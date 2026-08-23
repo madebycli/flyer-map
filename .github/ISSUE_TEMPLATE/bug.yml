@@ -1,0 +1,37 @@
+name: Bug melden
+description: Ein reproduzierbares Problem in Verteil-Flyer melden
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Was ist passiert?
+      description: Beschreibe das Problem möglichst konkret.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Was hätte passieren sollen?
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Gerät und Browser
+      placeholder: z. B. Pixel 7 / Chrome oder iPhone 13 / Safari
+  - type: dropdown
+    id: network
+    attributes:
+      label: Verbindung
+      options:
+        - Online/stabil
+        - Schwach/wechselnd
+        - Offline
+        - Unbekannt
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zum Reproduzieren
+      placeholder: "1. ...\n2. ...\n3. ..."

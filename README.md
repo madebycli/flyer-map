@@ -4,7 +4,7 @@ Mobile-first Progressive Web App zur koordinierten Verteilung von Flyern über e
 
 ## Status
 
-Das Projekt befindet sich im initialen Aufbau. Die technische und produktseitige Source of Truth liegt im Repository unter `docs/`.
+Die Foundation ist vorbereitet. Die technische und produktseitige Source of Truth liegt im Repository unter `docs/`.
 
 ## Projektprinzipien
 
@@ -16,15 +16,15 @@ Das Projekt befindet sich im initialen Aufbau. Die technische und produktseitige
 - möglichst ohne laufende Infrastrukturkosten
 - kleine, verständliche und langfristig wartbare Architektur
 
-## Geplanter Stack
+## Stack
 
 - TypeScript
 - React + Vite
 - MapLibre GL JS
 - OpenStreetMap-Daten / OpenFreeMap als initialer Kartenanbieter
 - Cloudflare Workers + Static Assets
-- Cloudflare D1
-- Progressive Web App mit Offline-Unterstützung
+- Cloudflare D1 (ab Datenbank-Milestone)
+- Progressive Web App
 
 ## Für Coding-Agents
 
@@ -36,19 +36,19 @@ Vor jeder Arbeit am Projekt zuerst lesen:
 
 Danach nur den für die Aufgabe relevanten Kontext laden.
 
-## Lokale Entwicklung
+## Entwicklung
 
-Nach dem Foundation-Setup:
+Voraussetzung: Node.js 22 oder neuer.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Produktions-Build:
+Qualitätscheck:
 
 ```bash
-npm run build
+npm run check
 ```
 
 Deployment zu Cloudflare:
@@ -57,4 +57,4 @@ Deployment zu Cloudflare:
 npm run deploy
 ```
 
-Die Cloudflare-Ressourcen werden bewusst erst nach dem ersten erfolgreichen Build verbunden. Siehe `docs/operations/DEPLOYMENT.md`.
+Die Cloudflare-Ressourcen werden bewusst erst nach einem erfolgreichen Foundation-Build verbunden. Siehe `docs/operations/DEPLOYMENT.md`.

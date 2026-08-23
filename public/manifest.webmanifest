@@ -1,0 +1,19 @@
+{
+  "name": "Verteil-Flyer",
+  "short_name": "Verteilen",
+  "description": "Gemeinsame Karte zur koordinierten Verteilung von Flyern.",
+  "lang": "de",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eef2ee",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
