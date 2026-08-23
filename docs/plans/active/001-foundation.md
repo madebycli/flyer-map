@@ -26,7 +26,7 @@ Establish a deployable, agent-friendly and lightweight project base before domai
 - [x] add PWA manifest/service-worker lifecycle
 - [x] add initial database schema proposal
 - [x] add GitHub CI and contribution templates
-- [ ] verify dependency install/typecheck/build in CI
+- [x] verify dependency install/typecheck/build in CI
 - [ ] merge foundation PR
 - [ ] connect merged `main` to Cloudflare
 - [ ] verify first production deployment on real phones
@@ -38,6 +38,10 @@ Establish a deployable, agent-friendly and lightweight project base before domai
 - Geolocation denial does not break map use.
 - `/api/health` works after Cloudflare deployment.
 - A new ChatGPT coding session can orient itself from the three context entrypoints without reading all docs.
+
+## Verification
+
+GitHub Actions CI run #2 passed on 2026-08-24 after validating dependency installation, TypeScript and the production Vite/Cloudflare build.
 
 ## Risks
 
