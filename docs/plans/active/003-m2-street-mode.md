@@ -32,7 +32,6 @@ Add the first real distribution-task workflow on top of team areas: manually tra
 - [x] persist street tasks across reloads on the same device
 - [x] update docs/status and planned D1 model without creating or inventing a production D1 id
 - [x] pass CI typecheck/build on the implementation head
-- [ ] verify the final PR head remains green and merge
 - [ ] verify Street Mode on a real Android phone and iPhone/Safari-class browser
 
 ## Acceptance criteria
@@ -51,9 +50,9 @@ Add the first real distribution-task workflow on top of team areas: manually tra
 
 ## Verification so far
 
-GitHub Actions passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build on the implementation head before the final documentation/status update.
+GitHub Actions passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build on the implementation head.
 
-The final PR head must repeat the same green CI gate before merge. Real-device interaction remains open and is intentionally not replaced by build success.
+Merge is allowed only after the final PR head repeats the same green CI gate. Real-device interaction remains open and is intentionally not replaced by build success.
 
 ## Risks
 
