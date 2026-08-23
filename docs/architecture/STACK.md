@@ -17,6 +17,8 @@ last_updated: 2026-08-24
 
 React is used for maintainable UI state and broad tool/agent familiarity. It is not permission to add a heavy component framework.
 
+The product is a normal mobile-first website. It does not use a Web App Manifest or service worker for installation.
+
 ## Cloudflare
 
 - Cloudflare Workers
@@ -29,7 +31,7 @@ The frontend and API deploy as one Worker unit.
 ## Map
 
 - MapLibre GL JS for rendering/interactions
-- OpenFreeMap initial vector basemap
+- VersaTiles public vector basemap for the current MVP
 - OpenStreetMap-derived data
 
 The provider URL must stay isolated so the basemap can be replaced without rewriting application logic.
