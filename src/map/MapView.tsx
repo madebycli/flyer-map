@@ -58,6 +58,8 @@ const CARTO_VOYAGER_RETINA_STYLE = {
 const AREAS_SOURCE = "distribution-areas";
 const AREAS_FILL_LAYER = "distribution-areas-fill";
 const AREAS_LINE_LAYER = "distribution-areas-line";
+const AREAS_SELECTED_HALO_LAYER = "distribution-areas-selected-halo";
+const AREAS_SELECTED_LINE_LAYER = "distribution-areas-selected-line";
 const DRAFT_SHAPE_SOURCE = "draft-area-shape";
 const DRAFT_POINTS_SOURCE = "draft-area-points";
 const EDIT_SHAPE_SOURCE = "edit-area-shape";
@@ -168,7 +170,7 @@ function addApplicationLayers(map: Map) {
     source: AREAS_SOURCE,
     paint: {
       "fill-color": ["get", "color"],
-      "fill-opacity": ["case", ["boolean", ["get", "selected"], false], 0.32, 0.2],
+      "fill-opacity": ["case", ["boolean", ["get", "selected"], false], 0.34, 0.2],
     },
   });
   map.addLayer({
@@ -177,8 +179,30 @@ function addApplicationLayers(map: Map) {
     source: AREAS_SOURCE,
     paint: {
       "line-color": ["get", "color"],
-      "line-width": ["case", ["boolean", ["get", "selected"], false], 4, 2.5],
+      "line-width": 2.5,
       "line-opacity": 0.95,
+    },
+  });
+  map.addLayer({
+    id: AREAS_SELECTED_HALO_LAYER,
+    type: "line",
+    source: AREAS_SOURCE,
+    filter: ["==", ["get", "selected"], true],
+    paint: {
+      "line-color": "#ffffff",
+      "line-width": 9,
+      "line-opacity": 0.96,
+    },
+  });
+  map.addLayer({
+    id: AREAS_SELECTED_LINE_LAYER,
+    type: "line",
+    source: AREAS_SOURCE,
+    filter: ["==", ["get", "selected"], true],
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": 5,
+      "line-opacity": 1,
     },
   });
 
