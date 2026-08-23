@@ -9,11 +9,11 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M0 — Repository foundation.
+M0 — Repository foundation merged to `main`.
 
 ## Working
 
-Foundation branch contains and CI has validated:
+`main` now contains and CI has validated:
 - React/Vite application shell
 - Cloudflare Worker health endpoint
 - MapLibre + OpenFreeMap map prototype
@@ -21,10 +21,11 @@ Foundation branch contains and CI has validated:
 - PWA manifest/service-worker lifecycle
 - initial D1 schema proposal
 - agent context/documentation system
+- GitHub CI and contribution templates
 
 ## Verification
 
-GitHub Actions run #2 passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build.
+The final foundation pull-request head passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build before PR #1 was squash-merged.
 
 ## Not connected yet
 
@@ -44,7 +45,7 @@ No known foundation build errors. Production Cloudflare resources do not exist y
 
 ## Next
 
-1. Merge the green foundation PR.
-2. Connect the GitHub repository to Cloudflare Workers Builds.
-3. Confirm the app on real Android and iPhone hardware.
+1. Connect `main` to Cloudflare Workers Builds and perform the first deployment.
+2. Verify `/api/health`, map rendering and geolocation on real Android/iPhone hardware.
+3. Complete and archive Plan 001.
 4. Start M1: campaign/team/area data model and editable map layers.
