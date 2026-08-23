@@ -31,7 +31,8 @@ The frontend and API deploy as one Worker unit.
 ## Map
 
 - MapLibre GL JS for rendering/interactions
-- VersaTiles public vector basemap for the current MVP
+- CARTO Positron public vector style as the current primary basemap
+- standard OpenStreetMap raster tiles as automatic emergency fallback
 - OpenStreetMap-derived data
 
 The provider URL must stay isolated so the basemap can be replaced without rewriting application logic.
