@@ -50,9 +50,17 @@ nodes:
     path: docs/operations/DEPLOYMENT.md
     topics: [deploy, cloudflare, github, production, d1]
 
+  - id: first-deploy
+    path: docs/operations/FIRST_DEPLOY.md
+    topics: [first-deploy, cloudflare, workers-builds, github, workers-dev, phone-test]
+
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
     topics: [agent, chatgpt, context, onboarding]
+
+  - id: deployment-agent-prompt
+    path: docs/prompts/NEXT_AGENT_DEPLOYMENT.md
+    topics: [agent, chatgpt, deployment, cloudflare, onboarding]
 
 edges:
   - { from: product, to: mvp, relation: defines_scope }
@@ -63,3 +71,5 @@ edges:
   - { from: security, to: data, relation: constrains }
   - { from: quality, to: architecture, relation: validates }
   - { from: deployment, to: architecture, relation: operates }
+  - { from: first-deploy, to: deployment, relation: procedure_for }
+  - { from: deployment-agent-prompt, to: first-deploy, relation: executes }
