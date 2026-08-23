@@ -20,23 +20,24 @@ Turn the map prototype into the first useful Verteil-Flyer workflow: one campaig
 
 ## Tasks
 
-- [ ] define browser-side campaign/team/area snapshot types compatible with the planned Worker/D1 model
-- [ ] create and rename the campaign
-- [ ] create, rename and recolor teams with unique palette colors
-- [ ] build mobile team management as a compact bottom sheet
-- [ ] draw a polygon area with explicit draw mode, undo, save and cancel
-- [ ] assign every area to a team and preview the team color while drawing
-- [ ] render all saved areas as colored transparent fills with clear outlines
-- [ ] select an existing area from the map
-- [ ] edit saved polygon vertices with large mobile-friendly handles
-- [ ] reassign an area to another team
-- [ ] delete an area with an explicit destructive action
-- [ ] reject invalid/self-intersecting polygon geometry instead of silently saving it
-- [ ] persist the M1 snapshot in browser storage and restore it after reload
-- [ ] isolate persistence behind a small store boundary so the same snapshot can later come from Worker/D1 on multiple phones
-- [ ] keep GPS local-only and leave the existing basemap provider unchanged
-- [ ] update stale website-only/map documentation and `docs/status/CURRENT.md`
-- [ ] run typecheck/build through CI, fix failures, merge only when green
+- [x] define browser-side campaign/team/area snapshot types compatible with the planned Worker/D1 model
+- [x] create and rename the campaign
+- [x] create, rename and recolor teams with unique palette colors
+- [x] build mobile team management as a compact bottom sheet
+- [x] draw a polygon area with explicit draw mode, undo, save and cancel
+- [x] assign every area to a team and preview the team color while drawing
+- [x] render all saved areas as colored transparent fills with clear outlines
+- [x] select an existing area from the map
+- [x] edit saved polygon vertices with large mobile-friendly handles
+- [x] reassign an area to another team
+- [x] delete an area with an explicit destructive action
+- [x] reject invalid/self-intersecting polygon geometry instead of silently saving it
+- [x] persist the M1 snapshot in browser storage and restore it after reload
+- [x] isolate persistence behind a small store boundary so the same snapshot can later come from Worker/D1 on multiple phones
+- [x] keep GPS local-only and leave the existing basemap provider unchanged
+- [x] update stale website-only/map documentation and `docs/status/CURRENT.md`
+- [x] run typecheck/build through CI and fix failures before merge
+- [ ] verify the complete M1 interaction on a real Android phone and iPhone/Safari-class browser
 
 ## Acceptance criteria
 
@@ -50,6 +51,13 @@ Turn the map prototype into the first useful Verteil-Flyer workflow: one campaig
 - No service worker, Web App Manifest, native-app code, GPS persistence or GPS sharing is introduced.
 - The data snapshot and persistence boundary are ready to be backed by the Worker/D1 later without changing map-domain types.
 - CI passes `npm run typecheck` and `npm run build` before merge.
+- Real-device verification confirms there is no horizontal overflow or blocking overlap between map controls and bottom sheets.
+
+## Verification so far
+
+GitHub Actions has passed `npm run check` on the implementation/documentation head, covering TypeScript type checking and the production Vite/Cloudflare build.
+
+Real-device verification of the new M1 interaction remains the release gate for closing this plan.
 
 ## Risks
 
