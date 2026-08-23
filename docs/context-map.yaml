@@ -1,0 +1,65 @@
+version: 1
+
+entrypoints:
+  always:
+    - AGENTS.md
+    - docs/status/CURRENT.md
+
+nodes:
+  - id: product
+    path: docs/product/PRODUCT.md
+    topics: [product, requirements, scope, users]
+
+  - id: mvp
+    path: docs/product/MVP.md
+    topics: [mvp, milestones, roadmap, scope]
+
+  - id: ux
+    path: docs/product/UX.md
+    topics: [ui, ux, mobile, accessibility, interaction]
+
+  - id: architecture
+    path: ARCHITECTURE.md
+    topics: [architecture, system, backend, frontend]
+
+  - id: stack
+    path: docs/architecture/STACK.md
+    topics: [dependencies, technology, cloudflare, react, vite]
+
+  - id: map
+    path: docs/architecture/MAP.md
+    topics: [map, maplibre, osm, openfreemap, geolocation]
+
+  - id: data
+    path: docs/architecture/DATA.md
+    topics: [database, d1, schema, campaigns, teams, areas, tasks]
+
+  - id: offline-sync
+    path: docs/architecture/OFFLINE_SYNC.md
+    topics: [offline, synchronization, indexeddb, conflicts]
+
+  - id: security
+    path: docs/architecture/SECURITY.md
+    topics: [auth, authorization, privacy, tokens, gps]
+
+  - id: quality
+    path: docs/quality/QUALITY.md
+    topics: [tests, performance, accessibility, browsers, quality]
+
+  - id: deployment
+    path: docs/operations/DEPLOYMENT.md
+    topics: [deploy, cloudflare, github, production, d1]
+
+  - id: prompts
+    path: docs/prompts/NEW_AGENT.md
+    topics: [agent, chatgpt, context, onboarding]
+
+edges:
+  - { from: product, to: mvp, relation: defines_scope }
+  - { from: architecture, to: product, relation: implements }
+  - { from: map, to: architecture, relation: component_of }
+  - { from: data, to: architecture, relation: component_of }
+  - { from: offline-sync, to: data, relation: depends_on }
+  - { from: security, to: data, relation: constrains }
+  - { from: quality, to: architecture, relation: validates }
+  - { from: deployment, to: architecture, relation: operates }

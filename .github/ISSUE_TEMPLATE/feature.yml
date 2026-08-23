@@ -1,0 +1,29 @@
+name: Feature vorschlagen
+description: Eine Verbesserung aus einem konkreten Verteil-Problem vorschlagen
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem soll gelöst werden?
+      description: Bitte zuerst das Problem beschreiben, nicht nur eine technische Lösung.
+    validations:
+      required: true
+  - type: textarea
+    id: users
+    attributes:
+      label: Wer braucht das?
+      placeholder: Verteiler, Teamleitung, Admin ...
+  - type: textarea
+    id: idea
+    attributes:
+      label: Gewünschtes Verhalten
+  - type: dropdown
+    id: importance
+    attributes:
+      label: Bedeutung
+      options:
+        - Für echte Verteilung notwendig
+        - Deutliche Verbesserung
+        - Komfort / Nice-to-have

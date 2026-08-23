@@ -1,0 +1,50 @@
+---
+id: architecture-stack
+type: architecture
+status: accepted
+last_updated: 2026-08-24
+---
+
+# Stack
+
+## Client
+
+- TypeScript
+- React
+- Vite
+- plain CSS
+- MapLibre GL JS
+
+React is used for maintainable UI state and broad tool/agent familiarity. It is not permission to add a heavy component framework.
+
+## Cloudflare
+
+- Cloudflare Workers
+- Workers Static Assets
+- Cloudflare Vite plugin
+- D1 when shared persistence is introduced
+
+The frontend and API deploy as one Worker unit.
+
+## Map
+
+- MapLibre GL JS for rendering/interactions
+- OpenFreeMap initial vector basemap
+- OpenStreetMap-derived data
+
+The provider URL must stay isolated so the basemap can be replaced without rewriting application logic.
+
+## Dependency policy
+
+A dependency should be added only when it provides meaningful value that would be costly or risky to implement locally.
+
+Avoid adding:
+- component suites
+- animation frameworks
+- large utility libraries for one function
+- analytics SDKs in MVP
+- external font packages
+
+## Version policy
+
+Dependencies are pinned in `package.json` during the foundation stage. Upgrade intentionally through review rather than silently drifting major versions.

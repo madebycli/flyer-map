@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Verteil-Flyer">
+  <rect width="512" height="512" rx="112" fill="#f5f7f5"/>
+  <path d="M100 116h312v280H100z" fill="#fff" stroke="#24452d" stroke-width="24"/>
+  <path d="M154 188h204M154 246h204M154 304h120" fill="none" stroke="#24452d" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="350" cy="322" r="58" fill="#dff1e4" stroke="#24452d" stroke-width="20"/>
+  <path d="m324 322 19 19 36-43" fill="none" stroke="#24452d" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
