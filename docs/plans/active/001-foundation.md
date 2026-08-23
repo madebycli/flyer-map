@@ -27,7 +27,7 @@ Establish a deployable, agent-friendly and lightweight project base before domai
 - [x] add initial database schema proposal
 - [x] add GitHub CI and contribution templates
 - [x] verify dependency install/typecheck/build in CI
-- [ ] merge foundation PR
+- [x] merge foundation PR
 - [ ] connect merged `main` to Cloudflare
 - [ ] verify first production deployment on real phones
 
@@ -41,7 +41,7 @@ Establish a deployable, agent-friendly and lightweight project base before domai
 
 ## Verification
 
-GitHub Actions CI run #2 passed on 2026-08-24 after validating dependency installation, TypeScript and the production Vite/Cloudflare build.
+The final pull-request head passed GitHub Actions CI on 2026-08-24, including dependency installation, TypeScript type checking and the production Vite/Cloudflare build. PR #1 was then squash-merged into `main`.
 
 ## Risks
 
