@@ -13,35 +13,47 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary]
 
 MapLibre GL JS renders the interactive map inside the mobile website.
 
-The module is dynamically imported by `MapView` so the rest of the website shell can remain a separate small chunk.
+The map is a primary field interface, so MapLibre is loaded as a normal application dependency instead of through a second-stage dynamic import. This avoids an avoidable startup waterfall before the first map request can begin.
 
 ## Basemap
 
 Primary MVP provider:
 
-`https://basemaps.cartocdn.com/gl/positron-gl-style/style.json`
+CARTO Positron Retina raster tiles:
 
-This is a vector basemap based on OpenStreetMap data and rendered by MapLibre at device resolution. It is intentionally used instead of 256 px raster tiles so roads, labels and building geometry stay sharp on high-DPI phones.
+`https://{a-d}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png`
 
-The basemap provider is an operational dependency, not a domain dependency. Keep it isolated and replaceable.
+The source uses four CARTO CDN hostnames and 2x-resolution tiles. This is intentionally chosen for the current MVP after real-phone testing showed that public vector styles introduced slow multi-resource startup, provider-specific failures and visible blank areas while moving the map.
 
-### Runtime fallback
+Why this tradeoff is acceptable:
+- 2x tiles are materially sharper than the previous 256 px OSM emergency tiles on high-DPI phones;
+- raster rendering avoids vector style, glyph and font request waterfalls;
+- CARTO serves the basemap through a CDN;
+- four tile hostnames allow viewport tile requests to be distributed;
+- the field UI values predictable loading over advanced vector styling.
 
-`MapView` keeps the standard OpenStreetMap raster style as a runtime emergency fallback.
+The basemap provider remains an operational dependency, not a domain dependency. Keep it isolated and replaceable.
 
-If the primary vector style does not reach a complete first render or emits an early loading error, the map automatically switches to the raster fallback instead of leaving the user with an empty/white map.
+### Mobile loading behavior
 
-The fallback is for availability, not preferred visual quality. While it is active, follow the standard OSM tile-service rules: viewport-only use, visible attribution and no bulk/offline prefetch.
+MapLibre keeps pending lower-zoom tile requests while the user zooms so previously requested context can progressively appear instead of being abruptly canceled.
+
+The map uses a neutral background beneath the tile layer and a small initial `Karte lädt…` status so a slow connection does not present a featureless white screen.
+
+Do not prefetch whole areas or build an offline basemap cache. Only normal interactive viewport requests are allowed in the current architecture.
 
 History:
 - OpenFreeMap was the initial vector provider but the first production-origin test lost street-level detail.
-- Standard OSM raster tiles restored street-level availability but looked soft on high-DPI displays.
-- VersaTiles was tested for crisp vector rendering but produced a fully white map on the real production phone test.
-- CARTO Positron is the current primary vector style, with OSM raster retained as automatic emergency fallback.
+- Standard OSM raster tiles restored availability but looked soft on high-DPI displays.
+- VersaTiles restored vector rendering in theory but produced a white map on the real production phone test.
+- CARTO Positron vector style rendered but real-device testing showed unacceptably slow first render and tile/resource loading while moving.
+- CARTO Retina raster is the current performance-oriented MVP choice.
 
 ## Application layers
 
-Team areas, distribution tasks and task state must be rendered as separate application-controlled layers above the basemap.
+Team areas, distribution tasks and task state must be rendered as separate application-controlled vector/GeoJSON layers above the basemap.
+
+The raster choice applies only to the background map. Distribution geometry and status remain crisp application-controlled overlays.
 
 Do not encode distribution state by editing the basemap itself.
 
