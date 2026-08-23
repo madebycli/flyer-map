@@ -9,18 +9,31 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M0 — Production website deployed; mobile map performance/visual verification in progress.
+M1 — Campaign, teams and editable assigned areas implemented; real-device interaction verification remains open.
 
 ## Working
 
-`main` contains and CI has validated:
+`main` contains and CI validates the mobile website foundation:
 - React/Vite mobile website shell
 - Cloudflare Worker health endpoint
-- MapLibre map
-- browser geolocation control
-- initial D1 schema proposal
-- agent context/documentation system
-- GitHub CI and contribution templates
+- MapLibre with CARTO Voyager Retina raster basemap
+- browser geolocation control with local-only GPS use
+- GitHub CI and Cloudflare deployment pipeline
+
+The current M1 slice adds:
+- one editable campaign/Verteilaktion
+- named teams with unique selectable colors
+- compact mobile team management
+- map-first polygon drawing with explicit Save/Cancel/Undo
+- assignment of every area to a team
+- simultaneous colored area fills/outlines
+- tap-to-select area management
+- area rename and team reassignment
+- mobile-friendly polygon editing with large vertex handles
+- invalid/self-intersecting polygon rejection
+- area deletion with explicit confirmation
+- versioned browser campaign snapshot persisted across reloads on the same device
+- a domain/storage boundary designed to move behind Worker/D1 later
 
 Cloudflare Workers Builds is connected to `main` and the deployment is available at:
 
@@ -28,44 +41,47 @@ Cloudflare Workers Builds is connected to `main` and the deployment is available
 
 ## Current architecture direction
 
-- website only
+- normal mobile-first website only
 - no native app
 - no installable PWA
 - no service worker/manifest lifecycle
-- browser geolocation remains supported
+- browser geolocation remains local-only in MVP
 - MapLibre remains the renderer
-- CARTO Voyager Retina raster tiles are the current MVP basemap for mobile performance plus a more familiar colorful street-map appearance
-- distribution areas/tasks remain application-controlled vector overlays
+- CARTO Voyager Retina raster tiles remain the current MVP basemap
+- campaign/team/area geometry is application-controlled GeoJSON above the basemap
+- M1 persistence is localStorage on one device, not shared synchronization
+- campaign snapshots carry a revision field so later Worker/D1 polling/version checks do not require a client-state redesign
 
 ## Verification
 
-The foundation build passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build.
+GitHub Actions has passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build for the M1 implementation branch.
 
-Real-device testing confirmed that the website and browser map interactions work, but public vector basemap attempts were operationally unreliable or too slow on the test phone. The CARTO vector style eventually rendered, but first useful map display could take roughly 10–20 seconds and moving the map exposed slow-loading blank regions.
+M0 production-phone tests were sufficient to close the foundation milestone and begin product work. The new M1 drawing/editing flow still requires direct phone verification after deployment.
 
-The performance change moved to CARTO 2x Retina raster tiles over four CDN hosts, removed the vector-to-raster fallback chain, starts MapLibre through the normal module graph and retains pending lower-zoom tiles while zooming for smoother continuity.
-
-Real-device visual review then rejected the very pale Positron styling. The current change keeps the same Retina/CDN performance strategy but switches the tile style to CARTO Voyager so roads, parks, water and general map context have more color and contrast.
-
-See `docs/operations/PRODUCTION.md`, `docs/architecture/MAP.md` and ADR-0008.
+See `docs/operations/PRODUCTION.md`, `docs/architecture/MAP.md`, `docs/architecture/DATA.md` and Plan 002.
 
 ## Not connected yet
 
-- D1 database/binding
-- shared campaign state
+- production D1 database/binding
+- shared campaign state across devices
+- authorization/access links
 - resilient mutation queue
+- street/task completion workflow
 
 ## Active plan
 
-`docs/plans/active/001-foundation.md`
+`docs/plans/active/002-m1-campaign-team-areas.md`
 
 ## Known issues
 
-The Voyager Retina map still needs real-phone verification after deployment. Basemap performance and readability on mobile data remain release-quality concerns and should be judged by perceived first useful render, pan/zoom continuity and field readability.
+- The M1 interaction has not yet been field-tested on the production phone after deployment.
+- localStorage persistence is deliberately single-device; edits do not yet synchronize between phones.
+- Basemap performance/readability should continue to be observed on mobile data, but minor map cosmetics no longer block product milestones.
 
 ## Next
 
-1. Verify Voyager color/readability and first useful map render on the real phone.
-2. Verify pan/zoom continuity and browser geolocation.
-3. Complete and archive Plan 001 if the map is field-usable.
-4. Start M1: campaign/team/area data model and editable map layers.
+1. Verify team management, drawing, selection, editing, deletion and reload persistence on the real phone.
+2. Verify narrow width, safe areas, Android/Chrome and iPhone/Safari behavior.
+3. Close/archive Plan 002 after the real-device M1 flow is field-usable.
+4. Start Street Mode task interaction: street-level tasks with `open`, `completed`, `later`, `not-deliverable` and undo.
+5. Connect shared Worker/D1 persistence before multi-device campaign use is considered ready.

@@ -4,11 +4,14 @@ Mobile-first Website zur koordinierten Verteilung von Flyern über eine gemeinsa
 
 ## Status
 
-Die Foundation ist vorbereitet und die erste Cloudflare-Testversion läuft. Die technische und produktseitige Source of Truth liegt im Repository unter `docs/`.
+Die Foundation ist produktiv deployed. M1 ergänzt die erste echte Produktfunktion: Verteilaktion, farbcodierte Teams sowie zeichn-, auswähl- und bearbeitbare Teamgebiete auf der Karte mit lokaler Reload-Persistenz.
+
+Die technische und produktseitige Source of Truth liegt im Repository unter `docs/`.
 
 ## Projektprinzipien
 
 - mobile first
+- map first
 - Website only, keine native App und keine installierbare PWA
 - lightweight und datenarm
 - zuverlässig bei schwankender Mobilfunkverbindung
@@ -22,9 +25,10 @@ Die Foundation ist vorbereitet und die erste Cloudflare-Testversion läuft. Die 
 - TypeScript
 - React + Vite
 - MapLibre GL JS
-- OpenStreetMap-basierte Vektordaten über VersaTiles
+- CARTO Voyager Retina Raster-Basemap mit OpenStreetMap-abgeleiteten Kartendaten
+- Verteil-Flyer GeoJSON-Layer für Teamgebiete und spätere Aufgaben
 - Cloudflare Workers + Static Assets
-- Cloudflare D1 ab Datenbank-Milestone
+- Cloudflare D1 ab Shared-Persistence-Milestone
 
 ## Für Coding-Agents
 

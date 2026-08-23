@@ -13,10 +13,16 @@ source_of_truth_for: [offline-queue, synchronization, conflict-handling]
 
 A field user must not silently lose a manual completion action because mobile connectivity disappears temporarily.
 
-## Planned model
+## Current M1 behavior
+
+The campaign/team/area snapshot is stored in browser localStorage so those edits survive reloads on the same device.
+
+This is not shared synchronization and not an offline app shell. It only protects the current local M1 domain state from a normal reload.
+
+## Planned mutation model
 
 1. Apply safe task-state changes optimistically in the UI.
-2. Store unsent mutations in IndexedDB.
+2. Store unsent mutations in browser storage, likely IndexedDB once mutation queuing is required.
 3. Give every mutation a unique idempotency key.
 4. Submit/retry when connectivity is available.
 5. Remove a mutation only after server acknowledgement.
@@ -26,8 +32,10 @@ A field user must not silently lose a manual completion action because mobile co
 
 Do not rely on "last write wins" without visibility.
 
-Before implementation, define server-side task versioning and what happens when two devices change the same task differently.
+The M1 campaign snapshot already carries a coarse `revision` field. Before shared writes are implemented, define server-side version checks and what happens when two devices change the same entity differently.
 
-## Service worker
+## Website-only constraint
 
-The foundation service worker intentionally does not cache application data yet. Offline application caching and mutation synchronization are a dedicated milestone to avoid shipping stale-state bugs accidentally.
+Verteil-Flyer does not use a service worker or Web App Manifest.
+
+Connectivity resilience must be implemented with normal browser storage and Worker API behavior. Do not reintroduce a service worker just to queue mutations or cache the app shell.

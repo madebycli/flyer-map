@@ -53,11 +53,29 @@ History:
 
 ## Application layers
 
-Team areas, distribution tasks and task state must be rendered as separate application-controlled vector/GeoJSON layers above the basemap.
+Team areas, distribution tasks and task state are rendered as separate application-controlled vector/GeoJSON layers above the basemap.
 
 The raster choice applies only to the background map. Distribution geometry and status remain crisp application-controlled overlays.
 
+M1 area behavior:
+- every stored area is a GeoJSON Polygon assigned to exactly one team;
+- fill and outline colors come from the assigned team;
+- stored areas are shown together with transparent fills and strong outlines;
+- drawing uses a separate draft shape/point layer, so map movement cannot silently rewrite saved geometry;
+- editing uses a separate preview layer with large vertex handles;
+- on phones, editing is tap-handle-then-tap-destination rather than relying on tiny draggable vertex buttons;
+- the client validates polygon geometry before Save is enabled.
+
 Do not encode distribution state by editing the basemap itself.
+
+## Interaction modes
+
+The map has explicit browser-side modes:
+- `browse`: pan/zoom and select stored areas;
+- `draw`: map taps add draft vertices; Save/Cancel/Undo are explicit;
+- `edit`: stored geometry remains unchanged until the user explicitly saves the edited preview.
+
+Double-click zoom is disabled in draw/edit modes to reduce accidental geometry input while touch panning and pinch zoom remain available.
 
 ## Geolocation
 

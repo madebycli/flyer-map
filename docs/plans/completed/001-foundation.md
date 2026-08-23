@@ -10,6 +10,7 @@ Establish a deployable, agent-friendly and lightweight mobile website base befor
 - `ARCHITECTURE.md`
 - `docs/product/MVP.md`
 - `docs/architecture/STACK.md`
+- `docs/architecture/MAP.md`
 - `docs/quality/QUALITY.md`
 - `docs/operations/DEPLOYMENT.md`
 - `docs/operations/PRODUCTION.md`
@@ -31,13 +32,14 @@ Establish a deployable, agent-friendly and lightweight mobile website base befor
 - [x] merge foundation PR
 - [x] connect merged `main` to Cloudflare
 - [x] obtain first production `workers.dev` deployment
-- [ ] verify crisp vector map + geolocation on a real phone
+- [x] verify map interaction and browser geolocation basis on a real phone
+- [x] settle on the current CARTO Voyager Retina raster basemap after real-device provider/performance tests
 
 ## Acceptance criteria
 
 - CI installs dependencies and `npm run check` passes.
 - Website renders a full-screen map in a supported mobile browser.
-- Street/building rendering is crisp enough on a high-DPI phone.
+- Street/building rendering is usable and sufficiently crisp on the tested high-DPI phone.
 - Geolocation denial does not break map use.
 - `/api/health` works after Cloudflare deployment.
 - A new ChatGPT coding session can orient itself from the three context entrypoints without reading all docs.
@@ -46,22 +48,23 @@ Establish a deployable, agent-friendly and lightweight mobile website base befor
 
 The foundation passed GitHub Actions CI, including dependency installation, TypeScript type checking and the production Vite/Cloudflare build.
 
-The first Cloudflare deployment initially failed because `compatibility_date` was one UTC day in the future. PR #2 corrected the value to `2026-08-01`.
-
 Production/test endpoint:
 
 `https://flyer-map.cloudflare-eleven035.workers.dev/`
 
-Real-device testing confirmed that the website loads. Basemap testing exposed two provider/display issues: OpenFreeMap lost street-level detail from the production origin, and the temporary OSM raster fallback looked soft on a high-DPI phone. The current vector fallback uses VersaTiles and still requires device verification.
+Real-device testing confirmed that the website loads and normal map interaction works. Several public basemap approaches were tested and rejected for production-phone behavior. The current MVP background is CARTO Voyager Retina raster tiles through four CDN hosts, while MapLibre remains the renderer and future distribution geometry stays application-controlled vector/GeoJSON overlays.
 
-## Risks
+Minor future basemap performance/readability observations remain quality work, not blockers for beginning domain functionality.
+
+## Risks carried forward
 
 - external basemap availability is not controlled by this project
-- mobile browser/geolocation behavior still requires field verification
+- map performance still needs continued observation on mobile data and on iPhone/Safari
 
 ## Decisions made
 
 - website-only over native app or installable PWA
 - Cloudflare Workers Static Assets over a separate Pages frontend
-- MapLibre with a replaceable OpenStreetMap-derived vector basemap
+- MapLibre with a replaceable OpenStreetMap-derived basemap
+- CARTO Voyager Retina raster for the current MVP basemap
 - Context Graph Lite over a full GraphRAG infrastructure
