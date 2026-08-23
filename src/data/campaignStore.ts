@@ -9,6 +9,7 @@ import {
 } from "../domain/campaign";
 
 const STORAGE_KEY = "verteil-flyer:campaign-snapshot";
+const BACKUP_STORAGE_KEY = "verteil-flyer:campaign-snapshot:backup";
 const LEGACY_STORAGE_KEY = "verteil-flyer:m1:campaign-snapshot:v1";
 
 export type CampaignLoadResult = {
@@ -140,30 +141,56 @@ function migrateV1(snapshot: LegacySnapshotV1): CampaignSnapshot {
   };
 }
 
+function parseSnapshot(raw: string | null): CampaignSnapshot | null {
+  if (!raw) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (isCampaignSnapshot(parsed)) return parsed;
+    if (isLegacySnapshotV1(parsed)) return migrateV1(parsed);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function loadCampaignSnapshot(): CampaignLoadResult {
   if (typeof window === "undefined") {
     return { snapshot: createInitialSnapshot(), warning: null };
   }
 
   try {
-    const raw =
-      window.localStorage.getItem(STORAGE_KEY) ??
-      window.localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (!raw) return { snapshot: createInitialSnapshot(), warning: null };
+    const primaryRaw = window.localStorage.getItem(STORAGE_KEY);
+    const backupRaw = window.localStorage.getItem(BACKUP_STORAGE_KEY);
+    const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
 
-    const parsed: unknown = JSON.parse(raw);
-    if (isCampaignSnapshot(parsed)) {
-      return { snapshot: parsed, warning: null };
+    const primary = parseSnapshot(primaryRaw);
+    if (primary) return { snapshot: primary, warning: null };
+
+    const backup = parseSnapshot(backupRaw);
+    if (backup) {
+      return {
+        snapshot: backup,
+        warning: primaryRaw
+          ? "Die lokale Hauptdatei war beschädigt. Eine lokale Sicherung wurde geladen."
+          : null,
+      };
     }
 
-    if (isLegacySnapshotV1(parsed)) {
-      return { snapshot: migrateV1(parsed), warning: null };
+    const legacy = parseSnapshot(legacyRaw);
+    if (legacy) {
+      saveCampaignSnapshot(legacy);
+      return { snapshot: legacy, warning: null };
     }
 
-    return {
-      snapshot: createInitialSnapshot(),
-      warning: "Die lokal gespeicherten Daten waren ungültig und wurden nicht geladen.",
-    };
+    if (primaryRaw || backupRaw || legacyRaw) {
+      return {
+        snapshot: createInitialSnapshot(),
+        warning: "Lokale Daten konnten nicht wiederhergestellt werden.",
+      };
+    }
+
+    return { snapshot: createInitialSnapshot(), warning: null };
   } catch {
     return {
       snapshot: createInitialSnapshot(),
@@ -175,11 +202,19 @@ export function loadCampaignSnapshot(): CampaignLoadResult {
 export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
   if (typeof window === "undefined") return null;
 
+  const serialized = JSON.stringify(snapshot);
+
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-    return null;
+    window.localStorage.setItem(STORAGE_KEY, serialized);
   } catch {
     return "Lokales Speichern ist fehlgeschlagen. Bitte diese Seite noch nicht neu laden.";
   }
+
+  try {
+    window.localStorage.setItem(BACKUP_STORAGE_KEY, serialized);
+  } catch {
+    return "Gespeichert, aber die lokale Sicherheitskopie konnte nicht aktualisiert werden.";
+  }
+
+  return null;
 }
