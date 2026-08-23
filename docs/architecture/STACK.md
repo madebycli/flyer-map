@@ -19,6 +19,8 @@ React is used for maintainable UI state and broad tool/agent familiarity. It is 
 
 The product is a normal mobile-first website. It does not use a Web App Manifest or service worker for installation.
 
+M1 uses browser `localStorage` only for the versioned campaign/team/area snapshot on one device. Shared state remains a Worker/D1 responsibility.
+
 ## Cloudflare
 
 - Cloudflare Workers
@@ -31,11 +33,11 @@ The frontend and API deploy as one Worker unit.
 ## Map
 
 - MapLibre GL JS for rendering/interactions and application overlays
-- CARTO Positron Retina raster tiles as the current performance-oriented basemap
+- CARTO Voyager Retina raster tiles as the current performance-oriented basemap
 - four CARTO CDN hosts for tile delivery
 - OpenStreetMap-derived basemap data
 
-The raster choice is limited to the background map. Team areas, tasks, completion state and other Verteil-Flyer geometry remain application-controlled vector/GeoJSON layers.
+The raster choice is limited to the background map. Team areas, drawing/editing previews, tasks, completion state and other Verteil-Flyer geometry remain application-controlled vector/GeoJSON layers.
 
 The provider configuration must stay isolated so the basemap can be replaced without rewriting application logic.
 
@@ -49,6 +51,8 @@ Avoid adding:
 - large utility libraries for one function
 - analytics SDKs in MVP
 - external font packages
+
+M1 polygon drawing/editing is implemented with MapLibre's existing map/event/GeoJSON primitives rather than adding a large drawing library.
 
 ## Version policy
 
