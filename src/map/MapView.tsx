@@ -3,16 +3,16 @@ import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-const CARTO_RETINA_STYLE = {
+const CARTO_VOYAGER_RETINA_STYLE = {
   version: 8,
   sources: {
     carto: {
       type: "raster",
       tiles: [
-        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
-        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
-        "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
-        "https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
+        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
       ],
       tileSize: 256,
       minzoom: 0,
@@ -26,7 +26,7 @@ const CARTO_RETINA_STYLE = {
       id: "map-background",
       type: "background",
       paint: {
-        "background-color": "#e8ece8",
+        "background-color": "#fbf8f3",
       },
     },
     {
@@ -58,7 +58,7 @@ export function MapView() {
     try {
       const map = new Map({
         container: containerRef.current,
-        style: CARTO_RETINA_STYLE,
+        style: CARTO_VOYAGER_RETINA_STYLE,
         center: [10.45, 51.16],
         zoom: 5.3,
         maxZoom: 20,
