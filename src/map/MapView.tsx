@@ -5,7 +5,7 @@ import {
   Map,
   NavigationControl,
 } from "maplibre-gl";
-import type { StyleSpecification } from "maplibre-gl";
+import type { LayerSpecification, StyleSpecification } from "maplibre-gl";
 import type {
   Feature,
   FeatureCollection,
@@ -13,7 +13,12 @@ import type {
   Point,
   Polygon,
 } from "geojson";
-import type { Area, DistributionTask, LngLat } from "../domain/campaign";
+import type {
+  Area,
+  DistributionTask,
+  LngLat,
+  TaskStatus,
+} from "../domain/campaign";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 const CARTO_VOYAGER_RETINA_STYLE = {
@@ -38,9 +43,7 @@ const CARTO_VOYAGER_RETINA_STYLE = {
     {
       id: "map-background",
       type: "background",
-      paint: {
-        "background-color": "#fbf8f3",
-      },
+      paint: { "background-color": "#fbf8f3" },
     },
     {
       id: "carto-basemap",
@@ -48,31 +51,38 @@ const CARTO_VOYAGER_RETINA_STYLE = {
       source: "carto",
       minzoom: 0,
       maxzoom: 20,
-      paint: {
-        "raster-fade-duration": 0,
-      },
+      paint: { "raster-fade-duration": 0 },
     },
   ],
 } satisfies StyleSpecification;
 
 const AREAS_SOURCE = "distribution-areas";
+const SELECTED_AREA_SOURCE = "selected-distribution-area";
 const AREAS_FILL_LAYER = "distribution-areas-fill";
 const AREAS_LINE_LAYER = "distribution-areas-line";
-const AREAS_SELECTED_HALO_LAYER = "distribution-areas-selected-halo";
-const AREAS_SELECTED_LINE_LAYER = "distribution-areas-selected-line";
-const TASKS_SOURCE = "distribution-street-tasks";
-const TASKS_SELECTED_HALO_LAYER = "distribution-street-tasks-selected-halo";
+const SELECTED_AREA_HALO_LAYER = "selected-distribution-area-halo";
+const SELECTED_AREA_LINE_LAYER = "selected-distribution-area-line";
+
+const TASKS_ALL_SOURCE = "distribution-street-tasks-all";
+const TASKS_OPEN_SOURCE = "distribution-street-tasks-open-source";
+const TASKS_COMPLETED_SOURCE = "distribution-street-tasks-completed-source";
+const TASKS_LATER_SOURCE = "distribution-street-tasks-later-source";
+const TASKS_NOT_DELIVERABLE_SOURCE = "distribution-street-tasks-not-deliverable-source";
+const SELECTED_TASK_SOURCE = "selected-distribution-street-task";
 const TASKS_CASING_LAYER = "distribution-street-tasks-casing";
 const TASKS_OPEN_LAYER = "distribution-street-tasks-open";
 const TASKS_COMPLETED_LAYER = "distribution-street-tasks-completed";
 const TASKS_LATER_LAYER = "distribution-street-tasks-later";
 const TASKS_NOT_DELIVERABLE_LAYER = "distribution-street-tasks-not-deliverable";
+const SELECTED_TASK_HALO_LAYER = "selected-distribution-street-task-halo";
+const SELECTED_TASK_LINE_LAYER = "selected-distribution-street-task-line";
 const TASK_CLICK_LAYERS = [
   TASKS_OPEN_LAYER,
   TASKS_COMPLETED_LAYER,
   TASKS_LATER_LAYER,
   TASKS_NOT_DELIVERABLE_LAYER,
 ];
+
 const DRAFT_SHAPE_SOURCE = "draft-area-shape";
 const DRAFT_POINTS_SOURCE = "draft-area-points";
 const EDIT_SHAPE_SOURCE = "edit-area-shape";
@@ -83,13 +93,8 @@ const STREET_DRAFT_POINTS_SOURCE = "draft-street-points";
 
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
 
-type RenderArea = Area & {
-  color: string;
-};
-
-type RenderTask = DistributionTask & {
-  color: string;
-};
+type RenderArea = Area & { color: string };
+type RenderTask = DistributionTask & { color: string };
 
 type MapViewProps = {
   areas: RenderArea[];
@@ -117,39 +122,67 @@ const emptyCollection = (): FeatureCollection => ({
   features: [],
 });
 
-function areaFeatures(areas: RenderArea[], selectedAreaId: string | null): FeatureCollection<Polygon> {
+function areaFeatures(areas: RenderArea[]): FeatureCollection<Polygon> {
   return {
     type: "FeatureCollection",
     features: areas.map((area) => ({
       type: "Feature",
-      properties: {
-        id: area.id,
-        color: area.color,
-        selected: area.id === selectedAreaId,
-      },
+      properties: { id: area.id, color: area.color },
       geometry: area.geometry,
     })),
   };
 }
 
-function taskFeatures(tasks: RenderTask[], selectedTaskId: string | null): FeatureCollection<LineString> {
+function selectedAreaFeatures(
+  areas: RenderArea[],
+  selectedAreaId: string | null,
+): FeatureCollection<Polygon> {
+  const area = areas.find((candidate) => candidate.id === selectedAreaId);
+  return {
+    type: "FeatureCollection",
+    features: area
+      ? [
+          {
+            type: "Feature",
+            properties: { id: area.id, color: area.color },
+            geometry: area.geometry,
+          },
+        ]
+      : [],
+  };
+}
+
+function taskFeatures(tasks: RenderTask[]): FeatureCollection<LineString> {
   return {
     type: "FeatureCollection",
     features: tasks.map((task) => ({
       type: "Feature",
-      properties: {
-        id: task.id,
-        color: task.color,
-        status: task.status,
-        selected: task.id === selectedTaskId,
-      },
+      properties: { id: task.id, color: task.color },
       geometry: task.geometry,
     })),
   };
 }
 
-function shapeFeature(vertices: LngLat[], color: string): FeatureCollection<Polygon | LineString> {
-  if (vertices.length < 2) return { type: "FeatureCollection", features: [] };
+function taskFeaturesForStatus(
+  tasks: RenderTask[],
+  status: TaskStatus,
+): FeatureCollection<LineString> {
+  return taskFeatures(tasks.filter((task) => task.status === status));
+}
+
+function selectedTaskFeatures(
+  tasks: RenderTask[],
+  selectedTaskId: string | null,
+): FeatureCollection<LineString> {
+  const task = tasks.find((candidate) => candidate.id === selectedTaskId);
+  return taskFeatures(task ? [task] : []);
+}
+
+function shapeFeature(
+  vertices: LngLat[],
+  color: string,
+): FeatureCollection<Polygon | LineString> {
+  if (vertices.length < 2) return emptyCollection();
 
   if (vertices.length === 2) {
     return {
@@ -179,9 +212,11 @@ function shapeFeature(vertices: LngLat[], color: string): FeatureCollection<Poly
   };
 }
 
-function streetDraftFeature(vertices: LngLat[], color: string): FeatureCollection<LineString> {
-  if (vertices.length < 2) return { type: "FeatureCollection", features: [] };
-
+function streetDraftFeature(
+  vertices: LngLat[],
+  color: string,
+): FeatureCollection<LineString> {
+  if (vertices.length < 2) return emptyCollection();
   return {
     type: "FeatureCollection",
     features: [
@@ -203,223 +238,222 @@ function pointFeatures(
     type: "FeatureCollection",
     features: vertices.map<Feature<Point>>((coordinates, index) => ({
       type: "Feature",
-      properties: {
-        index,
-        color,
-        selected: index === selectedIndex,
-      },
+      properties: { index, color, selected: index === selectedIndex },
       geometry: { type: "Point", coordinates },
     })),
   };
 }
 
-function setSourceData(map: Map, sourceId: string, data: FeatureCollection) {
-  const source = map.getSource(sourceId) as GeoJSONSource | undefined;
-  source?.setData(data);
+function addGeoJsonSourceSafely(map: Map, sourceId: string) {
+  if (map.getSource(sourceId)) return;
+  try {
+    map.addSource(sourceId, { type: "geojson", data: emptyCollection() });
+  } catch (error) {
+    console.error(`Map source failed: ${sourceId}`, error);
+  }
 }
 
-function addTaskStatusLayer(
-  map: Map,
-  id: string,
-  status: DistributionTask["status"],
-  options: { width: number; opacity: number; dash?: number[] },
-) {
-  map.addLayer({
-    id,
-    type: "line",
-    source: TASKS_SOURCE,
-    filter: ["==", ["get", "status"], status],
-    paint: {
-      "line-color": ["get", "color"],
-      "line-width": options.width,
-      "line-opacity": options.opacity,
-      ...(options.dash ? { "line-dasharray": options.dash } : {}),
-    },
-  });
+function addLayerSafely(map: Map, layer: LayerSpecification) {
+  if (map.getLayer(layer.id)) return;
+  try {
+    map.addLayer(layer);
+  } catch (error) {
+    console.error(`Map layer failed: ${layer.id}`, error);
+  }
+}
+
+function setSourceData(map: Map, sourceId: string, data: FeatureCollection) {
+  try {
+    const source = map.getSource(sourceId) as GeoJSONSource | undefined;
+    source?.setData(data);
+  } catch (error) {
+    console.error(`Map source update failed: ${sourceId}`, error);
+  }
 }
 
 function addApplicationLayers(map: Map) {
-  map.addSource(AREAS_SOURCE, { type: "geojson", data: emptyCollection() });
-  map.addLayer({
+  [
+    AREAS_SOURCE,
+    SELECTED_AREA_SOURCE,
+    TASKS_ALL_SOURCE,
+    TASKS_OPEN_SOURCE,
+    TASKS_COMPLETED_SOURCE,
+    TASKS_LATER_SOURCE,
+    TASKS_NOT_DELIVERABLE_SOURCE,
+    SELECTED_TASK_SOURCE,
+    DRAFT_SHAPE_SOURCE,
+    DRAFT_POINTS_SOURCE,
+    EDIT_SHAPE_SOURCE,
+    EDIT_POINTS_SOURCE,
+    STREET_DRAFT_SOURCE,
+    STREET_DRAFT_POINTS_SOURCE,
+  ].forEach((sourceId) => addGeoJsonSourceSafely(map, sourceId));
+
+  addLayerSafely(map, {
     id: AREAS_FILL_LAYER,
     type: "fill",
     source: AREAS_SOURCE,
-    paint: {
-      "fill-color": ["get", "color"],
-      "fill-opacity": ["case", ["boolean", ["get", "selected"], false], 0.34, 0.2],
-    },
+    paint: { "fill-color": ["get", "color"], "fill-opacity": 0.24 },
   });
-  map.addLayer({
+  addLayerSafely(map, {
     id: AREAS_LINE_LAYER,
     type: "line",
     source: AREAS_SOURCE,
     paint: {
       "line-color": ["get", "color"],
-      "line-width": 2.5,
-      "line-opacity": 0.95,
+      "line-width": 3.5,
+      "line-opacity": 1,
     },
   });
-  map.addLayer({
-    id: AREAS_SELECTED_HALO_LAYER,
+  addLayerSafely(map, {
+    id: SELECTED_AREA_HALO_LAYER,
     type: "line",
-    source: AREAS_SOURCE,
-    filter: ["==", ["get", "selected"], true],
+    source: SELECTED_AREA_SOURCE,
+    paint: { "line-color": "#ffffff", "line-width": 11, "line-opacity": 1 },
+  });
+  addLayerSafely(map, {
+    id: SELECTED_AREA_LINE_LAYER,
+    type: "line",
+    source: SELECTED_AREA_SOURCE,
     paint: {
-      "line-color": "#ffffff",
-      "line-width": 9,
-      "line-opacity": 0.96,
+      "line-color": ["get", "color"],
+      "line-width": 6,
+      "line-opacity": 1,
     },
   });
-  map.addLayer({
-    id: AREAS_SELECTED_LINE_LAYER,
+
+  addLayerSafely(map, {
+    id: TASKS_CASING_LAYER,
     type: "line",
-    source: AREAS_SOURCE,
-    filter: ["==", ["get", "selected"], true],
+    source: TASKS_ALL_SOURCE,
+    paint: { "line-color": "#ffffff", "line-width": 9, "line-opacity": 0.96 },
+  });
+  addLayerSafely(map, {
+    id: TASKS_OPEN_LAYER,
+    type: "line",
+    source: TASKS_OPEN_SOURCE,
+    paint: { "line-color": ["get", "color"], "line-width": 6, "line-opacity": 1 },
+  });
+  addLayerSafely(map, {
+    id: TASKS_COMPLETED_LAYER,
+    type: "line",
+    source: TASKS_COMPLETED_SOURCE,
+    paint: { "line-color": ["get", "color"], "line-width": 3.5, "line-opacity": 0.45 },
+  });
+  addLayerSafely(map, {
+    id: TASKS_LATER_LAYER,
+    type: "line",
+    source: TASKS_LATER_SOURCE,
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": 5.5,
+      "line-opacity": 0.85,
+      "line-dasharray": [2, 1.4],
+    },
+  });
+  addLayerSafely(map, {
+    id: TASKS_NOT_DELIVERABLE_LAYER,
+    type: "line",
+    source: TASKS_NOT_DELIVERABLE_SOURCE,
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": 5,
+      "line-opacity": 0.76,
+      "line-dasharray": [0.5, 1.2],
+    },
+  });
+  addLayerSafely(map, {
+    id: SELECTED_TASK_HALO_LAYER,
+    type: "line",
+    source: SELECTED_TASK_SOURCE,
+    paint: { "line-color": "#172019", "line-width": 13, "line-opacity": 0.9 },
+  });
+  addLayerSafely(map, {
+    id: SELECTED_TASK_LINE_LAYER,
+    type: "line",
+    source: SELECTED_TASK_SOURCE,
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": 7,
+      "line-opacity": 1,
+    },
+  });
+
+  addLayerSafely(map, {
+    id: "draft-area-fill",
+    type: "fill",
+    source: DRAFT_SHAPE_SOURCE,
+    paint: { "fill-color": ["get", "color"], "fill-opacity": 0.3 },
+  });
+  addLayerSafely(map, {
+    id: "draft-area-line",
+    type: "line",
+    source: DRAFT_SHAPE_SOURCE,
     paint: {
       "line-color": ["get", "color"],
       "line-width": 5,
       "line-opacity": 1,
     },
   });
-
-  map.addSource(TASKS_SOURCE, { type: "geojson", data: emptyCollection() });
-  map.addLayer({
-    id: TASKS_SELECTED_HALO_LAYER,
-    type: "line",
-    source: TASKS_SOURCE,
-    filter: ["==", ["get", "selected"], true],
-    paint: {
-      "line-color": "#172019",
-      "line-width": 12,
-      "line-opacity": 0.9,
-    },
-  });
-  map.addLayer({
-    id: TASKS_CASING_LAYER,
-    type: "line",
-    source: TASKS_SOURCE,
-    paint: {
-      "line-color": "#ffffff",
-      "line-width": 8,
-      "line-opacity": [
-        "match",
-        ["get", "status"],
-        "completed",
-        0.58,
-        "not-deliverable",
-        0.75,
-        0.94,
-      ],
-    },
-  });
-  addTaskStatusLayer(map, TASKS_OPEN_LAYER, "open", { width: 5.5, opacity: 1 });
-  addTaskStatusLayer(map, TASKS_COMPLETED_LAYER, "completed", { width: 3.5, opacity: 0.48 });
-  addTaskStatusLayer(map, TASKS_LATER_LAYER, "later", {
-    width: 5,
-    opacity: 0.82,
-    dash: [2, 1.4],
-  });
-  addTaskStatusLayer(map, TASKS_NOT_DELIVERABLE_LAYER, "not-deliverable", {
-    width: 4.5,
-    opacity: 0.7,
-    dash: [0.45, 1.25],
-  });
-
-  map.addSource(DRAFT_SHAPE_SOURCE, { type: "geojson", data: emptyCollection() });
-  map.addLayer({
-    id: "draft-area-fill",
-    type: "fill",
-    source: DRAFT_SHAPE_SOURCE,
-    filter: ["==", ["geometry-type"], "Polygon"],
-    paint: {
-      "fill-color": ["get", "color"],
-      "fill-opacity": 0.3,
-    },
-  });
-  map.addLayer({
-    id: "draft-area-line",
-    type: "line",
-    source: DRAFT_SHAPE_SOURCE,
-    paint: {
-      "line-color": ["get", "color"],
-      "line-width": 4,
-      "line-dasharray": [1.5, 1.2],
-    },
-  });
-  map.addSource(DRAFT_POINTS_SOURCE, { type: "geojson", data: emptyCollection() });
-  map.addLayer({
+  addLayerSafely(map, {
     id: "draft-area-points-layer",
     type: "circle",
     source: DRAFT_POINTS_SOURCE,
     paint: {
-      "circle-radius": 7,
+      "circle-radius": 8,
       "circle-color": ["get", "color"],
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 3,
     },
   });
 
-  map.addSource(EDIT_SHAPE_SOURCE, { type: "geojson", data: emptyCollection() });
-  map.addLayer({
+  addLayerSafely(map, {
     id: "edit-area-fill",
     type: "fill",
     source: EDIT_SHAPE_SOURCE,
-    filter: ["==", ["geometry-type"], "Polygon"],
-    paint: {
-      "fill-color": ["get", "color"],
-      "fill-opacity": 0.36,
-    },
+    paint: { "fill-color": ["get", "color"], "fill-opacity": 0.34 },
   });
-  map.addLayer({
+  addLayerSafely(map, {
     id: "edit-area-line",
     type: "line",
     source: EDIT_SHAPE_SOURCE,
-    paint: {
-      "line-color": ["get", "color"],
-      "line-width": 4.5,
-    },
+    paint: { "line-color": ["get", "color"], "line-width": 5 },
   });
-  map.addSource(EDIT_POINTS_SOURCE, { type: "geojson", data: emptyCollection() });
-  map.addLayer({
+  addLayerSafely(map, {
     id: EDIT_POINTS_LAYER,
     type: "circle",
     source: EDIT_POINTS_SOURCE,
     paint: {
       "circle-radius": ["case", ["boolean", ["get", "selected"], false], 15, 12],
-      "circle-color": ["case", ["boolean", ["get", "selected"], false], "#ffffff", ["get", "color"]],
+      "circle-color": [
+        "case",
+        ["boolean", ["get", "selected"], false],
+        "#ffffff",
+        ["get", "color"],
+      ],
       "circle-stroke-color": ["get", "color"],
-      "circle-stroke-width": ["case", ["boolean", ["get", "selected"], false], 5, 4],
+      "circle-stroke-width": 4,
     },
   });
 
-  map.addSource(STREET_DRAFT_SOURCE, { type: "geojson", data: emptyCollection() });
-  map.addLayer({
+  addLayerSafely(map, {
     id: "draft-street-casing",
     type: "line",
     source: STREET_DRAFT_SOURCE,
-    paint: {
-      "line-color": "#ffffff",
-      "line-width": 9,
-      "line-opacity": 0.96,
-    },
+    paint: { "line-color": "#ffffff", "line-width": 10, "line-opacity": 1 },
   });
-  map.addLayer({
+  addLayerSafely(map, {
     id: "draft-street-line",
     type: "line",
     source: STREET_DRAFT_SOURCE,
-    paint: {
-      "line-color": ["get", "color"],
-      "line-width": 5.5,
-      "line-dasharray": [1.4, 1],
-    },
+    paint: { "line-color": ["get", "color"], "line-width": 6, "line-opacity": 1 },
   });
-  map.addSource(STREET_DRAFT_POINTS_SOURCE, { type: "geojson", data: emptyCollection() });
-  map.addLayer({
+  addLayerSafely(map, {
     id: "draft-street-points-layer",
     type: "circle",
     source: STREET_DRAFT_POINTS_SOURCE,
     paint: {
-      "circle-radius": 7,
+      "circle-radius": 8,
       "circle-color": ["get", "color"],
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 3,
@@ -459,7 +493,6 @@ export function MapView({
     onEditVertexMove,
     onStreetDrawPoint,
   });
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -502,14 +535,10 @@ export function MapView({
         validateStyle: import.meta.env.DEV,
       });
 
-      map.on("load", () => {
+      map.once("load", () => {
         if (!active) return;
         addApplicationLayers(map);
         setReady(true);
-      });
-
-      map.once("idle", () => {
-        if (active) setLoading(false);
       });
 
       map.on("click", (event) => {
@@ -527,9 +556,10 @@ export function MapView({
         }
 
         if (interaction.mode === "edit") {
-          const vertex = map.queryRenderedFeatures(event.point, {
-            layers: [EDIT_POINTS_LAYER],
-          })[0];
+          const editLayerExists = Boolean(map.getLayer(EDIT_POINTS_LAYER));
+          const vertex = editLayerExists
+            ? map.queryRenderedFeatures(event.point, { layers: [EDIT_POINTS_LAYER] })[0]
+            : undefined;
           const vertexIndex = Number(vertex?.properties?.index);
 
           if (Number.isInteger(vertexIndex) && vertexIndex >= 0) {
@@ -543,19 +573,26 @@ export function MapView({
           return;
         }
 
-        const task = map.queryRenderedFeatures(event.point, {
-          layers: TASK_CLICK_LAYERS,
-        })[0];
-        const taskId = task?.properties?.id;
-        if (typeof taskId === "string") {
-          interaction.onTaskSelect(taskId);
-          return;
+        const taskLayers = TASK_CLICK_LAYERS.filter((layerId) => map.getLayer(layerId));
+        if (taskLayers.length > 0) {
+          const hitBox: [[number, number], [number, number]] = [
+            [event.point.x - 10, event.point.y - 10],
+            [event.point.x + 10, event.point.y + 10],
+          ];
+          const task = map.queryRenderedFeatures(hitBox, { layers: taskLayers })[0];
+          const taskId = task?.properties?.id;
+          if (typeof taskId === "string") {
+            interaction.onTaskSelect(taskId);
+            return;
+          }
         }
 
         interaction.onTaskSelect(null);
-        const area = map.queryRenderedFeatures(event.point, {
-          layers: [AREAS_FILL_LAYER],
-        })[0];
+        if (!map.getLayer(AREAS_FILL_LAYER)) {
+          interaction.onAreaSelect(null);
+          return;
+        }
+        const area = map.queryRenderedFeatures(event.point, { layers: [AREAS_FILL_LAYER] })[0];
         const areaId = area?.properties?.id;
         interaction.onAreaSelect(typeof areaId === "string" ? areaId : null);
       });
@@ -564,7 +601,7 @@ export function MapView({
       map.addControl(
         new GeolocateControl({
           positionOptions: { enableHighAccuracy: true },
-          trackUserLocation: true,
+          trackUserLocation: false,
           showUserLocation: true,
           showAccuracyCircle: true,
         }),
@@ -572,11 +609,9 @@ export function MapView({
       );
 
       mapRef.current = map;
-    } catch {
-      if (active) {
-        setLoading(false);
-        setError("Die Karte konnte nicht geladen werden.");
-      }
+    } catch (cause) {
+      console.error("Map initialization failed", cause);
+      if (active) setError("Karte konnte nicht initialisiert werden.");
     }
 
     return () => {
@@ -589,21 +624,28 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-
-    setSourceData(map, AREAS_SOURCE, areaFeatures(areas, selectedAreaId));
+    setSourceData(map, AREAS_SOURCE, areaFeatures(areas));
+    setSourceData(map, SELECTED_AREA_SOURCE, selectedAreaFeatures(areas, selectedAreaId));
   }, [areas, selectedAreaId, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-
-    setSourceData(map, TASKS_SOURCE, taskFeatures(tasks, selectedTaskId));
+    setSourceData(map, TASKS_ALL_SOURCE, taskFeatures(tasks));
+    setSourceData(map, TASKS_OPEN_SOURCE, taskFeaturesForStatus(tasks, "open"));
+    setSourceData(map, TASKS_COMPLETED_SOURCE, taskFeaturesForStatus(tasks, "completed"));
+    setSourceData(map, TASKS_LATER_SOURCE, taskFeaturesForStatus(tasks, "later"));
+    setSourceData(
+      map,
+      TASKS_NOT_DELIVERABLE_SOURCE,
+      taskFeaturesForStatus(tasks, "not-deliverable"),
+    );
+    setSourceData(map, SELECTED_TASK_SOURCE, selectedTaskFeatures(tasks, selectedTaskId));
   }, [tasks, selectedTaskId, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-
     setSourceData(map, DRAFT_SHAPE_SOURCE, shapeFeature(draftVertices, draftColor));
     setSourceData(map, DRAFT_POINTS_SOURCE, pointFeatures(draftVertices, draftColor));
   }, [draftVertices, draftColor, ready]);
@@ -611,7 +653,6 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-
     setSourceData(map, EDIT_SHAPE_SOURCE, shapeFeature(editingVertices, editingColor));
     setSourceData(
       map,
@@ -623,26 +664,28 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-
-    setSourceData(map, STREET_DRAFT_SOURCE, streetDraftFeature(streetDraftVertices, streetDraftColor));
-    setSourceData(map, STREET_DRAFT_POINTS_SOURCE, pointFeatures(streetDraftVertices, streetDraftColor));
+    setSourceData(
+      map,
+      STREET_DRAFT_SOURCE,
+      streetDraftFeature(streetDraftVertices, streetDraftColor),
+    );
+    setSourceData(
+      map,
+      STREET_DRAFT_POINTS_SOURCE,
+      pointFeatures(streetDraftVertices, streetDraftColor),
+    );
   }, [streetDraftVertices, streetDraftColor, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    if (mode === "browse") {
-      map.doubleClickZoom.enable();
-    } else {
-      map.doubleClickZoom.disable();
-    }
+    if (mode === "browse") map.doubleClickZoom.enable();
+    else map.doubleClickZoom.disable();
   }, [mode]);
 
   return (
     <section className={`map-region map-mode-${mode}`} aria-label="Verteilkarte">
       <div ref={containerRef} className="map" />
-      {loading ? <div className="map-loading">Karte lädt…</div> : null}
       {error ? <div className="map-error">{error}</div> : null}
     </section>
   );
