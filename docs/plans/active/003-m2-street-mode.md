@@ -19,19 +19,21 @@ Add the first real distribution-task workflow on top of team areas: manually tra
 
 ## Tasks
 
-- [ ] evolve the browser snapshot from schema v1 to v2 without losing existing campaign/team/area data
-- [ ] add street-task domain type with statuses `open`, `completed`, `later`, `not-deliverable`
-- [ ] keep task geometry as application-controlled GeoJSON LineString assigned to an area
-- [ ] enter Street Mode from a selected area
-- [ ] manually trace a street segment with large explicit Save/Cancel/Undo controls
-- [ ] render all street tasks above team areas with status-distinguishing line style/opacity, not color alone
-- [ ] tap a street task to open a compact status sheet
-- [ ] change task status with large one-hand-friendly controls
-- [ ] provide immediate undo after a status change
-- [ ] allow street task rename and deletion
-- [ ] persist street tasks across reloads on the same device
-- [ ] update docs/status and planned D1 model without creating or inventing a production D1 id
-- [ ] run CI typecheck/build and merge only when green
+- [x] evolve the browser snapshot from schema v1 to v2 without losing existing campaign/team/area data
+- [x] add street-task domain type with statuses `open`, `completed`, `later`, `not-deliverable`
+- [x] keep task geometry as application-controlled GeoJSON LineString assigned to an area
+- [x] enter Street Mode from a selected area
+- [x] manually trace a street segment with large explicit Save/Cancel/Undo controls
+- [x] render all street tasks above team areas with status-distinguishing line style/opacity, not color alone
+- [x] tap a street task to open a compact status sheet
+- [x] change task status with large one-hand-friendly controls
+- [x] provide immediate undo after a status change
+- [x] allow street task rename and deletion
+- [x] persist street tasks across reloads on the same device
+- [x] update docs/status and planned D1 model without creating or inventing a production D1 id
+- [x] pass CI typecheck/build on the implementation head
+- [ ] verify the final PR head remains green and merge
+- [ ] verify Street Mode on a real Android phone and iPhone/Safari-class browser
 
 ## Acceptance criteria
 
@@ -46,6 +48,12 @@ Add the first real distribution-task workflow on top of team areas: manually tra
 - Existing M1 local data migrates forward rather than disappearing.
 - GPS remains local-only; no route recording, GPS history, service worker or PWA behavior is introduced.
 - CI passes `npm run typecheck` and `npm run build` before merge.
+
+## Verification so far
+
+GitHub Actions passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build on the implementation head before the final documentation/status update.
+
+The final PR head must repeat the same green CI gate before merge. Real-device interaction remains open and is intentionally not replaced by build success.
 
 ## Risks
 
