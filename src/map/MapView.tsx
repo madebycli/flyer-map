@@ -25,7 +25,6 @@ export function MapView() {
           style: MAP_STYLE,
           center: [10.45, 51.16],
           zoom: 5.3,
-          attributionControl: true,
         });
 
         map.addControl(new NavigationControl({ showCompass: false }), "top-right");
