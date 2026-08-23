@@ -28,6 +28,7 @@ The current M1 slice adds:
 - assignment of every area to a team
 - simultaneous colored area fills/outlines
 - tap-to-select area management
+- explicit high-contrast selected-area halo so the chosen polygon remains visible over the basemap
 - area rename and team reassignment
 - mobile-friendly polygon editing with large vertex handles
 - invalid/self-intersecting polygon rejection
@@ -56,7 +57,7 @@ Cloudflare Workers Builds is connected to `main` and the deployment is available
 
 GitHub Actions has passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build for the M1 implementation branch.
 
-M0 production-phone tests were sufficient to close the foundation milestone and begin product work. The new M1 drawing/editing flow still requires direct phone verification after deployment.
+M0 production-phone tests were sufficient to close the foundation milestone and begin product work. Real-device feedback on M1 found that selected polygons were not visually obvious because the original selection treatment only reused the team color with slightly greater opacity/line width. The current M1 fix introduces a dedicated white selection halo plus a stronger team-color outline and needs production-phone verification after deployment.
 
 See `docs/operations/PRODUCTION.md`, `docs/architecture/MAP.md`, `docs/architecture/DATA.md` and Plan 002.
 
@@ -74,13 +75,13 @@ See `docs/operations/PRODUCTION.md`, `docs/architecture/MAP.md`, `docs/architect
 
 ## Known issues
 
-- The M1 interaction has not yet been field-tested on the production phone after deployment.
+- The complete M1 interaction still needs field verification after the selected-area highlight fix is deployed.
 - localStorage persistence is deliberately single-device; edits do not yet synchronize between phones.
 - Basemap performance/readability should continue to be observed on mobile data, but minor map cosmetics no longer block product milestones.
 
 ## Next
 
-1. Verify team management, drawing, selection, editing, deletion and reload persistence on the real phone.
+1. Verify selected-area visibility plus team management, drawing, editing, deletion and reload persistence on the real phone.
 2. Verify narrow width, safe areas, Android/Chrome and iPhone/Safari behavior.
 3. Close/archive Plan 002 after the real-device M1 flow is field-usable.
 4. Start Street Mode task interaction: street-level tasks with `open`, `completed`, `later`, `not-deliverable` and undo.
