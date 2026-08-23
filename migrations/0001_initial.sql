@@ -33,13 +33,15 @@ CREATE TABLE tasks (
   id TEXT PRIMARY KEY,
   campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
   area_id TEXT NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
-  task_type TEXT NOT NULL,
+  task_type TEXT NOT NULL CHECK (task_type IN ('street')),
   label TEXT NOT NULL,
-  geometry_json TEXT,
+  geometry_json TEXT NOT NULL,
   source_type TEXT,
   source_id TEXT,
-  status TEXT NOT NULL DEFAULT 'open',
+  status TEXT NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open', 'completed', 'later', 'not-deliverable')),
   completed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
