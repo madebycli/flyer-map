@@ -2,7 +2,7 @@
 
 ## Project
 
-Verteil-Flyer is a mobile-first Progressive Web App for coordinating flyer distribution across geographic areas.
+Verteil-Flyer is a mobile-first website for coordinating flyer distribution across geographic areas.
 
 Users work from a shared interactive map, see their current device location, view assigned distribution areas and manually mark streets or buildings as completed.
 
@@ -13,16 +13,17 @@ The application must remain lightweight, reliable, privacy-conscious and easy to
 1. Make it obvious what has already been distributed.
 2. Make it obvious what still needs to be done.
 3. Allow multiple people to share the same current state.
-4. Preserve changes when mobile connectivity is unreliable.
+4. Preserve important user changes when mobile connectivity is unreliable.
 5. Keep GPS location local to the device unless a future accepted decision explicitly requires otherwise.
-6. Remain usable on common Android phones and iPhones.
+6. Remain usable in ordinary mobile browsers on common Android phones and iPhones.
 7. Keep hosting and infrastructure within free tiers where practical.
 
 ## MVP non-goals
 
+- Native Android or iOS applications.
+- PWA installation or app-like standalone installation flows.
 - Continuous GPS route recording.
 - Automatic detection of walked streets.
-- Native Android or iOS applications.
 - Large analytics systems.
 - Social networking features.
 - Complex user account systems.
@@ -43,9 +44,9 @@ Platform:
 - Cloudflare D1 when persistence is introduced
 
 Maps:
-- OpenStreetMap data
+- OpenStreetMap-derived data
 - MapLibre
-- OpenFreeMap initially
+- VersaTiles public vector basemap for the current MVP
 - map provider must remain replaceable
 
 Source control:
@@ -152,7 +153,7 @@ Every change must be tested at the lowest useful level.
 
 Important user flows should receive integration or browser tests once those flows exist.
 
-Mobile interaction, synchronization and offline behavior require explicit testing.
+Mobile interaction, synchronization and connectivity-loss behavior require explicit testing.
 
 ## Security
 
