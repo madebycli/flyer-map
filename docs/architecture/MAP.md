@@ -19,17 +19,18 @@ The map is a primary field interface, so MapLibre is loaded as a normal applicat
 
 Primary MVP provider:
 
-CARTO Positron Retina raster tiles:
+CARTO Voyager Retina raster tiles:
 
-`https://{a-d}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png`
+`https://{a-d}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png`
 
-The source uses four CARTO CDN hostnames and 2x-resolution tiles. This is intentionally chosen for the current MVP after real-phone testing showed that public vector styles introduced slow multi-resource startup, provider-specific failures and visible blank areas while moving the map.
+The source uses four CARTO CDN hostnames and 2x-resolution tiles. Voyager is intentionally preferred over the nearly monochrome Positron style because the field map benefits from visible road hierarchy, green spaces and water while retaining the same Retina-raster/CDN performance strategy.
 
 Why this tradeoff is acceptable:
 - 2x tiles are materially sharper than the previous 256 px OSM emergency tiles on high-DPI phones;
 - raster rendering avoids vector style, glyph and font request waterfalls;
 - CARTO serves the basemap through a CDN;
 - four tile hostnames allow viewport tile requests to be distributed;
+- Voyager restores a more familiar colorful street-map appearance without returning to the slower vector-style loading path;
 - the field UI values predictable loading over advanced vector styling.
 
 The basemap provider remains an operational dependency, not a domain dependency. Keep it isolated and replaceable.
@@ -38,7 +39,7 @@ The basemap provider remains an operational dependency, not a domain dependency.
 
 MapLibre keeps pending lower-zoom tile requests while the user zooms so previously requested context can progressively appear instead of being abruptly canceled.
 
-The map uses a neutral background beneath the tile layer and a small initial `Karte lädt…` status so a slow connection does not present a featureless white screen.
+The map uses a neutral warm background beneath the tile layer and a small initial `Karte lädt…` status so a slow connection does not present a featureless white screen.
 
 Do not prefetch whole areas or build an offline basemap cache. Only normal interactive viewport requests are allowed in the current architecture.
 
@@ -47,7 +48,8 @@ History:
 - Standard OSM raster tiles restored availability but looked soft on high-DPI displays.
 - VersaTiles restored vector rendering in theory but produced a white map on the real production phone test.
 - CARTO Positron vector style rendered but real-device testing showed unacceptably slow first render and tile/resource loading while moving.
-- CARTO Retina raster is the current performance-oriented MVP choice.
+- CARTO Positron Retina raster improved the loading path but its nearly colorless visual design was rejected in real-device review.
+- CARTO Voyager Retina raster is the current performance-oriented and more colorful MVP choice.
 
 ## Application layers
 
