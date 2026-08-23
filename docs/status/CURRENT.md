@@ -9,7 +9,7 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M0 — Production website deployed; mobile map verification in progress.
+M0 — Production website deployed; mobile map performance verification in progress.
 
 ## Working
 
@@ -33,15 +33,19 @@ Cloudflare Workers Builds is connected to `main` and the deployment is available
 - no installable PWA
 - no service worker/manifest lifecycle
 - browser geolocation remains supported
-- crisp vector basemap is being switched to VersaTiles after the temporary OSM raster fallback looked soft on high-DPI phones
+- MapLibre remains the renderer
+- CARTO Positron Retina raster tiles are the current MVP basemap for mobile performance
+- distribution areas/tasks remain application-controlled vector overlays
 
 ## Verification
 
 The foundation build passed dependency installation, TypeScript type checking and the production Vite/Cloudflare build.
 
-Real-device testing confirmed that the production website loads. The initial OpenFreeMap vector source failed at street-level zoom, and the temporary standard OSM raster fallback restored detail but looked visibly soft on modern high-DPI phones. The current change switches back to vector rendering using VersaTiles.
+Real-device testing confirmed that the website and browser map interactions work, but public vector basemap attempts were operationally unreliable or too slow on the test phone. The CARTO vector style eventually rendered, but first useful map display could take roughly 10–20 seconds and moving the map exposed slow-loading blank regions.
 
-See `docs/operations/PRODUCTION.md`.
+The current performance change replaces the vector basemap with CARTO 2x Retina raster tiles over four CDN hosts, removes the vector-to-raster fallback chain, starts MapLibre through the normal module graph and retains pending lower-zoom tiles while zooming for smoother continuity.
+
+See `docs/operations/PRODUCTION.md` and ADR-0008.
 
 ## Not connected yet
 
@@ -55,11 +59,11 @@ See `docs/operations/PRODUCTION.md`.
 
 ## Known issues
 
-The new VersaTiles vector basemap still needs confirmation on the real phone after deployment.
+The optimized Retina raster map still needs real-phone verification after deployment. Basemap performance on mobile data is a release-quality concern and should be judged by perceived first useful render and pan/zoom continuity, not only by build success.
 
 ## Next
 
-1. Verify crisp street/building rendering with the VersaTiles vector basemap.
+1. Verify first useful map render and pan/zoom continuity on the real phone.
 2. Verify browser geolocation.
-3. Complete and archive Plan 001.
+3. Complete and archive Plan 001 if the map is field-usable.
 4. Start M1: campaign/team/area data model and editable map layers.
