@@ -1,6 +1,6 @@
 import type { LngLat } from "./campaign";
 
-export type PolygonValidation =
+export type GeometryValidation =
   | { valid: true }
   | { valid: false; reason: string };
 
@@ -8,6 +8,10 @@ const EPSILON = 1e-10;
 
 function samePoint(a: LngLat, b: LngLat) {
   return Math.abs(a[0] - b[0]) < EPSILON && Math.abs(a[1] - b[1]) < EPSILON;
+}
+
+function pointInMapRange([lng, lat]: LngLat) {
+  return Number.isFinite(lng) && Number.isFinite(lat) && lng >= -180 && lng <= 180 && lat >= -85.0511 && lat <= 85.0511;
 }
 
 function orientation(a: LngLat, b: LngLat, c: LngLat) {
@@ -78,18 +82,14 @@ function signedArea(vertices: LngLat[]) {
   return sum / 2;
 }
 
-export function validatePolygonVertices(vertices: LngLat[]): PolygonValidation {
+export function validatePolygonVertices(vertices: LngLat[]): GeometryValidation {
   if (vertices.length < 3) {
     return { valid: false, reason: "Mindestens 3 Eckpunkte setzen." };
   }
 
-  for (const [lng, lat] of vertices) {
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
-      return { valid: false, reason: "Das Gebiet enthält einen ungültigen Punkt." };
-    }
-
-    if (lng < -180 || lng > 180 || lat < -85.0511 || lat > 85.0511) {
-      return { valid: false, reason: "Ein Eckpunkt liegt außerhalb des Kartenbereichs." };
+  for (const point of vertices) {
+    if (!pointInMapRange(point)) {
+      return { valid: false, reason: "Das Gebiet enthält einen ungültigen Kartenpunkt." };
     }
   }
 
@@ -110,6 +110,31 @@ export function validatePolygonVertices(vertices: LngLat[]): PolygonValidation {
 
   if (hasSelfIntersection(vertices)) {
     return { valid: false, reason: "Die Gebietsgrenze darf sich nicht selbst kreuzen." };
+  }
+
+  return { valid: true };
+}
+
+export function validateLineStringVertices(vertices: LngLat[]): GeometryValidation {
+  if (vertices.length < 2) {
+    return { valid: false, reason: "Mindestens 2 Punkte entlang der Straße setzen." };
+  }
+
+  for (const point of vertices) {
+    if (!pointInMapRange(point)) {
+      return { valid: false, reason: "Die Straße enthält einen ungültigen Kartenpunkt." };
+    }
+  }
+
+  for (let i = 0; i < vertices.length - 1; i += 1) {
+    if (samePoint(vertices[i], vertices[i + 1])) {
+      return { valid: false, reason: "Zwei aufeinanderfolgende Straßenpunkte liegen übereinander." };
+    }
+  }
+
+  const unique = new Set(vertices.map(([lng, lat]) => `${lng.toFixed(7)},${lat.toFixed(7)}`));
+  if (unique.size < 2) {
+    return { valid: false, reason: "Die Straße braucht mindestens 2 unterschiedliche Punkte." };
   }
 
   return { valid: true };
