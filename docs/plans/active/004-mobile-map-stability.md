@@ -26,7 +26,7 @@ Fix the production-phone failures reported after M1/M2: application geometry not
 - [x] remove the persistent top title/campaign/online chrome from the field UI
 - [x] compress the normal toolbar, drawing controls, selected-area controls and task-status sheet
 - [x] add a primary + backup local snapshot path and valid fallback loading
-- [ ] run CI typecheck/build and fix any failures
+- [x] run CI typecheck/build and fix any failures
 - [ ] verify production-phone geometry rendering, local persistence and geolocation interaction after deployment
 
 ## Acceptance criteria
@@ -42,6 +42,10 @@ Fix the production-phone failures reported after M1/M2: application geometry not
 - Idle map controls occupy only a compact strip near the bottom edge.
 - Local campaign/team/area/task data is written to a primary snapshot plus local backup and can recover from one invalid copy.
 - CI passes TypeScript typecheck and production build before merge.
+
+## Verification so far
+
+GitHub Actions passed dependency installation, TypeScript type checking and the production build after the map/persistence changes. The remaining gate is direct production-phone verification after Cloudflare deployment.
 
 ## Constraints
 
