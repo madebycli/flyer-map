@@ -1,7 +1,27 @@
 import { useEffect, useRef, useState } from "react";
+import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const MAP_STYLE = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution:
+        '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>',
+    },
+  },
+  layers: [
+    {
+      id: "osm-basemap",
+      type: "raster",
+      source: "osm",
+    },
+  ],
+} satisfies StyleSpecification;
 
 type MapInstance = import("maplibre-gl").Map;
 
@@ -25,6 +45,7 @@ export function MapView() {
           style: MAP_STYLE,
           center: [10.45, 51.16],
           zoom: 5.3,
+          maxZoom: 19,
         });
 
         map.addControl(new NavigationControl({ showCompass: false }), "top-right");
