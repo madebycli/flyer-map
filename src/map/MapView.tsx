@@ -182,7 +182,9 @@ function shapeFeature(
   vertices: LngLat[],
   color: string,
 ): FeatureCollection<Polygon | LineString> {
-  if (vertices.length < 2) return emptyCollection();
+  if (vertices.length < 2) {
+    return { type: "FeatureCollection", features: [] };
+  }
 
   if (vertices.length === 2) {
     return {
@@ -216,7 +218,9 @@ function streetDraftFeature(
   vertices: LngLat[],
   color: string,
 ): FeatureCollection<LineString> {
-  if (vertices.length < 2) return emptyCollection();
+  if (vertices.length < 2) {
+    return { type: "FeatureCollection", features: [] };
+  }
   return {
     type: "FeatureCollection",
     features: [
