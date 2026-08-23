@@ -11,28 +11,24 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary]
 
 ## Renderer
 
-MapLibre GL JS renders the interactive map.
+MapLibre GL JS renders the interactive map inside the mobile website.
 
-The module is dynamically imported by `MapView` so the rest of the app shell can remain a separate small chunk.
+The module is dynamically imported by `MapView` so the rest of the website shell can remain a separate small chunk.
 
 ## Basemap
 
 Current MVP provider:
 
-`https://tile.openstreetmap.org/{z}/{x}/{y}.png`
+`https://tiles.versatiles.org/assets/styles/colorful/style.json`
 
-The standard OpenStreetMap raster basemap is used temporarily because the first production test showed that OpenFreeMap's low-zoom world layer loaded while detail vector tiles failed from the deployed production origin. A matching OpenFreeMap production-domain `/planet` 403/CORS failure has been reported upstream.
+This is a vector basemap derived from OpenStreetMap data and rendered by MapLibre at device resolution. It replaces the temporary standard OSM raster fallback, whose 256 px image tiles looked visibly soft on high-DPI phones.
 
-This is an operational fallback, not a domain dependency. Keep the basemap provider isolated and replaceable.
+The basemap provider is an operational dependency, not a domain dependency. Keep it isolated and replaceable.
 
-Rules while using the OpenStreetMap standard tile service:
-- only request tiles for the viewport a user is actively viewing;
-- do not prefetch, bulk-download or offer offline map downloads;
-- keep visible OpenStreetMap attribution;
-- do not add a restrictive referrer policy that strips the browser Referer;
-- revisit the provider before usage grows materially.
-
-Application offline support may cache the app shell and pending distribution changes, but must not prefetch/cache OSM basemap areas for offline use.
+History:
+- OpenFreeMap was the initial vector provider but the first production-origin test lost street-level detail.
+- Standard OSM raster tiles were used as an emergency fallback and restored detail.
+- VersaTiles is now used to regain crisp vector rendering without requiring an API key.
 
 ## Application layers
 
@@ -49,6 +45,10 @@ Rules:
 - location is not written to the Worker/D1 in MVP
 - no route history is created
 - map use remains possible when permission is denied
+
+## Offline/connectivity behavior
+
+The project is website-only and does not use a PWA service worker. Future resilience work may locally queue important distribution mutations in browser storage, but must not turn the product into an installable PWA or bulk-cache basemap regions.
 
 ## Future OSM import
 
