@@ -30,12 +30,14 @@ The frontend and API deploy as one Worker unit.
 
 ## Map
 
-- MapLibre GL JS for rendering/interactions
-- CARTO Positron public vector style as the current primary basemap
-- standard OpenStreetMap raster tiles as automatic emergency fallback
-- OpenStreetMap-derived data
+- MapLibre GL JS for rendering/interactions and application overlays
+- CARTO Positron Retina raster tiles as the current performance-oriented basemap
+- four CARTO CDN hosts for tile delivery
+- OpenStreetMap-derived basemap data
 
-The provider URL must stay isolated so the basemap can be replaced without rewriting application logic.
+The raster choice is limited to the background map. Team areas, tasks, completion state and other Verteil-Flyer geometry remain application-controlled vector/GeoJSON layers.
+
+The provider configuration must stay isolated so the basemap can be replaced without rewriting application logic.
 
 ## Dependency policy
 
