@@ -9,18 +9,16 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M2 — Street Mode task interaction implemented locally; production-phone verification remains open.
+M2 — Street Mode task interaction implemented; production-phone verification remains open.
 
 ## Working
 
-`main` already contains the M1 mobile map workflow:
+The mobile map workflow includes:
 - editable campaign and named/color-coded teams
 - editable team areas with persistent local snapshot
 - high-contrast selected-area rendering
 - local-only browser geolocation
 - MapLibre with CARTO Voyager Retina basemap
-
-The current M2 branch adds:
 - schema-v2 campaign snapshot with migration from existing M1 local data
 - manually traced street LineString tasks assigned to an area
 - street-task persistence across reloads on the same device
@@ -50,7 +48,7 @@ Cloudflare Workers Builds is connected to `main` and the production/test deploym
 
 PR #9 fixed the reported selected-area visibility problem with a dedicated white halo plus stronger team-color outline and passed CI before merge.
 
-The M2 implementation branch has passed GitHub Actions dependency installation, TypeScript type checking and the production Vite/Cloudflare build. Real-device testing is still required for Street Mode touch interaction, status readability and Undo placement.
+The M2 implementation has passed GitHub Actions dependency installation, TypeScript type checking and the production Vite/Cloudflare build on its implementation head. The final PR head must repeat that green gate before merge. Real-device testing remains required for Street Mode touch interaction, status readability and Undo placement.
 
 See `docs/architecture/MAP.md`, `docs/architecture/DATA.md`, `docs/product/UX.md`, Plan 002 and Plan 003.
 
@@ -66,7 +64,7 @@ See `docs/architecture/MAP.md`, `docs/architecture/DATA.md`, `docs/product/UX.md
 ## Active plans
 
 - `docs/plans/active/002-m1-campaign-team-areas.md` — waiting on final real-device M1 verification
-- `docs/plans/active/003-m2-street-mode.md` — implementation complete, awaiting merge/field verification
+- `docs/plans/active/003-m2-street-mode.md` — implementation complete; field verification pending
 
 ## Known issues
 
@@ -76,8 +74,8 @@ See `docs/architecture/MAP.md`, `docs/architecture/DATA.md`, `docs/product/UX.md
 
 ## Next
 
-1. Merge M2 only after green CI.
-2. On the phone, confirm the selected-area halo is now obvious.
-3. Select an area, trace a street, save it, tap it and test all four statuses plus immediate Undo.
-4. Reload and verify areas, street lines and statuses persist.
+1. On the phone, confirm the selected-area halo is now obvious.
+2. Select an area, trace a street, save it, tap it and test all four statuses plus immediate Undo.
+3. Reload and verify areas, street lines and statuses persist.
+4. Verify narrow width/safe areas on Android Chrome and iPhone Safari.
 5. If the field interaction is usable, close Plans 002/003 and move to shared Worker/D1 persistence.
