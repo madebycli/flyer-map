@@ -11,17 +11,28 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary]
 
 ## Renderer
 
-MapLibre GL JS renders the interactive vector map.
+MapLibre GL JS renders the interactive map.
 
 The module is dynamically imported by `MapView` so the rest of the app shell can remain a separate small chunk.
 
 ## Basemap
 
-Initial provider:
+Current MVP provider:
 
-`https://tiles.openfreemap.org/styles/liberty`
+`https://tile.openstreetmap.org/{z}/{x}/{y}.png`
 
-OpenFreeMap is an operational dependency, not a domain dependency. Keep the style/provider configuration isolated.
+The standard OpenStreetMap raster basemap is used temporarily because the first production test showed that OpenFreeMap's low-zoom world layer loaded while detail vector tiles failed from the deployed production origin. A matching OpenFreeMap production-domain `/planet` 403/CORS failure has been reported upstream.
+
+This is an operational fallback, not a domain dependency. Keep the basemap provider isolated and replaceable.
+
+Rules while using the OpenStreetMap standard tile service:
+- only request tiles for the viewport a user is actively viewing;
+- do not prefetch, bulk-download or offer offline map downloads;
+- keep visible OpenStreetMap attribution;
+- do not add a restrictive referrer policy that strips the browser Referer;
+- revisit the provider before usage grows materially.
+
+Application offline support may cache the app shell and pending distribution changes, but must not prefetch/cache OSM basemap areas for offline use.
 
 ## Application layers
 
