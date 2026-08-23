@@ -1,14 +1,15 @@
 # Verteil-Flyer
 
-Mobile-first Progressive Web App zur koordinierten Verteilung von Flyern über eine gemeinsame interaktive Karte.
+Mobile-first Website zur koordinierten Verteilung von Flyern über eine gemeinsame interaktive Karte.
 
 ## Status
 
-Die Foundation ist vorbereitet. Die technische und produktseitige Source of Truth liegt im Repository unter `docs/`.
+Die Foundation ist vorbereitet und die erste Cloudflare-Testversion läuft. Die technische und produktseitige Source of Truth liegt im Repository unter `docs/`.
 
 ## Projektprinzipien
 
 - mobile first
+- Website only, keine native App und keine installierbare PWA
 - lightweight und datenarm
 - zuverlässig bei schwankender Mobilfunkverbindung
 - keine unnötige Standort- oder Bewegungsverfolgung
@@ -21,10 +22,9 @@ Die Foundation ist vorbereitet. Die technische und produktseitige Source of Trut
 - TypeScript
 - React + Vite
 - MapLibre GL JS
-- OpenStreetMap-Daten / OpenFreeMap als initialer Kartenanbieter
+- OpenStreetMap-basierte Vektordaten über VersaTiles
 - Cloudflare Workers + Static Assets
-- Cloudflare D1 (ab Datenbank-Milestone)
-- Progressive Web App
+- Cloudflare D1 ab Datenbank-Milestone
 
 ## Für Coding-Agents
 
@@ -57,4 +57,4 @@ Deployment zu Cloudflare:
 npm run deploy
 ```
 
-Die Cloudflare-Ressourcen werden bewusst erst nach einem erfolgreichen Foundation-Build verbunden. Siehe `docs/operations/DEPLOYMENT.md`.
+Produktions-/Test-Deployment siehe `docs/operations/PRODUCTION.md`.
