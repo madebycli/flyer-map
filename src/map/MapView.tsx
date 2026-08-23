@@ -1,27 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-const MAP_STYLE = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution:
-        '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>',
-    },
-  },
-  layers: [
-    {
-      id: "osm-basemap",
-      type: "raster",
-      source: "osm",
-    },
-  ],
-} satisfies StyleSpecification;
+const MAP_STYLE = "https://tiles.versatiles.org/assets/styles/colorful/style.json";
 
 type MapInstance = import("maplibre-gl").Map;
 

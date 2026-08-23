@@ -31,13 +31,14 @@ Add automated tests when domain logic/user flows appear. Do not add a test frame
 
 Before MVP release explicitly test:
 - map pan/zoom/tap interaction
+- crisp street/building rendering on a high-DPI phone
 - geolocation allowed/denied
-- Android homescreen/PWA use
-- iPhone homescreen/PWA use
+- normal mobile-browser use on Android
+- normal mobile-browser use on iPhone
 - intermittent network
 - two or more devices editing the same campaign
 - accidental action + undo
-- app resume after backgrounding
+- browser tab resume after backgrounding
 
 ## Performance budget
 
@@ -47,7 +48,7 @@ Principles:
 - no analytics SDK in MVP
 - avoid unnecessary startup requests
 - only load current campaign/area data
-- MapLibre is the expected major client dependency; keep unrelated app code small
+- MapLibre is the expected major client dependency; keep unrelated website code small
 
 Initial target: keep non-map application code comfortably below the map bundle and investigate any new dependency that materially changes initial transfer size.
 
