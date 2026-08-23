@@ -2,20 +2,30 @@ import { useEffect, useMemo, useState } from "react";
 import { loadCampaignSnapshot, saveCampaignSnapshot } from "./data/campaignStore";
 import {
   createId,
+  createLineStringGeometry,
   createPolygonGeometry,
   nextAvailableTeamColor,
   openPolygonRing,
+  TASK_STATUS_OPTIONS,
   TEAM_COLORS,
   type Area,
   type CampaignSnapshot,
+  type DistributionTask,
   type LngLat,
+  type TaskStatus,
   type Team,
 } from "./domain/campaign";
-import { validatePolygonVertices } from "./domain/geometry";
+import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
 import { MapView } from "./map/MapView";
 
-type MapMode = "browse" | "draw" | "edit";
-type Sheet = "teams" | "area" | null;
+type MapMode = "browse" | "draw" | "edit" | "street-draw";
+type Sheet = "teams" | "area" | "task" | null;
+type UndoStatusChange = {
+  taskId: string;
+  label: string;
+  previousStatus: TaskStatus;
+  previousCompletedAt: string | null;
+};
 
 function useOnlineStatus() {
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -37,6 +47,15 @@ function nextAreaName(areas: Area[]) {
   return `Gebiet ${areas.length + 1}`;
 }
 
+function nextStreetName(tasks: DistributionTask[], areaId: string) {
+  const count = tasks.filter((task) => task.areaId === areaId).length;
+  return `Straße ${count + 1}`;
+}
+
+function statusLabel(status: TaskStatus) {
+  return TASK_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+}
+
 export default function App() {
   const online = useOnlineStatus();
   const [initialLoad] = useState(loadCampaignSnapshot);
@@ -48,19 +67,38 @@ export default function App() {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [mode, setMode] = useState<MapMode>("browse");
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [draftVertices, setDraftVertices] = useState<LngLat[]>([]);
   const [editingVertices, setEditingVertices] = useState<LngLat[]>([]);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
+  const [streetDraftVertices, setStreetDraftVertices] = useState<LngLat[]>([]);
+  const [undoStatusChange, setUndoStatusChange] = useState<UndoStatusChange | null>(null);
 
   useEffect(() => {
     setStorageWarning(saveCampaignSnapshot(snapshot));
   }, [snapshot]);
+
+  useEffect(() => {
+    if (!undoStatusChange) return;
+    const timeout = window.setTimeout(() => setUndoStatusChange(null), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [undoStatusChange]);
 
   const activeTeam = snapshot.teams.find((team) => team.id === activeTeamId) ?? null;
   const selectedArea = snapshot.areas.find((area) => area.id === selectedAreaId) ?? null;
   const selectedAreaTeam = selectedArea
     ? snapshot.teams.find((team) => team.id === selectedArea.teamId) ?? null
     : null;
+  const selectedTask = snapshot.tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const selectedTaskArea = selectedTask
+    ? snapshot.areas.find((area) => area.id === selectedTask.areaId) ?? null
+    : null;
+  const selectedTaskTeam = selectedTaskArea
+    ? snapshot.teams.find((team) => team.id === selectedTaskArea.teamId) ?? null
+    : null;
+  const selectedAreaTasks = selectedArea
+    ? snapshot.tasks.filter((task) => task.areaId === selectedArea.id)
+    : [];
 
   const renderedAreas = useMemo(
     () =>
@@ -71,6 +109,19 @@ export default function App() {
     [snapshot.areas, snapshot.teams],
   );
 
+  const renderedTasks = useMemo(
+    () =>
+      snapshot.tasks.map((task) => {
+        const area = snapshot.areas.find((candidate) => candidate.id === task.areaId);
+        const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
+        return {
+          ...task,
+          color: team?.color ?? "#64748b",
+        };
+      }),
+    [snapshot.tasks, snapshot.areas, snapshot.teams],
+  );
+
   const drawValidation = useMemo(
     () => validatePolygonVertices(draftVertices),
     [draftVertices],
@@ -78,6 +129,10 @@ export default function App() {
   const editValidation = useMemo(
     () => validatePolygonVertices(editingVertices),
     [editingVertices],
+  );
+  const streetValidation = useMemo(
+    () => validateLineStringVertices(streetDraftVertices),
+    [streetDraftVertices],
   );
 
   const commitSnapshot = (update: (current: CampaignSnapshot) => CampaignSnapshot) => {
@@ -162,8 +217,10 @@ export default function App() {
     setMode("draw");
     setSheet(null);
     setSelectedAreaId(null);
+    setSelectedTaskId(null);
     setDraftVertices([]);
     setEditingVertices([]);
+    setStreetDraftVertices([]);
     setSelectedVertexIndex(null);
   };
 
@@ -198,8 +255,23 @@ export default function App() {
 
   const selectArea = (areaId: string | null) => {
     if (mode !== "browse") return;
+    setSelectedTaskId(null);
     setSelectedAreaId(areaId);
     setSheet(areaId ? "area" : null);
+  };
+
+  const selectTask = (taskId: string | null) => {
+    if (mode !== "browse") return;
+    if (!taskId) {
+      setSelectedTaskId(null);
+      return;
+    }
+
+    const task = snapshot.tasks.find((candidate) => candidate.id === taskId);
+    if (!task) return;
+    setSelectedTaskId(task.id);
+    setSelectedAreaId(task.areaId);
+    setSheet("task");
   };
 
   const updateSelectedArea = (patch: Partial<Pick<Area, "name" | "teamId">>) => {
@@ -223,13 +295,15 @@ export default function App() {
 
   const deleteSelectedArea = () => {
     if (!selectedArea) return;
-    if (!window.confirm(`„${selectedArea.name}“ wirklich löschen?`)) return;
+    if (!window.confirm(`„${selectedArea.name}“ und alle zugehörigen Straßen wirklich löschen?`)) return;
 
     commitSnapshot((current) => ({
       ...current,
       areas: current.areas.filter((area) => area.id !== selectedArea.id),
+      tasks: current.tasks.filter((task) => task.areaId !== selectedArea.id),
     }));
     setSelectedAreaId(null);
+    setSelectedTaskId(null);
     setSheet(null);
   };
 
@@ -277,8 +351,113 @@ export default function App() {
     setSheet("area");
   };
 
+  const startStreetDrawing = () => {
+    if (!selectedArea) return;
+    setStreetDraftVertices([]);
+    setSelectedTaskId(null);
+    setMode("street-draw");
+    setSheet(null);
+  };
+
+  const cancelStreetDrawing = () => {
+    setStreetDraftVertices([]);
+    setMode("browse");
+    if (selectedAreaId) setSheet("area");
+  };
+
+  const saveStreetTask = () => {
+    if (!selectedArea || !streetValidation.valid) return;
+    const now = new Date().toISOString();
+    const task: DistributionTask = {
+      id: createId("task"),
+      campaignId: snapshot.campaign.id,
+      areaId: selectedArea.id,
+      taskType: "street",
+      label: nextStreetName(snapshot.tasks, selectedArea.id),
+      geometry: createLineStringGeometry(streetDraftVertices),
+      status: "open",
+      completedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    commitSnapshot((current) => ({
+      ...current,
+      tasks: [...current.tasks, task],
+    }));
+    setStreetDraftVertices([]);
+    setSelectedTaskId(task.id);
+    setMode("browse");
+    setSheet("task");
+  };
+
+  const updateSelectedTask = (
+    patch: Partial<Pick<DistributionTask, "label" | "status" | "completedAt">>,
+  ) => {
+    if (!selectedTask) return;
+    const now = new Date().toISOString();
+    commitSnapshot((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) =>
+        task.id === selectedTask.id ? { ...task, ...patch, updatedAt: now } : task,
+      ),
+    }));
+  };
+
+  const normalizeTaskLabel = () => {
+    if (!selectedTask || selectedTask.label.trim()) return;
+    updateSelectedTask({ label: nextStreetName(snapshot.tasks.filter((task) => task.id !== selectedTask.id), selectedTask.areaId) });
+  };
+
+  const changeTaskStatus = (status: TaskStatus) => {
+    if (!selectedTask || selectedTask.status === status) return;
+    const now = new Date().toISOString();
+    setUndoStatusChange({
+      taskId: selectedTask.id,
+      label: selectedTask.label,
+      previousStatus: selectedTask.status,
+      previousCompletedAt: selectedTask.completedAt,
+    });
+    updateSelectedTask({
+      status,
+      completedAt: status === "completed" ? now : null,
+    });
+  };
+
+  const undoLastStatusChange = () => {
+    if (!undoStatusChange) return;
+    const now = new Date().toISOString();
+    commitSnapshot((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) =>
+        task.id === undoStatusChange.taskId
+          ? {
+              ...task,
+              status: undoStatusChange.previousStatus,
+              completedAt: undoStatusChange.previousCompletedAt,
+              updatedAt: now,
+            }
+          : task,
+      ),
+    }));
+    setUndoStatusChange(null);
+  };
+
+  const deleteSelectedTask = () => {
+    if (!selectedTask) return;
+    if (!window.confirm(`„${selectedTask.label}“ wirklich löschen?`)) return;
+    commitSnapshot((current) => ({
+      ...current,
+      tasks: current.tasks.filter((task) => task.id !== selectedTask.id),
+    }));
+    if (undoStatusChange?.taskId === selectedTask.id) setUndoStatusChange(null);
+    setSelectedTaskId(null);
+    setSheet("area");
+  };
+
   const campaignDisplayName = snapshot.campaign.name.trim() || "Verteilaktion";
   const editColor = selectedAreaTeam?.color ?? "#64748b";
+  const streetColor = selectedAreaTeam?.color ?? "#2563eb";
 
   return (
     <main className="app-shell">
@@ -294,24 +473,41 @@ export default function App() {
 
       <MapView
         areas={renderedAreas}
+        tasks={renderedTasks}
         selectedAreaId={selectedAreaId}
+        selectedTaskId={selectedTaskId}
         mode={mode}
         draftVertices={draftVertices}
         draftColor={activeTeam?.color ?? "#2563eb"}
         editingVertices={editingVertices}
         editingColor={editColor}
         selectedVertexIndex={selectedVertexIndex}
+        streetDraftVertices={streetDraftVertices}
+        streetDraftColor={streetColor}
         onAreaSelect={selectArea}
+        onTaskSelect={selectTask}
         onDrawPoint={(point) => setDraftVertices((current) => [...current, point])}
         onEditVertexSelect={(index) =>
           setSelectedVertexIndex((current) => (current === index ? null : index))
         }
         onEditVertexMove={moveEditVertex}
+        onStreetDrawPoint={(point) => setStreetDraftVertices((current) => [...current, point])}
       />
 
       {storageWarning ? (
         <div className="storage-warning" role="status">
           {storageWarning}
+        </div>
+      ) : null}
+
+      {undoStatusChange ? (
+        <div className="undo-toast" role="status">
+          <span>
+            {undoStatusChange.label || "Straße"}: Status geändert
+          </span>
+          <button type="button" onClick={undoLastStatusChange}>
+            Rückgängig
+          </button>
         </div>
       ) : null}
 
@@ -381,6 +577,49 @@ export default function App() {
               onClick={saveDraftArea}
             >
               Speichern
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {mode === "street-draw" ? (
+        <section className="mode-sheet" aria-label="Straße einzeichnen">
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Street Mode</span>
+              <strong>{selectedArea?.name || "Gebiet"}</strong>
+            </div>
+            <span
+              className="team-color-preview"
+              style={{ backgroundColor: streetColor }}
+              aria-hidden="true"
+            />
+          </div>
+          <p>Tippe den Straßenverlauf Punkt für Punkt nach. Die Linie wird als manuelle Verteilaufgabe gespeichert.</p>
+          <p className={`geometry-status ${streetValidation.valid ? "is-valid" : "is-invalid"}`}>
+            {streetValidation.valid
+              ? `${streetDraftVertices.length} Punkte · Straße bereit zum Speichern`
+              : streetValidation.reason}
+          </p>
+          <div className="mode-actions three-actions">
+            <button className="button secondary" type="button" onClick={cancelStreetDrawing}>
+              Abbrechen
+            </button>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={streetDraftVertices.length === 0}
+              onClick={() => setStreetDraftVertices((current) => current.slice(0, -1))}
+            >
+              Rückgängig
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={!streetValidation.valid}
+              onClick={saveStreetTask}
+            >
+              Straße speichern
             </button>
           </div>
         </section>
@@ -528,6 +767,7 @@ export default function App() {
               type="button"
               onClick={() => {
                 setSelectedAreaId(null);
+                setSelectedTaskId(null);
                 setSheet(null);
               }}
               aria-label="Schließen"
@@ -561,14 +801,86 @@ export default function App() {
             </label>
           </div>
 
-          <div className="area-actions">
-            <button className="button primary" type="button" onClick={startEditing}>
+          <div className="street-summary">
+            <span>{selectedAreaTasks.length} Straßen</span>
+            <span>{selectedAreaTasks.filter((task) => task.status === "completed").length} erledigt</span>
+          </div>
+
+          <button className="button primary full-width" type="button" onClick={startStreetDrawing}>
+            + Straße einzeichnen
+          </button>
+
+          <div className="area-actions secondary-row">
+            <button className="button secondary" type="button" onClick={startEditing}>
               Form bearbeiten
             </button>
             <button className="button danger" type="button" onClick={deleteSelectedArea}>
               Gebiet löschen
             </button>
           </div>
+        </section>
+      ) : null}
+
+      {sheet === "task" && mode === "browse" && selectedTask ? (
+        <section className="bottom-sheet task-sheet" aria-label="Straßenstatus">
+          <div className="sheet-handle" aria-hidden="true" />
+          <div className="sheet-header">
+            <div className="area-heading">
+              <span
+                className="team-dot large-dot"
+                style={{ backgroundColor: selectedTaskTeam?.color ?? "#64748b" }}
+                aria-hidden="true"
+              />
+              <div>
+                <span className="eyebrow">Street Mode · {selectedTaskArea?.name || "Gebiet"}</span>
+                <strong>{selectedTask.label.trim() || "Straße"}</strong>
+              </div>
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => {
+                setSelectedTaskId(null);
+                setSheet(selectedAreaId ? "area" : null);
+              }}
+              aria-label="Schließen"
+            >
+              ×
+            </button>
+          </div>
+
+          <label className="field-label">
+            <span>Name</span>
+            <input
+              value={selectedTask.label}
+              onChange={(event) => updateSelectedTask({ label: event.target.value })}
+              onBlur={normalizeTaskLabel}
+              maxLength={60}
+            />
+          </label>
+
+          <div className="task-current-status">
+            <span>Aktuell</span>
+            <strong>{statusLabel(selectedTask.status)}</strong>
+          </div>
+
+          <div className="status-grid" aria-label="Straßenstatus ändern">
+            {TASK_STATUS_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`status-button status-${option.value} ${selectedTask.status === option.value ? "is-selected" : ""}`}
+                aria-pressed={selectedTask.status === option.value}
+                onClick={() => changeTaskStatus(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <button className="button danger full-width task-delete" type="button" onClick={deleteSelectedTask}>
+            Straße löschen
+          </button>
         </section>
       ) : null}
     </main>

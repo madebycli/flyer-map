@@ -5,7 +5,13 @@ export type PolygonGeometry = {
   coordinates: LngLat[][];
 };
 
+export type LineStringGeometry = {
+  type: "LineString";
+  coordinates: LngLat[];
+};
+
 export type CampaignStatus = "draft" | "active" | "archived";
+export type TaskStatus = "open" | "completed" | "later" | "not-deliverable";
 
 export type Campaign = {
   id: string;
@@ -34,12 +40,26 @@ export type Area = {
   updatedAt: string;
 };
 
+export type DistributionTask = {
+  id: string;
+  campaignId: string;
+  areaId: string;
+  taskType: "street";
+  label: string;
+  geometry: LineStringGeometry;
+  status: TaskStatus;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CampaignSnapshot = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   revision: number;
   campaign: Campaign;
   teams: Team[];
   areas: Area[];
+  tasks: DistributionTask[];
 };
 
 export type TeamColor = {
@@ -58,7 +78,14 @@ export const TEAM_COLORS: readonly TeamColor[] = [
   { value: "#4338ca", label: "Indigo" },
 ] as const;
 
-export const createId = (prefix: "campaign" | "team" | "area") =>
+export const TASK_STATUS_OPTIONS: readonly { value: TaskStatus; label: string }[] = [
+  { value: "open", label: "Offen" },
+  { value: "completed", label: "Erledigt" },
+  { value: "later", label: "Später" },
+  { value: "not-deliverable", label: "Nicht zustellbar" },
+] as const;
+
+export const createId = (prefix: "campaign" | "team" | "area" | "task") =>
   `${prefix}_${crypto.randomUUID()}`;
 
 export function createInitialSnapshot(): CampaignSnapshot {
@@ -66,7 +93,7 @@ export function createInitialSnapshot(): CampaignSnapshot {
   const campaignId = createId("campaign");
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 0,
     campaign: {
       id: campaignId,
@@ -77,6 +104,7 @@ export function createInitialSnapshot(): CampaignSnapshot {
     },
     teams: [],
     areas: [],
+    tasks: [],
   };
 }
 
@@ -106,5 +134,12 @@ export function createPolygonGeometry(vertices: LngLat[]): PolygonGeometry {
   return {
     type: "Polygon",
     coordinates: [ring],
+  };
+}
+
+export function createLineStringGeometry(vertices: LngLat[]): LineStringGeometry {
+  return {
+    type: "LineString",
+    coordinates: vertices.map(([lng, lat]) => [lng, lat]),
   };
 }

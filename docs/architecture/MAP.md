@@ -53,29 +53,46 @@ History:
 
 ## Application layers
 
-Team areas, distribution tasks and task state are rendered as separate application-controlled vector/GeoJSON layers above the basemap.
+Team areas, street tasks and task state are rendered as separate application-controlled vector/GeoJSON layers above the basemap.
 
 The raster choice applies only to the background map. Distribution geometry and status remain crisp application-controlled overlays.
 
-M1 area behavior:
+### Area behavior
+
 - every stored area is a GeoJSON Polygon assigned to exactly one team;
 - fill and outline colors come from the assigned team;
 - stored areas are shown together with transparent fills and strong outlines;
+- selecting an area adds a dedicated high-contrast halo plus stronger team-color outline;
 - drawing uses a separate draft shape/point layer, so map movement cannot silently rewrite saved geometry;
 - editing uses a separate preview layer with large vertex handles;
 - on phones, editing is tap-handle-then-tap-destination rather than relying on tiny draggable vertex buttons;
 - the client validates polygon geometry before Save is enabled.
+
+### Street Mode behavior
+
+- every street task is a GeoJSON LineString assigned to one area;
+- the line inherits the area's team color for ownership context;
+- a white casing keeps street tasks readable above both the raster basemap and colored area fills;
+- status uses line pattern/weight/opacity in addition to color:
+  - `open`: strong solid team-color line;
+  - `completed`: thinner and visibly faded solid line;
+  - `later`: dashed line;
+  - `not-deliverable`: dotted line;
+- a selected street receives an additional dark outer halo without changing its stored geometry or status;
+- manual street tracing uses a separate draft LineString and large point markers;
+- street status changes happen through explicit UI controls, never through map panning or accidental line taps.
 
 Do not encode distribution state by editing the basemap itself.
 
 ## Interaction modes
 
 The map has explicit browser-side modes:
-- `browse`: pan/zoom and select stored areas;
-- `draw`: map taps add draft vertices; Save/Cancel/Undo are explicit;
-- `edit`: stored geometry remains unchanged until the user explicitly saves the edited preview.
+- `browse`: pan/zoom and select stored areas or street tasks;
+- `draw`: map taps add area polygon vertices; Save/Cancel/Undo are explicit;
+- `edit`: stored area geometry remains unchanged until the user explicitly saves the edited preview;
+- `street-draw`: map taps trace a street LineString; Save/Cancel/Undo are explicit.
 
-Double-click zoom is disabled in draw/edit modes to reduce accidental geometry input while touch panning and pinch zoom remain available.
+Double-click zoom is disabled in geometry-input modes to reduce accidental points while normal drag/pinch map navigation remains available.
 
 ## Geolocation
 
