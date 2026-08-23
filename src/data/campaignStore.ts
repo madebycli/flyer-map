@@ -2,19 +2,35 @@ import {
   createInitialSnapshot,
   type Area,
   type CampaignSnapshot,
+  type DistributionTask,
+  type LineStringGeometry,
   type PolygonGeometry,
   type Team,
 } from "../domain/campaign";
 
-const STORAGE_KEY = "verteil-flyer:m1:campaign-snapshot:v1";
+const STORAGE_KEY = "verteil-flyer:campaign-snapshot";
+const LEGACY_STORAGE_KEY = "verteil-flyer:m1:campaign-snapshot:v1";
 
 export type CampaignLoadResult = {
   snapshot: CampaignSnapshot;
   warning: string | null;
 };
 
+type LegacySnapshotV1 = Omit<CampaignSnapshot, "schemaVersion" | "tasks"> & {
+  schemaVersion: 1;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isLngLat(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    typeof value[0] === "number" &&
+    typeof value[1] === "number"
+  );
 }
 
 function isPolygonGeometry(value: unknown): value is PolygonGeometry {
@@ -23,15 +39,15 @@ function isPolygonGeometry(value: unknown): value is PolygonGeometry {
   }
 
   const firstRing = value.coordinates[0];
+  return Array.isArray(firstRing) && firstRing.every(isLngLat);
+}
+
+function isLineStringGeometry(value: unknown): value is LineStringGeometry {
   return (
-    Array.isArray(firstRing) &&
-    firstRing.every(
-      (point) =>
-        Array.isArray(point) &&
-        point.length === 2 &&
-        typeof point[0] === "number" &&
-        typeof point[1] === "number",
-    )
+    isRecord(value) &&
+    value.type === "LineString" &&
+    Array.isArray(value.coordinates) &&
+    value.coordinates.every(isLngLat)
   );
 }
 
@@ -60,11 +76,26 @@ function isArea(value: unknown): value is Area {
   );
 }
 
-function isCampaignSnapshot(value: unknown): value is CampaignSnapshot {
-  if (!isRecord(value) || value.schemaVersion !== 1 || typeof value.revision !== "number") {
-    return false;
-  }
+function isDistributionTask(value: unknown): value is DistributionTask {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.campaignId === "string" &&
+    typeof value.areaId === "string" &&
+    value.taskType === "street" &&
+    typeof value.label === "string" &&
+    isLineStringGeometry(value.geometry) &&
+    (value.status === "open" ||
+      value.status === "completed" ||
+      value.status === "later" ||
+      value.status === "not-deliverable") &&
+    (value.completedAt === null || typeof value.completedAt === "string") &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
 
+function hasValidCampaign(value: Record<string, unknown>) {
   const campaign = value.campaign;
   return (
     isRecord(campaign) &&
@@ -72,12 +103,41 @@ function isCampaignSnapshot(value: unknown): value is CampaignSnapshot {
     typeof campaign.name === "string" &&
     (campaign.status === "draft" || campaign.status === "active" || campaign.status === "archived") &&
     typeof campaign.createdAt === "string" &&
-    typeof campaign.updatedAt === "string" &&
+    typeof campaign.updatedAt === "string"
+  );
+}
+
+function hasValidBaseCollections(value: Record<string, unknown>) {
+  return (
+    typeof value.revision === "number" &&
+    hasValidCampaign(value) &&
     Array.isArray(value.teams) &&
     value.teams.every(isTeam) &&
     Array.isArray(value.areas) &&
     value.areas.every(isArea)
   );
+}
+
+function isCampaignSnapshot(value: unknown): value is CampaignSnapshot {
+  return (
+    isRecord(value) &&
+    value.schemaVersion === 2 &&
+    hasValidBaseCollections(value) &&
+    Array.isArray(value.tasks) &&
+    value.tasks.every(isDistributionTask)
+  );
+}
+
+function isLegacySnapshotV1(value: unknown): value is LegacySnapshotV1 {
+  return isRecord(value) && value.schemaVersion === 1 && hasValidBaseCollections(value);
+}
+
+function migrateV1(snapshot: LegacySnapshotV1): CampaignSnapshot {
+  return {
+    ...snapshot,
+    schemaVersion: 2,
+    tasks: [],
+  };
 }
 
 export function loadCampaignSnapshot(): CampaignLoadResult {
@@ -86,12 +146,18 @@ export function loadCampaignSnapshot(): CampaignLoadResult {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw =
+      window.localStorage.getItem(STORAGE_KEY) ??
+      window.localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return { snapshot: createInitialSnapshot(), warning: null };
 
     const parsed: unknown = JSON.parse(raw);
     if (isCampaignSnapshot(parsed)) {
       return { snapshot: parsed, warning: null };
+    }
+
+    if (isLegacySnapshotV1(parsed)) {
+      return { snapshot: migrateV1(parsed), warning: null };
     }
 
     return {
@@ -111,6 +177,7 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
 
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
     return null;
   } catch {
     return "Lokales Speichern ist fehlgeschlagen. Bitte diese Seite noch nicht neu laden.";
