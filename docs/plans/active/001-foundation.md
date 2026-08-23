@@ -12,6 +12,7 @@ Establish a deployable, agent-friendly and lightweight project base before domai
 - `docs/architecture/STACK.md`
 - `docs/quality/QUALITY.md`
 - `docs/operations/DEPLOYMENT.md`
+- `docs/operations/PRODUCTION.md`
 
 ## Tasks
 
@@ -28,8 +29,9 @@ Establish a deployable, agent-friendly and lightweight project base before domai
 - [x] add GitHub CI and contribution templates
 - [x] verify dependency install/typecheck/build in CI
 - [x] merge foundation PR
-- [ ] connect merged `main` to Cloudflare
-- [ ] verify first production deployment on real phones
+- [x] connect merged `main` to Cloudflare
+- [x] obtain first production `workers.dev` deployment
+- [ ] verify first production deployment on a real phone
 
 ## Acceptance criteria
 
@@ -41,13 +43,21 @@ Establish a deployable, agent-friendly and lightweight project base before domai
 
 ## Verification
 
-The final pull-request head passed GitHub Actions CI on 2026-08-24, including dependency installation, TypeScript type checking and the production Vite/Cloudflare build. PR #1 was then squash-merged into `main`.
+The final foundation pull-request head passed GitHub Actions CI, including dependency installation, TypeScript type checking and the production Vite/Cloudflare build. PR #1 was squash-merged into `main`.
+
+The first Cloudflare deployment initially failed because `compatibility_date` was one UTC day in the future. PR #2 corrected the value to `2026-08-01` and was merged after green CI.
+
+Production/test endpoint reported by Cloudflare:
+
+`https://flyer-map.cloudflare-eleven035.workers.dev/`
+
+The remaining M0 gate is real-device verification of the app shell, map, geolocation and `/api/health`.
 
 ## Risks
 
-- first Cloudflare configuration may require a dashboard-specific adjustment
 - PWA install behavior differs slightly between browsers
 - external basemap availability is not controlled by this project
+- mobile browser/geolocation behavior still requires field verification
 
 ## Decisions made
 
