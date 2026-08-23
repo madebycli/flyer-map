@@ -17,18 +17,27 @@ The module is dynamically imported by `MapView` so the rest of the website shell
 
 ## Basemap
 
-Current MVP provider:
+Primary MVP provider:
 
-`https://tiles.versatiles.org/assets/styles/colorful/style.json`
+`https://basemaps.cartocdn.com/gl/positron-gl-style/style.json`
 
-This is a vector basemap derived from OpenStreetMap data and rendered by MapLibre at device resolution. It replaces the temporary standard OSM raster fallback, whose 256 px image tiles looked visibly soft on high-DPI phones.
+This is a vector basemap based on OpenStreetMap data and rendered by MapLibre at device resolution. It is intentionally used instead of 256 px raster tiles so roads, labels and building geometry stay sharp on high-DPI phones.
 
 The basemap provider is an operational dependency, not a domain dependency. Keep it isolated and replaceable.
 
+### Runtime fallback
+
+`MapView` keeps the standard OpenStreetMap raster style as a runtime emergency fallback.
+
+If the primary vector style does not reach a complete first render or emits an early loading error, the map automatically switches to the raster fallback instead of leaving the user with an empty/white map.
+
+The fallback is for availability, not preferred visual quality. While it is active, follow the standard OSM tile-service rules: viewport-only use, visible attribution and no bulk/offline prefetch.
+
 History:
 - OpenFreeMap was the initial vector provider but the first production-origin test lost street-level detail.
-- Standard OSM raster tiles were used as an emergency fallback and restored detail.
-- VersaTiles is now used to regain crisp vector rendering without requiring an API key.
+- Standard OSM raster tiles restored street-level availability but looked soft on high-DPI displays.
+- VersaTiles was tested for crisp vector rendering but produced a fully white map on the real production phone test.
+- CARTO Positron is the current primary vector style, with OSM raster retained as automatic emergency fallback.
 
 ## Application layers
 

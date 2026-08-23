@@ -1,7 +1,29 @@
 import { useEffect, useRef, useState } from "react";
+import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-const MAP_STYLE = "https://tiles.versatiles.org/assets/styles/colorful/style.json";
+const VECTOR_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+
+const RASTER_FALLBACK_STYLE = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution:
+        '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>',
+    },
+  },
+  layers: [
+    {
+      id: "osm-basemap",
+      type: "raster",
+      source: "osm",
+    },
+  ],
+} satisfies StyleSpecification;
 
 type MapInstance = import("maplibre-gl").Map;
 
@@ -22,10 +44,34 @@ export function MapView() {
 
         const map = new Map({
           container: containerRef.current,
-          style: MAP_STYLE,
+          style: VECTOR_STYLE,
           center: [10.45, 51.16],
           zoom: 5.3,
           maxZoom: 19,
+        });
+
+        let primaryReady = false;
+        let fallbackActivated = false;
+
+        const activateFallback = () => {
+          if (!active || fallbackActivated) return;
+
+          fallbackActivated = true;
+          setError(null);
+          map.setStyle(RASTER_FALLBACK_STYLE);
+        };
+
+        const fallbackTimer = window.setTimeout(() => {
+          if (!primaryReady) activateFallback();
+        }, 6000);
+
+        map.once("idle", () => {
+          primaryReady = true;
+          window.clearTimeout(fallbackTimer);
+        });
+
+        map.on("error", () => {
+          if (!primaryReady) activateFallback();
         });
 
         map.addControl(new NavigationControl({ showCompass: false }), "top-right");
