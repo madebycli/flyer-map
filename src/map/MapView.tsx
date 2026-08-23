@@ -31,7 +31,6 @@ export function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapInstance | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [usingFallback, setUsingFallback] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -58,7 +57,6 @@ export function MapView() {
           if (!active || fallbackActivated) return;
 
           fallbackActivated = true;
-          setUsingFallback(true);
           setError(null);
           map.setStyle(RASTER_FALLBACK_STYLE);
         };
@@ -105,11 +103,6 @@ export function MapView() {
   return (
     <section className="map-region" aria-label="Verteilkarte">
       <div ref={containerRef} className="map" />
-      {usingFallback ? (
-        <div className="map-error" role="status">
-          Vereinfachte Karte aktiv.
-        </div>
-      ) : null}
       {error ? <div className="map-error">{error}</div> : null}
     </section>
   );
