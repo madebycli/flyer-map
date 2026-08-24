@@ -11,7 +11,7 @@ last_updated: 2026-08-24
 
 M3 — Shared Persistence is complete, merged to `main` through PR #14 and live on the production Cloudflare Worker.
 
-M4 — Access Links + Authorization + Field UX hardening is implemented on branch `m4-access-links-ux-sync` in PR #16 and has a green full CI run (#89: tests, TypeScript and production build). It is not yet production-complete because the M4 D1 migration and Cloudflare bootstrap secret are intentional deployment gates that must be handled before merge/deploy.
+M4 — Access Links + Authorization + Field UX hardening is implemented on branch `m4-access-links-ux-sync` in PR #16. The Cloudflare Worker secret `M4_BOOTSTRAP_SECRET` is configured and production D1 migration `0002_m4_access.sql` was intentionally applied to remote database `flyer-map-db` on 2026-08-24. Final merge/deploy and production smoke checks remain.
 
 ## M4 branch state
 
@@ -27,7 +27,7 @@ The M4 branch adds:
 - Campaign snapshot schema v3 with optional shared `defaultMapView`;
 - browser-local personal camera center/zoom/bearing per Campaign;
 - arbitrary MapLibre rotation plus compass while application geometry stays in the independent SVG overlay;
-- browse Area selection without white halo or stored-corner markers; draw/edit markers remain visible;
+- browse Area selection without white halo or stored-corner markers; draw/edit markers remain visible only in the active editing/drawing modes;
 - in-memory remote snapshot refresh instead of `window.location.reload()`;
 - 30-second revision polling plus online/visibility/manual refresh;
 - deferral of remote snapshot application while draw/edit/street-draw is active;
@@ -35,12 +35,17 @@ The M4 branch adds:
 
 ## Renderer boundary
 
-MapLibre continues to render only:
+M4 itself keeps the proven SVG renderer boundary. A separate post-M4 branch `renderer-webgl-performance` is evaluating a hybrid renderer for whole-city scale: saved Areas/Streets rendered by MapLibre WebGL while active draw/edit previews and edit handles remain SVG-only. This work must not be merged into PR #16.
+
+Current M4 MapLibre responsibilities:
 - CARTO Voyager Retina raster basemap;
 - camera/navigation/compass controls;
 - local one-shot geolocation display.
 
-All Verteil-Flyer areas, streets, draw previews and edit geometry remain in the independent SVG overlay. M4 changes selection presentation and camera behavior but does not reintroduce MapLibre application GeoJSON layers.
+Current M4 SVG responsibilities:
+- saved Areas and Streets;
+- active draw/edit previews;
+- edit handles only while an Area is actually being edited.
 
 ## D1
 
@@ -50,34 +55,32 @@ Worker binding: `DB`.
 
 Production history:
 - `migrations/0001_initial.sql` — M3 campaign/team/area/task schema; immutable production history.
+- `migrations/0002_m4_access.sql` — Campaign default map view plus access-grant/session tables; applied successfully to remote `flyer-map-db` on 2026-08-24.
 
-M4 pending deployment migration:
-- `migrations/0002_m4_access.sql` — Campaign default map view plus access-grant/session tables.
-
-`0002` must be applied intentionally to production before Worker code that depends on these tables is deployed.
+The migration application reported all 14 commands executed successfully and `0002_m4_access.sql` with status ✅.
 
 ## Verification
 
-M3 production verification remains valid for the current `main` deployment.
+M3 production verification remains valid for the currently deployed `main` version until the M4 merge finishes.
 
 M4 branch verification:
 - authorization/token/session tests cover missing credentials, hashed invite storage, campaign scope, revocation and token redemption;
 - permission tests cover Admin, Viewer and Team Editor own-team/foreign-team boundaries;
 - snapshot validation tests cover schema v3 and shared map view validation;
-- repository CI #89 passed the complete `npm run check` pipeline: tests, TypeScript and production build;
-- PR #16 remains unmerged until the production migration/bootstrap gates are intentionally completed.
+- CI #91 passed the complete `npm run check` pipeline: tests, TypeScript and production build;
+- Cloudflare Worker secret `M4_BOOTSTRAP_SECRET` is configured;
+- remote D1 migration `0002_m4_access.sql` is applied;
+- PR #16 is ready for final merge/deploy verification.
 
-## Production gate before M4 merge
+## Remaining M4 release steps
 
-1. Configure strong Cloudflare Worker secret `M4_BOOTSTRAP_SECRET` outside the repository.
-2. Apply `migrations/0002_m4_access.sql` to remote `flyer-map-db`.
-3. Confirm the final PR head remains green after any gate/documentation changes.
-4. Merge PR #16 to `main` and allow Cloudflare Workers Builds to deploy it.
-5. Smoke-check health plus 401/role/revocation/sync behavior in production.
-6. Explicitly bootstrap any known pre-M4 campaign that still needs an initial Admin access link.
-7. Perform real-phone map/rotation/camera/refresh checks.
-
-No Cloudflare connector/plugin is available in the current ChatGPT environment, so the production D1/secret operations cannot be truthfully executed from here and must not be fabricated.
+1. Confirm the new documentation-only PR head remains green.
+2. Merge PR #16 to `main` and allow Cloudflare Workers Builds to deploy it.
+3. Smoke-check `/api/health` plus unauthenticated 401 behavior in production.
+4. Explicitly bootstrap any known pre-M4 campaign that still needs an initial Admin access link.
+5. Smoke-check valid role/revocation/sync behavior.
+6. Perform real-phone map/rotation/camera/refresh checks.
+7. Mark plan 007 completed after production acceptance.
 
 ## Completed plan
 
@@ -99,4 +102,4 @@ No Cloudflare connector/plugin is available in the current ChatGPT environment, 
 
 ## Next
 
-Finish the explicit M4 production migration/bootstrap gates, merge and deploy PR #16, then complete production/real-device acceptance before moving plan 007 to completed and beginning M5.
+Merge/deploy M4 now that its production schema and bootstrap secret are prepared, complete production/real-device acceptance, then finish the separate whole-city renderer performance slice before placing heavy street density on older phones.
