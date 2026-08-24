@@ -158,13 +158,20 @@ export function validateCampaignSnapshot(
     return { valid: false, message: "Snapshot-Schema wird nicht unterstützt." };
   }
 
-  if (!Number.isInteger(value.revision) || (value.revision as number) < 0) {
+  if (
+    typeof value.revision !== "number" ||
+    !Number.isInteger(value.revision) ||
+    value.revision < 0
+  ) {
     return { valid: false, message: "Snapshot-Revision ist ungültig." };
   }
 
   const campaign = parseCampaign(value.campaign, campaignId);
   if (!campaign) {
-    return { valid: false, message: "Campaign-Daten sind ungültig oder gehören zu einer anderen Campaign." };
+    return {
+      valid: false,
+      message: "Campaign-Daten sind ungültig oder gehören zu einer anderen Campaign.",
+    };
   }
 
   if (!Array.isArray(value.teams) || !Array.isArray(value.areas) || !Array.isArray(value.tasks)) {
@@ -181,14 +188,21 @@ export function validateCampaignSnapshot(
   const areas: Area[] = [];
   for (const candidate of value.areas) {
     const area = parseArea(candidate, campaignId);
-    if (!area) return { valid: false, message: "Mindestens ein Gebiet oder Polygon ist ungültig." };
+    if (!area) {
+      return { valid: false, message: "Mindestens ein Gebiet oder Polygon ist ungültig." };
+    }
     areas.push(area);
   }
 
   const tasks: DistributionTask[] = [];
   for (const candidate of value.tasks) {
     const task = parseTask(candidate, campaignId);
-    if (!task) return { valid: false, message: "Mindestens eine Straße, Geometrie oder ein Status ist ungültig." };
+    if (!task) {
+      return {
+        valid: false,
+        message: "Mindestens eine Straße, Geometrie oder ein Status ist ungültig.",
+      };
+    }
     tasks.push(task);
   }
 
@@ -201,21 +215,30 @@ export function validateCampaignSnapshot(
   for (const team of teams) {
     const normalizedColor = team.color.toLowerCase();
     if (teamColors.has(normalizedColor)) {
-      return { valid: false, message: "Teamfarben müssen innerhalb einer Campaign eindeutig sein." };
+      return {
+        valid: false,
+        message: "Teamfarben müssen innerhalb einer Campaign eindeutig sein.",
+      };
     }
     teamColors.add(normalizedColor);
   }
 
   for (const area of areas) {
     if (!teamIds.has(area.teamId)) {
-      return { valid: false, message: "Ein Gebiet verweist auf ein fremdes oder fehlendes Team." };
+      return {
+        valid: false,
+        message: "Ein Gebiet verweist auf ein fremdes oder fehlendes Team.",
+      };
     }
   }
 
   const areaIds = new Set(areas.map((area) => area.id));
   for (const task of tasks) {
     if (!areaIds.has(task.areaId)) {
-      return { valid: false, message: "Eine Straße verweist auf ein fremdes oder fehlendes Gebiet." };
+      return {
+        valid: false,
+        message: "Eine Straße verweist auf ein fremdes oder fehlendes Gebiet.",
+      };
     }
   }
 
@@ -223,7 +246,7 @@ export function validateCampaignSnapshot(
     valid: true,
     snapshot: {
       schemaVersion: 2,
-      revision: value.revision as number,
+      revision: value.revision,
       campaign,
       teams,
       areas,
