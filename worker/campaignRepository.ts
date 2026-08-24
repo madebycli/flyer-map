@@ -22,6 +22,10 @@ type CampaignRow = {
   name: string;
   status: "draft" | "active" | "archived";
   revision: number;
+  map_center_lng: number | null;
+  map_center_lat: number | null;
+  map_zoom: number | null;
+  map_bearing: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -69,13 +73,20 @@ export async function getCampaignRevision(db: D1DatabaseLike, campaignId: string
   return row?.revision ?? null;
 }
 
+export async function campaignExists(db: D1DatabaseLike, campaignId: string) {
+  return (await getCampaignRevision(db, campaignId)) !== null;
+}
+
 export async function loadCampaignSnapshot(
   db: D1DatabaseLike,
   campaignId: string,
 ): Promise<CampaignSnapshot | null> {
   const campaign = await db
     .prepare(
-      "SELECT id, name, status, revision, created_at, updated_at FROM campaigns WHERE id = ?",
+      `SELECT id, name, status, revision,
+              map_center_lng, map_center_lat, map_zoom, map_bearing,
+              created_at, updated_at
+       FROM campaigns WHERE id = ?`,
     )
     .bind(campaignId)
     .first<CampaignRow>();
@@ -103,14 +114,26 @@ export async function loadCampaignSnapshot(
       .all<TaskRow>(),
   ]);
 
+  const hasDefaultMapView =
+    campaign.map_center_lng !== null &&
+    campaign.map_center_lat !== null &&
+    campaign.map_zoom !== null;
+
   try {
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision: campaign.revision,
       campaign: {
         id: campaign.id,
         name: campaign.name,
         status: campaign.status,
+        defaultMapView: hasDefaultMapView
+          ? {
+              center: [campaign.map_center_lng as number, campaign.map_center_lat as number],
+              zoom: campaign.map_zoom as number,
+              bearing: campaign.map_bearing ?? 0,
+            }
+          : null,
         createdAt: campaign.created_at,
         updatedAt: campaign.updated_at,
       },
@@ -143,7 +166,7 @@ export async function loadCampaignSnapshot(
         createdAt: task.created_at,
         updatedAt: task.updated_at,
       })),
-    } as CampaignSnapshot;
+    };
   } catch {
     throw new StoredSnapshotError("Stored campaign geometry is not valid JSON.");
   }
@@ -223,12 +246,17 @@ export async function replaceCampaignSnapshot(
 ): Promise<ReplaceSnapshotResult> {
   const writeToken = crypto.randomUUID();
   const nextRevision = baseRevision === null ? snapshot.revision : baseRevision + 1;
+  const mapView = snapshot.campaign.defaultMapView;
 
   const claim =
     baseRevision === null
       ? db
           .prepare(
-            "INSERT OR IGNORE INTO campaigns (id, name, status, revision, write_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            `INSERT OR IGNORE INTO campaigns (
+               id, name, status, revision, write_token,
+               map_center_lng, map_center_lat, map_zoom, map_bearing,
+               created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             snapshot.campaign.id,
@@ -236,18 +264,30 @@ export async function replaceCampaignSnapshot(
             snapshot.campaign.status,
             nextRevision,
             writeToken,
+            mapView?.center[0] ?? null,
+            mapView?.center[1] ?? null,
+            mapView?.zoom ?? null,
+            mapView?.bearing ?? null,
             snapshot.campaign.createdAt,
             snapshot.campaign.updatedAt,
           )
       : db
           .prepare(
-            "UPDATE campaigns SET name = ?, status = ?, revision = ?, write_token = ?, created_at = ?, updated_at = ? WHERE id = ? AND revision = ?",
+            `UPDATE campaigns SET
+               name = ?, status = ?, revision = ?, write_token = ?,
+               map_center_lng = ?, map_center_lat = ?, map_zoom = ?, map_bearing = ?,
+               created_at = ?, updated_at = ?
+             WHERE id = ? AND revision = ?`,
           )
           .bind(
             snapshot.campaign.name,
             snapshot.campaign.status,
             nextRevision,
             writeToken,
+            mapView?.center[0] ?? null,
+            mapView?.center[1] ?? null,
+            mapView?.zoom ?? null,
+            mapView?.bearing ?? null,
             snapshot.campaign.createdAt,
             snapshot.campaign.updatedAt,
             snapshot.campaign.id,
@@ -256,9 +296,6 @@ export async function replaceCampaignSnapshot(
 
   // Keep snapshot replacement to a constant seven D1 statements. The three child
   // collections are passed as JSON and expanded inside SQLite via json_each().
-  // This stays well below the Workers Free per-invocation D1 query limit even for
-  // snapshots containing many entities, while db.batch() keeps the replacement
-  // transactional.
   const results = await db.batch([
     claim,
     db

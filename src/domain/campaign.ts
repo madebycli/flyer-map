@@ -10,6 +10,12 @@ export type LineStringGeometry = {
   coordinates: LngLat[];
 };
 
+export type MapCameraView = {
+  center: LngLat;
+  zoom: number;
+  bearing: number;
+};
+
 export type CampaignStatus = "draft" | "active" | "archived";
 export type TaskStatus = "open" | "completed" | "later" | "not-deliverable";
 
@@ -17,6 +23,7 @@ export type Campaign = {
   id: string;
   name: string;
   status: CampaignStatus;
+  defaultMapView: MapCameraView | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -54,7 +61,7 @@ export type DistributionTask = {
 };
 
 export type CampaignSnapshot = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   revision: number;
   campaign: Campaign;
   teams: Team[];
@@ -93,12 +100,13 @@ export function createInitialSnapshot(): CampaignSnapshot {
   const campaignId = createId("campaign");
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 0,
     campaign: {
       id: campaignId,
       name: "Neue Verteilaktion",
       status: "active",
+      defaultMapView: null,
       createdAt: now,
       updatedAt: now,
     },

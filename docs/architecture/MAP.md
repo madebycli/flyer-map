@@ -4,18 +4,19 @@ type: architecture
 status: accepted
 last_updated: 2026-08-24
 related: [architecture, product-ux, architecture-security]
-source_of_truth_for: [basemap, geolocation-display, map-layer-boundary]
+source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera]
 ---
 
 # Map Architecture
 
 ## Renderer boundary
 
-The production-phone stability phase established the current map architecture and it is a release gate.
+The production-phone stability phase established the current map architecture and it remains a release gate.
 
 MapLibre GL JS renders only:
 - the CARTO Voyager Retina raster basemap;
-- navigation controls;
+- navigation/compass controls;
+- camera movement and arbitrary bearing/rotation;
 - local one-shot browser geolocation display.
 
 All Verteil-Flyer application geometry is rendered by the independent SVG overlay above the MapLibre canvas:
@@ -24,10 +25,9 @@ All Verteil-Flyer application geometry is rendered by the independent SVG overla
 - area-draw geometry and points;
 - street-draw geometry and points;
 - area-edit preview geometry and edit points;
-- selected-area halo/outline and one marker at every stored polygon corner;
 - selected-street highlight.
 
-Do **not** reintroduce MapLibre application GeoJSON sources/layers for this geometry. M3 persistence changes the snapshot source, not the renderer.
+Do **not** reintroduce MapLibre application GeoJSON sources/layers for this geometry. Shared persistence, authorization and sync change snapshot delivery, not the renderer.
 
 ## Basemap
 
@@ -40,6 +40,8 @@ CARTO Voyager Retina raster tiles:
 The source uses four CARTO CDN hostnames and 2x-resolution tiles. Voyager remains preferred because it provides readable road hierarchy, green spaces and water while retaining the simpler Retina-raster loading path.
 
 The basemap provider is an operational dependency, not a domain dependency. Keep it isolated and replaceable.
+
+The Voyager labels are pre-rendered into raster tiles. Application language switching therefore translates Verteil-Flyer UI and ARIA text but cannot dynamically translate provider-rendered basemap labels. Do not replace the stable mobile basemap merely to force label localization.
 
 ### Mobile loading behavior
 
@@ -59,19 +61,23 @@ History:
 
 ## SVG application overlay
 
-The overlay projects stored longitude/latitude coordinates into the current MapLibre screen projection and redraws as the map pans, zooms or resizes.
+The overlay projects stored longitude/latitude coordinates into the current MapLibre screen projection and redraws as the map pans, zooms, rotates or resizes. Arbitrary bearing must not require duplicate MapLibre application layers.
 
 ### Area behavior
 
 - every stored area is a GeoJSON Polygon assigned to exactly one team;
 - fill and outline colors come from the assigned team;
-- saved areas render together in SVG with transparent fills and strong outlines;
-- the selected area receives the existing high-contrast treatment plus a visible marker at every stored corner;
+- saved areas render together in SVG with transparent fills and strong team-colored outlines;
+- **browse selection intentionally has no extra white halo and no stored-corner markers**; the detail/bottom sheet is the selection indication;
+- area corner markers appear only while the user is actively editing that Area;
 - drawing renders SVG point markers and connecting/polygon geometry immediately;
-- editing renders the preview and large edit points in SVG;
+- editing renders a high-contrast preview outline plus large touch-friendly edit points in SVG;
+- the selected edit vertex is visually distinct;
 - area selection uses application point-in-polygon hit testing rather than MapLibre rendered-feature queries;
 - edit-vertex selection uses application screen-distance hit testing;
 - polygon geometry is validated before Save is enabled and again by the Worker before D1 persistence.
+
+The browse-selection rule above deliberately supersedes the earlier M1/M2 behavior where selection added a white polygon halo and markers at every stored corner.
 
 ### Street Mode behavior
 
@@ -93,33 +99,63 @@ Do not encode distribution state by editing the basemap itself.
 ## Interaction modes
 
 The map has explicit browser-side modes:
-- `browse`: pan/zoom and select stored areas or street tasks;
+- `browse`: pan/zoom/rotate and select stored areas or street tasks;
 - `draw`: map taps add area polygon vertices; Save/Cancel/Undo are explicit;
 - `edit`: stored area geometry remains unchanged until the edited preview is explicitly saved;
 - `street-draw`: map taps trace a street LineString; Save/Cancel/Undo are explicit.
 
 Double-click zoom is disabled in geometry-input modes to reduce accidental points while normal drag/pinch map navigation remains available.
 
+Rotation is supported again:
+- touch users may use normal two-finger MapLibre rotation;
+- desktop users may use MapLibre's normal rotation gestures;
+- no artificial 90-degree snapping is used;
+- the compass is visible and may reset North-Up;
+- SVG Areas, Streets, drafts and edit vertices must remain projected correctly at any bearing.
+
+## Camera state
+
+Campaign data and personal camera state are deliberately separate states.
+
+A personal camera view contains at least:
+- center longitude/latitude;
+- zoom;
+- bearing.
+
+It is stored locally in the browser, keyed by Campaign, with debounced writes after completed camera movement. It is not sent to D1 merely because the user pans, zooms or rotates.
+
+Camera startup priority is:
+1. personal last camera view for this Campaign on this browser;
+2. shared Campaign default map view (`defaultMapView` / Aktionsfokus);
+3. Germany fallback.
+
+The Campaign default map view is shared Campaign configuration and may be persisted in D1 by an Admin. A new browser with no personal camera can therefore open directly at the action location.
+
+A remote Campaign snapshot update must **never** reset center, zoom or bearing, trigger GPS focusing, or force the Germany fallback. Snapshot refresh and camera state are independent.
+
 ## Geolocation
 
 MapLibre's geolocation control may display the device's current location after browser permission is granted.
 
-Field behavior is one-shot centering, not continuous camera tracking. Pressing the location control may center the map on the current device location. After that, panning and zooming are fully manual until the user presses the location control again.
+Field behavior is one-shot centering, not continuous camera tracking. Pressing the location control may center the map on the current device location. After that, panning, zooming and rotation are fully manual until the user presses the location control again.
 
 Rules:
 - permission is user initiated;
-- location is not written to browser campaign data or Worker/D1;
+- GPS coordinates are not written into Campaign data or Worker/D1;
 - no route history is created;
+- no GPS history/trail is stored;
 - map use remains possible when permission is denied.
 
 ## Persistence independence
 
-The SVG overlay consumes the current in-memory campaign snapshot regardless of whether that snapshot originated from localStorage or Worker/D1. Synchronization must never make rendering depend directly on network availability.
+The SVG overlay consumes the current in-memory Campaign snapshot regardless of whether that snapshot originated from localStorage or Worker/D1. Synchronization must never make rendering depend directly on network availability.
+
+M4 replaces full-page sync reloads with in-memory snapshot replacement. The React snapshot can change while the MapLibre camera instance remains untouched.
 
 ## Offline/connectivity behavior
 
-The project is website-only and does not use a PWA service worker. M3 keeps the last known snapshot in localStorage and retries ordinary in-page synchronization. M5 may add a durable mutation queue without changing this renderer or bulk-caching map tiles.
+The project is website-only and does not use a PWA service worker. M4 keeps the last known snapshot in localStorage and performs ordinary in-page synchronization. M5 may add a durable mutation queue without changing this renderer or bulk-caching map tiles.
 
 ## Future OSM import
 
-A bounded import can later create task snapshots from OpenStreetMap/Overpass data. Imported task geometry must be stored as campaign data rather than relying permanently on mutable upstream OSM object state.
+A bounded import can later create task snapshots from OpenStreetMap/Overpass data. Imported task geometry must be stored as Campaign data rather than relying permanently on mutable upstream OSM object state.

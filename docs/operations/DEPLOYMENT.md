@@ -3,7 +3,7 @@ id: operations-deployment
 type: operations
 status: active
 last_updated: 2026-08-24
-related: [architecture-stack]
+related: [architecture-stack, architecture-security, architecture-data]
 ---
 
 # Deployment
@@ -23,43 +23,61 @@ Cloudflare Workers Builds is connected to `madebycli/flyer-map` and deploys `mai
 
 Repository configuration in `wrangler.jsonc` remains the deployment source of truth.
 
-## M3 D1 setup
+## D1
 
-M3 uses one D1 database named `flyer-map-db` with Worker binding name `DB`.
+Production uses one D1 database named `flyer-map-db` with Worker binding name `DB`.
 
-The real Cloudflare-provided database id is now stored in the reviewed `d1_databases` entry in `wrangler.jsonc`; no placeholder or invented id is used.
+The real Cloudflare-provided database id is stored in the reviewed `d1_databases` entry in `wrangler.jsonc`; no placeholder or invented id is used.
 
-CLI equivalent for creating this database in Western Europe was:
+`migrations/0001_initial.sql` is immutable M3 production history. M4 adds `migrations/0002_m4_access.sql`; do not rewrite `0001` to simulate an upgrade.
 
-```bash
-npx wrangler d1 create flyer-map-db --location=weur
-```
-
-Before merging/deploying Worker code that depends on the schema, apply the migration intentionally to the remote database:
+Apply unapplied migrations intentionally to the remote database before merging Worker code that requires them:
 
 ```bash
 npx wrangler d1 migrations apply flyer-map-db --remote
 ```
 
-`migrations/0001_initial.sql` is the first production schema for M3. It was an unapplied proposal before M3 and was aligned to the actual shared snapshot model before first application.
+For M4, verify that `0002_m4_access.sql` is reported as applied before production begins serving the protected access/session routes.
+
+## M4 access bootstrap
+
+M4 intentionally does not allow a pre-M4 campaign to become owned by whichever browser visits first.
+
+Existing M3 campaigns require an explicit server-side bootstrap credential. The Worker reads this value from the Cloudflare secret `M4_BOOTSTRAP_SECRET`; it must never be committed to the repository, written into a campaign URL, stored in D1 as plaintext invite material, or shared as a normal field access link.
+
+Before M4 merge/deploy:
+1. create a strong random bootstrap secret outside the repository;
+2. store it as the Worker secret `M4_BOOTSTRAP_SECRET` in Cloudflare;
+3. apply `0002_m4_access.sql` to production D1;
+4. after deploy, use the explicit bootstrap API only for campaigns that existed before M4 and still have no access grant;
+5. record/share the returned admin access link securely;
+6. revoke or rotate the bootstrap secret after the known legacy campaigns are bootstrapped if no further legacy bootstrap is required.
+
+Never add a client-side fallback that grants admin access when authorization is missing.
 
 ## Release workflow
 
-Preferred:
+Preferred M4 flow:
 
 ```text
-feature branch -> pull request -> CI -> provision/bind D1 -> apply migration -> final green CI -> merge to main -> Cloudflare automatic build/deploy
+feature branch -> pull request -> CI -> review migration/security model
+-> configure Cloudflare bootstrap secret -> apply D1 migration 0002
+-> final green CI -> merge to main -> Cloudflare automatic build/deploy
+-> health/auth/sync smoke checks -> legacy campaign bootstrap where required
 ```
 
-Production config changes are reviewed like code changes.
+Production config changes are reviewed like code changes. A green repository build alone does not prove that an unapplied D1 migration or missing Worker secret is ready in production.
 
 ## Post-deploy checks
 
-After M3 deploy:
+After M4 deploy:
 1. `/api/health` returns `ok: true` and reports `persistence: "d1"`;
-2. existing local campaign data can bootstrap to D1 without being deleted locally;
-3. reload restores the server snapshot;
-4. opening the same `?campaign=` URL on a second browser loads the same campaign;
-5. a change on one browser is detected on the other through revision polling;
-6. conflict/rejection behavior is visible rather than silently overwriting state;
-7. the CARTO Voyager Retina + independent SVG renderer behaves exactly as before M3.
+2. campaign id alone cannot read protected campaign snapshot/version data and returns an authorization failure;
+3. a valid admin access link redeems into an HttpOnly session and can manage campaign settings, teams and access grants;
+4. a team-editor access link can edit only its scoped team's areas/tasks and cannot change campaign/admin configuration;
+5. a viewer access link can read but cannot write;
+6. revoking a grant invalidates protected access for an already-issued session;
+7. opening the same authorized campaign on two browsers receives remote changes through 30-second revision polling, visibility/online refresh or manual refresh without a full-page reload;
+8. an active draw/edit/street-draw draft is not silently replaced by a remote snapshot;
+9. personal camera center/zoom/bearing survives reload on the same browser and shared campaign focus remains only the fallback for devices without a personal camera;
+10. map rotation/compass and the CARTO Voyager Retina + independent SVG renderer remain aligned and usable on a real phone.
