@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
-import type { GeoJSONSource, StyleSpecification } from "maplibre-gl";
+import type { ExpressionSpecification, GeoJSONSource, StyleSpecification } from "maplibre-gl";
 import type { Area, DistributionTask, LngLat, MapCameraView } from "../domain/campaign";
 import type { Language } from "../i18n";
 import { t } from "../i18n";
@@ -97,7 +97,7 @@ const STREET_LAYER_IDS = [
   STREET_NOT_DELIVERABLE_LAYER_ID,
 ] as const;
 
-const STREET_WIDTH_EXPRESSION = [
+const STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   ["zoom"],
@@ -113,9 +113,9 @@ const STREET_WIDTH_EXPRESSION = [
   1.65,
   20,
   2.4,
-] as const;
+];
 
-const AREA_WIDTH_EXPRESSION = [
+const AREA_WIDTH_EXPRESSION: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   ["zoom"],
@@ -131,9 +131,9 @@ const AREA_WIDTH_EXPRESSION = [
   1.25,
   20,
   1.7,
-] as const;
+];
 
-const SELECTED_STREET_WIDTH_EXPRESSION = [
+const SELECTED_STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   ["zoom"],
@@ -149,7 +149,7 @@ const SELECTED_STREET_WIDTH_EXPRESSION = [
   3.0,
   20,
   4.4,
-] as const;
+];
 
 const CARTO_VOYAGER_RETINA_STYLE: StyleSpecification = {
   version: 8,
