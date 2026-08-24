@@ -37,16 +37,18 @@ Frontend:
 - Vite
 - plain CSS
 - MapLibre GL JS
+- independent SVG overlay for Verteil-Flyer application geometry
 
 Platform:
 - Cloudflare Workers
 - Workers Static Assets
-- Cloudflare D1 when persistence is introduced
+- Cloudflare D1 for shared campaign persistence
 
 Maps:
 - OpenStreetMap-derived data
-- MapLibre
-- VersaTiles public vector basemap for the current MVP
+- MapLibre for the CARTO Voyager Retina basemap, navigation and local one-shot geolocation only
+- CARTO Voyager Retina raster basemap for the current MVP
+- saved/draft application geometry is rendered by the independent SVG overlay, not MapLibre application GeoJSON layers
 - map provider must remain replaceable
 
 Source control:
