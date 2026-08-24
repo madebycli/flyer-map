@@ -9,11 +9,25 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary]
 
 # Map Architecture
 
-## Renderer
+## Renderer boundary
 
-MapLibre GL JS renders the interactive map inside the mobile website.
+The production-phone stability phase established the current map architecture and it is a release gate.
 
-The map is the primary field interface. MapLibre is loaded as a normal application dependency instead of through a second-stage dynamic import so the first map request can begin immediately.
+MapLibre GL JS renders only:
+- the CARTO Voyager Retina raster basemap;
+- navigation controls;
+- local one-shot browser geolocation display.
+
+All Verteil-Flyer application geometry is rendered by the independent SVG overlay above the MapLibre canvas:
+- saved team areas;
+- saved street tasks;
+- area-draw geometry and points;
+- street-draw geometry and points;
+- area-edit preview geometry and edit points;
+- selected-area halo/outline and one marker at every stored polygon corner;
+- selected-street highlight.
+
+Do **not** reintroduce MapLibre application GeoJSON sources/layers for this geometry. M3 persistence changes the snapshot source, not the renderer.
 
 ## Basemap
 
@@ -31,61 +45,48 @@ The basemap provider is an operational dependency, not a domain dependency. Keep
 
 MapLibre keeps pending lower-zoom tile requests while the user zooms so previously requested context can progressively appear instead of being abruptly canceled.
 
-Do not gate the field UI on MapLibre `idle`. `idle` can be delayed by ongoing raster requests or interaction and previously left a centered `Karte lädt…` indicator visible on the production phone. Application overlays are initialized when the map style has loaded; no persistent centered loading badge is required after that point.
+Do not gate the field UI on MapLibre `idle`. The map is usable while raster tiles continue loading, and application SVG geometry has its own rendering path.
 
 Do not prefetch whole areas or build an offline basemap cache. Only normal interactive viewport requests are allowed in the current architecture.
 
 History:
 - OpenFreeMap was the initial vector provider but the first production-origin test lost street-level detail.
 - Standard OSM raster tiles restored availability but looked soft on high-DPI displays.
-- VersaTiles restored vector rendering in theory but produced a white map on the real production phone test.
-- CARTO Positron vector style rendered but real-device testing showed unacceptably slow first render and resource loading while moving.
-- CARTO Positron Retina raster improved the loading path but its nearly colorless visual design was rejected in real-device review.
-- CARTO Voyager Retina raster is the current performance-oriented and more colorful MVP choice.
+- VersaTiles produced a white map on the real production phone test.
+- CARTO vector rendering was too slow/unpredictable on the tested mobile connection.
+- CARTO Retina raster improved loading behavior.
+- CARTO Voyager Retina is the current colorful, performance-oriented MVP basemap.
 
-## Application layers
+## SVG application overlay
 
-Team areas, street tasks and task state are separate application-controlled GeoJSON layers above the basemap. The raster choice applies only to the background map.
-
-### Reliability boundary
-
-A single optional application layer must never be able to prevent every distribution overlay from rendering.
-
-Current rules:
-- add GeoJSON sources independently;
-- add application layers independently and report a failed layer without aborting the rest of setup;
-- keep saved areas, selected areas, street statuses and selected streets in simple dedicated sources where useful;
-- update every available source even if another optional layer failed;
-- do not make application-state readiness depend on raster-tile `idle`.
-
-This boundary was introduced after the production phone showed the basemap while all application geometry, draft points and status overlays remained invisible.
+The overlay projects stored longitude/latitude coordinates into the current MapLibre screen projection and redraws as the map pans, zooms or resizes.
 
 ### Area behavior
 
 - every stored area is a GeoJSON Polygon assigned to exactly one team;
 - fill and outline colors come from the assigned team;
-- stored areas are shown together with transparent fills and strong outlines;
-- a selected area is copied into a dedicated selected-area source and receives a high-contrast white halo plus stronger team-color outline;
-- drawing uses separate draft shape/point sources;
-- editing uses separate preview geometry and large vertex handles;
-- on phones, editing is tap-handle-then-tap-destination rather than relying on tiny draggable vertex buttons;
-- the client validates polygon geometry before Save is enabled.
+- saved areas render together in SVG with transparent fills and strong outlines;
+- the selected area receives the existing high-contrast treatment plus a visible marker at every stored corner;
+- drawing renders SVG point markers and connecting/polygon geometry immediately;
+- editing renders the preview and large edit points in SVG;
+- area selection uses application point-in-polygon hit testing rather than MapLibre rendered-feature queries;
+- edit-vertex selection uses application screen-distance hit testing;
+- polygon geometry is validated before Save is enabled and again by the Worker before D1 persistence.
 
 ### Street Mode behavior
 
 - every street task is a GeoJSON LineString assigned to one area;
 - the line inherits the area's team color for ownership context;
-- a white casing keeps street tasks readable above both the raster basemap and colored area fills;
-- task statuses are fed into dedicated status sources/layers so the rendering path stays simple;
-- status uses line pattern/weight/opacity in addition to color:
-  - `open`: strong solid team-color line;
-  - `completed`: thinner and visibly faded solid line;
+- saved street tasks render as SVG polylines;
+- status uses width/opacity/dash treatment in addition to team color:
+  - `open`: strong solid line;
+  - `completed`: thinner/faded solid line;
   - `later`: dashed line;
   - `not-deliverable`: dotted line;
-- a selected street is rendered through a dedicated selected-task source with a strong outer halo;
-- manual street tracing uses a separate draft LineString and large point markers;
-- street-task hit testing uses a larger screen-space box around the tap for phone usability;
-- street status changes happen through explicit UI controls, never through map panning or accidental line taps.
+- selected streets receive the existing SVG selection halo;
+- manual street tracing renders SVG draft LineString geometry and point markers;
+- street selection uses application screen-distance hit testing;
+- street status changes happen through explicit UI controls, never through map panning.
 
 Do not encode distribution state by editing the basemap itself.
 
@@ -103,17 +104,21 @@ Double-click zoom is disabled in geometry-input modes to reduce accidental point
 
 MapLibre's geolocation control may display the device's current location after browser permission is granted.
 
-Field behavior is one-shot centering, not continuous camera tracking. Pressing the location control may center the map on the current device location. After that, both panning and zooming are fully manual; the camera must not snap back until the user presses the location control again.
+Field behavior is one-shot centering, not continuous camera tracking. Pressing the location control may center the map on the current device location. After that, panning and zooming are fully manual until the user presses the location control again.
 
 Rules:
 - permission is user initiated;
-- location is not written to browser campaign data or Worker/D1 in MVP;
+- location is not written to browser campaign data or Worker/D1;
 - no route history is created;
 - map use remains possible when permission is denied.
 
+## Persistence independence
+
+The SVG overlay consumes the current in-memory campaign snapshot regardless of whether that snapshot originated from localStorage or Worker/D1. Synchronization must never make rendering depend directly on network availability.
+
 ## Offline/connectivity behavior
 
-The project is website-only and does not use a PWA service worker. Future resilience work may locally queue important distribution mutations in browser storage, but must not turn the product into an installable PWA or bulk-cache basemap regions.
+The project is website-only and does not use a PWA service worker. M3 keeps the last known snapshot in localStorage and retries ordinary in-page synchronization. M5 may add a durable mutation queue without changing this renderer or bulk-caching map tiles.
 
 ## Future OSM import
 

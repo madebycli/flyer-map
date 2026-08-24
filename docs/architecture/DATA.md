@@ -9,23 +9,19 @@ source_of_truth_for: [domain-data-model]
 
 # Data Model
 
-## Browser snapshot
+## Shared snapshot
 
-The browser uses the same campaign/team/area/task domain shape that the Worker/D1 API is expected to expose later.
+The browser and Worker use the same campaign/team/area/task domain shape.
 
 Snapshot schema v2 contains:
 - `schemaVersion`
-- `revision`
+- shared `revision`
 - one campaign
 - campaign teams
 - campaign areas
 - distribution tasks
 
-`revision` increments for every local domain mutation. It is intentionally part of the transport/domain model so a later Worker can expose campaign version checks for simple polling and conflict detection without redesigning client state.
-
-The M2 client migrates the existing M1 schema-v1 snapshot to schema v2 by preserving campaign, teams and areas and adding an empty task collection. The current local storage key is stable; the previous M1 key is read as a legacy fallback and removed only after the migrated snapshot has been saved successfully.
-
-Browser persistence is still local-only. It is not shared synchronization. Shared multi-device state still requires the Worker/D1 slice.
+M3 makes D1 the shared source of truth while preserving localStorage as the fast startup cache, last-known snapshot and fallback. Existing schema-v1 local data is still migrated to schema v2 before it can be uploaded.
 
 ## Entities
 
@@ -33,37 +29,33 @@ Browser persistence is still local-only. It is not shared synchronization. Share
 
 One flyer distribution effort.
 
-Fields: id, name, status, revision, created_at, updated_at.
+Domain fields: id, name, status, createdAt, updatedAt.
+
+The shared snapshot also carries the campaign `revision` at top level.
 
 ### Team
 
 Named group within a campaign.
 
-Fields: id, campaign_id, name, color, created_at, updated_at.
+Fields: id, campaignId, name, color, createdAt, updatedAt.
 
-Within one campaign, active UI team colors are unique so ownership remains visually distinguishable.
+Within one campaign, team colors are unique so ownership remains visually distinguishable.
 
 ### Area
 
-Geographic assignment owned by exactly one team.
+Geographic assignment owned by exactly one team in the same campaign.
 
-Fields: id, campaign_id, team_id, name, geometry, created_at, updated_at.
+Fields: id, campaignId, teamId, name, geometry, createdAt, updatedAt.
 
-Geometry is a GeoJSON Polygon. Browser code validates minimum vertices, duplicate/degenerate points and self-intersection before a polygon is saved.
+Geometry is a GeoJSON Polygon. Both client and Worker reject unusable geometry including too few/distinct vertices, out-of-range coordinates, degenerate area and self-intersection.
 
 ### Task
 
-One unit that can be marked during distribution.
+One distribution unit. M2/M3 implements the first task type: `street`.
 
-M2 implements the first task type: `street`.
+Fields: id, campaignId, areaId, taskType, label, geometry, status, completedAt, createdAt, updatedAt.
 
-Fields: id, campaign_id, area_id, task_type, label, geometry, status, completed_at, created_at, updated_at.
-
-Street geometry is a GeoJSON LineString manually traced over the basemap and assigned to one area. At least two distinct valid map points are required before save.
-
-Future OSM/source metadata fields may be populated when bounded import is introduced; the current manual Street Mode does not depend on upstream road identifiers.
-
-Geometry is planned to be stored as GeoJSON-compatible JSON text in D1. Introduce spatial infrastructure only if real server-side geographic queries require it.
+Street geometry is a GeoJSON LineString manually traced over the basemap and assigned to an area in the same campaign. At least two distinct valid map points are required.
 
 ## Status vocabulary
 
@@ -72,30 +64,72 @@ Geometry is planned to be stored as GeoJSON-compatible JSON text in D1. Introduc
 - later
 - not-deliverable
 
-`completed_at` is set when a task enters `completed` and cleared when it leaves that state.
+`completedAt` is present when a task is `completed` and is null for the other statuses. The D1 schema and Worker validate this invariant.
 
 ## IDs
 
-Use opaque application IDs. The current browser slice uses `crypto.randomUUID()` with entity prefixes. Do not expose sequential database IDs as authorization secrets.
+Use opaque application IDs. Browser-created entities use `crypto.randomUUID()` with entity prefixes. Sequential database IDs are not exposed as domain IDs or authorization secrets.
 
-## Revision/version direction
+The M3 `?campaign=` URL value is only a campaign selector. It is not an access token. M4 adds real authorization.
 
-The campaign revision is a coarse synchronization primitive, not authorization and not a complete conflict strategy.
+## D1 schema
 
-A later Worker/D1 implementation may:
-1. return the current campaign revision with the campaign snapshot;
-2. expose a lightweight version endpoint for polling;
-3. require clients to submit the version they edited from;
-4. reject or explicitly reconcile stale writes instead of silently applying last-write-wins.
+`migrations/0001_initial.sql` is the initial M3 D1 schema and is the SQL source of truth once applied.
 
-The exact conflict policy belongs to the synchronization milestone.
+Tables:
+- `campaigns`: id, name, status, shared revision, internal write token, timestamps
+- `teams`: campaign ownership, name/color, timestamps, unique color per campaign
+- `areas`: campaign/team ownership, Polygon JSON text, timestamps
+- `tasks`: campaign/area ownership, street LineString JSON text, status, `completed_at`, timestamps
+
+Composite foreign keys ensure a team/area/task relationship cannot cross campaign boundaries. Geometry is stored as JSON text with `json_valid()` constraints; semantic geometry validation happens in the Worker before write.
+
+No spatial extension is introduced because M3 does not need server-side geographic queries.
+
+### Internal write token
+
+`campaigns.write_token` is an implementation-only optimistic-concurrency guard. It is generated by the Worker for each successful claim and is never exposed as campaign data.
+
+A replacement write uses one D1 batch:
+1. claim the expected campaign revision and install a fresh write token;
+2. replace child rows only when that same token is still owned by the request;
+3. stale competing requests therefore cannot delete/insert child rows after losing the revision claim.
+
+This avoids a read-then-write last-write-wins race while keeping the public synchronization primitive simple.
+
+## Revision/version semantics
+
+The campaign revision is a coarse shared synchronization primitive.
+
+- `GET /api/campaigns/:campaignId/snapshot` returns the current snapshot/revision.
+- `GET /api/campaigns/:campaignId/version` returns only the current revision for polling.
+- `PUT /api/campaigns/:campaignId/snapshot` includes the `baseRevision` the browser edited from.
+- existing campaigns accept a write only when `baseRevision` matches the current server revision;
+- a successful replacement advances the shared revision by one;
+- a stale write returns HTTP 409 with the current server revision;
+- bootstrap creation uses `baseRevision: null` and succeeds only if the campaign does not already exist.
+
+The Worker also validates every campaign/team/area/task ownership reference before D1 receives it.
+
+## Browser cache and transition
+
+The existing primary/backup localStorage snapshot is not deleted when M3 starts.
+
+Safe transition:
+1. render the existing local snapshot immediately;
+2. select the campaign from `?campaign=` when present, otherwise use the local campaign id and place it in the URL;
+3. if the campaign does not yet exist in D1, upload that local snapshot as the initial server snapshot;
+4. if D1 already has a newer/current snapshot, cache and use the server state;
+5. before replacing a conflicting/different optimistic local snapshot, preserve it in `verteil-flyer:campaign-snapshot:conflict`.
+
+This protects existing browser data while changing the shared source of truth.
 
 ## Event history
 
-An append-only task event table is expected before production hardening so accidental or conflicting state changes are diagnosable. It is intentionally not included in the first schema until synchronization semantics are designed.
+An append-only task event table remains future hardening work. M3 intentionally keeps persistence small and snapshot-oriented. A durable mutation/event model can be introduced when M5 synchronization requirements justify it.
 
-## Migration source
+## Migration state
 
-SQL migrations under `/migrations` are the schema source of truth once D1 is enabled.
+Before M3 there was no production D1 binding/database id in the repository, and `0001_initial.sql` was explicitly documented as an unapplied proposal. M3 therefore aligns that initial migration to the real first shared-persistence schema before the production database is created/applied.
 
-The current initial migration is still only a proposal because no production D1 binding exists. Do not invent a database id.
+Never invent a production D1 database id.
