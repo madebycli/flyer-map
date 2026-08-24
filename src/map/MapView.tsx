@@ -189,7 +189,7 @@ function cameraFromMap(map: Map): MapCameraView {
 }
 
 function groupAreas(areas: RenderArea[]) {
-  const groups = new Map<string, RenderArea[]>();
+  const groups = new globalThis.Map<string, RenderArea[]>();
   for (const area of areas) {
     const current = groups.get(area.color);
     if (current) current.push(area);
@@ -203,7 +203,7 @@ function groupAreas(areas: RenderArea[]) {
 }
 
 function groupStreets(tasks: RenderTask[]) {
-  const groups = new Map<string, StreetGroup>();
+  const groups = new globalThis.Map<string, StreetGroup>();
   for (const task of tasks) {
     const key = `${task.color}:${task.status}`;
     const current = groups.get(key);
@@ -385,8 +385,8 @@ export function MapView({
   const suppressNextCameraSaveRef = useRef(false);
   const savedFrameRef = useRef<number | null>(null);
   const requestSavedRedrawRef = useRef<(() => void) | null>(null);
-  const areaPathRefs = useRef(new Map<string, SVGPathElement>());
-  const streetPathRefs = useRef(new Map<string, SVGPathElement>());
+  const areaPathRefs = useRef(new globalThis.Map<string, SVGPathElement>());
+  const streetPathRefs = useRef(new globalThis.Map<string, SVGPathElement>());
   const selectedStreetPathRef = useRef<SVGPathElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, forceActiveOverlayRender] = useState(0);
