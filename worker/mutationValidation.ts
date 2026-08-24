@@ -26,6 +26,10 @@ function hasExpectedUpdatedAt(payload: Record<string, unknown>) {
   return isTimestamp(payload.expectedUpdatedAt);
 }
 
+function isMapViewCandidate(value: unknown) {
+  return value === null || isRecord(value);
+}
+
 export function validateCampaignMutation(
   value: unknown,
   campaignId: string,
@@ -56,12 +60,12 @@ export function validateCampaignMutation(
   const payload = value.payload;
   switch (value.type) {
     case "campaign.rename":
-      if (!isString(payload.name, 160) || !hasExpectedUpdatedAt(payload)) break;
+      if (!isString(payload.name, 160) || !isString(payload.expectedName, 160)) break;
       return { valid: true, mutation: value as CampaignMutation };
     case "campaign.set-default-map-view":
       if (
-        (payload.defaultMapView === null || isRecord(payload.defaultMapView)) &&
-        hasExpectedUpdatedAt(payload)
+        isMapViewCandidate(payload.defaultMapView) &&
+        isMapViewCandidate(payload.expectedDefaultMapView)
       ) {
         return { valid: true, mutation: value as CampaignMutation };
       }
