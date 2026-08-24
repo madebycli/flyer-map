@@ -24,6 +24,7 @@ import {
   type AccessRole,
 } from "./access.ts";
 import { authorizeSnapshotWrite } from "./authorization.ts";
+import { handleCampaignMutation } from "./mutationHandler.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -78,6 +79,16 @@ function campaignRoute(pathname: string) {
     campaignId,
     resource: match[2] as "snapshot" | "version",
   };
+}
+
+function mutationRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/mutations$/);
+  if (!match) return null;
+  try {
+    return parseCampaignId(decodeURIComponent(match[1]));
+  } catch {
+    return null;
+  }
 }
 
 function accessRoute(pathname: string) {
@@ -403,9 +414,10 @@ export default {
       return json({
         ok: true,
         service: "flyer-map",
-        version: "0.3.0",
+        version: "0.4.0",
         persistence: env.DB ? "d1" : "unbound",
         authorization: "access-links",
+        synchronization: "durable-mutations",
       });
     }
 
@@ -486,6 +498,21 @@ export default {
           console.error("access_management_error", error);
           return errorResponse(500, "internal_error", "Access Management ist fehlgeschlagen.");
         }
+      }
+    }
+
+    const mutationCampaignId = mutationRoute(url.pathname);
+    if (mutationCampaignId && db) {
+      try {
+        const auth = await requireAccess(db, request, mutationCampaignId);
+        if (!auth.ok) return auth.response;
+        return await handleCampaignMutation(request, db, mutationCampaignId, auth.access);
+      } catch (error) {
+        if (error instanceof StoredSnapshotError) {
+          return errorResponse(500, "stored_snapshot_invalid", error.message);
+        }
+        console.error("campaign_mutation_error", error);
+        return errorResponse(500, "internal_error", "Mutation konnte nicht verarbeitet werden.");
       }
     }
 
