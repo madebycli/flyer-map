@@ -102,17 +102,17 @@ const STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   ["linear"],
   ["zoom"],
   5,
-  0.25,
+  0.45,
   8,
-  0.38,
+  0.55,
   11,
-  0.62,
+  0.8,
   14,
-  1.0,
+  1.25,
   17,
-  1.65,
+  2.0,
   20,
-  2.4,
+  3.0,
 ];
 
 const AREA_WIDTH_EXPRESSION: ExpressionSpecification = [
@@ -120,17 +120,17 @@ const AREA_WIDTH_EXPRESSION: ExpressionSpecification = [
   ["linear"],
   ["zoom"],
   5,
-  0.24,
+  0.45,
   8,
-  0.36,
+  0.55,
   11,
-  0.58,
+  0.75,
   14,
-  0.86,
+  1.0,
   17,
-  1.25,
+  1.45,
   20,
-  1.7,
+  2.0,
 ];
 
 const SELECTED_STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
@@ -138,53 +138,18 @@ const SELECTED_STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   ["linear"],
   ["zoom"],
   5,
-  1.1,
+  1.2,
   8,
-  1.25,
+  1.4,
   11,
-  1.55,
+  1.75,
   14,
-  2.05,
+  2.35,
   17,
-  3.0,
+  3.4,
   20,
-  4.4,
+  4.8,
 ];
-
-const CARTO_VOYAGER_RETINA_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    carto: {
-      type: "raster",
-      tiles: [
-        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-      ],
-      tileSize: 256,
-      minzoom: 0,
-      maxzoom: 20,
-      attribution:
-        '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · <a href="https://carto.com/attributions" target="_blank">© CARTO</a>',
-    },
-  },
-  layers: [
-    {
-      id: "map-background",
-      type: "background",
-      paint: { "background-color": "#fbf8f3" },
-    },
-    {
-      id: "carto-basemap",
-      type: "raster",
-      source: "carto",
-      minzoom: 0,
-      maxzoom: 20,
-      paint: { "raster-fade-duration": 0 },
-    },
-  ],
-};
 
 function areasToGeoJson(areas: RenderArea[]): AreaFeatureCollection {
   return {
@@ -227,6 +192,151 @@ function streetsToGeoJson(tasks: RenderTask[]): StreetFeatureCollection {
   };
 }
 
+function buildMapStyle(areas: RenderArea[], tasks: RenderTask[]): StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      carto: {
+        type: "raster",
+        tiles: [
+          "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+          "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+          "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+          "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        ],
+        tileSize: 256,
+        minzoom: 0,
+        maxzoom: 20,
+        attribution:
+          '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · <a href="https://carto.com/attributions" target="_blank">© CARTO</a>',
+      },
+      [AREA_SOURCE_ID]: {
+        type: "geojson",
+        data: areasToGeoJson(areas),
+      },
+      [STREET_SOURCE_ID]: {
+        type: "geojson",
+        data: streetsToGeoJson(tasks),
+      },
+    },
+    layers: [
+      {
+        id: "map-background",
+        type: "background",
+        paint: { "background-color": "#fbf8f3" },
+      },
+      {
+        id: "carto-basemap",
+        type: "raster",
+        source: "carto",
+        minzoom: 0,
+        maxzoom: 20,
+        paint: { "raster-fade-duration": 0 },
+      },
+      {
+        id: AREA_FILL_LAYER_ID,
+        type: "fill",
+        source: AREA_SOURCE_ID,
+        paint: {
+          "fill-color": ["get", "color"],
+          "fill-opacity": 0.13,
+        },
+      },
+      {
+        id: AREA_OUTLINE_LAYER_ID,
+        type: "line",
+        source: AREA_SOURCE_ID,
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.94,
+          "line-width": AREA_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: STREET_SELECTED_LAYER_ID,
+        type: "line",
+        source: STREET_SOURCE_ID,
+        filter: ["==", ["get", "taskId"], "__none__"],
+        paint: {
+          "line-color": "#172019",
+          "line-opacity": 0.7,
+          "line-width": SELECTED_STREET_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: STREET_OPEN_LAYER_ID,
+        type: "line",
+        source: STREET_SOURCE_ID,
+        filter: ["==", ["get", "status"], "open"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.98,
+          "line-width": STREET_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: STREET_COMPLETED_LAYER_ID,
+        type: "line",
+        source: STREET_SOURCE_ID,
+        filter: ["==", ["get", "status"], "completed"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.42,
+          "line-width": STREET_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: STREET_LATER_LAYER_ID,
+        type: "line",
+        source: STREET_SOURCE_ID,
+        filter: ["==", ["get", "status"], "later"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.86,
+          "line-width": STREET_WIDTH_EXPRESSION,
+          "line-dasharray": [5, 4],
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: STREET_NOT_DELIVERABLE_LAYER_ID,
+        type: "line",
+        source: STREET_SOURCE_ID,
+        filter: ["==", ["get", "status"], "not-deliverable"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.74,
+          "line-width": STREET_WIDTH_EXPRESSION,
+          "line-dasharray": [1.5, 4.5],
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+    ],
+  };
+}
+
 function cameraFromMap(map: Map): MapCameraView {
   const center = map.getCenter();
   return {
@@ -259,143 +369,6 @@ function findEditVertex(map: Map, vertices: LngLat[], point: { x: number; y: num
   return hit;
 }
 
-function ensureApplicationLayers(map: Map, areas: RenderArea[], tasks: RenderTask[]) {
-  if (!map.getSource(AREA_SOURCE_ID)) {
-    map.addSource(AREA_SOURCE_ID, {
-      type: "geojson",
-      data: areasToGeoJson(areas),
-    });
-  }
-
-  if (!map.getSource(STREET_SOURCE_ID)) {
-    map.addSource(STREET_SOURCE_ID, {
-      type: "geojson",
-      data: streetsToGeoJson(tasks),
-    });
-  }
-
-  if (!map.getLayer(AREA_FILL_LAYER_ID)) {
-    map.addLayer({
-      id: AREA_FILL_LAYER_ID,
-      type: "fill",
-      source: AREA_SOURCE_ID,
-      paint: {
-        "fill-color": ["get", "color"],
-        "fill-opacity": 0.09,
-      },
-    });
-  }
-
-  if (!map.getLayer(AREA_OUTLINE_LAYER_ID)) {
-    map.addLayer({
-      id: AREA_OUTLINE_LAYER_ID,
-      type: "line",
-      source: AREA_SOURCE_ID,
-      paint: {
-        "line-color": ["get", "color"],
-        "line-opacity": 0.92,
-        "line-width": AREA_WIDTH_EXPRESSION,
-      },
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
-    });
-  }
-
-  if (!map.getLayer(STREET_SELECTED_LAYER_ID)) {
-    map.addLayer({
-      id: STREET_SELECTED_LAYER_ID,
-      type: "line",
-      source: STREET_SOURCE_ID,
-      filter: ["==", ["get", "taskId"], "__none__"],
-      paint: {
-        "line-color": "#172019",
-        "line-opacity": 0.68,
-        "line-width": SELECTED_STREET_WIDTH_EXPRESSION,
-      },
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
-    });
-  }
-
-  if (!map.getLayer(STREET_OPEN_LAYER_ID)) {
-    map.addLayer({
-      id: STREET_OPEN_LAYER_ID,
-      type: "line",
-      source: STREET_SOURCE_ID,
-      filter: ["==", ["get", "status"], "open"],
-      paint: {
-        "line-color": ["get", "color"],
-        "line-opacity": 0.96,
-        "line-width": STREET_WIDTH_EXPRESSION,
-      },
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
-    });
-  }
-
-  if (!map.getLayer(STREET_COMPLETED_LAYER_ID)) {
-    map.addLayer({
-      id: STREET_COMPLETED_LAYER_ID,
-      type: "line",
-      source: STREET_SOURCE_ID,
-      filter: ["==", ["get", "status"], "completed"],
-      paint: {
-        "line-color": ["get", "color"],
-        "line-opacity": 0.38,
-        "line-width": STREET_WIDTH_EXPRESSION,
-      },
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
-    });
-  }
-
-  if (!map.getLayer(STREET_LATER_LAYER_ID)) {
-    map.addLayer({
-      id: STREET_LATER_LAYER_ID,
-      type: "line",
-      source: STREET_SOURCE_ID,
-      filter: ["==", ["get", "status"], "later"],
-      paint: {
-        "line-color": ["get", "color"],
-        "line-opacity": 0.84,
-        "line-width": STREET_WIDTH_EXPRESSION,
-        "line-dasharray": [5, 4],
-      },
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
-    });
-  }
-
-  if (!map.getLayer(STREET_NOT_DELIVERABLE_LAYER_ID)) {
-    map.addLayer({
-      id: STREET_NOT_DELIVERABLE_LAYER_ID,
-      type: "line",
-      source: STREET_SOURCE_ID,
-      filter: ["==", ["get", "status"], "not-deliverable"],
-      paint: {
-        "line-color": ["get", "color"],
-        "line-opacity": 0.72,
-        "line-width": STREET_WIDTH_EXPRESSION,
-        "line-dasharray": [1.5, 4.5],
-      },
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
-    });
-  }
-}
-
 function syncApplicationData(
   map: Map,
   areas: RenderArea[],
@@ -413,6 +386,37 @@ function syncApplicationData(
       STREET_SELECTED_LAYER_ID,
       ["==", ["get", "taskId"], selectedTaskId ?? "__none__"],
     );
+  }
+}
+
+function updateRendererDiagnostics(map: Map) {
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (!region) return;
+  try {
+    const sourceAreas = map.querySourceFeatures(AREA_SOURCE_ID).filter(
+      (feature) => typeof feature.properties?.areaId === "string",
+    );
+    const sourceStreets = map.querySourceFeatures(STREET_SOURCE_ID).filter(
+      (feature) => typeof feature.properties?.taskId === "string",
+    );
+    const renderedAreas = map.queryRenderedFeatures(undefined, { layers: [AREA_FILL_LAYER_ID] });
+    const streetLayers = STREET_LAYER_IDS.filter((layerId) => map.getLayer(layerId));
+    const renderedStreets =
+      streetLayers.length > 0
+        ? map.queryRenderedFeatures(undefined, { layers: [...streetLayers] })
+        : [];
+    region.dataset.sourceAreas = String(new Set(sourceAreas.map((feature) => feature.properties?.areaId)).size);
+    region.dataset.sourceStreets = String(
+      new Set(sourceStreets.map((feature) => feature.properties?.taskId)).size,
+    );
+    region.dataset.renderedAreas = String(
+      new Set(renderedAreas.map((feature) => feature.properties?.areaId)).size,
+    );
+    region.dataset.renderedStreets = String(
+      new Set(renderedStreets.map((feature) => feature.properties?.taskId)).size,
+    );
+  } catch (cause) {
+    console.warn("Map renderer diagnostics failed", cause);
   }
 }
 
@@ -553,11 +557,12 @@ export function MapView({
     if (!containerRef.current || mapRef.current) return;
     let active = true;
     const initialCamera = loadPersonalMapView(campaignId) ?? campaignDefaultView ?? GERMANY_VIEW;
+    const initialData = dataRef.current;
 
     try {
       const map = new Map({
         container: containerRef.current,
-        style: CARTO_VOYAGER_RETINA_STYLE,
+        style: buildMapStyle(initialData.areas, initialData.tasks),
         center: initialCamera.center,
         zoom: initialCamera.zoom,
         bearing: initialCamera.bearing,
@@ -582,12 +587,20 @@ export function MapView({
         }, 350);
       };
 
+      map.on("error", (event) => {
+        console.error("MapLibre runtime error", event.error ?? event);
+      });
+
       map.once("load", () => {
         if (!active) return;
         const current = dataRef.current;
-        ensureApplicationLayers(map, current.areas, current.tasks);
         syncApplicationData(map, current.areas, current.tasks, current.selectedTaskId);
         updateActiveOverlay(map);
+        updateRendererDiagnostics(map);
+      });
+
+      map.on("idle", () => {
+        if (active) updateRendererDiagnostics(map);
       });
 
       map.on("move", () => {
