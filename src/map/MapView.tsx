@@ -1,45 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  GeolocateControl,
-  GeoJSONSource,
-  Map,
-  NavigationControl,
-} from "maplibre-gl";
+import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
-import type {
-  Feature,
-  FeatureCollection,
-  LineString,
-  Point,
-  Polygon,
-} from "geojson";
 import type { Area, DistributionTask, LngLat } from "../domain/campaign";
 import "maplibre-gl/dist/maplibre-gl.css";
-
-const AREAS_SOURCE = "distribution-areas";
-const TASKS_SOURCE = "distribution-street-tasks";
-const DRAFT_SOURCE = "distribution-draft";
-
-const AREAS_FILL_LAYER = "distribution-areas-fill";
-const AREAS_LINE_LAYER = "distribution-areas-line";
-const AREAS_SELECTED_HALO_LAYER = "distribution-areas-selected-halo";
-const AREAS_SELECTED_LINE_LAYER = "distribution-areas-selected-line";
-
-const TASKS_CASING_LAYER = "distribution-street-tasks-casing";
-const TASKS_OPEN_LAYER = "distribution-street-tasks-open";
-const TASKS_COMPLETED_LAYER = "distribution-street-tasks-completed";
-const TASKS_LATER_LAYER = "distribution-street-tasks-later";
-const TASKS_NOT_DELIVERABLE_LAYER = "distribution-street-tasks-not-deliverable";
-const TASKS_SELECTED_HALO_LAYER = "distribution-street-tasks-selected-halo";
-const TASKS_SELECTED_LINE_LAYER = "distribution-street-tasks-selected-line";
-const TASK_CLICK_LAYERS = [
-  TASKS_OPEN_LAYER,
-  TASKS_COMPLETED_LAYER,
-  TASKS_LATER_LAYER,
-  TASKS_NOT_DELIVERABLE_LAYER,
-];
-
-const DRAFT_EDIT_POINTS_LAYER = "distribution-draft-edit-points";
 
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
 
@@ -67,428 +30,153 @@ type MapViewProps = {
   onStreetDrawPoint: (point: LngLat) => void;
 };
 
-type RenderState = Pick<
-  MapViewProps,
-  | "areas"
-  | "tasks"
-  | "selectedAreaId"
-  | "selectedTaskId"
-  | "mode"
-  | "draftVertices"
-  | "draftColor"
-  | "editingVertices"
-  | "editingColor"
-  | "selectedVertexIndex"
-  | "streetDraftVertices"
-  | "streetDraftColor"
->;
-
-type DraftGeometry = Polygon | LineString | Point;
-
-const emptyCollection = (): FeatureCollection => ({
-  type: "FeatureCollection",
-  features: [],
-});
-
-function areaFeatures(
-  areas: RenderArea[],
-  selectedAreaId: string | null,
-): FeatureCollection<Polygon> {
-  return {
-    type: "FeatureCollection",
-    features: areas.map((area) => ({
-      type: "Feature",
-      properties: {
-        id: area.id,
-        color: area.color,
-        selected: area.id === selectedAreaId,
-      },
-      geometry: area.geometry,
-    })),
-  };
-}
-
-function taskFeatures(
-  tasks: RenderTask[],
-  selectedTaskId: string | null,
-): FeatureCollection<LineString> {
-  return {
-    type: "FeatureCollection",
-    features: tasks.map((task) => ({
-      type: "Feature",
-      properties: {
-        id: task.id,
-        color: task.color,
-        status: task.status,
-        selected: task.id === selectedTaskId,
-      },
-      geometry: task.geometry,
-    })),
-  };
-}
-
-function shapeFeature(
-  vertices: LngLat[],
-  color: string,
-  kind: "area-draft" | "area-edit",
-): Feature<Polygon | LineString> | null {
-  if (vertices.length < 2) return null;
-
-  return {
-    type: "Feature",
-    properties: { color, kind },
-    geometry:
-      vertices.length === 2
-        ? { type: "LineString", coordinates: vertices }
-        : { type: "Polygon", coordinates: [[...vertices, vertices[0]]] },
-  };
-}
-
-function pointFeatures(
-  vertices: LngLat[],
-  color: string,
-  kind: "area-point" | "edit-point" | "street-point",
-  selectedIndex: number | null = null,
-): Feature<Point>[] {
-  return vertices.map((coordinates, index) => ({
-    type: "Feature",
-    properties: {
-      index,
-      color,
-      kind,
-      selected: index === selectedIndex,
+const CARTO_VOYAGER_RETINA_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    carto: {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+      ],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 20,
+      attribution:
+        '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · <a href="https://carto.com/attributions" target="_blank">© CARTO</a>',
     },
-    geometry: { type: "Point", coordinates },
-  }));
-}
-
-function draftFeatures(state: RenderState): FeatureCollection<DraftGeometry> {
-  const features: Feature<DraftGeometry>[] = [];
-
-  if (state.mode === "draw") {
-    const shape = shapeFeature(state.draftVertices, state.draftColor, "area-draft");
-    if (shape) features.push(shape);
-    features.push(...pointFeatures(state.draftVertices, state.draftColor, "area-point"));
-  }
-
-  if (state.mode === "edit") {
-    const shape = shapeFeature(state.editingVertices, state.editingColor, "area-edit");
-    if (shape) features.push(shape);
-    features.push(
-      ...pointFeatures(
-        state.editingVertices,
-        state.editingColor,
-        "edit-point",
-        state.selectedVertexIndex,
-      ),
-    );
-  }
-
-  if (state.mode === "street-draw") {
-    if (state.streetDraftVertices.length >= 2) {
-      features.push({
-        type: "Feature",
-        properties: { color: state.streetDraftColor, kind: "street-draft" },
-        geometry: {
-          type: "LineString",
-          coordinates: state.streetDraftVertices,
-        },
-      });
-    }
-    features.push(
-      ...pointFeatures(state.streetDraftVertices, state.streetDraftColor, "street-point"),
-    );
-  }
-
-  return { type: "FeatureCollection", features };
-}
-
-function buildMapStyle(state: RenderState): StyleSpecification {
-  return {
-    version: 8,
-    sources: {
-      carto: {
-        type: "raster",
-        tiles: [
-          "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        ],
-        tileSize: 256,
-        minzoom: 0,
-        maxzoom: 20,
-        attribution:
-          '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · <a href="https://carto.com/attributions" target="_blank">© CARTO</a>',
-      },
-      [AREAS_SOURCE]: {
-        type: "geojson",
-        data: areaFeatures(state.areas, state.selectedAreaId),
-      },
-      [TASKS_SOURCE]: {
-        type: "geojson",
-        data: taskFeatures(state.tasks, state.selectedTaskId),
-      },
-      [DRAFT_SOURCE]: {
-        type: "geojson",
-        data: draftFeatures(state),
-      },
+  },
+  layers: [
+    {
+      id: "map-background",
+      type: "background",
+      paint: { "background-color": "#fbf8f3" },
     },
-    layers: [
-      {
-        id: "map-background",
-        type: "background",
-        paint: { "background-color": "#fbf8f3" },
-      },
-      {
-        id: "carto-basemap",
-        type: "raster",
-        source: "carto",
-        minzoom: 0,
-        maxzoom: 20,
-        paint: { "raster-fade-duration": 0 },
-      },
-      {
-        id: AREAS_FILL_LAYER,
-        type: "fill",
-        source: AREAS_SOURCE,
-        paint: {
-          "fill-color": ["get", "color"],
-          "fill-opacity": 0.28,
-        },
-      },
-      {
-        id: AREAS_LINE_LAYER,
-        type: "line",
-        source: AREAS_SOURCE,
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 4,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: AREAS_SELECTED_HALO_LAYER,
-        type: "line",
-        source: AREAS_SOURCE,
-        filter: ["==", ["get", "selected"], true],
-        paint: {
-          "line-color": "#ffffff",
-          "line-width": 12,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: AREAS_SELECTED_LINE_LAYER,
-        type: "line",
-        source: AREAS_SOURCE,
-        filter: ["==", ["get", "selected"], true],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 7,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: TASKS_CASING_LAYER,
-        type: "line",
-        source: TASKS_SOURCE,
-        paint: {
-          "line-color": "#ffffff",
-          "line-width": 10,
-          "line-opacity": 0.98,
-        },
-      },
-      {
-        id: TASKS_OPEN_LAYER,
-        type: "line",
-        source: TASKS_SOURCE,
-        filter: ["==", ["get", "status"], "open"],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 6,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: TASKS_COMPLETED_LAYER,
-        type: "line",
-        source: TASKS_SOURCE,
-        filter: ["==", ["get", "status"], "completed"],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 4,
-          "line-opacity": 0.48,
-        },
-      },
-      {
-        id: TASKS_LATER_LAYER,
-        type: "line",
-        source: TASKS_SOURCE,
-        filter: ["==", ["get", "status"], "later"],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 6,
-          "line-opacity": 0.88,
-          "line-dasharray": [2, 1.4],
-        },
-      },
-      {
-        id: TASKS_NOT_DELIVERABLE_LAYER,
-        type: "line",
-        source: TASKS_SOURCE,
-        filter: ["==", ["get", "status"], "not-deliverable"],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 5.5,
-          "line-opacity": 0.8,
-          "line-dasharray": [0.5, 1.2],
-        },
-      },
-      {
-        id: TASKS_SELECTED_HALO_LAYER,
-        type: "line",
-        source: TASKS_SOURCE,
-        filter: ["==", ["get", "selected"], true],
-        paint: {
-          "line-color": "#172019",
-          "line-width": 14,
-          "line-opacity": 0.92,
-        },
-      },
-      {
-        id: TASKS_SELECTED_LINE_LAYER,
-        type: "line",
-        source: TASKS_SOURCE,
-        filter: ["==", ["get", "selected"], true],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 7,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: "distribution-draft-area-fill",
-        type: "fill",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "area-draft"],
-        paint: {
-          "fill-color": ["get", "color"],
-          "fill-opacity": 0.34,
-        },
-      },
-      {
-        id: "distribution-draft-area-line",
-        type: "line",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "area-draft"],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 6,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: "distribution-draft-area-points",
-        type: "circle",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "area-point"],
-        paint: {
-          "circle-radius": 9,
-          "circle-color": ["get", "color"],
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 4,
-        },
-      },
-      {
-        id: "distribution-draft-edit-fill",
-        type: "fill",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "area-edit"],
-        paint: {
-          "fill-color": ["get", "color"],
-          "fill-opacity": 0.36,
-        },
-      },
-      {
-        id: "distribution-draft-edit-line",
-        type: "line",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "area-edit"],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 6,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: DRAFT_EDIT_POINTS_LAYER,
-        type: "circle",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "edit-point"],
-        paint: {
-          "circle-radius": ["case", ["boolean", ["get", "selected"], false], 16, 13],
-          "circle-color": [
-            "case",
-            ["boolean", ["get", "selected"], false],
-            "#ffffff",
-            ["get", "color"],
-          ],
-          "circle-stroke-color": ["get", "color"],
-          "circle-stroke-width": 4,
-        },
-      },
-      {
-        id: "distribution-draft-street-casing",
-        type: "line",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "street-draft"],
-        paint: {
-          "line-color": "#ffffff",
-          "line-width": 11,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: "distribution-draft-street-line",
-        type: "line",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "street-draft"],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 7,
-          "line-opacity": 1,
-        },
-      },
-      {
-        id: "distribution-draft-street-points",
-        type: "circle",
-        source: DRAFT_SOURCE,
-        filter: ["==", ["get", "kind"], "street-point"],
-        paint: {
-          "circle-radius": 9,
-          "circle-color": ["get", "color"],
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 4,
-        },
-      },
-    ],
-  };
+    {
+      id: "carto-basemap",
+      type: "raster",
+      source: "carto",
+      minzoom: 0,
+      maxzoom: 20,
+      paint: { "raster-fade-duration": 0 },
+    },
+  ],
+};
+
+function samePoint(a: LngLat, b: LngLat) {
+  return a[0] === b[0] && a[1] === b[1];
 }
 
-function setSourceData(map: Map, sourceId: string, data: FeatureCollection) {
-  try {
-    const source = map.getSource(sourceId) as GeoJSONSource | undefined;
-    source?.setData(data);
-  } catch (cause) {
-    console.error(`Map source update failed: ${sourceId}`, cause);
+function openAreaRing(area: RenderArea): LngLat[] {
+  const ring = area.geometry.coordinates[0] as LngLat[];
+  if (ring.length > 1 && samePoint(ring[0], ring[ring.length - 1])) {
+    return ring.slice(0, -1);
+  }
+  return ring;
+}
+
+function pointInPolygon(point: LngLat, polygon: LngLat[]) {
+  let inside = false;
+  const [x, y] = point;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const intersects =
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi || Number.EPSILON) + xi;
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function pointToSegmentDistance(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y);
+
+  const t = Math.max(
+    0,
+    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)),
+  );
+  const x = start.x + t * dx;
+  const y = start.y + t * dy;
+  return Math.hypot(point.x - x, point.y - y);
+}
+
+function taskHitDistance(map: Map, task: RenderTask, point: { x: number; y: number }) {
+  const coordinates = task.geometry.coordinates as LngLat[];
+  let distance = Number.POSITIVE_INFINITY;
+
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const start = map.project(coordinates[index - 1]);
+    const end = map.project(coordinates[index]);
+    distance = Math.min(distance, pointToSegmentDistance(point, start, end));
+  }
+
+  return distance;
+}
+
+function statusPresentation(status: DistributionTask["status"]) {
+  switch (status) {
+    case "completed":
+      return { width: 4, opacity: 0.48, dash: undefined as string | undefined };
+    case "later":
+      return { width: 6, opacity: 0.88, dash: "12 8" };
+    case "not-deliverable":
+      return { width: 5.5, opacity: 0.8, dash: "3 7" };
+    default:
+      return { width: 6, opacity: 1, dash: undefined as string | undefined };
   }
 }
 
-function syncOverlaySources(map: Map, state: RenderState) {
-  setSourceData(map, AREAS_SOURCE, areaFeatures(state.areas, state.selectedAreaId));
-  setSourceData(map, TASKS_SOURCE, taskFeatures(state.tasks, state.selectedTaskId));
-  setSourceData(map, DRAFT_SOURCE, draftFeatures(state));
+function projectedPoints(map: Map | null, coordinates: LngLat[]) {
+  if (!map) return "";
+  return coordinates
+    .map((coordinate) => {
+      const point = map.project(coordinate);
+      return `${point.x},${point.y}`;
+    })
+    .join(" ");
+}
+
+function ProjectedMarkers({
+  map,
+  coordinates,
+  color,
+  selectedIndex = null,
+  radius = 8,
+}: {
+  map: Map | null;
+  coordinates: LngLat[];
+  color: string;
+  selectedIndex?: number | null;
+  radius?: number;
+}) {
+  if (!map) return null;
+
+  return coordinates.map((coordinate, index) => {
+    const point = map.project(coordinate);
+    const selected = selectedIndex === index;
+    return (
+      <circle
+        key={`${coordinate[0]}:${coordinate[1]}:${index}`}
+        cx={point.x}
+        cy={point.y}
+        r={selected ? radius + 3 : radius}
+        fill={selected ? "#ffffff" : color}
+        stroke={selected ? color : "#ffffff"}
+        strokeWidth={selected ? 4.5 : 3.5}
+        vectorEffect="non-scaling-stroke"
+      />
+    );
+  });
 }
 
 export function MapView({
@@ -514,24 +202,13 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const renderRef = useRef<RenderState>({
-    areas,
-    tasks,
-    selectedAreaId,
-    selectedTaskId,
-    mode,
-    draftVertices,
-    draftColor,
-    editingVertices,
-    editingColor,
-    selectedVertexIndex,
-    streetDraftVertices,
-    streetDraftColor,
-  });
+  const [, forceOverlayRender] = useState(0);
 
   const interactionRef = useRef({
+    areas,
+    tasks,
     mode,
+    editingVertices,
     selectedVertexIndex,
     onAreaSelect,
     onTaskSelect,
@@ -542,41 +219,11 @@ export function MapView({
   });
 
   useEffect(() => {
-    renderRef.current = {
+    interactionRef.current = {
       areas,
       tasks,
-      selectedAreaId,
-      selectedTaskId,
       mode,
-      draftVertices,
-      draftColor,
       editingVertices,
-      editingColor,
-      selectedVertexIndex,
-      streetDraftVertices,
-      streetDraftColor,
-    };
-
-    const map = mapRef.current;
-    if (map) syncOverlaySources(map, renderRef.current);
-  }, [
-    areas,
-    tasks,
-    selectedAreaId,
-    selectedTaskId,
-    mode,
-    draftVertices,
-    draftColor,
-    editingVertices,
-    editingColor,
-    selectedVertexIndex,
-    streetDraftVertices,
-    streetDraftColor,
-  ]);
-
-  useEffect(() => {
-    interactionRef.current = {
-      mode,
       selectedVertexIndex,
       onAreaSelect,
       onTaskSelect,
@@ -586,7 +233,10 @@ export function MapView({
       onStreetDrawPoint,
     };
   }, [
+    areas,
+    tasks,
     mode,
+    editingVertices,
     selectedVertexIndex,
     onAreaSelect,
     onTaskSelect,
@@ -604,7 +254,7 @@ export function MapView({
     try {
       const map = new Map({
         container: containerRef.current,
-        style: buildMapStyle(renderRef.current),
+        style: CARTO_VOYAGER_RETINA_STYLE,
         center: [10.45, 51.16],
         zoom: 5.3,
         maxZoom: 20,
@@ -614,69 +264,76 @@ export function MapView({
       });
 
       mapRef.current = map;
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
 
-      const syncLatest = () => {
-        if (active) syncOverlaySources(map, renderRef.current);
+      const redraw = () => {
+        if (active) forceOverlayRender((value) => value + 1);
       };
 
-      map.on("styledata", syncLatest);
-      map.on("load", syncLatest);
+      map.on("load", redraw);
+      map.on("move", redraw);
+      map.on("zoom", redraw);
+      map.on("resize", redraw);
 
       map.on("click", (event) => {
         const interaction = interactionRef.current;
-        const point: LngLat = [event.lngLat.lng, event.lngLat.lat];
+        const lngLat: LngLat = [event.lngLat.lng, event.lngLat.lat];
 
         if (interaction.mode === "draw") {
-          interaction.onDrawPoint(point);
+          interaction.onDrawPoint(lngLat);
           return;
         }
 
         if (interaction.mode === "street-draw") {
-          interaction.onStreetDrawPoint(point);
+          interaction.onStreetDrawPoint(lngLat);
           return;
         }
 
         if (interaction.mode === "edit") {
-          const vertex = map.getLayer(DRAFT_EDIT_POINTS_LAYER)
-            ? map.queryRenderedFeatures(event.point, { layers: [DRAFT_EDIT_POINTS_LAYER] })[0]
-            : undefined;
-          const vertexIndex = Number(vertex?.properties?.index);
+          let nearestIndex: number | null = null;
+          let nearestDistance = Number.POSITIVE_INFINITY;
 
-          if (Number.isInteger(vertexIndex) && vertexIndex >= 0) {
-            interaction.onEditVertexSelect(vertexIndex);
+          interaction.editingVertices.forEach((coordinate, index) => {
+            const projected = map.project(coordinate);
+            const distance = Math.hypot(projected.x - event.point.x, projected.y - event.point.y);
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              nearestIndex = index;
+            }
+          });
+
+          if (nearestIndex !== null && nearestDistance <= 24) {
+            interaction.onEditVertexSelect(nearestIndex);
             return;
           }
 
           if (interaction.selectedVertexIndex !== null) {
-            interaction.onEditVertexMove(interaction.selectedVertexIndex, point);
+            interaction.onEditVertexMove(interaction.selectedVertexIndex, lngLat);
           }
           return;
         }
 
-        const taskLayers = TASK_CLICK_LAYERS.filter((layerId) => map.getLayer(layerId));
-        if (taskLayers.length > 0) {
-          const hitBox: [[number, number], [number, number]] = [
-            [event.point.x - 12, event.point.y - 12],
-            [event.point.x + 12, event.point.y + 12],
-          ];
-          const task = map.queryRenderedFeatures(hitBox, { layers: taskLayers })[0];
-          const taskId = task?.properties?.id;
-          if (typeof taskId === "string") {
-            interaction.onTaskSelect(taskId);
-            return;
+        let taskHit: RenderTask | null = null;
+        let taskDistance = 16;
+        interaction.tasks.forEach((task) => {
+          const distance = taskHitDistance(map, task, event.point);
+          if (distance <= taskDistance) {
+            taskHit = task;
+            taskDistance = distance;
           }
+        });
+
+        if (taskHit) {
+          interaction.onTaskSelect(taskHit.id);
+          return;
         }
 
         interaction.onTaskSelect(null);
-
-        if (!map.getLayer(AREAS_FILL_LAYER)) {
-          interaction.onAreaSelect(null);
-          return;
-        }
-
-        const area = map.queryRenderedFeatures(event.point, { layers: [AREAS_FILL_LAYER] })[0];
-        const areaId = area?.properties?.id;
-        interaction.onAreaSelect(typeof areaId === "string" ? areaId : null);
+        const areaHit = [...interaction.areas]
+          .reverse()
+          .find((area) => pointInPolygon(lngLat, openAreaRing(area)));
+        interaction.onAreaSelect(areaHit?.id ?? null);
       });
 
       map.addControl(new NavigationControl({ showCompass: false }), "top-right");
@@ -689,6 +346,8 @@ export function MapView({
         }),
         "top-right",
       );
+
+      redraw();
     } catch (cause) {
       console.error("Map initialization failed", cause);
       if (active) setError("Karte konnte nicht initialisiert werden.");
@@ -708,9 +367,189 @@ export function MapView({
     else map.doubleClickZoom.disable();
   }, [mode]);
 
+  const map = mapRef.current;
+  const width = containerRef.current?.clientWidth ?? 1;
+  const height = containerRef.current?.clientHeight ?? 1;
+
   return (
     <section className={`map-region map-mode-${mode}`} aria-label="Verteilkarte">
       <div ref={containerRef} className="map" />
+
+      <svg
+        className="application-overlay"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        {areas.map((area) => {
+          const ring = openAreaRing(area);
+          const points = projectedPoints(map, ring);
+          const selected = area.id === selectedAreaId;
+          return (
+            <g key={area.id}>
+              <polygon
+                points={points}
+                fill={area.color}
+                fillOpacity={0.24}
+                stroke={area.color}
+                strokeWidth={4}
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+              {selected ? (
+                <>
+                  <polygon
+                    points={points}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={13}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polygon
+                    points={points}
+                    fill="none"
+                    stroke={area.color}
+                    strokeWidth={7}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <ProjectedMarkers map={map} coordinates={ring} color={area.color} radius={9} />
+                </>
+              ) : null}
+            </g>
+          );
+        })}
+
+        {tasks.map((task) => {
+          const coordinates = task.geometry.coordinates as LngLat[];
+          const points = projectedPoints(map, coordinates);
+          const presentation = statusPresentation(task.status);
+          const selected = task.id === selectedTaskId;
+          return (
+            <g key={task.id}>
+              {selected ? (
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke="#172019"
+                  strokeWidth={15}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={0.9}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
+              <polyline
+                points={points}
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth={10}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.98}
+                vectorEffect="non-scaling-stroke"
+              />
+              <polyline
+                points={points}
+                fill="none"
+                stroke={task.color}
+                strokeWidth={presentation.width}
+                strokeDasharray={presentation.dash}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={presentation.opacity}
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          );
+        })}
+
+        {mode === "draw" ? (
+          <>
+            {draftVertices.length >= 2 ? (
+              draftVertices.length >= 3 ? (
+                <polygon
+                  points={projectedPoints(map, draftVertices)}
+                  fill={draftColor}
+                  fillOpacity={0.3}
+                  stroke={draftColor}
+                  strokeWidth={6}
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : (
+                <polyline
+                  points={projectedPoints(map, draftVertices)}
+                  fill="none"
+                  stroke={draftColor}
+                  strokeWidth={6}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )
+            ) : null}
+            <ProjectedMarkers map={map} coordinates={draftVertices} color={draftColor} radius={9} />
+          </>
+        ) : null}
+
+        {mode === "edit" ? (
+          <>
+            {editingVertices.length >= 3 ? (
+              <polygon
+                points={projectedPoints(map, editingVertices)}
+                fill={editingColor}
+                fillOpacity={0.32}
+                stroke={editingColor}
+                strokeWidth={6}
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            <ProjectedMarkers
+              map={map}
+              coordinates={editingVertices}
+              color={editingColor}
+              selectedIndex={selectedVertexIndex}
+              radius={10}
+            />
+          </>
+        ) : null}
+
+        {mode === "street-draw" ? (
+          <>
+            {streetDraftVertices.length >= 2 ? (
+              <>
+                <polyline
+                  points={projectedPoints(map, streetDraftVertices)}
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth={11}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <polyline
+                  points={projectedPoints(map, streetDraftVertices)}
+                  fill="none"
+                  stroke={streetDraftColor}
+                  strokeWidth={7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </>
+            ) : null}
+            <ProjectedMarkers
+              map={map}
+              coordinates={streetDraftVertices}
+              color={streetDraftColor}
+              radius={9}
+            />
+          </>
+        ) : null}
+      </svg>
+
       {error ? <div className="map-error">{error}</div> : null}
     </section>
   );
