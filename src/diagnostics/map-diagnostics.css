@@ -1,0 +1,60 @@
+.map-diagnostics {
+  position: fixed;
+  z-index: 40;
+  top: calc(env(safe-area-inset-top) + 0.65rem);
+  left: 0.65rem;
+  display: grid;
+  justify-items: start;
+  gap: 0.4rem;
+  pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.map-diagnostics-toggle,
+.map-diagnostics-panel button {
+  pointer-events: auto;
+  border: 1px solid rgb(30 50 35 / 16%);
+  color: #25372b;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 0.18rem 0.7rem rgb(20 35 24 / 12%);
+  font: inherit;
+}
+
+.map-diagnostics-toggle {
+  min-height: 2.15rem;
+  padding: 0.45rem 0.62rem;
+  border-radius: 0.7rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.map-diagnostics-panel {
+  width: min(20rem, calc(100vw - 1.3rem));
+  display: grid;
+  gap: 0.36rem;
+  padding: 0.72rem;
+  border: 1px solid rgb(30 50 35 / 12%);
+  border-radius: 0.85rem;
+  color: #2b3930;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 0.35rem 1.2rem rgb(20 35 24 / 15%);
+  pointer-events: auto;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.map-diagnostics-panel strong {
+  font-size: 0.76rem;
+}
+
+.map-diagnostics-panel button {
+  min-height: 2.3rem;
+  margin-top: 0.2rem;
+  border-radius: 0.65rem;
+  font-weight: 800;
+}
+
+.map-diagnostics-panel small {
+  color: #667169;
+  font-size: 0.62rem;
+}
