@@ -10,6 +10,7 @@ import {
 
 const STORAGE_KEY = "verteil-flyer:campaign-snapshot";
 const BACKUP_STORAGE_KEY = "verteil-flyer:campaign-snapshot:backup";
+const CONFLICT_STORAGE_KEY = "verteil-flyer:campaign-snapshot:conflict";
 const LEGACY_STORAGE_KEY = "verteil-flyer:m1:campaign-snapshot:v1";
 
 export type CampaignLoadResult = {
@@ -217,4 +218,18 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
   }
 
   return null;
+}
+
+export function saveCampaignConflictSnapshot(snapshot: CampaignSnapshot) {
+  if (typeof window === "undefined") return false;
+
+  try {
+    window.localStorage.setItem(
+      CONFLICT_STORAGE_KEY,
+      JSON.stringify({ savedAt: new Date().toISOString(), snapshot }),
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
