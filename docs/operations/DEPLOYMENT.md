@@ -13,48 +13,55 @@ related: [architecture-stack]
 One Cloudflare Worker deployment containing:
 - Vite-built React static assets
 - Worker API routes
-- later a D1 binding
+- D1 binding `DB` for shared campaign persistence
 
-The repository is the source of truth. Normal releases should flow from GitHub to Cloudflare automatically; downloading/uploading builds from a phone should not be required.
+The repository is the source of truth. Normal releases flow from GitHub `main` to Cloudflare automatically; downloading/uploading builds from a phone is not part of the release process.
 
-## First Cloudflare connection
+## Existing production connection
 
-Do this after the foundation pull request is green and merged.
+Cloudflare Workers Builds is connected to `madebycli/flyer-map` and deploys `main` to the existing Workers deployment.
 
-1. Sign in to Cloudflare.
-2. Open Workers & Pages.
-3. Create/import a Worker application from GitHub.
-4. Connect the GitHub account if needed.
-5. Select `madebycli/flyer-map`.
-6. Use the repository configuration (`wrangler.jsonc`) as the Worker source of truth.
-7. Build command: `npm run build`.
-8. Deploy command: `npx wrangler deploy` if the UI requests one.
-9. Deploy and open the generated `workers.dev` URL.
-10. Verify `/api/health` returns `{ "ok": true, ... }`.
-11. Verify map rendering and geolocation on a phone.
+Repository configuration in `wrangler.jsonc` remains the deployment source of truth.
 
-Cloudflare's current React/Vite guidance supports the frontend assets and Worker API as one deployment through the Cloudflare Vite plugin.
+## M3 D1 setup
 
-## D1 setup (later milestone)
+M3 uses one D1 database named `flyer-map-db` with Worker binding name `DB`.
 
-Do not create D1 until persistence work starts.
-
-Expected CLI equivalent:
+CLI equivalent for creating the database in Western Europe:
 
 ```bash
 npx wrangler d1 create flyer-map-db --location=weur
 ```
 
-Cloudflare returns a database id/binding configuration. Add that binding to `wrangler.jsonc` in a reviewed change, then apply migrations intentionally.
+Cloudflare returns the real database id. Only that returned id may be added to the reviewed `d1_databases` entry in `wrangler.jsonc`.
 
 Never invent or commit a fake production database id.
+
+After the real binding exists, apply migrations intentionally before deploying Worker code that depends on the schema:
+
+```bash
+npx wrangler d1 migrations apply DB --remote
+```
+
+`migrations/0001_initial.sql` is the first production schema for M3. It was an unapplied proposal before M3 and was aligned to the actual shared snapshot model before first application.
 
 ## Release workflow
 
 Preferred:
 
 ```text
-feature branch -> pull request -> CI -> merge to main -> Cloudflare build/deploy
+feature branch -> pull request -> CI -> provision/bind D1 -> apply migration -> final green CI -> merge to main -> Cloudflare automatic build/deploy
 ```
 
-Production config changes should be reviewed like code changes.
+Production config changes are reviewed like code changes.
+
+## Post-deploy checks
+
+After M3 deploy:
+1. `/api/health` returns `ok: true` and reports `persistence: "d1"`;
+2. existing local campaign data can bootstrap to D1 without being deleted locally;
+3. reload restores the server snapshot;
+4. opening the same `?campaign=` URL on a second browser loads the same campaign;
+5. a change on one browser is detected on the other through revision polling;
+6. conflict/rejection behavior is visible rather than silently overwriting state;
+7. the CARTO Voyager Retina + independent SVG renderer behaves exactly as before M3.
