@@ -48,19 +48,20 @@ Cloudflare Workers Builds remains connected to `main` and the current production
 
 `https://flyer-map.cloudflare-eleven035.workers.dev/`
 
-The real Cloudflare D1 database `flyer-map-db` has been created and its returned id is now reviewed in `wrangler.jsonc` under binding `DB`.
+The real Cloudflare D1 database `flyer-map-db` is bound in `wrangler.jsonc` under binding `DB`.
 
-Migration `migrations/0001_initial.sql` has not yet been confirmed as applied to the remote D1 database. The D1-dependent Worker must not be merged/deployed before that schema exists.
+Production D1 confirms `0001_initial.sql` in `d1_migrations`, so the M3 schema exists before merge/deploy of the D1-dependent Worker.
 
 ## Verification
 
 - PR #14 CI run #62 passed all 7 tests, TypeScript typecheck and production build before the D1 binding commit.
-- A final CI run is required after the binding/config change and after migration confirmation.
-- The branch diff still must not contain any `src/map/*` renderer changes.
+- PR #14 CI run #66 passed all 7 tests, TypeScript typecheck and production build with the real D1 binding committed.
+- A final CI run is required on the migration-confirmation head before merge.
+- The branch diff contains no `src/map/*` renderer changes.
 
 ## Current blocker
 
-Apply migration `0001_initial.sql` to the production D1 database, then rerun final CI and merge only if green.
+Final green CI on PR #14, then merge to `main` and verify the automatic Cloudflare deployment/API behavior.
 
 ## Active plan
 
@@ -79,8 +80,7 @@ Apply migration `0001_initial.sql` to the production D1 database, then rerun fin
 
 ## Next
 
-1. Apply migration `0001_initial.sql` to the bound production D1 database.
-2. Run final CI on PR #14 and fix any failure.
-3. Merge to `main` only when green.
-4. Verify the automatic Cloudflare deployment and `/api/health`.
-5. Test one shared campaign on two phones with revision polling and conflict visibility.
+1. Run final CI on PR #14 and fix any failure.
+2. Merge to `main` only when green.
+3. Verify the automatic Cloudflare deployment and `/api/health`.
+4. Test one shared campaign on two phones with revision polling and conflict visibility.
