@@ -9,13 +9,15 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M3 — Shared Persistence is active on feature branch `feat/m3-shared-persistence` and PR #14.
+M3 — Shared Persistence is technically complete and merged to `main` through PR #14 (`ad7c921c36c2b411dd26ec87cd2177766fac968e`).
 
-The production-phone stability gate from PR #13 is accepted: areas, streets, draft geometry and selected-area corner markers are visible on the real phone. M1, M2 and the SVG stability plan are archived; broader Android/iPhone release hardening remains later work.
+The next logical milestone is M4 — access links and authorization.
+
+The production-phone stability gate from PR #13 remains accepted: areas, streets, draft geometry and selected-area corner markers are visible on the real phone. The renderer release gate remains unchanged.
 
 ## Working in code
 
-The existing mobile field workflow remains intact:
+The mobile field workflow includes:
 - editable named/color-coded teams
 - editable polygon areas
 - manually traced street LineString tasks
@@ -26,7 +28,7 @@ The existing mobile field workflow remains intact:
 - independent SVG overlay for all Verteil-Flyer application geometry
 - primary + backup localStorage snapshots
 
-M3 branch additionally implements:
+M3 adds shared persistence through:
 - `GET /api/campaigns/:campaignId/snapshot`
 - `PUT /api/campaigns/:campaignId/snapshot`
 - `GET /api/campaigns/:campaignId/version`
@@ -34,38 +36,51 @@ M3 branch additionally implements:
 - normalized D1 campaign/team/area/task persistence
 - shared revision with HTTP 409 conflict handling
 - transactional D1 replacement guarded by an internal per-write token
-- constant-size JSON bulk INSERT statements to stay within D1 Free worker-query limits
+- constant-size JSON bulk INSERT statements
 - localStorage-first startup and safe bootstrap of existing local campaigns
 - `?campaign=` shared campaign selection for M3 multi-browser testing
 - five-second revision polling while online/visible
 - local conflict backup plus visible user notification before reloading current server state
 
-The working SVG/MapLibre renderer files are not part of the M3 persistence redesign.
+The working SVG/MapLibre renderer was not changed by M3.
 
-## Deployment
+## D1
 
-Cloudflare Workers Builds remains connected to `main` and the current production deployment is:
+Production D1 database: `flyer-map-db`.
 
-`https://flyer-map.cloudflare-eleven035.workers.dev/`
+Worker binding: `DB`.
 
-The real Cloudflare D1 database `flyer-map-db` is bound in `wrangler.jsonc` under binding `DB`.
+Migration `0001_initial.sql` is confirmed in `d1_migrations` and provides:
+- `campaigns`
+- `teams`
+- `areas`
+- `tasks`
 
-Production D1 confirms `0001_initial.sql` in `d1_migrations`, so the M3 schema exists before merge/deploy of the D1-dependent Worker.
+`campaigns.revision` is the shared optimistic-concurrency version. `campaigns.write_token` is an internal write guard.
 
 ## Verification
 
-- PR #14 CI run #62 passed all 7 tests, TypeScript typecheck and production build before the D1 binding commit.
-- PR #14 CI run #66 passed all 7 tests, TypeScript typecheck and production build with the real D1 binding committed.
-- A final CI run is required on the migration-confirmation head before merge.
-- The branch diff contains no `src/map/*` renderer changes.
+- CI #62 passed all 7 tests, TypeScript and production build before the D1 binding commit.
+- CI #66 passed all 7 tests, TypeScript and production build with the real D1 binding committed.
+- final PR-head CI #68 passed all 7 tests, TypeScript and production build after production migration confirmation.
+- PR #14 merged successfully to `main`.
+- the M3 branch diff contained no `src/map/*` renderer changes.
 
-## Current blocker
+## Production verification still required on real devices
 
-Final green CI on PR #14, then merge to `main` and verify the automatic Cloudflare deployment/API behavior.
+After the automatic Cloudflare deployment from `main`:
+1. verify `/api/health` reports the D1-backed service;
+2. open one campaign on phone A and allow the existing local snapshot to bootstrap;
+3. open the same `?campaign=` URL on phone B;
+4. confirm teams, areas, streets, statuses and geometry match;
+5. make a change on phone A and confirm phone B receives it after revision polling;
+6. reload both phones and confirm D1 restores the same server state;
+7. make near-simultaneous edits to confirm a stale write produces a visible conflict instead of silent overwrite;
+8. confirm CARTO Voyager Retina and all independent SVG geometry render exactly as before M3.
 
-## Active plan
+## Completed plan
 
-- `docs/plans/active/006-m3-shared-persistence.md`
+- `docs/plans/completed/006-m3-shared-persistence.md`
 
 ## Deferred beyond M3
 
@@ -80,7 +95,4 @@ Final green CI on PR #14, then merge to `main` and verify the automatic Cloudfla
 
 ## Next
 
-1. Run final CI on PR #14 and fix any failure.
-2. Merge to `main` only when green.
-3. Verify the automatic Cloudflare deployment and `/api/health`.
-4. Test one shared campaign on two phones with revision polling and conflict visibility.
+M4 should introduce revocable campaign-scoped access links and authorization for read/write operations without changing the map renderer or reintroducing native/PWA behavior.
