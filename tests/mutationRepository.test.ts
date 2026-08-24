@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CampaignMutation } from "../src/domain/mutations.ts";
-import {
-  persistCampaignMutation,
-} from "../worker/mutationRepository.ts";
+import { persistCampaignMutation } from "../worker/mutationRepository.ts";
 import type {
   D1DatabaseLike,
   D1PreparedStatement,
@@ -12,11 +10,13 @@ import type {
 
 class FakeStatement implements D1PreparedStatement {
   values: unknown[] = [];
+  readonly query: string;
+  private readonly database: FakeMutationDatabase;
 
-  constructor(
-    readonly query: string,
-    private readonly database: FakeMutationDatabase,
-  ) {}
+  constructor(query: string, database: FakeMutationDatabase) {
+    this.query = query;
+    this.database = database;
+  }
 
   bind(...values: unknown[]) {
     this.values = values;
