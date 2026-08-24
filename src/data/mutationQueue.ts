@@ -103,6 +103,8 @@ export class MutationQueue {
     return records
       .filter((record) => record.campaignId === campaignId)
       .sort((a, b) => {
+        const revisionOrder = a.mutation.baseRevision - b.mutation.baseRevision;
+        if (revisionOrder !== 0) return revisionOrder;
         const created = a.createdAt.localeCompare(b.createdAt);
         return created !== 0 ? created : a.id.localeCompare(b.id);
       });
