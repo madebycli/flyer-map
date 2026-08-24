@@ -27,20 +27,18 @@ Repository configuration in `wrangler.jsonc` remains the deployment source of tr
 
 M3 uses one D1 database named `flyer-map-db` with Worker binding name `DB`.
 
-CLI equivalent for creating the database in Western Europe:
+The real Cloudflare-provided database id is now stored in the reviewed `d1_databases` entry in `wrangler.jsonc`; no placeholder or invented id is used.
+
+CLI equivalent for creating this database in Western Europe was:
 
 ```bash
 npx wrangler d1 create flyer-map-db --location=weur
 ```
 
-Cloudflare returns the real database id. Only that returned id may be added to the reviewed `d1_databases` entry in `wrangler.jsonc`.
-
-Never invent or commit a fake production database id.
-
-After the real binding exists, apply migrations intentionally before deploying Worker code that depends on the schema:
+Before merging/deploying Worker code that depends on the schema, apply the migration intentionally to the remote database:
 
 ```bash
-npx wrangler d1 migrations apply DB --remote
+npx wrangler d1 migrations apply flyer-map-db --remote
 ```
 
 `migrations/0001_initial.sql` is the first production schema for M3. It was an unapplied proposal before M3 and was aligned to the actual shared snapshot model before first application.
