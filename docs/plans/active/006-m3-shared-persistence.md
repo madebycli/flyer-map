@@ -40,8 +40,10 @@ Do not change the working map renderer boundary:
 - [x] preserve rejected/conflicting local snapshots separately in browser storage and surface a visible message
 - [x] add focused validation/concurrency tests without changing the map renderer
 - [x] update architecture/status/deployment documentation
-- [ ] pass tests, TypeScript and production build in CI
-- [ ] bind the real production D1 database id and apply migration 0001
+- [x] pass tests, TypeScript and production build in CI
+- [x] bind the real production D1 database id in `wrangler.jsonc`
+- [ ] apply migration `0001_initial.sql` to the production D1 database
+- [ ] rerun final CI after migration confirmation
 - [ ] merge only after final green CI
 
 ## Acceptance criteria
@@ -64,7 +66,9 @@ Do not change the working map renderer boundary:
 - repository tests cover a successful revision claim, a stale/conflicting revision claim and constant seven-statement D1 snapshot replacement even with many street tasks;
 - the bulk INSERT SQL path was additionally exercised against SQLite JSON functions/foreign keys during implementation review;
 - current Cloudflare D1 documentation confirms `db.batch()` is transactional and the Workers Free plan has a 50-query-per-invocation limit, which is why M3 uses JSON bulk INSERTs instead of one query per entity;
-- GitHub CI is the remaining code/build verification gate because the local execution container cannot resolve external GitHub/npm hosts.
+- PR #14 CI run #62 passed all 7 tests, TypeScript typecheck and the production Vite/Cloudflare build;
+- the real D1 database `flyer-map-db` is now bound as `DB` in `wrangler.jsonc` using the Cloudflare-provided database id;
+- production migration application remains the external gate before merge.
 
 ## Risks
 
