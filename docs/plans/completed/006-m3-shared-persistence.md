@@ -2,7 +2,7 @@
 
 ## Status
 
-Completed on 2026-08-24 through PR #14.
+Completed on 2026-08-24 through PR #14 and verified live on the production Cloudflare Worker.
 
 ## Goal
 
@@ -26,6 +26,7 @@ Move the existing campaign snapshot from single-browser persistence to shared Cl
 - [x] production migration `0001_initial.sql` applied and confirmed in `d1_migrations`
 - [x] final PR-head CI #68 passed all tests, TypeScript and production build
 - [x] PR #14 merged to `main` as `ad7c921c36c2b411dd26ec87cd2177766fac968e`
+- [x] production smoke CI #73 confirmed deployed Worker version `0.2.0`, `persistence: "d1"` and successful read access to the migrated D1 schema
 
 ## Release gate preserved
 
@@ -55,7 +56,18 @@ Normalized tables:
 - repository tests cover successful revision claims, stale claims and constant-size D1 snapshot replacement;
 - CI #62 passed before D1 binding;
 - CI #66 passed with the real D1 binding;
-- CI #68 passed after production migration confirmation and was the final merge gate.
+- CI #68 passed after production migration confirmation and was the final merge gate;
+- temporary PR #15 ran a read-only production smoke test and CI #73 passed; the PR was closed without merge and the probe branch was reset to `main`;
+- production health reported version `0.2.0` with D1 persistence, and a read-only version lookup for a non-existent campaign returned the expected `campaign_not_found` response through D1.
+
+## Remaining acceptance on real devices
+
+The automated deployment/database path is verified. The remaining field check is behavioral multi-device acceptance:
+- same campaign visible on two phones;
+- polling propagates a change;
+- reload restores D1 state;
+- conflict feedback is visible;
+- the existing CARTO + SVG renderer remains unchanged in actual phone use.
 
 ## Deferred
 
