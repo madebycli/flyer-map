@@ -1,17 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
-import type { Area, DistributionTask, LngLat } from "../domain/campaign";
+import type { Area, DistributionTask, LngLat, MapCameraView } from "../domain/campaign";
+import type { Language } from "../i18n";
+import { t } from "../i18n";
+import { loadPersonalMapView, savePersonalMapView } from "./cameraStore";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
 type RenderArea = Area & { color: string };
 type RenderTask = DistributionTask & { color: string };
+export type MapRefreshState = "idle" | "loading" | "current" | "error" | "available";
+export type MapCameraCommand = { id: number; view: MapCameraView } | null;
 
 type MapViewProps = {
+  campaignId: string;
+  campaignDefaultView: MapCameraView | null;
+  language: Language;
   areas: RenderArea[];
   tasks: RenderTask[];
-  selectedAreaId: string | null;
   selectedTaskId: string | null;
   mode: MapMode;
   draftVertices: LngLat[];
@@ -21,12 +28,22 @@ type MapViewProps = {
   selectedVertexIndex: number | null;
   streetDraftVertices: LngLat[];
   streetDraftColor: string;
+  refreshState: MapRefreshState;
+  cameraCommand: MapCameraCommand;
+  onCameraChange: (camera: MapCameraView) => void;
+  onRefresh: () => void;
   onAreaSelect: (areaId: string | null) => void;
   onTaskSelect: (taskId: string | null) => void;
   onDrawPoint: (point: LngLat) => void;
   onEditVertexSelect: (index: number) => void;
   onEditVertexMove: (index: number, point: LngLat) => void;
   onStreetDrawPoint: (point: LngLat) => void;
+};
+
+const GERMANY_VIEW: MapCameraView = {
+  center: [10.45, 51.16],
+  zoom: 5.3,
+  bearing: 0,
 };
 
 const CARTO_VOYAGER_RETINA_STYLE: StyleSpecification = {
@@ -100,12 +117,12 @@ function pointToSegmentDistance(
   const dy = end.y - start.y;
   if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y);
 
-  const t = Math.max(
+  const factor = Math.max(
     0,
     Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)),
   );
-  const x = start.x + t * dx;
-  const y = start.y + t * dy;
+  const x = start.x + factor * dx;
+  const y = start.y + factor * dy;
   return Math.hypot(point.x - x, point.y - y);
 }
 
@@ -133,11 +150,7 @@ function findTaskHit(map: Map, tasks: RenderTask[], point: { x: number; y: numbe
   return hitId;
 }
 
-function findEditVertex(
-  map: Map,
-  vertices: LngLat[],
-  point: { x: number; y: number },
-) {
+function findEditVertex(map: Map, vertices: LngLat[], point: { x: number; y: number }) {
   let hit: number | null = null;
   let best = 24;
   for (let index = 0; index < vertices.length; index += 1) {
@@ -174,6 +187,15 @@ function projectedPoints(map: Map | null, coordinates: LngLat[]) {
     .join(" ");
 }
 
+function cameraFromMap(map: Map): MapCameraView {
+  const center = map.getCenter();
+  return {
+    center: [center.lng, center.lat],
+    zoom: map.getZoom(),
+    bearing: map.getBearing(),
+  };
+}
+
 function ProjectedMarkers({
   map,
   coordinates,
@@ -207,9 +229,11 @@ function ProjectedMarkers({
 }
 
 export function MapView({
+  campaignId,
+  campaignDefaultView,
+  language,
   areas,
   tasks,
-  selectedAreaId,
   selectedTaskId,
   mode,
   draftVertices,
@@ -219,6 +243,10 @@ export function MapView({
   selectedVertexIndex,
   streetDraftVertices,
   streetDraftColor,
+  refreshState,
+  cameraCommand,
+  onCameraChange,
+  onRefresh,
   onAreaSelect,
   onTaskSelect,
   onDrawPoint,
@@ -228,6 +256,7 @@ export function MapView({
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
+  const cameraSaveTimerRef = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, forceOverlayRender] = useState(0);
 
@@ -276,13 +305,15 @@ export function MapView({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let active = true;
+    const initialCamera = loadPersonalMapView(campaignId) ?? campaignDefaultView ?? GERMANY_VIEW;
 
     try {
       const map = new Map({
         container: containerRef.current,
         style: CARTO_VOYAGER_RETINA_STYLE,
-        center: [10.45, 51.16],
-        zoom: 5.3,
+        center: initialCamera.center,
+        zoom: initialCamera.zoom,
+        bearing: initialCamera.bearing,
         maxZoom: 20,
         renderWorldCopies: false,
         cancelPendingTileRequestsWhileZooming: false,
@@ -290,17 +321,26 @@ export function MapView({
       });
 
       mapRef.current = map;
-      map.dragRotate.disable();
-      map.touchZoomRotate.disableRotation();
 
       const redraw = () => {
         if (active) forceOverlayRender((value) => value + 1);
       };
 
+      const persistCamera = () => {
+        if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
+        cameraSaveTimerRef.current = window.setTimeout(() => {
+          const camera = cameraFromMap(map);
+          savePersonalMapView(campaignId, camera);
+          onCameraChange(camera);
+        }, 350);
+      };
+
       map.on("load", redraw);
       map.on("move", redraw);
+      map.on("rotate", redraw);
       map.on("zoom", redraw);
       map.on("resize", redraw);
+      map.on("moveend", persistCamera);
 
       map.on("click", (event) => {
         const interaction = interactionRef.current;
@@ -341,7 +381,7 @@ export function MapView({
         interaction.onAreaSelect(areaHit?.id ?? null);
       });
 
-      map.addControl(new NavigationControl({ showCompass: false }), "top-right");
+      map.addControl(new NavigationControl({ showCompass: true, showZoom: true }), "top-right");
       map.addControl(
         new GeolocateControl({
           positionOptions: { enableHighAccuracy: true },
@@ -352,18 +392,20 @@ export function MapView({
         "top-right",
       );
 
+      onCameraChange(initialCamera);
       redraw();
     } catch (cause) {
       console.error("Map initialization failed", cause);
-      if (active) setError("Karte konnte nicht initialisiert werden.");
+      if (active) setError(t(language, "mapInitError"));
     }
 
     return () => {
       active = false;
+      if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [campaignId]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -372,12 +414,33 @@ export function MapView({
     else map.doubleClickZoom.disable();
   }, [mode]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !cameraCommand) return;
+    map.jumpTo({
+      center: cameraCommand.view.center,
+      zoom: cameraCommand.view.zoom,
+      bearing: cameraCommand.view.bearing,
+    });
+  }, [cameraCommand?.id]);
+
   const map = mapRef.current;
   const width = containerRef.current?.clientWidth ?? 1;
   const height = containerRef.current?.clientHeight ?? 1;
 
+  const refreshText =
+    refreshState === "loading"
+      ? t(language, "refreshLoading")
+      : refreshState === "error"
+        ? t(language, "refreshError")
+        : refreshState === "available"
+          ? t(language, "newData")
+          : refreshState === "current"
+            ? t(language, "refreshCurrent")
+            : "";
+
   return (
-    <section className={`map-region map-mode-${mode}`} aria-label="Verteilkarte">
+    <section className={`map-region map-mode-${mode}`} aria-label={t(language, "map")}>
       <div ref={containerRef} className="map" />
 
       <svg
@@ -389,40 +452,17 @@ export function MapView({
         {areas.map((area) => {
           const ring = openAreaRing(area);
           const points = projectedPoints(map, ring);
-          const selected = area.id === selectedAreaId;
           return (
-            <g key={area.id}>
-              <polygon
-                points={points}
-                fill={area.color}
-                fillOpacity={0.24}
-                stroke={area.color}
-                strokeWidth={4}
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-              />
-              {selected ? (
-                <>
-                  <polygon
-                    points={points}
-                    fill="none"
-                    stroke="#ffffff"
-                    strokeWidth={13}
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <polygon
-                    points={points}
-                    fill="none"
-                    stroke={area.color}
-                    strokeWidth={7}
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <ProjectedMarkers map={map} coordinates={ring} color={area.color} radius={9} />
-                </>
-              ) : null}
-            </g>
+            <polygon
+              key={area.id}
+              points={points}
+              fill={area.color}
+              fillOpacity={0.24}
+              stroke={area.color}
+              strokeWidth={4}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
           );
         })}
 
@@ -501,15 +541,25 @@ export function MapView({
         {mode === "edit" ? (
           <>
             {editingVertices.length >= 3 ? (
-              <polygon
-                points={projectedPoints(map, editingVertices)}
-                fill={editingColor}
-                fillOpacity={0.32}
-                stroke={editingColor}
-                strokeWidth={6}
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-              />
+              <>
+                <polygon
+                  points={projectedPoints(map, editingVertices)}
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth={13}
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <polygon
+                  points={projectedPoints(map, editingVertices)}
+                  fill={editingColor}
+                  fillOpacity={0.32}
+                  stroke={editingColor}
+                  strokeWidth={7}
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </>
             ) : null}
             <ProjectedMarkers
               map={map}
@@ -549,6 +599,20 @@ export function MapView({
           </>
         ) : null}
       </svg>
+
+      <div className="map-refresh-control">
+        <button
+          className="map-refresh-button"
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshState === "loading"}
+          aria-label={t(language, "refreshData")}
+          title={t(language, "refreshData")}
+        >
+          ↻
+        </button>
+        {refreshText ? <span className={`map-refresh-feedback is-${refreshState}`}>{refreshText}</span> : null}
+      </div>
 
       {error ? <div className="map-error">{error}</div> : null}
     </section>
