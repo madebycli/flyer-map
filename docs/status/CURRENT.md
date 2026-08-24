@@ -9,7 +9,7 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M3 — Shared Persistence is technically complete and merged to `main` through PR #14 (`ad7c921c36c2b411dd26ec87cd2177766fac968e`).
+M3 — Shared Persistence is technically complete, merged to `main` through PR #14 (`ad7c921c36c2b411dd26ec87cd2177766fac968e`) and live on the production Cloudflare Worker.
 
 The next logical milestone is M4 — access links and authorization.
 
@@ -65,18 +65,18 @@ Migration `0001_initial.sql` is confirmed in `d1_migrations` and provides:
 - final PR-head CI #68 passed all 7 tests, TypeScript and production build after production migration confirmation.
 - PR #14 merged successfully to `main`.
 - the M3 branch diff contained no `src/map/*` renderer changes.
+- temporary read-only production smoke PR #15 / CI #73 passed and was closed without merge;
+- that smoke check confirmed production `/api/health` reports version `0.2.0` with `persistence: "d1"` and that `GET /api/campaigns/campaign_smoke_probe/version` reaches the migrated D1 schema and returns the expected `campaign_not_found` response.
 
-## Production verification still required on real devices
+## Real-device M3 acceptance check
 
-After the automatic Cloudflare deployment from `main`:
-1. verify `/api/health` reports the D1-backed service;
-2. open one campaign on phone A and allow the existing local snapshot to bootstrap;
-3. open the same `?campaign=` URL on phone B;
-4. confirm teams, areas, streets, statuses and geometry match;
-5. make a change on phone A and confirm phone B receives it after revision polling;
-6. reload both phones and confirm D1 restores the same server state;
-7. make near-simultaneous edits to confirm a stale write produces a visible conflict instead of silent overwrite;
-8. confirm CARTO Voyager Retina and all independent SVG geometry render exactly as before M3.
+1. Open one campaign on phone A and allow the existing local snapshot to bootstrap.
+2. Open the same `?campaign=` URL on phone B.
+3. Confirm teams, areas, streets, statuses and geometry match.
+4. Make a change on phone A and confirm phone B receives it after revision polling.
+5. Reload both phones and confirm D1 restores the same server state.
+6. Make near-simultaneous edits to confirm a stale write produces a visible conflict instead of silent overwrite.
+7. Confirm CARTO Voyager Retina and all independent SVG geometry render exactly as before M3.
 
 ## Completed plan
 
