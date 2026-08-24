@@ -9,7 +9,7 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M4 — Access Links + Authorization + Field UX hardening is merged to `main` and the protected access/session behavior is live. Production D1 migration `0002_m4_access.sql` was applied successfully to remote database `flyer-map-db` on 2026-08-24, and Cloudflare secret `M4_BOOTSTRAP_SECRET` is configured.
+M4 — Access Links + Authorization + Field UX hardening is merged to `main` and the protected access/session behavior is live. Production D1 migration `0002_m4_access.sql` was applied successfully to remote database `flyer-map-db` on 2026-08-24, and Cloudflare runtime secret `M4_BOOTSTRAP_SECRET` is configured.
 
 The current follow-up slice is **Admin access recovery + whole-city SVG renderer performance** in PR #21 on branch `renderer-access-recovery`.
 
@@ -30,6 +30,8 @@ PR #21 adds an explicit operator recovery flow guarded by the existing high-entr
 
 There is still no first-visitor ownership path and Campaign id alone never grants access.
 
+Cloudflare Workers Builds separates build-time variables/secrets from Worker runtime bindings. A short-lived PR #21 config change declared `M4_BOOTSTRAP_SECRET` through Wrangler `secrets.required`; Cloudflare Vite builds then warned because the runtime secret is intentionally not exposed as `process.env` to the build container. That declaration was removed again. The real secret remains only in Cloudflare Runtime variables and secrets.
+
 ## Renderer state
 
 PR #19 (`renderer-webgl-performance`) attempted to move saved Areas/Streets into MapLibre GeoJSON/WebGL layers. Real-browser acceptance repeatedly failed: saved geometry was invisible/non-interactive even though CI and Cloudflare preview builds were green. PR #19 is closed and must not be merged.
@@ -48,6 +50,20 @@ PR #21 optimizes the stable SVG path instead of replacing it:
 - Area fill is subtle and outlines are thin;
 - stored corner/edit points remain hidden outside active draw/edit modes;
 - active edit/draw overlay keeps the established direct redraw behavior so the earlier edit-lag regression is not reintroduced.
+
+## Browser diagnostics
+
+PR #21 includes an opt-in browser diagnostics panel. Add `diag=1` to the page query string to enable it.
+
+It reports/copies only troubleshooting data needed for renderer acceptance:
+- recent animation-frame FPS and long-frame counts;
+- viewport/device/browser capability hints;
+- local Area/Street Task counts;
+- number/size of saved SVG paths and DOM node count;
+- CARTO basemap resource timing summaries;
+- recent browser console errors/warnings observed while diagnostics are enabled.
+
+The diagnostics panel does not persist data and redacts token-like strings. It is not enabled for normal users unless the query flag is present.
 
 ## UI follow-up
 
@@ -74,9 +90,7 @@ PR #21 adds access tests for:
 - fresh Admin grant/session creation even when the Campaign already has existing grants;
 - plaintext recovery token not being persisted into D1 statements.
 
-CI #113 passed all 21 tests but initially found a TypeScript name collision between MapLibre `Map` and native JavaScript `Map` collections in the grouped renderer. That compile issue was corrected. CI #118 then passed the complete pipeline: all 21 tests, TypeScript and the production build.
-
-Cloudflare Workers Builds successfully deployed PR #21 head `a4b3488c` to the branch preview. A final documentation-only head is being rechecked before real-browser acceptance.
+CI #125 passed the current renderer/recovery/diagnostics implementation: all 21 tests, TypeScript and production build are green. Real-browser acceptance remains required because earlier WebGL work demonstrated that CI alone cannot prove map rendering behavior.
 
 ## Active plans
 
@@ -85,13 +99,14 @@ Cloudflare Workers Builds successfully deployed PR #21 head `a4b3488c` to the br
 
 ## Current release gates for PR #21
 
-1. Final documentation-only head must remain green and deploy successfully.
+1. Cloudflare branch preview must deploy the current head with the configured Worker runtime secret available.
 2. On the preview host, use the configured operator secret to recover a fresh Admin session/link.
 3. Save an Area and confirm it stays visible + selectable immediately.
 4. Save a Street and confirm it stays visible + selectable immediately.
 5. Confirm stored edit points are absent in browse mode and edit mode is no worse than current `main`.
 6. Confirm thin zoom-dependent streets and stable bottom-right refresh placement on desktop + phone.
-7. Run synthetic dense-street acceptance (500 / 1,000 / 2,500 / 5,000 features) before declaring whole-city renderer work complete.
+7. Capture `diag=1` output while reproducing pan/zoom/edit behavior and use it to investigate any remaining jank.
+8. Run synthetic dense-street acceptance (500 / 1,000 / 2,500 / 5,000 features) before declaring whole-city renderer work complete.
 
 ## Deferred beyond this slice
 
@@ -105,4 +120,4 @@ Cloudflare Workers Builds successfully deployed PR #21 head `a4b3488c` to the br
 
 ## Next
 
-Perform real-browser recovery/render acceptance on PR #21, complete dense-street validation, merge it after acceptance, then continue M5 resilient mutation-queue work from the stable renderer baseline.
+Get the latest Cloudflare preview deployed with runtime recovery available, perform real-browser recovery/render diagnostics, merge PR #21 after acceptance, then continue M5 resilient mutation-queue work from the stable renderer baseline.
