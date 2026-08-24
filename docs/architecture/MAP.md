@@ -27,7 +27,7 @@ All Verteil-Flyer application geometry is rendered by the independent SVG overla
 - area-edit preview geometry and edit points;
 - selected-street highlight.
 
-Do **not** reintroduce MapLibre application GeoJSON sources/layers for this geometry. Shared persistence, authorization and sync change snapshot delivery, not the renderer.
+Do **not** reintroduce MapLibre application GeoJSON sources/layers for this geometry without a new accepted decision and real-browser acceptance. PR #19 attempted a wholesale saved-geometry move into MapLibre WebGL and failed real-browser visibility/interactivity acceptance despite green CI, so it was closed without merge.
 
 ## Basemap
 
@@ -61,13 +61,34 @@ History:
 
 ## SVG application overlay
 
-The overlay projects stored longitude/latitude coordinates into the current MapLibre screen projection and redraws as the map pans, zooms, rotates or resizes. Arbitrary bearing must not require duplicate MapLibre application layers.
+The overlay consumes stored longitude/latitude geometry and projects it into the current MapLibre screen projection.
+
+### Browse performance path
+
+Saved geometry stays in SVG, but ordinary browse pan/zoom/rotate must not cause a full React reconciliation of one SVG node per stored feature.
+
+The optimized browse renderer therefore:
+- groups saved Areas by Team color into a small number of SVG `path` elements;
+- groups saved Street Tasks by Team color + task status into a small number of SVG `path` elements;
+- keeps geometric Area/Street hit testing independent from the rendered SVG node count;
+- updates the grouped path `d` attributes imperatively from MapLibre camera events;
+- coalesces saved-geometry redraws to one animation-frame callback;
+- culls geometry whose geographic bounding box is outside the current map viewport before doing expensive point projection;
+- updates line widths from the current zoom so saved streets become visually thinner while zooming out.
+
+This removes React reconciliation and hundreds of individual saved-feature DOM writes from the hot camera-movement path while retaining the renderer that has already proven reliable in real browsers.
+
+The projection work itself is still proportional to the number of visible vertices. Whole-city acceptance therefore still requires synthetic density testing and real-device checks rather than assuming unlimited scale.
+
+### Active draw/edit path
+
+Active draw/edit geometry remains a separate SVG overlay with the established direct redraw behavior. It is deliberately **not** animation-frame throttled by the saved-geometry optimization because a previous experiment made real-device editing noticeably more laggy.
 
 ### Area behavior
 
 - every stored area is a GeoJSON Polygon assigned to exactly one team;
 - fill and outline colors come from the assigned team;
-- saved areas render together in SVG with transparent fills and strong team-colored outlines;
+- saved areas use a subtle transparent Team-color fill and a thin Team-color outline;
 - **browse selection intentionally has no extra white halo and no stored-corner markers**; the detail/bottom sheet is the selection indication;
 - area corner markers appear only while the user is actively editing that Area;
 - drawing renders SVG point markers and connecting/polygon geometry immediately;
@@ -83,14 +104,15 @@ The browse-selection rule above deliberately supersedes the earlier M1/M2 behavi
 
 - every street task is a GeoJSON LineString assigned to one area;
 - the line inherits the area's team color for ownership context;
-- saved street tasks render as SVG polylines;
-- status uses width/opacity/dash treatment in addition to team color:
+- saved street tasks are drawn as thin Team-colored road-like SVG strokes without a permanent broad white highlighter casing;
+- saved stroke width interpolates with map zoom so city overview lines are much thinner than street-level lines;
+- status uses opacity/dash treatment in addition to team color:
   - `open`: strong solid line;
-  - `completed`: thinner/faded solid line;
+  - `completed`: faded solid line;
   - `later`: dashed line;
   - `not-deliverable`: dotted line;
-- selected streets receive the existing SVG selection halo;
-- manual street tracing renders SVG draft LineString geometry and point markers;
+- only the selected street receives a compact dark selection halo;
+- manual street tracing keeps the established high-contrast draft line and point markers;
 - street selection uses application screen-distance hit testing;
 - street status changes happen through explicit UI controls, never through map panning.
 
