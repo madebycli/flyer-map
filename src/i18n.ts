@@ -1,0 +1,241 @@
+export type Language = "de" | "en";
+
+const LANGUAGE_KEY = "verteil-flyer:language";
+
+const messages = {
+  de: {
+    appName: "Verteil-Flyer",
+    actionFallback: "Verteilaktion",
+    online: "Online",
+    offline: "Offline · lokal",
+    activeTeam: "Aktives Team",
+    noTeam: "Noch kein Team",
+    teams: "Teams",
+    drawArea: "Gebiet zeichnen",
+    settings: "Einstellungen",
+    close: "Schließen",
+    cancel: "Abbrechen",
+    undo: "Rückgängig",
+    save: "Speichern",
+    drawing: "Zeichnen",
+    edit: "Bearbeiten",
+    area: "Gebiet",
+    street: "Straße",
+    streetMode: "Street Mode",
+    saveStreet: "Straße speichern",
+    saveChanges: "Änderungen speichern",
+    editShape: "Form bearbeiten",
+    deleteArea: "Gebiet löschen",
+    deleteStreet: "Straße löschen",
+    addStreet: "+ Straße einzeichnen",
+    manageTeams: "Teams verwalten",
+    actionName: "Name der Aktion",
+    name: "Name",
+    team: "Team",
+    active: "Aktiv",
+    choose: "Wählen",
+    addTeam: "+ Team hinzufügen",
+    allColorsUsed: "Alle Teamfarben vergeben",
+    noTeamTitle: "Noch kein Team",
+    noTeamBody: "Lege ein Team an. Danach kannst du das erste Gebiet direkt auf der Karte zeichnen.",
+    streets: "Straßen",
+    completed: "erledigt",
+    current: "Aktuell",
+    statusChanged: "Status geändert",
+    mapActions: "Kartenaktionen",
+    map: "Verteilkarte",
+    refreshData: "Daten aktualisieren",
+    refreshLoading: "Aktualisiere…",
+    refreshCurrent: "Aktuell",
+    refreshError: "Fehler",
+    newData: "Neue Daten verfügbar",
+    applyNewData: "Jetzt aktualisieren",
+    personal: "Persönlich",
+    language: "Sprache",
+    german: "Deutsch",
+    english: "English",
+    resetCamera: "Persönliche Kartenansicht zurücksetzen",
+    campaignSettings: "Aktion",
+    mapFocus: "Startansicht der Karte",
+    mapFocusBody: "Diese Ansicht wird auf neuen Geräten ohne persönliche Kartenposition verwendet.",
+    saveCurrentFocus: "Aktuelle Kartenansicht als Aktionsfokus speichern",
+    jumpToFocus: "Auf Aktionsfokus springen",
+    removeFocus: "Aktionsfokus entfernen",
+    access: "Access Links / Berechtigungen",
+    accessRole: "Rolle",
+    accessLabel: "Bezeichnung",
+    createAccess: "Access Link erstellen",
+    revoke: "Widerrufen",
+    copy: "Kopieren",
+    copied: "Kopiert",
+    admin: "Admin",
+    editor: "Team Editor",
+    viewer: "Read-only Viewer",
+    teamScope: "Team-Scope",
+    accessLinkOnce: "Dieser Link wird nur jetzt angezeigt. Teile ihn sicher.",
+    accessRequired: "Für diese Aktion wird ein gültiger Access Link benötigt.",
+    permissionDenied: "Dafür hast du keine Berechtigung.",
+    drawHint: "Tippe die Eckpunkte nacheinander auf die Karte. Verschieben und Zoomen bleiben möglich.",
+    streetHint: "Tippe den Straßenverlauf Punkt für Punkt nach. Die Linie wird als manuelle Verteilaufgabe gespeichert.",
+    editHint: "Großen Eckpunkt antippen, dann die neue Position auf der Karte antippen.",
+    editHintSelected: "Eckpunkt {index} gewählt · jetzt Zielposition antippen.",
+    readySaveCorners: "{count} Eckpunkte · bereit zum Speichern",
+    readySaveStreet: "{count} Punkte · Straße bereit zum Speichern",
+    geometryValid: "Geometrie ist gültig.",
+    confirmDeleteArea: "„{name}“ und alle zugehörigen Straßen wirklich löschen?",
+    confirmDeleteStreet: "„{name}“ wirklich löschen?",
+    teamColor: "Farbe für {name}",
+    teamName: "Name von {name}",
+    unavailable: "Gemeinsamer Serverstand momentan nicht erreichbar.",
+    syncing: "Synchronisiere…",
+    browseUpdateDeferred: "Neue Daten sind verfügbar. Deine laufende Bearbeitung bleibt erhalten.",
+    statusOpen: "Offen",
+    statusCompleted: "Erledigt",
+    statusLater: "Später",
+    statusNotDeliverable: "Nicht zustellbar",
+    mapInitError: "Karte konnte nicht initialisiert werden.",
+  },
+  en: {
+    appName: "Flyer Distribution",
+    actionFallback: "Campaign",
+    online: "Online",
+    offline: "Offline · local",
+    activeTeam: "Active team",
+    noTeam: "No team yet",
+    teams: "Teams",
+    drawArea: "Draw area",
+    settings: "Settings",
+    close: "Close",
+    cancel: "Cancel",
+    undo: "Undo",
+    save: "Save",
+    drawing: "Drawing",
+    edit: "Edit",
+    area: "Area",
+    street: "Street",
+    streetMode: "Street Mode",
+    saveStreet: "Save street",
+    saveChanges: "Save changes",
+    editShape: "Edit shape",
+    deleteArea: "Delete area",
+    deleteStreet: "Delete street",
+    addStreet: "+ Draw street",
+    manageTeams: "Manage teams",
+    actionName: "Campaign name",
+    name: "Name",
+    team: "Team",
+    active: "Active",
+    choose: "Select",
+    addTeam: "+ Add team",
+    allColorsUsed: "All team colors are used",
+    noTeamTitle: "No team yet",
+    noTeamBody: "Create a team. You can then draw the first area directly on the map.",
+    streets: "streets",
+    completed: "completed",
+    current: "Current",
+    statusChanged: "Status changed",
+    mapActions: "Map actions",
+    map: "Distribution map",
+    refreshData: "Refresh data",
+    refreshLoading: "Refreshing…",
+    refreshCurrent: "Up to date",
+    refreshError: "Error",
+    newData: "New data available",
+    applyNewData: "Refresh now",
+    personal: "Personal",
+    language: "Language",
+    german: "Deutsch",
+    english: "English",
+    resetCamera: "Reset personal map view",
+    campaignSettings: "Campaign",
+    mapFocus: "Map start view",
+    mapFocusBody: "This view is used on new devices that do not yet have a personal map position.",
+    saveCurrentFocus: "Save current map view as campaign focus",
+    jumpToFocus: "Jump to campaign focus",
+    removeFocus: "Remove campaign focus",
+    access: "Access links / permissions",
+    accessRole: "Role",
+    accessLabel: "Label",
+    createAccess: "Create access link",
+    revoke: "Revoke",
+    copy: "Copy",
+    copied: "Copied",
+    admin: "Admin",
+    editor: "Team Editor",
+    viewer: "Read-only Viewer",
+    teamScope: "Team scope",
+    accessLinkOnce: "This link is only shown now. Share it securely.",
+    accessRequired: "A valid access link is required for this action.",
+    permissionDenied: "You do not have permission for that.",
+    drawHint: "Tap the polygon corners on the map. Panning and zooming remain available.",
+    streetHint: "Trace the street point by point. The line is saved as a manual distribution task.",
+    editHint: "Tap a large corner point, then tap its new position on the map.",
+    editHintSelected: "Corner {index} selected · now tap the target position.",
+    readySaveCorners: "{count} corners · ready to save",
+    readySaveStreet: "{count} points · street ready to save",
+    geometryValid: "Geometry is valid.",
+    confirmDeleteArea: "Delete “{name}” and all associated streets?",
+    confirmDeleteStreet: "Delete “{name}”?",
+    teamColor: "Color for {name}",
+    teamName: "Name of {name}",
+    unavailable: "Shared server state is currently unavailable.",
+    syncing: "Syncing…",
+    browseUpdateDeferred: "New data is available. Your in-progress edit is kept intact.",
+    statusOpen: "Open",
+    statusCompleted: "Completed",
+    statusLater: "Later",
+    statusNotDeliverable: "Not deliverable",
+    mapInitError: "The map could not be initialized.",
+  },
+} as const;
+
+export type MessageKey = keyof (typeof messages)["de"];
+
+export function detectLanguage(): Language {
+  if (typeof window === "undefined") return "de";
+  const stored = window.localStorage.getItem(LANGUAGE_KEY);
+  if (stored === "de" || stored === "en") return stored;
+  const browser = navigator.language.toLowerCase();
+  return browser.startsWith("en") ? "en" : "de";
+}
+
+export function saveLanguage(language: Language) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LANGUAGE_KEY, language);
+  } catch {
+    // A language preference must never block field work.
+  }
+}
+
+export function t(language: Language, key: MessageKey, values: Record<string, string | number> = {}) {
+  let message: string = messages[language][key];
+  for (const [name, value] of Object.entries(values)) {
+    message = message.replaceAll(`{${name}}`, String(value));
+  }
+  return message;
+}
+
+export function taskStatusLabel(language: Language, status: string) {
+  if (status === "completed") return t(language, "statusCompleted");
+  if (status === "later") return t(language, "statusLater");
+  if (status === "not-deliverable") return t(language, "statusNotDeliverable");
+  return t(language, "statusOpen");
+}
+
+const geometryEnglish = new Map<string, string>([
+  ["Mindestens 3 Eckpunkte setzen.", "Set at least 3 corner points."],
+  ["Das Gebiet enthält einen ungültigen Kartenpunkt.", "The area contains an invalid map point."],
+  ["Das Gebiet braucht 3 unterschiedliche Eckpunkte.", "The area needs 3 distinct corner points."],
+  ["Zwei benachbarte Eckpunkte liegen übereinander.", "Two adjacent corner points overlap."],
+  ["Das Gebiet hat keine nutzbare Fläche.", "The area has no usable surface."],
+  ["Die Gebietsgrenze darf sich nicht selbst kreuzen.", "The area boundary must not self-intersect."],
+  ["Mindestens 2 Punkte entlang der Straße setzen.", "Set at least 2 points along the street."],
+  ["Die Straße enthält einen ungültigen Kartenpunkt.", "The street contains an invalid map point."],
+  ["Zwei aufeinanderfolgende Straßenpunkte liegen übereinander.", "Two consecutive street points overlap."],
+  ["Die Straße braucht mindestens 2 unterschiedliche Punkte.", "The street needs at least 2 distinct points."],
+]);
+
+export function geometryReason(language: Language, reason: string) {
+  return language === "en" ? geometryEnglish.get(reason) ?? reason : reason;
+}
