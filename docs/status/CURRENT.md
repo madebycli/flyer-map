@@ -2,7 +2,7 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-24
+last_updated: 2026-08-25
 ---
 
 # Current Project State
@@ -11,74 +11,82 @@ last_updated: 2026-08-24
 
 M4 — Access Links + Authorization + Field UX hardening is merged to `main` and the protected access/session behavior is live. Production D1 migration `0002_m4_access.sql` was applied successfully to remote database `flyer-map-db` on 2026-08-24, and Cloudflare runtime secret `M4_BOOTSTRAP_SECRET` is configured.
 
-The current follow-up slice is **Admin access recovery + whole-city renderer performance** in PR #21 on branch `renderer-access-recovery`.
+The current follow-up slice is **Admin access recovery + MetroDreamin-style whole-city renderer** in PR #21 on branch `renderer-access-recovery`.
 
-## Current access issue and recovery
+## Access recovery
 
 A Campaign id is intentionally only a selector. A browser without a valid session/Access Link receives `access_required` and cannot edit.
-
-This surfaced immediately on the normal/preview website after M4 because:
-- an old Admin Access Link/session may no longer be available;
-- Cloudflare branch-preview hosts have a different origin, so the production session cookie is not shared.
 
 PR #21 adds an explicit operator recovery flow guarded by the existing high-entropy `M4_BOOTSTRAP_SECRET`:
 - missing access shows a browser recovery card;
 - the secret is entered in a password field and is not persisted;
 - the Worker verifies it server-side;
-- a fresh normal revocable Admin grant + secure session is created;
+- a fresh normal revocable Admin grant + secure session is created even if the Campaign already has grants;
 - a new Admin Access Link is returned once for secure saving/bookmarking.
 
 There is still no first-visitor ownership path and Campaign id alone never grants access.
 
-Cloudflare Workers Builds separates build-time variables/secrets from Worker runtime bindings. A short-lived PR #21 config change declared `M4_BOOTSTRAP_SECRET` through Wrangler `secrets.required`; Cloudflare Vite builds then warned because the runtime secret is intentionally not exposed as `process.env` to the build container. That declaration was removed again. The real secret remains only in Cloudflare Runtime variables and secrets.
+Cloudflare Workers Builds separates build-time variables/secrets from Worker runtime bindings. A short-lived PR #21 config experiment declared `M4_BOOTSTRAP_SECRET` through Wrangler `secrets.required`; Cloudflare Vite builds then warned because the runtime secret is intentionally not exposed as `process.env` to the build container. That declaration was removed. The real secret remains a Worker runtime secret.
 
 ## Renderer state
 
-PR #19 (`renderer-webgl-performance`) attempted to move saved Areas/Streets into MapLibre GeoJSON/WebGL layers. Real-browser acceptance repeatedly failed: saved geometry was invisible/non-interactive even though CI and Cloudflare preview builds were green. PR #19 is closed and must not be merged.
+PR #19 (`renderer-webgl-performance`) attempted to move saved Areas/Streets into MapLibre GeoJSON/WebGL layers but used an unreliable lifecycle. Real-browser acceptance failed because saved geometry became invisible/non-interactive even though CI was green. PR #19 is closed and must not be merged.
 
-A subsequent grouped-SVG optimization in PR #21 removed React reconciliation from the saved browse path, but real-device testing still reported unacceptable lag. That implementation is now superseded inside PR #21.
+PR #21 then tested grouped SVG and a single Canvas overlay. Both reduced some React/DOM work, but real-device feedback still reported unacceptable lag because saved geometry still required application-side projection/repainting during camera movement. Those intermediate renderers are superseded.
 
-Current renderer boundary:
-- MapLibre: CARTO Voyager Retina basemap, camera, rotation/compass and geolocation control;
-- Canvas: all **saved** Verteil-Flyer Areas and Street Tasks;
-- SVG: only **active** area draw/edit and street-draw geometry/handles.
+The current PR #21 renderer deliberately follows the architectural pattern used by MetroDreamin for dense GL maps:
+- MapLibre owns the persistent saved-geometry rendering pipeline;
+- one long-lived GeoJSON source contains all saved Areas;
+- one long-lived GeoJSON source contains all saved Street Tasks;
+- a small constant set of Fill/Line layers is created once after the MapLibre `load` event;
+- actual Campaign data changes update existing sources through `GeoJSONSource.setData()`;
+- ordinary browse pan/zoom/rotate performs no Verteil-Flyer `map.project()` loop for saved geometry;
+- saved geometry moves in the same MapLibre/WebGL render pipeline as the basemap;
+- Street selection uses `queryRenderedFeatures()` with a small screen-space hit box;
+- Area selection queries the Area fill layer.
 
-Current Canvas browse path:
-- one transparent Canvas DOM node for all saved application geometry;
-- Areas grouped by Team color and Streets grouped by Team color + status in memory;
-- geographic bounds precomputed when snapshot data changes;
-- offscreen geometry culled before point projection;
-- camera events coalesced to at most one redraw per animation frame;
-- Canvas device-pixel-ratio capped at 2 for predictable mobile backing-buffer cost;
-- no React reconciliation and no saved-feature SVG DOM writes during pan/zoom/rotate;
-- saved street width scales down when zooming out and no permanent broad white highlighter casing is used;
-- Area fill is subtle and outlines are thin.
+MapLibre persistent layers:
+- subtle Team-colored Area fill;
+- thin Team-colored Area outline with zoom-dependent width;
+- selected-Street halo;
+- filtered Street layers for `open`, `completed`, `later`, and `not-deliverable`;
+- Street color comes from the Team color feature property;
+- Street width is a MapLibre zoom expression and becomes thinner toward city overview;
+- no permanent broad white highlighter casing.
 
-Current active edit/draw path:
-- only the small current draft/edit geometry is SVG;
-- camera movement updates SVG `points` and marker positions imperatively;
-- React is not rerendered for every MapLibre `move` frame;
-- stored corner/edit points remain hidden outside active draw/edit modes.
+The layer/source count is essentially constant whether a Campaign contains 10, 500 or several thousand Streets.
 
-ADR-0010 records the Canvas-saved / SVG-active renderer decision.
+## Active draw/edit renderer
+
+SVG remains only for the small amount of active input geometry:
+- Area draw preview and points;
+- Area edit preview and edit handles;
+- Street draw preview and points.
+
+Camera movement updates these active SVG `points`/marker positions imperatively. React is not intentionally reconciled on every MapLibre camera frame.
+
+Stored corner/edit points remain completely hidden in browse mode.
+
+ADR-0010 (`ADR-0010-maplibre-geojson-saved-geometry-svg-active-editing.md`) records this renderer decision and explicitly treats MetroDreamin as an architectural reference rather than copied application code.
 
 ## Browser diagnostics
 
 PR #21 includes an opt-in browser diagnostics panel. Add `diag=1` to the page query string to enable it.
 
 It reports/copies only troubleshooting data needed for renderer acceptance:
+- current renderer identifier (`maplibre-geojson` expected);
 - recent animation-frame FPS and long-frame counts;
 - viewport/device/browser capability hints;
 - local Area/Street Task counts;
-- saved Canvas presence/backing-pixel count, active SVG node count and total DOM size;
+- MapLibre Canvas count, active SVG node count and total DOM size;
 - CARTO basemap resource timing summaries;
 - recent browser console errors/warnings observed while diagnostics are enabled.
 
-The diagnostics panel does not persist data, removes the Campaign selector from copied page metadata and redacts token-like strings. It is not enabled for normal users unless the query flag is present.
+The diagnostics panel does not persist data, removes the Campaign selector and URL fragment from copied page metadata, and redacts token-like strings.
 
 ## UI follow-up
 
-The manual refresh control is browse-only and is anchored bottom-right immediately above the field toolbar. It no longer expands sideways with `Aktuell`/loading text and uses the same compact surface language as settings/field controls.
+The manual refresh control is browse-only and anchored bottom-right immediately above the field toolbar. It does not expand sideways with `Aktuell`/loading text and uses the compact surface language of the field/settings UI.
 
 ## D1
 
@@ -96,12 +104,12 @@ PR #21 requires no new D1 migration.
 
 Baseline M4 tests cover authorization/token/session behavior, Viewer/Team Editor/Admin boundaries, schema v3 and Campaign map focus.
 
-PR #21 adds access tests for:
-- incorrect/configuration-missing operator recovery secret rejection at the helper boundary;
-- fresh Admin grant/session creation even when the Campaign already has existing grants;
+PR #21 adds recovery coverage for:
+- incorrect/configuration-missing operator recovery secret rejection;
+- fresh Admin grant/session creation even when the Campaign already has grants;
 - plaintext recovery token not being persisted into D1 statements.
 
-CI #129 passed the Canvas renderer implementation: all 21 tests, TypeScript and production build were green before the documentation-only follow-up commits. A final CI/Cloudflare preview must still run on the documentation head. Real-browser acceptance remains the release gate because earlier WebGL and grouped-SVG work demonstrated that CI alone cannot prove map performance/visibility.
+CI #135 passed the MetroDreamin-style MapLibre implementation code: all 21 tests, TypeScript and production build were green. Documentation/diagnostics follow-up commits require one final CI run on the latest PR head before preview acceptance.
 
 ## Active plans
 
@@ -110,15 +118,15 @@ CI #129 passed the Canvas renderer implementation: all 21 tests, TypeScript and 
 
 ## Current release gates for PR #21
 
-1. Final CI and Cloudflare branch preview must deploy the current Canvas head.
-2. On the preview host, use the configured operator secret to recover a fresh Admin session/link.
-3. Save an Area and confirm it stays visible + selectable immediately.
-4. Save a Street and confirm it stays visible + selectable immediately.
-5. Confirm stored edit points are absent in browse mode.
-6. Pan/zoom/rotate for 5–10 seconds with `diag=1` and capture FPS/long-frame diagnostics.
-7. Enter Area edit mode and repeat the diagnostic movement test; active editing must no longer React-rerender on every camera frame.
+1. Final CI must pass on the latest PR head.
+2. Cloudflare branch preview must deploy that exact latest head.
+3. Preview runtime must expose the configured recovery secret so a fresh Admin session/link can be recovered without sharing the secret in chat.
+4. Save an Area and confirm it remains visible + selectable immediately.
+5. Save a Street and confirm it remains visible + selectable immediately.
+6. Confirm stored edit points are absent in browse mode and active editing remains responsive.
+7. Pan/zoom/rotate for 5–10 seconds with `diag=1`; renderer must report `maplibre-geojson` and saved geometry must stay visually locked to the basemap.
 8. Confirm thin zoom-dependent streets and stable bottom-right refresh placement on desktop + phone.
-9. Run dense-street acceptance with realistic city-sized geometry before declaring whole-city renderer work complete.
+9. Run dense-street acceptance with 500 / 1,000 / 2,500 / 5,000 realistic Street features before declaring whole-city performance complete.
 
 ## Deferred beyond this slice
 
@@ -132,4 +140,4 @@ CI #129 passed the Canvas renderer implementation: all 21 tests, TypeScript and 
 
 ## Next
 
-Deploy the final Canvas preview, collect real-device `diag=1` data, fix any remaining renderer bottleneck from measured evidence, merge PR #21 only after acceptance, then continue M5 resilient mutation-queue work from the accepted renderer baseline.
+Get the exact latest PR #21 head through CI and Cloudflare preview, perform real-browser recovery + renderer diagnostics, merge only after acceptance, then continue M5 resilient mutation-queue work from the accepted renderer baseline.
