@@ -6,13 +6,22 @@ import {
 } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 
+function fixedLengthEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
 export async function operatorSecretMatches(provided: string, configured: string | undefined) {
   if (!provided || !configured) return false;
   const [providedHash, configuredHash] = await Promise.all([
     hashSecret(provided),
     hashSecret(configured),
   ]);
-  return providedHash === configuredHash;
+  return fixedLengthEqual(providedHash, configuredHash);
 }
 
 export async function createRecoveredAdminAccess(
