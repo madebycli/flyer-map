@@ -11,7 +11,11 @@ import {
 import type { CampaignMutation } from "../src/domain/mutations.ts";
 
 class JsonFileQueueStorage implements MutationQueueStorage {
-  constructor(private readonly filePath: string) {}
+  private readonly filePath: string;
+
+  constructor(filePath: string) {
+    this.filePath = filePath;
+  }
 
   private async readAll() {
     try {
