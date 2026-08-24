@@ -153,14 +153,63 @@ function guardExistsSql() {
   return "EXISTS (SELECT 1 FROM campaigns WHERE id = ? AND write_token = ?)";
 }
 
-function guardedInsert(
-  db: D1DatabaseLike,
-  sql: string,
-  values: unknown[],
-  campaignId: string,
-  writeToken: string,
-) {
-  return db.prepare(`${sql} WHERE ${guardExistsSql()}`).bind(...values, campaignId, writeToken);
+function teamsBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
+  return db
+    .prepare(
+      `INSERT INTO teams (id, campaign_id, name, color, created_at, updated_at)
+       SELECT
+         json_extract(value, '$.id'),
+         json_extract(value, '$.campaignId'),
+         json_extract(value, '$.name'),
+         json_extract(value, '$.color'),
+         json_extract(value, '$.createdAt'),
+         json_extract(value, '$.updatedAt')
+       FROM json_each(?)
+       WHERE ${guardExistsSql()}`,
+    )
+    .bind(JSON.stringify(snapshot.teams), snapshot.campaign.id, writeToken);
+}
+
+function areasBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
+  return db
+    .prepare(
+      `INSERT INTO areas (id, campaign_id, team_id, name, geometry_json, created_at, updated_at)
+       SELECT
+         json_extract(value, '$.id'),
+         json_extract(value, '$.campaignId'),
+         json_extract(value, '$.teamId'),
+         json_extract(value, '$.name'),
+         json_extract(value, '$.geometry'),
+         json_extract(value, '$.createdAt'),
+         json_extract(value, '$.updatedAt')
+       FROM json_each(?)
+       WHERE ${guardExistsSql()}`,
+    )
+    .bind(JSON.stringify(snapshot.areas), snapshot.campaign.id, writeToken);
+}
+
+function tasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
+  return db
+    .prepare(
+      `INSERT INTO tasks (
+         id, campaign_id, area_id, task_type, label, geometry_json,
+         status, completed_at, created_at, updated_at
+       )
+       SELECT
+         json_extract(value, '$.id'),
+         json_extract(value, '$.campaignId'),
+         json_extract(value, '$.areaId'),
+         json_extract(value, '$.taskType'),
+         json_extract(value, '$.label'),
+         json_extract(value, '$.geometry'),
+         json_extract(value, '$.status'),
+         json_extract(value, '$.completedAt'),
+         json_extract(value, '$.createdAt'),
+         json_extract(value, '$.updatedAt')
+       FROM json_each(?)
+       WHERE ${guardExistsSql()}`,
+    )
+    .bind(JSON.stringify(snapshot.tasks), snapshot.campaign.id, writeToken);
 }
 
 export type ReplaceSnapshotResult =
@@ -205,81 +254,27 @@ export async function replaceCampaignSnapshot(
             baseRevision,
           );
 
-  const statements: D1PreparedStatement[] = [
+  // Keep snapshot replacement to a constant seven D1 statements. The three child
+  // collections are passed as JSON and expanded inside SQLite via json_each().
+  // This stays well below the Workers Free per-invocation D1 query limit even for
+  // snapshots containing many entities, while db.batch() keeps the replacement
+  // transactional.
+  const results = await db.batch([
     claim,
     db
-      .prepare(
-        `DELETE FROM tasks WHERE campaign_id = ? AND ${guardExistsSql()}`,
-      )
+      .prepare(`DELETE FROM tasks WHERE campaign_id = ? AND ${guardExistsSql()}`)
       .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
     db
-      .prepare(
-        `DELETE FROM areas WHERE campaign_id = ? AND ${guardExistsSql()}`,
-      )
+      .prepare(`DELETE FROM areas WHERE campaign_id = ? AND ${guardExistsSql()}`)
       .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
     db
-      .prepare(
-        `DELETE FROM teams WHERE campaign_id = ? AND ${guardExistsSql()}`,
-      )
+      .prepare(`DELETE FROM teams WHERE campaign_id = ? AND ${guardExistsSql()}`)
       .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
-  ];
+    teamsBulkInsert(db, snapshot, writeToken),
+    areasBulkInsert(db, snapshot, writeToken),
+    tasksBulkInsert(db, snapshot, writeToken),
+  ]);
 
-  for (const team of snapshot.teams) {
-    statements.push(
-      guardedInsert(
-        db,
-        "INSERT INTO teams (id, campaign_id, name, color, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?",
-        [team.id, team.campaignId, team.name, team.color, team.createdAt, team.updatedAt],
-        snapshot.campaign.id,
-        writeToken,
-      ),
-    );
-  }
-
-  for (const area of snapshot.areas) {
-    statements.push(
-      guardedInsert(
-        db,
-        "INSERT INTO areas (id, campaign_id, team_id, name, geometry_json, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?",
-        [
-          area.id,
-          area.campaignId,
-          area.teamId,
-          area.name,
-          JSON.stringify(area.geometry),
-          area.createdAt,
-          area.updatedAt,
-        ],
-        snapshot.campaign.id,
-        writeToken,
-      ),
-    );
-  }
-
-  for (const task of snapshot.tasks) {
-    statements.push(
-      guardedInsert(
-        db,
-        "INSERT INTO tasks (id, campaign_id, area_id, task_type, label, geometry_json, status, completed_at, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?",
-        [
-          task.id,
-          task.campaignId,
-          task.areaId,
-          task.taskType,
-          task.label,
-          JSON.stringify(task.geometry),
-          task.status,
-          task.completedAt,
-          task.createdAt,
-          task.updatedAt,
-        ],
-        snapshot.campaign.id,
-        writeToken,
-      ),
-    );
-  }
-
-  const results = await db.batch(statements);
   const claimChanges = results[0]?.meta?.changes ?? 0;
 
   if (claimChanges !== 1) {
