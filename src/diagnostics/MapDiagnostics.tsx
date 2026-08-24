@@ -21,6 +21,10 @@ type DiagnosticSnapshot = {
   renderer: {
     kind: string;
     maplibreCanvases: number;
+    sourceAreas: number | null;
+    sourceStreets: number | null;
+    renderedAreas: number | null;
+    renderedStreets: number | null;
     activeSvgNodes: number;
     totalDomNodes: number;
   };
@@ -112,11 +116,21 @@ function basemapStats() {
   };
 }
 
+function readDatasetNumber(value: string | undefined) {
+  if (value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function rendererStats() {
   const region = document.querySelector<HTMLElement>(".map-region");
   return {
     kind: region?.dataset.renderer ?? "unknown",
     maplibreCanvases: document.querySelectorAll(".maplibregl-canvas").length,
+    sourceAreas: readDatasetNumber(region?.dataset.sourceAreas),
+    sourceStreets: readDatasetNumber(region?.dataset.sourceStreets),
+    renderedAreas: readDatasetNumber(region?.dataset.renderedAreas),
+    renderedStreets: readDatasetNumber(region?.dataset.renderedStreets),
     activeSvgNodes: document.querySelectorAll(".active-geometry-overlay *").length,
     totalDomNodes: document.getElementsByTagName("*").length,
   };
@@ -264,6 +278,12 @@ export function MapDiagnostics() {
           <span>Frames &gt;32 ms / 5 s: {longFrames}</span>
           <span>
             Daten: {readDataCounts().areas} Gebiete · {readDataCounts().streetTasks} Straßen
+          </span>
+          <span>
+            Source: {renderer.sourceAreas ?? "–"} Gebiete · {renderer.sourceStreets ?? "–"} Straßen
+          </span>
+          <span>
+            Sichtbar: {renderer.renderedAreas ?? "–"} Gebiete · {renderer.renderedStreets ?? "–"} Straßen
           </span>
           <span>MapLibre Canvas: {renderer.maplibreCanvases} · aktive SVG-Nodes: {renderer.activeSvgNodes}</span>
           <button type="button" onClick={() => void copyDiagnostics()}>
