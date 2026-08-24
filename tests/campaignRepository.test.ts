@@ -65,12 +65,17 @@ function snapshotWithManyTasks(taskCount = 120): CampaignSnapshot {
   const areaId = "area_test-1";
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 8,
     campaign: {
       id: campaignId,
       name: "Testaktion",
       status: "active",
+      defaultMapView: {
+        center: [9.48, 51.31],
+        zoom: 11.5,
+        bearing: 32,
+      },
       createdAt,
       updatedAt: createdAt,
     },
@@ -132,6 +137,7 @@ test("snapshot replacement uses a constant seven-statement D1 batch", async () =
 
   assert.deepEqual(result, { ok: true, revision: 8 });
   assert.equal(db.lastBatch.length, 7);
+  assert.match(db.lastBatch[0].query, /map_center_lng/);
   assert.match(db.lastBatch[4].query, /json_each\(\?\)/);
   assert.match(db.lastBatch[5].query, /json_each\(\?\)/);
   assert.match(db.lastBatch[6].query, /json_each\(\?\)/);
