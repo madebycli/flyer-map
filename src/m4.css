@@ -1,24 +1,26 @@
 .map-refresh-control {
   position: absolute;
-  z-index: 7;
-  top: calc(env(safe-area-inset-top) + 13rem);
-  right: 0.65rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  z-index: 19;
+  right: 0.85rem;
+  bottom: calc(env(safe-area-inset-bottom) + 8.65rem);
+  width: 2.8rem;
+  height: 2.8rem;
   pointer-events: none;
 }
 
 .map-refresh-button {
+  display: grid;
   width: 2.8rem;
   height: 2.8rem;
-  border: 1px solid rgb(30 50 35 / 10%);
-  border-radius: 0.8rem;
-  color: #26352b;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 0.2rem 0.8rem rgb(20 35 24 / 10%);
-  font-size: 1.35rem;
-  font-weight: 700;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(30 50 35 / 11%);
+  border-radius: 0.82rem;
+  color: #243128;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 0.25rem 1rem rgb(20 35 24 / 11%);
+  font-size: 1.25rem;
+  font-weight: 760;
   line-height: 1;
   pointer-events: auto;
   -webkit-tap-highlight-color: transparent;
@@ -28,24 +30,10 @@
   opacity: 0.6;
 }
 
+/* Keep map sync feedback compact. The full text used to slide in horizontally
+   and move the control around; status remains available via button state/ARIA. */
 .map-refresh-feedback {
-  max-width: 10rem;
-  padding: 0.38rem 0.52rem;
-  border: 1px solid rgb(30 50 35 / 10%);
-  border-radius: 0.65rem;
-  color: #334039;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 0.15rem 0.55rem rgb(20 35 24 / 10%);
-  font-size: 0.68rem;
-  font-weight: 700;
-  line-height: 1.2;
-  pointer-events: none;
-}
-
-.map-refresh-feedback.is-error,
-.map-refresh-feedback.is-available {
-  color: #74420e;
-  background: rgb(255 246 226 / 97%);
+  display: none;
 }
 
 .settings-sheet {
@@ -183,12 +171,8 @@
 
 @media (max-width: 480px) {
   .map-refresh-control {
-    top: calc(env(safe-area-inset-top) + 12.7rem);
-    right: 0.45rem;
-  }
-
-  .map-refresh-feedback {
-    max-width: 8.2rem;
+    right: 0.7rem;
+    bottom: calc(env(safe-area-inset-bottom) + 8.55rem);
   }
 
   .settings-actions.stacked-mobile {
