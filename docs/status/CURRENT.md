@@ -74,7 +74,9 @@ PR #21 adds access tests for:
 - fresh Admin grant/session creation even when the Campaign already has existing grants;
 - plaintext recovery token not being persisted into D1 statements.
 
-CI #113 passed all 21 tests but initially found a TypeScript name collision between MapLibre `Map` and native JavaScript `Map` collections in the grouped renderer. That compile issue was corrected on the subsequent PR head; final CI/preview acceptance is still required before merge.
+CI #113 passed all 21 tests but initially found a TypeScript name collision between MapLibre `Map` and native JavaScript `Map` collections in the grouped renderer. That compile issue was corrected. CI #118 then passed the complete pipeline: all 21 tests, TypeScript and the production build.
+
+Cloudflare Workers Builds successfully deployed PR #21 head `a4b3488c` to the branch preview. A final documentation-only head is being rechecked before real-browser acceptance.
 
 ## Active plans
 
@@ -83,14 +85,13 @@ CI #113 passed all 21 tests but initially found a TypeScript name collision betw
 
 ## Current release gates for PR #21
 
-1. Final CI must pass tests, TypeScript and production build.
-2. Cloudflare branch preview must deploy the final head.
-3. On the preview host, use the configured operator secret to recover a fresh Admin session/link.
-4. Save an Area and confirm it stays visible + selectable immediately.
-5. Save a Street and confirm it stays visible + selectable immediately.
-6. Confirm stored edit points are absent in browse mode and edit mode is no worse than current `main`.
-7. Confirm thin zoom-dependent streets and stable bottom-right refresh placement on desktop + phone.
-8. Run synthetic dense-street acceptance (500 / 1,000 / 2,500 / 5,000 features) before declaring whole-city renderer work complete.
+1. Final documentation-only head must remain green and deploy successfully.
+2. On the preview host, use the configured operator secret to recover a fresh Admin session/link.
+3. Save an Area and confirm it stays visible + selectable immediately.
+4. Save a Street and confirm it stays visible + selectable immediately.
+5. Confirm stored edit points are absent in browse mode and edit mode is no worse than current `main`.
+6. Confirm thin zoom-dependent streets and stable bottom-right refresh placement on desktop + phone.
+7. Run synthetic dense-street acceptance (500 / 1,000 / 2,500 / 5,000 features) before declaring whole-city renderer work complete.
 
 ## Deferred beyond this slice
 
@@ -104,4 +105,4 @@ CI #113 passed all 21 tests but initially found a TypeScript name collision betw
 
 ## Next
 
-Get PR #21 green, perform real-browser recovery/render acceptance, merge it, then continue M5 resilient mutation-queue work from the stable renderer baseline.
+Perform real-browser recovery/render acceptance on PR #21, complete dense-street validation, merge it after acceptance, then continue M5 resilient mutation-queue work from the stable renderer baseline.
