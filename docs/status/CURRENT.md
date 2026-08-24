@@ -9,7 +9,7 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M3 — Shared Persistence is active on feature branch `feat/m3-shared-persistence`.
+M3 — Shared Persistence is active on feature branch `feat/m3-shared-persistence` and PR #14.
 
 The production-phone stability gate from PR #13 is accepted: areas, streets, draft geometry and selected-area corner markers are visible on the real phone. M1, M2 and the SVG stability plan are archived; broader Android/iPhone release hardening remains later work.
 
@@ -48,12 +48,19 @@ Cloudflare Workers Builds remains connected to `main` and the current production
 
 `https://flyer-map.cloudflare-eleven035.workers.dev/`
 
-`wrangler.jsonc` still has no D1 binding because no real production D1 database id has been provided yet. No id has been invented.
+The real Cloudflare D1 database `flyer-map-db` has been created and its returned id is now reviewed in `wrangler.jsonc` under binding `DB`.
 
-## Current blockers
+Migration `migrations/0001_initial.sql` has not yet been confirmed as applied to the remote D1 database. The D1-dependent Worker must not be merged/deployed before that schema exists.
 
-- GitHub CI must validate the M3 branch tests, TypeScript and production build.
-- A real Cloudflare D1 database must then be created/bound and migration `0001_initial.sql` applied before merge/deploy of the D1-dependent Worker.
+## Verification
+
+- PR #14 CI run #62 passed all 7 tests, TypeScript typecheck and production build before the D1 binding commit.
+- A final CI run is required after the binding/config change and after migration confirmation.
+- The branch diff still must not contain any `src/map/*` renderer changes.
+
+## Current blocker
+
+Apply migration `0001_initial.sql` to the production D1 database, then rerun final CI and merge only if green.
 
 ## Active plan
 
@@ -72,9 +79,8 @@ Cloudflare Workers Builds remains connected to `main` and the current production
 
 ## Next
 
-1. Open the M3 pull request and run CI.
-2. Fix any test/type/build failures.
-3. Provision the real D1 database and add only its returned id to the reviewed binding.
-4. Apply migration 0001 before merge.
-5. Require final green CI, then merge to `main` for automatic Cloudflare deploy.
-6. Verify `/api/health` reports D1 and test one shared campaign on two phones.
+1. Apply migration `0001_initial.sql` to the bound production D1 database.
+2. Run final CI on PR #14 and fix any failure.
+3. Merge to `main` only when green.
+4. Verify the automatic Cloudflare deployment and `/api/health`.
+5. Test one shared campaign on two phones with revision polling and conflict visibility.
