@@ -32,7 +32,14 @@ type Session = {
 
 class Statement implements D1PreparedStatement {
   values: unknown[] = [];
-  constructor(readonly db: AccessDb, readonly query: string) {}
+  db: AccessDb;
+  query: string;
+
+  constructor(db: AccessDb, query: string) {
+    this.db = db;
+    this.query = query;
+  }
+
   bind(...values: unknown[]) {
     this.values = values;
     return this;
