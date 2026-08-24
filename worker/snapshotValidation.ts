@@ -5,6 +5,7 @@ import type {
   DistributionTask,
   LineStringGeometry,
   LngLat,
+  MapCameraView,
   PolygonGeometry,
   Team,
 } from "../src/domain/campaign.ts";
@@ -45,6 +46,26 @@ function isLngLat(value: unknown): value is LngLat {
     typeof value[1] === "number" &&
     Number.isFinite(value[1])
   );
+}
+
+function isMapRange([lng, lat]: LngLat) {
+  return lng >= -180 && lng <= 180 && lat >= -85.0511 && lat <= 85.0511;
+}
+
+function parseMapCameraView(value: unknown): MapCameraView | null {
+  if (!isRecord(value) || !isLngLat(value.center) || !isMapRange(value.center)) return null;
+  if (typeof value.zoom !== "number" || !Number.isFinite(value.zoom) || value.zoom < 0 || value.zoom > 20) {
+    return null;
+  }
+  if (
+    typeof value.bearing !== "number" ||
+    !Number.isFinite(value.bearing) ||
+    value.bearing < -360 ||
+    value.bearing > 360
+  ) {
+    return null;
+  }
+  return value as MapCameraView;
 }
 
 function samePoint(a: LngLat, b: LngLat) {
@@ -91,6 +112,7 @@ function parseCampaign(value: unknown, campaignId: string): Campaign | null {
   if (value.status !== "draft" && value.status !== "active" && value.status !== "archived") {
     return null;
   }
+  if (value.defaultMapView !== null && !parseMapCameraView(value.defaultMapView)) return null;
   if (!isTimestamp(value.createdAt) || !isTimestamp(value.updatedAt)) return null;
 
   return value as Campaign;
@@ -154,7 +176,7 @@ export function validateCampaignSnapshot(
     return { valid: false, message: "Ungültige Campaign-ID." };
   }
 
-  if (!isRecord(value) || value.schemaVersion !== 2) {
+  if (!isRecord(value) || value.schemaVersion !== 3) {
     return { valid: false, message: "Snapshot-Schema wird nicht unterstützt." };
   }
 
@@ -245,7 +267,7 @@ export function validateCampaignSnapshot(
   return {
     valid: true,
     snapshot: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision: value.revision,
       campaign,
       teams,
