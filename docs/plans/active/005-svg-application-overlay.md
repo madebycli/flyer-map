@@ -23,7 +23,7 @@ Repeated production-phone tests after PRs #11 and #12 still showed no applicatio
 - [x] move area selection to point-in-polygon hit testing instead of MapLibre rendered-feature queries
 - [x] move street selection to screen-distance hit testing instead of MapLibre rendered-feature queries
 - [x] move edit-vertex selection to screen-distance hit testing
-- [ ] pass CI typecheck/build
+- [x] pass CI typecheck/build on implementation head `43be99c84b231de253d07399f58567b8c389d868` (run #57)
 - [ ] verify on the production phone
 
 ## Acceptance criteria
