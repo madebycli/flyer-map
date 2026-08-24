@@ -9,12 +9,14 @@ import {
 } from "../worker/campaignRepository.ts";
 
 class FakeStatement implements D1PreparedStatement {
+  query: string;
+  currentRevision: number;
   values: unknown[] = [];
 
-  constructor(
-    readonly query: string,
-    private readonly currentRevision: number,
-  ) {}
+  constructor(query: string, currentRevision: number) {
+    this.query = query;
+    this.currentRevision = currentRevision;
+  }
 
   bind(...values: unknown[]) {
     this.values = values;
@@ -34,12 +36,14 @@ class FakeStatement implements D1PreparedStatement {
 }
 
 class FakeDatabase implements D1DatabaseLike {
+  claimChanges: number;
+  currentRevision: number;
   lastBatch: FakeStatement[] = [];
 
-  constructor(
-    private readonly claimChanges: number,
-    private readonly currentRevision: number,
-  ) {}
+  constructor(claimChanges: number, currentRevision: number) {
+    this.claimChanges = claimChanges;
+    this.currentRevision = currentRevision;
+  }
 
   prepare(query: string) {
     return new FakeStatement(query, this.currentRevision);
