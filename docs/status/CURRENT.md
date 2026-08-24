@@ -11,7 +11,7 @@ last_updated: 2026-08-24
 
 M4 — Access Links + Authorization + Field UX hardening is merged to `main` and the protected access/session behavior is live. Production D1 migration `0002_m4_access.sql` was applied successfully to remote database `flyer-map-db` on 2026-08-24, and Cloudflare runtime secret `M4_BOOTSTRAP_SECRET` is configured.
 
-The current follow-up slice is **Admin access recovery + whole-city SVG renderer performance** in PR #21 on branch `renderer-access-recovery`.
+The current follow-up slice is **Admin access recovery + whole-city renderer performance** in PR #21 on branch `renderer-access-recovery`.
 
 ## Current access issue and recovery
 
@@ -36,20 +36,31 @@ Cloudflare Workers Builds separates build-time variables/secrets from Worker run
 
 PR #19 (`renderer-webgl-performance`) attempted to move saved Areas/Streets into MapLibre GeoJSON/WebGL layers. Real-browser acceptance repeatedly failed: saved geometry was invisible/non-interactive even though CI and Cloudflare preview builds were green. PR #19 is closed and must not be merged.
 
-The current renderer remains within the proven architecture boundary:
-- MapLibre: CARTO Voyager Retina basemap, camera, rotation/compass and geolocation control;
-- SVG: all Verteil-Flyer Areas, Streets, drafts and edit handles.
+A subsequent grouped-SVG optimization in PR #21 removed React reconciliation from the saved browse path, but real-device testing still reported unacceptable lag. That implementation is now superseded inside PR #21.
 
-PR #21 optimizes the stable SVG path instead of replacing it:
-- saved Areas are grouped by Team color into a small number of SVG paths;
-- saved Streets are grouped by Team color + status;
-- saved-path coordinates are updated imperatively from MapLibre camera events instead of forcing a full React geometry reconciliation on every browse frame;
-- saved redraws are coalesced to one animation-frame callback;
-- offscreen geometry is culled before point projection;
+Current renderer boundary:
+- MapLibre: CARTO Voyager Retina basemap, camera, rotation/compass and geolocation control;
+- Canvas: all **saved** Verteil-Flyer Areas and Street Tasks;
+- SVG: only **active** area draw/edit and street-draw geometry/handles.
+
+Current Canvas browse path:
+- one transparent Canvas DOM node for all saved application geometry;
+- Areas grouped by Team color and Streets grouped by Team color + status in memory;
+- geographic bounds precomputed when snapshot data changes;
+- offscreen geometry culled before point projection;
+- camera events coalesced to at most one redraw per animation frame;
+- Canvas device-pixel-ratio capped at 2 for predictable mobile backing-buffer cost;
+- no React reconciliation and no saved-feature SVG DOM writes during pan/zoom/rotate;
 - saved street width scales down when zooming out and no permanent broad white highlighter casing is used;
-- Area fill is subtle and outlines are thin;
-- stored corner/edit points remain hidden outside active draw/edit modes;
-- active edit/draw overlay keeps the established direct redraw behavior so the earlier edit-lag regression is not reintroduced.
+- Area fill is subtle and outlines are thin.
+
+Current active edit/draw path:
+- only the small current draft/edit geometry is SVG;
+- camera movement updates SVG `points` and marker positions imperatively;
+- React is not rerendered for every MapLibre `move` frame;
+- stored corner/edit points remain hidden outside active draw/edit modes.
+
+ADR-0010 records the Canvas-saved / SVG-active renderer decision.
 
 ## Browser diagnostics
 
@@ -59,11 +70,11 @@ It reports/copies only troubleshooting data needed for renderer acceptance:
 - recent animation-frame FPS and long-frame counts;
 - viewport/device/browser capability hints;
 - local Area/Street Task counts;
-- number/size of saved SVG paths and DOM node count;
+- saved Canvas presence/backing-pixel count, active SVG node count and total DOM size;
 - CARTO basemap resource timing summaries;
 - recent browser console errors/warnings observed while diagnostics are enabled.
 
-The diagnostics panel does not persist data and redacts token-like strings. It is not enabled for normal users unless the query flag is present.
+The diagnostics panel does not persist data, removes the Campaign selector from copied page metadata and redacts token-like strings. It is not enabled for normal users unless the query flag is present.
 
 ## UI follow-up
 
@@ -90,7 +101,7 @@ PR #21 adds access tests for:
 - fresh Admin grant/session creation even when the Campaign already has existing grants;
 - plaintext recovery token not being persisted into D1 statements.
 
-CI #125 passed the current renderer/recovery/diagnostics implementation: all 21 tests, TypeScript and production build are green. Real-browser acceptance remains required because earlier WebGL work demonstrated that CI alone cannot prove map rendering behavior.
+CI #129 passed the Canvas renderer implementation: all 21 tests, TypeScript and production build were green before the documentation-only follow-up commits. A final CI/Cloudflare preview must still run on the documentation head. Real-browser acceptance remains the release gate because earlier WebGL and grouped-SVG work demonstrated that CI alone cannot prove map performance/visibility.
 
 ## Active plans
 
@@ -99,14 +110,15 @@ CI #125 passed the current renderer/recovery/diagnostics implementation: all 21 
 
 ## Current release gates for PR #21
 
-1. Cloudflare branch preview must deploy the current head with the configured Worker runtime secret available.
+1. Final CI and Cloudflare branch preview must deploy the current Canvas head.
 2. On the preview host, use the configured operator secret to recover a fresh Admin session/link.
 3. Save an Area and confirm it stays visible + selectable immediately.
 4. Save a Street and confirm it stays visible + selectable immediately.
-5. Confirm stored edit points are absent in browse mode and edit mode is no worse than current `main`.
-6. Confirm thin zoom-dependent streets and stable bottom-right refresh placement on desktop + phone.
-7. Capture `diag=1` output while reproducing pan/zoom/edit behavior and use it to investigate any remaining jank.
-8. Run synthetic dense-street acceptance (500 / 1,000 / 2,500 / 5,000 features) before declaring whole-city renderer work complete.
+5. Confirm stored edit points are absent in browse mode.
+6. Pan/zoom/rotate for 5–10 seconds with `diag=1` and capture FPS/long-frame diagnostics.
+7. Enter Area edit mode and repeat the diagnostic movement test; active editing must no longer React-rerender on every camera frame.
+8. Confirm thin zoom-dependent streets and stable bottom-right refresh placement on desktop + phone.
+9. Run dense-street acceptance with realistic city-sized geometry before declaring whole-city renderer work complete.
 
 ## Deferred beyond this slice
 
@@ -120,4 +132,4 @@ CI #125 passed the current renderer/recovery/diagnostics implementation: all 21 
 
 ## Next
 
-Get the latest Cloudflare preview deployed with runtime recovery available, perform real-browser recovery/render diagnostics, merge PR #21 after acceptance, then continue M5 resilient mutation-queue work from the stable renderer baseline.
+Deploy the final Canvas preview, collect real-device `diag=1` data, fix any remaining renderer bottleneck from measured evidence, merge PR #21 only after acceptance, then continue M5 resilient mutation-queue work from the accepted renderer baseline.
