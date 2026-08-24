@@ -20,6 +20,11 @@
   pointer-events: none;
 }
 
+.active-geometry-overlay {
+  z-index: 9;
+}
+
+.application-overlay path,
 .application-overlay polygon,
 .application-overlay polyline,
 .application-overlay circle {
