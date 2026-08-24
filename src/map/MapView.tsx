@@ -290,7 +290,7 @@ function findRenderedTask(map: Map, point: { x: number; y: number }) {
 }
 
 function findRenderedArea(map: Map, point: { x: number; y: number }) {
-  const features = map.queryRenderedFeatures(point, { layers: [AREA_FILL_LAYER_ID] });
+  const features = map.queryRenderedFeatures([point.x, point.y], { layers: [AREA_FILL_LAYER_ID] });
   const id = features.find((feature) => typeof feature.properties?.id === "string")?.properties?.id;
   return typeof id === "string" ? id : null;
 }
