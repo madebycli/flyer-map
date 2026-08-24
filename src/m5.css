@@ -1,0 +1,55 @@
+.mutation-sync-status {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 4.35rem);
+  right: 0.75rem;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: min(78vw, 18rem);
+  min-height: 2rem;
+  padding: 0.38rem 0.65rem;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.1;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.mutation-sync-dot {
+  width: 0.48rem;
+  height: 0.48rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.mutation-sync-status.is-saved {
+  color: #166534;
+}
+
+.mutation-sync-status.is-pending,
+.mutation-sync-status.is-syncing,
+.mutation-sync-status.is-offline {
+  color: #92400e;
+}
+
+.mutation-sync-status.is-conflict,
+.mutation-sync-status.is-failed,
+.mutation-sync-status.is-blocked-auth {
+  color: #b91c1c;
+}
+
+@media (max-width: 420px) {
+  .mutation-sync-status {
+    top: calc(env(safe-area-inset-top, 0px) + 4.05rem);
+    right: 0.55rem;
+    max-width: calc(100vw - 1.1rem);
+    font-size: 0.75rem;
+  }
+}
