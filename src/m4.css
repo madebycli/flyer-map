@@ -1,17 +1,19 @@
 .map-refresh-control {
   position: absolute;
-  z-index: 7;
-  top: calc(env(safe-area-inset-top) + 13rem);
-  right: 0.65rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  z-index: 19;
+  right: 0.75rem;
+  bottom: calc(env(safe-area-inset-bottom) + 8.7rem);
+  width: 2.8rem;
+  height: 2.8rem;
   pointer-events: none;
 }
 
 .map-refresh-button {
+  display: grid;
   width: 2.8rem;
   height: 2.8rem;
+  place-items: center;
+  padding: 0;
   border: 1px solid rgb(30 50 35 / 10%);
   border-radius: 0.8rem;
   color: #26352b;
@@ -24,28 +26,27 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.map-refresh-button:disabled {
-  opacity: 0.6;
+.map-refresh-control.is-loading .map-refresh-button span {
+  animation: map-refresh-spin 0.9s linear infinite;
 }
 
-.map-refresh-feedback {
-  max-width: 10rem;
-  padding: 0.38rem 0.52rem;
-  border: 1px solid rgb(30 50 35 / 10%);
-  border-radius: 0.65rem;
-  color: #334039;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 0.15rem 0.55rem rgb(20 35 24 / 10%);
-  font-size: 0.68rem;
-  font-weight: 700;
-  line-height: 1.2;
-  pointer-events: none;
-}
-
-.map-refresh-feedback.is-error,
-.map-refresh-feedback.is-available {
-  color: #74420e;
+.map-refresh-control.is-error .map-refresh-button {
+  color: #8a4a0d;
   background: rgb(255 246 226 / 97%);
+}
+
+.map-refresh-control.is-current .map-refresh-button {
+  color: #19592f;
+}
+
+.map-refresh-button:disabled {
+  opacity: 0.68;
+}
+
+@keyframes map-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .settings-sheet {
@@ -183,12 +184,8 @@
 
 @media (max-width: 480px) {
   .map-refresh-control {
-    top: calc(env(safe-area-inset-top) + 12.7rem);
-    right: 0.45rem;
-  }
-
-  .map-refresh-feedback {
-    max-width: 8.2rem;
+    right: 0.55rem;
+    bottom: calc(env(safe-area-inset-bottom) + 8.55rem);
   }
 
   .settings-actions.stacked-mobile {
