@@ -1,0 +1,98 @@
+.access-recovery-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+  background: rgb(238 242 238 / 52%);
+  backdrop-filter: blur(8px);
+}
+
+.access-recovery-card {
+  width: min(100%, 30rem);
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid rgb(30 50 35 / 12%);
+  border-radius: 1.05rem;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 1rem 3rem rgb(20 35 24 / 20%);
+}
+
+.access-recovery-card strong {
+  color: #172019;
+  font-size: 1rem;
+}
+
+.access-recovery-card p {
+  margin: 0;
+  color: #5e6a62;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.access-recovery-kicker {
+  color: #1f6b3a;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.access-recovery-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.access-recovery-field > span {
+  color: #526057;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.access-recovery-field input,
+.access-recovery-link {
+  width: 100%;
+  min-height: 2.85rem;
+  padding: 0.62rem 0.72rem;
+  border: 1px solid #cfd7d0;
+  border-radius: 0.78rem;
+  color: #172019;
+  background: #ffffff;
+  font: inherit;
+}
+
+.access-recovery-link {
+  font-size: 0.72rem;
+}
+
+.access-recovery-note {
+  color: #718077 !important;
+  font-size: 0.69rem !important;
+}
+
+.access-recovery-error {
+  color: #8f1f22 !important;
+  background: #fde9e8;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.68rem;
+}
+
+.access-recovery-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+@media (max-width: 480px) {
+  .access-recovery-backdrop {
+    align-items: end;
+    padding-right: 0.7rem;
+    padding-left: 0.7rem;
+  }
+
+  .access-recovery-card {
+    border-radius: 1.1rem 1.1rem 0.9rem 0.9rem;
+  }
+}
