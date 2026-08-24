@@ -5,7 +5,6 @@ import type { Area, DistributionTask, LngLat } from "../domain/campaign";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
-
 type RenderArea = Area & { color: string };
 type RenderTask = DistributionTask & { color: string };
 
@@ -71,22 +70,22 @@ function samePoint(a: LngLat, b: LngLat) {
 
 function openAreaRing(area: RenderArea): LngLat[] {
   const ring = area.geometry.coordinates[0] as LngLat[];
-  if (ring.length > 1 && samePoint(ring[0], ring[ring.length - 1])) {
-    return ring.slice(0, -1);
-  }
+  if (ring.length > 1 && samePoint(ring[0], ring[ring.length - 1])) return ring.slice(0, -1);
   return ring;
 }
 
 function pointInPolygon(point: LngLat, polygon: LngLat[]) {
+  if (polygon.length < 3) return false;
   let inside = false;
   const [x, y] = point;
 
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
     const [xi, yi] = polygon[i];
     const [xj, yj] = polygon[j];
-    const intersects =
-      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi || Number.EPSILON) + xi;
-    if (intersects) inside = !inside;
+    const crosses = yi > y !== yj > y;
+    if (!crosses) continue;
+    const boundaryX = ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (x < boundaryX) inside = !inside;
   }
 
   return inside;
@@ -112,15 +111,44 @@ function pointToSegmentDistance(
 
 function taskHitDistance(map: Map, task: RenderTask, point: { x: number; y: number }) {
   const coordinates = task.geometry.coordinates as LngLat[];
-  let distance = Number.POSITIVE_INFINITY;
-
+  let best = Number.POSITIVE_INFINITY;
   for (let index = 1; index < coordinates.length; index += 1) {
     const start = map.project(coordinates[index - 1]);
     const end = map.project(coordinates[index]);
-    distance = Math.min(distance, pointToSegmentDistance(point, start, end));
+    best = Math.min(best, pointToSegmentDistance(point, start, end));
   }
+  return best;
+}
 
-  return distance;
+function findTaskHit(map: Map, tasks: RenderTask[], point: { x: number; y: number }) {
+  let hitId: string | null = null;
+  let best = 16;
+  for (const task of tasks) {
+    const distance = taskHitDistance(map, task, point);
+    if (distance <= best) {
+      hitId = task.id;
+      best = distance;
+    }
+  }
+  return hitId;
+}
+
+function findEditVertex(
+  map: Map,
+  vertices: LngLat[],
+  point: { x: number; y: number },
+) {
+  let hit: number | null = null;
+  let best = 24;
+  for (let index = 0; index < vertices.length; index += 1) {
+    const projected = map.project(vertices[index]);
+    const distance = Math.hypot(projected.x - point.x, projected.y - point.y);
+    if (distance <= best) {
+      hit = index;
+      best = distance;
+    }
+  }
+  return hit;
 }
 
 function statusPresentation(status: DistributionTask["status"]) {
@@ -160,7 +188,6 @@ function ProjectedMarkers({
   radius?: number;
 }) {
   if (!map) return null;
-
   return coordinates.map((coordinate, index) => {
     const point = map.project(coordinate);
     const selected = selectedIndex === index;
@@ -248,7 +275,6 @@ export function MapView({
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-
     let active = true;
 
     try {
@@ -291,41 +317,20 @@ export function MapView({
         }
 
         if (interaction.mode === "edit") {
-          let nearestIndex: number | null = null;
-          let nearestDistance = Number.POSITIVE_INFINITY;
-
-          interaction.editingVertices.forEach((coordinate, index) => {
-            const projected = map.project(coordinate);
-            const distance = Math.hypot(projected.x - event.point.x, projected.y - event.point.y);
-            if (distance < nearestDistance) {
-              nearestDistance = distance;
-              nearestIndex = index;
-            }
-          });
-
-          if (nearestIndex !== null && nearestDistance <= 24) {
-            interaction.onEditVertexSelect(nearestIndex);
+          const vertexIndex = findEditVertex(map, interaction.editingVertices, event.point);
+          if (vertexIndex !== null) {
+            interaction.onEditVertexSelect(vertexIndex);
             return;
           }
-
           if (interaction.selectedVertexIndex !== null) {
             interaction.onEditVertexMove(interaction.selectedVertexIndex, lngLat);
           }
           return;
         }
 
-        let taskHit: RenderTask | null = null;
-        let taskDistance = 16;
-        interaction.tasks.forEach((task) => {
-          const distance = taskHitDistance(map, task, event.point);
-          if (distance <= taskDistance) {
-            taskHit = task;
-            taskDistance = distance;
-          }
-        });
-
-        if (taskHit) {
-          interaction.onTaskSelect(taskHit.id);
+        const taskId = findTaskHit(map, interaction.tasks, event.point);
+        if (taskId) {
+          interaction.onTaskSelect(taskId);
           return;
         }
 
@@ -540,12 +545,7 @@ export function MapView({
                 />
               </>
             ) : null}
-            <ProjectedMarkers
-              map={map}
-              coordinates={streetDraftVertices}
-              color={streetDraftColor}
-              radius={9}
-            />
+            <ProjectedMarkers map={map} coordinates={streetDraftVertices} color={streetDraftColor} radius={9} />
           </>
         ) : null}
       </svg>
