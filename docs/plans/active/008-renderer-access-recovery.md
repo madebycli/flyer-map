@@ -2,86 +2,85 @@
 id: plan-008-renderer-access-recovery
 type: plan
 status: active
-last_updated: 2026-08-24
+last_updated: 2026-08-25
 ---
 
-# 008 — Access recovery + stable whole-city renderer
+# 008 — Access recovery + MetroDreamin-style whole-city renderer
 
 ## Goal
 
-Restore Admin access for an existing Campaign without weakening Worker authorization, and reach whole-city map performance for hundreds to thousands of saved street segments while preserving reliable visibility, selection and edit behavior on mobile browsers.
+Restore Admin access for existing Campaigns without weakening Worker authorization and make whole-city rendering smooth on older phones by moving saved geometry into long-lived MapLibre GeoJSON sources/layers.
 
 ## Context
 
-- M4 access links are live on `main`; a Campaign id is only a selector, not a credential.
-- Preview hosts do not share the production session cookie, so a valid Campaign can show `access_required` even when the same browser was previously authenticated on production.
-- The post-M4 MapLibre GeoJSON/WebGL experiment in PR #19 failed real-browser acceptance: saved Areas/Streets remained invisible and non-interactive despite green CI.
-- A first follow-up optimization grouped saved SVG paths and removed React reconciliation from browse movement, but real-device feedback still reported unacceptable lag.
-- The renderer therefore keeps MapLibre limited to basemap/camera and moves **saved** application geometry to one independent Canvas while keeping **active edit/draw** geometry in SVG.
-- Real-device feedback also requires edit handles to remain hidden outside active edit mode and the refresh control to sit cleanly above the bottom field UI.
+- M4 access links are live on `main`; Campaign id is a selector, never a credential.
+- Preview hosts use another origin and do not share the production session cookie.
+- PR #19 proved that a naive MapLibre layer migration can fail real-browser visibility/interactivity even with green CI.
+- Grouped SVG and Canvas experiments still required JavaScript projection of saved vertices on camera movement and did not meet real-device performance expectations.
+- MetroDreamin demonstrates the correct dense-map lifecycle: long-lived GL sources/layers, data updates through source data changes, and rendered-feature hit testing.
 
 ## Tasks
 
-1. Add a Worker-side Admin recovery endpoint guarded by the existing high-entropy `M4_BOOTSTRAP_SECRET`.
-   - The endpoint may create a fresh Admin grant even when grants already exist.
-   - It must set a new secure session cookie and return the plaintext recovery Access token once.
-   - Campaign existence and same-origin protections remain enforced.
-2. Add browser UI shown only when Campaign access is missing.
-   - Secret is entered locally into a password field and never persisted.
-   - Successful recovery immediately restores the session and yields a one-time Admin access URL that can be copied/bookmarked.
-3. Saved geometry performance path.
-   - Render all saved Areas and Street Tasks into one transparent Canvas overlay.
-   - Precompute feature bounds when snapshot data changes.
-   - Cull offscreen geometry before point projection.
-   - Group Areas by Team color and Streets by Team color + status in memory.
-   - Coalesce MapLibre camera events to at most one Canvas redraw per animation frame.
-   - Cap overlay device-pixel-ratio at 2 to avoid oversized mobile backing buffers.
-4. Active edit/draw performance path.
-   - Keep area/street draft geometry and edit handles in SVG.
-   - Update SVG `points`/marker coordinates directly on camera movement.
-   - Never trigger a React render for every MapLibre `move` event.
-5. Visual treatment.
-   - Saved Streets use thin Team-colored road-like Canvas strokes without permanent broad white casing.
-   - Stroke width becomes thinner as the map zooms out.
-   - Saved Areas use subtle fill and thin outline.
-   - Stored edit/corner points never render outside active edit mode.
-6. Refresh control.
-   - Browse-only.
-   - Fixed bottom-right directly above the bottom field toolbar.
-   - Compact surface language matching settings/field UI; no sideways expanding status label.
-7. Diagnostics/tests/documentation.
-   - Add coverage for recovery-secret rejection and successful recovery creating a fresh Admin grant/session.
-   - Keep existing access/authorization tests green.
-   - `?diag=1` reports FPS, long frames, feature counts, Canvas renderer state, DOM size and basemap timings without including Campaign selector or access token.
-   - Record ADR-0010 for Canvas saved geometry + SVG active editing.
-   - Update security, map architecture, current status and deployment documentation.
-   - Run tests, TypeScript and production build in CI.
-8. Cloudflare preview acceptance before merge.
-   - Existing Campaign can be recovered on the preview host using the server secret.
-   - Saved Area remains visible/clickable after Save.
-   - Saved Street remains visible/clickable after Save.
-   - Edit mode is smoother/no worse than current `main`.
-   - Pan/zoom/rotate keeps saved Canvas aligned with the basemap.
-   - Diagnose real device FPS before merge.
+1. Admin recovery
+- keep same-origin `POST /api/admin/recover` guarded by server-only `M4_BOOTSTRAP_SECRET`;
+- allow creation of a fresh Admin grant/session when Campaign already has grants;
+- never persist the plaintext recovery secret;
+- return a one-time new Admin Access Link.
+
+2. Saved renderer
+- one long-lived GeoJSON source for Areas;
+- one long-lived GeoJSON source for Street Tasks;
+- create sources/layers once after MapLibre `load`;
+- use `GeoJSONSource.setData()` only for actual Campaign data changes;
+- no saved-geometry `map.project()` work during browse pan/zoom/rotate.
+
+3. Styling
+- subtle Area fill + thin outline;
+- thin Team-colored Street lines;
+- zoom-dependent line widths that shrink toward city overview;
+- fixed filtered layers for task statuses;
+- compact selected-Street halo only;
+- no saved corner/edit points in browse mode.
+
+4. Interaction
+- Street selection via `queryRenderedFeatures()` with a small screen-space hit box;
+- Area selection via the Area fill layer;
+- no application scan/project loop across all Streets during browse clicks.
+
+5. Active editing
+- keep Area draw/edit and Street draw in SVG;
+- only active vertices are projected;
+- map camera movement updates active SVG DOM attributes directly rather than forcing React reconciliation per move event.
+
+6. Diagnostics
+- `?diag=1` must report `maplibre-geojson`, FPS, long frames, feature counts, DOM counts, basemap timing and captured browser warnings/errors;
+- copied diagnostics must remove Campaign selector/URL fragment and redact token-like strings.
+
+7. UI
+- refresh control remains browse-only, compact and anchored directly above the bottom field UI.
+
+8. Documentation and tests
+- ADR-0010 records MapLibre GeoJSON saved geometry + active SVG;
+- update map architecture/current status;
+- keep authorization/recovery tests green;
+- TypeScript and production build must pass.
 
 ## Acceptance criteria
 
-- Standard Campaign URL can recover Admin access through an explicit secret-protected flow; anonymous first-visitor claim remains impossible.
-- A newly recovered Admin receives a one-time new Access Link and persistent secure session cookie.
-- Saved Areas/Streets are always visible and selectable in browse mode.
-- Edit handles are visible only while actively editing/drawing.
-- Browse pan/zoom uses one Canvas overlay and does not reconcile stored geometry through React/SVG.
-- Active editing does not React-rerender on every map camera frame.
-- Streets look like colored street markings rather than highlighter strokes and scale down visually when zooming out.
-- Refresh control placement is stable on desktop/mobile.
-- CI is green and real-device preview acceptance passes before merge.
-
-## Risks
-
-- `M4_BOOTSTRAP_SECRET` becomes an operator recovery credential while it remains configured; documentation must make this explicit and recommend rotation if exposure is suspected.
-- Canvas projection is still O(number of visible vertices). Culling and removal of DOM/React work materially reduce overhead, but diagnostics on realistic city data are still the release gate.
-- Branch previews use a different origin and therefore require their own recovered/redeemed session cookie.
+- recovery can restore a normal Admin session/link without anonymous ownership claiming;
+- saved Area remains visible/selectable immediately after Save;
+- saved Street remains visible/selectable immediately after Save;
+- ordinary browse movement performs no Verteil-Flyer saved-feature projection loop;
+- there is no visible lag between basemap and saved geometry;
+- edit handles appear only in active edit/draw modes;
+- edit mode remains responsive;
+- streets remain thin and visually shrink while zooming out;
+- `?diag=1` reports `maplibre-geojson`;
+- real-device acceptance passes on desktop + Pixel 9 and, where available, older iPhone-class hardware;
+- synthetic 500 / 1,000 / 2,500 / 5,000 Street datasets remain usable.
 
 ## Decision
 
-Do not reintroduce MapLibre application GeoJSON layers in this slice. PR #19 demonstrated that path is not accepted for the current baseline. Use one Canvas for saved geometry and SVG only for active editing/drawing, as recorded in ADR-0010.
+Use MetroDreamin as an architectural reference, not as copied application code. Reimplement the general source/layer lifecycle in MapLibre TypeScript while keeping Verteil-Flyer product/domain/security code independent.
+
+Do not merge before real-browser acceptance. CI cannot prove visibility or mobile frame behavior by itself.
