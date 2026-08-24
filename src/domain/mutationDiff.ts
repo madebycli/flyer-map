@@ -14,13 +14,13 @@ function same(a: unknown, b: unknown) {
 
 function mutationBase(
   previous: CampaignSnapshot,
-  next: CampaignSnapshot,
+  createdAt: string,
 ): Pick<CampaignMutation, "id" | "campaignId" | "baseRevision" | "createdAt"> {
   return {
     id: `mutation_${crypto.randomUUID()}`,
     campaignId: previous.campaign.id,
     baseRevision: previous.revision,
-    createdAt: next.campaign.updatedAt,
+    createdAt,
   };
 }
 
@@ -52,7 +52,6 @@ export function deriveCampaignMutation(
     throw new MutationDerivationError("Lokale Mutation muss die Revision genau einmal erhöhen.");
   }
 
-  const base = mutationBase(previous, next);
   const campaignChanged = !same(withoutCampaignUpdatedAt(previous), withoutCampaignUpdatedAt(next));
   const teams = changedIds(previous.teams, next.teams);
   const areas = changedIds(previous.areas, next.areas);
@@ -70,6 +69,7 @@ export function deriveCampaignMutation(
     tasks.changed.length;
 
   if (campaignChanged && collectionDeltaCount === 0) {
+    const base = mutationBase(previous, next.campaign.updatedAt);
     const nameChanged = previous.campaign.name !== next.campaign.name;
     const mapViewChanged = !same(previous.campaign.defaultMapView, next.campaign.defaultMapView);
     const statusChanged = previous.campaign.status !== next.campaign.status;
@@ -82,7 +82,7 @@ export function deriveCampaignMutation(
         type: "campaign.rename",
         payload: {
           name: next.campaign.name,
-          expectedUpdatedAt: previous.campaign.updatedAt,
+          expectedName: previous.campaign.name,
         },
       };
     }
@@ -91,7 +91,7 @@ export function deriveCampaignMutation(
       type: "campaign.set-default-map-view",
       payload: {
         defaultMapView: next.campaign.defaultMapView,
-        expectedUpdatedAt: previous.campaign.updatedAt,
+        expectedDefaultMapView: previous.campaign.defaultMapView,
       },
     };
   }
@@ -100,13 +100,10 @@ export function deriveCampaignMutation(
     throw new MutationDerivationError("Campaign-Konfiguration und Domain-Daten wurden gleichzeitig geändert.");
   }
 
-  if (
-    teams.added.length === 1 &&
-    collectionDeltaCount === 1
-  ) {
+  if (teams.added.length === 1 && collectionDeltaCount === 1) {
     const team = teams.added[0];
     return {
-      ...base,
+      ...mutationBase(previous, team.createdAt),
       type: "team.create",
       payload: { teamId: team.id, name: team.name, color: team.color },
     };
@@ -123,7 +120,7 @@ export function deriveCampaignMutation(
     const colorChanged = oldTeam.color !== team.color;
     if (!nameChanged && !colorChanged) return null;
     return {
-      ...base,
+      ...mutationBase(previous, team.updatedAt),
       type: "team.update",
       payload: {
         teamId: team.id,
@@ -137,7 +134,7 @@ export function deriveCampaignMutation(
   if (areas.added.length === 1 && collectionDeltaCount === 1) {
     const area = areas.added[0];
     return {
-      ...base,
+      ...mutationBase(previous, area.createdAt),
       type: "area.create",
       payload: {
         areaId: area.id,
@@ -159,6 +156,7 @@ export function deriveCampaignMutation(
     if (Number(nameChanged) + Number(teamChanged) + Number(geometryChanged) !== 1) {
       throw new MutationDerivationError("Area-Änderung enthält mehr als eine Operation.");
     }
+    const base = mutationBase(previous, area.updatedAt);
     if (nameChanged) {
       return {
         ...base,
@@ -203,7 +201,7 @@ export function deriveCampaignMutation(
       collectionDeltaCount === 1 + tasks.removed.length;
     if (onlyCascadedTasksRemoved) {
       return {
-        ...base,
+        ...mutationBase(previous, next.campaign.updatedAt),
         type: "area.delete",
         payload: {
           areaId: removedArea.id,
@@ -216,7 +214,7 @@ export function deriveCampaignMutation(
   if (tasks.added.length === 1 && collectionDeltaCount === 1) {
     const task = tasks.added[0];
     return {
-      ...base,
+      ...mutationBase(previous, task.createdAt),
       type: "task.create",
       payload: {
         taskId: task.id,
@@ -239,11 +237,11 @@ export function deriveCampaignMutation(
       throw new MutationDerivationError("Unveränderliche Task-Felder wurden geändert.");
     }
     const labelChanged = oldTask.label !== task.label;
-    const statusChanged =
-      oldTask.status !== task.status || oldTask.completedAt !== task.completedAt;
+    const statusChanged = oldTask.status !== task.status || oldTask.completedAt !== task.completedAt;
     if (Number(labelChanged) + Number(statusChanged) !== 1) {
       throw new MutationDerivationError("Task-Änderung enthält mehr als eine Operation.");
     }
+    const base = mutationBase(previous, task.updatedAt);
     if (labelChanged) {
       return {
         ...base,
@@ -270,7 +268,7 @@ export function deriveCampaignMutation(
   if (tasks.removed.length === 1 && collectionDeltaCount === 1) {
     const task = tasks.removed[0];
     return {
-      ...base,
+      ...mutationBase(previous, next.campaign.updatedAt),
       type: "task.delete",
       payload: { taskId: task.id, expectedUpdatedAt: task.updatedAt },
     };
