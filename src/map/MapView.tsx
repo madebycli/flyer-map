@@ -10,12 +10,15 @@ import "maplibre-gl/dist/maplibre-gl.css";
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
 type RenderArea = Area & { color: string };
 type RenderTask = DistributionTask & { color: string };
-type AreaGroup = { key: string; color: string; areas: RenderArea[] };
+type GeoBounds = { west: number; east: number; south: number; north: number };
+type PreparedArea = { area: RenderArea; ring: LngLat[]; bounds: GeoBounds };
+type PreparedTask = { task: RenderTask; coordinates: LngLat[]; bounds: GeoBounds };
+type AreaGroup = { key: string; color: string; areas: PreparedArea[] };
 type StreetGroup = {
   key: string;
   color: string;
   status: DistributionTask["status"];
-  tasks: RenderTask[];
+  tasks: PreparedTask[];
 };
 
 export type MapRefreshState = "idle" | "loading" | "current" | "error" | "available";
@@ -49,6 +52,7 @@ type MapViewProps = {
 };
 
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
+const MAX_OVERLAY_DPR = 2;
 const CARTO_VOYAGER_RETINA_STYLE: StyleSpecification = {
   version: 8,
   sources: {
@@ -169,8 +173,7 @@ function findEditVertex(map: Map, vertices: LngLat[], point: { x: number; y: num
   return hit;
 }
 
-function projectedPoints(map: Map | null, coordinates: LngLat[]) {
-  if (!map) return "";
+function projectedPoints(map: Map, coordinates: LngLat[]) {
   return coordinates
     .map((coordinate) => {
       const point = map.project(coordinate);
@@ -188,12 +191,40 @@ function cameraFromMap(map: Map): MapCameraView {
   };
 }
 
-function groupAreas(areas: RenderArea[]) {
-  const groups = new globalThis.Map<string, RenderArea[]>();
+function geometryBounds(coordinates: LngLat[]): GeoBounds {
+  let west = Infinity;
+  let east = -Infinity;
+  let south = Infinity;
+  let north = -Infinity;
+  for (const [lng, lat] of coordinates) {
+    west = Math.min(west, lng);
+    east = Math.max(east, lng);
+    south = Math.min(south, lat);
+    north = Math.max(north, lat);
+  }
+  return { west, east, south, north };
+}
+
+function prepareAreas(areas: RenderArea[]) {
+  return areas.map((area): PreparedArea => {
+    const ring = openAreaRing(area);
+    return { area, ring, bounds: geometryBounds(ring) };
+  });
+}
+
+function prepareTasks(tasks: RenderTask[]) {
+  return tasks.map((task): PreparedTask => {
+    const coordinates = task.geometry.coordinates as LngLat[];
+    return { task, coordinates, bounds: geometryBounds(coordinates) };
+  });
+}
+
+function groupAreas(areas: PreparedArea[]) {
+  const groups = new globalThis.Map<string, PreparedArea[]>();
   for (const area of areas) {
-    const current = groups.get(area.color);
+    const current = groups.get(area.area.color);
     if (current) current.push(area);
-    else groups.set(area.color, [area]);
+    else groups.set(area.area.color, [area]);
   }
   return [...groups.entries()].map(([color, groupedAreas]) => ({
     key: color,
@@ -202,17 +233,17 @@ function groupAreas(areas: RenderArea[]) {
   }));
 }
 
-function groupStreets(tasks: RenderTask[]) {
+function groupStreets(tasks: PreparedTask[]) {
   const groups = new globalThis.Map<string, StreetGroup>();
   for (const task of tasks) {
-    const key = `${task.color}:${task.status}`;
+    const key = `${task.task.color}:${task.task.status}`;
     const current = groups.get(key);
     if (current) current.tasks.push(task);
     else {
       groups.set(key, {
         key,
-        color: task.color,
-        status: task.status,
+        color: task.task.color,
+        status: task.task.status,
         tasks: [task],
       });
     }
@@ -220,57 +251,18 @@ function groupStreets(tasks: RenderTask[]) {
   return [...groups.values()];
 }
 
-function intersectsViewport(map: Map, coordinates: LngLat[]) {
-  if (coordinates.length === 0) return false;
+function currentViewportBounds(map: Map): GeoBounds {
   const bounds = map.getBounds();
-  let minLng = Infinity;
-  let maxLng = -Infinity;
-  let minLat = Infinity;
-  let maxLat = -Infinity;
-  for (const [lng, lat] of coordinates) {
-    minLng = Math.min(minLng, lng);
-    maxLng = Math.max(maxLng, lng);
-    minLat = Math.min(minLat, lat);
-    maxLat = Math.max(maxLat, lat);
-  }
-  return !(
-    maxLng < bounds.getWest() ||
-    minLng > bounds.getEast() ||
-    maxLat < bounds.getSouth() ||
-    minLat > bounds.getNorth()
-  );
+  return {
+    west: bounds.getWest(),
+    east: bounds.getEast(),
+    south: bounds.getSouth(),
+    north: bounds.getNorth(),
+  };
 }
 
-function polygonPath(map: Map, areas: RenderArea[]) {
-  let path = "";
-  for (const area of areas) {
-    const coordinates = openAreaRing(area);
-    if (coordinates.length < 3 || !intersectsViewport(map, coordinates)) continue;
-    coordinates.forEach((coordinate, index) => {
-      const point = map.project(coordinate);
-      path += `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
-    });
-    path += "Z";
-  }
-  return path;
-}
-
-function linePath(map: Map, tasks: RenderTask[]) {
-  let path = "";
-  for (const task of tasks) {
-    const coordinates = task.geometry.coordinates as LngLat[];
-    if (coordinates.length < 2 || !intersectsViewport(map, coordinates)) continue;
-    coordinates.forEach((coordinate, index) => {
-      const point = map.project(coordinate);
-      path += `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
-    });
-  }
-  return path;
-}
-
-function oneTaskPath(map: Map, task: RenderTask | null) {
-  if (!task) return "";
-  return linePath(map, [task]);
+function boundsIntersect(a: GeoBounds, b: GeoBounds) {
+  return !(a.east < b.west || a.west > b.east || a.north < b.south || a.south > b.north);
 }
 
 function interpolateWidth(zoom: number, stops: Array<[number, number]>) {
@@ -288,69 +280,152 @@ function interpolateWidth(zoom: number, stops: Array<[number, number]>) {
 
 function streetWidth(zoom: number) {
   return interpolateWidth(zoom, [
-    [5, 0.35],
-    [8, 0.5],
-    [11, 0.8],
-    [14, 1.35],
-    [17, 2.2],
-    [20, 3.2],
+    [5, 0.3],
+    [8, 0.42],
+    [11, 0.68],
+    [14, 1.1],
+    [17, 1.8],
+    [20, 2.7],
   ]);
 }
 
 function areaWidth(zoom: number) {
   return interpolateWidth(zoom, [
-    [5, 0.3],
-    [8, 0.45],
-    [11, 0.7],
-    [14, 1.05],
-    [17, 1.55],
-    [20, 2.1],
+    [5, 0.28],
+    [8, 0.4],
+    [11, 0.62],
+    [14, 0.9],
+    [17, 1.3],
+    [20, 1.8],
   ]);
 }
 
 function statusPresentation(status: DistributionTask["status"]) {
   switch (status) {
     case "completed":
-      return { opacity: 0.38, dash: undefined as string | undefined, widthFactor: 0.9 };
+      return { opacity: 0.38, dash: [] as number[], widthFactor: 0.9 };
     case "later":
-      return { opacity: 0.84, dash: "7 5", widthFactor: 1 };
+      return { opacity: 0.84, dash: [7, 5], widthFactor: 1 };
     case "not-deliverable":
-      return { opacity: 0.72, dash: "2 6", widthFactor: 1 };
+      return { opacity: 0.72, dash: [2, 6], widthFactor: 1 };
     default:
-      return { opacity: 0.96, dash: undefined as string | undefined, widthFactor: 1 };
+      return { opacity: 0.96, dash: [] as number[], widthFactor: 1 };
   }
 }
 
-function ProjectedMarkers({
-  map,
-  coordinates,
-  color,
-  selectedIndex = null,
-  radius = 8,
-}: {
-  map: Map | null;
-  coordinates: LngLat[];
-  color: string;
-  selectedIndex?: number | null;
-  radius?: number;
-}) {
-  if (!map) return null;
-  return coordinates.map((coordinate, index) => {
-    const point = map.project(coordinate);
-    const selected = selectedIndex === index;
-    return (
-      <circle
-        key={`${coordinate[0]}:${coordinate[1]}:${index}`}
-        cx={point.x}
-        cy={point.y}
-        r={selected ? radius + 3 : radius}
-        fill={selected ? "#ffffff" : color}
-        stroke={selected ? color : "#ffffff"}
-        strokeWidth={selected ? 4.5 : 3.5}
-        vectorEffect="non-scaling-stroke"
-      />
-    );
-  });
+function ensureCanvasSize(canvas: HTMLCanvasElement, map: Map) {
+  const width = Math.max(1, map.getContainer().clientWidth);
+  const height = Math.max(1, map.getContainer().clientHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_OVERLAY_DPR);
+  const pixelWidth = Math.max(1, Math.round(width * dpr));
+  const pixelHeight = Math.max(1, Math.round(height * dpr));
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+  return { width, height, dpr };
+}
+
+function traceLine(ctx: CanvasRenderingContext2D, map: Map, coordinates: LngLat[]) {
+  if (coordinates.length < 2) return false;
+  const first = map.project(coordinates[0]);
+  ctx.moveTo(first.x, first.y);
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const point = map.project(coordinates[index]);
+    ctx.lineTo(point.x, point.y);
+  }
+  return true;
+}
+
+function drawSavedCanvas(
+  canvas: HTMLCanvasElement,
+  map: Map,
+  areaGroups: AreaGroup[],
+  streetGroups: StreetGroup[],
+  selectedTask: PreparedTask | null,
+) {
+  const ctx = canvas.getContext("2d", { alpha: true });
+  if (!ctx) return;
+  const { width, height, dpr } = ensureCanvasSize(canvas, map);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const viewport = currentViewportBounds(map);
+  const zoom = map.getZoom();
+  const currentAreaWidth = areaWidth(zoom);
+  const currentStreetWidth = streetWidth(zoom);
+
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  for (const group of areaGroups) {
+    let hasVisibleArea = false;
+    ctx.beginPath();
+    for (const prepared of group.areas) {
+      if (prepared.ring.length < 3 || !boundsIntersect(prepared.bounds, viewport)) continue;
+      const first = map.project(prepared.ring[0]);
+      ctx.moveTo(first.x, first.y);
+      for (let index = 1; index < prepared.ring.length; index += 1) {
+        const point = map.project(prepared.ring[index]);
+        ctx.lineTo(point.x, point.y);
+      }
+      ctx.closePath();
+      hasVisibleArea = true;
+    }
+    if (!hasVisibleArea) continue;
+    ctx.fillStyle = group.color;
+    ctx.globalAlpha = 0.09;
+    ctx.fill();
+    ctx.strokeStyle = group.color;
+    ctx.globalAlpha = 0.92;
+    ctx.lineWidth = currentAreaWidth;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  }
+
+  if (selectedTask && boundsIntersect(selectedTask.bounds, viewport)) {
+    ctx.beginPath();
+    if (traceLine(ctx, map, selectedTask.coordinates)) {
+      ctx.strokeStyle = "#172019";
+      ctx.globalAlpha = 0.68;
+      ctx.lineWidth = currentStreetWidth * 2.05 + 1.2;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    }
+  }
+
+  for (const group of streetGroups) {
+    const presentation = statusPresentation(group.status);
+    let hasVisibleTask = false;
+    ctx.beginPath();
+    for (const prepared of group.tasks) {
+      if (!boundsIntersect(prepared.bounds, viewport)) continue;
+      hasVisibleTask = traceLine(ctx, map, prepared.coordinates) || hasVisibleTask;
+    }
+    if (!hasVisibleTask) continue;
+    ctx.strokeStyle = group.color;
+    ctx.globalAlpha = presentation.opacity;
+    ctx.lineWidth = currentStreetWidth * presentation.widthFactor;
+    ctx.setLineDash(presentation.dash);
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+}
+
+function updateActiveMarkers(
+  map: Map,
+  markerRefs: Array<SVGCircleElement | null>,
+  coordinates: LngLat[],
+) {
+  for (let index = 0; index < coordinates.length; index += 1) {
+    const marker = markerRefs[index];
+    if (!marker) continue;
+    const point = map.project(coordinates[index]);
+    marker.setAttribute("cx", String(point.x));
+    marker.setAttribute("cy", String(point.y));
+  }
 }
 
 export function MapView({
@@ -381,21 +456,23 @@ export function MapView({
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
+  const savedCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activePrimaryRef = useRef<SVGElement | null>(null);
+  const activeSecondaryRef = useRef<SVGElement | null>(null);
+  const activeMarkerRefs = useRef<Array<SVGCircleElement | null>>([]);
   const cameraSaveTimerRef = useRef<number | null>(null);
   const suppressNextCameraSaveRef = useRef(false);
-  const savedFrameRef = useRef<number | null>(null);
-  const requestSavedRedrawRef = useRef<(() => void) | null>(null);
-  const areaPathRefs = useRef(new globalThis.Map<string, SVGPathElement>());
-  const streetPathRefs = useRef(new globalThis.Map<string, SVGPathElement>());
-  const selectedStreetPathRef = useRef<SVGPathElement | null>(null);
+  const redrawFrameRef = useRef<number | null>(null);
+  const requestRedrawRef = useRef<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [, forceActiveOverlayRender] = useState(0);
 
-  const areaGroups = useMemo(() => groupAreas(areas), [areas]);
-  const streetGroups = useMemo(() => groupStreets(tasks), [tasks]);
+  const preparedAreas = useMemo(() => prepareAreas(areas), [areas]);
+  const preparedTasks = useMemo(() => prepareTasks(tasks), [tasks]);
+  const areaGroups = useMemo(() => groupAreas(preparedAreas), [preparedAreas]);
+  const streetGroups = useMemo(() => groupStreets(preparedTasks), [preparedTasks]);
   const selectedTask = useMemo(
-    () => tasks.find((task) => task.id === selectedTaskId) ?? null,
-    [tasks, selectedTaskId],
+    () => preparedTasks.find((prepared) => prepared.task.id === selectedTaskId) ?? null,
+    [preparedTasks, selectedTaskId],
   );
   const savedRenderRef = useRef({ areaGroups, streetGroups, selectedTask });
   savedRenderRef.current = { areaGroups, streetGroups, selectedTask };
@@ -404,8 +481,10 @@ export function MapView({
     areas,
     tasks,
     mode,
+    draftVertices,
     editingVertices,
     selectedVertexIndex,
+    streetDraftVertices,
     onAreaSelect,
     onTaskSelect,
     onDrawPoint,
@@ -419,8 +498,10 @@ export function MapView({
       areas,
       tasks,
       mode,
+      draftVertices,
       editingVertices,
       selectedVertexIndex,
+      streetDraftVertices,
       onAreaSelect,
       onTaskSelect,
       onDrawPoint,
@@ -428,12 +509,15 @@ export function MapView({
       onEditVertexMove,
       onStreetDrawPoint,
     };
+    requestRedrawRef.current?.();
   }, [
     areas,
     tasks,
     mode,
+    draftVertices,
     editingVertices,
     selectedVertexIndex,
+    streetDraftVertices,
     onAreaSelect,
     onTaskSelect,
     onDrawPoint,
@@ -461,53 +545,35 @@ export function MapView({
       });
       mapRef.current = map;
 
-      const drawSavedGeometry = () => {
-        const render = savedRenderRef.current;
-        const zoom = map.getZoom();
-        const currentAreaWidth = areaWidth(zoom).toFixed(2);
-        const currentStreetWidth = streetWidth(zoom);
+      const drawActiveGeometry = () => {
+        const interaction = interactionRef.current;
+        if (interaction.mode === "browse") return;
 
-        for (const group of render.areaGroups) {
-          const path = areaPathRefs.current.get(group.key);
-          if (!path) continue;
-          path.setAttribute("d", polygonPath(map, group.areas));
-          path.setAttribute("stroke-width", currentAreaWidth);
-        }
+        let coordinates: LngLat[] = [];
+        if (interaction.mode === "draw") coordinates = interaction.draftVertices;
+        else if (interaction.mode === "edit") coordinates = interaction.editingVertices;
+        else coordinates = interaction.streetDraftVertices;
 
-        for (const group of render.streetGroups) {
-          const path = streetPathRefs.current.get(group.key);
-          if (!path) continue;
-          path.setAttribute("d", linePath(map, group.tasks));
-          path.setAttribute(
-            "stroke-width",
-            (currentStreetWidth * statusPresentation(group.status).widthFactor).toFixed(2),
-          );
-        }
-
-        if (selectedStreetPathRef.current) {
-          selectedStreetPathRef.current.setAttribute("d", oneTaskPath(map, render.selectedTask));
-          selectedStreetPathRef.current.setAttribute(
-            "stroke-width",
-            (currentStreetWidth * 2.15 + 1.4).toFixed(2),
-          );
-        }
+        const points = projectedPoints(map, coordinates);
+        activePrimaryRef.current?.setAttribute("points", points);
+        activeSecondaryRef.current?.setAttribute("points", points);
+        updateActiveMarkers(map, activeMarkerRefs.current, coordinates);
       };
-
-      const scheduleSavedRedraw = () => {
-        if (!active || savedFrameRef.current !== null) return;
-        savedFrameRef.current = window.requestAnimationFrame(() => {
-          savedFrameRef.current = null;
-          if (active) drawSavedGeometry();
-        });
-      };
-      requestSavedRedrawRef.current = scheduleSavedRedraw;
 
       const redraw = () => {
-        scheduleSavedRedraw();
-        if (active && interactionRef.current.mode !== "browse") {
-          forceActiveOverlayRender((value) => value + 1);
-        }
+        if (!active || redrawFrameRef.current !== null) return;
+        redrawFrameRef.current = window.requestAnimationFrame(() => {
+          redrawFrameRef.current = null;
+          if (!active) return;
+          const canvas = savedCanvasRef.current;
+          if (canvas) {
+            const render = savedRenderRef.current;
+            drawSavedCanvas(canvas, map, render.areaGroups, render.streetGroups, render.selectedTask);
+          }
+          drawActiveGeometry();
+        });
       };
+      requestRedrawRef.current = redraw;
 
       const persistCamera = () => {
         if (suppressNextCameraSaveRef.current) {
@@ -584,16 +650,16 @@ export function MapView({
 
     return () => {
       active = false;
-      requestSavedRedrawRef.current = null;
+      requestRedrawRef.current = null;
       if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
-      if (savedFrameRef.current !== null) window.cancelAnimationFrame(savedFrameRef.current);
+      if (redrawFrameRef.current !== null) window.cancelAnimationFrame(redrawFrameRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
     };
   }, [campaignId]);
 
   useEffect(() => {
-    requestSavedRedrawRef.current?.();
+    requestRedrawRef.current?.();
   }, [areaGroups, streetGroups, selectedTask]);
 
   useEffect(() => {
@@ -601,8 +667,7 @@ export function MapView({
     if (!map) return;
     if (mode === "browse") map.doubleClickZoom.enable();
     else map.doubleClickZoom.disable();
-    requestSavedRedrawRef.current?.();
-    if (mode !== "browse") forceActiveOverlayRender((value) => value + 1);
+    requestRedrawRef.current?.();
   }, [mode]);
 
   useEffect(() => {
@@ -616,61 +681,29 @@ export function MapView({
     });
   }, [cameraCommand?.id]);
 
-  const map = mapRef.current;
+  const renderMarker = (coordinate: LngLat, index: number, color: string, radius: number) => {
+    const selected = mode === "edit" && selectedVertexIndex === index;
+    return (
+      <circle
+        key={`${coordinate[0]}:${coordinate[1]}:${index}`}
+        ref={(node) => {
+          activeMarkerRefs.current[index] = node;
+        }}
+        cx={0}
+        cy={0}
+        r={selected ? radius + 3 : radius}
+        fill={selected ? "#ffffff" : color}
+        stroke={selected ? color : "#ffffff"}
+        strokeWidth={selected ? 4.5 : 3.5}
+        vectorEffect="non-scaling-stroke"
+      />
+    );
+  };
 
   return (
     <section className={`map-region map-mode-${mode}`} aria-label={t(language, "map")}>
       <div ref={containerRef} className="map" />
-
-      <svg className="application-overlay saved-geometry-overlay" aria-hidden="true">
-        {areaGroups.map((group) => (
-          <path
-            key={group.key}
-            ref={(node) => {
-              if (node) areaPathRefs.current.set(group.key, node);
-              else areaPathRefs.current.delete(group.key);
-            }}
-            d=""
-            fill={group.color}
-            fillOpacity={0.1}
-            stroke={group.color}
-            strokeOpacity={0.94}
-            strokeLinejoin="round"
-          />
-        ))}
-
-        {selectedTask ? (
-          <path
-            ref={selectedStreetPathRef}
-            d=""
-            fill="none"
-            stroke="#172019"
-            strokeOpacity={0.72}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ) : null}
-
-        {streetGroups.map((group) => {
-          const presentation = statusPresentation(group.status);
-          return (
-            <path
-              key={group.key}
-              ref={(node) => {
-                if (node) streetPathRefs.current.set(group.key, node);
-                else streetPathRefs.current.delete(group.key);
-              }}
-              d=""
-              fill="none"
-              stroke={group.color}
-              strokeOpacity={presentation.opacity}
-              strokeDasharray={presentation.dash}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          );
-        })}
-      </svg>
+      <canvas ref={savedCanvasRef} className="saved-geometry-canvas" aria-hidden="true" />
 
       {mode !== "browse" ? (
         <svg className="application-overlay active-geometry-overlay" aria-hidden="true">
@@ -679,7 +712,11 @@ export function MapView({
               {draftVertices.length >= 2 ? (
                 draftVertices.length >= 3 ? (
                   <polygon
-                    points={projectedPoints(map, draftVertices)}
+                    ref={(node) => {
+                      activePrimaryRef.current = node;
+                      activeSecondaryRef.current = null;
+                    }}
+                    points=""
                     fill={draftColor}
                     fillOpacity={0.3}
                     stroke={draftColor}
@@ -689,7 +726,11 @@ export function MapView({
                   />
                 ) : (
                   <polyline
-                    points={projectedPoints(map, draftVertices)}
+                    ref={(node) => {
+                      activePrimaryRef.current = node;
+                      activeSecondaryRef.current = null;
+                    }}
+                    points=""
                     fill="none"
                     stroke={draftColor}
                     strokeWidth={6}
@@ -698,7 +739,7 @@ export function MapView({
                   />
                 )
               ) : null}
-              <ProjectedMarkers map={map} coordinates={draftVertices} color={draftColor} radius={9} />
+              {draftVertices.map((coordinate, index) => renderMarker(coordinate, index, draftColor, 9))}
             </>
           ) : null}
 
@@ -707,7 +748,10 @@ export function MapView({
               {editingVertices.length >= 3 ? (
                 <>
                   <polygon
-                    points={projectedPoints(map, editingVertices)}
+                    ref={(node) => {
+                      activePrimaryRef.current = node;
+                    }}
+                    points=""
                     fill="none"
                     stroke="#ffffff"
                     strokeWidth={13}
@@ -715,7 +759,10 @@ export function MapView({
                     vectorEffect="non-scaling-stroke"
                   />
                   <polygon
-                    points={projectedPoints(map, editingVertices)}
+                    ref={(node) => {
+                      activeSecondaryRef.current = node;
+                    }}
+                    points=""
                     fill={editingColor}
                     fillOpacity={0.32}
                     stroke={editingColor}
@@ -725,13 +772,7 @@ export function MapView({
                   />
                 </>
               ) : null}
-              <ProjectedMarkers
-                map={map}
-                coordinates={editingVertices}
-                color={editingColor}
-                selectedIndex={selectedVertexIndex}
-                radius={10}
-              />
+              {editingVertices.map((coordinate, index) => renderMarker(coordinate, index, editingColor, 10))}
             </>
           ) : null}
 
@@ -740,7 +781,10 @@ export function MapView({
               {streetDraftVertices.length >= 2 ? (
                 <>
                   <polyline
-                    points={projectedPoints(map, streetDraftVertices)}
+                    ref={(node) => {
+                      activePrimaryRef.current = node;
+                    }}
+                    points=""
                     fill="none"
                     stroke="#ffffff"
                     strokeWidth={11}
@@ -749,7 +793,10 @@ export function MapView({
                     vectorEffect="non-scaling-stroke"
                   />
                   <polyline
-                    points={projectedPoints(map, streetDraftVertices)}
+                    ref={(node) => {
+                      activeSecondaryRef.current = node;
+                    }}
+                    points=""
                     fill="none"
                     stroke={streetDraftColor}
                     strokeWidth={7}
@@ -759,12 +806,9 @@ export function MapView({
                   />
                 </>
               ) : null}
-              <ProjectedMarkers
-                map={map}
-                coordinates={streetDraftVertices}
-                color={streetDraftColor}
-                radius={9}
-              />
+              {streetDraftVertices.map((coordinate, index) =>
+                renderMarker(coordinate, index, streetDraftColor, 9),
+              )}
             </>
           ) : null}
         </svg>
