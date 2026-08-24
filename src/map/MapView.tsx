@@ -49,7 +49,6 @@ type MapViewProps = {
 };
 
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
-
 const AREA_SOURCE_ID = "vf-saved-areas";
 const AREA_FILL_LAYER_ID = "vf-saved-areas-fill";
 const AREA_OUTLINE_LAYER_ID = "vf-saved-areas-outline";
@@ -59,7 +58,6 @@ const STREET_OPEN_LAYER_ID = "vf-saved-streets-open";
 const STREET_COMPLETED_LAYER_ID = "vf-saved-streets-completed";
 const STREET_LATER_LAYER_ID = "vf-saved-streets-later";
 const STREET_BLOCKED_LAYER_ID = "vf-saved-streets-not-deliverable";
-
 const STREET_RENDER_LAYER_IDS = [
   STREET_OPEN_LAYER_ID,
   STREET_COMPLETED_LAYER_ID,
@@ -73,51 +71,51 @@ const STREET_WIDTH: ExpressionSpecification = [
   ["linear"],
   ["zoom"],
   5,
-  0.2,
+  0.18,
   8,
-  0.45,
+  0.32,
   11,
-  0.8,
+  0.65,
   14,
-  1.5,
+  1.25,
   17,
-  2.7,
+  2.35,
   20,
-  4.2,
+  3.7,
 ];
 const STREET_SELECTED_WIDTH: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   ["zoom"],
   5,
-  0.8,
+  0.65,
   8,
-  1.2,
+  0.95,
   11,
-  1.8,
+  1.45,
   14,
-  3,
+  2.35,
   17,
-  5,
+  4.1,
   20,
-  7,
+  6.1,
 ];
 const AREA_OUTLINE_WIDTH: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   ["zoom"],
   5,
-  0.25,
+  0.22,
   8,
-  0.45,
+  0.38,
   11,
-  0.7,
+  0.65,
   14,
-  1.1,
+  1.05,
   17,
-  1.7,
+  1.55,
   20,
-  2.4,
+  2.15,
 ];
 
 const CARTO_VOYAGER_RETINA_STYLE: StyleSpecification = {
@@ -139,11 +137,7 @@ const CARTO_VOYAGER_RETINA_STYLE: StyleSpecification = {
     },
   },
   layers: [
-    {
-      id: "map-background",
-      type: "background",
-      paint: { "background-color": "#fbf8f3" },
-    },
+    { id: "map-background", type: "background", paint: { "background-color": "#fbf8f3" } },
     {
       id: "carto-basemap",
       type: "raster",
@@ -193,16 +187,14 @@ function installSavedGeometryLayers(map: Map, areas: RenderArea[], tasks: Render
   if (!map.getSource(AREA_SOURCE_ID)) {
     map.addSource(AREA_SOURCE_ID, { type: "geojson", data: areaFeatureCollection(areas) });
   }
-
   if (!map.getLayer(AREA_FILL_LAYER_ID)) {
     map.addLayer({
       id: AREA_FILL_LAYER_ID,
       type: "fill",
       source: AREA_SOURCE_ID,
-      paint: { "fill-color": TEAM_COLOR, "fill-opacity": 0.075 },
+      paint: { "fill-color": TEAM_COLOR, "fill-opacity": 0.1 },
     });
   }
-
   if (!map.getLayer(AREA_OUTLINE_LAYER_ID)) {
     map.addLayer({
       id: AREA_OUTLINE_LAYER_ID,
@@ -212,7 +204,7 @@ function installSavedGeometryLayers(map: Map, areas: RenderArea[], tasks: Render
       paint: {
         "line-color": TEAM_COLOR,
         "line-width": AREA_OUTLINE_WIDTH,
-        "line-opacity": 0.9,
+        "line-opacity": 0.95,
       },
     });
   }
@@ -220,7 +212,6 @@ function installSavedGeometryLayers(map: Map, areas: RenderArea[], tasks: Render
   if (!map.getSource(STREET_SOURCE_ID)) {
     map.addSource(STREET_SOURCE_ID, { type: "geojson", data: streetFeatureCollection(tasks) });
   }
-
   if (!map.getLayer(STREET_SELECTED_LAYER_ID)) {
     map.addLayer({
       id: STREET_SELECTED_LAYER_ID,
@@ -231,7 +222,7 @@ function installSavedGeometryLayers(map: Map, areas: RenderArea[], tasks: Render
       paint: {
         "line-color": "#ffffff",
         "line-width": STREET_SELECTED_WIDTH,
-        "line-opacity": 0.95,
+        "line-opacity": 0.92,
       },
     });
   }
@@ -258,38 +249,52 @@ function installSavedGeometryLayers(map: Map, areas: RenderArea[], tasks: Render
     });
   };
 
-  addStreetLayer(STREET_OPEN_LAYER_ID, "open", 0.95);
-  addStreetLayer(STREET_COMPLETED_LAYER_ID, "completed", 0.34);
-  addStreetLayer(STREET_LATER_LAYER_ID, "later", 0.82, [2.5, 2.2]);
-  addStreetLayer(STREET_BLOCKED_LAYER_ID, "not-deliverable", 0.72, [0.35, 2.2]);
+  addStreetLayer(STREET_OPEN_LAYER_ID, "open", 0.96);
+  addStreetLayer(STREET_COMPLETED_LAYER_ID, "completed", 0.38);
+  addStreetLayer(STREET_LATER_LAYER_ID, "later", 0.84, [2.5, 2.2]);
+  addStreetLayer(STREET_BLOCKED_LAYER_ID, "not-deliverable", 0.74, [0.35, 2.2]);
 }
 
-function updateSavedGeometry(map: Map, areas: RenderArea[], tasks: RenderTask[]) {
-  if (!map.isStyleLoaded()) return;
-  installSavedGeometryLayers(map, areas, tasks);
+/**
+ * Keep saved geometry durable in the MapLibre style. Once the sources exist we
+ * always push new data, even while raster tiles are still loading. The old
+ * implementation returned early whenever isStyleLoaded() was temporarily
+ * false, which could silently drop the one update produced by Save.
+ */
+function syncSavedGeometry(map: Map, areas: RenderArea[], tasks: RenderTask[]) {
+  const hasSources = Boolean(map.getSource(AREA_SOURCE_ID) && map.getSource(STREET_SOURCE_ID));
+  if (!hasSources) {
+    if (!map.isStyleLoaded()) return false;
+    installSavedGeometryLayers(map, areas, tasks);
+  }
+
   setSourceData(map, AREA_SOURCE_ID, areaFeatureCollection(areas));
   setSourceData(map, STREET_SOURCE_ID, streetFeatureCollection(tasks));
+  return true;
 }
 
-function updateSelectedStreet(map: Map, selectedTaskId: string | null) {
-  if (!map.isStyleLoaded() || !map.getLayer(STREET_SELECTED_LAYER_ID)) return;
+function syncSelectedStreet(map: Map, selectedTaskId: string | null) {
+  if (!map.getLayer(STREET_SELECTED_LAYER_ID)) return;
   map.setFilter(STREET_SELECTED_LAYER_ID, ["==", ["get", "id"], selectedTaskId ?? "__none__"]);
 }
 
 function findRenderedTask(map: Map, point: { x: number; y: number }) {
+  const layers = STREET_RENDER_LAYER_IDS.filter((id) => Boolean(map.getLayer(id)));
+  if (!layers.length) return null;
   const padding = 12;
   const features = map.queryRenderedFeatures(
     [
       [point.x - padding, point.y - padding],
       [point.x + padding, point.y + padding],
     ],
-    { layers: [...STREET_RENDER_LAYER_IDS] },
+    { layers: [...layers] },
   );
   const id = features.find((feature) => typeof feature.properties?.id === "string")?.properties?.id;
   return typeof id === "string" ? id : null;
 }
 
 function findRenderedArea(map: Map, point: { x: number; y: number }) {
+  if (!map.getLayer(AREA_FILL_LAYER_ID)) return null;
   const features = map.queryRenderedFeatures([point.x, point.y], { layers: [AREA_FILL_LAYER_ID] });
   const id = features.find((feature) => typeof feature.properties?.id === "string")?.properties?.id;
   return typeof id === "string" ? id : null;
@@ -386,12 +391,14 @@ export function MapView({
   const mapRef = useRef<Map | null>(null);
   const cameraSaveTimerRef = useRef<number | null>(null);
   const suppressNextCameraSaveRef = useRef(false);
+  const overlayFrameRef = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, forceOverlayRender] = useState(0);
 
   const interactionRef = useRef({
     areas,
     tasks,
+    selectedTaskId,
     mode,
     editingVertices,
     selectedVertexIndex,
@@ -407,6 +414,7 @@ export function MapView({
     interactionRef.current = {
       areas,
       tasks,
+      selectedTaskId,
       mode,
       editingVertices,
       selectedVertexIndex,
@@ -420,6 +428,7 @@ export function MapView({
   }, [
     areas,
     tasks,
+    selectedTaskId,
     mode,
     editingVertices,
     selectedVertexIndex,
@@ -451,9 +460,17 @@ export function MapView({
       mapRef.current = map;
 
       const redrawActiveOverlay = () => {
-        if (active && interactionRef.current.mode !== "browse") {
-          forceOverlayRender((value) => value + 1);
-        }
+        if (!active || interactionRef.current.mode === "browse" || overlayFrameRef.current !== null) return;
+        overlayFrameRef.current = window.requestAnimationFrame(() => {
+          overlayFrameRef.current = null;
+          if (active) forceOverlayRender((value) => value + 1);
+        });
+      };
+
+      const syncLatestSavedGeometry = () => {
+        const interaction = interactionRef.current;
+        if (!syncSavedGeometry(map, interaction.areas, interaction.tasks)) return;
+        syncSelectedStreet(map, interaction.selectedTaskId);
       };
 
       const persistCamera = () => {
@@ -470,12 +487,8 @@ export function MapView({
         }, 350);
       };
 
-      map.on("load", () => {
-        const interaction = interactionRef.current;
-        installSavedGeometryLayers(map, interaction.areas, interaction.tasks);
-        updateSelectedStreet(map, selectedTaskId);
-        if (active) forceOverlayRender((value) => value + 1);
-      });
+      map.on("load", syncLatestSavedGeometry);
+      map.on("styledata", syncLatestSavedGeometry);
       map.on("move", redrawActiveOverlay);
       map.on("rotate", redrawActiveOverlay);
       map.on("zoom", redrawActiveOverlay);
@@ -511,7 +524,6 @@ export function MapView({
           interaction.onTaskSelect(taskId);
           return;
         }
-
         interaction.onTaskSelect(null);
         interaction.onAreaSelect(findRenderedArea(map, event.point));
       });
@@ -535,6 +547,7 @@ export function MapView({
     return () => {
       active = false;
       if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
+      if (overlayFrameRef.current !== null) window.cancelAnimationFrame(overlayFrameRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -542,13 +555,9 @@ export function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (map) updateSavedGeometry(map, areas, tasks);
-  }, [areas, tasks]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (map) updateSelectedStreet(map, selectedTaskId);
-  }, [selectedTaskId]);
+    if (!map) return;
+    if (syncSavedGeometry(map, areas, tasks)) syncSelectedStreet(map, selectedTaskId);
+  }, [areas, tasks, selectedTaskId]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -572,18 +581,9 @@ export function MapView({
   const map = mapRef.current;
   const width = containerRef.current?.clientWidth ?? 1;
   const height = containerRef.current?.clientHeight ?? 1;
-  const refreshText =
-    refreshState === "loading"
-      ? t(language, "refreshLoading")
-      : refreshState === "error"
-        ? t(language, "refreshError")
-        : refreshState === "available"
-          ? t(language, "newData")
-          : refreshState === "current"
-            ? t(language, "refreshCurrent")
-            : "";
-
   const hasActiveOverlay = mode === "draw" || mode === "edit" || mode === "street-draw";
+  const refreshGlyph =
+    refreshState === "loading" ? "↻" : refreshState === "error" ? "!" : refreshState === "current" ? "✓" : "↻";
 
   return (
     <section className={`map-region map-mode-${mode}`} aria-label={t(language, "map")}>
@@ -676,19 +676,20 @@ export function MapView({
         </svg>
       ) : null}
 
-      <div className="map-refresh-control">
-        <button
-          className="map-refresh-button"
-          type="button"
-          onClick={onRefresh}
-          disabled={refreshState === "loading"}
-          aria-label={t(language, "refreshData")}
-          title={t(language, "refreshData")}
-        >
-          ↻
-        </button>
-        {refreshText ? <span className={`map-refresh-feedback is-${refreshState}`}>{refreshText}</span> : null}
-      </div>
+      {mode === "browse" ? (
+        <div className={`map-refresh-control is-${refreshState}`}>
+          <button
+            className="map-refresh-button"
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshState === "loading"}
+            aria-label={t(language, "refreshData")}
+            title={t(language, "refreshData")}
+          >
+            <span aria-hidden="true">{refreshGlyph}</span>
+          </button>
+        </div>
+      ) : null}
 
       {error ? <div className="map-error">{error}</div> : null}
     </section>
