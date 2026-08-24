@@ -19,9 +19,8 @@ type DiagnosticSnapshot = {
     streetTasks: number;
   };
   renderer: {
-    kind: "canvas" | "svg" | "unknown";
-    savedCanvases: number;
-    canvasBackingPixels: number;
+    kind: string;
+    maplibreCanvases: number;
     activeSvgNodes: number;
     totalDomNodes: number;
   };
@@ -114,12 +113,10 @@ function basemapStats() {
 }
 
 function rendererStats() {
-  const canvases = [...document.querySelectorAll<HTMLCanvasElement>(".saved-geometry-canvas")];
-  const savedSvg = document.querySelector(".saved-geometry-overlay");
+  const region = document.querySelector<HTMLElement>(".map-region");
   return {
-    kind: canvases.length > 0 ? ("canvas" as const) : savedSvg ? ("svg" as const) : ("unknown" as const),
-    savedCanvases: canvases.length,
-    canvasBackingPixels: canvases.reduce((sum, canvas) => sum + canvas.width * canvas.height, 0),
+    kind: region?.dataset.renderer ?? "unknown",
+    maplibreCanvases: document.querySelectorAll(".maplibregl-canvas").length,
     activeSvgNodes: document.querySelectorAll(".active-geometry-overlay *").length,
     totalDomNodes: document.getElementsByTagName("*").length,
   };
@@ -268,7 +265,7 @@ export function MapDiagnostics() {
           <span>
             Daten: {readDataCounts().areas} Gebiete · {readDataCounts().streetTasks} Straßen
           </span>
-          <span>Canvas: {renderer.savedCanvases} · aktive SVG-Nodes: {renderer.activeSvgNodes}</span>
+          <span>MapLibre Canvas: {renderer.maplibreCanvases} · aktive SVG-Nodes: {renderer.activeSvgNodes}</span>
           <button type="button" onClick={() => void copyDiagnostics()}>
             {copied ? "Kopiert ✓" : "Diagnose kopieren"}
           </button>
