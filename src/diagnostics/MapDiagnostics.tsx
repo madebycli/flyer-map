@@ -19,8 +19,10 @@ type DiagnosticSnapshot = {
     streetTasks: number;
   };
   renderer: {
-    savedSvgPaths: number;
-    savedPathCharacters: number;
+    kind: "canvas" | "svg" | "unknown";
+    savedCanvases: number;
+    canvasBackingPixels: number;
+    activeSvgNodes: number;
     totalDomNodes: number;
   };
   performance: {
@@ -112,10 +114,13 @@ function basemapStats() {
 }
 
 function rendererStats() {
-  const paths = [...document.querySelectorAll<SVGPathElement>(".saved-geometry-overlay path")];
+  const canvases = [...document.querySelectorAll<HTMLCanvasElement>(".saved-geometry-canvas")];
+  const savedSvg = document.querySelector(".saved-geometry-overlay");
   return {
-    savedSvgPaths: paths.length,
-    savedPathCharacters: paths.reduce((sum, path) => sum + (path.getAttribute("d")?.length ?? 0), 0),
+    kind: canvases.length > 0 ? ("canvas" as const) : savedSvg ? ("svg" as const) : ("unknown" as const),
+    savedCanvases: canvases.length,
+    canvasBackingPixels: canvases.reduce((sum, canvas) => sum + canvas.width * canvas.height, 0),
+    activeSvgNodes: document.querySelectorAll(".active-geometry-overlay *").length,
     totalDomNodes: document.getElementsByTagName("*").length,
   };
 }
@@ -198,6 +203,7 @@ export function MapDiagnostics() {
     const performanceMemory = (performance as PerformanceWithMemory).memory;
     const safeUrl = new URL(window.location.href);
     safeUrl.hash = "";
+    safeUrl.searchParams.delete("campaign");
 
     return {
       timestamp: new Date().toISOString(),
@@ -242,6 +248,7 @@ export function MapDiagnostics() {
     }
   };
 
+  const renderer = rendererStats();
   return (
     <aside className={`map-diagnostics${expanded ? " is-expanded" : ""}`}>
       <button
@@ -254,13 +261,14 @@ export function MapDiagnostics() {
       {expanded ? (
         <div className="map-diagnostics-panel">
           <strong>Karten-Diagnose</strong>
+          <span>Renderer: {renderer.kind}</span>
           <span>FPS: {fps}</span>
           <span>Schlimmster Frame: {worstFrame.toFixed(1)} ms</span>
           <span>Frames &gt;32 ms / 5 s: {longFrames}</span>
           <span>
             Daten: {readDataCounts().areas} Gebiete · {readDataCounts().streetTasks} Straßen
           </span>
-          <span>SVG-Pfade: {rendererStats().savedSvgPaths}</span>
+          <span>Canvas: {renderer.savedCanvases} · aktive SVG-Nodes: {renderer.activeSvgNodes}</span>
           <button type="button" onClick={() => void copyDiagnostics()}>
             {copied ? "Kopiert ✓" : "Diagnose kopieren"}
           </button>
