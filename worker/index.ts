@@ -64,18 +64,27 @@ function campaignRoute(pathname: string) {
 async function readJsonBody(request: Request) {
   const declaredLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(declaredLength) && declaredLength > MAX_SNAPSHOT_BYTES) {
-    return { ok: false as const, response: errorResponse(413, "payload_too_large", "Snapshot ist zu groß.") };
+    return {
+      ok: false as const,
+      response: errorResponse(413, "payload_too_large", "Snapshot ist zu groß."),
+    };
   }
 
   const raw = await request.text();
   if (new TextEncoder().encode(raw).byteLength > MAX_SNAPSHOT_BYTES) {
-    return { ok: false as const, response: errorResponse(413, "payload_too_large", "Snapshot ist zu groß.") };
+    return {
+      ok: false as const,
+      response: errorResponse(413, "payload_too_large", "Snapshot ist zu groß."),
+    };
   }
 
   try {
     return { ok: true as const, value: JSON.parse(raw) as unknown };
   } catch {
-    return { ok: false as const, response: errorResponse(400, "invalid_json", "Request-Body ist kein gültiges JSON.") };
+    return {
+      ok: false as const,
+      response: errorResponse(400, "invalid_json", "Request-Body ist kein gültiges JSON."),
+    };
   }
 }
 
@@ -87,7 +96,11 @@ async function getSnapshot(db: D1DatabaseLike, campaignId: string) {
 
   const validation = validateCampaignSnapshot(snapshot, campaignId);
   if (!validation.valid) {
-    return errorResponse(500, "stored_snapshot_invalid", "Der gespeicherte Campaign-Stand ist ungültig.");
+    return errorResponse(
+      500,
+      "stored_snapshot_invalid",
+      "Der gespeicherte Campaign-Stand ist ungültig.",
+    );
   }
 
   return json(validation.snapshot, {
@@ -100,7 +113,11 @@ async function getSnapshot(db: D1DatabaseLike, campaignId: string) {
 async function putSnapshot(request: Request, db: D1DatabaseLike, campaignId: string) {
   const parsedBody = await readJsonBody(request);
   if (!parsedBody.ok) return parsedBody.response;
-  if (typeof parsedBody.value !== "object" || parsedBody.value === null || Array.isArray(parsedBody.value)) {
+  if (
+    typeof parsedBody.value !== "object" ||
+    parsedBody.value === null ||
+    Array.isArray(parsedBody.value)
+  ) {
     return errorResponse(400, "invalid_request", "Request-Body ist ungültig.");
   }
 
@@ -108,9 +125,15 @@ async function putSnapshot(request: Request, db: D1DatabaseLike, campaignId: str
   const baseRevision = body.baseRevision;
   if (
     baseRevision !== null &&
-    (!Number.isInteger(baseRevision) || (baseRevision as number) < 0)
+    (typeof baseRevision !== "number" ||
+      !Number.isInteger(baseRevision) ||
+      baseRevision < 0)
   ) {
-    return errorResponse(400, "invalid_base_revision", "baseRevision muss null oder eine nichtnegative Ganzzahl sein.");
+    return errorResponse(
+      400,
+      "invalid_base_revision",
+      "baseRevision muss null oder eine nichtnegative Ganzzahl sein.",
+    );
   }
 
   const validation = validateCampaignSnapshot(body.snapshot, campaignId);
@@ -135,7 +158,11 @@ async function putSnapshot(request: Request, db: D1DatabaseLike, campaignId: str
 
   const stored = await loadCampaignSnapshot(db, campaignId);
   if (!stored) {
-    return errorResponse(500, "write_verification_failed", "Gespeicherter Campaign-Stand konnte nicht erneut geladen werden.");
+    return errorResponse(
+      500,
+      "write_verification_failed",
+      "Gespeicherter Campaign-Stand konnte nicht erneut geladen werden.",
+    );
   }
 
   return json(stored, {
@@ -161,19 +188,33 @@ export default {
     const route = campaignRoute(url.pathname);
     if (route) {
       if (!env.DB) {
-        return errorResponse(503, "d1_unavailable", "D1 ist für diesen Worker noch nicht gebunden.");
+        return errorResponse(
+          503,
+          "d1_unavailable",
+          "D1 ist für diesen Worker noch nicht gebunden.",
+        );
       }
 
       try {
         if (route.resource === "snapshot") {
           if (request.method === "GET") return await getSnapshot(env.DB, route.campaignId);
-          if (request.method === "PUT") return await putSnapshot(request, env.DB, route.campaignId);
-          return errorResponse(405, "method_not_allowed", "Für diesen Endpunkt ist nur GET oder PUT erlaubt.");
+          if (request.method === "PUT") {
+            return await putSnapshot(request, env.DB, route.campaignId);
+          }
+          return errorResponse(
+            405,
+            "method_not_allowed",
+            "Für diesen Endpunkt ist nur GET oder PUT erlaubt.",
+          );
         }
 
         if (route.resource === "version") {
           if (request.method !== "GET") {
-            return errorResponse(405, "method_not_allowed", "Für diesen Endpunkt ist nur GET erlaubt.");
+            return errorResponse(
+              405,
+              "method_not_allowed",
+              "Für diesen Endpunkt ist nur GET erlaubt.",
+            );
           }
 
           const revision = await getCampaignRevision(env.DB, route.campaignId);
@@ -187,7 +228,11 @@ export default {
           return errorResponse(500, "stored_snapshot_invalid", error.message);
         }
         console.error("campaign_api_error", error);
-        return errorResponse(500, "internal_error", "Campaign-Daten konnten nicht verarbeitet werden.");
+        return errorResponse(
+          500,
+          "internal_error",
+          "Campaign-Daten konnten nicht verarbeitet werden.",
+        );
       }
     }
 
