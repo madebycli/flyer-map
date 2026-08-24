@@ -42,7 +42,7 @@ Do not change the working map renderer boundary:
 - [x] update architecture/status/deployment documentation
 - [x] pass tests, TypeScript and production build in CI
 - [x] bind the real production D1 database id in `wrangler.jsonc`
-- [ ] apply migration `0001_initial.sql` to the production D1 database
+- [x] apply migration `0001_initial.sql` to the production D1 database
 - [ ] rerun final CI after migration confirmation
 - [ ] merge only after final green CI
 
@@ -67,8 +67,10 @@ Do not change the working map renderer boundary:
 - the bulk INSERT SQL path was additionally exercised against SQLite JSON functions/foreign keys during implementation review;
 - current Cloudflare D1 documentation confirms `db.batch()` is transactional and the Workers Free plan has a 50-query-per-invocation limit, which is why M3 uses JSON bulk INSERTs instead of one query per entity;
 - PR #14 CI run #62 passed all 7 tests, TypeScript typecheck and the production Vite/Cloudflare build;
-- the real D1 database `flyer-map-db` is now bound as `DB` in `wrangler.jsonc` using the Cloudflare-provided database id;
-- production migration application remains the external gate before merge.
+- PR #14 CI run #66 passed all 7 tests, TypeScript typecheck and production build with the real D1 binding committed;
+- the real D1 database `flyer-map-db` is bound as `DB` in `wrangler.jsonc` using the Cloudflare-provided database id;
+- production D1 reports `0001_initial.sql` in `d1_migrations`, confirming the first M3 schema has been applied;
+- final PR-head CI after this migration-confirmation commit remains the last merge gate.
 
 ## Risks
 
