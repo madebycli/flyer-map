@@ -41,7 +41,7 @@ type SyncRuntime = {
   writeInFlight: boolean;
   pending: CampaignSnapshot | null;
   listenersStarted: boolean;
-  pollTimer: number | null;
+  unavailableNotified: boolean;
 };
 
 const syncRuntime: SyncRuntime = {
@@ -54,8 +54,10 @@ const syncRuntime: SyncRuntime = {
   writeInFlight: false,
   pending: null,
   listenersStarted: false,
-  pollTimer: null,
+  unavailableNotified: false,
 };
+
+let loadedExistingSnapshot = false;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -222,7 +224,20 @@ function informUser(message: string) {
   if (typeof window !== "undefined") window.alert(message);
 }
 
+function notifySharedUnavailable() {
+  if (syncRuntime.unavailableNotified) return;
+  syncRuntime.unavailableNotified = true;
+  informUser(
+    "Der gemeinsame Serverstand ist momentan nicht erreichbar. Deine Änderungen bleiben lokal auf diesem Gerät gespeichert und werden erneut synchronisiert, sobald die Verbindung zurück ist.",
+  );
+}
+
+function markSharedAvailable() {
+  syncRuntime.unavailableNotified = false;
+}
+
 function replaceLocalWithServer(snapshot: CampaignSnapshot) {
+  syncRuntime.latestLocal = snapshot;
   writeLocalSnapshot(snapshot);
   if (typeof window !== "undefined") window.location.reload();
 }
@@ -248,13 +263,16 @@ async function recoverFromRejectedWrite(
 
   try {
     const serverSnapshot = await fetchCampaignSnapshot(campaignId);
+    markSharedAvailable();
     syncRuntime.serverRevision = serverSnapshot.revision;
     syncRuntime.lastServer = serverSnapshot;
     syncRuntime.pending = null;
     replaceLocalWithServer(serverSnapshot);
   } catch {
     syncRuntime.pending = optimisticSnapshot;
-    informUser("Der Serverstand konnte noch nicht neu geladen werden. Dein lokaler Stand bleibt auf diesem Gerät erhalten.");
+    informUser(
+      "Der Serverstand konnte noch nicht neu geladen werden. Dein lokaler Stand bleibt auf diesem Gerät erhalten.",
+    );
   }
 }
 
@@ -287,16 +305,22 @@ async function flushSharedSnapshot() {
       baseRevision,
       outgoing,
     );
+    markSharedAvailable();
     syncRuntime.serverRevision = stored.revision;
     syncRuntime.lastServer = stored;
-    writeLocalSnapshot(stored);
 
-    if (syncRuntime.latestLocal !== candidate && syncRuntime.latestLocal) {
+    if (syncRuntime.latestLocal === candidate) {
+      syncRuntime.latestLocal = stored;
+      writeLocalSnapshot(stored);
+    } else if (syncRuntime.latestLocal) {
+      // A newer optimistic mutation is already cached locally. Never overwrite it with
+      // the acknowledgement of an older write; send the latest snapshot next.
       syncRuntime.pending = syncRuntime.latestLocal;
     }
   } catch (error) {
     if (isNetworkLikeError(error)) {
       syncRuntime.pending = candidate;
+      notifySharedUnavailable();
     } else {
       await recoverFromRejectedWrite(syncRuntime.targetCampaignId, candidate, error);
     }
@@ -330,6 +354,7 @@ async function initializeSharedPersistence() {
     let serverSnapshot: CampaignSnapshot;
     try {
       serverSnapshot = await fetchCampaignSnapshot(targetCampaignId);
+      markSharedAvailable();
     } catch (error) {
       if (
         error instanceof CampaignApiError &&
@@ -338,11 +363,18 @@ async function initializeSharedPersistence() {
       ) {
         const candidate = syncRuntime.latestLocal;
         const stored = await putCampaignSnapshot(targetCampaignId, null, candidate);
+        markSharedAvailable();
         syncRuntime.serverRevision = stored.revision;
         syncRuntime.lastServer = stored;
         syncRuntime.initialized = true;
-        writeLocalSnapshot(stored);
-        if (syncRuntime.latestLocal !== candidate) syncRuntime.pending = syncRuntime.latestLocal;
+
+        if (syncRuntime.latestLocal === candidate) {
+          syncRuntime.latestLocal = stored;
+          writeLocalSnapshot(stored);
+        } else if (syncRuntime.latestLocal) {
+          syncRuntime.pending = syncRuntime.latestLocal;
+        }
+
         if (syncRuntime.pending) void flushSharedSnapshot();
         return;
       }
@@ -351,8 +383,12 @@ async function initializeSharedPersistence() {
 
     const latestLocal = syncRuntime.latestLocal;
     if (latestLocal.campaign.id !== targetCampaignId) {
-      saveCampaignConflictSnapshot(latestLocal);
-      informUser("Diese URL öffnet eine andere gemeinsame Campaign. Dein bisheriger lokaler Stand wurde als Sicherheitskopie behalten.");
+      if (loadedExistingSnapshot) {
+        saveCampaignConflictSnapshot(latestLocal);
+        informUser(
+          "Diese URL öffnet eine andere gemeinsame Campaign. Dein bisheriger lokaler Stand wurde als Sicherheitskopie behalten.",
+        );
+      }
       replaceLocalWithServer(serverSnapshot);
       return;
     }
@@ -370,30 +406,35 @@ async function initializeSharedPersistence() {
     const sameContent = sameSnapshotContent(latestLocal, serverSnapshot);
     if (latestLocal.revision === serverSnapshot.revision && !sameContent) {
       saveCampaignConflictSnapshot(latestLocal);
-      informUser("Lokaler und gemeinsamer Stand haben dieselbe Revision, unterscheiden sich aber. Die lokale Version wurde gesichert; der Serverstand wird geladen.");
+      informUser(
+        "Lokaler und gemeinsamer Stand haben dieselbe Revision, unterscheiden sich aber. Die lokale Version wurde gesichert; der Serverstand wird geladen.",
+      );
       replaceLocalWithServer(serverSnapshot);
       return;
     }
 
     if (serverSnapshot.revision > latestLocal.revision || !sameContent) {
-      if (!sameContent) saveCampaignConflictSnapshot(latestLocal);
+      if (!sameContent && loadedExistingSnapshot) saveCampaignConflictSnapshot(latestLocal);
       replaceLocalWithServer(serverSnapshot);
       return;
     }
 
     syncRuntime.pending = null;
+    syncRuntime.latestLocal = serverSnapshot;
     writeLocalSnapshot(serverSnapshot);
   } catch (error) {
-    if (!isNetworkLikeError(error)) {
-      if (error instanceof CampaignApiError && error.status === 404) {
-        informUser("Die Campaign aus diesem Link wurde auf dem Server nicht gefunden. Deine lokalen Daten wurden nicht überschrieben.");
-      } else {
-        informUser(
-          error instanceof CampaignApiError
-            ? `Gemeinsame Synchronisierung fehlgeschlagen: ${error.message}`
-            : "Gemeinsame Synchronisierung ist unerwartet fehlgeschlagen.",
-        );
-      }
+    if (isNetworkLikeError(error)) {
+      notifySharedUnavailable();
+    } else if (error instanceof CampaignApiError && error.status === 404) {
+      informUser(
+        "Die Campaign aus diesem Link wurde auf dem Server nicht gefunden. Deine lokalen Daten wurden nicht überschrieben.",
+      );
+    } else {
+      informUser(
+        error instanceof CampaignApiError
+          ? `Gemeinsame Synchronisierung fehlgeschlagen: ${error.message}`
+          : "Gemeinsame Synchronisierung ist unerwartet fehlgeschlagen.",
+      );
     }
   } finally {
     syncRuntime.initializeInFlight = false;
@@ -415,6 +456,7 @@ async function pollSharedVersion() {
 
   try {
     const revision = await fetchCampaignVersion(syncRuntime.targetCampaignId);
+    markSharedAvailable();
     if (revision === syncRuntime.serverRevision) return;
 
     const serverSnapshot = await fetchCampaignSnapshot(syncRuntime.targetCampaignId);
@@ -422,7 +464,9 @@ async function pollSharedVersion() {
     syncRuntime.lastServer = serverSnapshot;
     replaceLocalWithServer(serverSnapshot);
   } catch (error) {
-    if (!isNetworkLikeError(error)) {
+    if (isNetworkLikeError(error)) {
+      notifySharedUnavailable();
+    } else {
       console.warn("campaign_version_poll_failed", error);
     }
   }
@@ -444,7 +488,7 @@ function startSharedPersistenceRuntime() {
     else void pollSharedVersion();
   });
 
-  syncRuntime.pollTimer = window.setInterval(() => {
+  window.setInterval(() => {
     if (!syncRuntime.initialized) void initializeSharedPersistence();
     else void pollSharedVersion();
   }, POLL_INTERVAL_MS);
@@ -471,10 +515,14 @@ export function loadCampaignSnapshot(): CampaignLoadResult {
     const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
 
     const primary = parseSnapshot(primaryRaw);
-    if (primary) return { snapshot: primary, warning: null };
+    if (primary) {
+      loadedExistingSnapshot = true;
+      return { snapshot: primary, warning: null };
+    }
 
     const backup = parseSnapshot(backupRaw);
     if (backup) {
+      loadedExistingSnapshot = true;
       return {
         snapshot: backup,
         warning: primaryRaw
@@ -485,10 +533,12 @@ export function loadCampaignSnapshot(): CampaignLoadResult {
 
     const legacy = parseSnapshot(legacyRaw);
     if (legacy) {
+      loadedExistingSnapshot = true;
       writeLocalSnapshot(legacy);
       return { snapshot: legacy, warning: null };
     }
 
+    loadedExistingSnapshot = false;
     if (primaryRaw || backupRaw || legacyRaw) {
       return {
         snapshot: createInitialSnapshot(),
@@ -498,9 +548,11 @@ export function loadCampaignSnapshot(): CampaignLoadResult {
 
     return { snapshot: createInitialSnapshot(), warning: null };
   } catch {
+    loadedExistingSnapshot = false;
     return {
       snapshot: createInitialSnapshot(),
-      warning: "Lokale Daten konnten nicht gelesen werden. Änderungen bleiben bis zum Neuladen im Browser.",
+      warning:
+        "Lokale Daten konnten nicht gelesen werden. Änderungen bleiben bis zum Neuladen im Browser.",
     };
   }
 }
