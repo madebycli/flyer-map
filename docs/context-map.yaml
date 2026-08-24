@@ -28,7 +28,7 @@ nodes:
 
   - id: map
     path: docs/architecture/MAP.md
-    topics: [map, maplibre, osm, openfreemap, geolocation]
+    topics: [map, maplibre, geojson, webgl, svg, performance, geolocation]
 
   - id: data
     path: docs/architecture/DATA.md
@@ -58,6 +58,14 @@ nodes:
     path: docs/operations/PRODUCTION.md
     topics: [production, workers-dev, health, deployment, field-test]
 
+  - id: adr-hybrid-renderer
+    path: docs/decisions/ADR-0010-hybrid-map-renderer.md
+    topics: [maplibre, webgl, svg, renderer, performance, whole-city]
+
+  - id: renderer-plan
+    path: docs/plans/active/008-renderer-webgl-performance.md
+    topics: [map, performance, renderer, mobile, streets, areas]
+
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
     topics: [agent, chatgpt, context, onboarding]
@@ -66,6 +74,8 @@ edges:
   - { from: product, to: mvp, relation: defines_scope }
   - { from: architecture, to: product, relation: implements }
   - { from: map, to: architecture, relation: component_of }
+  - { from: adr-hybrid-renderer, to: map, relation: governs }
+  - { from: renderer-plan, to: adr-hybrid-renderer, relation: implements }
   - { from: data, to: architecture, relation: component_of }
   - { from: offline-sync, to: data, relation: depends_on }
   - { from: security, to: data, relation: constrains }
