@@ -2,6 +2,21 @@ import type { CampaignSnapshot } from "../domain/campaign";
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
 
+export type AccessRole = "admin" | "team-editor" | "viewer";
+
+export type AccessInfo = {
+  campaignId: string;
+  role: AccessRole;
+  teamId: string | null;
+  label: string | null;
+};
+
+export type AccessGrant = AccessInfo & {
+  grantId: string;
+  createdAt: string;
+  revokedAt: string | null;
+};
+
 type ApiErrorPayload = {
   error?: {
     code?: string;
@@ -56,7 +71,7 @@ async function apiFetch(path: string, init?: RequestInit) {
   return response;
 }
 
-function campaignPath(campaignId: string, resource: "snapshot" | "version") {
+function campaignPath(campaignId: string, resource: "snapshot" | "version" | "access") {
   return `/api/campaigns/${encodeURIComponent(campaignId)}/${resource}`;
 }
 
@@ -65,9 +80,22 @@ export async function fetchCampaignSnapshot(campaignId: string) {
   return (await response.json()) as CampaignSnapshot;
 }
 
+export async function createCampaignSnapshot(snapshot: CampaignSnapshot) {
+  const response = await apiFetch("/api/campaigns", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ snapshot }),
+  });
+  return (await response.json()) as {
+    snapshot: CampaignSnapshot;
+    access: AccessInfo;
+    initialAccessToken: string;
+  };
+}
+
 export async function putCampaignSnapshot(
   campaignId: string,
-  baseRevision: number | null,
+  baseRevision: number,
   snapshot: CampaignSnapshot,
 ) {
   const response = await apiFetch(campaignPath(campaignId, "snapshot"), {
@@ -84,6 +112,43 @@ export async function fetchCampaignVersion(campaignId: string) {
   return payload.revision;
 }
 
+export async function redeemCampaignAccess(campaignId: string, token: string) {
+  const response = await apiFetch("/api/access/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ campaignId, token }),
+  });
+  return ((await response.json()) as { access: AccessInfo }).access;
+}
+
+export async function fetchCurrentAccess(campaignId: string) {
+  const response = await apiFetch(`/api/access/current?campaign=${encodeURIComponent(campaignId)}`);
+  return ((await response.json()) as { access: AccessInfo }).access;
+}
+
+export async function fetchAccessGrants(campaignId: string) {
+  const response = await apiFetch(campaignPath(campaignId, "access"));
+  return ((await response.json()) as { grants: AccessGrant[] }).grants;
+}
+
+export async function createCampaignAccessGrant(
+  campaignId: string,
+  input: { role: AccessRole; teamId: string | null; label: string },
+) {
+  const response = await apiFetch(campaignPath(campaignId, "access"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return (await response.json()) as { grant: AccessGrant; token: string };
+}
+
+export async function revokeCampaignAccessGrant(campaignId: string, grantId: string) {
+  await apiFetch(`${campaignPath(campaignId, "access")}/${encodeURIComponent(grantId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function campaignIdFromUrl() {
   if (typeof window === "undefined") return null;
   const value = new URL(window.location.href).searchParams.get("campaign");
@@ -96,4 +161,29 @@ export function setCampaignIdInUrl(campaignId: string) {
   if (url.searchParams.get("campaign") === campaignId) return;
   url.searchParams.set("campaign", campaignId);
   window.history.replaceState(null, "", url);
+}
+
+export function accessTokenFromUrl() {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  const token = params.get("access");
+  return token && token.length >= 32 && token.length <= 256 ? token : null;
+}
+
+export function removeAccessTokenFromUrl() {
+  if (typeof window === "undefined" || !window.location.hash) return;
+  const url = new URL(window.location.href);
+  url.hash = "";
+  window.history.replaceState(null, "", url);
+}
+
+export function buildCampaignAccessUrl(campaignId: string, token: string) {
+  if (typeof window === "undefined") return `?campaign=${encodeURIComponent(campaignId)}#access=${encodeURIComponent(token)}`;
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("campaign", campaignId);
+  url.hash = new URLSearchParams({ access: token }).toString();
+  return url.toString();
 }
