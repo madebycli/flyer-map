@@ -16,13 +16,10 @@ type MutationBase<Type extends string, Payload> = {
 };
 
 export type CampaignMutation =
-  | MutationBase<
-      "campaign.rename",
-      { name: string; expectedUpdatedAt: string }
-    >
+  | MutationBase<"campaign.rename", { name: string; expectedName: string }>
   | MutationBase<
       "campaign.set-default-map-view",
-      { defaultMapView: MapCameraView | null; expectedUpdatedAt: string }
+      { defaultMapView: MapCameraView | null; expectedDefaultMapView: MapCameraView | null }
     >
   | MutationBase<"team.create", { teamId: string; name: string; color: string }>
   | MutationBase<
@@ -85,6 +82,10 @@ function conflict(reason: string): never {
   throw new CampaignMutationConflictError(reason);
 }
 
+function same(a: unknown, b: unknown) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function requireExpectedUpdatedAt(
   actual: string | undefined,
   expected: string,
@@ -124,12 +125,9 @@ export function applyCampaignMutation(
 
   switch (mutation.type) {
     case "campaign.rename": {
-      requireExpectedUpdatedAt(
-        snapshot.campaign.updatedAt,
-        mutation.payload.expectedUpdatedAt,
-        "campaign_missing",
-        "campaign_changed",
-      );
+      if (snapshot.campaign.name !== mutation.payload.expectedName) {
+        conflict("campaign_name_changed");
+      }
       next = {
         ...snapshot,
         campaign: { ...snapshot.campaign, name: mutation.payload.name },
@@ -137,12 +135,9 @@ export function applyCampaignMutation(
       break;
     }
     case "campaign.set-default-map-view": {
-      requireExpectedUpdatedAt(
-        snapshot.campaign.updatedAt,
-        mutation.payload.expectedUpdatedAt,
-        "campaign_missing",
-        "campaign_changed",
-      );
+      if (!same(snapshot.campaign.defaultMapView, mutation.payload.expectedDefaultMapView)) {
+        conflict("campaign_default_map_view_changed");
+      }
       next = {
         ...snapshot,
         campaign: {
