@@ -5,12 +5,17 @@ import { validateCampaignSnapshot } from "../worker/snapshotValidation.ts";
 
 function validSnapshot(): CampaignSnapshot {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 7,
     campaign: {
       id: "campaign_test-1",
       name: "Testaktion",
       status: "active",
+      defaultMapView: {
+        center: [9.48, 51.31],
+        zoom: 12,
+        bearing: 80,
+      },
       createdAt: "2026-08-24T00:00:00.000Z",
       updatedAt: "2026-08-24T00:01:00.000Z",
     },
@@ -69,9 +74,21 @@ function validSnapshot(): CampaignSnapshot {
   };
 }
 
-test("accepts a valid campaign/team/area/street snapshot", () => {
+test("accepts a valid schema-v3 campaign/team/area/street snapshot", () => {
   const result = validateCampaignSnapshot(validSnapshot(), "campaign_test-1");
   assert.equal(result.valid, true);
+});
+
+test("accepts a campaign without a shared default map view", () => {
+  const snapshot = validSnapshot();
+  snapshot.campaign.defaultMapView = null;
+  assert.equal(validateCampaignSnapshot(snapshot, snapshot.campaign.id).valid, true);
+});
+
+test("rejects an invalid shared map view", () => {
+  const snapshot = validSnapshot();
+  snapshot.campaign.defaultMapView = { center: [9.4, 95], zoom: 12, bearing: 0 };
+  assert.equal(validateCampaignSnapshot(snapshot, snapshot.campaign.id).valid, false);
 });
 
 test("rejects a polygon that self-intersects", () => {
