@@ -71,7 +71,23 @@ The first Admin grant for an existing Campaign can be created only through the e
 - the Campaign already exists;
 - the Campaign currently has zero access grants.
 
-After bootstrap, a second bootstrap attempt for the same Campaign is rejected. The deployment secret is not committed and should be removed/rotated after all intended legacy Campaigns are bootstrapped.
+After bootstrap, a second bootstrap attempt for the same Campaign is rejected. There is no anonymous first-visitor claim path.
+
+## Operator Admin recovery
+
+A browser session and an Access Link can be lost even though the Campaign already has valid grants. This is especially common on Cloudflare branch-preview hosts because cookies are origin-scoped and are not shared with the production hostname.
+
+While `M4_BOOTSTRAP_SECRET` remains configured, the Worker exposes an explicit same-origin Admin recovery operation. Recovery:
+- requires the caller to supply the server-configured high-entropy secret;
+- verifies that the requested Campaign exists;
+- may run even when the Campaign already has Access Grants;
+- creates a **new** normal revocable Admin grant;
+- creates a normal secure HttpOnly session cookie for the current origin;
+- returns the plaintext Admin Access token exactly once so the operator can save a fresh Access Link.
+
+The browser recovery form uses a password input and does not persist the operator secret in localStorage, D1 or Campaign data. The secret must never be placed in a Campaign URL or pasted into normal field communication.
+
+This recovery mechanism is intentionally a privileged operator capability, not an account login system. If the operator secret may have been exposed, rotate it in Cloudflare. If operator recovery is not desired after setup, remove/rotate the secret and rely only on retained Admin Access Links/sessions.
 
 ## New Campaigns
 
@@ -86,7 +102,8 @@ A newly created Campaign receives a fresh Admin grant and session as part of the
 - payloads are size-bounded and schema/geometry/ownership validated before persistence;
 - optimistic revision conflicts return 409;
 - browser state-changing requests are same-origin restricted when an Origin header is present;
-- browser cookies use `SameSite=Lax` in addition to same-origin API use.
+- browser cookies use `SameSite=Lax` in addition to same-origin API use;
+- bootstrap/recovery secret verification happens only in the Worker.
 
 ## GPS and camera privacy
 
@@ -100,7 +117,7 @@ The shared Campaign map focus is configuration, not a GPS history.
 
 Never commit:
 - Cloudflare API tokens;
-- bootstrap secrets;
+- bootstrap/recovery secrets;
 - plaintext production invite/access links;
 - session secrets;
 - private Campaign exports.
