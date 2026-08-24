@@ -1,11 +1,21 @@
 .map-refresh-control {
   position: absolute;
   z-index: 19;
-  right: 0.75rem;
+  right: 0.7rem;
   bottom: calc(env(safe-area-inset-bottom) + 8.7rem);
   width: 2.8rem;
   height: 2.8rem;
   pointer-events: none;
+}
+
+/* Admin has three toolbar actions, so the second row makes the field toolbar taller. */
+.map-region:has(~ .map-toolbar .toolbar-actions > :nth-child(3)) .map-refresh-control {
+  bottom: calc(env(safe-area-inset-bottom) + 12.25rem);
+}
+
+/* Viewer toolbars are only one row high. */
+.map-region:has(~ .map-toolbar.viewer-toolbar) .map-refresh-control {
+  bottom: calc(env(safe-area-inset-bottom) + 5.15rem);
 }
 
 .map-refresh-button {
@@ -14,16 +24,25 @@
   height: 2.8rem;
   place-items: center;
   padding: 0;
-  border: 1px solid rgb(30 50 35 / 10%);
-  border-radius: 0.8rem;
-  color: #26352b;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 0.2rem 0.8rem rgb(20 35 24 / 10%);
-  font-size: 1.35rem;
-  font-weight: 700;
+  border: 0;
+  border-radius: 0.82rem;
+  color: #243128;
+  background: #edf2ee;
+  box-shadow: 0 0.25rem 0.9rem rgb(20 35 24 / 14%);
+  font-size: 1.25rem;
+  font-weight: 760;
   line-height: 1;
   pointer-events: auto;
   -webkit-tap-highlight-color: transparent;
+}
+
+.map-refresh-button:hover {
+  background: #e3ebe5;
+}
+
+.map-refresh-button:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 35%);
+  outline-offset: 2px;
 }
 
 .map-refresh-control.is-loading .map-refresh-button span {
@@ -32,11 +51,12 @@
 
 .map-refresh-control.is-error .map-refresh-button {
   color: #8a4a0d;
-  background: rgb(255 246 226 / 97%);
+  background: #faead6;
 }
 
 .map-refresh-control.is-current .map-refresh-button {
   color: #19592f;
+  background: #ddf3e4;
 }
 
 .map-refresh-button:disabled {
@@ -184,8 +204,7 @@
 
 @media (max-width: 480px) {
   .map-refresh-control {
-    right: 0.55rem;
-    bottom: calc(env(safe-area-inset-bottom) + 8.55rem);
+    right: 0.7rem;
   }
 
   .settings-actions.stacked-mobile {
