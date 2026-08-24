@@ -121,6 +121,18 @@ export async function redeemCampaignAccess(campaignId: string, token: string) {
   return ((await response.json()) as { access: AccessInfo }).access;
 }
 
+export async function recoverCampaignAdminAccess(campaignId: string, secret: string) {
+  const response = await apiFetch("/api/admin/recover", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ campaignId, secret }),
+  });
+  return (await response.json()) as {
+    access: AccessInfo;
+    initialAccessToken: string;
+  };
+}
+
 export async function fetchCurrentAccess(campaignId: string) {
   const response = await apiFetch(`/api/access/current?campaign=${encodeURIComponent(campaignId)}`);
   return ((await response.json()) as { access: AccessInfo }).access;
@@ -179,7 +191,9 @@ export function removeAccessTokenFromUrl() {
 }
 
 export function buildCampaignAccessUrl(campaignId: string, token: string) {
-  if (typeof window === "undefined") return `?campaign=${encodeURIComponent(campaignId)}#access=${encodeURIComponent(token)}`;
+  if (typeof window === "undefined") {
+    return `?campaign=${encodeURIComponent(campaignId)}#access=${encodeURIComponent(token)}`;
+  }
   const url = new URL(window.location.href);
   url.search = "";
   url.hash = "";
