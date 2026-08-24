@@ -9,40 +9,38 @@ last_updated: 2026-08-24
 
 ## Milestone
 
-M3 — Shared Persistence is technically complete, merged to `main` through PR #14 (`ad7c921c36c2b411dd26ec87cd2177766fac968e`) and live on the production Cloudflare Worker.
+M3 — Shared Persistence is complete, merged to `main` through PR #14 and live on the production Cloudflare Worker.
 
-The next logical milestone is M4 — access links and authorization.
+M4 — Access Links + Authorization + Field UX hardening is implemented on branch `m4-access-links-ux-sync` in PR #16 and has a green full CI run (#89: tests, TypeScript and production build). It is not yet production-complete because the M4 D1 migration and Cloudflare bootstrap secret are intentional deployment gates that must be handled before merge/deploy.
 
-The production-phone stability gate from PR #13 remains accepted: areas, streets, draft geometry and selected-area corner markers are visible on the real phone. The renderer release gate remains unchanged.
+## M4 branch state
 
-## Working in code
+The M4 branch adds:
+- Worker-enforced campaign access for every protected snapshot/version request;
+- roles `admin`, `team-editor`, `viewer` with optional team scope;
+- strong random invite tokens with only SHA-256 hashes stored server-side;
+- opaque HttpOnly/Secure/SameSite session cookies whose authorization resolves the underlying grant on each request;
+- immediate access loss after grant revocation, including existing sessions;
+- explicit server-secret bootstrap for campaigns that existed before M4; there is no first-visitor-admin fallback;
+- admin Access Management API/UI for creating/listing/revoking grants;
+- server-side old/new snapshot authorization for team editors so complete-snapshot PUTs cannot mutate campaign settings, teams, foreign areas/tasks or ownership scope;
+- Campaign snapshot schema v3 with optional shared `defaultMapView`;
+- browser-local personal camera center/zoom/bearing per Campaign;
+- arbitrary MapLibre rotation plus compass while application geometry stays in the independent SVG overlay;
+- browse Area selection without white halo or stored-corner markers; draw/edit markers remain visible;
+- in-memory remote snapshot refresh instead of `window.location.reload()`;
+- 30-second revision polling plus online/visibility/manual refresh;
+- deferral of remote snapshot application while draw/edit/street-draw is active;
+- compact refresh feedback and browser-local German/English application language preference.
 
-The mobile field workflow includes:
-- editable named/color-coded teams
-- editable polygon areas
-- manually traced street LineString tasks
-- statuses `open`, `completed`, `later`, `not-deliverable`
-- `completedAt` and immediate status Undo
-- CARTO Voyager Retina basemap
-- local-only one-shot geolocation
-- independent SVG overlay for all Verteil-Flyer application geometry
-- primary + backup localStorage snapshots
+## Renderer boundary
 
-M3 adds shared persistence through:
-- `GET /api/campaigns/:campaignId/snapshot`
-- `PUT /api/campaigns/:campaignId/snapshot`
-- `GET /api/campaigns/:campaignId/version`
-- server-side snapshot, membership, status and geometry validation
-- normalized D1 campaign/team/area/task persistence
-- shared revision with HTTP 409 conflict handling
-- transactional D1 replacement guarded by an internal per-write token
-- constant-size JSON bulk INSERT statements
-- localStorage-first startup and safe bootstrap of existing local campaigns
-- `?campaign=` shared campaign selection for M3 multi-browser testing
-- five-second revision polling while online/visible
-- local conflict backup plus visible user notification before reloading current server state
+MapLibre continues to render only:
+- CARTO Voyager Retina raster basemap;
+- camera/navigation/compass controls;
+- local one-shot geolocation display.
 
-The working SVG/MapLibre renderer was not changed by M3.
+All Verteil-Flyer areas, streets, draw previews and edit geometry remain in the independent SVG overlay. M4 changes selection presentation and camera behavior but does not reintroduce MapLibre application GeoJSON layers.
 
 ## D1
 
@@ -50,49 +48,55 @@ Production D1 database: `flyer-map-db`.
 
 Worker binding: `DB`.
 
-Migration `0001_initial.sql` is confirmed in `d1_migrations` and provides:
-- `campaigns`
-- `teams`
-- `areas`
-- `tasks`
+Production history:
+- `migrations/0001_initial.sql` — M3 campaign/team/area/task schema; immutable production history.
 
-`campaigns.revision` is the shared optimistic-concurrency version. `campaigns.write_token` is an internal write guard.
+M4 pending deployment migration:
+- `migrations/0002_m4_access.sql` — Campaign default map view plus access-grant/session tables.
+
+`0002` must be applied intentionally to production before Worker code that depends on these tables is deployed.
 
 ## Verification
 
-- CI #62 passed all 7 tests, TypeScript and production build before the D1 binding commit.
-- CI #66 passed all 7 tests, TypeScript and production build with the real D1 binding committed.
-- final PR-head CI #68 passed all 7 tests, TypeScript and production build after production migration confirmation.
-- PR #14 merged successfully to `main`.
-- the M3 branch diff contained no `src/map/*` renderer changes.
-- temporary read-only production smoke PR #15 / CI #73 passed and was closed without merge;
-- that smoke check confirmed production `/api/health` reports version `0.2.0` with `persistence: "d1"` and that `GET /api/campaigns/campaign_smoke_probe/version` reaches the migrated D1 schema and returns the expected `campaign_not_found` response.
+M3 production verification remains valid for the current `main` deployment.
 
-## Real-device M3 acceptance check
+M4 branch verification:
+- authorization/token/session tests cover missing credentials, hashed invite storage, campaign scope, revocation and token redemption;
+- permission tests cover Admin, Viewer and Team Editor own-team/foreign-team boundaries;
+- snapshot validation tests cover schema v3 and shared map view validation;
+- repository CI #89 passed the complete `npm run check` pipeline: tests, TypeScript and production build;
+- PR #16 remains unmerged until the production migration/bootstrap gates are intentionally completed.
 
-1. Open one campaign on phone A and allow the existing local snapshot to bootstrap.
-2. Open the same `?campaign=` URL on phone B.
-3. Confirm teams, areas, streets, statuses and geometry match.
-4. Make a change on phone A and confirm phone B receives it after revision polling.
-5. Reload both phones and confirm D1 restores the same server state.
-6. Make near-simultaneous edits to confirm a stale write produces a visible conflict instead of silent overwrite.
-7. Confirm CARTO Voyager Retina and all independent SVG geometry render exactly as before M3.
+## Production gate before M4 merge
+
+1. Configure strong Cloudflare Worker secret `M4_BOOTSTRAP_SECRET` outside the repository.
+2. Apply `migrations/0002_m4_access.sql` to remote `flyer-map-db`.
+3. Confirm the final PR head remains green after any gate/documentation changes.
+4. Merge PR #16 to `main` and allow Cloudflare Workers Builds to deploy it.
+5. Smoke-check health plus 401/role/revocation/sync behavior in production.
+6. Explicitly bootstrap any known pre-M4 campaign that still needs an initial Admin access link.
+7. Perform real-phone map/rotation/camera/refresh checks.
+
+No Cloudflare connector/plugin is available in the current ChatGPT environment, so the production D1/secret operations cannot be truthfully executed from here and must not be fabricated.
 
 ## Completed plan
 
 - `docs/plans/completed/006-m3-shared-persistence.md`
 
-## Deferred beyond M3
+## Active plan
 
-- login/user accounts
-- invite/access links and roles (M4)
+- `docs/plans/active/007-m4-access-links-ux-sync.md`
+
+## Deferred beyond M4
+
 - durable multi-mutation offline queue (M5)
 - WebSockets
 - OSM street import/snap-to-road
 - House Mode
 - GPS routes/history
 - PWA/service worker
+- traditional email/password account system
 
 ## Next
 
-M4 should introduce revocable campaign-scoped access links and authorization for read/write operations without changing the map renderer or reintroducing native/PWA behavior.
+Finish the explicit M4 production migration/bootstrap gates, merge and deploy PR #16, then complete production/real-device acceptance before moving plan 007 to completed and beginning M5.
