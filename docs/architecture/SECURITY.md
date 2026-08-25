@@ -3,7 +3,7 @@ id: architecture-security
 type: architecture
 status: accepted
 last_updated: 2026-08-25
-related: [architecture-data, product, product-roadmap, architecture-organizations, ADR-0009]
+related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, ADR-0009, ADR-0011]
 source_of_truth_for: [authorization, privacy-baseline, current-access-model]
 ---
 
@@ -11,9 +11,9 @@ source_of_truth_for: [authorization, privacy-baseline, current-access-model]
 
 ## Baseline
 
-The client is untrusted. Every protected request is authorized and every state-changing payload is validated by the Cloudflare Worker. React/UI visibility is a convenience, never the authorization boundary.
+The client is untrusted. Every protected request is authorized and every state-changing payload is validated by the Cloudflare Worker. React/UI visibility, local queue state and mutation labels are conveniences, never authorization boundaries.
 
-Campaign ids, future Organization ids and domain ids are selectors only. They are never credentials.
+Campaign ids, future Organization ids, domain ids and M5 mutation ids are selectors/identifiers only. They are never credentials.
 
 ## Current Campaign access model
 
@@ -31,8 +31,15 @@ Current roles:
 | Create/edit/delete Tasks/status | yes | own Team Areas only | no |
 | Modify another Team | yes | no | no |
 | Create/revoke Campaign Access Links | yes | no | no |
+| Submit M5 domain mutations | yes | own authorized scope only | no |
 
-The Worker enforces scope on every write. Current complete-snapshot Team Editor writes are diff-authorized against the previous server state.
+The Worker enforces scope on every write.
+
+During M5 transition:
+- legacy snapshot PUT remains diff-authorized against previous server state;
+- M5 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the **same existing authorization policy** before D1 persistence.
+
+This prevents a client from bypassing scope by lying about a mutation type or target.
 
 ## Access grants and sessions
 
@@ -51,7 +58,47 @@ Every protected request resolves the session's backing grant. Revoking the grant
 
 Team Editor grant creation verifies that the scoped Team exists. Access resolution also verifies the Team still exists.
 
-There is intentionally no D1 Team foreign key on the grant in the current snapshot-replacement architecture; see `docs/architecture/DATA.md`.
+There is intentionally no D1 Team foreign key on the grant while the legacy snapshot-replacement compatibility path exists; see `docs/architecture/DATA.md`.
+
+For M5 mutations, Team Editor scope is not inferred from client mutation payload alone. The Worker:
+1. loads canonical current snapshot;
+2. applies the proposed mutation in memory;
+3. validates the candidate snapshot;
+4. compares current/candidate through `authorizeSnapshotWrite`;
+5. persists only if allowed.
+
+## M5 mutation request security
+
+Protected endpoint:
+- `POST /api/campaigns/:campaignId/mutations`.
+
+Controls:
+- same-origin write protection applies before route handling;
+- valid Campaign session/grant required;
+- Viewer rejected before mutation persistence;
+- Campaign id in the payload must match the protected route Campaign;
+- mutation id/type/base revision/createdAt/payload are schema validated;
+- mutation request body is size limited;
+- resulting Campaign snapshot is fully validated before persistence;
+- existing Worker authorization policy is authoritative;
+- D1 revision/write-token claim protects concurrent persistence;
+- mutation idempotency ledger prevents duplicate replay effects.
+
+A stable mutation id allows safe retry. It does **not** authorize the retry. Every retry still resolves current access first.
+
+If an already-applied mutation id is replayed, the Worker returns its previous applied revision only after the request has passed the protected route's access resolution. The ledger is not a public lookup service.
+
+## Queue and revocation behavior
+
+IndexedDB queue records may contain domain mutation payloads necessary to retry a user's saved work. They do not contain plaintext Access Link tokens or session secrets.
+
+When a queued request receives 401/403:
+- the record remains locally preserved;
+- queue state becomes `blocked-auth`;
+- ordered automatic retry stops;
+- the client must not blindly hammer a revoked credential.
+
+A later valid access session may allow the queue to resume, but the Worker re-authorizes each mutation against current canonical state.
 
 ## Existing Campaign bootstrap
 
@@ -67,7 +114,7 @@ Campaign id alone never creates ownership.
 
 ## Operator Admin recovery
 
-PR #21/current follow-up supports explicit operator recovery when an Admin session/link is lost.
+Operator recovery remains available after PR #21 and is unchanged by M5.
 
 Recovery:
 - requires the configured high-entropy server secret;
@@ -85,7 +132,7 @@ This is a privileged operator mechanism, not an ordinary user login system.
 - Viewer writes return authorization failure;
 - cross-Campaign credentials fail;
 - payloads are size/schema/geometry/ownership validated;
-- stale revisions conflict rather than silently overwrite;
+- target conflicts/revision races do not silently overwrite;
 - same-origin protections apply to browser state-changing requests when Origin is present;
 - secrets are verified server-side only.
 
@@ -103,6 +150,8 @@ Mandatory future security properties:
 - membership/revocation enforced server-side;
 - legacy Campaign migration cannot create a first-visitor claim race;
 - privileged admin/automation actions have auditable event records where appropriate.
+
+M5 mutation ids/idempotency do not establish Organization identity. Future tenant scope must be added explicitly to the authorization/data model.
 
 See `docs/architecture/ORGANIZATIONS.md`.
 
@@ -137,6 +186,8 @@ A D1 database id is configuration, not a credential.
 
 Current Access Grants do not require personal name/email/phone/device identity. Operational labels may be used.
 
+M5 stores only the domain payload and metadata needed to deliver/reconcile queued saved work. It does not add GPS history, device profiling or user tracking.
+
 Future Organization identity may require more durable member identity, but only collect data needed for explicit administrative/security requirements. Do not add personal profiling or movement tracking for statistics.
 
-See ADR-0009 for the current Campaign access/session decision.
+See ADR-0009 for Campaign access/session and ADR-0011 for durable mutation/idempotency behavior.
