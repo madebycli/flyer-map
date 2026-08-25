@@ -1,0 +1,90 @@
+.progress-summary-card {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid #dbe4dd;
+  border-radius: 1rem;
+  background: #ffffff;
+  box-shadow: 0 0.25rem 1rem rgb(27 44 32 / 7%);
+}
+
+.progress-summary-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.progress-summary-heading h3,
+.progress-summary-heading strong {
+  margin: 0;
+}
+
+.progress-summary-heading h3 {
+  color: #26342b;
+  font-size: 0.9rem;
+}
+
+.progress-summary-heading strong {
+  color: #1f5131;
+  font-size: 1rem;
+}
+
+.progress-summary-bar {
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6ece7;
+}
+
+.progress-summary-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2f7d47;
+  transition: width 180ms ease-out;
+}
+
+.progress-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.progress-summary-grid > div {
+  min-width: 0;
+  padding: 0.55rem;
+  border-radius: 0.7rem;
+  background: #f6f8f6;
+}
+
+.progress-summary-grid dt,
+.progress-summary-grid dd {
+  margin: 0;
+}
+
+.progress-summary-grid dt {
+  color: #66736a;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.progress-summary-grid dd {
+  margin-top: 0.12rem;
+  color: #243229;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+@media (min-width: 560px) {
+  .progress-summary-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-summary-bar > span {
+    transition: none;
+  }
+}
