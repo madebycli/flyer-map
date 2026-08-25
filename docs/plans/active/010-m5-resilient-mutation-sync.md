@@ -50,13 +50,13 @@ Implemented architecture:
 ### A. Domain protocol — implemented
 Explicit mutation types, derivation, target preconditions and tests are present.
 
-### B. Durable browser queue — implemented; browser acceptance pending
+### B. Durable browser queue — implemented; browser acceptance in progress
 IndexedDB queue, ordering, emergency recovery, transaction completion, retry/backoff and lifecycle triggers are present.
 
 ### C. Worker + D1 idempotency — implemented; migration passed, runtime acceptance pending
 Mutation route, validation, fingerprints, duplicate/reuse handling, authorization and narrow writes are present.
 
-### D. User-visible sync state — implemented; field acceptance pending
+### D. User-visible sync state — implemented; field acceptance in progress
 Compact pending/syncing/offline/conflict/failed/access-blocked indicator is present without changing MapLibre lifecycle.
 
 ### E. Documentation / handoff — current
@@ -105,10 +105,17 @@ No credentials or secret values are recorded. The D1 schema is now ready for M5 
 
 ## Browser/field acceptance — current gate
 
-Preview-root smoke is passed in a real browser. Functional M5 acceptance remains open.
+Preview-root smoke is passed in a real browser.
 
-Test one gate at a time and record each result immediately:
-1. offline save -> reload while still offline -> reconnect -> queued mutation synchronizes;
+Observed on 2026-08-25 for gate 1:
+- creating a Street while offline shows `offline gespeichert`;
+- editing a Street while offline also remains locally saved;
+- after a full reload while still offline, the created/edited Street remains present.
+
+Therefore local offline durability across reload is passed. Gate 1 is not fully complete until connectivity is restored and the queued mutation is observed synchronizing to the server without duplication.
+
+Remaining sequence:
+1. reconnect and confirm queued mutation delivery;
 2. retry/reconnect does not duplicate the effect;
 3. conflicting target change is visibly surfaced and does not overwrite silently;
 4. revoked/invalid access stops blind retry and queued work remains access-blocked;
@@ -139,6 +146,7 @@ For destructive acceptance use a disposable/test Campaign where practical becaus
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Perform browser acceptance gate 1: supported save while offline -> reload while still offline -> reconnect -> confirm delivery.
-3. Record the observed result in this plan and `CURRENT.md` before proceeding to gate 2.
-4. Merge only after all remaining browser gates pass and the final repository head is green.
+2. Turn connectivity back on in the same browser session used for the passed offline save/reload check.
+3. Confirm the queued Street mutation reaches the server and returns to normal saved state without duplication.
+4. Record the result in this plan and `CURRENT.md`, then continue to retry/idempotency acceptance.
+5. Merge only after all remaining browser gates pass and the final repository head is green.
