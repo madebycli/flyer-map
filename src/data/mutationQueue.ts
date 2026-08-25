@@ -82,7 +82,11 @@ export class IndexedDbMutationQueueStorage implements MutationQueueStorage {
 }
 
 export class MutationQueue {
-  constructor(private readonly storage: MutationQueueStorage) {}
+  private readonly storage: MutationQueueStorage;
+
+  constructor(storage: MutationQueueStorage) {
+    this.storage = storage;
+  }
 
   async enqueue(mutation: CampaignMutation) {
     const record: QueuedCampaignMutation = {
