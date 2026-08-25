@@ -31,11 +31,7 @@ Relevant graph nodes:
 
 The old draft PR #17 is closed as superseded. It was based on a pre-PR21 branch and obsolete renderer assumptions; only isolated synchronization ideas were ported to the fresh post-PR21 branch.
 
-## Production-health note
-
-The coding environment cannot independently resolve the public `workers.dev` production hostname, so post-PR21 production health remains tracked in GitHub #23 and is not claimed passed.
-
-Implementation may continue on isolated PR #24, but **M5 must not be merged/deployed to production until the migration/runtime gates below are satisfied**.
+Current implementation stays on existing branch `m5-resilient-sync-mainline` / Draft PR #24. A fresh agent must continue that PR rather than creating a parallel M5 branch.
 
 ## Architecture decisions
 
@@ -44,11 +40,12 @@ See ADR-0011.
 Core direction:
 - IndexedDB stores unacknowledged mutations;
 - mutation ids are stable idempotency keys;
-- each mutation id is bound to a canonical SHA-256 fingerprint of its semantic mutation content;
+- each mutation id is bound to a canonical, locale-independent SHA-256 fingerprint of the validated mutation envelope;
 - one explicit mutation is processed at a time per Campaign;
 - Worker loads current state, validates/applies mutation in memory, reuses existing authorization policy, then performs narrow D1 persistence;
 - D1 records applied mutation ids/fingerprints in additive migration `0003`;
 - same id + same mutation may be replayed safely; same id + changed mutation is rejected;
+- D1 `batch()` transaction semantics are relied on for atomic revision claim + narrow write + ledger insert; current Cloudflare docs state that a failing statement aborts/rolls back the whole batch;
 - conflicts/auth failures remain visible terminal queue states;
 - retryable failures use bounded exponential backoff;
 - retries run on page startup, online, visible-tab return and manual refresh;
@@ -90,15 +87,16 @@ Core direction:
 - expose pending/syncing/offline/conflict/failed/access-blocked state with a compact mobile-first indicator;
 - do not disturb MapLibre renderer/camera lifecycle.
 
-### E. Documentation / deployment — active
-- OFFLINE_SYNC, DATA, SECURITY and CURRENT describe the M5 implementation as code-in-PR, not production-deployed behavior;
+### E. Documentation / deployment — implemented for current code state, acceptance notes remain active
+- OFFLINE_SYNC, DATA, SECURITY, CURRENT, DEPLOYMENT and ADR-0011 describe the M5 implementation as code-in-PR, not production-deployed behavior;
 - context graph routes current M5 work through Plan 010 and ADR-0011;
+- NEW_AGENT points fresh sessions at existing PR #24/Plan 010;
 - `0001`/`0002` remain immutable;
 - `0003` must be explicitly applied before mutation runtime acceptance in the chosen D1 environment.
 
 ## Repository acceptance status
 
-Latest runtime-code head before context-only documentation updates: `8c7020ad5d1538bea68c351d918e94aa8f54973c`.
+Runtime-hardening head: `8c7020ad5d1538bea68c351d918e94aa8f54973c`.
 
 Passed:
 - CI #202 on `8c7020ad...`;
@@ -113,15 +111,27 @@ Passed:
 - canonical fingerprint remains stable across object key insertion order;
 - Team Editor/Viewer authorization tests inherited from the current Worker policy remain green.
 
-Cloudflare preview:
+Complete code + context/ADR/runbook head `5c7dce819d472be8242da59034310d7a87c21f36` passed CI #208. Commits after that acceptance point are documentation/handoff-only unless PR history states otherwise; the latest final repository head must still be checked before merge.
+
+## Cloudflare preview status — open
+
 - exact preview confirmed for older head `fc200f9d4331d002fd73c060fd3c76636e69b0d2`;
-- exact preview for the newer hardened runtime-equivalent head is **not yet confirmed in the PR bot record**;
-- do not mark this gate passed until the bot/deployment record names the newer head.
+- the Cloudflare PR bot record checked after CI #208 still names only `fc200f9d`;
+- the coding environment cannot resolve the `workers.dev` host directly;
+- therefore exact preview for the final runtime-equivalent M5 head is **not yet confirmed**.
+
+Do not use the older `fc200f9d` preview as proof that the hardened fingerprint/emergency-queue runtime was deployed.
+
+## D1 migration status — open
+
+`migrations/0003_m5_mutations.sql` is repository-prepared only and includes the required mutation fingerprint column.
+
+It is not claimed applied. The mutation endpoint must not be intentionally exercised in a D1 environment before `0003` is explicitly applied there.
 
 ## Acceptance still required before merge/production rollout
 
 Repository/deployment:
-- final documentation/context head CI green;
+- latest final repository head green;
 - exact Cloudflare preview for the final runtime-equivalent head;
 - explicit application of `0003_m5_mutations.sql` to the D1 environment used for runtime acceptance.
 
@@ -154,7 +164,8 @@ Browser/field:
 
 ## Immediate next
 
-1. Confirm CI and Cloudflare deployment on the current context/documentation head; runtime CI #202 is already green.
-2. Apply `0003_m5_mutations.sql` to the chosen D1 runtime-acceptance environment only through the documented Cloudflare/Wrangler procedure.
-3. Perform the browser queue/reconnect/conflict/revocation acceptance against an exact migrated preview/runtime-equivalent deployment.
-4. Keep PR #24 Draft until those gates are observed and recorded.
+1. Keep PR #24 Draft and verify CI on the latest documentation/handoff-only head.
+2. Resolve the exact Cloudflare preview-head gate; do not claim the stale `fc200f9d` preview as current.
+3. Apply `0003_m5_mutations.sql` to the chosen D1 runtime-acceptance environment only through the documented Cloudflare/Wrangler procedure.
+4. Perform the browser queue/reconnect/conflict/revocation acceptance against an exact migrated preview/runtime-equivalent deployment.
+5. Record each observed gate immediately in this plan + `CURRENT.md`; merge only after all remaining gates are passed.
