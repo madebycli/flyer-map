@@ -1,12 +1,11 @@
 import type { SmartRoadCandidate } from "./smartCandidates.ts";
 
-export type SmartRoadSelectionMode = "source-segment" | "connected-same-name";
-
 type Coordinate = [number, number];
 
-function normalizedRoadName(value: string | null) {
-  return value?.trim().toLocaleLowerCase("de-DE") || null;
-}
+export type SmartRoadRangeSelection =
+  | { state: "selected"; sourceIds: string[] }
+  | { state: "disconnected"; sourceIds: [] }
+  | { state: "ambiguous"; sourceIds: [] };
 
 function coordinateKey([lng, lat]: Coordinate) {
   return `${lng.toFixed(7)},${lat.toFixed(7)}`;
@@ -30,39 +29,67 @@ function candidatesTouch(a: SmartRoadCandidate, b: SmartRoadCandidate) {
   return false;
 }
 
-export function selectSmartRoadSourceIds(
-  roads: SmartRoadCandidate[],
-  selectedSourceId: string,
-  mode: SmartRoadSelectionMode,
-) {
-  const selected = roads.find((candidate) => candidate.sourceId === selectedSourceId);
-  if (!selected) return [];
-  if (mode === "source-segment") return [selected.sourceId];
+function adjacencyFor(roads: SmartRoadCandidate[]) {
+  const adjacency = new Map<string, string[]>();
+  for (const road of roads) adjacency.set(road.sourceId, []);
 
-  const selectedName = normalizedRoadName(selected.name);
-  if (!selectedName) return [selected.sourceId];
-
-  const sameName = roads.filter(
-    (candidate) => normalizedRoadName(candidate.name) === selectedName,
-  );
-  const selectedIds = new Set<string>([selected.sourceId]);
-  const queue = [selected];
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) break;
-
-    for (const candidate of sameName) {
-      if (selectedIds.has(candidate.sourceId)) continue;
-      if (!candidatesTouch(current, candidate)) continue;
-      selectedIds.add(candidate.sourceId);
-      queue.push(candidate);
+  for (let index = 0; index < roads.length; index += 1) {
+    for (let otherIndex = index + 1; otherIndex < roads.length; otherIndex += 1) {
+      const first = roads[index];
+      const second = roads[otherIndex];
+      if (!candidatesTouch(first, second)) continue;
+      adjacency.get(first.sourceId)?.push(second.sourceId);
+      adjacency.get(second.sourceId)?.push(first.sourceId);
     }
   }
 
-  return roads
-    .filter((candidate) => selectedIds.has(candidate.sourceId))
-    .map((candidate) => candidate.sourceId);
+  return adjacency;
+}
+
+function findAtMostTwoSimplePaths(
+  adjacency: Map<string, string[]>,
+  startSourceId: string,
+  endSourceId: string,
+) {
+  const paths: string[][] = [];
+  const queue: string[][] = [[startSourceId]];
+
+  while (queue.length > 0 && paths.length < 2) {
+    const path = queue.shift();
+    if (!path) break;
+    const current = path[path.length - 1];
+
+    if (current === endSourceId) {
+      paths.push(path);
+      continue;
+    }
+
+    for (const neighbor of adjacency.get(current) ?? []) {
+      if (path.includes(neighbor)) continue;
+      queue.push([...path, neighbor]);
+    }
+  }
+
+  return paths;
+}
+
+export function selectSmartRoadRange(
+  roads: SmartRoadCandidate[],
+  startSourceId: string,
+  endSourceId: string,
+): SmartRoadRangeSelection {
+  const sourceIds = new Set(roads.map((road) => road.sourceId));
+  if (!sourceIds.has(startSourceId) || !sourceIds.has(endSourceId)) {
+    return { state: "disconnected", sourceIds: [] };
+  }
+  if (startSourceId === endSourceId) {
+    return { state: "selected", sourceIds: [startSourceId] };
+  }
+
+  const paths = findAtMostTwoSimplePaths(adjacencyFor(roads), startSourceId, endSourceId);
+  if (paths.length === 0) return { state: "disconnected", sourceIds: [] };
+  if (paths.length > 1) return { state: "ambiguous", sourceIds: [] };
+  return { state: "selected", sourceIds: paths[0] };
 }
 
 export function smartRoadSelectionLabel(
@@ -71,9 +98,8 @@ export function smartRoadSelectionLabel(
 ) {
   if (sourceIds.length === 0) return null;
   const selected = roads.filter((candidate) => sourceIds.includes(candidate.sourceId));
-  const named = selected.map((candidate) => candidate.name?.trim()).filter(Boolean) as string[];
-  const uniqueNames = [...new Set(named)];
-  if (uniqueNames.length === 1) return uniqueNames[0];
-  if (selected.length === 1) return selected[0].ref ?? selected[0].sourceId;
+  if (selected.length === 1) {
+    return selected[0].name?.trim() || selected[0].ref || selected[0].sourceId;
+  }
   return `${selected.length} Straßenabschnitte`;
 }
