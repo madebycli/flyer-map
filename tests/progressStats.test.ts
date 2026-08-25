@@ -151,7 +151,7 @@ test("team progress includes only tasks owned through that team's areas", () => 
   assert.equal(summary.areaCount, 1);
   assert.equal(summary.total, 3);
   assert.equal(summary.completed, 1);
-  assert.equal(summary.percentCompleted, 100 / 3);
+  assert.equal(summary.percentCompleted, (1 / 3) * 100);
 });
 
 test("area progress keeps team ownership and returns null for unknown areas", () => {
