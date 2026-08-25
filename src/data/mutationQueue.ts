@@ -45,8 +45,13 @@ function transactionComplete(transaction: IDBTransaction) {
 }
 
 function writeEmergencyRecord(record: QueuedCampaignMutation) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(EMERGENCY_RECORD_KEY, JSON.stringify(record));
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(EMERGENCY_RECORD_KEY, JSON.stringify(record));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readEmergencyRecord() {
@@ -66,15 +71,21 @@ function readEmergencyRecord() {
     }
     return value as QueuedCampaignMutation;
   } catch (error) {
+    window.localStorage.removeItem(EMERGENCY_RECORD_KEY);
     throw new Error("Emergency mutation record could not be restored.", { cause: error });
   }
 }
 
 function clearEmergencyRecord(id: string) {
   if (typeof window === "undefined") return;
-  const current = readEmergencyRecord();
-  if (!current || current.id !== id) return;
-  window.localStorage.removeItem(EMERGENCY_RECORD_KEY);
+  const raw = window.localStorage.getItem(EMERGENCY_RECORD_KEY);
+  if (!raw) return;
+  try {
+    const current = JSON.parse(raw) as Partial<QueuedCampaignMutation>;
+    if (current.id === id) window.localStorage.removeItem(EMERGENCY_RECORD_KEY);
+  } catch {
+    window.localStorage.removeItem(EMERGENCY_RECORD_KEY);
+  }
 }
 
 export class IndexedDbMutationQueueStorage implements MutationQueueStorage {
@@ -155,9 +166,9 @@ export class MutationQueue {
       nextAttemptAt: 0,
     };
 
-    writeEmergencyRecord(record);
+    const emergencyWritten = writeEmergencyRecord(record);
     await this.storage.put(record);
-    clearEmergencyRecord(record.id);
+    if (emergencyWritten) clearEmergencyRecord(record.id);
     return record;
   }
 
