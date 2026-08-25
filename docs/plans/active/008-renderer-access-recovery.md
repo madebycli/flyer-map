@@ -61,33 +61,36 @@ Restore Admin access for existing Campaigns without weakening Worker authorizati
 
 ## Repository-controlled acceptance completed
 
-As of 2026-08-25 before the final documentation-cleanup commit:
-- PR #21 head `82b252762624b03b38e479efe53ef40aa7639491` was mergeable;
-- GitHub Actions CI #168 completed successfully for that exact head;
-- the Cloudflare bot reported a successful commit/branch preview deployment for that exact head;
+For PR head `3232e9e180fb3e2706278157e6fabccf0c4efeac` on 2026-08-25:
+- GitHub Actions CI #169 completed successfully;
+- Cloudflare reported a successful commit/branch preview deployment for the exact head;
 - source review confirms MapLibre 5.7.1 is pinned and saved geometry uses the accepted constant-source/layer architecture;
-- stale documentation that still described post-load source creation or grouped-SVG browse rendering has been corrected in the final documentation-cleanup commit.
+- ADR, deployment, production and status documentation match the initial-style GeoJSON lifecycle used by the code.
 
-The final documentation-cleanup head must again receive green CI and an exact Cloudflare preview before merge.
+This acceptance-note update changes documentation only. Its resulting head still requires normal CI and exact Cloudflare preview deployment before merge, but runtime browser results below remain applicable because no application/runtime code changed.
+
+## Real-browser acceptance completed
+
+User testing against the Cloudflare preview for runtime head `3232e9e180fb3e2706278157e6fabccf0c4efeac` confirmed the current behavior is very good for the requested renderer smoke slice:
+- saved Area remains visible and selectable after Save;
+- saved Street remains visible and selectable after Save;
+- pan/zoom/rotate behavior is acceptable and saved geometry remains visually aligned with the map.
 
 ## External acceptance still required
 
-These gates require an actual interactive browser/device against the final Cloudflare preview and cannot be honestly replaced by repository inspection or green TypeScript/unit/build checks:
+The remaining gates require an actual interactive browser/device against the runtime-equivalent final Cloudflare preview:
 
-- save an Area and confirm it remains visible and selectable;
-- save a Street and confirm it remains visible and selectable;
-- fast pan/zoom/rotate and confirm saved geometry stays visually locked to the basemap;
 - enter/leave draw and edit modes and confirm handles exist only while active and remain usable;
 - confirm bottom field toolbar positioning on desktop and mobile safe areas;
 - verify Admin recovery on the target preview origin with the configured server-only secret;
 - verify `?diag=1` reports `maplibre-geojson` and useful FPS/long-frame/source/rendered counts;
 - run representative dense acceptance at 500 / 1,000 / 2,500 / 5,000 Street features, or record a concrete reproducible blocker before merge.
 
-No interactive browser/device runner is available in the current repository-only coding session, so these checks are intentionally **not** marked passed.
+No interactive browser/device runner is available in the repository-only coding session, so these remaining checks are intentionally **not** marked passed.
 
 ## Merge/close procedure
 
-Only after all external acceptance gates above pass on the exact final preview head:
+Only after all remaining external acceptance gates above pass on a runtime-equivalent final preview head:
 1. update this plan with the accepted devices/browser results and dense-data observations;
 2. move this file to `docs/plans/completed/008-renderer-access-recovery.md` and set `status: completed`;
 3. update `docs/context-map.yaml` so Plan 008 is historical/completed rather than active;
