@@ -9,7 +9,18 @@ last_updated: 2026-08-25
 
 ## Baseline
 
-M4 access/session authorization and M5 resilient mutation synchronization are merged on `main`.
+M4 access/session authorization and PR #21 are merged on `main`.
+
+M5 resilient mutation synchronization is complete and PR #24 is merged on `main`.
+
+Accepted M5 behavior includes:
+- durable IndexedDB-backed mutation queue;
+- Worker-side idempotency and conflict preconditions;
+- explicit blocked-auth / conflict / invalid / retry states;
+- reconnect delivery without duplicate effect;
+- saved Area/Street renderer behavior preserved;
+- remote D1 mutation-ledger migration applied;
+- strict cold fully-offline website startup remains outside the current no-Service-Worker architecture.
 
 Verteil-Flyer remains a mobile-first normal website:
 - no native app;
@@ -26,43 +37,27 @@ Current renderer baseline:
 
 Current Campaign roles remain Admin, Team Editor scoped to one Team, and Viewer. Worker authorization is authoritative.
 
-## M5 completed
+## Active M5.5 prepared offline area
 
-M5 resilient mutation synchronization merged through PR #24 on 2026-08-25.
+`docs/plans/active/011-offline-map-area.md` is the active implementation slice.
 
-Current foundation includes:
-- IndexedDB-backed durable mutation queue;
-- explicit Campaign/Team/Area/Street mutations;
-- Worker/D1 idempotency ledger from migration `0003_m5_mutations.sql`;
-- target-specific conflict detection;
-- reconnect/visibility/manual retry;
-- durable retry and access-blocked queue states;
-- server-side authorization on every mutation;
-- compact sync state UI.
+ADR-0012 is accepted with **Approach A**:
+- bounded approximately 3 km raw OSM subset package;
+- existing Worker owns fixed Overpass-compatible query templates and validation;
+- upstream endpoint is server-configurable/replaceable;
+- normalized versioned JSON/GeoJSON package preserves OSM identity/tags;
+- browser IndexedDB stores the prepared package locally;
+- local MapLibre sources/layers render prepared context while the already-loaded website is offline;
+- no CARTO or OSM Foundation tile bulk cache;
+- no R2/PMTiles pipeline for v1;
+- same OSM identity/data direction should later feed M6 Smart Streets/Houses.
 
-Final browser acceptance confirmed:
-- loaded-app offline mutation reconnects and reaches saved state;
-- an online reload shows the intended change once without duplicate effect;
-- saved Areas/Streets remain visible/selectable and active editing still works.
-
-A strict full cold page reload while completely offline can still show Chrome's normal offline/Dino page before application JavaScript runs. This remains outside M5 under the accepted no-Service-Worker website architecture.
-
-Historical plan:
-- `docs/plans/completed/010-m5-resilient-mutation-sync.md`.
-
-## Active next slice: prepared offline area
-
-`docs/plans/active/011-offline-map-area.md` is now the next connectivity/map slice.
-
-Target:
-- deliberately prepare approximately 3 km around current map center;
-- store offline-permitted OSM/OSM-derived map data in browser IndexedDB;
-- keep geographic context available after connectivity loss while the website is already loaded;
-- reuse the reviewed data pipeline for M6 Smart Streets/Houses where practical.
-
-Before implementation, an ADR must decide provider/source, license/attribution, package format, zoom/detail limits, storage/versioning, update policy and rendering fallback.
-
-Do not intentionally cache/store the current CARTO raster basemap.
+Implementation order:
+1. Worker/package contract;
+2. IndexedDB lifecycle;
+3. Settings download/update/delete UX;
+4. MapLibre offline context;
+5. dense real-mobile acceptance/performance.
 
 ## Full platform expansion
 
@@ -81,13 +76,7 @@ Planned sequence after M5.5:
 
 Account/permissions work is not approved for ad-hoc implementation.
 
-Before M8 account implementation, an accepted ADR/threat model must define:
-- password hashing;
-- TOTP secret protection;
-- account sessions/recovery;
-- rate limiting;
-- role/capability evaluation;
-- legacy Campaign Admin migration.
+Before M8 account implementation, an accepted ADR/threat model must define password hashing, TOTP secret protection, account sessions/recovery, rate limiting, role/capability evaluation and legacy Campaign Admin migration.
 
 Mandatory direction already recorded:
 - parameterized/prepared D1 queries;
@@ -101,12 +90,9 @@ Mandatory direction already recorded:
 ## Known follow-ups
 
 Existing follow-ups remain visible:
-- GitHub #22, desktop bottom-toolbar fit/spacing;
-- GitHub #23, production health/recovery/diagnostics and dense Street validation.
+- GitHub #22: desktop bottom-toolbar fit/spacing;
+- GitHub #23: production health/recovery/diagnostics and dense Street validation.
 
 ## Immediate next
 
-1. Execute Plan 011 from the merged M5 baseline.
-2. Make the required offline map source/package ADR before implementation.
-3. Keep Plan 012 as the umbrella sequence for later platform slices.
-4. Do not start M8 accounts/permissions before the required security ADR/threat model is accepted.
+Implement Plan 011 Slice 1 from accepted ADR-0012. Do not introduce Service Worker/PWA behavior or cache CARTO/OSMF tiles. Keep M6 behavior outside the current slice until the prepared-area package path is stable.
