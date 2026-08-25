@@ -2,134 +2,141 @@
 id: architecture-security
 type: architecture
 status: accepted
-last_updated: 2026-08-24
-related: [architecture-data, product, ADR-0009]
-source_of_truth_for: [authorization, privacy-baseline]
+last_updated: 2026-08-25
+related: [architecture-data, product, product-roadmap, architecture-organizations, ADR-0009]
+source_of_truth_for: [authorization, privacy-baseline, current-access-model]
 ---
 
 # Security and Privacy
 
 ## Baseline
 
-The client is untrusted. Every protected request is authorized and every state-changing payload is validated by the Cloudflare Worker. React button visibility is a UX convenience, never the authorization boundary.
+The client is untrusted. Every protected request is authorized and every state-changing payload is validated by the Cloudflare Worker. React/UI visibility is a convenience, never the authorization boundary.
 
-A Campaign id in `?campaign=` or an API route is a selector only. It is not a secret and is never proof of authorization.
+Campaign ids, future Organization ids and domain ids are selectors only. They are never credentials.
 
-## M4 access model
+## Current Campaign access model
 
-The MVP uses revocable Campaign-scoped access grants rather than mandatory user accounts.
-
-Roles:
+Current roles:
 - `admin`;
-- `team-editor`;
+- `team-editor` scoped to one Team;
 - `viewer`.
-
-Permission matrix:
 
 | Capability | Admin | Team Editor | Viewer |
 | --- | --- | --- | --- |
-| Read snapshot/version | yes | yes | yes |
-| Rename/configure Campaign | yes | no | no |
-| Set/remove Campaign map focus | yes | no | no |
+| Read Campaign snapshot/version | yes | yes | yes |
+| Campaign settings/map focus | yes | no | no |
 | Manage Teams | yes | no | no |
-| Create/edit/delete scoped Areas | yes | own Team only | no |
-| Reassign Area ownership | yes | no | no |
-| Create/edit/delete Tasks/status | yes | own Team's Areas only | no |
-| Modify another Team's data | yes | no | no |
-| Create/revoke Access Links | yes | no | no |
+| Create/edit/delete Areas | yes | own Team only | no |
+| Create/edit/delete Tasks/status | yes | own Team Areas only | no |
+| Modify another Team | yes | no | no |
+| Create/revoke Campaign Access Links | yes | no | no |
 
-The Worker enforces this matrix on every write. M4 retains complete-snapshot PUTs, so Team Editor authorization loads the previous server snapshot and compares it to the proposed snapshot before persistence. Campaign settings, Teams, foreign Areas/Tasks and ownership reassignment are rejected server-side.
+The Worker enforces scope on every write. Current complete-snapshot Team Editor writes are diff-authorized against the previous server state.
 
-## Invite tokens and sessions
+## Access grants and sessions
 
-Each access grant contains a cryptographically random bearer token generated from 32 random bytes. The plaintext token is returned only when the grant is created and is never persisted in D1.
+Access grant token:
+- generated from cryptographically strong random bytes;
+- plaintext returned only when created;
+- D1 stores SHA-256 hash, role/scope/metadata only.
 
-D1 stores:
-- Campaign scope;
-- role;
-- optional Team scope;
-- SHA-256 token hash;
-- optional label;
-- `created_at`;
-- `revoked_at`.
+Invite links carry tokens in URL fragments. Browser redeems the fragment and removes it from the URL.
 
-Invite links put the bearer token in the URL fragment rather than the query string. Fragments are not sent as part of ordinary HTTP requests. The browser extracts the token, posts it once to the Worker redemption endpoint and removes the fragment from the visible URL.
+Successful redemption creates a separate opaque session secret in a `Secure; HttpOnly; SameSite=Lax` cookie. D1 stores only its hash.
 
-Successful redemption creates a separate opaque random session secret. The Worker sets it in a `Secure; HttpOnly; SameSite=Lax` cookie and stores only its SHA-256 hash in D1.
+Every protected request resolves the session's backing grant. Revoking the grant invalidates backed sessions on their next protected request.
 
-Every protected request joins the session to its backing access grant and requires `revoked_at IS NULL`. Revoking a grant therefore invalidates both the original invite link and all sessions backed by that grant on their next request.
+## Team Editor scope
 
-A credential scoped to one Campaign cannot authorize another Campaign.
+Team Editor grant creation verifies that the scoped Team exists. Access resolution also verifies the Team still exists.
 
-## Existing pre-M4 Campaigns
+There is intentionally no D1 Team foreign key on the grant in the current snapshot-replacement architecture; see `docs/architecture/DATA.md`.
 
-M3 Campaigns have no owner credential. They are never assigned to the first browser that asks.
+## Existing Campaign bootstrap
 
-The first Admin grant for an existing Campaign can be created only through the explicit M4 bootstrap endpoint while:
-- a deployment-only `M4_BOOTSTRAP_SECRET` is configured;
-- the caller supplies that secret;
-- the Campaign already exists;
-- the Campaign currently has zero access grants.
+Legacy pre-M4 Campaigns are never assigned to the first visitor.
 
-After bootstrap, a second bootstrap attempt for the same Campaign is rejected. There is no anonymous first-visitor claim path.
+Initial bootstrap requires:
+- configured server-only `M4_BOOTSTRAP_SECRET`;
+- correct supplied secret;
+- existing Campaign;
+- zero existing grants for the initial-bootstrap operation.
+
+Campaign id alone never creates ownership.
 
 ## Operator Admin recovery
 
-A browser session and an Access Link can be lost even though the Campaign already has valid grants. This is especially common on Cloudflare branch-preview hosts because cookies are origin-scoped and are not shared with the production hostname.
+PR #21/current follow-up supports explicit operator recovery when an Admin session/link is lost.
 
-While `M4_BOOTSTRAP_SECRET` remains configured, the Worker exposes an explicit same-origin Admin recovery operation. Recovery:
-- requires the caller to supply the server-configured high-entropy secret;
-- verifies that the requested Campaign exists;
-- may run even when the Campaign already has Access Grants;
-- creates a **new** normal revocable Admin grant;
-- creates a normal secure HttpOnly session cookie for the current origin;
-- returns the plaintext Admin Access token exactly once so the operator can save a fresh Access Link.
+Recovery:
+- requires the configured high-entropy server secret;
+- verifies Campaign existence;
+- may create a fresh normal revocable Admin grant even when grants already exist;
+- creates a secure session for the current origin;
+- returns the new Admin Access token/link once;
+- does not persist the operator secret in browser Campaign state or D1.
 
-The browser recovery form uses a password input and does not persist the operator secret in localStorage, D1 or Campaign data. The secret must never be placed in a Campaign URL or pasted into normal field communication.
-
-This recovery mechanism is intentionally a privileged operator capability, not an account login system. If the operator secret may have been exposed, rotate it in Cloudflare. If operator recovery is not desired after setup, remove/rotate the secret and rely only on retained Admin Access Links/sessions.
-
-## New Campaigns
-
-A newly created Campaign receives a fresh Admin grant and session as part of the creation flow. The initial Admin invite token is returned once so the creator can retain/share a recovery access link. Knowing the new Campaign id alone still does not authorize later reads or writes.
+This is a privileged operator mechanism, not an ordinary user login system.
 
 ## Request protections
 
-- protected Campaign snapshot and version endpoints require a valid session;
-- Viewer PUT requests are rejected with 403;
-- invalid/missing credentials return 401;
-- cross-Campaign credentials fail authorization;
-- payloads are size-bounded and schema/geometry/ownership validated before persistence;
-- optimistic revision conflicts return 409;
-- browser state-changing requests are same-origin restricted when an Origin header is present;
-- browser cookies use `SameSite=Lax` in addition to same-origin API use;
-- bootstrap/recovery secret verification happens only in the Worker.
+- valid session required for protected Campaign routes;
+- Viewer writes return authorization failure;
+- cross-Campaign credentials fail;
+- payloads are size/schema/geometry/ownership validated;
+- stale revisions conflict rather than silently overwrite;
+- same-origin protections apply to browser state-changing requests when Origin is present;
+- secrets are verified server-side only.
+
+## Future Organizations and multiple admins
+
+Multi-organization administration is planned but **not implemented by current Campaign Admin roles**.
+
+Before M8 implementation an ADR must define Organization identity/membership/session behavior.
+
+Mandatory future security properties:
+- Organization is a tenant boundary;
+- no cross-Organization reads/writes/statistics/comments/activity;
+- multiple Organization Admins supported explicitly;
+- Campaign Admin is not silently treated as Organization Admin;
+- membership/revocation enforced server-side;
+- legacy Campaign migration cannot create a first-visitor claim race;
+- privileged admin/automation actions have auditable event records where appropriate.
+
+See `docs/architecture/ORGANIZATIONS.md`.
+
+## Comments, activity, automations and statistics
+
+Future collaboration/reporting endpoints must enforce the same server-side scope principles.
+
+Automations must not become a bypass around caller/system authorization. Idempotent automation/domain mutation handling is required before privileged automatic effects are trusted.
+
+Statistics may aggregate authorized state/events, but must not introduce continuous GPS surveillance.
 
 ## GPS and camera privacy
 
-The MVP does not upload or persist continuous device location.
+The product does not upload/persist continuous device location history.
 
-The browser may use location locally to orient the map. No movement history is created by Verteil-Flyer. Personal camera center/zoom/bearing is stored only in that browser and is not sent to D1 merely because the user moves the map.
+One-shot browser location may orient the map. Personal center/zoom/bearing is local browser preference and is not shared merely because the map moves.
 
-The shared Campaign map focus is configuration, not a GPS history.
+Shared Campaign focus is configuration, not location tracking.
 
 ## Secrets
 
-Never commit:
+Never commit or paste into normal project communication:
 - Cloudflare API tokens;
 - bootstrap/recovery secrets;
-- plaintext production invite/access links;
+- plaintext production Access Links/tokens;
 - session secrets;
-- private Campaign exports.
+- private Campaign/Organization exports.
 
-A real D1 `database_id` is deployment configuration and may appear in `wrangler.jsonc`; it is not a database credential. Never invent a fake one.
-
-Use Cloudflare secrets for `M4_BOOTSTRAP_SECRET` and any later server-only secret.
+A D1 database id is configuration, not a credential.
 
 ## Data minimization
 
-Access grants do not require a person's name, email address, phone number or device identifier. Optional labels are operational labels chosen by the Admin, such as “Team Nord Tablet”.
+Current Access Grants do not require personal name/email/phone/device identity. Operational labels may be used.
 
-Do not collect personal identity data unless a later product requirement demonstrates a concrete need.
+Future Organization identity may require more durable member identity, but only collect data needed for explicit administrative/security requirements. Do not add personal profiling or movement tracking for statistics.
 
-See ADR-0009 for the durable access-link/session decision and its tradeoffs.
+See ADR-0009 for the current Campaign access/session decision.
