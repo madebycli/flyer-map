@@ -26,8 +26,8 @@ nodes:
     path: docs/product/ROADMAP.md
     type: product
     status: accepted
-    topics: [roadmap, milestones, offline-map, statistics, organizations, admin-panel, comments, automations, streets, houses, dark-mode]
-    load_when: [new feature planning, milestone planning, long-term scope, product expansion, offline map]
+    topics: [roadmap, milestones, offline-map, statistics, organizations, admin-panel, comments, automations, streets, houses, collection, pickup, effort-feedback, distribution-sessions, crew-size, duration, dark-mode]
+    load_when: [new feature planning, milestone planning, long-term scope, product expansion, offline map, collection mode, pickup workflow, distribution effort feedback]
 
   - id: mvp
     path: docs/product/MVP.md
@@ -41,7 +41,7 @@ nodes:
     type: product
     status: accepted
     topics: [ui, ux, mobile, accessibility, interaction, appearance]
-    load_when: [UI change, map interaction, mobile behavior, dark mode, offline map settings]
+    load_when: [UI change, map interaction, mobile behavior, dark mode, offline map settings, collection field flow, effort feedback input]
 
   - id: architecture
     path: ARCHITECTURE.md
@@ -61,15 +61,15 @@ nodes:
     path: docs/architecture/MAP.md
     type: architecture
     status: accepted
-    topics: [map, maplibre, carto, geojson, renderer, geolocation, performance, osm, offline-map]
-    load_when: [map rendering, geometry interaction, map performance, road/building data, offline map]
+    topics: [map, maplibre, carto, geojson, renderer, geolocation, performance, osm, offline-map, streets, houses, collection]
+    load_when: [map rendering, geometry interaction, map performance, road/building data, offline map, collection road/house map]
 
   - id: data
     path: docs/architecture/DATA.md
     type: architecture
     status: accepted
     topics: [database, d1, schema, campaigns, teams, areas, tasks, revisions]
-    load_when: [domain model, D1 migration, persistence, schema]
+    load_when: [domain model, D1 migration, persistence, schema, future collection data model, distribution session data model]
 
   - id: offline-sync
     path: docs/architecture/OFFLINE_SYNC.md
@@ -83,7 +83,7 @@ nodes:
     type: architecture
     status: accepted
     topics: [auth, authorization, privacy, tokens, sessions, roles, gps]
-    load_when: [access, roles, protected API, privacy, recovery]
+    load_when: [access, roles, protected API, privacy, recovery, collection authorization, effort feedback authorization]
 
   - id: organizations
     path: docs/architecture/ORGANIZATIONS.md
@@ -96,15 +96,15 @@ nodes:
     path: docs/architecture/COLLABORATION.md
     type: architecture
     status: proposed
-    topics: [comments, activity, events, automations, statistics, reporting]
-    load_when: [M7, M9, comments, activity feed, automation, statistics]
+    topics: [comments, activity, events, automations, statistics, reporting, effort-feedback, distribution-sessions, duration, crew-size, collection-reporting, pickup-stops]
+    load_when: [M6.5, M7, M9, comments, activity feed, automation, statistics, distribution duration/group size, collection reporting, pickup addresses]
 
   - id: quality
     path: docs/quality/QUALITY.md
     type: quality
     status: accepted
     topics: [tests, performance, accessibility, browsers, quality]
-    load_when: [testing, performance acceptance, browser support, release gate, offline map device testing]
+    load_when: [testing, performance acceptance, browser support, release gate, offline map device testing, collection field testing]
 
   - id: deployment
     path: docs/operations/DEPLOYMENT.md
@@ -152,7 +152,7 @@ nodes:
     path: docs/plans/active/009-product-platform-foundation.md
     type: plan
     status: active
-    topics: [platform-roadmap, M5, offline-map, smart-tasks, collaboration, organizations, statistics]
+    topics: [platform-roadmap, M5, offline-map, smart-tasks, collection, collaboration, organizations, statistics]
     load_when: [platform sequencing, post-M5 planning, next milestone]
 
   - id: plan-m5-sync
@@ -167,7 +167,7 @@ nodes:
     type: plan
     status: active
     topics: [offline-map, indexeddb, map-download, osm, field-connectivity, 3km]
-    load_when: [offline basemap, downloaded map area, 3 km offline area, map usable after offline reload]
+    load_when: [offline basemap, downloaded map area, 3 km offline area, loaded app usable during connectivity loss]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
@@ -191,13 +191,14 @@ edges:
   - { from: roadmap, to: organizations, relation: plans }
   - { from: roadmap, to: collaboration, relation: plans }
   - { from: roadmap, to: offline-sync, relation: plans }
-  - { from: roadmap, to: map, relation: extends_with_smart_tasks_and_offline_map }
+  - { from: roadmap, to: map, relation: extends_with_smart_tasks_offline_map_and_collection }
 
   - { from: organizations, to: security, relation: constrained_by }
   - { from: organizations, to: data, relation: requires_schema_extension }
   - { from: collaboration, to: security, relation: constrained_by }
-  - { from: collaboration, to: data, relation: requires_event_data }
+  - { from: collaboration, to: data, relation: requires_event_and_feedback_data }
   - { from: collaboration, to: offline-sync, relation: benefits_from_mutations }
+  - { from: collaboration, to: map, relation: reports_on_distribution_and_collection_context }
 
   - { from: quality, to: architecture, relation: validates }
   - { from: deployment, to: architecture, relation: operates }
