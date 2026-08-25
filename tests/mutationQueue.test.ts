@@ -58,6 +58,32 @@ function renameMutation(id: string, baseRevision: number, createdAt: string): Ca
   };
 }
 
+function installFakeWindowStorage() {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const values = new Map<string, string>();
+  const localStorage = {
+    getItem(key: string) {
+      return values.get(key) ?? null;
+    },
+    setItem(key: string, value: string) {
+      values.set(key, value);
+    },
+    removeItem(key: string) {
+      values.delete(key);
+    },
+  };
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { localStorage },
+  });
+
+  return () => {
+    if (previous) Object.defineProperty(globalThis, "window", previous);
+    else Reflect.deleteProperty(globalThis, "window");
+  };
+}
+
 test("durable mutation queue survives a storage reload", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "flyer-map-queue-"));
   const filePath = path.join(directory, "queue.json");
@@ -107,4 +133,49 @@ test("queue preserves dependency order by local base revision", async () => {
     ordered.map((record) => record.mutation.baseRevision),
     [1, 2, 3],
   );
+});
+
+test("failed durable enqueue is recovered from the emergency local shadow on next list", async () => {
+  const restoreWindow = installFakeWindowStorage();
+  const mutation = renameMutation(
+    "mutation_emergency-1",
+    9,
+    "2026-08-25T14:30:00.000Z",
+  );
+
+  try {
+    const failingStorage: MutationQueueStorage = {
+      async getAll() {
+        return [];
+      },
+      async put() {
+        throw new Error("IndexedDB write unavailable");
+      },
+      async delete() {},
+    };
+    const firstQueue = new MutationQueue(failingStorage);
+    await assert.rejects(() => firstQueue.enqueue(mutation), /IndexedDB write unavailable/);
+
+    const recovered = new Map<string, QueuedCampaignMutation>();
+    const recoveredStorage: MutationQueueStorage = {
+      async getAll() {
+        return [...recovered.values()];
+      },
+      async put(record) {
+        recovered.set(record.id, record);
+      },
+      async delete(id) {
+        recovered.delete(id);
+      },
+    };
+
+    const reloadedQueue = new MutationQueue(recoveredStorage);
+    const records = await reloadedQueue.list(mutation.campaignId);
+
+    assert.equal(records.length, 1);
+    assert.equal(records[0].id, mutation.id);
+    assert.deepEqual(records[0].mutation, mutation);
+  } finally {
+    restoreWindow();
+  }
 });
