@@ -1,3 +1,5 @@
+import "./live-group-list.css";
+
 type Props = {
   discoverable: boolean;
   onChange: (discoverable: boolean) => void;
