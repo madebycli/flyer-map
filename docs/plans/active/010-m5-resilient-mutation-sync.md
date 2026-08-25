@@ -10,7 +10,9 @@ related: [plan-009-product-platform-foundation, architecture-offline-sync, archi
 
 ## Goal
 
-Make saved field changes durable across reloads and unreliable connectivity without introducing a Service Worker/PWA and without weakening Worker-side authorization.
+Make saved field changes durable during unreliable connectivity and preserve unacknowledged mutations in browser storage without introducing a Service Worker/PWA and without weakening Worker-side authorization.
+
+The mutation queue may persist across browser reloads, but a **cold page reload while completely offline is not an application-shell guarantee** under the current website-only/no-Service-Worker architecture. If the browser cannot load the website JavaScript at all, M5 cannot render its queue or map UI. That limitation is tracked separately and must not be misreported as mutation loss.
 
 ## Baseline / source of truth
 
@@ -47,13 +49,14 @@ ADR-0011 governs mutation queue/idempotency behavior.
 
 Observed in a real browser:
 - preview root loads;
-- creating a Street while offline shows `offline gespeichert`;
-- editing a Street while offline remains locally saved;
-- after a full reload while still offline, the created/edited Street is still present.
+- creating a Street while the loaded app is offline shows `offline gespeichert`;
+- editing a Street while the loaded app is offline remains locally saved.
 
-This proves browser-local mutation durability across reload.
+A later attempt to fully reload the page while still offline did **not** load Verteil-Flyer; Chrome showed its normal offline/Dino page. Therefore the earlier assumption that the application itself had completed a full offline reload is withdrawn. The queued mutation may still exist in IndexedDB, but the browser could not load the application shell to inspect it.
 
-Reconnect delivery is not yet marked passed because the test exposed that the remote basemap itself is not usable after an offline reload. That separate product gap is now tracked in Plan 011 and must not be confused with mutation loss.
+This is not treated as a user error and not as proof of mutation loss. It is an expected limitation of a normal website without a Service Worker/app-shell offline strategy.
+
+For M5 release acceptance, cold-offline app-shell reload is therefore **deferred rather than falsely marked passed**. Plan 011 tracks deliberate offline map data, and a strict requirement that the entire website cold-start/reload offline would require a separate architecture decision revisiting ADR-0006.
 
 ## Maximum-zoom renderer regression — fixed and accepted
 
@@ -81,19 +84,21 @@ A fresh Cloudflare Worker Version preview containing the runtime fix was manuall
 
 Real-browser acceptance on 2026-08-25 passed: the basemap remains visible at maximum zoom and no longer turns white.
 
-## Offline map product gap
+## Offline map / app-shell product gap
 
-A deliberate downloadable offline geographic context is **not part of M5 PR #24**. It is now an explicit next milestone tracked by:
+A deliberate downloadable offline geographic context is **not part of M5 PR #24**. It is tracked by:
 - `docs/plans/active/011-offline-map-area.md`;
 - Roadmap M5.5.
 
-Target UX: Settings action downloads approximately 3 km around current map center for offline use after reload.
+Target UX: Settings action downloads approximately 3 km around current map center for continued use when connectivity drops while the application is available.
 
 Do not solve this by caching CARTO raster tiles. CARTO Basemap terms prohibit storing/caching basemap content. Plan 011 must select an offline-permitted OSM/OSM-derived source/format through a new ADR.
 
+Important: storing offline map data in IndexedDB does **not** itself make the website JavaScript/HTML cold-loadable with no network. A strict cold-start/offline-reload requirement must be handled as a separate architecture decision.
+
 ## Remaining M5 release gates
 
-1. reconnect queued mutation and confirm server delivery exactly once;
+1. with the app loaded, restore connectivity after an offline mutation and confirm server delivery exactly once;
 2. retry/reconnect produces no duplicate effect;
 3. conflicting target change is visibly surfaced with no silent overwrite;
 4. revoked/invalid access stops blind retry and leaves queued work access-blocked;
@@ -101,17 +106,22 @@ Do not solve this by caching CARTO raster tiles. CARTO Basemap terms prohibit st
 6. saved Areas/Streets remain visible/selectable and active edit behavior remains correct;
 7. final PR head CI remains green.
 
+Deferred/non-blocking follow-up:
+- strict cold page reload while fully offline; current browser test produced Chrome's offline/Dino page before the application could run.
+
 ## Risks
 
 - one terminal queue item blocks later dependent mutations by design;
 - browser storage/private-mode limitations must surface visibly;
 - preview and Production currently share the configured D1 database;
 - exact preview evidence must be refreshed after runtime changes;
-- offline map-package work is intentionally separated into Plan 011 so it does not destabilize M5 release scope.
+- offline map-package work is intentionally separated into Plan 011 so it does not destabilize M5 release scope;
+- no-Service-Worker architecture means application-shell availability itself is outside the IndexedDB mutation queue.
 
 ## Explicit non-goals
 
 - no Service Worker/PWA/Background Sync;
+- no guaranteed cold offline app-shell load inside PR #24;
 - no downloadable basemap package inside PR #24;
 - no Organization/Comments/Statistics implementation;
 - no MapLibre version upgrade;
@@ -121,9 +131,8 @@ Do not solve this by caching CARTO raster tiles. CARTO Basemap terms prohibit st
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Restore connectivity in the same browser/session containing the offline-saved Street.
-3. Confirm the queued Street mutation reaches the server and remains present exactly once.
-4. Continue idempotency/conflict/auth/transient-failure acceptance.
-5. Record every observed gate in this plan and `CURRENT.md`.
-6. Merge M5 only after all gates pass.
-7. Start Plan 011 as the next dedicated slice after M5 merge.
+2. Skip the strict cold-offline reload check for M5 and keep it as a documented follow-up.
+3. Continue loaded-app reconnect/idempotency/conflict/auth/transient-failure acceptance when convenient.
+4. Record every observed gate in this plan and `CURRENT.md`.
+5. Merge M5 only after the remaining applicable gates pass.
+6. Start Plan 011 as the next dedicated map/connectivity slice after M5 merge.
