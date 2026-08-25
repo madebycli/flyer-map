@@ -2,63 +2,102 @@
 id: product
 type: product
 status: accepted
-last_updated: 2026-08-24
+last_updated: 2026-08-25
+related: [product-roadmap, product-ux, architecture]
+source_of_truth_for: [product-goals, product-concepts, user-groups]
 ---
 
 # Product
 
 ## Problem
 
-Flyer distribution is currently coordinated using map screenshots that are colored, shared through messaging apps and edited repeatedly. This causes degraded image quality, unclear current state and constant switching between the screenshot and a navigation/map application.
+Flyer distribution is often coordinated with screenshots, hand-drawn markings and chat messages. This causes unclear current state, imprecise road coverage, duplicated work and constant switching between communication and map tools.
 
 ## Product promise
 
-Verteil-Flyer provides one shared interactive map that answers three field questions quickly:
+Verteil-Flyer provides one shared interactive map that quickly answers:
 
 1. Where am I?
-2. Which area is ours?
-3. What has already been distributed and what is still open?
+2. Which Area/Team is responsible here?
+3. What still needs to be distributed?
+4. What is already completed?
+5. What changed recently and what needs attention?
 
-## Primary users
+For coordinators/organizations it should additionally answer:
+- how far is the Campaign/Team/Area;
+- who/what has administrative access;
+- which Campaigns exist;
+- where collaboration or automation needs attention.
 
-- participants distributing flyers;
-- group coordinators;
-- Campaign administrators.
+## User groups
 
-The normal field user should not need technical knowledge, personal identity data or a traditional account setup. Access to a shared Campaign is granted through a revocable access link with an appropriate role.
+Current:
+- field participants;
+- Team coordinators;
+- Campaign Admins;
+- read-only viewers.
+
+Planned:
+- Organization Admins across multiple Campaigns;
+- multiple administrators per Organization;
+- coordinators using comments/activity/statistics/admin tooling.
+
+Ordinary field participation should remain simple and should not require unnecessary personal identity data.
 
 ## Core concepts
 
-- Campaign: one distribution effort/time period, shown to users as an Aktion/Campaign depending on language.
-- Team: a named group with an assigned display color.
-- Area: a polygon or other bounded geographic assignment.
-- Task: a street segment, building or manually defined distribution unit.
-- Status: open, completed, later, or not-deliverable.
-- Access: Campaign-scoped Admin, Team Editor or read-only Viewer permission.
-- Campaign map focus: the shared default map view for a new browser/device.
-- Personal map view: the last center/zoom/bearing saved only in that browser for that Campaign.
+Current concepts:
+- **Campaign / Aktion** — one distribution effort/time period;
+- **Team** — named group with display color;
+- **Area / Gebiet** — geographic assignment;
+- **Task** — a distribution unit; currently stored implementation uses Street Tasks;
+- **Status** — open, completed, later, not-deliverable;
+- **Access** — current Campaign-scoped Admin / Team Editor / Viewer permission;
+- **Campaign map focus** — shared initial camera for new browsers;
+- **Personal map view** — browser-local last center/zoom/bearing.
+
+Planned concepts:
+- **Organization** — top-level tenant/workspace containing Campaigns;
+- **Organization Admin** — one of multiple authorized organization administrators;
+- **Street/House Task** — map-data-backed road segment or building distribution unit;
+- **Comment** — contextual collaboration attached to Campaign/Area/Task;
+- **Activity/Event** — meaningful append-only shared change record;
+- **Automation** — deterministic auditable domain rule;
+- **Statistics** — progress/reporting derived from state/events, not continuous GPS tracking.
+
+Exact future schemas/identity mechanics are not implied by these names; see `docs/product/ROADMAP.md` and proposed architecture nodes before implementation.
 
 ## Field interaction principles
 
 - the map remains the primary workspace;
-- selecting a saved Area in normal browse mode opens its details without adding edit vertices or a heavy white selection halo;
-- polygon corner points appear only while drawing or explicitly editing geometry;
-- the map may be freely rotated and a compass returns to North-Up;
-- remote shared-data updates appear without a full website reload and do not reset the current camera;
-- a running local draw/edit operation is never silently destroyed by a remote revision.
+- saved Area selection is browse-like, not geometry-edit mode;
+- polygon edit points appear only during explicit draw/edit;
+- real road/building selection should replace freehand tracing as the normal future workflow;
+- manual street tracing remains a fallback, not the long-term primary interaction;
+- remote updates must not reset the current camera;
+- unsaved active editing must not be silently destroyed;
+- important local changes must eventually survive short connectivity loss via M5.
 
-## Language
+## Administration principles
 
-The application UI supports German and English as a personal browser setting. Browser language is used initially when it is German or English, otherwise German is the fallback.
+- administrative capability is explicitly authorized, never inferred from knowing an id;
+- multiple admins must be supported in the future;
+- organization-wide admin surfaces stay separate from the lightweight field map;
+- statistics/activity/access management belong in the Admin panel, not as permanent map clutter;
+- cross-organization access is forbidden.
 
-The CARTO Voyager Retina basemap is raster imagery; its provider-rendered labels are not dynamically translated by the application language setting.
+## Appearance
 
-## Privacy principle
+Application UI supports German and English. A personal `system` / `light` / `dark` UI appearance is planned; dark mode initially applies to website UI, not necessarily the basemap.
 
-Device location is for local map orientation. The MVP does not record a GPS trail and does not upload continuous device location.
+## Privacy
 
-Personal camera state is also local browser preference. Moving the map does not upload a location history. Only an explicitly saved Campaign map focus is shared Campaign configuration.
+Device location is a local orientation aid. The baseline does not record continuous GPS trails or upload a movement history.
+
+Statistics must not introduce hidden location tracking. Collect only data required for distribution state, collaboration, administration and explicitly accepted reporting.
 
 ## Long-term direction
 
-The product should be reusable for future distribution Campaigns and improve over time without becoming operationally heavy or requiring classic user accounts for ordinary field participation.
+Verteil-Flyer should be reusable across many Campaigns and Organizations while remaining fast enough for whole-city street/building workloads and simple enough for ordinary field users.
+
+Detailed sequencing is the source of truth in `docs/product/ROADMAP.md`.

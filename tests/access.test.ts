@@ -10,7 +10,15 @@ import {
   sessionCookie,
   type AccessRole,
 } from "../worker/access.ts";
-import type { D1DatabaseLike, D1PreparedStatement, D1RunResult } from "../worker/campaignRepository.ts";
+import {
+  createRecoveredAdminAccess,
+  operatorSecretMatches,
+} from "../worker/operatorRecovery.ts";
+import type {
+  D1DatabaseLike,
+  D1PreparedStatement,
+  D1RunResult,
+} from "../worker/campaignRepository.ts";
 
 type Grant = {
   id: string;
@@ -48,7 +56,9 @@ class Statement implements D1PreparedStatement {
     const query = this.query.replace(/\s+/g, " ");
     if (query.includes("FROM campaign_sessions s")) {
       const [sessionHash, now, campaignId] = this.values as [string, string, string | null];
-      const session = this.db.sessions.find((item) => item.sessionHash === sessionHash && item.expiresAt > now);
+      const session = this.db.sessions.find(
+        (item) => item.sessionHash === sessionHash && item.expiresAt > now,
+      );
       if (!session) return null;
       const grant = this.db.grants.find(
         (item) =>
@@ -69,7 +79,10 @@ class Statement implements D1PreparedStatement {
     if (query.includes("WHERE token_hash = ?")) {
       const [tokenHash, campaignId] = this.values as [string, string];
       const grant = this.db.grants.find(
-        (item) => item.tokenHash === tokenHash && item.campaignId === campaignId && item.revokedAt === null,
+        (item) =>
+          item.tokenHash === tokenHash &&
+          item.campaignId === campaignId &&
+          item.revokedAt === null,
       );
       if (!grant) return null;
       return {
@@ -119,7 +132,9 @@ class AccessDb implements D1DatabaseLike {
         changes = 1;
       } else if (query.startsWith("UPDATE campaign_access_grants")) {
         const [revokedAt, grantId, campaignId] = item.values as [string, string, string];
-        const grant = this.grants.find((candidate) => candidate.id === grantId && candidate.campaignId === campaignId);
+        const grant = this.grants.find(
+          (candidate) => candidate.id === grantId && candidate.campaignId === campaignId,
+        );
         if (grant) {
           grant.revokedAt ??= revokedAt;
           changes = 1;
@@ -177,7 +192,10 @@ test("session is campaign-scoped and grant revocation invalidates it immediately
   assert.match(sessionCookie(session.sessionSecret), /HttpOnly/);
   assert.match(sessionCookie(session.sessionSecret), /Secure/);
   assert.match(sessionCookie(session.sessionSecret), /SameSite=Lax/);
-  assert.equal((await resolveAccess(db, requestWithSession(session.sessionSecret), "campaign_a"))?.role, "admin");
+  assert.equal(
+    (await resolveAccess(db, requestWithSession(session.sessionSecret), "campaign_a"))?.role,
+    "admin",
+  );
   assert.equal(await resolveAccess(db, requestWithSession(session.sessionSecret), "campaign_b"), null);
 
   assert.equal(await revokeAccessGrant(db, "campaign_a", created.grant.grantId), true);
@@ -196,4 +214,33 @@ test("invite redemption rejects invalid or wrong-campaign tokens", async () => {
   assert.equal(await redeemAccessToken(db, "campaign_a", "x".repeat(43)), null);
   assert.equal(await redeemAccessToken(db, "campaign_b", created.token), null);
   assert.equal((await redeemAccessToken(db, "campaign_a", created.token))?.access.role, "viewer");
+});
+
+test("operator recovery secret only matches the configured high-entropy value", async () => {
+  assert.equal(await operatorSecretMatches("correct-secret", "correct-secret"), true);
+  assert.equal(await operatorSecretMatches("wrong-secret", "correct-secret"), false);
+  assert.equal(await operatorSecretMatches("", "correct-secret"), false);
+  assert.equal(await operatorSecretMatches("correct-secret", undefined), false);
+});
+
+test("operator recovery can mint a fresh admin grant and session after grants already exist", async () => {
+  const db = new AccessDb();
+  await createAccessGrant(db, {
+    campaignId: "campaign_a",
+    role: "viewer",
+    teamId: null,
+    label: "Existing viewer",
+  });
+
+  const recovered = await createRecoveredAdminAccess(db, "campaign_a");
+
+  assert.equal(db.grants.length, 2);
+  assert.equal(recovered.access.role, "admin");
+  assert.equal(recovered.access.campaignId, "campaign_a");
+  assert.ok(recovered.token.length >= 43);
+  assert.equal(JSON.stringify(db.capturedValues).includes(recovered.token), false);
+  assert.equal(
+    (await resolveAccess(db, requestWithSession(recovered.sessionSecret), "campaign_a"))?.role,
+    "admin",
+  );
 });

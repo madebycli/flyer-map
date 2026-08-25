@@ -2,81 +2,94 @@
 id: product-mvp
 type: product
 status: accepted
-last_updated: 2026-08-24
-related: [product, architecture]
+last_updated: 2026-08-25
+related: [product, product-roadmap, product-ux]
+source_of_truth_for: [release-scope, field-readiness]
 ---
 
-# MVP
+# MVP / Release Scope
 
 ## Release goal
 
-A reliable field-ready mobile website that can be used for a real flyer distribution Campaign on common Android phones and iPhones.
+A reliable mobile-first website that can be used for a real city-scale flyer distribution Campaign on common Android phones and iPhones while remaining safely manageable by coordinators.
 
-## Must have
+## Current baseline must remain
 
-- mobile-first browser interface;
-- crisp interactive map with arbitrary rotation and visible compass;
-- current device location on demand without route tracking;
-- Campaigns/Aktionen with a shared default map focus;
+- website-only delivery;
+- crisp interactive map with rotation/compass;
+- on-demand device location without route tracking;
+- Campaigns/Aktionen with shared map focus;
 - personal last map view per Campaign/browser;
-- named/color-coded Teams;
-- assigned map Areas;
-- Street distribution Tasks and manual status changes;
-- clear progress state;
-- shared state across multiple devices;
-- revocable Campaign-scoped access links without traditional user accounts;
-- Worker-enforced Admin, Team Editor and read-only Viewer roles;
-- Team Editor scope enforced server-side, not only through UI visibility;
-- remote revision refresh without full-page reload or camera reset;
-- 30-second lightweight version polling plus online/visibility/manual checks;
-- active unsaved draw/edit/street-draw state must not be silently replaced by remote data;
-- short connectivity loss must not silently lose important user changes;
-- undo for accidental status changes;
-- German and English application UI as a personal browser preference.
+- Teams and Areas;
+- saved distribution Tasks and explicit statuses;
+- shared D1 state;
+- revocable Campaign-scoped access;
+- Worker-enforced Admin / Team Editor / Viewer roles;
+- in-page remote refresh without camera reset;
+- active unsaved draw/edit protected from remote replacement;
+- German and English UI;
+- saved dense geometry rendered in the map engine rather than per-frame React/SVG projection.
 
-## Not required for MVP
+## Expanded release direction
 
-- native app stores;
-- PWA installation or standalone app mode;
+The product roadmap now includes capabilities required for the intended reusable platform rather than treating the early single-Campaign demo as the end state:
+
+- M5 resilient mutation synchronization;
+- M6 Smart Street + House Tasks;
+- M7 comments/activity/automations;
+- M8 Organizations + multiple admins + Admin panel;
+- M9 statistics/reporting + UI appearance themes;
+- M10 field hardening/release.
+
+See `docs/product/ROADMAP.md` for detailed scope and ordering.
+
+## Release-critical product expectations
+
+Before final city/organization release:
+- normal street work should use real road geometry rather than approximate freehand tracing where map data is available;
+- building-level work should be possible through House Mode where required;
+- important offline/reconnect mutations must not silently disappear;
+- comments/activity should make shared operational state understandable;
+- statistics must reconcile to domain state/events;
+- multiple authorized admins and organization tenant boundaries must be server-enforced;
+- the field map must remain lightweight even when admin functionality grows;
+- UI light/dark/system preference must remain personal and accessible;
+- no continuous GPS surveillance is introduced for reporting.
+
+## Non-goals unless a later ADR changes them
+
+- native app-store applications;
+- installable PWA mode;
 - service worker;
+- Background Sync API;
 - continuous GPS route history;
-- automatic completion based on movement;
-- WebSockets;
-- advanced analytics;
-- email/password accounts;
-- OAuth;
-- complex organization management;
-- durable multi-mutation queue before M5;
-- dynamic localization of provider-rendered raster basemap labels;
-- decorative motion effects.
+- automatic completion merely because a device moved through a street;
+- unnecessary social-profile system;
+- decorative motion/marketing effects;
+- basemap dark mode as a prerequisite for UI dark mode.
 
 ## Milestones
 
 - M0 Repository foundation + production website deployment
 - M1 Campaign/team/area model
-- M2 Distribution task interaction
-- M3 Shared persistence with D1
-- M4 Access links, authorization and field UX/sync hardening
+- M2 initial Street Task interaction
+- M3 shared persistence with D1
+- M4 access links, authorization and field UX/sync hardening
+- current renderer/access recovery hardening slice (PR #21)
 - M5 resilient mutation queue and synchronization
-- M6 Field testing and hardening
-- M7 MVP release
+- M6 Smart Street + House Tasks
+- M7 comments, activity and automations
+- M8 Organizations, multiple admins and Admin panel
+- M9 statistics/reporting and UI appearance
+- M10 field testing, hardening and release
 
-## M4 release gate
+## Final release gate
 
-M4 is not complete until:
-- Campaign id alone is insufficient to read/write protected Campaign data;
-- revocation works for already-issued sessions;
-- Admin/Team Editor/Viewer permissions are enforced by the Worker;
-- existing pre-M4 Campaigns can be bootstrapped only through the explicit secured path;
-- the D1 migration is intentionally applied without rewriting `0001_initial.sql`;
-- Browse Area selection has no edit vertices/white halo, while Edit/Draw still show appropriate SVG points;
-- personal camera persistence and shared Campaign focus use the documented priority;
-- arbitrary rotation keeps SVG geometry aligned;
-- shared updates and manual refresh work without page reload or camera reset;
-- active drafts survive discovery of a newer remote revision;
-- automated tests, TypeScript and production build are green;
-- production health/read-only smokechecks pass.
-
-## MVP release gate
-
-The MVP is not ready until the same Campaign can be used safely in a normal mobile browser on at least one representative Android phone and one representative iPhone under realistic outdoor connectivity conditions.
+The release is not ready until:
+- the same authorized Campaign can be used safely on representative Android and iPhone devices under realistic outdoor connectivity;
+- dense city-scale road/building data remains responsive;
+- queued mutations recover from short connection loss/reload;
+- access/revocation and Organization boundaries are tested server-side;
+- progress/statistics values are demonstrably correct;
+- admin and field surfaces remain understandable;
+- production deployment/recovery/migration runbooks are current.

@@ -2,34 +2,32 @@
 id: architecture-data
 type: architecture
 status: accepted
-last_updated: 2026-08-24
-related: [architecture-security, architecture-offline-sync, ADR-0009]
-source_of_truth_for: [domain-data-model]
+last_updated: 2026-08-25
+related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009]
+source_of_truth_for: [domain-data-model, d1-baseline]
 ---
 
 # Data Model
 
-## Shared snapshot
+## Current shared snapshot
 
-The browser and Worker use the same Campaign/Team/Area/Task domain shape.
-
-M4 snapshot schema v3 contains:
+Browser and Worker currently use Campaign snapshot schema v3:
 - `schemaVersion: 3`;
 - shared `revision`;
 - one Campaign;
 - Campaign Teams;
 - Campaign Areas;
-- distribution Tasks.
+- Distribution Tasks.
 
-D1 is the shared source of truth. localStorage remains the fast startup cache, last-known snapshot and fallback. Existing local schema v1 and M3 schema v2 snapshots migrate in-browser to v3 without deleting user data.
+D1 is the persisted shared source of truth. localStorage remains a startup/last-known cache and conflict safety copy. Existing older local snapshots are migrated in-browser rather than deleted.
 
-## Entities
+## Current entities
 
 ### Campaign
 
-One flyer distribution effort.
+One distribution effort.
 
-Domain fields:
+Fields:
 - id;
 - name;
 - status;
@@ -37,33 +35,52 @@ Domain fields:
 - createdAt;
 - updatedAt.
 
-`defaultMapView` is shared Campaign configuration with center longitude/latitude, zoom and bearing. It is the Aktionsfokus used only when a browser has no personal Campaign camera state.
-
-The shared snapshot carries the Campaign `revision` at top level.
+The shared snapshot carries Campaign revision at top level.
 
 ### Team
 
-Named group within a Campaign.
+Named group inside one Campaign.
 
-Fields: id, campaignId, name, color, createdAt, updatedAt.
-
-Within one Campaign, Team colors are unique so ownership remains visually distinguishable.
+Fields:
+- id;
+- campaignId;
+- name;
+- color;
+- createdAt;
+- updatedAt.
 
 ### Area
 
 Geographic assignment owned by exactly one Team in the same Campaign.
 
-Fields: id, campaignId, teamId, name, geometry, createdAt, updatedAt.
+Fields:
+- id;
+- campaignId;
+- teamId;
+- name;
+- Polygon geometry;
+- timestamps.
 
-Geometry is a GeoJSON Polygon. Both client and Worker reject unusable geometry including too few/distinct vertices, out-of-range coordinates, degenerate area and self-intersection.
+Client and Worker validate usable Polygon geometry.
 
 ### Task
 
-One distribution unit. The current task type is `street`.
+One distribution unit. The **current implemented task type is `street`**.
 
-Fields: id, campaignId, areaId, taskType, label, geometry, status, completedAt, createdAt, updatedAt.
+Fields:
+- id;
+- campaignId;
+- areaId;
+- taskType;
+- label;
+- LineString geometry;
+- status;
+- completedAt;
+- timestamps.
 
-Street geometry is a GeoJSON LineString manually traced over the basemap and assigned to an Area in the same Campaign. At least two distinct valid map points are required.
+Current Street Tasks may be manually traced, but M6 plans reviewed road/building data so manual tracing is no longer the normal workflow.
+
+Future House Tasks / parent-child Street-House relationships require an explicit schema plan and additive migration; they are not silently implied by current `street` rows.
 
 ## Status vocabulary
 
@@ -72,104 +89,107 @@ Street geometry is a GeoJSON LineString manually traced over the basemap and ass
 - later
 - not-deliverable
 
-`completedAt` is present when a Task is `completed` and null for the other statuses. D1 and Worker validation enforce this invariant.
+`completedAt` is set for completed Tasks and null otherwise.
 
-## IDs
+## IDs and authorization selectors
 
-Use opaque application IDs. Browser-created entities use `crypto.randomUUID()` with entity prefixes. Sequential database IDs are not exposed as domain IDs or authorization secrets.
+Domain ids are opaque application ids. Browser-created entities use UUID-based ids.
 
-`?campaign=` is only a Campaign selector. Authorization is carried by M4 access/session credentials, never the Campaign id.
+`?campaign=` and route ids are selectors only. Authorization always comes from access/session credentials and Worker scope checks.
 
-## D1 migrations
+## D1 production migration history
 
-`migrations/0001_initial.sql` is applied M3 production history and must never be rewritten.
+Applied migrations are immutable history:
+- `migrations/0001_initial.sql` — Campaign/Team/Area/Task baseline;
+- `migrations/0002_m4_access.sql` — shared map focus + access grant/session tables.
 
-M4 adds `migrations/0002_m4_access.sql`.
+Future schema work must use new additive migrations (`0003_...`, etc.).
 
-### Existing domain tables
+## Current tables
 
-- `campaigns`: id, name, status, shared revision, internal write token, timestamps, plus nullable shared map-focus columns added by 0002;
-- `teams`: Campaign ownership, name/color, timestamps, unique color per Campaign;
-- `areas`: Campaign/Team ownership, Polygon JSON text, timestamps;
-- `tasks`: Campaign/Area ownership, street LineString JSON text, status, `completed_at`, timestamps.
+Domain tables:
+- `campaigns`;
+- `teams`;
+- `areas`;
+- `tasks`.
 
-Composite foreign keys prevent Team/Area/Task relationships crossing Campaign boundaries. Geometry remains JSON text with semantic validation in the Worker.
+Access tables:
+- `campaign_access_grants`;
+- `campaign_sessions`.
 
-### M4 access tables
+Plaintext access/session secrets are never stored in D1; only SHA-256 hashes are persisted.
 
-`campaign_access_grants` stores:
-- opaque grant id;
-- Campaign id;
-- role (`admin`, `team-editor`, `viewer`);
-- optional Team id, required only for Team Editor;
-- SHA-256 invite-token hash;
-- optional operational label;
-- created timestamp;
-- nullable revoked timestamp.
+## Important Team Editor grant rule
 
-`campaign_sessions` stores:
-- opaque session id;
-- backing grant id;
-- Campaign id;
-- SHA-256 session-secret hash;
-- created timestamp;
-- expiry timestamp.
+`campaign_access_grants.team_id` scopes a Team Editor grant, but **there is intentionally no D1 foreign key from the grant to the `teams` table**.
 
-Plaintext invite tokens and session secrets are not D1 fields.
+Reason: current complete-snapshot persistence replaces Team child rows during a snapshot write. A Team foreign key with cascading behavior could revoke valid Team Editor grants merely because a snapshot replacement temporarily deletes/reinserts Team rows.
 
-Foreign keys keep every grant/session Campaign-scoped. Team Editor grants reference a Team in the same Campaign. Deleting their Team removes the scoped grant and its sessions through cascades.
+Instead:
+- grant creation verifies that the Team exists in the Campaign;
+- access resolution verifies that a Team Editor's scoped Team still exists;
+- if the Team no longer exists, that scoped access is treated as invalid;
+- Campaign/grant/session foreign keys still enforce Campaign ownership where safe.
 
-## Internal write token
+Do not reintroduce a Team FK without redesigning snapshot replacement semantics.
 
-`campaigns.write_token` remains an implementation-only optimistic-concurrency guard. It is unrelated to M4 user access credentials and is never exposed as Campaign data.
+## Current revision/write semantics
 
-A snapshot replacement still uses one constant-size seven-statement D1 batch:
-1. claim the expected Campaign revision and install a fresh internal write token;
-2. replace child rows only when that same write token is still owned by the request;
-3. stale competing requests therefore cannot delete/insert child rows after losing the revision claim.
+Current M4 persistence still uses coarse complete-snapshot replacement with one Campaign revision.
 
-## Revision/version semantics
-
-The Campaign revision is the coarse shared synchronization primitive.
-
-Protected endpoints:
-- `GET /api/campaigns/:campaignId/snapshot` returns current snapshot/revision;
-- `GET /api/campaigns/:campaignId/version` returns only current revision;
-- `PUT /api/campaigns/:campaignId/snapshot` includes the `baseRevision` the browser edited from.
+Protected endpoints include:
+- snapshot read;
+- version read;
+- snapshot write.
 
 Rules:
-- all three require valid Campaign-scoped authorization;
-- existing Campaign writes require `baseRevision` to match current server revision;
-- successful replacement advances revision by one;
-- stale write returns HTTP 409;
-- Viewer writes return 403;
-- Team Editor complete-snapshot writes are diff-authorized against the previous server snapshot;
-- new Campaign creation is a dedicated creation flow rather than `baseRevision: null` on the protected PUT;
-- pre-M4 Campaign ownership is established only through the explicit secured bootstrap flow.
+- valid Campaign-scoped session required;
+- Viewer cannot write;
+- Team Editor complete-snapshot proposal is diff-authorized server-side;
+- stale base revision returns conflict rather than silent overwrite;
+- new Campaign creation is a dedicated flow;
+- legacy ownership bootstrap/recovery is explicit and protected.
+
+## M5 transition direction
+
+M5 is planned to introduce durable mutation/idempotency semantics while retaining the snapshot as startup/recovery state.
+
+Expected direction:
+- IndexedDB pending mutation queue;
+- stable mutation/idempotency ids;
+- narrower Worker mutation endpoints;
+- server-side applied-mutation tracking;
+- explicit conflicts;
+- append-only domain/event information that later Activity/Statistics can consume.
+
+Do not delete legacy/local state during this transition.
+
+## Future organization model
+
+M8 plans an Organization tenant above Campaigns. It is not part of the current schema.
+
+Requirements for future migration:
+- existing Campaigns preserved;
+- additive D1 migration;
+- no first-visitor claim race;
+- explicit organization authorization/membership;
+- no cross-organization relationships.
+
+See `docs/architecture/ORGANIZATIONS.md`.
+
+## Future collaboration/statistics data
+
+Comments, activity/domain events, automation rules/runs and statistics rollups are planned but not current tables.
+
+Prefer deriving statistics from durable state/events. Do not add continuous GPS history for analytics.
+
+See `docs/architecture/COLLABORATION.md`.
 
 ## Browser-only data
 
-The following are intentionally **not** shared Campaign data:
+Intentionally local unless later changed:
 - language preference;
-- personal last map center/zoom/bearing per Campaign;
-- GPS history (none exists);
-- active unsaved draw/edit/street draft.
-
-Personal camera data is keyed by Campaign in localStorage and never uploaded just because the map moves.
-
-## Browser cache and transition
-
-M4 preserves the existing primary/backup localStorage snapshot instead of deleting it.
-
-Safe transition:
-1. render the existing local snapshot immediately;
-2. migrate schema v1/v2 to v3 locally;
-3. select Campaign from `?campaign=` when present, otherwise use the local Campaign id;
-4. redeem an invite fragment or resolve an existing session before protected server reads;
-5. if a legitimate new local Campaign has never existed on the server, use the dedicated create flow, which creates its first Admin grant/session;
-6. existing M3 Campaigns without grants remain protected until explicit bootstrap;
-7. preserve conflicting optimistic local data in `verteil-flyer:campaign-snapshot:conflict` before replacing it.
-
-## Event history
-
-An append-only mutation/event model remains future hardening work. M4 intentionally keeps complete snapshots with server-side role-aware diff validation. M5 may introduce a durable mutation queue and narrower writes.
+- personal last map camera per Campaign;
+- planned UI light/dark/system preference;
+- active unsaved draw/edit draft;
+- GPS route history (none exists).

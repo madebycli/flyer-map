@@ -2,104 +2,81 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-24
+last_updated: 2026-08-25
 ---
 
 # Current Project State
 
-## Milestone
+## Baseline
 
-M3 — Shared Persistence is complete, merged to `main` through PR #14 and live on the production Cloudflare Worker.
+M4 access/session authorization is merged on `main`; production D1 migration `0002_m4_access.sql` is applied and `M4_BOOTSTRAP_SECRET` is configured.
 
-M4 — Access Links + Authorization + Field UX hardening is implemented on branch `m4-access-links-ux-sync` in PR #16. The Cloudflare Worker secret `M4_BOOTSTRAP_SECRET` is configured and production D1 migration `0002_m4_access.sql` was intentionally applied to remote database `flyer-map-db` on 2026-08-24. Final merge/deploy and production smoke checks remain.
+PR #21 (`renderer-access-recovery`) contains the accepted post-M4 renderer/access baseline and is in final closeout. Plan 008 is completed; after the final documentation head receives green CI + exact Cloudflare preview, merge PR #21 and verify production.
 
-## M4 branch state
+## Map
 
-The M4 branch adds:
-- Worker-enforced campaign access for every protected snapshot/version request;
-- roles `admin`, `team-editor`, `viewer` with optional team scope;
-- strong random invite tokens with only SHA-256 hashes stored server-side;
-- opaque HttpOnly/Secure/SameSite session cookies whose authorization resolves the underlying grant on each request;
-- immediate access loss after grant revocation, including existing sessions;
-- explicit server-secret bootstrap for campaigns that existed before M4; there is no first-visitor-admin fallback;
-- admin Access Management API/UI for creating/listing/revoking grants;
-- server-side old/new snapshot authorization for team editors so complete-snapshot PUTs cannot mutate campaign settings, teams, foreign areas/tasks or ownership scope;
-- Campaign snapshot schema v3 with optional shared `defaultMapView`;
-- browser-local personal camera center/zoom/bearing per Campaign;
-- arbitrary MapLibre rotation plus compass while application geometry stays in the independent SVG overlay;
-- browse Area selection without white halo or stored-corner markers; draw/edit markers remain visible only in the active editing/drawing modes;
-- in-memory remote snapshot refresh instead of `window.location.reload()`;
-- 30-second revision polling plus online/visibility/manual refresh;
-- deferral of remote snapshot application while draw/edit/street-draw is active;
-- compact refresh feedback and browser-local German/English application language preference.
-
-## Renderer boundary
-
-M4 itself keeps the proven SVG renderer boundary. A separate post-M4 branch `renderer-webgl-performance` is evaluating a hybrid renderer for whole-city scale: saved Areas/Streets rendered by MapLibre WebGL while active draw/edit previews and edit handles remain SVG-only. This work must not be merged into PR #16.
-
-Current M4 MapLibre responsibilities:
+Current renderer baseline:
+- MapLibre GL JS **5.7.1 pinned**;
 - CARTO Voyager Retina raster basemap;
-- camera/navigation/compass controls;
-- local one-shot geolocation display.
+- saved Areas/Streets in persistent MapLibre GeoJSON sources/layers created as part of the initial style;
+- actual Campaign data changes update those sources through `setData()`;
+- active draw/edit only in SVG;
+- stored edit points hidden in browse;
+- no application projection loop over saved geometry during normal pan/zoom/rotate.
 
-Current M4 SVG responsibilities:
-- saved Areas and Streets;
-- active draw/edit previews;
-- edit handles only while an Area is actually being edited.
+MapLibre 6.4.1 is not the baseline: real-browser testing showed saved GeoJSON becoming invisible/non-interactive despite healthy FPS. The 5.7.1 pin restored the working direction.
 
-## D1
+## Current access
 
-Production D1 database: `flyer-map-db`.
+Current Campaign roles remain:
+- Admin;
+- Team Editor scoped to one Team;
+- Viewer.
 
-Worker binding: `DB`.
+Campaign id is only a selector. Access/session authorization is Worker-enforced. PR #21 adds operator Admin recovery using the configured server-only bootstrap/recovery secret.
 
-Production history:
-- `migrations/0001_initial.sql` — M3 campaign/team/area/task schema; immutable production history.
-- `migrations/0002_m4_access.sql` — Campaign default map view plus access-grant/session tables; applied successfully to remote `flyer-map-db` on 2026-08-24.
+## Plan 008 acceptance
 
-The migration application reported all 14 commands executed successfully and `0002_m4_access.sql` with status ✅.
+Real-browser/mobile acceptance confirmed:
+- saved Area visible/selectable after Save;
+- saved Street visible/selectable after Save;
+- pan/zoom/rotate alignment;
+- active-only usable Area edit handles;
+- mobile bottom toolbar and safe-area behavior.
 
-## Verification
+Repository-controlled acceptance also confirms the MapLibre source/layer lifecycle, Admin-recovery unit coverage, diagnostics implementation, green CI and exact Cloudflare preview deployment on the accepted runtime/documentation heads.
 
-M3 production verification remains valid for the currently deployed `main` version until the M4 merge finishes.
+Two non-passed follow-ups are deliberately tracked rather than hidden:
+- GitHub #22 — desktop bottom-toolbar fit/spacing; explicitly deferred for later;
+- GitHub #23 — deployed-origin Admin recovery smoke, real-browser `?diag=1`, and 500 / 1,000 / 2,500 / 5,000 Street device/browser stress validation.
 
-M4 branch verification:
-- authorization/token/session tests cover missing credentials, hashed invite storage, campaign scope, revocation and token redemption;
-- permission tests cover Admin, Viewer and Team Editor own-team/foreign-team boundaries;
-- snapshot validation tests cover schema v3 and shared map view validation;
-- CI #91 passed the complete `npm run check` pipeline: tests, TypeScript and production build;
-- Cloudflare Worker secret `M4_BOOTSTRAP_SECRET` is configured;
-- remote D1 migration `0002_m4_access.sql` is applied;
-- PR #16 is ready for final merge/deploy verification.
-
-## Remaining M4 release steps
-
-1. Confirm the new documentation-only PR head remains green.
-2. Merge PR #16 to `main` and allow Cloudflare Workers Builds to deploy it.
-3. Smoke-check `/api/health` plus unauthenticated 401 behavior in production.
-4. Explicitly bootstrap any known pre-M4 campaign that still needs an initial Admin access link.
-5. Smoke-check valid role/revocation/sync behavior.
-6. Perform real-phone map/rotation/camera/refresh checks.
-7. Mark plan 007 completed after production acceptance.
-
-## Completed plan
-
-- `docs/plans/completed/006-m3-shared-persistence.md`
+Neither follow-up should be described as already passed.
 
 ## Active plan
 
-- `docs/plans/active/007-m4-access-links-ux-sync.md`
+- `docs/plans/active/009-product-platform-foundation.md` — ordered next-platform plan; start M5 only after PR #21 is merged and production is healthy.
 
-## Deferred beyond M4
+Completed current slice:
+- `docs/plans/completed/008-renderer-access-recovery.md`.
 
-- durable multi-mutation offline queue (M5)
-- WebSockets
-- OSM street import/snap-to-road
-- House Mode
-- GPS routes/history
-- PWA/service worker
-- traditional email/password account system
+## Accepted next roadmap
 
-## Next
+See `docs/product/ROADMAP.md`.
 
-Merge/deploy M4 now that its production schema and bootstrap secret are prepared, complete production/real-device acceptance, then finish the separate whole-city renderer performance slice before placing heavy street density on older phones.
+Order:
+- M5 resilient mutation synchronization;
+- M6 Smart Street + House Tasks using reviewed real map geometry instead of freehand tracing as the normal path;
+- M7 comments, activity and deterministic automations;
+- M8 Organizations, multiple admins and separate Admin panel;
+- M9 statistics/reporting + personal UI light/dark/system appearance;
+- M10 field hardening/release.
+
+Organization and collaboration/statistics architecture are currently **proposed**, not implemented.
+
+## Immediate next
+
+1. Verify final PR #21 closeout head with CI and exact Cloudflare preview.
+2. Merge PR #21.
+3. Verify production deployment/health.
+4. Start M5 from Plan 009 on a fresh branch from current `main`.
+5. Keep #22 and #23 visible as deferred quality/operations work; they do not become passed by merging PR #21.

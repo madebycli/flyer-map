@@ -2,160 +2,150 @@
 id: architecture-map
 type: architecture
 status: accepted
-last_updated: 2026-08-24
-related: [architecture, product-ux, architecture-security]
-source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera]
+last_updated: 2026-08-25
+related: [architecture, product-ux, architecture-security, product-roadmap]
+source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera, saved-geometry-renderer]
 ---
 
 # Map Architecture
 
-## Renderer boundary
+## Current renderer baseline
 
-The production-phone stability phase established the current map architecture and it remains a release gate.
-
-MapLibre GL JS renders only:
-- the CARTO Voyager Retina raster basemap;
+MapLibre GL JS **5.7.1** owns the persistent map rendering pipeline:
+- CARTO Voyager Retina raster basemap;
+- camera movement, zoom and bearing;
 - navigation/compass controls;
-- camera movement and arbitrary bearing/rotation;
-- local one-shot browser geolocation display.
+- one-shot browser geolocation display;
+- saved Verteil-Flyer Areas through one GeoJSON source plus Fill/Outline layers;
+- saved Street Tasks through one GeoJSON source plus a small fixed set of Line layers.
 
-All Verteil-Flyer application geometry is rendered by the independent SVG overlay above the MapLibre canvas:
-- saved team areas;
-- saved street tasks;
-- area-draw geometry and points;
-- street-draw geometry and points;
-- area-edit preview geometry and edit points;
-- selected-street highlight.
+The independent SVG overlay is reserved for active geometry input only:
+- Area draw preview and points;
+- Area edit preview and edit handles;
+- Street draw preview and points.
 
-Do **not** reintroduce MapLibre application GeoJSON sources/layers for this geometry. Shared persistence, authorization and sync change snapshot delivery, not the renderer.
+Stored edit/corner points are never shown in browse mode.
+
+ADR-0010 defines this saved-vs-active rendering boundary.
+
+## Why MapLibre is pinned to 5.7.1
+
+A tested upgrade to MapLibre GL JS 6.4.1 produced a real-browser GeoJSON regression in this project: the basemap rendered and frame rate stayed healthy, while saved application GeoJSON became invisible and non-interactive.
+
+The current working baseline therefore pins 5.7.1. Do not upgrade MapLibre casually. Any runtime upgrade requires browser acceptance that proves:
+- saved Area visible;
+- saved Street visible;
+- Area selectable;
+- Street selectable;
+- browse pan/zoom/rotate remains visually locked and performant.
+
+Green TypeScript/CI alone is insufficient for a map-runtime upgrade.
 
 ## Basemap
 
-Primary MVP provider:
-
-CARTO Voyager Retina raster tiles:
+Primary provider is CARTO Voyager Retina raster:
 
 `https://{a-d}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png`
 
-The source uses four CARTO CDN hostnames and 2x-resolution tiles. Voyager remains preferred because it provides readable road hierarchy, green spaces and water while retaining the simpler Retina-raster loading path.
+The provider remains replaceable. Labels are provider-rendered raster content and are not dynamically translated by application language.
 
-The basemap provider is an operational dependency, not a domain dependency. Keep it isolated and replaceable.
+There is no whole-area offline tile cache or service worker.
 
-The Voyager labels are pre-rendered into raster tiles. Application language switching therefore translates Verteil-Flyer UI and ARIA text but cannot dynamically translate provider-rendered basemap labels. Do not replace the stable mobile basemap merely to force label localization.
+## Saved application GeoJSON
 
-### Mobile loading behavior
+### Sources
 
-MapLibre keeps pending lower-zoom tile requests while the user zooms so previously requested context can progressively appear instead of being abruptly canceled.
+Two persistent sources exist for the current Campaign:
+- `vf-areas` — all saved Areas;
+- `vf-streets` — all saved Street Tasks.
 
-Do not gate the field UI on MapLibre `idle`. The map is usable while raster tiles continue loading, and application SVG geometry has its own rendering path.
+The initial MapLibre style is built with these application sources/layers already present using the latest Campaign data available at map construction time. They are not recreated during pan/zoom/rotate.
 
-Do not prefetch whole areas or build an offline basemap cache. Only normal interactive viewport requests are allowed in the current architecture.
+Actual Campaign data changes update the existing `GeoJSONSource` data with `setData()`.
 
-History:
-- OpenFreeMap was the initial vector provider but the first production-origin test lost street-level detail.
-- Standard OSM raster tiles restored availability but looked soft on high-DPI displays.
-- VersaTiles produced a white map on the real production phone test.
-- CARTO vector rendering was too slow/unpredictable on the tested mobile connection.
-- CARTO Retina raster improved loading behavior.
-- CARTO Voyager Retina is the current colorful, performance-oriented MVP basemap.
+Do not use `styledata -> setData()` feedback loops.
 
-## SVG application overlay
+### Area layers
 
-The overlay projects stored longitude/latitude coordinates into the current MapLibre screen projection and redraws as the map pans, zooms, rotates or resizes. Arbitrary bearing must not require duplicate MapLibre application layers.
+- `vf-areas-fill` — subtle Team-color fill;
+- `vf-areas-outline` — thin Team-color outline.
+
+Browse selection adds no white edit halo and no stored corner markers.
+
+### Street layers
+
+Saved Street Tasks share one source and a constant small layer set:
+- selected-street treatment;
+- open;
+- completed;
+- later;
+- not-deliverable.
+
+Feature properties carry Team color/status. Line width is zoom-dependent and should remain road-like rather than highlighter-like.
+
+The number of sources/layers stays effectively constant whether a Campaign contains 10 or thousands of Street features.
+
+## Browse interaction
+
+Saved selection uses MapLibre rendered-feature queries.
+
+Street selection uses a small screen-space hit box around the pointer/tap so a thin line remains easy to select.
+
+Area selection queries the Area fill layer at the interaction point.
+
+Normal browse movement must perform **zero Verteil-Flyer `map.project()` loops over all saved Areas/Streets**.
+
+## Active draw/edit SVG
+
+Active geometry remains SVG because active vertex counts are small and explicit DOM handles work well for touch editing.
+
+During active draw/edit, map movement imperatively reprojects only the active points/preview.
 
 ### Area behavior
 
-- every stored area is a GeoJSON Polygon assigned to exactly one team;
-- fill and outline colors come from the assigned team;
-- saved areas render together in SVG with transparent fills and strong team-colored outlines;
-- **browse selection intentionally has no extra white halo and no stored-corner markers**; the detail/bottom sheet is the selection indication;
-- area corner markers appear only while the user is actively editing that Area;
-- drawing renders SVG point markers and connecting/polygon geometry immediately;
-- editing renders a high-contrast preview outline plus large touch-friendly edit points in SVG;
-- the selected edit vertex is visually distinct;
-- area selection uses application point-in-polygon hit testing rather than MapLibre rendered-feature queries;
-- edit-vertex selection uses application screen-distance hit testing;
-- polygon geometry is validated before Save is enabled and again by the Worker before D1 persistence.
+- stored Area = GeoJSON Polygon assigned to one Team;
+- Team color drives saved fill/outline;
+- browse shows no vertices;
+- draw/edit shows temporary explicit vertices;
+- geometry validated client-side and Worker-side.
 
-The browse-selection rule above deliberately supersedes the earlier M1/M2 behavior where selection added a white polygon halo and markers at every stored corner.
+### Current Street fallback
 
-### Street Mode behavior
+Current manual Street Task drawing stores a GeoJSON LineString assigned to an Area. This remains available as a fallback.
 
-- every street task is a GeoJSON LineString assigned to one area;
-- the line inherits the area's team color for ownership context;
-- saved street tasks render as SVG polylines;
-- status uses width/opacity/dash treatment in addition to team color:
-  - `open`: strong solid line;
-  - `completed`: thinner/faded solid line;
-  - `later`: dashed line;
-  - `not-deliverable`: dotted line;
-- selected streets receive the existing SVG selection halo;
-- manual street tracing renders SVG draft LineString geometry and point markers;
-- street selection uses application screen-distance hit testing;
-- street status changes happen through explicit UI controls, never through map panning.
+It is **not** the desired long-term primary workflow. M6 plans actual road/building selection from reviewed OSM/OSM-derived geometry. See `docs/product/ROADMAP.md`.
 
-Do not encode distribution state by editing the basemap itself.
+## Smart Street + House future constraints
 
-## Interaction modes
-
-The map has explicit browser-side modes:
-- `browse`: pan/zoom/rotate and select stored areas or street tasks;
-- `draw`: map taps add area polygon vertices; Save/Cancel/Undo are explicit;
-- `edit`: stored area geometry remains unchanged until the edited preview is explicitly saved;
-- `street-draw`: map taps trace a street LineString; Save/Cancel/Undo are explicit.
-
-Double-click zoom is disabled in geometry-input modes to reduce accidental points while normal drag/pinch map navigation remains available.
-
-Rotation is supported again:
-- touch users may use normal two-finger MapLibre rotation;
-- desktop users may use MapLibre's normal rotation gestures;
-- no artificial 90-degree snapping is used;
-- the compass is visible and may reset North-Up;
-- SVG Areas, Streets, drafts and edit vertices must remain projected correctly at any bearing.
+Future road/building import must preserve the persistent renderer pattern:
+- imported/generated saved features belong in map data sources/layers;
+- do not create one React/SVG DOM element or one MapLibre layer per Street/House;
+- whole-city geometry requires source/layer batching and real-device tests;
+- choose OSM provider/caching/licensing deliberately before implementation.
 
 ## Camera state
 
-Campaign data and personal camera state are deliberately separate states.
+Campaign default focus and personal camera state are separate.
 
-A personal camera view contains at least:
-- center longitude/latitude;
-- zoom;
-- bearing.
-
-It is stored locally in the browser, keyed by Campaign, with debounced writes after completed camera movement. It is not sent to D1 merely because the user pans, zooms or rotates.
-
-Camera startup priority is:
-1. personal last camera view for this Campaign on this browser;
-2. shared Campaign default map view (`defaultMapView` / Aktionsfokus);
+Startup priority:
+1. personal last camera view;
+2. Campaign default map view;
 3. Germany fallback.
 
-The Campaign default map view is shared Campaign configuration and may be persisted in D1 by an Admin. A new browser with no personal camera can therefore open directly at the action location.
+Remote synchronization must never reset the personal camera.
 
-A remote Campaign snapshot update must **never** reset center, zoom or bearing, trigger GPS focusing, or force the Germany fallback. Snapshot refresh and camera state are independent.
+## Rotation and geolocation
 
-## Geolocation
+Normal bearing/rotation stays enabled with a compass. Active SVG geometry must remain aligned at arbitrary bearing.
 
-MapLibre's geolocation control may display the device's current location after browser permission is granted.
+Geolocation is user-initiated and one-shot. GPS coordinates are not persisted as route history or statistics.
 
-Field behavior is one-shot centering, not continuous camera tracking. Pressing the location control may center the map on the current device location. After that, panning, zooming and rotation are fully manual until the user presses the location control again.
+## Diagnostics/performance acceptance
 
-Rules:
-- permission is user initiated;
-- GPS coordinates are not written into Campaign data or Worker/D1;
-- no route history is created;
-- no GPS history/trail is stored;
-- map use remains possible when permission is denied.
+The opt-in `?diag=1` panel is used for renderer troubleshooting and real-browser acceptance.
+
+Whole-city acceptance must include representative dense tests, currently targeted at 500 / 1,000 / 2,500 / 5,000 Street features. House Mode will require additional building-scale tests.
 
 ## Persistence independence
 
-The SVG overlay consumes the current in-memory Campaign snapshot regardless of whether that snapshot originated from localStorage or Worker/D1. Synchronization must never make rendering depend directly on network availability.
-
-M4 replaces full-page sync reloads with in-memory snapshot replacement. The React snapshot can change while the MapLibre camera instance remains untouched.
-
-## Offline/connectivity behavior
-
-The project is website-only and does not use a PWA service worker. M4 keeps the last known snapshot in localStorage and performs ordinary in-page synchronization. M5 may add a durable mutation queue without changing this renderer or bulk-caching map tiles.
-
-## Future OSM import
-
-A bounded import can later create task snapshots from OpenStreetMap/Overpass data. Imported task geometry must be stored as Campaign data rather than relying permanently on mutable upstream OSM object state.
+The map consumes the current in-memory Campaign state regardless of whether it came from local cache or Worker/D1. Rendering does not directly depend on network availability.

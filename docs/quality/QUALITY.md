@@ -2,56 +2,89 @@
 id: quality
 type: quality
 status: accepted
-last_updated: 2026-08-24
-related: [architecture, product-ux]
+last_updated: 2026-08-25
+related: [architecture, architecture-map, product-ux, product-roadmap]
+source_of_truth_for: [quality-gates, performance-acceptance, target-devices]
 ---
 
 # Quality Baseline
 
 ## Target devices
 
-Primary support:
-- current Chromium-based Android browsers on ordinary devices such as Pixel 6-class hardware and newer
-- current Safari on iPhone 11-class hardware and newer
+Primary:
+- current Chromium-based Android browsers on ordinary phones;
+- current Safari on supported iPhones.
 
-Older still-common devices are best-effort unless field testing shows they need explicit support.
+Performance/hardening target:
+- remain usable on materially slower/older hardware where practical;
+- iPhone 8-class performance is a useful stress target even when browser/OS support limits exact production coverage;
+- low-core Android devices must be represented in diagnostics/load testing.
 
-## Required checks
+Do not declare map performance based only on a fast desktop or flagship phone.
 
-Every pull request should at minimum pass:
+## Required automated checks
 
-```bash
-npm run typecheck
-npm run build
-```
+Every PR should at minimum pass the repository `check` flow (tests + TypeScript + production build where configured).
 
-Add automated tests when domain logic/user flows appear. Do not add a test framework merely to create empty tests.
+Add tests around domain/security/sync logic. Browser-visible map correctness still requires browser acceptance because CI cannot prove that GeoJSON is actually visible/hit-testable on a device.
 
-## Field testing
+## Field/browser testing
 
-Before MVP release explicitly test:
-- map pan/zoom/tap interaction
-- crisp street/building rendering on a high-DPI phone
-- geolocation allowed/denied
-- normal mobile-browser use on Android
-- normal mobile-browser use on iPhone
-- intermittent network
-- two or more devices editing the same campaign
-- accidental action + undo
-- browser tab resume after backgrounding
+Explicitly test:
+- saved Area visible + selectable;
+- saved Street visible + selectable;
+- pan/zoom/rotate alignment;
+- active edit handles only while editing/drawing;
+- geolocation allowed/denied;
+- Android and iPhone browser behavior;
+- intermittent network and reconnect;
+- two or more authorized devices editing shared state;
+- accidental status action + undo;
+- tab resume/background behavior;
+- Admin/access recovery where applicable;
+- desktop bottom-toolbar fit and mobile safe areas;
+- light/dark UI once implemented.
 
-## Performance budget
+## Whole-city map performance
 
-Principles:
-- no external web fonts
-- no marketing imagery/video
-- no analytics SDK in MVP
-- avoid unnecessary startup requests
-- only load current campaign/area data
-- MapLibre is the expected major client dependency; keep unrelated website code small
+Saved geometry must not cause application-side per-frame work proportional to every Street/Area during ordinary browse camera movement.
 
-Initial target: keep non-map application code comfortably below the map bundle and investigate any new dependency that materially changes initial transfer size.
+Synthetic/representative acceptance targets:
+- 500 Streets;
+- 1,000 Streets;
+- 2,500 Streets;
+- 5,000 Streets.
+
+When House Mode is implemented, add realistic building-count tests for a 40k–60k resident city-scale Campaign.
+
+Measure:
+- FPS / long frames;
+- interaction latency;
+- memory/DOM growth;
+- initial/updated GeoJSON processing time;
+- saved-feature hit testing;
+- basemap request behavior.
+
+## Map runtime upgrades
+
+MapLibre is currently pinned to 5.7.1 after 6.4.1 caused a real-browser saved-GeoJSON regression.
+
+A map-runtime upgrade must pass a dedicated browser test with real saved Area + Street data and cannot rely only on compilation/unit tests.
+
+## Application performance principles
+
+- no external web fonts;
+- no marketing imagery/video;
+- no unnecessary telemetry SDK;
+- avoid unnecessary startup requests;
+- keep field UI smaller/simpler than map/runtime workload;
+- investigate every substantial dependency;
+- statistics should use product data, not a third-party tracking SDK by default.
 
 ## Accessibility
 
-Keyboard/focus semantics still matter even though mobile touch is primary. Critical state cannot rely on color alone.
+- keyboard/focus semantics where applicable;
+- touch targets suitable for field use;
+- critical state not color-only;
+- accessible contrast in future light/dark themes;
+- admin/statistics UI must remain readable and keyboard navigable on desktop.
