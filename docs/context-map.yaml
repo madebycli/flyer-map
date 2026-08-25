@@ -156,6 +156,13 @@ nodes:
     topics: [offline-map, osm, overpass, indexeddb, geojson, m5.5]
     load_when: [prepared offline map, OSM source, offline map package, M5.5 implementation, Smart Street source]
 
+  - id: adr-session-events-retention
+    path: docs/decisions/ADR-0017-field-session-events-retention.md
+    type: decision
+    status: proposed
+    topics: [field-sessions, domain-events, activity, statistics, retention, affected-tasks, person-time, audit]
+    load_when: [Field Session persistence, activity event schema, session map highlighting, historical statistics, event retention, Team history retention]
+
   - id: plan-renderer-recovery
     path: docs/plans/completed/008-renderer-access-recovery.md
     type: plan
@@ -232,6 +239,9 @@ edges:
   - { from: collaboration, to: security, relation: constrained_by }
   - { from: collaboration, to: data, relation: requires_event_data }
   - { from: collaboration, to: offline-sync, relation: benefits_from_mutations }
+  - { from: adr-session-events-retention, to: collaboration, relation: proposes_persistence_model }
+  - { from: adr-session-events-retention, to: data, relation: proposes_schema_direction }
+  - { from: adr-session-events-retention, to: offline-sync, relation: requires_idempotent_event_append }
   - { from: quality, to: architecture, relation: validates }
   - { from: deployment, to: architecture, relation: operates }
   - { from: first-deploy, to: deployment, relation: procedure_for }
@@ -258,6 +268,7 @@ edges:
   - { from: plan-platform-expansion, to: live-teams, relation: requires }
   - { from: plan-platform-expansion, to: collaboration, relation: requires }
   - { from: plan-platform-expansion, to: map, relation: extends }
+  - { from: plan-platform-expansion, to: adr-session-events-retention, relation: requires_before_history_persistence }
   - { from: plan-platform-expansion, to: security, relation: constrained_by }
   - { from: plan-platform-expansion, to: quality, relation: validated_by }
   - { from: prompts, to: architecture, relation: onboards_to }
