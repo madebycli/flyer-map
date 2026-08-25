@@ -1,4 +1,5 @@
 import type { CampaignSnapshot } from "../domain/campaign";
+import type { CampaignMutation } from "../domain/mutations";
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
 
@@ -71,7 +72,10 @@ async function apiFetch(path: string, init?: RequestInit) {
   return response;
 }
 
-function campaignPath(campaignId: string, resource: "snapshot" | "version" | "access") {
+function campaignPath(
+  campaignId: string,
+  resource: "snapshot" | "version" | "access" | "mutations",
+) {
   return `/api/campaigns/${encodeURIComponent(campaignId)}/${resource}`;
 }
 
@@ -104,6 +108,22 @@ export async function putCampaignSnapshot(
     body: JSON.stringify({ baseRevision, snapshot }),
   });
   return (await response.json()) as CampaignSnapshot;
+}
+
+export async function postCampaignMutation(
+  campaignId: string,
+  mutation: CampaignMutation,
+) {
+  const response = await apiFetch(campaignPath(campaignId, "mutations"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mutation }),
+  });
+  return (await response.json()) as {
+    mutationId: string;
+    appliedRevision: number;
+    alreadyApplied: boolean;
+  };
 }
 
 export async function fetchCampaignVersion(campaignId: string) {
