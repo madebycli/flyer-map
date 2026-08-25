@@ -65,7 +65,8 @@ Complete code + context/ADR/runbook head `5c7dce819d472be8242da59034310d7a87c21f
 
 Accepted exact runtime preview:
 - `https://bb8fa846-flyer-map.cloudflare-eleven035.workers.dev`;
-- Cloudflare PR bot explicitly names commit `5c7dce81` and deployment success.
+- Cloudflare PR bot explicitly names commit `5c7dce81` and deployment success;
+- on 2026-08-25 the user confirmed that this preview root loads successfully in a real browser.
 
 Later status/handoff documentation commits are runtime-equivalent unless a later commit changes application/Worker/runtime configuration code. Any later runtime change invalidates the runtime-equivalent preview assumption and requires another exact preview.
 
@@ -104,7 +105,7 @@ M5 is **not production-ready yet**. Remaining gates:
 6. MapLibre saved Area/Street and active edit behavior remain unchanged;
 7. final repository head remains green before merge.
 
-Repository CI, exact runtime-equivalent Cloudflare preview and D1 migration gates are passed.
+Repository CI, exact runtime-equivalent Cloudflare preview, real-browser preview-root smoke and D1 migration gates are passed.
 
 ## Known follow-ups
 
