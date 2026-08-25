@@ -49,9 +49,9 @@ Observed in a real browser on 2026-08-25:
 
 This passes the local offline durability/reload portion of M5 gate 1. Reconnect delivery is still unconfirmed because the basemap itself did not remain usable offline after reload.
 
-## Maximum-zoom basemap bug
+## Maximum-zoom basemap bug — fixed and browser-accepted
 
-Real-browser testing exposed a separate renderer bug: at maximum zoom the CARTO basemap became completely white while application geometry remained visible.
+Real-browser testing exposed a renderer bug: at maximum zoom the CARTO basemap became completely white while application geometry remained visible.
 
 Root cause:
 - Map instance is capped at zoom 20;
@@ -73,7 +73,7 @@ A new Cloudflare Worker Version preview containing the fix was manually uploaded
 - preview alias: `https://m5-zoom-fix-flyer-map.cloudflare-eleven035.workers.dev`;
 - no production traffic was changed.
 
-Real-browser maximum-zoom confirmation on this new preview is the next renderer gate.
+Real-browser acceptance on 2026-08-25 passed: at maximum zoom the basemap remains visible and no longer turns white.
 
 ## Offline map-area requirement
 
@@ -94,16 +94,17 @@ Plan 011 (`docs/plans/active/011-offline-map-area.md`) tracks this as the next m
 
 ## M5 gates still open
 
-1. Real-browser max-zoom check on the new Version preview: basemap remains visible at zoom 20.
-2. Complete offline-save gate by reconnecting and confirming queued delivery exactly once.
-3. Retry/reconnect without duplicate effect.
-4. Visible target conflict with no silent overwrite.
-5. Revoked/invalid access stops blind retry and remains access-blocked.
-6. Transient failure stays queued and retries later.
-7. Saved Area/Street selection and active edit behavior remain unchanged.
-8. Final repository head green before merge.
+1. Complete offline-save gate by reconnecting and confirming queued delivery exactly once.
+2. Retry/reconnect without duplicate effect.
+3. Visible target conflict with no silent overwrite.
+4. Revoked/invalid access stops blind retry and remains access-blocked.
+5. Transient failure stays queued and retries later.
+6. Saved Area/Street selection and active edit behavior remain unchanged.
+7. Final repository head green before merge.
 
-PR #24 remains Draft until these gates pass.
+Passed renderer gate: the updated Version preview keeps the basemap visible at maximum zoom.
+
+PR #24 remains Draft until the remaining M5 gates pass.
 
 ## Follow-ups / roadmap
 
@@ -121,7 +122,7 @@ Existing GitHub follow-ups remain open:
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Browser-test the new Version preview at maximum zoom.
-3. Resume M5 reconnect/idempotency/conflict/auth/transient-failure acceptance.
+2. Restore connectivity in the same browser/session that still contains the offline-saved Street and confirm the queued mutation reaches the server exactly once.
+3. Continue idempotency/conflict/auth/transient-failure acceptance.
 4. Merge M5 only after all release gates pass.
 5. Then execute Plan 011 before/alongside Smart Street work so field users can deliberately prepare a local offline working area.
