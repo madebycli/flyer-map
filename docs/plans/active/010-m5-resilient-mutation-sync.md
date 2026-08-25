@@ -53,7 +53,7 @@ Explicit mutation types, derivation, target preconditions and tests are present.
 ### B. Durable browser queue — implemented; browser acceptance pending
 IndexedDB queue, ordering, emergency recovery, transaction completion, retry/backoff and lifecycle triggers are present.
 
-### C. Worker + D1 idempotency — implemented; D1 migration/runtime acceptance pending
+### C. Worker + D1 idempotency — implemented; migration passed, runtime acceptance pending
 Mutation route, validation, fingerprints, duplicate/reuse handling, authorization and narrow writes are present.
 
 ### D. User-visible sync state — implemented; field acceptance pending
@@ -87,23 +87,33 @@ Automated tests cover:
 - canonical fingerprint stability;
 - existing Team Editor / Viewer authorization policy.
 
-## D1 migration status — current gate
+## D1 migration status — passed
 
-`migrations/0003_m5_mutations.sql` is repository-prepared only and is **not yet claimed applied**.
+`migrations/0003_m5_mutations.sql` was applied successfully to remote D1 database `flyer-map-db` on 2026-08-25 from branch `m5-resilient-sync-mainline` using:
 
-Before mutation runtime/browser acceptance, explicitly apply `0003` to the D1 environment used by the preview/runtime acceptance. Do not intentionally call the mutation route before that migration exists in the bound database.
+```bash
+npx wrangler d1 migrations apply flyer-map-db --remote
+```
 
-## Browser/field acceptance still required
+Observed non-sensitive result:
+- Wrangler listed exactly `0003_m5_mutations.sql` as the pending migration;
+- user confirmed the remote migration prompt;
+- Wrangler executed 4 commands;
+- migration status displayed `✅`.
 
-After `0003` migration confirmation, test one gate at a time:
-1. offline save -> reload -> reconnect -> queued mutation synchronizes;
+No credentials or secret values are recorded. The D1 schema is now ready for M5 preview mutation acceptance.
+
+## Browser/field acceptance — current gate
+
+Test one gate at a time and record each result immediately:
+1. offline save -> reload while still offline -> reconnect -> queued mutation synchronizes;
 2. retry/reconnect does not duplicate the effect;
 3. conflicting target change is visibly surfaced and does not overwrite silently;
 4. revoked/invalid access stops blind retry and queued work remains access-blocked;
 5. transient network/server failure remains queued and later retries;
 6. saved MapLibre Areas/Streets remain visible/selectable and active edit behavior is unchanged.
 
-Record each observed result immediately in this plan and `CURRENT.md`.
+For destructive acceptance use a disposable/test Campaign where practical because the current preview and Production Worker share the configured `flyer-map-db` binding.
 
 ## Risks
 
@@ -111,7 +121,7 @@ Record each observed result immediately in this plan and `CURRENT.md`.
 - unsupported compound snapshot diffs must fail visibly rather than falling back to broad ordinary writes;
 - one terminal queue item blocks later dependent mutations by design;
 - IndexedDB/private-mode limitations must surface as failed-save state;
-- `0003` is not yet applied, so browser mutation acceptance cannot honestly begin yet.
+- preview code is isolated but its current D1 binding is not a separate staging database.
 
 ## Explicit non-goals
 
@@ -127,7 +137,6 @@ Record each observed result immediately in this plan and `CURRENT.md`.
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Confirm final docs-only CI remains green.
-3. Apply `0003_m5_mutations.sql` to the chosen D1 runtime-acceptance environment.
-4. Complete the browser acceptance sequence above one gate at a time.
-5. Merge only after remaining gates are passed and documented.
+2. Perform browser acceptance gate 1: supported save while offline -> reload while still offline -> reconnect -> confirm delivery.
+3. Record the observed result in this plan and `CURRENT.md` before proceeding to gate 2.
+4. Merge only after all remaining browser gates pass and the final repository head is green.
