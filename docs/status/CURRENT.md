@@ -9,9 +9,9 @@ last_updated: 2026-08-25
 
 ## Baseline
 
-M4 access/session authorization is merged on `main`; production D1 migration `0002_m4_access.sql` is applied and `M4_BOOTSTRAP_SECRET` is configured.
+M4 access/session authorization and PR #21 (`renderer-access-recovery`) are merged on `main`. PR #21 merged as `63ea2e9c1e289b0c149fa4e229df6d02b81ef51d` on 2026-08-25 and Plan 008 is completed.
 
-PR #21 (`renderer-access-recovery`) contains the accepted post-M4 renderer/access baseline and is in final closeout. Plan 008 is completed; after the final documentation head receives green CI + exact Cloudflare preview, merge PR #21 and verify production.
+Production D1 migration `0002_m4_access.sql` is applied and `M4_BOOTSTRAP_SECRET` is configured outside the repository.
 
 ## Map
 
@@ -33,28 +33,30 @@ Current Campaign roles remain:
 - Team Editor scoped to one Team;
 - Viewer.
 
-Campaign id is only a selector. Access/session authorization is Worker-enforced. PR #21 adds operator Admin recovery using the configured server-only bootstrap/recovery secret.
+Campaign id is only a selector. Access/session authorization is Worker-enforced. Operator Admin recovery uses the configured server-only bootstrap/recovery secret and creates normal revocable access/session records.
 
 ## Plan 008 acceptance
 
-Real-browser/mobile acceptance confirmed:
+Real-browser/mobile acceptance confirmed before merge:
 - saved Area visible/selectable after Save;
 - saved Street visible/selectable after Save;
 - pan/zoom/rotate alignment;
 - active-only usable Area edit handles;
 - mobile bottom toolbar and safe-area behavior.
 
-Repository-controlled acceptance also confirms the MapLibre source/layer lifecycle, Admin-recovery unit coverage, diagnostics implementation, green CI and exact Cloudflare preview deployment on the accepted runtime/documentation heads.
+Repository-controlled acceptance confirmed the MapLibre source/layer lifecycle, Admin-recovery unit coverage, diagnostics implementation and green CI. Final PR head `791d8590f94efef2236968a8d7542d6d56123200` passed CI #175 and Cloudflare deployed that exact head successfully as a preview before merge.
+
+## Known follow-ups
 
 Two non-passed follow-ups are deliberately tracked rather than hidden:
 - GitHub #22 — desktop bottom-toolbar fit/spacing; explicitly deferred for later;
-- GitHub #23 — deployed-origin Admin recovery smoke, real-browser `?diag=1`, and 500 / 1,000 / 2,500 / 5,000 Street device/browser stress validation.
+- GitHub #23 — post-merge production health/deployed-origin Admin recovery smoke, real-browser `?diag=1`, and 500 / 1,000 / 2,500 / 5,000 Street device/browser stress validation.
 
-Neither follow-up should be described as already passed.
+Neither follow-up should be described as already passed. The current coding environment cannot resolve the public `workers.dev` production hostname, so live production health is not independently claimed here.
 
 ## Active plan
 
-- `docs/plans/active/009-product-platform-foundation.md` — ordered next-platform plan; start M5 only after PR #21 is merged and production is healthy.
+- `docs/plans/active/009-product-platform-foundation.md` — ordered next-platform plan.
 
 Completed current slice:
 - `docs/plans/completed/008-renderer-access-recovery.md`.
@@ -75,8 +77,6 @@ Organization and collaboration/statistics architecture are currently **proposed*
 
 ## Immediate next
 
-1. Verify final PR #21 closeout head with CI and exact Cloudflare preview.
-2. Merge PR #21.
-3. Verify production deployment/health.
-4. Start M5 from Plan 009 on a fresh branch from current `main`.
-5. Keep #22 and #23 visible as deferred quality/operations work; they do not become passed by merging PR #21.
+1. Confirm the public production endpoint/health for the merged `main` baseline when an environment with `workers.dev` network access is available; this is tracked in #23.
+2. Once production health is confirmed, start M5 from Plan 009 on a fresh branch from current `main`.
+3. Keep #22 and #23 visible as deferred quality/operations work; merging PR #21 did not convert them into passed checks.
