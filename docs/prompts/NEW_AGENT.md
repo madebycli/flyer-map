@@ -114,16 +114,23 @@ Implementiert in PR #24:
 - narrow D1 writes mit Campaign revision + internem `write_token`;
 - kompakter Sync-Status im UI.
 
-Repository-Akzeptanz:
+BESTÄTIGTE M5-GATES:
 - Runtime-Hardening-Head `8c7020ad5d1538bea68c351d918e94aa8f54973c` bestand CI #202;
-- Gesamt-Head `5c7dce819d472be8242da59034310d7a87c21f36` (Code + Context/ADR/Runbook zu diesem Zeitpunkt) bestand CI #208;
-- spätere reine Context/Handoff-Commits ändern keine Runtime; prüfe trotzdem den aktuellen finalen CI-Stand vor Merge.
+- Gesamt-Head `5c7dce819d472be8242da59034310d7a87c21f36` bestand CI #208;
+- Cloudflare deployte exakt `5c7dce81...` erfolgreich als Runtime-Preview `https://bb8fa846-flyer-map.cloudflare-eleven035.workers.dev`;
+- spätere reine Context/Handoff-Commits sind runtime-equivalent, solange keine Runtime-Datei geändert wird;
+- `migrations/0003_m5_mutations.sql` wurde am 2026-08-25 erfolgreich auf die remote D1 `flyer-map-db` angewendet; Wrangler zeigte Status `✅`.
 
-NOCH OFFENE M5-GATES — NICHT ALS BESTANDEN DARSTELLEN:
-1. Cloudflare PR-Bot/Deployment-Record nennt bislang nur den älteren Preview-Commit `fc200f9d...`; ein exakter Preview für den finalen runtime-equivalenten Head muss noch bestätigt werden.
-2. `0003_m5_mutations.sql` ist repository-prepared, aber NICHT als auf D1 angewendet bestätigt. Mutation-Runtime-Tests erst nach expliziter Migration im gewählten Test-/Produktions-D1.
-3. Real-Browser-Abnahme: offline speichern -> Reload -> reconnect; Retry ohne Duplicate; sichtbarer Conflict; revoked access stoppt blind retry; transienter Fehler bleibt queued; MapLibre-Verhalten unverändert.
-4. PR #24 bleibt Draft bis diese Gates dokumentiert bestanden sind.
+AKTUELL NOCH OFFEN — NICHT ALS BESTANDEN DARSTELLEN:
+1. Real-Browser-Abnahme: offline speichern -> Reload während weiterhin offline -> reconnect -> Queue synchronisiert;
+2. Retry/Reconnect erzeugt keinen Duplicate-Effekt;
+3. echter Target-Konflikt wird sichtbar und überschreibt nichts still;
+4. revoked/ungültiger Access stoppt blind retry und bleibt sichtbar access-blocked;
+5. transienter Fehler bleibt queued und wird später erneut versucht;
+6. gespeicherte MapLibre Areas/Streets und aktives Edit-Verhalten bleiben unverändert;
+7. finaler Repository-Head muss vor Merge grün sein.
+
+PR #24 bleibt Draft bis diese Browser-Gates dokumentiert bestanden sind.
 
 Wenn eine neue KI M5 übernimmt, muss sie zuerst `CURRENT.md`, Plan 010, ADR-0011, OFFLINE_SYNC, DATA, SECURITY, DEPLOYMENT sowie PR #24/aktuelles CI prüfen und dann auf DEM BESTEHENDEN Branch/PR weiterarbeiten.
 
@@ -180,7 +187,7 @@ Wenn eine manuelle Cloudflare-Aktion des Users nötig ist:
 - frage immer nur genau EINE manuelle Aktion gleichzeitig an;
 - gib den exakten Klick/Befehl an;
 - frage genau EIN nicht-sensitives Ergebnis zurück;
-- bitte niemals darum, Secret-Werte oder Access Tokens in den Chat zu kopieren.
+- bitte niemals darum, Secret-Werte, OAuth-/Device-Codes oder Access Tokens in den Chat zu kopieren.
 
 DEIN START IN JEDEM FRISCHEN CHAT
 
