@@ -67,20 +67,20 @@ For PR head `3232e9e180fb3e2706278157e6fabccf0c4efeac` on 2026-08-25:
 - source review confirms MapLibre 5.7.1 is pinned and saved geometry uses the accepted constant-source/layer architecture;
 - ADR, deployment, production and status documentation match the initial-style GeoJSON lifecycle used by the code.
 
-This acceptance-note update changes documentation only. Its resulting head still requires normal CI and exact Cloudflare preview deployment before merge, but runtime browser results below remain applicable because no application/runtime code changed.
+Acceptance-note updates after that runtime head change documentation only. Their resulting heads still require normal CI and exact Cloudflare preview deployment before merge, while the runtime browser results below remain applicable because no application/runtime code changed.
 
 ## Real-browser acceptance completed
 
-User testing against the Cloudflare preview for runtime head `3232e9e180fb3e2706278157e6fabccf0c4efeac` confirmed the current behavior is very good for the requested renderer smoke slice:
+User testing against the Cloudflare preview for runtime head `3232e9e180fb3e2706278157e6fabccf0c4efeac` confirmed:
 - saved Area remains visible and selectable after Save;
 - saved Street remains visible and selectable after Save;
-- pan/zoom/rotate behavior is acceptable and saved geometry remains visually aligned with the map.
+- pan/zoom/rotate behavior is acceptable and saved geometry remains visually aligned with the map;
+- Area edit handles are visible only while active, remain usable during editing and disappear again after leaving the edit flow.
 
 ## External acceptance still required
 
 The remaining gates require an actual interactive browser/device against the runtime-equivalent final Cloudflare preview:
 
-- enter/leave draw and edit modes and confirm handles exist only while active and remain usable;
 - confirm bottom field toolbar positioning on desktop and mobile safe areas;
 - verify Admin recovery on the target preview origin with the configured server-only secret;
 - verify `?diag=1` reports `maplibre-geojson` and useful FPS/long-frame/source/rendered counts;
