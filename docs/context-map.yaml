@@ -149,6 +149,13 @@ nodes:
     topics: [adr, architecture-decisions, history]
     load_when: [architecture change, security decision, superseding a boundary]
 
+  - id: adr-offline-map-data
+    path: docs/decisions/ADR-0012-prepared-offline-map-data.md
+    type: decision
+    status: accepted
+    topics: [offline-map, osm, overpass, indexeddb, geojson, m5.5]
+    load_when: [prepared offline map, OSM source, offline map package, M5.5 implementation, Smart Street source]
+
   - id: plan-renderer-recovery
     path: docs/plans/completed/008-renderer-access-recovery.md
     type: plan
@@ -168,7 +175,7 @@ nodes:
     type: plan
     status: completed
     topics: [M5, mutation-queue, indexeddb, idempotency, conflicts, reconnect, authorization]
-    load_when: [M5 history, PR 24 history, durable mutation queue, reconnect acceptance, conflict acceptance]
+    load_when: [M5 history, PR 24 history, durable mutation queue architecture, conflict acceptance history]
 
   - id: plan-offline-map
     path: docs/plans/active/011-offline-map-area.md
@@ -202,21 +209,18 @@ edges:
   - { from: product, to: roadmap, relation: expands_into }
   - { from: product, to: mvp, relation: release_subset }
   - { from: ux, to: product, relation: implements_experience }
-
   - { from: architecture, to: product, relation: implements }
   - { from: stack, to: architecture, relation: constrains }
   - { from: map, to: architecture, relation: component_of }
   - { from: data, to: architecture, relation: component_of }
   - { from: offline-sync, to: data, relation: depends_on }
   - { from: security, to: data, relation: constrains }
-
   - { from: roadmap, to: organizations, relation: plans }
   - { from: roadmap, to: identity-permissions, relation: plans }
   - { from: roadmap, to: live-teams, relation: plans }
   - { from: roadmap, to: collaboration, relation: plans }
   - { from: roadmap, to: offline-sync, relation: plans }
   - { from: roadmap, to: map, relation: extends_with_streets_houses_pickup_and_offline }
-
   - { from: organizations, to: security, relation: constrained_by }
   - { from: organizations, to: identity-permissions, relation: uses }
   - { from: organizations, to: data, relation: requires_schema_extension }
@@ -228,12 +232,13 @@ edges:
   - { from: collaboration, to: security, relation: constrained_by }
   - { from: collaboration, to: data, relation: requires_event_data }
   - { from: collaboration, to: offline-sync, relation: benefits_from_mutations }
-
   - { from: quality, to: architecture, relation: validates }
   - { from: deployment, to: architecture, relation: operates }
   - { from: first-deploy, to: deployment, relation: procedure_for }
   - { from: production, to: deployment, relation: records }
-
+  - { from: adr-offline-map-data, to: map, relation: governs }
+  - { from: adr-offline-map-data, to: stack, relation: constrains }
+  - { from: adr-offline-map-data, to: offline-sync, relation: shares_indexeddb_boundary }
   - { from: plan-renderer-recovery, to: map, relation: changed }
   - { from: plan-renderer-recovery, to: security, relation: changed }
   - { from: plan-platform-roadmap, to: roadmap, relation: foundation_for }
@@ -244,7 +249,8 @@ edges:
   - { from: plan-offline-map, to: roadmap, relation: implements_m5_5 }
   - { from: plan-offline-map, to: map, relation: extends }
   - { from: plan-offline-map, to: offline-sync, relation: shares_indexeddb_constraints }
-  - { from: plan-offline-map, to: stack, relation: requires_provider_decision }
+  - { from: plan-offline-map, to: stack, relation: governed_by_adr_0012 }
+  - { from: plan-offline-map, to: adr-offline-map-data, relation: governed_by }
   - { from: plan-platform-expansion, to: roadmap, relation: executes }
   - { from: plan-platform-expansion, to: ux, relation: defines_target_experience }
   - { from: plan-platform-expansion, to: organizations, relation: plans_m8 }
@@ -254,7 +260,6 @@ edges:
   - { from: plan-platform-expansion, to: map, relation: extends }
   - { from: plan-platform-expansion, to: security, relation: constrained_by }
   - { from: plan-platform-expansion, to: quality, relation: validated_by }
-
   - { from: prompts, to: architecture, relation: onboards_to }
   - { from: prompts, to: roadmap, relation: onboards_to }
   - { from: prompt-platform-expansion, to: plan-platform-expansion, relation: starts }
