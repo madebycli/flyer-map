@@ -3,101 +3,187 @@ id: architecture-organizations
 type: architecture
 status: proposed
 last_updated: 2026-08-25
-related: [product-roadmap, architecture-security, architecture-data]
-source_of_truth_for: [future-organization-model, future-admin-panel-boundary]
+related: [product-roadmap, architecture-security, architecture-data, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion]
+source_of_truth_for: [future-organization-model, future-admin-panel-boundary, future-multi-admin]
 ---
 
 # Organizations and Admin Platform — Proposed
 
 ## Purpose
 
-This document defines constraints for the future multi-organization/Admin milestone. It is **not yet implemented** and does not change current Campaign authorization by itself.
+Define constraints for the future multi-organization and Admin platform.
 
-## Target model
+This is not yet implemented and does not change current Campaign authorization by itself.
 
-Future top-level hierarchy:
+## Target hierarchy
 
 ```text
 Organization
-  ├─ Organization members / administrators
+  ├─ Administrator/member accounts
+  ├─ Permission policies / role templates
   ├─ Campaigns
   │   ├─ Teams
-  │   ├─ Areas
-  │   └─ Tasks
-  └─ Organization settings / operational overview
+  │   │   ├─ Areas
+  │   │   ├─ Field Groups / Field Sessions
+  │   │   └─ Team-specific invites/access
+  │   ├─ Distribution Tasks
+  │   └─ Pickup Tasks
+  └─ Organization settings / audit / operational overview
 ```
 
-An Organization is a tenant boundary. Campaigns must belong to exactly one Organization once this model is introduced.
+Organization is the tenant boundary. Campaigns belong to exactly one Organization after migration.
 
-## Multiple admins
+## Multiple administrators
 
-The product must support more than one authorized administrator. No design may assume that one original creator is the only durable owner.
+More than one authorized Organization Admin is mandatory.
 
-Future admin capabilities may include:
+No design may assume one original creator is the only durable owner.
+
+Administrator capabilities may include:
 - create/archive Campaigns;
 - manage Organization settings;
-- invite/remove administrators and other organization-scoped roles;
-- review Campaign access;
-- view organization-wide statistics/activity where authorized;
-- recover/rotate access through an explicit safe process.
+- invite/create/disable administrators according to accepted identity policy;
+- manage permissions;
+- manage Team archive/delete;
+- review Campaign/Team access;
+- view Organization-wide statistics/activity;
+- manage security/recovery according to policy.
+
+## Admin handover
+
+Admin access must be transferable without sharing passwords or TOTP secrets.
+
+Safety requirements:
+- do not accidentally remove the last effective Organization Admin;
+- admin promotion/removal is audited;
+- safe recovery exists without first-visitor/race-to-claim behavior;
+- a disabled/revoked account loses server-side authority promptly.
+
+## Administrator identity
+
+Requested future account model:
+- username;
+- password;
+- authenticator-app TOTP;
+- no SMS requirement;
+- no mandatory email identity.
+
+The full security design is governed by `docs/architecture/IDENTITY_PERMISSIONS.md` and requires an accepted ADR before implementation.
+
+## Permission model
+
+Current fixed Campaign roles are not enough for the requested Admin settings.
+
+Future Admin must be able to configure capabilities such as:
+- whether users can create Teams;
+- rename/change Team color;
+- archive/delete Teams;
+- create/edit/delete Areas;
+- edit own-Team vs other-Team Areas;
+- edit/delete own-Team vs other-Team Streets/Houses/Pickup Tasks;
+- manage Team invites;
+- create/manage live Field Groups;
+- control live-group discoverability policy;
+- view statistics;
+- manage comments/moderation where applicable;
+- change Campaign settings;
+- manage permissions;
+- manage administrators.
+
+Rules:
+- deny by default;
+- Worker evaluates effective capability on every protected action;
+- UI reflects but never grants authority;
+- Organization boundary cannot be overridden by permission configuration;
+- permission changes are audited.
+
+Exact role-template/override semantics require ADR.
+
+## Team archive/delete
+
+Team deletion is explicitly required but must not destroy history accidentally.
+
+Before implementation define:
+- archive vs hard delete;
+- handling of Areas/Tasks;
+- Field Sessions/activity/comments;
+- invites/access grants;
+- statistics/history;
+- restore behavior;
+- scoped credentials after Team removal.
+
+Preferred direction is archive/tombstone for normal administration, with hard delete only where explicitly safe/required.
 
 ## Admin panel boundary
 
-The Admin panel is a separate administrative surface, not a replacement for the field map.
+Admin is a separate desktop-first administrative surface.
 
 Field map:
 - map-first;
-- minimal controls;
-- Campaign/Team work;
-- fast status updates.
+- compact controls;
+- Team/Field Group work;
+- Task updates;
+- progress context.
 
 Admin panel:
-- organization/Campaign management;
-- access and role management;
-- statistics/reporting;
-- automation configuration;
-- audit/activity review;
-- desktop-friendly layouts while remaining usable on mobile.
+- Organizations;
+- Campaigns;
+- Teams and archive/delete;
+- Team colors/metadata/date;
+- Areas/ownership;
+- access and invites;
+- permission settings;
+- live-group policies;
+- statistics/Field Sessions;
+- comments/activity/audit;
+- support/feedback;
+- accounts/security.
+
+Admin must remain responsive, but desktop may use denser tables/forms than field UI.
 
 ## Security requirements
 
-Before implementation, define an explicit identity/membership architecture in an ADR.
+Mandatory:
+- tenant scope enforced by Worker/D1 query boundaries;
+- no cross-Organization reads/writes/statistics/comments/activity;
+- account authentication never replaces resource authorization;
+- ids are selectors, never credentials;
+- parameterized/prepared D1 queries for user-controlled input;
+- sensitive management actions create audit records;
+- recovery never creates anonymous ownership.
 
-Mandatory properties:
-- organization scope enforced by the Worker/D1 query boundary;
-- no cross-organization reads/writes;
-- role changes/revocation take effect server-side;
-- administrator recovery does not create an anonymous first-visitor ownership path;
-- Campaign ids and Organization ids are selectors, never credentials;
-- sensitive management operations have clear audit/activity records.
+## Relationship to current Campaign roles
 
-## Relationship to current M4 roles
-
-Current roles are Campaign-scoped:
+Current roles remain until an explicit migration:
 - Admin;
 - Team Editor;
 - Viewer.
 
-They remain the current baseline until the organization slice explicitly migrates them. Do not silently reinterpret a Campaign Admin as an Organization Admin.
+Do not silently reinterpret current Campaign Admin as Organization Admin.
 
-A future model may preserve Campaign roles below Organization membership, but the exact matrix is not yet accepted.
+The future model may preserve lightweight Campaign/Team access for field participants while Organization administrators use accounts.
 
-## Data migration constraints
+This boundary must be defined in ADR before migration.
 
-Existing Campaigns must not disappear when Organizations are introduced.
+## Legacy migration
 
-A migration plan must:
-- create an Organization container for legacy Campaigns or provide an explicit claiming/migration operation;
-- preserve Campaign ids, geometry, revisions, access grants and history where possible;
-- avoid race-to-claim ownership;
-- be additive in D1 migrations.
+Existing Campaigns must not disappear.
 
-## Open decisions
+Migration plan must:
+- create/associate Organization container safely;
+- preserve Campaign ids, geometry, revisions, grants and history where practical;
+- avoid first-visitor claim races;
+- use additive D1 migrations;
+- define how current Admin grants coexist with/migrate to account-based admin authority.
 
-Require ADR/product design before implementation:
-- account/identity model for Organization Admins;
-- invitation and recovery mechanisms;
-- whether ordinary field access links remain independent of organization login;
-- role matrix and inheritance;
-- organization deletion/export/retention;
-- organization-scoped audit retention.
+## Open decisions requiring ADR
+
+- account schema and password hashing;
+- TOTP secret protection and recovery;
+- account-session model;
+- invitation/onboarding for additional admins;
+- role templates/capability overrides;
+- legacy Campaign Admin migration;
+- Organization deletion/export/retention;
+- audit retention;
+- whether field access links remain independent from administrator login.
