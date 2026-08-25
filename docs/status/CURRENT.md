@@ -37,19 +37,23 @@ Campaign id is only a selector. Access/session authorization is Worker-enforced.
 
 ## PR #21 state
 
-Repository-controlled implementation and documentation work for Plan 008 is complete enough for final acceptance:
-- renderer/access recovery code is present on `renderer-access-recovery`;
-- automated `npm run check` CI has passed on the pre-doc-cleanup head;
-- Cloudflare successfully deployed the matching pre-doc-cleanup head as a preview;
-- ADR/deployment/production documentation now matches the initial-style GeoJSON lifecycle used by the code.
+Repository-controlled implementation/documentation gates are healthy on runtime head `3232e9e180fb3e2706278157e6fabccf0c4efeac`:
+- GitHub Actions CI #169 passed;
+- Cloudflare deployed the exact head successfully as preview;
+- ADR/deployment/production documentation matches the initial-style GeoJSON lifecycle used by the code.
 
-The final PR head still must be green and deployed after the documentation cleanup.
+Real-browser acceptance has now also confirmed the requested saved-renderer smoke slice on that runtime head:
+- saved Area remains visible/selectable after Save;
+- saved Street remains visible/selectable after Save;
+- pan/zoom/rotate behavior is good and saved geometry remains aligned with the basemap.
 
-Do **not** merge until real-browser/device acceptance confirms saved Area/Street visibility + selection, browse alignment, edit-only handles, toolbar/safe-area behavior, Admin recovery on the target origin and representative dense Street datasets at 500 / 1,000 / 2,500 / 5,000 features (or records a concrete blocker).
+A later acceptance-note commit only changes documentation; it still requires normal CI + exact Cloudflare preview deployment, but the runtime browser result remains applicable because application/runtime code did not change.
+
+Do **not** merge until the remaining real-browser/device gates confirm edit/draw handle behavior, toolbar/safe-area behavior, Admin recovery on the target origin, diagnostics output and representative dense Street datasets at 500 / 1,000 / 2,500 / 5,000 features (or records a concrete blocker).
 
 ## Active plans
 
-- `docs/plans/active/008-renderer-access-recovery.md` — external browser/device acceptance + final PR #21 merge gate.
+- `docs/plans/active/008-renderer-access-recovery.md` — remaining external browser/device acceptance + final PR #21 merge gate.
 - `docs/plans/active/009-product-platform-foundation.md` — ordered next-platform plan after PR #21 is merged and production is healthy.
 
 ## Accepted next roadmap
@@ -68,6 +72,6 @@ Organization and collaboration/statistics architecture are currently **proposed*
 
 ## Immediate next
 
-1. Let CI and Cloudflare preview verify the final PR #21 documentation-cleanup head.
-2. Perform the required real-browser/phone and dense-data acceptance on that exact preview head.
-3. If accepted, move Plan 008 to completed, merge PR #21, verify production, then start M5 from Plan 009 on a fresh branch from current `main`.
+1. Let CI and Cloudflare preview verify the documentation-only acceptance-note head.
+2. Continue the remaining real-browser/phone acceptance without repeating already-passed renderer smoke checks.
+3. If all remaining gates pass, move Plan 008 to completed, merge PR #21, verify production, then start M5 from Plan 009 on a fresh branch from current `main`.
