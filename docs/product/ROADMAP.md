@@ -44,6 +44,24 @@ Planned capabilities:
 
 No service worker or Background Sync API.
 
+### M5.5 — Downloadable offline working area
+
+Goal: after deliberate preparation, the field map remains geographically useful during an offline reload instead of retaining only Campaign geometry on a blank basemap.
+
+Planned capabilities:
+- Settings action to download an offline working area;
+- initial/default target of approximately **3 km around the current map center**;
+- downloaded map context stored durably in browser IndexedDB;
+- saved Areas/Streets remain rendered and selectable above the offline map context;
+- offline edits continue through the M5 durable mutation queue;
+- update/delete controls for local map packages;
+- clear download/storage/error state and required attribution;
+- no Service Worker/PWA requirement.
+
+The current CARTO raster basemap must not be cached/stored for this feature because CARTO Basemap terms prohibit storing/caching basemap content. Before implementation, select an offline-permitted OSM/OSM-derived source and package format through an explicit ADR.
+
+Plan 011 is the implementation plan for this milestone. Prefer a map-data pipeline that can also support M6 Smart Street + House geometry rather than maintaining two unrelated datasets.
+
 ### M6 — Smart Street + House Tasks
 
 Goal: stop using freehand street tracing as the normal workflow.
@@ -151,9 +169,13 @@ Field flows remain one-handed and map-centric. Desktop/admin functionality can b
 
 No native app, installable PWA, service worker or Background Sync unless a later accepted ADR explicitly changes the website-only decision.
 
+Browser-local IndexedDB storage for deliberate map packages and mutation queues is allowed when it solves concrete field needs.
+
 ## Not decided yet
 
 The following require design/ADR work before implementation:
+- offline map data source/provider and package format;
+- offline package size/zoom/detail limits and refresh policy;
 - organization identity/login model;
 - whether organization admins use account login, durable invitations, or another credential model;
 - exact OSM road/building data provider and caching strategy;
