@@ -2,7 +2,9 @@
 id: architecture-stack
 type: architecture
 status: accepted
-last_updated: 2026-08-24
+last_updated: 2026-08-25
+related: [architecture, architecture-map]
+source_of_truth_for: [runtime-stack, dependency-policy]
 ---
 
 # Stack
@@ -10,62 +12,69 @@ last_updated: 2026-08-24
 ## Client
 
 - TypeScript
-- React
+- React 19
 - Vite
 - plain CSS
-- MapLibre GL JS
-- browser SVG for Verteil-Flyer application geometry
+- MapLibre GL JS **5.7.1 pinned**
 
-React owns the field UI and campaign snapshot state. It is not permission to add a heavy component framework.
+React owns the website UI and current in-memory Campaign state. Do not introduce a heavy component framework without a concrete need.
 
-The product is a normal mobile-first website. It does not use a Web App Manifest or service worker for installation.
-
-M3 keeps browser `localStorage` as the startup/last-known snapshot cache and fallback while the Worker + D1 become the shared source of truth.
+The product is a normal mobile-first website. No native app, service worker, installable PWA or Web App Manifest installation flow is part of the accepted baseline.
 
 ## Cloudflare
 
 - Cloudflare Workers
 - Workers Static Assets
 - Cloudflare Vite plugin
-- Cloudflare D1 for shared campaign persistence
+- Cloudflare D1
 
-The frontend and API deploy as one Worker unit.
+Frontend assets and API deploy as one Worker unit.
 
 ## Map
 
-- MapLibre GL JS for CARTO Voyager Retina raster basemap rendering, navigation and local one-shot geolocation
-- independent SVG overlay for areas, streets, selected geometry, draw/edit previews and vertex markers
-- four CARTO CDN hosts for tile delivery
-- OpenStreetMap-derived basemap data
+- CARTO Voyager Retina raster basemap using OpenStreetMap-derived data
+- MapLibre for basemap, camera, rotation/compass, one-shot geolocation, saved Areas and saved Street Tasks
+- two long-lived application GeoJSON sources for saved geometry
+- a small constant set of MapLibre Fill/Line layers
+- independent SVG overlay only for active Area draw/edit and Street draw geometry/handles
 
-The production-phone stability gate forbids reintroducing MapLibre application GeoJSON layers. Application selection uses the existing application-side point-in-polygon and screen-distance hit testing.
+Normal browse pan/zoom/rotate must not execute an application projection/repaint loop over every saved Area/Street.
 
-The basemap provider configuration must stay isolated so it can be replaced without rewriting application logic.
+### MapLibre version pin
 
-## Persistence
+`maplibre-gl` is currently pinned to `5.7.1` in `package.json`.
 
-M3 uses:
-- the existing schema-v2 campaign snapshot in the browser;
-- `GET/PUT` Worker snapshot endpoints;
-- a lightweight Worker version endpoint for polling;
-- normalized D1 tables for campaigns, teams, areas and street tasks;
-- one shared campaign revision for optimistic concurrency.
+The tested `6.4.1` runtime produced a real-browser GeoJSON rendering regression in this project: basemap/FPS were healthy while saved application GeoJSON became invisible/non-interactive. Therefore map runtime upgrades require explicit browser acceptance with saved Area + Street visibility and hit testing, not just green TypeScript/CI.
 
-A durable offline mutation queue remains M5 scope.
+## Persistence and sync
+
+Current shared persistence:
+- Cloudflare D1 as server source of truth;
+- localStorage last-known snapshot/cache;
+- protected Worker snapshot/version API;
+- coarse Campaign revision for optimistic concurrency;
+- secure Campaign-scoped access/session authorization.
+
+M5 is planned to add an IndexedDB-backed durable mutation queue and idempotent narrower writes. No service worker or Background Sync API.
+
+## Future data/tooling
+
+Planned Smart Street/House work may add a reviewed OSM/OSM-derived geometry data dependency. Do not select a provider or add a large geospatial dependency before the M6 research/design slice documents licensing, caching and performance constraints.
+
+Planned statistics/admin features should prefer server/domain data and small focused UI dependencies. Avoid adding analytics SDKs or dashboard frameworks merely to render a few charts/tables.
 
 ## Dependency policy
 
-A dependency should be added only when it provides meaningful value that would be costly or risky to implement locally.
+Add a dependency only when it solves a demonstrated problem more safely/cheaply than local code.
 
-Avoid adding:
-- component suites
-- animation frameworks
-- large utility libraries for one function
-- analytics SDKs in MVP
-- external font packages
-
-M3 introduces no synchronization library: normal Fetch, localStorage and the D1 Worker API are sufficient for this milestone.
+Avoid:
+- heavy component suites;
+- animation frameworks without UX value;
+- large utility libraries for one function;
+- unnecessary telemetry/analytics SDKs;
+- external font packages;
+- per-feature map libraries when MapLibre already provides the primitive.
 
 ## Version policy
 
-Dependencies are pinned in `package.json`. Upgrade intentionally through review rather than silently drifting major versions.
+Dependencies are intentionally pinned in `package.json`. Upgrade through review and real acceptance where runtime behavior matters; do not silently drift major versions.
