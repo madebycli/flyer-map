@@ -128,6 +128,13 @@ nodes:
     topics: [deploy, cloudflare, github, production, d1]
     load_when: [deployment, migration, Worker config, Cloudflare]
 
+  - id: first-deploy
+    path: docs/operations/FIRST_DEPLOY.md
+    type: operations
+    status: historical-procedure
+    topics: [cloudflare, setup, first-deploy, workers]
+    load_when: [new environment setup only]
+
   - id: production
     path: docs/operations/PRODUCTION.md
     type: operations
@@ -227,6 +234,7 @@ edges:
   - { from: collaboration, to: offline-sync, relation: benefits_from_mutations }
   - { from: quality, to: architecture, relation: validates }
   - { from: deployment, to: architecture, relation: operates }
+  - { from: first-deploy, to: deployment, relation: procedure_for }
   - { from: production, to: deployment, relation: records }
   - { from: adr-offline-map-data, to: map, relation: governs }
   - { from: adr-offline-map-data, to: stack, relation: constrains }
