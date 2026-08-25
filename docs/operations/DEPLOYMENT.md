@@ -34,7 +34,7 @@ Applied migrations are immutable history:
 - `migrations/0002_m4_access.sql` — M4 access/session + shared map focus, applied to Production on 2026-08-24.
 
 M5 PR #24 adds:
-- `migrations/0003_m5_mutations.sql` — durable mutation idempotency ledger.
+- `migrations/0003_m5_mutations.sql` — durable mutation idempotency ledger with canonical mutation fingerprint.
 
 Do not rewrite `0001`/`0002` to simulate an upgrade.
 
@@ -103,15 +103,16 @@ After the M5 migration and Worker deployment:
 2. Campaign id alone cannot read protected Campaign data or submit mutations;
 3. Viewer mutation requests return authorization failure and do not create ledger entries;
 4. Team Editor may mutate only its scoped Team's Areas/Tasks and cannot change Campaign/Admin configuration;
-5. the same mutation id retried with valid access returns the prior applied revision and does not duplicate the effect;
-6. a safe queued mutation may apply after an unrelated newer Campaign revision when its target precondition still matches;
-7. a changed/deleted target produces explicit 409 conflict and is not silently overwritten;
-8. save while offline, reload the page, restore access if needed, reconnect, and confirm the queued mutation is still delivered;
-9. 401/403 on a queued mutation leaves it locally visible as access-blocked and stops blind retry;
-10. transient network/server failure retains the mutation and retries with bounded backoff;
-11. manual refresh, `online` and visible-tab return trigger another eligible queue attempt;
-12. current localStorage snapshot still provides startup state while IndexedDB is the source of truth for unacknowledged M5 delivery;
-13. saved MapLibre Areas/Streets remain visible/selectable and active edit behavior is unchanged from the accepted PR21 baseline.
+5. the same mutation id **with the same canonical fingerprint/content** retried with valid access returns the prior applied revision and does not duplicate the effect;
+6. reusing the same mutation id with changed content returns `409 mutation_id_reused` and does not acknowledge or apply the changed effect;
+7. a safe queued mutation may apply after an unrelated newer Campaign revision when its target precondition still matches;
+8. a changed/deleted target produces explicit 409 conflict and is not silently overwritten;
+9. save while offline, reload the page, restore access if needed, reconnect, and confirm the queued mutation is still delivered;
+10. 401/403 on a queued mutation leaves it locally visible as access-blocked and stops blind retry;
+11. transient network/server failure retains the mutation and retries with bounded backoff;
+12. manual refresh, `online` and visible-tab return trigger another eligible queue attempt;
+13. current localStorage snapshot still provides startup state while IndexedDB is the source of truth for unacknowledged M5 delivery;
+14. saved MapLibre Areas/Streets remain visible/selectable and active edit behavior is unchanged from the accepted PR21 baseline.
 
 ## Existing access/renderer checks
 
