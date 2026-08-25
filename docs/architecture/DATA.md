@@ -101,6 +101,8 @@ Domain ids are opaque application ids. Browser-created entities use UUID-based i
 
 M5 mutation ids use UUID-backed `mutation_...` identifiers and are stable across retries. They are idempotency keys, not credentials.
 
+Each validated M5 mutation is canonicalized with deterministic object-key ordering and hashed with SHA-256. The resulting lowercase 64-character fingerprint binds the idempotency id to the mutation content.
+
 ## D1 migration history / rollout
 
 Applied production history remains immutable:
@@ -131,6 +133,7 @@ M5 ledger:
 - Campaign id;
 - mutation id;
 - mutation type;
+- canonical mutation SHA-256 fingerprint;
 - requested client base revision;
 - server revision from which it was applied;
 - resulting applied revision;
@@ -139,6 +142,8 @@ M5 ledger:
 
 Primary key:
 - `(campaign_id, mutation_id)`.
+
+`mutation_fingerprint` is required and constrained to 64 characters. It is used to distinguish a genuine duplicate retry from accidental/malicious reuse of the same mutation id with changed content.
 
 The ledger is for idempotency/auditability of mutation application. It is not an authorization credential and does not contain plaintext access/session secrets.
 
@@ -183,26 +188,31 @@ Protected endpoint:
 
 For a new mutation the Worker:
 1. validates the mutation;
-2. loads current snapshot;
-3. applies the mutation in memory with target-specific conflict preconditions;
-4. validates the resulting snapshot;
-5. authorizes current/candidate snapshots using the existing Worker policy;
-6. attempts a narrow row change and ledger insert guarded by current Campaign revision + internal `write_token`.
+2. computes its canonical SHA-256 fingerprint;
+3. loads current snapshot;
+4. applies the mutation in memory with target-specific conflict preconditions;
+5. validates the resulting snapshot;
+6. authorizes current/candidate snapshots using the existing Worker policy;
+7. attempts a narrow row change and ledger insert guarded by current Campaign revision + internal `write_token`.
 
 The D1 batch contains:
 - Campaign revision/write-token claim;
 - exactly the affected narrow domain statement;
-- mutation ledger insert.
+- mutation ledger insert including the mutation fingerprint.
 
 If the revision claim loses a race, the Worker reloads/re-evaluates for a bounded number of attempts. If the target remains compatible, the mutation can apply on the newer revision. If the target changed, an explicit conflict is returned.
 
-If `(campaign_id, mutation_id)` already exists, the server returns its prior applied revision without applying the domain effect again.
+If `(campaign_id, mutation_id)` already exists:
+- matching fingerprint -> return prior applied revision without applying the effect again;
+- different fingerprint -> return explicit `mutation_id_reused` conflict.
 
 ## Client durable queue data
 
 IndexedDB stores unacknowledged mutation records while localStorage continues to store the latest snapshot cache.
 
 Queue records are browser-local and include mutation payload, state, attempts/retry timing and last error. They are not synchronized as a separate server entity; successful server acknowledgement removes the queue record.
+
+During the short enqueue window there may also be one best-effort emergency localStorage shadow. It exists only to recover a mutation if IndexedDB enqueue fails or the page is interrupted before commit; after a successful IndexedDB transaction it is removed. Corrupt shadow data is discarded rather than treated as durable queue state.
 
 ## Future organization model
 
@@ -233,4 +243,5 @@ Intentionally local unless later changed:
 - planned UI light/dark/system preference;
 - active unsaved draw/edit draft;
 - M5 IndexedDB queue until its mutations are acknowledged;
+- short-lived best-effort M5 enqueue emergency shadow;
 - GPS route history (none exists).
