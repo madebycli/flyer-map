@@ -18,11 +18,7 @@ Initial product target: approximately **3 km around the current map center**.
 
 The project remains a normal website with no Service Worker/PWA under the current accepted architecture.
 
-A real-browser test showed that a full cold page reload while completely offline can show Chrome's normal offline/Dino page before application JavaScript loads. That is not user error and is not proof of IndexedDB data loss.
-
-Therefore this plan covers prepared local map data for offline field use. It does **not** promise strict cold app-shell startup without network.
-
-A strict cold-offline startup requirement would require a separate ADR revisiting the website-only/service-worker decision.
+A full cold page reload while completely offline can show the browser's normal offline page before application JavaScript loads. This plan covers prepared local map data for an already-loaded website and does not promise strict cold app-shell startup without network.
 
 ## Constraints
 
@@ -43,19 +39,19 @@ Direction:
 - browser requests a fixed approximately 3 km package through the existing Worker;
 - Worker owns the OSM/Overpass-compatible query template and validates radius/limits;
 - upstream endpoint is server-configurable and replaceable;
-- normalized versioned JSON/GeoJSON package preserves relevant OSM identity/tags;
-- package is stored device-locally in IndexedDB;
+- normalized versioned JSON/GeoJSON preserves relevant OSM identity/tags;
+- package is stored device-locally in a separate IndexedDB database;
 - no R2/vector-tile build pipeline in v1;
 - local MapLibre layers provide prepared offline context while the loaded website is offline;
 - existing Campaign Area/Street layers stay above that context;
-- same data direction should feed later M6 Smart Streets/Houses.
+- the same data direction should later feed M6 Smart Streets/Houses.
 
 Initial v1 parameters:
 - radius: 3,000 m;
 - feature priority: roads and building footprints plus only minimal reviewed context;
 - explicit OSM attribution and fetch/dataset timestamp;
 - advisory age/refresh UX rather than destructive automatic expiry;
-- atomic-enough replacement so failed updates preserve the previous package;
+- failed updates preserve the previous valid package;
 - bounded timeout/response/package sizes with visible errors.
 
 ## Intended UX
@@ -65,64 +61,64 @@ Settings contains `Offline-Kartenbereich`.
 Flow:
 1. user positions map;
 2. taps `3 km offline herunterladen`;
-3. UI shows estimate/progress;
+3. UI shows download/progress state;
 4. completed package shows center/radius/date/size;
 5. user can update/delete package;
-6. while website remains loaded and connectivity disappears, stored map data is used for covered bounds;
+6. while the website remains loaded and connectivity disappears, stored map data is used for covered bounds;
 7. Campaign Areas/Streets render above it;
 8. mutations continue through M5 queue;
 9. reconnect synchronizes normally.
 
-## Storage direction
-
-- browser IndexedDB;
-- device/browser-local, not Campaign D1 state;
-- package schema/version;
-- required attribution metadata;
-- preserve OSM feature identity needed by later M6 work;
-- atomic-enough replacement so failed update does not destroy last good package;
-- visible storage/download errors;
-- deletion/reclaim controls.
-
 ## Implementation slices
 
-### Slice 1: Worker/package contract — complete on PR #26 branch
+### Slice 1: Worker/package contract — complete and merged in PR #26
 
 Implemented:
-- shared `OfflineMapPackage v1` domain contract and structural validator;
-- fixed authenticated `POST /api/campaigns/:campaignId/offline-map/package` endpoint;
-- valid current Campaign session required for Admin, Team Editor or Viewer;
+- shared `OfflineMapPackage v1` domain contract and validator;
+- authenticated `POST /api/campaigns/:campaignId/offline-map/package` endpoint;
+- valid Campaign session required for Admin, Team Editor or Viewer;
 - strict center/radius validation with 3,000 m maximum;
 - fixed server-owned Overpass-compatible query template;
-- configurable server-side `OSM_OVERPASS_URL` with HTTPS requirement outside local development;
-- request/upstream/package byte limits and bounded upstream timeout;
+- configurable server-side `OSM_OVERPASS_URL`;
+- request/upstream/package byte limits and bounded timeout;
 - normalized OSM road LineStrings and building Polygons;
 - reviewed tag allowlist, preserved OSM way ids and inert tag values;
 - explicit OSM attribution/license/source timestamp metadata;
-- Worker wrapper delegates unchanged existing API routes instead of refactoring the established router;
 - tests for invalid radius, hostile client query text, normalization, response limits and timeout.
 
 Evidence:
-- initial CI #280 exposed a Node strip-types compatibility issue in the new error class;
-- the class was corrected without changing behavior;
-- CI #281 then passed tests, strict TypeScript and production build on runtime commit `3f5f6383c88036a7e8ee32eda2a95f13bd846461`;
+- CI #281 passed tests, strict TypeScript and production build after the initial strip-types compatibility fix;
+- final CI #285 passed;
+- PR #26 merged as `e5a97ac147168c9dcc3a53079324e3494508474f`.
+
+### Slice 2: IndexedDB lifecycle — complete on PR #27 branch
+
+Implemented:
+- separate IndexedDB database `verteil-flyer-offline-map`, isolated from the M5 mutation queue database;
+- one package record per Campaign;
+- structural package validation before replacement;
+- one transactional `put` replacement without deleting the previous record first;
+- read/delete lifecycle;
+- persisted UTF-8 JSON byte-size metadata;
+- package summary with center, radius, dates, size, attribution and feature counts;
+- corrupted package/size metadata is surfaced instead of silently used;
+- tests for reload persistence, invalid replacement, failed replacement preserving the previous package, summary metadata, deletion and corruption detection.
+
+Evidence:
+- CI #287 failed only because the Node strip-types test runner required an explicit `.ts` ESM import extension;
+- import fixed on commit `996dd5428dc5ce77cf7a57f76e97717411be44d5`;
+- CI #288 then passed tests, strict TypeScript and production build;
 - final docs-only head must remain green before merge.
 
-### Slice 2: IndexedDB lifecycle — next
+### Slice 3: Settings UX — next
 
-- package repository separate from M5 mutation queue stores;
-- write/validate new package before replacing previous active package;
-- read/update/delete and metadata/size reporting;
-- storage failure remains visible and previous valid package survives;
-- tests for reload persistence and replacement failure.
-
-### Slice 3: Settings UX
-
-- `Offline-Kartenbereich` settings entry;
-- use current map center for 3 km download;
-- progress/loading/error/success state;
-- package center/date/size and update/delete actions;
-- clear OSM attribution.
+- `Offline-Kartenbereich` settings entry visible to authorized Campaign users;
+- use current map center for the 3 km download;
+- loading/error/success state without pretending to know byte percentage when the upstream does not provide one;
+- package center/date/size/road/building metadata;
+- update/delete actions;
+- explicit OSM attribution;
+- safe handling of access, network, upstream and browser-storage errors.
 
 ### Slice 4: MapLibre offline context
 
@@ -138,7 +134,7 @@ Evidence:
 - dense urban 3 km package size/download/storage/render measurement;
 - Areas/Streets selection/edit regression;
 - M5 offline mutation queue/reconnect regression;
-- update/delete/replacement failure tests;
+- update/delete/replacement failure checks;
 - attribution visible offline.
 
 ## Relationship to M6
@@ -169,4 +165,4 @@ Use the reviewed normalized OSM package contract as the starting source for Smar
 
 ## Sequencing
 
-M5 is merged and ADR-0012 is accepted. Merge Slice 1 after its final head is green, then implement IndexedDB lifecycle, Settings UX, MapLibre offline context and real-device acceptance. Keep M6 behavior outside this plan until the prepared-area data path is stable enough to reuse.
+Merge Slice 2 after its final head is green, then implement Settings UX, MapLibre offline context and real-device acceptance. Keep M6 behavior outside this plan until the prepared-area data path is stable enough to reuse.
