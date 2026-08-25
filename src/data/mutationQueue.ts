@@ -106,9 +106,10 @@ export class IndexedDbMutationQueueStorage implements MutationQueueStorage {
   async getAll() {
     const database = await this.database();
     const transaction = database.transaction(STORE_NAME, "readonly");
+    const completion = transactionComplete(transaction);
     const request = transaction.objectStore(STORE_NAME).getAll();
     const records = (await requestResult(request)) as QueuedCampaignMutation[];
-    await transactionComplete(transaction);
+    await completion;
     return records;
   }
 
