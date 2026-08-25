@@ -3,7 +3,7 @@ id: operations-deployment
 type: operations
 status: active
 last_updated: 2026-08-25
-related: [architecture-stack, architecture-security, architecture-data, architecture-map]
+related: [architecture-stack, architecture-security, architecture-data, architecture-offline-sync, architecture-map]
 ---
 
 # Deployment
@@ -13,7 +13,7 @@ related: [architecture-stack, architecture-security, architecture-data, architec
 One Cloudflare Worker deployment containing:
 - Vite-built React static assets;
 - Worker API routes;
-- D1 binding `DB` for shared campaign persistence.
+- D1 binding `DB` for shared Campaign persistence.
 
 The repository is the source of truth. Normal releases flow from GitHub `main` to Cloudflare automatically; downloading/uploading builds from a phone is not part of the release process.
 
@@ -29,21 +29,41 @@ Production uses one D1 database named `flyer-map-db` with Worker binding name `D
 
 The real Cloudflare-provided database id is stored in the reviewed `d1_databases` entry in `wrangler.jsonc`; no placeholder or invented id is used.
 
-`migrations/0001_initial.sql` is immutable M3 production history. M4 adds `migrations/0002_m4_access.sql`; do not rewrite `0001` to simulate an upgrade.
+Applied migrations are immutable history:
+- `migrations/0001_initial.sql` — initial Campaign/Team/Area/Task schema;
+- `migrations/0002_m4_access.sql` — M4 access/session + shared map focus, applied to Production on 2026-08-24.
 
-Apply unapplied migrations intentionally to the remote database before merging Worker code that requires them:
+M5 PR #24 adds:
+- `migrations/0003_m5_mutations.sql` — durable mutation idempotency ledger.
+
+Do not rewrite `0001`/`0002` to simulate an upgrade.
+
+Apply unapplied migrations intentionally to the remote database before merging/deploying Worker code that requires them:
 
 ```bash
 npx wrangler d1 migrations apply flyer-map-db --remote
 ```
 
-Production `0002_m4_access.sql` was applied successfully on 2026-08-24 before M4 protected routes were merged.
+For M5, the expected Cloudflare output must show `0003_m5_mutations.sql` applied successfully (or already applied) before the mutation endpoint is accepted in that environment. Never ask the user to paste a Cloudflare API token or secret into chat.
+
+## M5 migration ordering
+
+PR #24 contains Worker code that queries/inserts `campaign_mutations`. Therefore:
+
+1. repository CI and final code review first;
+2. Cloudflare preview build of the exact PR head;
+3. apply `0003_m5_mutations.sql` to the D1 database used by the environment where mutation runtime acceptance will occur;
+4. then test `POST /api/campaigns/:id/mutations`, offline queue/reconnect/conflict behavior;
+5. merge to `main` only after the chosen production database is migration-ready;
+6. verify automatic Production deploy and smoke checks.
+
+Do **not** intentionally exercise the new mutation route against a D1 environment that still lacks `campaign_mutations`; that would only produce an expected database failure and is not meaningful acceptance.
 
 ## M4 bootstrap and operator recovery secret
 
-M4 intentionally does not allow a pre-M4 campaign to become owned by whichever browser visits first.
+M4 intentionally does not allow a pre-M4 Campaign to become owned by whichever browser visits first.
 
-The Worker reads the high-entropy operator credential from the Cloudflare secret `M4_BOOTSTRAP_SECRET`. It must never be committed to the repository, written into a campaign URL, stored in D1 as plaintext invite material, or shared as a normal field access link.
+The Worker reads the high-entropy operator credential from Cloudflare secret `M4_BOOTSTRAP_SECRET`. It must never be committed to the repository, written into a Campaign URL, stored in D1 as plaintext invite material, or shared as a normal field access link.
 
 The secret serves two explicit operator operations:
 
@@ -74,23 +94,32 @@ feature branch -> pull request -> CI -> Cloudflare preview
 -> Cloudflare automatic production build/deploy -> production smoke checks
 ```
 
-Schema-changing releases add the D1 migration gate before merge. The current renderer/access-recovery slice does not require an additional D1 migration beyond `0002_m4_access.sql`.
+Schema-changing releases add the D1 migration gate before runtime acceptance/merge. A green repository build alone does not prove that a missing Worker secret or unapplied D1 migration is ready in production.
 
-Production config changes are reviewed like code changes. A green repository build alone does not prove that a missing Worker secret or unapplied D1 migration is ready in production.
+## M5 post-migration / post-deploy checks
 
-## Post-deploy checks
+After the M5 migration and Worker deployment:
+1. `/api/health` returns `ok: true`, `persistence: "d1"` and `synchronization: "durable-mutations"`;
+2. Campaign id alone cannot read protected Campaign data or submit mutations;
+3. Viewer mutation requests return authorization failure and do not create ledger entries;
+4. Team Editor may mutate only its scoped Team's Areas/Tasks and cannot change Campaign/Admin configuration;
+5. the same mutation id retried with valid access returns the prior applied revision and does not duplicate the effect;
+6. a safe queued mutation may apply after an unrelated newer Campaign revision when its target precondition still matches;
+7. a changed/deleted target produces explicit 409 conflict and is not silently overwritten;
+8. save while offline, reload the page, restore access if needed, reconnect, and confirm the queued mutation is still delivered;
+9. 401/403 on a queued mutation leaves it locally visible as access-blocked and stops blind retry;
+10. transient network/server failure retains the mutation and retries with bounded backoff;
+11. manual refresh, `online` and visible-tab return trigger another eligible queue attempt;
+12. current localStorage snapshot still provides startup state while IndexedDB is the source of truth for unacknowledged M5 delivery;
+13. saved MapLibre Areas/Streets remain visible/selectable and active edit behavior is unchanged from the accepted PR21 baseline.
 
-After an access/renderer release:
-1. `/api/health` returns `ok: true` and reports `persistence: "d1"`;
-2. Campaign id alone cannot read protected Campaign snapshot/version data and returns an authorization failure;
-3. a valid Admin Access Link redeems into an HttpOnly session and can manage Campaign settings, Teams and access grants;
-4. Admin recovery rejects an incorrect operator secret and, with the configured secret, creates a fresh Admin session/link for an existing Campaign;
-5. a Team Editor Access Link can edit only its scoped Team's Areas/Tasks and cannot change Campaign/Admin configuration;
-6. a Viewer Access Link can read but cannot write;
-7. revoking a grant invalidates protected access for an already-issued session;
-8. opening the same authorized Campaign on two browsers receives remote changes through 30-second revision polling, visibility/online refresh or manual refresh without a full-page reload;
-9. an active draw/edit/street-draw draft is not silently replaced by a remote snapshot;
-10. personal camera center/zoom/bearing survives reload on the same browser and shared Campaign focus remains only the fallback for devices without a personal camera;
-11. rotation/compass remain aligned with saved MapLibre geometry and the small active SVG draw/edit overlay on a real phone;
-12. saved Areas/Streets stay visible and selectable after Save, edit handles remain edit-only, and ordinary browse pan/zoom/rotate performs no application-side saved-geometry projection loop;
-13. representative dense Street datasets are accepted at 500 / 1,000 / 2,500 / 5,000 features or a concrete blocker is recorded before merge.
+## Existing access/renderer checks
+
+Keep the existing baseline checks when a release touches those boundaries:
+- Admin access/recovery and revocation behavior;
+- Team Editor/Viewer scope;
+- active draw/edit draft safety during remote refresh;
+- personal vs shared camera behavior;
+- rotation/compass alignment;
+- no application-side saved-geometry projection loop;
+- dense Street performance follow-up tracked in #23 until separately accepted.
