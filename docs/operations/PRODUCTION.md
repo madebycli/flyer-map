@@ -27,7 +27,15 @@ Health endpoint:
 
 ## Current production baseline
 
-M4 access/session authorization is merged to `main` and is the production baseline.
+PR #21 (`renderer-access-recovery`) merged to `main` on 2026-08-25 as merge commit `63ea2e9c1e289b0c149fa4e229df6d02b81ef51d`.
+
+The merged baseline includes:
+- M4 Worker-enforced access/session authorization;
+- operator Admin recovery for existing Campaigns using server-only `M4_BOOTSTRAP_SECRET`;
+- MapLibre 5.7.1 with saved Areas/Streets in persistent GeoJSON sources/layers;
+- SVG only for active draw/edit input;
+- opt-in `?diag=1` renderer/performance diagnostics;
+- accepted mobile map/edit/toolbar behavior from Plan 008.
 
 Production prerequisites already completed:
 - Worker secret `M4_BOOTSTRAP_SECRET` configured outside the repository;
@@ -35,31 +43,26 @@ Production prerequisites already completed:
 - `migrations/0001_initial.sql` remains immutable production history;
 - `migrations/0002_m4_access.sql` was applied successfully on 2026-08-24.
 
-Until PR #21 merges, production intentionally remains on the M4 renderer/access baseline from `main`.
+## Merge evidence
 
-## PR #21 preview/release gate
+Before merge:
+- final PR head `791d8590f94efef2236968a8d7542d6d56123200` passed GitHub Actions CI #175;
+- Cloudflare reported a successful preview deployment for that exact head;
+- real-browser/mobile acceptance confirmed saved Area/Street visibility + selection, map alignment during pan/zoom/rotate, active-only Area edit handles and mobile toolbar/safe-area behavior.
 
-PR #21 (`renderer-access-recovery`) is the current post-M4 release candidate. It adds:
-- operator Admin recovery for existing Campaigns without weakening normal authorization;
-- MapLibre GeoJSON rendering for saved Areas and Street Tasks;
-- SVG only for active draw/edit input;
-- opt-in `?diag=1` renderer/performance diagnostics;
-- compact map refresh/UI follow-up;
-- refreshed repository context/roadmap documentation.
+After merge, GitHub `main` points to merge commit `63ea2e9c1e289b0c149fa4e229df6d02b81ef51d` and contains the accepted PR tree.
 
-Cloudflare must deploy the exact final PR head to a branch/commit preview before merge. CI success alone is not sufficient.
+## Post-merge health status
 
-Required real-browser/device acceptance before merge:
-1. saved Area remains visible and selectable after Save;
-2. saved Street remains visible and selectable after Save;
-3. browse geometry stays locked to the basemap during fast pan/zoom/rotate;
-4. edit/draw handles appear only in active modes and remain responsive;
-5. desktop bottom toolbar and mobile safe-area positioning remain usable;
-6. Admin recovery works on the target preview origin with the configured server-only secret;
-7. `?diag=1` reports renderer `maplibre-geojson` without exposing Campaign/token material;
-8. representative dense Street datasets are accepted at 500 / 1,000 / 2,500 / 5,000 features or a concrete blocker is documented before merge.
+This repository-only coding environment cannot currently resolve the public `workers.dev` hostname, so it cannot independently fetch the production root or `/api/health`. Do **not** convert that tooling/network limitation into a claim that production health was observed.
 
-After PR #21 merges, run the normal production smoke checks from `docs/operations/DEPLOYMENT.md`, then update this file and `docs/status/CURRENT.md` to record the new production baseline.
+GitHub #23 tracks the remaining deployed-origin operational validation, including:
+- public production root/health confirmation after the PR #21 merge;
+- Admin recovery smoke on the deployed origin using the configured server-only secret;
+- real-browser `?diag=1` output;
+- representative 500 / 1,000 / 2,500 / 5,000 Street browser/device stress runs.
+
+GitHub #22 separately tracks the desktop bottom-toolbar fit/spacing explicitly deferred by the user. Neither issue is already passed.
 
 ## Website-only rule
 
