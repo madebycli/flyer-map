@@ -3,6 +3,7 @@ import type { CampaignMutation } from "../domain/mutations";
 const DATABASE_NAME = "verteil-flyer-sync";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "mutations";
+const EMERGENCY_RECORD_KEY = "verteil-flyer:m5-mutation-emergency";
 
 export type MutationQueueState =
   | "pending"
@@ -41,6 +42,39 @@ function transactionComplete(transaction: IDBTransaction) {
     transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB transaction aborted."));
     transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB transaction failed."));
   });
+}
+
+function writeEmergencyRecord(record: QueuedCampaignMutation) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(EMERGENCY_RECORD_KEY, JSON.stringify(record));
+}
+
+function readEmergencyRecord() {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(EMERGENCY_RECORD_KEY);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<QueuedCampaignMutation>;
+    if (
+      typeof value.id !== "string" ||
+      typeof value.campaignId !== "string" ||
+      typeof value.createdAt !== "string" ||
+      !value.mutation ||
+      typeof value.mutation !== "object"
+    ) {
+      throw new Error("Emergency mutation record is invalid.");
+    }
+    return value as QueuedCampaignMutation;
+  } catch (error) {
+    throw new Error("Emergency mutation record could not be restored.", { cause: error });
+  }
+}
+
+function clearEmergencyRecord(id: string) {
+  if (typeof window === "undefined") return;
+  const current = readEmergencyRecord();
+  if (!current || current.id !== id) return;
+  window.localStorage.removeItem(EMERGENCY_RECORD_KEY);
 }
 
 export class IndexedDbMutationQueueStorage implements MutationQueueStorage {
@@ -102,6 +136,13 @@ export class MutationQueue {
     this.storage = storage;
   }
 
+  private async recoverEmergencyRecord() {
+    const record = readEmergencyRecord();
+    if (!record) return;
+    await this.storage.put(record);
+    clearEmergencyRecord(record.id);
+  }
+
   async enqueue(mutation: CampaignMutation) {
     const record: QueuedCampaignMutation = {
       id: mutation.id,
@@ -112,11 +153,15 @@ export class MutationQueue {
       attemptCount: 0,
       nextAttemptAt: 0,
     };
+
+    writeEmergencyRecord(record);
     await this.storage.put(record);
+    clearEmergencyRecord(record.id);
     return record;
   }
 
   async list(campaignId: string) {
+    await this.recoverEmergencyRecord();
     const records = await this.storage.getAll();
     return records
       .filter((record) => record.campaignId === campaignId)
