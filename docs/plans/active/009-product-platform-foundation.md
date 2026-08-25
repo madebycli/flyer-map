@@ -43,27 +43,43 @@ Current access baseline:
 
 Plan 008 is completed with real-browser acceptance for saved Area/Street visibility + selection, map alignment during pan/zoom/rotate, active-only Area edit handles and mobile toolbar/safe-area behavior.
 
-Known non-passed follow-ups remain visible and do **not** block starting M5 after PR #21 is merged and production is healthy:
+Known non-passed follow-ups remain visible:
 - GitHub #22 — desktop bottom-toolbar fit/spacing;
-- GitHub #23 — deployed-origin Admin recovery smoke, real-browser `?diag=1`, and representative 500 / 1,000 / 2,500 / 5,000 Street browser/device stress validation.
+- GitHub #23 — post-merge production health/deployed-origin Admin recovery smoke, real-browser `?diag=1`, and representative 500 / 1,000 / 2,500 / 5,000 Street browser/device stress validation.
 
-Do not describe #22 or #23 as completed until their own acceptance is actually observed. They must be resolved no later than M10 field hardening/release, and can be pulled forward earlier when convenient.
+Do not describe #22 or #23 as completed until their own acceptance is actually observed. They must be resolved no later than M10 field hardening/release and can be pulled forward earlier when convenient.
+
+## Current execution state
+
+PR #21 is merged. The repository coding environment still cannot independently resolve the public `workers.dev` hostname, so the production-health portion of #23 is not claimed passed.
+
+On 2026-08-25 the user explicitly instructed development to continue. M5 therefore proceeds on an isolated branch/PR from the current post-PR21 `main`, while **merge/production rollout remains gated by normal CI, Cloudflare preview, D1 migration and browser acceptance**.
+
+Active narrow M5 execution plan:
+- `docs/plans/active/010-m5-resilient-mutation-sync.md`;
+- PR #24 (`m5-resilient-sync-mainline`);
+- ADR-0011.
+
+The obsolete pre-PR21 M5 draft PR #17 is closed as superseded and must not be revived as the implementation branch.
 
 ## Work sequence
 
-### Phase A — establish post-PR21 baseline
+### Phase A — post-PR21 baseline
 
-Before starting M5:
-- confirm PR #21 is merged to current `main`;
-- confirm production deployment/health is normal;
-- start M5 on a fresh branch from current `main`;
-- keep #22 and #23 visible as deferred quality/operations work.
+Completed repository state:
+- PR #21 merged to current `main`;
+- M5 branch created fresh from current `main`;
+- Plan 010 + ADR-0011 created;
+- old divergent PR #17 closed as superseded.
 
-Do not repeat already accepted renderer/mobile smoke tests merely to begin M5 unless runtime code has changed in a way that invalidates the prior acceptance.
+Still tracked outside the M5 implementation branch:
+- public production-health verification in #23 when an environment with `workers.dev` access is available.
+
+This unresolved network verification does not authorize skipping M5 release gates; it only means implementation can continue without pretending the external check passed.
 
 ### Phase B — M5 resilient mutations
 
-Implement the durable synchronization foundation.
+Implement the durable synchronization foundation through Plan 010.
 
 Tasks:
 - IndexedDB-backed mutation queue;
@@ -201,4 +217,4 @@ For every phase:
 
 ## Immediate next action for a fresh agent
 
-If PR #21 is still open, finish its final CI/preview closeout and merge it. If PR #21 is merged and production is healthy, start Phase B/M5 by creating a dedicated M5 branch/PR and a narrower active implementation plan derived from this roadmap plan. Do not reopen completed Plan 008 merely because #22/#23 remain tracked follow-ups.
+If PR #24 is open, continue Plan 010 first: inspect its exact current head/CI, preserve the MapLibre 5.7.1 renderer, and finish M5 repository + runtime acceptance. Do not restart old PR #17. Only after M5 is merged/deployed should Phase C / M6 begin.
