@@ -9,7 +9,7 @@ date: 2026-08-26
 
 ## Status
 
-Proposed only. No join-code, QR or Field Group credential runtime implementation is authorized until the unresolved access-bootstrap choice is approved.
+Proposed only. The discovery/list behavior was clarified on 2026-08-26, but join-access bootstrap and credential lifetime details remain security decisions. No join-code, QR or Field Group credential runtime implementation is authorized yet.
 
 ## Context
 
@@ -23,6 +23,28 @@ Current security boundaries remain:
 - no continuous GPS surveillance;
 - no persistent Admin/Team access token may be embedded in a temporary Field Group QR.
 
+## Confirmed product direction
+
+A Field Group belongs to one Campaign/action and one persistent Team.
+
+When a group is created:
+- it receives a room code;
+- it receives a QR join representation;
+- its creator/manager can control a setting such as `online anzeigen`;
+- hiding it from the online list does not have to destroy the room code/QR;
+- closing the group invalidates future joining according to server-side policy.
+
+The Campaign has an online-groups list.
+
+Default list behavior:
+- show all active discoverable groups in the current Campaign/action;
+- `Alle in der Aktion` is the default filter;
+- user may filter to one Team to see only online groups belonging to that Team;
+- Team identity/color should remain visible in each list item;
+- groups with `online anzeigen = false` are excluded from discovery but may still be reachable by valid direct room code/QR according to the final join policy.
+
+There is no global/public list across unrelated Campaigns or Organizations.
+
 ## Proposed lifecycle
 
 A Field Group has an application-owned random id and belongs to exactly one Campaign + Team.
@@ -32,27 +54,36 @@ Proposed states:
 - `closed`: no new joins and temporary credentials invalid;
 - optional `expired`: server closes stale active groups after bounded lifetime.
 
-Creating a Field Group may start or attach to one Field Session, but exact event/session persistence remains governed by the future retention ADR.
+Creating a Field Group may start or attach to one Field Session, but exact event/session persistence remains governed by ADR-0017 once accepted.
 
 ## Discoverability
 
-Proposed rule:
-- active discoverable groups may be listed only to callers already authorized for that Campaign;
-- discoverability is enabled by default as requested, with explicit creator/manager opt-out;
-- discovery response exposes only operational fields required to choose a group: group display label, Team identity/color, coarse progress/session state and join availability;
-- no public search endpoint and no exact participant GPS/device fingerprint data.
+Confirmed visibility model:
+- `discoverable = true` exposes the active group in the current Campaign online-groups list;
+- `discoverable = false` hides it from that list;
+- discoverability is a group setting controlled only by an authorized creator/manager;
+- the list defaults to all discoverable groups in the Campaign;
+- an optional Team filter narrows the already-authorized Campaign list;
+- no filter may widen access beyond the Campaign boundary.
+
+Discovery responses should expose only operational fields required to choose a group:
+- group display label;
+- Team id/name/color;
+- coarse progress/session state if later approved;
+- join availability;
+- never exact participant GPS/device fingerprint data.
 
 ## Temporary credentials
 
-### Human code
+### Human room code
 
 Proposed manual code:
 - 10 characters from a human-safe Base32 alphabet;
 - generated from cryptographically secure random bytes;
 - case-insensitive presentation is allowed if canonical decoding is unambiguous;
 - never sequential and never derived from group id/name;
-- expires with a short Field Group lifetime and can be rotated/revoked immediately;
-- stored server-side only as a hash/derived lookup value, never plaintext after issuance where the lookup design permits;
+- expires/invalidates with group policy and can be rotated/revoked immediately;
+- stored server-side only as a hash/derived lookup value, never plaintext after issuance where lookup design permits;
 - strict join throttling is mandatory.
 
 Ten Base32 characters provide about 50 bits of random code space before online rate limiting.
@@ -84,7 +115,7 @@ Membership grants only the effective Field Group/Team capabilities defined by cu
 
 Closing/removing membership is checked server-side on subsequent privileged requests.
 
-## Unresolved product/security choice: can a join credential bootstrap Campaign access?
+## Still unresolved: can a room code/QR bootstrap Campaign access?
 
 ### Option J1: existing Campaign authorization required
 
@@ -98,9 +129,9 @@ Benefits:
 Trade-off:
 - every new device/person needs a separate Campaign/Team access step before joining the live group.
 
-### Option J2: code/QR may bootstrap temporary group-scoped Campaign access
+### Option J2: room code/QR may bootstrap temporary group-scoped access
 
-A valid join credential may establish a temporary session whose authorization is limited to the target Field Group/Team and expires with membership.
+A valid join credential may establish a temporary session whose authorization is limited to the target Field Group/Team and expires/revokes with membership.
 
 Benefits:
 - much simpler field onboarding from QR/code;
@@ -111,7 +142,7 @@ Trade-offs:
 - scope mapping and revocation need stronger tests;
 - temporary session must be clearly prevented from becoming persistent Team/Admin authority.
 
-This ADR remains proposed until J1/J2 is selected.
+The discovery/filter decision above does not decide J1/J2. This ADR remains proposed until that security/product choice is selected.
 
 ## Rate limiting and abuse controls
 
@@ -120,7 +151,7 @@ Current Cloudflare Workers provides a Rate Limiting binding. Proposed defense in
 - a second keyed limiter based on canonical code/group lookup key when available;
 - generic invalid/expired responses to avoid useful enumeration;
 - bounded request body and schema validation;
-- short credential expiry;
+- bounded credential lifetime/revocation;
 - server-side revocation check on every redemption;
 - audit/activity event for credential rotate/close and suspicious repeated failures once event storage exists.
 
@@ -145,7 +176,7 @@ When connectivity returns, revoked/closed membership must stop privileged sync r
 
 Before D1 schema/routes are implemented:
 1. select J1 or J2;
-2. confirm code alphabet/length and expiry policy;
+2. confirm code alphabet/length and expiry/rotation policy;
 3. define Field Group maximum lifetime and close behavior;
 4. define membership/session relationship to current Campaign sessions;
 5. define exact server-side authorization matrix for group members;
