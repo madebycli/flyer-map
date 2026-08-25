@@ -3,7 +3,7 @@ id: plan-011-offline-map-area
 type: plan
 status: active
 last_updated: 2026-08-25
-related: [product-roadmap, architecture-map, architecture-offline-sync, architecture-data, architecture-stack, quality, plan-012-platform-app-expansion, ADR-0012]
+related: [product-roadmap, architecture-map, architecture-offline-sync, architecture-data, architecture-stack, architecture-security, quality, plan-012-platform-app-expansion, ADR-0012]
 ---
 
 # Plan 011 — Prepared Offline Working Area
@@ -86,16 +86,29 @@ Flow:
 
 ## Implementation slices
 
-### Slice 1: Worker/package contract
+### Slice 1: Worker/package contract — complete on PR #26 branch
 
-- fixed authenticated Worker endpoint for prepared-area download;
-- strict center/radius validation and fixed server-owned upstream query templates;
-- configurable Overpass-compatible upstream;
-- upstream timeout and response-size limits;
-- normalized package v1 response with attribution, bounds, fetch time, roads/buildings and OSM identity;
-- unit tests for validation, hostile input, upstream failure and normalization.
+Implemented:
+- shared `OfflineMapPackage v1` domain contract and structural validator;
+- fixed authenticated `POST /api/campaigns/:campaignId/offline-map/package` endpoint;
+- valid current Campaign session required for Admin, Team Editor or Viewer;
+- strict center/radius validation with 3,000 m maximum;
+- fixed server-owned Overpass-compatible query template;
+- configurable server-side `OSM_OVERPASS_URL` with HTTPS requirement outside local development;
+- request/upstream/package byte limits and bounded upstream timeout;
+- normalized OSM road LineStrings and building Polygons;
+- reviewed tag allowlist, preserved OSM way ids and inert tag values;
+- explicit OSM attribution/license/source timestamp metadata;
+- Worker wrapper delegates unchanged existing API routes instead of refactoring the established router;
+- tests for invalid radius, hostile client query text, normalization, response limits and timeout.
 
-### Slice 2: IndexedDB lifecycle
+Evidence:
+- initial CI #280 exposed a Node strip-types compatibility issue in the new error class;
+- the class was corrected without changing behavior;
+- CI #281 then passed tests, strict TypeScript and production build on runtime commit `3f5f6383c88036a7e8ee32eda2a95f13bd846461`;
+- final docs-only head must remain green before merge.
+
+### Slice 2: IndexedDB lifecycle — next
 
 - package repository separate from M5 mutation queue stores;
 - write/validate new package before replacing previous active package;
@@ -156,4 +169,4 @@ Use the reviewed normalized OSM package contract as the starting source for Smar
 
 ## Sequencing
 
-M5 is merged and ADR-0012 is accepted. Implement Slice 1 first, then IndexedDB lifecycle, Settings UX, MapLibre offline context and real-device acceptance. Keep M6 behavior outside this plan until the prepared-area data path is stable enough to reuse.
+M5 is merged and ADR-0012 is accepted. Merge Slice 1 after its final head is green, then implement IndexedDB lifecycle, Settings UX, MapLibre offline context and real-device acceptance. Keep M6 behavior outside this plan until the prepared-area data path is stable enough to reuse.

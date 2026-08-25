@@ -3,8 +3,8 @@ id: architecture-stack
 type: architecture
 status: accepted
 last_updated: 2026-08-25
-related: [architecture, architecture-map]
-source_of_truth_for: [runtime-stack, dependency-policy]
+related: [architecture, architecture-map, ADR-0012]
+source_of_truth_for: [runtime-stack, dependency-policy, prepared-offline-map-stack]
 ---
 
 # Stack
@@ -30,6 +30,10 @@ The product is a normal mobile-first website. No native app, service worker, ins
 
 Frontend assets and API deploy as one Worker unit.
 
+M5.5 adds no new Cloudflare storage product. Prepared OSM packages are generated through the existing Worker and will be stored in browser IndexedDB. R2/PMTiles is intentionally not part of v1.
+
+The Worker entrypoint currently uses a narrow M5.5 wrapper that handles the prepared-map route and delegates all existing routes to the established Campaign Worker. This avoids an unrelated rewrite of the current API router.
+
 ## Map
 
 - CARTO Voyager Retina raster basemap using OpenStreetMap-derived data
@@ -52,14 +56,35 @@ Current shared persistence:
 - Cloudflare D1 as server source of truth;
 - localStorage last-known snapshot/cache;
 - protected Worker snapshot/version API;
-- coarse Campaign revision for optimistic concurrency;
+- IndexedDB-backed durable M5 mutation queue;
+- idempotent narrower mutation writes and explicit conflict/auth/retry states;
 - secure Campaign-scoped access/session authorization.
 
-M5 is planned to add an IndexedDB-backed durable mutation queue and idempotent narrower writes. No service worker or Background Sync API.
+There is no service worker or Background Sync API.
+
+Prepared offline map packages use a separate browser IndexedDB repository and are not Campaign D1 state.
+
+## Prepared OSM data
+
+ADR-0012 governs the M5.5 data path.
+
+Current v1 stack:
+- authenticated Campaign-scoped Worker endpoint;
+- fixed server-owned Overpass-compatible query template;
+- default development/beta upstream `https://overpass-api.de/api/interpreter`;
+- optional server-side `OSM_OVERPASS_URL` override for a replaceable compatible upstream;
+- normalized versioned JSON/GeoJSON package shared by Worker/client domain types;
+- roads and building footprints with reviewed OSM tag allowlist and preserved way ids;
+- hard radius, timeout and response/package limits;
+- browser IndexedDB package lifecycle in the next slice.
+
+No client-controlled Overpass query text is accepted. Do not bulk-cache CARTO or OpenStreetMap Foundation raster/vector tile services.
 
 ## Future data/tooling
 
-Planned Smart Street/House work may add a reviewed OSM/OSM-derived geometry data dependency. Do not select a provider or add a large geospatial dependency before the M6 research/design slice documents licensing, caching and performance constraints.
+M6 Smart Street/House work should reuse the reviewed OSM identity/data direction from ADR-0012 where practical instead of selecting another provider by default.
+
+If dense real-device measurements prove the normalized GeoJSON package unsuitable, revisit transport/storage through a new ADR. Do not silently introduce R2, PMTiles or a second OSM source-of-truth pipeline.
 
 Planned statistics/admin features should prefer server/domain data and small focused UI dependencies. Avoid adding analytics SDKs or dashboard frameworks merely to render a few charts/tables.
 

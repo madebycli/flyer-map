@@ -3,8 +3,8 @@ id: architecture-security
 type: architecture
 status: accepted
 last_updated: 2026-08-25
-related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, plan-012-platform-app-expansion]
-source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, future-security-boundaries]
+related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, plan-012-platform-app-expansion]
+source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, future-security-boundaries]
 ---
 
 # Security and Privacy
@@ -34,8 +34,9 @@ Current roles:
 | Modify another Team | yes | no | no |
 | Create/revoke Campaign Access Links | yes | no | no |
 | Submit M5 domain mutations | yes | own authorized scope only | no |
+| Prepare local OSM map package | yes | yes | yes |
 
-The Worker enforces scope on every write.
+The Worker enforces scope on every write and protected data request.
 
 During the M5 transition:
 - legacy snapshot PUT remains diff-authorized against previous server state;
@@ -90,6 +91,32 @@ A stable mutation id allows safe retry. It does not authorize the retry. Every r
 
 If an already-applied mutation id is replayed, the Worker returns its previous applied revision only after the request has passed protected access resolution. The ledger is not a public lookup service.
 
+## M5.5 prepared offline map request security
+
+Protected endpoint:
+- `POST /api/campaigns/:campaignId/offline-map/package`.
+
+The OSM source data is public, but the application endpoint is deliberately Campaign-authenticated to reduce anonymous proxy abuse and preserve one consistent protected API boundary.
+
+Controls:
+- same-origin protection applies;
+- a valid non-revoked Campaign session/grant is required for Admin, Team Editor or Viewer;
+- the client may provide only ordinary JSON data such as center and radius; arbitrary Overpass query text is never executed;
+- center coordinates and radius are validated server-side;
+- radius is hard-capped at 3,000 m;
+- Overpass-compatible query text is built only from a fixed server-owned template and validated numeric values;
+- upstream URL is server configuration, not a client parameter, and requires HTTPS outside localhost development;
+- request bytes, upstream response bytes and final package bytes are bounded;
+- upstream fetch has a fixed timeout;
+- only reviewed OSM tags are copied into the normalized package;
+- OSM tag values including HTML/JavaScript/SQL-looking text remain inert strings and are never evaluated/rendered as raw HTML;
+- the Worker returns a versioned package only after structural validation;
+- error responses do not expose upstream payloads, session secrets or private Campaign data.
+
+The route does not write OSM data into D1 and does not include Campaign snapshot/private domain data in the downloaded OSM package.
+
+Worker error logging for this route must never log request bodies, cookies, Access Link tokens, session secrets or raw upstream data. A stable error category/name is sufficient for operational diagnosis.
+
 ## Queue and revocation behavior
 
 IndexedDB queue records may contain domain mutation payloads necessary to retry saved work. They do not contain plaintext Access Link tokens or session secrets.
@@ -101,6 +128,8 @@ When a queued request receives 401/403:
 - the client must not blindly hammer a revoked credential.
 
 A later valid access session may allow the queue to resume, but the Worker re-authorizes every mutation against current canonical state.
+
+Prepared offline OSM packages are separate browser-local public map data. They must not be used as credentials or as proof of current Campaign authorization.
 
 ## Current bootstrap / operator recovery
 
@@ -117,7 +146,7 @@ Operator recovery remains a privileged operator mechanism, not an ordinary accou
 Current and future protected routes require:
 - valid authorized server-side session/credential state;
 - payload schema/size/domain validation;
-- revision/conflict handling rather than silent overwrite;
+- revision/conflict handling rather than silent overwrite where state is changed;
 - same-origin/CSRF protections where applicable;
 - secrets verified server-side only.
 
@@ -178,6 +207,8 @@ Mandatory:
 - validation helps correctness but security must not depend on blacklisting suspicious strings.
 
 If an attacker types SQL, HTML, JavaScript or other code-like text into a username/password/form field, it must remain data and never execute.
+
+The same rule applies to external OSM tags: code-like text from map data remains inert map metadata and is not executable content.
 
 ## Future capability authorization
 
@@ -242,8 +273,10 @@ Collect only data needed for explicit product/security requirements.
 
 M5 stores only domain payload and metadata needed to deliver/reconcile queued saved work. It does not add GPS history, device profiling or user tracking.
 
+Prepared offline OSM packages contain public map geometry/metadata and local package metadata only. They do not need user identity, continuous GPS history or private Campaign state.
+
 Field Sessions may store operational values such as date, duration, participant count and Task events. They should not become individual movement surveillance.
 
 Future Organization identity should not collect email/phone merely because account systems often do so if username/password/TOTP meets the accepted product/security design.
 
-See ADR-0009 for Campaign access/session and ADR-0011 for durable mutation/idempotency behavior.
+See ADR-0009 for Campaign access/session, ADR-0011 for durable mutation/idempotency behavior and ADR-0012 for the prepared offline-map data boundary.
