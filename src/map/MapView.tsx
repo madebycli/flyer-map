@@ -230,7 +230,7 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[]): StyleSpecifica
         type: "raster",
         source: "carto",
         minzoom: 0,
-        maxzoom: 20,
+        maxzoom: 21,
         paint: { "raster-fade-duration": 0 },
       },
       {
