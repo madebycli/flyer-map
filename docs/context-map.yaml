@@ -26,8 +26,8 @@ nodes:
     path: docs/product/ROADMAP.md
     type: product
     status: accepted
-    topics: [roadmap, milestones, statistics, organizations, admin-panel, comments, automations, streets, houses, dark-mode]
-    load_when: [new feature planning, milestone planning, long-term scope, product expansion]
+    topics: [roadmap, milestones, offline-map, statistics, organizations, admin-panel, comments, automations, streets, houses, dark-mode]
+    load_when: [new feature planning, milestone planning, long-term scope, product expansion, offline map]
 
   - id: mvp
     path: docs/product/MVP.md
@@ -41,7 +41,7 @@ nodes:
     type: product
     status: accepted
     topics: [ui, ux, mobile, accessibility, interaction, appearance]
-    load_when: [UI change, map interaction, mobile behavior, dark mode]
+    load_when: [UI change, map interaction, mobile behavior, dark mode, offline map settings]
 
   - id: architecture
     path: ARCHITECTURE.md
@@ -55,14 +55,14 @@ nodes:
     type: architecture
     status: accepted
     topics: [dependencies, technology, cloudflare, react, vite, maplibre]
-    load_when: [dependency change, runtime version, build tooling]
+    load_when: [dependency change, runtime version, build tooling, offline map provider]
 
   - id: map
     path: docs/architecture/MAP.md
     type: architecture
     status: accepted
-    topics: [map, maplibre, carto, geojson, renderer, geolocation, performance, osm]
-    load_when: [map rendering, geometry interaction, map performance, road/building data]
+    topics: [map, maplibre, carto, geojson, renderer, geolocation, performance, osm, offline-map]
+    load_when: [map rendering, geometry interaction, map performance, road/building data, offline map]
 
   - id: data
     path: docs/architecture/DATA.md
@@ -76,7 +76,7 @@ nodes:
     type: architecture
     status: accepted
     topics: [offline, synchronization, indexeddb, mutations, conflicts]
-    load_when: [M5, sync, retries, conflicts, offline behavior]
+    load_when: [M5, sync, retries, conflicts, offline behavior, offline map storage]
 
   - id: security
     path: docs/architecture/SECURITY.md
@@ -104,7 +104,7 @@ nodes:
     type: quality
     status: accepted
     topics: [tests, performance, accessibility, browsers, quality]
-    load_when: [testing, performance acceptance, browser support, release gate]
+    load_when: [testing, performance acceptance, browser support, release gate, offline map device testing]
 
   - id: deployment
     path: docs/operations/DEPLOYMENT.md
@@ -152,7 +152,7 @@ nodes:
     path: docs/plans/active/009-product-platform-foundation.md
     type: plan
     status: active
-    topics: [platform-roadmap, M5, smart-tasks, collaboration, organizations, statistics]
+    topics: [platform-roadmap, M5, offline-map, smart-tasks, collaboration, organizations, statistics]
     load_when: [platform sequencing, post-M5 planning, next milestone]
 
   - id: plan-m5-sync
@@ -161,6 +161,13 @@ nodes:
     status: active
     topics: [current-slice, M5, indexeddb, mutations, idempotency, retries, conflicts]
     load_when: [current M5 work, PR 24, mutation queue, synchronization]
+
+  - id: plan-offline-map
+    path: docs/plans/active/011-offline-map-area.md
+    type: plan
+    status: active
+    topics: [offline-map, indexeddb, map-download, osm, field-connectivity, 3km]
+    load_when: [offline basemap, downloaded map area, 3 km offline area, map usable after offline reload]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
@@ -184,7 +191,7 @@ edges:
   - { from: roadmap, to: organizations, relation: plans }
   - { from: roadmap, to: collaboration, relation: plans }
   - { from: roadmap, to: offline-sync, relation: plans }
-  - { from: roadmap, to: map, relation: extends_with_smart_tasks }
+  - { from: roadmap, to: map, relation: extends_with_smart_tasks_and_offline_map }
 
   - { from: organizations, to: security, relation: constrained_by }
   - { from: organizations, to: data, relation: requires_schema_extension }
@@ -211,5 +218,11 @@ edges:
   - { from: plan-m5-sync, to: data, relation: extends }
   - { from: plan-m5-sync, to: security, relation: constrained_by }
   - { from: plan-m5-sync, to: quality, relation: validated_by }
+  - { from: plan-offline-map, to: plan-platform-roadmap, relation: next_phase_after_m5 }
+  - { from: plan-offline-map, to: roadmap, relation: implements_offline_working_area }
+  - { from: plan-offline-map, to: map, relation: extends }
+  - { from: plan-offline-map, to: offline-sync, relation: shares_indexeddb_and_connectivity_constraints }
+  - { from: plan-offline-map, to: stack, relation: requires_provider_and_format_decision }
+  - { from: plan-offline-map, to: quality, relation: validated_by }
   - { from: prompts, to: architecture, relation: onboards_to }
   - { from: prompts, to: roadmap, relation: onboards_to }
