@@ -3,7 +3,7 @@ id: plan-011-offline-map-area
 type: plan
 status: active
 last_updated: 2026-08-25
-related: [product-roadmap, architecture-map, architecture-offline-sync, architecture-data, architecture-stack, quality, plan-012-platform-app-expansion]
+related: [product-roadmap, architecture-map, architecture-offline-sync, architecture-data, architecture-stack, quality, plan-012-platform-app-expansion, ADR-0012]
 ---
 
 # Plan 011 — Prepared Offline Working Area
@@ -70,6 +70,8 @@ Avoid unrelated duplicate datasets unless evidence requires it.
 
 ## Required ADR
 
+`docs/decisions/ADR-0012-prepared-offline-map-data.md` now records the two viable architectures and remains **proposed** until the user selects one.
+
 Before implementation decide:
 - provider/source;
 - license/attribution;
@@ -79,6 +81,8 @@ Before implementation decide:
 - expiration/update policy;
 - online/offline rendering fallback;
 - relationship to M6 Street/House data.
+
+No runtime implementation starts until ADR-0012 is accepted.
 
 ## Acceptance
 
@@ -103,4 +107,4 @@ Before implementation decide:
 
 ## Sequencing
 
-Finish/merge M5 first. Then execute this slice before or together with M6 map-data work so both can share the reviewed geometry pipeline.
+M5 is merged. Resolve ADR-0012 next, then execute this slice before or together with M6 map-data work so both can share the reviewed geometry pipeline.
