@@ -1,4 +1,4 @@
-version: 2
+version: 3
 
 entrypoints:
   always:
@@ -9,10 +9,11 @@ entrypoints:
 routing_rules:
   - load entrypoints first
   - select nodes whose topics/load_when match the task
-  - follow depends_on/constrained_by/implements edges as needed
+  - follow depends_on/constrained_by/implements/governed_by edges as needed
   - prefer accepted/current nodes over historical completed plans
   - load proposed architecture only when working on the corresponding future capability
   - inspect relevant ADRs before changing an accepted architectural boundary
+  - inspect current open PRs/branches before starting a replacement implementation slice
 
 nodes:
   - id: product
@@ -26,8 +27,8 @@ nodes:
     path: docs/product/ROADMAP.md
     type: product
     status: accepted
-    topics: [roadmap, milestones, statistics, organizations, admin-panel, comments, automations, streets, houses, dark-mode]
-    load_when: [new feature planning, milestone planning, long-term scope, product expansion]
+    topics: [roadmap, milestones, offline-map, streets, houses, pickup, collection, field-sessions, live-teams, statistics, organizations, admin-panel, permissions, accounts, totp, support, comments, automations, app-shell, dark-mode]
+    load_when: [new feature planning, milestone planning, long-term scope, product expansion, collection mode, live teams, statistics, admin accounts]
 
   - id: mvp
     path: docs/product/MVP.md
@@ -40,8 +41,8 @@ nodes:
     path: docs/product/UX.md
     type: product
     status: accepted
-    topics: [ui, ux, mobile, accessibility, interaction, appearance]
-    load_when: [UI change, map interaction, mobile behavior, dark mode]
+    topics: [ui, ux, mobile, desktop, accessibility, interaction, appearance, app-menu, bottom-bar, progress-bar, team-colors, admin-panel, support]
+    load_when: [UI change, map interaction, mobile behavior, desktop admin UX, app-like navigation, progress UI, team color UI, support UI]
 
   - id: architecture
     path: ARCHITECTURE.md
@@ -55,56 +56,70 @@ nodes:
     type: architecture
     status: accepted
     topics: [dependencies, technology, cloudflare, react, vite, maplibre]
-    load_when: [dependency change, runtime version, build tooling]
+    load_when: [dependency change, runtime version, build tooling, offline map provider]
 
   - id: map
     path: docs/architecture/MAP.md
     type: architecture
     status: accepted
-    topics: [map, maplibre, carto, geojson, renderer, geolocation, performance, osm]
-    load_when: [map rendering, geometry interaction, map performance, road/building data]
+    topics: [map, maplibre, carto, geojson, renderer, geolocation, performance, osm, offline-map, streets, houses]
+    load_when: [map rendering, geometry interaction, map performance, road/building data, offline map, session map highlighting]
 
   - id: data
     path: docs/architecture/DATA.md
     type: architecture
     status: accepted
     topics: [database, d1, schema, campaigns, teams, areas, tasks, revisions]
-    load_when: [domain model, D1 migration, persistence, schema]
+    load_when: [domain model, D1 migration, persistence, schema, field sessions, pickup tasks, accounts]
 
   - id: offline-sync
     path: docs/architecture/OFFLINE_SYNC.md
     type: architecture
     status: accepted
     topics: [offline, synchronization, indexeddb, mutations, conflicts]
-    load_when: [M5, sync, retries, conflicts, offline behavior]
+    load_when: [M5, sync, retries, conflicts, offline behavior, live collaboration conflicts]
 
   - id: security
     path: docs/architecture/SECURITY.md
     type: architecture
     status: accepted
-    topics: [auth, authorization, privacy, tokens, sessions, roles, gps]
-    load_when: [access, roles, protected API, privacy, recovery]
+    topics: [auth, authorization, privacy, tokens, sessions, roles, gps, injection, totp, accounts, permissions, live-join]
+    load_when: [access, roles, protected API, privacy, recovery, accounts, passwords, TOTP, permissions, QR codes, live teams]
 
   - id: organizations
     path: docs/architecture/ORGANIZATIONS.md
     type: architecture
     status: proposed
-    topics: [organizations, multi-tenant, admins, admin-panel, membership, multi-admin]
-    load_when: [M8, organization model, admin panel, multiple administrators, tenant security]
+    topics: [organizations, multi-tenant, admins, admin-panel, membership, multi-admin, team-delete]
+    load_when: [M8, organization model, admin panel, multiple administrators, tenant security, team archive delete]
+
+  - id: identity-permissions
+    path: docs/architecture/IDENTITY_PERMISSIONS.md
+    type: architecture
+    status: proposed
+    topics: [identity, accounts, username, password, totp, 2fa, permissions, capabilities, roles, admin-transfer, injection]
+    load_when: [admin login, accounts, 2FA, TOTP, permission settings, role matrix, capability model, admin transfer, password security]
+
+  - id: live-teams
+    path: docs/architecture/LIVE_TEAMS.md
+    type: architecture
+    status: proposed
+    topics: [live-teams, field-groups, team-code, qr-code, join-password, discoverability, multi-device, presence]
+    load_when: [live field groups, online teams, join with QR, group code, group password, multi-device collaboration, discoverability]
 
   - id: collaboration
     path: docs/architecture/COLLABORATION.md
     type: architecture
     status: proposed
-    topics: [comments, activity, events, automations, statistics, reporting]
-    load_when: [M7, M9, comments, activity feed, automation, statistics]
+    topics: [comments, activity, events, automations, statistics, reporting, field-sessions, duration, participant-count, person-time]
+    load_when: [M7, M9, comments, activity feed, automation, statistics, session history, progress percentage, duration and people feedback]
 
   - id: quality
     path: docs/quality/QUALITY.md
     type: quality
     status: accepted
-    topics: [tests, performance, accessibility, browsers, quality]
-    load_when: [testing, performance acceptance, browser support, release gate]
+    topics: [tests, performance, accessibility, browsers, quality, security-testing]
+    load_when: [testing, performance acceptance, browser support, release gate, security hardening, dense data]
 
   - id: deployment
     path: docs/operations/DEPLOYMENT.md
@@ -132,7 +147,7 @@ nodes:
     type: decisions
     status: index
     topics: [adr, architecture-decisions, history]
-    load_when: [architecture change, superseding a boundary]
+    load_when: [architecture change, security decision, superseding a boundary]
 
   - id: plan-renderer-recovery
     path: docs/plans/completed/008-renderer-access-recovery.md
@@ -145,15 +160,36 @@ nodes:
     path: docs/plans/active/009-product-platform-foundation.md
     type: plan
     status: active
-    topics: [next-work, M5, smart-tasks, collaboration, organizations, statistics]
-    load_when: [new agent continuation, post-PR21 planning, next milestone]
+    topics: [foundation, M5, smart-tasks, sequencing]
+    load_when: [M5 foundation history, platform sequencing, post-PR21 work]
+
+  - id: plan-offline-map
+    path: docs/plans/active/011-offline-map-area.md
+    type: plan
+    status: active
+    topics: [offline-map, indexeddb, map-download, osm, 3km, field-connectivity]
+    load_when: [prepared offline map, 3 km download, offline basemap, offline map storage]
+
+  - id: plan-platform-expansion
+    path: docs/plans/active/012-platform-app-expansion.md
+    type: plan
+    status: active
+    topics: [platform-expansion, app-shell, statistics, field-sessions, live-teams, collection, pickup, admin, organizations, permissions, accounts, totp, support]
+    load_when: [full platform work, next generation planning, app-like UI, live teams, admin accounts, permissions, statistics, collection mode, support]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
     type: onboarding
     status: current
     topics: [agent, chatgpt, context, onboarding, fresh-chat]
-    load_when: [new AI session, handoff]
+    load_when: [new AI session, generic handoff]
+
+  - id: prompt-platform-expansion
+    path: docs/prompts/START_PLATFORM_EXPANSION.md
+    type: onboarding
+    status: current
+    topics: [agent, platform-expansion, implementation-prompt, next-chat]
+    load_when: [start next AI chat for full expansion, handoff to development agent]
 
 edges:
   - { from: product, to: roadmap, relation: expands_into }
@@ -168,12 +204,20 @@ edges:
   - { from: security, to: data, relation: constrains }
 
   - { from: roadmap, to: organizations, relation: plans }
+  - { from: roadmap, to: identity-permissions, relation: plans }
+  - { from: roadmap, to: live-teams, relation: plans }
   - { from: roadmap, to: collaboration, relation: plans }
   - { from: roadmap, to: offline-sync, relation: plans }
-  - { from: roadmap, to: map, relation: extends_with_smart_tasks }
+  - { from: roadmap, to: map, relation: extends_with_streets_houses_pickup_and_offline }
 
   - { from: organizations, to: security, relation: constrained_by }
+  - { from: organizations, to: identity-permissions, relation: uses }
   - { from: organizations, to: data, relation: requires_schema_extension }
+  - { from: identity-permissions, to: security, relation: constrained_by }
+  - { from: identity-permissions, to: data, relation: requires_schema_extension }
+  - { from: live-teams, to: security, relation: constrained_by }
+  - { from: live-teams, to: offline-sync, relation: reuses_conflict_model }
+  - { from: live-teams, to: collaboration, relation: creates_field_sessions }
   - { from: collaboration, to: security, relation: constrained_by }
   - { from: collaboration, to: data, relation: requires_event_data }
   - { from: collaboration, to: offline-sync, relation: benefits_from_mutations }
@@ -185,7 +229,24 @@ edges:
 
   - { from: plan-renderer-recovery, to: map, relation: changed }
   - { from: plan-renderer-recovery, to: security, relation: changed }
-  - { from: plan-platform-roadmap, to: roadmap, relation: executes }
+  - { from: plan-platform-roadmap, to: roadmap, relation: foundation_for }
   - { from: plan-platform-roadmap, to: offline-sync, relation: starts_with }
+  - { from: plan-offline-map, to: roadmap, relation: implements_m5_5 }
+  - { from: plan-offline-map, to: map, relation: extends }
+  - { from: plan-offline-map, to: offline-sync, relation: shares_indexeddb_constraints }
+  - { from: plan-offline-map, to: stack, relation: requires_provider_decision }
+  - { from: plan-platform-expansion, to: roadmap, relation: executes }
+  - { from: plan-platform-expansion, to: ux, relation: defines_target_experience }
+  - { from: plan-platform-expansion, to: organizations, relation: plans_m8 }
+  - { from: plan-platform-expansion, to: identity-permissions, relation: requires }
+  - { from: plan-platform-expansion, to: live-teams, relation: requires }
+  - { from: plan-platform-expansion, to: collaboration, relation: requires }
+  - { from: plan-platform-expansion, to: map, relation: extends }
+  - { from: plan-platform-expansion, to: security, relation: constrained_by }
+  - { from: plan-platform-expansion, to: quality, relation: validated_by }
+
   - { from: prompts, to: architecture, relation: onboards_to }
   - { from: prompts, to: roadmap, relation: onboards_to }
+  - { from: prompt-platform-expansion, to: plan-platform-expansion, relation: starts }
+  - { from: prompt-platform-expansion, to: roadmap, relation: onboards_to }
+  - { from: prompt-platform-expansion, to: security, relation: constrained_by }
