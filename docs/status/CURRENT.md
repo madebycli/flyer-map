@@ -42,14 +42,18 @@ Repository-controlled implementation/documentation gates are healthy on runtime 
 - Cloudflare deployed the exact head successfully as preview;
 - ADR/deployment/production documentation matches the initial-style GeoJSON lifecycle used by the code.
 
-Real-browser acceptance has now also confirmed the requested saved-renderer smoke slice on that runtime head:
+Real-browser acceptance on that runtime-equivalent preview has confirmed:
 - saved Area remains visible/selectable after Save;
 - saved Street remains visible/selectable after Save;
-- pan/zoom/rotate behavior is good and saved geometry remains aligned with the basemap.
+- pan/zoom/rotate behavior is good and saved geometry remains aligned with the basemap;
+- Area edit handles are active-only and usable;
+- mobile bottom toolbar and safe-area behavior are acceptable.
 
-A later acceptance-note commit only changes documentation; it still requires normal CI + exact Cloudflare preview deployment, but the runtime browser result remains applicable because application/runtime code did not change.
+Desktop bottom-toolbar fit is explicitly **not accepted yet**. The user reported that the PC layout still needs work and chose to defer that desktop-specific fix until later. Do not infer desktop acceptance from the mobile result.
 
-Do **not** merge until the remaining real-browser/device gates confirm edit/draw handle behavior, toolbar/safe-area behavior, Admin recovery on the target origin, diagnostics output and representative dense Street datasets at 500 / 1,000 / 2,500 / 5,000 features (or records a concrete blocker).
+Acceptance-note commits only change documentation; they still require normal CI + exact Cloudflare preview deployment, while prior runtime browser results remain applicable because application/runtime code did not change.
+
+Do **not** merge until the remaining gates are resolved: desktop toolbar fit, Admin recovery on the target origin, diagnostics output, and representative dense Street datasets at 500 / 1,000 / 2,500 / 5,000 features (or a concrete documented blocker).
 
 ## Active plans
 
@@ -73,5 +77,5 @@ Organization and collaboration/statistics architecture are currently **proposed*
 ## Immediate next
 
 1. Let CI and Cloudflare preview verify the documentation-only acceptance-note head.
-2. Continue the remaining real-browser/phone acceptance without repeating already-passed renderer smoke checks.
-3. If all remaining gates pass, move Plan 008 to completed, merge PR #21, verify production, then start M5 from Plan 009 on a fresh branch from current `main`.
+2. Continue remaining acceptance without repeating already-passed mobile/map/edit checks; desktop toolbar remains explicitly deferred.
+3. If all remaining gates pass or are resolved with an accepted documented blocker, move Plan 008 to completed, merge PR #21, verify production, then start M5 from Plan 009 on a fresh branch from current `main`.
