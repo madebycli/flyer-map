@@ -55,9 +55,9 @@ This proves browser-local mutation durability across reload.
 
 Reconnect delivery is not yet marked passed because the test exposed that the remote basemap itself is not usable after an offline reload. That separate product gap is now tracked in Plan 011 and must not be confused with mutation loss.
 
-## Maximum-zoom renderer regression found during acceptance
+## Maximum-zoom renderer regression — fixed and accepted
 
-At the map's maximum zoom the CARTO basemap became white while saved application geometry remained visible.
+At the map's maximum zoom the CARTO basemap previously became white while saved application geometry remained visible.
 
 Cause:
 - Map maxZoom = 20;
@@ -79,7 +79,7 @@ A fresh Cloudflare Worker Version preview containing the runtime fix was manuall
 - alias `https://m5-zoom-fix-flyer-map.cloudflare-eleven035.workers.dev`;
 - no production traffic changed.
 
-Later documentation commits are runtime-equivalent unless runtime code/config changes again. The next required renderer observation is a real-browser zoom-20 check on this new preview.
+Real-browser acceptance on 2026-08-25 passed: the basemap remains visible at maximum zoom and no longer turns white.
 
 ## Offline map product gap
 
@@ -93,14 +93,13 @@ Do not solve this by caching CARTO raster tiles. CARTO Basemap terms prohibit st
 
 ## Remaining M5 release gates
 
-1. real-browser maximum-zoom confirmation on the new Version preview: basemap stays visible at zoom 20;
-2. reconnect queued mutation and confirm server delivery exactly once;
-3. retry/reconnect produces no duplicate effect;
-4. conflicting target change is visibly surfaced with no silent overwrite;
-5. revoked/invalid access stops blind retry and leaves queued work access-blocked;
-6. transient network/server failure remains queued and later retries;
-7. saved Areas/Streets remain visible/selectable and active edit behavior remains correct;
-8. final PR head CI remains green.
+1. reconnect queued mutation and confirm server delivery exactly once;
+2. retry/reconnect produces no duplicate effect;
+3. conflicting target change is visibly surfaced with no silent overwrite;
+4. revoked/invalid access stops blind retry and leaves queued work access-blocked;
+5. transient network/server failure remains queued and later retries;
+6. saved Areas/Streets remain visible/selectable and active edit behavior remains correct;
+7. final PR head CI remains green.
 
 ## Risks
 
@@ -122,8 +121,9 @@ Do not solve this by caching CARTO raster tiles. CARTO Basemap terms prohibit st
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Browser-test maximum zoom on `https://98516141-flyer-map.cloudflare-eleven035.workers.dev`.
-3. Resume reconnect/idempotency/conflict/auth/transient-failure acceptance.
-4. Record every observed gate in this plan and `CURRENT.md`.
-5. Merge M5 only after all gates pass.
-6. Start Plan 011 as the next dedicated slice after M5 merge.
+2. Restore connectivity in the same browser/session containing the offline-saved Street.
+3. Confirm the queued Street mutation reaches the server and remains present exactly once.
+4. Continue idempotency/conflict/auth/transient-failure acceptance.
+5. Record every observed gate in this plan and `CURRENT.md`.
+6. Merge M5 only after all gates pass.
+7. Start Plan 011 as the next dedicated slice after M5 merge.
