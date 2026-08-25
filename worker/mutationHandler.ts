@@ -8,6 +8,7 @@ import {
   loadCampaignSnapshot,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
+import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 import {
   getAppliedMutation,
   persistCampaignMutation,
@@ -97,14 +98,15 @@ export async function handleCampaignMutation(
     return errorResponse(422, "mutation_invalid", validation.message);
   }
   const mutation = validation.mutation;
+  const fingerprint = await fingerprintCampaignMutation(mutation);
 
   const existing = await getAppliedMutation(db, campaignId, mutation.id);
   if (existing) {
-    if (existing.mutationType !== mutation.type) {
+    if (existing.mutationFingerprint !== fingerprint) {
       return errorResponse(
         409,
         "mutation_id_reused",
-        "Diese Mutation-ID wurde bereits für einen anderen Mutation-Typ verwendet.",
+        "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.",
         existing.appliedRevision,
       );
     }
@@ -151,13 +153,27 @@ export async function handleCampaignMutation(
       );
     }
 
-    const persisted = await persistCampaignMutation(db, mutation, current.revision);
+    const persisted = await persistCampaignMutation(
+      db,
+      mutation,
+      current.revision,
+      fingerprint,
+    );
     if (persisted.ok) {
       return json({
         mutationId: mutation.id,
         appliedRevision: persisted.revision,
         alreadyApplied: persisted.alreadyApplied,
       });
+    }
+
+    if (persisted.reason === "mutation_id_reused") {
+      return errorResponse(
+        409,
+        "mutation_id_reused",
+        "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.",
+        persisted.currentRevision,
+      );
     }
 
     if (attempt === MAX_PERSIST_ATTEMPTS - 1) {
