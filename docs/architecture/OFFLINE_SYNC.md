@@ -9,93 +9,169 @@ source_of_truth_for: [offline-queue, synchronization, conflict-handling]
 
 # Offline Synchronization
 
-## Current goal
+## Goal
 
-A field user must not silently lose important changes because connectivity disappears or another device edits the same Campaign.
+A field user must not silently lose important saved changes because connectivity disappears, the page reloads, or another device edits the same Campaign.
 
-Current M4-era synchronization is the baseline; M5 is the next planned hardening step.
+M5 implements this through a page-owned durable mutation queue while preserving the website-only architecture.
 
-## Current behavior
+## Deployment state
 
-The versioned Campaign snapshot remains cached in localStorage.
+The durable mutation architecture is implemented in active PR #24 / Plan 010 and is **not yet the production baseline**.
 
-A normal local mutation currently:
-1. updates React/in-memory state immediately;
-2. caches the updated snapshot locally;
-3. sends the authorized snapshot asynchronously while the page is open;
-4. tracks the acknowledged server revision.
+Repository/preview/migration gates now passed:
+- runtime and final repository CI for the accepted M5 implementation path;
+- exact Cloudflare runtime-equivalent preview for commit `5c7dce81...`;
+- additive D1 migration `0003_m5_mutations.sql` applied successfully to remote `flyer-map-db` on 2026-08-25.
 
-The site remains a normal website: no service worker, installable PWA, Background Sync API or offline basemap cache.
+Remaining gate is real-browser acceptance of reload/reconnect/idempotency/conflict/auth behavior plus unchanged MapLibre behavior before PR #24 is merged.
 
-## Startup/access
+## Local state layers
 
-The browser may render last-known local data immediately, then resolves/redeems Campaign access and checks the protected Worker state.
+### localStorage snapshot
 
-A Campaign id selects a Campaign but does not authorize access.
+The versioned Campaign snapshot remains cached in localStorage as:
+- fast startup state;
+- recovery/safety copy;
+- convenient React UI model.
 
-A newer authorized server snapshot can replace the in-memory snapshot after safety checks. Personal map camera state is separate and is not reset by data refresh.
+It is not the durable delivery source of truth for new unacknowledged M5 writes.
 
-## Revision polling
+### IndexedDB mutation queue
 
-Normal checks use the small Campaign version endpoint roughly every 30 seconds while initialized, plus:
-- connectivity return;
-- tab visibility return;
-- manual refresh.
+New saved domain changes are represented as explicit `CampaignMutation` records and persisted to IndexedDB before network delivery.
 
-Only when a newer revision exists does the browser fetch the full snapshot.
+Each queue record contains:
+- stable mutation id / idempotency key;
+- Campaign id;
+- explicit mutation type and payload;
+- base revision;
+- target-specific conflict preconditions;
+- creation time;
+- queue state;
+- attempt count;
+- next retry time;
+- optional last error.
 
-When Campaign data changes, saved MapLibre GeoJSON sources receive new data from the in-memory snapshot; the map instance/camera remain alive.
+Queue states:
+- `pending`;
+- `retry`;
+- `conflict`;
+- `blocked-auth`;
+- `invalid`.
+
+During the short enqueue window a best-effort localStorage emergency shadow protects against an interrupted/failed IndexedDB write. A successful IndexedDB transaction clears that shadow; corrupt shadow data is quarantined rather than blocking the queue forever.
+
+## Supported mutation protocol
+
+Initial M5 operations:
+- Campaign rename;
+- shared Campaign default map view set/remove;
+- Team create/update;
+- Area create/rename/team assignment/geometry update/delete;
+- Street Task create/rename/status update/delete.
+
+Personal camera movement is not a shared mutation.
+
+The current snapshot-oriented React UI is bridged by `deriveCampaignMutation(previous, next)`. A normal supported save must derive one unambiguous mutation. Unsupported compound snapshot changes fail visibly rather than silently falling back to a broad ordinary write.
+
+## Conflict semantics
+
+Mutations can be replayed over unrelated newer Campaign revisions when their actual target is still unchanged.
+
+Preconditions:
+- entity edits/deletes use the target entity `updatedAt` observed when queued;
+- Campaign name/default map view use field-specific expected previous values;
+- creates require the new id not to exist and referenced parent/team records to remain valid.
+
+If the target itself changed or disappeared, the Worker returns an explicit conflict. There is no intentional silent last-write-wins merge.
+
+## Queue processing
+
+The active Campaign queue is processed sequentially in local revision order.
+
+Retry triggers while the website is open:
+- initial authenticated startup;
+- connectivity return (`online`);
+- visible-tab return;
+- manual refresh;
+- continuation after a successful earlier queue item.
+
+Retryable network/408/429/5xx failures use bounded exponential backoff. There is no tight retry loop.
+
+Terminal behavior:
+- success/already-applied -> remove the item;
+- conflict -> retain as `conflict` and stop ordered processing;
+- 401/403 -> retain as `blocked-auth` and stop blind retries;
+- invalid non-retryable request -> retain as `invalid`;
+- retryable failure -> retain as `retry`.
+
+## Server idempotency
+
+The Worker exposes authenticated `POST /api/campaigns/:id/mutations`.
+
+For each request it:
+1. resolves the existing Campaign access/session;
+2. validates the mutation envelope/payload;
+3. computes the canonical SHA-256 mutation fingerprint;
+4. loads current Campaign state;
+5. applies one mutation in memory;
+6. validates the resulting snapshot;
+7. runs current/candidate state through the existing Worker authorization policy;
+8. persists a narrow D1 change plus idempotency ledger entry.
+
+Migration `0003_m5_mutations.sql` adds `campaign_mutations` keyed by `(campaign_id, mutation_id)` and is already applied to the currently configured remote `flyer-map-db` used for M5 runtime acceptance.
+
+If a mutation id already exists:
+- same canonical fingerprint/content -> return its prior applied revision and do not apply the effect again;
+- different fingerprint/content -> return `409 mutation_id_reused` and do not apply the changed effect.
+
+Persistence uses the Campaign revision plus internal `write_token` as the concurrency claim. On a concurrent revision move, the Worker reloads and re-evaluates the mutation for a bounded number of attempts.
+
+## Authorization
+
+Campaign id remains only a selector.
+
+Worker authorization remains authoritative:
+- Viewer cannot write;
+- Team Editor remains limited to its Team scope;
+- Admin may perform Campaign-wide changes;
+- revoked/expired access blocks queued writes on the next request.
+
+The client sync label is UX only and is never an authorization boundary.
 
 ## Active draw/edit safety
 
-Unsaved active interaction must never be silently destroyed.
+Unsaved intermediate vertices remain local UI interaction state and are not queued.
 
-Protected modes:
+Protected modes remain:
 - Area draw;
 - Area edit;
 - Street draw.
 
-If newer server data is discovered during one of these modes:
-- preserve the active vertices;
-- show that newer data is available;
-- defer replacement until the interaction safely finishes/cancels;
-- then recheck/apply server state when safe.
+The existing interaction-block mechanism continues to prevent canonical server refresh from silently destroying active geometry. The saved MapLibre renderer receives data only when Campaign snapshot state changes; M5 does not recreate the map or change its camera lifecycle.
 
-## Current conflict/rejection behavior
+## Legacy transition path
 
-There is no intentional silent last-write-wins path.
+A pre-M5 optimistic local snapshot can exist without a corresponding IndexedDB queue record. During transition, the authorized coarse snapshot PUT may be used once to reconcile that legacy state.
 
-Rejected/409/unauthorized optimistic state is preserved when possible in a local conflict safety copy and a visible sync/access warning is surfaced.
+New ordinary M5 edits must use the mutation queue and must not return to arbitrary full-snapshot replacement as their normal delivery path.
 
-If authorization is revoked, protected requests stop succeeding until valid access is supplied.
+## Website-only constraints
 
-## Current limitation
-
-The current system does **not** provide a durable ordered mutation queue across reloads. It still relies on coarse snapshot revision semantics and local cache safety.
-
-This is the reason M5 is next.
-
-## M5 durable mutation direction
-
-M5 should introduce:
-- IndexedDB-backed pending mutation storage;
-- stable mutation/idempotency ids;
-- idempotent server application ledger/semantics;
-- narrower mutation-specific operations where practical;
-- retry across reload/online/visibility/manual refresh;
-- explicit ordering where operations depend on each other;
-- visible pending/error/conflict states;
-- authorization-aware stop conditions after revocation;
-- event/domain records that later Activity/Statistics can consume.
-
-The current snapshot remains useful as startup/recovery cache during transition.
-
-## M5 constraints
-
-- no service worker merely to queue mutations;
+- no Service Worker;
+- no installable PWA;
+- no Web App Manifest install flow;
 - no Background Sync API;
-- no silent conflict overwrite;
-- Worker authorization remains authoritative;
-- additive D1 migration only;
-- active map camera/draw state remains independent of server refresh;
-- future Organization scope must be compatible with mutation authorization.
+- no offline whole-area basemap cache;
+- synchronization progresses only while the website is open.
+
+## Renderer boundary
+
+M5 does not change ADR-0010:
+- MapLibre GL JS remains pinned to 5.7.1;
+- saved Areas/Streets remain persistent MapLibre GeoJSON sources/layers;
+- active draw/edit remains SVG-only;
+- normal browse has no application loop projecting all saved geometry.
+
+See ADR-0011 for the mutation/idempotency decision and Plan 010 for current implementation/release acceptance.

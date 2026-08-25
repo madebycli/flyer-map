@@ -163,6 +163,13 @@ nodes:
     topics: [foundation, M5, smart-tasks, sequencing]
     load_when: [M5 foundation history, platform sequencing, post-PR21 work]
 
+  - id: plan-m5-sync
+    path: docs/plans/active/010-m5-resilient-mutation-sync.md
+    type: plan
+    status: active
+    topics: [M5, mutation-queue, indexeddb, idempotency, conflicts, reconnect, authorization]
+    load_when: [M5 implementation, PR 24, durable mutation queue, reconnect acceptance, conflict acceptance]
+
   - id: plan-offline-map
     path: docs/plans/active/011-offline-map-area.md
     type: plan
@@ -231,6 +238,9 @@ edges:
   - { from: plan-renderer-recovery, to: security, relation: changed }
   - { from: plan-platform-roadmap, to: roadmap, relation: foundation_for }
   - { from: plan-platform-roadmap, to: offline-sync, relation: starts_with }
+  - { from: plan-m5-sync, to: offline-sync, relation: implements }
+  - { from: plan-m5-sync, to: security, relation: constrained_by }
+  - { from: plan-m5-sync, to: data, relation: extends }
   - { from: plan-offline-map, to: roadmap, relation: implements_m5_5 }
   - { from: plan-offline-map, to: map, relation: extends }
   - { from: plan-offline-map, to: offline-sync, relation: shares_indexeddb_constraints }

@@ -3,7 +3,7 @@ id: operations-deployment
 type: operations
 status: active
 last_updated: 2026-08-25
-related: [architecture-stack, architecture-security, architecture-data, architecture-map]
+related: [architecture-stack, architecture-security, architecture-data, architecture-offline-sync, architecture-map]
 ---
 
 # Deployment
@@ -13,84 +13,124 @@ related: [architecture-stack, architecture-security, architecture-data, architec
 One Cloudflare Worker deployment containing:
 - Vite-built React static assets;
 - Worker API routes;
-- D1 binding `DB` for shared campaign persistence.
+- D1 binding `DB` for shared Campaign persistence.
 
 The repository is the source of truth. Normal releases flow from GitHub `main` to Cloudflare automatically; downloading/uploading builds from a phone is not part of the release process.
 
 ## Existing production connection
 
-Cloudflare Workers Builds is connected to `madebycli/flyer-map` and deploys `main` to the existing Workers deployment.
+Cloudflare Workers Builds is connected to `madebycli/flyer-map` and deploys `main` to the existing Workers deployment. Non-production branches produce Worker preview versions/URLs.
 
 Repository configuration in `wrangler.jsonc` remains the deployment source of truth.
 
-## D1
+## D1 binding and preview isolation
 
 Production uses one D1 database named `flyer-map-db` with Worker binding name `DB`.
 
-The real Cloudflare-provided database id is stored in the reviewed `d1_databases` entry in `wrangler.jsonc`; no placeholder or invented id is used.
+Current `wrangler.jsonc` defines only:
+- `binding: DB`;
+- `database_name: flyer-map-db`;
+- the existing `database_id`.
 
-`migrations/0001_initial.sql` is immutable M3 production history. M4 adds `migrations/0002_m4_access.sql`; do not rewrite `0001` to simulate an upgrade.
+It does **not** define a separate Wrangler environment or `preview_database_id` for M5 browser acceptance.
 
-Apply unapplied migrations intentionally to the remote database before merging Worker code that requires them:
+Cloudflare Worker versions capture their bindings, while state changes in bound D1/KV/R2 resources are not versioned with the Worker. Workers Builds also does not natively create different production/non-production bindings merely because a branch has a preview URL.
+
+Therefore the current repository must treat the M5 Worker preview as **code-isolated but not D1-data-isolated**. Unless an explicit external Cloudflare binding override is later documented, the preview uses the same configured `flyer-map-db` binding.
+
+Operational consequence:
+- the additive M5 schema migration must exist in `flyer-map-db` before preview mutation tests;
+- use a deliberately disposable/test Campaign for destructive browser acceptance where practical;
+- do not assume a preview URL implies a separate database.
+
+A future dedicated staging D1 would require an explicit environment/build configuration. Current M5 does not add that infrastructure.
+
+## D1 migrations
+
+Applied migrations are immutable history:
+- `migrations/0001_initial.sql` — initial Campaign/Team/Area/Task schema;
+- `migrations/0002_m4_access.sql` — M4 access/session + shared map focus, applied to Production on 2026-08-24;
+- `migrations/0003_m5_mutations.sql` — durable mutation idempotency ledger with canonical mutation fingerprint, applied successfully to remote `flyer-map-db` on 2026-08-25.
+
+`0003` only adds the new ledger table/index and does not rewrite existing Campaign/Team/Area/Task/Access rows. This allows the schema to exist before M5 code is merged; the current Production Worker simply ignores the new table until M5 is deployed.
+
+Do not rewrite `0001`/`0002`/`0003` to simulate upgrades.
+
+The migration was applied from branch `m5-resilient-sync-mainline` with:
 
 ```bash
 npx wrangler d1 migrations apply flyer-map-db --remote
 ```
 
-Production `0002_m4_access.sql` was applied successfully on 2026-08-24 before M4 protected routes were merged.
+Observed non-sensitive Wrangler result on 2026-08-25:
+- remote database `flyer-map-db` selected;
+- exactly one pending migration listed: `0003_m5_mutations.sql`;
+- 4 commands executed;
+- migration status `✅`.
+
+Never record Wrangler OAuth codes, Cloudflare API tokens, access links or secret values in repository documentation.
+
+## M5 migration ordering
+
+PR #24 contains Worker code that queries/inserts `campaign_mutations`. Current safe order:
+
+1. repository CI/code review — passed for the accepted runtime-equivalent head;
+2. exact Cloudflare runtime-equivalent preview deployment — passed for `5c7dce81...`;
+3. apply `0003_m5_mutations.sql` to `flyer-map-db` — passed on 2026-08-25;
+4. test `POST /api/campaigns/:id/mutations` and queue/reconnect/conflict behavior through the preview — current gate;
+5. merge to `main` only after browser acceptance;
+6. verify automatic Production deploy and smoke checks.
 
 ## M4 bootstrap and operator recovery secret
 
-M4 intentionally does not allow a pre-M4 campaign to become owned by whichever browser visits first.
+M4 intentionally does not allow a pre-M4 Campaign to become owned by whichever browser visits first.
 
-The Worker reads the high-entropy operator credential from the Cloudflare secret `M4_BOOTSTRAP_SECRET`. It must never be committed to the repository, written into a campaign URL, stored in D1 as plaintext invite material, or shared as a normal field access link.
+The Worker reads the high-entropy operator credential from Cloudflare secret `M4_BOOTSTRAP_SECRET`. It must never be committed to the repository, written into a Campaign URL, stored in D1 as plaintext invite material, or shared as a normal field access link.
 
 The secret serves two explicit operator operations:
+1. legacy bootstrap for an existing Campaign with zero grants;
+2. Admin recovery creating a fresh normal revocable Admin grant/session.
 
-1. **Legacy bootstrap** — only for an existing Campaign that has zero access grants. This creates its first Admin grant/session.
-2. **Admin recovery** — for a Campaign that already has grants but where the operator lost the browser session/Admin Access Link. This creates a fresh normal revocable Admin grant/session and returns a new Access token once.
-
-The in-browser recovery form is appropriate when the operator only works online:
-- open the Campaign URL;
-- when the protected-access recovery panel appears, enter `M4_BOOTSTRAP_SECRET` in the password field;
-- the browser sends it only in the same-origin POST request to the Worker;
-- the Worker creates a new Admin session for that hostname and returns a one-time fresh Admin Access Link;
-- copy/bookmark that Access Link securely;
-- the secret itself is not persisted by the application.
-
-Cloudflare branch previews use a different hostname from production, so the production session cookie is not shared with the preview. The recovery flow can intentionally create a preview-host session when real-browser preview testing is required.
-
-If the operator secret may have been exposed, rotate it immediately in Cloudflare. If neither future legacy bootstrap nor operator recovery is desired, remove/rotate it and retain Admin Access Links through normal secure operational handling.
+Cloudflare branch previews use a different hostname from production, so the production session cookie is not shared with the preview. Recovery may intentionally create a preview-host session when browser preview testing needs Admin access. The secret itself is not persisted by the application.
 
 Never add a client-side fallback that grants admin access when authorization is missing.
 
 ## Release workflow
 
-Normal flow:
-
 ```text
 feature branch -> pull request -> CI -> Cloudflare preview
--> real-browser acceptance where required -> merge to main
+-> additive D1 migration when required
+-> real-browser acceptance -> merge to main
 -> Cloudflare automatic production build/deploy -> production smoke checks
 ```
 
-Schema-changing releases add the D1 migration gate before merge. The current renderer/access-recovery slice does not require an additional D1 migration beyond `0002_m4_access.sql`.
+A green repository build alone does not prove that a missing Worker secret or unapplied D1 migration is ready in production.
 
-Production config changes are reviewed like code changes. A green repository build alone does not prove that a missing Worker secret or unapplied D1 migration is ready in production.
+## M5 post-migration / post-deploy checks
 
-## Post-deploy checks
+After the M5 migration and Worker deployment:
+1. `/api/health` returns `ok: true`, `persistence: "d1"` and `synchronization: "durable-mutations"`;
+2. Campaign id alone cannot read protected Campaign data or submit mutations;
+3. Viewer mutation requests return authorization failure and do not create ledger entries;
+4. Team Editor may mutate only its scoped Team's Areas/Tasks and cannot change Campaign/Admin configuration;
+5. the same mutation id with the same canonical fingerprint/content returns the prior applied revision and does not duplicate the effect;
+6. same mutation id with changed content returns `409 mutation_id_reused` and does not apply the changed effect;
+7. a safe queued mutation may apply after an unrelated newer Campaign revision when its target precondition still matches;
+8. a changed/deleted target produces explicit 409 conflict and is not silently overwritten;
+9. save while offline, reload, reconnect, and confirm the queued mutation is still delivered;
+10. 401/403 on a queued mutation leaves it locally visible as access-blocked and stops blind retry;
+11. transient network/server failure retains the mutation and retries with bounded backoff;
+12. manual refresh, `online` and visible-tab return trigger another eligible queue attempt;
+13. localStorage snapshot remains startup state while IndexedDB is source of truth for unacknowledged M5 delivery;
+14. saved MapLibre Areas/Streets remain visible/selectable and active edit behavior is unchanged.
 
-After an access/renderer release:
-1. `/api/health` returns `ok: true` and reports `persistence: "d1"`;
-2. Campaign id alone cannot read protected Campaign snapshot/version data and returns an authorization failure;
-3. a valid Admin Access Link redeems into an HttpOnly session and can manage Campaign settings, Teams and access grants;
-4. Admin recovery rejects an incorrect operator secret and, with the configured secret, creates a fresh Admin session/link for an existing Campaign;
-5. a Team Editor Access Link can edit only its scoped Team's Areas/Tasks and cannot change Campaign/Admin configuration;
-6. a Viewer Access Link can read but cannot write;
-7. revoking a grant invalidates protected access for an already-issued session;
-8. opening the same authorized Campaign on two browsers receives remote changes through 30-second revision polling, visibility/online refresh or manual refresh without a full-page reload;
-9. an active draw/edit/street-draw draft is not silently replaced by a remote snapshot;
-10. personal camera center/zoom/bearing survives reload on the same browser and shared Campaign focus remains only the fallback for devices without a personal camera;
-11. rotation/compass remain aligned with saved MapLibre geometry and the small active SVG draw/edit overlay on a real phone;
-12. saved Areas/Streets stay visible and selectable after Save, edit handles remain edit-only, and ordinary browse pan/zoom/rotate performs no application-side saved-geometry projection loop;
-13. representative dense Street datasets are accepted at 500 / 1,000 / 2,500 / 5,000 features or a concrete blocker is recorded before merge.
+## Existing access/renderer checks
+
+Keep existing baseline checks when a release touches those boundaries:
+- Admin access/recovery and revocation behavior;
+- Team Editor/Viewer scope;
+- active draw/edit draft safety during remote refresh;
+- personal vs shared camera behavior;
+- rotation/compass alignment;
+- no application-side saved-geometry projection loop;
+- dense Street performance follow-up tracked in #23 until separately accepted.

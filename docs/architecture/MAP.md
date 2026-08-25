@@ -43,13 +43,22 @@ Green TypeScript/CI alone is insufficient for a map-runtime upgrade.
 
 ## Basemap
 
-Primary provider is CARTO Voyager Retina raster:
+Primary online provider is CARTO Voyager Retina raster:
 
 `https://{a-d}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png`
 
 The provider remains replaceable. Labels are provider-rendered raster content and are not dynamically translated by application language.
 
-There is no whole-area offline tile cache or service worker.
+Current zoom contract:
+- CARTO raster source `maxzoom` = 20;
+- Map instance `maxZoom` = 20;
+- raster style layer must remain visible at zoom 20, so its layer `maxzoom` must be greater than 20 (currently 21) or omitted.
+
+Do not set the raster layer `maxzoom` back to 20: MapLibre hides a style layer at zoom values equal to or greater than its layer maxzoom, which caused a real-browser white-basemap regression at maximum zoom.
+
+CARTO Basemap content is **online-only** in the current architecture. CARTO Basemap terms prohibit storing/saving/caching map content, so deliberate offline-map downloads must not cache these raster tiles.
+
+There is currently no implemented downloadable offline map package. Plan 011 will select an offline-permitted OSM/OSM-derived source/format before that capability is built.
 
 ## Saved application GeoJSON
 
@@ -114,6 +123,19 @@ During active draw/edit, map movement imperatively reprojects only the active po
 Current manual Street Task drawing stores a GeoJSON LineString assigned to an Area. This remains available as a fallback.
 
 It is **not** the desired long-term primary workflow. M6 plans actual road/building selection from reviewed OSM/OSM-derived geometry. See `docs/product/ROADMAP.md`.
+
+## Downloadable offline working area — planned
+
+Plan 011 introduces a future deliberate offline package, initially targeting about 3 km around the current map center.
+
+Constraints:
+- no Service Worker/PWA requirement;
+- browser IndexedDB is the intended durable local package store;
+- do not store CARTO raster content;
+- choose an offline-permitted OSM/OSM-derived provider/format via ADR before implementation;
+- render offline data through batched MapLibre sources/layers, not one DOM element/layer per road/building;
+- preserve required OSM/provider attribution;
+- prefer one map-data pipeline that can also feed M6 Smart Street + House geometry.
 
 ## Smart Street + House future constraints
 

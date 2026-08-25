@@ -3,15 +3,15 @@ id: architecture-data
 type: architecture
 status: accepted
 last_updated: 2026-08-25
-related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009]
+related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009, ADR-0011]
 source_of_truth_for: [domain-data-model, d1-baseline]
 ---
 
 # Data Model
 
-## Current shared snapshot
+## Shared snapshot
 
-Browser and Worker currently use Campaign snapshot schema v3:
+Browser and Worker use Campaign snapshot schema v3:
 - `schemaVersion: 3`;
 - shared `revision`;
 - one Campaign;
@@ -19,7 +19,9 @@ Browser and Worker currently use Campaign snapshot schema v3:
 - Campaign Areas;
 - Distribution Tasks.
 
-D1 is the persisted shared source of truth. localStorage remains a startup/last-known cache and conflict safety copy. Existing older local snapshots are migrated in-browser rather than deleted.
+D1 is the persisted shared source of truth. localStorage remains startup/last-known cache and conflict safety copy. Existing older local snapshots are migrated in-browser rather than deleted.
+
+M5 keeps the snapshot model for reads/UI while changing **new ordinary write delivery** from coarse snapshot replacement to explicit queued mutations.
 
 ## Current entities
 
@@ -97,15 +99,20 @@ Domain ids are opaque application ids. Browser-created entities use UUID-based i
 
 `?campaign=` and route ids are selectors only. Authorization always comes from access/session credentials and Worker scope checks.
 
-## D1 production migration history
+M5 mutation ids use UUID-backed `mutation_...` identifiers and are stable across retries. They are idempotency keys, not credentials.
 
-Applied migrations are immutable history:
+Each validated M5 mutation is canonicalized with deterministic object-key ordering and hashed with SHA-256. The resulting lowercase 64-character fingerprint binds the idempotency id to the mutation content.
+
+## D1 migration history / rollout
+
+Applied remote D1 history remains immutable:
 - `migrations/0001_initial.sql` — Campaign/Team/Area/Task baseline;
-- `migrations/0002_m4_access.sql` — shared map focus + access grant/session tables.
+- `migrations/0002_m4_access.sql` — shared map focus + access grant/session tables;
+- `migrations/0003_m5_mutations.sql` — Campaign-scoped mutation idempotency ledger, applied successfully to remote `flyer-map-db` on 2026-08-25.
 
-Future schema work must use new additive migrations (`0003_...`, etc.).
+`0003` adds the M5 ledger table/index and was applied before M5 browser runtime acceptance. Do not rewrite historical migrations.
 
-## Current tables
+## Tables after M5 migration
 
 Domain tables:
 - `campaigns`;
@@ -117,52 +124,93 @@ Access tables:
 - `campaign_access_grants`;
 - `campaign_sessions`.
 
+M5 ledger:
+- `campaign_mutations`.
+
+`campaign_mutations` records:
+- Campaign id;
+- mutation id;
+- mutation type;
+- canonical mutation SHA-256 fingerprint;
+- requested client base revision;
+- server revision from which it was applied;
+- resulting applied revision;
+- client creation time;
+- server applied time.
+
+Primary key:
+- `(campaign_id, mutation_id)`.
+
+`mutation_fingerprint` is required and constrained to 64 characters. It is used to distinguish a genuine duplicate retry from accidental/malicious reuse of the same mutation id with changed content.
+
+The ledger is for idempotency/auditability of mutation application. It is not an authorization credential and does not contain plaintext access/session secrets.
+
 Plaintext access/session secrets are never stored in D1; only SHA-256 hashes are persisted.
 
 ## Important Team Editor grant rule
 
-`campaign_access_grants.team_id` scopes a Team Editor grant, but **there is intentionally no D1 foreign key from the grant to the `teams` table**.
+`campaign_access_grants.team_id` scopes a Team Editor grant, but there is intentionally no D1 foreign key from the grant to the `teams` table.
 
-Reason: current complete-snapshot persistence replaces Team child rows during a snapshot write. A Team foreign key with cascading behavior could revoke valid Team Editor grants merely because a snapshot replacement temporarily deletes/reinserts Team rows.
+The legacy snapshot replacement path still exists during M5 transition and can delete/reinsert Team rows. A Team foreign key with cascading behavior could therefore revoke valid Team Editor grants during that compatibility write.
 
 Instead:
 - grant creation verifies that the Team exists in the Campaign;
 - access resolution verifies that a Team Editor's scoped Team still exists;
-- if the Team no longer exists, that scoped access is treated as invalid;
+- if the Team no longer exists, that scoped access is invalid;
 - Campaign/grant/session foreign keys still enforce Campaign ownership where safe.
 
-Do not reintroduce a Team FK without redesigning snapshot replacement semantics.
+Do not reintroduce a Team FK until legacy snapshot replacement is removed/redesigned and an explicit migration is accepted.
 
-## Current revision/write semantics
+## Revision/write semantics
 
-Current M4 persistence still uses coarse complete-snapshot replacement with one Campaign revision.
+### Reads
 
-Protected endpoints include:
+Protected read model remains snapshot-based:
 - snapshot read;
-- version read;
-- snapshot write.
+- lightweight version read.
 
-Rules:
-- valid Campaign-scoped session required;
-- Viewer cannot write;
-- Team Editor complete-snapshot proposal is diff-authorized server-side;
-- stale base revision returns conflict rather than silent overwrite;
-- new Campaign creation is a dedicated flow;
-- legacy ownership bootstrap/recovery is explicit and protected.
+The Campaign revision is still the shared monotonic revision used to detect newer canonical state.
 
-## M5 transition direction
+### Legacy snapshot write
 
-M5 is planned to introduce durable mutation/idempotency semantics while retaining the snapshot as startup/recovery state.
+Authorized complete-snapshot PUT remains during M5 only as:
+- compatibility for pre-M5 optimistic local state;
+- transition/recovery path.
 
-Expected direction:
-- IndexedDB pending mutation queue;
-- stable mutation/idempotency ids;
-- narrower Worker mutation endpoints;
-- server-side applied-mutation tracking;
-- explicit conflicts;
-- append-only domain/event information that later Activity/Statistics can consume.
+It remains revision-checked and Worker-authorized. New ordinary M5 saves must not use it as their normal delivery path.
 
-Do not delete legacy/local state during this transition.
+### M5 mutation write
+
+Protected endpoint:
+- `POST /api/campaigns/:id/mutations`.
+
+For a new mutation the Worker:
+1. validates the mutation;
+2. computes its canonical SHA-256 fingerprint;
+3. loads current snapshot;
+4. applies the mutation in memory with target-specific conflict preconditions;
+5. validates the resulting snapshot;
+6. authorizes current/candidate snapshots using the existing Worker policy;
+7. attempts a narrow row change and ledger insert guarded by current Campaign revision + internal `write_token`.
+
+The D1 batch contains:
+- Campaign revision/write-token claim;
+- exactly the affected narrow domain statement;
+- mutation ledger insert including the mutation fingerprint.
+
+If the revision claim loses a race, the Worker reloads/re-evaluates for a bounded number of attempts. If the target remains compatible, the mutation can apply on the newer revision. If the target changed, an explicit conflict is returned.
+
+If `(campaign_id, mutation_id)` already exists:
+- matching fingerprint -> return prior applied revision without applying the effect again;
+- different fingerprint -> return explicit `mutation_id_reused` conflict.
+
+## Client durable queue data
+
+IndexedDB stores unacknowledged mutation records while localStorage continues to store the latest snapshot cache.
+
+Queue records are browser-local and include mutation payload, state, attempts/retry timing and last error. They are not synchronized as a separate server entity; successful server acknowledgement removes the queue record.
+
+During the short enqueue window there may also be one best-effort emergency localStorage shadow. It exists only to recover a mutation if IndexedDB enqueue fails or the page is interrupted before commit; after a successful IndexedDB transaction it is removed. Corrupt shadow data is discarded rather than treated as durable queue state.
 
 ## Future organization model
 
@@ -192,4 +240,6 @@ Intentionally local unless later changed:
 - personal last map camera per Campaign;
 - planned UI light/dark/system preference;
 - active unsaved draw/edit draft;
+- M5 IndexedDB queue until its mutations are acknowledged;
+- short-lived best-effort M5 enqueue emergency shadow;
 - GPS route history (none exists).
