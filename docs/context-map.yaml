@@ -145,8 +145,15 @@ nodes:
     path: docs/plans/active/009-product-platform-foundation.md
     type: plan
     status: active
-    topics: [next-work, M5, smart-tasks, collaboration, organizations, statistics]
-    load_when: [new agent continuation, post-PR21 planning, next milestone]
+    topics: [platform-roadmap, M5, smart-tasks, collaboration, organizations, statistics]
+    load_when: [platform sequencing, post-M5 planning, next milestone]
+
+  - id: plan-m5-sync
+    path: docs/plans/active/010-m5-resilient-mutation-sync.md
+    type: plan
+    status: active
+    topics: [current-slice, M5, indexeddb, mutations, idempotency, retries, conflicts]
+    load_when: [current M5 work, PR 24, mutation queue, synchronization]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
@@ -187,5 +194,10 @@ edges:
   - { from: plan-renderer-recovery, to: security, relation: changed }
   - { from: plan-platform-roadmap, to: roadmap, relation: executes }
   - { from: plan-platform-roadmap, to: offline-sync, relation: starts_with }
+  - { from: plan-m5-sync, to: plan-platform-roadmap, relation: implements_phase }
+  - { from: plan-m5-sync, to: offline-sync, relation: implements }
+  - { from: plan-m5-sync, to: data, relation: extends }
+  - { from: plan-m5-sync, to: security, relation: constrained_by }
+  - { from: plan-m5-sync, to: quality, relation: validated_by }
   - { from: prompts, to: architecture, relation: onboards_to }
   - { from: prompts, to: roadmap, relation: onboards_to }
