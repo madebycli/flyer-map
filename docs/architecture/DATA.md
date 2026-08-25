@@ -105,14 +105,12 @@ Each validated M5 mutation is canonicalized with deterministic object-key orderi
 
 ## D1 migration history / rollout
 
-Applied production history remains immutable:
+Applied remote D1 history remains immutable:
 - `migrations/0001_initial.sql` — Campaign/Team/Area/Task baseline;
-- `migrations/0002_m4_access.sql` — shared map focus + access grant/session tables.
+- `migrations/0002_m4_access.sql` — shared map focus + access grant/session tables;
+- `migrations/0003_m5_mutations.sql` — Campaign-scoped mutation idempotency ledger, applied successfully to remote `flyer-map-db` on 2026-08-25.
 
-M5 PR #24 adds:
-- `migrations/0003_m5_mutations.sql` — Campaign-scoped mutation idempotency ledger.
-
-`0003` is repository-prepared but must not be described as applied to Production until the explicit D1 migration action succeeds. The M5 mutation endpoint depends on this table and must not be exercised in an environment before the migration is applied there.
+`0003` adds the M5 ledger table/index and was applied before M5 browser runtime acceptance. Do not rewrite historical migrations.
 
 ## Tables after M5 migration
 
