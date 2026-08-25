@@ -1,210 +1,109 @@
 # Prompt — New Agent / Fresh Chat
 
-Use this prompt when starting a completely new AI coding session with **no prior knowledge** of Verteil-Flyer.
+Use this file when a completely new AI session joins the project.
 
 ```text
 Du arbeitest am GitHub-Projekt `madebycli/flyer-map` (Verteil-Flyer).
 
-WICHTIG: Das Repository ist die einzige Source of Truth. Du hast kein verlässliches Vorwissen aus alten Chats. Erfinde keine Architektur, Roadmap, Zugangsdaten, CI-/Preview- oder Produktionszustände aus Erinnerung.
+Das Repository ist die einzige Source of Truth. Verlasse dich nicht auf alte Chat-Erinnerungen, wenn das Repository etwas anderes sagt.
 
-ARBEITSWEISE ZUM START
-
-Bevor du irgendetwas änderst:
+START
 
 1. Lies `AGENTS.md` vollständig.
 2. Lies `docs/status/CURRENT.md` vollständig.
 3. Lies `docs/context-map.yaml` vollständig.
-4. Behandle `docs/context-map.yaml` als Routing-Graph und lade nur die zur Aufgabe passenden Nodes.
-5. Prüfe bei Architekturänderungen die relevanten akzeptierten ADRs unter `docs/decisions/`.
-6. Prüfe aktuellen Code, offenen PR/Branch-Stand, letzte CI-Läufe und Preview-/Produktionsstatus.
-7. Wenn Code und Doku widersprechen, ermittle den aktuellen beabsichtigten Stand anhand Code + aktuellem PR/main + ADRs und bereinige die falsche Doku im selben Slice.
+4. Behandle `docs/context-map.yaml` als Routing-Graph und lade nur die Nodes, die zur Aufgabe passen.
+5. Prüfe relevante akzeptierte ADRs bevor du Architekturgrenzen änderst.
+6. Prüfe aktuellen `main`, offene PRs/Branches, CI und Preview/Production-Stand soweit relevant.
+7. Wenn Code/PR/Doku widersprechen, ermittle den aktuellen beabsichtigten Stand und korrigiere stale Doku im selben Slice.
 
-PRODUKT
+NICHT VERHANDELBARE AKTUELLE BASIS
 
-Verteil-Flyer ist eine mobile-first Website für reale Kleidersammlungs-Aktionen. Die Karte ist der primäre Feldarbeitsplatz.
-
-Aktuelle Kernkonzepte:
-- Campaign / Aktion
-- Team
-- Area / Gebiet
-- Distribution Task
-- Status: open / completed / later / not-deliverable
-- Campaign-scoped Access mit Admin / Team Editor / Viewer
-
-Langfristige Roadmap (Details immer aus `docs/product/ROADMAP.md` lesen):
-- M5 resiliente Mutation Queue / Sync — AKTUELLER IMPLEMENTIERUNGS-SLICE
-- M5.5 herunterladbarer ca. 3-km Offline-Kartenbereich für die geladene Website
-- M6 Smart Street + House Tasks mit echter OSM/OSM-derived Geometrie
-- M6.5 Collection / pickup mode für die spätere Kleider-Abholung per Auto, inklusive abgehakter Straßenabschnitte und expliziter Abholadressen
-- M7 Kommentare, Activity, deterministische Automationen und Distribution-Einsatzfeedback (Dauer, Gruppengröße, optionale Notiz)
-- M8 Organizations, mehrere Admins und separates Admin Panel
-- M9 Statistiken/Reporting inkl. Dauer, Gruppengröße/Personenzeit sowie UI Light/Dark/System
-- M10 Field Hardening / Release
-
-Future-Features sind nicht automatisch implementiert. Lies die jeweiligen Graph-Nodes/Proposed-Architektur bevor du sie baust.
-
-NICHT VERHANDELBARE WEBSITE-REGELN
-
-Verteil-Flyer ist aktuell eine normale Website:
+Verteil-Flyer ist eine normale Mobile-First-WEBSITE:
 - keine native App
 - keine installierbare PWA
 - kein Service Worker
-- kein Web-App-Manifest-Installationsflow
 - kein Background Sync API
 
 Eine Änderung daran braucht eine neue akzeptierte ADR.
 
-WICHTIGE OFFLINE-GRENZE
-
-M5 schützt Domain-Änderungen in IndexedDB. Das bedeutet NICHT automatisch, dass Chrome/Safari die komplette Website bei einem kalten Reload ohne Netz laden können.
-
-Real-Browser-Beobachtung am 2026-08-25:
-- geladene Website kann offline Streets erstellen/editieren und zeigt `offline gespeichert`;
-- bei einem späteren vollständigen Reload ohne Netz zeigte Chrome die normale Offline-/Dino-Seite, bevor Verteil-Flyer JavaScript laufen konnte.
-
-Daher:
-- diesen Cold-Offline-Reload NICHT als bestanden darstellen;
-- ihn auch nicht als Mutationverlust interpretieren;
-- M5 akzeptiert geladene-App Offline-Queue/Retry-Verhalten;
-- Plan 011 behandelt bewusst herunterladbare Offline-Kartendaten für die geladene App;
-- garantiertes Cold-Offline-App-Shell-Loading würde eine neue Architekturentscheidung erfordern, die ADR-0006 revisitiert.
-
-AKTUELLER MAP-BASELINE
-
+Map-Baseline:
 - MapLibre GL JS 5.7.1 gepinnt
-- CARTO Voyager Retina Raster-Basemap online
-- gespeicherte Areas und Streets in persistenten MapLibre GeoJSON Sources/Layers
-- aktive Draw/Edit-Geometrie nur SVG
-- Browse darf keine Projektion aller gespeicherten Geometrien pro Frame ausführen
+- gespeicherte Areas/Streets in persistenten MapLibre GeoJSON Sources/Layers
+- aktive Draw/Edit-Geometrie nur im kleinen SVG Overlay
+- kein Anwendungsschleifen-Rendering über alle gespeicherten Geometrien bei jedem Pan/Zoom
 
-Am 2026-08-25 wurde ein Max-Zoom-Fehler behoben:
-- Ursache: CARTO Raster-Layer `maxzoom: 20` wurde bei Map-Zoom 20 ausgeblendet;
-- Fix-Commit `5029f9b958502d96d6c185beac16b894774d72e9` setzt nur den Raster-Layer auf maxzoom 21;
-- Source und Map bleiben max 20;
-- CI #226 grün;
-- Worker Version Preview `https://98516141-flyer-map.cloudflare-eleven035.workers.dev`;
-- Real-Browser-Abnahme: Basemap bleibt beim maximalen Zoom sichtbar.
+Authorization:
+- Worker ist maßgeblich
+- IDs sind Selector, niemals Credential
+- aktuelle Rollen: Campaign Admin / Team Editor / Viewer
+- keine Client-only Authorization
+- keine Secrets/Access Tokens/private Campaign-Daten committen oder anfordern
 
-Lies `docs/architecture/MAP.md` und ADR-0010 bevor du den Renderer änderst.
+AKTUELLER M5-STAND
 
-AKTUELLER ACCESS-/SECURITY-BASELINE
+M5 wurde bereits gestartet:
+- Draft PR #24
+- Branch `m5-resilient-sync-mainline`
 
-- Campaign id ist nur Selector, niemals Credential.
-- Access Grants sind revocable und Campaign-scoped.
-- Rollen: Admin, Team Editor (Team-scoped), Viewer.
-- Authorization wird immer im Cloudflare Worker erzwungen.
-- Session ist Secure/HttpOnly/SameSite=Lax.
-- Plaintext Access Tokens werden nicht in D1 gespeichert.
-- Operator Admin recovery/bootstrap ist über das serverseitige `M4_BOOTSTRAP_SECRET` abgesichert.
-- Keine Race-to-claim-/First-visitor-Ownership einführen.
+ERSTELLE KEINEN ZWEITEN M5-BRANCH.
 
-Lies `docs/architecture/SECURITY.md` + ADR-0009 bevor du Access/Organizations/Admin-Funktionen änderst.
+Prüfe PR #24 und die aktuelle Branch-Doku/CI, bevor du entscheidest, was noch offen ist.
 
-AKTUELLER M5-SLICE
+Ein kompletter Cold-Reload ohne Internet kann unter der aktuellen No-Service-Worker-Architektur Chrome's normale Offline/Dino-Seite zeigen. Das ist kein Bedienfehler. `docs/plans/active/011-offline-map-area.md` behandelt den vorbereiteten ~3-km-Offline-Kartenbereich, garantiert aber keinen Cold-Offline-App-Start.
 
-M5 wurde bereits gestartet. ERSTELLE NICHT NOCH EINEN NEUEN M5-BRANCH.
+GROSSER PRODUKTAUSBAU
 
-Aktueller Arbeitsstand:
-- Branch: `m5-resilient-sync-mainline`
-- Draft PR #24: `M5 durable mutation queue on current MapLibre baseline`
-- aktiver Detailplan: `docs/plans/active/010-m5-resilient-mutation-sync.md`
-- Plan 011: `docs/plans/active/011-offline-map-area.md` ist der geplante nächste Offline-Karten-Slice
-- übergeordneter Plan: `docs/plans/active/009-product-platform-foundation.md`
-- akzeptierte M5-Entscheidung: `docs/decisions/ADR-0011-durable-mutation-queue-and-idempotency.md`
-- der alte Draft PR #17 ist geschlossen/superseded.
+Die neue übergeordnete Planung steht in:
+- `docs/product/ROADMAP.md`
+- `docs/plans/active/012-platform-app-expansion.md`
 
-Implementiert in PR #24:
-- explizite Campaign/Team/Area/Street-Task-Mutationen;
-- IndexedDB als durable Queue;
-- geordnete Verarbeitung + bounded exponential retry;
-- Retry bei online / sichtbarem Tab / manuellem Refresh;
-- Konflikt-, Auth-blocked- und Invalid-Zustände;
-- best-effort localStorage Emergency Shadow;
-- Worker-Endpunkt `/api/campaigns/:id/mutations`;
-- bestehende Worker-Autorisierung bleibt maßgeblich;
-- additive Migration `migrations/0003_m5_mutations.sql`;
-- kanonischer SHA-256 Mutation-Fingerprint;
-- gleiche ID + gleicher Inhalt = idempotenter Retry;
-- gleiche ID + anderer Inhalt = `409 mutation_id_reused`;
-- kompakter Sync-Status im UI.
+Wichtige proposed Architecture Nodes:
+- `docs/architecture/IDENTITY_PERMISSIONS.md`
+- `docs/architecture/LIVE_TEAMS.md`
+- `docs/architecture/ORGANIZATIONS.md`
+- `docs/architecture/COLLABORATION.md`
 
-BESTÄTIGTE GATES:
-- D1 Migration `0003_m5_mutations.sql` erfolgreich auf remote `flyer-map-db` angewendet;
-- Real-Browser Preview lädt;
-- offline Street create/edit in der geladenen App zeigt `offline gespeichert`;
-- Max-Zoom-Fix CI + neue Version Preview + Real-Browser-Abnahme bestanden.
+Geplante Richtung nach M5:
+1. M5.5 vorbereiteter Offline-Bereich
+2. M6 echte Smart Streets + Houses
+3. M6.5 Collection/Pickup für Kleidersammlung
+4. M7 Field Sessions + Live Field Groups + Comments/Activity/Automations
+5. M8 Organizations + Accounts + Permissions + Desktop Admin
+6. M9 Statistics + App-like Navigation + Support/Feedback + Appearance
+7. M10 Security/Field Hardening
 
-AKTUELL NOCH OFFEN — NICHT ALS BESTANDEN DARSTELLEN:
-1. geladenen App offline mutieren -> reconnect -> Queue genau einmal zum Server liefern;
-2. Retry/Reconnect ohne Duplicate-Effekt;
-3. echter Target-Konflikt sichtbar, kein stilles Überschreiben;
-4. revoked/ungültiger Access stoppt blind retry und bleibt sichtbar access-blocked;
-5. transienter Fehler bleibt queued und wird später erneut versucht;
-6. gespeicherte MapLibre Areas/Streets und aktives Edit-Verhalten bleiben unverändert;
-7. finaler Repository-Head vor Merge grün.
+Für einen frischen Chat, der genau diesen großen Ausbau umsetzen soll, nutze den ausführlichen Prompt:
+- `docs/prompts/START_PLATFORM_EXPANSION.md`
 
-Cold Full-Page Reload ohne Netz ist derzeit DEFERRED/TODO, nicht M5-bestanden.
+SECURITY
 
-NEUE FUTURE-ANFORDERUNGEN
+Account/Admin/Permission-Code darf nicht ohne vorherige akzeptierte ADR/Threat-Model-Entscheidung gebaut werden.
 
-1. Distribution effort feedback:
-   - Dauer der Verteilung für konkreten Abschnitt/Area/Session;
-   - Anzahl Personen;
-   - optionale Notiz;
-   - später Auswertung für Gebietszuschnitt, Person-Zeit und Leiterrunden;
-   - keine GPS-basierte Mitarbeiterüberwachung.
+Mindestgrenzen:
+- parameterized/prepared D1 queries
+- keine SQL-Konkatenation mit Userinput
+- Passwörter/TOTP-Secrets nie loggen
+- reviewed Password-Hashing
+- TOTP serverseitig + Rate Limits
+- opaque server-revocable Sessions
+- Injection-/XSS-/CSRF-Schutz
+- Organization Tenant Isolation
+- Authentication ersetzt niemals Authorization
+- Security/Admin/Permission-Änderungen auditieren
 
-2. Collection / pickup mode:
-   - eigener Modus getrennt vom Flyer-Verteilfortschritt;
-   - Straßenabschnitte beim späteren Einsammeln per Auto abhaken;
-   - Häuser/Adressen als Abholstellen markieren;
-   - telefonisch gemeldete Abholadressen manuell hinzufügen;
-   - reale Street/House-Geometrie aus M6 wiederverwenden;
-   - exaktes Datenmodell/Statusvokabular vor Implementierung entscheiden.
+ARBEITSWEISE
 
-ORGANIZATIONS / ADMIN PANEL
+- kleine reviewbare Commits
+- additive D1 Migrationen
+- bestehende aktive PRs/Pläne fortführen statt Ersatz erzeugen
+- relevante Tests/Typecheck/Build
+- `CURRENT.md` + Context-Graph aktuell halten
+- bei manuellen Cloudflare-Schritten immer nur eine konkrete User-Aktion gleichzeitig und niemals Secrets anfordern
 
-Mehrere Organisationen und mehrere Administratoren sind geplant, aber noch nicht Teil des aktuellen Campaign-Rollenmodells. Vor Implementierung `docs/architecture/ORGANIZATIONS.md` lesen und eine passende ADR akzeptieren.
-
-COMMENTS / ACTIVITY / AUTOMATIONS / STATISTICS
-
-Vor Implementierung `docs/architecture/COLLABORATION.md` lesen. Dort stehen jetzt auch Distribution-Einsatzfeedback und Collection-Reporting.
-
-BEKANNTE FOLLOW-UPS
-
-- GitHub #22: Desktop bottom-toolbar fit/spacing;
-- GitHub #23: Production-Health/Recovery/`?diag=1`/500-5000-Street-Validation;
-- Cold-Offline-App-Shell-Reload unter Website-only Architektur;
-- Plan 011 Offline-Kartenbereich;
-- M6.5 Collection / pickup mode;
-- M7/M9 Distribution-Einsatzfeedback und Auswertung.
-
-CODE-/GIT-REGELN
-
-- Repository ist Source of Truth.
-- Kleine reviewbare Commits.
-- Keine historischen Migrationen umschreiben.
-- Neue D1-Änderungen nur additive Migrationen.
-- Keine Secrets/Access Links/private Campaign-Daten committen oder im Chat anfordern.
-- Authorization serverseitig.
-- Vor Abschluss: Tests + TypeScript + Production Build + relevante Doku + `CURRENT.md` + Context-Graph prüfen.
-- Bestehenden aktiven PR/Plan fortführen statt parallele Ersatz-Slices zu erzeugen.
-
-EXTERNE CLOUDFLARE-AKTIONEN
-
-Wenn eine manuelle Cloudflare-Aktion des Users nötig ist:
-- immer nur genau EINE manuelle Aktion gleichzeitig;
-- exakten Klick/Befehl nennen;
-- genau EIN nicht-sensitives Ergebnis zurückfragen;
-- niemals Secret-Werte, OAuth-/Device-Codes oder Access Tokens im Chat anfordern.
-
-DEIN START IN JEDEM FRISCHEN CHAT
-
-Gib nach dem Lesen zuerst eine kurze Bestandsaufnahme mit aktuellem main/PR/Branch-Stand, Milestone/Plan, relevanten Graph-Nodes/ADRs, tatsächlich bestandenen Gates und offenen Risiken. Danach direkt weiter umsetzen, außer eine echte externe Aktion blockiert.
+Gib nach dem Lesen eine kurze Bestandsaufnahme und beginne danach direkt mit der Umsetzung. Stoppe nicht nach bloßer Planung, außer eine echte externe Aktion oder notwendige Architekturentscheidung blockiert.
 ```
 
-## Minimal handoff note
+## Minimal handoff
 
-If a shorter handoff is needed, give the new agent only this file path and tell it:
-
-> Read `docs/prompts/NEW_AGENT.md` from the repository and follow it exactly. Do not rely on prior chat memory.
+> Read `docs/prompts/NEW_AGENT.md` and follow it exactly. For the full platform expansion also read `docs/prompts/START_PLATFORM_EXPANSION.md`.

@@ -3,15 +3,17 @@ id: architecture-security
 type: architecture
 status: accepted
 last_updated: 2026-08-25
-related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, ADR-0009, ADR-0011]
-source_of_truth_for: [authorization, privacy-baseline, current-access-model]
+related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, plan-012-platform-app-expansion]
+source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, future-security-boundaries]
 ---
 
 # Security and Privacy
 
 ## Baseline
 
-The client is untrusted. Every protected request is authorized and every state-changing payload is validated by the Cloudflare Worker. React/UI visibility, local queue state and mutation labels are conveniences, never authorization boundaries.
+The client is untrusted.
+
+Every protected request is authorized and every state-changing payload is validated by the Cloudflare Worker. React/UI visibility, local queue state and mutation labels are conveniences, never authorization boundaries.
 
 Campaign ids, future Organization ids, domain ids and M5 mutation ids are selectors/identifiers only. They are never credentials.
 
@@ -35,16 +37,16 @@ Current roles:
 
 The Worker enforces scope on every write.
 
-During M5 transition:
+During the M5 transition:
 - legacy snapshot PUT remains diff-authorized against previous server state;
-- M5 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the **same existing authorization policy** before D1 persistence.
+- M5 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence.
 
 This prevents a client from bypassing scope by lying about a mutation type or target.
 
-## Access grants and sessions
+## Current access grants and sessions
 
 Access grant token:
-- generated from cryptographically strong random bytes;
+- cryptographically strong random bytes;
 - plaintext returned only when created;
 - D1 stores SHA-256 hash, role/scope/metadata only.
 
@@ -54,7 +56,7 @@ Successful redemption creates a separate opaque session secret in a `Secure; Htt
 
 Every protected request resolves the session's backing grant. Revoking the grant invalidates backed sessions on their next protected request.
 
-## Team Editor scope
+## Current Team Editor scope
 
 Team Editor grant creation verifies that the scoped Team exists. Access resolution also verifies the Team still exists.
 
@@ -64,7 +66,7 @@ For M5 mutations, Team Editor scope is not inferred from client mutation payload
 1. loads canonical current snapshot;
 2. applies the proposed mutation in memory;
 3. validates the candidate snapshot;
-4. compares current/candidate through `authorizeSnapshotWrite`;
+4. compares current/candidate through the existing snapshot authorization policy;
 5. persists only if allowed.
 
 ## M5 mutation request security
@@ -78,19 +80,19 @@ Controls:
 - Viewer rejected before mutation persistence;
 - Campaign id in the payload must match the protected route Campaign;
 - mutation id/type/base revision/createdAt/payload are schema validated;
-- mutation request body is size limited;
+- request body is size limited;
 - resulting Campaign snapshot is fully validated before persistence;
 - existing Worker authorization policy is authoritative;
 - D1 revision/write-token claim protects concurrent persistence;
 - mutation idempotency ledger prevents duplicate replay effects.
 
-A stable mutation id allows safe retry. It does **not** authorize the retry. Every retry still resolves current access first.
+A stable mutation id allows safe retry. It does not authorize the retry. Every retry still resolves current access first.
 
-If an already-applied mutation id is replayed, the Worker returns its previous applied revision only after the request has passed the protected route's access resolution. The ledger is not a public lookup service.
+If an already-applied mutation id is replayed, the Worker returns its previous applied revision only after the request has passed protected access resolution. The ledger is not a public lookup service.
 
 ## Queue and revocation behavior
 
-IndexedDB queue records may contain domain mutation payloads necessary to retry a user's saved work. They do not contain plaintext Access Link tokens or session secrets.
+IndexedDB queue records may contain domain mutation payloads necessary to retry saved work. They do not contain plaintext Access Link tokens or session secrets.
 
 When a queued request receives 401/403:
 - the record remains locally preserved;
@@ -98,78 +100,128 @@ When a queued request receives 401/403:
 - ordered automatic retry stops;
 - the client must not blindly hammer a revoked credential.
 
-A later valid access session may allow the queue to resume, but the Worker re-authorizes each mutation against current canonical state.
+A later valid access session may allow the queue to resume, but the Worker re-authorizes every mutation against current canonical state.
 
-## Existing Campaign bootstrap
+## Current bootstrap / operator recovery
 
-Legacy pre-M4 Campaigns are never assigned to the first visitor.
+Legacy Campaigns are never assigned to the first visitor.
 
-Initial bootstrap requires:
-- configured server-only `M4_BOOTSTRAP_SECRET`;
-- correct supplied secret;
-- existing Campaign;
-- zero existing grants for the initial-bootstrap operation.
+Initial bootstrap/recovery remains protected by the server-only configured secret flow described by current accepted ADR/docs.
 
 Campaign id alone never creates ownership.
 
-## Operator Admin recovery
-
-Operator recovery remains available after PR #21 and is unchanged by M5.
-
-Recovery:
-- requires the configured high-entropy server secret;
-- verifies Campaign existence;
-- may create a fresh normal revocable Admin grant even when grants already exist;
-- creates a secure session for the current origin;
-- returns the new Admin Access token/link once;
-- does not persist the operator secret in browser Campaign state or D1.
-
-This is a privileged operator mechanism, not an ordinary user login system.
+Operator recovery remains a privileged operator mechanism, not an ordinary account login system. M5 does not weaken or replace it.
 
 ## Request protections
 
-- valid session required for protected Campaign routes;
-- Viewer writes return authorization failure;
-- cross-Campaign credentials fail;
-- payloads are size/schema/geometry/ownership validated;
-- target conflicts/revision races do not silently overwrite;
-- same-origin protections apply to browser state-changing requests when Origin is present;
-- secrets are verified server-side only.
+Current and future protected routes require:
+- valid authorized server-side session/credential state;
+- payload schema/size/domain validation;
+- revision/conflict handling rather than silent overwrite;
+- same-origin/CSRF protections where applicable;
+- secrets verified server-side only.
 
-## Future Organizations and multiple admins
+## Future Organizations and accounts
 
-Multi-organization administration is planned but **not implemented by current Campaign Admin roles**.
+Multi-organization administration is planned but not implemented by current Campaign roles.
 
-Before M8 implementation an ADR must define Organization identity/membership/session behavior.
+Before implementation, accepted ADR(s) and threat-model review must define:
+- Organization identity/membership/session behavior;
+- username/password/TOTP account security;
+- role/capability semantics;
+- legacy Campaign Admin migration.
 
-Mandatory future security properties:
-- Organization is a tenant boundary;
+Mandatory properties:
+- Organization is tenant boundary;
 - no cross-Organization reads/writes/statistics/comments/activity;
-- multiple Organization Admins supported explicitly;
+- multiple Organization Admins supported;
+- safe admin handover/recovery;
 - Campaign Admin is not silently treated as Organization Admin;
 - membership/revocation enforced server-side;
-- legacy Campaign migration cannot create a first-visitor claim race;
-- privileged admin/automation actions have auditable event records where appropriate.
+- privileged admin/permission/security actions audited.
 
 M5 mutation ids/idempotency do not establish Organization identity. Future tenant scope must be added explicitly to the authorization/data model.
 
-See `docs/architecture/ORGANIZATIONS.md`.
+See `docs/architecture/ORGANIZATIONS.md` and `docs/architecture/IDENTITY_PERMISSIONS.md`.
 
-## Comments, activity, automations and statistics
+## Future username/password/TOTP security
 
-Future collaboration/reporting endpoints must enforce the same server-side scope principles.
+Requested administrator login model:
+- username;
+- password;
+- authenticator-app TOTP;
+- no SMS requirement;
+- no mandatory email identity.
 
-Automations must not become a bypass around caller/system authorization. Idempotent automation/domain mutation handling is required before privileged automatic effects are trusted.
+Security requirements:
+- raw passwords never stored or logged;
+- reviewed password hashing strategy with unique salts and appropriate cost;
+- no home-grown password cryptography;
+- TOTP secrets generated securely and protected at rest;
+- TOTP codes/secrets never logged;
+- login creates/rotates opaque revocable sessions;
+- login/TOTP endpoints rate-limited;
+- narrow server-side TOTP time tolerance;
+- security-sensitive recovery/reset audited;
+- last effective Organization Admin cannot be accidentally removed without safe transfer/recovery.
 
-Statistics may aggregate authorized state/events, but must not introduce continuous GPS surveillance.
+## Injection resistance
 
-## GPS and camera privacy
+All user-controlled input is inert data.
 
-The product does not upload/persist continuous device location history.
+Mandatory:
+- never concatenate username/password/code/comment/form input into SQL;
+- use D1 prepared/parameterized queries;
+- never pass user input to `eval`, dynamic code execution, shell execution or raw HTML rendering;
+- safely encode output;
+- prefer a restrictive CSP;
+- validation helps correctness but security must not depend on blacklisting suspicious strings.
 
-One-shot browser location may orient the map. Personal center/zoom/bearing is local browser preference and is not shared merely because the map moves.
+If an attacker types SQL, HTML, JavaScript or other code-like text into a username/password/form field, it must remain data and never execute.
 
-Shared Campaign focus is configuration, not location tracking.
+## Future capability authorization
+
+Future configurable permissions must be evaluated server-side on every privileged operation.
+
+Rules:
+- deny by default;
+- Organization boundary cannot be overridden;
+- UI toggles do not grant permission;
+- permission changes are audited;
+- authentication and authorization remain separate steps.
+
+## Live Field Group security
+
+Future live groups/QR/team codes must not become backdoors around persistent access policy.
+
+Requirements:
+- discoverability limited to authorized Campaign context;
+- no public internet directory;
+- random/non-sequential temporary codes;
+- expiry/revocation;
+- rate limiting/brute-force resistance;
+- optional join passwords handled as secrets, not plaintext storage;
+- QR contains minimum required join material;
+- Field Group join never grants Admin automatically;
+- temporary group credentials are distinct from persistent Team/Admin invites.
+
+See `docs/architecture/LIVE_TEAMS.md`.
+
+## Comments, activity, sessions and statistics
+
+Future collaboration/reporting endpoints enforce server-side scope.
+
+Automations cannot bypass caller/system authorization.
+
+Statistics/session highlighting derives from Task/domain events, not continuous GPS surveillance.
+
+## GPS and presence privacy
+
+The product does not upload/persist continuous device location history by default.
+
+One-shot browser location may orient the map. Personal center/zoom/bearing remains local browser preference unless explicitly shared through authorized Campaign configuration.
+
+Future live groups may expose limited operational presence where useful, but must not require exact live GPS trails or permanent device fingerprinting.
 
 ## Secrets
 
@@ -178,16 +230,20 @@ Never commit or paste into normal project communication:
 - bootstrap/recovery secrets;
 - plaintext production Access Links/tokens;
 - session secrets;
+- passwords;
+- TOTP secrets/codes;
 - private Campaign/Organization exports.
 
 A D1 database id is configuration, not a credential.
 
 ## Data minimization
 
-Current Access Grants do not require personal name/email/phone/device identity. Operational labels may be used.
+Collect only data needed for explicit product/security requirements.
 
-M5 stores only the domain payload and metadata needed to deliver/reconcile queued saved work. It does not add GPS history, device profiling or user tracking.
+M5 stores only domain payload and metadata needed to deliver/reconcile queued saved work. It does not add GPS history, device profiling or user tracking.
 
-Future Organization identity may require more durable member identity, but only collect data needed for explicit administrative/security requirements. Do not add personal profiling or movement tracking for statistics.
+Field Sessions may store operational values such as date, duration, participant count and Task events. They should not become individual movement surveillance.
+
+Future Organization identity should not collect email/phone merely because account systems often do so if username/password/TOTP meets the accepted product/security design.
 
 See ADR-0009 for Campaign access/session and ADR-0011 for durable mutation/idempotency behavior.
