@@ -1,0 +1,459 @@
+import {
+  OFFLINE_MAP_RADIUS_METERS,
+  OFFLINE_MAP_SCHEMA_VERSION,
+  isOfflineMapPackage,
+  type OfflineMapBounds,
+  type OfflineMapBuildingFeature,
+  type OfflineMapPackage,
+  type OfflineMapRoadFeature,
+} from "../src/domain/offlineMap.ts";
+
+const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const MAX_REQUEST_BYTES = 4_096;
+const MAX_UPSTREAM_BYTES = 8_000_000;
+const MAX_PACKAGE_BYTES = 10_000_000;
+const UPSTREAM_TIMEOUT_MS = 18_000;
+const MIN_RADIUS_METERS = 250;
+
+const TAG_ALLOWLIST = new Set([
+  "name",
+  "ref",
+  "highway",
+  "building",
+  "building:levels",
+  "addr:housenumber",
+  "addr:street",
+  "addr:postcode",
+  "addr:city",
+  "surface",
+  "service",
+  "access",
+  "foot",
+  "bicycle",
+  "motor_vehicle",
+  "oneway",
+  "lanes",
+  "lit",
+  "sidewalk",
+]);
+
+type FetchLike = typeof fetch;
+
+type OfflineMapHandlerOptions = {
+  upstreamUrl?: string;
+  fetchImpl?: FetchLike;
+  now?: () => Date;
+  timeoutMs?: number;
+  maxUpstreamBytes?: number;
+  maxPackageBytes?: number;
+};
+
+type OverpassGeometryPoint = {
+  lat: number;
+  lon: number;
+};
+
+type OverpassWay = {
+  type: "way";
+  id: number;
+  tags?: Record<string, unknown>;
+  geometry?: OverpassGeometryPoint[];
+};
+
+type OverpassPayload = {
+  elements?: unknown[];
+  osm3s?: {
+    timestamp_osm_base?: unknown;
+  };
+};
+
+type ParsedRequest = {
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+};
+
+class OfflineMapRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "OfflineMapRequestError";
+  }
+}
+
+const json = (data: unknown, init: ResponseInit = {}) =>
+  Response.json(data, {
+    ...init,
+    headers: {
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      ...init.headers,
+    },
+  });
+
+const errorResponse = (error: OfflineMapRequestError) =>
+  json(
+    {
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    },
+    { status: error.status },
+  );
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+async function parseRequest(request: Request): Promise<ParsedRequest> {
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+    throw new OfflineMapRequestError(413, "request_too_large", "Offline-Kartenanfrage ist zu groß.");
+  }
+
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) {
+    throw new OfflineMapRequestError(413, "request_too_large", "Offline-Kartenanfrage ist zu groß.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new OfflineMapRequestError(400, "invalid_json", "Request-Body ist kein gültiges JSON.");
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new OfflineMapRequestError(400, "invalid_request", "Offline-Kartenanfrage ist ungültig.");
+  }
+
+  const body = parsed as Record<string, unknown>;
+  const center = body.center;
+  if (!center || typeof center !== "object" || Array.isArray(center)) {
+    throw new OfflineMapRequestError(400, "invalid_center", "Kartenmittelpunkt ist ungültig.");
+  }
+
+  const point = center as Record<string, unknown>;
+  if (
+    !finiteNumber(point.lat) ||
+    point.lat < -90 ||
+    point.lat > 90 ||
+    !finiteNumber(point.lng) ||
+    point.lng < -180 ||
+    point.lng > 180
+  ) {
+    throw new OfflineMapRequestError(400, "invalid_center", "Kartenmittelpunkt ist ungültig.");
+  }
+
+  const radius = body.radiusMeters ?? OFFLINE_MAP_RADIUS_METERS;
+  if (
+    !finiteNumber(radius) ||
+    !Number.isInteger(radius) ||
+    radius < MIN_RADIUS_METERS ||
+    radius > OFFLINE_MAP_RADIUS_METERS
+  ) {
+    throw new OfflineMapRequestError(
+      400,
+      "invalid_radius",
+      `Offline-Radius muss zwischen ${MIN_RADIUS_METERS} und ${OFFLINE_MAP_RADIUS_METERS} Metern liegen.`,
+    );
+  }
+
+  return { lat: point.lat, lng: point.lng, radiusMeters: radius };
+}
+
+function upstreamUrl(value: string | undefined) {
+  let url: URL;
+  try {
+    url = new URL(value || DEFAULT_OVERPASS_URL);
+  } catch {
+    throw new OfflineMapRequestError(
+      503,
+      "osm_upstream_invalid",
+      "OSM-Datenquelle ist serverseitig ungültig konfiguriert.",
+    );
+  }
+
+  const localDevelopment =
+    url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+  if (url.protocol !== "https:" && !localDevelopment) {
+    throw new OfflineMapRequestError(
+      503,
+      "osm_upstream_invalid",
+      "OSM-Datenquelle ist serverseitig ungültig konfiguriert.",
+    );
+  }
+  return url.toString();
+}
+
+export function buildOfflineMapOverpassQuery(input: ParsedRequest) {
+  const lat = input.lat.toFixed(6);
+  const lng = input.lng.toFixed(6);
+  const radius = String(input.radiusMeters);
+
+  return `[out:json][timeout:15];\n(\n  way(around:${radius},${lat},${lng})["highway"];\n  way(around:${radius},${lat},${lng})["building"];\n);\nout tags geom qt;`;
+}
+
+function normalizeTags(tags: Record<string, unknown> | undefined) {
+  const result: Record<string, string> = {};
+  if (!tags) return result;
+  for (const [key, value] of Object.entries(tags)) {
+    if (!TAG_ALLOWLIST.has(key)) continue;
+    if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+      continue;
+    }
+    result[key] = String(value).slice(0, 240);
+  }
+  return result;
+}
+
+function validWay(value: unknown): value is OverpassWay {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const way = value as Record<string, unknown>;
+  return way.type === "way" && Number.isSafeInteger(way.id) && Number(way.id) > 0;
+}
+
+function normalizeCoordinates(geometry: OverpassGeometryPoint[] | undefined) {
+  if (!Array.isArray(geometry)) return [] as [number, number][];
+  const result: [number, number][] = [];
+  for (const point of geometry) {
+    if (
+      !point ||
+      !finiteNumber(point.lat) ||
+      !finiteNumber(point.lon) ||
+      point.lat < -90 ||
+      point.lat > 90 ||
+      point.lon < -180 ||
+      point.lon > 180
+    ) {
+      continue;
+    }
+    const coordinate: [number, number] = [point.lon, point.lat];
+    const previous = result[result.length - 1];
+    if (!previous || previous[0] !== coordinate[0] || previous[1] !== coordinate[1]) {
+      result.push(coordinate);
+    }
+  }
+  return result;
+}
+
+function normalizeRoad(way: OverpassWay): OfflineMapRoadFeature | null {
+  if (!way.tags || typeof way.tags.highway !== "string") return null;
+  const coordinates = normalizeCoordinates(way.geometry);
+  if (coordinates.length < 2) return null;
+  return {
+    type: "Feature",
+    id: `way/${way.id}`,
+    properties: {
+      osmType: "way",
+      osmId: way.id,
+      kind: "road",
+      tags: normalizeTags(way.tags),
+    },
+    geometry: {
+      type: "LineString",
+      coordinates,
+    },
+  };
+}
+
+function normalizeBuilding(way: OverpassWay): OfflineMapBuildingFeature | null {
+  if (!way.tags || typeof way.tags.building !== "string") return null;
+  const coordinates = normalizeCoordinates(way.geometry);
+  if (coordinates.length < 3) return null;
+  const first = coordinates[0];
+  const last = coordinates[coordinates.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    coordinates.push([first[0], first[1]]);
+  }
+  if (coordinates.length < 4) return null;
+  return {
+    type: "Feature",
+    id: `way/${way.id}`,
+    properties: {
+      osmType: "way",
+      osmId: way.id,
+      kind: "building",
+      tags: normalizeTags(way.tags),
+    },
+    geometry: {
+      type: "Polygon",
+      coordinates: [coordinates],
+    },
+  };
+}
+
+function calculateBounds(lat: number, lng: number, radiusMeters: number): OfflineMapBounds {
+  const latDelta = radiusMeters / 111_320;
+  const longitudeScale = Math.max(Math.cos((lat * Math.PI) / 180), 0.01);
+  const lngDelta = Math.min(radiusMeters / (111_320 * longitudeScale), 180);
+  return {
+    south: Math.max(-90, lat - latDelta),
+    west: Math.max(-180, lng - lngDelta),
+    north: Math.min(90, lat + latDelta),
+    east: Math.min(180, lng + lngDelta),
+  };
+}
+
+export function normalizeOfflineMapPackage(
+  payload: OverpassPayload,
+  input: ParsedRequest,
+  fetchedAt: Date,
+): OfflineMapPackage {
+  const roads: OfflineMapRoadFeature[] = [];
+  const buildings: OfflineMapBuildingFeature[] = [];
+
+  for (const element of Array.isArray(payload.elements) ? payload.elements : []) {
+    if (!validWay(element)) continue;
+    const building = normalizeBuilding(element);
+    if (building) {
+      buildings.push(building);
+      continue;
+    }
+    const road = normalizeRoad(element);
+    if (road) roads.push(road);
+  }
+
+  const timestamp = payload.osm3s?.timestamp_osm_base;
+  const sourceTimestamp =
+    typeof timestamp === "string" && !Number.isNaN(Date.parse(timestamp)) ? timestamp : null;
+
+  return {
+    schemaVersion: OFFLINE_MAP_SCHEMA_VERSION,
+    sourceDataset: "OpenStreetMap",
+    sourceLicense: "ODbL-1.0",
+    sourceUrl: "https://www.openstreetmap.org/copyright",
+    fetchedAt: fetchedAt.toISOString(),
+    sourceTimestamp,
+    center: { lat: input.lat, lng: input.lng },
+    radiusMeters: input.radiusMeters,
+    bounds: calculateBounds(input.lat, input.lng, input.radiusMeters),
+    attribution: "© OpenStreetMap contributors",
+    roads: { type: "FeatureCollection", features: roads },
+    buildings: { type: "FeatureCollection", features: buildings },
+  };
+}
+
+async function fetchOverpass(
+  input: ParsedRequest,
+  options: OfflineMapHandlerOptions,
+): Promise<OverpassPayload> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? UPSTREAM_TIMEOUT_MS);
+  try {
+    const response = await (options.fetchImpl ?? fetch)(upstreamUrl(options.upstreamUrl), {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+      },
+      body: new URLSearchParams({ data: buildOfflineMapOverpassQuery(input) }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new OfflineMapRequestError(
+        502,
+        "osm_upstream_failed",
+        "OSM-Daten konnten nicht geladen werden.",
+      );
+    }
+
+    const maxBytes = options.maxUpstreamBytes ?? MAX_UPSTREAM_BYTES;
+    const declaredLength = Number(response.headers.get("content-length") ?? "0");
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+      throw new OfflineMapRequestError(
+        413,
+        "osm_response_too_large",
+        "Der gewählte Offline-Bereich enthält zu viele Kartendaten.",
+      );
+    }
+
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes) {
+      throw new OfflineMapRequestError(
+        413,
+        "osm_response_too_large",
+        "Der gewählte Offline-Bereich enthält zu viele Kartendaten.",
+      );
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      throw new OfflineMapRequestError(
+        502,
+        "osm_response_invalid",
+        "OSM-Datenquelle hat ungültige Daten geliefert.",
+      );
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new OfflineMapRequestError(
+        502,
+        "osm_response_invalid",
+        "OSM-Datenquelle hat ungültige Daten geliefert.",
+      );
+    }
+    return payload as OverpassPayload;
+  } catch (error) {
+    if (error instanceof OfflineMapRequestError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new OfflineMapRequestError(504, "osm_upstream_timeout", "OSM-Datenquelle hat zu lange gebraucht.");
+    }
+    throw new OfflineMapRequestError(502, "osm_upstream_failed", "OSM-Daten konnten nicht geladen werden.");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function handleOfflineMapPackage(
+  request: Request,
+  options: OfflineMapHandlerOptions = {},
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return errorResponse(
+      new OfflineMapRequestError(405, "method_not_allowed", "Für diesen Endpunkt ist nur POST erlaubt."),
+    );
+  }
+
+  try {
+    const input = await parseRequest(request);
+    const upstream = await fetchOverpass(input, options);
+    const pkg = normalizeOfflineMapPackage(upstream, input, (options.now ?? (() => new Date()))());
+    if (!isOfflineMapPackage(pkg)) {
+      throw new OfflineMapRequestError(
+        502,
+        "offline_package_invalid",
+        "Geladene OSM-Daten konnten nicht sicher verarbeitet werden.",
+      );
+    }
+
+    const serialized = JSON.stringify(pkg);
+    if (new TextEncoder().encode(serialized).byteLength > (options.maxPackageBytes ?? MAX_PACKAGE_BYTES)) {
+      throw new OfflineMapRequestError(
+        413,
+        "offline_package_too_large",
+        "Der gewählte Offline-Bereich ist für dieses Gerätedatenpaket zu groß.",
+      );
+    }
+
+    return new Response(serialized, {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+      },
+    });
+  } catch (error) {
+    if (error instanceof OfflineMapRequestError) return errorResponse(error);
+    return errorResponse(
+      new OfflineMapRequestError(500, "offline_package_failed", "Offline-Kartenbereich konnte nicht erstellt werden."),
+    );
+  }
+}
