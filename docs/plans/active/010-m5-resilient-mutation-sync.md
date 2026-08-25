@@ -72,7 +72,7 @@ Complete code + context/ADR/runbook head `5c7dce819d472be8242da59034310d7a87c21f
 - Cloudflare exact commit preview deployment passed;
 - exact preview: `https://bb8fa846-flyer-map.cloudflare-eleven035.workers.dev`.
 
-Cloudflare PR bot explicitly reported `5c7dce81` as the successful preview commit.
+Cloudflare PR bot explicitly reported `5c7dce81` as the successful preview commit. On 2026-08-25 the user also confirmed that this exact preview root loads successfully in a real browser.
 
 Commits after `5c7dce...` are documentation/handoff/status-only at this point, so they are runtime-equivalent to the accepted preview. If any later commit changes runtime code, obtain a new exact preview before merge.
 
@@ -104,6 +104,8 @@ Observed non-sensitive result:
 No credentials or secret values are recorded. The D1 schema is now ready for M5 preview mutation acceptance.
 
 ## Browser/field acceptance — current gate
+
+Preview-root smoke is passed in a real browser. Functional M5 acceptance remains open.
 
 Test one gate at a time and record each result immediately:
 1. offline save -> reload while still offline -> reconnect -> queued mutation synchronizes;
