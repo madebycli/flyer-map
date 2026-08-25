@@ -43,11 +43,14 @@ D1 migration `0003_m5_mutations.sql` was successfully applied to remote `flyer-m
 
 Observed in a real browser on 2026-08-25:
 - preview root loads;
-- while offline, creating a Street shows `offline gespeichert`;
-- while offline, editing a Street remains locally saved;
-- after a full page reload while still offline, the created/edited Street is still present.
+- while the application is loaded and offline, creating a Street shows `offline gespeichert`;
+- while the application is loaded and offline, editing a Street remains locally saved.
 
-This passes the local offline durability/reload portion of M5 gate 1. Reconnect delivery is still unconfirmed because the basemap itself did not remain usable offline after reload.
+A later full page reload while still offline did **not** load Verteil-Flyer; Chrome displayed its normal offline/Dino page. Therefore the earlier assumption that an end-to-end full offline reload had passed is withdrawn.
+
+This is not treated as user error and not as proof that the IndexedDB mutation disappeared. It demonstrates a separate application-shell limitation of the current normal-website/no-Service-Worker architecture.
+
+Strict cold page reload/start while fully offline is therefore deferred as a TODO rather than a blocking M5 acceptance claim. A future requirement to guarantee the whole website cold-loads offline needs an explicit architecture decision revisiting ADR-0006.
 
 ## Maximum-zoom basemap bug — fixed and browser-accepted
 
@@ -73,46 +76,73 @@ A new Cloudflare Worker Version preview containing the fix was manually uploaded
 - preview alias: `https://m5-zoom-fix-flyer-map.cloudflare-eleven035.workers.dev`;
 - no production traffic was changed.
 
-Real-browser acceptance on 2026-08-25 passed: at maximum zoom the basemap remains visible and no longer turns white.
+Real-browser acceptance passed: at maximum zoom the basemap remains visible and no longer turns white.
 
 ## Offline map-area requirement
 
-A new field requirement was confirmed during M5 testing: after intentionally downloading an area, the map must remain useful after an offline reload.
-
-Desired UX:
-- Settings action to download an offline working area;
+Plan 011 tracks a deliberate downloadable local map package:
+- Settings action;
 - default radius approximately **3 km around the current map center**;
-- downloaded map context survives reload in browser storage;
-- Areas/Streets and queued mutations continue working on top of that offline map context;
-- reconnect later synchronizes normal M5 mutations.
+- offline-permitted OSM/OSM-derived data stored in IndexedDB;
+- Areas/Streets and M5 mutations continue working while the loaded application loses connectivity;
+- CARTO raster tiles are not stored/cached.
 
-This must remain website-only and must not use a Service Worker.
+Important scope correction: Plan 011 does not itself guarantee a cold full-page reload with no network. Offline map data and offline application-shell loading are separate problems.
 
-CARTO raster tiles must **not** be used for the offline package because CARTO Basemap terms prohibit storing/caching basemap content. The offline package therefore requires a separately reviewed OSM/OSM-derived source/format whose license and operational model permit deliberate local storage.
+## Newly accepted future field requirements
 
-Plan 011 (`docs/plans/active/011-offline-map-area.md`) tracks this as the next map/connectivity slice after M5 rather than silently expanding PR #24.
+Two external field-user ideas were accepted into the roadmap on 2026-08-25.
+
+### Distribution effort feedback
+
+Groups should be able to record directly after distributing a section:
+- how long they were distributing;
+- how many people were in the group;
+- optional short note/difficulty feedback.
+
+Purpose:
+- avoid guessing duration/group size later in leader meetings;
+- help determine whether Areas are realistically sized for different groups;
+- feed later Area/Team statistics and person-time reporting without GPS surveillance.
+
+This belongs to M7 collaboration/activity capture and M9 statistics/reporting. Exact session/entity semantics are still to be designed.
+
+### Collection / pickup mode
+
+A second field mode is planned for the later clothes-collection round:
+- reuse real Street/House geometry from M6;
+- parents/teams can mark collection road sections already driven/completed;
+- houses/addresses can be marked as pickup stops;
+- manually reported pickup addresses can be added, e.g. after residents call;
+- collection progress remains separate from prior flyer-distribution progress;
+- no continuous GPS route tracking required.
+
+This is now Roadmap **M6.5 — Collection / pickup mode** and requires its own reviewed data-model decision before implementation.
 
 ## M5 gates still open
 
-1. Complete offline-save gate by reconnecting and confirming queued delivery exactly once.
-2. Retry/reconnect without duplicate effect.
-3. Visible target conflict with no silent overwrite.
-4. Revoked/invalid access stops blind retry and remains access-blocked.
-5. Transient failure stays queued and retries later.
-6. Saved Area/Street selection and active edit behavior remain unchanged.
-7. Final repository head green before merge.
+Applicable remaining release gates:
+1. with the app loaded, reconnect after an offline mutation and confirm queued delivery exactly once;
+2. retry/reconnect without duplicate effect;
+3. visible target conflict with no silent overwrite;
+4. revoked/invalid access stops blind retry and remains access-blocked;
+5. transient failure stays queued and retries later;
+6. saved Area/Street selection and active edit behavior remain unchanged;
+7. final repository head green before merge.
 
-Passed renderer gate: the updated Version preview keeps the basemap visible at maximum zoom.
+Deferred/non-blocking TODO:
+- strict cold page reload/start while fully offline; current Chrome test shows the browser offline/Dino page before Verteil-Flyer can run.
 
-PR #24 remains Draft until the remaining M5 gates pass.
+PR #24 remains Draft until the applicable remaining M5 gates pass.
 
 ## Follow-ups / roadmap
 
-- Plan 011 — downloadable ~3 km offline working area with offline-permitted map data;
+- Plan 011 / M5.5 — downloadable ~3 km offline working area for the loaded app;
 - M6 — Smart Street + House Tasks from reviewed real map geometry;
-- M7 — comments, activity and deterministic automations;
+- M6.5 — Collection / pickup mode for later clothes collection by car and explicit pickup addresses;
+- M7 — comments, activity, deterministic automations and distribution effort feedback;
 - M8 — Organizations, multiple admins and Admin panel;
-- M9 — statistics/reporting and personal UI appearance;
+- M9 — statistics/reporting including duration, group size/person-time and personal UI appearance;
 - M10 — field hardening/release.
 
 Existing GitHub follow-ups remain open:
@@ -122,7 +152,7 @@ Existing GitHub follow-ups remain open:
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Restore connectivity in the same browser/session that still contains the offline-saved Street and confirm the queued mutation reaches the server exactly once.
-3. Continue idempotency/conflict/auth/transient-failure acceptance.
-4. Merge M5 only after all release gates pass.
-5. Then execute Plan 011 before/alongside Smart Street work so field users can deliberately prepare a local offline working area.
+2. Do not repeat the strict cold-offline reload test for M5; keep it documented as a follow-up.
+3. Continue the remaining loaded-app M5 browser acceptance when convenient.
+4. Merge M5 only after applicable release gates pass.
+5. Then execute Plan 011 and M6; M6.5 collection mode should reuse the same reviewed road/building geometry.
