@@ -5,11 +5,11 @@ status: proposed
 date: 2026-08-26
 ---
 
-# ADR-0013: Smart Street and House identity, source provenance and splitting
+# ADR-0013: Smart Street and House identity, source provenance and detailed section selection
 
 ## Status
 
-Proposed. No persistence/schema implementation is authorized by this ADR until the remaining product choice is resolved and the ADR is explicitly accepted.
+Proposed. The product direction for Street selection was clarified on 2026-08-26, but persistence/schema implementation remains blocked until the remaining topology and geometry choices are accepted.
 
 ## Context
 
@@ -18,12 +18,11 @@ M6 replaces rough hand-drawn Street geometry with reviewed OSM-derived road/buil
 ADR-0012 already requires normalized OSM source identity to survive into the prepared local package. Workbench slices currently prove that the app can:
 - find OSM roads/buildings intersecting one Area;
 - preserve `way/<osm id>` source identity and relevant inert tags;
-- select one road source segment;
-- expand selection through connected segments with the same normalized street name;
 - select one or several building footprints;
-- select addressed buildings belonging to one street.
+- select addressed buildings belonging to one street;
+- treat OSM road source ways as small selectable source sections rather than user-visible whole-street identities.
 
-The unresolved question is how those source objects become durable Verteil-Flyer domain Tasks.
+The clarified product goal is deliberately detailed selection. A user should choose the beginning and end of the desired road section on the map. The app selects the connected road source sections between those anchors. It must not select every OSM way sharing a street name and must not continue for kilometers merely because the road name is unchanged.
 
 Important constraints:
 - OSM object ids are source provenance, not credentials;
@@ -49,7 +48,7 @@ StreetTask
 - campaignId
 - areaId
 - label
-- geometry: LineString or MultiLineString
+- geometry: reviewed road-section geometry
 - status
 - source:
   - dataset: OpenStreetMap
@@ -61,7 +60,7 @@ StreetTask
 
 `source.objectIds` are metadata for traceability, refresh comparison and later re-generation assistance. They are never the durable Task id.
 
-One user-visible Street Task may reference multiple OSM ways when the user deliberately selects them as one logical Street/section.
+One user-visible Street Task may reference multiple OSM ways when the user deliberately selects a start/end section spanning several source ways.
 
 ### House identity
 
@@ -90,52 +89,60 @@ After Task creation, Campaign behavior must not depend on the next OSM response 
 
 Any future source-refresh/reconciliation feature must be explicit and reviewable.
 
-## Remaining product choice: default Smart Street click scope
+## Confirmed product direction: detailed anchor-to-anchor Street selection
 
-Two workbench-tested behaviors remain possible:
+The previous workbench alternatives "clicked OSM segment" and "connected same-name street" are superseded as the default product model.
 
-### Option S1: clicked source segment
+The intended interaction is:
+1. user enters Smart Street selection mode;
+2. user clicks/taps a start location/road section;
+3. user clicks/taps an end location/road section;
+4. the app highlights only the connected road source sections between the two anchors;
+5. user reviews the highlighted section before creating/saving a Street Task.
 
-A click starts with only the clicked OSM way.
+Rules:
+- street name is display metadata only and never determines how far selection expands;
+- crossing from one named road into another is allowed when that is the explicitly selected connected path;
+- a long same-name road is not selected beyond the chosen end anchor;
+- the existing click-oriented map interaction remains the basis, but clicks choose reviewed OSM road geometry instead of drawing a rough marker line;
+- selecting start and end on the same source section produces one detailed section candidate;
+- disconnected anchors must fail visibly rather than fabricating a connection.
 
-Benefits:
-- precise and predictable;
-- easy to split work into small sections;
-- unnamed roads behave naturally.
+### Junction ambiguity
 
-Trade-offs:
-- many real streets consist of multiple OSM ways;
-- user may need several taps to mark what they perceive as one street;
-- progress may become too fragmented if every source way becomes a separate user-visible Task.
+A road graph can contain loops or multiple possible routes between the same two anchors. The implementation must not silently choose a path merely because it is shortest or shares a name.
 
-### Option S2: connected same-name street
+The current workbench domain helper returns an explicit `ambiguous` result when more than one simple path exists between the selected source anchors.
 
-A click expands through touching OSM ways with the same normalized street name inside the Area candidate set.
+One remaining UX choice is required:
+- A: user adds one or more intermediate waypoint clicks until the desired path is unambiguous;
+- B: app previews multiple route candidates and the user taps the desired candidate;
+- C: use both, with route candidates for simple ambiguity and waypoints for precise correction.
 
-Benefits:
-- closer to the user concept of “mark the whole street”;
-- avoids requiring knowledge of OSM way boundaries;
-- fewer user-visible Street Tasks.
-
-Trade-offs:
-- unnamed roads cannot safely auto-group;
-- named roads may branch or have unusual topology;
-- the UI must preview exactly what will be selected before saving;
-- disconnected same-name pieces must not be silently included.
-
-A visual workbench prototype exists for comparing S1/S2. The default remains unresolved in this proposed ADR.
+No persistence code should depend on a choice before this is accepted.
 
 ## Splitting and combining direction
 
-Regardless of S1/S2:
+Regardless of the ambiguity UX:
 - source ways are inputs, not immutable domain boundaries;
 - user-visible Street Tasks may be created from one or multiple selected source ways;
-- combining selected source ways produces one new application-owned Street Task with all reviewed source ids recorded;
-- future manual splitting creates application-owned Tasks for the resulting reviewed pieces instead of reusing fabricated OSM ids;
+- start/end selection creates one application-owned Street Task from the reviewed selected section;
+- future manual splitting creates application-owned Tasks for resulting reviewed pieces instead of reusing fabricated OSM ids;
 - a split/merge operation must be atomic from the Campaign snapshot/mutation perspective;
 - once long-term activity/session history exists, replacement/supersession semantics must preserve historical references rather than hard-deleting history.
 
 Exact historical supersession storage belongs with the event/session retention ADR, not this M6 ADR.
+
+## Rejected: select by normalized street name
+
+Do not expand selection because source sections have the same normalized road name.
+
+Reasons:
+- one named street can run through an entire village or for many kilometers;
+- the requested workflow is detailed beginning/end selection;
+- duplicate/branched street naming is not a reliable geometry boundary;
+- unnamed roads still need to be selectable;
+- street name remains useful as a label, not topology authority.
 
 ## Rejected: OSM id as Task id
 
@@ -143,20 +150,10 @@ Do not use `way/12345` directly as the durable Verteil-Flyer Task id.
 
 Reasons:
 - OSM ways can be split/merged;
-- one user-visible street may require multiple OSM ways;
+- one user-selected section may require multiple OSM ways;
 - manual tasks have no OSM id;
 - application identity becomes coupled to an external mutable dataset;
 - offline mutation targets and future history become unnecessarily fragile.
-
-## Rejected: normalized street name as Task id
-
-Do not derive Task identity from Area + street name.
-
-Reasons:
-- duplicate street names can exist;
-- roads can be unnamed or renamed;
-- one named street may intentionally be split into several work sections;
-- string normalization is display/grouping logic, not durable identity.
 
 ## Rejected: geometry hash as primary identity
 
@@ -174,22 +171,23 @@ A geometry hash may help compare source revisions but must not be the Task id be
 ## Consequences if accepted
 
 Benefits:
+- precise road-section selection matching the field workflow;
+- no accidental multi-kilometer selection from shared street names;
 - durable offline-safe Task targets;
 - OSM refreshes cannot silently destroy Campaign identity;
-- supports one-segment, whole-street and manual geometry workflows;
-- House and later Pickup tasks can share source provenance without sharing completion status;
 - future sessions/comments/statistics can reference stable Task ids.
 
 Costs:
+- the UI needs explicit start/end selection state and ambiguity handling;
+- road graph connectivity must be derived from reviewed OSM source geometry;
 - schema/mutation contracts must add source provenance and House-capable Task shape;
-- MultiLineString or equivalent logical-street geometry may be required when one Street Task aggregates source ways;
 - source refresh becomes a reconciliation problem instead of an automatic overwrite.
 
 ## Acceptance required before M6 persistence
 
 Before implementing the D1/schema/mutation write path:
-1. choose S1 or S2 as the default click behavior;
+1. confirm the ambiguity UX A, B or C;
 2. confirm application-owned generated ids + separate OSM provenance;
-3. define the initial persisted Street geometry representation for multi-way selections;
+3. define the initial persisted geometry representation for a selected multi-way road section;
 4. update DATA/MAP/OFFLINE_SYNC/SECURITY docs and mutation tests;
 5. use additive migration only for the active M6 slice.
