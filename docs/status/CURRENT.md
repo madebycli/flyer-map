@@ -9,7 +9,7 @@ last_updated: 2026-08-25
 
 ## Baseline
 
-M4 access/session authorization and PR #21 are merged on `main`.
+M4 access/session authorization and M5 resilient mutation synchronization are merged on `main`.
 
 Verteil-Flyer remains a mobile-first normal website:
 - no native app;
@@ -26,73 +26,56 @@ Current renderer baseline:
 
 Current Campaign roles remain Admin, Team Editor scoped to one Team, and Viewer. Worker authorization is authoritative.
 
-## Active M5 implementation
+## M5 completed
 
-M5 resilient mutation synchronization is already in progress and must **not** be restarted on a new branch.
+M5 resilient mutation synchronization merged through PR #24 on 2026-08-25.
 
-Current implementation:
-- branch `m5-resilient-sync-mainline`;
-- Draft PR #24 `M5 durable mutation queue on current MapLibre baseline`;
-- remote D1 migration `0003_m5_mutations.sql` has been reported applied successfully in the M5 acceptance work;
-- durable mutation queue / Worker idempotency foundation is implemented on that PR.
+Current foundation includes:
+- IndexedDB-backed durable mutation queue;
+- explicit Campaign/Team/Area/Street mutations;
+- Worker/D1 idempotency ledger from migration `0003_m5_mutations.sql`;
+- target-specific conflict detection;
+- reconnect/visibility/manual retry;
+- durable retry and access-blocked queue states;
+- server-side authorization on every mutation;
+- compact sync state UI.
 
-Real-browser acceptance already found and fixed a maximum-zoom basemap bug on the M5 branch. A Worker Version preview containing the fix was tested and the basemap remained visible at maximum zoom.
+Final browser acceptance confirmed:
+- loaded-app offline mutation reconnects and reaches saved state;
+- an online reload shows the intended change once without duplicate effect;
+- saved Areas/Streets remain visible/selectable and active editing still works.
 
-A strict full cold page reload while completely offline showed Chrome's normal offline/Dino page before application JavaScript could run. This is not treated as user error or mutation-loss proof. Guaranteed cold-offline app-shell startup is deferred under the current no-Service-Worker architecture.
+A strict full cold page reload while completely offline can still show Chrome's normal offline/Dino page before application JavaScript runs. This remains outside M5 under the accepted no-Service-Worker website architecture.
 
-Before changing M5, inspect PR #24 and its branch/current CI. Do not rely only on this summary for individual remaining gates.
+Historical plan:
+- `docs/plans/completed/010-m5-resilient-mutation-sync.md`.
 
-## Prepared offline area
+## Active next slice: prepared offline area
 
-`docs/plans/active/011-offline-map-area.md` tracks a future approximately 3 km prepared offline working area using an offline-permitted OSM/OSM-derived source/format.
+`docs/plans/active/011-offline-map-area.md` is now the next connectivity/map slice.
 
-It must not intentionally cache/store current CARTO raster content and does not by itself promise cold offline page startup.
+Target:
+- deliberately prepare approximately 3 km around current map center;
+- store offline-permitted OSM/OSM-derived map data in browser IndexedDB;
+- keep geographic context available after connectivity loss while the website is already loaded;
+- reuse the reviewed data pipeline for M6 Smart Streets/Houses where practical.
+
+Before implementation, an ADR must decide provider/source, license/attribution, package format, zoom/detail limits, storage/versioning, update policy and rendering fallback.
+
+Do not intentionally cache/store the current CARTO raster basemap.
 
 ## Full platform expansion
-
-The accepted product direction has been expanded substantially.
 
 Primary umbrella plan:
 - `docs/plans/active/012-platform-app-expansion.md`.
 
-New proposed architecture:
-- `docs/architecture/IDENTITY_PERMISSIONS.md`;
-- `docs/architecture/LIVE_TEAMS.md`;
-- expanded `ORGANIZATIONS.md`, `COLLABORATION.md`, `SECURITY.md` and `UX.md`.
-
-Dedicated fresh-chat implementation prompt:
-- `docs/prompts/START_PLATFORM_EXPANSION.md`.
-
-## Accepted expansion direction
-
-After the M5 foundation, planned sequence is:
-1. M5.5 prepared offline working area;
-2. M6 Smart Street + House geometry;
-3. M6.5 Clothes Collection / Pickup mode;
-4. M7 Field Sessions + Live Field Groups + comments/activity/automations;
-5. M8 Organizations + username/password/TOTP admin accounts + configurable permissions + desktop Admin;
-6. M9 statistics/progress + app-like navigation + Support/Feedback + appearance;
-7. M10 security/field hardening/release.
-
-Important requested product capabilities include:
-- Campaign/Team/Area percentage progress bars;
-- Team outing/session history with date, duration, participant count and optional note;
-- map highlighting of work from a selected past session using Task/domain events, not GPS trails;
-- optional Team date;
-- Team archive/delete;
-- Team color presets starting Orange, Blue, Green, Red, Gray plus more colors;
-- persistent Teams separated from temporary live Field Groups;
-- multi-device Field Group joining with authorized QR/code/optional password;
-- live discoverability enabled by default with opt-out, but never public internet discovery;
-- separate flyer Distribution and clothes Collection/Pickup progress;
-- call-in/manual pickup addresses;
-- smaller field bottom bar, gear Settings icon, Team icon, Menu/App button and full-screen app-like menu;
-- compact current Team name and progress in top bar;
-- separate desktop Admin panel;
-- administrator-configured capability permissions;
-- multiple administrator accounts and safe admin transfer;
-- future admin login using username + password + authenticator-app TOTP;
-- Support/Feedback module.
+Planned sequence after M5.5:
+1. M6 Smart Street + House geometry;
+2. M6.5 Clothes Collection / Pickup mode;
+3. M7 Field Sessions + Live Field Groups + comments/activity/automations;
+4. M8 Organizations + username/password/TOTP admin accounts + configurable permissions + desktop Admin;
+5. M9 statistics/progress + app-like navigation + Support/Feedback + appearance;
+6. M10 security/field hardening/release.
 
 ## Security boundary for future accounts
 
@@ -118,12 +101,12 @@ Mandatory direction already recorded:
 ## Known follow-ups
 
 Existing follow-ups remain visible:
-- GitHub #22 — desktop bottom-toolbar fit/spacing;
-- GitHub #23 — production health/recovery/diagnostics and dense Street validation.
+- GitHub #22, desktop bottom-toolbar fit/spacing;
+- GitHub #23, production health/recovery/diagnostics and dense Street validation.
 
 ## Immediate next
 
-1. Inspect and finish the existing M5 Draft PR #24 rather than starting a replacement.
-2. Merge M5 only after its actual remaining gates and final CI are green.
-3. Then execute the next slice according to Plan 011 / Plan 012 and the Context Graph.
-4. For a fresh AI coding chat use `docs/prompts/START_PLATFORM_EXPANSION.md`.
+1. Execute Plan 011 from the merged M5 baseline.
+2. Make the required offline map source/package ADR before implementation.
+3. Keep Plan 012 as the umbrella sequence for later platform slices.
+4. Do not start M8 accounts/permissions before the required security ADR/threat model is accepted.
