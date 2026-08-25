@@ -10,7 +10,7 @@ related: [product-roadmap, architecture-offline-sync, architecture-organizations
 
 ## Goal
 
-Continue from the accepted current renderer/access baseline and evolve Verteil-Flyer into a reliable multi-Campaign distribution platform without losing the mobile-first map experience.
+Continue from the accepted renderer/access baseline and evolve Verteil-Flyer into a reliable multi-Campaign distribution platform without losing the mobile-first map experience.
 
 This plan is deliberately ordered. Do **not** start Organization/Admin/Statistics implementation before the synchronization/event foundations they depend on are understood.
 
@@ -23,7 +23,7 @@ Before doing work from this plan, a fresh agent must read:
 4. `docs/product/ROADMAP.md`;
 5. only the graph nodes relevant to the chosen slice;
 6. accepted ADRs relevant to that slice;
-7. current `main`, open PRs and CI before editing code.
+7. current `main`, open PRs/issues and CI before editing code.
 
 Current map baseline:
 - MapLibre GL JS 5.7.1;
@@ -36,20 +36,30 @@ Current access baseline:
 - Campaign-scoped Admin / Team Editor / Viewer;
 - server-side Worker authorization;
 - revocable access grants/sessions;
-- Campaign id is never a credential.
+- Campaign id is never a credential;
+- operator Admin recovery uses the server-only configured recovery/bootstrap secret.
+
+## Plan 008 closeout / known follow-ups
+
+Plan 008 is completed with real-browser acceptance for saved Area/Street visibility + selection, map alignment during pan/zoom/rotate, active-only Area edit handles and mobile toolbar/safe-area behavior.
+
+Known non-passed follow-ups remain visible and do **not** block starting M5 after PR #21 is merged and production is healthy:
+- GitHub #22 — desktop bottom-toolbar fit/spacing;
+- GitHub #23 — deployed-origin Admin recovery smoke, real-browser `?diag=1`, and representative 500 / 1,000 / 2,500 / 5,000 Street browser/device stress validation.
+
+Do not describe #22 or #23 as completed until their own acceptance is actually observed. They must be resolved no later than M10 field hardening/release, and can be pulled forward earlier when convenient.
 
 ## Work sequence
 
-### Phase A — close current renderer/access slice
+### Phase A — establish post-PR21 baseline
 
 Before starting M5:
-- finish PR #21 acceptance;
-- verify saved Areas/Streets visible and selectable on real browser/device;
-- verify active edit points only in draw/edit;
-- verify no overlay lag in browse;
-- keep diagnostics available for troubleshooting;
-- resolve desktop bottom-toolbar clipping/spacing;
-- merge only after final CI + Cloudflare preview acceptance.
+- confirm PR #21 is merged to current `main`;
+- confirm production deployment/health is normal;
+- start M5 on a fresh branch from current `main`;
+- keep #22 and #23 visible as deferred quality/operations work.
+
+Do not repeat already accepted renderer/mobile smoke tests merely to begin M5 unless runtime code has changed in a way that invalidates the prior acceptance.
 
 ### Phase B — M5 resilient mutations
 
@@ -158,6 +168,8 @@ Acceptance:
 
 ### Phase G — M10 field hardening/release
 
+- resolve any still-open #22 desktop toolbar follow-up;
+- resolve #23 operational renderer/recovery validation if not already closed;
 - real Android/iPhone tests including slower devices;
 - 500 / 1,000 / 2,500 / 5,000 Street tests;
 - building-scale load tests;
@@ -189,4 +201,4 @@ For every phase:
 
 ## Immediate next action for a fresh agent
 
-If PR #21 is still open, finish its acceptance first. If PR #21 is merged and production is healthy, start Phase B/M5 by creating a dedicated M5 branch/PR and a narrower active implementation plan derived from this roadmap plan.
+If PR #21 is still open, finish its final CI/preview closeout and merge it. If PR #21 is merged and production is healthy, start Phase B/M5 by creating a dedicated M5 branch/PR and a narrower active implementation plan derived from this roadmap plan. Do not reopen completed Plan 008 merely because #22/#23 remain tracked follow-ups.

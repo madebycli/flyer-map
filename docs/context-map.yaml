@@ -135,11 +135,11 @@ nodes:
     load_when: [architecture change, superseding a boundary]
 
   - id: plan-renderer-recovery
-    path: docs/plans/active/008-renderer-access-recovery.md
+    path: docs/plans/completed/008-renderer-access-recovery.md
     type: plan
-    status: active
-    topics: [current-slice, renderer, access-recovery, diagnostics]
-    load_when: [current PR 21 work, renderer acceptance, access recovery]
+    status: completed
+    topics: [historical-slice, renderer, access-recovery, diagnostics]
+    load_when: [PR 21 history, renderer recovery history, access recovery history]
 
   - id: plan-platform-roadmap
     path: docs/plans/active/009-product-platform-foundation.md
@@ -183,8 +183,8 @@ edges:
   - { from: first-deploy, to: deployment, relation: procedure_for }
   - { from: production, to: deployment, relation: records }
 
-  - { from: plan-renderer-recovery, to: map, relation: changes }
-  - { from: plan-renderer-recovery, to: security, relation: changes }
+  - { from: plan-renderer-recovery, to: map, relation: changed }
+  - { from: plan-renderer-recovery, to: security, relation: changed }
   - { from: plan-platform-roadmap, to: roadmap, relation: executes }
   - { from: plan-platform-roadmap, to: offline-sync, relation: starts_with }
   - { from: prompts, to: architecture, relation: onboards_to }

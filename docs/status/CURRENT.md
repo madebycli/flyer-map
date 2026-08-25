@@ -11,7 +11,7 @@ last_updated: 2026-08-25
 
 M4 access/session authorization is merged on `main`; production D1 migration `0002_m4_access.sql` is applied and `M4_BOOTSTRAP_SECRET` is configured.
 
-Current follow-up is PR #21 (`renderer-access-recovery`): Admin access recovery + whole-city saved-geometry renderer + diagnostics/UI cleanup.
+PR #21 (`renderer-access-recovery`) contains the accepted post-M4 renderer/access baseline and is in final closeout. Plan 008 is completed; after the final documentation head receives green CI + exact Cloudflare preview, merge PR #21 and verify production.
 
 ## Map
 
@@ -24,7 +24,7 @@ Current renderer baseline:
 - stored edit points hidden in browse;
 - no application projection loop over saved geometry during normal pan/zoom/rotate.
 
-MapLibre 6.4.1 is not the baseline: real-browser testing showed saved GeoJSON becoming invisible/non-interactive despite healthy FPS. The 5.7.1 pin restored the working direction and is now documented as the current base.
+MapLibre 6.4.1 is not the baseline: real-browser testing showed saved GeoJSON becoming invisible/non-interactive despite healthy FPS. The 5.7.1 pin restored the working direction.
 
 ## Current access
 
@@ -35,30 +35,29 @@ Current Campaign roles remain:
 
 Campaign id is only a selector. Access/session authorization is Worker-enforced. PR #21 adds operator Admin recovery using the configured server-only bootstrap/recovery secret.
 
-## PR #21 state
+## Plan 008 acceptance
 
-Repository-controlled implementation/documentation gates are healthy on runtime head `3232e9e180fb3e2706278157e6fabccf0c4efeac`:
-- GitHub Actions CI #169 passed;
-- Cloudflare deployed the exact head successfully as preview;
-- ADR/deployment/production documentation matches the initial-style GeoJSON lifecycle used by the code.
+Real-browser/mobile acceptance confirmed:
+- saved Area visible/selectable after Save;
+- saved Street visible/selectable after Save;
+- pan/zoom/rotate alignment;
+- active-only usable Area edit handles;
+- mobile bottom toolbar and safe-area behavior.
 
-Real-browser acceptance on that runtime-equivalent preview has confirmed:
-- saved Area remains visible/selectable after Save;
-- saved Street remains visible/selectable after Save;
-- pan/zoom/rotate behavior is good and saved geometry remains aligned with the basemap;
-- Area edit handles are active-only and usable;
-- mobile bottom toolbar and safe-area behavior are acceptable.
+Repository-controlled acceptance also confirms the MapLibre source/layer lifecycle, Admin-recovery unit coverage, diagnostics implementation, green CI and exact Cloudflare preview deployment on the accepted runtime/documentation heads.
 
-Desktop bottom-toolbar fit is explicitly **not accepted yet**. The user reported that the PC layout still needs work and chose to defer that desktop-specific fix until later. Do not infer desktop acceptance from the mobile result.
+Two non-passed follow-ups are deliberately tracked rather than hidden:
+- GitHub #22 — desktop bottom-toolbar fit/spacing; explicitly deferred for later;
+- GitHub #23 — deployed-origin Admin recovery smoke, real-browser `?diag=1`, and 500 / 1,000 / 2,500 / 5,000 Street device/browser stress validation.
 
-Acceptance-note commits only change documentation; they still require normal CI + exact Cloudflare preview deployment, while prior runtime browser results remain applicable because application/runtime code did not change.
+Neither follow-up should be described as already passed.
 
-Do **not** merge until the remaining gates are resolved: desktop toolbar fit, Admin recovery on the target origin, diagnostics output, and representative dense Street datasets at 500 / 1,000 / 2,500 / 5,000 features (or a concrete documented blocker).
+## Active plan
 
-## Active plans
+- `docs/plans/active/009-product-platform-foundation.md` — ordered next-platform plan; start M5 only after PR #21 is merged and production is healthy.
 
-- `docs/plans/active/008-renderer-access-recovery.md` — remaining external browser/device acceptance + final PR #21 merge gate.
-- `docs/plans/active/009-product-platform-foundation.md` — ordered next-platform plan after PR #21 is merged and production is healthy.
+Completed current slice:
+- `docs/plans/completed/008-renderer-access-recovery.md`.
 
 ## Accepted next roadmap
 
@@ -76,6 +75,8 @@ Organization and collaboration/statistics architecture are currently **proposed*
 
 ## Immediate next
 
-1. Let CI and Cloudflare preview verify the documentation-only acceptance-note head.
-2. Continue remaining acceptance without repeating already-passed mobile/map/edit checks; desktop toolbar remains explicitly deferred.
-3. If all remaining gates pass or are resolved with an accepted documented blocker, move Plan 008 to completed, merge PR #21, verify production, then start M5 from Plan 009 on a fresh branch from current `main`.
+1. Verify final PR #21 closeout head with CI and exact Cloudflare preview.
+2. Merge PR #21.
+3. Verify production deployment/health.
+4. Start M5 from Plan 009 on a fresh branch from current `main`.
+5. Keep #22 and #23 visible as deferred quality/operations work; they do not become passed by merging PR #21.
