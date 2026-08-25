@@ -30,6 +30,19 @@ Use IndexedDB for unacknowledged Campaign mutations. Each record contains:
 
 Mutations are processed sequentially for the active Campaign. The page retries on initialization, `online`, visible-tab return and manual refresh. Retryable network/server failures use bounded exponential backoff.
 
+IndexedDB persistence waits for the transaction to complete, not merely for the individual request callback.
+
+### Enqueue crash window
+
+The existing localStorage snapshot remains the fast startup/recovery view, but it is not the source of truth for unacknowledged M5 delivery.
+
+During the short interval before a new mutation is durably committed to IndexedDB, the browser may keep one emergency localStorage shadow of the mutation being enqueued. If the IndexedDB write fails or the page is interrupted, the next queue read attempts to restore that shadow into IndexedDB. After the IndexedDB transaction commits, the shadow is removed.
+
+This emergency shadow is best-effort only:
+- failure to write the shadow must not block a successful IndexedDB enqueue;
+- corrupt shadow data is quarantined/removed rather than blocking the queue forever;
+- ordered unacknowledged work still lives in IndexedDB after successful enqueue.
+
 ### Local snapshot transition
 
 React may continue to use a Campaign snapshot as its convenient local UI model. localStorage remains startup/recovery cache. The synchronization source of truth for **unacknowledged M5 changes** is the IndexedDB queue, not an in-memory pending snapshot.
@@ -61,12 +74,16 @@ The Worker loads current Campaign state, applies one mutation in memory, validat
 
 Add `migrations/0003_m5_mutations.sql` with a Campaign-scoped mutation ledger keyed by `(campaign_id, mutation_id)`. Existing migrations stay immutable.
 
-Before persistence, the Worker checks the ledger. An already-recorded mutation returns its original applied revision and is not applied again.
+Each accepted mutation is canonicalized with deterministic object-key ordering and hashed with SHA-256. The ledger stores that 64-character fingerprint together with the mutation id/type/revisions.
+
+Before persistence, the Worker checks the ledger:
+- same Campaign + same mutation id + same fingerprint returns the original applied revision and does not apply the effect again;
+- same Campaign + same mutation id + different fingerprint returns explicit `mutation_id_reused` conflict and is never treated as a successful retry.
 
 For a new mutation, persistence uses the current Campaign revision and internal `write_token` as the concurrency claim. One D1 batch:
 1. claims the expected Campaign revision and installs a fresh internal write token;
 2. changes only the affected Campaign/Team/Area/Task row(s);
-3. records the mutation id and applied revision, guarded by the same write token.
+3. records mutation id, fingerprint and applied revision, guarded by the same write token.
 
 A failed claim causes bounded reload/re-evaluation. There is no fallback to whole-snapshot replacement for an ordinary M5 mutation.
 
@@ -92,6 +109,7 @@ This decision does **not** change the accepted map renderer from ADR-0010:
 Positive:
 - saved edits survive reload and temporary connectivity loss;
 - duplicate retries cannot duplicate effects;
+- accidental/malicious reuse of an idempotency id with changed content is detected instead of acknowledged;
 - unrelated newer server changes can coexist with safe queued edits;
 - real target conflicts become explicit;
 - normal writes become narrower while existing Worker authorization remains the security boundary;
@@ -100,6 +118,7 @@ Positive:
 Tradeoffs:
 - synchronization progresses only while the website is open;
 - localStorage and IndexedDB coexist during transition;
+- the emergency enqueue shadow adds one small best-effort local recovery record;
 - one terminal queue item blocks later ordered work until resolved;
 - the legacy snapshot PUT remains temporarily available for compatibility/recovery and must not become the normal M5 write path.
 
