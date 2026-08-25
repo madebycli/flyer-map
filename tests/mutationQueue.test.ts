@@ -10,6 +10,8 @@ import {
 } from "../src/data/mutationQueue.ts";
 import type { CampaignMutation } from "../src/domain/mutations.ts";
 
+const EMERGENCY_RECORD_KEY = "verteil-flyer:m5-mutation-emergency";
+
 class JsonFileQueueStorage implements MutationQueueStorage {
   private readonly filePath: string;
 
@@ -58,14 +60,18 @@ function renameMutation(id: string, baseRevision: number, createdAt: string): Ca
   };
 }
 
-function installFakeWindowStorage() {
+function installFakeWindowStorage(options?: {
+  failWrites?: boolean;
+  initial?: Iterable<readonly [string, string]>;
+}) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
-  const values = new Map<string, string>();
+  const values = new Map<string, string>(options?.initial);
   const localStorage = {
     getItem(key: string) {
       return values.get(key) ?? null;
     },
     setItem(key: string, value: string) {
+      if (options?.failWrites) throw new Error("localStorage unavailable");
       values.set(key, value);
     },
     removeItem(key: string) {
@@ -78,9 +84,12 @@ function installFakeWindowStorage() {
     value: { localStorage },
   });
 
-  return () => {
-    if (previous) Object.defineProperty(globalThis, "window", previous);
-    else Reflect.deleteProperty(globalThis, "window");
+  return {
+    values,
+    restore() {
+      if (previous) Object.defineProperty(globalThis, "window", previous);
+      else Reflect.deleteProperty(globalThis, "window");
+    },
   };
 }
 
@@ -136,7 +145,7 @@ test("queue preserves dependency order by local base revision", async () => {
 });
 
 test("failed durable enqueue is recovered from the emergency local shadow on next list", async () => {
-  const restoreWindow = installFakeWindowStorage();
+  const fakeWindow = installFakeWindowStorage();
   const mutation = renameMutation(
     "mutation_emergency-1",
     9,
@@ -175,7 +184,64 @@ test("failed durable enqueue is recovered from the emergency local shadow on nex
     assert.equal(records.length, 1);
     assert.equal(records[0].id, mutation.id);
     assert.deepEqual(records[0].mutation, mutation);
+    assert.equal(fakeWindow.values.has(EMERGENCY_RECORD_KEY), false);
   } finally {
-    restoreWindow();
+    fakeWindow.restore();
+  }
+});
+
+test("localStorage emergency shadow failure does not block a successful IndexedDB enqueue", async () => {
+  const fakeWindow = installFakeWindowStorage({ failWrites: true });
+  const records = new Map<string, QueuedCampaignMutation>();
+  const storage: MutationQueueStorage = {
+    async getAll() {
+      return [...records.values()];
+    },
+    async put(record) {
+      records.set(record.id, record);
+    },
+    async delete(id) {
+      records.delete(id);
+    },
+  };
+  const mutation = renameMutation(
+    "mutation_no-shadow-1",
+    12,
+    "2026-08-25T14:31:00.000Z",
+  );
+
+  try {
+    const queue = new MutationQueue(storage);
+    await queue.enqueue(mutation);
+    const listed = await queue.list(mutation.campaignId);
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].id, mutation.id);
+  } finally {
+    fakeWindow.restore();
+  }
+});
+
+test("corrupt emergency shadow is quarantined instead of blocking the queue forever", async () => {
+  const fakeWindow = installFakeWindowStorage({
+    initial: [[EMERGENCY_RECORD_KEY, "{not valid json"]],
+  });
+  const storage: MutationQueueStorage = {
+    async getAll() {
+      return [];
+    },
+    async put() {},
+    async delete() {},
+  };
+
+  try {
+    const queue = new MutationQueue(storage);
+    await assert.rejects(
+      () => queue.list("campaign_queue-test"),
+      /Emergency mutation record could not be restored/,
+    );
+    assert.equal(fakeWindow.values.has(EMERGENCY_RECORD_KEY), false);
+    assert.deepEqual(await queue.list("campaign_queue-test"), []);
+  } finally {
+    fakeWindow.restore();
   }
 });
