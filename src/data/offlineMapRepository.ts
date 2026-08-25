@@ -1,7 +1,7 @@
 import {
   isOfflineMapPackage,
   type OfflineMapPackage,
-} from "../domain/offlineMap";
+} from "../domain/offlineMap.ts";
 
 const DATABASE_NAME = "verteil-flyer-offline-map";
 const DATABASE_VERSION = 1;
