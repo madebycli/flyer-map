@@ -124,7 +124,12 @@ export class IndexedDbOfflineMapPackageStorage implements OfflineMapPackageStora
       await requestResult(transaction.objectStore(STORE_NAME).put(record));
       await completion;
     } catch (error) {
-      if (transaction.readyState === "active") transaction.abort();
+      try {
+        transaction.abort();
+      } catch {
+        // Transaction may already be completed/aborted. The original error remains authoritative.
+      }
+      await completion.catch(() => undefined);
       throw error;
     }
   }
