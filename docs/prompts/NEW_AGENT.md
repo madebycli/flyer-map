@@ -1,164 +1,109 @@
 # Prompt — New Agent / Fresh Chat
 
-Use this prompt when starting a completely new AI coding session with **no prior knowledge** of Verteil-Flyer.
+Use this file when a completely new AI session joins the project.
 
 ```text
 Du arbeitest am GitHub-Projekt `madebycli/flyer-map` (Verteil-Flyer).
 
-WICHTIG: Das Repository ist die einzige Source of Truth. Du hast kein verlässliches Vorwissen aus alten Chats. Erfinde keine Architektur, Roadmap, Zugangsdaten oder Produktionszustände aus Erinnerung.
+Das Repository ist die einzige Source of Truth. Verlasse dich nicht auf alte Chat-Erinnerungen, wenn das Repository etwas anderes sagt.
 
-ARBEITSWEISE ZUM START
-
-Bevor du irgendetwas änderst:
+START
 
 1. Lies `AGENTS.md` vollständig.
 2. Lies `docs/status/CURRENT.md` vollständig.
 3. Lies `docs/context-map.yaml` vollständig.
-4. Behandle `docs/context-map.yaml` als Routing-Graph:
-   - wähle die Nodes, deren `topics`/`load_when` zur Aufgabe passen;
-   - folge relevante `depends_on`, `constrained_by`, `implements` und Plan-Kanten;
-   - lade vorgeschlagene Future-Architektur nur, wenn die Aufgabe dieses Future-Thema betrifft;
-   - lade nicht pauschal alle Dokumente.
-5. Prüfe bei Architekturänderungen die relevanten akzeptierten ADRs unter `docs/decisions/`.
-6. Prüfe aktuellen Code, offenen PR/Branch-Stand, letzte CI-Läufe und Produktionsstatus, soweit für die Aufgabe relevant.
-7. Wenn Code und Doku widersprechen, ermittle den aktuellen beabsichtigten Stand anhand Code + aktuellem PR/main + ADRs und bereinige die falsche Doku im selben Slice.
+4. Behandle `docs/context-map.yaml` als Routing-Graph und lade nur die Nodes, die zur Aufgabe passen.
+5. Prüfe relevante akzeptierte ADRs bevor du Architekturgrenzen änderst.
+6. Prüfe aktuellen `main`, offene PRs/Branches, CI und Preview/Production-Stand soweit relevant.
+7. Wenn Code/PR/Doku widersprechen, ermittle den aktuellen beabsichtigten Stand und korrigiere stale Doku im selben Slice.
 
-PRODUKT
+NICHT VERHANDELBARE AKTUELLE BASIS
 
-Verteil-Flyer ist eine mobile-first Website für reale Flyer-/Verteilaktionen. Die Karte ist der primäre Feldarbeitsplatz.
-
-Aktuelle Kernkonzepte:
-- Campaign / Aktion
-- Team
-- Area / Gebiet
-- Distribution Task
-- Status: open / completed / later / not-deliverable
-- Campaign-scoped Access mit Admin / Team Editor / Viewer
-
-Die langfristige Produkt-Roadmap steht in `docs/product/ROADMAP.md`. Nach dem abgeschlossenen Renderer-/Access-Slice ist die Reihenfolge:
-- M5 resiliente Mutation Queue / Sync
-- M6 Smart Street + House Tasks mit OSM/OSM-derived Geometrie statt Freihand-Textmarker als Normalfall
-- M7 Kommentare, Activity und deterministische Automationen
-- M8 Organizations, mehrere Admins und separates Admin Panel
-- M9 Statistiken/Reporting und UI Light/Dark/System
-- M10 Field Hardening / Release
-
-Diese Features sind geplant, aber nicht automatisch bereits implementiert. Lies die jeweiligen Graph-Nodes/Proposed-Architektur bevor du sie baust.
-
-NICHT VERHANDELBARE WEBSITE-REGELN
-
-Verteil-Flyer ist aktuell eine normale Website:
+Verteil-Flyer ist eine normale Mobile-First-WEBSITE:
 - keine native App
 - keine installierbare PWA
 - kein Service Worker
-- kein Web-App-Manifest-Installationsflow
 - kein Background Sync API
 
 Eine Änderung daran braucht eine neue akzeptierte ADR.
 
-AKTUELLER MAP-BASELINE
+Map-Baseline:
+- MapLibre GL JS 5.7.1 gepinnt
+- gespeicherte Areas/Streets in persistenten MapLibre GeoJSON Sources/Layers
+- aktive Draw/Edit-Geometrie nur im kleinen SVG Overlay
+- kein Anwendungsschleifen-Rendering über alle gespeicherten Geometrien bei jedem Pan/Zoom
 
-Der aktuelle akzeptierte Renderer-Pfad ist:
-- MapLibre GL JS 5.7.1 (bewusst gepinnt; nicht beiläufig upgraden)
-- CARTO Voyager Retina Raster-Basemap
-- gespeicherte Areas als MapLibre GeoJSON Source + Fill/Outline Layer
-- gespeicherte Street Tasks als MapLibre GeoJSON Source + wenige feste Status-Line-Layer
-- normale Browse-Pan/Zoom/Rotate-Bewegung darf keine Anwendungsschleife über alle gespeicherten Straßen/Areas ausführen
-- aktive Area-Draw/Edit- und Street-Draw-Geometrie bleibt in einem kleinen SVG-Overlay
-- Edit-Punkte sind im Browse-Modus nicht sichtbar
-- MapLibre `queryRenderedFeatures()` dient zur gespeicherten Auswahl
+Authorization:
+- Worker ist maßgeblich
+- IDs sind Selector, niemals Credential
+- aktuelle Rollen: Campaign Admin / Team Editor / Viewer
+- keine Client-only Authorization
+- keine Secrets/Access Tokens/private Campaign-Daten committen oder anfordern
 
-Lies `docs/architecture/MAP.md` und ADR-0010 bevor du diesen Renderer änderst.
+AKTUELLER M5-STAND
 
-WICHTIG: MapLibre 6.4.1 hat im realen Browser dieses Projekts gespeicherte GeoJSON-Geometrie unsichtbar gemacht. 5.7.1 ist deshalb die aktuelle getestete Basis. Ein Upgrade braucht einen echten Browser-Test mit sichtbarer und anklickbarer Area + Street, nicht nur grünes TypeScript/CI.
+M5 wurde bereits gestartet:
+- Draft PR #24
+- Branch `m5-resilient-sync-mainline`
 
-AKTUELLER ACCESS-/SECURITY-BASELINE
+ERSTELLE KEINEN ZWEITEN M5-BRANCH.
 
-- Campaign id ist nur Selector, niemals Credential.
-- Access Grants sind revocable und Campaign-scoped.
-- Rollen: Admin, Team Editor (Team-scoped), Viewer.
-- Authorization wird immer im Cloudflare Worker erzwungen.
-- Session ist Secure/HttpOnly/SameSite=Lax.
-- Plaintext Access Tokens werden nicht in D1 gespeichert.
-- Operator Admin recovery/bootstrap ist über das serverseitige `M4_BOOTSTRAP_SECRET` abgesichert.
-- Keine Race-to-claim-/First-visitor-Ownership einführen.
+Prüfe PR #24 und die aktuelle Branch-Doku/CI, bevor du entscheidest, was noch offen ist.
 
-Lies `docs/architecture/SECURITY.md` + ADR-0009 bevor du Access/Organizations/Admin-Funktionen änderst.
+Ein kompletter Cold-Reload ohne Internet kann unter der aktuellen No-Service-Worker-Architektur Chrome's normale Offline/Dino-Seite zeigen. Das ist kein Bedienfehler. `docs/plans/active/011-offline-map-area.md` behandelt den vorbereiteten ~3-km-Offline-Kartenbereich, garantiert aber keinen Cold-Offline-App-Start.
 
-ORGANIZATIONS / ADMIN PANEL
+GROSSER PRODUKTAUSBAU
 
-Mehrere Organisationen und mehrere Administratoren sind geplant, aber noch nicht Teil des aktuellen Campaign-Rollenmodells.
+Die neue übergeordnete Planung steht in:
+- `docs/product/ROADMAP.md`
+- `docs/plans/active/012-platform-app-expansion.md`
 
-Vor Implementierung:
-- lies `docs/architecture/ORGANIZATIONS.md`;
-- erstelle/akzeptiere eine ADR für Identity/Membership/Org-Scope;
-- behandle Organization als Tenant-Grenze;
-- keine Cross-Organization Reads/Writes;
-- Campaign Admin darf nicht stillschweigend zu Organization Admin umgedeutet werden.
+Wichtige proposed Architecture Nodes:
+- `docs/architecture/IDENTITY_PERMISSIONS.md`
+- `docs/architecture/LIVE_TEAMS.md`
+- `docs/architecture/ORGANIZATIONS.md`
+- `docs/architecture/COLLABORATION.md`
 
-COMMENTS / ACTIVITY / AUTOMATIONS / STATISTICS
+Geplante Richtung nach M5:
+1. M5.5 vorbereiteter Offline-Bereich
+2. M6 echte Smart Streets + Houses
+3. M6.5 Collection/Pickup für Kleidersammlung
+4. M7 Field Sessions + Live Field Groups + Comments/Activity/Automations
+5. M8 Organizations + Accounts + Permissions + Desktop Admin
+6. M9 Statistics + App-like Navigation + Support/Feedback + Appearance
+7. M10 Security/Field Hardening
 
-Vor Implementierung lies `docs/architecture/COLLABORATION.md`.
+Für einen frischen Chat, der genau diesen großen Ausbau umsetzen soll, nutze den ausführlichen Prompt:
+- `docs/prompts/START_PLATFORM_EXPANSION.md`
 
-Prinzipien:
-- Comments an Campaign/Area/Task-Kontext binden;
-- Activity möglichst append-only aus echten Domain-Mutationen;
-- Automationen deterministisch, idempotent und auditierbar;
-- Statistiken aus Domain-State/Events, nicht aus kontinuierlichem GPS-Tracking;
-- keine versteckten privilegierten Automationen.
+SECURITY
 
-PLÄNE UND AKTUELLER STAND
+Account/Admin/Permission-Code darf nicht ohne vorherige akzeptierte ADR/Threat-Model-Entscheidung gebaut werden.
 
-Nicht-triviale Arbeit braucht eine Datei unter `docs/plans/active/`.
+Mindestgrenzen:
+- parameterized/prepared D1 queries
+- keine SQL-Konkatenation mit Userinput
+- Passwörter/TOTP-Secrets nie loggen
+- reviewed Password-Hashing
+- TOTP serverseitig + Rate Limits
+- opaque server-revocable Sessions
+- Injection-/XSS-/CSRF-Schutz
+- Organization Tenant Isolation
+- Authentication ersetzt niemals Authorization
+- Security/Admin/Permission-Änderungen auditieren
 
-Plan 008 ist abgeschlossen und historisch:
-- `docs/plans/completed/008-renderer-access-recovery.md`.
+ARBEITSWEISE
 
-PR #21 ist am 2026-08-25 in `main` gemergt. Suche Plan 008 nicht mehr unter `docs/plans/active/` und öffne den alten Renderer-Branch nicht für neue Arbeit.
+- kleine reviewbare Commits
+- additive D1 Migrationen
+- bestehende aktive PRs/Pläne fortführen statt Ersatz erzeugen
+- relevante Tests/Typecheck/Build
+- `CURRENT.md` + Context-Graph aktuell halten
+- bei manuellen Cloudflare-Schritten immer nur eine konkrete User-Aktion gleichzeitig und niemals Secrets anfordern
 
-Aktive übergeordnete Planung:
-- `docs/plans/active/009-product-platform-foundation.md`.
-
-M5 ist der nächste technische Foundation-Slice. Starte ihn auf einem frischen Branch von aktuellem `main`, aber erst nachdem `docs/status/CURRENT.md` bestätigt, dass der aktuelle Production-Health-Gate geklärt ist.
-
-Bekannte, ausdrücklich NICHT als bestanden geltende Follow-ups:
-- GitHub #22: Desktop bottom-toolbar fit/spacing;
-- GitHub #23: Production-Health/Deployed-Origin-Recovery/`?diag=1`/500-5000-Street-Operational-Validation.
-
-Diese Issues dürfen nicht stillschweigend als erledigt interpretiert werden. Sie blockieren nicht automatisch die gesamte Roadmap, müssen aber gemäß `CURRENT.md`/Plan 009 passend eingeordnet und spätestens im Field-Hardening geschlossen werden.
-
-CODE-/GIT-REGELN
-
-- Repository ist Source of Truth.
-- Kleine reviewbare Commits.
-- Keine historischen Migrationen umschreiben.
-- Neue D1-Änderungen nur additive Migrationen.
-- Keine Secrets/Access Links/private Campaign-Daten committen oder im Chat anfordern.
-- Authorization serverseitig.
-- Vor Abschluss: Tests + TypeScript + Production Build + relevante Doku + `CURRENT.md` + Context-Graph prüfen.
-- Abgeschlossene Pläne nach `docs/plans/completed/` verschieben.
-
-EXTERNE CLOUDFLARE-AKTIONEN
-
-Wenn eine manuelle Cloudflare-Aktion des Users nötig ist:
-- frage immer nur genau EINE manuelle Aktion gleichzeitig an;
-- gib den exakten Klick/Befehl an;
-- frage genau EIN nicht-sensitives Ergebnis zurück;
-- bitte niemals darum, Secret-Werte oder Access Tokens in den Chat zu kopieren.
-
-DEIN START IN JEDEM FRISCHEN CHAT
-
-Gib nach dem Lesen zuerst eine kurze Bestandsaufnahme mit:
-- aktuellem main/PR/Branch-Stand;
-- aktuellem Milestone/Plan;
-- relevanten Graph-Nodes;
-- vorhandenen Blockern/Risiken.
-
-Danach beginne direkt mit der Umsetzung. Stoppe nicht nach einer bloßen Planung, außer eine echte externe Aktion ist erforderlich.
+Gib nach dem Lesen eine kurze Bestandsaufnahme und beginne danach direkt mit der Umsetzung. Stoppe nicht nach bloßer Planung, außer eine echte externe Aktion oder notwendige Architekturentscheidung blockiert.
 ```
 
-## Minimal handoff note
+## Minimal handoff
 
-If a shorter handoff is needed, give the new agent only this file path and tell it:
-
-> Read `docs/prompts/NEW_AGENT.md` from the repository and follow it exactly. Do not rely on prior chat memory.
+> Read `docs/prompts/NEW_AGENT.md` and follow it exactly. For the full platform expansion also read `docs/prompts/START_PLATFORM_EXPANSION.md`.
