@@ -35,6 +35,14 @@ function requestResult<T>(request: IDBRequest<T>) {
   });
 }
 
+function transactionComplete(transaction: IDBTransaction) {
+  return new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB transaction aborted."));
+    transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB transaction failed."));
+  });
+}
+
 export class IndexedDbMutationQueueStorage implements MutationQueueStorage {
   private databasePromise: Promise<IDBDatabase> | null = null;
 
@@ -65,19 +73,25 @@ export class IndexedDbMutationQueueStorage implements MutationQueueStorage {
     const database = await this.database();
     const transaction = database.transaction(STORE_NAME, "readonly");
     const request = transaction.objectStore(STORE_NAME).getAll();
-    return (await requestResult(request)) as QueuedCampaignMutation[];
+    const records = (await requestResult(request)) as QueuedCampaignMutation[];
+    await transactionComplete(transaction);
+    return records;
   }
 
   async put(record: QueuedCampaignMutation) {
     const database = await this.database();
     const transaction = database.transaction(STORE_NAME, "readwrite");
+    const completion = transactionComplete(transaction);
     await requestResult(transaction.objectStore(STORE_NAME).put(record));
+    await completion;
   }
 
   async delete(id: string) {
     const database = await this.database();
     const transaction = database.transaction(STORE_NAME, "readwrite");
+    const completion = transactionComplete(transaction);
     await requestResult(transaction.objectStore(STORE_NAME).delete(id));
+    await completion;
   }
 }
 
