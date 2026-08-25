@@ -75,13 +75,18 @@ User testing against the Cloudflare preview for runtime head `3232e9e180fb3e2706
 - saved Area remains visible and selectable after Save;
 - saved Street remains visible and selectable after Save;
 - pan/zoom/rotate behavior is acceptable and saved geometry remains visually aligned with the map;
-- Area edit handles are visible only while active, remain usable during editing and disappear again after leaving the edit flow.
+- Area edit handles are visible only while active, remain usable during editing and disappear again after leaving the edit flow;
+- mobile bottom field toolbar positioning and mobile safe-area behavior are acceptable.
+
+## Deferred / explicitly not accepted yet
+
+- Desktop bottom-toolbar fit is **not** accepted yet. The user reported that the PC layout is not satisfactory and explicitly chose to address it later. Do not mark this gate passed or infer desktop acceptance from the mobile result.
 
 ## External acceptance still required
 
 The remaining gates require an actual interactive browser/device against the runtime-equivalent final Cloudflare preview:
 
-- confirm bottom field toolbar positioning on desktop and mobile safe areas;
+- desktop bottom field toolbar positioning/fitting (deferred by user for later work);
 - verify Admin recovery on the target preview origin with the configured server-only secret;
 - verify `?diag=1` reports `maplibre-geojson` and useful FPS/long-frame/source/rendered counts;
 - run representative dense acceptance at 500 / 1,000 / 2,500 / 5,000 Street features, or record a concrete reproducible blocker before merge.
