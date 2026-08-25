@@ -39,7 +39,7 @@ Current Campaign roles remain Admin, Team Editor scoped to one Team, and Viewer.
 
 ## Active M5.5 prepared offline area
 
-`docs/plans/active/011-offline-map-area.md` is the active implementation slice.
+`docs/plans/active/011-offline-map-area.md` is the active implementation plan.
 
 ADR-0012 is accepted with **Approach A**:
 - bounded approximately 3 km raw OSM subset package;
@@ -47,31 +47,44 @@ ADR-0012 is accepted with **Approach A**:
 - upstream endpoint is server-configurable/replaceable;
 - normalized versioned JSON/GeoJSON package preserves OSM identity/tags;
 - browser IndexedDB stores the prepared package locally;
-- local MapLibre sources/layers render prepared context while the already-loaded website is offline;
+- local MapLibre sources/layers will render prepared context while the already-loaded website is offline;
 - no CARTO or OSM Foundation tile bulk cache;
 - no R2/PMTiles pipeline for v1;
 - same OSM identity/data direction should later feed M6 Smart Streets/Houses.
 
 ### Slice 1 Worker/package contract
 
-Implemented on Draft PR #26 / branch `m55-offline-map-runtime`:
-- shared `OfflineMapPackage v1` contract and validator;
-- authenticated `POST /api/campaigns/:campaignId/offline-map/package` route;
-- fixed server-owned Overpass query, 3 km server maximum and server-configurable upstream;
-- bounded request/upstream/package sizes and timeout;
-- normalized road/building geometry, OSM way identity and reviewed tag allowlist;
-- explicit OSM attribution/license/source timestamps;
-- hostile client query text is ignored rather than executed;
-- code-like OSM tag values remain inert data.
+Complete and merged in PR #26 as `e5a97ac147168c9dcc3a53079324e3494508474f`.
 
-CI #280 found a Node strip-types compatibility issue in the initial error class. The implementation was corrected and runtime commit `3f5f6383c88036a7e8ee32eda2a95f13bd846461` passed tests, strict TypeScript and production build in CI #281. Final docs-only head still needs its normal CI before merge.
+Implemented:
+- shared `OfflineMapPackage v1` contract and validator;
+- authenticated Campaign-scoped package endpoint;
+- fixed server-owned Overpass query and 3 km maximum;
+- server-configurable upstream;
+- bounded request/upstream/package sizes and timeout;
+- normalized roads/buildings with preserved OSM way ids and inert reviewed tags;
+- OSM attribution/license/source timestamps;
+- tests for hostile query text, limits, normalization and timeout.
+
+### Slice 2 IndexedDB lifecycle
+
+Implemented on PR #27 / branch `m55-offline-map-storage`:
+- separate `verteil-flyer-offline-map` IndexedDB database, isolated from the M5 mutation queue;
+- one package per Campaign;
+- validate-before-replace and transactional `put` without delete-first;
+- failed replacement preserves the previous valid package;
+- read/delete lifecycle;
+- byte-size metadata and package summary;
+- corruption detection;
+- reload/replacement/delete/summary/corruption tests.
+
+CI #287 exposed only an explicit TypeScript ESM import-extension issue. Commit `996dd5428dc5ce77cf7a57f76e97717411be44d5` fixed it and CI #288 passed tests, strict TypeScript and production build. Final docs-only head still needs normal CI before merge.
 
 Implementation order remaining:
-1. merge Slice 1 after final head is green;
-2. IndexedDB package lifecycle;
-3. Settings download/update/delete UX;
-4. MapLibre offline context;
-5. dense real-mobile acceptance/performance.
+1. merge Slice 2 after final green CI;
+2. Settings download/update/delete UX;
+3. MapLibre offline context;
+4. dense real-mobile acceptance/performance.
 
 ## Full platform expansion
 
@@ -109,4 +122,4 @@ Existing follow-ups remain visible:
 
 ## Immediate next
 
-Finish/merge PR #26 with final green CI, then implement Plan 011 Slice 2 IndexedDB lifecycle. Do not introduce Service Worker/PWA behavior or cache CARTO/OSMF tiles. Keep M6 behavior outside the current slice until the prepared-area package path is stable.
+Finish/merge PR #27 with final green CI, then implement Plan 011 Slice 3 Settings UX. Do not introduce Service Worker/PWA behavior or cache CARTO/OSMF tiles. Keep M6 behavior outside the current slice until the prepared-area package path is stable.
