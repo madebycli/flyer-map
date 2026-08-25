@@ -39,50 +39,47 @@ Cloudflare Worker versions capture their bindings, while state changes in bound 
 Therefore the current repository must treat the M5 Worker preview as **code-isolated but not D1-data-isolated**. Unless an explicit external Cloudflare binding override is later documented, the preview uses the same configured `flyer-map-db` binding.
 
 Operational consequence:
-- apply the additive M5 schema migration to `flyer-map-db` before exercising the preview mutation endpoint;
+- the additive M5 schema migration must exist in `flyer-map-db` before preview mutation tests;
 - use a deliberately disposable/test Campaign for destructive browser acceptance where practical;
 - do not assume a preview URL implies a separate database.
 
-A future dedicated staging D1 would require an explicit environment/build configuration and is not silently inferred from `preview_database_id`; current M5 does not add that infrastructure.
+A future dedicated staging D1 would require an explicit environment/build configuration. Current M5 does not add that infrastructure.
 
 ## D1 migrations
 
 Applied migrations are immutable history:
 - `migrations/0001_initial.sql` — initial Campaign/Team/Area/Task schema;
-- `migrations/0002_m4_access.sql` — M4 access/session + shared map focus, applied to Production on 2026-08-24.
+- `migrations/0002_m4_access.sql` — M4 access/session + shared map focus, applied to Production on 2026-08-24;
+- `migrations/0003_m5_mutations.sql` — durable mutation idempotency ledger with canonical mutation fingerprint, applied successfully to remote `flyer-map-db` on 2026-08-25.
 
-M5 PR #24 adds:
-- `migrations/0003_m5_mutations.sql` — durable mutation idempotency ledger with canonical mutation fingerprint.
+`0003` only adds the new ledger table/index and does not rewrite existing Campaign/Team/Area/Task/Access rows. This allows the schema to exist before M5 code is merged; the current Production Worker simply ignores the new table until M5 is deployed.
 
-`0003` only adds the new ledger table/index and does not rewrite existing Campaign/Team/Area/Task/Access rows. This allows the schema to be applied before M5 code is merged: the current Production Worker simply ignores the new table until M5 is deployed.
+Do not rewrite `0001`/`0002`/`0003` to simulate upgrades.
 
-Do not rewrite `0001`/`0002` to simulate an upgrade.
-
-Apply unapplied migrations intentionally to the remote database before merging/deploying Worker code that requires them:
+The migration was applied from branch `m5-resilient-sync-mainline` with:
 
 ```bash
 npx wrangler d1 migrations apply flyer-map-db --remote
 ```
 
-For M5, expected Wrangler output must show `0003_m5_mutations.sql` applied successfully (or already applied) before the mutation endpoint is accepted. Never ask the user to paste a Cloudflare API token or secret into chat.
+Observed non-sensitive Wrangler result on 2026-08-25:
+- remote database `flyer-map-db` selected;
+- exactly one pending migration listed: `0003_m5_mutations.sql`;
+- 4 commands executed;
+- migration status `✅`.
+
+Never record Wrangler OAuth codes, Cloudflare API tokens, access links or secret values in repository documentation.
 
 ## M5 migration ordering
 
 PR #24 contains Worker code that queries/inserts `campaign_mutations`. Current safe order:
 
-1. repository CI/code review;
-2. exact Cloudflare runtime-equivalent preview deployment;
-3. apply `0003_m5_mutations.sql` to `flyer-map-db`;
-4. then test `POST /api/campaigns/:id/mutations` and queue/reconnect/conflict behavior through the preview;
+1. repository CI/code review — passed for the accepted runtime-equivalent head;
+2. exact Cloudflare runtime-equivalent preview deployment — passed for `5c7dce81...`;
+3. apply `0003_m5_mutations.sql` to `flyer-map-db` — passed on 2026-08-25;
+4. test `POST /api/campaigns/:id/mutations` and queue/reconnect/conflict behavior through the preview — current gate;
 5. merge to `main` only after browser acceptance;
 6. verify automatic Production deploy and smoke checks.
-
-Repository/preview gates currently recorded in Plan 010/CURRENT:
-- code/runtime CI passed;
-- exact runtime-equivalent preview for `5c7dce81...` passed;
-- `0003` migration is the next external gate.
-
-Do **not** intentionally exercise the new mutation route while `flyer-map-db` still lacks `campaign_mutations`; that would only produce an expected database failure.
 
 ## M4 bootstrap and operator recovery secret
 
