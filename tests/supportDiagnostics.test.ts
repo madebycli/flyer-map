@@ -11,6 +11,7 @@ test("support diagnostics contain only explicitly supplied safe operational fiel
     language: "de",
     online: false,
     campaignId: "campaign_support",
+    includeCampaignContext: true,
     mapRenderer: "maplibre",
     mapRendererVersion: "5.7.1",
     snapshotSchemaVersion: 3,
@@ -31,12 +32,28 @@ test("support diagnostics contain only explicitly supplied safe operational fiel
   });
 });
 
-test("support diagnostics reject unsafe campaign identifiers instead of serializing arbitrary text", () => {
+test("Campaign context is excluded unless the user explicitly opts in", () => {
+  const diagnostics = buildSupportDiagnostics({
+    appVersion: "0.2.0",
+    language: "de",
+    online: true,
+    campaignId: "campaign_private-by-default",
+    mapRenderer: "maplibre",
+    mapRendererVersion: "5.7.1",
+    snapshotSchemaVersion: 3,
+  });
+
+  assert.equal(diagnostics.campaignId, null);
+  assert.doesNotMatch(supportDiagnosticsText(diagnostics), /campaign_private-by-default/);
+});
+
+test("support diagnostics reject unsafe campaign identifiers even after context consent", () => {
   const diagnostics = buildSupportDiagnostics({
     appVersion: "0.2.0",
     language: "en",
     online: true,
     campaignId: "campaign#access=plaintext-secret",
+    includeCampaignContext: true,
     mapRenderer: "maplibre",
     mapRendererVersion: "5.7.1",
     snapshotSchemaVersion: 3,
@@ -52,6 +69,7 @@ test("diagnostics text never needs URL, cookie, access token, password or TOTP i
       language: "de",
       online: true,
       campaignId: "campaign_safe",
+      includeCampaignContext: true,
       mapRenderer: "maplibre",
       mapRendererVersion: "5.7.1",
       snapshotSchemaVersion: 3,
