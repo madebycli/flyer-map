@@ -4,6 +4,7 @@ import App from "./App";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
 import { SyncStatus } from "./sync/SyncStatus";
+import { M6SelectionPreview } from "./workbench/M6SelectionPreview";
 import "./styles.css";
 import "./street-mode.css";
 import "./mobile-stability.css";
@@ -13,11 +14,22 @@ import "./m5.css";
 import "./access-recovery.css";
 import "./diagnostics/map-diagnostics.css";
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-    <AccessRecoveryGate />
-    <MapDiagnostics />
-    <SyncStatus />
-  </StrictMode>,
-);
+const workbenchMode = new URLSearchParams(window.location.search).get("workbench");
+const root = createRoot(document.getElementById("root")!);
+
+if (workbenchMode === "m6") {
+  root.render(
+    <StrictMode>
+      <M6SelectionPreview />
+    </StrictMode>,
+  );
+} else {
+  root.render(
+    <StrictMode>
+      <App />
+      <AccessRecoveryGate />
+      <MapDiagnostics />
+      <SyncStatus />
+    </StrictMode>,
+  );
+}
