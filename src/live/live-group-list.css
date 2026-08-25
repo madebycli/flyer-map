@@ -1,0 +1,122 @@
+.live-group-list {
+  display: grid;
+  gap: 1rem;
+  width: min(100%, 48rem);
+}
+
+.live-group-list__header h2,
+.live-group-list__header p {
+  margin: 0;
+}
+
+.live-group-list__header p {
+  margin-top: 0.3rem;
+  color: var(--text-muted, #5f6570);
+  font-size: 0.9rem;
+}
+
+.live-group-list__filters {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scrollbar-width: thin;
+}
+
+.live-group-list__filters button,
+.live-group-list__items button {
+  min-height: 2.75rem;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: inherit;
+  font: inherit;
+}
+
+.live-group-list__filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.55rem 0.8rem;
+}
+
+.live-group-list__filters button.is-active {
+  border-color: currentColor;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.live-group-list__team-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.14);
+}
+
+.live-group-list__items {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.live-group-list__items li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.live-group-list__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.live-group-list__identity div {
+  display: grid;
+  min-width: 0;
+}
+
+.live-group-list__identity strong,
+.live-group-list__identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-group-list__identity span {
+  color: var(--text-muted, #5f6570);
+  font-size: 0.86rem;
+}
+
+.live-group-list__items button {
+  flex: 0 0 auto;
+  padding: 0.55rem 0.9rem;
+}
+
+.live-group-list__items button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.live-group-list__filters button:focus-visible,
+.live-group-list__items button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+.live-group-list__empty {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed rgba(15, 23, 42, 0.18);
+  border-radius: 1rem;
+  color: var(--text-muted, #5f6570);
+}
