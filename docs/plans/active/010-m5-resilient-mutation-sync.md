@@ -73,7 +73,13 @@ Runtime fix commit:
 
 CI #226 passed for this fix.
 
-Because `5029f9b...` is a runtime change after the previously accepted exact preview, the old `5c7dce...` exact preview is no longer sufficient for merge acceptance. A new Cloudflare deployment/preview that contains the updated runtime is required, followed by a real-browser zoom-20 check.
+A fresh Cloudflare Worker Version preview containing the runtime fix was manually uploaded from branch head `da7a13a38916b058bc6a2d577210100700d04111` after a successful production build:
+- Worker Version ID `98516141-4820-4fb6-8f7d-8a7410c1d57b`;
+- exact Version Preview `https://98516141-flyer-map.cloudflare-eleven035.workers.dev`;
+- alias `https://m5-zoom-fix-flyer-map.cloudflare-eleven035.workers.dev`;
+- no production traffic changed.
+
+Later documentation commits are runtime-equivalent unless runtime code/config changes again. The next required renderer observation is a real-browser zoom-20 check on this new preview.
 
 ## Offline map product gap
 
@@ -87,15 +93,14 @@ Do not solve this by caching CARTO raster tiles. CARTO Basemap terms prohibit st
 
 ## Remaining M5 release gates
 
-1. new Cloudflare runtime preview/deployment containing `5029f9b...`;
-2. real-browser maximum-zoom confirmation: basemap stays visible at zoom 20;
-3. reconnect queued mutation and confirm server delivery exactly once;
-4. retry/reconnect produces no duplicate effect;
-5. conflicting target change is visibly surfaced with no silent overwrite;
-6. revoked/invalid access stops blind retry and leaves queued work access-blocked;
-7. transient network/server failure remains queued and later retries;
-8. saved Areas/Streets remain visible/selectable and active edit behavior remains correct;
-9. final PR head CI remains green.
+1. real-browser maximum-zoom confirmation on the new Version preview: basemap stays visible at zoom 20;
+2. reconnect queued mutation and confirm server delivery exactly once;
+3. retry/reconnect produces no duplicate effect;
+4. conflicting target change is visibly surfaced with no silent overwrite;
+5. revoked/invalid access stops blind retry and leaves queued work access-blocked;
+6. transient network/server failure remains queued and later retries;
+7. saved Areas/Streets remain visible/selectable and active edit behavior remains correct;
+8. final PR head CI remains green.
 
 ## Risks
 
@@ -117,7 +122,7 @@ Do not solve this by caching CARTO raster tiles. CARTO Basemap terms prohibit st
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Verify Cloudflare deployment for the updated runtime and browser-test maximum zoom.
+2. Browser-test maximum zoom on `https://98516141-flyer-map.cloudflare-eleven035.workers.dev`.
 3. Resume reconnect/idempotency/conflict/auth/transient-failure acceptance.
 4. Record every observed gate in this plan and `CURRENT.md`.
 5. Merge M5 only after all gates pass.
