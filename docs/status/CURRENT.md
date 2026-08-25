@@ -94,10 +94,19 @@ No token, OAuth code, access link, secret value, or private Campaign data is rec
 
 The bound D1 database is now schema-ready for M5 preview mutation runtime/browser acceptance.
 
+## Browser acceptance observations
+
+Observed in a real browser on 2026-08-25:
+- while offline, creating a Street shows the visible state `offline gespeichert`;
+- while offline, editing a Street also remains locally saved;
+- after a full page reload while still offline, the newly created/edited Street is still present.
+
+This confirms the local durability/reload portion of gate 1. Reconnect delivery to D1 is the next required observation before gate 1 is marked fully passed.
+
 ## M5 release gates still open
 
 M5 is **not production-ready yet**. Remaining gates:
-1. real-browser acceptance: offline save -> reload -> reconnect delivery;
+1. complete gate 1 by reconnecting after the passed offline save + reload test and confirm queued delivery;
 2. retry without duplicate effect;
 3. visible conflict with no silent overwrite;
 4. revoked access stops blind retry and remains access-blocked;
@@ -105,7 +114,7 @@ M5 is **not production-ready yet**. Remaining gates:
 6. MapLibre saved Area/Street and active edit behavior remain unchanged;
 7. final repository head remains green before merge.
 
-Repository CI, exact runtime-equivalent Cloudflare preview, real-browser preview-root smoke and D1 migration gates are passed.
+Repository CI, exact runtime-equivalent Cloudflare preview, real-browser preview-root smoke, D1 migration, and offline save/reload durability are passed.
 
 ## Known follow-ups
 
@@ -135,7 +144,7 @@ Organization and collaboration/statistics architecture remain proposed, not impl
 ## Immediate next
 
 1. Keep PR #24 Draft and do not alter the accepted renderer.
-2. Perform the browser M5 acceptance one gate at a time through the accepted runtime-equivalent preview/branch deployment, preferably with a disposable test Campaign.
-3. First browser gate: save an ordinary supported mutation while offline, reload while still offline, reconnect, and verify the queued mutation is delivered exactly once.
-4. Record every observed gate immediately in Plan 010 + CURRENT.
+2. Turn connectivity back on in the same browser session after the passed offline save + reload observation.
+3. Confirm that the queued Street mutation automatically reaches the server and returns to the normal saved state without duplication.
+4. Record the result immediately in Plan 010 + CURRENT, then continue to gate 2.
 5. Merge/deploy M5 only after all remaining gates pass; keep #22/#23 separate.
