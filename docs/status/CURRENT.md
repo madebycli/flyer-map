@@ -65,7 +65,15 @@ Fix committed in `5029f9b958502d96d6c185beac16b894774d72e9`:
 - map maxZoom remains 20;
 - no provider, MapLibre version, saved-geometry renderer or camera architecture changed.
 
-CI #226 passed for this runtime fix. Because this is a runtime commit after the previously accepted exact preview, a new Cloudflare preview for the updated runtime is required before M5 can merge. Real-browser maximum-zoom confirmation is also required.
+CI #226 passed for this runtime fix.
+
+A new Cloudflare Worker Version preview containing the fix was manually uploaded from branch head `da7a13a38916b058bc6a2d577210100700d04111` after a successful production build:
+- Worker Version ID: `98516141-4820-4fb6-8f7d-8a7410c1d57b`;
+- exact Version Preview: `https://98516141-flyer-map.cloudflare-eleven035.workers.dev`;
+- preview alias: `https://m5-zoom-fix-flyer-map.cloudflare-eleven035.workers.dev`;
+- no production traffic was changed.
+
+Real-browser maximum-zoom confirmation on this new preview is the next renderer gate.
 
 ## Offline map-area requirement
 
@@ -86,15 +94,14 @@ Plan 011 (`docs/plans/active/011-offline-map-area.md`) tracks this as the next m
 
 ## M5 gates still open
 
-1. Cloudflare preview deployment for runtime commit `5029f9b...`.
-2. Real-browser max-zoom check: basemap remains visible at zoom 20.
-3. Complete offline-save gate by reconnecting and confirming queued delivery exactly once.
-4. Retry/reconnect without duplicate effect.
-5. Visible target conflict with no silent overwrite.
-6. Revoked/invalid access stops blind retry and remains access-blocked.
-7. Transient failure stays queued and retries later.
-8. Saved Area/Street selection and active edit behavior remain unchanged.
-9. Final repository head green before merge.
+1. Real-browser max-zoom check on the new Version preview: basemap remains visible at zoom 20.
+2. Complete offline-save gate by reconnecting and confirming queued delivery exactly once.
+3. Retry/reconnect without duplicate effect.
+4. Visible target conflict with no silent overwrite.
+5. Revoked/invalid access stops blind retry and remains access-blocked.
+6. Transient failure stays queued and retries later.
+7. Saved Area/Street selection and active edit behavior remain unchanged.
+8. Final repository head green before merge.
 
 PR #24 remains Draft until these gates pass.
 
@@ -114,7 +121,7 @@ Existing GitHub follow-ups remain open:
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Obtain/verify the Cloudflare preview for `5029f9b...` and browser-test zoom 20.
+2. Browser-test the new Version preview at maximum zoom.
 3. Resume M5 reconnect/idempotency/conflict/auth/transient-failure acceptance.
 4. Merge M5 only after all release gates pass.
 5. Then execute Plan 011 before/alongside Smart Street work so field users can deliberately prepare a local offline working area.
