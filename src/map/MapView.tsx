@@ -649,6 +649,7 @@ export function MapView({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let active = true;
+    let cleanupListeners = () => {};
     const initialCamera = loadPersonalMapView(campaignId) ?? campaignDefaultView ?? GERMANY_VIEW;
     const initialData = dataRef.current;
 
@@ -698,6 +699,12 @@ export function MapView({
       window.addEventListener("offline", handleConnectivityChange);
       window.addEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
       document.addEventListener("visibilitychange", handleVisibilityChange);
+      cleanupListeners = () => {
+        window.removeEventListener("online", handleConnectivityChange);
+        window.removeEventListener("offline", handleConnectivityChange);
+        window.removeEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      };
 
       const persistCamera = () => {
         if (suppressNextCameraSaveRef.current) {
@@ -805,13 +812,6 @@ export function MapView({
         "top-right",
       );
       onCameraChange(initialCamera);
-
-      return () => {
-        window.removeEventListener("online", handleConnectivityChange);
-        window.removeEventListener("offline", handleConnectivityChange);
-        window.removeEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-      };
     } catch (cause) {
       console.error("Map initialization failed", cause);
       if (active) setError(t(language, "mapInitError"));
@@ -819,6 +819,7 @@ export function MapView({
 
     return () => {
       active = false;
+      cleanupListeners();
       if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
