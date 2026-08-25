@@ -164,11 +164,11 @@ nodes:
     load_when: [M5 foundation history, platform sequencing, post-PR21 work]
 
   - id: plan-m5-sync
-    path: docs/plans/active/010-m5-resilient-mutation-sync.md
+    path: docs/plans/completed/010-m5-resilient-mutation-sync.md
     type: plan
-    status: active
+    status: completed
     topics: [M5, mutation-queue, indexeddb, idempotency, conflicts, reconnect, authorization]
-    load_when: [M5 implementation, PR 24, durable mutation queue, reconnect acceptance, conflict acceptance]
+    load_when: [M5 history, PR 24 history, durable mutation queue, reconnect acceptance, conflict acceptance]
 
   - id: plan-offline-map
     path: docs/plans/active/011-offline-map-area.md
