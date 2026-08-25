@@ -3,6 +3,7 @@ export type SupportDiagnosticsInput = {
   language: "de" | "en";
   online: boolean;
   campaignId?: string | null;
+  includeCampaignContext?: boolean;
   mapRenderer: "maplibre";
   mapRendererVersion: string;
   snapshotSchemaVersion: number;
@@ -33,7 +34,7 @@ export function buildSupportDiagnostics(input: SupportDiagnosticsInput): Support
     appVersion: input.appVersion.slice(0, 80),
     language: input.language,
     connectivity: input.online ? "online" : "offline",
-    campaignId: safeShortIdentifier(input.campaignId),
+    campaignId: input.includeCampaignContext === true ? safeShortIdentifier(input.campaignId) : null,
     mapRenderer: "maplibre",
     mapRendererVersion: input.mapRendererVersion.slice(0, 40),
     snapshotSchemaVersion: Number.isSafeInteger(input.snapshotSchemaVersion)
