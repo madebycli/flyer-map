@@ -1,75 +1,191 @@
-version: 1
+version: 2
 
 entrypoints:
   always:
     - AGENTS.md
     - docs/status/CURRENT.md
+    - docs/context-map.yaml
+
+routing_rules:
+  - load entrypoints first
+  - select nodes whose topics/load_when match the task
+  - follow depends_on/constrained_by/implements edges as needed
+  - prefer accepted/current nodes over historical completed plans
+  - load proposed architecture only when working on the corresponding future capability
+  - inspect relevant ADRs before changing an accepted architectural boundary
 
 nodes:
   - id: product
     path: docs/product/PRODUCT.md
-    topics: [product, requirements, scope, users]
+    type: product
+    status: accepted
+    topics: [product, requirements, users, concepts]
+    load_when: [product behavior, domain vocabulary, user goals]
+
+  - id: roadmap
+    path: docs/product/ROADMAP.md
+    type: product
+    status: accepted
+    topics: [roadmap, milestones, statistics, organizations, admin-panel, comments, automations, streets, houses, dark-mode]
+    load_when: [new feature planning, milestone planning, long-term scope, product expansion]
 
   - id: mvp
     path: docs/product/MVP.md
-    topics: [mvp, milestones, roadmap, scope]
+    type: product
+    status: accepted
+    topics: [mvp, release, field-readiness, scope]
+    load_when: [release scope, MVP acceptance, field testing]
 
   - id: ux
     path: docs/product/UX.md
-    topics: [ui, ux, mobile, accessibility, interaction]
+    type: product
+    status: accepted
+    topics: [ui, ux, mobile, accessibility, interaction, appearance]
+    load_when: [UI change, map interaction, mobile behavior, dark mode]
 
   - id: architecture
     path: ARCHITECTURE.md
-    topics: [architecture, system, backend, frontend]
+    type: architecture
+    status: current
+    topics: [architecture, system, backend, frontend, boundaries]
+    load_when: [cross-cutting architecture, system overview]
 
   - id: stack
     path: docs/architecture/STACK.md
-    topics: [dependencies, technology, cloudflare, react, vite]
+    type: architecture
+    status: accepted
+    topics: [dependencies, technology, cloudflare, react, vite, maplibre]
+    load_when: [dependency change, runtime version, build tooling]
 
   - id: map
     path: docs/architecture/MAP.md
-    topics: [map, maplibre, osm, openfreemap, geolocation]
+    type: architecture
+    status: accepted
+    topics: [map, maplibre, carto, geojson, renderer, geolocation, performance, osm]
+    load_when: [map rendering, geometry interaction, map performance, road/building data]
 
   - id: data
     path: docs/architecture/DATA.md
-    topics: [database, d1, schema, campaigns, teams, areas, tasks]
+    type: architecture
+    status: accepted
+    topics: [database, d1, schema, campaigns, teams, areas, tasks, revisions]
+    load_when: [domain model, D1 migration, persistence, schema]
 
   - id: offline-sync
     path: docs/architecture/OFFLINE_SYNC.md
-    topics: [offline, synchronization, indexeddb, conflicts]
+    type: architecture
+    status: accepted
+    topics: [offline, synchronization, indexeddb, mutations, conflicts]
+    load_when: [M5, sync, retries, conflicts, offline behavior]
 
   - id: security
     path: docs/architecture/SECURITY.md
-    topics: [auth, authorization, privacy, tokens, gps]
+    type: architecture
+    status: accepted
+    topics: [auth, authorization, privacy, tokens, sessions, roles, gps]
+    load_when: [access, roles, protected API, privacy, recovery]
+
+  - id: organizations
+    path: docs/architecture/ORGANIZATIONS.md
+    type: architecture
+    status: proposed
+    topics: [organizations, multi-tenant, admins, admin-panel, membership, multi-admin]
+    load_when: [M8, organization model, admin panel, multiple administrators, tenant security]
+
+  - id: collaboration
+    path: docs/architecture/COLLABORATION.md
+    type: architecture
+    status: proposed
+    topics: [comments, activity, events, automations, statistics, reporting]
+    load_when: [M7, M9, comments, activity feed, automation, statistics]
 
   - id: quality
     path: docs/quality/QUALITY.md
+    type: quality
+    status: accepted
     topics: [tests, performance, accessibility, browsers, quality]
+    load_when: [testing, performance acceptance, browser support, release gate]
 
   - id: deployment
     path: docs/operations/DEPLOYMENT.md
+    type: operations
+    status: accepted
     topics: [deploy, cloudflare, github, production, d1]
+    load_when: [deployment, migration, Worker config, Cloudflare]
 
   - id: first-deploy
     path: docs/operations/FIRST_DEPLOY.md
+    type: operations
+    status: historical-procedure
     topics: [cloudflare, setup, first-deploy, workers]
+    load_when: [new environment setup only]
 
   - id: production
     path: docs/operations/PRODUCTION.md
+    type: operations
+    status: current
     topics: [production, workers-dev, health, deployment, field-test]
+    load_when: [production verification, live URL, smoke test]
+
+  - id: decisions
+    path: docs/decisions/README.md
+    type: decisions
+    status: index
+    topics: [adr, architecture-decisions, history]
+    load_when: [architecture change, superseding a boundary]
+
+  - id: plan-renderer-recovery
+    path: docs/plans/active/008-renderer-access-recovery.md
+    type: plan
+    status: active
+    topics: [current-slice, renderer, access-recovery, diagnostics]
+    load_when: [current PR 21 work, renderer acceptance, access recovery]
+
+  - id: plan-platform-roadmap
+    path: docs/plans/active/009-product-platform-foundation.md
+    type: plan
+    status: active
+    topics: [next-work, M5, smart-tasks, collaboration, organizations, statistics]
+    load_when: [new agent continuation, post-PR21 planning, next milestone]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
-    topics: [agent, chatgpt, context, onboarding]
+    type: onboarding
+    status: current
+    topics: [agent, chatgpt, context, onboarding, fresh-chat]
+    load_when: [new AI session, handoff]
 
 edges:
-  - { from: product, to: mvp, relation: defines_scope }
+  - { from: product, to: roadmap, relation: expands_into }
+  - { from: product, to: mvp, relation: release_subset }
+  - { from: ux, to: product, relation: implements_experience }
+
   - { from: architecture, to: product, relation: implements }
+  - { from: stack, to: architecture, relation: constrains }
   - { from: map, to: architecture, relation: component_of }
   - { from: data, to: architecture, relation: component_of }
   - { from: offline-sync, to: data, relation: depends_on }
   - { from: security, to: data, relation: constrains }
+
+  - { from: roadmap, to: organizations, relation: plans }
+  - { from: roadmap, to: collaboration, relation: plans }
+  - { from: roadmap, to: offline-sync, relation: plans }
+  - { from: roadmap, to: map, relation: extends_with_smart_tasks }
+
+  - { from: organizations, to: security, relation: constrained_by }
+  - { from: organizations, to: data, relation: requires_schema_extension }
+  - { from: collaboration, to: security, relation: constrained_by }
+  - { from: collaboration, to: data, relation: requires_event_data }
+  - { from: collaboration, to: offline-sync, relation: benefits_from_mutations }
+
   - { from: quality, to: architecture, relation: validates }
   - { from: deployment, to: architecture, relation: operates }
   - { from: first-deploy, to: deployment, relation: procedure_for }
   - { from: production, to: deployment, relation: records }
+
+  - { from: plan-renderer-recovery, to: map, relation: changes }
+  - { from: plan-renderer-recovery, to: security, relation: changes }
+  - { from: plan-platform-roadmap, to: roadmap, relation: executes }
+  - { from: plan-platform-roadmap, to: offline-sync, relation: starts_with }
+  - { from: prompts, to: architecture, relation: onboards_to }
+  - { from: prompts, to: roadmap, relation: onboards_to }
