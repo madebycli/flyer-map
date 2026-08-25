@@ -3,7 +3,7 @@ id: plan-010-m5-resilient-mutation-sync
 type: plan
 status: active
 last_updated: 2026-08-25
-related: [plan-009-product-platform-foundation, architecture-offline-sync, architecture-data, architecture-security, quality, ADR-0011]
+related: [plan-009-product-platform-foundation, architecture-offline-sync, architecture-data, architecture-security, architecture-map, quality, ADR-0011]
 ---
 
 # Plan 010 — M5 resilient mutation synchronization
@@ -14,139 +14,111 @@ Make saved field changes durable across reloads and unreliable connectivity with
 
 ## Baseline / source of truth
 
-This slice preserves:
-- MapLibre GL JS 5.7.1 with saved Areas/Streets in persistent GeoJSON sources/layers;
-- SVG only for active draw/edit geometry;
-- Campaign-scoped Admin / Team Editor / Viewer access enforced by the Worker;
-- localStorage Campaign snapshot as startup/recovery cache;
-- coarse snapshot PUT only as compatibility/recovery path during the M5 transition.
+Continue existing branch `m5-resilient-sync-mainline` / Draft PR #24. Do not create a replacement M5 branch. Old PR #17 is closed as superseded.
 
-Continue existing branch `m5-resilient-sync-mainline` / Draft PR #24. Do not create a parallel M5 branch. Old PR #17 is closed as superseded.
+Preserve:
+- MapLibre GL JS 5.7.1;
+- saved Areas/Streets in persistent MapLibre GeoJSON sources/layers;
+- active draw/edit only in SVG;
+- Campaign-scoped Admin / Team Editor / Viewer authorization enforced by the Worker;
+- website-only architecture.
 
-Relevant graph nodes: `offline-sync`, `data`, `security`, `quality`, `adr-m5-durable-mutations`, `plan-platform-roadmap`.
+ADR-0011 governs mutation queue/idempotency behavior.
 
-## Architecture
+## Implemented M5 architecture
 
-ADR-0011 governs this slice.
-
-Implemented architecture:
-- IndexedDB stores unacknowledged mutations;
-- best-effort localStorage emergency shadow covers the short enqueue window;
-- IndexedDB operations await transaction completion;
-- mutation ids are stable idempotency keys;
-- each id is bound to a canonical, locale-independent SHA-256 fingerprint of the validated mutation envelope;
-- one explicit mutation is processed at a time per Campaign;
-- Worker validates/applies against current state, reuses existing authorization, then performs narrow D1 persistence;
-- D1 records mutation id/fingerprint/revisions in additive migration `0003`;
-- same id + same content replays safely; same id + changed content is rejected;
-- revision claim + narrow domain write + ledger insert use D1 `batch()` transaction semantics;
-- conflict/auth/invalid states stop inappropriate retries;
-- retryable failures use bounded exponential backoff;
-- retry triggers include page initialization, `online`, visible-tab return and manual refresh;
+- explicit Campaign/Team/Area/Street mutations;
+- IndexedDB durable queue for unacknowledged changes;
+- emergency localStorage shadow during IndexedDB enqueue;
+- stable mutation ids plus canonical SHA-256 fingerprints;
+- ordered processing with bounded retry/backoff;
+- online/visible-tab/manual retry triggers;
+- explicit conflict, invalid and access-blocked states;
+- Worker validation followed by existing authorization;
+- narrow D1 writes plus mutation ledger;
+- compact sync status UI;
 - no Service Worker or Background Sync API.
 
-## Implementation status
+## D1 migration — passed
 
-### A. Domain protocol — implemented
-Explicit mutation types, derivation, target preconditions and tests are present.
+`migrations/0003_m5_mutations.sql` was applied successfully to remote `flyer-map-db` on 2026-08-25. Wrangler showed the migration with status `✅`.
 
-### B. Durable browser queue — implemented; browser acceptance in progress
-IndexedDB queue, ordering, emergency recovery, transaction completion, retry/backoff and lifecycle triggers are present.
+## Browser acceptance observations
 
-### C. Worker + D1 idempotency — implemented; migration passed, runtime acceptance pending
-Mutation route, validation, fingerprints, duplicate/reuse handling, authorization and narrow writes are present.
-
-### D. User-visible sync state — implemented; field acceptance in progress
-Compact pending/syncing/offline/conflict/failed/access-blocked indicator is present without changing MapLibre lifecycle.
-
-### E. Documentation / handoff — current
-OFFLINE_SYNC, DATA, SECURITY, DEPLOYMENT, CURRENT, ADR-0011, context graph and NEW_AGENT are aligned to PR #24.
-
-## Repository / preview acceptance — passed
-
-Runtime-hardening head `8c7020ad5d1538bea68c351d918e94aa8f54973c`:
-- CI #202 passed.
-
-Complete code + context/ADR/runbook head `5c7dce819d472be8242da59034310d7a87c21f36`:
-- CI #208 passed;
-- Cloudflare exact commit preview deployment passed;
-- exact preview: `https://bb8fa846-flyer-map.cloudflare-eleven035.workers.dev`.
-
-Cloudflare PR bot explicitly reported `5c7dce81` as the successful preview commit. On 2026-08-25 the user also confirmed that this exact preview root loads successfully in a real browser.
-
-Commits after `5c7dce...` are documentation/handoff/status-only at this point, so they are runtime-equivalent to the accepted preview. If any later commit changes runtime code, obtain a new exact preview before merge.
-
-Automated tests cover:
-- mutation derivation and target conflicts;
-- durable queue order/reload abstraction;
-- failed IndexedDB enqueue emergency recovery;
-- localStorage emergency-shadow failure fallback;
-- corrupt emergency-shadow quarantine;
-- duplicate same-id/same-content apply-once behavior;
-- same-id/changed-content rejection;
-- canonical fingerprint stability;
-- existing Team Editor / Viewer authorization policy.
-
-## D1 migration status — passed
-
-`migrations/0003_m5_mutations.sql` was applied successfully to remote D1 database `flyer-map-db` on 2026-08-25 from branch `m5-resilient-sync-mainline` using:
-
-```bash
-npx wrangler d1 migrations apply flyer-map-db --remote
-```
-
-Observed non-sensitive result:
-- Wrangler listed exactly `0003_m5_mutations.sql` as the pending migration;
-- user confirmed the remote migration prompt;
-- Wrangler executed 4 commands;
-- migration status displayed `✅`.
-
-No credentials or secret values are recorded. The D1 schema is now ready for M5 preview mutation acceptance.
-
-## Browser/field acceptance — current gate
-
-Preview-root smoke is passed in a real browser.
-
-Observed on 2026-08-25 for gate 1:
+Observed in a real browser:
+- preview root loads;
 - creating a Street while offline shows `offline gespeichert`;
-- editing a Street while offline also remains locally saved;
-- after a full reload while still offline, the created/edited Street remains present.
+- editing a Street while offline remains locally saved;
+- after a full reload while still offline, the created/edited Street is still present.
 
-Therefore local offline durability across reload is passed. Gate 1 is not fully complete until connectivity is restored and the queued mutation is observed synchronizing to the server without duplication.
+This proves browser-local mutation durability across reload.
 
-Remaining sequence:
-1. reconnect and confirm queued mutation delivery;
-2. retry/reconnect does not duplicate the effect;
-3. conflicting target change is visibly surfaced and does not overwrite silently;
-4. revoked/invalid access stops blind retry and queued work remains access-blocked;
-5. transient network/server failure remains queued and later retries;
-6. saved MapLibre Areas/Streets remain visible/selectable and active edit behavior is unchanged.
+Reconnect delivery is not yet marked passed because the test exposed that the remote basemap itself is not usable after an offline reload. That separate product gap is now tracked in Plan 011 and must not be confused with mutation loss.
 
-For destructive acceptance use a disposable/test Campaign where practical because the current preview and Production Worker share the configured `flyer-map-db` binding.
+## Maximum-zoom renderer regression found during acceptance
+
+At the map's maximum zoom the CARTO basemap became white while saved application geometry remained visible.
+
+Cause:
+- Map maxZoom = 20;
+- CARTO source maxzoom = 20;
+- CARTO raster style layer maxzoom was also 20;
+- MapLibre hides a style layer at zoom values equal to or greater than layer maxzoom.
+
+Runtime fix commit:
+- `5029f9b958502d96d6c185beac16b894774d72e9`;
+- only the raster layer `maxzoom` changed `20 -> 21`;
+- source maxzoom and Map maxZoom remain 20;
+- no saved-geometry renderer/provider/MapLibre-version change.
+
+CI #226 passed for this fix.
+
+Because `5029f9b...` is a runtime change after the previously accepted exact preview, the old `5c7dce...` exact preview is no longer sufficient for merge acceptance. A new Cloudflare deployment/preview that contains the updated runtime is required, followed by a real-browser zoom-20 check.
+
+## Offline map product gap
+
+A deliberate downloadable offline geographic context is **not part of M5 PR #24**. It is now an explicit next milestone tracked by:
+- `docs/plans/active/011-offline-map-area.md`;
+- Roadmap M5.5.
+
+Target UX: Settings action downloads approximately 3 km around current map center for offline use after reload.
+
+Do not solve this by caching CARTO raster tiles. CARTO Basemap terms prohibit storing/caching basemap content. Plan 011 must select an offline-permitted OSM/OSM-derived source/format through a new ADR.
+
+## Remaining M5 release gates
+
+1. new Cloudflare runtime preview/deployment containing `5029f9b...`;
+2. real-browser maximum-zoom confirmation: basemap stays visible at zoom 20;
+3. reconnect queued mutation and confirm server delivery exactly once;
+4. retry/reconnect produces no duplicate effect;
+5. conflicting target change is visibly surfaced with no silent overwrite;
+6. revoked/invalid access stops blind retry and leaves queued work access-blocked;
+7. transient network/server failure remains queued and later retries;
+8. saved Areas/Streets remain visible/selectable and active edit behavior remains correct;
+9. final PR head CI remains green.
 
 ## Risks
 
-- legacy optimistic snapshots before queue initialization still rely on one-time compatibility recovery;
-- unsupported compound snapshot diffs must fail visibly rather than falling back to broad ordinary writes;
 - one terminal queue item blocks later dependent mutations by design;
-- IndexedDB/private-mode limitations must surface as failed-save state;
-- preview code is isolated but its current D1 binding is not a separate staging database.
+- browser storage/private-mode limitations must surface visibly;
+- preview and Production currently share the configured D1 database;
+- exact preview evidence must be refreshed after runtime changes;
+- offline map-package work is intentionally separated into Plan 011 so it does not destabilize M5 release scope.
 
 ## Explicit non-goals
 
-- no Service Worker;
-- no PWA/install flow;
-- no Background Sync API;
-- no Organization model;
-- no Comments/Activity/Automations/Statistics implementation;
-- no MapLibre version change;
-- no rewrite of saved-geometry renderer;
+- no Service Worker/PWA/Background Sync;
+- no downloadable basemap package inside PR #24;
+- no Organization/Comments/Statistics implementation;
+- no MapLibre version upgrade;
+- no saved-geometry renderer rewrite;
 - no silent last-write-wins merge.
 
 ## Immediate next
 
 1. Keep PR #24 Draft.
-2. Turn connectivity back on in the same browser session used for the passed offline save/reload check.
-3. Confirm the queued Street mutation reaches the server and returns to normal saved state without duplication.
-4. Record the result in this plan and `CURRENT.md`, then continue to retry/idempotency acceptance.
-5. Merge only after all remaining browser gates pass and the final repository head is green.
+2. Verify Cloudflare deployment for the updated runtime and browser-test maximum zoom.
+3. Resume reconnect/idempotency/conflict/auth/transient-failure acceptance.
+4. Record every observed gate in this plan and `CURRENT.md`.
+5. Merge M5 only after all gates pass.
+6. Start Plan 011 as the next dedicated slice after M5 merge.
