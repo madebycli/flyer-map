@@ -37,35 +37,55 @@ Campaign id is only a selector. Access/session authorization is Worker-enforced.
 
 ## Active M5 development
 
-M5 resilient mutation synchronization is now the active implementation slice:
-- branch: `m5-resilient-sync-mainline` created from current post-PR21 `main`;
+M5 resilient mutation synchronization is the active implementation slice:
+- branch: `m5-resilient-sync-mainline` from current post-PR21 `main`;
 - PR #24: `M5 durable mutation queue on current MapLibre baseline` (Draft while acceptance continues);
 - Plan 010: `docs/plans/active/010-m5-resilient-mutation-sync.md`;
 - ADR-0011: page-owned IndexedDB mutation queue + Worker/D1 idempotency.
 
-Current M5 implementation direction on PR #24:
+Implemented on PR #24:
 - explicit Campaign/Team/Area/Street Task mutations;
 - durable IndexedDB queue for unacknowledged changes;
+- emergency localStorage shadow during the short enqueue window, with recovery into IndexedDB after a failed write/reload;
+- IndexedDB reads/writes wait for transaction completion, not merely request success;
 - stable mutation id used as server idempotency key;
+- canonical SHA-256 mutation fingerprint binds each idempotency id to the exact semantic mutation content;
+- same id + same content returns the original applied revision without reapplying;
+- same id + changed content is rejected as `mutation_id_reused`;
 - ordered queue processing with bounded exponential retry;
 - conflict / authorization-blocked / invalid terminal states;
 - retry on online, visible-tab return and manual refresh;
-- Worker mutation validation followed by existing snapshot-based authorization policy;
+- Worker mutation validation followed by the existing snapshot-based authorization policy;
 - additive `migrations/0003_m5_mutations.sql` idempotency ledger;
 - narrow D1 writes guarded by Campaign revision and internal write token;
 - compact visible sync status.
 
 The obsolete pre-PR21 M5 draft PR #17 is closed as superseded. Its isolated sync ideas were selectively ported; its stale renderer/application baseline was not.
 
+## Current repository acceptance
+
+Latest runtime-code head before context-only documentation updates: `8c7020ad5d1538bea68c351d918e94aa8f54973c`.
+
+Confirmed:
+- CI #202 completed successfully on `8c7020ad...`;
+- tests include mutation derivation/conflict behavior, queue ordering/reload recovery, emergency-shadow recovery, localStorage-shadow failure fallback, corrupt-shadow quarantine, server duplicate application and changed-payload id reuse rejection;
+- TypeScript check and production build passed in the same CI run;
+- PR #24 remains based directly on the post-PR21 `main` baseline and does not modify `src/map/MapView.tsx` or the accepted renderer architecture.
+
+Cloudflare preview status is deliberately more conservative:
+- exact preview deployment is confirmed for older PR head `fc200f9d4331d002fd73c060fd3c76636e69b0d2` at `https://9ad67cf5-flyer-map.cloudflare-eleven035.workers.dev`;
+- the Cloudflare PR bot has not yet reported an exact commit preview for the newer hardened runtime head in the repository record checked on 2026-08-25;
+- therefore **final-head Cloudflare preview is still an open gate** and must not be described as passed.
+
 ## M5 release gates
 
 M5 is **not production-ready yet**. Before merge/production rollout:
 - repository `check` must be green on the final head;
-- exact Cloudflare preview head must deploy successfully;
-- `0003_m5_mutations.sql` must be explicitly applied to the target D1 environment before the mutation endpoint is exercised there;
+- exact Cloudflare preview for the final runtime-equivalent head must deploy successfully;
+- `0003_m5_mutations.sql` must be explicitly applied to the D1 environment used for mutation runtime acceptance before the mutation endpoint is exercised there;
 - real-browser acceptance must verify offline save -> reload -> reconnect delivery, duplicate-safe retry, visible conflict/auth-block states and unchanged MapLibre renderer behavior.
 
-The user explicitly instructed continued implementation on 2026-08-25, so development proceeds on the isolated PR #24 branch while the production gates remain enforced.
+`0003_m5_mutations.sql` is still code-prepared only. Do not claim that it is applied until Cloudflare/D1 output confirms it.
 
 ## Known follow-ups
 
@@ -98,9 +118,9 @@ Organization and collaboration/statistics architecture are currently **proposed*
 
 ## Immediate next
 
-1. Finish PR #24 repository implementation/tests/documentation without changing the accepted map renderer.
-2. Resolve all CI failures on the current head.
-3. Obtain an exact Cloudflare preview of the final M5 head.
-4. Apply migration `0003_m5_mutations.sql` to the target D1 environment before runtime mutation acceptance.
-5. Complete real-browser M5 queue/conflict/retry acceptance.
+1. Keep PR #24 Draft and preserve the accepted MapLibre renderer boundary.
+2. Confirm CI on the final context/documentation head; runtime-code CI #202 is already green for `8c7020ad...`.
+3. Obtain an exact Cloudflare preview for the current/final runtime-equivalent head.
+4. Apply `0003_m5_mutations.sql` to the chosen D1 runtime-acceptance environment before testing the mutation route there.
+5. Complete real-browser M5 queue/conflict/retry/access-revocation acceptance.
 6. Merge/deploy M5 only after those gates pass; keep #22/#23 visible as separate follow-ups.
