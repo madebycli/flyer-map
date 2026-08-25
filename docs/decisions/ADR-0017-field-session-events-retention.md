@@ -9,7 +9,7 @@ date: 2026-08-26
 
 ## Status
 
-Proposed only. No Field Session, activity-event or historical-statistics D1 schema is authorized until the retention/deletion choice is explicitly accepted.
+Proposed only. The product retention direction was clarified on 2026-08-26: operational history should be retained rather than automatically expired. D1 schema implementation remains blocked until deletion/archive and historical-geometry semantics are accepted.
 
 ## Context
 
@@ -71,9 +71,9 @@ Events are append-only from normal product flows. Corrections happen by later ev
 
 ## Event payload minimization
 
-Do not store whole Campaign snapshots or unrestricted before/after JSON blobs in every event.
+Retaining history does not mean retaining unrestricted request bodies or whole snapshots.
 
-Payload contains only fields needed to understand the event later.
+Do not store whole Campaign snapshots or unrestricted before/after JSON blobs in every event. Payload contains only fields needed to understand the event later.
 
 Examples:
 - `task.status.changed`: task id, previous status, new status;
@@ -126,56 +126,36 @@ Do not create unnecessary personal profiles solely for event history.
 
 Display labels are not durable authorization identity.
 
-## Retention options
+## Confirmed product retention direction: retain operational history
 
-### Option R1: retain operational history with the Campaign
+Operational history should not automatically disappear after 12/24 months or through tiered feed expiry.
 
-Field Sessions and domain events remain while the Campaign/history is retained, subject to explicit Organization/Campaign deletion/export policy.
+For the initial product direction:
+- Field Sessions are retained with the Campaign/history;
+- domain events are retained with the Campaign/history;
+- Task/event relations required for historical session understanding are retained;
+- statistics may continue to derive from retained history;
+- there is no automatic age-based cleanup for ordinary operational history in the initial design.
 
-Benefits:
-- coordinators can compare seasons/outings long term;
-- no arbitrary history gaps;
-- session map/statistics remain understandable.
+This corresponds to the earlier R1 option.
 
-Trade-offs:
-- more D1 storage over time;
-- privacy/deletion policy must be explicit;
-- old low-value events may accumulate.
+The retained records still follow payload minimization. "Keep everything" means keep the product's meaningful operational history, not secrets, raw HTTP bodies, GPS trails or redundant full Campaign snapshots.
 
-### Option R2: fixed detailed-event retention, durable session summaries
-
-Keep Field Session summary rows long term, but automatically remove detailed domain events after a fixed period such as 12 or 24 months.
+### Consequences
 
 Benefits:
-- bounded detailed-history growth;
-- lower long-term privacy/storage footprint.
+- coordinators can compare outings and actions over long periods;
+- session map/statistics do not develop arbitrary time gaps;
+- auditability remains understandable;
+- no cleanup scheduler is required for the first implementation.
 
-Trade-offs:
-- old session affected-task highlighting becomes incomplete after event expiry unless task references are separately summarized;
-- audit/operational history has a hard cutoff;
-- more retention job/expiry complexity.
+Costs:
+- D1 storage grows with product usage;
+- explicit Campaign/Organization deletion/export policy becomes important;
+- query/index design must remain bounded as history grows;
+- future scale may justify archive/export mechanisms, but not silent history expiry.
 
-### Option R3: tiered retention
-
-Keep compact session/task-reference summaries long term while expiring low-value detailed events sooner.
-
-Benefits:
-- preserves core session highlighting/statistics;
-- bounds verbose activity history.
-
-Trade-offs:
-- more complex event classification/cleanup;
-- requires clear distinction between durable operational evidence and disposable feed noise.
-
-## Proposed recommendation
-
-Prefer R3 if implementation complexity remains modest:
-- Field Session summary retained with Campaign;
-- compact affected Task references or essential task-change events retained with Campaign;
-- verbose activity/feed-only events may have a configurable/fixed shorter retention later;
-- security/audit retention may follow a separate stricter policy.
-
-For the first M7 slice, a simpler R1 implementation may be safer than prematurely building cleanup jobs, provided payloads are minimal and deletion/export policy is explicit before release.
+The previous fixed-expiry and tiered-expiry variants are not the selected initial product direction. A future change would require an explicit ADR update rather than silent cleanup.
 
 ## Team archive/delete interaction
 
@@ -220,13 +200,12 @@ Reason:
 - harder retention/redaction;
 - unnecessary for session task highlighting and normal activity history.
 
-## Open acceptance decisions
+## Remaining acceptance decisions
 
-1. Select R1, R2 or R3 retention direction.
-2. Decide Campaign archive vs deletion behavior for retained sessions/events.
-3. Decide whether exact historical geometry is a future requirement or current-geometry highlighting is sufficient.
-4. Define comment edit/delete event semantics once comment moderation policy is chosen.
-5. Define security/audit retention separately from ordinary operational activity if required.
+1. Define Campaign archive vs permanent deletion behavior for retained sessions/events.
+2. Decide whether exact historical geometry is a future requirement or current-geometry highlighting is sufficient.
+3. Define comment edit/delete event semantics once comment moderation policy is chosen.
+4. Define security/audit retention if it must differ from ordinary operational history.
 
 ## Implementation gates after acceptance
 
