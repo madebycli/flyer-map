@@ -19,10 +19,12 @@ M5 implements this through a page-owned durable mutation queue while preserving 
 
 The durable mutation architecture is implemented in active PR #24 / Plan 010 and is **not yet the production baseline**.
 
-Production remains on the pre-M5 persistence path until:
-- final PR checks and Cloudflare preview pass;
-- additive D1 migration `0003_m5_mutations.sql` is applied to the target environment;
-- browser acceptance confirms reload/reconnect/conflict/auth behavior.
+Repository/preview/migration gates now passed:
+- runtime and final repository CI for the accepted M5 implementation path;
+- exact Cloudflare runtime-equivalent preview for commit `5c7dce81...`;
+- additive D1 migration `0003_m5_mutations.sql` applied successfully to remote `flyer-map-db` on 2026-08-25.
+
+Remaining gate is real-browser acceptance of reload/reconnect/idempotency/conflict/auth behavior plus unchanged MapLibre behavior before PR #24 is merged.
 
 ## Local state layers
 
@@ -57,6 +59,8 @@ Queue states:
 - `conflict`;
 - `blocked-auth`;
 - `invalid`.
+
+During the short enqueue window a best-effort localStorage emergency shadow protects against an interrupted/failed IndexedDB write. A successful IndexedDB transaction clears that shadow; corrupt shadow data is quarantined rather than blocking the queue forever.
 
 ## Supported mutation protocol
 
@@ -109,15 +113,18 @@ The Worker exposes authenticated `POST /api/campaigns/:id/mutations`.
 For each request it:
 1. resolves the existing Campaign access/session;
 2. validates the mutation envelope/payload;
-3. loads current Campaign state;
-4. applies one mutation in memory;
-5. validates the resulting snapshot;
-6. runs current/candidate state through the existing Worker authorization policy;
-7. persists a narrow D1 change plus idempotency ledger entry.
+3. computes the canonical SHA-256 mutation fingerprint;
+4. loads current Campaign state;
+5. applies one mutation in memory;
+6. validates the resulting snapshot;
+7. runs current/candidate state through the existing Worker authorization policy;
+8. persists a narrow D1 change plus idempotency ledger entry.
 
-Migration `0003_m5_mutations.sql` adds `campaign_mutations` keyed by `(campaign_id, mutation_id)`.
+Migration `0003_m5_mutations.sql` adds `campaign_mutations` keyed by `(campaign_id, mutation_id)` and is already applied to the currently configured remote `flyer-map-db` used for M5 runtime acceptance.
 
-If a mutation id already exists, the server returns its prior applied revision and does not apply the effect again.
+If a mutation id already exists:
+- same canonical fingerprint/content -> return its prior applied revision and do not apply the effect again;
+- different fingerprint/content -> return `409 mutation_id_reused` and do not apply the changed effect.
 
 Persistence uses the Campaign revision plus internal `write_token` as the concurrency claim. On a concurrent revision move, the Worker reloads and re-evaluates the mutation for a bounded number of attempts.
 
