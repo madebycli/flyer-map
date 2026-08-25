@@ -35,7 +35,7 @@ Aktuelle Kernkonzepte:
 - Status: open / completed / later / not-deliverable
 - Campaign-scoped Access mit Admin / Team Editor / Viewer
 
-Die langfristige Produkt-Roadmap steht in `docs/product/ROADMAP.md`. Dazu gehören nach dem aktuellen Baseline-Slice insbesondere:
+Die langfristige Produkt-Roadmap steht in `docs/product/ROADMAP.md`. Nach dem abgeschlossenen Renderer-/Access-Slice ist die Reihenfolge:
 - M5 resiliente Mutation Queue / Sync
 - M6 Smart Street + House Tasks mit OSM/OSM-derived Geometrie statt Freihand-Textmarker als Normalfall
 - M7 Kommentare, Activity und deterministische Automationen
@@ -107,21 +107,25 @@ Prinzipien:
 - Statistiken aus Domain-State/Events, nicht aus kontinuierlichem GPS-Tracking;
 - keine versteckten privilegierten Automationen.
 
-PLÄNE
+PLÄNE UND AKTUELLER STAND
 
 Nicht-triviale Arbeit braucht eine Datei unter `docs/plans/active/`.
 
-Aktuell relevante übergeordnete Planung:
-- `docs/plans/active/008-renderer-access-recovery.md` solange PR #21 noch offen ist;
-- `docs/plans/active/009-product-platform-foundation.md` für die Arbeit danach.
+Plan 008 ist abgeschlossen und historisch:
+- `docs/plans/completed/008-renderer-access-recovery.md`.
 
-Wenn PR #21 noch offen ist:
-- arbeite zuerst dessen Acceptance/Restpunkte fertig;
-- starte nicht parallel einen großen M5/M6/M8-Rewrite in denselben Branch.
+PR #21 ist am 2026-08-25 in `main` gemergt. Suche Plan 008 nicht mehr unter `docs/plans/active/` und öffne den alten Renderer-Branch nicht für neue Arbeit.
 
-Wenn PR #21 bereits gemergt und Production gesund ist:
-- starte den nächsten Slice von aktuellem `main`;
-- M5 ist der nächste technische Foundation-Slice.
+Aktive übergeordnete Planung:
+- `docs/plans/active/009-product-platform-foundation.md`.
+
+M5 ist der nächste technische Foundation-Slice. Starte ihn auf einem frischen Branch von aktuellem `main`, aber erst nachdem `docs/status/CURRENT.md` bestätigt, dass der aktuelle Production-Health-Gate geklärt ist.
+
+Bekannte, ausdrücklich NICHT als bestanden geltende Follow-ups:
+- GitHub #22: Desktop bottom-toolbar fit/spacing;
+- GitHub #23: Production-Health/Deployed-Origin-Recovery/`?diag=1`/500-5000-Street-Operational-Validation.
+
+Diese Issues dürfen nicht stillschweigend als erledigt interpretiert werden. Sie blockieren nicht automatisch die gesamte Roadmap, müssen aber gemäß `CURRENT.md`/Plan 009 passend eingeordnet und spätestens im Field-Hardening geschlossen werden.
 
 CODE-/GIT-REGELN
 
