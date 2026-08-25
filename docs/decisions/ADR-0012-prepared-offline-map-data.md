@@ -1,7 +1,7 @@
 ---
 id: ADR-0012
 type: decision
-status: proposed
+status: accepted
 date: 2026-08-25
 ---
 
@@ -9,7 +9,7 @@ date: 2026-08-25
 
 ## Status
 
-Proposed. User architecture decision required before M5.5 implementation.
+Accepted on 2026-08-25. Approach A was selected by the product owner.
 
 ## Context
 
@@ -39,7 +39,7 @@ Official references verified 2026-08-25:
 
 ## Required product behavior
 
-A selected implementation must support:
+The implementation must support:
 - user positions the map and explicitly downloads about 3 km around current center;
 - visible estimate/progress and storage errors;
 - local package metadata with center, bounds/radius, created/updated time, package schema and attribution;
@@ -51,32 +51,32 @@ A selected implementation must support:
 - no hidden large background downloads;
 - mobile performance measurement in a dense urban area.
 
-## Approach A: Bounded raw OSM subset package
+## Decision: Approach A, bounded raw OSM subset package
 
 ### Stack
 
 - existing React/Vite/MapLibre frontend;
 - existing Cloudflare Worker;
 - browser IndexedDB;
-- Worker-controlled Overpass-compatible OSM data source initially, with the upstream endpoint configurable rather than hard-coded into UI code;
+- Worker-controlled Overpass-compatible OSM data source, with the upstream endpoint configurable server-side rather than hard-coded into UI code;
 - compact normalized JSON/GeoJSON package for v1;
 - no new R2 dependency for the initial slice.
 
-A public Overpass instance may be useful for development and low-volume validation, but it must not be treated as a guaranteed production SLA. Public instances are explicitly described as services for small projects that can become overloaded. A commercial or self-hosted compatible source can later replace the upstream without changing the browser package contract.
+A public Overpass instance may be used for development and limited beta validation, but it is not considered a guaranteed production SLA. The Worker boundary keeps the upstream replaceable so a hosted or self-hosted Overpass-compatible provider can replace it without changing the browser package contract.
 
 ### Data flow
 
 1. Browser sends center/radius to a fixed Worker endpoint.
 2. Worker enforces a small radius, request limits and fixed server-owned query templates.
-3. Worker requests only the OSM feature classes needed for offline context and future task geometry, initially roads, buildings and a minimal set of contextual features.
+3. Worker requests only the OSM feature classes needed for offline context and future task geometry, initially roads and buildings with a deliberately small context whitelist.
 4. Worker validates and normalizes geometry/tags and preserves explicit source identity such as OSM object type/id where available.
 5. Browser writes an `OfflineMapPackage` to IndexedDB.
 6. MapLibre renders local GeoJSON sources/layers when online basemap data is unavailable inside the prepared bounds.
 7. Campaign Areas/Streets continue to render through their existing MapLibre sources above this context.
 
-### Package direction
+### Package contract
 
-Initial package can remain deliberately boring:
+Initial package remains deliberately small and versioned:
 
 ```text
 OfflineMapPackage v1
@@ -94,85 +94,50 @@ OfflineMapPackage v1
 
 Do not turn the first package into a general GIS database unless measured size/performance requires it.
 
+### Initial implementation parameters
+
+These are conservative v1 parameters and may be tuned from measurements without replacing this ADR:
+- requested working radius: 3,000 m;
+- Worker rejects larger radii rather than trusting arbitrary client bounds;
+- fixed server-owned OSM query templates, never client-supplied query text;
+- v1 feature priority: routable/visible road ways and building footprints, preserving relevant OSM ids/tags for later M6 work;
+- package is device/browser-local in IndexedDB and is replaced only after the new package has downloaded, validated and persisted successfully;
+- package metadata carries OSM attribution and dataset/fetch timestamp;
+- user can explicitly update or delete the package;
+- package expiry is advisory in v1: stale packages remain usable but UI can mark age and offer refresh;
+- hard response/package limits and timeout values are implementation constants with visible user errors and tests.
+
 ### Security and abuse controls
 
 - client never supplies arbitrary Overpass query text;
 - radius/bounds are validated server-side;
 - response size and upstream timeout are bounded;
 - upstream URL is server configuration, not user input;
-- current Campaign authorization may protect download endpoints to reduce abuse even though OSM data itself is public;
+- Campaign authorization protects the download endpoint to reduce abuse even though OSM data itself is public;
 - no secrets or Campaign-private data are included in the local OSM package;
-- package content is treated as untrusted external data before rendering/use.
+- package content is treated as untrusted external data before rendering/use;
+- user-controlled values are not concatenated into SQL or executable query/code templates.
 
-### Benefits
+### Consequences
 
-- lowest new infrastructure complexity;
-- lowest initial operating cost;
-- preserves raw-ish OSM identities/tags needed by M6 better than a display-only basemap schema;
-- one data direction can support offline context plus later Street/House proposal logic;
+Benefits:
+- lowest new infrastructure complexity and operating cost for the current 3 km requirement;
+- preserves raw OSM identities/tags needed by M6 better than a display-only basemap schema;
+- one map-data direction can support offline context plus later Street/House proposal logic;
 - simple IndexedDB replacement/version model;
-- avoids introducing R2 and a scheduled tile-build pipeline before scale proves they are needed.
+- avoids R2 and a scheduled tile-build pipeline until measured scale justifies them.
 
-### Drawbacks
-
+Trade-offs:
 - public Overpass availability is not suitable as a hard production dependency at scale;
 - large/dense building sets can make GeoJSON packages heavy;
-- visual result needs a deliberately small local MapLibre style rather than inheriting a polished full basemap automatically;
-- if real usage grows substantially, a tile-based backend may later be justified.
+- local offline styling will be simpler than the CARTO online basemap;
+- if real usage grows substantially, a later accepted ADR may replace the upstream/package transport with a tile-based pipeline while preserving the product contract.
 
-### Complexity
+## Rejected for M5.5: Approach B, self-hosted vector tiles/PMTiles
 
-Medium.
+A self-hosted regional vector-tile/PMTiles pipeline with Cloudflare R2 remains a valid future scaling option, but is rejected for the first M5.5 slice because it adds a scheduled OSM build environment, custom tile schema, R2 lifecycle, offline tile enumeration/cache protocol and glyph/sprite packaging before current scale requires them.
 
-## Approach B: Self-hosted regional vector tiles with preserved OSM identity
-
-### Stack
-
-- existing React/Vite/MapLibre frontend;
-- `pmtiles` browser integration or equivalent MVT protocol adapter;
-- Cloudflare R2 for self-hosted map archives/tiles;
-- scheduled external tile build from OSM/Geofabrik extracts using Planetiler or a comparable tool;
-- custom tile schema that preserves the OSM ids/tags required by M6;
-- browser IndexedDB tile/package cache for the prepared 3 km area.
-
-### Data flow
-
-1. Scheduled builder downloads a current regional OSM PBF, for example from Geofabrik.
-2. Builder creates a custom PMTiles/MVT archive containing visual context plus preserved road/building identity fields.
-3. Archive is copied to R2 or another explicitly offline-capable storage service.
-4. Browser normally reads remote vector tiles through MapLibre/PMTiles.
-5. `3 km offline herunterladen` enumerates the bounded tile coverage and stores the needed tile bytes plus required metadata/assets in IndexedDB.
-6. A custom protocol resolves local tile bytes first while offline and remote tile bytes when online.
-
-### Security and operations
-
-- R2 bucket exposure/CORS is deliberately configured;
-- no user-controlled storage key/path is trusted blindly;
-- build artifacts are versioned and immutable;
-- package references include dataset/build version;
-- update jobs and storage/request costs need monitoring;
-- glyph/sprite assets required for offline rendering must be bundled or explicitly included in the offline strategy.
-
-### Benefits
-
-- predictable production availability because Verteil-Flyer controls hosting;
-- vector tiles scale better than large GeoJSON packages for dense cities;
-- polished map styling and zoom behavior are easier to maintain;
-- same custom tile schema can preserve fields required by M6 if designed carefully;
-- PMTiles is designed for browser + MapLibre range-request access and R2 is a documented hosting option.
-
-### Drawbacks
-
-- materially more infrastructure and operational work;
-- requires a separate scheduled build environment because Cloudflare Workers are not an OSM PBF tile compiler;
-- R2 storage/request cost plus build-compute cost;
-- offline tile enumeration/cache/protocol and glyph/sprite handling add client complexity;
-- building a custom identity-preserving tile schema before M6 identity rules are accepted risks premature architecture;
-- more moving parts for the first 3 km use case.
-
-### Complexity
-
-High.
+If measurements later show the normalized package approach is not viable, revisit this through a new ADR rather than silently changing the accepted architecture.
 
 ## Rejected approach: cache existing CARTO or OSMF tiles
 
@@ -183,47 +148,6 @@ Reason:
 - OSMF standard raster and vector tile policies explicitly prohibit bulk download/offline prefetch;
 - browser HTTP cache behavior is not a deliberate versioned offline package.
 
-## Recommendation, not yet decision
+## Implementation follow-up
 
-For the first M5.5 slice, Approach A is the recommended direction if the user accepts it.
-
-Reasoning:
-- it is the simplest architecture that satisfies the actual 3 km prepared-area requirement;
-- it adds no new Cloudflare storage product or scheduled tile compiler;
-- raw OSM identity/tags are more useful for the immediately following M6 Smart Street/House work;
-- the browser package contract can remain stable even if the upstream Overpass-compatible provider later changes;
-- dense-data measurements can tell us whether a move to MVT/PMTiles is actually necessary.
-
-The recommendation does not approve a public Overpass instance as a permanent production dependency. The Worker boundary should make the upstream replaceable.
-
-## Decision required
-
-Choose one before implementation:
-
-- **A: Bounded raw OSM subset package via Worker and IndexedDB**
-- **B: Self-hosted regional vector-tile/PMTiles pipeline with R2**
-
-Until this ADR is accepted, do not implement the Plan 011 download/storage/rendering runtime.
-
-## Follow-up decisions after choosing A
-
-If A is accepted, the first implementation slice should still keep these settings conservative and measurable:
-- exact feature whitelist;
-- maximum radius, initially about 3 km;
-- response/package size ceiling;
-- package expiry/update UX;
-- local MapLibre style;
-- whether production uses a hosted Overpass-compatible provider immediately or starts with a limited public-instance beta.
-
-These are implementation parameters unless measurements make them expensive architectural commitments.
-
-## Follow-up decisions after choosing B
-
-If B is accepted, define before runtime code:
-- builder environment and schedule;
-- geographic coverage;
-- custom tile schema and OSM identity fields;
-- R2 bucket/version lifecycle;
-- offline zoom range;
-- glyph/sprite packaging;
-- storage/request/build budget.
+Plan 011 may now proceed. The first slice should implement the Worker contract, package validation/storage, package lifecycle UI and local MapLibre rendering with tests before expanding into M6 Smart Street/House behavior.
