@@ -3,8 +3,8 @@ id: product-ux
 type: product
 status: accepted
 last_updated: 2026-08-25
-related: [product, product-roadmap, architecture-map, architecture-security]
-source_of_truth_for: [field-ux, map-interaction, appearance-ux]
+related: [product, product-roadmap, architecture-map, architecture-security, architecture-live-teams, architecture-identity-permissions, plan-012-platform-app-expansion]
+source_of_truth_for: [field-ux, map-interaction, appearance-ux, app-shell-ux, admin-ux-direction]
 ---
 
 # UX Rules
@@ -18,141 +18,243 @@ Design for one-handed outdoor use before desktop use.
 - avoid hover-only interaction;
 - respect safe-area insets and desktop viewport edges;
 - map panning/rotation must never accidentally complete Tasks;
-- completion actions need an immediate Undo path;
-- settings/refresh controls must stay reachable without covering the map;
-- bottom toolbars must remain fully visible and must not clip below the viewport on desktop or mobile.
+- completion actions need an immediate Undo path where practical;
+- icon-only controls require localized accessible labels/tooltips;
+- field UI stays compact and map-first.
 
 ## Visual hierarchy
 
-The map is the primary field workspace. Toolbars and status cards float above it without consuming most of the viewport.
+The map is the primary field workspace.
 
-Administrative/statistical dashboards are separate surfaces. Do not permanently overlay organization/admin complexity on the field map.
+Administrative/statistical complexity belongs in separate surfaces:
+- mobile full-screen app/menu modules;
+- desktop-first Admin panel.
+
+Do not permanently overlay a dashboard over the map.
+
+## Target field chrome
+
+### Bottom bar
+Target direction:
+- Settings becomes a compact gear icon;
+- Teams uses a familiar people/team/contact icon;
+- Teams lives in the right-side control cluster;
+- a Menu/App button is added on the right;
+- remove oversized text controls when a clear accessible icon is better;
+- preserve touch target size even if the visible icon is small.
+
+### Full-screen app menu
+The Menu/App button opens a full-screen mobile surface similar to an app launcher/dashboard.
+
+Candidate modules:
+- Progress;
+- Teams / Join Team;
+- Activity / Comments;
+- Collection;
+- Support / Feedback;
+- Settings;
+- Admin entry when authorized.
+
+The transition may animate, but:
+- keep it short;
+- do not block interaction unnecessarily;
+- respect `prefers-reduced-motion`;
+- do not add a large animation dependency without evidence.
+
+### Active Team / Field Group context
+When working in a Team or Field Group:
+- show Team name compactly in the top bar near Menu;
+- remove the old permanently visible Team dropdown as the primary switcher;
+- show a subtle progress bar in/under the top bar;
+- tapping Team context opens details/switching intentionally.
+
+## Progress UX
+
+Progress needs both a number and a visual bar.
+
+Show where relevant:
+- percentage complete;
+- completed/total count;
+- remaining count.
+
+Possible scopes:
+- Campaign;
+- Team;
+- Area;
+- current Field Session;
+- Collection separately from Distribution.
+
+Never communicate critical progress only through color.
+
+The denominator must be understandable. If Street and House models coexist, label which unit the percentage represents.
+
+## Team/session history UX
+
+Team details should eventually show how often the Team was out and what happened.
+
+Each Field Session card may show:
+- date;
+- duration;
+- number of people;
+- optional note;
+- completed/changed work;
+- person-time.
+
+Selecting a session can highlight its affected Streets/Houses on the map.
+
+This highlighting is based on domain events/Task ids, not recorded GPS trails.
+
+## Team creation UX
+
+Team creation supports:
+- Team name;
+- color;
+- optional date;
+- later live-group/discoverability defaults where relevant.
+
+Color preset order must start with:
+1. Orange;
+2. Blue;
+3. Green;
+4. Red;
+5. Gray.
+
+Offer additional accessible colors after those presets.
+
+Team archive/delete needs an explicit destructive/retention-aware flow rather than a casual single tap.
+
+## Live Field Groups UX
+
+Teams / Join Team module should later support:
+- current Team and Field Group;
+- list of discoverable live Field Groups for authorized Campaign participants;
+- join with code;
+- scan/show QR;
+- optional group password;
+- leave/close group according to permissions;
+- visible current group progress.
+
+Discoverability is requested as enabled by default with opt-out, but is never public internet discovery.
+
+Persistent Team access and temporary Field Group joining must be visually distinct.
+
+## Distribution vs Collection UX
+
+The app later supports two operational contexts:
+- Flyer Distribution;
+- Clothes Collection / Pickup.
+
+The mode must be explicit. A user should never accidentally mark a flyer Task complete while intending to mark a pickup complete.
+
+Collection UI may support:
+- road sections driven/finished;
+- pickup addresses/buildings;
+- manually entered call-in addresses;
+- open / collected / unavailable / follow-up status.
 
 ## Area browse/draw/edit
 
 ### Browse
+A saved Area keeps normal Team-colored fill/outline.
 
-A saved Area keeps its normal Team-colored fill/outline. Normal selection:
+Normal selection:
 - no thick white halo;
 - no stored corner/edit markers;
-- no edit affordances directly on the polygon;
-- detail/bottom sheet communicates selection.
+- no edit affordances directly on polygon;
+- details communicate selection.
 
 ### Draw
-
-Area drawing shows:
-- draft vertices;
-- draft connecting geometry/fill;
-- Save / Cancel / Undo-point controls.
+Area drawing shows draft vertices/geometry plus Save/Cancel/Undo-point controls.
 
 ### Edit
-
-Only after explicit **Form bearbeiten / Edit shape**:
+Only after explicit shape edit:
 - large touch-friendly vertices;
-- high-contrast edit preview;
-- selected vertex visibly distinct;
-- stored geometry unchanged until Save;
-- Cancel returns to saved geometry.
+- high-contrast preview;
+- selected vertex distinct;
+- saved geometry unchanged until Save;
+- Cancel restores saved state.
 
 ## Saved map rendering
 
-Saved Areas/Streets are rendered in MapLibre with the basemap. They must stay visually locked to the map while pan/zoom/rotate occurs.
+Saved Areas/Streets remain rendered by MapLibre with the basemap and stay aligned through pan/zoom/rotate.
 
-Saved geometry must remain selectable with touch-friendly hit targets even when visible lines are thin.
+Street styling should remain road-like rather than broad highlighter strokes.
 
-Street styling should look road-like, not like a broad text marker:
-- thin Team-colored line;
-- zoom-dependent width;
-- no permanent broad white casing;
-- status also communicated by opacity/dash pattern, not hue alone.
+M6 target is real Street/House geometry; manual tracing becomes fallback.
 
-## Street + House direction
+## Map camera / geolocation
 
-Manual street tracing is the current fallback interaction, not the desired long-term normal workflow.
-
-M6 target:
-- creating/saving an Area can propose/generate actual road segments from reviewed OSM/OSM-derived data;
-- user can tap/select the real Street/segment rather than hand-tracing it;
-- generated geometry follows the road and does not cut diagonally across buildings/plots;
-- manual LineString drawing remains available for missing/special paths.
-
-House Mode target:
-- switch explicitly between Street and House context;
-- tap one building to select/update it;
-- support efficient multiple-building selection on mobile without breaking normal map panning;
-- exact long-press/multi-select gesture must be usability-tested before it becomes a hard rule;
-- Street progress may aggregate from building children only after the data model defines that relationship.
-
-## Map camera
-
-The map supports arbitrary bearing. Two-finger touch rotation and normal desktop MapLibre rotation are allowed. Compass remains visible and resets North-Up.
-
-Personal last camera view is stored per Campaign/browser using center, zoom and bearing.
+Personal last camera view is browser-local.
 
 Startup priority:
 1. personal last camera view;
-2. shared Campaign focus;
+2. Campaign shared focus;
 3. Germany fallback.
 
-Remote synchronization never resets camera or automatically requests GPS.
+GPS remains user initiated. No continuous route history is required for statistics or live groups.
 
-## Geolocation
+## Access and permissions UX
 
-GPS is user initiated and one-shot. No continuous route history is created for field UX or statistics.
+UI reflects effective Worker-authorized permissions but never replaces server authorization.
 
-## Access/roles
+Future Admin permissions need understandable labels, for example:
+- Teams erstellen;
+- Teams umbenennen/Farbe ändern;
+- Teams archivieren/löschen;
+- eigene/fremde Gebiete bearbeiten;
+- eigene/fremde Straßen/Häuser bearbeiten;
+- Einladungen verwalten;
+- Live-Gruppen verwalten;
+- Statistiken ansehen;
+- Rechte verwalten;
+- Administratoren verwalten.
 
-UI reflects Worker-authorized roles but never replaces server authorization.
+Admin UI should show effective permissions clearly instead of presenting an unbounded confusing matrix.
 
-Current Campaign roles:
-- Admin manages Campaign settings, Teams and access;
-- Team Editor edits only scoped Team data;
-- Viewer is read-only.
+## Desktop Admin panel
 
-Future Organization Admin UI is a separate product surface and must not be inferred from current Campaign Admin controls.
+Admin is a separate desktop-first surface.
 
-## Comments/activity
+Expected navigation areas:
+- Organizations;
+- Campaigns;
+- Teams;
+- Areas;
+- Access/Invites;
+- Permissions;
+- Live Groups;
+- Statistics/Sessions;
+- Activity/Audit;
+- Support/Feedback;
+- Security/Accounts.
 
-Planned collaboration UI should remain contextual:
-- comments/activity accessible from Campaign/Area/Task sheets;
-- field UI shows recent/relevant information, not a full social feed;
-- admin surface may expose richer history/filtering;
-- system/automation activity must be visually distinguishable from human comments.
+Admin may be denser than field UI, but should remain responsive and accessible.
 
-## Automations
+## Comments/activity/automations
 
-Automation results must be understandable. When an automatic action changes state, the UI should make the effect visible and allow investigation through activity/history.
+Comments remain contextual to Campaign/Area/Task.
 
-Do not create hidden automation that silently marks field work complete.
+Automation/system activity must be distinguishable from human comments.
 
-## Statistics/Admin panel
+Automatic state changes must be visible/auditable and never silently bypass permissions.
 
-Statistics belong primarily in the future Admin panel:
-- progress summaries;
-- Team/Area/Campaign breakdowns;
-- activity-over-time views;
-- organization-level overview for authorized admins.
+## Support / Feedback
 
-The map may show compact progress context, but not a permanent analytics dashboard.
+Support module may include:
+- FAQ/help;
+- app/version info;
+- feedback/bug report form.
+
+Never automatically include secrets, access tokens, TOTP secrets, private exports or exact GPS history.
 
 ## Appearance
 
-Planned personal appearance setting:
+Planned preference:
 - System;
 - Light;
 - Dark.
 
-Dark mode initially applies to website UI only:
-- top/bottom bars;
-- sheets/dialogs;
-- settings;
-- comments/activity;
-- Admin panel;
-- forms/buttons/status surfaces.
-
-The current CARTO map may remain light. UI dark mode must not require a basemap replacement.
-
-Appearance is personal browser/user state, not shared Campaign configuration unless a later decision changes it.
+Applies to website UI/Admin surfaces. Basemap may remain light initially.
 
 ## Language
 
@@ -160,25 +262,22 @@ Supported UI languages:
 - Deutsch;
 - English.
 
-Browser language initializes preference where possible. Application controls/status/settings/ARIA labels are localized; provider-rendered CARTO labels remain provider-controlled.
-
 ## Shared refresh/sync UX
 
-Current remote refresh is in-page and does not reload the website or reset camera.
+Synchronization/authorization failures must remain visible without replacing the entire field interface when avoidable.
 
-If newer shared data appears during active draw/edit:
+When newer shared data arrives during active draw/edit:
 - preserve unsaved geometry;
-- show that newer data exists;
-- recheck/apply safely after local interaction completes.
-
-M5 will add durable pending/offline mutation states. Synchronization/authorization failures must remain visible without replacing the whole field UI with a blocking screen when avoidable.
+- indicate newer data;
+- recheck/apply safely after local interaction.
 
 ## Accessibility
 
 - semantic controls;
 - visible focus state;
-- sufficient contrast in light and dark UI;
-- localized labels for icon-only buttons;
-- no critical state communicated only through color;
-- touch-friendly edit/select targets;
-- respect reduced-motion preferences if motion is introduced later.
+- sufficient contrast;
+- localized icon labels;
+- no critical state only by color;
+- touch-friendly targets;
+- reduced-motion support;
+- QR/code flows also have non-camera/manual alternatives.
