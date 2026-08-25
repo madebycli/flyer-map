@@ -30,6 +30,7 @@ class FakeStatement implements D1PreparedStatement {
       return applied
         ? ({
             mutation_type: applied.type,
+            mutation_fingerprint: applied.fingerprint,
             applied_revision: applied.revision,
           } as T)
         : null;
@@ -49,7 +50,10 @@ class FakeMutationDatabase implements D1DatabaseLike {
   currentRevision = 4;
   mutationApplications = 0;
   batchCalls = 0;
-  ledger = new Map<string, { type: CampaignMutation["type"]; revision: number }>();
+  ledger = new Map<
+    string,
+    { type: CampaignMutation["type"]; fingerprint: string; revision: number }
+  >();
 
   prepare(query: string) {
     return new FakeStatement(query, this);
@@ -71,7 +75,8 @@ class FakeMutationDatabase implements D1DatabaseLike {
       const mutationId = ledger.values[1] as string;
       this.ledger.set(`${campaignId}:${mutationId}`, {
         type: ledger.values[2] as CampaignMutation["type"],
-        revision: ledger.values[5] as number,
+        fingerprint: ledger.values[3] as string,
+        revision: ledger.values[6] as number,
       });
     }
 
@@ -93,7 +98,7 @@ function mutation(): CampaignMutation {
   };
 }
 
-test("same mutation id is applied server-side only once", async () => {
+test("same mutation id and payload is applied server-side only once", async () => {
   const db = new FakeMutationDatabase();
   const input = mutation();
 
@@ -102,6 +107,27 @@ test("same mutation id is applied server-side only once", async () => {
 
   assert.deepEqual(first, { ok: true, revision: 5, alreadyApplied: false });
   assert.deepEqual(second, { ok: true, revision: 5, alreadyApplied: true });
+  assert.equal(db.mutationApplications, 1);
+  assert.equal(db.batchCalls, 1);
+});
+
+test("same mutation id with changed payload is rejected instead of treated as duplicate", async () => {
+  const db = new FakeMutationDatabase();
+  const firstInput = mutation();
+  const changedInput: CampaignMutation = {
+    ...firstInput,
+    payload: { name: "Anderer Inhalt", expectedName: "Alt" },
+  };
+
+  const first = await persistCampaignMutation(db, firstInput, 4);
+  const reused = await persistCampaignMutation(db, changedInput, 5);
+
+  assert.deepEqual(first, { ok: true, revision: 5, alreadyApplied: false });
+  assert.deepEqual(reused, {
+    ok: false,
+    currentRevision: 5,
+    reason: "mutation_id_reused",
+  });
   assert.equal(db.mutationApplications, 1);
   assert.equal(db.batchCalls, 1);
 });
