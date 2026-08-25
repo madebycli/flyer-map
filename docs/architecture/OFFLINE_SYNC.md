@@ -1,129 +1,101 @@
 ---
 id: architecture-offline-sync
 type: architecture
-status: active
-last_updated: 2026-08-24
-related: [architecture-data, architecture-security, architecture-map]
+status: accepted
+last_updated: 2026-08-25
+related: [architecture-data, architecture-security, architecture-map, product-roadmap]
 source_of_truth_for: [offline-queue, synchronization, conflict-handling]
 ---
 
 # Offline Synchronization
 
-## Goal
+## Current goal
 
-A field user must not silently lose a manual Campaign/Task change because connectivity disappears or another device edits the same Campaign.
+A field user must not silently lose important changes because connectivity disappears or another device edits the same Campaign.
 
-M4 also requires remote data to appear without a full website reload and without resetting the current MapLibre camera.
+Current M4-era synchronization is the baseline; M5 is the next planned hardening step.
 
-## M4 local-first behavior
+## Current behavior
 
-The versioned Campaign snapshot remains in browser localStorage.
+The versioned Campaign snapshot remains cached in localStorage.
 
-A normal local mutation:
-1. updates React state immediately;
-2. writes the updated snapshot to primary + backup localStorage;
-3. queues the latest snapshot for an asynchronous authorized Worker `PUT` while the page is open;
-4. on acknowledgement, stores the canonical server revision locally and in memory.
+A normal local mutation currently:
+1. updates React/in-memory state immediately;
+2. caches the updated snapshot locally;
+3. sends the authorized snapshot asynchronously while the page is open;
+4. tracks the acknowledged server revision.
 
-This remains an ordinary website. There is no service worker, installable PWA, background sync or offline basemap cache.
+The site remains a normal website: no service worker, installable PWA, Background Sync API or offline basemap cache.
 
-## Startup and access transition
+## Startup/access
 
-The browser renders its local last-known data immediately so startup does not wait for D1.
+The browser may render last-known local data immediately, then resolves/redeems Campaign access and checks the protected Worker state.
 
-When online:
-- `?campaign=` selects the Campaign when present, otherwise the local Campaign id is used;
-- an invite token in the URL fragment is redeemed once for an HttpOnly session and then removed from the URL;
-- otherwise the browser resolves its existing session;
-- only then are protected snapshot/version endpoints read;
-- a newer authorized server snapshot updates React/localStorage in memory;
-- materially different optimistic local data is preserved in the conflict backup before replacement.
+A Campaign id selects a Campaign but does not authorize access.
 
-A pre-M4 Campaign with no grants is not auto-claimed. It remains locally visible on browsers that already had the cache, but protected server synchronization stays unavailable until explicit secured bootstrap creates the first Admin grant.
+A newer authorized server snapshot can replace the in-memory snapshot after safety checks. Personal map camera state is separate and is not reset by data refresh.
 
-## Revision polling and request volume
+## Revision polling
 
-The browser keeps the last acknowledged server revision separately from optimistic local changes.
+Normal checks use the small Campaign version endpoint roughly every 30 seconds while initialized, plus:
+- connectivity return;
+- tab visibility return;
+- manual refresh.
 
-Writes send `baseRevision`; the Worker advances the revision only when that base still matches and the role is authorized for the proposed change.
+Only when a newer revision exists does the browser fetch the full snapshot.
 
-Normal remote-update checks:
-- approximately every **30 seconds** while the page is open and initialized;
-- immediately after `online` returns;
-- immediately when `visibilitychange` makes the tab visible again;
-- immediately when the user presses **Daten aktualisieren / Refresh data**.
+When Campaign data changes, saved MapLibre GeoJSON sources receive new data from the in-memory snapshot; the map instance/camera remain alive.
 
-The normal poll calls only:
+## Active draw/edit safety
 
-`GET /api/campaigns/:campaignId/version`
+Unsaved active interaction must never be silently destroyed.
 
-If the revision is unchanged, no snapshot is downloaded.
+Protected modes:
+- Area draw;
+- Area edit;
+- Street draw.
 
-If the revision is newer and it is safe to apply, the browser then performs one snapshot GET and replaces the in-memory React Campaign state. SVG geometry updates from that state automatically.
+If newer server data is discovered during one of these modes:
+- preserve the active vertices;
+- show that newer data is available;
+- defer replacement until the interaction safely finishes/cancels;
+- then recheck/apply server state when safe.
 
-No WebSockets are used in M4.
+## Current conflict/rejection behavior
 
-## No full-page reload
+There is no intentional silent last-write-wins path.
 
-Remote synchronization must not call `window.location.reload()`.
+Rejected/409/unauthorized optimistic state is preserved when possible in a local conflict safety copy and a visible sync/access warning is surfaced.
 
-Campaign snapshot state and MapLibre camera state are independent. Applying a newer snapshot must not:
-- reset zoom;
-- reset center;
-- reset bearing;
-- jump to the Germany fallback;
-- automatically trigger GPS centering.
+If authorization is revoked, protected requests stop succeeding until valid access is supplied.
 
-The personal camera is persisted separately and the existing MapLibre instance remains alive while React receives a new Campaign snapshot.
+## Current limitation
 
-## Active draft/edit safety
+The current system does **not** provide a durable ordered mutation queue across reloads. It still relies on coarse snapshot revision semantics and local cache safety.
 
-A remote revision must never silently destroy unsaved local interaction state.
+This is the reason M5 is next.
 
-Unsafe-to-replace modes:
-- `draw`;
-- `edit`;
-- `street-draw`.
+## M5 durable mutation direction
 
-When `/version` reports a newer revision during one of those modes:
-1. remember that a newer server revision exists;
-2. do **not** replace the current Campaign snapshot underneath the active interaction;
-3. show compact “Neue Daten verfügbar / New data available” feedback;
-4. retain all local draft/edit vertices;
-5. after the user saves/cancels and returns to `browse`, fetch/apply the newer server state when no local write is pending.
+M5 should introduce:
+- IndexedDB-backed pending mutation storage;
+- stable mutation/idempotency ids;
+- idempotent server application ledger/semantics;
+- narrower mutation-specific operations where practical;
+- retry across reload/online/visibility/manual refresh;
+- explicit ordering where operations depend on each other;
+- visible pending/error/conflict states;
+- authorization-aware stop conditions after revocation;
+- event/domain records that later Activity/Statistics can consume.
 
-The manual refresh button follows the same safety rule; pressing it while a draft is active may discover a newer revision but does not silently discard the draft.
+The current snapshot remains useful as startup/recovery cache during transition.
 
-This is intentionally smaller than M5's future durable mutation queue.
+## M5 constraints
 
-## Conflict/rejection behavior
-
-There is no silent last-write-wins behavior.
-
-If a snapshot write is rejected, unauthorized or returns HTTP 409:
-1. preserve the rejected optimistic snapshot in `verteil-flyer:campaign-snapshot:conflict` when storage allows it;
-2. expose a visible sync/access warning;
-3. fetch the current authorized server snapshot when possible;
-4. cache/load the server state without reloading the page.
-
-If authorization was revoked, the browser clears its in-memory access state and further protected requests fail until another valid access link/session is supplied.
-
-If the current server snapshot cannot be fetched, the optimistic local snapshot remains available on that device instead of being silently erased.
-
-## Temporary connectivity loss
-
-Ordinary transient failures keep the latest unsent snapshot in memory while the current page remains open and retry when connectivity returns. The localStorage primary/backup copy still protects the last local domain state across a normal reload.
-
-M4 deliberately does **not** implement a durable multi-mutation queue, idempotency ledger or background sync.
-
-## M5 durable queue direction
-
-A later resilient synchronization milestone may:
-1. store unsent mutations durably in browser storage such as IndexedDB;
-2. give mutations idempotency keys;
-3. retry across page reloads;
-4. preserve ordering/reversal semantics for Undo;
-5. expose pending/sync-error state more granularly;
-6. replace complete-snapshot writes with narrower mutation-specific endpoints.
-
-That work must keep the website-only constraint and must not add a service worker merely to queue mutations.
+- no service worker merely to queue mutations;
+- no Background Sync API;
+- no silent conflict overwrite;
+- Worker authorization remains authoritative;
+- additive D1 migration only;
+- active map camera/draw state remains independent of server refresh;
+- future Organization scope must be compatible with mutation authorization.
