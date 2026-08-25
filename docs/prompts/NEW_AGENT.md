@@ -5,204 +5,182 @@ Use this prompt when starting a completely new AI coding session with **no prior
 ```text
 Du arbeitest am GitHub-Projekt `madebycli/flyer-map` (Verteil-Flyer).
 
-WICHTIG: Das Repository ist die einzige Source of Truth. Du hast kein verlässliches Vorwissen aus alten Chats. Erfinde keine Architektur, Roadmap, Zugangsdaten, CI-/Preview- oder Produktionszustände aus Erinnerung.
+WICHTIG: Das Repository ist die einzige Source of Truth. Verlasse dich nicht auf alte Chat-Erinnerungen.
 
-ARBEITSWEISE ZUM START
-
-Bevor du irgendetwas änderst:
+START
 
 1. Lies `AGENTS.md` vollständig.
 2. Lies `docs/status/CURRENT.md` vollständig.
 3. Lies `docs/context-map.yaml` vollständig.
-4. Behandle `docs/context-map.yaml` als Routing-Graph:
-   - wähle die Nodes, deren `topics`/`load_when` zur Aufgabe passen;
-   - folge relevante `depends_on`, `constrained_by`, `implements`, `governed_by` und Plan-Kanten;
-   - lade vorgeschlagene Future-Architektur nur, wenn die Aufgabe dieses Future-Thema betrifft;
-   - lade nicht pauschal alle Dokumente.
-5. Prüfe bei Architekturänderungen die relevanten akzeptierten ADRs unter `docs/decisions/`.
-6. Prüfe aktuellen Code, offenen PR/Branch-Stand, letzte CI-Läufe und Produktions-/Preview-Status, soweit für die Aufgabe relevant.
-7. Wenn Code und Doku widersprechen, ermittle den aktuellen beabsichtigten Stand anhand Code + aktuellem PR/main + ADRs und bereinige die falsche Doku im selben Slice.
+4. Nutze `docs/context-map.yaml` als Routing-Graph und lade nur relevante Nodes/Abhängigkeiten.
+5. Prüfe bei Architekturänderungen die relevanten akzeptierten ADRs.
+6. Prüfe aktuellen Branch/PR, CI und Cloudflare-Preview-Status.
+7. Wenn Code und Doku widersprechen, kläre den aktuellen Stand anhand Branch/PR/ADRs und bereinige die falsche Doku im selben Slice.
 
 PRODUKT
 
 Verteil-Flyer ist eine mobile-first Website für reale Flyer-/Verteilaktionen. Die Karte ist der primäre Feldarbeitsplatz.
 
-Aktuelle Kernkonzepte:
+Kernkonzepte:
 - Campaign / Aktion
 - Team
 - Area / Gebiet
 - Distribution Task
-- Status: open / completed / later / not-deliverable
+- Status open / completed / later / not-deliverable
 - Campaign-scoped Access mit Admin / Team Editor / Viewer
 
-Die langfristige Produkt-Roadmap steht in `docs/product/ROADMAP.md`. Reihenfolge:
-- M5 resiliente Mutation Queue / Sync — AKTUELLER IMPLEMENTIERUNGS-SLICE
-- M6 Smart Street + House Tasks mit OSM/OSM-derived Geometrie statt Freihand-Textmarker als Normalfall
-- M7 Kommentare, Activity und deterministische Automationen
-- M8 Organizations, mehrere Admins und separates Admin Panel
-- M9 Statistiken/Reporting und UI Light/Dark/System
+Roadmap-Reihenfolge:
+- M5 resiliente Mutation Queue / Sync — AKTUELLER RELEASE-SLICE
+- M5.5 Downloadable Offline Working Area (~3 km) — Plan 011
+- M6 Smart Street + House Tasks
+- M7 Kommentare / Activity / Automationen
+- M8 Organizations / Multi-Admin / Admin Panel
+- M9 Statistiken / Reporting / UI Appearance
 - M10 Field Hardening / Release
 
-Future-Features sind nicht automatisch implementiert. Lies die jeweiligen Graph-Nodes/Proposed-Architektur bevor du sie baust.
+WEBSITE-REGELN
 
-NICHT VERHANDELBARE WEBSITE-REGELN
-
-Verteil-Flyer ist aktuell eine normale Website:
+Verteil-Flyer bleibt eine normale Website:
 - keine native App
 - keine installierbare PWA
 - kein Service Worker
 - kein Web-App-Manifest-Installationsflow
 - kein Background Sync API
 
-Eine Änderung daran braucht eine neue akzeptierte ADR.
+Browser-lokales IndexedDB ist erlaubt, wenn es einen konkreten Feldbedarf löst.
 
-AKTUELLER MAP-BASELINE
+MAP-BASELINE
 
-Der aktuelle akzeptierte Renderer-Pfad ist:
-- MapLibre GL JS 5.7.1 (bewusst gepinnt; nicht beiläufig upgraden)
-- CARTO Voyager Retina Raster-Basemap
-- gespeicherte Areas als MapLibre GeoJSON Source + Fill/Outline Layer
-- gespeicherte Street Tasks als MapLibre GeoJSON Source + wenige feste Status-Line-Layer
-- normale Browse-Pan/Zoom/Rotate-Bewegung darf keine Anwendungsschleife über alle gespeicherten Straßen/Areas ausführen
-- aktive Area-Draw/Edit- und Street-Draw-Geometrie bleibt in einem kleinen SVG-Overlay
-- Edit-Punkte sind im Browse-Modus nicht sichtbar
-- MapLibre `queryRenderedFeatures()` dient zur gespeicherten Auswahl
+- MapLibre GL JS 5.7.1 bleibt gepinnt.
+- CARTO Voyager Retina ist der aktuelle Online-Raster-Basemap.
+- gespeicherte Areas/Streets liegen in persistenten MapLibre GeoJSON Sources/Layers.
+- aktive Draw/Edit-Geometrie bleibt im kleinen SVG-Overlay.
+- normale Browse-Bewegung darf keine Anwendungsschleife über alle gespeicherten Geometrien ausführen.
+- gespeicherte Auswahl nutzt `queryRenderedFeatures()`.
 
-Lies `docs/architecture/MAP.md` und ADR-0010 bevor du diesen Renderer änderst.
+Lies `docs/architecture/MAP.md` + ADR-0010 bevor du Renderer-Code änderst.
 
-WICHTIG: MapLibre 6.4.1 hat im realen Browser dieses Projekts gespeicherte GeoJSON-Geometrie unsichtbar gemacht. 5.7.1 ist deshalb die aktuelle getestete Basis. M5 darf diesen Renderer nicht nebenbei ändern.
+MapLibre 6.4.1 hatte in diesem Projekt eine reale Browser-Regression mit unsichtbarer gespeicherter GeoJSON-Geometrie. Nicht beiläufig upgraden.
 
-AKTUELLER ACCESS-/SECURITY-BASELINE
+ACCESS-/SECURITY-BASELINE
 
 - Campaign id ist nur Selector, niemals Credential.
-- Access Grants sind revocable und Campaign-scoped.
 - Rollen: Admin, Team Editor (Team-scoped), Viewer.
-- Authorization wird immer im Cloudflare Worker erzwungen.
+- Authorization wird im Worker erzwungen.
+- Access Grants sind revocable und Campaign-scoped.
 - Session ist Secure/HttpOnly/SameSite=Lax.
 - Plaintext Access Tokens werden nicht in D1 gespeichert.
-- Operator Admin recovery/bootstrap ist über das serverseitige `M4_BOOTSTRAP_SECRET` abgesichert.
-- Keine Race-to-claim-/First-visitor-Ownership einführen.
+- Operator Admin recovery/bootstrap nutzt serverseitig `M4_BOOTSTRAP_SECRET`.
+- keine First-visitor/Race-to-claim-Ownership einführen.
 
-Lies `docs/architecture/SECURITY.md` + ADR-0009 bevor du Access/Organizations/Admin-Funktionen änderst.
+Lies `docs/architecture/SECURITY.md` + ADR-0009 bei Access-/Admin-Arbeit.
 
 AKTUELLER M5-SLICE
 
-M5 wurde bereits gestartet. ERSTELLE NICHT NOCH EINEN NEUEN M5-BRANCH.
+M5 existiert bereits. ERSTELLE KEINEN NEUEN M5-BRANCH.
 
 Aktueller Arbeitsstand:
-- Branch: `m5-resilient-sync-mainline`
-- Draft PR #24: `M5 durable mutation queue on current MapLibre baseline`
-- aktiver Detailplan: `docs/plans/active/010-m5-resilient-mutation-sync.md`
-- übergeordneter Plan: `docs/plans/active/009-product-platform-foundation.md`
-- akzeptierte M5-Entscheidung: `docs/decisions/ADR-0011-durable-mutation-queue-and-idempotency.md`
-- der alte Draft PR #17 ist geschlossen/superseded und darf nicht als aktueller Branch wiederbelebt werden.
+- Branch `m5-resilient-sync-mainline`
+- Draft PR #24 `M5 durable mutation queue on current MapLibre baseline`
+- Plan 010 `docs/plans/active/010-m5-resilient-mutation-sync.md`
+- ADR-0011 durable mutation queue/idempotency
+- alter PR #17 ist geschlossen/superseded.
 
 Implementiert in PR #24:
-- explizite Campaign/Team/Area/Street-Task-Mutationen;
-- IndexedDB als durable Queue für nicht bestätigte Änderungen;
-- geordnete Verarbeitung + bounded exponential retry;
-- Retry bei online / sichtbarem Tab / manuellem Refresh;
-- Konflikt-, Auth-blocked- und Invalid-Zustände;
-- best-effort localStorage Emergency Shadow im kurzen IndexedDB-Enqueue-Fenster;
-- IndexedDB-Operationen warten auf Transaktionsabschluss;
-- Worker-Endpunkt `/api/campaigns/:id/mutations`;
-- bestehende Worker-Autorisierung bleibt maßgeblich;
-- additive Migration `migrations/0003_m5_mutations.sql`;
-- kanonischer SHA-256 Mutation-Fingerprint bindet Mutation-ID an exakten Inhalt;
-- gleiche ID + gleicher Inhalt = idempotenter Retry;
-- gleiche ID + anderer Inhalt = `409 mutation_id_reused`;
-- narrow D1 writes mit Campaign revision + internem `write_token`;
-- kompakter Sync-Status im UI.
+- explizite Campaign/Team/Area/Street-Mutationen
+- IndexedDB durable queue
+- emergency localStorage shadow
+- ordered bounded retry/backoff
+- online/visible/manual retry triggers
+- conflict/auth-blocked/invalid states
+- canonical SHA-256 mutation fingerprints
+- Worker mutation endpoint + bestehende Authorization
+- additive D1 migration `0003_m5_mutations.sql`
+- narrow D1 writes + idempotency ledger
+- kompakter Sync-Status.
 
-BESTÄTIGTE M5-GATES:
-- Runtime-Hardening-Head `8c7020ad5d1538bea68c351d918e94aa8f54973c` bestand CI #202;
-- Gesamt-Head `5c7dce819d472be8242da59034310d7a87c21f36` bestand CI #208;
-- Cloudflare deployte exakt `5c7dce81...` erfolgreich als Runtime-Preview `https://bb8fa846-flyer-map.cloudflare-eleven035.workers.dev`;
-- spätere reine Context/Handoff-Commits sind runtime-equivalent, solange keine Runtime-Datei geändert wird;
-- `migrations/0003_m5_mutations.sql` wurde am 2026-08-25 erfolgreich auf die remote D1 `flyer-map-db` angewendet; Wrangler zeigte Status `✅`.
+Bestätigte Gates:
+- Migration `0003_m5_mutations.sql` wurde am 2026-08-25 erfolgreich auf remote `flyer-map-db` angewendet.
+- Offline Street create/edit zeigt `offline gespeichert`.
+- Offline Street-Daten überleben einen vollständigen Reload.
+- Runtime-Fix `5029f9b958502d96d6c185beac16b894774d72e9` behebt den gefundenen Maximum-Zoom-Grenzwertfehler (`carto-basemap` Layer maxzoom 20 -> 21).
+- CI #226 für `5029f9b...` ist grün.
 
-AKTUELL NOCH OFFEN — NICHT ALS BESTANDEN DARSTELLEN:
-1. Real-Browser-Abnahme: offline speichern -> Reload während weiterhin offline -> reconnect -> Queue synchronisiert;
-2. Retry/Reconnect erzeugt keinen Duplicate-Effekt;
-3. echter Target-Konflikt wird sichtbar und überschreibt nichts still;
-4. revoked/ungültiger Access stoppt blind retry und bleibt sichtbar access-blocked;
-5. transienter Fehler bleibt queued und wird später erneut versucht;
-6. gespeicherte MapLibre Areas/Streets und aktives Edit-Verhalten bleiben unverändert;
-7. finaler Repository-Head muss vor Merge grün sein.
+WICHTIGER PREVIEW-STATUS:
+- Der ältere exakte Preview `5c7dce...` war akzeptiert, ist aber nach dem Runtime-Commit `5029f9b...` nicht mehr ausreichend.
+- Vor Merge muss Cloudflare einen Preview/Deployment-Stand liefern, der `5029f9b...` oder einen späteren runtime-equivalenten Head enthält.
+- Danach im echten Browser maximal hineinzoomen und bestätigen, dass die Basemap bei Zoom 20 sichtbar bleibt.
 
-PR #24 bleibt Draft bis diese Browser-Gates dokumentiert bestanden sind.
+Noch offene M5-Gates:
+1. neuer Cloudflare Runtime-Preview nach `5029f9b...`;
+2. real-browser max-zoom check;
+3. reconnect nach Offline-Reload -> queued Mutation wird genau einmal geliefert;
+4. Retry ohne Duplicate;
+5. sichtbarer Target-Konflikt ohne silent overwrite;
+6. revoked/invalid access stoppt blind retry;
+7. transienter Fehler bleibt queued und retryt später;
+8. Area/Street selection + active edit bleiben korrekt;
+9. finaler Head grün.
 
-Wenn eine neue KI M5 übernimmt, muss sie zuerst `CURRENT.md`, Plan 010, ADR-0011, OFFLINE_SYNC, DATA, SECURITY, DEPLOYMENT sowie PR #24/aktuelles CI prüfen und dann auf DEM BESTEHENDEN Branch/PR weiterarbeiten.
+PR #24 bleibt Draft bis diese Gates bestanden und dokumentiert sind.
 
-ORGANIZATIONS / ADMIN PANEL
+M5.5 OFFLINE WORKING AREA — PLAN 011
 
-Mehrere Organisationen und mehrere Administratoren sind geplant, aber noch nicht Teil des aktuellen Campaign-Rollenmodells.
+Neue bestätigte Produktanforderung:
+- Settings-Aktion soll ungefähr 3 km um den aktuellen Kartenmittelpunkt für Offline-Arbeit herunterladen können;
+- nach erfolgreichem Download muss der geografische Kontext nach Offline-Reload weiter sichtbar sein;
+- Areas/Streets und M5-Queue funktionieren darüber weiter;
+- kein Service Worker/PWA.
 
-Vor Implementierung:
-- lies `docs/architecture/ORGANIZATIONS.md`;
-- erstelle/akzeptiere eine ADR für Identity/Membership/Org-Scope;
-- behandle Organization als Tenant-Grenze;
-- keine Cross-Organization Reads/Writes;
-- Campaign Admin darf nicht stillschweigend zu Organization Admin umgedeutet werden.
+Plan:
+- `docs/plans/active/011-offline-map-area.md`
 
-COMMENTS / ACTIVITY / AUTOMATIONS / STATISTICS
+WICHTIG: CARTO-Rastertiles dürfen dafür NICHT gespeichert/gecached werden. CARTO Basemap Terms verbieten storing/saving/caching basemap content. Plan 011 muss vor Implementierung per ADR einen offline-erlaubten OSM/OSM-derived Provider und ein Paketformat auswählen.
 
-Vor Implementierung lies `docs/architecture/COLLABORATION.md`.
+Bevorzugt soll derselbe OSM/OSM-derived Datenpfad später auch M6 Smart Street + House Tasks versorgen.
 
-Prinzipien:
-- Comments an Campaign/Area/Task-Kontext binden;
-- Activity möglichst append-only aus echten Domain-Mutationen;
-- Automationen deterministisch, idempotent und auditierbar;
-- Statistiken aus Domain-State/Events, nicht aus kontinuierlichem GPS-Tracking;
-- keine versteckten privilegierten Automationen.
+ORGANIZATIONS / COMMENTS / STATISTICS
 
-PLÄNE UND BEKANNTE FOLLOW-UPS
+Mehrere Organisationen/Admins, Kommentare/Activity/Automationen und Statistik sind geplant, aber nicht Teil des aktuellen M5-Domainmodells. Vor Implementierung die passenden proposed architecture Nodes laden und erforderliche ADRs erstellen.
 
-Plan 008 ist abgeschlossen und historisch:
-- `docs/plans/completed/008-renderer-access-recovery.md`.
+BEKANNTE FOLLOW-UPS
 
-PR #21 ist am 2026-08-25 in `main` gemergt. Öffne den alten Renderer-Branch nicht für neue Arbeit.
+- GitHub #22 Desktop bottom-toolbar fit/spacing
+- GitHub #23 Production health/recovery/diagnostics + 500/1000/2500/5000 Street validation
 
-Bekannte, ausdrücklich NICHT als bestanden geltende Follow-ups:
-- GitHub #22: Desktop bottom-toolbar fit/spacing;
-- GitHub #23: Production-Health/Deployed-Origin-Recovery/`?diag=1`/500-5000-Street-Operational-Validation.
-
-Diese Issues dürfen nicht stillschweigend als erledigt interpretiert werden. Sie blockieren nicht automatisch M5, müssen aber gemäß `CURRENT.md`/Plan 009 eingeordnet und spätestens im Field-Hardening geschlossen werden.
+Nicht stillschweigend als bestanden markieren.
 
 CODE-/GIT-REGELN
 
 - Repository ist Source of Truth.
-- Kleine reviewbare Commits.
-- Keine historischen Migrationen umschreiben.
-- Neue D1-Änderungen nur additive Migrationen.
-- Keine Secrets/Access Links/private Campaign-Daten committen oder im Chat anfordern.
+- kleine reviewbare Commits.
+- historische Migrationen nicht umschreiben.
+- neue D1-Änderungen nur additive Migrationen.
+- keine Secrets/Access Links/private Campaign-Daten committen oder im Chat anfordern.
 - Authorization serverseitig.
-- Vor Abschluss: Tests + TypeScript + Production Build + relevante Doku + `CURRENT.md` + Context-Graph prüfen.
-- Abgeschlossene Pläne nach `docs/plans/completed/` verschieben.
-- Bestehenden aktiven PR/Plan fortführen statt parallele Ersatz-Slices zu erzeugen.
+- vor Abschluss Tests + TypeScript + Production Build + relevante Doku + CURRENT + Context-Graph prüfen.
+- bestehende aktive Branches/PRs/Pläne fortführen statt Parallel-Ersatz zu erzeugen.
 
 EXTERNE CLOUDFLARE-AKTIONEN
 
-Wenn eine manuelle Cloudflare-Aktion des Users nötig ist:
-- frage immer nur genau EINE manuelle Aktion gleichzeitig an;
-- gib den exakten Klick/Befehl an;
-- frage genau EIN nicht-sensitives Ergebnis zurück;
-- bitte niemals darum, Secret-Werte, OAuth-/Device-Codes oder Access Tokens in den Chat zu kopieren.
+Wenn eine manuelle Aktion nötig ist:
+- immer genau EINE Aktion gleichzeitig;
+- exakter Klick/Befehl;
+- genau EIN nicht-sensitives Ergebnis zurückfragen;
+- niemals Secret-Werte, Tokens oder OAuth-/Device-Codes anfordern.
 
-DEIN START IN JEDEM FRISCHEN CHAT
+STARTAUSGABE EINER NEUEN KI
 
-Gib nach dem Lesen zuerst eine kurze Bestandsaufnahme mit:
-- aktuellem main/PR/Branch-Stand;
-- aktuellem Milestone/Plan;
-- relevanten Graph-Nodes/ADRs;
-- tatsächlich bestandenen CI/Preview/Migrations-Gates;
-- vorhandenen Blockern/Risiken.
+Nach dem Lesen kurze Bestandsaufnahme:
+- main/Branch/PR
+- aktueller Plan/Milestone
+- relevante ADRs/Graph-Nodes
+- tatsächlich bestandene CI/Preview/Migrations-Gates
+- Blocker/Risiken
 
-Danach beginne direkt mit der Umsetzung. Stoppe nicht nach einer bloßen Planung, außer eine echte externe Aktion ist erforderlich.
+Danach direkt weiterarbeiten. Nicht nach einer bloßen Planung stoppen, außer eine echte externe Aktion ist erforderlich.
 ```
 
 ## Minimal handoff note
-
-If a shorter handoff is needed, give the new agent only this file path and tell it:
 
 > Read `docs/prompts/NEW_AGENT.md` from the repository and follow it exactly. Do not rely on prior chat memory.
