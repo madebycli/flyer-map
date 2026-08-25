@@ -4,15 +4,21 @@ import {
   type D1DatabaseLike,
   type D1PreparedStatement,
 } from "./campaignRepository.ts";
+import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 
 export type AppliedMutation = {
   mutationType: CampaignMutation["type"];
+  mutationFingerprint: string;
   appliedRevision: number;
 };
 
 export type MutationPersistenceResult =
   | { ok: true; revision: number; alreadyApplied: boolean }
-  | { ok: false; currentRevision: number | null };
+  | {
+      ok: false;
+      currentRevision: number | null;
+      reason: "revision_conflict" | "mutation_id_reused";
+    };
 
 export async function getAppliedMutation(
   db: D1DatabaseLike,
@@ -21,15 +27,23 @@ export async function getAppliedMutation(
 ): Promise<AppliedMutation | null> {
   const row = await db
     .prepare(
-      `SELECT mutation_type, applied_revision
+      `SELECT mutation_type, mutation_fingerprint, applied_revision
        FROM campaign_mutations
        WHERE campaign_id = ? AND mutation_id = ?`,
     )
     .bind(campaignId, mutationId)
-    .first<{ mutation_type: CampaignMutation["type"]; applied_revision: number }>();
+    .first<{
+      mutation_type: CampaignMutation["type"];
+      mutation_fingerprint: string;
+      applied_revision: number;
+    }>();
 
   return row
-    ? { mutationType: row.mutation_type, appliedRevision: row.applied_revision }
+    ? {
+        mutationType: row.mutation_type,
+        mutationFingerprint: row.mutation_fingerprint,
+        appliedRevision: row.applied_revision,
+      }
     : null;
 }
 
@@ -231,9 +245,18 @@ export async function persistCampaignMutation(
   db: D1DatabaseLike,
   mutation: CampaignMutation,
   fromRevision: number,
+  fingerprintOverride?: string,
 ): Promise<MutationPersistenceResult> {
+  const fingerprint = fingerprintOverride ?? (await fingerprintCampaignMutation(mutation));
   const existing = await getAppliedMutation(db, mutation.campaignId, mutation.id);
   if (existing) {
+    if (existing.mutationFingerprint !== fingerprint) {
+      return {
+        ok: false,
+        currentRevision: existing.appliedRevision,
+        reason: "mutation_id_reused",
+      };
+    }
     return { ok: true, revision: existing.appliedRevision, alreadyApplied: true };
   }
 
@@ -249,15 +272,16 @@ export async function persistCampaignMutation(
   const ledger = db
     .prepare(
       `INSERT INTO campaign_mutations (
-         campaign_id, mutation_id, mutation_type, requested_base_revision,
-         applied_from_revision, applied_revision, client_created_at
+         campaign_id, mutation_id, mutation_type, mutation_fingerprint,
+         requested_base_revision, applied_from_revision, applied_revision, client_created_at
        )
-       SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${guardExistsSql()}`,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guardExistsSql()}`,
     )
     .bind(
       mutation.campaignId,
       mutation.id,
       mutation.type,
+      fingerprint,
       mutation.baseRevision,
       fromRevision,
       nextRevision,
@@ -278,11 +302,19 @@ export async function persistCampaignMutation(
 
   const appliedAfterRace = await getAppliedMutation(db, mutation.campaignId, mutation.id);
   if (appliedAfterRace) {
+    if (appliedAfterRace.mutationFingerprint !== fingerprint) {
+      return {
+        ok: false,
+        currentRevision: appliedAfterRace.appliedRevision,
+        reason: "mutation_id_reused",
+      };
+    }
     return { ok: true, revision: appliedAfterRace.appliedRevision, alreadyApplied: true };
   }
 
   return {
     ok: false,
     currentRevision: await getCampaignRevision(db, mutation.campaignId),
+    reason: "revision_conflict",
   };
 }
