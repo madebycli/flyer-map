@@ -134,6 +134,13 @@ nodes:
     topics: [adr, architecture-decisions, history]
     load_when: [architecture change, superseding a boundary]
 
+  - id: adr-m5-durable-mutations
+    path: docs/decisions/ADR-0011-durable-mutation-queue-and-idempotency.md
+    type: decision
+    status: accepted
+    topics: [M5, indexeddb, mutations, idempotency, d1, retries, conflicts]
+    load_when: [M5 implementation, mutation protocol, queue semantics, idempotency, D1 mutation ledger]
+
   - id: plan-renderer-recovery
     path: docs/plans/completed/008-renderer-access-recovery.md
     type: plan
@@ -190,11 +197,16 @@ edges:
   - { from: first-deploy, to: deployment, relation: procedure_for }
   - { from: production, to: deployment, relation: records }
 
+  - { from: adr-m5-durable-mutations, to: offline-sync, relation: decides }
+  - { from: adr-m5-durable-mutations, to: data, relation: constrains }
+  - { from: adr-m5-durable-mutations, to: security, relation: preserves_boundary }
+
   - { from: plan-renderer-recovery, to: map, relation: changed }
   - { from: plan-renderer-recovery, to: security, relation: changed }
   - { from: plan-platform-roadmap, to: roadmap, relation: executes }
   - { from: plan-platform-roadmap, to: offline-sync, relation: starts_with }
   - { from: plan-m5-sync, to: plan-platform-roadmap, relation: implements_phase }
+  - { from: plan-m5-sync, to: adr-m5-durable-mutations, relation: governed_by }
   - { from: plan-m5-sync, to: offline-sync, relation: implements }
   - { from: plan-m5-sync, to: data, relation: extends }
   - { from: plan-m5-sync, to: security, relation: constrained_by }
