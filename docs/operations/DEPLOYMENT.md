@@ -2,8 +2,8 @@
 id: operations-deployment
 type: operations
 status: active
-last_updated: 2026-08-24
-related: [architecture-stack, architecture-security, architecture-data]
+last_updated: 2026-08-25
+related: [architecture-stack, architecture-security, architecture-data, architecture-map]
 ---
 
 # Deployment
@@ -11,9 +11,9 @@ related: [architecture-stack, architecture-security, architecture-data]
 ## Target
 
 One Cloudflare Worker deployment containing:
-- Vite-built React static assets
-- Worker API routes
-- D1 binding `DB` for shared campaign persistence
+- Vite-built React static assets;
+- Worker API routes;
+- D1 binding `DB` for shared campaign persistence.
 
 The repository is the source of truth. Normal releases flow from GitHub `main` to Cloudflare automatically; downloading/uploading builds from a phone is not part of the release process.
 
@@ -82,14 +82,15 @@ Production config changes are reviewed like code changes. A green repository bui
 
 After an access/renderer release:
 1. `/api/health` returns `ok: true` and reports `persistence: "d1"`;
-2. campaign id alone cannot read protected campaign snapshot/version data and returns an authorization failure;
-3. a valid admin access link redeems into an HttpOnly session and can manage campaign settings, teams and access grants;
+2. Campaign id alone cannot read protected Campaign snapshot/version data and returns an authorization failure;
+3. a valid Admin Access Link redeems into an HttpOnly session and can manage Campaign settings, Teams and access grants;
 4. Admin recovery rejects an incorrect operator secret and, with the configured secret, creates a fresh Admin session/link for an existing Campaign;
-5. a team-editor access link can edit only its scoped team's areas/tasks and cannot change campaign/admin configuration;
-6. a viewer access link can read but cannot write;
+5. a Team Editor Access Link can edit only its scoped Team's Areas/Tasks and cannot change Campaign/Admin configuration;
+6. a Viewer Access Link can read but cannot write;
 7. revoking a grant invalidates protected access for an already-issued session;
-8. opening the same authorized campaign on two browsers receives remote changes through 30-second revision polling, visibility/online refresh or manual refresh without a full-page reload;
+8. opening the same authorized Campaign on two browsers receives remote changes through 30-second revision polling, visibility/online refresh or manual refresh without a full-page reload;
 9. an active draw/edit/street-draw draft is not silently replaced by a remote snapshot;
-10. personal camera center/zoom/bearing survives reload on the same browser and shared campaign focus remains only the fallback for devices without a personal camera;
-11. map rotation/compass and the CARTO Voyager Retina + independent SVG renderer remain aligned and usable on a real phone;
-12. saved Areas/Streets stay visible and selectable after Save, edit handles remain edit-only, and browse pan/zoom uses the grouped SVG performance path.
+10. personal camera center/zoom/bearing survives reload on the same browser and shared Campaign focus remains only the fallback for devices without a personal camera;
+11. rotation/compass remain aligned with saved MapLibre geometry and the small active SVG draw/edit overlay on a real phone;
+12. saved Areas/Streets stay visible and selectable after Save, edit handles remain edit-only, and ordinary browse pan/zoom/rotate performs no application-side saved-geometry projection loop;
+13. representative dense Street datasets are accepted at 500 / 1,000 / 2,500 / 5,000 features or a concrete blocker is recorded before merge.

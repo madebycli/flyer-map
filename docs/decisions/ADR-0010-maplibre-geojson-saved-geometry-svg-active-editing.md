@@ -23,8 +23,8 @@ Saved Verteil-Flyer geometry is rendered by MapLibre GeoJSON sources/layers usin
 
 - one long-lived GeoJSON source for saved Areas;
 - one long-lived GeoJSON source for saved Street Tasks;
-- fixed Fill/Line layers created once after the MapLibre `load` event;
-- `GeoJSONSource.setData()` only when the in-memory Campaign data changes;
+- the application sources and fixed Fill/Line layers are included once in the initial MapLibre style;
+- `GeoJSONSource.setData()` is used only when the in-memory Campaign data changes or when the newest pre-load state is synchronized after `load`;
 - no application `map.project()` loop for saved geometry during browse pan/zoom/rotate;
 - street and area selection through `queryRenderedFeatures()` against the application layers;
 - zoom-dependent MapLibre expressions control thin street/area widths;
@@ -45,13 +45,13 @@ The MapLibre application sources/layers are not embedded through React and are n
 
 On map initialization:
 
-1. create MapLibre with the stable CARTO Voyager Retina raster style;
-2. wait for the MapLibre `load` event;
-3. create application GeoJSON sources if missing;
-4. create the fixed application layers if missing;
-5. synchronize the latest in-memory Area/Street collections through `setData()`.
+1. build the initial MapLibre style with the CARTO Voyager Retina raster source/layer plus the two application GeoJSON sources and the fixed application layers;
+2. seed those application sources with the latest Campaign data available when the Map instance is constructed;
+3. keep refs to the newest Areas/Streets/selection while MapLibre is still loading;
+4. on the MapLibre `load` event, synchronize the newest referenced Campaign data through `setData()` and the selected-Street filter so changes that arrived during startup cannot be lost;
+5. on later domain changes, call `setData()` on the existing sources and update only the relevant fixed filters.
 
-If Campaign data changes before map load finishes, refs retain the newest data and the load callback uses that newest data. Subsequent domain changes call `setData()` on the existing sources. No `styledata -> setData()` loop is allowed.
+Do not use `styledata -> setData()` feedback loops. Do not recreate application sources/layers for normal Campaign changes.
 
 The current product does not switch the underlying map style at runtime. If runtime style replacement is introduced later, source/layer rehydration must become an explicit lifecycle concern.
 

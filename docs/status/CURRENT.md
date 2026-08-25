@@ -18,14 +18,13 @@ Current follow-up is PR #21 (`renderer-access-recovery`): Admin access recovery 
 Current renderer baseline:
 - MapLibre GL JS **5.7.1 pinned**;
 - CARTO Voyager Retina raster basemap;
-- saved Areas/Streets in MapLibre GeoJSON sources/layers;
+- saved Areas/Streets in persistent MapLibre GeoJSON sources/layers created as part of the initial style;
+- actual Campaign data changes update those sources through `setData()`;
 - active draw/edit only in SVG;
 - stored edit points hidden in browse;
 - no application projection loop over saved geometry during normal pan/zoom/rotate.
 
 MapLibre 6.4.1 is not the baseline: real-browser testing showed saved GeoJSON becoming invisible/non-interactive despite healthy FPS. The 5.7.1 pin restored the working direction and is now documented as the current base.
-
-PR #21 still needs final interaction/dense-data acceptance before merge.
 
 ## Current access
 
@@ -36,10 +35,22 @@ Current Campaign roles remain:
 
 Campaign id is only a selector. Access/session authorization is Worker-enforced. PR #21 adds operator Admin recovery using the configured server-only bootstrap/recovery secret.
 
+## PR #21 state
+
+Repository-controlled implementation and documentation work for Plan 008 is complete enough for final acceptance:
+- renderer/access recovery code is present on `renderer-access-recovery`;
+- automated `npm run check` CI has passed on the pre-doc-cleanup head;
+- Cloudflare successfully deployed the matching pre-doc-cleanup head as a preview;
+- ADR/deployment/production documentation now matches the initial-style GeoJSON lifecycle used by the code.
+
+The final PR head still must be green and deployed after the documentation cleanup.
+
+Do **not** merge until real-browser/device acceptance confirms saved Area/Street visibility + selection, browse alignment, edit-only handles, toolbar/safe-area behavior, Admin recovery on the target origin and representative dense Street datasets at 500 / 1,000 / 2,500 / 5,000 features (or records a concrete blocker).
+
 ## Active plans
 
-- `docs/plans/active/008-renderer-access-recovery.md` — finish PR #21 acceptance/merge.
-- `docs/plans/active/009-product-platform-foundation.md` — ordered next-platform plan after the current slice.
+- `docs/plans/active/008-renderer-access-recovery.md` — external browser/device acceptance + final PR #21 merge gate.
+- `docs/plans/active/009-product-platform-foundation.md` — ordered next-platform plan after PR #21 is merged and production is healthy.
 
 ## Accepted next roadmap
 
@@ -53,10 +64,10 @@ Order:
 - M9 statistics/reporting + personal UI light/dark/system appearance;
 - M10 field hardening/release.
 
-Organization and collaboration/statistics architecture are currently **proposed**, not implemented. Their constraints live in `docs/architecture/ORGANIZATIONS.md` and `docs/architecture/COLLABORATION.md`.
+Organization and collaboration/statistics architecture are currently **proposed**, not implemented.
 
 ## Immediate next
 
-1. Finish PR #21 browser/phone acceptance and desktop toolbar polish.
-2. Merge/deploy only when current renderer/access behavior is confirmed.
-3. Start M5 from the accepted baseline; do not mix Organization/Admin/Statistics rewrites into the renderer branch.
+1. Let CI and Cloudflare preview verify the final PR #21 documentation-cleanup head.
+2. Perform the required real-browser/phone and dense-data acceptance on that exact preview head.
+3. If accepted, move Plan 008 to completed, merge PR #21, verify production, then start M5 from Plan 009 on a fresh branch from current `main`.
