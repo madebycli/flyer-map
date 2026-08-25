@@ -67,9 +67,7 @@ Accepted exact runtime preview:
 - `https://bb8fa846-flyer-map.cloudflare-eleven035.workers.dev`;
 - Cloudflare PR bot explicitly names commit `5c7dce81` and deployment success.
 
-The later status/handoff documentation heads remain runtime-equivalent unless a later PR commit changes application/Worker/runtime configuration code. Final docs-only head `547ee4cbcc14005f6c8bb92ff1064779140c0d88` passed CI #213 before the final D1-binding documentation note.
-
-Any later runtime change invalidates the runtime-equivalent preview assumption and requires another exact preview.
+Later status/handoff documentation commits are runtime-equivalent unless a later commit changes application/Worker/runtime configuration code. Any later runtime change invalidates the runtime-equivalent preview assumption and requires another exact preview.
 
 ## Preview D1 binding reality
 
@@ -79,29 +77,34 @@ Current `wrangler.jsonc` defines one D1 binding only:
 - one `database_id`;
 - no repo-defined staging environment or separate preview D1 binding.
 
-Cloudflare Worker versions capture their bindings, but storage state is not versioned with Worker versions. Workers Builds does not automatically create separate non-production bindings for branch previews.
+Therefore the M5 Worker preview is **code-isolated but not database-isolated** under the current repository configuration. Browser acceptance should use a deliberately disposable/test Campaign where practical.
 
-Therefore, under the current repository configuration, treat the M5 preview as **code-isolated but not database-isolated**. Unless an external Cloudflare override is explicitly documented later, M5 preview mutation requests operate against the configured `flyer-map-db`.
+## D1 migration status — passed
 
-Operationally this is acceptable for the additive `0003` rollout because `0003` only creates a new ledger table/index and current Production code ignores it. Browser acceptance should use a deliberately disposable/test Campaign where practical.
+`migrations/0003_m5_mutations.sql` was applied successfully to remote D1 database `flyer-map-db` on 2026-08-25 through Wrangler from branch `m5-resilient-sync-mainline`.
 
-## D1 migration status — next external gate
+Observed non-sensitive Wrangler result:
+- resource location: remote;
+- database: `flyer-map-db`;
+- `0003_m5_mutations.sql`: successful (`✅`);
+- Wrangler executed 4 commands.
 
-`migrations/0003_m5_mutations.sql` is repository-prepared only. It is **not** yet claimed applied to `flyer-map-db`.
+No token, OAuth code, access link, secret value, or private Campaign data is recorded in the repository.
 
-Do not intentionally exercise `/api/campaigns/:id/mutations` until `0003` is explicitly applied.
+The bound D1 database is now schema-ready for M5 preview mutation runtime/browser acceptance.
 
 ## M5 release gates still open
 
 M5 is **not production-ready yet**. Remaining gates:
-1. apply `0003_m5_mutations.sql` to `flyer-map-db` and record successful/non-sensitive migration output;
-2. real-browser acceptance: offline save -> reload -> reconnect delivery;
-3. retry without duplicate effect;
-4. visible conflict with no silent overwrite;
-5. revoked access stops blind retry and remains access-blocked;
-6. transient failure remains queued and retries later;
-7. MapLibre saved Area/Street and active edit behavior remain unchanged;
-8. final repository head remains green before merge.
+1. real-browser acceptance: offline save -> reload -> reconnect delivery;
+2. retry without duplicate effect;
+3. visible conflict with no silent overwrite;
+4. revoked access stops blind retry and remains access-blocked;
+5. transient failure remains queued and retries later;
+6. MapLibre saved Area/Street and active edit behavior remain unchanged;
+7. final repository head remains green before merge.
+
+Repository CI, exact runtime-equivalent Cloudflare preview and D1 migration gates are passed.
 
 ## Known follow-ups
 
@@ -115,7 +118,7 @@ Plan-008 follow-ups remain visible and not-passed:
 - `docs/plans/active/009-product-platform-foundation.md` — platform roadmap above Plan 010.
 - `docs/prompts/NEW_AGENT.md` — tells fresh sessions to continue PR #24/Plan 010, not create a replacement M5 branch.
 - `docs/context-map.yaml` — routes M5 through Plan 010 and ADR-0011.
-- `docs/operations/DEPLOYMENT.md` — records the shared preview/Production D1 binding and migration order.
+- `docs/operations/DEPLOYMENT.md` — records the shared preview/Production D1 binding and migration order/status.
 - `docs/plans/completed/008-renderer-access-recovery.md` — completed historical renderer/access slice.
 
 ## Roadmap after M5
@@ -131,7 +134,7 @@ Organization and collaboration/statistics architecture remain proposed, not impl
 ## Immediate next
 
 1. Keep PR #24 Draft and do not alter the accepted renderer.
-2. Apply `0003_m5_mutations.sql` to `flyer-map-db`.
-3. After migration confirmation, perform the browser M5 acceptance one gate at a time through the accepted runtime-equivalent preview/branch deployment, preferably with a disposable test Campaign.
+2. Perform the browser M5 acceptance one gate at a time through the accepted runtime-equivalent preview/branch deployment, preferably with a disposable test Campaign.
+3. First browser gate: save an ordinary supported mutation while offline, reload while still offline, reconnect, and verify the queued mutation is delivered exactly once.
 4. Record every observed gate immediately in Plan 010 + CURRENT.
 5. Merge/deploy M5 only after all remaining gates pass; keep #22/#23 separate.
