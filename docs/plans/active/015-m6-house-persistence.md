@@ -10,7 +10,7 @@ related: [plan-012-platform-app-expansion, ADR-0013, architecture-data, architec
 
 ## Ziel
 
-Die bereits vorhandene Smart-House-Auswahl wird auf eine echte, offline-/sync-fähige House-Task-Domain vorbereitet. House Tasks erhalten anwendungs-eigene Task-IDs, persistierte Gebäude-Geometrie, optionale OSM-Provenance und optional einen Bezug zu einer Street Task. Bestehende Street Tasks und M5-Synchronisation dürfen dabei nicht regressieren.
+Die bereits vorhandene Smart-House-Auswahl wird auf eine echte, offline-/sync-fähige House-Task-Domain vorbereitet. House Tasks erhalten anwendungs-eigene Task-IDs, persistierte Gebäude-Geometrie, optionale OSM-Provenance und optional einen Bezug zu einer Street Task. Bestehende Street Tasks, Renderer, Fortschrittsberechnung und M5-Synchronisation dürfen dabei nicht regressieren.
 
 ## Baseline / Source of Truth
 
@@ -36,15 +36,15 @@ Die bereits vorhandene Smart-House-Auswahl wird auf eine echte, offline-/sync-f�
 
 ## Architekturentscheidung
 
-### Gewählt: additive `house_tasks`-Tabelle, gemeinsame Task-Domain
+### Gewählt: additive `house_tasks`-Tabelle und separate House-Collection im Snapshot
 
-Die bestehende `tasks`-Tabelle besitzt seit M3 einen festen `CHECK (task_type IN ('street'))`. Statt diese etablierte Tabelle destruktiv umzubauen, erhält M6 House eine separate additive `house_tasks`-Tabelle. Im Client-/Mutation-Modell erscheinen Street und House weiterhin als gemeinsame `DistributionTask`-Union, damit IDs, Status-Operationen, Offline-Mutationsqueue und spätere History dieselbe Task-Semantik nutzen können.
+Die bestehende `tasks`-Tabelle besitzt seit M3 einen festen `CHECK (task_type IN ('street'))` und wird heute direkt vom Street-Renderer, von Street-Statistiken und von bestehender M5-Logik verwendet. Statt diese etablierte Street-Domain in diesem Slice breit umzubauen, erhält M6 House eine separate additive `house_tasks`-Tabelle und `CampaignSnapshot.houseTasks`.
+
+House Tasks benutzen weiterhin dieselben anwendungs-eigenen `task_<uuid>`-IDs, Statuswerte, Campaign-/Area-Scoping- und M5-Konfliktprinzipien wie Street Tasks. Die Mutation Queue erhält dafür eng begrenzte `house.create`, `house.rename`, `house.set-status` und `house.delete`-Operationen. Damit bleibt der bestehende Street-Pfad unverändert und House kann später bewusst in Renderer, Progress und History integriert werden.
 
 Datenfluss:
 
-`SmartBuildingCandidate -> HouseTask snapshot -> M5 task.create -> Worker validation/authorization -> house_tasks`
-
-Beim Laden führt der Worker Street- und House-Zeilen wieder in `CampaignSnapshot.tasks` zusammen.
+`SmartBuildingCandidate -> HouseTask snapshot -> M5 house.create -> Worker validation/authorization -> house_tasks`
 
 ### Pre-Migration-Verhalten
 
@@ -52,18 +52,19 @@ Vor Migration 0005 bleiben Street-Snapshots vollständig lesbar/schreibbar. Soba
 
 ## Aufgaben
 
-1. `DistributionTask` als diskriminierte Street-/House-Union modellieren.
-2. House-Geometrie als validierten Polygon-Snapshot und OSM-Provenance mit genau einem Way unterstützen.
-3. Optionalen `parentStreetTaskId` validieren und innerhalb derselben Campaign/Area auf eine Street Task begrenzen.
-4. M5 `task.create`, Mutation-Diff und Immutability-Regeln für House Tasks erweitern.
-5. Additive Migration `0005_m6_house_tasks.sql` ergänzen.
-6. CampaignRepository um House-Schema-Erkennung, Reads und atomare Snapshot-Persistenz erweitern.
-7. Vor 0005 House-Writes sicher mit `schema_migration_required` blockieren.
-8. Street-Progress weiterhin ausschließlich mit Street Tasks berechnen, bis House-Progress separat ausgewiesen wird.
-9. Smart-Building-Kandidaten in persistierbare House-Task-Snapshots überführen.
-10. Regressionstests für Domain, Validation, SQL/Persistence, Pre-Migration und Cross-Campaign/Parent-Referenzen ergänzen.
-11. DATA/MAP/OFFLINE_SYNC/SECURITY, WORKBENCH, CURRENT und Context-Graph aktualisieren.
-12. Tests, TypeScript, Dependency Audit, Build und Cloudflare Preview auf dem exakten Head prüfen.
+1. `HouseTask` mit Polygon-Geometrie, Status, optionaler Provenance und optionalem Parent modellieren.
+2. `CampaignSnapshot.houseTasks` rückwärtskompatibel als optionale Collection ergänzen.
+3. House-Geometrie serverseitig als validierten Polygon-Snapshot und OSM-Provenance mit genau einem Way validieren.
+4. Optionalen `parentStreetTaskId` innerhalb derselben Campaign/Area auf eine Street Task begrenzen.
+5. M5 House-Mutationen, Mutation-Diff und Immutability-Regeln ergänzen.
+6. Additive Migration `0005_m6_house_tasks.sql` ergänzen.
+7. CampaignRepository um House-Schema-Erkennung, Reads und atomare Snapshot-Persistenz erweitern.
+8. Vor 0005 House-Writes sicher mit `schema_migration_required` blockieren.
+9. Street-Progress und Street-Renderer unverändert auf `tasks` belassen, bis House-Progress/Rendering separat integriert wird.
+10. Smart-Building-Kandidaten in persistierbare House-Task-Snapshots überführen.
+11. Regressionstests für Domain, Validation, SQL/Persistence, Pre-Migration und Cross-Campaign/Parent-Referenzen ergänzen.
+12. DATA/MAP/OFFLINE_SYNC/SECURITY, WORKBENCH, CURRENT und Context-Graph aktualisieren.
+13. Tests, TypeScript, Dependency Audit, Build und Cloudflare Preview auf dem exakten Head prüfen.
 
 ## Akzeptanzkriterien
 
@@ -71,8 +72,8 @@ Vor Migration 0005 bleiben Street-Snapshots vollständig lesbar/schreibbar. Soba
 - House Tasks speichern einen validierten Polygon-Snapshot.
 - OSM-House-Provenance ist optional, inert und bei OSM genau ein positives Way-ID-Element.
 - Optionaler Parent verweist nur auf eine Street Task derselben Campaign und desselben Areas.
-- Street Tasks bleiben vollständig kompatibel.
-- M5 kann House Create/Rename/Status/Delete wie andere Tasks konflikt- und offline-fähig abbilden.
+- Street Tasks bleiben vollständig kompatibel und ihre bestehenden Map-/Progress-Pfade ändern sich nicht.
+- M5 kann House Create/Rename/Status/Delete konflikt- und offline-fähig abbilden.
 - House-Geometrie, Parent und Provenance sind nach Erstellung unveränderlich, bis ein späterer expliziter Reconciliation-Slice definiert wird.
 - Ohne Migration 0005 werden House-Writes abgelehnt, ohne Revision oder Street-Daten zu verändern.
 - Keine Remote-D1-Migration wird in diesem Slice automatisch ausgeführt.
@@ -80,15 +81,16 @@ Vor Migration 0005 bleiben Street-Snapshots vollständig lesbar/schreibbar. Soba
 
 ## Risiken
 
-- Die gemeinsame Task-Union darf bestehende Street-only Renderer/Statistiken nicht versehentlich als House-fähig behandeln.
 - Snapshot-Replacement muss Street und House atomar behandeln, ohne House-Daten bei altem Schema zu verlieren.
 - Parent-Referenzen dürfen keine Campaign-/Area-Grenzen umgehen.
 - OSM-Gebäudegeometrie bleibt untrusted input und muss serverseitig validiert werden.
+- Die optionale House-Collection darf von älteren lokalen Snapshots fehlen, ohne deren Laden zu brechen.
 
 ## Entscheidungen
 
 - Separate additive House-Tabelle statt riskantem Rebuild der bestehenden Street-Tabelle.
-- Gemeinsame Task-IDs und M5-Mutationstypen bleiben erhalten.
+- Separate Snapshot-Collection und Mutationstypen halten den Street-Renderer und Street-Progress in diesem Slice stabil.
+- House und Street teilen weiterhin ID-, Status-, Scope- und Konfliktprinzipien.
 - House-Progress wird noch nicht in Street-Prozentwerte gemischt.
 - Keine Remote-Migration in dieser Implementierungsarbeit.
 
@@ -96,6 +98,7 @@ Vor Migration 0005 bleiben Street-Snapshots vollständig lesbar/schreibbar. Soba
 
 - Pickup Tasks in `house_tasks` speichern.
 - Street/House-Aggregationsformel für gemeinsame Prozentwerte definieren.
+- House-Map-Layer vollständig in die normale Feldkarte integrieren.
 - Field-Session-Event-Persistenz implementieren.
 - Live-Group-Credentials implementieren.
 - Organization Accounts, TOTP oder Capability-Runtime implementieren.
