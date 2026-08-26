@@ -2,8 +2,8 @@
 id: architecture-map
 type: architecture
 status: accepted
-last_updated: 2026-08-25
-related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012]
+last_updated: 2026-08-26
+related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012, ADR-0013]
 source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera, saved-geometry-renderer, prepared-offline-map-rendering]
 ---
 
@@ -58,15 +58,15 @@ Do not set the raster layer `maxzoom` back to 20: MapLibre hides a style layer a
 
 CARTO Basemap content is **online-only** in the current architecture. CARTO Basemap terms prohibit storing/saving/caching map content, so deliberate offline-map downloads must not cache these raster tiles.
 
-ADR-0012 now defines the separate prepared offline-data path. OpenStreetMap Foundation raster/vector tile services also must not be bulk-prefetched for this feature.
+ADR-0012 defines the separate prepared offline-data path. OpenStreetMap Foundation raster/vector tile services also must not be bulk-prefetched for this feature.
 
 ## Saved application GeoJSON
 
 ### Sources
 
 Two persistent sources exist for the current Campaign:
-- `vf-areas` — all saved Areas;
-- `vf-streets` — all saved Street Tasks.
+- `vf-areas` - all saved Areas;
+- `vf-streets` - all saved Street Tasks.
 
 The initial MapLibre style is built with these application sources/layers already present using the latest Campaign data available at map construction time. They are not recreated during pan/zoom/rotate.
 
@@ -76,8 +76,8 @@ Do not use `styledata -> setData()` feedback loops.
 
 ### Area layers
 
-- `vf-areas-fill` — subtle Team-color fill;
-- `vf-areas-outline` — thin Team-color outline.
+- `vf-areas-fill` - subtle Team-color fill;
+- `vf-areas-outline` - thin Team-color outline.
 
 Browse selection adds no white edit halo and no stored corner markers.
 
@@ -93,6 +93,8 @@ Saved Street Tasks share one source and a constant small layer set:
 Feature properties carry Team color/status. Line width is zoom-dependent and should remain road-like rather than highlighter-like.
 
 The number of sources/layers stays effectively constant whether a Campaign contains 10 or thousands of Street features.
+
+ADR-0013 does not create a second renderer path. A persisted Smart Street becomes the same saved Campaign Street feature after its reviewed OSM-derived route is copied into a validated LineString snapshot. OSM provenance is metadata and is not needed to render the saved Street.
 
 ## Browse interaction
 
@@ -120,9 +122,19 @@ During active draw/edit, map movement imperatively reprojects only the active po
 
 ### Current Street fallback
 
-Current manual Street Task drawing stores a GeoJSON LineString assigned to an Area. This remains available as a fallback.
+Manual Street Task drawing stores a GeoJSON LineString assigned to an Area and remains available as a fallback.
 
-It is **not** the desired long-term primary workflow. M6 plans actual road/building selection from reviewed OSM/OSM-derived geometry. See `docs/product/ROADMAP.md`.
+ADR-0013 confirms the Smart Street primary direction:
+- user chooses precise snapped start/end anchors on prepared OSM road geometry;
+- ambiguity is resolved through explicit route candidates and optional waypoints;
+- street names are display metadata only;
+- the reviewed selected route is clipped/stiched into one Campaign-owned LineString snapshot;
+- first/last source ways are clipped exactly at the reviewed anchors;
+- multi-way source coordinate order may be reversed for continuity;
+- a non-continuous route is rejected instead of silently stored as `MultiLineString`;
+- later OSM refreshes do not silently rewrite the saved geometry.
+
+The Workbench persistence stack keeps the renderer contract unchanged: after creation, a Smart Street is just another saved Street Task in `vf-streets`.
 
 ## Prepared offline working area
 
@@ -136,21 +148,24 @@ Initial direction:
 - browser IndexedDB stores the package locally;
 - local roads/buildings/context render through batched MapLibre sources/layers while the already-loaded website is offline;
 - Campaign Areas/Streets remain above the local context and retain the existing selection/edit boundary;
-- the same OSM identity/data direction should later feed M6 Smart Street + House geometry;
+- the same prepared OSM identity/data feeds Smart Street source candidates while application-owned Task identity remains separate under ADR-0013;
 - no CARTO or OpenStreetMap Foundation tile bulk cache;
 - no Service Worker/PWA requirement;
 - no R2/PMTiles pipeline in v1.
 
 The first local offline style should remain deliberately small rather than attempting to reproduce the complete CARTO visual basemap. Required OSM attribution must remain visible.
 
-## Smart Street + House future constraints
+## Smart Street + House constraints
 
-Future road/building import must preserve the persistent renderer pattern:
+Road/building import must preserve the persistent renderer pattern:
 - imported/generated saved features belong in map data sources/layers;
 - do not create one React/SVG DOM element or one MapLibre layer per Street/House;
 - whole-city geometry requires source/layer batching and real-device tests;
-- reuse the accepted ADR-0012 OSM identity/data direction where practical;
+- reuse the accepted ADR-0012 OSM identity/data direction;
+- use application-owned durable Task ids and reviewed geometry snapshots under ADR-0013;
 - if a different production-scale map pipeline becomes necessary, decide it explicitly rather than silently creating a duplicate source of truth.
+
+House persistence remains a later explicit schema slice and is not implied by the current Street-only Task table.
 
 ## Camera state
 

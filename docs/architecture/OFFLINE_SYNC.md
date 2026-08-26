@@ -2,8 +2,8 @@
 id: architecture-offline-sync
 type: architecture
 status: accepted
-last_updated: 2026-08-25
-related: [architecture-data, architecture-security, architecture-map, product-roadmap]
+last_updated: 2026-08-26
+related: [architecture-data, architecture-security, architecture-map, product-roadmap, ADR-0011, ADR-0013]
 source_of_truth_for: [offline-queue, synchronization, conflict-handling]
 ---
 
@@ -17,14 +17,9 @@ M5 implements this through a page-owned durable mutation queue while preserving 
 
 ## Deployment state
 
-The durable mutation architecture is implemented in active PR #24 / Plan 010 and is **not yet the production baseline**.
+The durable mutation architecture is implemented in the current stable code line, with M5/M5.5 work already integrated before this M6 Workbench stack.
 
-Repository/preview/migration gates now passed:
-- runtime and final repository CI for the accepted M5 implementation path;
-- exact Cloudflare runtime-equivalent preview for commit `5c7dce81...`;
-- additive D1 migration `0003_m5_mutations.sql` applied successfully to remote `flyer-map-db` on 2026-08-25.
-
-Remaining gate is real-browser acceptance of reload/reconnect/idempotency/conflict/auth behavior plus unchanged MapLibre behavior before PR #24 is merged.
+M6 Smart Street persistence is still Workbench-only. Its additive `0004_m6_task_source_provenance.sql` migration must not be treated as remotely applied until the stack is intentionally promoted.
 
 ## Local state layers
 
@@ -35,7 +30,9 @@ The versioned Campaign snapshot remains cached in localStorage as:
 - recovery/safety copy;
 - convenient React UI model.
 
-It is not the durable delivery source of truth for new unacknowledged M5 writes.
+It is not the durable delivery source of truth for new unacknowledged writes.
+
+Schema-v3 compatibility is retained while M6 adds optional Task source provenance. Older/manual Street Task objects without `source` remain valid.
 
 ### IndexedDB mutation queue
 
@@ -62,6 +59,8 @@ Queue states:
 
 During the short enqueue window a best-effort localStorage emergency shadow protects against an interrupted/failed IndexedDB write. A successful IndexedDB transaction clears that shadow; corrupt shadow data is quarantined rather than blocking the queue forever.
 
+A Smart Street `task.create` queue record may contain the reviewed LineString snapshot and its non-secret OSM source provenance. OSM ids are data, not authorization credentials.
+
 ## Supported mutation protocol
 
 Initial M5 operations:
@@ -71,9 +70,13 @@ Initial M5 operations:
 - Area create/rename/team assignment/geometry update/delete;
 - Street Task create/rename/status update/delete.
 
+M6 keeps the same `task.create` operation and extends its payload with optional validated source provenance. Smart Street Task identity remains the normal application-generated `task_*` id.
+
 Personal camera movement is not a shared mutation.
 
 The current snapshot-oriented React UI is bridged by `deriveCampaignMutation(previous, next)`. A normal supported save must derive one unambiguous mutation. Unsupported compound snapshot changes fail visibly rather than silently falling back to a broad ordinary write.
+
+For existing Tasks, geometry and source provenance are immutable through ordinary rename/status mutations. A future source/geometry reconciliation flow requires its own explicit reviewed operation.
 
 ## Conflict semantics
 
@@ -120,7 +123,9 @@ For each request it:
 7. runs current/candidate state through the existing Worker authorization policy;
 8. persists a narrow D1 change plus idempotency ledger entry.
 
-Migration `0003_m5_mutations.sql` adds `campaign_mutations` keyed by `(campaign_id, mutation_id)` and is already applied to the currently configured remote `flyer-map-db` used for M5 runtime acceptance.
+Migration `0003_m5_mutations.sql` adds `campaign_mutations` keyed by `(campaign_id, mutation_id)`.
+
+The M6 Workbench `task.create` narrow statement adds a bound `source_json` value after migration `0004`; geometry, source ids and labels remain parameters rather than SQL text.
 
 If a mutation id already exists:
 - same canonical fingerprint/content -> return its prior applied revision and do not apply the effect again;
@@ -140,6 +145,8 @@ Worker authorization remains authoritative:
 
 The client sync label is UX only and is never an authorization boundary.
 
+Under ADR-0013, existing Smart Street source provenance is also protected from accidental mutation by the legacy full-snapshot compatibility write, including for Admin. Deleting the entire Task is distinct from silently rewriting its source metadata.
+
 ## Active draw/edit safety
 
 Unsaved intermediate vertices remain local UI interaction state and are not queued.
@@ -147,15 +154,18 @@ Unsaved intermediate vertices remain local UI interaction state and are not queu
 Protected modes remain:
 - Area draw;
 - Area edit;
-- Street draw.
+- Street draw;
+- Smart Street start/end/waypoint review while it is still an unsaved selection draft.
 
-The existing interaction-block mechanism continues to prevent canonical server refresh from silently destroying active geometry. The saved MapLibre renderer receives data only when Campaign snapshot state changes; M5 does not recreate the map or change its camera lifecycle.
+The existing interaction-block mechanism continues to prevent canonical server refresh from silently destroying active geometry. The saved MapLibre renderer receives data only when Campaign snapshot state changes; M6 does not recreate the map or change its camera lifecycle.
 
 ## Legacy transition path
 
-A pre-M5 optimistic local snapshot can exist without a corresponding IndexedDB queue record. During transition, the authorized coarse snapshot PUT may be used once to reconcile that legacy state.
+A pre-M5 optimistic local snapshot can exist without a corresponding IndexedDB queue record. During transition, the authorized coarse snapshot PUT may be used only for the compatibility/recovery behavior that remains intentionally supported.
 
-New ordinary M5 edits must use the mutation queue and must not return to arbitrary full-snapshot replacement as their normal delivery path.
+New ordinary edits must use the mutation queue and must not return to arbitrary full-snapshot replacement as their normal delivery path.
+
+If an existing Task already has Smart Street provenance, the compatibility write may preserve or delete the whole Task when authorized, but may not strip/change the existing provenance while keeping the Task.
 
 ## Website-only constraints
 
@@ -168,10 +178,10 @@ New ordinary M5 edits must use the mutation queue and must not return to arbitra
 
 ## Renderer boundary
 
-M5 does not change ADR-0010:
+M6 does not change ADR-0010:
 - MapLibre GL JS remains pinned to 5.7.1;
 - saved Areas/Streets remain persistent MapLibre GeoJSON sources/layers;
-- active draw/edit remains SVG-only;
+- active draw/edit/review interaction remains outside the saved persistent layer model until Task creation;
 - normal browse has no application loop projecting all saved geometry.
 
-See ADR-0011 for the mutation/idempotency decision and Plan 010 for current implementation/release acceptance.
+See ADR-0011 for mutation/idempotency behavior and ADR-0013 for Smart Street Task identity/source geometry.

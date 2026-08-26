@@ -185,9 +185,9 @@ function mutationStatement(
       return db
         .prepare(
           `INSERT INTO tasks (
-             id, campaign_id, area_id, task_type, label, geometry_json,
+             id, campaign_id, area_id, task_type, label, geometry_json, source_json,
              status, completed_at, created_at, updated_at
-           ) SELECT ?, ?, ?, 'street', ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
+           ) SELECT ?, ?, ?, 'street', ?, ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
         )
         .bind(
           mutation.payload.taskId,
@@ -195,6 +195,7 @@ function mutationStatement(
           mutation.payload.areaId,
           mutation.payload.label,
           JSON.stringify(mutation.payload.geometry),
+          mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
           mutation.createdAt,
           mutation.createdAt,
           mutation.campaignId,

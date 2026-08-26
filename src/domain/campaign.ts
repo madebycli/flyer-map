@@ -10,6 +10,12 @@ export type LineStringGeometry = {
   coordinates: LngLat[];
 };
 
+export type TaskSourceProvenance = {
+  dataset: "OpenStreetMap";
+  objectType: "way";
+  objectIds: number[];
+};
+
 export type MapCameraView = {
   center: LngLat;
   zoom: number;
@@ -54,6 +60,11 @@ export type DistributionTask = {
   taskType: "street";
   label: string;
   geometry: LineStringGeometry;
+  /**
+   * Optional for backwards-compatible schema-v3 caches and manual Street Tasks.
+   * Smart Streets persist reviewed external provenance here, never as Task identity.
+   */
+  source?: TaskSourceProvenance | null;
   status: TaskStatus;
   completedAt: string | null;
   createdAt: string;
