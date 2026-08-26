@@ -160,13 +160,15 @@ test("server validation rejects forged Task identity and malformed OSM provenanc
   };
 
   assert.equal(validateCampaignMutation(valid, previous.campaign.id).valid, true);
-  assert.equal(
-    validateCampaignMutation(
-      { ...valid, payload: { ...valid.payload, taskId: "osm_101" } },
-      previous.campaign.id,
-    ).valid,
-    false,
-  );
+  for (const taskId of ["osm_101", "task_"]) {
+    assert.equal(
+      validateCampaignMutation(
+        { ...valid, payload: { ...valid.payload, taskId } },
+        previous.campaign.id,
+      ).valid,
+      false,
+    );
+  }
   assert.equal(
     validateCampaignMutation(
       {
@@ -198,6 +200,19 @@ test("server validation rejects forged Task identity and malformed OSM provenanc
     ).valid,
     false,
   );
+  assert.equal(
+    validateCampaignMutation(
+      {
+        ...valid,
+        payload: {
+          ...valid.payload,
+          source: { dataset: "OpenStreetMap", objectType: "way", objectIds: [101, 101] },
+        },
+      },
+      previous.campaign.id,
+    ).valid,
+    false,
+  );
 });
 
 test("schema-v3 remains compatible with manual tasks while validating Smart Street provenance", () => {
@@ -213,15 +228,25 @@ test("schema-v3 remains compatible with manual tasks while validating Smart Stre
   smart.tasks = [smartTask()];
   assert.equal(validateCampaignSnapshot(smart, smart.campaign.id).valid, true);
 
-  const invalid = structuredClone(smart) as unknown as {
+  const wrongType = structuredClone(smart) as unknown as {
     tasks: Array<{ source: unknown }>;
   };
-  invalid.tasks[0].source = {
+  wrongType.tasks[0].source = {
     dataset: "OpenStreetMap",
     objectType: "node",
     objectIds: [101],
   };
-  assert.equal(validateCampaignSnapshot(invalid, smart.campaign.id).valid, false);
+  assert.equal(validateCampaignSnapshot(wrongType, smart.campaign.id).valid, false);
+
+  const duplicateIds = structuredClone(smart) as unknown as {
+    tasks: Array<{ source: unknown }>;
+  };
+  duplicateIds.tasks[0].source = {
+    dataset: "OpenStreetMap",
+    objectType: "way",
+    objectIds: [101, 101],
+  };
+  assert.equal(validateCampaignSnapshot(duplicateIds, smart.campaign.id).valid, false);
 });
 
 test("legacy full-snapshot authorization cannot strip existing Smart Street provenance", () => {
@@ -236,6 +261,27 @@ test("legacy full-snapshot authorization cannot strip existing Smart Street prov
   assert.deepEqual(authorizeSnapshotWrite(admin, previous, next), {
     allowed: false,
     reason: "task_source_provenance_immutable",
+  });
+});
+
+test("legacy full-snapshot authorization cannot rewrite reviewed Smart Street geometry", () => {
+  const previous = baseSnapshot();
+  previous.tasks = [smartTask()];
+  const next: CampaignSnapshot = {
+    ...previous,
+    revision: previous.revision + 1,
+    tasks: [{
+      ...previous.tasks[0],
+      geometry: {
+        type: "LineString",
+        coordinates: [[10.003, 50], [10.014, 50]],
+      },
+    }],
+  };
+
+  assert.deepEqual(authorizeSnapshotWrite(admin, previous, next), {
+    allowed: false,
+    reason: "smart_street_geometry_immutable",
   });
 });
 
