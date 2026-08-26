@@ -8,7 +8,8 @@
 .action-workbench-preview__header,
 .action-workbench-preview__message,
 .action-workbench-preview__grid,
-.action-workbench-preview__note {
+.action-workbench-preview__note,
+.action-workbench-preview__analytics {
   width: min(100%, 76rem);
   margin-inline: auto;
 }
@@ -43,7 +44,8 @@
 }
 
 .action-workbench-preview__header p,
-.action-workbench-preview__note p {
+.action-workbench-preview__note p,
+.action-workbench-preview__downloads p {
   margin: 0;
   color: #64748b;
   line-height: 1.45;
@@ -79,7 +81,8 @@
 }
 
 .action-workbench-preview__template-card,
-.action-workbench-preview__note {
+.action-workbench-preview__note,
+.action-workbench-preview__analytics {
   padding: 1rem;
   border: 1px solid #d8e0db;
   border-radius: 1rem;
@@ -89,15 +92,57 @@
 .action-workbench-preview__note {
   display: grid;
   gap: 0.25rem;
+  margin-bottom: 1rem;
 }
 
-.action-workbench-preview__header a:focus-visible {
+.action-workbench-preview__analytics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.8fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.action-workbench-preview__analytics > .admin-analytics-export {
+  max-width: none;
+}
+
+.action-workbench-preview__downloads {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+  border: 1px solid #d8e0db;
+  border-radius: 0.9rem;
+  background: #f8faf9;
+}
+
+.action-workbench-preview__downloads > div {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.action-workbench-preview__downloads button {
+  min-height: 2.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #cfd9d1;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 720;
+  text-align: left;
+  cursor: pointer;
+}
+
+.action-workbench-preview__header a:focus-visible,
+.action-workbench-preview__downloads button:focus-visible {
   outline: 3px solid currentColor;
   outline-offset: 2px;
 }
 
 @media (max-width: 900px) {
-  .action-workbench-preview__grid {
+  .action-workbench-preview__grid,
+  .action-workbench-preview__analytics {
     grid-template-columns: 1fr;
   }
 }
