@@ -24,7 +24,8 @@
 }
 
 .m6-selection-header span,
-.m6-selection-summary > span {
+.m6-selection-summary > span,
+.m6-route-options > span {
   color: #6f7c73;
   font-size: 0.68rem;
   font-weight: 760;
@@ -57,6 +58,7 @@
 
 .m6-preview-note,
 .m6-mode-picker,
+.m6-route-options,
 .m6-selection-summary {
   margin: 0;
   padding: 0.9rem;
@@ -67,13 +69,14 @@
 }
 
 .m6-preview-note strong,
-.m6-mode-picker legend {
+.m6-mode-picker > strong {
   font-size: 0.82rem;
   font-weight: 780;
 }
 
 .m6-preview-note p,
-.m6-selection-summary p {
+.m6-selection-summary p,
+.m6-route-options p {
   margin: 0.3rem 0 0;
   color: #66736a;
   font-size: 0.74rem;
@@ -85,17 +88,38 @@
   gap: 0.55rem;
 }
 
-.m6-mode-picker label {
+.m6-mode-picker > span {
+  color: #66736a;
+  font-size: 0.72rem;
+}
+
+.m6-anchor-actions {
   display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-height: 2.7rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #dce4de;
-  border-radius: 0.78rem;
-  font-size: 0.76rem;
-  font-weight: 700;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.m6-anchor-actions button,
+.m6-route-options button {
+  min-height: 2.65rem;
+  border: 1px solid #d3ddd5;
+  border-radius: 0.8rem;
+  color: #294130;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 720;
   cursor: pointer;
+}
+
+.m6-anchor-actions button {
+  padding: 0.55rem 0.75rem;
+}
+
+.m6-anchor-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .m6-road-list {
@@ -150,6 +174,35 @@
   font-weight: 720;
 }
 
+.m6-route-options {
+  display: grid;
+  gap: 0.65rem;
+  border-color: #bfd0e7;
+  background: #f7faff;
+}
+
+.m6-route-options > div {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.m6-route-options button {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+}
+
+.m6-route-options button strong {
+  font-size: 0.76rem;
+}
+
+.m6-route-options button span {
+  color: #65748a;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
 .m6-selection-summary {
   display: grid;
   gap: 0.15rem;
@@ -161,7 +214,8 @@
   font-size: 1rem;
 }
 
-.m6-mode-picker input:focus-visible,
+.m6-anchor-actions button:focus-visible,
+.m6-route-options button:focus-visible,
 .m6-road-row:focus-visible,
 .m6-preview-exit:focus-visible {
   outline: 3px solid #2563eb;
@@ -177,6 +231,11 @@
     grid-column: 1;
     grid-row: auto;
     margin-top: 0.25rem;
+  }
+
+  .m6-anchor-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
 
