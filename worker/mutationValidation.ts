@@ -10,19 +10,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isId(value: unknown) {
+function isId(value: unknown): value is string {
   return typeof value === "string" && ID_PATTERN.test(value);
 }
 
-function isTaskId(value: unknown) {
+function isTaskId(value: unknown): value is string {
   return isId(value) && value.startsWith("task_") && value.length > "task_".length;
 }
 
-function isTimestamp(value: unknown) {
+function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && value.length <= 64 && Number.isFinite(Date.parse(value));
 }
 
-function isString(value: unknown, maxLength: number) {
+function isString(value: unknown, maxLength: number): value is string {
   return typeof value === "string" && value.length <= maxLength;
 }
 
@@ -60,7 +60,7 @@ export function validateCampaignMutation(
   if (!isRecord(value)) {
     return { valid: false, message: "Mutation ist kein gültiges Objekt." };
   }
-  if (!isId(value.id) || !String(value.id).startsWith("mutation_")) {
+  if (!isId(value.id) || !value.id.startsWith("mutation_")) {
     return { valid: false, message: "Mutation-ID ist ungültig." };
   }
   if (value.campaignId !== campaignId) {
