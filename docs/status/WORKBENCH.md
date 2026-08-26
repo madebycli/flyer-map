@@ -37,7 +37,7 @@ Workbench Draft PR #29 (`workbench-unattended-platform`) is stacked on #28 and c
 - current Campaign/Team/Area progress helpers;
 - architecture-neutral OSM Area intersection helpers.
 
-Latest root-workbench CI evidence: #301 passed.
+Latest root-workbench CI evidence before this status update: #301 passed.
 
 Real browser/device acceptance is still required before Plan 011 can be considered complete:
 - dense 3 km visual quality/performance on a field phone;
@@ -47,50 +47,55 @@ Real browser/device acceptance is still required before Plan 011 can be consider
 
 ## App, support and field UI
 
-- PR #30: app-menu model, privacy-safe Support diagnostics, Field Session metrics. CI #302 passed. Campaign context in Support diagnostics is opt-in only.
+- PR #30: app-menu model, privacy-safe Support diagnostics, Field Session metrics. CI #302 passed.
 - PR #31: Team palette starts Orange, Blue, Green, Red, Gray and contains 12 unique presets. CI #303 passed.
 - PR #32: reusable app menu, progress, Team context and Support/Feedback UI surfaces. CI #304 passed.
-- PR #37: isolated `?workbench=ui` visual preview using fake/local data. Normal application route remains unchanged. CI #311 passed.
+- PR #37: isolated `?workbench=ui` visual preview using fake/local data. CI #311 passed.
 - PR #35: local System/Light/Dark appearance preference, no server state. CI #307 passed.
-- PR #36: current Campaign/Team/Area progress overview, no historical analytics. CI #308 passed.
-- PR #43: controlled Field Session draft + history UI for distribution/collection, duration/people/note and selection callback only. CI #330 passed after history extension.
-- PR #44: presentation-only desktop Admin shell with explicit `authorized` input and sensitive future modules marked planned. CI #318 passed.
-- PR #45: compact mobile field action bar for Settings/Teams/Menu plus optional primary Area action. CI #319 passed.
+- PR #36: current Campaign/Team/Area progress overview. CI #308 passed.
+- PR #43: controlled Field Session draft + history UI for distribution/collection. CI #330 passed.
+- PR #44: presentation-only desktop Admin shell with explicit `authorized` input. CI #318 passed.
+- PR #45: compact mobile field action bar. CI #319 passed.
 
 ## Collaboration, history and automations
 
-- PR #33: comment draft validation, deterministic progress/sync automation signals, read-only Automation Signals UI and proposed ADR-0017. Latest CI #337 passed after retention direction update.
-- PR #42: controlled comments list/composer with explicit context and read-only mode; no network, storage or moderation policy. CI #316 passed.
+- PR #33: comment draft validation, deterministic progress/sync automation signals, read-only Automation Signals UI and proposed ADR-0017. Latest confirmed CI #350 passed.
+- PR #42: controlled comments list/composer; no network, storage or moderation policy. CI #316 passed.
 
-Confirmed product direction for ADR-0017:
-- retain meaningful operational Field Session/domain-event history with the Campaign;
-- do not automatically expire history after 12/24 months;
-- retention still excludes secrets, raw request bodies, continuous GPS trails and redundant full Campaign snapshots.
+Confirmed history direction:
+- retain meaningful operational Field Session/domain-event history with the action;
+- no automatic 12/24-month expiry for ordinary operational history;
+- exact historical geometry reconstruction is not required for v1 reflection;
+- current/reviewed Task geometry plus retained references is sufficient initially;
+- history supports repeated-action comparison and future Admin analysis exports;
+- retention still excludes credentials, raw request bodies, continuous GPS trails and redundant full snapshots.
 
 Still unresolved before history persistence:
-- Campaign archive vs permanent delete behavior for retained history;
-- whether past sessions need exact historical geometry or current Task geometry is enough;
-- comment edit/delete/moderation event semantics.
+- archive vs permanent destructive deletion behavior;
+- comment edit/delete/moderation event semantics;
+- whether security/audit retention differs from ordinary operational history.
 
 ## Smart Streets and Houses
 
 - PR #34: OSM road/building candidates intersecting an Area; source `way/...` identity and reviewed road/address tags retained. CI #306 passed.
-- PR #38: detailed Street start/end anchor selection. Street names no longer control selection extent. Unique connected topology selects the sections between anchors; disconnected or ambiguous networks fail visibly. Latest CI #334 passed.
-- PR #39: isolated `?workbench=m6` start/end selection preview. Preview branch has been updated to the new interaction and awaits/re-runs its own final-head CI as applicable.
-- PR #40: individual/multi House selection and same-street building bulk selection UI. Latest CI #328 passed.
-- PR #46: proposed ADR-0013 updated to start/end anchor semantics, application-owned durable Task ids and separate OSM provenance. Latest CI #335 passed. ADR remains proposed.
+- PR #38: detailed Street start/end anchor semantics plus route choices and waypoint correction. Latest CI #352 passed.
+- PR #39: isolated `?workbench=m6` route/waypoint preview. Latest CI #354 passed and PR is correctly stacked on the current #38 head.
+- PR #40: individual/multi House selection and same-street building bulk selection UI. CI #328 passed.
+- PR #46: proposed ADR-0013 for application-owned Task identity, OSM provenance and reviewed geometry. Latest CI #349 passed. ADR remains proposed.
 
-Confirmed product direction:
-- the user chooses a detailed Street section by clicking/tapping a beginning and an end;
-- all unambiguous road source sections between those anchors are selected;
-- selection must not expand by street name;
-- a multi-kilometer same-name street is never automatically selected beyond the chosen end;
-- the old rough marker workflow is replaced by clicking reviewed Street geometry rather than freehand drawing.
+Confirmed Street interaction:
+- first tap/click chooses detailed start road section;
+- second chooses end road section;
+- street names never determine selection extent;
+- a unique connected shortest topological path is highlighted;
+- equal plausible shortest paths are not guessed;
+- ambiguity UX is **C: show bounded route candidates and allow intermediate waypoint clicks**;
+- a user can deliberately force a different/longer path with waypoints;
+- disconnected or bounded-too-complex routes fail visibly.
 
 Still unresolved before M6 persistence:
-- ambiguous junction UX: intermediate waypoint(s), route-candidate preview, or both;
-- persisted geometry representation for a selected multi-way Street section;
-- explicit acceptance of ADR-0013.
+- explicit acceptance of application-owned generated Task ids + separate OSM provenance;
+- persisted geometry representation for a selected multi-way Street section.
 
 No M6 D1 schema or Task-write path exists in the workbench.
 
@@ -107,64 +112,110 @@ Latest UI/domain CI #323 passed.
 
 ## Live Field Groups
 
-PR #48 contains the first architecture-neutral online-groups list UI:
+PR #48 contains architecture-neutral online-groups behavior/UI:
 - list is scoped to the current Campaign/action;
 - default filter is `Alle in der Aktion`;
 - optional Team filter narrows the list;
 - only active discoverable groups are shown;
+- **new Field Groups default to `online anzeigen = an`**;
 - groups with `online anzeigen = false` do not appear;
 - Team name/color remain visible;
 - discovery data contains no room code, QR token or persistent access secret;
-- join action is callback-only and performs no credential redemption.
+- join action is callback-only;
+- pure creation defaults contain visibility/state only, never credentials/authority.
 
-CI #338 passed.
-
-ADR-0014 in PR #47 records the confirmed discovery direction:
-- a Field Group belongs to one Campaign + Team;
-- room-code/QR concepts remain part of joining;
-- creator/manager can control `online anzeigen`;
-- default Campaign list scope is all visible groups in the action, with Team filter available;
-- no public cross-Campaign directory.
+ADR-0014 in PR #47 records the confirmed access direction:
+- Field Group belongs to one Campaign/action + Team;
+- room code + separate QR join token are temporary credentials;
+- valid room code/QR may bootstrap temporary Field-Group/Team-scoped access for somebody without prior Campaign access;
+- temporary join must never grant persistent Team management, Admin or Organizer authority;
+- offline-first join is not supported because initial credential redemption/revocation requires Worker access.
 
 Still unresolved before credential runtime:
-- J1: existing Campaign authorization required before room-code/QR join;
-- J2: valid room-code/QR may bootstrap temporary Field-Group-scoped access;
-- whether `online anzeigen` defaults on/off for a newly created group;
-- exact credential/group lifetime and rotation policy.
+- credential expiry/rotation;
+- maximum Field Group lifetime/close policy;
+- exact temporary group-member capability matrix;
+- rate-limit configuration and security test details.
 
-## Security-sensitive architecture proposals
+## Organizer, Admin and permissions
 
-PR #47 contains documentation only, no runtime code/migrations:
-- proposed ADR-0014: Live Field Group lifecycle/discovery/manual code/QR credential boundaries;
-- proposed ADR-0015: Organization Admin username/password/TOTP/session design;
-- proposed identity threat model covering injection, XSS, brute force, TOTP replay, session fixation, CSRF, tenant isolation, last-admin concurrency and secret logging;
-- proposed ADR-0016: named role templates + explicit capabilities, deny by default, no per-user exceptions in v1 proposal;
-- context graph routes future security-sensitive work through these documents.
+PR #47 contains documentation only, no runtime code/migrations. Latest confirmed CI #348 passed.
 
-Latest CI #336 passed after the Live Group discovery clarification.
+Confirmed product hierarchy:
+- Organization has **Organizer** role above normal Admin;
+- Organizer can add/promote/disable Admins according to final re-authentication policy;
+- Organizer manages Organization-wide permission/role policy;
+- normal Admin does not automatically become Organizer or create Organizers;
+- last effective Organizer must be protected transactionally;
+- Admin/Organizer actions are server-authorized and audited;
+- Admin-only analytics export uses an explicit capability such as `analytics.export`.
 
-Security implementation remains blocked until explicit review/acceptance. In particular:
-- no account table;
-- no password/TOTP runtime;
-- no permission-write runtime;
-- no QR/manual Live Group join endpoint;
-- no raw password/TOTP/recovery/session secret logging or plaintext persistence;
-- future D1 statements remain prepared/parameterized.
+PR #47 also contains:
+- proposed ADR-0015 username/password/TOTP/session design;
+- identity threat model covering injection, XSS, brute force, TOTP replay, session fixation, CSRF, tenant isolation, last-authority concurrency and secret logging;
+- proposed ADR-0016 named role templates/capabilities, deny by default;
+- updated Organizations architecture.
+
+No account table, password/TOTP runtime, permission-write runtime or Live Group credential endpoint exists.
+
+## Reusable templates, actions and AI analytics
+
+PR #49 (`workbench-action-templates-analytics`) is stacked on collaboration/history work, never `main`.
+
+Proposed product/domain separation:
+- **Action Template** = reusable planning blueprint;
+- **Action/Aktion** = one concrete flyer distribution or clothes collection round with fresh state/history;
+- **Field Session/Einsatz** = one outing/working session inside an action;
+- optional **Action Cycle** can group a related Distribution Action and later Collection Action, e.g. Spring 2027;
+- common twice-per-year workflow is supported but never hardcoded.
+
+Template workbench behavior:
+- copies Team structure/colors, Areas, map view and planned Street geometry;
+- never copies completed status, old entity ids, Sessions, Field Groups, comments, pickup completion or credentials;
+- new Distribution draft starts planned Streets `open`;
+- new Collection draft reuses planning context but starts Pickup tasks empty;
+- controlled Admin surface can create local Distribution/Collection drafts without persistence.
+
+Admin analytics workbench:
+- strict allowlist single-action export:
+  - `analytics.json`
+  - `teams.csv`
+  - `areas.csv`
+  - `sessions.csv`
+  - `events.csv`
+  - `AI_ANALYSE_PROMPT.md`
+- repeated-action comparison:
+  - `comparison.json`
+  - `actions.csv`
+  - `AI_VERGLEICHS_PROMPT.md`
+- generated prompts ask for bottlenecks, workload imbalance, problem Areas, which Teams should do less/more next time, trends and concrete improvements;
+- comparison produces descriptive deltas, never an opaque Team score/ranking;
+- prompts warn when changed territory/task amount makes direct comparison unfair;
+- exported labels are treated as untrusted data, not AI instructions;
+- CSV neutralizes formula prefixes;
+- credentials, GPS trails, comment bodies, free Session notes and account data are excluded from the initial AI package;
+- no automatic AI call and no AI authority over assignments/permissions.
+
+ADR-0018 records the proposed Template/version/Action Cycle/export architecture while exact D1 representation remains open.
+
+Initial PR #49 CI #351 passed; later comparison/template UI extensions have their own current final-head check.
 
 ## Open product/architecture decisions
 
-1. Smart Street ambiguity UX: intermediate waypoint(s), route candidates, or both.
-2. ADR-0013 final multi-way Street geometry/persistence details.
-3. Campaign archive/permanent delete behavior for retained operational history.
-4. Current Task geometry vs exact historical geometry for past-session map highlighting.
-5. Comment edit/delete/moderation/actor semantics before persistence.
-6. Live Group J1 vs J2: existing Campaign access required vs room-code/QR bootstraps temporary Field-Group-scoped access.
-7. New Field Group `online anzeigen` default: on or off.
-8. Admin username canonicalization policy.
-9. Secure Worker password-verifier benchmark/runtime path.
-10. Whether account recovery codes are mandatory and catastrophic all-admin recovery policy.
-11. Admin session idle/absolute lifetime.
-12. Capability-role delegation and legacy Campaign access-link coexistence.
+1. ADR-0013: confirm application-owned generated Task ids + separate OSM provenance.
+2. M6: choose initial persisted continuous multi-way Street geometry representation.
+3. Action/history: normal archive vs Organizer-only permanent deletion policy.
+4. Organizer: allow multiple Organizers or exactly one effective Organizer at a time.
+5. Organizer/Admin: whether selected Admins may be delegated `admin.manage` or only Organizers can add Admins.
+6. Template: whether non-secret operational defaults beyond map/Teams/Areas belong in the template.
+7. Collection: linked to prior Distribution by default but also independently creatable, or linked-only.
+8. Comment edit/delete/moderation/actor semantics before persistence.
+9. Live Group credential/group lifetime/rotation and final capability matrix.
+10. Admin username canonicalization policy.
+11. Secure Worker password-verifier benchmark/runtime path.
+12. Recovery codes / catastrophic all-admin recovery policy.
+13. Admin session idle/absolute lifetime.
+14. Legacy Campaign access-link coexistence/migration.
 
 ## Promotion rule
 
