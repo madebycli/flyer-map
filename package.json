@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run verify && vite build",
     "preview": "npm run build && vite preview",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "audit:dependencies": "npm audit --audit-level=high",
-    "check": "npm test && npm run typecheck && npm run build && npm run audit:dependencies",
-    "deploy": "npm run build && wrangler deploy"
+    "verify": "npm test && npm run typecheck && npm run audit:dependencies",
+    "check": "npm run build",
+    "deploy": "npm run check && wrangler deploy"
   },
   "dependencies": {
     "maplibre-gl": "5.7.1",
