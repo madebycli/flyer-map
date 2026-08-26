@@ -73,7 +73,7 @@ Confirmed:
 - Workbench hard-delete confirmation phrase is `AKTION LÖSCHEN`;
 - UI is never the security boundary.
 
-Organizer UI/delete guard passed CI #378 before the later presentation/selector refinements; the newest PR #44 head must retain a green final-head check before promotion.
+Organizer UI/delete guard passed CI #378 before later presentation/selector refinements. Newest final head must be green before promotion.
 
 Open Team-role detail:
 - exact extra Team Leader rights, especially Team name/color, member/invite and live-group management.
