@@ -1,6 +1,7 @@
 import type { CampaignMutation } from "../src/domain/mutations.ts";
 import {
   getCampaignRevision,
+  hasHouseTasksTable,
   hasTaskSourceProvenanceColumn,
   type D1DatabaseLike,
   type D1PreparedStatement,
@@ -260,6 +261,65 @@ function mutationStatement(
           mutation.campaignId,
           writeToken,
         );
+    case "house.create":
+      return db
+        .prepare(
+          `INSERT INTO house_tasks (
+             id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
+             status, completed_at, created_at, updated_at
+           ) SELECT ?, ?, ?, ?, ?, ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
+        )
+        .bind(
+          mutation.payload.taskId,
+          mutation.campaignId,
+          mutation.payload.areaId,
+          mutation.payload.parentStreetTaskId,
+          mutation.payload.label,
+          JSON.stringify(mutation.payload.geometry),
+          mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
+          mutation.createdAt,
+          mutation.createdAt,
+          mutation.campaignId,
+          writeToken,
+        );
+    case "house.rename":
+      return db
+        .prepare(
+          `UPDATE house_tasks SET label = ?, updated_at = ?
+           WHERE id = ? AND campaign_id = ? AND ${guard}`,
+        )
+        .bind(
+          mutation.payload.label,
+          mutation.createdAt,
+          mutation.payload.taskId,
+          mutation.campaignId,
+          mutation.campaignId,
+          writeToken,
+        );
+    case "house.set-status":
+      return db
+        .prepare(
+          `UPDATE house_tasks SET status = ?, completed_at = ?, updated_at = ?
+           WHERE id = ? AND campaign_id = ? AND ${guard}`,
+        )
+        .bind(
+          mutation.payload.status,
+          mutation.payload.completedAt,
+          mutation.createdAt,
+          mutation.payload.taskId,
+          mutation.campaignId,
+          mutation.campaignId,
+          writeToken,
+        );
+    case "house.delete":
+      return db
+        .prepare(`DELETE FROM house_tasks WHERE id = ? AND campaign_id = ? AND ${guard}`)
+        .bind(
+          mutation.payload.taskId,
+          mutation.campaignId,
+          mutation.campaignId,
+          writeToken,
+        );
   }
 }
 
@@ -280,6 +340,15 @@ export async function persistCampaignMutation(
       };
     }
     return { ok: true, revision: existing.appliedRevision, alreadyApplied: true };
+  }
+
+  const houseMutation = mutation.type.startsWith("house.");
+  if (houseMutation && !(await hasHouseTasksTable(db))) {
+    return {
+      ok: false,
+      currentRevision: fromRevision,
+      reason: "schema_migration_required",
+    };
   }
 
   const hasTaskSource =
