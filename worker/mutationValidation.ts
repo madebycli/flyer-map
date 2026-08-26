@@ -151,13 +151,13 @@ export function validateCampaignMutation(
       }
       break;
     case "task.rename":
-      if (isTaskId(payload.taskId) && isString(payload.label, 160) && hasExpectedUpdatedAt(payload)) {
+      if (isId(payload.taskId) && isString(payload.label, 160) && hasExpectedUpdatedAt(payload)) {
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;
     case "task.set-status":
       if (
-        isTaskId(payload.taskId) &&
+        isId(payload.taskId) &&
         (payload.status === "open" ||
           payload.status === "completed" ||
           payload.status === "later" ||
@@ -169,7 +169,7 @@ export function validateCampaignMutation(
       }
       break;
     case "task.delete":
-      if (isTaskId(payload.taskId) && hasExpectedUpdatedAt(payload)) {
+      if (isId(payload.taskId) && hasExpectedUpdatedAt(payload)) {
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;
