@@ -12,7 +12,7 @@ Das Repository ist die **Source of Truth**. Wenn Chattext und Repository/Branche
 
 Sprache mit dem Nutzer: Deutsch, natürlich, kompakt. Im Projekt wird der Nutzer häufig als `Master` angesprochen.
 
-### Arbeitsregel
+## Arbeitsregel
 
 Der Nutzer erlaubt lange eigenständige Workbench-Arbeit ohne regelmäßige Approvals, aber:
 - `main`/stable nicht ungefragt verändern;
@@ -23,15 +23,16 @@ Der Nutzer erlaubt lange eigenständige Workbench-Arbeit ohne regelmäßige Appr
 - bei Architekturentscheidungen Optionen + Empfehlung nennen, finale Wahl trifft der Nutzer;
 - sicherheitskritische Account/TOTP/Permission-/Credential-Runtime erst nach akzeptierten ADRs + Threat Model.
 
-### Vor jeder Änderung
+## Vor jeder Änderung
 
 1. `AGENTS.md` vollständig lesen.
 2. `docs/status/CURRENT.md` auf `main` lesen.
 3. `docs/context-map.yaml` lesen.
 4. `docs/status/WORKBENCH.md` auf `workbench-unattended-platform` lesen.
-5. relevante Product/Architecture/ADR/Plan-Dateien über Context Graph laden.
-6. offene PRs inklusive Base/Head/CI prüfen.
-7. aktuellen `main` und letzte Merges prüfen.
+5. `docs/prompts/CONTINUE_WORKBENCH_LATEST.md` lesen.
+6. relevante Product/Architecture/ADR/Plan-Dateien über Context Graph laden.
+7. offene PRs inklusive Base/Head/CI prüfen.
+8. aktuellen `main` und letzte Merges prüfen.
 
 Danach kurze Bestandsaufnahme und direkt weiterarbeiten. Nicht nach reiner Planung stoppen.
 
@@ -81,7 +82,7 @@ Plan 011 Prepared Offline Map ist noch nicht komplett promoted. Reale Phone/Brow
 # Wichtige Workbench PRs
 
 - #28 Offline Map Settings Download/Update/Delete.
-- #29 Offline OSM MapLibre context + neutral foundations + `docs/status/WORKBENCH.md` + Handoff-Prompts.
+- #29 Offline OSM MapLibre context + neutral foundations + Workbench-Status/Handoffs.
 - #30 app menu/support/session metrics.
 - #31 Team-Farbpalette.
 - #32 app/progress/Team/support UI surfaces.
@@ -119,16 +120,14 @@ Bestätigt:
 - niemals automatisch kilometerweit gleiche Straßennamen auswählen;
 - eindeutiger kürzester topologischer Pfad zwischen Start/Ende wird ausgewählt;
 - mehrere plausible Wege werden nicht geraten;
-- Produktentscheidung für Mehrdeutigkeit = **C**:
-  1. bounded Route-Varianten zeigen;
-  2. zusätzlich Zwischenpunkte erlauben;
+- Mehrdeutigkeit = Produktentscheidung **C**: bounded Route-Varianten plus optionale Zwischenpunkte;
 - Zwischenpunkte dürfen absichtlich längeren/anderen Weg erzwingen;
 - disconnected/zu komplex -> sichtbarer Fehler;
 - Straßenliste bleibt Keyboard-/Accessibility-Fallback.
 
 Preview:
 - `?workbench=m6`
-- PR #39 aktueller geprüfter Touch-Preview-Head bestand CI #416.
+- PR #39 geprüfter Touch-Preview-Head bestand CI #416.
 
 Houses:
 - einzeln;
@@ -153,7 +152,7 @@ Bestätigte Begriffe:
 - Aktion = konkrete reale Runde mit frischem Zustand/History;
 - Einsatz/Field Session = einzelner Außentermin innerhalb einer Aktion.
 
-Typischer Ablauf ungefähr zweimal jährlich, aber Frequenz niemals hardcoden.
+Typischer Ablauf ungefähr zweimal jährlich, Frequenz niemals hardcoden.
 
 Templates:
 - erstellen;
@@ -176,19 +175,25 @@ Distribution:
 Collection:
 - eigene Auto-/Abholteams;
 - typischerweise mehr und kleinere, anders geschnittene Gebiete;
-- übernimmt ausdrücklich NICHT, welches Flyer-Team vorher wo verteilt hat;
+- übernimmt NICHT, welches Flyer-Team vorher wo verteilt hat;
 - Pickup-Aufgaben starten frisch;
 - optionaler Action Cycle darf Distribution + Collection nur für Reporting gruppieren, ohne Assignments/Progress zu koppeln.
 
 PR #49:
-- `?workbench=actions`
+- `?workbench=actions`;
 - New Action Wizard;
 - passende Template-Typen;
 - Template import/download;
 - getrennte Fake-Verteil-/Abholplanung;
-- Admin Analyseexport.
+- Single-Action Admin Analyseexport;
+- Multi-Action Vergleichsexport.
 
-Der Actions Preview Head vor dem neuesten Vergleichs-Ausbau bestand CI #433. Prüfe immer aktuellen Head/CI neu.
+Wichtig aktueller Stand PR #49:
+- ein neuer Import-Sicherheitstest fand, dass unbekannte Zusatzfelder innerhalb von Team/Area/Road-Objekten durch Objekt-Spreads erhalten blieben;
+- `cloneTemplate` wurde deshalb auf explizite Allowlist-Feldkopie umgebaut;
+- Commit des Fixes: `de331c17d855780931fbf511e23cc7e79fe83c82`;
+- diesen aktuellen Head/PR-CI beim neuen Chat unbedingt neu prüfen und bei Fehlern auf demselben Branch fixen;
+- niemals den früheren roten CI #443 als aktuellen Endzustand annehmen.
 
 ADR-0018 + Plan 013 bleiben proposed/active. Kein D1 Template/Action-Schema vor akzeptierter Persistenzrichtung.
 
@@ -230,8 +235,6 @@ Security:
 - später `analytics.export` serverseitig prüfen und Export auditieren;
 - keine automatische externe AI-Verbindung nötig.
 
-Workbench `?workbench=actions` soll Single-Action und Multi-Action Export mit Fake-Daten lokal vorbereiten/downloaden können. Prüfe aktuellen PR #49 Head/CI.
-
 # Historie / Löschen
 
 Bestätigt:
@@ -247,7 +250,7 @@ Bestätigt:
 
 ADR-0017 bleibt vor echter History/Event-Persistenz relevant.
 
-# Live Field Groups
+# Live Field Groups — bestätigter Stand inklusive Lifetime
 
 Bestätigt:
 - Field Group gehört zu Aktion/Campaign + Team;
@@ -260,22 +263,36 @@ Bestätigt:
 - temporäre Mitgliedschaft darf niemals persistente Team-Management/Admin/Organizer-Rechte erzeugen;
 - initiales Credential Redemption braucht Worker/Netzwerk.
 
+**Lifetime-Entscheidung des Nutzers vom 2026-08-26:**
+- eine Einsatzgruppe ist für genau eine Tour gedacht;
+- normalerweise sind die Leute ungefähr 2 bis 3 Stunden unterwegs;
+- die Gruppe wird am Ende der Tour **manuell beendet**;
+- manuelles Beenden invalidiert Room Code und QR sofort;
+- falls die Gruppe vergessen wird, läuft sie samt Room Code/QR nach **maximal 24 Stunden ab Erstellung** automatisch ab;
+- `expired` ist nur Safety-Fallback, nicht normaler Ablauf;
+- Credential-Rotation darf die ursprüngliche 24-Stunden-Gruppenfrist nicht verlängern.
+
+Teilnehmerzahl:
+- während der laufenden Tour muss die Anzahl der Personen eingetragen bzw. aktualisiert werden können;
+- spätestens beim manuellen Beenden muss die endgültige Teilnehmerzahl feststehen;
+- sie dient Field-Session-/Personenzeit-/Statistikdaten;
+- Teilnehmerzahl ist niemals ein Credential und verändert keine Berechtigungen.
+
+ADR-0014 wurde auf Branch `workbench-security-adr-proposals` entsprechend aktualisiert, bleibt aber insgesamt **proposed**, weil Security-Details fehlen.
+
 PR #48:
 - local create draft: label, allowed Team ID, discoverable, active state;
 - kein Room Code/QR/Role/Authority im Draft;
 - `?workbench=groups` kombiniert create/list/filter mit Fake-Daten;
 - neue Preview-Gruppen haben ohne Server-Credential bewusst kein echtes Join;
-- aktueller Live Group Preview Head bestand CI #434 nach TypeScript Fix.
+- Live Group Preview Head bestand CI #434 nach TypeScript Fix.
 
-Noch Nutzerentscheidung offen:
-- Standardlaufzeit Room Code/QR.
-Empfehlung bisher: gültig bis Einsatzgruppe geschlossen wird, zusätzlich hard maximum 24 Stunden.
-Nicht annehmen, bis Nutzer antwortet.
-
-Danach noch definieren:
-- Rotation/Revocation;
-- genaue temporäre Member-Capabilities;
-- Rate Limits / brute-force tests.
+Noch vor Credential-Runtime definieren:
+- Credential-Rotation/Revocation UX innerhalb der festen 24h-Gruppenfrist;
+- genaue temporäre Member-Capability-Matrix;
+- Beziehung zu bestehenden Campaign Sessions;
+- Rate Limits, brute-force/revocation/expiry tests;
+- minimale Audit Events ohne Secrets.
 
 # Rollen / Organization
 
@@ -324,7 +341,7 @@ PR #47:
 
 PR #44:
 - `?workbench=admin`;
-- fake mehrere Organizer/Admins;
+- mehrere Fake Organizer/Admins;
 - delegiertes Adminmanagement sichtbar;
 - configurable Team Member/Team Leader local role drafts;
 - unbekannte/Cross-Team/Admin capability in Team-role model abgelehnt;
@@ -375,24 +392,24 @@ Passwortsicherheit nicht reduzieren, um Worker-Limits zu erfüllen. Wenn sichere
 
 Nur fragen, wenn sie blockieren, sonst andere Arbeit fortsetzen:
 1. ADR-0013 durable Smart Street/House Task Identity + persisted selected geometry.
-2. Live Group credential lifetime/rotation + temporary capability matrix.
+2. Live Group Rotation/Revocation + temporary capability/session/rate-limit matrix. **24h Lifetime ist bereits entschieden und nicht mehr offen.**
 3. ADR-0015 Identity/TOTP/session/recovery Details.
 4. ADR-0016 role-template update/version semantics + legacy access migration.
 5. ADR-0018 Template/Action/Cycle D1 representation + template version persistence UX.
 6. Comment edit/delete/moderation semantics.
 7. Legacy Campaign access-link coexistence/migration.
 
-# Empfohlene Fortsetzung
+# Empfohlene unmittelbare Fortsetzung im neuen Chat
 
-Solange Stable geschützt bleibt:
-- keine Workbench-Merges zu main;
-- aktuellen PR Head/CI immer verifizieren;
-- UI/domain/test slices weiterentwickeln;
-- Doku/Context Graph synchron halten;
-- keine Security-/Credential-/Identity-Persistenz vor akzeptierten ADRs;
-- keine Architektur stillschweigend auswählen.
+1. Repo/AGENTS/CURRENT/Context/WORKBENCH lesen.
+2. PR #49 aktuellen Head und CI nach Commit `de331c17...` prüfen. Falls rot, konkreten Fehler auf demselben Branch beheben.
+3. Wenn PR #49 grün ist, Workbench-Status/PR-Beschreibung auf finalen CI-Stand ziehen.
+4. Teilnehmerzahl/Lifecycle in Live-Group/Field-Session Workbench als presentation/domain/test slice ergänzen, aber noch ohne Credential-Runtime.
+5. Dann weitere sichere Workbench-Slices fortsetzen.
+6. Keine Workbench-Merges nach `main` ohne ausdrückliche Promotion-Entscheidung.
+7. Keine Account/TOTP/Permission/Credential-Persistenz vor akzeptierten Security-ADRs/Threat Model.
 
-Wenn der Nutzer später einen Bereich Richtung stable bringen will:
+Wenn später ein Bereich Richtung stable soll:
 1. Dependencies/PR-Reihenfolge prüfen;
 2. relevante ADRs akzeptieren;
 3. kleinen Promotion-Branch vom aktuellen `main`;
