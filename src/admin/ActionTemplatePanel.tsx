@@ -72,8 +72,8 @@ export function ActionTemplatePanel({
           <span>Admin</span>
           <h2 id="action-template-title">Aktionsvorlagen</h2>
           <p>
-            Flyer-Verteilung und Kleider-Abholung haben eigene Vorlagen. Eine neue Aktion übernimmt
-            nur Planung und normale Einstellungen, nie alten Fortschritt, Historie oder Zugänge.
+            Flyer-Verteilung und Kleider-Abholung haben eigene Vorlagen. Abholvorlagen können eigene
+            Auto-Teams und kleinere Gebiete enthalten und übernehmen keine Flyer-Zuweisungen.
           </p>
         </div>
 
