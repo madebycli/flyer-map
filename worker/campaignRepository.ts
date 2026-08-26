@@ -56,6 +56,7 @@ type TaskRow = {
   task_type: "street";
   label: string;
   geometry_json: string;
+  source_json: string | null;
   status: "open" | "completed" | "later" | "not-deliverable";
   completed_at: string | null;
   created_at: string;
@@ -108,7 +109,7 @@ export async function loadCampaignSnapshot(
       .all<AreaRow>(),
     db
       .prepare(
-        "SELECT id, campaign_id, area_id, task_type, label, geometry_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id",
+        "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id",
       )
       .bind(campaignId)
       .all<TaskRow>(),
@@ -161,6 +162,7 @@ export async function loadCampaignSnapshot(
         taskType: task.task_type,
         label: task.label,
         geometry: JSON.parse(task.geometry_json),
+        ...(task.source_json ? { source: JSON.parse(task.source_json) } : {}),
         status: task.status,
         completedAt: task.completed_at,
         createdAt: task.created_at,
@@ -168,7 +170,7 @@ export async function loadCampaignSnapshot(
       })),
     };
   } catch {
-    throw new StoredSnapshotError("Stored campaign geometry is not valid JSON.");
+    throw new StoredSnapshotError("Stored campaign geometry or Task provenance is not valid JSON.");
   }
 }
 
@@ -215,7 +217,7 @@ function tasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeTo
   return db
     .prepare(
       `INSERT INTO tasks (
-         id, campaign_id, area_id, task_type, label, geometry_json,
+         id, campaign_id, area_id, task_type, label, geometry_json, source_json,
          status, completed_at, created_at, updated_at
        )
        SELECT
@@ -225,6 +227,10 @@ function tasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeTo
          json_extract(value, '$.taskType'),
          json_extract(value, '$.label'),
          json_extract(value, '$.geometry'),
+         CASE
+           WHEN json_type(value, '$.source') IS NULL THEN NULL
+           ELSE json_extract(value, '$.source')
+         END,
          json_extract(value, '$.status'),
          json_extract(value, '$.completedAt'),
          json_extract(value, '$.createdAt'),
