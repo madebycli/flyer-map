@@ -3,7 +3,7 @@ id: status-workbench
 type: status
 status: experimental
 last_updated: 2026-08-26
-related: [plan-011-offline-map-area, plan-012-platform-app-expansion, ADR-0012]
+related: [plan-011-offline-map-area, plan-012-platform-app-expansion, ADR-0012, ADR-0013]
 ---
 
 # Unattended Workbench
@@ -30,7 +30,8 @@ Experimental non-main work only. Nothing here declares shipped `main` behavior.
 - PR #38: start/end selection, route choices, waypoints and point-to-road snapping. Point-snap CI #368 passed.
 - PR #39: combined Smart-Street semantics + isolated touch preview, retargeted cleanly to `workbench-m6-candidate-prep`; current head passed CI #416.
 - PR #40: House single/multi/same-street selection UI.
-- PR #46: proposed ADR-0013 for application-owned Task ids + OSM provenance. Still proposed.
+- PR #46: ADR-0013 for application-owned Task ids + OSM provenance. Accepted on 2026-08-26 after explicit product-owner confirmation of both identity and geometry choices.
+- PR #51: first persistence-facing Smart Street domain slice stacked on PR #39. It creates an application-owned Street Task snapshot with clipped/stiched reviewed LineString geometry and separate OSM provenance, without D1 writes yet.
 
 Confirmed interaction:
 - street names never define selection extent;
@@ -44,9 +45,16 @@ Confirmed interaction:
 - road list remains keyboard/accessibility fallback;
 - isolated preview route is `?workbench=m6`.
 
-Still blocked before M6 persistence:
-- explicit acceptance of durable application-owned Task ids + separate OSM provenance;
-- persisted geometry representation for clipped/multi-way selected road sections.
+Confirmed persistence contract under ADR-0013:
+- every durable Street/House Task receives an application-owned generated id;
+- OSM ids remain source provenance only and are never Task identity;
+- Smart Street geometry is persisted as a reviewed GeoJSON-compatible `LineString` snapshot using `[longitude, latitude]` coordinates;
+- first and last source road sections are clipped at the snapped start/end anchors;
+- a multi-way route is ordered/oriented and stitched into one validated continuous LineString;
+- non-continuous geometry fails visibly instead of silently falling back to `MultiLineString`;
+- later OSM/package refreshes must not silently rewrite Task ids or reviewed geometry snapshots.
+
+Next M6 runtime persistence work must update DATA/MAP/OFFLINE_SYNC/SECURITY docs, snapshot/mutation validation and focused persistence tests before promotion. Any D1 schema change must be additive and all SQL must remain prepared/parameterized with existing Worker authorization authoritative.
 
 ## Live Field Groups
 
@@ -148,18 +156,17 @@ Permanent deletion storage/cascade semantics remain blocked until Action/history
 Full current copy/paste context for a new ChatGPT conversation is stored in:
 - `docs/prompts/CONTINUE_WORKBENCH_LATEST.md`
 
-That prompt already contains the confirmed manual-close, hard-24-hour and participant-count decisions. Future continuation must still re-check open PRs and `WORKBENCH.md` for newer Workbench topology such as PR #50.
+That prompt already contains the confirmed manual-close, hard-24-hour and participant-count decisions. Future continuation must still re-check open PRs and `WORKBENCH.md` for newer Workbench topology such as PR #50 and PR #51, and must treat ADR-0013 as accepted once the relevant ADR branch is included.
 
 ## Major open architecture/product decisions
 
-1. ADR-0013 final durable Smart Street/House identity + persisted selected geometry.
-2. Live Group credential rotation/revocation, temporary capability/session relationship, rate-limit and audit details. The manual-close + hard 24-hour lifetime is already confirmed.
-3. Identity/TOTP/session/recovery details under ADR-0015.
-4. Final role-template update/version and access-link migration details under ADR-0016.
-5. Template/Action/Cycle D1 representation and template-version UX under ADR-0018.
-6. Whether Collection Actions may exist completely outside an Action Cycle or cycles remain optional grouping only.
-7. Comment moderation/edit/delete semantics.
-8. Legacy Campaign access-link coexistence/migration.
+1. Live Group credential rotation/revocation, temporary capability/session relationship, rate-limit and audit details. The manual-close + hard 24-hour lifetime is already confirmed.
+2. Identity/TOTP/session/recovery details under ADR-0015.
+3. Final role-template update/version and access-link migration details under ADR-0016.
+4. Template/Action/Cycle D1 representation and template-version UX under ADR-0018.
+5. Whether Collection Actions may exist completely outside an Action Cycle or cycles remain optional grouping only.
+6. Comment moderation/edit/delete semantics.
+7. Legacy Campaign access-link coexistence/migration.
 
 ## Promotion rule
 
