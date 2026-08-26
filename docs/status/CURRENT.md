@@ -22,11 +22,11 @@ M4 access/session authorization, M5 resilient mutation synchronization and the M
 
 ## Unified platform UI
 
-The normal website now starts in one unified platform shell instead of requiring separate Workbench query URLs to discover the newer UI foundations.
+Plan 014 is completed and verified. The normal website starts in one unified platform shell instead of requiring separate Workbench query URLs to discover the newer UI foundations.
 
-The map remains mounted as the primary field workspace. A shared platform menu opens the integrated modules without replacing the accepted map/access/sync runtime.
+The map remains mounted as the primary field workspace. A shared platform menu opens integrated modules without replacing the accepted map/access/sync runtime.
 
-Integrated modules now include:
+Integrated modules include:
 - live Campaign progress using the current Campaign snapshot;
 - activity/comments, Pickup and Field Session UI foundations in one operational surface;
 - Smart Streets/House selection UI;
@@ -38,6 +38,9 @@ Integrated modules now include:
 The old `?workbench=ui|m6|admin|groups|actions` routes remain available for development and review compatibility.
 
 Local Foundation UI does not imply durable server persistence. Comments/Pickup/Field Session integration remains explicitly local until the corresponding reviewed persistence slices are implemented. Admin/Live Group security-gated surfaces continue to show only non-authoritative Foundation behavior.
+
+Verification for the composed UI passed GitHub CI and Cloudflare Workers build/preview on the release branch. The stable branch preview alias remains:
+`https://release-platform-integration-2026-08-26-flyer-map.cloudflare-eleven035.workers.dev`
 
 ## Release integration candidate
 
@@ -104,4 +107,4 @@ Do not silently implement:
 
 ## Immediate next
 
-Verify Plan 014 unified platform UI on the exact branch head through tests, TypeScript, production build and Cloudflare preview. After that, continue the next persistence/security slices without weakening the existing ADR gates. Migration 0004 remains a separate intentional D1 rollout step; until then Smart Street provenance writes fail explicitly and safely rather than corrupting or dropping data.
+Continue the next persistence/security slices from the unified UI baseline without weakening the existing ADR gates. Migration 0004 remains a separate intentional D1 rollout step; until then Smart Street provenance writes fail explicitly and safely rather than corrupting or dropping data.
