@@ -30,7 +30,11 @@ test("confirmation is exact and cannot be bypassed with whitespace or casing", (
   });
 });
 
-test("invalid action selector/name never reaches destructive callback", () => {
+test("valid legacy-style campaign selector remains usable while arbitrary paths are rejected", () => {
+  assert.deepEqual(
+    actionDeleteReadiness({ ...action, actionId: "campaign_legacy_01" }, true, ACTION_DELETE_CONFIRMATION),
+    { ready: true },
+  );
   assert.deepEqual(
     actionDeleteReadiness({ ...action, actionId: "../other" }, true, ACTION_DELETE_CONFIRMATION),
     { ready: false, reason: "invalid-action" },
