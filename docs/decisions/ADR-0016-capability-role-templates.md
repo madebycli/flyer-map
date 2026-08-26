@@ -9,54 +9,77 @@ date: 2026-08-26
 
 ## Status
 
-Proposed only. Product hierarchy was clarified on 2026-08-26: an Organization has an **Organizer** role above normal Admins, and Organizers can add/manage Admins. No permission tables, capability checks replacing current roles, or Admin permission UI writes are authorized until this ADR is explicitly accepted after ADR-0015 identity/session boundaries are understood.
+Proposed only. Product hierarchy/role behavior was clarified on 2026-08-26, but no permission tables/runtime are authorized until ADR-0015 identity/session boundaries and this ADR are explicitly accepted.
 
-## Context
+## Confirmed product hierarchy
 
-Plan 012 requires more control than the current fixed `Admin / Team Editor / Viewer` Campaign roles while preserving understandable administration and strict server-side authorization.
+### Organizer
 
-Requirements:
-- deny by default;
-- Organization tenant boundary is absolute;
-- UI visibility is never the authorization boundary;
-- capability/role changes are audited;
-- at least one effective Organizer must remain protected;
-- normal Admins must not automatically be able to promote arbitrary new Admins/Organizers;
-- arbitrary permission combinations must not become impossible to understand/support;
-- existing Campaign access links need a migration/coexistence path.
+Top Organization authority for normal product administration.
 
-## Proposed v1 model: named role templates, no per-user capability exceptions
+Confirmed:
+- multiple Organizers are allowed;
+- at least one effective Organizer must always remain;
+- Organizer has Admin-management authority by default;
+- Organizer may add/promote/disable normal Admins;
+- Organizer may explicitly delegate `admin.manage` to selected Admin roles;
+- delegated `admin.manage` never grants `organizer.manage` or Organizer status;
+- only Organizer can manage Organizer membership under the final strong re-authentication policy;
+- permanent Action deletion is Organizer-only in the current product direction.
 
-A user/account receives one or more role assignments at explicit scopes. Each role template contains a reviewed set of capability keys.
+### Admin
 
-V1 deliberately does **not** add per-user allow/deny overrides. If a different combination is needed, an authorized Organizer/Admin creates or clones a named custom role template within their delegation ceiling.
+Broad operational Organization/Campaign administrator.
 
-Benefits:
-- effective access remains inspectable and explainable;
-- fewer hidden exceptions;
-- permission changes are easier to audit/test;
-- Admin UI can show “this member has role X at scope Y” rather than reconstructing a giant matrix.
+An Admin:
+- may receive normal operational/admin capabilities;
+- may receive delegated `admin.manage` from Organizer policy;
+- never automatically becomes Organizer;
+- cannot remove/bypass the last-Organizer invariant;
+- cannot grant itself `organizer.manage`.
 
-If real usage proves per-user exceptions necessary, add them through a later ADR.
+### Team Member
 
-## Scopes
+Confirmed default field direction:
+- assigned Team members may edit operational data inside **their own Team**, including Team Areas and Tasks, subject to server-side scope resolution;
+- they cannot edit another Team merely by supplying another Team id;
+- Organization/Admin/permission capabilities are never implied by Team membership.
 
-Proposed scope hierarchy:
+### Team Leader
+
+Optional role for Organizations/Campaigns that want a designated Team coordinator.
+
+Base proposal:
+- includes normal own-Team operational editing;
+- may additionally receive Team-management capabilities such as Team metadata, invites/members and live-group management;
+- exact additional Team Leader capability set remains a small acceptance decision;
+- role is not required for ordinary Team editing because Team Members already edit their own Team.
+
+### Viewer
+
+Read-only where explicitly assigned.
+
+## Model: named role templates and explicit scopes
+
+A user/account receives one or more role assignments at Organization, Campaign or Team scope. Each role template contains known reviewed capability keys.
+
+V1 proposal still avoids arbitrary per-user allow/deny exceptions. Different combinations use named role templates, keeping effective access explainable and auditable.
+
+Scope hierarchy:
 1. Organization;
 2. Campaign;
 3. Team.
 
-A role assignment always carries an Organization id and may narrow to Campaign/Team.
+Organization tenant boundary is absolute and cannot be overridden by any role.
 
-No assignment can reference or authorize an entity from another Organization.
+## Candidate capability registry
 
-## Candidate capability keys
-
-Use stable machine keys, initially aligned with Plan 012:
+Stable server-known keys include:
 - `team.create`
 - `team.rename`
 - `team.change-color`
 - `team.archive-or-delete`
+- `team.member-manage`
 - `area.create`
 - `area.edit-own-team`
 - `area.edit-other-team`
@@ -80,173 +103,129 @@ Use stable machine keys, initially aligned with Plan 012:
 - `admin.manage`
 - `organizer.manage`
 
-New capability keys require code + server authorization tests and should not be created dynamically from arbitrary user strings at runtime.
+Permanent Action deletion is currently proposed as a **hard-coded Organizer invariant**, not a delegable capability, because the user explicitly wants only Organizers to delete actions permanently.
 
-## Built-in role direction
+New capability keys require code, server authorization tests and documentation. Arbitrary user-defined strings are not executable permissions.
 
-### Organization Organizer
+## Effective authorization
 
-System role above normal Admins, not freely editable.
+For every protected target:
+1. authenticate account/session;
+2. resolve target Organization server-side;
+3. require active Organization membership;
+4. load active assignments whose scope contains the target;
+5. union known capability keys;
+6. apply hard-coded security/product invariants;
+7. deny when required authority is absent.
 
-Confirmed product responsibility:
-- may add/promote/disable Organization Admins according to accepted identity/re-authentication policy;
-- may manage Organization-wide role templates/permissions;
-- may create/archive Campaigns and manage templates;
-- may view/export Organization/Campaign operational analytics where allowed;
-- may manage other Organizers only under a stricter accepted policy;
-- subject to a **last effective Organizer** invariant;
-- cannot cross Organization boundary.
+Hard-coded invariants always win:
+- no cross-Organization access;
+- last effective Organizer cannot be removed;
+- Team scope cannot escape to another Team;
+- Admin cannot self-promote to Organizer;
+- Organizer-only permanent Action deletion cannot be delegated through a custom role;
+- high-risk identity/recovery operations may require stronger re-authentication.
 
-Organizer is the authority that creates/manages Admins. This prevents every normal Admin from automatically becoming an administrator-of-administrators.
+## Team scope resolution
 
-### Organization Admin
+Own-Team capabilities are resolved from canonical server data, not caller assertions.
 
-System or built-in role for normal Organization operations.
+Worker resolves:
+- Area -> Team;
+- Task -> Area -> Team;
+- Field Group -> Team;
+- Team membership/assignment.
 
-Default direction:
-- broad operational authority across Campaigns according to accepted capability set;
-- may manage Campaigns, Teams, Areas, Tasks, sessions, statistics and exports;
-- does **not** automatically receive `organizer.manage`;
-- does **not** automatically gain the right to create/promote Organizers;
-- whether an Admin may add other Admins is denied by default in v1 unless an Organizer explicitly delegates an accepted safe role/capability model.
+A Team Member/Leader may edit only resources whose canonical Team matches an active assignment.
 
-### Campaign Admin
+## Organizer/Admin delegation
 
-Campaign-scoped management role for normal Campaign operations. Does not automatically gain Organization account/security management.
+Confirmed direction:
+- Organizers have `admin.manage` by default;
+- Organizers may delegate `admin.manage` to selected Admin role templates;
+- delegated Admins can manage normal Admins only within the defined delegation ceiling;
+- only Organizer may grant/remove Organizer status;
+- only Organizer may create/assign roles containing `organizer.manage`;
+- delegated Admin cannot grant a role that exceeds what Organizer policy allows it to delegate;
+- all such changes are audited.
 
-### Team Coordinator
-
-Team-scoped role with Team/Area/Task/invite/live-group management within assigned Team according to accepted capability set.
-
-### Team Editor
-
-Conservative successor to current Team Editor: Task/Area editing inside assigned Team, without permission/admin management.
-
-### Viewer
-
-Read-only role with only explicitly granted view capabilities where a view capability is needed. Absence of write keys means write is denied.
-
-Exact built-in capability lists remain acceptance detail and must preserve current behavior during migration.
-
-## Custom role templates
+## Role-template safety
 
 Proposed:
-- Organizer may create Organization-owned named role templates;
-- normal Admin template-management rights are limited by delegation policy;
-- template name/description are inert bounded text;
-- capabilities selected only from the hardcoded known key registry;
-- template may be limited to allowed assignment scopes;
-- editing a template produces an audit event and updates effective authorization for assignments according to explicit versioning semantics;
-- destructive template deletion is prevented while assigned, or implemented as archive/deactivate.
-
-## Effective capability evaluation
-
-For a target resource:
-1. resolve authenticated account/session;
-2. resolve Organization from target resource server-side;
-3. require active Organization membership;
-4. load active role assignments whose scope includes the target;
-5. union capability keys from those role templates;
-6. apply hard-coded product/security invariants;
-7. deny when required capability is absent.
-
-Hard-coded invariants always win. Examples:
-- tenant boundary cannot be overridden;
-- last effective Organizer cannot be removed accidentally;
-- a Team-scoped assignment cannot operate on another Team merely because a request supplies its id;
-- current protected recovery/security operations may require stronger re-authentication even when a management capability exists.
-
-## Own-Team vs other-Team
-
-`*-own-team` capabilities require server-side ownership/scope resolution. Caller-supplied `teamId` is not proof that the resource is “own”.
-
-Worker must resolve Area -> Team and Task -> Area -> Team from canonical data before authorizing mutation.
-
-## Delegation safety
-
-A principal with `permission.manage` must not be able to create/assign a role that effectively exceeds the authority the policy permits that principal to delegate.
-
-Initial conservative proposal:
-- only Organizer may assign/remove Organization Admin by default;
-- only Organizer may assign/remove Organizer, subject to stricter re-authentication/recovery rules;
-- only Organizer may create templates containing `organizer.manage`;
-- normal Admin may manage only a safe subset explicitly delegated by Organizer policy;
-- Campaign/Team managers may assign only an explicit safe subset of role templates within their scope;
-- last effective Organizer protection is transactional.
-
-Exact delegation ceiling requires tests before acceptance.
+- Organization owns named role templates;
+- capabilities are selected only from the hardcoded registry;
+- template assignment scopes are explicit;
+- dangerous capabilities are visually prominent;
+- template updates are audited;
+- assigned templates are archived/deactivated rather than destructively removed where needed for history.
 
 ## Current access links coexistence
 
-Existing Campaign Admin/Team Editor/Viewer access links remain separate legacy/field credentials during migration.
+Legacy Campaign Admin/Team Editor/Viewer links remain separate field credentials during migration.
 
-Do not silently convert an access-link session into an Organization Organizer/Admin account.
-
-A future migration slice must explicitly map current roles to conservative capability sets and define which Organizer/Admin role may manage those grants.
+Never silently convert a legacy access-link session into an Organization Organizer/Admin account. Migration/coexistence requires a dedicated implementation slice.
 
 ## UI requirements
 
-Admin permission UI should show:
-- role name;
-- scope;
+Admin UI should show:
+- role name and scope;
+- Organizer/Admin/Team Member/Team Leader identity;
 - effective capability summary;
-- whether role is built-in or custom;
-- whether the account is Organizer, Admin or lower-scope manager;
-- who/what will be affected by an edit;
-- dangerous capabilities (`organizer.manage`, `admin.manage`, `permission.manage`, cross-Team editing) prominently;
-- no implication that hiding a toggle enforces security.
+- built-in vs custom role;
+- dangerous capabilities (`organizer.manage`, `admin.manage`, `permission.manage`, cross-Team editing);
+- what accounts/resources will be affected.
+
+UI visibility never substitutes for Worker authorization.
 
 ## Audit requirements
 
 Record tenant-scoped events for:
-- role template created/renamed/changed/archived;
-- role assignment added/removed;
-- Admin added/promoted/demoted/disabled;
-- Organizer added/promoted/demoted/disabled;
-- last-Organizer transfer/recovery action;
+- role template create/change/archive;
+- assignment add/remove;
+- Admin add/promote/demote/disable;
+- Organizer add/promote/demote/disable;
+- admin-management delegation changes;
+- last-Organizer transfer/recovery;
 - high-risk capability changes;
-- admin-only analytics export creation when implemented.
+- Organizer permanent Action deletion;
+- Admin analytics export creation once implemented.
 
-Never include session/password/TOTP secrets in audit payloads.
+Never include passwords, TOTP secrets/codes, recovery codes or session/join secrets.
 
-## Rejected for v1: every Admin can create Admins automatically
+## Rejected
 
-Reason:
-- makes privilege escalation too broad;
-- weakens the distinction requested between Organizer and Admin;
-- complicates last-authority recovery and auditing;
-- a compromised normal Admin account should not automatically be able to create more top-level administrators.
+### Every Admin automatically creates Admins
+Rejected because a compromised normal Admin would automatically become an administrator-of-administrators. Delegation is explicit instead.
 
-## Rejected for v1: raw per-member capability matrix
+### Team Member read-only by default
+Rejected by current product direction. Normal Team members are expected to edit their own Team's operational work.
 
-Reason:
-- hard to explain and review;
-- easy to accumulate invisible exceptions;
-- difficult to test/transfer administrators safely;
-- substantially increases UI and audit complexity.
+### Raw client-side permission booleans as authority
+Rejected. Worker remains authoritative.
 
-## Rejected for v1: client-side permission booleans as authority
+### Arbitrary per-user capability matrix in v1
+Still not recommended because it creates hidden exceptions. Named role templates remain the proposed mechanism.
 
-Client capability data may optimize UI only. Worker remains authoritative.
+## Remaining acceptance decisions
 
-## Open acceptance decisions
+1. Confirm exact additional Team Leader rights: Team name/color, member/invite management, live-group management, or another subset.
+2. Confirm whether delegated `admin.manage` Admins may create new Admin accounts directly or only assign Admin role to already-created accounts after Organizer onboarding.
+3. Confirm v1 role templates only, without per-user exceptions.
+4. Confirm template update/version behavior for existing assignments.
+5. Define current access-link coexistence/migration.
+6. Accept ADR-0015 identity/session and re-authentication policy for high-risk Organizer actions.
 
-1. Confirm whether multiple Organizers are allowed/recommended or exactly one Organizer is required at a time.
-2. Confirm exact built-in Organizer/Admin capability sets.
-3. Confirm whether an Organizer may delegate `admin.manage` to selected Admin roles or only Organizers can ever add Admins.
-4. Confirm v1 has role templates only and no per-user overrides.
-5. Confirm assignment scope rules for one account holding multiple roles.
-6. Define custom role template update/version behavior for existing assignments.
-7. Define current access-link coexistence/migration plan.
+## Required implementation gates
 
-## Required implementation gates after acceptance
-
-- additive D1 migration only for active identity/permission slice;
+- additive D1 migration only;
 - all permission SQL prepared/parameterized;
-- Worker unit/integration tests for every capability family;
+- Worker tests for every capability family;
 - cross-Organization negative tests;
 - own-Team/other-Team negative tests;
+- Team Member can edit own Team but not another Team;
 - concurrent last-Organizer removal test;
-- Admin-cannot-self-escalate-to-Organizer negative test;
+- Admin cannot self-escalate to Organizer;
+- delegated `admin.manage` cannot grant Organizer authority;
+- Organizer-only permanent Action delete negative tests for Admin/Team roles;
 - audit event tests;
-- client UI tests proving disabled/hidden actions never substitute for Worker denial.
+- client tests proving hidden/disabled controls are never the security boundary.
