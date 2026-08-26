@@ -1,10 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
 import type { ExpressionSpecification, GeoJSONSource, StyleSpecification } from "maplibre-gl";
+import {
+  browserOfflineMapRepository,
+  OFFLINE_MAP_CHANGED_EVENT,
+} from "../data/offlineMapRepository";
 import type { Area, DistributionTask, LngLat, MapCameraView } from "../domain/campaign";
+import type { OfflineMapPackage } from "../domain/offlineMap";
 import type { Language } from "../i18n";
 import { t } from "../i18n";
 import { loadPersonalMapView, savePersonalMapView } from "./cameraStore";
+import {
+  CARTO_BASEMAP_LAYER_ID,
+  OFFLINE_BUILDING_LAYER_ID,
+  OFFLINE_BUILDING_SOURCE_ID,
+  OFFLINE_ROAD_LAYER_ID,
+  OFFLINE_ROAD_SOURCE_ID,
+  emptyOfflineBuildings,
+  emptyOfflineRoads,
+  offlineBuildingData,
+  offlineMapRendererMode,
+  offlineRoadData,
+} from "./offlineMapContext";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
@@ -115,6 +132,20 @@ const STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   3.0,
 ];
 
+const OFFLINE_ROAD_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  10,
+  0.7,
+  13,
+  1.15,
+  16,
+  1.9,
+  19,
+  3.0,
+];
+
 const AREA_WIDTH_EXPRESSION: ExpressionSpecification = [
   "interpolate",
   ["linear"],
@@ -192,7 +223,7 @@ function streetsToGeoJson(tasks: RenderTask[]): StreetFeatureCollection {
   };
 }
 
-function buildMapStyle(areas: RenderArea[], tasks: RenderTask[]): StyleSpecification {
+function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean): StyleSpecification {
   return {
     version: 8,
     sources: {
@@ -210,6 +241,14 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[]): StyleSpecifica
         attribution:
           '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · <a href="https://carto.com/attributions" target="_blank">© CARTO</a>',
       },
+      [OFFLINE_BUILDING_SOURCE_ID]: {
+        type: "geojson",
+        data: emptyOfflineBuildings(),
+      },
+      [OFFLINE_ROAD_SOURCE_ID]: {
+        type: "geojson",
+        data: emptyOfflineRoads(),
+      },
       [AREA_SOURCE_ID]: {
         type: "geojson",
         data: areasToGeoJson(areas),
@@ -226,12 +265,39 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[]): StyleSpecifica
         paint: { "background-color": "#fbf8f3" },
       },
       {
-        id: "carto-basemap",
+        id: CARTO_BASEMAP_LAYER_ID,
         type: "raster",
         source: "carto",
         minzoom: 0,
         maxzoom: 21,
+        layout: { visibility: online ? "visible" : "none" },
         paint: { "raster-fade-duration": 0 },
+      },
+      {
+        id: OFFLINE_BUILDING_LAYER_ID,
+        type: "fill",
+        source: OFFLINE_BUILDING_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-color": "#ddd8cf",
+          "fill-opacity": 0.7,
+          "fill-outline-color": "#b9b3a9",
+        },
+      },
+      {
+        id: OFFLINE_ROAD_LAYER_ID,
+        type: "line",
+        source: OFFLINE_ROAD_SOURCE_ID,
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#777b77",
+          "line-opacity": 0.9,
+          "line-width": OFFLINE_ROAD_WIDTH_EXPRESSION,
+        },
       },
       {
         id: AREA_FILL_LAYER_ID,
@@ -389,6 +455,32 @@ function syncApplicationData(
   }
 }
 
+function syncOfflineMapData(map: Map, pkg: OfflineMapPackage | null, online: boolean) {
+  const buildingSource = map.getSource(OFFLINE_BUILDING_SOURCE_ID) as GeoJSONSource | undefined;
+  if (buildingSource) buildingSource.setData(offlineBuildingData(pkg));
+
+  const roadSource = map.getSource(OFFLINE_ROAD_SOURCE_ID) as GeoJSONSource | undefined;
+  if (roadSource) roadSource.setData(offlineRoadData(pkg));
+
+  const mode = offlineMapRendererMode(online, pkg);
+  if (map.getLayer(CARTO_BASEMAP_LAYER_ID)) {
+    map.setLayoutProperty(CARTO_BASEMAP_LAYER_ID, "visibility", mode.cartoVisibility);
+  }
+  if (map.getLayer(OFFLINE_BUILDING_LAYER_ID)) {
+    map.setLayoutProperty(OFFLINE_BUILDING_LAYER_ID, "visibility", mode.offlineVisibility);
+  }
+  if (map.getLayer(OFFLINE_ROAD_LAYER_ID)) {
+    map.setLayoutProperty(OFFLINE_ROAD_LAYER_ID, "visibility", mode.offlineVisibility);
+  }
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) {
+    region.dataset.offlineContext = mode.offlineVisibility === "visible" ? "active" : "inactive";
+    region.dataset.offlineRoads = String(pkg?.roads.features.length ?? 0);
+    region.dataset.offlineBuildings = String(pkg?.buildings.features.length ?? 0);
+  }
+}
+
 function updateRendererDiagnostics(map: Map) {
   const region = map.getContainer().closest<HTMLElement>(".map-region");
   if (!region) return;
@@ -489,6 +581,7 @@ export function MapView({
   const cameraSaveTimerRef = useRef<number | null>(null);
   const suppressNextCameraSaveRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [offlineContextActive, setOfflineContextActive] = useState(false);
 
   const activePrimaryRef = useRef<SVGPolygonElement | SVGPolylineElement | null>(null);
   const activeHaloRef = useRef<SVGPolygonElement | SVGPolylineElement | null>(null);
@@ -556,13 +649,14 @@ export function MapView({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let active = true;
+    let cleanupListeners = () => {};
     const initialCamera = loadPersonalMapView(campaignId) ?? campaignDefaultView ?? GERMANY_VIEW;
     const initialData = dataRef.current;
 
     try {
       const map = new Map({
         container: containerRef.current,
-        style: buildMapStyle(initialData.areas, initialData.tasks),
+        style: buildMapStyle(initialData.areas, initialData.tasks, navigator.onLine),
         center: initialCamera.center,
         zoom: initialCamera.zoom,
         bearing: initialCamera.bearing,
@@ -572,6 +666,45 @@ export function MapView({
         validateStyle: import.meta.env.DEV,
       });
       mapRef.current = map;
+
+      const refreshOfflineContext = async () => {
+        try {
+          const stored = await browserOfflineMapRepository.load(campaignId);
+          if (!active) return;
+          const pkg = stored?.package ?? null;
+          const online = navigator.onLine;
+          setOfflineContextActive(!online && Boolean(pkg));
+          if (map.isStyleLoaded()) syncOfflineMapData(map, pkg, online);
+        } catch (cause) {
+          console.warn("Prepared offline map could not be loaded", cause);
+          if (!active) return;
+          setOfflineContextActive(false);
+          if (map.isStyleLoaded()) syncOfflineMapData(map, null, navigator.onLine);
+        }
+      };
+
+      const handleConnectivityChange = () => {
+        void refreshOfflineContext();
+      };
+      const handleOfflineMapChanged = (event: Event) => {
+        const detail = (event as CustomEvent<{ campaignId?: string }>).detail;
+        if (detail?.campaignId && detail.campaignId !== campaignId) return;
+        void refreshOfflineContext();
+      };
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "visible") void refreshOfflineContext();
+      };
+
+      window.addEventListener("online", handleConnectivityChange);
+      window.addEventListener("offline", handleConnectivityChange);
+      window.addEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      cleanupListeners = () => {
+        window.removeEventListener("online", handleConnectivityChange);
+        window.removeEventListener("offline", handleConnectivityChange);
+        window.removeEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      };
 
       const persistCamera = () => {
         if (suppressNextCameraSaveRef.current) {
@@ -595,6 +728,7 @@ export function MapView({
         if (!active) return;
         const current = dataRef.current;
         syncApplicationData(map, current.areas, current.tasks, current.selectedTaskId);
+        void refreshOfflineContext();
         updateActiveOverlay(map);
         updateRendererDiagnostics(map);
       });
@@ -685,6 +819,7 @@ export function MapView({
 
     return () => {
       active = false;
+      cleanupListeners();
       if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
@@ -836,6 +971,12 @@ export function MapView({
             </>
           ) : null}
         </svg>
+      ) : null}
+
+      {offlineContextActive ? (
+        <div className="offline-map-context-badge" role="status">
+          {t(language, "offlineMapArea")} · © OpenStreetMap contributors
+        </div>
       ) : null}
 
       {mode === "browse" ? (
