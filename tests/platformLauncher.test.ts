@@ -5,10 +5,12 @@ import test from "node:test";
 const shellSource = readFileSync(new URL("../src/platform/PlatformShell.tsx", import.meta.url), "utf8");
 const shellCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
 
-test("field chrome uses a 3x3 launcher glyph and compact Team context", () => {
+test("field chrome uses a bottom 3x3 launcher bar with visible Team name", () => {
   assert.match(shellSource, /Array\.from\(\{ length: 9 \}/);
   assert.match(shellSource, /className="platform-active-team"/);
+  assert.match(shellSource, /<strong>\{teamName\}<\/strong>/);
   assert.match(shellCss, /\.platform-grid-glyph\s*\{[\s\S]*grid-template-columns: repeat\(3,/);
+  assert.match(shellCss, /\.platform-field-bar\s*\{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom\) \+ 0\.55rem\);/);
   assert.match(shellCss, /\.platform-map-layer \.map-toolbar\s*\{[\s\S]*display: none;/);
 });
 
