@@ -63,6 +63,20 @@ type TaskRow = {
   updated_at: string;
 };
 
+type HouseTaskRow = {
+  id: string;
+  campaign_id: string;
+  area_id: string;
+  parent_street_task_id: string | null;
+  label: string;
+  geometry_json: string;
+  source_json: string | null;
+  status: "open" | "completed" | "later" | "not-deliverable";
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export class StoredSnapshotError extends Error {}
 
 export async function getCampaignRevision(db: D1DatabaseLike, campaignId: string) {
@@ -85,6 +99,13 @@ export async function hasTaskSourceProvenanceColumn(db: D1DatabaseLike) {
   return result.results.some((column) => column.name === "source_json");
 }
 
+export async function hasHouseTasksTable(db: D1DatabaseLike) {
+  const result = await db
+    .prepare("PRAGMA table_info(house_tasks)")
+    .all<{ name: string }>();
+  return result.results.some((column) => column.name === "id");
+}
+
 export async function loadCampaignSnapshot(
   db: D1DatabaseLike,
   campaignId: string,
@@ -101,12 +122,24 @@ export async function loadCampaignSnapshot(
 
   if (!campaign) return null;
 
-  const hasTaskSource = await hasTaskSourceProvenanceColumn(db);
+  const [hasTaskSource, hasHouses] = await Promise.all([
+    hasTaskSourceProvenanceColumn(db),
+    hasHouseTasksTable(db),
+  ]);
   const taskSelect = hasTaskSource
     ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
     : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id";
 
-  const [teamResult, areaResult, taskResult] = await Promise.all([
+  const housePromise = hasHouses
+    ? db
+        .prepare(
+          "SELECT id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json, status, completed_at, created_at, updated_at FROM house_tasks WHERE campaign_id = ? ORDER BY created_at, id",
+        )
+        .bind(campaignId)
+        .all<HouseTaskRow>()
+    : Promise.resolve({ results: [] as HouseTaskRow[] });
+
+  const [teamResult, areaResult, taskResult, houseResult] = await Promise.all([
     db
       .prepare(
         "SELECT id, campaign_id, name, color, created_at, updated_at FROM teams WHERE campaign_id = ? ORDER BY created_at, id",
@@ -120,6 +153,7 @@ export async function loadCampaignSnapshot(
       .bind(campaignId)
       .all<AreaRow>(),
     db.prepare(taskSelect).bind(campaignId).all<TaskRow>(),
+    housePromise,
   ]);
 
   const hasDefaultMapView =
@@ -175,6 +209,24 @@ export async function loadCampaignSnapshot(
         createdAt: task.created_at,
         updatedAt: task.updated_at,
       })),
+      ...(hasHouses
+        ? {
+            houseTasks: houseResult.results.map((task) => ({
+              id: task.id,
+              campaignId: task.campaign_id,
+              areaId: task.area_id,
+              taskType: "house" as const,
+              label: task.label,
+              geometry: JSON.parse(task.geometry_json),
+              ...(task.source_json ? { source: JSON.parse(task.source_json) } : {}),
+              parentStreetTaskId: task.parent_street_task_id,
+              status: task.status,
+              completedAt: task.completed_at,
+              createdAt: task.created_at,
+              updatedAt: task.updated_at,
+            })),
+          }
+        : {}),
     };
   } catch {
     throw new StoredSnapshotError("Stored campaign geometry or Task provenance is not valid JSON.");
@@ -271,6 +323,34 @@ function tasksBulkInsert(
     .bind(JSON.stringify(snapshot.tasks), snapshot.campaign.id, writeToken);
 }
 
+function houseTasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
+  return db
+    .prepare(
+      `INSERT INTO house_tasks (
+         id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
+         status, completed_at, created_at, updated_at
+       )
+       SELECT
+         json_extract(value, '$.id'),
+         json_extract(value, '$.campaignId'),
+         json_extract(value, '$.areaId'),
+         json_extract(value, '$.parentStreetTaskId'),
+         json_extract(value, '$.label'),
+         json_extract(value, '$.geometry'),
+         CASE
+           WHEN json_type(value, '$.source') IS NULL THEN NULL
+           ELSE json_extract(value, '$.source')
+         END,
+         json_extract(value, '$.status'),
+         json_extract(value, '$.completedAt'),
+         json_extract(value, '$.createdAt'),
+         json_extract(value, '$.updatedAt')
+       FROM json_each(?)
+       WHERE ${guardExistsSql()}`,
+    )
+    .bind(JSON.stringify(snapshot.houseTasks ?? []), snapshot.campaign.id, writeToken);
+}
+
 export type ReplaceSnapshotResult =
   | { ok: true; revision: number }
   | {
@@ -284,8 +364,19 @@ export async function replaceCampaignSnapshot(
   snapshot: CampaignSnapshot,
   baseRevision: number | null,
 ): Promise<ReplaceSnapshotResult> {
-  const hasTaskSource = await hasTaskSourceProvenanceColumn(db);
+  const [hasTaskSource, hasHouses] = await Promise.all([
+    hasTaskSourceProvenanceColumn(db),
+    hasHouseTasksTable(db),
+  ]);
   if (!hasTaskSource && snapshot.tasks.some((task) => task.source)) {
+    return {
+      ok: false,
+      currentRevision:
+        baseRevision === null ? await getCampaignRevision(db, snapshot.campaign.id) : baseRevision,
+      reason: "schema_migration_required",
+    };
+  }
+  if (!hasHouses && (snapshot.houseTasks?.length ?? 0) > 0) {
     return {
       ok: false,
       currentRevision:
@@ -344,10 +435,15 @@ export async function replaceCampaignSnapshot(
             baseRevision,
           );
 
-  // Keep snapshot replacement to a constant seven D1 statements. The three child
-  // collections are passed as JSON and expanded inside SQLite via json_each().
-  const results = await db.batch([
-    claim,
+  const childStatements: D1PreparedStatement[] = [];
+  if (hasHouses) {
+    childStatements.push(
+      db
+        .prepare(`DELETE FROM house_tasks WHERE campaign_id = ? AND ${guardExistsSql()}`)
+        .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
+    );
+  }
+  childStatements.push(
     db
       .prepare(`DELETE FROM tasks WHERE campaign_id = ? AND ${guardExistsSql()}`)
       .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
@@ -360,8 +456,10 @@ export async function replaceCampaignSnapshot(
     teamsBulkInsert(db, snapshot, writeToken),
     areasBulkInsert(db, snapshot, writeToken),
     tasksBulkInsert(db, snapshot, writeToken, hasTaskSource),
-  ]);
+  );
+  if (hasHouses) childStatements.push(houseTasksBulkInsert(db, snapshot, writeToken));
 
+  const results = await db.batch([claim, ...childStatements]);
   const claimChanges = results[0]?.meta?.changes ?? 0;
 
   if (claimChanges !== 1) {
