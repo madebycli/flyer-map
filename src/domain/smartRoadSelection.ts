@@ -55,7 +55,12 @@ function adjacencyFor(roads: SmartRoadCandidate[]) {
   return adjacency;
 }
 
-function findSimplePaths(
+/**
+ * Breadth-first search returns only shortest topological paths. Longer loop-style
+ * detours are not treated as equal route candidates; users can still force an
+ * intentional detour by placing waypoints.
+ */
+function findShortestPaths(
   adjacency: Map<string, string[]>,
   startSourceId: string,
   endSourceId: string,
@@ -66,6 +71,7 @@ function findSimplePaths(
   const graphSize = Math.max(1, adjacency.size);
   const expansionLimit = Math.max(500, Math.min(10_000, graphSize * 20));
   let expansions = 0;
+  let shortestLength: number | null = null;
 
   while (queue.length > 0 && paths.length < pathLimit) {
     if (expansions >= expansionLimit) {
@@ -75,12 +81,17 @@ function findSimplePaths(
 
     const path = queue.shift();
     if (!path) break;
-    const current = path[path.length - 1];
 
+    if (shortestLength !== null && path.length > shortestLength) break;
+
+    const current = path[path.length - 1];
     if (current === endSourceId) {
+      shortestLength ??= path.length;
       paths.push(path);
       continue;
     }
+
+    if (shortestLength !== null) continue;
 
     for (const neighbor of adjacency.get(current) ?? []) {
       if (path.includes(neighbor)) continue;
@@ -98,9 +109,9 @@ function knownSourceIds(roads: SmartRoadCandidate[]) {
 /**
  * Resolve the detailed Street range between two clicked OSM source segments.
  *
- * Street names are deliberately ignored. If the road graph offers more than one
- * simple route between the anchors, the result is ambiguous and the UI must ask
- * the user to choose a route or add a waypoint instead of guessing.
+ * Street names are deliberately ignored. A single shortest topological route is
+ * selected. If multiple equally short routes exist, the result is ambiguous and
+ * the UI must ask the user to choose a route or add waypoints instead of guessing.
  */
 export function selectSmartRoadRange(
   roads: SmartRoadCandidate[],
@@ -115,7 +126,7 @@ export function selectSmartRoadRange(
     return { state: "selected", sourceIds: [startSourceId] };
   }
 
-  const search = findSimplePaths(adjacencyFor(roads), startSourceId, endSourceId, 2);
+  const search = findShortestPaths(adjacencyFor(roads), startSourceId, endSourceId, 2);
   if (search.paths.length === 0 && !search.truncated) {
     return { state: "disconnected", sourceIds: [] };
   }
@@ -126,8 +137,8 @@ export function selectSmartRoadRange(
 }
 
 /**
- * Return a small set of concrete route candidates for an ambiguous start/end pair.
- * This is presentation help only. Returning the list does not pick a route.
+ * Return a small set of equally-short route candidates for an ambiguous pair.
+ * Returning candidates never selects one automatically.
  */
 export function smartRoadRouteOptions(
   roads: SmartRoadCandidate[],
@@ -140,15 +151,15 @@ export function smartRoadRouteOptions(
   if (!sourceIds.has(startSourceId) || !sourceIds.has(endSourceId)) return [];
   if (startSourceId === endSourceId) return [{ sourceIds: [startSourceId] }];
 
-  return findSimplePaths(adjacencyFor(roads), startSourceId, endSourceId, limit).paths.map(
+  return findShortestPaths(adjacencyFor(roads), startSourceId, endSourceId, limit).paths.map(
     (sourceIdsForRoute) => ({ sourceIds: sourceIdsForRoute }),
   );
 }
 
 /**
  * Resolve a start/end selection through explicit user-selected waypoint segments.
- * Each leg still has to be unambiguous. The caller can add another waypoint when
- * one leg remains ambiguous.
+ * Each leg uses the same shortest-path ambiguity rule. Adding waypoints can force
+ * an intentional route or detour without relying on road names.
  */
 export function selectSmartRoadRangeViaWaypoints(
   roads: SmartRoadCandidate[],
