@@ -1,10 +1,19 @@
 import { useState } from "react";
 import { ActionTemplatePanel } from "../admin/ActionTemplatePanel.tsx";
+import {
+  AdminActionComparisonPanel,
+  type AdminActionComparisonOption,
+} from "../admin/AdminActionComparisonPanel.tsx";
 import { AdminAnalyticsExportPanel } from "../admin/AdminAnalyticsExportPanel.tsx";
 import { NewActionWizard } from "../admin/NewActionWizard.tsx";
 import type { ActionTemplateBlueprint } from "../domain/actionTemplate.ts";
 import {
+  buildAdminActionSeriesExport,
+  type AdminActionSeriesExportPackage,
+} from "../domain/adminActionSeriesExport.ts";
+import {
   buildAdminAnalyticsExport,
+  type AdminAnalyticsExportInput,
   type AdminAnalyticsExportPackage,
 } from "../domain/adminAnalyticsExport.ts";
 import type { NewActionSetupDraft } from "../domain/newActionSetup.ts";
@@ -93,83 +102,173 @@ const COLLECTION_TEMPLATE: ActionTemplateBlueprint = {
   roadSections: [],
 };
 
+const PREVIEW_ANALYTICS_ACTIONS: Array<{
+  id: string;
+  detail: string;
+  input: AdminAnalyticsExportInput;
+}> = [
+  {
+    id: "spring-2026",
+    detail: "ältere Vergleichsrunde",
+    input: {
+      actionName: "Frühjahr 2026 Flyer-Verteilung",
+      templateName: DISTRIBUTION_TEMPLATE.name,
+      mode: "distribution",
+      generatedAt: "2026-04-18T18:00:00.000Z",
+      teams: [
+        {
+          teamLabel: "Orange",
+          distribution: { total: 78, completed: 68, open: 4, later: 4, notDeliverable: 2 },
+          pickupTotal: 0,
+          pickupCollected: 0,
+          sessionCount: 4,
+          personMinutes: 990,
+        },
+        {
+          teamLabel: "Blau",
+          distribution: { total: 56, completed: 54, open: 1, later: 1, notDeliverable: 0 },
+          pickupTotal: 0,
+          pickupCollected: 0,
+          sessionCount: 3,
+          personMinutes: 610,
+        },
+      ],
+      areas: [
+        {
+          areaLabel: "Nord",
+          teamLabel: "Orange",
+          distribution: { total: 78, completed: 68, open: 4, later: 4, notDeliverable: 2 },
+          pickupTotal: 0,
+          pickupCollected: 0,
+        },
+        {
+          areaLabel: "Süd",
+          teamLabel: "Blau",
+          distribution: { total: 56, completed: 54, open: 1, later: 1, notDeliverable: 0 },
+          pickupTotal: 0,
+          pickupCollected: 0,
+        },
+      ],
+      sessions: [
+        {
+          startedAt: "2026-04-09T09:00:00.000Z",
+          mode: "distribution",
+          teamLabel: "Orange",
+          durationMinutes: 165,
+          participantCount: 3,
+          personMinutes: 495,
+          affectedTaskCount: 35,
+        },
+      ],
+      events: [
+        {
+          occurredAt: "2026-04-09T11:20:00.000Z",
+          eventType: "task-marked-later",
+          teamLabel: "Orange",
+          areaLabel: "Nord",
+          outcomeCode: "access-problem",
+        },
+      ],
+    },
+  },
+  {
+    id: "spring-2027",
+    detail: "aktuelle Beispielrunde",
+    input: {
+      actionName: "Frühjahr 2027 Flyer-Verteilung",
+      templateName: DISTRIBUTION_TEMPLATE.name,
+      mode: "distribution",
+      generatedAt: "2027-04-21T18:30:00.000Z",
+      teams: [
+        {
+          teamLabel: "Orange",
+          distribution: { total: 82, completed: 76, open: 2, later: 3, notDeliverable: 1 },
+          pickupTotal: 0,
+          pickupCollected: 0,
+          sessionCount: 3,
+          personMinutes: 810,
+        },
+        {
+          teamLabel: "Blau",
+          distribution: { total: 58, completed: 58, open: 0, later: 0, notDeliverable: 0 },
+          pickupTotal: 0,
+          pickupCollected: 0,
+          sessionCount: 2,
+          personMinutes: 430,
+        },
+      ],
+      areas: [
+        {
+          areaLabel: "Nord",
+          teamLabel: "Orange",
+          distribution: { total: 82, completed: 76, open: 2, later: 3, notDeliverable: 1 },
+          pickupTotal: 0,
+          pickupCollected: 0,
+        },
+        {
+          areaLabel: "Süd",
+          teamLabel: "Blau",
+          distribution: { total: 58, completed: 58, open: 0, later: 0, notDeliverable: 0 },
+          pickupTotal: 0,
+          pickupCollected: 0,
+        },
+      ],
+      sessions: [
+        {
+          startedAt: "2027-04-10T09:00:00.000Z",
+          mode: "distribution",
+          teamLabel: "Orange",
+          durationMinutes: 150,
+          participantCount: 3,
+          personMinutes: 450,
+          affectedTaskCount: 41,
+        },
+        {
+          startedAt: "2027-04-11T09:15:00.000Z",
+          mode: "distribution",
+          teamLabel: "Blau",
+          durationMinutes: 110,
+          participantCount: 2,
+          personMinutes: 220,
+          affectedTaskCount: 37,
+        },
+      ],
+      events: [
+        {
+          occurredAt: "2027-04-10T11:10:00.000Z",
+          eventType: "task-marked-later",
+          teamLabel: "Orange",
+          areaLabel: "Nord",
+          outcomeCode: "access-problem",
+        },
+        {
+          occurredAt: "2027-04-11T10:45:00.000Z",
+          eventType: "area-completed",
+          teamLabel: "Blau",
+          areaLabel: "Süd",
+          outcomeCode: "completed",
+        },
+      ],
+    },
+  },
+];
+
+const COMPARISON_OPTIONS: AdminActionComparisonOption[] = PREVIEW_ANALYTICS_ACTIONS.map((action) => ({
+  id: action.id,
+  label: action.input.actionName,
+  detail: action.detail,
+}));
+
 function buildPreviewAnalyticsPackage() {
-  return buildAdminAnalyticsExport({
-    actionName: "Frühjahr 2027 Flyer-Verteilung",
-    templateName: DISTRIBUTION_TEMPLATE.name,
-    mode: "distribution",
-    generatedAt: "2027-04-21T18:30:00.000Z",
-    teams: [
-      {
-        teamLabel: "Orange",
-        distribution: { total: 82, completed: 76, open: 2, later: 3, notDeliverable: 1 },
-        pickupTotal: 0,
-        pickupCollected: 0,
-        sessionCount: 3,
-        personMinutes: 810,
-      },
-      {
-        teamLabel: "Blau",
-        distribution: { total: 58, completed: 58, open: 0, later: 0, notDeliverable: 0 },
-        pickupTotal: 0,
-        pickupCollected: 0,
-        sessionCount: 2,
-        personMinutes: 430,
-      },
-    ],
-    areas: [
-      {
-        areaLabel: "Nord",
-        teamLabel: "Orange",
-        distribution: { total: 82, completed: 76, open: 2, later: 3, notDeliverable: 1 },
-        pickupTotal: 0,
-        pickupCollected: 0,
-      },
-      {
-        areaLabel: "Süd",
-        teamLabel: "Blau",
-        distribution: { total: 58, completed: 58, open: 0, later: 0, notDeliverable: 0 },
-        pickupTotal: 0,
-        pickupCollected: 0,
-      },
-    ],
-    sessions: [
-      {
-        startedAt: "2027-04-10T09:00:00.000Z",
-        mode: "distribution",
-        teamLabel: "Orange",
-        durationMinutes: 150,
-        participantCount: 3,
-        personMinutes: 450,
-        affectedTaskCount: 41,
-      },
-      {
-        startedAt: "2027-04-11T09:15:00.000Z",
-        mode: "distribution",
-        teamLabel: "Blau",
-        durationMinutes: 110,
-        participantCount: 2,
-        personMinutes: 220,
-        affectedTaskCount: 37,
-      },
-    ],
-    events: [
-      {
-        occurredAt: "2027-04-10T11:10:00.000Z",
-        eventType: "task-marked-later",
-        teamLabel: "Orange",
-        areaLabel: "Nord",
-        outcomeCode: "access-problem",
-      },
-      {
-        occurredAt: "2027-04-11T10:45:00.000Z",
-        eventType: "area-completed",
-        teamLabel: "Blau",
-        areaLabel: "Süd",
-        outcomeCode: "completed",
-      },
-    ],
+  return buildAdminAnalyticsExport(PREVIEW_ANALYTICS_ACTIONS.at(-1)!.input);
+}
+
+function buildPreviewComparison(selectedActionIds: string[]) {
+  const selected = selectedActionIds.flatMap((id) => {
+    const action = PREVIEW_ANALYTICS_ACTIONS.find((candidate) => candidate.id === id);
+    return action ? [action.input] : [];
   });
+  return buildAdminActionSeriesExport(selected);
 }
 
 function downloadPreviewFile(fileName: string, content: string) {
@@ -190,6 +289,7 @@ export function ActionWorkbenchPreview() {
     COLLECTION_TEMPLATE,
   ]);
   const [exportPackage, setExportPackage] = useState<AdminAnalyticsExportPackage | null>(null);
+  const [comparisonPackage, setComparisonPackage] = useState<AdminActionSeriesExportPackage | null>(null);
   const [message, setMessage] = useState(
     "Nur lokale Vorschau. Neue Aktionen, Vorlagen und Analysepakete werden nicht serverseitig gespeichert.",
   );
@@ -267,15 +367,37 @@ export function ActionWorkbenchPreview() {
 
         {exportPackage ? (
           <div className="action-workbench-preview__downloads">
-            <strong>Vorbereitete Dateien</strong>
+            <strong>Vorbereitete Einzelaktions-Dateien</strong>
             <p>Fake-Daten aus dem Workbench, keine echten Campaign-Daten.</p>
             <div>
               {Object.entries(exportPackage.files).map(([fileName, content]) => (
-                <button
-                  type="button"
-                  key={fileName}
-                  onClick={() => downloadPreviewFile(fileName, content)}
-                >
+                <button type="button" key={fileName} onClick={() => downloadPreviewFile(fileName, content)}>
+                  {fileName} herunterladen
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="action-workbench-preview__comparison">
+        <AdminActionComparisonPanel
+          authorized
+          actions={COMPARISON_OPTIONS}
+          onPrepareComparison={buildPreviewComparison}
+          onComparisonReady={(pkg) => {
+            setComparisonPackage(pkg);
+            setMessage("Lokales Vergleichspaket über mehrere Aktionen vorbereitet.");
+          }}
+        />
+
+        {comparisonPackage ? (
+          <div className="action-workbench-preview__downloads">
+            <strong>Vorbereitete Vergleichs-Dateien</strong>
+            <p>Nur Beispielwerte. Die AI soll Trends erklären, nicht Teams pauschal bewerten.</p>
+            <div>
+              {Object.entries(comparisonPackage.files).map(([fileName, content]) => (
+                <button type="button" key={fileName} onClick={() => downloadPreviewFile(fileName, content)}>
                   {fileName} herunterladen
                 </button>
               ))}
