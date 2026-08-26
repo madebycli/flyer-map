@@ -519,8 +519,7 @@ export default {
     if (db && url.pathname === "/api/campaigns" && request.method === "POST") {
       try {
         return await createCampaign(request, db);
-      } catch (error) {
-        console.error("campaign_create_error", error);
+      } catch {
         return errorResponse(500, "internal_error", "Campaign konnte nicht erstellt werden.");
       }
     }
@@ -555,8 +554,7 @@ export default {
           { access: publicAccess(redeemed.access) },
           { headers: { "set-cookie": sessionCookie(redeemed.sessionSecret) } },
         );
-      } catch (error) {
-        console.error("access_redeem_error", error);
+      } catch {
         return errorResponse(
           500,
           "internal_error",
@@ -589,8 +587,7 @@ export default {
     if (db && url.pathname === "/api/admin/bootstrap" && request.method === "POST") {
       try {
         return await bootstrapCampaign(request, env, db);
-      } catch (error) {
-        console.error("bootstrap_error", error);
+      } catch {
         return errorResponse(
           500,
           "internal_error",
@@ -602,8 +599,7 @@ export default {
     if (db && url.pathname === "/api/admin/recover" && request.method === "POST") {
       try {
         return await recoverCampaignAdmin(request, env, db);
-      } catch (error) {
-        console.error("admin_recovery_error", error);
+      } catch {
         return errorResponse(
           500,
           "internal_error",
@@ -622,8 +618,7 @@ export default {
             accessManagement.campaignId,
             accessManagement.grantId,
           );
-        } catch (error) {
-          console.error("access_management_error", error);
+        } catch {
           return errorResponse(
             500,
             "internal_error",
@@ -643,7 +638,6 @@ export default {
         if (error instanceof StoredSnapshotError) {
           return errorResponse(500, "stored_snapshot_invalid", error.message);
         }
-        console.error("campaign_mutation_error", error);
         return errorResponse(500, "internal_error", "Mutation konnte nicht verarbeitet werden.");
       }
     }
@@ -696,7 +690,6 @@ export default {
         if (error instanceof StoredSnapshotError) {
           return errorResponse(500, "stored_snapshot_invalid", error.message);
         }
-        console.error("campaign_api_error", error);
         return errorResponse(
           500,
           "internal_error",
