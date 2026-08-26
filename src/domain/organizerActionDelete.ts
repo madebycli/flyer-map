@@ -12,7 +12,7 @@ export type ActionDeleteReadiness =
 
 function validAction(candidate: ActionDeleteCandidate) {
   return (
-    /^campaign_[0-9a-f-]{8,}$/iu.test(candidate.actionId) &&
+    /^campaign_[A-Za-z0-9_-]{6,160}$/u.test(candidate.actionId) &&
     candidate.actionName.trim().length > 0 &&
     candidate.actionName.length <= 200
   );
