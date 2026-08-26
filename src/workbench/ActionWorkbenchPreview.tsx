@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { ActionTemplatePanel } from "../admin/ActionTemplatePanel.tsx";
+import { AdminAnalyticsExportPanel } from "../admin/AdminAnalyticsExportPanel.tsx";
 import { NewActionWizard } from "../admin/NewActionWizard.tsx";
 import type { ActionTemplateBlueprint } from "../domain/actionTemplate.ts";
+import {
+  buildAdminAnalyticsExport,
+  type AdminAnalyticsExportPackage,
+} from "../domain/adminAnalyticsExport.ts";
 import type { NewActionSetupDraft } from "../domain/newActionSetup.ts";
 import "./action-workbench-preview.css";
 
@@ -88,13 +93,105 @@ const COLLECTION_TEMPLATE: ActionTemplateBlueprint = {
   roadSections: [],
 };
 
+function buildPreviewAnalyticsPackage() {
+  return buildAdminAnalyticsExport({
+    actionName: "Frühjahr 2027 Flyer-Verteilung",
+    templateName: DISTRIBUTION_TEMPLATE.name,
+    mode: "distribution",
+    generatedAt: "2027-04-21T18:30:00.000Z",
+    teams: [
+      {
+        teamLabel: "Orange",
+        distribution: { total: 82, completed: 76, open: 2, later: 3, notDeliverable: 1 },
+        pickupTotal: 0,
+        pickupCollected: 0,
+        sessionCount: 3,
+        personMinutes: 810,
+      },
+      {
+        teamLabel: "Blau",
+        distribution: { total: 58, completed: 58, open: 0, later: 0, notDeliverable: 0 },
+        pickupTotal: 0,
+        pickupCollected: 0,
+        sessionCount: 2,
+        personMinutes: 430,
+      },
+    ],
+    areas: [
+      {
+        areaLabel: "Nord",
+        teamLabel: "Orange",
+        distribution: { total: 82, completed: 76, open: 2, later: 3, notDeliverable: 1 },
+        pickupTotal: 0,
+        pickupCollected: 0,
+      },
+      {
+        areaLabel: "Süd",
+        teamLabel: "Blau",
+        distribution: { total: 58, completed: 58, open: 0, later: 0, notDeliverable: 0 },
+        pickupTotal: 0,
+        pickupCollected: 0,
+      },
+    ],
+    sessions: [
+      {
+        startedAt: "2027-04-10T09:00:00.000Z",
+        mode: "distribution",
+        teamLabel: "Orange",
+        durationMinutes: 150,
+        participantCount: 3,
+        personMinutes: 450,
+        affectedTaskCount: 41,
+      },
+      {
+        startedAt: "2027-04-11T09:15:00.000Z",
+        mode: "distribution",
+        teamLabel: "Blau",
+        durationMinutes: 110,
+        participantCount: 2,
+        personMinutes: 220,
+        affectedTaskCount: 37,
+      },
+    ],
+    events: [
+      {
+        occurredAt: "2027-04-10T11:10:00.000Z",
+        eventType: "task-marked-later",
+        teamLabel: "Orange",
+        areaLabel: "Nord",
+        outcomeCode: "access-problem",
+      },
+      {
+        occurredAt: "2027-04-11T10:45:00.000Z",
+        eventType: "area-completed",
+        teamLabel: "Blau",
+        areaLabel: "Süd",
+        outcomeCode: "completed",
+      },
+    ],
+  });
+}
+
+function downloadPreviewFile(fileName: string, content: string) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function ActionWorkbenchPreview() {
   const [templates, setTemplates] = useState<ActionTemplateBlueprint[]>([
     DISTRIBUTION_TEMPLATE,
     COLLECTION_TEMPLATE,
   ]);
+  const [exportPackage, setExportPackage] = useState<AdminAnalyticsExportPackage | null>(null);
   const [message, setMessage] = useState(
-    "Nur lokale Vorschau. Neue Aktionen und importierte Vorlagen werden nicht gespeichert.",
+    "Nur lokale Vorschau. Neue Aktionen, Vorlagen und Analysepakete werden nicht serverseitig gespeichert.",
   );
 
   const addImportedTemplate = (template: ActionTemplateBlueprint) => {
@@ -115,7 +212,7 @@ export function ActionWorkbenchPreview() {
       <header className="action-workbench-preview__header">
         <div>
           <span>Experimenteller Workbench</span>
-          <strong>Vorlagen & neue Aktion</strong>
+          <strong>Vorlagen, neue Aktion & Analyse</strong>
           <p>Verteilung und Abholung bleiben getrennte Planungen mit frischem Zustand.</p>
         </div>
         <a href="?">Normale App</a>
@@ -155,6 +252,36 @@ export function ActionWorkbenchPreview() {
           Die Abholvorlage besitzt eigene Auto-Teams und eigene kleinere Gebiete. Sie übernimmt nicht,
           welche Flyer-Gruppe vorher welches Verteilgebiet hatte.
         </p>
+      </section>
+
+      <section className="action-workbench-preview__analytics">
+        <AdminAnalyticsExportPanel
+          authorized
+          actionLabel="Frühjahr 2027 Flyer-Verteilung"
+          onPrepareExport={buildPreviewAnalyticsPackage}
+          onExportReady={(pkg) => {
+            setExportPackage(pkg);
+            setMessage("Lokales Analysepaket vorbereitet. Die Dateien können einzeln heruntergeladen werden.");
+          }}
+        />
+
+        {exportPackage ? (
+          <div className="action-workbench-preview__downloads">
+            <strong>Vorbereitete Dateien</strong>
+            <p>Fake-Daten aus dem Workbench, keine echten Campaign-Daten.</p>
+            <div>
+              {Object.entries(exportPackage.files).map(([fileName, content]) => (
+                <button
+                  type="button"
+                  key={fileName}
+                  onClick={() => downloadPreviewFile(fileName, content)}
+                >
+                  {fileName} herunterladen
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );
