@@ -9,7 +9,8 @@
 .action-workbench-preview__message,
 .action-workbench-preview__grid,
 .action-workbench-preview__note,
-.action-workbench-preview__analytics {
+.action-workbench-preview__analytics,
+.action-workbench-preview__comparison {
   width: min(100%, 76rem);
   margin-inline: auto;
 }
@@ -82,7 +83,8 @@
 
 .action-workbench-preview__template-card,
 .action-workbench-preview__note,
-.action-workbench-preview__analytics {
+.action-workbench-preview__analytics,
+.action-workbench-preview__comparison {
   padding: 1rem;
   border: 1px solid #d8e0db;
   border-radius: 1rem;
@@ -95,11 +97,13 @@
   margin-bottom: 1rem;
 }
 
-.action-workbench-preview__analytics {
+.action-workbench-preview__analytics,
+.action-workbench-preview__comparison {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.8fr);
   gap: 1rem;
   align-items: start;
+  margin-bottom: 1rem;
 }
 
 .action-workbench-preview__analytics > .admin-analytics-export {
@@ -142,7 +146,8 @@
 
 @media (max-width: 900px) {
   .action-workbench-preview__grid,
-  .action-workbench-preview__analytics {
+  .action-workbench-preview__analytics,
+  .action-workbench-preview__comparison {
     grid-template-columns: 1fr;
   }
 }
