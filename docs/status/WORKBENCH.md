@@ -21,7 +21,7 @@ Experimental non-main work only. Nothing here declares shipped `main` behavior.
 ## Prepared offline map
 
 - PR #28: Plan 011 Settings download/update/delete UX, unmerged.
-- PR #29: offline prepared OSM MapLibre context plus neutral progress/M6 foundations, unmerged.
+- PR #29: offline prepared OSM MapLibre context plus neutral progress/M6 foundations, unmerged; current head passed CI #447.
 - real phone/browser acceptance is still required before Plan 011 completion.
 
 ## Smart Streets / Houses
@@ -59,15 +59,21 @@ Still blocked before M6 persistence:
 - newly created preview groups deliberately have no real join availability until a future server credential exists.
 - ADR-0014: valid room code/QR may bootstrap temporary Field-Group/Team-scoped access without prior Campaign access.
 - temporary access never becomes Admin/Organizer authority.
+- one Field Group represents exactly one tour and normally ends through explicit manual close.
+- manual close invalidates future Room-Code/QR joining immediately.
+- a still-open group and its temporary join credentials expire no later than 24 hours after original creation; rotation must not extend that hard maximum.
+- `expired` is the safety fallback, not the normal lifecycle.
+- participant count may be updated during the tour and must be finalized before manual close; it feeds Field Session/person-time/statistics only and never changes permissions.
 
 Still blocked before credential runtime:
-- credential/group lifetime and rotation;
-- exact temporary member capability matrix;
-- rate-limit/revocation/brute-force tests/config.
+- credential rotation/revocation UX within the fixed 24-hour lifetime;
+- exact temporary member capability matrix and relationship to existing Campaign sessions;
+- rate-limit/revocation/brute-force/expiry tests and configuration;
+- minimal audit events without secrets.
 
 ## Organizer / Admin / Team roles
 
-- PR #47: documentation-only identity/permission/security proposals; confirmed-role head passed CI #413.
+- PR #47: documentation-only identity/permission/security proposals; current security-doc head passed CI #446.
 - PR #44: presentation-only desktop Admin/Organizer + Team-role + destructive Action workbench; preview head passed CI #423.
 - isolated preview route is `?workbench=admin`.
 
@@ -107,7 +113,8 @@ PR #49 + ADR-0018 + Plan 013 model:
 - AI prompts treat labels as untrusted data;
 - secrets/GPS/comment bodies/free Session notes/account details are excluded from initial analysis export;
 - isolated `?workbench=actions` preview combines Template import/download and New Action creation with separate fake Distribution/Collection planning;
-- current Action preview head passed CI #433.
+- current Action preview head `de331c17d855780931fbf511e23cc7e79fe83c82` passed CI #445.
+- keep the regression test that rejects/drops unknown nested Template Team/Area/Road fields; normalization must copy allowlisted fields explicitly rather than preserving object-spread extras.
 
 ## History
 
@@ -135,15 +142,15 @@ Permanent deletion storage/cascade semantics remain blocked until Action/history
 
 ## Handoff
 
-Full copy/paste context for a new ChatGPT conversation is stored in:
-- `docs/prompts/CONTINUE_WORKBENCH_2026-08-26.md`
+Full current copy/paste context for a new ChatGPT conversation is stored in:
+- `docs/prompts/CONTINUE_WORKBENCH_LATEST.md`
 
 That prompt must be updated when confirmed product architecture or major Workbench topology changes materially.
 
 ## Major open architecture/product decisions
 
 1. ADR-0013 final durable Smart Street/House identity + persisted selected geometry.
-2. Live Group credential lifetime/rotation/member capability matrix.
+2. Live Group credential rotation/revocation, temporary capability/session relationship, rate-limit and audit details. The manual-close + hard 24-hour lifetime is already confirmed.
 3. Identity/TOTP/session/recovery details under ADR-0015.
 4. Final role-template update/version and access-link migration details under ADR-0016.
 5. Template/Action/Cycle D1 representation and template-version UX under ADR-0018.
