@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "npm run build && vite preview",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --experimental-transform-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "audit:dependencies": "npm audit --audit-level=high",
     "verify": "npm test && npm run typecheck && npm run audit:dependencies",
