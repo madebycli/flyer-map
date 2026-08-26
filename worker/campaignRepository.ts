@@ -78,6 +78,13 @@ export async function campaignExists(db: D1DatabaseLike, campaignId: string) {
   return (await getCampaignRevision(db, campaignId)) !== null;
 }
 
+export async function hasTaskSourceProvenanceColumn(db: D1DatabaseLike) {
+  const result = await db
+    .prepare("PRAGMA table_info(tasks)")
+    .all<{ name: string }>();
+  return result.results.some((column) => column.name === "source_json");
+}
+
 export async function loadCampaignSnapshot(
   db: D1DatabaseLike,
   campaignId: string,
@@ -94,6 +101,11 @@ export async function loadCampaignSnapshot(
 
   if (!campaign) return null;
 
+  const hasTaskSource = await hasTaskSourceProvenanceColumn(db);
+  const taskSelect = hasTaskSource
+    ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
+    : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id";
+
   const [teamResult, areaResult, taskResult] = await Promise.all([
     db
       .prepare(
@@ -107,12 +119,7 @@ export async function loadCampaignSnapshot(
       )
       .bind(campaignId)
       .all<AreaRow>(),
-    db
-      .prepare(
-        "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id",
-      )
-      .bind(campaignId)
-      .all<TaskRow>(),
+    db.prepare(taskSelect).bind(campaignId).all<TaskRow>(),
   ]);
 
   const hasDefaultMapView =
@@ -213,10 +220,14 @@ function areasBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeTo
     .bind(JSON.stringify(snapshot.areas), snapshot.campaign.id, writeToken);
 }
 
-function tasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
-  return db
-    .prepare(
-      `INSERT INTO tasks (
+function tasksBulkInsert(
+  db: D1DatabaseLike,
+  snapshot: CampaignSnapshot,
+  writeToken: string,
+  hasTaskSource: boolean,
+) {
+  const query = hasTaskSource
+    ? `INSERT INTO tasks (
          id, campaign_id, area_id, task_type, label, geometry_json, source_json,
          status, completed_at, created_at, updated_at
        )
@@ -236,20 +247,53 @@ function tasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeTo
          json_extract(value, '$.createdAt'),
          json_extract(value, '$.updatedAt')
        FROM json_each(?)
-       WHERE ${guardExistsSql()}`,
-    )
+       WHERE ${guardExistsSql()}`
+    : `INSERT INTO tasks (
+         id, campaign_id, area_id, task_type, label, geometry_json,
+         status, completed_at, created_at, updated_at
+       )
+       SELECT
+         json_extract(value, '$.id'),
+         json_extract(value, '$.campaignId'),
+         json_extract(value, '$.areaId'),
+         json_extract(value, '$.taskType'),
+         json_extract(value, '$.label'),
+         json_extract(value, '$.geometry'),
+         json_extract(value, '$.status'),
+         json_extract(value, '$.completedAt'),
+         json_extract(value, '$.createdAt'),
+         json_extract(value, '$.updatedAt')
+       FROM json_each(?)
+       WHERE ${guardExistsSql()}`;
+
+  return db
+    .prepare(query)
     .bind(JSON.stringify(snapshot.tasks), snapshot.campaign.id, writeToken);
 }
 
 export type ReplaceSnapshotResult =
   | { ok: true; revision: number }
-  | { ok: false; currentRevision: number | null };
+  | {
+      ok: false;
+      currentRevision: number | null;
+      reason?: "revision_conflict" | "schema_migration_required";
+    };
 
 export async function replaceCampaignSnapshot(
   db: D1DatabaseLike,
   snapshot: CampaignSnapshot,
   baseRevision: number | null,
 ): Promise<ReplaceSnapshotResult> {
+  const hasTaskSource = await hasTaskSourceProvenanceColumn(db);
+  if (!hasTaskSource && snapshot.tasks.some((task) => task.source)) {
+    return {
+      ok: false,
+      currentRevision:
+        baseRevision === null ? await getCampaignRevision(db, snapshot.campaign.id) : baseRevision,
+      reason: "schema_migration_required",
+    };
+  }
+
   const writeToken = crypto.randomUUID();
   const nextRevision = baseRevision === null ? snapshot.revision : baseRevision + 1;
   const mapView = snapshot.campaign.defaultMapView;
@@ -315,7 +359,7 @@ export async function replaceCampaignSnapshot(
       .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
     teamsBulkInsert(db, snapshot, writeToken),
     areasBulkInsert(db, snapshot, writeToken),
-    tasksBulkInsert(db, snapshot, writeToken),
+    tasksBulkInsert(db, snapshot, writeToken, hasTaskSource),
   ]);
 
   const claimChanges = results[0]?.meta?.changes ?? 0;
@@ -324,6 +368,7 @@ export async function replaceCampaignSnapshot(
     return {
       ok: false,
       currentRevision: await getCampaignRevision(db, snapshot.campaign.id),
+      reason: "revision_conflict",
     };
   }
 
