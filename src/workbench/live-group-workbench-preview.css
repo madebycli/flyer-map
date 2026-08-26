@@ -1,0 +1,118 @@
+.live-group-workbench-preview {
+  min-height: 100dvh;
+  padding: 1rem;
+  color: #1f2937;
+  background: #f5f7f6;
+}
+
+.live-group-workbench-preview__header,
+.live-group-workbench-preview__message,
+.live-group-workbench-preview__grid,
+.live-group-workbench-preview__tour,
+.live-group-workbench-preview__policy {
+  width: min(100%, 70rem);
+  margin-inline: auto;
+}
+
+.live-group-workbench-preview__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #d8e0db;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.live-group-workbench-preview__header > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.live-group-workbench-preview__header span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.live-group-workbench-preview__header strong {
+  font-size: 1.1rem;
+}
+
+.live-group-workbench-preview__header p,
+.live-group-workbench-preview__policy p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.live-group-workbench-preview__header a {
+  min-height: 2.65rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #d4ddd6;
+  border-radius: 0.8rem;
+  color: #294130;
+  background: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.live-group-workbench-preview__message {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.8rem;
+  background: #eef5ff;
+  color: #35506f;
+  font-size: 0.8rem;
+}
+
+.live-group-workbench-preview__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.live-group-workbench-preview__tour {
+  margin-bottom: 1rem;
+}
+
+.live-group-workbench-preview__list-card,
+.live-group-workbench-preview__policy {
+  padding: 1rem;
+  border: 1px solid #d8e0db;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.live-group-workbench-preview__policy {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.live-group-workbench-preview__header a:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media (max-width: 820px) {
+  .live-group-workbench-preview__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .live-group-workbench-preview {
+    padding: 0.7rem;
+  }
+
+  .live-group-workbench-preview__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
