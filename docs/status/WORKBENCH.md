@@ -21,7 +21,7 @@ Experimental non-main work only. Nothing here declares shipped `main` behavior.
 ## Prepared offline map
 
 - PR #28: Plan 011 Settings download/update/delete UX, unmerged.
-- PR #29: offline prepared OSM MapLibre context plus neutral progress/M6 foundations, unmerged; current head passed CI #447.
+- PR #29: offline prepared OSM MapLibre context plus neutral progress/M6 foundations, unmerged; feature head passed CI #447 and the following documentation-only status sync passed CI #448.
 - real phone/browser acceptance is still required before Plan 011 completion.
 
 ## Smart Streets / Houses
@@ -51,6 +51,7 @@ Still blocked before M6 persistence:
 ## Live Field Groups
 
 - PR #48: local creation + Campaign/action online-group discovery, final head passed CI #434.
+- PR #50: stacked tour-lifecycle/participant-count Workbench on PR #48; current head `8f21c24b903342c657ac5a2d76190bcb6f79eeb0` passed CI #452.
 - isolated preview route is `?workbench=groups`.
 - default list is `Alle in der Aktion`, optional Team filter.
 - new groups default `online anzeigen = an`.
@@ -62,8 +63,10 @@ Still blocked before M6 persistence:
 - one Field Group represents exactly one tour and normally ends through explicit manual close.
 - manual close invalidates future Room-Code/QR joining immediately.
 - a still-open group and its temporary join credentials expire no later than 24 hours after original creation; rotation must not extend that hard maximum.
+- Workbench lifecycle re-derives the hard expiry from original `createdAt`, so a later stored expiry cannot extend the 24-hour group lifetime.
 - `expired` is the safety fallback, not the normal lifecycle.
 - participant count may be updated during the tour and must be finalized before manual close; it feeds Field Session/person-time/statistics only and never changes permissions.
+- manual close in the Workbench derives a local Field Session duration/person-time summary without credential or persistence runtime.
 
 Still blocked before credential runtime:
 - credential rotation/revocation UX within the fixed 24-hour lifetime;
@@ -113,8 +116,8 @@ PR #49 + ADR-0018 + Plan 013 model:
 - AI prompts treat labels as untrusted data;
 - secrets/GPS/comment bodies/free Session notes/account details are excluded from initial analysis export;
 - isolated `?workbench=actions` preview combines Template import/download and New Action creation with separate fake Distribution/Collection planning;
-- current Action preview head `de331c17d855780931fbf511e23cc7e79fe83c82` passed CI #445.
-- keep the regression test that rejects/drops unknown nested Template Team/Area/Road fields; normalization must copy allowlisted fields explicitly rather than preserving object-spread extras.
+- current Action preview head `6f9b952e1081698a18f700b4781acca797b6ef3d` passed CI #453.
+- keep the regression test that rejects/drops unknown nested Template Team/Area/Road fields; the test now explicitly covers all three object levels and normalization copies allowlisted fields rather than preserving object-spread extras.
 
 ## History
 
@@ -145,7 +148,7 @@ Permanent deletion storage/cascade semantics remain blocked until Action/history
 Full current copy/paste context for a new ChatGPT conversation is stored in:
 - `docs/prompts/CONTINUE_WORKBENCH_LATEST.md`
 
-That prompt must be updated when confirmed product architecture or major Workbench topology changes materially.
+That prompt already contains the confirmed manual-close, hard-24-hour and participant-count decisions. Future continuation must still re-check open PRs and `WORKBENCH.md` for newer Workbench topology such as PR #50.
 
 ## Major open architecture/product decisions
 
