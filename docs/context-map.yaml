@@ -241,9 +241,9 @@ nodes:
     load_when: [House persistence, House Tasks, house_tasks table, migration 0005, parent Street, Smart House persistence]
 
   - id: plan-app-launcher-sheet
-    path: docs/plans/active/016-app-launcher-sheet.md
+    path: docs/plans/completed/016-app-launcher-sheet.md
     type: plan
-    status: active
+    status: completed
     topics: [ui, mobile, app-launcher, menu, team-context, icons, field-chrome]
     load_when: [compact menu, app launcher, 3x3 menu icon, iOS-style icon grid, Team dropdown removal, field chrome]
 
