@@ -9,7 +9,7 @@ date: 2026-08-26
 
 ## Status
 
-Proposed only. Product choices for discovery and temporary join bootstrap were clarified on 2026-08-26. Credential lifetime, close/expiry policy and exact authorization mapping remain security decisions. No join-code, QR or Field Group credential runtime implementation is authorized yet.
+Proposed overall. Product choices for discovery, temporary join bootstrap and credential/group lifetime were clarified on 2026-08-26. The confirmed lifetime rule is: a Field Group is normally closed manually when the tour ends, and any still-open group plus its Room Code/QR credentials expires automatically after a hard maximum of 24 hours. Exact authorization mapping, rate-limit configuration and remaining credential implementation details are still security decisions. No join-code, QR or Field Group credential runtime implementation is authorized yet.
 
 ## Context
 
@@ -33,7 +33,15 @@ When a group is created:
 - `online anzeigen` defaults to **enabled** for a newly created group;
 - its creator/manager can disable `online anzeigen` explicitly;
 - hiding it from the online list does not have to destroy the room code/QR;
-- closing the group invalidates future joining according to server-side policy.
+- the group is intended for one short field tour, commonly around 2 to 3 hours;
+- the group is normally ended manually when the tour ends;
+- closing the group immediately invalidates future joining;
+- if nobody closes it, the group and its join credentials expire automatically after at most 24 hours from creation.
+
+Participant count is operational Field Session data, not credential data:
+- the number of people in the group can be entered or updated while the tour is running;
+- the final participant count must be present when the tour/group is ended so later person-time/statistics can use it;
+- this count never changes authentication scope or grants authority.
 
 The Campaign has an online-groups list.
 
@@ -46,16 +54,20 @@ Default list behavior:
 
 There is no global/public list across unrelated Campaigns or Organizations.
 
-## Proposed lifecycle
+## Confirmed lifecycle
 
 A Field Group has an application-owned random id and belongs to exactly one Campaign + Team.
 
-Proposed states:
+Lifecycle:
 - `active`: join allowed according to policy;
-- `closed`: no new joins and temporary credentials invalid;
-- optional `expired`: server closes stale active groups after bounded lifetime.
+- `closed`: manually ended, no new joins and temporary credentials immediately invalid;
+- `expired`: server closes a still-active group automatically when its hard 24-hour lifetime is reached.
 
-Creating a Field Group may start or attach to one Field Session, but exact event/session persistence remains governed by ADR-0017 once accepted.
+The intended normal lifecycle is `active -> closed` after the real tour, usually after roughly 2 to 3 hours. `expired` is a safety fallback, not the normal workflow.
+
+The 24-hour hard limit applies to the Field Group and the Room Code/QR join credentials. Rotating a credential must not extend the Field Group beyond its original maximum expiry unless a future accepted ADR explicitly changes that rule.
+
+Creating a Field Group may start or attach to one Field Session. The participant count can be updated during the session and must be finalized when the session/group is manually ended. Exact event/session persistence remains governed by ADR-0017 once accepted.
 
 ## Discoverability
 
@@ -85,7 +97,8 @@ Proposed manual code:
 - generated from cryptographically secure random bytes;
 - case-insensitive presentation is allowed if canonical decoding is unambiguous;
 - never sequential and never derived from group id/name;
-- expires/invalidates with group policy and can be rotated/revoked immediately;
+- expires immediately when the group closes and no later than the group hard expiry at 24 hours;
+- can be rotated/revoked immediately without extending the group's 24-hour maximum lifetime;
 - stored server-side only as a hash/derived lookup value, never plaintext after issuance where lookup design permits;
 - strict join throttling is mandatory.
 
@@ -99,7 +112,7 @@ Proposed token:
 - at least 128 bits of cryptographic randomness;
 - opaque, non-semantic value;
 - server stores only a hash/derived representation;
-- same group scope/expiry/revocation as the QR credential record;
+- same group scope and manual-close/hard-24-hour expiry boundary as the QR credential record;
 - redemption creates server-side membership/session state, after which the QR token itself is not trusted as the ongoing authorization session.
 
 ## Optional group password
@@ -120,7 +133,7 @@ This temporary join must:
 - authorize only the capabilities needed for that Field Group/Team according to the final capability policy;
 - never grant Organization Organizer/Admin authority;
 - never grant persistent Team invitation/management authority merely because the code was redeemed;
-- expire/revoke with membership/group policy;
+- expire/revoke with membership/group policy and never outlive the Field Group hard expiry;
 - be revocable server-side immediately;
 - require online Worker redemption before first join;
 - be protected against brute force/replay with entropy, expiry, rate limiting and generic failure responses.
@@ -133,7 +146,7 @@ Successful join creates explicit Field Group membership tied to a server-revocab
 
 Membership grants only the effective Field Group/Team capabilities defined by current/future authorization policy. It never grants Organization Organizer/Admin or persistent Team invitation rights.
 
-Closing/removing membership is checked server-side on subsequent privileged requests.
+Closing/removing membership is checked server-side on subsequent privileged requests. A group reaching the 24-hour hard expiry is treated as closed for authorization purposes even if a stale client still displays it locally.
 
 ## Rate limiting and abuse controls
 
@@ -142,9 +155,9 @@ Current Cloudflare Workers provides a Rate Limiting binding. Proposed defense in
 - a second keyed limiter based on canonical code/group lookup key when available;
 - generic invalid/expired responses to avoid useful enumeration;
 - bounded request body and schema validation;
-- bounded credential lifetime/revocation;
+- hard 24-hour group/credential lifetime plus immediate manual close/revocation;
 - server-side revocation check on every redemption;
-- audit/activity event for credential rotate/close and suspicious repeated failures once event storage exists.
+- audit/activity event for credential rotate/close/expiry and suspicious repeated failures once event storage exists.
 
 Rate limiting is a defense in depth control, not a substitute for code entropy.
 
@@ -152,7 +165,7 @@ Rate limiting is a defense in depth control, not a substitute for code entropy.
 
 Already-joined devices may continue using the existing M5 local mutation queue while offline if their local temporary session/group membership was previously authorized and the queued mutations are within its scope. Offline state does not allow joining a new Field Group because credential redemption/revocation requires the Worker.
 
-When connectivity returns, revoked/closed membership must stop privileged sync rather than blindly retrying.
+When connectivity returns, revoked/closed/expired membership must stop privileged sync rather than blindly retrying.
 
 ## Security non-goals
 
@@ -165,10 +178,15 @@ When connectivity returns, revoked/closed membership must stop privileged sync r
 
 ## Acceptance required before implementation
 
-Before D1 schema/routes are implemented:
-1. confirm code alphabet/length and expiry/rotation policy;
-2. define Field Group maximum lifetime and close behavior;
+Confirmed and no longer open:
+- Field Group normally ends manually with the tour;
+- Room Code/QR and still-open group expire after a hard maximum of 24 hours;
+- participant count can be updated during the tour and must be finalized when ending it.
+
+Still required before D1 schema/routes are implemented:
+1. confirm final code alphabet/length if the proposed 10-character human-safe Base32 format changes;
+2. define credential rotation/revocation UX within the fixed 24-hour group lifetime;
 3. define membership/session relationship to current Campaign sessions;
 4. define exact server-side authorization matrix for temporary group members;
-5. add rate-limit binding configuration and brute-force/revocation tests;
+5. add rate-limit binding configuration and brute-force/revocation/expiry tests;
 6. define minimal audit events without logging join secrets.
