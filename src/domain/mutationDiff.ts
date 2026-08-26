@@ -56,6 +56,7 @@ export function deriveCampaignMutation(
   const teams = changedIds(previous.teams, next.teams);
   const areas = changedIds(previous.areas, next.areas);
   const tasks = changedIds(previous.tasks, next.tasks);
+  const houses = changedIds(previous.houseTasks ?? [], next.houseTasks ?? []);
 
   const collectionDeltaCount =
     teams.added.length +
@@ -66,7 +67,10 @@ export function deriveCampaignMutation(
     areas.changed.length +
     tasks.added.length +
     tasks.removed.length +
-    tasks.changed.length;
+    tasks.changed.length +
+    houses.added.length +
+    houses.removed.length +
+    houses.changed.length;
 
   if (campaignChanged && collectionDeltaCount === 0) {
     const base = mutationBase(previous, next.campaign.updatedAt);
@@ -198,7 +202,10 @@ export function deriveCampaignMutation(
       tasks.added.length === 0 &&
       tasks.changed.length === 0 &&
       tasks.removed.every((task) => task.areaId === removedArea.id) &&
-      collectionDeltaCount === 1 + tasks.removed.length;
+      houses.added.length === 0 &&
+      houses.changed.length === 0 &&
+      houses.removed.every((task) => task.areaId === removedArea.id) &&
+      collectionDeltaCount === 1 + tasks.removed.length + houses.removed.length;
     if (onlyCascadedTasksRemoved) {
       return {
         ...mutationBase(previous, next.campaign.updatedAt),
@@ -272,6 +279,73 @@ export function deriveCampaignMutation(
     return {
       ...mutationBase(previous, next.campaign.updatedAt),
       type: "task.delete",
+      payload: { taskId: task.id, expectedUpdatedAt: task.updatedAt },
+    };
+  }
+
+  if (houses.added.length === 1 && collectionDeltaCount === 1) {
+    const task = houses.added[0];
+    return {
+      ...mutationBase(previous, task.createdAt),
+      type: "house.create",
+      payload: {
+        taskId: task.id,
+        areaId: task.areaId,
+        label: task.label,
+        geometry: task.geometry,
+        ...(task.source ? { source: task.source } : {}),
+        parentStreetTaskId: task.parentStreetTaskId,
+      },
+    };
+  }
+
+  if (houses.changed.length === 1 && collectionDeltaCount === 1) {
+    const { previous: oldTask, next: task } = houses.changed[0];
+    if (
+      oldTask.campaignId !== task.campaignId ||
+      oldTask.areaId !== task.areaId ||
+      oldTask.taskType !== task.taskType ||
+      oldTask.createdAt !== task.createdAt ||
+      oldTask.parentStreetTaskId !== task.parentStreetTaskId ||
+      !same(oldTask.geometry, task.geometry) ||
+      !same(oldTask.source ?? null, task.source ?? null)
+    ) {
+      throw new MutationDerivationError("Unveränderliche House-Task-Felder wurden geändert.");
+    }
+    const labelChanged = oldTask.label !== task.label;
+    const statusChanged = oldTask.status !== task.status || oldTask.completedAt !== task.completedAt;
+    if (Number(labelChanged) + Number(statusChanged) !== 1) {
+      throw new MutationDerivationError("House-Task-Änderung enthält mehr als eine Operation.");
+    }
+    const base = mutationBase(previous, task.updatedAt);
+    if (labelChanged) {
+      return {
+        ...base,
+        type: "house.rename",
+        payload: {
+          taskId: task.id,
+          label: task.label,
+          expectedUpdatedAt: oldTask.updatedAt,
+        },
+      };
+    }
+    return {
+      ...base,
+      type: "house.set-status",
+      payload: {
+        taskId: task.id,
+        status: task.status,
+        completedAt: task.completedAt,
+        expectedUpdatedAt: oldTask.updatedAt,
+      },
+    };
+  }
+
+  if (houses.removed.length === 1 && collectionDeltaCount === 1) {
+    const task = houses.removed[0];
+    return {
+      ...mutationBase(previous, next.campaign.updatedAt),
+      type: "house.delete",
       payload: { taskId: task.id, expectedUpdatedAt: task.updatedAt },
     };
   }
