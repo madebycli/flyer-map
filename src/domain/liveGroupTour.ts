@@ -55,6 +55,14 @@ function validParticipantCount(value: number) {
   return Number.isSafeInteger(value) && value >= 1 && value <= 500;
 }
 
+function hardExpiryFromCreatedAt(createdAt: string) {
+  const createdTimestamp = parseTimestamp(createdAt);
+  if (createdTimestamp === null) {
+    throw new Error("invalid_live_group_lifecycle_time");
+  }
+  return new Date(createdTimestamp + LIVE_GROUP_MAX_LIFETIME_MS).toISOString();
+}
+
 export function createLiveGroupTour(input: {
   groupId: string;
   mode: LiveGroupTourMode;
@@ -72,11 +80,12 @@ export function createLiveGroupTour(input: {
     throw new Error("invalid_live_group_participants");
   }
 
+  const normalizedCreatedAt = new Date(createdAt).toISOString();
   return {
     groupId: input.groupId,
     mode: input.mode,
-    createdAt: new Date(createdAt).toISOString(),
-    hardExpiresAt: new Date(createdAt + LIVE_GROUP_MAX_LIFETIME_MS).toISOString(),
+    createdAt: normalizedCreatedAt,
+    hardExpiresAt: hardExpiryFromCreatedAt(normalizedCreatedAt),
     state: "active",
     participantCount: input.participantCount ?? null,
     endedAt: null,
@@ -87,17 +96,21 @@ export function resolveLiveGroupTour(tour: LiveGroupTour, now: string): LiveGrou
   if (tour.state !== "active") return tour;
 
   const nowTimestamp = parseTimestamp(now);
-  const expiresTimestamp = parseTimestamp(tour.hardExpiresAt);
-  if (nowTimestamp === null || expiresTimestamp === null) {
+  if (nowTimestamp === null) {
     throw new Error("invalid_live_group_lifecycle_time");
   }
 
-  if (nowTimestamp < expiresTimestamp) return tour;
+  const hardExpiresAt = hardExpiryFromCreatedAt(tour.createdAt);
+  const expiresTimestamp = Date.parse(hardExpiresAt);
+  const normalizedTour =
+    tour.hardExpiresAt === hardExpiresAt ? tour : { ...tour, hardExpiresAt };
+
+  if (nowTimestamp < expiresTimestamp) return normalizedTour;
 
   return {
-    ...tour,
+    ...normalizedTour,
     state: "expired",
-    endedAt: tour.hardExpiresAt,
+    endedAt: hardExpiresAt,
   };
 }
 
