@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AccessContext } from "../worker/access.ts";
 import { authorizeSnapshotWrite } from "../worker/authorization.ts";
 import {
+  loadCampaignSnapshot,
   replaceCampaignSnapshot,
   type D1DatabaseLike,
   type D1PreparedStatement,
@@ -108,6 +109,19 @@ function smartTask() {
   });
 }
 
+function createTaskMutation(task = smartTask()) {
+  const previous = baseSnapshot();
+  const next: CampaignSnapshot = {
+    ...previous,
+    revision: previous.revision + 1,
+    campaign: { ...previous.campaign, updatedAt: task.createdAt },
+    tasks: [task],
+  };
+  const mutation = deriveCampaignMutation(previous, next);
+  if (!mutation || mutation.type !== "task.create") throw new Error("expected task.create");
+  return { previous, mutation };
+}
+
 const admin: AccessContext = {
   grantId: "grant_admin",
   campaignId: "campaign_smart-street",
@@ -117,18 +131,7 @@ const admin: AccessContext = {
 };
 
 test("Smart Street snapshot derives a task.create mutation with separate OSM provenance", () => {
-  const previous = baseSnapshot();
-  const task = smartTask();
-  const next: CampaignSnapshot = {
-    ...previous,
-    revision: previous.revision + 1,
-    campaign: { ...previous.campaign, updatedAt: task.createdAt },
-    tasks: [task],
-  };
-
-  const mutation = deriveCampaignMutation(previous, next);
-  assert.equal(mutation?.type, "task.create");
-  if (!mutation || mutation.type !== "task.create") throw new Error("expected task.create");
+  const { previous, mutation } = createTaskMutation();
   assert.equal(mutation.payload.taskId, "task_smart-1");
   assert.deepEqual(mutation.payload.source, {
     dataset: "OpenStreetMap",
@@ -289,7 +292,7 @@ class FakeStatement implements D1PreparedStatement {
   values: unknown[] = [];
   readonly query: string;
 
-  constructor(query: string) {
+  constructor(query: string, private readonly database: CapturingDatabase) {
     this.query = query;
   }
   bind(...values: unknown[]) {
@@ -297,17 +300,32 @@ class FakeStatement implements D1PreparedStatement {
     return this;
   }
   async first<T>() {
-    return null as T | null;
+    return this.database.firstForQuery(this.query) as T | null;
   }
   async all<T>() {
-    return { results: [] as T[] };
+    return { results: this.database.allForQuery(this.query) as T[] };
   }
 }
 
 class CapturingDatabase implements D1DatabaseLike {
   lastBatch: FakeStatement[] = [];
+  prepared: FakeStatement[] = [];
+
+  constructor(readonly supportsTaskSource = true) {}
+
   prepare(query: string) {
-    return new FakeStatement(query);
+    const statement = new FakeStatement(query, this);
+    this.prepared.push(statement);
+    return statement;
+  }
+  firstForQuery(_query: string): unknown | null {
+    return null;
+  }
+  allForQuery(query: string): unknown[] {
+    if (/PRAGMA table_info\(tasks\)/u.test(query)) {
+      return this.supportsTaskSource ? [{ name: "id" }, { name: "source_json" }] : [{ name: "id" }];
+    }
+    return [];
   }
   async batch(statements: D1PreparedStatement[]) {
     this.lastBatch = statements as FakeStatement[];
@@ -315,17 +333,56 @@ class CapturingDatabase implements D1DatabaseLike {
   }
 }
 
+class PreMigrationReadDatabase extends CapturingDatabase {
+  constructor() {
+    super(false);
+  }
+
+  override firstForQuery(query: string): unknown | null {
+    if (/FROM campaigns WHERE id = \?/u.test(query) && /SELECT id, name, status, revision/u.test(query)) {
+      return {
+        id: "campaign_smart-street",
+        name: "Aktion",
+        status: "active",
+        revision: 4,
+        map_center_lng: null,
+        map_center_lat: null,
+        map_zoom: null,
+        map_bearing: null,
+        created_at: createdAt,
+        updated_at: createdAt,
+      };
+    }
+    return null;
+  }
+
+  override allForQuery(query: string): unknown[] {
+    if (/PRAGMA table_info\(tasks\)/u.test(query)) return [{ name: "id" }];
+    if (/FROM tasks WHERE campaign_id = \?/u.test(query)) {
+      assert.match(query, /NULL AS source_json/u);
+      return [{
+        id: "task_manual-legacy",
+        campaign_id: "campaign_smart-street",
+        area_id: "area_a",
+        task_type: "street",
+        label: "Legacy Street",
+        geometry_json: JSON.stringify({
+          type: "LineString",
+          coordinates: [[10, 50], [10.01, 50]],
+        }),
+        source_json: null,
+        status: "open",
+        completed_at: null,
+        created_at: createdAt,
+        updated_at: createdAt,
+      }];
+    }
+    return [];
+  }
+}
+
 test("narrow task persistence binds source JSON instead of concatenating provenance into SQL", async () => {
-  const previous = baseSnapshot();
-  const task = smartTask();
-  const next: CampaignSnapshot = {
-    ...previous,
-    revision: previous.revision + 1,
-    campaign: { ...previous.campaign, updatedAt: task.createdAt },
-    tasks: [task],
-  };
-  const mutation = deriveCampaignMutation(previous, next);
-  if (!mutation || mutation.type !== "task.create") throw new Error("expected task.create");
+  const { previous, mutation } = createTaskMutation();
 
   const db = new CapturingDatabase();
   const result = await persistCampaignMutation(db, mutation, previous.revision, "a".repeat(64));
@@ -341,6 +398,39 @@ test("narrow task persistence binds source JSON instead of concatenating provena
   );
 });
 
+test("pre-migration D1 still loads legacy manual Tasks without selecting a missing column", async () => {
+  const db = new PreMigrationReadDatabase();
+  const snapshot = await loadCampaignSnapshot(db, "campaign_smart-street");
+  assert.ok(snapshot);
+  assert.equal(snapshot.tasks.length, 1);
+  assert.equal(snapshot.tasks[0].id, "task_manual-legacy");
+  assert.equal(snapshot.tasks[0].source, undefined);
+});
+
+test("pre-migration D1 still persists manual task.create without source_json", async () => {
+  const manualTask = { ...smartTask(), id: "task_manual-pre-migration", source: undefined };
+  const { previous, mutation } = createTaskMutation(manualTask);
+  const db = new CapturingDatabase(false);
+
+  const result = await persistCampaignMutation(db, mutation, previous.revision, "b".repeat(64));
+  assert.deepEqual(result, { ok: true, revision: 5, alreadyApplied: false });
+  assert.equal(db.lastBatch.length, 3);
+  assert.doesNotMatch(db.lastBatch[1].query, /source_json/u);
+});
+
+test("pre-migration D1 blocks Smart Street provenance before claiming a revision", async () => {
+  const { previous, mutation } = createTaskMutation();
+  const db = new CapturingDatabase(false);
+
+  const result = await persistCampaignMutation(db, mutation, previous.revision, "c".repeat(64));
+  assert.deepEqual(result, {
+    ok: false,
+    currentRevision: previous.revision,
+    reason: "schema_migration_required",
+  });
+  assert.equal(db.lastBatch.length, 0);
+});
+
 test("legacy snapshot replacement carries Smart Street provenance through its bound JSON batch", async () => {
   const snapshot = baseSnapshot();
   snapshot.tasks = [smartTask()];
@@ -354,6 +444,31 @@ test("legacy snapshot replacement carries Smart Street provenance through its bo
 
   const boundTasks = JSON.parse(String(db.lastBatch[6].values[0]));
   assert.deepEqual(boundTasks[0].source, smartTask().source);
+});
+
+test("pre-migration legacy snapshot replacement keeps manual Tasks compatible", async () => {
+  const snapshot = baseSnapshot();
+  snapshot.tasks = [{ ...smartTask(), id: "task_manual-snapshot", source: undefined }];
+  const db = new CapturingDatabase(false);
+
+  const result = await replaceCampaignSnapshot(db, snapshot, snapshot.revision - 1);
+  assert.deepEqual(result, { ok: true, revision: snapshot.revision });
+  assert.equal(db.lastBatch.length, 7);
+  assert.doesNotMatch(db.lastBatch[6].query, /source_json/u);
+});
+
+test("pre-migration legacy snapshot replacement refuses to discard Smart Street provenance", async () => {
+  const snapshot = baseSnapshot();
+  snapshot.tasks = [smartTask()];
+  const db = new CapturingDatabase(false);
+
+  const result = await replaceCampaignSnapshot(db, snapshot, snapshot.revision - 1);
+  assert.deepEqual(result, {
+    ok: false,
+    currentRevision: snapshot.revision - 1,
+    reason: "schema_migration_required",
+  });
+  assert.equal(db.lastBatch.length, 0);
 });
 
 test("M6 provenance migration is additive and nullable for existing manual tasks", () => {
