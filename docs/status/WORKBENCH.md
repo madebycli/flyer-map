@@ -27,7 +27,7 @@ Experimental non-main work only. Nothing here declares shipped `main` behavior.
 ## Smart Streets / Houses
 
 - PR #34: OSM road/building candidates.
-- PR #38: start/end selection, route choices, waypoints and point-to-road snapping. Latest point-snap head CI #368 passed.
+- PR #38: start/end selection, route choices, waypoints and point-to-road snapping. Point-snap CI #368 passed.
 - PR #39: isolated route/waypoint preview, stacked on PR #38.
 - PR #40: House single/multi/same-street selection UI.
 - PR #46: proposed ADR-0013 for application-owned Task ids + OSM provenance. Still proposed.
@@ -72,6 +72,8 @@ Confirmed:
 - normal path is archive + retain operational history;
 - Workbench hard-delete confirmation phrase is `AKTION LÖSCHEN`;
 - UI is never the security boundary.
+
+Organizer UI/delete guard passed CI #378 before the later presentation/selector refinements; the newest PR #44 head must retain a green final-head check before promotion.
 
 Open Team-role detail:
 - exact extra Team Leader rights, especially Team name/color, member/invite and live-group management.
