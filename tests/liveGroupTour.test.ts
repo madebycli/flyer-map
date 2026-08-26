@@ -31,6 +31,20 @@ test("new tour gets one immutable 24-hour hard expiry", () => {
   );
 });
 
+test("later stored expiry cannot extend the original 24-hour group lifetime", () => {
+  const tour = createTour(2);
+  const tamperedTour = {
+    ...tour,
+    hardExpiresAt: "2026-08-28T08:00:00.000Z",
+  };
+
+  const resolved = resolveLiveGroupTour(tamperedTour, "2026-08-27T08:00:00.000Z");
+
+  assert.equal(resolved.hardExpiresAt, "2026-08-27T08:00:00.000Z");
+  assert.equal(resolved.state, "expired");
+  assert.equal(resolved.endedAt, "2026-08-27T08:00:00.000Z");
+});
+
 test("participant count can be entered and changed while active without extending expiry", () => {
   const tour = createTour();
   const first = updateLiveGroupParticipantCount(tour, 3, "2026-08-26T09:00:00.000Z");
