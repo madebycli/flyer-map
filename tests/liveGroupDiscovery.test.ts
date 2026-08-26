@@ -42,6 +42,17 @@ const groups: LiveGroupDiscoveryItem[] = [
     joinAvailable: true,
   },
   {
+    id: "group_expired",
+    campaignId: "campaign_1",
+    teamId: "team_green",
+    teamName: "Team Grün",
+    teamColor: "#16a34a",
+    label: "Abgelaufen",
+    state: "expired",
+    discoverable: true,
+    joinAvailable: false,
+  },
+  {
     id: "group_other_campaign",
     campaignId: "campaign_2",
     teamId: "team_other",
@@ -70,7 +81,7 @@ test("Team filter narrows the current Campaign list without widening scope", () 
   );
 });
 
-test("non-discoverable and other-Campaign groups never appear in filters", () => {
+test("hidden, closed/expired and other-Campaign groups never appear in filters", () => {
   assert.deepEqual(liveGroupTeamFilters(groups, "campaign_1"), [
     { teamId: "team_blue", teamName: "Team Blau", teamColor: "#2563eb" },
     { teamId: "team_orange", teamName: "Team Orange", teamColor: "#ea580c" },
