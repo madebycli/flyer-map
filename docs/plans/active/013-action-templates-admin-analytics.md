@@ -10,70 +10,72 @@ related: [plan-012-platform-app-expansion, ADR-0017, ADR-0018, architecture-orga
 
 ## Goal
 
-Support recurring flyer-distribution and clothes-collection work without rebuilding the same map planning each time, while keeping each real action's progress/history independent and giving Organizers/Admins a safe export for deep retrospective analysis.
+Support recurring flyer-distribution and clothes-collection work without rebuilding planning each time, while keeping every real action independent and giving Organizers/Admins safe retrospective exports.
 
-This plan is experimental and must not be treated as shipped behavior while its work remains on Workbench branches.
+This remains experimental Workbench scope and is not shipped behavior.
 
 ## Confirmed product model
 
-### Action Template
-Reusable planning blueprint.
+### Template
+Reusable non-secret planning blueprint.
 
-May contain:
-- default map view;
-- Team structure/names/colors;
-- Areas and reviewed geometry;
-- planned Street/House planning geometry where available;
-- non-secret operational defaults after explicit acceptance.
-
-Must never copy:
-- prior completion status;
-- prior entity ids as new operational identity;
-- Field Groups/room codes/QR credentials;
-- Field Sessions/history;
-- comments;
-- access/session secrets;
-- pickup completion.
+Confirmed:
+- templates can be created, downloaded as a portable file and loaded/selected when creating a new action;
+- Flyer Distribution and Clothes Collection use **separate template types**;
+- templates may contain map view, Team names/colors, Areas, reviewed road/house planning and normal defaults such as `online anzeigen = an`;
+- templates never contain prior completion, Sessions, Groups, comments or credentials.
 
 ### Action / Aktion
-One concrete operational round.
+One concrete operational round with fresh ids, progress and history.
 
 Examples:
 - `Frühjahr 2027 Flyer-Verteilung`;
 - `Frühjahr 2027 Kleider-Abholung`;
 - `Herbst 2027 Flyer-Verteilung`.
 
-Every action gets fresh progress and history.
-
 ### Field Session / Einsatz
-One concrete outing inside an action with explicit start/end or duration, participant count, Team/Field Group and affected work.
+One outing inside an action.
 
 ### Action Cycle
-Optional grouping for related actions, typically one flyer distribution followed by its collection.
+Optional reporting/grouping concept for related rounds. The product may commonly run two cycles per year, but frequency is never hardcoded.
 
-The real workflow commonly has about two cycles per year, but no schema/UI may hardcode exactly two.
+## Distribution vs Collection planning
 
-## Workbench already prepared
+Distribution Template:
+- distribution Teams/Areas;
+- reviewed Street/House planning;
+- fresh distribution work starts open.
 
-PR #49 currently provides architecture-neutral building blocks:
-- `ActionTemplateBlueprint`;
-- extraction of reusable planning from a Campaign snapshot without operational completion/history/credentials;
-- clean Distribution Action draft with planned Street work reset to `open`;
-- clean Collection Action draft with reused planning context and no pre-created Pickup tasks;
-- controlled Admin template UI;
+Collection Template:
+- separately designed car/collection Teams;
+- often more and smaller Areas;
+- collection-specific planning boundaries;
+- does **not** inherit who distributed where;
+- starts with fresh collection road/pickup work.
+
+A Collection Action may still be grouped with a Distribution Action for retrospective comparison, but their assignment structures remain independent.
+
+## Workbench prepared in PR #49
+
+- mode-specific `ActionTemplateBlueprint`;
+- Distribution Template extraction from current Campaign planning;
+- purpose-built Collection Templates;
+- portable `flyer-map-action-template` JSON file with strict import validation;
+- local download/import UI;
+- clean new-action drafts;
+- controlled Admin template surface;
 - strict allowlist single-action analytics export;
-- repeated-action comparison helpers;
+- repeated-action comparison;
 - AI analysis/comparison prompts;
 - CSV formula-injection protection;
-- prompt-injection instruction boundary;
+- prompt-injection boundary;
 - controlled Admin export UI.
 
 No D1 migration, endpoint or automatic AI call exists.
 
 ## Admin analysis package
 
-### Single action
-Expected portable files:
+Single action:
 - `analytics.json`;
 - `teams.csv`;
 - `areas.csv`;
@@ -81,147 +83,116 @@ Expected portable files:
 - `events.csv`;
 - `AI_ANALYSE_PROMPT.md`.
 
-### Multiple actions
-Expected comparison files:
+Comparison:
 - `comparison.json`;
 - `actions.csv`;
 - `AI_VERGLEICHS_PROMPT.md`.
 
-### Analysis goals
+Analysis asks for bottlenecks, problem Areas, person-time/workload imbalance, which Teams should receive more/less work next time, Area sizing and concrete improvements. It remains advisory and must explain evidence/context instead of producing an opaque punishment/ranking score.
 
-Prompt should help Organizers/Admins answer:
-- Where were recurring problems?
-- Which Areas took too much person-time?
-- Which Teams had disproportionately high/low workload after accounting for task amount and time?
-- Which Team should receive less/more work next time?
-- Did previous improvements help?
-- Were Area boundaries realistic?
-- How should Team allocation, session duration or participant count change next time?
+## Organizer/Admin direction
 
-AI output is advisory only. It never changes assignments, permissions or statuses automatically.
+Confirmed:
+- multiple Organizers are allowed;
+- at least one effective Organizer must always remain;
+- Organizer has `admin.manage` by default;
+- Organizer may explicitly delegate `admin.manage` to selected Admin roles;
+- Admins never receive Organizer authority from that delegation;
+- permanent Action deletion is Organizer-only and non-delegable in the current product direction;
+- normal completion uses archive/retained history.
 
-## Export privacy/security
+Identity/permission runtime remains blocked by ADR-0015/ADR-0016/threat-model acceptance.
 
-Initial export is strict allowlist.
+## Team access direction
 
-Excluded by design:
-- passwords;
-- TOTP secrets/codes;
-- recovery codes;
-- access/session/join secrets;
-- raw HTTP bodies/headers/cookies;
-- continuous GPS trails;
-- device fingerprints;
-- comment bodies;
-- Field Session free-text notes;
-- unnecessary account/personal data.
+Confirmed product intent:
+- normal members of a Team can edit operational data inside their own Team, including assigned Areas/Tasks, subject to server-side Team scope;
+- an optional Team Leader role may add Team-management responsibilities;
+- exact Team Leader extras such as Team metadata/member/invite management remain a small product decision;
+- no Team role may edit another Team without explicit higher-scope capability.
 
-Requirements:
-- fixed server-owned output filenames;
-- CSV user-controlled values neutralize `=`, `+`, `-`, `@` formula prefixes;
-- AI prompt explicitly says exported values are data, not instructions;
-- all future reads/export queries are tenant scoped server-side;
-- `analytics.export` or equivalent capability is required;
-- export creation is audited;
-- no direct AI service access is required for v1; user/admin can use the portable package with an AI separately.
+## Permanent Action deletion
 
-## Organizer/Admin relationship
+Normal path:
+- completed Action is archived;
+- retained history/statistics remain available.
 
-Confirmed product hierarchy:
-- Organizer is above normal Admin;
-- Organizer can add/manage Admins according to accepted re-authentication/delegation policy;
-- normal Admin cannot silently become Organizer;
-- last effective Organizer must be protected;
-- Admin/Organizer analytics access requires explicit capability.
-
-Account/permission runtime remains blocked by ADR-0015/ADR-0016/threat-model acceptance.
+Destructive path:
+- Organizer only;
+- server re-authorizes Organizer capability;
+- UI shows the exact Action being removed;
+- user must type a fixed confirmation phrase before the request can be submitted;
+- initial Workbench phrase: `AKTION LÖSCHEN`;
+- deletion creates a security/admin audit event without copying secrets;
+- final D1 retention/cascade behavior still requires accepted persistence ADRs.
 
 ## History relationship
 
 ADR-0017 direction:
-- meaningful operational history is retained;
-- no automatic ordinary-history expiry after 12/24 months;
-- exact old geometry is not required for initial reflection;
-- current/reviewed Task geometry plus retained historical references is sufficient;
-- repeated-action comparison consumes retained operational history.
+- meaningful operational history retained;
+- no ordinary 12/24-month expiry;
+- exact old geometry reconstruction not required for initial reflection;
+- retained references support repeated-action comparison and AI export.
 
 ## Implementation slices after architecture acceptance
 
-### Slice A — Template persistence
-- accept ADR-0018 D1 representation;
+### A — Template persistence
+- accepted D1 representation;
 - additive migration;
-- application-owned template/version ids;
-- tenant-scoped create/read/update/archive;
-- no credential/history copying;
-- safe clone-from-existing-action flow;
-- template version/revision relationship.
+- application-owned Template/version ids;
+- tenant-scoped CRUD/archive;
+- safe file import/export;
+- no credentials/history copying.
 
-### Slice B — Create Action from Template
-- create fresh action ids;
-- copy reviewed planning only;
-- Distribution Tasks start open;
-- Collection Pickup Tasks start empty;
-- record template/version provenance;
-- optional Action Cycle linkage;
-- transaction/idempotency tests.
+### B — Create Action from Template
+- fresh Action ids/state;
+- template/version provenance;
+- mode-specific planning;
+- optional cycle relation;
+- idempotency/transaction tests.
 
-### Slice C — Retained history/session persistence
-- only after ADR-0017 acceptance;
-- Field Sessions + minimal domain events;
-- M5 idempotency ensures retries do not duplicate events;
-- no GPS trace storage.
+### C — History/session persistence
+- after ADR-0017 acceptance;
+- Sessions + minimal events;
+- no GPS trail;
+- no duplicate events on M5 replay.
 
-### Slice D — Admin analytics query/export
-- only after Organizer/Admin capabilities are accepted;
-- server-side tenant/action authorization;
-- bounded export size;
-- strict allowlist serialization;
-- fixed file names;
-- audited export creation;
-- downloadable package/UI.
+### D — Admin analytics export
+- after Organizer/Admin capability acceptance;
+- bounded tenant-scoped export;
+- strict allowlist;
+- audit event;
+- downloadable package.
 
-### Slice E — Repeated-action comparison UI
-- select actions/template/cycle;
-- compare distributions/collections separately;
-- show descriptive deltas and context;
-- no opaque Team performance score;
-- produce comparison prompt/package.
+### E — Repeated-action comparison
+- compare compatible actions/template versions;
+- Distribution/Collection separate;
+- descriptive deltas/context;
+- advisory AI prompt/package.
 
-## Acceptance gates
+### F — Archive and Organizer-only permanent deletion
+- archive is normal completion/removal path;
+- hard delete hidden from normal Admin/Team roles;
+- fixed phrase confirmation plus server-side Organizer re-check;
+- retained-history/cascade policy explicitly tested.
 
-Before persistence:
-- decide exact Template/Action/Cycle D1 representation;
-- decide whether Action Cycle is optional vs mandatory;
-- decide which non-secret defaults belong in Template;
-- decide whether Collection may exist independently of a prior Distribution Action;
-- decide action archive/permanent deletion policy;
-- accept ADR-0017 and ADR-0018 as applicable.
+## Remaining decisions before persistence
 
-Before Admin export runtime:
-- accepted Organizer/Admin capability policy;
-- cross-Organization negative authorization tests;
-- export-size and memory limits;
-- formula-injection tests;
-- prompt-injection boundary tests;
-- no-secret/privacy regression tests;
-- audit event test;
-- retained-history queries proven bounded on expected action history sizes.
-
-## Current open product decisions
-
-1. Multiple Organizers allowed/recommended or exactly one active Organizer at a time?
-2. May selected Admins be delegated `admin.manage`, or only Organizers may add Admins?
-3. Should Template include non-secret operational defaults such as Team colors, map view and Live Group visibility defaults?
-4. Should Collection normally link to Distribution but still be independently creatable for special cases?
-5. Should normal completed actions archive/retain everything, with permanent delete restricted to an explicit Organizer-only destructive flow?
+1. Exact Template/Action/Cycle D1 representation.
+2. Whether Action Cycle is optional metadata or required for every action.
+3. Final template version/update UX.
+4. Whether Collection Actions may exist outside a Cycle.
+5. Team Leader extra management capabilities.
+6. Comment moderation/history details from ADR-0017.
+7. Accept ADR-0016/0017/0018 as applicable before runtime.
 
 ## Explicit non-goals
 
 - no hardcoded twice-per-year schedule;
 - no automatic AI call with private data;
-- no AI-controlled assignments/permissions;
-- no worker/person productivity score;
-- no exact continuous GPS route history;
-- no reuse of old completion status in a new action;
-- no copied secrets from a template;
+- no AI-controlled assignment or permissions;
+- no opaque worker/person score;
+- no continuous GPS route history;
+- no copied old completion state or secrets;
+- no Distribution assignment reuse for Collection;
 - no all-at-once schema migration.
