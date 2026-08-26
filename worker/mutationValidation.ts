@@ -14,6 +14,10 @@ function isId(value: unknown): value is string {
   return typeof value === "string" && ID_PATTERN.test(value);
 }
 
+function isMutationId(value: unknown): value is string {
+  return isId(value) && value.startsWith("mutation_") && value.length > "mutation_".length;
+}
+
 function isTaskId(value: unknown): value is string {
   return isId(value) && value.startsWith("task_") && value.length > "task_".length;
 }
@@ -60,7 +64,7 @@ export function validateCampaignMutation(
   if (!isRecord(value)) {
     return { valid: false, message: "Mutation ist kein gültiges Objekt." };
   }
-  if (!isId(value.id) || !value.id.startsWith("mutation_")) {
+  if (!isMutationId(value.id)) {
     return { valid: false, message: "Mutation-ID ist ungültig." };
   }
   if (value.campaignId !== campaignId) {
