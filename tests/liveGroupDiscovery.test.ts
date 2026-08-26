@@ -42,6 +42,17 @@ const groups: LiveGroupDiscoveryItem[] = [
     joinAvailable: true,
   },
   {
+    id: "group_closed",
+    campaignId: "campaign_1",
+    teamId: "team_green",
+    teamName: "Team Grün",
+    teamColor: "#16a34a",
+    label: "Beendet",
+    state: "closed",
+    discoverable: true,
+    joinAvailable: false,
+  },
+  {
     id: "group_expired",
     campaignId: "campaign_1",
     teamId: "team_green",
