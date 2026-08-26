@@ -9,21 +9,23 @@ date: 2026-08-26
 
 ## Status
 
-Proposed only. The product retention direction was clarified on 2026-08-26: operational history should be retained rather than automatically expired. D1 schema implementation remains blocked until deletion/archive and historical-geometry semantics are accepted.
+Proposed only. Product direction is now clear that meaningful operational history is retained and exact historical geometry reconstruction is **not required for v1 reflection**. D1 schema implementation remains blocked on archive/permanent-deletion and final security/audit retention semantics.
 
 ## Context
 
 Plan 012 needs:
 - Field Sessions with date/duration/participant count/note;
 - history showing work performed;
-- selecting a past session and highlighting affected current Task geometry;
+- repeated flyer/collection actions that can be compared later;
+- selecting a past action/session and reflecting affected work on the map;
 - operational statistics such as outings, person-time and Area sizing;
 - comments/activity/automation auditability;
+- exportable Admin analysis data;
 - no continuous GPS surveillance.
 
 Current M5 mutations already provide durable offline/reconnect behavior for Campaign state changes, but the current snapshot is not sufficient to reconstruct historical sessions after later Task edits.
 
-The collaboration architecture already requires meaningful domain events rather than GPS traces.
+The collaboration architecture therefore uses meaningful domain events rather than GPS traces.
 
 ## Proposed direction: append-only minimal domain events plus durable Field Sessions
 
@@ -79,7 +81,7 @@ Examples:
 - `task.status.changed`: task id, previous status, new status;
 - `task.created`: task id/type/source summary;
 - `area.created`: area id/team id;
-- `field-session.closed`: final explicit duration/participant summary if not already on session row;
+- `field-session.closed`: final duration/participant summary if not already on session row;
 - `comment.created`: comment id/target reference, not duplicated full comment body unless required;
 - `automation.executed`: rule type/result code, no secrets;
 - access/admin/security audit events use a dedicated safe payload policy and never include credentials.
@@ -88,25 +90,31 @@ No event payload may include:
 - password;
 - TOTP code/seed;
 - recovery code;
-- session/access secret;
+- session/access/join secret;
 - exact continuous GPS trail;
 - arbitrary raw request body;
 - full private export.
 
-## Session affected Tasks
+## Session/action reflection on the map
 
-Session map highlighting should derive affected Task ids from events whose `field_session_id` matches the selected session.
+Session/action history should derive affected Task ids from events and retained Task relationships.
 
-Initial behavior highlights current Task geometry.
+Confirmed v1 direction:
+- historical map view is primarily for reflection, not forensic geometry reconstruction;
+- current/reviewed Task geometry is sufficient to show where historical work happened;
+- the system does **not** need to duplicate every historical geometry revision merely so an old session can be opened;
+- if a historical Task was superseded/archived, keep enough retained reference/tombstone information to make the log understandable;
+- exact historical geometry may be added later only if real use proves it valuable.
 
-If exact historical geometry is later required, that needs a separate explicit geometry-history decision. Do not silently duplicate every geometry version now.
+This keeps history useful without turning every geometry edit into a full GIS versioning system.
 
 ## Statistics
 
 Initial statistics derive from:
 - current Tasks for current completion percentages;
 - Field Sessions for duration/participant/person-time summaries;
-- domain events for work performed per session/time period.
+- domain events for work performed per session/time period/action;
+- action/template relationships for repeated-round comparison once ADR-0018 is accepted.
 
 Do not add precomputed rollup tables initially. Add rollups only if measured scale proves query cost requires them.
 
@@ -131,9 +139,9 @@ Display labels are not durable authorization identity.
 Operational history should not automatically disappear after 12/24 months or through tiered feed expiry.
 
 For the initial product direction:
-- Field Sessions are retained with the Campaign/history;
-- domain events are retained with the Campaign/history;
-- Task/event relations required for historical session understanding are retained;
+- Field Sessions are retained with the Campaign/action history;
+- domain events are retained with the Campaign/action history;
+- Task/event relations required for historical understanding are retained;
 - statistics may continue to derive from retained history;
 - there is no automatic age-based cleanup for ordinary operational history in the initial design.
 
@@ -144,18 +152,17 @@ The retained records still follow payload minimization. "Keep everything" means 
 ### Consequences
 
 Benefits:
-- coordinators can compare outings and actions over long periods;
-- session map/statistics do not develop arbitrary time gaps;
-- auditability remains understandable;
+- coordinators can compare repeated flyer/collection rounds over long periods;
+- session/action statistics do not develop arbitrary time gaps;
+- problem Areas and workload imbalance can be analyzed later;
+- Admin export can use a complete operational history;
 - no cleanup scheduler is required for the first implementation.
 
 Costs:
 - D1 storage grows with product usage;
 - explicit Campaign/Organization deletion/export policy becomes important;
-- query/index design must remain bounded as history grows;
-- future scale may justify archive/export mechanisms, but not silent history expiry.
-
-The previous fixed-expiry and tiered-expiry variants are not the selected initial product direction. A future change would require an explicit ADR update rather than silent cleanup.
+- query/index/export design must remain bounded as history grows;
+- future scale may justify archival infrastructure, but not silent history expiry.
 
 ## Team archive/delete interaction
 
@@ -176,11 +183,18 @@ Event append must therefore participate in the same idempotency/transaction boun
 
 The client must never manufacture authoritative audit/event history independently of server application.
 
+## Admin analytics export relationship
+
+ADR-0018 proposes an Admin-only analysis package derived from retained operational history.
+
+Export should consume normalized/allowlisted session/event/statistics data rather than dumping raw database rows. Comment bodies, session free-text notes, credentials and GPS trails are excluded from the initial AI-analysis dataset.
+
 ## Security and authorization
 
 - event/session reads are Campaign/Organization scoped server-side;
 - event append follows authorization of the underlying domain operation;
 - Field Session create/close requires explicit capability once permissions exist;
+- analytics export requires explicit Admin/Organizer capability;
 - all D1 statements remain prepared/parameterized;
 - arbitrary user input remains inert text;
 - event APIs return only authorized tenant data;
@@ -200,12 +214,19 @@ Reason:
 - harder retention/redaction;
 - unnecessary for session task highlighting and normal activity history.
 
+## Rejected for v1: exact geometry snapshot for every historical edit
+
+Reason:
+- the requested history is primarily for reflection/statistics and future planning;
+- retained Task/event references plus current/reviewed geometry are sufficient initially;
+- full geometry versioning would add major storage/query/reconciliation complexity before there is evidence it is needed.
+
 ## Remaining acceptance decisions
 
-1. Define Campaign archive vs permanent deletion behavior for retained sessions/events.
-2. Decide whether exact historical geometry is a future requirement or current-geometry highlighting is sufficient.
-3. Define comment edit/delete event semantics once comment moderation policy is chosen.
-4. Define security/audit retention if it must differ from ordinary operational history.
+1. Define Campaign/action archive vs permanent deletion behavior for retained sessions/events.
+2. Define comment edit/delete event semantics once comment moderation policy is chosen.
+3. Define security/audit retention if it must differ from ordinary operational history.
+4. Accept the final action/template linkage and export boundaries in ADR-0018 before cross-action analytics persistence.
 
 ## Implementation gates after acceptance
 
