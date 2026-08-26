@@ -20,6 +20,25 @@ The field map remains MapLibre GL JS 5.7.1 with the CARTO online basemap. Prepar
 
 M4 access/session authorization, M5 resilient mutation synchronization and the M5.5 prepared-offline-map storage lifecycle are established mainline foundations.
 
+## Unified platform UI
+
+The normal website now starts in one unified platform shell instead of requiring separate Workbench query URLs to discover the newer UI foundations.
+
+The map remains mounted as the primary field workspace. A shared platform menu opens the integrated modules without replacing the accepted map/access/sync runtime.
+
+Integrated modules now include:
+- live Campaign progress using the current Campaign snapshot;
+- activity/comments, Pickup and Field Session UI foundations in one operational surface;
+- Smart Streets/House selection UI;
+- Live Group discovery/tour UI foundations;
+- Action/Templates/Analytics UI foundations for authorized Admin access;
+- Support/Feedback;
+- Organization/Admin UI foundations for authorized Admin access.
+
+The old `?workbench=ui|m6|admin|groups|actions` routes remain available for development and review compatibility.
+
+Local Foundation UI does not imply durable server persistence. Comments/Pickup/Field Session integration remains explicitly local until the corresponding reviewed persistence slices are implemented. Admin/Live Group security-gated surfaces continue to show only non-authoritative Foundation behavior.
+
 ## Release integration candidate
 
 The current platform integration combines the reviewed Workbench slices for the next product generation while preserving the accepted security boundaries.
@@ -85,4 +104,4 @@ Do not silently implement:
 
 ## Immediate next
 
-Finish the release integration gates on the exact candidate head. Only after tests, TypeScript, production build, dependency audit and Cloudflare preview are all green should the candidate be promoted to `main`. Migration 0004 remains a separate intentional D1 rollout step; until then Smart Street provenance writes fail explicitly and safely rather than corrupting or dropping data.
+Verify Plan 014 unified platform UI on the exact branch head through tests, TypeScript, production build and Cloudflare preview. After that, continue the next persistence/security slices without weakening the existing ADR gates. Migration 0004 remains a separate intentional D1 rollout step; until then Smart Street provenance writes fail explicitly and safely rather than corrupting or dropping data.
