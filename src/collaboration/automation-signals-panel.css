@@ -1,0 +1,61 @@
+.automation-signals-panel {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem;
+  border: 1px solid #dbe4dd;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.automation-signals-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.automation-signals-panel > header strong {
+  font-size: 0.84rem;
+}
+
+.automation-signals-panel > header span,
+.automation-signal > span {
+  color: #718078;
+  font-size: 0.64rem;
+  font-weight: 720;
+}
+
+.automation-empty {
+  margin: 0;
+  color: #6e7a72;
+  font-size: 0.72rem;
+}
+
+.automation-signal-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.automation-signal {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.68rem;
+  border: 1px solid #dce5de;
+  border-radius: 0.76rem;
+  background: #f8faf8;
+}
+
+.automation-signal strong {
+  color: #32453a;
+  font-size: 0.74rem;
+}
+
+.automation-signal.is-warning {
+  border-color: #e0c695;
+  background: #fff9eb;
+}
+
+.automation-signal.is-warning > span,
+.automation-signal.is-warning strong {
+  color: #73521e;
+}
