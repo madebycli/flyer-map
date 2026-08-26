@@ -1,0 +1,88 @@
+.organizer-action-delete {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #d7ded8;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.organizer-action-delete > div:first-child > span {
+  color: #8b3d2e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.organizer-action-delete h2,
+.organizer-action-delete p {
+  margin: 0.25rem 0 0;
+}
+
+.organizer-action-delete__archive,
+.organizer-action-delete__danger {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem;
+  border-radius: 0.85rem;
+}
+
+.organizer-action-delete__archive {
+  border: 1px solid #dce4de;
+  background: #f8faf8;
+}
+
+.organizer-action-delete__danger {
+  border: 1px solid #e3b5ad;
+  background: #fff7f5;
+}
+
+.organizer-action-delete__danger label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 700;
+}
+
+.organizer-action-delete__danger input {
+  min-height: 2.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #b9857c;
+  border-radius: 0.7rem;
+  font: inherit;
+  background: #ffffff;
+}
+
+.organizer-action-delete__danger code {
+  width: fit-content;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  background: #f0e2df;
+}
+
+.organizer-action-delete__blocked {
+  font-weight: 800;
+}
+
+.organizer-action-delete__delete-button {
+  justify-self: start;
+  min-height: 2.7rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid #9a392d;
+  border-radius: 0.75rem;
+  font: inherit;
+  font-weight: 800;
+  color: #ffffff;
+  background: #a53d30;
+}
+
+.organizer-action-delete button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.organizer-action-delete input:focus-visible,
+.organizer-action-delete button:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
