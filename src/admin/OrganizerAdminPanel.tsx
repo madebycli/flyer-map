@@ -3,6 +3,7 @@ export type AdminAccountListItem = {
   username: string;
   role: "organizer" | "admin";
   status: "active" | "disabled";
+  adminManagementDelegated?: boolean;
 };
 
 type Props = {
@@ -10,6 +11,7 @@ type Props = {
   canManageAdmins: boolean;
   canManageOrganizers: boolean;
   onAddAdmin: () => void;
+  onAddOrganizer?: () => void;
   onManageAccount: (account: AdminAccountListItem) => void;
 };
 
@@ -22,6 +24,7 @@ export function OrganizerAdminPanel({
   canManageAdmins,
   canManageOrganizers,
   onAddAdmin,
+  onAddOrganizer,
   onManageAccount,
 }: Props) {
   const activeOrganizers = accounts.filter(
@@ -35,13 +38,20 @@ export function OrganizerAdminPanel({
           <span>Organisation</span>
           <h2 id="organizer-admin-title">Organisatoren & Admins</h2>
           <p>
-            Organisatoren verwalten die administrative Ebene. Normale Admins bearbeiten den Betrieb
-            nur innerhalb ihrer serverseitig zugewiesenen Rechte.
+            Mehrere Organisatoren sind erlaubt. Mindestens ein wirksamer Organisator muss immer
+            erhalten bleiben. Admin-Verwaltung kann ausgewählten Admins explizit delegiert werden.
           </p>
         </div>
-        <button type="button" onClick={onAddAdmin} disabled={!canManageAdmins}>
-          Admin hinzufügen
-        </button>
+        <div className="organizer-admin-panel__create-actions">
+          <button type="button" onClick={onAddAdmin} disabled={!canManageAdmins}>
+            Admin hinzufügen
+          </button>
+          {onAddOrganizer ? (
+            <button type="button" onClick={onAddOrganizer} disabled={!canManageOrganizers}>
+              Organisator hinzufügen
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <div className="organizer-admin-panel__safety">
@@ -59,6 +69,9 @@ export function OrganizerAdminPanel({
                 <span>
                   {roleLabel(account.role)} · {account.status === "active" ? "Aktiv" : "Deaktiviert"}
                 </span>
+                {account.role === "admin" && account.adminManagementDelegated ? (
+                  <span>Admin-Verwaltung delegiert</span>
+                ) : null}
               </div>
               <button
                 type="button"
@@ -74,8 +87,8 @@ export function OrganizerAdminPanel({
       </ul>
 
       <p className="organizer-admin-panel__note">
-        Diese Oberfläche erzeugt keine Rechte. Hinzufügen, Rollenwechsel und Deaktivierung müssen
-        später immer durch den Worker autorisiert, erneut geprüft und auditiert werden.
+        Diese Oberfläche erzeugt keine Rechte. Hinzufügen, Rollenwechsel, Delegation und
+        Deaktivierung müssen später immer durch den Worker autorisiert, erneut geprüft und auditiert werden.
       </p>
     </section>
   );
