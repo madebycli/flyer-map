@@ -56,6 +56,7 @@
 .new-action-wizard__file {
   display: grid;
   gap: 0.4rem;
+  min-width: 0;
   font-size: 0.78rem;
   font-weight: 750;
 }
@@ -63,6 +64,7 @@
 .new-action-wizard input[type="text"],
 .new-action-wizard select,
 .new-action-wizard input[type="file"] {
+  min-width: 0;
   min-height: 2.75rem;
   padding: 0.55rem 0.65rem;
   border: 1px solid #cfd9d1;
@@ -111,4 +113,14 @@
 .new-action-wizard button:focus-visible {
   outline: 3px solid #2563eb;
   outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .new-action-wizard__mode {
+    display: grid;
+  }
+
+  .new-action-wizard > button {
+    justify-self: stretch;
+  }
 }
