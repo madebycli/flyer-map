@@ -180,7 +180,7 @@ export async function handleCampaignMutation(
       return errorResponse(
         503,
         "schema_migration_required",
-        "Smart-Street-Provenienz kann erst nach der vorbereiteten Datenbankmigration gespeichert werden.",
+        "Diese M6-Änderung kann erst nach der vorbereiteten Datenbankmigration gespeichert werden.",
         persisted.currentRevision,
       );
     }
