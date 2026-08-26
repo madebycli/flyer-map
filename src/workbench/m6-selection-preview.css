@@ -57,6 +57,7 @@
 }
 
 .m6-preview-note,
+.m6-sketch-section,
 .m6-mode-picker,
 .m6-route-options,
 .m6-selection-summary {
@@ -69,18 +70,122 @@
 }
 
 .m6-preview-note strong,
-.m6-mode-picker > strong {
+.m6-mode-picker > strong,
+.m6-sketch-section > div:first-child strong {
   font-size: 0.82rem;
   font-weight: 780;
 }
 
 .m6-preview-note p,
 .m6-selection-summary p,
-.m6-route-options p {
+.m6-route-options p,
+.m6-sketch-message {
   margin: 0.3rem 0 0;
   color: #66736a;
   font-size: 0.74rem;
   line-height: 1.45;
+}
+
+.m6-sketch-section {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.m6-sketch-section > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.m6-sketch-section > div:first-child span {
+  color: #66736a;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.m6-road-sketch {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 5 / 3;
+  border: 1px solid #cad6cc;
+  border-radius: 0.9rem;
+  background:
+    linear-gradient(rgb(69 101 76 / 5%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(69 101 76 / 5%) 1px, transparent 1px),
+    #f3f6f2;
+  background-size: 1.25rem 1.25rem;
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.m6-road-sketch svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.m6-sketch-road {
+  fill: none;
+  stroke: #708278;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.m6-sketch-road.is-selected {
+  stroke: #25834a;
+  stroke-width: 4;
+}
+
+.m6-sketch-anchor {
+  stroke: #ffffff;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.m6-sketch-anchor.is-start {
+  fill: #2563eb;
+}
+
+.m6-sketch-anchor.is-end {
+  fill: #be123c;
+}
+
+.m6-sketch-anchor.is-waypoint {
+  fill: #b45309;
+}
+
+.m6-sketch-message {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.75rem;
+  background: #f5f8f5;
+}
+
+.m6-snap-candidates {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.m6-snap-candidates button {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  min-height: 2.8rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #cbd8ce;
+  border-radius: 0.8rem;
+  color: #294130;
+  background: #ffffff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m6-snap-candidates button span {
+  color: #6f7c73;
+  font-size: 0.68rem;
 }
 
 .m6-mode-picker {
@@ -214,6 +319,7 @@
   font-size: 1rem;
 }
 
+.m6-snap-candidates button:focus-visible,
 .m6-anchor-actions button:focus-visible,
 .m6-route-options button:focus-visible,
 .m6-road-row:focus-visible,
