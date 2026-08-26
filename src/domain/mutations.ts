@@ -412,7 +412,7 @@ export function applyCampaignMutation(
           ? {
               houseTasks: snapshot.houseTasks.map((house) =>
                 house.parentStreetTaskId === mutation.payload.taskId
-                  ? { ...house, parentStreetTaskId: null, updatedAt: mutation.createdAt }
+                  ? { ...house, parentStreetTaskId: null }
                   : house,
               ),
             }
