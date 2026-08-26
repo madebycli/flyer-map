@@ -20,10 +20,20 @@ const validTemplate = {
       },
     },
   ],
-  roadSections: [],
+  roadSections: [
+    {
+      key: "road-1",
+      areaKey: "area-1",
+      label: "Hauptstraße",
+      geometry: {
+        type: "LineString",
+        coordinates: [[8, 49], [8.01, 49.01]],
+      },
+    },
+  ],
 };
 
-test("template import normalizes onto the allowlisted schema and drops unrelated extra fields", () => {
+test("template import normalizes nested Team, Area and Road objects onto allowlisted fields", () => {
   const imported = parseActionTemplateFile(JSON.stringify({
     format: "flyer-map-action-template",
     fileVersion: 1,
@@ -36,7 +46,23 @@ test("template import normalizes onto the allowlisted schema and drops unrelated
         {
           ...validTemplate.teams[0],
           oldTeamId: "team_old",
-          unrelatedMetadata: "drop-me",
+          unrelatedTeamMetadata: "drop-team",
+        },
+      ],
+      areas: [
+        {
+          ...validTemplate.areas[0],
+          oldAreaId: "area_old",
+          previousAreaCompletion: "completed",
+          unrelatedAreaMetadata: "drop-area",
+        },
+      ],
+      roadSections: [
+        {
+          ...validTemplate.roadSections[0],
+          oldTaskId: "task_old",
+          previousRoadStatus: "completed",
+          unrelatedRoadMetadata: "drop-road",
         },
       ],
     },
@@ -53,7 +79,21 @@ test("template import normalizes onto the allowlisted schema and drops unrelated
     "teams",
   ]);
   assert.deepEqual(Object.keys(imported.teams[0]).sort(), ["color", "key", "name"]);
-  assert.equal(JSON.stringify(imported).includes("campaign_old"), false);
-  assert.equal(JSON.stringify(imported).includes("should-not-survive"), false);
-  assert.equal(JSON.stringify(imported).includes("team_old"), false);
+  assert.deepEqual(Object.keys(imported.areas[0]).sort(), ["geometry", "key", "name", "teamKey"]);
+  assert.deepEqual(Object.keys(imported.roadSections[0]).sort(), ["areaKey", "geometry", "key", "label"]);
+
+  const normalized = JSON.stringify(imported);
+  for (const forbidden of [
+    "campaign_old",
+    "should-not-survive",
+    "team_old",
+    "drop-team",
+    "area_old",
+    "completed",
+    "drop-area",
+    "task_old",
+    "drop-road",
+  ]) {
+    assert.equal(normalized.includes(forbidden), false, `${forbidden} must not survive import`);
+  }
 });
