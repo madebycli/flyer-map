@@ -1,4 +1,5 @@
 import type { AdminAnalyticsExportPackage } from "../domain/adminAnalyticsExport.ts";
+import "./admin-analytics-export.css";
 
 const EXPORT_FILES = [
   "analytics.json",
