@@ -19,10 +19,11 @@ M4 access/session authorization, M5 resilient mutation synchronization and the M
 
 The normal website starts in one unified platform shell while the map remains mounted as the primary field workspace.
 
-Plan 016 updates the field chrome to the current mobile direction:
+Plan 016 defines the current mobile field chrome:
 - permanent Team dropdown removed from the composed field UI;
 - permanent Settings/Teams/Draw-Area toolbar removed from the composed browse chrome;
-- top-left now shows only a compact 3x3 app-grid button plus Team color/name context;
+- bottom-left now shows only a compact 3x3 app-grid button plus the visible Team name, with Team color only as a supporting marker;
+- former toolbar actions stay out of the permanent bottom bar and may later move into the launcher according to effective permissions;
 - the app menu is a rounded sheet over the map, visually aligned with the existing Settings/Teams sheet family;
 - launcher destinations use large phone-style rounded icons with short labels such as Karte, Stats, Team, Feedback, Smart and Einsätze;
 - Admin-only launcher destinations remain hidden unless current access is Admin;
@@ -73,4 +74,4 @@ Do not silently implement Organization account/password/TOTP/session runtime bef
 
 ## Immediate next
 
-Verify the compact launcher branch on its exact final head. Keep migrations 0004 and 0005 as separate intentional D1 rollout operations. After the navigation polish, the next M6 product slice remains the batched House map/runtime interaction layer.
+Verify the corrected bottom launcher branch on its exact final head. Keep migrations 0004 and 0005 as separate intentional D1 rollout operations. After the navigation polish, the next M6 product slice remains the batched House map/runtime interaction layer.
