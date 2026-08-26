@@ -37,11 +37,12 @@ Do not permanently overlay a dashboard over the map.
 The browse view intentionally keeps permanent chrome extremely small.
 
 Current direction:
-- top-left uses one compact translucent control group;
+- bottom-left uses one compact translucent control group;
 - first control is a 3×3 app-grid/menu icon, visually similar to one face of a cube;
-- directly beside it, left aligned, show the active Team name with a small Team-color marker;
+- directly beside it, left aligned, show the active Team name; a small Team-color marker may support the name but never replace it;
 - the old permanent Team dropdown is removed from the primary field chrome;
-- Settings, Teams and Draw Area are not permanently shown as a bottom action toolbar;
+- Settings, Teams, Draw Area and other former toolbar actions are not permanently shown in the bottom bar;
+- those actions may later move into the launcher and must only be shown where the effective permissions allow them;
 - map controls and contextual Area/Street sheets remain separate from this launcher chrome;
 - preserve large enough touch targets even though the visible control is compact.
 
@@ -72,7 +73,8 @@ The transition may animate, but:
 ## Active Team / Field Group context
 
 When working in a Team or Field Group:
-- show Team name compactly beside the app-grid icon;
+- show the Team name visibly beside the app-grid icon in the bottom bar;
+- Team color may be an additional marker, not the primary identifier;
 - remove the old permanently visible Team dropdown as the primary switcher;
 - later Team switching/details should happen through the Team destination intentionally;
 - future Team progress may be shown subtly without expanding the permanent field chrome.
