@@ -73,8 +73,6 @@ Confirmed:
 - Workbench hard-delete confirmation phrase is `AKTION LÖSCHEN`;
 - UI is never the security boundary.
 
-Organizer UI/delete guard passed CI #378 before later presentation/selector refinements. Newest final head must be green before promotion.
-
 Open Team-role detail:
 - exact extra Team Leader rights, especially Team name/color, member/invite and live-group management.
 
@@ -85,7 +83,9 @@ No account/password/TOTP/permission runtime exists.
 PR #49 + ADR-0018 + Plan 013 now model:
 - **Distribution Template** and **Collection Template** separately;
 - Templates can be downloaded/loaded as validated `flyer-map-action-template` JSON files;
-- creating an Action selects a compatible Template and starts fresh operational state;
+- New Action Wizard first chooses Distribution vs Collection and then only offers compatible Templates;
+- an Action may deliberately start without a Template;
+- creating an Action starts fresh operational state;
 - normal non-secret defaults such as map view, Team colors and `online anzeigen = an` may live in a Template;
 - no old completion/history/groups/comments/credentials are copied;
 - Collection Templates have their own car Teams and often more/smaller Areas instead of inheriting Distribution assignments;
@@ -96,7 +96,7 @@ PR #49 + ADR-0018 + Plan 013 now model:
 - AI prompts treat labels as untrusted data;
 - secrets/GPS/comment bodies/free Session notes/account details are excluded from initial analysis export.
 
-Latest template import/export + mode separation head CI #379 passed.
+Template/New Action Workbench was green on CI #404 before the latest wording-only template-panel change; final head must remain green before promotion.
 
 ## History
 
