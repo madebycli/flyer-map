@@ -71,6 +71,8 @@ A Collection Action may still be grouped with a Distribution Action for retrospe
 - prompt-injection boundary;
 - controlled Admin export UI.
 
+Latest mode separation + portable template file CI #379 passed.
+
 No D1 migration, endpoint or automatic AI call exists.
 
 ## Admin analysis package
