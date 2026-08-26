@@ -1,0 +1,117 @@
+.action-template-panel {
+  display: grid;
+  gap: 1rem;
+  max-width: 58rem;
+}
+
+.action-template-panel__header h2,
+.action-template-panel__header p,
+.action-template-panel__empty,
+.action-template-panel__note {
+  margin: 0;
+}
+
+.action-template-panel__header > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.action-template-panel__header span {
+  color: var(--text-muted, #64748b);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.action-template-panel__header p,
+.action-template-panel__identity span,
+.action-template-panel__note,
+.action-template-panel__empty {
+  color: var(--text-muted, #64748b);
+  line-height: 1.45;
+}
+
+.action-template-panel__list {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.action-template-panel__list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.action-template-panel__identity {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.action-template-panel__identity strong,
+.action-template-panel__identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.action-template-panel__identity span {
+  font-size: 0.82rem;
+}
+
+.action-template-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.action-template-panel__actions button {
+  min-height: 2.65rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  border-radius: 0.78rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 730;
+  cursor: pointer;
+}
+
+.action-template-panel__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.action-template-panel__actions button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+.action-template-panel__note,
+.action-template-panel__empty {
+  padding: 0.8rem;
+  border-radius: 0.8rem;
+  background: rgba(15, 23, 42, 0.04);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .action-template-panel__list > li {
+    grid-template-columns: 1fr;
+  }
+
+  .action-template-panel__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
