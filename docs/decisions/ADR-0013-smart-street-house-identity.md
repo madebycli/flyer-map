@@ -1,7 +1,7 @@
 ---
 id: ADR-0013
 type: decision
-status: proposed
+status: accepted
 date: 2026-08-26
 ---
 
@@ -9,7 +9,7 @@ date: 2026-08-26
 
 ## Status
 
-Proposed. The product direction for Street selection and junction ambiguity was clarified on 2026-08-26. Persistence/schema implementation remains blocked until the durable identity/geometry representation is explicitly accepted.
+Accepted on 2026-08-26. The product owner explicitly confirmed application-owned Task ids with separate OSM provenance and persisted reviewed geometry snapshots. M6 persistence may proceed under the constraints in this ADR.
 
 ## Context
 
@@ -37,11 +37,11 @@ Important constraints:
 - distribution and pickup completion remain independent;
 - geometry stored by the Campaign must remain usable if a later OSM refresh changes the source dataset.
 
-## Decision candidate: application-owned Task identity with explicit OSM provenance
+## Decision: application-owned Task identity with explicit OSM provenance
 
 ### Street identity
 
-A durable Smart Street Task should receive a normal application-owned generated Task id.
+A durable Smart Street Task receives a normal application-owned generated Task id.
 
 The Task stores a reviewed geometry snapshot and separate source provenance such as:
 
@@ -51,7 +51,7 @@ StreetTask
 - campaignId
 - areaId
 - label
-- geometry: reviewed road-section geometry
+- geometry: reviewed GeoJSON LineString road-section snapshot
 - status
 - source:
   - dataset: OpenStreetMap
@@ -67,7 +67,7 @@ One user-visible Street Task may reference multiple OSM ways when the user delib
 
 ### House identity
 
-A durable House Task should also receive an application-owned generated id and store its reviewed geometry/address snapshot separately from optional source provenance:
+A durable House Task also receives an application-owned generated id and stores its reviewed geometry/address snapshot separately from optional source provenance:
 
 ```text
 HouseTask
@@ -86,7 +86,25 @@ HouseTask
 
 Manual House/Pickup addresses may have `source = null`.
 
-### Why geometry is snapshotted
+## Persisted Street geometry representation
+
+The initial persisted Smart Street geometry is a reviewed GeoJSON-compatible `LineString` snapshot using `[longitude, latitude]` coordinates.
+
+Rules:
+- the persisted LineString represents exactly the user-reviewed route between the snapped start and end anchors;
+- the first and last source road sections are clipped at the snapped anchor coordinates, so geometry outside the selected range is not stored as part of the Task;
+- when start and end are on the same source road section, only the interval between those two snapped anchors is stored;
+- when a selected route spans multiple OSM ways, their reviewed source geometries are ordered, oriented and stitched into one continuous LineString;
+- source coordinate order may be reversed during stitching when required for continuity. This does not change OSM provenance;
+- OSM way ids remain separate provenance metadata and do not determine domain identity;
+- adjacent duplicate coordinates are removed while building the snapshot;
+- the persisted snapshot is copied into Campaign-owned data and is not a live reference to the prepared OSM package;
+- if the reviewed route cannot be validated as one continuous LineString, persistence must fail visibly and require correction. The initial format does not silently fall back to a `MultiLineString`;
+- a later OSM/package refresh may propose differences, but it must never silently rewrite an existing Task geometry snapshot or Task id.
+
+A future explicit reconciliation flow may compare the snapshot with newer source data, but accepting such a change is a separate user-visible operation.
+
+## Why geometry is snapshotted
 
 After Task creation, Campaign behavior must not depend on the next OSM response reproducing exactly the same object geometry or identity. A later prepared-package refresh may propose changes, but it must not silently rewrite completed/assigned domain Tasks.
 
@@ -166,12 +184,12 @@ A geometry hash may help compare source revisions but must not be the Task id be
 
 - OSM names/refs/address tags remain untrusted inert text;
 - source ids are selectors/provenance, never credentials;
-- any future persistence uses validated structured payloads and parameterized/prepared D1 statements;
+- any persistence uses validated structured payloads and parameterized/prepared D1 statements;
 - Worker authorization remains authoritative for Task creation/update;
 - generated domain ids are validated independently of source ids;
 - no user-supplied Overpass/query text is introduced by M6.
 
-## Consequences if accepted
+## Consequences
 
 Benefits:
 - precise road-section selection matching the field workflow;
@@ -187,10 +205,10 @@ Costs:
 - schema/mutation contracts must add source provenance and House-capable Task shape;
 - source refresh becomes a reconciliation problem instead of an automatic overwrite.
 
-## Acceptance required before M6 persistence
+## Implementation requirements for M6 persistence
 
-Before implementing the D1/schema/mutation write path:
-1. confirm application-owned generated ids + separate OSM provenance;
-2. define the initial persisted geometry representation for a selected multi-way road section;
-3. update DATA/MAP/OFFLINE_SYNC/SECURITY docs and mutation tests;
-4. use additive migration only for the active M6 slice.
+1. Keep application-owned Task ids independent from OSM ids and geometry hashes.
+2. Persist the validated reviewed LineString snapshot plus separate OSM provenance.
+3. Update DATA/MAP/OFFLINE_SYNC/SECURITY documentation and add mutation/persistence regression tests before promoting the runtime slice.
+4. Use additive migrations only for the active M6 slice.
+5. Preserve existing server-side authorization, validation and prepared/parameterized SQL boundaries.
