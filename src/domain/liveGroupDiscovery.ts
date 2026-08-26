@@ -5,7 +5,7 @@ export type LiveGroupDiscoveryItem = {
   teamName: string;
   teamColor: string;
   label: string;
-  state: "active" | "closed";
+  state: "active" | "closed" | "expired";
   discoverable: boolean;
   joinAvailable: boolean;
 };

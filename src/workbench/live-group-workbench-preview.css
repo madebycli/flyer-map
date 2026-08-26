@@ -8,6 +8,7 @@
 .live-group-workbench-preview__header,
 .live-group-workbench-preview__message,
 .live-group-workbench-preview__grid,
+.live-group-workbench-preview__tour,
 .live-group-workbench-preview__policy {
   width: min(100%, 70rem);
   margin-inline: auto;
@@ -77,6 +78,10 @@
   margin-bottom: 1rem;
 }
 
+.live-group-workbench-preview__tour {
+  margin-bottom: 1rem;
+}
+
 .live-group-workbench-preview__list-card,
 .live-group-workbench-preview__policy {
   padding: 1rem;
@@ -87,7 +92,7 @@
 
 .live-group-workbench-preview__policy {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.5rem;
 }
 
 .live-group-workbench-preview__header a:focus-visible {
