@@ -96,7 +96,7 @@ PR #49 + ADR-0018 + Plan 013 now model:
 - AI prompts treat labels as untrusted data;
 - secrets/GPS/comment bodies/free Session notes/account details are excluded from initial analysis export.
 
-Template/New Action Workbench was green on CI #404 before the latest wording-only template-panel change; final head must remain green before promotion.
+Template/New Action Workbench passed CI #404 before the latest wording-only change. Final head must be green before promotion.
 
 ## History
 
