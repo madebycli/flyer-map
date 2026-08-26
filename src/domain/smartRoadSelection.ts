@@ -7,6 +7,15 @@ export type SmartRoadRangeSelection =
   | { state: "disconnected"; sourceIds: [] }
   | { state: "ambiguous"; sourceIds: [] };
 
+export type SmartRoadRouteOption = {
+  sourceIds: string[];
+};
+
+type PathSearchResult = {
+  paths: string[][];
+  truncated: boolean;
+};
+
 function coordinateKey([lng, lat]: Coordinate) {
   return `${lng.toFixed(7)},${lat.toFixed(7)}`;
 }
@@ -46,15 +55,24 @@ function adjacencyFor(roads: SmartRoadCandidate[]) {
   return adjacency;
 }
 
-function findAtMostTwoSimplePaths(
+function findSimplePaths(
   adjacency: Map<string, string[]>,
   startSourceId: string,
   endSourceId: string,
-) {
+  pathLimit: number,
+): PathSearchResult {
   const paths: string[][] = [];
   const queue: string[][] = [[startSourceId]];
+  const graphSize = Math.max(1, adjacency.size);
+  const expansionLimit = Math.max(500, Math.min(10_000, graphSize * 20));
+  let expansions = 0;
 
-  while (queue.length > 0 && paths.length < 2) {
+  while (queue.length > 0 && paths.length < pathLimit) {
+    if (expansions >= expansionLimit) {
+      return { paths, truncated: true };
+    }
+    expansions += 1;
+
     const path = queue.shift();
     if (!path) break;
     const current = path[path.length - 1];
@@ -70,7 +88,11 @@ function findAtMostTwoSimplePaths(
     }
   }
 
-  return paths;
+  return { paths, truncated: false };
+}
+
+function knownSourceIds(roads: SmartRoadCandidate[]) {
+  return new Set(roads.map((road) => road.sourceId));
 }
 
 /**
@@ -78,14 +100,14 @@ function findAtMostTwoSimplePaths(
  *
  * Street names are deliberately ignored. If the road graph offers more than one
  * simple route between the anchors, the result is ambiguous and the UI must ask
- * for another anchor/waypoint instead of guessing a route through a junction/grid.
+ * the user to choose a route or add a waypoint instead of guessing.
  */
 export function selectSmartRoadRange(
   roads: SmartRoadCandidate[],
   startSourceId: string,
   endSourceId: string,
 ): SmartRoadRangeSelection {
-  const sourceIds = new Set(roads.map((road) => road.sourceId));
+  const sourceIds = knownSourceIds(roads);
   if (!sourceIds.has(startSourceId) || !sourceIds.has(endSourceId)) {
     return { state: "disconnected", sourceIds: [] };
   }
@@ -93,10 +115,58 @@ export function selectSmartRoadRange(
     return { state: "selected", sourceIds: [startSourceId] };
   }
 
-  const paths = findAtMostTwoSimplePaths(adjacencyFor(roads), startSourceId, endSourceId);
-  if (paths.length === 0) return { state: "disconnected", sourceIds: [] };
-  if (paths.length > 1) return { state: "ambiguous", sourceIds: [] };
-  return { state: "selected", sourceIds: paths[0] };
+  const search = findSimplePaths(adjacencyFor(roads), startSourceId, endSourceId, 2);
+  if (search.paths.length === 0 && !search.truncated) {
+    return { state: "disconnected", sourceIds: [] };
+  }
+  if (search.truncated || search.paths.length > 1) {
+    return { state: "ambiguous", sourceIds: [] };
+  }
+  return { state: "selected", sourceIds: search.paths[0] };
+}
+
+/**
+ * Return a small set of concrete route candidates for an ambiguous start/end pair.
+ * This is presentation help only. Returning the list does not pick a route.
+ */
+export function smartRoadRouteOptions(
+  roads: SmartRoadCandidate[],
+  startSourceId: string,
+  endSourceId: string,
+  limit = 3,
+): SmartRoadRouteOption[] {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 5) return [];
+  const sourceIds = knownSourceIds(roads);
+  if (!sourceIds.has(startSourceId) || !sourceIds.has(endSourceId)) return [];
+  if (startSourceId === endSourceId) return [{ sourceIds: [startSourceId] }];
+
+  return findSimplePaths(adjacencyFor(roads), startSourceId, endSourceId, limit).paths.map(
+    (sourceIdsForRoute) => ({ sourceIds: sourceIdsForRoute }),
+  );
+}
+
+/**
+ * Resolve a start/end selection through explicit user-selected waypoint segments.
+ * Each leg still has to be unambiguous. The caller can add another waypoint when
+ * one leg remains ambiguous.
+ */
+export function selectSmartRoadRangeViaWaypoints(
+  roads: SmartRoadCandidate[],
+  anchorSourceIds: string[],
+): SmartRoadRangeSelection {
+  if (anchorSourceIds.length < 2) return { state: "disconnected", sourceIds: [] };
+
+  const merged: string[] = [];
+  for (let index = 0; index < anchorSourceIds.length - 1; index += 1) {
+    const leg = selectSmartRoadRange(roads, anchorSourceIds[index], anchorSourceIds[index + 1]);
+    if (leg.state !== "selected") return leg;
+
+    for (const sourceId of leg.sourceIds) {
+      if (merged[merged.length - 1] !== sourceId) merged.push(sourceId);
+    }
+  }
+
+  return { state: "selected", sourceIds: merged };
 }
 
 export function smartRoadSelectionLabel(
