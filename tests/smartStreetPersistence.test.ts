@@ -109,7 +109,9 @@ function smartTask() {
   });
 }
 
-function createTaskMutation(task = smartTask()) {
+function createTaskMutation(
+  task: CampaignSnapshot["tasks"][number] = smartTask(),
+) {
   const previous = baseSnapshot();
   const next: CampaignSnapshot = {
     ...previous,
@@ -408,7 +410,11 @@ test("pre-migration D1 still loads legacy manual Tasks without selecting a missi
 });
 
 test("pre-migration D1 still persists manual task.create without source_json", async () => {
-  const manualTask = { ...smartTask(), id: "task_manual-pre-migration", source: undefined };
+  const manualTask: CampaignSnapshot["tasks"][number] = {
+    ...smartTask(),
+    id: "task_manual-pre-migration",
+    source: undefined,
+  };
   const { previous, mutation } = createTaskMutation(manualTask);
   const db = new CapturingDatabase(false);
 
