@@ -240,6 +240,13 @@ nodes:
     topics: [m6, houses, house-tasks, persistence, osm, mutations, d1, migration-0005, parent-street]
     load_when: [House persistence, House Tasks, house_tasks table, migration 0005, parent Street, Smart House persistence]
 
+  - id: plan-app-launcher-sheet
+    path: docs/plans/active/016-app-launcher-sheet.md
+    type: plan
+    status: active
+    topics: [ui, mobile, app-launcher, menu, team-context, icons, field-chrome]
+    load_when: [compact menu, app launcher, 3x3 menu icon, iOS-style icon grid, Team dropdown removal, field chrome]
+
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
     type: onboarding
@@ -338,6 +345,9 @@ edges:
   - { from: plan-m6-house-persistence, to: map, relation: constrains_followup }
   - { from: plan-m6-house-persistence, to: security, relation: constrained_by }
   - { from: plan-m6-house-persistence, to: quality, relation: validated_by }
+  - { from: plan-app-launcher-sheet, to: plan-unified-platform-ui, relation: refines_navigation }
+  - { from: plan-app-launcher-sheet, to: ux, relation: implements_field_chrome }
+  - { from: plan-app-launcher-sheet, to: quality, relation: validated_by }
   - { from: prompts, to: architecture, relation: onboards_to }
   - { from: prompts, to: roadmap, relation: onboards_to }
   - { from: prompt-platform-expansion, to: plan-platform-expansion, relation: starts }
