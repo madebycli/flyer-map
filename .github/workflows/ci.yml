@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   check:
+    # Release integration branches use this same gate before promotion to main.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
