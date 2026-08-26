@@ -18,6 +18,7 @@ const workbenchMode = new URLSearchParams(window.location.search).get("workbench
 const root = createRoot(document.getElementById("root")!);
 
 if (workbenchMode === "m6") {
+  document.title = "Smart Streets Workbench | Flyer Map";
   root.render(
     <StrictMode>
       <M6SelectionPreview />
