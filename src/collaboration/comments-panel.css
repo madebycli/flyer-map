@@ -1,0 +1,138 @@
+.comments-panel {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.9rem;
+  border: 1px solid #dbe4dd;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.comments-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.comments-panel-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.comments-panel-header > div > span,
+.comments-panel-header > span,
+.comment-composer-footer > span {
+  color: #748078;
+  font-size: 0.65rem;
+  font-weight: 720;
+}
+
+.comments-panel-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+}
+
+.comments-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.comments-empty,
+.comments-readonly,
+.comment-error {
+  margin: 0;
+  color: #6c796f;
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
+.comment-card {
+  display: grid;
+  gap: 0.42rem;
+  padding: 0.7rem;
+  border: 1px solid #e0e7e2;
+  border-radius: 0.78rem;
+  background: #f8faf8;
+}
+
+.comment-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.comment-card-meta strong {
+  font-size: 0.71rem;
+}
+
+.comment-card-meta time {
+  color: #76827a;
+  font-size: 0.62rem;
+}
+
+.comment-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: #334239;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.comment-composer {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.comment-composer textarea {
+  width: 100%;
+  min-height: 6rem;
+  resize: vertical;
+  padding: 0.7rem;
+  border: 1px solid #cfd9d1;
+  border-radius: 0.78rem;
+  color: #25362b;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.comment-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.comment-composer-footer button {
+  min-height: 2.45rem;
+  padding: 0.48rem 0.8rem;
+  border: 0;
+  border-radius: 0.72rem;
+  color: #ffffff;
+  background: #245b35;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.comment-composer-footer button:disabled {
+  opacity: 0.62;
+  cursor: default;
+}
+
+.comment-composer textarea:focus-visible,
+.comment-composer-footer button:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.comment-error {
+  color: #921f24;
+}
