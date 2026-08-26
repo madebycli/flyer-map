@@ -1,0 +1,123 @@
+.organizer-admin-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.organizer-admin-panel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.organizer-admin-panel > header > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.organizer-admin-panel h2,
+.organizer-admin-panel p {
+  margin: 0;
+}
+
+.organizer-admin-panel > header span {
+  color: var(--text-muted, #64748b);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.organizer-admin-panel > header p,
+.organizer-admin-panel__note,
+.organizer-admin-panel li span,
+.organizer-admin-panel__safety span {
+  color: var(--text-muted, #64748b);
+  line-height: 1.45;
+}
+
+.organizer-admin-panel button {
+  min-height: 2.65rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 0.78rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 730;
+  cursor: pointer;
+}
+
+.organizer-admin-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.organizer-admin-panel button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+.organizer-admin-panel__safety {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(180, 83, 9, 0.2);
+  border-radius: 0.85rem;
+  background: rgba(255, 247, 237, 0.92);
+}
+
+.organizer-admin-panel__safety span,
+.organizer-admin-panel__note {
+  font-size: 0.8rem;
+}
+
+.organizer-admin-panel ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.organizer-admin-panel li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(15, 23, 42, 0.11);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.organizer-admin-panel li > div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.organizer-admin-panel li strong,
+.organizer-admin-panel li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.organizer-admin-panel li span {
+  font-size: 0.8rem;
+}
+
+.organizer-admin-panel__note {
+  padding: 0.8rem;
+  border-radius: 0.8rem;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+@media (max-width: 640px) {
+  .organizer-admin-panel > header,
+  .organizer-admin-panel li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
