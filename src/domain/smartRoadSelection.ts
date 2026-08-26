@@ -55,7 +55,7 @@ function adjacencyFor(roads: SmartRoadCandidate[]) {
   return adjacency;
 }
 
-function findSimplePaths(
+function findShortestPaths(
   adjacency: Map<string, string[]>,
   startSourceId: string,
   endSourceId: string,
@@ -66,21 +66,23 @@ function findSimplePaths(
   const graphSize = Math.max(1, adjacency.size);
   const expansionLimit = Math.max(500, Math.min(10_000, graphSize * 20));
   let expansions = 0;
+  let shortestLength: number | null = null;
 
   while (queue.length > 0 && paths.length < pathLimit) {
-    if (expansions >= expansionLimit) {
-      return { paths, truncated: true };
-    }
+    if (expansions >= expansionLimit) return { paths, truncated: true };
     expansions += 1;
 
     const path = queue.shift();
     if (!path) break;
-    const current = path[path.length - 1];
+    if (shortestLength !== null && path.length > shortestLength) break;
 
+    const current = path[path.length - 1];
     if (current === endSourceId) {
+      shortestLength ??= path.length;
       paths.push(path);
       continue;
     }
+    if (shortestLength !== null) continue;
 
     for (const neighbor of adjacency.get(current) ?? []) {
       if (path.includes(neighbor)) continue;
@@ -108,13 +110,9 @@ export function selectSmartRoadRange(
     return { state: "selected", sourceIds: [startSourceId] };
   }
 
-  const search = findSimplePaths(adjacencyFor(roads), startSourceId, endSourceId, 2);
-  if (search.paths.length === 0 && !search.truncated) {
-    return { state: "disconnected", sourceIds: [] };
-  }
-  if (search.truncated || search.paths.length > 1) {
-    return { state: "ambiguous", sourceIds: [] };
-  }
+  const search = findShortestPaths(adjacencyFor(roads), startSourceId, endSourceId, 2);
+  if (search.paths.length === 0 && !search.truncated) return { state: "disconnected", sourceIds: [] };
+  if (search.truncated || search.paths.length > 1) return { state: "ambiguous", sourceIds: [] };
   return { state: "selected", sourceIds: search.paths[0] };
 }
 
@@ -129,7 +127,7 @@ export function smartRoadRouteOptions(
   if (!sourceIds.has(startSourceId) || !sourceIds.has(endSourceId)) return [];
   if (startSourceId === endSourceId) return [{ sourceIds: [startSourceId] }];
 
-  return findSimplePaths(adjacencyFor(roads), startSourceId, endSourceId, limit).paths.map(
+  return findShortestPaths(adjacencyFor(roads), startSourceId, endSourceId, limit).paths.map(
     (sourceIdsForRoute) => ({ sourceIds: sourceIdsForRoute }),
   );
 }
@@ -144,7 +142,6 @@ export function selectSmartRoadRangeViaWaypoints(
   for (let index = 0; index < anchorSourceIds.length - 1; index += 1) {
     const leg = selectSmartRoadRange(roads, anchorSourceIds[index], anchorSourceIds[index + 1]);
     if (leg.state !== "selected") return leg;
-
     for (const sourceId of leg.sourceIds) {
       if (merged[merged.length - 1] !== sourceId) merged.push(sourceId);
     }
@@ -153,10 +150,7 @@ export function selectSmartRoadRangeViaWaypoints(
   return { state: "selected", sourceIds: merged };
 }
 
-export function smartRoadSelectionLabel(
-  roads: SmartRoadCandidate[],
-  sourceIds: string[],
-) {
+export function smartRoadSelectionLabel(roads: SmartRoadCandidate[], sourceIds: string[]) {
   if (sourceIds.length === 0) return null;
   const selected = roads.filter((candidate) => sourceIds.includes(candidate.sourceId));
   if (selected.length === 1) {
