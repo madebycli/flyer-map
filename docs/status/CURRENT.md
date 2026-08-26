@@ -9,12 +9,7 @@ last_updated: 2026-08-26
 
 ## Product baseline
 
-Verteil-Flyer is a mobile-first normal website. The architecture still explicitly excludes:
-- native app runtime;
-- installable PWA behavior;
-- Service Worker;
-- Web App Manifest;
-- Background Sync.
+Verteil-Flyer is a mobile-first normal website. The architecture still explicitly excludes native app runtime, installable PWA behavior, Service Worker, Web App Manifest and Background Sync.
 
 The field map remains MapLibre GL JS 5.7.1 with the CARTO online basemap. Prepared offline OSM context is stored separately in browser IndexedDB and does not bulk-cache CARTO/OSMF tiles.
 
@@ -22,33 +17,31 @@ M4 access/session authorization, M5 resilient mutation synchronization and the M
 
 ## Unified platform UI
 
-Plan 014 is completed and verified. The normal website starts in one unified platform shell instead of requiring separate Workbench query URLs to discover the newer UI foundations.
+The normal website starts in one unified platform shell while the map remains mounted as the primary field workspace.
 
-The map remains mounted as the primary field workspace. Integrated modules include live Campaign progress, operational comments/Pickup/Field Session foundations, Smart Streets/Houses, Live Groups, Actions/Analytics, Support and authorized Admin foundations.
+Plan 016 defines the current mobile field chrome:
+- permanent Team dropdown removed from the composed field UI;
+- permanent Settings/Teams/Draw-Area toolbar removed from the composed browse chrome;
+- bottom-left now shows only a compact 3x3 app-grid button plus the visible Team name, with Team color only as a supporting marker;
+- former toolbar actions stay out of the permanent bottom bar and may later move into the launcher according to effective permissions;
+- the app menu is a rounded sheet over the map, visually aligned with the existing Settings/Teams sheet family;
+- launcher destinations use large phone-style rounded icons with short labels such as Karte, Stats, Team, Feedback, Smart and Einsätze;
+- Admin-only launcher destinations remain hidden unless current access is Admin;
+- selecting a launcher destination may still open its dedicated full module surface.
 
-The old `?workbench=ui|m6|admin|groups|actions` routes remain available for development and review compatibility.
+Integrated modules still include Campaign progress, operational comments/Pickup/Field Session foundations, Smart Streets/Houses, Live Groups, Actions/Analytics, Support and authorized Admin foundations.
 
 Local Foundation UI does not imply durable server persistence. Comments/Pickup/Field Session integration remains explicitly local until the corresponding reviewed persistence slices are implemented. Admin/Live Group security-gated surfaces continue to show only non-authoritative Foundation behavior.
 
-The stable integration preview alias remains:
-`https://release-platform-integration-2026-08-26-flyer-map.cloudflare-eleven035.workers.dev`
-
 ## M6 Street and House persistence
 
-ADR-0013 is accepted:
-- durable Street/House identity is application-owned;
-- OSM ids are provenance only;
-- reviewed geometry becomes Campaign-owned snapshot data;
-- later OSM refreshes must not silently rewrite Task identity or reviewed geometry/provenance.
+ADR-0013 is accepted: durable Street/House identity is application-owned, OSM ids are provenance only, reviewed geometry becomes Campaign-owned snapshot data, and later OSM refreshes must not silently rewrite Task identity or reviewed geometry/provenance.
 
 ### Smart Street
 
 `migrations/0004_m6_task_source_provenance.sql` adds nullable `tasks.source_json` for Smart Street provenance. It is prepared but is not recorded as remotely applied.
 
-Before 0004:
-- existing/manual Street Tasks remain readable/writable;
-- Smart Street provenance writes fail before Campaign revision claim with `schema_migration_required`;
-- provenance is never silently discarded.
+Before 0004 existing/manual Street Tasks remain readable/writable, while Smart Street provenance writes fail before Campaign revision claim with `schema_migration_required`. Provenance is never silently discarded.
 
 ### House Tasks
 
@@ -59,64 +52,26 @@ Plan 015 adds the durable House persistence foundation without changing the esta
 - optional exactly-one-Way OSM provenance;
 - optional parent Street Task constrained to the same Campaign and Area;
 - House create/rename/status/delete through the existing M5 queue/idempotency/revision model;
-- Worker-side scope validation for Admin/Team Editor/Viewer;
+- Worker-side scope validation;
 - reviewed House geometry/source/parent immutability;
 - parent relationship clears safely when its Street is deleted.
 
-`migrations/0005_m6_house_tasks.sql` adds the separate `house_tasks` table. It is additive and is **not remotely applied** by this development slice.
+`migrations/0005_m6_house_tasks.sql` adds the separate `house_tasks` table. It is additive and is not remotely applied by development work.
 
-Before 0005:
-- Street reads/writes continue normally;
-- House reads do not query a missing table;
-- House writes fail explicitly with `schema_migration_required` before revision claim;
-- House data is never silently dropped or stored as a Street.
+Before 0005 Street reads/writes continue normally, House reads do not query a missing table, and House writes fail explicitly with `schema_migration_required` before revision claim.
 
 House rendering remains a deliberate follow-up. `vf-streets` continues to contain only Street LineStrings until a batched House Polygon layer is implemented and density-tested.
 
-The House persistence feature branch is `m6-house-persistence-runtime`, with Draft PR #70 based on the unified release branch. Its first complete implementation head passed tests, TypeScript, dependency audit, production build and Cloudflare Workers preview. Subsequent documentation-only commits still require the same final-head verification before merge.
-
-## Release integration candidate
-
-The wider platform candidate also includes:
-- prepared offline map Settings/API/repository/context work;
-- Smart Street/House candidate and selection geometry;
-- pickup/collection domain and UI foundations;
-- Field Session draft/history/metrics foundations;
-- comments, automation signals and progress/statistics foundations;
-- Live Group draft/discovery/tour UI foundations without blocked credential runtime;
-- app-like navigation, active Team context, appearance and Support/Feedback surfaces;
-- Organizer/Admin Workbench, templates, action setup, analytics/export and role-template modeling;
-- dedicated security regression matrix and static source guards.
-
-Account/password/TOTP/Organization permission runtime remains intentionally excluded. ADR-0015 and ADR-0016 plus the identity threat model remain review gates before that runtime is implemented.
-
-Live Group QR/code/password credential runtime remains intentionally excluded until ADR-0014 is accepted with its remaining security details.
-
-Durable Field Session/domain-event persistence and durable Action/Templates/Analytics persistence remain behind their proposed architecture/ADR gates.
-
 ## Security/release gates
 
-Every promoted integration head must pass together:
-- complete automated test suite;
-- strict TypeScript check;
-- production build;
-- high-severity dependency audit;
-- static source guards;
-- Cloudflare Worker build/preview verification.
+Every promoted integration head must pass the automated test suite, strict TypeScript check, production build, high-severity dependency audit, static source guards and Cloudflare Worker build/preview verification.
 
 Prepared/parameterized SQL remains mandatory. External/user-controlled content renders inertly. IDs are selectors, not authorization. Worker-side scope checks remain authoritative. Secrets, session material and future password/TOTP/recovery data must never be logged.
 
 ## Architecture still blocked for later milestones
 
-Do not silently implement:
-- Organization account/password/TOTP/session runtime before accepted ADR-0015 and threat-model review;
-- configurable capability enforcement before accepted ADR-0016;
-- Live Group credential runtime before accepted ADR-0014;
-- durable Field Session event history before its accepted retention/event decision;
-- durable Action/Templates/Analytics persistence before its accepted architecture decision;
-- any Service Worker/PWA/Background Sync path without a later accepted architecture decision;
-- continuous GPS history for sessions/statistics/live groups.
+Do not silently implement Organization account/password/TOTP/session runtime before accepted ADR-0015 and threat-model review, configurable capability enforcement before accepted ADR-0016, Live Group credential runtime before accepted ADR-0014, durable Field Session event history before its accepted retention/event decision, durable Action/Templates/Analytics persistence before its accepted architecture decision, Service Worker/PWA/Background Sync, or continuous GPS history.
 
 ## Immediate next
 
-Finish PR #70 on its exact final head and merge it into the unified release branch only if all gates remain green. Keep migrations 0004 and 0005 as separate intentional D1 rollout operations. After the House persistence foundation, the next M6 product slice is the batched House map/runtime interaction layer rather than weakening any security gate.
+Verify the corrected bottom launcher branch on its exact final head. Keep migrations 0004 and 0005 as separate intentional D1 rollout operations. After the navigation polish, the next M6 product slice remains the batched House map/runtime interaction layer.

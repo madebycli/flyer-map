@@ -31,8 +31,10 @@ type PlatformModuleId =
 type PlatformModule = {
   id: PlatformModuleId;
   title: string;
+  menuLabel: string;
   description: string;
   badge: string;
+  icon: string;
   adminOnly?: boolean;
 };
 
@@ -40,45 +42,59 @@ const MODULES: readonly PlatformModule[] = [
   {
     id: "progress",
     title: "Fortschritt",
+    menuLabel: "Stats",
     description: "Gesamtstand, Teams und Gebiete auf einen Blick.",
     badge: "Live-Daten",
-  },
-  {
-    id: "operations",
-    title: "Aktivität & Einsätze",
-    description: "Kommentare, Kleidersammlung und Field-Session-Oberflächen.",
-    badge: "Foundation",
-  },
-  {
-    id: "smart",
-    title: "Smart Streets & Houses",
-    description: "Straßen direkt auf echter Kartengeometrie auswählen und vorbereiten.",
-    badge: "M6",
+    icon: "📊",
   },
   {
     id: "groups",
     title: "Live-Gruppen",
+    menuLabel: "Team",
     description: "Online-Gruppen, Touren, Teamfilter und Teilnehmerzahl.",
     badge: "Foundation",
-  },
-  {
-    id: "actions",
-    title: "Aktionen & Analyse",
-    description: "Vorlagen, neue Aktionen, Vergleiche und Analyse-Export.",
-    badge: "Admin",
-    adminOnly: true,
+    icon: "👥",
   },
   {
     id: "support",
     title: "Support & Feedback",
+    menuLabel: "Feedback",
     description: "Diagnose, Hilfe und sicherer Feedback-Entwurf.",
     badge: "Verfügbar",
+    icon: "💬",
+  },
+  {
+    id: "smart",
+    title: "Smart Streets & Houses",
+    menuLabel: "Smart",
+    description: "Straßen direkt auf echter Kartengeometrie auswählen und vorbereiten.",
+    badge: "M6",
+    icon: "🧭",
+  },
+  {
+    id: "operations",
+    title: "Aktivität & Einsätze",
+    menuLabel: "Einsätze",
+    description: "Kommentare, Kleidersammlung und Field-Session-Oberflächen.",
+    badge: "Foundation",
+    icon: "✅",
+  },
+  {
+    id: "actions",
+    title: "Aktionen & Analyse",
+    menuLabel: "Aktionen",
+    description: "Vorlagen, neue Aktionen, Vergleiche und Analyse-Export.",
+    badge: "Admin",
+    icon: "📁",
+    adminOnly: true,
   },
   {
     id: "admin",
     title: "Organisation & Admin",
+    menuLabel: "Admin",
     description: "Rollen, Administratoren und Organisationsverwaltung.",
     badge: "Security-Gate",
+    icon: "⚙️",
     adminOnly: true,
   },
 ] as const;
@@ -378,6 +394,14 @@ function moduleContent(
   return <AdminWorkbenchPreview />;
 }
 
+function MenuGridIcon() {
+  return (
+    <span className="platform-grid-glyph" aria-hidden="true">
+      {Array.from({ length: 9 }, (_, index) => <i key={index} />)}
+    </span>
+  );
+}
+
 export function PlatformShell() {
   const [initialLoad] = useState(loadCampaignSnapshot);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(initialLoad.snapshot);
@@ -397,7 +421,11 @@ export function PlatformShell() {
   const isAdmin = access?.role === "admin";
   const visibleModules = MODULES.filter((module) => !module.adminOnly || isAdmin);
   const activeMeta = MODULES.find((module) => module.id === activeModule) ?? null;
-  const overlayOpen = menuOpen || activeModule !== null;
+  const teamContext = access?.teamId
+    ? snapshot.teams.find((team) => team.id === access.teamId) ?? null
+    : snapshot.teams[0] ?? null;
+  const teamName = teamContext?.name.trim() || "Team";
+  const teamColor = teamContext?.color ?? "#64748b";
 
   const openModule = (moduleId: PlatformModuleId) => {
     const module = MODULES.find((candidate) => candidate.id === moduleId);
@@ -408,21 +436,26 @@ export function PlatformShell() {
 
   return (
     <div className="platform-shell">
-      <div className="platform-map-layer" aria-hidden={overlayOpen || undefined}>
+      <div className="platform-map-layer" aria-hidden={menuOpen || activeModule !== null || undefined}>
         <App />
       </div>
 
-      {!overlayOpen ? (
-        <button
-          className="platform-launcher"
-          type="button"
-          onClick={() => setMenuOpen(true)}
-          aria-label="Plattform-Menü öffnen"
-          title="Plattform-Menü öffnen"
-        >
-          <span aria-hidden="true">•••</span>
-          <strong>Menü</strong>
-        </button>
+      {!activeModule ? (
+        <div className={`platform-field-bar ${menuOpen ? "is-behind-menu" : ""}`}>
+          <button
+            className="platform-grid-button"
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Menü öffnen"
+            title="Menü öffnen"
+          >
+            <MenuGridIcon />
+          </button>
+          <div className="platform-active-team" title={teamName}>
+            <span className="platform-active-team-dot" style={{ backgroundColor: teamColor }} aria-hidden="true" />
+            <strong>{teamName}</strong>
+          </div>
+        </div>
       ) : null}
 
       {activeModule && activeMeta ? (
@@ -433,55 +466,59 @@ export function PlatformShell() {
               <span>{activeMeta.badge}</span>
               <strong id="platform-module-title">{activeMeta.title}</strong>
             </div>
-            <button type="button" onClick={() => setMenuOpen(true)} aria-label="Module öffnen">Module</button>
+            <button type="button" onClick={() => setMenuOpen(true)} aria-label="Menü öffnen">Menü</button>
           </header>
           <div className="platform-module-content">{moduleContent(activeModule, snapshot, access)}</div>
         </section>
       ) : null}
 
       {menuOpen ? (
-        <section className="platform-menu-overlay" role="dialog" aria-modal="true" aria-labelledby="platform-menu-title">
-          <header className="platform-menu-header">
-            <div>
-              <span>Verteil-Flyer</span>
-              <strong id="platform-menu-title">Was möchtest du öffnen?</strong>
-            </div>
-            <button type="button" onClick={() => setMenuOpen(false)} aria-label="Menü schließen">×</button>
-          </header>
+        <div className="platform-menu-overlay" role="presentation" onMouseDown={() => setMenuOpen(false)}>
+          <section
+            className="platform-menu-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="platform-menu-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="platform-menu-handle" aria-hidden="true" />
+            <header className="platform-menu-header">
+              <div>
+                <span>Verteil-Flyer</span>
+                <strong id="platform-menu-title">Menü</strong>
+              </div>
+              <button type="button" onClick={() => setMenuOpen(false)} aria-label="Menü schließen">×</button>
+            </header>
 
-          <div className="platform-menu-grid">
-            <button
-              className="platform-menu-card platform-menu-card--map"
-              type="button"
-              onClick={() => {
-                setActiveModule(null);
-                setMenuOpen(false);
-              }}
-            >
-              <span className="platform-menu-badge">Feld</span>
-              <strong>Arbeitskarte</strong>
-              <small>Gebiete, Straßen, Status, Sync und Offline-Arbeitsbereich.</small>
-            </button>
-
-            {visibleModules.map((module) => (
+            <div className="platform-menu-grid">
               <button
-                className="platform-menu-card"
+                className="platform-app-item"
                 type="button"
-                key={module.id}
-                onClick={() => openModule(module.id)}
+                onClick={() => {
+                  setActiveModule(null);
+                  setMenuOpen(false);
+                }}
               >
-                <span className="platform-menu-badge">{module.badge}</span>
-                <strong>{module.title}</strong>
-                <small>{module.description}</small>
+                <span className="platform-app-icon platform-app-icon--map" aria-hidden="true">🗺️</span>
+                <strong>Karte</strong>
               </button>
-            ))}
-          </div>
 
-          <footer className="platform-menu-footer">
-            <span>{access ? `Zugriff: ${access.role}` : "Zugriff wird geprüft"}</span>
-            <span>Website-only · MapLibre 5.7.1</span>
-          </footer>
-        </section>
+              {visibleModules.map((module) => (
+                <button
+                  className="platform-app-item"
+                  type="button"
+                  key={module.id}
+                  onClick={() => openModule(module.id)}
+                >
+                  <span className={`platform-app-icon platform-app-icon--${module.id}`} aria-hidden="true">
+                    {module.icon}
+                  </span>
+                  <strong>{module.menuLabel}</strong>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
       ) : null}
     </div>
   );

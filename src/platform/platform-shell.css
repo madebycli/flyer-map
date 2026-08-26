@@ -15,49 +15,126 @@
   inset: 0;
 }
 
-.platform-launcher {
-  position: fixed;
-  z-index: 120;
+/* The unified shell owns browse chrome. Keep the legacy map toolbar available to App
+   internally, but do not render it as permanent field chrome here. */
+.platform-map-layer .topbar,
+.platform-map-layer .map-toolbar {
+  display: none;
+}
+
+.platform-map-layer .storage-warning,
+.platform-map-layer .undo-toast {
   top: calc(env(safe-area-inset-top) + 0.55rem);
+}
+
+.platform-field-bar {
+  position: fixed;
+  z-index: 19;
+  bottom: calc(env(safe-area-inset-bottom) + 0.55rem);
   left: 0.55rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  min-height: 2.7rem;
-  padding: 0.45rem 0.72rem;
+  gap: 0.32rem;
+  max-width: min(22rem, calc(100vw - 1.1rem));
+  min-height: 3rem;
+  padding: 0.28rem;
   border: 1px solid rgb(23 32 25 / 12%);
-  border-radius: 0.8rem;
-  color: #172019;
+  border-radius: 0.92rem;
   background: rgb(255 255 255 / 96%);
   box-shadow: 0 0.3rem 1.1rem rgb(20 35 24 / 14%);
   backdrop-filter: blur(12px);
 }
 
-.platform-launcher span {
-  letter-spacing: 0.08em;
+.platform-field-bar.is-behind-menu {
+  pointer-events: none;
 }
 
-.platform-launcher strong {
-  font-size: 0.78rem;
-}
-
-.platform-menu-overlay,
-.platform-module-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 3000;
-  display: flex;
-  flex-direction: column;
-  min-width: 320px;
-  min-height: 100dvh;
+.platform-grid-button {
+  display: grid;
+  place-items: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0.7rem;
   color: #172019;
-  background: #f4f6f3;
+  background: #edf2ee;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.platform-grid-glyph {
+  display: grid;
+  grid-template-columns: repeat(3, 0.26rem);
+  grid-template-rows: repeat(3, 0.26rem);
+  gap: 0.18rem;
+}
+
+.platform-grid-glyph i {
+  display: block;
+  width: 0.26rem;
+  height: 0.26rem;
+  border-radius: 0.08rem;
+  background: currentColor;
+}
+
+.platform-active-team {
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+  min-width: 0;
+  padding: 0 0.68rem 0 0.46rem;
+}
+
+.platform-active-team-dot {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgb(23 32 25 / 18%);
+}
+
+.platform-active-team strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .platform-menu-overlay {
+  position: fixed;
+  inset: 0;
   z-index: 3200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.55rem;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 0.55rem);
+  background: rgb(16 24 18 / 22%);
+  backdrop-filter: blur(2px);
+}
+
+.platform-menu-sheet {
+  width: min(31rem, 100%);
+  max-height: min(74dvh, 38rem);
   overflow: auto;
-  padding: calc(env(safe-area-inset-top) + 1rem) 1rem calc(env(safe-area-inset-bottom) + 1rem);
+  padding: 0.42rem 0.92rem calc(1rem + env(safe-area-inset-bottom));
+  border: 1px solid rgb(23 32 25 / 11%);
+  border-radius: 1.3rem 1.3rem 1rem 1rem;
+  color: #172019;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 0.45rem 1.8rem rgb(20 35 24 / 22%);
+  overscroll-behavior: contain;
+}
+
+.platform-menu-handle {
+  width: 2.7rem;
+  height: 0.28rem;
+  margin: 0.08rem auto 0.72rem;
+  border-radius: 999px;
+  background: #c9d1ca;
 }
 
 .platform-menu-header,
@@ -69,8 +146,7 @@
 }
 
 .platform-menu-header {
-  margin: 0 auto 1rem;
-  width: min(74rem, 100%);
+  margin-bottom: 0.95rem;
 }
 
 .platform-menu-header > div,
@@ -103,75 +179,102 @@
   border: 1px solid rgb(23 32 25 / 12%);
   border-radius: 0.8rem;
   color: #172019;
-  background: #fff;
+  background: #edf2ee;
   font-weight: 800;
+}
+
+.platform-menu-header button {
+  border-radius: 999px;
+  font-size: 1.3rem;
+  line-height: 1;
 }
 
 .platform-menu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  gap: 0.8rem;
-  width: min(74rem, 100%);
-  margin: 0 auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem 0.55rem;
+  padding: 0.25rem 0.1rem 0.45rem;
 }
 
-.platform-menu-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.45rem;
-  min-height: 9rem;
-  padding: 1rem;
-  border: 1px solid rgb(23 32 25 / 10%);
-  border-radius: 1rem;
+.platform-app-item {
+  display: grid;
+  justify-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+  min-height: 5.4rem;
+  padding: 0.15rem;
+  border: 0;
   color: #172019;
-  background: #fff;
-  box-shadow: 0 0.25rem 1rem rgb(20 35 24 / 6%);
-  text-align: left;
+  background: transparent;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.platform-menu-card:hover {
-  border-color: rgb(37 99 235 / 35%);
-  box-shadow: 0 0.5rem 1.4rem rgb(20 35 24 / 10%);
+.platform-app-icon {
+  display: grid;
+  place-items: center;
+  width: 3.65rem;
+  height: 3.65rem;
+  border-radius: 1rem;
+  color: #fff;
+  background: linear-gradient(145deg, #4f7d5e, #245136);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 30%), 0 0.25rem 0.7rem rgb(20 35 24 / 16%);
+  font-size: 1.55rem;
+  line-height: 1;
 }
 
-.platform-menu-card--map {
-  background: linear-gradient(145deg, #fff, #eef6ef);
+.platform-app-icon--map {
+  background: linear-gradient(145deg, #66a776, #2f7143);
 }
 
-.platform-menu-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 1.55rem;
-  padding: 0.2rem 0.45rem;
-  border-radius: 999px;
-  color: #31583a;
-  background: #e9f3eb;
-  font-size: 0.68rem;
-  font-weight: 800;
+.platform-app-icon--progress {
+  background: linear-gradient(145deg, #4d8fdd, #255eaa);
 }
 
-.platform-menu-card strong {
-  font-size: 1rem;
+.platform-app-icon--groups {
+  background: linear-gradient(145deg, #8b73d6, #5d47af);
 }
 
-.platform-menu-card small {
-  color: #667067;
-  line-height: 1.45;
+.platform-app-icon--support {
+  background: linear-gradient(145deg, #39a79f, #17736d);
 }
 
-.platform-menu-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  width: min(74rem, 100%);
-  margin: 1rem auto 0;
-  color: #667067;
+.platform-app-icon--smart {
+  background: linear-gradient(145deg, #e49a40, #b8651f);
+}
+
+.platform-app-icon--operations {
+  background: linear-gradient(145deg, #59a96a, #2f783f);
+}
+
+.platform-app-icon--actions {
+  background: linear-gradient(145deg, #d27482, #a03c4c);
+}
+
+.platform-app-icon--admin {
+  background: linear-gradient(145deg, #707983, #3f4851);
+}
+
+.platform-app-item strong {
+  width: 100%;
+  overflow: hidden;
   font-size: 0.72rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .platform-module-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  min-height: 100dvh;
   overflow: hidden;
+  color: #172019;
+  background: #f4f6f3;
 }
 
 .platform-module-header {
@@ -190,6 +293,7 @@
 
 .platform-module-header button {
   padding: 0.45rem 0.65rem;
+  background: #fff;
   font-size: 0.76rem;
 }
 
@@ -301,7 +405,6 @@
   font-size: 0.8rem;
 }
 
-/* In der integrierten Plattform-Hülle ersetzt der gemeinsame Header die alten Workbench-Header. */
 .platform-module-content .workbench-preview-topbar,
 .platform-module-content .workbench-preview-note,
 .platform-module-content .m6-selection-header,
@@ -325,11 +428,28 @@
   padding-top: 0;
 }
 
-@media (min-width: 900px) {
-  .platform-menu-overlay {
-    padding-inline: 1.5rem;
+@media (max-width: 370px) {
+  .platform-menu-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .platform-app-icon {
+    width: 3.45rem;
+    height: 3.45rem;
+  }
+}
+
+@media (min-width: 700px) {
+  .platform-menu-overlay {
+    align-items: center;
+  }
+
+  .platform-menu-sheet {
+    border-radius: 1.3rem;
+  }
+}
+
+@media (min-width: 900px) {
   .platform-module-header {
     padding-inline: 1.25rem;
   }
@@ -338,20 +458,21 @@
     padding: 1.25rem;
   }
 
-  .platform-launcher {
-    top: 0.75rem;
+  .platform-field-bar {
+    bottom: 0.75rem;
     left: 0.75rem;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .platform-menu-card,
-  .platform-launcher {
-    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  .platform-app-item,
+  .platform-grid-button,
+  .platform-menu-sheet {
+    transition: transform 140ms ease, box-shadow 140ms ease;
   }
 
-  .platform-menu-card:active,
-  .platform-launcher:active {
-    transform: scale(0.985);
+  .platform-app-item:active,
+  .platform-grid-button:active {
+    transform: scale(0.96);
   }
 }
