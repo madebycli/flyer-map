@@ -86,6 +86,40 @@ function cloneMapView(view: MapCameraView | null): MapCameraView | null {
     : null;
 }
 
+function cloneOperationalDefaults(
+  defaults: ActionTemplateOperationalDefaults,
+): ActionTemplateOperationalDefaults {
+  return {
+    fieldGroupDiscoverableByDefault: defaults.fieldGroupDiscoverableByDefault,
+  };
+}
+
+function cloneTeam(team: ActionTemplateTeam): ActionTemplateTeam {
+  return {
+    key: team.key,
+    name: team.name,
+    color: team.color,
+  };
+}
+
+function cloneArea(area: ActionTemplateArea): ActionTemplateArea {
+  return {
+    key: area.key,
+    teamKey: area.teamKey,
+    name: area.name,
+    geometry: clonePolygon(area.geometry),
+  };
+}
+
+function cloneRoadSection(section: ActionTemplateRoadSection): ActionTemplateRoadSection {
+  return {
+    key: section.key,
+    areaKey: section.areaKey,
+    label: section.label,
+    geometry: cloneLineString(section.geometry),
+  };
+}
+
 function validText(value: unknown, maxLength: number) {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
 }
@@ -150,13 +184,10 @@ function cloneTemplate(template: ActionTemplateBlueprint): ActionTemplateBluepri
     mode: template.mode,
     name: template.name,
     defaultMapView: cloneMapView(template.defaultMapView),
-    operationalDefaults: { ...template.operationalDefaults },
-    teams: template.teams.map((team) => ({ ...team })),
-    areas: template.areas.map((area) => ({ ...area, geometry: clonePolygon(area.geometry) })),
-    roadSections: template.roadSections.map((section) => ({
-      ...section,
-      geometry: cloneLineString(section.geometry),
-    })),
+    operationalDefaults: cloneOperationalDefaults(template.operationalDefaults),
+    teams: template.teams.map(cloneTeam),
+    areas: template.areas.map(cloneArea),
+    roadSections: template.roadSections.map(cloneRoadSection),
   };
 }
 
@@ -261,25 +292,23 @@ export function createCollectionActionTemplate(
 export function actionRunDraftFromTemplate(template: ActionTemplateBlueprint): ActionRunDraft {
   if (!validateActionTemplate(template)) throw new Error("invalid_action_template");
 
-  const roadSections = template.roadSections.map((section) => ({
-    ...section,
-    geometry: cloneLineString(section.geometry),
-  }));
+  const normalized = cloneTemplate(template);
+  const roadSections = normalized.roadSections.map(cloneRoadSection);
 
   return {
-    templateName: template.name,
-    mode: template.mode,
-    defaultMapView: cloneMapView(template.defaultMapView),
-    operationalDefaults: { ...template.operationalDefaults },
-    teams: template.teams.map((team) => ({ ...team })),
-    areas: template.areas.map((area) => ({ ...area, geometry: clonePolygon(area.geometry) })),
+    templateName: normalized.name,
+    mode: normalized.mode,
+    defaultMapView: cloneMapView(normalized.defaultMapView),
+    operationalDefaults: cloneOperationalDefaults(normalized.operationalDefaults),
+    teams: normalized.teams.map(cloneTeam),
+    areas: normalized.areas.map(cloneArea),
     distributionTasks:
-      template.mode === "distribution"
-        ? roadSections.map((section) => ({ ...section, status: "open" as const }))
+      normalized.mode === "distribution"
+        ? roadSections.map((section) => ({ ...cloneRoadSection(section), status: "open" as const }))
         : [],
     collectionRoadSections:
-      template.mode === "collection"
-        ? roadSections.map((section) => ({ ...section, status: "open" as const }))
+      normalized.mode === "collection"
+        ? roadSections.map((section) => ({ ...cloneRoadSection(section), status: "open" as const }))
         : [],
     pickupTasks: [],
   };
