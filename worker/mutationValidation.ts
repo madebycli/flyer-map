@@ -15,7 +15,7 @@ function isId(value: unknown) {
 }
 
 function isTaskId(value: unknown) {
-  return isId(value) && value.startsWith("task_");
+  return isId(value) && value.startsWith("task_") && value.length > "task_".length;
 }
 
 function isTimestamp(value: unknown) {
@@ -39,15 +39,18 @@ function isTaskSource(value: unknown) {
   if (!isRecord(value)) return false;
   const keys = Object.keys(value).sort();
   if (keys.join(",") !== "dataset,objectIds,objectType") return false;
-  return (
-    value.dataset === "OpenStreetMap"
-    && value.objectType === "way"
-    && Array.isArray(value.objectIds)
-    && value.objectIds.length > 0
-    && value.objectIds.every(
+  if (
+    value.dataset !== "OpenStreetMap"
+    || value.objectType !== "way"
+    || !Array.isArray(value.objectIds)
+    || value.objectIds.length === 0
+    || !value.objectIds.every(
       (objectId) => typeof objectId === "number" && Number.isSafeInteger(objectId) && objectId > 0,
     )
-  );
+  ) {
+    return false;
+  }
+  return new Set(value.objectIds).size === value.objectIds.length;
 }
 
 export function validateCampaignMutation(
