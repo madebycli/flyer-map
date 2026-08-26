@@ -9,7 +9,8 @@
     "preview": "npm run build && vite preview",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "check": "npm test && npm run typecheck && npm run build",
+    "audit:dependencies": "npm audit --audit-level=high",
+    "check": "npm test && npm run typecheck && npm run build && npm run audit:dependencies",
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
