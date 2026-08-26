@@ -117,6 +117,7 @@ function parseTaskSource(value: unknown): TaskSourceProvenance | null {
     || !value.objectIds.every(
       (objectId) => typeof objectId === "number" && Number.isSafeInteger(objectId) && objectId > 0,
     )
+    || new Set(value.objectIds).size !== value.objectIds.length
   ) {
     return null;
   }
