@@ -2,9 +2,9 @@
 id: architecture-organizations
 type: architecture
 status: proposed
-last_updated: 2026-08-25
+last_updated: 2026-08-26
 related: [product-roadmap, architecture-security, architecture-data, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion]
-source_of_truth_for: [future-organization-model, future-admin-panel-boundary, future-multi-admin]
+source_of_truth_for: [future-organization-model, future-admin-panel-boundary, future-organizer-admin-hierarchy]
 ---
 
 # Organizations and Admin Platform — Proposed
@@ -19,45 +19,62 @@ This is not yet implemented and does not change current Campaign authorization b
 
 ```text
 Organization
-  ├─ Administrator/member accounts
+  ├─ Organizer account(s)
+  ├─ Admin/member accounts
   ├─ Permission policies / role templates
-  ├─ Campaigns
+  ├─ Campaign templates
+  ├─ Campaigns / Aktionen
   │   ├─ Teams
   │   │   ├─ Areas
   │   │   ├─ Field Groups / Field Sessions
   │   │   └─ Team-specific invites/access
   │   ├─ Distribution Tasks
   │   └─ Pickup Tasks
-  └─ Organization settings / audit / operational overview
+  └─ Organization settings / audit / operational overview / exports
 ```
 
 Organization is the tenant boundary. Campaigns belong to exactly one Organization after migration.
 
-## Multiple administrators
+## Organizer and Admin
 
-More than one authorized Organization Admin is mandatory.
+The product hierarchy distinguishes a top-level **Organizer** from normal **Admins**.
 
-No design may assume one original creator is the only durable owner.
+### Organizer
 
-Administrator capabilities may include:
-- create/archive Campaigns;
-- manage Organization settings;
-- invite/create/disable administrators according to accepted identity policy;
-- manage permissions;
-- manage Team archive/delete;
-- review Campaign/Team access;
-- view Organization-wide statistics/activity;
-- manage security/recovery according to policy.
+Organizer is responsible for administrative authority itself.
 
-## Admin handover
+Confirmed direction:
+- Organizer can add/promote/disable Admin accounts according to the accepted identity/re-authentication policy;
+- Organizer manages Organization-wide permission/role policy;
+- Organizer can manage Campaign templates and Organization-wide configuration;
+- Organizer is protected by a last-effective-Organizer invariant;
+- Organizer actions are audited;
+- Organizer authority never crosses the Organization tenant boundary.
 
-Admin access must be transferable without sharing passwords or TOTP secrets.
+### Admin
+
+Admins handle normal operational administration according to their capabilities.
+
+Typical responsibilities may include:
+- create/archive Campaigns when allowed;
+- manage Teams/Areas/Tasks;
+- manage Field Groups and Campaign settings;
+- view statistics/session history;
+- create Admin-only analytics/log exports;
+- review Campaign/Team access.
+
+Normal Admins do not automatically gain Organizer authority or the right to create new Organizers. Whether selected Admins may be delegated Admin-management authority remains an ADR decision.
+
+## Authority handover
+
+Organizer/Admin access must be transferable without sharing passwords or TOTP secrets.
 
 Safety requirements:
-- do not accidentally remove the last effective Organization Admin;
-- admin promotion/removal is audited;
+- do not accidentally remove the last effective Organizer;
+- Organizer/Admin promotion/removal is audited;
 - safe recovery exists without first-visitor/race-to-claim behavior;
-- a disabled/revoked account loses server-side authority promptly.
+- a disabled/revoked account loses server-side authority promptly;
+- a normal Admin cannot self-promote to Organizer merely through UI or client-controlled role values.
 
 ## Administrator identity
 
@@ -68,27 +85,23 @@ Requested future account model:
 - no SMS requirement;
 - no mandatory email identity.
 
-The full security design is governed by `docs/architecture/IDENTITY_PERMISSIONS.md` and requires an accepted ADR before implementation.
+The full security design is governed by `docs/architecture/IDENTITY_PERMISSIONS.md` and the proposed ADRs 0015/0016. It requires accepted security decisions before runtime implementation.
 
 ## Permission model
 
 Current fixed Campaign roles are not enough for the requested Admin settings.
 
-Future Admin must be able to configure capabilities such as:
-- whether users can create Teams;
-- rename/change Team color;
-- archive/delete Teams;
-- create/edit/delete Areas;
-- edit own-Team vs other-Team Areas;
-- edit/delete own-Team vs other-Team Streets/Houses/Pickup Tasks;
-- manage Team invites;
-- create/manage live Field Groups;
-- control live-group discoverability policy;
-- view statistics;
-- manage comments/moderation where applicable;
-- change Campaign settings;
-- manage permissions;
-- manage administrators.
+Future capabilities include:
+- Team create/rename/color/archive-delete;
+- Area/Task edits across own/other Teams;
+- Team invites;
+- live Field Group create/manage/discoverability;
+- statistics/history viewing;
+- analytics/log export;
+- Campaign/template settings;
+- permission management;
+- Admin management;
+- Organizer management under stricter policy.
 
 Rules:
 - deny by default;
@@ -97,7 +110,7 @@ Rules:
 - Organization boundary cannot be overridden by permission configuration;
 - permission changes are audited.
 
-Exact role-template/override semantics require ADR.
+Exact role-template/delegation semantics require ADR-0016 acceptance.
 
 ## Team archive/delete
 
@@ -127,17 +140,18 @@ Field map:
 
 Admin panel:
 - Organizations;
-- Campaigns;
+- Organizer/Admin accounts;
+- Campaign templates and Aktionen;
 - Teams and archive/delete;
-- Team colors/metadata/date;
 - Areas/ownership;
 - access and invites;
 - permission settings;
 - live-group policies;
 - statistics/Field Sessions;
-- comments/activity/audit;
+- activity/audit;
+- AI-analysis/log export;
 - support/feedback;
-- accounts/security.
+- security/accounts.
 
 Admin must remain responsive, but desktop may use denser tables/forms than field UI.
 
@@ -145,12 +159,13 @@ Admin must remain responsive, but desktop may use denser tables/forms than field
 
 Mandatory:
 - tenant scope enforced by Worker/D1 query boundaries;
-- no cross-Organization reads/writes/statistics/comments/activity;
+- no cross-Organization reads/writes/statistics/comments/activity/exports;
 - account authentication never replaces resource authorization;
 - ids are selectors, never credentials;
 - parameterized/prepared D1 queries for user-controlled input;
-- sensitive management actions create audit records;
-- recovery never creates anonymous ownership.
+- sensitive management/export actions create audit records;
+- recovery never creates anonymous ownership;
+- exports never contain passwords, TOTP secrets/codes, session/access secrets or raw credentials.
 
 ## Relationship to current Campaign roles
 
@@ -159,11 +174,9 @@ Current roles remain until an explicit migration:
 - Team Editor;
 - Viewer.
 
-Do not silently reinterpret current Campaign Admin as Organization Admin.
+Do not silently reinterpret current Campaign Admin as Organization Admin or Organizer.
 
-The future model may preserve lightweight Campaign/Team access for field participants while Organization administrators use accounts.
-
-This boundary must be defined in ADR before migration.
+The future model may preserve lightweight Campaign/Team access for field participants while Organizer/Admin users use accounts.
 
 ## Legacy migration
 
@@ -174,15 +187,14 @@ Migration plan must:
 - preserve Campaign ids, geometry, revisions, grants and history where practical;
 - avoid first-visitor claim races;
 - use additive D1 migrations;
-- define how current Admin grants coexist with/migrate to account-based admin authority.
+- define how current Admin grants coexist with/migrate to account-based Organizer/Admin authority.
 
 ## Open decisions requiring ADR
 
-- account schema and password hashing;
-- TOTP secret protection and recovery;
-- account-session model;
-- invitation/onboarding for additional admins;
-- role templates/capability overrides;
+- whether multiple Organizers are allowed/recommended;
+- whether selected Admins may add other Admins or only Organizers can;
+- account schema/password hashing/TOTP recovery;
+- role template/delegation rules;
 - legacy Campaign Admin migration;
 - Organization deletion/export/retention;
 - audit retention;
