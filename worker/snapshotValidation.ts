@@ -7,6 +7,7 @@ import type {
   LngLat,
   MapCameraView,
   PolygonGeometry,
+  TaskSourceProvenance,
   Team,
 } from "../src/domain/campaign.ts";
 import {
@@ -105,6 +106,23 @@ function parseLineStringGeometry(value: unknown): LineStringGeometry | null {
   return value as LineStringGeometry;
 }
 
+function parseTaskSource(value: unknown): TaskSourceProvenance | null {
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value).sort();
+  if (keys.join(",") !== "dataset,objectIds,objectType") return null;
+  if (value.dataset !== "OpenStreetMap" || value.objectType !== "way") return null;
+  if (
+    !Array.isArray(value.objectIds)
+    || value.objectIds.length === 0
+    || !value.objectIds.every(
+      (objectId) => typeof objectId === "number" && Number.isSafeInteger(objectId) && objectId > 0,
+    )
+  ) {
+    return null;
+  }
+  return value as TaskSourceProvenance;
+}
+
 function parseCampaign(value: unknown, campaignId: string): Campaign | null {
   if (!isRecord(value)) return null;
   if (value.id !== campaignId) return null;
@@ -144,6 +162,7 @@ function parseTask(value: unknown, campaignId: string): DistributionTask | null 
   if (value.taskType !== "street") return null;
   if (!isBoundedString(value.label, 160)) return null;
   if (!parseLineStringGeometry(value.geometry)) return null;
+  if (value.source !== undefined && value.source !== null && !parseTaskSource(value.source)) return null;
   if (
     value.status !== "open" &&
     value.status !== "completed" &&
@@ -222,7 +241,7 @@ export function validateCampaignSnapshot(
     if (!task) {
       return {
         valid: false,
-        message: "Mindestens eine Straße, Geometrie oder ein Status ist ungültig.",
+        message: "Mindestens eine Straße, Geometrie, Provenance oder ein Status ist ungültig.",
       };
     }
     tasks.push(task);
