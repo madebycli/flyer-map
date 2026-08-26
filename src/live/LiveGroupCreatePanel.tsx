@@ -20,7 +20,7 @@ export function LiveGroupCreatePanel({ teams, canCreate, onCreateDraft }: Props)
   const defaults = liveGroupCreationDefaults();
   const [label, setLabel] = useState("");
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
-  const [discoverable, setDiscoverable] = useState(defaults.discoverable);
+  const [discoverable, setDiscoverable] = useState<boolean>(defaults.discoverable);
   const [error, setError] = useState<string | null>(null);
 
   const selectedTeam = useMemo(
