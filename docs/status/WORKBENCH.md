@@ -28,7 +28,7 @@ Experimental non-main work only. Nothing here declares shipped `main` behavior.
 
 - PR #34: OSM road/building candidates.
 - PR #38: start/end selection, route choices, waypoints and point-to-road snapping. Point-snap CI #368 passed.
-- PR #39: combined Smart-Street semantics + isolated touch preview, now retargeted cleanly to `workbench-m6-candidate-prep` and mergeable.
+- PR #39: combined Smart-Street semantics + isolated touch preview, retargeted cleanly to `workbench-m6-candidate-prep`; current head passed CI #416.
 - PR #40: House single/multi/same-street selection UI.
 - PR #46: proposed ADR-0013 for application-owned Task ids + OSM provenance. Still proposed.
 
@@ -41,7 +41,8 @@ Confirmed interaction:
 - equal plausible routes are shown for explicit user choice;
 - ambiguity UX is C: route choices plus optional intermediate waypoints;
 - waypoints can deliberately force an alternate/longer route;
-- road list remains keyboard/accessibility fallback.
+- road list remains keyboard/accessibility fallback;
+- isolated preview route is `?workbench=m6`.
 
 Still blocked before M6 persistence:
 - explicit acceptance of durable application-owned Task ids + separate OSM provenance;
@@ -49,19 +50,26 @@ Still blocked before M6 persistence:
 
 ## Live Field Groups
 
-- PR #48: Campaign/action online group list, default `Alle in der Aktion`, Team filter, new groups default `online anzeigen = an`.
+- PR #48: local creation + Campaign/action online-group discovery, final head passed CI #434.
+- isolated preview route is `?workbench=groups`.
+- default list is `Alle in der Aktion`, optional Team filter.
+- new groups default `online anzeigen = an`.
+- local create draft contains only label, caller-allowed Team id, discoverability and active state.
+- preview/local draft contains no Room/QR credential or authority.
+- newly created preview groups deliberately have no real join availability until a future server credential exists.
 - ADR-0014: valid room code/QR may bootstrap temporary Field-Group/Team-scoped access without prior Campaign access.
 - temporary access never becomes Admin/Organizer authority.
 
 Still blocked before credential runtime:
 - credential/group lifetime and rotation;
 - exact temporary member capability matrix;
-- rate-limit/revocation tests/config.
+- rate-limit/revocation/brute-force tests/config.
 
 ## Organizer / Admin / Team roles
 
-- PR #47: documentation-only identity/permission/security proposals.
-- PR #44: presentation-only desktop Admin/Organizer UI plus Organizer-only destructive Action confirmation guard.
+- PR #47: documentation-only identity/permission/security proposals; confirmed-role head passed CI #413.
+- PR #44: presentation-only desktop Admin/Organizer + Team-role + destructive Action workbench; preview head passed CI #423.
+- isolated preview route is `?workbench=admin`.
 
 Confirmed defaults:
 - multiple Organizers allowed;
@@ -71,7 +79,9 @@ Confirmed defaults:
 - delegated Admin never becomes Organizer;
 - normal Team Member may edit operational data inside its own Team, including Areas and Tasks;
 - optional Team Leader defaults to Team Member rights plus Team name/color, member/invite and live-group management;
-- all ordinary role defaults are configurable later through named role templates within delegation ceilings;
+- Team Member/Leader rights are represented as configurable known-capability presets in the local Admin preview;
+- unknown/cross-Team/Admin capabilities are rejected by the Team-role model;
+- all ordinary role defaults remain configurable later through named role templates within delegation ceilings;
 - permanent Action deletion is Organizer-only and not delegable;
 - normal completed-Action path is archive + retained operational history;
 - Workbench hard-delete confirmation phrase is `AKTION LÖSCHEN`;
@@ -95,9 +105,9 @@ PR #49 + ADR-0018 + Plan 013 model:
 - AI recommendations remain advisory and never control assignments/permissions;
 - CSV formula-like values are neutralized;
 - AI prompts treat labels as untrusted data;
-- secrets/GPS/comment bodies/free Session notes/account details are excluded from initial analysis export.
-
-Template/New Action Workbench current checked head passed CI #405 before later documentation-only status updates.
+- secrets/GPS/comment bodies/free Session notes/account details are excluded from initial analysis export;
+- isolated `?workbench=actions` preview combines Template import/download and New Action creation with separate fake Distribution/Collection planning;
+- current Action preview head passed CI #433.
 
 ## History
 
@@ -122,6 +132,13 @@ Permanent deletion storage/cascade semantics remain blocked until Action/history
 - PR #42 comments UI.
 - PR #43 Field Session draft/history UI.
 - PR #45 compact mobile field chrome.
+
+## Handoff
+
+Full copy/paste context for a new ChatGPT conversation is stored in:
+- `docs/prompts/CONTINUE_WORKBENCH_2026-08-26.md`
+
+That prompt must be updated when confirmed product architecture or major Workbench topology changes materially.
 
 ## Major open architecture/product decisions
 
