@@ -36,6 +36,13 @@
   line-height: 1.45;
 }
 
+.organizer-admin-panel__create-actions {
+  display: flex !important;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem !important;
+}
+
 .organizer-admin-panel button {
   min-height: 2.65rem;
   padding: 0.55rem 0.75rem;
@@ -119,5 +126,13 @@
   .organizer-admin-panel li {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .organizer-admin-panel__create-actions {
+    justify-content: stretch;
+  }
+
+  .organizer-admin-panel__create-actions button {
+    flex: 1 1 12rem;
   }
 }
