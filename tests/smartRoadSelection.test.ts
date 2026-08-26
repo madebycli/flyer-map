@@ -45,22 +45,25 @@ test("same start/end source selects one detailed road segment", () => {
   });
 });
 
-test("start and end anchors select connected source sections regardless of road name", () => {
+test("start and end anchors select every connected source segment between them regardless of street name", () => {
   assert.deepEqual(selectSmartRoadRange(chain, "way/1", "way/3"), {
     state: "selected",
     sourceIds: ["way/1", "way/2", "way/3"],
   });
 });
 
-test("disconnected anchors do not fabricate a route", () => {
-  const roads = [...chain, road("way/9", "Hauptstraße", [[13.9, 52.5], [13.91, 52.5]])];
+test("disconnected anchors do not guess a route", () => {
+  const roads = [
+    ...chain,
+    road("way/9", "Hauptstraße", [[13.9, 52.5], [13.91, 52.5]]),
+  ];
   assert.deepEqual(selectSmartRoadRange(roads, "way/1", "way/9"), {
     state: "disconnected",
     sourceIds: [],
   });
 });
 
-test("multiple topological routes are surfaced as ambiguous", () => {
+test("junction loops with more than one possible path are surfaced as ambiguous", () => {
   assert.deepEqual(selectSmartRoadRange(loop, "way/1", "way/6"), {
     state: "ambiguous",
     sourceIds: [],
@@ -68,8 +71,10 @@ test("multiple topological routes are surfaced as ambiguous", () => {
 });
 
 test("ambiguous selection exposes concrete route candidates without choosing one", () => {
+  const options = smartRoadRouteOptions(loop, "way/1", "way/6");
+  assert.equal(options.length, 2);
   assert.deepEqual(
-    smartRoadRouteOptions(loop, "way/1", "way/6").map((option) => option.sourceIds),
+    options.map((option) => option.sourceIds),
     [
       ["way/1", "way/2", "way/3", "way/6"],
       ["way/1", "way/4", "way/5", "way/6"],
@@ -77,13 +82,33 @@ test("ambiguous selection exposes concrete route candidates without choosing one
   );
 });
 
-test("waypoint resolves the intended route", () => {
+test("an explicit waypoint resolves the intended branch when each leg is unique", () => {
   assert.deepEqual(selectSmartRoadRangeViaWaypoints(loop, ["way/1", "way/2", "way/6"]), {
     state: "selected",
     sourceIds: ["way/1", "way/2", "way/3", "way/6"],
   });
 });
 
-test("selection label reports exact selected section count", () => {
+test("waypoint selection remains ambiguous when the chosen waypoint does not disambiguate a leg", () => {
+  assert.deepEqual(selectSmartRoadRangeViaWaypoints(loop, ["way/1", "way/6"]), {
+    state: "ambiguous",
+    sourceIds: [],
+  });
+});
+
+test("route option limit is bounded and rejects invalid limits", () => {
+  assert.equal(smartRoadRouteOptions(loop, "way/1", "way/6", 1).length, 1);
+  assert.deepEqual(smartRoadRouteOptions(loop, "way/1", "way/6", 0), []);
+  assert.deepEqual(smartRoadRouteOptions(loop, "way/1", "way/6", 6), []);
+});
+
+test("unknown anchors are rejected", () => {
+  assert.deepEqual(selectSmartRoadRange(chain, "way/missing", "way/2"), {
+    state: "disconnected",
+    sourceIds: [],
+  });
+});
+
+test("multi-segment selection label reports exact section count instead of grouping by road name", () => {
   assert.equal(smartRoadSelectionLabel(chain, ["way/1", "way/2", "way/3"]), "3 Straßenabschnitte");
 });
