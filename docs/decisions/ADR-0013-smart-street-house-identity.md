@@ -9,7 +9,7 @@ date: 2026-08-26
 
 ## Status
 
-Proposed. The product direction for Street selection was clarified on 2026-08-26, but persistence/schema implementation remains blocked until the remaining topology and geometry choices are accepted.
+Proposed. The product direction for Street selection and junction ambiguity was clarified on 2026-08-26. Persistence/schema implementation remains blocked until the durable identity/geometry representation is explicitly accepted.
 
 ## Context
 
@@ -20,9 +20,12 @@ ADR-0012 already requires normalized OSM source identity to survive into the pre
 - preserve `way/<osm id>` source identity and relevant inert tags;
 - select one or several building footprints;
 - select addressed buildings belonging to one street;
-- treat OSM road source ways as small selectable source sections rather than user-visible whole-street identities.
+- treat OSM road source ways as small selectable source sections rather than user-visible whole-street identities;
+- resolve a unique connected range between start/end anchors;
+- enumerate bounded route candidates when a junction/loop offers multiple paths;
+- resolve ambiguous ranges through explicit waypoint anchors.
 
-The clarified product goal is deliberately detailed selection. A user should choose the beginning and end of the desired road section on the map. The app selects the connected road source sections between those anchors. It must not select every OSM way sharing a street name and must not continue for kilometers merely because the road name is unchanged.
+The product goal is deliberately detailed selection. A user chooses the beginning and end of the desired road section on the map. The app selects the connected road source sections between those anchors. It must not select every OSM way sharing a street name and must not continue for kilometers merely because the road name is unchanged.
 
 Important constraints:
 - OSM object ids are source provenance, not credentials;
@@ -108,22 +111,22 @@ Rules:
 - selecting start and end on the same source section produces one detailed section candidate;
 - disconnected anchors must fail visibly rather than fabricating a connection.
 
-### Junction ambiguity
+## Confirmed junction UX: route candidates plus waypoints (Option C)
 
-A road graph can contain loops or multiple possible routes between the same two anchors. The implementation must not silently choose a path merely because it is shortest or shares a name.
+When more than one topological path exists between start and end, the app must not guess.
 
-The current workbench domain helper returns an explicit `ambiguous` result when more than one simple path exists between the selected source anchors.
+Selected product behavior:
+- for a simple ambiguity, show a small bounded set of concrete route candidates so the user can tap the intended route;
+- also allow one or more intermediate waypoint clicks to force a precise route through complicated junctions;
+- route candidates are previews only and never become selected until the user chooses one;
+- if the graph search is too complex/bounded to prove uniqueness, treat it as ambiguous rather than silently choosing a path;
+- adding waypoints divides the range into legs, and every leg must resolve unambiguously before saving;
+- the user can reset/correct start, end and waypoints before creating the Task.
 
-One remaining UX choice is required:
-- A: user adds one or more intermediate waypoint clicks until the desired path is unambiguous;
-- B: app previews multiple route candidates and the user taps the desired candidate;
-- C: use both, with route candidates for simple ambiguity and waypoints for precise correction.
-
-No persistence code should depend on a choice before this is accepted.
+The current workbench helper exposes both route options and waypoint resolution without persistence.
 
 ## Splitting and combining direction
 
-Regardless of the ambiguity UX:
 - source ways are inputs, not immutable domain boundaries;
 - user-visible Street Tasks may be created from one or multiple selected source ways;
 - start/end selection creates one application-owned Street Task from the reviewed selected section;
@@ -173,12 +176,13 @@ A geometry hash may help compare source revisions but must not be the Task id be
 Benefits:
 - precise road-section selection matching the field workflow;
 - no accidental multi-kilometer selection from shared street names;
+- complex junctions remain controllable without opaque route guessing;
 - durable offline-safe Task targets;
 - OSM refreshes cannot silently destroy Campaign identity;
 - future sessions/comments/statistics can reference stable Task ids.
 
 Costs:
-- the UI needs explicit start/end selection state and ambiguity handling;
+- the UI needs start/end/waypoint state and route-candidate preview;
 - road graph connectivity must be derived from reviewed OSM source geometry;
 - schema/mutation contracts must add source provenance and House-capable Task shape;
 - source refresh becomes a reconciliation problem instead of an automatic overwrite.
@@ -186,8 +190,7 @@ Costs:
 ## Acceptance required before M6 persistence
 
 Before implementing the D1/schema/mutation write path:
-1. confirm the ambiguity UX A, B or C;
-2. confirm application-owned generated ids + separate OSM provenance;
-3. define the initial persisted geometry representation for a selected multi-way road section;
-4. update DATA/MAP/OFFLINE_SYNC/SECURITY docs and mutation tests;
-5. use additive migration only for the active M6 slice.
+1. confirm application-owned generated ids + separate OSM provenance;
+2. define the initial persisted geometry representation for a selected multi-way road section;
+3. update DATA/MAP/OFFLINE_SYNC/SECURITY docs and mutation tests;
+4. use additive migration only for the active M6 slice.
