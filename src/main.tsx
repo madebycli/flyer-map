@@ -1,8 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
+import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
 import { ActionWorkbenchPreview } from "./workbench/ActionWorkbenchPreview";
 import { AdminWorkbenchPreview } from "./workbench/AdminWorkbenchPreview";
@@ -37,9 +37,10 @@ if (preview) {
   document.title = preview.title;
   root.render(<StrictMode>{preview.component}</StrictMode>);
 } else {
+  document.title = "Verteil-Flyer";
   root.render(
     <StrictMode>
-      <App />
+      <PlatformShell />
       <AccessRecoveryGate />
       <MapDiagnostics />
       <SyncStatus />
