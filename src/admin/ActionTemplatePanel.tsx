@@ -118,7 +118,7 @@ export function ActionTemplatePanel({
                   Neue {modeLabel(template.mode)} aus Vorlage
                 </button>
                 <button type="button" onClick={() => downloadTemplate(template)}>
-                  Vorlage herunterladen
+                  Vorlage als Datei herunterladen
                 </button>
                 {canManageTemplates && onEditTemplate ? (
                   <button type="button" onClick={() => onEditTemplate(template)}>
