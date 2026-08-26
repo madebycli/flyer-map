@@ -200,10 +200,6 @@ export function validateActionTemplate(template: unknown): template is ActionTem
   return true;
 }
 
-/**
- * Extract a reusable distribution plan from the currently implemented Campaign snapshot.
- * Operational ids, completion state, timestamps and history are intentionally not copied.
- */
 export function actionTemplateFromCampaign(
   snapshot: CampaignSnapshot,
   templateName: string,
@@ -250,12 +246,6 @@ export function actionTemplateFromCampaign(
   };
 }
 
-/**
- * Collection planning is intentionally independent from distribution planning.
- * Cars may have different Teams and smaller/differently shaped Areas. This helper
- * validates a purpose-built collection template instead of copying the prior
- * distribution assignment structure.
- */
 export function createCollectionActionTemplate(
   template: Omit<ActionTemplateBlueprint, "schemaVersion" | "mode">,
 ): ActionTemplateBlueprint {
@@ -329,6 +319,7 @@ export function parseActionTemplateFile(text: string): ActionTemplateBlueprint {
 export function actionTemplateFilename(template: ActionTemplateBlueprint) {
   const safeName = template.name
     .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
     .replace(/[^a-zA-Z0-9äöüÄÖÜß_-]+/gu, "-")
     .replace(/-+/gu, "-")
     .replace(/^-|-$/gu, "")
