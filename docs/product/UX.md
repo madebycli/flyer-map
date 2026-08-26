@@ -2,7 +2,7 @@
 id: product-ux
 type: product
 status: accepted
-last_updated: 2026-08-25
+last_updated: 2026-08-26
 related: [product, product-roadmap, architecture-map, architecture-security, architecture-live-teams, architecture-identity-permissions, plan-012-platform-app-expansion]
 source_of_truth_for: [field-ux, map-interaction, appearance-ux, app-shell-ux, admin-ux-direction]
 ---
@@ -27,33 +27,41 @@ Design for one-handed outdoor use before desktop use.
 The map is the primary field workspace.
 
 Administrative/statistical complexity belongs in separate surfaces:
-- mobile full-screen app/menu modules;
+- compact mobile app-launcher sheet plus dedicated modules;
 - desktop-first Admin panel.
 
 Do not permanently overlay a dashboard over the map.
 
 ## Target field chrome
 
-### Bottom bar
-Target direction:
-- Settings becomes a compact gear icon;
-- Teams uses a familiar people/team/contact icon;
-- Teams lives in the right-side control cluster;
-- a Menu/App button is added on the right;
-- remove oversized text controls when a clear accessible icon is better;
-- preserve touch target size even if the visible icon is small.
+The browse view intentionally keeps permanent chrome extremely small.
 
-### Full-screen app menu
-The Menu/App button opens a full-screen mobile surface similar to an app launcher/dashboard.
+Current direction:
+- top-left uses one compact translucent control group;
+- first control is a 3×3 app-grid/menu icon, visually similar to one face of a cube;
+- directly beside it, left aligned, show the active Team name with a small Team-color marker;
+- the old permanent Team dropdown is removed from the primary field chrome;
+- Settings, Teams and Draw Area are not permanently shown as a bottom action toolbar;
+- map controls and contextual Area/Street sheets remain separate from this launcher chrome;
+- preserve large enough touch targets even though the visible control is compact.
 
-Candidate modules:
-- Progress;
-- Teams / Join Team;
-- Activity / Comments;
-- Collection;
-- Support / Feedback;
-- Settings;
-- Admin entry when authorized.
+The Team name is context, not an authorization boundary. Effective Team scope still comes from Worker-authorized access and canonical Campaign state.
+
+## App launcher sheet
+
+The Menu/App button opens a compact rounded sheet over the map. It should visually belong to the same family as the existing Settings/Teams bottom sheets rather than looking like a separate fullscreen dashboard.
+
+Inside the sheet, destinations are shown like a phone home screen:
+- large rounded app icons;
+- short label directly underneath;
+- no paragraph descriptions inside each launcher item;
+- enough spacing for one-handed touch use;
+- common labels such as Karte, Stats, Team, Feedback, Smart and Einsätze;
+- Admin-only entries appear only for authorized Admin access.
+
+On narrow phones the icon grid may reduce columns. On larger screens the sheet may center instead of occupying the full width, but should retain the compact sheet character.
+
+Opening a destination may still transition into its dedicated full module surface. The launcher itself is not a full-screen module.
 
 The transition may animate, but:
 - keep it short;
@@ -61,12 +69,13 @@ The transition may animate, but:
 - respect `prefers-reduced-motion`;
 - do not add a large animation dependency without evidence.
 
-### Active Team / Field Group context
+## Active Team / Field Group context
+
 When working in a Team or Field Group:
-- show Team name compactly in the top bar near Menu;
+- show Team name compactly beside the app-grid icon;
 - remove the old permanently visible Team dropdown as the primary switcher;
-- show a subtle progress bar in/under the top bar;
-- tapping Team context opens details/switching intentionally.
+- later Team switching/details should happen through the Team destination intentionally;
+- future Team progress may be shown subtly without expanding the permanent field chrome.
 
 ## Progress UX
 
