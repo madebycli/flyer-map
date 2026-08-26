@@ -233,6 +233,13 @@ nodes:
     topics: [ui, unified-ui, app-shell, navigation, progress, comments, pickup, field-sessions, smart-streets, live-groups, admin, support]
     load_when: [unified website UI, platform shell, module navigation, current composed interface, Plan 014 history]
 
+  - id: plan-m6-house-persistence
+    path: docs/plans/completed/015-m6-house-persistence.md
+    type: plan
+    status: completed
+    topics: [m6, houses, house-tasks, persistence, osm, mutations, d1, migration-0005, parent-street]
+    load_when: [House persistence, House Tasks, house_tasks table, migration 0005, parent Street, Smart House persistence]
+
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
     type: onboarding
@@ -324,6 +331,13 @@ edges:
   - { from: plan-unified-platform-ui, to: plan-platform-expansion, relation: composes_foundations_from }
   - { from: plan-unified-platform-ui, to: ux, relation: implements_app_shell }
   - { from: plan-unified-platform-ui, to: quality, relation: validated_by }
+  - { from: plan-m6-house-persistence, to: plan-platform-expansion, relation: implements_slice_of }
+  - { from: plan-m6-house-persistence, to: adr-smart-task-identity, relation: implements_accepted_decision }
+  - { from: plan-m6-house-persistence, to: data, relation: extends }
+  - { from: plan-m6-house-persistence, to: offline-sync, relation: extends }
+  - { from: plan-m6-house-persistence, to: map, relation: constrains_followup }
+  - { from: plan-m6-house-persistence, to: security, relation: constrained_by }
+  - { from: plan-m6-house-persistence, to: quality, relation: validated_by }
   - { from: prompts, to: architecture, relation: onboards_to }
   - { from: prompts, to: roadmap, relation: onboards_to }
   - { from: prompt-platform-expansion, to: plan-platform-expansion, relation: starts }
