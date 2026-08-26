@@ -10,7 +10,7 @@ related: [plan-014-unified-platform-ui, product-ux]
 
 ## Ziel
 
-Die Feldkarte erhält eine deutlich reduzierte obere Leiste und ein mobiles App-Launcher-Menü. In der Leiste bleiben nur ein 3x3-Menü-Symbol und direkt daneben der aktive Teamname. Das bisherige Team-Dropdown sowie Settings/Teams/Gebiet-Buttons verschwinden aus der permanenten Kartenleiste.
+Die Feldkarte erhält eine deutlich reduzierte obere Leiste und ein mobiles App-Launcher-Menü. In der Leiste bleiben nur ein 3x3-Menü-Symbol und direkt daneben der aktuelle Team-Kontext. Das bisherige Team-Dropdown sowie Settings/Teams/Gebiet-Buttons verschwinden aus der permanenten Kartenleiste.
 
 Das Plattform-Menü wird nicht mehr als Fullscreen-Dashboard dargestellt. Es erscheint als kompakte, abgerundete Sheet-Fläche über der Karte und orientiert sich visuell an den bestehenden Settings-/Teams-Sheets. Innerhalb des Sheets werden die Ziele als iOS-artiges Icon-Raster mit Icon oben und kurzem Label darunter dargestellt.
 
@@ -33,8 +33,8 @@ Das Plattform-Menü wird nicht mehr als Fullscreen-Dashboard dargestellt. Es ers
 
 ## Aufgaben
 
-1. Topbar auf Menü-Icon + aktiven Teamnamen reduzieren.
-2. Altes Team-Dropdown und permanente Toolbar-Aktionen aus der Browse-Ansicht entfernen.
+1. Feld-Chrome auf Menü-Icon + Team-Kontext reduzieren.
+2. Altes Team-Dropdown und permanente Toolbar-Aktionen aus der komponierten Browse-Ansicht entfernen.
 3. App-Menü als Sheet statt Fullscreen-Overlay darstellen.
 4. Icon-Raster im Stil eines mobilen Home-Screens umsetzen.
 5. Stats, Team, Feedback, Smart, Einsätze und weitere vorhandene Module in dieses Raster einordnen.
@@ -45,7 +45,7 @@ Das Plattform-Menü wird nicht mehr als Fullscreen-Dashboard dargestellt. Es ers
 
 ## Akzeptanzkriterien
 
-- Im Browse-Modus zeigt die obere Kartenleiste nur das 3x3-Menü-Icon und den aktiven Teamnamen.
+- Im Browse-Modus zeigt die komponierte Feldoberfläche oben links nur das 3x3-Menü-Icon und den Team-Kontext.
 - Das Team-Dropdown ist nicht mehr permanent sichtbar.
 - Settings, Teams und Gebiet zeichnen sind nicht mehr permanent in einer unteren Toolbar sichtbar.
 - Das Menü öffnet als abgerundetes Sheet über der Karte, nicht als Fullscreen-Menü.
@@ -56,20 +56,21 @@ Das Plattform-Menü wird nicht mehr als Fullscreen-Dashboard dargestellt. Es ers
 
 ## Risiken
 
-- Entfernte permanente Aktionen dürfen keine notwendige Funktion endgültig unzugänglich machen.
-- Der aktive Teamname muss aus dem tatsächlichen App-Zustand kommen, nicht aus einer zweiten uneinheitlichen Team-Auswahl.
+- Entfernte permanente Aktionen dürfen nicht mit einer falschen impliziten Berechtigung ersetzt werden.
+- Der aktuell angezeigte Team-Kontext wird im Shell-Slice aus dem autorisierten Team-Scope beziehungsweise dem ersten Campaign-Team abgeleitet. Eine spätere explizite Team-Wechseloberfläche muss diesen Kontext bewusst mit dem Karten-Arbeitskontext vereinheitlichen.
 - Das Sheet darf auf kleinen iPhones/Android-Geräten keine Karteninteraktion außerhalb des Menüs blockieren, sobald es geschlossen ist.
 
 ## Entscheidungen
 
-- Der Menü-Trigger wird direkt in `App` gerendert, weil dort der echte aktive Teamzustand lebt.
-- `PlatformShell` kontrolliert weiterhin das Öffnen der Plattformmodule.
+- `PlatformShell` besitzt Menü-Trigger, Team-Kontext-Chrome und Launcher-Sheet. `App` bleibt für Karteninteraktion und bestehende Domain-Sheets zuständig.
+- Das Legacy-`map-toolbar` bleibt im App-Code für Übergangskompatibilität bestehen, wird aber innerhalb der komponierten Plattformansicht per Shell-CSS nicht als permanente Browse-Leiste gerendert.
 - Das Menü ist ein kompaktes Bottom-Sheet-artiges Panel mit Icon-Grid statt eines Fullscreen-Dashboards.
-- Vorhandene module bleiben funktional getrennt; dieser Slice ändert Navigation und Chrome, nicht deren Persistenzmodell.
+- Vorhandene Module bleiben funktional getrennt; dieser Slice ändert Navigation und Chrome, nicht deren Persistenzmodell.
 
 ## Nicht-Ziele
 
 - Neue Backend-Persistenz implementieren.
 - Live-Group-Credentials, Accounts/TOTP oder Capability-Runtime freischalten.
 - Team-/Settings-Formulare komplett neu bauen.
+- Eine neue persistierte Team-Auswahl einführen.
 - House-Map-Rendering implementieren.
