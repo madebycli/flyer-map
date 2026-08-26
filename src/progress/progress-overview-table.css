@@ -1,0 +1,55 @@
+.progress-overview-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid #dbe4dd;
+  border-radius: 0.9rem;
+  background: #ffffff;
+}
+
+.progress-overview-scroll:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.progress-overview-table {
+  width: 100%;
+  min-width: 36rem;
+  border-collapse: collapse;
+  color: #29372e;
+  font-size: 0.74rem;
+}
+
+.progress-overview-table th,
+.progress-overview-table td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid #edf1ee;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.progress-overview-table th {
+  color: #657168;
+  background: #f7f9f7;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.progress-overview-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.progress-overview-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 800;
+}
+
+.progress-overview-team > span {
+  width: 0.68rem;
+  height: 0.68rem;
+  flex: 0 0 auto;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgb(20 35 24 / 18%);
+}
