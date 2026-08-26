@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import type { SmartRoadCandidate } from "../domain/smartCandidates.ts";
 import {
   selectSmartRoadRange,
+  selectSmartRoadRangeViaWaypoints,
+  smartRoadRouteOptions,
   smartRoadSelectionLabel,
 } from "../domain/smartRoadSelection.ts";
 import "./m6-selection-preview.css";
@@ -71,30 +73,65 @@ function roadLabel(sourceId: string | null) {
   return road ? `${road.name ?? "Unbenannte Straße"} (${road.sourceId})` : sourceId;
 }
 
+function routeLabel(sourceIds: string[]) {
+  return sourceIds.map((sourceId) => roadLabel(sourceId).replace(/ \(way\/\d+\)$/u, "")).join(" → ");
+}
+
 export function M6SelectionPreview() {
   const [startSourceId, setStartSourceId] = useState<string | null>(null);
   const [endSourceId, setEndSourceId] = useState<string | null>(null);
+  const [waypoints, setWaypoints] = useState<string[]>([]);
+  const [addingWaypoint, setAddingWaypoint] = useState(false);
+  const [chosenRouteIds, setChosenRouteIds] = useState<string[] | null>(null);
 
   const selection = useMemo(() => {
     if (!startSourceId || !endSourceId) return null;
+    if (waypoints.length > 0) {
+      return selectSmartRoadRangeViaWaypoints(PREVIEW_ROADS, [
+        startSourceId,
+        ...waypoints,
+        endSourceId,
+      ]);
+    }
     return selectSmartRoadRange(PREVIEW_ROADS, startSourceId, endSourceId);
-  }, [startSourceId, endSourceId]);
+  }, [startSourceId, endSourceId, waypoints]);
 
-  const selectedIds = selection?.state === "selected" ? selection.sourceIds : [];
+  const routeOptions = useMemo(() => {
+    if (!startSourceId || !endSourceId || waypoints.length > 0) return [];
+    if (selection?.state !== "ambiguous") return [];
+    return smartRoadRouteOptions(PREVIEW_ROADS, startSourceId, endSourceId, 3);
+  }, [startSourceId, endSourceId, selection, waypoints]);
+
+  const selectedIds = chosenRouteIds ?? (selection?.state === "selected" ? selection.sourceIds : []);
   const label = smartRoadSelectionLabel(PREVIEW_ROADS, selectedIds);
 
   const chooseRoad = (sourceId: string) => {
+    if (addingWaypoint && startSourceId && endSourceId) {
+      setWaypoints((current) => [...current, sourceId]);
+      setChosenRouteIds(null);
+      setAddingWaypoint(false);
+      return;
+    }
+
     if (!startSourceId || endSourceId) {
       setStartSourceId(sourceId);
       setEndSourceId(null);
+      setWaypoints([]);
+      setChosenRouteIds(null);
+      setAddingWaypoint(false);
       return;
     }
+
     setEndSourceId(sourceId);
+    setChosenRouteIds(null);
   };
 
   const reset = () => {
     setStartSourceId(null);
     setEndSourceId(null);
+    setWaypoints([]);
+    setChosenRouteIds(null);
+    setAddingWaypoint(false);
   };
 
   return (
@@ -109,19 +146,30 @@ export function M6SelectionPreview() {
 
       <section className="m6-selection-content">
         <div className="m6-preview-note">
-          <strong>Start und Ende statt Straßenname</strong>
+          <strong>Start, Ende und Kreuzungen präzise wählen</strong>
           <p>
-            Erster Klick setzt den Anfang, zweiter Klick das Ende. Nur der eindeutige verbundene Weg
-            dazwischen wird gewählt. Bei mehreren möglichen Wegen wird nichts geraten.
+            Erster Klick setzt den Anfang, zweiter das Ende. Bei mehreren Wegen kannst du eine Route
+            antippen oder mit Zwischenpunkten den exakten Verlauf erzwingen. Straßennamen erweitern
+            die Auswahl nie automatisch.
           </p>
         </div>
 
         <section className="m6-mode-picker" aria-label="Aktuelle Ankerpunkte">
           <strong>Start: {roadLabel(startSourceId)}</strong>
           <strong>Ende: {roadLabel(endSourceId)}</strong>
-          <button type="button" onClick={reset} disabled={!startSourceId && !endSourceId}>
-            Auswahl zurücksetzen
-          </button>
+          <span>Zwischenpunkte: {waypoints.length ? waypoints.map(roadLabel).join(" · ") : "keine"}</span>
+          <div className="m6-anchor-actions">
+            <button
+              type="button"
+              onClick={() => setAddingWaypoint(true)}
+              disabled={!startSourceId || !endSourceId || addingWaypoint}
+            >
+              {addingWaypoint ? "Jetzt Abschnitt antippen" : "Zwischenpunkt setzen"}
+            </button>
+            <button type="button" onClick={reset} disabled={!startSourceId && !endSourceId}>
+              Zurücksetzen
+            </button>
+          </div>
         </section>
 
         <section className="m6-road-list" aria-label="OSM-Straßenabschnitte">
@@ -129,26 +177,61 @@ export function M6SelectionPreview() {
             const selected = selectedIds.includes(road.sourceId);
             const isStart = startSourceId === road.sourceId;
             const isEnd = endSourceId === road.sourceId;
+            const isWaypoint = waypoints.includes(road.sourceId);
             return (
               <button
                 type="button"
                 key={road.sourceId}
-                className={`m6-road-row ${selected ? "is-selected" : ""} ${isStart || isEnd ? "is-clicked" : ""}`}
+                className={`m6-road-row ${selected ? "is-selected" : ""} ${isStart || isEnd || isWaypoint ? "is-clicked" : ""}`}
                 onClick={() => chooseRoad(road.sourceId)}
               >
                 <span className="m6-road-name">{road.name ?? "Unbenannte Straße"}</span>
                 <span className="m6-road-meta">{road.sourceId} · {road.highway}</span>
                 <span className="m6-road-state">
-                  {isStart ? "Start" : isEnd ? "Ende" : selected ? "dazwischen" : "wählen"}
+                  {isStart
+                    ? "Start"
+                    : isEnd
+                      ? "Ende"
+                      : isWaypoint
+                        ? "Zwischenpunkt"
+                        : selected
+                          ? "gewählt"
+                          : addingWaypoint
+                            ? "als Zwischenpunkt"
+                            : "wählen"}
                 </span>
               </button>
             );
           })}
         </section>
 
+        {routeOptions.length > 1 && !chosenRouteIds ? (
+          <section className="m6-route-options" aria-label="Mögliche Routen">
+            <span>Mehrere Wege möglich</span>
+            <p>Wähle direkt eine Variante oder setze einen Zwischenpunkt für noch mehr Kontrolle.</p>
+            <div>
+              {routeOptions.map((option, index) => (
+                <button
+                  type="button"
+                  key={option.sourceIds.join("|")}
+                  onClick={() => setChosenRouteIds(option.sourceIds)}
+                >
+                  <strong>Route {index + 1}</strong>
+                  <span>{routeLabel(option.sourceIds)}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <section className="m6-selection-summary" aria-live="polite">
           <span>Aktuelle Auswahl</span>
-          {!selection ? (
+          {chosenRouteIds ? (
+            <>
+              <strong>{label ?? "Gewählte Route"}</strong>
+              <p>{chosenRouteIds.length} Straßenabschnitte, Route bewusst ausgewählt.</p>
+            </>
+          ) : !selection ? (
             <>
               <strong>{startSourceId ? "Jetzt Ende wählen" : "Start wählen"}</strong>
               <p>Die Vorschau speichert nichts.</p>
@@ -156,17 +239,17 @@ export function M6SelectionPreview() {
           ) : selection.state === "selected" ? (
             <>
               <strong>{label ?? "Ausgewählter Abschnitt"}</strong>
-              <p>{selectedIds.length} OSM-Segment{selectedIds.length === 1 ? "" : "e"} zwischen Start und Ende</p>
+              <p>{selectedIds.length} OSM-Segment{selectedIds.length === 1 ? "" : "e"} zwischen den Ankern.</p>
             </>
           ) : selection.state === "ambiguous" ? (
             <>
               <strong>Mehrere Wege möglich</strong>
-              <p>Die App darf hier nicht raten. Dafür ist noch Zwischenpunkt- oder Routenwahl-UX zu entscheiden.</p>
+              <p>Route antippen oder einen weiteren Zwischenpunkt setzen. Die App rät nicht.</p>
             </>
           ) : (
             <>
               <strong>Keine Verbindung</strong>
-              <p>Start und Ende liegen nicht auf einem zusammenhängenden vorbereiteten Straßennetz.</p>
+              <p>Start, Ende oder Zwischenpunkte liegen nicht auf einem eindeutig verbundenen vorbereiteten Straßennetz.</p>
             </>
           )}
         </section>
