@@ -226,6 +226,13 @@ nodes:
     topics: [platform-expansion, app-shell, statistics, field-sessions, live-teams, collection, pickup, admin, organizations, permissions, accounts, totp, support]
     load_when: [full platform work, next generation planning, app-like UI, live teams, admin accounts, permissions, statistics, collection mode, support]
 
+  - id: plan-unified-platform-ui
+    path: docs/plans/completed/014-unified-platform-ui.md
+    type: plan
+    status: completed
+    topics: [ui, unified-ui, app-shell, navigation, progress, comments, pickup, field-sessions, smart-streets, live-groups, admin, support]
+    load_when: [unified website UI, platform shell, module navigation, current composed interface, Plan 014 history]
+
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
     type: onboarding
@@ -314,6 +321,9 @@ edges:
   - { from: plan-platform-expansion, to: identity-threat-model, relation: requires_security_review }
   - { from: plan-platform-expansion, to: security, relation: constrained_by }
   - { from: plan-platform-expansion, to: quality, relation: validated_by }
+  - { from: plan-unified-platform-ui, to: plan-platform-expansion, relation: composes_foundations_from }
+  - { from: plan-unified-platform-ui, to: ux, relation: implements_app_shell }
+  - { from: plan-unified-platform-ui, to: quality, relation: validated_by }
   - { from: prompts, to: architecture, relation: onboards_to }
   - { from: prompts, to: roadmap, relation: onboards_to }
   - { from: prompt-platform-expansion, to: plan-platform-expansion, relation: starts }
