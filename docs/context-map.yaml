@@ -244,8 +244,8 @@ nodes:
     path: docs/plans/completed/016-app-launcher-sheet.md
     type: plan
     status: completed
-    topics: [ui, mobile, app-launcher, menu, team-context, icons, field-chrome]
-    load_when: [compact menu, app launcher, 3x3 menu icon, iOS-style icon grid, Team dropdown removal, field chrome]
+    topics: [ui, mobile, app-launcher, menu, team-context, icons, field-chrome, bottom-bar]
+    load_when: [compact menu, app launcher, 3x3 menu icon, iOS-style icon grid, Team dropdown removal, bottom launcher bar, field chrome]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
