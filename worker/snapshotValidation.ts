@@ -3,6 +3,7 @@ import type {
   Campaign,
   CampaignSnapshot,
   DistributionTask,
+  HouseTask,
   LineStringGeometry,
   LngLat,
   MapCameraView,
@@ -106,7 +107,7 @@ function parseLineStringGeometry(value: unknown): LineStringGeometry | null {
   return value as LineStringGeometry;
 }
 
-function parseTaskSource(value: unknown): TaskSourceProvenance | null {
+function parseTaskSource(value: unknown, expectedObjectCount: number | null = null): TaskSourceProvenance | null {
   if (!isRecord(value)) return null;
   const keys = Object.keys(value).sort();
   if (keys.join(",") !== "dataset,objectIds,objectType") return null;
@@ -114,6 +115,7 @@ function parseTaskSource(value: unknown): TaskSourceProvenance | null {
   if (
     !Array.isArray(value.objectIds)
     || value.objectIds.length === 0
+    || (expectedObjectCount !== null && value.objectIds.length !== expectedObjectCount)
     || !value.objectIds.every(
       (objectId) => typeof objectId === "number" && Number.isSafeInteger(objectId) && objectId > 0,
     )
@@ -157,6 +159,25 @@ function parseArea(value: unknown, campaignId: string): Area | null {
   return value as Area;
 }
 
+function validTaskStatus(value: Record<string, unknown>) {
+  if (
+    value.status !== "open" &&
+    value.status !== "completed" &&
+    value.status !== "later" &&
+    value.status !== "not-deliverable"
+  ) {
+    return false;
+  }
+
+  if (value.status === "completed") {
+    if (!isTimestamp(value.completedAt)) return false;
+  } else if (value.completedAt !== null) {
+    return false;
+  }
+
+  return isTimestamp(value.createdAt) && isTimestamp(value.updatedAt);
+}
+
 function parseTask(value: unknown, campaignId: string): DistributionTask | null {
   if (!isRecord(value)) return null;
   if (!isId(value.id) || value.campaignId !== campaignId || !isId(value.areaId)) return null;
@@ -164,24 +185,22 @@ function parseTask(value: unknown, campaignId: string): DistributionTask | null 
   if (!isBoundedString(value.label, 160)) return null;
   if (!parseLineStringGeometry(value.geometry)) return null;
   if (value.source !== undefined && value.source !== null && !parseTaskSource(value.source)) return null;
-  if (
-    value.status !== "open" &&
-    value.status !== "completed" &&
-    value.status !== "later" &&
-    value.status !== "not-deliverable"
-  ) {
-    return null;
-  }
-
-  if (value.status === "completed") {
-    if (!isTimestamp(value.completedAt)) return null;
-  } else if (value.completedAt !== null) {
-    return null;
-  }
-
-  if (!isTimestamp(value.createdAt) || !isTimestamp(value.updatedAt)) return null;
+  if (!validTaskStatus(value)) return null;
 
   return value as DistributionTask;
+}
+
+function parseHouseTask(value: unknown, campaignId: string): HouseTask | null {
+  if (!isRecord(value)) return null;
+  if (!isId(value.id) || value.campaignId !== campaignId || !isId(value.areaId)) return null;
+  if (value.taskType !== "house") return null;
+  if (!isBoundedString(value.label, 160)) return null;
+  if (!parsePolygonGeometry(value.geometry)) return null;
+  if (value.source !== undefined && value.source !== null && !parseTaskSource(value.source, 1)) return null;
+  if (value.parentStreetTaskId !== null && !isId(value.parentStreetTaskId)) return null;
+  if (!validTaskStatus(value)) return null;
+
+  return value as HouseTask;
 }
 
 function hasUniqueIds<T extends { id: string }>(values: T[]) {
@@ -219,6 +238,10 @@ export function validateCampaignSnapshot(
   if (!Array.isArray(value.teams) || !Array.isArray(value.areas) || !Array.isArray(value.tasks)) {
     return { valid: false, message: "Snapshot-Collections sind ungültig." };
   }
+  const hasHouseCollection = value.houseTasks !== undefined;
+  if (hasHouseCollection && !Array.isArray(value.houseTasks)) {
+    return { valid: false, message: "House-Task-Collection ist ungültig." };
+  }
 
   const teams: Team[] = [];
   for (const candidate of value.teams) {
@@ -248,7 +271,28 @@ export function validateCampaignSnapshot(
     tasks.push(task);
   }
 
-  if (!hasUniqueIds(teams) || !hasUniqueIds(areas) || !hasUniqueIds(tasks)) {
+  const houseTasks: HouseTask[] = [];
+  if (Array.isArray(value.houseTasks)) {
+    for (const candidate of value.houseTasks) {
+      const task = parseHouseTask(candidate, campaignId);
+      if (!task) {
+        return {
+          valid: false,
+          message: "Mindestens ein House Task, Polygon, Parent, Provenance oder Status ist ungültig.",
+        };
+      }
+      houseTasks.push(task);
+    }
+  }
+
+  if (
+    !hasUniqueIds(teams) ||
+    !hasUniqueIds(areas) ||
+    !hasUniqueIds(tasks) ||
+    !hasUniqueIds(houseTasks) ||
+    new Set([...tasks.map((task) => task.id), ...houseTasks.map((task) => task.id)]).size !==
+      tasks.length + houseTasks.length
+  ) {
     return { valid: false, message: "Entity-IDs müssen innerhalb des Snapshots eindeutig sein." };
   }
 
@@ -267,20 +311,30 @@ export function validateCampaignSnapshot(
 
   for (const area of areas) {
     if (!teamIds.has(area.teamId)) {
-      return {
-        valid: false,
-        message: "Ein Gebiet verweist auf ein fremdes oder fehlendes Team.",
-      };
+      return { valid: false, message: "Ein Gebiet verweist auf ein fremdes oder fehlendes Team." };
     }
   }
 
   const areaIds = new Set(areas.map((area) => area.id));
   for (const task of tasks) {
     if (!areaIds.has(task.areaId)) {
-      return {
-        valid: false,
-        message: "Eine Straße verweist auf ein fremdes oder fehlendes Gebiet.",
-      };
+      return { valid: false, message: "Eine Straße verweist auf ein fremdes oder fehlendes Gebiet." };
+    }
+  }
+
+  const streetById = new Map(tasks.map((task) => [task.id, task]));
+  for (const task of houseTasks) {
+    if (!areaIds.has(task.areaId)) {
+      return { valid: false, message: "Ein House Task verweist auf ein fremdes oder fehlendes Gebiet." };
+    }
+    if (task.parentStreetTaskId) {
+      const parent = streetById.get(task.parentStreetTaskId);
+      if (!parent || parent.areaId !== task.areaId) {
+        return {
+          valid: false,
+          message: "Ein House Task verweist auf eine fehlende oder gebietsfremde Parent-Straße.",
+        };
+      }
     }
   }
 
@@ -293,6 +347,7 @@ export function validateCampaignSnapshot(
       teams,
       areas,
       tasks,
+      ...(hasHouseCollection ? { houseTasks } : {}),
     },
   };
 }

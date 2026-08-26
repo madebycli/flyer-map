@@ -71,6 +71,23 @@ export type DistributionTask = {
   updatedAt: string;
 };
 
+export type HouseTask = {
+  id: string;
+  campaignId: string;
+  areaId: string;
+  taskType: "house";
+  label: string;
+  geometry: PolygonGeometry;
+  /** Optional reviewed source provenance. OSM ids never become House Task identity. */
+  source?: TaskSourceProvenance | null;
+  /** Optional relationship to a Street Task in the same Campaign and Area. */
+  parentStreetTaskId: string | null;
+  status: TaskStatus;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CampaignSnapshot = {
   schemaVersion: 3;
   revision: number;
@@ -78,6 +95,11 @@ export type CampaignSnapshot = {
   teams: Team[];
   areas: Area[];
   tasks: DistributionTask[];
+  /**
+   * M6 House Tasks are an additive schema-v3 extension. Older snapshots omit the
+   * collection and are interpreted as having no House Tasks.
+   */
+  houseTasks?: HouseTask[];
 };
 
 export type TeamColor = {

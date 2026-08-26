@@ -67,7 +67,32 @@ export type CampaignMutation =
         expectedUpdatedAt: string;
       }
     >
-  | MutationBase<"task.delete", { taskId: string; expectedUpdatedAt: string }>;
+  | MutationBase<"task.delete", { taskId: string; expectedUpdatedAt: string }>
+  | MutationBase<
+      "house.create",
+      {
+        taskId: string;
+        areaId: string;
+        label: string;
+        geometry: PolygonGeometry;
+        source?: TaskSourceProvenance | null;
+        parentStreetTaskId: string | null;
+      }
+    >
+  | MutationBase<
+      "house.rename",
+      { taskId: string; label: string; expectedUpdatedAt: string }
+    >
+  | MutationBase<
+      "house.set-status",
+      {
+        taskId: string;
+        status: TaskStatus;
+        completedAt: string | null;
+        expectedUpdatedAt: string;
+      }
+    >
+  | MutationBase<"house.delete", { taskId: string; expectedUpdatedAt: string }>;
 
 export type CampaignMutationDraft = CampaignMutation extends infer Mutation
   ? Mutation extends CampaignMutation
@@ -294,11 +319,17 @@ export function applyCampaignMutation(
         ...snapshot,
         areas: snapshot.areas.filter((candidate) => candidate.id !== mutation.payload.areaId),
         tasks: snapshot.tasks.filter((task) => task.areaId !== mutation.payload.areaId),
+        ...(snapshot.houseTasks
+          ? { houseTasks: snapshot.houseTasks.filter((task) => task.areaId !== mutation.payload.areaId) }
+          : {}),
       };
       break;
     }
     case "task.create": {
-      if (snapshot.tasks.some((task) => task.id === mutation.payload.taskId)) {
+      if (
+        snapshot.tasks.some((task) => task.id === mutation.payload.taskId) ||
+        (snapshot.houseTasks ?? []).some((task) => task.id === mutation.payload.taskId)
+      ) {
         conflict("task_already_exists");
       }
       if (!snapshot.areas.some((area) => area.id === mutation.payload.areaId)) {
@@ -377,6 +408,113 @@ export function applyCampaignMutation(
       next = {
         ...snapshot,
         tasks: snapshot.tasks.filter((candidate) => candidate.id !== mutation.payload.taskId),
+        ...(snapshot.houseTasks
+          ? {
+              houseTasks: snapshot.houseTasks.map((house) =>
+                house.parentStreetTaskId === mutation.payload.taskId
+                  ? { ...house, parentStreetTaskId: null }
+                  : house,
+              ),
+            }
+          : {}),
+      };
+      break;
+    }
+    case "house.create": {
+      const houses = snapshot.houseTasks ?? [];
+      if (
+        snapshot.tasks.some((task) => task.id === mutation.payload.taskId) ||
+        houses.some((task) => task.id === mutation.payload.taskId)
+      ) {
+        conflict("task_already_exists");
+      }
+      if (!snapshot.areas.some((area) => area.id === mutation.payload.areaId)) {
+        conflict("house_area_missing");
+      }
+      if (mutation.payload.parentStreetTaskId) {
+        const parent = snapshot.tasks.find(
+          (task) => task.id === mutation.payload.parentStreetTaskId,
+        );
+        if (!parent) conflict("house_parent_street_missing");
+        if (parent.areaId !== mutation.payload.areaId) conflict("house_parent_area_mismatch");
+      }
+      next = {
+        ...snapshot,
+        houseTasks: [
+          ...houses,
+          {
+            id: mutation.payload.taskId,
+            campaignId: snapshot.campaign.id,
+            areaId: mutation.payload.areaId,
+            taskType: "house",
+            label: mutation.payload.label,
+            geometry: mutation.payload.geometry,
+            ...(mutation.payload.source ? { source: mutation.payload.source } : {}),
+            parentStreetTaskId: mutation.payload.parentStreetTaskId,
+            status: "open",
+            completedAt: null,
+            createdAt: mutation.createdAt,
+            updatedAt: mutation.createdAt,
+          },
+        ],
+      };
+      break;
+    }
+    case "house.rename": {
+      const houses = snapshot.houseTasks ?? [];
+      const task = houses.find((candidate) => candidate.id === mutation.payload.taskId);
+      requireExpectedUpdatedAt(
+        task?.updatedAt,
+        mutation.payload.expectedUpdatedAt,
+        "house_missing",
+        "house_changed",
+      );
+      next = {
+        ...snapshot,
+        houseTasks: houses.map((candidate) =>
+          candidate.id === mutation.payload.taskId
+            ? { ...candidate, label: mutation.payload.label, updatedAt: mutation.createdAt }
+            : candidate,
+        ),
+      };
+      break;
+    }
+    case "house.set-status": {
+      const houses = snapshot.houseTasks ?? [];
+      const task = houses.find((candidate) => candidate.id === mutation.payload.taskId);
+      requireExpectedUpdatedAt(
+        task?.updatedAt,
+        mutation.payload.expectedUpdatedAt,
+        "house_missing",
+        "house_changed",
+      );
+      next = {
+        ...snapshot,
+        houseTasks: houses.map((candidate) =>
+          candidate.id === mutation.payload.taskId
+            ? {
+                ...candidate,
+                status: mutation.payload.status,
+                completedAt: mutation.payload.completedAt,
+                updatedAt: mutation.createdAt,
+              }
+            : candidate,
+        ),
+      };
+      break;
+    }
+    case "house.delete": {
+      const houses = snapshot.houseTasks ?? [];
+      const task = houses.find((candidate) => candidate.id === mutation.payload.taskId);
+      requireExpectedUpdatedAt(
+        task?.updatedAt,
+        mutation.payload.expectedUpdatedAt,
+        "house_missing",
+        "house_changed",
+      );
+      next = {
+        ...snapshot,
+        houseTasks: houses.filter((candidate) => candidate.id !== mutation.payload.taskId),
       };
       break;
     }

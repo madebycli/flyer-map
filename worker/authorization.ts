@@ -41,6 +41,29 @@ function immutableTaskFieldsUnchanged(
   );
 }
 
+function houseImmutableFieldsUnchanged(
+  previous: NonNullable<CampaignSnapshot["houseTasks"]>[number],
+  next: NonNullable<CampaignSnapshot["houseTasks"]>[number],
+  nextStreetIds: Set<string>,
+) {
+  const parentUnchanged = previous.parentStreetTaskId === next.parentStreetTaskId;
+  const parentClearedByStreetDelete =
+    previous.parentStreetTaskId !== null &&
+    next.parentStreetTaskId === null &&
+    !nextStreetIds.has(previous.parentStreetTaskId);
+
+  return (
+    previous.id === next.id &&
+    previous.campaignId === next.campaignId &&
+    previous.areaId === next.areaId &&
+    previous.taskType === next.taskType &&
+    previous.createdAt === next.createdAt &&
+    same(previous.geometry, next.geometry) &&
+    same(previous.source ?? null, next.source ?? null) &&
+    (parentUnchanged || parentClearedByStreetDelete)
+  );
+}
+
 function existingSmartStreetSnapshotUnchanged(
   previous: CampaignSnapshot,
   next: CampaignSnapshot,
@@ -61,6 +84,24 @@ function existingSmartStreetSnapshotUnchanged(
   return { allowed: true };
 }
 
+function existingHouseSnapshotsUnchanged(
+  previous: CampaignSnapshot,
+  next: CampaignSnapshot,
+): WriteAuthorization {
+  const nextHouses = new Map((next.houseTasks ?? []).map((task) => [task.id, task]));
+  const nextStreetIds = new Set(next.tasks.map((task) => task.id));
+
+  for (const previousTask of previous.houseTasks ?? []) {
+    const nextTask = nextHouses.get(previousTask.id);
+    if (!nextTask) continue;
+    if (!houseImmutableFieldsUnchanged(previousTask, nextTask, nextStreetIds)) {
+      return { allowed: false, reason: "house_snapshot_immutable" };
+    }
+  }
+
+  return { allowed: true };
+}
+
 export function authorizeSnapshotWrite(
   access: AccessContext,
   previous: CampaignSnapshot,
@@ -71,11 +112,11 @@ export function authorizeSnapshotWrite(
   }
 
   // Legacy full-snapshot writes may still exist during the M5 transition. Existing
-  // Smart Street provenance and its reviewed geometry snapshot are immutable there
-  // for every role, including Admin. A future reviewed source-reconciliation
-  // mutation can define an explicit change path.
+  // reviewed Smart Street/House source snapshots remain immutable for every role.
   const smartStreetCheck = existingSmartStreetSnapshotUnchanged(previous, next);
   if (!smartStreetCheck.allowed) return smartStreetCheck;
+  const houseCheck = existingHouseSnapshotsUnchanged(previous, next);
+  if (!houseCheck.allowed) return houseCheck;
 
   if (access.role === "admin") return { allowed: true };
   if (access.role === "viewer") return { allowed: false, reason: "viewer_read_only" };
@@ -139,6 +180,33 @@ export function authorizeSnapshotWrite(
     const previousTask = previousTaskMap.get(nextTask.id);
     if (!previousTask && nextAreaTeam.get(nextTask.areaId) !== teamId) {
       return { allowed: false, reason: "editor_foreign_task_create_forbidden" };
+    }
+  }
+
+  const previousHouseMap = new Map((previous.houseTasks ?? []).map((task) => [task.id, task]));
+  const nextHouseMap = new Map((next.houseTasks ?? []).map((task) => [task.id, task]));
+  const nextStreetIds = new Set(next.tasks.map((task) => task.id));
+
+  for (const previousTask of previous.houseTasks ?? []) {
+    const nextTask = nextHouseMap.get(previousTask.id);
+    const ownedByEditor = previousAreaTeam.get(previousTask.areaId) === teamId;
+
+    if (!ownedByEditor) {
+      if (!nextTask || !same(previousTask, nextTask)) {
+        return { allowed: false, reason: "editor_foreign_house_forbidden" };
+      }
+      continue;
+    }
+
+    if (nextTask && !houseImmutableFieldsUnchanged(previousTask, nextTask, nextStreetIds)) {
+      return { allowed: false, reason: "editor_house_reassignment_forbidden" };
+    }
+  }
+
+  for (const nextTask of next.houseTasks ?? []) {
+    const previousTask = previousHouseMap.get(nextTask.id);
+    if (!previousTask && nextAreaTeam.get(nextTask.areaId) !== teamId) {
+      return { allowed: false, reason: "editor_foreign_house_create_forbidden" };
     }
   }
 

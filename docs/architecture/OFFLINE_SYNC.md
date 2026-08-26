@@ -17,9 +17,13 @@ M5 implements this through a page-owned durable mutation queue while preserving 
 
 ## Deployment state
 
-The durable mutation architecture is implemented in the current stable code line, with M5/M5.5 work already integrated before this M6 Workbench stack.
+The durable mutation architecture is implemented in the current stable code line, with M5/M5.5 work already integrated before M6.
 
-M6 Smart Street persistence is still Workbench-only. Its additive `0004_m6_task_source_provenance.sql` migration must not be treated as remotely applied until the stack is intentionally promoted.
+M6 Street/House persistence code has additive migrations prepared but they are not remotely applied automatically:
+- 0004 adds optional Street source provenance;
+- 0005 adds durable House Tasks.
+
+Until intentional migration rollout, affected writes fail explicitly with `schema_migration_required` before claiming a Campaign revision.
 
 ## Local state layers
 
@@ -32,7 +36,7 @@ The versioned Campaign snapshot remains cached in localStorage as:
 
 It is not the durable delivery source of truth for new unacknowledged writes.
 
-Schema-v3 compatibility is retained while M6 adds optional Task source provenance. Older/manual Street Task objects without `source` remain valid.
+Schema-v3 compatibility is retained while M6 adds optional Street source provenance and optional `houseTasks`. Older/manual Street snapshots without either extension remain valid.
 
 ### IndexedDB mutation queue
 
@@ -59,24 +63,25 @@ Queue states:
 
 During the short enqueue window a best-effort localStorage emergency shadow protects against an interrupted/failed IndexedDB write. A successful IndexedDB transaction clears that shadow; corrupt shadow data is quarantined rather than blocking the queue forever.
 
-A Smart Street `task.create` queue record may contain the reviewed LineString snapshot and its non-secret OSM source provenance. OSM ids are data, not authorization credentials.
+Smart Street and House create records may contain reviewed geometry plus non-secret OSM provenance. OSM ids are data, not authorization credentials.
 
 ## Supported mutation protocol
 
-Initial M5 operations:
+M5/M6 operations include:
 - Campaign rename;
 - shared Campaign default map view set/remove;
 - Team create/update;
 - Area create/rename/team assignment/geometry update/delete;
-- Street Task create/rename/status update/delete.
+- Street Task create/rename/status update/delete;
+- House Task create/rename/status update/delete.
 
-M6 keeps the same `task.create` operation and extends its payload with optional validated source provenance. Smart Street Task identity remains the normal application-generated `task_*` id.
+Street `task.create` may carry optional validated source provenance. House operations use dedicated `house.*` mutation types while sharing the same durable queue, idempotency, revision and authorization protocol.
 
 Personal camera movement is not a shared mutation.
 
 The current snapshot-oriented React UI is bridged by `deriveCampaignMutation(previous, next)`. A normal supported save must derive one unambiguous mutation. Unsupported compound snapshot changes fail visibly rather than silently falling back to a broad ordinary write.
 
-For existing Tasks, geometry and source provenance are immutable through ordinary rename/status mutations. A future source/geometry reconciliation flow requires its own explicit reviewed operation.
+For existing reviewed Smart Street and House Tasks, source geometry/provenance is immutable through ordinary rename/status mutations. House parent Street relation is also immutable except for deterministic clearing when the parent Street is deleted.
 
 ## Conflict semantics
 
@@ -85,7 +90,8 @@ Mutations can be replayed over unrelated newer Campaign revisions when their act
 Preconditions:
 - entity edits/deletes use the target entity `updatedAt` observed when queued;
 - Campaign name/default map view use field-specific expected previous values;
-- creates require the new id not to exist and referenced parent/team records to remain valid.
+- creates require the new id not to exist and referenced parent/team records to remain valid;
+- House create requires its Area to exist and an optional parent Street to be in the same Area.
 
 If the target itself changed or disappeared, the Worker returns an explicit conflict. There is no intentional silent last-write-wins merge.
 
@@ -109,6 +115,8 @@ Terminal behavior:
 - invalid non-retryable request -> retain as `invalid`;
 - retryable failure -> retain as `retry`.
 
+`schema_migration_required` is non-destructive: the mutation remains unsatisfied rather than being silently coerced to an older schema.
+
 ## Server idempotency
 
 The Worker exposes authenticated `POST /api/campaigns/:id/mutations`.
@@ -125,7 +133,7 @@ For each request it:
 
 Migration `0003_m5_mutations.sql` adds `campaign_mutations` keyed by `(campaign_id, mutation_id)`.
 
-The M6 Workbench `task.create` narrow statement adds a bound `source_json` value after migration `0004`; geometry, source ids and labels remain parameters rather than SQL text.
+Street creation uses bound `geometry_json` and optional `source_json`. House creation uses bound Polygon JSON, optional source JSON and optional parent Street id in `house_tasks`. Labels, OSM ids and geometry are never concatenated into SQL text.
 
 If a mutation id already exists:
 - same canonical fingerprint/content -> return its prior applied revision and do not apply the effect again;
@@ -139,33 +147,34 @@ Campaign id remains only a selector.
 
 Worker authorization remains authoritative:
 - Viewer cannot write;
-- Team Editor remains limited to its Team scope;
+- Team Editor remains limited to its Team scope for Areas, Streets and Houses;
 - Admin may perform Campaign-wide changes;
 - revoked/expired access blocks queued writes on the next request.
 
 The client sync label is UX only and is never an authorization boundary.
 
-Under ADR-0013, existing Smart Street source provenance is also protected from accidental mutation by the legacy full-snapshot compatibility write, including for Admin. Deleting the entire Task is distinct from silently rewriting its source metadata.
+Under ADR-0013, existing reviewed Street source and House geometry/source/parent snapshots are protected from accidental mutation by the legacy full-snapshot compatibility write, including for Admin. Deleting the entire Task is distinct from silently rewriting reviewed source data.
 
 ## Active draw/edit safety
 
-Unsaved intermediate vertices remain local UI interaction state and are not queued.
+Unsaved intermediate vertices and Smart selection drafts remain local UI interaction state and are not queued.
 
-Protected modes remain:
+Protected modes include:
 - Area draw;
 - Area edit;
 - Street draw;
-- Smart Street start/end/waypoint review while it is still an unsaved selection draft.
+- Smart Street start/end/waypoint review;
+- Smart House selection before the user confirms creation.
 
-The existing interaction-block mechanism continues to prevent canonical server refresh from silently destroying active geometry. The saved MapLibre renderer receives data only when Campaign snapshot state changes; M6 does not recreate the map or change its camera lifecycle.
+The existing interaction-block mechanism continues to prevent canonical server refresh from silently destroying active geometry. Saved MapLibre data changes only when Campaign snapshot state changes.
 
 ## Legacy transition path
 
-A pre-M5 optimistic local snapshot can exist without a corresponding IndexedDB queue record. During transition, the authorized coarse snapshot PUT may be used only for the compatibility/recovery behavior that remains intentionally supported.
+A pre-M5 optimistic local snapshot can exist without a corresponding IndexedDB queue record. During transition, the authorized coarse snapshot PUT may be used only for compatibility/recovery behavior that remains intentionally supported.
 
 New ordinary edits must use the mutation queue and must not return to arbitrary full-snapshot replacement as their normal delivery path.
 
-If an existing Task already has Smart Street provenance, the compatibility write may preserve or delete the whole Task when authorized, but may not strip/change the existing provenance while keeping the Task.
+The compatibility write detects missing M6 schema before revision claim. It may preserve/delete whole reviewed Tasks when authorized, but may not strip or rewrite reviewed provenance/geometry while retaining the Task.
 
 ## Website-only constraints
 
@@ -178,10 +187,11 @@ If an existing Task already has Smart Street provenance, the compatibility write
 
 ## Renderer boundary
 
-M6 does not change ADR-0010:
+M6 persistence does not change ADR-0010:
 - MapLibre GL JS remains pinned to 5.7.1;
 - saved Areas/Streets remain persistent MapLibre GeoJSON sources/layers;
+- durable House data exists separately until a dedicated batched House map-layer slice is accepted/tested;
 - active draw/edit/review interaction remains outside the saved persistent layer model until Task creation;
 - normal browse has no application loop projecting all saved geometry.
 
-See ADR-0011 for mutation/idempotency behavior and ADR-0013 for Smart Street Task identity/source geometry.
+See ADR-0011 for mutation/idempotency behavior and ADR-0013 for Smart Street/House identity/source geometry.

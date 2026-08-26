@@ -38,7 +38,7 @@ function isMapViewCandidate(value: unknown) {
   return value === null || isRecord(value);
 }
 
-function isTaskSource(value: unknown) {
+function isTaskSource(value: unknown, expectedObjectCount: number | null = null) {
   if (value === undefined || value === null) return true;
   if (!isRecord(value)) return false;
   const keys = Object.keys(value).sort();
@@ -48,6 +48,7 @@ function isTaskSource(value: unknown) {
     || value.objectType !== "way"
     || !Array.isArray(value.objectIds)
     || value.objectIds.length === 0
+    || (expectedObjectCount !== null && value.objectIds.length !== expectedObjectCount)
     || !value.objectIds.every(
       (objectId) => typeof objectId === "number" && Number.isSafeInteger(objectId) && objectId > 0,
     )
@@ -55,6 +56,17 @@ function isTaskSource(value: unknown) {
     return false;
   }
   return new Set(value.objectIds).size === value.objectIds.length;
+}
+
+function validStatusPayload(payload: Record<string, unknown>) {
+  return (
+    (payload.status === "open" ||
+      payload.status === "completed" ||
+      payload.status === "later" ||
+      payload.status === "not-deliverable") &&
+    (payload.completedAt === null || isTimestamp(payload.completedAt)) &&
+    hasExpectedUpdatedAt(payload)
+  );
 }
 
 export function validateCampaignMutation(
@@ -163,20 +175,39 @@ export function validateCampaignMutation(
       }
       break;
     case "task.set-status":
-      if (
-        isId(payload.taskId) &&
-        (payload.status === "open" ||
-          payload.status === "completed" ||
-          payload.status === "later" ||
-          payload.status === "not-deliverable") &&
-        (payload.completedAt === null || isTimestamp(payload.completedAt)) &&
-        hasExpectedUpdatedAt(payload)
-      ) {
+      if (isId(payload.taskId) && validStatusPayload(payload)) {
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;
     case "task.delete":
       if (isId(payload.taskId) && hasExpectedUpdatedAt(payload)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "house.create":
+      if (
+        isTaskId(payload.taskId) &&
+        isId(payload.areaId) &&
+        isString(payload.label, 160) &&
+        isRecord(payload.geometry) &&
+        isTaskSource(payload.source, 1) &&
+        (payload.parentStreetTaskId === null || isTaskId(payload.parentStreetTaskId))
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "house.rename":
+      if (isTaskId(payload.taskId) && isString(payload.label, 160) && hasExpectedUpdatedAt(payload)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "house.set-status":
+      if (isTaskId(payload.taskId) && validStatusPayload(payload)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "house.delete":
+      if (isTaskId(payload.taskId) && hasExpectedUpdatedAt(payload)) {
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;
