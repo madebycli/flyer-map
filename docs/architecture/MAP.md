@@ -64,7 +64,7 @@ ADR-0012 defines the separate prepared offline-data path. OpenStreetMap Foundati
 
 ### Sources
 
-Two persistent sources exist for the current Campaign:
+Two persistent sources exist for the current field renderer:
 - `vf-areas` - all saved Areas;
 - `vf-streets` - all saved Street Tasks.
 
@@ -94,17 +94,32 @@ Feature properties carry Team color/status. Line width is zoom-dependent and sho
 
 The number of sources/layers stays effectively constant whether a Campaign contains 10 or thousands of Street features.
 
-ADR-0013 does not create a second renderer path. A persisted Smart Street becomes the same saved Campaign Street feature after its reviewed OSM-derived route is copied into a validated LineString snapshot. OSM provenance is metadata and is not needed to render the saved Street.
+ADR-0013 does not create a second Street renderer path. A persisted Smart Street becomes the same saved Campaign Street feature after its reviewed OSM-derived route is copied into a validated LineString snapshot. OSM provenance is metadata and is not needed to render the saved Street.
+
+### House persistence boundary
+
+M6 now has a durable House Task data/persistence foundation under ADR-0013:
+- application-owned Task id;
+- reviewed building Polygon snapshot;
+- optional one-Way OSM provenance;
+- optional parent Street Task in the same Area;
+- independent Task status.
+
+House Tasks intentionally **do not yet enter `vf-streets`**. The current field renderer remains Street-only until a dedicated House map-layer slice defines batched building fill/outline/selection styling and real-device density acceptance. This avoids accidentally treating Polygon House geometry as Street LineString geometry.
+
+When House rendering is added it must follow the same persistent MapLibre rule: one/few batched GeoJSON sources and a fixed small layer set, never one layer or React/SVG element per building.
 
 ## Browse interaction
 
-Saved selection uses MapLibre rendered-feature queries.
+Saved Street selection uses MapLibre rendered-feature queries.
 
 Street selection uses a small screen-space hit box around the pointer/tap so a thin line remains easy to select.
 
 Area selection queries the Area fill layer at the interaction point.
 
 Normal browse movement must perform **zero Verteil-Flyer `map.project()` loops over all saved Areas/Streets**.
+
+Future House browse selection must use rendered-feature queries over the batched House source, not per-House DOM hit targets.
 
 ## Active draw/edit SVG
 
@@ -134,7 +149,7 @@ ADR-0013 confirms the Smart Street primary direction:
 - a non-continuous route is rejected instead of silently stored as `MultiLineString`;
 - later OSM refreshes do not silently rewrite the saved geometry.
 
-The Workbench persistence stack keeps the renderer contract unchanged: after creation, a Smart Street is just another saved Street Task in `vf-streets`.
+The persistence stack keeps the renderer contract unchanged: after creation, a Smart Street is just another saved Street Task in `vf-streets`.
 
 ## Prepared offline working area
 
@@ -148,7 +163,7 @@ Initial direction:
 - browser IndexedDB stores the package locally;
 - local roads/buildings/context render through batched MapLibre sources/layers while the already-loaded website is offline;
 - Campaign Areas/Streets remain above the local context and retain the existing selection/edit boundary;
-- the same prepared OSM identity/data feeds Smart Street source candidates while application-owned Task identity remains separate under ADR-0013;
+- the same prepared OSM data feeds Smart Street and Smart House source candidates while application-owned Task identity remains separate under ADR-0013;
 - no CARTO or OpenStreetMap Foundation tile bulk cache;
 - no Service Worker/PWA requirement;
 - no R2/PMTiles pipeline in v1.
@@ -165,7 +180,7 @@ Road/building import must preserve the persistent renderer pattern:
 - use application-owned durable Task ids and reviewed geometry snapshots under ADR-0013;
 - if a different production-scale map pipeline becomes necessary, decide it explicitly rather than silently creating a duplicate source of truth.
 
-House persistence remains a later explicit schema slice and is not implied by the current Street-only Task table.
+House persistence is now a separate additive data slice. House map rendering remains an explicit follow-up, not an implicit extension of the Street LineString source.
 
 ## Camera state
 
@@ -188,7 +203,7 @@ Geolocation is user-initiated and one-shot. GPS coordinates are not persisted as
 
 The opt-in `?diag=1` panel is used for renderer troubleshooting and real-browser acceptance.
 
-Whole-city acceptance must include representative dense tests, currently targeted at 500 / 1,000 / 2,500 / 5,000 Street features. House Mode will require additional building-scale tests.
+Whole-city acceptance must include representative dense tests, currently targeted at 500 / 1,000 / 2,500 / 5,000 Street features. House Mode requires additional building-scale tests before its persistent layer is promoted into the field map.
 
 Prepared 3 km offline packages must be measured with dense representative urban data on real mobile devices. If normalized GeoJSON package/render size becomes unsuitable, revisit transport/render storage through a new ADR rather than silently introducing a second map pipeline.
 
