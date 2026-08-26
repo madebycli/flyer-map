@@ -4,7 +4,7 @@ type: architecture
 status: accepted
 last_updated: 2026-08-26
 related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, plan-012-platform-app-expansion]
-source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, m6-smart-street-security, future-security-boundaries]
+source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, m6-smart-task-security, future-security-boundaries]
 ---
 
 # Security and Privacy
@@ -30,10 +30,10 @@ Current roles:
 | Campaign settings/map focus | yes | no | no |
 | Manage Teams | yes | no | no |
 | Create/edit/delete Areas | yes | own Team only | no |
-| Create/edit/delete Tasks/status | yes | own Team Areas only | no |
+| Create/edit/delete Street/House Tasks/status | yes | own Team Areas only | no |
 | Modify another Team | yes | no | no |
 | Create/revoke Campaign Access Links | yes | no | no |
-| Submit M5 domain mutations | yes | own authorized scope only | no |
+| Submit M5/M6 domain mutations | yes | own authorized scope only | no |
 | Prepare local OSM map package | yes | yes | yes |
 
 The Worker enforces scope on every write and protected data request.
@@ -69,6 +69,8 @@ For mutations, Team Editor scope is not inferred from client mutation payload al
 3. validates the candidate snapshot;
 4. compares current/candidate through the existing snapshot authorization policy;
 5. persists only if allowed.
+
+House Tasks use the same Area -> Team ownership rule as Street Tasks. An optional House parent Street never expands authority: both House Area and parent Street must remain in the same Campaign/Area.
 
 ## M5 mutation request security
 
@@ -117,24 +119,39 @@ The route does not write OSM data into D1 and does not include Campaign snapshot
 
 Worker error logging for this route must never log request bodies, cookies, Access Link tokens, session secrets or raw upstream data. A stable error category/name is sufficient for operational diagnosis.
 
-## M6 Smart Street persistence security
+## M6 Smart Street and House persistence security
 
 ADR-0013 separates durable application identity from external OSM provenance.
 
-Required boundaries:
-- every new Smart Street uses an application-owned generated `task_*` id;
+Shared boundaries:
+- every new Smart Street/House uses an application-owned generated `task_*` id;
 - OSM way ids remain ordinary non-secret provenance values and never authorize access;
-- the reviewed Street route is a validated Campaign-owned LineString snapshot, not a live reference to remote OSM data;
-- the optional Task `source` object accepts only the reviewed `OpenStreetMap` / `way` / positive-integer `objectIds` shape;
+- reviewed geometry is copied into Campaign-owned snapshots rather than being a live remote reference;
 - unexpected nested provenance fields are rejected at the Worker validation boundary rather than persisted by object spreading;
-- Task geometry and source provenance are immutable through ordinary rename/status mutations;
-- the legacy full-snapshot compatibility write may not strip or rewrite existing Task provenance for any role, including Admin;
-- a future OSM source reconciliation must be a dedicated explicit reviewed mutation with its own authorization and conflict semantics;
-- `source_json` and `geometry_json` values are passed through D1 prepared/parameterized bindings and never concatenated into SQL;
+- source/geometry values are passed through D1 prepared/parameterized bindings and never concatenated into SQL;
 - malformed stored provenance is treated as invalid stored data, not evaluated content;
-- OSM labels/tags remain inert text if later surfaced alongside the provenance ids.
+- OSM labels/tags remain inert text if later surfaced alongside provenance ids.
 
-The Workbench additive `0004_m6_task_source_provenance.sql` migration is not remotely applied merely because it exists in a Draft PR.
+Street-specific boundaries:
+- reviewed Street geometry is a validated LineString snapshot;
+- Street source accepts `OpenStreetMap` / `way` / positive unique `objectIds`;
+- existing reviewed Street geometry/source is immutable through ordinary rename/status or legacy full-snapshot writes.
+
+House-specific boundaries:
+- reviewed House geometry is a validated Polygon footprint snapshot;
+- OSM House provenance, when present, is exactly one positive Way id;
+- `parentStreetTaskId`, when present, must resolve to a Street Task in the same Campaign and same Area;
+- House geometry, provenance and parent relation are immutable through ordinary House rename/status writes;
+- deleting a parent Street may only clear the optional parent relation, never silently delete/reassign the House;
+- House ids must not collide with Street Task ids inside a Campaign snapshot;
+- Team Editors may create/edit/delete Houses only inside Areas owned by their scoped Team.
+
+Migration boundaries:
+- `0004_m6_task_source_provenance.sql` and `0005_m6_house_tasks.sql` are not remotely applied merely because they exist in a branch/PR;
+- before the required schema exists, affected M6 writes return explicit `schema_migration_required` before Campaign revision claim;
+- House data must never be silently discarded or coerced into the Street table for compatibility.
+
+A future OSM source reconciliation must be a dedicated explicit reviewed mutation with its own authorization and conflict semantics.
 
 No credential, account, role, TOTP or GPS behavior is introduced by this M6 slice.
 
@@ -142,7 +159,7 @@ No credential, account, role, TOTP or GPS behavior is introduced by this M6 slic
 
 IndexedDB queue records may contain domain mutation payloads necessary to retry saved work. They do not contain plaintext Access Link tokens or session secrets.
 
-A Smart Street task-create payload may include reviewed geometry and OSM way provenance. Those values are operational domain data, not credentials.
+Smart Street/House create payloads may include reviewed geometry and OSM way provenance. Those values are operational domain data, not credentials.
 
 When a queued request receives 401/403:
 - the record remains locally preserved;
@@ -222,7 +239,7 @@ Security requirements:
 All user-controlled input is inert data.
 
 Mandatory:
-- never concatenate username/password/code/comment/form input into SQL;
+- never concatenate username/password/code/comment/form/OSM input into SQL;
 - use D1 prepared/parameterized queries;
 - never pass user input to `eval`, dynamic code execution, shell execution or raw HTML rendering;
 - safely encode output;
@@ -298,7 +315,7 @@ M5 stores only domain payload and metadata needed to deliver/reconcile queued sa
 
 Prepared offline OSM packages contain public map geometry/metadata and local package metadata only. They do not need user identity, continuous GPS history or private Campaign state.
 
-M6 Smart Street persistence stores only reviewed route geometry plus the OSM way ids needed for source traceability. It does not store raw Overpass responses, browsing history or device location trails in D1.
+M6 Smart Street/House persistence stores only reviewed route/building geometry plus OSM Way ids needed for source traceability. It does not store raw Overpass responses, browsing history or device location trails in D1.
 
 Field Sessions may store operational values such as date, duration, participant count and Task events. They should not become individual movement surveillance.
 
