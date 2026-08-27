@@ -90,6 +90,12 @@ export function FieldSessionsHub({
       setError(null);
       try {
         const taskRefs = await fetchAllFieldSessionTaskRefs(campaignId, session.id);
+        if (!taskRefs.some((taskRef) => taskRef.entityType === "street-task")) {
+          setError(
+            "Für diesen Einsatz gibt es keine aktuell darstellbaren Straßen-Aufgaben. Haus-Aufgaben bleiben in der Historie sichtbar.",
+          );
+          return;
+        }
         onShowSessionOnMap(session, taskRefs);
       } catch (loadError) {
         setError(historyErrorMessage(loadError));
