@@ -1,12 +1,12 @@
 # Prompt - Continue Feature-Complete Platform
 
-Use this prompt for the next fresh AI coding chat. This file is a living handoff. At the end of the work session it must be updated so the following fresh chat can continue from the exact repository state without relying on chat memory.
+Use this prompt for the next fresh AI coding chat. It is the living handoff for the current Plan-017 development line.
 
 ```text
 Du arbeitest weiter am GitHub-Projekt `madebycli/flyer-map` (Verteil-Flyer / Flyer Map).
 
 DAS REPOSITORY IST DIE EINZIGE SOURCE OF TRUTH.
-Verlasse dich nicht auf alte Chat-Erinnerungen, Branch-Namen, PR-Stände oder frühere Aussagen, wenn Repository, GitHub, CI oder Cloudflare inzwischen etwas anderes zeigen.
+Prüfe Repository, GitHub, PRs, Branch-Heads und CI neu. Die konkreten Heads in diesem Prompt sind nur der letzte bekannte verifizierte Stand.
 
 PRODUKTBASIS
 
@@ -19,314 +19,186 @@ Kein Web-App-Manifest-Installationsflow.
 Kein Background Sync API.
 Keine kontinuierliche GPS-Routenaufzeichnung.
 
-MapLibre GL JS bleibt der Kartenrenderer gemäß den akzeptierten Architekturentscheidungen, solange keine neue akzeptierte ADR etwas anderes festlegt.
-
-WICHTIGE NEUE ARBEITSWEISE
-
-Die weitere Entwicklung erfolgt gemäß Plan 017 FEATURE COMPLETE.
-
-Baue nicht wieder nur Foundation, Preview, Fake-Daten oder Callback-only UI und nenne das Feature fertig.
-
-Ein normales Produktfeature ist erst geliefert, wenn der komplette relevante Benutzerweg funktioniert:
-- echte UI;
-- echte gemeinsame Persistenz, wenn Shared State benötigt wird;
-- Worker-seitige Autorisierung;
-- M5-Queue/Idempotenz bei offline-relevanten Mutationen;
-- Loading/Empty/Error/Revoked/Conflict/Retry-Zustände;
-- permission-aware Navigation und Aktionen;
-- Mobile/Responsive/Accessibility;
-- Tests;
-- Production Build und Cloudflare Preview;
-- aktualisierte Doku/Context-Dateien.
-
-Interne `?workbench=`-Routen dürfen als Entwicklungswerkzeug bestehen bleiben, zählen aber nicht als fertiges Produktfeature. Unfertige Foundation-Module sollen normalen Nutzern nicht als scheinbar fertige Launcher-Ziele angeboten werden.
-
 BEVOR DU IRGENDETWAS ÄNDERST
 
 1. Lies `AGENTS.md` vollständig.
 2. Lies `docs/status/CURRENT.md` vollständig.
 3. Lies `docs/context-map.yaml` vollständig.
-4. Lies `docs/product/ROADMAP.md` vollständig.
-5. Lies `docs/product/UX.md` vollständig.
-6. Lies `docs/plans/active/012-platform-app-expansion.md` vollständig.
-7. Lies `docs/plans/active/017-feature-complete-platform.md` vollständig.
-8. Lies diesen Prompt vollständig bis zum Ende.
-9. Prüfe den aktuellen Branch-/PR-Stack, insbesondere aktuell bekannte PRs #68, #70, #71 und #72. Verlasse dich nicht auf die Nummern/Heads aus diesem Prompt, wenn GitHub inzwischen weiter ist.
-10. Prüfe offene PRs, deren Base-/Head-Branches, Mergeability, aktuelle Heads, CI/Checks und Cloudflare-Builds.
-11. Prüfe den aktuellen Code der betroffenen UI und Runtime, nicht nur die Plan-Dokumentation.
-12. Folge anschließend dem Context-Graph für die konkret betroffenen Architecture-/ADR-Dateien.
+4. Lies `docs/product/ROADMAP.md` und `docs/product/UX.md`.
+5. Lies `docs/plans/active/017-feature-complete-platform.md` vollständig.
+6. Lies diesen Prompt vollständig.
+7. Prüfe Draft PR #72, Branch `plan-feature-complete-platform`, Base `ui-app-launcher-sheet`, exakten Head, Mergeability und CI.
+8. Prüfe den gestapelten Base-PR #71 und weitere offene PRs, wenn sie den aktuellen Stack beeinflussen.
+9. Folge dem Context-Graph zu den für den nächsten Slice relevanten Architecture-/ADR-Dateien.
+10. Prüfe vor jeder D1-Arbeit den dokumentierten Remote-Migrationsstand.
 
-Für die unmittelbar geplante Arbeit sind insbesondere relevant:
-- `docs/architecture/SECURITY.md`
-- `docs/architecture/OFFLINE_SYNC.md`
-- `docs/architecture/LIVE_TEAMS.md`
-- `docs/architecture/COLLABORATION.md`
-- `docs/architecture/IDENTITY_PERMISSIONS.md` nur wenn Rechte/Accounts betroffen sind
-- `docs/decisions/ADR-0011-durable-mutation-queue-and-idempotency.md`
-- `docs/decisions/ADR-0013-smart-street-house-identity.md`
-- `docs/decisions/ADR-0014-live-field-group-credentials.md`
-- `docs/decisions/ADR-0017-field-session-events-retention.md`
+AKTUELLER VERIFIZIERTER CHECKPOINT
 
-Lies vorgeschlagene ADRs vollständig, bevor du Runtime implementierst, die durch sie blockiert ist.
+Zuletzt vollständig verifizierter Head vor diesem Handoff-Commit:
+- PR #72: Draft, mergeable;
+- Branch: `plan-feature-complete-platform`;
+- Base: `ui-app-launcher-sheet`;
+- Head: `9c32b5db22d6f86d01bbb68e5593b1723c9edd0b`;
+- CI #629: erfolgreich;
+- Tests, Typecheck, High-Severity Dependency Audit und Production Build: grün.
 
-AKTUELLER PRODUKT-/BRANCH-KONTEXT, NUR ALS STARTPUNKT ZUM VERIFIZIEREN
+Der Handoff-Commit selbst ändert den Head danach erneut. Verifiziere deshalb zuerst den tatsächlichen aktuellen Head und dessen CI, bevor du weiterentwickelst.
 
-Der zuletzt bekannte Stack war:
-- `release-platform-integration-2026-08-26` -> Draft PR #68 gegen `main`;
-- `m6-house-persistence-runtime` -> Draft PR #70 gegen Release-Branch;
-- `ui-app-launcher-sheet` -> Draft PR #71 gegen House-Branch;
-- `plan-feature-complete-platform` -> Draft PR #72 gegen `ui-app-launcher-sheet`.
+PR #72 heißt aktuell:
+`FC0/FC1: platform navigation, Team Hub and Live Field Groups`
 
-Prüfe das neu. Wenn sich GitHub geändert hat, gilt GitHub.
+FC0 STATUS
 
-Migrationen `0004_m6_task_source_provenance.sql` und `0005_m6_house_tasks.sql` sind nach zuletzt bekanntem Stand NICHT remote angewendet.
+FC0 Navigation/Action-Bridge ist umgesetzt:
+- typisierter PlatformShell/App-Contract;
+- der sichtbare Teamname folgt dem aktiven Karten-Team;
+- Settings, Teamverwaltung und Gebiet-Aktion bleiben capability-/scope-gesteuert erreichbar;
+- `Team` öffnet den echten Team Hub statt eines Workbench-Previews;
+- unfertige Foundation-Module zählen weiterhin nicht als abgeschlossenes Produktfeature.
+
+FC1 STATUS
+
+ADR-0014 ist accepted.
+
+Der Team-Hub-/Live-Field-Group-Runtime-Slice ist umgesetzt:
+- Campaign-scoped aktive Gruppen und Teamfilter;
+- Admin und eigener Team Editor als aktuelle Managementrollen;
+- Create mit Label, Team, Discoverability und Teilnehmerzahl;
+- idempotente Create-Request-ID mit Payload-Bindung;
+- 10-stelliger human-safe Room Code;
+- separater 32-Byte-QR-Token;
+- nur Credential-Hashes in D1, Plaintext nur bei Ausgabe/Rotation;
+- idempotente Credential-Rotation;
+- Revoke;
+- manueller Room-Code-Join und QR-Join;
+- Cloudflare Actor- und Candidate-Rate-Limits mit fail-closed Verhalten;
+- temporäre `vf_field_group_session` für Teilnehmer ohne persistenten Campaign-Zugriff;
+- temporäre Autorisierung nur für den Ziel-Team-/Group-Scope und freigegebene Task-Statusarbeit;
+- kein Rollen-Upgrade durch Join;
+- Participant Count und Discoverability Update;
+- Leave und Manager Remove Membership;
+- serverseitige 24h-Hard-Expiry;
+- revoked/removed/closed/expired Zugriff wird bei Folgezugriffen serverseitig erneut geprüft;
+- realer Team-Fortschritt im Team Hub.
+
+MANAGER MEMBER ROSTER
+
+Die zuvor offene Mitgliederverwaltung ist umgesetzt und im echten Produkt-Build importiert:
+- server-authorisierte aktive Mitgliederliste;
+- Admin innerhalb Campaign;
+- Team Editor nur eigenes canonical Team;
+- Viewer und temporäre Mitglieder ausgeschlossen;
+- nur Membership-ID, Membership-Typ, sichere Bezeichnung und Join-Zeit;
+- keine Session-Hashes, Join-Credentials, IPs oder Gerätefingerprints;
+- Remove mit Bestätigung;
+- Gruppenanzahl wird danach autoritativ neu geladen;
+- `tests/fieldGroupMembersUi.test.ts` schützt davor, dass das Panel wieder nur als unimportierte Datei existiert.
+
+FIELD SESSION FOUNDATION
+
+ADR-0017 ist accepted.
+
+Migration `0007_field_sessions_events.sql` ist vorbereitet:
+- `field_sessions`;
+- minimierte `domain_events`;
+- deterministische eine Field Session pro Field Group Endzustand;
+- `field_session.closed` bei manuellem Close;
+- `field_session.expired` beim 24h-Sicherheitsablauf;
+- Dauer, explizite Teilnehmer und Person-Time;
+- bei Expiry ohne bekannte Teilnehmer bleiben Teilnehmer/Person-Time `NULL`;
+- keine GPS-Trails, Secrets oder vollen Campaign-Snapshots.
+
+Der Worker blockiert normalen Group-Close mit `field_session_schema_unavailable`, solange 0007 fehlt. Mit 0007 hängen Group-Endzustand und Session/Event-Historie in derselben D1-Transaktion.
+
+MIGRATIONSSTATUS
+
+Remote D1 ist weiterhin nur bis 0003 dokumentiert.
+
+Prepared, aber NICHT remote angewendet:
+- 0004: Smart Street source provenance;
+- 0005: House Tasks;
+- 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
+- 0007: Field Sessions und minimierte Domain Events.
 
 WENDE KEINE REMOTE D1-MIGRATION AN, außer der User fordert diesen Rollout ausdrücklich an.
 
-Merge `main` nicht automatisch nur um den Stack aufzuräumen. Promotion nach `main` bleibt eine bewusste Release-Aktion. Stacked PRs untereinander dürfen nur dann integriert/retargetet werden, wenn der exakte aktuelle Zustand geprüft ist und dadurch keine ungeprüfte Release-Promotion entsteht.
+TEAM LIFECYCLE
 
-VERBINDLICHES AKTUELLES MOBILE DESIGN
+Baue in FC1 keinen improvisierten Team-Hard-Delete oder Fake-Archivstatus ein.
 
-Die Karte bleibt Home/Arbeitsfläche.
+Das aktuelle Teammodell hat kein persistentes Archivstatusfeld. Team-Editor-Grants und Legacy-Snapshot-Kompatibilität beeinflussen Delete/FK-Semantik. Retained Field Sessions/Events müssen verständlich bleiben.
 
-Im normalen Browse-Zustand sitzt UNTEN LINKS eine kompakte Launcher-Leiste.
-Sie enthält nur:
-- 3x3 App-Grid/Menu-Button;
-- direkt daneben den AKTUELLEN TEAMNAMEN ALS TEXT;
-- Teamfarbe höchstens als kleinen unterstützenden Marker.
+Team Archive/Restore/Permanent Delete gehört in einen eigenen Team-Lifecycle-/Admin-Slice unter Organization/Permissions. Vor Runtime müssen Statusfeld, Areas/Tasks, Grants, aktive Field Groups, History und Restore/Permanent-Delete-Semantik geklärt werden.
 
-Nicht permanent in diese Leiste gehören:
-- Team-Dropdown;
-- Settings;
-- Teamverwaltung;
-- Gebiet anlegen;
-- weitere Admin-/Editor-Aktionen.
+NÄCHSTER KONKRETER IMPLEMENTIERUNGSBLOCK: FC2
 
-Diese Aktionen gehören in permission-aware Menü-/Modul-Flows.
+Wenn der exakte aktuelle PR-Head weiterhin grün und der Stack gesund ist, beginne direkt mit FC2.
 
-Das Menü ist ein kompaktes, abgerundetes Sheet in derselben visuellen Familie wie die vorhandenen Settings-/Teams-Sheets:
-- große App-Icons;
-- kurze Labels darunter;
-- kein Fullscreen-Home-Dashboard;
-- einzelne Fachmodule dürfen nach Auswahl eine volle Fachoberfläche öffnen.
+Erster sichere vertikale Slice:
+1. server-authorisierte Field-Session-History-Read-API;
+2. Campaign-/Team-Scope serverseitig prüfen;
+3. nur minimale Sessiondaten ausgeben;
+4. keine Secrets, GPS-Daten oder unrestricted Event-Payloads;
+5. Loading/Empty/Error/Unauthorized-Zustände im echten `Einsätze`-Modul;
+6. vorhandene Foundation/Fake-Session-Historie dort durch reale Daten ersetzen;
+7. gezielte Security-Negativtests für fremden Team-/Campaign-Scope;
+8. exact-head Tests, Typecheck, Audit und Production Build.
 
-Kontextuelle Area-/Street-/House-Sheets dürfen die untere Launcher-Leiste überdecken, wenn aktiv an einem Objekt gearbeitet wird.
+Danach im selben FC2-Ziel:
+- Task-Mutationen serverseitig einer aktiven Session/Event-Historie zuordnen;
+- M5-Retry darf kein doppeltes Event erzeugen;
+- Session-Auswahl darf betroffene aktuelle/reviewed Task-Geometrie hervorheben;
+- dauerhafte Comments mit expliziter Edit/Delete/Moderation-Semantik;
+- Activity Feed aus echten normalisierten Domain Events;
+- Automations nur deterministisch, autorisiert und idempotent.
 
-Keine neue große UI-Framework-Abhängigkeit einführen, wenn die vorhandene React/CSS-Struktur ausreicht.
+RELEVANTE ARCHITEKTUR FÜR FC2
 
-NÄCHSTER KONKRETER IMPLEMENTIERUNGSBLOCK: FC0
+Lies insbesondere:
+- `docs/architecture/COLLABORATION.md`
+- `docs/architecture/LIVE_TEAMS.md`
+- `docs/architecture/SECURITY.md`
+- `docs/architecture/OFFLINE_SYNC.md`
+- `docs/architecture/DATA.md`
+- `docs/decisions/ADR-0011-durable-mutation-queue-and-idempotency.md`
+- `docs/decisions/ADR-0017-field-session-events-retention.md`
 
-Beginne nach der Bestandsaufnahme direkt mit Plan 017 FC0, sofern GitHub/CURRENT nicht bereits zeigen, dass er abgeschlossen wurde.
-
-FC0 bedeutet:
-
-1. Mache die neue Navigation funktional vollständig.
-2. Führe einen typisierten PlatformShell <-> App Action-/Navigation-Contract ein. Keine brittle DOM-query/click-Proxies auf versteckte Legacy-Buttons, wenn eine saubere Bridge möglich ist.
-3. Der unten sichtbare Teamname muss aus dem tatsächlich aktiven Karten-Team stammen, nicht bloß aus dem ersten Team oder einem statischen Access-Fallback.
-4. Bestehende Kernfunktionen müssen wieder erreichbar sein, ohne zurück in die permanente Leiste zu kommen:
-   - Einstellungen;
-   - echte Team-/Teamverwaltungsoberfläche;
-   - Gebiet anlegen, sofern berechtigt.
-5. `Team` darf nicht einfach ein Fake-/Workbench-Live-Group-Preview öffnen.
-6. Baue das Launcher-Registry-Modell permission-aware auf.
-7. Viewer dürfen keine Bearbeitungsaktionen sehen.
-8. Team-/Admin-Aktionen werden nur angezeigt, wenn der aktuelle reale Access-/Capability-Stand sie erlaubt.
-9. Unfertige Foundation-Module nicht als normale fertige Ziele präsentieren.
-10. Bewahre Map-Interaktion, Offline-Sync und bestehende Authorisierung vollständig.
-
-TESTE FC0 sowohl statisch als auch über die vorhandenen automatisierten Tests. Ergänze zielgerichtete Tests für:
-- echten aktiven Team-Kontext;
-- Settings/Team/Gebiet-Erreichbarkeit;
-- Viewer-Hiding;
-- keine Team->Workbench-Fehlroute;
-- untere Launcher-Position und Teamname.
-
-DANACH: FC1 TEAM HUB + LIVE FIELD GROUPS
-
-Wenn FC0 sauber abgeschlossen und verifiziert ist, stoppe nicht nur wegen eines künstlichen Slice-Endes. Beginne direkt mit dem nächsten sicheren Teil von FC1.
-
-Ziel ist ein echter Team Hub im aktuellen Design:
-- aktuelles Team: Name/Farbe/optional Datum;
-- Team wechseln, wenn Zugriff mehrere Teams erlaubt;
-- Team-Fortschritt;
-- aktueller Einsatz / aktuelle Field Group;
-- aktive Online-Gruppen in der aktuellen Aktion;
-- Team-Filter;
-- Verwaltungsaktionen nur bei Berechtigung.
-
-Trenne sichtbar und im Domain-Modell:
-- Team = dauerhaftes Campaign-Team;
-- Field Group / Einsatzgruppe = temporäre Gruppe für genau eine Tour.
-
-FIELD GROUP FEATURE-COMPLETE ZIEL
-
-Eine berechtigte Person soll später end-to-end können:
-- Gruppe im erlaubten Team erstellen;
-- Label setzen;
-- `online anzeigen` standardmäßig aktiv lassen oder deaktivieren;
-- Room Code erhalten;
-- QR anzeigen;
-- Teilnehmerzahl setzen/ändern;
-- andere Geräte per Code/QR beitreten lassen;
-- aktive Gruppe und Fortschritt sehen;
-- Gruppe manuell schließen;
-- nach spätestens 24h automatisch als nicht mehr joinbar behandeln;
-- finale Teilnehmerzahl beim Schließen speichern;
-- daraus eine Field Session abschließen.
-
-Discovery:
-- Standard `Alle in der Aktion`;
-- optional Teamfilter;
-- nur aktive discoverable Gruppen;
-- niemals Join-Secrets in Listenantworten.
-
-Security:
-- QR/Room Code dürfen niemals persistenten Admin-/Campaign-Zugang enthalten;
-- temporäre Membership darf nie Admin/Organizer/Teamverwaltung grant-en;
-- keine Client-only Authorization;
-- keine Join-Secrets in Logs;
-- Revocation/Close/Expiry serverseitig prüfen;
-- neuer Join benötigt Online-Worker-Redemption;
-- bereits autorisierte Offline-Arbeit darf die M5-Queue nutzen, muss nach Reconnect bei revoked/closed/expired sichtbar blockiert werden.
-
-ADR-0014 IST NOCH EIN GATE
-
-Implementiere keine echte Field-Group-Credential-/Membership-Runtime, solange ADR-0014 nach Repository-Stand noch `proposed` ist.
-
-Wenn sie noch proposed ist:
-1. lies sie vollständig;
-2. schließe die noch offenen Entscheidungen sauber im Repo;
-3. prüfe Security-Auswirkungen;
-4. setze den ADR-Status erst auf accepted, wenn die Entscheidung vollständig und intern konsistent ist;
-5. beginne danach direkt mit der Runtime, ohne einen weiteren Chat nur für Planung zu verschwenden.
-
-Plan-017-Empfehlungen für die offenen Punkte, sofern aktuelle Repo-Diskussion nichts Gegenteiliges festgelegt hat:
-- 10-stelliger human-safe Base32 Room Code;
-- separater QR-Token mit >=128 Bit Entropie;
-- Credential-Rotation verlängert niemals die ursprüngliche 24h-Frist;
-- temporäre Standardrechte enger als persistenter Team Member;
-- keine Team-/Gebiets-/Invite-/Admin-Verwaltung für temporäre Gruppenmitglieder;
-- Route- und codebezogene Rate Limits;
-- generische Invalid/Expired-Fehler;
-- secret-freie Audit Events.
-
-Optionales Gruppenpasswort ist kein Blocker für die erste Feature-Complete-Version, solange Code + QR vollständig und sicher funktionieren.
-
-ADR-0017 / FIELD SESSIONS
-
-Wenn FC1 an den Punkt kommt, an dem dauerhafte Field Sessions/Events nötig werden, prüfe ADR-0017.
-
-Implementiere keine dauerhafte Event-/Session-Historie auf Basis einer weiterhin `proposed` ADR.
-
-Falls noch proposed:
-- finale Archive-vs-Permanent-Delete-Semantik für retained operational history festlegen;
-- Comment Edit/Delete Event-Semantik festlegen, soweit für den aktuellen Slice nötig;
-- Security/Audit-Retention sauber abgrenzen;
-- danach akzeptieren und direkt weiterimplementieren.
-
-Feature-Ziel:
-- echte Field Sessions;
-- Start/Ende bzw. Dauer;
-- Teilnehmerzahl;
-- optionale Notiz;
-- Task-/Domain-Event-Bezug;
-- Person-Time;
-- Session-Historie;
-- späteres Map-Highlighting über Task/Event-Beziehungen, NICHT über GPS-Trails.
-
-WICHTIGE SECURITY-GATES FÜR SPÄTER
+SPÄTERE SECURITY-GATES
 
 Nicht vorzeitig implementieren:
-- Organization Account/Password/TOTP/Account-Session Runtime vor accepted ADR-0015 + Threat Model;
-- configurable Capability Runtime vor accepted ADR-0016;
-- Action/Templates/Analytics Persistence vor accepted ADR-0018;
+- Organization username/password/TOTP/session runtime vor accepted ADR-0015 plus Threat-Model-Review;
+- configurable capability runtime vor accepted ADR-0016;
+- durable Action/Templates/Cross-Action Analytics vor accepted ADR-0018;
 - Service Worker/PWA/Background Sync;
-- continuous GPS tracking.
+- continuous GPS history.
 
-Wenn du im aktuellen Chat an einen dieser Blöcke kommst, schließe die notwendige ADR/Threat-Model-Entscheidung im Repo vollständig und arbeite danach weiter, statt eine unsichere Abkürzung zu bauen.
+ARBEITSWEISE
 
-QUALITÄT / RELEASE GATES
+- Repository und GitHub zuerst verifizieren, dann direkt implementieren.
+- Frage nicht nach Dingen, die Repository/GitHub beantworten können.
+- Erstelle keinen Ersatz-Branch für vorhandene Arbeit.
+- Merge oder deploye nichts ohne klare Freigabe.
+- Keine Remote-D1-Migration ohne ausdrücklichen User-Auftrag.
+- Korrigiere stale Doku im selben Arbeitsgang.
+- Halte Slices reviewbar, aber liefere vertikal vollständige Benutzerwege.
+- UI-Rechte ersetzen niemals Worker-Autorisierung.
 
-Bevor du einen Implementierungsstand als fertig meldest:
+QUALITÄTSGATES
+
+Vor jedem Abschluss:
 - Tests grün;
-- TypeScript strict/grün;
+- TypeScript grün;
 - High-Severity Dependency Audit grün;
 - Production Build grün;
 - relevante Security-Negativtests grün;
-- Cloudflare Workers Build/Preview grün;
-- exakten finalen Branch-/PR-Head verifizieren.
+- exakten aktuellen PR-/Branch-Head verifizieren.
 
-Bei Map-/House-/Live-Group-/Permission-Arbeit gezielte Regressionstests ergänzen.
+HANDOFF AM ENDE JEDES LANGEN CHATS
 
-Keine Remote-D1-Migration ohne ausdrücklichen User-Auftrag.
-
-ARBEITSWEISE IM CHAT
-
-- Gib nach dem initialen Lesen nur eine kurze Bestandsaufnahme und beginne direkt mit der Umsetzung.
-- Stoppe nicht nach einer Planung, wenn du im aktuellen Chat sicher weiterarbeiten kannst.
-- Frage nicht nach Dingen, die Repository/GitHub selbst beantworten können.
-- Erstelle keinen Ersatz-Branch für bereits vorhandene Arbeit.
-- Halte PR-Stack sauber; vermeide eine neue Kette aus rein experimentellen Workbench-PRs.
-- Vertikal feature complete bedeutet nicht einen riesigen unreviewbaren Commit: nutze kleine reviewbare Commits/PRs, aber behalte den kompletten Nutzerweg als Ziel.
-- Stale Doku im selben Arbeitsgang korrigieren.
-
-ZWINGENDE HANDOFF-ARBEIT AM ENDE DIESES CHATS
-
-Beende den Entwicklungs-Chat NICHT, ohne den Repository-Handoff auf den exakten finalen Stand zu bringen.
-
-Am Ende MUSST du:
-
-1. `docs/status/CURRENT.md` aktualisieren:
-   - exakter aktueller Produktstand;
-   - was wirklich feature complete ist;
-   - was noch Foundation/blocked ist;
-   - aktuelle Branches/PRs;
-   - Migrationsstatus;
-   - Security-/ADR-Gates;
-   - exakter nächster Arbeitsschritt.
-
-2. `docs/context-map.yaml` aktualisieren:
-   - neue/abgeschlossene Pläne;
-   - neue relevante ADRs/Architecture-Nodes;
-   - korrekte Statuswerte;
-   - sinnvolle `load_when`-Topics;
-   - Kanten für Abhängigkeiten/Implementierung/Validierung.
-
-3. Relevante Product-/Architecture-/Plan-Dateien aktualisieren, wenn der tatsächliche Code/Produktstand sie verändert hat.
-
-4. Aktive Slice-Pläne abschließen und nach `docs/plans/completed/` verschieben, wenn ihre Akzeptanz wirklich erfüllt ist. Nicht erfüllte Arbeit nicht künstlich als completed markieren.
-
-5. DIESE DATEI aktualisieren:
-   `docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md`
-
-   Schreibe sie am Ende vollständig für den DARAUFFOLGENDEN frischen Chat neu.
-
-   Der neue Prompt muss enthalten:
-   - Repository als Source of Truth;
-   - genaue Start-Lesereihenfolge;
-   - aktuelle Branch-/PR-Struktur und exakte Heads, soweit nützlich;
-   - was in diesem Chat implementiert/merged/retargetet wurde;
-   - aktuelle CI-/Cloudflare-Verifikation;
-   - remote D1-Migrationsstatus;
-   - weiterhin geltende Website-/Security-Grenzen;
-   - aktuelles verbindliches Mobile-Design;
-   - offene ADR-Gates;
-   - exakten nächsten Feature-Complete-Arbeitsschritt;
-   - Warnungen vor bekannten Fallen/Regressionen;
-   - wiederum dieselbe Pflicht, am Ende Context-Dateien und den nächsten Latest-Prompt zu aktualisieren.
-
-6. Prüfe nach diesen Doku-/Prompt-Commits den FINALEN exakten Head erneut. Dokumentiere keine grünen Checks für einen älteren Zwischen-Head als wären sie für den finalen Head.
-
-7. Wenn der finale Head neue CI/Cloudflare-Checks auslöst, prüfe deren echten Status. Wenn GitHub noch keinen Run erzeugt hat, sage das ausdrücklich statt einen alten grünen Run als final auszugeben.
-
-ABSCHLUSSANTWORT AN DEN USER
-
-Kurz und konkret berichten:
-- was wirklich umgesetzt wurde;
-- Branch/PR und finaler Head;
-- welche Checks auf genau diesem Head grün sind bzw. noch nicht gestartet wurden;
-- Preview, wenn vorhanden;
-- was als Nächstes im neu geschriebenen Latest-Prompt steht.
-
-Das Ziel des Chats ist nicht, möglichst viele Foundation-Dateien zu erzeugen. Das Ziel ist, den nächsten realen Benutzerweg so weit wie sicher möglich FEATURE COMPLETE zu machen und einen präzisen Repository-Handoff für den nächsten Chat zu hinterlassen.
+Vor dem Ende eines längeren Entwicklungschats:
+1. `docs/status/CURRENT.md` auf den exakten Stand bringen.
+2. `docs/context-map.yaml` bei neuen/abgeschlossenen Architektur-/Plan-Knoten aktualisieren.
+3. relevante Architecture-/Plan-Doku aktualisieren.
+4. diesen Living Prompt `docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md` mit exaktem PR/Branch/Head/CI/Migrationsstatus und nächstem Schritt ersetzen.
+5. den finalen Handoff-Commit selbst nochmals per exact-head CI verifizieren.
 ```
