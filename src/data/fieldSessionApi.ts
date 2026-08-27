@@ -1,5 +1,7 @@
 import { CampaignApiError } from "./campaignApi.ts";
 
+export const FIELD_SESSION_NOTE_MAX_LENGTH = 1_000;
+
 export type FieldSessionMode = "distribution" | "collection";
 export type FieldSessionStatus = "active" | "closed";
 export type FieldSessionEndReason = "manual-close" | "group-expired" | null;
@@ -19,6 +21,7 @@ export type FieldSessionSummary = {
   durationSeconds: number | null;
   participantCount: number | null;
   personSeconds: number | null;
+  note: string | null;
   affectedTaskCount: number;
   status: FieldSessionStatus;
 };
@@ -92,6 +95,31 @@ export async function fetchFieldSessions(
 
   if (!response.ok) throw await parseError(response);
   return (await response.json()) as FieldSessionHistoryPage;
+}
+
+export async function updateFieldSessionNote(
+  campaignId: string,
+  sessionId: string,
+  note: string,
+): Promise<{ note: string | null; updatedAt: string }> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `/api/campaigns/${encodeURIComponent(campaignId)}/field-sessions/${encodeURIComponent(sessionId)}/note`,
+      {
+        method: "PATCH",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ note }),
+      },
+    );
+  } catch {
+    throw new CampaignApiError(0, "network_error", "Server ist momentan nicht erreichbar.");
+  }
+
+  if (!response.ok) throw await parseError(response);
+  return (await response.json()) as { note: string | null; updatedAt: string };
 }
 
 export async function fetchFieldSessionTaskRefs(
