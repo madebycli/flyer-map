@@ -23,6 +23,8 @@ type Session = {
   durationSeconds: number | null;
   participantCount: number | null;
   personSeconds: number | null;
+  note: string | null;
+  affectedTaskCount: number;
   status: "active" | "closed";
 };
 
@@ -121,6 +123,8 @@ class Statement implements D1PreparedStatement {
         duration_seconds: session.durationSeconds,
         participant_count: session.participantCount,
         person_seconds: session.personSeconds,
+        note: session.note,
+        affected_task_count: session.affectedTaskCount,
         status: session.status,
       }));
 
@@ -145,6 +149,8 @@ class SessionDb implements D1DatabaseLike {
       durationSeconds: 3600,
       participantCount: 2,
       personSeconds: 7200,
+      note: null,
+      affectedTaskCount: 1,
       status: "closed",
     },
     {
@@ -160,6 +166,8 @@ class SessionDb implements D1DatabaseLike {
       durationSeconds: 3600,
       participantCount: null,
       personSeconds: null,
+      note: "  Wird nicht zugestellt <script>  ",
+      affectedTaskCount: 2,
       status: "closed",
     },
     {
@@ -175,6 +183,8 @@ class SessionDb implements D1DatabaseLike {
       durationSeconds: 1800,
       participantCount: 3,
       personSeconds: 5400,
+      note: null,
+      affectedTaskCount: 3,
       status: "closed",
     },
   ];
@@ -229,7 +239,7 @@ test("admin history is bounded and cursor pagination is stable for equal timesta
   assert.equal(secondBody.nextCursor, null);
 });
 
-test("history response exposes only minimal normalized session fields", async () => {
+test("history response exposes optional inert note with otherwise minimized session fields", async () => {
   const db = new SessionDb();
   const response = await handleFieldSessionsApi(persistentRequest("?team=team_a"), db);
   assert.equal(response?.status, 200);
@@ -237,8 +247,10 @@ test("history response exposes only minimal normalized session fields", async ()
   assert.equal(body.sessions.length, 2);
   assert.equal(body.sessions[0].participantCount, null);
   assert.equal(body.sessions[0].personSeconds, null);
+  assert.equal(body.sessions[0].note, "  Wird nicht zugestellt <script>  ");
+  assert.equal(body.sessions[0].affectedTaskCount, 2);
   const serialized = JSON.stringify(body);
-  assert.doesNotMatch(serialized, /payload|actor|secret|hash|room|qr|gps|longitude|latitude|note/iu);
+  assert.doesNotMatch(serialized, /payload|actor|secret|hash|room|qr|gps|longitude|latitude/iu);
 });
 
 test("Team Editor is forced to own team and cannot widen scope with query", async () => {
