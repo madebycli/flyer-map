@@ -3,16 +3,19 @@ import type { CampaignMutation } from "../domain/mutations";
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
 
-export type AccessRole = "admin" | "team-editor" | "viewer";
+export type AccessRole = "admin" | "team-editor" | "viewer" | "field-group-member";
+export type PersistentAccessRole = Exclude<AccessRole, "field-group-member">;
 
 export type AccessInfo = {
   campaignId: string;
   role: AccessRole;
   teamId: string | null;
+  groupId?: string | null;
   label: string | null;
 };
 
-export type AccessGrant = AccessInfo & {
+export type AccessGrant = Omit<AccessInfo, "role" | "groupId"> & {
+  role: PersistentAccessRole;
   grantId: string;
   createdAt: string;
   revokedAt: string | null;
@@ -165,7 +168,7 @@ export async function fetchAccessGrants(campaignId: string) {
 
 export async function createCampaignAccessGrant(
   campaignId: string,
-  input: { role: AccessRole; teamId: string | null; label: string },
+  input: { role: PersistentAccessRole; teamId: string | null; label: string },
 ) {
   const response = await apiFetch(campaignPath(campaignId, "access"), {
     method: "POST",
