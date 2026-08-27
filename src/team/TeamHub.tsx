@@ -20,6 +20,7 @@ import {
   type FieldGroupTourSummary,
 } from "../data/fieldGroupApi.ts";
 import type { PlatformAppContext } from "../platform/platformContract.ts";
+import { FieldGroupMembersPanel } from "./FieldGroupMembersPanel.tsx";
 import { TeamProgressPanel } from "./TeamProgressPanel.tsx";
 import "./team-hub.css";
 
@@ -651,6 +652,15 @@ export function TeamHub({
                     Einsatz beenden
                   </button>
                 </div>
+              ) : null}
+
+              {campaignId && canManageGroup(selectedGroup) && selectedGroup.state === "active" ? (
+                <FieldGroupMembersPanel
+                  campaignId={campaignId}
+                  groupId={selectedGroup.id}
+                  online={online}
+                  onChanged={() => refreshSelected(selectedGroup.id)}
+                />
               ) : null}
 
               {(context?.activeGroupId === selectedGroup.id || context?.accessRole === "field-group-member") && selectedGroup.state === "active" ? (
