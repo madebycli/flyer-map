@@ -56,6 +56,11 @@ function snapshotCampaignRoute(pathname: string) {
   }
 }
 
+function accessCurrentCampaign(url: URL) {
+  if (url.pathname !== "/api/access/current") return null;
+  return parseCampaignId(url.searchParams.get("campaign") ?? "");
+}
+
 function sameOrigin(request: Request) {
   const origin = request.headers.get("origin");
   return !origin || origin === new URL(request.url).origin;
@@ -106,6 +111,22 @@ export default {
     if (fieldGroupResponse) return fieldGroupResponse;
 
     const url = new URL(request.url);
+    const currentCampaignId = accessCurrentCampaign(url);
+    if (currentCampaignId && request.method === "GET" && env.DB) {
+      const access = await resolveAccess(env.DB, request, currentCampaignId);
+      if (access?.role === "field-group-member") {
+        return json({
+          access: {
+            campaignId: access.campaignId,
+            role: access.role,
+            teamId: access.teamId,
+            groupId: access.groupId ?? null,
+            label: access.label,
+          },
+        });
+      }
+    }
+
     const snapshotCampaignId = snapshotCampaignRoute(url.pathname);
     if (snapshotCampaignId && env.DB) {
       try {
