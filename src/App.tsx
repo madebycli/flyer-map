@@ -139,7 +139,10 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   }, [undoStatusChange]);
 
   useEffect(() => {
-    if (access?.role === "team-editor" && access.teamId) {
+    if (
+      (access?.role === "team-editor" || access?.role === "field-group-member") &&
+      access.teamId
+    ) {
       setActiveTeamId(access.teamId);
       return;
     }
@@ -160,8 +163,15 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
 
   const isAdmin = access?.role === "admin";
   const isEditor = access?.role === "team-editor";
+  const isFieldGroupMember = access?.role === "field-group-member";
   const canEditTeam = (teamId: string) => isAdmin || (isEditor && access?.teamId === teamId);
   const canEditArea = (area: Area | null) => Boolean(area && canEditTeam(area.teamId));
+  const canChangeTaskStatusInArea = (area: Area | null) =>
+    Boolean(
+      area &&
+        (canEditTeam(area.teamId) ||
+          (isFieldGroupMember && access?.teamId === area.teamId && Boolean(access.groupId))),
+    );
 
   const activeTeam = snapshot.teams.find((team) => team.id === activeTeamId) ?? null;
   const selectedArea = snapshot.areas.find((area) => area.id === selectedAreaId) ?? null;
@@ -180,10 +190,14 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     : [];
   const canEditSelectedArea = canEditArea(selectedArea);
   const canEditSelectedTask = canEditArea(selectedTaskArea);
+  const canChangeSelectedTaskStatus = canChangeTaskStatusInArea(selectedTaskArea);
 
   useEffect(() => {
     onPlatformContextChange?.({
+      campaignId: snapshot.campaign.id,
       accessRole: access?.role ?? null,
+      accessTeamId: access?.teamId ?? null,
+      activeGroupId: access?.groupId ?? null,
       activeTeam: activeTeam
         ? {
             id: activeTeam.id,
@@ -191,11 +205,12 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
             color: activeTeam.color,
           }
         : null,
+      teams: snapshot.teams.map((team) => ({ id: team.id, name: team.name, color: team.color })),
       launcherAvailable: mode === "browse" && sheet === null,
       canManageTeams: Boolean(isAdmin),
-      canCreateArea: Boolean(access && access.role !== "viewer" && activeTeam && canEditTeam(activeTeam.id)),
+      canCreateArea: Boolean(activeTeam && canEditTeam(activeTeam.id)),
     });
-  }, [access, activeTeam, isAdmin, mode, sheet, onPlatformContextChange]);
+  }, [access, activeTeam, isAdmin, mode, sheet, onPlatformContextChange, snapshot.campaign.id, snapshot.teams]);
 
   const renderedAreas = useMemo(
     () =>
@@ -337,10 +352,23 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
       return;
     }
 
+    if (platformCommand.type === "select-active-team") {
+      const candidate = snapshot.teams.find((team) => team.id === platformCommand.teamId);
+      if (!candidate || !access) return;
+      if (
+        (access.role === "team-editor" || access.role === "field-group-member") &&
+        access.teamId !== candidate.id
+      ) {
+        return;
+      }
+      setActiveTeamId(candidate.id);
+      return;
+    }
+
     if (platformCommand.type === "start-area-drawing") {
       startDrawing();
     }
-  }, [platformCommand, mode, isAdmin, activeTeam, access]);
+  }, [platformCommand, mode, isAdmin, activeTeam, access, snapshot.teams]);
 
   const cancelDrawing = () => {
     setMode("browse");
@@ -527,7 +555,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   };
 
   const changeTaskStatus = (status: TaskStatus) => {
-    if (!selectedTask || !canEditSelectedTask || selectedTask.status === status) return;
+    if (!selectedTask || !canChangeSelectedTaskStatus || selectedTask.status === status) return;
     const now = new Date().toISOString();
     setUndoStatusChange({
       taskId: selectedTask.id,
@@ -535,14 +563,26 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
       previousStatus: selectedTask.status,
       previousCompletedAt: selectedTask.completedAt,
     });
-    updateSelectedTask({ status, completedAt: status === "completed" ? now : null });
+    commitSnapshot((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) =>
+        task.id === selectedTask.id
+          ? {
+              ...task,
+              status,
+              completedAt: status === "completed" ? now : null,
+              updatedAt: now,
+            }
+          : task,
+      ),
+    }));
   };
 
   const undoLastStatusChange = () => {
     if (!undoStatusChange) return;
     const task = snapshot.tasks.find((candidate) => candidate.id === undoStatusChange.taskId) ?? null;
     const area = task ? snapshot.areas.find((candidate) => candidate.id === task.areaId) ?? null : null;
-    if (!task || !canEditArea(area)) return;
+    if (!task || !canChangeTaskStatusInArea(area)) return;
     const now = new Date().toISOString();
     commitSnapshot((current) => ({
       ...current,
@@ -669,7 +709,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
 
       {mode === "browse" && sheet === null ? (
         <section className={`map-toolbar ${access?.role === "viewer" ? "viewer-toolbar" : ""}`} aria-label={t(language, "mapActions")}>
-          {access && access.role !== "viewer" ? (
+          {access && (access.role === "admin" || access.role === "team-editor") ? (
             <label className="team-picker">
               <span>{t(language, "activeTeam")}</span>
               <select
@@ -697,7 +737,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
                 {t(language, "teams")}
               </button>
             ) : null}
-            {access && access.role !== "viewer" ? (
+            {access && (access.role === "admin" || access.role === "team-editor") ? (
               <button className="button primary" type="button" onClick={startDrawing}>
                 {t(language, "drawArea")}
               </button>
@@ -933,7 +973,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
               <button
                 key={status}
                 type="button"
-                disabled={!canEditSelectedTask}
+                disabled={!canChangeSelectedTaskStatus}
                 className={`status-button status-${status} ${selectedTask.status === status ? "is-selected" : ""}`}
                 aria-pressed={selectedTask.status === status}
                 onClick={() => changeTaskStatus(status)}
