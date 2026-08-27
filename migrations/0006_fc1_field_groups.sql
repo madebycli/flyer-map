@@ -1,5 +1,6 @@
 -- FC1 durable Field Groups, join credentials and scoped memberships.
 -- This migration is intentionally additive. Do not apply remotely as part of application code.
+-- Migration 0006 has not been applied remotely, so FC1 idempotency columns stay in this initial schema.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE field_groups (
@@ -16,11 +17,14 @@ CREATE TABLE field_groups (
   participant_count INTEGER
     CHECK (participant_count IS NULL OR (participant_count >= 1 AND participant_count <= 500)),
   created_by_grant_id TEXT,
+  create_request_id TEXT NOT NULL,
+  create_payload_hash TEXT NOT NULL,
   created_at TEXT NOT NULL,
   hard_expires_at TEXT NOT NULL,
   closed_at TEXT,
   updated_at TEXT NOT NULL,
   UNIQUE (id, campaign_id),
+  UNIQUE (campaign_id, create_request_id),
   FOREIGN KEY (team_id, campaign_id)
     REFERENCES teams(id, campaign_id) ON DELETE RESTRICT,
   FOREIGN KEY (created_by_grant_id)
@@ -36,10 +40,12 @@ CREATE TABLE field_group_join_credentials (
   campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
   group_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('room-code', 'qr')),
+  request_id TEXT NOT NULL,
   secret_hash TEXT NOT NULL,
   created_at TEXT NOT NULL,
   revoked_at TEXT,
   UNIQUE (kind, secret_hash),
+  UNIQUE (group_id, kind, request_id),
   FOREIGN KEY (group_id, campaign_id)
     REFERENCES field_groups(id, campaign_id) ON DELETE CASCADE
 );
@@ -77,6 +83,8 @@ CREATE INDEX idx_field_groups_team_state
   ON field_groups(team_id, state);
 CREATE INDEX idx_field_group_credentials_group
   ON field_group_join_credentials(group_id, kind, revoked_at);
+CREATE INDEX idx_field_group_credentials_request
+  ON field_group_join_credentials(group_id, request_id);
 CREATE INDEX idx_field_group_memberships_group
   ON field_group_memberships(group_id, left_at, removed_at);
 CREATE INDEX idx_field_group_memberships_campaign
