@@ -1,10 +1,11 @@
 import baseWorker from "./index.ts";
 import { resolveAccess } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
+import { handleFieldGroupApi, type FieldGroupEnv } from "./fieldGroups.ts";
 import { handleOfflineMapPackage } from "./offlineMap.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
 
-type Env = {
+type Env = FieldGroupEnv & {
   DB?: D1DatabaseLike;
   M4_BOOTSTRAP_SECRET?: string;
   OSM_OVERPASS_URL?: string;
@@ -39,6 +40,9 @@ function sameOrigin(request: Request) {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const fieldGroupResponse = await handleFieldGroupApi(request, env);
+    if (fieldGroupResponse) return fieldGroupResponse;
+
     const campaignId = offlineMapCampaignRoute(new URL(request.url).pathname);
     if (!campaignId) return baseWorker.fetch(request, env);
 
