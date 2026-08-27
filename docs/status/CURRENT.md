@@ -9,142 +9,175 @@ last_updated: 2026-08-27
 
 ## Product baseline
 
-Verteil-Flyer is a mobile-first normal website. The architecture still explicitly excludes native app runtime, installable PWA behavior, Service Worker, Web App Manifest and Background Sync.
+Verteil-Flyer ist eine mobile-first normale Website.
 
-The field map remains MapLibre GL JS 5.7.1 with the CARTO online basemap. Prepared offline OSM context is stored separately in browser IndexedDB and does not bulk-cache CARTO/OSMF tiles.
+Weiterhin ausdrücklich ausgeschlossen:
+- native App Runtime;
+- installierbare PWA;
+- Service Worker;
+- Web App Manifest;
+- Background Sync;
+- kontinuierliche GPS-Historie.
 
-M4 access/session authorization, M5 resilient mutation synchronization and the M5.5 prepared-offline-map storage lifecycle are established foundations.
+Die Feldkarte bleibt MapLibre GL JS 5.7.1 mit CARTO Online-Basemap. Vorbereitete Offline-OSM-Daten liegen separat im Browser-IndexedDB und bulk-cachen keine CARTO/OSMF-Tiles.
+
+M4 Access/Session, M5 resilient mutation synchronization und M5.5 prepared offline map bleiben etablierte Grundlagen.
 
 ## Delivery direction
 
-Plan 017 changes the implementation model from normal-product Foundation previews to vertical feature-complete delivery.
+Plan 017 ist die aktuelle Delivery-Source-of-Truth für neue Produktfeatures.
 
-A visible Launcher module is no longer considered delivered merely because local UI, fake data, domain helpers or a Workbench route exists. Shared features must include their real persistence, Worker authorization, offline/retry behavior where relevant, complete user states, tests and production verification before they count as complete.
+Normale Launcher-Features zählen nicht als fertig, wenn sie nur aus Workbench, Fake-Daten oder lokalem React-State bestehen. Shared Features brauchen den vollständigen UI-/Persistenz-/Autorisierungs-/Fehler-/Test-Weg.
 
-Internal `?workbench=` routes may remain for development but are not normal product navigation and do not count as completed features.
-
-The current prioritized feature-complete product area is the Team Hub + Live Field Group system. Its main runtime is now implemented on Draft PR #72. Remaining FC1 product gaps are completed before moving fully into the broader FC2 collaboration surface.
+FC0 und der FC1-Runtime-Slice liegen aktuell auf Draft PR #72, Branch `plan-feature-complete-platform`.
 
 ## Unified platform UI
 
-The normal website starts in one unified platform shell while the map remains mounted as the primary field workspace.
+Der normale Browse-Zustand verwendet weiterhin:
+- kompakten 3x3 App-Launcher unten links;
+- sichtbaren aktiven Teamnamen daneben;
+- Teamfarbe nur als unterstützenden Marker;
+- keine permanente Team-Auswahl;
+- keine permanenten Settings-/Teams-/Gebiet-Buttons.
 
-Plan 016 defines the current mobile field chrome:
-- permanent Team dropdown removed from the composed field UI;
-- permanent Settings/Teams/Draw-Area toolbar removed from the composed browse chrome;
-- bottom-left now shows only a compact 3x3 app-grid button plus the visible Team name, with Team color only as a supporting marker;
-- former toolbar actions stay out of the permanent bottom bar and move into launcher/module flows according to effective permissions;
-- the app menu is a rounded sheet over the map, visually aligned with the existing Settings/Teams sheet family;
-- launcher destinations use large phone-style rounded icons with short labels such as Karte, Stats, Team, Feedback, Smart and Einsätze;
-- selecting a launcher destination may still open its dedicated full module surface.
+FC0 ist auf PR #72 umgesetzt:
+- typisierte PlatformShell/App-Bridge;
+- aktiver Teamname folgt dem realen Karten-Arbeitskontext;
+- Settings, Teamverwaltung und Gebiet-Aktion bleiben capability-/scope-gesteuert erreichbar;
+- `Team` öffnet den echten Team Hub;
+- unfertige Foundation-Module bleiben interne Entwicklungseingaben und zählen nicht als Produktabschluss.
 
-FC0 navigation/action bridging is established on the current PR #72 stack: the launcher uses the typed platform action bridge, the visible Team follows the active map context, core Settings/Team/Area actions remain reachable according to effective permissions, and `Team` opens the real Team Hub instead of the old Workbench preview.
+## FC1 Team Hub und Live Field Groups
 
-Current integrated preview/foundation surfaces still include broader comments/Pickup/Field Session history UI, Smart Streets/Houses, Actions/Analytics, Support and Admin. They remain development inputs until their corresponding feature-complete slices replace local/fake state with authoritative runtime behavior.
+ADR-0014 ist akzeptiert.
 
-## FC1 Team Hub and Live Field Groups
+Der aktuelle FC1-Runtime-Slice umfasst:
+- Team Hub als normales `Team`-Launcher-Ziel;
+- realen Team-Fortschritt mit getrennten Street-/House-Nennern;
+- Campaign-scoped aktive Gruppenliste plus Teamfilter;
+- Admin und eigener Team Editor als aktuelle Managerrollen;
+- Gruppen-Create mit Label, Team, Discoverability und Teilnehmerzahl;
+- 10-stelligen human-safe Room Code;
+- separaten 32-Byte-QR-Token;
+- nur Hashes in D1, Plaintext nur bei Ausgabe/Rotation;
+- idempotente Create- und Rotate-Request-IDs mit Payload-Bindung;
+- QR- und manuellen Room-Code-Join;
+- `vf_field_group_session` für temporäre Teilnehmer ohne persistenten Campaign-Zugriff;
+- temporäre Autorisierung auf genau Campaign/Team/Group und erlaubte Task-Statusarbeit;
+- Update Participant Count und Discoverability;
+- Credential Rotate/Revoke;
+- Leave und Manager Remove Membership;
+- serverseitige 24h-Hard-Expiry;
+- serverseitige Revocation auf geschützten Folgezugriffen;
+- Cloudflare Actor- und Candidate-Rate-Limits mit fail-closed Verhalten.
 
-ADR-0014 is accepted and the current PR #72 runtime implements the first real Field Group lifecycle:
-- Team Hub as the normal `Team` launcher destination;
-- Campaign-scoped active group discovery and Team filter;
-- Admin and own-Team Editor group management boundaries;
-- create with label, Team, discoverability and participant count;
-- human-safe 10-character Room Code plus separate 256-bit QR token;
-- only credential hashes persisted, plaintext shown only at issuance/rotation;
-- actor and candidate Cloudflare Rate Limiting bindings with fail-closed join behavior;
-- QR and manual Room-Code join;
-- temporary `vf_field_group_session` for users without persistent Campaign access;
-- temporary access scoped to one Campaign/Team/Group and restricted to reviewed Task-status work;
-- update participant count/discoverability, rotate/revoke credentials, leave/remove membership API and manual close;
-- server-enforced hard expiry no later than 24 hours from original group creation;
-- idempotent create, update, rotation, revoke, join, leave, remove and close semantics;
-- Create/Rotate request ids survive client network retries without storing plaintext secrets for replay;
-- Team progress is derived from the real Campaign snapshot, with Street and House denominators shown separately;
-- revoked/closed/expired temporary access is re-authorized on protected requests and cannot silently keep privileged sync alive.
+### Manager member roster
 
-The remaining visible FC1 gap currently identified is manager-side membership listing/removal UX. The remove endpoint exists, but the Team Hub does not yet expose a safe member roster to drive it.
+Die zuvor offene FC1-Mitgliederverwaltung ist jetzt umgesetzt:
+- aktiver Member-Roster nur für echte Gruppenmanager;
+- Admin darf innerhalb der Campaign lesen/entfernen;
+- Team Editor nur für Gruppen des eigenen canonical Team-Scope;
+- Viewer und temporäre Mitglieder dürfen den Roster nicht verwalten;
+- Ausgabe nur von Membership-ID, Membership-Typ, sicherer Bezeichnung und Join-Zeit;
+- keine Session-Hashes, Join-Credentials, IPs oder Device Fingerprints;
+- Remove mit expliziter Bestätigung;
+- Gruppen-Membership-Count wird danach autoritativ neu geladen;
+- Source-Guard schützt davor, dass das Panel wieder aus dem echten Team-Hub-Build verschwindet.
 
-## Durable Field Session close history
+## Durable Field Session close/expiry history
 
-ADR-0017 is accepted.
+ADR-0017 ist akzeptiert.
 
-`migrations/0007_field_sessions_events.sql` is prepared as the first minimal durable Field Session/Event slice. It adds:
+`migrations/0007_field_sessions_events.sql` ist die erste minimale dauerhafte Session-/Event-Grundlage:
 - `field_sessions`;
-- minimized append-only `domain_events`;
-- one deterministic Field Session per Field Group;
-- deduplicated `field_session.closed` history for manual close;
-- `field_session.expired` history for the 24-hour safety fallback;
-- duration and explicit participant/person-time metrics;
-- unknown participant/person-time stays `NULL` for expired forgotten groups instead of being fabricated;
-- no GPS trail, secret material or full Campaign snapshot history.
+- minimierte `domain_events`;
+- deterministische Field-Group-zu-Session-Beziehung;
+- dedupliziertes `field_session.closed` bei manuellem Close;
+- `field_session.expired` bei 24h-Sicherheitsablauf;
+- Dauer, explizite Teilnehmerzahl und Person-Time;
+- unbekannte Teilnehmer/Person-Time bleiben bei vergessener Expiry `NULL` statt erfunden zu werden;
+- keine GPS-Trails, Secrets oder vollen Campaign-Snapshots im Eventmodell.
 
-The Worker blocks manual Field Group close with `field_session_schema_unavailable` until the 0007 schema is present. Once 0007 is present, SQLite triggers bind the authorized `active -> closed` or `active -> expired` group state transition to its durable Field Session/Event in the same D1 transaction. Existing closed/expired development groups are backfilled when 0007 is applied.
+Der Worker blockiert normalen Group-Close mit `field_session_schema_unavailable`, solange 0007 nicht vorhanden ist. Mit 0007 bindet SQLite den autorisierten `active -> closed` bzw. `active -> expired` Übergang transaktional an die Session-/Event-Historie.
 
-This is only the Field Group close/expiry foundation. Broader FC2 Session history reads, notes, Task-event attribution, comments, activity feed and automations are not yet feature complete.
+Das ist nur die FC1-Endzustands-Grundlage. Session-History-Reads, Notizen, Task-Event-Attribution, Comments, Activity und Automations gehören zu FC2.
 
-## M6 Street and House persistence
+## Team lifecycle
 
-ADR-0013 is accepted: durable Street/House identity is application-owned, OSM ids are provenance only, reviewed geometry becomes Campaign-owned snapshot data, and later OSM refreshes must not silently rewrite Task identity or reviewed geometry/provenance.
+Sicheres Team-Archivieren ist **nicht** als versteckte FC1-Nebenänderung umgesetzt.
 
-### Smart Street
+Grund:
+- das aktuelle Teammodell besitzt kein persistentes Archivstatusfeld;
+- Team-Editor-Grants hängen an aktueller Team-Existenz;
+- die Legacy-Snapshot-Kompatibilität beeinflusst aktuell mögliche Team-FKs und Delete-Semantik;
+- retained Field Sessions/Events müssen verständlich bleiben.
 
-`migrations/0004_m6_task_source_provenance.sql` adds nullable `tasks.source_json` for Smart Street provenance. It is prepared but is not recorded as remotely applied.
+Daher gibt es in FC1 weder neuen Team-Hard-Delete noch improvisiertes Archivieren.
 
-Before 0004 existing/manual Street Tasks remain readable/writable, while Smart Street provenance writes fail before Campaign revision claim with `schema_migration_required`. Provenance is never silently discarded.
+Team Archive/Restore/Permanent Delete wird als eigener Team-Lifecycle-/Admin-Slice unter Organization/Permissions umgesetzt, nachdem Statusfeld, Area/Task-Verhalten, Grants, aktive Field Groups und retained history explizit geklärt sind.
 
-### House Tasks
+## M6 Street und House persistence
 
-Plan 015 adds the durable House persistence foundation without changing the established Street renderer/progress denominator:
-- optional `CampaignSnapshot.houseTasks` extension;
-- application-owned House Task ids;
-- reviewed Polygon building snapshots;
-- optional exactly-one-Way OSM provenance;
-- optional parent Street Task constrained to the same Campaign and Area;
-- House create/rename/status/delete through the existing M5 queue/idempotency/revision model;
-- Worker-side scope validation;
-- reviewed House geometry/source/parent immutability;
-- parent relationship clears safely when its Street is deleted.
+ADR-0013 bleibt akzeptiert.
 
-`migrations/0005_m6_house_tasks.sql` adds the separate `house_tasks` table. It is additive and is not remotely applied by development work.
+Prepared, aber nicht remote angewendet:
+- `0004_m6_task_source_provenance.sql` für Street source provenance;
+- `0005_m6_house_tasks.sql` für House Tasks.
 
-Before 0005 Street reads/writes continue normally, House reads do not query a missing table, and House writes fail explicitly with `schema_migration_required` before revision claim.
+Vor 0004 bleiben normale manuelle Street-Writes möglich, Smart-Street-Provenance-Writes failen explizit mit `schema_migration_required`.
 
-House rendering remains a deliberate feature-complete follow-up. `vf-streets` continues to contain only Street LineStrings until a batched House Polygon layer is implemented and density-tested.
+Vor 0005 bleiben Street-Reads/Writes möglich, House-Writes failen explizit vor Revision Claim.
+
+House Rendering als normaler batched MapLibre-Layer bleibt FC4-Arbeit.
 
 ## D1 rollout status
 
-Remote-applied migration history remains only 0001 through 0003.
+Dokumentierter Remote-Stand bleibt nur 0001 bis 0003.
 
-Prepared but deliberately **not remotely applied** on this development branch:
-- 0004: Smart Street source provenance;
+Prepared, aber **nicht remote angewendet**:
+- 0004: Smart Street provenance;
 - 0005: House Tasks;
-- 0006: FC1 Field Groups, credential idempotency and memberships;
-- 0007: Field Sessions and minimized domain events.
+- 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
+- 0007: Field Sessions und minimierte Domain Events.
 
-None of these migrations is applied merely because PR #72 is green. Remote D1 rollout remains an explicit later operation.
+Kein Runtime- oder Dokumentationscommit wendet diese Migrationen automatisch an.
 
 ## Security/release gates
 
-Every promoted integration head must pass the automated test suite, strict TypeScript check, production build, high-severity dependency audit, static source guards and Cloudflare Worker build/preview verification.
+Weiterhin verbindlich:
+- Worker ist authoritative Authorization Boundary;
+- IDs sind Selektoren, keine Credentials;
+- SQL ist prepared/parameterized;
+- untrusted Text bleibt inert;
+- Join-/Session-/Access-Secrets werden weder geloggt noch als Produktdaten exponiert;
+- keine IP-Persistenz aus Join Rate Limiting;
+- temporäre Membership erweitert keinen persistenten Role-Scope.
 
-Prepared/parameterized SQL remains mandatory. External/user-controlled content renders inertly. IDs are selectors, not authorization. Worker-side scope checks remain authoritative. Secrets, session material and future password/TOTP/recovery data must never be logged.
+Letzter vollständig verifizierter Runtime-Checkpoint:
+- Head `dc376504ba1c7cd64643f4d94e3371fedde452ca`;
+- CI #623 erfolgreich;
+- Tests, Typecheck, Dependency Audit und Production Build grün;
+- dieser Lauf kompiliert den echten importierten Member-Roster-UI-Pfad.
 
-Current verified PR #72 checkpoint before this documentation update:
-- head `13ab3f37d2e70c5db76584ecf5e2414b080ae600`;
-- CI #615 completed successfully with tests, strict TypeScript check, dependency audit and production build green.
+Spätere Source-Guard-/Dokumentationscommits müssen auf ihrem eigenen exakten Head erneut grün werden, bevor PR #72 promotet wird.
 
-Any later documentation/runtime commit must be verified on its own exact head before promotion.
+## Architecture blockers for later work
 
-## Architecture still blocked for later milestones
+Noch nicht autorisiert:
+- Organization username/password/TOTP runtime vor ADR-0015-Akzeptanz plus Threat-Model-Review;
+- configurable capability runtime vor ADR-0016-Akzeptanz;
+- durable Action/Templates/Cross-Action Analytics vor ADR-0018-Akzeptanz;
+- Team Archive/Delete ohne eigenen Lifecycle-Slice;
+- Service Worker/PWA/Background Sync;
+- kontinuierliche GPS-Historie.
 
-Do not silently implement Organization account/password/TOTP/session runtime before accepted ADR-0015 and threat-model review, configurable capability enforcement before accepted ADR-0016, durable Action/Templates/Analytics persistence before accepted ADR-0018, Service Worker/PWA/Background Sync, continuous GPS history, or broad FC2 comment/activity event persistence beyond accepted ADR-0017's active slice.
-
-ADR-0014 and ADR-0017 are accepted and no longer architecture blockers for their implemented FC1 scopes.
+ADR-0014 und ADR-0017 sind akzeptiert und keine Blocker mehr für ihre aktuellen FC1-Slices.
 
 ## Immediate next
 
-1. Finish FC1 manager-side Field Group membership listing/removal UX with server-authorized minimum member metadata.
-2. Re-check the remaining FC1 acceptance list, especially Team archival behavior now that ADR-0017 retention is accepted, without introducing unsafe Team hard delete.
-3. Keep 0004 through 0007 as separate intentional D1 rollout operations until explicitly authorized.
-4. Keep PR #72 draft and verify the exact current head after every runtime/documentation change.
-5. After FC1 is genuinely complete, continue FC2 with durable Session history reads, Task-event attribution, comments/activity and deterministic automations under accepted ADR-0017.
+1. Exakten aktuellen PR-#72-Head nach Source-Guard und Doku vollständig durch CI laufen lassen.
+2. PR #72 Body/Status auf den tatsächlichen Runtime-Inhalt aktualisieren.
+3. 0004 bis 0007 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.
+4. Danach FC2 mit autorisierter Field-Session-History-Read-API beginnen.
+5. `Einsätze` auf echte Session-Historie umstellen.
+6. Anschließend Task-Event-Attribution über M5 idempotent anbinden, danach Comments und Activity.
