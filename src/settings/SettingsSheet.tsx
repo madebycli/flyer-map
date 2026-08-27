@@ -6,7 +6,7 @@ import {
   revokeCampaignAccessGrant,
   type AccessGrant,
   type AccessInfo,
-  type AccessRole,
+  type PersistentAccessRole,
 } from "../data/campaignApi";
 import {
   downloadOfflineMapPackage,
@@ -38,7 +38,7 @@ type Props = {
 
 type OfflineBusyState = "idle" | "downloading" | "deleting";
 
-function roleLabel(language: Language, role: AccessRole) {
+function roleLabel(language: Language, role: PersistentAccessRole) {
   if (role === "admin") return t(language, "admin");
   if (role === "team-editor") return t(language, "editor");
   return t(language, "viewer");
@@ -88,7 +88,7 @@ export function SettingsSheet({
 }: Props) {
   const isAdmin = access?.role === "admin";
   const [grants, setGrants] = useState<AccessGrant[]>([]);
-  const [role, setRole] = useState<AccessRole>("viewer");
+  const [role, setRole] = useState<PersistentAccessRole>("viewer");
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [label, setLabel] = useState("");
   const [createdUrl, setCreatedUrl] = useState<string | null>(initialAccessUrl);
@@ -397,7 +397,10 @@ export function SettingsSheet({
             <div className="access-create-grid">
               <label className="field-label">
                 <span>{t(language, "accessRole")}</span>
-                <select value={role} onChange={(event) => setRole(event.target.value as AccessRole)}>
+                <select
+                  value={role}
+                  onChange={(event) => setRole(event.target.value as PersistentAccessRole)}
+                >
                   <option value="admin">{t(language, "admin")}</option>
                   <option value="team-editor">{t(language, "editor")}</option>
                   <option value="viewer">{t(language, "viewer")}</option>
