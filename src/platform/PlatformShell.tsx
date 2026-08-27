@@ -9,6 +9,10 @@ import {
   type PlatformAppCommandType,
   type PlatformAppContext,
 } from "./platformContract.ts";
+import {
+  SessionMapHighlightProvider,
+  type SessionMapHighlight,
+} from "./sessionMapHighlight.tsx";
 import "./platform-shell.css";
 
 function MenuGridIcon() {
@@ -40,6 +44,7 @@ export function PlatformShell() {
   const [fieldSessionsOpen, setFieldSessionsOpen] = useState(false);
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
+  const [sessionMapHighlight, setSessionMapHighlight] = useState<SessionMapHighlight | null>(null);
   const commandId = useRef(0);
 
   const launcherItems = buildPlatformLauncherItems(appContext);
@@ -47,6 +52,13 @@ export function PlatformShell() {
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const launcherAvailable = appContext?.launcherAvailable ?? true;
   const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen;
+
+  useEffect(() => {
+    if (!sessionMapHighlight || !appContext?.campaignId) return;
+    if (sessionMapHighlight.campaignId !== appContext.campaignId) {
+      setSessionMapHighlight(null);
+    }
+  }, [appContext?.campaignId, sessionMapHighlight]);
 
   const dispatchSimpleCommand = (
     type: Exclude<PlatformAppCommandType, "select-active-team">,
@@ -66,11 +78,30 @@ export function PlatformShell() {
   return (
     <div className="platform-shell">
       <div className="platform-map-layer" aria-hidden={overlayOpen || undefined}>
-        <App
-          platformCommand={appCommand}
-          onPlatformContextChange={setAppContext}
-        />
+        <SessionMapHighlightProvider value={sessionMapHighlight}>
+          <App
+            platformCommand={appCommand}
+            onPlatformContextChange={setAppContext}
+          />
+        </SessionMapHighlightProvider>
       </div>
+
+      {sessionMapHighlight && !overlayOpen ? (
+        <div className="platform-session-highlight" role="status">
+          <div>
+            <strong>Einsatz hervorgehoben</strong>
+            <span>
+              {sessionMapHighlight.label} · {sessionMapHighlight.streetTaskIds.length} Straßen
+              {sessionMapHighlight.houseTaskCount > 0
+                ? ` · ${sessionMapHighlight.houseTaskCount} Haus-Aufgaben nur im Verlauf`
+                : ""}
+            </span>
+          </div>
+          <button type="button" onClick={() => setSessionMapHighlight(null)}>
+            Ausblenden
+          </button>
+        </div>
+      ) : null}
 
       {launcherAvailable ? (
         <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
@@ -161,6 +192,19 @@ export function PlatformShell() {
           context={appContext}
           online={online}
           onClose={() => setFieldSessionsOpen(false)}
+          onShowSessionOnMap={(session, taskRefs) => {
+            const streetTaskIds = taskRefs
+              .filter((taskRef) => taskRef.entityType === "street-task")
+              .map((taskRef) => taskRef.entityId);
+            setSessionMapHighlight({
+              campaignId: session.campaignId,
+              sessionId: session.id,
+              label: session.teamName,
+              streetTaskIds,
+              houseTaskCount: taskRefs.filter((taskRef) => taskRef.entityType === "house-task").length,
+            });
+            setFieldSessionsOpen(false);
+          }}
         />
       ) : null}
     </div>
