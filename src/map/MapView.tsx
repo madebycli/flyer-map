@@ -9,6 +9,7 @@ import type { Area, DistributionTask, LngLat, MapCameraView } from "../domain/ca
 import type { OfflineMapPackage } from "../domain/offlineMap";
 import type { Language } from "../i18n";
 import { t } from "../i18n";
+import { useSessionMapHighlight } from "../platform/sessionMapHighlight.tsx";
 import { loadPersonalMapView, savePersonalMapView } from "./cameraStore";
 import {
   CARTO_BASEMAP_LAYER_ID,
@@ -106,6 +107,7 @@ const STREET_OPEN_LAYER_ID = "vf-streets-open";
 const STREET_COMPLETED_LAYER_ID = "vf-streets-completed";
 const STREET_LATER_LAYER_ID = "vf-streets-later";
 const STREET_NOT_DELIVERABLE_LAYER_ID = "vf-streets-not-deliverable";
+const STREET_SESSION_HIGHLIGHT_LAYER_ID = "vf-streets-session-highlight";
 const STREET_LAYER_IDS = [
   STREET_SELECTED_LAYER_ID,
   STREET_OPEN_LAYER_ID,
@@ -180,6 +182,24 @@ const SELECTED_STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   3.4,
   20,
   4.8,
+];
+
+const SESSION_HIGHLIGHT_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  5,
+  2.1,
+  8,
+  2.5,
+  11,
+  3.1,
+  14,
+  4.2,
+  17,
+  5.8,
+  20,
+  7.6,
 ];
 
 function areasToGeoJson(areas: RenderArea[]): AreaFeatureCollection {
@@ -399,6 +419,21 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean
           "line-cap": "round",
         },
       },
+      {
+        id: STREET_SESSION_HIGHLIGHT_LAYER_ID,
+        type: "line",
+        source: STREET_SOURCE_ID,
+        filter: ["==", ["get", "taskId"], "__none__"],
+        paint: {
+          "line-color": "#f59e0b",
+          "line-opacity": 0.92,
+          "line-width": SESSION_HIGHLIGHT_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
     ],
   };
 }
@@ -440,6 +475,7 @@ function syncApplicationData(
   areas: RenderArea[],
   tasks: RenderTask[],
   selectedTaskId: string | null,
+  highlightedTaskIds: readonly string[],
 ) {
   const areaSource = map.getSource(AREA_SOURCE_ID) as GeoJSONSource | undefined;
   if (areaSource) areaSource.setData(areasToGeoJson(areas));
@@ -453,6 +489,17 @@ function syncApplicationData(
       ["==", ["get", "taskId"], selectedTaskId ?? "__none__"],
     );
   }
+  if (map.getLayer(STREET_SESSION_HIGHLIGHT_LAYER_ID)) {
+    map.setFilter(
+      STREET_SESSION_HIGHLIGHT_LAYER_ID,
+      highlightedTaskIds.length > 0
+        ? ["match", ["get", "taskId"], [...highlightedTaskIds], true, false]
+        : ["==", ["get", "taskId"], "__none__"],
+    );
+  }
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) region.dataset.sessionHighlightStreets = String(highlightedTaskIds.length);
 }
 
 function syncOfflineMapData(map: Map, pkg: OfflineMapPackage | null, online: boolean) {
@@ -576,6 +623,14 @@ export function MapView({
   onEditVertexMove,
   onStreetDrawPoint,
 }: MapViewProps) {
+  const sessionMapHighlight = useSessionMapHighlight();
+  const highlightedStreetTaskIds = useMemo(
+    () =>
+      sessionMapHighlight?.campaignId === campaignId
+        ? [...sessionMapHighlight.streetTaskIds]
+        : [],
+    [campaignId, sessionMapHighlight],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const cameraSaveTimerRef = useRef<number | null>(null);
@@ -587,8 +642,8 @@ export function MapView({
   const activeHaloRef = useRef<SVGPolygonElement | SVGPolylineElement | null>(null);
   const activeMarkerRefs = useRef(new globalThis.Map<number, SVGCircleElement>());
 
-  const dataRef = useRef({ areas, tasks, selectedTaskId });
-  dataRef.current = { areas, tasks, selectedTaskId };
+  const dataRef = useRef({ areas, tasks, selectedTaskId, highlightedStreetTaskIds });
+  dataRef.current = { areas, tasks, selectedTaskId, highlightedStreetTaskIds };
 
   const interactionRef = useRef({
     mode,
@@ -727,7 +782,13 @@ export function MapView({
       map.once("load", () => {
         if (!active) return;
         const current = dataRef.current;
-        syncApplicationData(map, current.areas, current.tasks, current.selectedTaskId);
+        syncApplicationData(
+          map,
+          current.areas,
+          current.tasks,
+          current.selectedTaskId,
+          current.highlightedStreetTaskIds,
+        );
         void refreshOfflineContext();
         updateActiveOverlay(map);
         updateRendererDiagnostics(map);
@@ -829,8 +890,8 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    syncApplicationData(map, areas, tasks, selectedTaskId);
-  }, [areas, tasks, selectedTaskId]);
+    syncApplicationData(map, areas, tasks, selectedTaskId, highlightedStreetTaskIds);
+  }, [areas, tasks, selectedTaskId, highlightedStreetTaskIds]);
 
   useEffect(() => {
     const map = mapRef.current;
