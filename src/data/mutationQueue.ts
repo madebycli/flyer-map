@@ -4,6 +4,7 @@ const DATABASE_NAME = "verteil-flyer-sync";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "mutations";
 const EMERGENCY_RECORD_KEY = "verteil-flyer:m5-mutation-emergency";
+const FIELD_GROUP_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 
 export type MutationQueueState =
   | "pending"
@@ -17,6 +18,7 @@ export type QueuedCampaignMutation = {
   campaignId: string;
   createdAt: string;
   mutation: CampaignMutation;
+  fieldGroupId: string | null;
   state: MutationQueueState;
   attemptCount: number;
   nextAttemptAt: number;
@@ -44,6 +46,17 @@ function transactionComplete(transaction: IDBTransaction) {
   });
 }
 
+function normalizeFieldGroupId(value: unknown) {
+  return typeof value === "string" && FIELD_GROUP_ID_PATTERN.test(value) ? value : null;
+}
+
+function normalizeRecord(record: QueuedCampaignMutation) {
+  return {
+    ...record,
+    fieldGroupId: normalizeFieldGroupId(record.fieldGroupId),
+  } satisfies QueuedCampaignMutation;
+}
+
 function writeEmergencyRecord(record: QueuedCampaignMutation) {
   if (typeof window === "undefined") return false;
   try {
@@ -69,7 +82,10 @@ function readEmergencyRecord() {
     ) {
       throw new Error("Emergency mutation record is invalid.");
     }
-    return value as QueuedCampaignMutation;
+    return normalizeRecord({
+      ...(value as QueuedCampaignMutation),
+      fieldGroupId: normalizeFieldGroupId(value.fieldGroupId),
+    });
   } catch (error) {
     window.localStorage.removeItem(EMERGENCY_RECORD_KEY);
     throw new Error("Emergency mutation record could not be restored.", { cause: error });
@@ -121,14 +137,14 @@ export class IndexedDbMutationQueueStorage implements MutationQueueStorage {
     const request = transaction.objectStore(STORE_NAME).getAll();
     const records = (await requestResult(request)) as QueuedCampaignMutation[];
     await completion;
-    return records;
+    return records.map(normalizeRecord);
   }
 
   async put(record: QueuedCampaignMutation) {
     const database = await this.database();
     const transaction = database.transaction(STORE_NAME, "readwrite");
     const completion = transactionComplete(transaction);
-    await requestResult(transaction.objectStore(STORE_NAME).put(record));
+    await requestResult(transaction.objectStore(STORE_NAME).put(normalizeRecord(record)));
     await completion;
   }
 
@@ -155,12 +171,16 @@ export class MutationQueue {
     clearEmergencyRecord(record.id);
   }
 
-  async enqueue(mutation: CampaignMutation) {
+  async enqueue(
+    mutation: CampaignMutation,
+    context: { fieldGroupId?: string | null } = {},
+  ) {
     const record: QueuedCampaignMutation = {
       id: mutation.id,
       campaignId: mutation.campaignId,
       createdAt: mutation.createdAt,
       mutation,
+      fieldGroupId: normalizeFieldGroupId(context.fieldGroupId),
       state: "pending",
       attemptCount: 0,
       nextAttemptAt: 0,
@@ -174,7 +194,7 @@ export class MutationQueue {
 
   async list(campaignId: string) {
     await this.recoverEmergencyRecord();
-    const records = await this.storage.getAll();
+    const records = (await this.storage.getAll()).map(normalizeRecord);
     return records
       .filter((record) => record.campaignId === campaignId)
       .sort((a, b) => {
@@ -186,7 +206,7 @@ export class MutationQueue {
   }
 
   async update(record: QueuedCampaignMutation) {
-    await this.storage.put(record);
+    await this.storage.put(normalizeRecord(record));
   }
 
   async remove(id: string) {
