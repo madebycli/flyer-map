@@ -3,6 +3,7 @@ import { CampaignApiError } from "../data/campaignApi.ts";
 import {
   fetchAllFieldSessionTaskRefs,
   fetchFieldSessions,
+  updateFieldSessionNote,
   type FieldSessionSummary,
   type FieldSessionTaskRef,
 } from "../data/fieldSessionApi.ts";
@@ -51,6 +52,7 @@ export function FieldSessionsHub({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [highlightingSessionId, setHighlightingSessionId] = useState<string | null>(null);
+  const [noteSavingSessionId, setNoteSavingSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const effectiveTeamId = forcedTeamId ?? (teamFilter === "all" ? null : teamFilter);
@@ -106,6 +108,38 @@ export function FieldSessionsHub({
     [campaignId, highlightingSessionId, onShowSessionOnMap, online],
   );
 
+  const saveSessionNote = useCallback(
+    async (session: FieldSessionSummary, note: string) => {
+      if (!campaignId || !online || noteSavingSessionId) return false;
+      setNoteSavingSessionId(session.id);
+      setError(null);
+      try {
+        const result = await updateFieldSessionNote(campaignId, session.id, note);
+        setSessions((current) =>
+          current.map((candidate) =>
+            candidate.id === session.id ? { ...candidate, note: result.note } : candidate,
+          ),
+        );
+        return true;
+      } catch (saveError) {
+        setError(historyErrorMessage(saveError));
+        return false;
+      } finally {
+        setNoteSavingSessionId(null);
+      }
+    },
+    [campaignId, noteSavingSessionId, online],
+  );
+
+  const canEditSessionNote = useCallback(
+    (session: FieldSessionSummary) => {
+      if (!online) return false;
+      if (context?.accessRole === "admin") return true;
+      return context?.accessRole === "team-editor" && context.accessTeamId === session.teamId;
+    },
+    [context?.accessRole, context?.accessTeamId, online],
+  );
+
   useEffect(() => {
     if (!online || !campaignId || !context?.accessRole) return;
     const controller = new AbortController();
@@ -134,7 +168,7 @@ export function FieldSessionsHub({
         <div className="field-sessions-scroll">
           {!online ? (
             <div className="field-sessions-notice is-offline" role="status">
-              Offline: bereits geladene Einsätze bleiben sichtbar. Neue Historie benötigt Internet.
+              Offline: bereits geladene Einsätze und Notizen bleiben sichtbar. Änderungen benötigen Internet.
             </div>
           ) : null}
 
@@ -190,6 +224,9 @@ export function FieldSessionsHub({
             <FieldSessionHistory
               items={sessions}
               highlightingSessionId={highlightingSessionId}
+              noteSavingSessionId={noteSavingSessionId}
+              canEditNote={canEditSessionNote}
+              onSaveNote={saveSessionNote}
               onShowOnMap={online && onShowSessionOnMap ? (session) => void showSessionOnMap(session) : undefined}
             />
           )}
