@@ -2,8 +2,8 @@
 id: product-roadmap
 type: product
 status: accepted
-last_updated: 2026-08-25
-related: [product, product-mvp, product-ux, architecture-organizations, architecture-collaboration, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion]
+last_updated: 2026-08-27
+related: [product, product-mvp, product-ux, architecture-organizations, architecture-collaboration, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion, plan-017-feature-complete-platform]
 source_of_truth_for: [product-roadmap, planned-capabilities, milestone-order]
 ---
 
@@ -30,6 +30,17 @@ The platform should support:
 The map remains the primary field workspace. Administrative complexity belongs in separate surfaces and must not make the mobile field map heavy.
 
 Detailed umbrella specification: `docs/plans/active/012-platform-app-expansion.md`.
+Current vertical delivery policy: `docs/plans/active/017-feature-complete-platform.md`.
+
+## Feature-complete delivery policy
+
+Future product work is delivered as vertical user features rather than normal-product Foundation previews.
+
+A visible Launcher module is not considered delivered merely because local UI, fake data, domain helpers or a Workbench route exists. Shared product features must include their real persistence, Worker authorization, offline/retry behavior where relevant, error states, tests and production verification before they count as complete.
+
+Internal `?workbench=` routes may remain useful for development, but they are not normal navigation and do not count as a completed product milestone.
+
+The next prioritized feature-complete product area is the Team Hub + Live Field Group system, followed by durable Field Sessions/Activity/Comments and statistics. Security-sensitive runtime remains gated by explicit ADR acceptance.
 
 ## Domain direction
 
@@ -214,16 +225,17 @@ Statistics may include:
 The denominator/aggregation rule must be explicit and reconcilable with source state/events.
 
 #### Mobile app-like shell
-Target field chrome:
-- smaller bottom bar;
-- Settings reduced to gear icon;
-- Teams has familiar people/team icon and right-side placement;
-- new Menu/App button;
-- full-screen animated app menu/dashboard;
-- Progress and Teams/Join modules inside;
-- active Team name compactly visible near Menu;
-- old permanent Team dropdown removed;
-- subtle top-bar progress indicator when actively working;
+Current accepted field chrome follows Plan 016/017:
+- the permanent compact launcher sits at the bottom-left of the map;
+- it contains only the 3x3 Menu/App button plus the visible active Team name;
+- Team color is supporting context only;
+- the old permanent Team dropdown is removed;
+- Settings, Team management, Area creation and later privileged actions are not permanent bar buttons and move into the permission-aware launcher/module flows;
+- the Menu/App button opens a compact rounded launcher sheet in the Settings/Teams visual family, not a full-screen home dashboard;
+- launcher destinations use large phone-style icons with short labels;
+- normal users only see destinations/actions that are both implemented and allowed by effective access/capabilities;
+- selected modules may still open dedicated full surfaces;
+- contextual Area/Street/House sheets remain separate and may overlay the launcher while editing;
 - respect `prefers-reduced-motion`.
 
 #### Team colors
