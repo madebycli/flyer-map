@@ -75,6 +75,18 @@ function access(role: AccessContext["role"], teamId: string | null = null): Acce
   return { grantId: `grant_${role}`, campaignId: "campaign_auth", role, teamId, label: null };
 }
 
+function fieldGroupAccess(teamId = "team_a"): AccessContext {
+  return {
+    grantId: "field-group:membership_a",
+    campaignId: "campaign_auth",
+    role: "field-group-member",
+    teamId,
+    label: "Tour A",
+    groupId: "field_group_a",
+    membershipId: "membership_a",
+  };
+}
+
 test("admin may change campaign configuration", () => {
   const previous = snapshot();
   const next = structuredClone(previous);
@@ -138,6 +150,48 @@ test("team editor cannot manage teams, campaign focus or reassign an area", () =
   const reassignment = structuredClone(previous);
   reassignment.areas[0].teamId = "team_b";
   assert.equal(authorizeSnapshotWrite(access("team-editor", "team_a"), previous, reassignment).allowed, false);
+});
+
+test("temporary field group member may change only own-team task status", () => {
+  const previous = snapshot();
+  const next = structuredClone(previous);
+  next.tasks[0].status = "completed";
+  next.tasks[0].completedAt = "2026-08-24T00:02:00.000Z";
+  next.tasks[0].updatedAt = "2026-08-24T00:02:00.000Z";
+
+  assert.deepEqual(authorizeSnapshotWrite(fieldGroupAccess(), previous, next), { allowed: true });
+});
+
+test("temporary field group member cannot change labels, areas or foreign-team status", () => {
+  const previous = snapshot();
+
+  const labelChange = structuredClone(previous);
+  labelChange.tasks[0].label = "Renamed";
+  assert.equal(authorizeSnapshotWrite(fieldGroupAccess(), previous, labelChange).allowed, false);
+
+  const areaChange = structuredClone(previous);
+  areaChange.areas[0].name = "Forbidden";
+  assert.equal(authorizeSnapshotWrite(fieldGroupAccess(), previous, areaChange).allowed, false);
+
+  const foreignStatus = structuredClone(previous);
+  foreignStatus.tasks[1].status = "later";
+  foreignStatus.tasks[1].updatedAt = "2026-08-24T00:02:00.000Z";
+  assert.equal(authorizeSnapshotWrite(fieldGroupAccess(), previous, foreignStatus).allowed, false);
+});
+
+test("temporary field group member requires canonical group and membership scope", () => {
+  const previous = snapshot();
+  const next = structuredClone(previous);
+  next.tasks[0].status = "later";
+  next.tasks[0].updatedAt = "2026-08-24T00:02:00.000Z";
+  const missingScope = {
+    ...fieldGroupAccess(),
+    groupId: null,
+  };
+  assert.deepEqual(authorizeSnapshotWrite(missingScope, previous, next), {
+    allowed: false,
+    reason: "field_group_scope_missing",
+  });
 });
 
 test("credential cannot authorize another campaign", () => {
