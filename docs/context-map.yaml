@@ -1,4 +1,4 @@
-version: 3
+version: 4
 
 entrypoints:
   always:
@@ -10,10 +10,11 @@ routing_rules:
   - load entrypoints first
   - select nodes whose topics/load_when match the task
   - follow depends_on/constrained_by/implements/governed_by edges as needed
-  - prefer accepted/current nodes over historical completed plans
-  - load proposed architecture only when working on the corresponding future capability
-  - inspect relevant ADRs before changing an accepted architectural boundary
-  - inspect current open PRs/branches before starting a replacement implementation slice
+  - prefer accepted/current/active nodes over proposed or historical nodes
+  - load proposed architecture only for the corresponding future capability
+  - inspect accepted ADRs before changing an architectural or security boundary
+  - inspect current open PRs, exact heads and CI before starting or replacing a slice
+  - treat prepared D1 migrations as unapplied until deployment/status docs explicitly record remote application
 
 nodes:
   - id: product
@@ -27,22 +28,22 @@ nodes:
     path: docs/product/ROADMAP.md
     type: product
     status: accepted
-    topics: [roadmap, milestones, feature-complete, vertical-delivery, offline-map, streets, houses, pickup, collection, field-sessions, live-teams, statistics, organizations, admin-panel, permissions, accounts, totp, support, comments, automations, app-shell, dark-mode]
-    load_when: [new feature planning, milestone planning, feature-complete planning, long-term scope, product expansion, collection mode, live teams, statistics, admin accounts]
+    topics: [roadmap, feature-complete, offline-map, streets, houses, pickup, collection, field-sessions, live-teams, statistics, organizations, admin, permissions, accounts, support, comments, automations]
+    load_when: [new feature planning, milestone planning, long-term scope, collection, live teams, statistics, admin accounts]
 
   - id: mvp
     path: docs/product/MVP.md
     type: product
     status: accepted
-    topics: [mvp, release, field-readiness, scope]
+    topics: [mvp, release, field-readiness]
     load_when: [release scope, MVP acceptance, field testing]
 
   - id: ux
     path: docs/product/UX.md
     type: product
     status: accepted
-    topics: [ui, ux, mobile, desktop, accessibility, interaction, appearance, app-menu, bottom-bar, progress-bar, team-colors, admin-panel, support]
-    load_when: [UI change, map interaction, mobile behavior, desktop admin UX, app-like navigation, progress UI, team color UI, support UI]
+    topics: [ui, ux, mobile, desktop, accessibility, launcher, bottom-bar, progress, team-colors, admin, support]
+    load_when: [UI change, map interaction, mobile behavior, desktop admin UX, launcher, progress UI]
 
   - id: architecture
     path: ARCHITECTURE.md
@@ -55,243 +56,214 @@ nodes:
     path: docs/architecture/STACK.md
     type: architecture
     status: accepted
-    topics: [dependencies, technology, cloudflare, react, vite, maplibre]
-    load_when: [dependency change, runtime version, build tooling, offline map provider]
+    topics: [dependencies, cloudflare, react, vite, maplibre]
+    load_when: [dependency change, runtime version, build tooling]
 
   - id: map
     path: docs/architecture/MAP.md
     type: architecture
     status: accepted
-    topics: [map, maplibre, carto, geojson, renderer, geolocation, performance, osm, offline-map, streets, houses]
-    load_when: [map rendering, geometry interaction, map performance, road/building data, offline map, session map highlighting]
+    topics: [map, maplibre, carto, geojson, renderer, osm, offline-map, streets, houses]
+    load_when: [map rendering, geometry interaction, performance, road/building data, session map highlighting]
 
   - id: data
     path: docs/architecture/DATA.md
     type: architecture
     status: accepted
-    topics: [database, d1, schema, campaigns, teams, areas, tasks, revisions]
-    load_when: [domain model, D1 migration, persistence, schema, field sessions, pickup tasks, accounts]
+    topics: [database, d1, schema, campaigns, teams, areas, tasks, revisions, migrations]
+    load_when: [domain model, D1 migration, persistence, field sessions, accounts, team lifecycle]
 
   - id: offline-sync
     path: docs/architecture/OFFLINE_SYNC.md
     type: architecture
     status: accepted
-    topics: [offline, synchronization, indexeddb, mutations, conflicts]
+    topics: [offline, synchronization, indexeddb, mutations, idempotency, conflicts]
     load_when: [M5, sync, retries, conflicts, offline behavior, live collaboration conflicts]
 
   - id: security
     path: docs/architecture/SECURITY.md
     type: architecture
     status: accepted
-    topics: [auth, authorization, privacy, tokens, sessions, roles, gps, injection, totp, accounts, permissions, live-join]
-    load_when: [access, roles, protected API, privacy, recovery, accounts, passwords, TOTP, permissions, QR codes, live teams]
+    topics: [auth, authorization, privacy, tokens, sessions, roles, gps, injection, live-join]
+    load_when: [access, protected API, privacy, recovery, QR codes, live teams, credentials]
+
+  - id: live-teams
+    path: docs/architecture/LIVE_TEAMS.md
+    type: architecture
+    status: accepted
+    topics: [live-teams, field-groups, room-code, qr, temporary-membership, discoverability, multi-device, rate-limit]
+    load_when: [Field Groups, Team Hub, Room Code, QR join, member roster, temporary group access, discoverability]
+
+  - id: collaboration
+    path: docs/architecture/COLLABORATION.md
+    type: architecture
+    status: active
+    topics: [field-sessions, domain-events, comments, activity, automations, statistics, reporting, retention]
+    load_when: [Field Session, event persistence, comments, activity feed, automations, statistics, session history]
 
   - id: organizations
     path: docs/architecture/ORGANIZATIONS.md
     type: architecture
     status: proposed
-    topics: [organizations, multi-tenant, admins, admin-panel, membership, multi-admin, team-delete]
-    load_when: [M8, organization model, admin panel, multiple administrators, tenant security, team archive delete]
+    topics: [organizations, multi-tenant, admins, admin-panel, membership, team-archive, team-delete]
+    load_when: [organization model, admin panel, multiple administrators, tenant security, Team archive/delete]
 
   - id: identity-permissions
     path: docs/architecture/IDENTITY_PERMISSIONS.md
     type: architecture
     status: proposed
-    topics: [identity, accounts, username, password, totp, 2fa, permissions, capabilities, roles, admin-transfer, injection]
-    load_when: [admin login, accounts, 2FA, TOTP, permission settings, role matrix, capability model, admin transfer, password security]
+    topics: [identity, accounts, username, password, totp, permissions, capabilities, roles, admin-transfer]
+    load_when: [admin login, accounts, TOTP, permission settings, capability model, admin transfer]
 
   - id: identity-threat-model
     path: docs/architecture/IDENTITY_THREAT_MODEL.md
     type: architecture
     status: proposed
-    topics: [threat-model, accounts, password, totp, sessions, csrf, xss, injection, tenant-isolation, recovery, security-testing]
-    load_when: [account threat model, admin login security review, TOTP security, account release gate, tenant isolation testing]
-
-  - id: live-teams
-    path: docs/architecture/LIVE_TEAMS.md
-    type: architecture
-    status: proposed
-    topics: [live-teams, field-groups, team-code, qr-code, join-password, discoverability, multi-device, presence]
-    load_when: [live field groups, online teams, join with QR, group code, group password, multi-device collaboration, discoverability]
-
-  - id: collaboration
-    path: docs/architecture/COLLABORATION.md
-    type: architecture
-    status: proposed
-    topics: [comments, activity, events, automations, statistics, reporting, field-sessions, duration, participant-count, person-time]
-    load_when: [M7, M9, comments, activity feed, automation, statistics, session history, progress percentage, duration and people feedback]
+    topics: [threat-model, password, totp, sessions, csrf, xss, tenant-isolation, recovery]
+    load_when: [account threat model, admin login security, TOTP security, tenant isolation]
 
   - id: quality
     path: docs/quality/QUALITY.md
     type: quality
     status: accepted
-    topics: [tests, performance, accessibility, browsers, quality, security-testing]
-    load_when: [testing, performance acceptance, browser support, release gate, security hardening, dense data]
+    topics: [tests, performance, accessibility, browsers, security-testing]
+    load_when: [testing, performance acceptance, browser support, release gate, dense data]
 
   - id: deployment
     path: docs/operations/DEPLOYMENT.md
     type: operations
     status: accepted
-    topics: [deploy, cloudflare, github, production, d1]
+    topics: [deploy, cloudflare, github, d1, migrations]
     load_when: [deployment, migration, Worker config, Cloudflare]
-
-  - id: first-deploy
-    path: docs/operations/FIRST_DEPLOY.md
-    type: operations
-    status: historical-procedure
-    topics: [cloudflare, setup, first-deploy, workers]
-    load_when: [new environment setup only]
 
   - id: production
     path: docs/operations/PRODUCTION.md
     type: operations
     status: current
-    topics: [production, workers-dev, health, deployment, field-test]
+    topics: [production, health, deployment, field-test]
     load_when: [production verification, live URL, smoke test]
 
   - id: decisions
     path: docs/decisions/README.md
     type: decisions
     status: index
-    topics: [adr, architecture-decisions, history]
+    topics: [adr, architecture-decisions]
     load_when: [architecture change, security decision, superseding a boundary]
 
   - id: adr-offline-map-data
     path: docs/decisions/ADR-0012-prepared-offline-map-data.md
     type: decision
     status: accepted
-    topics: [offline-map, osm, overpass, indexeddb, geojson, m5.5]
-    load_when: [prepared offline map, OSM source, offline map package, M5.5 implementation, Smart Street source]
+    topics: [offline-map, osm, overpass, indexeddb]
+    load_when: [prepared offline map, OSM package, Smart Street source]
 
   - id: adr-smart-task-identity
     path: docs/decisions/ADR-0013-smart-street-house-identity.md
     type: decision
     status: accepted
-    topics: [m6, smart-streets, houses, osm-identity, task-identity, source-provenance, splitting, multi-way]
-    load_when: [Smart Street persistence, House persistence, Street splitting, OSM task identity, multi-way Street tasks, M6 schema]
+    topics: [smart-streets, houses, osm-identity, task-identity, provenance]
+    load_when: [Smart Street persistence, House persistence, OSM task identity, M6 schema]
 
   - id: adr-live-field-group-credentials
     path: docs/decisions/ADR-0014-live-field-group-credentials.md
     type: decision
-    status: proposed
-    topics: [live-teams, field-groups, qr, join-code, temporary-credentials, discoverability, rate-limit]
-    load_when: [Field Group credential design, QR join, live group code, discoverability policy, temporary group access]
+    status: accepted
+    topics: [field-groups, qr, room-code, temporary-credentials, discoverability, rate-limit]
+    load_when: [Field Group credential runtime, QR join, Room Code, temporary group access, member removal]
 
   - id: adr-admin-identity
     path: docs/decisions/ADR-0015-organization-admin-identity-totp-sessions.md
     type: decision
     status: proposed
-    topics: [accounts, username, password, pbkdf2, totp, recovery-codes, sessions, rate-limit, encryption]
-    load_when: [Organization Admin accounts, password hashing, TOTP enrollment, Admin sessions, account recovery]
+    topics: [accounts, username, password, totp, recovery, sessions]
+    load_when: [Organization Admin accounts, password hashing, TOTP, account recovery]
 
   - id: adr-capability-roles
     path: docs/decisions/ADR-0016-capability-role-templates.md
     type: decision
     status: proposed
-    topics: [permissions, capabilities, role-templates, delegation, admin-manage, tenant-isolation]
-    load_when: [permission implementation, role templates, configurable permissions, capability checks, Admin delegation]
+    topics: [permissions, capabilities, role-templates, delegation, tenant-isolation]
+    load_when: [permission implementation, role templates, capability checks, Admin delegation]
 
   - id: adr-field-session-events
     path: docs/decisions/ADR-0017-field-session-events-retention.md
     type: decision
-    status: proposed
+    status: accepted
     topics: [field-sessions, domain-events, retention, statistics, comments, activity, history]
-    load_when: [durable Field Sessions, domain event persistence, session map highlighting, comment history, statistics retention]
+    load_when: [durable Field Sessions, event persistence, session map highlighting, retention]
 
   - id: adr-action-templates-analytics
     path: docs/decisions/ADR-0018-action-templates-cycles-analytics-export.md
     type: decision
     status: proposed
-    topics: [actions, templates, action-cycles, analytics, export, repeated-rounds]
-    load_when: [Action Template persistence, new Action wizard runtime, repeated Action comparison, Admin analytics export]
-
-  - id: plan-renderer-recovery
-    path: docs/plans/completed/008-renderer-access-recovery.md
-    type: plan
-    status: completed
-    topics: [historical-slice, renderer, access-recovery, diagnostics]
-    load_when: [PR 21 history, renderer recovery history, access recovery history]
-
-  - id: plan-platform-roadmap
-    path: docs/plans/active/009-product-platform-foundation.md
-    type: plan
-    status: active
-    topics: [foundation, M5, smart-tasks, sequencing]
-    load_when: [M5 foundation history, platform sequencing, post-PR21 work]
+    topics: [actions, templates, action-cycles, analytics, export]
+    load_when: [Action Template persistence, repeated Action comparison, Admin analytics export]
 
   - id: plan-m5-sync
     path: docs/plans/completed/010-m5-resilient-mutation-sync.md
     type: plan
     status: completed
-    topics: [M5, mutation-queue, indexeddb, idempotency, conflicts, reconnect, authorization]
-    load_when: [M5 history, PR 24 history, durable mutation queue architecture, conflict acceptance history]
+    topics: [M5, mutation-queue, indexeddb, idempotency, conflicts]
+    load_when: [M5 history, durable mutation queue architecture]
 
   - id: plan-offline-map
     path: docs/plans/active/011-offline-map-area.md
     type: plan
     status: active
-    topics: [offline-map, indexeddb, map-download, osm, 3km, field-connectivity]
-    load_when: [prepared offline map, 3 km download, offline basemap, offline map storage]
+    topics: [offline-map, indexeddb, osm, field-connectivity]
+    load_when: [prepared offline map, offline map storage]
 
   - id: plan-platform-expansion
     path: docs/plans/active/012-platform-app-expansion.md
     type: plan
     status: active
-    topics: [platform-expansion, app-shell, statistics, field-sessions, live-teams, collection, pickup, admin, organizations, permissions, accounts, totp, support]
-    load_when: [full platform work, next generation planning, app-like UI, live teams, admin accounts, permissions, statistics, collection mode, support]
+    topics: [platform-expansion, statistics, field-sessions, live-teams, collection, admin, organizations, permissions]
+    load_when: [full platform scope, product expansion history]
 
   - id: plan-action-templates-analytics
     path: docs/plans/active/013-action-templates-admin-analytics.md
     type: plan
     status: active
-    topics: [actions, templates, repeated-rounds, analytics, export, collection, admin]
-    load_when: [Action Templates, new Action creation, repeated rounds, analytics export, comparison]
-
-  - id: plan-unified-platform-ui
-    path: docs/plans/completed/014-unified-platform-ui.md
-    type: plan
-    status: completed
-    topics: [ui, unified-ui, app-shell, navigation, progress, comments, pickup, field-sessions, smart-streets, live-groups, admin, support]
-    load_when: [unified website UI, platform shell, module navigation, current composed interface, Plan 014 history]
+    topics: [actions, templates, repeated-rounds, analytics, export]
+    load_when: [Action Templates, repeated rounds, analytics export]
 
   - id: plan-m6-house-persistence
     path: docs/plans/completed/015-m6-house-persistence.md
     type: plan
     status: completed
-    topics: [m6, houses, house-tasks, persistence, osm, mutations, d1, migration-0005, parent-street]
-    load_when: [House persistence, House Tasks, house_tasks table, migration 0005, parent Street, Smart House persistence]
+    topics: [houses, house-tasks, persistence, migration-0005]
+    load_when: [House persistence, house_tasks, parent Street]
 
   - id: plan-app-launcher-sheet
     path: docs/plans/completed/016-app-launcher-sheet.md
     type: plan
     status: completed
-    topics: [ui, mobile, app-launcher, menu, team-context, icons, field-chrome, bottom-bar]
-    load_when: [compact menu, app launcher, 3x3 menu icon, iOS-style icon grid, Team dropdown removal, bottom launcher bar, field chrome]
+    topics: [app-launcher, menu, team-context, field-chrome]
+    load_when: [launcher, bottom bar, Team dropdown removal]
 
   - id: plan-feature-complete-platform
     path: docs/plans/active/017-feature-complete-platform.md
     type: plan
     status: active
-    topics: [feature-complete, vertical-delivery, team-hub, live-groups, field-sessions, statistics, smart-streets, houses, collection, admin, permissions, actions, support, hardening]
-    load_when: [next feature implementation, feature-complete delivery, Team Hub, Live Field Groups runtime, remove Foundation previews, platform completion]
+    topics: [feature-complete, team-hub, live-groups, field-sessions, statistics, smart-streets, houses, collection, admin, permissions, actions, support, hardening]
+    load_when: [next feature implementation, Team Hub, Live Field Groups, FC2, platform completion]
+
+  - id: prompt-latest-feature-complete
+    path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
+    type: onboarding
+    status: current
+    topics: [handoff, current-branch, current-pr, next-step]
+    load_when: [fresh AI session, continue current Plan 017 development]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
     type: onboarding
     status: current
-    topics: [agent, chatgpt, context, onboarding, fresh-chat]
-    load_when: [new AI session, generic handoff]
-
-  - id: prompt-platform-expansion
-    path: docs/prompts/START_PLATFORM_EXPANSION.md
-    type: onboarding
-    status: current
-    topics: [agent, platform-expansion, implementation-prompt, next-chat]
-    load_when: [start next AI chat for full expansion, handoff to development agent]
+    topics: [agent, context, onboarding]
+    load_when: [generic fresh AI session]
 
 edges:
   - { from: product, to: roadmap, relation: expands_into }
-  - { from: product, to: mvp, relation: release_subset }
   - { from: ux, to: product, relation: implements_experience }
   - { from: architecture, to: product, relation: implements }
   - { from: stack, to: architecture, relation: constrains }
@@ -299,103 +271,25 @@ edges:
   - { from: data, to: architecture, relation: component_of }
   - { from: offline-sync, to: data, relation: depends_on }
   - { from: security, to: data, relation: constrains }
-  - { from: roadmap, to: organizations, relation: plans }
-  - { from: roadmap, to: identity-permissions, relation: plans }
-  - { from: roadmap, to: live-teams, relation: plans }
-  - { from: roadmap, to: collaboration, relation: plans }
-  - { from: roadmap, to: offline-sync, relation: plans }
-  - { from: roadmap, to: map, relation: extends_with_streets_houses_pickup_and_offline }
-  - { from: organizations, to: security, relation: constrained_by }
-  - { from: organizations, to: identity-permissions, relation: uses }
-  - { from: organizations, to: data, relation: requires_schema_extension }
-  - { from: identity-permissions, to: security, relation: constrained_by }
-  - { from: identity-permissions, to: data, relation: requires_schema_extension }
-  - { from: identity-threat-model, to: identity-permissions, relation: threat_models }
-  - { from: identity-threat-model, to: security, relation: validates_against }
   - { from: live-teams, to: security, relation: constrained_by }
-  - { from: live-teams, to: offline-sync, relation: reuses_conflict_model }
+  - { from: live-teams, to: offline-sync, relation: reuses }
   - { from: live-teams, to: collaboration, relation: creates_field_sessions }
   - { from: collaboration, to: security, relation: constrained_by }
-  - { from: collaboration, to: data, relation: requires_event_data }
-  - { from: collaboration, to: offline-sync, relation: benefits_from_mutations }
-  - { from: quality, to: architecture, relation: validates }
-  - { from: deployment, to: architecture, relation: operates }
-  - { from: first-deploy, to: deployment, relation: procedure_for }
-  - { from: production, to: deployment, relation: records }
+  - { from: collaboration, to: data, relation: persists_in }
+  - { from: collaboration, to: offline-sync, relation: reuses_idempotency }
+  - { from: organizations, to: security, relation: constrained_by }
+  - { from: organizations, to: identity-permissions, relation: uses }
+  - { from: identity-permissions, to: identity-threat-model, relation: validated_by }
   - { from: adr-offline-map-data, to: map, relation: governs }
-  - { from: adr-offline-map-data, to: stack, relation: constrains }
-  - { from: adr-offline-map-data, to: offline-sync, relation: shares_indexeddb_boundary }
-  - { from: adr-smart-task-identity, to: map, relation: governs_m6_identity }
-  - { from: adr-smart-task-identity, to: data, relation: governs_m6_task_persistence }
-  - { from: adr-smart-task-identity, to: offline-sync, relation: requires_stable_mutation_targets }
-  - { from: adr-live-field-group-credentials, to: live-teams, relation: proposes }
-  - { from: adr-live-field-group-credentials, to: security, relation: constrained_by }
-  - { from: adr-live-field-group-credentials, to: offline-sync, relation: reuses_offline_rules }
-  - { from: adr-admin-identity, to: identity-permissions, relation: proposes_identity_layer }
-  - { from: adr-admin-identity, to: identity-threat-model, relation: requires_review_of }
-  - { from: adr-admin-identity, to: security, relation: constrained_by }
-  - { from: adr-capability-roles, to: identity-permissions, relation: proposes_permission_layer }
-  - { from: adr-capability-roles, to: organizations, relation: scoped_by }
-  - { from: adr-capability-roles, to: security, relation: constrained_by }
-  - { from: adr-field-session-events, to: collaboration, relation: proposes_persistence_model }
-  - { from: adr-field-session-events, to: data, relation: requires_schema_extension }
-  - { from: adr-field-session-events, to: offline-sync, relation: reuses_idempotency_boundary }
-  - { from: adr-action-templates-analytics, to: collaboration, relation: consumes_retained_history }
-  - { from: adr-action-templates-analytics, to: organizations, relation: requires_tenant_scope }
-  - { from: plan-renderer-recovery, to: map, relation: changed }
-  - { from: plan-renderer-recovery, to: security, relation: changed }
-  - { from: plan-platform-roadmap, to: roadmap, relation: foundation_for }
-  - { from: plan-platform-roadmap, to: offline-sync, relation: starts_with }
-  - { from: plan-m5-sync, to: offline-sync, relation: implements }
-  - { from: plan-m5-sync, to: security, relation: constrained_by }
-  - { from: plan-m5-sync, to: data, relation: extends }
-  - { from: plan-offline-map, to: roadmap, relation: implements_m5_5 }
-  - { from: plan-offline-map, to: map, relation: extends }
-  - { from: plan-offline-map, to: offline-sync, relation: shares_indexeddb_constraints }
-  - { from: plan-offline-map, to: stack, relation: governed_by_adr_0012 }
-  - { from: plan-offline-map, to: adr-offline-map-data, relation: governed_by }
-  - { from: plan-platform-expansion, to: roadmap, relation: executes }
-  - { from: plan-platform-expansion, to: ux, relation: defines_target_experience }
-  - { from: plan-platform-expansion, to: organizations, relation: plans_m8 }
-  - { from: plan-platform-expansion, to: identity-permissions, relation: requires }
-  - { from: plan-platform-expansion, to: live-teams, relation: requires }
-  - { from: plan-platform-expansion, to: collaboration, relation: requires }
-  - { from: plan-platform-expansion, to: map, relation: extends }
-  - { from: plan-platform-expansion, to: adr-smart-task-identity, relation: implements_accepted_decision }
-  - { from: plan-platform-expansion, to: adr-live-field-group-credentials, relation: requires_before_live_credentials }
-  - { from: plan-platform-expansion, to: adr-admin-identity, relation: requires_before_accounts }
-  - { from: plan-platform-expansion, to: adr-capability-roles, relation: requires_before_permissions }
-  - { from: plan-platform-expansion, to: identity-threat-model, relation: requires_security_review }
-  - { from: plan-platform-expansion, to: security, relation: constrained_by }
-  - { from: plan-platform-expansion, to: quality, relation: validated_by }
-  - { from: plan-action-templates-analytics, to: plan-platform-expansion, relation: implements_slice_of }
-  - { from: plan-action-templates-analytics, to: adr-field-session-events, relation: depends_on_history }
-  - { from: plan-action-templates-analytics, to: adr-action-templates-analytics, relation: governed_by }
-  - { from: plan-unified-platform-ui, to: plan-platform-expansion, relation: composes_foundations_from }
-  - { from: plan-unified-platform-ui, to: ux, relation: implements_app_shell }
-  - { from: plan-unified-platform-ui, to: quality, relation: validated_by }
-  - { from: plan-m6-house-persistence, to: plan-platform-expansion, relation: implements_slice_of }
-  - { from: plan-m6-house-persistence, to: adr-smart-task-identity, relation: implements_accepted_decision }
-  - { from: plan-m6-house-persistence, to: data, relation: extends }
-  - { from: plan-m6-house-persistence, to: offline-sync, relation: extends }
-  - { from: plan-m6-house-persistence, to: map, relation: constrains_followup }
-  - { from: plan-m6-house-persistence, to: security, relation: constrained_by }
-  - { from: plan-m6-house-persistence, to: quality, relation: validated_by }
-  - { from: plan-app-launcher-sheet, to: plan-unified-platform-ui, relation: refines_navigation }
-  - { from: plan-app-launcher-sheet, to: ux, relation: implements_field_chrome }
-  - { from: plan-app-launcher-sheet, to: quality, relation: validated_by }
-  - { from: plan-feature-complete-platform, to: plan-platform-expansion, relation: refines_delivery_model }
-  - { from: plan-feature-complete-platform, to: plan-app-launcher-sheet, relation: continues_ui_direction }
-  - { from: plan-feature-complete-platform, to: live-teams, relation: prioritizes_first_complete_feature }
-  - { from: plan-feature-complete-platform, to: collaboration, relation: sequences_after_groups }
-  - { from: plan-feature-complete-platform, to: adr-live-field-group-credentials, relation: requires_acceptance_before_runtime }
-  - { from: plan-feature-complete-platform, to: adr-field-session-events, relation: requires_acceptance_before_history_runtime }
-  - { from: plan-feature-complete-platform, to: adr-admin-identity, relation: requires_acceptance_before_identity_runtime }
-  - { from: plan-feature-complete-platform, to: adr-capability-roles, relation: requires_acceptance_before_permission_runtime }
-  - { from: plan-feature-complete-platform, to: adr-action-templates-analytics, relation: requires_acceptance_before_action_runtime }
-  - { from: plan-feature-complete-platform, to: quality, relation: validated_by }
-  - { from: prompts, to: architecture, relation: onboards_to }
-  - { from: prompts, to: roadmap, relation: onboards_to }
-  - { from: prompt-platform-expansion, to: plan-platform-expansion, relation: starts }
-  - { from: prompt-platform-expansion, to: roadmap, relation: onboards_to }
-  - { from: prompt-platform-expansion, to: security, relation: constrained_by }
+  - { from: adr-smart-task-identity, to: data, relation: governs }
+  - { from: adr-live-field-group-credentials, to: live-teams, relation: governs }
+  - { from: adr-field-session-events, to: collaboration, relation: governs }
+  - { from: adr-admin-identity, to: identity-permissions, relation: precedes_runtime }
+  - { from: adr-capability-roles, to: identity-permissions, relation: governs }
+  - { from: adr-action-templates-analytics, to: plan-action-templates-analytics, relation: governs }
+  - { from: plan-m5-sync, to: offline-sync, relation: implemented }
+  - { from: plan-m6-house-persistence, to: data, relation: implemented_foundation }
+  - { from: plan-app-launcher-sheet, to: ux, relation: implemented }
+  - { from: plan-feature-complete-platform, to: live-teams, relation: implements_current_slice }
+  - { from: plan-feature-complete-platform, to: collaboration, relation: implements_next_slices }
+  - { from: prompt-latest-feature-complete, to: plan-feature-complete-platform, relation: continues }
