@@ -65,7 +65,7 @@
 
 .field-session-history-card dl {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.5rem;
   margin: 0.15rem 0 0;
 }
@@ -84,6 +84,22 @@
   overflow-wrap: anywhere;
   font-size: 0.72rem;
   font-weight: 760;
+}
+
+.field-session-history-map-button {
+  min-height: 2.35rem;
+  margin-top: 0.28rem;
+  padding: 0.5rem 0.72rem;
+  border: 1px solid #ccd8cf;
+  border-radius: 0.68rem;
+  color: #244f35;
+  background: #edf5ef;
+  font-size: 0.72rem;
+  font-weight: 780;
+}
+
+.field-session-history-map-button:disabled {
+  opacity: 0.58;
 }
 
 @media (max-width: 560px) {
