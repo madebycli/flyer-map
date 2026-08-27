@@ -34,23 +34,33 @@ export type PlatformAppContext = {
 };
 
 export type PlatformLauncherItem = {
-  id: "map" | "settings" | "team" | "area-create";
+  id: "map" | "settings" | "team" | "sessions" | "area-create";
   label: string;
   icon: string;
   command: Exclude<PlatformAppCommandType, "select-active-team"> | null;
   opensTeamHub?: boolean;
+  opensFieldSessions?: boolean;
 };
-
-const BASE_LAUNCHER_ITEMS: readonly PlatformLauncherItem[] = [
-  { id: "map", label: "Karte", icon: "🗺️", command: null },
-  { id: "team", label: "Team", icon: "👥", command: null, opensTeamHub: true },
-  { id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" },
-];
 
 export function buildPlatformLauncherItems(
   context: PlatformAppContext | null,
 ): PlatformLauncherItem[] {
-  const items = [...BASE_LAUNCHER_ITEMS];
+  const items: PlatformLauncherItem[] = [
+    { id: "map", label: "Karte", icon: "🗺️", command: null },
+    { id: "team", label: "Team", icon: "👥", command: null, opensTeamHub: true },
+  ];
+
+  if (context?.accessRole) {
+    items.push({
+      id: "sessions",
+      label: "Einsätze",
+      icon: "🕘",
+      command: null,
+      opensFieldSessions: true,
+    });
+  }
+
+  items.push({ id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" });
 
   if (context?.canCreateArea) {
     items.push({ id: "area-create", label: "Gebiet", icon: "➕", command: "start-area-drawing" });
