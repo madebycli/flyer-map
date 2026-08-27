@@ -51,6 +51,10 @@ export function FieldSessionsHub({ context, online, onClose }: Props) {
       if (!campaignId || !context?.accessRole || !online) return;
       setLoadState(append ? "loading-more" : "loading");
       setError(null);
+      if (!append) {
+        setSessions([]);
+        setNextCursor(null);
+      }
       try {
         const page = await fetchFieldSessions(campaignId, {
           teamId: effectiveTeamId,
