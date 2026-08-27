@@ -103,7 +103,32 @@ test("field group close fails before authorization or mutation when migration 00
   assert.equal((await response.json()).error.code, "field_session_schema_unavailable");
 });
 
-test("migration 0007 binds manual close to one durable session and one deduplicated event", async () => {
+test("migration 0007 creates one active session when a Field Group starts", async () => {
+  const sql = await readFile("migrations/0007_field_sessions_events.sql", "utf8");
+
+  assert.match(sql, /CREATE TRIGGER trg_field_group_start_session/u);
+  assert.match(sql, /AFTER INSERT ON field_groups/u);
+  assert.match(sql, /WHEN NEW\.state = 'active'/u);
+  assert.match(
+    sql,
+    /'field_session_group_' \|\| NEW\.id[\s\S]*NEW\.created_at,[\s\S]*NULL,[\s\S]*NULL,[\s\S]*NULL,[\s\S]*NEW\.participant_count,[\s\S]*NULL,[\s\S]*NULL,[\s\S]*'active'/u,
+  );
+  assert.match(sql, /CREATE TRIGGER trg_field_group_participant_session_sync/u);
+  assert.match(sql, /UPDATE field_sessions[\s\S]*SET participant_count = NEW\.participant_count/u);
+});
+
+test("migration 0007 backfills active and ended Field Groups into the same session model", async () => {
+  const sql = await readFile("migrations/0007_field_sessions_events.sql", "utf8");
+
+  assert.match(sql, /FROM field_groups g/u);
+  assert.match(sql, /g\.state = 'active'/u);
+  assert.match(sql, /g\.state IN \('closed', 'expired'\)/u);
+  assert.match(sql, /CASE WHEN g\.state = 'active' THEN 'active' ELSE 'closed' END/u);
+  assert.match(sql, /CASE WHEN g\.state = 'active' THEN NULL ELSE g\.closed_at END/u);
+  assert.match(sql, /'field_session_group_' \|\| g\.id/u);
+});
+
+test("migration 0007 closes the existing active session and emits one deduplicated close event", async () => {
   const sql = await readFile("migrations/0007_field_sessions_events.sql", "utf8");
 
   assert.match(sql, /CREATE TABLE field_sessions/u);
@@ -113,22 +138,30 @@ test("migration 0007 binds manual close to one durable session and one deduplica
   assert.match(sql, /UNIQUE \(campaign_id, dedupe_key\)/u);
   assert.match(sql, /CREATE TRIGGER trg_field_group_close_history/u);
   assert.match(sql, /OLD\.state = 'active' AND NEW\.state = 'closed'/u);
-  assert.match(sql, /'field_session_group_' \|\| NEW\.id/u);
-  assert.match(sql, /'manual-close'/u);
+  assert.match(
+    sql,
+    /CREATE TRIGGER trg_field_group_close_history[\s\S]*UPDATE field_sessions[\s\S]*end_reason = 'manual-close'[\s\S]*status = 'closed'/u,
+  );
+  assert.match(
+    sql,
+    /WHERE campaign_id = NEW\.campaign_id[\s\S]*field_group_id = NEW\.id[\s\S]*status = 'active'/u,
+  );
   assert.match(sql, /'field_session\.closed'/u);
-  assert.match(sql, /person_seconds/u);
+  assert.match(sql, /'field-session\.ended:field_session_group_' \|\| NEW\.id/u);
   assert.match(sql, /INSERT OR IGNORE INTO field_sessions/u);
-  assert.match(sql, /g\.state IN \('closed', 'expired'\)/u);
 
   assert.doesNotMatch(sql, /latitude|longitude|gps|route_polyline|session_secret|qr_token|room_code/iu);
 });
 
-test("migration 0007 retains expired groups without inventing missing person-time", async () => {
+test("migration 0007 expires the same active session without inventing missing person-time", async () => {
   const sql = await readFile("migrations/0007_field_sessions_events.sql", "utf8");
 
   assert.match(sql, /CREATE TRIGGER trg_field_group_expiry_history/u);
   assert.match(sql, /OLD\.state = 'active' AND NEW\.state = 'expired'/u);
-  assert.match(sql, /'group-expired'/u);
+  assert.match(
+    sql,
+    /CREATE TRIGGER trg_field_group_expiry_history[\s\S]*UPDATE field_sessions[\s\S]*end_reason = 'group-expired'[\s\S]*status = 'closed'/u,
+  );
   assert.match(sql, /'field_session\.expired'/u);
   assert.match(sql, /WHEN NEW\.participant_count IS NULL THEN NULL/u);
   assert.match(sql, /actor_kind[\s\S]*'system'/u);
