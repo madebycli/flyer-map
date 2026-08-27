@@ -1,31 +1,8 @@
+import type { FieldSessionSummary } from "../data/fieldSessionApi.ts";
 import "./field-session-history.css";
 
-export type FieldSessionHistoryItem = {
-  id: string;
-  mode: "distribution" | "collection";
-  startedAt: string;
-  durationMinutes: number;
-  participantCount: number;
-  personMinutes: number;
-  affectedTaskCount: number;
-  note: string;
-};
-
 type Props = {
-  items: readonly FieldSessionHistoryItem[];
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
-  labels: {
-    title: string;
-    empty: string;
-    distribution: string;
-    collection: string;
-    participants: string;
-    duration: string;
-    personTime: string;
-    affectedTasks: string;
-    selected: string;
-  };
+  items: readonly FieldSessionSummary[];
 };
 
 function formatDate(value: string) {
@@ -37,59 +14,67 @@ function formatDate(value: string) {
   }).format(date);
 }
 
-function formatHours(minutes: number) {
-  if (!Number.isFinite(minutes) || minutes < 0) return "–";
+function formatDuration(seconds: number | null) {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return "–";
+  const minutes = Math.round(seconds / 60);
   const hours = Math.floor(minutes / 60);
-  const rest = Math.round(minutes % 60);
+  const rest = minutes % 60;
   if (hours === 0) return `${rest} min`;
   if (rest === 0) return `${hours} h`;
   return `${hours} h ${rest} min`;
 }
 
-export function FieldSessionHistory({ items, selectedId, onSelect, labels }: Props) {
+function endReasonLabel(item: FieldSessionSummary) {
+  if (item.status === "active") return "Aktiv";
+  if (item.endReason === "group-expired") return "Automatisch beendet";
+  return "Abgeschlossen";
+}
+
+export function FieldSessionHistory({ items }: Props) {
   return (
-    <section className="field-session-history" aria-label={labels.title}>
+    <section className="field-session-history" aria-label="Einsatzhistorie">
       <header>
-        <strong>{labels.title}</strong>
+        <strong>Einsatzhistorie</strong>
         <span>{items.length}</span>
       </header>
-      {items.length === 0 ? <p className="field-session-history-empty">{labels.empty}</p> : null}
+      {items.length === 0 ? (
+        <p className="field-session-history-empty">Noch keine gespeicherten Einsätze.</p>
+      ) : null}
       <div className="field-session-history-list">
-        {items.map((item) => {
-          const selected = item.id === selectedId;
-          return (
-            <button
-              type="button"
-              key={item.id}
-              className={`field-session-history-card ${selected ? "is-selected" : ""}`}
-              aria-pressed={selected}
-              onClick={() => onSelect(selected ? null : item.id)}
-            >
+        {items.map((item) => (
+          <article className="field-session-history-card" key={item.id}>
+            <div className="field-session-history-card-topline">
               <span className="field-session-history-date">{formatDate(item.startedAt)}</span>
-              <strong>{item.mode === "distribution" ? labels.distribution : labels.collection}</strong>
-              <dl>
-                <div>
-                  <dt>{labels.duration}</dt>
-                  <dd>{formatHours(item.durationMinutes)}</dd>
-                </div>
-                <div>
-                  <dt>{labels.participants}</dt>
-                  <dd>{item.participantCount}</dd>
-                </div>
-                <div>
-                  <dt>{labels.personTime}</dt>
-                  <dd>{formatHours(item.personMinutes)}</dd>
-                </div>
-                <div>
-                  <dt>{labels.affectedTasks}</dt>
-                  <dd>{item.affectedTaskCount}</dd>
-                </div>
-              </dl>
-              {item.note ? <p>{item.note}</p> : null}
-              {selected ? <span className="field-session-history-selected">{labels.selected}</span> : null}
-            </button>
-          );
-        })}
+              <span
+                className="field-session-history-team-dot"
+                style={{ backgroundColor: item.teamColor }}
+                aria-hidden="true"
+              />
+            </div>
+            <strong>
+              {item.mode === "distribution" ? "Flyer verteilen" : "Kleidersammlung"}
+            </strong>
+            <span className="field-session-history-team">{item.teamName}</span>
+            <dl>
+              <div>
+                <dt>Dauer</dt>
+                <dd>{formatDuration(item.durationSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Personen</dt>
+                <dd>{item.participantCount ?? "–"}</dd>
+              </div>
+              <div>
+                <dt>Personenzeit</dt>
+                <dd>{formatDuration(item.personSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{endReasonLabel(item)}</dd>
+              </div>
+            </dl>
+          </article>
+        ))}
       </div>
     </section>
   );
