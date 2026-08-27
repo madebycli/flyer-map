@@ -29,7 +29,7 @@ Plan 017 ist die aktuelle Delivery-Source-of-Truth für neue Produktfeatures.
 
 Normale Launcher-Features zählen nicht als fertig, wenn sie nur aus Workbench, Fake-Daten oder lokalem React-State bestehen. Shared Features brauchen den vollständigen UI-/Persistenz-/Autorisierungs-/Fehler-/Test-Weg.
 
-FC0 und der FC1-Runtime-Slice liegen aktuell auf Draft PR #72, Branch `plan-feature-complete-platform`.
+FC0, FC1 und der aktuelle FC2-Runtime-Slice liegen auf Draft PR #72, Branch `plan-feature-complete-platform`.
 
 ## Unified platform UI
 
@@ -73,7 +73,7 @@ Der aktuelle FC1-Runtime-Slice umfasst:
 
 ### Manager member roster
 
-Die zuvor offene FC1-Mitgliederverwaltung ist jetzt umgesetzt:
+Die FC1-Mitgliederverwaltung ist umgesetzt:
 - aktiver Member-Roster nur für echte Gruppenmanager;
 - Admin darf innerhalb der Campaign lesen/entfernen;
 - Team Editor nur für Gruppen des eigenen canonical Team-Scope;
@@ -84,27 +84,77 @@ Die zuvor offene FC1-Mitgliederverwaltung ist jetzt umgesetzt:
 - Gruppen-Membership-Count wird danach autoritativ neu geladen;
 - Source-Guard schützt davor, dass das Panel wieder aus dem echten Team-Hub-Build verschwindet.
 
-## Durable Field Session close/expiry history
+## FC2 Field Sessions und operative Historie
 
 ADR-0017 ist akzeptiert.
 
-`migrations/0007_field_sessions_events.sql` ist die erste minimale dauerhafte Session-/Event-Grundlage:
+`migrations/0007_field_sessions_events.sql` bleibt die dauerhafte Session-/Event-Grundlage:
 - `field_sessions`;
 - minimierte `domain_events`;
 - deterministische Field-Group-zu-Session-Beziehung;
+- aktive Session ab Gruppenstart;
 - dedupliziertes `field_session.closed` bei manuellem Close;
 - `field_session.expired` bei 24h-Sicherheitsablauf;
 - Dauer, explizite Teilnehmerzahl und Person-Time;
+- optionale Session-Notiz;
 - unbekannte Teilnehmer/Person-Time bleiben bei vergessener Expiry `NULL` statt erfunden zu werden;
 - keine GPS-Trails, Secrets oder vollen Campaign-Snapshots im Eventmodell.
 
-Der Worker blockiert normalen Group-Close mit `field_session_schema_unavailable`, solange 0007 nicht vorhanden ist. Mit 0007 bindet SQLite den autorisierten `active -> closed` bzw. `active -> expired` Übergang transaktional an die Session-/Event-Historie.
+Der Worker blockiert normalen Group-Close mit `field_session_schema_unavailable`, solange 0007 nicht vorhanden ist. Mit 0007 bindet SQLite den autorisierten `active -> closed` bzw. `active -> expired` Übergang transaktional an dieselbe Session-/Event-Historie.
 
-Das ist nur die FC1-Endzustands-Grundlage. Session-History-Reads, Notizen, Task-Event-Attribution, Comments, Activity und Automations gehören zu FC2.
+### Reale Einsatzhistorie
+
+Das Launcher-Ziel `Einsätze` verwendet jetzt echte serverseitige Field Sessions:
+- Campaign-/Team-/temporärer Group-Scope wird im Worker erzwungen;
+- stabile Cursor-Pagination;
+- Dauer, Teilnehmer, Person-Time und Status;
+- Anzahl unterschiedlicher betroffener Street-/House-Aufgaben wird aus `task.status.changed` Events mit deduplizierter Task-Identität abgeleitet;
+- keine Fake-/Workbench-Historie als Produktzustand.
+
+### Task-Event-Attribution
+
+M5 `task.set-status` und `house.set-status` erzeugen bei erfolgreicher autoritativer Anwendung minimierte `task.status.changed` Domain Events:
+- Event und Domain-Mutation teilen dieselbe Campaign-Revision-/Write-Token-Batchgrenze;
+- Retry derselben M5-Mutation erzeugt kein zweites Event;
+- temporäre Mitglieder werden nur ihrer serverbekannten Field Group/Session zugeordnet;
+- bei mehreren möglichen persistenten Memberships wird keine Session geraten;
+- Event-Payload enthält nur vorherigen und neuen Status plus notwendige Referenzen.
+
+### Session auf der Karte
+
+Eine Session kann aus `Einsätze` auf der Karte reflektiert werden:
+- autorisierte, deduplizierte Task-Referenzen werden über einen eigenen bounded Read-Endpunkt geladen;
+- aktuelle/reviewed Street-Geometrie wird in einer separaten MapLibre-Layer hervorgehoben;
+- der normale Task-Auswahl-/Bearbeitungspfad bleibt unangetastet;
+- das Highlight ist transient und kann wieder ausgeblendet werden;
+- House-Events werden in Historie und Zählung berücksichtigt, aber nicht als Polygon-Highlight vorgetäuscht, solange der normale House-Polygon-Renderer aus FC4 noch fehlt;
+- es wird keine Route oder historische Geometriekopie gespeichert.
+
+### Session-Notizen
+
+Session-Notizen sind jetzt Runtime-Funktion:
+- `field_sessions.note` aus Migration 0007 wird verwendet, keine zusätzliche Migration erforderlich;
+- maximal 1000 getrimmte Zeichen;
+- leerer Text löscht die Notiz zu `NULL`;
+- Text bleibt inert und wird als gebundener D1-Wert gespeichert;
+- Admin darf Notizen aller Campaign-Sessions ändern;
+- Team Editor nur Sessions des eigenen Teams;
+- Viewer und temporäre Field-Group-Mitglieder bleiben read-only;
+- Notizen bleiben offline lesbar, Änderungen sind online-only;
+- die UI aktualisiert erst nach erfolgreichem Worker-Write.
+
+### Noch offen in FC2
+
+Noch nicht feature-complete:
+- dauerhafte Comments auf Campaign/Area/Street/House/Pickup-Kontext;
+- explizite Comment Edit/Delete/Moderation-Semantik vor Runtime;
+- Activity Feed als Projektion normalisierter Domain Events;
+- deterministische, autorisierte, idempotente Automations;
+- House-Polygon-Highlight, sobald der normale FC4 House-Renderer vorhanden ist.
 
 ## Team lifecycle
 
-Sicheres Team-Archivieren ist **nicht** als versteckte FC1-Nebenänderung umgesetzt.
+Sicheres Team-Archivieren ist nicht als versteckte FC1-Nebenänderung umgesetzt.
 
 Grund:
 - das aktuelle Teammodell besitzt kein persistentes Archivstatusfeld;
@@ -134,7 +184,7 @@ House Rendering als normaler batched MapLibre-Layer bleibt FC4-Arbeit.
 
 Dokumentierter Remote-Stand bleibt nur 0001 bis 0003.
 
-Prepared, aber **nicht remote angewendet**:
+Prepared, aber nicht remote angewendet:
 - 0004: Smart Street provenance;
 - 0005: House Tasks;
 - 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
@@ -154,12 +204,12 @@ Weiterhin verbindlich:
 - temporäre Membership erweitert keinen persistenten Role-Scope.
 
 Letzter vollständig verifizierter Runtime-Checkpoint:
-- Head `dc376504ba1c7cd64643f4d94e3371fedde452ca`;
-- CI #623 erfolgreich;
+- Head `d25669224a7bedf57939da7ff1dd0382aa26bc09`;
+- CI #684 erfolgreich;
 - Tests, Typecheck, Dependency Audit und Production Build grün;
-- dieser Lauf kompiliert den echten importierten Member-Roster-UI-Pfad.
+- dieser Lauf enthält reale Field-Session-History, Task-Event-Attribution, Street-Map-Highlight und autorisierte Session-Notizen.
 
-Spätere Source-Guard-/Dokumentationscommits müssen auf ihrem eigenen exakten Head erneut grün werden, bevor PR #72 promotet wird.
+Dokumentationscommits nach diesem Runtime-Checkpoint müssen auf ihrem eigenen exakten Head erneut grün werden, bevor PR #72 promotet wird.
 
 ## Architecture blockers for later work
 
@@ -171,13 +221,13 @@ Noch nicht autorisiert:
 - Service Worker/PWA/Background Sync;
 - kontinuierliche GPS-Historie.
 
-ADR-0014 und ADR-0017 sind akzeptiert und keine Blocker mehr für ihre aktuellen FC1-Slices.
+ADR-0014 und ADR-0017 sind akzeptiert und keine Blocker mehr für ihre aktuellen FC1-/FC2-Slices.
 
 ## Immediate next
 
-1. Exakten aktuellen PR-#72-Head nach Source-Guard und Doku vollständig durch CI laufen lassen.
-2. PR #72 Body/Status auf den tatsächlichen Runtime-Inhalt aktualisieren.
-3. 0004 bis 0007 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.
-4. Danach FC2 mit autorisierter Field-Session-History-Read-API beginnen.
-5. `Einsätze` auf echte Session-Historie umstellen.
-6. Anschließend Task-Event-Attribution über M5 idempotent anbinden, danach Comments und Activity.
+1. Comment Edit/Delete/Moderation-Semantik für FC2 explizit festlegen und dokumentieren.
+2. Danach dauerhafte, serverautorisierte Comments auf Campaign/Area/Street/House/Pickup-Kontext umsetzen.
+3. Comment-Events nur nach der festgelegten Semantik in die normale Activity-Historie aufnehmen.
+4. Activity Feed aus normalisierten Domain Events aufbauen.
+5. Deterministische Automations mit explizitem Trigger/Effekt und Idempotenz anbinden.
+6. 0004 bis 0007 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.
