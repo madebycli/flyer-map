@@ -102,6 +102,99 @@ function existingHouseSnapshotsUnchanged(
   return { allowed: true };
 }
 
+function taskStatusOnlyUnchanged(
+  previous: CampaignSnapshot["tasks"][number],
+  next: CampaignSnapshot["tasks"][number],
+) {
+  const {
+    status: _previousStatus,
+    completedAt: _previousCompletedAt,
+    updatedAt: _previousUpdatedAt,
+    ...previousRest
+  } = previous;
+  const {
+    status: _nextStatus,
+    completedAt: _nextCompletedAt,
+    updatedAt: _nextUpdatedAt,
+    ...nextRest
+  } = next;
+  return same(previousRest, nextRest);
+}
+
+function houseStatusOnlyUnchanged(
+  previous: NonNullable<CampaignSnapshot["houseTasks"]>[number],
+  next: NonNullable<CampaignSnapshot["houseTasks"]>[number],
+) {
+  const {
+    status: _previousStatus,
+    completedAt: _previousCompletedAt,
+    updatedAt: _previousUpdatedAt,
+    ...previousRest
+  } = previous;
+  const {
+    status: _nextStatus,
+    completedAt: _nextCompletedAt,
+    updatedAt: _nextUpdatedAt,
+    ...nextRest
+  } = next;
+  return same(previousRest, nextRest);
+}
+
+function authorizeFieldGroupMemberSnapshot(
+  access: AccessContext,
+  previous: CampaignSnapshot,
+  next: CampaignSnapshot,
+): WriteAuthorization {
+  if (!access.teamId || !access.groupId || !access.membershipId) {
+    return { allowed: false, reason: "field_group_scope_missing" };
+  }
+  if (!campaignConfigUnchanged(previous, next)) {
+    return { allowed: false, reason: "field_group_campaign_change_forbidden" };
+  }
+  if (!same(previous.teams, next.teams) || !same(previous.areas, next.areas)) {
+    return { allowed: false, reason: "field_group_management_forbidden" };
+  }
+  if (previous.tasks.length !== next.tasks.length) {
+    return { allowed: false, reason: "field_group_task_structure_forbidden" };
+  }
+  if ((previous.houseTasks ?? []).length !== (next.houseTasks ?? []).length) {
+    return { allowed: false, reason: "field_group_house_structure_forbidden" };
+  }
+
+  const areaTeams = new Map(previous.areas.map((area) => [area.id, area.teamId]));
+  const nextTasks = new Map(next.tasks.map((task) => [task.id, task]));
+  for (const previousTask of previous.tasks) {
+    const nextTask = nextTasks.get(previousTask.id);
+    if (!nextTask) return { allowed: false, reason: "field_group_task_delete_forbidden" };
+    if (areaTeams.get(previousTask.areaId) !== access.teamId) {
+      if (!same(previousTask, nextTask)) {
+        return { allowed: false, reason: "field_group_foreign_task_forbidden" };
+      }
+      continue;
+    }
+    if (!taskStatusOnlyUnchanged(previousTask, nextTask)) {
+      return { allowed: false, reason: "field_group_task_change_forbidden" };
+    }
+  }
+
+  const nextHouses = new Map((next.houseTasks ?? []).map((task) => [task.id, task]));
+  for (const previousTask of previous.houseTasks ?? []) {
+    const nextTask = nextHouses.get(previousTask.id);
+    if (!nextTask) return { allowed: false, reason: "field_group_house_delete_forbidden" };
+    if (areaTeams.get(previousTask.areaId) !== access.teamId) {
+      if (!same(previousTask, nextTask)) {
+        return { allowed: false, reason: "field_group_foreign_house_forbidden" };
+      }
+      continue;
+    }
+    if (!houseStatusOnlyUnchanged(previousTask, nextTask)) {
+      return { allowed: false, reason: "field_group_house_change_forbidden" };
+    }
+  }
+
+  return { allowed: true };
+}
+
 export function authorizeSnapshotWrite(
   access: AccessContext,
   previous: CampaignSnapshot,
@@ -120,6 +213,9 @@ export function authorizeSnapshotWrite(
 
   if (access.role === "admin") return { allowed: true };
   if (access.role === "viewer") return { allowed: false, reason: "viewer_read_only" };
+  if (access.role === "field-group-member") {
+    return authorizeFieldGroupMemberSnapshot(access, previous, next);
+  }
   if (!access.teamId) return { allowed: false, reason: "editor_team_scope_missing" };
 
   const teamId = access.teamId;
