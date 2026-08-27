@@ -65,8 +65,12 @@ test("launcher registry exposes only current-role real actions", () => {
 
 test("launcher remains a compact rounded sheet rather than a fullscreen dashboard", () => {
   assert.match(shellSource, /className="platform-menu-sheet"/);
-  assert.match(shellSource, /label: "Team"/);
-  assert.match(shellSource, /label: "Einstellungen"/);
+  assert.deepEqual(
+    buildPlatformLauncherItems(
+      context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
+    ).map((item) => item.label),
+    ["Karte", "Einstellungen", "Team", "Gebiet"],
+  );
   assert.match(shellCss, /\.platform-menu-overlay\s*\{[\s\S]*align-items: flex-end;/);
   assert.match(shellCss, /\.platform-menu-grid\s*\{[\s\S]*grid-template-columns: repeat\(4,/);
   assert.doesNotMatch(shellSource, /Was möchtest du öffnen\?/);
