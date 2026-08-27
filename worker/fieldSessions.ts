@@ -24,6 +24,7 @@ type FieldSessionRow = {
   duration_seconds: number | null;
   participant_count: number | null;
   person_seconds: number | null;
+  affected_task_count: number;
   status: "active" | "closed";
 };
 
@@ -124,7 +125,7 @@ function teamFilterForAccess(
 
 function schemaUnavailable(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return /no such table.*field_sessions|field_sessions.*does not exist/iu.test(message);
+  return /no such table.*field_sessions|field_sessions.*does not exist|no such table.*domain_events|domain_events.*does not exist/iu.test(message);
 }
 
 export async function handleFieldSessionsApi(
@@ -179,6 +180,12 @@ export async function handleFieldSessionsApi(
            s.duration_seconds,
            s.participant_count,
            s.person_seconds,
+           (
+             SELECT COUNT(DISTINCT e.entity_type || '|' || e.entity_id)
+             FROM domain_events e
+             WHERE e.field_session_id = s.id
+               AND e.event_type = 'task.status.changed'
+           ) AS affected_task_count,
            s.status
          FROM field_sessions s
          JOIN teams t ON t.id = s.team_id AND t.campaign_id = s.campaign_id
@@ -226,6 +233,7 @@ export async function handleFieldSessionsApi(
         durationSeconds: row.duration_seconds,
         participantCount: row.participant_count,
         personSeconds: row.person_seconds,
+        affectedTaskCount: row.affected_task_count,
         status: row.status,
       })),
       nextCursor: hasMore && last ? cursorFor(last) : null,
