@@ -334,8 +334,8 @@ function domainEventStatement(
     previousStatus: event.previousStatus,
     newStatus: event.newStatus,
   });
-  const eventId = `domain_event_mutation_${mutation.id}`;
-  const dedupeKey = `campaign-mutation:${mutation.id}:task-status`;
+  const eventId = "domain_event_mutation_" + mutation.id;
+  const dedupeKey = "campaign-mutation:" + mutation.id + ":task-status";
 
   return db
     .prepare(
