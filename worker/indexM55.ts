@@ -1,6 +1,9 @@
 import baseWorker from "./index.ts";
 import { resolveAccess } from "./access.ts";
-import type { D1DatabaseLike } from "./campaignRepository.ts";
+import {
+  loadCampaignSnapshot,
+  type D1DatabaseLike,
+} from "./campaignRepository.ts";
 import { handleFieldGroupApi, type FieldGroupEnv } from "./fieldGroups.ts";
 import { handleOfflineMapPackage } from "./offlineMap.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
@@ -23,8 +26,28 @@ const jsonError = (status: number, code: string, message: string) =>
     },
   );
 
+const json = (data: unknown, init: ResponseInit = {}) =>
+  Response.json(data, {
+    ...init,
+    headers: {
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      ...init.headers,
+    },
+  });
+
 export function offlineMapCampaignRoute(pathname: string) {
   const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/offline-map\/package$/);
+  if (!match) return null;
+  try {
+    return parseCampaignId(decodeURIComponent(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+function snapshotCampaignRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/snapshot$/u);
   if (!match) return null;
   try {
     return parseCampaignId(decodeURIComponent(match[1]));
@@ -38,12 +61,62 @@ function sameOrigin(request: Request) {
   return !origin || origin === new URL(request.url).origin;
 }
 
+async function temporarySnapshotResponse(
+  request: Request,
+  db: D1DatabaseLike,
+  campaignId: string,
+) {
+  const access = await resolveAccess(db, request, campaignId);
+  if (access?.role !== "field-group-member") return null;
+
+  if (request.method === "PUT") {
+    return jsonError(
+      403,
+      "field_group_snapshot_write_forbidden",
+      "Temporäre Gruppenmitglieder dürfen keine vollständigen Campaign-Snapshots schreiben.",
+    );
+  }
+  if (request.method !== "GET") return null;
+  if (!access.teamId) {
+    return jsonError(403, "field_group_scope_missing", "Temporärer Team-Scope fehlt.");
+  }
+
+  const snapshot = await loadCampaignSnapshot(db, campaignId);
+  if (!snapshot) return jsonError(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+
+  const areaIds = new Set(
+    snapshot.areas.filter((area) => area.teamId === access.teamId).map((area) => area.id),
+  );
+  const scoped = {
+    ...snapshot,
+    teams: snapshot.teams.filter((team) => team.id === access.teamId),
+    areas: snapshot.areas.filter((area) => areaIds.has(area.id)),
+    tasks: snapshot.tasks.filter((task) => areaIds.has(task.areaId)),
+    houseTasks: (snapshot.houseTasks ?? []).filter((task) => areaIds.has(task.areaId)),
+  };
+
+  return json(scoped, {
+    headers: { etag: `"${campaignId}:${snapshot.revision}:team:${access.teamId}"` },
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const fieldGroupResponse = await handleFieldGroupApi(request, env);
     if (fieldGroupResponse) return fieldGroupResponse;
 
-    const campaignId = offlineMapCampaignRoute(new URL(request.url).pathname);
+    const url = new URL(request.url);
+    const snapshotCampaignId = snapshotCampaignRoute(url.pathname);
+    if (snapshotCampaignId && env.DB) {
+      try {
+        const response = await temporarySnapshotResponse(request, env.DB, snapshotCampaignId);
+        if (response) return response;
+      } catch {
+        return jsonError(500, "temporary_snapshot_failed", "Team-Kartendaten konnten nicht geladen werden.");
+      }
+    }
+
+    const campaignId = offlineMapCampaignRoute(url.pathname);
     if (!campaignId) return baseWorker.fetch(request, env);
 
     if (request.method !== "POST") {
