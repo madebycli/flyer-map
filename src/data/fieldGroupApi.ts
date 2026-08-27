@@ -90,6 +90,10 @@ function groupPath(campaignId: string, groupId: string) {
   return `${groupsPath(campaignId)}/${encodeURIComponent(groupId)}`;
 }
 
+export function createFieldGroupRequestId(scope = "field-group") {
+  return `${scope}_${crypto.randomUUID()}`;
+}
+
 export async function fetchFieldGroups(campaignId: string, teamId?: string | null) {
   const query = teamId ? `?team=${encodeURIComponent(teamId)}` : "";
   const response = await apiFetch(`${groupsPath(campaignId)}${query}`);
@@ -110,15 +114,17 @@ export async function createFieldGroup(
     discoverable?: boolean;
     participantCount?: number | null;
   },
+  requestId = createFieldGroupRequestId("create"),
 ) {
   const response = await apiFetch(groupsPath(campaignId), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, requestId }),
   });
   return (await response.json()) as {
     group: FieldGroupSummary;
-    credentials: FieldGroupCredentials;
+    credentials: FieldGroupCredentials | null;
+    alreadyApplied: boolean;
   };
 }
 
@@ -135,13 +141,20 @@ export async function updateFieldGroup(
   return ((await response.json()) as { group: FieldGroupSummary }).group;
 }
 
-export async function rotateFieldGroupCredentials(campaignId: string, groupId: string) {
+export async function rotateFieldGroupCredentials(
+  campaignId: string,
+  groupId: string,
+  requestId = createFieldGroupRequestId("rotate"),
+) {
   const response = await apiFetch(`${groupPath(campaignId, groupId)}/credentials/rotate`, {
     method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ requestId }),
   });
   return (await response.json()) as {
     group: FieldGroupSummary;
-    credentials: FieldGroupCredentials;
+    credentials: FieldGroupCredentials | null;
+    alreadyApplied: boolean;
   };
 }
 
@@ -166,6 +179,7 @@ export async function joinFieldGroup(
     group: FieldGroupSummary;
     membership: { id: string; temporary: boolean };
     access: FieldGroupAccessInfo;
+    alreadyApplied?: boolean;
   };
 }
 
@@ -197,6 +211,7 @@ export async function closeFieldGroup(
   return (await response.json()) as {
     group: FieldGroupSummary;
     tourSummary: FieldGroupTourSummary;
+    alreadyApplied?: boolean;
   };
 }
 
