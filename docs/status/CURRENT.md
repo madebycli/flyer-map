@@ -2,7 +2,7 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-26
+last_updated: 2026-08-27
 ---
 
 # Current Project State
@@ -15,6 +15,16 @@ The field map remains MapLibre GL JS 5.7.1 with the CARTO online basemap. Prepar
 
 M4 access/session authorization, M5 resilient mutation synchronization and the M5.5 prepared-offline-map storage lifecycle are established foundations.
 
+## Delivery direction
+
+Plan 017 changes the implementation model from normal-product Foundation previews to vertical feature-complete delivery.
+
+A visible Launcher module is no longer considered delivered merely because local UI, fake data, domain helpers or a Workbench route exists. Shared features must include their real persistence, Worker authorization, offline/retry behavior where relevant, complete user states, tests and production verification before they count as complete.
+
+Internal `?workbench=` routes may remain for development but are not normal product navigation and do not count as completed features.
+
+The next prioritized feature-complete product area is the Team Hub + Live Field Group system. Durable Field Sessions/Activity/Comments and real statistics follow directly after it.
+
 ## Unified platform UI
 
 The normal website starts in one unified platform shell while the map remains mounted as the primary field workspace.
@@ -23,15 +33,14 @@ Plan 016 defines the current mobile field chrome:
 - permanent Team dropdown removed from the composed field UI;
 - permanent Settings/Teams/Draw-Area toolbar removed from the composed browse chrome;
 - bottom-left now shows only a compact 3x3 app-grid button plus the visible Team name, with Team color only as a supporting marker;
-- former toolbar actions stay out of the permanent bottom bar and may later move into the launcher according to effective permissions;
+- former toolbar actions stay out of the permanent bottom bar and move into launcher/module flows according to effective permissions;
 - the app menu is a rounded sheet over the map, visually aligned with the existing Settings/Teams sheet family;
 - launcher destinations use large phone-style rounded icons with short labels such as Karte, Stats, Team, Feedback, Smart and Einsätze;
-- Admin-only launcher destinations remain hidden unless current access is Admin;
 - selecting a launcher destination may still open its dedicated full module surface.
 
-Integrated modules still include Campaign progress, operational comments/Pickup/Field Session foundations, Smart Streets/Houses, Live Groups, Actions/Analytics, Support and authorized Admin foundations.
+Before further feature work, FC0 in Plan 017 must make the new navigation functionally complete: the displayed Team name must follow the real active map Team, existing Settings/Team/Area actions must remain reachable through a typed PlatformShell/App bridge, and unfinished Foundation modules must not be offered as normal finished destinations.
 
-Local Foundation UI does not imply durable server persistence. Comments/Pickup/Field Session integration remains explicitly local until the corresponding reviewed persistence slices are implemented. Admin/Live Group security-gated surfaces continue to show only non-authoritative Foundation behavior.
+Current integrated preview/foundation surfaces include Campaign progress, operational comments/Pickup/Field Session UI, Smart Streets/Houses, Live Groups, Actions/Analytics, Support and Admin. They remain development inputs until their corresponding feature-complete slices replace local/fake state with authoritative runtime behavior.
 
 ## M6 Street and House persistence
 
@@ -60,7 +69,7 @@ Plan 015 adds the durable House persistence foundation without changing the esta
 
 Before 0005 Street reads/writes continue normally, House reads do not query a missing table, and House writes fail explicitly with `schema_migration_required` before revision claim.
 
-House rendering remains a deliberate follow-up. `vf-streets` continues to contain only Street LineStrings until a batched House Polygon layer is implemented and density-tested.
+House rendering remains a deliberate feature-complete follow-up. `vf-streets` continues to contain only Street LineStrings until a batched House Polygon layer is implemented and density-tested.
 
 ## Security/release gates
 
@@ -70,8 +79,13 @@ Prepared/parameterized SQL remains mandatory. External/user-controlled content r
 
 ## Architecture still blocked for later milestones
 
-Do not silently implement Organization account/password/TOTP/session runtime before accepted ADR-0015 and threat-model review, configurable capability enforcement before accepted ADR-0016, Live Group credential runtime before accepted ADR-0014, durable Field Session event history before its accepted retention/event decision, durable Action/Templates/Analytics persistence before its accepted architecture decision, Service Worker/PWA/Background Sync, or continuous GPS history.
+Do not silently implement Organization account/password/TOTP/session runtime before accepted ADR-0015 and threat-model review, configurable capability enforcement before accepted ADR-0016, Live Group credential runtime before accepted ADR-0014, durable Field Session event history before accepted ADR-0017, durable Action/Templates/Analytics persistence before accepted ADR-0018, Service Worker/PWA/Background Sync, or continuous GPS history.
 
 ## Immediate next
 
-Verify the corrected bottom launcher branch on its exact final head. Keep migrations 0004 and 0005 as separate intentional D1 rollout operations. After the navigation polish, the next M6 product slice remains the batched House map/runtime interaction layer.
+1. Keep the current stacked release/House/launcher PR state explicit and verify exact heads before promotion or retargeting.
+2. Complete Plan 017 FC0 navigation/action bridge so the bottom launcher is the authoritative product navigation without losing Settings/Team/Area actions.
+3. Finalize and explicitly accept the remaining ADR-0014 decisions.
+4. Build Team Hub + Live Field Groups end-to-end with real D1/API credentials, membership, QR/Room Code, participant count, close/expiry, authorization and multi-device behavior.
+5. Finalize ADR-0017 and attach durable Field Sessions/events directly to the finished group flow.
+6. Keep migrations 0004 and 0005 as separate intentional D1 rollout operations until explicitly authorized.
