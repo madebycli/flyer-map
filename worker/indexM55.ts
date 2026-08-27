@@ -9,6 +9,7 @@ import {
   parseFieldGroupRoute,
   type FieldGroupEnv,
 } from "./fieldGroups.ts";
+import { handleFieldGroupMembersApi } from "./fieldGroupMembers.ts";
 import { hasFieldSessionHistorySchema } from "./fieldSessionHistory.ts";
 import { handleOfflineMapPackage } from "./offlineMap.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
@@ -113,6 +114,12 @@ async function temporarySnapshotResponse(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    if (env.DB) {
+      const memberResponse = await handleFieldGroupMembersApi(request, env.DB);
+      if (memberResponse) return memberResponse;
+    }
+
     const fieldGroupRoute = parseFieldGroupRoute(url.pathname);
     if (
       fieldGroupRoute?.kind === "close" &&
