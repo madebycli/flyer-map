@@ -1,209 +1,208 @@
 ---
 id: architecture-collaboration
 type: architecture
-status: proposed
-last_updated: 2026-08-25
-related: [product-roadmap, architecture-data, architecture-security, architecture-offline-sync, architecture-live-teams, plan-012-platform-app-expansion]
-source_of_truth_for: [future-comments, future-activity, future-automations, future-statistics, future-field-sessions]
+status: active
+last_updated: 2026-08-27
+related: [product-roadmap, architecture-data, architecture-security, architecture-offline-sync, architecture-live-teams, plan-012-platform-app-expansion, ADR-0017, ADR-0018]
+source_of_truth_for: [field-session-foundation, future-comments, future-activity, future-automations, future-statistics]
 ---
 
-# Collaboration, Field Sessions, Activity, Automations and Statistics — Proposed
+# Collaboration, Field Sessions, Activity, Automations and Statistics
 
 ## Purpose
 
-Record constraints for future comments, Field Sessions, activity history, automations and statistics. These capabilities are planned but not yet implemented.
+Record the accepted collaboration/history boundary and distinguish the durable Field Session foundation already implemented for Field Group close/expiry from the broader FC2 features that are still pending.
 
-## Field Sessions / Einsätze
+ADR-0017 is accepted and governs Field Session/event retention. ADR-0018 continues to govern future action/template and cross-action analytics persistence.
+
+## Current durable Field Session foundation
 
 A Field Session represents one concrete outing/work period by a Team or temporary Field Group.
 
-Candidate fields:
-- stable id;
+The first durable slice is tied to Field Group end state and stores only explicit operational data:
+- stable application-owned id;
 - Campaign id;
 - Team id;
-- optional Field Group id;
-- mode: distribution or collection;
-- date;
-- start/end timestamps or explicit duration;
-- participant count;
-- optional note;
-- created/closed by actor reference;
-- lifecycle timestamps.
+- Field Group id;
+- distribution/collection mode;
+- start/end timestamps;
+- duration;
+- participant count when explicitly known;
+- person-time when participant count is known;
+- lifecycle status and timestamps.
 
-### Why sessions exist
+No walked/driven route is stored.
 
-Sessions provide the operational memory that coordinators currently reconstruct manually after the fact.
+### Manual close
 
-They should answer:
-- how often was the Team out?;
-- how long did the outing take?;
-- how many people participated?;
-- what work was completed?;
-- was the Area realistically sized?;
-- what was the approximate person-time?
+Normal manual close requires a final participant count. The group transition and durable session/event history are bound to the same D1 transaction once migration 0007 is present.
 
-### Person-time
+The session stores duration, participant count and person-time. A deduplicated `field_session.closed` domain event is appended.
 
-Person-time may be calculated from duration × participant count.
+### Safety expiry
 
-It is an operational planning metric, not a worker-ranking metric.
+The 24-hour Field Group expiry is a safety fallback, not a normal user-completed tour.
 
-Do not derive it from GPS presence or continuous location history.
+Expired groups still receive durable history so the outing does not disappear. If no participant count was ever explicitly recorded, participant count and person-time remain unknown instead of being fabricated. The event type is `field_session.expired`.
 
-## Session work / map highlighting
+## Person-time
 
-A session should be related to the actual Task/domain events created or changed while the session is active.
+Person-time is duration multiplied by explicit participant count.
 
-Possible storage direction:
-- activity/domain events reference `field_session_id` when applicable;
-- session summaries derive affected Task ids from those events;
-- map highlight reads those Task ids and highlights current/relevant geometry.
+It is an operational planning metric, not a worker-ranking metric. Do not derive it from GPS presence, joined-device count or continuous location history.
 
-Do not store a continuous route polyline merely to recreate what a Team did.
+## Domain events
 
-Historical geometry semantics need an ADR if later requirements demand showing the exact old geometry after Tasks were edited/deleted.
+ADR-0017 accepts append-only minimized domain events.
 
-## Comments
+Current implemented minimum:
+- `field_session.closed`;
+- `field_session.expired`.
 
-Comments should attach to explicit context:
-- Campaign;
-- Area;
-- Task (Street/House/Pickup etc.);
-- optionally Field Session if product testing shows value.
+Broader event types are added only with the feature slice that authoritatively owns the underlying mutation.
 
-Requirements:
-- server-authorized read/write scope;
-- timestamps and stable ids;
-- operational actor reference/label;
-- edit/delete/moderation policy defined before implementation;
-- no unnecessary personal profile collection.
-
-## Activity history
-
-Meaningful mutations should become append-only activity/domain events once the event model exists.
-
-Candidate events:
+Candidate FC2 events include:
 - Area created/renamed/geometry changed;
-- Task generated/created/status changed/deleted;
+- Task created/status changed/deleted;
 - Team created/renamed/color changed/archived;
 - Field Session started/closed;
-- participant count/duration feedback recorded;
-- Field Group created/joined/closed where appropriate;
-- pickup address added/status changed;
-- comment created;
-- automation executed;
-- access/admin/permission changes where safe to expose.
+- Pickup status changes;
+- comment created/edited/deleted according to the accepted comment policy;
+- deterministic automation executions.
 
-Activity supports auditability, session reconstruction and progress statistics.
+Events never contain unrestricted request bodies, credentials, raw exports, full Campaign snapshots or continuous GPS trails.
 
-## Automations
+## Idempotency and authority
+
+The client does not manufacture authoritative history.
+
+A domain event is created only when the underlying server-authorized operation applies. Retry/replay must not duplicate history.
+
+For the current Field Group end-state slice:
+- deterministic Field Session relationship prevents duplicate sessions;
+- Campaign-scoped event dedupe keys prevent duplicate close/expiry events;
+- the Worker blocks normal manual close until the required 0007 history schema exists.
+
+When Task mutations gain event attribution, event creation must participate in the accepted M5 idempotency/transaction model or an equivalent deterministic relation to the applied mutation.
+
+## Session work and map highlighting, FC2
+
+Future session history should relate work to actual Task/domain events created or changed while the session is active.
+
+Accepted direction:
+- domain events reference `field_session_id` where applicable;
+- session summaries derive affected Task ids from events;
+- map highlight uses current/reviewed Task geometry;
+- no continuous route polyline is stored merely to recreate an outing;
+- exact historical geometry versioning is not required for v1 reflection.
+
+This remains FC2 work and is not implied by the current close/expiry foundation.
+
+## Comments, FC2
+
+Comments remain not yet durable feature-complete runtime.
+
+They may attach to explicit contexts such as:
+- Campaign;
+- Area;
+- Street/House/Pickup Task;
+- optionally Field Session where product testing justifies it.
+
+Before durable implementation:
+- server-authorized read/write scope is required;
+- edit/delete/moderation semantics must be explicit;
+- user text remains inert data;
+- no unnecessary personal profile collection;
+- event payload must not duplicate unrestricted comment bodies unless a specific accepted requirement needs it.
+
+## Activity history, FC2
+
+The Activity feed will be a projection of meaningful normalized events, not raw HTTP/database logs.
+
+It supports:
+- operational auditability;
+- session reconstruction;
+- map reflection;
+- progress/statistics explanation.
+
+Security-sensitive audit logging remains separate from ordinary product `domain_events` where stronger retention/restriction is required.
+
+## Automations, FC2+
 
 Automations are deterministic domain rules, not opaque AI actions.
 
-Initial candidates:
-- new Area -> propose/generate road Tasks from reviewed OSM data;
-- all building Tasks for a Street complete -> optionally complete parent Street;
-- status mutation -> append activity event;
+Candidate rules:
+- new Area -> propose/generate reviewed road Tasks;
+- all child House Tasks complete -> optionally complete parent Street;
+- accepted status mutation -> append normalized activity event;
 - progress threshold -> surface coordinator indicator;
-- session close -> compute/update derived summary;
-- synchronization/retry state -> notify when manual action is required.
+- session close -> derive summary;
+- sync/retry state -> surface manual-action warning.
 
 Requirements:
 - explicit trigger/effect;
-- privileged effects obey system/caller authorization rules;
-- idempotency prevents duplicate effects;
-- execution is observable/auditable;
-- failures are visible;
-- avoid unnecessary high-frequency polling.
+- authorization preserved;
+- idempotent effects;
+- observable success/failure;
+- no hidden high-frequency polling requirement.
 
 ## Statistics
 
-Statistics are operational metrics, not behavioral surveillance.
+Statistics remain operational, not behavioral surveillance.
 
-### Progress measures
-Candidate measures:
-- completion percentage by Campaign / Team / Area;
-- Task totals by status;
-- Street completion counts;
-- House completion counts;
-- Pickup completion separately from Distribution;
-- remaining work;
-- progress over time.
+### Current/future source model
 
-Every percentage needs an explicit denominator and unit.
+Use:
+- current Tasks for current progress denominators;
+- Field Sessions for outings/duration/participants/person-time;
+- domain events for work performed over time/session;
+- action/template relationships for repeated-round comparison once ADR-0018 is accepted.
 
-Do not silently combine Street and House counts into one percentage without an accepted aggregation rule.
+Do not add rollup tables initially. Add rollups only after measured query/scale need.
 
-### Session measures
-Candidate measures:
-- number of outings/sessions;
-- duration per session;
-- participants per session;
-- person-time;
-- work completed per session;
-- average/median session duration when meaningful;
-- Areas requiring repeated outings.
+Every percentage names its denominator. Street, House, Distribution and Collection/Pickup units are not silently mixed.
 
-### Map-linked statistics
-Selecting a session or statistic may highlight its affected current Task geometry on the map.
+## Retention and deletion
 
-This comes from Task/event relations, not GPS trails.
-
-## Data-model direction
-
-Potential future entities (names provisional):
-- comments;
-- activity_events / domain_events;
-- field_sessions;
-- field_session_task_events or event references;
-- automation_rules;
-- automation_runs;
-- precomputed statistics/rollups only when scale proves a need.
-
-Do not add all tables at once. Add only what the active plan requires with additive migrations.
-
-## Retention / deletion
-
-Before Team deletion/archive is implemented, define how session/activity/statistics history behaves.
-
-Preferred direction:
-- archive/tombstone Team identity when history must remain;
-- historical session/event rows remain referentially understandable;
-- permanent destructive deletion is explicit and narrow.
-
-Long-term event/session/statistics retention requires an ADR before large-scale implementation.
+Accepted ADR-0017 policy:
+- meaningful operational Field Sessions/events remain with Campaign/action history;
+- no automatic age-based cleanup for ordinary operational history;
+- Team identity referenced by retained history is archived/tombstoned rather than casually hard-deleted;
+- permanent Campaign deletion is a future explicit destructive Admin operation and is outside the current runtime;
+- security/legal audit retention, if later required, is separate from ordinary product history.
 
 ## Organization interaction
 
 Once Organizations exist:
 - comments/events/sessions/statistics remain tenant-scoped;
-- statistics require Organization/Campaign authorization;
-- Admin panel may aggregate only within authorized Organization;
-- automation rules are Campaign/Organization scoped only after scope model is explicit.
+- Admin aggregation is only within authorized Organization/Campaign scope;
+- capability checks remain server-side;
+- account/admin audit data stays separated from ordinary field Activity where required.
 
 ## Field UI boundary
 
-Field UI:
-- compact comments/activity access;
-- session start/close/feedback UX;
-- progress bar/percentage context;
-- session history detail with optional map highlight;
-- no giant analytics dashboard over the map.
+Field UI should stay compact:
+- session start/close/feedback;
+- concise history/activity access;
+- comments in relevant context;
+- progress context;
+- session selection and optional map highlight.
 
-Admin UI:
-- richer history/filtering;
-- statistics charts/tables;
-- Area sizing/session analysis;
-- automation configuration/failure review;
-- audit views.
+Do not turn the map into a giant analytics dashboard.
+
+Richer filtering, exports, statistics and audit views belong in Admin/analytics surfaces.
 
 ## Privacy
-
-Do not infer exact walked/driven routes or productivity from continuous GPS.
 
 Collect only explicit operational data needed by the product:
 - Task/event changes;
 - duration;
 - participant count;
-- optional note;
-- authorized live-group/session state.
+- optional note when implemented;
+- authorized group/session state.
+
+Do not infer exact walked/driven routes or individual productivity from continuous GPS.
+
+## Rollout status
+
+`migrations/0007_field_sessions_events.sql` is prepared on Draft PR #72 but is not recorded as remotely applied. Broader FC2 schema/runtime remains intentionally unimplemented until its feature-complete slice.
