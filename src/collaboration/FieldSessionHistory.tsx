@@ -69,6 +69,10 @@ export function FieldSessionHistory({ items }: Props) {
                 <dd>{formatDuration(item.personSeconds)}</dd>
               </div>
               <div>
+                <dt>Aufgaben</dt>
+                <dd>{item.affectedTaskCount}</dd>
+              </div>
+              <div>
                 <dt>Status</dt>
                 <dd>{endReasonLabel(item)}</dd>
               </div>
