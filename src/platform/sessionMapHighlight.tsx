@@ -1,4 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
+import "./session-map-highlight.css";
 
 export type SessionMapHighlight = {
   campaignId: string;
