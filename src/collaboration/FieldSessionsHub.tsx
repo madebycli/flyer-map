@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { CampaignApiError } from "../data/campaignApi.ts";
 import {
+  fetchAllFieldSessionTaskRefs,
   fetchFieldSessions,
   type FieldSessionSummary,
+  type FieldSessionTaskRef,
 } from "../data/fieldSessionApi.ts";
 import type { PlatformAppContext } from "../platform/platformContract.ts";
 import { FieldSessionHistory } from "./FieldSessionHistory.tsx";
@@ -12,6 +14,7 @@ type Props = {
   context: PlatformAppContext | null;
   online: boolean;
   onClose: () => void;
+  onShowSessionOnMap?: (session: FieldSessionSummary, taskRefs: FieldSessionTaskRef[]) => void;
 };
 
 type LoadState = "idle" | "loading" | "loading-more";
@@ -29,7 +32,12 @@ function historyErrorMessage(error: unknown) {
   return "Die Einsatzhistorie konnte nicht geladen werden.";
 }
 
-export function FieldSessionsHub({ context, online, onClose }: Props) {
+export function FieldSessionsHub({
+  context,
+  online,
+  onClose,
+  onShowSessionOnMap,
+}: Props) {
   const campaignId = context?.campaignId ?? null;
   const canFilterTeams =
     (context?.accessRole === "admin" || context?.accessRole === "viewer") &&
@@ -42,6 +50,7 @@ export function FieldSessionsHub({ context, online, onClose }: Props) {
   const [sessions, setSessions] = useState<FieldSessionSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("idle");
+  const [highlightingSessionId, setHighlightingSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const effectiveTeamId = forcedTeamId ?? (teamFilter === "all" ? null : teamFilter);
@@ -72,6 +81,23 @@ export function FieldSessionsHub({ context, online, onClose }: Props) {
       }
     },
     [campaignId, context?.accessRole, effectiveTeamId, online],
+  );
+
+  const showSessionOnMap = useCallback(
+    async (session: FieldSessionSummary) => {
+      if (!campaignId || !online || !onShowSessionOnMap || highlightingSessionId) return;
+      setHighlightingSessionId(session.id);
+      setError(null);
+      try {
+        const taskRefs = await fetchAllFieldSessionTaskRefs(campaignId, session.id);
+        onShowSessionOnMap(session, taskRefs);
+      } catch (loadError) {
+        setError(historyErrorMessage(loadError));
+      } finally {
+        setHighlightingSessionId(null);
+      }
+    },
+    [campaignId, highlightingSessionId, onShowSessionOnMap, online],
   );
 
   useEffect(() => {
@@ -155,7 +181,11 @@ export function FieldSessionsHub({ context, online, onClose }: Props) {
           {loadState === "loading" && sessions.length === 0 ? (
             <div className="field-sessions-loading" role="status">Einsätze werden geladen ...</div>
           ) : (
-            <FieldSessionHistory items={sessions} />
+            <FieldSessionHistory
+              items={sessions}
+              highlightingSessionId={highlightingSessionId}
+              onShowOnMap={online && onShowSessionOnMap ? (session) => void showSessionOnMap(session) : undefined}
+            />
           )}
 
           {nextCursor ? (
