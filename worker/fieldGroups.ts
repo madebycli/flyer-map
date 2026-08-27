@@ -8,8 +8,9 @@ import {
   resolvePersistentAccess,
   type AccessContext,
 } from "./access.ts";
-import type { D1DatabaseLike } from "./campaignRepository.ts";
+import type { D1DatabaseLike, D1PreparedStatement } from "./campaignRepository.ts";
 import { emitFieldGroupAudit } from "./fieldGroupAudit.ts";
+import { resolveFieldGroupLeaveSession } from "./fieldGroupLeaveSession.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
 
 const MAX_FIELD_GROUP_BODY_BYTES = 32_000;
@@ -29,6 +30,7 @@ export type FieldGroupEnv = {
 type FieldGroupState = "active" | "closed" | "expired";
 type FieldGroupMode = "distribution" | "collection";
 type CredentialKind = "room-code" | "qr";
+type CredentialIssuanceType = "create" | "rotate";
 
 type FieldGroupRow = {
   id: string;
@@ -77,6 +79,15 @@ type TeamRow = {
   color: string;
 };
 
+type CreateRequestRow = {
+  id: string;
+  create_payload_hash: string;
+};
+
+type CredentialRequestRow = {
+  id: string;
+};
+
 type FieldGroupRoute =
   | { kind: "join" }
   | { kind: "collection"; campaignId: string }
@@ -114,6 +125,10 @@ function sameOriginWrite(request: Request) {
 
 function validSelector(value: string) {
   return /^[A-Za-z0-9._:-]{1,200}$/u.test(value);
+}
+
+function validRequestId(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9._:-]{8,200}$/u.test(value);
 }
 
 function normalizeLabel(value: unknown) {
@@ -302,6 +317,40 @@ async function loadGroupRow(db: D1DatabaseLike, campaignId: string, groupId: str
     .first<FieldGroupRow>();
 }
 
+async function loadCreateRequest(
+  db: D1DatabaseLike,
+  campaignId: string,
+  requestId: string,
+) {
+  return db
+    .prepare(
+      `SELECT id, create_payload_hash
+       FROM field_groups
+       WHERE campaign_id = ? AND create_request_id = ?
+       LIMIT 1`,
+    )
+    .bind(campaignId, requestId)
+    .first<CreateRequestRow>();
+}
+
+async function loadCredentialRequest(
+  db: D1DatabaseLike,
+  campaignId: string,
+  groupId: string,
+  issuanceType: CredentialIssuanceType,
+  requestId: string,
+) {
+  return db
+    .prepare(
+      `SELECT id
+       FROM field_group_join_credentials
+       WHERE campaign_id = ? AND group_id = ? AND issuance_type = ? AND request_id = ?
+       LIMIT 1`,
+    )
+    .bind(campaignId, groupId, issuanceType, requestId)
+    .first<CredentialRequestRow>();
+}
+
 async function listDiscoverableGroups(db: D1DatabaseLike, campaignId: string) {
   const now = new Date().toISOString();
   const result = await db
@@ -355,6 +404,30 @@ async function requireCampaignAccess(
   return { ok: true as const, access };
 }
 
+async function createReplayResponse(
+  db: D1DatabaseLike,
+  campaignId: string,
+  requestId: string,
+  payloadHash: string,
+) {
+  const replay = await loadCreateRequest(db, campaignId, requestId);
+  if (!replay) return null;
+  if (replay.create_payload_hash !== payloadHash) {
+    return errorResponse(
+      409,
+      "idempotency_key_reused",
+      "Diese Request-ID wurde bereits für andere Gruppendaten verwendet.",
+    );
+  }
+  const stored = await loadGroupRow(db, campaignId, replay.id);
+  if (!stored) return errorResponse(500, "group_read_failed", "Gruppe konnte nicht geladen werden.");
+  return json({
+    group: groupPublic(stored),
+    credentials: null,
+    alreadyApplied: true,
+  });
+}
+
 async function createGroup(
   request: Request,
   db: D1DatabaseLike,
@@ -368,9 +441,16 @@ async function createGroup(
   const mode = parsed.value.mode === undefined ? "distribution" : parsed.value.mode;
   const discoverable = parsed.value.discoverable === undefined ? true : parsed.value.discoverable;
   const participantCount = parsed.value.participantCount ?? null;
+  const requestId = parsed.value.requestId;
 
-  if (!label || !validSelector(teamId) || !validMode(mode) || typeof discoverable !== "boolean") {
-    return errorResponse(400, "invalid_group", "Gruppendaten sind ungültig.");
+  if (
+    !label ||
+    !validSelector(teamId) ||
+    !validMode(mode) ||
+    typeof discoverable !== "boolean" ||
+    !validRequestId(requestId)
+  ) {
+    return errorResponse(400, "invalid_group", "Gruppendaten oder Request-ID sind ungültig.");
   }
   if (participantCount !== null && !validParticipantCount(participantCount)) {
     return errorResponse(400, "invalid_participant_count", "Teilnehmerzahl ist ungültig.");
@@ -381,50 +461,79 @@ async function createGroup(
     return errorResponse(403, "group_manage_forbidden", "Diese Rolle darf hier keine Gruppe erstellen.");
   }
 
+  const payloadHash = await hashSecret(
+    JSON.stringify({ teamId, label, mode, discoverable, participantCount }),
+  );
+  const replay = await createReplayResponse(db, campaignId, requestId, payloadHash);
+  if (replay) return replay;
+
   const credentials = await credentialPair();
   const groupId = `field_group_${crypto.randomUUID()}`;
   const createdAt = new Date().toISOString();
   const hardExpiresAt = new Date(Date.parse(createdAt) + LIVE_GROUP_MAX_LIFETIME_MS).toISOString();
 
-  const result = await db.batch([
-    db
-      .prepare(
-        `INSERT INTO field_groups
-          (id, campaign_id, team_id, label, mode, discoverable, state, participant_count,
-           created_by_grant_id, created_at, hard_expires_at, closed_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, NULL, ?)`,
-      )
-      .bind(
-        groupId,
-        campaignId,
-        teamId,
-        label,
-        mode,
-        discoverable ? 1 : 0,
-        participantCount,
-        access.grantId,
-        createdAt,
-        hardExpiresAt,
-        createdAt,
-      ),
-    db
-      .prepare(
-        `INSERT INTO field_group_join_credentials
-          (id, campaign_id, group_id, kind, secret_hash, created_at, revoked_at)
-         VALUES (?, ?, ?, 'room-code', ?, ?, NULL)`,
-      )
-      .bind(`field_group_credential_${crypto.randomUUID()}`, campaignId, groupId, credentials.roomCodeHash, createdAt),
-    db
-      .prepare(
-        `INSERT INTO field_group_join_credentials
-          (id, campaign_id, group_id, kind, secret_hash, created_at, revoked_at)
-         VALUES (?, ?, ?, 'qr', ?, ?, NULL)`,
-      )
-      .bind(`field_group_credential_${crypto.randomUUID()}`, campaignId, groupId, credentials.qrTokenHash, createdAt),
-  ]);
+  try {
+    const result = await db.batch([
+      db
+        .prepare(
+          `INSERT INTO field_groups
+            (id, campaign_id, team_id, label, mode, discoverable, state, participant_count,
+             created_by_grant_id, create_request_id, create_payload_hash,
+             created_at, hard_expires_at, closed_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, NULL, ?)`,
+        )
+        .bind(
+          groupId,
+          campaignId,
+          teamId,
+          label,
+          mode,
+          discoverable ? 1 : 0,
+          participantCount,
+          access.grantId,
+          requestId,
+          payloadHash,
+          createdAt,
+          hardExpiresAt,
+          createdAt,
+        ),
+      db
+        .prepare(
+          `INSERT INTO field_group_join_credentials
+            (id, campaign_id, group_id, kind, issuance_type, request_id, secret_hash, created_at, revoked_at)
+           VALUES (?, ?, ?, 'room-code', 'create', ?, ?, ?, NULL)`,
+        )
+        .bind(
+          `field_group_credential_${crypto.randomUUID()}`,
+          campaignId,
+          groupId,
+          requestId,
+          credentials.roomCodeHash,
+          createdAt,
+        ),
+      db
+        .prepare(
+          `INSERT INTO field_group_join_credentials
+            (id, campaign_id, group_id, kind, issuance_type, request_id, secret_hash, created_at, revoked_at)
+           VALUES (?, ?, ?, 'qr', 'create', ?, ?, ?, NULL)`,
+        )
+        .bind(
+          `field_group_credential_${crypto.randomUUID()}`,
+          campaignId,
+          groupId,
+          requestId,
+          credentials.qrTokenHash,
+          createdAt,
+        ),
+    ]);
 
-  if ((result[0]?.meta?.changes ?? 0) !== 1) {
-    return errorResponse(409, "group_create_conflict", "Gruppe konnte nicht erstellt werden.");
+    if ((result[0]?.meta?.changes ?? 0) !== 1) {
+      return errorResponse(409, "group_create_conflict", "Gruppe konnte nicht erstellt werden.");
+    }
+  } catch (error) {
+    const concurrentReplay = await createReplayResponse(db, campaignId, requestId, payloadHash);
+    if (concurrentReplay) return concurrentReplay;
+    throw error;
   }
 
   const actor = auditActor(access);
@@ -443,6 +552,7 @@ async function createGroup(
     {
       group: groupPublic(stored),
       credentials: { roomCode: credentials.roomCode, qrToken: credentials.qrToken },
+      alreadyApplied: false,
     },
     { status: 201 },
   );
@@ -488,6 +598,7 @@ async function requireManagedGroup(
   campaignId: string,
   groupId: string,
   access: AccessContext,
+  options: { allowInactive?: boolean } = {},
 ) {
   await expireCampaignGroups(db, campaignId, new Date().toISOString());
   const group = await loadGroupRow(db, campaignId, groupId);
@@ -500,7 +611,7 @@ async function requireManagedGroup(
       response: errorResponse(403, "group_manage_forbidden", "Diese Rolle darf die Gruppe nicht verwalten."),
     };
   }
-  if (group.state !== "active") {
+  if (!options.allowInactive && group.state !== "active") {
     return {
       ok: false as const,
       response: errorResponse(409, "group_not_active", "Gruppe ist nicht mehr aktiv."),
@@ -533,34 +644,60 @@ async function patchGroup(
     return errorResponse(400, "invalid_participant_count", "Teilnehmerzahl ist ungültig.");
   }
 
+  const targetDiscoverable = hasDiscoverable ? (parsed.value.discoverable ? 1 : 0) : null;
+  const targetParticipantCount = hasParticipantCount ? (parsed.value.participantCount as number) : null;
+  const discoverabilityChanged =
+    hasDiscoverable && managed.group.discoverable !== targetDiscoverable;
+  const participantChanged =
+    hasParticipantCount && managed.group.participant_count !== targetParticipantCount;
+
+  if (!discoverabilityChanged && !participantChanged) {
+    return json({ group: groupPublic(managed.group), alreadyApplied: true });
+  }
+
   const now = new Date().toISOString();
-  const statements = [];
-  if (hasDiscoverable) {
+  const statements: D1PreparedStatement[] = [];
+  let discoverabilityIndex = -1;
+  let participantIndex = -1;
+
+  if (discoverabilityChanged && targetDiscoverable !== null) {
+    discoverabilityIndex = statements.length;
     statements.push(
       db
         .prepare(
           `UPDATE field_groups
            SET discoverable = ?, updated_at = ?
-           WHERE id = ? AND campaign_id = ? AND state = 'active'`,
+           WHERE id = ? AND campaign_id = ? AND state = 'active' AND discoverable <> ?`,
         )
-        .bind(parsed.value.discoverable ? 1 : 0, now, groupId, campaignId),
+        .bind(targetDiscoverable, now, groupId, campaignId, targetDiscoverable),
     );
   }
-  if (hasParticipantCount) {
+  if (participantChanged && targetParticipantCount !== null) {
+    participantIndex = statements.length;
     statements.push(
       db
         .prepare(
           `UPDATE field_groups
            SET participant_count = ?, updated_at = ?
-           WHERE id = ? AND campaign_id = ? AND state = 'active'`,
+           WHERE id = ? AND campaign_id = ? AND state = 'active'
+             AND (participant_count IS NULL OR participant_count <> ?)`,
         )
-        .bind(parsed.value.participantCount, now, groupId, campaignId),
+        .bind(
+          targetParticipantCount,
+          now,
+          groupId,
+          campaignId,
+          targetParticipantCount,
+        ),
     );
   }
-  await db.batch(statements);
 
+  const results = await db.batch(statements);
   const actor = auditActor(access);
-  if (hasDiscoverable && managed.group.discoverable !== (parsed.value.discoverable ? 1 : 0)) {
+  if (
+    discoverabilityIndex >= 0 &&
+    (results[discoverabilityIndex]?.meta?.changes ?? 0) === 1
+  ) {
     emitFieldGroupAudit({
       kind: "field_group.discoverability_changed",
       campaignId,
@@ -570,7 +707,7 @@ async function patchGroup(
       at: now,
     });
   }
-  if (hasParticipantCount && managed.group.participant_count !== parsed.value.participantCount) {
+  if (participantIndex >= 0 && (results[participantIndex]?.meta?.changes ?? 0) === 1) {
     emitFieldGroupAudit({
       kind: "field_group.participant_count_changed",
       campaignId,
@@ -583,10 +720,14 @@ async function patchGroup(
 
   const stored = await loadGroupRow(db, campaignId, groupId);
   if (!stored) return errorResponse(404, "group_not_found", "Gruppe wurde nicht gefunden.");
-  return json({ group: groupPublic(stored) });
+  return json({
+    group: groupPublic(stored),
+    alreadyApplied: results.every((result) => (result.meta?.changes ?? 0) === 0),
+  });
 }
 
 async function rotateCredentials(
+  request: Request,
   db: D1DatabaseLike,
   campaignId: string,
   groupId: string,
@@ -594,32 +735,73 @@ async function rotateCredentials(
 ) {
   const managed = await requireManagedGroup(db, campaignId, groupId, access);
   if (!managed.ok) return managed.response;
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const requestId = parsed.value.requestId;
+  if (!validRequestId(requestId)) {
+    return errorResponse(400, "invalid_request_id", "Request-ID für Rotation ist ungültig.");
+  }
+
+  if (await loadCredentialRequest(db, campaignId, groupId, "rotate", requestId)) {
+    const stored = await loadGroupRow(db, campaignId, groupId);
+    return json({
+      group: groupPublic(stored ?? managed.group),
+      credentials: null,
+      alreadyApplied: true,
+    });
+  }
+
   const credentials = await credentialPair();
   const now = new Date().toISOString();
-
-  await db.batch([
-    db
-      .prepare(
-        `UPDATE field_group_join_credentials
-         SET revoked_at = COALESCE(revoked_at, ?)
-         WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,
-      )
-      .bind(now, groupId, campaignId),
-    db
-      .prepare(
-        `INSERT INTO field_group_join_credentials
-          (id, campaign_id, group_id, kind, secret_hash, created_at, revoked_at)
-         VALUES (?, ?, ?, 'room-code', ?, ?, NULL)`,
-      )
-      .bind(`field_group_credential_${crypto.randomUUID()}`, campaignId, groupId, credentials.roomCodeHash, now),
-    db
-      .prepare(
-        `INSERT INTO field_group_join_credentials
-          (id, campaign_id, group_id, kind, secret_hash, created_at, revoked_at)
-         VALUES (?, ?, ?, 'qr', ?, ?, NULL)`,
-      )
-      .bind(`field_group_credential_${crypto.randomUUID()}`, campaignId, groupId, credentials.qrTokenHash, now),
-  ]);
+  try {
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE field_group_join_credentials
+           SET revoked_at = COALESCE(revoked_at, ?)
+           WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,
+        )
+        .bind(now, groupId, campaignId),
+      db
+        .prepare(
+          `INSERT INTO field_group_join_credentials
+            (id, campaign_id, group_id, kind, issuance_type, request_id, secret_hash, created_at, revoked_at)
+           VALUES (?, ?, ?, 'room-code', 'rotate', ?, ?, ?, NULL)`,
+        )
+        .bind(
+          `field_group_credential_${crypto.randomUUID()}`,
+          campaignId,
+          groupId,
+          requestId,
+          credentials.roomCodeHash,
+          now,
+        ),
+      db
+        .prepare(
+          `INSERT INTO field_group_join_credentials
+            (id, campaign_id, group_id, kind, issuance_type, request_id, secret_hash, created_at, revoked_at)
+           VALUES (?, ?, ?, 'qr', 'rotate', ?, ?, ?, NULL)`,
+        )
+        .bind(
+          `field_group_credential_${crypto.randomUUID()}`,
+          campaignId,
+          groupId,
+          requestId,
+          credentials.qrTokenHash,
+          now,
+        ),
+    ]);
+  } catch (error) {
+    if (await loadCredentialRequest(db, campaignId, groupId, "rotate", requestId)) {
+      const stored = await loadGroupRow(db, campaignId, groupId);
+      return json({
+        group: groupPublic(stored ?? managed.group),
+        credentials: null,
+        alreadyApplied: true,
+      });
+    }
+    throw error;
+  }
 
   emitFieldGroupAudit({
     kind: "field_group.credentials_rotated",
@@ -629,9 +811,11 @@ async function rotateCredentials(
     ...auditActor(access),
     at: now,
   });
+  const stored = await loadGroupRow(db, campaignId, groupId);
   return json({
-    group: groupPublic(managed.group),
+    group: groupPublic(stored ?? managed.group),
     credentials: { roomCode: credentials.roomCode, qrToken: credentials.qrToken },
+    alreadyApplied: false,
   });
 }
 
@@ -644,7 +828,7 @@ async function revokeCredentials(
   const managed = await requireManagedGroup(db, campaignId, groupId, access);
   if (!managed.ok) return managed.response;
   const now = new Date().toISOString();
-  await db.batch([
+  const results = await db.batch([
     db
       .prepare(
         `UPDATE field_group_join_credentials
@@ -653,16 +837,37 @@ async function revokeCredentials(
       )
       .bind(now, groupId, campaignId),
   ]);
-  emitFieldGroupAudit({
-    kind: "field_group.credentials_revoked",
-    campaignId,
-    groupId,
-    teamId: managed.group.team_id,
-    ...auditActor(access),
-    at: now,
-  });
+  const changed = (results[0]?.meta?.changes ?? 0) > 0;
+  if (changed) {
+    emitFieldGroupAudit({
+      kind: "field_group.credentials_revoked",
+      campaignId,
+      groupId,
+      teamId: managed.group.team_id,
+      ...auditActor(access),
+      at: now,
+    });
+  }
   const stored = await loadGroupRow(db, campaignId, groupId);
-  return json({ group: stored ? groupPublic(stored) : null });
+  return json({
+    group: stored ? groupPublic(stored) : null,
+    alreadyApplied: !changed,
+  });
+}
+
+function tourSummaryFromGroup(group: FieldGroupRow) {
+  if (!group.closed_at || !validParticipantCount(group.participant_count)) return null;
+  const durationSeconds = Math.max(
+    0,
+    Math.floor((Date.parse(group.closed_at) - Date.parse(group.created_at)) / 1000),
+  );
+  return {
+    startedAt: group.created_at,
+    endedAt: group.closed_at,
+    participantCount: group.participant_count,
+    durationSeconds,
+    personSeconds: durationSeconds * group.participant_count,
+  };
 }
 
 async function closeGroup(
@@ -672,14 +877,44 @@ async function closeGroup(
   groupId: string,
   access: AccessContext,
 ) {
-  const managed = await requireManagedGroup(db, campaignId, groupId, access);
+  const managed = await requireManagedGroup(db, campaignId, groupId, access, {
+    allowInactive: true,
+  });
   if (!managed.ok) return managed.response;
   const parsed = await readJsonBody(request);
   if (!parsed.ok) return parsed.response;
 
-  const finalParticipantCount = Object.hasOwn(parsed.value, "participantCount")
+  const suppliedParticipantCount = Object.hasOwn(parsed.value, "participantCount")
     ? parsed.value.participantCount
-    : managed.group.participant_count;
+    : null;
+
+  if (managed.group.state === "closed") {
+    if (
+      suppliedParticipantCount !== null &&
+      (!validParticipantCount(suppliedParticipantCount) ||
+        suppliedParticipantCount !== managed.group.participant_count)
+    ) {
+      return errorResponse(
+        409,
+        "close_conflict",
+        "Die Gruppe wurde bereits mit einer anderen finalen Teilnehmerzahl geschlossen.",
+      );
+    }
+    const summary = tourSummaryFromGroup(managed.group);
+    if (!summary) return errorResponse(500, "group_close_state_invalid", "Abschlussdaten sind ungültig.");
+    return json({
+      group: groupPublic(managed.group),
+      tourSummary: summary,
+      alreadyApplied: true,
+    });
+  }
+
+  if (managed.group.state !== "active") {
+    return errorResponse(409, "group_not_active", "Gruppe ist nicht mehr aktiv.");
+  }
+
+  const finalParticipantCount =
+    suppliedParticipantCount ?? managed.group.participant_count;
   if (!validParticipantCount(finalParticipantCount)) {
     return errorResponse(
       422,
@@ -706,6 +941,17 @@ async function closeGroup(
       .bind(now, groupId, campaignId),
   ]);
   if ((result[0]?.meta?.changes ?? 0) !== 1) {
+    const concurrent = await loadGroupRow(db, campaignId, groupId);
+    if (concurrent?.state === "closed") {
+      const summary = tourSummaryFromGroup(concurrent);
+      if (summary && summary.participantCount === finalParticipantCount) {
+        return json({
+          group: groupPublic(concurrent),
+          tourSummary: summary,
+          alreadyApplied: true,
+        });
+      }
+    }
     return errorResponse(409, "group_not_active", "Gruppe ist nicht mehr aktiv.");
   }
 
@@ -730,16 +976,14 @@ async function closeGroup(
   });
 
   const stored = await loadGroupRow(db, campaignId, groupId);
-  const durationSeconds = Math.max(0, Math.floor((Date.parse(now) - Date.parse(managed.group.created_at)) / 1000));
+  const summary = stored ? tourSummaryFromGroup(stored) : null;
+  if (!stored || !summary) {
+    return errorResponse(500, "group_close_state_invalid", "Abschlussdaten konnten nicht geladen werden.");
+  }
   return json({
-    group: stored ? groupPublic(stored) : null,
-    tourSummary: {
-      startedAt: managed.group.created_at,
-      endedAt: now,
-      participantCount: finalParticipantCount,
-      durationSeconds,
-      personSeconds: durationSeconds * finalParticipantCount,
-    },
+    group: groupPublic(stored),
+    tourSummary: summary,
+    alreadyApplied: false,
   });
 }
 
@@ -789,6 +1033,19 @@ async function persistentMembership(
     .first<MembershipRow>();
   const joinedAt = new Date().toISOString();
 
+  if (
+    existing &&
+    !existing.left_at &&
+    !existing.removed_at &&
+    existing.expires_at > joinedAt
+  ) {
+    return {
+      membershipId: existing.id,
+      joinedAt: existing.joined_at,
+      alreadyJoined: true,
+    };
+  }
+
   if (existing) {
     await db.batch([
       db
@@ -799,7 +1056,7 @@ async function persistentMembership(
         )
         .bind(joinedAt, group.hard_expires_at, existing.id, group.id, group.campaign_id),
     ]);
-    return { membershipId: existing.id, joinedAt };
+    return { membershipId: existing.id, joinedAt, alreadyJoined: false };
   }
 
   const membershipId = `field_group_membership_${crypto.randomUUID()}`;
@@ -821,7 +1078,7 @@ async function persistentMembership(
         group.hard_expires_at,
       ),
   ]);
-  return { membershipId, joinedAt };
+  return { membershipId, joinedAt, alreadyJoined: false };
 }
 
 async function temporaryMembership(db: D1DatabaseLike, group: CredentialGroupRow) {
@@ -850,23 +1107,44 @@ async function temporaryMembership(db: D1DatabaseLike, group: CredentialGroupRow
   return { membershipId, sessionSecret, joinedAt };
 }
 
+async function membershipById(
+  db: D1DatabaseLike,
+  campaignId: string,
+  groupId: string,
+  membershipId: string,
+) {
+  return db
+    .prepare(
+      `SELECT id, campaign_id, group_id, team_id, campaign_grant_id, joined_at, expires_at, left_at, removed_at
+       FROM field_group_memberships
+       WHERE id = ? AND campaign_id = ? AND group_id = ?
+       LIMIT 1`,
+    )
+    .bind(membershipId, campaignId, groupId)
+    .first<MembershipRow>();
+}
+
 async function leaveMembershipById(
   db: D1DatabaseLike,
   campaignId: string,
   groupId: string,
   membershipId: string,
   at: string,
-) {
+): Promise<"left" | "already-left" | "missing"> {
   const result = await db.batch([
     db
       .prepare(
         `UPDATE field_group_memberships
-         SET left_at = COALESCE(left_at, ?)
-         WHERE id = ? AND campaign_id = ? AND group_id = ? AND removed_at IS NULL`,
+         SET left_at = ?
+         WHERE id = ? AND campaign_id = ? AND group_id = ?
+           AND left_at IS NULL AND removed_at IS NULL`,
       )
       .bind(at, membershipId, campaignId, groupId),
   ]);
-  return (result[0]?.meta?.changes ?? 0) === 1;
+  if ((result[0]?.meta?.changes ?? 0) === 1) return "left";
+  const existing = await membershipById(db, campaignId, groupId, membershipId);
+  if (existing?.left_at) return "already-left";
+  return "missing";
 }
 
 async function joinGroup(request: Request, env: FieldGroupEnv, db: D1DatabaseLike) {
@@ -941,20 +1219,23 @@ async function joinGroup(request: Request, env: FieldGroupEnv, db: D1DatabaseLik
   const persistent = await resolvePersistentAccess(db, request, campaignId);
   if (persistent) {
     const membership = await persistentMembership(db, group, persistent);
-    emitFieldGroupAudit({
-      kind: "field_group.joined",
-      campaignId,
-      groupId: group.id,
-      teamId: group.team_id,
-      membershipId: membership.membershipId,
-      actorKind: "campaign-grant",
-      actorRef: persistent.grantId,
-      at: membership.joinedAt,
-    });
+    if (!membership.alreadyJoined) {
+      emitFieldGroupAudit({
+        kind: "field_group.joined",
+        campaignId,
+        groupId: group.id,
+        teamId: group.team_id,
+        membershipId: membership.membershipId,
+        actorKind: "campaign-grant",
+        actorRef: persistent.grantId,
+        at: membership.joinedAt,
+      });
+    }
     return json({
       group: groupPublic(group),
       membership: { id: membership.membershipId, temporary: false },
       access: accessPublic(persistent),
+      alreadyApplied: membership.alreadyJoined,
     });
   }
 
@@ -968,6 +1249,7 @@ async function joinGroup(request: Request, env: FieldGroupEnv, db: D1DatabaseLik
       group: groupPublic(group),
       membership: { id: currentTemporary.membershipId, temporary: true },
       access: accessPublic(currentTemporary),
+      alreadyApplied: true,
     });
   }
   if (
@@ -1006,6 +1288,7 @@ async function joinGroup(request: Request, env: FieldGroupEnv, db: D1DatabaseLik
         groupId: group.id,
         label: group.label,
       },
+      alreadyApplied: false,
     },
     { headers: { "set-cookie": fieldGroupSessionCookie(membership.sessionSecret) } },
   );
@@ -1040,24 +1323,31 @@ async function leaveGroup(
     membershipId = membership?.id ?? null;
   }
 
-  if (!membershipId || !(await leaveMembershipById(db, campaignId, groupId, membershipId, now))) {
-    return errorResponse(404, "membership_not_found", "Aktive Gruppenmitgliedschaft wurde nicht gefunden.");
+  if (!membershipId) {
+    return errorResponse(404, "membership_not_found", "Gruppenmitgliedschaft wurde nicht gefunden.");
   }
 
-  const group = await loadGroupRow(db, campaignId, groupId);
-  const actor = auditActor(access);
-  emitFieldGroupAudit({
-    kind: "field_group.member_left",
-    campaignId,
-    groupId,
-    teamId: group?.team_id ?? access.teamId,
-    membershipId,
-    ...actor,
-    at: now,
-  });
+  const outcome = await leaveMembershipById(db, campaignId, groupId, membershipId, now);
+  if (outcome === "missing") {
+    return errorResponse(404, "membership_not_found", "Gruppenmitgliedschaft wurde nicht gefunden.");
+  }
+
+  if (outcome === "left") {
+    const group = await loadGroupRow(db, campaignId, groupId);
+    const actor = auditActor(access);
+    emitFieldGroupAudit({
+      kind: "field_group.member_left",
+      campaignId,
+      groupId,
+      teamId: group?.team_id ?? access.teamId,
+      membershipId,
+      ...actor,
+      at: now,
+    });
+  }
 
   return json(
-    { ok: true },
+    { ok: true, alreadyApplied: outcome === "already-left" },
     clearTemporaryCookie
       ? { headers: { "set-cookie": clearFieldGroupSessionCookie() } }
       : undefined,
@@ -1078,13 +1368,15 @@ async function removeMember(
     db
       .prepare(
         `UPDATE field_group_memberships
-         SET removed_at = COALESCE(removed_at, ?)
+         SET removed_at = ?
          WHERE id = ? AND campaign_id = ? AND group_id = ?
            AND left_at IS NULL AND removed_at IS NULL`,
       )
       .bind(now, membershipId, campaignId, groupId),
   ]);
   if ((result[0]?.meta?.changes ?? 0) !== 1) {
+    const existing = await membershipById(db, campaignId, groupId, membershipId);
+    if (existing?.removed_at) return json({ ok: true, alreadyApplied: true });
     return errorResponse(404, "membership_not_found", "Aktive Gruppenmitgliedschaft wurde nicht gefunden.");
   }
   emitFieldGroupAudit({
@@ -1096,7 +1388,7 @@ async function removeMember(
     ...auditActor(access),
     at: now,
   });
-  return json({ ok: true });
+  return json({ ok: true, alreadyApplied: false });
 }
 
 export function parseFieldGroupRoute(pathname: string): FieldGroupRoute | null {
@@ -1174,6 +1466,19 @@ export async function handleFieldGroupApi(
       return await joinGroup(request, env, db);
     }
 
+    if (route.kind === "leave") {
+      if (request.method !== "POST") {
+        return errorResponse(405, "method_not_allowed", "Für das Verlassen ist nur POST erlaubt.");
+      }
+      const access =
+        (await resolveAccess(db, request, route.campaignId)) ??
+        (await resolveFieldGroupLeaveSession(db, request, route.campaignId));
+      if (!access) {
+        return errorResponse(401, "access_required", "Gültiger Zugriff ist erforderlich.");
+      }
+      return leaveGroup(db, route.campaignId, route.groupId, access);
+    }
+
     const auth = await requireCampaignAccess(db, request, route.campaignId);
     if (!auth.ok) return auth.response;
     const access = auth.access;
@@ -1202,16 +1507,13 @@ export async function handleFieldGroupApi(
     }
 
     if (route.kind === "rotate" && request.method === "POST") {
-      return rotateCredentials(db, route.campaignId, route.groupId, access);
+      return rotateCredentials(request, db, route.campaignId, route.groupId, access);
     }
     if (route.kind === "revoke" && request.method === "POST") {
       return revokeCredentials(db, route.campaignId, route.groupId, access);
     }
     if (route.kind === "close" && request.method === "POST") {
       return closeGroup(request, db, route.campaignId, route.groupId, access);
-    }
-    if (route.kind === "leave" && request.method === "POST") {
-      return leaveGroup(db, route.campaignId, route.groupId, access);
     }
     if (route.kind === "remove-member" && request.method === "DELETE") {
       return removeMember(
