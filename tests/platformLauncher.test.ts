@@ -33,41 +33,60 @@ test("field chrome uses a bottom 3x3 launcher bar with the App active Team", () 
   assert.match(shellCss, /\.platform-map-layer \.map-toolbar\s*\{[\s\S]*display: none;/);
 });
 
-test("PlatformShell uses the typed App bridge and real Team Hub instead of Workbench or DOM proxies", () => {
+test("PlatformShell uses typed real Team and Field Session surfaces instead of Workbench or DOM proxies", () => {
   assert.match(shellSource, /platformCommand=\{appCommand\}/);
   assert.match(shellSource, /onPlatformContextChange=\{setAppContext\}/);
   assert.match(shellSource, /<TeamHub/);
+  assert.match(shellSource, /<FieldSessionsHub/);
   assert.match(shellSource, /type: "select-active-team"/);
   assert.match(appSource, /platformCommand\.type === "open-settings"/);
   assert.match(appSource, /platformCommand\.type === "open-team-management"/);
   assert.match(appSource, /platformCommand\.type === "start-area-drawing"/);
   assert.match(appSource, /platformCommand\.type === "select-active-team"/);
-  assert.doesNotMatch(shellSource, /LiveGroupWorkbenchPreview/);
+  assert.doesNotMatch(shellSource, /LiveGroupWorkbenchPreview|FieldSessionWorkbenchPreview/);
   assert.doesNotMatch(shellSource, /querySelector|click\(\)/);
 });
 
-test("launcher gives viewers the real Team Hub but hides editing and unfinished destinations", () => {
+test("launcher gives authenticated viewers Team Hub and real Einsätze but hides editing destinations", () => {
   assert.deepEqual(
     buildPlatformLauncherItems(context()).map((item) => item.id),
-    ["map", "team", "settings"],
+    ["map", "team", "sessions", "settings"],
   );
   assert.equal(buildPlatformLauncherItems(context()).find((item) => item.id === "team")?.opensTeamHub, true);
+  assert.equal(
+    buildPlatformLauncherItems(context()).find((item) => item.id === "sessions")?.opensFieldSessions,
+    true,
+  );
   assert.doesNotMatch(shellSource, /Foundation|Security-Gate|menuLabel: "Stats"|menuLabel: "Feedback"/);
 });
 
-test("launcher registry exposes Team Hub to all roles and editing only when capability allows", () => {
+test("Einsätze is hidden without access while Team Hub remains available for joining", () => {
+  assert.deepEqual(
+    buildPlatformLauncherItems(context({ accessRole: null })).map((item) => item.id),
+    ["map", "team", "settings"],
+  );
+});
+
+test("launcher registry exposes history to scoped roles and editing only when capability allows", () => {
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "team-editor", accessTeamId: "team_one", canCreateArea: true }),
     ).map((item) => item.id),
-    ["map", "team", "settings", "area-create"],
+    ["map", "team", "sessions", "settings", "area-create"],
   );
 
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.id),
-    ["map", "team", "settings", "area-create"],
+    ["map", "team", "sessions", "settings", "area-create"],
+  );
+
+  assert.deepEqual(
+    buildPlatformLauncherItems(
+      context({ accessRole: "field-group-member", accessTeamId: "team_one" }),
+    ).map((item) => item.id),
+    ["map", "team", "sessions", "settings"],
   );
 });
 
@@ -77,7 +96,7 @@ test("launcher remains a compact rounded sheet rather than a fullscreen dashboar
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.label),
-    ["Karte", "Team", "Einstellungen", "Gebiet"],
+    ["Karte", "Team", "Einsätze", "Einstellungen", "Gebiet"],
   );
   assert.match(shellCss, /\.platform-menu-overlay\s*\{[\s\S]*align-items: flex-end;/);
   assert.match(shellCss, /\.platform-menu-grid\s*\{[\s\S]*grid-template-columns: repeat\(4,/);
