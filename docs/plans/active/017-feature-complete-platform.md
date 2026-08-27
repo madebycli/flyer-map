@@ -10,439 +10,382 @@ related: [plan-012-platform-app-expansion, plan-016-app-launcher-sheet, product-
 
 ## Ziel
 
-Die weitere Entwicklung von Verteil-Flyer wechselt von isolierten Foundation-/Preview-Slices auf vertikale, benutzbare Features.
+Verteil-Flyer wird nicht mehr über sichtbare Foundation-/Preview-Slices erweitert, sondern über vertikale Features, die im normalen Produkt wirklich benutzbar sind.
 
-Ein Modul gilt ab jetzt nicht mehr als geliefert, nur weil Domain-Modelle, lokale UI oder ein Workbench-Preview existieren. Ein normales Launcher-Ziel wird erst als fertiges Produktfeature behandelt, wenn der komplette Benutzerweg funktioniert: UI, Persistenz, Berechtigungen, Fehlerzustände, Synchronisation, Tests und Dokumentation.
+Ein Launcher-Ziel gilt erst als geliefert, wenn der relevante Benutzerweg inklusive UI, Persistenz, Worker-Autorisierung, Offline-/Retry-Verhalten, Fehlerzuständen, Tests und Dokumentation vollständig ist.
 
-Der nächste große Produktabschluss ist das Team-/Gruppensystem. Danach werden Sessions/Aktivität, Statistik, Smart Streets/Houses, Collection, Admin/Permissions, Aktionen/Analytics sowie Settings/Support nach demselben Feature-Complete-Maßstab abgeschlossen.
+## Source of Truth
 
-## Source of Truth / Baseline
+Vor jeder weiteren Umsetzung:
+1. `AGENTS.md` vollständig lesen.
+2. `docs/status/CURRENT.md` lesen.
+3. `docs/context-map.yaml` traversieren.
+4. Relevante Product-, Architecture- und ADR-Knoten laden.
+5. Offene PRs, Branch-Stack, exakten Head und CI prüfen.
+6. Vor D1-Arbeit den dokumentierten Remote-Migrationsstand prüfen.
 
-Vor jeder Umsetzung aus diesem Plan:
-1. `AGENTS.md` lesen;
-2. `docs/status/CURRENT.md` lesen;
-3. `docs/context-map.yaml` traversieren;
-4. `docs/product/ROADMAP.md` und `docs/product/UX.md` lesen;
-5. nur die zum Slice gehörenden Architecture-/ADR-Knoten laden;
-6. aktuellen Code, offene PRs, Branch-Stack und CI prüfen.
+Aktueller Entwicklungszweig:
+- Draft PR #72;
+- Branch `plan-feature-complete-platform`;
+- Base `ui-app-launcher-sheet`;
+- PR #72 enthält inzwischen nicht nur Planung, sondern den aktuellen FC0-/FC1-Runtime-Slice.
 
-Aktueller Branch-Stack zum Zeitpunkt dieses Plans:
-- `release-platform-integration-2026-08-26` -> Draft PR #68 gegen `main`;
-- `m6-house-persistence-runtime` -> Draft PR #70 gegen Release-Branch;
-- `ui-app-launcher-sheet` -> Draft PR #71 gegen House-Branch;
-- dieser Plan-Branch baut auf PR #71 auf.
+Remote D1 ist weiterhin nur bis Migration 0003 dokumentiert. Migrationen 0004 bis 0007 bleiben vorbereitet, aber nicht remote angewendet.
 
-Migrationen 0004 und 0005 bleiben bewusst nicht remote angewendet, bis ein eigener Rollout ausdrücklich freigegeben wird.
+## Delivery-Regel
 
-## Neue Delivery-Regel: kein Foundation-Feature im normalen Produkt
-
-### Was nicht mehr als fertig zählt
-
-Folgendes zählt nur als interne Vorbereitung:
-- lokaler React-State ohne Worker/D1-Persistenz;
-- `?workbench=`-Preview;
-- Fake-Daten;
-- Callback-only Join/Create/Save-Flows;
-- UI, die zwar klickbar ist, aber keine autorisierte Serverfunktion besitzt;
+Nicht feature complete sind:
+- lokale React-Daten ohne autoritative Persistenz;
+- Workbench/Fake-Preview;
+- Callback-only Flows;
+- klickbare UI ohne serverseitige Berechtigung;
 - Backend ohne vollständige Benutzeroberfläche;
-- ein Launcher-Eintrag mit `Foundation`- oder `Security-Gate`-Charakter im normalen Feldfluss.
+- ein sichtbares Launcher-Ziel, das nur Foundation-Code öffnet.
 
-Workbench-Routen dürfen als Entwicklungswerkzeug bestehen bleiben, sind aber kein Produktmeilenstein und werden normalen Nutzern nicht als fertige App angeboten.
-
-### Definition Feature Complete
-
-Ein Feature ist erst abgeschlossen, wenn alle zutreffenden Punkte erfüllt sind:
-1. vollständiger Happy Path auf Mobile;
-2. dauerhafte Server-/D1-Persistenz, sofern es Shared State ist;
-3. Worker-seitige Autorisierung für jeden Read/Write;
-4. M5-Queue/Idempotenz für offline-relevante Mutationen;
-5. Loading-, Empty-, Error-, Revoked-, Conflict- und Retry-Zustände;
-6. UI zeigt nur Aktionen, für die effektive Berechtigungen bestehen;
-7. keine verlorenen Kernfunktionen durch Navigation/Redesign;
-8. responsive Mobile- und Desktop-Darstellung;
-9. Accessibility, Touch-Ziele und Reduced Motion;
-10. Unit-/Integration-/Security-Tests auf der niedrigsten sinnvollen Ebene;
-11. Production Build, Typecheck, Dependency Audit und Cloudflare Preview grün;
-12. relevante Product-/Architecture-/CURRENT-/Context-Dokumentation aktualisiert;
-13. keine sichtbare `Foundation`-Kennzeichnung im normalen Produkt.
+Feature complete bedeutet für den jeweiligen Slice, soweit zutreffend:
+1. Happy Path auf Mobile.
+2. Shared State dauerhaft serverseitig gespeichert.
+3. Worker autorisiert jeden geschützten Read/Write.
+4. Offline-relevante Arbeit nutzt den akzeptierten M5-Mechanismus.
+5. Loading, Empty, Error, Revoked, Conflict und Retry sind behandelt.
+6. UI zeigt nur erlaubte Aktionen.
+7. Kein Core-Flow geht durch Navigation/Redesign verloren.
+8. Mobile und Desktop bleiben benutzbar.
+9. Touch-Ziele und Accessibility sind berücksichtigt.
+10. Unit-/Integration-/Security-Tests decken die relevanten Grenzen ab.
+11. Tests, Typecheck, Dependency Audit und Production Build sind grün.
+12. Product-/Architecture-/Status-/Context-Doku ist aktuell.
+13. Keine sichtbare Foundation-Kennzeichnung bleibt als Ersatz für ein fertiges Feature.
 
 ## Verbindliches UI-System
 
-Alle folgenden Features verwenden das mit Plan 016 festgelegte Design statt neue parallele Navigationsmuster einzuführen.
-
-### Permanenter Karten-Chrome
-
-Im normalen Browse-Zustand bleibt unten nur eine kompakte Launcher-Leiste:
-- 3x3 App-Grid/Menu-Button;
-- direkt daneben der aktive Teamname als Text;
-- Teamfarbe nur als unterstützender Marker;
+Der Karten-Browse-Zustand bleibt kompakt:
+- unten links 3x3 Launcher-Button;
+- daneben aktiver Teamname;
+- Teamfarbe nur unterstützend;
 - keine permanente Team-Auswahl;
 - keine permanenten Settings-/Teams-/Gebiet-Buttons.
 
-Kontextuelle Area-/Street-/House-Sheets dürfen darüber liegen, wenn der Nutzer aktiv mit einem Objekt arbeitet.
+Launcher und Fachoberflächen verwenden das bestehende Sheet-/Card-System. Neue große UI-Framework-Abhängigkeiten werden nicht eingeführt.
 
-### Launcher-Sheet
+## FC0: Navigation und Berechtigungs-Bridge
 
-Das Menü bleibt ein kompaktes, abgerundetes Sheet in derselben visuellen Familie wie Settings-/Teams-Sheets:
-- große App-Icons;
-- kurze Labels darunter;
-- keine Fullscreen-Home-Screen-Dashboard-Fläche;
-- Module dürfen nach Auswahl eine eigene volle Fachoberfläche öffnen;
-- Einträge sind capability-/scope-gesteuert;
-- unfertige interne Module werden nicht als normale Ziele angezeigt.
+**Status: umgesetzt auf PR #72.**
 
-### Einheitliche Fachoberflächen
+Erreicht:
+- typisierter PlatformShell/App-Action-Contract;
+- sichtbarer Teamname folgt dem aktiven Karten-Team;
+- Settings, Teamverwaltung und Gebiet-Aktion bleiben über Launcher/Bridge erreichbar;
+- Viewer und Team-scoped Rollen sehen nur passende Aktionen;
+- `Team` öffnet den echten Team Hub statt des alten Workbench-Live-Group-Previews;
+- unfertige Foundation-Module gelten weiterhin nicht als abgeschlossen, nur weil interne UI existiert.
 
-Team, Gruppen, Stats, Einsätze, Feedback, Smart, Collection, Aktionen und Admin verwenden wiederkehrende Muster:
-- klare Sheet-/Card-Hierarchie;
-- kompakte Überschriften;
-- Status zuerst, Aktionen darunter;
-- destructive Aktionen deutlich getrennt;
-- keine Desktop-Admin-Dichte im mobilen Feldfluss;
-- keine neue große UI-Framework-Abhängigkeit.
+## FC1: Team Hub + Live Field Groups
 
-## FC0: Navigation und Berechtigungs-Bridge abschließen
+**Status: Runtime-Slice umgesetzt, Rollout noch nicht freigegeben.**
 
-Bevor das Gruppensystem als echtes Feature startet, muss die neue Navigation funktional vollständig werden.
+ADR-0014 ist akzeptiert. ADR-0017 ist für die Field-Session-Historie akzeptiert.
 
-### Aufgaben
-- `PlatformShell` erhält einen typisierten Action-/Navigation-Contract mit `App` statt versteckter DOM-Button-Proxies.
-- Der angezeigte Teamname stammt aus dem tatsächlichen aktiven Karten-Team, nicht nur aus dem ersten/autorisierten Team-Fallback.
-- Das Launcher-Menü wird aus einem zentralen, permission-aware Registry-Modell aufgebaut.
-- Bestehende Kartenfunktionen werden wieder erreichbar, aber nicht permanent angezeigt:
-  - Einstellungen;
-  - Team/Teamverwaltung;
-  - Gebiet anlegen, sofern berechtigt;
-  - spätere weitere rollenabhängige Aktionen.
-- `Team` darf nicht länger nur auf ein Workbench-Live-Group-Preview zeigen.
-- normale Launcher-Ziele dürfen keine Fake-/Foundation-Oberfläche öffnen.
+### Team Hub
 
-### Akzeptanz
-- kein Core-Flow ist durch das Entfernen der alten Toolbar unerreichbar;
-- Teamname entspricht dem aktuellen Karten-Arbeitskontext;
-- Viewer sieht keine Bearbeitungsaktionen;
-- Team-scoped Rollen sehen nur zulässige Aktionen;
-- Admin-/Organizer-Aktionen erscheinen nur mit entsprechender effektiver Berechtigung.
+Der normale Launcher-Eintrag `Team` bietet:
+- aktuelles Team mit Name/Farbe;
+- Teamwechsel bei entsprechendem Zugriff;
+- realen Team-Fortschritt;
+- aktive Gruppen;
+- Campaign-weite Gruppenliste mit optionalem Teamfilter;
+- Join per Room Code und QR;
+- Management-Aktionen nur für Admin bzw. eigenen Team Editor;
+- read-only Verhalten für Viewer/temporäre Mitglieder.
 
-## FC1: Team Hub + Live Field Groups feature complete
+### Gruppe erstellen
 
-Dies ist der nächste priorisierte Produktabschluss.
+Berechtigte Nutzer können:
+- ein erlaubtes Team auswählen;
+- Gruppenlabel setzen;
+- Discoverability setzen, standardmäßig aktiv;
+- optionale Teilnehmerzahl setzen;
+- eine Gruppe mit idempotenter Create-Request-ID erzeugen;
+- den einmal ausgegebenen Room Code und QR-Zugang teilen.
 
-### Produktstruktur
+Create-Replay mit gleicher Request-ID und gleichem Payload erzeugt keine zweite Gruppe und legt Secrets nicht erneut offen. Gleiche Request-ID mit anderem Payload konfliktet.
 
-Der Launcher-Eintrag `Team` öffnet einen echten Team Hub. Er kombiniert dauerhafte Team-Kontexte mit temporären Einsatzgruppen, trennt die Konzepte aber sichtbar.
+### Credentials
 
-#### Team Hub Start
-- aktuelles Team mit Name/Farbe und optionalem Datum;
-- Team wechseln, wenn der Zugriff mehrere Teams erlaubt;
-- Team-Fortschritt kompakt;
-- aktueller Einsatz / aktuelle Field Group;
-- aktive Online-Gruppen in der Aktion;
-- Team-Filter;
-- passende Verwaltungsaktionen nur bei Berechtigung.
+Akzeptierter FC1-Stand:
+- 10-stelliger human-safe Base32 Room Code;
+- separater 32-Byte-QR-Token;
+- D1 speichert nur SHA-256-Lookup-Hashes;
+- Plaintext wird nur bei Ausgabe/Rotation zurückgegeben;
+- Rotation ist idempotent und verlängert die ursprüngliche 24h-Frist nicht;
+- Revoke sperrt neue Joins, ohne bestehende Memberships automatisch zu entfernen.
 
-#### Teamverwaltung
-Feature-complete Teammanagement umfasst, soweit aktuelle/akzeptierte Berechtigungen es erlauben:
-- Team erstellen;
-- umbenennen;
-- Farbe ändern;
-- optionales Datum bearbeiten;
-- Mitglieder/Einladungen später unter accepted capability runtime;
-- Archivierung statt unbedachtem Hard Delete, sobald ADR-0017-Retention akzeptiert ist;
-- klarer read-only Zustand für Viewer/temporäre Gruppenmitglieder.
+### Join und temporäre Session
 
-### Live Group Benutzerwege
+Join ist online-only und Worker-authorisiert.
 
-#### Gruppe erstellen
-Ein berechtigter Nutzer kann:
-- Team auswählen, nur aus server-seitig erlaubtem Scope;
-- Gruppenname/Label setzen;
-- `online anzeigen` standardmäßig aktiv lassen oder deaktivieren;
-- Gruppe erstellen;
-- danach Room Code und QR anzeigen;
-- Teilnehmerzahl während der Tour setzen/ändern;
-- Gruppe manuell schließen.
+Ohne vorhandenen Campaign-Zugriff kann eine separate `vf_field_group_session` erzeugt werden:
+- HttpOnly;
+- Secure;
+- SameSite=Lax;
+- serverseitig nur gehashte Session gespeichert;
+- Scope auf genau eine Campaign, ein Team und eine Field Group;
+- keine Team-/Gebiets-/Invite-/Admin-Verwaltung;
+- nur freigegebene Task-Statusarbeit im Ziel-Team.
 
-#### Gruppe finden
-Im aktuellen Campaign-Kontext:
-- Standardfilter `Alle in der Aktion`;
-- optionaler Teamfilter;
-- nur aktive discoverable Gruppen;
-- Teamname/Farbe, Gruppenlabel, Joinbarkeit und sinnvoller Fortschrittskontext;
-- niemals Join-Secrets in Discovery-Listen.
+Bestehender Campaign-Zugriff bleibt das Berechtigungsmaximum. Join erhöht keine Rolle und erweitert keinen Team Editor auf andere Teams.
 
-#### Gruppe beitreten
-Unterstützt werden:
-- manueller Room Code;
-- QR-Join;
-- manuelle Eingabe bleibt immer als Fallback bestehen, auch wenn Kamera/QR-Scan nicht verfügbar ist.
+### Rate Limits
 
-Ein Nutzer ohne bestehenden Campaign-Zugriff darf nach erfolgreicher Online-Einlösung eine temporäre server-revocable Field-Group-Session erhalten. Diese Session bleibt auf das benötigte Team-/Gruppenfeld beschränkt.
+Join verwendet zwei Cloudflare-Rate-Limit-Bindings:
+- 30 Versuche pro 60 Sekunden für Campaign plus Connecting-IP-Key;
+- 8 Versuche pro 60 Sekunden für Campaign plus Kandidaten-Hash.
 
-#### Aktive Gruppe
-Nach Beitritt zeigt die UI:
-- Team und Gruppenname;
-- Status `aktiv`;
-- Startzeit/Dauer;
+Die IP dient nur als Rate-Limit-Key und wird nicht als Produktdaten gespeichert.
+
+### Aktive Gruppe
+
+Die UI zeigt:
+- Gruppen-/Teamname;
+- aktiven Status;
+- Laufzeit;
 - Teilnehmerzahl;
-- Gruppen-/Teamfortschritt;
-- Online-/Sync-Zustand;
-- Verlassen bzw. Entfernen, soweit erlaubt;
-- Schließen nur mit Management-Berechtigung;
-- klaren Hinweis bei geschlossen/abgelaufen/revoked.
+- realen Team-Fortschritt;
+- Online-/Offline-Zustand;
+- Leave für die eigene Membership;
+- Discoverability, Credential Rotate/Revoke und Close nur für Manager.
 
-#### Tour schließen
-- finale Teilnehmerzahl ist Pflicht;
-- manuelles Schließen invalidiert neue Joins sofort;
-- Gruppe wird `closed`;
-- verbundene Field Session wird abgeschlossen;
-- Dauer, Personen und Person-Time werden nachvollziehbar gespeichert;
-- spätere Session-/Event-Verknüpfung folgt ADR-0017.
+### Manager-Mitgliederverwaltung
 
-### ADR-0014 vor Runtime abschließen
+Umgesetzt:
+- server-autorisierter aktiver Member-Roster;
+- Admin für jede Gruppe der Campaign;
+- Team Editor nur für die eigene Teamgruppe;
+- Viewer und temporäre Mitglieder ausgeschlossen;
+- minimale Daten: Membership-ID, Membership-Typ, sichere Bezeichnung, Join-Zeit;
+- keine Session-Hashes, Join-Secrets, IPs oder Gerätefingerprints;
+- Entfernen mit expliziter Bestätigung;
+- Gruppenanzahl wird danach erneut autoritativ geladen.
 
-Vor D1-/Credential-Runtime wird ADR-0014 explizit akzeptiert. Planempfehlung für die offenen Punkte:
-- 10-stelliger human-safe Base32 Room Code beibehalten;
-- separater QR-Token mit mindestens 128 Bit Entropie;
-- Credential-Rotation ersetzt nur Credentials und verlängert niemals die ursprüngliche 24h-Gruppenfrist;
-- bestehender Campaign-Zugriff kann einer Group-Membership zugeordnet werden, ohne eine zweite privilegiertere Identity zu erzeugen;
-- Nutzer ohne Campaign-Zugriff erhalten eine separate temporäre Field-Group-Session;
-- temporäre Standardrechte bleiben enger als ein persistenter Team Member: eigene Teamkarte lesen, zulässige Task-Statusarbeit im Ziel-Team, eigene Gruppen-/Session-Interaktion, keine Team-/Gebiets-/Invite-/Admin-Verwaltung;
-- Route- und codebezogene Rate Limits plus generische Fehlerantworten;
-- Audit Events für Create, Discoverability Change, Credential Rotate/Revoke, Join, Remove, Close, Expire, ohne Secrets.
+Ein Source-Guard stellt sicher, dass das Member-Panel im echten Team-Hub-Build bleibt und nicht wieder als unimportierte Datei aus dem Produktgraph verschwindet.
 
-Optionales Gruppenpasswort ist kein Blocker für die erste Feature-Complete-Version, solange Room Code und QR vollständig funktionieren. Wenn es später kommt, muss es einen akzeptierten Hashing-Ansatz wiederverwenden und darf niemals plaintext gespeichert werden.
+### Close und 24h-Expiry
 
-### Persistenz/API
+Manuelles Schließen:
+- finale Teilnehmerzahl verpflichtend;
+- blockiert neue Joins sofort;
+- invalidiert temporären privilegierten Zugriff;
+- beendet die Field Group;
+- legt nach Migration 0007 dauerhaft die zugehörige Field Session plus dedupliziertes `field_session.closed`-Event an.
 
-Nach ADR-Akzeptanz additive Tabellen nur für diesen Slice, voraussichtlich:
+24h-Sicherheitsablauf:
+- wird serverseitig auf relevanten Read-/Join-/Authorization-Pfaden aufgelöst;
+- erzeugt `field_session.expired`;
+- unbekannte Teilnehmerzahl bleibt unbekannt;
+- Person-Time wird nicht erfunden.
+
+### Persistenz
+
+Migration 0006:
 - `field_groups`;
 - `field_group_join_credentials`;
-- `field_group_memberships` bzw. temporäre Membership-Sessions;
-- Verknüpfung zu `field_sessions`, sobald ADR-0017 akzeptiert ist.
+- `field_group_memberships`;
+- Create-/Rotate-Idempotenzfelder und Constraints.
 
-Benötigte serverseitige Operationen:
-- create/list/get group;
-- update discoverability;
-- update participant count;
-- join via Room Code;
-- join via QR token;
-- rotate/revoke join credentials;
-- leave/remove membership;
-- close group;
-- expire group server-side bei jeder relevanten Autorisierungs-/Read-/Join-Prüfung spätestens nach 24h.
+Migration 0007:
+- `field_sessions`;
+- minimierte `domain_events`;
+- deterministische Field-Group-zu-Session-Beziehung;
+- transaktionale Close-/Expiry-Historie.
 
-Es darf kein Client-only Expiry oder Client-only Join geben.
+Beide Migrationen sind vorbereitet, aber nicht remote angewendet.
 
-### Synchronisation
+### FC1 Rollout-Gate
 
-- Group-/Session-Mutationen verwenden idempotente Serveroperationen;
-- offline bereits autorisierte Arbeitsmutationen nutzen M5, soweit ihr Scope das erlaubt;
-- neuer Join benötigt Online-Worker-Redemption;
-- nach Reconnect stoppen revoked/closed/expired Sessions privilegierte Queue-Synchronisation sichtbar;
-- kein WebSocket/Service-Worker-Zwang nur für „live“; gemeinsamer Zustand wird zunächst über den bestehenden Snapshot/API-Refresh sinnvoll aktualisiert, neue Realtime-Infrastruktur nur nach gemessenem Bedarf.
+FC1 darf erst als produktiv ausgerollt gelten, wenn:
+- 0006 und 0007 bewusst remote angewendet wurden;
+- exakter Release-Head grün ist;
+- Cloudflare Worker/Rate-Limit-Bindings im Zielenvironment verifiziert sind;
+- Multi-Device-Smoke-Test mit Room Code und QR erfolgt;
+- Close/Expiry plus Membership-Removal im Zielenvironment geprüft sind.
 
-### Security-Akzeptanz
-- Room Code nicht sequenziell;
-- QR enthält keinen persistenten Campaign/Admin-Token;
-- Join Secrets nie in Logs/Discovery/Analytics;
-- Rate-Limit-/Brute-Force-/Expiry-/Revocation-Tests;
-- Cross-Campaign und Cross-Team negative Tests;
-- temporärer Member kann nie Teamverwaltung/Admin/Organizer erhalten;
-- manuelles Close macht neuen Join sofort unmöglich;
-- Rotation verlängert die 24h-Frist nicht.
+### Team-Lifecycle bewusst nicht in FC1 verstecken
 
-## FC2: Field Sessions + Kommentare + Activity + Automations
+Die bestehende persistente Teamstruktur besitzt keinen Archivstatus. Team-Editor-Grants hängen außerdem an der aktuellen Team-Existenz und die Legacy-Snapshot-Kompatibilität beeinflusst FK-Entscheidungen.
 
-Nach dem Team-/Gruppensystem wird Zusammenarbeit dauerhaft statt lokal.
+Darum wird in FC1 **kein neuer Team-Hard-Delete oder improvisierter Archivstatus** eingebaut.
 
-### ADR-0017 abschließen
-Vor Tabellen/Runtime werden entschieden:
-- Aktion/Campaign archivieren vs permanent löschen bei retained history;
-- Kommentar-Edit/Delete-Semantik;
-- Security/Audit-Retention getrennt von normaler Activity, falls nötig;
-- ADR-0018-Linkage für cross-action Analytics.
+Sicheres Team-Archivieren wird als eigener Team-Lifecycle-/Admin-Slice unter Organization/Permissions behandelt. Dieser Slice muss vorher explizit definieren:
+- persistentes Team-Statusfeld;
+- Verhalten aktiver Areas/Tasks;
+- Verhalten bestehender Team-Editor-Grants;
+- Verhalten aktiver Field Groups;
+- retained Field Sessions/Events;
+- Wiederherstellung vs permanentes Löschen.
 
-### Feature Complete
-- Field Session manuell oder über Field Group starten;
-- Dauer/Teilnehmer/Notiz;
-- Task-Mutationen erhalten Session/Event-Bezug serverseitig;
-- Session schließen und Historie anzeigen;
-- Session auf Karte auswählen und betroffene aktuelle/reviewed Street-/House-Geometrie hervorheben;
-- Kommentare auf Campaign/Area/Street/House/Pickup-Kontext dauerhaft speichern;
-- Activity Feed aus echten Domain Events;
-- Automations nur deterministisch/idempotent, mit sichtbaren Erfolgs-/Fehlerzuständen;
-- Retry derselben M5-Mutation erzeugt kein doppeltes Event.
+ADR-0017 bleibt dabei verbindlich: Historie referenzierter Teams darf nicht durch unbedachten Hard Delete unverständlich werden.
 
-## FC3: Stats feature complete
+## FC2: Field Sessions + Comments + Activity + Automations
 
-Stats ersetzt reine Preview-Karten.
+**Status: als nächster Feature-Complete-Slice offen.**
 
-### Mobile
+Die Close-/Expiry-Session-Grundlage aus FC1 ist bereits vorhanden. FC2 erweitert sie zu einem echten Collaboration-Produkt.
+
+### Umsetzung
+
+1. Field Session Read-/History-API mit Campaign-/Team-Scope.
+2. Session-Historie im normalen `Einsätze`-Modul statt Fake-/Foundation-State.
+3. explizite Session-Notiz mit klarer Größenbegrenzung und inertem Text.
+4. Task-Mutationen erhalten serverseitigen Session-/Event-Bezug.
+5. Retry derselben M5-Mutation erzeugt kein zweites Event.
+6. Session-Auswahl kann betroffene aktuelle/reviewed Street-/House-Geometrie hervorheben.
+7. Kommentare werden auf Campaign/Area/Street/House/Pickup-Kontext dauerhaft gespeichert.
+8. Kommentar Edit/Delete/Moderation wird vor Runtime explizit festgelegt.
+9. Activity Feed basiert auf echten normalisierten Domain Events.
+10. Automations bleiben deterministisch, autorisiert und idempotent.
+
+### Grenzen
+
+- keine GPS-Route;
+- keine vollständigen Snapshot-Kopien pro Event;
+- keine unrestricted Request Bodies im Eventlog;
+- Security/Audit bleibt bei Bedarf getrennt vom normalen Produkt-Activity-Feed.
+
+## FC3: Stats
+
+Feature complete umfasst:
 - Campaign-Fortschritt;
 - Team-Fortschritt;
 - Area-Fortschritt;
-- Streets und Houses separat verständlich;
+- Streets und Houses separat;
 - offene/restliche Arbeit;
 - Einsätze, Dauer, Teilnehmer, Person-Time;
 - Session-Historie;
-- optional Karte fokussieren/highlighten.
+- optionaler Kartenfokus/Highlight.
 
-### Regeln
+Regeln:
 - jede Prozentzahl benennt ihren Nenner;
 - Distribution und Collection bleiben getrennt;
-- keine Worker-/Team-Rangliste;
+- keine Team-/Worker-Rangliste;
 - keine GPS-basierte Produktivitätsmetrik;
-- zunächst aus Source State + Sessions/Events berechnen, Rollups erst bei gemessenem Bedarf.
+- zunächst aus Source State plus Sessions/Events berechnen, Rollups erst bei gemessenem Bedarf.
 
-## FC4: Smart Streets + Houses als echter Kartenworkflow
+## FC4: Smart Streets + Houses
 
-M6 gilt erst als abgeschlossen, wenn die vorhandene Persistenz auch im normalen Kartenprodukt benutzbar ist.
-
-Feature Complete umfasst:
+Feature complete umfasst:
 - reale Straßen auswählen/generieren statt Highlighter-Tracing;
-- Area -> passende Straßenvorschläge/generierte Segmente;
+- Area zu passenden Straßen-/Segmentvorschlägen;
 - stabile Street-Snapshots;
 - House Polygon Layer in MapLibre;
 - ein oder mehrere Häuser auswählen;
-- klare Street-vs-House-Modi;
+- klare Street-/House-Modi;
 - Parent-Street-Bezug;
-- Statusänderungen offline-resilient;
-- whole-city Dichte-/Performance-Tests;
+- offline-resiliente Statusänderungen;
+- Dichte-/Performance-Tests;
 - manuelles Zeichnen nur als Fallback.
 
-Remote Migration 0004/0005 bleibt ein separater, explizit freizugebender Rollout.
+Migrationen 0004/0005 bleiben bis zum bewussten Rollout unangetastet.
 
-## FC5: Collection / Pickup feature complete
+## FC5: Collection / Pickup
 
-- expliziter Distribution/Collection-Modus;
+- expliziter Distribution-/Collection-Modus;
 - separate Pickup-Persistenz;
 - Straßenabschnitte gefahren/fertig;
 - Häuser/Adressen als Pickup Tasks;
-- manuelle Telefon-/Meldeadressen;
+- manuelle Meldeadressen;
 - open/collected/unavailable/follow-up;
-- Field Groups funktionieren auch in Collection;
-- eigene Stats;
-- keine Überschreibung von Flyer-Status.
+- Field Groups auch in Collection;
+- separate Stats;
+- keine Überschreibung von Distribution-Status.
 
-## FC6: Organizations + Identity + Permissions + Admin feature complete
+## FC6: Organizations + Identity + Permissions + Admin
 
-Erst nach expliziter Akzeptanz von ADR-0015 + Threat Model + ADR-0016.
+Erst nach expliziter Akzeptanz von ADR-0015, Threat Model und ADR-0016.
 
-### Identity
+Umfasst:
 - username/password/TOTP;
 - sichere Recovery;
-- server-revocable Sessions;
-- mehrere Organizers/Admins;
-- letzter Organizer geschützt;
-- sichere Migration/Koexistenz mit Legacy Access Links.
-
-### Permissions
-- named role templates;
-- Organizer/Admin/Team Member/Team Leader/Viewer;
-- capability registry;
+- revocable Account Sessions;
+- mehrere Admins/Organizer;
+- Capability Registry;
 - Team-/Campaign-/Organization-Scopes;
-- Worker deny-by-default;
-- permission-aware Launcher und Admin UI.
+- deny-by-default Worker-Autorisierung;
+- desktop-first Admin;
+- sicheren Team-Lifecycle inklusive Archive/Restore/Permanent Delete nach akzeptierter Retention-Semantik.
 
-### Desktop Admin
-- Organizations;
-- Aktionen;
-- Teams;
-- Areas;
-- Mitglieder/Invites;
-- Rollen/Rechte;
-- Live Groups;
-- Sessions/Stats;
-- Activity/Audit;
-- Support;
-- Security/Accounts.
-
-Admin bleibt desktop-first und wird nicht in den mobilen Kartenfluss gequetscht.
-
-## FC7: Aktionen, Templates und Analytics feature complete
+## FC7: Actions, Templates und Analytics
 
 Nach ADR-0018-Akzeptanz:
 - persistente Distribution-/Collection-Templates;
-- neue Aktion aus kompatibler Vorlage oder leer;
-- immer frische operative IDs/History;
+- neue Action aus Vorlage oder leer;
+- frische operative IDs/History;
 - Template Import/Export;
 - Archive;
-- Organizer-only Permanent Delete;
+- privilegierter Permanent Delete;
 - tenant-scoped Analytics Export;
-- repeated-action comparison;
-- keine automatische AI-Ausführung und keine AI-gesteuerten Rechte.
+- repeated-action comparison.
 
-## FC8: Settings + Support + Appearance feature complete
+Keine automatische AI-Ausführung und keine AI-gesteuerten Berechtigungen.
 
-### Settings
+## FC8: Settings + Support + Appearance
+
+Settings:
 - Campaign-Fokus/Startansicht;
 - vorbereitete Offline-Arbeitsfläche;
 - Sprache;
-- Appearance System/Light/Dark;
-- weitere capability-gesteuerte Campaign-Einstellungen.
+- System/Light/Dark;
+- capability-gesteuerte Campaign-Einstellungen.
 
-### Support/Feedback
+Support:
 - Hilfe/FAQ;
 - Version/Environment;
 - Feedback/Bugreport;
-- sichere optionale Kontextdaten;
-- niemals Secrets/Tokens/TOTP/GPS-History automatisch anhängen.
+- nur sichere optionale Kontextdaten;
+- keine Secrets/Tokens/TOTP/GPS-History automatisch anhängen.
 
 ## FC9: Hardening und Release
 
-Die Plattform gilt erst nach produktweitem Abschluss als feature complete:
-- reale Android-/iPhone-Tests, auch langsamere Geräte;
+Vor Plattform-Feature-Complete:
+- reale Android-/iPhone-Tests;
 - Desktop Admin;
-- 500/1000/2500/5000 Streets + House-Dichte;
+- 500/1000/2500/5000 Streets plus House-Dichte;
 - Session/Event-Historie unter Last;
-- schlechte Verbindung, Reconnect, Revocation;
+- schlechte Verbindung, Reconnect und Revocation;
 - Security Matrix für Identity/Permissions/Join Codes;
 - XSS/CSRF/SQL-Injection/Tenant-Isolation;
 - Accessibility/Reduced Motion;
-- Recovery/Runbooks;
-- exakte Release-Head CI + Cloudflare Preview.
+- Recovery-/Deployment-Runbooks;
+- exakter Release-Head plus Cloudflare-Verifikation.
 
 ## Branch-/PR-Strategie
 
-- Keine weitere Serie von dauerhaft offenen Workbench-Preview-PRs für normale Features.
-- Pro Feature-Complete-Slice ein kleiner, klarer Integrationsbranch oder wenige logisch getrennte PRs, aber das Produktziel des Slices bleibt end-to-end.
-- Security-sensitive ADR-/Threat-Model-Änderungen können separat vor Runtime gemergt werden.
-- Migrationen werden vorbereitet, getestet und in eigener dokumentierter Operation remote ausgerollt.
-- Gestapelte PRs werden vor dem nächsten großen Slice sauber integriert/retargeted, damit kein unübersichtlicher Workbench-Baum entsteht.
-- Alte experimentelle Workbench-PRs werden nach bestätigter Integration geschlossen oder als historische Experimente markiert, statt parallel als vermeintliche Produktlinien offen zu bleiben.
+- keine neue Serie dauerhaft offener Workbench-Preview-PRs;
+- Feature-Slices bleiben klein genug für Review, aber end-to-end im Produktziel;
+- Security-ADR/Threat-Model darf separat vor Runtime landen;
+- Migrationen werden vorbereitet, getestet und separat remote ausgerollt;
+- gestapelte PRs werden vor großen Folgeslices bewusst integriert/retargeted;
+- experimentelle Workbench-Linien bleiben historisch und werden nicht parallel als Produktlinie fortgeführt.
 
-## Empfohlene unmittelbare Reihenfolge
+## Unmittelbare Reihenfolge
 
-1. PR #70/#71 exact-head prüfen und Branch-Stack sauber integrieren/retargeten, ohne ungeprüften Main-Merge.
-2. FC0 Navigation/Action-Bridge abschließen.
-3. ADR-0014 offene Punkte final entscheiden und ADR explizit akzeptieren.
-4. Team Hub UI im aktuellen Design fertig bauen.
-5. Field Group D1/API/Credentials/Membership + Join/QR/Close end-to-end bauen.
-6. ADR-0017 finalisieren und Field Session/Events direkt an das fertige Gruppensystem anbinden.
+1. FC1-Doku und exact-head CI auf PR #72 finalisieren.
+2. 0006/0007 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
+3. FC2 mit autorisierter Field-Session-History-Read-API beginnen.
+4. Session-Historie im `Einsätze`-Modul auf reale Daten umstellen.
+5. Task-Event-Attribution über M5 idempotent anbinden.
+6. Danach Kommentare und Activity innerhalb desselben akzeptierten Eventmodells.
 7. Stats aus echten Tasks/Sessions/Events abschließen.
-8. Danach FC4 bis FC9 in der obigen Reihenfolge.
-
-## Akzeptanz für diesen Plan
-
-Dieser Plan ist erfüllt, wenn:
-- normale Nutzer keine Foundation-/Fake-Module mehr als Produktfeature sehen;
-- alle Launcher-Ziele entweder end-to-end funktionieren oder bewusst nicht angeboten werden;
-- das Team-/Gruppensystem real über mehrere Geräte nutzbar ist;
-- Sessions, Activity, Stats und Collection auf dauerhaften Daten beruhen;
-- Admin/Identity/Permissions sicher und serverseitig umgesetzt sind;
-- Smart Street/House der normale Kartenworkflow ist;
-- das mobile UI durchgehend dem unteren Launcher-/Sheet-Design folgt;
-- die Plattform die M10-Hardening-Gates besteht.
+8. Anschließend FC4 bis FC9.
 
 ## Risiken
 
-- „Feature complete“ darf nicht zu einem riesigen unreviewbaren PR führen. Vertikal vollständig bedeutet nicht monolithisch.
-- Group Credentials und Account Identity sind echte Authentifizierungsgrenzen und dürfen nicht durch UI-Druck an ihren ADR-/Threat-Model-Gates vorbeigebaut werden.
-- zu frühe Realtime-Infrastruktur kann Komplexität erhöhen, ohne Nutzwert zu liefern;
-- Launcher-Rechte dürfen nicht zum Sicherheitsmechanismus werden;
+- Feature complete darf nicht zu einem monolithischen, unreviewbaren PR werden.
+- Credentials und Account Identity bleiben echte Sicherheitsgrenzen.
+- zu frühe Realtime-Infrastruktur erhöht Komplexität ohne bewiesenen Nutzen;
+- UI-Rechte ersetzen niemals Worker-Autorisierung;
 - Statistics dürfen Street/House/Collection-Einheiten nicht irreführend vermischen;
-- retained history macht Archive/Delete-Semantik dauerhaft relevant.
+- retained history macht Archive/Delete-Semantik dauerhaft relevant;
+- Team-Lifecycle darf nicht über Legacy-Snapshot-/Grant-Grenzen improvisiert werden.
 
 ## Nicht-Ziele
 
@@ -453,5 +396,5 @@ Dieser Plan ist erfüllt, wenn:
 - kein öffentliches Gruppenverzeichnis;
 - kein Continuous-GPS-Tracking;
 - keine Client-only Authorization;
-- kein all-at-once D1-Schema;
-- keine weitere sichtbare Foundation-Oberfläche als Ersatz für ein fertiges Feature.
+- kein All-at-once-D1-Schema;
+- keine sichtbare Foundation-Oberfläche als Ersatz für ein fertiges Feature.
