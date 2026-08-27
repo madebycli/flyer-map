@@ -18,6 +18,7 @@ export type FieldSessionSummary = {
   durationSeconds: number | null;
   participantCount: number | null;
   personSeconds: number | null;
+  affectedTaskCount: number;
   status: FieldSessionStatus;
 };
 
