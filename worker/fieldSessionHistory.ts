@@ -7,6 +7,7 @@ const REQUIRED_FIELD_SESSION_COLUMNS = new Set([
   "field_group_id",
   "started_at",
   "ended_at",
+  "end_reason",
   "duration_seconds",
   "participant_count",
   "person_seconds",
