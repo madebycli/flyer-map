@@ -40,12 +40,13 @@ CREATE TABLE field_group_join_credentials (
   campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
   group_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('room-code', 'qr')),
+  issuance_type TEXT NOT NULL CHECK (issuance_type IN ('create', 'rotate')),
   request_id TEXT NOT NULL,
   secret_hash TEXT NOT NULL,
   created_at TEXT NOT NULL,
   revoked_at TEXT,
   UNIQUE (kind, secret_hash),
-  UNIQUE (group_id, kind, request_id),
+  UNIQUE (group_id, kind, issuance_type, request_id),
   FOREIGN KEY (group_id, campaign_id)
     REFERENCES field_groups(id, campaign_id) ON DELETE CASCADE
 );
@@ -84,7 +85,7 @@ CREATE INDEX idx_field_groups_team_state
 CREATE INDEX idx_field_group_credentials_group
   ON field_group_join_credentials(group_id, kind, revoked_at);
 CREATE INDEX idx_field_group_credentials_request
-  ON field_group_join_credentials(group_id, request_id);
+  ON field_group_join_credentials(group_id, issuance_type, request_id);
 CREATE INDEX idx_field_group_memberships_group
   ON field_group_memberships(group_id, left_at, removed_at);
 CREATE INDEX idx_field_group_memberships_campaign
