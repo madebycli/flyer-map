@@ -15,6 +15,7 @@ const sessionColumns = [
   "field_group_id",
   "started_at",
   "ended_at",
+  "end_reason",
   "duration_seconds",
   "participant_count",
   "person_seconds",
@@ -75,7 +76,7 @@ test("field session history schema requires both complete session and event tabl
   assert.equal(await hasFieldSessionHistorySchema(missingEvents), false);
 
   const incompleteSessions = new SchemaDb({
-    field_sessions: sessionColumns.filter((column) => column !== "person_seconds"),
+    field_sessions: sessionColumns.filter((column) => column !== "end_reason"),
     domain_events: eventColumns,
   });
   assert.equal(await hasFieldSessionHistorySchema(incompleteSessions), false);
@@ -102,21 +103,33 @@ test("field group close fails before authorization or mutation when migration 00
   assert.equal((await response.json()).error.code, "field_session_schema_unavailable");
 });
 
-test("migration 0007 binds group close to one durable session and one deduplicated event", async () => {
+test("migration 0007 binds manual close to one durable session and one deduplicated event", async () => {
   const sql = await readFile("migrations/0007_field_sessions_events.sql", "utf8");
 
   assert.match(sql, /CREATE TABLE field_sessions/u);
   assert.match(sql, /CREATE TABLE domain_events/u);
+  assert.match(sql, /end_reason TEXT/u);
   assert.match(sql, /UNIQUE \(campaign_id, field_group_id\)/u);
   assert.match(sql, /UNIQUE \(campaign_id, dedupe_key\)/u);
   assert.match(sql, /CREATE TRIGGER trg_field_group_close_history/u);
-  assert.match(sql, /AFTER UPDATE OF state ON field_groups/u);
   assert.match(sql, /OLD\.state = 'active' AND NEW\.state = 'closed'/u);
   assert.match(sql, /'field_session_group_' \|\| NEW\.id/u);
+  assert.match(sql, /'manual-close'/u);
   assert.match(sql, /'field_session\.closed'/u);
   assert.match(sql, /person_seconds/u);
   assert.match(sql, /INSERT OR IGNORE INTO field_sessions/u);
-  assert.match(sql, /WHERE g\.state = 'closed'/u);
+  assert.match(sql, /g\.state IN \('closed', 'expired'\)/u);
 
   assert.doesNotMatch(sql, /latitude|longitude|gps|route_polyline|session_secret|qr_token|room_code/iu);
+});
+
+test("migration 0007 retains expired groups without inventing missing person-time", async () => {
+  const sql = await readFile("migrations/0007_field_sessions_events.sql", "utf8");
+
+  assert.match(sql, /CREATE TRIGGER trg_field_group_expiry_history/u);
+  assert.match(sql, /OLD\.state = 'active' AND NEW\.state = 'expired'/u);
+  assert.match(sql, /'group-expired'/u);
+  assert.match(sql, /'field_session\.expired'/u);
+  assert.match(sql, /WHEN NEW\.participant_count IS NULL THEN NULL/u);
+  assert.match(sql, /actor_kind[\s\S]*'system'/u);
 });
