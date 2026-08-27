@@ -19,6 +19,7 @@ import {
   type FieldGroupTourSummary,
 } from "../data/fieldGroupApi.ts";
 import type { PlatformAppContext } from "../platform/platformContract.ts";
+import { TeamProgressPanel } from "./TeamProgressPanel.tsx";
 import "./team-hub.css";
 
 type TeamHubProps = {
@@ -296,11 +297,6 @@ export function TeamHub({
       await loadGroups();
     });
 
-  const progress = useMemo(() => {
-    if (!activeTeam) return null;
-    return null;
-  }, [activeTeam]);
-
   return (
     <div className="team-hub-overlay" role="presentation" onMouseDown={onClose}>
       <section
@@ -373,7 +369,11 @@ export function TeamHub({
                         : "Noch nicht verbunden"}
               </strong>
             </div>
-            {progress ? <div>{progress}</div> : null}
+            <TeamProgressPanel
+              campaignId={campaignId}
+              teamId={activeTeam?.id ?? null}
+              online={online}
+            />
             {context?.canManageTeams ? (
               <button className="team-hub-secondary" type="button" onClick={onManageTeams}>
                 Teams verwalten
