@@ -116,11 +116,12 @@ export async function putCampaignSnapshot(
 export async function postCampaignMutation(
   campaignId: string,
   mutation: CampaignMutation,
+  fieldGroupId: string | null = null,
 ) {
   const response = await apiFetch(campaignPath(campaignId, "mutations"), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mutation }),
+    body: JSON.stringify({ mutation, fieldGroupId }),
   });
   return (await response.json()) as {
     mutationId: string;
