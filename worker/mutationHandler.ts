@@ -8,6 +8,8 @@ import {
   loadCampaignSnapshot,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
+import { hasFieldSessionHistorySchema } from "./fieldSessionHistory.ts";
+import { buildMutationDomainEvent } from "./mutationEvents.ts";
 import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 import {
   getAppliedMutation,
@@ -166,11 +168,24 @@ export async function handleCampaignMutation(
       );
     }
 
+    const domainEvent =
+      (mutation.type === "task.set-status" || mutation.type === "house.set-status") &&
+      (await hasFieldSessionHistorySchema(db))
+        ? await buildMutationDomainEvent(
+            db,
+            current,
+            mutation,
+            access,
+            parsed.value.fieldGroupId,
+          )
+        : null;
+
     const persisted = await persistCampaignMutation(
       db,
       mutation,
       current.revision,
       fingerprint,
+      domainEvent,
     );
     if (persisted.ok) {
       return json({
