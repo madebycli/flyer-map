@@ -6,6 +6,7 @@ import {
   type D1DatabaseLike,
   type D1PreparedStatement,
 } from "./campaignRepository.ts";
+import type { MutationDomainEvent } from "./mutationEvents.ts";
 import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 
 export type AppliedMutation = {
@@ -323,11 +324,54 @@ function mutationStatement(
   }
 }
 
+function domainEventStatement(
+  db: D1DatabaseLike,
+  mutation: CampaignMutation,
+  writeToken: string,
+  event: MutationDomainEvent,
+): D1PreparedStatement {
+  const payloadJson = JSON.stringify({
+    previousStatus: event.previousStatus,
+    newStatus: event.newStatus,
+  });
+  const eventId = `domain_event_mutation_${mutation.id}`;
+  const dedupeKey = `campaign-mutation:${mutation.id}:task-status`;
+
+  return db
+    .prepare(
+      `INSERT OR IGNORE INTO domain_events (
+         id, campaign_id, team_id, field_session_id, entity_type, entity_id,
+         event_type, occurred_at, actor_kind, actor_ref, payload_version,
+         payload_json, dedupe_key, created_at
+       )
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?
+       WHERE ${guardExistsSql()}`,
+    )
+    .bind(
+      eventId,
+      mutation.campaignId,
+      event.teamId,
+      event.fieldSessionId,
+      event.entityType,
+      event.entityId,
+      event.eventType,
+      event.occurredAt,
+      event.actorKind,
+      event.actorRef,
+      payloadJson,
+      dedupeKey,
+      new Date().toISOString(),
+      mutation.campaignId,
+      writeToken,
+    );
+}
+
 export async function persistCampaignMutation(
   db: D1DatabaseLike,
   mutation: CampaignMutation,
   fromRevision: number,
   fingerprintOverride?: string,
+  domainEvent: MutationDomainEvent | null = null,
 ): Promise<MutationPersistenceResult> {
   const fingerprint = fingerprintOverride ?? (await fingerprintCampaignMutation(mutation));
   const existing = await getAppliedMutation(db, mutation.campaignId, mutation.id);
@@ -391,11 +435,16 @@ export async function persistCampaignMutation(
       writeToken,
     );
 
-  const results = await db.batch([
+  const statements = [
     claim,
     mutationStatement(db, mutation, writeToken, hasTaskSource),
     ledger,
-  ]);
+  ];
+  if (domainEvent) {
+    statements.push(domainEventStatement(db, mutation, writeToken, domainEvent));
+  }
+
+  const results = await db.batch(statements);
 
   if ((results[0]?.meta?.changes ?? 0) === 1) {
     return { ok: true, revision: nextRevision, alreadyApplied: false };
