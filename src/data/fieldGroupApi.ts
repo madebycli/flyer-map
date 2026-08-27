@@ -33,6 +33,13 @@ export type FieldGroupSummary = {
   membershipCount: number;
 };
 
+export type FieldGroupMemberSummary = {
+  id: string;
+  kind: "campaign-access" | "temporary";
+  label: string;
+  joinedAt: string;
+};
+
 export type FieldGroupCredentials = {
   roomCode: string;
   qrToken: string;
@@ -103,6 +110,11 @@ export async function fetchFieldGroups(campaignId: string, teamId?: string | nul
 export async function fetchFieldGroup(campaignId: string, groupId: string) {
   const response = await apiFetch(groupPath(campaignId, groupId));
   return ((await response.json()) as { group: FieldGroupSummary }).group;
+}
+
+export async function fetchFieldGroupMembers(campaignId: string, groupId: string) {
+  const response = await apiFetch(`${groupPath(campaignId, groupId)}/memberships`);
+  return ((await response.json()) as { members: FieldGroupMemberSummary[] }).members;
 }
 
 export async function createFieldGroup(
