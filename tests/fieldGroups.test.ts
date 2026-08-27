@@ -24,6 +24,8 @@ type StoredGroup = {
   discoverable: number;
   state: "active" | "closed" | "expired";
   participant_count: number | null;
+  create_request_id: string;
+  create_payload_hash: string;
   created_at: string;
   hard_expires_at: string;
   closed_at: string | null;
@@ -32,6 +34,16 @@ type StoredGroup = {
   team_color: string;
   join_available: number;
   membership_count: number;
+};
+
+type StoredCredential = {
+  id: string;
+  campaignId: string;
+  groupId: string;
+  issuanceType: "create" | "rotate";
+  requestId: string;
+  secretHash: string;
+  revokedAt: string | null;
 };
 
 class FieldGroupStatement implements D1PreparedStatement {
@@ -66,6 +78,38 @@ class FieldGroupStatement implements D1PreparedStatement {
       if (campaignId !== "campaign_a") return null;
       const team = this.db.teams.get(teamId);
       return (team ?? null) as T | null;
+    }
+
+    if (query.includes("FROM field_groups") && query.includes("create_request_id = ?")) {
+      const [campaignId, requestId] = this.values as [string, string];
+      const group = this.db.groups.find(
+        (candidate) =>
+          candidate.campaign_id === campaignId && candidate.create_request_id === requestId,
+      );
+      return (group
+        ? { id: group.id, create_payload_hash: group.create_payload_hash }
+        : null) as T | null;
+    }
+
+    if (
+      query.includes("FROM field_group_join_credentials") &&
+      query.includes("issuance_type = ?") &&
+      query.includes("request_id = ?")
+    ) {
+      const [campaignId, groupId, issuanceType, requestId] = this.values as [
+        string,
+        string,
+        "create" | "rotate",
+        string,
+      ];
+      const credential = this.db.credentials.find(
+        (candidate) =>
+          candidate.campaignId === campaignId &&
+          candidate.groupId === groupId &&
+          candidate.issuanceType === issuanceType &&
+          candidate.requestId === requestId,
+      );
+      return (credential ? { id: credential.id } : null) as T | null;
     }
 
     if (query.includes("FROM field_groups g") && query.includes("WHERE g.id = ?")) {
@@ -105,6 +149,7 @@ class FieldGroupDb implements D1DatabaseLike {
   teamId: string | null = null;
   capturedValues: unknown[][] = [];
   credentialHashes: string[] = [];
+  credentials: StoredCredential[] = [];
   groups: StoredGroup[] = [];
   teams = new Map([
     ["team_a", { id: "team_a", name: "Team A", color: "#2563eb" }],
@@ -132,6 +177,8 @@ class FieldGroupDb implements D1DatabaseLike {
           discoverable,
           participantCount,
           ,
+          requestId,
+          payloadHash,
           createdAt,
           hardExpiresAt,
           updatedAt,
@@ -147,6 +194,8 @@ class FieldGroupDb implements D1DatabaseLike {
           string,
           string,
           string,
+          string,
+          string,
         ];
         const team = this.teams.get(teamId)!;
         this.groups.push({
@@ -158,6 +207,8 @@ class FieldGroupDb implements D1DatabaseLike {
           discoverable,
           state: "active",
           participant_count: participantCount,
+          create_request_id: requestId,
+          create_payload_hash: payloadHash,
           created_at: createdAt,
           hard_expires_at: hardExpiresAt,
           closed_at: null,
@@ -168,7 +219,38 @@ class FieldGroupDb implements D1DatabaseLike {
           membership_count: 0,
         });
       } else if (query.startsWith("INSERT INTO field_group_join_credentials")) {
-        this.credentialHashes.push(statement.values[3] as string);
+        const [id, campaignId, groupId, requestId, secretHash] = statement.values as [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ];
+        const issuanceType = query.includes("'rotate'") ? "rotate" : "create";
+        this.credentials.push({
+          id,
+          campaignId,
+          groupId,
+          issuanceType,
+          requestId,
+          secretHash,
+          revokedAt: null,
+        });
+        this.credentialHashes.push(secretHash);
+      } else if (query.startsWith("UPDATE field_group_join_credentials")) {
+        const [revokedAt, groupId, campaignId] = statement.values as [string, string, string];
+        changes = 0;
+        for (const credential of this.credentials) {
+          if (
+            credential.groupId === groupId &&
+            credential.campaignId === campaignId &&
+            credential.revokedAt === null
+          ) {
+            credential.revokedAt = revokedAt;
+            changes += 1;
+          }
+        }
       } else if (query.startsWith("UPDATE field_groups")) {
         changes = 0;
       }
@@ -348,6 +430,7 @@ test("create stores only credential hashes and enforces legacy team management s
         label: "Tour Nord",
         teamId: "team_b",
         discoverable: true,
+        requestId: "create-admin-001",
       }),
       { DB: adminDb },
     ),
@@ -369,6 +452,7 @@ test("create stores only credential hashes and enforces legacy team management s
       request("/api/campaigns/campaign_a/field-groups", "POST", {
         label: "Eigene Tour",
         teamId: "team_a",
+        requestId: "create-own-team-001",
       }),
       { DB: ownTeamDb },
     ),
@@ -382,6 +466,7 @@ test("create stores only credential hashes and enforces legacy team management s
     request("/api/campaigns/campaign_a/field-groups", "POST", {
       label: "Fremde Tour",
       teamId: "team_b",
+      requestId: "create-foreign-001",
     }),
     { DB: foreignTeamDb },
   );
@@ -394,11 +479,114 @@ test("create stores only credential hashes and enforces legacy team management s
     request("/api/campaigns/campaign_a/field-groups", "POST", {
       label: "Viewer Tour",
       teamId: "team_a",
+      requestId: "create-viewer-001",
     }),
     { DB: viewerDb },
   );
   assert.equal(viewer?.status, 403);
   assert.equal(viewerDb.groups.length, 0);
+});
+
+test("create replay returns the original group without issuing secrets or duplicating state", async () => {
+  const db = new FieldGroupDb();
+  const body = {
+    label: "Retry Tour",
+    teamId: "team_a",
+    discoverable: true,
+    participantCount: 3,
+    requestId: "create-retry-001",
+  };
+
+  const first = await quietAudit(() =>
+    handleFieldGroupApi(
+      request("/api/campaigns/campaign_a/field-groups", "POST", body),
+      { DB: db },
+    ),
+  );
+  assert.equal(first?.status, 201);
+  const firstBody = await first?.json();
+  assert.equal(firstBody.alreadyApplied, false);
+  assert.ok(firstBody.credentials?.roomCode);
+
+  const replay = await quietAudit(() =>
+    handleFieldGroupApi(
+      request("/api/campaigns/campaign_a/field-groups", "POST", body),
+      { DB: db },
+    ),
+  );
+  assert.equal(replay?.status, 200);
+  const replayBody = await replay?.json();
+  assert.equal(replayBody.alreadyApplied, true);
+  assert.equal(replayBody.credentials, null);
+  assert.equal(replayBody.group.id, firstBody.group.id);
+  assert.equal(db.groups.length, 1);
+  assert.equal(db.credentialHashes.length, 2);
+});
+
+test("create request id cannot be reused for a different payload", async () => {
+  const db = new FieldGroupDb();
+  const requestId = "create-conflict-001";
+  const first = await quietAudit(() =>
+    handleFieldGroupApi(
+      request("/api/campaigns/campaign_a/field-groups", "POST", {
+        label: "Erste Tour",
+        teamId: "team_a",
+        requestId,
+      }),
+      { DB: db },
+    ),
+  );
+  assert.equal(first?.status, 201);
+
+  const conflict = await handleFieldGroupApi(
+    request("/api/campaigns/campaign_a/field-groups", "POST", {
+      label: "Andere Tour",
+      teamId: "team_a",
+      requestId,
+    }),
+    { DB: db },
+  );
+  assert.equal(conflict?.status, 409);
+  assert.equal((await conflict?.json()).error.code, "idempotency_key_reused");
+  assert.equal(db.groups.length, 1);
+  assert.equal(db.credentialHashes.length, 2);
+});
+
+test("credential rotation replay never rotates twice or re-exposes generated secrets", async () => {
+  const db = new FieldGroupDb();
+  const created = await quietAudit(() =>
+    handleFieldGroupApi(
+      request("/api/campaigns/campaign_a/field-groups", "POST", {
+        label: "Rotate Tour",
+        teamId: "team_a",
+        requestId: "create-rotate-test-001",
+      }),
+      { DB: db },
+    ),
+  );
+  assert.equal(created?.status, 201);
+  const createdBody = await created?.json();
+  const groupId = createdBody.group.id as string;
+
+  const rotatePath = `/api/campaigns/campaign_a/field-groups/${groupId}/credentials/rotate`;
+  const rotateBody = { requestId: "rotate-retry-001" };
+  const firstRotation = await quietAudit(() =>
+    handleFieldGroupApi(request(rotatePath, "POST", rotateBody), { DB: db }),
+  );
+  assert.equal(firstRotation?.status, 200);
+  const firstRotationBody = await firstRotation?.json();
+  assert.equal(firstRotationBody.alreadyApplied, false);
+  assert.ok(firstRotationBody.credentials?.qrToken);
+  assert.equal(db.credentialHashes.length, 4);
+
+  const replay = await quietAudit(() =>
+    handleFieldGroupApi(request(rotatePath, "POST", rotateBody), { DB: db }),
+  );
+  assert.equal(replay?.status, 200);
+  const replayBody = await replay?.json();
+  assert.equal(replayBody.alreadyApplied, true);
+  assert.equal(replayBody.credentials, null);
+  assert.equal(db.credentialHashes.length, 4);
 });
 
 test("discovery response exposes operational fields but no join credential material", async () => {
@@ -408,6 +596,7 @@ test("discovery response exposes operational fields but no join credential mater
       request("/api/campaigns/campaign_a/field-groups", "POST", {
         label: "Discoverable Tour",
         teamId: "team_a",
+        requestId: "create-discovery-001",
       }),
       { DB: db },
     ),
