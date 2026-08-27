@@ -98,6 +98,19 @@ export async function handleCampaignMutation(
     return errorResponse(422, "mutation_invalid", validation.message);
   }
   const mutation = validation.mutation;
+
+  if (
+    access.role === "field-group-member" &&
+    mutation.type !== "task.set-status" &&
+    mutation.type !== "house.set-status"
+  ) {
+    return errorResponse(
+      403,
+      "field_group_scope_forbidden",
+      "Temporäre Gruppenmitglieder dürfen nur Arbeitsstatus im eigenen Team ändern.",
+    );
+  }
+
   const fingerprint = await fingerprintCampaignMutation(mutation);
 
   const existing = await getAppliedMutation(db, campaignId, mutation.id);
