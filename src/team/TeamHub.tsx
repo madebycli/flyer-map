@@ -44,6 +44,9 @@ function errorMessage(error: unknown) {
     if (error.code === "field_group_schema_unavailable") {
       return "Live-Gruppen sind serverseitig vorbereitet, aber die Datenbankmigration ist noch nicht ausgerollt.";
     }
+    if (error.code === "field_session_schema_unavailable") {
+      return "Der Einsatz kann erst beendet werden, wenn die Field-Session-Historie serverseitig ausgerollt ist.";
+    }
     if (error.code === "join_security_unconfigured" || error.code === "join_security_unavailable") {
       return "Der sichere Gruppenbeitritt ist serverseitig gerade nicht verfügbar.";
     }
@@ -663,7 +666,7 @@ export function TeamHub({
               <span>Einsatz abgeschlossen</span>
               <strong>{durationLabel(tourSummary.startedAt, tourSummary.endedAt)}</strong>
               <p>{tourSummary.participantCount} Personen, {personTimeLabel(tourSummary.personSeconds)} Personenzeit.</p>
-              <p className="team-hub-muted">Die dauerhafte Field-Session-Historie wird erst nach dem separaten Retention-/Event-Gate gespeichert.</p>
+              <p className="team-hub-muted">Dauer, Personen und Personenzeit wurden dauerhaft als Field Session gespeichert.</p>
             </section>
           ) : null}
         </div>
