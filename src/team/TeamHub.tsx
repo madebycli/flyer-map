@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { CampaignApiError } from "../data/campaignApi.ts";
 import {
   buildFieldGroupQrJoinUrl,
   closeFieldGroup,
   createFieldGroup,
+  createFieldGroupRequestId,
   fetchFieldGroup,
   fetchFieldGroups,
   fieldGroupQrTokenFromUrl,
@@ -73,6 +74,10 @@ function personTimeLabel(personSeconds: number) {
   return hours > 0 ? `${hours} Std. ${rest} Min.` : `${rest} Min.`;
 }
 
+function normalizedLabel(value: string) {
+  return value.trim().replace(/\s+/gu, " ");
+}
+
 export function TeamHub({
   context,
   online,
@@ -89,6 +94,7 @@ export function TeamHub({
   );
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [joinCode, setJoinCode] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [newTeamId, setNewTeamId] = useState(context?.activeTeam?.id ?? "");
@@ -96,6 +102,19 @@ export function TeamHub({
   const [participantCount, setParticipantCount] = useState("1");
   const [issuedCredentials, setIssuedCredentials] = useState<IssuedCredentials | null>(null);
   const [tourSummary, setTourSummary] = useState<FieldGroupTourSummary | null>(null);
+  const retryRequestIds = useRef(new Map<string, string>());
+
+  const requestIdFor = (key: string, scope: string) => {
+    const existing = retryRequestIds.current.get(key);
+    if (existing) return existing;
+    const created = createFieldGroupRequestId(scope);
+    retryRequestIds.current.set(key, created);
+    return created;
+  };
+
+  const clearRequestId = (key: string) => {
+    retryRequestIds.current.delete(key);
+  };
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId) ?? null,
@@ -158,6 +177,7 @@ export function TeamHub({
     let cancelled = false;
     setRequestState("saving");
     setError(null);
+    setStatusMessage(null);
     void joinFieldGroup(campaignId, "qr", qrToken)
       .then((result) => {
         if (cancelled) return;
@@ -185,6 +205,7 @@ export function TeamHub({
     if (requestState === "saving") return;
     setRequestState("saving");
     setError(null);
+    setStatusMessage(null);
     try {
       await action();
     } catch (actionError) {
@@ -210,16 +231,39 @@ export function TeamHub({
     perform(async () => {
       if (!campaignId || !newTeamId || !newLabel.trim()) return;
       const parsedParticipants = Number(participantCount);
-      const created = await createFieldGroup(campaignId, {
-        label: newLabel,
-        teamId: newTeamId,
-        discoverable: newDiscoverable,
-        participantCount:
-          Number.isSafeInteger(parsedParticipants) && parsedParticipants >= 1
-            ? parsedParticipants
-            : null,
-      });
-      setIssuedCredentials({ groupId: created.group.id, credentials: created.credentials });
+      const normalizedParticipants =
+        Number.isSafeInteger(parsedParticipants) && parsedParticipants >= 1
+          ? parsedParticipants
+          : null;
+      const createKey = JSON.stringify([
+        "create",
+        campaignId,
+        newTeamId,
+        normalizedLabel(newLabel),
+        newDiscoverable,
+        normalizedParticipants,
+      ]);
+      const requestId = requestIdFor(createKey, "create");
+      const created = await createFieldGroup(
+        campaignId,
+        {
+          label: newLabel,
+          teamId: newTeamId,
+          discoverable: newDiscoverable,
+          participantCount: normalizedParticipants,
+        },
+        requestId,
+      );
+      clearRequestId(createKey);
+
+      if (created.credentials) {
+        setIssuedCredentials({ groupId: created.group.id, credentials: created.credentials });
+      } else {
+        setIssuedCredentials(null);
+        setStatusMessage(
+          "Die Gruppe wurde bereits erstellt. Bereits ausgegebene Join-Daten werden aus Sicherheitsgründen nicht erneut angezeigt. Über „Join-Zugang rotieren“ kannst du neue ausgeben.",
+        );
+      }
       setGroups((current) => [created.group, ...current.filter((group) => group.id !== created.group.id)]);
       setSelectedGroupId(created.group.id);
       setNewLabel("");
@@ -256,8 +300,19 @@ export function TeamHub({
     perform(async () => {
       if (!campaignId || !selectedGroup) return;
       if (!window.confirm("Alte Room-Codes und QR-Zugänge funktionieren danach nicht mehr. Fortfahren?")) return;
-      const rotated = await rotateFieldGroupCredentials(campaignId, selectedGroup.id);
-      setIssuedCredentials({ groupId: selectedGroup.id, credentials: rotated.credentials });
+      const rotateKey = `rotate:${campaignId}:${selectedGroup.id}`;
+      const requestId = requestIdFor(rotateKey, "rotate");
+      const rotated = await rotateFieldGroupCredentials(campaignId, selectedGroup.id, requestId);
+      clearRequestId(rotateKey);
+
+      if (rotated.credentials) {
+        setIssuedCredentials({ groupId: selectedGroup.id, credentials: rotated.credentials });
+      } else {
+        setIssuedCredentials(null);
+        setStatusMessage(
+          "Die Rotation wurde bereits angewendet. Bereits ausgegebene Join-Daten werden nicht erneut angezeigt. Starte die Rotation erneut, wenn du neue Join-Daten brauchst.",
+        );
+      }
       await refreshSelected(selectedGroup.id);
     });
 
@@ -318,6 +373,11 @@ export function TeamHub({
         {!online ? (
           <div className="team-hub-notice is-offline" role="status">
             Offline: bestehende Kartenarbeit bleibt verfügbar, neuer Gruppenbeitritt und Live-Verwaltung benötigen Internet.
+          </div>
+        ) : null}
+        {statusMessage ? (
+          <div className="team-hub-notice" role="status">
+            <span>{statusMessage}</span>
           </div>
         ) : null}
         {error ? (
