@@ -138,15 +138,16 @@ export async function handleFieldSessionNoteApi(
     if (!body.ok) return body.response;
 
     const updatedAt = new Date().toISOString();
-    const result = await db
-      .prepare(
-        `UPDATE field_sessions
-         SET note = ?, updated_at = ?
-         WHERE id = ? AND campaign_id = ?`,
-      )
-      .bind(body.note, updatedAt, route.sessionId, route.campaignId)
-      .run();
-    if ((result.meta?.changes ?? 0) !== 1) {
+    const [result] = await db.batch([
+      db
+        .prepare(
+          `UPDATE field_sessions
+           SET note = ?, updated_at = ?
+           WHERE id = ? AND campaign_id = ?`,
+        )
+        .bind(body.note, updatedAt, route.sessionId, route.campaignId),
+    ]);
+    if ((result?.meta?.changes ?? 0) !== 1) {
       return errorResponse(409, "field_session_note_conflict", "Einsatz-Notiz konnte nicht aktualisiert werden.");
     }
 
