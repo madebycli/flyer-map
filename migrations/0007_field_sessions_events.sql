@@ -73,9 +73,9 @@ CREATE INDEX idx_domain_events_session_time
 CREATE INDEX idx_domain_events_entity
   ON domain_events(campaign_id, entity_type, entity_id, occurred_at);
 
--- Backfill groups that may already have closed/expired while FC1 was under development.
--- Expired groups are retained even when no final participant count exists. In that case
--- person-time intentionally remains unknown rather than being fabricated.
+-- Backfill every existing Field Group. Active groups become active sessions immediately,
+-- while already closed/expired groups retain their known end metrics. Missing participant
+-- data on expired groups remains unknown rather than being fabricated.
 INSERT OR IGNORE INTO field_sessions (
   id,
   campaign_id,
@@ -100,27 +100,34 @@ SELECT
   g.id,
   g.mode,
   g.created_at,
-  g.closed_at,
-  CASE g.state WHEN 'closed' THEN 'manual-close' ELSE 'group-expired' END,
-  MAX(
-    0,
-    CAST(strftime('%s', g.closed_at) AS INTEGER) - CAST(strftime('%s', g.created_at) AS INTEGER)
-  ),
+  CASE WHEN g.state = 'active' THEN NULL ELSE g.closed_at END,
+  CASE g.state
+    WHEN 'closed' THEN 'manual-close'
+    WHEN 'expired' THEN 'group-expired'
+    ELSE NULL
+  END,
+  CASE
+    WHEN g.state = 'active' THEN NULL
+    ELSE MAX(
+      0,
+      CAST(strftime('%s', g.closed_at) AS INTEGER) - CAST(strftime('%s', g.created_at) AS INTEGER)
+    )
+  END,
   g.participant_count,
   CASE
-    WHEN g.participant_count IS NULL THEN NULL
+    WHEN g.state = 'active' OR g.participant_count IS NULL THEN NULL
     ELSE MAX(
       0,
       CAST(strftime('%s', g.closed_at) AS INTEGER) - CAST(strftime('%s', g.created_at) AS INTEGER)
     ) * g.participant_count
   END,
   NULL,
-  'closed',
-  g.closed_at,
-  g.closed_at
+  CASE WHEN g.state = 'active' THEN 'active' ELSE 'closed' END,
+  g.created_at,
+  CASE WHEN g.state = 'active' THEN g.updated_at ELSE g.closed_at END
 FROM field_groups g
-WHERE g.state IN ('closed', 'expired')
-  AND g.closed_at IS NOT NULL;
+WHERE g.state = 'active'
+   OR (g.state IN ('closed', 'expired') AND g.closed_at IS NOT NULL);
 
 INSERT OR IGNORE INTO domain_events (
   id,
@@ -161,12 +168,86 @@ WHERE s.field_group_id IS NOT NULL
   AND s.status = 'closed'
   AND s.ended_at IS NOT NULL;
 
+-- Every new Field Group gets one durable active Field Session in the same SQLite
+-- transaction. This gives later Task events a stable session to reference while work runs.
+CREATE TRIGGER trg_field_group_start_session
+AFTER INSERT ON field_groups
+WHEN NEW.state = 'active'
+BEGIN
+  INSERT OR IGNORE INTO field_sessions (
+    id,
+    campaign_id,
+    team_id,
+    field_group_id,
+    mode,
+    started_at,
+    ended_at,
+    end_reason,
+    duration_seconds,
+    participant_count,
+    person_seconds,
+    note,
+    status,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    'field_session_group_' || NEW.id,
+    NEW.campaign_id,
+    NEW.team_id,
+    NEW.id,
+    NEW.mode,
+    NEW.created_at,
+    NULL,
+    NULL,
+    NULL,
+    NEW.participant_count,
+    NULL,
+    NULL,
+    'active',
+    NEW.created_at,
+    NEW.created_at
+  );
+END;
+
+-- Keep the active session's explicit participant count aligned with the live group.
+CREATE TRIGGER trg_field_group_participant_session_sync
+AFTER UPDATE OF participant_count ON field_groups
+WHEN NEW.state = 'active' AND OLD.participant_count IS NOT NEW.participant_count
+BEGIN
+  UPDATE field_sessions
+  SET participant_count = NEW.participant_count,
+      updated_at = NEW.updated_at
+  WHERE campaign_id = NEW.campaign_id
+    AND field_group_id = NEW.id
+    AND status = 'active';
+END;
+
 -- Keep manual Field Group close and its durable operational history in one SQLite
 -- transaction. The existing Worker UPDATE remains the authorization boundary.
 CREATE TRIGGER trg_field_group_close_history
 AFTER UPDATE OF state ON field_groups
 WHEN OLD.state = 'active' AND NEW.state = 'closed'
 BEGIN
+  UPDATE field_sessions
+  SET ended_at = NEW.closed_at,
+      end_reason = 'manual-close',
+      duration_seconds = MAX(
+        0,
+        CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', started_at) AS INTEGER)
+      ),
+      participant_count = NEW.participant_count,
+      person_seconds = MAX(
+        0,
+        CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', started_at) AS INTEGER)
+      ) * NEW.participant_count,
+      status = 'closed',
+      updated_at = NEW.closed_at
+  WHERE campaign_id = NEW.campaign_id
+    AND field_group_id = NEW.id
+    AND status = 'active';
+
+  -- Fallback for a pre-0007 group if no active session row was present for any reason.
   INSERT OR IGNORE INTO field_sessions (
     id,
     campaign_id,
@@ -204,7 +285,7 @@ BEGIN
     ) * NEW.participant_count,
     NULL,
     'closed',
-    NEW.closed_at,
+    NEW.created_at,
     NEW.closed_at
   );
 
@@ -242,13 +323,35 @@ BEGIN
   );
 END;
 
--- Expiry is the safety fallback. It still closes the operational session so the tour does
+-- Expiry is the safety fallback. It closes the same operational session so the tour does
 -- not disappear from history, but missing participant data stays NULL and therefore never
 -- creates invented person-time.
 CREATE TRIGGER trg_field_group_expiry_history
 AFTER UPDATE OF state ON field_groups
 WHEN OLD.state = 'active' AND NEW.state = 'expired'
 BEGIN
+  UPDATE field_sessions
+  SET ended_at = NEW.closed_at,
+      end_reason = 'group-expired',
+      duration_seconds = MAX(
+        0,
+        CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', started_at) AS INTEGER)
+      ),
+      participant_count = NEW.participant_count,
+      person_seconds = CASE
+        WHEN NEW.participant_count IS NULL THEN NULL
+        ELSE MAX(
+          0,
+          CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', started_at) AS INTEGER)
+        ) * NEW.participant_count
+      END,
+      status = 'closed',
+      updated_at = NEW.closed_at
+  WHERE campaign_id = NEW.campaign_id
+    AND field_group_id = NEW.id
+    AND status = 'active';
+
+  -- Fallback for a pre-0007 group if no active session row was present for any reason.
   INSERT OR IGNORE INTO field_sessions (
     id,
     campaign_id,
@@ -289,7 +392,7 @@ BEGIN
     END,
     NULL,
     'closed',
-    NEW.closed_at,
+    NEW.created_at,
     NEW.closed_at
   );
 
