@@ -28,6 +28,7 @@ import { validateLineStringVertices, validatePolygonVertices } from "./domain/ge
 import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } from "./i18n";
 import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
+import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";
 import { SettingsSheet } from "./settings/SettingsSheet";
 
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
@@ -37,6 +38,10 @@ type UndoStatusChange = {
   label: string;
   previousStatus: TaskStatus;
   previousCompletedAt: string | null;
+};
+type AppProps = {
+  platformCommand?: PlatformAppCommand | null;
+  onPlatformContextChange?: (context: PlatformAppContext) => void;
 };
 
 const GERMANY_VIEW: MapCameraView = {
@@ -79,7 +84,7 @@ function syncMessage(language: Language, code: SyncMessageCode, refreshState: Re
   return null;
 }
 
-export default function App() {
+export default function App({ platformCommand = null, onPlatformContextChange }: AppProps = {}) {
   const online = useOnlineStatus();
   const [initialLoad] = useState(loadCampaignSnapshot);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(initialLoad.snapshot);
@@ -92,6 +97,7 @@ export default function App() {
   const [currentCamera, setCurrentCamera] = useState<MapCameraView | null>(null);
   const [cameraCommand, setCameraCommand] = useState<MapCameraCommand>(null);
   const cameraCommandId = useRef(0);
+  const handledPlatformCommandId = useRef(0);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(
     initialLoad.snapshot.teams[0]?.id ?? null,
   );
@@ -174,6 +180,22 @@ export default function App() {
     : [];
   const canEditSelectedArea = canEditArea(selectedArea);
   const canEditSelectedTask = canEditArea(selectedTaskArea);
+
+  useEffect(() => {
+    onPlatformContextChange?.({
+      accessRole: access?.role ?? null,
+      activeTeam: activeTeam
+        ? {
+            id: activeTeam.id,
+            name: activeTeam.name,
+            color: activeTeam.color,
+          }
+        : null,
+      launcherAvailable: mode === "browse" && sheet === null,
+      canManageTeams: Boolean(isAdmin),
+      canCreateArea: Boolean(access && access.role !== "viewer" && activeTeam && canEditTeam(activeTeam.id)),
+    });
+  }, [access, activeTeam, isAdmin, mode, sheet, onPlatformContextChange]);
 
   const renderedAreas = useMemo(
     () =>
@@ -299,6 +321,26 @@ export default function App() {
     setStreetDraftVertices([]);
     setSelectedVertexIndex(null);
   };
+
+  useEffect(() => {
+    if (!platformCommand || platformCommand.id <= handledPlatformCommandId.current) return;
+    handledPlatformCommandId.current = platformCommand.id;
+    if (mode !== "browse") return;
+
+    if (platformCommand.type === "open-settings") {
+      setSheet("settings");
+      return;
+    }
+
+    if (platformCommand.type === "open-team-management") {
+      if (isAdmin) setSheet("teams");
+      return;
+    }
+
+    if (platformCommand.type === "start-area-drawing") {
+      startDrawing();
+    }
+  }, [platformCommand, mode, isAdmin, activeTeam, access]);
 
   const cancelDrawing = () => {
     setMode("browse");
