@@ -3,6 +3,8 @@ import "./field-session-history.css";
 
 type Props = {
   items: readonly FieldSessionSummary[];
+  highlightingSessionId?: string | null;
+  onShowOnMap?: (item: FieldSessionSummary) => void;
 };
 
 function formatDate(value: string) {
@@ -30,7 +32,11 @@ function endReasonLabel(item: FieldSessionSummary) {
   return "Abgeschlossen";
 }
 
-export function FieldSessionHistory({ items }: Props) {
+export function FieldSessionHistory({
+  items,
+  highlightingSessionId = null,
+  onShowOnMap,
+}: Props) {
   return (
     <section className="field-session-history" aria-label="Einsatzhistorie">
       <header>
@@ -77,6 +83,16 @@ export function FieldSessionHistory({ items }: Props) {
                 <dd>{endReasonLabel(item)}</dd>
               </div>
             </dl>
+            {onShowOnMap && item.affectedTaskCount > 0 ? (
+              <button
+                className="field-session-history-map-button"
+                type="button"
+                onClick={() => onShowOnMap(item)}
+                disabled={highlightingSessionId !== null}
+              >
+                {highlightingSessionId === item.id ? "Karte wird vorbereitet ..." : "Auf Karte zeigen"}
+              </button>
+            ) : null}
           </article>
         ))}
       </div>
