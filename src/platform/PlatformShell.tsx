@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import App from "../App";
+import { FieldSessionsHub } from "../collaboration/FieldSessionsHub.tsx";
 import { manualRefreshCampaign } from "../data/campaignStore.ts";
 import { TeamHub } from "../team/TeamHub.tsx";
 import {
@@ -36,6 +37,7 @@ export function PlatformShell() {
   const online = useOnlineStatus();
   const [menuOpen, setMenuOpen] = useState(false);
   const [teamHubOpen, setTeamHubOpen] = useState(false);
+  const [fieldSessionsOpen, setFieldSessionsOpen] = useState(false);
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
   const commandId = useRef(0);
@@ -44,6 +46,7 @@ export function PlatformShell() {
   const teamName = appContext?.activeTeam?.name.trim() || "Team";
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const launcherAvailable = appContext?.launcherAvailable ?? true;
+  const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen;
 
   const dispatchSimpleCommand = (
     type: Exclude<PlatformAppCommandType, "select-active-team">,
@@ -52,6 +55,7 @@ export function PlatformShell() {
     setAppCommand({ id: commandId.current, type });
     setMenuOpen(false);
     setTeamHubOpen(false);
+    setFieldSessionsOpen(false);
   };
 
   const selectActiveTeam = (teamId: string) => {
@@ -61,7 +65,7 @@ export function PlatformShell() {
 
   return (
     <div className="platform-shell">
-      <div className="platform-map-layer" aria-hidden={menuOpen || teamHubOpen || undefined}>
+      <div className="platform-map-layer" aria-hidden={overlayOpen || undefined}>
         <App
           platformCommand={appCommand}
           onPlatformContextChange={setAppContext}
@@ -69,7 +73,7 @@ export function PlatformShell() {
       </div>
 
       {launcherAvailable ? (
-        <div className={`platform-field-bar ${menuOpen || teamHubOpen ? "is-behind-menu" : ""}`}>
+        <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
           <button
             className="platform-grid-button"
             type="button"
@@ -117,7 +121,12 @@ export function PlatformShell() {
                   onClick={() => {
                     if (item.opensTeamHub) {
                       setMenuOpen(false);
+                      setFieldSessionsOpen(false);
                       setTeamHubOpen(true);
+                    } else if (item.opensFieldSessions) {
+                      setMenuOpen(false);
+                      setTeamHubOpen(false);
+                      setFieldSessionsOpen(true);
                     } else if (item.command) {
                       dispatchSimpleCommand(item.command);
                     } else {
@@ -144,6 +153,14 @@ export function PlatformShell() {
           onSelectTeam={selectActiveTeam}
           onManageTeams={() => dispatchSimpleCommand("open-team-management")}
           onAccessChanged={manualRefreshCampaign}
+        />
+      ) : null}
+
+      {fieldSessionsOpen ? (
+        <FieldSessionsHub
+          context={appContext}
+          online={online}
+          onClose={() => setFieldSessionsOpen(false)}
         />
       ) : null}
     </div>
