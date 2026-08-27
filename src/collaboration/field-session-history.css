@@ -86,6 +86,89 @@
   font-weight: 760;
 }
 
+.field-session-history-note {
+  display: grid;
+  gap: 0.34rem;
+  margin-top: 0.22rem;
+  padding-top: 0.58rem;
+  border-top: 1px solid #edf1ee;
+}
+
+.field-session-history-note-heading,
+.field-session-history-note-editor-footer,
+.field-session-history-note-editor-footer > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.field-session-history-note-heading > span,
+.field-session-history-note-editor-footer > span {
+  color: #718078;
+  font-size: 0.64rem;
+  font-weight: 720;
+}
+
+.field-session-history-note-heading button,
+.field-session-history-note-editor-footer button {
+  min-height: 2rem;
+  padding: 0.32rem 0.55rem;
+  border: 1px solid #d5dfd8;
+  border-radius: 0.56rem;
+  color: #31523c;
+  background: #f7faf8;
+  font-size: 0.66rem;
+  font-weight: 760;
+}
+
+.field-session-history-note p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: #3f5146;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.field-session-history-note .field-session-history-note-empty {
+  color: #87928b;
+}
+
+.field-session-history-note-editor {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.field-session-history-note-editor textarea {
+  width: 100%;
+  min-height: 5.2rem;
+  resize: vertical;
+  padding: 0.58rem 0.62rem;
+  border: 1px solid #cdd9d1;
+  border-radius: 0.65rem;
+  color: #22372a;
+  background: #fbfdfb;
+  font: inherit;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.field-session-history-note-editor textarea:focus-visible {
+  outline: 2px solid #527d5f;
+  outline-offset: 1px;
+}
+
+.field-session-history-note-editor-footer button:last-child {
+  color: #ffffff;
+  border-color: #356b46;
+  background: #356b46;
+}
+
+.field-session-history-note-editor-footer button:disabled {
+  opacity: 0.56;
+}
+
 .field-session-history-map-button {
   min-height: 2.35rem;
   margin-top: 0.28rem;
