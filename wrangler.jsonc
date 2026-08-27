@@ -14,5 +14,23 @@
       "database_name": "flyer-map-db",
       "database_id": "0113e775-1e43-4d96-8b97-51fdeec7355b"
     }
+  ],
+  "ratelimits": [
+    {
+      "name": "FIELD_GROUP_JOIN_ACTOR_LIMITER",
+      "namespace_id": "91714001",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    },
+    {
+      "name": "FIELD_GROUP_JOIN_CREDENTIAL_LIMITER",
+      "namespace_id": "91714002",
+      "simple": {
+        "limit": 8,
+        "period": 60
+      }
+    }
   ]
 }
