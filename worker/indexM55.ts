@@ -11,6 +11,7 @@ import {
 } from "./fieldGroups.ts";
 import { handleFieldGroupMembersApi } from "./fieldGroupMembers.ts";
 import { hasFieldSessionHistorySchema } from "./fieldSessionHistory.ts";
+import { handleFieldSessionsApi } from "./fieldSessions.ts";
 import { handleOfflineMapPackage } from "./offlineMap.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
 
@@ -116,6 +117,9 @@ export default {
     const url = new URL(request.url);
 
     if (env.DB) {
+      const sessionResponse = await handleFieldSessionsApi(request, env.DB);
+      if (sessionResponse) return sessionResponse;
+
       const memberResponse = await handleFieldGroupMembersApi(request, env.DB);
       if (memberResponse) return memberResponse;
     }
