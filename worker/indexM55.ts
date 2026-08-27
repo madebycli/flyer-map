@@ -4,7 +4,12 @@ import {
   loadCampaignSnapshot,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
-import { handleFieldGroupApi, type FieldGroupEnv } from "./fieldGroups.ts";
+import {
+  handleFieldGroupApi,
+  parseFieldGroupRoute,
+  type FieldGroupEnv,
+} from "./fieldGroups.ts";
+import { hasFieldSessionHistorySchema } from "./fieldSessionHistory.ts";
 import { handleOfflineMapPackage } from "./offlineMap.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
 
@@ -107,10 +112,24 @@ async function temporarySnapshotResponse(
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const fieldGroupRoute = parseFieldGroupRoute(url.pathname);
+    if (
+      fieldGroupRoute?.kind === "close" &&
+      request.method === "POST" &&
+      env.DB &&
+      !(await hasFieldSessionHistorySchema(env.DB))
+    ) {
+      return jsonError(
+        503,
+        "field_session_schema_unavailable",
+        "Einsatz kann erst geschlossen werden, wenn die Field-Session-Historie serverseitig verfügbar ist.",
+      );
+    }
+
     const fieldGroupResponse = await handleFieldGroupApi(request, env);
     if (fieldGroupResponse) return fieldGroupResponse;
 
-    const url = new URL(request.url);
     const currentCampaignId = accessCurrentCampaign(url);
     if (currentCampaignId && request.method === "GET" && env.DB) {
       const access = await resolveAccess(env.DB, request, currentCampaignId);
