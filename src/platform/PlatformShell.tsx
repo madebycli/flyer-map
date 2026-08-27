@@ -1,5 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import App from "../App";
+import { manualRefreshCampaign } from "../data/campaignStore.ts";
+import { TeamHub } from "../team/TeamHub.tsx";
 import {
   buildPlatformLauncherItems,
   type PlatformAppCommand,
@@ -16,8 +18,24 @@ function MenuGridIcon() {
   );
 }
 
+function useOnlineStatus() {
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+  return online;
+}
+
 export function PlatformShell() {
+  const online = useOnlineStatus();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [teamHubOpen, setTeamHubOpen] = useState(false);
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
   const commandId = useRef(0);
@@ -27,15 +45,23 @@ export function PlatformShell() {
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const launcherAvailable = appContext?.launcherAvailable ?? true;
 
-  const dispatchCommand = (type: PlatformAppCommandType) => {
+  const dispatchSimpleCommand = (
+    type: Exclude<PlatformAppCommandType, "select-active-team">,
+  ) => {
     commandId.current += 1;
     setAppCommand({ id: commandId.current, type });
     setMenuOpen(false);
+    setTeamHubOpen(false);
+  };
+
+  const selectActiveTeam = (teamId: string) => {
+    commandId.current += 1;
+    setAppCommand({ id: commandId.current, type: "select-active-team", teamId });
   };
 
   return (
     <div className="platform-shell">
-      <div className="platform-map-layer" aria-hidden={menuOpen || undefined}>
+      <div className="platform-map-layer" aria-hidden={menuOpen || teamHubOpen || undefined}>
         <App
           platformCommand={appCommand}
           onPlatformContextChange={setAppContext}
@@ -43,7 +69,7 @@ export function PlatformShell() {
       </div>
 
       {launcherAvailable ? (
-        <div className={`platform-field-bar ${menuOpen ? "is-behind-menu" : ""}`}>
+        <div className={`platform-field-bar ${menuOpen || teamHubOpen ? "is-behind-menu" : ""}`}>
           <button
             className="platform-grid-button"
             type="button"
@@ -89,8 +115,14 @@ export function PlatformShell() {
                   type="button"
                   key={item.id}
                   onClick={() => {
-                    if (item.command) dispatchCommand(item.command);
-                    else setMenuOpen(false);
+                    if (item.opensTeamHub) {
+                      setMenuOpen(false);
+                      setTeamHubOpen(true);
+                    } else if (item.command) {
+                      dispatchSimpleCommand(item.command);
+                    } else {
+                      setMenuOpen(false);
+                    }
                   }}
                 >
                   <span className={`platform-app-icon platform-app-icon--${item.id}`} aria-hidden="true">
@@ -102,6 +134,17 @@ export function PlatformShell() {
             </div>
           </section>
         </div>
+      ) : null}
+
+      {teamHubOpen ? (
+        <TeamHub
+          context={appContext}
+          online={online}
+          onClose={() => setTeamHubOpen(false)}
+          onSelectTeam={selectActiveTeam}
+          onManageTeams={() => dispatchSimpleCommand("open-team-management")}
+          onAccessChanged={manualRefreshCampaign}
+        />
       ) : null}
     </div>
   );
