@@ -34,18 +34,23 @@ BEVOR DU IRGENDETWAS ÄNDERST
 
 AKTUELLER VERIFIZIERTER CHECKPOINT
 
-Zuletzt vollständig verifizierter Head vor diesem Handoff-Commit:
+Zuletzt vollständig verifizierter Runtime-Head vor diesem Doku-/Handoff-Commit:
 - PR #72: Draft, mergeable;
 - Branch: `plan-feature-complete-platform`;
 - Base: `ui-app-launcher-sheet`;
-- Head: `9c32b5db22d6f86d01bbb68e5593b1723c9edd0b`;
-- CI #629: erfolgreich;
-- Tests, Typecheck, High-Severity Dependency Audit und Production Build: grün.
+- Head: `3e72c398f4af7fadfc779bb0f4ed95d422e53d8d`;
+- CI #689: erfolgreich;
+- Tests, Typecheck, High-Severity Dependency Audit und Production Build: grün;
+- dieser Head enthält die echte Activity-Projektion aus `domain_events`, serverseitige Scopes, Privacy-Allowlist, Cursor-Pagination und den normalen Launcher-Pfad.
 
-Der Handoff-Commit selbst ändert den Head danach erneut. Verifiziere deshalb zuerst den tatsächlichen aktuellen Head und dessen CI, bevor du weiterentwickelst.
+Der nachfolgende Doku-/Handoff-Commit ändert den Head danach erneut. Verifiziere deshalb zuerst den tatsächlichen aktuellen Head und dessen CI, bevor du weiterentwickelst.
 
 PR #72 heißt aktuell:
-`FC0/FC1: platform navigation, Team Hub and Live Field Groups`
+`FC0-FC2: Platform, Live Field Groups and Field Sessions`
+
+AUTOMATIC CLOUDFLARE PREVIEW
+
+Die Git-Integration kann nach einem neuen Branch-Commit automatisch einen Cloudflare-Preview-Kommentar mit Commit- und Branch-URL erzeugen. Das ist erwartetes Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout. Bei einem neuen Preview-Kommentar nur Commit/Branch und Status gegen den exakten Head prüfen.
 
 FC0 STATUS
 
@@ -118,7 +123,8 @@ Prepared, aber NICHT remote angewendet:
 - 0004: Smart Street source provenance;
 - 0005: House Tasks;
 - 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
-- 0007: Field Sessions und minimierte Domain Events.
+- 0007: Field Sessions und minimierte Domain Events;
+- 0008: durable Comments und Comment-Tombstones.
 
 WENDE KEINE REMOTE D1-MIGRATION AN, außer der User fordert diesen Rollout ausdrücklich an.
 
@@ -130,27 +136,33 @@ Das aktuelle Teammodell hat kein persistentes Archivstatusfeld. Team-Editor-Gran
 
 Team Archive/Restore/Permanent Delete gehört in einen eigenen Team-Lifecycle-/Admin-Slice unter Organization/Permissions. Vor Runtime müssen Statusfeld, Areas/Tasks, Grants, aktive Field Groups, History und Restore/Permanent-Delete-Semantik geklärt werden.
 
-NÄCHSTER KONKRETER IMPLEMENTIERUNGSBLOCK: FC2
+ACTIVITY STATUS
 
-Wenn der exakte aktuelle PR-Head weiterhin grün und der Stack gesund ist, beginne direkt mit FC2.
+Activity ist auf dem verifizierten Runtime-Head eine echte Campaign-scoped Projektion der persistierten `domain_events`.
 
-Erster sichere vertikale Slice:
-1. server-authorisierte Field-Session-History-Read-API;
-2. Campaign-/Team-Scope serverseitig prüfen;
-3. nur minimale Sessiondaten ausgeben;
-4. keine Secrets, GPS-Daten oder unrestricted Event-Payloads;
-5. Loading/Empty/Error/Unauthorized-Zustände im echten `Einsätze`-Modul;
-6. vorhandene Foundation/Fake-Session-Historie dort durch reale Daten ersetzen;
-7. gezielte Security-Negativtests für fremden Team-/Campaign-Scope;
-8. exact-head Tests, Typecheck, Audit und Production Build.
+Unterstützte echte Eventtypen:
+- `field_session.closed`;
+- `field_session.expired`;
+- `task.status.changed`;
+- `comment.created`;
+- `comment.edited`;
+- `comment.deleted`.
 
-Danach im selben FC2-Ziel:
-- Task-Mutationen serverseitig einer aktiven Session/Event-Historie zuordnen;
-- M5-Retry darf kein doppeltes Event erzeugen;
-- Session-Auswahl darf betroffene aktuelle/reviewed Task-Geometrie hervorheben;
-- dauerhafte Comments mit expliziter Edit/Delete/Moderation-Semantik;
-- Activity Feed aus echten normalisierten Domain Events;
-- Automations nur deterministisch, autorisiert und idempotent.
+Contract und Grenzen:
+- `GET /api/campaigns/:campaignId/activity` mit Default 30, hartem Maximum 50, stabilem `occurred_at`-/ID-Cursor und optionalem Teamfilter nur für passende Rollen;
+- Admin und Viewer Campaign-weit; Team Editor nur im canonical eigenen Team; temporäre Mitglieder nur eigene autorisierte Field Group/Field Session plus eigene temporäre Comment-Events;
+- DTO-Allowlist ohne Rohpayload, Actor-ID, Kommentartext, Cookies, Tokens, Session-Hashes, QR-/Room-Credentials, IPs, GPS oder Snapshots;
+- normales Launcher-Sheet mit Loading, Empty, Error/Retry, Offline-Read-Hinweis und `Mehr laden`;
+- keine neue Activity-Tabelle, kein Rollup und kein zweiter Queue-/Sync-Mechanismus.
+
+NÄCHSTER KONKRETER IMPLEMENTIERUNGSBLOCK: FC2-AUTOMATIONS
+
+Wenn der exakte aktuelle PR-Head weiterhin grün und der Stack gesund ist, beginne direkt mit deterministischen Automations.
+
+1. expliziten Trigger und Effekt definieren;
+2. serverseitige Autorisierung für jede Automation prüfen;
+3. idempotente Ausführung und sichtbare Fehler-/Activity-Referenz bauen;
+4. keine AI-Automation.
 
 RELEVANTE ARCHITEKTUR FÜR FC2
 

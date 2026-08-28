@@ -28,7 +28,7 @@ Aktueller Entwicklungszweig:
 - Draft PR #72;
 - Branch `plan-feature-complete-platform`;
 - Base `ui-app-launcher-sheet`;
-- PR #72 enthält inzwischen nicht nur Planung, sondern den aktuellen FC0-/FC1-Runtime-Slice sowie den durable-Comments-Teil von FC2.
+- PR #72 enthält inzwischen nicht nur Planung, sondern den aktuellen FC0-/FC1-Runtime-Slice sowie den durable-Comments- und Activity-Teil von FC2.
 
 Remote D1 ist weiterhin nur bis Migration 0003 dokumentiert. Migrationen 0004 bis 0008 bleiben vorbereitet, aber nicht remote angewendet.
 
@@ -233,7 +233,7 @@ ADR-0017 bleibt dabei verbindlich: Historie referenzierter Teams darf nicht durc
 
 ## FC2: Field Sessions + Comments + Activity + Automations
 
-**Status: Field-Session- und durable-Comments-Runtime umgesetzt; Activity und Automations bleiben offen.**
+**Status: Field-Session-, durable-Comments- und Activity-Runtime umgesetzt; Automations bleiben offen.**
 
 Die Close-/Expiry-Session-Grundlage aus FC1 ist bereits vorhanden. FC2 erweitert sie zu einem echten Collaboration-Produkt.
 
@@ -270,6 +270,20 @@ Der Comment-Slice verwendet Migration 0008 und den Worker als authoritative Boun
 - stabile Comment-/Operation-IDs und D1-Dedupe verhindern doppelte Events bei Retries;
 - der normale Launcher öffnet Campaign-Kommentare, Area-/Street-/House-Sheets enthalten die passenden Kontextflächen;
 - bereits geladene Kommentare bleiben offline sichtbar. Writes bleiben in diesem Slice online-only und nutzen keinen zweiten Queue-Mechanismus.
+
+### Activity Feed Runtime
+
+Activity ist eine sichere Projektion der bereits persistierten `domain_events` und keine zweite Activity-Persistenz.
+
+- der Worker bietet den Campaign-scoped Read-Pfad `GET /api/campaigns/:campaignId/activity`;
+- Default-Limit ist 30, das harte Maximum 50. Die Sortierung ist `occurred_at DESC, id DESC`; der Cursor enthält nur den letzten Zeit-/ID-Tie-Breaker;
+- die aktuelle Allowlist umfasst ausschließlich `field_session.closed`, `field_session.expired`, `task.status.changed`, `comment.created`, `comment.edited` und `comment.deleted`;
+- `task.status.changed` projiziert nur Street/Haus, alten/neuen allowlisteten Status und sichere aktuelle Labels. Session-Events laden sichere Metriken aus `field_sessions`. Comment-Events zeigen Zieltyp und aktuellen sicheren Kontext, nie Kommentartext;
+- Actor-Darstellung bleibt auf sichere Kategorien (`Campaign-Zugriff`, `Temporäre Gruppe`, `System`, unbekannt) reduziert;
+- Admin und Viewer lesen Campaign-weit, Team Editor nur das canonical eigene Team. Temporäre Mitglieder erhalten keine Campaign-weite Activity, sondern nur ihre autorisierte Field Group/Field Session und die eigenen temporären Comment-Events;
+- unbekannte Eventtypen werden ausgelassen, unbekannte Ziele erhalten einen generischen Fallback. Rohes `payload_json`, Actor-Referenzen, Secrets, Tokens, Cookies, Session-Hashes, Room-/QR-Credentials, IPs, GPS und Snapshots verlassen den Worker nicht;
+- das normale Produkt erreicht Activity über das kompakte Launcher-Sheet mit Loading, Empty, Error/Retry, Offline-Read-Hinweis und `Mehr laden`. Bereits geladene Einträge bleiben bei Offline-Wechsel sichtbar, neue Reads benötigen Internet;
+- es gibt keine neue Activity-Tabelle, keine Rollup-Kopie und keinen zweiten Sync-/Queue-Mechanismus. Schemafehler liefern explizit 503, solange die vorbereitete 0007-Grundlage nicht vorhanden ist.
 
 ### Grenzen
 
@@ -397,11 +411,9 @@ Vor Plattform-Feature-Complete:
 
 1. Für jeden weiteren PR-Commit den exakten Head erneut durch CI verifizieren.
 2. 0006/0007/0008 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
-3. Comment-Events in eine normale Activity-Projektion aufnehmen.
-4. Activity Feed auf echte normalisierte Domain Events aufbauen.
-5. Deterministische Automations mit explizitem Trigger/Effekt und Idempotenz anbinden.
-6. Stats aus echten Tasks/Sessions/Events abschließen.
-7. Anschließend FC4 bis FC9.
+3. Deterministische Automations mit explizitem Trigger/Effekt und Idempotenz anbinden.
+4. Stats aus echten Tasks/Sessions/Events abschließen.
+5. Anschließend FC4 bis FC9.
 
 ## Risiken
 

@@ -165,10 +165,22 @@ Der aktuelle FC2-Comments-Slice ist als echter, serverautorisierter Runtime-Pfad
 - der normale Produktpfad hängt am Launcher sowie an Area-, Street- und vorhandenen House-Kontext-Sheets;
 - bereits geladene Kommentare bleiben offline sichtbar, neue Writes sind online-only und werden nicht fälschlich als gespeichert bestätigt.
 
+### Activity Feed
+
+Der Activity-Slice ist jetzt als echter Campaign-scoped Read-Pfad umgesetzt:
+- Activity ist ausschließlich eine Projektion bereits persistierter `domain_events`, keine zweite Event- oder Activity-Tabelle;
+- der Worker unterstützt explizit `field_session.closed`, `field_session.expired`, `task.status.changed`, `comment.created`, `comment.edited` und `comment.deleted`;
+- die Antwort ist ein kleines allowlistetes DTO ohne `payload_json`, Actor-Referenzen, Kommentartext, Cookies, Tokens, Session-Hashes, QR-/Room-Credentials, IPs, GPS oder Snapshots;
+- Task-Status und aktuelle sichere Task-/Area-Labels werden typisiert projiziert; Session-Metriken kommen aus `field_sessions`; Comment-Events lesen höchstens sicheren Zielkontext und niemals den Body;
+- Admin und Viewer lesen Campaign-weit, Team Editor nur das canonical eigene Team, temporäre Mitglieder nur die eigene autorisierte Field Group/Field Session sowie eigene temporäre Comment-Events;
+- Campaign-Isolation, Teamfilter und Schema-Fehler werden serverseitig im Worker fail-closed behandelt;
+- neueste Events werden mit `occurred_at` plus Event-ID stabil sortiert und per begrenztem Cursor gelesen, Default 30, Maximum 50;
+- das normale Produkt öffnet Aktivität über ein kompaktes Launcher-Sheet mit Loading, Empty, Error/Retry, Offline-Zustand und `Mehr laden`;
+- bereits geladene Activity bleibt bei Offline-Wechsel sichtbar. Neue Reads benötigen Internet; es gibt keine falsche Offline-Erfolgsmeldung und keinen zweiten Queue-Mechanismus.
+
 ### Noch offen in FC2
 
 Noch nicht feature-complete:
-- Activity Feed als Projektion normalisierter Domain Events;
 - deterministische, autorisierte, idempotente Automations;
 - House-Polygon-Highlight, sobald der normale FC4 House-Renderer vorhanden ist.
 
@@ -225,10 +237,10 @@ Weiterhin verbindlich:
 - temporäre Membership erweitert keinen persistenten Role-Scope.
 
 Letzter vollständig verifizierter Runtime-Checkpoint:
-- Head `7f9dd9682687f20d7f09ff665975f387a2f18961`;
-- CI #687 erfolgreich;
+- Head `3e72c398f4af7fadfc779bb0f4ed95d422e53d8d`;
+- CI #689 erfolgreich;
 - Tests, Typecheck, Dependency Audit und Production Build grün;
-- dieser Lauf enthält den durable Comments Runtime-Slice mit API-Authorization, Tombstones, minimalen Comment-Events, Pagination und Produktions-UI-Pfad.
+- dieser Lauf enthält den Activity-Read-Slice mit Projection-Allowlist, serverseitiger Scope-Autorisierung, Cursor-Pagination, Privacy-Guards und echtem Launcher-UI-Pfad.
 
 Dokumentationscommits nach diesem Runtime-Checkpoint müssen auf ihrem eigenen exakten Head erneut grün werden, bevor PR #72 promotet wird.
 
@@ -246,8 +258,6 @@ ADR-0014 und ADR-0017 sind akzeptiert und keine Blocker mehr für ihre aktuellen
 
 ## Immediate next
 
-1. Comment-Events nach der festgelegten Semantik in die normale Activity-Historie aufnehmen.
-2. Activity Feed aus normalisierten Domain Events aufbauen.
-3. Deterministische Automations mit explizitem Trigger/Effekt und Idempotenz anbinden.
-4. House-Polygon-Highlight erst mit dem normalen FC4 House-Renderer ergänzen.
-5. 0004 bis 0008 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.
+1. Deterministische Automations mit explizitem Trigger/Effekt, serverseitiger Autorisierung und Idempotenz anbinden.
+2. House-Polygon-Highlight erst mit dem normalen FC4 House-Renderer ergänzen.
+3. 0004 bis 0008 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.

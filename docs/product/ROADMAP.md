@@ -2,7 +2,7 @@
 id: product-roadmap
 type: product
 status: accepted
-last_updated: 2026-08-27
+last_updated: 2026-08-28
 related: [product, product-mvp, product-ux, architecture-organizations, architecture-collaboration, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion, plan-017-feature-complete-platform]
 source_of_truth_for: [product-roadmap, planned-capabilities, milestone-order]
 ---
@@ -40,7 +40,7 @@ A visible Launcher module is not considered delivered merely because local UI, f
 
 Internal `?workbench=` routes may remain useful for development, but they are not normal navigation and do not count as a completed product milestone.
 
-The next prioritized feature-complete product area is the Team Hub + Live Field Group system, followed by durable Field Sessions/Activity/Comments and statistics. Security-sensitive runtime remains gated by explicit ADR acceptance.
+The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments and the bounded Activity projection on Draft PR #72. The next collaboration slice is deterministic, explicitly authorized and idempotent Automations, followed by the remaining statistics and House-rendering work. Security-sensitive runtime remains gated by explicit ADR acceptance.
 
 ## Domain direction
 
@@ -146,6 +146,8 @@ Selecting a session may highlight the affected Street/House geometry on the map.
 - append-only activity events;
 - deterministic/idempotent automations;
 - initial compact Team/Area progress.
+
+The durable Comment runtime and the normal-product Activity feed are now implemented on the current feature-complete delivery line. Activity is a bounded projection of normalized `domain_events`, with server-side Campaign/Team/Field-Group authorization and no raw event payloads in the client response. Deterministic Automations remain open.
 
 ### M8 — Organizations + Identity + Permissions + Desktop Admin
 

@@ -4,14 +4,14 @@ type: architecture
 status: active
 last_updated: 2026-08-28
 related: [product-roadmap, architecture-data, architecture-security, architecture-offline-sync, architecture-live-teams, plan-012-platform-app-expansion, ADR-0017, ADR-0018]
-source_of_truth_for: [field-session-foundation, comments, future-activity, future-automations, future-statistics]
+source_of_truth_for: [field-session-foundation, comments, activity, future-automations, future-statistics]
 ---
 
 # Collaboration, Field Sessions, Activity, Automations and Statistics
 
 ## Purpose
 
-Record the accepted collaboration/history boundary and distinguish the durable Field Session foundation from the FC2 Comment runtime and the broader activity/automation features that are still pending.
+Record the accepted collaboration/history boundary and distinguish the durable Field Session, Comment and Activity runtimes from the broader automation/statistics features that are still pending.
 
 ADR-0017 is accepted and governs Field Session/event retention. ADR-0018 continues to govern future action/template and cross-action analytics persistence.
 
@@ -59,6 +59,9 @@ Current implemented minimum:
 - `field_session.closed`;
 - `field_session.expired`.
 
+The M5 mutation runtime additionally emits:
+- `task.status.changed` for an authoritatively applied Street-/House-Task-Statuswechsel;
+
 The durable Comment runtime additionally emits:
 - `comment.created`;
 - `comment.edited`;
@@ -88,7 +91,7 @@ For the current Field Group end-state slice:
 - Campaign-scoped event dedupe keys prevent duplicate close/expiry events;
 - the Worker blocks normal manual close until the required 0007 history schema exists.
 
-When Task mutations gain event attribution, event creation must participate in the accepted M5 idempotency/transaction model or an equivalent deterministic relation to the applied mutation.
+Task event creation participates in the accepted M5 idempotency/transaction model. The event and the applied mutation share the Campaign revision/write-token batch boundary; a replayed mutation returns the existing result and does not append another event.
 
 ## Session work and map highlighting, FC2
 
@@ -151,15 +154,44 @@ Same-Origin checks, Campaign isolation, prepared SQL and fail-closed target/scop
 
 ## Activity history, FC2
 
-The Activity feed will be a projection of meaningful normalized events, not raw HTTP/database logs.
+Activity is now a bounded Campaign-scoped projection of persisted `domain_events`, not raw HTTP/database logs and not a second event system. The Worker is the only authority for both the source events and the read scope.
 
-It supports:
-- operational auditability;
-- session reconstruction;
-- map reflection;
-- progress/statistics explanation.
+### Read contract
 
-Security-sensitive audit logging remains separate from ordinary product `domain_events` where stronger retention/restriction is required.
+The endpoint is `GET /api/campaigns/:campaignId/activity` with:
+- a default page size of 30 and a hard maximum of 50;
+- newest-first ordering by `occurred_at DESC, id DESC`;
+- a stable opaque cursor containing only the last occurrence time and Event ID;
+- an optional `team` filter for roles whose access contract permits multiple Teams;
+- a 503 schema response when the prepared Field-Session/Event foundation is not available.
+
+There is no `OFFSET` history read and no unbounded Event-table response. The query is Campaign-, scope- and cursor-bounded and uses the existing Campaign/time Event index. Current labels are resolved in the same bounded read with safe joins; Activity never performs a per-item request.
+
+### Supported projection
+
+Only these currently persisted event types are allowlisted:
+- `field_session.closed`;
+- `field_session.expired`;
+- `task.status.changed`;
+- `comment.created`;
+- `comment.edited`;
+- `comment.deleted`.
+
+The DTO contains only the stable Event ID, event type, occurrence time, optional Team/Session/Entity selectors, a safe actor category and typed minimal details. `task.status.changed` exposes Street/Haus, old/new allowlist status values and current safe labels. Field Session metrics come from the current `field_sessions` row. Comment events expose target type/context only and never read the Comment body for Activity text. Unknown event types are omitted; unknown or removed entity targets use a generic safe fallback and do not break the feed.
+
+`payload_json` is parsed server-side only where the explicit event schema requires it. It is never forwarded to the client. Activity does not expose `actor_ref`, cookies, access tokens, session hashes, join credentials, QR tokens, room codes, IP addresses, raw request bodies, full Comment text, GPS data or complete snapshots. Actor output is limited to `Campaign-Zugriff`, `Temporäre Gruppe`, `System` or an unknown safe category. Security-sensitive audit logging remains separate from ordinary product `domain_events` where stronger retention/restriction is required.
+
+### Authorization scope
+
+The Worker re-resolves the current access before every read:
+- Admin and Viewer may read normal operational Activity for their Campaign;
+- Team Editor is restricted to the canonical current Team and cannot widen that scope with a query parameter. Campaign-level events without a Team are excluded from this Team-scoped read;
+- temporary Field Group members never receive Campaign-wide Activity. They see only events tied to their exact current Campaign/Team/Field Group Session, plus their own temporary Comment events without a Session reference. Same-Team events from other Sessions are excluded;
+- Campaign IDs, Team IDs, Group IDs and Session IDs are selectors only. Campaign isolation, prepared SQL and fail-closed scope validation remain server-side.
+
+### Product and offline boundary
+
+The normal Launcher exposes a compact `Aktivität` sheet. It has Loading, Empty, Error/Retry, mobile-friendly cards, allowed-role Team filtering and cursor-based `Mehr laden`. Already loaded entries remain visible if connectivity is lost; new reads require Internet and are not reported as current offline data. No Activity copy table, rollup table, client-created history or second offline queue is introduced. Navigation back to a context remains optional and is not required for this slice.
 
 ## Automations, FC2+
 
@@ -239,4 +271,4 @@ Do not infer exact walked/driven routes or individual productivity from continuo
 
 ## Rollout status
 
-`migrations/0007_field_sessions_events.sql` and additive `migrations/0008_comments.sql` are prepared on Draft PR #72 but are not recorded as remotely applied. The durable Comment runtime is implemented against 0008, while the Activity projection and Automations remain intentionally unimplemented until their own feature-complete slices.
+`migrations/0007_field_sessions_events.sql` and additive `migrations/0008_comments.sql` are prepared on Draft PR #72 but are not recorded as remotely applied. The durable Comment runtime and the Activity projection are implemented against those prepared schemas. Automations remain intentionally unimplemented until their own feature-complete slice.
