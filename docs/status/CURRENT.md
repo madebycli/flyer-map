@@ -250,11 +250,11 @@ Weiterhin verbindlich:
 - keine IP-Persistenz aus Join Rate Limiting;
 - temporäre Membership erweitert keinen persistenten Role-Scope.
 
-Letzter vollständig verifizierter Runtime-Checkpoint:
-- Head `652ccfdf9e1cc12e7b88cc742b29393cb0525415`;
-- CI #696 erfolgreich;
+Letzter vollständig verifizierter Runtime-/Doku-Checkpoint vor dem Handoff-Refresh:
+- Head `22f38664503c59f4af42c1f5d8373ed724ced546`;
+- CI #698 erfolgreich;
 - Tests, Typecheck, Dependency Audit und Production Build grün;
-- dieser Lauf enthält den Activity-Read-Slice und den deterministischen Automation-Slice mit Projection-Allowlist, serverseitiger Scope-Autorisierung, Cursor-Pagination, Privacy-Guards, M5-Idempotenz und echtem Launcher-UI-Pfad.
+- dieser Lauf enthält den Activity-Read-Slice, den deterministischen Automation-Slice und den aktualisierten Living Handoff mit Projection-Allowlist, serverseitiger Scope-Autorisierung, Cursor-Pagination, Privacy-Guards, M5-Idempotenz und echtem Launcher-UI-Pfad.
 
 Dokumentationscommits nach diesem Runtime-Checkpoint müssen auf ihrem eigenen exakten Head erneut grün werden, bevor PR #72 promotet wird.
 
