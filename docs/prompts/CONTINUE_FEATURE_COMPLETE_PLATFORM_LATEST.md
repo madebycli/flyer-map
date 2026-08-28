@@ -45,12 +45,20 @@ Zuletzt vollständig verifizierter Runtime-Head vor diesem Doku-/Handoff-Commit:
 
 Der nachfolgende Doku-/Handoff-Commit ändert den Head danach erneut. Verifiziere deshalb zuerst den tatsächlichen aktuellen Head und dessen CI, bevor du weiterentwickelst.
 
+LETZTER VOLLSTÄNDIG VERIFIZIERTER DOKUMENTATIONS-CHECKPOINT
+
+- Head: `827a89696ddbfe7b538db6a3d5897b1f32070131`;
+- CI #690: erfolgreich, inklusive Tests, TypeScript, High-Severity Dependency Audit und Production Build;
+- PR #72: Base `ui-app-launcher-sheet`, Head-Branch `plan-feature-complete-platform`, Draft, mergeable.
+
+Der aktuelle Handoff-Update-Commit folgt auf diesem verifizierten Doku-Head und muss danach ebenfalls über die vollständige CI geprüft werden.
+
 PR #72 heißt aktuell:
 `FC0-FC2: Platform, Live Field Groups and Field Sessions`
 
 AUTOMATIC CLOUDFLARE PREVIEW
 
-Die Git-Integration kann nach einem neuen Branch-Commit automatisch einen Cloudflare-Preview-Kommentar mit Commit- und Branch-URL erzeugen. Das ist erwartetes Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout. Bei einem neuen Preview-Kommentar nur Commit/Branch und Status gegen den exakten Head prüfen.
+Die Git-Integration kann nach einem neuen Branch-Commit automatisch einen Cloudflare-Preview-Kommentar mit Commit- und Branch-URL erzeugen. Das ist erwartetes Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout. Für den aktuellen Doku-Head `827a8969` wurde der bestehende Kommentar mit erfolgreichem Preview aktualisiert: Commit-Preview `https://e7f2346c-flyer-map.cloudflare-eleven035.workers.dev`, Branch-Preview `https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev`. Bei einem neuen Preview-Kommentar nur Commit/Branch und Status gegen den exakten Head prüfen.
 
 FC0 STATUS
 
