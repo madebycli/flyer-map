@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import App from "../App";
+import { ActivityHub } from "../collaboration/ActivityHub.tsx";
 import { FieldSessionsHub } from "../collaboration/FieldSessionsHub.tsx";
 import { manualRefreshCampaign } from "../data/campaignStore.ts";
 import { TeamHub } from "../team/TeamHub.tsx";
@@ -42,6 +43,7 @@ export function PlatformShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [teamHubOpen, setTeamHubOpen] = useState(false);
   const [fieldSessionsOpen, setFieldSessionsOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
   const [sessionMapHighlight, setSessionMapHighlight] = useState<SessionMapHighlight | null>(null);
@@ -51,7 +53,7 @@ export function PlatformShell() {
   const teamName = appContext?.activeTeam?.name.trim() || "Team";
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const launcherAvailable = appContext?.launcherAvailable ?? true;
-  const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen;
+  const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen || activityOpen;
 
   useEffect(() => {
     if (!sessionMapHighlight || !appContext?.campaignId) return;
@@ -68,6 +70,7 @@ export function PlatformShell() {
     setMenuOpen(false);
     setTeamHubOpen(false);
     setFieldSessionsOpen(false);
+    setActivityOpen(false);
   };
 
   const selectActiveTeam = (teamId: string) => {
@@ -153,11 +156,18 @@ export function PlatformShell() {
                     if (item.opensTeamHub) {
                       setMenuOpen(false);
                       setFieldSessionsOpen(false);
+                      setActivityOpen(false);
                       setTeamHubOpen(true);
                     } else if (item.opensFieldSessions) {
                       setMenuOpen(false);
                       setTeamHubOpen(false);
+                      setActivityOpen(false);
                       setFieldSessionsOpen(true);
+                    } else if (item.opensActivity) {
+                      setMenuOpen(false);
+                      setTeamHubOpen(false);
+                      setFieldSessionsOpen(false);
+                      setActivityOpen(true);
                     } else if (item.command) {
                       dispatchSimpleCommand(item.command);
                     } else {
@@ -205,6 +215,14 @@ export function PlatformShell() {
             });
             setFieldSessionsOpen(false);
           }}
+        />
+      ) : null}
+
+      {activityOpen ? (
+        <ActivityHub
+          context={appContext}
+          online={online}
+          onClose={() => setActivityOpen(false)}
         />
       ) : null}
     </div>

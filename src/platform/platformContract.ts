@@ -34,12 +34,13 @@ export type PlatformAppContext = {
 };
 
 export type PlatformLauncherItem = {
-  id: "map" | "settings" | "team" | "sessions" | "comments" | "area-create";
+  id: "map" | "settings" | "team" | "sessions" | "activity" | "comments" | "area-create";
   label: string;
   icon: string;
   command: Exclude<PlatformAppCommandType, "select-active-team"> | null;
   opensTeamHub?: boolean;
   opensFieldSessions?: boolean;
+  opensActivity?: boolean;
 };
 
 export function buildPlatformLauncherItems(
@@ -57,6 +58,13 @@ export function buildPlatformLauncherItems(
       icon: "🕘",
       command: null,
       opensFieldSessions: true,
+    });
+    items.push({
+      id: "activity",
+      label: "Aktivität",
+      icon: "📰",
+      command: null,
+      opensActivity: true,
     });
     items.push({ id: "comments", label: "Kommentare", icon: "💬", command: "open-campaign-comments" });
   }
