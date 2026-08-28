@@ -34,13 +34,14 @@ export type PlatformAppContext = {
 };
 
 export type PlatformLauncherItem = {
-  id: "map" | "settings" | "team" | "sessions" | "activity" | "automations" | "comments" | "area-create";
+  id: "map" | "settings" | "team" | "sessions" | "activity" | "stats" | "automations" | "comments" | "area-create";
   label: string;
   icon: string;
   command: Exclude<PlatformAppCommandType, "select-active-team"> | null;
   opensTeamHub?: boolean;
   opensFieldSessions?: boolean;
   opensActivity?: boolean;
+  opensStatistics?: boolean;
   opensAutomations?: boolean;
 };
 
@@ -66,6 +67,13 @@ export function buildPlatformLauncherItems(
       icon: "📰",
       command: null,
       opensActivity: true,
+    });
+    items.push({
+      id: "stats",
+      label: "Stats",
+      icon: "📊",
+      command: null,
+      opensStatistics: true,
     });
     if (context.accessRole === "admin") {
       items.push({

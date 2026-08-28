@@ -231,6 +231,10 @@
   background: linear-gradient(145deg, #4d8fdd, #255eaa);
 }
 
+.platform-app-icon--stats {
+  background: linear-gradient(145deg, #4d8fdd, #255eaa);
+}
+
 .platform-app-icon--groups {
   background: linear-gradient(145deg, #8b73d6, #5d47af);
 }

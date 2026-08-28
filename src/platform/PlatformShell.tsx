@@ -3,6 +3,7 @@ import App from "../App";
 import { AutomationHub } from "../collaboration/AutomationHub.tsx";
 import { ActivityHub } from "../collaboration/ActivityHub.tsx";
 import { FieldSessionsHub } from "../collaboration/FieldSessionsHub.tsx";
+import { StatisticsHub } from "../collaboration/StatisticsHub.tsx";
 import { manualRefreshCampaign } from "../data/campaignStore.ts";
 import { TeamHub } from "../team/TeamHub.tsx";
 import {
@@ -45,6 +46,7 @@ export function PlatformShell() {
   const [teamHubOpen, setTeamHubOpen] = useState(false);
   const [fieldSessionsOpen, setFieldSessionsOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [statisticsOpen, setStatisticsOpen] = useState(false);
   const [automationsOpen, setAutomationsOpen] = useState(false);
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
@@ -55,7 +57,7 @@ export function PlatformShell() {
   const teamName = appContext?.activeTeam?.name.trim() || "Team";
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const launcherAvailable = appContext?.launcherAvailable ?? true;
-  const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen || activityOpen || automationsOpen;
+  const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen || activityOpen || statisticsOpen || automationsOpen;
 
   useEffect(() => {
     if (!sessionMapHighlight || !appContext?.campaignId) return;
@@ -73,6 +75,7 @@ export function PlatformShell() {
     setTeamHubOpen(false);
     setFieldSessionsOpen(false);
     setActivityOpen(false);
+    setStatisticsOpen(false);
     setAutomationsOpen(false);
   };
 
@@ -160,25 +163,36 @@ export function PlatformShell() {
                       setMenuOpen(false);
                       setFieldSessionsOpen(false);
                       setActivityOpen(false);
+                      setStatisticsOpen(false);
                       setAutomationsOpen(false);
                       setTeamHubOpen(true);
                     } else if (item.opensFieldSessions) {
                       setMenuOpen(false);
                       setTeamHubOpen(false);
                       setActivityOpen(false);
+                      setStatisticsOpen(false);
                       setAutomationsOpen(false);
                       setFieldSessionsOpen(true);
                     } else if (item.opensActivity) {
                       setMenuOpen(false);
                       setTeamHubOpen(false);
                       setFieldSessionsOpen(false);
+                      setStatisticsOpen(false);
                       setActivityOpen(true);
+                      setAutomationsOpen(false);
+                    } else if (item.opensStatistics) {
+                      setMenuOpen(false);
+                      setTeamHubOpen(false);
+                      setFieldSessionsOpen(false);
+                      setActivityOpen(false);
+                      setStatisticsOpen(true);
                       setAutomationsOpen(false);
                     } else if (item.opensAutomations) {
                       setMenuOpen(false);
                       setTeamHubOpen(false);
                       setFieldSessionsOpen(false);
                       setActivityOpen(false);
+                      setStatisticsOpen(false);
                       setAutomationsOpen(true);
                     } else if (item.command) {
                       dispatchSimpleCommand(item.command);
@@ -235,6 +249,18 @@ export function PlatformShell() {
           context={appContext}
           online={online}
           onClose={() => setActivityOpen(false)}
+        />
+      ) : null}
+
+      {statisticsOpen ? (
+        <StatisticsHub
+          context={appContext}
+          online={online}
+          onClose={() => setStatisticsOpen(false)}
+          onOpenSessions={() => {
+            setStatisticsOpen(false);
+            setFieldSessionsOpen(true);
+          }}
         />
       ) : null}
 

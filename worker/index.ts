@@ -28,6 +28,7 @@ import { handleCampaignMutation } from "./mutationHandler.ts";
 import { handleActivityApi } from "./activity.ts";
 import { handleCommentsApi } from "./comments.ts";
 import { handleAutomationsApi } from "./automationConfig.ts";
+import { handleStatisticsApi } from "./statistics.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -525,6 +526,9 @@ export default {
 
       const activityResponse = await handleActivityApi(request, db);
       if (activityResponse) return activityResponse;
+
+      const statisticsResponse = await handleStatisticsApi(request, db);
+      if (statisticsResponse) return statisticsResponse;
 
       const automationsResponse = await handleAutomationsApi(request, db);
       if (automationsResponse) return automationsResponse;
