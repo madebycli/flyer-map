@@ -311,6 +311,8 @@ Der Slice ist durch akzeptiertes ADR-0019 und die feste Registry bewusst klein:
 
 ## FC3: Stats
 
+**Status: Runtime-Slice umgesetzt, Rollout noch nicht freigegeben.**
+
 Feature complete umfasst:
 - Campaign-Fortschritt;
 - Team-Fortschritt;
@@ -327,6 +329,24 @@ Regeln:
 - keine Team-/Worker-Rangliste;
 - keine GPS-basierte Produktivitätsmetrik;
 - zunächst aus Source State plus Sessions/Events berechnen, Rollups erst bei gemessenem Bedarf.
+
+Der aktuelle Stats-Slice erfüllt diese Richtung mit dem Worker-Read-Endpunkt
+`GET /api/campaigns/:campaignId/stats` und dem normalen Launcher-Ziel `Stats`:
+- Street-/House-Progress wird aus aktuellen, canonical Campaign-/Area-/Team-gebundenen
+  Tasks aggregiert und nie vermischt;
+- Field Sessions liefern getrennte Distribution-/Collection-Werte für Einsätze, Dauer,
+  explizite Teilnehmerangaben, Person-Time und betroffene Aufgaben;
+- die letzten 20 Einsätze werden ohne Notizen oder Field-Group-Credentials begrenzt
+  projiziert; die vollständige Session-Historie bleibt im cursor-paginierten `Einsätze`-Modul;
+- die Statusänderungs-Zeitreihe nutzt nur aggregierte `task.status.changed` Events der
+  letzten 90 Tage und gibt keine Rohpayloads aus;
+- Admin/Viewer können Campaign-weit lesen, Team Editor bleibt im eigenen Team und
+  temporäre Mitglieder sehen nur ihren Team-Arbeitsbereich, die exakte eigene Group
+  Session und deren Events;
+- Migration 0009 wird nicht erweitert und es entsteht keine Stats-/Rollup-Tabelle;
+- Offline hält die UI bereits geladene Stats sichtbar, meldet neue Reads aber nicht als
+  erfolgreich. Pickup-Fortschritt bleibt bis zu einem echten persistenten Pickup-Modell
+  ausgeschlossen.
 
 ## FC4: Smart Streets + Houses
 

@@ -27,10 +27,10 @@ VERIFIZIERTER CHECKPOINT VOR DIESEM DOKU-/HANDOFF-COMMIT
 - PR #72 Base: `ui-app-launcher-sheet`;
 - PR #72 Base-SHA: `48843793184650bd96039f0e3b073f60aebb068a`;
 - PR #72 Head-Branch: `plan-feature-complete-platform`;
-- PR #72 Head vor diesem Doku-/Handoff-Commit: `22f38664503c59f4af42c1f5d8373ed724ced546`;
+- PR #72 Head vor diesem Doku-/Handoff-Commit: `6d8a54f30cfcd5ffa1fc0262e0fdf505b3c0fe8e`;
 - PR #72 ist offen, Draft und mergeable;
-- GitHub Actions CI #698 auf genau diesem Head: erfolgreich;
-- CI-Check `98842602724`: Tests, TypeScript, Dependency Audit und Production Build erfolgreich.
+- GitHub Actions CI #700 auf genau diesem Head: erfolgreich;
+- CI-Check `98978406286`: Tests, TypeScript, Dependency Audit und Production Build erfolgreich.
 
 Der nachfolgende Doku-/Handoff-Commit verschiebt den Branch-Head. Nach diesem Commit muss der tatsächliche neue Head erneut mit vollständiger CI geprüft und in PR #72 sowie beim nächsten Handoff festgehalten werden. Ein älterer grüner Head darf nicht als finaler Nachweis verwendet werden.
 
@@ -40,8 +40,8 @@ AUTOMATISCHE CLOUDFLARE-PREVIEW-HINWEISE
 
 Die bestehende Git-Integration kann nach Branch-Commits automatisch einen Cloudflare-Preview-Kommentar in PR #72 aktualisieren. Das ist Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout.
 
-Beim zuletzt verifizierten Doku-Head `22f38664503c59f4af42c1f5d8373ed724ced546` zeigte der Kommentar:
-- Commit Preview: `https://ab43ab59-flyer-map.cloudflare-eleven035.workers.dev`;
+Beim zuletzt verifizierten Runtime-Head `6d8a54f30cfcd5ffa1fc0262e0fdf505b3c0fe8e` zeigte der Kommentar:
+- Commit Preview: `https://faf8eb71-flyer-map.cloudflare-eleven035.workers.dev`;
 - Branch Preview: `https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev`.
 
 Wenn die Git-Integration nach einem neuen Commit erneut kommentiert, prüfe Commit-SHA, Preview-Status und URLs gegen den exakten Branch-Head. Interpretiere den Preview-Kommentar nicht als Nachweis, dass eine vorbereitete D1-Migration remote angewendet wurde. Führe keinen manuellen `wrangler deploy` aus.
@@ -140,6 +140,35 @@ Contract:
 
 Die Activity-DTO-Allowlist enthält nur Event-ID, Eventtyp, Zeit, sichere Team-/Session-/Entity-Selektoren, Actor-Kategorie und typisierte minimale Details. Sie gibt niemals rohes `payload_json`, `actor_ref`, Kommentartext, Cookies, Tokens, Session-Hashes, Join-Credentials, Room Codes, QR-Tokens, IPs, Request-Bodies, GPS oder vollständige Snapshots aus. Actor-Ausgaben bleiben bei sicheren Kategorien wie `Campaign-Zugriff`, `Temporäre Gruppe`, `System` oder unbekannter sicherer Kategorie.
 
+Stats
+
+Der erste echte Statistics-Slice ist umgesetzt. Stats ist eine begrenzte Server-Projektion des autoritativen Campaign-Zustands, der Field-Session-Daten und der normalisierten `domain_events`; es gibt keine Activity-/Stats-Rollup-Tabelle und keine clientseitig erfundene Historie.
+
+Contract und Projektion:
+- `GET /api/campaigns/:campaignId/stats`;
+- Admin und Viewer lesen normale operative Campaign-Stats Campaign-weit;
+- Team Editor bleibt auf den canonical eigenen Team-Scope begrenzt;
+- temporäre Field-Group-Mitglieder erhalten keine Campaign-weite Statistik, sondern nur den exakt autorisierten Group-/Session-Scope und den eigenen Team-Arbeitsbereich;
+- Campaign, Team und Area werden serverseitig aufgelöst;
+- Straßen- und Hausaufgaben haben getrennte Nenner und Fortschrittswerte; Hauswerte bleiben als unavailable markiert, wenn das vorbereitete House-Schema fehlt;
+- Einsätze werden getrennt nach Distribution/Collection mit Dauer, bekannten Teilnehmern, Person-Time und betroffenen Aufgaben aggregiert;
+- die Liste der letzten Einsätze ist auf 20 Einträge plus Truncation-Hinweis begrenzt;
+- Fortschrittsänderungen aus `task.status.changed` sind auf ein 90-Tage-Fenster und sichere Aggregate begrenzt;
+- Pickup-Statistiken werden nicht simuliert, solange kein echtes persistentes Pickup-Modell existiert.
+
+Privacy und Performance:
+- SQL bleibt prepared/parameterized; Scope, Campaign und Group-/Session-Beziehungen werden ausschließlich im Worker autorisiert;
+- fehlendes `field_sessions`-/`domain_events`-Schema liefert explizit 503 statt einer Ersatzsemantik;
+- die Antwort enthält nur ein versioniertes allowlistiertes DTO. Rohes `payload_json`, Actor-Referenzen, Kommentartext, Notes, Cookies, Tokens, Hashes, Room Codes, QR-Tokens, IPs, GPS-Daten und Snapshots werden nicht ausgeliefert;
+- unbekannte oder fehlende Entity-Labels zerstören die Statistik nicht; es gibt sichere Fallbacks;
+- Aggregationen und die begrenzte Recent-Session-Abfrage vermeiden unbounded Reads und N+1-Historienabfragen.
+
+UI:
+- normales Launcher-Ziel `Stats` im map-first Produkt;
+- Loading, Empty, Error/Retry, Offline-Read-Verhalten und mobile-first Karten für Fortschritt, Teams, Areas, Einsätze und Verlauf;
+- bereits geladene Stats bleiben offline sichtbar; neue Reads benötigen Internet und werden nicht als erfolgreich ausgegeben;
+- `Einsätze` wird über die typisierte PlatformShell-Action geöffnet. House-Polygon-Fokus bleibt bis zum echten House-Renderer offen.
+
 Deterministische Automations
 
 ADR-0019 ist accepted. Der erste Runtime-Slice ist implementiert:
@@ -182,13 +211,13 @@ Der Worker bleibt die authoritative Boundary:
 OFFENE FC2-PUNKTE
 
 - House-Polygon-Highlight ist weiterhin offen und hängt am echten normalen House-Renderer;
-- Stats ist der nächste konkrete Plattform-/FC2-nahe Entwicklungsschritt, danach House-Rendering gemäß Plan-017;
+- Stats-Runtime und normale Launcher-Fläche sind umgesetzt und auf dem Runtime-Head durch vollständige CI verifiziert;
 - Comment- und Automation-Writes bleiben bewusst online-only, solange der bestehende M5-Mutationsmechanismus nicht ohne zweite Sync-Architektur sicher wiederverwendet werden kann;
 - sichere personenbezogene Autorauflösung bleibt bis zu einer echten Identity-/Organization-Grundlage konservativ eingeschränkt.
 
 NÄCHSTER ENTWICKLUNGSSCHRITT
 
-Wenn der exakte aktuelle PR-Head und seine vollständige CI weiterhin grün sind, implementiere als nächsten Slice Stats. Danach prüfe House-Polygon-Rendering. Automations nicht ausweiten, bevor ein expliziter Trigger-/Effekt-/Idempotenz-Contract und die jeweilige serverseitige Autorisierung vorliegen.
+Wenn der exakte aktuelle PR-Head und seine vollständige CI weiterhin grün sind, prüfe als nächsten Slice das House-Polygon-Rendering im echten normalen Renderer. Automations nicht ausweiten, bevor ein expliziter Trigger-/Effekt-/Idempotenz-Contract und die jeweilige serverseitige Autorisierung vorliegen.
 
 NICHT TUN
 

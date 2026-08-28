@@ -286,11 +286,24 @@ Requirements for future migration:
 
 See `docs/architecture/ORGANIZATIONS.md`.
 
-## Future collaboration/statistics data
+## Collaboration/statistics data
 
-Comments, activity/domain events, automation rules/runs and statistics rollups are planned but not current tables.
+The current prepared collaboration schema contains durable Comments, Field Sessions,
+minimized `domain_events` and deterministic Automation configuration. Activity and
+Statistics are projections/aggregations of those sources; they do not have a second
+history or rollup table.
 
-Prefer deriving statistics from durable state/events. Do not add continuous GPS history for analytics.
+The Stats read path derives current Street-/House-task denominators from `tasks`,
+`house_tasks` and their canonical Area/Team relationships. Session totals and the
+bounded recent session list derive from `field_sessions`. A bounded 90-day status-change
+series derives from `domain_events`. Collection session metrics remain separate from
+Distribution progress; Pickup progress is not fabricated before a persistent Pickup
+model exists.
+
+The Worker performs the Campaign-/Team-/Field-Group scope filtering before returning
+the small Stats DTO. The endpoint uses prepared queries and bounded reads. Prefer this
+derivation from durable state/events; add rollups only after a measured scale need.
+Do not add continuous GPS history for analytics.
 
 See `docs/architecture/COLLABORATION.md`.
 

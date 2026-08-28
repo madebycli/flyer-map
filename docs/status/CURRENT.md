@@ -192,6 +192,28 @@ Der erste Automation-Slice ist als echter serverseitiger Runtime-Pfad umgesetzt 
 - Admins lesen/aktivieren/deaktivieren die feste Regel über den Worker-Endpunkt und das normale Launcher-Ziel `Automationen`. Viewer, Team Editor und temporäre Mitglieder dürfen die Konfiguration nicht verwalten;
 - die Automation-Konfiguration ist online-only. Offline wird eine bereits geladene Konfiguration sichtbar gehalten, neue Änderungen werden nicht als erfolgreich gemeldet.
 
+### Stats
+
+Der Stats-Slice ist jetzt als echter serverseitiger Read-Pfad im normalen Produkt umgesetzt:
+- `GET /api/campaigns/:campaignId/stats` aggregiert aktuelle Street-/House-Tasks,
+  Field Sessions und persistierte `task.status.changed` Events;
+- Street- und House-Fortschritt bleiben getrennt, jede Prozentzahl hat einen expliziten
+  Nenner. Collection-Sessions werden separat von Distribution dargestellt; Pickup-Fortschritt
+  wird ohne persistentes Pickup-Modell nicht erfunden;
+- Admin und Viewer lesen Campaign-weit mit optionalem Teamfilter. Team Editor bleibt im
+  canonical eigenen Team. Temporäre Mitglieder erhalten nur den eigenen Team-Arbeitsbereich,
+  die exakte eigene Field-Group-Session und deren Events, nicht die Campaign oder andere
+  Sessions desselben Teams;
+- der Worker liefert ein kleines allowlistetes DTO: keine Rohpayloads, Actor-Referenzen,
+  Session-Notizen, Credentials, Tokens, Hashes, IPs, GPS-Daten oder Geometrie-Snapshots;
+- aktuelle Session-Historie ist auf 20 Einträge begrenzt und verweist für die vollständige
+  cursor-paginierte Historie auf `Einsätze`. Die Statuszeitreihe ist auf 90 Tage und
+  aggregierte Zählwerte begrenzt;
+- das normale Launcher-Sheet `Stats` hat Loading, Empty, Error/Retry, Teamfilter für
+  berechtigte Mehr-Team-Rollen und Offline-Read-Verhalten. Bereits geladene Werte bleiben
+  offline sichtbar, neue Reads benötigen Internet;
+- es gibt keine neue Stats-/Rollup-Persistenz und keine zusätzliche Queue-Architektur.
+
 ### Noch offen in FC2
 
 Noch nicht feature-complete:
@@ -272,6 +294,6 @@ ADR-0014 und ADR-0017 sind akzeptiert und keine Blocker mehr für ihre aktuellen
 
 ## Immediate next
 
-1. Stats aus echten Tasks, Sessions und Events als nächstes vertikales Produktfeature abgrenzen.
-2. House-Polygon-Highlight erst mit dem normalen FC4 House-Renderer ergänzen.
+1. Den Stats-Slice auf dem exakten finalen PR-Head durch vollständige CI und Doku-Handoff verifizieren.
+2. Danach House-Polygon-Highlight erst mit dem normalen FC4 House-Renderer ergänzen.
 3. 0004 bis 0009 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.

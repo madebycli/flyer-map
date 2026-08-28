@@ -11,7 +11,7 @@ source_of_truth_for: [field-session-foundation, comments, activity, future-autom
 
 ## Purpose
 
-Record the accepted collaboration/history boundary and distinguish the durable Field Session, Comment, Activity and deterministic Automation runtimes from future statistics and broader automation features.
+Record the accepted collaboration/history boundary and distinguish the durable Field Session, Comment, Activity, Statistics and deterministic Automation runtimes from future broader automation features.
 
 ADR-0017 is accepted and governs Field Session/event retention. ADR-0018 continues to govern future action/template and cross-action analytics persistence.
 
@@ -244,7 +244,50 @@ Every future rule still requires an explicit trigger/effect, preserved authoriza
 
 Statistics remain operational, not behavioral surveillance.
 
-### Current/future source model
+### Current Stats projection
+
+The normal Launcher exposes a compact `Stats` module backed by
+`GET /api/campaigns/:campaignId/stats`. It is a bounded server-side projection of
+current state, Field Sessions and normalized task-status events. There is no Activity
+copy table, Stats rollup table or client-created history.
+
+The response keeps these units separate:
+- Street progress uses the `street-tasks` denominator;
+- House progress uses the `house-tasks` denominator when migration 0005 is available;
+- Distribution and Collection session metrics are returned in separate buckets;
+- Pickup progress is not invented because no persistent Pickup model exists yet.
+
+Current fields include Campaign/Team/Area progress, completed/open/later/not-deliverable
+counts, remaining work, bounded recent Session summaries, outing count, duration,
+explicit participant-count sums, known-participant-session count, person-time and a
+bounded 90-day status-change series. Every percentage is accompanied by its completed
+and total denominator. Participant-count sums are explicitly not unique-person counts.
+
+The recent Session projection is capped at 20 rows and indicates truncation; the full
+cursor-paginated history remains in `Einsätze`. The progress-over-time query groups
+persisted `task.status.changed` events and returns counts only, never event payloads.
+
+### Authorization and privacy
+
+The Worker resolves the existing AccessContext before aggregation:
+- Admin and Viewer may read Campaign-wide Stats, with an optional Team filter;
+- Team Editor is forced to the canonical own Team and cannot widen the query;
+- temporary Field-Group members receive only their own Team work area, exact Field
+  Group Session metrics and events tied to that Session, never Campaign-wide or other
+  same-Team Session history;
+- Campaign mismatch, missing Team scope and invalid filters fail closed.
+
+The DTO contains safe operational labels and selectors only. It does not contain raw
+`payload_json`, actor references, comments, session notes, credentials, tokens,
+hashes, IPs, GPS data or full geometry/snapshots. Malformed event payloads contribute
+no completion-transition count but cannot break the bounded Stats response.
+
+The normal `Stats` sheet has Loading, Empty, Error/Retry, Offline-read and refresh
+states, plus a Team filter only for roles that can read multiple Teams. Already loaded
+Stats remain visible offline; new reads require Internet. `Einsätze` remains the
+dedicated full Session-history surface.
+
+### Source model
 
 Use:
 - current Tasks for current progress denominators;

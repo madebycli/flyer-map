@@ -40,7 +40,7 @@ A visible Launcher module is not considered delivered merely because local UI, f
 
 Internal `?workbench=` routes may remain useful for development, but they are not normal navigation and do not count as a completed product milestone.
 
-The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, the bounded Activity projection and the first deterministic, explicitly authorized and idempotent Automation on Draft PR #72. The next work is the remaining statistics and House-rendering work. Security-sensitive runtime remains gated by explicit ADR acceptance.
+The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, the bounded Activity projection, the first deterministic, explicitly authorized and idempotent Automation and the first real Stats projection on Draft PR #72. Stats derives bounded progress/session/event aggregates with explicit Street-/House denominators and no duplicate rollup persistence. The remaining work is the House-rendering slice. Security-sensitive runtime remains gated by explicit ADR acceptance.
 
 ## Domain direction
 
@@ -207,6 +207,12 @@ Separate desktop-first surface for:
 Goal: provide a polished operational overview while keeping the map fast.
 
 #### Statistics
+
+The current feature-complete line now has a normal Launcher `Stats` module backed by a
+server-authorized bounded read. It derives current progress and operational Session
+metrics from source state and normalized events, while the richer M9 reporting scope
+below remains the product direction.
+
 Show percentage/progress bars for:
 - Campaign;
 - Team;
