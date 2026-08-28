@@ -27,10 +27,10 @@ VERIFIZIERTER CHECKPOINT VOR DIESEM DOKU-/HANDOFF-COMMIT
 - PR #72 Base: `ui-app-launcher-sheet`;
 - PR #72 Base-SHA: `48843793184650bd96039f0e3b073f60aebb068a`;
 - PR #72 Head-Branch: `plan-feature-complete-platform`;
-- PR #72 Head vor diesem Doku-/Handoff-Commit: `652ccfdf9e1cc12e7b88cc742b29393cb0525415`;
+- PR #72 Head vor diesem Doku-/Handoff-Commit: `971ee877f467655c0deb540ad9631dfea55260e7`;
 - PR #72 ist offen, Draft und mergeable;
-- GitHub Actions CI #696 auf genau diesem Head: erfolgreich;
-- CI-Check `98839824719`: Tests, TypeScript, Dependency Audit und Production Build erfolgreich.
+- GitHub Actions CI #697 auf genau diesem Head: erfolgreich;
+- CI-Check `98842192988`: Tests, TypeScript, Dependency Audit und Production Build erfolgreich.
 
 Der nachfolgende Doku-/Handoff-Commit verschiebt den Branch-Head. Nach diesem Commit muss der tatsächliche neue Head erneut mit vollständiger CI geprüft und in PR #72 sowie beim nächsten Handoff festgehalten werden. Ein älterer grüner Head darf nicht als finaler Nachweis verwendet werden.
 
@@ -40,8 +40,8 @@ AUTOMATISCHE CLOUDFLARE-PREVIEW-HINWEISE
 
 Die bestehende Git-Integration kann nach Branch-Commits automatisch einen Cloudflare-Preview-Kommentar in PR #72 aktualisieren. Das ist Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout.
 
-Beim zuletzt verifizierten Runtime-Head `652ccfdf9e1cc12e7b88cc742b29393cb0525415` zeigte der Kommentar:
-- Commit Preview: `https://bbf94726-flyer-map.cloudflare-eleven035.workers.dev`;
+Beim zuletzt verifizierten Doku-Head `971ee877f467655c0deb540ad9631dfea55260e7` zeigte der Kommentar:
+- Commit Preview: `https://d053f089-flyer-map.cloudflare-eleven035.workers.dev`;
 - Branch Preview: `https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev`.
 
 Wenn die Git-Integration nach einem neuen Commit erneut kommentiert, prüfe Commit-SHA, Preview-Status und URLs gegen den exakten Branch-Head. Interpretiere den Preview-Kommentar nicht als Nachweis, dass eine vorbereitete D1-Migration remote angewendet wurde. Führe keinen manuellen `wrangler deploy` aus.
