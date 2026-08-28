@@ -45,13 +45,13 @@ Zuletzt vollständig verifizierter Runtime-Head vor diesem Doku-/Handoff-Commit:
 
 Der nachfolgende Doku-/Handoff-Commit ändert den Head danach erneut. Verifiziere deshalb zuerst den tatsächlichen aktuellen Head und dessen CI, bevor du weiterentwickelst.
 
-LETZTER VOLLSTÄNDIG VERIFIZIERTER DOKUMENTATIONS-CHECKPOINT
+LETZTER VOLLSTÄNDIG VERIFIZIERTER DOKUMENTATIONS-/HANDOFF-CHECKPOINT
 
-- Head: `827a89696ddbfe7b538db6a3d5897b1f32070131`;
-- CI #690: erfolgreich, inklusive Tests, TypeScript, High-Severity Dependency Audit und Production Build;
+- Head: `3da335c239affbde68c9405491f656fcae953f03`;
+- CI #691: erfolgreich, inklusive Tests, TypeScript, High-Severity Dependency Audit und Production Build;
 - PR #72: Base `ui-app-launcher-sheet`, Head-Branch `plan-feature-complete-platform`, Draft, mergeable.
 
-Der aktuelle Handoff-Update-Commit folgt auf diesem verifizierten Doku-Head und muss danach ebenfalls über die vollständige CI geprüft werden.
+Dieser Handoff-Text wird mit dem nachfolgenden Aktualisierungscommit auf diesem verifizierten Head fortgeschrieben. Nach jeder solchen Handoff-Aktualisierung muss der dann exakte Branch-Head erneut über die vollständige CI geprüft werden.
 
 PR #72 heißt aktuell:
 `FC0-FC2: Platform, Live Field Groups and Field Sessions`
