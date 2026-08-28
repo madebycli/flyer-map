@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import App from "../App";
+import { AutomationHub } from "../collaboration/AutomationHub.tsx";
 import { ActivityHub } from "../collaboration/ActivityHub.tsx";
 import { FieldSessionsHub } from "../collaboration/FieldSessionsHub.tsx";
 import { manualRefreshCampaign } from "../data/campaignStore.ts";
@@ -44,6 +45,7 @@ export function PlatformShell() {
   const [teamHubOpen, setTeamHubOpen] = useState(false);
   const [fieldSessionsOpen, setFieldSessionsOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [automationsOpen, setAutomationsOpen] = useState(false);
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
   const [sessionMapHighlight, setSessionMapHighlight] = useState<SessionMapHighlight | null>(null);
@@ -53,7 +55,7 @@ export function PlatformShell() {
   const teamName = appContext?.activeTeam?.name.trim() || "Team";
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const launcherAvailable = appContext?.launcherAvailable ?? true;
-  const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen || activityOpen;
+  const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen || activityOpen || automationsOpen;
 
   useEffect(() => {
     if (!sessionMapHighlight || !appContext?.campaignId) return;
@@ -71,6 +73,7 @@ export function PlatformShell() {
     setTeamHubOpen(false);
     setFieldSessionsOpen(false);
     setActivityOpen(false);
+    setAutomationsOpen(false);
   };
 
   const selectActiveTeam = (teamId: string) => {
@@ -157,17 +160,26 @@ export function PlatformShell() {
                       setMenuOpen(false);
                       setFieldSessionsOpen(false);
                       setActivityOpen(false);
+                      setAutomationsOpen(false);
                       setTeamHubOpen(true);
                     } else if (item.opensFieldSessions) {
                       setMenuOpen(false);
                       setTeamHubOpen(false);
                       setActivityOpen(false);
+                      setAutomationsOpen(false);
                       setFieldSessionsOpen(true);
                     } else if (item.opensActivity) {
                       setMenuOpen(false);
                       setTeamHubOpen(false);
                       setFieldSessionsOpen(false);
                       setActivityOpen(true);
+                      setAutomationsOpen(false);
+                    } else if (item.opensAutomations) {
+                      setMenuOpen(false);
+                      setTeamHubOpen(false);
+                      setFieldSessionsOpen(false);
+                      setActivityOpen(false);
+                      setAutomationsOpen(true);
                     } else if (item.command) {
                       dispatchSimpleCommand(item.command);
                     } else {
@@ -223,6 +235,14 @@ export function PlatformShell() {
           context={appContext}
           online={online}
           onClose={() => setActivityOpen(false)}
+        />
+      ) : null}
+
+      {automationsOpen ? (
+        <AutomationHub
+          context={appContext}
+          online={online}
+          onClose={() => setAutomationsOpen(false)}
         />
       ) : null}
     </div>

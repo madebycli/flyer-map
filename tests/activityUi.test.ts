@@ -13,6 +13,8 @@ test("Activity uses the real production launcher graph and bounded read client",
   ]);
 
   assert.match(worker, /domain_events/u);
+  assert.match(worker, /automation\.executed/u);
+  assert.match(worker, /COMPLETE_PARENT_STREET_RULE_TYPE/u);
   assert.match(worker, /LIMIT \?/u);
   assert.match(worker, /ORDER BY e\.occurred_at DESC, e\.id DESC/u);
   assert.match(worker, /payload_json/u);
@@ -27,6 +29,7 @@ test("Activity uses the real production launcher graph and bounded read client",
   assert.match(hub, /Noch keine Aktivität vorhanden/u);
   assert.match(hub, /Erneut laden/u);
   assert.match(hub, /Mehr laden/u);
+  assert.match(hub, /automatisch abgeschlossen/u);
   assert.match(hub, /bereits geladene Aktivität bleibt sichtbar/u);
   assert.doesNotMatch(hub, /dangerouslySetInnerHTML/u);
   assert.doesNotMatch(hub, /fake|mock|Workbench/iu);

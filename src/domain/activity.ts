@@ -7,6 +7,7 @@ export const ACTIVITY_EVENT_TYPES = [
   "comment.created",
   "comment.edited",
   "comment.deleted",
+  "automation.executed",
 ] as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];
@@ -47,6 +48,11 @@ export type ActivityDetails =
       kind: "comment-created" | "comment-edited" | "comment-deleted";
       targetType: ActivityCommentTargetType;
       targetId: string | null;
+      targetLabel: string;
+      contextLabel: string | null;
+    }
+  | {
+      kind: "automation-executed";
       targetLabel: string;
       contextLabel: string | null;
     };

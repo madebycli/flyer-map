@@ -368,6 +368,7 @@ test("Activity route, event allowlist and schema failure are explicit", async ()
     "comment.created",
     "comment.edited",
     "comment.deleted",
+    "automation.executed",
   ]);
 
   const db = await database();
@@ -411,6 +412,31 @@ test("admin projection supports all real events without raw payload or identity 
     actorKind: "unknown",
     payload: "not-json",
   });
+  insertEvent(db, {
+    id: "event_automation_executed",
+    teamId: "team_a",
+    entityType: "street-task",
+    entityId: "street_a",
+    eventType: "automation.executed",
+    occurredAt: "2026-08-28T10:09:00.000Z",
+    actorKind: "system",
+    actorRef: "must-not-be-visible",
+    payload: JSON.stringify({
+      ruleType: "complete-parent-street-when-all-houses-complete",
+      effectType: "complete-parent-street",
+      triggerEntityId: "house_a",
+    }),
+  });
+  insertEvent(db, {
+    id: "event_automation_invalid",
+    teamId: "team_a",
+    entityType: "street-task",
+    entityId: "street_a",
+    eventType: "automation.executed",
+    occurredAt: "2026-08-28T10:10:00.000Z",
+    actorKind: "system",
+    payload: JSON.stringify({ ruleType: "unknown-rule", effectType: "unknown-effect" }),
+  });
 
   const admin = await persistentAccess(db, "admin");
   const response = await handleActivityApi(
@@ -419,7 +445,7 @@ test("admin projection supports all real events without raw payload or identity 
   );
   assert.equal(response?.status, 200);
   const result = await payload(response!);
-  assert.equal(result.activities.length, 7);
+  assert.equal(result.activities.length, 8);
   assert.deepEqual(
     new Set(result.activities.map((activity) => activity.eventType)),
     new Set([...SUPPORTED_ACTIVITY_EVENT_TYPES, "task.status.changed"]),
@@ -450,6 +476,13 @@ test("admin projection supports all real events without raw payload or identity 
   });
   const comment = result.activities.find((activity) => activity.id === "event_comment_created");
   assert.equal((comment?.details as { targetLabel?: string }).targetLabel, "Gebiet A");
+  const automation = result.activities.find((activity) => activity.id === "event_automation_executed");
+  assert.deepEqual(automation?.details, {
+    kind: "automation-executed",
+    targetLabel: "Hauptstraße",
+    contextLabel: "Gebiet A",
+  });
+  assert.equal(automation?.actorCategory, "system");
   assert.equal(JSON.stringify(result).includes("payload_json"), false);
   assert.equal(JSON.stringify(result).includes("private old body"), false);
   assert.equal(JSON.stringify(result).includes("secret-cookie"), false);
@@ -457,6 +490,7 @@ test("admin projection supports all real events without raw payload or identity 
   assert.equal(JSON.stringify(result).includes("<script>"), false);
   assert.equal(JSON.stringify(result).includes("not-json"), false);
   assert.equal(result.activities.some((activity) => activity.id === "event_unsupported"), false);
+  assert.equal(result.activities.some((activity) => activity.id === "event_automation_invalid"), false);
   const unknown = result.activities.find((activity) => activity.id === "event_unknown_entity");
   assert.equal(unknown?.entityType, "unknown");
   assert.equal((unknown?.details as { targetLabel?: string }).targetLabel, "Aufgabe");
@@ -565,6 +599,35 @@ test("temporary member sees only the exact Field Group session and own comment e
     actorKind: "temporary-member",
     actorRef: temporary.membershipId,
   });
+  insertEvent(db, {
+    id: "event_temp_own_automation",
+    teamId: "team_a",
+    fieldSessionId: temporary.sessionId,
+    entityType: "street-task",
+    entityId: "street_a",
+    eventType: "automation.executed",
+    occurredAt: "2026-08-28T10:03:30.000Z",
+    actorKind: "system",
+    payload: JSON.stringify({
+      ruleType: "complete-parent-street-when-all-houses-complete",
+      effectType: "complete-parent-street",
+      triggerEntityId: "house_a",
+    }),
+  });
+  insertEvent(db, {
+    id: "event_temp_other_automation",
+    teamId: "team_a",
+    fieldSessionId: "session_other_a",
+    entityType: "street-task",
+    entityId: "street_a",
+    eventType: "automation.executed",
+    occurredAt: "2026-08-28T10:03:40.000Z",
+    actorKind: "system",
+    payload: JSON.stringify({
+      ruleType: "complete-parent-street-when-all-houses-complete",
+      effectType: "complete-parent-street",
+    }),
+  });
   insertComment(db, "comment_temp_other", "area", "area_a", "team_a");
   insertEvent(db, {
     id: "event_temp_other_comment",
@@ -605,7 +668,7 @@ test("temporary member sees only the exact Field Group session and own comment e
   const result = await payload(response!);
   assert.deepEqual(
     new Set(result.activities.map((activity) => activity.id)),
-    new Set(["event_temp_own_session", "event_temp_own_comment"]),
+    new Set(["event_temp_own_session", "event_temp_own_comment", "event_temp_own_automation"]),
   );
   assert.equal(result.activities.every((activity) => activity.teamId === "team_a"), true);
 });

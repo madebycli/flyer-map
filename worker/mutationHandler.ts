@@ -10,6 +10,7 @@ import {
 } from "./campaignRepository.ts";
 import { hasFieldSessionHistorySchema } from "./fieldSessionHistory.ts";
 import { buildMutationDomainEvent } from "./mutationEvents.ts";
+import { buildAutomationExecution } from "./automationRuntime.ts";
 import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 import {
   getAppliedMutation,
@@ -168,15 +169,26 @@ export async function handleCampaignMutation(
       );
     }
 
-    const domainEvent =
+    const eventSchemaAvailable =
       (mutation.type === "task.set-status" || mutation.type === "house.set-status") &&
-      (await hasFieldSessionHistorySchema(db))
-        ? await buildMutationDomainEvent(
+      (await hasFieldSessionHistorySchema(db));
+    const domainEvent = eventSchemaAvailable
+      ? await buildMutationDomainEvent(
+          db,
+          current,
+          mutation,
+          access,
+          parsed.value.fieldGroupId,
+        )
+      : null;
+    const automationExecution =
+      eventSchemaAvailable && mutation.type === "house.set-status"
+        ? await buildAutomationExecution(
             db,
             current,
+            candidate,
             mutation,
-            access,
-            parsed.value.fieldGroupId,
+            domainEvent?.fieldSessionId ?? null,
           )
         : null;
 
@@ -186,6 +198,7 @@ export async function handleCampaignMutation(
       current.revision,
       fingerprint,
       domainEvent,
+      automationExecution,
     );
     if (persisted.ok) {
       return json({

@@ -6,6 +6,10 @@ import {
   type ActivityItem,
   type ActivityPage,
 } from "../src/domain/activity.ts";
+import {
+  COMPLETE_PARENT_STREET_EFFECT_TYPE,
+  COMPLETE_PARENT_STREET_RULE_TYPE,
+} from "../src/domain/automations.ts";
 import type { TaskStatus } from "../src/domain/campaign.ts";
 import { resolveAccess, type AccessContext } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
@@ -258,6 +262,41 @@ function projectFieldSession(row: ActivityRow): ActivityItem {
   };
 }
 
+function projectAutomation(row: ActivityRow): ActivityItem | null {
+  if (row.entity_type !== "street-task" || row.actor_kind !== "system") return null;
+  if (row.payload_version !== 1) return null;
+  try {
+    const payload = JSON.parse(row.payload_json) as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const record = payload as Record<string, unknown>;
+    if (
+      record.ruleType !== COMPLETE_PARENT_STREET_RULE_TYPE ||
+      record.effectType !== COMPLETE_PARENT_STREET_EFFECT_TYPE
+    ) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    eventType: row.event_type,
+    occurredAt: row.occurred_at,
+    teamId: safeId(row.event_team_id ?? row.session_team_id),
+    teamLabel: optionalLabel(row.event_team_name ?? row.session_team_name),
+    fieldSessionId: safeId(row.field_session_id),
+    entityType: "street-task",
+    entityId: safeId(row.entity_id),
+    actorCategory: actorCategory(row.actor_kind),
+    details: {
+      kind: "automation-executed",
+      targetLabel: safeLabel(row.street_task_label, "Straße"),
+      contextLabel: optionalLabel(row.street_area_label),
+    },
+  };
+}
+
 function projectComment(row: ActivityRow): ActivityItem {
   const targetType = commentTargetType(row.comment_target_type);
   const targetId = safeId(row.comment_target_id);
@@ -309,6 +348,7 @@ function projectRow(row: ActivityRow): ActivityItem | null {
   if (row.event_type === "field_session.closed" || row.event_type === "field_session.expired") {
     return projectFieldSession(row);
   }
+  if (row.event_type === "automation.executed") return projectAutomation(row);
   return projectComment(row);
 }
 

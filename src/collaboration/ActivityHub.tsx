@@ -64,12 +64,16 @@ function activityTitle(item: ActivityItem) {
     return `Kommentar zu ${details.targetLabel} hinzugefügt`;
   }
   if (details.kind === "comment-edited") return "Kommentar bearbeitet";
+  if (details.kind === "automation-executed") {
+    return `Straße ${details.targetLabel} automatisch abgeschlossen`;
+  }
   return "Kommentar gelöscht";
 }
 
 function activityContext(item: ActivityItem) {
   const details = item.details;
   if (details.kind === "task-status-changed") return details.contextLabel;
+  if (details.kind === "automation-executed") return details.contextLabel;
   if (details.kind === "comment-created" || details.kind === "comment-edited" || details.kind === "comment-deleted") {
     return details.contextLabel;
   }

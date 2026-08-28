@@ -79,7 +79,7 @@ test("launcher registry exposes history to scoped roles and editing only when ca
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.id),
-    ["map", "team", "sessions", "activity", "comments", "settings", "area-create"],
+    ["map", "team", "sessions", "activity", "automations", "comments", "settings", "area-create"],
   );
 
   assert.deepEqual(
@@ -96,7 +96,7 @@ test("launcher remains a compact rounded sheet rather than a fullscreen dashboar
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.label),
-    ["Karte", "Team", "Einsätze", "Aktivität", "Kommentare", "Einstellungen", "Gebiet"],
+    ["Karte", "Team", "Einsätze", "Aktivität", "Automationen", "Kommentare", "Einstellungen", "Gebiet"],
   );
   assert.match(shellCss, /\.platform-menu-overlay\s*\{[\s\S]*align-items: flex-end;/);
   assert.match(shellCss, /\.platform-menu-grid\s*\{[\s\S]*grid-template-columns: repeat\(4,/);

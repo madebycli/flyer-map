@@ -8,6 +8,7 @@ import {
 } from "./campaignRepository.ts";
 import type { MutationDomainEvent } from "./mutationEvents.ts";
 import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
+import type { AutomationExecution } from "./automationRuntime.ts";
 
 export type AppliedMutation = {
   mutationType: CampaignMutation["type"];
@@ -366,12 +367,190 @@ function domainEventStatement(
     );
 }
 
+const AUTOMATION_COMPLETION_PREDICATE = `
+    EXISTS (
+      SELECT 1
+      FROM automation_rules ar
+      WHERE ar.campaign_id = parent_task.campaign_id
+        AND ar.rule_type = ?
+        AND ar.enabled = 1
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM house_tasks trigger_house
+      WHERE trigger_house.id = ?
+        AND trigger_house.campaign_id = parent_task.campaign_id
+        AND trigger_house.parent_street_task_id = parent_task.id
+        AND trigger_house.area_id = parent_task.area_id
+        AND trigger_house.status = 'completed'
+        AND trigger_house.updated_at = ?
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM house_tasks child_house
+      WHERE child_house.campaign_id = parent_task.campaign_id
+        AND child_house.parent_street_task_id = parent_task.id
+        AND child_house.area_id = parent_task.area_id
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM house_tasks incomplete_house
+      WHERE incomplete_house.campaign_id = parent_task.campaign_id
+        AND incomplete_house.parent_street_task_id = parent_task.id
+        AND incomplete_house.area_id = parent_task.area_id
+        AND incomplete_house.status <> 'completed'
+    )`;
+
+function automationParentStatement(
+  db: D1DatabaseLike,
+  mutation: CampaignMutation,
+  writeToken: string,
+  execution: AutomationExecution,
+) {
+  return db
+    .prepare(
+      `UPDATE tasks AS parent_task
+       SET status = 'completed', completed_at = ?, updated_at = ?
+       WHERE parent_task.id = ?
+         AND parent_task.campaign_id = ?
+         AND parent_task.status = 'open'
+         AND ` +
+        AUTOMATION_COMPLETION_PREDICATE +
+        `
+         AND ${guardExistsSql()}`,
+    )
+    .bind(
+      mutation.createdAt,
+      mutation.createdAt,
+      execution.parentStreetTaskId,
+      mutation.campaignId,
+      execution.ruleType,
+      execution.triggerHouseTaskId,
+      mutation.createdAt,
+      mutation.campaignId,
+      writeToken,
+    );
+}
+
+function automationParentEventStatement(
+  db: D1DatabaseLike,
+  mutation: CampaignMutation,
+  writeToken: string,
+  execution: AutomationExecution,
+) {
+  const eventId = "domain_event_automation_task_" + mutation.id;
+  const dedupeKey = "campaign-mutation:" + mutation.id + ":automation-parent-task-status";
+  const payloadJson = JSON.stringify({ previousStatus: "open", newStatus: "completed" });
+  return db
+    .prepare(
+      `INSERT OR IGNORE INTO domain_events (
+         id, campaign_id, team_id, field_session_id, entity_type, entity_id,
+         event_type, occurred_at, actor_kind, actor_ref, payload_version,
+         payload_json, dedupe_key, created_at
+       )
+       SELECT ?, ?, ?, ?, 'street-task', ?, 'task.status.changed', ?,
+              'system', NULL, 1, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1
+         FROM tasks AS parent_task
+         WHERE parent_task.id = ?
+           AND parent_task.campaign_id = ?
+           AND parent_task.status = 'completed'
+           AND parent_task.completed_at = ?
+           AND parent_task.updated_at = ?
+           AND ` +
+        AUTOMATION_COMPLETION_PREDICATE +
+        `
+           AND ${guardExistsSql()}
+       )`,
+    )
+    .bind(
+      eventId,
+      mutation.campaignId,
+      execution.parentTeamId,
+      execution.fieldSessionId,
+      execution.parentStreetTaskId,
+      mutation.createdAt,
+      payloadJson,
+      dedupeKey,
+      new Date().toISOString(),
+      execution.parentStreetTaskId,
+      mutation.campaignId,
+      mutation.createdAt,
+      mutation.createdAt,
+      execution.ruleType,
+      execution.triggerHouseTaskId,
+      mutation.createdAt,
+      mutation.campaignId,
+      writeToken,
+    );
+}
+
+function automationExecutedEventStatement(
+  db: D1DatabaseLike,
+  mutation: CampaignMutation,
+  writeToken: string,
+  execution: AutomationExecution,
+) {
+  const eventId = "domain_event_automation_executed_" + mutation.id;
+  const dedupeKey = "campaign-mutation:" + mutation.id + ":automation-executed";
+  const payloadJson = JSON.stringify({
+    ruleType: execution.ruleType,
+    effectType: execution.effectType,
+    triggerEntityId: execution.triggerHouseTaskId,
+  });
+  return db
+    .prepare(
+      `INSERT OR IGNORE INTO domain_events (
+         id, campaign_id, team_id, field_session_id, entity_type, entity_id,
+         event_type, occurred_at, actor_kind, actor_ref, payload_version,
+         payload_json, dedupe_key, created_at
+       )
+       SELECT ?, ?, ?, ?, 'street-task', ?, 'automation.executed', ?,
+              'system', NULL, 1, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1
+         FROM tasks AS parent_task
+         WHERE parent_task.id = ?
+           AND parent_task.campaign_id = ?
+           AND parent_task.status = 'completed'
+           AND parent_task.completed_at = ?
+           AND parent_task.updated_at = ?
+           AND ` +
+        AUTOMATION_COMPLETION_PREDICATE +
+        `
+           AND ${guardExistsSql()}
+       )`,
+    )
+    .bind(
+      eventId,
+      mutation.campaignId,
+      execution.parentTeamId,
+      execution.fieldSessionId,
+      execution.parentStreetTaskId,
+      mutation.createdAt,
+      payloadJson,
+      dedupeKey,
+      new Date().toISOString(),
+      execution.parentStreetTaskId,
+      mutation.campaignId,
+      mutation.createdAt,
+      mutation.createdAt,
+      execution.ruleType,
+      execution.triggerHouseTaskId,
+      mutation.createdAt,
+      mutation.campaignId,
+      writeToken,
+    );
+}
+
 export async function persistCampaignMutation(
   db: D1DatabaseLike,
   mutation: CampaignMutation,
   fromRevision: number,
   fingerprintOverride?: string,
   domainEvent: MutationDomainEvent | null = null,
+  automationExecution: AutomationExecution | null = null,
 ): Promise<MutationPersistenceResult> {
   const fingerprint = fingerprintOverride ?? (await fingerprintCampaignMutation(mutation));
   const existing = await getAppliedMutation(db, mutation.campaignId, mutation.id);
@@ -442,6 +621,13 @@ export async function persistCampaignMutation(
   ];
   if (domainEvent) {
     statements.push(domainEventStatement(db, mutation, writeToken, domainEvent));
+  }
+  if (automationExecution) {
+    statements.push(
+      automationParentStatement(db, mutation, writeToken, automationExecution),
+      automationParentEventStatement(db, mutation, writeToken, automationExecution),
+      automationExecutedEventStatement(db, mutation, writeToken, automationExecution),
+    );
   }
 
   const results = await db.batch(statements);
