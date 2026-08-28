@@ -47,8 +47,8 @@ Der nachfolgende Doku-/Handoff-Commit ändert den Head danach erneut. Verifizier
 
 LETZTER VOLLSTÄNDIG VERIFIZIERTER DOKUMENTATIONS-/HANDOFF-CHECKPOINT
 
-- Head: `782e2928be2e4591a3d9601110bde9e48e3fca3b`;
-- CI #692: erfolgreich, inklusive Tests, TypeScript, High-Severity Dependency Audit und Production Build;
+- Head: `5ee83cd72ac5129fd8e2dfe946f1c2c0b537406c`;
+- CI #693: erfolgreich, inklusive Tests, TypeScript, High-Severity Dependency Audit und Production Build;
 - PR #72: Base `ui-app-launcher-sheet`, Head-Branch `plan-feature-complete-platform`, Draft, mergeable.
 
 Dieser Handoff-Text wird mit dem nachfolgenden Aktualisierungscommit auf diesem verifizierten Head fortgeschrieben. Nach jeder solchen Handoff-Aktualisierung muss der dann exakte Branch-Head erneut über die vollständige CI geprüft werden.
@@ -58,7 +58,7 @@ PR #72 heißt aktuell:
 
 AUTOMATIC CLOUDFLARE PREVIEW
 
-Die Git-Integration kann nach einem neuen Branch-Commit automatisch einen Cloudflare-Preview-Kommentar mit Commit- und Branch-URL erzeugen. Das ist erwartetes Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout. Für den aktuellen Doku-Head `782e2928` wurde der bestehende Kommentar mit erfolgreichem Preview aktualisiert: Commit-Preview `https://6aa543aa-flyer-map.cloudflare-eleven035.workers.dev`, Branch-Preview `https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev`. Bei einem neuen Preview-Kommentar nur Commit/Branch und Status gegen den exakten Head prüfen.
+Die Git-Integration kann nach einem neuen Branch-Commit automatisch einen Cloudflare-Preview-Kommentar mit Commit- und Branch-URL erzeugen. Das ist erwartetes Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout. Für den aktuellen Doku-Head `5ee83cd7` wurde der bestehende Kommentar mit erfolgreichem Preview aktualisiert: Commit-Preview `https://eef8ee41-flyer-map.cloudflare-eleven035.workers.dev`, Branch-Preview `https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev`. Bei einem neuen Preview-Kommentar nur Commit/Branch und Status gegen den exakten Head prüfen.
 
 FC0 STATUS
 
