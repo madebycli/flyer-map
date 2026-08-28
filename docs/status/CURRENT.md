@@ -225,10 +225,10 @@ Weiterhin verbindlich:
 - temporäre Membership erweitert keinen persistenten Role-Scope.
 
 Letzter vollständig verifizierter Runtime-Checkpoint:
-- Head `d25669224a7bedf57939da7ff1dd0382aa26bc09`;
-- CI #684 erfolgreich;
+- Head `7f9dd9682687f20d7f09ff665975f387a2f18961`;
+- CI #687 erfolgreich;
 - Tests, Typecheck, Dependency Audit und Production Build grün;
-- dieser Lauf enthält reale Field-Session-History, Task-Event-Attribution, Street-Map-Highlight und autorisierte Session-Notizen.
+- dieser Lauf enthält den durable Comments Runtime-Slice mit API-Authorization, Tombstones, minimalen Comment-Events, Pagination und Produktions-UI-Pfad.
 
 Dokumentationscommits nach diesem Runtime-Checkpoint müssen auf ihrem eigenen exakten Head erneut grün werden, bevor PR #72 promotet wird.
 

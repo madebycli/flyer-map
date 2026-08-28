@@ -395,7 +395,7 @@ Vor Plattform-Feature-Complete:
 
 ## Unmittelbare Reihenfolge
 
-1. FC1-Doku und exact-head CI auf PR #72 finalisieren.
+1. Für jeden weiteren PR-Commit den exakten Head erneut durch CI verifizieren.
 2. 0006/0007/0008 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
 3. Comment-Events in eine normale Activity-Projektion aufnehmen.
 4. Activity Feed auf echte normalisierte Domain Events aufbauen.
