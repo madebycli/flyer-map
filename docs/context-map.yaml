@@ -199,6 +199,13 @@ nodes:
     topics: [actions, templates, action-cycles, analytics, export]
     load_when: [Action Template persistence, repeated Action comparison, Admin analytics export]
 
+  - id: adr-deterministic-automations
+    path: docs/decisions/ADR-0019-deterministic-automation-runtime.md
+    type: decision
+    status: accepted
+    topics: [automations, deterministic-effects, idempotency, domain-events, authorization]
+    load_when: [deterministic automation, automation runtime, automation configuration, automatic task effect]
+
   - id: plan-m5-sync
     path: docs/plans/completed/010-m5-resilient-mutation-sync.md
     type: plan
@@ -287,6 +294,7 @@ edges:
   - { from: adr-admin-identity, to: identity-permissions, relation: precedes_runtime }
   - { from: adr-capability-roles, to: identity-permissions, relation: governs }
   - { from: adr-action-templates-analytics, to: plan-action-templates-analytics, relation: governs }
+  - { from: collaboration, to: adr-deterministic-automations, relation: governed_by }
   - { from: plan-m5-sync, to: offline-sync, relation: implemented }
   - { from: plan-m6-house-persistence, to: data, relation: implemented_foundation }
   - { from: plan-app-launcher-sheet, to: ux, relation: implemented }

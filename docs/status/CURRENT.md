@@ -169,7 +169,7 @@ Der aktuelle FC2-Comments-Slice ist als echter, serverautorisierter Runtime-Pfad
 
 Der Activity-Slice ist jetzt als echter Campaign-scoped Read-Pfad umgesetzt:
 - Activity ist ausschließlich eine Projektion bereits persistierter `domain_events`, keine zweite Event- oder Activity-Tabelle;
-- der Worker unterstützt explizit `field_session.closed`, `field_session.expired`, `task.status.changed`, `comment.created`, `comment.edited` und `comment.deleted`;
+- der Worker unterstützt explizit `field_session.closed`, `field_session.expired`, `task.status.changed`, `comment.created`, `comment.edited`, `comment.deleted` und `automation.executed`;
 - die Antwort ist ein kleines allowlistetes DTO ohne `payload_json`, Actor-Referenzen, Kommentartext, Cookies, Tokens, Session-Hashes, QR-/Room-Credentials, IPs, GPS oder Snapshots;
 - Task-Status und aktuelle sichere Task-/Area-Labels werden typisiert projiziert; Session-Metriken kommen aus `field_sessions`; Comment-Events lesen höchstens sicheren Zielkontext und niemals den Body;
 - Admin und Viewer lesen Campaign-weit, Team Editor nur das canonical eigene Team, temporäre Mitglieder nur die eigene autorisierte Field Group/Field Session sowie eigene temporäre Comment-Events;
@@ -178,10 +178,23 @@ Der Activity-Slice ist jetzt als echter Campaign-scoped Read-Pfad umgesetzt:
 - das normale Produkt öffnet Aktivität über ein kompaktes Launcher-Sheet mit Loading, Empty, Error/Retry, Offline-Zustand und `Mehr laden`;
 - bereits geladene Activity bleibt bei Offline-Wechsel sichtbar. Neue Reads benötigen Internet; es gibt keine falsche Offline-Erfolgsmeldung und keinen zweiten Queue-Mechanismus.
 
+### Deterministische Automations
+
+Der erste Automation-Slice ist als echter serverseitiger Runtime-Pfad umgesetzt und durch ADR-0019 begrenzt:
+- die einzige registrierte, versionierte Regel ist `complete-parent-street-when-all-houses-complete`;
+- ein erfolgreicher `house.set-status`-M5-Write mit resultierendem House-Status `completed` ist der einzige Trigger;
+- bei aktivierter Campaign-Regel wird nur eine exakt zugehörige, noch offene Parent-Straße abgeschlossen, wenn mindestens ein aktuelles House existiert und alle zugehörigen Houses erledigt sind;
+- `later`, `not-deliverable` und bereits erledigte Parent-Straßen werden nie überschrieben, und die Regel öffnet nichts wieder;
+- Campaign-/Area-/Team-Beziehungen werden serverseitig geprüft. Temporäre Field-Group-Mitglieder können nur über ihren normalen autorisierten House-Status-Write auslösen und erhalten keine Managementrechte;
+- Parent-Update, normales minimiertes `task.status.changed`, `automation.executed` und M5-Mutation-Ledger teilen dieselbe guarded D1-Batchgrenze;
+- automatische Events verwenden den Actor `system`, nur minimale Rule-/Effect-/Statusdaten und dieselbe Field Session wie der Trigger, falls sie eindeutig ist;
+- Replay derselben Mutation erzeugt weder ein zweites Parent-Update noch neue Events. Es gibt keine Execution-Tabelle, keine Scripts, keine Webhooks, kein Polling und keine AI-Automation;
+- Admins lesen/aktivieren/deaktivieren die feste Regel über den Worker-Endpunkt und das normale Launcher-Ziel `Automationen`. Viewer, Team Editor und temporäre Mitglieder dürfen die Konfiguration nicht verwalten;
+- die Automation-Konfiguration ist online-only. Offline wird eine bereits geladene Konfiguration sichtbar gehalten, neue Änderungen werden nicht als erfolgreich gemeldet.
+
 ### Noch offen in FC2
 
 Noch nicht feature-complete:
-- deterministische, autorisierte, idempotente Automations;
 - House-Polygon-Highlight, sobald der normale FC4 House-Renderer vorhanden ist.
 
 ## Team lifecycle
@@ -221,7 +234,8 @@ Prepared, aber nicht remote angewendet:
 - 0005: House Tasks;
 - 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
 - 0007: Field Sessions und minimierte Domain Events;
-- 0008: durable Comments und Comment-Tombstones.
+- 0008: durable Comments und Comment-Tombstones;
+- 0009: deterministische Automation-Konfiguration.
 
 Kein Runtime- oder Dokumentationscommit wendet diese Migrationen automatisch an.
 
@@ -237,10 +251,10 @@ Weiterhin verbindlich:
 - temporäre Membership erweitert keinen persistenten Role-Scope.
 
 Letzter vollständig verifizierter Runtime-Checkpoint:
-- Head `3e72c398f4af7fadfc779bb0f4ed95d422e53d8d`;
-- CI #689 erfolgreich;
+- Head `652ccfdf9e1cc12e7b88cc742b29393cb0525415`;
+- CI #696 erfolgreich;
 - Tests, Typecheck, Dependency Audit und Production Build grün;
-- dieser Lauf enthält den Activity-Read-Slice mit Projection-Allowlist, serverseitiger Scope-Autorisierung, Cursor-Pagination, Privacy-Guards und echtem Launcher-UI-Pfad.
+- dieser Lauf enthält den Activity-Read-Slice und den deterministischen Automation-Slice mit Projection-Allowlist, serverseitiger Scope-Autorisierung, Cursor-Pagination, Privacy-Guards, M5-Idempotenz und echtem Launcher-UI-Pfad.
 
 Dokumentationscommits nach diesem Runtime-Checkpoint müssen auf ihrem eigenen exakten Head erneut grün werden, bevor PR #72 promotet wird.
 
@@ -258,6 +272,6 @@ ADR-0014 und ADR-0017 sind akzeptiert und keine Blocker mehr für ihre aktuellen
 
 ## Immediate next
 
-1. Deterministische Automations mit explizitem Trigger/Effekt, serverseitiger Autorisierung und Idempotenz anbinden.
+1. Stats aus echten Tasks, Sessions und Events als nächstes vertikales Produktfeature abgrenzen.
 2. House-Polygon-Highlight erst mit dem normalen FC4 House-Renderer ergänzen.
-3. 0004 bis 0008 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.
+3. 0004 bis 0009 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.

@@ -3,7 +3,7 @@ id: architecture-collaboration
 type: architecture
 status: active
 last_updated: 2026-08-28
-related: [product-roadmap, architecture-data, architecture-security, architecture-offline-sync, architecture-live-teams, plan-012-platform-app-expansion, ADR-0017, ADR-0018]
+related: [product-roadmap, architecture-data, architecture-security, architecture-offline-sync, architecture-live-teams, plan-012-platform-app-expansion, ADR-0017, ADR-0018, ADR-0019]
 source_of_truth_for: [field-session-foundation, comments, activity, future-automations, future-statistics]
 ---
 
@@ -11,7 +11,7 @@ source_of_truth_for: [field-session-foundation, comments, activity, future-autom
 
 ## Purpose
 
-Record the accepted collaboration/history boundary and distinguish the durable Field Session, Comment and Activity runtimes from the broader automation/statistics features that are still pending.
+Record the accepted collaboration/history boundary and distinguish the durable Field Session, Comment, Activity and deterministic Automation runtimes from future statistics and broader automation features.
 
 ADR-0017 is accepted and governs Field Session/event retention. ADR-0018 continues to govern future action/template and cross-action analytics persistence.
 
@@ -66,6 +66,9 @@ The durable Comment runtime additionally emits:
 - `comment.created`;
 - `comment.edited`;
 - `comment.deleted`.
+
+The deterministic Automation runtime additionally emits:
+- `automation.executed`.
 
 Broader event types are added only with the feature slice that authoritatively owns the underlying mutation.
 
@@ -193,24 +196,49 @@ The Worker re-resolves the current access before every read:
 
 The normal Launcher exposes a compact `Aktivität` sheet. It has Loading, Empty, Error/Retry, mobile-friendly cards, allowed-role Team filtering and cursor-based `Mehr laden`. Already loaded entries remain visible if connectivity is lost; new reads require Internet and are not reported as current offline data. No Activity copy table, rollup table, client-created history or second offline queue is introduced. Navigation back to a context remains optional and is not required for this slice.
 
-## Automations, FC2+
+## Deterministic Automations, FC2+
 
-Automations are deterministic domain rules, not opaque AI actions.
+Automations are deterministic domain rules, not opaque AI actions. ADR-0019 is accepted for the first bounded runtime slice.
+
+### Implemented rule
+
+The code-owned registry contains exactly one versioned rule:
+
+`complete-parent-street-when-all-houses-complete` (version 1)
+
+The only trigger is a successfully authorized M5 `house.set-status` mutation whose resulting House status is `completed`. If the Campaign rule is enabled, the Worker completes a Parent Street only when:
+
+- the House and Parent Street belong to the same Campaign and Area and resolve to the same Team;
+- the current Parent Street is exactly `open`;
+- at least one current persisted House child belongs to that Parent Street;
+- every current child House is `completed`.
+
+The effect never overwrites `later`, `not-deliverable` or an already completed Parent Street, and it never reopens a task. It does not alter task geometry, labels, source provenance, relationships or unrelated Campaign/Team data.
+
+### Authority, idempotency and events
+
+Only Campaign Admins can read or enable/disable the fixed rule through the Campaign-scoped automation API. Viewer, Team Editor and temporary Field-Group members cannot manage configuration. A temporary member may still trigger the effect through a normal House status mutation inside its existing exact Campaign/Team/Group authorization; the resulting system effect grants no new authority.
+
+The House mutation, guarded Parent update, Parent `task.status.changed`, `automation.executed` and M5 mutation ledger share one D1 batch. The existing `(campaign_id, mutation_id)` ledger and unique event dedupe keys make retries idempotent without an execution ledger. The Worker rechecks the rule, Campaign and child predicates in the SQL write path.
+
+Automatic events use the safe `system` actor category. The Parent status event contains only normalized old/new status. `automation.executed` contains only the fixed Rule/Effect identifiers and triggering entity reference. An unambiguous triggering Field Session is reused; otherwise the field-session reference is `NULL`. No raw request body, comment text, credential, token, session hash, GPS data or full snapshot is written.
+
+### Configuration and product boundary
+
+`migrations/0009_automations.sql` is additive and creates only one `automation_rules` row per Campaign/Rule pair. It is prepared locally and not remotely applied. The normal Admin Launcher exposes a compact `Automationen` sheet with loading, error/retry, migration-unavailable, enabled/disabled and offline states. Configuration writes are online-only and are confirmed only after the Worker responds.
+
+Activity projects `automation.executed` through its explicit server-side allowlist and displays a current safe Street/Area label or a generic fallback. Activity remains a projection of `domain_events`; no Activity table, rollup copy or second queue is introduced. There are no user-defined scripts, SQL fragments, webhooks, timers, polling loops or AI execution paths.
+
+### Future deterministic rules
 
 Candidate rules:
 - new Area -> propose/generate reviewed road Tasks;
-- all child House Tasks complete -> optionally complete parent Street;
 - accepted status mutation -> append normalized activity event;
 - progress threshold -> surface coordinator indicator;
 - session close -> derive summary;
 - sync/retry state -> surface manual-action warning.
 
-Requirements:
-- explicit trigger/effect;
-- authorization preserved;
-- idempotent effects;
-- observable success/failure;
-- no hidden high-frequency polling requirement.
+Every future rule still requires an explicit trigger/effect, preserved authorization, idempotent effects, observable success/failure and no hidden high-frequency polling requirement.
 
 ## Statistics
 
@@ -271,4 +299,4 @@ Do not infer exact walked/driven routes or individual productivity from continuo
 
 ## Rollout status
 
-`migrations/0007_field_sessions_events.sql` and additive `migrations/0008_comments.sql` are prepared on Draft PR #72 but are not recorded as remotely applied. The durable Comment runtime and the Activity projection are implemented against those prepared schemas. Automations remain intentionally unimplemented until their own feature-complete slice.
+`migrations/0007_field_sessions_events.sql`, additive `migrations/0008_comments.sql` and additive `migrations/0009_automations.sql` are prepared on Draft PR #72 but are not recorded as remotely applied. The durable Comment, Activity and first deterministic Automation runtimes are implemented against those prepared schemas. No migration is applied by application code or preview integration.

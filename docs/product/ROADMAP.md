@@ -40,7 +40,7 @@ A visible Launcher module is not considered delivered merely because local UI, f
 
 Internal `?workbench=` routes may remain useful for development, but they are not normal navigation and do not count as a completed product milestone.
 
-The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments and the bounded Activity projection on Draft PR #72. The next collaboration slice is deterministic, explicitly authorized and idempotent Automations, followed by the remaining statistics and House-rendering work. Security-sensitive runtime remains gated by explicit ADR acceptance.
+The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, the bounded Activity projection and the first deterministic, explicitly authorized and idempotent Automation on Draft PR #72. The next work is the remaining statistics and House-rendering work. Security-sensitive runtime remains gated by explicit ADR acceptance.
 
 ## Domain direction
 
@@ -147,7 +147,7 @@ Selecting a session may highlight the affected Street/House geometry on the map.
 - deterministic/idempotent automations;
 - initial compact Team/Area progress.
 
-The durable Comment runtime and the normal-product Activity feed are now implemented on the current feature-complete delivery line. Activity is a bounded projection of normalized `domain_events`, with server-side Campaign/Team/Field-Group authorization and no raw event payloads in the client response. Deterministic Automations remain open.
+The durable Comment runtime, the normal-product Activity feed and the first deterministic Automation are now implemented on the current feature-complete delivery line. Activity is a bounded projection of normalized `domain_events`, with server-side Campaign/Team/Field-Group authorization and no raw event payloads in the client response. The Automation runtime is limited to the versioned parent-Street completion rule, configured by Admin through prepared migration 0009 and executed atomically from the authorized M5 House-status mutation path.
 
 ### M8 — Organizations + Identity + Permissions + Desktop Admin
 

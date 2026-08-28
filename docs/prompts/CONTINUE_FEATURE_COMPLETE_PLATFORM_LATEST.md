@@ -1,224 +1,231 @@
 # Prompt - Continue Feature-Complete Platform
 
-Use this prompt for the next fresh AI coding chat. It is the living handoff for the current Plan-017 development line.
+Dieser Living Handoff gehört zur Plan-017-Linie und muss bei jedem weiteren langen Entwicklungschat erneut auf den exakten Repository-, PR- und CI-Stand aktualisiert werden.
 
 ```text
 Du arbeitest weiter am GitHub-Projekt `madebycli/flyer-map` (Verteil-Flyer / Flyer Map).
 
 DAS REPOSITORY IST DIE EINZIGE SOURCE OF TRUTH.
-Prüfe Repository, GitHub, PRs, Branch-Heads und CI neu. Die konkreten Heads in diesem Prompt sind nur der letzte bekannte verifizierte Stand.
+Prüfe Branch, PR, Migrationen, Remote-D1-Status, Dateien und CI neu. Angaben aus diesem Handoff sind ein verifizierter Ausgangspunkt, aber kein Ersatz für die erneute Prüfung des aktuellen Repository-Stands.
 
-PRODUKTBASIS
-
-Verteil-Flyer ist eine Mobile-First normale WEBSITE.
-
-Keine native App.
-Keine installierbare PWA.
-Kein Service Worker.
-Kein Web-App-Manifest-Installationsflow.
-Kein Background Sync API.
-Keine kontinuierliche GPS-Routenaufzeichnung.
-
-BEVOR DU IRGENDETWAS ÄNDERST
+BEVOR DU ÄNDERST
 
 1. Lies `AGENTS.md` vollständig.
 2. Lies `docs/status/CURRENT.md` vollständig.
 3. Lies `docs/context-map.yaml` vollständig.
-4. Lies `docs/product/ROADMAP.md` und `docs/product/UX.md`.
-5. Lies `docs/plans/active/017-feature-complete-platform.md` vollständig.
-6. Lies diesen Prompt vollständig.
-7. Prüfe Draft PR #72, Branch `plan-feature-complete-platform`, Base `ui-app-launcher-sheet`, exakten Head, Mergeability und CI.
-8. Prüfe den gestapelten Base-PR #71 und weitere offene PRs, wenn sie den aktuellen Stack beeinflussen.
-9. Folge dem Context-Graph zu den für den nächsten Slice relevanten Architecture-/ADR-Dateien.
-10. Prüfe vor jeder D1-Arbeit den dokumentierten Remote-Migrationsstand.
+4. Lies `docs/plans/active/017-feature-complete-platform.md` vollständig.
+5. Lies `docs/architecture/COLLABORATION.md` und die für den nächsten Slice relevanten ADRs.
+6. Lies `docs/product/PRODUCT.md`, `docs/product/UX.md` und `docs/product/ROADMAP.md`.
+7. Prüfe PR #72 inklusive Base, Head, Draft-Status und Mergeability sowie den aktuellen CI-Lauf des exakten Heads.
+8. Prüfe den gestapelten Base-PR #71, falls der Stack den nächsten Slice beeinflusst.
+9. Prüfe vor jeder D1-Arbeit den dokumentierten Remote-Migrationsstand. 0004 bis 0009 sind nur vorbereitet, solange GitHub und Doku nichts anderes belegen.
 
-AKTUELLER VERIFIZIERTER CHECKPOINT
+VERIFIZIERTER CHECKPOINT VOR DIESEM DOKU-/HANDOFF-COMMIT
 
-Zuletzt vollständig verifizierter Runtime-Head vor diesem Doku-/Handoff-Commit:
-- PR #72: Draft, mergeable;
 - Branch: `plan-feature-complete-platform`;
-- Base: `ui-app-launcher-sheet`;
-- Head: `3e72c398f4af7fadfc779bb0f4ed95d422e53d8d`;
-- CI #689: erfolgreich;
-- Tests, Typecheck, High-Severity Dependency Audit und Production Build: grün;
-- dieser Head enthält die echte Activity-Projektion aus `domain_events`, serverseitige Scopes, Privacy-Allowlist, Cursor-Pagination und den normalen Launcher-Pfad.
+- PR #72: `FC0-FC2: Platform, Live Field Groups and Field Sessions`;
+- PR #72 Base: `ui-app-launcher-sheet`;
+- PR #72 Base-SHA: `48843793184650bd96039f0e3b073f60aebb068a`;
+- PR #72 Head-Branch: `plan-feature-complete-platform`;
+- PR #72 Head vor diesem Doku-/Handoff-Commit: `652ccfdf9e1cc12e7b88cc742b29393cb0525415`;
+- PR #72 ist offen, Draft und mergeable;
+- GitHub Actions CI #696 auf genau diesem Head: erfolgreich;
+- CI-Check `98839824719`: Tests, TypeScript, Dependency Audit und Production Build erfolgreich.
 
-Der nachfolgende Doku-/Handoff-Commit ändert den Head danach erneut. Verifiziere deshalb zuerst den tatsächlichen aktuellen Head und dessen CI, bevor du weiterentwickelst.
+Der nachfolgende Doku-/Handoff-Commit verschiebt den Branch-Head. Nach diesem Commit muss der tatsächliche neue Head erneut mit vollständiger CI geprüft und in PR #72 sowie beim nächsten Handoff festgehalten werden. Ein älterer grüner Head darf nicht als finaler Nachweis verwendet werden.
 
-LETZTER VOLLSTÄNDIG VERIFIZIERTER DOKUMENTATIONS-/HANDOFF-CHECKPOINT
+PR #72 bleibt Draft. Nichts mergen, PR nicht auf Ready for Review setzen und nichts explizit deployen.
 
-- Head: `5ee83cd72ac5129fd8e2dfe946f1c2c0b537406c`;
-- CI #693: erfolgreich, inklusive Tests, TypeScript, High-Severity Dependency Audit und Production Build;
-- PR #72: Base `ui-app-launcher-sheet`, Head-Branch `plan-feature-complete-platform`, Draft, mergeable.
+AUTOMATISCHE CLOUDFLARE-PREVIEW-HINWEISE
 
-Dieser Handoff-Text wird mit dem nachfolgenden Aktualisierungscommit auf diesem verifizierten Head fortgeschrieben. Nach jeder solchen Handoff-Aktualisierung muss der dann exakte Branch-Head erneut über die vollständige CI geprüft werden.
+Die bestehende Git-Integration kann nach Branch-Commits automatisch einen Cloudflare-Preview-Kommentar in PR #72 aktualisieren. Das ist Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout.
 
-PR #72 heißt aktuell:
-`FC0-FC2: Platform, Live Field Groups and Field Sessions`
+Beim zuletzt verifizierten Runtime-Head `652ccfdf9e1cc12e7b88cc742b29393cb0525415` zeigte der Kommentar:
+- Commit Preview: `https://bbf94726-flyer-map.cloudflare-eleven035.workers.dev`;
+- Branch Preview: `https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev`.
 
-AUTOMATIC CLOUDFLARE PREVIEW
-
-Die Git-Integration kann nach einem neuen Branch-Commit automatisch einen Cloudflare-Preview-Kommentar mit Commit- und Branch-URL erzeugen. Das ist erwartetes Integrationsverhalten und kein von diesem Arbeitsauftrag explizit ausgelöster Deployment-Rollout. Für den aktuellen Doku-Head `5ee83cd7` wurde der bestehende Kommentar mit erfolgreichem Preview aktualisiert: Commit-Preview `https://eef8ee41-flyer-map.cloudflare-eleven035.workers.dev`, Branch-Preview `https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev`. Bei einem neuen Preview-Kommentar nur Commit/Branch und Status gegen den exakten Head prüfen.
-
-FC0 STATUS
-
-FC0 Navigation/Action-Bridge ist umgesetzt:
-- typisierter PlatformShell/App-Contract;
-- der sichtbare Teamname folgt dem aktiven Karten-Team;
-- Settings, Teamverwaltung und Gebiet-Aktion bleiben capability-/scope-gesteuert erreichbar;
-- `Team` öffnet den echten Team Hub statt eines Workbench-Previews;
-- unfertige Foundation-Module zählen weiterhin nicht als abgeschlossenes Produktfeature.
-
-FC1 STATUS
-
-ADR-0014 ist accepted.
-
-Der Team-Hub-/Live-Field-Group-Runtime-Slice ist umgesetzt:
-- Campaign-scoped aktive Gruppen und Teamfilter;
-- Admin und eigener Team Editor als aktuelle Managementrollen;
-- Create mit Label, Team, Discoverability und Teilnehmerzahl;
-- idempotente Create-Request-ID mit Payload-Bindung;
-- 10-stelliger human-safe Room Code;
-- separater 32-Byte-QR-Token;
-- nur Credential-Hashes in D1, Plaintext nur bei Ausgabe/Rotation;
-- idempotente Credential-Rotation;
-- Revoke;
-- manueller Room-Code-Join und QR-Join;
-- Cloudflare Actor- und Candidate-Rate-Limits mit fail-closed Verhalten;
-- temporäre `vf_field_group_session` für Teilnehmer ohne persistenten Campaign-Zugriff;
-- temporäre Autorisierung nur für den Ziel-Team-/Group-Scope und freigegebene Task-Statusarbeit;
-- kein Rollen-Upgrade durch Join;
-- Participant Count und Discoverability Update;
-- Leave und Manager Remove Membership;
-- serverseitige 24h-Hard-Expiry;
-- revoked/removed/closed/expired Zugriff wird bei Folgezugriffen serverseitig erneut geprüft;
-- realer Team-Fortschritt im Team Hub.
-
-MANAGER MEMBER ROSTER
-
-Die zuvor offene Mitgliederverwaltung ist umgesetzt und im echten Produkt-Build importiert:
-- server-authorisierte aktive Mitgliederliste;
-- Admin innerhalb Campaign;
-- Team Editor nur eigenes canonical Team;
-- Viewer und temporäre Mitglieder ausgeschlossen;
-- nur Membership-ID, Membership-Typ, sichere Bezeichnung und Join-Zeit;
-- keine Session-Hashes, Join-Credentials, IPs oder Gerätefingerprints;
-- Remove mit Bestätigung;
-- Gruppenanzahl wird danach autoritativ neu geladen;
-- `tests/fieldGroupMembersUi.test.ts` schützt davor, dass das Panel wieder nur als unimportierte Datei existiert.
-
-FIELD SESSION FOUNDATION
-
-ADR-0017 ist accepted.
-
-Migration `0007_field_sessions_events.sql` ist vorbereitet:
-- `field_sessions`;
-- minimierte `domain_events`;
-- deterministische eine Field Session pro Field Group Endzustand;
-- `field_session.closed` bei manuellem Close;
-- `field_session.expired` beim 24h-Sicherheitsablauf;
-- Dauer, explizite Teilnehmer und Person-Time;
-- bei Expiry ohne bekannte Teilnehmer bleiben Teilnehmer/Person-Time `NULL`;
-- keine GPS-Trails, Secrets oder vollen Campaign-Snapshots.
-
-Der Worker blockiert normalen Group-Close mit `field_session_schema_unavailable`, solange 0007 fehlt. Mit 0007 hängen Group-Endzustand und Session/Event-Historie in derselben D1-Transaktion.
+Wenn die Git-Integration nach einem neuen Commit erneut kommentiert, prüfe Commit-SHA, Preview-Status und URLs gegen den exakten Branch-Head. Interpretiere den Preview-Kommentar nicht als Nachweis, dass eine vorbereitete D1-Migration remote angewendet wurde. Führe keinen manuellen `wrangler deploy` aus.
 
 MIGRATIONSSTATUS
 
-Remote D1 ist weiterhin nur bis 0003 dokumentiert.
+Remote-D1 ist weiterhin nur bis 0003 dokumentiert.
 
-Prepared, aber NICHT remote angewendet:
+Vorbereitet, aber NICHT remote angewendet:
 - 0004: Smart Street source provenance;
 - 0005: House Tasks;
-- 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
+- 0006: Field Groups, Credentials, Memberships und FC1-Idempotency;
 - 0007: Field Sessions und minimierte Domain Events;
-- 0008: durable Comments und Comment-Tombstones.
+- 0008: durable Comments und Comment-Tombstones;
+- 0009: deterministische Automation-Konfiguration.
 
-WENDE KEINE REMOTE D1-MIGRATION AN, außer der User fordert diesen Rollout ausdrücklich an.
+0004 bis 0008 müssen weiterhin ausdrücklich als nicht remote angewendet gelten, sofern die erneute Repository-/D1-Prüfung nichts anderes beweist. Keine Migration remote anwenden und keinen Rollout durchführen, solange der User dies nicht ausdrücklich beauftragt.
 
-TEAM LIFECYCLE
+FC0 STATUS
 
-Baue in FC1 keinen improvisierten Team-Hard-Delete oder Fake-Archivstatus ein.
+FC0 Navigation/Action-Bridge ist im normalen Produkt umgesetzt:
+- typisierter PlatformShell-/App-Contract;
+- aktiver Karten-Teamname im Launcher-Kontext;
+- capability-/scope-gesteuerte Settings, Teamverwaltung und Gebietsaktionen;
+- `Team` öffnet den echten Team Hub;
+- Launcher-Ziele werden im Production-Graph geprüft, nicht nur über Workbench-Dateien.
 
-Das aktuelle Teammodell hat kein persistentes Archivstatusfeld. Team-Editor-Grants und Legacy-Snapshot-Kompatibilität beeinflussen Delete/FK-Semantik. Retained Field Sessions/Events müssen verständlich bleiben.
+FC1 STATUS
 
-Team Archive/Restore/Permanent Delete gehört in einen eigenen Team-Lifecycle-/Admin-Slice unter Organization/Permissions. Vor Runtime müssen Statusfeld, Areas/Tasks, Grants, aktive Field Groups, History und Restore/Permanent-Delete-Semantik geklärt werden.
+Der Live-Field-Group- und Team-Hub-Slice ist umgesetzt:
+- Campaign-scoped aktive Field Groups und canonical Team-Scope;
+- Admin und eigener Team Editor als Managementrollen;
+- idempotente Creation mit Payload-Bindung;
+- human-safe Room Code und separater QR-Token, nur Hashes in D1;
+- Rotation, Revoke, Room-Code-Join und QR-Join;
+- Cloudflare Actor-/Candidate-Rate-Limits mit fail-closed Verhalten;
+- temporäre `vf_field_group_session` nur für den Campaign-/Team-/Group-Scope;
+- kein Rollen-Upgrade, keine persistenten Rechte durch temporäre Membership;
+- Participant Count, Discoverability, Leave und Manager Remove;
+- serverseitige 24h-Hard-Expiry;
+- Folgezugriffe prüfen revoked/removed/closed/expired erneut serverseitig;
+- autorisierte Manager-Memberliste mit minimalen Metadaten.
 
-ACTIVITY STATUS
+FIELD SESSIONS
 
-Activity ist auf dem verifizierten Runtime-Head eine echte Campaign-scoped Projektion der persistierten `domain_events`.
+ADR-0017 ist accepted. Migration `0007_field_sessions_events.sql` ist vorbereitet und nicht remote angewendet.
 
-Unterstützte echte Eventtypen:
+Die Runtime persistiert Field Sessions und minimierte `domain_events` für:
+- `field_session.closed`;
+- `field_session.expired`;
+- autorisierte Session-/Task-Kontexte;
+- Dauer, explizite Teilnehmer und Person-Time, soweit sicher bekannt.
+
+Bei Expiry ohne bekannte Teilnehmer bleiben Teilnehmer und Person-Time `NULL`. Es gibt keine GPS-Trails, keine Credentials und keine vollständigen Campaign-Snapshots. Normaler Group-Close wird mit `field_session_schema_unavailable` blockiert, solange die vorbereitete Schema-Grundlage fehlt. Group-Endzustand und Session-/Event-Historie liegen in derselben D1-Transaktion.
+
+FC2 STATUS
+
+Kommentare
+
+Der durable Comment-Slice ist umgesetzt und verwendet Migration 0008:
+- Kontexte: Campaign, Area, Street Task und persistierbare House Tasks;
+- bounded context reads sowie Create, Edit und Soft Delete;
+- Body trimmen, leer ablehnen, maximal 2000 Zeichen;
+- inert gespeicherter Text, keine HTML-/Markdown-Ausführung;
+- Worker als authoritative Boundary, Campaign-/Team-/Target-Isolation und Same-Origin-Write-Schutz;
+- Viewer read-only, Team Editor nur eigener canonical Team-Scope;
+- temporäre Mitglieder nur exakt im autorisierten Campaign-/Team-/Group-Kontext;
+- Legacy-Identity wird nicht zu einer erfundenen Person erweitert. Self-Edit/Self-Delete bleibt konservativ eingeschränkt, wenn eine sichere Autor-Zuordnung fehlt;
+- Löschen erzeugt einen Tombstone mit `Kommentar gelöscht`, ohne normalen Hard Delete;
+- `comment.created`, `comment.edited`, `comment.deleted` mit minimaler normalisierter Payload und Retry-Dedupe;
+- Schreiben ist online-only. Bereits geladene Kommentare bleiben offline sichtbar; es gibt keine falsche Erfolgsmeldung und keine zweite Queue-Architektur.
+
+Activity
+
+Activity ist kein zweites Eventsystem, sondern eine bounded Campaign-scoped Projektion der persistierten `domain_events`.
+
+Echte unterstützte Eventtypen:
 - `field_session.closed`;
 - `field_session.expired`;
 - `task.status.changed`;
 - `comment.created`;
 - `comment.edited`;
-- `comment.deleted`.
+- `comment.deleted`;
+- `automation.executed`.
 
-Contract und Grenzen:
-- `GET /api/campaigns/:campaignId/activity` mit Default 30, hartem Maximum 50, stabilem `occurred_at`-/ID-Cursor und optionalem Teamfilter nur für passende Rollen;
-- Admin und Viewer Campaign-weit; Team Editor nur im canonical eigenen Team; temporäre Mitglieder nur eigene autorisierte Field Group/Field Session plus eigene temporäre Comment-Events;
-- DTO-Allowlist ohne Rohpayload, Actor-ID, Kommentartext, Cookies, Tokens, Session-Hashes, QR-/Room-Credentials, IPs, GPS oder Snapshots;
-- normales Launcher-Sheet mit Loading, Empty, Error/Retry, Offline-Read-Hinweis und `Mehr laden`;
-- keine neue Activity-Tabelle, kein Rollup und kein zweiter Queue-/Sync-Mechanismus.
+Contract:
+- `GET /api/campaigns/:campaignId/activity`;
+- Default-Limit 30, hartes Maximum 50;
+- newest-first über `occurred_at DESC, id DESC`;
+- stabiler Cursor ohne langfristig wachsenden OFFSET-Read;
+- optionaler Teamfilter nur gemäß bestehender Access-Semantik;
+- Unknown Events werden bewusst ausgelassen, unbekannte Ziele erhalten sichere generische Darstellung;
+- unbekannte Entity-Zustände zerstören den Feed nicht;
+- normale Launcher-Fläche `Aktivität` mit Loading, Empty, Error/Retry, Offline-Read-Hinweis und `Mehr laden`;
+- bereits geladene Activity bleibt offline sichtbar, neue Reads benötigen Internet.
 
-NÄCHSTER KONKRETER IMPLEMENTIERUNGSBLOCK: FC2-AUTOMATIONS
+Die Activity-DTO-Allowlist enthält nur Event-ID, Eventtyp, Zeit, sichere Team-/Session-/Entity-Selektoren, Actor-Kategorie und typisierte minimale Details. Sie gibt niemals rohes `payload_json`, `actor_ref`, Kommentartext, Cookies, Tokens, Session-Hashes, Join-Credentials, Room Codes, QR-Tokens, IPs, Request-Bodies, GPS oder vollständige Snapshots aus. Actor-Ausgaben bleiben bei sicheren Kategorien wie `Campaign-Zugriff`, `Temporäre Gruppe`, `System` oder unbekannter sicherer Kategorie.
 
-Wenn der exakte aktuelle PR-Head weiterhin grün und der Stack gesund ist, beginne direkt mit deterministischen Automations.
+Deterministische Automations
 
-1. expliziten Trigger und Effekt definieren;
-2. serverseitige Autorisierung für jede Automation prüfen;
-3. idempotente Ausführung und sichtbare Fehler-/Activity-Referenz bauen;
-4. keine AI-Automation.
+ADR-0019 ist accepted. Der erste Runtime-Slice ist implementiert:
+- feste Registry-Regel, Version 1: `complete-parent-street-when-all-houses-complete`;
+- Admin-only `GET`/`PATCH /api/campaigns/:campaignId/automations` mit explizitem Boolean-Contract;
+- Admin-only normales Launcher-Ziel `Automationen` mit Loading, Error/Retry, Migration-unavailable, Enabled/Disabled, Busy- und Offline-Zuständen;
+- kein Script, keine SQL-Fragmente, keine beliebigen Bedingungen, keine Webhooks, keine Timer, kein Polling und keine AI-Automation.
 
-RELEVANTE ARCHITEKTUR FÜR FC2
+Trigger und Effekt:
+- ausschließlich nach erfolgreicher autorisierter M5-Mutation `house.set-status` mit resultierendem House-Status `completed`;
+- Automation muss für die Campaign aktiviert sein;
+- House und Parent Street müssen zur selben Campaign und Area sowie zum selben sicheren Team-Scope gehören;
+- alle aktuell persistierten House-Kinder des Parent Streets müssen vorhanden und `completed` sein;
+- mindestens ein Kind ist erforderlich;
+- Parent Street muss exakt `open` sein;
+- Parent Street wird atomar auf `completed` gesetzt und erhält `completed_at`/`updated_at` aus der Mutation;
+- `later`, `not-deliverable` und bereits abgeschlossene Parent Streets werden nicht überschrieben;
+- kein Auto-Reopen, keine Änderung von Tasks außer dem geschützten Parent-Status, keine Geometrie-/Label-/Source-/Provenance-Änderung.
 
-Lies insbesondere:
-- `docs/architecture/COLLABORATION.md`
-- `docs/architecture/LIVE_TEAMS.md`
-- `docs/architecture/SECURITY.md`
-- `docs/architecture/OFFLINE_SYNC.md`
-- `docs/architecture/DATA.md`
-- `docs/decisions/ADR-0011-durable-mutation-queue-and-idempotency.md`
-- `docs/decisions/ADR-0017-field-session-events-retention.md`
+Der Parent-Update, der normale `task.status.changed`-Eventpfad, `automation.executed` und die bestehende M5-Idempotenz liegen in derselben guarded D1-Batch. Mutation-ID/Fingerprint und Event-Dedupe verhindern bei Retry ein zweites Update oder zweite Events. Die Automation nutzt einen Field-Session-Kontext nur, wenn er eindeutig ist, sonst `NULL`.
 
-SPÄTERE SECURITY-GATES
+Automatische Events verwenden den Actor `system` und minimale Payloads: Rule-/Effect-Identifier und Trigger-Entity-Referenz, keine Kommentare, Secrets, Credentials, Tokens, Session-Hashes, GPS-Daten, Request-Bodies oder Snapshots. Activity allowlistet `automation.executed` und projiziert nur sichere aktuelle Kontextlabels.
 
-Nicht vorzeitig implementieren:
-- Organization username/password/TOTP/session runtime vor accepted ADR-0015 plus Threat-Model-Review;
-- configurable capability runtime vor accepted ADR-0016;
-- durable Action/Templates/Cross-Action Analytics vor accepted ADR-0018;
-- Service Worker/PWA/Background Sync;
-- continuous GPS history.
+AUTHORIZATION
 
-ARBEITSWEISE
+Der Worker bleibt die authoritative Boundary:
+- IDs sind Selektoren und niemals Credentials;
+- Campaign-Isolation ist serverseitig strikt;
+- Admin darf Campaign-weit lesen und Automations konfigurieren/moderieren;
+- Viewer darf normale operative Activity lesen, aber nicht schreiben oder konfigurieren;
+- Team Editor bleibt auf dem canonical eigenen Team-Scope;
+- temporäre Field-Group-Mitglieder bekommen weder Campaign-weite Activity noch Team-/Admin-Rechte;
+- temporäre Activity ist mindestens auf die eigene autorisierte Group/Session sowie den eigenen Team-Arbeitsbereich begrenzt;
+- temporäre Mitglieder dürfen die normale autorisierte House-Statusmutation und den daraus entstehenden Systemeffekt auslösen, aber keine Automation konfigurieren;
+- Parent-/Target-/Area-/Team-/Session-Beziehungen werden serverseitig geprüft;
+- protected writes prüfen Same-Origin/CSRF-Grenzen analog zu bestehenden Pfaden;
+- SQL bleibt prepared/parameterized und Fehlerpfade fail closed;
+- fehlendes vorbereitetes Schema liefert einen expliziten 503 statt einer stillen Ersatzsemantik.
 
-- Repository und GitHub zuerst verifizieren, dann direkt implementieren.
-- Frage nicht nach Dingen, die Repository/GitHub beantworten können.
-- Erstelle keinen Ersatz-Branch für vorhandene Arbeit.
-- Merge oder deploye nichts ohne klare Freigabe.
-- Keine Remote-D1-Migration ohne ausdrücklichen User-Auftrag.
-- Korrigiere stale Doku im selben Arbeitsgang.
-- Halte Slices reviewbar, aber liefere vertikal vollständige Benutzerwege.
-- UI-Rechte ersetzen niemals Worker-Autorisierung.
+OFFENE FC2-PUNKTE
+
+- House-Polygon-Highlight ist weiterhin offen und hängt am echten normalen House-Renderer;
+- Stats ist der nächste konkrete Plattform-/FC2-nahe Entwicklungsschritt, danach House-Rendering gemäß Plan-017;
+- Comment- und Automation-Writes bleiben bewusst online-only, solange der bestehende M5-Mutationsmechanismus nicht ohne zweite Sync-Architektur sicher wiederverwendet werden kann;
+- sichere personenbezogene Autorauflösung bleibt bis zu einer echten Identity-/Organization-Grundlage konservativ eingeschränkt.
+
+NÄCHSTER ENTWICKLUNGSSCHRITT
+
+Wenn der exakte aktuelle PR-Head und seine vollständige CI weiterhin grün sind, implementiere als nächsten Slice Stats. Danach prüfe House-Polygon-Rendering. Automations nicht ausweiten, bevor ein expliziter Trigger-/Effekt-/Idempotenz-Contract und die jeweilige serverseitige Autorisierung vorliegen.
+
+NICHT TUN
+
+- nichts mergen und PR nicht Ready for Review setzen;
+- nichts explizit deployen;
+- 0004 bis 0009 nicht remote anwenden;
+- keine neue Organization-/Account-Identity erfinden;
+- keine Capability-Runtime vor akzeptierter ADR;
+- keine PWA, keinen Service Worker und kein Background Sync;
+- keine GPS-Historie;
+- keine Activity-Duplikatdatenbank;
+- keine AI-Automation;
+- keine Comment-Hard-Deletes im normalen Produkt;
+- keine UI-only-Berechtigung.
 
 QUALITÄTSGATES
 
 Vor jedem Abschluss:
-- Tests grün;
-- TypeScript grün;
-- High-Severity Dependency Audit grün;
-- Production Build grün;
-- relevante Security-Negativtests grün;
-- exakten aktuellen PR-/Branch-Head verifizieren.
+- relevante Security-Negativtests;
+- vollständige Testsuite;
+- TypeScript;
+- Dependency Audit;
+- Production Build;
+- PR-/Branch-Head und CI auf genau diesem Head;
+- keine Regression bestehender Launcher-, M5-, Field-Session-, Comment- und Activity-Pfade.
 
-HANDOFF AM ENDE JEDES LANGEN CHATS
+VERPFLICHTUNG FÜR DEN NÄCHSTEN HANDOFF
 
-Vor dem Ende eines längeren Entwicklungschats:
-1. `docs/status/CURRENT.md` auf den exakten Stand bringen.
-2. `docs/context-map.yaml` bei neuen/abgeschlossenen Architektur-/Plan-Knoten aktualisieren.
-3. relevante Architecture-/Plan-Doku aktualisieren.
-4. diesen Living Prompt `docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md` mit exaktem PR/Branch/Head/CI/Migrationsstatus und nächstem Schritt ersetzen.
-5. den finalen Handoff-Commit selbst nochmals per exact-head CI verifizieren.
+Aktualisiere beim nächsten Handoff dieselbe Datei erneut mit:
+- exaktem Branch und exaktem finalem Head;
+- PR #72 Base, Head, Draft-Status und Mergeability;
+- finalem CI-Lauf auf genau diesem Head;
+- aktuellem Migration-/Remote-D1-Status;
+- FC0-, FC1- und FC2-Stand;
+- offenen Punkten und konkretem nächsten Schritt;
+- aktuellen Security-/Authorization-Grenzen;
+- erneutem Hinweis auf automatische Cloudflare-Preview-Kommentare, falls sie auftreten.
+
+Die Doku muss den realen Repository-Stand beschreiben. Veraltete grüne Heads sind zu ersetzen, nicht als Nachweis weiterzuführen.
 ```

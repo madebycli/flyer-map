@@ -30,7 +30,7 @@ Aktueller Entwicklungszweig:
 - Base `ui-app-launcher-sheet`;
 - PR #72 enthält inzwischen nicht nur Planung, sondern den aktuellen FC0-/FC1-Runtime-Slice sowie den durable-Comments- und Activity-Teil von FC2.
 
-Remote D1 ist weiterhin nur bis Migration 0003 dokumentiert. Migrationen 0004 bis 0008 bleiben vorbereitet, aber nicht remote angewendet.
+Remote D1 ist weiterhin nur bis Migration 0003 dokumentiert. Migrationen 0004 bis 0009 bleiben vorbereitet, aber nicht remote angewendet.
 
 ## Delivery-Regel
 
@@ -233,7 +233,7 @@ ADR-0017 bleibt dabei verbindlich: Historie referenzierter Teams darf nicht durc
 
 ## FC2: Field Sessions + Comments + Activity + Automations
 
-**Status: Field-Session-, durable-Comments- und Activity-Runtime umgesetzt; Automations bleiben offen.**
+**Status: Field-Session-, durable-Comments-, Activity- und der erste Automation-Runtime-Slice umgesetzt; Rollout noch nicht freigegeben.**
 
 Die Close-/Expiry-Session-Grundlage aus FC1 ist bereits vorhanden. FC2 erweitert sie zu einem echten Collaboration-Produkt.
 
@@ -248,7 +248,7 @@ Die Close-/Expiry-Session-Grundlage aus FC1 ist bereits vorhanden. FC2 erweitert
 7. Kommentare werden auf Campaign/Area/Street/House-Kontext dauerhaft gespeichert. Pickup bleibt bis zum echten persistenten Pickup-Modell ausgeschlossen.
 8. Kommentar Edit/Delete/Moderation folgt einer konservativen, dokumentierten Legacy-Identity-Regel.
 9. Activity Feed basiert auf echten normalisierten Domain Events.
-10. Automations bleiben deterministisch, autorisiert und idempotent.
+10. Eine feste, versionierte Automation läuft deterministisch, autorisiert und idempotent im M5-Write-Pfad.
 
 ### Durable Comments Runtime
 
@@ -277,13 +277,30 @@ Activity ist eine sichere Projektion der bereits persistierten `domain_events` u
 
 - der Worker bietet den Campaign-scoped Read-Pfad `GET /api/campaigns/:campaignId/activity`;
 - Default-Limit ist 30, das harte Maximum 50. Die Sortierung ist `occurred_at DESC, id DESC`; der Cursor enthält nur den letzten Zeit-/ID-Tie-Breaker;
-- die aktuelle Allowlist umfasst ausschließlich `field_session.closed`, `field_session.expired`, `task.status.changed`, `comment.created`, `comment.edited` und `comment.deleted`;
+- die aktuelle Allowlist umfasst ausschließlich `field_session.closed`, `field_session.expired`, `task.status.changed`, `comment.created`, `comment.edited`, `comment.deleted` und `automation.executed`;
 - `task.status.changed` projiziert nur Street/Haus, alten/neuen allowlisteten Status und sichere aktuelle Labels. Session-Events laden sichere Metriken aus `field_sessions`. Comment-Events zeigen Zieltyp und aktuellen sicheren Kontext, nie Kommentartext;
 - Actor-Darstellung bleibt auf sichere Kategorien (`Campaign-Zugriff`, `Temporäre Gruppe`, `System`, unbekannt) reduziert;
 - Admin und Viewer lesen Campaign-weit, Team Editor nur das canonical eigene Team. Temporäre Mitglieder erhalten keine Campaign-weite Activity, sondern nur ihre autorisierte Field Group/Field Session und die eigenen temporären Comment-Events;
 - unbekannte Eventtypen werden ausgelassen, unbekannte Ziele erhalten einen generischen Fallback. Rohes `payload_json`, Actor-Referenzen, Secrets, Tokens, Cookies, Session-Hashes, Room-/QR-Credentials, IPs, GPS und Snapshots verlassen den Worker nicht;
 - das normale Produkt erreicht Activity über das kompakte Launcher-Sheet mit Loading, Empty, Error/Retry, Offline-Read-Hinweis und `Mehr laden`. Bereits geladene Einträge bleiben bei Offline-Wechsel sichtbar, neue Reads benötigen Internet;
 - es gibt keine neue Activity-Tabelle, keine Rollup-Kopie und keinen zweiten Sync-/Queue-Mechanismus. Schemafehler liefern explizit 503, solange die vorbereitete 0007-Grundlage nicht vorhanden ist.
+
+### Deterministische Automations Runtime
+
+Der Slice ist durch akzeptiertes ADR-0019 und die feste Registry bewusst klein:
+
+- Migration `0009_automations.sql` ergänzt ausschließlich `automation_rules` mit Campaign, Rule-Typ, aktiviertem Status und Zeitstempeln. Die Migration ist vorbereitet, aber nicht remote angewendet;
+- die einzige Regel ist `complete-parent-street-when-all-houses-complete`, Version 1, mit dem Trigger eines erfolgreich autorisierten `house.set-status`-M5-Write auf `completed`;
+- der Worker prüft vor dem Effekt die aktuelle Parent-Straße, Campaign-/Area-/Team-Beziehung, mindestens ein aktuelles House, den exakten Status `open` der Parent-Straße und `completed` aller zugehörigen Houses;
+- `later`, `not-deliverable`, bereits erledigte oder nicht sicher zuordenbare Parent-Straßen werden nicht überschrieben. Die Regel öffnet niemals automatisch wieder;
+- Parent-Update, Parent-`task.status.changed`, `automation.executed` und Campaign-Mutation-Ledger laufen in derselben guarded D1-Batch wie der auslösende House-Write;
+- M5 `(campaign_id, mutation_id)` und die bestehenden Domain-Event-Dedupe-Keys verhindern Wiederholungseffekte. Eine separate Execution-Tabelle oder Activity-Kopie ist nicht erforderlich;
+- automatische Events verwenden den sicheren Actor `system`, minimale Rule-/Effect-/Statusdaten und nur eine eindeutig bekannte auslösende Field Session. Kommentartext, Request-Bodies, Credentials, GPS und Snapshots werden nicht gespeichert;
+- die Activity-Projektion allowlistet `automation.executed` und zeigt nur einen sicheren aktuellen Straßen-/Gebietskontext;
+- nur Admins lesen oder ändern die Aktivierung über `GET`/`PATCH /api/campaigns/:campaignId/automations`. Die normale Launcher-Fläche `Automationen` ist Admin-only. Viewer, Team Editor und temporäre Mitglieder können nicht konfigurieren;
+- temporäre Mitglieder können bei aktiver Regel den Effekt nur als Folge ihres normalen, serverseitig autorisierten House-Status-Write auslösen. Dabei entstehen keine zusätzlichen Rechte;
+- das Aktivieren/Deaktivieren ist online-only. Die UI hält geladene Konfiguration offline sichtbar, bestätigt aber keinen neuen Write ohne Worker-Antwort;
+- es gibt keine frei definierbaren Skripte, Bedingungen, Webhooks, Timer, Polling- oder AI-Ausführung.
 
 ### Grenzen
 
@@ -410,10 +427,9 @@ Vor Plattform-Feature-Complete:
 ## Unmittelbare Reihenfolge
 
 1. Für jeden weiteren PR-Commit den exakten Head erneut durch CI verifizieren.
-2. 0006/0007/0008 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
-3. Deterministische Automations mit explizitem Trigger/Effekt und Idempotenz anbinden.
-4. Stats aus echten Tasks/Sessions/Events abschließen.
-5. Anschließend FC4 bis FC9.
+2. 0006/0007/0008/0009 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
+3. Stats aus echten Tasks/Sessions/Events abschließen.
+4. Anschließend FC4 bis FC9.
 
 ## Risiken
 
