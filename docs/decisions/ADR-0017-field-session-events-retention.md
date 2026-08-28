@@ -15,7 +15,7 @@ The accepted v1 model retains meaningful operational history for the lifetime of
 
 Permanent Campaign deletion is deliberately outside the initial Field Session runtime. If it is introduced later, it must be a separate explicitly confirmed Admin operation that removes the Campaign-owned operational history with the Campaign instead of leaving orphaned session/event data. Security/audit retention remains a separate security concern and is not modeled by ordinary product `domain_events`.
 
-Comment edit/delete/moderation event semantics remain gated to the comment slice and do not block the Field Session foundation accepted here.
+Comment edit/delete/moderation event semantics were intentionally deferred at this ADR's acceptance and are now resolved for the FC2 Comment slice in `docs/architecture/COLLABORATION.md`. The runtime keeps the conservative legacy-identity fallback and uses the same minimized event/retention boundary defined here.
 
 ## Context
 

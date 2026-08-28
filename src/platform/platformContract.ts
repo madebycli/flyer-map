@@ -3,7 +3,7 @@ import type { AccessRole } from "../data/campaignApi.ts";
 export type PlatformAppCommand =
   | {
       id: number;
-      type: "open-settings" | "open-team-management" | "start-area-drawing";
+      type: "open-settings" | "open-team-management" | "open-campaign-comments" | "start-area-drawing";
     }
   | {
       id: number;
@@ -34,7 +34,7 @@ export type PlatformAppContext = {
 };
 
 export type PlatformLauncherItem = {
-  id: "map" | "settings" | "team" | "sessions" | "area-create";
+  id: "map" | "settings" | "team" | "sessions" | "comments" | "area-create";
   label: string;
   icon: string;
   command: Exclude<PlatformAppCommandType, "select-active-team"> | null;
@@ -58,6 +58,7 @@ export function buildPlatformLauncherItems(
       command: null,
       opensFieldSessions: true,
     });
+    items.push({ id: "comments", label: "Kommentare", icon: "💬", command: "open-campaign-comments" });
   }
 
   items.push({ id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" });

@@ -2,7 +2,7 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-27
+last_updated: 2026-08-28
 ---
 
 # Current Project State
@@ -143,11 +143,31 @@ Session-Notizen sind jetzt Runtime-Funktion:
 - Notizen bleiben offline lesbar, Änderungen sind online-only;
 - die UI aktualisiert erst nach erfolgreichem Worker-Write.
 
+### Durable Comments Runtime
+
+Der aktuelle FC2-Comments-Slice ist als echter, serverautorisierter Runtime-Pfad umgesetzt:
+- Campaign-, Area-, Street-Task- und House-Task-Kommentare werden dauerhaft in D1 gespeichert;
+- Pickup bleibt bis zu einem echten persistenten Pickup-Modell ausgeschlossen;
+- Body wird serverseitig getrimmt, auf 2000 Zeichen begrenzt und als inert gespeicherter React-/D1-Text behandelt;
+- der API-Vertrag ist Campaign-scoped, target-scoped und cursor-paginiert mit einem Limit von höchstens 50 Einträgen;
+- der Worker löst jedes Zielobjekt innerhalb der Campaign auf, bevor gelesen oder geschrieben wird;
+- Admin darf innerhalb der Campaign moderieren;
+- Team Editor darf nur im aktuellen eigenen Team-Scope moderieren;
+- Viewer bleiben read-only;
+- temporäre Mitglieder dürfen nur im aktuellen Campaign-/Team-/aktiven-Group-Scope erstellen;
+- temporäre Mitglieder erhalten wegen der nicht zuverlässig auflösbaren Legacy-Identity keine Self-Edit-/Self-Delete-Sonderregel;
+- dieselbe konservative Regel gilt für alle Legacy-Access-Grants, solange keine sichere Personenidentität existiert;
+- Edit nutzt aktuelle Version/`updated_at`, Delete ist ein idempotenter Tombstone ohne physischen Hard Delete;
+- gelöschte Kommentare geben im Produkt keinen Body mehr zurück und erscheinen sinngemäß als `Kommentar gelöscht`;
+- normale Reads von gelöschten oder nicht mehr vorhandenen Zielobjekten failen geschlossen;
+- `comment.created`, `comment.edited` und `comment.deleted` enthalten nur Ziel-/Actor-/Versionsmetadaten, niemals Kommentartext, Cookies, Secrets, Request-Bodies, GPS oder Snapshots;
+- Create-/Edit-/Delete-Replays erzeugen keine zweiten Domain Events;
+- der normale Produktpfad hängt am Launcher sowie an Area-, Street- und vorhandenen House-Kontext-Sheets;
+- bereits geladene Kommentare bleiben offline sichtbar, neue Writes sind online-only und werden nicht fälschlich als gespeichert bestätigt.
+
 ### Noch offen in FC2
 
 Noch nicht feature-complete:
-- dauerhafte Comments auf Campaign/Area/Street/House/Pickup-Kontext;
-- explizite Comment Edit/Delete/Moderation-Semantik vor Runtime;
 - Activity Feed als Projektion normalisierter Domain Events;
 - deterministische, autorisierte, idempotente Automations;
 - House-Polygon-Highlight, sobald der normale FC4 House-Renderer vorhanden ist.
@@ -188,7 +208,8 @@ Prepared, aber nicht remote angewendet:
 - 0004: Smart Street provenance;
 - 0005: House Tasks;
 - 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
-- 0007: Field Sessions und minimierte Domain Events.
+- 0007: Field Sessions und minimierte Domain Events;
+- 0008: durable Comments und Comment-Tombstones.
 
 Kein Runtime- oder Dokumentationscommit wendet diese Migrationen automatisch an.
 
@@ -225,9 +246,8 @@ ADR-0014 und ADR-0017 sind akzeptiert und keine Blocker mehr für ihre aktuellen
 
 ## Immediate next
 
-1. Comment Edit/Delete/Moderation-Semantik für FC2 explizit festlegen und dokumentieren.
-2. Danach dauerhafte, serverautorisierte Comments auf Campaign/Area/Street/House/Pickup-Kontext umsetzen.
-3. Comment-Events nur nach der festgelegten Semantik in die normale Activity-Historie aufnehmen.
-4. Activity Feed aus normalisierten Domain Events aufbauen.
-5. Deterministische Automations mit explizitem Trigger/Effekt und Idempotenz anbinden.
-6. 0004 bis 0007 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.
+1. Comment-Events nach der festgelegten Semantik in die normale Activity-Historie aufnehmen.
+2. Activity Feed aus normalisierten Domain Events aufbauen.
+3. Deterministische Automations mit explizitem Trigger/Effekt und Idempotenz anbinden.
+4. House-Polygon-Highlight erst mit dem normalen FC4 House-Renderer ergänzen.
+5. 0004 bis 0008 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.

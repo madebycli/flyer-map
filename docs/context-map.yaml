@@ -70,8 +70,8 @@ nodes:
     path: docs/architecture/DATA.md
     type: architecture
     status: accepted
-    topics: [database, d1, schema, campaigns, teams, areas, tasks, revisions, migrations]
-    load_when: [domain model, D1 migration, persistence, field sessions, accounts, team lifecycle]
+    topics: [database, d1, schema, campaigns, teams, areas, tasks, comments, revisions, migrations]
+    load_when: [domain model, D1 migration, persistence, field sessions, comments, accounts, team lifecycle]
 
   - id: offline-sync
     path: docs/architecture/OFFLINE_SYNC.md
@@ -245,7 +245,7 @@ nodes:
     path: docs/plans/active/017-feature-complete-platform.md
     type: plan
     status: active
-    topics: [feature-complete, team-hub, live-groups, field-sessions, statistics, smart-streets, houses, collection, admin, permissions, actions, support, hardening]
+    topics: [feature-complete, team-hub, live-groups, field-sessions, comments, statistics, smart-streets, houses, collection, admin, permissions, actions, support, hardening]
     load_when: [next feature implementation, Team Hub, Live Field Groups, FC2, platform completion]
 
   - id: prompt-latest-feature-complete

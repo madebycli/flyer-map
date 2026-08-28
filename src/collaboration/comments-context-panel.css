@@ -1,0 +1,42 @@
+.comments-context-panel {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.comments-context-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.68rem 0.75rem;
+  border: 1px solid #e2c4c4;
+  border-radius: 0.78rem;
+  color: #7e2528;
+  background: #fff7f7;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.comments-context-error button,
+.comments-load-more {
+  min-height: 2.45rem;
+  flex: 0 0 auto;
+  padding: 0.42rem 0.65rem;
+  border: 1px solid #cfd9d1;
+  border-radius: 0.68rem;
+  color: #31503b;
+  background: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+
+.comments-load-more {
+  width: 100%;
+}
+
+.comments-context-error button:focus-visible,
+.comments-load-more:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}

@@ -85,6 +85,76 @@
   margin-top: 0.7rem;
 }
 
+.context-task-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #e0e7e2;
+}
+
+.context-task-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  color: #4f5d53;
+  font-size: 0.73rem;
+}
+
+.context-task-list-header span {
+  color: #748078;
+  font-weight: 700;
+}
+
+.context-task-list > p {
+  margin: 0;
+  color: #6c796f;
+  font-size: 0.72rem;
+}
+
+.context-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-height: 2.65rem;
+  padding: 0.48rem 0.62rem;
+  border: 1px solid #dbe4dd;
+  border-radius: 0.7rem;
+  color: #334239;
+  background: #f8faf8;
+  text-align: left;
+}
+
+.context-task-row span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.73rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-task-row small {
+  flex: 0 0 auto;
+  color: #748078;
+  font-size: 0.64rem;
+}
+
+.context-task-row:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.comment-sheet {
+  max-height: min(76dvh, 42rem);
+}
+
+.commentable-task-sheet {
+  max-height: min(76dvh, 42rem);
+}
+
 .undo-toast {
   position: absolute;
   z-index: 32;

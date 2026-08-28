@@ -19,6 +19,7 @@ import {
   type Area,
   type CampaignSnapshot,
   type DistributionTask,
+  type HouseTask,
   type LngLat,
   type MapCameraView,
   type TaskStatus,
@@ -29,10 +30,11 @@ import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } fro
 import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
 import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";
+import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
 import { SettingsSheet } from "./settings/SettingsSheet";
 
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
-type Sheet = "teams" | "area" | "task" | "settings" | null;
+type Sheet = "teams" | "area" | "task" | "house" | "campaign-comments" | "settings" | null;
 type UndoStatusChange = {
   taskId: string;
   label: string;
@@ -105,6 +107,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const [mode, setMode] = useState<MapMode>("browse");
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedHouseTaskId, setSelectedHouseTaskId] = useState<string | null>(null);
   const [draftVertices, setDraftVertices] = useState<LngLat[]>([]);
   const [editingVertices, setEditingVertices] = useState<LngLat[]>([]);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
@@ -159,7 +162,11 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
       setSelectedTaskId(null);
       if (sheet === "task") setSheet(selectedAreaId ? "area" : null);
     }
-  }, [snapshot, selectedAreaId, selectedTaskId, sheet]);
+    if (selectedHouseTaskId && !(snapshot.houseTasks ?? []).some((task) => task.id === selectedHouseTaskId)) {
+      setSelectedHouseTaskId(null);
+      if (sheet === "house") setSheet(selectedAreaId ? "area" : null);
+    }
+  }, [snapshot, selectedAreaId, selectedHouseTaskId, selectedTaskId, sheet]);
 
   const isAdmin = access?.role === "admin";
   const isEditor = access?.role === "team-editor";
@@ -185,8 +192,18 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const selectedTaskTeam = selectedTaskArea
     ? snapshot.teams.find((team) => team.id === selectedTaskArea.teamId) ?? null
     : null;
+  const selectedHouseTask = snapshot.houseTasks?.find((task) => task.id === selectedHouseTaskId) ?? null;
+  const selectedHouseTaskArea = selectedHouseTask
+    ? snapshot.areas.find((area) => area.id === selectedHouseTask.areaId) ?? null
+    : null;
+  const selectedHouseTaskTeam = selectedHouseTaskArea
+    ? snapshot.teams.find((team) => team.id === selectedHouseTaskArea.teamId) ?? null
+    : null;
   const selectedAreaTasks = selectedArea
     ? snapshot.tasks.filter((task) => task.areaId === selectedArea.id)
+    : [];
+  const selectedAreaHouseTasks = selectedArea
+    ? (snapshot.houseTasks ?? []).filter((task) => task.areaId === selectedArea.id)
     : [];
   const canEditSelectedArea = canEditArea(selectedArea);
   const canEditSelectedTask = canEditArea(selectedTaskArea);
@@ -331,6 +348,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     setSheet(null);
     setSelectedAreaId(null);
     setSelectedTaskId(null);
+    setSelectedHouseTaskId(null);
     setDraftVertices([]);
     setEditingVertices([]);
     setStreetDraftVertices([]);
@@ -344,6 +362,14 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
 
     if (platformCommand.type === "open-settings") {
       setSheet("settings");
+      return;
+    }
+
+    if (platformCommand.type === "open-campaign-comments") {
+      setSelectedAreaId(null);
+      setSelectedTaskId(null);
+      setSelectedHouseTaskId(null);
+      setSheet("campaign-comments");
       return;
     }
 
@@ -399,6 +425,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const selectArea = (areaId: string | null) => {
     if (mode !== "browse") return;
     setSelectedTaskId(null);
+    setSelectedHouseTaskId(null);
     setSelectedAreaId(areaId);
     setSheet(areaId ? "area" : null);
   };
@@ -413,8 +440,25 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     const task = snapshot.tasks.find((candidate) => candidate.id === taskId);
     if (!task) return;
     setSelectedTaskId(task.id);
+    setSelectedHouseTaskId(null);
     setSelectedAreaId(task.areaId);
     setSheet("task");
+  };
+
+  const selectHouseTask = (taskId: string | null) => {
+    if (mode !== "browse") return;
+    if (!taskId) {
+      setSelectedHouseTaskId(null);
+      setSheet(selectedAreaId ? "area" : null);
+      return;
+    }
+
+    const task: HouseTask | undefined = snapshot.houseTasks?.find((candidate) => candidate.id === taskId);
+    if (!task) return;
+    setSelectedTaskId(null);
+    setSelectedHouseTaskId(task.id);
+    setSelectedAreaId(task.areaId);
+    setSheet("house");
   };
 
   const updateSelectedArea = (patch: Partial<Pick<Area, "name" | "teamId">>) => {
@@ -447,6 +491,9 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
       ...current,
       areas: current.areas.filter((area) => area.id !== selectedArea.id),
       tasks: current.tasks.filter((task) => task.areaId !== selectedArea.id),
+      ...(current.houseTasks
+        ? { houseTasks: current.houseTasks.filter((task) => task.areaId !== selectedArea.id) }
+        : {}),
     }));
     setSelectedAreaId(null);
     setSelectedTaskId(null);
@@ -835,6 +882,29 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         />
       ) : null}
 
+      {sheet === "campaign-comments" && mode === "browse" ? (
+        <section className="bottom-sheet comment-sheet" aria-label="Kommentare">
+          <div className="sheet-handle" aria-hidden="true" />
+          <div className="sheet-header">
+            <div>
+              <span className="eyebrow">{t(language, "campaignSettings")}</span>
+              <strong>{language === "de" ? "Campaign-Kommentare" : "Campaign comments"}</strong>
+            </div>
+            <button className="icon-button" type="button" onClick={() => setSheet(null)} aria-label={t(language, "close")}>×</button>
+          </div>
+          <CommentsContextPanel
+            campaignId={snapshot.campaign.id}
+            targetType="campaign"
+            targetId={snapshot.campaign.id}
+            targetLabel={campaignDisplayName}
+            targetTeamId={null}
+            access={access}
+            online={online}
+            language={language}
+          />
+        </section>
+      ) : null}
+
       {sheet === "teams" && mode === "browse" && isAdmin ? (
         <section className="bottom-sheet" aria-label={t(language, "manageTeams")}>
           <div className="sheet-handle" aria-hidden="true" />
@@ -939,6 +1009,36 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
               </div>
             </>
           ) : null}
+
+          {snapshot.houseTasks ? (
+            <div className="context-task-list">
+              <div className="context-task-list-header">
+                <strong>{language === "de" ? "Haus-Aufgaben" : "House tasks"}</strong>
+                <span>{selectedAreaHouseTasks.length}</span>
+              </div>
+              {selectedAreaHouseTasks.length === 0 ? (
+                <p>{language === "de" ? "Keine Haus-Aufgaben in diesem Gebiet." : "No house tasks in this area."}</p>
+              ) : (
+                selectedAreaHouseTasks.map((task) => (
+                  <button className="context-task-row" type="button" key={task.id} onClick={() => selectHouseTask(task.id)}>
+                    <span>{task.label.trim() || (language === "de" ? "Haus" : "House")}</span>
+                    <small>{taskStatusLabel(language, task.status)}</small>
+                  </button>
+                ))
+              )}
+            </div>
+          ) : null}
+
+          <CommentsContextPanel
+            campaignId={snapshot.campaign.id}
+            targetType="area"
+            targetId={selectedArea.id}
+            targetLabel={selectedArea.name.trim() || t(language, "area")}
+            targetTeamId={selectedArea.teamId}
+            access={access}
+            online={online}
+            language={language}
+          />
         </section>
       ) : null}
 
@@ -986,6 +1086,49 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
           {canEditSelectedTask ? (
             <button className="button danger full-width task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>
           ) : null}
+
+          <CommentsContextPanel
+            campaignId={snapshot.campaign.id}
+            targetType="street-task"
+            targetId={selectedTask.id}
+            targetLabel={selectedTask.label.trim() || t(language, "street")}
+            targetTeamId={selectedTaskArea?.teamId ?? null}
+            access={access}
+            online={online}
+            language={language}
+          />
+        </section>
+      ) : null}
+
+      {sheet === "house" && mode === "browse" && selectedHouseTask ? (
+        <section className="bottom-sheet task-sheet commentable-task-sheet" aria-label={language === "de" ? "Haus-Aufgabe" : "House task"}>
+          <div className="sheet-handle" aria-hidden="true" />
+          <div className="sheet-header">
+            <div className="area-heading">
+              <span className="team-dot large-dot" style={{ backgroundColor: selectedHouseTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />
+              <div>
+                <span className="eyebrow">{language === "de" ? "Haus-Aufgabe" : "House task"} · {selectedHouseTaskArea?.name || t(language, "area")}</span>
+                <strong>{selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}</strong>
+              </div>
+            </div>
+            <button className="icon-button" type="button" onClick={() => { setSelectedHouseTaskId(null); setSheet(selectedAreaId ? "area" : null); }} aria-label={t(language, "close")}>×</button>
+          </div>
+
+          <div className="task-current-status">
+            <span>{t(language, "current")}</span>
+            <strong>{taskStatusLabel(language, selectedHouseTask.status)}</strong>
+          </div>
+
+          <CommentsContextPanel
+            campaignId={snapshot.campaign.id}
+            targetType="house-task"
+            targetId={selectedHouseTask.id}
+            targetLabel={selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}
+            targetTeamId={selectedHouseTaskArea?.teamId ?? null}
+            access={access}
+            online={online}
+            language={language}
+          />
         </section>
       ) : null}
     </main>

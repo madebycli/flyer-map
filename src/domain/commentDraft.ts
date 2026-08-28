@@ -1,9 +1,19 @@
 import type { CampaignSnapshot } from "./campaign.ts";
 
+export const COMMENT_BODY_MAX_LENGTH = 2_000;
+
 export type CommentTarget =
   | { type: "campaign"; id: string }
   | { type: "area"; id: string }
-  | { type: "task"; id: string };
+  | { type: "task"; id: string }
+  | { type: "street-task"; id: string }
+  | { type: "house-task"; id: string };
+
+export type PersistentCommentTargetType =
+  | "campaign"
+  | "area"
+  | "street-task"
+  | "house-task";
 
 export type CommentDraft = {
   campaignId: string;
@@ -27,10 +37,33 @@ function validIdentifier(value: unknown) {
   );
 }
 
+export function isValidCommentIdentifier(value: unknown) {
+  return validIdentifier(value);
+}
+
+export function normalizeCommentBody(value: unknown) {
+  if (typeof value !== "string") return null;
+  const body = value.trim();
+  return body.length >= 1 && body.length <= COMMENT_BODY_MAX_LENGTH ? body : null;
+}
+
+export function normalizeCommentTargetType(value: unknown): PersistentCommentTargetType | null {
+  if (value === "campaign" || value === "area" || value === "street-task" || value === "house-task") {
+    return value;
+  }
+  // The original local foundation called Street Tasks simply "task". Accepting
+  // it at the boundary keeps old drafts readable while persistence stays explicit.
+  if (value === "task") return "street-task";
+  return null;
+}
+
 function targetExists(snapshot: CampaignSnapshot, target: CommentTarget) {
   if (target.type === "campaign") return target.id === snapshot.campaign.id;
   if (target.type === "area") return snapshot.areas.some((area) => area.id === target.id);
-  return snapshot.tasks.some((task) => task.id === target.id);
+  if (target.type === "task" || target.type === "street-task") {
+    return snapshot.tasks.some((task) => task.id === target.id);
+  }
+  return (snapshot.houseTasks ?? []).some((task) => task.id === target.id);
 }
 
 export function validateCommentDraft(
@@ -66,7 +99,7 @@ export function validateCommentDraft(
     return { valid: false, reason: "invalid-body" };
   }
   const body = draft.body.trim();
-  if (body.length < 1 || body.length > 2_000) {
+  if (body.length < 1 || body.length > COMMENT_BODY_MAX_LENGTH) {
     return { valid: false, reason: "invalid-body" };
   }
 

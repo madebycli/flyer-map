@@ -2,16 +2,16 @@
 id: architecture-collaboration
 type: architecture
 status: active
-last_updated: 2026-08-27
+last_updated: 2026-08-28
 related: [product-roadmap, architecture-data, architecture-security, architecture-offline-sync, architecture-live-teams, plan-012-platform-app-expansion, ADR-0017, ADR-0018]
-source_of_truth_for: [field-session-foundation, future-comments, future-activity, future-automations, future-statistics]
+source_of_truth_for: [field-session-foundation, comments, future-activity, future-automations, future-statistics]
 ---
 
 # Collaboration, Field Sessions, Activity, Automations and Statistics
 
 ## Purpose
 
-Record the accepted collaboration/history boundary and distinguish the durable Field Session foundation already implemented for Field Group close/expiry from the broader FC2 features that are still pending.
+Record the accepted collaboration/history boundary and distinguish the durable Field Session foundation from the FC2 Comment runtime and the broader activity/automation features that are still pending.
 
 ADR-0017 is accepted and governs Field Session/event retention. ADR-0018 continues to govern future action/template and cross-action analytics persistence.
 
@@ -59,6 +59,11 @@ Current implemented minimum:
 - `field_session.closed`;
 - `field_session.expired`.
 
+The durable Comment runtime additionally emits:
+- `comment.created`;
+- `comment.edited`;
+- `comment.deleted`.
+
 Broader event types are added only with the feature slice that authoritatively owns the underlying mutation.
 
 Candidate FC2 events include:
@@ -100,20 +105,49 @@ This remains FC2 work and is not implied by the current close/expiry foundation.
 
 ## Comments, FC2
 
-Comments remain not yet durable feature-complete runtime.
+Comments are now a durable runtime for Campaign, Area, Street Task and persisted House Task contexts. Pickup is intentionally unsupported until a real persistent Pickup model exists. Field Sessions are not comment targets in this slice.
 
-They may attach to explicit contexts such as:
-- Campaign;
-- Area;
-- Street/House/Pickup Task;
-- optionally Field Session where product testing justifies it.
+### Stored model and lifecycle
 
-Before durable implementation:
-- server-authorized read/write scope is required;
-- edit/delete/moderation semantics must be explicit;
-- user text remains inert data;
-- no unnecessary personal profile collection;
-- event payload must not duplicate unrestricted comment bodies unless a specific accepted requirement needs it.
+Migration 0008 adds one additive `comments` table with:
+- stable Comment id and Campaign id;
+- explicit target type/id;
+- current Team scope for non-Campaign targets;
+- only the safe access principal kind/reference available from the legacy access model;
+- trimmed body, created/updated timestamps, monotonic version and tombstone fields.
+
+Polymorphic target IDs are never trusted by themselves. The Worker resolves Campaign, Area, Street Task or House Task in the requested Campaign and derives the current Team scope before serving the context or applying a mutation. Removed targets fail closed for normal Comment reads and writes while the Comment row remains as historical reference. There is no normal product hard delete.
+
+Bodies are ordinary inert text. The Worker trims them, requires a non-empty value and enforces a 2000-character maximum. The UI renders them as React text. A soft delete clears the stored body, sets `deleted_at`, advances the version and keeps the stable id and necessary metadata. Reads expose the tombstone as `Kommentar gelöscht` and never return the deleted body.
+
+### Authorization matrix
+
+The Worker remains authoritative:
+
+| Access | Read | Create | Edit/Delete moderation |
+| --- | --- | --- | --- |
+| Admin | within Campaign | all supported targets in Campaign | all supported targets in Campaign |
+| Team Editor | Campaign plus current own-Team targets | current own-Team targets | current own-Team targets only |
+| Viewer | Campaign-scoped read | no | no |
+| Temporary Field Group member | current own-Team target scope | current active Campaign-/Team-/Group scope | no self exception |
+
+The legacy access model does not safely identify a human author. Therefore Comment creation stores a safe campaign-grant or temporary-membership principal only as historical actor reference. It is not treated as a person identity, and no Self-Edit/Self-Delete capability is inferred. This conservative rule stays in force until a separately accepted identity model can support a reliable author mapping. Temporary membership never creates persistent Team or Admin rights. Team Editor and Admin moderation still re-check the target's current scope.
+
+### Events and retries
+
+Comment events use the existing minimized `domain_events` table. Their columns carry only the Comment entity id, target-derived Team id, actor principal, event type, occurrence time and dedupe key. `payload_json` contains only the normalized Comment version. It never contains the full body, cookies, tokens, secrets, raw request bodies, GPS data or snapshots.
+
+Create uses a stable Comment id. Edit uses `updated_at` plus an operation id. Delete uses an idempotent operation id and never issues `DELETE FROM comments`. The Comment mutation and its event are written in one prepared D1 batch. Replaying an accepted operation returns the current result and does not append a second event.
+
+### API and offline boundary
+
+The API is intentionally narrow:
+- `GET /api/campaigns/:campaignId/comments?targetType=...&targetId=...` reads one context with a stable cursor and a maximum page size of 50;
+- `POST /api/campaigns/:campaignId/comments` creates a Comment;
+- `PATCH /api/campaigns/:campaignId/comments/:commentId` edits a non-deleted Comment with optimistic version checking;
+- `DELETE /api/campaigns/:campaignId/comments/:commentId` applies the tombstone.
+
+Same-Origin checks, Campaign isolation, prepared SQL and fail-closed target/scope resolution apply to all writes. The normal product exposes Campaign comments from the launcher and Area/Street/House comments in context sheets. Already loaded comments remain visible when the website loses connectivity. Comment writes are online-only in this slice and deliberately do not introduce a second queue beside the accepted M5 mutation queue; the UI never reports a server write as successful before the Worker responds.
 
 ## Activity history, FC2
 
@@ -205,4 +239,4 @@ Do not infer exact walked/driven routes or individual productivity from continuo
 
 ## Rollout status
 
-`migrations/0007_field_sessions_events.sql` is prepared on Draft PR #72 but is not recorded as remotely applied. Broader FC2 schema/runtime remains intentionally unimplemented until its feature-complete slice.
+`migrations/0007_field_sessions_events.sql` and additive `migrations/0008_comments.sql` are prepared on Draft PR #72 but are not recorded as remotely applied. The durable Comment runtime is implemented against 0008, while the Activity projection and Automations remain intentionally unimplemented until their own feature-complete slices.

@@ -50,7 +50,7 @@ test("PlatformShell uses typed real Team and Field Session surfaces instead of W
 test("launcher gives authenticated viewers Team Hub and real Einsätze but hides editing destinations", () => {
   assert.deepEqual(
     buildPlatformLauncherItems(context()).map((item) => item.id),
-    ["map", "team", "sessions", "settings"],
+    ["map", "team", "sessions", "comments", "settings"],
   );
   assert.equal(buildPlatformLauncherItems(context()).find((item) => item.id === "team")?.opensTeamHub, true);
   assert.equal(
@@ -72,21 +72,21 @@ test("launcher registry exposes history to scoped roles and editing only when ca
     buildPlatformLauncherItems(
       context({ accessRole: "team-editor", accessTeamId: "team_one", canCreateArea: true }),
     ).map((item) => item.id),
-    ["map", "team", "sessions", "settings", "area-create"],
+    ["map", "team", "sessions", "comments", "settings", "area-create"],
   );
 
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.id),
-    ["map", "team", "sessions", "settings", "area-create"],
+    ["map", "team", "sessions", "comments", "settings", "area-create"],
   );
 
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "field-group-member", accessTeamId: "team_one" }),
     ).map((item) => item.id),
-    ["map", "team", "sessions", "settings"],
+    ["map", "team", "sessions", "comments", "settings"],
   );
 });
 
@@ -96,7 +96,7 @@ test("launcher remains a compact rounded sheet rather than a fullscreen dashboar
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.label),
-    ["Karte", "Team", "Einsätze", "Einstellungen", "Gebiet"],
+    ["Karte", "Team", "Einsätze", "Kommentare", "Einstellungen", "Gebiet"],
   );
   assert.match(shellCss, /\.platform-menu-overlay\s*\{[\s\S]*align-items: flex-end;/);
   assert.match(shellCss, /\.platform-menu-grid\s*\{[\s\S]*grid-template-columns: repeat\(4,/);

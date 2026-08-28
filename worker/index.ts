@@ -25,6 +25,7 @@ import {
 import { authorizeSnapshotWrite } from "./authorization.ts";
 import { createRecoveredAdminAccess, operatorSecretMatches } from "./operatorRecovery.ts";
 import { handleCampaignMutation } from "./mutationHandler.ts";
+import { handleCommentsApi } from "./comments.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -515,6 +516,11 @@ export default {
       );
     }
     const db = env.DB;
+
+    if (db) {
+      const commentsResponse = await handleCommentsApi(request, db);
+      if (commentsResponse) return commentsResponse;
+    }
 
     if (db && url.pathname === "/api/campaigns" && request.method === "POST") {
       try {

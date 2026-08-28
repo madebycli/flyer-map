@@ -2,7 +2,7 @@
 id: plan-017-feature-complete-platform
 type: plan
 status: active
-last_updated: 2026-08-27
+last_updated: 2026-08-28
 related: [plan-012-platform-app-expansion, plan-016-app-launcher-sheet, product-roadmap, product-ux, architecture-live-teams, architecture-collaboration, architecture-identity-permissions, architecture-organizations, ADR-0014, ADR-0015, ADR-0016, ADR-0017, ADR-0018, quality]
 ---
 
@@ -28,9 +28,9 @@ Aktueller Entwicklungszweig:
 - Draft PR #72;
 - Branch `plan-feature-complete-platform`;
 - Base `ui-app-launcher-sheet`;
-- PR #72 enthält inzwischen nicht nur Planung, sondern den aktuellen FC0-/FC1-Runtime-Slice.
+- PR #72 enthält inzwischen nicht nur Planung, sondern den aktuellen FC0-/FC1-Runtime-Slice sowie den durable-Comments-Teil von FC2.
 
-Remote D1 ist weiterhin nur bis Migration 0003 dokumentiert. Migrationen 0004 bis 0007 bleiben vorbereitet, aber nicht remote angewendet.
+Remote D1 ist weiterhin nur bis Migration 0003 dokumentiert. Migrationen 0004 bis 0008 bleiben vorbereitet, aber nicht remote angewendet.
 
 ## Delivery-Regel
 
@@ -198,7 +198,13 @@ Migration 0007:
 - deterministische Field-Group-zu-Session-Beziehung;
 - transaktionale Close-/Expiry-Historie.
 
-Beide Migrationen sind vorbereitet, aber nicht remote angewendet.
+Migration 0008:
+- `comments` mit Campaign-/Target-/Team-Scope;
+- sicherer Actor-Prinzipal ohne neue Personen- oder Account-Identity;
+- getrimmter Body, Versionierung und Tombstone-Zustand;
+- bounded Context-Read-Indizes.
+
+Alle drei Migrationen sind vorbereitet, aber nicht remote angewendet.
 
 ### FC1 Rollout-Gate
 
@@ -227,7 +233,7 @@ ADR-0017 bleibt dabei verbindlich: Historie referenzierter Teams darf nicht durc
 
 ## FC2: Field Sessions + Comments + Activity + Automations
 
-**Status: als nächster Feature-Complete-Slice offen.**
+**Status: Field-Session- und durable-Comments-Runtime umgesetzt; Activity und Automations bleiben offen.**
 
 Die Close-/Expiry-Session-Grundlage aus FC1 ist bereits vorhanden. FC2 erweitert sie zu einem echten Collaboration-Produkt.
 
@@ -239,10 +245,31 @@ Die Close-/Expiry-Session-Grundlage aus FC1 ist bereits vorhanden. FC2 erweitert
 4. Task-Mutationen erhalten serverseitigen Session-/Event-Bezug.
 5. Retry derselben M5-Mutation erzeugt kein zweites Event.
 6. Session-Auswahl kann betroffene aktuelle/reviewed Street-/House-Geometrie hervorheben.
-7. Kommentare werden auf Campaign/Area/Street/House/Pickup-Kontext dauerhaft gespeichert.
-8. Kommentar Edit/Delete/Moderation wird vor Runtime explizit festgelegt.
+7. Kommentare werden auf Campaign/Area/Street/House-Kontext dauerhaft gespeichert. Pickup bleibt bis zum echten persistenten Pickup-Modell ausgeschlossen.
+8. Kommentar Edit/Delete/Moderation folgt einer konservativen, dokumentierten Legacy-Identity-Regel.
 9. Activity Feed basiert auf echten normalisierten Domain Events.
 10. Automations bleiben deterministisch, autorisiert und idempotent.
+
+### Durable Comments Runtime
+
+Der Comment-Slice verwendet Migration 0008 und den Worker als authoritative Boundary.
+
+- API: `GET` für einen einzelnen Campaign-/Area-/Street-Task-/House-Task-Kontext sowie `POST`, `PATCH` und `DELETE` auf Campaign-scoped Comment-IDs;
+- jede Liste ist cursor-paginiert und auf höchstens 50 Einträge pro Read begrenzt;
+- Body wird getrimmt, auf 2000 Zeichen begrenzt und als inert gespeicherter Text behandelt;
+- Ziel-IDs werden serverseitig gegen Campaign und aktuellen Team-Scope aufgelöst;
+- Admin darf in der Campaign moderieren;
+- Team Editor darf nur aktuelle Zielobjekte im eigenen Team moderieren;
+- Viewer bleiben read-only;
+- temporäre Mitglieder dürfen nur im eigenen aktiven Campaign-/Team-/Group-Scope erstellen und erhalten keine persistenten Rechte;
+- die aktuelle Legacy-Identity erlaubt keine sichere Personen-Zuordnung für Self-Edit/Self-Delete, daher wird diese Sonderregel konservativ nicht freigeschaltet;
+- Delete setzt einen Tombstone und leert den Body, der Datensatz und notwendige Metadaten bleiben erhalten;
+- gelöschte Kommentare sind nicht editierbar und werden als `Kommentar gelöscht` dargestellt;
+- Target-Reads nach Entfernung des Zielobjekts failen geschlossen, die historische Comment-Referenz bleibt erhalten;
+- `comment.created`, `comment.edited` und `comment.deleted` speichern nur minimale Actor-, Ziel- und Versionsreferenzen. Vollständiger Body, Request-Body, Secrets, Cookies, GPS und Snapshots bleiben außerhalb des Event-Payloads;
+- stabile Comment-/Operation-IDs und D1-Dedupe verhindern doppelte Events bei Retries;
+- der normale Launcher öffnet Campaign-Kommentare, Area-/Street-/House-Sheets enthalten die passenden Kontextflächen;
+- bereits geladene Kommentare bleiben offline sichtbar. Writes bleiben in diesem Slice online-only und nutzen keinen zweiten Queue-Mechanismus.
 
 ### Grenzen
 
@@ -369,13 +396,12 @@ Vor Plattform-Feature-Complete:
 ## Unmittelbare Reihenfolge
 
 1. FC1-Doku und exact-head CI auf PR #72 finalisieren.
-2. 0006/0007 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
-3. FC2 mit autorisierter Field-Session-History-Read-API beginnen.
-4. Session-Historie im `Einsätze`-Modul auf reale Daten umstellen.
-5. Task-Event-Attribution über M5 idempotent anbinden.
-6. Danach Kommentare und Activity innerhalb desselben akzeptierten Eventmodells.
-7. Stats aus echten Tasks/Sessions/Events abschließen.
-8. Anschließend FC4 bis FC9.
+2. 0006/0007/0008 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
+3. Comment-Events in eine normale Activity-Projektion aufnehmen.
+4. Activity Feed auf echte normalisierte Domain Events aufbauen.
+5. Deterministische Automations mit explizitem Trigger/Effekt und Idempotenz anbinden.
+6. Stats aus echten Tasks/Sessions/Events abschließen.
+7. Anschließend FC4 bis FC9.
 
 ## Risiken
 
