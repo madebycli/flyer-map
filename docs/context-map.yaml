@@ -1,4 +1,4 @@
-version: 4
+version: 6
 
 entrypoints:
   always:
@@ -15,6 +15,8 @@ routing_rules:
   - inspect accepted ADRs before changing an architectural or security boundary
   - inspect current open PRs, exact heads and CI before starting or replacing a slice
   - treat prepared D1 migrations as unapplied until deployment/status docs explicitly record remote application
+  - for a fresh Plan-017 planner chat, load prompt-latest-feature-complete after the entrypoints, then follow its graph edges
+  - for House polygon renderer planning, load prompt-house-polygon-renderer and plan-house-polygon-renderer, then follow Map, Smart Task identity, Collaboration and Quality edges
 
 nodes:
   - id: product
@@ -42,8 +44,8 @@ nodes:
     path: docs/product/UX.md
     type: product
     status: accepted
-    topics: [ui, ux, mobile, desktop, accessibility, launcher, bottom-bar, progress, team-colors, admin, support]
-    load_when: [UI change, map interaction, mobile behavior, desktop admin UX, launcher, progress UI]
+    topics: [ui, ux, mobile, desktop, accessibility, launcher, bottom-bar, progress, team-colors, admin, support, comments, activity, statistics, field-sessions, houses]
+    load_when: [UI change, map interaction, mobile behavior, desktop admin UX, launcher, progress UI, House interaction]
 
   - id: architecture
     path: ARCHITECTURE.md
@@ -64,13 +66,13 @@ nodes:
     type: architecture
     status: accepted
     topics: [map, maplibre, carto, geojson, renderer, osm, offline-map, streets, houses]
-    load_when: [map rendering, geometry interaction, performance, road/building data, session map highlighting]
+    load_when: [map rendering, geometry interaction, performance, road/building data, session map highlighting, House polygon renderer]
 
   - id: data
     path: docs/architecture/DATA.md
     type: architecture
     status: accepted
-    topics: [database, d1, schema, campaigns, teams, areas, tasks, comments, domain-events, activity, revisions, migrations]
+    topics: [database, d1, schema, campaigns, teams, areas, tasks, comments, domain-events, activity, automations, statistics, revisions, migrations]
     load_when: [domain model, D1 migration, persistence, field sessions, comments, accounts, team lifecycle]
 
   - id: offline-sync
@@ -98,8 +100,8 @@ nodes:
     path: docs/architecture/COLLABORATION.md
     type: architecture
     status: active
-    topics: [field-sessions, domain-events, comments, activity, automations, statistics, reporting, retention]
-    load_when: [Field Session, event persistence, comments, activity feed, automations, statistics, session history]
+    topics: [field-sessions, domain-events, comments, activity, automations, statistics, reporting, retention, session-map-highlight]
+    load_when: [Field Session, event persistence, comments, activity feed, automations, statistics, session history, House session highlight]
 
   - id: organizations
     path: docs/architecture/ORGANIZATIONS.md
@@ -126,8 +128,8 @@ nodes:
     path: docs/quality/QUALITY.md
     type: quality
     status: accepted
-    topics: [tests, performance, accessibility, browsers, security-testing]
-    load_when: [testing, performance acceptance, browser support, release gate, dense data]
+    topics: [tests, performance, accessibility, browsers, security-testing, dense-data]
+    load_when: [testing, performance acceptance, browser support, release gate, dense data, House renderer performance]
 
   - id: deployment
     path: docs/operations/DEPLOYMENT.md
@@ -162,7 +164,7 @@ nodes:
     type: decision
     status: accepted
     topics: [smart-streets, houses, osm-identity, task-identity, provenance]
-    load_when: [Smart Street persistence, House persistence, OSM task identity, M6 schema]
+    load_when: [Smart Street persistence, House persistence, OSM task identity, M6 schema, House renderer identity]
 
   - id: adr-live-field-group-credentials
     path: docs/decisions/ADR-0014-live-field-group-credentials.md
@@ -252,15 +254,29 @@ nodes:
     path: docs/plans/active/017-feature-complete-platform.md
     type: plan
     status: active
-    topics: [feature-complete, team-hub, live-groups, field-sessions, comments, activity, statistics, smart-streets, houses, collection, admin, permissions, actions, support, hardening]
-    load_when: [next feature implementation, Team Hub, Live Field Groups, FC2, platform completion]
+    topics: [feature-complete, team-hub, live-groups, field-sessions, comments, activity, automations, statistics, smart-streets, houses, house-polygon, collection, admin, permissions, actions, support, hardening]
+    load_when: [next feature implementation, Team Hub, Live Field Groups, FC2, FC4, platform completion]
+
+  - id: plan-house-polygon-renderer
+    path: docs/plans/active/018-house-polygon-renderer.md
+    type: plan
+    status: active
+    topics: [houses, house-polygon, maplibre, geojson, renderer, selection, session-highlight, performance]
+    load_when: [House polygon renderer, normal House rendering, House map selection, House session highlight, current safe slice]
 
   - id: prompt-latest-feature-complete
     path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
     type: onboarding
     status: current
-    topics: [handoff, current-branch, current-pr, next-step]
-    load_when: [fresh AI session, continue current Plan 017 development]
+    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer]
+    load_when: [fresh AI session, planner chat, verify current Plan 017 state, continue current Plan 017 development]
+
+  - id: prompt-house-polygon-renderer
+    path: docs/prompts/CODEX_PLAN_HOUSE_POLYGON_RENDERER.md
+    type: onboarding
+    status: current
+    topics: [codex, planner, house-polygon, renderer, maplibre, current-pr, working-tree]
+    load_when: [fresh Codex planner, House renderer planning, verify Plan 018, implementation handoff]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
@@ -300,4 +316,11 @@ edges:
   - { from: plan-app-launcher-sheet, to: ux, relation: implemented }
   - { from: plan-feature-complete-platform, to: live-teams, relation: implements_current_slice }
   - { from: plan-feature-complete-platform, to: collaboration, relation: implements_next_slices }
+  - { from: plan-house-polygon-renderer, to: plan-feature-complete-platform, relation: refines_current_slice }
+  - { from: plan-house-polygon-renderer, to: map, relation: implements }
+  - { from: plan-house-polygon-renderer, to: adr-smart-task-identity, relation: constrained_by }
+  - { from: plan-house-polygon-renderer, to: collaboration, relation: completes_house_session_highlight }
+  - { from: plan-house-polygon-renderer, to: quality, relation: validated_by }
   - { from: prompt-latest-feature-complete, to: plan-feature-complete-platform, relation: continues }
+  - { from: prompt-latest-feature-complete, to: prompt-house-polygon-renderer, relation: routes_to_next_slice }
+  - { from: prompt-house-polygon-renderer, to: plan-house-polygon-renderer, relation: plans }

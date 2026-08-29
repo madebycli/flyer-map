@@ -2,7 +2,7 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-28
+last_updated: 2026-08-29
 ---
 
 # Current Project State
@@ -11,7 +11,13 @@ last_updated: 2026-08-28
 
 Verteil-Flyer ist eine mobile-first normale Website.
 
-Weiterhin ausdrücklich ausgeschlossen:
+Technischer Kern:
+- React, TypeScript und Vite;
+- MapLibre GL JS 5.7.1 für die Feldkarte;
+- Cloudflare Workers und D1 für Shared Runtime und Persistenz;
+- M4 Access/Session, M5 resiliente Mutation-Synchronisierung und M5.5 vorbereitete Offline-Kartendaten bleiben etablierte Grundlagen.
+
+Weiterhin ausgeschlossen:
 - native App Runtime;
 - installierbare PWA;
 - Service Worker;
@@ -19,239 +25,56 @@ Weiterhin ausdrücklich ausgeschlossen:
 - Background Sync;
 - kontinuierliche GPS-Historie.
 
-Die Feldkarte bleibt MapLibre GL JS 5.7.1 mit CARTO Online-Basemap. Vorbereitete Offline-OSM-Daten liegen separat im Browser-IndexedDB und bulk-cachen keine CARTO/OSMF-Tiles.
+## Active delivery
 
-M4 Access/Session, M5 resilient mutation synchronization und M5.5 prepared offline map bleiben etablierte Grundlagen.
+Plan 017 bleibt die übergeordnete Feature-Complete-Delivery-Linie.
 
-## Delivery direction
+Der aktuell geplante nächste sichere Slice ist Plan 018:
+`docs/plans/active/018-house-polygon-renderer.md`.
 
-Plan 017 ist die aktuelle Delivery-Source-of-Truth für neue Produktfeatures.
+Aktiver Entwicklungsstack:
+- Branch `plan-feature-complete-platform`;
+- Draft PR #72 gegen `ui-app-launcher-sheet`;
+- letzter vor diesem Planungs-Doku-Commit verifizierter Head: `2b90db509666d853dd20ac22a497536c88292522`;
+- CI #701 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
+- PR #72 war offen, Draft und mergeable.
 
-Normale Launcher-Features zählen nicht als fertig, wenn sie nur aus Workbench, Fake-Daten oder lokalem React-State bestehen. Shared Features brauchen den vollständigen UI-/Persistenz-/Autorisierungs-/Fehler-/Test-Weg.
+GitHub und der aktuelle Branch-Head bleiben Source of Truth. Nach jedem neuen Commit muss CI erneut auf genau diesem neuen Head geprüft werden.
 
-FC0, FC1 und der aktuelle FC2-Runtime-Slice liegen auf Draft PR #72, Branch `plan-feature-complete-platform`.
+## Implementierter Plattformstand
 
-## Unified platform UI
+Auf PR #72 sind die aktuellen Runtime-Slices für folgende Bereiche umgesetzt:
+- FC0 PlatformShell/App Navigation und aktiver Teamkontext;
+- Team Hub und Live Field Groups;
+- Field Sessions und Einsatzhistorie;
+- durable Comments für Campaign, Area, Street Task und persistierte House Tasks;
+- bounded Activity-Projektion aus `domain_events`;
+- erste feste deterministische und idempotente Automation gemäß ADR-0019;
+- echte serverseitige Stats-Projektion mit getrennten Street-/House-Nennern.
 
-Der normale Browse-Zustand verwendet weiterhin:
-- kompakten 3x3 App-Launcher unten links;
-- sichtbaren aktiven Teamnamen daneben;
-- Teamfarbe nur als unterstützenden Marker;
-- keine permanente Team-Auswahl;
-- keine permanenten Settings-/Teams-/Gebiet-Buttons.
+## House renderer gap
 
-FC0 ist auf PR #72 umgesetzt:
-- typisierte PlatformShell/App-Bridge;
-- aktiver Teamname folgt dem realen Karten-Arbeitskontext;
-- Settings, Teamverwaltung und Gebiet-Aktion bleiben capability-/scope-gesteuert erreichbar;
-- `Team` öffnet den echten Team Hub;
-- unfertige Foundation-Module bleiben interne Entwicklungseingaben und zählen nicht als Produktabschluss.
+House-Persistenz und House-Domain sind vorhanden, aber persistierte House Tasks werden im normalen MapLibre-Browse-Renderer noch nicht als eigene Polygone gerendert.
 
-## FC1 Team Hub und Live Field Groups
+Der aktuelle Code hat bereits:
+- `CampaignSnapshot.houseTasks` und `HouseTask.geometry` als Polygon;
+- House-Auswahlzustand und House-Sheet in `App.tsx`;
+- House-Kommentarkontext;
+- Field-Session-Task-Refs für `street-task` und `house-task`.
 
-ADR-0014 ist akzeptiert.
+Noch offen:
+- eigene gebatchte House-GeoJSON-Source im normalen Renderer;
+- feste House-Layer für Status, Auswahl und später Session-Highlight;
+- House-Hit-Test über `queryRenderedFeatures`;
+- Übergabe echter House-IDs in den bestehenden Session-Map-Highlight-Pfad.
 
-Der aktuelle FC1-Runtime-Slice umfasst:
-- Team Hub als normales `Team`-Launcher-Ziel;
-- realen Team-Fortschritt mit getrennten Street-/House-Nennern;
-- Campaign-scoped aktive Gruppenliste plus Teamfilter;
-- Admin und eigener Team Editor als aktuelle Managerrollen;
-- Gruppen-Create mit Label, Team, Discoverability und Teilnehmerzahl;
-- 10-stelligen human-safe Room Code;
-- separaten 32-Byte-QR-Token;
-- nur Hashes in D1, Plaintext nur bei Ausgabe/Rotation;
-- idempotente Create- und Rotate-Request-IDs mit Payload-Bindung;
-- QR- und manuellen Room-Code-Join;
-- `vf_field_group_session` für temporäre Teilnehmer ohne persistenten Campaign-Zugriff;
-- temporäre Autorisierung auf genau Campaign/Team/Group und erlaubte Task-Statusarbeit;
-- Update Participant Count und Discoverability;
-- Credential Rotate/Revoke;
-- Leave und Manager Remove Membership;
-- serverseitige 24h-Hard-Expiry;
-- serverseitige Revocation auf geschützten Folgezugriffen;
-- Cloudflare Actor- und Candidate-Rate-Limits mit fail-closed Verhalten.
-
-### Manager member roster
-
-Die FC1-Mitgliederverwaltung ist umgesetzt:
-- aktiver Member-Roster nur für echte Gruppenmanager;
-- Admin darf innerhalb der Campaign lesen/entfernen;
-- Team Editor nur für Gruppen des eigenen canonical Team-Scope;
-- Viewer und temporäre Mitglieder dürfen den Roster nicht verwalten;
-- Ausgabe nur von Membership-ID, Membership-Typ, sicherer Bezeichnung und Join-Zeit;
-- keine Session-Hashes, Join-Credentials, IPs oder Device Fingerprints;
-- Remove mit expliziter Bestätigung;
-- Gruppen-Membership-Count wird danach autoritativ neu geladen;
-- Source-Guard schützt davor, dass das Panel wieder aus dem echten Team-Hub-Build verschwindet.
-
-## FC2 Field Sessions und operative Historie
-
-ADR-0017 ist akzeptiert.
-
-`migrations/0007_field_sessions_events.sql` bleibt die dauerhafte Session-/Event-Grundlage:
-- `field_sessions`;
-- minimierte `domain_events`;
-- deterministische Field-Group-zu-Session-Beziehung;
-- aktive Session ab Gruppenstart;
-- dedupliziertes `field_session.closed` bei manuellem Close;
-- `field_session.expired` bei 24h-Sicherheitsablauf;
-- Dauer, explizite Teilnehmerzahl und Person-Time;
-- optionale Session-Notiz;
-- unbekannte Teilnehmer/Person-Time bleiben bei vergessener Expiry `NULL` statt erfunden zu werden;
-- keine GPS-Trails, Secrets oder vollen Campaign-Snapshots im Eventmodell.
-
-Der Worker blockiert normalen Group-Close mit `field_session_schema_unavailable`, solange 0007 nicht vorhanden ist. Mit 0007 bindet SQLite den autorisierten `active -> closed` bzw. `active -> expired` Übergang transaktional an dieselbe Session-/Event-Historie.
-
-### Reale Einsatzhistorie
-
-Das Launcher-Ziel `Einsätze` verwendet jetzt echte serverseitige Field Sessions:
-- Campaign-/Team-/temporärer Group-Scope wird im Worker erzwungen;
-- stabile Cursor-Pagination;
-- Dauer, Teilnehmer, Person-Time und Status;
-- Anzahl unterschiedlicher betroffener Street-/House-Aufgaben wird aus `task.status.changed` Events mit deduplizierter Task-Identität abgeleitet;
-- keine Fake-/Workbench-Historie als Produktzustand.
-
-### Task-Event-Attribution
-
-M5 `task.set-status` und `house.set-status` erzeugen bei erfolgreicher autoritativer Anwendung minimierte `task.status.changed` Domain Events:
-- Event und Domain-Mutation teilen dieselbe Campaign-Revision-/Write-Token-Batchgrenze;
-- Retry derselben M5-Mutation erzeugt kein zweites Event;
-- temporäre Mitglieder werden nur ihrer serverbekannten Field Group/Session zugeordnet;
-- bei mehreren möglichen persistenten Memberships wird keine Session geraten;
-- Event-Payload enthält nur vorherigen und neuen Status plus notwendige Referenzen.
-
-### Session auf der Karte
-
-Eine Session kann aus `Einsätze` auf der Karte reflektiert werden:
-- autorisierte, deduplizierte Task-Referenzen werden über einen eigenen bounded Read-Endpunkt geladen;
-- aktuelle/reviewed Street-Geometrie wird in einer separaten MapLibre-Layer hervorgehoben;
-- der normale Task-Auswahl-/Bearbeitungspfad bleibt unangetastet;
-- das Highlight ist transient und kann wieder ausgeblendet werden;
-- House-Events werden in Historie und Zählung berücksichtigt, aber nicht als Polygon-Highlight vorgetäuscht, solange der normale House-Polygon-Renderer aus FC4 noch fehlt;
-- es wird keine Route oder historische Geometriekopie gespeichert.
-
-### Session-Notizen
-
-Session-Notizen sind jetzt Runtime-Funktion:
-- `field_sessions.note` aus Migration 0007 wird verwendet, keine zusätzliche Migration erforderlich;
-- maximal 1000 getrimmte Zeichen;
-- leerer Text löscht die Notiz zu `NULL`;
-- Text bleibt inert und wird als gebundener D1-Wert gespeichert;
-- Admin darf Notizen aller Campaign-Sessions ändern;
-- Team Editor nur Sessions des eigenen Teams;
-- Viewer und temporäre Field-Group-Mitglieder bleiben read-only;
-- Notizen bleiben offline lesbar, Änderungen sind online-only;
-- die UI aktualisiert erst nach erfolgreichem Worker-Write.
-
-### Durable Comments Runtime
-
-Der aktuelle FC2-Comments-Slice ist als echter, serverautorisierter Runtime-Pfad umgesetzt:
-- Campaign-, Area-, Street-Task- und House-Task-Kommentare werden dauerhaft in D1 gespeichert;
-- Pickup bleibt bis zu einem echten persistenten Pickup-Modell ausgeschlossen;
-- Body wird serverseitig getrimmt, auf 2000 Zeichen begrenzt und als inert gespeicherter React-/D1-Text behandelt;
-- der API-Vertrag ist Campaign-scoped, target-scoped und cursor-paginiert mit einem Limit von höchstens 50 Einträgen;
-- der Worker löst jedes Zielobjekt innerhalb der Campaign auf, bevor gelesen oder geschrieben wird;
-- Admin darf innerhalb der Campaign moderieren;
-- Team Editor darf nur im aktuellen eigenen Team-Scope moderieren;
-- Viewer bleiben read-only;
-- temporäre Mitglieder dürfen nur im aktuellen Campaign-/Team-/aktiven-Group-Scope erstellen;
-- temporäre Mitglieder erhalten wegen der nicht zuverlässig auflösbaren Legacy-Identity keine Self-Edit-/Self-Delete-Sonderregel;
-- dieselbe konservative Regel gilt für alle Legacy-Access-Grants, solange keine sichere Personenidentität existiert;
-- Edit nutzt aktuelle Version/`updated_at`, Delete ist ein idempotenter Tombstone ohne physischen Hard Delete;
-- gelöschte Kommentare geben im Produkt keinen Body mehr zurück und erscheinen sinngemäß als `Kommentar gelöscht`;
-- normale Reads von gelöschten oder nicht mehr vorhandenen Zielobjekten failen geschlossen;
-- `comment.created`, `comment.edited` und `comment.deleted` enthalten nur Ziel-/Actor-/Versionsmetadaten, niemals Kommentartext, Cookies, Secrets, Request-Bodies, GPS oder Snapshots;
-- Create-/Edit-/Delete-Replays erzeugen keine zweiten Domain Events;
-- der normale Produktpfad hängt am Launcher sowie an Area-, Street- und vorhandenen House-Kontext-Sheets;
-- bereits geladene Kommentare bleiben offline sichtbar, neue Writes sind online-only und werden nicht fälschlich als gespeichert bestätigt.
-
-### Activity Feed
-
-Der Activity-Slice ist jetzt als echter Campaign-scoped Read-Pfad umgesetzt:
-- Activity ist ausschließlich eine Projektion bereits persistierter `domain_events`, keine zweite Event- oder Activity-Tabelle;
-- der Worker unterstützt explizit `field_session.closed`, `field_session.expired`, `task.status.changed`, `comment.created`, `comment.edited`, `comment.deleted` und `automation.executed`;
-- die Antwort ist ein kleines allowlistetes DTO ohne `payload_json`, Actor-Referenzen, Kommentartext, Cookies, Tokens, Session-Hashes, QR-/Room-Credentials, IPs, GPS oder Snapshots;
-- Task-Status und aktuelle sichere Task-/Area-Labels werden typisiert projiziert; Session-Metriken kommen aus `field_sessions`; Comment-Events lesen höchstens sicheren Zielkontext und niemals den Body;
-- Admin und Viewer lesen Campaign-weit, Team Editor nur das canonical eigene Team, temporäre Mitglieder nur die eigene autorisierte Field Group/Field Session sowie eigene temporäre Comment-Events;
-- Campaign-Isolation, Teamfilter und Schema-Fehler werden serverseitig im Worker fail-closed behandelt;
-- neueste Events werden mit `occurred_at` plus Event-ID stabil sortiert und per begrenztem Cursor gelesen, Default 30, Maximum 50;
-- das normale Produkt öffnet Aktivität über ein kompaktes Launcher-Sheet mit Loading, Empty, Error/Retry, Offline-Zustand und `Mehr laden`;
-- bereits geladene Activity bleibt bei Offline-Wechsel sichtbar. Neue Reads benötigen Internet; es gibt keine falsche Offline-Erfolgsmeldung und keinen zweiten Queue-Mechanismus.
-
-### Deterministische Automations
-
-Der erste Automation-Slice ist als echter serverseitiger Runtime-Pfad umgesetzt und durch ADR-0019 begrenzt:
-- die einzige registrierte, versionierte Regel ist `complete-parent-street-when-all-houses-complete`;
-- ein erfolgreicher `house.set-status`-M5-Write mit resultierendem House-Status `completed` ist der einzige Trigger;
-- bei aktivierter Campaign-Regel wird nur eine exakt zugehörige, noch offene Parent-Straße abgeschlossen, wenn mindestens ein aktuelles House existiert und alle zugehörigen Houses erledigt sind;
-- `later`, `not-deliverable` und bereits erledigte Parent-Straßen werden nie überschrieben, und die Regel öffnet nichts wieder;
-- Campaign-/Area-/Team-Beziehungen werden serverseitig geprüft. Temporäre Field-Group-Mitglieder können nur über ihren normalen autorisierten House-Status-Write auslösen und erhalten keine Managementrechte;
-- Parent-Update, normales minimiertes `task.status.changed`, `automation.executed` und M5-Mutation-Ledger teilen dieselbe guarded D1-Batchgrenze;
-- automatische Events verwenden den Actor `system`, nur minimale Rule-/Effect-/Statusdaten und dieselbe Field Session wie der Trigger, falls sie eindeutig ist;
-- Replay derselben Mutation erzeugt weder ein zweites Parent-Update noch neue Events. Es gibt keine Execution-Tabelle, keine Scripts, keine Webhooks, kein Polling und keine AI-Automation;
-- Admins lesen/aktivieren/deaktivieren die feste Regel über den Worker-Endpunkt und das normale Launcher-Ziel `Automationen`. Viewer, Team Editor und temporäre Mitglieder dürfen die Konfiguration nicht verwalten;
-- die Automation-Konfiguration ist online-only. Offline wird eine bereits geladene Konfiguration sichtbar gehalten, neue Änderungen werden nicht als erfolgreich gemeldet.
-
-### Stats
-
-Der Stats-Slice ist jetzt als echter serverseitiger Read-Pfad im normalen Produkt umgesetzt:
-- `GET /api/campaigns/:campaignId/stats` aggregiert aktuelle Street-/House-Tasks,
-  Field Sessions und persistierte `task.status.changed` Events;
-- Street- und House-Fortschritt bleiben getrennt, jede Prozentzahl hat einen expliziten
-  Nenner. Collection-Sessions werden separat von Distribution dargestellt; Pickup-Fortschritt
-  wird ohne persistentes Pickup-Modell nicht erfunden;
-- Admin und Viewer lesen Campaign-weit mit optionalem Teamfilter. Team Editor bleibt im
-  canonical eigenen Team. Temporäre Mitglieder erhalten nur den eigenen Team-Arbeitsbereich,
-  die exakte eigene Field-Group-Session und deren Events, nicht die Campaign oder andere
-  Sessions desselben Teams;
-- der Worker liefert ein kleines allowlistetes DTO: keine Rohpayloads, Actor-Referenzen,
-  Session-Notizen, Credentials, Tokens, Hashes, IPs, GPS-Daten oder Geometrie-Snapshots;
-- aktuelle Session-Historie ist auf 20 Einträge begrenzt und verweist für die vollständige
-  cursor-paginierte Historie auf `Einsätze`. Die Statuszeitreihe ist auf 90 Tage und
-  aggregierte Zählwerte begrenzt;
-- das normale Launcher-Sheet `Stats` hat Loading, Empty, Error/Retry, Teamfilter für
-  berechtigte Mehr-Team-Rollen und Offline-Read-Verhalten. Bereits geladene Werte bleiben
-  offline sichtbar, neue Reads benötigen Internet;
-- es gibt keine neue Stats-/Rollup-Persistenz und keine zusätzliche Queue-Architektur.
-
-### Noch offen in FC2
-
-Noch nicht feature-complete:
-- House-Polygon-Highlight, sobald der normale FC4 House-Renderer vorhanden ist.
-
-## Team lifecycle
-
-Sicheres Team-Archivieren ist nicht als versteckte FC1-Nebenänderung umgesetzt.
-
-Grund:
-- das aktuelle Teammodell besitzt kein persistentes Archivstatusfeld;
-- Team-Editor-Grants hängen an aktueller Team-Existenz;
-- die Legacy-Snapshot-Kompatibilität beeinflusst aktuell mögliche Team-FKs und Delete-Semantik;
-- retained Field Sessions/Events müssen verständlich bleiben.
-
-Daher gibt es in FC1 weder neuen Team-Hard-Delete noch improvisiertes Archivieren.
-
-Team Archive/Restore/Permanent Delete wird als eigener Team-Lifecycle-/Admin-Slice unter Organization/Permissions umgesetzt, nachdem Statusfeld, Area/Task-Verhalten, Grants, aktive Field Groups und retained history explizit geklärt sind.
-
-## M6 Street und House persistence
-
-ADR-0013 bleibt akzeptiert.
-
-Prepared, aber nicht remote angewendet:
-- `0004_m6_task_source_provenance.sql` für Street source provenance;
-- `0005_m6_house_tasks.sql` für House Tasks.
-
-Vor 0004 bleiben normale manuelle Street-Writes möglich, Smart-Street-Provenance-Writes failen explizit mit `schema_migration_required`.
-
-Vor 0005 bleiben Street-Reads/Writes möglich, House-Writes failen explizit vor Revision Claim.
-
-House Rendering als normaler batched MapLibre-Layer bleibt FC4-Arbeit.
+Der bestehende Street-Renderer bleibt unverändert und darf nicht zu einer gemischten riskanten `vf-tasks`-Source umgebaut werden, solange dafür kein nachgewiesener Bedarf besteht.
 
 ## D1 rollout status
 
-Dokumentierter Remote-Stand bleibt nur 0001 bis 0003.
+Dokumentierter Remote-Stand bleibt nur Migration 0001 bis 0003.
 
-Prepared, aber nicht remote angewendet:
+Vorbereitet, aber nicht remote angewendet:
 - 0004: Smart Street provenance;
 - 0005: House Tasks;
 - 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
@@ -259,41 +82,26 @@ Prepared, aber nicht remote angewendet:
 - 0008: durable Comments und Comment-Tombstones;
 - 0009: deterministische Automation-Konfiguration.
 
-Kein Runtime- oder Dokumentationscommit wendet diese Migrationen automatisch an.
+Der House-Renderer-Slice benötigt keine neue Migration und darf keine vorbereitete Migration remote anwenden.
 
-## Security/release gates
+## Security and performance boundaries
 
 Weiterhin verbindlich:
-- Worker ist authoritative Authorization Boundary;
+- Worker bleibt authoritative Authorization Boundary;
 - IDs sind Selektoren, keine Credentials;
-- SQL ist prepared/parameterized;
-- untrusted Text bleibt inert;
-- Join-/Session-/Access-Secrets werden weder geloggt noch als Produktdaten exponiert;
-- keine IP-Persistenz aus Join Rate Limiting;
-- temporäre Membership erweitert keinen persistenten Role-Scope.
-
-Letzter vollständig verifizierter Runtime-/Doku-Checkpoint vor dem Handoff-Refresh:
-- Head `22f38664503c59f4af42c1f5d8373ed724ced546`;
-- CI #698 erfolgreich;
-- Tests, Typecheck, Dependency Audit und Production Build grün;
-- dieser Lauf enthält den Activity-Read-Slice, den deterministischen Automation-Slice und den aktualisierten Living Handoff mit Projection-Allowlist, serverseitiger Scope-Autorisierung, Cursor-Pagination, Privacy-Guards, M5-Idempotenz und echtem Launcher-UI-Pfad.
-
-Dokumentationscommits nach diesem Runtime-Checkpoint müssen auf ihrem eigenen exakten Head erneut grün werden, bevor PR #72 promotet wird.
-
-## Architecture blockers for later work
-
-Noch nicht autorisiert:
-- Organization username/password/TOTP runtime vor ADR-0015-Akzeptanz plus Threat-Model-Review;
-- configurable capability runtime vor ADR-0016-Akzeptanz;
-- durable Action/Templates/Cross-Action Analytics vor ADR-0018-Akzeptanz;
-- Team Archive/Delete ohne eigenen Lifecycle-Slice;
-- Service Worker/PWA/Background Sync;
-- kontinuierliche GPS-Historie.
-
-ADR-0014 und ADR-0017 sind akzeptiert und keine Blocker mehr für ihre aktuellen FC1-/FC2-Slices.
+- keine neue Permission- oder Identity-Runtime im Renderer-Slice;
+- keine Secrets, Tokens oder unnötigen Domain-Daten in Renderer-Properties;
+- persistierte House-Geometrie wird von MapLibre gerendert, nicht pro House durch React, SVG oder Canvas;
+- feste kleine Source-/Layer-Anzahl statt Layer oder DOM-Nodes pro House;
+- `GeoJSONSource.setData()` nur bei echten Domain-Datenänderungen, nicht bei Pan, Zoom oder Rotate;
+- Dense-House-Daten müssen auf realistischen mobilen Geräten geprüft werden.
 
 ## Immediate next
 
-1. Den Stats-Slice auf dem exakten finalen PR-Head durch vollständige CI und Doku-Handoff verifizieren.
-2. Danach House-Polygon-Highlight erst mit dem normalen FC4 House-Renderer ergänzen.
-3. 0004 bis 0009 weiterhin nicht remote anwenden, solange kein expliziter Rollout beauftragt ist.
+1. Plan 018 gegen den exakten aktuellen Branch- und PR-Stand verifizieren.
+2. House-Polygon-Rendering als separate `vf-houses`-Source im normalen MapLibre-Renderer implementieren.
+3. Bestehenden House-Sheet-Pfad über Karten-Hit-Test anbinden.
+4. Danach den vorhandenen Field-Session-House-Highlight-Pfad auf echte House-IDs erweitern.
+5. Relevante Security-/Renderer-Tests, vollständige Testsuite, TypeScript, Dependency Audit und Production Build ausführen.
+6. Dokumentation und Living Handoff auf dem finalen Head aktualisieren.
+7. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.
