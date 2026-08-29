@@ -20,12 +20,30 @@ import {
   type CampaignSnapshot,
   type DistributionTask,
   type HouseTask,
+  type LineStringGeometry,
   type LngLat,
   type MapCameraView,
   type TaskStatus,
   type Team,
 } from "./domain/campaign";
 import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
+import type { OfflineMapPackage } from "./domain/offlineMap";
+import {
+  smartCandidatesForArea,
+  type SmartRoadCandidate,
+} from "./domain/smartCandidates";
+import {
+  smartRoadPointAnchorCandidates,
+  type SmartRoadPointAnchor,
+} from "./domain/smartRoadPointAnchor";
+import {
+  selectSmartRoadRange,
+  selectSmartRoadRangeViaWaypoints,
+  smartRoadRouteOptions,
+  smartRoadSelectionLabel,
+  type SmartRoadRouteOption,
+} from "./domain/smartRoadSelection";
+import { createSmartStreetTaskSnapshot } from "./domain/smartStreetTask";
 import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } from "./i18n";
 import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
@@ -33,8 +51,9 @@ import type { PlatformAppCommand, PlatformAppContext } from "./platform/platform
 import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
 import { SettingsSheet } from "./settings/SettingsSheet";
 
-type MapMode = "browse" | "draw" | "edit" | "street-draw";
+type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street";
 type Sheet = "teams" | "area" | "task" | "house" | "campaign-comments" | "settings" | null;
+type SmartStreetAnchorKind = "start" | "end" | "waypoint";
 type UndoStatusChange = {
   taskId: string;
   label: string;
@@ -77,6 +96,11 @@ function nextStreetName(tasks: DistributionTask[], areaId: string, language: Lan
   return `${t(language, "street")} ${count + 1}`;
 }
 
+function smartRoadLabel(road: SmartRoadCandidate | undefined, language: Language) {
+  if (!road) return t(language, "smartStreetSection");
+  return road.name?.trim() || road.ref?.trim() || `${t(language, "smartStreetSection")} · ${road.highway}`;
+}
+
 function syncMessage(language: Language, code: SyncMessageCode, refreshState: RefreshState) {
   if (refreshState === "available") return t(language, "browseUpdateDeferred");
   if (code === "access_required") return t(language, "accessRequired");
@@ -112,6 +136,16 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const [editingVertices, setEditingVertices] = useState<LngLat[]>([]);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
   const [streetDraftVertices, setStreetDraftVertices] = useState<LngLat[]>([]);
+  const [offlineMapPackage, setOfflineMapPackage] = useState<OfflineMapPackage | null>(null);
+  const [smartStreetStartAnchor, setSmartStreetStartAnchor] = useState<SmartRoadPointAnchor | null>(null);
+  const [smartStreetEndAnchor, setSmartStreetEndAnchor] = useState<SmartRoadPointAnchor | null>(null);
+  const [smartStreetWaypointAnchors, setSmartStreetWaypointAnchors] = useState<SmartRoadPointAnchor[]>([]);
+  const [smartStreetSelectedSourceIds, setSmartStreetSelectedSourceIds] = useState<string[]>([]);
+  const [smartStreetAnchorKind, setSmartStreetAnchorKind] = useState<SmartStreetAnchorKind | null>(null);
+  const [smartStreetPendingAnchors, setSmartStreetPendingAnchors] = useState<SmartRoadPointAnchor[]>([]);
+  const [smartStreetRouteOptions, setSmartStreetRouteOptions] = useState<SmartRoadRouteOption[]>([]);
+  const [smartStreetMessage, setSmartStreetMessage] = useState<string | null>(null);
+  const smartStreetSaveInFlight = useRef(false);
   const [undoStatusChange, setUndoStatusChange] = useState<UndoStatusChange | null>(null);
 
   useEffect(
@@ -125,6 +159,10 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
       }),
     [],
   );
+
+  useEffect(() => {
+    setOfflineMapPackage(null);
+  }, [snapshot.campaign.id]);
 
   useEffect(() => {
     setStorageWarning(saveCampaignSnapshot(snapshot));
@@ -205,6 +243,11 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const selectedAreaHouseTasks = selectedArea
     ? (snapshot.houseTasks ?? []).filter((task) => task.areaId === selectedArea.id)
     : [];
+  const smartCandidates = useMemo(() => {
+    if (!selectedArea || !offlineMapPackage) return null;
+    return smartCandidatesForArea(selectedArea, offlineMapPackage);
+  }, [offlineMapPackage, selectedArea]);
+  const smartRoads = smartCandidates?.roads ?? [];
   const canEditSelectedArea = canEditArea(selectedArea);
   const canEditSelectedTask = canEditArea(selectedTaskArea);
   const canChangeSelectedTaskStatus = canChangeTaskStatusInArea(selectedTaskArea);
@@ -276,6 +319,45 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     () => validateLineStringVertices(streetDraftVertices),
     [streetDraftVertices],
   );
+  const smartStreetLabel = useMemo(
+    () =>
+      smartRoadSelectionLabel(smartRoads, smartStreetSelectedSourceIds) ??
+      (selectedArea ? nextStreetName(snapshot.tasks, selectedArea.id, language) : t(language, "street")),
+    [language, selectedArea, smartRoads, smartStreetSelectedSourceIds, snapshot.tasks],
+  );
+  const smartStreetPreviewGeometry = useMemo<LineStringGeometry | null>(() => {
+    if (
+      !selectedArea ||
+      !smartStreetStartAnchor ||
+      !smartStreetEndAnchor ||
+      smartStreetSelectedSourceIds.length === 0
+    ) {
+      return null;
+    }
+    try {
+      return createSmartStreetTaskSnapshot({
+        campaignId: snapshot.campaign.id,
+        areaId: selectedArea.id,
+        label: smartStreetLabel,
+        roads: smartRoads,
+        sourceIds: smartStreetSelectedSourceIds,
+        startAnchor: smartStreetStartAnchor,
+        endAnchor: smartStreetEndAnchor,
+        taskId: "task_smart-preview",
+        timestamp: "2026-01-01T00:00:00.000Z",
+      }).geometry;
+    } catch {
+      return null;
+    }
+  }, [
+    selectedArea,
+    smartRoads,
+    smartStreetEndAnchor,
+    smartStreetLabel,
+    smartStreetSelectedSourceIds,
+    smartStreetStartAnchor,
+    snapshot.campaign.id,
+  ]);
 
   const commitSnapshot = (update: (current: CampaignSnapshot) => CampaignSnapshot) => {
     if (!access || access.role === "viewer") return;
@@ -553,8 +635,210 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     setSheet("area");
   };
 
+  const resetSmartStreetSelection = () => {
+    setSmartStreetStartAnchor(null);
+    setSmartStreetEndAnchor(null);
+    setSmartStreetWaypointAnchors([]);
+    setSmartStreetSelectedSourceIds([]);
+    setSmartStreetAnchorKind(null);
+    setSmartStreetPendingAnchors([]);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetMessage(null);
+    smartStreetSaveInFlight.current = false;
+  };
+
+  const startSmartStreetSelection = () => {
+    if (!selectedArea || !canEditSelectedArea || smartRoads.length === 0) return;
+    resetSmartStreetSelection();
+    setSelectedTaskId(null);
+    setSelectedHouseTaskId(null);
+    setSmartStreetAnchorKind("start");
+    setSmartStreetMessage(t(language, "smartStreetStartHint"));
+    setMode("smart-street");
+    setSheet(null);
+  };
+
+  const cancelSmartStreetSelection = () => {
+    resetSmartStreetSelection();
+    setMode("browse");
+    if (selectedAreaId) setSheet("area");
+  };
+
+  const acceptSmartStreetAnchor = (anchor: SmartRoadPointAnchor) => {
+    setSmartStreetPendingAnchors([]);
+    if (smartStreetAnchorKind === "start") {
+      setSmartStreetStartAnchor(anchor);
+      setSmartStreetEndAnchor(null);
+      setSmartStreetWaypointAnchors([]);
+      setSmartStreetSelectedSourceIds([]);
+      setSmartStreetRouteOptions([]);
+      setSmartStreetAnchorKind("end");
+      setSmartStreetMessage(t(language, "smartStreetEndHint"));
+      return;
+    }
+
+    if (smartStreetAnchorKind === "end" && smartStreetStartAnchor) {
+      const selection = selectSmartRoadRange(
+        smartRoads,
+        smartStreetStartAnchor.sourceId,
+        anchor.sourceId,
+      );
+      if (selection.state === "selected") {
+        setSmartStreetEndAnchor(anchor);
+        setSmartStreetSelectedSourceIds(selection.sourceIds);
+        setSmartStreetRouteOptions([]);
+        setSmartStreetAnchorKind(null);
+        setSmartStreetMessage(t(language, "smartStreetPreviewReady"));
+        return;
+      }
+      if (selection.state === "ambiguous") {
+        setSmartStreetEndAnchor(anchor);
+        setSmartStreetSelectedSourceIds([]);
+        setSmartStreetRouteOptions(
+          smartRoadRouteOptions(
+            smartRoads,
+            smartStreetStartAnchor.sourceId,
+            anchor.sourceId,
+            3,
+          ),
+        );
+        setSmartStreetAnchorKind(null);
+        setSmartStreetMessage(t(language, "smartStreetChooseRoute"));
+        return;
+      }
+      setSmartStreetEndAnchor(null);
+      setSmartStreetSelectedSourceIds([]);
+      setSmartStreetRouteOptions([]);
+      setSmartStreetAnchorKind("end");
+      setSmartStreetMessage(t(language, "smartStreetDisconnected"));
+      return;
+    }
+
+    if (
+      smartStreetAnchorKind === "waypoint" &&
+      smartStreetStartAnchor &&
+      smartStreetEndAnchor
+    ) {
+      const waypointAnchors = [...smartStreetWaypointAnchors, anchor];
+      const selection = selectSmartRoadRangeViaWaypoints(
+        smartRoads,
+        [
+          smartStreetStartAnchor.sourceId,
+          ...waypointAnchors.map((candidate) => candidate.sourceId),
+          smartStreetEndAnchor.sourceId,
+        ],
+      );
+      if (selection.state === "selected") {
+        setSmartStreetWaypointAnchors(waypointAnchors);
+        setSmartStreetSelectedSourceIds(selection.sourceIds);
+        setSmartStreetAnchorKind(null);
+        setSmartStreetMessage(t(language, "smartStreetPreviewReady"));
+        return;
+      }
+      setSmartStreetMessage(
+        selection.state === "ambiguous"
+          ? t(language, "smartStreetWaypointAmbiguous")
+          : t(language, "smartStreetDisconnected"),
+      );
+    }
+  };
+
+  const handleSmartStreetPoint = (point: LngLat, sourceIds: string[]) => {
+    if (!smartStreetAnchorKind) {
+      setSmartStreetMessage(t(language, "smartStreetUseActions"));
+      return;
+    }
+    const visibleRoads = smartRoads.filter((road) => sourceIds.includes(road.sourceId));
+    const anchors = smartRoadPointAnchorCandidates(visibleRoads, point, 25, 4);
+    if (anchors.length === 0) {
+      setSmartStreetPendingAnchors([]);
+      setSmartStreetMessage(t(language, "smartStreetTapCandidate"));
+      return;
+    }
+    if (anchors.length === 1) {
+      acceptSmartStreetAnchor(anchors[0]);
+      return;
+    }
+    setSmartStreetPendingAnchors(anchors);
+    setSmartStreetMessage(t(language, "smartStreetChooseCandidate"));
+  };
+
+  const chooseSmartStreetRoute = (option: SmartRoadRouteOption) => {
+    setSmartStreetSelectedSourceIds(option.sourceIds);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetMessage(t(language, "smartStreetPreviewReady"));
+  };
+
+  const resetSmartStreetStart = () => {
+    setSmartStreetStartAnchor(null);
+    setSmartStreetEndAnchor(null);
+    setSmartStreetWaypointAnchors([]);
+    setSmartStreetSelectedSourceIds([]);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetPendingAnchors([]);
+    setSmartStreetAnchorKind("start");
+    setSmartStreetMessage(t(language, "smartStreetStartHint"));
+  };
+
+  const resetSmartStreetEnd = () => {
+    if (!smartStreetStartAnchor) return;
+    setSmartStreetEndAnchor(null);
+    setSmartStreetWaypointAnchors([]);
+    setSmartStreetSelectedSourceIds([]);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetPendingAnchors([]);
+    setSmartStreetAnchorKind("end");
+    setSmartStreetMessage(t(language, "smartStreetEndHint"));
+  };
+
+  const addSmartStreetWaypoint = () => {
+    if (!smartStreetStartAnchor || !smartStreetEndAnchor) return;
+    setSmartStreetSelectedSourceIds([]);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetPendingAnchors([]);
+    setSmartStreetAnchorKind("waypoint");
+    setSmartStreetMessage(t(language, "smartStreetWaypointHint"));
+  };
+
+  const saveSmartStreetTask = () => {
+    if (
+      smartStreetSaveInFlight.current ||
+      !selectedArea ||
+      !canEditSelectedArea ||
+      !smartStreetStartAnchor ||
+      !smartStreetEndAnchor ||
+      smartStreetSelectedSourceIds.length === 0
+    ) {
+      return;
+    }
+    smartStreetSaveInFlight.current = true;
+    try {
+      const now = new Date().toISOString();
+      const task = createSmartStreetTaskSnapshot({
+        campaignId: snapshot.campaign.id,
+        areaId: selectedArea.id,
+        label: smartStreetLabel,
+        roads: smartRoads,
+        sourceIds: smartStreetSelectedSourceIds,
+        startAnchor: smartStreetStartAnchor,
+        endAnchor: smartStreetEndAnchor,
+        taskId: createId("task"),
+        timestamp: now,
+      });
+      commitSnapshot((current) => ({ ...current, tasks: [...current.tasks, task] }));
+      resetSmartStreetSelection();
+      setSelectedTaskId(task.id);
+      setMode("browse");
+      setSheet("task");
+    } catch {
+      smartStreetSaveInFlight.current = false;
+      setSmartStreetMessage(t(language, "smartStreetSaveError"));
+    }
+  };
+
   const startStreetDrawing = () => {
     if (!selectedArea || !canEditSelectedArea) return;
+    resetSmartStreetSelection();
     setStreetDraftVertices([]);
     setSelectedTaskId(null);
     setMode("street-draw");
@@ -751,6 +1035,15 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         }
         onEditVertexMove={moveEditVertex}
         onStreetDrawPoint={(point) => setStreetDraftVertices((current) => [...current, point])}
+        smartRoads={smartRoads}
+        smartSelectedSourceIds={smartStreetSelectedSourceIds}
+        smartStartAnchor={smartStreetStartAnchor}
+        smartEndAnchor={smartStreetEndAnchor}
+        smartWaypointAnchors={smartStreetWaypointAnchors}
+        smartPreviewGeometry={smartStreetPreviewGeometry}
+        smartStreetColor={streetColor}
+        onSmartStreetPoint={handleSmartStreetPoint}
+        onOfflineMapPackageChange={setOfflineMapPackage}
       />
 
       {displayedStorageWarning || message ? (
@@ -851,6 +1144,85 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
             <button className="button secondary" type="button" onClick={cancelStreetDrawing}>{t(language, "cancel")}</button>
             <button className="button secondary" type="button" disabled={streetDraftVertices.length === 0} onClick={() => setStreetDraftVertices((current) => current.slice(0, -1))}>{t(language, "undo")}</button>
             <button className="button primary" type="button" disabled={!streetValidation.valid} onClick={saveStreetTask}>{t(language, "saveStreet")}</button>
+          </div>
+        </section>
+      ) : null}
+
+      {mode === "smart-street" ? (
+        <section className="mode-sheet smart-street-sheet" aria-label={t(language, "addSmartStreet")}>
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Smart Street</span>
+              <strong>{selectedArea?.name || t(language, "area")}</strong>
+            </div>
+            <span className="team-color-preview" style={{ backgroundColor: streetColor }} aria-hidden="true" />
+          </div>
+
+          <div className="smart-street-message" role="status">
+            {smartStreetMessage || t(language, "smartStreetStartHint")}
+          </div>
+          <div className="smart-street-meta">
+            <span>{t(language, "smartStreetCandidates", { count: smartRoads.length })}</span>
+            {smartStreetSelectedSourceIds.length > 0 ? (
+              <span>{t(language, "smartStreetSelected", { count: smartStreetSelectedSourceIds.length })}</span>
+            ) : null}
+          </div>
+
+          {smartStreetPendingAnchors.length > 0 ? (
+            <div className="smart-street-choice-list">
+              <strong>{t(language, "smartStreetChooseCandidate")}</strong>
+              {smartStreetPendingAnchors.map((anchor) => (
+                <button
+                  className="smart-street-choice"
+                  type="button"
+                  key={`${anchor.sourceId}:${anchor.segmentIndex}:${anchor.segmentT}`}
+                  onClick={() => acceptSmartStreetAnchor(anchor)}
+                >
+                  <span>{smartRoadLabel(smartRoads.find((road) => road.sourceId === anchor.sourceId), language)}</span>
+                  <small>{Math.round(anchor.distanceMeters)} m</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {smartStreetRouteOptions.length > 0 ? (
+            <div className="smart-street-choice-list">
+              <strong>{t(language, "smartStreetChooseRoute")}</strong>
+              {smartStreetRouteOptions.map((option, index) => (
+                <button
+                  className="smart-street-choice"
+                  type="button"
+                  key={option.sourceIds.join("/")}
+                  onClick={() => chooseSmartStreetRoute(option)}
+                >
+                  <span>
+                    {t(language, "smartStreetRoute", { index: index + 1 })} · {smartRoadSelectionLabel(smartRoads, option.sourceIds)}
+                  </span>
+                  <small>{option.sourceIds.length}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="smart-street-actions">
+            <button className="button secondary" type="button" onClick={cancelSmartStreetSelection}>{t(language, "cancel")}</button>
+            {smartStreetStartAnchor ? (
+              <button className="button secondary" type="button" onClick={resetSmartStreetStart}>{t(language, "smartStreetResetStart")}</button>
+            ) : null}
+            {smartStreetStartAnchor && smartStreetEndAnchor ? (
+              <>
+                <button className="button secondary" type="button" onClick={resetSmartStreetEnd}>{t(language, "smartStreetResetEnd")}</button>
+                <button className="button secondary" type="button" onClick={addSmartStreetWaypoint}>{t(language, "smartStreetAddWaypoint")}</button>
+              </>
+            ) : null}
+            <button
+              className="button primary"
+              type="button"
+              disabled={!smartStreetPreviewGeometry || smartStreetRouteOptions.length > 0}
+              onClick={saveSmartStreetTask}
+            >
+              {t(language, "saveStreet")}
+            </button>
           </div>
         </section>
       ) : null}
@@ -1018,7 +1390,20 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
 
           {canEditSelectedArea ? (
             <>
-              <button className="button primary full-width" type="button" onClick={startStreetDrawing}>{t(language, "addStreet")}</button>
+              <button
+                className="button primary full-width"
+                type="button"
+                onClick={startSmartStreetSelection}
+                disabled={smartRoads.length === 0}
+              >
+                {t(language, "addSmartStreet")}
+              </button>
+              <button className="button secondary full-width" type="button" onClick={startStreetDrawing}>{t(language, "smartStreetManualFallback")}</button>
+              {smartRoads.length === 0 ? (
+                <p className="smart-street-area-note">
+                  {offlineMapPackage ? t(language, "smartStreetNoCandidates") : t(language, "smartStreetNoPackage")}
+                </p>
+              ) : null}
               <div className="area-actions secondary-row">
                 <button className="button secondary" type="button" onClick={startEditing}>{t(language, "editShape")}</button>
                 <button className="button danger" type="button" onClick={deleteSelectedArea}>{t(language, "deleteArea")}</button>

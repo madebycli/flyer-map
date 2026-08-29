@@ -12,29 +12,31 @@ Lies zuerst vollständig:
 2. `docs/status/CURRENT.md`
 3. `docs/context-map.yaml`
 
-Nutze danach den Context-Graph. Für den aktuellen nächsten Slice folge `prompt-latest-feature-complete` zu `prompt-house-polygon-renderer` und `plan-house-polygon-renderer`, anschließend zu Map, UX, Collaboration, Quality und ADR-0013. Lies für die Renderer-Grenze zusätzlich ADR-0010.
+Nutze danach den Context-Graph. Für den aktuellen Stand folge `prompt-latest-feature-complete` zu `plan-smart-street-runtime` und anschließend zu Offline Map, Map, UX, Offline Sync, Collaboration, Quality, ADR-0012 und ADR-0013. Für den abgeschlossenen House-Renderer-Checkpoint kann zusätzlich die historische Plan-018-Dokumentation geladen werden.
 
-Prüfe vor jeder Änderung den lokalen Working Tree. Zwei Kontextdateien waren im vorherigen Workspace lokal uncommitted und können nach dem Remote-Doku-Commit noch als lokale Änderungen vorhanden sein. Nichts blind resetten oder verwerfen. Vergleiche lokale Varianten zuerst mit dem aktuellen Remote-Branch.
+Prüfe vor jeder Änderung den lokalen Working Tree und vergleiche ihn mit dem aktuellen Remote-Branch. Nichts blind resetten, verwerfen oder überschreiben.
 
 Verifiziere danach Branch `plan-feature-complete-platform`, PR #72, Base/Head/Draft/Mergeability, exakten aktuellen Head und CI auf genau diesem Head gegen GitHub.
 
-Der House-Polygon-Renderer-Slice ist auf dem verifizierten Runtime-Head `a6753b572e095a4f48f9caabdf50cf4b5c89a7ed` umgesetzt. Prüfe den vorhandenen Runtime-Code und die verbleibende manuelle Android-/iPhone-Browserabnahme, bevor du weitere Änderungen beginnst. Wiederhole den Renderer-Slice nicht ohne konkreten Repository-Befund.
+Plan 018, der House-Polygon-Renderer, ist im normalen MapLibre-Produktweg umgesetzt und nach `docs/plans/completed/018-house-polygon-renderer.md` verschoben. Prüfe den vorhandenen Runtime-Code und die verbleibende manuelle Android-/iPhone-Browserabnahme, bevor du weitere Änderungen beginnst. Wiederhole den Renderer-Slice nicht ohne konkreten Repository-Befund.
+
+Plan 019, `docs/plans/completed/019-smart-street-runtime.md`, integriert die vorbereiteten echten OSM-Kandidaten in den normalen Area-Flow. Prüfe vor einer Fortsetzung, ob der nächste Engpass tatsächlich Smart House Candidate Selection ist.
 
 Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.
 ```
 
-## Verifizierter Runtime-Checkpoint
+## Verifizierter Ausgangs-Checkpoint vor Plan 019
 
 - Branch: `plan-feature-complete-platform`;
 - PR #72: `FC0-FC2: Platform, Live Field Groups and Field Sessions`;
 - Base: `ui-app-launcher-sheet`;
 - Base-SHA: `48843793184650bd96039f0e3b073f60aebb068a`;
 - Head-Branch: `plan-feature-complete-platform`;
-- letzter verifizierter Runtime-Head: `a6753b572e095a4f48f9caabdf50cf4b5c89a7ed`;
-- CI #703 auf genau diesem Head: erfolgreich mit Tests, TypeScript, Dependency Audit und Production Build;
+- letzter vor Plan 019 verifizierter Runtime-Head: `9477e1d15aada83db145cd9dd27b10a152cd13f7`;
+- CI #704 auf genau diesem Head: erfolgreich mit Tests, TypeScript, Dependency Audit und Production Build;
 - PR #72 war offen, Draft und mergeable.
 
-Ein späterer Dokumentationscommit kann den Branch-Head weiter verschieben. Nach jedem Commit muss GitHub erneut geprüft werden. Ein älterer grüner Runtime-Head ist nur für den Code-Nachweis maßgeblich, nicht automatisch für den finalen Branch-Head.
+Plan 019 und der Launcher-Cleanup verschieben den Branch-Head. Nach jedem Commit müssen exakter GitHub-Head, PR #72, Draft-/Mergeability-Status und CI auf genau diesem Head erneut geprüft werden. Ein älterer grüner Runtime-Head ist nicht automatisch ein Nachweis für den finalen Branch-Head.
 
 ## Aktueller Feature-Stand
 
@@ -48,6 +50,17 @@ Auf PR #72 umgesetzt:
 - deterministische feste Automation `complete-parent-street-when-all-houses-complete` gemäß ADR-0019;
 - serverseitige Stats-Projektion und normales Launcher-Stats-Modul.
 
+Der redundante Launcher-Eintrag „Karte“ ist entfernt. X und Tap außerhalb des Sheets schließen das Menü weiterhin.
+
+Der normale FC4-Smart-Street-Weg ist umgesetzt:
+- ein berechtigter Nutzer startet ihn aus dem Area Sheet;
+- `smartCandidatesForArea()` verwendet nur das vorhandene validierte Offline-OSM-Paket;
+- MapLibre rendert echte Kandidaten, Auswahl, Vorschau und Start/Ende/Zwischenpunkte über feste Sources/Layer;
+- Snap-, Mehrdeutigkeits-, Routen- und Waypoint-Logik bleibt in der Domain;
+- die Bestätigung erzeugt eine App-eigene `task_<uuid>`-ID und speichert OSM-Ways nur als Provenance über den M5-Pfad;
+- manuelles Zeichnen bleibt als Fallback erhalten;
+- Preview-/Mock-Daten aus `M6SelectionPreview.tsx` sind nicht im Produktionsgraphen.
+
 House-Domain, House-Persistenz und die eigene persistierte House-Polygon-Source sind vorhanden. Der normale MapLibre-Renderer nutzt `vf-houses` mit festen Layern, House-Auswahl über den bestehenden App-/Sheet-Pfad und echte House-IDs im Session-Highlight.
 
 ## Aktueller Plan
@@ -55,10 +68,14 @@ House-Domain, House-Persistenz und die eigene persistierte House-Polygon-Source 
 Übergeordnete Delivery-Linie:
 - `docs/plans/active/017-feature-complete-platform.md`
 
-Aktueller konkreter Slice:
-- `docs/plans/active/018-house-polygon-renderer.md`
+Abgeschlossene konkrete Slices:
+- `docs/plans/completed/018-house-polygon-renderer.md`
+- `docs/plans/completed/019-smart-street-runtime.md`
 
-Planner-/Codex-Handoff:
+Nächster konkreter FC4-Slice:
+- Smart House Candidate Selection im normalen Area-/Street-Kontext.
+
+Historischer Planungs-Handoff:
 - `docs/prompts/CODEX_PLAN_HOUSE_POLYGON_RENDERER.md`
 
 ## Renderer-Richtung
@@ -75,7 +92,14 @@ Plan 018 ist im Runtime-Slice umgesetzt:
 - House Session Highlight mit echten `houseTaskIds`, inklusive House-only Sessions;
 - verbleibend sind manuelle Mobile-/Dense-House-Abnahme und die langfristige `minzoom`-Entscheidung.
 
-Wenn aktueller Code oder accepted ADRs diesem Plan widersprechen, Repository und accepted ADRs gewinnen. Dann Plan 018 aktualisieren, nicht die Realität passend machen.
+Plan 019 ist im Runtime-Slice umgesetzt:
+- vorbereitete Offline-OSM-Straßen werden im normalen Area-Flow zu echten Kandidaten;
+- MapLibre übernimmt den sichtbaren Auswahl- und Vorschaupfad;
+- Start/Ende, explizite Ambiguitätsauflösung, alternative Routen und Zwischenpunkte werden unterstützt;
+- Persistenz nutzt `DistributionTask`, App-ID, OSM-Provenance und den bestehenden M5-Mutationspfad;
+- Migration 0004 bleibt vorbereitet und nicht remote angewendet.
+
+Wenn aktueller Code oder accepted ADRs diesem Handoff widersprechen, gewinnen Repository und accepted ADRs. Dann den betroffenen aktuellen Plan aktualisieren, nicht die Realität passend machen.
 
 ## D1 / Rollout
 
@@ -89,7 +113,9 @@ Vorbereitet, aber nicht remote angewendet:
 - 0008 Comments;
 - 0009 Automation-Konfiguration.
 
-Der Renderer-Slice benötigt keine neue Migration.
+Der House-Renderer benötigt keine neue Migration. Smart-Street-Source-Writes benötigen
+die vorbereitete 0004-Spalte, dürfen diese aber in diesem Arbeitsstand nicht remote
+anwenden.
 
 Keine Migration remote anwenden und keinen manuellen `wrangler deploy` ausführen.
 
@@ -109,16 +135,17 @@ Die bestehende Cloudflare Git-Integration kann nach Branch-Commits automatisch P
 - House-`minzoom` muss anhand eines Dense-Mobile-Tests entschieden werden.
 - House-Status-Stile müssen neben Farbe einen zweiten visuellen Kanal besitzen.
 - Spätere House-Mode-Hit-Test-Priorität ist nicht Teil des Renderer-Cores.
+- Smart House Candidate Selection im normalen Produktweg fehlt noch.
 - Comment- und Automation-Writes bleiben weiterhin online-only, solange keine sichere Wiederverwendung des vorhandenen M5-Pfads ohne zweite Sync-Architektur umgesetzt ist.
 - Organization-/Identity-/Capability-Runtime bleibt durch die jeweiligen vorgeschlagenen ADRs blockiert.
 
 ## Verbleibende Quality Gates
 
-- relevante Renderer-/House-/Session-/Security-Regressionstests: CI #703 grün;
+- relevante Renderer-/House-/Session-/Security-Regressionstests und Smart-Street-Runtime-Guards: lokal seriell 450/450 grün;
 - Dense-House-Conversion bis 20.000 Features: lokal grün;
 - mobile Hit-Test-Prüfung auf Android Chromium und iPhone Safari: noch offen;
-- TypeScript, Dependency Audit und Production Build: CI #703 grün;
-- finaler GitHub-CI-Lauf auf exakt dem finalen Dokumentations-Head: nach dem nächsten Commit erneut prüfen.
+- TypeScript, Dependency Audit, Production Build und finaler `check`-Lauf: nach dem nächsten Commit auf exakt dem GitHub-Head prüfen;
+- reale Android-/iPhone- und Touch-Dichteabnahme: weiterhin offen.
 
 ## Nicht tun
 
@@ -133,13 +160,16 @@ Die bestehende Cloudflare Git-Integration kann nach Branch-Commits automatisch P
 - keine GPS-Historie;
 - keine allgemeine Rules Engine oder AI-Automation;
 - keine House-Renderer-Struktur mit einem Layer oder DOM-Node pro House.
+- keine Preview-/Mock-Straßen im normalen Produktgraphen;
+- keine Remote-Migration für 0004 oder spätere Migrationen.
 
 ## Verpflichtung für den nächsten Handoff
 
-Nach einer späteren Runtime-Umsetzung diese Datei erneut aktualisieren mit:
+Nach einem weiteren Runtime-Slice diese Datei erneut aktualisieren mit:
 - exaktem Branch und letztem Runtime-Head;
 - PR #72 Base/Head/Draft/Mergeability;
 - finalem CI-Lauf auf genau diesem Head;
 - House-Renderer- und Session-House-Highlight-Status;
+- Smart-Street- und Smart-House-Status im normalen Produktweg;
 - aktuellem Migration-/Remote-D1-Status;
 - offenen Risiken und nächstem konkreten Slice.

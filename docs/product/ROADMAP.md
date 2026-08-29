@@ -2,7 +2,7 @@
 id: product-roadmap
 type: product
 status: accepted
-last_updated: 2026-08-28
+last_updated: 2026-08-29
 related: [product, product-mvp, product-ux, architecture-organizations, architecture-collaboration, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion, plan-017-feature-complete-platform]
 source_of_truth_for: [product-roadmap, planned-capabilities, milestone-order]
 ---
@@ -40,7 +40,7 @@ A visible Launcher module is not considered delivered merely because local UI, f
 
 Internal `?workbench=` routes may remain useful for development, but they are not normal navigation and do not count as a completed product milestone.
 
-The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, the bounded Activity projection, the first deterministic, explicitly authorized and idempotent Automation and the first real Stats projection on Draft PR #72. Stats derives bounded progress/session/event aggregates with explicit Street-/House denominators and no duplicate rollup persistence. The remaining work is the House-rendering slice. Security-sensitive runtime remains gated by explicit ADR acceptance.
+The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, the bounded Activity projection, the first deterministic, explicitly authorized and idempotent Automation and the first real Stats projection on Draft PR #72. Stats derives bounded progress/session/event aggregates with explicit Street-/House denominators and no duplicate rollup persistence. The House-renderer slice and the first normal-product Smart-Street selection slice are implemented; remaining FC4 work includes normal-product Smart-House selection plus real-device and dense-mobile acceptance. Security-sensitive runtime remains gated by explicit ADR acceptance.
 
 ## Domain direction
 

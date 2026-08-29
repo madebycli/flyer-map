@@ -5,6 +5,7 @@ import { buildPlatformLauncherItems, type PlatformAppContext } from "../src/plat
 
 const shellSource = readFileSync(new URL("../src/platform/PlatformShell.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+const contractSource = readFileSync(new URL("../src/platform/platformContract.ts", import.meta.url), "utf8");
 const shellCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
 
 function context(overrides: Partial<PlatformAppContext> = {}): PlatformAppContext {
@@ -50,7 +51,7 @@ test("PlatformShell uses typed real Team and Field Session surfaces instead of W
 test("launcher gives authenticated viewers Team Hub and real Einsätze but hides editing destinations", () => {
   assert.deepEqual(
     buildPlatformLauncherItems(context()).map((item) => item.id),
-    ["map", "team", "sessions", "activity", "stats", "comments", "settings"],
+    ["team", "sessions", "activity", "stats", "comments", "settings"],
   );
   assert.equal(buildPlatformLauncherItems(context()).find((item) => item.id === "team")?.opensTeamHub, true);
   assert.equal(
@@ -60,10 +61,15 @@ test("launcher gives authenticated viewers Team Hub and real Einsätze but hides
   assert.doesNotMatch(shellSource, /Foundation|Security-Gate|menuLabel: "Stats"|menuLabel: "Feedback"/);
 });
 
+test("launcher has no redundant map tile or map launcher id", () => {
+  assert.doesNotMatch(contractSource, /id: "map"/u);
+  assert.doesNotMatch(contractSource, /id: "map"\s*\|/u);
+});
+
 test("Einsätze is hidden without access while Team Hub remains available for joining", () => {
   assert.deepEqual(
     buildPlatformLauncherItems(context({ accessRole: null })).map((item) => item.id),
-    ["map", "team", "settings"],
+    ["team", "settings"],
   );
 });
 
@@ -72,21 +78,21 @@ test("launcher registry exposes history to scoped roles and editing only when ca
     buildPlatformLauncherItems(
       context({ accessRole: "team-editor", accessTeamId: "team_one", canCreateArea: true }),
     ).map((item) => item.id),
-    ["map", "team", "sessions", "activity", "stats", "comments", "settings", "area-create"],
+    ["team", "sessions", "activity", "stats", "comments", "settings", "area-create"],
   );
 
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.id),
-    ["map", "team", "sessions", "activity", "stats", "automations", "comments", "settings", "area-create"],
+    ["team", "sessions", "activity", "stats", "automations", "comments", "settings", "area-create"],
   );
 
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "field-group-member", accessTeamId: "team_one" }),
     ).map((item) => item.id),
-    ["map", "team", "sessions", "activity", "stats", "comments", "settings"],
+    ["team", "sessions", "activity", "stats", "comments", "settings"],
   );
 });
 
@@ -96,7 +102,7 @@ test("launcher remains a compact rounded sheet rather than a fullscreen dashboar
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.label),
-    ["Karte", "Team", "Einsätze", "Aktivität", "Stats", "Automationen", "Kommentare", "Einstellungen", "Gebiet"],
+    ["Team", "Einsätze", "Aktivität", "Stats", "Automationen", "Kommentare", "Einstellungen", "Gebiet"],
   );
   assert.match(shellCss, /\.platform-menu-overlay\s*\{[\s\S]*align-items: flex-end;/);
   assert.match(shellCss, /\.platform-menu-grid\s*\{[\s\S]*grid-template-columns: repeat\(4,/);

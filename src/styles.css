@@ -473,7 +473,8 @@ select:disabled {
 }
 
 .map-mode-draw .maplibregl-canvas,
-.map-mode-edit .maplibregl-canvas {
+.map-mode-edit .maplibregl-canvas,
+.map-mode-smart-street .maplibregl-canvas {
   cursor: crosshair;
 }
 

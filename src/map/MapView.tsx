@@ -5,8 +5,16 @@ import {
   browserOfflineMapRepository,
   OFFLINE_MAP_CHANGED_EVENT,
 } from "../data/offlineMapRepository";
-import type { Area, DistributionTask, LngLat, MapCameraView } from "../domain/campaign";
+import type {
+  Area,
+  DistributionTask,
+  LineStringGeometry,
+  LngLat,
+  MapCameraView,
+} from "../domain/campaign";
 import type { OfflineMapPackage } from "../domain/offlineMap";
+import type { SmartRoadCandidate } from "../domain/smartCandidates";
+import type { SmartRoadPointAnchor } from "../domain/smartRoadPointAnchor";
 import type { Language } from "../i18n";
 import { t } from "../i18n";
 import { useSessionMapHighlight } from "../platform/sessionMapHighlight.tsx";
@@ -37,7 +45,7 @@ import {
 } from "./houseRenderer";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-type MapMode = "browse" | "draw" | "edit" | "street-draw";
+type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street";
 type RenderArea = Area & { color: string };
 type RenderTask = DistributionTask & { color: string };
 
@@ -78,6 +86,55 @@ type StreetFeatureCollection = {
   }>;
 };
 
+type SmartRoadFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: {
+      sourceId: string;
+      name: string | null;
+      ref: string | null;
+      highway: string;
+      color: string;
+      selected: boolean;
+    };
+    geometry: {
+      type: "LineString";
+      coordinates: LngLat[];
+    };
+  }>;
+};
+
+type SmartPreviewFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: Record<string, never>;
+    geometry: {
+      type: "LineString";
+      coordinates: LngLat[];
+    };
+  }>;
+};
+
+type SmartPointFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: {
+      role: "start" | "end" | "waypoint";
+      label: string;
+    };
+    geometry: {
+      type: "Point";
+      coordinates: LngLat;
+    };
+  }>;
+};
+
 export type MapRefreshState = "idle" | "loading" | "current" | "error" | "available";
 export type MapCameraCommand = { id: number; view: MapCameraView; persist?: boolean } | null;
 
@@ -109,6 +166,15 @@ type MapViewProps = {
   onEditVertexSelect: (index: number) => void;
   onEditVertexMove: (index: number, point: LngLat) => void;
   onStreetDrawPoint: (point: LngLat) => void;
+  smartRoads: SmartRoadCandidate[];
+  smartSelectedSourceIds: readonly string[];
+  smartStartAnchor: SmartRoadPointAnchor | null;
+  smartEndAnchor: SmartRoadPointAnchor | null;
+  smartWaypointAnchors: SmartRoadPointAnchor[];
+  smartPreviewGeometry: LineStringGeometry | null;
+  smartStreetColor: string;
+  onSmartStreetPoint: (point: LngLat, sourceIds: string[]) => void;
+  onOfflineMapPackageChange?: (pkg: OfflineMapPackage | null) => void;
 };
 
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
@@ -123,6 +189,14 @@ const STREET_COMPLETED_LAYER_ID = "vf-streets-completed";
 const STREET_LATER_LAYER_ID = "vf-streets-later";
 const STREET_NOT_DELIVERABLE_LAYER_ID = "vf-streets-not-deliverable";
 const STREET_SESSION_HIGHLIGHT_LAYER_ID = "vf-streets-session-highlight";
+const SMART_ROAD_SOURCE_ID = "vf-smart-street-candidates";
+const SMART_ROAD_LAYER_ID = "vf-smart-street-candidates-line";
+const SMART_ROAD_SELECTED_LAYER_ID = "vf-smart-street-candidates-selected";
+const SMART_PREVIEW_SOURCE_ID = "vf-smart-street-preview";
+const SMART_PREVIEW_LAYER_ID = "vf-smart-street-preview-line";
+const SMART_POINT_SOURCE_ID = "vf-smart-street-points";
+const SMART_POINT_LAYER_ID = "vf-smart-street-points-circle";
+const SMART_POINT_LABEL_LAYER_ID = "vf-smart-street-points-label";
 const STREET_LAYER_IDS = [
   STREET_SELECTED_LAYER_ID,
   STREET_OPEN_LAYER_ID,
@@ -265,6 +339,34 @@ const SESSION_HIGHLIGHT_WIDTH_EXPRESSION: ExpressionSpecification = [
   7.6,
 ];
 
+const SMART_ROAD_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  10,
+  1.8,
+  13,
+  2.8,
+  16,
+  4.2,
+  19,
+  6.2,
+];
+
+const SMART_PREVIEW_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  10,
+  3.4,
+  13,
+  4.8,
+  16,
+  6.6,
+  19,
+  9,
+];
+
 function areasToGeoJson(areas: RenderArea[]): AreaFeatureCollection {
   return {
     type: "FeatureCollection",
@@ -306,10 +408,98 @@ function streetsToGeoJson(tasks: RenderTask[]): StreetFeatureCollection {
   };
 }
 
+function smartRoadsToGeoJson(
+  roads: SmartRoadCandidate[],
+  selectedSourceIds: readonly string[],
+  color: string,
+): SmartRoadFeatureCollection {
+  const selected = new Set(selectedSourceIds);
+  return {
+    type: "FeatureCollection",
+    features: roads.map((road) => ({
+      type: "Feature",
+      id: road.sourceId,
+      properties: {
+        sourceId: road.sourceId,
+        name: road.name,
+        ref: road.ref,
+        highway: road.highway,
+        color,
+        selected: selected.has(road.sourceId),
+      },
+      geometry: {
+        type: "LineString",
+        coordinates: road.geometry.coordinates,
+      },
+    })),
+  };
+}
+
+function smartPreviewToGeoJson(
+  geometry: LineStringGeometry | null,
+): SmartPreviewFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: geometry
+      ? [{
+          type: "Feature",
+          id: "smart-street-preview",
+          properties: {},
+          geometry: {
+            type: "LineString",
+            coordinates: geometry.coordinates,
+          },
+        }]
+      : [],
+  };
+}
+
+function smartPointsToGeoJson(
+  startAnchor: SmartRoadPointAnchor | null,
+  endAnchor: SmartRoadPointAnchor | null,
+  waypointAnchors: SmartRoadPointAnchor[],
+  language: Language,
+): SmartPointFeatureCollection {
+  const features: SmartPointFeatureCollection["features"] = [];
+  if (startAnchor) {
+    features.push({
+      type: "Feature",
+      id: "smart-street-start",
+      properties: { role: "start", label: t(language, "smartStreetStart") },
+      geometry: { type: "Point", coordinates: startAnchor.snapped },
+    });
+  }
+  waypointAnchors.forEach((anchor, index) => {
+    features.push({
+      type: "Feature",
+      id: `smart-street-waypoint-${index}`,
+      properties: { role: "waypoint", label: t(language, "smartStreetWaypoint", { index: index + 1 }) },
+      geometry: { type: "Point", coordinates: anchor.snapped },
+    });
+  });
+  if (endAnchor) {
+    features.push({
+      type: "Feature",
+      id: "smart-street-end",
+      properties: { role: "end", label: t(language, "smartStreetEnd") },
+      geometry: { type: "Point", coordinates: endAnchor.snapped },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 function buildMapStyle(
   areas: RenderArea[],
   tasks: RenderTask[],
   houses: RenderHouse[],
+  smartRoads: SmartRoadCandidate[],
+  smartSelectedSourceIds: readonly string[],
+  smartPreviewGeometry: LineStringGeometry | null,
+  smartStartAnchor: SmartRoadPointAnchor | null,
+  smartEndAnchor: SmartRoadPointAnchor | null,
+  smartWaypointAnchors: SmartRoadPointAnchor[],
+  smartStreetColor: string,
+  language: Language,
   online: boolean,
 ): StyleSpecification {
   return {
@@ -348,6 +538,18 @@ function buildMapStyle(
       [HOUSE_SOURCE_ID]: {
         type: "geojson",
         data: housesToGeoJson(houses),
+      },
+      [SMART_ROAD_SOURCE_ID]: {
+        type: "geojson",
+        data: smartRoadsToGeoJson(smartRoads, smartSelectedSourceIds, smartStreetColor),
+      },
+      [SMART_PREVIEW_SOURCE_ID]: {
+        type: "geojson",
+        data: smartPreviewToGeoJson(smartPreviewGeometry),
+      },
+      [SMART_POINT_SOURCE_ID]: {
+        type: "geojson",
+        data: smartPointsToGeoJson(smartStartAnchor, smartEndAnchor, smartWaypointAnchors, language),
       },
     },
     layers: [
@@ -603,6 +805,92 @@ function buildMapStyle(
           "line-cap": "round",
         },
       },
+      {
+        id: SMART_ROAD_LAYER_ID,
+        type: "line",
+        source: SMART_ROAD_SOURCE_ID,
+        filter: ["==", ["get", "selected"], false],
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#53635a",
+          "line-opacity": 0.88,
+          "line-width": SMART_ROAD_WIDTH_EXPRESSION,
+          "line-dasharray": [2, 1.5],
+        },
+      },
+      {
+        id: SMART_ROAD_SELECTED_LAYER_ID,
+        type: "line",
+        source: SMART_ROAD_SOURCE_ID,
+        filter: ["==", ["get", "selected"], true],
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.98,
+          "line-width": SMART_ROAD_WIDTH_EXPRESSION,
+        },
+      },
+      {
+        id: SMART_PREVIEW_LAYER_ID,
+        type: "line",
+        source: SMART_PREVIEW_SOURCE_ID,
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#f59e0b",
+          "line-opacity": 0.98,
+          "line-width": SMART_PREVIEW_WIDTH_EXPRESSION,
+        },
+      },
+      {
+        id: SMART_POINT_LAYER_ID,
+        type: "circle",
+        source: SMART_POINT_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: {
+          "circle-color": [
+            "match",
+            ["get", "role"],
+            "start",
+            "#1f6b3a",
+            "end",
+            "#b42318",
+            "#2563eb",
+          ],
+          "circle-radius": 8,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 3,
+        },
+      },
+      {
+        id: SMART_POINT_LABEL_LAYER_ID,
+        type: "symbol",
+        source: SMART_POINT_SOURCE_ID,
+        layout: {
+          visibility: "none",
+          "text-field": ["get", "label"],
+          "text-size": 12,
+          "text-offset": [0, 1.35],
+          "text-anchor": "top",
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#172019",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
+        },
+      },
     ],
   };
 }
@@ -652,6 +940,45 @@ function syncStreetData(map: Map, tasks: RenderTask[]) {
 function syncHouseData(map: Map, houses: RenderHouse[]) {
   const houseSource = map.getSource(HOUSE_SOURCE_ID) as GeoJSONSource | undefined;
   if (houseSource) houseSource.setData(housesToGeoJson(houses));
+}
+
+function syncSmartStreetData(
+  map: Map,
+  roads: SmartRoadCandidate[],
+  selectedSourceIds: readonly string[],
+  previewGeometry: LineStringGeometry | null,
+  startAnchor: SmartRoadPointAnchor | null,
+  endAnchor: SmartRoadPointAnchor | null,
+  waypointAnchors: SmartRoadPointAnchor[],
+  color: string,
+  language: Language,
+  mode: MapMode,
+) {
+  const roadSource = map.getSource(SMART_ROAD_SOURCE_ID) as GeoJSONSource | undefined;
+  if (roadSource) roadSource.setData(smartRoadsToGeoJson(roads, selectedSourceIds, color));
+
+  const previewSource = map.getSource(SMART_PREVIEW_SOURCE_ID) as GeoJSONSource | undefined;
+  if (previewSource) previewSource.setData(smartPreviewToGeoJson(previewGeometry));
+
+  const pointSource = map.getSource(SMART_POINT_SOURCE_ID) as GeoJSONSource | undefined;
+  if (pointSource) pointSource.setData(smartPointsToGeoJson(startAnchor, endAnchor, waypointAnchors, language));
+
+  const visibility = mode === "smart-street" ? "visible" : "none";
+  for (const layerId of [
+    SMART_ROAD_LAYER_ID,
+    SMART_ROAD_SELECTED_LAYER_ID,
+    SMART_PREVIEW_LAYER_ID,
+    SMART_POINT_LAYER_ID,
+    SMART_POINT_LABEL_LAYER_ID,
+  ]) {
+    if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+  }
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) {
+    region.dataset.smartCandidateRoads = String(roads.length);
+    region.dataset.smartSelectedRoads = String(selectedSourceIds.length);
+  }
 }
 
 function syncApplicationFilters(
@@ -834,6 +1161,15 @@ export function MapView({
   onEditVertexSelect,
   onEditVertexMove,
   onStreetDrawPoint,
+  smartRoads,
+  smartSelectedSourceIds,
+  smartStartAnchor,
+  smartEndAnchor,
+  smartWaypointAnchors,
+  smartPreviewGeometry,
+  smartStreetColor,
+  onSmartStreetPoint,
+  onOfflineMapPackageChange,
 }: MapViewProps) {
   const sessionMapHighlight = useSessionMapHighlight();
   const highlightedStreetTaskIds = useMemo(
@@ -856,6 +1192,8 @@ export function MapView({
   const suppressNextCameraSaveRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [offlineContextActive, setOfflineContextActive] = useState(false);
+  const offlineMapPackageChangeRef = useRef(onOfflineMapPackageChange);
+  offlineMapPackageChangeRef.current = onOfflineMapPackageChange;
 
   const activePrimaryRef = useRef<SVGPolygonElement | SVGPolylineElement | null>(null);
   const activeHaloRef = useRef<SVGPolygonElement | SVGPolylineElement | null>(null);
@@ -869,6 +1207,15 @@ export function MapView({
     selectedHouseTaskId,
     highlightedStreetTaskIds,
     highlightedHouseTaskIds,
+    mode,
+    smartRoads,
+    smartSelectedSourceIds,
+    smartStartAnchor,
+    smartEndAnchor,
+    smartWaypointAnchors,
+    smartPreviewGeometry,
+    smartStreetColor,
+    language,
   });
   dataRef.current = {
     areas,
@@ -878,6 +1225,15 @@ export function MapView({
     selectedHouseTaskId,
     highlightedStreetTaskIds,
     highlightedHouseTaskIds,
+    mode,
+    smartRoads,
+    smartSelectedSourceIds,
+    smartStartAnchor,
+    smartEndAnchor,
+    smartWaypointAnchors,
+    smartPreviewGeometry,
+    smartStreetColor,
+    language,
   };
 
   const interactionRef = useRef({
@@ -893,6 +1249,7 @@ export function MapView({
     onEditVertexSelect,
     onEditVertexMove,
     onStreetDrawPoint,
+    onSmartStreetPoint,
   });
   interactionRef.current = {
     mode,
@@ -907,6 +1264,7 @@ export function MapView({
     onEditVertexSelect,
     onEditVertexMove,
     onStreetDrawPoint,
+    onSmartStreetPoint,
   };
 
   const activeCoordinates = useMemo(() => {
@@ -952,6 +1310,14 @@ export function MapView({
           initialData.areas,
           initialData.tasks,
           initialData.houses,
+          initialData.smartRoads,
+          initialData.smartSelectedSourceIds,
+          initialData.smartPreviewGeometry,
+          initialData.smartStartAnchor,
+          initialData.smartEndAnchor,
+          initialData.smartWaypointAnchors,
+          initialData.smartStreetColor,
+          initialData.language,
           navigator.onLine,
         ),
         center: initialCamera.center,
@@ -970,11 +1336,13 @@ export function MapView({
           if (!active) return;
           const pkg = stored?.package ?? null;
           const online = navigator.onLine;
+          offlineMapPackageChangeRef.current?.(pkg);
           setOfflineContextActive(!online && Boolean(pkg));
           if (map.isStyleLoaded()) syncOfflineMapData(map, pkg, online);
         } catch (cause) {
           console.warn("Prepared offline map could not be loaded", cause);
           if (!active) return;
+          offlineMapPackageChangeRef.current?.(null);
           setOfflineContextActive(false);
           if (map.isStyleLoaded()) syncOfflineMapData(map, null, navigator.onLine);
         }
@@ -1027,6 +1395,18 @@ export function MapView({
         syncAreaData(map, current.areas);
         syncStreetData(map, current.tasks);
         syncHouseData(map, current.houses);
+        syncSmartStreetData(
+          map,
+          current.smartRoads,
+          current.smartSelectedSourceIds,
+          current.smartPreviewGeometry,
+          current.smartStartAnchor,
+          current.smartEndAnchor,
+          current.smartWaypointAnchors,
+          current.smartStreetColor,
+          current.language,
+          current.mode,
+        );
         syncApplicationFilters(
           map,
           current.selectedTaskId,
@@ -1061,6 +1441,25 @@ export function MapView({
         }
         if (interaction.mode === "street-draw") {
           interaction.onStreetDrawPoint(lngLat);
+          return;
+        }
+        if (interaction.mode === "smart-street") {
+          const smartLayers = [SMART_ROAD_LAYER_ID, SMART_ROAD_SELECTED_LAYER_ID].filter(
+            (layerId) => map.getLayer(layerId),
+          );
+          const bbox: [[number, number], [number, number]] = [
+            [event.point.x - 10, event.point.y - 10],
+            [event.point.x + 10, event.point.y + 10],
+          ];
+          const smartFeatures = smartLayers.length > 0
+            ? map.queryRenderedFeatures(bbox, { layers: smartLayers })
+            : [];
+          const sourceIds = [...new Set(
+            smartFeatures
+              .map((feature) => feature.properties?.sourceId)
+              .filter((sourceId): sourceId is string => typeof sourceId === "string"),
+          )];
+          interaction.onSmartStreetPoint(lngLat, sourceIds);
           return;
         }
         if (interaction.mode === "edit") {
@@ -1166,6 +1565,33 @@ export function MapView({
     if (!map || !map.isStyleLoaded()) return;
     syncHouseData(map, houses);
   }, [houses]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncSmartStreetData(
+      map,
+      smartRoads,
+      smartSelectedSourceIds,
+      smartPreviewGeometry,
+      smartStartAnchor,
+      smartEndAnchor,
+      smartWaypointAnchors,
+      smartStreetColor,
+      language,
+      mode,
+    );
+  }, [
+    mode,
+    smartEndAnchor,
+    smartPreviewGeometry,
+    smartRoads,
+    smartSelectedSourceIds,
+    smartStartAnchor,
+    smartStreetColor,
+    smartWaypointAnchors,
+    language,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;

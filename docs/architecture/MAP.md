@@ -159,6 +159,12 @@ ADR-0013 confirms the Smart Street primary direction:
 
 The persistence stack keeps the renderer contract unchanged: after creation, a Smart Street is just another saved Street Task in `vf-streets`.
 
+The first normal-product runtime slice now connects this direction end to end: the Area
+Sheet reads the already prepared local OSM package, `smartCandidatesForArea()` supplies
+real road candidates, MapLibre handles candidate hit testing and preview, and the
+reviewed result enters the existing M5 mutation path. No preview road set is copied into
+the product flow, and no new map or sync engine is introduced.
+
 ## Prepared offline working area
 
 ADR-0012 is accepted with the bounded raw OSM subset approach.

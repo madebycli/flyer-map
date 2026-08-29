@@ -1,9 +1,9 @@
 ---
 id: plan-house-polygon-renderer
 type: plan
-status: active
+status: completed
 last_updated: 2026-08-29
-related: [plan-feature-complete-platform, map, collaboration, adr-smart-task-identity, quality]
+related: [plan-feature-complete-platform, map, collaboration, adr-smart-task-identity, quality, plan-smart-street-runtime]
 source_of_truth_for: [house-polygon-renderer-slice, house-map-selection-plan, house-session-highlight-plan]
 ---
 
@@ -42,7 +42,7 @@ Ein neuerer GitHub-Stand ersetzt diese Angaben sofort.
 
 ## Implementierungscheckpoint 2026-08-29
 
-Der Renderer-Core und der anschließende Session-Highlight-Checkpoint sind im aktuellen Arbeitsstand umgesetzt:
+Der Renderer-Core und der anschließende Session-Highlight-Checkpoint sind im Repository umgesetzt und als Plan-018-Runtime-Checkpoint abgeschlossen:
 - neue gebatchte `vf-houses`-Source und feste House-Layer im normalen MapLibre-Style;
 - `housesToGeoJson()` verwendet stabile App-House-IDs und nur die Properties `houseTaskId`, `status` und `color`;
 - House-Auswahl nutzt den bestehenden `selectHouseTask()`-/House-Sheet-Pfad;
@@ -51,14 +51,15 @@ Der Renderer-Core und der anschließende Session-Highlight-Checkpoint sind im ak
 - Field-Session-Refs transportieren echte `houseTaskIds`, House-only Sessions werden nicht mehr ausgefiltert;
 - Renderer-Diagnose und lokale Dichteprüfung decken House-Sets bis 20.000 Features ab.
 
-Noch ausstehend sind die reale Android-/iPhone-Prüfung und der finale CI-Nachweis auf dem Dokumentations-Head. TypeScript, Dependency Audit, Production Build und der vollständige `check`-Flow waren auf Runtime-Head `a6753b572e095a4f48f9caabdf50cf4b5c89a7ed` bereits grün.
+Nicht als bestanden behauptet werden die reale Android-/iPhone-Prüfung, die Touch-Dichteprüfung und die endgültige Wahl von `HOUSE_MIN_ZOOM`. `HOUSE_MIN_ZOOM = 15` bleibt der dokumentierte Ausgangswert. Diese Hardware-Abnahme wird als offener, gemeinsamer Quality-Gate weitergeführt und nicht durch Desktop- oder Cloud-Browser-Tests ersetzt.
 
-Der Runtime-Commit `a6753b572e095a4f48f9caabdf50cf4b5c89a7ed` wurde als PR-Head verifiziert. CI #703 war auf genau diesem Head mit Tests, TypeScript, Dependency Audit und Production Build grün. Die reale Browserprüfung bleibt ein manueller nächster Schritt.
+Der zuvor verifizierte Runtime-Stand war auf PR #72 Head `9477e1d15aada83db145cd9dd27b10a152cd13f7` mit CI #704 grün. Der exakte finale Head des Folgeslices und dessen CI-Nachweis stehen in `docs/status/CURRENT.md`.
 
 ## Relevante Context-Graph-Knoten
 
 - `prompt-house-polygon-renderer`
 - `plan-house-polygon-renderer`
+- `plan-smart-street-runtime`
 - `plan-feature-complete-platform`
 - `map`
 - `ux`
@@ -327,3 +328,7 @@ Mitigation:
 - UNKLAR: finaler House-`minzoom`, nach Dense-Mobile-Test entscheiden.
 - UNKLAR: finale Status-Stile, sie müssen neben Farbe einen zweiten visuellen Kanal besitzen.
 - UNKLAR: spätere House-Mode-Hit-Test-Priorität, nicht Teil dieses Renderer-Cores.
+
+## Abschluss
+
+Plan 018 ist runtime-seitig abgeschlossen. Die offenen realen Geräte- und Dense-Mobile-Prüfungen bleiben ausdrücklich offen und werden nicht als Feature-Complete-Nachweis fingiert. Der nächste normale FC4-Produktweg ist in Plan 019 dokumentiert.

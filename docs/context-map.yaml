@@ -1,4 +1,4 @@
-version: 7
+version: 8
 
 entrypoints:
   always:
@@ -16,7 +16,8 @@ routing_rules:
   - inspect current open PRs, exact heads and CI before starting or replacing a slice
   - treat prepared D1 migrations as unapplied until deployment/status docs explicitly record remote application
   - for a fresh Plan-017 planner chat, load prompt-latest-feature-complete after the entrypoints, then follow its graph edges
-  - for House polygon renderer planning, load prompt-house-polygon-renderer and plan-house-polygon-renderer, then follow Map, Smart Task identity, Collaboration and Quality edges
+  - for completed House polygon renderer history or its open device gates, load prompt-house-polygon-renderer and plan-house-polygon-renderer, then follow Map, Smart Task identity, Collaboration and Quality edges
+  - for Smart Street runtime planning or continuation, load plan-smart-street-runtime, then follow Offline Map, Map, UX, Offline Sync, Smart Task identity and Quality edges
 
 nodes:
   - id: product
@@ -258,11 +259,18 @@ nodes:
     load_when: [next feature implementation, Team Hub, Live Field Groups, FC2, FC4, platform completion]
 
   - id: plan-house-polygon-renderer
-    path: docs/plans/active/018-house-polygon-renderer.md
+    path: docs/plans/completed/018-house-polygon-renderer.md
     type: plan
-    status: active
+    status: completed
     topics: [houses, house-polygon, maplibre, geojson, renderer, selection, session-highlight, performance]
-    load_when: [House polygon renderer, normal House rendering, House map selection, House session highlight, current safe slice]
+    load_when: [House polygon renderer history, normal House rendering, House map selection, House session highlight, open House device gates]
+
+  - id: plan-smart-street-runtime
+    path: docs/plans/completed/019-smart-street-runtime.md
+    type: plan
+    status: completed
+    topics: [feature-complete, FC4, smart-streets, streets, offline-map, osm, maplibre, selection, persistence, retry, permissions]
+    load_when: [Smart Street runtime, normal Area street selection, FC4 continuation, prepared OSM candidates, Smart Street persistence]
 
   - id: house-renderer-runtime
     path: src/map/houseRenderer.ts
@@ -275,15 +283,22 @@ nodes:
     path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
     type: onboarding
     status: current
-    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer]
+    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime]
     load_when: [fresh AI session, planner chat, verify current Plan 017 state, continue current Plan 017 development]
 
   - id: prompt-house-polygon-renderer
     path: docs/prompts/CODEX_PLAN_HOUSE_POLYGON_RENDERER.md
     type: onboarding
-    status: current
+    status: historical
     topics: [codex, planner, house-polygon, renderer, maplibre, current-pr, working-tree]
-    load_when: [fresh Codex planner, House renderer planning, verify Plan 018, implementation handoff]
+    load_when: [historical House renderer planning, verify completed Plan 018, open House device gates]
+
+  - id: smart-street-runtime
+    path: src/App.tsx
+    type: code
+    status: current
+    topics: [smart-streets, prepared-osm, maplibre, candidate-selection, route-ambiguity, task-persistence, m5-sync]
+    load_when: [Smart Street normal product flow, candidate map interaction, Street Task creation from OSM candidates]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
@@ -333,5 +348,17 @@ edges:
   - { from: house-renderer-runtime, to: adr-smart-task-identity, relation: constrained_by }
   - { from: house-renderer-runtime, to: collaboration, relation: integrates }
   - { from: prompt-latest-feature-complete, to: plan-feature-complete-platform, relation: continues }
-  - { from: prompt-latest-feature-complete, to: prompt-house-polygon-renderer, relation: routes_to_next_slice }
+  - { from: prompt-latest-feature-complete, to: plan-smart-street-runtime, relation: routes_to_next_slice }
   - { from: prompt-house-polygon-renderer, to: plan-house-polygon-renderer, relation: plans }
+  - { from: plan-smart-street-runtime, to: plan-feature-complete-platform, relation: implements_fc4_slice }
+  - { from: plan-smart-street-runtime, to: plan-offline-map, relation: reuses_prepared_data }
+  - { from: plan-smart-street-runtime, to: map, relation: implements }
+  - { from: plan-smart-street-runtime, to: ux, relation: implements_mobile_flow }
+  - { from: plan-smart-street-runtime, to: offline-sync, relation: reuses }
+  - { from: plan-smart-street-runtime, to: adr-offline-map-data, relation: constrained_by }
+  - { from: plan-smart-street-runtime, to: adr-smart-task-identity, relation: constrained_by }
+  - { from: plan-smart-street-runtime, to: quality, relation: validated_by }
+  - { from: plan-smart-street-runtime, to: smart-street-runtime, relation: implements }
+  - { from: smart-street-runtime, to: map, relation: integrates }
+  - { from: smart-street-runtime, to: adr-smart-task-identity, relation: constrained_by }
+  - { from: smart-street-runtime, to: offline-sync, relation: reuses }

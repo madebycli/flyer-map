@@ -34,7 +34,7 @@ export type PlatformAppContext = {
 };
 
 export type PlatformLauncherItem = {
-  id: "map" | "settings" | "team" | "sessions" | "activity" | "stats" | "automations" | "comments" | "area-create";
+  id: "settings" | "team" | "sessions" | "activity" | "stats" | "automations" | "comments" | "area-create";
   label: string;
   icon: string;
   command: Exclude<PlatformAppCommandType, "select-active-team"> | null;
@@ -49,7 +49,6 @@ export function buildPlatformLauncherItems(
   context: PlatformAppContext | null,
 ): PlatformLauncherItem[] {
   const items: PlatformLauncherItem[] = [
-    { id: "map", label: "Karte", icon: "🗺️", command: null },
     { id: "team", label: "Team", icon: "👥", command: null, opensTeamHub: true },
   ];
 

@@ -29,17 +29,20 @@ Weiterhin ausgeschlossen:
 
 Plan 017 bleibt die übergeordnete Feature-Complete-Delivery-Linie.
 
-Der aktuell geplante nächste sichere Slice ist Plan 018:
-`docs/plans/active/018-house-polygon-renderer.md`.
+Plan 018 ist als implementierter House-Renderer-Checkpoint abgeschlossen:
+`docs/plans/completed/018-house-polygon-renderer.md`.
+
+Plan 019 ist der nächste implementierte normale FC4-Vertical-Slice:
+`docs/plans/completed/019-smart-street-runtime.md`.
 
 Aktiver Entwicklungsstack:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- letzter verifizierter Runtime-Head: `a6753b572e095a4f48f9caabdf50cf4b5c89a7ed`;
-- CI #703 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
+- letzter vor Plan 019 verifizierter Runtime-Head: `9477e1d15aada83db145cd9dd27b10a152cd13f7`;
+- CI #704 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
 - PR #72 war offen, Draft und mergeable.
 
-Der aktuelle Dokumentationscheckpoint kann den Branch-Head weiter verschieben, ohne den verifizierten Runtime-Slice zu verändern. GitHub bleibt für den exakten finalen Head und CI maßgeblich.
+Der Plan-019-Commit verschiebt den Branch-Head. GitHub bleibt für den exakten finalen Head und CI maßgeblich; die aktualisierten Werte werden nach diesem Commit erneut eingetragen.
 
 GitHub und der aktuelle Branch-Head bleiben Source of Truth. Nach jedem neuen Commit muss CI erneut auf genau diesem neuen Head geprüft werden.
 
@@ -53,6 +56,29 @@ Auf PR #72 sind die aktuellen Runtime-Slices für folgende Bereiche umgesetzt:
 - bounded Activity-Projektion aus `domain_events`;
 - erste feste deterministische und idempotente Automation gemäß ADR-0019;
 - echte serverseitige Stats-Projektion mit getrennten Street-/House-Nennern.
+
+Der redundante Launcher-Eintrag „Karte“ ist entfernt. Das Menü bleibt über X und Tap
+außerhalb des Sheets schließbar.
+
+## Smart Street runtime checkpoint
+
+Der normale Area-Flow unterstützt für berechtigte Nutzer die Auswahl realer Straßen aus
+dem bereits vorbereiteten Offline-OSM-Paket:
+- `smartCandidatesForArea()` liefert nur Kandidaten aus dem geladenen, validierten
+  `OfflineMapPackage` für das aktive Gebiet;
+- MapLibre rendert Kandidaten, Auswahl, Vorschau sowie Start-, Ende- und Zwischenpunkte
+  über feste gebatchte Sources/Layer;
+- reale Kartenklicks werden mit `queryRenderedFeatures()` auf Straßenkandidaten gesnappt;
+- Mehrfachtreffer und gleich kurze alternative Routen werden explizit im mobilen Sheet
+  gelöst, nicht geraten;
+- die bestätigte Geometrie wird als normale `DistributionTask` mit App-ID und OSM-
+  Provenance über den bestehenden M5-Mutationspfad gespeichert;
+- manuelles Einzeichnen bleibt als Fallback sichtbar;
+- `M6SelectionPreview.tsx` und Preview-/Mock-Daten bleiben außerhalb des Produktionsgraphen.
+
+Der Runtime-Code ist entwickelt und getestet. Remote bleibt Migration 0004 unangetastet;
+der Worker verweigert Source-Writes ohne `source_json` weiterhin ausdrücklich mit
+`schema_migration_required`.
 
 ## House renderer checkpoint
 
@@ -71,8 +97,7 @@ Umgesetzt:
 
 Noch offen:
 - reale Android-/iPhone-Browserprüfung der Touch-Dichte und des endgültigen House-`minzoom`;
-- finaler GitHub-CI-Lauf auf dem Dokumentations-Head;
-- Dokumentations-/Handoff-Commit und anschließende erneute Prüfung von PR #72.
+- finale Geräte- und Dense-Mobile-Abnahme für den gesamten FC4-Weg.
 
 Der bestehende Street-Renderer bleibt unverändert und darf nicht zu einer gemischten riskanten `vf-tasks`-Source umgebaut werden, solange dafür kein nachgewiesener Bedarf besteht.
 
@@ -104,8 +129,11 @@ Weiterhin verbindlich:
 
 ## Immediate next
 
-1. Reale Android-/iPhone-Browserprüfung für House-Rendering, Touch-Hit-Test und Dense-Mobile-Verhalten abschließen.
-2. TypeScript, Dependency Audit, Production Build und den vollständigen `check`-Flow auf dem Implementierungs-Head ausführen.
-3. Dokumentation und Living Handoff auf dem finalen Head aktualisieren.
-4. PR #72 Draft und offen lassen, finalen CI-Lauf exakt auf diesem Head verifizieren.
-5. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.
+1. Smart House Candidate Selection in den normalen Area-/Street-Kontext integrieren.
+2. Reale Android-/iPhone-Browserprüfung für House-/Street-Rendering, Touch-Hit-Test und
+   Dense-Mobile-Verhalten durchführen.
+3. TypeScript, Dependency Audit, Production Build und den vollständigen `check`-Flow auf
+   dem jeweils exakten GitHub-Head verifizieren.
+4. PR #72 Draft und offen lassen.
+5. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen
+   neuen Branch oder PR erstellen.

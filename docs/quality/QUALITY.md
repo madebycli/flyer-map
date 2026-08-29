@@ -33,6 +33,8 @@ Add tests around domain/security/sync logic. Browser-visible map correctness sti
 Explicitly test:
 - saved Area visible + selectable;
 - saved Street visible + selectable;
+- prepared OSM Street candidates visible, snappable and selectable in the normal Area flow;
+- explicit resolution of candidate and route ambiguity;
 - pan/zoom/rotate alignment;
 - active edit handles only while editing/drawing;
 - geolocation allowed/denied;
