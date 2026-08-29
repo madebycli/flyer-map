@@ -35,9 +35,11 @@ Der aktuell geplante nächste sichere Slice ist Plan 018:
 Aktiver Entwicklungsstack:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- letzter vor diesem Planungs-Doku-Commit verifizierter Head: `2b90db509666d853dd20ac22a497536c88292522`;
-- CI #701 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
+- letzter verifizierter Runtime-Head: `a6753b572e095a4f48f9caabdf50cf4b5c89a7ed`;
+- CI #703 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
 - PR #72 war offen, Draft und mergeable.
+
+Der aktuelle Dokumentationscheckpoint kann den Branch-Head weiter verschieben, ohne den verifizierten Runtime-Slice zu verändern. GitHub bleibt für den exakten finalen Head und CI maßgeblich.
 
 GitHub und der aktuelle Branch-Head bleiben Source of Truth. Nach jedem neuen Commit muss CI erneut auf genau diesem neuen Head geprüft werden.
 
@@ -69,7 +71,7 @@ Umgesetzt:
 
 Noch offen:
 - reale Android-/iPhone-Browserprüfung der Touch-Dichte und des endgültigen House-`minzoom`;
-- TypeScript, Dependency Audit, Production Build und finaler GitHub-CI-Lauf auf dem Implementierungs-Head;
+- finaler GitHub-CI-Lauf auf dem Dokumentations-Head;
 - Dokumentations-/Handoff-Commit und anschließende erneute Prüfung von PR #72.
 
 Der bestehende Street-Renderer bleibt unverändert und darf nicht zu einer gemischten riskanten `vf-tasks`-Source umgebaut werden, solange dafür kein nachgewiesener Bedarf besteht.

@@ -15,7 +15,7 @@ Persistierte `HouseTask`-Polygone im echten normalen MapLibre-Renderer anzeigen 
 
 Der Slice schließt die aktuelle FC4-Renderer-Lücke innerhalb von Plan 017, ohne Backend-Umbau, neue Berechtigungen, neue Migration oder neue Sync-Architektur.
 
-Nach stabilem Renderer-Core darf derselbe Slice den bereits vorhandenen Field-Session-Highlight-Pfad von `houseTaskCount` auf echte `houseTaskIds` erweitern, weil der autorisierte Session-Task-Read diese IDs bereits liefert.
+Nach stabilem Renderer-Core wurde derselbe Slice um echte `houseTaskIds` im bereits vorhandenen Field-Session-Highlight-Pfad erweitert, weil der autorisierte Session-Task-Read diese IDs bereits liefert.
 
 ## Baseline / Source of Truth
 
@@ -51,7 +51,9 @@ Der Renderer-Core und der anschließende Session-Highlight-Checkpoint sind im ak
 - Field-Session-Refs transportieren echte `houseTaskIds`, House-only Sessions werden nicht mehr ausgefiltert;
 - Renderer-Diagnose und lokale Dichteprüfung decken House-Sets bis 20.000 Features ab.
 
-Noch ausstehend sind die reale Android-/iPhone-Prüfung, TypeScript, Dependency Audit, Production Build, der finale `check`-Lauf und der CI-Nachweis auf dem finalen GitHub-Head.
+Noch ausstehend sind die reale Android-/iPhone-Prüfung und der finale CI-Nachweis auf dem Dokumentations-Head. TypeScript, Dependency Audit, Production Build und der vollständige `check`-Flow waren auf Runtime-Head `a6753b572e095a4f48f9caabdf50cf4b5c89a7ed` bereits grün.
+
+Der Runtime-Commit `a6753b572e095a4f48f9caabdf50cf4b5c89a7ed` wurde als PR-Head verifiziert. CI #703 war auf genau diesem Head mit Tests, TypeScript, Dependency Audit und Production Build grün. Die reale Browserprüfung bleibt ein manueller nächster Schritt.
 
 ## Relevante Context-Graph-Knoten
 
