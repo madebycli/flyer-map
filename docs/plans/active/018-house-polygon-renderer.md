@@ -40,6 +40,19 @@ Zuletzt vor diesem Planungscommit verifiziert:
 
 Ein neuerer GitHub-Stand ersetzt diese Angaben sofort.
 
+## Implementierungscheckpoint 2026-08-29
+
+Der Renderer-Core und der anschließende Session-Highlight-Checkpoint sind im aktuellen Arbeitsstand umgesetzt:
+- neue gebatchte `vf-houses`-Source und feste House-Layer im normalen MapLibre-Style;
+- `housesToGeoJson()` verwendet stabile App-House-IDs und nur die Properties `houseTaskId`, `status` und `color`;
+- House-Auswahl nutzt den bestehenden `selectHouseTask()`-/House-Sheet-Pfad;
+- Street-, House- und Area-Hit-Test bleiben in dieser Reihenfolge;
+- Domain-`setData()`-Pfade sind für Areas, Streets und Houses getrennt, Filteränderungen lösen kein House-`setData()` aus;
+- Field-Session-Refs transportieren echte `houseTaskIds`, House-only Sessions werden nicht mehr ausgefiltert;
+- Renderer-Diagnose und lokale Dichteprüfung decken House-Sets bis 20.000 Features ab.
+
+Noch ausstehend sind die reale Android-/iPhone-Prüfung, TypeScript, Dependency Audit, Production Build, der finale `check`-Lauf und der CI-Nachweis auf dem finalen GitHub-Head.
+
 ## Relevante Context-Graph-Knoten
 
 - `prompt-house-polygon-renderer`
@@ -193,7 +206,7 @@ Neue kleine Renderer-Grenze:
 - feste House-Layer-IDs;
 - House-FeatureCollection-Typ;
 - `housesToGeoJson()`;
-- minimale Properties wie `houseTaskId`, `areaId`, `teamId`, `status`, `color`;
+- minimale Properties `houseTaskId`, `status`, `color`;
 - pure Layer-/Filter-Helper, soweit sie `MapView.tsx` tatsächlich vereinfachen.
 
 Keine Credentials und keine unnötigen Domain-Metadaten.

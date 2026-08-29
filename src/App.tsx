@@ -251,6 +251,19 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     [snapshot.tasks, snapshot.areas, snapshot.teams],
   );
 
+  const renderedHouses = useMemo(
+    () =>
+      (snapshot.houseTasks ?? []).map((house) => {
+        const area = snapshot.areas.find((candidate) => candidate.id === house.areaId);
+        const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
+        return {
+          ...house,
+          color: team?.color ?? "#64748b",
+        };
+      }),
+    [snapshot.houseTasks, snapshot.areas, snapshot.teams],
+  );
+
   const drawValidation = useMemo(
     () => validatePolygonVertices(draftVertices),
     [draftVertices],
@@ -714,7 +727,9 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         language={language}
         areas={renderedAreas}
         tasks={renderedTasks}
+        houses={renderedHouses}
         selectedTaskId={selectedTaskId}
+        selectedHouseTaskId={selectedHouseTaskId}
         mode={mode}
         draftVertices={draftVertices}
         draftColor={activeTeam?.color ?? "#2563eb"}
@@ -729,6 +744,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         onRefresh={manualRefreshCampaign}
         onAreaSelect={selectArea}
         onTaskSelect={selectTask}
+        onHouseTaskSelect={selectHouseTask}
         onDrawPoint={(point) => setDraftVertices((current) => [...current, point])}
         onEditVertexSelect={(index) =>
           setSelectedVertexIndex((current) => (current === index ? null : index))

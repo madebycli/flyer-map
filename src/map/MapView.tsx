@@ -23,6 +23,18 @@ import {
   offlineMapRendererMode,
   offlineRoadData,
 } from "./offlineMapContext";
+import {
+  HOUSE_FILL_LAYER_ID,
+  HOUSE_LATER_LAYER_ID,
+  HOUSE_MIN_ZOOM,
+  HOUSE_NOT_DELIVERABLE_LAYER_ID,
+  HOUSE_OUTLINE_LAYER_ID,
+  HOUSE_SELECTED_LAYER_ID,
+  HOUSE_SESSION_HIGHLIGHT_LAYER_ID,
+  HOUSE_SOURCE_ID,
+  housesToGeoJson,
+  type RenderHouse,
+} from "./houseRenderer";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 type MapMode = "browse" | "draw" | "edit" | "street-draw";
@@ -75,7 +87,9 @@ type MapViewProps = {
   language: Language;
   areas: RenderArea[];
   tasks: RenderTask[];
+  houses: RenderHouse[];
   selectedTaskId: string | null;
+  selectedHouseTaskId: string | null;
   mode: MapMode;
   draftVertices: LngLat[];
   draftColor: string;
@@ -90,6 +104,7 @@ type MapViewProps = {
   onRefresh: () => void;
   onAreaSelect: (areaId: string | null) => void;
   onTaskSelect: (taskId: string | null) => void;
+  onHouseTaskSelect: (taskId: string | null) => void;
   onDrawPoint: (point: LngLat) => void;
   onEditVertexSelect: (index: number) => void;
   onEditVertexMove: (index: number, point: LngLat) => void;
@@ -115,6 +130,54 @@ const STREET_LAYER_IDS = [
   STREET_LATER_LAYER_ID,
   STREET_NOT_DELIVERABLE_LAYER_ID,
 ] as const;
+
+const HOUSE_FILL_OPACITY_EXPRESSION: ExpressionSpecification = [
+  "match",
+  ["get", "status"],
+  "completed",
+  0.12,
+  "later",
+  0.1,
+  "not-deliverable",
+  0.08,
+  0.24,
+];
+
+const HOUSE_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  HOUSE_MIN_ZOOM,
+  0.9,
+  17,
+  1.3,
+  20,
+  2.2,
+];
+
+const HOUSE_HIGHLIGHT_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  HOUSE_MIN_ZOOM,
+  2.2,
+  17,
+  3.0,
+  20,
+  4.6,
+];
+
+const HOUSE_SELECTED_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  HOUSE_MIN_ZOOM,
+  2.8,
+  17,
+  3.7,
+  20,
+  5.4,
+];
 
 const STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   "interpolate",
@@ -243,7 +306,12 @@ function streetsToGeoJson(tasks: RenderTask[]): StreetFeatureCollection {
   };
 }
 
-function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean): StyleSpecification {
+function buildMapStyle(
+  areas: RenderArea[],
+  tasks: RenderTask[],
+  houses: RenderHouse[],
+  online: boolean,
+): StyleSpecification {
   return {
     version: 8,
     sources: {
@@ -276,6 +344,10 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean
       [STREET_SOURCE_ID]: {
         type: "geojson",
         data: streetsToGeoJson(tasks),
+      },
+      [HOUSE_SOURCE_ID]: {
+        type: "geojson",
+        data: housesToGeoJson(houses),
       },
     },
     layers: [
@@ -336,6 +408,70 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean
           "line-color": ["get", "color"],
           "line-opacity": 0.94,
           "line-width": AREA_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: HOUSE_FILL_LAYER_ID,
+        type: "fill",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        paint: {
+          "fill-color": ["get", "color"],
+          "fill-opacity": HOUSE_FILL_OPACITY_EXPRESSION,
+        },
+      },
+      {
+        id: HOUSE_OUTLINE_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: [
+          "any",
+          ["==", ["get", "status"], "open"],
+          ["==", ["get", "status"], "completed"],
+        ],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.9,
+          "line-width": HOUSE_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: HOUSE_LATER_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: ["==", ["get", "status"], "later"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.88,
+          "line-width": HOUSE_WIDTH_EXPRESSION,
+          "line-dasharray": [2, 2],
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: HOUSE_NOT_DELIVERABLE_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: ["==", ["get", "status"], "not-deliverable"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.86,
+          "line-width": HOUSE_WIDTH_EXPRESSION,
+          "line-dasharray": [0.7, 2.8],
         },
         layout: {
           "line-join": "round",
@@ -434,6 +570,39 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean
           "line-cap": "round",
         },
       },
+      {
+        id: HOUSE_SESSION_HIGHLIGHT_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: ["==", ["get", "houseTaskId"], "__none__"],
+        paint: {
+          "line-color": "#f59e0b",
+          "line-opacity": 0.96,
+          "line-width": HOUSE_HIGHLIGHT_WIDTH_EXPRESSION,
+          "line-dasharray": [1, 1],
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: HOUSE_SELECTED_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: ["==", ["get", "houseTaskId"], "__none__"],
+        paint: {
+          "line-color": "#172019",
+          "line-opacity": 0.98,
+          "line-width": HOUSE_SELECTED_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
     ],
   };
 }
@@ -470,18 +639,28 @@ function findEditVertex(map: Map, vertices: LngLat[], point: { x: number; y: num
   return hit;
 }
 
-function syncApplicationData(
-  map: Map,
-  areas: RenderArea[],
-  tasks: RenderTask[],
-  selectedTaskId: string | null,
-  highlightedTaskIds: readonly string[],
-) {
+function syncAreaData(map: Map, areas: RenderArea[]) {
   const areaSource = map.getSource(AREA_SOURCE_ID) as GeoJSONSource | undefined;
   if (areaSource) areaSource.setData(areasToGeoJson(areas));
+}
 
+function syncStreetData(map: Map, tasks: RenderTask[]) {
   const streetSource = map.getSource(STREET_SOURCE_ID) as GeoJSONSource | undefined;
   if (streetSource) streetSource.setData(streetsToGeoJson(tasks));
+}
+
+function syncHouseData(map: Map, houses: RenderHouse[]) {
+  const houseSource = map.getSource(HOUSE_SOURCE_ID) as GeoJSONSource | undefined;
+  if (houseSource) houseSource.setData(housesToGeoJson(houses));
+}
+
+function syncApplicationFilters(
+  map: Map,
+  selectedTaskId: string | null,
+  selectedHouseTaskId: string | null,
+  highlightedStreetTaskIds: readonly string[],
+  highlightedHouseTaskIds: readonly string[],
+) {
 
   if (map.getLayer(STREET_SELECTED_LAYER_ID)) {
     map.setFilter(
@@ -492,14 +671,32 @@ function syncApplicationData(
   if (map.getLayer(STREET_SESSION_HIGHLIGHT_LAYER_ID)) {
     map.setFilter(
       STREET_SESSION_HIGHLIGHT_LAYER_ID,
-      highlightedTaskIds.length > 0
-        ? ["match", ["get", "taskId"], [...highlightedTaskIds], true, false]
+      highlightedStreetTaskIds.length > 0
+        ? ["match", ["get", "taskId"], [...highlightedStreetTaskIds], true, false]
         : ["==", ["get", "taskId"], "__none__"],
     );
   }
 
+  if (map.getLayer(HOUSE_SELECTED_LAYER_ID)) {
+    map.setFilter(
+      HOUSE_SELECTED_LAYER_ID,
+      ["==", ["get", "houseTaskId"], selectedHouseTaskId ?? "__none__"],
+    );
+  }
+  if (map.getLayer(HOUSE_SESSION_HIGHLIGHT_LAYER_ID)) {
+    map.setFilter(
+      HOUSE_SESSION_HIGHLIGHT_LAYER_ID,
+      highlightedHouseTaskIds.length > 0
+        ? ["match", ["get", "houseTaskId"], [...highlightedHouseTaskIds], true, false]
+        : ["==", ["get", "houseTaskId"], "__none__"],
+    );
+  }
+
   const region = map.getContainer().closest<HTMLElement>(".map-region");
-  if (region) region.dataset.sessionHighlightStreets = String(highlightedTaskIds.length);
+  if (region) {
+    region.dataset.sessionHighlightStreets = String(highlightedStreetTaskIds.length);
+    region.dataset.sessionHighlightHouses = String(highlightedHouseTaskIds.length);
+  }
 }
 
 function syncOfflineMapData(map: Map, pkg: OfflineMapPackage | null, online: boolean) {
@@ -544,6 +741,12 @@ function updateRendererDiagnostics(map: Map) {
       streetLayers.length > 0
         ? map.queryRenderedFeatures(undefined, { layers: [...streetLayers] })
         : [];
+    const sourceHouses = map.querySourceFeatures(HOUSE_SOURCE_ID).filter(
+      (feature) => typeof feature.properties?.houseTaskId === "string",
+    );
+    const renderedHouses = map.getLayer(HOUSE_FILL_LAYER_ID)
+      ? map.queryRenderedFeatures(undefined, { layers: [HOUSE_FILL_LAYER_ID] })
+      : [];
     region.dataset.sourceAreas = String(new Set(sourceAreas.map((feature) => feature.properties?.areaId)).size);
     region.dataset.sourceStreets = String(
       new Set(sourceStreets.map((feature) => feature.properties?.taskId)).size,
@@ -553,6 +756,12 @@ function updateRendererDiagnostics(map: Map) {
     );
     region.dataset.renderedStreets = String(
       new Set(renderedStreets.map((feature) => feature.properties?.taskId)).size,
+    );
+    region.dataset.sourceHouses = String(
+      new Set(sourceHouses.map((feature) => feature.properties?.houseTaskId)).size,
+    );
+    region.dataset.renderedHouses = String(
+      new Set(renderedHouses.map((feature) => feature.properties?.houseTaskId)).size,
     );
   } catch (cause) {
     console.warn("Map renderer diagnostics failed", cause);
@@ -603,7 +812,9 @@ export function MapView({
   language,
   areas,
   tasks,
+  houses,
   selectedTaskId,
+  selectedHouseTaskId,
   mode,
   draftVertices,
   draftColor,
@@ -618,6 +829,7 @@ export function MapView({
   onRefresh,
   onAreaSelect,
   onTaskSelect,
+  onHouseTaskSelect,
   onDrawPoint,
   onEditVertexSelect,
   onEditVertexMove,
@@ -628,6 +840,13 @@ export function MapView({
     () =>
       sessionMapHighlight?.campaignId === campaignId
         ? [...sessionMapHighlight.streetTaskIds]
+        : [],
+    [campaignId, sessionMapHighlight],
+  );
+  const highlightedHouseTaskIds = useMemo(
+    () =>
+      sessionMapHighlight?.campaignId === campaignId
+        ? [...sessionMapHighlight.houseTaskIds]
         : [],
     [campaignId, sessionMapHighlight],
   );
@@ -642,8 +861,24 @@ export function MapView({
   const activeHaloRef = useRef<SVGPolygonElement | SVGPolylineElement | null>(null);
   const activeMarkerRefs = useRef(new globalThis.Map<number, SVGCircleElement>());
 
-  const dataRef = useRef({ areas, tasks, selectedTaskId, highlightedStreetTaskIds });
-  dataRef.current = { areas, tasks, selectedTaskId, highlightedStreetTaskIds };
+  const dataRef = useRef({
+    areas,
+    tasks,
+    houses,
+    selectedTaskId,
+    selectedHouseTaskId,
+    highlightedStreetTaskIds,
+    highlightedHouseTaskIds,
+  });
+  dataRef.current = {
+    areas,
+    tasks,
+    houses,
+    selectedTaskId,
+    selectedHouseTaskId,
+    highlightedStreetTaskIds,
+    highlightedHouseTaskIds,
+  };
 
   const interactionRef = useRef({
     mode,
@@ -653,6 +888,7 @@ export function MapView({
     streetDraftVertices,
     onAreaSelect,
     onTaskSelect,
+    onHouseTaskSelect,
     onDrawPoint,
     onEditVertexSelect,
     onEditVertexMove,
@@ -666,6 +902,7 @@ export function MapView({
     streetDraftVertices,
     onAreaSelect,
     onTaskSelect,
+    onHouseTaskSelect,
     onDrawPoint,
     onEditVertexSelect,
     onEditVertexMove,
@@ -711,7 +948,12 @@ export function MapView({
     try {
       const map = new Map({
         container: containerRef.current,
-        style: buildMapStyle(initialData.areas, initialData.tasks, navigator.onLine),
+        style: buildMapStyle(
+          initialData.areas,
+          initialData.tasks,
+          initialData.houses,
+          navigator.onLine,
+        ),
         center: initialCamera.center,
         zoom: initialCamera.zoom,
         bearing: initialCamera.bearing,
@@ -782,12 +1024,15 @@ export function MapView({
       map.once("load", () => {
         if (!active) return;
         const current = dataRef.current;
-        syncApplicationData(
+        syncAreaData(map, current.areas);
+        syncStreetData(map, current.tasks);
+        syncHouseData(map, current.houses);
+        syncApplicationFilters(
           map,
-          current.areas,
-          current.tasks,
           current.selectedTaskId,
+          current.selectedHouseTaskId,
           current.highlightedStreetTaskIds,
+          current.highlightedHouseTaskIds,
         );
         void refreshOfflineContext();
         updateActiveOverlay(map);
@@ -846,6 +1091,23 @@ export function MapView({
           }
         }
 
+        if (map.getLayer(HOUSE_FILL_LAYER_ID)) {
+          const bbox: [[number, number], [number, number]] = [
+            [event.point.x - 10, event.point.y - 10],
+            [event.point.x + 10, event.point.y + 10],
+          ];
+          const houseFeatures = map.queryRenderedFeatures(bbox, {
+            layers: [HOUSE_FILL_LAYER_ID],
+          });
+          const houseFeature = houseFeatures.find(
+            (feature) => typeof feature.properties?.houseTaskId === "string",
+          );
+          if (houseFeature && typeof houseFeature.properties?.houseTaskId === "string") {
+            interaction.onHouseTaskSelect(houseFeature.properties.houseTaskId);
+            return;
+          }
+        }
+
         interaction.onTaskSelect(null);
         if (map.getLayer(AREA_FILL_LAYER_ID)) {
           const areaFeatures = map.queryRenderedFeatures(event.point, { layers: [AREA_FILL_LAYER_ID] });
@@ -889,9 +1151,38 @@ export function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    syncApplicationData(map, areas, tasks, selectedTaskId, highlightedStreetTaskIds);
-  }, [areas, tasks, selectedTaskId, highlightedStreetTaskIds]);
+    if (!map || !map.isStyleLoaded()) return;
+    syncAreaData(map, areas);
+  }, [areas]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncStreetData(map, tasks);
+  }, [tasks]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncHouseData(map, houses);
+  }, [houses]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncApplicationFilters(
+      map,
+      selectedTaskId,
+      selectedHouseTaskId,
+      highlightedStreetTaskIds,
+      highlightedHouseTaskIds,
+    );
+  }, [
+    highlightedHouseTaskIds,
+    highlightedStreetTaskIds,
+    selectedHouseTaskId,
+    selectedTaskId,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -53,8 +53,13 @@ test("real Einsätze history stays in the production launcher graph", async () =
   assert.match(workerEntry, /handleFieldSessionNoteApi/u);
   assert.match(workerEntry, /handleFieldSessionTasksApi/u);
   assert.match(map, /vf-streets-session-highlight/u);
+  assert.match(map, /HOUSE_SESSION_HIGHLIGHT_LAYER_ID/u);
   assert.match(map, /useSessionMapHighlight/u);
   assert.match(map, /sessionHighlightStreets/u);
+  assert.match(map, /sessionHighlightHouses/u);
+  assert.match(shell, /houseTaskIds/u);
+  assert.match(hub, /if \(taskRefs\.length === 0\)/u);
+  assert.doesNotMatch(hub, /keine aktuell darstellbaren Straßen-Aufgaben/u);
 
   const combined = `${shell}\n${hub}\n${history}\n${api}\n${map}\n${worker}\n${noteWorker}\n${taskWorker}`;
   assert.doesNotMatch(combined, /session_hash|secret_hash|qrToken|roomCode|cf-connecting-ip/iu);

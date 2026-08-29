@@ -52,21 +52,25 @@ Auf PR #72 sind die aktuellen Runtime-Slices für folgende Bereiche umgesetzt:
 - erste feste deterministische und idempotente Automation gemäß ADR-0019;
 - echte serverseitige Stats-Projektion mit getrennten Street-/House-Nennern.
 
-## House renderer gap
+## House renderer checkpoint
 
-House-Persistenz und House-Domain sind vorhanden, aber persistierte House Tasks werden im normalen MapLibre-Browse-Renderer noch nicht als eigene Polygone gerendert.
+Der aktuelle Runtime-Slice rendert persistierte House Tasks im normalen MapLibre-Browse-Renderer.
 
-Der aktuelle Code hat bereits:
-- `CampaignSnapshot.houseTasks` und `HouseTask.geometry` als Polygon;
-- House-Auswahlzustand und House-Sheet in `App.tsx`;
-- House-Kommentarkontext;
-- Field-Session-Task-Refs für `street-task` und `house-task`.
+Umgesetzt:
+- `CampaignSnapshot.houseTasks` und `HouseTask.geometry` werden über `src/map/houseRenderer.ts` in eine gebatchte `vf-houses`-GeoJSON-Source überführt;
+- `Feature.id` und `properties.houseTaskId` bleiben die stabile App-House-ID, OSM bleibt ausschließlich Provenance;
+- Renderer-Properties sind auf `houseTaskId`, `status` und Team-`color` begrenzt;
+- feste House-Layer zeigen Fläche, Status-Outline, Auswahl und Session Highlight, ohne House-spezifische Layer oder DOM-Nodes;
+- normale House-Layer liegen unter den Street-Layern, `HOUSE_MIN_ZOOM` startet bei 15;
+- House-Klicks verwenden `queryRenderedFeatures` auf `vf-houses-fill` mit kleinem Touch-Hitbox und der Reihenfolge Street, House, Area;
+- Area-, Street- und House-`setData()` sind getrennt, Auswahl und Session Highlight setzen nur Filter;
+- echte `houseTaskIds` laufen durch den vorhandenen Field-Session-Highlight-Pfad, inklusive House-only Sessions;
+- `?diag=1` zeigt Source-/sichtbare House-Zahlen.
 
 Noch offen:
-- eigene gebatchte House-GeoJSON-Source im normalen Renderer;
-- feste House-Layer für Status, Auswahl und später Session-Highlight;
-- House-Hit-Test über `queryRenderedFeatures`;
-- Übergabe echter House-IDs in den bestehenden Session-Map-Highlight-Pfad.
+- reale Android-/iPhone-Browserprüfung der Touch-Dichte und des endgültigen House-`minzoom`;
+- TypeScript, Dependency Audit, Production Build und finaler GitHub-CI-Lauf auf dem Implementierungs-Head;
+- Dokumentations-/Handoff-Commit und anschließende erneute Prüfung von PR #72.
 
 Der bestehende Street-Renderer bleibt unverändert und darf nicht zu einer gemischten riskanten `vf-tasks`-Source umgebaut werden, solange dafür kein nachgewiesener Bedarf besteht.
 
@@ -93,15 +97,13 @@ Weiterhin verbindlich:
 - keine Secrets, Tokens oder unnötigen Domain-Daten in Renderer-Properties;
 - persistierte House-Geometrie wird von MapLibre gerendert, nicht pro House durch React, SVG oder Canvas;
 - feste kleine Source-/Layer-Anzahl statt Layer oder DOM-Nodes pro House;
-- `GeoJSONSource.setData()` nur bei echten Domain-Datenänderungen, nicht bei Pan, Zoom oder Rotate;
+- `GeoJSONSource.setData()` nur bei echten Domain-Datenänderungen, nicht bei Auswahl, Session-Filtern, Pan, Zoom oder Rotate;
 - Dense-House-Daten müssen auf realistischen mobilen Geräten geprüft werden.
 
 ## Immediate next
 
-1. Plan 018 gegen den exakten aktuellen Branch- und PR-Stand verifizieren.
-2. House-Polygon-Rendering als separate `vf-houses`-Source im normalen MapLibre-Renderer implementieren.
-3. Bestehenden House-Sheet-Pfad über Karten-Hit-Test anbinden.
-4. Danach den vorhandenen Field-Session-House-Highlight-Pfad auf echte House-IDs erweitern.
-5. Relevante Security-/Renderer-Tests, vollständige Testsuite, TypeScript, Dependency Audit und Production Build ausführen.
-6. Dokumentation und Living Handoff auf dem finalen Head aktualisieren.
-7. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.
+1. Reale Android-/iPhone-Browserprüfung für House-Rendering, Touch-Hit-Test und Dense-Mobile-Verhalten abschließen.
+2. TypeScript, Dependency Audit, Production Build und den vollständigen `check`-Flow auf dem Implementierungs-Head ausführen.
+3. Dokumentation und Living Handoff auf dem finalen Head aktualisieren.
+4. PR #72 Draft und offen lassen, finalen CI-Lauf exakt auf diesem Head verifizieren.
+5. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.

@@ -6,7 +6,7 @@ export type SessionMapHighlight = {
   sessionId: string;
   label: string;
   streetTaskIds: readonly string[];
-  houseTaskCount: number;
+  houseTaskIds: readonly string[];
 };
 
 const SessionMapHighlightContext = createContext<SessionMapHighlight | null>(null);

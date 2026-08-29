@@ -101,8 +101,8 @@ export function PlatformShell() {
             <strong>Einsatz hervorgehoben</strong>
             <span>
               {sessionMapHighlight.label} · {sessionMapHighlight.streetTaskIds.length} Straßen
-              {sessionMapHighlight.houseTaskCount > 0
-                ? ` · ${sessionMapHighlight.houseTaskCount} Haus-Aufgaben nur im Verlauf`
+              {sessionMapHighlight.houseTaskIds.length > 0
+                ? ` · ${sessionMapHighlight.houseTaskIds.length} Häuser`
                 : ""}
             </span>
           </div>
@@ -232,12 +232,15 @@ export function PlatformShell() {
             const streetTaskIds = taskRefs
               .filter((taskRef) => taskRef.entityType === "street-task")
               .map((taskRef) => taskRef.entityId);
+            const houseTaskIds = taskRefs
+              .filter((taskRef) => taskRef.entityType === "house-task")
+              .map((taskRef) => taskRef.entityId);
             setSessionMapHighlight({
               campaignId: session.campaignId,
               sessionId: session.id,
               label: session.teamName,
               streetTaskIds,
-              houseTaskCount: taskRefs.filter((taskRef) => taskRef.entityType === "house-task").length,
+              houseTaskIds,
             });
             setFieldSessionsOpen(false);
           }}

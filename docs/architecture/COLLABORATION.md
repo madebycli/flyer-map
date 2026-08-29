@@ -2,7 +2,7 @@
 id: architecture-collaboration
 type: architecture
 status: active
-last_updated: 2026-08-28
+last_updated: 2026-08-29
 related: [product-roadmap, architecture-data, architecture-security, architecture-offline-sync, architecture-live-teams, plan-012-platform-app-expansion, ADR-0017, ADR-0018, ADR-0019]
 source_of_truth_for: [field-session-foundation, comments, activity, future-automations, future-statistics]
 ---
@@ -98,7 +98,7 @@ Task event creation participates in the accepted M5 idempotency/transaction mode
 
 ## Session work and map highlighting, FC2
 
-Future session history should relate work to actual Task/domain events created or changed while the session is active.
+Session history relates work to actual Task/domain events created or changed while the session is active.
 
 Accepted direction:
 - domain events reference `field_session_id` where applicable;
@@ -107,7 +107,12 @@ Accepted direction:
 - no continuous route polyline is stored merely to recreate an outing;
 - exact historical geometry versioning is not required for v1 reflection.
 
-This remains FC2 work and is not implied by the current close/expiry foundation.
+The current map path preserves both supported entity types as stable selectors:
+- `street-task` refs become Street layer filters;
+- `house-task` refs become House layer filters on the current `vf-houses` source;
+- Street-only, House-only and mixed sessions are supported;
+- missing or deleted current Tasks simply produce no rendered feature;
+- no historical geometry copy, GPS route or new authorization path is created.
 
 ## Comments, FC2
 

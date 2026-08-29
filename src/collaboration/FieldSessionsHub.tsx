@@ -92,9 +92,9 @@ export function FieldSessionsHub({
       setError(null);
       try {
         const taskRefs = await fetchAllFieldSessionTaskRefs(campaignId, session.id);
-        if (!taskRefs.some((taskRef) => taskRef.entityType === "street-task")) {
+        if (taskRefs.length === 0) {
           setError(
-            "Für diesen Einsatz gibt es keine aktuell darstellbaren Straßen-Aufgaben. Haus-Aufgaben bleiben in der Historie sichtbar.",
+            "Für diesen Einsatz gibt es keine aktuell darstellbaren Straßen- oder Haus-Aufgaben.",
           );
           return;
         }

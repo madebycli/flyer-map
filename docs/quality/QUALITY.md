@@ -2,7 +2,7 @@
 id: quality
 type: quality
 status: accepted
-last_updated: 2026-08-25
+last_updated: 2026-08-29
 related: [architecture, architecture-map, product-ux, product-roadmap]
 source_of_truth_for: [quality-gates, performance-acceptance, target-devices]
 ---
@@ -55,7 +55,7 @@ Synthetic/representative acceptance targets:
 - 2,500 Streets;
 - 5,000 Streets.
 
-When House Mode is implemented, add realistic building-count tests for a 40k–60k resident city-scale Campaign.
+The current House renderer slice adds batched conversion checks at 1,000 / 2,500 / 5,000 / 10,000 / 20,000 House features. House Mode still requires real-device building-density acceptance for a 40k-60k resident city-scale Campaign before a final scale claim.
 
 Measure:
 - FPS / long frames;

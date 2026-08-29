@@ -2,7 +2,7 @@
 id: architecture-map
 type: architecture
 status: accepted
-last_updated: 2026-08-26
+last_updated: 2026-08-29
 related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012, ADR-0013]
 source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera, saved-geometry-renderer, prepared-offline-map-rendering]
 ---
@@ -17,7 +17,8 @@ MapLibre GL JS **5.7.1** owns the persistent map rendering pipeline:
 - navigation/compass controls;
 - one-shot browser geolocation display;
 - saved Verteil-Flyer Areas through one GeoJSON source plus Fill/Outline layers;
-- saved Street Tasks through one GeoJSON source plus a small fixed set of Line layers.
+- saved Street Tasks through one GeoJSON source plus a small fixed set of Line layers;
+- saved House Tasks through one GeoJSON source plus a small fixed set of Fill/Line layers.
 
 The independent SVG overlay is reserved for active geometry input only:
 - Area draw preview and points;
@@ -67,6 +68,7 @@ ADR-0012 defines the separate prepared offline-data path. OpenStreetMap Foundati
 Two persistent sources exist for the current field renderer:
 - `vf-areas` - all saved Areas;
 - `vf-streets` - all saved Street Tasks.
+- `vf-houses` - all saved House Tasks.
 
 The initial MapLibre style is built with these application sources/layers already present using the latest Campaign data available at map construction time. They are not recreated during pan/zoom/rotate.
 
@@ -105,9 +107,15 @@ M6 now has a durable House Task data/persistence foundation under ADR-0013:
 - optional parent Street Task in the same Area;
 - independent Task status.
 
-House Tasks intentionally **do not yet enter `vf-streets`**. The current field renderer remains Street-only until a dedicated House map-layer slice defines batched building fill/outline/selection styling and real-device density acceptance. This avoids accidentally treating Polygon House geometry as Street LineString geometry.
+House Tasks intentionally **do not enter `vf-streets`**. They now render through the separate `vf-houses` source with fixed building fill, status outline, selection and Session Highlight layers. This avoids treating Polygon House geometry as Street LineString geometry.
 
-When House rendering is added it must follow the same persistent MapLibre rule: one/few batched GeoJSON sources and a fixed small layer set, never one layer or React/SVG element per building.
+The current House renderer uses:
+- `HOUSE_MIN_ZOOM = 15` as the dense-mobile starting boundary;
+- `Feature.id` and `houseTaskId` as the stable application-owned House Task identity;
+- only `houseTaskId`, `status` and resolved Team `color` in renderer properties;
+- no layer, marker, React component or SVG element per building.
+
+Normal House layers remain below Street layers. Selected Houses and Session Highlights use fixed overlay layers above the normal map presentation.
 
 ## Browse interaction
 
@@ -117,9 +125,9 @@ Street selection uses a small screen-space hit box around the pointer/tap so a t
 
 Area selection queries the Area fill layer at the interaction point.
 
-Normal browse movement must perform **zero Verteil-Flyer `map.project()` loops over all saved Areas/Streets**.
+Normal browse movement must perform **zero Verteil-Flyer `map.project()` loops over all saved Areas/Streets/Houses**.
 
-Future House browse selection must use rendered-feature queries over the batched House source, not per-House DOM hit targets.
+House browse selection uses a rendered-feature query over `vf-houses-fill` with a small screen-space hit box. Street selection remains first, followed by House, then Area. There are no per-House DOM hit targets.
 
 ## Active draw/edit SVG
 
@@ -180,7 +188,7 @@ Road/building import must preserve the persistent renderer pattern:
 - use application-owned durable Task ids and reviewed geometry snapshots under ADR-0013;
 - if a different production-scale map pipeline becomes necessary, decide it explicitly rather than silently creating a duplicate source of truth.
 
-House persistence is now a separate additive data slice. House map rendering remains an explicit follow-up, not an implicit extension of the Street LineString source.
+House persistence and map rendering remain separate from the Street LineString source. The renderer consumes the already-authorized Campaign snapshot and does not add a new persistence or authorization path.
 
 ## Camera state
 
@@ -203,7 +211,7 @@ Geolocation is user-initiated and one-shot. GPS coordinates are not persisted as
 
 The opt-in `?diag=1` panel is used for renderer troubleshooting and real-browser acceptance.
 
-Whole-city acceptance must include representative dense tests, currently targeted at 500 / 1,000 / 2,500 / 5,000 Street features. House Mode requires additional building-scale tests before its persistent layer is promoted into the field map.
+Whole-city acceptance must include representative dense tests, currently targeted at 500 / 1,000 / 2,500 / 5,000 Street features and 1,000 / 2,500 / 5,000 / 10,000 / 20,000 House features. Real mobile browser acceptance remains required for the final House `minzoom` decision and touch density behavior.
 
 Prepared 3 km offline packages must be measured with dense representative urban data on real mobile devices. If normalized GeoJSON package/render size becomes unsuitable, revisit transport/render storage through a new ADR rather than silently introducing a second map pipeline.
 

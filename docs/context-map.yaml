@@ -1,4 +1,4 @@
-version: 6
+version: 7
 
 entrypoints:
   always:
@@ -264,6 +264,13 @@ nodes:
     topics: [houses, house-polygon, maplibre, geojson, renderer, selection, session-highlight, performance]
     load_when: [House polygon renderer, normal House rendering, House map selection, House session highlight, current safe slice]
 
+  - id: house-renderer-runtime
+    path: src/map/houseRenderer.ts
+    type: code
+    status: current
+    topics: [houses, house-polygon, maplibre, geojson, renderer, selection, session-highlight]
+    load_when: [House renderer implementation, House GeoJSON contract, House renderer regression, House map selection]
+
   - id: prompt-latest-feature-complete
     path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
     type: onboarding
@@ -321,6 +328,10 @@ edges:
   - { from: plan-house-polygon-renderer, to: adr-smart-task-identity, relation: constrained_by }
   - { from: plan-house-polygon-renderer, to: collaboration, relation: completes_house_session_highlight }
   - { from: plan-house-polygon-renderer, to: quality, relation: validated_by }
+  - { from: plan-house-polygon-renderer, to: house-renderer-runtime, relation: implements }
+  - { from: house-renderer-runtime, to: map, relation: implements }
+  - { from: house-renderer-runtime, to: adr-smart-task-identity, relation: constrained_by }
+  - { from: house-renderer-runtime, to: collaboration, relation: integrates }
   - { from: prompt-latest-feature-complete, to: plan-feature-complete-platform, relation: continues }
   - { from: prompt-latest-feature-complete, to: prompt-house-polygon-renderer, relation: routes_to_next_slice }
   - { from: prompt-house-polygon-renderer, to: plan-house-polygon-renderer, relation: plans }
