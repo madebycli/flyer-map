@@ -38,6 +38,17 @@ Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keine
 
 Plan 019 und der Launcher-Cleanup verschieben den Branch-Head. Nach jedem Commit müssen exakter GitHub-Head, PR #72, Draft-/Mergeability-Status und CI auf genau diesem Head erneut geprüft werden. Ein älterer grüner Runtime-Head ist nicht automatisch ein Nachweis für den finalen Branch-Head.
 
+## Verifizierter Plan-019-Runtime-Stand
+
+- Runtime-Head: `6a21f5534c5854f9ff606ed34ae39fd31793420b`;
+- CI #705 auf genau diesem Head: erfolgreich mit Tests, TypeScript, Dependency Audit und Production Build;
+- PR #72: offen, Draft und mergeable.
+
+Die nachfolgende Dokumentationsaktualisierung kann den Branch-Head als reinen
+Dokumentationscommit weiter verschieben. Für die Runtime-Bewertung bleibt der oben
+genannte Commit maßgeblich; den exakten aktuellen GitHub-Head und dessen neuesten CI-Lauf
+immer erneut prüfen.
+
 ## Aktueller Feature-Stand
 
 Auf PR #72 umgesetzt:
@@ -141,10 +152,10 @@ Die bestehende Cloudflare Git-Integration kann nach Branch-Commits automatisch P
 
 ## Verbleibende Quality Gates
 
-- relevante Renderer-/House-/Session-/Security-Regressionstests und Smart-Street-Runtime-Guards: lokal seriell 450/450 grün;
+- relevante Renderer-/House-/Session-/Security-Regressionstests und Smart-Street-Runtime-Guards: lokal seriell 451/451 grün;
 - Dense-House-Conversion bis 20.000 Features: lokal grün;
 - mobile Hit-Test-Prüfung auf Android Chromium und iPhone Safari: noch offen;
-- TypeScript, Dependency Audit, Production Build und finaler `check`-Lauf: nach dem nächsten Commit auf exakt dem GitHub-Head prüfen;
+- TypeScript, Dependency Audit, Production Build und finaler `check`-Lauf: CI #705 auf dem verifizierten Plan-019-Runtime-Head grün;
 - reale Android-/iPhone- und Touch-Dichteabnahme: weiterhin offen.
 
 ## Nicht tun

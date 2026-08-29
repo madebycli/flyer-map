@@ -38,11 +38,14 @@ Plan 019 ist der nächste implementierte normale FC4-Vertical-Slice:
 Aktiver Entwicklungsstack:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- letzter vor Plan 019 verifizierter Runtime-Head: `9477e1d15aada83db145cd9dd27b10a152cd13f7`;
-- CI #704 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
+- letzter verifizierter Runtime-Head: `6a21f5534c5854f9ff606ed34ae39fd31793420b`;
+- CI #705 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
 - PR #72 war offen, Draft und mergeable.
 
-Der Plan-019-Commit verschiebt den Branch-Head. GitHub bleibt für den exakten finalen Head und CI maßgeblich; die aktualisierten Werte werden nach diesem Commit erneut eingetragen.
+Der Runtime-Head enthält den Launcher-Cleanup, Plan 018 als abgeschlossenen Checkpoint
+und den normalen Plan-019-Smart-Street-Flow. Ein späterer Dokumentationscommit kann den
+Branch-Head weiter verschieben; GitHub bleibt für den exakten jeweiligen Head und CI
+maßgeblich.
 
 GitHub und der aktuelle Branch-Head bleiben Source of Truth. Nach jedem neuen Commit muss CI erneut auf genau diesem neuen Head geprüft werden.
 

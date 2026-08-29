@@ -30,8 +30,10 @@ Vor der Umsetzung wurden Working Tree, Branch, PR und CI erneut geprüft:
 - CI #704 war auf genau diesem Head erfolgreich;
 - Migration 0004 und alle späteren vorbereiteten Migrationen waren nicht remote angewendet.
 
-Der spätere exakte Folgeslice-Head steht in `docs/status/CURRENT.md`. Repository und
-GitHub bleiben auch für diesen Plan die alleinige Source of Truth.
+Der verifizierte Plan-019-Runtime-Head ist
+`6a21f5534c5854f9ff606ed34ae39fd31793420b`; CI #705 lief auf genau diesem Head
+erfolgreich. Repository und GitHub bleiben auch für diesen Plan die alleinige Source
+of Truth.
 
 ## Architekturprüfung und Entscheidung
 

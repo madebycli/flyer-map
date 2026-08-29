@@ -53,7 +53,10 @@ Der Renderer-Core und der anschließende Session-Highlight-Checkpoint sind im Re
 
 Nicht als bestanden behauptet werden die reale Android-/iPhone-Prüfung, die Touch-Dichteprüfung und die endgültige Wahl von `HOUSE_MIN_ZOOM`. `HOUSE_MIN_ZOOM = 15` bleibt der dokumentierte Ausgangswert. Diese Hardware-Abnahme wird als offener, gemeinsamer Quality-Gate weitergeführt und nicht durch Desktop- oder Cloud-Browser-Tests ersetzt.
 
-Der zuvor verifizierte Runtime-Stand war auf PR #72 Head `9477e1d15aada83db145cd9dd27b10a152cd13f7` mit CI #704 grün. Der exakte finale Head des Folgeslices und dessen CI-Nachweis stehen in `docs/status/CURRENT.md`.
+Der House-Renderer wurde vor dem Smart-Street-Folgeslice auf PR #72 Head
+`9477e1d15aada83db145cd9dd27b10a152cd13f7` mit CI #704 verifiziert. Der aktuelle
+Plan-019-Runtime-Head `6a21f5534c5854f9ff606ed34ae39fd31793420b` ist mit CI #705
+verifiziert und in `docs/status/CURRENT.md` dokumentiert.
 
 ## Relevante Context-Graph-Knoten
 
