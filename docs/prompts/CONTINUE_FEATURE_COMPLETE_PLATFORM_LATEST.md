@@ -23,16 +23,16 @@ Verifiziere danach Branch `plan-feature-complete-platform`, PR #72, Base/Head/Dr
 Keine Migration remote anwenden, nicht explizit deployen, nicht mergen, PR #72 nicht Ready setzen und keinen neuen Branch oder PR erstellen.
 ```
 
-## Zuletzt verifizierter Hardening-Code-Checkpoint
+## Zuletzt verifizierter FC5.1-Code-Checkpoint
 
-Vor den nachfolgenden Living-Docs-Commits:
+Vor diesem Living-Docs-Commit:
 
 - Branch `plan-feature-complete-platform`;
 - PR #72 `FC0-FC2: Platform, Live Field Groups and Field Sessions`;
 - Base `ui-app-launcher-sheet`;
-- Hardening-Code-Head `fea8f2aef1ca7d61ccb017a6b0c1e386dd8af961`;
+- FC5.1-Code-Head `3a5c46aafa47e866b8441a380f34918eda1f0cee`;
 - PR offen, Draft, mergeable, nicht gemerged;
-- CI #721 auf exakt diesem Hardening-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build.
+- CI #729 auf exakt diesem FC5.1-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build.
 
 Nach jedem neuen Dokumentations-/Runtime-Commit GitHub erneut prüfen. Ein älterer grüner CI-Lauf zählt nicht für einen neueren Head.
 
@@ -50,7 +50,8 @@ Umgesetzt:
 - redundante Launcher-Kachel `Karte` entfernt, X und Outside-Tap schließen weiter;
 - Plan 018 House Polygon Renderer;
 - Plan 019 Smart Street Runtime;
-- Plan 020 Smart House Runtime.
+- Plan 020 Smart House Runtime;
+- FC5.1 Collection Access, Areas und Runs mit Collection-only QR, Main/Child Areas, Runs, Mehrgeräte-Join, manueller Release-Logik und Admin force release.
 
 Smart Street/House verwenden App-eigene IDs. OSM bleibt Datenquelle/Provenance. Workbench-/Mock-Daten sind kein normaler Produktweg.
 
@@ -75,7 +76,7 @@ Tests:
 - vorhandene Tests simulieren bereits fehlende 0006-Spalten für Field Groups, fehlende 0007-Tabellen für Field Sessions und eine SQLite-DB ohne Migration 0009 für Automationen;
 - vorhandene Smart-Street-/House-Persistenztests schützen 0004/0005 mit `schema_migration_required` und ohne Revision-Claim.
 
-CI #721 ist auf exakt `fea8f2aef1ca7d61ccb017a6b0c1e386dd8af961` grün.
+CI #729 ist auf exakt `3a5c46aafa47e866b8441a380f34918eda1f0cee` mit Test, Typecheck, Dependency Audit und Production Build grün.
 
 Für diesen Slice war keine neue Architekturentscheidung und keine neue Context-Graph-Topologie nötig. Die bestehenden Knoten `plan-smart-house-runtime`, `collaboration`, `data`, `offline-sync`, `security`, `ux` und `quality` decken Preview-/Schema-Gate-Hardening bereits ab.
 
@@ -205,6 +206,9 @@ Kein lineares Undo und kein direktes Löschen der Audit-Historie.
 
 ### FC5.1 Collection Access, Areas und Runs
 
+Status: implementiert und auf CI #729 verifiziert. Migration 0010 ist vorbereitet, aber nicht remote angewendet.
+
+
 Echter Produktflow:
 
 `QR -> Collector -> offene Areas -> eine/mehrere übernehmen -> Run -> Beitreten -> Fortschritt -> manueller Leave/Release/Admin force release`
@@ -232,7 +236,8 @@ Vorbereitet, aber nicht remote angewendet:
 - 0006 Field Groups/Credentials/Memberships;
 - 0007 Field Sessions/Domain Events;
 - 0008 Comments;
-- 0009 Automation-Konfiguration.
+- 0009 Automation-Konfiguration;
+- 0010 Collection Access, Main/Child Areas, Runs, Collector-Sessions und Claim-Historie.
 
 Vor neuen Collection-Migrationen zuerst das aktuelle Migrationsverzeichnis prüfen. Nichts remote anwenden.
 
@@ -266,13 +271,13 @@ Vor neuen Collection-Migrationen zuerst das aktuelle Migrationsverzeichnis prüf
 
 ## Nächster Auftrag
 
-Als nächster sicherer Runtime-Slice soll **FC5.1 Collection Access, Areas und Runs** umgesetzt werden.
+Als nächster sicherer Runtime-Slice soll **FC5.2 Pickup Tasks, Sonderadressen, Online-Adresssuche und Kommentare** umgesetzt werden.
 
 Vor dem ersten irreversiblen Persistenz-Commit:
 1. Repository/GitHub exakt neu verifizieren.
-2. Aktuellen Migrationsstand prüfen.
-3. Bestehende Access-/Session-/Live-Field-Group-Mechanik vollständig lesen und wiederverwenden.
-4. Falls noch kein akzeptierter ADR für First-Class Collection Access/Areas/Runs existiert, diesen dokumentieren, bevor das Schema festgeschrieben wird.
-5. Dann den kompletten normalen FC5.1-Flow implementieren und testen.
+2. Den aktuellen Provider für OSM-basierte Online-Adresssuche gegen ToS, Rate Limits, Datenschutz, Attribution und Kosten prüfen.
+3. Bestehende Collection-only Access-, Sheet-, MapLibre- und M5-Mechanik wiederverwenden.
+4. Pickup ohne Distribution House, Pflicht-Koordinaten, Archivierung und getrennte App-ID sicherstellen.
+5. Den normalen Flow Search -> Map-Fokus/Marker -> Pickup -> Status/Kommentar implementieren und testen.
 
 Nach Abschluss Living Docs erneut aktualisieren, exakten neuen Head gegen GitHub prüfen und CI nur auf diesem Head als Nachweis verwenden.

@@ -1,4 +1,4 @@
-version: 12
+version: 13
 
 entrypoints:
   always:
@@ -213,6 +213,13 @@ nodes:
     topics: [automations, deterministic-effects, idempotency, domain-events, authorization]
     load_when: [deterministic automation, automation runtime, automation configuration, automatic task effect]
 
+  - id: adr-collection-access-areas-runs
+    path: docs/decisions/ADR-0020-collection-access-areas-runs.md
+    type: decision
+    status: accepted
+    topics: [collection, collection-access, collection-areas, collection-runs, qr, security, m5, maplibre]
+    load_when: [Collection Access, Collection Areas, Collection Runs, Collection QR, FC5.1 runtime]
+
   - id: plan-m5-sync
     path: docs/plans/completed/010-m5-resilient-mutation-sync.md
     type: plan
@@ -419,6 +426,11 @@ edges:
   - { from: smart-house-runtime, to: smart-house-candidate-data, relation: uses }
   - { from: smart-house-candidate-data, to: map, relation: integrates }
 
+  - { from: adr-collection-access-areas-runs, to: plan-collection-pickup-persistence, relation: governs }
+  - { from: adr-collection-access-areas-runs, to: data, relation: constrains }
+  - { from: adr-collection-access-areas-runs, to: security, relation: constrains }
+  - { from: adr-collection-access-areas-runs, to: map, relation: constrains }
+  - { from: plan-collection-pickup-persistence, to: adr-collection-access-areas-runs, relation: governed_by }
   - { from: plan-collection-pickup-persistence, to: plan-feature-complete-platform, relation: refines_next_milestone }
   - { from: plan-collection-pickup-persistence, to: plan-smart-house-runtime, relation: builds_on }
   - { from: plan-collection-pickup-persistence, to: plan-platform-expansion, relation: follows_direction }

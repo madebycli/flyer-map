@@ -43,7 +43,7 @@ Internal `?workbench=` routes may remain useful for development, but they are no
 
 The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, bounded Activity, the first deterministic Automation, the first real Stats projection, the House renderer, normal-product Smart Street and normal-product Smart House on Draft PR #72. Remaining FC4 work is real-device/touch-density/dense-mobile acceptance including the documented `HOUSE_MIN_ZOOM` starting value 15.
 
-For FC5, Master selected the First-Class Collection/Pickup direction. Collection is not a second status on Distribution Street/House Tasks. It has its own Main Area, work Areas, Runs, Road Sections, Pickup Tasks, temporary Collector access and progress. Runtime for FC5 is not shipped yet.
+For FC5, Master selected the First-Class Collection/Pickup direction. Collection is not a second status on Distribution Street/House Tasks. It has its own Main Area, work Areas, Runs, Road Sections, Pickup Tasks, temporary Collector access and progress. FC5.1 Collection Access, Areas und Runs ist als echter normaler Runtime-Slice implementiert. Pickup, Road Sections, Stats, Attribution und Revert bleiben weitere FC5-Slices.
 
 ## Domain direction
 
@@ -479,7 +479,7 @@ Before implementation of their respective slices:
 - offline map provider/package ADR;
 - Street/House identity/splitting ADR;
 - Live Field Group join/discoverability/credential ADR;
-- First-Class Collection/Pickup Access/Area/Run persistence decision from Plan 021 must be recorded before irreversible FC5 schema work;
+- ADR-0020 records the accepted First-Class Collection Access/Areas/Runs persistence boundary before further FC5 schema work;
 - Organization identity + username/password/TOTP/session ADR;
 - capability/role-template ADR;
 - event/session/statistics retention ADR.

@@ -15,7 +15,7 @@ FC5 Collection / Pickup wird als eigener Arbeitsbereich neben Distribution umges
 
 Distribution und Collection teilen Campaign/Aktion, MapLibre, Worker, D1 und die bestehende M5-Queue, aber nicht ihre fachlichen Task-Identitäten oder Arbeitsstatus. Änderungen oder Archivierungen in Distribution verändern Collection nicht und umgekehrt. Nur das Löschen der gesamten Campaign/Aktion darf beide Bereiche gemeinsam entfernen.
 
-Plan 021 bleibt aktiv, bis der ausgewählte Ansatz als normaler Produktweg implementiert und verifiziert ist.
+Plan 021 bleibt für die noch offenen FC5.2- und FC5.3-Slices aktiv. FC5.1 ist als normaler Produktweg implementiert und verifiziert.
 
 ## Anforderungen
 
@@ -24,11 +24,11 @@ Plan 021 bleibt aktiv, bis der ausgewählte Ansatz als normaler Produktweg imple
 - Repository: `madebycli/flyer-map`.
 - Branch: `plan-feature-complete-platform`.
 - Draft PR #72 gegen `ui-app-launcher-sheet`.
-- Verifizierter Ausgangs-Head: `af417ff8ebb92d0e8b471feb1861089fc4795f13`.
-- CI #713 war auf exakt diesem Ausgangs-Head vollständig grün.
-- Plan 018, 019 und 020 sind abgeschlossen.
+- FC5.1-Code-Head: `3a5c46aafa47e866b8441a380f34918eda1f0cee`.
+- CI #729 war auf exakt diesem Code-Head mit Test, Typecheck, Dependency Audit und Production Build vollständig grün.
+- Plan 018, 019 und 020 sind abgeschlossen; die reale Geräteabnahme für Plan 018 bleibt offen.
 - Remote D1 ist weiterhin nur bis Migration 0001 bis 0003 dokumentiert.
-- 0004 bis 0009 sind vorbereitet und nicht remote angewendet.
+- 0004 bis 0010 sind vorbereitet und nicht remote angewendet.
 - Die Cloud-Browser-Umgebung besitzt kein nutzbares WebGL. Das ist kein Beleg für eine MapLibre-Regression.
 - Reale Android-/iPhone-Gates für FC4 bleiben separat offen.
 
@@ -219,11 +219,13 @@ Verbindlich:
 
 ## Dateistruktur
 
-Die ersten drei Dateien des ersten Runtime-Schritts werden erst nach erneuter Repository-Prüfung final bestätigt. Erwartete Startpunkte:
+FC5.1 ist umgesetzt. Der Runtime-Slice nutzt:
 
-1. nächste freie additive Migration nach dem aktuellen Migrationsverzeichnis für Collection Core;
-2. `src/domain/pickup.ts` beziehungsweise eine kleine Collection-Domain-Datei für First-Class IDs/Status/Validierung;
-3. `src/domain/mutations.ts` für explizite `collection.*`-/`pickup.*`-Mutationen im bestehenden M5-Vertrag.
+1. `migrations/0010_fc5_collection_access_areas_runs.sql` für additive Collection-Tabellen;
+2. `src/domain/collection.ts` für First-Class IDs, Statuswerte und Snapshot-Validierung;
+3. `src/domain/mutations.ts` und `src/domain/mutationDiff.ts` für explizite `collection.*`-Mutationen im bestehenden M5-Vertrag;
+4. `worker/collectionAccess.ts`, Collection-Repositories und Worker-Routen für QR Access, Session und Persistenz;
+5. `src/collection/CollectionCollectorView.tsx`, `src/collection/CollectionAdminPanel.tsx` und feste MapLibre-Layer für den normalen Produktweg.
 
 Danach insbesondere prüfen:
 
@@ -261,7 +263,7 @@ Collection QR
 -> Verlassen/Freigeben manuell
 ```
 
-Muss persistiert, serverautorisiert, M5-kompatibel, offline/retry-fähig und im normalen Produktweg erreichbar sein.
+Ist als normaler Produktweg persistiert, serverautorisiert, M5-kompatibel und erreichbar. Der Slice verwendet Collection-only QR Access, pro Gerät eigene Collector-Sessions, getrennte Main/Child Areas, Mehrfach-Claims, aktive Runs, Join, manuellen Leave/Release/Cancel-Flow und Admin force release. Migration 0010 bleibt vorbereitet und wird nicht remote angewendet.
 
 ### FC5.2 Pickup Tasks, Sonderadressen, Suche und Kommentare
 
@@ -297,6 +299,10 @@ Zusätzlich manueller Karten-Tap/-Korrektur. Pickup kann ohne Distribution House
 Wenn Repository-Abhängigkeiten eine andere Reihenfolge zwingend machen, darf Codex die technische Reihenfolge ändern, aber nicht die fachlichen Grenzen oder einen Preview-Ersatz.
 
 ## Tests und Quality Gates
+
+FC5.1 ist durch `tests/collectionRuntime.test.ts` sowie die bestehenden Mutation-, Authorization-, Snapshot-, Persistence- und Security-Tests abgedeckt. Geprüft werden Collection-only Scope, getrennte Collector-Identitäten, Main/Child Areas, Mehrfach-Claims, Join, Leave/Release, Cancel, Admin force release, App-ID-Identität, OSM-Provenance-Grenze, M5-Verhalten und der Ausschluss von Preview-/Mock-Daten aus dem Produktionsgraph. CI #729 ist auf dem FC5.1-Code-Head vollständig grün.
+
+Die reale Android-/iPhone-Abnahme und Touch-Dichte bleiben wie bei Plan 018 offene Hardware-Gates.
 
 Spätere Runtime-Slices müssen mindestens prüfen:
 
@@ -372,9 +378,9 @@ Die bisherigen A/B-Produktfragen sind durch Master entschieden.
 
 Nicht blockierende technische Punkte, die Codex anhand Repository und aktueller Provider-Regeln klären und dokumentieren soll:
 
-- `UNKLAR:` exakte Namen/Tabellenaufteilung der Collection Core Migrationen nach Prüfung des aktuellen Migrationsverzeichnisses;
+- FC5.1 ist für die Collection-Core-Tabellen in Migration 0010 mit getrennten Tabellen für Main Area, Child Areas, Runs, Collector-Sessions, Mitglieder und Claim-Historie festgelegt;
 - `UNKLAR:` welcher OSM-basierte Online-Geocoder die aktuellen Nutzungsbedingungen, Rate Limits, Datenschutz, Proximity/BBox und Kosten am besten erfüllt;
-- `UNKLAR:` ob Main Area + Child Areas in einer Tabelle mit `kind/parent_id` oder in getrennten Tabellen klarer und kleiner sind;
+- FC5.1 verwendet getrennte Main-Area- und Child-Area-Tabellen, damit Collection- und Distribution-Lifecycles explizit getrennt bleiben;
 - `UNKLAR:` minimale reversible Change-Repräsentation für selektiven Admin-Revert ohne Full Event Sourcing;
 - `UNKLAR:` genaue Retention von abgeschlossenen Collection Runs und Audit Changes. Historie darf nicht stillschweigend gelöscht werden.
 

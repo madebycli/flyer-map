@@ -37,8 +37,8 @@ Abgeschlossen:
 Aktiver Entwicklungsstack nach dem Read-/Schema-Hardening-Checkpoint:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- verifizierter Hardening-Code-Head `fea8f2aef1ca7d61ccb017a6b0c1e386dd8af961`;
-- CI #721 auf exakt diesem Hardening-Code-Head vollständig grün;
+- verifizierter FC5.1-Code-Head `3a5c46aafa47e866b8441a380f34918eda1f0cee`;
+- CI #729 auf exakt diesem FC5.1-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build;
 - PR #72 offen, Draft, mergeable und nicht gemerged.
 
 Jeder nachfolgende Dokumentations- oder Runtime-Commit verschiebt den Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
@@ -55,7 +55,10 @@ Auf PR #72 sind umgesetzt:
 - echte serverseitige Stats mit getrennten Street-/House-Nennern;
 - normaler Smart-Street-Flow aus vorbereitetem OSM-Paket;
 - normaler Smart-House-Flow aus vorbereiteten OSM-Gebäudekandidaten;
-- persistierter House-Polygon-Renderer mit House-Auswahl und House-Session-Highlight.
+- persistierter House-Polygon-Renderer mit House-Auswahl und House-Session-Highlight;
+- FC5.1 Collection-only QR Access mit eigener revocable Collector-Identität pro Gerät;
+- eigene Collection Main Area, Child Areas und Collection Runs mit Mehrgeräte-Join, manueller Leave/Release/Cancel-Logik und Admin force release;
+- additive Collection-D1-Persistenz, Worker-Autorisierung und MapLibre-Layer über den bestehenden M5-Mutationspfad.
 
 Der redundante Launcher-Eintrag `Karte` ist entfernt. X und Tap außerhalb schließen das Launcher-Sheet weiterhin.
 
@@ -73,7 +76,7 @@ Der aktuelle Hardening-Slice setzt dafür um:
 - bestehende Fake-/SQLite-Tests decken 0006, 0007 und 0009 bereits spezifisch ab;
 - bestehende Smart-Street-/House-Persistenztests decken 0004/0005 als `schema_migration_required` ohne Revision-Claim ab.
 
-CI #721 bestätigt auf dem Hardening-Code-Head Tests, TypeScript, Dependency Audit und Production Build. Keine Migration wurde remote angewendet und kein manueller Deploy ausgeführt.
+CI #729 bestätigt auf dem FC5.1-Code-Head Tests, TypeScript, Dependency Audit und Production Build. Keine Migration wurde remote angewendet und kein manueller Deploy ausgeführt.
 
 Der Context Graph benötigt für diesen Slice keine neue Topologie: `plan-smart-house-runtime`, `collaboration`, `data`, `offline-sync`, `security`, `ux` und `quality` decken Preview-/Schema-Gate-Hardening bereits ab.
 
@@ -123,10 +126,12 @@ Verbindliche Produktentscheidung:
 - authoritative Collection-Änderungen werden einem Actor zugeordnet;
 - Admin kann Beiträge eines Collectors highlighten und ausgewählte Änderungen über serverseitige compensating mutations gezielt zurücksetzen.
 
-Pickup-Runtime, Collection Areas/Runs, QR Collector Access, Road Sections und Online-Adresssuche sind noch nicht implementiert.
+FC5.1 Collection Access, Areas und Runs ist im normalen Produktweg implementiert und auf dem aktuellen Code-Head verifiziert. Der Slice umfasst Collection-only QR Access, pro Gerät getrennte Collector-Sessions, Main/Child Areas, Mehrfach-Claims, laufende Runs, Join, Leave/Release/Cancel und Admin force release.
+
+Offen bleiben FC5.2 Pickup Tasks, Sonderadressen, Online-Adresssuche und Kommentare sowie FC5.3 Road Sections, Stats, Actor Attribution und gezieltes Revert.
 
 Nächster empfohlener vertikaler Runtime-Slice:
-`FC5.1 Collection Access, Areas und Runs`.
+`FC5.2 Pickup Tasks, Sonderadressen und Kommentare`.
 
 ## Preview / D1 schema state
 
@@ -138,7 +143,8 @@ Vorbereitet, aber nicht remote angewendet:
 - 0006 Field Groups, Credentials, Memberships und FC1 Idempotency;
 - 0007 Field Sessions und minimierte Domain Events;
 - 0008 durable Comments und Comment-Tombstones;
-- 0009 deterministische Automation-Konfiguration.
+- 0009 deterministische Automation-Konfiguration;
+- 0010 Collection Access, Main/Child Areas, Runs, Collector-Sessions und Claim-Historie.
 
 Bekannte fehlende Schemas müssen spezifisch fail-closed behandelt werden. Keine Migration wird als Diagnosewerkzeug remote angewendet.
 
@@ -159,9 +165,8 @@ Weiterhin verbindlich:
 
 ## Immediate next
 
-1. FC5.1 als echten normalen Produktflow implementieren: Collection-only QR Access -> Collector -> offene Collection Areas -> eine/mehrere Areas übernehmen -> Run -> Beitreten -> Fortschritt -> manueller Leave/Release/Admin force release.
-2. Vor Runtime-Code den gewählten First-Class-Ansatz in der passenden Architekturentscheidung/Plan-Dokumentation festschreiben, falls noch kein akzeptierter ADR dafür existiert.
-3. Danach FC5.2 Pickup Tasks/Sonderadressen/OSM-Suche/Kommentare und FC5.3 Road Sections/Stats/Actor-Revert vertikal liefern.
-4. Reale Android-/iPhone-Prüfung für FC4 offen halten.
-5. Remote-D1 unverändert lassen, bis eine ausdrücklich freigegebene Rollout-Entscheidung vorliegt.
-6. PR #72 offen und Draft lassen. Nicht mergen, nicht Ready setzen, keinen neuen Branch/PR erstellen und keinen manuellen Deploy ausführen.
+1. FC5.2 Pickup Tasks, Sonderadressen, Online-Adresssuche und Kommentare als nächsten echten Collection-Slice liefern.
+2. Danach FC5.3 Road Sections, getrennte Stats, Actor Attribution und gezieltes serverseitiges Revert vertikal umsetzen.
+3. Reale Android-/iPhone-Prüfung für FC4 offen halten; `HOUSE_MIN_ZOOM = 15` bleibt der dokumentierte Ausgangswert.
+4. Remote-D1 unverändert lassen, bis eine ausdrücklich freigegebene Rollout-Entscheidung vorliegt. Migration 0010 ist nur vorbereitet.
+5. PR #72 offen und Draft lassen. Nicht mergen, nicht Ready setzen, keinen neuen Branch/PR erstellen und keinen manuellen Deploy ausführen.
