@@ -16,7 +16,7 @@ export type CollectionCollectorSummary = {
 
 type CollectionAccessRow = {
   collector_id: string; campaign_id: string; access_link_id: string; label: string;
-  expires_at: string; collector_revoked_at: string | null; link_revoked_at: string | null;
+  expires_at: string; session_revoked_at: string | null; collector_revoked_at: string | null;
 };
 
 function collectionCookieValue(request: Request) {
@@ -50,8 +50,8 @@ export async function resolveCollectionAccess(
   try {
     const row = await db.prepare(
       `SELECT s.collector_id, s.campaign_id, c.access_link_id, c.label,
-                s.expires_at, c.revoked_at AS collector_revoked_at,
-                l.revoked_at AS link_revoked_at
+                s.expires_at, s.revoked_at AS session_revoked_at,
+                c.revoked_at AS collector_revoked_at
            FROM collection_collector_sessions s
            JOIN collection_collectors c
              ON c.id = s.collector_id AND c.campaign_id = s.campaign_id
@@ -61,7 +61,7 @@ export async function resolveCollectionAccess(
             AND (? IS NULL OR s.campaign_id = ?)
           LIMIT 1`
     ).bind(await hashSecret(secret), campaignId ?? null, campaignId ?? null).first<CollectionAccessRow>();
-    if (!row || row.expires_at <= now || row.collector_revoked_at || row.link_revoked_at) return null;
+    if (!row || row.expires_at <= now || row.session_revoked_at || row.collector_revoked_at) return null;
     return {
       grantId: "collection:" + row.collector_id, campaignId: row.campaign_id,
       role: "collection-collector" as AccessRole, teamId: null, label: row.label,
@@ -181,11 +181,13 @@ export async function revokeCollectionCollector(db: D1DatabaseLike, campaignId: 
 export async function revokeCollectionSession(db: D1DatabaseLike, request: Request) {
   const secret = collectionCookieValue(request);
   if (!secret) return;
-  await db.prepare(
-    `UPDATE collection_collector_sessions
-        SET revoked_at = COALESCE(revoked_at, ?)
-      WHERE session_hash = ?`
-  ).bind(new Date().toISOString(), await hashSecret(secret)).all();
+  await db.batch([
+    db.prepare(
+      `UPDATE collection_collector_sessions
+          SET revoked_at = COALESCE(revoked_at, ?)
+        WHERE session_hash = ?`
+    ).bind(new Date().toISOString(), await hashSecret(secret)),
+  ]);
 }
 
 export async function persistentAccessForCollection(
