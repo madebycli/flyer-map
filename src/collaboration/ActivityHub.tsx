@@ -3,6 +3,7 @@ import { CampaignApiError } from "../data/campaignApi.ts";
 import { fetchActivity } from "../data/activityApi.ts";
 import type { ActivityItem, ActivityPage } from "../domain/activity.ts";
 import type { PlatformAppContext } from "../platform/platformContract.ts";
+import { resolveRemoteReadState } from "./remoteReadState.ts";
 import "./activity-hub.css";
 
 type Props = {
@@ -110,6 +111,11 @@ export function ActivityHub({ context, online, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const effectiveTeamId = forcedTeamId ?? (teamFilter === "all" ? null : teamFilter);
+  const readState = resolveRemoteReadState({
+    loading: loadState === "loading",
+    error,
+    itemCount: activities.length,
+  });
 
   const load = useCallback(
     async (cursor: string | null, append: boolean, signal?: AbortSignal) => {
@@ -226,13 +232,17 @@ export function ActivityHub({ context, online, onClose }: Props) {
             </button>
           </div>
 
-          {loadState === "loading" && activities.length === 0 ? (
+          {readState === "loading" ? (
             <div className="activity-loading" role="status">Aktivität wird geladen ...</div>
-          ) : activities.length === 0 ? (
+          ) : null}
+
+          {readState === "empty" ? (
             <div className="activity-empty" role="status">
               {online ? "Noch keine Aktivität vorhanden." : "Aktivität ist offline nicht abrufbar."}
             </div>
-          ) : (
+          ) : null}
+
+          {readState === "data" ? (
             <ol className="activity-list" aria-label="Aktivitätsverlauf">
               {activities.map((item) => {
                 const contextText = activityContext(item);
@@ -258,7 +268,7 @@ export function ActivityHub({ context, online, onClose }: Props) {
                 );
               })}
             </ol>
-          )}
+          ) : null}
 
           {nextCursor ? (
             <button
