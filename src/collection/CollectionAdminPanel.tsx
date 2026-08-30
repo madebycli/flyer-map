@@ -6,6 +6,11 @@ import {
   fetchCollectionCollectors,
   revokeCollectionCollector,
 } from "../data/campaignApi";
+import {
+  collectionPickupCapabilitiesFromUnknown,
+  updateCollectionPickupCapabilities,
+  type CollectionPickupCapabilities,
+} from "../data/pickupCapabilitiesApi";
 import type { CampaignSnapshot } from "../domain/campaign";
 import {
   collectionSnapshotOrEmpty,
@@ -21,6 +26,7 @@ type Collector = {
   label: string;
   createdAt: string;
   revokedAt: string | null;
+  collectionCapabilities: CollectionPickupCapabilities;
 };
 
 type Props = {
@@ -76,7 +82,18 @@ export function CollectionAdminPanel({
   const refreshCollectors = async () => {
     try {
       const result = await fetchCollectionCollectors(campaignId);
-      setCollectors(result.collectors);
+      setCollectors(result.collectors.map((collector) => {
+        const candidate = collector as typeof collector & { collectionCapabilities?: unknown };
+        return {
+          id: candidate.id,
+          label: candidate.label,
+          createdAt: candidate.createdAt,
+          revokedAt: candidate.revokedAt,
+          collectionCapabilities: collectionPickupCapabilitiesFromUnknown(
+            candidate.collectionCapabilities,
+          ),
+        };
+      }));
       setMessage(null);
     } catch {
       setMessage(copy(language, "Sammler konnten nicht geladen werden.", "Collectors could not be loaded."));
@@ -123,6 +140,44 @@ export function CollectionAdminPanel({
       setMessage(copy(language, "Sammlerzugang widerrufen.", "Collector access revoked."));
     } catch {
       setMessage(copy(language, "Widerruf fehlgeschlagen.", "Revocation failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changePickupCapability = async (
+    collector: Collector,
+    key: keyof CollectionPickupCapabilities,
+    checked: boolean,
+  ) => {
+    if (busy || collector.revokedAt) return;
+    let next: CollectionPickupCapabilities = {
+      ...collector.collectionCapabilities,
+      [key]: checked,
+    };
+    if (key === "canViewPickups" && !checked) {
+      next = {
+        canViewPickups: false,
+        canCreatePickups: false,
+        canEditPickups: false,
+        canAssignPickups: false,
+      };
+    }
+    setBusy(true);
+    try {
+      const updated = await updateCollectionPickupCapabilities(campaignId, collector.id, next);
+      setCollectors((current) => current.map((candidate) =>
+        candidate.id === collector.id
+          ? { ...candidate, collectionCapabilities: updated }
+          : candidate,
+      ));
+      setMessage(copy(language, "Pickup-Rechte gespeichert.", "Pickup permissions saved."));
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : copy(language, "Pickup-Rechte konnten nicht gespeichert werden.", "Pickup permissions could not be saved."),
+      );
     } finally {
       setBusy(false);
     }
@@ -228,19 +283,61 @@ export function CollectionAdminPanel({
         <div className="collection-collector-list">
           {collectors.length === 0 ? (
             <p className="empty-state">{copy(language, "Noch kein Gerät verbunden.", "No device connected yet.")}</p>
-          ) : collectors.map((collector) => (
-            <article className="collection-collector-row" key={collector.id}>
-              <div>
-                <strong>{collector.label}</strong>
-                <small>{collector.revokedAt ? copy(language, "widerrufen", "revoked") : copy(language, "aktiv", "active")}</small>
-              </div>
-              {!collector.revokedAt ? (
-                <button type="button" className="text-action danger-action" onClick={() => void revokeCollector(collector.id)} disabled={busy}>
-                  {copy(language, "Widerrufen", "Revoke")}
-                </button>
-              ) : null}
-            </article>
-          ))}
+          ) : collectors.map((collector) => {
+            const capabilities = collector.collectionCapabilities;
+            const writesDisabled = !capabilities.canViewPickups || busy || Boolean(collector.revokedAt);
+            return (
+              <article className="collection-collector-row" key={collector.id}>
+                <div className="collection-collector-summary">
+                  <strong>{collector.label}</strong>
+                  <small>{collector.revokedAt ? copy(language, "widerrufen", "revoked") : copy(language, "aktiv", "active")}</small>
+                </div>
+                <div className="collection-capability-grid" aria-label={copy(language, "Pickup-Rechte", "Pickup permissions")}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={capabilities.canViewPickups}
+                      disabled={busy || Boolean(collector.revokedAt)}
+                      onChange={(event) => void changePickupCapability(collector, "canViewPickups", event.currentTarget.checked)}
+                    />
+                    {copy(language, "Sehen", "View")}
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={capabilities.canCreatePickups}
+                      disabled={writesDisabled}
+                      onChange={(event) => void changePickupCapability(collector, "canCreatePickups", event.currentTarget.checked)}
+                    />
+                    {copy(language, "Erstellen", "Create")}
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={capabilities.canEditPickups}
+                      disabled={writesDisabled}
+                      onChange={(event) => void changePickupCapability(collector, "canEditPickups", event.currentTarget.checked)}
+                    />
+                    {copy(language, "Bearbeiten", "Edit")}
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={capabilities.canAssignPickups}
+                      disabled={writesDisabled}
+                      onChange={(event) => void changePickupCapability(collector, "canAssignPickups", event.currentTarget.checked)}
+                    />
+                    {copy(language, "Zuweisen", "Assign")}
+                  </label>
+                </div>
+                {!collector.revokedAt ? (
+                  <button type="button" className="text-action danger-action" onClick={() => void revokeCollector(collector.id)} disabled={busy}>
+                    {copy(language, "Widerrufen", "Revoke")}
+                  </button>
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       </div>
 

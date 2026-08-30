@@ -1,8 +1,11 @@
 import baseWorker from "./indexM55.ts";
+import { resolvePersistentAccess } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
+import { resolveCollectionAccess } from "./collectionAccess.ts";
 import {
   augmentPickupCapabilitiesResponse,
   handlePickupCapabilitiesApi,
+  loadPickupCapabilities,
 } from "./pickupCapabilities.ts";
 import {
   hasPickupReadSchema,
@@ -11,6 +14,7 @@ import {
 } from "./pickupRepository.ts";
 import {
   handlePickupSearch,
+  pickupSearchCampaignRoute,
   type PickupSearchEnv,
 } from "./pickupSearch.ts";
 
@@ -43,10 +47,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+async function collectorCanViewPickups(
+  request: Request,
+  db: D1DatabaseLike,
+  campaignId: string,
+) {
+  const persistent = await resolvePersistentAccess(db, request, campaignId);
+  if (persistent) return true;
+  const collection = await resolveCollectionAccess(db, request, campaignId);
+  if (collection?.role !== "collection-collector" || !collection.collectorId) return false;
+  const capabilities = await loadPickupCapabilities(db, campaignId, collection.collectorId);
+  return capabilities?.canViewPickups === true;
+}
+
 export async function augmentPickupSnapshotResponse(
   response: Response,
   db: D1DatabaseLike,
   campaignId: string,
+  request?: Request,
 ) {
   if (!response.ok) return response;
 
@@ -72,7 +90,10 @@ export async function augmentPickupSnapshotResponse(
   }
 
   try {
-    const pickups = await loadPickupTasks(db, campaignId);
+    const canView = request
+      ? await collectorCanViewPickups(request, db, campaignId)
+      : true;
+    const pickups = canView ? await loadPickupTasks(db, campaignId) : [];
     const headers = new Headers(response.headers);
     headers.delete("content-length");
     return Response.json(
@@ -111,6 +132,29 @@ export default {
     if (env.DB) {
       const capabilityResponse = await handlePickupCapabilitiesApi(request, env.DB);
       if (capabilityResponse) return capabilityResponse;
+
+      const searchCampaignId = pickupSearchCampaignRoute(new URL(request.url).pathname);
+      if (searchCampaignId && await hasPickupReadSchema(env.DB)) {
+        const collection = await resolveCollectionAccess(env.DB, request, searchCampaignId);
+        if (collection?.role === "collection-collector" && collection.collectorId) {
+          const capabilities = await loadPickupCapabilities(
+            env.DB,
+            searchCampaignId,
+            collection.collectorId,
+          );
+          if (!capabilities?.canViewPickups) {
+            return json(
+              {
+                error: {
+                  code: "pickup_capability_forbidden",
+                  message: "Dieser Collection-Helfer darf keine Pickups sehen oder anlegen.",
+                },
+              },
+              { status: 403 },
+            );
+          }
+        }
+      }
     }
 
     const searchResponse = await handlePickupSearch(request, env);
@@ -122,6 +166,6 @@ export default {
     if (request.method !== "GET") return response;
     const campaignId = snapshotCampaignId(new URL(request.url).pathname);
     if (!campaignId) return response;
-    return augmentPickupSnapshotResponse(response, env.DB, campaignId);
+    return augmentPickupSnapshotResponse(response, env.DB, campaignId, request);
   },
 };

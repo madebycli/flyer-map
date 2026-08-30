@@ -5,12 +5,21 @@ import { hasPickupReadSchema } from "./pickupRepository.ts";
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 
 export type PickupCapabilities = {
+  canViewPickups: boolean;
+  canCreatePickups: boolean;
+  canEditPickups: boolean;
+  canAssignPickups: boolean;
+};
+
+export type PickupCapabilityUpdate = {
+  canViewPickups?: boolean;
   canCreatePickups: boolean;
   canEditPickups: boolean;
   canAssignPickups: boolean;
 };
 
 type CapabilityRow = {
+  can_view_pickups?: number;
   can_create_pickups: number;
   can_edit_pickups: number;
   can_assign_pickups: number;
@@ -19,6 +28,13 @@ type CapabilityRow = {
 type CollectorRow = CapabilityRow & {
   id: string;
 };
+
+export class PickupVisibilitySchemaUnavailableError extends Error {
+  constructor() {
+    super("Pickup-Sichtbarkeit benötigt die vorbereitete Visibility-Migration.");
+    this.name = "PickupVisibilitySchemaUnavailableError";
+  }
+}
 
 const json = (data: unknown, init: ResponseInit = {}) =>
   Response.json(data, {
@@ -34,11 +50,34 @@ function errorResponse(status: number, code: string, message: string) {
   return json({ error: { code, message } }, { status });
 }
 
-function capabilitiesFromRow(row: CapabilityRow | null): PickupCapabilities {
+export async function hasPickupVisibilitySchema(db: D1DatabaseLike) {
+  try {
+    const result = await db
+      .prepare("PRAGMA table_info(collection_collectors)")
+      .all<{ name: string }>();
+    return result.results.some((column) => column.name === "can_view_pickups");
+  } catch {
+    return false;
+  }
+}
+
+function capabilitiesFromRow(
+  row: CapabilityRow | null,
+  visibilitySchemaAvailable: boolean,
+): PickupCapabilities {
+  if (!row) {
+    return {
+      canViewPickups: false,
+      canCreatePickups: false,
+      canEditPickups: false,
+      canAssignPickups: false,
+    };
+  }
   return {
-    canCreatePickups: row?.can_create_pickups === 1,
-    canEditPickups: row?.can_edit_pickups === 1,
-    canAssignPickups: row?.can_assign_pickups === 1,
+    canViewPickups: visibilitySchemaAvailable ? row.can_view_pickups === 1 : true,
+    canCreatePickups: row.can_create_pickups === 1,
+    canEditPickups: row.can_edit_pickups === 1,
+    canAssignPickups: row.can_assign_pickups === 1,
   };
 }
 
@@ -47,41 +86,74 @@ export async function loadPickupCapabilities(
   campaignId: string,
   collectorId: string,
 ) {
+  const visibilitySchemaAvailable = await hasPickupVisibilitySchema(db);
+  const select = visibilitySchemaAvailable
+    ? "can_view_pickups, can_create_pickups, can_edit_pickups, can_assign_pickups"
+    : "can_create_pickups, can_edit_pickups, can_assign_pickups";
   const row = await db
     .prepare(
-      `SELECT can_create_pickups, can_edit_pickups, can_assign_pickups
+      `SELECT ${select}
          FROM collection_collectors
         WHERE id = ? AND campaign_id = ? AND revoked_at IS NULL
         LIMIT 1`,
     )
     .bind(collectorId, campaignId)
     .first<CapabilityRow>();
-  return row ? capabilitiesFromRow(row) : null;
+  return row ? capabilitiesFromRow(row, visibilitySchemaAvailable) : null;
 }
 
 export async function updatePickupCapabilities(
   db: D1DatabaseLike,
   campaignId: string,
   collectorId: string,
-  capabilities: PickupCapabilities,
+  capabilities: PickupCapabilityUpdate,
 ) {
-  const [result] = await db.batch([
-    db
-      .prepare(
-        `UPDATE collection_collectors
-            SET can_create_pickups = ?,
-                can_edit_pickups = ?,
-                can_assign_pickups = ?
-          WHERE id = ? AND campaign_id = ? AND revoked_at IS NULL`,
-      )
-      .bind(
-        capabilities.canCreatePickups ? 1 : 0,
-        capabilities.canEditPickups ? 1 : 0,
-        capabilities.canAssignPickups ? 1 : 0,
-        collectorId,
-        campaignId,
-      ),
-  ]);
+  const visibilitySchemaAvailable = await hasPickupVisibilitySchema(db);
+  if (capabilities.canViewPickups !== undefined && !visibilitySchemaAvailable) {
+    throw new PickupVisibilitySchemaUnavailableError();
+  }
+
+  const statement = visibilitySchemaAvailable
+    ? db
+        .prepare(
+          `UPDATE collection_collectors
+              SET can_view_pickups = COALESCE(?, can_view_pickups),
+                  can_create_pickups = CASE
+                    WHEN COALESCE(?, can_view_pickups) = 1 THEN ? ELSE 0 END,
+                  can_edit_pickups = CASE
+                    WHEN COALESCE(?, can_view_pickups) = 1 THEN ? ELSE 0 END,
+                  can_assign_pickups = CASE
+                    WHEN COALESCE(?, can_view_pickups) = 1 THEN ? ELSE 0 END
+            WHERE id = ? AND campaign_id = ? AND revoked_at IS NULL`,
+        )
+        .bind(
+          capabilities.canViewPickups ?? null,
+          capabilities.canViewPickups ?? null,
+          capabilities.canCreatePickups ? 1 : 0,
+          capabilities.canViewPickups ?? null,
+          capabilities.canEditPickups ? 1 : 0,
+          capabilities.canViewPickups ?? null,
+          capabilities.canAssignPickups ? 1 : 0,
+          collectorId,
+          campaignId,
+        )
+    : db
+        .prepare(
+          `UPDATE collection_collectors
+              SET can_create_pickups = ?,
+                  can_edit_pickups = ?,
+                  can_assign_pickups = ?
+            WHERE id = ? AND campaign_id = ? AND revoked_at IS NULL`,
+        )
+        .bind(
+          capabilities.canCreatePickups ? 1 : 0,
+          capabilities.canEditPickups ? 1 : 0,
+          capabilities.canAssignPickups ? 1 : 0,
+          collectorId,
+          campaignId,
+        );
+
+  const [result] = await db.batch([statement]);
   return (result?.meta?.changes ?? 0) === 1;
 }
 
@@ -104,16 +176,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseCapabilities(value: unknown): PickupCapabilities | null {
+function parseCapabilities(value: unknown): PickupCapabilityUpdate | null {
   if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  const allowed = new Set([
+    "canViewPickups",
+    "canCreatePickups",
+    "canEditPickups",
+    "canAssignPickups",
+  ]);
+  if (keys.some((key) => !allowed.has(key))) return null;
   if (
     typeof value.canCreatePickups !== "boolean" ||
     typeof value.canEditPickups !== "boolean" ||
-    typeof value.canAssignPickups !== "boolean"
+    typeof value.canAssignPickups !== "boolean" ||
+    (value.canViewPickups !== undefined && typeof value.canViewPickups !== "boolean")
   ) {
     return null;
   }
   return {
+    ...(value.canViewPickups === undefined ? {} : { canViewPickups: value.canViewPickups }),
     canCreatePickups: value.canCreatePickups,
     canEditPickups: value.canEditPickups,
     canAssignPickups: value.canAssignPickups,
@@ -155,10 +237,27 @@ export async function handlePickupCapabilitiesApi(
   if (!capabilities) {
     return errorResponse(422, "capabilities_invalid", "Pickup-Rechte sind ungültig.");
   }
-  if (!(await updatePickupCapabilities(db, route.campaignId, route.collectorId, capabilities))) {
+
+  try {
+    if (!(await updatePickupCapabilities(db, route.campaignId, route.collectorId, capabilities))) {
+      return errorResponse(404, "collector_not_found", "Collection-Helfer wurde nicht gefunden.");
+    }
+  } catch (error) {
+    if (error instanceof PickupVisibilitySchemaUnavailableError) {
+      return errorResponse(
+        503,
+        "pickup_visibility_schema_unavailable",
+        "Pickup-Sichtbarkeit benötigt die vorbereitete Visibility-Migration.",
+      );
+    }
+    throw error;
+  }
+
+  const updated = await loadPickupCapabilities(db, route.campaignId, route.collectorId);
+  if (!updated) {
     return errorResponse(404, "collector_not_found", "Collection-Helfer wurde nicht gefunden.");
   }
-  return json({ collectorId: route.collectorId, capabilities });
+  return json({ collectorId: route.collectorId, capabilities: updated });
 }
 
 function collectorCampaignFromPath(pathname: string) {
@@ -228,22 +327,28 @@ export async function augmentPickupCapabilitiesResponse(
 
   const campaignId = collectorCampaignFromPath(url.pathname);
   if (!campaignId || request.method !== "GET" || !Array.isArray(payload.collectors)) return response;
+  const visibilitySchemaAvailable = await hasPickupVisibilitySchema(db);
+  const select = visibilitySchemaAvailable
+    ? "id, can_view_pickups, can_create_pickups, can_edit_pickups, can_assign_pickups"
+    : "id, can_create_pickups, can_edit_pickups, can_assign_pickups";
   const rows = await db
     .prepare(
-      `SELECT id, can_create_pickups, can_edit_pickups, can_assign_pickups
+      `SELECT ${select}
          FROM collection_collectors
         WHERE campaign_id = ?`,
     )
     .bind(campaignId)
     .all<CollectorRow>();
-  const byId = new Map(rows.results.map((row) => [row.id, capabilitiesFromRow(row)]));
+  const byId = new Map(
+    rows.results.map((row) => [row.id, capabilitiesFromRow(row, visibilitySchemaAvailable)]),
+  );
   return jsonWithResponseMetadata(response, {
     ...payload,
     collectors: payload.collectors.map((candidate) => {
       if (!isRecord(candidate) || typeof candidate.id !== "string") return candidate;
       return {
         ...candidate,
-        collectionCapabilities: byId.get(candidate.id) ?? capabilitiesFromRow(null),
+        collectionCapabilities: byId.get(candidate.id) ?? capabilitiesFromRow(null, visibilitySchemaAvailable),
       };
     }),
   });

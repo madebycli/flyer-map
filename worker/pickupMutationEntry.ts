@@ -7,6 +7,8 @@ import {
   handlePickupMutation,
   validatePickupMutation,
 } from "./pickupMutationRuntime.ts";
+import { loadPickupCapabilities } from "./pickupCapabilities.ts";
+import { hasPickupReadSchema } from "./pickupRepository.ts";
 
 const json = (data: unknown, init: ResponseInit = {}) =>
   Response.json(data, {
@@ -30,6 +32,23 @@ export async function handlePickupMutationRequest(
       { error: { code: "mutation_invalid", message: validation.message } },
       { status: 422 },
     );
+  }
+
+  if (access.role === "collection-collector" && await hasPickupReadSchema(db)) {
+    const capabilities = access.collectorId
+      ? await loadPickupCapabilities(db, campaignId, access.collectorId)
+      : null;
+    if (!capabilities?.canViewPickups) {
+      return json(
+        {
+          error: {
+            code: "pickup_capability_forbidden",
+            message: "Dieser Collection-Helfer darf keine Pickups sehen oder verändern.",
+          },
+        },
+        { status: 403 },
+      );
+    }
   }
 
   const mutation = validation.mutation;
