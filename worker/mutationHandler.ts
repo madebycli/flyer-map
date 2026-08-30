@@ -166,6 +166,20 @@ export async function handleCampaignMutation(
       return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
     }
 
+    if (mutation.type === "collection.admin.force-release-area") {
+      const area = current.collection?.areas.find(
+        (candidate) => candidate.id === mutation.payload.areaId,
+      );
+      if (!area || area.runId !== mutation.payload.runId) {
+        return errorResponse(
+          409,
+          "mutation_conflict",
+          "Collection Area und Run passen nicht zum aktuellen Serverstand.",
+          current.revision,
+        );
+      }
+    }
+
     let candidate;
     try {
       candidate = applyCampaignMutation(current, mutation);
