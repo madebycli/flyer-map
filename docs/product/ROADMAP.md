@@ -40,7 +40,7 @@ A visible Launcher module is not considered delivered merely because local UI, f
 
 Internal `?workbench=` routes may remain useful for development, but they are not normal navigation and do not count as a completed product milestone.
 
-The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, the bounded Activity projection, the first deterministic, explicitly authorized and idempotent Automation and the first real Stats projection on Draft PR #72. Stats derives bounded progress/session/event aggregates with explicit Street-/House denominators and no duplicate rollup persistence. The House-renderer slice and the first normal-product Smart-Street selection slice are implemented; remaining FC4 work includes normal-product Smart-House selection plus real-device and dense-mobile acceptance. Security-sensitive runtime remains gated by explicit ADR acceptance.
+The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, the bounded Activity projection, the first deterministic, explicitly authorized and idempotent Automation and the first real Stats projection on Draft PR #72. Stats derives bounded progress/session/event aggregates with explicit Street-/House denominators and no duplicate rollup persistence. The House-renderer slice, normal-product Smart-Street selection and normal-product Smart-House selection are implemented; remaining FC4 work is real-device, touch-density and dense-mobile acceptance, including the documented HOUSE_MIN_ZOOM starting value of 15. FC5 Collection/Pickup is now in architecture planning under docs/plans/active/021-collection-pickup-persistence.md; no Pickup runtime or persistence is shipped yet. Security-sensitive runtime remains gated by explicit ADR acceptance.
 
 ## Domain direction
 
@@ -103,6 +103,8 @@ Capabilities:
 ### M6.5 — Clothes Collection / Pickup Mode
 
 Goal: reuse the same map for the later clothes-collection round with cars.
+
+The current repository has only the Pickup domain/UI foundation. Plan 021 prepares the persistence and identity decision for this milestone; it is not a shipped Collection runtime.
 
 Capabilities:
 - explicit switch between Distribution and Collection context;

@@ -12,7 +12,7 @@ Lies zuerst vollständig:
 2. `docs/status/CURRENT.md`
 3. `docs/context-map.yaml`
 
-Nutze danach den Context-Graph. Für den aktuellen Stand folge `prompt-latest-feature-complete` zu Plan 017 und den abgeschlossenen FC4-Slices 018, 019 und 020. Lade für Karten-/Datenänderungen die verknüpften ADRs, Architecture-Dokumente und Quality-Gates.
+Nutze danach den Context-Graph. Für den aktuellen Stand folge `prompt-latest-feature-complete` zu Plan 017 und den abgeschlossenen FC4-Slices 018, 019 und 020. Lade für Karten-/Datenänderungen die verknüpften ADRs, Architecture-Dokumente und Quality-Gates. Für FC5 Collection/Pickup folge plan-collection-pickup-persistence und lade nur die dort verknüpften Daten-, Sync-, Map-, Security-, Collaboration-, Live-Teams- und Quality-Knoten.
 
 Prüfe vor jeder Änderung den lokalen Working Tree und vergleiche ihn mit dem aktuellen Remote-Branch. Nichts blind resetten, verwerfen oder überschreiben.
 
@@ -26,9 +26,9 @@ Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keine
 - Branch: `plan-feature-complete-platform`;
 - PR #72: `FC0-FC2: Platform, Live Field Groups and Field Sessions`;
 - Base: `ui-app-launcher-sheet`;
-- verifizierter Smart-House-Runtime-Head: `2f6aaa945e49de76c717b7c542b734f320e4a33f`;
-- CI #711 auf genau diesem Runtime-Head: Tests, TypeScript, Dependency Audit und Production Build erfolgreich;
-- PR #72 bleibt offen, Draft und mergeable.
+- zuletzt vor Plan 021 verifizierter Branch-Head: `7c38830cbf94129ff4cb3e1a97ab73fd9b5a605c`;
+- CI #712 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
+- PR #72 war offen, Draft und mergeable.
 
 Der nächste Dokumentationscommit verschiebt den Branch-Head. Deshalb vor jeder Fortsetzung GitHub erneut prüfen.
 
@@ -73,7 +73,7 @@ Abgeschlossene Slices:
 - `docs/plans/completed/019-smart-street-runtime.md`;
 - `docs/plans/completed/020-smart-house-runtime.md`.
 
-Der nächste FC4-Slice ist noch nicht festgelegt. Er muss aus dem dann aktuellen Repository- und Context-Graph-Stand abgeleitet werden.
+Plan 021 `docs/plans/active/021-collection-pickup-persistence.md` ist als aktiver Architektur- und Dokumentationsplan angelegt. Er behandelt FC5 Collection/Pickup und implementiert in diesem Turn keine Runtime. Die Architekturentscheidung A oder B bleibt durch Master offen. Pickup-Foundation, Collection-Field-Sessions und Collection-Field-Groups sind nicht mit einer feature-completen Pickup-Persistenz gleichzusetzen.
 
 ## Renderer und Geräteabnahme
 
@@ -128,4 +128,4 @@ Nach dem nächsten Slice diese Datei erneut aktualisieren mit:
 - Plan-018-Renderer- und Session-Highlight-Status;
 - Smart-Street- und Smart-House-Status;
 - aktuellem Migration-/Remote-D1-Status;
-- offenen Geräte-/Performance-Risiken und dem nächsten begründeten Slice.
+- offenen Geräte-/Performance-Risiken, dem aktiven Plan 021 und der ausstehenden Architekturentscheidung.

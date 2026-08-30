@@ -1,4 +1,4 @@
-version: 10
+version: 11
 
 entrypoints:
   always:
@@ -19,6 +19,7 @@ routing_rules:
   - for completed House polygon renderer history or its open device gates, load prompt-house-polygon-renderer and plan-house-polygon-renderer, then follow Map, Smart Task identity, Collaboration and Quality edges
   - for Smart Street runtime planning or continuation, load plan-smart-street-runtime, then follow Offline Map, Map, UX, Offline Sync, Smart Task identity and Quality edges
   - for Smart House runtime or preview schema-gate hardening, load plan-smart-house-runtime, then follow Smart Street runtime, House persistence, House renderer, Offline Map, Map, UX, Data, Offline Sync, Security, Smart Task identity and Quality edges
+  - for FC5 Collection/Pickup persistence planning, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Smart Task identity, Offline Map, Field Session Events, proposed Action Templates and Quality edges
 
 nodes:
   - id: product
@@ -280,6 +281,13 @@ nodes:
     topics: [feature-complete, FC4, smart-houses, houses, offline-map, osm, maplibre, selection, batch-mutation, persistence, schema-gates, preview-hardening]
     load_when: [Smart House runtime, normal House candidate selection, FC4 continuation, prepared OSM buildings, House batch persistence, preview schema gates]
 
+  - id: plan-collection-pickup-persistence
+    path: docs/plans/active/021-collection-pickup-persistence.md
+    type: plan
+    status: active
+    topics: [feature-complete, FC5, collection, pickup, persistence, m5, field-sessions, maplibre, statistics, security]
+    load_when: [Collection/Pickup planning, Pickup persistence, FC5, collection mode, pickup tasks]
+
   - id: house-renderer-runtime
     path: src/map/houseRenderer.ts
     type: code
@@ -321,6 +329,13 @@ nodes:
     status: current
     topics: [smart-houses, maplibre, geojson, dense-data, selection]
     load_when: [Smart House candidate source, fixed candidate layers, House candidate performance]
+
+  - id: pickup-foundation
+    path: src/domain/pickup.ts
+    type: code
+    status: current
+    topics: [collection, pickup, status, address, statistics]
+    load_when: [Pickup domain foundation, Pickup status, Collection persistence planning]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
@@ -401,3 +416,22 @@ edges:
   - { from: plan-smart-house-runtime, to: smart-house-runtime, relation: implements }
   - { from: smart-house-runtime, to: smart-house-candidate-data, relation: uses }
   - { from: smart-house-candidate-data, to: map, relation: integrates }
+
+  - { from: plan-collection-pickup-persistence, to: plan-feature-complete-platform, relation: refines_next_milestone }
+  - { from: plan-collection-pickup-persistence, to: plan-smart-house-runtime, relation: builds_on }
+  - { from: plan-collection-pickup-persistence, to: plan-platform-expansion, relation: follows_direction }
+  - { from: plan-collection-pickup-persistence, to: roadmap, relation: implements_planned_capability }
+  - { from: plan-collection-pickup-persistence, to: ux, relation: implements_mobile_flow }
+  - { from: plan-collection-pickup-persistence, to: data, relation: extends_persistence_contract }
+  - { from: plan-collection-pickup-persistence, to: offline-sync, relation: reuses }
+  - { from: plan-collection-pickup-persistence, to: map, relation: reuses_renderer_boundary }
+  - { from: plan-collection-pickup-persistence, to: security, relation: constrained_by }
+  - { from: plan-collection-pickup-persistence, to: collaboration, relation: integrates_sessions_events_stats }
+  - { from: plan-collection-pickup-persistence, to: live-teams, relation: integrates_collection_groups }
+  - { from: plan-collection-pickup-persistence, to: adr-offline-map-data, relation: constrained_by }
+  - { from: plan-collection-pickup-persistence, to: adr-smart-task-identity, relation: constrained_by }
+  - { from: plan-collection-pickup-persistence, to: adr-field-session-events, relation: constrained_by }
+  - { from: plan-collection-pickup-persistence, to: adr-action-templates-analytics, relation: considers_future_scope }
+  - { from: plan-collection-pickup-persistence, to: quality, relation: validated_by }
+  - { from: plan-collection-pickup-persistence, to: pickup-foundation, relation: evaluates }
+  - { from: pickup-foundation, to: data, relation: informs_domain_contract }

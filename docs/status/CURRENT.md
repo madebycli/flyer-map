@@ -41,8 +41,8 @@ Aktueller FC4-Stand:
 Aktiver Entwicklungsstack:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- verifizierter Smart-House-Runtime-Head: `2f6aaa945e49de76c717b7c542b734f320e4a33f`;
-- CI #711 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
+- zuletzt vor Plan 021 verifizierter Branch-Head: `7c38830cbf94129ff4cb3e1a97ab73fd9b5a605c`;
+- CI #712 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
 - PR #72 war offen, Draft und mergeable.
 
 Der nachfolgende Dokumentationscommit verschiebt den Branch-Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
@@ -82,6 +82,10 @@ Persistierte Houses werden über `vf-houses` mit festen MapLibre-Layern dargeste
 
 Reale Android-/iPhone-Abnahme, Touch-Dichte und die endgültige `HOUSE_MIN_ZOOM`-Entscheidung bleiben offen. Ausgangswert bleibt 15.
 
+## FC5 planning checkpoint
+
+Plan 021 `docs/plans/active/021-collection-pickup-persistence.md` ist als reiner Architektur- und Dokumentationsplan aktiv. Pickup bleibt im normalen Produktweg noch nicht implementiert. `src/domain/pickup.ts` und `src/collection/PickupPanel.tsx` bleiben eine Foundation ohne Snapshot-, M5-, Worker- oder D1-Anbindung. Die Architekturentscheidung A oder B sowie die markierten UNKLAR-Fragen stehen vor jedem Pickup-Runtime-Commit noch aus.
+
 ## Preview / D1 schema state
 
 Dokumentierter Remote-D1-Stand bleibt nur Migration 0001 bis 0003.
@@ -118,7 +122,7 @@ Weiterhin verbindlich:
 
 ## Immediate next
 
-1. Reale Android-/iPhone-Browserprüfung für House-/Street-Rendering, Touch-Hit-Test und Dense-Mobile-Verhalten durchführen, sobald echte Geräte verfügbar sind.
-2. Den nächsten FC4-Slice anhand des dann aktuellen Repository- und Context-Graph-Stands bestimmen, ohne eine neue Architektur ungeprüft zu erfinden.
+1. Plan 021 als Architekturgrundlage für FC5 prüfen und die offene Entscheidung A oder B durch Master festlegen, bevor Pickup-Runtime entsteht.
+2. Reale Android-/iPhone-Browserprüfung für House-/Street-Rendering, Touch-Hit-Test und Dense-Mobile-Verhalten durchführen, sobald echte Geräte verfügbar sind.
 3. Remote-D1-Stand und vorbereitete Migrationen unverändert dokumentieren, bis eine ausdrücklich freigegebene Rollout-Entscheidung vorliegt.
 4. PR #72 offen und Draft lassen. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.
