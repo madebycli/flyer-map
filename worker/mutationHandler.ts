@@ -18,6 +18,8 @@ import {
 } from "./mutationRepository.ts";
 import { validateCampaignMutation } from "./mutationValidation.ts";
 import { validateCampaignSnapshot } from "./snapshotValidation.ts";
+import { isPickupMutationInput } from "./pickupMutationRuntime.ts";
+import { handlePickupMutationRequest } from "./pickupMutationEntry.ts";
 
 const MAX_MUTATION_BYTES = 256_000;
 const MAX_PERSIST_ATTEMPTS = 3;
@@ -95,6 +97,10 @@ export async function handleCampaignMutation(
 
   const parsed = await readMutationBody(request);
   if (!parsed.ok) return parsed.response;
+
+  if (isPickupMutationInput(parsed.value.mutation)) {
+    return handlePickupMutationRequest(db, campaignId, access, parsed.value.mutation);
+  }
 
   const validation = validateCampaignMutation(parsed.value.mutation, campaignId);
   if (!validation.valid) {
