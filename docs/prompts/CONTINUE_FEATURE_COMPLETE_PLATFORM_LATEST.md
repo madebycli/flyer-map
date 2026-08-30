@@ -1,194 +1,138 @@
-# Prompt: Continue Feature Complete Platform
+# Continue Feature Complete Platform
 
-Dieser Living Handoff gehört zur Plan-017-Linie. Repository, aktueller Branch-Head, PR und CI bleiben Source of Truth.
-
-## Start für einen neuen Chat
-
-```text
 Du arbeitest weiter am GitHub-Projekt `madebycli/flyer-map`.
 
-Lies zuerst vollständig:
+Repository und GitHub sind die einzige Source of Truth. Prüfe vor jeder Änderung den aktuellen Branch, PR #72, exakten Head und CI. Verlasse dich nicht auf diesen Prompt, wenn GitHub inzwischen weiter ist.
+
+## Aktiver Stack
+
+```text
+Branch: plan-feature-complete-platform
+PR: #72
+Base: ui-app-launcher-sheet
+Draft: true
+Merge: verboten
+Ready: verboten
+Remote Migration: verboten
+Manueller Deploy: verboten
+Neuer Branch/PR: verboten
+```
+
+Letzter vollständig grüner FC5.2 Visibility-Code-Checkpoint vor dem anschließenden Living-Docs-Commit:
+
+```text
+Head: a8ae9a33dd478df459b450f4d0f25519302e9ae0
+CI: #765 success
+```
+
+Wenn dieser Prompt selbst auf einem späteren Docs-Head liegt, muss dessen CI vor Runtime-Arbeit ebenfalls vollständig grün sein.
+
+## Pflichtkontext
+
+Lies vollständig:
 1. `AGENTS.md`
 2. `docs/status/CURRENT.md`
 3. `docs/context-map.yaml`
-4. `docs/plans/active/021-collection-pickup-persistence.md`
+4. `docs/plans/active/017-feature-complete-platform.md`
+5. `docs/plans/active/021-collection-pickup-persistence.md`
+6. `docs/product/ROADMAP.md`
+7. `docs/product/UX.md`
+8. `docs/architecture/DATA.md`
+9. `docs/architecture/OFFLINE_SYNC.md`
+10. `docs/architecture/SECURITY.md`
+11. `docs/architecture/MAP.md`
+12. relevante Collection-/Pickup-Domain-, Worker-, UI- und Testdateien.
 
-Nutze danach den Context-Graph ab `prompt-latest-feature-complete` und `plan-collection-pickup-persistence`. Lade insbesondere Data, Offline-Sync, Map, Security, Collaboration, Live-Teams, OSM und Quality.
+Nutze `docs/context-map.yaml` als Routing-Graph und lade keine irrelevanten Dokumente nur aus Gewohnheit.
 
-Prüfe vor jeder Änderung lokalen Working Tree und Remote-Branch. Nichts blind resetten, verwerfen oder überschreiben.
+## FC5.2 Checkpoint A abgeschlossen
 
-Verifiziere Branch `plan-feature-complete-platform`, PR #72, Base/Head/Draft/Mergeability, exakten Head und CI auf exakt diesem Head gegen GitHub.
+Pickup Visibility ist als enge serverseitige Collection-Capability umgesetzt:
 
-Keine Migration remote anwenden, nicht explizit deployen, nicht mergen, PR #72 nicht Ready setzen und keinen neuen Branch oder PR erstellen.
+```text
+canViewPickups = true
+canCreatePickups = false
+canEditPickups = false
+canAssignPickups = false
 ```
 
-## Pre-FC5.2 Green Stabilization Checkpoint
+Verbindlich:
+- 0011 wurde nicht historisch umgeschrieben;
+- additive prepared-only Migration 0012 ergänzt `can_view_pickups DEFAULT 1`;
+- 0011-only bedeutet für bestehende Collector-Sessions logisch View=true;
+- explizite View-Änderung ohne 0012 liefert `pickup_visibility_schema_unavailable`;
+- View=false filtert Pickup-Daten serverseitig aus dem Collection Snapshot;
+- Areas/Runs bleiben unabhängig sichtbar;
+- View=false blockiert Pickup Search/Write serverseitig, auch wenn Write-Flags inkonsistent wären;
+- Admin kann vier Rechte pro Collector verwalten;
+- keine generische Permission-Runtime wurde eingeführt.
 
-Vor diesem Living-Docs-Commit wurde der begonnene FC5.2-Vorbereitungsstand wieder vollständig grün stabilisiert.
+Remote D1 bleibt nur 0001 bis 0003 applied. 0010, 0011 und 0012 bleiben prepared only.
 
-Ausgang:
-- letzter stabiler FC5.1-Head: `79bd68a42d1a11bf5b79897d0f05894975f3c543`, CI #738 grün;
-- gebrochener FC5.2-Vorbereitungs-Head: `5f533fb1403263aeec35312449afd2a9abaea169`, CI #743 fehlgeschlagen;
-- Ursache #743: fehlende explizite `.ts`-Endung bei `./pickup` im Node-TypeScript-Testpfad plus alte Pickup-Foundation-Tests auf `address/note/sourceBuildingId` statt des neuen FC5.2-Draft-Vertrags.
+## Nächster Slice: FC5.2 Checkpoint B
 
-Reparierter Code-Checkpoint vor Living Docs:
-- `3f413791ec5063abed66eeb1a377bc48fc4c0e5d`;
-- CI #754 auf exakt diesem Head grün;
-- Test, Typecheck, Dependency Audit und Production Build alle erfolgreich.
+Erst nach Verifikation eines vollständig grünen aktuellen Heads weiterbauen.
 
-Nach jedem Living-Docs-Commit GitHub erneut prüfen. Der ältere grüne Code-Checkpoint zählt nicht als CI-Nachweis für einen neueren Dokumentations-Head.
+Ziel ist ausschließlich der normale Pickup Composer / Sonderadress-Flow:
 
-## Was bei der Stabilisierung geändert wurde
+```text
++ / Sonderadresse hinzufügen
+-> Search Sheet
+-> Adresse eingeben
+-> Worker-basierter OSM-derived Search
+-> Treffer mit Distanz
+-> Treffer auswählen
+-> MapLibre fokussiert Treffer
+-> temporärer Marker
+-> Titel / Adresse / Beschreibung
+-> Position optional per Finger/Maus korrigieren
+-> speichern über bestehenden M5-Pickup-Pfad
+```
 
-### Pickup Domain
+### Search Bias
 
-Der neue FC5.2-Domainvertrag bleibt bestehen und wurde nicht zugunsten alter Foundation-Kompatibilität aufgeweicht:
-- App-eigene Pickup-ID;
-- `title` Pflicht;
-- `address` Pflicht;
-- echte Karten-`position` Pflicht;
-- `description` separat;
-- optionale Collection Area;
-- optionale OSM-/Distribution-Provenance;
-- Status `open`, `collected`, `unavailable`, `needs-follow-up`;
-- Archivierung statt Hard Delete.
+Priorität:
+1. einmalig freigegebener Gerätestandort, wenn vorhanden;
+2. sonst aktueller MapLibre-Kartenmittelpunkt.
 
-`src/domain/pickup.ts` validiert fehlende/manipulierte Pflichtfelder kontrolliert. OSM-Provenance bleibt Datenquelle/Provenance und ist keine Pickup-Identität. Der konkrete Geocoder-Provider wird in diesem Stabilisierungsslice nicht festgelegt.
+Keine Pflicht-Permission, kein `watchPosition`, keine GPS-Historie. Worker bekommt nur validierte bounded longitude/latitude-Werte.
 
-`src/domain/collection.ts` importiert `./pickup.ts` explizit. `pickups` bleibt im gespeicherten `CollectionSnapshot` vorerst optional und wird über `collectionSnapshotOrEmpty()` additiv auf `[]` normalisiert, damit bestehende FC5.1-Snapshots gültig bleiben.
+### Distanz
 
-### Alte PickupPanel Foundation
+Distanz zwischen Bias-Punkt und Treffer deterministisch berechnen, nach Nähe sortieren und mobil lesbar anzeigen, beispielsweise `84 m`, `320 m`, `1,4 km`, `12 km`.
 
-`src/collection/PickupPanel.tsx` ist weiterhin nicht in den normalen App-/Collection-Produktgraphen verdrahtet. Sie wurde nur typkonsistent auf den neuen Domainvertrag gebracht:
-- Titel/Adresse/Beschreibung statt `note`;
-- Position als echter Prop-Vertrag;
-- ohne Position kein Submit;
-- kein `[0, 0]`-Fallback;
-- kein neuer FC5.2-Produktflow.
+### Main Area
 
-### Tests
+Bestehende Worker-Grenze beibehalten: Provider-BBox/Proximity auf Collection Main Area und jeden Treffer zusätzlich gegen das echte Main-Area-Polygon prüfen. Kein offener Geocoder-Proxy und keine weltweite ungebremste Suche.
 
-`tests/pickup.test.ts` wurde auf den neuen Vertrag migriert.
+### UX
 
-Zusätzlich:
-- `tests/collectionPickupPreparation.test.ts` führt 0001 + 0010 + vorbereitete 0011 gegen echtes In-Memory-SQLite aus und prüft Default-Deny-Capabilities, Area-FK, Distribution-Unabhängigkeit, Campaign-Cascade, Archivierung und JSON-Array-Invarianten;
-- `tests/pickupCommentPreparation.test.ts` prüft, dass lokale Pickup-Comment-Drafts nur auf existierende Pickup-IDs zeigen können und dass `pickup-task` am persistenten Comment-Boundary weiterhin abgelehnt wird.
+Bestehendes Sheet-System verwenden. Debounce, Abort alter Requests und Race-Schutz für out-of-order Responses. Loading, Empty, Network Error, Rate Limit, Provider Error, Permission Error und Schema Error getrennt behandeln. Kein Fehlerzustand gleichzeitig als `0 Treffer` darstellen.
 
-### Migration 0008
+Treffer-Auswahl fokussiert MapLibre und setzt nur einen temporären Marker, kein Auto-Save. Manuelle Positionskorrektur muss Touch und Maus unterstützen, nie `[0,0]` verwenden.
 
-`migrations/0008_comments.sql` wurde auf seinen bereits vorbereiteten FC2-Inhalt zurückgeführt.
+Collector darf den Add-Flow nur sehen, wenn `canViewPickups && canCreatePickups`. Worker prüft Create weiterhin authoritative.
 
-Begründung:
-- `docs/architecture/DATA.md` sagt ausdrücklich, historische Migrationen nicht umzuschreiben;
-- Pickup-Kommentare sind noch kein fertiger Runtime-Slice;
-- daher kein nachträgliches `pickup-task` in 0008.
+### Nicht in Checkpoint B stapeln
 
-`src/domain/commentDraft.ts` enthält `pickup-task` nur als Domain-Vorbereitung und validiert die konkrete Pickup-ID. `normalizeCommentTargetType("pickup-task")` bleibt `null`. Persistente Pickup-Kommentare benötigen später eine additive Forward Migration plus Worker-Autorisierung.
-
-### Migration 0011
-
-`migrations/0011_fc5_collection_pickups.sql` bleibt vorbereitet und nicht remote angewendet.
-
-Korrigierte Invarianten:
-- enge Collector-Capabilities `can_create_pickups`, `can_edit_pickups`, `can_assign_pickups`, Default `0`;
-- kein ungültiges `ON DELETE SET NULL` auf `(area_id, campaign_id)`;
-- Pickups besitzen keinen Distribution-FK;
-- Distribution Delete darf Pickup nicht löschen;
-- Campaign Delete darf Pickup per Cascade löschen;
-- ein Area-gebundener Pickup verhindert Area Hard Delete;
-- archivierter Pickup darf auch `collected` sein;
-- Assignment-Felder müssen JSON-Arrays sein.
-
-## Implementierter Feature-Stand
-
-Umgesetzt:
-- FC0 PlatformShell/App-Bridge und aktiver Teamkontext;
-- Live Field Groups;
-- durable Field Sessions;
-- Comments für bestehende persistente Targets;
-- bounded Activity;
-- serverseitige Stats;
-- deterministische/idempotente Automation;
-- Plan 018 House Polygon Renderer;
-- Plan 019 Smart Street Runtime;
-- Plan 020 Smart House Runtime;
-- FC5.1 First-Class Collection Access, Areas und Runs.
-
-FC5.1 umfasst Collection-only QR Access, pro Gerät revocable Collector-Sessions, Main/Child Areas, Runs, Mehrgeräte-Join, manuelle Release-/Cancel-Flows und Admin force release.
-
-## FC5.2 Status
-
-FC5.2 ist **noch nicht als Runtime umgesetzt**. Es existieren nur stabilisierte vorbereitende Domain-/Schema-Bausteine.
-
-Noch nicht implementieren/als fertig behaupten:
-- Geo-/Adress-Provider Worker Proxy;
-- API-Key Binding;
-- Adress-Autocomplete;
-- Pickup Worker CRUD;
-- Pickup M5 Mutationen;
-- normale Pickup UI;
-- MapLibre Pickup Marker;
-- persistente Pickup-Kommentare;
-- Sonderadressen-Workflow;
-- Assignment UI;
+- permanente Pickup MapLibre Layer;
+- Assignment;
+- persistente Pickup Comments;
+- FC5.3 Collection Road Sections;
+- Revert;
 - Pickup Stats.
 
-## FC5 verbindliche Produktgrenzen
+Nach Checkpoint B wieder einen eigenen stabilen CI-Checkpoint herstellen und Living Docs nur auf den tatsächlich erreichten Stand aktualisieren.
 
-Master hat **Ansatz A: First-Class Collection/Pickup** festgelegt.
+## Globale Grenzen
 
-- Collection und Distribution bleiben getrennte fachliche Datenwelten unter derselben Campaign;
-- Distribution Delete verändert Collection nicht und umgekehrt;
-- nur Campaign Delete darf beide gemeinsam entfernen;
-- eigene Collection Main Area und Child Areas;
-- eigene Collection Runs;
-- eigene Collection Road Sections;
-- eigene Pickup Tasks;
-- Pickup kann ohne Distribution House existieren;
-- OSM IDs sind nie Pickup-/Area-/Run-/Road-Primärschlüssel;
-- temporäre Collector-Zugänge sind Collection-only;
-- Collector Pickup-Sichtbarkeit Default `true`, create/edit/assign Default `false`;
-- Worker bleibt authoritative Authorization Boundary;
-- keine kontinuierliche GPS-Historie.
-
-## D1 / Rollout
-
-Remote D1 bleibt dokumentiert nur 0001 bis 0003.
-
-Vorbereitet, aber nicht remote angewendet:
-- 0004 Smart Street provenance;
-- 0005 House Tasks;
-- 0006 Field Groups/Credentials/Memberships;
-- 0007 Field Sessions/Domain Events;
-- 0008 Comments, unverändert ohne Pickup-Target;
-- 0009 Automation-Konfiguration;
-- 0010 Collection Access/Main/Child Areas/Runs/Collector-Sessions/Claim-Historie;
-- 0011 Pickup-Schema und enge Collector-Capabilities, noch ohne Runtime-Verdrahtung.
-
-## Sicherheits-/Architekturgrenzen
-
-- gleicher Worker;
-- gleiche D1;
-- gleiche M5 IndexedDB Queue;
-- gleiche MapLibre Engine;
-- keine zweite Datenbank/Queue/Map Engine;
-- keine neue allgemeine Identity-/Permission-Runtime;
-- keine Secrets/Tokens in Client-Map-Properties oder Domain Events;
-- keine PWA/Service Worker/Background Sync;
-- keine kontinuierliche GPS-Historie;
-- keine Preview-/Mock-Daten als Produktfeature;
-- kein AI-/LLM-Routing.
-
-## Nächster Auftrag
-
-Erst nach erneuter Verifikation des aktuellen GitHub-Heads und grüner CI darf der eigentliche FC5.2-Runtime-Slice beginnen.
-
-Dann vor dem ersten Runtime-Persistenzcommit:
-1. aktuellen OSM-basierten Adressprovider gegen ToS, Rate Limits, Datenschutz, Attribution und Kosten prüfen;
-2. bestehende Collection-only Access-, Sheet-, MapLibre- und M5-Mechanik wiederverwenden;
-3. Pickup ohne Distribution House, Pflicht-Koordinaten, Archivierung und getrennte App-ID sicherstellen;
-4. Pickup Worker/M5/Persistenz vertikal und fail-closed implementieren;
-5. Pickup Comments über additive Forward Migration, nicht durch Umschreiben von 0008, ergänzen;
-6. normalen Flow Suche -> Karte -> Pickup -> Status/Kommentar vollständig testen.
-
-Keine Migration remote anwenden, keinen manuellen Deploy, nichts mergen, PR #72 nicht Ready setzen und keinen neuen Branch/PR erstellen.
+- MapLibre 5.7.1 bleibt einzige Kartenengine.
+- M5 bleibt einzige Mutation Queue.
+- App-eigene IDs bleiben authoritative, OSM IDs nur Provenance.
+- Worker bleibt Authorization Boundary.
+- Keine Secrets im Client oder in Map Properties.
+- Keine kontinuierliche GPS-Historie.
+- Keine Remote-Migration.
+- Kein manueller Deploy.
+- Kein Merge oder Ready.
+- Kein neuer Branch/PR.
