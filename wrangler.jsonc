@@ -31,6 +31,14 @@
         "limit": 8,
         "period": 60
       }
+    },
+    {
+      "name": "PICKUP_SEARCH_LIMITER",
+      "namespace_id": "91714003",
+      "simple": {
+        "limit": 20,
+        "period": 10
+      }
     }
   ]
 }

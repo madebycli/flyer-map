@@ -5,8 +5,12 @@ import {
   loadPickupTasks,
   StoredPickupError,
 } from "./pickupRepository.ts";
+import {
+  handlePickupSearch,
+  type PickupSearchEnv,
+} from "./pickupSearch.ts";
 
-type Env = Parameters<typeof baseWorker.fetch>[1];
+type Env = Parameters<typeof baseWorker.fetch>[1] & PickupSearchEnv;
 
 const json = (data: unknown, init: ResponseInit = {}) =>
   Response.json(data, {
@@ -100,6 +104,9 @@ export async function augmentPickupSnapshotResponse(
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const searchResponse = await handlePickupSearch(request, env);
+    if (searchResponse) return searchResponse;
+
     const response = await baseWorker.fetch(request, env);
     if (request.method !== "GET" || !env.DB) return response;
     const campaignId = snapshotCampaignId(new URL(request.url).pathname);
