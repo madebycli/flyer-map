@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
-import type { ExpressionSpecification, GeoJSONSource, StyleSpecification } from "maplibre-gl";
+import type {
+  ExpressionSpecification,
+  FilterSpecification,
+  GeoJSONSource,
+  StyleSpecification,
+} from "maplibre-gl";
 import {
   browserOfflineMapRepository,
   OFFLINE_MAP_CHANGED_EVENT,
@@ -445,7 +450,7 @@ function smartRoadsToGeoJson(
   };
 }
 
-function smartHouseSelectionFilter(selectedSourceIds: readonly string[]) {
+function smartHouseSelectionFilter(selectedSourceIds: readonly string[]): FilterSpecification {
   return selectedSourceIds.length > 0
     ? ["match", ["get", "sourceId"], [...selectedSourceIds], true, false]
     : ["==", ["get", "sourceId"], "__none__"];
