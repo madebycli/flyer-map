@@ -26,12 +26,17 @@ import {
   type TaskStatus,
   type Team,
 } from "./domain/campaign";
+import { HOUSE_CREATE_BATCH_MAX } from "./domain/mutations";
 import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
 import type { OfflineMapPackage } from "./domain/offlineMap";
 import {
   smartCandidatesForArea,
   type SmartRoadCandidate,
 } from "./domain/smartCandidates";
+import {
+  availableSmartBuildingsForCreation,
+  toggleSmartBuildingSourceId,
+} from "./domain/smartBuildingSelection";
 import {
   smartRoadPointAnchorCandidates,
   type SmartRoadPointAnchor,
@@ -44,14 +49,16 @@ import {
   type SmartRoadRouteOption,
 } from "./domain/smartRoadSelection";
 import { createSmartStreetTaskSnapshot } from "./domain/smartStreetTask";
+import { createSmartHouseTaskSnapshot } from "./domain/smartHouseTask";
 import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } from "./i18n";
 import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
+import { SmartHouseSelectionPanel } from "./map/SmartHouseSelectionPanel";
 import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";
 import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
 import { SettingsSheet } from "./settings/SettingsSheet";
 
-type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street";
+type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house";
 type Sheet = "teams" | "area" | "task" | "house" | "campaign-comments" | "settings" | null;
 type SmartStreetAnchorKind = "start" | "end" | "waypoint";
 type UndoStatusChange = {
@@ -106,6 +113,7 @@ function syncMessage(language: Language, code: SyncMessageCode, refreshState: Re
   if (code === "access_required") return t(language, "accessRequired");
   if (code === "network") return t(language, "unavailable");
   if (code === "forbidden") return t(language, "permissionDenied");
+  if (code === "schema_migration_required") return t(language, "schemaMigrationRequired");
   if (code === "conflict") return t(language, "newData");
   return null;
 }
@@ -145,7 +153,12 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const [smartStreetPendingAnchors, setSmartStreetPendingAnchors] = useState<SmartRoadPointAnchor[]>([]);
   const [smartStreetRouteOptions, setSmartStreetRouteOptions] = useState<SmartRoadRouteOption[]>([]);
   const [smartStreetMessage, setSmartStreetMessage] = useState<string | null>(null);
+  const [smartHouseSelectedSourceIds, setSmartHouseSelectedSourceIds] = useState<string[]>([]);
+  const [smartHousePendingSourceIds, setSmartHousePendingSourceIds] = useState<string[]>([]);
+  const [smartHouseParentStreetTaskId, setSmartHouseParentStreetTaskId] = useState<string | null>(null);
+  const [smartHouseMessage, setSmartHouseMessage] = useState<string | null>(null);
   const smartStreetSaveInFlight = useRef(false);
+  const smartHouseSaveInFlight = useRef(false);
   const [undoStatusChange, setUndoStatusChange] = useState<UndoStatusChange | null>(null);
 
   useEffect(
@@ -237,17 +250,34 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const selectedHouseTaskTeam = selectedHouseTaskArea
     ? snapshot.teams.find((team) => team.id === selectedHouseTaskArea.teamId) ?? null
     : null;
-  const selectedAreaTasks = selectedArea
-    ? snapshot.tasks.filter((task) => task.areaId === selectedArea.id)
-    : [];
-  const selectedAreaHouseTasks = selectedArea
-    ? (snapshot.houseTasks ?? []).filter((task) => task.areaId === selectedArea.id)
-    : [];
+  const selectedAreaTasks = useMemo(
+    () => (selectedArea ? snapshot.tasks.filter((task) => task.areaId === selectedArea.id) : []),
+    [selectedArea, snapshot.tasks],
+  );
+  const selectedAreaHouseTasks = useMemo(
+    () =>
+      selectedArea
+        ? (snapshot.houseTasks ?? []).filter((task) => task.areaId === selectedArea.id)
+        : [],
+    [selectedArea, snapshot.houseTasks],
+  );
   const smartCandidates = useMemo(() => {
     if (!selectedArea || !offlineMapPackage) return null;
     return smartCandidatesForArea(selectedArea, offlineMapPackage);
   }, [offlineMapPackage, selectedArea]);
   const smartRoads = smartCandidates?.roads ?? [];
+  const smartHouseBuildings = useMemo(
+    () => availableSmartBuildingsForCreation(smartCandidates?.buildings ?? [], selectedAreaHouseTasks),
+    [selectedAreaHouseTasks, smartCandidates],
+  );
+  const smartHouseSelectedBuildings = useMemo(() => {
+    const selected = new Set(smartHouseSelectedSourceIds);
+    return smartHouseBuildings.filter((building) => selected.has(building.sourceId));
+  }, [smartHouseBuildings, smartHouseSelectedSourceIds]);
+  const smartHousePendingBuildings = useMemo(() => {
+    const pending = new Set(smartHousePendingSourceIds);
+    return smartHouseBuildings.filter((building) => pending.has(building.sourceId));
+  }, [smartHouseBuildings, smartHousePendingSourceIds]);
   const canEditSelectedArea = canEditArea(selectedArea);
   const canEditSelectedTask = canEditArea(selectedTaskArea);
   const canChangeSelectedTaskStatus = canChangeTaskStatusInArea(selectedTaskArea);
@@ -664,6 +694,106 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     if (selectedAreaId) setSheet("area");
   };
 
+  const resetSmartHouseSelection = () => {
+    setSmartHouseSelectedSourceIds([]);
+    setSmartHousePendingSourceIds([]);
+    setSmartHouseParentStreetTaskId(null);
+    setSmartHouseMessage(null);
+    smartHouseSaveInFlight.current = false;
+  };
+
+  const startSmartHouseSelection = (parentStreetTaskId: string | null) => {
+    if (!selectedArea || !canEditSelectedArea || smartHouseBuildings.length === 0) return;
+    if (
+      parentStreetTaskId &&
+      (!selectedTask || selectedTask.id !== parentStreetTaskId || selectedTask.areaId !== selectedArea.id)
+    ) {
+      return;
+    }
+    resetSmartHouseSelection();
+    setSmartHouseParentStreetTaskId(parentStreetTaskId);
+    setSelectedHouseTaskId(null);
+    setSmartHouseMessage(t(language, "smartHouseTapCandidate"));
+    setMode("smart-house");
+    setSheet(null);
+  };
+
+  const acceptSmartHouseCandidate = (sourceId: string) => {
+    setSmartHousePendingSourceIds([]);
+    setSmartHouseSelectedSourceIds((current) =>
+      toggleSmartBuildingSourceId(current, sourceId, smartHouseBuildings),
+    );
+  };
+
+  const handleSmartHousePoint = (point: LngLat, sourceIds: string[]) => {
+    const visibleSourceIds = [...new Set(sourceIds)].filter((sourceId) =>
+      smartHouseBuildings.some((building) => building.sourceId === sourceId),
+    );
+    if (visibleSourceIds.length === 0) {
+      setSmartHousePendingSourceIds([]);
+      setSmartHouseMessage(t(language, "smartHouseTapCandidate"));
+      return;
+    }
+    if (visibleSourceIds.length === 1) {
+      acceptSmartHouseCandidate(visibleSourceIds[0]);
+      return;
+    }
+    setSmartHousePendingSourceIds(visibleSourceIds.slice(0, 6));
+    setSmartHouseMessage(t(language, "smartHouseChooseCandidate"));
+    void point;
+  };
+
+  const cancelSmartHouseSelection = () => {
+    const parentStreetTaskId = smartHouseParentStreetTaskId;
+    resetSmartHouseSelection();
+    setMode("browse");
+    if (parentStreetTaskId) {
+      setSelectedTaskId(parentStreetTaskId);
+      setSelectedHouseTaskId(null);
+      setSheet("task");
+    } else if (selectedAreaId) {
+      setSheet("area");
+    }
+  };
+
+  const saveSmartHouseTasks = () => {
+    if (
+      smartHouseSaveInFlight.current ||
+      !selectedArea ||
+      !canEditSelectedArea ||
+      smartHouseSelectedBuildings.length < 1 ||
+      smartHouseSelectedBuildings.length > HOUSE_CREATE_BATCH_MAX
+    ) {
+      return;
+    }
+    smartHouseSaveInFlight.current = true;
+    try {
+      const now = new Date().toISOString();
+      const houses = smartHouseSelectedBuildings.map((building) =>
+        createSmartHouseTaskSnapshot({
+          campaignId: snapshot.campaign.id,
+          areaId: selectedArea.id,
+          building,
+          parentStreetTaskId: smartHouseParentStreetTaskId,
+          taskId: createId("task"),
+          timestamp: now,
+        }),
+      );
+      commitSnapshot((current) => ({
+        ...current,
+        houseTasks: [...(current.houseTasks ?? []), ...houses],
+      }));
+      resetSmartHouseSelection();
+      setSelectedTaskId(null);
+      setSelectedHouseTaskId(null);
+      setMode("browse");
+      setSheet("area");
+    } catch {
+      smartHouseSaveInFlight.current = false;
+      setSmartHouseMessage(t(language, "smartHouseSaveError"));
+    }
+  };
+
   const acceptSmartStreetAnchor = (anchor: SmartRoadPointAnchor) => {
     setSmartStreetPendingAnchors([]);
     if (smartStreetAnchorKind === "start") {
@@ -1043,6 +1173,9 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         smartPreviewGeometry={smartStreetPreviewGeometry}
         smartStreetColor={streetColor}
         onSmartStreetPoint={handleSmartStreetPoint}
+        smartHouseBuildings={smartHouseBuildings}
+        smartHouseSelectedSourceIds={smartHouseSelectedSourceIds}
+        onSmartHousePoint={handleSmartHousePoint}
         onOfflineMapPackageChange={setOfflineMapPackage}
       />
 
@@ -1227,6 +1360,76 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         </section>
       ) : null}
 
+      {mode === "smart-house" ? (
+        <section className="mode-sheet smart-house-sheet" aria-label={t(language, "addSmartHouse")}>
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Smart House</span>
+              <strong>
+                {smartHouseParentStreetTaskId
+                  ? `${selectedTask?.label.trim() || t(language, "street")} · ${selectedArea?.name || t(language, "area")}`
+                  : selectedArea?.name || t(language, "area")}
+              </strong>
+            </div>
+            <span className="team-color-preview" style={{ backgroundColor: streetColor }} aria-hidden="true" />
+          </div>
+
+          <div className="smart-street-message" role="status">
+            {smartHouseMessage || t(language, "smartHouseTapCandidate")}
+          </div>
+          <div className="smart-street-meta">
+            <span>{t(language, "smartHouseCandidates", { count: smartHouseBuildings.length })}</span>
+            <span>{t(language, "smartHouseSelected", { count: smartHouseSelectedBuildings.length })}</span>
+          </div>
+
+          {smartHousePendingBuildings.length > 0 ? (
+            <div className="smart-street-choice-list" aria-label={t(language, "smartHouseChooseCandidate")}>
+              <strong>{t(language, "smartHouseChooseCandidate")}</strong>
+              {smartHousePendingBuildings.map((building) => (
+                <button
+                  className="smart-street-choice"
+                  type="button"
+                  key={building.sourceId}
+                  onClick={() => acceptSmartHouseCandidate(building.sourceId)}
+                >
+                  <span>{building.houseNumber ? `${building.street || t(language, "smartHouseBuilding")} ${building.houseNumber}` : t(language, "smartHouseBuilding")}</span>
+                  <small>{building.buildingType}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <SmartHouseSelectionPanel
+            buildings={smartHouseBuildings}
+            selectedSourceIds={smartHouseSelectedSourceIds}
+            onSelectionChange={setSmartHouseSelectedSourceIds}
+            labels={{
+              title: t(language, "smartHouseReview"),
+              selected: t(language, "smartHouseSelectedLabel"),
+              unnamedBuilding: t(language, "smartHouseBuilding"),
+              selectStreet: t(language, "smartHouseSelectStreet"),
+              clear: t(language, "smartHouseClear"),
+              noBuildings: t(language, "smartHouseNoCandidates"),
+              noSelection: t(language, "smartHouseNoSelection"),
+              selectionLimit: t(language, "smartHouseSelectionLimit"),
+              moreStreets: t(language, "smartHouseMoreStreets"),
+            }}
+          />
+
+          <div className="smart-street-actions">
+            <button className="button secondary" type="button" onClick={cancelSmartHouseSelection}>{t(language, "cancel")}</button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={smartHouseSelectedBuildings.length === 0 || smartHouseSelectedBuildings.length > HOUSE_CREATE_BATCH_MAX}
+              onClick={saveSmartHouseTasks}
+            >
+              {t(language, "smartHouseSave")}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {mode === "edit" ? (
         <section className="mode-sheet" aria-label={t(language, "editShape")}>
           <div className="mode-title-row">
@@ -1393,6 +1596,14 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
               <button
                 className="button primary full-width"
                 type="button"
+                onClick={() => startSmartHouseSelection(null)}
+                disabled={smartHouseBuildings.length === 0}
+              >
+                {t(language, "addSmartHouse")}
+              </button>
+              <button
+                className="button primary full-width"
+                type="button"
                 onClick={startSmartStreetSelection}
                 disabled={smartRoads.length === 0}
               >
@@ -1402,6 +1613,11 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
               {smartRoads.length === 0 ? (
                 <p className="smart-street-area-note">
                   {offlineMapPackage ? t(language, "smartStreetNoCandidates") : t(language, "smartStreetNoPackage")}
+                </p>
+              ) : null}
+              {smartHouseBuildings.length === 0 ? (
+                <p className="smart-street-area-note">
+                  {offlineMapPackage ? t(language, "smartHouseNoCandidates") : t(language, "smartHouseNoPackage")}
                 </p>
               ) : null}
               <div className="area-actions secondary-row">
@@ -1483,6 +1699,17 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
               </button>
             ))}
           </div>
+
+          {canEditSelectedTask ? (
+            <button
+              className="button secondary full-width task-house-action"
+              type="button"
+              onClick={() => startSmartHouseSelection(selectedTask.id)}
+              disabled={smartHouseBuildings.length === 0}
+            >
+              {t(language, "addSmartHouseForStreet")}
+            </button>
+          ) : null}
 
           {canEditSelectedTask ? (
             <button className="button danger full-width task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>

@@ -43,7 +43,7 @@ const MAX_RETRY_DELAY_MS = 60_000;
 
 export type CampaignLoadResult = { snapshot: CampaignSnapshot; warning: string | null };
 export type RefreshState = "idle" | "loading" | "current" | "error" | "available";
-export type SyncMessageCode = "access_required" | "network" | "conflict" | "forbidden" | null;
+export type SyncMessageCode = "access_required" | "network" | "conflict" | "forbidden" | "schema_migration_required" | null;
 export type MutationSyncState =
   | "saved"
   | "pending"
@@ -505,6 +505,25 @@ async function processMutationQueue() {
         messageCode: apiError.status === 403 ? "forbidden" : "access_required",
         pendingCount: records.length,
       });
+      return;
+    }
+
+    if (apiError?.code === "schema_migration_required") {
+      const attemptCount = record.attemptCount + 1;
+      const nextAttemptAt = Date.now() + retryDelay(attemptCount);
+      await browserMutationQueue.update({
+        ...record,
+        state: "retry",
+        attemptCount,
+        nextAttemptAt,
+        lastError,
+      });
+      emit({
+        syncState: "failed",
+        messageCode: "schema_migration_required",
+        pendingCount: records.length,
+      });
+      if (navigator.onLine) scheduleRetry(nextAttemptAt - Date.now());
       return;
     }
 

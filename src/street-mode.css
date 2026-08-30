@@ -17,6 +17,11 @@
   overflow: auto;
 }
 
+.smart-house-sheet {
+  max-height: min(82dvh, 48rem);
+  overflow: auto;
+}
+
 .smart-street-message {
   margin: 0.7rem 0 0;
   padding: 0.65rem 0.72rem;
@@ -170,6 +175,10 @@
   margin-top: 0.7rem;
 }
 
+.task-house-action {
+  margin-top: 0.7rem;
+}
+
 .context-task-list {
   display: grid;
   gap: 0.45rem;
@@ -281,7 +290,8 @@
 }
 
 .map-mode-street-draw .maplibregl-canvas,
-.map-mode-smart-street .maplibregl-canvas {
+.map-mode-smart-street .maplibregl-canvas,
+.map-mode-smart-house .maplibregl-canvas {
   cursor: crosshair;
 }
 

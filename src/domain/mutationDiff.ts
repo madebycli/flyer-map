@@ -1,5 +1,6 @@
 import type { CampaignSnapshot } from "./campaign";
-import type { CampaignMutation } from "./mutations";
+import { HOUSE_CREATE_BATCH_MAX } from "./mutations.ts";
+import type { CampaignMutation } from "./mutations.ts";
 
 export class MutationDerivationError extends Error {
   constructor(message: string) {
@@ -295,6 +296,30 @@ export function deriveCampaignMutation(
         geometry: task.geometry,
         ...(task.source ? { source: task.source } : {}),
         parentStreetTaskId: task.parentStreetTaskId,
+      },
+    };
+  }
+
+  if (houses.added.length > 1 && collectionDeltaCount === houses.added.length) {
+    if (houses.added.length > HOUSE_CREATE_BATCH_MAX) {
+      throw new MutationDerivationError("House-Batch darf höchstens 50 Häuser enthalten.");
+    }
+    const createdAt = houses.added[0].createdAt;
+    if (!houses.added.every((house) => house.createdAt === createdAt)) {
+      throw new MutationDerivationError("House-Batch benötigt einen gemeinsamen Erstellzeitpunkt.");
+    }
+    return {
+      ...mutationBase(previous, createdAt),
+      type: "house.create-batch",
+      payload: {
+        houses: houses.added.map((house) => ({
+          taskId: house.id,
+          areaId: house.areaId,
+          label: house.label,
+          geometry: house.geometry,
+          ...(house.source ? { source: house.source } : {}),
+          parentStreetTaskId: house.parentStreetTaskId,
+        })),
       },
     };
   }

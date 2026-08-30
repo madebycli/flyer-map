@@ -284,6 +284,36 @@ function mutationStatement(
           mutation.campaignId,
           writeToken,
         );
+    case "house.create-batch":
+      return db
+        .prepare(
+          `INSERT INTO house_tasks (
+             id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
+             status, completed_at, created_at, updated_at
+           )
+           SELECT
+             json_extract(value, '$.taskId'),
+             ?,
+             json_extract(value, '$.areaId'),
+             json_extract(value, '$.parentStreetTaskId'),
+             json_extract(value, '$.label'),
+             json_extract(value, '$.geometry'),
+             CASE
+               WHEN json_type(value, '$.source') IS NULL THEN NULL
+               ELSE json_extract(value, '$.source')
+             END,
+             'open', NULL, ?, ?
+           FROM json_each(?)
+           WHERE ${guard}`,
+        )
+        .bind(
+          mutation.campaignId,
+          mutation.createdAt,
+          mutation.createdAt,
+          JSON.stringify(mutation.payload.houses),
+          mutation.campaignId,
+          writeToken,
+        );
     case "house.rename":
       return db
         .prepare(

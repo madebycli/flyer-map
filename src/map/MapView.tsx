@@ -13,12 +13,15 @@ import type {
   MapCameraView,
 } from "../domain/campaign";
 import type { OfflineMapPackage } from "../domain/offlineMap";
-import type { SmartRoadCandidate } from "../domain/smartCandidates";
+import type { SmartBuildingCandidate, SmartRoadCandidate } from "../domain/smartCandidates";
 import type { SmartRoadPointAnchor } from "../domain/smartRoadPointAnchor";
 import type { Language } from "../i18n";
 import { t } from "../i18n";
 import { useSessionMapHighlight } from "../platform/sessionMapHighlight.tsx";
 import { loadPersonalMapView, savePersonalMapView } from "./cameraStore";
+import {
+  smartHouseBuildingsToGeoJson,
+} from "./smartHouseCandidateData";
 import {
   CARTO_BASEMAP_LAYER_ID,
   OFFLINE_BUILDING_LAYER_ID,
@@ -45,7 +48,7 @@ import {
 } from "./houseRenderer";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street";
+type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house";
 type RenderArea = Area & { color: string };
 type RenderTask = DistributionTask & { color: string };
 
@@ -174,6 +177,9 @@ type MapViewProps = {
   smartPreviewGeometry: LineStringGeometry | null;
   smartStreetColor: string;
   onSmartStreetPoint: (point: LngLat, sourceIds: string[]) => void;
+  smartHouseBuildings: SmartBuildingCandidate[];
+  smartHouseSelectedSourceIds: readonly string[];
+  onSmartHousePoint: (point: LngLat, sourceIds: string[]) => void;
   onOfflineMapPackageChange?: (pkg: OfflineMapPackage | null) => void;
 };
 
@@ -197,6 +203,10 @@ const SMART_PREVIEW_LAYER_ID = "vf-smart-street-preview-line";
 const SMART_POINT_SOURCE_ID = "vf-smart-street-points";
 const SMART_POINT_LAYER_ID = "vf-smart-street-points-circle";
 const SMART_POINT_LABEL_LAYER_ID = "vf-smart-street-points-label";
+const SMART_HOUSE_SOURCE_ID = "vf-smart-house-candidates";
+const SMART_HOUSE_FILL_LAYER_ID = "vf-smart-house-candidates-fill";
+const SMART_HOUSE_OUTLINE_LAYER_ID = "vf-smart-house-candidates-outline";
+const SMART_HOUSE_SELECTED_LAYER_ID = "vf-smart-house-candidates-selected";
 const STREET_LAYER_IDS = [
   STREET_SELECTED_LAYER_ID,
   STREET_OPEN_LAYER_ID,
@@ -435,6 +445,12 @@ function smartRoadsToGeoJson(
   };
 }
 
+function smartHouseSelectionFilter(selectedSourceIds: readonly string[]) {
+  return selectedSourceIds.length > 0
+    ? ["match", ["get", "sourceId"], [...selectedSourceIds], true, false]
+    : ["==", ["get", "sourceId"], "__none__"];
+}
+
 function smartPreviewToGeoJson(
   geometry: LineStringGeometry | null,
 ): SmartPreviewFeatureCollection {
@@ -499,6 +515,8 @@ function buildMapStyle(
   smartEndAnchor: SmartRoadPointAnchor | null,
   smartWaypointAnchors: SmartRoadPointAnchor[],
   smartStreetColor: string,
+  smartHouseBuildings: SmartBuildingCandidate[],
+  smartHouseSelectedSourceIds: readonly string[],
   language: Language,
   online: boolean,
 ): StyleSpecification {
@@ -550,6 +568,10 @@ function buildMapStyle(
       [SMART_POINT_SOURCE_ID]: {
         type: "geojson",
         data: smartPointsToGeoJson(smartStartAnchor, smartEndAnchor, smartWaypointAnchors, language),
+      },
+      [SMART_HOUSE_SOURCE_ID]: {
+        type: "geojson",
+        data: smartHouseBuildingsToGeoJson(smartHouseBuildings),
       },
     },
     layers: [
@@ -806,6 +828,50 @@ function buildMapStyle(
         },
       },
       {
+        id: SMART_HOUSE_FILL_LAYER_ID,
+        type: "fill",
+        source: SMART_HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-color": "#9bc8a7",
+          "fill-opacity": 0.32,
+        },
+      },
+      {
+        id: SMART_HOUSE_OUTLINE_LAYER_ID,
+        type: "line",
+        source: SMART_HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#2d6a3f",
+          "line-opacity": 0.9,
+          "line-width": HOUSE_WIDTH_EXPRESSION,
+        },
+      },
+      {
+        id: SMART_HOUSE_SELECTED_LAYER_ID,
+        type: "line",
+        source: SMART_HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: smartHouseSelectionFilter(smartHouseSelectedSourceIds),
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#172019",
+          "line-opacity": 0.98,
+          "line-width": HOUSE_SELECTED_WIDTH_EXPRESSION,
+        },
+      },
+      {
         id: SMART_ROAD_LAYER_ID,
         type: "line",
         source: SMART_ROAD_SOURCE_ID,
@@ -979,6 +1045,39 @@ function syncSmartStreetData(
     region.dataset.smartCandidateRoads = String(roads.length);
     region.dataset.smartSelectedRoads = String(selectedSourceIds.length);
   }
+}
+
+function syncSmartHouseData(map: Map, buildings: SmartBuildingCandidate[]) {
+  const source = map.getSource(SMART_HOUSE_SOURCE_ID) as GeoJSONSource | undefined;
+  if (source) source.setData(smartHouseBuildingsToGeoJson(buildings));
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) region.dataset.smartCandidateHouses = String(buildings.length);
+}
+
+function syncSmartHouseSelection(
+  map: Map,
+  selectedSourceIds: readonly string[],
+  mode: MapMode,
+) {
+  if (map.getLayer(SMART_HOUSE_SELECTED_LAYER_ID)) {
+    map.setFilter(
+      SMART_HOUSE_SELECTED_LAYER_ID,
+      smartHouseSelectionFilter(selectedSourceIds),
+    );
+  }
+
+  const visibility = mode === "smart-house" ? "visible" : "none";
+  for (const layerId of [
+    SMART_HOUSE_FILL_LAYER_ID,
+    SMART_HOUSE_OUTLINE_LAYER_ID,
+    SMART_HOUSE_SELECTED_LAYER_ID,
+  ]) {
+    if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+  }
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) region.dataset.smartSelectedHouses = String(selectedSourceIds.length);
 }
 
 function syncApplicationFilters(
@@ -1169,6 +1268,9 @@ export function MapView({
   smartPreviewGeometry,
   smartStreetColor,
   onSmartStreetPoint,
+  smartHouseBuildings,
+  smartHouseSelectedSourceIds,
+  onSmartHousePoint,
   onOfflineMapPackageChange,
 }: MapViewProps) {
   const sessionMapHighlight = useSessionMapHighlight();
@@ -1215,6 +1317,8 @@ export function MapView({
     smartWaypointAnchors,
     smartPreviewGeometry,
     smartStreetColor,
+    smartHouseBuildings,
+    smartHouseSelectedSourceIds,
     language,
   });
   dataRef.current = {
@@ -1233,6 +1337,8 @@ export function MapView({
     smartWaypointAnchors,
     smartPreviewGeometry,
     smartStreetColor,
+    smartHouseBuildings,
+    smartHouseSelectedSourceIds,
     language,
   };
 
@@ -1250,6 +1356,7 @@ export function MapView({
     onEditVertexMove,
     onStreetDrawPoint,
     onSmartStreetPoint,
+    onSmartHousePoint,
   });
   interactionRef.current = {
     mode,
@@ -1265,6 +1372,7 @@ export function MapView({
     onEditVertexMove,
     onStreetDrawPoint,
     onSmartStreetPoint,
+    onSmartHousePoint,
   };
 
   const activeCoordinates = useMemo(() => {
@@ -1317,6 +1425,8 @@ export function MapView({
           initialData.smartEndAnchor,
           initialData.smartWaypointAnchors,
           initialData.smartStreetColor,
+          initialData.smartHouseBuildings,
+          initialData.smartHouseSelectedSourceIds,
           initialData.language,
           navigator.onLine,
         ),
@@ -1407,6 +1517,8 @@ export function MapView({
           current.language,
           current.mode,
         );
+        syncSmartHouseData(map, current.smartHouseBuildings);
+        syncSmartHouseSelection(map, current.smartHouseSelectedSourceIds, current.mode);
         syncApplicationFilters(
           map,
           current.selectedTaskId,
@@ -1460,6 +1572,22 @@ export function MapView({
               .filter((sourceId): sourceId is string => typeof sourceId === "string"),
           )];
           interaction.onSmartStreetPoint(lngLat, sourceIds);
+          return;
+        }
+        if (interaction.mode === "smart-house") {
+          const bbox: [[number, number], [number, number]] = [
+            [event.point.x - 10, event.point.y - 10],
+            [event.point.x + 10, event.point.y + 10],
+          ];
+          const smartFeatures = map.getLayer(SMART_HOUSE_FILL_LAYER_ID)
+            ? map.queryRenderedFeatures(bbox, { layers: [SMART_HOUSE_FILL_LAYER_ID] })
+            : [];
+          const sourceIds = [...new Set(
+            smartFeatures
+              .map((feature) => feature.properties?.sourceId)
+              .filter((sourceId): sourceId is string => typeof sourceId === "string"),
+          )];
+          interaction.onSmartHousePoint(lngLat, sourceIds);
           return;
         }
         if (interaction.mode === "edit") {
@@ -1565,6 +1693,18 @@ export function MapView({
     if (!map || !map.isStyleLoaded()) return;
     syncHouseData(map, houses);
   }, [houses]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncSmartHouseData(map, smartHouseBuildings);
+  }, [smartHouseBuildings]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncSmartHouseSelection(map, smartHouseSelectedSourceIds, mode);
+  }, [mode, smartHouseSelectedSourceIds]);
 
   useEffect(() => {
     const map = mapRef.current;

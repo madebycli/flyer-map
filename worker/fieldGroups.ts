@@ -1443,7 +1443,7 @@ export function parseFieldGroupRoute(pathname: string): FieldGroupRoute | null {
 
 function schemaUnavailable(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return /no such table.*field_group|field_groups.*does not exist/iu.test(message);
+  return /(?:no such (?:table|column)|does not exist).*field[_ ]groups?|field[_ ]groups?.*(?:no such (?:table|column)|does not exist)/iu.test(message);
 }
 
 export async function handleFieldGroupApi(
@@ -1476,7 +1476,7 @@ export async function handleFieldGroupApi(
       if (!access) {
         return errorResponse(401, "access_required", "Gültiger Zugriff ist erforderlich.");
       }
-      return leaveGroup(db, route.campaignId, route.groupId, access);
+      return await leaveGroup(db, route.campaignId, route.groupId, access);
     }
 
     const auth = await requireCampaignAccess(db, request, route.campaignId);
@@ -1485,7 +1485,7 @@ export async function handleFieldGroupApi(
 
     if (route.kind === "collection") {
       if (request.method === "GET") {
-        return listGroups(
+        return await listGroups(
           db,
           route.campaignId,
           access,
@@ -1493,30 +1493,32 @@ export async function handleFieldGroupApi(
         );
       }
       if (request.method === "POST") {
-        return createGroup(request, db, route.campaignId, access);
+        return await createGroup(request, db, route.campaignId, access);
       }
       return errorResponse(405, "method_not_allowed", "Methode für Gruppenliste nicht erlaubt.");
     }
 
     if (route.kind === "group") {
-      if (request.method === "GET") return getGroup(db, route.campaignId, route.groupId, access);
+      if (request.method === "GET") {
+        return await getGroup(db, route.campaignId, route.groupId, access);
+      }
       if (request.method === "PATCH") {
-        return patchGroup(request, db, route.campaignId, route.groupId, access);
+        return await patchGroup(request, db, route.campaignId, route.groupId, access);
       }
       return errorResponse(405, "method_not_allowed", "Methode für Gruppe nicht erlaubt.");
     }
 
     if (route.kind === "rotate" && request.method === "POST") {
-      return rotateCredentials(request, db, route.campaignId, route.groupId, access);
+      return await rotateCredentials(request, db, route.campaignId, route.groupId, access);
     }
     if (route.kind === "revoke" && request.method === "POST") {
-      return revokeCredentials(db, route.campaignId, route.groupId, access);
+      return await revokeCredentials(db, route.campaignId, route.groupId, access);
     }
     if (route.kind === "close" && request.method === "POST") {
-      return closeGroup(request, db, route.campaignId, route.groupId, access);
+      return await closeGroup(request, db, route.campaignId, route.groupId, access);
     }
     if (route.kind === "remove-member" && request.method === "DELETE") {
-      return removeMember(
+      return await removeMember(
         db,
         route.campaignId,
         route.groupId,

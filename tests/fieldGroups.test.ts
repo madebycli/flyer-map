@@ -127,6 +127,9 @@ class FieldGroupStatement implements D1PreparedStatement {
 
   async all<T>() {
     const query = this.query.replace(/\s+/gu, " ");
+    if (this.db.simulateMissingSchema && query.includes("FROM field_groups")) {
+      throw new Error("D1_ERROR: no such column: field_groups.discoverable");
+    }
     if (
       query.includes("FROM field_groups") &&
       query.includes("state = 'active' AND hard_expires_at <=")
@@ -147,6 +150,7 @@ class FieldGroupStatement implements D1PreparedStatement {
 class FieldGroupDb implements D1DatabaseLike {
   role: PersistentAccessRole = "admin";
   teamId: string | null = null;
+  simulateMissingSchema = false;
   capturedValues: unknown[][] = [];
   credentialHashes: string[] = [];
   credentials: StoredCredential[] = [];
@@ -329,6 +333,17 @@ test("field group route parser keeps campaign, group and membership selectors sc
     },
   );
   assert.equal(parseFieldGroupRoute("/api/campaigns/%2F/field-groups"), null);
+});
+
+test("missing 0006 field-group columns return a specific migration response instead of 500", async () => {
+  const db = new FieldGroupDb();
+  db.simulateMissingSchema = true;
+  const response = await handleFieldGroupApi(
+    request("/api/campaigns/campaign_a/field-groups", "GET"),
+    { DB: db },
+  );
+  assert.equal(response?.status, 503);
+  assert.equal((await response?.json()).error.code, "field_group_schema_unavailable");
 });
 
 test("field group audit builder drops credential, session and IP extras", () => {

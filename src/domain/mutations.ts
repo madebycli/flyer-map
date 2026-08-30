@@ -16,6 +16,17 @@ type MutationBase<Type extends string, Payload> = {
   createdAt: string;
 };
 
+export const HOUSE_CREATE_BATCH_MAX = 50;
+
+export type HouseCreateMutationEntry = {
+  taskId: string;
+  areaId: string;
+  label: string;
+  geometry: PolygonGeometry;
+  source?: TaskSourceProvenance | null;
+  parentStreetTaskId: string | null;
+};
+
 export type CampaignMutation =
   | MutationBase<"campaign.rename", { name: string; expectedName: string }>
   | MutationBase<
@@ -70,15 +81,9 @@ export type CampaignMutation =
   | MutationBase<"task.delete", { taskId: string; expectedUpdatedAt: string }>
   | MutationBase<
       "house.create",
-      {
-        taskId: string;
-        areaId: string;
-        label: string;
-        geometry: PolygonGeometry;
-        source?: TaskSourceProvenance | null;
-        parentStreetTaskId: string | null;
-      }
+      HouseCreateMutationEntry
     >
+  | MutationBase<"house.create-batch", { houses: HouseCreateMutationEntry[] }>
   | MutationBase<
       "house.rename",
       { taskId: string; label: string; expectedUpdatedAt: string }
@@ -456,6 +461,55 @@ export function applyCampaignMutation(
             createdAt: mutation.createdAt,
             updatedAt: mutation.createdAt,
           },
+        ],
+      };
+      break;
+    }
+    case "house.create-batch": {
+      const houses = snapshot.houseTasks ?? [];
+      const entries = mutation.payload.houses;
+      if (entries.length < 1 || entries.length > HOUSE_CREATE_BATCH_MAX) {
+        conflict("house_batch_size_invalid");
+      }
+
+      const existingIds = new Set([
+        ...snapshot.tasks.map((task) => task.id),
+        ...houses.map((task) => task.id),
+      ]);
+      const newIds = new Set<string>();
+      for (const entry of entries) {
+        if (existingIds.has(entry.taskId) || newIds.has(entry.taskId)) {
+          conflict("task_already_exists");
+        }
+        newIds.add(entry.taskId);
+        if (!snapshot.areas.some((area) => area.id === entry.areaId)) {
+          conflict("house_area_missing");
+        }
+        if (entry.parentStreetTaskId) {
+          const parent = snapshot.tasks.find((task) => task.id === entry.parentStreetTaskId);
+          if (!parent) conflict("house_parent_street_missing");
+          if (parent.areaId !== entry.areaId) conflict("house_parent_area_mismatch");
+        }
+      }
+
+      next = {
+        ...snapshot,
+        houseTasks: [
+          ...houses,
+          ...entries.map((entry) => ({
+            id: entry.taskId,
+            campaignId: snapshot.campaign.id,
+            areaId: entry.areaId,
+            taskType: "house" as const,
+            label: entry.label,
+            geometry: entry.geometry,
+            ...(entry.source ? { source: entry.source } : {}),
+            parentStreetTaskId: entry.parentStreetTaskId,
+            status: "open" as const,
+            completedAt: null,
+            createdAt: mutation.createdAt,
+            updatedAt: mutation.createdAt,
+          })),
         ],
       };
       break;

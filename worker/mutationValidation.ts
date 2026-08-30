@@ -1,4 +1,7 @@
-import type { CampaignMutation } from "../src/domain/mutations.ts";
+import {
+  HOUSE_CREATE_BATCH_MAX,
+  type CampaignMutation,
+} from "../src/domain/mutations.ts";
 
 export type MutationValidationResult =
   | { valid: true; mutation: CampaignMutation }
@@ -66,6 +69,25 @@ function validStatusPayload(payload: Record<string, unknown>) {
       payload.status === "not-deliverable") &&
     (payload.completedAt === null || isTimestamp(payload.completedAt)) &&
     hasExpectedUpdatedAt(payload)
+  );
+}
+
+function validHouseCreateEntry(value: unknown) {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value).sort().join(",");
+  if (
+    keys !== "areaId,geometry,label,parentStreetTaskId,taskId" &&
+    keys !== "areaId,geometry,label,parentStreetTaskId,source,taskId"
+  ) {
+    return false;
+  }
+  return (
+    isTaskId(value.taskId) &&
+    isId(value.areaId) &&
+    isString(value.label, 160) &&
+    isRecord(value.geometry) &&
+    isTaskSource(value.source, 1) &&
+    (value.parentStreetTaskId === null || isTaskId(value.parentStreetTaskId))
   );
 }
 
@@ -196,6 +218,19 @@ export function validateCampaignMutation(
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;
+    case "house.create-batch": {
+      if (
+        !Array.isArray(payload.houses) ||
+        payload.houses.length < 1 ||
+        payload.houses.length > HOUSE_CREATE_BATCH_MAX ||
+        !payload.houses.every(validHouseCreateEntry)
+      ) {
+        break;
+      }
+      const taskIds = payload.houses.map((house) => (house as Record<string, unknown>).taskId);
+      if (new Set(taskIds).size !== taskIds.length) break;
+      return { valid: true, mutation: value as CampaignMutation };
+    }
     case "house.rename":
       if (isTaskId(payload.taskId) && isString(payload.label, 160) && hasExpectedUpdatedAt(payload)) {
         return { valid: true, mutation: value as CampaignMutation };
