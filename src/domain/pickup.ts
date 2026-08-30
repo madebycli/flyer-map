@@ -5,7 +5,7 @@ export type PickupStatus = "open" | "collected" | "unavailable" | "needs-follow-
 export type PickupSource =
   | {
       kind: "osm-address";
-      provider: "geoapify";
+      provider: string;
       placeId: string | null;
       osmType: string | null;
       osmId: string | null;
@@ -60,6 +60,7 @@ export type PickupDraftValidation =
         | "description-too-long"
         | "position-required"
         | "position-invalid"
+        | "area-id-invalid"
         | "source-invalid";
     };
 
@@ -74,8 +75,22 @@ export type PickupProgressSummary = {
   percentCollected: number | null;
 };
 
-function normalizeText(value: string) {
+function normalizeText(value: unknown) {
+  if (typeof value !== "string") return null;
   return value.trim().replace(/\s+/gu, " ");
+}
+
+function validIdentifier(value: unknown) {
+  return (
+    typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= 200 &&
+    /^[A-Za-z0-9._:-]+$/u.test(value)
+  );
+}
+
+function validOptionalSourceValue(value: unknown) {
+  return value === null || (typeof value === "string" && value.length <= 240);
 }
 
 export function isPickupPosition(value: unknown): value is LngLat {
@@ -104,36 +119,41 @@ export function isPickupSource(value: unknown): value is PickupSource | null {
       Object.keys(source).length === 2
     );
   }
-  if (source.kind !== "osm-address" || source.provider !== "geoapify") return false;
+  if (source.kind !== "osm-address" || !validIdentifier(source.provider)) return false;
   return (
-    (source.placeId === null || typeof source.placeId === "string") &&
-    (source.osmType === null || typeof source.osmType === "string") &&
-    (source.osmId === null || typeof source.osmId === "string") &&
+    validOptionalSourceValue(source.placeId) &&
+    validOptionalSourceValue(source.osmType) &&
+    validOptionalSourceValue(source.osmId) &&
     Object.keys(source).sort().join(",") === "kind,osmId,osmType,placeId,provider"
   );
 }
 
 export function validatePickupDraft(input: PickupDraft): PickupDraftValidation {
-  const title = normalizeText(input.title);
-  const address = normalizeText(input.address);
-  const description = input.description.trim();
+  const title = normalizeText(input?.title);
+  const address = normalizeText(input?.address);
+  const description = typeof input?.description === "string" ? input.description.trim() : "";
+  const position = input?.position ?? null;
+  const areaId = input?.areaId ?? null;
+  const source = input?.source ?? null;
+
   if (!title) return { valid: false, reason: "title-required" };
   if (title.length > 160) return { valid: false, reason: "title-too-long" };
   if (!address) return { valid: false, reason: "address-required" };
   if (address.length > 320) return { valid: false, reason: "address-too-long" };
   if (description.length > 4_000) return { valid: false, reason: "description-too-long" };
-  if (input.position === null) return { valid: false, reason: "position-required" };
-  if (!isPickupPosition(input.position)) return { valid: false, reason: "position-invalid" };
-  if (!isPickupSource(input.source)) return { valid: false, reason: "source-invalid" };
+  if (position === null) return { valid: false, reason: "position-required" };
+  if (!isPickupPosition(position)) return { valid: false, reason: "position-invalid" };
+  if (areaId !== null && !validIdentifier(areaId)) return { valid: false, reason: "area-id-invalid" };
+  if (!isPickupSource(source)) return { valid: false, reason: "source-invalid" };
   return {
     valid: true,
     value: {
       title,
       address,
       description,
-      position: input.position,
-      areaId: input.areaId,
-      source: input.source,
+      position,
+      areaId,
+      source,
     },
   };
 }
