@@ -1,4 +1,9 @@
 import type { LngLat, PolygonGeometry } from "./campaign";
+import {
+  isPickupPosition,
+  isPickupSource,
+  type PickupTask,
+} from "./pickup";
 
 export type CollectionAreaStatus =
   | "open"
@@ -61,6 +66,7 @@ export type CollectionSnapshot = {
   mainArea: CollectionMainArea | null;
   areas: CollectionArea[];
   runs: CollectionRun[];
+  pickups: PickupTask[];
 };
 
 export const COLLECTION_AREA_COLORS = [
@@ -83,14 +89,20 @@ export const COLLECTION_AREA_STATUS_COLORS: Record<CollectionAreaStatus, string>
 };
 
 export function createEmptyCollectionSnapshot(): CollectionSnapshot {
-  return { mainArea: null, areas: [], runs: [] };
+  return { mainArea: null, areas: [], runs: [], pickups: [] };
 }
 
-export function collectionSnapshotOrEmpty(value: CollectionSnapshot | undefined | null) {
-  return value ?? createEmptyCollectionSnapshot();
+export function collectionSnapshotOrEmpty(value: CollectionSnapshot | undefined | null): CollectionSnapshot {
+  if (!value) return createEmptyCollectionSnapshot();
+  return {
+    ...value,
+    pickups: Array.isArray((value as CollectionSnapshot & { pickups?: PickupTask[] }).pickups)
+      ? (value as CollectionSnapshot & { pickups?: PickupTask[] }).pickups ?? []
+      : [],
+  };
 }
 
-export function createCollectionId(prefix: "main" | "area" | "run" | "member") {
+export function createCollectionId(prefix: "main" | "area" | "run" | "member" | "pickup") {
   return "collection_" + prefix + "_" + crypto.randomUUID();
 }
 
@@ -124,8 +136,21 @@ function isRunStatus(value: unknown): value is CollectionRunStatus {
   return value === "active" || value === "closed" || value === "cancelled";
 }
 
+function isPickupStatus(value: unknown) {
+  return value === "open" || value === "collected" || value === "unavailable" || value === "needs-follow-up";
+}
+
+function isPickupActor(value: unknown) {
+  return (
+    isRecord(value) &&
+    (value.kind === "campaign-grant" || value.kind === "collection-collector") &&
+    (value.ref === null || typeof value.ref === "string")
+  );
+}
+
 export function isCollectionSnapshot(value: unknown): value is CollectionSnapshot {
   if (!isRecord(value) || !Array.isArray(value.areas) || !Array.isArray(value.runs)) return false;
+  if (value.pickups !== undefined && !Array.isArray(value.pickups)) return false;
   if (value.mainArea !== null && value.mainArea !== undefined) {
     const main = value.mainArea;
     if (!isRecord(main) || typeof main.id !== "string" || typeof main.campaignId !== "string" ||
@@ -162,6 +187,37 @@ export function isCollectionSnapshot(value: unknown): value is CollectionSnapsho
       memberIds.add(member.id);
     }
     runIds.add(candidate.id);
+  }
+
+  const pickupIds = new Set<string>();
+  for (const candidate of (value.pickups ?? []) as unknown[]) {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.id !== "string" ||
+      pickupIds.has(candidate.id) ||
+      typeof candidate.campaignId !== "string" ||
+      (candidate.areaId !== null && (typeof candidate.areaId !== "string" || !areaIds.has(candidate.areaId))) ||
+      typeof candidate.title !== "string" || candidate.title.trim().length < 1 || candidate.title.length > 160 ||
+      typeof candidate.address !== "string" || candidate.address.trim().length < 1 || candidate.address.length > 320 ||
+      typeof candidate.description !== "string" || candidate.description.length > 4_000 ||
+      !isPickupPosition(candidate.position) ||
+      !isPickupStatus(candidate.status) ||
+      (candidate.archivedAt !== null && typeof candidate.archivedAt !== "string") ||
+      !Array.isArray(candidate.assignedRunIds) ||
+      !candidate.assignedRunIds.every((id) => typeof id === "string" && runIds.has(id)) ||
+      new Set(candidate.assignedRunIds).size !== candidate.assignedRunIds.length ||
+      !Array.isArray(candidate.assignedCollectorIds) ||
+      !candidate.assignedCollectorIds.every((id) => typeof id === "string") ||
+      new Set(candidate.assignedCollectorIds).size !== candidate.assignedCollectorIds.length ||
+      !isPickupSource(candidate.source) ||
+      !isPickupActor(candidate.createdBy) ||
+      !isPickupActor(candidate.updatedBy) ||
+      typeof candidate.createdAt !== "string" ||
+      typeof candidate.updatedAt !== "string"
+    ) {
+      return false;
+    }
+    pickupIds.add(candidate.id);
   }
   return true;
 }
