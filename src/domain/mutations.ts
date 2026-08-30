@@ -1,4 +1,4 @@
-import { collectionSnapshotOrEmpty } from "./collection";
+import { collectionSnapshotOrEmpty } from "./collection.ts";
 import type { CampaignSnapshot,
   LineStringGeometry,
   MapCameraView,

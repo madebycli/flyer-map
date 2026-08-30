@@ -1,4 +1,4 @@
-import { collectionSnapshotOrEmpty } from "./collection";
+import { collectionSnapshotOrEmpty } from "./collection.ts";
 import type { CampaignSnapshot } from "./campaign";
 import { HOUSE_CREATE_BATCH_MAX } from "./mutations.ts";
 import type { CampaignMutation } from "./mutations.ts";
