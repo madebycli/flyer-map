@@ -65,23 +65,24 @@ export async function updatePickupCapabilities(
   collectorId: string,
   capabilities: PickupCapabilities,
 ) {
-  const result = await db
-    .prepare(
-      `UPDATE collection_collectors
-          SET can_create_pickups = ?,
-              can_edit_pickups = ?,
-              can_assign_pickups = ?
-        WHERE id = ? AND campaign_id = ? AND revoked_at IS NULL`,
-    )
-    .bind(
-      capabilities.canCreatePickups ? 1 : 0,
-      capabilities.canEditPickups ? 1 : 0,
-      capabilities.canAssignPickups ? 1 : 0,
-      collectorId,
-      campaignId,
-    )
-    .run();
-  return (result.meta?.changes ?? 0) === 1;
+  const [result] = await db.batch([
+    db
+      .prepare(
+        `UPDATE collection_collectors
+            SET can_create_pickups = ?,
+                can_edit_pickups = ?,
+                can_assign_pickups = ?
+          WHERE id = ? AND campaign_id = ? AND revoked_at IS NULL`,
+      )
+      .bind(
+        capabilities.canCreatePickups ? 1 : 0,
+        capabilities.canEditPickups ? 1 : 0,
+        capabilities.canAssignPickups ? 1 : 0,
+        collectorId,
+        campaignId,
+      ),
+  ]);
+  return (result?.meta?.changes ?? 0) === 1;
 }
 
 function capabilityRoute(pathname: string) {
