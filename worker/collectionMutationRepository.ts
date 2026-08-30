@@ -9,7 +9,7 @@ function historyStatements(
   db: D1DatabaseLike,
   mutation: CollectionMutation,
   writeToken: string,
-  action: "claim" | "release" | "force-release" | "archive",
+  action: "claim" | "release" | "complete" | "force-release" | "archive",
   areaIds: string[],
   collectorId: string | null,
 ) {
@@ -93,8 +93,8 @@ export function collectionMutationStatements(
         `UPDATE collection_areas SET name = ?, geometry_json = ?, color = ?, updated_at = ?
           WHERE id = ? AND campaign_id = ? AND updated_at = ? AND status <> 'archived' AND @@GUARD@@`.replace("@@GUARD@@", guard),
       ).bind(
-        mutation.payload.name, JSON.stringify(mutation.payload.geometry), mutation.payload.color,
-        mutation.createdAt, mutation.payload.areaId, mutation.campaignId,
+        mutation.payload.name, JSON.stringify(mutation.payload.geometry), mutation.createdAt,
+        mutation.payload.areaId, mutation.campaignId,
         mutation.payload.expectedUpdatedAt, mutation.campaignId, writeToken,
       )];
     case "collection.area.archive":
@@ -194,14 +194,19 @@ export function collectionMutationStatements(
       ];
     }
     case "collection.run.complete-area":
-      return [db.prepare(
-        `UPDATE collection_areas SET status = 'completed', completed_at = ?, updated_at = ?
-          WHERE id = ? AND campaign_id = ? AND run_id = ? AND status IN ('claimed', 'in-progress')
-            AND @@GUARD@@`.replace("@@GUARD@@", guard),
-      ).bind(
-        mutation.createdAt, mutation.createdAt, mutation.payload.areaId, mutation.campaignId,
-        mutation.payload.runId, mutation.campaignId, writeToken,
-      )];
+      return [
+        db.prepare(
+          `UPDATE collection_areas SET status = 'completed', completed_at = ?, updated_at = ?
+            WHERE id = ? AND campaign_id = ? AND run_id = ? AND status IN ('claimed', 'in-progress')
+              AND @@GUARD@@`.replace("@@GUARD@@", guard),
+        ).bind(
+          mutation.createdAt, mutation.createdAt, mutation.payload.areaId, mutation.campaignId,
+          mutation.payload.runId, mutation.campaignId, writeToken,
+        ),
+        ...historyStatements(
+          db, mutation, writeToken, "complete", [mutation.payload.areaId], mutation.payload.collectorId,
+        ),
+      ];
     case "collection.run.close":
       return [db.prepare(
         `UPDATE collection_runs SET status = 'closed', ended_at = ?, updated_at = ?
@@ -233,6 +238,7 @@ export function collectionMutationStatements(
           mutation.createdAt, mutation.campaignId, mutation.payload.runId,
           mutation.campaignId, writeToken,
         ),
+        ...recomputeRunAreas(db, mutation, writeToken),
       ];
   }
 }
