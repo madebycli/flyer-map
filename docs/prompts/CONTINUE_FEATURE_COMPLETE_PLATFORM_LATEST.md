@@ -23,16 +23,16 @@ Verifiziere danach Branch `plan-feature-complete-platform`, PR #72, Base/Head/Dr
 Keine Migration remote anwenden, nicht explizit deployen, nicht mergen, PR #72 nicht Ready setzen und keinen neuen Branch oder PR erstellen.
 ```
 
-## Zuletzt verifizierter Ausgangsstand
+## Zuletzt verifizierter Hardening-Code-Checkpoint
 
-Vor diesem Planner-Update:
+Vor den nachfolgenden Living-Docs-Commits:
 
 - Branch `plan-feature-complete-platform`;
 - PR #72 `FC0-FC2: Platform, Live Field Groups and Field Sessions`;
 - Base `ui-app-launcher-sheet`;
-- Head `af417ff8ebb92d0e8b471feb1861089fc4795f13`;
+- Hardening-Code-Head `fea8f2aef1ca7d61ccb017a6b0c1e386dd8af961`;
 - PR offen, Draft, mergeable, nicht gemerged;
-- CI #713 auf exakt diesem Head vollständig grün.
+- CI #721 auf exakt diesem Hardening-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build.
 
 Nach jedem neuen Dokumentations-/Runtime-Commit GitHub erneut prüfen. Ein älterer grüner CI-Lauf zählt nicht für einen neueren Head.
 
@@ -53,6 +53,31 @@ Umgesetzt:
 - Plan 020 Smart House Runtime.
 
 Smart Street/House verwenden App-eigene IDs. OSM bleibt Datenquelle/Provenance. Workbench-/Mock-Daten sind kein normaler Produktweg.
+
+## Read-/Schema-Hardening 2026-08-30
+
+Ein kleiner Read-/Schema-Hardening-Slice wurde auf PR #72 umgesetzt.
+
+Verhalten:
+
+- `Einsätze`, `Aktivität` und `Automationen` unterscheiden jetzt Loading, echten Empty-State, Fehler und vorhandene Daten über `src/collaboration/remoteReadState.ts`;
+- ein initialer Schema-, Access- oder Netzwerkfehler mit null geladenen Einträgen darf nicht zusätzlich als „0 Einträge“ oder „noch nichts vorhanden“ erscheinen;
+- bereits geladene Daten bleiben bei einem späteren transienten Fehler sichtbar;
+- `CommentsContextPanel` behandelt `comments_schema_unavailable` als klaren Migration-0008-Rolloutzustand;
+- der Kommentar-Composer bleibt bei einem initial fehlgeschlagenen Read fail-closed und erscheint erst wieder nach einem verwertbaren Read-Zustand;
+- kein Backend-Erfolg wird simuliert, keine Migration wird als Diagnose angewendet.
+
+Tests:
+
+- `tests/remoteReadState.test.ts` simuliert Loading, Error, Empty, Data, Refresh mit vorhandenen Daten und transienten Fehler mit vorhandenen Daten;
+- `tests/schemaReadHardening.test.ts` simuliert fehlende Migration 0008 mit Fake-D1 und prüft den spezifischen `503 comments_schema_unavailable`-Vertrag;
+- derselbe Test schützt die Produktionsverdrahtung der Read-heavy UI-Module;
+- vorhandene Tests simulieren bereits fehlende 0006-Spalten für Field Groups, fehlende 0007-Tabellen für Field Sessions und eine SQLite-DB ohne Migration 0009 für Automationen;
+- vorhandene Smart-Street-/House-Persistenztests schützen 0004/0005 mit `schema_migration_required` und ohne Revision-Claim.
+
+CI #721 ist auf exakt `fea8f2aef1ca7d61ccb017a6b0c1e386dd8af961` grün.
+
+Für diesen Slice war keine neue Architekturentscheidung und keine neue Context-Graph-Topologie nötig. Die bestehenden Knoten `plan-smart-house-runtime`, `collaboration`, `data`, `offline-sync`, `security`, `ux` und `quality` decken Preview-/Schema-Gate-Hardening bereits ab.
 
 ## FC4 offene Acceptance
 
@@ -250,4 +275,4 @@ Vor dem ersten irreversiblen Persistenz-Commit:
 4. Falls noch kein akzeptierter ADR für First-Class Collection Access/Areas/Runs existiert, diesen dokumentieren, bevor das Schema festgeschrieben wird.
 5. Dann den kompletten normalen FC5.1-Flow implementieren und testen.
 
-Nach Abschluss Living Docs und Context Graph erneut aktualisieren, exakten neuen Head gegen GitHub prüfen und CI nur auf diesem Head als Nachweis verwenden.
+Nach Abschluss Living Docs erneut aktualisieren, exakten neuen Head gegen GitHub prüfen und CI nur auf diesem Head als Nachweis verwenden.
