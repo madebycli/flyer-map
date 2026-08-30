@@ -6,31 +6,79 @@ import {
   validatePickupDraft,
 } from "../src/domain/pickup.ts";
 
-test("manual call-in pickup address is normalized as inert text", () => {
+test("manual call-in pickup fields are normalized while description remains inert text", () => {
   const result = validatePickupDraft({
+    title: "  Abholung   Müller  ",
     address: "  Hauptstraße   12, 12345 Musterstadt  ",
-    note: "<script>alert('x')</script>; DROP TABLE pickup_tasks;",
-    sourceBuildingId: null,
+    description: "<script>alert('x')</script>; DROP TABLE collection_pickups;",
+    position: [10.123, 50.456],
+    areaId: null,
+    source: null,
   });
   assert.equal(result.valid, true);
   if (!result.valid) return;
+  assert.equal(result.value.title, "Abholung Müller");
   assert.equal(result.value.address, "Hauptstraße 12, 12345 Musterstadt");
-  assert.equal(result.value.note, "<script>alert('x')</script>; DROP TABLE pickup_tasks;");
+  assert.equal(result.value.description, "<script>alert('x')</script>; DROP TABLE collection_pickups;");
+  assert.deepEqual(result.value.position, [10.123, 50.456]);
 });
 
-test("pickup draft may reference a reviewed OSM building without making it a credential", () => {
+test("pickup draft may retain bounded OSM address provenance without using it as identity or credential", () => {
   const result = validatePickupDraft({
+    title: "Nebenstraße",
     address: "Nebenstraße 2",
-    note: "",
-    sourceBuildingId: "way/2042",
+    description: "",
+    position: [10.2, 50.2],
+    areaId: null,
+    source: {
+      kind: "osm-address",
+      provider: "osm-provider",
+      placeId: "place-2042",
+      osmType: "way",
+      osmId: "2042",
+    },
   });
   assert.equal(result.valid, true);
+  if (!result.valid) return;
+  assert.equal(result.value.source?.kind, "osm-address");
 });
 
-test("invalid source building ids are rejected", () => {
+test("invalid Distribution House provenance is rejected", () => {
   assert.deepEqual(
-    validatePickupDraft({ address: "Nebenstraße 2", note: "", sourceBuildingId: "../../secret" }),
-    { valid: false, reason: "source-id-invalid" },
+    validatePickupDraft({
+      title: "Nebenstraße",
+      address: "Nebenstraße 2",
+      description: "",
+      position: [10.2, 50.2],
+      areaId: null,
+      source: { kind: "distribution-house", taskId: "../../secret" },
+    }),
+    { valid: false, reason: "source-invalid" },
+  );
+});
+
+test("title and map position remain mandatory for Pickup drafts", () => {
+  assert.deepEqual(
+    validatePickupDraft({
+      title: "",
+      address: "Nebenstraße 2",
+      description: "",
+      position: [10.2, 50.2],
+      areaId: null,
+      source: null,
+    }),
+    { valid: false, reason: "title-required" },
+  );
+  assert.deepEqual(
+    validatePickupDraft({
+      title: "Abholung",
+      address: "Nebenstraße 2",
+      description: "",
+      position: null,
+      areaId: null,
+      source: null,
+    }),
+    { valid: false, reason: "position-required" },
   );
 });
 
