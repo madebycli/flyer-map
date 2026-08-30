@@ -1,29 +1,36 @@
 import { useMemo, useState } from "react";
+import type { LngLat } from "../domain/campaign.ts";
 import {
   summarizePickupStatuses,
   validatePickupDraft,
   type PickupDraft,
+  type PickupSource,
   type PickupStatus,
 } from "../domain/pickup.ts";
 import "./pickup-panel.css";
 
 export type PickupListItem = {
   id: string;
+  title: string;
   address: string;
-  note: string;
+  description: string;
   status: PickupStatus;
 };
 
 type Props = {
   items: readonly PickupListItem[];
   canEdit: boolean;
-  onCreate: (draft: PickupDraft) => void | Promise<void>;
+  position: LngLat | null;
+  areaId?: string | null;
+  source?: PickupSource | null;
+  onCreate: (draft: PickupDraft & { position: LngLat }) => void | Promise<void>;
   onStatusChange: (id: string, status: PickupStatus) => void | Promise<void>;
   labels: {
     title: string;
     progress: string;
+    pickupTitle: string;
     address: string;
-    note: string;
+    description: string;
     add: string;
     adding: string;
     open: string;
@@ -31,7 +38,8 @@ type Props = {
     unavailable: string;
     needsFollowUp: string;
     empty: string;
-    invalidAddress: string;
+    invalidDraft: string;
+    positionRequired: string;
     readOnly: string;
   };
 };
@@ -43,14 +51,28 @@ const STATUS_ORDER: readonly PickupStatus[] = [
   "needs-follow-up",
 ];
 
-export function PickupPanel({ items, canEdit, onCreate, onStatusChange, labels }: Props) {
-  const [draft, setDraft] = useState<PickupDraft>({ address: "", note: "", sourceBuildingId: null });
+export function PickupPanel({
+  items,
+  canEdit,
+  position,
+  areaId = null,
+  source = null,
+  onCreate,
+  onStatusChange,
+  labels,
+}: Props) {
+  const [draft, setDraft] = useState({ title: "", address: "", description: "" });
   const [submitting, setSubmitting] = useState(false);
   const [invalid, setInvalid] = useState(false);
   const summary = useMemo(() => summarizePickupStatuses(items.map((item) => item.status)), [items]);
 
   const create = async () => {
-    const validation = validatePickupDraft(draft);
+    const validation = validatePickupDraft({
+      ...draft,
+      position,
+      areaId,
+      source,
+    });
     if (!canEdit || !validation.valid) {
       setInvalid(true);
       return;
@@ -59,7 +81,7 @@ export function PickupPanel({ items, canEdit, onCreate, onStatusChange, labels }
     setSubmitting(true);
     try {
       await onCreate(validation.value);
-      setDraft({ address: "", note: "", sourceBuildingId: null });
+      setDraft({ title: "", address: "", description: "" });
     } finally {
       setSubmitting(false);
     }
@@ -90,8 +112,9 @@ export function PickupPanel({ items, canEdit, onCreate, onStatusChange, labels }
         {items.map((item) => (
           <article className="pickup-card" key={item.id}>
             <div className="pickup-card-copy">
-              <strong>{item.address}</strong>
-              {item.note ? <p>{item.note}</p> : null}
+              <strong>{item.title}</strong>
+              <small>{item.address}</small>
+              {item.description ? <p>{item.description}</p> : null}
             </div>
             {canEdit ? (
               <select
@@ -113,10 +136,21 @@ export function PickupPanel({ items, canEdit, onCreate, onStatusChange, labels }
       {canEdit ? (
         <div className="pickup-composer">
           <label>
+            <span>{labels.pickupTitle}</span>
+            <input
+              value={draft.title}
+              maxLength={160}
+              onChange={(event) => {
+                setDraft((current) => ({ ...current, title: event.target.value }));
+                if (invalid) setInvalid(false);
+              }}
+            />
+          </label>
+          <label>
             <span>{labels.address}</span>
             <input
               value={draft.address}
-              maxLength={240}
+              maxLength={320}
               autoComplete="street-address"
               onChange={(event) => {
                 setDraft((current) => ({ ...current, address: event.target.value }));
@@ -125,16 +159,17 @@ export function PickupPanel({ items, canEdit, onCreate, onStatusChange, labels }
             />
           </label>
           <label>
-            <span>{labels.note}</span>
+            <span>{labels.description}</span>
             <textarea
               rows={3}
-              value={draft.note}
-              maxLength={2_000}
-              onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))}
+              value={draft.description}
+              maxLength={4_000}
+              onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
             />
           </label>
-          {invalid ? <p className="pickup-error" role="alert">{labels.invalidAddress}</p> : null}
-          <button type="button" disabled={submitting} onClick={() => void create()}>
+          {!position ? <p className="pickup-error">{labels.positionRequired}</p> : null}
+          {invalid ? <p className="pickup-error" role="alert">{labels.invalidDraft}</p> : null}
+          <button type="button" disabled={submitting || !position} onClick={() => void create()}>
             {submitting ? labels.adding : labels.add}
           </button>
         </div>
