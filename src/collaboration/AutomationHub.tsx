@@ -3,6 +3,7 @@ import { CampaignApiError } from "../data/campaignApi.ts";
 import { fetchAutomations, updateAutomation } from "../data/automationApi.ts";
 import type { AutomationRuleState } from "../domain/automations.ts";
 import type { PlatformAppContext } from "../platform/platformContract.ts";
+import { resolveRemoteReadState } from "./remoteReadState.ts";
 import "./automation-hub.css";
 
 type Props = {
@@ -33,6 +34,11 @@ export function AutomationHub({ context, online, onClose }: Props) {
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [savingRuleType, setSavingRuleType] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const readState = resolveRemoteReadState({
+    loading: loadState === "loading",
+    error,
+    itemCount: automations.length,
+  });
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -120,13 +126,17 @@ export function AutomationHub({ context, online, onClose }: Props) {
             </div>
           ) : null}
 
-          {loadState === "loading" && automations.length === 0 ? (
+          {readState === "loading" ? (
             <div className="automation-loading" role="status">Automationen werden geladen ...</div>
-          ) : automations.length === 0 ? (
+          ) : null}
+
+          {readState === "empty" ? (
             <div className="automation-empty" role="status">
               {online ? "Keine Automation-Konfiguration verfügbar." : "Automationen sind offline nicht abrufbar."}
             </div>
-          ) : (
+          ) : null}
+
+          {readState === "data" ? (
             <div className="automation-list" aria-label="Automation-Konfiguration">
               {automations.map((automation) => {
                 const saving = savingRuleType === automation.ruleType;
@@ -155,7 +165,7 @@ export function AutomationHub({ context, online, onClose }: Props) {
                 );
               })}
             </div>
-          )}
+          ) : null}
 
           <div className="automation-footer">
             <span>Änderungen wirken nur bei neuen, serverseitig autorisierten Statusmutationen.</span>
