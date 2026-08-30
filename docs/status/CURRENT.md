@@ -32,16 +32,51 @@ Plan 017 bleibt die übergeordnete Feature-Complete-Delivery-Linie.
 Abgeschlossen:
 - Plan 018 House Polygon Renderer;
 - Plan 019 Smart Street Runtime;
-- Plan 020 Smart House Runtime.
+- Plan 020 Smart House Runtime;
+- FC5.1 Collection Access, Areas und Runs.
 
-Aktiver Entwicklungsstack nach dem Read-/Schema-Hardening-Checkpoint:
+Aktiver Entwicklungsstack:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- verifizierter FC5.1-Code-Head `78472b660d58b6d9184a2a63730a5a25e8fd7841`;
-- CI #735 auf exakt diesem FC5.1-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build;
+- letzter vollständig grüner FC5.1-Head vor FC5.2-Vorbereitung: `79bd68a42d1a11bf5b79897d0f05894975f3c543`, CI #738;
+- gebrochener FC5.2-Vorbereitungs-Head: `5f533fb1403263aeec35312449afd2a9abaea169`, CI #743;
+- reparierter Pre-FC5.2-Code-Checkpoint vor diesem Living-Docs-Commit: `3f413791ec5063abed66eeb1a377bc48fc4c0e5d`;
+- CI #754 auf exakt diesem Code-Checkpoint vollständig grün mit Test, Typecheck, Dependency Audit und Production Build;
 - PR #72 offen, Draft, mergeable und nicht gemerged.
 
 Jeder nachfolgende Dokumentations- oder Runtime-Commit verschiebt den Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
+
+## Pre-FC5.2 Stabilisierung 2026-08-30
+
+Der begonnene FC5.2-Vorbereitungsstand wurde vor weiterem Runtime-Ausbau bewusst stabilisiert. Es wurde kein weiterer FC5.2-Produktflow implementiert.
+
+Behobene Punkte:
+- `src/domain/collection.ts` verwendet im Node-/TypeScript-Testpfad den expliziten Runtime-Import `./pickup.ts`;
+- der neue Pickup-Draft-Vertrag bleibt fachlich verbindlich: `title`, `address` und echte Karten-`position` sind Pflicht; `description`, optionale Collection Area und optionale Provenance bleiben getrennte Felder;
+- alte `note`-/`sourceBuildingId`-Foundation-Verträge wurden nicht wieder eingeführt;
+- Pickup-Draft-Validierung scheitert bei fehlenden oder manipulierten Pflichtfeldern kontrolliert statt mit einem `TypeError`;
+- `src/collection/PickupPanel.tsx` bleibt eine isolierte Foundation und ist nicht in den normalen Produktgraphen verdrahtet; sie wurde nur typkonsistent gemacht und verlangt eine echte Position, ohne `[0, 0]`-Fallback;
+- bestehende Pickup-Tests wurden auf den neuen Domain-Vertrag migriert;
+- zusätzliche SQLite-Tests führen die vorbereitete Migration 0011 real gegen 0001 + 0010 aus und prüfen Default-Deny-Capabilities, Collection-Area-FK, Distribution-Unabhängigkeit, Campaign-Cascade, Archivierung und JSON-Array-Invarianten.
+
+### Migration 0008 Entscheidung
+
+`migrations/0008_comments.sql` wurde auf seinen bereits vorbereiteten FC2-Inhalt zurückgeführt. `docs/architecture/DATA.md` verbietet das Umschreiben historischer Migrationen. Pickup-Kommentare werden deshalb nicht durch nachträgliches Ändern von 0008 aktiviert.
+
+`src/domain/commentDraft.ts` darf `pickup-task` nur als Domain-Vorbereitung gegen eine tatsächlich vorhandene Pickup-ID validieren. Der persistente `normalizeCommentTargetType()`-Boundary akzeptiert `pickup-task` weiterhin nicht. Der Worker behauptet damit keinen fertigen Pickup-Comment-Runtimevertrag. Eine spätere persistente Erweiterung muss über eine additive Forward Migration plus explizite Worker-Autorisierung erfolgen.
+
+### Migration 0011 Entscheidung
+
+`migrations/0011_fc5_collection_pickups.sql` bleibt eine ausschließlich vorbereitete, nicht remote angewendete Forward Migration. Korrigiert wurden:
+- enge Collector-Capabilities `can_create_pickups`, `can_edit_pickups`, `can_assign_pickups`, jeweils Default `0`;
+- kein ungültiges `ON DELETE SET NULL` auf dem kompositen FK `(area_id, campaign_id)`, weil `campaign_id` `NOT NULL` ist;
+- ein Pickup mit Area-Bezug schützt die Area vor Hard Delete, statt Collection-/Campaign-Scope zu beschädigen;
+- Campaign Delete darf Pickups weiter per Cascade entfernen;
+- Distribution-Objekte besitzen bewusst keinen FK zu Pickups und können Pickups nicht löschen;
+- archivierte Pickups dürfen auch bereits `collected` sein;
+- Assignment-JSON muss ein gültiges JSON-Array sein.
+
+Der OSM-/Adress-Provider ist durch diese Stabilisierung nicht festgelegt und kein Geocoder-Runtimecode wurde hinzugefügt.
 
 ## Implementierter Plattformstand
 
@@ -60,25 +95,19 @@ Auf PR #72 sind umgesetzt:
 - eigene Collection Main Area, Child Areas und Collection Runs mit Mehrgeräte-Join, manueller Leave/Release/Cancel-Logik und Admin force release;
 - additive Collection-D1-Persistenz, Worker-Autorisierung und MapLibre-Layer über den bestehenden M5-Mutationspfad.
 
-Der redundante Launcher-Eintrag `Karte` ist entfernt. X und Tap außerhalb schließen das Launcher-Sheet weiterhin.
+Nicht als FC5.2-Runtime umgesetzt sind weiterhin Pickup Worker CRUD, Pickup-M5-Mutationen, normale Pickup-UI, MapLibre-Pickup-Marker, Online-Adresssuche, Pickup-Kommentare im persistenten Produktflow, Assignment UI und Pickup Stats.
 
 ## Read-/Schema-Hardening checkpoint
 
 Bekannte vorbereitete, aber noch nicht remote angewendete Schemas müssen in der normalen UI als eigener Fehlerzustand erscheinen und dürfen nicht gleichzeitig wie echte leere Daten wirken.
 
-Der aktuelle Hardening-Slice setzt dafür um:
+Umgesetzt:
 - gemeinsames kleines `resolveRemoteReadState()` für `loading`, `error`, `empty` und `data`;
 - `Einsätze`, `Aktivität` und `Automationen` zeigen bei einem initialen Read-Fehler keinen falschen Empty-State mehr;
 - bereits geladene Daten bleiben bei einem späteren transienten Read-Fehler sichtbar;
 - Kommentare behandeln `comments_schema_unavailable` explizit als Migration-0008-Rolloutzustand;
 - der Kommentar-Composer bleibt vor einem ersten erfolgreichen Read bei Schema-/Access-Fehlern fail-closed;
-- Migration 0008 wird mit Fake-D1 ohne Comment-/Event-Schema als spezifisches 503 simuliert;
-- bestehende Fake-/SQLite-Tests decken 0006, 0007 und 0009 bereits spezifisch ab;
-- bestehende Smart-Street-/House-Persistenztests decken 0004/0005 als `schema_migration_required` ohne Revision-Claim ab.
-
-CI #735 bestätigt auf dem FC5.1-Code-Head Tests, TypeScript, Dependency Audit und Production Build. Keine Migration wurde remote angewendet und kein manueller Deploy ausgeführt.
-
-Der Context Graph benötigt für diesen Slice keine neue Topologie: `plan-smart-house-runtime`, `collaboration`, `data`, `offline-sync`, `security`, `ux` und `quality` decken Preview-/Schema-Gate-Hardening bereits ab.
+- Fake-/SQLite-Tests decken die vorbereiteten Schema-Gates ab.
 
 ## FC4 checkpoint
 
@@ -106,32 +135,21 @@ Verbindliche Produktentscheidung:
 - Distribution-Delete verändert Collection nicht und umgekehrt;
 - nur das Löschen der gesamten Campaign/Aktion darf beide Bereiche gemeinsam entfernen;
 - eigenes Collection-Hauptgebiet plus frei geschnittene innere Collection Areas;
-- Hauptgebiet leicht grau, innere Areas mit eigener Farbe darüber;
 - temporärer Collection-only QR-Zugang ohne normalen Account;
-- pro Gerät eigene revocable Collector-Identität wie `Nutzer 1`, `Nutzer 2`;
-- Collection Runs/Fahrten können eine oder mehrere Areas übernehmen;
-- andere Geräte können laufenden Runs beitreten;
+- pro Gerät eigene revocable Collector-Identität;
+- Collection Runs/Fahrten können eine oder mehrere Areas übernehmen und weitere Geräte können beitreten;
 - kein automatisches Timeout;
-- manueller Leave/Release/Abbrechen-Flow und Admin force release;
-- eigene Collection Road Sections mit Offen/Abgefahren/Später/Nicht befahrbar;
-- Pickup Tasks mit eigener App-ID, verpflichtender Kartenposition, Titel, Adresse, Beschreibung, Status und Kommentaren;
+- eigene Collection Road Sections;
+- Pickup Tasks mit eigener App-ID, verpflichtender Kartenposition, Titel, Adresse, Beschreibung und eigenem Status;
 - Pickup darf ohne Distribution House entstehen;
 - eigene Address-/Geometry-Snapshots bei Übernahme aus House/OSM;
 - Einzel-Pickups werden archiviert statt hart gelöscht;
-- OSM-basierte Online-Adresssuche im bestehenden Sheet-Stil;
-- Suche bevorzugt auf Collection-Hauptgebiet begrenzt und nach Nähe sortiert;
+- OSM-basierte Online-Adresssuche soll den bestehenden Sheet-Stil nutzen;
 - One-shot Location darf Ranking unterstützen, keine GPS-Historie;
 - Sonderadressen standardmäßig sichtbar, create/edit/assign standardmäßig nicht erlaubt;
-- Admin/Operator kann Collection-spezifische Rechte erweitern;
-- authoritative Collection-Änderungen werden einem Actor zugeordnet;
-- Admin kann Beiträge eines Collectors highlighten und ausgewählte Änderungen über serverseitige compensating mutations gezielt zurücksetzen.
+- Worker bleibt authoritative Authorization Boundary.
 
-FC5.1 Collection Access, Areas und Runs ist im normalen Produktweg implementiert und auf dem aktuellen Code-Head verifiziert. Der Slice umfasst Collection-only QR Access, pro Gerät getrennte Collector-Sessions, Main/Child Areas, Mehrfach-Claims, laufende Runs, Join, Leave/Release/Cancel und Admin force release.
-
-Offen bleiben FC5.2 Pickup Tasks, Sonderadressen, Online-Adresssuche und Kommentare sowie FC5.3 Road Sections, Stats, Actor Attribution und gezieltes Revert.
-
-Nächster empfohlener vertikaler Runtime-Slice:
-`FC5.2 Pickup Tasks, Sonderadressen und Kommentare`.
+FC5.1 ist im normalen Produktweg implementiert. FC5.2 besitzt nach der Stabilisierung nur vorbereitete Domain-/Schema-Bausteine und ist ausdrücklich noch nicht als Runtime umgesetzt.
 
 ## Preview / D1 schema state
 
@@ -142,9 +160,10 @@ Vorbereitet, aber nicht remote angewendet:
 - 0005 House Tasks;
 - 0006 Field Groups, Credentials, Memberships und FC1 Idempotency;
 - 0007 Field Sessions und minimierte Domain Events;
-- 0008 durable Comments und Comment-Tombstones;
+- 0008 durable Comments und Comment-Tombstones, unverändert ohne Pickup-Target;
 - 0009 deterministische Automation-Konfiguration;
-- 0010 Collection Access, Main/Child Areas, Runs, Collector-Sessions und Claim-Historie.
+- 0010 Collection Access, Main/Child Areas, Runs, Collector-Sessions und Claim-Historie;
+- 0011 vorbereitete Pickup-Tabellen/Collector-Capabilities, noch ohne Pickup-Runtime.
 
 Bekannte fehlende Schemas müssen spezifisch fail-closed behandelt werden. Keine Migration wird als Diagnosewerkzeug remote angewendet.
 
@@ -158,15 +177,14 @@ Weiterhin verbindlich:
 - keine neue generische Identity-/Permission-Runtime im FC5-Slice;
 - keine kontinuierliche GPS-Historie;
 - MapLibre bleibt einzige Kartenengine;
-- Collection Areas/Roads/Pickups werden gebatcht mit einer kleinen festen Layer-Zahl;
-- keine per-feature React/SVG/Canvas-Kartenstruktur;
 - bestehende M5-Queue wird wiederverwendet;
 - OSM Online-Search muss aktuelle Provider-ToS, Rate Limits, Datenschutz und Kosten beachten.
 
 ## Immediate next
 
-1. FC5.2 Pickup Tasks, Sonderadressen, Online-Adresssuche und Kommentare als nächsten echten Collection-Slice liefern.
-2. Danach FC5.3 Road Sections, getrennte Stats, Actor Attribution und gezieltes serverseitiges Revert vertikal umsetzen.
-3. Reale Android-/iPhone-Prüfung für FC4 offen halten; `HOUSE_MIN_ZOOM = 15` bleibt der dokumentierte Ausgangswert.
-4. Remote-D1 unverändert lassen, bis eine ausdrücklich freigegebene Rollout-Entscheidung vorliegt. Migration 0010 ist nur vorbereitet.
-5. PR #72 offen und Draft lassen. Nicht mergen, nicht Ready setzen, keinen neuen Branch/PR erstellen und keinen manuellen Deploy ausführen.
+1. Vor weiterem FC5.2-Runtimecode den jeweils aktuellen GitHub-Head und CI erneut verifizieren.
+2. Erst danach FC5.2 als echten vertikalen Produktflow planen/implementieren: Pickup-M5-Persistenz, Worker-Autorisierung, normale UI, MapLibre, Suche und additive Pickup-Comments.
+3. Provider-Auswahl für OSM-basierte Online-Adresssuche vor Runtime-Verdrahtung gegen aktuelle ToS, Rate Limits, Datenschutz, Attribution und Kosten verifizieren.
+4. Reale Android-/iPhone-Prüfung für FC4 offen halten; `HOUSE_MIN_ZOOM = 15` bleibt Ausgangswert.
+5. Remote-D1 unverändert lassen, bis eine ausdrücklich freigegebene Rollout-Entscheidung vorliegt.
+6. PR #72 offen und Draft lassen. Nicht mergen, nicht Ready setzen, keinen neuen Branch/PR erstellen und keinen manuellen Deploy ausführen.
