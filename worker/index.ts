@@ -277,7 +277,7 @@ async function getCollectionSnapshot(db: D1DatabaseLike, campaignId: string) {
     tasks: [],
     houseTasks: [],
     collection: collectionSnapshotOrEmpty(validation.snapshot.collection),
-  }, { headers: { etag: "\\"" + campaignId + ":" + snapshot.revision + ":collection\\"" } });
+  }, { headers: { etag: '"' + campaignId + ':' + snapshot.revision + ':collection"' } });
 }
 
 async function manageCollection(
