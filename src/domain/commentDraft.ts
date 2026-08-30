@@ -1,4 +1,5 @@
 import type { CampaignSnapshot } from "./campaign.ts";
+import { collectionSnapshotOrEmpty } from "./collection.ts";
 
 export const COMMENT_BODY_MAX_LENGTH = 2_000;
 
@@ -7,13 +8,15 @@ export type CommentTarget =
   | { type: "area"; id: string }
   | { type: "task"; id: string }
   | { type: "street-task"; id: string }
-  | { type: "house-task"; id: string };
+  | { type: "house-task"; id: string }
+  | { type: "pickup-task"; id: string };
 
 export type PersistentCommentTargetType =
   | "campaign"
   | "area"
   | "street-task"
-  | "house-task";
+  | "house-task"
+  | "pickup-task";
 
 export type CommentDraft = {
   campaignId: string;
@@ -48,7 +51,13 @@ export function normalizeCommentBody(value: unknown) {
 }
 
 export function normalizeCommentTargetType(value: unknown): PersistentCommentTargetType | null {
-  if (value === "campaign" || value === "area" || value === "street-task" || value === "house-task") {
+  if (
+    value === "campaign" ||
+    value === "area" ||
+    value === "street-task" ||
+    value === "house-task" ||
+    value === "pickup-task"
+  ) {
     return value;
   }
   // The original local foundation called Street Tasks simply "task". Accepting
@@ -63,7 +72,10 @@ function targetExists(snapshot: CampaignSnapshot, target: CommentTarget) {
   if (target.type === "task" || target.type === "street-task") {
     return snapshot.tasks.some((task) => task.id === target.id);
   }
-  return (snapshot.houseTasks ?? []).some((task) => task.id === target.id);
+  if (target.type === "house-task") {
+    return (snapshot.houseTasks ?? []).some((task) => task.id === target.id);
+  }
+  return collectionSnapshotOrEmpty(snapshot.collection).pickups.some((pickup) => pickup.id === target.id);
 }
 
 export function validateCommentDraft(
@@ -84,7 +96,12 @@ export function validateCommentDraft(
   }
   const rawTarget = draft.target as Record<string, unknown>;
   if (
-    (rawTarget.type !== "campaign" && rawTarget.type !== "area" && rawTarget.type !== "task") ||
+    (rawTarget.type !== "campaign" &&
+      rawTarget.type !== "area" &&
+      rawTarget.type !== "task" &&
+      rawTarget.type !== "street-task" &&
+      rawTarget.type !== "house-task" &&
+      rawTarget.type !== "pickup-task") ||
     !validIdentifier(rawTarget.id)
   ) {
     return { valid: false, reason: "invalid-target" };
