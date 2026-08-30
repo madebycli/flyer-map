@@ -74,11 +74,9 @@ test("prepared Pickup migration is additive and Collector capabilities default d
     `SELECT can_create_pickups, can_edit_pickups, can_assign_pickups
        FROM collection_collectors WHERE id = 'collector_pickup'`,
   ).get() as Record<string, number>;
-  assert.deepEqual(collector, {
-    can_create_pickups: 0,
-    can_edit_pickups: 0,
-    can_assign_pickups: 0,
-  });
+  assert.equal(collector.can_create_pickups, 0);
+  assert.equal(collector.can_edit_pickups, 0);
+  assert.equal(collector.can_assign_pickups, 0);
 });
 
 test("Pickup Area scope stays consistent while Distribution deletion remains independent", () => {
