@@ -77,7 +77,7 @@ export function CollectionCollectorView({
 }: Props) {
   const collection = collectionSnapshotOrEmpty(snapshot.collection);
   const collectorId = access.collectorId;
-  const collectorLabel = access.collectorLabel ?? copy(language, "Sammler", "Collector");
+  const collectorLabel = access.label ?? copy(language, "Sammler", "Collector");
   const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const submitInFlight = useRef(false);
