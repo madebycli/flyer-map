@@ -30,99 +30,120 @@ Weiterhin ausgeschlossen:
 Plan 017 bleibt die übergeordnete Feature-Complete-Delivery-Linie.
 
 Abgeschlossen:
-- Plan 018 House Polygon Renderer: `docs/plans/completed/018-house-polygon-renderer.md`;
-- Plan 019 Smart Street Runtime: `docs/plans/completed/019-smart-street-runtime.md`;
-- Plan 020 Smart House Runtime: `docs/plans/completed/020-smart-house-runtime.md`.
+- Plan 018 House Polygon Renderer;
+- Plan 019 Smart Street Runtime;
+- Plan 020 Smart House Runtime.
 
-Aktueller FC4-Stand:
-- Plan 020 integriert echte vorbereitete OSM-Gebäudekandidaten in den normalen Area-/Street-Produktweg;
-- bekannte unapplied Schema-Stände sind als spezifische fail-closed Zustände dokumentiert und getestet.
-
-Aktiver Entwicklungsstack:
+Aktiver Entwicklungsstack vor diesem Planner-Update:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- zuletzt vor Plan 021 verifizierter Branch-Head: `7c38830cbf94129ff4cb3e1a97ab73fd9b5a605c`;
-- CI #712 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
-- PR #72 war offen, Draft und mergeable.
+- verifizierter Ausgangs-Head `af417ff8ebb92d0e8b471feb1861089fc4795f13`;
+- CI #713 auf exakt diesem Ausgangs-Head vollständig grün;
+- PR #72 offen, Draft, mergeable und nicht gemerged.
 
-Der nachfolgende Dokumentationscommit verschiebt den Branch-Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
+Jeder nachfolgende Dokumentations- oder Runtime-Commit verschiebt den Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
 
 ## Implementierter Plattformstand
 
-Auf PR #72 sind die aktuellen Runtime-Slices für folgende Bereiche umgesetzt:
+Auf PR #72 sind umgesetzt:
 - FC0 PlatformShell/App Navigation und aktiver Teamkontext;
 - Team Hub und Live Field Groups;
 - Field Sessions und Einsatzhistorie;
 - durable Comments für Campaign, Area, Street Task und persistierte House Tasks;
-- bounded Activity-Projektion aus `domain_events`;
-- erste feste deterministische und idempotente Automation gemäß ADR-0019;
-- echte serverseitige Stats-Projektion mit getrennten Street-/House-Nennern;
+- bounded Activity aus `domain_events`;
+- erste deterministische/idempotente Automation;
+- echte serverseitige Stats mit getrennten Street-/House-Nennern;
 - normaler Smart-Street-Flow aus vorbereitetem OSM-Paket;
 - normaler Smart-House-Flow aus vorbereiteten OSM-Gebäudekandidaten;
 - persistierter House-Polygon-Renderer mit House-Auswahl und House-Session-Highlight.
 
-Der redundante Launcher-Eintrag „Karte“ ist entfernt. Das Menü bleibt über X und Tap außerhalb des Sheets schließbar.
+Der redundante Launcher-Eintrag `Karte` ist entfernt. X und Tap außerhalb schließen das Launcher-Sheet weiterhin.
 
 ## FC4 checkpoint
 
-Smart Street ist im normalen Produktweg umgesetzt:
-- echte Straßen-Candidates aus dem validierten `OfflineMapPackage`;
-- MapLibre-Kandidaten, Snap, Start/Ende, Zwischenpunkte und explizite Ambiguitätsauflösung;
-- persistente App-ID und OSM nur als Provenance;
-- bestehender M5-Pfad;
-- manuelles Street-Drawing als Fallback;
-- keine Preview-/Mock-Straßen im Produktionsgraphen.
+Smart Street und Smart House sind im normalen Produktweg umgesetzt. App-eigene Task-IDs bleiben authoritative, OSM IDs nur Provenance. Workbench-/Mock-Daten sind kein normaler Produktweg.
 
-Persistierte Houses werden über `vf-houses` mit festen MapLibre-Layern dargestellt. Smart House ist im normalen Produktweg umgesetzt:
-- echte Building-Candidates kommen aus dem vorbereiteten und validierten `OfflineMapPackage`;
-- MapLibre verwendet eine gebatchte Candidate-Source mit festen Fill-/Outline-/Selected-Layern;
-- Einzel-, Mehrfach- und gebundene Straßen-Auswahl werden vor der Bestätigung reviewt;
-- bestätigte Houses erhalten App-eigene IDs und laufen über die bestehende M5-Queue;
-- ein Street-Parent wird nur aus einem expliziten Street-Kontext gesetzt.
+Persistierte Houses laufen über `vf-houses` und feste MapLibre-Layer.
 
-Reale Android-/iPhone-Abnahme, Touch-Dichte und die endgültige `HOUSE_MIN_ZOOM`-Entscheidung bleiben offen. Ausgangswert bleibt 15.
+Offene FC4 Quality Gates:
+- reale Android-Chromium-Abnahme;
+- reale iPhone-Safari-Abnahme;
+- Touch-Dichte;
+- Dense-Mobile-Verhalten;
+- endgültige Entscheidung zu `HOUSE_MIN_ZOOM`, dokumentierter Ausgangswert 15.
 
-## FC5 planning checkpoint
+Cloud-Browser ohne WebGL ist kein Nachweis für eine MapLibre-Regression und ersetzt keine reale Geräteabnahme.
 
-Plan 021 `docs/plans/active/021-collection-pickup-persistence.md` ist als reiner Architektur- und Dokumentationsplan aktiv. Pickup bleibt im normalen Produktweg noch nicht implementiert. `src/domain/pickup.ts` und `src/collection/PickupPanel.tsx` bleiben eine Foundation ohne Snapshot-, M5-, Worker- oder D1-Anbindung. Die Architekturentscheidung A oder B sowie die markierten UNKLAR-Fragen stehen vor jedem Pickup-Runtime-Commit noch aus.
+## FC5 Collection/Pickup checkpoint
+
+Plan 021 `docs/plans/active/021-collection-pickup-persistence.md` bleibt aktiv.
+
+Master hat Ansatz A festgelegt: **First-Class Collection/Pickup**.
+
+Verbindliche Produktentscheidung:
+- Collection ist status-, area-, run-, road- und pickup-seitig unabhängig von Distribution;
+- Distribution-Delete verändert Collection nicht und umgekehrt;
+- nur das Löschen der gesamten Campaign/Aktion darf beide Bereiche gemeinsam entfernen;
+- eigenes Collection-Hauptgebiet plus frei geschnittene innere Collection Areas;
+- Hauptgebiet leicht grau, innere Areas mit eigener Farbe darüber;
+- temporärer Collection-only QR-Zugang ohne normalen Account;
+- pro Gerät eigene revocable Collector-Identität wie `Nutzer 1`, `Nutzer 2`;
+- Collection Runs/Fahrten können eine oder mehrere Areas übernehmen;
+- andere Geräte können laufenden Runs beitreten;
+- kein automatisches Timeout;
+- manueller Leave/Release/Abbrechen-Flow und Admin force release;
+- eigene Collection Road Sections mit Offen/Abgefahren/Später/Nicht befahrbar;
+- Pickup Tasks mit eigener App-ID, verpflichtender Kartenposition, Titel, Adresse, Beschreibung, Status und Kommentaren;
+- Pickup darf ohne Distribution House entstehen;
+- eigene Address-/Geometry-Snapshots bei Übernahme aus House/OSM;
+- Einzel-Pickups werden archiviert statt hart gelöscht;
+- OSM-basierte Online-Adresssuche im bestehenden Sheet-Stil;
+- Suche bevorzugt auf Collection-Hauptgebiet begrenzt und nach Nähe sortiert;
+- One-shot Location darf Ranking unterstützen, keine GPS-Historie;
+- Sonderadressen standardmäßig sichtbar, create/edit/assign standardmäßig nicht erlaubt;
+- Admin/Operator kann Collection-spezifische Rechte erweitern;
+- authoritative Collection-Änderungen werden einem Actor zugeordnet;
+- Admin kann Beiträge eines Collectors highlighten und ausgewählte Änderungen über serverseitige compensating mutations gezielt zurücksetzen.
+
+Pickup-Runtime, Collection Areas/Runs, QR Collector Access, Road Sections und Online-Adresssuche sind noch nicht implementiert.
+
+Nächster empfohlener vertikaler Runtime-Slice:
+`FC5.1 Collection Access, Areas und Runs`.
 
 ## Preview / D1 schema state
 
 Dokumentierter Remote-D1-Stand bleibt nur Migration 0001 bis 0003.
 
 Vorbereitet, aber nicht remote angewendet:
-- 0004: Smart Street provenance;
-- 0005: House Tasks;
-- 0006: Field Groups, Credentials, Memberships und FC1 Idempotency;
-- 0007: Field Sessions und minimierte Domain Events;
-- 0008: durable Comments und Comment-Tombstones;
-- 0009: deterministische Automation-Konfiguration.
+- 0004 Smart Street provenance;
+- 0005 House Tasks;
+- 0006 Field Groups, Credentials, Memberships und FC1 Idempotency;
+- 0007 Field Sessions und minimierte Domain Events;
+- 0008 durable Comments und Comment-Tombstones;
+- 0009 deterministische Automation-Konfiguration.
 
-Daraus sind auf der Cloudflare-Testseite vor dem Rollout bestimmte fail-closed Meldungen erwartbar:
-- Smart-Street-Source-Writes benötigen 0004;
-- House-Writes benötigen 0005;
-- Team Hub / Live Field Groups benötigen 0006;
-- Einsätze und Aktivität benötigen 0007;
-- Kommentare benötigen 0008;
-- Automationen benötigen 0009.
-
-Die beobachteten expliziten 0007-/Kommentar-Schemahinweise sind daher erwartete Rollout-Gates und kein Nachweis eines fehlenden Runtime-Features. Ein beobachteter generischer `Serveranfrage fehlgeschlagen (500)` im Team Hub ist dagegen für einen bekannten fehlenden 0006-Schema-Stand nicht ausreichend und wird in Plan 020 reproduziert und gehärtet. Keine Migration wird dafür als Diagnosewerkzeug remote angewendet.
+Bekannte fehlende Schemas müssen spezifisch fail-closed behandelt werden. Keine Migration wird als Diagnosewerkzeug remote angewendet.
 
 ## Security and performance boundaries
 
 Weiterhin verbindlich:
 - Worker bleibt authoritative Authorization Boundary;
 - IDs sind Selektoren, keine Credentials;
-- keine neue Permission- oder Identity-Runtime;
-- keine Secrets, Tokens oder unnötigen Domain-Daten in Renderer-Properties;
-- persistierte House-Geometrie wird von MapLibre gerendert, nicht pro House durch React, SVG oder Canvas;
-- Smart-House-Candidates verwenden ebenfalls feste Sources/Layer statt Layer oder DOM-Nodes pro Gebäude;
-- keine `setData()`-Arbeit auf Pan/Zoom/Rotate;
-- Dense-House-Daten und echte Mobile-Geräte bleiben Quality-Gates.
+- temporäre Collection Credentials müssen high entropy und revocable sein;
+- keine Secrets/Tokens in MapLibre Properties oder Domain Events;
+- keine neue generische Identity-/Permission-Runtime im FC5-Slice;
+- keine kontinuierliche GPS-Historie;
+- MapLibre bleibt einzige Kartenengine;
+- Collection Areas/Roads/Pickups werden gebatcht mit einer kleinen festen Layer-Zahl;
+- keine per-feature React/SVG/Canvas-Kartenstruktur;
+- bestehende M5-Queue wird wiederverwendet;
+- OSM Online-Search muss aktuelle Provider-ToS, Rate Limits, Datenschutz und Kosten beachten.
 
 ## Immediate next
 
-1. Plan 021 als Architekturgrundlage für FC5 prüfen und die offene Entscheidung A oder B durch Master festlegen, bevor Pickup-Runtime entsteht.
-2. Reale Android-/iPhone-Browserprüfung für House-/Street-Rendering, Touch-Hit-Test und Dense-Mobile-Verhalten durchführen, sobald echte Geräte verfügbar sind.
-3. Remote-D1-Stand und vorbereitete Migrationen unverändert dokumentieren, bis eine ausdrücklich freigegebene Rollout-Entscheidung vorliegt.
-4. PR #72 offen und Draft lassen. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.
+1. FC5.1 als echten normalen Produktflow implementieren: Collection-only QR Access -> Collector -> offene Collection Areas -> eine/mehrere Areas übernehmen -> Run -> Beitreten -> Fortschritt -> manueller Leave/Release/Admin force release.
+2. Vor Runtime-Code den gewählten First-Class-Ansatz in der passenden Architekturentscheidung/Plan-Dokumentation festschreiben, falls noch kein akzeptierter ADR dafür existiert.
+3. Danach FC5.2 Pickup Tasks/Sonderadressen/OSM-Suche/Kommentare und FC5.3 Road Sections/Stats/Actor-Revert vertikal liefern.
+4. Reale Android-/iPhone-Prüfung für FC4 offen halten.
+5. Remote-D1 unverändert lassen, bis eine ausdrücklich freigegebene Rollout-Entscheidung vorliegt.
+6. PR #72 offen und Draft lassen. Nicht mergen, nicht Ready setzen, keinen neuen Branch/PR erstellen und keinen manuellen Deploy ausführen.

@@ -1,4 +1,4 @@
-version: 11
+version: 12
 
 entrypoints:
   always:
@@ -19,7 +19,9 @@ routing_rules:
   - for completed House polygon renderer history or its open device gates, load prompt-house-polygon-renderer and plan-house-polygon-renderer, then follow Map, Smart Task identity, Collaboration and Quality edges
   - for Smart Street runtime planning or continuation, load plan-smart-street-runtime, then follow Offline Map, Map, UX, Offline Sync, Smart Task identity and Quality edges
   - for Smart House runtime or preview schema-gate hardening, load plan-smart-house-runtime, then follow Smart Street runtime, House persistence, House renderer, Offline Map, Map, UX, Data, Offline Sync, Security, Smart Task identity and Quality edges
-  - for FC5 Collection/Pickup persistence planning, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Smart Task identity, Offline Map, Field Session Events, proposed Action Templates and Quality edges
+  - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
+  - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
+  - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
 
 nodes:
   - id: product
@@ -33,8 +35,8 @@ nodes:
     path: docs/product/ROADMAP.md
     type: product
     status: accepted
-    topics: [roadmap, feature-complete, offline-map, streets, houses, pickup, collection, field-sessions, live-teams, statistics, organizations, admin, permissions, accounts, support, comments, automations]
-    load_when: [new feature planning, milestone planning, long-term scope, collection, live teams, statistics, admin accounts]
+    topics: [roadmap, feature-complete, offline-map, streets, houses, pickup, collection, collection-areas, collection-runs, collector-access, field-sessions, live-teams, statistics, organizations, admin, permissions, accounts, support, comments, automations]
+    load_when: [new feature planning, milestone planning, long-term scope, collection, collection access, collection areas, collection runs, live teams, statistics, admin accounts]
 
   - id: mvp
     path: docs/product/MVP.md
@@ -48,7 +50,7 @@ nodes:
     type: product
     status: accepted
     topics: [ui, ux, mobile, desktop, accessibility, launcher, bottom-bar, progress, team-colors, admin, support, comments, activity, statistics, field-sessions, houses]
-    load_when: [UI change, map interaction, mobile behavior, desktop admin UX, launcher, progress UI, House interaction]
+    load_when: [UI change, map interaction, mobile behavior, desktop admin UX, launcher, progress UI, House interaction, Collection sheets, address search]
 
   - id: architecture
     path: ARCHITECTURE.md
@@ -69,42 +71,42 @@ nodes:
     type: architecture
     status: accepted
     topics: [map, maplibre, carto, geojson, renderer, osm, offline-map, streets, houses]
-    load_when: [map rendering, geometry interaction, performance, road/building data, session map highlighting, House polygon renderer]
+    load_when: [map rendering, geometry interaction, performance, road/building data, session map highlighting, House polygon renderer, Collection areas, Collection roads, Pickup markers]
 
   - id: data
     path: docs/architecture/DATA.md
     type: architecture
     status: accepted
     topics: [database, d1, schema, campaigns, teams, areas, tasks, comments, domain-events, activity, automations, statistics, revisions, migrations]
-    load_when: [domain model, D1 migration, persistence, field sessions, comments, accounts, team lifecycle]
+    load_when: [domain model, D1 migration, persistence, field sessions, comments, accounts, team lifecycle, Collection persistence]
 
   - id: offline-sync
     path: docs/architecture/OFFLINE_SYNC.md
     type: architecture
     status: accepted
     topics: [offline, synchronization, indexeddb, mutations, idempotency, conflicts]
-    load_when: [M5, sync, retries, conflicts, offline behavior, live collaboration conflicts]
+    load_when: [M5, sync, retries, conflicts, offline behavior, live collaboration conflicts, Collection mutation retry]
 
   - id: security
     path: docs/architecture/SECURITY.md
     type: architecture
     status: accepted
     topics: [auth, authorization, privacy, tokens, sessions, roles, gps, injection, live-join]
-    load_when: [access, protected API, privacy, recovery, QR codes, live teams, credentials]
+    load_when: [access, protected API, privacy, recovery, QR codes, live teams, credentials, Collection QR access, geocoder proxy]
 
   - id: live-teams
     path: docs/architecture/LIVE_TEAMS.md
     type: architecture
     status: accepted
     topics: [live-teams, field-groups, room-code, qr, temporary-membership, discoverability, multi-device, rate-limit]
-    load_when: [Field Groups, Team Hub, Room Code, QR join, member roster, temporary group access, discoverability]
+    load_when: [Field Groups, Team Hub, Room Code, QR join, member roster, temporary group access, discoverability, temporary Collector credential reuse]
 
   - id: collaboration
     path: docs/architecture/COLLABORATION.md
     type: architecture
     status: active
     topics: [field-sessions, domain-events, comments, activity, automations, statistics, reporting, retention, session-map-highlight]
-    load_when: [Field Session, event persistence, comments, activity feed, automations, statistics, session history, House session highlight]
+    load_when: [Field Session, event persistence, comments, activity feed, automations, statistics, session history, House session highlight, Collection actor attribution, Pickup comments]
 
   - id: organizations
     path: docs/architecture/ORGANIZATIONS.md
@@ -132,7 +134,7 @@ nodes:
     type: quality
     status: accepted
     topics: [tests, performance, accessibility, browsers, security-testing, dense-data]
-    load_when: [testing, performance acceptance, browser support, release gate, dense data, House renderer performance]
+    load_when: [testing, performance acceptance, browser support, release gate, dense data, House renderer performance, Collection dense-mobile]
 
   - id: deployment
     path: docs/operations/DEPLOYMENT.md
@@ -174,7 +176,7 @@ nodes:
     type: decision
     status: accepted
     topics: [field-groups, qr, room-code, temporary-credentials, discoverability, rate-limit]
-    load_when: [Field Group credential runtime, QR join, Room Code, temporary group access, member removal]
+    load_when: [Field Group credential runtime, QR join, Room Code, temporary group access, member removal, Collection temporary access reuse]
 
   - id: adr-admin-identity
     path: docs/decisions/ADR-0015-organization-admin-identity-totp-sessions.md
@@ -195,7 +197,7 @@ nodes:
     type: decision
     status: accepted
     topics: [field-sessions, domain-events, retention, statistics, comments, activity, history]
-    load_when: [durable Field Sessions, event persistence, session map highlighting, retention]
+    load_when: [durable Field Sessions, event persistence, session map highlighting, retention, Collection event attribution]
 
   - id: adr-action-templates-analytics
     path: docs/decisions/ADR-0018-action-templates-cycles-analytics-export.md
@@ -258,7 +260,7 @@ nodes:
     type: plan
     status: active
     topics: [feature-complete, team-hub, live-groups, field-sessions, comments, activity, automations, statistics, smart-streets, houses, house-polygon, collection, admin, permissions, actions, support, hardening]
-    load_when: [next feature implementation, Team Hub, Live Field Groups, FC2, FC4, platform completion]
+    load_when: [next feature implementation, Team Hub, Live Field Groups, FC2, FC4, FC5, platform completion]
 
   - id: plan-house-polygon-renderer
     path: docs/plans/completed/018-house-polygon-renderer.md
@@ -285,8 +287,8 @@ nodes:
     path: docs/plans/active/021-collection-pickup-persistence.md
     type: plan
     status: active
-    topics: [feature-complete, FC5, collection, pickup, persistence, m5, field-sessions, maplibre, statistics, security]
-    load_when: [Collection/Pickup planning, Pickup persistence, FC5, collection mode, pickup tasks]
+    topics: [feature-complete, FC5, collection, pickup, persistence, collection-main-area, collection-areas, collection-runs, collector-access, qr, road-sections, osm-address-search, special-address, comments, actor-attribution, revert, m5, field-sessions, maplibre, statistics, security]
+    load_when: [Collection/Pickup planning, Pickup persistence, FC5, collection mode, pickup tasks, Collection QR, Collection Areas, Collection Runs, Collection Road Sections, special-address search, actor revert]
 
   - id: house-renderer-runtime
     path: src/map/houseRenderer.ts
@@ -299,8 +301,8 @@ nodes:
     path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
     type: onboarding
     status: current
-    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime]
-    load_when: [fresh AI session, planner chat, verify current Plan 017 state, continue current Plan 017 development]
+    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime, collection, FC5, collection-access, collection-runs]
+    load_when: [fresh AI session, planner chat, verify current Plan 017 state, continue current Plan 017 development, continue FC5]
 
   - id: prompt-house-polygon-renderer
     path: docs/prompts/CODEX_PLAN_HOUSE_POLYGON_RENDERER.md
@@ -335,7 +337,7 @@ nodes:
     type: code
     status: current
     topics: [collection, pickup, status, address, statistics]
-    load_when: [Pickup domain foundation, Pickup status, Collection persistence planning]
+    load_when: [Pickup domain foundation, Pickup status, Collection persistence planning, FC5.2]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
@@ -386,6 +388,7 @@ edges:
   - { from: house-renderer-runtime, to: collaboration, relation: integrates }
   - { from: prompt-latest-feature-complete, to: plan-feature-complete-platform, relation: continues }
   - { from: prompt-latest-feature-complete, to: plan-smart-house-runtime, relation: records_completed_slice }
+  - { from: prompt-latest-feature-complete, to: plan-collection-pickup-persistence, relation: continues_fc5 }
   - { from: prompt-house-polygon-renderer, to: plan-house-polygon-renderer, relation: plans }
   - { from: plan-smart-street-runtime, to: plan-feature-complete-platform, relation: implements_fc4_slice }
   - { from: plan-smart-street-runtime, to: plan-offline-map, relation: reuses_prepared_data }
@@ -412,7 +415,6 @@ edges:
   - { from: plan-smart-house-runtime, to: adr-offline-map-data, relation: constrained_by }
   - { from: plan-smart-house-runtime, to: adr-smart-task-identity, relation: constrained_by }
   - { from: plan-smart-house-runtime, to: quality, relation: validated_by }
-
   - { from: plan-smart-house-runtime, to: smart-house-runtime, relation: implements }
   - { from: smart-house-runtime, to: smart-house-candidate-data, relation: uses }
   - { from: smart-house-candidate-data, to: map, relation: integrates }
@@ -427,11 +429,11 @@ edges:
   - { from: plan-collection-pickup-persistence, to: map, relation: reuses_renderer_boundary }
   - { from: plan-collection-pickup-persistence, to: security, relation: constrained_by }
   - { from: plan-collection-pickup-persistence, to: collaboration, relation: integrates_sessions_events_stats }
-  - { from: plan-collection-pickup-persistence, to: live-teams, relation: integrates_collection_groups }
+  - { from: plan-collection-pickup-persistence, to: live-teams, relation: reuses_temporary_credential_patterns }
+  - { from: plan-collection-pickup-persistence, to: adr-live-field-group-credentials, relation: reuses_security_pattern }
   - { from: plan-collection-pickup-persistence, to: adr-offline-map-data, relation: constrained_by }
-  - { from: plan-collection-pickup-persistence, to: adr-smart-task-identity, relation: constrained_by }
+  - { from: plan-collection-pickup-persistence, to: adr-smart-task-identity, relation: constrained_by_identity_principles }
   - { from: plan-collection-pickup-persistence, to: adr-field-session-events, relation: constrained_by }
-  - { from: plan-collection-pickup-persistence, to: adr-action-templates-analytics, relation: considers_future_scope }
   - { from: plan-collection-pickup-persistence, to: quality, relation: validated_by }
-  - { from: plan-collection-pickup-persistence, to: pickup-foundation, relation: evaluates }
+  - { from: plan-collection-pickup-persistence, to: pickup-foundation, relation: extends }
   - { from: pickup-foundation, to: data, relation: informs_domain_contract }
