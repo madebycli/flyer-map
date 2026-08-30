@@ -9,6 +9,7 @@ import {
 } from "../data/fieldSessionApi.ts";
 import type { PlatformAppContext } from "../platform/platformContract.ts";
 import { FieldSessionHistory } from "./FieldSessionHistory.tsx";
+import { resolveRemoteReadState } from "./remoteReadState.ts";
 import "./field-sessions-hub.css";
 
 type Props = {
@@ -56,6 +57,11 @@ export function FieldSessionsHub({
   const [error, setError] = useState<string | null>(null);
 
   const effectiveTeamId = forcedTeamId ?? (teamFilter === "all" ? null : teamFilter);
+  const readState = resolveRemoteReadState({
+    loading: loadState === "loading",
+    error,
+    itemCount: sessions.length,
+  });
 
   const load = useCallback(
     async (cursor: string | null, append: boolean, signal?: AbortSignal) => {
@@ -218,9 +224,9 @@ export function FieldSessionsHub({
             </button>
           </div>
 
-          {loadState === "loading" && sessions.length === 0 ? (
+          {readState === "loading" ? (
             <div className="field-sessions-loading" role="status">Einsätze werden geladen ...</div>
-          ) : (
+          ) : readState === "empty" || readState === "data" ? (
             <FieldSessionHistory
               items={sessions}
               highlightingSessionId={highlightingSessionId}
@@ -229,7 +235,7 @@ export function FieldSessionsHub({
               onSaveNote={saveSessionNote}
               onShowOnMap={online && onShowSessionOnMap ? (session) => void showSessionOnMap(session) : undefined}
             />
-          )}
+          ) : null}
 
           {nextCursor ? (
             <button
