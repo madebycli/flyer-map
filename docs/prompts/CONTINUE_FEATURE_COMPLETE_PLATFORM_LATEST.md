@@ -12,105 +12,76 @@ Lies zuerst vollständig:
 2. `docs/status/CURRENT.md`
 3. `docs/context-map.yaml`
 
-Nutze danach den Context-Graph. Für den aktuellen Stand folge `prompt-latest-feature-complete` zu `plan-smart-street-runtime` und anschließend zu Offline Map, Map, UX, Offline Sync, Collaboration, Quality, ADR-0012 und ADR-0013. Für den abgeschlossenen House-Renderer-Checkpoint kann zusätzlich die historische Plan-018-Dokumentation geladen werden.
+Nutze danach den Context-Graph. Für den aktuellen Stand folge `prompt-latest-feature-complete` zu Plan 017 und den abgeschlossenen FC4-Slices 018, 019 und 020. Lade für Karten-/Datenänderungen die verknüpften ADRs, Architecture-Dokumente und Quality-Gates.
 
 Prüfe vor jeder Änderung den lokalen Working Tree und vergleiche ihn mit dem aktuellen Remote-Branch. Nichts blind resetten, verwerfen oder überschreiben.
 
-Verifiziere danach Branch `plan-feature-complete-platform`, PR #72, Base/Head/Draft/Mergeability, exakten aktuellen Head und CI auf genau diesem Head gegen GitHub.
-
-Plan 018, der House-Polygon-Renderer, ist im normalen MapLibre-Produktweg umgesetzt und nach `docs/plans/completed/018-house-polygon-renderer.md` verschoben. Prüfe den vorhandenen Runtime-Code und die verbleibende manuelle Android-/iPhone-Browserabnahme, bevor du weitere Änderungen beginnst. Wiederhole den Renderer-Slice nicht ohne konkreten Repository-Befund.
-
-Plan 019, `docs/plans/completed/019-smart-street-runtime.md`, integriert die vorbereiteten echten OSM-Kandidaten in den normalen Area-Flow. Prüfe vor einer Fortsetzung, ob der nächste Engpass tatsächlich Smart House Candidate Selection ist.
+Verifiziere danach Branch `plan-feature-complete-platform`, PR #72, Base/Head/Draft/Mergeability, den exakten aktuellen Head und CI auf genau diesem Head gegen GitHub.
 
 Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.
 ```
 
-## Verifizierter Ausgangs-Checkpoint vor Plan 019
+## Verifizierter aktueller Stand
 
 - Branch: `plan-feature-complete-platform`;
 - PR #72: `FC0-FC2: Platform, Live Field Groups and Field Sessions`;
 - Base: `ui-app-launcher-sheet`;
-- Base-SHA: `48843793184650bd96039f0e3b073f60aebb068a`;
-- Head-Branch: `plan-feature-complete-platform`;
-- letzter vor Plan 019 verifizierter Runtime-Head: `9477e1d15aada83db145cd9dd27b10a152cd13f7`;
-- CI #704 auf genau diesem Head: erfolgreich mit Tests, TypeScript, Dependency Audit und Production Build;
-- PR #72 war offen, Draft und mergeable.
+- verifizierter Smart-House-Runtime-Head: `2f6aaa945e49de76c717b7c542b734f320e4a33f`;
+- CI #711 auf genau diesem Runtime-Head: Tests, TypeScript, Dependency Audit und Production Build erfolgreich;
+- PR #72 bleibt offen, Draft und mergeable.
 
-Plan 019 und der Launcher-Cleanup verschieben den Branch-Head. Nach jedem Commit müssen exakter GitHub-Head, PR #72, Draft-/Mergeability-Status und CI auf genau diesem Head erneut geprüft werden. Ein älterer grüner Runtime-Head ist nicht automatisch ein Nachweis für den finalen Branch-Head.
+Der nächste Dokumentationscommit verschiebt den Branch-Head. Deshalb vor jeder Fortsetzung GitHub erneut prüfen.
 
-## Verifizierter Plan-019-Runtime-Stand
+## Implementierter Feature-Stand
 
-- Runtime-Head: `6a21f5534c5854f9ff606ed34ae39fd31793420b`;
-- CI #705 auf genau diesem Head: erfolgreich mit Tests, TypeScript, Dependency Audit und Production Build;
-- PR #72: offen, Draft und mergeable.
+Umgesetzt:
 
-Die nachfolgende Dokumentationsaktualisierung kann den Branch-Head als reinen
-Dokumentationscommit weiter verschieben. Für die Runtime-Bewertung bleibt der oben
-genannte Commit maßgeblich; den exakten aktuellen GitHub-Head und dessen neuesten CI-Lauf
-immer erneut prüfen.
+- FC0 PlatformShell/App-Bridge, aktiver Teamkontext und echtes Team-/Einsatz-Modul;
+- Live Field Groups, Field Sessions, Comments, bounded Activity, Stats und deterministische Automation;
+- redundante Launcher-Kachel `Karte` entfernt. X und Tap außerhalb des Sheets schließen das Menü weiterhin;
+- Plan 018 House Polygon Renderer mit gebatchter `vf-houses`-Source, House-Auswahl und House-only Session Highlight;
+- Plan 019 Smart Street Runtime mit echten Kandidaten aus dem vorbereiteten validierten OSM-Paket, Snap, Start/Ende, Waypoints, Ambiguitätsauflösung und M5-Persistenz;
+- Plan 020 Smart House Runtime mit echten Gebäude-Candidates aus demselben vorbereiteten Paket, MapLibre-Auswahl, Review, bounded Batch-Persistenz und explizitem Street-Parent.
 
-## Aktueller Feature-Stand
+Smart Street und Smart House verwenden App-eigene `task_<uuid>`-IDs. OSM-Way-IDs bleiben Provenance. Workbench-/Mock-Daten aus `M6SelectionPreview.tsx` sind kein normaler Produktweg.
 
-Auf PR #72 umgesetzt:
-- FC0 PlatformShell/App-Bridge und aktiver Teamkontext;
-- Team Hub;
-- Live Field Groups inklusive Credential-/Rate-Limit-/Membership-Grenzen;
-- Field Sessions, Session-Historie, Task-Refs und Street-Session-Highlight;
-- durable Comments für Campaign, Area, Street Task und persistierte House Tasks;
-- bounded Activity-Projektion aus normalisierten `domain_events`;
-- deterministische feste Automation `complete-parent-street-when-all-houses-complete` gemäß ADR-0019;
-- serverseitige Stats-Projektion und normales Launcher-Stats-Modul.
+## Smart-House-Runtime
 
-Der redundante Launcher-Eintrag „Karte“ ist entfernt. X und Tap außerhalb des Sheets schließen das Menü weiterhin.
+Der normale Flow ist:
 
-Der normale FC4-Smart-Street-Weg ist umgesetzt:
-- ein berechtigter Nutzer startet ihn aus dem Area Sheet;
-- `smartCandidatesForArea()` verwendet nur das vorhandene validierte Offline-OSM-Paket;
-- MapLibre rendert echte Kandidaten, Auswahl, Vorschau und Start/Ende/Zwischenpunkte über feste Sources/Layer;
-- Snap-, Mehrdeutigkeits-, Routen- und Waypoint-Logik bleibt in der Domain;
-- die Bestätigung erzeugt eine App-eigene `task_<uuid>`-ID und speichert OSM-Ways nur als Provenance über den M5-Pfad;
-- manuelles Zeichnen bleibt als Fallback erhalten;
-- Preview-/Mock-Daten aus `M6SelectionPreview.tsx` sind nicht im Produktionsgraphen.
+`Area oder bestehender Street Task -> Smart House Mode -> echte Building-Candidates -> MapLibre-Tap/Mehrfachauswahl -> Review -> house.create-batch -> bestehende M5-Queue -> vf-houses`
 
-House-Domain, House-Persistenz und die eigene persistierte House-Polygon-Source sind vorhanden. Der normale MapLibre-Renderer nutzt `vf-houses` mit festen Layern, House-Auswahl über den bestehenden App-/Sheet-Pfad und echte House-IDs im Session-Highlight.
+Rahmen:
 
-## Aktueller Plan
+- Candidate-Daten stammen nur aus dem vorbereiteten validierten `OfflineMapPackage`;
+- die Candidate-Karte nutzt eine gebatchte Source und wenige feste MapLibre-Layer;
+- Hit-Test fragt nur den Candidate-Fill-Layer ab und löst Mehrfachtreffer ausdrücklich;
+- ausgewählte Houses werden vor dem Speichern reviewt;
+- pro Bestätigung sind maximal 50 Houses erlaubt;
+- ein Street-Parent wird nur aus dem expliziten Street-Einstieg gesetzt;
+- Worker bleibt die Autorisierungsgrenze;
+- fehlende Migration 0005 blockiert House-Writes fail-closed;
+- fehlende bekannte Field-Group-0006-Spalten ergeben den spezifischen Schema-Gate-State.
+
+## Plan-/Context-Graph
 
 Übergeordnete Delivery-Linie:
 - `docs/plans/active/017-feature-complete-platform.md`
 
-Abgeschlossene konkrete Slices:
-- `docs/plans/completed/018-house-polygon-renderer.md`
-- `docs/plans/completed/019-smart-street-runtime.md`
+Abgeschlossene Slices:
+- `docs/plans/completed/018-house-polygon-renderer.md`;
+- `docs/plans/completed/019-smart-street-runtime.md`;
+- `docs/plans/completed/020-smart-house-runtime.md`.
 
-Nächster konkreter FC4-Slice:
-- Smart House Candidate Selection im normalen Area-/Street-Kontext.
+Der nächste FC4-Slice ist noch nicht festgelegt. Er muss aus dem dann aktuellen Repository- und Context-Graph-Stand abgeleitet werden.
 
-Historischer Planungs-Handoff:
-- `docs/prompts/CODEX_PLAN_HOUSE_POLYGON_RENDERER.md`
+## Renderer und Geräteabnahme
 
-## Renderer-Richtung
-
-Plan 018 ist im Runtime-Slice umgesetzt:
-- eigene gebatchte `vf-houses`-GeoJSON-Source;
-- wenige feste MapLibre-Layer;
-- keine per-frame React-Projektion gespeicherter Houses;
-- stabile App-House-ID, OSM nur Provenance;
-- `vf-streets` bleibt Street-only;
-- House-Hit-Test über `queryRenderedFeatures`;
-- Hit-Test zunächst Street, House, Area;
-- bestehendes House-Sheet wiederverwenden;
-- House Session Highlight mit echten `houseTaskIds`, inklusive House-only Sessions;
-- verbleibend sind manuelle Mobile-/Dense-House-Abnahme und die langfristige `minzoom`-Entscheidung.
-
-Plan 019 ist im Runtime-Slice umgesetzt:
-- vorbereitete Offline-OSM-Straßen werden im normalen Area-Flow zu echten Kandidaten;
-- MapLibre übernimmt den sichtbaren Auswahl- und Vorschaupfad;
-- Start/Ende, explizite Ambiguitätsauflösung, alternative Routen und Zwischenpunkte werden unterstützt;
-- Persistenz nutzt `DistributionTask`, App-ID, OSM-Provenance und den bestehenden M5-Mutationspfad;
-- Migration 0004 bleibt vorbereitet und nicht remote angewendet.
-
-Wenn aktueller Code oder accepted ADRs diesem Handoff widersprechen, gewinnen Repository und accepted ADRs. Dann den betroffenen aktuellen Plan aktualisieren, nicht die Realität passend machen.
+Plan 018 bleibt ein implementierter Runtime-Checkpoint:
+- `vf-houses` verwendet feste Layer und App-House-IDs;
+- House-Hit-Test und House-Session-Highlight sind produktiv integriert;
+- `HOUSE_MIN_ZOOM = 15` bleibt der dokumentierte Ausgangswert;
+- reale Android-Chromium-/iPhone-Safari-Abnahme, Touch-Dichte und Dense-Mobile-Verhalten sind offen.
 
 ## D1 / Rollout
 
@@ -124,63 +95,37 @@ Vorbereitet, aber nicht remote angewendet:
 - 0008 Comments;
 - 0009 Automation-Konfiguration.
 
-Der House-Renderer benötigt keine neue Migration. Smart-Street-Source-Writes benötigen
-die vorbereitete 0004-Spalte, dürfen diese aber in diesem Arbeitsstand nicht remote
-anwenden.
+Die Cloudflare-Git-Integration darf nach Branch-Commits automatisch Preview-Kommentare aktualisieren. Das ist kein bewusst ausgelöster manueller Deploy und kein Nachweis für remote angewendete Migrationen.
 
-Keine Migration remote anwenden und keinen manuellen `wrangler deploy` ausführen.
+## Quality-Gates
 
-Die bestehende Cloudflare Git-Integration kann nach Branch-Commits automatisch Preview-Kommentare aktualisieren. Das ist kein bewusst ausgelöster Rollout und kein Beweis für remote angewendete D1-Migrationen.
-
-## Security / Privacy
-
-- Worker bleibt authoritative Authorization Boundary.
-- IDs sind Selektoren, keine Credentials.
-- Keine neue Permission-/Identity-Runtime für den House-Renderer.
-- Keine Secrets oder Join-/Session-Credentials in Renderer-Daten.
-- Keine GPS-Historie.
-- Session-Highlight verwendet nur bereits autorisierte Task-Refs und aktuelle persistierte Geometrie.
-
-## Bekannte offene Punkte
-
-- House-`minzoom` muss anhand eines Dense-Mobile-Tests entschieden werden.
-- House-Status-Stile müssen neben Farbe einen zweiten visuellen Kanal besitzen.
-- Spätere House-Mode-Hit-Test-Priorität ist nicht Teil des Renderer-Cores.
-- Smart House Candidate Selection im normalen Produktweg fehlt noch.
-- Comment- und Automation-Writes bleiben weiterhin online-only, solange keine sichere Wiederverwendung des vorhandenen M5-Pfads ohne zweite Sync-Architektur umgesetzt ist.
-- Organization-/Identity-/Capability-Runtime bleibt durch die jeweiligen vorgeschlagenen ADRs blockiert.
-
-## Verbleibende Quality Gates
-
-- relevante Renderer-/House-/Session-/Security-Regressionstests und Smart-Street-Runtime-Guards: lokal seriell 451/451 grün;
-- Dense-House-Conversion bis 20.000 Features: lokal grün;
-- mobile Hit-Test-Prüfung auf Android Chromium und iPhone Safari: noch offen;
-- TypeScript, Dependency Audit, Production Build und finaler `check`-Lauf: CI #705 auf dem verifizierten Plan-019-Runtime-Head grün;
-- reale Android-/iPhone- und Touch-Dichteabnahme: weiterhin offen.
+- lokale direkte Node-Test-Suite zuletzt: 466/466 grün;
+- CI #711 auf dem verifizierten Runtime-Head: Test, TypeScript, Dependency Audit und Production Build grün;
+- reale Geräteprüfung für Android Chromium und iPhone Safari steht aus;
+- keine finale Dense-Mobile- oder `HOUSE_MIN_ZOOM`-Aussage ohne echte Geräte.
 
 ## Nicht tun
 
 - nichts mergen;
 - PR #72 nicht Ready for Review setzen;
 - keine D1-Migration remote anwenden;
-- keinen expliziten Deploy ausführen;
+- keinen expliziten `wrangler deploy` ausführen;
 - keinen neuen Branch oder PR erstellen;
-- keine neue Organization-/Account-Identity erfinden;
-- keine Capability-Runtime vor akzeptierter ADR;
+- keine Preview-/Mock-Gebäudedaten in den normalen Produktgraphen übernehmen;
+- keine neue Map-Engine, Renderer-Registry, OSM-Datenbank oder Sync-Queue erfinden;
+- keine automatische Parent-Zuordnung nur über `addr:street`;
 - keine PWA, keinen Service Worker und kein Background Sync;
 - keine GPS-Historie;
-- keine allgemeine Rules Engine oder AI-Automation;
-- keine House-Renderer-Struktur mit einem Layer oder DOM-Node pro House.
-- keine Preview-/Mock-Straßen im normalen Produktgraphen;
-- keine Remote-Migration für 0004 oder spätere Migrationen.
+- keine neue Permission-/Identity-Runtime;
+- kein AI-/LLM-Routing.
 
 ## Verpflichtung für den nächsten Handoff
 
-Nach einem weiteren Runtime-Slice diese Datei erneut aktualisieren mit:
-- exaktem Branch und letztem Runtime-Head;
+Nach dem nächsten Slice diese Datei erneut aktualisieren mit:
+- exaktem Branch und aktuellem GitHub-Head;
 - PR #72 Base/Head/Draft/Mergeability;
-- finalem CI-Lauf auf genau diesem Head;
-- House-Renderer- und Session-House-Highlight-Status;
-- Smart-Street- und Smart-House-Status im normalen Produktweg;
+- CI auf genau diesem Head;
+- Plan-018-Renderer- und Session-Highlight-Status;
+- Smart-Street- und Smart-House-Status;
 - aktuellem Migration-/Remote-D1-Status;
-- offenen Risiken und nächstem konkreten Slice.
+- offenen Geräte-/Performance-Risiken und dem nächsten begründeten Slice.

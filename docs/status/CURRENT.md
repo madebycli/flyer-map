@@ -31,21 +31,21 @@ Plan 017 bleibt die übergeordnete Feature-Complete-Delivery-Linie.
 
 Abgeschlossen:
 - Plan 018 House Polygon Renderer: `docs/plans/completed/018-house-polygon-renderer.md`;
-- Plan 019 Smart Street Runtime: `docs/plans/completed/019-smart-street-runtime.md`.
+- Plan 019 Smart Street Runtime: `docs/plans/completed/019-smart-street-runtime.md`;
+- Plan 020 Smart House Runtime: `docs/plans/completed/020-smart-house-runtime.md`.
 
-Aktiver nächster FC4-Slice:
-- Plan 020 Smart House Runtime: `docs/plans/active/020-smart-house-runtime.md`.
-
-Plan 020 integriert echte vorbereitete OSM-Gebäudekandidaten in den normalen Area-/Street-Produktweg und enthält das Preview-/Schema-Gate-Hardening für bekannte unapplied Migrationen.
+Aktueller FC4-Stand:
+- Plan 020 integriert echte vorbereitete OSM-Gebäudekandidaten in den normalen Area-/Street-Produktweg;
+- bekannte unapplied Schema-Stände sind als spezifische fail-closed Zustände dokumentiert und getestet.
 
 Aktiver Entwicklungsstack:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- letzter vor Plan 020 exakt verifizierter Branch-Head: `fd333269eb40e0f32460328fa9b44e59a71afba0`;
-- CI #706 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
+- verifizierter Smart-House-Runtime-Head: `2f6aaa945e49de76c717b7c542b734f320e4a33f`;
+- CI #711 war auf genau diesem Head vollständig grün mit Tests, TypeScript, Dependency Audit und Production Build;
 - PR #72 war offen, Draft und mergeable.
 
-Die Plan-020-Dokumentationscommits verschieben den Branch-Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
+Der nachfolgende Dokumentationscommit verschiebt den Branch-Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
 
 ## Implementierter Plattformstand
 
@@ -58,6 +58,7 @@ Auf PR #72 sind die aktuellen Runtime-Slices für folgende Bereiche umgesetzt:
 - erste feste deterministische und idempotente Automation gemäß ADR-0019;
 - echte serverseitige Stats-Projektion mit getrennten Street-/House-Nennern;
 - normaler Smart-Street-Flow aus vorbereitetem OSM-Paket;
+- normaler Smart-House-Flow aus vorbereiteten OSM-Gebäudekandidaten;
 - persistierter House-Polygon-Renderer mit House-Auswahl und House-Session-Highlight.
 
 Der redundante Launcher-Eintrag „Karte“ ist entfernt. Das Menü bleibt über X und Tap außerhalb des Sheets schließbar.
@@ -72,7 +73,12 @@ Smart Street ist im normalen Produktweg umgesetzt:
 - manuelles Street-Drawing als Fallback;
 - keine Preview-/Mock-Straßen im Produktionsgraphen.
 
-Persistierte Houses werden bereits über `vf-houses` mit festen MapLibre-Layern dargestellt. Der nächste fehlende normale FC4-Produktweg ist die Candidate-Auswahl und Erzeugung mehrerer echter House Tasks aus dem vorbereiteten Building-Paket.
+Persistierte Houses werden über `vf-houses` mit festen MapLibre-Layern dargestellt. Smart House ist im normalen Produktweg umgesetzt:
+- echte Building-Candidates kommen aus dem vorbereiteten und validierten `OfflineMapPackage`;
+- MapLibre verwendet eine gebatchte Candidate-Source mit festen Fill-/Outline-/Selected-Layern;
+- Einzel-, Mehrfach- und gebundene Straßen-Auswahl werden vor der Bestätigung reviewt;
+- bestätigte Houses erhalten App-eigene IDs und laufen über die bestehende M5-Queue;
+- ein Street-Parent wird nur aus einem expliziten Street-Kontext gesetzt.
 
 Reale Android-/iPhone-Abnahme, Touch-Dichte und die endgültige `HOUSE_MIN_ZOOM`-Entscheidung bleiben offen. Ausgangswert bleibt 15.
 
@@ -112,8 +118,7 @@ Weiterhin verbindlich:
 
 ## Immediate next
 
-1. Plan 020 im normalen Produkt umsetzen: Smart House Candidate Selection mit MapLibre, Einzel-/Mehrfachauswahl und bestehender House-Persistenz.
-2. Bounded Mehrfachpersistenz sauber in den bestehenden M5-Pfad integrieren, ohne zweite Queue.
-3. Preview-/Schema-Gates aus den Testseiten-Befunden regressionssicher machen, insbesondere den generischen Team-Hub-500.
-4. Reale Android-/iPhone-Browserprüfung für House-/Street-Rendering, Touch-Hit-Test und Dense-Mobile-Verhalten offen halten, bis echte Geräte benutzt wurden.
-5. PR #72 Draft und offen lassen. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.
+1. Reale Android-/iPhone-Browserprüfung für House-/Street-Rendering, Touch-Hit-Test und Dense-Mobile-Verhalten durchführen, sobald echte Geräte verfügbar sind.
+2. Den nächsten FC4-Slice anhand des dann aktuellen Repository- und Context-Graph-Stands bestimmen, ohne eine neue Architektur ungeprüft zu erfinden.
+3. Remote-D1-Stand und vorbereitete Migrationen unverändert dokumentieren, bis eine ausdrücklich freigegebene Rollout-Entscheidung vorliegt.
+4. PR #72 offen und Draft lassen. Keine Migration remote anwenden, nicht explizit deployen, nicht mergen und keinen neuen Branch oder PR erstellen.

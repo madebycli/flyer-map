@@ -1,7 +1,7 @@
 ---
 id: plan-smart-house-runtime
 type: plan
-status: active
+status: completed
 last_updated: 2026-08-30
 related: [plan-feature-complete-platform, plan-smart-street-runtime, plan-m6-house-persistence, plan-house-polygon-renderer, plan-offline-map, map, ux, data, offline-sync, security, adr-offline-map-data, adr-smart-task-identity, quality]
 source_of_truth_for: [smart-house-runtime-slice, fc4-smart-house-selection, preview-schema-gate-hardening]
@@ -610,6 +610,26 @@ Nicht Teil von Plan 020:
 - Service Worker, PWA oder Background Sync;
 - GPS-Historie;
 - AI-/LLM-Routing.
+
+## Verifizierter Abschluss
+
+Der normale Smart-House-Produktweg ist implementiert:
+
+- Area- und expliziter Street-Einstieg in `App.tsx`;
+- echte Building-Candidates aus dem validierten vorbereiteten `OfflineMapPackage`;
+- gebatchte MapLibre-Candidate-Source `vf-smart-house-candidates` mit festem Layer-Set, Fill-only Hit-Test und Selection-Filter;
+- bounded Einzel-/Mehrfachauswahl mit Review und maximal 50 Houses pro Bestätigung;
+- stabile App-House-IDs, OSM-Way-IDs nur als Provenance und expliziter Parent-Street-Bezug;
+- `house.create-batch` über den bestehenden M5-Queue-/Worker-/D1-Pfad mit atomarer Persistenz, Idempotenz und pre-0005 Fail-Closed;
+- spezifischer Field-Group-Schema-Gate-State statt eines generischen 500 bei fehlenden 0006-Spalten;
+- bestehender `vf-houses`-Renderer übernimmt die persistierten Houses nach erfolgreicher Erstellung.
+
+Verifikation:
+
+- lokale direkte Node-Test-Suite: 466/466 Tests grün;
+- GitHub CI #711 auf Runtime-Head `2f6aaa945e49de76c717b7c542b734f320e4a33f`: Tests, TypeScript, Dependency Audit und Production Build grün;
+- keine Migration remote angewendet, kein manueller Deploy und kein Merge;
+- reale Android-/iPhone-Abnahme, Touch-Dichte, Dense-Mobile-Verhalten und die endgültige `HOUSE_MIN_ZOOM`-Entscheidung bleiben offen; dokumentierter Ausgangswert bleibt 15.
 
 ## Abschlusskriterium
 
