@@ -113,6 +113,11 @@ export async function updatePickupCapabilities(
     throw new PickupVisibilitySchemaUnavailableError();
   }
 
+  const viewValue = capabilities.canViewPickups === undefined
+    ? null
+    : capabilities.canViewPickups
+      ? 1
+      : 0;
   const statement = visibilitySchemaAvailable
     ? db
         .prepare(
@@ -127,12 +132,12 @@ export async function updatePickupCapabilities(
             WHERE id = ? AND campaign_id = ? AND revoked_at IS NULL`,
         )
         .bind(
-          capabilities.canViewPickups ?? null,
-          capabilities.canViewPickups ?? null,
+          viewValue,
+          viewValue,
           capabilities.canCreatePickups ? 1 : 0,
-          capabilities.canViewPickups ?? null,
+          viewValue,
           capabilities.canEditPickups ? 1 : 0,
-          capabilities.canViewPickups ?? null,
+          viewValue,
           capabilities.canAssignPickups ? 1 : 0,
           collectorId,
           campaignId,

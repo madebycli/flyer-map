@@ -238,7 +238,7 @@ test("view=false blocks Pickup mutation even if write flags were forged true", a
     campaignId: "campaign_visibility",
     type: "collection.pickup.create",
     payload: {
-      pickupId: "pickup_visibility_second",
+      pickupId: "collection_pickup_visibility_second",
       areaId: "area_visibility",
       title: "Zweiter Pickup",
       address: "Hauptstraße 2",
