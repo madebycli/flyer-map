@@ -622,6 +622,7 @@ export function applyCampaignMutation(
       };
       break;
 
+    }
     case "collection.main-area.create": {
       const collection = collectionSnapshotOrEmpty(snapshot.collection);
       if (collection.mainArea) conflict("collection_main_area_already_exists");
