@@ -24,8 +24,8 @@ Plan 021 bleibt für die noch offenen FC5.2- und FC5.3-Slices aktiv. FC5.1 ist a
 - Repository: `madebycli/flyer-map`.
 - Branch: `plan-feature-complete-platform`.
 - Draft PR #72 gegen `ui-app-launcher-sheet`.
-- FC5.1-Code-Head: `3a5c46aafa47e866b8441a380f34918eda1f0cee`.
-- CI #729 war auf exakt diesem Code-Head mit Test, Typecheck, Dependency Audit und Production Build vollständig grün.
+- FC5.1-Code-Head: `78472b660d58b6d9184a2a63730a5a25e8fd7841`.
+- CI #735 war auf exakt diesem Code-Head mit Test, Typecheck, Dependency Audit und Production Build vollständig grün.
 - Plan 018, 019 und 020 sind abgeschlossen; die reale Geräteabnahme für Plan 018 bleibt offen.
 - Remote D1 ist weiterhin nur bis Migration 0001 bis 0003 dokumentiert.
 - 0004 bis 0010 sind vorbereitet und nicht remote angewendet.
@@ -300,7 +300,7 @@ Wenn Repository-Abhängigkeiten eine andere Reihenfolge zwingend machen, darf Co
 
 ## Tests und Quality Gates
 
-FC5.1 ist durch `tests/collectionRuntime.test.ts` sowie die bestehenden Mutation-, Authorization-, Snapshot-, Persistence- und Security-Tests abgedeckt. Geprüft werden Collection-only Scope, getrennte Collector-Identitäten, Main/Child Areas, Mehrfach-Claims, Join, Leave/Release, Cancel, Admin force release, App-ID-Identität, OSM-Provenance-Grenze, M5-Verhalten und der Ausschluss von Preview-/Mock-Daten aus dem Produktionsgraph. CI #729 ist auf dem FC5.1-Code-Head vollständig grün.
+FC5.1 ist durch `tests/collectionRuntime.test.ts` sowie die bestehenden Mutation-, Authorization-, Snapshot-, Persistence- und Security-Tests abgedeckt. Geprüft werden Collection-only Scope, getrennte Collector-Identitäten, Main/Child Areas, Mehrfach-Claims, Join, Leave/Release, Cancel, Admin force release, App-ID-Identität, OSM-Provenance-Grenze, M5-Verhalten und der Ausschluss von Preview-/Mock-Daten aus dem Produktionsgraph. CI #735 ist auf dem FC5.1-Code-Head vollständig grün.
 
 Die reale Android-/iPhone-Abnahme und Touch-Dichte bleiben wie bei Plan 018 offene Hardware-Gates.
 

@@ -30,9 +30,9 @@ Vor diesem Living-Docs-Commit:
 - Branch `plan-feature-complete-platform`;
 - PR #72 `FC0-FC2: Platform, Live Field Groups and Field Sessions`;
 - Base `ui-app-launcher-sheet`;
-- FC5.1-Code-Head `3a5c46aafa47e866b8441a380f34918eda1f0cee`;
+- FC5.1-Code-Head `78472b660d58b6d9184a2a63730a5a25e8fd7841`;
 - PR offen, Draft, mergeable, nicht gemerged;
-- CI #729 auf exakt diesem FC5.1-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build.
+- CI #735 auf exakt diesem FC5.1-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build.
 
 Nach jedem neuen Dokumentations-/Runtime-Commit GitHub erneut prüfen. Ein älterer grüner CI-Lauf zählt nicht für einen neueren Head.
 
@@ -76,7 +76,7 @@ Tests:
 - vorhandene Tests simulieren bereits fehlende 0006-Spalten für Field Groups, fehlende 0007-Tabellen für Field Sessions und eine SQLite-DB ohne Migration 0009 für Automationen;
 - vorhandene Smart-Street-/House-Persistenztests schützen 0004/0005 mit `schema_migration_required` und ohne Revision-Claim.
 
-CI #729 ist auf exakt `3a5c46aafa47e866b8441a380f34918eda1f0cee` mit Test, Typecheck, Dependency Audit und Production Build grün.
+CI #735 ist auf exakt `78472b660d58b6d9184a2a63730a5a25e8fd7841` mit Test, Typecheck, Dependency Audit und Production Build grün.
 
 Für diesen Slice war keine neue Architekturentscheidung und keine neue Context-Graph-Topologie nötig. Die bestehenden Knoten `plan-smart-house-runtime`, `collaboration`, `data`, `offline-sync`, `security`, `ux` und `quality` decken Preview-/Schema-Gate-Hardening bereits ab.
 
@@ -206,7 +206,7 @@ Kein lineares Undo und kein direktes Löschen der Audit-Historie.
 
 ### FC5.1 Collection Access, Areas und Runs
 
-Status: implementiert und auf CI #729 verifiziert. Migration 0010 ist vorbereitet, aber nicht remote angewendet.
+Status: implementiert und auf CI #735 verifiziert. Migration 0010 ist vorbereitet, aber nicht remote angewendet.
 
 
 Echter Produktflow:

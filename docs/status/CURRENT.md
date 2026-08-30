@@ -37,8 +37,8 @@ Abgeschlossen:
 Aktiver Entwicklungsstack nach dem Read-/Schema-Hardening-Checkpoint:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- verifizierter FC5.1-Code-Head `3a5c46aafa47e866b8441a380f34918eda1f0cee`;
-- CI #729 auf exakt diesem FC5.1-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build;
+- verifizierter FC5.1-Code-Head `78472b660d58b6d9184a2a63730a5a25e8fd7841`;
+- CI #735 auf exakt diesem FC5.1-Code-Head vollständig grün mit Test, Typecheck, Dependency Audit und Production Build;
 - PR #72 offen, Draft, mergeable und nicht gemerged.
 
 Jeder nachfolgende Dokumentations- oder Runtime-Commit verschiebt den Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
@@ -76,7 +76,7 @@ Der aktuelle Hardening-Slice setzt dafür um:
 - bestehende Fake-/SQLite-Tests decken 0006, 0007 und 0009 bereits spezifisch ab;
 - bestehende Smart-Street-/House-Persistenztests decken 0004/0005 als `schema_migration_required` ohne Revision-Claim ab.
 
-CI #729 bestätigt auf dem FC5.1-Code-Head Tests, TypeScript, Dependency Audit und Production Build. Keine Migration wurde remote angewendet und kein manueller Deploy ausgeführt.
+CI #735 bestätigt auf dem FC5.1-Code-Head Tests, TypeScript, Dependency Audit und Production Build. Keine Migration wurde remote angewendet und kein manueller Deploy ausgeführt.
 
 Der Context Graph benötigt für diesen Slice keine neue Topologie: `plan-smart-house-runtime`, `collaboration`, `data`, `offline-sync`, `security`, `ux` und `quality` decken Preview-/Schema-Gate-Hardening bereits ab.
 
