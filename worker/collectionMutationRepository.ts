@@ -200,7 +200,7 @@ export function collectionMutationStatements(
             AND @@GUARD@@`.replace("@@GUARD@@", guard),
       ).bind(
         mutation.createdAt, mutation.createdAt, mutation.payload.areaId, mutation.campaignId,
-        mutation.payload.runId, mutation.campaignId, mutation.campaignId, writeToken,
+        mutation.payload.runId, mutation.campaignId, writeToken,
       )];
     case "collection.run.close":
       return [db.prepare(
