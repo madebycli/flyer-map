@@ -17,6 +17,7 @@ import type {
   LngLat,
   MapCameraView,
 } from "../domain/campaign";
+import type { CollectionArea, CollectionMainArea } from "../domain/collection";
 import type { OfflineMapPackage } from "../domain/offlineMap";
 import type { SmartBuildingCandidate, SmartRoadCandidate } from "../domain/smartCandidates";
 import type { SmartRoadPointAnchor } from "../domain/smartRoadPointAnchor";
@@ -53,7 +54,7 @@ import {
 } from "./houseRenderer";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house";
+export type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house" | "collection-main-draw" | "collection-area-draw" | "collection-area-edit";
 type RenderArea = Area & { color: string };
 type RenderTask = DistributionTask & { color: string };
 
@@ -127,6 +128,23 @@ type SmartPreviewFeatureCollection = {
   }>;
 };
 
+
+type CollectionFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: {
+      areaId?: string;
+      status?: CollectionArea["status"];
+      color?: string;
+      selected?: boolean;
+      main?: boolean;
+    };
+    geometry: { type: "Polygon"; coordinates: LngLat[][] };
+  }>;
+};
+
 type SmartPointFeatureCollection = {
   type: "FeatureCollection";
   features: Array<{
@@ -186,6 +204,19 @@ type MapViewProps = {
   smartHouseSelectedSourceIds: readonly string[];
   onSmartHousePoint: (point: LngLat, sourceIds: string[]) => void;
   onOfflineMapPackageChange?: (pkg: OfflineMapPackage | null) => void;
+
+  collectionVisible?: boolean;
+  collectionMainArea?: CollectionMainArea | null;
+  collectionAreas?: CollectionArea[];
+  selectedCollectionAreaId?: string | null;
+  collectionDraftVertices?: LngLat[];
+  collectionEditingVertices?: LngLat[];
+  collectionColor?: string;
+  collectionSelectedVertexIndex?: number | null;
+  onCollectionAreaSelect?: (areaId: string | null) => void;
+  onCollectionDrawPoint?: (point: LngLat) => void;
+  onCollectionEditVertexSelect?: (index: number) => void;
+  onCollectionEditVertexMove?: (index: number, point: LngLat) => void;
 };
 
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
@@ -212,6 +243,15 @@ const SMART_HOUSE_SOURCE_ID = "vf-smart-house-candidates";
 const SMART_HOUSE_FILL_LAYER_ID = "vf-smart-house-candidates-fill";
 const SMART_HOUSE_OUTLINE_LAYER_ID = "vf-smart-house-candidates-outline";
 const SMART_HOUSE_SELECTED_LAYER_ID = "vf-smart-house-candidates-selected";
+
+const COLLECTION_MAIN_SOURCE_ID = "vf-collection-main-area";
+const COLLECTION_AREAS_SOURCE_ID = "vf-collection-areas";
+const COLLECTION_MAIN_FILL_LAYER_ID = "vf-collection-main-area-fill";
+const COLLECTION_MAIN_OUTLINE_LAYER_ID = "vf-collection-main-area-outline";
+const COLLECTION_AREAS_FILL_LAYER_ID = "vf-collection-areas-fill";
+const COLLECTION_AREAS_OUTLINE_LAYER_ID = "vf-collection-areas-outline";
+const COLLECTION_AREAS_SELECTED_LAYER_ID = "vf-collection-areas-selected";
+
 const STREET_LAYER_IDS = [
   STREET_SELECTED_LAYER_ID,
   STREET_OPEN_LAYER_ID,
@@ -562,6 +602,14 @@ function buildMapStyle(
         type: "geojson",
         data: housesToGeoJson(houses),
       },
+      [COLLECTION_MAIN_SOURCE_ID]: {
+        type: "geojson",
+        data: collectionMainToGeoJson(null),
+      },
+      [COLLECTION_AREAS_SOURCE_ID]: {
+        type: "geojson",
+        data: collectionAreasToGeoJson([], null),
+      },
       [SMART_ROAD_SOURCE_ID]: {
         type: "geojson",
         data: smartRoadsToGeoJson(smartRoads, smartSelectedSourceIds, smartStreetColor),
@@ -833,6 +881,55 @@ function buildMapStyle(
         },
       },
       {
+        id: COLLECTION_MAIN_FILL_LAYER_ID,
+        type: "fill",
+        source: COLLECTION_MAIN_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: { "fill-color": "#9aa1a6", "fill-opacity": 0.18 },
+      },
+      {
+        id: COLLECTION_MAIN_OUTLINE_LAYER_ID,
+        type: "line",
+        source: COLLECTION_MAIN_SOURCE_ID,
+        layout: { visibility: "none", "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#70777d", "line-opacity": 0.9, "line-width": 2 },
+      },
+      {
+        id: COLLECTION_AREAS_FILL_LAYER_ID,
+        type: "fill",
+        source: COLLECTION_AREAS_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-color": ["get", "color"],
+          "fill-opacity": [
+            "match", ["get", "status"],
+            "completed", 0.34,
+            "in-progress", 0.3,
+            "claimed", 0.25,
+            0.2,
+          ],
+        },
+      },
+      {
+        id: COLLECTION_AREAS_OUTLINE_LAYER_ID,
+        type: "line",
+        source: COLLECTION_AREAS_SOURCE_ID,
+        layout: { visibility: "none", "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.95,
+          "line-width": 2,
+        },
+      },
+      {
+        id: COLLECTION_AREAS_SELECTED_LAYER_ID,
+        type: "line",
+        source: COLLECTION_AREAS_SOURCE_ID,
+        filter: ["==", ["get", "selected"], true],
+        layout: { visibility: "none", "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#111827", "line-opacity": 1, "line-width": 4 },
+      },
+      {
         id: SMART_HOUSE_FILL_LAYER_ID,
         type: "fill",
         source: SMART_HOUSE_SOURCE_ID,
@@ -966,6 +1063,39 @@ function buildMapStyle(
   };
 }
 
+
+function collectionMainToGeoJson(mainArea: CollectionMainArea | null): CollectionFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: mainArea ? [{
+      type: "Feature",
+      id: mainArea.id,
+      properties: { main: true, color: "#9aa1a6" },
+      geometry: { type: "Polygon", coordinates: mainArea.geometry.coordinates },
+    }] : [],
+  };
+}
+
+function collectionAreasToGeoJson(
+  areas: CollectionArea[],
+  selectedAreaId: string | null,
+): CollectionFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: areas.filter((area) => area.status !== "archived").map((area) => ({
+      type: "Feature",
+      id: area.id,
+      properties: {
+        areaId: area.id,
+        status: area.status,
+        color: area.color,
+        selected: area.id === selectedAreaId,
+      },
+      geometry: { type: "Polygon", coordinates: area.geometry.coordinates },
+    })),
+  };
+}
+
 function cameraFromMap(map: Map): MapCameraView {
   const center = map.getCenter();
   return {
@@ -996,6 +1126,36 @@ function findEditVertex(map: Map, vertices: LngLat[], point: { x: number; y: num
     }
   }
   return hit;
+}
+
+
+function syncCollectionData(
+  map: Map,
+  mainArea: CollectionMainArea | null,
+  areas: CollectionArea[],
+  selectedAreaId: string | null,
+  visible: boolean,
+) {
+  const mainSource = map.getSource(COLLECTION_MAIN_SOURCE_ID) as GeoJSONSource | undefined;
+  if (mainSource) mainSource.setData(collectionMainToGeoJson(mainArea));
+  const areaSource = map.getSource(COLLECTION_AREAS_SOURCE_ID) as GeoJSONSource | undefined;
+  if (areaSource) areaSource.setData(collectionAreasToGeoJson(areas, selectedAreaId));
+  const visibility = visible ? "visible" : "none";
+  for (const layerId of [
+    COLLECTION_MAIN_FILL_LAYER_ID,
+    COLLECTION_MAIN_OUTLINE_LAYER_ID,
+    COLLECTION_AREAS_FILL_LAYER_ID,
+    COLLECTION_AREAS_OUTLINE_LAYER_ID,
+    COLLECTION_AREAS_SELECTED_LAYER_ID,
+  ]) {
+    if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+  }
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) {
+    region.dataset.collectionMain = mainArea ? "1" : "0";
+    region.dataset.collectionAreas = String(areas.filter((area) => area.status !== "archived").length);
+    region.dataset.collectionSelectedArea = selectedAreaId ?? "";
+  }
 }
 
 function syncAreaData(map: Map, areas: RenderArea[]) {
@@ -1277,6 +1437,18 @@ export function MapView({
   smartHouseSelectedSourceIds,
   onSmartHousePoint,
   onOfflineMapPackageChange,
+  collectionVisible = false,
+  collectionMainArea = null,
+  collectionAreas = [],
+  selectedCollectionAreaId = null,
+  collectionDraftVertices = [],
+  collectionEditingVertices = [],
+  collectionColor = "#2563eb",
+  collectionSelectedVertexIndex = null,
+  onCollectionAreaSelect = () => {},
+  onCollectionDrawPoint = () => {},
+  onCollectionEditVertexSelect = () => {},
+  onCollectionEditVertexMove = () => {},
 }: MapViewProps) {
   const sessionMapHighlight = useSessionMapHighlight();
   const highlightedStreetTaskIds = useMemo(
@@ -1325,6 +1497,10 @@ export function MapView({
     smartHouseBuildings,
     smartHouseSelectedSourceIds,
     language,
+    collectionVisible,
+    collectionMainArea,
+    collectionAreas,
+    selectedCollectionAreaId,
   });
   dataRef.current = {
     areas,
@@ -1345,6 +1521,10 @@ export function MapView({
     smartHouseBuildings,
     smartHouseSelectedSourceIds,
     language,
+    collectionVisible,
+    collectionMainArea,
+    collectionAreas,
+    selectedCollectionAreaId,
   };
 
   const interactionRef = useRef({
@@ -1362,6 +1542,14 @@ export function MapView({
     onStreetDrawPoint,
     onSmartStreetPoint,
     onSmartHousePoint,
+    collectionVisible,
+    collectionDraftVertices,
+    collectionEditingVertices,
+    collectionSelectedVertexIndex,
+    onCollectionAreaSelect,
+    onCollectionDrawPoint,
+    onCollectionEditVertexSelect,
+    onCollectionEditVertexMove,
   });
   interactionRef.current = {
     mode,
@@ -1378,14 +1566,31 @@ export function MapView({
     onStreetDrawPoint,
     onSmartStreetPoint,
     onSmartHousePoint,
+    collectionVisible,
+    collectionDraftVertices,
+    collectionEditingVertices,
+    collectionSelectedVertexIndex,
+    onCollectionAreaSelect,
+    onCollectionDrawPoint,
+    onCollectionEditVertexSelect,
+    onCollectionEditVertexMove,
   };
 
   const activeCoordinates = useMemo(() => {
     if (mode === "draw") return draftVertices;
     if (mode === "edit") return editingVertices;
     if (mode === "street-draw") return streetDraftVertices;
+    if (mode === "collection-main-draw" || mode === "collection-area-draw") return collectionDraftVertices;
+    if (mode === "collection-area-edit") return collectionEditingVertices;
     return [];
-  }, [mode, draftVertices, editingVertices, streetDraftVertices]);
+  }, [
+    mode,
+    draftVertices,
+    editingVertices,
+    streetDraftVertices,
+    collectionDraftVertices,
+    collectionEditingVertices,
+  ]);
 
   const updateActiveOverlay = (map: Map) => {
     const interaction = interactionRef.current;
@@ -1393,6 +1598,11 @@ export function MapView({
     if (interaction.mode === "draw") coordinates = interaction.draftVertices;
     else if (interaction.mode === "edit") coordinates = interaction.editingVertices;
     else if (interaction.mode === "street-draw") coordinates = interaction.streetDraftVertices;
+    else if (
+      interaction.mode === "collection-main-draw" ||
+      interaction.mode === "collection-area-draw"
+    ) coordinates = interaction.collectionDraftVertices;
+    else if (interaction.mode === "collection-area-edit") coordinates = interaction.collectionEditingVertices;
 
     if (activePrimaryRef.current) {
       activePrimaryRef.current.setAttribute("points", projectedPoints(map, coordinates));
@@ -1510,6 +1720,13 @@ export function MapView({
         syncAreaData(map, current.areas);
         syncStreetData(map, current.tasks);
         syncHouseData(map, current.houses);
+        syncCollectionData(
+          map,
+          current.collectionMainArea,
+          current.collectionAreas,
+          current.selectedCollectionAreaId,
+          current.collectionVisible,
+        );
         syncSmartStreetData(
           map,
           current.smartRoads,
@@ -1551,6 +1768,48 @@ export function MapView({
       map.on("click", (event) => {
         const interaction = interactionRef.current;
         const lngLat: LngLat = [event.lngLat.lng, event.lngLat.lat];
+
+        if (interaction.collectionVisible) {
+          if (
+            interaction.mode === "collection-main-draw" ||
+            interaction.mode === "collection-area-draw"
+          ) {
+            interaction.onCollectionDrawPoint(lngLat);
+            return;
+          }
+          if (interaction.mode === "collection-area-edit") {
+            const vertexIndex = findEditVertex(
+              map,
+              interaction.collectionEditingVertices,
+              event.point,
+            );
+            if (vertexIndex !== null) {
+              interaction.onCollectionEditVertexSelect(vertexIndex);
+              return;
+            }
+            if (interaction.collectionSelectedVertexIndex !== null) {
+              interaction.onCollectionEditVertexMove(
+                interaction.collectionSelectedVertexIndex,
+                lngLat,
+              );
+            }
+            return;
+          }
+          const collectionLayers = [COLLECTION_AREAS_SELECTED_LAYER_ID, COLLECTION_AREAS_FILL_LAYER_ID]
+            .filter((layerId) => map.getLayer(layerId));
+          const collectionFeatures = collectionLayers.length > 0
+            ? map.queryRenderedFeatures(event.point, { layers: collectionLayers })
+            : [];
+          const collectionFeature = collectionFeatures.find(
+            (feature) => typeof feature.properties?.areaId === "string",
+          );
+          interaction.onCollectionAreaSelect(
+            collectionFeature && typeof collectionFeature.properties?.areaId === "string"
+              ? collectionFeature.properties.areaId
+              : null,
+          );
+          return;
+        }
 
         if (interaction.mode === "draw") {
           interaction.onDrawPoint(lngLat);
@@ -1714,6 +1973,23 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
+    syncCollectionData(
+      map,
+      collectionMainArea,
+      collectionAreas,
+      selectedCollectionAreaId,
+      collectionVisible,
+    );
+  }, [
+    collectionAreas,
+    collectionMainArea,
+    collectionVisible,
+    selectedCollectionAreaId,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
     syncSmartStreetData(
       map,
       smartRoads,
@@ -1781,6 +2057,7 @@ export function MapView({
       className={`map-region map-mode-${mode}`}
       aria-label={t(language, "map")}
       data-renderer="maplibre-geojson"
+      data-collection-visible={collectionVisible ? "1" : "0"}
     >
       <div ref={containerRef} className="map" />
 
@@ -1852,6 +2129,78 @@ export function MapView({
                 coordinates={editingVertices}
                 color={editingColor}
                 selectedIndex={selectedVertexIndex}
+                radius={10}
+                markerRefs={activeMarkerRefs}
+              />
+            </>
+          ) : null}
+
+          {mode === "collection-main-draw" || mode === "collection-area-draw" ? (
+            <>
+              {collectionDraftVertices.length >= 2 ? (
+                <>
+                  <polyline
+                    ref={activeHaloRef as React.RefObject<SVGPolylineElement>}
+                    points={map ? projectedPoints(map, collectionDraftVertices) : ""}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={12}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polyline
+                    ref={activePrimaryRef as React.RefObject<SVGPolylineElement>}
+                    points={map ? projectedPoints(map, collectionDraftVertices) : ""}
+                    fill="none"
+                    stroke={collectionColor}
+                    strokeWidth={8}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              ) : null}
+              <ProjectedMarkers
+                map={map}
+                coordinates={collectionDraftVertices}
+                color={collectionColor}
+                radius={10}
+                markerRefs={activeMarkerRefs}
+              />
+            </>
+          ) : null}
+
+          {mode === "collection-area-edit" ? (
+            <>
+              {collectionEditingVertices.length >= 3 ? (
+                <>
+                  <polygon
+                    ref={activeHaloRef as React.RefObject<SVGPolygonElement>}
+                    points={map ? projectedPoints(map, collectionEditingVertices) : ""}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={14}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polygon
+                    ref={activePrimaryRef as React.RefObject<SVGPolygonElement>}
+                    points={map ? projectedPoints(map, collectionEditingVertices) : ""}
+                    fill={collectionColor}
+                    fillOpacity={0.24}
+                    stroke={collectionColor}
+                    strokeWidth={8}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              ) : null}
+              <ProjectedMarkers
+                map={map}
+                coordinates={collectionEditingVertices}
+                color={collectionColor}
+                selectedIndex={collectionSelectedVertexIndex}
                 radius={10}
                 markerRefs={activeMarkerRefs}
               />

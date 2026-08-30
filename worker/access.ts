@@ -1,7 +1,7 @@
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 
 export type PersistentAccessRole = "admin" | "team-editor" | "viewer";
-export type AccessRole = PersistentAccessRole | "field-group-member";
+export type AccessRole = PersistentAccessRole | "field-group-member" | "collection-collector";
 
 export type AccessContext = {
   grantId: string;
@@ -11,6 +11,8 @@ export type AccessContext = {
   label: string | null;
   groupId?: string | null;
   membershipId?: string | null;
+  collectorId?: string | null;
+  collectionAccessId?: string | null;
 };
 
 export type AccessGrantSummary = Omit<AccessContext, "role" | "groupId" | "membershipId"> & {
@@ -70,7 +72,7 @@ export async function hashSecret(secret: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function cookieValue(request: Request, name: string) {
+export function cookieValue(request: Request, name: string) {
   const header = request.headers.get("cookie");
   if (!header) return null;
   for (const part of header.split(";")) {
@@ -277,7 +279,7 @@ export async function createSessionForGrant(
   db: D1DatabaseLike,
   grant: AccessContext,
 ) {
-  if (grant.role === "field-group-member") {
+  if (grant.role === "field-group-member" || grant.role === "collection-collector") {
     throw new Error("persistent_session_role_required");
   }
   const sessionSecret = randomSecret();

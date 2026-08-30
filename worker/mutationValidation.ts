@@ -246,6 +246,113 @@ export function validateCampaignMutation(
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;
+    case "collection.main-area.create":
+      if (isId(payload.mainAreaId) && isString(payload.name, 160) && isRecord(payload.geometry)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.main-area.update":
+      if (
+        isId(payload.mainAreaId) &&
+        isString(payload.name, 160) &&
+        isRecord(payload.geometry) &&
+        hasExpectedUpdatedAt(payload)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.area.create":
+      if (
+        isId(payload.areaId) &&
+        isId(payload.mainAreaId) &&
+        isString(payload.name, 160) &&
+        isRecord(payload.geometry) &&
+        isString(payload.color, 32)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.area.update":
+      if (
+        isId(payload.areaId) &&
+        isString(payload.name, 160) &&
+        isRecord(payload.geometry) &&
+        isString(payload.color, 32) &&
+        hasExpectedUpdatedAt(payload)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.area.archive":
+      if (isId(payload.areaId) && hasExpectedUpdatedAt(payload)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.start":
+      if (
+        isId(payload.runId) &&
+        isId(payload.memberId) &&
+        isId(payload.mainAreaId) &&
+        isId(payload.collectorId) &&
+        isString(payload.label, 120)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.claim-areas":
+      if (
+        isId(payload.runId) &&
+        isId(payload.collectorId) &&
+        isString(payload.collectorLabel, 120) &&
+        Array.isArray(payload.areaIds) &&
+        payload.areaIds.length > 0 &&
+        payload.areaIds.every(isId) &&
+        new Set(payload.areaIds).size === payload.areaIds.length
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.start-area":
+      if (isId(payload.runId) && isId(payload.collectorId) && isId(payload.areaId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.join":
+      if (
+        isId(payload.runId) &&
+        isId(payload.memberId) &&
+        isId(payload.collectorId) &&
+        isString(payload.label, 120)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.leave":
+      if (isId(payload.runId) && isId(payload.collectorId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.release-area":
+      if (isId(payload.runId) && isId(payload.areaId) && isId(payload.collectorId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.admin.force-release-area":
+      if (isId(payload.runId) && isId(payload.areaId) && isId(payload.adminId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.complete-area":
+      if (isId(payload.runId) && isId(payload.areaId) && isId(payload.collectorId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.close":
+    case "collection.run.cancel":
+      if (isId(payload.runId) && isId(payload.collectorId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
     default:
       return { valid: false, message: "Mutation-Typ wird nicht unterstützt." };
   }

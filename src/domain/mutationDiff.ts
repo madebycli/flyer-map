@@ -1,3 +1,4 @@
+import { collectionSnapshotOrEmpty } from "./collection";
 import type { CampaignSnapshot } from "./campaign";
 import { HOUSE_CREATE_BATCH_MAX } from "./mutations.ts";
 import type { CampaignMutation } from "./mutations.ts";
@@ -58,6 +59,25 @@ export function deriveCampaignMutation(
   const areas = changedIds(previous.areas, next.areas);
   const tasks = changedIds(previous.tasks, next.tasks);
   const houses = changedIds(previous.houseTasks ?? [], next.houseTasks ?? []);
+
+  const previousCollection = collectionSnapshotOrEmpty(previous.collection);
+  const nextCollection = collectionSnapshotOrEmpty(next.collection);
+  const mainAreas = changedIds(
+    previousCollection.mainArea ? [previousCollection.mainArea] : [],
+    nextCollection.mainArea ? [nextCollection.mainArea] : [],
+  );
+  const collectionAreas = changedIds(previousCollection.areas, nextCollection.areas);
+  const collectionRuns = changedIds(previousCollection.runs, nextCollection.runs);
+  const collectionEntityDeltaCount =
+    mainAreas.added.length +
+    mainAreas.removed.length +
+    mainAreas.changed.length +
+    collectionAreas.added.length +
+    collectionAreas.removed.length +
+    collectionAreas.changed.length +
+    collectionRuns.added.length +
+    collectionRuns.removed.length +
+    collectionRuns.changed.length;
 
   const collectionDeltaCount =
     teams.added.length +
@@ -373,6 +393,273 @@ export function deriveCampaignMutation(
       type: "house.delete",
       payload: { taskId: task.id, expectedUpdatedAt: task.updatedAt },
     };
+  }
+
+  if (collectionEntityDeltaCount > 0) {
+    const base = (createdAt: string) => mutationBase(previous, createdAt);
+    if (mainAreas.added.length === 1 && collectionEntityDeltaCount === 1) {
+      const main = mainAreas.added[0];
+      return {
+        ...base(main.createdAt),
+        type: "collection.main-area.create",
+        payload: { mainAreaId: main.id, name: main.name, geometry: main.geometry },
+      };
+    }
+    if (mainAreas.changed.length === 1 && collectionEntityDeltaCount === 1) {
+      const { previous: oldMain, next: main } = mainAreas.changed[0];
+      if (oldMain.campaignId !== main.campaignId || oldMain.createdAt !== main.createdAt) {
+        throw new MutationDerivationError("Unveränderliche Collection-Main-Felder wurden geändert.");
+      }
+      if (oldMain.name === main.name && JSON.stringify(oldMain.geometry) === JSON.stringify(main.geometry)) return null;
+      return {
+        ...base(main.updatedAt),
+        type: "collection.main-area.update",
+        payload: {
+          mainAreaId: main.id,
+          name: main.name,
+          geometry: main.geometry,
+          expectedUpdatedAt: oldMain.updatedAt,
+        },
+      };
+    }
+    if (collectionAreas.added.length === 1 && collectionEntityDeltaCount === 1) {
+      const area = collectionAreas.added[0];
+      return {
+        ...base(area.createdAt),
+        type: "collection.area.create",
+        payload: {
+          areaId: area.id,
+          mainAreaId: area.mainAreaId,
+          name: area.name,
+          geometry: area.geometry,
+          color: area.color,
+        },
+      };
+    }
+    if (collectionAreas.changed.length === 1 && collectionEntityDeltaCount === 1) {
+      const { previous: oldArea, next: area } = collectionAreas.changed[0];
+      if (
+        oldArea.campaignId !== area.campaignId ||
+        oldArea.mainAreaId !== area.mainAreaId ||
+        oldArea.createdAt !== area.createdAt
+      ) {
+        throw new MutationDerivationError("Unveränderliche Collection-Area-Felder wurden geändert.");
+      }
+      if (oldArea.status === "open" && area.status === "archived") {
+        return {
+          ...base(area.updatedAt),
+          type: "collection.area.archive",
+          payload: { areaId: area.id, expectedUpdatedAt: oldArea.updatedAt },
+        };
+      }
+      if (
+        oldArea.status === area.status &&
+        oldArea.runId === area.runId &&
+        oldArea.claimedByCollectorId === area.claimedByCollectorId &&
+        oldArea.claimedByLabel === area.claimedByLabel &&
+        oldArea.completedAt === area.completedAt &&
+        (oldArea.name !== area.name ||
+          oldArea.color !== area.color ||
+          JSON.stringify(oldArea.geometry) !== JSON.stringify(area.geometry))
+      ) {
+        return {
+          ...base(area.updatedAt),
+          type: "collection.area.update",
+          payload: {
+            areaId: area.id,
+            name: area.name,
+            geometry: area.geometry,
+            color: area.color,
+            expectedUpdatedAt: oldArea.updatedAt,
+          },
+        };
+      }
+    }
+    if (collectionRuns.added.length === 1 && collectionEntityDeltaCount === 1) {
+      const run = collectionRuns.added[0];
+      const member = run.members.find((candidate) => candidate.collectorId === run.createdByCollectorId);
+      if (!member || run.areaIds.length !== 0) {
+        throw new MutationDerivationError("Collection Run benötigt seinen Ersteller und startet ohne Areas.");
+      }
+      return {
+        ...base(run.createdAt),
+        type: "collection.run.start",
+        payload: {
+          runId: run.id,
+          memberId: member.id,
+          mainAreaId: run.mainAreaId,
+          collectorId: run.createdByCollectorId,
+          label: member.label,
+        },
+      };
+    }
+    if (collectionRuns.changed.length === 1 && collectionEntityDeltaCount === 1) {
+      const { previous: oldRun, next: run } = collectionRuns.changed[0];
+      if (oldRun.campaignId !== run.campaignId || oldRun.mainAreaId !== run.mainAreaId || oldRun.createdAt !== run.createdAt) {
+        throw new MutationDerivationError("Unveränderliche Collection-Run-Felder wurden geändert.");
+      }
+      const addedMembers = run.members.filter((member) => !oldRun.members.some((oldMember) => oldMember.id === member.id));
+      if (
+        oldRun.status === "active" &&
+        run.status === "active" &&
+        addedMembers.length === 1 &&
+        oldRun.areaIds.join("|") === run.areaIds.join("|")
+      ) {
+        return {
+          ...base(run.updatedAt),
+          type: "collection.run.join",
+          payload: {
+            runId: run.id,
+            memberId: addedMembers[0].id,
+            collectorId: addedMembers[0].collectorId,
+            label: addedMembers[0].label,
+          },
+        };
+      }
+      const leftMember = run.members.find((member) => {
+        const oldMember = oldRun.members.find((candidate) => candidate.id === member.id);
+        return oldMember?.leftAt === null && member.leftAt !== null;
+      });
+      if (
+        oldRun.status === "active" &&
+        run.status === "active" &&
+        leftMember &&
+        oldRun.areaIds.join("|") === run.areaIds.join("|")
+      ) {
+        return {
+          ...base(run.updatedAt),
+          type: "collection.run.leave",
+          payload: { runId: run.id, collectorId: leftMember.collectorId },
+        };
+      }
+      if (oldRun.status === "active" && run.status === "closed") {
+        const member = run.members.find((candidate) => candidate.leftAt === null);
+        if (!member) throw new MutationDerivationError("Collection Run benötigt ein aktives Mitglied zum Schließen.");
+        return {
+          ...base(run.updatedAt),
+          type: "collection.run.close",
+          payload: { runId: run.id, collectorId: member.collectorId },
+        };
+      }
+      if (oldRun.status === "active" && run.status === "cancelled") {
+        const member = run.members.find((candidate) => candidate.leftAt === null);
+        if (!member) throw new MutationDerivationError("Collection Run benötigt ein aktives Mitglied zum Abbrechen.");
+        return {
+          ...base(run.updatedAt),
+          type: "collection.run.cancel",
+          payload: { runId: run.id, collectorId: member.collectorId },
+        };
+      }
+    }
+    if (collectionRuns.changed.length === 1) {
+      const { previous: oldRun, next: run } = collectionRuns.changed[0];
+      const areaChanges = collectionAreas.changed;
+      const claimedAreas = areaChanges.filter(({ previous: oldArea, next: area }) =>
+        oldArea.runId === null &&
+        area.runId === run.id &&
+        oldArea.status === "open" &&
+        area.status === "claimed" &&
+        run.areaIds.includes(area.id) &&
+        !oldRun.areaIds.includes(area.id),
+      );
+      const addedAreaIds = run.areaIds.filter((areaId) => !oldRun.areaIds.includes(areaId));
+      const firstClaim = claimedAreas[0]?.next;
+      const claimantIds = new Set(claimedAreas.map(({ next: area }) => area.claimedByCollectorId));
+      const claimantLabels = new Set(claimedAreas.map(({ next: area }) => area.claimedByLabel));
+      if (
+        claimedAreas.length > 0 &&
+        claimedAreas.length === addedAreaIds.length &&
+        claimedAreas.length === areaChanges.length &&
+        oldRun.status === "active" &&
+        run.status === "active" &&
+        oldRun.members.length === run.members.length &&
+        claimantIds.size === 1 &&
+        claimantLabels.size === 1 &&
+        firstClaim?.claimedByCollectorId &&
+        firstClaim.claimedByLabel
+      ) {
+        return {
+          ...base(run.updatedAt),
+          type: "collection.run.claim-areas",
+          payload: {
+            runId: run.id,
+            collectorId: firstClaim.claimedByCollectorId,
+            collectorLabel: firstClaim.claimedByLabel,
+            areaIds: addedAreaIds,
+          },
+        };
+      }
+      if (areaChanges.length === 1) {
+        const { previous: oldArea, next: area } = areaChanges[0];
+        if (
+          oldArea.runId === null &&
+          area.runId === run.id &&
+          oldArea.status === "open" &&
+          area.status === "claimed" &&
+          run.areaIds.includes(area.id) &&
+          !oldRun.areaIds.includes(area.id)
+        ) {
+          return {
+            ...base(area.updatedAt),
+            type: "collection.run.claim-areas",
+            payload: {
+              runId: run.id,
+              collectorId: area.claimedByCollectorId ?? "",
+              collectorLabel: area.claimedByLabel ?? "",
+              areaIds: [area.id],
+            },
+          };
+        }
+        if (
+          oldArea.runId === run.id &&
+          area.runId === run.id &&
+          oldArea.status === "claimed" &&
+          area.status === "in-progress" &&
+          oldRun.areaIds.join("|") === run.areaIds.join("|")
+        ) {
+          return {
+            ...base(area.updatedAt),
+            type: "collection.run.start-area",
+            payload: { runId: run.id, collectorId: area.claimedByCollectorId ?? "", areaId: area.id },
+          };
+        }
+        if (
+          oldArea.runId === run.id &&
+          area.runId === run.id &&
+          (oldArea.status === "claimed" || oldArea.status === "in-progress") &&
+          area.status === "completed" &&
+          oldRun.areaIds.join("|") === run.areaIds.join("|")
+        ) {
+          return {
+            ...base(area.updatedAt),
+            type: "collection.run.complete-area",
+            payload: { runId: run.id, collectorId: area.claimedByCollectorId ?? "", areaId: area.id },
+          };
+        }
+        if (
+          oldArea.runId === run.id &&
+          area.runId === null &&
+          (oldArea.status === "claimed" || oldArea.status === "in-progress") &&
+          area.status === "open" &&
+          !run.areaIds.includes(area.id)
+        ) {
+          return {
+            ...base(area.updatedAt),
+            type: "collection.run.release-area",
+            payload: { runId: oldArea.runId, areaId: area.id, collectorId: oldArea.claimedByCollectorId ?? "" },
+          };
+        }
+      }
+      if (oldRun.status === "active" && run.status === "cancelled") {
+        const member = run.members.find((candidate) => candidate.leftAt === null);
+        if (!member) throw new MutationDerivationError("Collection Run benötigt ein aktives Mitglied zum Abbrechen.");
+        return {
+          ...base(run.updatedAt),
+          type: "collection.run.cancel",
+          payload: { runId: run.id, collectorId: member.collectorId },
+        };
+      }
+    }
   }
 
   if (collectionDeltaCount === 0) return null;

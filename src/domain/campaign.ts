@@ -1,3 +1,5 @@
+import type { CollectionSnapshot } from "./collection";
+
 export type LngLat = [number, number];
 
 export type PolygonGeometry = {
@@ -100,6 +102,8 @@ export type CampaignSnapshot = {
    * collection and are interpreted as having no House Tasks.
    */
   houseTasks?: HouseTask[];
+  /** First-class Collection state is independent from Distribution. */
+  collection?: CollectionSnapshot;
 };
 
 export type TeamColor = {

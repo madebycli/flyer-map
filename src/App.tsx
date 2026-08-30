@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AccessInfo } from "./data/campaignApi";
+import {
+  collectionModeFromUrl,
+  removeCollectionAccessTokenFromUrl,
+  type AccessInfo,
+} from "./data/campaignApi";
 import {
   loadCampaignSnapshot,
   manualRefreshCampaign,
@@ -27,6 +31,13 @@ import {
   type Team,
 } from "./domain/campaign";
 import { HOUSE_CREATE_BATCH_MAX } from "./domain/mutations";
+import {
+  collectionAreaColor,
+  collectionSnapshotOrEmpty,
+  createCollectionId,
+  type CollectionArea,
+  type CollectionMainArea,
+} from "./domain/collection";
 import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
 import type { OfflineMapPackage } from "./domain/offlineMap";
 import {
@@ -53,13 +64,32 @@ import { createSmartHouseTaskSnapshot } from "./domain/smartHouseTask";
 import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } from "./i18n";
 import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
+import { CollectionAdminPanel } from "./collection/CollectionAdminPanel";
+import { CollectionCollectorView } from "./collection/CollectionCollectorView";
 import { SmartHouseSelectionPanel } from "./map/SmartHouseSelectionPanel";
 import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";
 import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
 import { SettingsSheet } from "./settings/SettingsSheet";
 
-type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house";
-type Sheet = "teams" | "area" | "task" | "house" | "campaign-comments" | "settings" | null;
+type MapMode =
+  | "browse"
+  | "draw"
+  | "edit"
+  | "street-draw"
+  | "smart-street"
+  | "smart-house"
+  | "collection-main-draw"
+  | "collection-area-draw"
+  | "collection-area-edit";
+type Sheet =
+  | "teams"
+  | "area"
+  | "task"
+  | "house"
+  | "campaign-comments"
+  | "settings"
+  | "collection-admin"
+  | null;
 type SmartStreetAnchorKind = "start" | "end" | "waypoint";
 type UndoStatusChange = {
   taskId: string;
@@ -144,6 +174,11 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const [editingVertices, setEditingVertices] = useState<LngLat[]>([]);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
   const [streetDraftVertices, setStreetDraftVertices] = useState<LngLat[]>([]);
+  const [collectionDraftVertices, setCollectionDraftVertices] = useState<LngLat[]>([]);
+  const [collectionEditingVertices, setCollectionEditingVertices] = useState<LngLat[]>([]);
+  const [collectionEditingAreaId, setCollectionEditingAreaId] = useState<string | null>(null);
+  const [selectedCollectionAreaId, setSelectedCollectionAreaId] = useState<string | null>(null);
+  const [collectionSelectedVertexIndex, setCollectionSelectedVertexIndex] = useState<number | null>(null);
   const [offlineMapPackage, setOfflineMapPackage] = useState<OfflineMapPackage | null>(null);
   const [smartStreetStartAnchor, setSmartStreetStartAnchor] = useState<SmartRoadPointAnchor | null>(null);
   const [smartStreetEndAnchor, setSmartStreetEndAnchor] = useState<SmartRoadPointAnchor | null>(null);
@@ -230,6 +265,25 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         (canEditTeam(area.teamId) ||
           (isFieldGroupMember && access?.teamId === area.teamId && Boolean(access.groupId))),
     );
+
+  const collection = collectionSnapshotOrEmpty(snapshot.collection);
+  const collectionMode = collectionModeFromUrl();
+  const collectionSelectedArea = collection.areas.find(
+    (area) => area.id === (collectionEditingAreaId ?? selectedCollectionAreaId),
+  ) ?? null;
+  const collectionColor = collectionSelectedArea?.color ?? collectionAreaColor(collection.areas.length);
+  const collectionVisible =
+    Boolean(isAdmin) &&
+    (sheet === "collection-admin" || mode === "collection-main-draw" ||
+      mode === "collection-area-draw" || mode === "collection-area-edit");
+  const collectionDraftValidation = useMemo(
+    () => validatePolygonVertices(collectionDraftVertices),
+    [collectionDraftVertices],
+  );
+  const collectionEditValidation = useMemo(
+    () => validatePolygonVertices(collectionEditingVertices),
+    [collectionEditingVertices],
+  );
 
   const activeTeam = snapshot.teams.find((team) => team.id === activeTeamId) ?? null;
   const selectedArea = snapshot.areas.find((area) => area.id === selectedAreaId) ?? null;
@@ -524,6 +578,170 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const cancelDrawing = () => {
     setMode("browse");
     setDraftVertices([]);
+  };
+
+  const startCollectionMainArea = () => {
+    if (!isAdmin || collection.mainArea) return;
+    setMode("collection-main-draw");
+    setSheet(null);
+    setCollectionDraftVertices([]);
+    setCollectionEditingVertices([]);
+    setCollectionEditingAreaId(null);
+    setCollectionSelectedVertexIndex(null);
+  };
+
+  const startCollectionArea = () => {
+    if (!isAdmin || !collection.mainArea) return;
+    setMode("collection-area-draw");
+    setSheet(null);
+    setCollectionDraftVertices([]);
+    setCollectionEditingVertices([]);
+    setCollectionEditingAreaId(null);
+    setCollectionSelectedVertexIndex(null);
+  };
+
+  const startCollectionAreaEditing = (areaId: string) => {
+    if (!isAdmin) return;
+    const area = collection.areas.find((candidate) => candidate.id === areaId);
+    if (!area || area.status !== "open") return;
+    setSelectedCollectionAreaId(area.id);
+    setCollectionEditingAreaId(area.id);
+    setCollectionEditingVertices(openPolygonRing(area.geometry));
+    setCollectionSelectedVertexIndex(null);
+    setMode("collection-area-edit");
+    setSheet(null);
+  };
+
+  const cancelCollectionGeometry = () => {
+    setMode("browse");
+    setCollectionDraftVertices([]);
+    setCollectionEditingVertices([]);
+    setCollectionEditingAreaId(null);
+    setCollectionSelectedVertexIndex(null);
+    setSheet("collection-admin");
+  };
+
+  const moveCollectionEditVertex = (index: number, point: LngLat) => {
+    setCollectionEditingVertices((current) =>
+      current.map((vertex, vertexIndex) => (vertexIndex === index ? point : vertex)),
+    );
+    setCollectionSelectedVertexIndex(null);
+  };
+
+  const saveCollectionGeometry = () => {
+    if (!isAdmin) return;
+    const now = new Date().toISOString();
+    if (mode === "collection-main-draw") {
+      if (!collectionDraftValidation.valid || collection.mainArea) return;
+      const mainArea: CollectionMainArea = {
+        id: createCollectionId("main"),
+        campaignId: snapshot.campaign.id,
+        name: language === "en" ? "Collection Main Area" : "Collection Main Area",
+        geometry: createPolygonGeometry(collectionDraftVertices),
+        createdAt: now,
+        updatedAt: now,
+      };
+      commitSnapshot((current) => ({
+        ...current,
+        collection: {
+          ...collectionSnapshotOrEmpty(current.collection),
+          mainArea,
+        },
+      }));
+      setSelectedCollectionAreaId(null);
+      setCollectionDraftVertices([]);
+      setMode("browse");
+      setSheet("collection-admin");
+      return;
+    }
+
+    if (mode === "collection-area-draw") {
+      if (!collectionDraftValidation.valid || !collection.mainArea) return;
+      const area: CollectionArea = {
+        id: createCollectionId("area"),
+        campaignId: snapshot.campaign.id,
+        mainAreaId: collection.mainArea.id,
+        name: language === "en"
+          ? "Collection Area " + (collection.areas.length + 1)
+          : "Collection Area " + (collection.areas.length + 1),
+        geometry: createPolygonGeometry(collectionDraftVertices),
+        color: collectionAreaColor(collection.areas.length),
+        status: "open",
+        runId: null,
+        claimedByCollectorId: null,
+        claimedByLabel: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      commitSnapshot((current) => ({
+        ...current,
+        collection: {
+          ...collectionSnapshotOrEmpty(current.collection),
+          areas: [...collectionSnapshotOrEmpty(current.collection).areas, area],
+        },
+      }));
+      setSelectedCollectionAreaId(area.id);
+      setCollectionDraftVertices([]);
+      setMode("browse");
+      setSheet("collection-admin");
+      return;
+    }
+
+    if (mode === "collection-area-edit") {
+      const area = collectionSelectedArea;
+      if (!area || !collectionEditValidation.valid) return;
+      commitSnapshot((current) => ({
+        ...current,
+        collection: {
+          ...collectionSnapshotOrEmpty(current.collection),
+          areas: collectionSnapshotOrEmpty(current.collection).areas.map((candidate) =>
+            candidate.id === area.id
+              ? { ...candidate, geometry: createPolygonGeometry(collectionEditingVertices), updatedAt: now }
+              : candidate,
+          ),
+        },
+      }));
+      setCollectionEditingVertices([]);
+      setCollectionEditingAreaId(null);
+      setCollectionSelectedVertexIndex(null);
+      setMode("browse");
+      setSheet("collection-admin");
+    }
+  };
+
+  const forceReleaseCollectionArea = (areaId: string, runId: string) => {
+    if (!isAdmin) return;
+    const area = collection.areas.find((candidate) => candidate.id === areaId);
+    if (!area || area.runId !== runId || area.status === "completed") return;
+    const now = new Date().toISOString();
+    commitSnapshot((current) => {
+      const currentCollection = collectionSnapshotOrEmpty(current.collection);
+      return {
+        ...current,
+        collection: {
+          ...currentCollection,
+          areas: currentCollection.areas.map((candidate) =>
+            candidate.id === areaId
+              ? {
+                  ...candidate,
+                  status: "open",
+                  runId: null,
+                  claimedByCollectorId: null,
+                  claimedByLabel: null,
+                  completedAt: null,
+                  updatedAt: now,
+                }
+              : candidate,
+          ),
+          runs: currentCollection.runs.map((run) =>
+            run.id === runId
+              ? { ...run, areaIds: run.areaIds.filter((id) => id !== areaId), updatedAt: now }
+              : run,
+          ),
+        },
+      };
+    });
   };
 
   const saveDraftArea = () => {
@@ -1123,6 +1341,47 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const displayedStorageWarning =
     storageWarning && language === "de" ? storageWarning : storageWarning ? t(language, "refreshError") : null;
 
+  if (collectionMode) {
+    if (access?.role === "collection-collector") {
+      return (
+        <CollectionCollectorView
+          campaignId={snapshot.campaign.id}
+          language={language}
+          snapshot={snapshot}
+          access={access}
+          online={online}
+          refreshState={refreshState}
+          onRefresh={manualRefreshCampaign}
+          onSnapshotChange={commitSnapshot}
+          onExit={() => {
+            removeCollectionAccessTokenFromUrl();
+            const url = new URL(window.location.href);
+            url.searchParams.delete("collection");
+            window.history.replaceState(null, "", url);
+            window.location.reload();
+          }}
+        />
+      );
+    }
+    return (
+      <main className="collection-screen">
+        <section className="collection-card">
+          <h1>{t(language, "accessRequired")}</h1>
+          <p>{t(language, "permissionDenied")}</p>
+          <button type="button" onClick={() => {
+            removeCollectionAccessTokenFromUrl();
+            const url = new URL(window.location.href);
+            url.searchParams.delete("collection");
+            window.history.replaceState(null, "", url);
+            window.location.reload();
+          }}>
+            {t(language, "close")}
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1177,6 +1436,20 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         smartHouseSelectedSourceIds={smartHouseSelectedSourceIds}
         onSmartHousePoint={handleSmartHousePoint}
         onOfflineMapPackageChange={setOfflineMapPackage}
+        collectionVisible={collectionVisible}
+        collectionMainArea={collection.mainArea}
+        collectionAreas={collection.areas}
+        selectedCollectionAreaId={selectedCollectionAreaId}
+        collectionDraftVertices={collectionDraftVertices}
+        collectionEditingVertices={collectionEditingVertices}
+        collectionColor={collectionSelectedArea?.color ?? collectionAreaColor(collection.areas.length)}
+        collectionSelectedVertexIndex={collectionSelectedVertexIndex}
+        onCollectionAreaSelect={setSelectedCollectionAreaId}
+        onCollectionDrawPoint={(point) => setCollectionDraftVertices((current) => [...current, point])}
+        onCollectionEditVertexSelect={(index) =>
+          setCollectionSelectedVertexIndex((current) => (current === index ? null : index))
+        }
+        onCollectionEditVertexMove={moveCollectionEditVertex}
       />
 
       {displayedStorageWarning || message ? (
@@ -1226,11 +1499,82 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
                 {t(language, "teams")}
               </button>
             ) : null}
+            {isAdmin ? (
+              <button className="button secondary" type="button" onClick={() => setSheet("collection-admin")}>
+                Collection
+              </button>
+            ) : null}
             {access && (access.role === "admin" || access.role === "team-editor") ? (
               <button className="button primary" type="button" onClick={startDrawing}>
                 {t(language, "drawArea")}
               </button>
             ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {mode === "collection-main-draw" || mode === "collection-area-draw" ? (
+        <section className="mode-sheet collection-mode-sheet" aria-label="Collection">
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Collection</span>
+              <strong>
+                {mode === "collection-main-draw" ? "Collection Main Area" : "Collection Area"}
+              </strong>
+            </div>
+            <span className="team-color-preview" style={{ backgroundColor: collectionColor }} aria-hidden="true" />
+          </div>
+          <p>
+            {mode === "collection-main-draw"
+              ? "Zeichne das gemeinsame Collection-Hauptgebiet."
+              : "Zeichne ein auswählbares Collection-Untergebiet."}
+          </p>
+          <p className={`geometry-status ${collectionDraftValidation.valid ? "is-valid" : "is-invalid"}`}>
+            {collectionDraftValidation.valid
+              ? `${collectionDraftVertices.length} Punkte bereit`
+              : geometryReason(language, collectionDraftValidation.reason)}
+          </p>
+          <div className="mode-actions three-actions">
+            <button className="button secondary" type="button" onClick={cancelCollectionGeometry}>{t(language, "cancel")}</button>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={collectionDraftVertices.length === 0}
+              onClick={() => setCollectionDraftVertices((current) => current.slice(0, -1))}
+            >
+              {t(language, "undo")}
+            </button>
+            <button className="button primary" type="button" disabled={!collectionDraftValidation.valid} onClick={saveCollectionGeometry}>
+              {t(language, "save")}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {mode === "collection-area-edit" ? (
+        <section className="mode-sheet collection-mode-sheet" aria-label="Collection Area bearbeiten">
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Collection</span>
+              <strong>{collectionSelectedArea?.name || "Collection Area"}</strong>
+            </div>
+            <span className="team-color-preview" style={{ backgroundColor: collectionSelectedArea?.color ?? "#2563eb" }} aria-hidden="true" />
+          </div>
+          <p>
+            {collectionSelectedVertexIndex === null
+              ? "Wähle einen Punkt auf der Karte und verschiebe ihn."
+              : `Punkt ${collectionSelectedVertexIndex + 1} ausgewählt`}
+          </p>
+          <p className={`geometry-status ${collectionEditValidation.valid ? "is-valid" : "is-invalid"}`}>
+            {collectionEditValidation.valid
+              ? "Geometrie ist gültig"
+              : geometryReason(language, collectionEditValidation.reason)}
+          </p>
+          <div className="mode-actions">
+            <button className="button secondary" type="button" onClick={cancelCollectionGeometry}>{t(language, "cancel")}</button>
+            <button className="button primary" type="button" disabled={!collectionEditValidation.valid} onClick={saveCollectionGeometry}>
+              {t(language, "saveChanges")}
+            </button>
           </div>
         </section>
       ) : null}
@@ -1555,6 +1899,20 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
             {nextAvailableTeamColor(snapshot.teams) === null ? t(language, "allColorsUsed") : t(language, "addTeam")}
           </button>
         </section>
+      ) : null}
+
+      {sheet === "collection-admin" && mode === "browse" && isAdmin ? (
+        <CollectionAdminPanel
+          campaignId={snapshot.campaign.id}
+          language={language}
+          snapshot={snapshot}
+          onSnapshotChange={commitSnapshot}
+          onClose={() => setSheet(null)}
+          onStartMainArea={startCollectionMainArea}
+          onStartArea={startCollectionArea}
+          onEditArea={startCollectionAreaEditing}
+          onForceReleaseArea={forceReleaseCollectionArea}
+        />
       ) : null}
 
       {sheet === "area" && mode === "browse" && selectedArea ? (

@@ -15,6 +15,13 @@ import {
   validateLineStringVertices,
   validatePolygonVertices,
 } from "../src/domain/geometry.ts";
+import type {
+  CollectionArea,
+  CollectionMainArea,
+  CollectionRun,
+  CollectionRunMember,
+  CollectionSnapshot,
+} from "../src/domain/collection.ts";
 
 export type SnapshotValidationResult =
   | { valid: true; snapshot: CampaignSnapshot }
@@ -207,6 +214,104 @@ function hasUniqueIds<T extends { id: string }>(values: T[]) {
   return new Set(values.map((value) => value.id)).size === values.length;
 }
 
+function parseCollectionSnapshot(value: unknown, campaignId: string): CollectionSnapshot | null {
+  if (!isRecord(value) || !Array.isArray(value.areas) || !Array.isArray(value.runs)) return null;
+  const mainValue = value.mainArea;
+  let mainArea: CollectionMainArea | null = null;
+  if (mainValue !== null && mainValue !== undefined) {
+    if (
+      !isRecord(mainValue) ||
+      !isId(mainValue.id) ||
+      mainValue.campaignId !== campaignId ||
+      !isBoundedString(mainValue.name, 160) ||
+      !parsePolygonGeometry(mainValue.geometry) ||
+      !isTimestamp(mainValue.createdAt) ||
+      !isTimestamp(mainValue.updatedAt)
+    ) return null;
+    mainArea = mainValue as CollectionMainArea;
+  }
+
+  const areas: CollectionArea[] = [];
+  for (const candidate of value.areas) {
+    if (!isRecord(candidate) || !isId(candidate.id) || candidate.campaignId !== campaignId ||
+      !isId(candidate.mainAreaId) || !isBoundedString(candidate.name, 160) ||
+      !parsePolygonGeometry(candidate.geometry) ||
+      typeof candidate.color !== "string" || !HEX_COLOR_PATTERN.test(candidate.color) ||
+      (candidate.status !== "open" && candidate.status !== "claimed" &&
+        candidate.status !== "in-progress" && candidate.status !== "completed" &&
+        candidate.status !== "archived") ||
+      (candidate.runId !== null && !isId(candidate.runId)) ||
+      (candidate.claimedByCollectorId !== null && !isId(candidate.claimedByCollectorId)) ||
+      (candidate.claimedByLabel !== null && !isBoundedString(candidate.claimedByLabel, 120)) ||
+      (candidate.completedAt !== null && !isTimestamp(candidate.completedAt)) ||
+      !isTimestamp(candidate.createdAt) || !isTimestamp(candidate.updatedAt)
+    ) return null;
+    areas.push(candidate as CollectionArea);
+  }
+  if (!hasUniqueIds(areas)) return null;
+
+  const runs: CollectionRun[] = [];
+  for (const candidate of value.runs) {
+    if (!isRecord(candidate) || !isId(candidate.id) || candidate.campaignId !== campaignId ||
+      !isId(candidate.mainAreaId) ||
+      (candidate.status !== "active" && candidate.status !== "closed" && candidate.status !== "cancelled") ||
+      !isTimestamp(candidate.startedAt) ||
+      (candidate.endedAt !== null && !isTimestamp(candidate.endedAt)) ||
+      (candidate.status === "active" && candidate.endedAt !== null) ||
+      (candidate.status !== "active" && candidate.endedAt === null) ||
+      !isId(candidate.createdByCollectorId) ||
+      !Array.isArray(candidate.areaIds) ||
+      !candidate.areaIds.every(isId) ||
+      new Set(candidate.areaIds).size !== candidate.areaIds.length ||
+      !Array.isArray(candidate.members) ||
+      !isTimestamp(candidate.createdAt) || !isTimestamp(candidate.updatedAt)
+    ) return null;
+    const members: CollectionRunMember[] = [];
+    for (const member of candidate.members) {
+      if (!isRecord(member) || !isId(member.id) || member.runId !== candidate.id ||
+        !isId(member.collectorId) || !isBoundedString(member.label, 120) ||
+        !isTimestamp(member.joinedAt) ||
+        (member.leftAt !== null && !isTimestamp(member.leftAt))
+      ) return null;
+      members.push(member as CollectionRunMember);
+    }
+    if (!hasUniqueIds(members) ||
+      new Set(members.map((member) => member.collectorId)).size !== members.length ||
+      !members.some((member) => member.collectorId === candidate.createdByCollectorId)
+    ) return null;
+    runs.push({ ...(candidate as CollectionRun), members });
+  }
+  if (!hasUniqueIds(runs)) return null;
+
+  if (!mainArea && (areas.length > 0 || runs.length > 0)) return null;
+  const runIds = new Set(runs.map((run) => run.id));
+  const areaIds = new Set(areas.map((area) => area.id));
+  for (const area of areas) {
+    if (!mainArea || area.mainAreaId !== mainArea.id) return null;
+    if (area.status === "open" || area.status === "archived") {
+      if (area.runId !== null || area.claimedByCollectorId !== null ||
+        area.claimedByLabel !== null || area.completedAt !== null) return null;
+    } else {
+      if (!area.runId || !runIds.has(area.runId) ||
+        !area.claimedByCollectorId || !area.claimedByLabel) return null;
+      if (area.status === "completed") {
+        if (!area.completedAt) return null;
+      } else if (area.completedAt !== null) return null;
+    }
+  }
+  for (const run of runs) {
+    if (!mainArea || run.mainAreaId !== mainArea.id) return null;
+    for (const areaId of run.areaIds) {
+      const area = areas.find((candidate) => candidate.id === areaId);
+      if (!area || area.runId !== run.id) return null;
+    }
+  }
+  for (const area of areas) {
+    if (area.runId && !runs.some((run) => run.id === area.runId && run.areaIds.includes(area.id))) return null;
+  }
+  return { mainArea, areas, runs };
+}
+
 export function validateCampaignSnapshot(
   value: unknown,
   campaignId: string,
@@ -239,6 +344,12 @@ export function validateCampaignSnapshot(
     return { valid: false, message: "Snapshot-Collections sind ungültig." };
   }
   const hasHouseCollection = value.houseTasks !== undefined;
+  const hasCollection = value.collection !== undefined;
+  const collection = hasCollection ? parseCollectionSnapshot(value.collection, campaignId) : null;
+  if (hasCollection && !collection) {
+    return { valid: false, message: "Collection Areas oder Runs sind ungültig." };
+  }
+
   if (hasHouseCollection && !Array.isArray(value.houseTasks)) {
     return { valid: false, message: "House-Task-Collection ist ungültig." };
   }
@@ -348,6 +459,7 @@ export function validateCampaignSnapshot(
       areas,
       tasks,
       ...(hasHouseCollection ? { houseTasks } : {}),
+      ...(hasCollection ? { collection: collection as CollectionSnapshot } : {}),
     },
   };
 }

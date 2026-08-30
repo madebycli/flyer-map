@@ -1,0 +1,250 @@
+import { useEffect, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import {
+  buildCollectionAccessUrl,
+  createCollectionAccessLink,
+  fetchCollectionCollectors,
+  revokeCollectionCollector,
+} from "../data/campaignApi";
+import type { CampaignSnapshot } from "../domain/campaign";
+import {
+  collectionSnapshotOrEmpty,
+  type CollectionArea,
+  type CollectionRun,
+  type CollectionSnapshot,
+} from "../domain/collection";
+import type { Language } from "../i18n";
+import "./collection-admin-panel.css";
+
+type Collector = {
+  id: string;
+  label: string;
+  createdAt: string;
+  revokedAt: string | null;
+};
+
+type Props = {
+  campaignId: string;
+  language: Language;
+  snapshot: CampaignSnapshot;
+  onSnapshotChange: (update: (current: CampaignSnapshot) => CampaignSnapshot) => void;
+  onClose: () => void;
+  onStartMainArea: () => void;
+  onStartArea: () => void;
+  onEditArea: (areaId: string) => void;
+  onForceReleaseArea: (areaId: string, runId: string) => void;
+};
+
+function copy(language: Language, german: string, english: string) {
+  return language === "en" ? english : german;
+}
+
+function statusLabel(language: Language, status: CollectionArea["status"]) {
+  const labels: Record<CollectionArea["status"], [string, string]> = {
+    open: ["offen", "open"],
+    claimed: ["reserviert", "claimed"],
+    "in-progress": ["läuft", "in progress"],
+    completed: ["fertig", "completed"],
+    archived: ["archiviert", "archived"],
+  };
+  return copy(language, labels[status][0], labels[status][1]);
+}
+
+function activeRunForArea(collection: CollectionSnapshot, areaId: string): CollectionRun | null {
+  return collection.runs.find(
+    (run) => run.status === "active" && run.areaIds.includes(areaId),
+  ) ?? null;
+}
+
+export function CollectionAdminPanel({
+  campaignId,
+  language,
+  snapshot,
+  onSnapshotChange,
+  onClose,
+  onStartMainArea,
+  onStartArea,
+  onEditArea,
+  onForceReleaseArea,
+}: Props) {
+  const collection = collectionSnapshotOrEmpty(snapshot.collection);
+  const [accessUrl, setAccessUrl] = useState<string | null>(null);
+  const [collectors, setCollectors] = useState<Collector[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refreshCollectors = async () => {
+    try {
+      const result = await fetchCollectionCollectors(campaignId);
+      setCollectors(result.collectors);
+      setMessage(null);
+    } catch {
+      setMessage(copy(language, "Sammler konnten nicht geladen werden.", "Collectors could not be loaded."));
+    }
+  };
+
+  useEffect(() => {
+    void refreshCollectors();
+  }, [campaignId]);
+
+  const createQr = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await createCollectionAccessLink(campaignId);
+      setAccessUrl(buildCollectionAccessUrl(campaignId, result.token));
+      setMessage(copy(language, "QR-Zugang erstellt.", "QR access created."));
+      await refreshCollectors();
+    } catch {
+      setMessage(copy(language, "QR-Zugang konnte nicht erstellt werden.", "QR access could not be created."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyUrl = async () => {
+    if (!accessUrl || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(accessUrl);
+      setMessage(copy(language, "Link kopiert.", "Link copied."));
+    } catch {
+      setMessage(copy(language, "Link konnte nicht kopiert werden.", "Link could not be copied."));
+    }
+  };
+
+  const revokeCollector = async (collectorId: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await revokeCollectionCollector(campaignId, collectorId);
+      setCollectors((current) => current.map((collector) =>
+        collector.id === collectorId ? { ...collector, revokedAt: new Date().toISOString() } : collector,
+      ));
+      setMessage(copy(language, "Sammlerzugang widerrufen.", "Collector access revoked."));
+    } catch {
+      setMessage(copy(language, "Widerruf fehlgeschlagen.", "Revocation failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateCollection = (update: (current: CollectionSnapshot) => CollectionSnapshot) => {
+    onSnapshotChange((current) => ({
+      ...current,
+      collection: update(collectionSnapshotOrEmpty(current.collection)),
+    }));
+  };
+
+  return (
+    <section className="bottom-sheet collection-admin-sheet" aria-label={copy(language, "Collection verwalten", "Manage collection")}>
+      <div className="sheet-handle" aria-hidden="true" />
+      <div className="sheet-header">
+        <div>
+          <span className="eyebrow">Collection</span>
+          <strong>{copy(language, "Collection verwalten", "Manage collection")}</strong>
+        </div>
+        <button className="icon-button" type="button" onClick={onClose} aria-label={copy(language, "Schließen", "Close")}>×</button>
+      </div>
+
+      <div className="collection-admin-actions">
+        <button type="button" className="primary-action" onClick={onStartMainArea} disabled={Boolean(collection.mainArea)}>
+          {collection.mainArea ? copy(language, "Main Area vorhanden", "Main area configured") : copy(language, "Main Area zeichnen", "Draw main area")}
+        </button>
+        <button type="button" className="secondary-action" onClick={onStartArea} disabled={!collection.mainArea}>
+          {copy(language, "Collection Area zeichnen", "Draw collection area")}
+        </button>
+      </div>
+
+      <div className="collection-admin-section">
+        <div className="collection-section-heading">
+          <div>
+            <span className="eyebrow">{copy(language, "Gebiet", "Area")}</span>
+            <h2>{collection.mainArea?.name ?? copy(language, "Noch nicht eingerichtet", "Not configured yet")}</h2>
+          </div>
+          <span className="collection-count">{collection.areas.filter((area) => area.status !== "archived").length}</span>
+        </div>
+        <div className="collection-admin-area-list">
+          {collection.areas.filter((area) => area.status !== "archived").map((area) => {
+            const run = activeRunForArea(collection, area.id);
+            return (
+              <article className="collection-admin-area-row" key={area.id}>
+                <span className="collection-color-dot" style={{ backgroundColor: area.color }} aria-hidden="true" />
+                <div className="collection-area-copy">
+                  <strong>{area.name}</strong>
+                  <small>{statusLabel(language, area.status)}{area.claimedByLabel ? " · " + area.claimedByLabel : ""}</small>
+                </div>
+                <div className="collection-button-row">
+                  {area.status === "open" ? (
+                    <button type="button" className="text-action" onClick={() => onEditArea(area.id)}>
+                      {copy(language, "Bearbeiten", "Edit")}
+                    </button>
+                  ) : null}
+                  {run && area.status !== "completed" ? (
+                    <button type="button" className="text-action danger-action" onClick={() => onForceReleaseArea(area.id, run.id)}>
+                      {copy(language, "Freigeben", "Force release")}
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+          {collection.areas.filter((area) => area.status !== "archived").length === 0 ? (
+            <p className="empty-state">{copy(language, "Noch keine Collection Areas.", "No collection areas yet.")}</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="collection-admin-section">
+        <div className="collection-section-heading">
+          <div>
+            <span className="eyebrow">QR</span>
+            <h2>{copy(language, "Temporärer Sammlerzugang", "Temporary collector access")}</h2>
+          </div>
+        </div>
+        {accessUrl ? (
+          <div className="collection-qr">
+            <QRCodeSVG value={accessUrl} size={176} includeMargin />
+            <code>{accessUrl}</code>
+            <div className="collection-button-row">
+              <button type="button" className="secondary-action" onClick={copyUrl}>{copy(language, "Link kopieren", "Copy link")}</button>
+              <button type="button" className="text-action" onClick={createQr} disabled={busy}>{copy(language, "Neu erstellen", "Create new")}</button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="primary-action" onClick={createQr} disabled={busy}>
+            {copy(language, "QR-Zugang erstellen", "Create QR access")}
+          </button>
+        )}
+      </div>
+
+      <div className="collection-admin-section">
+        <div className="collection-section-heading">
+          <div>
+            <span className="eyebrow">{copy(language, "Zugänge", "Access")}</span>
+            <h2>{copy(language, "Aktive Geräte", "Active devices")}</h2>
+          </div>
+          <button type="button" className="text-action" onClick={() => void refreshCollectors()}>{copy(language, "Aktualisieren", "Refresh")}</button>
+        </div>
+        <div className="collection-collector-list">
+          {collectors.length === 0 ? (
+            <p className="empty-state">{copy(language, "Noch kein Gerät verbunden.", "No device connected yet.")}</p>
+          ) : collectors.map((collector) => (
+            <article className="collection-collector-row" key={collector.id}>
+              <div>
+                <strong>{collector.label}</strong>
+                <small>{collector.revokedAt ? copy(language, "widerrufen", "revoked") : copy(language, "aktiv", "active")}</small>
+              </div>
+              {!collector.revokedAt ? (
+                <button type="button" className="text-action danger-action" onClick={() => void revokeCollector(collector.id)} disabled={busy}>
+                  {copy(language, "Widerrufen", "Revoke")}
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      </div>
+
+      {message ? <p className="collection-message" role="status">{message}</p> : null}
+    </section>
+  );
+}

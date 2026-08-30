@@ -3,6 +3,7 @@ import {
   getCampaignRevision,
   loadCampaignSnapshot,
   replaceCampaignSnapshot,
+  hasCollectionSchema,
   StoredSnapshotError,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
@@ -22,6 +23,19 @@ import {
   type AccessContext,
   type AccessRole,
 } from "./access.ts";
+import {
+  clearCollectionSessionCookie,
+  createCollectionAccessLink,
+  isCollectionSchemaError,
+  listCollectionAccessLinks,
+  listCollectionCollectors,
+  redeemCollectionAccess,
+  resolveCollectionAccess,
+  revokeCollectionCollector,
+  revokeCollectionSession,
+  collectionSessionCookie,
+} from "./collectionAccess.ts";
+import { collectionSnapshotOrEmpty } from "../src/domain/collection.ts";
 import { authorizeSnapshotWrite } from "./authorization.ts";
 import { createRecoveredAdminAccess, operatorSecretMatches } from "./operatorRecovery.ts";
 import { handleCampaignMutation } from "./mutationHandler.ts";
@@ -83,6 +97,36 @@ function campaignRoute(pathname: string) {
     campaignId,
     resource: match[2] as "snapshot" | "version",
   };
+}
+
+
+function collectionSnapshotRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/collection\/snapshot$/);
+  if (!match) return null;
+  try {
+    return parseCampaignId(decodeURIComponent(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+function collectionAccessRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/collection\/access\/(redeem|current|logout)$/);
+  return match ? match[1] : null;
+}
+
+function collectionManagementRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/collection\/(access|collectors)(?:\/([^/]+))?$/);
+  if (!match) return null;
+  try {
+    const campaignId = parseCampaignId(decodeURIComponent(match[1]));
+    const resource = match[2] as "access" | "collectors";
+    const id = match[3] ? decodeURIComponent(match[3]) : null;
+    if (!campaignId || (id && !/^[A-Za-z0-9._:-]{1,200}$/.test(id))) return null;
+    return { campaignId, resource, id };
+  } catch {
+    return null;
+  }
 }
 
 function mutationRoute(pathname: string) {
@@ -148,6 +192,8 @@ function publicAccess(access: AccessContext) {
     role: access.role,
     teamId: access.teamId,
     label: access.label,
+    collectorId: access.collectorId ?? null,
+    collectionAccessId: access.collectionAccessId ?? null,
   };
 }
 
@@ -171,6 +217,95 @@ async function requireAccess(
     };
   }
   return { ok: true as const, access };
+}
+
+
+async function requireCollectionReadAccess(
+  db: D1DatabaseLike,
+  request: Request,
+  campaignId: string,
+) {
+  const normal = await resolveAccess(db, request, campaignId);
+  if (normal) {
+    if (normal.role === "field-group-member") {
+      return {
+        ok: false as const,
+        response: errorResponse(403, "collection_scope_forbidden", "Dieser Zugriff ist nicht für Collection freigeschaltet."),
+      };
+    }
+    return { ok: true as const, access: normal };
+  }
+  const collector = await resolveCollectionAccess(db, request, campaignId);
+  if (!collector) {
+    return {
+      ok: false as const,
+      response: errorResponse(401, "access_required", "Gültiger Collection-Zugriff ist erforderlich."),
+    };
+  }
+  return { ok: true as const, access: collector };
+}
+
+async function requireMutationAccess(
+  db: D1DatabaseLike,
+  request: Request,
+  campaignId: string,
+) {
+  const normal = await resolveAccess(db, request, campaignId);
+  if (normal) return { ok: true as const, access: normal };
+  const collector = await resolveCollectionAccess(db, request, campaignId);
+  if (!collector) {
+    return {
+      ok: false as const,
+      response: errorResponse(401, "access_required", "Gültiger Campaign-Zugriff ist erforderlich."),
+    };
+  }
+  return { ok: true as const, access: collector };
+}
+
+async function getCollectionSnapshot(db: D1DatabaseLike, campaignId: string) {
+  if (!(await hasCollectionSchema(db))) {
+    return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+  }
+  const snapshot = await loadCampaignSnapshot(db, campaignId);
+  if (!snapshot) return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+  const validation = validateCampaignSnapshot(snapshot, campaignId);
+  if (!validation.valid) return errorResponse(500, "stored_snapshot_invalid", "Der gespeicherte Collection-Stand ist ungültig.");
+  return json({
+    ...validation.snapshot,
+    teams: [],
+    areas: [],
+    tasks: [],
+    houseTasks: [],
+    collection: collectionSnapshotOrEmpty(validation.snapshot.collection),
+  }, { headers: { etag: "\\"" + campaignId + ":" + snapshot.revision + ":collection\\"" } });
+}
+
+async function manageCollection(
+  request: Request,
+  db: D1DatabaseLike,
+  campaignId: string,
+  resource: "access" | "collectors",
+  id: string | null,
+) {
+  const auth = await requireAccess(db, request, campaignId, ["admin"]);
+  if (!auth.ok) return auth.response;
+  if (resource === "access" && request.method === "POST" && !id) {
+    const result = await createCollectionAccessLink(db, campaignId);
+    return json(result, { status: 201 });
+  }
+  if (resource === "access" && request.method === "GET" && !id) {
+    return json({ links: await listCollectionAccessLinks(db, campaignId) });
+  }
+  if (resource === "collectors" && request.method === "GET" && !id) {
+    return json({ collectors: await listCollectionCollectors(db, campaignId) });
+  }
+  if (resource === "collectors" && request.method === "DELETE" && id) {
+    if (!(await revokeCollectionCollector(db, campaignId, id))) {
+      return errorResponse(404, "collector_not_found", "Collection-Helfer wurde nicht gefunden.");
+    }
+    return json({ ok: true });
+  }
+  return errorResponse(405, "method_not_allowed", "Collection-Management-Methode nicht erlaubt.");
 }
 
 async function getSnapshot(db: D1DatabaseLike, campaignId: string) {
@@ -238,6 +373,14 @@ async function putSnapshot(
 
   const previous = await loadCampaignSnapshot(db, campaignId);
   if (!previous) return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+
+  if (JSON.stringify(previous.collection ?? null) !== JSON.stringify(validation.snapshot.collection ?? null)) {
+    return errorResponse(
+      400,
+      "collection_mutation_required",
+      "Collection-Änderungen müssen über den Collection-Mutationspfad gespeichert werden.",
+    );
+  }
 
   const authorization = authorizeSnapshotWrite(access, previous, validation.snapshot);
   if (!authorization.allowed) {
@@ -520,6 +663,51 @@ export default {
     }
     const db = env.DB;
 
+
+    if (db) {
+      const collectionAccess = collectionAccessRoute(url.pathname);
+      if (collectionAccess === "redeem" && request.method === "POST") {
+        const parsed = await readJsonBody(request);
+        if (!parsed.ok) return parsed.response;
+        if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+          return errorResponse(400, "invalid_request", "Collection Token ist ungültig.");
+        }
+        const body = parsed.value as Record<string, unknown>;
+        const campaignId = typeof body.campaignId === "string" ? parseCampaignId(body.campaignId) : null;
+        const token = typeof body.token === "string" ? body.token : "";
+        if (!campaignId || !token) {
+          return errorResponse(400, "invalid_request", "Campaign und Collection Token sind erforderlich.");
+        }
+        try {
+          const redeemed = await redeemCollectionAccess(db, campaignId, token);
+          if (!redeemed) return errorResponse(401, "invalid_collection_token", "Collection-QR ist ungültig oder widerrufen.");
+          return json(
+            { access: publicAccess(redeemed.access) },
+            { headers: { "set-cookie": collectionSessionCookie(redeemed.sessionSecret) } },
+          );
+        } catch (error) {
+          if (isCollectionSchemaError(error)) {
+            return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+          }
+          return errorResponse(500, "internal_error", "Collection-Zugang konnte nicht eingelöst werden.");
+        }
+      }
+      if (collectionAccess === "current" && request.method === "GET") {
+        const campaignId = parseCampaignId(url.searchParams.get("campaign") ?? "");
+        if (!campaignId) return errorResponse(400, "invalid_campaign", "Campaign-ID ist ungültig.");
+        if (!(await hasCollectionSchema(db))) {
+          return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+        }
+        const access = await resolveCollectionAccess(db, request, campaignId);
+        if (!access) return errorResponse(401, "access_required", "Gültiger Collection-Zugriff ist erforderlich.");
+        return json({ access: publicAccess(access) });
+      }
+      if (collectionAccess === "logout" && request.method === "POST") {
+        await revokeCollectionSession(db, request);
+        return json({ ok: true }, { headers: { "set-cookie": clearCollectionSessionCookie() } });
+      }
+    }
+
     if (db) {
       const commentsResponse = await handleCommentsApi(request, db);
       if (commentsResponse) return commentsResponse;
@@ -627,6 +815,24 @@ export default {
     }
 
     if (db) {
+      const collectionManagement = collectionManagementRoute(url.pathname);
+      if (collectionManagement) {
+        try {
+          return await manageCollection(
+            request,
+            db,
+            collectionManagement.campaignId,
+            collectionManagement.resource,
+            collectionManagement.id,
+          );
+        } catch (error) {
+          if (isCollectionSchemaError(error)) {
+            return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+          }
+          return errorResponse(500, "internal_error", "Collection-Management ist fehlgeschlagen.");
+        }
+      }
+
       const accessManagement = accessRoute(url.pathname);
       if (accessManagement) {
         try {
@@ -649,7 +855,7 @@ export default {
     const mutationCampaignId = mutationRoute(url.pathname);
     if (mutationCampaignId && db) {
       try {
-        const auth = await requireAccess(db, request, mutationCampaignId);
+        const auth = await requireMutationAccess(db, request, mutationCampaignId);
         if (!auth.ok) return auth.response;
         return await handleCampaignMutation(request, db, mutationCampaignId, auth.access);
       } catch (error) {
@@ -657,6 +863,27 @@ export default {
           return errorResponse(500, "stored_snapshot_invalid", error.message);
         }
         return errorResponse(500, "internal_error", "Mutation konnte nicht verarbeitet werden.");
+      }
+    }
+
+
+    const collectionCampaignId = collectionSnapshotRoute(url.pathname);
+    if (collectionCampaignId && db) {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "Für Collection-Snapshots ist nur GET erlaubt.");
+      }
+      try {
+        const auth = await requireCollectionReadAccess(db, request, collectionCampaignId);
+        if (!auth.ok) return auth.response;
+        return await getCollectionSnapshot(db, collectionCampaignId);
+      } catch (error) {
+        if (isCollectionSchemaError(error)) {
+          return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+        }
+        if (error instanceof StoredSnapshotError) {
+          return errorResponse(500, "stored_snapshot_invalid", error.message);
+        }
+        return errorResponse(500, "internal_error", "Collection-Daten konnten nicht geladen werden.");
       }
     }
 

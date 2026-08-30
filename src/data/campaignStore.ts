@@ -2,6 +2,12 @@ import {
   CampaignApiError,
   accessTokenFromUrl,
   buildCampaignAccessUrl,
+  collectionAccessTokenFromUrl,
+  collectionModeFromUrl,
+  fetchCollectionSnapshot,
+  fetchCurrentCollectionAccess,
+  redeemCollectionAccess,
+  removeCollectionAccessTokenFromUrl,
   campaignIdFromUrl,
   createCampaignSnapshot,
   fetchCampaignSnapshot,
@@ -285,16 +291,20 @@ function parseSnapshot(raw: string | null): CampaignSnapshot | null {
   }
 }
 
+function localStorageKey(key: string) {
+  return collectionModeFromUrl() ? key + ":collection" : key;
+}
+
 function writeLocalSnapshot(snapshot: CampaignSnapshot) {
   if (typeof window === "undefined") return null;
   const serialized = JSON.stringify(snapshot);
   try {
-    window.localStorage.setItem(STORAGE_KEY, serialized);
+    window.localStorage.setItem(localStorageKey(STORAGE_KEY), serialized);
   } catch {
     return "Lokales Speichern ist fehlgeschlagen. Bitte diese Seite noch nicht neu laden.";
   }
   try {
-    window.localStorage.setItem(BACKUP_STORAGE_KEY, serialized);
+    window.localStorage.setItem(localStorageKey(BACKUP_STORAGE_KEY), serialized);
   } catch {
     return "Gespeichert, aber die lokale Sicherheitskopie konnte nicht aktualisiert werden.";
   }
@@ -407,7 +417,9 @@ async function finalizeQueueIfPossible(campaignId: string) {
   }
 
   try {
-    const canonical = await fetchCampaignSnapshot(campaignId);
+    const canonical = collectionModeFromUrl()
+      ? await fetchCollectionSnapshot(campaignId)
+      : await fetchCampaignSnapshot(campaignId);
     applyServerSnapshot(canonical);
     emit({ syncState: "saved", pendingCount: 0 });
   } catch (error) {
@@ -573,7 +585,7 @@ async function recoverLegacyOptimisticSnapshot(
   local: CampaignSnapshot,
   server: CampaignSnapshot,
 ) {
-  if (syncRuntime.access?.role === "viewer") return false;
+  if (syncRuntime.access?.role === "viewer" || collectionModeFromUrl()) return false;
   if (local.revision <= server.revision || sameSnapshotContent(local, server)) return false;
 
   try {
@@ -598,7 +610,9 @@ async function recoverLegacyOptimisticSnapshot(
 }
 
 async function loadServerForAuthenticatedCampaign(targetCampaignId: string) {
-  const serverSnapshot = await fetchCampaignSnapshot(targetCampaignId);
+  const serverSnapshot = collectionModeFromUrl()
+    ? await fetchCollectionSnapshot(targetCampaignId)
+    : await fetchCampaignSnapshot(targetCampaignId);
   const latestLocal = syncRuntime.latestLocal;
   syncRuntime.serverRevision = serverSnapshot.revision;
   syncRuntime.lastServer = serverSnapshot;
@@ -686,6 +700,24 @@ async function initializeSharedPersistence() {
   setCampaignIdInUrl(targetCampaignId);
 
   try {
+    const collectionToken = collectionAccessTokenFromUrl();
+    if (collectionModeFromUrl()) {
+      try {
+        if (collectionToken) {
+          setAccess(await redeemCollectionAccess(targetCampaignId, collectionToken));
+          removeCollectionAccessTokenFromUrl();
+        } else {
+          setAccess(await fetchCurrentCollectionAccess(targetCampaignId));
+        }
+        await loadServerForAuthenticatedCampaign(targetCampaignId);
+        return;
+      } catch (error) {
+        if (!isAccessError(error)) throw error;
+        syncRuntime.initialized = false;
+        setAccess(null);
+        return;
+      }
+    }
     const fragmentToken = accessTokenFromUrl();
     if (fragmentToken) {
       try {
@@ -776,11 +808,20 @@ async function refreshFromServer(manual: boolean) {
         setRefreshState("available");
         return;
       }
-      applyServerSnapshot(await fetchCampaignSnapshot(syncRuntime.targetCampaignId));
+      applyServerSnapshot(
+        await (collectionModeFromUrl()
+          ? fetchCollectionSnapshot(syncRuntime.targetCampaignId)
+          : fetchCampaignSnapshot(syncRuntime.targetCampaignId)),
+      );
       if (manual) setRefreshState("current", true);
       return;
     }
 
+    if (collectionModeFromUrl()) {
+      applyServerSnapshot(await fetchCollectionSnapshot(syncRuntime.targetCampaignId));
+      if (manual) setRefreshState("current", true);
+      return;
+    }
     const revision = await fetchCampaignVersion(syncRuntime.targetCampaignId);
     if (revision <= syncRuntime.serverRevision) {
       if (manual) setRefreshState("current", true);
@@ -865,9 +906,9 @@ export function loadCampaignSnapshot(): CampaignLoadResult {
   }
 
   try {
-    const primaryRaw = window.localStorage.getItem(STORAGE_KEY);
-    const backupRaw = window.localStorage.getItem(BACKUP_STORAGE_KEY);
-    const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    const primaryRaw = window.localStorage.getItem(localStorageKey(STORAGE_KEY));
+    const backupRaw = window.localStorage.getItem(localStorageKey(BACKUP_STORAGE_KEY));
+    const legacyRaw = window.localStorage.getItem(localStorageKey(LEGACY_STORAGE_KEY));
     const primary = parseSnapshot(primaryRaw);
     if (primary) {
       loadedExistingSnapshot = true;
@@ -980,7 +1021,7 @@ export function saveCampaignConflictSnapshot(snapshot: CampaignSnapshot) {
   if (typeof window === "undefined") return false;
   try {
     window.localStorage.setItem(
-      CONFLICT_STORAGE_KEY,
+      localStorageKey(CONFLICT_STORAGE_KEY),
       JSON.stringify({ savedAt: new Date().toISOString(), snapshot }),
     );
     return true;

@@ -2,6 +2,7 @@ import type { CampaignMutation } from "../src/domain/mutations.ts";
 import {
   getCampaignRevision,
   hasHouseTasksTable,
+  hasCollectionSchema,
   hasTaskSourceProvenanceColumn,
   type D1DatabaseLike,
   type D1PreparedStatement,
@@ -9,6 +10,7 @@ import {
 import type { MutationDomainEvent } from "./mutationEvents.ts";
 import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 import type { AutomationExecution } from "./automationRuntime.ts";
+import { collectionMutationStatements } from "./collectionMutationRepository.ts";
 
 export type AppliedMutation = {
   mutationType: CampaignMutation["type"];
@@ -352,6 +354,8 @@ function mutationStatement(
           mutation.campaignId,
           writeToken,
         );
+    default:
+      throw new Error("collection_mutation_statement_not_supported_here");
   }
 }
 
@@ -595,6 +599,15 @@ export async function persistCampaignMutation(
     return { ok: true, revision: existing.appliedRevision, alreadyApplied: true };
   }
 
+  const collectionMutation = mutation.type.startsWith("collection.");
+  if (collectionMutation && !(await hasCollectionSchema(db))) {
+    return {
+      ok: false,
+      currentRevision: fromRevision,
+      reason: "schema_migration_required",
+    };
+  }
+
   const houseMutation = mutation.type.startsWith("house.");
   if (houseMutation && !(await hasHouseTasksTable(db))) {
     return {
@@ -644,9 +657,12 @@ export async function persistCampaignMutation(
       writeToken,
     );
 
+  const domainStatements = collectionMutation
+    ? collectionMutationStatements(db, mutation as import("../src/domain/mutations.ts").CollectionMutation, writeToken)
+    : [mutationStatement(db, mutation, writeToken, hasTaskSource)];
   const statements = [
     claim,
-    mutationStatement(db, mutation, writeToken, hasTaskSource),
+    ...domainStatements,
     ledger,
   ];
   if (domainEvent) {

@@ -101,6 +101,33 @@ export async function handleCampaignMutation(
     return errorResponse(422, "mutation_invalid", validation.message);
   }
   const mutation = validation.mutation;
+  const isCollectionMutation = mutation.type.startsWith("collection.");
+  if (access.role === "collection-collector") {
+    if (!isCollectionMutation || !access.collectorId) {
+      return errorResponse(
+        403,
+        "collection_scope_forbidden",
+        "Collection-Helfer dürfen nur Collection-Mutationen ausführen.",
+      );
+    }
+    const actorId =
+      typeof (mutation.payload as Record<string, unknown>).collectorId === "string"
+        ? (mutation.payload as Record<string, unknown>).collectorId
+        : null;
+    if (actorId !== access.collectorId) {
+      return errorResponse(
+        403,
+        "collection_actor_forbidden",
+        "Die Mutation gehört nicht zu diesem Collection-Gerät.",
+      );
+    }
+  } else if (isCollectionMutation && access.role !== "admin") {
+    return errorResponse(
+      403,
+      "collection_scope_forbidden",
+      "Nur Admins oder Collection-Helfer dürfen Collection ändern.",
+    );
+  }
 
   if (
     access.role === "field-group-member" &&

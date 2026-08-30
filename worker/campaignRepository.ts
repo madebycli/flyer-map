@@ -1,4 +1,5 @@
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
+import type { CollectionArea, CollectionMainArea, CollectionRun, CollectionRunMember, CollectionSnapshot } from "../src/domain/collection.ts";
 
 export type D1RunResult = {
   success: boolean;
@@ -63,6 +64,28 @@ type TaskRow = {
   updated_at: string;
 };
 
+
+type CollectionMainAreaRow = {
+  id: string; campaign_id: string; name: string; geometry_json: string;
+  created_at: string; updated_at: string;
+};
+type CollectionAreaRow = {
+  id: string; campaign_id: string; main_area_id: string; name: string;
+  geometry_json: string; color: string; status: CollectionArea["status"];
+  run_id: string | null; claimed_by_collector_id: string | null;
+  claimed_by_label: string | null; completed_at: string | null;
+  created_at: string; updated_at: string;
+};
+type CollectionRunRow = {
+  id: string; campaign_id: string; main_area_id: string; status: CollectionRun["status"];
+  started_at: string; ended_at: string | null; created_by_collector_id: string;
+  area_ids_json: string; created_at: string; updated_at: string;
+};
+type CollectionMemberRow = {
+  id: string; run_id: string; campaign_id: string; collector_id: string;
+  label: string; joined_at: string; left_at: string | null;
+};
+
 type HouseTaskRow = {
   id: string;
   campaign_id: string;
@@ -99,6 +122,12 @@ export async function hasTaskSourceProvenanceColumn(db: D1DatabaseLike) {
   return result.results.some((column) => column.name === "source_json");
 }
 
+
+export async function hasCollectionSchema(db: D1DatabaseLike) {
+  const result = await db.prepare("PRAGMA table_info(collection_main_areas)").all<{ name: string }>();
+  return result.results.some((column) => column.name === "id");
+}
+
 export async function hasHouseTasksTable(db: D1DatabaseLike) {
   const result = await db
     .prepare("PRAGMA table_info(house_tasks)")
@@ -122,9 +151,10 @@ export async function loadCampaignSnapshot(
 
   if (!campaign) return null;
 
-  const [hasTaskSource, hasHouses] = await Promise.all([
+  const [hasTaskSource, hasHouses, hasCollection] = await Promise.all([
     hasTaskSourceProvenanceColumn(db),
     hasHouseTasksTable(db),
+    hasCollectionSchema(db),
   ]);
   const taskSelect = hasTaskSource
     ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
@@ -138,6 +168,24 @@ export async function loadCampaignSnapshot(
         .bind(campaignId)
         .all<HouseTaskRow>()
     : Promise.resolve({ results: [] as HouseTaskRow[] });
+
+
+  const collectionPromise = hasCollection
+    ? Promise.all([
+        db.prepare(
+          "SELECT id, campaign_id, name, geometry_json, created_at, updated_at FROM collection_main_areas WHERE campaign_id = ?",
+        ).bind(campaignId).all<CollectionMainAreaRow>(),
+        db.prepare(
+          "SELECT id, campaign_id, main_area_id, name, geometry_json, color, status, run_id, claimed_by_collector_id, claimed_by_label, completed_at, created_at, updated_at FROM collection_areas WHERE campaign_id = ? ORDER BY created_at, id",
+        ).bind(campaignId).all<CollectionAreaRow>(),
+        db.prepare(
+          "SELECT id, campaign_id, main_area_id, status, started_at, ended_at, created_by_collector_id, area_ids_json, created_at, updated_at FROM collection_runs WHERE campaign_id = ? ORDER BY started_at, id",
+        ).bind(campaignId).all<CollectionRunRow>(),
+        db.prepare(
+          "SELECT id, run_id, campaign_id, collector_id, label, joined_at, left_at FROM collection_run_members WHERE campaign_id = ? ORDER BY joined_at, id",
+        ).bind(campaignId).all<CollectionMemberRow>(),
+      ])
+    : Promise.resolve(null);
 
   const [teamResult, areaResult, taskResult, houseResult] = await Promise.all([
     db
@@ -155,6 +203,67 @@ export async function loadCampaignSnapshot(
     db.prepare(taskSelect).bind(campaignId).all<TaskRow>(),
     housePromise,
   ]);
+  const collectionResult = await collectionPromise;
+
+
+    const collection = collectionResult
+      ? (() => {
+          const [mainResult, areaResult, runResult, memberResult] = collectionResult;
+          const main = mainResult.results[0];
+          const areas = areaResult.results.map((area): CollectionArea => ({
+            id: area.id,
+            campaignId: area.campaign_id,
+            mainAreaId: area.main_area_id,
+            name: area.name,
+            geometry: JSON.parse(area.geometry_json),
+            color: area.color,
+            status: area.status,
+            runId: area.run_id,
+            claimedByCollectorId: area.claimed_by_collector_id,
+            claimedByLabel: area.claimed_by_label,
+            completedAt: area.completed_at,
+            createdAt: area.created_at,
+            updatedAt: area.updated_at,
+          }));
+          const membersByRun = new Map<string, CollectionMemberRow[]>();
+          for (const member of memberResult.results) {
+            const members = membersByRun.get(member.run_id) ?? [];
+            members.push(member);
+            membersByRun.set(member.run_id, members);
+          }
+          return {
+            mainArea: main ? ({
+              id: main.id,
+              campaignId: main.campaign_id,
+              name: main.name,
+              geometry: JSON.parse(main.geometry_json),
+              createdAt: main.created_at,
+              updatedAt: main.updated_at,
+            } satisfies CollectionMainArea) : null,
+            areas,
+            runs: runResult.results.map((run): CollectionRun => ({
+              id: run.id,
+              campaignId: run.campaign_id,
+              mainAreaId: run.main_area_id,
+              status: run.status,
+              startedAt: run.started_at,
+              endedAt: run.ended_at,
+              createdByCollectorId: run.created_by_collector_id,
+              areaIds: areas.filter((area) => area.runId === run.id).map((area) => area.id),
+              members: (membersByRun.get(run.id) ?? []).map((member): CollectionRunMember => ({
+                id: member.id,
+                runId: member.run_id,
+                collectorId: member.collector_id,
+                label: member.label,
+                joinedAt: member.joined_at,
+                leftAt: member.left_at,
+              })),
+              createdAt: run.created_at,
+              updatedAt: run.updated_at,
+            })),
+          } satisfies CollectionSnapshot;
+        })()
+      : null;
 
   const hasDefaultMapView =
     campaign.map_center_lng !== null &&
@@ -227,6 +336,7 @@ export async function loadCampaignSnapshot(
             })),
           }
         : {}),
+      ...(hasCollection ? { collection: collection as CollectionSnapshot } : {}),
     };
   } catch {
     throw new StoredSnapshotError("Stored campaign geometry or Task provenance is not valid JSON.");

@@ -195,11 +195,38 @@ function authorizeFieldGroupMemberSnapshot(
   return { allowed: true };
 }
 
+
+function distributionSnapshotUnchanged(previous: CampaignSnapshot, next: CampaignSnapshot) {
+  const { collection: _previousCollection, revision: _previousRevision, campaign: previousCampaign,
+    ...previousRest } = previous;
+  const { collection: _nextCollection, revision: _nextRevision, campaign: nextCampaign,
+    ...nextRest } = next;
+  const { updatedAt: _previousUpdatedAt, ...previousCampaignRest } = previousCampaign;
+  const { updatedAt: _nextUpdatedAt, ...nextCampaignRest } = nextCampaign;
+  return same(
+    { ...previousRest, campaign: previousCampaignRest },
+    { ...nextRest, campaign: nextCampaignRest },
+  );
+}
+
 export function authorizeSnapshotWrite(
   access: AccessContext,
   previous: CampaignSnapshot,
   next: CampaignSnapshot,
 ): WriteAuthorization {
+  const collectionChanged = !same(previous.collection ?? null, next.collection ?? null);
+  if (access.campaignId !== previous.campaign.id || access.campaignId !== next.campaign.id) {
+    return { allowed: false, reason: "credential_campaign_mismatch" };
+  }
+  if (access.role === "collection-collector") {
+    if (!collectionChanged || !distributionSnapshotUnchanged(previous, next)) {
+      return { allowed: false, reason: "collection_only_write_required" };
+    }
+    return { allowed: true };
+  }
+  if (collectionChanged && access.role !== "admin") {
+    return { allowed: false, reason: "collection_scope_forbidden" };
+  }
   if (access.campaignId !== previous.campaign.id || access.campaignId !== next.campaign.id) {
     return { allowed: false, reason: "credential_campaign_mismatch" };
   }
