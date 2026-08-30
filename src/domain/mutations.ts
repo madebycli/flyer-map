@@ -967,7 +967,6 @@ export function applyCampaignMutation(
       };
       break;
     }
-    }
   }
 
   return {
