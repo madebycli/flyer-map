@@ -3,7 +3,7 @@ import {
   isPickupPosition,
   isPickupSource,
   type PickupTask,
-} from "./pickup";
+} from "./pickup.ts";
 
 export type CollectionAreaStatus =
   | "open"
