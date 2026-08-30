@@ -7,7 +7,7 @@ import {
   type CommentItem,
   type CommentTargetType,
 } from "../data/commentsApi.ts";
-import type { AccessInfo } from "../data/campaignApi.ts";
+import { CampaignApiError, type AccessInfo } from "../data/campaignApi.ts";
 import type { Language } from "../i18n.ts";
 import { CommentsPanel, type CommentListItem } from "./CommentsPanel.tsx";
 import "./comments-context-panel.css";
@@ -24,6 +24,23 @@ type Props = {
 };
 
 function errorMessage(error: unknown, language: Language) {
+  if (error instanceof CampaignApiError) {
+    if (error.code === "comments_schema_unavailable") {
+      return language === "de"
+        ? "Kommentare sind vorbereitet, aber Migration 0008 ist noch nicht ausgerollt."
+        : "Comments are prepared, but migration 0008 has not been rolled out yet.";
+    }
+    if (error.status === 401) {
+      return language === "de" ? "Für Kommentare fehlt ein gültiger Zugriff." : "Valid access is required for comments.";
+    }
+    if (error.status === 403) {
+      return language === "de" ? "Dieser Kommentar-Kontext liegt außerhalb deines Zugriffs." : "This comment context is outside your access scope.";
+    }
+    if (error.code === "network_error") {
+      return language === "de" ? "Kommentare sind gerade nicht erreichbar." : "Comments are currently unavailable.";
+    }
+    return error.message;
+  }
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
     return error.message;
   }
@@ -223,6 +240,9 @@ export function CommentsContextPanel({
         requestFailed: "The action could not be saved.",
       };
 
+  const initialReadFailed = Boolean(error && !loading && serverCanCreate === null && comments.length === 0);
+  const canCreate = online && !loading && !initialReadFailed && (serverCanCreate ?? canCreateFallback);
+
   return (
     <section className="comments-context-panel" aria-label={labels.title}>
       {error ? (
@@ -231,15 +251,17 @@ export function CommentsContextPanel({
           {online ? <button type="button" onClick={retry}>{language === "de" ? "Erneut versuchen" : "Retry"}</button> : null}
         </div>
       ) : null}
-      <CommentsPanel
-        targetLabel={targetLabel}
-        comments={comments.map(toPanelComment)}
-        canCreate={online && (serverCanCreate ?? canCreateFallback)}
-        onSubmit={submit}
-        onEdit={edit}
-        onDelete={remove}
-        labels={labels}
-      />
+      {!initialReadFailed ? (
+        <CommentsPanel
+          targetLabel={targetLabel}
+          comments={comments.map(toPanelComment)}
+          canCreate={canCreate}
+          onSubmit={submit}
+          onEdit={edit}
+          onDelete={remove}
+          labels={labels}
+        />
+      ) : null}
       {nextCursor ? (
         <button className="comments-load-more" type="button" disabled={!online || loadingMore} onClick={() => void loadMore()}>
           {loadingMore ? (language === "de" ? "Weitere Kommentare werden geladen …" : "Loading more comments …") : (language === "de" ? "Weitere Kommentare" : "Load more comments")}
