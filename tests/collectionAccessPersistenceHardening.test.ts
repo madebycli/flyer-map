@@ -181,8 +181,76 @@ test("collection.run.complete-area persists through the real SQLite schema and a
   assert.equal(area.status, "completed");
   assert.equal(area.completed_at, mutation.createdAt);
 
+  const claim = db.raw.prepare(
+    "SELECT action, collector_id FROM collection_area_claims WHERE area_id = 'collection_area_one' ORDER BY occurred_at DESC LIMIT 1",
+  ).get() as { action: string; collector_id: string | null };
+  assert.equal(claim.action, "complete");
+  assert.equal(claim.collector_id, "collector_one");
+
   const campaign = db.raw.prepare(
     "SELECT revision FROM campaigns WHERE id = 'campaign_collection'",
   ).get() as { revision: number };
   assert.equal(campaign.revision, 1);
+});
+
+test("collection.run.cancel releases unfinished areas and recomputes persisted run area ids", async () => {
+  const db = database();
+  const stamp = "2026-08-30T14:00:00.000Z";
+  const polygon = JSON.stringify({
+    type: "Polygon",
+    coordinates: [[[10, 50], [10.01, 50], [10.01, 50.01], [10, 50]]],
+  });
+
+  db.raw.prepare(
+    `INSERT INTO collection_main_areas
+       (id, campaign_id, name, geometry_json, created_at, updated_at)
+     VALUES ('collection_main_cancel', 'campaign_collection', 'Main', ?, ?, ?)`,
+  ).run(polygon, stamp, stamp);
+  db.raw.prepare(
+    `INSERT INTO collection_runs
+       (id, campaign_id, main_area_id, status, started_at, ended_at,
+        created_by_collector_id, area_ids_json, created_at, updated_at)
+     VALUES ('collection_run_cancel', 'campaign_collection', 'collection_main_cancel', 'active', ?, NULL,
+             'collector_one', '["collection_area_done","collection_area_open"]', ?, ?)`,
+  ).run(stamp, stamp, stamp);
+  db.raw.prepare(
+    `INSERT INTO collection_areas
+       (id, campaign_id, main_area_id, name, geometry_json, color, status,
+        run_id, claimed_by_collector_id, claimed_by_label, completed_at, created_at, updated_at)
+     VALUES
+       ('collection_area_done', 'campaign_collection', 'collection_main_cancel', 'Fertig', ?, '#2563eb',
+        'completed', 'collection_run_cancel', 'collector_one', 'Nutzer 1', ?, ?, ?),
+       ('collection_area_open', 'campaign_collection', 'collection_main_cancel', 'Offen', ?, '#16a34a',
+        'claimed', 'collection_run_cancel', 'collector_one', 'Nutzer 1', NULL, ?, ?)`,
+  ).run(polygon, stamp, stamp, stamp, polygon, stamp, stamp);
+
+  const mutation: CollectionMutation = {
+    id: "mutation_collection_cancel_one",
+    campaignId: "campaign_collection",
+    type: "collection.run.cancel",
+    payload: { runId: "collection_run_cancel", collectorId: "collector_one" },
+    baseRevision: 0,
+    createdAt: "2026-08-30T14:05:00.000Z",
+  };
+
+  const result = await persistCampaignMutation(db, mutation, 0);
+  assert.deepEqual(result, { ok: true, revision: 1, alreadyApplied: false });
+
+  const run = db.raw.prepare(
+    "SELECT status, area_ids_json FROM collection_runs WHERE id = 'collection_run_cancel'",
+  ).get() as { status: string; area_ids_json: string };
+  assert.equal(run.status, "cancelled");
+  assert.deepEqual(JSON.parse(run.area_ids_json), ["collection_area_done"]);
+
+  const released = db.raw.prepare(
+    "SELECT status, run_id FROM collection_areas WHERE id = 'collection_area_open'",
+  ).get() as { status: string; run_id: string | null };
+  assert.equal(released.status, "open");
+  assert.equal(released.run_id, null);
+
+  const completed = db.raw.prepare(
+    "SELECT status, run_id FROM collection_areas WHERE id = 'collection_area_done'",
+  ).get() as { status: string; run_id: string | null };
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.run_id, "collection_run_cancel");
 });
