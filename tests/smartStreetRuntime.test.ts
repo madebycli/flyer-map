@@ -40,13 +40,15 @@ test("MapLibre receives real candidate clicks and renders candidate, preview, an
 test("Smart Street save keeps App identity and uses the durable mutation path", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const diff = await readFile("src/domain/mutationDiff.ts", "utf8");
+  const baseDiff = await readFile("src/domain/mutationDiffBase.ts", "utf8");
   const store = await readFile("src/data/campaignStore.ts", "utf8");
 
   assert.match(app, /taskId: createId\("task"\)/u);
   assert.match(app, /sourceIds: smartStreetSelectedSourceIds/u);
   assert.match(app, /commitSnapshot\(\(current\) => \(\{ \.\.\.current, tasks: \[\.\.\.current\.tasks, task\] \}\)\)/u);
   assert.match(app, /smartStreetSaveInFlight\.current/u);
-  assert.match(diff, /\.\.\.\(task\.source \? \{ source: task\.source \} : \{\}\)/u);
+  assert.match(diff, /mutationDiffBase\.ts/u);
+  assert.match(baseDiff, /\.\.\.\(task\.source \? \{ source: task\.source \} : \{\}\)/u);
   assert.match(store, /postCampaignMutation\(campaignId, record\.mutation\)/u);
 });
 

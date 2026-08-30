@@ -74,12 +74,14 @@ test("Smart House review renders only selected rows and bounded street shortcuts
 test("house batch mutation stays on the existing M5 queue and preserves App identity", async () => {
   const mutations = await readFile("src/domain/mutations.ts", "utf8");
   const diff = await readFile("src/domain/mutationDiff.ts", "utf8");
+  const baseDiff = await readFile("src/domain/mutationDiffBase.ts", "utf8");
   const repository = await readFile("worker/mutationRepository.ts", "utf8");
   const store = await readFile("src/data/campaignStore.ts", "utf8");
 
   assert.match(mutations, /"house\.create-batch"/u);
   assert.match(mutations, /HOUSE_CREATE_BATCH_MAX = 50/u);
-  assert.match(diff, /type: "house\.create-batch"/u);
+  assert.match(diff, /mutationDiffBase\.ts/u);
+  assert.match(baseDiff, /type: "house\.create-batch"/u);
   assert.match(repository, /FROM json_each\(\?\)/u);
   assert.match(repository, /INSERT INTO house_tasks/u);
   assert.match(store, /postCampaignMutation\(campaignId, record\.mutation\)/u);
