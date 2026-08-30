@@ -66,6 +66,10 @@ export type CollectionSnapshot = {
   mainArea: CollectionMainArea | null;
   areas: CollectionArea[];
   runs: CollectionRun[];
+  pickups?: PickupTask[];
+};
+
+export type NormalizedCollectionSnapshot = Omit<CollectionSnapshot, "pickups"> & {
   pickups: PickupTask[];
 };
 
@@ -88,17 +92,17 @@ export const COLLECTION_AREA_STATUS_COLORS: Record<CollectionAreaStatus, string>
   archived: "#94a3b8",
 };
 
-export function createEmptyCollectionSnapshot(): CollectionSnapshot {
+export function createEmptyCollectionSnapshot(): NormalizedCollectionSnapshot {
   return { mainArea: null, areas: [], runs: [], pickups: [] };
 }
 
-export function collectionSnapshotOrEmpty(value: CollectionSnapshot | undefined | null): CollectionSnapshot {
+export function collectionSnapshotOrEmpty(
+  value: CollectionSnapshot | undefined | null,
+): NormalizedCollectionSnapshot {
   if (!value) return createEmptyCollectionSnapshot();
   return {
     ...value,
-    pickups: Array.isArray((value as CollectionSnapshot & { pickups?: PickupTask[] }).pickups)
-      ? (value as CollectionSnapshot & { pickups?: PickupTask[] }).pickups ?? []
-      : [],
+    pickups: Array.isArray(value.pickups) ? value.pickups : [],
   };
 }
 
