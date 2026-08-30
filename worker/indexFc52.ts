@@ -1,6 +1,10 @@
 import baseWorker from "./indexM55.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import {
+  augmentPickupCapabilitiesResponse,
+  handlePickupCapabilitiesApi,
+} from "./pickupCapabilities.ts";
+import {
   hasPickupReadSchema,
   loadPickupTasks,
   StoredPickupError,
@@ -104,11 +108,18 @@ export async function augmentPickupSnapshotResponse(
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (env.DB) {
+      const capabilityResponse = await handlePickupCapabilitiesApi(request, env.DB);
+      if (capabilityResponse) return capabilityResponse;
+    }
+
     const searchResponse = await handlePickupSearch(request, env);
     if (searchResponse) return searchResponse;
 
-    const response = await baseWorker.fetch(request, env);
-    if (request.method !== "GET" || !env.DB) return response;
+    let response = await baseWorker.fetch(request, env);
+    if (!env.DB) return response;
+    response = await augmentPickupCapabilitiesResponse(request, response, env.DB);
+    if (request.method !== "GET") return response;
     const campaignId = snapshotCampaignId(new URL(request.url).pathname);
     if (!campaignId) return response;
     return augmentPickupSnapshotResponse(response, env.DB, campaignId);
