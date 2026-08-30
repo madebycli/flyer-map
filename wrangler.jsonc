@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "flyer-map",
-  "main": "./worker/indexM55.ts",
+  "main": "./worker/indexFc52.ts",
   "compatibility_date": "2026-08-01",
   "assets": {
     "binding": "ASSETS",
