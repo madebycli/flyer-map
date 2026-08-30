@@ -1,14 +1,67 @@
+import type { LngLat } from "./campaign";
+
 export type PickupStatus = "open" | "collected" | "unavailable" | "needs-follow-up";
 
-export type PickupDraft = {
+export type PickupSource =
+  | {
+      kind: "osm-address";
+      provider: "geoapify";
+      placeId: string | null;
+      osmType: string | null;
+      osmId: string | null;
+    }
+  | {
+      kind: "distribution-house";
+      taskId: string;
+    };
+
+export type PickupActor = {
+  kind: "campaign-grant" | "collection-collector";
+  ref: string | null;
+};
+
+export type PickupTask = {
+  id: string;
+  campaignId: string;
+  areaId: string | null;
+  title: string;
   address: string;
-  note: string;
-  sourceBuildingId: string | null;
+  description: string;
+  position: LngLat;
+  status: PickupStatus;
+  archivedAt: string | null;
+  assignedRunIds: string[];
+  assignedCollectorIds: string[];
+  source: PickupSource | null;
+  createdBy: PickupActor;
+  updatedBy: PickupActor;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PickupDraft = {
+  title: string;
+  address: string;
+  description: string;
+  position: LngLat | null;
+  areaId: string | null;
+  source: PickupSource | null;
 };
 
 export type PickupDraftValidation =
-  | { valid: true; value: PickupDraft }
-  | { valid: false; reason: "address-required" | "address-too-long" | "note-too-long" | "source-id-invalid" };
+  | { valid: true; value: PickupDraft & { position: LngLat } }
+  | {
+      valid: false;
+      reason:
+        | "title-required"
+        | "title-too-long"
+        | "address-required"
+        | "address-too-long"
+        | "description-too-long"
+        | "position-required"
+        | "position-invalid"
+        | "source-invalid";
+    };
 
 export type PickupProgressSummary = {
   denominator: "pickup-tasks";
@@ -25,25 +78,62 @@ function normalizeText(value: string) {
   return value.trim().replace(/\s+/gu, " ");
 }
 
-function validSourceBuildingId(value: string | null) {
-  return value === null || /^way\/\d+$/u.test(value);
+export function isPickupPosition(value: unknown): value is LngLat {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    typeof value[0] === "number" &&
+    Number.isFinite(value[0]) &&
+    value[0] >= -180 &&
+    value[0] <= 180 &&
+    typeof value[1] === "number" &&
+    Number.isFinite(value[1]) &&
+    value[1] >= -90 &&
+    value[1] <= 90
+  );
+}
+
+export function isPickupSource(value: unknown): value is PickupSource | null {
+  if (value === null) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const source = value as Record<string, unknown>;
+  if (source.kind === "distribution-house") {
+    return (
+      typeof source.taskId === "string" &&
+      /^task_[A-Za-z0-9._:-]+$/u.test(source.taskId) &&
+      Object.keys(source).length === 2
+    );
+  }
+  if (source.kind !== "osm-address" || source.provider !== "geoapify") return false;
+  return (
+    (source.placeId === null || typeof source.placeId === "string") &&
+    (source.osmType === null || typeof source.osmType === "string") &&
+    (source.osmId === null || typeof source.osmId === "string") &&
+    Object.keys(source).sort().join(",") === "kind,osmId,osmType,placeId,provider"
+  );
 }
 
 export function validatePickupDraft(input: PickupDraft): PickupDraftValidation {
+  const title = normalizeText(input.title);
   const address = normalizeText(input.address);
-  const note = input.note.trim();
+  const description = input.description.trim();
+  if (!title) return { valid: false, reason: "title-required" };
+  if (title.length > 160) return { valid: false, reason: "title-too-long" };
   if (!address) return { valid: false, reason: "address-required" };
-  if (address.length > 240) return { valid: false, reason: "address-too-long" };
-  if (note.length > 2_000) return { valid: false, reason: "note-too-long" };
-  if (!validSourceBuildingId(input.sourceBuildingId)) {
-    return { valid: false, reason: "source-id-invalid" };
-  }
+  if (address.length > 320) return { valid: false, reason: "address-too-long" };
+  if (description.length > 4_000) return { valid: false, reason: "description-too-long" };
+  if (input.position === null) return { valid: false, reason: "position-required" };
+  if (!isPickupPosition(input.position)) return { valid: false, reason: "position-invalid" };
+  if (!isPickupSource(input.source)) return { valid: false, reason: "source-invalid" };
   return {
     valid: true,
     value: {
+      title,
       address,
-      note,
-      sourceBuildingId: input.sourceBuildingId,
+      description,
+      position: input.position,
+      areaId: input.areaId,
+      source: input.source,
     },
   };
 }
@@ -66,10 +156,7 @@ export function summarizePickupStatuses(statuses: PickupStatus[]): PickupProgres
   };
 }
 
-export function pickupStatusTransition(
-  current: PickupStatus,
-  next: PickupStatus,
-) {
+export function pickupStatusTransition(current: PickupStatus, next: PickupStatus) {
   if (current === next) return current;
   return next;
 }
