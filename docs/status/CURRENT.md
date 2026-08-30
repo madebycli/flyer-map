@@ -34,11 +34,11 @@ Abgeschlossen:
 - Plan 019 Smart Street Runtime;
 - Plan 020 Smart House Runtime.
 
-Aktiver Entwicklungsstack vor diesem Planner-Update:
+Aktiver Entwicklungsstack nach dem Read-/Schema-Hardening-Checkpoint:
 - Branch `plan-feature-complete-platform`;
 - Draft PR #72 gegen `ui-app-launcher-sheet`;
-- verifizierter Ausgangs-Head `af417ff8ebb92d0e8b471feb1861089fc4795f13`;
-- CI #713 auf exakt diesem Ausgangs-Head vollständig grün;
+- verifizierter Hardening-Code-Head `fea8f2aef1ca7d61ccb017a6b0c1e386dd8af961`;
+- CI #721 auf exakt diesem Hardening-Code-Head vollständig grün;
 - PR #72 offen, Draft, mergeable und nicht gemerged.
 
 Jeder nachfolgende Dokumentations- oder Runtime-Commit verschiebt den Head. GitHub bleibt für den jeweils exakten Head und CI maßgeblich.
@@ -58,6 +58,24 @@ Auf PR #72 sind umgesetzt:
 - persistierter House-Polygon-Renderer mit House-Auswahl und House-Session-Highlight.
 
 Der redundante Launcher-Eintrag `Karte` ist entfernt. X und Tap außerhalb schließen das Launcher-Sheet weiterhin.
+
+## Read-/Schema-Hardening checkpoint
+
+Bekannte vorbereitete, aber noch nicht remote angewendete Schemas müssen in der normalen UI als eigener Fehlerzustand erscheinen und dürfen nicht gleichzeitig wie echte leere Daten wirken.
+
+Der aktuelle Hardening-Slice setzt dafür um:
+- gemeinsames kleines `resolveRemoteReadState()` für `loading`, `error`, `empty` und `data`;
+- `Einsätze`, `Aktivität` und `Automationen` zeigen bei einem initialen Read-Fehler keinen falschen Empty-State mehr;
+- bereits geladene Daten bleiben bei einem späteren transienten Read-Fehler sichtbar;
+- Kommentare behandeln `comments_schema_unavailable` explizit als Migration-0008-Rolloutzustand;
+- der Kommentar-Composer bleibt vor einem ersten erfolgreichen Read bei Schema-/Access-Fehlern fail-closed;
+- Migration 0008 wird mit Fake-D1 ohne Comment-/Event-Schema als spezifisches 503 simuliert;
+- bestehende Fake-/SQLite-Tests decken 0006, 0007 und 0009 bereits spezifisch ab;
+- bestehende Smart-Street-/House-Persistenztests decken 0004/0005 als `schema_migration_required` ohne Revision-Claim ab.
+
+CI #721 bestätigt auf dem Hardening-Code-Head Tests, TypeScript, Dependency Audit und Production Build. Keine Migration wurde remote angewendet und kein manueller Deploy ausgeführt.
+
+Der Context Graph benötigt für diesen Slice keine neue Topologie: `plan-smart-house-runtime`, `collaboration`, `data`, `offline-sync`, `security`, `ux` und `quality` decken Preview-/Schema-Gate-Hardening bereits ab.
 
 ## FC4 checkpoint
 
