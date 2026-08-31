@@ -1,4 +1,4 @@
-version: 13
+version: 14
 
 entrypoints:
   always:
@@ -22,6 +22,7 @@ routing_rules:
   - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
+  - FC5.2 Pickup runtime is complete through visibility, search/composer, MapLibre rendering, comments, assignment, edit, soft archive, archive review and normal Admin/Collector product flows; route new runtime work to FC5.3 Road Sections, separated statistics, actor highlight/attribution and compensating revert while keeping real-device acceptance separate
 
 nodes:
   - id: product
@@ -294,8 +295,8 @@ nodes:
     path: docs/plans/active/021-collection-pickup-persistence.md
     type: plan
     status: active
-    topics: [feature-complete, FC5, collection, pickup, persistence, collection-main-area, collection-areas, collection-runs, collector-access, qr, road-sections, osm-address-search, special-address, comments, actor-attribution, revert, m5, field-sessions, maplibre, statistics, security]
-    load_when: [Collection/Pickup planning, Pickup persistence, FC5, collection mode, pickup tasks, Collection QR, Collection Areas, Collection Runs, Collection Road Sections, special-address search, actor revert]
+    topics: [feature-complete, FC5, collection, pickup, persistence, collection-main-area, collection-areas, collection-runs, collector-access, qr, road-sections, osm-address-search, special-address, pickup-edit, pickup-archive, pickup-assignment, comments, actor-attribution, revert, m5, field-sessions, maplibre, statistics, security]
+    load_when: [Collection/Pickup planning, Pickup persistence, FC5, collection mode, pickup tasks, Collection QR, Collection Areas, Collection Runs, Collection Road Sections, special-address search, Pickup lifecycle, actor revert]
 
   - id: house-renderer-runtime
     path: src/map/houseRenderer.ts
@@ -308,7 +309,7 @@ nodes:
     path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
     type: onboarding
     status: current
-    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime, collection, FC5, collection-access, collection-runs]
+    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime, collection, FC5, FC5.2-complete, FC5.3, collection-access, collection-runs]
     load_when: [fresh AI session, planner chat, verify current Plan 017 state, continue current Plan 017 development, continue FC5]
 
   - id: prompt-house-polygon-renderer
@@ -343,8 +344,8 @@ nodes:
     path: src/domain/pickup.ts
     type: code
     status: current
-    topics: [collection, pickup, status, address, statistics]
-    load_when: [Pickup domain foundation, Pickup status, Collection persistence planning, FC5.2]
+    topics: [collection, pickup, status, address, edit, archive, assignment, comments, statistics]
+    load_when: [Pickup domain/runtime, Pickup status, Pickup lifecycle, Collection persistence planning, FC5.2 history, FC5.3]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
