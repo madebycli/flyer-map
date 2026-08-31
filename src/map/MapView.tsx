@@ -1890,8 +1890,8 @@ export function MapView({
 
       const persistCamera = () => {
         // A live GeolocateControl follow move is transient device state. Keep
-        // it inside MapLibre, but never expose or write a GPS-derived camera
-        // center through the personal camera state/store.
+        // it inside MapLibre, but never expose or write a GPS-derived camera center
+        // through the personal camera state/store.
         if (geolocateFollowRef.current) {
           return;
         }
