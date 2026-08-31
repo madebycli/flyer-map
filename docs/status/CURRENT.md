@@ -111,16 +111,15 @@ Prepared only und nicht remote angewendet:
 
 Bekannte fehlende Schemas müssen spezifisch fail-closed behandelt werden. Keine Migration wird als Diagnosewerkzeug remote angewendet.
 
-## Context Graph
+## Context Graph / Living Docs
 
-`docs/context-map.yaml` benötigt für FC5.2 keine neue Topologie. Der vorhandene Knoten `plan-collection-pickup-persistence` routet bereits zu Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams und Quality. Der Lifecycle-Abschluss führt keine neue Architekturdomäne ein.
+`docs/context-map.yaml` bleibt bei derselben FC5-Topologie und routet den abgeschlossenen FC5.2-Lifecycle jetzt ausdrücklich weiter zu FC5.3. Plan 021, Roadmap, Current State und `CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md` dokumentieren den realen FC5.2-Produktflow. Der Lifecycle-Abschluss führt keine neue Architekturdomäne ein.
 
-## Noch offen / Immediate next
+## Noch offen / Next
 
-1. Living-Docs-Head nach den Abschlussdokumenten auf exakt seinem SHA durch CI verifizieren.
-2. PR #72 offen, Draft, mergeable und unmerged halten.
-3. Reale Android-Chromium-/iPhone-Safari-Abnahme für FC4/FC5 als offenes Hardware-Gate führen, solange sie nicht tatsächlich durchgeführt wurde.
-4. Nächster neuer Runtime-Scope ist FC5.3: First-Class Collection Road Sections.
-5. Danach getrennte Collection/Pickup Stats, Actor Attribution/Highlight und compensating Revert serverautorisiert umsetzen.
-6. Migrationen 0007/0008 nicht historisch verändern, keine Remote-Migration anwenden, keinen manuellen Deploy ausführen.
-7. Kein Merge oder Ready-for-Review ohne expliziten Auftrag.
+1. Reale Android-Chromium-/iPhone-Safari-Abnahme für FC4/FC5 bleibt ein offenes Hardware-Gate, solange sie nicht tatsächlich durchgeführt wurde.
+2. Nächster neuer Runtime-Scope ist FC5.3: First-Class Collection Road Sections.
+3. Danach getrennte Collection/Pickup Stats, Actor Attribution/Highlight und compensating Revert serverautorisiert umsetzen.
+4. Vor jeder neuen Runtime-Änderung exakten GitHub-Head, PR #72 und CI erneut verifizieren.
+5. Migrationen 0007/0008 nicht historisch verändern, keine Remote-Migration anwenden, keinen manuellen Deploy ausführen.
+6. Kein Merge oder Ready-for-Review ohne expliziten Auftrag.
