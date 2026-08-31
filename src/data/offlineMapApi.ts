@@ -1,6 +1,7 @@
 import {
   OFFLINE_MAP_RADIUS_METERS,
   isOfflineMapPackage,
+  type OfflineMapDataKind,
   type OfflineMapLngLat,
   type OfflineMapPackage,
 } from "../domain/offlineMap.ts";
@@ -42,6 +43,7 @@ export async function fetchMapDataPackage(
   campaignId: string,
   center: OfflineMapLngLat,
   radiusMeters = OFFLINE_MAP_RADIUS_METERS,
+  kind: OfflineMapDataKind = "all",
 ): Promise<OfflineMapPackage> {
   let response: Response;
   try {
@@ -52,7 +54,7 @@ export async function fetchMapDataPackage(
         cache: "no-store",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ center, radiusMeters }),
+        body: JSON.stringify({ center, radiusMeters, kind }),
       },
     );
   } catch {
@@ -92,5 +94,5 @@ export function downloadOfflineMapPackage(
   center: OfflineMapLngLat,
   radiusMeters = OFFLINE_MAP_RADIUS_METERS,
 ) {
-  return fetchMapDataPackage(campaignId, center, radiusMeters);
+  return fetchMapDataPackage(campaignId, center, radiusMeters, "all");
 }

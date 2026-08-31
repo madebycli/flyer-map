@@ -14,7 +14,7 @@ This file records the reviewed experimental slices collected by the release inte
 
 - Website only: no native app, installable PWA, Service Worker, Web App Manifest or Background Sync.
 - MapLibre GL JS remains pinned at 5.7.1.
-- CARTO remains online-only; no CARTO/OSMF bulk tile cache.
+- OpenFreeMap Bright remains online-only; no OpenFreeMap/OSMF bulk tile cache.
 - Prepared OSM working-area data is browser-local in dedicated IndexedDB storage.
 - Worker authorization remains authoritative.
 - Prepared/parameterized D1 SQL only.

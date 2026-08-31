@@ -12,6 +12,11 @@
   font-weight: 700;
 }
 
+.smart-map-action {
+  display: grid;
+  gap: 0.2rem;
+}
+
 .smart-street-sheet {
   max-height: min(76dvh, 42rem);
   overflow: auto;

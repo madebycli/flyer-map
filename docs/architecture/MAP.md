@@ -12,10 +12,10 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-came
 ## Current renderer baseline
 
 MapLibre GL JS **5.7.1** owns the persistent map rendering pipeline:
-- OpenFreeMap Liberty vector basemap;
+- OpenFreeMap Bright vector basemap;
 - camera movement, zoom and bearing;
 - navigation/compass controls;
-- one-shot browser geolocation display;
+- live/refining browser geolocation display and follow;
 - saved Verteil-Flyer Areas through one GeoJSON source plus Fill/Outline layers;
 - saved Street Tasks through one GeoJSON source plus a small fixed set of Line layers;
 - saved House Tasks through one GeoJSON source plus a small fixed set of Fill/Line layers.
@@ -44,24 +44,24 @@ Green TypeScript/CI alone is insufficient for a map-runtime upgrade.
 
 ## Basemap
 
-Primary online provider is OpenFreeMap Liberty:
+Primary online provider is OpenFreeMap Bright:
 
-`https://tiles.openfreemap.org/styles/liberty`
+`https://tiles.openfreemap.org/styles/bright`
 
-The provider remains replaceable. Liberty requires no application API key, account or secret. MapLibre remains pinned to 5.7.1.
+The provider remains replaceable. Bright requires no application API key, account or secret. MapLibre remains pinned to 5.7.1.
 
-The loaded Liberty contract uses vector source `openmaptiles`. Standard house numbers are enabled by default through exactly one app-owned symbol layer:
+The loaded Bright contract uses vector source `openmaptiles`. Standard house numbers are enabled by default through exactly one app-owned symbol layer:
 
 - layer id `vf-basemap-housenumbers`;
 - source `openmaptiles`;
 - source-layer `housenumber`;
 - text field `housenumber`;
-- `Noto Sans Regular` from the loaded Liberty glyph contract;
-- minimum zoom 16, approximately 11 px text, light halo and normal collision handling.
+- `Noto Sans Regular` from the loaded Bright glyph contract;
+- minimum zoom 16, zoom-scaled text from 12.5 px through 16 px, a light halo and normal collision handling.
 
-Provider house-number layers for the same source/source-layer are removed before the app-owned layer is added, so labels are never duplicated. If Liberty no longer provides `openmaptiles`, `housenumber` or the required Noto Sans glyph contract, do not silently substitute another schema. Stop and re-evaluate the provider contract.
+Provider house-number layers for the same source/source-layer are removed before the app-owned layer is added, so labels are never duplicated. Any provider `fill-extrusion` layer is also removed before application layers are installed, keeping the map deliberately 2D. If Bright no longer provides `openmaptiles`, `housenumber` or the required Noto Sans glyph contract, do not silently substitute another schema. Stop and re-evaluate the provider contract.
 
-The online Liberty style is not the deliberate offline-download payload. ADR-0012 continues to define the separate prepared raw-OSM package path. OpenStreetMap Foundation raster/vector tile services must not be bulk-prefetched for this feature.
+The online Bright style is not the deliberate offline-download payload. ADR-0012 continues to define the separate prepared raw-OSM package path. OpenStreetMap Foundation raster/vector tile services must not be bulk-prefetched for this feature.
 
 ## Saved application GeoJSON
 
@@ -72,16 +72,16 @@ Two persistent sources exist for the current field renderer:
 - `vf-streets` - all saved Street Tasks.
 - `vf-houses` - all saved House Tasks.
 
-MapLibre first loads Liberty. On the single `style.load` event, Verteil-Flyer installs its fixed application sources/layers once and immediately synchronizes current data through the existing `sync*()` functions. Data updates do not recreate the Map instance or style.
+MapLibre first loads Bright. On the single `style.load` event, Verteil-Flyer installs its fixed application sources/layers once and immediately synchronizes current data through the existing `sync*()` functions. Data updates do not recreate the Map instance or style.
 
-Normal context layers are inserted below the first Liberty symbol/label layer:
+Normal context layers are inserted below the first Bright symbol/label layer:
 - prepared offline roads/buildings;
 - Areas;
 - normal Houses;
 - normal Streets;
 - Collection Main/Areas.
 
-Interaction overlays stay above Liberty labels:
+Interaction overlays stay above Bright labels:
 - Street/House selection and Session Highlight;
 - Pickup markers and selection;
 - Smart Street/House candidates and selections;
@@ -195,7 +195,7 @@ Initial direction:
 - no Service Worker/PWA requirement;
 - no R2/PMTiles pipeline in v1.
 
-The first local offline style should remain deliberately small rather than attempting to reproduce the complete Liberty visual basemap. Required OSM attribution must remain visible.
+The first local offline style should remain deliberately small rather than attempting to reproduce the complete Bright visual basemap. Required OSM attribution must remain visible.
 
 ## Smart Street + House constraints
 
@@ -222,9 +222,9 @@ Remote synchronization must never reset the personal camera.
 
 ## Rotation and geolocation
 
-Normal bearing/rotation stays enabled with a compass. Active SVG geometry must remain aligned at arbitrary bearing.
+Normal bearing/rotation stays enabled with a compass while pitch is fixed at zero (`maxPitch: 0`, touch pitch disabled). Active SVG geometry must remain aligned at arbitrary bearing.
 
-Geolocation is user-initiated and one-shot. GPS coordinates are not persisted as route history or statistics.
+The MapLibre `GeolocateControl` uses high accuracy, a 30-second maximum age, a 6-second timeout, an approximately zoom-18 fit bound and `trackUserLocation: true`. Its official active/passive behavior provides live fixes and active camera follow while leaving the location point updating after a deliberate map pan. A second location-button activation recenters and resumes the official active lock. GPS coordinates remain transient client state and are never persisted as route history or statistics.
 
 ## Diagnostics/performance acceptance
 

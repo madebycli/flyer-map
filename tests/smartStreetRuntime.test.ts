@@ -57,9 +57,12 @@ test("Smart Street UI keeps editing permissions at the existing Area boundary", 
 
   assert.match(app, /const startSmartStreetSelection = async/u);
   assert.match(app, /if \(!selectedArea \|\| !canEditSelectedArea\) return/u);
-  assert.match(app, /const pkg = await ensureSmartMapPackage\(\)/u);
+  assert.match(app, /const pkg = await ensureSmartMapPackage\("roads"\)/u);
   assert.match(app, /fetchMapDataPackage/u);
-  assert.match(app, /disabled=\{smartMapLoading\}/u);
+  assert.match(app, /smartRoadMapPackage/u);
+  assert.match(app, /request\.radiusMeters,\n\s*kind/u);
+  assert.match(app, /smartStreetLoading/u);
+  assert.match(app, /aria-busy=\{smartStreetLoading\}/u);
   assert.match(app, /!canEditSelectedArea/u);
   assert.match(app, /setSmartStreetMessage\(t\(language, "smartStreetDisconnected"\)\)/u);
 });

@@ -9,7 +9,7 @@ last_updated: 2026-08-31
 
 ## Baseline
 
-Verteil-Flyer bleibt eine mobile-first normale Website mit React, TypeScript, Vite, MapLibre GL JS 5.7.1, OpenFreeMap Liberty, Cloudflare Workers und D1. M4 Access/Session und die resiliente M5 Mutation Queue bleiben die gemeinsame Grundlage. Keine native App, keine installierbare PWA, kein Service Worker, keine Background Sync API und keine kontinuierliche GPS-Historie.
+Verteil-Flyer bleibt eine mobile-first normale Website mit React, TypeScript, Vite, MapLibre GL JS 5.7.1, OpenFreeMap Bright, Cloudflare Workers und D1. M4 Access/Session und die resiliente M5 Mutation Queue bleiben die gemeinsame Grundlage. Keine native App, keine installierbare PWA, kein Service Worker, keine Background Sync API und keine kontinuierliche GPS-Historie.
 
 Repository und GitHub sind Source of Truth. Aktiver Entwicklungsbranch ist `plan-feature-complete-platform`, Draft PR #72 läuft gegen `ui-app-launcher-sheet`. Nicht mergen, nicht Ready setzen, keinen neuen Branch/PR erstellen und keine Migration oder manuellen Deploy remote ausführen.
 
@@ -17,19 +17,20 @@ Repository und GitHub sind Source of Truth. Aktiver Entwicklungsbranch ist `plan
 
 Plan 017 bleibt die übergeordnete Delivery-Linie. Abgeschlossen sind Plan 018 House Polygon Renderer, Plan 019 Smart Street Runtime, Plan 020 Smart House Runtime, FC5.1 Collection Access/Areas/Runs und der vollständige FC5.2-Runtime-Scope. Plan 021 bleibt für FC5.3 sowie die noch offenen realen Geräte-/Touch-Gates aktiv.
 
-Der Basemap-/Smart-Data-/UI-Hardening-Slice aus Plan 022 ist abgeschlossen: CARTO wurde vollständig durch OpenFreeMap Liberty ersetzt, Hausnummern sind standardmäßig aktiv, Smart Street/House sind online-first und das vorbereitete Offline-Paket ist ausdrücklich optional.
+Der Basemap-/Smart-Data-/UI-Hardening-Slice aus Plan 022 ist abgeschlossen: CARTO wurde vollständig durch OpenFreeMap Bright ersetzt, Provider-Extrusionen werden entfernt und die Karte bleibt 2D, Hausnummern sind standardmäßig größer aktiv, Smart Street/House sind online-first mit getrennten roads/buildings-Paketen und das vorbereitete Offline-Paket ist ausdrücklich optional. MapLibre Geolocate liefert live/refining Fixes und folgt im offiziellen Active-Lock, ohne GPS-Historie.
 
 Weiter offen aus FC4/FC5 sind reale Android-Chromium- und iPhone-Safari-Abnahmen, Touch-Dichte und Dense-Mobile-Verhalten. Cloud-Browser ohne WebGL und CI ersetzen diese Hardware-Gates nicht.
 
 ## Basemap, Smart Data und mobile Area-UI
 
-- OpenFreeMap Liberty wird als externer Style ohne API-Key/Secret geladen;
-- `vf-basemap-housenumbers` verwendet den verifizierten Liberty-Vertrag `openmaptiles` / `housenumber` mit Noto Sans ab Zoom 16;
-- normale Offline-/Area-/House-/Street-/Collection-Layer liegen unter Liberty-Labels;
+- OpenFreeMap Bright wird als externer Style ohne API-Key/Secret geladen;
+- `vf-basemap-housenumbers` verwendet den verifizierten Bright-Vertrag `openmaptiles` / `housenumber` mit Noto Sans ab Zoom 16 und zoom-skalierter größerer Beschriftung;
+- Provider-`fill-extrusion`-Layer werden vor der App-Installation entfernt; Kartenpitch bleibt 0;
+- normale Offline-/Area-/House-/Street-/Collection-Layer liegen unter Bright-Labels;
 - Selection, Session Highlight, Pickup und Smart-Layer bleiben oberhalb der Basemap-Labels;
 - App Sources/Layers werden einmal auf `style.load` installiert, Datenänderungen laufen weiter über getrennte `setData()`-/Filter-Syncs;
 - passende gespeicherte Offline-Pakete haben für Smart Street/House Priorität;
-- online wird sonst ein passendes ephemeres Paket für das ausgewählte Area geladen, ohne IndexedDB-Write;
+- online wird sonst ein passendes ephemeres Paket für das ausgewählte Area geladen, ohne IndexedDB-Write; Smart Street fragt ausschließlich `roads`, Smart House ausschließlich `buildings` an;
 - Offline ohne passendes Paket zeigt genau einen gemeinsamen Hinweis;
 - Areas außerhalb vollständiger 3-km-Coverage werden ehrlich abgelehnt, manueller Street-Fallback bleibt verfügbar;
 - Comment-Schema-, 401- und 403-Fehler zeigen keinen Retry, Netzwerk- und temporäre 5xx-Fehler schon;

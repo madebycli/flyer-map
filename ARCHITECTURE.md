@@ -8,9 +8,9 @@ Verteil-Flyer is a client-heavy mobile-first website backed by a small Cloudflar
 Mobile/Desktop Browser
   ├─ React website shell
   ├─ MapLibre GL JS 5.7.1
-  │   ├─ CARTO Voyager Retina raster basemap
+  │   ├─ OpenFreeMap Bright vector basemap
   │   ├─ camera / zoom / rotation / compass
-  │   ├─ one-shot local geolocation display
+  │   ├─ live/refining local geolocation and follow
   │   ├─ saved Area GeoJSON source + fill/outline layers
   │   └─ saved Street Task GeoJSON source + fixed status layers
   ├─ SVG active-input overlay
@@ -41,7 +41,7 @@ The website is not a native app and not an installable PWA. There is no service 
 
 The browser owns:
 - presentation and field interaction;
-- map camera and local one-shot geolocation display;
+- map camera and local live/refining geolocation display;
 - immediate optimistic UI state;
 - active unsaved draw/edit geometry;
 - personal camera/language preferences;
@@ -77,6 +77,7 @@ Persistent saved geometry is rendered by MapLibre, not by a per-frame React/SVG/
 
 MapLibre owns:
 - basemap;
+- 2D camera pitch and live/refining geolocation follow;
 - camera/navigation/geolocation control;
 - saved Areas;
 - saved Street Tasks;

@@ -1,4 +1,4 @@
-version: 15
+version: 16
 
 entrypoints:
   always:
@@ -72,7 +72,7 @@ nodes:
     path: docs/architecture/MAP.md
     type: architecture
     status: accepted
-    topics: [map, maplibre, openfreemap, liberty, housenumber, geojson, renderer, osm, offline-map, streets, houses]
+    topics: [map, maplibre, openfreemap, bright, liberty, housenumber, geojson, renderer, osm, offline-map, streets, houses, gps-follow]
     load_when: [map rendering, geometry interaction, performance, road/building data, session map highlighting, House polygon renderer, Collection areas, Collection roads, Pickup markers]
 
   - id: data
@@ -296,7 +296,7 @@ nodes:
     path: docs/plans/completed/022-openfreemap-smartdata-ui-hardening.md
     type: plan
     status: completed
-    topics: [openfreemap, liberty, basemap, housenumber, style-load, smart-map, online-first, offline-optional, comments, retry, mobile-area-sheet]
+    topics: [openfreemap, bright, liberty, basemap, housenumber, style-load, smart-map, online-first, offline-optional, roads, buildings, gps-follow, comments, retry, mobile-area-sheet]
     load_when: [OpenFreeMap basemap, house number labels, Smart Street online data, Smart House online data, optional offline map, Comment retry UI, mobile Area sheet]
 
   - id: plan-collection-pickup-persistence

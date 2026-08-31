@@ -4,14 +4,14 @@ type: plan
 status: completed
 last_updated: 2026-08-31
 related: [plan-feature-complete-platform, plan-offline-map, plan-smart-street-runtime, plan-smart-house-runtime, map, ux, collaboration, quality]
-source_of_truth_for: [openfreemap-basemap-slice, smart-map-online-first, comment-retry-ui, mobile-area-sheet-hardening]
+source_of_truth_for: [openfreemap-basemap-slice, bright-2d-basemap, geolocate-live-follow, smart-map-kind-split, comment-retry-ui, mobile-area-sheet-hardening]
 ---
 
 # Plan 022: OpenFreeMap, Smart Data und UI-Hardening
 
 ## Ziel
 
-CARTO vollständig durch OpenFreeMap Liberty ersetzen, Hausnummern standardmäßig sichtbar machen und Smart Street/House ohne verpflichtenden Offline-Download online nutzbar machen. Gleichzeitig werden bekannte Comment-Retry- und mobile Area-Sheet-Probleme mechanisch behoben.
+CARTO vollständig durch OpenFreeMap Bright ersetzen, Hausnummern standardmäßig sichtbar machen und Smart Street/House ohne verpflichtenden Offline-Download online nutzbar machen. Gleichzeitig werden bekannte Comment-Retry- und mobile Area-Sheet-Probleme mechanisch behoben.
 
 ## Baseline / Source of Truth
 
@@ -25,13 +25,13 @@ Ausgangsstand:
 - MapLibre 5.7.1 bleibt unverändert;
 - Remote-D1 bleibt dokumentiert nur bis Migration 0003.
 
-Der Live-Vertrag von `https://tiles.openfreemap.org/styles/liberty` wurde vor der Umsetzung geprüft: Source `openmaptiles`, Source-Layer `housenumber` und `Noto Sans Regular` sind vorhanden. Liberty hatte bei der Prüfung keinen eigenen Hausnummern-Layer, der mit dem App-Layer kollidiert.
+Der Live-Vertrag von `https://tiles.openfreemap.org/styles/bright` wurde vor der Umsetzung geprüft: Source `openmaptiles` und `Noto Sans Regular` sind vorhanden. Bright hatte bei der Prüfung keinen eigenen Hausnummern-Layer, der mit dem App-Layer kollidiert.
 
 ## Architektur
 
 ### Basemap und Layer
 
-MapLibre lädt Liberty direkt. Auf `style.load` werden alle festen Verteil-Flyer-Sources genau einmal installiert. Normale Kontextgeometrie liegt unter dem ersten Liberty-Symbol-Layer, Interaktions- und Pickup-Layer liegen oberhalb der Basemap-Labels.
+MapLibre lädt Bright direkt. Auf `style.load` werden alle festen Verteil-Flyer-Sources genau einmal installiert. Provider-`fill-extrusion`-Layer werden vorab entfernt; der Map-Pitch bleibt 0. Normale Kontextgeometrie liegt unter dem ersten Bright-Symbol-Layer, Interaktions- und Pickup-Layer liegen oberhalb der Basemap-Labels.
 
 Ein konstanter Symbol-Layer `vf-basemap-housenumbers` nutzt `openmaptiles` / `housenumber`, Noto Sans, `minzoom` 16 und normale Collision-Erkennung. Provider-Layer für denselben Source-Layer werden vor Installation entfernt.
 
@@ -75,7 +75,7 @@ Primär geändert:
 ## Umsetzungsschritte
 
 1. GitHub-Head, PR und CI verifizieren.
-2. Liberty-Source-, House-Number- und Font-Vertrag live prüfen.
+2. Bright-Source-, House-Number- und Font-Vertrag live prüfen.
 3. CARTO entfernen und App-Layer auf `style.load` installieren.
 4. feste Layer-Reihenfolge inklusive bestehendem Pickup-Renderer sichern.
 5. Map-Data-API in ephemeren Fetch und Settings-Wrapper teilen.
@@ -88,7 +88,7 @@ Primär geändert:
 ## Akzeptanz
 
 - kein CARTO-Runtime-Code;
-- Liberty ohne Secret konfiguriert;
+- Bright ohne Secret konfiguriert;
 - genau ein `vf-basemap-housenumbers`-Layer;
 - Pickup Source/Marker/Selection bleiben erhalten;
 - Smart Street und Smart House laden online ohne gespeichertes Paket;
@@ -101,7 +101,7 @@ Primär geändert:
 
 ## Risiken
 
-- Änderungen am externen Liberty-Schema: fail-fast statt stiller Ersatzquelle.
+- Änderungen am externen Bright-Schema: fail-fast statt stiller Ersatzquelle.
 - Style-Ladezeit: App-Layer erst nach `style.load`, anschließend Sync aus aktuellem `dataRef`.
 - Layer-Regressionsrisiko: feste Quellen/Layers und Pickup-Regressionstests.
 - große Areas: keine Partial-Candidates als vollständig darstellen.
@@ -122,3 +122,16 @@ Primär geändert:
 ## Verifizierter Abschluss
 
 Die lokale Node-Test-Suite ist mit 555 von 555 Tests grün. Typecheck, Dependency Audit, Production Build und `check` werden durch die bestehende GitHub-CI auf dem exakten finalen Branch-Head verifiziert. Eine echte WebGL-, Android- oder iPhone-Abnahme wurde nicht behauptet.
+
+## Nachfolge-Hardening: Bright, Live-Follow und getrennte Smart-Daten
+
+Der anschließende Runtime-Fix hält dieselben Architekturgrenzen ein:
+
+- OpenFreeMap Bright ersetzt Liberty als aktive Basemap;
+- Provider-`fill-extrusion`-Layer werden vor der App-Installation entfernt, `pitch` und `maxPitch` bleiben 0;
+- der kontrollierte Hausnummern-Layer skaliert von 12,5 bis 16 px ab Zoom 16 und behält normale Collision-Erkennung;
+- MapLibre `GeolocateControl` nutzt `trackUserLocation`, High Accuracy, `maximumAge: 30_000`, `timeout: 6_000`, `fitBoundsOptions.maxZoom: 18` und ausschließlich flüchtigen Clientzustand ohne GPS-Historie;
+- der bestehende Worker-Endpunkt akzeptiert `kind: all | roads | buildings`, wobei fehlendes `kind` rückwärtskompatibel `all` bedeutet;
+- Smart Street lädt nur `roads`, Smart House nur `buildings`; beide halten getrennte ephemere Caches, Ladezustände und Fehler-Typen;
+- Settings lädt weiterhin über den Wrapper `all` und schreibt als einziger Pfad in IndexedDB;
+- Ladehinweise stehen direkt an den jeweiligen Smart-Aktionen, Fehler unterscheiden Netzwerk, Timeout, Upstream und Größenlimit, und der manuelle Street-Fallback bleibt verfügbar.

@@ -233,7 +233,7 @@ type MapViewProps = {
 
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
 
-export const OPENFREE_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+export const OPENFREE_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
 export const BASEMAP_VECTOR_SOURCE_ID = "openmaptiles";
 export const BASEMAP_HOUSENUMBER_SOURCE_LAYER = "housenumber";
 export const BASEMAP_HOUSENUMBER_LAYER_ID = "vf-basemap-housenumbers";
@@ -1127,7 +1127,16 @@ function installApplicationMapStyle(map: Map) {
     throw new Error(`OpenFreeMap style source ${BASEMAP_VECTOR_SOURCE_ID} is unavailable.`);
   }
 
-  for (const layer of map.getStyle().layers) {
+  // Bright may ship provider-owned 3D building layers. Remove every
+  // fill-extrusion before installing any application layers so the map stays
+  // deliberately 2D regardless of provider layer ids.
+  for (const layer of [...map.getStyle().layers]) {
+    if (layer.type === "fill-extrusion") {
+      map.removeLayer(layer.id);
+    }
+  }
+
+  for (const layer of [...map.getStyle().layers]) {
     const providerLayer = layer as LayerSpecification & {
       source?: string;
       "source-layer"?: string;
@@ -1145,7 +1154,7 @@ function installApplicationMapStyle(map: Map) {
     (layer) => layer.type === "symbol",
   )?.id;
   if (!firstBasemapSymbolLayerId) {
-    throw new Error("OpenFreeMap Liberty contains no symbol layer insertion point.");
+    throw new Error("OpenFreeMap Bright contains no symbol layer insertion point.");
   }
 
   const applicationStyle = buildApplicationMapStyle();
@@ -1169,14 +1178,23 @@ function installApplicationMapStyle(map: Map) {
         layout: {
           "text-field": ["get", "housenumber"],
           "text-font": ["Noto Sans Regular"],
-          "text-size": 11,
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            16, 12.5,
+            17, 13,
+            18, 14,
+            19, 15,
+            20, 16,
+          ],
           "text-allow-overlap": false,
           "text-ignore-placement": false,
         },
         paint: {
           "text-color": "#625b55",
           "text-halo-color": "rgba(255, 255, 255, 0.9)",
-          "text-halo-width": 1.2,
+          "text-halo-width": 1.4,
           "text-halo-blur": 0.2,
         },
       },
@@ -1648,6 +1666,7 @@ export function MapView({
   const mapRef = useRef<Map | null>(null);
   const cameraSaveTimerRef = useRef<number | null>(null);
   const suppressNextCameraSaveRef = useRef(false);
+  const geolocateFollowRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [offlineContextActive, setOfflineContextActive] = useState(false);
   const offlineMapPackageChangeRef = useRef(onOfflineMapPackageChange);
@@ -1817,6 +1836,10 @@ export function MapView({
         center: initialCamera.center,
         zoom: initialCamera.zoom,
         bearing: initialCamera.bearing,
+        pitch: 0,
+        maxPitch: 0,
+        pitchWithRotate: false,
+        touchPitch: false,
         maxZoom: 20,
         renderWorldCopies: false,
         cancelPendingTileRequestsWhileZooming: false,
@@ -1866,6 +1889,12 @@ export function MapView({
       };
 
       const persistCamera = () => {
+        // A live GeolocateControl follow move is transient device state. Keep
+        // it inside MapLibre, but never expose or write a GPS-derived camera
+        // center through the personal camera state/store.
+        if (geolocateFollowRef.current) {
+          return;
+        }
         if (suppressNextCameraSaveRef.current) {
           suppressNextCameraSaveRef.current = false;
           onCameraChange(cameraFromMap(map));
@@ -2114,15 +2143,40 @@ export function MapView({
       });
 
       map.addControl(new NavigationControl({ showCompass: true, showZoom: true }), "top-right");
-      map.addControl(
-        new GeolocateControl({
-          positionOptions: { enableHighAccuracy: true },
-          trackUserLocation: false,
-          showUserLocation: true,
-          showAccuracyCircle: true,
-        }),
-        "top-right",
-      );
+      const geolocateControl = new GeolocateControl({
+        positionOptions: {
+          enableHighAccuracy: true,
+          maximumAge: 30_000,
+          timeout: 6_000,
+        },
+        fitBoundsOptions: { maxZoom: 18 },
+        trackUserLocation: true,
+        showUserLocation: true,
+        showAccuracyCircle: true,
+      });
+      // These are the official GeolocateControl state events. They only gate
+      // personal-camera persistence; the control retains ownership of live
+      // tracking, active/passive follow and recenter behavior.
+      const markGeolocateFollow = () => {
+        geolocateFollowRef.current = true;
+        if (cameraSaveTimerRef.current !== null) {
+          window.clearTimeout(cameraSaveTimerRef.current);
+          cameraSaveTimerRef.current = null;
+        }
+      };
+      geolocateControl.on("trackuserlocationstart", () => {
+        markGeolocateFollow();
+      });
+      geolocateControl.on("trackuserlocationend", () => {
+        geolocateFollowRef.current = false;
+      });
+      geolocateControl.on("userlocationfocus", () => {
+        markGeolocateFollow();
+      });
+      geolocateControl.on("userlocationlostfocus", () => {
+        geolocateFollowRef.current = false;
+      });
+      map.addControl(geolocateControl, "top-right");
       onCameraChange(initialCamera);
     } catch (cause) {
       console.error("Map initialization failed", cause);
@@ -2135,6 +2189,7 @@ export function MapView({
       if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
+      geolocateFollowRef.current = false;
     };
   }, [campaignId]);
 

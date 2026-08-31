@@ -1,5 +1,6 @@
 export const OFFLINE_MAP_SCHEMA_VERSION = 1 as const;
 export const OFFLINE_MAP_RADIUS_METERS = 3_000;
+export type OfflineMapDataKind = "all" | "roads" | "buildings";
 
 export type OfflineMapLngLat = {
   lat: number;

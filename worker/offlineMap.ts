@@ -4,6 +4,7 @@ import {
   isOfflineMapPackage,
   type OfflineMapBounds,
   type OfflineMapBuildingFeature,
+  type OfflineMapDataKind,
   type OfflineMapPackage,
   type OfflineMapRoadFeature,
 } from "../src/domain/offlineMap.ts";
@@ -67,10 +68,13 @@ type OverpassPayload = {
   };
 };
 
-type ParsedRequest = {
+export type OfflineMapRequestKind = OfflineMapDataKind;
+
+export type ParsedRequest = {
   lat: number;
   lng: number;
   radiusMeters: number;
+  kind: OfflineMapRequestKind;
 };
 
 class OfflineMapRequestError extends Error {
@@ -164,7 +168,19 @@ async function parseRequest(request: Request): Promise<ParsedRequest> {
     );
   }
 
-  return { lat: point.lat, lng: point.lng, radiusMeters: radius };
+  const requestedKind = Object.prototype.hasOwnProperty.call(body, "kind")
+    ? body.kind
+    : "all";
+  if (requestedKind !== "all" && requestedKind !== "roads" && requestedKind !== "buildings") {
+    throw new OfflineMapRequestError(
+      400,
+      "invalid_kind",
+      "Kartendaten-Typ ist ungültig.",
+    );
+  }
+  const kind = requestedKind as OfflineMapRequestKind;
+
+  return { lat: point.lat, lng: point.lng, radiusMeters: radius, kind };
 }
 
 function upstreamUrl(value: string | undefined) {
@@ -195,8 +211,16 @@ export function buildOfflineMapOverpassQuery(input: ParsedRequest) {
   const lat = input.lat.toFixed(6);
   const lng = input.lng.toFixed(6);
   const radius = String(input.radiusMeters);
+  const kind = input.kind ?? "all";
+  const around = `way(around:${radius},${lat},${lng})`;
+  const selectors =
+    kind === "roads"
+      ? [`${around}["highway"];`]
+      : kind === "buildings"
+        ? [`${around}["building"];`]
+        : [`${around}["highway"];`, `${around}["building"];`];
 
-  return `[out:json][timeout:15];\n(\n  way(around:${radius},${lat},${lng})["highway"];\n  way(around:${radius},${lat},${lng})["building"];\n);\nout tags geom qt;`;
+  return `[out:json][timeout:15];\n(\n  ${selectors.join("\n  ")}\n);\nout tags geom qt;`;
 }
 
 function normalizeTags(tags: Record<string, unknown> | undefined) {
@@ -307,16 +331,21 @@ export function normalizeOfflineMapPackage(
 ): OfflineMapPackage {
   const roads: OfflineMapRoadFeature[] = [];
   const buildings: OfflineMapBuildingFeature[] = [];
+  const kind = input.kind ?? "all";
 
   for (const element of Array.isArray(payload.elements) ? payload.elements : []) {
     if (!validWay(element)) continue;
-    const building = normalizeBuilding(element);
-    if (building) {
-      buildings.push(building);
-      continue;
+    if (kind !== "roads") {
+      const building = normalizeBuilding(element);
+      if (building) {
+        buildings.push(building);
+        if (kind === "all") continue;
+      }
     }
-    const road = normalizeRoad(element);
-    if (road) roads.push(road);
+    if (kind !== "buildings") {
+      const road = normalizeRoad(element);
+      if (road) roads.push(road);
+    }
   }
 
   const timestamp = payload.osm3s?.timestamp_osm_base;

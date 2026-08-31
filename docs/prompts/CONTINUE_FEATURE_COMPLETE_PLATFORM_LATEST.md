@@ -27,6 +27,19 @@ CI: #807 success
 
 CI #807 ist auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build. Dieser Prompt kann auf einem späteren reinen Living-Docs-Head liegen; vor weiterer Runtime-Arbeit muss auch dessen exakte CI verifiziert werden.
 
+## Nachfolgender Map-/Smart-Data-Fix
+
+Der nächste Map-Hardening-Slice aktualisiert den bestehenden PR #72 ohne neuen Branch oder neue Architektur:
+
+- aktive Basemap ist OpenFreeMap Bright (`/styles/bright`), Provider-`fill-extrusion` wird entfernt und MapLibre bleibt auf 2D-Pitch 0;
+- der kontrollierte Hausnummern-Layer bleibt `openmaptiles` / `housenumber`, ist ab Zoom 16 zoom-skaliert größer und behält normale Collision-Erkennung;
+- der bestehende MapLibre-GeolocateControl läuft mit `trackUserLocation: true`, schnellem kürzlich bekannten Fix und offiziellem Active-/Passive-Follow, ohne GPS-Persistenz oder History;
+- `/offline-map/package` akzeptiert optional `kind: all | roads | buildings` (ohne `kind` weiterhin `all`), Smart Street lädt `roads`, Smart House `buildings`, Settings über den Wrapper weiterhin `all`;
+- Smart Street und Smart House besitzen getrennte ephemere Caches, Ladezustände, Dedupe-Schlüssel und Fehleranzeigen. Ein Paket wird aus keinem anderen Smart-Flow wiederverwendet;
+- die Smart-Aktionsbuttons zeigen ihren jeweiligen Ladezustand unmittelbar, der manuelle Fallback bleibt verfügbar.
+
+Der Fix darf erst nach einem neuen exakten CI-Lauf als verifiziert dokumentiert werden. Reale WebGL-/Android-/iPhone-Abnahme bleibt offen, sofern sie nicht tatsächlich durchgeführt wurde.
+
 ## Pflichtkontext
 
 Lies zuerst vollständig:
