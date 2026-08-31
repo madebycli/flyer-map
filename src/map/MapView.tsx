@@ -19,6 +19,7 @@ import type {
 } from "../domain/campaign";
 import type { CollectionArea, CollectionMainArea } from "../domain/collection";
 import type { OfflineMapPackage } from "../domain/offlineMap";
+import type { PickupTask } from "../domain/pickup.ts";
 import type { SmartBuildingCandidate, SmartRoadCandidate } from "../domain/smartCandidates";
 import type { SmartRoadPointAnchor } from "../domain/smartRoadPointAnchor";
 import type { Language } from "../i18n";
@@ -52,6 +53,13 @@ import {
   housesToGeoJson,
   type RenderHouse,
 } from "./houseRenderer";
+import {
+  COLLECTION_PICKUP_LAYER_IDS,
+  COLLECTION_PICKUP_MARKER_LAYER_ID,
+  COLLECTION_PICKUP_SELECTED_LAYER_ID,
+  COLLECTION_PICKUP_SOURCE_ID,
+  pickupsToGeoJson,
+} from "./pickupRenderer.ts";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 export type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house" | "collection-main-draw" | "collection-area-draw" | "collection-area-edit";
@@ -209,11 +217,14 @@ type MapViewProps = {
   collectionMainArea?: CollectionMainArea | null;
   collectionAreas?: CollectionArea[];
   selectedCollectionAreaId?: string | null;
+  collectionPickups?: PickupTask[];
+  selectedCollectionPickupId?: string | null;
   collectionDraftVertices?: LngLat[];
   collectionEditingVertices?: LngLat[];
   collectionColor?: string;
   collectionSelectedVertexIndex?: number | null;
   onCollectionAreaSelect?: (areaId: string | null) => void;
+  onCollectionPickupSelect?: (pickupId: string | null) => void;
   onCollectionDrawPoint?: (point: LngLat) => void;
   onCollectionEditVertexSelect?: (index: number) => void;
   onCollectionEditVertexMove?: (index: number, point: LngLat) => void;
@@ -422,6 +433,34 @@ const SMART_PREVIEW_WIDTH_EXPRESSION: ExpressionSpecification = [
   9,
 ];
 
+const PICKUP_RADIUS_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  8,
+  4,
+  12,
+  5.5,
+  16,
+  7.5,
+  20,
+  10,
+];
+
+const PICKUP_SELECTED_RADIUS_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  8,
+  7,
+  12,
+  9,
+  16,
+  11.5,
+  20,
+  14,
+];
+
 function areasToGeoJson(areas: RenderArea[]): AreaFeatureCollection {
   return {
     type: "FeatureCollection",
@@ -609,6 +648,10 @@ function buildMapStyle(
       [COLLECTION_AREAS_SOURCE_ID]: {
         type: "geojson",
         data: collectionAreasToGeoJson([], null),
+      },
+      [COLLECTION_PICKUP_SOURCE_ID]: {
+        type: "geojson",
+        data: pickupsToGeoJson([]),
       },
       [SMART_ROAD_SOURCE_ID]: {
         type: "geojson",
@@ -930,6 +973,39 @@ function buildMapStyle(
         paint: { "line-color": "#111827", "line-opacity": 1, "line-width": 4 },
       },
       {
+        id: COLLECTION_PICKUP_MARKER_LAYER_ID,
+        type: "circle",
+        source: COLLECTION_PICKUP_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: {
+          "circle-color": [
+            "match",
+            ["get", "status"],
+            "collected", "#15803d",
+            "unavailable", "#6b7280",
+            "needs-follow-up", "#d97706",
+            "#dc2626",
+          ],
+          "circle-radius": PICKUP_RADIUS_EXPRESSION,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 2,
+          "circle-opacity": 0.96,
+        },
+      },
+      {
+        id: COLLECTION_PICKUP_SELECTED_LAYER_ID,
+        type: "circle",
+        source: COLLECTION_PICKUP_SOURCE_ID,
+        filter: ["==", ["get", "pickupId"], "__none__"],
+        layout: { visibility: "none" },
+        paint: {
+          "circle-color": "rgba(255,255,255,0)",
+          "circle-radius": PICKUP_SELECTED_RADIUS_EXPRESSION,
+          "circle-stroke-color": "#111827",
+          "circle-stroke-width": 3,
+        },
+      },
+      {
         id: SMART_HOUSE_FILL_LAYER_ID,
         type: "fill",
         source: SMART_HOUSE_SOURCE_ID,
@@ -1158,6 +1234,46 @@ function syncCollectionData(
   }
 }
 
+function syncCollectionPickupData(map: Map, pickups: PickupTask[]) {
+  const pickupSource = map.getSource(COLLECTION_PICKUP_SOURCE_ID) as GeoJSONSource | undefined;
+  if (pickupSource) pickupSource.setData(pickupsToGeoJson(pickups));
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) {
+    region.dataset.collectionPickups = String(
+      pickups.filter((pickup) => pickup.archivedAt === null).length,
+    );
+  }
+}
+
+function syncCollectionPickupSelection(
+  map: Map,
+  selectedPickupId: string | null,
+  visible: boolean,
+) {
+  if (map.getLayer(COLLECTION_PICKUP_SELECTED_LAYER_ID)) {
+    map.setFilter(
+      COLLECTION_PICKUP_SELECTED_LAYER_ID,
+      ["==", ["get", "pickupId"], selectedPickupId ?? "__none__"],
+    );
+  }
+  if (map.getLayer(COLLECTION_PICKUP_MARKER_LAYER_ID)) {
+    map.setLayoutProperty(
+      COLLECTION_PICKUP_MARKER_LAYER_ID,
+      "visibility",
+      visible ? "visible" : "none",
+    );
+  }
+  if (map.getLayer(COLLECTION_PICKUP_SELECTED_LAYER_ID)) {
+    map.setLayoutProperty(
+      COLLECTION_PICKUP_SELECTED_LAYER_ID,
+      "visibility",
+      visible && selectedPickupId ? "visible" : "none",
+    );
+  }
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) region.dataset.collectionSelectedPickup = selectedPickupId ?? "";
+}
+
 function syncAreaData(map: Map, areas: RenderArea[]) {
   const areaSource = map.getSource(AREA_SOURCE_ID) as GeoJSONSource | undefined;
   if (areaSource) areaSource.setData(areasToGeoJson(areas));
@@ -1338,6 +1454,12 @@ function updateRendererDiagnostics(map: Map) {
     const renderedHouses = map.getLayer(HOUSE_FILL_LAYER_ID)
       ? map.queryRenderedFeatures(undefined, { layers: [HOUSE_FILL_LAYER_ID] })
       : [];
+    const sourcePickups = map.querySourceFeatures(COLLECTION_PICKUP_SOURCE_ID).filter(
+      (feature) => typeof feature.properties?.pickupId === "string",
+    );
+    const renderedPickups = map.getLayer(COLLECTION_PICKUP_MARKER_LAYER_ID)
+      ? map.queryRenderedFeatures(undefined, { layers: [COLLECTION_PICKUP_MARKER_LAYER_ID] })
+      : [];
     region.dataset.sourceAreas = String(new Set(sourceAreas.map((feature) => feature.properties?.areaId)).size);
     region.dataset.sourceStreets = String(
       new Set(sourceStreets.map((feature) => feature.properties?.taskId)).size,
@@ -1353,6 +1475,12 @@ function updateRendererDiagnostics(map: Map) {
     );
     region.dataset.renderedHouses = String(
       new Set(renderedHouses.map((feature) => feature.properties?.houseTaskId)).size,
+    );
+    region.dataset.sourceCollectionPickups = String(
+      new Set(sourcePickups.map((feature) => feature.properties?.pickupId)).size,
+    );
+    region.dataset.renderedCollectionPickups = String(
+      new Set(renderedPickups.map((feature) => feature.properties?.pickupId)).size,
     );
   } catch (cause) {
     console.warn("Map renderer diagnostics failed", cause);
@@ -1441,11 +1569,14 @@ export function MapView({
   collectionMainArea = null,
   collectionAreas = [],
   selectedCollectionAreaId = null,
+  collectionPickups = [],
+  selectedCollectionPickupId = null,
   collectionDraftVertices = [],
   collectionEditingVertices = [],
   collectionColor = "#2563eb",
   collectionSelectedVertexIndex = null,
   onCollectionAreaSelect = () => {},
+  onCollectionPickupSelect = () => {},
   onCollectionDrawPoint = () => {},
   onCollectionEditVertexSelect = () => {},
   onCollectionEditVertexMove = () => {},
@@ -1501,6 +1632,8 @@ export function MapView({
     collectionMainArea,
     collectionAreas,
     selectedCollectionAreaId,
+    collectionPickups,
+    selectedCollectionPickupId,
   });
   dataRef.current = {
     areas,
@@ -1525,6 +1658,8 @@ export function MapView({
     collectionMainArea,
     collectionAreas,
     selectedCollectionAreaId,
+    collectionPickups,
+    selectedCollectionPickupId,
   };
 
   const interactionRef = useRef({
@@ -1547,6 +1682,7 @@ export function MapView({
     collectionEditingVertices,
     collectionSelectedVertexIndex,
     onCollectionAreaSelect,
+    onCollectionPickupSelect,
     onCollectionDrawPoint,
     onCollectionEditVertexSelect,
     onCollectionEditVertexMove,
@@ -1571,6 +1707,7 @@ export function MapView({
     collectionEditingVertices,
     collectionSelectedVertexIndex,
     onCollectionAreaSelect,
+    onCollectionPickupSelect,
     onCollectionDrawPoint,
     onCollectionEditVertexSelect,
     onCollectionEditVertexMove,
@@ -1727,6 +1864,12 @@ export function MapView({
           current.selectedCollectionAreaId,
           current.collectionVisible,
         );
+        syncCollectionPickupData(map, current.collectionPickups);
+        syncCollectionPickupSelection(
+          map,
+          current.selectedCollectionPickupId,
+          current.collectionVisible,
+        );
         syncSmartStreetData(
           map,
           current.smartRoads,
@@ -1795,6 +1938,23 @@ export function MapView({
             }
             return;
           }
+          const pickupLayers = COLLECTION_PICKUP_LAYER_IDS.filter((layerId) => map.getLayer(layerId));
+          const pickupBbox: [[number, number], [number, number]] = [
+            [event.point.x - 12, event.point.y - 12],
+            [event.point.x + 12, event.point.y + 12],
+          ];
+          const pickupFeatures = pickupLayers.length > 0
+            ? map.queryRenderedFeatures(pickupBbox, { layers: [...pickupLayers] })
+            : [];
+          const pickupFeature = pickupFeatures.find(
+            (feature) => typeof feature.properties?.pickupId === "string",
+          );
+          if (pickupFeature && typeof pickupFeature.properties?.pickupId === "string") {
+            interaction.onCollectionPickupSelect(pickupFeature.properties.pickupId);
+            interaction.onCollectionAreaSelect(null);
+            return;
+          }
+          interaction.onCollectionPickupSelect(null);
           const collectionLayers = [COLLECTION_AREAS_SELECTED_LAYER_ID, COLLECTION_AREAS_FILL_LAYER_ID]
             .filter((layerId) => map.getLayer(layerId));
           const collectionFeatures = collectionLayers.length > 0
@@ -1986,6 +2146,18 @@ export function MapView({
     collectionVisible,
     selectedCollectionAreaId,
   ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncCollectionPickupData(map, collectionPickups);
+  }, [collectionPickups]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncCollectionPickupSelection(map, selectedCollectionPickupId, collectionVisible);
+  }, [collectionVisible, selectedCollectionPickupId]);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -92,6 +92,7 @@ export function CollectionCollectorView({
   );
   const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedPickupId, setSelectedPickupId] = useState<string | null>(null);
   const [currentCamera, setCurrentCamera] = useState<MapCameraView | null>(null);
   const [pickupCameraCommand, setPickupCameraCommand] = useState<MapCameraCommand>(null);
   const [pickupPosition, setPickupPosition] = useState<LngLat | null>(null);
@@ -118,7 +119,11 @@ export function CollectionCollectorView({
   const selectedOpenAreaIds = selectedAreaIds.filter((areaId) =>
     visibleAreas.some((area) => area.id === areaId && area.status === "open" && area.runId === null),
   );
-  const pickupItems = collection.pickups
+  const visiblePickups = useMemo(
+    () => pickupCapabilities.canViewPickups ? collection.pickups : [],
+    [collection.pickups, pickupCapabilities.canViewPickups],
+  );
+  const pickupItems = visiblePickups
     .filter((pickup) => pickup.archivedAt === null)
     .map((pickup) => ({
       id: pickup.id,
@@ -127,6 +132,15 @@ export function CollectionCollectorView({
       description: pickup.description,
       status: pickup.status,
     }));
+
+  useEffect(() => {
+    if (
+      selectedPickupId &&
+      !visiblePickups.some((pickup) => pickup.id === selectedPickupId && pickup.archivedAt === null)
+    ) {
+      setSelectedPickupId(null);
+    }
+  }, [selectedPickupId, visiblePickups]);
 
   const renderedCollectionAreas = useMemo(
     () => visibleAreas.map((area) => ({
@@ -385,6 +399,8 @@ export function CollectionCollectorView({
       ...current,
       pickups: [...collectionSnapshotOrEmpty(current).pickups, pickup],
     }));
+    setSelectedPickupId(pickup.id);
+    focusPickupPosition(pickup.position);
   };
 
   const changePickupStatus = async (pickupId: string, status: PickupStatus) => {
@@ -524,8 +540,12 @@ export function CollectionCollectorView({
           collectionMainArea={collection.mainArea}
           collectionAreas={renderedCollectionAreas}
           selectedCollectionAreaId={selectedAreaIds[0] ?? null}
+          collectionPickups={visiblePickups}
+          selectedCollectionPickupId={selectedPickupId}
+          onCollectionPickupSelect={setSelectedPickupId}
           onCollectionAreaSelect={(areaId) => {
             if (pickupPositioning || !areaId) return;
+            setSelectedPickupId(null);
             setSelectedAreaIds((current) =>
               current.includes(areaId)
                 ? current.filter((id) => id !== areaId)
