@@ -15,7 +15,8 @@ export type PersistentCommentTargetType =
   | "campaign"
   | "area"
   | "street-task"
-  | "house-task";
+  | "house-task"
+  | "pickup-task";
 
 export type CommentDraft = {
   campaignId: string;
@@ -50,7 +51,13 @@ export function normalizeCommentBody(value: unknown) {
 }
 
 export function normalizeCommentTargetType(value: unknown): PersistentCommentTargetType | null {
-  if (value === "campaign" || value === "area" || value === "street-task" || value === "house-task") {
+  if (
+    value === "campaign" ||
+    value === "area" ||
+    value === "street-task" ||
+    value === "house-task" ||
+    value === "pickup-task"
+  ) {
     return value;
   }
   // The original local foundation called Street Tasks simply "task". Accepting
