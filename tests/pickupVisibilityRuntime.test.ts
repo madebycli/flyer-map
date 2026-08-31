@@ -267,9 +267,22 @@ test("view=false blocks Pickup mutation even if write flags were forged true", a
   );
 });
 
-test("current statistics and Map source do not derive hidden Pickup counts or properties", () => {
+test("current statistics do not derive hidden Pickup counts and Map rendering stays capability-gated", () => {
   const statistics = readFileSync(new URL("../worker/statistics.ts", import.meta.url), "utf8");
   assert.doesNotMatch(statistics, /collection_pickups|pickup.*count/iu);
+
   const mapView = readFileSync(new URL("../src/map/MapView.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(mapView, /pickup.*properties|collection_pickups/iu);
+  assert.doesNotMatch(mapView, /collection_pickups/iu);
+
+  const collector = readFileSync(
+    new URL("../src/collection/CollectionCollectorView.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    collector,
+    /pickupCapabilities\.canViewPickups\s*\?\s*collection\.pickups\s*:\s*\[\]/u,
+  );
+
+  const renderer = readFileSync(new URL("../src/map/pickupRenderer.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(renderer, /address|description|createdBy|updatedBy|source|provider|osmId/iu);
 });
