@@ -11,323 +11,279 @@ source_of_truth_for: [fc5-collection-pickup-persistence-decision, fc5-collection
 
 ## Ziel
 
-FC5 Collection / Pickup wird als eigener Arbeitsbereich neben Distribution umgesetzt. Master hat nach dem A/B-Vergleich die Produktanforderungen festgelegt, die Ansatz A verbindlich machen: First-Class Collection-Daten mit eigenen Areas, Runs, Straßenabschnitten, Pickup Tasks, Statuswerten und temporären Collection-Zugängen.
+FC5 Collection / Pickup ist ein eigener Arbeitsbereich neben Distribution. Master hat First-Class Collection-Daten als verbindlichen Ansatz gewählt: eigene Main Area, Collection Areas, Runs, Road Sections, Pickup Tasks, Statuswerte und temporäre Collection-Zugänge.
 
 Distribution und Collection teilen Campaign/Aktion, MapLibre, Worker, D1 und die bestehende M5-Queue, aber nicht ihre fachlichen Task-Identitäten oder Arbeitsstatus. Änderungen oder Archivierungen in Distribution verändern Collection nicht und umgekehrt. Nur das Löschen der gesamten Campaign/Aktion darf beide Bereiche gemeinsam entfernen.
 
-Plan 021 bleibt für FC5.3 und die realen Mobile-/Touch-Acceptance-Gates aktiv. FC5.1 und der vollständige FC5.2-Runtime-Scope sind als normale Produktwege implementiert und auf GitHub verifiziert.
+Plan 021 bleibt aktiv für FC5.3 sowie reale Mobile-/Touch-Acceptance-Gates. FC5.1 und der vollständige FC5.2-Runtime-Scope sind als normale Produktwege implementiert und auf GitHub verifiziert.
 
-## Anforderungen
+## Verifizierter FC5.2-Runtime-Checkpoint
 
-### Verifizierte Baseline vor dieser Entscheidung
+```text
+Branch: plan-feature-complete-platform
+PR: #72 Draft gegen ui-app-launcher-sheet
+Head: f9967033048cf03f2839cd41924cc1bd524a69c5
+CI: #807 success
+```
 
-- Repository: `madebycli/flyer-map`.
-- Branch: `plan-feature-complete-platform`.
-- Draft PR #72 gegen `ui-app-launcher-sheet`.
-- FC5.1-Code-Head: `78472b660d58b6d9184a2a63730a5a25e8fd7841`.
-- CI #735 war auf exakt diesem Code-Head mit Test, Typecheck, Dependency Audit und Production Build vollständig grün.
-- Plan 018, 019 und 020 sind abgeschlossen; die reale Geräteabnahme für Plan 018 bleibt offen.
-- Remote D1 ist weiterhin nur bis Migration 0001 bis 0003 dokumentiert.
-- 0004 bis 0010 sind vorbereitet und nicht remote angewendet.
-- Die Cloud-Browser-Umgebung besitzt kein nutzbares WebGL. Das ist kein Beleg für eine MapLibre-Regression.
-- Reale Android-/iPhone-Gates für FC4 bleiben separat offen.
+CI #807 ist auf exakt diesem Code-Head grün mit Tests, Typecheck, Dependency Audit und Production Build. Spätere reine Living-Docs-Heads benötigen ihre eigene exakte CI-Verifikation.
 
-Vor jeder späteren Runtime-Änderung müssen Branch, PR, exakter Head und CI erneut gegen GitHub verifiziert werden.
+Remote D1 bleibt dokumentiert ausschließlich bis Migration 0001 bis 0003. Migrationen 0004 bis 0013 sind vorbereitet und nicht remote angewendet. Kein manueller Deploy, Merge oder Ready-for-Review gehört zu diesem Plan-Slice.
 
-### Gewählte Produktgrenzen
+## Gewählte Produktgrenzen
 
-- Collection ist vollständig von Distribution getrennt.
-- Collection besitzt ein eigenes Hauptgebiet und eigene innere Arbeitsgebiete. Diese dürfen größer, kleiner oder vollständig anders geschnitten sein als Distribution Areas.
-- Das Collection-Hauptgebiet wird als leichte graue Fläche dargestellt.
-- Innere Collection Areas liegen farblich darüber. Ihre Farbe soll visuell nicht mit der grauen Hauptfläche vermischt werden.
-- Nicht in ein inneres Gebiet aufgeteilte Fläche innerhalb des Hauptgebiets bleibt als leicht grauer, noch nicht zugewiesener Bereich erkennbar.
-- Ein Pickup Task kann überall im Collection-Hauptgebiet entstehen, auch ohne vorhandenen Distribution House Task.
-- Ein Pickup kann zunächst ohne innere Area-Zuordnung in einer unzugewiesenen Intake-Liste bestehen. Für normale Feldarbeit kann er anschließend einer Collection Area zugeordnet werden.
-- Wird ein Distribution Street/House Task gelöscht oder archiviert, bleibt ein daraus abgeleiteter Pickup unverändert bestehen.
-- Wird ein Collection-Objekt archiviert oder geändert, beeinflusst das Distribution nicht.
-- Erst beim Löschen der gesamten Campaign/Aktion werden zugehörige Distribution- und Collection-Daten gemeinsam entfernt.
-- Ein aus Street/House/OSM übernommener Pickup speichert einen eigenen Adress- und Geometrie-Snapshot. Eine optionale Referenz dient nur Provenance/Nachvollziehbarkeit.
-- OSM IDs sind nie Pickup-, Area-, Run- oder Road-Primärschlüssel.
+### Collection versus Distribution
+
+- Collection ist fachlich vollständig von Distribution getrennt.
+- Collection besitzt ein eigenes Hauptgebiet und eigene innere Arbeitsgebiete. Diese dürfen größer, kleiner oder anders geschnitten sein als Distribution Areas.
+- Das Collection-Hauptgebiet wird als leichte graue Fläche dargestellt; innere Collection Areas liegen farblich darüber.
+- Unzugewiesene Fläche innerhalb des Hauptgebiets bleibt als grauer Bereich erkennbar.
+- Distribution Street/House Delete oder Archive verändert Collection nicht.
+- Collection Edit/Archive verändert Distribution nicht.
+- Erst Campaign-Delete darf beide Domänen gemeinsam entfernen.
+- OSM-/Geocoder-IDs sind nie Collection-Primärschlüssel.
+- App-eigene IDs bleiben authoritative.
 
 ### Collection Areas, Runs und freiwillige Helfer
 
-Der Collection-Betrieb ist nicht an die persistenten Distribution Teams gekoppelt.
-
-- Helfer kommen dynamisch und häufig ohne bestehenden Account.
-- Ein Campaign-spezifischer Collection-QR-Code öffnet ausschließlich den Collection-Bereich.
-- Das Scannen darf ohne vorherigen normalen Account einen temporären, Collection-only Zugriff erzeugen.
-- Der gemeinsame QR-Code ist nur ein Eintrittspunkt. Jedes Gerät erhält danach eine eigene temporäre Collector-Identität mit app-eigener ID und einer neutralen sichtbaren Bezeichnung wie `Nutzer 1`, `Nutzer 2`, `Nutzer 3`.
-- Der QR-/Collector-Zugang erteilt niemals Distribution-, Admin- oder Organizations-Rechte.
-- Der Worker bleibt für alle Reads/Writes die Autorisierungsgrenze.
-- Admin/Operator kann einen einzelnen Collector-Zugang widerrufen.
-- Die Sammlung arbeitet mit `Collection Runs` beziehungsweise Fahrten statt persistenten Distribution Teams.
-- Eine Fahrt kann je nach Fahrzeug/Kapazität ein oder mehrere Collection Areas übernehmen.
-- Ein kleines Fahrzeug kann kleinere Areas beziehungsweise mehrere Fahrten benötigen, ein großes Fahrzeug kann mehrere Areas gleichzeitig übernehmen.
-- Andere Helfer sehen, dass eine Area bereits bearbeitet wird, inklusive Fortschritt.
-- Andere Geräte dürfen einer bereits laufenden Fahrt über `Beitreten` beitreten.
-- Mehrere Geräte derselben Fahrt dürfen Fortschritt eintragen.
-- Verlässt ein Teilnehmer eine Fahrt, bleibt die Fahrt bestehen, solange andere Mitglieder weiterarbeiten.
-- Es gibt einen deutlichen manuellen `Verlassen`-/`Freigeben`-/`Abbrechen`-Flow.
-- Es gibt ausdrücklich kein automatisches Timeout und keine automatische Freigabe wegen Inaktivität.
-- Admin/Operator darf Areas zwangsweise freigeben oder neu zuordnen.
+- Helfer benötigen keinen vorher angelegten normalen Account.
+- Ein Campaign-spezifischer Collection-QR öffnet Collection-only Access.
+- Jedes Gerät erhält eine eigene temporäre, revocable Collector-Identität mit app-eigener ID und neutraler Bezeichnung.
+- Collection QR/Collector Access erteilt keine Distribution-, Admin- oder Organization-Rechte.
+- Worker bleibt für Reads und Writes die Autorisierungsgrenze.
+- Admin kann einzelne Collector-Zugänge widerrufen.
+- Collection arbeitet mit Runs/Fahrten statt persistenten Distribution Teams.
+- Ein Run kann eine oder mehrere Collection Areas übernehmen.
+- Andere Geräte sehen Claims/Fortschritt und können einem aktiven Run beitreten.
+- Mehrere Geräte eines Runs dürfen Fortschritt eintragen.
+- Verlassen, Freigeben und Abbrechen sind explizite manuelle Flows.
+- Es gibt kein automatisches Inaktivitäts-Timeout und keine automatische Area-Freigabe.
+- Admin darf Areas zwangsweise freigeben oder neu zuordnen.
 
 ### Collection Road Sections
 
 Collection-Straßen sind First-Class Collection-Daten und kein Zusatzstatus auf Distribution Streets.
 
-Vorgesehene Statuswerte:
+Vorgesehene Statuswerte für FC5.3:
+- `open` / Offen;
+- `driven` / Abgefahren;
+- `later` / Später;
+- `unavailable` / Nicht befahrbar.
 
-- `open` -> Offen
-- `driven` -> Abgefahren
-- `later` -> Später
-- `unavailable` -> Nicht befahrbar
+Road Sections besitzen eigene App-IDs, eigene Geometrie-Snapshots, Area-/Run-Kontext und eigene Stats.
 
-Road Sections besitzen eigene App-IDs, eigene Geometrie-Snapshots, Area-/Run-Kontext und eigene Stats. Sie dürfen unabhängig von Distribution zugeschnitten werden.
+## Pickup Tasks / Sonderadressen
 
-### Pickup Tasks und Sonderadressen
+Pickup-Statuswerte:
+- `open`;
+- `collected`;
+- `unavailable`;
+- `needs-follow-up`.
 
-Bestehende Pickup-Statuswerte bleiben:
-
-- `open`
-- `collected`
-- `unavailable`
-- `needs-follow-up`
-
-Für einen Pickup beziehungsweise eine Sonderadresse werden mindestens gespeichert:
-
+Ein Pickup speichert mindestens:
 - app-eigene ID;
 - Campaign-Scope;
-- optionale innere Collection Area;
+- optionale Collection Area;
 - verpflichtende Kartenposition;
-- Adresse;
 - Titel;
+- Adresse;
 - Beschreibung;
+- Pickup-Status;
 - Archivstatus;
-- eigener Pickup-Status;
-- optionaler Collection-Run-/Assignee-Kontext;
+- optionale Run-/Collector-Zuweisungen;
 - optionale OSM-/Distribution-Provenance;
 - created/updated actor und Zeit;
-- eigener Adress-/Geometrie-Snapshot.
+- eigenen Adress-/Geometrie-Snapshot.
 
-Ein einzelner Pickup wird nicht hart gelöscht. Maximal archivieren. Die Position/Adresse darf später bearbeitet werden, auch wenn bereits Arbeit protokolliert wurde; diese Änderung muss nachvollziehbar als neuer Domain-Change gespeichert werden.
+Ein Pickup kann überall im Collection-Hauptgebiet entstehen, auch ohne Distribution House. Er kann zunächst ohne innere Area-Zuordnung bestehen.
 
-### Online-Adresssuche mit OSM-Daten
+Ein einzelner Pickup wird niemals hart gelöscht. Er wird soft archiviert. Titel, Adresse, Beschreibung und Kartenposition dürfen später bearbeitet werden. Die Änderung läuft als eigener Domain-Change über den bestehenden Pickup-Mutationspfad. Bereits archivierte Pickups sind nicht mehr editierbar, bleiben aber für Prüfung/Audit erhalten.
 
-Für `Sonderadresse hinzufügen` ist eine echte Online-Adresssuche gewünscht.
+## Online-Adresssuche mit OSM-derived Daten
 
-UX:
+Normaler Create-Flow:
 
-1. Plus-/Hinzufügen-Aktion öffnet eine Suchoberfläche im bestehenden Sheet-System.
-2. Auf Mobile verhält sie sich wie die anderen Bottom Sheets; Desktop darf dieselbe Komponente kompakter/zentriert darstellen.
-3. Die Suche fühlt sich wie eine Spotlight-/Maps-Suche an.
-4. Resultate zeigen Adresse und Entfernung.
-5. Auswahl eines Resultats fokussiert/zoomt MapLibre auf den Treffer und zeigt einen Marker.
-6. Danach kann der Nutzer `Sonderadresse hinzufügen` wählen.
-7. Titel, Adresse und Beschreibung werden im Erstell-Flow angezeigt.
-8. Alternativ kann die Kartenposition per Finger/Maus gesetzt oder korrigiert werden.
-9. Eine Sonderadresse benötigt immer Koordinaten.
+```text
+Sonderadresse hinzufügen
+-> Maps-/Spotlight-artige Suche
+-> Worker-basierter Geoapify Address Autocomplete auf OSM-derived Daten
+-> Resultate im Collection-Hauptgebiet
+-> Entfernung anzeigen
+-> Treffer auswählen
+-> MapLibre fokussiert den Treffer
+-> Titel / Adresse / Beschreibung
+-> Position übernehmen oder manuell korrigieren
+-> bestehende M5-Queue
+-> Worker / D1
+-> Pickup auf Karte und Liste
+```
 
-Daten-/Provider-Grenze:
+Verbindliche Provider-/Privacy-Grenzen:
+- Geoapify Address Autocomplete ist der produktive FC5.2-Adapter;
+- der öffentliche Nominatim-Dienst wird nicht als produktives Search-as-you-type verwendet;
+- Provider-Credentials bleiben ausschließlich serverseitig im Worker;
+- Search ist hart auf die Collection Main Area begrenzt und wird zusätzlich gegen das echte Polygon gefiltert;
+- einmalig freigegebener Gerätestandort darf Ranking/Fokus unterstützen;
+- ohne Location-Permission wird der aktuelle MapLibre-Kartenmittelpunkt verwendet;
+- Distanz wird in Meter/Kilometer angezeigt;
+- kein `watchPosition`, keine kontinuierliche GPS-Historie, keine Bewegungsroute;
+- Geoapify-/OpenStreetMap-Attribution wird sichtbar gerendert;
+- Search besitzt Debounce, Abort/Race-Schutz, serverseitiges Rate Limit, Validation, Timeout und kontrollierte Fehlerzustände.
 
-- OpenStreetMap/OSM-derived Adressdaten sind die gewünschte Datenbasis.
-- Der produktive FC5.2-Adapter ist Geoapify Address Autocomplete über den Worker; der öffentliche Nominatim-Dienst wird nicht als Live-Autocomplete verwendet.
-- Provider-Credentials bleiben serverseitig im Worker.
-- Suche wird hart auf das Collection-Hauptgebiet begrenzt; Provider-BBox/Proximity wird zusätzlich gegen die Hauptgebietsgeometrie geprüft.
-- Bei einmalig freigegebenem Gerätestandort wird nach Distanz zu diesem Punkt sortiert. Ohne Location-Permission wird der aktuelle Kartenmittelpunkt verwendet.
-- Distanz wird als Meter/Kilometer angezeigt.
-- Keine kontinuierliche GPS-Historie und keine Speicherung einer Bewegungsroute.
-- Geoapify-/OpenStreetMap-Attribution wird sichtbar aus dem Worker-Vertrag gerendert.
-- Search ist serverseitig rate-limitiert, validiert, timeout-begrenzt und liefert kontrollierte Fehlerzustände.
+## Pickup Capabilities
 
-### Sonderadressen und Berechtigungen
+Temporäre Collection Collector besitzen vier enge serverseitige Pickup-Capabilities:
+- View, Default `true`;
+- Create, Default `false`;
+- Edit, Default `false`;
+- Assign, Default `false`.
 
-Sonderadressen sind standardmäßig für Collection-Helfer sichtbar.
+View=false ist authoritative und setzt Pickup Search/Write effektiv außer Kraft, ohne Collection Areas/Runs zu verstecken.
 
-Collection-spezifische serverseitige Capabilities unterscheiden:
+Create benötigt View + Create. Status, Edit und Archive benötigen View + Edit. Assignment benötigt View + Assign. Admin-Autorisierung bleibt authoritative und unabhängig von Collector-Flags.
 
-- Sonderadressen sehen, Default `true`;
-- Sonderadressen erstellen, Default `false`;
-- Sonderadressen bearbeiten, Default `false`;
-- Sonderadressen zuweisen, Default `false`.
+Admin kann diese vier Rechte pro Collector verwalten. Das bleibt eine enge FC5-Grenze und zieht keine generische Organizations-/Permission-Runtime vor.
 
-Admin/Operator kann diese Rechte für einzelne temporäre Collector-Zugänge erweitern. Das ist eine enge FC5-Berechtigung und darf nicht als Vorwand dienen, die spätere generische Organizations-/Permission-Runtime vorzuziehen.
+## Assignment
 
-Eine konkrete Sonderadresse kann einem oder mehreren aktiven Collectors/Runs zugewiesen werden. Assignment wird serverseitig gegen Campaign, Pickup, aktiven Run-/Collector-Zustand und `can_assign_pickups` validiert.
+Ein Pickup kann einem oder mehreren aktiven Collection Runs beziehungsweise Collector-Kontexten zugewiesen werden.
 
-### Kommentare und Beschreibung
+- Admin und Collector verwenden denselben `PickupAssignmentEditor`;
+- Mutation bleibt `collection.pickup.set-assignment`;
+- derselbe M5-Pfad wird verwendet;
+- Worker validiert Campaign, Pickup sowie aktive Run-/Collector-Referenzen authoritative;
+- geschlossene/abgebrochene Runs und widerrufene Collector werden abgelehnt;
+- stale Revisionen konfliktieren ohne Teilzustand.
 
-Pickup Tasks erhalten:
+## Kommentare und Beschreibung
 
-- `Titel`;
-- `Adresse`;
-- `Beschreibung`;
-- einen normalen Kommentar-Thread.
+Pickup Tasks besitzen Titel, Adresse, Beschreibung und einen normalen Kommentar-Thread.
 
-Beschreibung ist der statische fachliche Vermerk zum Pickup. Kommentare nutzen die bestehende durable Comment-Domain mit persistentem Target Context `pickup-task`. Der additive Forward-Slice 0013 erweitert die bestehende Comment-/Event-Schema-Grenze, ohne historische Migration 0008 umzuschreiben.
+Beschreibung ist der statische fachliche Vermerk. Kommentare nutzen die bestehende durable Comment-Domain mit Target `pickup-task`.
 
-### Actor-Provenance, Highlight und gezieltes Zurücksetzen
+Prepared-only Forward Migration 0013 erweitert die bestehenden Comment-/Event-CHECK-Verträge additiv um `pickup-task` und Actor `collection-collector`, ohne historische Migrationen 0007 oder 0008 zu verändern. Bestehende Daten und die betroffenen Field-Group-Trigger werden beim SQLite-Rebuild erhalten.
 
-Jede authoritative Collection-Änderung muss dem temporären Collector/Admin/Operator zugeordnet werden können.
+Collection Collector benötigen Pickup View für Comment Reads/Writes. Collector dürfen Kommentare erstellen, aber nicht selbst moderieren. Normale Campaign-Admin-Autorisierung bleibt authoritative.
 
-Admin/Operator soll:
+Archivierte Pickups behalten ihren Comment-Thread und können über die Archivprüfung weiterhin kontrolliert werden.
 
-- Beiträge eines Collectors auf Karte/Liste filtern beziehungsweise highlighten können;
-- einzelne Änderungen gezielt auswählen können;
-- ausgewählte Änderungen fachlich zurücksetzen können;
-- optional alle fachlichen Beiträge eines Collector-Zugangs zur Prüfung auswählen können;
-- den Collector-Zugang widerrufen können.
+## MapLibre-Vertrag
 
-Das ist kein lineares `Undo, Undo, Undo` und kein direktes Löschen von Datenbankzeilen.
+MapLibre 5.7.1 bleibt einzige Kartenengine.
 
-Revert wird durch eine neue serverautorisierte compensating mutation ausgeführt. Audit-/Event-Historie bleibt erhalten. Bei komplexen Änderungen muss vor dem Revert die aktuelle Revision/Abhängigkeit geprüft werden, damit fremde spätere Arbeit nicht unbemerkt überschrieben wird.
+Permanente Pickup-Darstellung:
+- eine feste GeoJSON-Source `vf-collection-pickups`;
+- feste Marker-/Selection-Layer;
+- app-eigene Pickup-ID als Feature- und Selection-Identität;
+- Map Properties nur `pickupId` und `status`;
+- keine Adresse, Beschreibung, Actor-, Provider-, Credential- oder OSM-Provenance in Map Properties;
+- archivierte oder ungültig positionierte Pickups werden nicht gerendert;
+- keine per-feature DOM Marker;
+- Daten- und Selection-Updates bleiben getrennt.
 
-## Architektur (gewählter Ansatz)
+Admin und Collector verwenden dieselbe MapLibre-Engine. Der Admin-Pickup-Workspace ist ein weiterer MapLibre-View desselben Renderers, keine zweite Map-Engine.
 
-**Gewählt durch Master: Ansatz A, First-Class Collection/Pickup.**
-
-Ansatz B, Collection-State auf bestehenden Distribution Street/House Tasks, ist verworfen, weil die Produktanforderungen ausdrücklich getrennte Gebiete, Fahrten, Personen, Straßenabschnitte, Pickup-Lifecycles und Berechtigungen verlangen.
-
-Architekturfluss:
+## Architekturfluss
 
 ```text
 Collection QR / normaler Admin-Zugang
--> temporärer Collector Access oder Admin/Operator
+-> temporärer Collector Access oder Admin
 -> Collection Main Area
 -> Collection Areas
--> Collection Run + Mitglieder + Area Claims
--> Collection Road Sections / Pickup Tasks
+-> Collection Run + Mitglieder + Claims
+-> Pickup Tasks / später Collection Road Sections
+-> zentraler Snapshot-Commit
 -> bestehende M5 Mutation Queue
 -> Worker Authorization + Validation
 -> additive D1 Collection Persistenz
--> minimierte Domain Events / reversible Collection Changes
--> MapLibre + Comments + Collection Stats
+-> minimierte Domain Events
+-> MapLibre + Comments + Stats
 ```
 
 Verbindlich:
-
 - App-eigene IDs überall;
-- OSM nur als Datenquelle/Provenance;
+- OSM/Geoapify nur Datenquelle/Provenance;
 - gleiche MapLibre-Engine;
 - gleiche M5-Queue;
 - gleicher Worker;
 - D1 bleibt Persistenz;
-- Distribution und Collection status-/lifecycle-seitig getrennt;
-- Campaign ist bis zu einer später akzeptierten Action/Cycle-Architektur der gemeinsame obere Scope;
-- Campaign-Delete darf Collection kaskadieren, Distribution-Objekt-Delete nicht.
+- keine zweite Pickup API oder zweite Offline Queue;
+- keine Preview-/Mock-Daten im normalen Produktpfad.
 
-## Dateistruktur
+## Migrationen
 
-FC5.1 ist umgesetzt. FC5.2 erweitert denselben Produktgraph insbesondere um:
+Prepared only, nicht remote angewendet:
+- `0010_fc5_collection_access_areas_runs.sql`;
+- `0011_fc5_collection_pickups.sql`;
+- `0012_fc5_collection_pickup_visibility.sql`;
+- `0013_fc5_pickup_comments.sql`.
 
-1. `migrations/0011_fc5_collection_pickups.sql` für First-Class Pickup-Persistenz und Create/Edit/Assign-Capabilities;
-2. `migrations/0012_fc5_collection_pickup_visibility.sql` für die rückwärtskompatible View-Capability;
-3. `migrations/0013_fc5_pickup_comments.sql` für den additiven persistenten Pickup-Comment-/Actor-Contract;
-4. `src/domain/pickup.ts`, Pickup-Mutationen und bestehende M5-Diff-/Queue-Pfade;
-5. `worker/pickupSearch.ts`, Pickup-Repositories/-Autorisierung und Collection-Snapshot-Augmentation;
-6. `src/collection/PickupPanel.tsx`, `PickupAssignmentEditor.tsx`, `CollectionCollectorView.tsx` und `CollectionAdminPanel.tsx` für den normalen Produktweg;
-7. `src/map/pickupRenderer.ts` und feste MapLibre-Pickup-Layer;
-8. bestehende Comments-, Security- und Quality-Pfade statt zweiter Parallel-Subsysteme.
-
-Keine neue generische Registry oder zweite Datenzugriffsschicht nur für FC5 einführen.
+0011 enthält First-Class Pickup-Persistenz plus Create/Edit/Assign-Capabilities. 0012 ergänzt View rückwärtskompatibel. 0013 erweitert Comments/Events additiv. Historische 0007/0008 werden nicht umgeschrieben.
 
 ## Umsetzungsschritte
 
-FC5 wird in vertikalen, echten Produkt-Slices umgesetzt. Keine Foundation-/Preview-only Lieferung zählt als abgeschlossen.
+### FC5.1: Collection Access, Areas und Runs
 
-### FC5.1 Collection Access, Areas und Runs
-
-Normaler Flow:
+Status: implementiert.
 
 ```text
 Collection QR
 -> Collection-only Collector
--> offene Collection Areas als Liste/Karte
+-> offene Collection Areas
 -> eine oder mehrere Areas übernehmen
--> Collection Run startet
+-> Run startet
 -> weitere Geräte können beitreten
 -> Fortschritt sichtbar
--> Verlassen/Freigeben manuell
+-> Leave / Release / Cancel manuell
+-> Admin Force Release
 ```
 
-Ist als normaler Produktweg persistiert, serverautorisiert, M5-kompatibel und erreichbar. Der Slice verwendet Collection-only QR Access, pro Gerät eigene Collector-Sessions, getrennte Main/Child Areas, Mehrfach-Claims, aktive Runs, Join, manuellen Leave/Release/Cancel-Flow und Admin force release. Migration 0010 bleibt vorbereitet und wird nicht remote angewendet.
+### FC5.2: First-Class Pickup Tasks
 
-### FC5.2 Pickup Tasks, Sonderadressen, Suche, Kommentare und Assignment
-
-**Status: Runtime vollständig implementiert und auf Code-Head `824ddbe946ddfaf1f5b46ba64ab6ea09f128c3f3` mit CI #794 vollständig grün verifiziert. Reale Android-/iPhone-Abnahme bleibt als Hardware-Gate offen.**
-
-Normaler Flow:
-
-```text
-Plus
--> Adresssuche
--> OSM-derived Geoapify Online-Search über Worker
--> Resultat nach Nähe/Hauptgebiet
--> Map fokussiert + Marker
--> Sonderadresse anlegen
--> Titel/Adresse/Beschreibung
--> bestehende M5-Queue
--> Worker/D1
--> Pickup auf Karte/Liste
--> Kommentar / Status / Zuweisung
-```
-
-Zusätzlich manueller Karten-Tap/-Korrektur. Pickup kann ohne Distribution House existieren.
+Status: Runtime vollständig implementiert. Code-Checkpoint `f9967033048cf03f2839cd41924cc1bd524a69c5`, CI #807 success. Reale Android-/iPhone-Abnahme bleibt als Hardware-Gate offen.
 
 Implementierte Checkpoints:
-- A: Pickup Visibility und vier enge Collector-Capabilities;
-- B: echter Sonderadress-Composer mit Geoapify/OSM-derived Search, Main-Area-Filter, Bias, Distanz, Rate Limit, Timeout und Attribution;
-- C: permanente MapLibre-Pickup-Darstellung über eine feste GeoJSON-Source und feste Layer, ohne per-feature DOM-Marker;
-- D: durable Pickup Comments über bestehende Comment-Domain und additive Migration 0013;
-- E: Admin-/Collector-Assignment an aktive Runs/Collectors über denselben `PickupAssignmentEditor`, den bestehenden `collection.pickup.set-assignment`-Vertrag und dieselbe M5-Queue.
 
-### FC5.3 Collection Road Sections, Stats und Attribution
+- **A Visibility/Capabilities**: View default true, Create/Edit/Assign default false, authoritative View-Filter und Admin Capability UI.
+- **B Search/Composer**: echter Geoapify/OSM-derived Search, Main-Area-Filter, Distanz/Bias, Rate Limit, Timeout, Attribution, manuelle Map-Korrektur und bestehender M5-Create-Pfad.
+- **C Renderer**: permanente feste MapLibre-Source/-Layer, app-eigene IDs, minimierte Properties, archivierte Pickups aus dem Renderer entfernt.
+- **D Comments**: durable `pickup-task` Comments, additive Migration 0013, Collector Actor, View-Gate und Moderationsgrenzen.
+- **E Assignment**: gemeinsamer Admin-/Collector-Editor, aktive Referenzen, `can_assign_pickups`, bestehender M5-Vertrag.
+- **F Lifecycle/Admin Completion**: späteres Edit von Titel/Adresse/Beschreibung/Position, Soft-Archive, Archivprüfung inklusive Comments und vollständiger Admin Search-/Map-/Create-/Status-/Edit-/Archive-Produktweg.
 
-- eigene Collection Road Sections;
-- Status Offen/Abgefahren/Später/Nicht befahrbar;
-- Fortschritt je Area/Run/Campaign;
-- getrennte Pickup- und Road-Nenner;
-- actor-attributed Events;
-- Filter/Highlight nach Collector;
-- gezieltes serverseitiges Revert ausgewählter Änderungen;
-- Admin force release/reassignment.
+Checkpoint F nutzt:
+- `src/collection/PickupLifecyclePanel.tsx` für Edit/Archive/Archivprüfung;
+- `src/collection/CollectionCollectorView.tsx` für capability-gatete Collector-Writes mit tatsächlichem Collector Actor;
+- `src/collection/CollectionAdminPickupWorkspace.tsx` für den normalen Admin Search-/Map-/Composer-/Lifecycle-Flow;
+- `src/collection/CollectionAdminPanel.tsx` als erreichbare Admin-Oberfläche;
+- `tests/pickupLifecycleUi.test.ts` als gezielte Regression.
 
-Wenn Repository-Abhängigkeiten eine andere Reihenfolge zwingend machen, darf Codex die technische Reihenfolge ändern, aber nicht die fachlichen Grenzen oder einen Preview-Ersatz.
+Save ohne fachliche Pickup-Änderung wird vor dem Snapshot-Commit verworfen, damit der M5-Diff keine künstliche Revision ohne Operation erhält.
 
 ## Tests und Quality Gates
 
-FC5.1 ist durch `tests/collectionRuntime.test.ts` sowie die bestehenden Mutation-, Authorization-, Snapshot-, Persistence- und Security-Tests abgedeckt. Geprüft werden Collection-only Scope, getrennte Collector-Identitäten, Main/Child Areas, Mehrfach-Claims, Join, Leave/Release, Cancel, Admin force release, App-ID-Identität, OSM-Provenance-Grenze, M5-Verhalten und der Ausschluss von Preview-/Mock-Daten aus dem Produktionsgraph.
-
-FC5.2 deckt zusätzlich ab:
-- Pickup ohne Distribution House und verpflichtende Koordinaten;
-- Archive statt Hard Delete sowie narrow Create/Edit/Status/Assignment-Mutationen;
+FC5.2 deckt mindestens ab:
+- Pickup ohne Distribution House und Pflichtkoordinaten;
+- Create/Edit/Status/Archive/Assignment über enge Pickup-Mutationen;
+- Archive statt Hard Delete;
 - M5 offline/retry/duplicate/conflict/401/403/schema gate;
-- View default true und Create/Edit/Assign default false;
+- View default true, Create/Edit/Assign default false;
 - View=false filtert Snapshot und blockiert Search/Write;
-- Search Main-Area-Bounds, Polygon-Filter, Proximity/Map-Center-Fallback, Distanz, Race-/Abort-Verhalten, Provider-Fehler, Rate Limit, Timeout und Secret-Isolation;
+- Geoapify Search Main-Area-Bounds, Polygon-Filter, Proximity/Map-Center-Fallback, Distanz, Race/Abort, Provider-Fehler, Rate Limit, Timeout und Secret-Isolation;
 - permanente MapLibre-Source/feste Layer, app-eigene IDs und minimierte Properties;
-- Pickup Comments inklusive Schema-Gate, Migrationserhalt, Collector-Actor, View=false und Moderationsgrenzen;
-- Assignment nur an aktive Runs/Collectors, Collector-Capability, atomare Zuweisung und stale Revision conflict;
-- normaler Admin-/Collector-Produktgraph ohne zweite Queue, Map-Engine oder Comment-UI.
+- Pickup Comments einschließlich Schema-Gate, Migrationserhalt, Collector Actor, View=false und Moderationsgrenzen;
+- Assignment nur an aktive Runs/Collectors und stale conflict;
+- Collector Edit/Archive nur mit Edit-Capability;
+- Admin realer Search-/Map-/Create-/Edit-/Archive-Pfad;
+- archivierte Pickups nicht auf der Karte, aber weiterhin prüfbar;
+- kein zweiter Queue-/Map-/Comment-Pfad.
 
-Der vollständige FC5.2-Code-Checkpoint ist auf Head `824ddbe946ddfaf1f5b46ba64ab6ea09f128c3f3` mit CI #794 grün: 543 Tests sowie Typecheck, Dependency Audit und Production Build.
+Verifizierter Runtime-Code-Checkpoint:
 
-Die reale Android-/iPhone-Abnahme und Touch-Dichte bleiben wie bei Plan 018 offene Hardware-Gates.
-
-Spätere FC5.3-/Acceptance-Slices müssen mindestens prüfen:
-
-- QR erzeugt nur Collection-Scope und keine Distribution/Admin-Rechte;
-- jedes Gerät erhält getrennte app-eigene Collector-Identität;
-- Revocation blockiert neue Reads/Writes serverseitig;
-- kein automatisches Timeout existiert;
-- Collection Areas sind unabhängig von Distribution Areas;
-- Distribution Delete verändert Collection nicht;
-- Campaign Delete entfernt Collection-Daten gemäß FK-/Lifecycle-Vertrag;
-- Collection Road Status verändert niemals Distribution Street Status;
-- getrennte Stats-Nenner;
-- Actor Attribution;
-- gezielter Revert ist idempotent und überschreibt keine neuere fremde Änderung ohne Konflikt;
-- Touch-/Keyboard-/Screenreader-Alternativen;
-- Android Chromium und iPhone Safari als reale Acceptance Gates.
+```text
+Head: f9967033048cf03f2839cd41924cc1bd524a69c5
+CI: #807 success
+```
 
 Quality Commands:
 
@@ -339,53 +295,69 @@ npm run build
 npm run check
 ```
 
-CI zählt nur, wenn es auf exakt dem aktuellen Head grün ist.
+CI zählt nur, wenn sie auf exakt dem aktuellen Head grün ist.
+
+## FC5.3: nächster Runtime-Scope
+
+FC5.3 bleibt separat:
+- First-Class Collection Road Sections;
+- Status Offen/Abgefahren/Später/Nicht befahrbar;
+- Fortschritt je Area/Run/Campaign;
+- getrennte Pickup- und Road-Nenner;
+- Actor Attribution und Highlight;
+- gezieltes serverseitiges compensating Revert mit Revision-/Konfliktprüfung;
+- Admin force release/reassignment bleibt verfügbar.
+
+Keine FC5.3-Funktion in einen FC5.2-Hotfix zurückstapeln.
+
+## Actor-Provenance / Revert
+
+Jede authoritative Collection-Änderung muss dem handelnden Collector/Admin zugeordnet werden können. Worker persistiert authoritative Actor-Provenance.
+
+Spätere FC5.3-Admin-Funktionen sollen Beiträge filtern/highlighten und ausgewählte Änderungen über serverautorisierte compensating mutations zurücksetzen. Kein lineares Undo und kein direktes Löschen historischer DB-Zeilen. Audit-Historie bleibt erhalten und Konflikte mit späterer fremder Arbeit müssen erkannt werden.
 
 ## Sicherheit, Privacy und Kosten
 
 - Worker bleibt authoritative Authorization Boundary.
-- QR-Code ist ein Capability-Einstieg, kein öffentlicher allgemeiner Account.
-- QR-/Session-/Collector-Tokens sind high entropy, revocable und nicht als Klartext in D1/Logs/Events abzulegen.
-- Reuse der vorhandenen Access-/Temporary-Credential-Muster vor neuer Auth-Mechanik.
-- Collector-ID ist Selektor/Audit-Identität und nicht das Credential selbst.
-- Kein Client-only Capability Check.
+- QR/Session/Collector Tokens sind high entropy und revocable; keine Klartext-Credentials in D1/Logs/Events.
+- Collector-ID ist Audit-/Selektor-Identität, nicht Credential.
+- Keine Client-only Security-Entscheidung.
 - Keine Secrets in MapLibre Properties.
-- Adresse, Titel, Beschreibung, Kommentare und Provider-Daten sind untrusted/inert.
+- Adresse, Titel, Beschreibung, Kommentare und Provider-Daten bleiben untrusted/inert.
 - Prepared/bound D1 Statements.
-- Kein SQL aus String-Konkatenation.
 - Keine kontinuierliche GPS-Historie.
-- One-shot Location nur für UI-Ranking/Fokus, wenn der Nutzer erlaubt.
-- Geoapify läuft über den Worker mit serverseitigem Credential und enger Rate-Limit-/Main-Area-Grenze.
-- Geoapify-/OSM-Attribution wird sichtbar gerendert; aktuelle Provider-Kosten-/Nutzungsgrenzen sind im FC5.2-Handoff dokumentiert.
-- Kein unbegrenztes Search-as-you-type gegen den Provider.
-- Keine neue Datenbank, Queue, Map-Engine oder externe Routing-Engine.
-- Bestehendes Cloudflare/D1/MapLibre-Setup bevorzugen.
-- Gesamtrichtung bleibt auf sehr niedrige laufende Kosten ausgerichtet.
+- One-shot Location nur nach Nutzerfreigabe.
+- Geoapify über Worker mit engem Rate Limit und Main-Area-Grenze.
+- sichtbare Geoapify-/OSM-Attribution.
+- keine neue Datenbank, Queue, Map-Engine oder Routing-Engine.
+- bestehendes Cloudflare/D1/MapLibre-Setup bevorzugen.
+- laufende Kosten niedrig halten.
 
-## Offene Fragen / Unklarheiten
+## Reale Acceptance-Gates
 
-Die bisherigen A/B-Produktfragen und die FC5.2-Geocoder-Auswahl sind entschieden.
+Noch nicht als durchgeführt behaupten:
+- Android Chromium;
+- iPhone Safari;
+- Touch-Dichte und Dense-Mobile-Verhalten;
+- Search-Ergebniswahl und manuelle Kartenposition auf echten Touch-Geräten;
+- Comment-/Assignment-/Edit-/Archive-Bedienung auf echten Geräten.
 
-Nicht blockierende technische Punkte für FC5.3:
+Cloud-Browser/CI sind kein Ersatz für diese Gates.
 
-- minimale reversible Change-Repräsentation für selektiven Admin-Revert ohne Full Event Sourcing;
-- genaue Retention von abgeschlossenen Collection Runs und Audit Changes. Historie darf nicht stillschweigend gelöscht werden.
+## Nicht Teil des FC5.2-Abschlusses
 
-Diese Punkte erfordern keine weitere Produktentscheidung von Master, solange die Implementierung die oben festgelegten Grenzen einhält. Falls eine technische Auswahl zusätzliche Kosten, neue externe Credentials oder eine neue irreversible Architekturgrenze erzeugt, muss Codex stoppen und die Alternativen dokumentieren.
-
-## Nicht Teil dieses Slices
-
-- Kopplung von Collection-Status an Distribution Tasks;
-- automatische Freigabe/Timeout von übernommenen Areas;
-- kontinuierliches GPS-Tracking;
-- GPS-Routenhistorie;
-- neue allgemeine Organizations-/Identity-/Permission-Runtime;
+- Collection Road Sections;
+- Collection/Pickup Stats;
+- Actor Highlight/Attribution UI;
+- compensating Revert;
+- automatische Freigabe/Timeout von Areas;
+- kontinuierliches GPS-Tracking oder Routenhistorie;
+- allgemeine Organizations-/Identity-/Permission-Runtime;
 - neue Map-Engine;
 - zweite Sync-Queue;
-- öffentliche internetweite Collector-Discovery;
 - AI-/LLM-Routing;
 - automatisches Fahrzeug-Routing oder automatische Gebietsverteilung;
 - Remote-Anwendung vorbereiteter Migrationen;
 - manueller Cloudflare-Deploy;
 - Merge oder Ready for Review von PR #72;
-- neuer Branch oder neuer PR, solange nicht ausdrücklich angeordnet.
+- neuer Branch oder neuer PR ohne ausdrücklichen Auftrag.
