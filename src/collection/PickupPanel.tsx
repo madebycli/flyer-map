@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CommentsContextPanel } from "../collaboration/CommentsContextPanel.tsx";
 import type { LngLat } from "../domain/campaign.ts";
 import {
   summarizePickupStatuses,
@@ -115,9 +116,20 @@ export function PickupPanel({
   const [searchState, setSearchState] = useState<"idle" | "loading" | "empty" | "error">("idle");
   const [locationBias, setLocationBias] = useState<LngLat | null>(null);
   const [locationState, setLocationState] = useState<"idle" | "loading" | "active" | "error">("idle");
+  const [commentPickupId, setCommentPickupId] = useState<string | null>(null);
   const searchSequence = useRef(0);
   const summary = useMemo(() => summarizePickupStatuses(items.map((item) => item.status)), [items]);
   const effectiveBias = locationBias ?? mapCenter;
+  const commentPickup = commentPickupId
+    ? items.find((item) => item.id === commentPickupId) ?? null
+    : null;
+  const language = locale.toLowerCase().startsWith("de") ? "de" : "en";
+
+  useEffect(() => {
+    if (commentPickupId && !items.some((item) => item.id === commentPickupId)) {
+      setCommentPickupId(null);
+    }
+  }, [commentPickupId, items]);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -261,6 +273,16 @@ export function PickupPanel({
               <strong>{item.title}</strong>
               <small>{item.address}</small>
               {item.description ? <p>{item.description}</p> : null}
+              <button
+                type="button"
+                className="pickup-comment-toggle"
+                aria-expanded={commentPickupId === item.id}
+                onClick={() => setCommentPickupId((current) => current === item.id ? null : item.id)}
+              >
+                {commentPickupId === item.id
+                  ? (language === "de" ? "Kommentare schließen" : "Close comments")
+                  : (language === "de" ? "Kommentare" : "Comments")}
+              </button>
             </div>
             {canEdit ? (
               <select
@@ -278,6 +300,19 @@ export function PickupPanel({
           </article>
         ))}
       </div>
+
+      {commentPickup ? (
+        <CommentsContextPanel
+          campaignId={campaignId}
+          targetType="pickup-task"
+          targetId={commentPickup.id}
+          targetLabel={`${commentPickup.title} · ${commentPickup.address}`}
+          targetTeamId={null}
+          access={null}
+          online={online}
+          language={language}
+        />
+      ) : null}
 
       {canCreate && !composerOpen ? (
         <button type="button" className="pickup-open-composer" onClick={() => setComposerOpen(true)}>
