@@ -38,6 +38,15 @@ Weiter offen aus FC4/FC5 sind reale Android-Chromium- und iPhone-Safari-Abnahmen
 
 Die automatische Suite schützt den neuen Layer-/Datenvertrag einschließlich Pickup-Renderer. Eine echte WebGL-/Android-/iPhone-Sichtprüfung wurde in diesem Slice nicht behauptet.
 
+## Map-/Smart-Data-Hardening-Checkpoint
+
+```text
+Runtime-Head: 619cf690859ff21a4a8599f7762f38b0e27a013d
+CI: #816 success
+```
+
+Der Bright-/Live-Follow-/Smart-Data-Fix ist auf diesem exakten Runtime-Head mit Tests, Typecheck, Dependency Audit und Production Build grün verifiziert. Der automatisierte Workers-Build-Check ist ebenfalls erfolgreich. Eine echte WebGL-/Android-/iPhone-Abnahme bleibt offen.
+
 ## FC5.2 verifizierter Runtime-Checkpoint
 
 ```text

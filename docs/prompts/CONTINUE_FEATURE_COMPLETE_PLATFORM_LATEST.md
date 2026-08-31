@@ -38,7 +38,7 @@ Der nächste Map-Hardening-Slice aktualisiert den bestehenden PR #72 ohne neuen 
 - Smart Street und Smart House besitzen getrennte ephemere Caches, Ladezustände, Dedupe-Schlüssel und Fehleranzeigen. Ein Paket wird aus keinem anderen Smart-Flow wiederverwendet;
 - die Smart-Aktionsbuttons zeigen ihren jeweiligen Ladezustand unmittelbar, der manuelle Fallback bleibt verfügbar.
 
-Der Fix darf erst nach einem neuen exakten CI-Lauf als verifiziert dokumentiert werden. Reale WebGL-/Android-/iPhone-Abnahme bleibt offen, sofern sie nicht tatsächlich durchgeführt wurde.
+Der Fix ist auf Runtime-Head `619cf690859ff21a4a8599f7762f38b0e27a013d` mit GitHub-CI #816 (Tests, Typecheck, Dependency Audit und Production Build) grün verifiziert; der automatisierte Workers-Build-Check ist ebenfalls erfolgreich. Reale WebGL-/Android-/iPhone-Abnahme bleibt offen, sofern sie nicht tatsächlich durchgeführt wurde.
 
 ## Pflichtkontext
 

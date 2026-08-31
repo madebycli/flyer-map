@@ -121,7 +121,7 @@ Primär geändert:
 
 ## Verifizierter Abschluss
 
-Die lokale Node-Test-Suite ist mit 555 von 555 Tests grün. Typecheck, Dependency Audit, Production Build und `check` werden durch die bestehende GitHub-CI auf dem exakten finalen Branch-Head verifiziert. Eine echte WebGL-, Android- oder iPhone-Abnahme wurde nicht behauptet.
+Die lokale Node-Test-Suite ist mit 560 von 560 Tests grün. Der Runtime-Fix ist auf Head `619cf690859ff21a4a8599f7762f38b0e27a013d` durch GitHub-CI #816 mit Tests, Typecheck, Dependency Audit und Production Build grün verifiziert. Der automatisierte Workers-Build-Check ist ebenfalls erfolgreich. Eine echte WebGL-, Android- oder iPhone-Abnahme wurde nicht behauptet.
 
 ## Nachfolge-Hardening: Bright, Live-Follow und getrennte Smart-Daten
 
