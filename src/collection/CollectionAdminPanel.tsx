@@ -238,7 +238,7 @@ export function CollectionAdminPanel({
     const now = new Date().toISOString();
     updateCollection((current) => ({
       ...current,
-      pickups: current.pickups.map((pickup) =>
+      pickups: (current.pickups ?? []).map((pickup) =>
         pickup.id === pickupId && pickup.archivedAt === null
           ? {
               ...pickup,
