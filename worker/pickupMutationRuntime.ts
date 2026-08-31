@@ -291,11 +291,14 @@ async function allReferencesExist(
   ids: string[],
 ) {
   if (ids.length === 0) return true;
-  const revokedPredicate = table === "collection_collectors" ? " AND revoked_at IS NULL" : "";
+  const activePredicate =
+    table === "collection_runs"
+      ? " AND status = 'active'"
+      : " AND revoked_at IS NULL";
   const rows = await db
     .prepare(
       `SELECT id FROM ${table}
-       WHERE campaign_id = ?${revokedPredicate}
+       WHERE campaign_id = ?${activePredicate}
          AND id IN (SELECT value FROM json_each(?))`,
     )
     .bind(campaignId, JSON.stringify(ids))
