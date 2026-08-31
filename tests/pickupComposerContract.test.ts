@@ -11,7 +11,7 @@ test("Pickup composer uses race-safe bounded search with map-center and one-shot
   assert.match(panel, /new AbortController\(\)/u);
   assert.match(panel, /searchSequence/u);
   assert.match(panel, /setTimeout\(\(\) => \{/u);
-  assert.match(panel, /}, 320\)/u);
+  assert.ok(panel.includes("}, 320)"));
   assert.match(panel, /locationBias \?\? mapCenter/u);
   assert.match(panel, /navigator\.geolocation\.getCurrentPosition/u);
   assert.doesNotMatch(panel, /watchPosition/u);
