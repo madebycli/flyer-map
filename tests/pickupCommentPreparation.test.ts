@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import {
@@ -67,6 +68,21 @@ test("Pickup comment draft preparation only accepts an existing Pickup target", 
   );
 });
 
-test("Pickup comment persistence remains disabled until an additive runtime migration exists", () => {
-  assert.equal(normalizeCommentTargetType("pickup-task"), null);
+test("Pickup comments use the persistent target only after forward migration 0013", () => {
+  assert.equal(normalizeCommentTargetType("pickup-task"), "pickup-task");
+  const migration = readFileSync(
+    new URL("../migrations/0013_fc5_pickup_comments.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(migration, /pickup-task/u);
+  assert.match(migration, /collection-collector/u);
+  assert.match(migration, /INSERT INTO comments_fc5_next/u);
+  assert.match(migration, /INSERT INTO domain_events_fc5_next/u);
+});
+
+test("normal Pickup UI reuses the durable CommentsContextPanel", () => {
+  const panel = readFileSync(new URL("../src/collection/PickupPanel.tsx", import.meta.url), "utf8");
+  assert.match(panel, /CommentsContextPanel/u);
+  assert.match(panel, /targetType="pickup-task"/u);
+  assert.match(panel, /commentPickup\.id/u);
 });
