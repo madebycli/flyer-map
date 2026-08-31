@@ -6,12 +6,14 @@ import {
 } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import { resolveCollectionAccess } from "./collectionAccess.ts";
+import { loadPickupCapabilities } from "./pickupCapabilities.ts";
 import { hasPickupReadSchema } from "./pickupRepository.ts";
 
 const GEOAPIFY_AUTOCOMPLETE_URL = "https://api.geoapify.com/v1/geocode/autocomplete";
 const MAX_QUERY_LENGTH = 120;
 const MAX_RESULTS = 8;
 const DEFAULT_TIMEOUT_MS = 2_500;
+const EARTH_RADIUS_METERS = 6_371_000;
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/u;
 
 type RateLimitBinding = {
@@ -28,10 +30,6 @@ type MainAreaRow = {
   geometry_json: string;
 };
 
-type CollectorCapabilityRow = {
-  can_create_pickups: number;
-};
-
 type GeoapifyResult = Record<string, unknown>;
 
 type SearchAccessResult =
@@ -43,6 +41,7 @@ export type PickupAddressSearchResult = {
   title: string;
   address: string;
   position: LngLat;
+  distanceMeters: number;
   source: Extract<PickupSource, { kind: "osm-address" }>;
 };
 
@@ -172,6 +171,18 @@ function optionalBias(url: URL, ring: LngLat[]) {
   ] satisfies LngLat;
 }
 
+export function pickupSearchDistanceMeters(origin: LngLat, target: LngLat) {
+  const toRadians = (value: number) => value * Math.PI / 180;
+  const latitude1 = toRadians(origin[1]);
+  const latitude2 = toRadians(target[1]);
+  const latitudeDelta = toRadians(target[1] - origin[1]);
+  const longitudeDelta = toRadians(target[0] - origin[0]);
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(latitude1) * Math.cos(latitude2) * Math.sin(longitudeDelta / 2) ** 2;
+  return Math.round(2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(haversine)));
+}
+
 function safeText(value: unknown, maxLength: number) {
   if (typeof value !== "string") return null;
   const normalized = value.trim().replace(/\s+/gu, " ");
@@ -194,6 +205,7 @@ function normalizeGeoapifyResult(
   result: GeoapifyResult,
   index: number,
   ring: LngLat[],
+  bias: LngLat,
 ): PickupAddressSearchResult | null {
   const position = resultPosition(result);
   if (!position || !pickupSearchPointInPolygon(position, ring)) return null;
@@ -218,6 +230,7 @@ function normalizeGeoapifyResult(
     title: preferredTitle,
     address,
     position,
+    distanceMeters: pickupSearchDistanceMeters(bias, position),
     source,
   };
 }
@@ -260,21 +273,13 @@ async function resolveSearchAccess(
   };
 }
 
-async function collectorCanCreatePickups(
+async function collectorCanSearchPickups(
   db: D1DatabaseLike,
   campaignId: string,
   collectorId: string,
 ) {
-  const row = await db
-    .prepare(
-      `SELECT can_create_pickups
-       FROM collection_collectors
-       WHERE id = ? AND campaign_id = ? AND revoked_at IS NULL
-       LIMIT 1`,
-    )
-    .bind(collectorId, campaignId)
-    .first<CollectorCapabilityRow>();
-  return row?.can_create_pickups === 1;
+  const capabilities = await loadPickupCapabilities(db, campaignId, collectorId);
+  return Boolean(capabilities?.canViewPickups && capabilities.canCreatePickups);
 }
 
 async function loadMainAreaRing(db: D1DatabaseLike, campaignId: string) {
@@ -360,12 +365,12 @@ export async function handlePickupSearch(
   if (access.access.role === "collection-collector") {
     if (
       !access.access.collectorId ||
-      !(await collectorCanCreatePickups(env.DB, campaignId, access.access.collectorId))
+      !(await collectorCanSearchPickups(env.DB, campaignId, access.access.collectorId))
     ) {
       return errorResponse(
         403,
         "pickup_capability_forbidden",
-        "Dieser Collection-Helfer darf keine Pickups anlegen.",
+        "Dieser Collection-Helfer darf keine Pickups sehen und anlegen.",
       );
     }
   }
@@ -452,12 +457,12 @@ export async function handlePickupSearch(
   const results: PickupAddressSearchResult[] = [];
   for (const [index, candidate] of payload.results.entries()) {
     if (!isRecord(candidate)) continue;
-    const normalized = normalizeGeoapifyResult(candidate, index, ring);
+    const normalized = normalizeGeoapifyResult(candidate, index, ring, bias);
     if (!normalized) continue;
     if (results.some((result) => result.id === normalized.id)) continue;
     results.push(normalized);
-    if (results.length >= MAX_RESULTS) break;
   }
+  results.sort((left, right) => left.distanceMeters - right.distanceMeters || left.id.localeCompare(right.id));
 
-  return json({ results, attribution: PICKUP_SEARCH_ATTRIBUTION });
+  return json({ results: results.slice(0, MAX_RESULTS), attribution: PICKUP_SEARCH_ATTRIBUTION });
 }

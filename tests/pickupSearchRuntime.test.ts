@@ -15,6 +15,7 @@ import type {
 import {
   handlePickupSearch,
   parsePickupSearchPolygon,
+  pickupSearchDistanceMeters,
   pickupSearchPointInPolygon,
 } from "../worker/pickupSearch.ts";
 
@@ -23,6 +24,7 @@ const migrationFiles = [
   "0002_m4_access.sql",
   "0010_fc5_collection_access_areas_runs.sql",
   "0011_fc5_collection_pickups.sql",
+  "0012_fc5_collection_pickup_visibility.sql",
 ];
 
 class SqliteStatement implements D1PreparedStatement {
@@ -142,16 +144,17 @@ function limiter(success = true) {
   };
 }
 
-test("Pickup search polygon parsing and containment include the boundary and reject outside points", () => {
+test("Pickup search polygon parsing, containment and distance are deterministic", () => {
   const ring = parsePickupSearchPolygon(mainPolygon);
   assert.ok(ring);
   assert.equal(pickupSearchPointInPolygon([10.05, 50.05], ring), true);
   assert.equal(pickupSearchPointInPolygon([10, 50.04], ring), true);
   assert.equal(pickupSearchPointInPolygon([10.2, 50.05], ring), false);
   assert.equal(parsePickupSearchPolygon({ type: "Polygon", coordinates: [] }), null);
+  assert.equal(pickupSearchDistanceMeters([10.02, 50.02], [10.03, 50.03]), 1322);
 });
 
-test("Admin Pickup search keeps the key server-side and filters Geoapify results against the real polygon", async () => {
+test("Admin Pickup search keeps the key server-side, filters Main Area and sorts by bias distance", async () => {
   const db = database();
   const cookie = await adminCookie(db);
   const rate = limiter();
@@ -161,14 +164,23 @@ test("Admin Pickup search keeps the key server-side and filters Geoapify results
     return Response.json({
       results: [
         {
-          place_id: "inside-one",
+          place_id: "inside-far",
+          osm_type: "node",
+          osm_id: 456,
+          address_line1: "Hauptstraße 8",
+          formatted: "Hauptstraße 8, 12345 Teststadt, Deutschland",
+          lon: 10.08,
+          lat: 50.08,
+          rawSecret: "must-not-leak",
+        },
+        {
+          place_id: "inside-near",
           osm_type: "node",
           osm_id: 123,
           address_line1: "Hauptstraße 1",
           formatted: "Hauptstraße 1, 12345 Teststadt, Deutschland",
-          lon: 10.03,
-          lat: 50.03,
-          rawSecret: "must-not-leak",
+          lon: 10.021,
+          lat: 50.021,
         },
         {
           place_id: "outside-one",
@@ -208,27 +220,25 @@ test("Admin Pickup search keeps the key server-side and filters Geoapify results
     results: Array<Record<string, unknown>>;
     attribution: Record<string, unknown>;
   };
-  assert.equal(payload.results.length, 1);
-  assert.deepEqual(payload.results[0], {
-    id: "geoapify:inside-one",
-    title: "Hauptstraße 1",
-    address: "Hauptstraße 1, 12345 Teststadt, Deutschland",
-    position: [10.03, 50.03],
-    source: {
-      kind: "osm-address",
-      provider: "geoapify",
-      placeId: "inside-one",
-      osmType: "node",
-      osmId: "123",
-    },
+  assert.equal(payload.results.length, 2);
+  assert.equal(payload.results[0].id, "geoapify:inside-near");
+  assert.equal(payload.results[0].distanceMeters, 132);
+  assert.equal(payload.results[1].id, "geoapify:inside-far");
+  assert.equal(payload.results[1].distanceMeters, 7929);
+  assert.deepEqual(payload.results[0].source, {
+    kind: "osm-address",
+    provider: "geoapify",
+    placeId: "inside-near",
+    osmType: "node",
+    osmId: "123",
   });
   const serialized = JSON.stringify(payload);
-  assert.doesNotMatch(serialized, /server-secret-key|must-not-leak/u);
+  assert.doesNotMatch(serialized, /server-secret-key|must-not-leak|outside-one/u);
   assert.match(serialized, /Powered by Geoapify/u);
   assert.match(serialized, /OpenStreetMap contributors/u);
 });
 
-test("Pickup search requires access and Collector create capability before any provider request", async () => {
+test("Pickup search requires view and create capabilities before any provider request", async () => {
   const db = database();
   let providerCalls = 0;
   const fetchImpl: typeof fetch = async () => {
@@ -252,10 +262,8 @@ test("Pickup search requires access and Collector create capability before any p
   assert.ok(redeemed);
   const collectorCookie = `vf_collection_session=${encodeURIComponent(redeemed.sessionSecret)}`;
 
-  const denied = await handlePickupSearch(request(collectorCookie), env, { fetchImpl });
-  assert.equal(denied?.status, 403);
-  const deniedPayload = (await denied!.json()) as { error: { code: string } };
-  assert.equal(deniedPayload.error.code, "pickup_capability_forbidden");
+  const deniedCreate = await handlePickupSearch(request(collectorCookie), env, { fetchImpl });
+  assert.equal(deniedCreate?.status, 403);
   assert.equal(providerCalls, 0);
   assert.equal(rate.keys.length, 0);
 
@@ -269,6 +277,41 @@ test("Pickup search requires access and Collector create capability before any p
     "pickup-search:geoapify",
     `pickup-search:campaign_search:${redeemed.access.collectorId}`,
   ]);
+
+  rate.keys.length = 0;
+  db.raw.prepare(
+    `UPDATE collection_collectors
+        SET can_view_pickups = 0, can_create_pickups = 1
+      WHERE id = ?`,
+  ).run(redeemed.access.collectorId);
+  const deniedView = await handlePickupSearch(request(collectorCookie), env, { fetchImpl });
+  assert.equal(deniedView?.status, 403);
+  const deniedPayload = (await deniedView!.json()) as { error: { code: string } };
+  assert.equal(deniedPayload.error.code, "pickup_capability_forbidden");
+  assert.equal(providerCalls, 1);
+  assert.equal(rate.keys.length, 0);
+});
+
+test("Pickup search falls back to Main Area center when the requested bias is outside", async () => {
+  const db = database();
+  const cookie = await adminCookie(db);
+  let upstreamUrl: URL | null = null;
+  const fetchImpl: typeof fetch = async (input) => {
+    upstreamUrl = new URL(String(input));
+    return Response.json({ results: [] });
+  };
+  const response = await handlePickupSearch(
+    request(cookie, "?q=Haupt&lng=30&lat=70"),
+    {
+      DB: db,
+      GEOAPIFY_API_KEY: "server-secret-key",
+      PICKUP_SEARCH_LIMITER: limiter().binding,
+    },
+    { fetchImpl },
+  );
+  assert.equal(response?.status, 200);
+  assert.ok(upstreamUrl);
+  assert.equal(upstreamUrl.searchParams.get("bias"), "proximity:10.05,50.05");
 });
 
 test("Pickup search fails closed for rate limits and missing Main Area without calling Geoapify", async () => {

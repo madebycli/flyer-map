@@ -1,6 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AccessInfo } from "../data/campaignApi";
-import type { CampaignSnapshot, LngLat } from "../domain/campaign";
+import {
+  collectionPickupCapabilitiesFromUnknown,
+} from "../data/pickupCapabilitiesApi.ts";
+import type { CampaignSnapshot, LngLat, MapCameraView } from "../domain/campaign";
 import {
   collectionAreaColor,
   collectionSnapshotOrEmpty,
@@ -9,10 +12,12 @@ import {
   type CollectionRun,
   type CollectionSnapshot,
 } from "../domain/collection";
+import type { PickupDraft, PickupSource, PickupStatus, PickupTask } from "../domain/pickup.ts";
 import type { Language } from "../i18n";
 import { t } from "../i18n";
-import { MapView } from "../map/MapView";
+import { MapView, type MapCameraCommand } from "../map/MapView";
 import type { RefreshState } from "../data/campaignStore";
+import { PickupPanel } from "./PickupPanel.tsx";
 import "./collection-collector.css";
 
 type Props = {
@@ -64,6 +69,10 @@ function updateCollection(
   }));
 }
 
+function pickupActor(collectorId: string) {
+  return { kind: "collection-collector" as const, ref: collectorId };
+}
+
 export function CollectionCollectorView({
   campaignId,
   language,
@@ -78,9 +87,26 @@ export function CollectionCollectorView({
   const collection = collectionSnapshotOrEmpty(snapshot.collection);
   const collectorId = access.collectorId;
   const collectorLabel = access.label ?? copy(language, "Sammler", "Collector");
+  const pickupCapabilities = collectionPickupCapabilitiesFromUnknown(
+    (access as AccessInfo & { collectionCapabilities?: unknown }).collectionCapabilities,
+  );
   const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [currentCamera, setCurrentCamera] = useState<MapCameraView | null>(null);
+  const [pickupCameraCommand, setPickupCameraCommand] = useState<MapCameraCommand>(null);
+  const [pickupPosition, setPickupPosition] = useState<LngLat | null>(null);
+  const [pickupSource, setPickupSource] = useState<PickupSource | null>(null);
+  const [pickupPositioning, setPickupPositioning] = useState(false);
+  const pickupPositioningRef = useRef(false);
+  const preservePickupSourceOnNextCamera = useRef(false);
+  const pickupFocusResetTimer = useRef<number | null>(null);
+  const pickupCameraCommandId = useRef(0);
   const submitInFlight = useRef(false);
+  pickupPositioningRef.current = pickupPositioning;
+
+  useEffect(() => () => {
+    if (pickupFocusResetTimer.current !== null) window.clearTimeout(pickupFocusResetTimer.current);
+  }, []);
 
   const visibleAreas = collection.areas.filter((area) => area.status !== "archived");
   const activeRuns = collection.runs.filter((run) => run.status === "active");
@@ -92,6 +118,15 @@ export function CollectionCollectorView({
   const selectedOpenAreaIds = selectedAreaIds.filter((areaId) =>
     visibleAreas.some((area) => area.id === areaId && area.status === "open" && area.runId === null),
   );
+  const pickupItems = collection.pickups
+    .filter((pickup) => pickup.archivedAt === null)
+    .map((pickup) => ({
+      id: pickup.id,
+      title: pickup.title,
+      address: pickup.address,
+      description: pickup.description,
+      status: pickup.status,
+    }));
 
   const renderedCollectionAreas = useMemo(
     () => visibleAreas.map((area) => ({
@@ -318,6 +353,103 @@ export function CollectionCollectorView({
     }));
   };
 
+  const createPickup = async (draft: PickupDraft & { position: LngLat }) => {
+    if (
+      !collectorId ||
+      !pickupCapabilities.canViewPickups ||
+      !pickupCapabilities.canCreatePickups
+    ) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const actor = pickupActor(collectorId);
+    const pickup: PickupTask = {
+      id: createCollectionId("pickup"),
+      campaignId,
+      areaId: draft.areaId ?? null,
+      title: draft.title,
+      address: draft.address,
+      description: draft.description,
+      position: draft.position,
+      status: "open",
+      archivedAt: null,
+      assignedRunIds: [],
+      assignedCollectorIds: [],
+      source: draft.source ?? null,
+      createdBy: actor,
+      updatedBy: actor,
+      createdAt: now,
+      updatedAt: now,
+    };
+    updateCollection(onSnapshotChange, (current) => ({
+      ...current,
+      pickups: [...collectionSnapshotOrEmpty(current).pickups, pickup],
+    }));
+  };
+
+  const changePickupStatus = async (pickupId: string, status: PickupStatus) => {
+    if (
+      !collectorId ||
+      !pickupCapabilities.canViewPickups ||
+      !pickupCapabilities.canEditPickups
+    ) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const actor = pickupActor(collectorId);
+    updateCollection(onSnapshotChange, (current) => ({
+      ...current,
+      pickups: collectionSnapshotOrEmpty(current).pickups.map((pickup) =>
+        pickup.id === pickupId && pickup.archivedAt === null && pickup.status !== status
+          ? { ...pickup, status, updatedBy: actor, updatedAt: now }
+          : pickup,
+      ),
+    }));
+  };
+
+  const changePickupPosition = (position: LngLat | null, source: PickupSource | null) => {
+    setPickupPosition(position);
+    setPickupSource(source);
+  };
+
+  const focusPickupPosition = (position: LngLat) => {
+    preservePickupSourceOnNextCamera.current = true;
+    if (pickupFocusResetTimer.current !== null) window.clearTimeout(pickupFocusResetTimer.current);
+    pickupFocusResetTimer.current = window.setTimeout(() => {
+      preservePickupSourceOnNextCamera.current = false;
+      pickupFocusResetTimer.current = null;
+    }, 900);
+    pickupCameraCommandId.current += 1;
+    setPickupCameraCommand({
+      id: pickupCameraCommandId.current,
+      view: {
+        center: position,
+        zoom: Math.max(currentCamera?.zoom ?? 0, 17),
+        bearing: currentCamera?.bearing ?? 0,
+      },
+      persist: false,
+    });
+  };
+
+  const handleCameraChange = (camera: MapCameraView) => {
+    setCurrentCamera(camera);
+    if (!pickupPositioningRef.current) return;
+    if (preservePickupSourceOnNextCamera.current) {
+      preservePickupSourceOnNextCamera.current = false;
+      if (pickupFocusResetTimer.current !== null) {
+        window.clearTimeout(pickupFocusResetTimer.current);
+        pickupFocusResetTimer.current = null;
+      }
+      return;
+    }
+    setPickupPosition(camera.center);
+    setPickupSource(null);
+  };
+
+  const setManualPickupPositioning = (active: boolean) => {
+    setPickupPositioning(active);
+  };
+
   if (!collectorId) {
     return (
       <main className="collection-screen">
@@ -348,7 +480,7 @@ export function CollectionCollectorView({
         </div>
       </header>
 
-      <section className="collection-map-card">
+      <section className={"collection-map-card " + (pickupPositioning ? "is-pickup-positioning" : "")}>
         <MapView
           campaignId={campaignId}
           campaignDefaultView={null}
@@ -367,8 +499,8 @@ export function CollectionCollectorView({
           streetDraftVertices={[]}
           streetDraftColor="#2563eb"
           refreshState={refreshState}
-          cameraCommand={null}
-          onCameraChange={() => {}}
+          cameraCommand={pickupCameraCommand}
+          onCameraChange={handleCameraChange}
           onRefresh={onRefresh}
           onAreaSelect={() => {}}
           onTaskSelect={() => {}}
@@ -393,7 +525,7 @@ export function CollectionCollectorView({
           collectionAreas={renderedCollectionAreas}
           selectedCollectionAreaId={selectedAreaIds[0] ?? null}
           onCollectionAreaSelect={(areaId) => {
-            if (!areaId) return;
+            if (pickupPositioning || !areaId) return;
             setSelectedAreaIds((current) =>
               current.includes(areaId)
                 ? current.filter((id) => id !== areaId)
@@ -401,7 +533,66 @@ export function CollectionCollectorView({
             );
           }}
         />
+        {pickupPositioning ? (
+          <div className="collection-pickup-map-pin" aria-hidden="true">
+            <span />
+          </div>
+        ) : null}
       </section>
+
+      {pickupCapabilities.canViewPickups ? (
+        <PickupPanel
+          campaignId={campaignId}
+          items={pickupItems}
+          canCreate={pickupCapabilities.canCreatePickups}
+          canEdit={pickupCapabilities.canEditPickups}
+          online={online}
+          locale={language === "de" ? "de-DE" : "en"}
+          position={pickupPosition}
+          source={pickupSource}
+          mapCenter={currentCamera?.center ?? null}
+          manualPositioning={pickupPositioning}
+          areaId={null}
+          onCreate={createPickup}
+          onStatusChange={changePickupStatus}
+          onPositionChange={changePickupPosition}
+          onFocusPosition={focusPickupPosition}
+          onManualPositioningChange={setManualPickupPositioning}
+          labels={{
+            title: copy(language, "Sonderadressen", "Pickup addresses"),
+            progress: copy(language, "Fortschritt", "Progress"),
+            pickupTitle: copy(language, "Titel", "Title"),
+            address: copy(language, "Adresse", "Address"),
+            description: copy(language, "Beschreibung", "Description"),
+            add: copy(language, "Sonderadresse hinzufügen", "Add pickup address"),
+            adding: copy(language, "Wird gespeichert…", "Saving…"),
+            openComposer: copy(language, "+ Sonderadresse hinzufügen", "+ Add pickup address"),
+            closeComposer: copy(language, "Schließen", "Close"),
+            search: copy(language, "Adresse suchen", "Search address"),
+            searchHint: copy(language, "Straße, Hausnummer oder Ort", "Street, number or place"),
+            searching: copy(language, "Suche läuft…", "Searching…"),
+            searchEmpty: copy(language, "Keine Treffer im Collection-Hauptgebiet.", "No results inside the collection main area."),
+            searchOffline: copy(language, "Offline: Suche pausiert, manuelle Eingabe bleibt möglich.", "Offline: search is paused, manual entry remains available."),
+            searchError: copy(language, "Adresssuche ist gerade nicht verfügbar.", "Address search is currently unavailable."),
+            useLocation: copy(language, "Einmalig Standort nutzen", "Use location once"),
+            locationLoading: copy(language, "Standort wird gelesen…", "Reading location…"),
+            locationActive: copy(language, "Standort-Bias aktiv", "Location bias active"),
+            locationError: copy(language, "Standort nicht verfügbar, Kartenmitte wird verwendet.", "Location unavailable, map center is used."),
+            manualPosition: copy(language, "Position auf Karte korrigieren", "Adjust position on map"),
+            confirmPosition: copy(language, "Position übernehmen", "Use this position"),
+            positionSelected: copy(language, "Position", "Position"),
+            open: copy(language, "Offen", "Open"),
+            collected: copy(language, "Eingesammelt", "Collected"),
+            unavailable: copy(language, "Nicht verfügbar", "Unavailable"),
+            needsFollowUp: copy(language, "Später prüfen", "Needs follow-up"),
+            empty: copy(language, "Noch keine Sonderadressen.", "No pickup addresses yet."),
+            invalidDraft: copy(language, "Bitte Titel, Adresse und Position prüfen.", "Check title, address and position."),
+            positionRequired: copy(language, "Eine Kartenposition ist erforderlich.", "A map position is required."),
+            readOnly: copy(language, "Sonderadressen sind für diesen Zugang nur lesbar.", "Pickup addresses are read-only for this access."),
+            readOnlyCreate: copy(language, "Dieser Zugang darf Sonderadressen bearbeiten, aber keine neuen anlegen.", "This access may edit pickup addresses but cannot create new ones."),
+          }}
+        />
+      ) : null}
 
       <section className="collection-card collection-actions-card">
         <div className="collection-section-heading">
