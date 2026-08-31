@@ -15,22 +15,22 @@ Repository und GitHub sind Source of Truth. Aktiver Entwicklungsbranch ist `plan
 
 ## Feature-Complete-Linie
 
-Plan 017 bleibt die übergeordnete Delivery-Linie. Abgeschlossen sind Plan 018 House Polygon Renderer, Plan 019 Smart Street Runtime, Plan 020 Smart House Runtime und FC5.1 Collection Access, Areas und Runs. Plan 021 bleibt für die noch offenen FC5.2- und FC5.3-Slices aktiv.
+Plan 017 bleibt die übergeordnete Delivery-Linie. Abgeschlossen sind Plan 018 House Polygon Renderer, Plan 019 Smart Street Runtime, Plan 020 Smart House Runtime, FC5.1 Collection Access/Areas/Runs und der FC5.2 Runtime-Scope für First-Class Pickups, Sonderadress-Suche, Map-Rendering, Comments und Assignment. Plan 021 bleibt für FC5.3 sowie die noch offenen realen Geräte-/Touch-Gates aktiv.
 
 Weiter offen aus FC4 sind reale Android-Chromium- und iPhone-Safari-Abnahmen, Touch-Dichte und Dense-Mobile-Verhalten. Cloud-Browser ohne WebGL ersetzt diese Gates nicht.
 
 ## FC5.2 aktueller Stand
 
-Checkpoint A Pickup Visibility, Checkpoint B Pickup Composer/Sonderadress-Suche, Checkpoint C permanente Pickup-MapLibre-Darstellung und Checkpoint D persistente Pickup Comments sind technisch implementiert.
+Checkpoint A Pickup Visibility, Checkpoint B Pickup Composer/Sonderadress-Suche, Checkpoint C permanente Pickup-MapLibre-Darstellung, Checkpoint D persistente Pickup Comments und Checkpoint E Pickup Assignment sind technisch implementiert.
 
-Letzter vollständig grüner FC5.2-D-Code-Checkpoint vor diesem Living-Docs-Commit:
+Letzter vollständig grüner FC5.2-Code-Checkpoint:
 
 ```text
-Head: 731724faa823aa3c2fa5b159559f513bd94b9b55
-CI: #783 success
+Head: 824ddbe946ddfaf1f5b46ba64ab6ea09f128c3f3
+CI: #794 success
 ```
 
-CI #783 ist auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build.
+CI #794 ist auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build.
 
 Checkpoint A:
 - additive prepared-only Migration `0012_fc5_collection_pickup_visibility.sql` mit `can_view_pickups DEFAULT 1`;
@@ -88,9 +88,19 @@ Checkpoint D:
 - CI #782 deckte einen realen SQLite-Rebuild-Fehler auf, weil bestehende 0007-Trigger während des `domain_events`-Rebuilds auf die temporär fehlende Tabelle zeigten; 0013 entfernt nur die beiden betroffenen Trigger vor dem Rebuild und stellt sie danach identisch wieder her;
 - CI #783 ist nach diesem Fix vollständig grün.
 
+Checkpoint E:
+- Admin und Collection Collector verwenden denselben `PickupAssignmentEditor` statt getrennte Assignment-Implementierungen;
+- Assignment bleibt auf dem bestehenden `collection.pickup.set-assignment`-Mutationsvertrag und damit auf derselben M5-Queue;
+- Collector benötigt serverseitig Pickup View und `can_assign_pickups`; Create/Edit werden dadurch nicht implizit gewährt;
+- UI bietet nur aktive Collection Runs und aktive beziehungsweise nicht widerrufene Collector-Kontexte an;
+- Worker validiert Run-/Collector-Referenzen authoritative gegen Campaign und aktuellen aktiven Zustand und lehnt geschlossene/abgebrochene Runs sowie widerrufene Collector ab;
+- Assignment aktualisiert Run- und Collector-Zuweisungen atomar; stale Revisionen konfliktieren ohne Teilzustand;
+- ältere Collection Snapshots ohne `pickups` bleiben im Admin-Update-Pfad kompatibel und werden als leere Pickup-Liste behandelt;
+- Assignment-Tests decken Admin, Collector-Capability, aktive/inaktive Referenzen, stale conflict und den normalen Produktgraph ab;
+- CI #794 ist für den vollständigen FC5.2-Code-Checkpoint grün.
+
 Noch offen aus FC5.2 / Plan 021:
-- echte Assignment UI für Pickup-Zuweisung an Collection Run beziehungsweise einen oder mehrere Collector-Kontexte;
-- reale Mobile-/Touch-Abnahme der Collection- und Pickup-Flows.
+- reale Android-Chromium- und iPhone-Safari-Abnahme der Collection-/Pickup-Flows einschließlich Touch-Dichte, Search, Map-Auswahl, Comments und Assignment.
 
 FC5.3 bleibt separat:
 - eigene Collection Road Sections;
@@ -98,7 +108,7 @@ FC5.3 bleibt separat:
 - Actor-Attribution und Highlight;
 - gezieltes compensating Revert mit Konfliktprüfung.
 
-Nächster empfohlener isolierter Runtime-Slice: Pickup Assignment UI / Run- und Collector-Zuweisung. Der vorhandene serverseitige Assign-Mutationsvertrag und `can_assign_pickups` sollen verwendet werden. Stats, Road Sections, Highlight/Revert und FC5.3 dürfen nicht in denselben Slice gestapelt werden.
+Der nächste neue Runtime-Scope ist damit nicht mehr FC5.2, sondern FC5.3. Reale Geräteabnahme bleibt parallel ein Acceptance Gate und darf nicht durch Cloud-Browser-Checks ersetzt werden.
 
 ## Collection / Pickup Architekturgrenzen
 
@@ -126,14 +136,13 @@ Bekannte fehlende Schemas müssen spezifisch fail-closed behandelt werden. Keine
 
 ## Context Graph
 
-`docs/context-map.yaml` benötigt für diesen Checkpoint keine neue Topologie. Der vorhandene FC5-Knoten `plan-collection-pickup-persistence` routet bereits zu Collaboration, Data, Security, Offline Sync, Map und Quality; `collaboration` lädt explizit für Pickup Comments. Keine unnötige Graph-Duplikation hinzufügen.
+`docs/context-map.yaml` benötigt für diesen Checkpoint keine neue Topologie. Der vorhandene FC5-Knoten `plan-collection-pickup-persistence` routet bereits zu Collaboration, Data, Security, Offline Sync, Map und Quality. Assignment verwendet dieselben FC5-/M5-/Collection-Knoten und führt keine neue Architekturdomäne ein.
 
 ## Immediate next
 
 1. Exakten aktuellen Branch-Head und CI einschließlich dieses Living-Docs-Commits verifizieren.
-2. Nur bei vollständig grüner CI den nächsten Runtime-Slice beginnen.
-3. Pickup Assignment UI als isolierten FC5.2-Slice auf dem bestehenden serverseitigen Assign-Vertrag und `can_assign_pickups` aufbauen.
-4. Zuweisungen serverseitig gegen Campaign, Pickup, Run/Collector-Scope und Capability validieren; keine UI-only-Berechtigung.
+2. Reale Android-/iPhone-Abnahme für FC4/FC5 weiter als offenes Hardware-Gate führen, solange sie nicht tatsächlich durchgeführt wurde.
+3. Wenn Runtime-Entwicklung fortgesetzt wird, FC5.3 mit First-Class Collection Road Sections als eigenem Slice beginnen.
+4. Collection/Pickup Stats, Attribution/Highlight und Revert weiterhin getrennt und serverautorisiert entwickeln.
 5. Migrationen 0008/0013 nicht historisch verändern und keine Remote-Migration anwenden.
-6. Collection Road Sections, Stats, Attribution/Highlight, Revert und FC5.3 separat halten.
-7. Den Assignment-Slice wieder mit Tests, Typecheck, Audit und Production Build auf exakt einem Head grün abschließen.
+6. Kein Deploy, Merge oder Ready-for-Review ohne expliziten Auftrag.
