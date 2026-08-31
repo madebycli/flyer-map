@@ -25,6 +25,11 @@ type Props = {
 
 function errorMessage(error: unknown, language: Language) {
   if (error instanceof CampaignApiError) {
+    if (error.code === "pickup_comments_schema_unavailable") {
+      return language === "de"
+        ? "Pickup-Kommentare sind vorbereitet, aber Migration 0013 ist noch nicht ausgerollt."
+        : "Pickup comments are prepared, but migration 0013 has not been rolled out yet.";
+    }
     if (error.code === "comments_schema_unavailable") {
       return language === "de"
         ? "Kommentare sind vorbereitet, aber Migration 0008 ist noch nicht ausgerollt."
@@ -54,6 +59,9 @@ function clientCanCreate(
 ) {
   if (!access || access.role === "viewer") return false;
   if (access.role === "admin") return true;
+  if (access.role === "collection-collector") {
+    return targetType === "pickup-task" && Boolean(access.collectorId);
+  }
   return (
     targetType !== "campaign" &&
     Boolean(targetTeamId && access.teamId === targetTeamId) &&
