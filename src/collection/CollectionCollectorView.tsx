@@ -18,6 +18,10 @@ import { t } from "../i18n";
 import { MapView, type MapCameraCommand } from "../map/MapView";
 import type { RefreshState } from "../data/campaignStore";
 import { PickupPanel } from "./PickupPanel.tsx";
+import {
+  PickupLifecyclePanel,
+  type PickupLifecycleEdit,
+} from "./PickupLifecyclePanel.tsx";
 import "./collection-collector.css";
 
 type Props = {
@@ -71,6 +75,10 @@ function updateCollection(
 
 function pickupActor(collectorId: string) {
   return { kind: "collection-collector" as const, ref: collectorId };
+}
+
+function samePosition(a: LngLat, b: LngLat) {
+  return a[0] === b[0] && a[1] === b[1];
 }
 
 export function CollectionCollectorView({
@@ -134,6 +142,16 @@ export function CollectionCollectorView({
       assignedRunIds: pickup.assignedRunIds,
       assignedCollectorIds: pickup.assignedCollectorIds,
     }));
+  const pickupLifecycleItems = visiblePickups.map((pickup) => ({
+    id: pickup.id,
+    title: pickup.title,
+    address: pickup.address,
+    description: pickup.description,
+    position: pickup.position,
+    areaId: pickup.areaId,
+    status: pickup.status,
+    archivedAt: pickup.archivedAt,
+  }));
   const assignmentRunOptions = activeRuns.map((run) => ({
     id: run.id,
     label: `${copy(language, "Run", "Run")} ${run.id.slice(-8)} · ${run.members.filter((member) => member.leftAt === null).length} ${copy(language, "Geräte", "devices")}`,
@@ -429,16 +447,81 @@ export function CollectionCollectorView({
     ) {
       return;
     }
+    const existing = visiblePickups.find((pickup) => pickup.id === pickupId);
+    if (!existing || existing.archivedAt !== null || existing.status === status) return;
     const now = new Date().toISOString();
     const actor = pickupActor(collectorId);
     updateCollection(onSnapshotChange, (current) => ({
       ...current,
       pickups: collectionSnapshotOrEmpty(current).pickups.map((pickup) =>
-        pickup.id === pickupId && pickup.archivedAt === null && pickup.status !== status
+        pickup.id === pickupId && pickup.archivedAt === null
           ? { ...pickup, status, updatedBy: actor, updatedAt: now }
           : pickup,
       ),
     }));
+  };
+
+  const changePickupDetails = async (pickupId: string, input: PickupLifecycleEdit) => {
+    if (
+      !collectorId ||
+      !pickupCapabilities.canViewPickups ||
+      !pickupCapabilities.canEditPickups
+    ) {
+      return;
+    }
+    const existing = visiblePickups.find((pickup) => pickup.id === pickupId);
+    if (!existing || existing.archivedAt !== null) return;
+    const changed =
+      existing.areaId !== input.areaId ||
+      existing.title !== input.title ||
+      existing.address !== input.address ||
+      existing.description !== input.description ||
+      !samePosition(existing.position, input.position);
+    if (!changed) return;
+    const now = new Date().toISOString();
+    const actor = pickupActor(collectorId);
+    updateCollection(onSnapshotChange, (current) => ({
+      ...current,
+      pickups: collectionSnapshotOrEmpty(current).pickups.map((pickup) =>
+        pickup.id === pickupId && pickup.archivedAt === null
+          ? {
+              ...pickup,
+              areaId: input.areaId,
+              title: input.title,
+              address: input.address,
+              description: input.description,
+              position: input.position,
+              updatedBy: actor,
+              updatedAt: now,
+            }
+          : pickup,
+      ),
+    }));
+    setSelectedPickupId(pickupId);
+    focusPickupPosition(input.position);
+  };
+
+  const archivePickup = async (pickupId: string) => {
+    if (
+      !collectorId ||
+      !pickupCapabilities.canViewPickups ||
+      !pickupCapabilities.canEditPickups
+    ) {
+      return;
+    }
+    const existing = visiblePickups.find((pickup) => pickup.id === pickupId);
+    if (!existing || existing.archivedAt !== null) return;
+    const now = new Date().toISOString();
+    const actor = pickupActor(collectorId);
+    updateCollection(onSnapshotChange, (current) => ({
+      ...current,
+      pickups: collectionSnapshotOrEmpty(current).pickups.map((pickup) =>
+        pickup.id === pickupId && pickup.archivedAt === null
+          ? { ...pickup, archivedAt: now, updatedBy: actor, updatedAt: now }
+          : pickup,
+      ),
+    }));
+    if (selectedPickupId === pickupId) setSelectedPickupId(null);
   };
 
   const changePickupAssignment = async (
@@ -450,6 +533,14 @@ export function CollectionCollectorView({
       !collectorId ||
       !pickupCapabilities.canViewPickups ||
       !pickupCapabilities.canAssignPickups
+    ) {
+      return;
+    }
+    const existing = visiblePickups.find((pickup) => pickup.id === pickupId);
+    if (!existing || existing.archivedAt !== null) return;
+    if (
+      JSON.stringify(existing.assignedRunIds) === JSON.stringify(assignedRunIds) &&
+      JSON.stringify(existing.assignedCollectorIds) === JSON.stringify(assignedCollectorIds)
     ) {
       return;
     }
@@ -474,6 +565,11 @@ export function CollectionCollectorView({
   const changePickupPosition = (position: LngLat | null, source: PickupSource | null) => {
     setPickupPosition(position);
     setPickupSource(source);
+  };
+
+  const changeLifecyclePosition = (position: LngLat | null) => {
+    setPickupPosition(position);
+    setPickupSource(null);
   };
 
   const focusPickupPosition = (position: LngLat) => {
@@ -609,61 +705,77 @@ export function CollectionCollectorView({
       </section>
 
       {pickupCapabilities.canViewPickups ? (
-        <PickupPanel
-          campaignId={campaignId}
-          items={pickupItems}
-          canCreate={pickupCapabilities.canCreatePickups}
-          canEdit={pickupCapabilities.canEditPickups}
-          canAssign={pickupCapabilities.canAssignPickups}
-          assignmentRunOptions={assignmentRunOptions}
-          assignmentCollectorOptions={assignmentCollectorOptions}
-          online={online}
-          locale={language === "de" ? "de-DE" : "en"}
-          position={pickupPosition}
-          source={pickupSource}
-          mapCenter={currentCamera?.center ?? null}
-          manualPositioning={pickupPositioning}
-          areaId={null}
-          onCreate={createPickup}
-          onStatusChange={changePickupStatus}
-          onAssignmentChange={changePickupAssignment}
-          onPositionChange={changePickupPosition}
-          onFocusPosition={focusPickupPosition}
-          onManualPositioningChange={setManualPickupPositioning}
-          labels={{
-            title: copy(language, "Sonderadressen", "Pickup addresses"),
-            progress: copy(language, "Fortschritt", "Progress"),
-            pickupTitle: copy(language, "Titel", "Title"),
-            address: copy(language, "Adresse", "Address"),
-            description: copy(language, "Beschreibung", "Description"),
-            add: copy(language, "Sonderadresse hinzufügen", "Add pickup address"),
-            adding: copy(language, "Wird gespeichert…", "Saving…"),
-            openComposer: copy(language, "+ Sonderadresse hinzufügen", "+ Add pickup address"),
-            closeComposer: copy(language, "Schließen", "Close"),
-            search: copy(language, "Adresse suchen", "Search address"),
-            searchHint: copy(language, "Straße, Hausnummer oder Ort", "Street, number or place"),
-            searching: copy(language, "Suche läuft…", "Searching…"),
-            searchEmpty: copy(language, "Keine Treffer im Collection-Hauptgebiet.", "No results inside the collection main area."),
-            searchOffline: copy(language, "Offline: Suche pausiert, manuelle Eingabe bleibt möglich.", "Offline: search is paused, manual entry remains available."),
-            searchError: copy(language, "Adresssuche ist gerade nicht verfügbar.", "Address search is currently unavailable."),
-            useLocation: copy(language, "Einmalig Standort nutzen", "Use location once"),
-            locationLoading: copy(language, "Standort wird gelesen…", "Reading location…"),
-            locationActive: copy(language, "Standort-Bias aktiv", "Location bias active"),
-            locationError: copy(language, "Standort nicht verfügbar, Kartenmitte wird verwendet.", "Location unavailable, map center is used."),
-            manualPosition: copy(language, "Position auf Karte korrigieren", "Adjust position on map"),
-            confirmPosition: copy(language, "Position übernehmen", "Use this position"),
-            positionSelected: copy(language, "Position", "Position"),
-            open: copy(language, "Offen", "Open"),
-            collected: copy(language, "Eingesammelt", "Collected"),
-            unavailable: copy(language, "Nicht verfügbar", "Unavailable"),
-            needsFollowUp: copy(language, "Später prüfen", "Needs follow-up"),
-            empty: copy(language, "Noch keine Sonderadressen.", "No pickup addresses yet."),
-            invalidDraft: copy(language, "Bitte Titel, Adresse und Position prüfen.", "Check title, address and position."),
-            positionRequired: copy(language, "Eine Kartenposition ist erforderlich.", "A map position is required."),
-            readOnly: copy(language, "Sonderadressen sind für diesen Zugang nur lesbar.", "Pickup addresses are read-only for this access."),
-            readOnlyCreate: copy(language, "Dieser Zugang darf Sonderadressen bearbeiten, aber keine neuen anlegen.", "This access may edit pickup addresses but cannot create new ones."),
-          }}
-        />
+        <>
+          <PickupPanel
+            campaignId={campaignId}
+            items={pickupItems}
+            canCreate={pickupCapabilities.canCreatePickups}
+            canEdit={pickupCapabilities.canEditPickups}
+            canAssign={pickupCapabilities.canAssignPickups}
+            assignmentRunOptions={assignmentRunOptions}
+            assignmentCollectorOptions={assignmentCollectorOptions}
+            online={online}
+            locale={language === "de" ? "de-DE" : "en"}
+            position={pickupPosition}
+            source={pickupSource}
+            mapCenter={currentCamera?.center ?? null}
+            manualPositioning={pickupPositioning}
+            areaId={null}
+            onCreate={createPickup}
+            onStatusChange={changePickupStatus}
+            onAssignmentChange={changePickupAssignment}
+            onPositionChange={changePickupPosition}
+            onFocusPosition={focusPickupPosition}
+            onManualPositioningChange={setManualPickupPositioning}
+            labels={{
+              title: copy(language, "Sonderadressen", "Pickup addresses"),
+              progress: copy(language, "Fortschritt", "Progress"),
+              pickupTitle: copy(language, "Titel", "Title"),
+              address: copy(language, "Adresse", "Address"),
+              description: copy(language, "Beschreibung", "Description"),
+              add: copy(language, "Sonderadresse hinzufügen", "Add pickup address"),
+              adding: copy(language, "Wird gespeichert…", "Saving…"),
+              openComposer: copy(language, "+ Sonderadresse hinzufügen", "+ Add pickup address"),
+              closeComposer: copy(language, "Schließen", "Close"),
+              search: copy(language, "Adresse suchen", "Search address"),
+              searchHint: copy(language, "Straße, Hausnummer oder Ort", "Street, number or place"),
+              searching: copy(language, "Suche läuft…", "Searching…"),
+              searchEmpty: copy(language, "Keine Treffer im Collection-Hauptgebiet.", "No results inside the collection main area."),
+              searchOffline: copy(language, "Offline: Suche pausiert, manuelle Eingabe bleibt möglich.", "Offline: search is paused, manual entry remains available."),
+              searchError: copy(language, "Adresssuche ist gerade nicht verfügbar.", "Address search is currently unavailable."),
+              useLocation: copy(language, "Einmalig Standort nutzen", "Use location once"),
+              locationLoading: copy(language, "Standort wird gelesen…", "Reading location…"),
+              locationActive: copy(language, "Standort-Bias aktiv", "Location bias active"),
+              locationError: copy(language, "Standort nicht verfügbar, Kartenmitte wird verwendet.", "Location unavailable, map center is used."),
+              manualPosition: copy(language, "Position auf Karte korrigieren", "Adjust position on map"),
+              confirmPosition: copy(language, "Position übernehmen", "Use this position"),
+              positionSelected: copy(language, "Position", "Position"),
+              open: copy(language, "Offen", "Open"),
+              collected: copy(language, "Eingesammelt", "Collected"),
+              unavailable: copy(language, "Nicht verfügbar", "Unavailable"),
+              needsFollowUp: copy(language, "Später prüfen", "Needs follow-up"),
+              empty: copy(language, "Noch keine Sonderadressen.", "No pickup addresses yet."),
+              invalidDraft: copy(language, "Bitte Titel, Adresse und Position prüfen.", "Check title, address and position."),
+              positionRequired: copy(language, "Eine Kartenposition ist erforderlich.", "A map position is required."),
+              readOnly: copy(language, "Sonderadressen sind für diesen Zugang nur lesbar.", "Pickup addresses are read-only for this access."),
+              readOnlyCreate: copy(language, "Dieser Zugang darf Sonderadressen bearbeiten, aber keine neuen anlegen.", "This access may edit pickup addresses but cannot create new ones."),
+            }}
+          />
+          <PickupLifecyclePanel
+            campaignId={campaignId}
+            items={pickupLifecycleItems}
+            canEdit={pickupCapabilities.canEditPickups}
+            online={online}
+            language={language}
+            editPosition={pickupPosition}
+            manualPositioning={pickupPositioning}
+            onEdit={changePickupDetails}
+            onArchive={archivePickup}
+            onPositionChange={changeLifecyclePosition}
+            onFocusPosition={focusPickupPosition}
+            onManualPositioningChange={setManualPickupPositioning}
+          />
+        </>
       ) : null}
 
       <section className="collection-card collection-actions-card">
