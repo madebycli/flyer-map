@@ -7,11 +7,14 @@ import {
 } from "../src/domain/commentDraft.ts";
 import { resolveAccess, type AccessContext } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
+import { resolveCollectionAccess } from "./collectionAccess.ts";
+import { loadPickupCapabilities } from "./pickupCapabilities.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
 
 const MAX_COMMENT_REQUEST_BYTES = 64_000;
 const DEFAULT_COMMENT_PAGE_SIZE = 20;
 const MAX_COMMENT_PAGE_SIZE = 50;
+const PICKUP_COMMENTS_SCHEMA_ERROR = "pickup_comments_schema_unavailable";
 
 type CommentRoute = {
   campaignId: string;
@@ -21,6 +24,7 @@ type CommentRoute = {
 type CommentTarget = {
   id: string;
   teamId: string | null;
+  archivedAt?: string | null;
 };
 
 type StoredComment = {
@@ -29,7 +33,7 @@ type StoredComment = {
   target_type: PersistentCommentTargetType;
   target_id: string;
   team_id: string | null;
-  author_kind: "campaign-grant" | "temporary-member" | "unknown";
+  author_kind: "campaign-grant" | "temporary-member" | "collection-collector" | "unknown";
   author_ref: string | null;
   body: string | null;
   created_at: string;
@@ -267,6 +271,33 @@ async function hasCommentsSchema(db: D1DatabaseLike) {
   return comments && events;
 }
 
+async function tableDefinition(db: D1DatabaseLike, table: "comments" | "domain_events") {
+  try {
+    return await db
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1")
+      .bind(table)
+      .first<{ sql: string | null }>();
+  } catch {
+    return null;
+  }
+}
+
+async function hasPickupCommentsSchema(db: D1DatabaseLike) {
+  const [comments, events] = await Promise.all([
+    tableDefinition(db, "comments"),
+    tableDefinition(db, "domain_events"),
+  ]);
+  return Boolean(
+    comments?.sql?.includes("'pickup-task'") &&
+      comments.sql.includes("'collection-collector'") &&
+      events?.sql?.includes("'collection-collector'"),
+  );
+}
+
+function pickupCommentsSchemaError() {
+  return new Error(PICKUP_COMMENTS_SCHEMA_ERROR);
+}
+
 async function resolveTarget(
   db: D1DatabaseLike,
   campaignId: string,
@@ -310,27 +341,71 @@ async function resolveTarget(
     return row ? { id: row.target_id, teamId: row.team_id } : null;
   }
 
+  if (targetType === "house-task") {
+    try {
+      const row = await db
+        .prepare(
+          `SELECT h.id AS target_id, a.team_id
+           FROM house_tasks h
+           JOIN areas a ON a.id = h.area_id AND a.campaign_id = h.campaign_id
+           WHERE h.id = ? AND h.campaign_id = ?
+           LIMIT 1`,
+        )
+        .bind(targetId, campaignId)
+        .first<{ target_id: string; team_id: string }>();
+      return row ? { id: row.target_id, teamId: row.team_id } : null;
+    } catch (error) {
+      if (/no such table.*house_tasks|house_tasks.*does not exist/iu.test(String(error))) return null;
+      throw error;
+    }
+  }
+
+  if (!(await hasPickupCommentsSchema(db))) throw pickupCommentsSchemaError();
   try {
     const row = await db
       .prepare(
-        `SELECT h.id AS target_id, a.team_id
-         FROM house_tasks h
-         JOIN areas a ON a.id = h.area_id AND a.campaign_id = h.campaign_id
-         WHERE h.id = ? AND h.campaign_id = ?
+        `SELECT id AS target_id, archived_at
+         FROM collection_pickups
+         WHERE id = ? AND campaign_id = ?
          LIMIT 1`,
       )
       .bind(targetId, campaignId)
-      .first<{ target_id: string; team_id: string }>();
-    return row ? { id: row.target_id, teamId: row.team_id } : null;
+      .first<{ target_id: string; archived_at: string | null }>();
+    return row
+      ? { id: row.target_id, teamId: null, archivedAt: row.archived_at }
+      : null;
   } catch (error) {
-    if (/no such table.*house_tasks|house_tasks.*does not exist/iu.test(String(error))) return null;
+    if (/no such table.*collection_pickups|collection_pickups.*does not exist/iu.test(String(error))) {
+      throw pickupCommentsSchemaError();
+    }
     throw error;
   }
 }
 
 function canReadTarget(access: AccessContext, targetType: PersistentCommentTargetType, target: CommentTarget) {
+  if (access.role === "collection-collector") return false;
   if (targetType === "campaign" || access.role === "admin" || access.role === "viewer") return true;
   return Boolean(access.teamId && target.teamId && access.teamId === target.teamId);
+}
+
+async function canReadCommentTarget(
+  db: D1DatabaseLike,
+  campaignId: string,
+  access: AccessContext,
+  targetType: PersistentCommentTargetType,
+  target: CommentTarget,
+) {
+  if (targetType !== "pickup-task") return canReadTarget(access, targetType, target);
+  if (access.role === "admin") return true;
+  if (
+    access.role !== "collection-collector" ||
+    !access.collectorId ||
+    target.archivedAt !== null
+  ) {
+    return false;
+  }
+  const capabilities = await loadPickupCapabilities(db, campaignId, access.collectorId);
+  return Boolean(capabilities?.canViewPickups);
 }
 
 function canCreateComment(
@@ -339,6 +414,9 @@ function canCreateComment(
   target: CommentTarget,
 ) {
   if (access.role === "admin") return true;
+  if (targetType === "pickup-task") {
+    return access.role === "collection-collector" && Boolean(access.collectorId);
+  }
   if (targetType === "campaign" || !target.teamId || !access.teamId) return false;
   if (access.teamId !== target.teamId) return false;
   if (access.role === "team-editor") return true;
@@ -351,6 +429,7 @@ function canModerateComment(
   target: CommentTarget,
 ) {
   if (access.role === "admin") return true;
+  if (targetType === "pickup-task") return false;
   return (
     access.role === "team-editor" &&
     targetType !== "campaign" &&
@@ -362,11 +441,15 @@ function authorFor(access: AccessContext) {
   if (access.role === "field-group-member") {
     return { kind: "temporary-member" as const, ref: access.membershipId ?? null };
   }
+  if (access.role === "collection-collector") {
+    return { kind: "collection-collector" as const, ref: access.collectorId ?? null };
+  }
   return { kind: "campaign-grant" as const, ref: access.grantId };
 }
 
 function authorLabel(kind: StoredComment["author_kind"]) {
   if (kind === "temporary-member") return "Temporäre Gruppe";
+  if (kind === "collection-collector") return "Collection-Helfer";
   if (kind === "campaign-grant") return "Campaign-Zugriff";
   return "Unbekannter Zugriff";
 }
@@ -421,7 +504,7 @@ function commentEventStatement(
     commentId: string;
     eventType: "comment.created" | "comment.edited" | "comment.deleted";
     occurredAt: string;
-    actorKind: "campaign-grant" | "temporary-member";
+    actorKind: "campaign-grant" | "temporary-member" | "collection-collector";
     actorRef: string | null;
     payloadVersion: number;
     commentVersion: number;
@@ -486,7 +569,7 @@ async function listComments(
   if (!target) {
     return errorResponse(404, "comment_target_not_found", "Kommentar-Kontext wurde nicht gefunden.");
   }
-  if (!canReadTarget(access, targetType, target)) {
+  if (!(await canReadCommentTarget(db, route.campaignId, access, targetType, target))) {
     return errorResponse(403, "comment_scope_forbidden", "Dieser Kommentar-Kontext liegt außerhalb deines Scopes.");
   }
 
@@ -560,6 +643,9 @@ async function createComment(
   const resolvedTarget = await resolveTarget(db, route.campaignId, target.targetType, target.targetId);
   if (!resolvedTarget) {
     return errorResponse(404, "comment_target_not_found", "Kommentar-Kontext wurde nicht gefunden.");
+  }
+  if (!(await canReadCommentTarget(db, route.campaignId, access, target.targetType, resolvedTarget))) {
+    return errorResponse(403, "comment_scope_forbidden", "Dieser Kommentar-Kontext liegt außerhalb deines Scopes.");
   }
   if (!canCreateComment(access, target.targetType, resolvedTarget)) {
     const code = access.role === "viewer" ? "viewer_read_only" : "comment_write_forbidden";
@@ -670,6 +756,9 @@ async function editComment(
   if (!current) return errorResponse(404, "comment_not_found", "Kommentar wurde nicht gefunden.");
   const target = await resolveTarget(db, route.campaignId, current.target_type, current.target_id);
   if (!target) return errorResponse(404, "comment_target_not_found", "Kommentar-Kontext wurde nicht gefunden.");
+  if (!(await canReadCommentTarget(db, route.campaignId, access, current.target_type, target))) {
+    return errorResponse(403, "comment_scope_forbidden", "Dieser Kommentar-Kontext liegt außerhalb deines Scopes.");
+  }
   if (!canModerateComment(access, current.target_type, target)) {
     return errorResponse(403, "comment_edit_forbidden", "Du darfst diesen Kommentar nicht bearbeiten.");
   }
@@ -738,6 +827,9 @@ async function deleteComment(
   if (!current) return errorResponse(404, "comment_not_found", "Kommentar wurde nicht gefunden.");
   const target = await resolveTarget(db, route.campaignId, current.target_type, current.target_id);
   if (!target) return errorResponse(404, "comment_target_not_found", "Kommentar-Kontext wurde nicht gefunden.");
+  if (!(await canReadCommentTarget(db, route.campaignId, access, current.target_type, target))) {
+    return errorResponse(403, "comment_scope_forbidden", "Dieser Kommentar-Kontext liegt außerhalb deines Scopes.");
+  }
   if (!canModerateComment(access, current.target_type, target)) {
     return errorResponse(403, "comment_delete_forbidden", "Du darfst diesen Kommentar nicht löschen.");
   }
@@ -785,6 +877,16 @@ async function deleteComment(
   return errorResponse(409, "comment_conflict", "Kommentar konnte nicht gelöscht werden.");
 }
 
+async function resolveCommentsAccess(
+  db: D1DatabaseLike,
+  request: Request,
+  campaignId: string,
+) {
+  const access = await resolveAccess(db, request, campaignId);
+  if (access) return access;
+  return resolveCollectionAccess(db, request, campaignId);
+}
+
 export async function handleCommentsApi(
   request: Request,
   db: D1DatabaseLike,
@@ -797,8 +899,8 @@ export async function handleCommentsApi(
   }
 
   try {
-    const access = await resolveAccess(db, request, route.campaignId);
-    if (!access) return errorResponse(401, "access_required", "Gültiger Campaign-Zugriff ist erforderlich.");
+    const access = await resolveCommentsAccess(db, request, route.campaignId);
+    if (!access) return errorResponse(401, "access_required", "Gültiger Campaign- oder Collection-Zugriff ist erforderlich.");
 
     if (!(await hasCommentsSchema(db))) {
       return errorResponse(
@@ -822,6 +924,13 @@ export async function handleCommentsApi(
     }
     return errorResponse(405, "method_not_allowed", "Methode für Comments ist nicht erlaubt.");
   } catch (error) {
+    if (error instanceof Error && error.message === PICKUP_COMMENTS_SCHEMA_ERROR) {
+      return errorResponse(
+        503,
+        PICKUP_COMMENTS_SCHEMA_ERROR,
+        "Pickup-Kommentare benötigen die vorbereitete Migration 0013.",
+      );
+    }
     if (schemaUnavailable(error)) {
       return errorResponse(
         503,
