@@ -21,16 +21,18 @@ Weiter offen aus FC4 sind reale Android-Chromium- und iPhone-Safari-Abnahmen, To
 
 ## FC5.2 aktueller Stand
 
-Checkpoint A, Pickup Visibility Capability, ist technisch implementiert. Letzter vollständig grüner A-Code-Checkpoint vor diesem Living-Docs-Commit:
+Checkpoint A, Pickup Visibility Capability, und Checkpoint B, Pickup Composer / Sonderadress-Suche, sind technisch implementiert.
+
+Letzter vollständig grüner FC5.2-B-Code-Checkpoint vor diesem Living-Docs-Commit:
 
 ```text
-Head: a8ae9a33dd478df459b450f4d0f25519302e9ae0
-CI: #765 success
+Head: c4b59b3d29967a850f1124188dfe37772f01dc00
+CI: #768 success
 ```
 
-CI #765 war auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build.
+CI #768 war auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build.
 
-Umgesetzt:
+Checkpoint A umgesetzt:
 - additive vorbereitete Migration `0012_fc5_collection_pickup_visibility.sql` mit `can_view_pickups DEFAULT 1`;
 - vier enge Collection-Pickup-Capabilities: View default true, Create/Edit/Assign default false;
 - 0011-only bleibt rückwärtskompatibel und interpretiert vorhandene Collector-Sessions als `canViewPickups=true`;
@@ -42,18 +44,29 @@ Umgesetzt:
 - Collector Access und Admin-Collector-Liste liefern alle vier Capability-Werte ohne Credential-Material;
 - Collection Admin UI kann die vier Rechte pro Collector ändern.
 
-Noch nicht als FC5.2-Produktflow abgeschlossen:
-- Pickup Composer / Sonderadresse im normalen Admin- und Collector-Flow;
-- Proximity-Sortierung und Distanzanzeige;
-- Map-Center-Bias ohne Location-Permission und optionaler One-shot Location-Bias;
-- Auswahl eines Search-Treffers mit Map-Fokus und temporärem Marker;
-- manuelle Positionskorrektur im Composer;
-- permanente Pickup MapLibre Layer;
-- Assignment UI;
-- persistente Pickup Comments;
-- Pickup Stats und Revert/Attribution-Folgearbeit.
+Checkpoint B umgesetzt:
+- normaler `Sonderadresse hinzufügen`-Composer ist in den Collection-Flow integriert;
+- Search läuft über den bestehenden serverseitigen Geoapify-Worker-Pfad, Provider-Credentials bleiben aus dem Client heraus;
+- Suche ist auf Collection Main Area begrenzt, Worker filtert Treffer zusätzlich gegen das echte Main-Area-Polygon;
+- Bias-Priorität ist einmalig freigegebener Gerätestandort, sonst aktueller MapLibre-Kartenmittelpunkt;
+- kein `watchPosition`, keine GPS-Historie und keine Pflicht-Location-Permission;
+- deterministische Distanzberechnung, Sortierung und mobile Distanzanzeige sind vorhanden;
+- Search nutzt Debounce, Abort alter Requests und Sequence-/Race-Schutz;
+- Treffer-Auswahl fokussiert MapLibre ohne persistente Kameraänderung;
+- manuelle Positionskorrektur nutzt die aktuelle Kartenmitte und speichert bei manueller Korrektur keine falsche externe Provenance;
+- Composer speichert über den bestehenden Snapshot-zu-M5-Pickup-Mutationspfad und führt keine zweite Queue ein;
+- Collector Add-Flow ist auf `canViewPickups && canCreatePickups` begrenzt, Worker bleibt authoritative;
+- Checkpoint B führt bewusst noch keinen permanenten Pickup-Renderer, Assignment, persistente Pickup Comments, Pickup Stats oder Revert ein.
 
-Der nächste erlaubte Slice ist Checkpoint B aus Plan 021: Pickup Composer und Sonderadress-Suche. Vor B muss der jeweils aktuelle Branch-Head gegen GitHub geprüft werden. Wenn ein Living-Docs-Commit den Head verschiebt, dessen CI muss ebenfalls vollständig grün sein.
+Noch offen aus FC5.2 / Plan 021:
+- permanente Pickup MapLibre Layer und dauerhafte Kartenrepräsentation nach dem Composer;
+- Assignment UI / Run- oder Collector-Zuweisung;
+- persistente Pickup Comments über eine additive Forward Migration und bestehende Comment-Domain;
+- Pickup Stats;
+- Actor-Attribution, Highlight und gezieltes compensating Revert;
+- reale Mobile-/Touch-Abnahme der Collection- und Pickup-Flows.
+
+Der nächste Runtime-Slice muss wieder isoliert auf dem jeweils aktuellen grünen Head beginnen. Als einfachste sinnvolle Fortsetzung bietet sich die permanente Pickup-Darstellung im normalen MapLibre-/Collection-Read-Flow an. Assignment, Comments, Stats, Revert und FC5.3 dürfen nicht in denselben Renderer-Slice gestapelt werden.
 
 ## Collection / Pickup Architekturgrenzen
 
@@ -80,9 +93,10 @@ Bekannte fehlende Schemas müssen spezifisch fail-closed behandelt werden. Keine
 
 ## Immediate next
 
-1. Exakten aktuellen Branch-Head und CI verifizieren.
-2. Nur bei vollständig grüner CI Checkpoint B beginnen.
-3. Bestehenden Geoapify-Worker-Search weiterverwenden und keinen zweiten Providerpfad bauen.
-4. Composer um Map-Center-Bias, optionalen One-shot Location-Bias, deterministische Distanzsortierung/-anzeige, Search-States, Map-Fokus und manuelle Positionskorrektur erweitern.
-5. Checkpoint B separat committen und auf exakt diesem Head wieder Tests, Typecheck, Audit und Production Build grün bekommen.
-6. Permanente Pickup MapLibre Layer, Assignment, Pickup Comments, Stats und FC5.3 nicht in denselben Composer-Commit stapeln.
+1. Exakten aktuellen Branch-Head und CI verifizieren, einschließlich dieses Living-Docs-Commits.
+2. Nur bei vollständig grüner CI den nächsten Runtime-Slice beginnen.
+3. Permanente Pickup-Darstellung im normalen MapLibre-/Collection-Read-Flow als kleinsten nächsten Slice prüfen und planen.
+4. App-eigene Pickup-ID, vorhandene Snapshot-Daten und feste MapLibre-Layer verwenden, keine zweite Kartenengine und keinen zweiten Datenpfad einführen.
+5. View-Capability serverseitig beibehalten und keine versteckten Pickup-Daten über Map Properties, Stats oder Nebenpfade leaken.
+6. Assignment, persistente Pickup Comments, Stats, Revert und FC5.3 nicht in denselben Renderer-Commit stapeln.
+7. Den nächsten Runtime-Slice wieder separat committen und auf exakt diesem Head Tests, Typecheck, Audit und Production Build grün bekommen.

@@ -18,14 +18,16 @@ Manueller Deploy: verboten
 Neuer Branch/PR: verboten
 ```
 
-Letzter vollständig grüner FC5.2 Visibility-Code-Checkpoint vor dem anschließenden Living-Docs-Commit:
+Letzter vollständig grüner FC5.2-B-Code-Checkpoint vor dem anschließenden Living-Docs-Commit:
 
 ```text
-Head: a8ae9a33dd478df459b450f4d0f25519302e9ae0
-CI: #765 success
+Head: c4b59b3d29967a850f1124188dfe37772f01dc00
+CI: #768 success
 ```
 
-Wenn dieser Prompt selbst auf einem späteren Docs-Head liegt, muss dessen CI vor Runtime-Arbeit ebenfalls vollständig grün sein.
+CI #768 war auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build.
+
+Wenn dieser Prompt selbst auf einem späteren Docs-Head liegt, muss dessen CI vor weiterer Runtime-Arbeit ebenfalls vollständig grün sein.
 
 ## Pflichtkontext
 
@@ -41,7 +43,7 @@ Lies vollständig:
 9. `docs/architecture/OFFLINE_SYNC.md`
 10. `docs/architecture/SECURITY.md`
 11. `docs/architecture/MAP.md`
-12. relevante Collection-/Pickup-Domain-, Worker-, UI- und Testdateien.
+12. relevante Collection-/Pickup-Domain-, Worker-, UI-, Map- und Testdateien.
 
 Nutze `docs/context-map.yaml` als Routing-Graph und lade keine irrelevanten Dokumente nur aus Gewohnheit.
 
@@ -67,68 +69,83 @@ Verbindlich:
 - Admin kann vier Rechte pro Collector verwalten;
 - keine generische Permission-Runtime wurde eingeführt.
 
-Remote D1 bleibt nur 0001 bis 0003 applied. 0010, 0011 und 0012 bleiben prepared only.
+## FC5.2 Checkpoint B abgeschlossen
 
-## Nächster Slice: FC5.2 Checkpoint B
+Der normale Pickup Composer / Sonderadress-Flow ist umgesetzt und auf CI #768 vollständig grün.
 
-Erst nach Verifikation eines vollständig grünen aktuellen Heads weiterbauen.
-
-Ziel ist ausschließlich der normale Pickup Composer / Sonderadress-Flow:
+Normaler Flow:
 
 ```text
 + / Sonderadresse hinzufügen
 -> Search Sheet
 -> Adresse eingeben
--> Worker-basierter OSM-derived Search
--> Treffer mit Distanz
+-> Worker-basierter Geoapify Search auf OSM-derived Daten
+-> Treffer nach Main Area + Distanz
 -> Treffer auswählen
 -> MapLibre fokussiert Treffer
--> temporärer Marker
+-> temporäre Composer-Position
 -> Titel / Adresse / Beschreibung
--> Position optional per Finger/Maus korrigieren
--> speichern über bestehenden M5-Pickup-Pfad
+-> Position optional per Finger/Maus über Kartenmitte korrigieren
+-> speichern über bestehenden Snapshot-zu-M5-Pickup-Pfad
 ```
 
-### Search Bias
+Verbindlich:
+- Provider-Credentials bleiben ausschließlich serverseitig;
+- Worker begrenzt Suche auf Collection Main Area und prüft Treffer zusätzlich gegen das echte Polygon;
+- Bias-Priorität ist einmalig freigegebener Gerätestandort, sonst aktueller Kartenmittelpunkt;
+- keine Pflicht-Permission, kein `watchPosition`, keine GPS-Historie;
+- Distanz wird deterministisch berechnet, sortiert und angezeigt;
+- Search nutzt Debounce, Abort und Race-/Sequence-Schutz;
+- Treffer-Fokus verändert die persistente Kampagnenkamera nicht;
+- manuelle Korrektur setzt externe Provenance auf `null`, statt einen falschen Geocoder-Treffer zu behaupten;
+- Collector Add-Flow benötigt `canViewPickups && canCreatePickups`, Worker prüft Create authoritative;
+- M5 bleibt die einzige Mutation Queue;
+- kein permanenter Pickup-Layer, Assignment, persistenter Pickup-Comment, Pickup Stats oder Revert wurde in B gestapelt.
 
-Priorität:
-1. einmalig freigegebener Gerätestandort, wenn vorhanden;
-2. sonst aktueller MapLibre-Kartenmittelpunkt.
+Remote D1 bleibt nur 0001 bis 0003 applied. 0010, 0011 und 0012 bleiben prepared only.
 
-Keine Pflicht-Permission, kein `watchPosition`, keine GPS-Historie. Worker bekommt nur validierte bounded longitude/latitude-Werte.
+## Nächster isolierter FC5.2-Slice
 
-### Distanz
+Erst nach Verifikation eines vollständig grünen aktuellen Heads weiterbauen, einschließlich des Living-Docs-Heads dieses Prompts.
 
-Distanz zwischen Bias-Punkt und Treffer deterministisch berechnen, nach Nähe sortieren und mobil lesbar anzeigen, beispielsweise `84 m`, `320 m`, `1,4 km`, `12 km`.
+Die einfachste sinnvolle Fortsetzung ist die permanente Pickup-Darstellung im normalen Collection-/MapLibre-Read-Flow:
 
-### Main Area
+```text
+canonical Collection Snapshot mit Pickups
+-> View-Capability bereits serverseitig gefiltert
+-> feste Pickup GeoJSON Source / feste Layer
+-> Marker dauerhaft auf der normalen Karte
+-> Auswahl/Fokus nutzt app-eigene Pickup-ID
+-> keine externe ID als Domain-Identität
+```
 
-Bestehende Worker-Grenze beibehalten: Provider-BBox/Proximity auf Collection Main Area und jeden Treffer zusätzlich gegen das echte Main-Area-Polygon prüfen. Kein offener Geocoder-Proxy und keine weltweite ungebremste Suche.
+Ziele:
+- nach erfolgreichem Composer-Save bleibt der Pickup als normaler Karteninhalt sichtbar;
+- nur bereits im autorisierten Snapshot enthaltene Pickups rendern;
+- app-eigene Pickup-ID als Feature-Identität verwenden;
+- MapLibre 5.7.1 und bestehende feste Layer-/Source-Muster weiterverwenden;
+- Map Properties minimal halten, keine Credential-, Actor-, Comment- oder unnötigen Provenance-Daten einbetten;
+- leere/legacy Snapshots stabil als leere FeatureCollection behandeln;
+- Datenupdates getrennt von Auswahl und Kamera halten;
+- mobile Hit-Flächen und Dense-Data-Verhalten mit Tests absichern;
+- keine zweite Kartenengine, kein DOM-Marker-Fallback als dauerhaften Renderer und keinen Preview-Pfad einführen.
 
-### UX
-
-Bestehendes Sheet-System verwenden. Debounce, Abort alter Requests und Race-Schutz für out-of-order Responses. Loading, Empty, Network Error, Rate Limit, Provider Error, Permission Error und Schema Error getrennt behandeln. Kein Fehlerzustand gleichzeitig als `0 Treffer` darstellen.
-
-Treffer-Auswahl fokussiert MapLibre und setzt nur einen temporären Marker, kein Auto-Save. Manuelle Positionskorrektur muss Touch und Maus unterstützen, nie `[0,0]` verwenden.
-
-Collector darf den Add-Flow nur sehen, wenn `canViewPickups && canCreatePickups`. Worker prüft Create weiterhin authoritative.
-
-### Nicht in Checkpoint B stapeln
-
-- permanente Pickup MapLibre Layer;
-- Assignment;
+Nicht in denselben Renderer-Slice stapeln:
+- Assignment UI;
 - persistente Pickup Comments;
-- FC5.3 Collection Road Sections;
-- Revert;
-- Pickup Stats.
+- Pickup Stats;
+- Actor-Attribution / Highlight / Revert;
+- FC5.3 Collection Road Sections.
 
-Nach Checkpoint B wieder einen eigenen stabilen CI-Checkpoint herstellen und Living Docs nur auf den tatsächlich erreichten Stand aktualisieren.
+Wenn Repository-Abhängigkeiten zeigen, dass ein kleiner anderer FC5.2-Schritt zwingend vorher nötig ist, dokumentiere das explizit und halte den Slice trotzdem eng.
+
+Nach dem nächsten Runtime-Slice wieder einen eigenen stabilen CI-Checkpoint herstellen und Living Docs nur auf den tatsächlich erreichten Stand aktualisieren.
 
 ## Globale Grenzen
 
 - MapLibre 5.7.1 bleibt einzige Kartenengine.
 - M5 bleibt einzige Mutation Queue.
-- App-eigene IDs bleiben authoritative, OSM IDs nur Provenance.
+- App-eigene IDs bleiben authoritative, OSM-/Geocoder-IDs nur Provenance.
 - Worker bleibt Authorization Boundary.
 - Keine Secrets im Client oder in Map Properties.
 - Keine kontinuierliche GPS-Historie.
