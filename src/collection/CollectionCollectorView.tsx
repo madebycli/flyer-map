@@ -131,7 +131,25 @@ export function CollectionCollectorView({
       address: pickup.address,
       description: pickup.description,
       status: pickup.status,
+      assignedRunIds: pickup.assignedRunIds,
+      assignedCollectorIds: pickup.assignedCollectorIds,
     }));
+  const assignmentRunOptions = activeRuns.map((run) => ({
+    id: run.id,
+    label: `${copy(language, "Run", "Run")} ${run.id.slice(-8)} · ${run.members.filter((member) => member.leftAt === null).length} ${copy(language, "Geräte", "devices")}`,
+  }));
+  const assignmentCollectorOptions = (() => {
+    const options = new Map<string, string>();
+    if (collectorId) options.set(collectorId, collectorLabel);
+    for (const run of activeRuns) {
+      for (const member of run.members) {
+        if (member.leftAt === null && !options.has(member.collectorId)) {
+          options.set(member.collectorId, member.label);
+        }
+      }
+    }
+    return [...options].map(([id, label]) => ({ id, label }));
+  })();
 
   useEffect(() => {
     if (
@@ -423,6 +441,36 @@ export function CollectionCollectorView({
     }));
   };
 
+  const changePickupAssignment = async (
+    pickupId: string,
+    assignedRunIds: string[],
+    assignedCollectorIds: string[],
+  ) => {
+    if (
+      !collectorId ||
+      !pickupCapabilities.canViewPickups ||
+      !pickupCapabilities.canAssignPickups
+    ) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const actor = pickupActor(collectorId);
+    updateCollection(onSnapshotChange, (current) => ({
+      ...current,
+      pickups: collectionSnapshotOrEmpty(current).pickups.map((pickup) =>
+        pickup.id === pickupId && pickup.archivedAt === null
+          ? {
+              ...pickup,
+              assignedRunIds: [...assignedRunIds],
+              assignedCollectorIds: [...assignedCollectorIds],
+              updatedBy: actor,
+              updatedAt: now,
+            }
+          : pickup,
+      ),
+    }));
+  };
+
   const changePickupPosition = (position: LngLat | null, source: PickupSource | null) => {
     setPickupPosition(position);
     setPickupSource(source);
@@ -566,6 +614,9 @@ export function CollectionCollectorView({
           items={pickupItems}
           canCreate={pickupCapabilities.canCreatePickups}
           canEdit={pickupCapabilities.canEditPickups}
+          canAssign={pickupCapabilities.canAssignPickups}
+          assignmentRunOptions={assignmentRunOptions}
+          assignmentCollectorOptions={assignmentCollectorOptions}
           online={online}
           locale={language === "de" ? "de-DE" : "en"}
           position={pickupPosition}
@@ -575,6 +626,7 @@ export function CollectionCollectorView({
           areaId={null}
           onCreate={createPickup}
           onStatusChange={changePickupStatus}
+          onAssignmentChange={changePickupAssignment}
           onPositionChange={changePickupPosition}
           onFocusPosition={focusPickupPosition}
           onManualPositioningChange={setManualPickupPositioning}
