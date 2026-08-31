@@ -171,7 +171,7 @@ export function CollectionAdminPickupWorkspace({
     };
     updateCollection(onSnapshotChange, (current) => ({
       ...current,
-      pickups: [...current.pickups, pickup],
+      pickups: [...collectionSnapshotOrEmpty(current).pickups, pickup],
     }));
     setSelectedPickupId(pickup.id);
     focusPosition(pickup.position);
@@ -183,7 +183,7 @@ export function CollectionAdminPickupWorkspace({
     const now = new Date().toISOString();
     updateCollection(onSnapshotChange, (current) => ({
       ...current,
-      pickups: current.pickups.map((pickup) =>
+      pickups: collectionSnapshotOrEmpty(current).pickups.map((pickup) =>
         pickup.id === pickupId && pickup.archivedAt === null
           ? { ...pickup, status, updatedBy: adminActor, updatedAt: now }
           : pickup,
@@ -204,7 +204,7 @@ export function CollectionAdminPickupWorkspace({
     const now = new Date().toISOString();
     updateCollection(onSnapshotChange, (current) => ({
       ...current,
-      pickups: current.pickups.map((pickup) =>
+      pickups: collectionSnapshotOrEmpty(current).pickups.map((pickup) =>
         pickup.id === pickupId && pickup.archivedAt === null
           ? {
               ...pickup,
@@ -229,7 +229,7 @@ export function CollectionAdminPickupWorkspace({
     const now = new Date().toISOString();
     updateCollection(onSnapshotChange, (current) => ({
       ...current,
-      pickups: current.pickups.map((pickup) =>
+      pickups: collectionSnapshotOrEmpty(current).pickups.map((pickup) =>
         pickup.id === pickupId && pickup.archivedAt === null
           ? { ...pickup, archivedAt: now, updatedBy: adminActor, updatedAt: now }
           : pickup,
