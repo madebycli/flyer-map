@@ -23,6 +23,7 @@ import {
   PickupAssignmentEditor,
   type PickupAssignmentOption,
 } from "./PickupAssignmentEditor.tsx";
+import { CollectionAdminPickupWorkspace } from "./CollectionAdminPickupWorkspace.tsx";
 import "./collection-admin-panel.css";
 
 type Collector = {
@@ -235,6 +236,14 @@ export function CollectionAdminPanel({
     assignedRunIds: string[],
     assignedCollectorIds: string[],
   ) => {
+    const currentPickup = activePickups.find((pickup) => pickup.id === pickupId);
+    if (!currentPickup) return;
+    if (
+      JSON.stringify(currentPickup.assignedRunIds) === JSON.stringify(assignedRunIds) &&
+      JSON.stringify(currentPickup.assignedCollectorIds) === JSON.stringify(assignedCollectorIds)
+    ) {
+      return;
+    }
     const now = new Date().toISOString();
     updateCollection((current) => ({
       ...current,
@@ -308,6 +317,22 @@ export function CollectionAdminPanel({
             <p className="empty-state">{copy(language, "Noch keine Collection Areas.", "No collection areas yet.")}</p>
           ) : null}
         </div>
+      </div>
+
+      <div className="collection-admin-section">
+        <div className="collection-section-heading">
+          <div>
+            <span className="eyebrow">{copy(language, "Sonderadressen", "Pickup addresses")}</span>
+            <h2>{copy(language, "Erstellen und bearbeiten", "Create and edit")}</h2>
+          </div>
+          <span className="collection-count">{activePickups.length}</span>
+        </div>
+        <CollectionAdminPickupWorkspace
+          campaignId={campaignId}
+          language={language}
+          snapshot={snapshot}
+          onSnapshotChange={onSnapshotChange}
+        />
       </div>
 
       <div className="collection-admin-section">
