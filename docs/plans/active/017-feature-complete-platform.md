@@ -2,7 +2,7 @@
 id: plan-017-feature-complete-platform
 type: plan
 status: active
-last_updated: 2026-08-28
+last_updated: 2026-08-31
 related: [plan-012-platform-app-expansion, plan-016-app-launcher-sheet, product-roadmap, product-ux, architecture-live-teams, architecture-collaboration, architecture-identity-permissions, architecture-organizations, ADR-0014, ADR-0015, ADR-0016, ADR-0017, ADR-0018, quality]
 ---
 
@@ -28,9 +28,9 @@ Aktueller Entwicklungszweig:
 - Draft PR #72;
 - Branch `plan-feature-complete-platform`;
 - Base `ui-app-launcher-sheet`;
-- PR #72 enthält inzwischen nicht nur Planung, sondern den aktuellen FC0-/FC1-Runtime-Slice sowie den durable-Comments- und Activity-Teil von FC2.
+- PR #72 enthält inzwischen die Feature-Complete-Linie durch FC5.2 Runtime.
 
-Remote D1 ist weiterhin nur bis Migration 0003 dokumentiert. Migrationen 0004 bis 0009 bleiben vorbereitet, aber nicht remote angewendet.
+Remote D1 ist weiterhin nur bis Migration 0003 dokumentiert. Migrationen 0004 bis 0013 bleiben vorbereitet, aber nicht remote angewendet.
 
 ## Delivery-Regel
 
@@ -245,7 +245,7 @@ Die Close-/Expiry-Session-Grundlage aus FC1 ist bereits vorhanden. FC2 erweitert
 4. Task-Mutationen erhalten serverseitigen Session-/Event-Bezug.
 5. Retry derselben M5-Mutation erzeugt kein zweites Event.
 6. Session-Auswahl kann betroffene aktuelle/reviewed Street-/House-Geometrie hervorheben.
-7. Kommentare werden auf Campaign/Area/Street/House-Kontext dauerhaft gespeichert. Pickup bleibt bis zum echten persistenten Pickup-Modell ausgeschlossen.
+7. Kommentare werden auf Campaign/Area/Street/House-Kontext dauerhaft gespeichert; FC5.2 erweitert denselben Runtime-Pfad später additiv auf `pickup-task`.
 8. Kommentar Edit/Delete/Moderation folgt einer konservativen, dokumentierten Legacy-Identity-Regel.
 9. Activity Feed basiert auf echten normalisierten Domain Events.
 10. Eine feste, versionierte Automation läuft deterministisch, autorisiert und idempotent im M5-Write-Pfad.
@@ -345,8 +345,7 @@ Der aktuelle Stats-Slice erfüllt diese Richtung mit dem Worker-Read-Endpunkt
   Session und deren Events;
 - Migration 0009 wird nicht erweitert und es entsteht keine Stats-/Rollup-Tabelle;
 - Offline hält die UI bereits geladene Stats sichtbar, meldet neue Reads aber nicht als
-  erfolgreich. Pickup-Fortschritt bleibt bis zu einem echten persistenten Pickup-Modell
-  ausgeschlossen.
+  erfolgreich. Der persistente Pickup-Runtime-Scope existiert inzwischen; dessen separate Collection-/Pickup-Stats bleiben bewusst FC5.3 und werden nicht in den Distribution-Nenner gemischt.
 
 ## FC4: Smart Streets + Houses
 
@@ -366,15 +365,26 @@ Migrationen 0004/0005 bleiben bis zum bewussten Rollout unangetastet.
 
 ## FC5: Collection / Pickup
 
-- expliziter Distribution-/Collection-Modus;
-- separate Pickup-Persistenz;
-- Straßenabschnitte gefahren/fertig;
-- Häuser/Adressen als Pickup Tasks;
-- manuelle Meldeadressen;
-- open/collected/unavailable/follow-up;
-- Field Groups auch in Collection;
-- separate Stats;
-- keine Überschreibung von Distribution-Status.
+**Status: FC5.1 und FC5.2 Runtime umgesetzt; FC5.3 und reale Geräteabnahme offen.**
+
+FC5.1 liefert Collection-only QR/Collector Access, Main/Child Areas und Runs.
+
+FC5.2 liefert:
+- First-Class Pickup-Persistenz unabhängig von Distribution Houses;
+- open/collected/unavailable/needs-follow-up und Archive statt Hard Delete;
+- View/Create/Edit/Assign als enge serverseitige Collector-Capabilities;
+- Geoapify/OSM-derived Sonderadress-Suche über den Worker mit Main-Area-Filter, Rate Limit, Timeout und Attribution;
+- permanente Pickup-Darstellung über feste MapLibre-Source/-Layer;
+- durable Pickup Comments über denselben Comment-Runtime-Pfad mit Forward Migration 0013;
+- Run-/Collector-Assignment über denselben M5-Mutationsvertrag und authoritative Referenzprüfung.
+
+FC5.3 bleibt separat:
+- eigene Collection Road Sections und deren Status;
+- separate Collection/Pickup Stats;
+- Actor-Attribution/Highlight;
+- gezielter serverseitiger compensating Revert.
+
+Der vollständige FC5.2-Code-Checkpoint war auf Head `824ddbe946ddfaf1f5b46ba64ab6ea09f128c3f3` mit CI #794 vollständig grün. Reale Android-Chromium-/iPhone-Safari-Touch-Abnahme ist dadurch nicht ersetzt.
 
 ## FC6: Organizations + Identity + Permissions + Admin
 
@@ -447,9 +457,9 @@ Vor Plattform-Feature-Complete:
 ## Unmittelbare Reihenfolge
 
 1. Für jeden weiteren PR-Commit den exakten Head erneut durch CI verifizieren.
-2. 0006/0007/0008/0009 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
-3. Stats aus echten Tasks/Sessions/Events abschließen.
-4. Anschließend FC4 bis FC9.
+2. Migrationen 0004 bis 0013 **nicht** remote anwenden, bis ein expliziter Rollout beauftragt ist.
+3. FC5.2 reale Geräte-/Touch-Gates offen führen, solange sie nicht tatsächlich geprüft wurden.
+4. Weitere Runtime-Arbeit ab jetzt als getrennte FC5.3-Slices beginnen, zuerst First-Class Collection Road Sections.
 
 ## Risiken
 
