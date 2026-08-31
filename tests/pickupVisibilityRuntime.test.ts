@@ -10,7 +10,9 @@ import type {
 } from "../worker/campaignRepository.ts";
 import { augmentPickupSnapshotResponse } from "../worker/indexFc52.ts";
 import { handleCampaignMutation } from "../worker/mutationHandler.ts";
+import type { PickupTask } from "../src/domain/pickup.ts";
 import type { PickupMutation } from "../src/domain/pickupMutation.ts";
+import { pickupsToGeoJson } from "../src/map/pickupRenderer.ts";
 
 const migrations = [
   "0001_initial.sql",
@@ -283,6 +285,39 @@ test("current statistics do not derive hidden Pickup counts and Map rendering st
     /pickupCapabilities\.canViewPickups\s*\?\s*collection\.pickups\s*:\s*\[\]/u,
   );
 
-  const renderer = readFileSync(new URL("../src/map/pickupRenderer.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(renderer, /address|description|createdBy|updatedBy|source|provider|osmId/iu);
+  const pickup: PickupTask = {
+    id: "pickup_visibility_map",
+    campaignId: "campaign_visibility",
+    areaId: "area_visibility",
+    title: "Geheimer Pickup",
+    address: "Hauptstraße 1",
+    description: "Seiteneingang",
+    position: [10.05, 50.05],
+    status: "open",
+    archivedAt: null,
+    assignedRunIds: ["run_secret"],
+    assignedCollectorIds: ["collector_secret"],
+    source: {
+      kind: "osm-address",
+      provider: "provider-secret",
+      placeId: "place-secret",
+      osmType: "node",
+      osmId: "123",
+    },
+    createdBy: { kind: "campaign-grant", ref: "grant_secret" },
+    updatedBy: { kind: "collection-collector", ref: "collector_secret" },
+    createdAt: "2026-08-31T00:00:00.000Z",
+    updatedAt: "2026-08-31T00:00:00.000Z",
+  };
+  const feature = pickupsToGeoJson([pickup]).features[0];
+  assert.ok(feature);
+  assert.deepEqual(feature.properties, {
+    pickupId: "pickup_visibility_map",
+    status: "open",
+  });
+  assert.deepEqual(Object.keys(feature.properties).sort(), ["pickupId", "status"]);
+  assert.doesNotMatch(
+    JSON.stringify(feature.properties),
+    /Hauptstraße|Seiteneingang|provider-secret|place-secret|grant_secret|collector_secret/u,
+  );
 });
