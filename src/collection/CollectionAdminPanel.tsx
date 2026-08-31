@@ -19,6 +19,10 @@ import {
   type CollectionSnapshot,
 } from "../domain/collection";
 import type { Language } from "../i18n";
+import {
+  PickupAssignmentEditor,
+  type PickupAssignmentOption,
+} from "./PickupAssignmentEditor.tsx";
 import "./collection-admin-panel.css";
 
 type Collector = {
@@ -62,6 +66,25 @@ function activeRunForArea(collection: CollectionSnapshot, areaId: string): Colle
   ) ?? null;
 }
 
+function activeAssignmentCollectors(
+  collectors: readonly Collector[],
+  runs: readonly CollectionRun[],
+): PickupAssignmentOption[] {
+  const options = new Map<string, string>();
+  for (const collector of collectors) {
+    if (!collector.revokedAt) options.set(collector.id, collector.label);
+  }
+  for (const run of runs) {
+    if (run.status !== "active") continue;
+    for (const member of run.members) {
+      if (member.leftAt === null && !options.has(member.collectorId)) {
+        options.set(member.collectorId, member.label);
+      }
+    }
+  }
+  return [...options].map(([id, label]) => ({ id, label }));
+}
+
 export function CollectionAdminPanel({
   campaignId,
   language,
@@ -78,6 +101,17 @@ export function CollectionAdminPanel({
   const [collectors, setCollectors] = useState<Collector[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [assignmentPickupId, setAssignmentPickupId] = useState<string | null>(null);
+  const activeRuns = collection.runs.filter((run) => run.status === "active");
+  const activePickups = collection.pickups.filter((pickup) => pickup.archivedAt === null);
+  const assignmentPickup = assignmentPickupId
+    ? activePickups.find((pickup) => pickup.id === assignmentPickupId) ?? null
+    : null;
+  const assignmentRunOptions: PickupAssignmentOption[] = activeRuns.map((run) => ({
+    id: run.id,
+    label: `${copy(language, "Run", "Run")} ${run.id.slice(-8)} · ${run.members.filter((member) => member.leftAt === null).length} ${copy(language, "Geräte", "devices")}`,
+  }));
+  const assignmentCollectorOptions = activeAssignmentCollectors(collectors, activeRuns);
 
   const refreshCollectors = async () => {
     try {
@@ -103,6 +137,12 @@ export function CollectionAdminPanel({
   useEffect(() => {
     void refreshCollectors();
   }, [campaignId]);
+
+  useEffect(() => {
+    if (assignmentPickupId && !activePickups.some((pickup) => pickup.id === assignmentPickupId)) {
+      setAssignmentPickupId(null);
+    }
+  }, [activePickups, assignmentPickupId]);
 
   const createQr = async () => {
     if (busy) return;
@@ -190,6 +230,27 @@ export function CollectionAdminPanel({
     }));
   };
 
+  const changePickupAssignment = async (
+    pickupId: string,
+    assignedRunIds: string[],
+    assignedCollectorIds: string[],
+  ) => {
+    const now = new Date().toISOString();
+    updateCollection((current) => ({
+      ...current,
+      pickups: current.pickups.map((pickup) =>
+        pickup.id === pickupId && pickup.archivedAt === null
+          ? {
+              ...pickup,
+              assignedRunIds: [...assignedRunIds],
+              assignedCollectorIds: [...assignedCollectorIds],
+              updatedAt: now,
+            }
+          : pickup,
+      ),
+    }));
+  };
+
   return (
     <section className="bottom-sheet collection-admin-sheet" aria-label={copy(language, "Collection verwalten", "Manage collection")}>
       <div className="sheet-handle" aria-hidden="true" />
@@ -247,6 +308,55 @@ export function CollectionAdminPanel({
             <p className="empty-state">{copy(language, "Noch keine Collection Areas.", "No collection areas yet.")}</p>
           ) : null}
         </div>
+      </div>
+
+      <div className="collection-admin-section">
+        <div className="collection-section-heading">
+          <div>
+            <span className="eyebrow">{copy(language, "Sonderadressen", "Pickup addresses")}</span>
+            <h2>{copy(language, "Zuweisungen", "Assignments")}</h2>
+          </div>
+          <span className="collection-count">{activePickups.length}</span>
+        </div>
+        <div className="collection-admin-area-list">
+          {activePickups.length === 0 ? (
+            <p className="empty-state">{copy(language, "Noch keine Sonderadressen.", "No pickup addresses yet.")}</p>
+          ) : activePickups.map((pickup) => {
+            const assignmentCount = pickup.assignedRunIds.length + pickup.assignedCollectorIds.length;
+            return (
+              <article className="collection-admin-area-row" key={pickup.id}>
+                <div className="collection-area-copy">
+                  <strong>{pickup.title}</strong>
+                  <small>
+                    {pickup.address} · {assignmentCount} {copy(language, "Zuweisungen", "assignments")}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  className="text-action"
+                  aria-expanded={assignmentPickupId === pickup.id}
+                  onClick={() => setAssignmentPickupId((current) => current === pickup.id ? null : pickup.id)}
+                >
+                  {assignmentPickupId === pickup.id
+                    ? copy(language, "Schließen", "Close")
+                    : copy(language, "Zuweisen", "Assign")}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+        {assignmentPickup ? (
+          <PickupAssignmentEditor
+            assignedRunIds={assignmentPickup.assignedRunIds}
+            assignedCollectorIds={assignmentPickup.assignedCollectorIds}
+            runOptions={assignmentRunOptions}
+            collectorOptions={assignmentCollectorOptions}
+            canAssign
+            language={language}
+            onSave={(runIds, collectorIds) =>
+              changePickupAssignment(assignmentPickup.id, runIds, collectorIds)}
+          />
+        ) : null}
       </div>
 
       <div className="collection-admin-section">
