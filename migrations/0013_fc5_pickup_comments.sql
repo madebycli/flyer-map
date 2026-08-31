@@ -97,6 +97,12 @@ SELECT
   payload_json, dedupe_key, created_at
 FROM domain_events;
 
+-- These two 0007 triggers write to domain_events. Leaving them installed while the
+-- table is briefly absent makes SQLite reparse an invalid schema during RENAME.
+-- Drop only the affected triggers, then recreate their historical behavior unchanged.
+DROP TRIGGER IF EXISTS trg_field_group_close_history;
+DROP TRIGGER IF EXISTS trg_field_group_expiry_history;
+
 DROP TABLE domain_events;
 ALTER TABLE domain_events_fc5_next RENAME TO domain_events;
 
@@ -106,3 +112,203 @@ CREATE INDEX idx_domain_events_session_time
   ON domain_events(field_session_id, occurred_at, id);
 CREATE INDEX idx_domain_events_entity
   ON domain_events(campaign_id, entity_type, entity_id, occurred_at);
+
+CREATE TRIGGER trg_field_group_close_history
+AFTER UPDATE OF state ON field_groups
+WHEN OLD.state = 'active' AND NEW.state = 'closed'
+BEGIN
+  UPDATE field_sessions
+  SET ended_at = NEW.closed_at,
+      end_reason = 'manual-close',
+      duration_seconds = MAX(
+        0,
+        CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', started_at) AS INTEGER)
+      ),
+      participant_count = NEW.participant_count,
+      person_seconds = MAX(
+        0,
+        CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', started_at) AS INTEGER)
+      ) * NEW.participant_count,
+      status = 'closed',
+      updated_at = NEW.closed_at
+  WHERE campaign_id = NEW.campaign_id
+    AND field_group_id = NEW.id
+    AND status = 'active';
+
+  INSERT OR IGNORE INTO field_sessions (
+    id,
+    campaign_id,
+    team_id,
+    field_group_id,
+    mode,
+    started_at,
+    ended_at,
+    end_reason,
+    duration_seconds,
+    participant_count,
+    person_seconds,
+    note,
+    status,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    'field_session_group_' || NEW.id,
+    NEW.campaign_id,
+    NEW.team_id,
+    NEW.id,
+    NEW.mode,
+    NEW.created_at,
+    NEW.closed_at,
+    'manual-close',
+    MAX(
+      0,
+      CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', NEW.created_at) AS INTEGER)
+    ),
+    NEW.participant_count,
+    MAX(
+      0,
+      CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', NEW.created_at) AS INTEGER)
+    ) * NEW.participant_count,
+    NULL,
+    'closed',
+    NEW.created_at,
+    NEW.closed_at
+  );
+
+  INSERT OR IGNORE INTO domain_events (
+    id,
+    campaign_id,
+    team_id,
+    field_session_id,
+    entity_type,
+    entity_id,
+    event_type,
+    occurred_at,
+    actor_kind,
+    actor_ref,
+    payload_version,
+    payload_json,
+    dedupe_key,
+    created_at
+  )
+  VALUES (
+    'domain_event_field_session_ended_' || NEW.id,
+    NEW.campaign_id,
+    NEW.team_id,
+    'field_session_group_' || NEW.id,
+    'field-session',
+    'field_session_group_' || NEW.id,
+    'field_session.closed',
+    NEW.closed_at,
+    'unknown',
+    NULL,
+    1,
+    '{}',
+    'field-session.ended:field_session_group_' || NEW.id,
+    NEW.closed_at
+  );
+END;
+
+CREATE TRIGGER trg_field_group_expiry_history
+AFTER UPDATE OF state ON field_groups
+WHEN OLD.state = 'active' AND NEW.state = 'expired'
+BEGIN
+  UPDATE field_sessions
+  SET ended_at = NEW.closed_at,
+      end_reason = 'group-expired',
+      duration_seconds = MAX(
+        0,
+        CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', started_at) AS INTEGER)
+      ),
+      participant_count = NEW.participant_count,
+      person_seconds = CASE
+        WHEN NEW.participant_count IS NULL THEN NULL
+        ELSE MAX(
+          0,
+          CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', started_at) AS INTEGER)
+        ) * NEW.participant_count
+      END,
+      status = 'closed',
+      updated_at = NEW.closed_at
+  WHERE campaign_id = NEW.campaign_id
+    AND field_group_id = NEW.id
+    AND status = 'active';
+
+  INSERT OR IGNORE INTO field_sessions (
+    id,
+    campaign_id,
+    team_id,
+    field_group_id,
+    mode,
+    started_at,
+    ended_at,
+    end_reason,
+    duration_seconds,
+    participant_count,
+    person_seconds,
+    note,
+    status,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    'field_session_group_' || NEW.id,
+    NEW.campaign_id,
+    NEW.team_id,
+    NEW.id,
+    NEW.mode,
+    NEW.created_at,
+    NEW.closed_at,
+    'group-expired',
+    MAX(
+      0,
+      CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', NEW.created_at) AS INTEGER)
+    ),
+    NEW.participant_count,
+    CASE
+      WHEN NEW.participant_count IS NULL THEN NULL
+      ELSE MAX(
+        0,
+        CAST(strftime('%s', NEW.closed_at) AS INTEGER) - CAST(strftime('%s', NEW.created_at) AS INTEGER)
+      ) * NEW.participant_count
+    END,
+    NULL,
+    'closed',
+    NEW.created_at,
+    NEW.closed_at
+  );
+
+  INSERT OR IGNORE INTO domain_events (
+    id,
+    campaign_id,
+    team_id,
+    field_session_id,
+    entity_type,
+    entity_id,
+    event_type,
+    occurred_at,
+    actor_kind,
+    actor_ref,
+    payload_version,
+    payload_json,
+    dedupe_key,
+    created_at
+  )
+  VALUES (
+    'domain_event_field_session_ended_' || NEW.id,
+    NEW.campaign_id,
+    NEW.team_id,
+    'field_session_group_' || NEW.id,
+    'field-session',
+    'field_session_group_' || NEW.id,
+    'field_session.expired',
+    NEW.closed_at,
+    'system',
+    NULL,
+    1,
+    '{}',
+    'field-session.ended:field_session_group_' || NEW.id,
+    NEW.closed_at
+  );
+END;
