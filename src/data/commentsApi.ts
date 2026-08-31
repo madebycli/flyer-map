@@ -1,6 +1,11 @@
 import { CampaignApiError } from "./campaignApi";
 
-export type CommentTargetType = "campaign" | "area" | "street-task" | "house-task";
+export type CommentTargetType =
+  | "campaign"
+  | "area"
+  | "street-task"
+  | "house-task"
+  | "pickup-task";
 
 export type CommentItem = {
   id: string;
