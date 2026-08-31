@@ -21,52 +21,65 @@ Weiter offen aus FC4 sind reale Android-Chromium- und iPhone-Safari-Abnahmen, To
 
 ## FC5.2 aktueller Stand
 
-Checkpoint A, Pickup Visibility Capability, und Checkpoint B, Pickup Composer / Sonderadress-Suche, sind technisch implementiert.
+Checkpoint A Pickup Visibility, Checkpoint B Pickup Composer/Sonderadress-Suche und Checkpoint C permanente Pickup-MapLibre-Darstellung sind technisch implementiert.
 
-Letzter vollständig grüner FC5.2-B-Code-Checkpoint vor diesem Living-Docs-Commit:
+Letzter vollständig grüner FC5.2-C-Code-Checkpoint vor diesem Living-Docs-Commit:
 
 ```text
-Head: c4b59b3d29967a850f1124188dfe37772f01dc00
-CI: #768 success
+Head: 70e72f58b1f48668362228e532f8253e8eeb377f
+CI: #772 success
 ```
 
-CI #768 war auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build.
+CI #772 ist auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build.
 
-Checkpoint A umgesetzt:
-- additive vorbereitete Migration `0012_fc5_collection_pickup_visibility.sql` mit `can_view_pickups DEFAULT 1`;
+Checkpoint A:
+- additive prepared-only Migration `0012_fc5_collection_pickup_visibility.sql` mit `can_view_pickups DEFAULT 1`;
 - vier enge Collection-Pickup-Capabilities: View default true, Create/Edit/Assign default false;
 - 0011-only bleibt rückwärtskompatibel und interpretiert vorhandene Collector-Sessions als `canViewPickups=true`;
-- explizite View-Änderung ohne 0012 scheitert spezifisch mit `pickup_visibility_schema_unavailable`;
-- Abschalten von View setzt die drei Write-Rechte atomar auf false;
-- Worker prüft View zusätzlich für Pickup-Mutationen und Pickup-Suche;
-- Collection Snapshot filtert Pickups serverseitig auf `[]`, wenn ein Collector kein View-Recht besitzt, ohne Areas oder Runs zu verstecken;
-- normale Campaign-Admin-/Persistent-Access-Reads bleiben unverändert;
-- Collector Access und Admin-Collector-Liste liefern alle vier Capability-Werte ohne Credential-Material;
+- View=false setzt Write-Rechte serverseitig außer Kraft, filtert Pickups aus dem Collection Snapshot und blockiert Pickup Search/Write;
+- Areas/Runs bleiben sichtbar;
+- normale Campaign-Admin-/Persistent-Access-Reads bleiben unabhängig;
 - Collection Admin UI kann die vier Rechte pro Collector ändern.
 
-Checkpoint B umgesetzt:
+Checkpoint B:
 - normaler `Sonderadresse hinzufügen`-Composer ist in den Collection-Flow integriert;
-- Search läuft über den bestehenden serverseitigen Geoapify-Worker-Pfad, Provider-Credentials bleiben aus dem Client heraus;
-- Suche ist auf Collection Main Area begrenzt, Worker filtert Treffer zusätzlich gegen das echte Main-Area-Polygon;
-- Bias-Priorität ist einmalig freigegebener Gerätestandort, sonst aktueller MapLibre-Kartenmittelpunkt;
+- Search läuft serverseitig über Geoapify auf OSM-derived Daten, Provider-Credentials bleiben aus dem Client heraus;
+- Worker begrenzt Search auf Collection Main Area und filtert Treffer zusätzlich gegen das echte Polygon;
+- Bias-Priorität: einmalig freigegebener Gerätestandort, sonst MapLibre-Kartenmittelpunkt;
 - kein `watchPosition`, keine GPS-Historie und keine Pflicht-Location-Permission;
-- deterministische Distanzberechnung, Sortierung und mobile Distanzanzeige sind vorhanden;
-- Search nutzt Debounce, Abort alter Requests und Sequence-/Race-Schutz;
-- Treffer-Auswahl fokussiert MapLibre ohne persistente Kameraänderung;
-- manuelle Positionskorrektur nutzt die aktuelle Kartenmitte und speichert bei manueller Korrektur keine falsche externe Provenance;
-- Composer speichert über den bestehenden Snapshot-zu-M5-Pickup-Mutationspfad und führt keine zweite Queue ein;
-- Collector Add-Flow ist auf `canViewPickups && canCreatePickups` begrenzt, Worker bleibt authoritative;
-- Checkpoint B führt bewusst noch keinen permanenten Pickup-Renderer, Assignment, persistente Pickup Comments, Pickup Stats oder Revert ein.
+- deterministische Distanzberechnung, Sortierung, Debounce, Abort und Race-Schutz sind vorhanden;
+- Search-Treffer fokussieren MapLibre ohne persistente Kameraänderung;
+- manuelle Positionskorrektur speichert keine falsche externe Provenance;
+- Composer speichert über den bestehenden Snapshot-zu-M5-Pickup-Mutationspfad;
+- Geoapify- und OpenStreetMap-Attribution werden aus dem Worker geliefert und sichtbar im Composer gerendert.
+
+Provider-Audit am 2026-08-31 gegen die offiziellen Geoapify-Seiten:
+- Geocoding/Autocomplete ist für den verwendeten Flow vorgesehen;
+- 1 Geocoding-/Autocomplete-Request entspricht aktuell 1 Credit;
+- Free-Plan nennt aktuell 3.000 Credits pro Tag;
+- OpenStreetMap-Attribution ist erforderlich;
+- im Free-Plan ist zusätzlich Geoapify-Attribution erforderlich;
+- Geoapify erlaubt das Speichern von Geocoding-Resultaten unter Beibehaltung der erforderlichen Attribution.
+
+Checkpoint C:
+- permanente Pickup-Darstellung nutzt `src/map/pickupRenderer.ts` mit einer festen GeoJSON-Source `vf-collection-pickups` und zwei festen Marker-/Selection-Layern;
+- nur bereits autorisierte, serverseitig sichtbare Pickups gelangen in den Collector-Map-Flow;
+- Feature-ID und Selection verwenden die app-eigene Pickup-ID;
+- Map Properties enthalten nur `pickupId` und `status`, keine Adresse, Beschreibung, Actor-, Provider- oder OSM-Provenance;
+- archivierte beziehungsweise ungültig positionierte Pickups werden nicht gerendert;
+- Datenupdates und Selection-Updates sind getrennt;
+- Browse-Hitbox bleibt MapLibre-basiert, kein DOM-Marker-Fallback;
+- Dense-Test deckt 5.000 Pickup-Features bei fester Source-/Layer-Zahl ab;
+- CI #771 war wegen eines zu breiten statischen `source`-Regex im Visibility-Test rot; der Test wurde auf die tatsächlich erzeugten GeoJSON-Properties umgestellt, CI #772 ist vollständig grün.
 
 Noch offen aus FC5.2 / Plan 021:
-- permanente Pickup MapLibre Layer und dauerhafte Kartenrepräsentation nach dem Composer;
-- Assignment UI / Run- oder Collector-Zuweisung;
 - persistente Pickup Comments über eine additive Forward Migration und bestehende Comment-Domain;
+- Assignment UI / Run- oder Collector-Zuweisung;
 - Pickup Stats;
 - Actor-Attribution, Highlight und gezieltes compensating Revert;
 - reale Mobile-/Touch-Abnahme der Collection- und Pickup-Flows.
 
-Der nächste Runtime-Slice muss wieder isoliert auf dem jeweils aktuellen grünen Head beginnen. Als einfachste sinnvolle Fortsetzung bietet sich die permanente Pickup-Darstellung im normalen MapLibre-/Collection-Read-Flow an. Assignment, Comments, Stats, Revert und FC5.3 dürfen nicht in denselben Renderer-Slice gestapelt werden.
+Nächster empfohlener isolierter Runtime-Slice: persistente Pickup Comments. Migration 0008 bleibt historisch unverändert; Pickup-Target-Support muss über eine neue additive Forward Migration plus Worker-Autorisierung erfolgen. Assignment, Stats, Revert und FC5.3 dürfen nicht in denselben Comment-Slice gestapelt werden.
 
 ## Collection / Pickup Architekturgrenzen
 
@@ -93,10 +106,10 @@ Bekannte fehlende Schemas müssen spezifisch fail-closed behandelt werden. Keine
 
 ## Immediate next
 
-1. Exakten aktuellen Branch-Head und CI verifizieren, einschließlich dieses Living-Docs-Commits.
+1. Exakten aktuellen Branch-Head und CI einschließlich dieses Living-Docs-Commits verifizieren.
 2. Nur bei vollständig grüner CI den nächsten Runtime-Slice beginnen.
-3. Permanente Pickup-Darstellung im normalen MapLibre-/Collection-Read-Flow als kleinsten nächsten Slice prüfen und planen.
-4. App-eigene Pickup-ID, vorhandene Snapshot-Daten und feste MapLibre-Layer verwenden, keine zweite Kartenengine und keinen zweiten Datenpfad einführen.
-5. View-Capability serverseitig beibehalten und keine versteckten Pickup-Daten über Map Properties, Stats oder Nebenpfade leaken.
-6. Assignment, persistente Pickup Comments, Stats, Revert und FC5.3 nicht in denselben Renderer-Commit stapeln.
-7. Den nächsten Runtime-Slice wieder separat committen und auf exakt diesem Head Tests, Typecheck, Audit und Production Build grün bekommen.
+3. Persistente Pickup Comments über eine neue additive Forward Migration und die bestehende Comment-Domain umsetzen.
+4. Pickup-Target serverseitig gegen Campaign/Pickup-Existenz und Pickup-View-Scope autorisieren; keine UI-only-Berechtigung.
+5. Migration 0008 nicht verändern und keine Remote-Migration anwenden.
+6. Assignment, Pickup Stats, Revert und FC5.3 separat halten.
+7. Den Comment-Slice wieder mit Tests, Typecheck, Audit und Production Build auf exakt einem Head grün abschließen.
