@@ -13,6 +13,10 @@ import {
   type PickupSearchAttribution,
   type PickupSearchResult,
 } from "../data/pickupSearchApi.ts";
+import {
+  PickupAssignmentEditor,
+  type PickupAssignmentOption,
+} from "./PickupAssignmentEditor.tsx";
 import "./pickup-panel.css";
 
 export type PickupListItem = {
@@ -21,6 +25,8 @@ export type PickupListItem = {
   address: string;
   description: string;
   status: PickupStatus;
+  assignedRunIds: readonly string[];
+  assignedCollectorIds: readonly string[];
 };
 
 type Props = {
@@ -28,6 +34,9 @@ type Props = {
   items: readonly PickupListItem[];
   canCreate: boolean;
   canEdit: boolean;
+  canAssign: boolean;
+  assignmentRunOptions: readonly PickupAssignmentOption[];
+  assignmentCollectorOptions: readonly PickupAssignmentOption[];
   online: boolean;
   locale: string;
   position: LngLat | null;
@@ -37,6 +46,11 @@ type Props = {
   areaId?: string | null;
   onCreate: (draft: PickupDraft & { position: LngLat }) => void | Promise<void>;
   onStatusChange: (id: string, status: PickupStatus) => void | Promise<void>;
+  onAssignmentChange: (
+    id: string,
+    assignedRunIds: string[],
+    assignedCollectorIds: string[],
+  ) => void | Promise<void>;
   onPositionChange: (position: LngLat | null, source: PickupSource | null) => void;
   onFocusPosition: (position: LngLat) => void;
   onManualPositioningChange: (active: boolean) => void;
@@ -92,6 +106,9 @@ export function PickupPanel({
   items,
   canCreate,
   canEdit,
+  canAssign,
+  assignmentRunOptions,
+  assignmentCollectorOptions,
   online,
   locale,
   position,
@@ -101,6 +118,7 @@ export function PickupPanel({
   areaId = null,
   onCreate,
   onStatusChange,
+  onAssignmentChange,
   onPositionChange,
   onFocusPosition,
   onManualPositioningChange,
@@ -117,11 +135,15 @@ export function PickupPanel({
   const [locationBias, setLocationBias] = useState<LngLat | null>(null);
   const [locationState, setLocationState] = useState<"idle" | "loading" | "active" | "error">("idle");
   const [commentPickupId, setCommentPickupId] = useState<string | null>(null);
+  const [assignmentPickupId, setAssignmentPickupId] = useState<string | null>(null);
   const searchSequence = useRef(0);
   const summary = useMemo(() => summarizePickupStatuses(items.map((item) => item.status)), [items]);
   const effectiveBias = locationBias ?? mapCenter;
   const commentPickup = commentPickupId
     ? items.find((item) => item.id === commentPickupId) ?? null
+    : null;
+  const assignmentPickup = assignmentPickupId
+    ? items.find((item) => item.id === assignmentPickupId) ?? null
     : null;
   const language = locale.toLowerCase().startsWith("de") ? "de" : "en";
 
@@ -129,7 +151,10 @@ export function PickupPanel({
     if (commentPickupId && !items.some((item) => item.id === commentPickupId)) {
       setCommentPickupId(null);
     }
-  }, [commentPickupId, items]);
+    if (assignmentPickupId && !items.some((item) => item.id === assignmentPickupId)) {
+      setAssignmentPickupId(null);
+    }
+  }, [assignmentPickupId, commentPickupId, items]);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -267,39 +292,70 @@ export function PickupPanel({
 
       <div className="pickup-list">
         {items.length === 0 ? <p className="pickup-empty">{labels.empty}</p> : null}
-        {items.map((item) => (
-          <article className="pickup-card" key={item.id}>
-            <div className="pickup-card-copy">
-              <strong>{item.title}</strong>
-              <small>{item.address}</small>
-              {item.description ? <p>{item.description}</p> : null}
-              <button
-                type="button"
-                className="pickup-comment-toggle"
-                aria-expanded={commentPickupId === item.id}
-                onClick={() => setCommentPickupId((current) => current === item.id ? null : item.id)}
-              >
-                {commentPickupId === item.id
-                  ? (language === "de" ? "Kommentare schließen" : "Close comments")
-                  : (language === "de" ? "Kommentare" : "Comments")}
-              </button>
-            </div>
-            {canEdit ? (
-              <select
-                aria-label={`${item.address}: ${labels.progress}`}
-                value={item.status}
-                onChange={(event) => void onStatusChange(item.id, event.target.value as PickupStatus)}
-              >
-                {STATUS_ORDER.map((status) => (
-                  <option key={status} value={status}>{statusLabel(status)}</option>
-                ))}
-              </select>
-            ) : (
-              <span className={`pickup-status is-${item.status}`}>{statusLabel(item.status)}</span>
-            )}
-          </article>
-        ))}
+        {items.map((item) => {
+          const assignmentCount = item.assignedRunIds.length + item.assignedCollectorIds.length;
+          const assignmentVisible = canAssign || assignmentCount > 0;
+          return (
+            <article className="pickup-card" key={item.id}>
+              <div className="pickup-card-copy">
+                <strong>{item.title}</strong>
+                <small>{item.address}</small>
+                {item.description ? <p>{item.description}</p> : null}
+                <div className="pickup-card-actions">
+                  <button
+                    type="button"
+                    className="pickup-comment-toggle"
+                    aria-expanded={commentPickupId === item.id}
+                    onClick={() => setCommentPickupId((current) => current === item.id ? null : item.id)}
+                  >
+                    {commentPickupId === item.id
+                      ? (language === "de" ? "Kommentare schließen" : "Close comments")
+                      : (language === "de" ? "Kommentare" : "Comments")}
+                  </button>
+                  {assignmentVisible ? (
+                    <button
+                      type="button"
+                      className="pickup-comment-toggle"
+                      aria-expanded={assignmentPickupId === item.id}
+                      onClick={() => setAssignmentPickupId((current) => current === item.id ? null : item.id)}
+                    >
+                      {assignmentPickupId === item.id
+                        ? (language === "de" ? "Zuweisung schließen" : "Close assignment")
+                        : `${language === "de" ? "Zuweisung" : "Assignment"}${assignmentCount > 0 ? ` · ${assignmentCount}` : ""}`}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              {canEdit ? (
+                <select
+                  aria-label={`${item.address}: ${labels.progress}`}
+                  value={item.status}
+                  onChange={(event) => void onStatusChange(item.id, event.target.value as PickupStatus)}
+                >
+                  {STATUS_ORDER.map((status) => (
+                    <option key={status} value={status}>{statusLabel(status)}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className={`pickup-status is-${item.status}`}>{statusLabel(item.status)}</span>
+              )}
+            </article>
+          );
+        })}
       </div>
+
+      {assignmentPickup ? (
+        <PickupAssignmentEditor
+          assignedRunIds={assignmentPickup.assignedRunIds}
+          assignedCollectorIds={assignmentPickup.assignedCollectorIds}
+          runOptions={assignmentRunOptions}
+          collectorOptions={assignmentCollectorOptions}
+          canAssign={canAssign}
+          language={language}
+          onSave={(runIds, collectorIds) =>
+            onAssignmentChange(assignmentPickup.id, runIds, collectorIds)}
+        />
+      ) : null}
 
       {commentPickup ? (
         <CommentsContextPanel
@@ -423,7 +479,19 @@ export function PickupPanel({
         </div>
       ) : null}
 
-      {!canCreate ? <p className="pickup-readonly">{canEdit ? labels.readOnlyCreate : labels.readOnly}</p> : null}
+      {!canCreate && !canEdit && !canAssign ? <p className="pickup-readonly">{labels.readOnly}</p> : null}
+      {!canCreate && canEdit && !canAssign ? <p className="pickup-readonly">{labels.readOnlyCreate}</p> : null}
+      {!canCreate && canAssign ? (
+        <p className="pickup-readonly">
+          {canEdit
+            ? (language === "de"
+                ? "Dieser Zugang darf Sonderadressen bearbeiten und zuweisen, aber keine neuen anlegen."
+                : "This access may edit and assign pickup addresses but cannot create new ones.")
+            : (language === "de"
+                ? "Dieser Zugang darf Sonderadressen zuweisen, aber nicht bearbeiten oder neu anlegen."
+                : "This access may assign pickup addresses but cannot edit or create them.")}
+        </p>
+      ) : null}
     </section>
   );
 }
