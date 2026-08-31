@@ -2,7 +2,7 @@
 id: product-roadmap
 type: product
 status: accepted
-last_updated: 2026-08-30
+last_updated: 2026-08-31
 related: [product, product-mvp, product-ux, architecture-organizations, architecture-collaboration, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion, plan-017-feature-complete-platform, plan-021-collection-pickup-persistence]
 source_of_truth_for: [product-roadmap, planned-capabilities, milestone-order]
 ---
@@ -43,7 +43,7 @@ Internal `?workbench=` routes may remain useful for development, but they are no
 
 The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, bounded Activity, the first deterministic Automation, the first real Stats projection, the House renderer, normal-product Smart Street and normal-product Smart House on Draft PR #72. Remaining FC4 work is real-device/touch-density/dense-mobile acceptance including the documented `HOUSE_MIN_ZOOM` starting value 15.
 
-For FC5, Master selected the First-Class Collection/Pickup direction. Collection is not a second status on Distribution Street/House Tasks. It has its own Main Area, work Areas, Runs, Road Sections, Pickup Tasks, temporary Collector access and progress. FC5.1 Collection Access, Areas und Runs ist als echter normaler Runtime-Slice implementiert. Pickup, Road Sections, Stats, Attribution und Revert bleiben weitere FC5-Slices.
+For FC5, Master selected the First-Class Collection/Pickup direction. Collection is not a second status on Distribution Street/House Tasks. It has its own Main Area, work Areas, Runs, Road Sections, Pickup Tasks, temporary Collector access and progress. FC5.1 Collection Access, Areas und Runs sowie der vollständige FC5.2-Runtime-Scope für Pickup-Persistenz, Visibility/Capabilities, Geoapify/OSM-derived Sonderadress-Suche, MapLibre-Pickup-Rendering, durable Pickup Comments und Run-/Collector-Assignment sind als echte normale Produktwege implementiert. FC5.3 Road Sections, Collection/Pickup Stats, Actor Highlight/Attribution und compensating Revert bleiben weitere FC5-Slices. Reale Android-/iPhone-Abnahme bleibt ein separates Acceptance Gate.
 
 ## Domain direction
 
@@ -130,7 +130,7 @@ Plan 021 is the current source of truth for the selected FC5 product/architectur
 - Inner Collection Areas render above it with their own colors rather than mixing with gray.
 - Main-Area surface not yet assigned to an inner Area remains visibly gray/unassigned.
 - Pickup Tasks may initially remain unassigned to an inner Area but still belong to the Campaign/Main Area.
-- Address search should be spatially restricted to the Main Area where possible.
+- Address search is spatially restricted to the Main Area and post-filtered against its polygon.
 
 #### Temporary Collection QR access
 
@@ -162,7 +162,7 @@ Statuses:
 - `later` / Später;
 - `unavailable` / Nicht befahrbar.
 
-Road Sections have their own IDs, geometry, Area/Run context, events and statistics.
+Road Sections have their own IDs, geometry, Area/Run context, events and statistics. Dieser Teil bleibt FC5.3.
 
 #### Pickup Tasks / Sonderadressen
 
@@ -171,10 +171,11 @@ Pickup Tasks:
 - require a map position;
 - contain title, address and description;
 - use the separate Pickup status model;
-- can be commented on;
+- use durable contextual comments with target `pickup-task`;
 - can be archived but should not be hard-deleted individually;
 - may be edited/moved later with change attribution;
-- copy their own address/geometry snapshot when created from an existing House/OSM candidate.
+- copy their own address/geometry snapshot when created from an existing House/OSM candidate;
+- may be assigned to one or more active Collection Runs/Collectors through the existing M5 mutation path.
 
 Existing Pickup statuses:
 - `open`;
@@ -184,19 +185,19 @@ Existing Pickup statuses:
 
 #### OSM-based online address search
 
-`Sonderadresse hinzufügen` should use a Maps/Spotlight-like Search Sheet:
+`Sonderadresse hinzufügen` uses a Maps/Spotlight-like Search Sheet:
 
 `Plus -> Search -> result -> map focus/marker -> Sonderadresse hinzufügen -> title/address/description`
 
-Requirements:
-- use OSM/OSM-derived online address data;
-- choose a provider only after checking current ToS, rate limits, privacy, attribution and cost;
-- do not blindly use a public geocoder endpoint for unsupported live autocomplete;
-- prefer restriction to Collection Main Area;
-- if only BBox/proximity is supported, post-filter against the Main Area geometry;
-- rank by one-shot current device location when permitted, otherwise current map center;
-- show distance in metres/kilometres;
-- allow manual map tap/position correction;
+Implemented FC5.2 boundary:
+- OSM-derived address data via Geoapify Address Autocomplete behind the Worker;
+- no provider credential in the client;
+- server-side rate limit, validation and timeout;
+- Main-Area BBox/proximity plus authoritative polygon post-filter;
+- one-shot device-location bias when permitted, otherwise current MapLibre center;
+- distance in metres/kilometres;
+- manual map position correction;
+- visible Geoapify/OpenStreetMap attribution;
 - no continuous GPS history.
 
 #### Special-address capabilities
@@ -207,7 +208,7 @@ For temporary Collection helpers:
 - edit defaults off;
 - assign defaults off.
 
-Admin/Operator may grant these narrow Collection-specific capabilities to selected helpers/groups without bringing forward the general Organizations/Permission runtime.
+Admin/Operator may grant these narrow Collection-specific capabilities without bringing forward the general Organizations/Permission runtime. View=false remains authoritative for Pickup data/search/write. Assignment requires the separate assign capability and validates active Run/Collector references server-side.
 
 #### Actor attribution and corrections
 
@@ -268,7 +269,7 @@ Collection QR/Collector Access is a related but distinct FC5 entry flow and must
 - deterministic/idempotent automations;
 - Team/Area/Collection progress.
 
-The durable Comment runtime, Activity feed and first deterministic Automation already exist on the current feature-complete line. Pickup comment target support remains FC5 work.
+The durable Comment runtime, Activity feed and first deterministic Automation already exist on the current feature-complete line. FC5.2 extends the same durable Comment runtime to `pickup-task` with Collection-Collector authorization and additive forward migration 0013.
 
 ### M8 - Organizations + Identity + Permissions + Desktop Admin
 
@@ -335,7 +336,7 @@ Goal: provide a polished operational overview while keeping the map fast.
 
 #### Statistics
 
-The current feature-complete line has a normal Launcher `Stats` module backed by a server-authorized bounded read. It derives current Distribution progress/session/event aggregates. FC5 adds separate Collection denominators and progress.
+The current feature-complete line has a normal Launcher `Stats` module backed by a server-authorized bounded read. It derives current Distribution progress/session/event aggregates. FC5.3 adds separate Collection denominators and progress.
 
 Show percentage/progress bars for:
 - Campaign;
