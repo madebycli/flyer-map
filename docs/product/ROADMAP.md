@@ -43,7 +43,7 @@ Internal `?workbench=` routes may remain useful for development, but they are no
 
 The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, bounded Activity, the first deterministic Automation, the first real Stats projection, the House renderer, normal-product Smart Street and normal-product Smart House on Draft PR #72. Remaining FC4 work is real-device/touch-density/dense-mobile acceptance including the documented `HOUSE_MIN_ZOOM` starting value 15.
 
-For FC5, Master selected the First-Class Collection/Pickup direction. Collection is not a second status on Distribution Street/House Tasks. It has its own Main Area, work Areas, Runs, Road Sections, Pickup Tasks, temporary Collector access and progress. FC5.1 Collection Access, Areas und Runs sowie der vollständige FC5.2-Runtime-Scope für Pickup-Persistenz, Visibility/Capabilities, Geoapify/OSM-derived Sonderadress-Suche, MapLibre-Pickup-Rendering, durable Pickup Comments und Run-/Collector-Assignment sind als echte normale Produktwege implementiert. FC5.3 Road Sections, Collection/Pickup Stats, Actor Highlight/Attribution und compensating Revert bleiben weitere FC5-Slices. Reale Android-/iPhone-Abnahme bleibt ein separates Acceptance Gate.
+For FC5, Master selected the First-Class Collection/Pickup direction. Collection is not a second status on Distribution Street/House Tasks. It has its own Main Area, work Areas, Runs, Road Sections, Pickup Tasks, temporary Collector access and progress. FC5.1 Collection Access, Areas und Runs sowie der vollständige FC5.2-Runtime-Scope für Pickup-Persistenz, Visibility/Capabilities, Geoapify/OSM-derived Sonderadress-Suche, MapLibre-Pickup-Rendering, durable Pickup Comments, Run-/Collector-Assignment, Edit/Move, Soft-Archive, Archivprüfung und normale Admin-/Collector-Pickup-Flows sind als echte normale Produktwege implementiert. FC5.3 Road Sections, Collection/Pickup Stats, Actor Highlight/Attribution und compensating Revert bleiben weitere FC5-Slices. Reale Android-/iPhone-Abnahme bleibt ein separates Acceptance Gate.
 
 ## Domain direction
 
@@ -175,7 +175,9 @@ Pickup Tasks:
 - can be archived but should not be hard-deleted individually;
 - may be edited/moved later with change attribution;
 - copy their own address/geometry snapshot when created from an existing House/OSM candidate;
-- may be assigned to one or more active Collection Runs/Collectors through the existing M5 mutation path.
+- may be assigned to one or more active Collection Runs/Collectors through the existing M5 mutation path;
+- are editable and soft-archivable in the normal Admin and authorized Collector product paths;
+- remain reviewable after archive while archived Pickups are excluded from the active MapLibre marker set.
 
 Existing Pickup statuses:
 - `open`;
@@ -323,7 +325,7 @@ Separate desktop-first surface for:
 - access/invites;
 - permissions;
 - Areas/ownership;
-- Collection Main Area/Areas/Runs/Collectors;
+- Collection Main Area/Areas/Runs/Collectors/Pickups;
 - live-group policy;
 - statistics/session history;
 - activity/audit;
@@ -337,7 +339,6 @@ Goal: provide a polished operational overview while keeping the map fast.
 #### Statistics
 
 The current feature-complete line has a normal Launcher `Stats` module backed by a server-authorized bounded read. It derives current Distribution progress/session/event aggregates. FC5.3 adds separate Collection denominators and progress.
-
 Show percentage/progress bars for:
 - Campaign;
 - Team;
