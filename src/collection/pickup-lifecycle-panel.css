@@ -1,0 +1,191 @@
+.pickup-lifecycle-panel {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.9rem;
+  border: 1px solid #dbe4dd;
+  border-radius: 1rem;
+  background: #fff;
+}
+
+.pickup-lifecycle-header,
+.pickup-lifecycle-editor-heading,
+.pickup-lifecycle-position,
+.pickup-lifecycle-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pickup-lifecycle-header > div,
+.pickup-lifecycle-copy,
+.pickup-lifecycle-list,
+.pickup-lifecycle-editor,
+.pickup-lifecycle-archive {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pickup-lifecycle-header span,
+.pickup-lifecycle-card small,
+.pickup-lifecycle-position span,
+.pickup-lifecycle-panel label > span,
+.pickup-lifecycle-list > p {
+  color: #6b786f;
+  font-size: 0.7rem;
+}
+
+.pickup-lifecycle-list > p,
+.pickup-lifecycle-copy p,
+.pickup-lifecycle-error {
+  margin: 0;
+}
+
+.pickup-lifecycle-card {
+  padding: 0.72rem;
+  border: 1px solid #dfe7e1;
+  border-radius: 0.8rem;
+  background: #f8faf8;
+}
+
+.pickup-lifecycle-card.is-archived {
+  opacity: 0.78;
+  background: #f2f4f2;
+}
+
+.pickup-lifecycle-copy {
+  min-width: 0;
+}
+
+.pickup-lifecycle-copy strong,
+.pickup-lifecycle-copy small,
+.pickup-lifecycle-copy p {
+  overflow-wrap: anywhere;
+}
+
+.pickup-lifecycle-copy p {
+  color: #5f6c63;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.pickup-lifecycle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.pickup-lifecycle-actions button,
+.pickup-lifecycle-archive > button,
+.pickup-lifecycle-editor button {
+  min-height: 2.2rem;
+  padding: 0.38rem 0.62rem;
+  border: 1px solid #c8d6cb;
+  border-radius: 0.62rem;
+  color: #24462e;
+  background: #eef5f0;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.pickup-lifecycle-actions .is-danger {
+  border-color: #e1c0c0;
+  color: #8b252b;
+  background: #fff3f3;
+}
+
+.pickup-lifecycle-card select {
+  min-height: 2.35rem;
+  max-width: 10rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #ced8d0;
+  border-radius: 0.65rem;
+  color: #2b4032;
+  background: #fff;
+  font: inherit;
+  font-size: 0.68rem;
+}
+
+.pickup-lifecycle-badge {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.48rem;
+  border-radius: 999px;
+  background: #e5e9e6;
+  color: #566159;
+  font-size: 0.64rem;
+  font-weight: 740;
+}
+
+.pickup-lifecycle-editor {
+  padding: 0.75rem;
+  border: 1px solid #cfdcd2;
+  border-radius: 0.82rem;
+  background: #fbfdfb;
+}
+
+.pickup-lifecycle-editor-heading {
+  align-items: center;
+}
+
+.pickup-lifecycle-editor label {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.pickup-lifecycle-editor input,
+.pickup-lifecycle-editor textarea {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.62rem;
+  border: 1px solid #ced8d0;
+  border-radius: 0.68rem;
+  background: #fff;
+  color: #26372d;
+  font: inherit;
+  font-size: 0.74rem;
+}
+
+.pickup-lifecycle-editor textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.pickup-lifecycle-position {
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.pickup-lifecycle-save {
+  justify-self: start;
+  border-color: #255d37 !important;
+  color: #fff !important;
+  background: #255d37 !important;
+}
+
+.pickup-lifecycle-error {
+  color: #8f2328;
+  font-size: 0.72rem;
+}
+
+.pickup-lifecycle-panel button:focus-visible,
+.pickup-lifecycle-panel input:focus-visible,
+.pickup-lifecycle-panel textarea:focus-visible,
+.pickup-lifecycle-panel select:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .pickup-lifecycle-card {
+    display: grid;
+  }
+
+  .pickup-lifecycle-card select {
+    width: 100%;
+    max-width: none;
+  }
+}
