@@ -6,8 +6,9 @@
 
 .comments-context-error {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.7rem;
   padding: 0.68rem 0.75rem;
   border: 1px solid #e2c4c4;
@@ -16,6 +17,12 @@
   background: #fff7f7;
   font-size: 0.72rem;
   line-height: 1.35;
+}
+
+.comments-context-error span {
+  min-width: 0;
+  flex: 1 1 12rem;
+  overflow-wrap: anywhere;
 }
 
 .comments-context-error button,

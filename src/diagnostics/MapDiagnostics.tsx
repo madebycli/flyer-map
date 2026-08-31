@@ -108,7 +108,7 @@ function currentMode() {
 function basemapStats() {
   const entries = performance
     .getEntriesByType("resource")
-    .filter((entry) => entry.name.includes("basemaps.cartocdn.com"));
+    .filter((entry) => entry.name.includes("tiles.openfreemap.org"));
   if (entries.length === 0) {
     return { requests: 0, averageDurationMs: null, maxDurationMs: null };
   }

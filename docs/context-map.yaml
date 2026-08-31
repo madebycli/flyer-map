@@ -1,4 +1,4 @@
-version: 14
+version: 15
 
 entrypoints:
   always:
@@ -19,6 +19,7 @@ routing_rules:
   - for completed House polygon renderer history or its open device gates, load prompt-house-polygon-renderer and plan-house-polygon-renderer, then follow Map, Smart Task identity, Collaboration and Quality edges
   - for Smart Street runtime planning or continuation, load plan-smart-street-runtime, then follow Offline Map, Map, UX, Offline Sync, Smart Task identity and Quality edges
   - for Smart House runtime or preview schema-gate hardening, load plan-smart-house-runtime, then follow Smart Street runtime, House persistence, House renderer, Offline Map, Map, UX, Data, Offline Sync, Security, Smart Task identity and Quality edges
+  - for OpenFreeMap basemap, standard house numbers, Smart Map online-first or related Area-Sheet hardening, load plan-openfreemap-smartdata-ui-hardening, then follow Map, Offline Map, Smart Street runtime, Smart House runtime, UX, Collaboration and Quality edges
   - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
@@ -71,7 +72,7 @@ nodes:
     path: docs/architecture/MAP.md
     type: architecture
     status: accepted
-    topics: [map, maplibre, carto, geojson, renderer, osm, offline-map, streets, houses]
+    topics: [map, maplibre, openfreemap, liberty, housenumber, geojson, renderer, osm, offline-map, streets, houses]
     load_when: [map rendering, geometry interaction, performance, road/building data, session map highlighting, House polygon renderer, Collection areas, Collection roads, Pickup markers]
 
   - id: data
@@ -291,6 +292,13 @@ nodes:
     topics: [feature-complete, FC4, smart-houses, houses, offline-map, osm, maplibre, selection, batch-mutation, persistence, schema-gates, preview-hardening]
     load_when: [Smart House runtime, normal House candidate selection, FC4 continuation, prepared OSM buildings, House batch persistence, preview schema gates]
 
+  - id: plan-openfreemap-smartdata-ui-hardening
+    path: docs/plans/completed/022-openfreemap-smartdata-ui-hardening.md
+    type: plan
+    status: completed
+    topics: [openfreemap, liberty, basemap, housenumber, style-load, smart-map, online-first, offline-optional, comments, retry, mobile-area-sheet]
+    load_when: [OpenFreeMap basemap, house number labels, Smart Street online data, Smart House online data, optional offline map, Comment retry UI, mobile Area sheet]
+
   - id: plan-collection-pickup-persistence
     path: docs/plans/active/021-collection-pickup-persistence.md
     type: plan
@@ -426,6 +434,13 @@ edges:
   - { from: plan-smart-house-runtime, to: smart-house-runtime, relation: implements }
   - { from: smart-house-runtime, to: smart-house-candidate-data, relation: uses }
   - { from: smart-house-candidate-data, to: map, relation: integrates }
+  - { from: plan-openfreemap-smartdata-ui-hardening, to: map, relation: updates_basemap_and_layer_order }
+  - { from: plan-openfreemap-smartdata-ui-hardening, to: plan-offline-map, relation: keeps_optional_storage_boundary }
+  - { from: plan-openfreemap-smartdata-ui-hardening, to: plan-smart-street-runtime, relation: makes_online_first }
+  - { from: plan-openfreemap-smartdata-ui-hardening, to: plan-smart-house-runtime, relation: makes_online_first }
+  - { from: plan-openfreemap-smartdata-ui-hardening, to: ux, relation: hardens_mobile_flow }
+  - { from: plan-openfreemap-smartdata-ui-hardening, to: collaboration, relation: hardens_comment_retry }
+  - { from: plan-openfreemap-smartdata-ui-hardening, to: quality, relation: validated_by }
 
   - { from: adr-collection-access-areas-runs, to: plan-collection-pickup-persistence, relation: governs }
   - { from: adr-collection-access-areas-runs, to: data, relation: constrains }

@@ -55,8 +55,11 @@ test("Smart Street save keeps App identity and uses the durable mutation path", 
 test("Smart Street UI keeps editing permissions at the existing Area boundary", async () => {
   const app = await readFile("src/App.tsx", "utf8");
 
-  assert.match(app, /if \(!selectedArea \|\| !canEditSelectedArea \|\| smartRoads\.length === 0\) return/u);
-  assert.match(app, /disabled=\{smartRoads\.length === 0\}/u);
+  assert.match(app, /const startSmartStreetSelection = async/u);
+  assert.match(app, /if \(!selectedArea \|\| !canEditSelectedArea\) return/u);
+  assert.match(app, /const pkg = await ensureSmartMapPackage\(\)/u);
+  assert.match(app, /fetchMapDataPackage/u);
+  assert.match(app, /disabled=\{smartMapLoading\}/u);
   assert.match(app, /!canEditSelectedArea/u);
   assert.match(app, /setSmartStreetMessage\(t\(language, "smartStreetDisconnected"\)\)/u);
 });

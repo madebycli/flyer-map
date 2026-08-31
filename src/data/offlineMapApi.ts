@@ -38,7 +38,7 @@ async function parseError(response: Response) {
   );
 }
 
-export async function downloadOfflineMapPackage(
+export async function fetchMapDataPackage(
   campaignId: string,
   center: OfflineMapLngLat,
   radiusMeters = OFFLINE_MAP_RADIUS_METERS,
@@ -85,4 +85,12 @@ export async function downloadOfflineMapPackage(
   }
 
   return payload;
+}
+
+export function downloadOfflineMapPackage(
+  campaignId: string,
+  center: OfflineMapLngLat,
+  radiusMeters = OFFLINE_MAP_RADIUS_METERS,
+) {
+  return fetchMapDataPackage(campaignId, center, radiusMeters);
 }

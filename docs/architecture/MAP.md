@@ -2,7 +2,7 @@
 id: architecture-map
 type: architecture
 status: accepted
-last_updated: 2026-08-29
+last_updated: 2026-08-31
 related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012, ADR-0013]
 source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera, saved-geometry-renderer, prepared-offline-map-rendering]
 ---
@@ -12,7 +12,7 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-came
 ## Current renderer baseline
 
 MapLibre GL JS **5.7.1** owns the persistent map rendering pipeline:
-- CARTO Voyager Retina raster basemap;
+- OpenFreeMap Liberty vector basemap;
 - camera movement, zoom and bearing;
 - navigation/compass controls;
 - one-shot browser geolocation display;
@@ -44,33 +44,48 @@ Green TypeScript/CI alone is insufficient for a map-runtime upgrade.
 
 ## Basemap
 
-Primary online provider is CARTO Voyager Retina raster:
+Primary online provider is OpenFreeMap Liberty:
 
-`https://{a-d}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png`
+`https://tiles.openfreemap.org/styles/liberty`
 
-The provider remains replaceable. Labels are provider-rendered raster content and are not dynamically translated by application language.
+The provider remains replaceable. Liberty requires no application API key, account or secret. MapLibre remains pinned to 5.7.1.
 
-Current zoom contract:
-- CARTO raster source `maxzoom` = 20;
-- Map instance `maxZoom` = 20;
-- raster style layer must remain visible at zoom 20, so its layer `maxzoom` must be greater than 20 (currently 21) or omitted.
+The loaded Liberty contract uses vector source `openmaptiles`. Standard house numbers are enabled by default through exactly one app-owned symbol layer:
 
-Do not set the raster layer `maxzoom` back to 20: MapLibre hides a style layer at zoom values equal to or greater than its layer maxzoom, which caused a real-browser white-basemap regression at maximum zoom.
+- layer id `vf-basemap-housenumbers`;
+- source `openmaptiles`;
+- source-layer `housenumber`;
+- text field `housenumber`;
+- `Noto Sans Regular` from the loaded Liberty glyph contract;
+- minimum zoom 16, approximately 11 px text, light halo and normal collision handling.
 
-CARTO Basemap content is **online-only** in the current architecture. CARTO Basemap terms prohibit storing/saving/caching map content, so deliberate offline-map downloads must not cache these raster tiles.
+Provider house-number layers for the same source/source-layer are removed before the app-owned layer is added, so labels are never duplicated. If Liberty no longer provides `openmaptiles`, `housenumber` or the required Noto Sans glyph contract, do not silently substitute another schema. Stop and re-evaluate the provider contract.
 
-ADR-0012 defines the separate prepared offline-data path. OpenStreetMap Foundation raster/vector tile services also must not be bulk-prefetched for this feature.
+The online Liberty style is not the deliberate offline-download payload. ADR-0012 continues to define the separate prepared raw-OSM package path. OpenStreetMap Foundation raster/vector tile services must not be bulk-prefetched for this feature.
 
 ## Saved application GeoJSON
 
-### Sources
+### Sources and style installation
 
 Two persistent sources exist for the current field renderer:
 - `vf-areas` - all saved Areas;
 - `vf-streets` - all saved Street Tasks.
 - `vf-houses` - all saved House Tasks.
 
-The initial MapLibre style is built with these application sources/layers already present using the latest Campaign data available at map construction time. They are not recreated during pan/zoom/rotate.
+MapLibre first loads Liberty. On the single `style.load` event, Verteil-Flyer installs its fixed application sources/layers once and immediately synchronizes current data through the existing `sync*()` functions. Data updates do not recreate the Map instance or style.
+
+Normal context layers are inserted below the first Liberty symbol/label layer:
+- prepared offline roads/buildings;
+- Areas;
+- normal Houses;
+- normal Streets;
+- Collection Main/Areas.
+
+Interaction overlays stay above Liberty labels:
+- Street/House selection and Session Highlight;
+- Pickup markers and selection;
+- Smart Street/House candidates and selections;
+- Smart preview, points and point labels.
 
 Actual Campaign data changes update the existing `GeoJSONSource` data with `setData()`.
 
@@ -159,11 +174,9 @@ ADR-0013 confirms the Smart Street primary direction:
 
 The persistence stack keeps the renderer contract unchanged: after creation, a Smart Street is just another saved Street Task in `vf-streets`.
 
-The first normal-product runtime slice now connects this direction end to end: the Area
-Sheet reads the already prepared local OSM package, `smartCandidatesForArea()` supplies
-real road candidates, MapLibre handles candidate hit testing and preview, and the
-reviewed result enters the existing M5 mutation path. No preview road set is copied into
-the product flow, and no new map or sync engine is introduced.
+The normal product runtime is online-first. A covering prepared IndexedDB package has priority. Without one, an online Smart Street/House action requests an ephemeral bounded package centered on the selected Area. The ephemeral result is not persisted. Offline use still requires a covering deliberately stored package. `smartCandidatesForArea()` supplies real candidates, MapLibre handles hit testing and preview, and the reviewed result enters the existing M5 mutation path. No preview road set, new map engine or new sync path is introduced.
+
+The request radius is the maximum distance from the Area-bounds center to its corners plus a small buffer, clamped to 250 through 3,000 m. Areas that cannot fit fully inside 3,000 m are rejected instead of presenting partial candidates as complete. A package is usable only when every Area polygon point lies inside its returned bounds. Identical in-flight requests are deduplicated.
 
 ## Prepared offline working area
 
@@ -178,11 +191,11 @@ Initial direction:
 - local roads/buildings/context render through batched MapLibre sources/layers while the already-loaded website is offline;
 - Campaign Areas/Streets remain above the local context and retain the existing selection/edit boundary;
 - the same prepared OSM data feeds Smart Street and Smart House source candidates while application-owned Task identity remains separate under ADR-0013;
-- no CARTO or OpenStreetMap Foundation tile bulk cache;
+- no OpenFreeMap or OpenStreetMap Foundation tile bulk cache;
 - no Service Worker/PWA requirement;
 - no R2/PMTiles pipeline in v1.
 
-The first local offline style should remain deliberately small rather than attempting to reproduce the complete CARTO visual basemap. Required OSM attribution must remain visible.
+The first local offline style should remain deliberately small rather than attempting to reproduce the complete Liberty visual basemap. Required OSM attribution must remain visible.
 
 ## Smart Street + House constraints
 

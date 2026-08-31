@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   downloadOfflineMapPackage,
+  fetchMapDataPackage,
   OfflineMapApiError,
 } from "../src/data/offlineMapApi.ts";
 import type { OfflineMapPackage } from "../src/domain/offlineMap.ts";
@@ -58,6 +59,18 @@ test("offline map client sends only campaign route, center and fixed radius", as
     assert.equal(pkg.schemaVersion, 1);
     assert.equal(pkg.radiusMeters, 3_000);
   });
+});
+
+test("ephemeral and Settings map-data requests share the same non-persisting client", async () => {
+  let requests = 0;
+  await withFetch(async () => {
+    requests += 1;
+    return Response.json(packageFixture());
+  }, async () => {
+    await fetchMapDataPackage("campaign_smart", { lat: 51.05, lng: 13.74 }, 750);
+    await downloadOfflineMapPackage("campaign_settings", { lat: 51.05, lng: 13.74 });
+  });
+  assert.equal(requests, 2);
 });
 
 test("offline map client rejects structurally invalid success payloads", async () => {

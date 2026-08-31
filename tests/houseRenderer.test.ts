@@ -93,7 +93,7 @@ test("House conversion stays batched across the required dense dataset sizes", (
 
 test("MapView keeps House data updates separate from selection and camera work", async () => {
   const source = await readFile("src/map/MapView.tsx", "utf8");
-  assert.match(source, /\[HOUSE_SOURCE_ID\]:\s*\{[\s\S]*?data: housesToGeoJson\(houses\)/u);
+  assert.match(source, /\[HOUSE_SOURCE_ID\]:\s*\{[\s\S]*?data: housesToGeoJson\(\[\]\)/u);
   assert.match(source, /function syncHouseData\([\s\S]*?houseSource\.setData\(housesToGeoJson\(houses\)\)/u);
   assert.match(source, /function syncApplicationFilters\([\s\S]*?HOUSE_SELECTED_LAYER_ID[\s\S]*?HOUSE_SESSION_HIGHLIGHT_LAYER_ID/u);
   assert.match(source, /const houseFeatures = map\.queryRenderedFeatures\(bbox,\s*\{\s*layers: \[HOUSE_FILL_LAYER_ID\]/u);

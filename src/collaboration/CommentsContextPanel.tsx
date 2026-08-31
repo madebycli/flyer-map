@@ -52,6 +52,19 @@ function errorMessage(error: unknown, language: Language) {
   return language === "de" ? "Kommentare konnten nicht geladen werden." : "Comments could not be loaded.";
 }
 
+export function commentErrorCanRetry(error: unknown) {
+  if (!(error instanceof CampaignApiError)) return false;
+  if (
+    error.code === "comments_schema_unavailable" ||
+    error.code === "pickup_comments_schema_unavailable" ||
+    error.status === 401 ||
+    error.status === 403
+  ) {
+    return false;
+  }
+  return error.code === "network_error" || error.status >= 500;
+}
+
 function clientCanCreate(
   access: AccessInfo | null,
   targetType: CommentTargetType,
@@ -89,6 +102,7 @@ export function CommentsContextPanel({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCanRetry, setErrorCanRetry] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const pendingCreate = useRef<{ id: string; body: string } | null>(null);
 
@@ -103,6 +117,7 @@ export function CommentsContextPanel({
     setNextCursor(null);
     setServerCanCreate(null);
     setError(null);
+    setErrorCanRetry(false);
     pendingCreate.current = null;
   }, [contextKey]);
 
@@ -115,6 +130,7 @@ export function CommentsContextPanel({
       setError(language === "de"
         ? "Offline. Bereits geladene Kommentare bleiben sichtbar."
         : "Offline. Previously loaded comments remain visible.");
+      setErrorCanRetry(false);
       return () => controller.abort();
     }
 
@@ -127,10 +143,12 @@ export function CommentsContextPanel({
         setNextCursor(page.nextCursor);
         setServerCanCreate(page.canCreate);
         setError(null);
+        setErrorCanRetry(false);
       })
       .catch((reason: unknown) => {
         if (cancelled || (reason instanceof DOMException && reason.name === "AbortError")) return;
         setError(errorMessage(reason, language));
+        setErrorCanRetry(commentErrorCanRetry(reason));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -153,8 +171,10 @@ export function CommentsContextPanel({
       setNextCursor(page.nextCursor);
       setServerCanCreate(page.canCreate);
       setError(null);
+      setErrorCanRetry(false);
     } catch (reason) {
       setError(errorMessage(reason, language));
+      setErrorCanRetry(commentErrorCanRetry(reason));
     } finally {
       setLoadingMore(false);
     }
@@ -177,9 +197,11 @@ export function CommentsContextPanel({
       setComments((current) => [result.comment, ...current.filter((comment) => comment.id !== result.comment.id)]);
       setServerCanCreate(true);
       setError(null);
+      setErrorCanRetry(false);
       pendingCreate.current = null;
     } catch (reason) {
       setError(errorMessage(reason, language));
+      setErrorCanRetry(commentErrorCanRetry(reason));
       throw reason;
     }
   };
@@ -194,8 +216,10 @@ export function CommentsContextPanel({
       });
       setComments((current) => current.map((comment) => comment.id === commentId ? result.comment : comment));
       setError(null);
+      setErrorCanRetry(false);
     } catch (reason) {
       setError(errorMessage(reason, language));
+      setErrorCanRetry(commentErrorCanRetry(reason));
       throw reason;
     }
   };
@@ -206,8 +230,10 @@ export function CommentsContextPanel({
       const result = await deleteComment(campaignId, commentId, `delete:${commentId}`);
       setComments((current) => current.map((comment) => comment.id === commentId ? result.comment : comment));
       setError(null);
+      setErrorCanRetry(false);
     } catch (reason) {
       setError(errorMessage(reason, language));
+      setErrorCanRetry(commentErrorCanRetry(reason));
       throw reason;
     }
   };
@@ -256,7 +282,7 @@ export function CommentsContextPanel({
       {error ? (
         <div className="comments-context-error" role="alert">
           <span>{error}</span>
-          {online ? <button type="button" onClick={retry}>{language === "de" ? "Erneut versuchen" : "Retry"}</button> : null}
+          {online && errorCanRetry ? <button type="button" onClick={retry}>{language === "de" ? "Erneut versuchen" : "Retry"}</button> : null}
         </div>
       ) : null}
       {!initialReadFailed ? (

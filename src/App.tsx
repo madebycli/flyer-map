@@ -4,6 +4,7 @@ import {
   removeCollectionAccessTokenFromUrl,
   type AccessInfo,
 } from "./data/campaignApi";
+import { fetchMapDataPackage } from "./data/offlineMapApi";
 import {
   loadCampaignSnapshot,
   manualRefreshCampaign,
@@ -39,7 +40,11 @@ import {
   type CollectionMainArea,
 } from "./domain/collection";
 import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
-import type { OfflineMapPackage } from "./domain/offlineMap";
+import {
+  offlineMapPackageCoversArea,
+  offlineMapRequestForArea,
+  type OfflineMapPackage,
+} from "./domain/offlineMap";
 import {
   smartCandidatesForArea,
   type SmartRoadCandidate,
@@ -180,6 +185,13 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const [selectedCollectionAreaId, setSelectedCollectionAreaId] = useState<string | null>(null);
   const [collectionSelectedVertexIndex, setCollectionSelectedVertexIndex] = useState<number | null>(null);
   const [offlineMapPackage, setOfflineMapPackage] = useState<OfflineMapPackage | null>(null);
+  const [smartMapPackage, setSmartMapPackage] = useState<OfflineMapPackage | null>(null);
+  const [smartMapLoading, setSmartMapLoading] = useState(false);
+  const [smartMapError, setSmartMapError] = useState<string | null>(null);
+  const smartMapRequestRef = useRef<{
+    key: string;
+    promise: Promise<OfflineMapPackage>;
+  } | null>(null);
   const [smartStreetStartAnchor, setSmartStreetStartAnchor] = useState<SmartRoadPointAnchor | null>(null);
   const [smartStreetEndAnchor, setSmartStreetEndAnchor] = useState<SmartRoadPointAnchor | null>(null);
   const [smartStreetWaypointAnchors, setSmartStreetWaypointAnchors] = useState<SmartRoadPointAnchor[]>([]);
@@ -210,7 +222,15 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
 
   useEffect(() => {
     setOfflineMapPackage(null);
+    setSmartMapPackage(null);
+    setSmartMapError(null);
+    setSmartMapLoading(false);
+    smartMapRequestRef.current = null;
   }, [snapshot.campaign.id]);
+
+  useEffect(() => {
+    setSmartMapError(null);
+  }, [selectedAreaId]);
 
   useEffect(() => {
     setStorageWarning(saveCampaignSnapshot(snapshot));
@@ -315,10 +335,23 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
         : [],
     [selectedArea, snapshot.houseTasks],
   );
+  const smartCandidatePackage = useMemo(() => {
+    if (!selectedArea) return null;
+    if (
+      offlineMapPackage &&
+      offlineMapPackageCoversArea(offlineMapPackage, selectedArea.geometry)
+    ) {
+      return offlineMapPackage;
+    }
+    if (smartMapPackage && offlineMapPackageCoversArea(smartMapPackage, selectedArea.geometry)) {
+      return smartMapPackage;
+    }
+    return null;
+  }, [offlineMapPackage, selectedArea, smartMapPackage]);
   const smartCandidates = useMemo(() => {
-    if (!selectedArea || !offlineMapPackage) return null;
-    return smartCandidatesForArea(selectedArea, offlineMapPackage);
-  }, [offlineMapPackage, selectedArea]);
+    if (!selectedArea || !smartCandidatePackage) return null;
+    return smartCandidatesForArea(selectedArea, smartCandidatePackage);
+  }, [selectedArea, smartCandidatePackage]);
   const smartRoads = smartCandidates?.roads ?? [];
   const smartHouseBuildings = useMemo(
     () => availableSmartBuildingsForCreation(smartCandidates?.buildings ?? [], selectedAreaHouseTasks),
@@ -335,6 +368,10 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const canEditSelectedArea = canEditArea(selectedArea);
   const canEditSelectedTask = canEditArea(selectedTaskArea);
   const canChangeSelectedTaskStatus = canChangeTaskStatusInArea(selectedTaskArea);
+  const smartMapAreaNotice = smartMapLoading
+    ? t(language, "smartMapLoading")
+    : smartMapError ??
+      (!online && !smartCandidatePackage ? t(language, "smartMapOfflineNoPackage") : null);
 
   useEffect(() => {
     onPlatformContextChange?.({
@@ -895,9 +932,84 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     smartStreetSaveInFlight.current = false;
   };
 
-  const startSmartStreetSelection = () => {
-    if (!selectedArea || !canEditSelectedArea || smartRoads.length === 0) return;
+  const ensureSmartMapPackage = async () => {
+    if (!selectedArea) return null;
+    if (
+      offlineMapPackage &&
+      offlineMapPackageCoversArea(offlineMapPackage, selectedArea.geometry)
+    ) {
+      setSmartMapError(null);
+      return offlineMapPackage;
+    }
+    if (smartMapPackage && offlineMapPackageCoversArea(smartMapPackage, selectedArea.geometry)) {
+      setSmartMapError(null);
+      return smartMapPackage;
+    }
+    if (!online) {
+      setSmartMapError(null);
+      return null;
+    }
+
+    const request = offlineMapRequestForArea(selectedArea.geometry);
+    if (!request) {
+      setSmartMapError(t(language, "smartMapAreaTooLarge"));
+      return null;
+    }
+
+    const requestKey = [
+      snapshot.campaign.id,
+      request.center.lat.toFixed(6),
+      request.center.lng.toFixed(6),
+      request.radiusMeters,
+    ].join(":");
+    let pending = smartMapRequestRef.current;
+    if (!pending || pending.key !== requestKey) {
+      pending = {
+        key: requestKey,
+        promise: fetchMapDataPackage(
+          snapshot.campaign.id,
+          request.center,
+          request.radiusMeters,
+        ),
+      };
+      smartMapRequestRef.current = pending;
+    }
+
+    setSmartMapLoading(true);
+    setSmartMapError(null);
+    try {
+      const pkg = await pending.promise;
+      if (smartMapRequestRef.current?.key !== requestKey) return null;
+      if (!offlineMapPackageCoversArea(pkg, selectedArea.geometry)) {
+        setSmartMapError(t(language, "smartMapCoverageIncomplete"));
+        return null;
+      }
+      setSmartMapPackage(pkg);
+      return pkg;
+    } catch {
+      if (smartMapRequestRef.current?.key === requestKey) {
+        setSmartMapError(t(language, "smartMapFetchError"));
+      }
+      return null;
+    } finally {
+      if (smartMapRequestRef.current?.key === requestKey) {
+        smartMapRequestRef.current = null;
+        setSmartMapLoading(false);
+      }
+    }
+  };
+
+  const startSmartStreetSelection = async () => {
+    if (!selectedArea || !canEditSelectedArea) return;
+    const pkg = await ensureSmartMapPackage();
+    if (!pkg) return;
+    const roads = smartCandidatesForArea(selectedArea, pkg).roads;
+    if (roads.length === 0) {
+      setSmartMapError(t(language, "smartStreetNoCandidates"));
+      return;
+    }
     resetSmartStreetSelection();
+    setSmartMapError(null);
     setSelectedTaskId(null);
     setSelectedHouseTaskId(null);
     setSmartStreetAnchorKind("start");
@@ -920,15 +1032,26 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     smartHouseSaveInFlight.current = false;
   };
 
-  const startSmartHouseSelection = (parentStreetTaskId: string | null) => {
-    if (!selectedArea || !canEditSelectedArea || smartHouseBuildings.length === 0) return;
+  const startSmartHouseSelection = async (parentStreetTaskId: string | null) => {
+    if (!selectedArea || !canEditSelectedArea) return;
     if (
       parentStreetTaskId &&
       (!selectedTask || selectedTask.id !== parentStreetTaskId || selectedTask.areaId !== selectedArea.id)
     ) {
       return;
     }
+    const pkg = await ensureSmartMapPackage();
+    if (!pkg) return;
+    const buildings = availableSmartBuildingsForCreation(
+      smartCandidatesForArea(selectedArea, pkg).buildings,
+      selectedAreaHouseTasks,
+    );
+    if (buildings.length === 0) {
+      setSmartMapError(t(language, "smartHouseNoCandidates"));
+      return;
+    }
     resetSmartHouseSelection();
+    setSmartMapError(null);
     setSmartHouseParentStreetTaskId(parentStreetTaskId);
     setSelectedHouseTaskId(null);
     setSmartHouseMessage(t(language, "smartHouseTapCandidate"));
@@ -1954,28 +2077,33 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
               <button
                 className="button primary full-width"
                 type="button"
-                onClick={() => startSmartHouseSelection(null)}
-                disabled={smartHouseBuildings.length === 0}
+                onClick={() => void startSmartHouseSelection(null)}
+                disabled={smartMapLoading}
               >
                 {t(language, "addSmartHouse")}
               </button>
               <button
                 className="button primary full-width"
                 type="button"
-                onClick={startSmartStreetSelection}
-                disabled={smartRoads.length === 0}
+                onClick={() => void startSmartStreetSelection()}
+                disabled={smartMapLoading}
               >
                 {t(language, "addSmartStreet")}
               </button>
               <button className="button secondary full-width" type="button" onClick={startStreetDrawing}>{t(language, "smartStreetManualFallback")}</button>
-              {smartRoads.length === 0 ? (
-                <p className="smart-street-area-note">
-                  {offlineMapPackage ? t(language, "smartStreetNoCandidates") : t(language, "smartStreetNoPackage")}
+              {smartMapAreaNotice ? (
+                <p className="smart-street-area-note" role="status">
+                  {smartMapAreaNotice}
                 </p>
               ) : null}
-              {smartHouseBuildings.length === 0 ? (
+              {smartCandidatePackage && smartRoads.length === 0 && !smartMapAreaNotice ? (
                 <p className="smart-street-area-note">
-                  {offlineMapPackage ? t(language, "smartHouseNoCandidates") : t(language, "smartHouseNoPackage")}
+                  {t(language, "smartStreetNoCandidates")}
+                </p>
+              ) : null}
+              {smartCandidatePackage && smartHouseBuildings.length === 0 && !smartMapAreaNotice ? (
+                <p className="smart-street-area-note">
+                  {t(language, "smartHouseNoCandidates")}
                 </p>
               ) : null}
               <div className="area-actions secondary-row">
@@ -2062,11 +2190,15 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
             <button
               className="button secondary full-width task-house-action"
               type="button"
-              onClick={() => startSmartHouseSelection(selectedTask.id)}
-              disabled={smartHouseBuildings.length === 0}
+              onClick={() => void startSmartHouseSelection(selectedTask.id)}
+              disabled={smartMapLoading}
             >
               {t(language, "addSmartHouseForStreet")}
             </button>
+          ) : null}
+
+          {canEditSelectedTask && smartMapAreaNotice ? (
+            <p className="smart-street-area-note" role="status">{smartMapAreaNotice}</p>
           ) : null}
 
           {canEditSelectedTask ? (

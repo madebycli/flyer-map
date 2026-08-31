@@ -101,6 +101,7 @@ test("Smart House keeps cancel, permission, duplicate-submit and existing retry 
   const store = await readFile("src/data/campaignStore.ts", "utf8");
 
   assert.match(app, /if \(!selectedArea \|\| !canEditSelectedArea/u);
+  assert.match(app, /const pkg = await ensureSmartMapPackage\(\)/u);
   assert.match(app, /const cancelSmartHouseSelection/u);
   assert.match(app, /smartHouseSaveInFlight\.current/u);
   assert.match(app, /setSheet\("task"\)/u);

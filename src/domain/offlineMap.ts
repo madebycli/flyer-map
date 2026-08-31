@@ -64,6 +64,87 @@ export type OfflineMapPackage = {
   buildings: OfflineMapFeatureCollection<OfflineMapBuildingFeature>;
 };
 
+export type OfflineMapAreaGeometry = {
+  type: "Polygon";
+  coordinates: [number, number][][];
+};
+
+export type OfflineMapAreaRequest = {
+  center: OfflineMapLngLat;
+  radiusMeters: number;
+};
+
+const SMART_MAP_MIN_RADIUS_METERS = 250;
+const SMART_MAP_RADIUS_BUFFER_METERS = 50;
+const EARTH_RADIUS_METERS = 6_371_000;
+
+function degreesToRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function distanceMeters(a: OfflineMapLngLat, b: OfflineMapLngLat) {
+  const latA = degreesToRadians(a.lat);
+  const latB = degreesToRadians(b.lat);
+  const deltaLat = latB - latA;
+  const deltaLng = degreesToRadians(b.lng - a.lng);
+  const sinLat = Math.sin(deltaLat / 2);
+  const sinLng = Math.sin(deltaLng / 2);
+  const h = sinLat * sinLat + Math.cos(latA) * Math.cos(latB) * sinLng * sinLng;
+  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function areaPoints(areaGeometry: OfflineMapAreaGeometry) {
+  return areaGeometry.coordinates.flat();
+}
+
+export function offlineMapPackageCoversArea(
+  pkg: OfflineMapPackage,
+  areaGeometry: OfflineMapAreaGeometry,
+) {
+  const points = areaPoints(areaGeometry);
+  return points.length >= 4 && points.every(([lng, lat]) =>
+    Number.isFinite(lng) &&
+    Number.isFinite(lat) &&
+    lng >= pkg.bounds.west &&
+    lng <= pkg.bounds.east &&
+    lat >= pkg.bounds.south &&
+    lat <= pkg.bounds.north
+  );
+}
+
+export function offlineMapRequestForArea(
+  areaGeometry: OfflineMapAreaGeometry,
+): OfflineMapAreaRequest | null {
+  const points = areaPoints(areaGeometry);
+  if (points.length < 4 || points.some(([lng, lat]) => !Number.isFinite(lng) || !Number.isFinite(lat))) {
+    return null;
+  }
+
+  const lngs = points.map(([lng]) => lng);
+  const lats = points.map(([, lat]) => lat);
+  const west = Math.min(...lngs);
+  const east = Math.max(...lngs);
+  const south = Math.min(...lats);
+  const north = Math.max(...lats);
+  const center = { lat: (south + north) / 2, lng: (west + east) / 2 };
+  const corners = [
+    { lat: south, lng: west },
+    { lat: south, lng: east },
+    { lat: north, lng: west },
+    { lat: north, lng: east },
+  ];
+  const requiredRadius = Math.max(...corners.map((corner) => distanceMeters(center, corner)));
+  if (requiredRadius > OFFLINE_MAP_RADIUS_METERS) return null;
+
+  return {
+    center,
+    radiusMeters: Math.min(
+      OFFLINE_MAP_RADIUS_METERS,
+      Math.max(SMART_MAP_MIN_RADIUS_METERS, Math.ceil(requiredRadius + SMART_MAP_RADIUS_BUFFER_METERS)),
+    ),
+  };
+}
+
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }

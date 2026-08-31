@@ -4,6 +4,8 @@ import type {
   ExpressionSpecification,
   FilterSpecification,
   GeoJSONSource,
+  LayerSpecification,
+  SourceSpecification,
   StyleSpecification,
 } from "maplibre-gl";
 import {
@@ -30,7 +32,6 @@ import {
   smartHouseBuildingsToGeoJson,
 } from "./smartHouseCandidateData";
 import {
-  CARTO_BASEMAP_LAYER_ID,
   OFFLINE_BUILDING_LAYER_ID,
   OFFLINE_BUILDING_SOURCE_ID,
   OFFLINE_ROAD_LAYER_ID,
@@ -231,6 +232,11 @@ type MapViewProps = {
 };
 
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
+
+export const OPENFREE_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+export const BASEMAP_VECTOR_SOURCE_ID = "openmaptiles";
+export const BASEMAP_HOUSENUMBER_SOURCE_LAYER = "housenumber";
+export const BASEMAP_HOUSENUMBER_LAYER_ID = "vf-basemap-housenumbers";
 
 const AREA_SOURCE_ID = "vf-areas";
 const AREA_FILL_LAYER_ID = "vf-areas-fill";
@@ -588,39 +594,10 @@ function smartPointsToGeoJson(
   return { type: "FeatureCollection", features };
 }
 
-function buildMapStyle(
-  areas: RenderArea[],
-  tasks: RenderTask[],
-  houses: RenderHouse[],
-  smartRoads: SmartRoadCandidate[],
-  smartSelectedSourceIds: readonly string[],
-  smartPreviewGeometry: LineStringGeometry | null,
-  smartStartAnchor: SmartRoadPointAnchor | null,
-  smartEndAnchor: SmartRoadPointAnchor | null,
-  smartWaypointAnchors: SmartRoadPointAnchor[],
-  smartStreetColor: string,
-  smartHouseBuildings: SmartBuildingCandidate[],
-  smartHouseSelectedSourceIds: readonly string[],
-  language: Language,
-  online: boolean,
-): StyleSpecification {
+function buildApplicationMapStyle(): StyleSpecification {
   return {
     version: 8,
     sources: {
-      carto: {
-        type: "raster",
-        tiles: [
-          "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        ],
-        tileSize: 256,
-        minzoom: 0,
-        maxzoom: 20,
-        attribution:
-          '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · <a href="https://carto.com/attributions" target="_blank">© CARTO</a>',
-      },
       [OFFLINE_BUILDING_SOURCE_ID]: {
         type: "geojson",
         data: emptyOfflineBuildings(),
@@ -631,15 +608,15 @@ function buildMapStyle(
       },
       [AREA_SOURCE_ID]: {
         type: "geojson",
-        data: areasToGeoJson(areas),
+        data: areasToGeoJson([]),
       },
       [STREET_SOURCE_ID]: {
         type: "geojson",
-        data: streetsToGeoJson(tasks),
+        data: streetsToGeoJson([]),
       },
       [HOUSE_SOURCE_ID]: {
         type: "geojson",
-        data: housesToGeoJson(houses),
+        data: housesToGeoJson([]),
       },
       [COLLECTION_MAIN_SOURCE_ID]: {
         type: "geojson",
@@ -655,36 +632,22 @@ function buildMapStyle(
       },
       [SMART_ROAD_SOURCE_ID]: {
         type: "geojson",
-        data: smartRoadsToGeoJson(smartRoads, smartSelectedSourceIds, smartStreetColor),
+        data: smartRoadsToGeoJson([], [], "#64748b"),
       },
       [SMART_PREVIEW_SOURCE_ID]: {
         type: "geojson",
-        data: smartPreviewToGeoJson(smartPreviewGeometry),
+        data: smartPreviewToGeoJson(null),
       },
       [SMART_POINT_SOURCE_ID]: {
         type: "geojson",
-        data: smartPointsToGeoJson(smartStartAnchor, smartEndAnchor, smartWaypointAnchors, language),
+        data: smartPointsToGeoJson(null, null, [], "de"),
       },
       [SMART_HOUSE_SOURCE_ID]: {
         type: "geojson",
-        data: smartHouseBuildingsToGeoJson(smartHouseBuildings),
+        data: smartHouseBuildingsToGeoJson([]),
       },
     },
     layers: [
-      {
-        id: "map-background",
-        type: "background",
-        paint: { "background-color": "#fbf8f3" },
-      },
-      {
-        id: CARTO_BASEMAP_LAYER_ID,
-        type: "raster",
-        source: "carto",
-        minzoom: 0,
-        maxzoom: 21,
-        layout: { visibility: online ? "visible" : "none" },
-        paint: { "raster-fade-duration": 0 },
-      },
       {
         id: OFFLINE_BUILDING_LAYER_ID,
         type: "fill",
@@ -1037,7 +1000,7 @@ function buildMapStyle(
         type: "line",
         source: SMART_HOUSE_SOURCE_ID,
         minzoom: HOUSE_MIN_ZOOM,
-        filter: smartHouseSelectionFilter(smartHouseSelectedSourceIds),
+        filter: smartHouseSelectionFilter([]),
         layout: {
           visibility: "none",
           "line-join": "round",
@@ -1137,6 +1100,94 @@ function buildMapStyle(
       },
     ],
   };
+}
+
+const BELOW_BASEMAP_LABEL_LAYER_IDS = new Set([
+  OFFLINE_BUILDING_LAYER_ID,
+  OFFLINE_ROAD_LAYER_ID,
+  AREA_FILL_LAYER_ID,
+  AREA_OUTLINE_LAYER_ID,
+  HOUSE_FILL_LAYER_ID,
+  HOUSE_OUTLINE_LAYER_ID,
+  HOUSE_LATER_LAYER_ID,
+  HOUSE_NOT_DELIVERABLE_LAYER_ID,
+  STREET_OPEN_LAYER_ID,
+  STREET_COMPLETED_LAYER_ID,
+  STREET_LATER_LAYER_ID,
+  STREET_NOT_DELIVERABLE_LAYER_ID,
+  COLLECTION_MAIN_FILL_LAYER_ID,
+  COLLECTION_MAIN_OUTLINE_LAYER_ID,
+  COLLECTION_AREAS_FILL_LAYER_ID,
+  COLLECTION_AREAS_OUTLINE_LAYER_ID,
+  COLLECTION_AREAS_SELECTED_LAYER_ID,
+]);
+
+function installApplicationMapStyle(map: Map) {
+  if (!map.getSource(BASEMAP_VECTOR_SOURCE_ID)) {
+    throw new Error(`OpenFreeMap style source ${BASEMAP_VECTOR_SOURCE_ID} is unavailable.`);
+  }
+
+  for (const layer of map.getStyle().layers) {
+    const providerLayer = layer as LayerSpecification & {
+      source?: string;
+      "source-layer"?: string;
+    };
+    if (
+      providerLayer.id !== BASEMAP_HOUSENUMBER_LAYER_ID &&
+      providerLayer.source === BASEMAP_VECTOR_SOURCE_ID &&
+      providerLayer["source-layer"] === BASEMAP_HOUSENUMBER_SOURCE_LAYER
+    ) {
+      map.removeLayer(providerLayer.id);
+    }
+  }
+
+  const firstBasemapSymbolLayerId = map.getStyle().layers.find(
+    (layer) => layer.type === "symbol",
+  )?.id;
+  if (!firstBasemapSymbolLayerId) {
+    throw new Error("OpenFreeMap Liberty contains no symbol layer insertion point.");
+  }
+
+  const applicationStyle = buildApplicationMapStyle();
+  for (const [sourceId, source] of Object.entries(applicationStyle.sources)) {
+    if (!map.getSource(sourceId)) map.addSource(sourceId, source as SourceSpecification);
+  }
+
+  for (const layer of applicationStyle.layers) {
+    if (!BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;
+    if (!map.getLayer(layer.id)) map.addLayer(layer, firstBasemapSymbolLayerId);
+  }
+
+  if (!map.getLayer(BASEMAP_HOUSENUMBER_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: BASEMAP_HOUSENUMBER_LAYER_ID,
+        type: "symbol",
+        source: BASEMAP_VECTOR_SOURCE_ID,
+        "source-layer": BASEMAP_HOUSENUMBER_SOURCE_LAYER,
+        minzoom: 16,
+        layout: {
+          "text-field": ["get", "housenumber"],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": 11,
+          "text-allow-overlap": false,
+          "text-ignore-placement": false,
+        },
+        paint: {
+          "text-color": "#625b55",
+          "text-halo-color": "rgba(255, 255, 255, 0.9)",
+          "text-halo-width": 1.2,
+          "text-halo-blur": 0.2,
+        },
+      },
+      firstBasemapSymbolLayerId,
+    );
+  }
+
+  for (const layer of applicationStyle.layers) {
+    if (BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;
+    if (!map.getLayer(layer.id)) map.addLayer(layer);
+  }
 }
 
 
@@ -1414,9 +1465,6 @@ function syncOfflineMapData(map: Map, pkg: OfflineMapPackage | null, online: boo
   if (roadSource) roadSource.setData(offlineRoadData(pkg));
 
   const mode = offlineMapRendererMode(online, pkg);
-  if (map.getLayer(CARTO_BASEMAP_LAYER_ID)) {
-    map.setLayoutProperty(CARTO_BASEMAP_LAYER_ID, "visibility", mode.cartoVisibility);
-  }
   if (map.getLayer(OFFLINE_BUILDING_LAYER_ID)) {
     map.setLayoutProperty(OFFLINE_BUILDING_LAYER_ID, "visibility", mode.offlineVisibility);
   }
@@ -1761,27 +1809,11 @@ export function MapView({
     let active = true;
     let cleanupListeners = () => {};
     const initialCamera = loadPersonalMapView(campaignId) ?? campaignDefaultView ?? GERMANY_VIEW;
-    const initialData = dataRef.current;
 
     try {
       const map = new Map({
         container: containerRef.current,
-        style: buildMapStyle(
-          initialData.areas,
-          initialData.tasks,
-          initialData.houses,
-          initialData.smartRoads,
-          initialData.smartSelectedSourceIds,
-          initialData.smartPreviewGeometry,
-          initialData.smartStartAnchor,
-          initialData.smartEndAnchor,
-          initialData.smartWaypointAnchors,
-          initialData.smartStreetColor,
-          initialData.smartHouseBuildings,
-          initialData.smartHouseSelectedSourceIds,
-          initialData.language,
-          navigator.onLine,
-        ),
+        style: OPENFREE_MAP_STYLE_URL,
         center: initialCamera.center,
         zoom: initialCamera.zoom,
         bearing: initialCamera.bearing,
@@ -1851,49 +1883,55 @@ export function MapView({
         console.error("MapLibre runtime error", event.error ?? event);
       });
 
-      map.once("load", () => {
+      map.once("style.load", () => {
         if (!active) return;
-        const current = dataRef.current;
-        syncAreaData(map, current.areas);
-        syncStreetData(map, current.tasks);
-        syncHouseData(map, current.houses);
-        syncCollectionData(
-          map,
-          current.collectionMainArea,
-          current.collectionAreas,
-          current.selectedCollectionAreaId,
-          current.collectionVisible,
-        );
-        syncCollectionPickupData(map, current.collectionPickups);
-        syncCollectionPickupSelection(
-          map,
-          current.selectedCollectionPickupId,
-          current.collectionVisible,
-        );
-        syncSmartStreetData(
-          map,
-          current.smartRoads,
-          current.smartSelectedSourceIds,
-          current.smartPreviewGeometry,
-          current.smartStartAnchor,
-          current.smartEndAnchor,
-          current.smartWaypointAnchors,
-          current.smartStreetColor,
-          current.language,
-          current.mode,
-        );
-        syncSmartHouseData(map, current.smartHouseBuildings);
-        syncSmartHouseSelection(map, current.smartHouseSelectedSourceIds, current.mode);
-        syncApplicationFilters(
-          map,
-          current.selectedTaskId,
-          current.selectedHouseTaskId,
-          current.highlightedStreetTaskIds,
-          current.highlightedHouseTaskIds,
-        );
-        void refreshOfflineContext();
-        updateActiveOverlay(map);
-        updateRendererDiagnostics(map);
+        try {
+          installApplicationMapStyle(map);
+          const current = dataRef.current;
+          syncAreaData(map, current.areas);
+          syncStreetData(map, current.tasks);
+          syncHouseData(map, current.houses);
+          syncCollectionData(
+            map,
+            current.collectionMainArea,
+            current.collectionAreas,
+            current.selectedCollectionAreaId,
+            current.collectionVisible,
+          );
+          syncCollectionPickupData(map, current.collectionPickups);
+          syncCollectionPickupSelection(
+            map,
+            current.selectedCollectionPickupId,
+            current.collectionVisible,
+          );
+          syncSmartStreetData(
+            map,
+            current.smartRoads,
+            current.smartSelectedSourceIds,
+            current.smartPreviewGeometry,
+            current.smartStartAnchor,
+            current.smartEndAnchor,
+            current.smartWaypointAnchors,
+            current.smartStreetColor,
+            current.language,
+            current.mode,
+          );
+          syncSmartHouseData(map, current.smartHouseBuildings);
+          syncSmartHouseSelection(map, current.smartHouseSelectedSourceIds, current.mode);
+          syncApplicationFilters(
+            map,
+            current.selectedTaskId,
+            current.selectedHouseTaskId,
+            current.highlightedStreetTaskIds,
+            current.highlightedHouseTaskIds,
+          );
+          void refreshOfflineContext();
+          updateActiveOverlay(map);
+          updateRendererDiagnostics(map);
+        } catch (cause) {
+          console.error("OpenFreeMap application layers could not be installed", cause);
+          setError(t(dataRef.current.language, "mapInitError"));
+        }
       });
 
       map.on("idle", () => {

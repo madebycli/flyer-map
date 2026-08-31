@@ -85,6 +85,11 @@ test("read-heavy launcher modules wire error and empty states through the shared
   assert.match(automation, /readState === "empty"/u);
   assert.match(automation, /readState === "data"/u);
   assert.match(comments, /comments_schema_unavailable/u);
+  assert.match(comments, /pickup_comments_schema_unavailable/u);
+  assert.match(comments, /error\.status === 401/u);
+  assert.match(comments, /error\.status === 403/u);
+  assert.match(comments, /error\.code === "network_error" \|\| error\.status >= 500/u);
+  assert.match(comments, /online && errorCanRetry/u);
   assert.match(comments, /initialReadFailed/u);
   assert.match(comments, /!initialReadFailed/u);
   assert.match(teamHub, /field_group_schema_unavailable/u);
