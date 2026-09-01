@@ -12,10 +12,16 @@ import {
 } from "../src/domain/offlineMap.ts";
 
 const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const DEFAULT_AREA_OVERPASS_URLS = [
+  DEFAULT_OVERPASS_URL,
+  "https://overpass.private.coffee/api/interpreter",
+] as const;
 const MAX_REQUEST_BYTES = 4_096;
 const MAX_UPSTREAM_BYTES = 8_000_000;
 const MAX_PACKAGE_BYTES = 10_000_000;
 const UPSTREAM_TIMEOUT_MS = 18_000;
+const AREA_UPSTREAM_TIMEOUT_MS = 10_000;
+const AREA_BBOX_BUFFER_METERS = 120;
 const MIN_RADIUS_METERS = 250;
 
 const TAG_ALLOWLIST = new Set([
@@ -258,6 +264,47 @@ export function buildOfflineMapOverpassQuery(input: ParsedRequest) {
   return `[out:json][timeout:15];\n(\n  ${selectors.join("\n  ")}\n);\nout tags geom qt;`;
 }
 
+function areaBounds(geometry: OfflineMapAreaGeometry) {
+  const points = geometry.coordinates.flat();
+  if (
+    points.length < 4 ||
+    points.some(([lng, lat]) =>
+      !finiteNumber(lng) || !finiteNumber(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90
+    )
+  ) {
+    return null;
+  }
+  const lngs = points.map(([lng]) => lng);
+  const lats = points.map(([, lat]) => lat);
+  const rawSouth = Math.min(...lats);
+  const rawWest = Math.min(...lngs);
+  const rawNorth = Math.max(...lats);
+  const rawEast = Math.max(...lngs);
+  const centerLat = (rawSouth + rawNorth) / 2;
+  const latPadding = AREA_BBOX_BUFFER_METERS / 111_320;
+  const longitudeScale = Math.max(Math.cos((centerLat * Math.PI) / 180), 0.01);
+  const lngPadding = AREA_BBOX_BUFFER_METERS / (111_320 * longitudeScale);
+  return {
+    south: Math.max(-90, rawSouth - latPadding),
+    west: Math.max(-180, rawWest - lngPadding),
+    north: Math.min(90, rawNorth + latPadding),
+    east: Math.min(180, rawEast + lngPadding),
+  };
+}
+
+/**
+ * Area preparation uses the canonical server-side Area BBox plus a small road-node
+ * buffer. The hard ownership boundary remains the polygon clip before persistence.
+ */
+export function buildAreaPreparationOverpassQuery(geometry: OfflineMapAreaGeometry) {
+  const bounds = areaBounds(geometry);
+  if (!bounds) return null;
+  const bbox = [bounds.south, bounds.west, bounds.north, bounds.east]
+    .map((value) => value.toFixed(7))
+    .join(",");
+  return `[out:json][timeout:8];\n(\n  way["highway"](${bbox});\n  way["building"](${bbox});\n);\nout tags geom qt;`;
+}
+
 function normalizeTags(tags: Record<string, unknown> | undefined) {
   const result: Record<string, string> = {};
   if (!tags) return result;
@@ -476,10 +523,124 @@ async function fetchOverpass(
   }
 }
 
+function areaFetchError(error: unknown) {
+  if (error instanceof OfflineMapRequestError) return error;
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return new OfflineMapRequestError(504, "osm_upstream_timeout", "OSM-Datenquelle hat zu lange gebraucht.");
+  }
+  return new OfflineMapRequestError(502, "osm_upstream_failed", "OSM-Daten konnten nicht geladen werden.");
+}
+
+function retryableAreaFetchError(error: OfflineMapRequestError) {
+  return error.code === "osm_upstream_timeout" || error.code === "osm_upstream_failed" || error.code === "osm_response_invalid";
+}
+
+async function fetchAreaOverpass(
+  query: string,
+  options: OfflineMapHandlerOptions,
+): Promise<OverpassPayload> {
+  const endpoints = options.upstreamUrl
+    ? [upstreamUrl(options.upstreamUrl)]
+    : DEFAULT_AREA_OVERPASS_URLS.map((value) => upstreamUrl(value));
+  let lastError: OfflineMapRequestError | null = null;
+
+  for (let index = 0; index < endpoints.length; index += 1) {
+    const endpoint = endpoints[index];
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      options.timeoutMs ?? AREA_UPSTREAM_TIMEOUT_MS,
+    );
+    const endpointHost = new URL(endpoint).host;
+    const startedAt = Date.now();
+    try {
+      console.info("[area-preparation] osm-attempt", {
+        attempt: index + 1,
+        totalAttempts: endpoints.length,
+        endpoint: endpointHost,
+      });
+      const response = await (options.fetchImpl ?? fetch)(endpoint, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ data: query }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new OfflineMapRequestError(
+          response.status,
+          "osm_upstream_failed",
+          "OSM-Daten konnten nicht geladen werden.",
+        );
+      }
+
+      const maxBytes = options.maxUpstreamBytes ?? MAX_UPSTREAM_BYTES;
+      const declaredLength = Number(response.headers.get("content-length") ?? "0");
+      if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+        throw new OfflineMapRequestError(
+          413,
+          "osm_response_too_large",
+          "Der gewählte Area-Bereich enthält zu viele Kartendaten.",
+        );
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > maxBytes) {
+        throw new OfflineMapRequestError(
+          413,
+          "osm_response_too_large",
+          "Der gewählte Area-Bereich enthält zu viele Kartendaten.",
+        );
+      }
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(new TextDecoder().decode(bytes));
+      } catch {
+        throw new OfflineMapRequestError(
+          502,
+          "osm_response_invalid",
+          "OSM-Datenquelle hat ungültige Daten geliefert.",
+        );
+      }
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new OfflineMapRequestError(
+          502,
+          "osm_response_invalid",
+          "OSM-Datenquelle hat ungültige Daten geliefert.",
+        );
+      }
+      console.info("[area-preparation] osm-success", {
+        attempt: index + 1,
+        endpoint: endpointHost,
+        durationMs: Date.now() - startedAt,
+        responseBytes: bytes.byteLength,
+      });
+      return payload as OverpassPayload;
+    } catch (caught) {
+      const error = areaFetchError(caught);
+      lastError = error;
+      console.warn("[area-preparation] osm-failure", {
+        attempt: index + 1,
+        endpoint: endpointHost,
+        durationMs: Date.now() - startedAt,
+        status: error.status,
+        code: error.code,
+      });
+      if (!retryableAreaFetchError(error) || index === endpoints.length - 1) throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw lastError ?? new OfflineMapRequestError(502, "osm_upstream_failed", "OSM-Daten konnten nicht geladen werden.");
+}
+
 /**
- * Fetches the two OSM feature classes for a persisted Area. The bounded request
- * is derived only from the canonical polygon and deliberately shares the same
- * allowlist and normalizers as the legacy offline-map package endpoint.
+ * Fetches the two OSM feature classes for a persisted Area. The request is
+ * derived only from the canonical Area. A narrow buffered BBox limits upstream
+ * work; exact Street ownership is still enforced by polygon clipping later.
  */
 export async function fetchOsmFeaturesForArea(
   options: OsmFeaturesForAreaOptions,
@@ -490,6 +651,10 @@ export async function fetchOsmFeaturesForArea(
       "too_large",
       `Area überschreitet die maximale Begrenzung von ${OFFLINE_MAP_RADIUS_METERS} Metern.`,
     );
+  }
+  const query = buildAreaPreparationOverpassQuery(options.geometry);
+  if (!query) {
+    throw new OsmFeaturesForAreaError("invalid", "Area-Geometrie ist für den OSM-Abruf ungültig.");
   }
 
   const request: ParsedRequest = {
@@ -508,7 +673,7 @@ export async function fetchOsmFeaturesForArea(
   };
 
   try {
-    const payload = await fetchOverpass(request, handlerOptions);
+    const payload = await fetchAreaOverpass(query, handlerOptions);
     if (!Array.isArray(payload.elements)) {
       throw new OsmFeaturesForAreaError("invalid", "OSM-Antwort enthält keine Way-Collection.");
     }
@@ -524,6 +689,11 @@ export async function fetchOsmFeaturesForArea(
     if (serializedBytes > (options.limits?.maxPackageBytes ?? MAX_PACKAGE_BYTES)) {
       throw new OsmFeaturesForAreaError("too_large", "OSM-Featurepaket überschreitet die Sicherheitsgrenze.");
     }
+    console.info("[area-preparation] osm-normalized", {
+      roadCandidates: pkg.roads.features.length,
+      buildingCandidates: pkg.buildings.features.length,
+      packageBytes: serializedBytes,
+    });
     return {
       roads: pkg.roads.features,
       buildings: pkg.buildings.features,
