@@ -17,7 +17,9 @@ function task(input: Partial<DistributionTask> & Pick<DistributionTask, "id" | "
       objectType: "way",
       objectIds: [101],
     },
-    areaPreparationGeneration: input.areaPreparationGeneration ?? "generation-1",
+    areaPreparationGeneration: input.areaPreparationGeneration === undefined
+      ? "generation-1"
+      : input.areaPreparationGeneration,
     status: "open",
     completedAt: null,
     createdAt: "2026-09-02T00:00:00.000Z",
