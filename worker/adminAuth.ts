@@ -10,6 +10,7 @@ const PASSWORD_ITERATIONS = 600_000;
 const PASSWORD_SALT_BYTES = 16;
 const ADMIN_SESSION_SECONDS = 60 * 60 * 12;
 const SETUP_INVITE_SECONDS = 60 * 60 * 24;
+const PASSWORD_RESET_SECONDS = 60 * 60 * 24;
 const LOGIN_FAILURE_LIMIT = 5;
 const LOGIN_LOCK_SECONDS = 60 * 15;
 const USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,40}$/u;
@@ -32,6 +33,14 @@ type AdminAccountRow = {
 type SetupInviteRow = {
   id: string;
   campaign_id: string;
+  expires_at: string;
+  used_at: string | null;
+};
+
+type PasswordResetInviteRow = {
+  id: string;
+  campaign_id: string;
+  account_id: string;
   expires_at: string;
   used_at: string | null;
 };
@@ -176,6 +185,19 @@ export async function hasCampaignAdminAuthSchema(db: D1DatabaseLike) {
   }
 }
 
+export async function hasCampaignAdminPasswordResetSchema(db: D1DatabaseLike) {
+  try {
+    const resets = await db
+      .prepare("PRAGMA table_info(campaign_admin_password_reset_invites)")
+      .all<{ name: string }>();
+    return ["id", "campaign_id", "account_id", "token_hash", "expires_at", "used_at"].every(
+      (column) => resets.results.some((item) => item.name === column),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveCampaignAdminAccountAccess(
   db: D1DatabaseLike,
   request: Request,
@@ -278,6 +300,24 @@ export async function createCampaignAdminSetupInvite(
   return { token, expiresAt };
 }
 
+async function accountById(
+  db: D1DatabaseLike,
+  campaignId: string,
+  accountId: string,
+) {
+  return db
+    .prepare(
+      `SELECT a.id, a.campaign_id, a.grant_id, a.username, a.username_normalized,
+              a.password_algorithm, a.password_iterations, a.password_salt, a.password_hash,
+              a.disabled_at, g.revoked_at AS grant_revoked_at
+       FROM campaign_admin_accounts a
+       JOIN campaign_access_grants g ON g.id = a.grant_id AND g.campaign_id = a.campaign_id
+       WHERE a.id = ? AND a.campaign_id = ? LIMIT 1`,
+    )
+    .bind(accountId, campaignId)
+    .first<AdminAccountRow>();
+}
+
 async function accountByUsername(
   db: D1DatabaseLike,
   campaignId: string,
@@ -294,6 +334,78 @@ async function accountByUsername(
     )
     .bind(campaignId, normalizedUsername)
     .first<AdminAccountRow>();
+}
+
+export async function renameCampaignAdminAccount(
+  db: D1DatabaseLike,
+  campaignId: string,
+  accountId: string,
+  usernameValue: unknown,
+) {
+  const username = normalizeCampaignAdminUsername(usernameValue);
+  if (!username) return { ok: false as const, code: "invalid_username" };
+  const account = await accountById(db, campaignId, accountId);
+  if (!account) return { ok: false as const, code: "account_not_found" };
+  const existing = await accountByUsername(db, campaignId, username.normalized);
+  if (existing && existing.id !== accountId) return { ok: false as const, code: "username_unavailable" };
+  const result = await db.batch([
+    db
+      .prepare(
+        `UPDATE campaign_admin_accounts
+         SET username = ?, username_normalized = ?
+         WHERE id = ? AND campaign_id = ?`,
+      )
+      .bind(username.display, username.normalized, accountId, campaignId),
+    db
+      .prepare(
+        `UPDATE campaign_access_grants
+         SET label = ?
+         WHERE id = ? AND campaign_id = ?`,
+      )
+      .bind(`Admin-Konto: ${username.display}`, account.grant_id, campaignId),
+  ]);
+  if ((result[0]?.meta?.changes ?? 0) !== 1 || (result[1]?.meta?.changes ?? 0) !== 1) {
+    return { ok: false as const, code: "account_not_found" };
+  }
+  return { ok: true as const, username: username.display };
+}
+
+export async function createCampaignAdminPasswordResetInvite(
+  db: D1DatabaseLike,
+  campaignId: string,
+  accountId: string,
+) {
+  const account = await accountById(db, campaignId, accountId);
+  if (!account || account.disabled_at || account.grant_revoked_at) return null;
+  const token = randomSecret();
+  const tokenHash = await hashSecret(token);
+  const createdAt = new Date();
+  const expiresAt = new Date(createdAt.getTime() + PASSWORD_RESET_SECONDS * 1000).toISOString();
+  const result = await db.batch([
+    db
+      .prepare(
+        `UPDATE campaign_admin_password_reset_invites
+         SET used_at = COALESCE(used_at, ?)
+         WHERE campaign_id = ? AND account_id = ? AND used_at IS NULL`,
+      )
+      .bind(createdAt.toISOString(), campaignId, accountId),
+    db
+      .prepare(
+        `INSERT INTO campaign_admin_password_reset_invites
+          (id, campaign_id, account_id, token_hash, created_at, expires_at, used_at)
+         VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .bind(
+        `admin_password_reset_${crypto.randomUUID()}`,
+        campaignId,
+        accountId,
+        tokenHash,
+        createdAt.toISOString(),
+        expiresAt,
+      ),
+  ]);
+  if ((result[1]?.meta?.changes ?? 0) !== 1) throw new Error("admin_password_reset_invite_create_failed");
+  return { token, expiresAt, username: account.username };
 }
 
 export async function completeCampaignAdminSetup(
@@ -456,6 +568,91 @@ export async function loginCampaignAdminAccount(
   };
 }
 
+export async function completeCampaignAdminPasswordReset(
+  db: D1DatabaseLike,
+  input: { campaignId: string; token: string; password: unknown },
+) {
+  if (!validCampaignAdminPassword(input.password) || input.token.length < 32 || input.token.length > 256) {
+    return { ok: false as const, code: "invalid_reset" };
+  }
+  const tokenHash = await hashSecret(input.token);
+  const now = new Date().toISOString();
+  const invite = await db
+    .prepare(
+      `SELECT id, campaign_id, account_id, expires_at, used_at
+       FROM campaign_admin_password_reset_invites
+       WHERE token_hash = ? AND campaign_id = ? AND used_at IS NULL AND expires_at > ? LIMIT 1`,
+    )
+    .bind(tokenHash, input.campaignId, now)
+    .first<PasswordResetInviteRow>();
+  if (!invite) return { ok: false as const, code: "reset_link_invalid" };
+  const account = await accountById(db, input.campaignId, invite.account_id);
+  if (!account || account.disabled_at || account.grant_revoked_at) {
+    return { ok: false as const, code: "reset_link_invalid" };
+  }
+  const password = await passwordRecord(input.password);
+  const claim = await db.batch([
+    db
+      .prepare(
+        `UPDATE campaign_admin_password_reset_invites
+         SET used_at = ?
+         WHERE id = ? AND campaign_id = ? AND account_id = ?
+           AND used_at IS NULL AND expires_at > ?`,
+      )
+      .bind(now, invite.id, input.campaignId, account.id, now),
+  ]);
+  if ((claim[0]?.meta?.changes ?? 0) !== 1) {
+    return { ok: false as const, code: "reset_link_invalid" };
+  }
+  const result = await db.batch([
+    db
+      .prepare(
+        `UPDATE campaign_admin_accounts
+         SET password_algorithm = ?, password_iterations = ?, password_salt = ?, password_hash = ?
+         WHERE id = ? AND campaign_id = ? AND disabled_at IS NULL`,
+      )
+      .bind(
+        password.algorithm,
+        password.iterations,
+        password.salt,
+        password.verifier,
+        account.id,
+        input.campaignId,
+      ),
+    db
+      .prepare(
+        `UPDATE campaign_admin_password_reset_invites
+         SET used_at = COALESCE(used_at, ?)
+         WHERE campaign_id = ? AND account_id = ? AND id <> ? AND used_at IS NULL`,
+      )
+      .bind(now, input.campaignId, account.id, invite.id),
+    db
+      .prepare(
+        `UPDATE campaign_admin_sessions
+         SET revoked_at = COALESCE(revoked_at, ?)
+         WHERE account_id = ? AND campaign_id = ?`,
+      )
+      .bind(now, account.id, input.campaignId),
+  ]);
+  if ((result[0]?.meta?.changes ?? 0) !== 1) {
+    return { ok: false as const, code: "reset_link_invalid" };
+  }
+  const session = await createAccountSession(db, account);
+  return {
+    ok: true as const,
+    access: {
+      grantId: account.grant_id,
+      campaignId: account.campaign_id,
+      role: "admin" as const,
+      teamId: null,
+      label: account.username,
+      groupId: null,
+      membershipId: null,
+    },
+    session,
+  };
+}
+
 export async function listCampaignAdminAccounts(db: D1DatabaseLike, campaignId: string) {
   const result = await db
     .prepare(
@@ -488,11 +685,31 @@ export async function disableCampaignAdminAccount(
   const now = new Date().toISOString();
   const result = await db.batch([
     db
-      .prepare("UPDATE campaign_admin_accounts SET disabled_at = COALESCE(disabled_at, ?) WHERE id = ? AND campaign_id = ?")
-      .bind(now, accountId, campaignId),
+      .prepare(
+        `UPDATE campaign_admin_accounts
+         SET disabled_at = ?
+         WHERE id = ? AND campaign_id = ? AND disabled_at IS NULL
+           AND (
+             SELECT COUNT(*) FROM campaign_admin_accounts
+             WHERE campaign_id = ? AND disabled_at IS NULL
+           ) > 1`,
+      )
+      .bind(now, accountId, campaignId, campaignId),
     db
-      .prepare("UPDATE campaign_admin_sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE account_id = ? AND campaign_id = ?")
-      .bind(now, accountId, campaignId),
+      .prepare(
+        `UPDATE campaign_admin_sessions
+         SET revoked_at = COALESCE(revoked_at, ?)
+         WHERE account_id = ? AND campaign_id = ?
+           AND EXISTS (
+             SELECT 1 FROM campaign_admin_accounts
+             WHERE id = ? AND campaign_id = ? AND disabled_at IS NOT NULL
+           )`,
+      )
+      .bind(now, accountId, campaignId, accountId, campaignId),
   ]);
-  return (result[0]?.meta?.changes ?? 0) === 1;
+  if ((result[0]?.meta?.changes ?? 0) === 1) return "disabled" as const;
+  const account = await accountById(db, campaignId, accountId);
+  if (!account) return "not_found" as const;
+  if (account.disabled_at) return "disabled" as const;
+  return "last_account" as const;
 }

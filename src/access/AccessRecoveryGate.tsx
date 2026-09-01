@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CampaignApiError,
   buildCampaignAccessUrl,
+  campaignAdminPasswordResetTokenFromUrl,
   campaignAdminSetupTokenFromUrl,
+  completeCampaignAdminPasswordReset,
   campaignIdFromUrl,
   completeCampaignAdminAccountSetup,
   loginCampaignAdminAccount,
+  removeCampaignAdminPasswordResetTokenFromUrl,
   removeCampaignAdminSetupTokenFromUrl,
   recoverCampaignAdminAccess,
 } from "../data/campaignApi";
@@ -31,7 +34,9 @@ export function AccessRecoveryGate() {
   const [copied, setCopied] = useState(false);
 
   const de = language === "de";
+  const resetToken = useMemo(campaignAdminPasswordResetTokenFromUrl, []);
   const setupToken = useMemo(campaignAdminSetupTokenFromUrl, []);
+  const accountLinkOpen = Boolean(resetToken || setupToken);
 
   useEffect(() => {
     if (!campaignId) {
@@ -51,8 +56,8 @@ export function AccessRecoveryGate() {
 
   if (
     !campaignId ||
-    (checking && !recoveredUrl) ||
-    (accessState !== "required" && !recoveredUrl)
+    (checking && !recoveredUrl && !accountLinkOpen) ||
+    (accessState !== "required" && !recoveredUrl && !accountLinkOpen)
   ) return null;
 
   const submit = async () => {
@@ -122,6 +127,29 @@ export function AccessRecoveryGate() {
     }
   };
 
+  const completePasswordReset = async () => {
+    if (!campaignId || !resetToken || !password || password !== passwordConfirmation || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await completeCampaignAdminPasswordReset(campaignId, resetToken, password);
+      setPassword("");
+      setPasswordConfirmation("");
+      removeCampaignAdminPasswordResetTokenFromUrl();
+      window.dispatchEvent(new Event("online"));
+    } catch (cause) {
+      setError(
+        cause instanceof CampaignApiError
+          ? cause.message
+          : de
+            ? "Passwort konnte nicht zurückgesetzt werden."
+            : "Password could not be reset.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const copy = async () => {
     if (!recoveredUrl) return;
     try {
@@ -163,6 +191,31 @@ export function AccessRecoveryGate() {
                 {de ? "Zur Karte" : "Open map"}
               </button>
             </div>
+          </>
+        ) : resetToken ? (
+          <>
+            <span className="access-recovery-kicker">{de ? "Campaign-Admin" : "Campaign Admin"}</span>
+            <strong>{de ? "Passwort zurücksetzen" : "Reset password"}</strong>
+            <p>
+              {de
+                ? "Lege über diesen einmaligen Link ein neues Passwort für dein kampagnenlokales Admin-Konto fest."
+                : "Use this one-time link to set a new password for your Campaign-local admin account."}
+            </p>
+            <label className="access-recovery-field">
+              <span>{de ? "Neues Passwort" : "New password"}</span>
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={256} />
+            </label>
+            <label className="access-recovery-field">
+              <span>{de ? "Passwort wiederholen" : "Confirm password"}</span>
+              <input type="password" value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" minLength={12} maxLength={256} onKeyDown={(event) => { if (event.key === "Enter") void completePasswordReset(); }} />
+            </label>
+            <p className="access-recovery-note">
+              {de ? "Mindestens 12 Zeichen. Der Link ist 24 Stunden gültig, nur einmal nutzbar und meldet dich danach direkt an." : "At least 12 characters. The link is valid for 24 hours, single-use and signs you in afterwards."}
+            </p>
+            {error ? <p className="access-recovery-error" role="alert">{error}</p> : null}
+            <button className="button primary full-width" type="button" disabled={password.length < 12 || password !== passwordConfirmation || submitting} onClick={() => void completePasswordReset()}>
+              {submitting ? (de ? "Wird zurückgesetzt…" : "Resetting…") : de ? "Neues Passwort speichern" : "Save new password"}
+            </button>
           </>
         ) : setupToken ? (
           <>

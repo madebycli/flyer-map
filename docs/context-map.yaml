@@ -1,4 +1,4 @@
-version: 20
+version: 21
 
 entrypoints:
   always:
@@ -22,7 +22,8 @@ routing_rules:
   - for OpenFreeMap basemap, standard house numbers, Smart Map online-first or related Area-Sheet hardening, load plan-openfreemap-smartdata-ui-hardening, then follow Map, Offline Map, Smart Street runtime, Smart House runtime, UX, Collaboration and Quality edges
   - for automatic server-side Area preparation, recovery status/retry, generated Street/House Tasks or migration 0014, load plan-auto-area-task-preparation, then follow Data, Offline Sync, Map, Security, Quality, Offline Map, Smart Task identity and ADR-0021 edges
   - for the normal automatic Area Sheet, Preparation polling/retry, completed task color or removal of browser Smart/offline-download UI, load plan-auto-area-ui-server-preparation after plan-auto-area-task-preparation, then follow UX, Map, Offline Sync, Quality and ADR-0021 edges
-  - for the 2026-09-02 mission branch, manual Street creation, dormant automatic preparation, campaign-local Admin passwords or migration 0015, load ADR-0023 before proposed Organization identity documents
+  - for the 2026-09-02 mission branch, manual Street creation, dormant automatic preparation, campaign-local Admin passwords, password reset or migrations 0015/0016, load ADR-0023 before proposed Organization identity documents
+  - for post-mission automatic Street editing, load plan-smart-street-edit-after-mission and ADR-0023, then follow Smart Street runtime, automatic Area preparation, Map, Offline Sync, Security and Quality edges
   - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
@@ -195,8 +196,8 @@ nodes:
     path: docs/decisions/ADR-0023-mission-manual-distribution-and-campaign-admin-accounts.md
     type: decision
     status: accepted
-    topics: [mission-release, manual-streets, area-validation, campaign-admin, username, password, sessions, migration-0015]
-    load_when: [mission branch, manual Street, automatic preparation disabled, Campaign Admin password, setup link, login, migration 0015]
+    topics: [mission-release, manual-streets, area-validation, campaign-admin, username, password, password-reset, sessions, migration-0015, migration-0016]
+    load_when: [mission branch, manual Street, automatic preparation disabled, Campaign Admin password, setup link, password reset, login, migration 0015, migration 0016]
 
   - id: adr-capability-roles
     path: docs/decisions/ADR-0016-capability-role-templates.md
@@ -344,6 +345,13 @@ nodes:
     status: completed
     topics: [automatic-area-preparation, area-sheet, preparation-status, polling, retry, completed-color, offline-map, smart-ui-removal, m5]
     load_when: [normal automatic Area Sheet, preparation polling, preparation retry, completed task color, browser Smart UI removal, offline download UI removal]
+
+  - id: plan-smart-street-edit-after-mission
+    path: docs/plans/active/026-smart-street-edit-after-mission.md
+    type: plan
+    status: proposed
+    topics: [mission-release, post-mission, automatic-area-preparation, smart-streets, street-edit, two-point-selection, maplibre, m5, override]
+    load_when: [post-mission automatic Street edit, Smart Street edit button, highlighted route between two points, automatic Street correction]
 
   - id: plan-collection-pickup-persistence
     path: docs/plans/active/021-collection-pickup-persistence.md
@@ -502,6 +510,13 @@ edges:
   - { from: adr-mission-manual-distribution-admin-accounts, to: security, relation: governs }
   - { from: adr-mission-manual-distribution-admin-accounts, to: data, relation: extends_additively }
   - { from: adr-mission-manual-distribution-admin-accounts, to: adr-admin-identity, relation: mission_scoped_exception }
+  - { from: plan-smart-street-edit-after-mission, to: adr-mission-manual-distribution-admin-accounts, relation: waits_for_mission_gate }
+  - { from: plan-smart-street-edit-after-mission, to: plan-smart-street-runtime, relation: reuses_selection_runtime }
+  - { from: plan-smart-street-edit-after-mission, to: plan-auto-area-task-preparation, relation: requires_ready_areas }
+  - { from: plan-smart-street-edit-after-mission, to: map, relation: implements_highlight }
+  - { from: plan-smart-street-edit-after-mission, to: offline-sync, relation: reuses_m5 }
+  - { from: plan-smart-street-edit-after-mission, to: security, relation: constrained_by }
+  - { from: plan-smart-street-edit-after-mission, to: quality, relation: validated_by }
   - { from: adr-m5-no-legacy-snapshot-writes, to: data, relation: governs }
   - { from: adr-m5-no-legacy-snapshot-writes, to: offline-sync, relation: governs }
   - { from: adr-m5-no-legacy-snapshot-writes, to: security, relation: governs }

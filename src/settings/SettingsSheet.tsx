@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildCampaignAccessUrl,
+  buildCampaignAdminPasswordResetUrl,
   buildCampaignAdminSetupUrl,
   createCampaignAccessGrant,
+  createCampaignAdminPasswordResetInvite,
   createCampaignAdminSetupInvite,
   disableCampaignAdminAccount,
   fetchCampaignAdminAccounts,
   fetchAccessGrants,
   revokeCampaignAccessGrant,
+  renameCampaignAdminAccount,
   type CampaignAdminAccount,
   type AccessGrant,
   type AccessInfo,
@@ -81,11 +84,17 @@ export function SettingsSheet({
   const [createdUrl, setCreatedUrl] = useState<string | null>(initialAccessUrl);
   const [createdRole, setCreatedRole] = useState<PersistentAccessRole>("admin");
   const [copyDone, setCopyDone] = useState(false);
-  const [shareTarget, setShareTarget] = useState<"access" | "admin" | null>(null);
+  const [shareTarget, setShareTarget] = useState<"access" | "admin" | "reset" | null>(null);
   const [adminSetupUrl, setAdminSetupUrl] = useState<string | null>(null);
   const [adminSetupCopied, setAdminSetupCopied] = useState(false);
+  const [adminResetUrl, setAdminResetUrl] = useState<string | null>(null);
+  const [adminResetUsername, setAdminResetUsername] = useState<string | null>(null);
+  const [adminResetCopied, setAdminResetCopied] = useState(false);
+  const [editingAdminAccountId, setEditingAdminAccountId] = useState<string | null>(null);
+  const [adminUsernameDraft, setAdminUsernameDraft] = useState("");
   const [accessBusy, setAccessBusy] = useState(false);
   const [accessError, setAccessError] = useState(false);
+  const [adminAccountError, setAdminAccountError] = useState<string | null>(null);
 
   const activeGrants = useMemo(
     () => grants.filter((grant) => grant.revokedAt === null),
@@ -179,12 +188,12 @@ export function SettingsSheet({
   const createAdminSetup = async () => {
     if (!isAdmin) return;
     setAccessBusy(true);
-    setAccessError(false);
+    setAdminAccountError(null);
     try {
       const invite = await createCampaignAdminSetupInvite(campaign.id);
       setAdminSetupUrl(buildCampaignAdminSetupUrl(campaign.id, invite.token));
-    } catch {
-      setAccessError(true);
+    } catch (cause) {
+      setAdminAccountError(cause instanceof Error ? cause.message : "Admin-Konto konnte nicht vorbereitet werden.");
     } finally {
       setAccessBusy(false);
     }
@@ -203,15 +212,60 @@ export function SettingsSheet({
 
   const disableAdminAccount = async (accountId: string) => {
     if (!isAdmin) return;
+    if (!window.confirm("Dieses Admin-Konto wird gesperrt und seine Sitzungen werden sofort beendet. Fortfahren?")) return;
     setAccessBusy(true);
-    setAccessError(false);
+    setAdminAccountError(null);
     try {
       await disableCampaignAdminAccount(campaign.id, accountId);
       await reloadAdminAccounts();
-    } catch {
-      setAccessError(true);
+    } catch (cause) {
+      setAdminAccountError(cause instanceof Error ? cause.message : "Admin-Konto konnte nicht gesperrt werden.");
     } finally {
       setAccessBusy(false);
+    }
+  };
+
+  const saveAdminUsername = async (accountId: string) => {
+    if (!isAdmin || !adminUsernameDraft.trim()) return;
+    setAccessBusy(true);
+    setAdminAccountError(null);
+    try {
+      await renameCampaignAdminAccount(campaign.id, accountId, adminUsernameDraft.trim());
+      setEditingAdminAccountId(null);
+      setAdminUsernameDraft("");
+      await reloadAdminAccounts();
+    } catch (cause) {
+      setAdminAccountError(cause instanceof Error ? cause.message : "Benutzername konnte nicht geändert werden.");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const createAdminPasswordReset = async (account: CampaignAdminAccount) => {
+    if (!isAdmin) return;
+    setAccessBusy(true);
+    setAdminAccountError(null);
+    try {
+      const invite = await createCampaignAdminPasswordResetInvite(campaign.id, account.id);
+      setAdminResetUrl(buildCampaignAdminPasswordResetUrl(campaign.id, invite.token));
+      setAdminResetUsername(invite.username);
+      setAdminResetCopied(false);
+      setShareTarget("reset");
+    } catch (cause) {
+      setAdminAccountError(cause instanceof Error ? cause.message : "Passwort-Reset-Link konnte nicht erstellt werden.");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const copyAdminResetUrl = async () => {
+    if (!adminResetUrl) return;
+    try {
+      await navigator.clipboard.writeText(adminResetUrl);
+      setAdminResetCopied(true);
+      window.setTimeout(() => setAdminResetCopied(false), 1600);
+    } catch {
+      setAdminResetCopied(false);
     }
   };
 
@@ -290,7 +344,7 @@ export function SettingsSheet({
 
           <section className="settings-section access-section">
             <h3>Admin-Konten</h3>
-            <p className="settings-help">Jede Person erhält einen eigenen Benutzernamen und ein eigenes Passwort nur für diese Campaign. Keine TOTP-Abfrage für die Mission.</p>
+            <p className="settings-help">Der Organisator richtet Konten ein, ändert Benutzernamen und erzeugt sichere Passwort-Reset-Links. Jede Person wählt ihr Passwort selbst, damit es nie an eine andere Person weitergegeben werden muss.</p>
             <button className="button secondary full-width" type="button" disabled={accessBusy} onClick={() => void createAdminSetup()}>
               Einmaligen Einrichtungslink erstellen
             </button>
@@ -315,13 +369,40 @@ export function SettingsSheet({
                   <div>
                     <strong>{account.username}</strong>
                     <span>Campaign-Admin</span>
+                    {editingAdminAccountId === account.id ? (
+                      <label className="field-label">
+                        <span>Neuer Benutzername</span>
+                        <input value={adminUsernameDraft} onChange={(event) => setAdminUsernameDraft(event.target.value)} autoComplete="username" maxLength={40} />
+                      </label>
+                    ) : null}
                   </div>
-                  <button className="small-action danger-action" type="button" disabled={accessBusy} onClick={() => void disableAdminAccount(account.id)}>
-                    Sperren
-                  </button>
+                  <div className="settings-actions">
+                    {editingAdminAccountId === account.id ? (
+                      <>
+                        <button className="small-action" type="button" disabled={accessBusy || !adminUsernameDraft.trim()} onClick={() => void saveAdminUsername(account.id)}>Speichern</button>
+                        <button className="small-action" type="button" disabled={accessBusy} onClick={() => { setEditingAdminAccountId(null); setAdminUsernameDraft(""); }}>Abbrechen</button>
+                      </>
+                    ) : (
+                      <button className="small-action" type="button" disabled={accessBusy} onClick={() => { setEditingAdminAccountId(account.id); setAdminUsernameDraft(account.username); }}>Name ändern</button>
+                    )}
+                    <button className="small-action" type="button" disabled={accessBusy} onClick={() => void createAdminPasswordReset(account)}>Passwort zurücksetzen</button>
+                    <button className="small-action danger-action" type="button" disabled={accessBusy} onClick={() => void disableAdminAccount(account.id)}>Sperren</button>
+                  </div>
                 </article>
               ))}
             </div>
+            {adminAccountError ? <p className="settings-error" role="alert">{adminAccountError}</p> : null}
+            {adminResetUrl ? (
+              <div className="access-link-result" role="status">
+                <strong>Passwort-Reset für {adminResetUsername}</strong>
+                <span>Der Link ist 24 Stunden gültig, nur einmal nutzbar und beendet beim Einlösen alle bisherigen Sitzungen dieses Kontos.</span>
+                <input readOnly value={adminResetUrl} aria-label="Admin-Passwort-Reset-Link" />
+                <div className="settings-actions">
+                  <button className="button secondary" type="button" onClick={copyAdminResetUrl}>{adminResetCopied ? t(language, "copied") : t(language, "copy")}</button>
+                  <button className="button secondary" type="button" onClick={() => setShareTarget("reset")}>QR-Code anzeigen</button>
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <section className="settings-section access-section">
@@ -422,6 +503,14 @@ export function SettingsSheet({
           title="Admin-Konto einrichten"
           description="Einmaliger Link zum Festlegen eines kampagnenlokalen Admin-Passworts."
           url={adminSetupUrl}
+          onClose={() => setShareTarget(null)}
+        />
+      ) : null}
+      {shareTarget === "reset" && adminResetUrl ? (
+        <ShareLinkModal
+          title={`Passwort-Reset für ${adminResetUsername ?? "Admin"}`}
+          description="Einmaliger Link zum Festlegen eines neuen kampagnenlokalen Admin-Passworts. Beim Einlösen werden bestehende Sitzungen beendet."
+          url={adminResetUrl}
           onClose={() => setShareTarget(null)}
         />
       ) : null}

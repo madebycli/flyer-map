@@ -298,6 +298,23 @@ export async function disableCampaignAdminAccount(campaignId: string, accountId:
   });
 }
 
+export async function renameCampaignAdminAccount(campaignId: string, accountId: string, username: string) {
+  const response = await apiFetch(`${campaignAdminAccountsPath(campaignId)}/${encodeURIComponent(accountId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username }),
+  });
+  return (await response.json()) as { ok: true; username: string };
+}
+
+export async function createCampaignAdminPasswordResetInvite(campaignId: string, accountId: string) {
+  const response = await apiFetch(
+    `${campaignAdminAccountsPath(campaignId)}/${encodeURIComponent(accountId)}/password-reset`,
+    { method: "POST", headers: { "content-type": "application/json" } },
+  );
+  return (await response.json()) as { token: string; expiresAt: string; username: string };
+}
+
 export async function loginCampaignAdminAccount(campaignId: string, username: string, password: string) {
   const response = await apiFetch(`${campaignAdminAccountsPath(campaignId)}/login`, {
     method: "POST",
@@ -317,6 +334,19 @@ export async function completeCampaignAdminAccountSetup(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ campaignId, token, username, password }),
+  });
+  return ((await response.json()) as { access: AccessInfo }).access;
+}
+
+export async function completeCampaignAdminPasswordReset(
+  campaignId: string,
+  token: string,
+  password: string,
+) {
+  const response = await apiFetch("/api/admin-accounts/password-reset", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ campaignId, token, password }),
   });
   return ((await response.json()) as { access: AccessInfo }).access;
 }
@@ -432,5 +462,34 @@ export function buildCampaignAdminSetupUrl(campaignId: string, token: string) {
   url.hash = "";
   url.searchParams.set("campaign", campaignId);
   url.hash = new URLSearchParams({ "admin-setup": token }).toString();
+  return url.toString();
+}
+
+export function campaignAdminPasswordResetTokenFromUrl() {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  const token = params.get("admin-reset");
+  return token && token.length >= 32 && token.length <= 256 ? token : null;
+}
+
+export function removeCampaignAdminPasswordResetTokenFromUrl() {
+  if (typeof window === "undefined" || !window.location.hash) return;
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  params.delete("admin-reset");
+  url.hash = params.toString();
+  window.history.replaceState(null, "", url);
+}
+
+export function buildCampaignAdminPasswordResetUrl(campaignId: string, token: string) {
+  if (typeof window === "undefined") {
+    return `?campaign=${encodeURIComponent(campaignId)}#admin-reset=${encodeURIComponent(token)}`;
+  }
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("campaign", campaignId);
+  url.hash = new URLSearchParams({ "admin-reset": token }).toString();
   return url.toString();
 }

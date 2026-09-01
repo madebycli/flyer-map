@@ -240,7 +240,7 @@
 
 .access-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.7rem;
   padding: 0.65rem;
@@ -251,6 +251,14 @@
 
 .access-card > div {
   min-width: 0;
+}
+
+.access-card > div:first-child {
+  flex: 1 1 10rem;
+}
+
+.access-card > .settings-actions {
+  justify-content: flex-end;
 }
 
 .access-card strong,
@@ -302,5 +310,17 @@
 
   .settings-actions.stacked-mobile .button {
     width: 100%;
+  }
+
+  .access-card {
+    flex-direction: column;
+  }
+
+  .access-card > .settings-actions {
+    width: 100%;
+  }
+
+  .access-card > .settings-actions .small-action {
+    flex: 1 1 8.5rem;
   }
 }

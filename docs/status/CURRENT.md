@@ -67,7 +67,7 @@ Sicherheitsvertrag:
 - Grant-Revocation invalidiert bestehende Sessions auf dem nächsten geschützten Request;
 - normaler Admin-Handoff benötigt kein GitHub, Cloudflare, Wrangler, Deployment Secret oder D1-Zugriff.
 
-Zusätzlich erlaubt ADR-0023 kampagnenlokale Admin-Konten für die Mission. Ein bestehender Campaign Admin erzeugt unter `Einstellungen -> Admin-Konten` einen einmaligen, 24 Stunden gültigen Einrichtungslink. Die Empfängerperson legt einen eigenen Benutzernamen und ein eigenes Passwort fest und erhält eine serverseitig widerrufbare, 12-stündige Session. D1 speichert nur PBKDF2-HMAC-SHA-256-Verifier mit individuellem Salt und 600.000 Iterationen, Setup-/Session-Hashes und ein persistentes Login-Backoff. Es gibt bewusst kein TOTP, keine E-Mail-Anforderung und keine Campaign-übergreifenden Konten. Migration `0015` muss vor dem Worker-Rollout angewendet werden.
+Zusätzlich erlaubt ADR-0023 kampagnenlokale Admin-Konten für die Mission. Ein bestehender Campaign Admin erzeugt unter `Einstellungen -> Admin-Konten` einen einmaligen, 24 Stunden gültigen Einrichtungslink. Die Empfängerperson legt einen eigenen Benutzernamen und ein eigenes Passwort fest und erhält eine serverseitig widerrufbare, 12-stündige Session. Der Organisator kann Benutzername ändern, Konten sperren und einen einmaligen 24-Stunden-Passwort-Reset-Link mit QR-Code übergeben. Beim Reset werden alte Reset-Links und alle bestehenden Sessions dieses Kontos ungültig; das letzte aktive Campaign-Admin-Konto bleibt gegen Sperren geschützt. D1 speichert nur PBKDF2-HMAC-SHA-256-Verifier mit individuellem Salt und 600.000 Iterationen, Setup-/Reset-/Session-Hashes und ein persistentes Login-Backoff. Es gibt bewusst kein TOTP, keine E-Mail-Anforderung und keine Campaign-übergreifenden Konten. Migrationen `0015` und `0016` müssen in dieser Reihenfolge vor dem Worker-Rollout angewendet werden.
 
 ## M5 finaler Schreibvertrag
 
@@ -88,6 +88,13 @@ Der Campaign-Snapshot bleibt Read Model, UI-Modell, Startup-Cache und Konflikt-/
 ADR-0023 überschreibt ADR-0021 nur für die Mission: erfolgreiche `area.create`- und `area.update-geometry`-Mutationen starten keine OSM-Vorbereitung, keinen Worker-Job und keinen Browser-Poller. Der vorhandene automatische Runtime-Code bleibt unverändert erhalten, wird aber durch die zentrale Missions-Policy nicht aufgerufen.
 
 `Straße manuell hinzufügen` ist als grüner globaler Plus-Button sichtbar und im Gebiet weiterhin verfügbar. Bei mehreren editierbaren Gebieten wählt die Person zuerst eines aus. Die Street-Prüfung akzeptiert nur eine vollständige Linie innerhalb oder auf der Gebietsgrenze und der Worker weist Umgehungsversuche mit `street_outside_area` zurück. Historische automatisch vorbereitete Tasks bleiben normale darstellbare und statusänderbare Daten.
+
+Der nachgelagerte Plan `026-smart-street-edit-after-mission.md` beschreibt verbindlich
+den späteren Wechsel: Erst nach einem separaten Ende-des-Missions-Gate wird der grüne
+Plus-Button für bereite automatische Areas zu „Straßen bearbeiten“. Er startet die
+vorhandene Smart-Street-Zwei-Punkt-Auswahl und hebt die geprüfte Strecke zwischen Start
+und Ende vor einer einzigen M5-Override-Mutation hervor. Dieser Plan verändert die
+aktuelle manuelle Mission nicht.
 
 ## Map und Task-Darstellung
 
@@ -141,9 +148,9 @@ Cloud-/CI-Tests oder ein Browser ohne echte Mobile/WebGL-Eigenschaften dürfen n
 
 ## Nächster Schritt
 
-1. Mission-Trim auf exaktem neuen Head durch CI verifizieren.
+1. Mission-Trim einschließlich Admin-Konten und Reset auf exaktem neuen Head durch CI verifizieren.
 2. Versioned Preview und Branch-Alias für diesen Head verifizieren.
-3. echten Distribution E2E und Admin-Handoff durchführen.
+3. echten Distribution E2E, Admin-Handoff sowie Passwort-Reset durchführen.
 4. Android/iPhone Mission Smoke durchführen.
 5. danach Mission-Head und Release-URL einfrieren, Feature Freeze.
 6. Erst nach der Mission zu Plan 017/FC5.3 und langfristiger Plattformarbeit zurückkehren.

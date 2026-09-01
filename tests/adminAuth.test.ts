@@ -4,9 +4,13 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import {
   adminAccountSessionCookie,
+  completeCampaignAdminPasswordReset,
   completeCampaignAdminSetup,
+  createCampaignAdminPasswordResetInvite,
   createCampaignAdminSetupInvite,
+  disableCampaignAdminAccount,
   loginCampaignAdminAccount,
+  renameCampaignAdminAccount,
 } from "../worker/adminAuth.ts";
 import { resolveAccess } from "../worker/access.ts";
 import type {
@@ -47,6 +51,7 @@ class AdminAuthDb implements D1DatabaseLike {
       "0001_initial.sql",
       "0002_m4_access.sql",
       "0015_mission_campaign_admin_accounts.sql",
+      "0016_mission_campaign_admin_password_resets.sql",
     ]) {
       this.sqlite.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
     }
@@ -141,5 +146,96 @@ test("Campaign Admin login uses the stored verifier and rejects incorrect creden
   assert.equal(
     (await resolveAccess(db, requestWithAdminCookie(loggedIn.session.sessionSecret), campaignId))?.label,
     "admin.one",
+  );
+});
+
+test("organizer can rename an Admin and issue a one-time password reset that revokes old sessions", async () => {
+  const db = new AdminAuthDb();
+  const setup = await createCampaignAdminSetupInvite(db, campaignId);
+  const created = await completeCampaignAdminSetup(db, {
+    campaignId,
+    token: setup.token,
+    username: "admin.one",
+    password: "ein-sicheres-passwort",
+  });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+
+  const account = db.sqlite.prepare("SELECT id FROM campaign_admin_accounts").get() as { id: string };
+  assert.deepEqual(
+    await renameCampaignAdminAccount(db, campaignId, account.id, "Organisator.1"),
+    { ok: true, username: "Organisator.1" },
+  );
+  assert.equal(
+    (await resolveAccess(db, requestWithAdminCookie(created.session.sessionSecret), campaignId))?.label,
+    "Organisator.1",
+  );
+
+  const firstReset = await createCampaignAdminPasswordResetInvite(db, campaignId, account.id);
+  const reset = await createCampaignAdminPasswordResetInvite(db, campaignId, account.id);
+  assert.ok(firstReset);
+  assert.ok(reset);
+  if (!firstReset || !reset) return;
+  assert.equal((await completeCampaignAdminPasswordReset(db, {
+    campaignId,
+    token: firstReset.token,
+    password: "noch-ein-sicheres-passwort",
+  })).ok, false);
+
+  const competingResets = await Promise.all([
+    completeCampaignAdminPasswordReset(db, {
+      campaignId,
+      token: reset.token,
+      password: "noch-ein-sicheres-passwort",
+    }),
+    completeCampaignAdminPasswordReset(db, {
+      campaignId,
+      token: reset.token,
+      password: "ein-anderes-sicheres-passwort",
+    }),
+  ]);
+  assert.equal(competingResets.filter((result) => result.ok).length, 1);
+  const completed = competingResets.find((result) => result.ok);
+  assert.ok(completed);
+  if (!completed?.ok) return;
+  const replacementPassword = competingResets[0].ok
+    ? "noch-ein-sicheres-passwort"
+    : "ein-anderes-sicheres-passwort";
+  assert.equal(
+    await resolveAccess(db, requestWithAdminCookie(created.session.sessionSecret), campaignId),
+    null,
+  );
+  assert.equal((await loginCampaignAdminAccount(db, {
+    campaignId,
+    username: "organisator.1",
+    password: "ein-sicheres-passwort",
+  })).ok, false);
+  assert.equal((await loginCampaignAdminAccount(db, {
+    campaignId,
+    username: "organisator.1",
+    password: replacementPassword,
+  })).ok, true);
+  assert.equal((await completeCampaignAdminPasswordReset(db, {
+    campaignId,
+    token: reset.token,
+    password: "darf-nicht-gesetzt-werden",
+  })).ok, false);
+});
+
+test("the last active Campaign Admin account cannot be disabled", async () => {
+  const db = new AdminAuthDb();
+  const setup = await createCampaignAdminSetupInvite(db, campaignId);
+  const created = await completeCampaignAdminSetup(db, {
+    campaignId,
+    token: setup.token,
+    username: "last.admin",
+    password: "ein-sicheres-passwort",
+  });
+  assert.equal(created.ok, true);
+  const account = db.sqlite.prepare("SELECT id FROM campaign_admin_accounts").get() as { id: string };
+  assert.equal(await disableCampaignAdminAccount(db, campaignId, account.id), "last_account");
+  assert.equal(
+    db.sqlite.prepare("SELECT disabled_at FROM campaign_admin_accounts WHERE id = ?").get(account.id)?.disabled_at,
+    null,
   );
 });

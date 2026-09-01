@@ -65,9 +65,19 @@ ADR-0023 adds a temporary, campaign-local password login alongside Access Links.
 - login responses do not distinguish an unknown, disabled, locked or wrong-password account;
 - a durable username-scoped backoff locks after five failures for 15 minutes;
 - account sessions use a separate opaque hash-only `HttpOnly; Secure; SameSite=Lax` cookie and expire after 12 hours;
-- disabling an account revokes its account sessions; its backing Campaign grant remains the Worker authorization source of truth.
+- an existing Campaign Admin may rename a Campaign-local username or generate a
+  single-use 24-hour password-reset link. The recipient enters the new password; neither
+  the organizer nor the client persists a plaintext password;
+- issuing a new reset link invalidates any still-unused reset link for that account;
+  redeeming one invalidates all remaining reset links and revokes all existing account
+  sessions before issuing a new session;
+- disabling an account revokes its account sessions, but a single SQL guarded update
+  prevents removing the last active Campaign-local Admin even when requests race; its
+  backing Campaign grant remains the Worker authorization source of truth.
 
-Migration `0015` is additive and must be present before these endpoints are used. TOTP, recovery codes, e-mail identity and cross-Campaign accounts remain outside this mission scope.
+Migration `0015` is additive for accounts and `0016` is additive for password resets.
+Both must be present before their endpoints are used. TOTP, recovery codes, e-mail
+identity and cross-Campaign accounts remain outside this mission scope.
 
 ## Current Team Editor scope
 

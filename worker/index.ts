@@ -50,12 +50,16 @@ import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 import {
   adminAccountSessionCookie,
   clearAdminAccountSessionCookie,
+  completeCampaignAdminPasswordReset,
   completeCampaignAdminSetup,
+  createCampaignAdminPasswordResetInvite,
   createCampaignAdminSetupInvite,
   disableCampaignAdminAccount,
   hasCampaignAdminAuthSchema,
+  hasCampaignAdminPasswordResetSchema,
   listCampaignAdminAccounts,
   loginCampaignAdminAccount,
+  renameCampaignAdminAccount,
   revokeCurrentCampaignAdminAccountSession,
 } from "./adminAuth.ts";
 
@@ -170,16 +174,22 @@ function accessRoute(pathname: string) {
 }
 
 function campaignAdminAccountRoute(pathname: string) {
-  const match = pathname.match(
-    /^\/api\/campaigns\/([^/]+)\/admin-accounts(?:\/(login|setup-invites|([^/]+)))?$/,
-  );
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/admin-accounts(?:\/(.*))?$/);
   if (!match) return null;
   try {
     const campaignId = parseCampaignId(decodeURIComponent(match[1]));
-    const action = match[2] ?? null;
-    const accountId = match[3] ? decodeURIComponent(match[3]) : null;
-    if (!campaignId || (accountId && !/^[A-Za-z0-9._:-]{1,200}$/.test(accountId))) return null;
-    return { campaignId, action, accountId };
+    const suffix = match[2] ? match[2].split("/").map((part) => decodeURIComponent(part)) : [];
+    if (!campaignId) return null;
+    if (suffix.length === 0) return { campaignId, kind: "collection" as const, accountId: null };
+    if (suffix.length === 1 && suffix[0] === "login") return { campaignId, kind: "login" as const, accountId: null };
+    if (suffix.length === 1 && suffix[0] === "setup-invites") return { campaignId, kind: "setup-invites" as const, accountId: null };
+    if (suffix.length === 1 && /^[A-Za-z0-9._:-]{1,200}$/.test(suffix[0])) {
+      return { campaignId, kind: "account" as const, accountId: suffix[0] };
+    }
+    if (suffix.length === 2 && /^[A-Za-z0-9._:-]{1,200}$/.test(suffix[0]) && suffix[1] === "password-reset") {
+      return { campaignId, kind: "password-reset" as const, accountId: suffix[0] };
+    }
+    return null;
   } catch {
     return null;
   }
@@ -523,15 +533,28 @@ async function requireCampaignAdminAuthSchema(db: D1DatabaseLike) {
   );
 }
 
+async function requireCampaignAdminPasswordResetSchema(db: D1DatabaseLike) {
+  if (await hasCampaignAdminPasswordResetSchema(db)) return null;
+  return errorResponse(
+    503,
+    "admin_password_reset_schema_unavailable",
+    "Campaign-Admin-Passwort-Resets benötigen die vorbereitete Migration 0016.",
+  );
+}
+
 async function manageCampaignAdminAccounts(
   request: Request,
   db: D1DatabaseLike,
-  route: { campaignId: string; action: string | null; accountId: string | null },
+  route: {
+    campaignId: string;
+    kind: "collection" | "login" | "setup-invites" | "account" | "password-reset";
+    accountId: string | null;
+  },
 ) {
   const schemaError = await requireCampaignAdminAuthSchema(db);
   if (schemaError) return schemaError;
 
-  if (route.action === "login" && request.method === "POST") {
+  if (route.kind === "login" && request.method === "POST") {
     const parsed = await readJsonBody(request);
     if (!parsed.ok) return parsed.response;
     if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
@@ -555,16 +578,48 @@ async function manageCampaignAdminAccounts(
   const auth = await requireAccess(db, request, route.campaignId, ["admin"]);
   if (!auth.ok) return auth.response;
 
-  if (!route.action && request.method === "GET") {
+  if (route.kind === "collection" && request.method === "GET") {
     return json({ accounts: await listCampaignAdminAccounts(db, route.campaignId) });
   }
-  if (route.action === "setup-invites" && request.method === "POST") {
+  if (route.kind === "setup-invites" && request.method === "POST") {
     const invite = await createCampaignAdminSetupInvite(db, route.campaignId);
     return json(invite, { status: 201 });
   }
-  if (route.accountId && request.method === "DELETE") {
+  if (route.kind === "password-reset" && route.accountId && request.method === "POST") {
+    const resetSchemaError = await requireCampaignAdminPasswordResetSchema(db);
+    if (resetSchemaError) return resetSchemaError;
+    const invite = await createCampaignAdminPasswordResetInvite(db, route.campaignId, route.accountId);
+    if (!invite) return errorResponse(404, "admin_account_not_found", "Aktives Admin-Konto wurde nicht gefunden.");
+    return json(invite, { status: 201 });
+  }
+  if (route.kind === "account" && route.accountId && request.method === "PATCH") {
+    const parsed = await readJsonBody(request);
+    if (!parsed.ok) return parsed.response;
+    if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+      return errorResponse(400, "invalid_request", "Admin-Kontodaten sind ungültig.");
+    }
+    const renamed = await renameCampaignAdminAccount(
+      db,
+      route.campaignId,
+      route.accountId,
+      (parsed.value as Record<string, unknown>).username,
+    );
+    if (!renamed.ok) {
+      const message = renamed.code === "username_unavailable"
+        ? "Dieser Benutzername ist in dieser Campaign bereits vergeben."
+        : renamed.code === "account_not_found"
+          ? "Admin-Konto wurde nicht gefunden."
+          : "Der Benutzername muss 3 bis 40 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich oder Bindestrich enthalten.";
+      return errorResponse(400, renamed.code, message);
+    }
+    return json({ ok: true, username: renamed.username });
+  }
+  if (route.kind === "account" && route.accountId && request.method === "DELETE") {
     const disabled = await disableCampaignAdminAccount(db, route.campaignId, route.accountId);
-    if (!disabled) return errorResponse(404, "admin_account_not_found", "Admin-Konto wurde nicht gefunden.");
+    if (disabled === "not_found") return errorResponse(404, "admin_account_not_found", "Admin-Konto wurde nicht gefunden.");
+    if (disabled === "last_account") {
+      return errorResponse(409, "last_admin_account", "Das letzte aktive Admin-Konto kann nicht gesperrt werden.");
+    }
     return json({ ok: true });
   }
   return errorResponse(405, "method_not_allowed", "Methode für Campaign-Admin-Konten nicht erlaubt.");
@@ -597,6 +652,38 @@ async function completeCampaignAdminAccountSetup(
       : completed.code === "setup_link_invalid"
         ? "Der Einrichtungslink ist ungültig, abgelaufen oder bereits verwendet."
         : "Benutzername, Passwort oder Einrichtungslink sind ungültig.";
+    return errorResponse(400, completed.code, message);
+  }
+  return json(
+    { access: publicAccess(completed.access) },
+    { headers: { "set-cookie": adminAccountSessionCookie(completed.session.sessionSecret) } },
+  );
+}
+
+async function completeCampaignAdminAccountPasswordReset(
+  request: Request,
+  db: D1DatabaseLike,
+) {
+  const schemaError = await requireCampaignAdminAuthSchema(db) ?? await requireCampaignAdminPasswordResetSchema(db);
+  if (schemaError) return schemaError;
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+    return errorResponse(400, "invalid_request", "Passwort-Reset-Daten sind ungültig.");
+  }
+  const body = parsed.value as Record<string, unknown>;
+  const campaignId = typeof body.campaignId === "string" ? parseCampaignId(body.campaignId) : null;
+  const token = typeof body.token === "string" ? body.token : "";
+  if (!campaignId) return errorResponse(400, "invalid_campaign", "Campaign-ID ist ungültig.");
+  const completed = await completeCampaignAdminPasswordReset(db, {
+    campaignId,
+    token,
+    password: body.password,
+  });
+  if (!completed.ok) {
+    const message = completed.code === "reset_link_invalid"
+      ? "Der Passwort-Reset-Link ist ungültig, abgelaufen oder bereits verwendet."
+      : "Passwort oder Reset-Link sind ungültig.";
     return errorResponse(400, completed.code, message);
   }
   return json(
@@ -850,6 +937,14 @@ export default {
         return await completeCampaignAdminAccountSetup(request, db);
       } catch {
         return errorResponse(500, "internal_error", "Admin-Konto konnte nicht eingerichtet werden.");
+      }
+    }
+
+    if (db && url.pathname === "/api/admin-accounts/password-reset" && request.method === "POST") {
+      try {
+        return await completeCampaignAdminAccountPasswordReset(request, db);
+      } catch {
+        return errorResponse(500, "internal_error", "Admin-Passwort konnte nicht zurückgesetzt werden.");
       }
     }
 
