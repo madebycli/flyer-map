@@ -31,14 +31,21 @@ Der Snapshot ist nach Abschluss der M5-Transition ausschließlich Read Model, UI
 
 Dieser Slice ändert keine Migration und führt keine zweite Queue, Datenbank oder Mutation-Domain ein.
 
-Letzter vollständig grüner FC5.2-Runtime-Code-Checkpoint:
+Letzter vollständig grüner M5-/FC5.2-Runtime-Code-Checkpoint:
 
 ```text
-Head: f9967033048cf03f2839cd41924cc1bd524a69c5
-CI: #807 success
+Head: aa0852efe909baca63d1cde4eadb49ba3359e1f6
+CI: #821 success
 ```
 
-CI #807 ist auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build. Dieser Prompt kann auf einem späteren reinen Living-Docs-Head liegen; vor weiterer Runtime-Arbeit muss auch dessen exakte CI verifiziert werden.
+CI #821 ist auf exakt diesem korrigierten Runtime-Head grün mit Tests, Typecheck, Dependency Audit und Production Build. Der danach verifizierte Living-Docs-Head ist:
+
+```text
+Head: 3b11f171701a87f7d80b70b48270e616a566693e
+CI: #822 success
+```
+
+Vor weiterer Runtime-Arbeit müssen Branch, PR #72 und die CI des dann aktuellen Heads erneut verifiziert werden.
 
 ## Abgeschlossener Map-/Smart-Data-Hardening-Slice
 
