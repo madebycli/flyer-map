@@ -101,7 +101,7 @@ ADR-0021 ist der normale Mission-Pfad:
 - automatische Tasks dürfen normal ihren Status ändern, aber nicht über normale Client-Mutationen gelöscht werden;
 - nach begonnenem automatischem Work wird eine Geometrieänderung kontrolliert mit `area_has_started_work` blockiert.
 
-Der normale Area Sheet startet `missing` genau einmal, pollt `pending` nur solange das Sheet offen ist, refresht bei `ready` einmal den normalen Campaign-Snapshot und bietet bei `failed` einen autorisierten Retry. `Straße manuell hinzufügen` bleibt Fallback. Die alten Smart-Street-/Smart-House-Auswahlbuttons sind kein normaler Produkteinstieg mehr.
+Der normale Area Sheet startet `missing` genau einmal, pollt `pending` nur solange das Sheet offen ist, refresht bei `ready` einmal den normalen Campaign-Snapshot und bietet bei `failed` einen autorisierten Retry. Nach lokaler Area-Erstellung oder Geometrieänderung toleriert der Poller den kurzen M5-Persistenz-Race mit höchstens fünf weiteren `404 area_not_found`-Reads im Zwei-Sekunden-Takt; andere Fehler bleiben explizit retrybar. `Straße manuell hinzufügen` bleibt Fallback. Die alten Smart-Street-/Smart-House-Auswahlbuttons sind kein normaler Produkteinstieg mehr.
 
 ## Map und Task-Darstellung
 

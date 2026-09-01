@@ -1,6 +1,10 @@
-import type { AreaPreparationPublicState } from "../data/campaignApi";
+import {
+  CampaignApiError,
+  type AreaPreparationPublicState,
+} from "../data/campaignApi.ts";
 
 export const AREA_PREPARATION_POLL_INTERVAL_MS = 2_000;
+export const AREA_PREPARATION_NOT_YET_PERSISTED_RETRY_LIMIT = 5;
 
 export type AreaPreparationClient = {
   fetchState(campaignId: string, areaId: string): Promise<AreaPreparationPublicState>;
@@ -51,9 +55,14 @@ function browserScheduler(): Scheduler {
   };
 }
 
+function isAreaNotYetPersistedError(error: unknown) {
+  return error instanceof CampaignApiError && error.status === 404 && error.code === "area_not_found";
+}
+
 /**
  * Owns one open Area Sheet's short-lived preparation read/poll/retry cycle.
- * It deliberately never retries a failed request on its own.
+ * It only retries the bounded not-yet-persisted Area race; preparation failures
+ * and other request errors still require an explicit user retry.
  */
 export function createAreaPreparationPoller(
   options: AreaPreparationPollerOptions,
@@ -62,6 +71,7 @@ export function createAreaPreparationPoller(
   let stopped = false;
   let inFlight = false;
   let pollTimeout: number | null = null;
+  let notYetPersistedRetryCount = 0;
 
   const clearPoll = () => {
     if (pollTimeout === null) return;
@@ -69,16 +79,17 @@ export function createAreaPreparationPoller(
     pollTimeout = null;
   };
 
-  const schedulePoll = () => {
+  const schedulePoll = (allowAutoStart = false) => {
     clearPoll();
     pollTimeout = scheduler.setTimeout(() => {
       pollTimeout = null;
-      void load(false);
+      void load(allowAutoStart);
     }, AREA_PREPARATION_POLL_INTERVAL_MS);
   };
 
   const applyState = (state: AreaPreparationPublicState) => {
     if (stopped) return;
+    notYetPersistedRetryCount = 0;
     options.onState(state);
     if (state.status === "pending") {
       options.markPending();
@@ -112,6 +123,18 @@ export function createAreaPreparationPoller(
       }
       applyState(state);
     } catch (error) {
+      if (
+        !stopped &&
+        allowAutoStart &&
+        isAreaNotYetPersistedError(error) &&
+        notYetPersistedRetryCount < AREA_PREPARATION_NOT_YET_PERSISTED_RETRY_LIMIT
+      ) {
+        notYetPersistedRetryCount += 1;
+        options.markPending();
+        options.onState(pendingState());
+        schedulePoll(true);
+        return;
+      }
       if (!stopped) options.onError(error);
     } finally {
       inFlight = false;
@@ -125,6 +148,7 @@ export function createAreaPreparationPoller(
     retry() {
       if (stopped || inFlight) return;
       clearPoll();
+      notYetPersistedRetryCount = 0;
       inFlight = true;
       void runStart()
         .catch((error) => {

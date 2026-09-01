@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AREA_PREPARATION_POLL_INTERVAL_MS,
+  AREA_PREPARATION_NOT_YET_PERSISTED_RETRY_LIMIT,
   createAreaPreparationPoller,
 } from "../src/areaPreparation/preparationPolling.ts";
-import type { AreaPreparationPublicState } from "../src/data/campaignApi.ts";
+import {
+  CampaignApiError,
+  type AreaPreparationPublicState,
+} from "../src/data/campaignApi.ts";
 
 const pending: AreaPreparationPublicState = {
   status: "pending",
@@ -121,6 +125,109 @@ test("missing preparation starts once, polls every two seconds, and refreshes on
   assert.equal(fetchCalls, 3);
   assert.deepEqual(states, ["pending", "pending", "pending", "ready"]);
   assert.equal(refreshes, 1);
+  assert.equal(timers.size, 0);
+});
+
+test("a just-created Area can propagate after the first 404 before auto-start", async () => {
+  const timers = timerQueue();
+  const states: string[] = [];
+  let fetchCalls = 0;
+  let startCalls = 0;
+  let pendingMarks = 0;
+  let autoStarts = 0;
+  const poller = createAreaPreparationPoller({
+    campaignId: "campaign-1",
+    areaId: "area-1",
+    client: {
+      async fetchState() {
+        fetchCalls += 1;
+        if (fetchCalls < 3) {
+          throw new CampaignApiError(404, "area_not_found", "Area wurde noch nicht synchronisiert.");
+        }
+        return { ...pending, status: "missing" };
+      },
+      async start() {
+        startCalls += 1;
+        return pending;
+      },
+    },
+    canAutoStart: () => true,
+    markAutoStarted: () => {
+      autoStarts += 1;
+    },
+    markPending: () => {
+      pendingMarks += 1;
+    },
+    hasPending: () => pendingMarks > 0,
+    clearPending: () => {
+      pendingMarks = 0;
+    },
+    onState: (state) => states.push(state.status),
+    onReady: () => {},
+    onError: (error) => {
+      throw error;
+    },
+    scheduler: timers.scheduler,
+  });
+
+  poller.start();
+  await settle();
+  assert.equal(fetchCalls, 1);
+  assert.equal(startCalls, 0);
+  assert.equal(timers.size, 1);
+
+  timers.runNext();
+  await settle();
+  assert.equal(fetchCalls, 2);
+  assert.equal(startCalls, 0);
+  assert.equal(timers.size, 1);
+
+  timers.runNext();
+  await settle();
+  assert.equal(fetchCalls, 3);
+  assert.equal(startCalls, 1);
+  assert.equal(autoStarts, 1);
+  assert.deepEqual(states, ["pending", "pending", "pending", "pending"]);
+  assert.equal(timers.size, 1);
+});
+
+test("not-yet-persisted Area retries stop after a bounded budget", async () => {
+  const timers = timerQueue();
+  const failures: unknown[] = [];
+  let fetchCalls = 0;
+  const poller = createAreaPreparationPoller({
+    campaignId: "campaign-1",
+    areaId: "area-1",
+    client: {
+      async fetchState() {
+        fetchCalls += 1;
+        throw new CampaignApiError(404, "area_not_found", "Area wurde noch nicht synchronisiert.");
+      },
+      async start() {
+        throw new Error("start must not be reached");
+      },
+    },
+    canAutoStart: () => true,
+    markAutoStarted: () => {},
+    markPending: () => {},
+    hasPending: () => true,
+    clearPending: () => {},
+    onState: () => {},
+    onReady: () => {},
+    onError: (error) => failures.push(error),
+    scheduler: timers.scheduler,
+  });
+
+  poller.start();
+  await settle();
+  for (let retry = 0; retry < AREA_PREPARATION_NOT_YET_PERSISTED_RETRY_LIMIT; retry += 1) {
+    assert.equal(timers.size, 1);
+    timers.runNext();
+    await settle();
+  }
+
+  assert.equal(fetchCalls, AREA_PREPARATION_NOT_YET_PERSISTED_RETRY_LIMIT + 1);
+  assert.equal(failures.length, 1);
   assert.equal(timers.size, 0);
 });
 
