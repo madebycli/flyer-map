@@ -5,6 +5,7 @@ import {
 
 export const AREA_PREPARATION_POLL_INTERVAL_MS = 2_000;
 export const AREA_PREPARATION_NOT_YET_PERSISTED_RETRY_LIMIT = 5;
+export const AREA_PREPARATION_STALE_PENDING_MS = 60_000;
 
 export type AreaPreparationClient = {
   fetchState(campaignId: string, areaId: string): Promise<AreaPreparationPublicState>;
@@ -59,10 +60,21 @@ function isAreaNotYetPersistedError(error: unknown) {
   return error instanceof CampaignApiError && error.status === 404 && error.code === "area_not_found";
 }
 
+function isStalePending(state: AreaPreparationPublicState) {
+  if (state.status !== "pending" || !state.updatedAt) return false;
+  const updatedAt = Date.parse(state.updatedAt);
+  return !Number.isFinite(updatedAt) || Date.now() - updatedAt >= AREA_PREPARATION_STALE_PENDING_MS;
+}
+
+function shouldAutoRecover(state: AreaPreparationPublicState) {
+  return state.status === "missing" || state.status === "failed" || isStalePending(state);
+}
+
 /**
  * Owns one open Area Sheet's short-lived preparation read/poll/retry cycle.
- * It only retries the bounded not-yet-persisted Area race; preparation failures
- * and other request errors still require an explicit user retry.
+ * A missing, failed, or stale pending preparation is recovered once per Area
+ * Sheet session through canAutoStart/markAutoStarted. Fresh pending work keeps
+ * polling, and other request errors still require an explicit user retry.
  */
 export function createAreaPreparationPoller(
   options: AreaPreparationPollerOptions,
@@ -114,9 +126,9 @@ export function createAreaPreparationPoller(
     if (stopped || inFlight) return;
     inFlight = true;
     try {
-      let state = await options.client.fetchState(options.campaignId, options.areaId);
+      const state = await options.client.fetchState(options.campaignId, options.areaId);
       if (stopped) return;
-      if (state.status === "missing" && allowAutoStart && options.canAutoStart()) {
+      if (allowAutoStart && shouldAutoRecover(state) && options.canAutoStart()) {
         options.markAutoStarted();
         await runStart();
         return;

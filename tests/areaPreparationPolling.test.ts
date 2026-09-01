@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AREA_PREPARATION_POLL_INTERVAL_MS,
   AREA_PREPARATION_NOT_YET_PERSISTED_RETRY_LIMIT,
+  AREA_PREPARATION_STALE_PENDING_MS,
   createAreaPreparationPoller,
 } from "../src/areaPreparation/preparationPolling.ts";
 import {
@@ -126,6 +127,90 @@ test("missing preparation starts once, polls every two seconds, and refreshes on
   assert.deepEqual(states, ["pending", "pending", "pending", "ready"]);
   assert.equal(refreshes, 1);
   assert.equal(timers.size, 0);
+});
+
+test("failed preparation is automatically restarted once when the Area Sheet opens", async () => {
+  const timers = timerQueue();
+  const states: string[] = [];
+  let startCalls = 0;
+  let autoStarts = 0;
+  const poller = createAreaPreparationPoller({
+    campaignId: "campaign-1",
+    areaId: "area-1",
+    client: {
+      async fetchState() {
+        return {
+          ...pending,
+          status: "failed",
+          errorCode: "area_preparation_osm_failed",
+          updatedAt: "2026-09-01T20:00:00.000Z",
+        };
+      },
+      async start() {
+        startCalls += 1;
+        return { ...pending, updatedAt: "2026-09-02T00:00:00.000Z" };
+      },
+    },
+    canAutoStart: () => autoStarts === 0,
+    markAutoStarted: () => {
+      autoStarts += 1;
+    },
+    markPending() {},
+    hasPending: () => true,
+    clearPending() {},
+    onState: (state) => states.push(state.status),
+    onReady() {},
+    onError(error) {
+      throw error;
+    },
+    scheduler: timers.scheduler,
+  });
+
+  poller.start();
+  await settle();
+  assert.equal(startCalls, 1);
+  assert.equal(autoStarts, 1);
+  assert.deepEqual(states, ["pending", "pending"]);
+  assert.equal(timers.size, 1);
+});
+
+test("stale pending preparation is automatically reclaimed once, while fresh pending keeps polling", async () => {
+  const timers = timerQueue();
+  let startCalls = 0;
+  let autoStarts = 0;
+  const staleUpdatedAt = new Date(Date.now() - AREA_PREPARATION_STALE_PENDING_MS - 1_000).toISOString();
+  const poller = createAreaPreparationPoller({
+    campaignId: "campaign-1",
+    areaId: "area-1",
+    client: {
+      async fetchState() {
+        return { ...pending, updatedAt: staleUpdatedAt };
+      },
+      async start() {
+        startCalls += 1;
+        return { ...pending, updatedAt: new Date().toISOString() };
+      },
+    },
+    canAutoStart: () => autoStarts === 0,
+    markAutoStarted: () => {
+      autoStarts += 1;
+    },
+    markPending() {},
+    hasPending: () => true,
+    clearPending() {},
+    onState() {},
+    onReady() {},
+    onError(error) {
+      throw error;
+    },
+    scheduler: timers.scheduler,
+  });
+
+  poller.start();
+  await settle();
+  assert.equal(startCalls, 1);
+  assert.equal(autoStarts, 1);
+  assert.equal(timers.size, 1);
 });
 
 test("a just-created Area can propagate after the first 404 before auto-start", async () => {
