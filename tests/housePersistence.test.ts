@@ -5,7 +5,7 @@ import type { AccessContext } from "../worker/access.ts";
 import { authorizeSnapshotWrite } from "../worker/authorization.ts";
 import {
   loadCampaignSnapshot,
-  replaceCampaignSnapshot,
+  createInitialCampaignState,
   type D1DatabaseLike,
   type D1PreparedStatement,
   type D1RunResult,
@@ -524,23 +524,23 @@ test("Campaign snapshot loading joins durable House Tasks only when 0005 exists"
   assert.equal(validateCampaignSnapshot(snapshot, "campaign_house-test").valid, true);
 });
 
-test("legacy snapshot replacement blocks House data before 0005 and persists it after 0005", async () => {
+test("initial Campaign create blocks House data before 0005 and persists it after 0005", async () => {
   const snapshot = baseSnapshot();
+  snapshot.revision = 0;
   snapshot.houseTasks = [houseTask()];
 
   const oldDb = new CapturingDatabase(false);
-  const blocked = await replaceCampaignSnapshot(oldDb, snapshot, snapshot.revision - 1);
+  const blocked = await createInitialCampaignState(oldDb, snapshot);
   assert.deepEqual(blocked, {
     ok: false,
-    currentRevision: snapshot.revision - 1,
     reason: "schema_migration_required",
   });
   assert.equal(oldDb.lastBatch.length, 0);
 
   const newDb = new CapturingDatabase(true);
-  const persisted = await replaceCampaignSnapshot(newDb, snapshot, snapshot.revision - 1);
-  assert.deepEqual(persisted, { ok: true, revision: snapshot.revision });
-  assert.equal(newDb.lastBatch.length, 9);
+  const persisted = await createInitialCampaignState(newDb, snapshot);
+  assert.deepEqual(persisted, { ok: true, revision: 0 });
+  assert.equal(newDb.lastBatch.length, 5);
   assert.match(newDb.lastBatch.at(-1)!.query, /INSERT INTO house_tasks/u);
 });
 

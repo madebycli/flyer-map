@@ -607,6 +607,11 @@ export default {
       );
     }
 
+    const snapshotWriteRoute = campaignRoute(url.pathname);
+    if (snapshotWriteRoute?.resource === "snapshot" && request.method === "PUT") {
+      return legacySnapshotWriteResponse();
+    }
+
     if (!env.DB && url.pathname.startsWith("/api/")) {
       return errorResponse(
         503,
@@ -863,11 +868,7 @@ export default {
       }
     }
 
-    const route = campaignRoute(url.pathname);
-    if (route?.resource === "snapshot" && request.method === "PUT") {
-      return legacySnapshotWriteResponse();
-    }
-
+    const route = snapshotWriteRoute;
     if (route && db) {
       try {
         const auth = await requireAccess(db, request, route.campaignId);
