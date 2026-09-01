@@ -23,7 +23,14 @@ Der M5-Transition-Slice ist im Code umgesetzt:
 - normale Campaign-, Team-, Area-, Street-, House-, Collection- und Pickup-Änderungen bleiben auf expliziten M5- oder spezialisierten Mutationen;
 - bei leerer Queue bewahrt der Store einen abweichenden lokalen Zustand als Konfliktkopie, zeigt den kanonischen Serverzustand und macht den Konflikt sichtbar.
 
-Die Repository-, HTTP- und statischen Guard-Tests decken den Insert-only-Create, den 410-Vertrag und das Fehlen des alten Snapshot-Write-Pfads ab. Der exakte Runtime-Head und CI-Checkpoint folgen nach Verifikation des korrigierten Branch-Heads.
+Die Repository-, HTTP- und statischen Guard-Tests decken den Insert-only-Create, den 410-Vertrag und das Fehlen des alten Snapshot-Write-Pfads ab.
+
+```text
+M5 Runtime-Head: aa0852efe909baca63d1cde4eadb49ba3359e1f6
+CI: #821 success
+```
+
+CI #821 ist auf dem korrigierten M5-Code-Head mit Tests, Typecheck, Dependency Audit und Production Build grün. Der Branch kann danach noch reine Living-Docs-Commits enthalten.
 
 ## Feature-Complete-Linie
 
