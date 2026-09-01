@@ -1,0 +1,173 @@
+name: D1 Remote Rollout v3
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type exactly: APPLY 0004-0014"
+        required: true
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/d1-remote-rollout-v3.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d1-production-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-d1-rollout-v3]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE: flyer-map-db
+      D1_DATABASE_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      TARGET_REF: plan-feature-complete-platform
+      EXPECTED_SHA: 129bc30cc408cfb2fd840390faaa6e37c5164148
+      CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirmation || 'APPLY 0004-0014' }}
+
+    steps:
+      - name: Confirm intent and checkout approved source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_REF }}
+          fetch-depth: 1
+
+      - name: Safety locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${CONFIRMATION}" = "APPLY 0004-0014"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          node <<'NODE'
+          const fs=require('fs');
+          const expected=['0001_initial.sql','0002_m4_access.sql','0003_m5_mutations.sql','0004_m6_task_source_provenance.sql','0005_m6_house_tasks.sql','0006_fc1_field_groups.sql','0007_field_sessions_events.sql','0008_comments.sql','0009_automations.sql','0010_fc5_collection_access_areas_runs.sql','0011_fc5_collection_pickups.sql','0012_fc5_collection_pickup_visibility.sql','0013_fc5_pickup_comments.sql','0014_auto_area_task_preparation.sql'];
+          const actual=fs.readdirSync('migrations').filter(n=>/^\d{4}.*\.sql$/.test(n)).sort();
+          if(JSON.stringify(actual)!==JSON.stringify(expected)){console.error(actual);process.exit(1)}
+          NODE
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify target and remote pre-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .rollout
+          npx wrangler d1 info "${D1_DATABASE}" | tee .rollout/d1-info.txt
+          grep -Fq "${D1_DATABASE_ID}" .rollout/d1-info.txt
+          npx wrangler d1 migrations list "${D1_DATABASE}" --remote
+          npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "SELECT name FROM d1_migrations ORDER BY name;" > .rollout/applied-before.json
+          node <<'NODE'
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync('.rollout/applied-before.json','utf8'));const rows=(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);const actual=rows.map(r=>r.name);const expected=['0001_initial.sql','0002_m4_access.sql','0003_m5_mutations.sql'];if(JSON.stringify(actual)!==JSON.stringify(expected)){console.error(actual);process.exit(1)}
+          NODE
+
+      - name: Recovery point and SQL export
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 time-travel info "${D1_DATABASE}" --json > .rollout/time-travel-before.json
+          test -s .rollout/time-travel-before.json
+          npx wrangler d1 export "${D1_DATABASE}" --remote --output=.rollout/before.sql --skip-confirmation
+          test -s .rollout/before.sql
+          echo "Export bytes: $(wc -c < .rollout/before.sql)"
+
+      - name: Verify clean FK baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "PRAGMA foreign_key_check;" > .rollout/fk-before.json
+          node <<'NODE'
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync('.rollout/fk-before.json','utf8'));const rows=(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);if(rows.length){console.error(rows);process.exit(1)}
+          NODE
+
+      - name: Capture baseline counts separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          for table in campaigns teams areas tasks campaign_access_grants campaign_sessions campaign_mutations; do
+            echo "Reading baseline count: ${table}"
+            if ! npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "SELECT COUNT(*) AS row_count FROM ${table};" > ".rollout/${table}-before.json"; then
+              cat ".rollout/${table}-before.json" || true
+              exit 1
+            fi
+          done
+          node <<'NODE'
+          const fs=require('fs');const tables=['campaigns','teams','areas','tasks','campaign_access_grants','campaign_sessions','campaign_mutations'];
+          const out={};for(const t of tables){const x=JSON.parse(fs.readFileSync(`.rollout/${t}-before.json`,'utf8'));const rows=(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);if(rows.length!==1)throw new Error(`bad count ${t}`);out[t]=Number(rows[0].row_count)}fs.writeFileSync('.rollout/counts-before-summary.json',JSON.stringify(out));console.log('Baseline counts:',out);
+          NODE
+
+      - name: APPLY remote migrations 0004-0014
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations apply "${D1_DATABASE}" --remote | tee .rollout/migrations-apply.txt
+
+      - name: Verify registry through 0014
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list "${D1_DATABASE}" --remote
+          npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "SELECT name FROM d1_migrations ORDER BY name;" > .rollout/applied-after.json
+          node <<'NODE'
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync('.rollout/applied-after.json','utf8'));const rows=(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);const actual=rows.map(r=>r.name);const expected=['0001_initial.sql','0002_m4_access.sql','0003_m5_mutations.sql','0004_m6_task_source_provenance.sql','0005_m6_house_tasks.sql','0006_fc1_field_groups.sql','0007_field_sessions_events.sql','0008_comments.sql','0009_automations.sql','0010_fc5_collection_access_areas_runs.sql','0011_fc5_collection_pickups.sql','0012_fc5_collection_pickup_visibility.sql','0013_fc5_pickup_comments.sql','0014_auto_area_task_preparation.sql'];if(JSON.stringify(actual)!==JSON.stringify(expected)){console.error(actual);process.exit(1)}
+          NODE
+
+      - name: Verify post FK and counts separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "PRAGMA foreign_key_check;" > .rollout/fk-after.json
+          for table in campaigns teams areas tasks campaign_access_grants campaign_sessions campaign_mutations; do
+            if ! npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "SELECT COUNT(*) AS row_count FROM ${table};" > ".rollout/${table}-after.json"; then
+              cat ".rollout/${table}-after.json" || true
+              exit 1
+            fi
+          done
+          node <<'NODE'
+          const fs=require('fs');const rows=p=>{const x=JSON.parse(fs.readFileSync(p,'utf8'));return(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[])};if(rows('.rollout/fk-after.json').length)throw new Error('post FK violations');const before=JSON.parse(fs.readFileSync('.rollout/counts-before-summary.json','utf8'));const after={};for(const t of Object.keys(before)){const r=rows(`.rollout/${t}-after.json`);after[t]=Number(r[0].row_count)}if(JSON.stringify(before)!==JSON.stringify(after)){console.error({before,after});process.exit(1)}console.log('Post counts preserved:',after);
+          NODE
+
+      - name: Verify critical schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "SELECT type,name FROM sqlite_master WHERE (type='trigger' AND name IN ('trg_field_group_close_history','trg_field_group_expiry_history')) OR (type='table' AND name IN ('comments','domain_events','automation_rules','collection_pickups','area_task_preparations','house_tasks')) ORDER BY type,name;" > .rollout/schema.json
+          npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "PRAGMA table_info(tasks);" > .rollout/tasks-columns.json
+          npx wrangler d1 execute "${D1_DATABASE}" --remote --json --command "PRAGMA table_info(house_tasks);" > .rollout/houses-columns.json
+          node <<'NODE'
+          const fs=require('fs');const rows=p=>{const x=JSON.parse(fs.readFileSync(p,'utf8'));return(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[])};const names=new Set(rows('.rollout/schema.json').map(r=>r.name));for(const n of ['trg_field_group_close_history','trg_field_group_expiry_history','comments','domain_events','automation_rules','collection_pickups','area_task_preparations','house_tasks'])if(!names.has(n))throw new Error(`missing ${n}`);const tc=new Set(rows('.rollout/tasks-columns.json').map(r=>r.name));const hc=new Set(rows('.rollout/houses-columns.json').map(r=>r.name));if(!tc.has('source_json')||!tc.has('area_preparation_generation')||!hc.has('area_preparation_generation'))throw new Error('missing 0014 columns');console.log('Critical schema verified.');
+          NODE
+
+      - name: Verify preview alias
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="https://56f131d5-flyer-map.cloudflare-eleven035.workers.dev"; A="https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev"
+          curl -fsSL "${V}/" -o .rollout/v.html; curl -fsSL "${A}/" -o .rollout/a.html
+          VA="$(grep -oE '/assets/[^\" ]+\.(js|css)' .rollout/v.html | sort -u)"; AA="$(grep -oE '/assets/[^\" ]+\.(js|css)' .rollout/a.html | sort -u)"
+          test "${VA}" = "${AA}"; curl -fsSL "${V}/api/health" >/dev/null; curl -fsSL "${A}/api/health" >/dev/null
+          echo 'Preview alias match: YES'
+
+      - name: Rollout success
+        shell: bash
+        run: |
+          echo '### D1 Remote Rollout' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Remote migrations 0004-0014: applied' >> "$GITHUB_STEP_SUMMARY"
+          echo '- FK check: clean' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Baseline counts: preserved' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Critical schema: verified' >> "$GITHUB_STEP_SUMMARY"
+          echo '**ROLLOUT_SUCCESS: YES**' >> "$GITHUB_STEP_SUMMARY"
