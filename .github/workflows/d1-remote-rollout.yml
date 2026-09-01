@@ -1,0 +1,416 @@
+name: D1 Remote Rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: "Branch/ref whose migrations are applied"
+        required: true
+        default: "plan-feature-complete-platform"
+        type: string
+      expected_sha:
+        description: "Exact commit SHA required before any remote write"
+        required: true
+        default: "129bc30cc408cfb2fd840390faaa6e37c5164148"
+        type: string
+      confirmation:
+        description: "Type exactly: APPLY 0004-0014"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d1-production-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    name: Apply D1 migrations 0004-0014
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE: flyer-map-db
+      D1_DATABASE_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+
+    steps:
+      - name: Confirm explicit rollout intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirmation }}" != "APPLY 0004-0014" ]; then
+            echo "Confirmation text is incorrect."
+            exit 1
+          fi
+
+      - name: Checkout target ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 1
+
+      - name: Lock exact source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "Checked out SHA: ${ACTUAL_SHA}"
+          if [ "${ACTUAL_SHA}" != "${{ inputs.expected_sha }}" ]; then
+            echo "Ref moved. Expected ${{ inputs.expected_sha }}, got ${ACTUAL_SHA}."
+            exit 1
+          fi
+
+      - name: Verify exact migration set
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+          const expected = [
+            "0001_initial.sql",
+            "0002_m4_access.sql",
+            "0003_m5_mutations.sql",
+            "0004_m6_task_source_provenance.sql",
+            "0005_m6_house_tasks.sql",
+            "0006_fc1_field_groups.sql",
+            "0007_field_sessions_events.sql",
+            "0008_comments.sql",
+            "0009_automations.sql",
+            "0010_fc5_collection_access_areas_runs.sql",
+            "0011_fc5_collection_pickups.sql",
+            "0012_fc5_collection_pickup_visibility.sql",
+            "0013_fc5_pickup_comments.sql",
+            "0014_auto_area_task_preparation.sql",
+          ];
+          const actual = fs.readdirSync("migrations")
+            .filter((name) => /^\d{4}.*\.sql$/.test(name))
+            .sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            console.error("Migration set differs from the approved 0001-0014 set.");
+            console.error("Actual:", actual);
+            process.exit(1);
+          }
+          console.log("Approved migration set verified.");
+          NODE
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install project dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify Wrangler and target D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .rollout
+          npx wrangler --version
+          npx wrangler d1 info "${D1_DATABASE}" > .rollout/d1-info.txt
+          if ! grep -Fq "${D1_DATABASE_ID}" .rollout/d1-info.txt; then
+            echo "D1 database ID does not match the approved database."
+            exit 1
+          fi
+          echo "Target D1 verified."
+
+      - name: Verify remote migration state is exactly 0001-0003
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list "${D1_DATABASE}" --remote
+
+          npx wrangler d1 execute "${D1_DATABASE}" \
+            --remote \
+            --json \
+            --command "SELECT name FROM d1_migrations ORDER BY name;" \
+            > .rollout/applied-before.json
+
+          node <<'NODE'
+          const fs = require("fs");
+          const payload = JSON.parse(fs.readFileSync(".rollout/applied-before.json", "utf8"));
+          const statements = Array.isArray(payload) ? payload : [payload];
+          const rows = statements.flatMap((x) => Array.isArray(x.results) ? x.results : []);
+          const actual = rows.map((row) => row.name);
+          const expected = [
+            "0001_initial.sql",
+            "0002_m4_access.sql",
+            "0003_m5_mutations.sql",
+          ];
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            console.error("Remote migration state is not the approved pre-rollout state.");
+            console.error("Applied migrations:", actual);
+            process.exit(1);
+          }
+          console.log("Remote state verified: only 0001-0003 are applied.");
+          NODE
+
+      - name: Capture rollback point and baseline
+        id: baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROLLBACK_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          echo "rollback_timestamp=${ROLLBACK_TIMESTAMP}" >> "$GITHUB_OUTPUT"
+
+          npx wrangler d1 time-travel info "${D1_DATABASE}" \
+            > .rollout/time-travel-before.txt
+
+          npx wrangler d1 execute "${D1_DATABASE}" \
+            --remote \
+            --json \
+            --command "PRAGMA foreign_key_check;" \
+            > .rollout/fk-before.json
+
+          npx wrangler d1 execute "${D1_DATABASE}" \
+            --remote \
+            --json \
+            --command "SELECT 'campaigns' AS table_name, COUNT(*) AS row_count FROM campaigns
+                       UNION ALL SELECT 'teams', COUNT(*) FROM teams
+                       UNION ALL SELECT 'areas', COUNT(*) FROM areas
+                       UNION ALL SELECT 'tasks', COUNT(*) FROM tasks
+                       UNION ALL SELECT 'campaign_access_grants', COUNT(*) FROM campaign_access_grants
+                       UNION ALL SELECT 'campaign_sessions', COUNT(*) FROM campaign_sessions
+                       UNION ALL SELECT 'campaign_mutations', COUNT(*) FROM campaign_mutations;" \
+            > .rollout/counts-before.json
+
+          node <<'NODE'
+          const fs = require("fs");
+          const payload = JSON.parse(fs.readFileSync(".rollout/fk-before.json", "utf8"));
+          const statements = Array.isArray(payload) ? payload : [payload];
+          const rows = statements.flatMap((x) => Array.isArray(x.results) ? x.results : []);
+          if (rows.length !== 0) {
+            console.error("Foreign-key violations exist before rollout. Aborting.");
+            process.exit(1);
+          }
+          console.log("Baseline foreign-key check clean.");
+          NODE
+
+          echo "Rollback timestamp captured: ${ROLLBACK_TIMESTAMP}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cloudflare migrations apply captures a D1 backup in CI." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: APPLY remote D1 migrations 0004-0014
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Applying approved migrations to ${D1_DATABASE}..."
+          npx wrangler d1 migrations apply "${D1_DATABASE}" --remote \
+            | tee .rollout/migrations-apply.txt
+
+      - name: Verify all 0001-0014 are applied
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list "${D1_DATABASE}" --remote
+
+          npx wrangler d1 execute "${D1_DATABASE}" \
+            --remote \
+            --json \
+            --command "SELECT name FROM d1_migrations ORDER BY name;" \
+            > .rollout/applied-after.json
+
+          node <<'NODE'
+          const fs = require("fs");
+          const payload = JSON.parse(fs.readFileSync(".rollout/applied-after.json", "utf8"));
+          const statements = Array.isArray(payload) ? payload : [payload];
+          const rows = statements.flatMap((x) => Array.isArray(x.results) ? x.results : []);
+          const actual = rows.map((row) => row.name);
+          const expected = [
+            "0001_initial.sql",
+            "0002_m4_access.sql",
+            "0003_m5_mutations.sql",
+            "0004_m6_task_source_provenance.sql",
+            "0005_m6_house_tasks.sql",
+            "0006_fc1_field_groups.sql",
+            "0007_field_sessions_events.sql",
+            "0008_comments.sql",
+            "0009_automations.sql",
+            "0010_fc5_collection_access_areas_runs.sql",
+            "0011_fc5_collection_pickups.sql",
+            "0012_fc5_collection_pickup_visibility.sql",
+            "0013_fc5_pickup_comments.sql",
+            "0014_auto_area_task_preparation.sql",
+          ];
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            console.error("Remote migrations do not exactly match 0001-0014 after apply.");
+            console.error("Applied migrations:", actual);
+            process.exit(1);
+          }
+          console.log("Remote migration registry verified through 0014.");
+          NODE
+
+      - name: Verify integrity and preserve existing row counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "${D1_DATABASE}" \
+            --remote \
+            --json \
+            --command "PRAGMA foreign_key_check;" \
+            > .rollout/fk-after.json
+
+          npx wrangler d1 execute "${D1_DATABASE}" \
+            --remote \
+            --json \
+            --command "SELECT 'campaigns' AS table_name, COUNT(*) AS row_count FROM campaigns
+                       UNION ALL SELECT 'teams', COUNT(*) FROM teams
+                       UNION ALL SELECT 'areas', COUNT(*) FROM areas
+                       UNION ALL SELECT 'tasks', COUNT(*) FROM tasks
+                       UNION ALL SELECT 'campaign_access_grants', COUNT(*) FROM campaign_access_grants
+                       UNION ALL SELECT 'campaign_sessions', COUNT(*) FROM campaign_sessions
+                       UNION ALL SELECT 'campaign_mutations', COUNT(*) FROM campaign_mutations;" \
+            > .rollout/counts-after.json
+
+          node <<'NODE'
+          const fs = require("fs");
+          function rows(path) {
+            const payload = JSON.parse(fs.readFileSync(path, "utf8"));
+            const statements = Array.isArray(payload) ? payload : [payload];
+            return statements.flatMap((x) => Array.isArray(x.results) ? x.results : []);
+          }
+
+          const fk = rows(".rollout/fk-after.json");
+          if (fk.length !== 0) {
+            console.error("Foreign-key violations detected after rollout.");
+            process.exit(1);
+          }
+
+          const before = Object.fromEntries(rows(".rollout/counts-before.json")
+            .map((r) => [r.table_name, Number(r.row_count)]));
+          const after = Object.fromEntries(rows(".rollout/counts-after.json")
+            .map((r) => [r.table_name, Number(r.row_count)]));
+
+          if (JSON.stringify(before) !== JSON.stringify(after)) {
+            console.error("Existing baseline row counts changed.");
+            console.error("Before:", before);
+            console.error("After:", after);
+            process.exit(1);
+          }
+
+          console.log("Foreign-key check clean and baseline row counts preserved.");
+          NODE
+
+      - name: Verify critical 0013 and 0014 schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "${D1_DATABASE}" \
+            --remote \
+            --json \
+            --command "SELECT type, name FROM sqlite_master
+                       WHERE (type='trigger' AND name IN (
+                         'trg_field_group_close_history',
+                         'trg_field_group_expiry_history'
+                       ))
+                       OR (type='table' AND name IN (
+                         'comments',
+                         'domain_events',
+                         'automation_rules',
+                         'collection_pickups',
+                         'area_task_preparations',
+                         'house_tasks'
+                       ))
+                       ORDER BY type, name;" \
+            > .rollout/schema-critical.json
+
+          npx wrangler d1 execute "${D1_DATABASE}" \
+            --remote \
+            --json \
+            --command "SELECT 'tasks' AS table_name, name AS column_name
+                       FROM pragma_table_info('tasks')
+                       WHERE name IN ('source_json','area_preparation_generation')
+                       UNION ALL
+                       SELECT 'house_tasks', name
+                       FROM pragma_table_info('house_tasks')
+                       WHERE name='area_preparation_generation';" \
+            > .rollout/columns-critical.json
+
+          node <<'NODE'
+          const fs = require("fs");
+          function rows(path) {
+            const payload = JSON.parse(fs.readFileSync(path, "utf8"));
+            const statements = Array.isArray(payload) ? payload : [payload];
+            return statements.flatMap((x) => Array.isArray(x.results) ? x.results : []);
+          }
+
+          const schemaNames = new Set(rows(".rollout/schema-critical.json").map((r) => r.name));
+          const requiredSchema = [
+            "trg_field_group_close_history",
+            "trg_field_group_expiry_history",
+            "comments",
+            "domain_events",
+            "automation_rules",
+            "collection_pickups",
+            "area_task_preparations",
+            "house_tasks",
+          ];
+          for (const name of requiredSchema) {
+            if (!schemaNames.has(name)) {
+              console.error(`Missing required schema object: ${name}`);
+              process.exit(1);
+            }
+          }
+
+          const columns = new Set(rows(".rollout/columns-critical.json")
+            .map((r) => `${r.table_name}.${r.column_name}`));
+          for (const name of [
+            "tasks.source_json",
+            "tasks.area_preparation_generation",
+            "house_tasks.area_preparation_generation",
+          ]) {
+            if (!columns.has(name)) {
+              console.error(`Missing required column: ${name}`);
+              process.exit(1);
+            }
+          }
+
+          console.log("Critical 0013/0014 schema verified.");
+          NODE
+
+      - name: Verify current preview and branch alias
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSIONED="https://56f131d5-flyer-map.cloudflare-eleven035.workers.dev"
+          ALIAS="https://plan-feature-complete-platform-flyer-map.cloudflare-eleven035.workers.dev"
+
+          curl -fsSL "${VERSIONED}/" -o .rollout/versioned.html
+          curl -fsSL "${ALIAS}/" -o .rollout/alias.html
+
+          VERSIONED_ASSETS="$(grep -oE '/assets/[^\" ]+\.(js|css)' .rollout/versioned.html | sort -u)"
+          ALIAS_ASSETS="$(grep -oE '/assets/[^\" ]+\.(js|css)' .rollout/alias.html | sort -u)"
+
+          if [ "${VERSIONED_ASSETS}" != "${ALIAS_ASSETS}" ]; then
+            echo "Versioned preview and alias serve different assets."
+            exit 1
+          fi
+
+          curl -fsSL "${VERSIONED}/api/health" > /dev/null
+          curl -fsSL "${ALIAS}/api/health" > /dev/null
+
+          echo "Preview alias asset match: YES" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rollout summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## D1 Remote Rollout"
+            echo
+            echo "- Source ref: \`${{ inputs.target_ref }}\`"
+            echo "- Source SHA: \`${{ inputs.expected_sha }}\`"
+            echo "- Database: \`${D1_DATABASE}\`"
+            echo "- Database ID: \`${D1_DATABASE_ID}\`"
+            echo "- Applied: \`0004-0014\`"
+            echo "- Foreign-key check: clean"
+            echo "- Existing baseline row counts: preserved"
+            echo "- Critical 0013/0014 schema: verified"
+            echo "- Manual Worker deploy: not performed"
+            echo "- PR merge/Ready: not performed"
+            echo
+            echo "**ROLLOUT_SUCCESS: YES**"
+          } >> "$GITHUB_STEP_SUMMARY"
