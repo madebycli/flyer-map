@@ -54,36 +54,12 @@ export function buildPlatformLauncherItems(
 
   if (context?.accessRole) {
     items.push({
-      id: "sessions",
-      label: "Einsätze",
-      icon: "🕘",
-      command: null,
-      opensFieldSessions: true,
-    });
-    items.push({
-      id: "activity",
-      label: "Aktivität",
-      icon: "📰",
-      command: null,
-      opensActivity: true,
-    });
-    items.push({
       id: "stats",
-      label: "Stats",
+      label: "Fortschritt",
       icon: "📊",
       command: null,
       opensStatistics: true,
     });
-    if (context.accessRole === "admin") {
-      items.push({
-        id: "automations",
-        label: "Automationen",
-        icon: "⚡",
-        command: null,
-        opensAutomations: true,
-      });
-    }
-    items.push({ id: "comments", label: "Kommentare", icon: "💬", command: "open-campaign-comments" });
   }
 
   items.push({ id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" });
