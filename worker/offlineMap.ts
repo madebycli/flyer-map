@@ -2,7 +2,6 @@ import {
   OFFLINE_MAP_RADIUS_METERS,
   OFFLINE_MAP_SCHEMA_VERSION,
   isOfflineMapPackage,
-  offlineMapRequestForArea,
   type OfflineMapBounds,
   type OfflineMapAreaGeometry,
   type OfflineMapBuildingFeature,
@@ -20,9 +19,13 @@ const OVERPASS_USER_AGENT = "flyer-map/1.0 (+https://github.com/madebycli/flyer-
 const MAX_REQUEST_BYTES = 4_096;
 const MAX_UPSTREAM_BYTES = 8_000_000;
 const MAX_PACKAGE_BYTES = 10_000_000;
+const AREA_PREPARATION_MAX_AGGREGATE_BYTES = 32_000_000;
 const UPSTREAM_TIMEOUT_MS = 18_000;
 const AREA_UPSTREAM_TIMEOUT_MS = 10_000;
 const AREA_BBOX_BUFFER_METERS = 120;
+const AREA_PREPARATION_TILE_TARGET_METERS = 1_600;
+const AREA_PREPARATION_MAX_TILE_AXIS = 4;
+const AREA_PREPARATION_FETCH_CONCURRENCY = 3;
 const MIN_RADIUS_METERS = 250;
 
 const TAG_ALLOWLIST = new Set([
@@ -293,17 +296,69 @@ function areaBounds(geometry: OfflineMapAreaGeometry) {
   };
 }
 
+type AreaBounds = NonNullable<ReturnType<typeof areaBounds>>;
+
+function buildAreaPreparationQueryForBounds(bounds: AreaBounds) {
+  const bbox = [bounds.south, bounds.west, bounds.north, bounds.east]
+    .map((value) => value.toFixed(7))
+    .join(",");
+  return `[out:json][timeout:8];\n(\n  way["highway"](${bbox});\n  way["building"](${bbox});\n);\nout tags geom qt;`;
+}
+
+function areaPreparationRequest(bounds: AreaBounds): ParsedRequest {
+  const lat = (bounds.south + bounds.north) / 2;
+  const lng = (bounds.west + bounds.east) / 2;
+  const halfLatMeters = ((bounds.north - bounds.south) * 111_320) / 2;
+  const longitudeScale = Math.max(Math.cos((lat * Math.PI) / 180), 0.01);
+  const halfLngMeters = ((bounds.east - bounds.west) * 111_320 * longitudeScale) / 2;
+  return {
+    lat,
+    lng,
+    radiusMeters: Math.max(MIN_RADIUS_METERS, Math.ceil(Math.hypot(halfLatMeters, halfLngMeters))),
+    kind: "all",
+  };
+}
+
+function areaPreparationTileBounds(bounds: AreaBounds) {
+  const centerLat = (bounds.south + bounds.north) / 2;
+  const longitudeScale = Math.max(Math.cos((centerLat * Math.PI) / 180), 0.01);
+  const latSpanMeters = (bounds.north - bounds.south) * 111_320;
+  const lngSpanMeters = (bounds.east - bounds.west) * 111_320 * longitudeScale;
+  const rows = Math.max(
+    1,
+    Math.min(AREA_PREPARATION_MAX_TILE_AXIS, Math.ceil(latSpanMeters / AREA_PREPARATION_TILE_TARGET_METERS)),
+  );
+  const columns = Math.max(
+    1,
+    Math.min(AREA_PREPARATION_MAX_TILE_AXIS, Math.ceil(lngSpanMeters / AREA_PREPARATION_TILE_TARGET_METERS)),
+  );
+  const tiles: AreaBounds[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    const south = bounds.south + ((bounds.north - bounds.south) * row) / rows;
+    const north = bounds.south + ((bounds.north - bounds.south) * (row + 1)) / rows;
+    for (let column = 0; column < columns; column += 1) {
+      const west = bounds.west + ((bounds.east - bounds.west) * column) / columns;
+      const east = bounds.west + ((bounds.east - bounds.west) * (column + 1)) / columns;
+      tiles.push({ south, west, north, east });
+    }
+  }
+  return tiles;
+}
+
 /**
  * Area preparation uses the canonical server-side Area BBox plus a small road-node
  * buffer. The hard ownership boundary remains the polygon clip before persistence.
  */
 export function buildAreaPreparationOverpassQuery(geometry: OfflineMapAreaGeometry) {
   const bounds = areaBounds(geometry);
-  if (!bounds) return null;
-  const bbox = [bounds.south, bounds.west, bounds.north, bounds.east]
-    .map((value) => value.toFixed(7))
-    .join(",");
-  return `[out:json][timeout:8];\n(\n  way["highway"](${bbox});\n  way["building"](${bbox});\n);\nout tags geom qt;`;
+  return bounds ? buildAreaPreparationQueryForBounds(bounds) : null;
+}
+
+/** Large Areas are split only for upstream load control; polygon clipping remains authoritative. */
+export function buildAreaPreparationOverpassQueries(geometry: OfflineMapAreaGeometry) {
+  const bounds = areaBounds(geometry);
+  if (!bounds) return [];
+  return areaPreparationTileBounds(bounds).map(buildAreaPreparationQueryForBounds);
 }
 
 function normalizeTags(tags: Record<string, unknown> | undefined) {
@@ -620,32 +675,66 @@ async function fetchAreaOverpass(
   throw lastError ?? new OfflineMapRequestError(502, "osm_upstream_failed", "OSM-Daten konnten nicht geladen werden.");
 }
 
+async function fetchAreaOverpassQueries(
+  queries: string[],
+  options: OfflineMapHandlerOptions,
+) {
+  const payloads: OverpassPayload[] = [];
+  for (let offset = 0; offset < queries.length; offset += AREA_PREPARATION_FETCH_CONCURRENCY) {
+    const batch = queries.slice(offset, offset + AREA_PREPARATION_FETCH_CONCURRENCY);
+    const settled = await Promise.allSettled(batch.map((query) => fetchAreaOverpass(query, options)));
+    for (const result of settled) {
+      if (result.status === "rejected") throw result.reason;
+      payloads.push(result.value);
+    }
+  }
+  return payloads;
+}
+
+function mergeAreaOverpassPayloads(payloads: OverpassPayload[]): OverpassPayload {
+  const elements = new Map<string, OverpassWay>();
+  let sourceTimestamp: string | null = null;
+  for (const payload of payloads) {
+    if (!Array.isArray(payload.elements)) {
+      throw new OsmFeaturesForAreaError("invalid", "OSM-Antwort enthält keine Way-Collection.");
+    }
+    const candidateTimestamp = payload.osm3s?.timestamp_osm_base;
+    if (typeof candidateTimestamp === "string" && Number.isFinite(Date.parse(candidateTimestamp))) {
+      if (!sourceTimestamp || Date.parse(candidateTimestamp) > Date.parse(sourceTimestamp)) {
+        sourceTimestamp = candidateTimestamp;
+      }
+    }
+    for (const element of payload.elements) {
+      if (!validWay(element)) continue;
+      const key = `${element.type}/${element.id}`;
+      if (!elements.has(key)) elements.set(key, element);
+    }
+  }
+  return {
+    elements: [...elements.values()],
+    ...(sourceTimestamp ? { osm3s: { timestamp_osm_base: sourceTimestamp } } : {}),
+  };
+}
+
 /**
- * Fetches the two OSM feature classes for a persisted Area. The request is
- * derived only from the canonical Area. A narrow buffered BBox limits upstream
- * work; exact Street ownership is still enforced by polygon clipping later.
+ * Fetches the two OSM feature classes for a persisted Area. The Area itself has
+ * no 3-km offline-package limit. Large buffered BBoxes are tiled only to keep
+ * individual Overpass requests bounded; exact Street ownership is still enforced
+ * by polygon clipping before persistence.
  */
 export async function fetchOsmFeaturesForArea(
   options: OsmFeaturesForAreaOptions,
 ): Promise<OsmFeaturesForArea> {
-  const areaRequest = offlineMapRequestForArea(options.geometry);
-  if (!areaRequest) {
-    throw new OsmFeaturesForAreaError(
-      "too_large",
-      `Area überschreitet die maximale Begrenzung von ${OFFLINE_MAP_RADIUS_METERS} Metern.`,
-    );
+  const bounds = areaBounds(options.geometry);
+  if (!bounds) {
+    throw new OsmFeaturesForAreaError("invalid", "Area-Geometrie ist für den OSM-Abruf ungültig.");
   }
-  const query = buildAreaPreparationOverpassQuery(options.geometry);
-  if (!query) {
+  const queries = buildAreaPreparationOverpassQueries(options.geometry);
+  if (queries.length === 0) {
     throw new OsmFeaturesForAreaError("invalid", "Area-Geometrie ist für den OSM-Abruf ungültig.");
   }
 
-  const request: ParsedRequest = {
-    lat: areaRequest.center.lat,
-    lng: areaRequest.center.lng,
-    radiusMeters: areaRequest.radiusMeters,
-    kind: "all",
-  };
+  const request = areaPreparationRequest(bounds);
   const handlerOptions: OfflineMapHandlerOptions = {
     upstreamUrl: options.upstreamUrl,
     fetchImpl: options.fetchImpl,
@@ -656,21 +745,23 @@ export async function fetchOsmFeaturesForArea(
   };
 
   try {
-    const payload = await fetchAreaOverpass(query, handlerOptions);
-    if (!Array.isArray(payload.elements)) {
-      throw new OsmFeaturesForAreaError("invalid", "OSM-Antwort enthält keine Way-Collection.");
-    }
+    const payloads = await fetchAreaOverpassQueries(queries, handlerOptions);
+    const payload = mergeAreaOverpassPayloads(payloads);
+    const normalizationRequest: ParsedRequest = {
+      ...request,
+      radiusMeters: Math.min(request.radiusMeters, OFFLINE_MAP_RADIUS_METERS),
+    };
     const pkg = normalizeOfflineMapPackage(
       payload,
-      request,
+      normalizationRequest,
       (options.now ?? (() => new Date()))(),
     );
-    if (!isOfflineMapPackage(pkg)) {
-      throw new OsmFeaturesForAreaError("invalid", "OSM-Features konnten nicht normalisiert werden.");
-    }
-    const serializedBytes = new TextEncoder().encode(JSON.stringify(pkg)).byteLength;
-    if (serializedBytes > (options.limits?.maxPackageBytes ?? MAX_PACKAGE_BYTES)) {
-      throw new OsmFeaturesForAreaError("too_large", "OSM-Featurepaket überschreitet die Sicherheitsgrenze.");
+    const serializedBytes = new TextEncoder().encode(JSON.stringify({
+      roads: pkg.roads,
+      buildings: pkg.buildings,
+    })).byteLength;
+    if (serializedBytes > (options.limits?.maxPackageBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES)) {
+      throw new OsmFeaturesForAreaError("too_large", "OSM-Featuremenge überschreitet die Sicherheitsgrenze.");
     }
     return {
       roads: pkg.roads.features,
