@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("Activity uses the real production launcher graph and bounded read client", async () => {
+test("Activity remains implemented but is not promoted in the mission launcher", async () => {
   const [worker, api, shell, hub, css, contract] = await Promise.all([
     readFile("worker/activity.ts", "utf8"),
     readFile("src/data/activityApi.ts", "utf8"),
@@ -21,8 +21,8 @@ test("Activity uses the real production launcher graph and bounded read client",
   assert.match(api, /credentials: "same-origin"/u);
   assert.match(api, /cache: "no-store"/u);
   assert.match(api, /cursor/u);
-  assert.match(contract, /id: "activity"/u);
-  assert.match(contract, /label: "Aktivität"/u);
+  assert.match(contract, /id: "settings" \| "team" \| "sessions" \| "activity"/u);
+  assert.doesNotMatch(contract, /label: "Aktivität"/u);
   assert.match(shell, /<ActivityHub/u);
   assert.match(shell, /activityOpen/u);
   assert.match(hub, /Aktivität wird geladen/u);
