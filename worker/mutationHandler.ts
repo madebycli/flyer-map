@@ -176,6 +176,15 @@ export async function handleCampaignMutation(
       );
     }
 
+    if (persisted.reason === "schema_migration_required") {
+      return errorResponse(
+        503,
+        "schema_migration_required",
+        "Smart-Street-Provenienz kann erst nach der vorbereiteten Datenbankmigration gespeichert werden.",
+        persisted.currentRevision,
+      );
+    }
+
     if (attempt === MAX_PERSIST_ATTEMPTS - 1) {
       return errorResponse(
         409,

@@ -3,6 +3,7 @@ import type {
   LineStringGeometry,
   MapCameraView,
   PolygonGeometry,
+  TaskSourceProvenance,
   TaskStatus,
 } from "./campaign";
 
@@ -45,7 +46,13 @@ export type CampaignMutation =
   | MutationBase<"area.delete", { areaId: string; expectedUpdatedAt: string }>
   | MutationBase<
       "task.create",
-      { taskId: string; areaId: string; label: string; geometry: LineStringGeometry }
+      {
+        taskId: string;
+        areaId: string;
+        label: string;
+        geometry: LineStringGeometry;
+        source?: TaskSourceProvenance | null;
+      }
     >
   | MutationBase<
       "task.rename",
@@ -308,6 +315,7 @@ export function applyCampaignMutation(
             taskType: "street",
             label: mutation.payload.label,
             geometry: mutation.payload.geometry,
+            ...(mutation.payload.source ? { source: mutation.payload.source } : {}),
             status: "open",
             completedAt: null,
             createdAt: mutation.createdAt,

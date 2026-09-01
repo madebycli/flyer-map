@@ -1,0 +1,357 @@
+.platform-shell,
+.platform-map-layer {
+  width: 100%;
+  height: 100dvh;
+  min-height: 100%;
+}
+
+.platform-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.platform-map-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.platform-launcher {
+  position: fixed;
+  z-index: 120;
+  top: calc(env(safe-area-inset-top) + 0.55rem);
+  left: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.7rem;
+  padding: 0.45rem 0.72rem;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 0.8rem;
+  color: #172019;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 0.3rem 1.1rem rgb(20 35 24 / 14%);
+  backdrop-filter: blur(12px);
+}
+
+.platform-launcher span {
+  letter-spacing: 0.08em;
+}
+
+.platform-launcher strong {
+  font-size: 0.78rem;
+}
+
+.platform-menu-overlay,
+.platform-module-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  min-height: 100dvh;
+  color: #172019;
+  background: #f4f6f3;
+}
+
+.platform-menu-overlay {
+  z-index: 3200;
+  overflow: auto;
+  padding: calc(env(safe-area-inset-top) + 1rem) 1rem calc(env(safe-area-inset-bottom) + 1rem);
+}
+
+.platform-menu-header,
+.platform-module-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.platform-menu-header {
+  margin: 0 auto 1rem;
+  width: min(74rem, 100%);
+}
+
+.platform-menu-header > div,
+.platform-module-header > div {
+  min-width: 0;
+}
+
+.platform-menu-header span,
+.platform-module-header span,
+.platform-card-heading span {
+  display: block;
+  margin-bottom: 0.18rem;
+  color: #667067;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.platform-menu-header strong,
+.platform-module-header strong {
+  display: block;
+  font-size: clamp(1.05rem, 3vw, 1.35rem);
+}
+
+.platform-menu-header button,
+.platform-module-header button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 0.8rem;
+  color: #172019;
+  background: #fff;
+  font-weight: 800;
+}
+
+.platform-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.8rem;
+  width: min(74rem, 100%);
+  margin: 0 auto;
+}
+
+.platform-menu-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  min-height: 9rem;
+  padding: 1rem;
+  border: 1px solid rgb(23 32 25 / 10%);
+  border-radius: 1rem;
+  color: #172019;
+  background: #fff;
+  box-shadow: 0 0.25rem 1rem rgb(20 35 24 / 6%);
+  text-align: left;
+}
+
+.platform-menu-card:hover {
+  border-color: rgb(37 99 235 / 35%);
+  box-shadow: 0 0.5rem 1.4rem rgb(20 35 24 / 10%);
+}
+
+.platform-menu-card--map {
+  background: linear-gradient(145deg, #fff, #eef6ef);
+}
+
+.platform-menu-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.55rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  color: #31583a;
+  background: #e9f3eb;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.platform-menu-card strong {
+  font-size: 1rem;
+}
+
+.platform-menu-card small {
+  color: #667067;
+  line-height: 1.45;
+}
+
+.platform-menu-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: min(74rem, 100%);
+  margin: 1rem auto 0;
+  color: #667067;
+  font-size: 0.72rem;
+}
+
+.platform-module-overlay {
+  overflow: hidden;
+}
+
+.platform-module-header {
+  flex: 0 0 auto;
+  min-height: 4.25rem;
+  padding: calc(env(safe-area-inset-top) + 0.55rem) 0.7rem 0.55rem;
+  border-bottom: 1px solid rgb(23 32 25 / 10%);
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 0.2rem 0.8rem rgb(20 35 24 / 6%);
+}
+
+.platform-module-header > div {
+  flex: 1;
+  text-align: center;
+}
+
+.platform-module-header button {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.76rem;
+}
+
+.platform-module-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.platform-stack {
+  display: grid;
+  gap: 0.9rem;
+  width: min(74rem, 100%);
+  margin: 0 auto;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+}
+
+.platform-card,
+.platform-foundation-note {
+  border: 1px solid rgb(23 32 25 / 10%);
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 0.25rem 1rem rgb(20 35 24 / 5%);
+}
+
+.platform-card {
+  padding: 0.9rem;
+}
+
+.platform-foundation-note {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.8rem 0.9rem;
+  color: #4b554d;
+  background: #fffbe9;
+}
+
+.platform-foundation-note strong {
+  color: #564b17;
+}
+
+.platform-foundation-note span {
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.platform-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-bottom: 0.75rem;
+}
+
+.platform-team-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.65rem;
+}
+
+.platform-team-progress-card {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.7rem;
+  border: 1px solid rgb(23 32 25 / 9%);
+  border-radius: 0.8rem;
+  background: #f9faf8;
+}
+
+.platform-team-progress-card > div {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.platform-team-progress-card span,
+.platform-team-progress-card small {
+  color: #667067;
+}
+
+.platform-team-dot {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgb(23 32 25 / 10%);
+}
+
+.platform-session-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.platform-session-list article {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.7rem;
+  border: 1px solid rgb(23 32 25 / 9%);
+  border-radius: 0.8rem;
+  background: #f9faf8;
+}
+
+.platform-session-list span,
+.platform-session-list p {
+  margin: 0;
+  color: #667067;
+  font-size: 0.8rem;
+}
+
+/* In der integrierten Plattform-Hülle ersetzt der gemeinsame Header die alten Workbench-Header. */
+.platform-module-content .workbench-preview-topbar,
+.platform-module-content .workbench-preview-note,
+.platform-module-content .m6-selection-header,
+.platform-module-content .admin-workbench-preview__header,
+.platform-module-content .live-group-workbench-preview__header,
+.platform-module-content .action-workbench-preview__header {
+  display: none;
+}
+
+.platform-module-content .workbench-preview,
+.platform-module-content .m6-selection-preview,
+.platform-module-content .admin-workbench-preview,
+.platform-module-content .live-group-workbench-preview,
+.platform-module-content .action-workbench-preview {
+  min-height: 0;
+  background: transparent;
+}
+
+.platform-module-content .workbench-preview-content,
+.platform-module-content .m6-selection-content {
+  padding-top: 0;
+}
+
+@media (min-width: 900px) {
+  .platform-menu-overlay {
+    padding-inline: 1.5rem;
+  }
+
+  .platform-module-header {
+    padding-inline: 1.25rem;
+  }
+
+  .platform-module-content {
+    padding: 1.25rem;
+  }
+
+  .platform-launcher {
+    top: 0.75rem;
+    left: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .platform-menu-card,
+  .platform-launcher {
+    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  }
+
+  .platform-menu-card:active,
+  .platform-launcher:active {
+    transform: scale(0.985);
+  }
+}

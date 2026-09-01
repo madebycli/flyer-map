@@ -221,6 +221,7 @@ export function deriveCampaignMutation(
         areaId: task.areaId,
         label: task.label,
         geometry: task.geometry,
+        ...(task.source ? { source: task.source } : {}),
       },
     };
   }
@@ -232,7 +233,8 @@ export function deriveCampaignMutation(
       oldTask.areaId !== task.areaId ||
       oldTask.taskType !== task.taskType ||
       oldTask.createdAt !== task.createdAt ||
-      !same(oldTask.geometry, task.geometry)
+      !same(oldTask.geometry, task.geometry) ||
+      !same(oldTask.source ?? null, task.source ?? null)
     ) {
       throw new MutationDerivationError("Unveränderliche Task-Felder wurden geändert.");
     }

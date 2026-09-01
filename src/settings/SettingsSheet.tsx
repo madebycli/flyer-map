@@ -8,8 +8,16 @@ import {
   type AccessInfo,
   type AccessRole,
 } from "../data/campaignApi";
+import {
+  downloadOfflineMapPackage,
+  OfflineMapApiError,
+} from "../data/offlineMapApi";
+import {
+  browserOfflineMapRepository,
+  type StoredOfflineMapPackage,
+} from "../data/offlineMapRepository";
 import type { Campaign, MapCameraView, Team } from "../domain/campaign";
-import { saveLanguage, t, type Language } from "../i18n";
+import { saveLanguage, t, type Language, type MessageKey } from "../i18n";
 
 type Props = {
   language: Language;
@@ -28,10 +36,38 @@ type Props = {
   onClose: () => void;
 };
 
+type OfflineBusyState = "idle" | "downloading" | "deleting";
+
 function roleLabel(language: Language, role: AccessRole) {
   if (role === "admin") return t(language, "admin");
   if (role === "team-editor") return t(language, "editor");
   return t(language, "viewer");
+}
+
+function offlineErrorMessage(error: unknown): MessageKey {
+  if (error instanceof OfflineMapApiError) {
+    if (error.status === 401 || error.status === 403) return "offlineMapAccessError";
+    if (error.code === "network_error") return "offlineMapNetworkError";
+    if (error.code === "osm_upstream_timeout") return "offlineMapTimeoutError";
+    if (error.status === 413) return "offlineMapTooLargeError";
+    return "offlineMapDownloadError";
+  }
+  return "offlineMapStorageError";
+}
+
+function formatBytes(language: Language, bytes: number) {
+  const locale = language === "de" ? "de-DE" : "en-US";
+  if (bytes < 1_000_000) {
+    return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(bytes / 1_000)} KB`;
+  }
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / 1_000_000)} MB`;
+}
+
+function formatStoredDate(language: Language, value: string) {
+  return new Intl.DateTimeFormat(language === "de" ? "de-DE" : "en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 export function SettingsSheet({
@@ -59,10 +95,19 @@ export function SettingsSheet({
   const [copyDone, setCopyDone] = useState(false);
   const [accessBusy, setAccessBusy] = useState(false);
   const [accessError, setAccessError] = useState(false);
+  const [offlineRecord, setOfflineRecord] = useState<StoredOfflineMapPackage | null>(null);
+  const [offlineBusy, setOfflineBusy] = useState<OfflineBusyState>("idle");
+  const [offlineMessage, setOfflineMessage] = useState<MessageKey | null>(null);
+  const [offlineMessageError, setOfflineMessageError] = useState(false);
 
   const activeGrants = useMemo(
     () => grants.filter((grant) => grant.revokedAt === null),
     [grants],
+  );
+
+  const offlineSummary = useMemo(
+    () => (offlineRecord ? browserOfflineMapRepository.summary(offlineRecord) : null),
+    [offlineRecord],
   );
 
   const reloadGrants = async () => {
@@ -80,6 +125,26 @@ export function SettingsSheet({
   }, [campaign.id, isAdmin]);
 
   useEffect(() => {
+    let active = true;
+    setOfflineMessage(null);
+    void browserOfflineMapRepository
+      .load(campaign.id)
+      .then((record) => {
+        if (!active) return;
+        setOfflineRecord(record);
+      })
+      .catch(() => {
+        if (!active) return;
+        setOfflineRecord(null);
+        setOfflineMessage("offlineMapStorageError");
+        setOfflineMessageError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [campaign.id]);
+
+  useEffect(() => {
     if (!teamId && teams[0]) setTeamId(teams[0].id);
   }, [teams, teamId]);
 
@@ -90,6 +155,53 @@ export function SettingsSheet({
   const changeLanguage = (nextLanguage: Language) => {
     saveLanguage(nextLanguage);
     onLanguageChange(nextLanguage);
+  };
+
+  const prepareOfflineMap = async () => {
+    if (!currentCamera) {
+      setOfflineMessage("offlineMapNoCamera");
+      setOfflineMessageError(true);
+      return;
+    }
+    if (!access) {
+      setOfflineMessage("offlineMapAccessError");
+      setOfflineMessageError(true);
+      return;
+    }
+
+    const [lng, lat] = currentCamera.center;
+    setOfflineBusy("downloading");
+    setOfflineMessage("offlineMapDownloading");
+    setOfflineMessageError(false);
+    try {
+      const pkg = await downloadOfflineMapPackage(campaign.id, { lat, lng });
+      const stored = await browserOfflineMapRepository.replace(campaign.id, pkg);
+      setOfflineRecord(stored);
+      setOfflineMessage("offlineMapStored");
+      setOfflineMessageError(false);
+    } catch (error) {
+      setOfflineMessage(offlineErrorMessage(error));
+      setOfflineMessageError(true);
+    } finally {
+      setOfflineBusy("idle");
+    }
+  };
+
+  const deleteOfflineMap = async () => {
+    if (!offlineRecord || offlineBusy !== "idle") return;
+    setOfflineBusy("deleting");
+    setOfflineMessage("offlineMapDeleting");
+    setOfflineMessageError(false);
+    try {
+      await browserOfflineMapRepository.remove(campaign.id);
+      setOfflineRecord(null);
+      setOfflineMessage(null);
+    } catch {
+      setOfflineMessage("offlineMapStorageError");
+      setOfflineMessageError(true);
+    } finally {
+      setOfflineBusy("idle");
+    }
   };
 
   const createAccess = async () => {
@@ -170,6 +282,75 @@ export function SettingsSheet({
             </button>
           ) : null}
         </div>
+      </section>
+
+      <section className="settings-section offline-map-section">
+        <h3>{t(language, "offlineMapArea")}</h3>
+        <p className="settings-help">{t(language, "offlineMapBody")}</p>
+
+        {offlineSummary ? (
+          <div className="offline-map-card">
+            <strong>{t(language, "offlineMapStored")}</strong>
+            <dl className="offline-map-meta">
+              <div>
+                <dt>{t(language, "offlineMapSavedAt")}</dt>
+                <dd>{formatStoredDate(language, offlineSummary.savedAt)}</dd>
+              </div>
+              <div>
+                <dt>{t(language, "offlineMapSize")}</dt>
+                <dd>{formatBytes(language, offlineSummary.byteSize)}</dd>
+              </div>
+              <div>
+                <dt>{t(language, "offlineMapRoads")}</dt>
+                <dd>{offlineSummary.roadCount}</dd>
+              </div>
+              <div>
+                <dt>{t(language, "offlineMapBuildings")}</dt>
+                <dd>{offlineSummary.buildingCount}</dd>
+              </div>
+              <div className="offline-map-meta-wide">
+                <dt>{t(language, "offlineMapCenter")}</dt>
+                <dd>
+                  {offlineSummary.center.lat.toFixed(5)}, {offlineSummary.center.lng.toFixed(5)} · {Math.round(offlineSummary.radiusMeters / 1_000)} km
+                </dd>
+              </div>
+            </dl>
+          </div>
+        ) : (
+          <p className="settings-muted">{t(language, "offlineMapNoPackage")}</p>
+        )}
+
+        <div className="settings-actions stacked-mobile">
+          <button
+            className="button primary"
+            type="button"
+            disabled={!access || !currentCamera || offlineBusy !== "idle"}
+            onClick={() => void prepareOfflineMap()}
+          >
+            {offlineRecord ? t(language, "offlineMapUpdate") : t(language, "offlineMapDownload")}
+          </button>
+          {offlineRecord ? (
+            <button
+              className="button danger"
+              type="button"
+              disabled={offlineBusy !== "idle"}
+              onClick={() => void deleteOfflineMap()}
+            >
+              {t(language, "offlineMapDelete")}
+            </button>
+          ) : null}
+        </div>
+
+        {offlineMessage ? (
+          <p
+            className={offlineMessageError ? "settings-error" : "offline-map-status"}
+            role="status"
+            aria-live="polite"
+          >
+            {t(language, offlineMessage)}
+          </p>
+        ) : null}
+        <p className="offline-map-attribution">{t(language, "offlineMapAttribution")}</p>
       </section>
 
       {isAdmin ? (

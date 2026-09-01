@@ -1,6 +1,7 @@
 import type { CampaignMutation } from "../src/domain/mutations.ts";
 import {
   getCampaignRevision,
+  hasTaskSourceProvenanceColumn,
   type D1DatabaseLike,
   type D1PreparedStatement,
 } from "./campaignRepository.ts";
@@ -17,7 +18,7 @@ export type MutationPersistenceResult =
   | {
       ok: false;
       currentRevision: number | null;
-      reason: "revision_conflict" | "mutation_id_reused";
+      reason: "revision_conflict" | "mutation_id_reused" | "schema_migration_required";
     };
 
 export async function getAppliedMutation(
@@ -55,6 +56,7 @@ function mutationStatement(
   db: D1DatabaseLike,
   mutation: CampaignMutation,
   writeToken: string,
+  hasTaskSource: boolean,
 ): D1PreparedStatement {
   const guard = guardExistsSql();
 
@@ -182,24 +184,44 @@ function mutationStatement(
           writeToken,
         );
     case "task.create":
-      return db
-        .prepare(
-          `INSERT INTO tasks (
-             id, campaign_id, area_id, task_type, label, geometry_json,
-             status, completed_at, created_at, updated_at
-           ) SELECT ?, ?, ?, 'street', ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
-        )
-        .bind(
-          mutation.payload.taskId,
-          mutation.campaignId,
-          mutation.payload.areaId,
-          mutation.payload.label,
-          JSON.stringify(mutation.payload.geometry),
-          mutation.createdAt,
-          mutation.createdAt,
-          mutation.campaignId,
-          writeToken,
-        );
+      return hasTaskSource
+        ? db
+            .prepare(
+              `INSERT INTO tasks (
+                 id, campaign_id, area_id, task_type, label, geometry_json, source_json,
+                 status, completed_at, created_at, updated_at
+               ) SELECT ?, ?, ?, 'street', ?, ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
+            )
+            .bind(
+              mutation.payload.taskId,
+              mutation.campaignId,
+              mutation.payload.areaId,
+              mutation.payload.label,
+              JSON.stringify(mutation.payload.geometry),
+              mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
+              mutation.createdAt,
+              mutation.createdAt,
+              mutation.campaignId,
+              writeToken,
+            )
+        : db
+            .prepare(
+              `INSERT INTO tasks (
+                 id, campaign_id, area_id, task_type, label, geometry_json,
+                 status, completed_at, created_at, updated_at
+               ) SELECT ?, ?, ?, 'street', ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
+            )
+            .bind(
+              mutation.payload.taskId,
+              mutation.campaignId,
+              mutation.payload.areaId,
+              mutation.payload.label,
+              JSON.stringify(mutation.payload.geometry),
+              mutation.createdAt,
+              mutation.createdAt,
+              mutation.campaignId,
+              writeToken,
+            );
     case "task.rename":
       return db
         .prepare(
@@ -260,6 +282,16 @@ export async function persistCampaignMutation(
     return { ok: true, revision: existing.appliedRevision, alreadyApplied: true };
   }
 
+  const hasTaskSource =
+    mutation.type === "task.create" ? await hasTaskSourceProvenanceColumn(db) : true;
+  if (mutation.type === "task.create" && mutation.payload.source && !hasTaskSource) {
+    return {
+      ok: false,
+      currentRevision: fromRevision,
+      reason: "schema_migration_required",
+    };
+  }
+
   const writeToken = crypto.randomUUID();
   const nextRevision = fromRevision + 1;
   const claim = db
@@ -292,7 +324,7 @@ export async function persistCampaignMutation(
 
   const results = await db.batch([
     claim,
-    mutationStatement(db, mutation, writeToken),
+    mutationStatement(db, mutation, writeToken, hasTaskSource),
     ledger,
   ]);
 

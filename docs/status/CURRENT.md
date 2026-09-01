@@ -2,124 +2,109 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-25
+last_updated: 2026-08-26
 ---
 
 # Current Project State
 
-## Baseline
+## Product baseline
 
-M4 access/session authorization and PR #21 are merged on `main`.
+Verteil-Flyer is a mobile-first normal website. The architecture still explicitly excludes:
+- native app runtime;
+- installable PWA behavior;
+- Service Worker;
+- Web App Manifest;
+- Background Sync.
 
-M5 resilient mutation synchronization is complete and PR #24 is merged on `main`.
+The field map remains MapLibre GL JS 5.7.1 with the CARTO online basemap. Prepared offline OSM context is stored separately in browser IndexedDB and does not bulk-cache CARTO/OSMF tiles.
 
-Accepted M5 behavior includes:
-- durable IndexedDB-backed mutation queue;
-- Worker-side idempotency and conflict preconditions;
-- explicit blocked-auth / conflict / invalid / retry states;
-- reconnect delivery without duplicate effect;
-- saved Area/Street renderer behavior preserved;
-- remote D1 mutation-ledger migration applied;
-- strict cold fully-offline website startup remains outside the current no-Service-Worker architecture.
+M4 access/session authorization, M5 resilient mutation synchronization and the M5.5 prepared-offline-map storage lifecycle are established mainline foundations.
 
-Verteil-Flyer remains a mobile-first normal website:
-- no native app;
-- no installable PWA;
-- no Service Worker;
-- no Background Sync API.
+## Unified platform UI
 
-Current renderer baseline:
-- MapLibre GL JS **5.7.1 pinned**;
-- CARTO Voyager Retina online basemap;
-- saved Areas/Streets in persistent MapLibre GeoJSON sources/layers;
-- active draw/edit geometry only in SVG;
-- no application-side dense saved-geometry projection loop during browse.
+Plan 014 is completed and verified. The normal website starts in one unified platform shell instead of requiring separate Workbench query URLs to discover the newer UI foundations.
 
-Current Campaign roles remain Admin, Team Editor scoped to one Team, and Viewer. Worker authorization is authoritative.
+The map remains mounted as the primary field workspace. A shared platform menu opens integrated modules without replacing the accepted map/access/sync runtime.
 
-## Active M5.5 prepared offline area
+Integrated modules include:
+- live Campaign progress using the current Campaign snapshot;
+- activity/comments, Pickup and Field Session UI foundations in one operational surface;
+- Smart Streets/House selection UI;
+- Live Group discovery/tour UI foundations;
+- Action/Templates/Analytics UI foundations for authorized Admin access;
+- Support/Feedback;
+- Organization/Admin UI foundations for authorized Admin access.
 
-`docs/plans/active/011-offline-map-area.md` is the active implementation plan.
+The old `?workbench=ui|m6|admin|groups|actions` routes remain available for development and review compatibility.
 
-ADR-0012 is accepted with **Approach A**:
-- bounded approximately 3 km raw OSM subset package;
-- existing Worker owns fixed Overpass-compatible query templates and validation;
-- upstream endpoint is server-configurable/replaceable;
-- normalized versioned JSON/GeoJSON package preserves OSM identity/tags;
-- browser IndexedDB stores the prepared package locally;
-- local MapLibre sources/layers will render prepared context while the already-loaded website is offline;
-- no CARTO or OSM Foundation tile bulk cache;
-- no R2/PMTiles pipeline for v1;
-- same OSM identity/data direction should later feed M6 Smart Streets/Houses.
+Local Foundation UI does not imply durable server persistence. Comments/Pickup/Field Session integration remains explicitly local until the corresponding reviewed persistence slices are implemented. Admin/Live Group security-gated surfaces continue to show only non-authoritative Foundation behavior.
 
-### Slice 1 Worker/package contract
+Verification for the composed UI passed GitHub CI and Cloudflare Workers build/preview on the release branch. The stable branch preview alias remains:
+`https://release-platform-integration-2026-08-26-flyer-map.cloudflare-eleven035.workers.dev`
 
-Complete and merged in PR #26 as `e5a97ac147168c9dcc3a53079324e3494508474f`.
+## Release integration candidate
 
-Implemented:
-- shared `OfflineMapPackage v1` contract and validator;
-- authenticated Campaign-scoped package endpoint;
-- fixed server-owned Overpass query and 3 km maximum;
-- server-configurable upstream;
-- bounded request/upstream/package sizes and timeout;
-- normalized roads/buildings with preserved OSM way ids and inert reviewed tags;
-- OSM attribution/license/source timestamps;
-- tests for hostile query text, limits, normalization and timeout.
+The current platform integration combines the reviewed Workbench slices for the next product generation while preserving the accepted security boundaries.
 
-### Slice 2 IndexedDB lifecycle
+Included runtime/domain work covers:
+- prepared offline map Settings/API/repository/context work;
+- Smart Street/House candidate and selection geometry;
+- accepted ADR-0013 Smart Task identity with application-owned Task ids and OSM provenance only;
+- Smart Street reviewed LineString snapshots and persistence contract;
+- pickup/collection domain and UI foundations;
+- Field Session draft/history/metrics foundations;
+- comments, automation signals and progress/statistics foundations;
+- Live Group draft/discovery/tour UI foundations without shipping the blocked credential runtime;
+- app-like navigation, active Team context, appearance and Support/Feedback surfaces;
+- Organizer/Admin Workbench, templates, action setup, analytics/export and role-template modeling;
+- dedicated security regression matrix and static source guards.
 
-Implemented on PR #27 / branch `m55-offline-map-storage`:
-- separate `verteil-flyer-offline-map` IndexedDB database, isolated from the M5 mutation queue;
-- one package per Campaign;
-- validate-before-replace and transactional `put` without delete-first;
-- failed replacement preserves the previous valid package;
-- read/delete lifecycle;
-- byte-size metadata and package summary;
-- corruption detection;
-- reload/replacement/delete/summary/corruption tests.
+Account/password/TOTP/Organization permission runtime remains intentionally excluded. ADR-0015 and ADR-0016 plus the identity threat model remain review gates before that runtime is implemented.
 
-CI #287 exposed only an explicit TypeScript ESM import-extension issue. Commit `996dd5428dc5ce77cf7a57f76e97717411be44d5` fixed it and CI #288 passed tests, strict TypeScript and production build. Final docs-only head still needs normal CI before merge.
+Live Group QR/code/password credential runtime remains intentionally excluded until ADR-0014 is accepted with its remaining security details.
 
-Implementation order remaining:
-1. merge Slice 2 after final green CI;
-2. Settings download/update/delete UX;
-3. MapLibre offline context;
-4. dense real-mobile acceptance/performance.
+## M6 Smart Street persistence rollout
 
-## Full platform expansion
+ADR-0013 is accepted:
+- durable Street/House Task identity is application-owned;
+- OSM ids are source provenance only;
+- reviewed Street geometry is persisted as a Campaign-owned LineString snapshot;
+- OSM refresh must not silently rewrite Task identity or reviewed geometry/provenance.
 
-Primary umbrella plan:
-- `docs/plans/active/012-platform-app-expansion.md`.
+`migrations/0004_m6_task_source_provenance.sql` adds nullable `tasks.source_json` for Smart Street source provenance. It is additive and is not yet recorded as remotely applied.
 
-Planned sequence after M5.5:
-1. M6 Smart Street + House geometry;
-2. M6.5 Clothes Collection / Pickup mode;
-3. M7 Field Sessions + Live Field Groups + comments/activity/automations;
-4. M8 Organizations + username/password/TOTP admin accounts + configurable permissions + desktop Admin;
-5. M9 statistics/progress + app-like navigation + Support/Feedback + appearance;
-6. M10 security/field hardening/release.
+The Worker is deliberately backward-compatible with a pre-0004 D1 database:
+- Campaign reads detect whether `source_json` exists and use `NULL AS source_json` on the old schema;
+- existing/manual Tasks remain readable and writable before migration;
+- legacy snapshot replacement uses the old Task insert when the column is absent;
+- Smart Street writes that contain provenance are refused before any revision claim with `schema_migration_required` until 0004 is intentionally applied;
+- provenance is never silently discarded to make an old database accept a Smart Street write.
 
-## Security boundary for future accounts
+This compatibility boundary allows application releases to remain safe while migration rollout is handled explicitly.
 
-Account/permissions work is not approved for ad-hoc implementation.
+## Security/release gates
 
-Before M8 account implementation, an accepted ADR/threat model must define password hashing, TOTP secret protection, account sessions/recovery, rate limiting, role/capability evaluation and legacy Campaign Admin migration.
+The release candidate is required to pass together:
+- complete automated test suite;
+- strict TypeScript check;
+- production build;
+- static source guards covering unsafe HTML/code execution, Worker logging, SQL interpolation, forbidden Service Worker/PWA behavior and continuous GPS watch;
+- high-severity dependency audit;
+- Cloudflare Worker build/preview verification.
 
-Mandatory direction already recorded:
-- parameterized/prepared D1 queries;
-- no SQL concatenation with user input;
-- raw passwords/TOTP secrets never logged;
-- injected SQL/HTML/JS/code-like input remains inert data;
-- authentication never replaces Worker-side authorization;
-- Organization tenant isolation is non-bypassable;
-- security/admin/permission changes are audited.
+Release branches run CI directly in addition to pull-request CI so integration fixes are tested before promotion.
 
-## Known follow-ups
+Prepared/parameterized SQL remains mandatory. External/user-controlled content renders inertly. IDs are selectors, not authorization. Worker-side scope checks remain authoritative. Secrets, session material and future password/TOTP/recovery data must never be logged.
 
-Existing follow-ups remain visible:
-- GitHub #22: desktop bottom-toolbar fit/spacing;
-- GitHub #23: production health/recovery/diagnostics and dense Street validation.
+## Architecture still blocked for later milestones
+
+Do not silently implement:
+- Organization account/password/TOTP/session runtime before accepted ADR-0015 and threat-model review;
+- configurable capability enforcement before accepted ADR-0016;
+- Live Group credential runtime before accepted ADR-0014;
+- any Service Worker/PWA/Background Sync path without a later accepted architecture decision;
+- continuous GPS history for sessions/statistics/live groups.
 
 ## Immediate next
 
-Finish/merge PR #27 with final green CI, then implement Plan 011 Slice 3 Settings UX. Do not introduce Service Worker/PWA behavior or cache CARTO/OSMF tiles. Keep M6 behavior outside the current slice until the prepared-area package path is stable.
+Continue the next persistence/security slices from the unified UI baseline without weakening the existing ADR gates. Migration 0004 remains a separate intentional D1 rollout step; until then Smart Street provenance writes fail explicitly and safely rather than corrupting or dropping data.

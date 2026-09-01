@@ -2,9 +2,9 @@
 id: architecture-security
 type: architecture
 status: accepted
-last_updated: 2026-08-25
-related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, plan-012-platform-app-expansion]
-source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, future-security-boundaries]
+last_updated: 2026-08-26
+related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, plan-012-platform-app-expansion]
+source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, m6-smart-street-security, future-security-boundaries]
 ---
 
 # Security and Privacy
@@ -40,7 +40,7 @@ The Worker enforces scope on every write and protected data request.
 
 During the M5 transition:
 - legacy snapshot PUT remains diff-authorized against previous server state;
-- M5 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence.
+- M5/M6 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence.
 
 This prevents a client from bypassing scope by lying about a mutation type or target.
 
@@ -63,7 +63,7 @@ Team Editor grant creation verifies that the scoped Team exists. Access resoluti
 
 There is intentionally no D1 Team foreign key on the grant while the legacy snapshot-replacement compatibility path exists; see `docs/architecture/DATA.md`.
 
-For M5 mutations, Team Editor scope is not inferred from client mutation payload alone. The Worker:
+For mutations, Team Editor scope is not inferred from client mutation payload alone. The Worker:
 1. loads canonical current snapshot;
 2. applies the proposed mutation in memory;
 3. validates the candidate snapshot;
@@ -117,9 +117,32 @@ The route does not write OSM data into D1 and does not include Campaign snapshot
 
 Worker error logging for this route must never log request bodies, cookies, Access Link tokens, session secrets or raw upstream data. A stable error category/name is sufficient for operational diagnosis.
 
+## M6 Smart Street persistence security
+
+ADR-0013 separates durable application identity from external OSM provenance.
+
+Required boundaries:
+- every new Smart Street uses an application-owned generated `task_*` id;
+- OSM way ids remain ordinary non-secret provenance values and never authorize access;
+- the reviewed Street route is a validated Campaign-owned LineString snapshot, not a live reference to remote OSM data;
+- the optional Task `source` object accepts only the reviewed `OpenStreetMap` / `way` / positive-integer `objectIds` shape;
+- unexpected nested provenance fields are rejected at the Worker validation boundary rather than persisted by object spreading;
+- Task geometry and source provenance are immutable through ordinary rename/status mutations;
+- the legacy full-snapshot compatibility write may not strip or rewrite existing Task provenance for any role, including Admin;
+- a future OSM source reconciliation must be a dedicated explicit reviewed mutation with its own authorization and conflict semantics;
+- `source_json` and `geometry_json` values are passed through D1 prepared/parameterized bindings and never concatenated into SQL;
+- malformed stored provenance is treated as invalid stored data, not evaluated content;
+- OSM labels/tags remain inert text if later surfaced alongside the provenance ids.
+
+The Workbench additive `0004_m6_task_source_provenance.sql` migration is not remotely applied merely because it exists in a Draft PR.
+
+No credential, account, role, TOTP or GPS behavior is introduced by this M6 slice.
+
 ## Queue and revocation behavior
 
 IndexedDB queue records may contain domain mutation payloads necessary to retry saved work. They do not contain plaintext Access Link tokens or session secrets.
+
+A Smart Street task-create payload may include reviewed geometry and OSM way provenance. Those values are operational domain data, not credentials.
 
 When a queued request receives 401/403:
 - the record remains locally preserved;
@@ -139,7 +162,7 @@ Initial bootstrap/recovery remains protected by the server-only configured secre
 
 Campaign id alone never creates ownership.
 
-Operator recovery remains a privileged operator mechanism, not an ordinary account login system. M5 does not weaken or replace it.
+Operator recovery remains a privileged operator mechanism, not an ordinary account login system. M5/M6 does not weaken or replace it.
 
 ## Request protections
 
@@ -208,7 +231,7 @@ Mandatory:
 
 If an attacker types SQL, HTML, JavaScript or other code-like text into a username/password/form field, it must remain data and never execute.
 
-The same rule applies to external OSM tags: code-like text from map data remains inert map metadata and is not executable content.
+The same rule applies to external OSM tags and provenance metadata: code-like text from map data remains inert data and is not executable content.
 
 ## Future capability authorization
 
@@ -275,8 +298,10 @@ M5 stores only domain payload and metadata needed to deliver/reconcile queued sa
 
 Prepared offline OSM packages contain public map geometry/metadata and local package metadata only. They do not need user identity, continuous GPS history or private Campaign state.
 
+M6 Smart Street persistence stores only reviewed route geometry plus the OSM way ids needed for source traceability. It does not store raw Overpass responses, browsing history or device location trails in D1.
+
 Field Sessions may store operational values such as date, duration, participant count and Task events. They should not become individual movement surveillance.
 
 Future Organization identity should not collect email/phone merely because account systems often do so if username/password/TOTP meets the accepted product/security design.
 
-See ADR-0009 for Campaign access/session, ADR-0011 for durable mutation/idempotency behavior and ADR-0012 for the prepared offline-map data boundary.
+See ADR-0009 for Campaign access/session, ADR-0011 for durable mutation/idempotency behavior, ADR-0012 for the prepared offline-map data boundary and ADR-0013 for Smart Street/House identity and reviewed source snapshots.

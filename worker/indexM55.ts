@@ -66,11 +66,7 @@ export default {
         );
       }
       return await handleOfflineMapPackage(request, { upstreamUrl: env.OSM_OVERPASS_URL });
-    } catch (error) {
-      console.error(
-        "offline_map_package_error",
-        error instanceof Error ? error.name : "unknown_error",
-      );
+    } catch {
       return jsonError(
         500,
         "offline_package_failed",

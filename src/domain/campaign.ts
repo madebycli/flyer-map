@@ -10,6 +10,12 @@ export type LineStringGeometry = {
   coordinates: LngLat[];
 };
 
+export type TaskSourceProvenance = {
+  dataset: "OpenStreetMap";
+  objectType: "way";
+  objectIds: number[];
+};
+
 export type MapCameraView = {
   center: LngLat;
   zoom: number;
@@ -54,6 +60,11 @@ export type DistributionTask = {
   taskType: "street";
   label: string;
   geometry: LineStringGeometry;
+  /**
+   * Optional for backwards-compatible schema-v3 caches and manual Street Tasks.
+   * Smart Streets persist reviewed external provenance here, never as Task identity.
+   */
+  source?: TaskSourceProvenance | null;
   status: TaskStatus;
   completedAt: string | null;
   createdAt: string;
@@ -75,14 +86,18 @@ export type TeamColor = {
 };
 
 export const TEAM_COLORS: readonly TeamColor[] = [
-  { value: "#2563eb", label: "Blau" },
   { value: "#ea580c", label: "Orange" },
+  { value: "#2563eb", label: "Blau" },
   { value: "#15803d", label: "Grün" },
-  { value: "#7e22ce", label: "Violett" },
   { value: "#be123c", label: "Rot" },
+  { value: "#64748b", label: "Grau" },
+  { value: "#7e22ce", label: "Violett" },
   { value: "#0f766e", label: "Türkis" },
   { value: "#b45309", label: "Gold" },
   { value: "#4338ca", label: "Indigo" },
+  { value: "#0369a1", label: "Petrolblau" },
+  { value: "#a21caf", label: "Magenta" },
+  { value: "#4d7c0f", label: "Olivgrün" },
 ] as const;
 
 export const TASK_STATUS_OPTIONS: readonly { value: TaskStatus; label: string }[] = [

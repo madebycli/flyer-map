@@ -1,0 +1,114 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { SmartRoadCandidate } from "../src/domain/smartCandidates.ts";
+import {
+  selectSmartRoadRange,
+  selectSmartRoadRangeViaWaypoints,
+  smartRoadRouteOptions,
+  smartRoadSelectionLabel,
+} from "../src/domain/smartRoadSelection.ts";
+
+function road(
+  sourceId: string,
+  name: string | null,
+  coordinates: [number, number][],
+): SmartRoadCandidate {
+  return {
+    sourceId,
+    osmId: Number(sourceId.replace(/\D+/gu, "")) || 1,
+    name,
+    ref: null,
+    highway: "residential",
+    geometry: { type: "LineString", coordinates },
+  };
+}
+
+const chain = [
+  road("way/1", "Hauptstraße", [[13.4, 52.5], [13.41, 52.5]]),
+  road("way/2", "Hauptstraße", [[13.41, 52.5], [13.42, 52.5]]),
+  road("way/3", "Andere Straße", [[13.42, 52.5], [13.43, 52.5]]),
+];
+
+const loop = [
+  road("way/1", "A", [[13.4, 52.5], [13.41, 52.5]]),
+  road("way/2", "B", [[13.41, 52.5], [13.42, 52.51]]),
+  road("way/3", "C", [[13.42, 52.51], [13.43, 52.5]]),
+  road("way/4", "D", [[13.41, 52.5], [13.42, 52.49]]),
+  road("way/5", "E", [[13.42, 52.49], [13.43, 52.5]]),
+  road("way/6", "F", [[13.43, 52.5], [13.44, 52.5]]),
+];
+
+test("same start/end source selects one detailed road segment", () => {
+  assert.deepEqual(selectSmartRoadRange(chain, "way/2", "way/2"), {
+    state: "selected",
+    sourceIds: ["way/2"],
+  });
+});
+
+test("start and end anchors select every connected source segment between them regardless of street name", () => {
+  assert.deepEqual(selectSmartRoadRange(chain, "way/1", "way/3"), {
+    state: "selected",
+    sourceIds: ["way/1", "way/2", "way/3"],
+  });
+});
+
+test("disconnected anchors do not guess a route", () => {
+  const roads = [
+    ...chain,
+    road("way/9", "Hauptstraße", [[13.9, 52.5], [13.91, 52.5]]),
+  ];
+  assert.deepEqual(selectSmartRoadRange(roads, "way/1", "way/9"), {
+    state: "disconnected",
+    sourceIds: [],
+  });
+});
+
+test("junction loops with more than one possible path are surfaced as ambiguous", () => {
+  assert.deepEqual(selectSmartRoadRange(loop, "way/1", "way/6"), {
+    state: "ambiguous",
+    sourceIds: [],
+  });
+});
+
+test("ambiguous selection exposes concrete route candidates without choosing one", () => {
+  const options = smartRoadRouteOptions(loop, "way/1", "way/6");
+  assert.equal(options.length, 2);
+  assert.deepEqual(
+    options.map((option) => option.sourceIds),
+    [
+      ["way/1", "way/2", "way/3", "way/6"],
+      ["way/1", "way/4", "way/5", "way/6"],
+    ],
+  );
+});
+
+test("an explicit waypoint resolves the intended branch when each leg is unique", () => {
+  assert.deepEqual(selectSmartRoadRangeViaWaypoints(loop, ["way/1", "way/2", "way/6"]), {
+    state: "selected",
+    sourceIds: ["way/1", "way/2", "way/3", "way/6"],
+  });
+});
+
+test("waypoint selection remains ambiguous when the chosen waypoint does not disambiguate a leg", () => {
+  assert.deepEqual(selectSmartRoadRangeViaWaypoints(loop, ["way/1", "way/6"]), {
+    state: "ambiguous",
+    sourceIds: [],
+  });
+});
+
+test("route option limit is bounded and rejects invalid limits", () => {
+  assert.equal(smartRoadRouteOptions(loop, "way/1", "way/6", 1).length, 1);
+  assert.deepEqual(smartRoadRouteOptions(loop, "way/1", "way/6", 0), []);
+  assert.deepEqual(smartRoadRouteOptions(loop, "way/1", "way/6", 6), []);
+});
+
+test("unknown anchors are rejected", () => {
+  assert.deepEqual(selectSmartRoadRange(chain, "way/missing", "way/2"), {
+    state: "disconnected",
+    sourceIds: [],
+  });
+});
+
+test("multi-segment selection label reports exact section count instead of grouping by road name", () => {
+  assert.equal(smartRoadSelectionLabel(chain, ["way/1", "way/2", "way/3"]), "3 Straßenabschnitte");
+});

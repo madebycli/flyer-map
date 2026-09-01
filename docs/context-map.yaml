@@ -100,6 +100,13 @@ nodes:
     topics: [identity, accounts, username, password, totp, 2fa, permissions, capabilities, roles, admin-transfer, injection]
     load_when: [admin login, accounts, 2FA, TOTP, permission settings, role matrix, capability model, admin transfer, password security]
 
+  - id: identity-threat-model
+    path: docs/architecture/IDENTITY_THREAT_MODEL.md
+    type: architecture
+    status: proposed
+    topics: [threat-model, accounts, password, totp, sessions, csrf, xss, injection, tenant-isolation, recovery, security-testing]
+    load_when: [account threat model, admin login security review, TOTP security, account release gate, tenant isolation testing]
+
   - id: live-teams
     path: docs/architecture/LIVE_TEAMS.md
     type: architecture
@@ -156,6 +163,34 @@ nodes:
     topics: [offline-map, osm, overpass, indexeddb, geojson, m5.5]
     load_when: [prepared offline map, OSM source, offline map package, M5.5 implementation, Smart Street source]
 
+  - id: adr-smart-task-identity
+    path: docs/decisions/ADR-0013-smart-street-house-identity.md
+    type: decision
+    status: accepted
+    topics: [m6, smart-streets, houses, osm-identity, task-identity, source-provenance, splitting, multi-way]
+    load_when: [Smart Street persistence, House persistence, Street splitting, OSM task identity, multi-way Street tasks, M6 schema]
+
+  - id: adr-live-field-group-credentials
+    path: docs/decisions/ADR-0014-live-field-group-credentials.md
+    type: decision
+    status: proposed
+    topics: [live-teams, field-groups, qr, join-code, temporary-credentials, discoverability, rate-limit]
+    load_when: [Field Group credential design, QR join, live group code, discoverability policy, temporary group access]
+
+  - id: adr-admin-identity
+    path: docs/decisions/ADR-0015-organization-admin-identity-totp-sessions.md
+    type: decision
+    status: proposed
+    topics: [accounts, username, password, pbkdf2, totp, recovery-codes, sessions, rate-limit, encryption]
+    load_when: [Organization Admin accounts, password hashing, TOTP enrollment, Admin sessions, account recovery]
+
+  - id: adr-capability-roles
+    path: docs/decisions/ADR-0016-capability-role-templates.md
+    type: decision
+    status: proposed
+    topics: [permissions, capabilities, role-templates, delegation, admin-manage, tenant-isolation]
+    load_when: [permission implementation, role templates, configurable permissions, capability checks, Admin delegation]
+
   - id: plan-renderer-recovery
     path: docs/plans/completed/008-renderer-access-recovery.md
     type: plan
@@ -190,6 +225,13 @@ nodes:
     status: active
     topics: [platform-expansion, app-shell, statistics, field-sessions, live-teams, collection, pickup, admin, organizations, permissions, accounts, totp, support]
     load_when: [full platform work, next generation planning, app-like UI, live teams, admin accounts, permissions, statistics, collection mode, support]
+
+  - id: plan-unified-platform-ui
+    path: docs/plans/completed/014-unified-platform-ui.md
+    type: plan
+    status: completed
+    topics: [ui, unified-ui, app-shell, navigation, progress, comments, pickup, field-sessions, smart-streets, live-groups, admin, support]
+    load_when: [unified website UI, platform shell, module navigation, current composed interface, Plan 014 history]
 
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
@@ -226,6 +268,8 @@ edges:
   - { from: organizations, to: data, relation: requires_schema_extension }
   - { from: identity-permissions, to: security, relation: constrained_by }
   - { from: identity-permissions, to: data, relation: requires_schema_extension }
+  - { from: identity-threat-model, to: identity-permissions, relation: threat_models }
+  - { from: identity-threat-model, to: security, relation: validates_against }
   - { from: live-teams, to: security, relation: constrained_by }
   - { from: live-teams, to: offline-sync, relation: reuses_conflict_model }
   - { from: live-teams, to: collaboration, relation: creates_field_sessions }
@@ -239,6 +283,18 @@ edges:
   - { from: adr-offline-map-data, to: map, relation: governs }
   - { from: adr-offline-map-data, to: stack, relation: constrains }
   - { from: adr-offline-map-data, to: offline-sync, relation: shares_indexeddb_boundary }
+  - { from: adr-smart-task-identity, to: map, relation: governs_m6_identity }
+  - { from: adr-smart-task-identity, to: data, relation: governs_m6_task_persistence }
+  - { from: adr-smart-task-identity, to: offline-sync, relation: requires_stable_mutation_targets }
+  - { from: adr-live-field-group-credentials, to: live-teams, relation: proposes }
+  - { from: adr-live-field-group-credentials, to: security, relation: constrained_by }
+  - { from: adr-live-field-group-credentials, to: offline-sync, relation: reuses_offline_rules }
+  - { from: adr-admin-identity, to: identity-permissions, relation: proposes_identity_layer }
+  - { from: adr-admin-identity, to: identity-threat-model, relation: requires_review_of }
+  - { from: adr-admin-identity, to: security, relation: constrained_by }
+  - { from: adr-capability-roles, to: identity-permissions, relation: proposes_permission_layer }
+  - { from: adr-capability-roles, to: organizations, relation: scoped_by }
+  - { from: adr-capability-roles, to: security, relation: constrained_by }
   - { from: plan-renderer-recovery, to: map, relation: changed }
   - { from: plan-renderer-recovery, to: security, relation: changed }
   - { from: plan-platform-roadmap, to: roadmap, relation: foundation_for }
@@ -258,8 +314,16 @@ edges:
   - { from: plan-platform-expansion, to: live-teams, relation: requires }
   - { from: plan-platform-expansion, to: collaboration, relation: requires }
   - { from: plan-platform-expansion, to: map, relation: extends }
+  - { from: plan-platform-expansion, to: adr-smart-task-identity, relation: implements_accepted_decision }
+  - { from: plan-platform-expansion, to: adr-live-field-group-credentials, relation: requires_before_live_credentials }
+  - { from: plan-platform-expansion, to: adr-admin-identity, relation: requires_before_accounts }
+  - { from: plan-platform-expansion, to: adr-capability-roles, relation: requires_before_permissions }
+  - { from: plan-platform-expansion, to: identity-threat-model, relation: requires_security_review }
   - { from: plan-platform-expansion, to: security, relation: constrained_by }
   - { from: plan-platform-expansion, to: quality, relation: validated_by }
+  - { from: plan-unified-platform-ui, to: plan-platform-expansion, relation: composes_foundations_from }
+  - { from: plan-unified-platform-ui, to: ux, relation: implements_app_shell }
+  - { from: plan-unified-platform-ui, to: quality, relation: validated_by }
   - { from: prompts, to: architecture, relation: onboards_to }
   - { from: prompts, to: roadmap, relation: onboards_to }
   - { from: prompt-platform-expansion, to: plan-platform-expansion, relation: starts }

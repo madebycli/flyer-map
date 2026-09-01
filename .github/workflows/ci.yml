@@ -3,13 +3,16 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "release-*"
 
 permissions:
   contents: read
 
 jobs:
   check:
+    # Release integration branches use these same gates before promotion to main.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -21,5 +24,11 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Typecheck and build
-        run: npm run check
+      - name: Test
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Dependency audit
+        run: npm run audit:dependencies
+      - name: Production build
+        run: npm run build

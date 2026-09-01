@@ -36,8 +36,29 @@ function immutableTaskFieldsUnchanged(
     previous.campaignId === next.campaignId &&
     previous.areaId === next.areaId &&
     previous.taskType === next.taskType &&
-    previous.createdAt === next.createdAt
+    previous.createdAt === next.createdAt &&
+    same(previous.source ?? null, next.source ?? null)
   );
+}
+
+function existingSmartStreetSnapshotUnchanged(
+  previous: CampaignSnapshot,
+  next: CampaignSnapshot,
+): WriteAuthorization {
+  const nextTaskMap = new Map(next.tasks.map((task) => [task.id, task]));
+  for (const previousTask of previous.tasks) {
+    const nextTask = nextTaskMap.get(previousTask.id);
+    if (!nextTask) continue;
+
+    if (!same(previousTask.source ?? null, nextTask.source ?? null)) {
+      return { allowed: false, reason: "task_source_provenance_immutable" };
+    }
+
+    if (previousTask.source && !same(previousTask.geometry, nextTask.geometry)) {
+      return { allowed: false, reason: "smart_street_geometry_immutable" };
+    }
+  }
+  return { allowed: true };
 }
 
 export function authorizeSnapshotWrite(
@@ -48,6 +69,13 @@ export function authorizeSnapshotWrite(
   if (access.campaignId !== previous.campaign.id || access.campaignId !== next.campaign.id) {
     return { allowed: false, reason: "credential_campaign_mismatch" };
   }
+
+  // Legacy full-snapshot writes may still exist during the M5 transition. Existing
+  // Smart Street provenance and its reviewed geometry snapshot are immutable there
+  // for every role, including Admin. A future reviewed source-reconciliation
+  // mutation can define an explicit change path.
+  const smartStreetCheck = existingSmartStreetSnapshotUnchanged(previous, next);
+  if (!smartStreetCheck.allowed) return smartStreetCheck;
 
   if (access.role === "admin") return { allowed: true };
   if (access.role === "viewer") return { allowed: false, reason: "viewer_read_only" };

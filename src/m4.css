@@ -44,6 +44,25 @@
   opacity: 0.68;
 }
 
+.offline-map-context-badge {
+  position: absolute;
+  z-index: 18;
+  right: 0.72rem;
+  bottom: calc(env(safe-area-inset-bottom) + 12.1rem);
+  max-width: min(72vw, 21rem);
+  padding: 0.42rem 0.58rem;
+  border: 1px solid rgb(47 65 53 / 14%);
+  border-radius: 0.68rem;
+  color: #344139;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 0.22rem 0.8rem rgb(20 35 24 / 10%);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.3;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
 @keyframes map-refresh-spin {
   to {
     transform: rotate(360deg);
@@ -82,7 +101,11 @@
 }
 
 .settings-subsection > p,
-.settings-error {
+.settings-error,
+.settings-help,
+.settings-muted,
+.offline-map-status,
+.offline-map-attribution {
   margin: 0;
   color: #5b685f;
   font-size: 0.73rem;
@@ -91,6 +114,68 @@
 
 .settings-error {
   color: #8f1f22;
+}
+
+.settings-muted {
+  color: #748078;
+}
+
+.offline-map-status {
+  color: #1c6a39;
+  font-weight: 700;
+}
+
+.offline-map-card {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.72rem;
+  border: 1px solid #b9d2c0;
+  border-radius: 0.85rem;
+  background: #f1f8f3;
+}
+
+.offline-map-card > strong {
+  color: #1f5131;
+  font-size: 0.76rem;
+}
+
+.offline-map-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.75rem;
+  margin: 0;
+}
+
+.offline-map-meta > div {
+  min-width: 0;
+}
+
+.offline-map-meta-wide {
+  grid-column: 1 / -1;
+}
+
+.offline-map-meta dt,
+.offline-map-meta dd {
+  margin: 0;
+}
+
+.offline-map-meta dt {
+  color: #647168;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.offline-map-meta dd {
+  margin-top: 0.12rem;
+  overflow-wrap: anywhere;
+  color: #26342b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.offline-map-attribution {
+  color: #68756c;
+  font-size: 0.66rem;
 }
 
 .settings-actions {
@@ -187,6 +272,11 @@
   .map-refresh-control {
     right: 0.55rem;
     bottom: calc(env(safe-area-inset-bottom) + 8.65rem);
+  }
+
+  .offline-map-context-badge {
+    right: 0.55rem;
+    bottom: calc(env(safe-area-inset-bottom) + 11.85rem);
   }
 
   .settings-actions.stacked-mobile {

@@ -147,6 +147,10 @@ test("a failed revision claim reports conflict instead of success", async () => 
   const db = new FakeDatabase(0, 9);
   const result = await replaceCampaignSnapshot(db, snapshotWithManyTasks(1), 7);
 
-  assert.deepEqual(result, { ok: false, currentRevision: 9 });
+  assert.deepEqual(result, {
+    ok: false,
+    currentRevision: 9,
+    reason: "revision_conflict",
+  });
   assert.equal(db.lastBatch.length, 7);
 });
