@@ -53,7 +53,7 @@ test("Area preparation query uses a narrow buffered BBox instead of the offline 
   assert.doesNotMatch(query, /around:/u);
 });
 
-test("custom Area Overpass upstream remains single-attempt and receives the BBox query", async () => {
+test("custom Area Overpass upstream remains single-attempt, identified and receives the BBox query", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const result = await fetchOsmFeaturesForArea({
     geometry: area,
@@ -66,13 +66,15 @@ test("custom Area Overpass upstream remains single-attempt and receives the BBox
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "http://localhost/overpass");
+  const headers = new Headers(calls[0].init?.headers);
+  assert.match(headers.get("user-agent") ?? "", /^flyer-map\/1\.0/u);
   const query = String(new URLSearchParams(String(calls[0].init?.body)).get("data"));
   assert.doesNotMatch(query, /around:/u);
   assert.equal(result.roads.length, 1);
   assert.equal(result.buildings.length, 1);
 });
 
-test("default Area preparation fails over once after a transient primary Overpass error", async () => {
+test("default Area preparation prefers private.coffee and fails over once after a transient primary error", async () => {
   const urls: string[] = [];
   const result = await fetchOsmFeaturesForArea({
     geometry: area,
@@ -84,8 +86,8 @@ test("default Area preparation fails over once after a transient primary Overpas
   });
 
   assert.deepEqual(urls, [
-    "https://overpass-api.de/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
   ]);
   assert.equal(result.roads.length, 1);
   assert.equal(result.buildings.length, 1);
@@ -104,5 +106,5 @@ test("non-retryable Area package-size failures do not hammer fallback instances"
     }),
     (error: unknown) => error instanceof Error && error.name === "OsmFeaturesForAreaError",
   );
-  assert.deepEqual(urls, ["https://overpass-api.de/api/interpreter"]);
+  assert.deepEqual(urls, ["https://overpass.private.coffee/api/interpreter"]);
 });

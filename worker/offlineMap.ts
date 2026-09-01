@@ -13,9 +13,10 @@ import {
 
 const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const DEFAULT_AREA_OVERPASS_URLS = [
-  DEFAULT_OVERPASS_URL,
   "https://overpass.private.coffee/api/interpreter",
+  DEFAULT_OVERPASS_URL,
 ] as const;
+const OVERPASS_USER_AGENT = "flyer-map/1.0 (+https://github.com/madebycli/flyer-map)";
 const MAX_REQUEST_BYTES = 4_096;
 const MAX_UPSTREAM_BYTES = 8_000_000;
 const MAX_PACKAGE_BYTES = 10_000_000;
@@ -462,6 +463,7 @@ async function fetchOverpass(
       headers: {
         accept: "application/json",
         "content-type": "application/x-www-form-urlencoded",
+        "user-agent": OVERPASS_USER_AGENT,
       },
       body: new URLSearchParams({ data: buildOfflineMapOverpassQuery(input) }),
       signal: controller.signal,
@@ -557,6 +559,7 @@ async function fetchAreaOverpass(
         headers: {
           accept: "application/json",
           "content-type": "application/x-www-form-urlencoded",
+          "user-agent": OVERPASS_USER_AGENT,
         },
         body: new URLSearchParams({ data: query }),
         signal: controller.signal,
