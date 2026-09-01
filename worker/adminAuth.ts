@@ -85,6 +85,11 @@ export function validCampaignAdminPassword(value: unknown): value is string {
 }
 
 async function derivePassword(password: string, salt: Uint8Array, iterations: number) {
+  // Make a fresh ArrayBuffer-backed copy for the current TypeScript WebCrypto
+  // definitions. The source may be typed as ArrayBufferLike, while Workers
+  // accepts this byte sequence as the PBKDF2 salt.
+  const workerSalt = new Uint8Array(salt.byteLength);
+  workerSalt.set(salt);
   const material = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(password),
@@ -93,7 +98,7 @@ async function derivePassword(password: string, salt: Uint8Array, iterations: nu
     ["deriveBits"],
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+    { name: "PBKDF2", hash: "SHA-256", salt: workerSalt, iterations },
     material,
     256,
   );
