@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("Automationen use the real Admin launcher path and remain server-controlled", async () => {
+test("Automationen remain server-controlled but are not promoted in the mission launcher", async () => {
   const [worker, api, shell, hub, css, contract, domain] = await Promise.all([
     readFile("worker/automationConfig.ts", "utf8"),
     readFile("src/data/automationApi.ts", "utf8"),
@@ -19,8 +19,8 @@ test("Automationen use the real Admin launcher path and remain server-controlled
   assert.match(api, /credentials: "same-origin"/u);
   assert.match(api, /cache: "no-store"/u);
   assert.match(api, /method: "PATCH"/u);
-  assert.match(contract, /context\.accessRole === "admin"/u);
-  assert.match(contract, /label: "Automationen"/u);
+  assert.doesNotMatch(contract, /context\.accessRole === "admin"/u);
+  assert.doesNotMatch(contract, /label: "Automationen"/u);
   assert.match(shell, /<AutomationHub/u);
   assert.match(shell, /automationsOpen/u);
   assert.match(hub, /Migration 0009/u);
