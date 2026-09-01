@@ -7,7 +7,6 @@ import {
   shouldStartAreaPreparation,
   type AreaPreparationExecutionContext,
   type AreaTaskPreparationOptions,
-  type PrepareAreaTasksResult,
 } from "./areaTaskPreparation.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
 
@@ -25,34 +24,6 @@ const json = (data: unknown, init: ResponseInit = {}) =>
 
 const error = (status: number, code: string, message: string) =>
   json({ error: { code, message } }, { status });
-
-function logPreparationResult(
-  generation: string,
-  geometryHash: string,
-  result: PrepareAreaTasksResult,
-) {
-  const correlation = `${generation.slice(0, 8)}:${geometryHash.slice(0, 10)}`;
-  if (result.outcome === "ready") {
-    console.info("[area-preparation] job-ready", {
-      correlation,
-      roadCount: result.roadCount,
-      houseCount: result.houseCount,
-    });
-    return;
-  }
-  if (result.outcome === "failed" || result.outcome === "stale") {
-    console.warn("[area-preparation] job-failed", {
-      correlation,
-      outcome: result.outcome,
-      code: result.code,
-    });
-    return;
-  }
-  console.info("[area-preparation] job-finished", {
-    correlation,
-    outcome: result.outcome,
-  });
-}
 
 export function areaTaskPreparationRoute(pathname: string): PreparationRoute | null {
   const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/areas\/([^/]+)\/preparation$/u);
@@ -127,22 +98,7 @@ export async function handleAreaTaskPreparationApi(
 
   const preparation = await beginAreaTaskPreparation(db, route.campaignId, route.areaId, options);
   if (preparation.outcome === "run") {
-    const { generation, geometryHash } = preparation.run;
-    console.info("[area-preparation] job-started", {
-      correlation: `${generation.slice(0, 8)}:${geometryHash.slice(0, 10)}`,
-    });
-    const job = runAreaTaskPreparation(db, preparation.run, options)
-      .then((result) => {
-        logPreparationResult(generation, geometryHash, result);
-        return result;
-      })
-      .catch((caught) => {
-        console.error("[area-preparation] job-unhandled", {
-          correlation: `${generation.slice(0, 8)}:${geometryHash.slice(0, 10)}`,
-          errorName: caught instanceof Error ? caught.name : "unknown",
-        });
-        throw caught;
-      });
+    const job = runAreaTaskPreparation(db, preparation.run, options);
     if (context) context.waitUntil(job);
     else void job;
   } else if (

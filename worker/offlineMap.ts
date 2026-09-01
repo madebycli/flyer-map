@@ -551,14 +551,7 @@ async function fetchAreaOverpass(
       () => controller.abort(),
       options.timeoutMs ?? AREA_UPSTREAM_TIMEOUT_MS,
     );
-    const endpointHost = new URL(endpoint).host;
-    const startedAt = Date.now();
     try {
-      console.info("[area-preparation] osm-attempt", {
-        attempt: index + 1,
-        totalAttempts: endpoints.length,
-        endpoint: endpointHost,
-      });
       const response = await (options.fetchImpl ?? fetch)(endpoint, {
         method: "POST",
         headers: {
@@ -611,23 +604,10 @@ async function fetchAreaOverpass(
           "OSM-Datenquelle hat ungültige Daten geliefert.",
         );
       }
-      console.info("[area-preparation] osm-success", {
-        attempt: index + 1,
-        endpoint: endpointHost,
-        durationMs: Date.now() - startedAt,
-        responseBytes: bytes.byteLength,
-      });
       return payload as OverpassPayload;
     } catch (caught) {
       const error = areaFetchError(caught);
       lastError = error;
-      console.warn("[area-preparation] osm-failure", {
-        attempt: index + 1,
-        endpoint: endpointHost,
-        durationMs: Date.now() - startedAt,
-        status: error.status,
-        code: error.code,
-      });
       if (!retryableAreaFetchError(error) || index === endpoints.length - 1) throw error;
     } finally {
       clearTimeout(timeout);
@@ -689,11 +669,6 @@ export async function fetchOsmFeaturesForArea(
     if (serializedBytes > (options.limits?.maxPackageBytes ?? MAX_PACKAGE_BYTES)) {
       throw new OsmFeaturesForAreaError("too_large", "OSM-Featurepaket überschreitet die Sicherheitsgrenze.");
     }
-    console.info("[area-preparation] osm-normalized", {
-      roadCandidates: pkg.roads.features.length,
-      buildingCandidates: pkg.buildings.features.length,
-      packageBytes: serializedBytes,
-    });
     return {
       roads: pkg.roads.features,
       buildings: pkg.buildings.features,
