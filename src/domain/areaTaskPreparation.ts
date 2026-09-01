@@ -1,9 +1,18 @@
 import type { LineStringGeometry, LngLat, PolygonGeometry } from "./campaign.ts";
 
-const EPSILON = 1e-10;
+// Coordinate equality is intentionally looser than determinant/parameter math.
+// Cross products are measured in degree², so reusing a 1e-10 coordinate epsilon
+// for them can incorrectly classify short real-world boundary edges as parallel.
+const COORDINATE_EPSILON = 1e-10;
+const PARAMETER_EPSILON = 1e-12;
+const DETERMINANT_EPSILON = 1e-15;
+
+function finitePoint(point: LngLat) {
+  return Number.isFinite(point[0]) && Number.isFinite(point[1]);
+}
 
 function sameNumber(a: number, b: number) {
-  return Math.abs(a - b) <= EPSILON;
+  return Math.abs(a - b) <= COORDINATE_EPSILON;
 }
 
 function samePoint(a: LngLat, b: LngLat) {
@@ -34,14 +43,15 @@ function parameterOnSegment(point: LngLat, start: LngLat, end: LngLat) {
 }
 
 function pointOnSegment(point: LngLat, start: LngLat, end: LngLat) {
+  if (!finitePoint(point) || !finitePoint(start) || !finitePoint(end)) return false;
   const segment = subtract(end, start);
   const offset = subtract(point, start);
-  if (Math.abs(cross(segment, offset)) > EPSILON) return false;
+  if (Math.abs(cross(segment, offset)) > DETERMINANT_EPSILON) return false;
   return (
-    point[0] >= Math.min(start[0], end[0]) - EPSILON &&
-    point[0] <= Math.max(start[0], end[0]) + EPSILON &&
-    point[1] >= Math.min(start[1], end[1]) - EPSILON &&
-    point[1] <= Math.max(start[1], end[1]) + EPSILON
+    point[0] >= Math.min(start[0], end[0]) - COORDINATE_EPSILON &&
+    point[0] <= Math.max(start[0], end[0]) + COORDINATE_EPSILON &&
+    point[1] >= Math.min(start[1], end[1]) - COORDINATE_EPSILON &&
+    point[1] <= Math.max(start[1], end[1]) + COORDINATE_EPSILON
   );
 }
 
@@ -53,8 +63,9 @@ function ringFor(polygon: PolygonGeometry): LngLat[] {
 
 /** True for points in the polygon or exactly on its boundary. */
 export function pointInOrOnPolygon(point: LngLat, polygon: PolygonGeometry) {
+  if (!finitePoint(point)) return false;
   const ring = ringFor(polygon);
-  if (ring.length < 3) return false;
+  if (ring.length < 3 || ring.some((candidate) => !finitePoint(candidate))) return false;
 
   let inside = false;
   for (let index = 0; index < ring.length; index += 1) {
@@ -82,19 +93,26 @@ function segmentIntersectionParameters(
   const denominator = cross(direction, edge);
   const parameters: number[] = [];
 
-  if (Math.abs(denominator) <= EPSILON) {
-    if (Math.abs(cross(delta, direction)) > EPSILON) return parameters;
+  if (Math.abs(denominator) <= DETERMINANT_EPSILON) {
+    if (Math.abs(cross(delta, direction)) > DETERMINANT_EPSILON) return parameters;
     for (const candidate of [edgeStart, edgeEnd]) {
       if (!pointOnSegment(candidate, lineStart, lineEnd)) continue;
       const t = parameterOnSegment(candidate, lineStart, lineEnd);
-      if (t >= -EPSILON && t <= 1 + EPSILON) parameters.push(Math.min(1, Math.max(0, t)));
+      if (t >= -PARAMETER_EPSILON && t <= 1 + PARAMETER_EPSILON) {
+        parameters.push(Math.min(1, Math.max(0, t)));
+      }
     }
     return parameters;
   }
 
   const t = cross(delta, edge) / denominator;
   const u = cross(delta, direction) / denominator;
-  if (t >= -EPSILON && t <= 1 + EPSILON && u >= -EPSILON && u <= 1 + EPSILON) {
+  if (
+    t >= -PARAMETER_EPSILON &&
+    t <= 1 + PARAMETER_EPSILON &&
+    u >= -PARAMETER_EPSILON &&
+    u <= 1 + PARAMETER_EPSILON
+  ) {
     parameters.push(Math.min(1, Math.max(0, t)));
   }
   return parameters;
@@ -103,7 +121,20 @@ function segmentIntersectionParameters(
 function sortedUnique(values: number[]) {
   return values
     .sort((a, b) => a - b)
-    .filter((value, index, list) => index === 0 || Math.abs(value - list[index - 1]) > EPSILON);
+    .filter(
+      (value, index, list) =>
+        index === 0 || Math.abs(value - list[index - 1]) > PARAMETER_EPSILON,
+    );
+}
+
+function segmentParameters(start: LngLat, end: LngLat, polygonRing: LngLat[]) {
+  const parameters = [0, 1];
+  for (let edgeIndex = 0; edgeIndex < polygonRing.length; edgeIndex += 1) {
+    const edgeStart = polygonRing[edgeIndex];
+    const edgeEnd = polygonRing[(edgeIndex + 1) % polygonRing.length];
+    parameters.push(...segmentIntersectionParameters(start, end, edgeStart, edgeEnd));
+  }
+  return sortedUnique(parameters);
 }
 
 function cleanLine(points: LngLat[]) {
@@ -114,16 +145,67 @@ function cleanLine(points: LngLat[]) {
   return clean.length >= 2 ? clean : [];
 }
 
+function segmentInsideOrOnPolygon(
+  start: LngLat,
+  end: LngLat,
+  polygon: PolygonGeometry,
+  polygonRing: LngLat[],
+) {
+  if (!finitePoint(start) || !finitePoint(end)) return false;
+  if (!pointInOrOnPolygon(start, polygon) || !pointInOrOnPolygon(end, polygon)) return false;
+  if (samePoint(start, end)) return true;
+
+  const parameters = segmentParameters(start, end, polygonRing);
+  for (let index = 0; index < parameters.length - 1; index += 1) {
+    const from = parameters[index];
+    const to = parameters[index + 1];
+    if (to - from <= PARAMETER_EPSILON) continue;
+    if (!pointInOrOnPolygon(pointAt(start, end, (from + to) / 2), polygon)) return false;
+  }
+  return true;
+}
+
+/**
+ * Validates the complete LineString against the polygon closure. Endpoint-only
+ * checks are deliberately insufficient because a concave Area can be exited
+ * and re-entered between two inside vertices.
+ */
+export function lineStringInsidePolygon(line: LineStringGeometry, polygon: PolygonGeometry) {
+  const polygonRing = ringFor(polygon);
+  if (line.coordinates.length < 2 || polygonRing.length < 3) return false;
+  if (polygonRing.some((point) => !finitePoint(point))) return false;
+
+  let hasLength = false;
+  for (let index = 0; index < line.coordinates.length - 1; index += 1) {
+    const start = line.coordinates[index];
+    const end = line.coordinates[index + 1];
+    if (!finitePoint(start) || !finitePoint(end)) return false;
+    if (samePoint(start, end)) continue;
+    hasLength = true;
+    if (!segmentInsideOrOnPolygon(start, end, polygon, polygonRing)) return false;
+  }
+  return hasLength;
+}
+
 /**
  * Clips a LineString exactly to a single-ring Area polygon. Each disjoint inside
- * fragment is returned separately, including boundary-aligned fragments.
+ * fragment is returned separately, including boundary-aligned fragments. The
+ * final containment guard is fail-closed: an unexpected numeric inconsistency
+ * drops a fragment instead of allowing canonical automatic work outside Area.
  */
 export function clipLineStringToPolygon(
   line: LineStringGeometry,
   polygon: PolygonGeometry,
 ): LineStringGeometry[] {
   const polygonRing = ringFor(polygon);
-  if (line.coordinates.length < 2 || polygonRing.length < 3) return [];
+  if (
+    line.coordinates.length < 2 ||
+    polygonRing.length < 3 ||
+    line.coordinates.some((point) => !finitePoint(point)) ||
+    polygonRing.some((point) => !finitePoint(point))
+  ) {
+    return [];
+  }
 
   const fragments: LineStringGeometry[] = [];
   let current: LngLat[] | null = null;
@@ -131,7 +213,10 @@ export function clipLineStringToPolygon(
   const finishCurrent = () => {
     if (!current) return;
     const coordinates = cleanLine(current);
-    if (coordinates.length >= 2) fragments.push({ type: "LineString", coordinates });
+    if (coordinates.length >= 2) {
+      const fragment: LineStringGeometry = { type: "LineString", coordinates };
+      if (lineStringInsidePolygon(fragment, polygon)) fragments.push(fragment);
+    }
     current = null;
   };
 
@@ -140,17 +225,11 @@ export function clipLineStringToPolygon(
     const end = line.coordinates[segmentIndex + 1];
     if (samePoint(start, end)) continue;
 
-    const parameters = [0, 1];
-    for (let edgeIndex = 0; edgeIndex < polygonRing.length; edgeIndex += 1) {
-      const edgeStart = polygonRing[edgeIndex];
-      const edgeEnd = polygonRing[(edgeIndex + 1) % polygonRing.length];
-      parameters.push(...segmentIntersectionParameters(start, end, edgeStart, edgeEnd));
-    }
-
-    for (const [from, to] of sortedUnique(parameters).flatMap((value, index, all) =>
-      index < all.length - 1 ? [[value, all[index + 1]] as const] : [],
-    )) {
-      if (to - from <= EPSILON) continue;
+    const parameters = segmentParameters(start, end, polygonRing);
+    for (let index = 0; index < parameters.length - 1; index += 1) {
+      const from = parameters[index];
+      const to = parameters[index + 1];
+      if (to - from <= PARAMETER_EPSILON) continue;
       const midpoint = pointAt(start, end, (from + to) / 2);
       if (!pointInOrOnPolygon(midpoint, polygon)) {
         finishCurrent();
@@ -173,19 +252,23 @@ export function clipLineStringToPolygon(
 }
 
 function signedAreaAndCentroid(ring: LngLat[]) {
+  const origin = ring[0];
   let twiceArea = 0;
   let centroidLng = 0;
   let centroidLat = 0;
   for (let index = 0; index < ring.length; index += 1) {
-    const current = ring[index];
-    const next = ring[(index + 1) % ring.length];
-    const factor = current[0] * next[1] - next[0] * current[1];
+    const current = subtract(ring[index], origin);
+    const next = subtract(ring[(index + 1) % ring.length], origin);
+    const factor = cross(current, next);
     twiceArea += factor;
     centroidLng += (current[0] + next[0]) * factor;
     centroidLat += (current[1] + next[1]) * factor;
   }
-  if (Math.abs(twiceArea) <= EPSILON) return null;
-  return [centroidLng / (3 * twiceArea), centroidLat / (3 * twiceArea)] as LngLat;
+  if (Math.abs(twiceArea) <= DETERMINANT_EPSILON) return null;
+  return [
+    origin[0] + centroidLng / (3 * twiceArea),
+    origin[1] + centroidLat / (3 * twiceArea),
+  ] as LngLat;
 }
 
 /**
