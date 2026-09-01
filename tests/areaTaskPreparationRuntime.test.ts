@@ -323,7 +323,7 @@ test("recovery API scopes reads and queues only authorized server-side preparati
   assert.equal(queued.length, 1);
 });
 
-test("only successful non-replayed Area create and geometry mutations schedule preparation", async () => {
+test("Area create and geometry mutations do not schedule automatic preparation on the mission branch", async () => {
   const db = new SqliteD1();
   seed(db);
   const access: AccessContext = { grantId: "admin", campaignId, role: "admin", teamId: null, label: null };
@@ -349,18 +349,17 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   });
   const created = await handleCampaignMutation(request(create), db, campaignId, access, context, options());
   assert.equal(created.status, 200);
-  assert.equal(queued.length, 1);
-  await Promise.all(queued);
-  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 5);
+  assert.equal(queued.length, 0);
+  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 4);
 
   const replay = await handleCampaignMutation(request(create), db, campaignId, access, context, options());
   assert.equal(replay.status, 200);
-  assert.equal(queued.length, 1);
+  assert.equal(queued.length, 0);
 
   const update = {
     id: "mutation_area-update-auto",
     campaignId,
-    baseRevision: 5,
+    baseRevision: 4,
     createdAt: "2026-08-31T15:03:00.000Z",
     type: "area.update-geometry" as const,
     payload: {
@@ -376,9 +375,8 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   };
   const updated = await handleCampaignMutation(request(update), db, campaignId, access, context, options());
   assert.equal(updated.status, 200);
-  assert.equal(queued.length, 2);
-  await Promise.all(queued);
-  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 7);
+  assert.equal(queued.length, 0);
+  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 5);
 
   const alternateTeamId = "team_auto-alternate";
   db.sqlite.prepare(
@@ -387,17 +385,17 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   const rename = {
     id: "mutation_area-rename-no-auto",
     campaignId,
-    baseRevision: 7,
+    baseRevision: 5,
     createdAt: "2026-08-31T15:04:00.000Z",
     type: "area.rename" as const,
     payload: { areaId: "area_created", name: "Umbenannt", expectedUpdatedAt: update.createdAt },
   };
   assert.equal((await handleCampaignMutation(request(rename), db, campaignId, access, context, options())).status, 200);
-  assert.equal(queued.length, 2);
+  assert.equal(queued.length, 0);
   const setTeam = {
     id: "mutation_area-team-no-auto",
     campaignId,
-    baseRevision: 8,
+    baseRevision: 6,
     createdAt: "2026-08-31T15:05:00.000Z",
     type: "area.set-team" as const,
     payload: {
@@ -407,16 +405,16 @@ test("only successful non-replayed Area create and geometry mutations schedule p
     },
   };
   assert.equal((await handleCampaignMutation(request(setTeam), db, campaignId, access, context, options())).status, 200);
-  assert.equal(queued.length, 2);
+  assert.equal(queued.length, 0);
 
   const conflict = await handleCampaignMutation(request({
     ...update,
     id: "mutation_area-conflict-auto",
-    baseRevision: 9,
+    baseRevision: 7,
     payload: { ...update.payload, expectedUpdatedAt: "2026-01-01T00:00:00.000Z" },
   }), db, campaignId, access, context, options());
   assert.equal(conflict.status, 409);
-  assert.equal(queued.length, 2);
+  assert.equal(queued.length, 0);
 });
 
 test("non-open automatic tasks block Area geometry edits while open work can be re-prepared", async () => {

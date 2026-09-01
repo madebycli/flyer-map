@@ -8,6 +8,9 @@
 .platform-shell {
   position: relative;
   overflow: hidden;
+  --platform-field-control-size: max(2.75rem, 44px);
+  --platform-field-control-radius: 0.7rem;
+  --platform-field-control-bottom: calc(env(safe-area-inset-bottom) + 0.55rem);
 }
 
 .platform-map-layer {
@@ -27,6 +30,11 @@
   top: calc(env(safe-area-inset-top) + 0.55rem);
 }
 
+.platform-map-layer .mutation-sync-status {
+  top: calc(env(safe-area-inset-top) + 0.55rem);
+  right: 0.55rem;
+}
+
 .platform-field-bar {
   position: fixed;
   z-index: 19;
@@ -36,7 +44,7 @@
   align-items: center;
   gap: 0.32rem;
   max-width: min(22rem, calc(100vw - 1.1rem));
-  min-height: 3rem;
+  min-height: calc(var(--platform-field-control-size) + 0.56rem);
   padding: 0.28rem;
   border: 1px solid rgb(23 32 25 / 12%);
   border-radius: 0.92rem;
@@ -49,18 +57,38 @@
   pointer-events: none;
 }
 
-.platform-grid-button {
+.platform-grid-button,
+.platform-manual-street-button {
   display: grid;
   place-items: center;
-  width: 2.55rem;
-  height: 2.55rem;
+  width: var(--platform-field-control-size);
+  height: var(--platform-field-control-size);
   flex: 0 0 auto;
   padding: 0;
   border: 0;
-  border-radius: 0.7rem;
+  border-radius: var(--platform-field-control-radius);
   color: #172019;
   background: #edf2ee;
   -webkit-tap-highlight-color: transparent;
+}
+
+.platform-manual-street-button {
+  position: fixed;
+  z-index: 19;
+  right: 0.55rem;
+  bottom: var(--platform-field-control-bottom);
+  border: 1px solid rgb(20 92 47 / 55%);
+  color: #ffffff;
+  background: #16803c;
+  box-shadow: 0 0.3rem 1.1rem rgb(20 35 24 / 20%);
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.platform-manual-street-button:active {
+  background: #116b32;
 }
 
 .platform-grid-glyph {

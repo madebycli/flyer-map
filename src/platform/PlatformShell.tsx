@@ -50,6 +50,7 @@ export function PlatformShell() {
   const [automationsOpen, setAutomationsOpen] = useState(false);
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
+  const [activeFieldGroupId, setActiveFieldGroupId] = useState<string | null>(null);
   const [sessionMapHighlight, setSessionMapHighlight] = useState<SessionMapHighlight | null>(null);
   const commandId = useRef(0);
 
@@ -90,6 +91,7 @@ export function PlatformShell() {
         <SessionMapHighlightProvider value={sessionMapHighlight}>
           <App
             platformCommand={appCommand}
+            activeFieldGroupId={activeFieldGroupId}
             onPlatformContextChange={setAppContext}
           />
         </SessionMapHighlightProvider>
@@ -113,25 +115,38 @@ export function PlatformShell() {
       ) : null}
 
       {launcherAvailable ? (
-        <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
-          <button
-            className="platform-grid-button"
-            type="button"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Menü öffnen"
-            title="Menü öffnen"
-          >
-            <MenuGridIcon />
-          </button>
-          <div className="platform-active-team" title={teamName}>
-            <span
-              className="platform-active-team-dot"
-              style={{ backgroundColor: teamColor }}
-              aria-hidden="true"
-            />
-            <strong>{teamName}</strong>
+        <>
+          <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
+            <button
+              className="platform-grid-button"
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Menü öffnen"
+              title="Menü öffnen"
+            >
+              <MenuGridIcon />
+            </button>
+            <div className="platform-active-team" title={teamName}>
+              <span
+                className="platform-active-team-dot"
+                style={{ backgroundColor: teamColor }}
+                aria-hidden="true"
+              />
+              <strong>{teamName}</strong>
+            </div>
           </div>
-        </div>
+          {appContext?.canCreateManualStreet ? (
+            <button
+              className="platform-manual-street-button"
+              type="button"
+              onClick={() => dispatchSimpleCommand("start-manual-street")}
+              aria-label="Straße manuell hinzufügen"
+              title="Straße manuell hinzufügen"
+            >
+              <span aria-hidden="true">+</span>
+            </button>
+          ) : null}
+        </>
       ) : null}
 
       {menuOpen ? (
@@ -220,6 +235,7 @@ export function PlatformShell() {
           onSelectTeam={selectActiveTeam}
           onManageTeams={() => dispatchSimpleCommand("open-team-management")}
           onAccessChanged={manualRefreshCampaign}
+          onOperationalGroupChange={setActiveFieldGroupId}
         />
       ) : null}
 

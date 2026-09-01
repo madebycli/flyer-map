@@ -69,12 +69,11 @@ test("normal Area flow leaves OSM fetching and offline downloads out of the brow
   const settings = await readFile("src/settings/SettingsSheet.tsx", "utf8");
   const store = await readFile("src/data/campaignStore.ts", "utf8");
 
-  assert.match(app, /fetchAreaPreparation/u);
-  assert.match(app, /startAreaPreparation/u);
+  assert.doesNotMatch(app, /fetchAreaPreparation|startAreaPreparation|createAreaPreparationPoller/u);
   assert.doesNotMatch(app, /smartRoadMapPackage|smartHouseMapPackage|smartMapRequestRef|fetchMapDataPackage/u);
   assert.doesNotMatch(app, /browserOfflineMapRepository/u);
   assert.doesNotMatch(settings, /downloadOfflineMapPackage|browserOfflineMapRepository|offline-map-section/u);
-  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation\)/u);
+  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation, record\.fieldGroupId\)/u);
   assert.match(store, /browserMutationQueue/u);
   assert.match(store, /writeLocalSnapshot/u);
 });

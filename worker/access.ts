@@ -1,4 +1,5 @@
 import type { D1DatabaseLike } from "./campaignRepository.ts";
+import { resolveCampaignAdminAccountAccess } from "./adminAuth.ts";
 
 export type PersistentAccessRole = "admin" | "team-editor" | "viewer";
 export type AccessRole = PersistentAccessRole | "field-group-member" | "collection-collector";
@@ -223,6 +224,8 @@ export async function resolveAccess(
 ): Promise<AccessContext | null> {
   const persistent = await resolvePersistentAccess(db, request, campaignId);
   if (persistent) return persistent;
+  const account = await resolveCampaignAdminAccountAccess(db, request, campaignId);
+  if (account) return account;
   return resolveFieldGroupAccess(db, request, campaignId);
 }
 

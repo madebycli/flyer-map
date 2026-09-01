@@ -27,6 +27,7 @@ import {
   type AreaPreparationExecutionContext,
   type AreaTaskPreparationOptions,
 } from "./areaTaskPreparation.ts";
+import { AUTO_AREA_PREPARATION_ENABLED } from "../src/domain/missionPolicy.ts";
 
 const MAX_MUTATION_BYTES = 256_000;
 const MAX_PERSIST_ATTEMPTS = 3;
@@ -200,6 +201,14 @@ export async function handleCampaignMutation(
       candidate = applyCampaignMutation(current, mutation);
     } catch (error) {
       if (error instanceof CampaignMutationConflictError) {
+        if (error.reason === "street_outside_area") {
+          return errorResponse(
+            409,
+            "street_outside_area",
+            "Die Straße muss vollständig innerhalb des Gebiets liegen.",
+            current.revision,
+          );
+        }
         if (error.reason === "auto_prepared_task_delete_forbidden") {
           return errorResponse(
             409,
@@ -278,6 +287,7 @@ export async function handleCampaignMutation(
     );
     if (persisted.ok) {
       if (
+        AUTO_AREA_PREPARATION_ENABLED &&
         !persisted.alreadyApplied &&
         (mutation.type === "area.create" || mutation.type === "area.update-geometry")
       ) {

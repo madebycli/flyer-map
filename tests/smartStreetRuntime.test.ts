@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("normal Area flow uses server preparation and keeps no browser Smart Street entry", async () => {
+test("normal Area flow is manual and keeps no automatic preparation or browser Smart Street entry", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const map = await readFile("src/map/MapView.tsx", "utf8");
   const offline = await readFile("src/data/offlineMapRepository.ts", "utf8");
   const combined = `${app}\n${map}\n${offline}`;
 
-  assert.match(app, /createAreaPreparationPoller/u);
-  assert.match(app, /fetchAreaPreparation/u);
-  assert.match(app, /startAreaPreparation/u);
+  assert.match(app, /startManualStreet/u);
+  assert.match(app, /lineStringIsFullyInsideOrOnPolygon/u);
   assert.match(app, /addManualStreet/u);
+  assert.doesNotMatch(app, /createAreaPreparationPoller|fetchAreaPreparation|startAreaPreparation/u);
   assert.doesNotMatch(app, /smartCandidatesForArea|smartRoadMapPackage|smartMapRequestRef|setMode\("smart-street"\)/u);
   assert.doesNotMatch(combined, /PREVIEW_ROADS|Mock Roads|M6SelectionPreview/u);
 });
@@ -43,16 +43,15 @@ test("automatic Street Tasks use the durable normal task and mutation path", asy
   assert.match(app, /selectedTask\.areaPreparationGeneration/u);
   assert.match(diff, /mutationDiffBase\.ts/u);
   assert.match(baseDiff, /\.\.\.\(task\.source \? \{ source: task\.source \} : \{\}\)/u);
-  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation\)/u);
+  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation, record\.fieldGroupId\)/u);
 });
 
-test("Area preparation keeps its existing Area permissions and bounded retry", async () => {
+test("manual Street creation retains Area permission and never activates preparation polling", async () => {
   const app = await readFile("src/App.tsx", "utf8");
 
   assert.match(app, /if \(!selectedArea \|\| !canEditSelectedArea\) return/u);
-  assert.match(app, /areaPreparationPollerRef\.current\?\.retry\(\)/u);
-  assert.match(app, /areaPreparationSchemaUnavailable/u);
-  assert.match(app, /areaPreparationRequestFailed/u);
-  assert.match(app, /canAutoStart: \(\) => !areaPreparationAutoStartKeys\.current\.has/u);
+  assert.match(app, /manualStreetAreaSelection/u);
+  assert.match(app, /Straße manuell hinzufügen/u);
+  assert.doesNotMatch(app, /areaPreparationPollerRef|areaPreparationSchemaUnavailable|areaPreparationRequestFailed|canAutoStart/u);
   assert.doesNotMatch(app, /ensureSmartMapPackage|fetchMapDataPackage|smartRoadMapPackage/u);
 });

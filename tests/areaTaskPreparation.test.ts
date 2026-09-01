@@ -9,6 +9,7 @@ import {
 } from "../src/domain/campaign.ts";
 import {
   clipLineStringToPolygon,
+  lineStringIsFullyInsideOrOnPolygon,
   pointInOrOnPolygon,
   polygonRepresentativePoint,
 } from "../src/domain/areaTaskPreparation.ts";
@@ -84,6 +85,12 @@ test("road clipping handles concave multiple exits and re-entries", () => {
   assert.equal(twoCrossings.length, 2);
   assert.deepEqual(twoCrossings[0], line([[0, 2], [5, 2], [5, 4]]));
   assert.deepEqual(twoCrossings[1], line([[6, 8], [10, 8]]));
+});
+
+test("manual Street validation accepts only a complete line inside its Area", () => {
+  assert.equal(lineStringIsFullyInsideOrOnPolygon(line([[1, 1], [9, 1]]), square), true);
+  assert.equal(lineStringIsFullyInsideOrOnPolygon(line([[-1, 1], [9, 1]]), square), false);
+  assert.equal(lineStringIsFullyInsideOrOnPolygon(line([[-1, 7], [11, 7]]), concave), false);
 });
 
 test("representative building point is deterministic and supports boundary ownership", () => {

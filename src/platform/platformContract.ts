@@ -3,7 +3,12 @@ import type { AccessRole } from "../data/campaignApi.ts";
 export type PlatformAppCommand =
   | {
       id: number;
-      type: "open-settings" | "open-team-management" | "open-campaign-comments" | "start-area-drawing";
+      type:
+        | "open-settings"
+        | "open-team-management"
+        | "open-campaign-comments"
+        | "start-area-drawing"
+        | "start-manual-street";
     }
   | {
       id: number;
@@ -31,6 +36,7 @@ export type PlatformAppContext = {
   launcherAvailable: boolean;
   canManageTeams: boolean;
   canCreateArea: boolean;
+  canCreateManualStreet: boolean;
 };
 
 export type PlatformLauncherItem = {

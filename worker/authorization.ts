@@ -339,7 +339,7 @@ export function authorizeSnapshotWrite(
     const ownedByEditor = previousAreaTeam.get(previousTask.areaId) === teamId;
 
     if (!ownedByEditor) {
-      if (!nextTask || !same(previousTask, nextTask)) {
+      if (!nextTask || !taskStatusOnlyUnchanged(previousTask, nextTask)) {
         return { allowed: false, reason: "editor_foreign_task_forbidden" };
       }
       continue;
@@ -366,7 +366,7 @@ export function authorizeSnapshotWrite(
     const ownedByEditor = previousAreaTeam.get(previousTask.areaId) === teamId;
 
     if (!ownedByEditor) {
-      if (!nextTask || !same(previousTask, nextTask)) {
+      if (!nextTask || !houseStatusOnlyUnchanged(previousTask, nextTask)) {
         return { allowed: false, reason: "editor_foreign_house_forbidden" };
       }
       continue;

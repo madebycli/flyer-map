@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CampaignApiError,
   buildCampaignAccessUrl,
+  campaignAdminSetupTokenFromUrl,
   campaignIdFromUrl,
+  completeCampaignAdminAccountSetup,
+  loginCampaignAdminAccount,
+  removeCampaignAdminSetupTokenFromUrl,
   recoverCampaignAdminAccess,
 } from "../data/campaignApi";
 import {
@@ -17,12 +21,17 @@ export function AccessRecoveryGate() {
   const [checking, setChecking] = useState(Boolean(campaignId));
   const [accessState, setAccessState] = useState<CampaignAccessState>("idle");
   const [secret, setSecret] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recoveredUrl, setRecoveredUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const de = language === "de";
+  const setupToken = useMemo(campaignAdminSetupTokenFromUrl, []);
 
   useEffect(() => {
     if (!campaignId) {
@@ -63,6 +72,50 @@ export function AccessRecoveryGate() {
           : de
             ? "Admin-Zugriff konnte nicht wiederhergestellt werden."
             : "Admin access could not be recovered.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const login = async () => {
+    if (!campaignId || !username.trim() || !password || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await loginCampaignAdminAccount(campaignId, username, password);
+      setPassword("");
+      window.dispatchEvent(new Event("online"));
+    } catch (cause) {
+      setError(
+        cause instanceof CampaignApiError
+          ? cause.message
+          : de
+            ? "Anmeldung konnte nicht durchgeführt werden."
+            : "Sign-in could not be completed.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const completeSetup = async () => {
+    if (!campaignId || !setupToken || !username.trim() || !password || password !== passwordConfirmation || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await completeCampaignAdminAccountSetup(campaignId, setupToken, username, password);
+      setPassword("");
+      setPasswordConfirmation("");
+      removeCampaignAdminSetupTokenFromUrl();
+      window.dispatchEvent(new Event("online"));
+    } catch (cause) {
+      setError(
+        cause instanceof CampaignApiError
+          ? cause.message
+          : de
+            ? "Admin-Konto konnte nicht eingerichtet werden."
+            : "Admin account could not be set up.",
       );
     } finally {
       setSubmitting(false);
@@ -111,7 +164,36 @@ export function AccessRecoveryGate() {
               </button>
             </div>
           </>
-        ) : (
+        ) : setupToken ? (
+          <>
+            <span className="access-recovery-kicker">{de ? "Campaign-Admin einrichten" : "Set up Campaign Admin"}</span>
+            <strong>{de ? "Eigenes Passwort festlegen" : "Set your password"}</strong>
+            <p>
+              {de
+                ? "Dieser einmalige Link richtet ein lokales Admin-Konto nur für diese Campaign ein."
+                : "This one-time link sets up a local admin account for this Campaign only."}
+            </p>
+            <label className="access-recovery-field">
+              <span>{de ? "Benutzername" : "Username"}</span>
+              <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" maxLength={40} />
+            </label>
+            <label className="access-recovery-field">
+              <span>{de ? "Passwort" : "Password"}</span>
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={256} />
+            </label>
+            <label className="access-recovery-field">
+              <span>{de ? "Passwort wiederholen" : "Confirm password"}</span>
+              <input type="password" value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" minLength={12} maxLength={256} />
+            </label>
+            <p className="access-recovery-note">
+              {de ? "Mindestens 12 Zeichen. Das Passwort wird nie im Browser gespeichert." : "At least 12 characters. The password is never stored in the browser."}
+            </p>
+            {error ? <p className="access-recovery-error" role="alert">{error}</p> : null}
+            <button className="button primary full-width" type="button" disabled={!username.trim() || password.length < 12 || password !== passwordConfirmation || submitting} onClick={() => void completeSetup()}>
+              {submitting ? (de ? "Wird eingerichtet…" : "Setting up…") : de ? "Admin-Konto einrichten" : "Set up admin account"}
+            </button>
+          </>
+        ) : recoveryOpen ? (
           <>
             <span className="access-recovery-kicker">{de ? "Campaign geschützt" : "Campaign protected"}</span>
             <strong>{de ? "Admin-Zugriff wiederherstellen" : "Recover admin access"}</strong>
@@ -141,6 +223,34 @@ export function AccessRecoveryGate() {
             {error ? <p className="access-recovery-error" role="alert">{error}</p> : null}
             <button className="button primary full-width" type="button" disabled={!secret.trim() || submitting} onClick={() => void submit()}>
               {submitting ? (de ? "Wird wiederhergestellt…" : "Recovering…") : de ? "Admin-Zugriff wiederherstellen" : "Recover admin access"}
+            </button>
+            <button className="button secondary full-width" type="button" onClick={() => setRecoveryOpen(false)}>
+              {de ? "Mit Passwort anmelden" : "Sign in with password"}
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="access-recovery-kicker">{de ? "Campaign geschützt" : "Campaign protected"}</span>
+            <strong>{de ? "Als Admin anmelden" : "Sign in as admin"}</strong>
+            <p>
+              {de
+                ? "Melde dich mit deinem kampagnenlokalen Admin-Konto an."
+                : "Sign in with your Campaign-local admin account."}
+            </p>
+            <label className="access-recovery-field">
+              <span>{de ? "Benutzername" : "Username"}</span>
+              <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" maxLength={40} />
+            </label>
+            <label className="access-recovery-field">
+              <span>{de ? "Passwort" : "Password"}</span>
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" maxLength={256} onKeyDown={(event) => { if (event.key === "Enter") void login(); }} />
+            </label>
+            {error ? <p className="access-recovery-error" role="alert">{error}</p> : null}
+            <button className="button primary full-width" type="button" disabled={!username.trim() || !password || submitting} onClick={() => void login()}>
+              {submitting ? (de ? "Wird angemeldet…" : "Signing in…") : de ? "Anmelden" : "Sign in"}
+            </button>
+            <button className="button secondary full-width" type="button" onClick={() => setRecoveryOpen(true)}>
+              {de ? "Recovery-Secret verwenden" : "Use recovery secret"}
             </button>
           </>
         )}

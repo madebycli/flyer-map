@@ -47,6 +47,7 @@ const CONFLICT_STORAGE_KEY = "verteil-flyer:campaign-snapshot:conflict";
 const LEGACY_STORAGE_KEY = "verteil-flyer:m1:campaign-snapshot:v1";
 const POLL_INTERVAL_MS = 30_000;
 const MAX_RETRY_DELAY_MS = 60_000;
+const FIELD_GROUP_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 
 export type CampaignLoadResult = { snapshot: CampaignSnapshot; warning: string | null };
 export type RefreshState = "idle" | "loading" | "current" | "error" | "available";
@@ -95,6 +96,7 @@ type SyncRuntime = {
   needsCanonicalRefresh: boolean;
   retryTimer: number | null;
   enqueuesPending: number;
+  activeFieldGroupId: string | null;
 };
 
 const syncRuntime: SyncRuntime = {
@@ -113,6 +115,7 @@ const syncRuntime: SyncRuntime = {
   needsCanonicalRefresh: false,
   retryTimer: null,
   enqueuesPending: 0,
+  activeFieldGroupId: null,
 };
 
 const listeners = new Set<(update: CampaignStoreUpdate) => void>();
@@ -482,7 +485,7 @@ async function processMutationQueue() {
   emit({ syncState: "syncing", pendingCount: records.length + syncRuntime.enqueuesPending });
 
   try {
-    const result = await postCampaignMutation(campaignId, record.mutation);
+    const result = await postCampaignMutation(campaignId, record.mutation, record.fieldGroupId);
     await browserMutationQueue.remove(record.id);
     syncRuntime.serverRevision = result.appliedRevision;
     syncRuntime.lastServer = null;
@@ -853,6 +856,14 @@ export function setCampaignInteractionBlocked(blocked: boolean) {
   if (!blocked) void processMutationQueue().then(() => refreshFromServer(false));
 }
 
+/** Captures the active Tour only for mutations enqueued from this point onward. */
+export function setCampaignFieldGroupContext(fieldGroupId: string | null) {
+  syncRuntime.activeFieldGroupId =
+    typeof fieldGroupId === "string" && FIELD_GROUP_ID_PATTERN.test(fieldGroupId)
+      ? fieldGroupId
+      : null;
+}
+
 export function manualRefreshCampaign() {
   if (!syncRuntime.initialized) {
     setRefreshState("loading");
@@ -958,7 +969,9 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
   enqueueChain = enqueueChain
     .then(async () => {
       try {
-        await browserMutationQueue.enqueue(mutation);
+        await browserMutationQueue.enqueue(mutation, {
+          fieldGroupId: syncRuntime.activeFieldGroupId,
+        });
       } catch (error) {
         saveCampaignConflictSnapshot(snapshot);
         emit({ syncState: "failed", messageCode: "network" });

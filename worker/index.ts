@@ -47,6 +47,17 @@ import {
   handleAreaTaskPreparationApi,
 } from "./areaTaskPreparationApi.ts";
 import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
+import {
+  adminAccountSessionCookie,
+  clearAdminAccountSessionCookie,
+  completeCampaignAdminSetup,
+  createCampaignAdminSetupInvite,
+  disableCampaignAdminAccount,
+  hasCampaignAdminAuthSchema,
+  listCampaignAdminAccounts,
+  loginCampaignAdminAccount,
+  revokeCurrentCampaignAdminAccountSession,
+} from "./adminAuth.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -153,6 +164,22 @@ function accessRoute(pathname: string) {
     if (!campaignId) return null;
     if (grantId && !/^[A-Za-z0-9._:-]{1,200}$/.test(grantId)) return null;
     return { campaignId, grantId };
+  } catch {
+    return null;
+  }
+}
+
+function campaignAdminAccountRoute(pathname: string) {
+  const match = pathname.match(
+    /^\/api\/campaigns\/([^/]+)\/admin-accounts(?:\/(login|setup-invites|([^/]+)))?$/,
+  );
+  if (!match) return null;
+  try {
+    const campaignId = parseCampaignId(decodeURIComponent(match[1]));
+    const action = match[2] ?? null;
+    const accountId = match[3] ? decodeURIComponent(match[3]) : null;
+    if (!campaignId || (accountId && !/^[A-Za-z0-9._:-]{1,200}$/.test(accountId))) return null;
+    return { campaignId, action, accountId };
   } catch {
     return null;
   }
@@ -487,6 +514,97 @@ async function manageAccess(
   );
 }
 
+async function requireCampaignAdminAuthSchema(db: D1DatabaseLike) {
+  if (await hasCampaignAdminAuthSchema(db)) return null;
+  return errorResponse(
+    503,
+    "admin_account_schema_unavailable",
+    "Campaign-Admin-Konten benötigen die vorbereitete Migration 0015.",
+  );
+}
+
+async function manageCampaignAdminAccounts(
+  request: Request,
+  db: D1DatabaseLike,
+  route: { campaignId: string; action: string | null; accountId: string | null },
+) {
+  const schemaError = await requireCampaignAdminAuthSchema(db);
+  if (schemaError) return schemaError;
+
+  if (route.action === "login" && request.method === "POST") {
+    const parsed = await readJsonBody(request);
+    if (!parsed.ok) return parsed.response;
+    if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+      return errorResponse(400, "invalid_request", "Anmeldedaten sind ungültig.");
+    }
+    const body = parsed.value as Record<string, unknown>;
+    const loggedIn = await loginCampaignAdminAccount(db, {
+      campaignId: route.campaignId,
+      username: body.username,
+      password: body.password,
+    });
+    if (!loggedIn.ok) {
+      return errorResponse(401, "invalid_admin_credentials", "Benutzername oder Passwort ist ungültig.");
+    }
+    return json(
+      { access: publicAccess(loggedIn.access) },
+      { headers: { "set-cookie": adminAccountSessionCookie(loggedIn.session.sessionSecret) } },
+    );
+  }
+
+  const auth = await requireAccess(db, request, route.campaignId, ["admin"]);
+  if (!auth.ok) return auth.response;
+
+  if (!route.action && request.method === "GET") {
+    return json({ accounts: await listCampaignAdminAccounts(db, route.campaignId) });
+  }
+  if (route.action === "setup-invites" && request.method === "POST") {
+    const invite = await createCampaignAdminSetupInvite(db, route.campaignId);
+    return json(invite, { status: 201 });
+  }
+  if (route.accountId && request.method === "DELETE") {
+    const disabled = await disableCampaignAdminAccount(db, route.campaignId, route.accountId);
+    if (!disabled) return errorResponse(404, "admin_account_not_found", "Admin-Konto wurde nicht gefunden.");
+    return json({ ok: true });
+  }
+  return errorResponse(405, "method_not_allowed", "Methode für Campaign-Admin-Konten nicht erlaubt.");
+}
+
+async function completeCampaignAdminAccountSetup(
+  request: Request,
+  db: D1DatabaseLike,
+) {
+  const schemaError = await requireCampaignAdminAuthSchema(db);
+  if (schemaError) return schemaError;
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+    return errorResponse(400, "invalid_request", "Einrichtungsdaten sind ungültig.");
+  }
+  const body = parsed.value as Record<string, unknown>;
+  const campaignId = typeof body.campaignId === "string" ? parseCampaignId(body.campaignId) : null;
+  const token = typeof body.token === "string" ? body.token : "";
+  if (!campaignId) return errorResponse(400, "invalid_campaign", "Campaign-ID ist ungültig.");
+  const completed = await completeCampaignAdminSetup(db, {
+    campaignId,
+    token,
+    username: body.username,
+    password: body.password,
+  });
+  if (!completed.ok) {
+    const message = completed.code === "username_unavailable"
+      ? "Dieser Benutzername ist in dieser Campaign bereits vergeben."
+      : completed.code === "setup_link_invalid"
+        ? "Der Einrichtungslink ist ungültig, abgelaufen oder bereits verwendet."
+        : "Benutzername, Passwort oder Einrichtungslink sind ungültig.";
+    return errorResponse(400, completed.code, message);
+  }
+  return json(
+    { access: publicAccess(completed.access) },
+    { headers: { "set-cookie": adminAccountSessionCookie(completed.session.sessionSecret) } },
+  );
+}
+
 async function bootstrapCampaign(request: Request, env: Env, db: D1DatabaseLike) {
   if (!env.M4_BOOTSTRAP_SECRET) {
     return errorResponse(
@@ -727,6 +845,22 @@ export default {
       }
     }
 
+    if (db && url.pathname === "/api/admin-accounts/setup" && request.method === "POST") {
+      try {
+        return await completeCampaignAdminAccountSetup(request, db);
+      } catch {
+        return errorResponse(500, "internal_error", "Admin-Konto konnte nicht eingerichtet werden.");
+      }
+    }
+
+    if (db && url.pathname === "/api/admin-accounts/logout" && request.method === "POST") {
+      await revokeCurrentCampaignAdminAccountSession(db, request);
+      return json(
+        { ok: true },
+        { headers: { "set-cookie": clearAdminAccountSessionCookie() } },
+      );
+    }
+
     if (db && url.pathname === "/api/access/current" && request.method === "GET") {
       const campaignId = parseCampaignId(url.searchParams.get("campaign") ?? "");
       if (!campaignId) {
@@ -745,7 +879,10 @@ export default {
 
     if (db && url.pathname === "/api/access/logout" && request.method === "POST") {
       await revokeCurrentSession(db, request);
-      return json({ ok: true }, { headers: { "set-cookie": clearSessionCookie() } });
+      await revokeCurrentCampaignAdminAccountSession(db, request);
+      const response = json({ ok: true }, { headers: { "set-cookie": clearSessionCookie() } });
+      response.headers.append("set-cookie", clearAdminAccountSessionCookie());
+      return response;
     }
 
     if (db && url.pathname === "/api/admin/bootstrap" && request.method === "POST") {
@@ -805,6 +942,19 @@ export default {
             500,
             "internal_error",
             "Access Management ist fehlgeschlagen.",
+          );
+        }
+      }
+
+      const adminAccountManagement = campaignAdminAccountRoute(url.pathname);
+      if (adminAccountManagement) {
+        try {
+          return await manageCampaignAdminAccounts(request, db, adminAccountManagement);
+        } catch {
+          return errorResponse(
+            500,
+            "internal_error",
+            "Campaign-Admin-Konten konnten nicht verarbeitet werden.",
           );
         }
       }

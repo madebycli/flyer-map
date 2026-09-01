@@ -1,4 +1,5 @@
 import { collectionSnapshotOrEmpty } from "./collection.ts";
+import { lineStringIsFullyInsideOrOnPolygon } from "./areaTaskPreparation.ts";
 import type { CampaignSnapshot,
   LineStringGeometry,
   MapCameraView,
@@ -387,8 +388,12 @@ export function applyCampaignMutation(
       ) {
         conflict("task_already_exists");
       }
-      if (!snapshot.areas.some((area) => area.id === mutation.payload.areaId)) {
+      const area = snapshot.areas.find((candidate) => candidate.id === mutation.payload.areaId);
+      if (!area) {
         conflict("task_area_missing");
+      }
+      if (!lineStringIsFullyInsideOrOnPolygon(mutation.payload.geometry, area.geometry)) {
+        conflict("street_outside_area");
       }
       next = {
         ...snapshot,

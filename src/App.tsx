@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CampaignApiError,
   collectionModeFromUrl,
-  fetchAreaPreparation,
   removeCollectionAccessTokenFromUrl,
-  startAreaPreparation,
   type AccessInfo,
-  type AreaPreparationPublicState,
 } from "./data/campaignApi";
 import {
   loadCampaignSnapshot,
   manualRefreshCampaign,
   saveCampaignSnapshot,
+  setCampaignFieldGroupContext,
   setCampaignInteractionBlocked,
   subscribeCampaignStore,
   type RefreshState,
@@ -42,11 +39,8 @@ import {
   type CollectionMainArea,
 } from "./domain/collection";
 import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
-import {
-  createAreaPreparationPoller,
-  type AreaPreparationPoller,
-} from "./areaPreparation/preparationPolling";
 import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } from "./i18n";
+import { lineStringIsFullyInsideOrOnPolygon } from "./domain/areaTaskPreparation.ts";
 import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
 import { CollectionAdminPanel } from "./collection/CollectionAdminPanel";
@@ -80,6 +74,7 @@ type UndoStatusChange = {
 };
 type AppProps = {
   platformCommand?: PlatformAppCommand | null;
+  activeFieldGroupId?: string | null;
   onPlatformContextChange?: (context: PlatformAppContext) => void;
 };
 
@@ -115,7 +110,7 @@ function nextStreetName(tasks: DistributionTask[], areaId: string, language: Lan
 }
 
 function syncMessage(language: Language, code: SyncMessageCode, refreshState: RefreshState) {
-  if (refreshState === "available") return t(language, "browseUpdateDeferred");
+  if (refreshState === "available") return null;
   if (code === "access_required") return t(language, "accessRequired");
   if (code === "network") return t(language, "unavailable");
   if (code === "forbidden") return t(language, "permissionDenied");
@@ -124,7 +119,11 @@ function syncMessage(language: Language, code: SyncMessageCode, refreshState: Re
   return null;
 }
 
-export default function App({ platformCommand = null, onPlatformContextChange }: AppProps = {}) {
+export default function App({
+  platformCommand = null,
+  activeFieldGroupId = null,
+  onPlatformContextChange,
+}: AppProps = {}) {
   const online = useOnlineStatus();
   const [initialLoad] = useState(loadCampaignSnapshot);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(initialLoad.snapshot);
@@ -155,13 +154,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const [collectionEditingAreaId, setCollectionEditingAreaId] = useState<string | null>(null);
   const [selectedCollectionAreaId, setSelectedCollectionAreaId] = useState<string | null>(null);
   const [collectionSelectedVertexIndex, setCollectionSelectedVertexIndex] = useState<number | null>(null);
-  const [areaPreparation, setAreaPreparation] = useState<AreaPreparationPublicState | null>(null);
-  const [areaPreparationSchemaUnavailable, setAreaPreparationSchemaUnavailable] = useState(false);
-  const [areaPreparationRequestFailed, setAreaPreparationRequestFailed] = useState(false);
-  const [areaPreparationRetrying, setAreaPreparationRetrying] = useState(false);
-  const areaPreparationPollerRef = useRef<AreaPreparationPoller | null>(null);
-  const areaPreparationAutoStartKeys = useRef(new Set<string>());
-  const areaPreparationPendingKeys = useRef(new Set<string>());
+  const [manualStreetAreaSelection, setManualStreetAreaSelection] = useState(false);
   const [undoStatusChange, setUndoStatusChange] = useState<UndoStatusChange | null>(null);
 
   useEffect(
@@ -184,6 +177,10 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     setCampaignInteractionBlocked(mode !== "browse");
     return () => setCampaignInteractionBlocked(false);
   }, [mode]);
+
+  useEffect(() => {
+    setCampaignFieldGroupContext(access?.groupId ?? activeFieldGroupId);
+  }, [access?.groupId, activeFieldGroupId]);
 
   useEffect(() => {
     if (!undoStatusChange) return;
@@ -226,7 +223,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const canChangeTaskStatusInArea = (area: Area | null) =>
     Boolean(
       area &&
-        (canEditTeam(area.teamId) ||
+        (canEditTeam(area.teamId) || isEditor ||
           (isFieldGroupMember && access?.teamId === area.teamId && Boolean(access.groupId))),
     );
 
@@ -280,73 +277,12 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
   const canChangeSelectedTaskStatus = canChangeTaskStatusInArea(selectedTaskArea);
   const canChangeSelectedHouseTaskStatus = canChangeTaskStatusInArea(selectedHouseTaskArea);
   const selectedTaskIsAutoPrepared = Boolean(selectedTask?.areaPreparationGeneration);
-  const selectedAreaPreparationKey = selectedArea
-    ? `${snapshot.campaign.id}:${selectedArea.id}`
-    : null;
-
-  useEffect(() => {
-    areaPreparationPollerRef.current?.stop();
-    areaPreparationPollerRef.current = null;
-    setAreaPreparation(null);
-    setAreaPreparationSchemaUnavailable(false);
-    setAreaPreparationRequestFailed(false);
-    setAreaPreparationRetrying(false);
-
-    if (
-      sheet !== "area" ||
-      !selectedArea ||
-      !selectedAreaPreparationKey ||
-      !canEditSelectedArea
-    ) {
-      return;
-    }
-
-    const poller = createAreaPreparationPoller({
-      campaignId: snapshot.campaign.id,
-      areaId: selectedArea.id,
-      client: {
-        fetchState: fetchAreaPreparation,
-        start: startAreaPreparation,
-      },
-      canAutoStart: () => !areaPreparationAutoStartKeys.current.has(selectedAreaPreparationKey),
-      markAutoStarted: () => areaPreparationAutoStartKeys.current.add(selectedAreaPreparationKey),
-      markPending: () => areaPreparationPendingKeys.current.add(selectedAreaPreparationKey),
-      hasPending: () => areaPreparationPendingKeys.current.has(selectedAreaPreparationKey),
-      clearPending: () => areaPreparationPendingKeys.current.delete(selectedAreaPreparationKey),
-      onState: (state) => {
-        setAreaPreparation(state);
-        setAreaPreparationSchemaUnavailable(false);
-        setAreaPreparationRequestFailed(false);
-        setAreaPreparationRetrying(false);
-      },
-      onReady: manualRefreshCampaign,
-      onError: (error) => {
-        setAreaPreparationRetrying(false);
-        setAreaPreparation(null);
-        if (error instanceof CampaignApiError && error.code === "area_preparation_schema_unavailable") {
-          setAreaPreparationSchemaUnavailable(true);
-          return;
-        }
-        setAreaPreparationRequestFailed(true);
-      },
-    });
-    areaPreparationPollerRef.current = poller;
-    poller.start();
-
-    return () => {
-      poller.stop();
-      if (areaPreparationPollerRef.current === poller) {
-        areaPreparationPollerRef.current = null;
-      }
-    };
-  }, [canEditSelectedArea, selectedArea?.id, selectedAreaPreparationKey, sheet, snapshot.campaign.id]);
-
   useEffect(() => {
     onPlatformContextChange?.({
       campaignId: snapshot.campaign.id,
       accessRole: access?.role ?? null,
       accessTeamId: access?.teamId ?? null,
-      activeGroupId: access?.groupId ?? null,
+      activeGroupId: access?.groupId ?? activeFieldGroupId,
       activeTeam: activeTeam
         ? {
             id: activeTeam.id,
@@ -355,11 +291,12 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
           }
         : null,
       teams: snapshot.teams.map((team) => ({ id: team.id, name: team.name, color: team.color })),
-      launcherAvailable: mode === "browse" && sheet === null,
+      launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection,
       canManageTeams: Boolean(isAdmin),
       canCreateArea: Boolean(activeTeam && canEditTeam(activeTeam.id)),
+      canCreateManualStreet: snapshot.areas.some((area) => canEditArea(area)),
     });
-  }, [access, activeTeam, isAdmin, mode, sheet, onPlatformContextChange, snapshot.campaign.id, snapshot.teams]);
+  }, [access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, sheet, onPlatformContextChange, snapshot.areas, snapshot.campaign.id, snapshot.teams]);
 
   const renderedAreas = useMemo(
     () =>
@@ -406,10 +343,16 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     () => validatePolygonVertices(editingVertices),
     [editingVertices],
   );
-  const streetValidation = useMemo(
-    () => validateLineStringVertices(streetDraftVertices),
-    [streetDraftVertices],
-  );
+  const streetValidation = useMemo(() => {
+    const validation = validateLineStringVertices(streetDraftVertices);
+    if (!validation.valid || !selectedArea) return validation;
+    return lineStringIsFullyInsideOrOnPolygon(
+      createLineStringGeometry(streetDraftVertices),
+      selectedArea.geometry,
+    )
+      ? validation
+      : { valid: false as const, reason: "Die Straße muss vollständig innerhalb des Gebiets liegen." };
+  }, [selectedArea, streetDraftVertices]);
   const commitSnapshot = (update: (current: CampaignSnapshot) => CampaignSnapshot) => {
     if (!access || access.role === "viewer") return;
     setSnapshot((current) => {
@@ -501,6 +444,36 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     setSelectedVertexIndex(null);
   };
 
+  const openStreetDrawing = (area: Area) => {
+    if (!canEditArea(area)) return;
+    setManualStreetAreaSelection(false);
+    setSelectedAreaId(area.id);
+    setStreetDraftVertices([]);
+    setSelectedTaskId(null);
+    setSelectedHouseTaskId(null);
+    setMode("street-draw");
+    setSheet(null);
+  };
+
+  const startManualStreet = () => {
+    if (selectedArea && canEditSelectedArea) {
+      openStreetDrawing(selectedArea);
+      return;
+    }
+    const editableAreas = snapshot.areas.filter((area) => canEditArea(area));
+    if (editableAreas.length === 1) {
+      openStreetDrawing(editableAreas[0]);
+      return;
+    }
+    if (editableAreas.length > 1) {
+      setSelectedAreaId(null);
+      setSelectedTaskId(null);
+      setSelectedHouseTaskId(null);
+      setSheet(null);
+      setManualStreetAreaSelection(true);
+    }
+  };
+
   useEffect(() => {
     if (!platformCommand || platformCommand.id <= handledPlatformCommandId.current) return;
     handledPlatformCommandId.current = platformCommand.id;
@@ -540,7 +513,10 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
     if (platformCommand.type === "start-area-drawing") {
       startDrawing();
     }
-  }, [platformCommand, mode, isAdmin, activeTeam, access, snapshot.teams]);
+    if (platformCommand.type === "start-manual-street") {
+      startManualStreet();
+    }
+  }, [platformCommand, mode, isAdmin, activeTeam, access, selectedArea, canEditSelectedArea, snapshot.areas, snapshot.teams]);
 
   const cancelDrawing = () => {
     setMode("browse");
@@ -734,6 +710,11 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
 
   const selectArea = (areaId: string | null) => {
     if (mode !== "browse") return;
+    if (manualStreetAreaSelection) {
+      const candidate = snapshot.areas.find((area) => area.id === areaId) ?? null;
+      if (candidate && canEditArea(candidate)) openStreetDrawing(candidate);
+      return;
+    }
     setSelectedTaskId(null);
     setSelectedHouseTaskId(null);
     setSelectedAreaId(areaId);
@@ -852,16 +833,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
 
   const startStreetDrawing = () => {
     if (!selectedArea || !canEditSelectedArea) return;
-    setStreetDraftVertices([]);
-    setSelectedTaskId(null);
-    setMode("street-draw");
-    setSheet(null);
-  };
-
-  const retryAreaPreparation = () => {
-    if (!selectedArea || !canEditSelectedArea) return;
-    setAreaPreparationRetrying(true);
-    areaPreparationPollerRef.current?.retry();
+    openStreetDrawing(selectedArea);
   };
 
   const cancelStreetDrawing = () => {
@@ -1151,6 +1123,23 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
             {t(language, "undo")}
           </button>
         </div>
+      ) : null}
+
+      {manualStreetAreaSelection ? (
+        <section className="mode-sheet" aria-label="Gebiet für manuelle Straße auswählen">
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Straße manuell hinzufügen</span>
+              <strong>Gebiet auswählen</strong>
+            </div>
+          </div>
+          <p>Tippe auf ein Gebiet, in dem du Straßen bearbeiten darfst.</p>
+          <div className="mode-actions">
+            <button className="button secondary" type="button" onClick={() => setManualStreetAreaSelection(false)}>
+              {t(language, "cancel")}
+            </button>
+          </div>
+        </section>
       ) : null}
 
       {mode === "browse" && sheet === null ? (
@@ -1463,33 +1452,6 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
             </div>
             <button className="icon-button" type="button" onClick={() => { setSelectedAreaId(null); setSelectedTaskId(null); setSheet(null); }} aria-label={t(language, "close")}>×</button>
           </div>
-
-          {canEditSelectedArea && (areaPreparation?.status === "pending" || areaPreparationRetrying) ? (
-            <div className="area-preparation-status is-pending" role="status" aria-live="polite">
-              {t(language, "areaPreparationPending")}
-            </div>
-          ) : null}
-          {canEditSelectedArea && areaPreparation?.status === "ready" ? (
-            <div className="area-preparation-status is-ready" role="status" aria-live="polite">
-              {t(language, "areaPreparationReady", {
-                roads: areaPreparation.roadCount,
-                houses: areaPreparation.houseCount,
-              })}
-            </div>
-          ) : null}
-          {canEditSelectedArea && areaPreparationSchemaUnavailable ? (
-            <div className="area-preparation-status is-unavailable" role="status">
-              {t(language, "areaPreparationSchemaUnavailable")}
-            </div>
-          ) : null}
-          {canEditSelectedArea && !areaPreparationSchemaUnavailable && (areaPreparation?.status === "failed" || areaPreparationRequestFailed) ? (
-            <div className="area-preparation-status is-failed" role="status">
-              <span>{t(language, "areaPreparationFailed")}</span>
-              <button className="small-action" type="button" onClick={retryAreaPreparation} disabled={areaPreparationRetrying}>
-                {t(language, "areaPreparationRetry")}
-              </button>
-            </div>
-          ) : null}
 
           {canEditSelectedArea ? (
             <div className="area-fields">

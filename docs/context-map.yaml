@@ -1,4 +1,4 @@
-version: 19
+version: 20
 
 entrypoints:
   always:
@@ -22,6 +22,7 @@ routing_rules:
   - for OpenFreeMap basemap, standard house numbers, Smart Map online-first or related Area-Sheet hardening, load plan-openfreemap-smartdata-ui-hardening, then follow Map, Offline Map, Smart Street runtime, Smart House runtime, UX, Collaboration and Quality edges
   - for automatic server-side Area preparation, recovery status/retry, generated Street/House Tasks or migration 0014, load plan-auto-area-task-preparation, then follow Data, Offline Sync, Map, Security, Quality, Offline Map, Smart Task identity and ADR-0021 edges
   - for the normal automatic Area Sheet, Preparation polling/retry, completed task color or removal of browser Smart/offline-download UI, load plan-auto-area-ui-server-preparation after plan-auto-area-task-preparation, then follow UX, Map, Offline Sync, Quality and ADR-0021 edges
+  - for the 2026-09-02 mission branch, manual Street creation, dormant automatic preparation, campaign-local Admin passwords or migration 0015, load ADR-0023 before proposed Organization identity documents
   - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
@@ -189,6 +190,13 @@ nodes:
     status: proposed
     topics: [accounts, username, password, totp, recovery, sessions]
     load_when: [Organization Admin accounts, password hashing, TOTP, account recovery]
+
+  - id: adr-mission-manual-distribution-admin-accounts
+    path: docs/decisions/ADR-0023-mission-manual-distribution-and-campaign-admin-accounts.md
+    type: decision
+    status: accepted
+    topics: [mission-release, manual-streets, area-validation, campaign-admin, username, password, sessions, migration-0015]
+    load_when: [mission branch, manual Street, automatic preparation disabled, Campaign Admin password, setup link, login, migration 0015]
 
   - id: adr-capability-roles
     path: docs/decisions/ADR-0016-capability-role-templates.md
@@ -491,6 +499,9 @@ edges:
   - { from: adr-collection-access-areas-runs, to: security, relation: constrains }
   - { from: adr-collection-access-areas-runs, to: map, relation: constrains }
   - { from: adr-server-prepared-automatic-area-work, to: data, relation: governs }
+  - { from: adr-mission-manual-distribution-admin-accounts, to: security, relation: governs }
+  - { from: adr-mission-manual-distribution-admin-accounts, to: data, relation: extends_additively }
+  - { from: adr-mission-manual-distribution-admin-accounts, to: adr-admin-identity, relation: mission_scoped_exception }
   - { from: adr-m5-no-legacy-snapshot-writes, to: data, relation: governs }
   - { from: adr-m5-no-legacy-snapshot-writes, to: offline-sync, relation: governs }
   - { from: adr-m5-no-legacy-snapshot-writes, to: security, relation: governs }

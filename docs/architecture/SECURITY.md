@@ -2,7 +2,7 @@
 id: architecture-security
 type: architecture
 status: accepted
-last_updated: 2026-09-01
+last_updated: 2026-09-02
 related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, ADR-0021, ADR-0022, plan-012-platform-app-expansion]
 source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, m6-smart-task-security, future-security-boundaries]
 ---
@@ -54,6 +54,20 @@ Invite links carry tokens in URL fragments. Browser redeems the fragment and rem
 Successful redemption creates a separate opaque session secret in a `Secure; HttpOnly; SameSite=Lax` cookie. D1 stores only its hash.
 
 Every protected request resolves the session's backing grant. Revoking the grant invalidates backed sessions on their next protected request.
+
+## Mission Campaign Admin accounts
+
+ADR-0023 adds a temporary, campaign-local password login alongside Access Links. It is not an Organization identity system.
+
+- setup requires an existing Campaign Admin and a single-use 24-hour setup link;
+- usernames are local to one Campaign and limited to ASCII letters, digits, `.`, `_` and `-`;
+- passwords are never returned, logged or stored client-side; D1 stores a unique-salt PBKDF2-HMAC-SHA-256 verifier with 600,000 iterations only;
+- login responses do not distinguish an unknown, disabled, locked or wrong-password account;
+- a durable username-scoped backoff locks after five failures for 15 minutes;
+- account sessions use a separate opaque hash-only `HttpOnly; Secure; SameSite=Lax` cookie and expire after 12 hours;
+- disabling an account revokes its account sessions; its backing Campaign grant remains the Worker authorization source of truth.
+
+Migration `0015` is additive and must be present before these endpoints are used. TOTP, recovery codes, e-mail identity and cross-Campaign accounts remain outside this mission scope.
 
 ## Current Team Editor scope
 

@@ -172,6 +172,22 @@ export function clipLineStringToPolygon(
   return fragments;
 }
 
+/**
+ * True only when every part of a Street line stays inside or on its Area.
+ * Comparing the clipped result catches concave-polygon exits that a
+ * vertex-only check would miss.
+ */
+export function lineStringIsFullyInsideOrOnPolygon(
+  line: LineStringGeometry,
+  polygon: PolygonGeometry,
+) {
+  const fragments = clipLineStringToPolygon(line, polygon);
+  if (fragments.length !== 1 || fragments[0].coordinates.length !== line.coordinates.length) {
+    return false;
+  }
+  return fragments[0].coordinates.every((point, index) => samePoint(point, line.coordinates[index]));
+}
+
 function signedAreaAndCentroid(ring: LngLat[]) {
   let twiceArea = 0;
   let centroidLng = 0;

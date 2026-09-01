@@ -2530,8 +2530,16 @@ export function MapView({
             type="button"
             onClick={onRefresh}
             disabled={refreshState === "loading"}
-            aria-label={t(language, "refreshData")}
-            title={t(language, "refreshData")}
+            aria-label={
+              refreshState === "available"
+                ? `${t(language, "refreshData")}: ${t(language, "browseUpdateDeferred")}`
+                : t(language, "refreshData")
+            }
+            title={
+              refreshState === "available"
+                ? `${t(language, "refreshData")}: ${t(language, "browseUpdateDeferred")}`
+                : t(language, "refreshData")
+            }
           >
             <span aria-hidden="true">↻</span>
           </button>

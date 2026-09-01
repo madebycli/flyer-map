@@ -119,7 +119,7 @@ test("team editor may change a task and area in its own team", () => {
   });
 });
 
-test("team editor cannot modify another team's area or task", () => {
+test("team editor cannot modify another team's area, but may help with status only", () => {
   const previous = snapshot();
   const changedArea = structuredClone(previous);
   changedArea.areas[1].name = "Forbidden";
@@ -132,6 +132,13 @@ test("team editor cannot modify another team's area or task", () => {
   changedTask.tasks[1].status = "later";
   assert.equal(
     authorizeSnapshotWrite(access("team-editor", "team_a"), previous, changedTask).allowed,
+    true,
+  );
+
+  const changedForeignLabel = structuredClone(previous);
+  changedForeignLabel.tasks[1].label = "Forbidden";
+  assert.equal(
+    authorizeSnapshotWrite(access("team-editor", "team_a"), previous, changedForeignLabel).allowed,
     false,
   );
 });

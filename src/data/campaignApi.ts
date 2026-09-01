@@ -31,6 +31,14 @@ export type AccessGrant = Omit<AccessInfo, "role" | "groupId"> & {
   revokedAt: string | null;
 };
 
+export type CampaignAdminAccount = {
+  id: string;
+  campaignId: string;
+  username: string;
+  createdAt: string;
+  disabledAt: string | null;
+};
+
 export type AreaPreparationStatus = "missing" | "pending" | "ready" | "failed";
 
 export type AreaPreparationPublicState = {
@@ -267,6 +275,52 @@ export async function revokeCampaignAccessGrant(campaignId: string, grantId: str
   });
 }
 
+function campaignAdminAccountsPath(campaignId: string) {
+  return `/api/campaigns/${encodeURIComponent(campaignId)}/admin-accounts`;
+}
+
+export async function fetchCampaignAdminAccounts(campaignId: string) {
+  const response = await apiFetch(campaignAdminAccountsPath(campaignId));
+  return ((await response.json()) as { accounts: CampaignAdminAccount[] }).accounts;
+}
+
+export async function createCampaignAdminSetupInvite(campaignId: string) {
+  const response = await apiFetch(`${campaignAdminAccountsPath(campaignId)}/setup-invites`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  });
+  return (await response.json()) as { token: string; expiresAt: string };
+}
+
+export async function disableCampaignAdminAccount(campaignId: string, accountId: string) {
+  await apiFetch(`${campaignAdminAccountsPath(campaignId)}/${encodeURIComponent(accountId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function loginCampaignAdminAccount(campaignId: string, username: string, password: string) {
+  const response = await apiFetch(`${campaignAdminAccountsPath(campaignId)}/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  return ((await response.json()) as { access: AccessInfo }).access;
+}
+
+export async function completeCampaignAdminAccountSetup(
+  campaignId: string,
+  token: string,
+  username: string,
+  password: string,
+) {
+  const response = await apiFetch("/api/admin-accounts/setup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ campaignId, token, username, password }),
+  });
+  return ((await response.json()) as { access: AccessInfo }).access;
+}
+
 
 export function collectionAccessTokenFromUrl() {
   if (typeof window === "undefined") return null;
@@ -349,5 +403,34 @@ export function buildCampaignAccessUrl(campaignId: string, token: string) {
   url.hash = "";
   url.searchParams.set("campaign", campaignId);
   url.hash = new URLSearchParams({ access: token }).toString();
+  return url.toString();
+}
+
+export function campaignAdminSetupTokenFromUrl() {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  const token = params.get("admin-setup");
+  return token && token.length >= 32 && token.length <= 256 ? token : null;
+}
+
+export function removeCampaignAdminSetupTokenFromUrl() {
+  if (typeof window === "undefined" || !window.location.hash) return;
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  params.delete("admin-setup");
+  url.hash = params.toString();
+  window.history.replaceState(null, "", url);
+}
+
+export function buildCampaignAdminSetupUrl(campaignId: string, token: string) {
+  if (typeof window === "undefined") {
+    return `?campaign=${encodeURIComponent(campaignId)}#admin-setup=${encodeURIComponent(token)}`;
+  }
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("campaign", campaignId);
+  url.hash = new URLSearchParams({ "admin-setup": token }).toString();
   return url.toString();
 }

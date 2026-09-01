@@ -2,7 +2,7 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-01
+last_updated: 2026-09-02
 ---
 
 # Current Project State
@@ -14,7 +14,7 @@ Die reale Distribution-Mission startet am 2026-09-02. Bis nach der Mission gilt 
 Mission-kritischer Produktfluss:
 
 ```text
-Admin -> Teams/Gebiet -> serverseitige Area Preparation -> Streets/Houses
+Admin -> Teams/Gebiet -> manuelle Streets/Houses
 -> Street-/House-Status -> M5 Queue/Sync -> gemeinsamer Stand auf weiteren Geräten
 ```
 
@@ -53,7 +53,7 @@ mutations: 188
 
 Damit ist Migration 0014 für die serverseitige automatische Area-Vorbereitung remote vorhanden. Historische Plan-/ADR-Texte, die den damaligen Zustand `prepared only` beschreiben, bleiben historische Evidence und sind nicht als aktueller Deployment-State zu lesen.
 
-## M4 Admin-Handoff
+## Mission-Admin-Handoff
 
 Der bestehende Campaign-Access-Flow bleibt der Mission-Admin-Weg. Ein bestehender Admin kann in `Einstellungen -> Zugriff` einen neuen Grant mit Rolle `admin` erzeugen und den einmalig angezeigten Zugangslink weitergeben.
 
@@ -67,7 +67,7 @@ Sicherheitsvertrag:
 - Grant-Revocation invalidiert bestehende Sessions auf dem nächsten geschützten Request;
 - normaler Admin-Handoff benötigt kein GitHub, Cloudflare, Wrangler, Deployment Secret oder D1-Zugriff.
 
-Username/Password/TOTP und Organization-Migration bleiben nach der Mission.
+Zusätzlich erlaubt ADR-0023 kampagnenlokale Admin-Konten für die Mission. Ein bestehender Campaign Admin erzeugt unter `Einstellungen -> Admin-Konten` einen einmaligen, 24 Stunden gültigen Einrichtungslink. Die Empfängerperson legt einen eigenen Benutzernamen und ein eigenes Passwort fest und erhält eine serverseitig widerrufbare, 12-stündige Session. D1 speichert nur PBKDF2-HMAC-SHA-256-Verifier mit individuellem Salt und 600.000 Iterationen, Setup-/Session-Hashes und ein persistentes Login-Backoff. Es gibt bewusst kein TOTP, keine E-Mail-Anforderung und keine Campaign-übergreifenden Konten. Migration `0015` muss vor dem Worker-Rollout angewendet werden.
 
 ## M5 finaler Schreibvertrag
 
@@ -83,25 +83,11 @@ Der Campaign-Snapshot bleibt Read Model, UI-Modell, Startup-Cache und Konflikt-/
 - Conflict, 401/403 und invalide Mutationen bleiben sichtbar und werden nicht heimlich überschrieben;
 - bei leerer Queue wird ein abweichender lokaler Snapshot als Konfliktkopie bewahrt, statt ihn automatisch zum Server hochzuladen.
 
-## Automatische Distribution-Area-Vorbereitung
+## Manuelle Distribution-Areas
 
-ADR-0021 ist der normale Mission-Pfad:
+ADR-0023 überschreibt ADR-0021 nur für die Mission: erfolgreiche `area.create`- und `area.update-geometry`-Mutationen starten keine OSM-Vorbereitung, keinen Worker-Job und keinen Browser-Poller. Der vorhandene automatische Runtime-Code bleibt unverändert erhalten, wird aber durch die zentrale Missions-Policy nicht aufgerufen.
 
-- erfolgreicher, nicht wiederholter `area.create` oder `area.update-geometry` Write kann Worker-seitig Vorbereitung planen;
-- canonical Area-Geometrie und BBox werden serverseitig ermittelt;
-- bounded OSM-Daten werden serverseitig geladen und normalisiert;
-- Straßenfragmente werden als normale persistente Street Tasks gespeichert;
-- Gebäude werden als normale persistente House Tasks gespeichert;
-- automatische Tasks besitzen app-eigene IDs und eine serverseitige Preparation-Generation;
-- manuelle Streets bleiben mit `areaPreparationGeneration = null` erhalten;
-- Publish von Tasks, Ready-State und Campaign-Revision erfolgt guarded/atomar;
-- gleiche Ready-Geometrie ist No-op, frisches Pending dedupliziert und veraltete Generationen dürfen nicht publishen;
-- Fehler veröffentlichen keine partiellen Tasks;
-- autorisierter Retry ist möglich;
-- automatische Tasks dürfen normal ihren Status ändern, aber nicht über normale Client-Mutationen gelöscht werden;
-- nach begonnenem automatischem Work wird eine Geometrieänderung kontrolliert mit `area_has_started_work` blockiert.
-
-Der normale Area Sheet startet `missing` genau einmal, pollt `pending` nur solange das Sheet offen ist, refresht bei `ready` einmal den normalen Campaign-Snapshot und bietet bei `failed` einen autorisierten Retry. Nach lokaler Area-Erstellung oder Geometrieänderung toleriert der Poller den kurzen M5-Persistenz-Race mit höchstens fünf weiteren `404 area_not_found`-Reads im Zwei-Sekunden-Takt; andere Fehler bleiben explizit retrybar. Der serverseitige Overpass-Formularrequest verwendet den produktiv kompatiblen `application/x-www-form-urlencoded`-Content-Type ohne den von Overpass abgelehnten Charset-Zusatz. Leere additive House-/Collection-Felder werden beim lokalen/kanonischen Vergleich gleich behandelt, echte Datenabweichungen bleiben Konflikte. `Straße manuell hinzufügen` bleibt Fallback. Die alten Smart-Street-/Smart-House-Auswahlbuttons sind kein normaler Produkteinstieg mehr.
+`Straße manuell hinzufügen` ist als grüner globaler Plus-Button sichtbar und im Gebiet weiterhin verfügbar. Bei mehreren editierbaren Gebieten wählt die Person zuerst eines aus. Die Street-Prüfung akzeptiert nur eine vollständige Linie innerhalb oder auf der Gebietsgrenze und der Worker weist Umgehungsversuche mit `street_outside_area` zurück. Historische automatisch vorbereitete Tasks bleiben normale darstellbare und statusänderbare Daten.
 
 ## Map und Task-Darstellung
 
@@ -131,7 +117,7 @@ Jeder neue Mission-Commit muss wieder auf seinem exakten Head durch CI verifizie
 Automatisierte Tests ersetzen folgende Abnahmen nicht:
 
 1. echter Admin-A -> Admin-B-Handoff in einem frischen Browser/Gerät einschließlich weiterer Admin-Link-Erzeugung und Revocation;
-2. echter Area-End-to-End-Flow auf der Release-Preview: Team -> Gebiet -> pending -> ready -> persistente Streets/Houses;
+2. echter Area-End-to-End-Flow auf der Release-Preview: Team -> Gebiet -> manuelle Street -> persistenter Status auf zweitem Gerät;
 3. zweites autorisiertes Gerät sieht Statusänderungen;
 4. kurzer Netzverlust während Street-/House-Statusänderung und erfolgreiche Wiederkehr;
 5. reales Android Chromium Smoke;
@@ -146,7 +132,7 @@ Cloud-/CI-Tests oder ein Browser ohne echte Mobile/WebGL-Eigenschaften dürfen n
 - Collection/Pickup Stats;
 - Collection Actor Attribution/Highlight/Revert;
 - vollständige Organizations-Migration;
-- Username/Password/TOTP;
+- Organization-Username/Password/TOTP und generische Konten;
 - generische Capability-/Permission-Matrix;
 - Action Templates und langfristige Analytics;
 - vollständiger Desktop-Admin-Neubau;

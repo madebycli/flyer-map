@@ -32,7 +32,7 @@ test("normal Area flow has no browser Smart House entry and no workbench preview
   const panel = await readFile("src/map/SmartHouseSelectionPanel.tsx", "utf8");
   const combined = `${app}\n${map}\n${panel}`;
 
-  assert.match(app, /createAreaPreparationPoller/u);
+  assert.doesNotMatch(app, /createAreaPreparationPoller|fetchAreaPreparation|startAreaPreparation/u);
   assert.doesNotMatch(app, /smartCandidatesForArea|availableSmartBuildingsForCreation|setMode\("smart-house"\)|createSmartHouseTaskSnapshot/u);
   assert.doesNotMatch(combined, /PREVIEW_BUILDINGS|Mock Buildings|M6SelectionPreview/u);
 });
@@ -81,7 +81,7 @@ test("house batch mutation stays on the existing M5 queue and preserves App iden
   assert.match(baseDiff, /type: "house\.create-batch"/u);
   assert.match(repository, /FROM json_each\(\?\)/u);
   assert.match(repository, /INSERT INTO house_tasks/u);
-  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation\)/u);
+  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation, record\.fieldGroupId\)/u);
   assert.match(store, /schema_migration_required/u);
 });
 

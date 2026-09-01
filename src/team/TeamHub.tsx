@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
 import { CampaignApiError } from "../data/campaignApi.ts";
 import {
   buildFieldGroupQrJoinUrl,
@@ -22,6 +21,7 @@ import {
 import type { PlatformAppContext } from "../platform/platformContract.ts";
 import { FieldGroupMembersPanel } from "./FieldGroupMembersPanel.tsx";
 import { TeamProgressPanel } from "./TeamProgressPanel.tsx";
+import { ShareLinkModal } from "../share/ShareLinkModal.tsx";
 import "./team-hub.css";
 
 type TeamHubProps = {
@@ -31,6 +31,7 @@ type TeamHubProps = {
   onSelectTeam: (teamId: string) => void;
   onManageTeams: () => void;
   onAccessChanged: () => void;
+  onOperationalGroupChange: (groupId: string | null) => void;
 };
 
 type RequestState = "idle" | "loading" | "saving";
@@ -38,6 +39,12 @@ type RequestState = "idle" | "loading" | "saving";
 type IssuedCredentials = {
   groupId: string;
   credentials: FieldGroupCredentials;
+};
+
+type ShareLink = {
+  title: string;
+  description: string;
+  url: string;
 };
 
 function errorMessage(error: unknown) {
@@ -89,6 +96,7 @@ export function TeamHub({
   onSelectTeam,
   onManageTeams,
   onAccessChanged,
+  onOperationalGroupChange,
 }: TeamHubProps) {
   const campaignId = context?.campaignId ?? null;
   const [groups, setGroups] = useState<FieldGroupSummary[]>([]);
@@ -105,6 +113,8 @@ export function TeamHub({
   const [newDiscoverable, setNewDiscoverable] = useState(true);
   const [participantCount, setParticipantCount] = useState("1");
   const [issuedCredentials, setIssuedCredentials] = useState<IssuedCredentials | null>(null);
+  const [shareLink, setShareLink] = useState<ShareLink | null>(null);
+  const [copiedJoinLink, setCopiedJoinLink] = useState(false);
   const [tourSummary, setTourSummary] = useState<FieldGroupTourSummary | null>(null);
   const retryRequestIds = useRef(new Map<string, string>());
 
@@ -124,6 +134,10 @@ export function TeamHub({
     () => groups.find((group) => group.id === selectedGroupId) ?? null,
     [groups, selectedGroupId],
   );
+  const issuedJoinUrl =
+    campaignId && issuedCredentials
+      ? buildFieldGroupQrJoinUrl(campaignId, issuedCredentials.credentials.qrToken)
+      : null;
   const activeTeam = context?.activeTeam ?? null;
   const currentTeamIds = context?.teams.map((team) => team.id) ?? [];
   const canManageGroup = useCallback(
@@ -191,6 +205,7 @@ export function TeamHub({
           return [result.group, ...rest];
         });
         setSelectedGroupId(result.group.id);
+        onOperationalGroupChange(result.group.id);
         onSelectTeam(result.group.teamId);
         onAccessChanged();
       })
@@ -219,6 +234,17 @@ export function TeamHub({
     }
   };
 
+  const copyIssuedJoinLink = async () => {
+    if (!issuedJoinUrl) return;
+    try {
+      await navigator.clipboard.writeText(issuedJoinUrl);
+      setCopiedJoinLink(true);
+      window.setTimeout(() => setCopiedJoinLink(false), 1600);
+    } catch {
+      setCopiedJoinLink(false);
+    }
+  };
+
   const submitJoin = () =>
     perform(async () => {
       if (!campaignId || !joinCode.trim()) return;
@@ -227,6 +253,7 @@ export function TeamHub({
       setJoinCode("");
       setGroups((current) => [result.group, ...current.filter((group) => group.id !== result.group.id)]);
       setSelectedGroupId(result.group.id);
+      onOperationalGroupChange(result.group.id);
       onSelectTeam(result.group.teamId);
       onAccessChanged();
     });
@@ -270,6 +297,7 @@ export function TeamHub({
       }
       setGroups((current) => [created.group, ...current.filter((group) => group.id !== created.group.id)]);
       setSelectedGroupId(created.group.id);
+      onOperationalGroupChange(created.group.id);
       setNewLabel("");
       onSelectTeam(created.group.teamId);
     });
@@ -342,6 +370,7 @@ export function TeamHub({
       if (result.group) {
         setGroups((current) => [result.group, ...current.filter((item) => item.id !== result.group.id)]);
       }
+      onOperationalGroupChange(null);
       setIssuedCredentials(null);
       onAccessChanged();
     });
@@ -352,6 +381,7 @@ export function TeamHub({
       await leaveFieldGroup(campaignId, selectedGroup.id);
       setSelectedGroupId(null);
       setIssuedCredentials(null);
+      onOperationalGroupChange(null);
       onAccessChanged();
       await loadGroups();
     });
@@ -546,17 +576,27 @@ export function TeamHub({
                 </div>
               </div>
               <div className="team-hub-room-code">{issuedCredentials.credentials.roomCode}</div>
-              {campaignId ? (
-                <div className="team-hub-qr">
-                  <QRCodeSVG
-                    value={buildFieldGroupQrJoinUrl(campaignId, issuedCredentials.credentials.qrToken)}
-                    size={176}
-                    level="M"
-                    title="QR-Code zum Beitreten"
-                  />
-                </div>
+              {issuedJoinUrl ? (
+                <>
+                  <input readOnly value={issuedJoinUrl} aria-label="Tour Join Link" />
+                  <div className="team-hub-action-row">
+                    <button type="button" onClick={() => void copyIssuedJoinLink()}>
+                      {copiedJoinLink ? "Kopiert" : "Link kopieren"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShareLink({
+                        title: `Tour: ${selectedGroup?.label ?? "Einsatz"}`,
+                        description: "Room Code und QR gelten für diese Tour. Nach einer Rotation sind die bisherigen Join-Daten ungültig.",
+                        url: issuedJoinUrl,
+                      })}
+                    >
+                      QR-Code anzeigen
+                    </button>
+                  </div>
+                </>
               ) : null}
-              <p>Der Code und QR-Zugang werden nur jetzt angezeigt. Nach Rotation funktionieren die alten Daten sofort nicht mehr.</p>
+              <p>Room Code, Link und QR-Zugang werden nur jetzt angezeigt. Nach Rotation funktionieren die alten Daten sofort nicht mehr.</p>
             </section>
           ) : null}
 
@@ -596,6 +636,7 @@ export function TeamHub({
                   onClick={() => {
                     setSelectedGroupId(group.id);
                     setParticipantCount(String(group.participantCount ?? 1));
+                    onOperationalGroupChange(group.id);
                     onSelectTeam(group.teamId);
                   }}
                 >
@@ -681,6 +722,14 @@ export function TeamHub({
           ) : null}
         </div>
       </section>
+      {shareLink ? (
+        <ShareLinkModal
+          title={shareLink.title}
+          description={shareLink.description}
+          url={shareLink.url}
+          onClose={() => setShareLink(null)}
+        />
+      ) : null}
     </div>
   );
 }
