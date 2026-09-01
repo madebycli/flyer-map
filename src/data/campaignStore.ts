@@ -39,6 +39,7 @@ import {
   deriveCampaignMutation,
   MutationDerivationError,
 } from "../domain/mutationDiff";
+import { sameSnapshotContent } from "../domain/snapshotComparison.ts";
 
 const STORAGE_KEY = "verteil-flyer:campaign-snapshot";
 const BACKUP_STORAGE_KEY = "verteil-flyer:campaign-snapshot:backup";
@@ -313,10 +314,6 @@ function writeLocalSnapshot(snapshot: CampaignSnapshot) {
     return "Gespeichert, aber die lokale Sicherheitskopie konnte nicht aktualisiert werden.";
   }
   return null;
-}
-
-function sameSnapshotContent(a: CampaignSnapshot, b: CampaignSnapshot) {
-  return JSON.stringify({ ...a, revision: 0 }) === JSON.stringify({ ...b, revision: 0 });
 }
 
 function isAccessError(error: unknown) {

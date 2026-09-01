@@ -234,6 +234,10 @@ test("server-side area fetch makes one bounded roads and buildings request", asy
     },
   });
   assert.equal(requests.length, 1);
+  assert.equal(
+    new Headers(requests[0].headers).get("content-type"),
+    "application/x-www-form-urlencoded",
+  );
   const query = String(new URLSearchParams(String(requests[0].body)).get("data"));
   assert.match(query, /\["highway"\]/u);
   assert.match(query, /\["building"\]/u);

@@ -414,7 +414,7 @@ async function fetchOverpass(
       method: "POST",
       headers: {
         accept: "application/json",
-        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "content-type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({ data: buildOfflineMapOverpassQuery(input) }),
       signal: controller.signal,

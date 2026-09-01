@@ -11,7 +11,7 @@ source_of_truth_for: [automatic-area-preparation-ui]
 
 ## Ergebnis
 
-Der normale Distribution-Area-Sheet verwendet den serverautorisierten Preparation-Status. Fehlende Vorbereitung wird genau einmal gestartet, Pending wird nur bei offenem Sheet im Zwei-Sekunden-Takt gelesen und Ready löst einen normalen Snapshot-Refresh aus. Nach lokaler Area-Erstellung oder Geometrieänderung toleriert der Poller den kurzen M5-Persistenz-Race mit höchstens fünf weiteren `404 area_not_found`-Reads; Failed bietet berechtigten Rollen einen manuellen Retry, ein fehlendes 0014-Schema keinen Retry-Loop.
+Der normale Distribution-Area-Sheet verwendet den serverautorisierten Preparation-Status. Fehlende Vorbereitung wird genau einmal gestartet, Pending wird nur bei offenem Sheet im Zwei-Sekunden-Takt gelesen und Ready löst einen normalen Snapshot-Refresh aus. Nach lokaler Area-Erstellung oder Geometrieänderung toleriert der Poller den kurzen M5-Persistenz-Race mit höchstens fünf weiteren `404 area_not_found`-Reads; Failed bietet berechtigten Rollen einen manuellen Retry, ein fehlendes 0014-Schema keinen Retry-Loop. Der serverseitige Overpass-Formularrequest verwendet den produktiv kompatiblen `application/x-www-form-urlencoded`-Content-Type ohne den abgelehnten Charset-Zusatz. Leere additive House-/Collection-Felder werden beim lokalen/kanonischen Vergleich gleich behandelt, echte Datenabweichungen bleiben Konflikte.
 
 Die alten browserseitigen Smart-Street-/Smart-House-Aktionsbuttons, Paket-Fetches und der Settings-Download für Offline-Karten sind aus dem normalen Produktfluss entfernt. M5-Mutation-Queue, lokaler Snapshot-Cache und der bestehende Map-Kontext bleiben unverändert.
 
