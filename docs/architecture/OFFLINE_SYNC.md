@@ -2,8 +2,8 @@
 id: architecture-offline-sync
 type: architecture
 status: accepted
-last_updated: 2026-08-26
-related: [architecture-data, architecture-security, architecture-map, product-roadmap, ADR-0011, ADR-0013]
+last_updated: 2026-09-01
+related: [architecture-data, architecture-security, architecture-map, product-roadmap, ADR-0011, ADR-0013, ADR-0021]
 source_of_truth_for: [offline-queue, synchronization, conflict-handling]
 ---
 
@@ -22,8 +22,11 @@ The durable mutation architecture is implemented in the current stable code line
 M6 Street/House persistence code has additive migrations prepared but they are not remotely applied automatically:
 - 0004 adds optional Street source provenance;
 - 0005 adds durable House Tasks.
+- 0014 adds server-side automatic Area preparation state and optional automatic-generation markers.
 
 Until intentional migration rollout, affected writes fail explicitly with `schema_migration_required` before claiming a Campaign revision.
+
+The 0014 automatic preparation path instead fails closed as `area_preparation_schema_unavailable`; it never turns an Area mutation into a partial client-side fallback.
 
 ## Local state layers
 
@@ -77,11 +80,15 @@ M5/M6 operations include:
 
 Street `task.create` may carry optional validated source provenance. House operations use dedicated `house.*` mutation types while sharing the same durable queue, idempotency, revision and authorization protocol.
 
+Automatic Area preparation is deliberately outside the browser mutation queue. A successful non-replayed `area.create` or `area.update-geometry` persists first, then the Worker schedules a server job with `waitUntil`. The job reads canonical D1 state, fetches bounded OSM data and atomically publishes ordinary Task rows plus one Campaign revision. It does not synthesize one client mutation per generated Task.
+
 Personal camera movement is not a shared mutation.
 
 The current snapshot-oriented React UI is bridged by `deriveCampaignMutation(previous, next)`. A normal supported save must derive one unambiguous mutation. Unsupported compound snapshot changes fail visibly rather than silently falling back to a broad ordinary write.
 
 For existing reviewed Smart Street and House Tasks, source geometry/provenance is immutable through ordinary rename/status mutations. House parent Street relation is also immutable except for deterministic clearing when the parent Street is deleted.
+
+Automatic Tasks remain normal status-bearing Tasks, but their non-null preparation generation is server-owned: browser create payloads cannot supply it and browser deletes return `auto_prepared_task_delete_forbidden`. Geometry changes are rejected with `area_has_started_work` once any automatic Task in the Area has left `open`; deleting the complete Area retains the established cascade.
 
 ## Conflict semantics
 
@@ -184,6 +191,8 @@ The compatibility write detects missing M6 schema before revision claim. It may 
 - no Background Sync API;
 - no offline whole-area basemap cache;
 - synchronization progresses only while the website is open.
+
+Server preparation is not a browser offline-download requirement. Devices consume the persisted prepared Tasks through the normal snapshot; optional local offline OSM packages remain a separate map-context feature.
 
 ## Renderer boundary
 

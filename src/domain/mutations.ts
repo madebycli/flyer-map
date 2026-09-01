@@ -402,6 +402,7 @@ export function applyCampaignMutation(
             label: mutation.payload.label,
             geometry: mutation.payload.geometry,
             ...(mutation.payload.source ? { source: mutation.payload.source } : {}),
+            areaPreparationGeneration: null,
             status: "open",
             completedAt: null,
             createdAt: mutation.createdAt,
@@ -460,6 +461,7 @@ export function applyCampaignMutation(
         "task_missing",
         "task_changed",
       );
+      if (task?.areaPreparationGeneration) conflict("auto_prepared_task_delete_forbidden");
       next = {
         ...snapshot,
         tasks: snapshot.tasks.filter((candidate) => candidate.id !== mutation.payload.taskId),
@@ -505,6 +507,7 @@ export function applyCampaignMutation(
             label: mutation.payload.label,
             geometry: mutation.payload.geometry,
             ...(mutation.payload.source ? { source: mutation.payload.source } : {}),
+            areaPreparationGeneration: null,
             parentStreetTaskId: mutation.payload.parentStreetTaskId,
             status: "open",
             completedAt: null,
@@ -554,6 +557,7 @@ export function applyCampaignMutation(
             label: entry.label,
             geometry: entry.geometry,
             ...(entry.source ? { source: entry.source } : {}),
+            areaPreparationGeneration: null,
             parentStreetTaskId: entry.parentStreetTaskId,
             status: "open" as const,
             completedAt: null,
@@ -616,6 +620,7 @@ export function applyCampaignMutation(
         "house_missing",
         "house_changed",
       );
+      if (task?.areaPreparationGeneration) conflict("auto_prepared_task_delete_forbidden");
       next = {
         ...snapshot,
         houseTasks: houses.filter((candidate) => candidate.id !== mutation.payload.taskId),

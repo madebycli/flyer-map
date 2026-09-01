@@ -2,8 +2,8 @@
 id: architecture-map
 type: architecture
 status: accepted
-last_updated: 2026-08-31
-related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012, ADR-0013]
+last_updated: 2026-09-01
+related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012, ADR-0013, ADR-0021]
 source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera, saved-geometry-renderer, prepared-offline-map-rendering]
 ---
 
@@ -112,6 +112,8 @@ Feature properties carry Team color/status. Line width is zoom-dependent and sho
 The number of sources/layers stays effectively constant whether a Campaign contains 10 or thousands of Street features.
 
 ADR-0013 does not create a second Street renderer path. A persisted Smart Street becomes the same saved Campaign Street feature after its reviewed OSM-derived route is copied into a validated LineString snapshot. OSM provenance is metadata and is not needed to render the saved Street.
+
+ADR-0021 uses that same renderer boundary for server-prepared work: clipped OSM road fragments and owned building footprints are persisted as ordinary Task snapshots, then flow through `vf-streets` and `vf-houses`. The map does not run automatic OSM preparation and gains no per-Area source/layer, browser-side work queue or alternate Task renderer.
 
 ### House persistence boundary
 

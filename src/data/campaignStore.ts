@@ -26,6 +26,7 @@ import {
 } from "./mutationQueue";
 import {
   createInitialSnapshot,
+  normalizeAreaPreparationGenerations,
   type Area,
   type Campaign,
   type CampaignSnapshot,
@@ -282,9 +283,9 @@ function parseSnapshot(raw: string | null): CampaignSnapshot | null {
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (isCampaignSnapshot(parsed)) return parsed;
-    if (isSnapshotV2(parsed)) return migrateV2(parsed);
-    if (isSnapshotV1(parsed)) return migrateV1(parsed);
+    if (isCampaignSnapshot(parsed)) return normalizeAreaPreparationGenerations(parsed);
+    if (isSnapshotV2(parsed)) return normalizeAreaPreparationGenerations(migrateV2(parsed));
+    if (isSnapshotV1(parsed)) return normalizeAreaPreparationGenerations(migrateV1(parsed));
     return null;
   } catch {
     return null;

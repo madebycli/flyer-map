@@ -1,4 +1,4 @@
-version: 16
+version: 17
 
 entrypoints:
   always:
@@ -20,6 +20,7 @@ routing_rules:
   - for Smart Street runtime planning or continuation, load plan-smart-street-runtime, then follow Offline Map, Map, UX, Offline Sync, Smart Task identity and Quality edges
   - for Smart House runtime or preview schema-gate hardening, load plan-smart-house-runtime, then follow Smart Street runtime, House persistence, House renderer, Offline Map, Map, UX, Data, Offline Sync, Security, Smart Task identity and Quality edges
   - for OpenFreeMap basemap, standard house numbers, Smart Map online-first or related Area-Sheet hardening, load plan-openfreemap-smartdata-ui-hardening, then follow Map, Offline Map, Smart Street runtime, Smart House runtime, UX, Collaboration and Quality edges
+  - for automatic server-side Area preparation, recovery status/retry, generated Street/House Tasks or migration 0014, load plan-auto-area-task-preparation, then follow Data, Offline Sync, Map, Security, Quality, Offline Map, Smart Task identity and ADR-0021 edges
   - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
@@ -37,7 +38,7 @@ nodes:
     path: docs/product/ROADMAP.md
     type: product
     status: accepted
-    topics: [roadmap, feature-complete, offline-map, streets, houses, pickup, collection, collection-areas, collection-runs, collector-access, field-sessions, live-teams, statistics, organizations, admin, permissions, accounts, support, comments, automations]
+    topics: [roadmap, feature-complete, offline-map, streets, houses, automatic-area-preparation, pickup, collection, collection-areas, collection-runs, collector-access, field-sessions, live-teams, statistics, organizations, admin, permissions, accounts, support, comments, automations]
     load_when: [new feature planning, milestone planning, long-term scope, collection, collection access, collection areas, collection runs, live teams, statistics, admin accounts]
 
   - id: mvp
@@ -72,29 +73,29 @@ nodes:
     path: docs/architecture/MAP.md
     type: architecture
     status: accepted
-    topics: [map, maplibre, openfreemap, bright, liberty, housenumber, geojson, renderer, osm, offline-map, streets, houses, gps-follow]
-    load_when: [map rendering, geometry interaction, performance, road/building data, session map highlighting, House polygon renderer, Collection areas, Collection roads, Pickup markers]
+    topics: [map, maplibre, openfreemap, bright, liberty, housenumber, geojson, renderer, osm, offline-map, streets, houses, automatic-area-preparation, gps-follow]
+    load_when: [map rendering, geometry interaction, performance, road/building data, automatic Area tasks, session map highlighting, House polygon renderer, Collection areas, Collection roads, Pickup markers]
 
   - id: data
     path: docs/architecture/DATA.md
     type: architecture
     status: accepted
-    topics: [database, d1, schema, campaigns, teams, areas, tasks, comments, domain-events, activity, automations, statistics, revisions, migrations]
-    load_when: [domain model, D1 migration, persistence, field sessions, comments, accounts, team lifecycle, Collection persistence]
+    topics: [database, d1, schema, campaigns, teams, areas, tasks, automatic-area-preparation, preparation-generation, comments, domain-events, activity, automations, statistics, revisions, migrations]
+    load_when: [domain model, D1 migration, persistence, automatic Area preparation, preparation state, field sessions, comments, accounts, team lifecycle, Collection persistence]
 
   - id: offline-sync
     path: docs/architecture/OFFLINE_SYNC.md
     type: architecture
     status: accepted
-    topics: [offline, synchronization, indexeddb, mutations, idempotency, conflicts]
-    load_when: [M5, sync, retries, conflicts, offline behavior, live collaboration conflicts, Collection mutation retry]
+    topics: [offline, synchronization, indexeddb, mutations, idempotency, conflicts, automatic-area-preparation]
+    load_when: [M5, sync, retries, conflicts, offline behavior, automatic Area preparation, live collaboration conflicts, Collection mutation retry]
 
   - id: security
     path: docs/architecture/SECURITY.md
     type: architecture
     status: accepted
-    topics: [auth, authorization, privacy, tokens, sessions, roles, gps, injection, live-join]
-    load_when: [access, protected API, privacy, recovery, QR codes, live teams, credentials, Collection QR access, geocoder proxy]
+    topics: [auth, authorization, privacy, tokens, sessions, roles, gps, injection, live-join, automatic-area-preparation]
+    load_when: [access, protected API, automatic Area preparation, preparation recovery, privacy, QR codes, live teams, credentials, Collection QR access, geocoder proxy]
 
   - id: live-teams
     path: docs/architecture/LIVE_TEAMS.md
@@ -222,6 +223,13 @@ nodes:
     topics: [collection, collection-access, collection-areas, collection-runs, qr, security, m5, maplibre]
     load_when: [Collection Access, Collection Areas, Collection Runs, Collection QR, FC5.1 runtime]
 
+  - id: adr-server-prepared-automatic-area-work
+    path: docs/decisions/ADR-0021-server-prepared-automatic-area-work.md
+    type: decision
+    status: accepted
+    topics: [automatic-area-preparation, generated-tasks, osm, preparation-generation, recovery, migration-0014]
+    load_when: [server Area preparation, automatic Street Tasks, automatic House Tasks, preparation recovery, migration 0014]
+
   - id: plan-m5-sync
     path: docs/plans/completed/010-m5-resilient-mutation-sync.md
     type: plan
@@ -299,6 +307,13 @@ nodes:
     topics: [openfreemap, bright, liberty, basemap, housenumber, style-load, smart-map, online-first, offline-optional, roads, buildings, gps-follow, comments, retry, mobile-area-sheet]
     load_when: [OpenFreeMap basemap, house number labels, Smart Street online data, Smart House online data, optional offline map, Comment retry UI, mobile Area sheet]
 
+  - id: plan-auto-area-task-preparation
+    path: docs/plans/completed/023-auto-area-task-preparation.md
+    type: plan
+    status: completed
+    topics: [automatic-area-preparation, generated-tasks, areas, streets, houses, osm, clipping, preparation-generation, recovery, migration-0014, m5]
+    load_when: [automatic Area preparation, generated Street Tasks, generated House Tasks, preparation status, recovery retry, migration 0014]
+
   - id: plan-collection-pickup-persistence
     path: docs/plans/active/021-collection-pickup-persistence.md
     type: plan
@@ -317,7 +332,7 @@ nodes:
     path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
     type: onboarding
     status: current
-    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime, collection, FC5, FC5.2-complete, FC5.3, collection-access, collection-runs]
+    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime, automatic-area-preparation, collection, FC5, FC5.2-complete, FC5.3, collection-access, collection-runs]
     load_when: [fresh AI session, planner chat, verify current Plan 017 state, continue current Plan 017 development, continue FC5]
 
   - id: prompt-house-polygon-renderer
@@ -446,6 +461,18 @@ edges:
   - { from: adr-collection-access-areas-runs, to: data, relation: constrains }
   - { from: adr-collection-access-areas-runs, to: security, relation: constrains }
   - { from: adr-collection-access-areas-runs, to: map, relation: constrains }
+  - { from: adr-server-prepared-automatic-area-work, to: data, relation: governs }
+  - { from: adr-server-prepared-automatic-area-work, to: security, relation: governs }
+  - { from: adr-server-prepared-automatic-area-work, to: map, relation: governs }
+  - { from: plan-auto-area-task-preparation, to: plan-feature-complete-platform, relation: implements_backend_slice }
+  - { from: plan-auto-area-task-preparation, to: data, relation: extends_persistence_contract }
+  - { from: plan-auto-area-task-preparation, to: offline-sync, relation: reuses_mutation_trigger }
+  - { from: plan-auto-area-task-preparation, to: map, relation: reuses_saved_renderer }
+  - { from: plan-auto-area-task-preparation, to: security, relation: constrained_by }
+  - { from: plan-auto-area-task-preparation, to: adr-offline-map-data, relation: reuses_bounded_osm }
+  - { from: plan-auto-area-task-preparation, to: adr-smart-task-identity, relation: preserves_identity }
+  - { from: plan-auto-area-task-preparation, to: adr-server-prepared-automatic-area-work, relation: governed_by }
+  - { from: plan-auto-area-task-preparation, to: quality, relation: validated_by }
   - { from: plan-collection-pickup-persistence, to: adr-collection-access-areas-runs, relation: governed_by }
   - { from: plan-collection-pickup-persistence, to: plan-feature-complete-platform, relation: refines_next_milestone }
   - { from: plan-collection-pickup-persistence, to: plan-smart-house-runtime, relation: builds_on }

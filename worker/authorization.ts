@@ -37,7 +37,8 @@ function immutableTaskFieldsUnchanged(
     previous.areaId === next.areaId &&
     previous.taskType === next.taskType &&
     previous.createdAt === next.createdAt &&
-    same(previous.source ?? null, next.source ?? null)
+    same(previous.source ?? null, next.source ?? null) &&
+    (previous.areaPreparationGeneration ?? null) === (next.areaPreparationGeneration ?? null)
   );
 }
 
@@ -58,10 +59,58 @@ function houseImmutableFieldsUnchanged(
     previous.areaId === next.areaId &&
     previous.taskType === next.taskType &&
     previous.createdAt === next.createdAt &&
+    (previous.areaPreparationGeneration ?? null) === (next.areaPreparationGeneration ?? null) &&
     same(previous.geometry, next.geometry) &&
     same(previous.source ?? null, next.source ?? null) &&
     (parentUnchanged || parentClearedByStreetDelete)
   );
+}
+
+function automaticPreparationSnapshotsProtected(
+  previous: CampaignSnapshot,
+  next: CampaignSnapshot,
+): WriteAuthorization {
+  const nextAreaIds = new Set(next.areas.map((area) => area.id));
+  const nextTasks = new Map(next.tasks.map((task) => [task.id, task]));
+  const nextHouses = new Map((next.houseTasks ?? []).map((task) => [task.id, task]));
+
+  for (const task of previous.tasks) {
+    if (!task.areaPreparationGeneration) continue;
+    const nextTask = nextTasks.get(task.id);
+    if (!nextTask) {
+      if (nextAreaIds.has(task.areaId)) {
+        return { allowed: false, reason: "auto_prepared_task_delete_forbidden" };
+      }
+      continue;
+    }
+    if (!taskStatusOnlyUnchanged(task, nextTask)) {
+      return { allowed: false, reason: "auto_prepared_task_immutable" };
+    }
+  }
+  for (const task of previous.houseTasks ?? []) {
+    if (!task.areaPreparationGeneration) continue;
+    const nextTask = nextHouses.get(task.id);
+    if (!nextTask) {
+      if (nextAreaIds.has(task.areaId)) {
+        return { allowed: false, reason: "auto_prepared_task_delete_forbidden" };
+      }
+      continue;
+    }
+    if (!houseStatusOnlyUnchanged(task, nextTask)) {
+      return { allowed: false, reason: "auto_prepared_task_immutable" };
+    }
+  }
+  for (const task of next.tasks) {
+    if (!previous.tasks.some((candidate) => candidate.id === task.id) && task.areaPreparationGeneration) {
+      return { allowed: false, reason: "auto_prepared_generation_server_only" };
+    }
+  }
+  for (const task of next.houseTasks ?? []) {
+    if (!(previous.houseTasks ?? []).some((candidate) => candidate.id === task.id) && task.areaPreparationGeneration) {
+      return { allowed: false, reason: "auto_prepared_generation_server_only" };
+    }
+  }
+  return { allowed: true };
 }
 
 function existingSmartStreetSnapshotUnchanged(
@@ -237,6 +286,8 @@ export function authorizeSnapshotWrite(
   if (!smartStreetCheck.allowed) return smartStreetCheck;
   const houseCheck = existingHouseSnapshotsUnchanged(previous, next);
   if (!houseCheck.allowed) return houseCheck;
+  const automaticPreparationCheck = automaticPreparationSnapshotsProtected(previous, next);
+  if (!automaticPreparationCheck.allowed) return automaticPreparationCheck;
 
   if (access.role === "admin") return { allowed: true };
   if (access.role === "viewer") return { allowed: false, reason: "viewer_read_only" };

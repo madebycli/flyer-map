@@ -3,6 +3,7 @@ import {
   getCampaignRevision,
   hasHouseTasksTable,
   hasCollectionSchema,
+  hasAreaTaskPreparationSchema,
   hasTaskSourceProvenanceColumn,
   type D1DatabaseLike,
   type D1PreparedStatement,
@@ -62,6 +63,7 @@ function mutationStatement(
   mutation: CampaignMutation,
   writeToken: string,
   hasTaskSource: boolean,
+  hasPreparation: boolean,
 ): D1PreparedStatement {
   const guard = guardExistsSql();
 
@@ -189,7 +191,27 @@ function mutationStatement(
           writeToken,
         );
     case "task.create":
-      return hasTaskSource
+      return hasTaskSource && hasPreparation
+        ? db
+            .prepare(
+              `INSERT INTO tasks (
+                 id, campaign_id, area_id, task_type, label, geometry_json, source_json,
+                 area_preparation_generation, status, completed_at, created_at, updated_at
+               ) SELECT ?, ?, ?, 'street', ?, ?, ?, NULL, 'open', NULL, ?, ? WHERE ${guard}`,
+            )
+            .bind(
+              mutation.payload.taskId,
+              mutation.campaignId,
+              mutation.payload.areaId,
+              mutation.payload.label,
+              JSON.stringify(mutation.payload.geometry),
+              mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
+              mutation.createdAt,
+              mutation.createdAt,
+              mutation.campaignId,
+              writeToken,
+            )
+        : hasTaskSource
         ? db
             .prepare(
               `INSERT INTO tasks (
@@ -257,16 +279,46 @@ function mutationStatement(
           writeToken,
         );
     case "task.delete":
-      return db
-        .prepare(`DELETE FROM tasks WHERE id = ? AND campaign_id = ? AND ${guard}`)
-        .bind(
-          mutation.payload.taskId,
-          mutation.campaignId,
-          mutation.campaignId,
-          writeToken,
-        );
+      return hasPreparation
+        ? db
+            .prepare(`DELETE FROM tasks WHERE id = ? AND campaign_id = ? AND area_preparation_generation IS NULL AND ${guard}`)
+            .bind(
+              mutation.payload.taskId,
+              mutation.campaignId,
+              mutation.campaignId,
+              writeToken,
+            )
+        : db
+            .prepare(`DELETE FROM tasks WHERE id = ? AND campaign_id = ? AND ${guard}`)
+            .bind(
+              mutation.payload.taskId,
+              mutation.campaignId,
+              mutation.campaignId,
+              writeToken,
+            );
     case "house.create":
-      return db
+      return hasPreparation
+        ? db
+            .prepare(
+              `INSERT INTO house_tasks (
+                 id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
+                 area_preparation_generation, status, completed_at, created_at, updated_at
+               ) SELECT ?, ?, ?, ?, ?, ?, ?, NULL, 'open', NULL, ?, ? WHERE ${guard}`,
+            )
+            .bind(
+              mutation.payload.taskId,
+              mutation.campaignId,
+              mutation.payload.areaId,
+              mutation.payload.parentStreetTaskId,
+              mutation.payload.label,
+              JSON.stringify(mutation.payload.geometry),
+              mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
+              mutation.createdAt,
+              mutation.createdAt,
+              mutation.campaignId,
+              writeToken,
+            )
+        : db
         .prepare(
           `INSERT INTO house_tasks (
              id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
@@ -287,7 +339,30 @@ function mutationStatement(
           writeToken,
         );
     case "house.create-batch":
-      return db
+      return hasPreparation
+        ? db
+            .prepare(
+              `INSERT INTO house_tasks (
+                 id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
+                 area_preparation_generation, status, completed_at, created_at, updated_at
+               )
+               SELECT
+                 json_extract(value, '$.taskId'), ?, json_extract(value, '$.areaId'),
+                 json_extract(value, '$.parentStreetTaskId'), json_extract(value, '$.label'),
+                 json_extract(value, '$.geometry'),
+                 CASE WHEN json_type(value, '$.source') IS NULL THEN NULL ELSE json_extract(value, '$.source') END,
+                 NULL, 'open', NULL, ?, ?
+               FROM json_each(?) WHERE ${guard}`,
+            )
+            .bind(
+              mutation.campaignId,
+              mutation.createdAt,
+              mutation.createdAt,
+              JSON.stringify(mutation.payload.houses),
+              mutation.campaignId,
+              writeToken,
+            )
+        : db
         .prepare(
           `INSERT INTO house_tasks (
              id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
@@ -346,14 +421,23 @@ function mutationStatement(
           writeToken,
         );
     case "house.delete":
-      return db
-        .prepare(`DELETE FROM house_tasks WHERE id = ? AND campaign_id = ? AND ${guard}`)
-        .bind(
-          mutation.payload.taskId,
-          mutation.campaignId,
-          mutation.campaignId,
-          writeToken,
-        );
+      return hasPreparation
+        ? db
+            .prepare(`DELETE FROM house_tasks WHERE id = ? AND campaign_id = ? AND area_preparation_generation IS NULL AND ${guard}`)
+            .bind(
+              mutation.payload.taskId,
+              mutation.campaignId,
+              mutation.campaignId,
+              writeToken,
+            )
+        : db
+            .prepare(`DELETE FROM house_tasks WHERE id = ? AND campaign_id = ? AND ${guard}`)
+            .bind(
+              mutation.payload.taskId,
+              mutation.campaignId,
+              mutation.campaignId,
+              writeToken,
+            );
     default:
       throw new Error("collection_mutation_statement_not_supported_here");
   }
@@ -619,6 +703,7 @@ export async function persistCampaignMutation(
 
   const hasTaskSource =
     mutation.type === "task.create" ? await hasTaskSourceProvenanceColumn(db) : true;
+  const hasPreparation = await hasAreaTaskPreparationSchema(db);
   if (mutation.type === "task.create" && mutation.payload.source && !hasTaskSource) {
     return {
       ok: false,
@@ -659,7 +744,7 @@ export async function persistCampaignMutation(
 
   const domainStatements = collectionMutation
     ? collectionMutationStatements(db, mutation as import("../src/domain/mutations.ts").CollectionMutation, writeToken)
-    : [mutationStatement(db, mutation, writeToken, hasTaskSource)];
+    : [mutationStatement(db, mutation, writeToken, hasTaskSource, hasPreparation)];
   const statements = [
     claim,
     ...domainStatements,

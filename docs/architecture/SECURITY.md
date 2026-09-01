@@ -2,8 +2,8 @@
 id: architecture-security
 type: architecture
 status: accepted
-last_updated: 2026-08-26
-related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, plan-012-platform-app-expansion]
+last_updated: 2026-09-01
+related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, ADR-0021, plan-012-platform-app-expansion]
 source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, m6-smart-task-security, future-security-boundaries]
 ---
 
@@ -152,6 +152,18 @@ Migration boundaries:
 - House data must never be silently discarded or coerced into the Street table for compatibility.
 
 A future OSM source reconciliation must be a dedicated explicit reviewed mutation with its own authorization and conflict semantics.
+
+## Automatic Area preparation security
+
+ADR-0021 keeps automatic work generation inside the Worker authorization and persistence boundary.
+
+- only a successful persisted, non-replayed Area create or geometry mutation may schedule work; a rename or Team reassignment does not;
+- the Worker loads the Area from canonical D1 state and derives the bounded OSM request itself. The preparation route accepts no client BBox, polygon or Overpass text;
+- the status read requires ordinary Area read access. Start/retry requires Admin or a Team Editor for that exact Area Team; Viewers and Field Group members cannot start it;
+- the bounded OSM request retains the fixed 3 km, request-size, response-size, timeout, normalizer/allowlist and feature-cap controls of the existing offline-map boundary. Raw upstream payloads are not persisted or exposed;
+- generated Task identity and `areaPreparationGeneration` are server-owned. A client cannot create, delete or rewrite automatic identity through a normal mutation, although normal authorized Task status changes remain available;
+- once automatic work begins, a geometry rewrite would invalidate completed work, so it returns `area_has_started_work`. Deleting the complete Area follows the scoped foreign-key cascade;
+- migration 0014 is required for this path and fails closed as `area_preparation_schema_unavailable`; no remote migration is performed by a request.
 
 No credential, account, role, TOTP or GPS behavior is introduced by this M6 slice.
 

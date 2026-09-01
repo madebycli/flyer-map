@@ -2,8 +2,8 @@
 id: architecture-data
 type: architecture
 status: accepted
-last_updated: 2026-08-26
-related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009, ADR-0011, ADR-0013]
+last_updated: 2026-09-01
+related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009, ADR-0011, ADR-0013, ADR-0021]
 source_of_truth_for: [domain-data-model, d1-baseline]
 ---
 
@@ -80,11 +80,14 @@ Fields:
 - label;
 - reviewed LineString geometry snapshot;
 - optional external source provenance;
+- optional server-owned `areaPreparationGeneration`;
 - status;
 - completedAt;
 - timestamps.
 
 Manual Street Tasks remain valid without source provenance.
+
+`areaPreparationGeneration` is null for manual and user-reviewed Smart Tasks. A non-null UUID identifies a server-prepared automatic Task generation and is not client-controlled.
 
 Under accepted ADR-0013, a Smart Street Task keeps its durable application id separate from OSM. The reviewed selected route is copied into Task `geometry` as a Campaign-owned LineString snapshot. Optional `source` provenance is restricted to reviewed metadata such as:
 - `dataset: OpenStreetMap`;
@@ -106,6 +109,7 @@ Fields:
 - reviewed Polygon building geometry snapshot;
 - optional OSM source provenance;
 - optional `parentStreetTaskId`;
+- optional server-owned `areaPreparationGeneration`;
 - status;
 - completedAt;
 - timestamps.
@@ -115,6 +119,16 @@ For OSM-backed House Tasks, provenance is exactly one positive Way id. It remain
 Reviewed House geometry, source provenance and parent relation are immutable through ordinary writes. A future source-reconciliation feature must use an explicit reviewed mutation rather than silently accepting changed upstream OSM geometry.
 
 Deleting a parent Street clears the optional House-parent relationship rather than deleting the House Task. Deleting an Area cascades its Street and House Tasks.
+
+### Automatic Area preparation
+
+ADR-0021 adds a prepared-only server job that turns the canonical persisted Area geometry into ordinary open Street and House Tasks. It does not create a parallel work-item type.
+
+- `area_task_preparations` is keyed by `(campaign_id, area_id)` and records the current geometry hash, generation, `pending` / `ready` / `failed` status, counts, timestamps and a non-secret error code;
+- automatic Tasks retain normal application-owned ids, Task status and OSM provenance, but carry the server-created generation UUID;
+- the browser reads those Tasks through the ordinary Campaign snapshot; omitted legacy fields deserialize as null;
+- manual Tasks have null generation and are never replaced by a preparation run;
+- ordinary client mutations may change an automatic Task's status but may not delete or rewrite its automatic identity.
 
 ## Status vocabulary
 
@@ -147,15 +161,17 @@ Applied remote D1 history remains immutable:
 - `migrations/0002_m4_access.sql` - shared map focus + access grant/session tables;
 - `migrations/0003_m5_mutations.sql` - Campaign-scoped mutation idempotency ledger, applied successfully to remote `flyer-map-db` on 2026-08-25.
 
-M6 code currently adds, but has **not remotely applied**:
+Prepared code adds, but has **not remotely applied**:
 - `migrations/0004_m6_task_source_provenance.sql` - nullable `tasks.source_json` for external Street Task provenance;
 - `migrations/0005_m6_house_tasks.sql` - additive durable House Task table.
+- `migrations/0014_auto_area_task_preparation.sql` - automatic Task generation/state columns and `area_task_preparations`.
 
-Both migrations are intentionally additive. Existing/manual Street rows remain valid before them. Application code must not mark either migration production-applied until an explicit rollout and acceptance step is performed.
+These migrations are intentionally additive. Existing/manual Street rows remain valid before them. Application code must not mark any migration production-applied until an explicit rollout and acceptance step is performed.
 
 Pre-migration behavior is fail-safe:
 - before 0004, manual Street writes remain compatible while Smart Street provenance writes return `schema_migration_required`;
 - before 0005, Street reads/writes remain compatible while any durable House write returns `schema_migration_required` before the Campaign revision is claimed;
+- before 0014, automatic Area preparation and its status route fail closed with `area_preparation_schema_unavailable`; existing manual/M5 work remains compatible;
 - House data is never silently dropped or coerced into the Street table.
 
 Do not rewrite historical migrations.
@@ -170,6 +186,10 @@ Established domain tables:
 
 After migration 0005:
 - `house_tasks` for House Tasks.
+
+After migration 0014:
+- `area_task_preparations` for automatic Area preparation state;
+- nullable `area_preparation_generation` columns on `tasks` and `house_tasks`.
 
 Access tables:
 - `campaign_access_grants`;

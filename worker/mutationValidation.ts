@@ -61,6 +61,10 @@ function isTaskSource(value: unknown, expectedObjectCount: number | null = null)
   return new Set(value.objectIds).size === value.objectIds.length;
 }
 
+function hasNoClientPreparationGeneration(payload: Record<string, unknown>) {
+  return !Object.prototype.hasOwnProperty.call(payload, "areaPreparationGeneration");
+}
+
 function validStatusPayload(payload: Record<string, unknown>) {
   return (
     (payload.status === "open" ||
@@ -182,6 +186,7 @@ export function validateCampaignMutation(
       break;
     case "task.create":
       if (
+        hasNoClientPreparationGeneration(payload) &&
         isTaskId(payload.taskId) &&
         isId(payload.areaId) &&
         isString(payload.label, 160) &&
@@ -208,6 +213,7 @@ export function validateCampaignMutation(
       break;
     case "house.create":
       if (
+        hasNoClientPreparationGeneration(payload) &&
         isTaskId(payload.taskId) &&
         isId(payload.areaId) &&
         isString(payload.label, 160) &&
@@ -220,6 +226,7 @@ export function validateCampaignMutation(
       break;
     case "house.create-batch": {
       if (
+        !hasNoClientPreparationGeneration(payload) ||
         !Array.isArray(payload.houses) ||
         payload.houses.length < 1 ||
         payload.houses.length > HOUSE_CREATE_BATCH_MAX ||

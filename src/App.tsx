@@ -1380,6 +1380,7 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
       taskType: "street",
       label: nextStreetName(snapshot.tasks, selectedArea.id, language),
       geometry: createLineStringGeometry(streetDraftVertices),
+      areaPreparationGeneration: null,
       status: "open",
       completedAt: null,
       createdAt: now,

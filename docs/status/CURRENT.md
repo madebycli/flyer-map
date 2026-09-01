@@ -2,7 +2,7 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 ---
 
 # Current Project State
@@ -18,6 +18,8 @@ Repository und GitHub sind Source of Truth. Aktiver Entwicklungsbranch ist `plan
 Plan 017 bleibt die übergeordnete Delivery-Linie. Abgeschlossen sind Plan 018 House Polygon Renderer, Plan 019 Smart Street Runtime, Plan 020 Smart House Runtime, FC5.1 Collection Access/Areas/Runs und der vollständige FC5.2-Runtime-Scope. Plan 021 bleibt für FC5.3 sowie die noch offenen realen Geräte-/Touch-Gates aktiv.
 
 Der Basemap-/Smart-Data-/UI-Hardening-Slice aus Plan 022 ist abgeschlossen: CARTO wurde vollständig durch OpenFreeMap Bright ersetzt, Provider-Extrusionen werden entfernt und die Karte bleibt 2D, Hausnummern sind standardmäßig größer aktiv, Smart Street/House sind online-first mit getrennten roads/buildings-Paketen und das vorbereitete Offline-Paket ist ausdrücklich optional. MapLibre Geolocate liefert live/refining Fixes und folgt im offiziellen Active-Lock, ohne GPS-Historie.
+
+Plan 023 ergänzt den Backend-Pfad für serverseitig vorbereitete Distribution Areas: Nach einer erfolgreichen nicht wiederholten `area.create` oder `area.update-geometry` erzeugt ein Worker-Job aus begrenzten OSM-Daten atomar normale Street- und House-Tasks. Es gibt keine neue Task-Domain, keine browserseitige automatische OSM-Generierung und kein Massenvorbereiten alter Areas. Die additive Migration 0014 bleibt vorbereitet und nicht remote angewendet; bis zu einem ausdrücklich kontrollierten Rollout schlägt nur dieser neue Pfad fail-closed fehl.
 
 Weiter offen aus FC4/FC5 sind reale Android-Chromium- und iPhone-Safari-Abnahmen, Touch-Dichte und Dense-Mobile-Verhalten. Cloud-Browser ohne WebGL und CI ersetzen diese Hardware-Gates nicht.
 
@@ -136,18 +138,20 @@ Prepared only und nicht remote angewendet:
 - 0011 Collection Pickups / Create-Edit-Assign Capabilities;
 - 0012 Pickup Visibility Capability;
 - 0013 Pickup Comments Forward Migration.
+- 0014 automatische Area-Task-Vorbereitung.
 
 Bekannte fehlende Schemas müssen spezifisch fail-closed behandelt werden. Keine Migration wird als Diagnosewerkzeug remote angewendet.
 
 ## Context Graph / Living Docs
 
-`docs/context-map.yaml` routet den abgeschlossenen Basemap-/Smart-Data-/UI-Slice über Plan 022 zu Map, Offline Map, Smart Street/House, UX, Collaboration und Quality. Die FC5-Topologie routet den abgeschlossenen FC5.2-Lifecycle weiterhin ausdrücklich zu FC5.3. Der Hardening-Slice führt keine neue Persistenz-, Queue-, Karten- oder Berechtigungsdomäne ein.
+`docs/context-map.yaml` routet den abgeschlossenen Basemap-/Smart-Data-/UI-Slice über Plan 022 zu Map, Offline Map, Smart Street/House, UX, Collaboration und Quality. Plan 023 routet automatische Area-Vorbereitung zu Data, Offline Sync, Map, Security, Quality und ADR-0021. Die FC5-Topologie routet den abgeschlossenen FC5.2-Lifecycle weiterhin ausdrücklich zu FC5.3. Kein Slice führt eine zweite Persistenz-, Queue-, Karten- oder Berechtigungsdomäne ein.
 
 ## Noch offen / Next
 
 1. Reale Android-Chromium-/iPhone-Safari-Abnahme für FC4/FC5 bleibt ein offenes Hardware-Gate, solange sie nicht tatsächlich durchgeführt wurde.
-2. Nächster neuer Runtime-Scope ist FC5.3: First-Class Collection Road Sections.
-3. Danach getrennte Collection/Pickup Stats, Actor Attribution/Highlight und compensating Revert serverautorisiert umsetzen.
-4. Vor jeder neuen Runtime-Änderung exakten GitHub-Head, PR #72 und CI erneut verifizieren.
-5. Migrationen 0007/0008 nicht historisch verändern, keine Remote-Migration anwenden, keinen manuellen Deploy ausführen.
-6. Kein Merge oder Ready-for-Review ohne expliziten Auftrag.
+2. Nach einem ausdrücklich kontrollierten Migration-0014-Rollout kann ein UI-Follow-up eine sichtbare Prepare/Retry-Aktion für ältere editierbare Distribution Areas anbieten.
+3. Nächster neuer Runtime-Scope ist FC5.3: First-Class Collection Road Sections.
+4. Danach getrennte Collection/Pickup Stats, Actor Attribution/Highlight und compensating Revert serverautorisiert umsetzen.
+5. Vor jeder neuen Runtime-Änderung exakten GitHub-Head, PR #72 und CI erneut verifizieren.
+6. Migrationen 0007/0008 nicht historisch verändern, keine Remote-Migration anwenden, keinen manuellen Deploy ausführen.
+7. Kein Merge oder Ready-for-Review ohne expliziten Auftrag.

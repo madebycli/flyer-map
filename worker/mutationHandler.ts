@@ -20,6 +20,13 @@ import { validateCampaignMutation } from "./mutationValidation.ts";
 import { validateCampaignSnapshot } from "./snapshotValidation.ts";
 import { isPickupMutationInput } from "./pickupMutationRuntime.ts";
 import { handlePickupMutationRequest } from "./pickupMutationEntry.ts";
+import {
+  areaHasStartedAutomaticWork,
+  beginAreaTaskPreparation,
+  runAreaTaskPreparation,
+  type AreaPreparationExecutionContext,
+  type AreaTaskPreparationOptions,
+} from "./areaTaskPreparation.ts";
 
 const MAX_MUTATION_BYTES = 256_000;
 const MAX_PERSIST_ATTEMPTS = 3;
@@ -87,6 +94,8 @@ export async function handleCampaignMutation(
   db: D1DatabaseLike,
   campaignId: string,
   access: AccessContext,
+  context?: AreaPreparationExecutionContext,
+  options?: AreaTaskPreparationOptions,
 ) {
   if (request.method !== "POST") {
     return errorResponse(405, "method_not_allowed", "Für Mutationen ist nur POST erlaubt.");
@@ -191,6 +200,14 @@ export async function handleCampaignMutation(
       candidate = applyCampaignMutation(current, mutation);
     } catch (error) {
       if (error instanceof CampaignMutationConflictError) {
+        if (error.reason === "auto_prepared_task_delete_forbidden") {
+          return errorResponse(
+            409,
+            "auto_prepared_task_delete_forbidden",
+            "Automatisch vorbereitete Tasks werden über ihren Status gesteuert und nicht gelöscht.",
+            current.revision,
+          );
+        }
         return errorResponse(
           409,
           "mutation_conflict",
@@ -212,6 +229,18 @@ export async function handleCampaignMutation(
         403,
         "write_forbidden",
         "Die Änderung liegt außerhalb deiner Berechtigung.",
+        current.revision,
+      );
+    }
+
+    if (
+      mutation.type === "area.update-geometry" &&
+      await areaHasStartedAutomaticWork(db, campaignId, mutation.payload.areaId)
+    ) {
+      return errorResponse(
+        409,
+        "area_has_started_work",
+        "Die Area kann nicht mehr geändert werden, weil automatische Arbeit bereits begonnen wurde.",
         current.revision,
       );
     }
@@ -248,6 +277,20 @@ export async function handleCampaignMutation(
       automationExecution,
     );
     if (persisted.ok) {
+      if (
+        !persisted.alreadyApplied &&
+        (mutation.type === "area.create" || mutation.type === "area.update-geometry")
+      ) {
+        const preparation = await beginAreaTaskPreparation(
+          db,
+          campaignId,
+          mutation.payload.areaId,
+          options,
+        );
+        if (preparation.outcome === "run") {
+          context?.waitUntil(runAreaTaskPreparation(db, preparation.run, options));
+        }
+      }
       return json({
         mutationId: mutation.id,
         appliedRevision: persisted.revision,

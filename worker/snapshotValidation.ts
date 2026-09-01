@@ -29,6 +29,7 @@ export type SnapshotValidationResult =
 
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+const PREPARATION_GENERATION_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -185,6 +186,11 @@ function validTaskStatus(value: Record<string, unknown>) {
   return isTimestamp(value.createdAt) && isTimestamp(value.updatedAt);
 }
 
+function parseAreaPreparationGeneration(value: unknown) {
+  if (value === undefined || value === null) return null;
+  return typeof value === "string" && PREPARATION_GENERATION_PATTERN.test(value) ? value : null;
+}
+
 function parseTask(value: unknown, campaignId: string): DistributionTask | null {
   if (!isRecord(value)) return null;
   if (!isId(value.id) || value.campaignId !== campaignId || !isId(value.areaId)) return null;
@@ -192,9 +198,13 @@ function parseTask(value: unknown, campaignId: string): DistributionTask | null 
   if (!isBoundedString(value.label, 160)) return null;
   if (!parseLineStringGeometry(value.geometry)) return null;
   if (value.source !== undefined && value.source !== null && !parseTaskSource(value.source)) return null;
+  const areaPreparationGeneration = parseAreaPreparationGeneration(value.areaPreparationGeneration);
+  if (value.areaPreparationGeneration !== undefined && value.areaPreparationGeneration !== null && !areaPreparationGeneration) {
+    return null;
+  }
   if (!validTaskStatus(value)) return null;
 
-  return value as DistributionTask;
+  return { ...value, areaPreparationGeneration } as DistributionTask;
 }
 
 function parseHouseTask(value: unknown, campaignId: string): HouseTask | null {
@@ -204,10 +214,14 @@ function parseHouseTask(value: unknown, campaignId: string): HouseTask | null {
   if (!isBoundedString(value.label, 160)) return null;
   if (!parsePolygonGeometry(value.geometry)) return null;
   if (value.source !== undefined && value.source !== null && !parseTaskSource(value.source, 1)) return null;
+  const areaPreparationGeneration = parseAreaPreparationGeneration(value.areaPreparationGeneration);
+  if (value.areaPreparationGeneration !== undefined && value.areaPreparationGeneration !== null && !areaPreparationGeneration) {
+    return null;
+  }
   if (value.parentStreetTaskId !== null && !isId(value.parentStreetTaskId)) return null;
   if (!validTaskStatus(value)) return null;
 
-  return value as HouseTask;
+  return { ...value, areaPreparationGeneration } as HouseTask;
 }
 
 function hasUniqueIds<T extends { id: string }>(values: T[]) {

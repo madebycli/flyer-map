@@ -241,6 +241,9 @@ export function deriveCampaignMutation(
 
   if (tasks.added.length === 1 && collectionDeltaCount === 1) {
     const task = tasks.added[0];
+    if (task.areaPreparationGeneration) {
+      throw new MutationDerivationError("Automatische Task-Generationen werden nur serverseitig erstellt.");
+    }
     return {
       ...mutationBase(previous, task.createdAt),
       type: "task.create",
@@ -261,6 +264,7 @@ export function deriveCampaignMutation(
       oldTask.areaId !== task.areaId ||
       oldTask.taskType !== task.taskType ||
       oldTask.createdAt !== task.createdAt ||
+      (oldTask.areaPreparationGeneration ?? null) !== (task.areaPreparationGeneration ?? null) ||
       !same(oldTask.geometry, task.geometry) ||
       !same(oldTask.source ?? null, task.source ?? null)
     ) {
@@ -297,6 +301,9 @@ export function deriveCampaignMutation(
 
   if (tasks.removed.length === 1 && collectionDeltaCount === 1) {
     const task = tasks.removed[0];
+    if (task.areaPreparationGeneration) {
+      throw new MutationDerivationError("Automatisch vorbereitete Tasks dürfen nicht gelöscht werden.");
+    }
     return {
       ...mutationBase(previous, next.campaign.updatedAt),
       type: "task.delete",
@@ -306,6 +313,9 @@ export function deriveCampaignMutation(
 
   if (houses.added.length === 1 && collectionDeltaCount === 1) {
     const task = houses.added[0];
+    if (task.areaPreparationGeneration) {
+      throw new MutationDerivationError("Automatische House-Generationen werden nur serverseitig erstellt.");
+    }
     return {
       ...mutationBase(previous, task.createdAt),
       type: "house.create",
@@ -321,6 +331,9 @@ export function deriveCampaignMutation(
   }
 
   if (houses.added.length > 1 && collectionDeltaCount === houses.added.length) {
+    if (houses.added.some((house) => house.areaPreparationGeneration)) {
+      throw new MutationDerivationError("Automatische House-Generationen werden nur serverseitig erstellt.");
+    }
     if (houses.added.length > HOUSE_CREATE_BATCH_MAX) {
       throw new MutationDerivationError("House-Batch darf höchstens 50 Häuser enthalten.");
     }
@@ -351,6 +364,7 @@ export function deriveCampaignMutation(
       oldTask.areaId !== task.areaId ||
       oldTask.taskType !== task.taskType ||
       oldTask.createdAt !== task.createdAt ||
+      (oldTask.areaPreparationGeneration ?? null) !== (task.areaPreparationGeneration ?? null) ||
       oldTask.parentStreetTaskId !== task.parentStreetTaskId ||
       !same(oldTask.geometry, task.geometry) ||
       !same(oldTask.source ?? null, task.source ?? null)
@@ -388,6 +402,9 @@ export function deriveCampaignMutation(
 
   if (houses.removed.length === 1 && collectionDeltaCount === 1) {
     const task = houses.removed[0];
+    if (task.areaPreparationGeneration) {
+      throw new MutationDerivationError("Automatisch vorbereitete House-Tasks dürfen nicht gelöscht werden.");
+    }
     return {
       ...mutationBase(previous, next.campaign.updatedAt),
       type: "house.delete",

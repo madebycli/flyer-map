@@ -40,6 +40,17 @@ Der nächste Map-Hardening-Slice aktualisiert den bestehenden PR #72 ohne neuen 
 
 Der Fix ist auf Runtime-Head `619cf690859ff21a4a8599f7762f38b0e27a013d` mit GitHub-CI #816 (Tests, Typecheck, Dependency Audit und Production Build) grün verifiziert; der automatisierte Workers-Build-Check ist ebenfalls erfolgreich. Reale WebGL-/Android-/iPhone-Abnahme bleibt offen, sofern sie nicht tatsächlich durchgeführt wurde.
 
+## Abgeschlossener Backend-Slice: automatische Area-Vorbereitung
+
+Plan 023 ergänzt den bestehenden PR ohne neue Produkt-Queue oder Kartenengine:
+
+- ein erfolgreich persistiertes, nicht wiederholtes `area.create` oder `area.update-geometry` plant serverseitig einen begrenzten OSM-Job;
+- der Worker liest ausschließlich die kanonische D1-Area, clippt Roads exakt auf das Polygon und publiziert Street-/House-Tasks atomar als normale Snapshot-Tasks;
+- automatische Tasks tragen eine servereigene Preparation-Generation, manuelle Tasks bleiben unverändert; Statusänderungen sind normal möglich, Client-Delete automatischer Tasks ist gesperrt;
+- die enge Preparation-Status/Retry-Route besitzt dieselbe Area-Scope-Autorisierung; Viewer und Field-Group-Mitglieder dürfen nicht starten;
+- Migration 0014 ist prepared-only. Kein Remote-Rollout, kein Massenvorbereiten alter Areas und kein Browser-OSM-Job als persistente Wahrheit;
+- ein späterer UI-Slice kann nach einem bewusst kontrollierten 0014-Rollout eine sichtbare Prepare/Retry-Aktion für ältere editierbare Areas anbieten.
+
 ## Pflichtkontext
 
 Lies zuerst vollständig:
@@ -49,6 +60,7 @@ Lies zuerst vollständig:
 3. `docs/context-map.yaml`
 4. `docs/plans/active/017-feature-complete-platform.md`
 5. `docs/plans/active/021-collection-pickup-persistence.md`
+6. `docs/plans/completed/023-auto-area-task-preparation.md` bei automatischer Area-Vorbereitung oder Migration 0014
 
 Folge für FC5 im Context Graph ab `plan-collection-pickup-persistence` insbesondere zu Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams und Quality. Keine parallele FC5-Topologie einführen, solange die bestehende Graph-Struktur ausreicht.
 
@@ -168,6 +180,7 @@ Prepared only, nicht remote angewendet:
 - 0011 Collection Pickups + Create/Edit/Assign Capabilities;
 - 0012 Pickup Visibility;
 - 0013 Pickup Comments Forward Migration.
+- 0014 automatische Area-Task-Vorbereitung.
 
 Keine Migration als Diagnose remote anwenden.
 

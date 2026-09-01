@@ -43,12 +43,21 @@ import { handleActivityApi } from "./activity.ts";
 import { handleCommentsApi } from "./comments.ts";
 import { handleAutomationsApi } from "./automationConfig.ts";
 import { handleStatisticsApi } from "./statistics.ts";
+import {
+  areaTaskPreparationRoute,
+  handleAreaTaskPreparationApi,
+} from "./areaTaskPreparationApi.ts";
+import {
+  areaHasStartedAutomaticWork,
+  type AreaPreparationExecutionContext,
+} from "./areaTaskPreparation.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
 type Env = {
   DB?: D1DatabaseLike;
   M4_BOOTSTRAP_SECRET?: string;
+  OSM_OVERPASS_URL?: string;
 };
 
 type ErrorBody = {
@@ -391,6 +400,21 @@ async function putSnapshot(
     );
   }
 
+  for (const previousArea of previous.areas) {
+    const nextArea = validation.snapshot.areas.find((area) => area.id === previousArea.id);
+    if (
+      nextArea &&
+      JSON.stringify(nextArea.geometry) !== JSON.stringify(previousArea.geometry) &&
+      await areaHasStartedAutomaticWork(db, campaignId, previousArea.id)
+    ) {
+      return errorResponse(
+        409,
+        "area_has_started_work",
+        "Die Area kann nicht mehr geändert werden, weil automatische Arbeit bereits begonnen wurde.",
+      );
+    }
+  }
+
   const result = await replaceCampaignSnapshot(db, validation.snapshot, baseRevision as number);
   if (!result.ok) {
     return errorResponse(
@@ -632,7 +656,11 @@ async function recoverCampaignAdmin(request: Request, env: Env, db: D1DatabaseLi
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    context?: AreaPreparationExecutionContext,
+  ): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health" && request.method === "GET") {
@@ -852,12 +880,35 @@ export default {
       }
     }
 
+    const preparationRoute = areaTaskPreparationRoute(url.pathname);
+    if (preparationRoute && db) {
+      try {
+        const auth = await requireAccess(db, request, preparationRoute.campaignId);
+        if (!auth.ok) return auth.response;
+        return await handleAreaTaskPreparationApi(
+          request,
+          db,
+          preparationRoute,
+          auth.access,
+          context,
+          { upstreamUrl: env.OSM_OVERPASS_URL },
+        );
+      } catch (error) {
+        if (error instanceof StoredSnapshotError) {
+          return errorResponse(500, "stored_snapshot_invalid", error.message);
+        }
+        return errorResponse(500, "internal_error", "Area-Vorbereitung konnte nicht verarbeitet werden.");
+      }
+    }
+
     const mutationCampaignId = mutationRoute(url.pathname);
     if (mutationCampaignId && db) {
       try {
         const auth = await requireMutationAccess(db, request, mutationCampaignId);
         if (!auth.ok) return auth.response;
-        return await handleCampaignMutation(request, db, mutationCampaignId, auth.access);
+        return await handleCampaignMutation(request, db, mutationCampaignId, auth.access, context, {
+          upstreamUrl: env.OSM_OVERPASS_URL,
+        });
       } catch (error) {
         if (error instanceof StoredSnapshotError) {
           return errorResponse(500, "stored_snapshot_invalid", error.message);

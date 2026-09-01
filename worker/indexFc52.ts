@@ -17,6 +17,7 @@ import {
   pickupSearchCampaignRoute,
   type PickupSearchEnv,
 } from "./pickupSearch.ts";
+import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 
 type Env = Parameters<typeof baseWorker.fetch>[1] & PickupSearchEnv;
 
@@ -128,7 +129,7 @@ export async function augmentPickupSnapshotResponse(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
     if (env.DB) {
       const capabilityResponse = await handlePickupCapabilitiesApi(request, env.DB);
       if (capabilityResponse) return capabilityResponse;
@@ -160,7 +161,7 @@ export default {
     const searchResponse = await handlePickupSearch(request, env);
     if (searchResponse) return searchResponse;
 
-    let response = await baseWorker.fetch(request, env);
+    let response = await baseWorker.fetch(request, env, context);
     if (!env.DB) return response;
     response = await augmentPickupCapabilitiesResponse(request, response, env.DB);
     if (request.method !== "GET") return response;

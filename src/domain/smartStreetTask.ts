@@ -331,6 +331,7 @@ export function createSmartStreetTaskSnapshot(
       objectType: "way",
       objectIds: selectedRoads.map((road) => road.osmId),
     },
+    areaPreparationGeneration: null,
     status: "open",
     completedAt: null,
     createdAt: timestamp,

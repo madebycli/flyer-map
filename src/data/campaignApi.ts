@@ -1,4 +1,7 @@
-import type { CampaignSnapshot } from "../domain/campaign";
+import {
+  normalizeAreaPreparationGenerations,
+  type CampaignSnapshot,
+} from "../domain/campaign.ts";
 import type { CampaignMutation } from "../domain/mutations";
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
@@ -91,7 +94,7 @@ function campaignPath(
 
 export async function fetchCampaignSnapshot(campaignId: string) {
   const response = await apiFetch(campaignPath(campaignId, "snapshot"));
-  return (await response.json()) as CampaignSnapshot;
+  return normalizeAreaPreparationGenerations((await response.json()) as CampaignSnapshot);
 }
 
 export async function createCampaignSnapshot(snapshot: CampaignSnapshot) {
@@ -100,11 +103,12 @@ export async function createCampaignSnapshot(snapshot: CampaignSnapshot) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ snapshot }),
   });
-  return (await response.json()) as {
+  const payload = (await response.json()) as {
     snapshot: CampaignSnapshot;
     access: AccessInfo;
     initialAccessToken: string;
   };
+  return { ...payload, snapshot: normalizeAreaPreparationGenerations(payload.snapshot) };
 }
 
 export async function putCampaignSnapshot(
@@ -117,7 +121,7 @@ export async function putCampaignSnapshot(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ baseRevision, snapshot }),
   });
-  return (await response.json()) as CampaignSnapshot;
+  return normalizeAreaPreparationGenerations((await response.json()) as CampaignSnapshot);
 }
 
 export async function postCampaignMutation(
@@ -142,7 +146,7 @@ export async function fetchCollectionSnapshot(campaignId: string) {
   const response = await apiFetch(
     "/api/campaigns/" + encodeURIComponent(campaignId) + "/collection/snapshot",
   );
-  return (await response.json()) as CampaignSnapshot;
+  return normalizeAreaPreparationGenerations((await response.json()) as CampaignSnapshot);
 }
 
 export async function fetchCurrentCollectionAccess(campaignId: string) {

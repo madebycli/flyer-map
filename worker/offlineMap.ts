@@ -2,7 +2,9 @@ import {
   OFFLINE_MAP_RADIUS_METERS,
   OFFLINE_MAP_SCHEMA_VERSION,
   isOfflineMapPackage,
+  offlineMapRequestForArea,
   type OfflineMapBounds,
+  type OfflineMapAreaGeometry,
   type OfflineMapBuildingFeature,
   type OfflineMapDataKind,
   type OfflineMapPackage,
@@ -38,9 +40,9 @@ const TAG_ALLOWLIST = new Set([
   "sidewalk",
 ]);
 
-type FetchLike = typeof fetch;
+export type FetchLike = typeof fetch;
 
-type OfflineMapHandlerOptions = {
+export type OfflineMapHandlerOptions = {
   upstreamUrl?: string;
   fetchImpl?: FetchLike;
   now?: () => Date;
@@ -61,7 +63,7 @@ type OverpassWay = {
   geometry?: OverpassGeometryPoint[];
 };
 
-type OverpassPayload = {
+export type OverpassPayload = {
   elements?: unknown[];
   osm3s?: {
     timestamp_osm_base?: unknown;
@@ -77,7 +79,7 @@ export type ParsedRequest = {
   kind: OfflineMapRequestKind;
 };
 
-class OfflineMapRequestError extends Error {
+export class OfflineMapRequestError extends Error {
   readonly status: number;
   readonly code: string;
 
@@ -85,6 +87,39 @@ class OfflineMapRequestError extends Error {
     super(message);
     this.name = "OfflineMapRequestError";
     this.status = status;
+    this.code = code;
+  }
+}
+
+export type OsmFeaturesForAreaLimits = {
+  timeoutMs?: number;
+  maxUpstreamBytes?: number;
+  maxPackageBytes?: number;
+};
+
+export type OsmFeaturesForAreaOptions = {
+  geometry: OfflineMapAreaGeometry;
+  upstreamUrl?: string;
+  fetchImpl?: FetchLike;
+  now?: () => Date;
+  limits?: OsmFeaturesForAreaLimits;
+};
+
+export type OsmFeaturesForArea = {
+  roads: OfflineMapRoadFeature[];
+  buildings: OfflineMapBuildingFeature[];
+  sourceTimestamp: string | null;
+  fetchedAt: string;
+  request: ParsedRequest;
+};
+
+/** A non-HTTP error contract for the canonical server-side Area OSM fetch. */
+export class OsmFeaturesForAreaError extends Error {
+  readonly code: "too_large" | "timeout" | "failed" | "invalid";
+
+  constructor(code: "too_large" | "timeout" | "failed" | "invalid", message: string) {
+    super(message);
+    this.name = "OsmFeaturesForAreaError";
     this.code = code;
   }
 }
@@ -438,6 +473,79 @@ async function fetchOverpass(
     throw new OfflineMapRequestError(502, "osm_upstream_failed", "OSM-Daten konnten nicht geladen werden.");
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+/**
+ * Fetches the two OSM feature classes for a persisted Area. The bounded request
+ * is derived only from the canonical polygon and deliberately shares the same
+ * allowlist and normalizers as the legacy offline-map package endpoint.
+ */
+export async function fetchOsmFeaturesForArea(
+  options: OsmFeaturesForAreaOptions,
+): Promise<OsmFeaturesForArea> {
+  const areaRequest = offlineMapRequestForArea(options.geometry);
+  if (!areaRequest) {
+    throw new OsmFeaturesForAreaError(
+      "too_large",
+      `Area überschreitet die maximale Begrenzung von ${OFFLINE_MAP_RADIUS_METERS} Metern.`,
+    );
+  }
+
+  const request: ParsedRequest = {
+    lat: areaRequest.center.lat,
+    lng: areaRequest.center.lng,
+    radiusMeters: areaRequest.radiusMeters,
+    kind: "all",
+  };
+  const handlerOptions: OfflineMapHandlerOptions = {
+    upstreamUrl: options.upstreamUrl,
+    fetchImpl: options.fetchImpl,
+    now: options.now,
+    timeoutMs: options.limits?.timeoutMs,
+    maxUpstreamBytes: options.limits?.maxUpstreamBytes,
+    maxPackageBytes: options.limits?.maxPackageBytes,
+  };
+
+  try {
+    const payload = await fetchOverpass(request, handlerOptions);
+    if (!Array.isArray(payload.elements)) {
+      throw new OsmFeaturesForAreaError("invalid", "OSM-Antwort enthält keine Way-Collection.");
+    }
+    const pkg = normalizeOfflineMapPackage(
+      payload,
+      request,
+      (options.now ?? (() => new Date()))(),
+    );
+    if (!isOfflineMapPackage(pkg)) {
+      throw new OsmFeaturesForAreaError("invalid", "OSM-Features konnten nicht normalisiert werden.");
+    }
+    const serializedBytes = new TextEncoder().encode(JSON.stringify(pkg)).byteLength;
+    if (serializedBytes > (options.limits?.maxPackageBytes ?? MAX_PACKAGE_BYTES)) {
+      throw new OsmFeaturesForAreaError("too_large", "OSM-Featurepaket überschreitet die Sicherheitsgrenze.");
+    }
+    return {
+      roads: pkg.roads.features,
+      buildings: pkg.buildings.features,
+      sourceTimestamp: pkg.sourceTimestamp,
+      fetchedAt: pkg.fetchedAt,
+      request,
+    };
+  } catch (error) {
+    if (error instanceof OsmFeaturesForAreaError) throw error;
+    if (error instanceof OfflineMapRequestError) {
+      if (error.code === "osm_upstream_timeout") {
+        throw new OsmFeaturesForAreaError("timeout", error.message);
+      }
+      if (error.code === "osm_response_invalid") {
+        throw new OsmFeaturesForAreaError("invalid", error.message);
+      }
+      if (error.code === "osm_response_too_large") {
+        throw new OsmFeaturesForAreaError("too_large", error.message);
+      }
+      throw new OsmFeaturesForAreaError("failed", error.message);
+    }
+    throw new OsmFeaturesForAreaError("failed", "OSM-Daten konnten nicht geladen werden.");
   }
 }
 

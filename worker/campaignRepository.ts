@@ -58,6 +58,7 @@ type TaskRow = {
   label: string;
   geometry_json: string;
   source_json: string | null;
+  area_preparation_generation: string | null;
   status: "open" | "completed" | "later" | "not-deliverable";
   completed_at: string | null;
   created_at: string;
@@ -94,6 +95,7 @@ type HouseTaskRow = {
   label: string;
   geometry_json: string;
   source_json: string | null;
+  area_preparation_generation: string | null;
   status: "open" | "completed" | "later" | "not-deliverable";
   completed_at: string | null;
   created_at: string;
@@ -135,6 +137,35 @@ export async function hasHouseTasksTable(db: D1DatabaseLike) {
   return result.results.some((column) => column.name === "id");
 }
 
+/** True only after prepared migration 0014 has been applied as a complete unit. */
+export async function hasAreaTaskPreparationSchema(db: D1DatabaseLike) {
+  const [preparations, tasks, houses] = await Promise.all([
+    db.prepare("PRAGMA table_info(area_task_preparations)").all<{ name: string }>(),
+    db.prepare("PRAGMA table_info(tasks)").all<{ name: string }>(),
+    db.prepare("PRAGMA table_info(house_tasks)").all<{ name: string }>(),
+  ]);
+  const preparationColumns = new Set(preparations.results.map((column) => column.name));
+  return (
+    [
+      "campaign_id",
+      "area_id",
+      "geometry_hash",
+      "generation",
+      "status",
+      "road_count",
+      "house_count",
+      "source_timestamp",
+      "started_at",
+      "ready_at",
+      "failed_at",
+      "last_error_code",
+      "updated_at",
+    ].every((column) => preparationColumns.has(column)) &&
+    tasks.results.some((column) => column.name === "area_preparation_generation") &&
+    houses.results.some((column) => column.name === "area_preparation_generation")
+  );
+}
+
 export async function loadCampaignSnapshot(
   db: D1DatabaseLike,
   campaignId: string,
@@ -151,20 +182,27 @@ export async function loadCampaignSnapshot(
 
   if (!campaign) return null;
 
-  const [hasTaskSource, hasHouses, hasCollection] = await Promise.all([
+  const [hasTaskSource, hasHouses, hasCollection, hasPreparation] = await Promise.all([
     hasTaskSourceProvenanceColumn(db),
     hasHouseTasksTable(db),
     hasCollectionSchema(db),
+    hasAreaTaskPreparationSchema(db),
   ]);
   const taskSelect = hasTaskSource
-    ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
-    : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id";
+    ? hasPreparation
+      ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
+      : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
+    : hasPreparation
+      ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
+      : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id";
+
+  const houseSelect = hasPreparation
+    ? "SELECT id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM house_tasks WHERE campaign_id = ? ORDER BY created_at, id"
+    : "SELECT id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM house_tasks WHERE campaign_id = ? ORDER BY created_at, id";
 
   const housePromise = hasHouses
     ? db
-        .prepare(
-          "SELECT id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json, status, completed_at, created_at, updated_at FROM house_tasks WHERE campaign_id = ? ORDER BY created_at, id",
-        )
+        .prepare(houseSelect)
         .bind(campaignId)
         .all<HouseTaskRow>()
     : Promise.resolve({ results: [] as HouseTaskRow[] });
@@ -313,6 +351,7 @@ export async function loadCampaignSnapshot(
         label: task.label,
         geometry: JSON.parse(task.geometry_json),
         ...(task.source_json ? { source: JSON.parse(task.source_json) } : {}),
+        areaPreparationGeneration: task.area_preparation_generation ?? null,
         status: task.status,
         completedAt: task.completed_at,
         createdAt: task.created_at,
@@ -328,6 +367,7 @@ export async function loadCampaignSnapshot(
               label: task.label,
               geometry: JSON.parse(task.geometry_json),
               ...(task.source_json ? { source: JSON.parse(task.source_json) } : {}),
+              areaPreparationGeneration: task.area_preparation_generation ?? null,
               parentStreetTaskId: task.parent_street_task_id,
               status: task.status,
               completedAt: task.completed_at,
@@ -387,8 +427,32 @@ function tasksBulkInsert(
   snapshot: CampaignSnapshot,
   writeToken: string,
   hasTaskSource: boolean,
+  hasPreparation: boolean,
 ) {
-  const query = hasTaskSource
+  const query = hasTaskSource && hasPreparation
+    ? `INSERT INTO tasks (
+         id, campaign_id, area_id, task_type, label, geometry_json, source_json,
+         area_preparation_generation, status, completed_at, created_at, updated_at
+       )
+       SELECT
+         json_extract(value, '$.id'),
+         json_extract(value, '$.campaignId'),
+         json_extract(value, '$.areaId'),
+         json_extract(value, '$.taskType'),
+         json_extract(value, '$.label'),
+         json_extract(value, '$.geometry'),
+         CASE
+           WHEN json_type(value, '$.source') IS NULL THEN NULL
+           ELSE json_extract(value, '$.source')
+         END,
+         json_extract(value, '$.areaPreparationGeneration'),
+         json_extract(value, '$.status'),
+         json_extract(value, '$.completedAt'),
+         json_extract(value, '$.createdAt'),
+         json_extract(value, '$.updatedAt')
+       FROM json_each(?)
+       WHERE ${guardExistsSql()}`
+    : hasTaskSource
     ? `INSERT INTO tasks (
          id, campaign_id, area_id, task_type, label, geometry_json, source_json,
          status, completed_at, created_at, updated_at
@@ -433,10 +497,36 @@ function tasksBulkInsert(
     .bind(JSON.stringify(snapshot.tasks), snapshot.campaign.id, writeToken);
 }
 
-function houseTasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
-  return db
-    .prepare(
-      `INSERT INTO house_tasks (
+function houseTasksBulkInsert(
+  db: D1DatabaseLike,
+  snapshot: CampaignSnapshot,
+  writeToken: string,
+  hasPreparation: boolean,
+) {
+  const query = hasPreparation
+    ? `INSERT INTO house_tasks (
+         id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
+         area_preparation_generation, status, completed_at, created_at, updated_at
+       )
+       SELECT
+         json_extract(value, '$.id'),
+         json_extract(value, '$.campaignId'),
+         json_extract(value, '$.areaId'),
+         json_extract(value, '$.parentStreetTaskId'),
+         json_extract(value, '$.label'),
+         json_extract(value, '$.geometry'),
+         CASE
+           WHEN json_type(value, '$.source') IS NULL THEN NULL
+           ELSE json_extract(value, '$.source')
+         END,
+         json_extract(value, '$.areaPreparationGeneration'),
+         json_extract(value, '$.status'),
+         json_extract(value, '$.completedAt'),
+         json_extract(value, '$.createdAt'),
+         json_extract(value, '$.updatedAt')
+       FROM json_each(?)
+       WHERE ${guardExistsSql()}`
+    : `INSERT INTO house_tasks (
          id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
          status, completed_at, created_at, updated_at
        )
@@ -456,8 +546,9 @@ function houseTasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, wr
          json_extract(value, '$.createdAt'),
          json_extract(value, '$.updatedAt')
        FROM json_each(?)
-       WHERE ${guardExistsSql()}`,
-    )
+       WHERE ${guardExistsSql()}`;
+  return db
+    .prepare(query)
     .bind(JSON.stringify(snapshot.houseTasks ?? []), snapshot.campaign.id, writeToken);
 }
 
@@ -474,9 +565,10 @@ export async function replaceCampaignSnapshot(
   snapshot: CampaignSnapshot,
   baseRevision: number | null,
 ): Promise<ReplaceSnapshotResult> {
-  const [hasTaskSource, hasHouses] = await Promise.all([
+  const [hasTaskSource, hasHouses, hasPreparation] = await Promise.all([
     hasTaskSourceProvenanceColumn(db),
     hasHouseTasksTable(db),
+    hasAreaTaskPreparationSchema(db),
   ]);
   if (!hasTaskSource && snapshot.tasks.some((task) => task.source)) {
     return {
@@ -487,6 +579,19 @@ export async function replaceCampaignSnapshot(
     };
   }
   if (!hasHouses && (snapshot.houseTasks?.length ?? 0) > 0) {
+    return {
+      ok: false,
+      currentRevision:
+        baseRevision === null ? await getCampaignRevision(db, snapshot.campaign.id) : baseRevision,
+      reason: "schema_migration_required",
+    };
+  }
+  if (
+    !hasPreparation &&
+    [...snapshot.tasks, ...(snapshot.houseTasks ?? [])].some(
+      (task) => task.areaPreparationGeneration !== undefined && task.areaPreparationGeneration !== null,
+    )
+  ) {
     return {
       ok: false,
       currentRevision:
@@ -565,9 +670,9 @@ export async function replaceCampaignSnapshot(
       .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
     teamsBulkInsert(db, snapshot, writeToken),
     areasBulkInsert(db, snapshot, writeToken),
-    tasksBulkInsert(db, snapshot, writeToken, hasTaskSource),
+    tasksBulkInsert(db, snapshot, writeToken, hasTaskSource, hasPreparation),
   );
-  if (hasHouses) childStatements.push(houseTasksBulkInsert(db, snapshot, writeToken));
+  if (hasHouses) childStatements.push(houseTasksBulkInsert(db, snapshot, writeToken, hasPreparation));
 
   const results = await db.batch([claim, ...childStatements]);
   const claimChanges = results[0]?.meta?.changes ?? 0;

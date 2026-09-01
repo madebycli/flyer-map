@@ -2,8 +2,8 @@
 id: product-roadmap
 type: product
 status: accepted
-last_updated: 2026-08-31
-related: [product, product-mvp, product-ux, architecture-organizations, architecture-collaboration, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion, plan-017-feature-complete-platform, plan-021-collection-pickup-persistence]
+last_updated: 2026-09-01
+related: [product, product-mvp, product-ux, architecture-organizations, architecture-collaboration, architecture-identity-permissions, architecture-live-teams, plan-012-platform-app-expansion, plan-017-feature-complete-platform, plan-021-collection-pickup-persistence, plan-023-auto-area-task-preparation]
 source_of_truth_for: [product-roadmap, planned-capabilities, milestone-order]
 ---
 
@@ -107,6 +107,8 @@ Capabilities:
 - whole-city performance.
 
 Normal Smart Street, Smart House and the persisted House renderer are implemented. Real-device FC4 acceptance remains open.
+
+The completed backend-only Plan 023 adds server-prepared automatic Area work: a successful persisted Area create or geometry update can atomically publish ordinary clipped Street and House Tasks for all devices. It does not mass-prepare existing Areas and does not replace the Smart/manual flows. A follow-up UI slice may offer an explicit prepare/retry action for an older editable Area after migration 0014 has been deliberately rolled out.
 
 ### M6.5 - Clothes Collection / Pickup Mode
 

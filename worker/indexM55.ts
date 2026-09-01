@@ -16,6 +16,7 @@ import { handleFieldSessionTasksApi } from "./fieldSessionTasks.ts";
 import { handleFieldSessionsApi } from "./fieldSessions.ts";
 import { handleOfflineMapPackage } from "./offlineMap.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
+import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 
 type Env = FieldGroupEnv & {
   DB?: D1DatabaseLike;
@@ -115,7 +116,7 @@ async function temporarySnapshotResponse(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (env.DB) {
@@ -176,7 +177,7 @@ export default {
     }
 
     const campaignId = offlineMapCampaignRoute(url.pathname);
-    if (!campaignId) return baseWorker.fetch(request, env);
+    if (!campaignId) return baseWorker.fetch(request, env, context);
 
     if (request.method !== "POST") {
       return jsonError(405, "method_not_allowed", "Für diesen Endpunkt ist nur POST erlaubt.");
