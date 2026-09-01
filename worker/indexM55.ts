@@ -1,4 +1,4 @@
-import baseWorker from "./index.ts";
+import baseWorker, { legacySnapshotWriteResponse } from "./index.ts";
 import { resolveAccess } from "./access.ts";
 import {
   loadCampaignSnapshot,
@@ -81,16 +81,10 @@ async function temporarySnapshotResponse(
   db: D1DatabaseLike,
   campaignId: string,
 ) {
+  if (request.method === "PUT") return legacySnapshotWriteResponse();
+
   const access = await resolveAccess(db, request, campaignId);
   if (access?.role !== "field-group-member") return null;
-
-  if (request.method === "PUT") {
-    return jsonError(
-      403,
-      "field_group_snapshot_write_forbidden",
-      "Temporäre Gruppenmitglieder dürfen keine vollständigen Campaign-Snapshots schreiben.",
-    );
-  }
   if (request.method !== "GET") return null;
   if (!access.teamId) {
     return jsonError(403, "field_group_scope_missing", "Temporärer Team-Scope fehlt.");

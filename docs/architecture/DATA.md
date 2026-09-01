@@ -3,7 +3,7 @@ id: architecture-data
 type: architecture
 status: accepted
 last_updated: 2026-09-01
-related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009, ADR-0011, ADR-0013, ADR-0021]
+related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009, ADR-0011, ADR-0013, ADR-0021, ADR-0022]
 source_of_truth_for: [domain-data-model, d1-baseline]
 ---
 
@@ -24,7 +24,7 @@ Browser and Worker use Campaign snapshot schema v3:
 
 D1 is the persisted shared source of truth. localStorage remains startup/last-known cache and conflict safety copy. Existing older local snapshots are migrated in-browser rather than deleted.
 
-M5 keeps the snapshot model for reads/UI while changing **new ordinary write delivery** from coarse snapshot replacement to explicit queued mutations.
+M5 keeps the snapshot model for reads/UI, startup cache and conflict safety copies. New ordinary write delivery uses explicit queued mutations, not a complete snapshot replacement.
 
 ## Current entities
 
@@ -224,15 +224,15 @@ Plaintext access/session secrets are never stored in D1; only SHA-256 hashes are
 
 `campaign_access_grants.team_id` scopes a Team Editor grant, but there is intentionally no D1 foreign key from the grant to the `teams` table.
 
-The legacy snapshot replacement path still exists during M5 transition and can delete/reinsert Team rows. A Team foreign key with cascading behavior could therefore revoke valid Team Editor grants during that compatibility write.
+The absence of a D1 foreign key from a Team Editor grant to `teams` is a historical choice from migration 0002. The old snapshot replacement could delete/reinsert Team rows, so adding a cascading FK without an explicit migration would have been unsafe. This M5 slice removes that replacement path but does not rewrite the historical schema.
 
-Instead:
+The existing safeguards remain:
 - grant creation verifies that the Team exists in the Campaign;
 - access resolution verifies that a Team Editor's scoped Team still exists;
 - if the Team no longer exists, that scoped access is invalid;
 - Campaign/grant/session foreign keys still enforce Campaign ownership where safe.
 
-Do not reintroduce a Team FK until legacy snapshot replacement is removed/redesigned and an explicit migration is accepted.
+Do not add a Team FK implicitly. Any future FK or Team-lifecycle change requires its own explicit migration and decision.
 
 ## Revision/write semantics
 
@@ -246,17 +246,20 @@ The Campaign revision is still the shared monotonic revision used to detect newe
 
 When 0005 exists, the Worker loads `house_tasks` into optional `CampaignSnapshot.houseTasks`. Before 0005, it does not query a missing House table and returns the established Street snapshot shape.
 
-### Legacy snapshot write
+### Initial Campaign create
 
-Authorized complete-snapshot PUT remains during M5 only as:
-- compatibility for pre-M5 optimistic local state;
-- transition/recovery path.
+`POST /api/campaigns` is the one-time server-side bootstrap for a new Campaign. The Worker validates a schema-v3 snapshot with `revision: 0` and calls `createInitialCampaignState`.
 
-It remains revision-checked and Worker-authorized. New ordinary M5/M6 saves must not use it as their normal delivery path.
+The repository claims the new Campaign with an atomic insert-only D1 batch:
+- Campaign is inserted only when its id does not already exist;
+- initial Teams, Areas and Street/House Tasks are inserted behind the internal write-token guard;
+- no existing Campaign is updated;
+- no child rows are deleted or replaced;
+- access grants and sessions are created by the surrounding create flow after the initial state succeeds.
 
-For M6 reviewed Smart Streets and Houses, source/geometry snapshots are immutable through this compatibility path for every role, including Admin. A future reviewed OSM reconciliation requires an explicit mutation rather than an accidental broad-snapshot overwrite.
+The endpoint remains protected by the server-only bootstrap contract. It returns a conflict for an existing Campaign and fails closed when an additive Task schema required by the initial snapshot is unavailable.
 
-Snapshot replacement detects 0004/0005 before claiming a revision. When 0005 exists, Street rows are inserted before House rows so optional parent Street FKs resolve correctly. When 0005 does not exist and no House data is present, the established Street-only replacement path remains compatible.
+Snapshot reads remain the protected read model. `PUT /api/campaigns/:id/snapshot` is retired and returns HTTP 410 without claiming a revision or writing D1. Normal Campaign, Team, Area, Street, House, Collection and Pickup changes use explicit M5 or specialized mutations.
 
 ### M5 mutation write
 

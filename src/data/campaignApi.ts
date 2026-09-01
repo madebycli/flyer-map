@@ -136,19 +136,6 @@ export async function createCampaignSnapshot(snapshot: CampaignSnapshot) {
   return { ...payload, snapshot: normalizeAreaPreparationGenerations(payload.snapshot) };
 }
 
-export async function putCampaignSnapshot(
-  campaignId: string,
-  baseRevision: number,
-  snapshot: CampaignSnapshot,
-) {
-  const response = await apiFetch(campaignPath(campaignId, "snapshot"), {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ baseRevision, snapshot }),
-  });
-  return normalizeAreaPreparationGenerations((await response.json()) as CampaignSnapshot);
-}
-
 export async function postCampaignMutation(
   campaignId: string,
   mutation: CampaignMutation,

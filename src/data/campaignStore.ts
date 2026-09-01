@@ -14,7 +14,6 @@ import {
   fetchCampaignVersion,
   fetchCurrentAccess,
   postCampaignMutation,
-  putCampaignSnapshot,
   redeemCampaignAccess,
   removeAccessTokenFromUrl,
   setCampaignIdInUrl,
@@ -581,35 +580,6 @@ async function processMutationQueue() {
   }
 }
 
-async function recoverLegacyOptimisticSnapshot(
-  campaignId: string,
-  local: CampaignSnapshot,
-  server: CampaignSnapshot,
-) {
-  if (syncRuntime.access?.role === "viewer" || collectionModeFromUrl()) return false;
-  if (local.revision <= server.revision || sameSnapshotContent(local, server)) return false;
-
-  try {
-    const outgoing: CampaignSnapshot = { ...local, revision: server.revision + 1 };
-    const stored = await putCampaignSnapshot(campaignId, server.revision, outgoing);
-    applyServerSnapshot(stored);
-    emit({ syncState: "saved", pendingCount: 0 });
-    return true;
-  } catch (error) {
-    saveCampaignConflictSnapshot(local);
-    if (isRetryableError(error)) {
-      emit({ syncState: "failed", messageCode: "network", pendingCount: 0 });
-    } else if (isAccessError(error)) {
-      syncRuntime.initialized = false;
-      setAccess(null);
-      emit({ syncState: "blocked-auth", pendingCount: 0 });
-    } else {
-      emit({ syncState: "conflict", messageCode: "conflict", pendingCount: 0 });
-    }
-    return true;
-  }
-}
-
 async function loadServerForAuthenticatedCampaign(targetCampaignId: string) {
   const serverSnapshot = collectionModeFromUrl()
     ? await fetchCollectionSnapshot(targetCampaignId)
@@ -652,33 +622,15 @@ async function loadServerForAuthenticatedCampaign(targetCampaignId: string) {
     return;
   }
 
-  if (syncRuntime.access?.role === "viewer") {
-    if (!sameSnapshotContent(latestLocal, serverSnapshot) && loadedExistingSnapshot) {
-      saveCampaignConflictSnapshot(latestLocal);
-    }
-    applyServerSnapshot(serverSnapshot);
-    emit({ syncState: "saved", pendingCount: 0 });
-    return;
-  }
-
-  if (await recoverLegacyOptimisticSnapshot(targetCampaignId, latestLocal, serverSnapshot)) return;
-
   const sameContent = sameSnapshotContent(latestLocal, serverSnapshot);
-  if (latestLocal.revision === serverSnapshot.revision && !sameContent) {
+  if (!sameContent) {
     saveCampaignConflictSnapshot(latestLocal);
+    applyServerSnapshot(serverSnapshot, "conflict");
     emit({ syncState: "conflict", messageCode: "conflict", pendingCount: 0 });
     return;
   }
 
-  if (serverSnapshot.revision > latestLocal.revision || !sameContent) {
-    if (!sameContent && loadedExistingSnapshot) saveCampaignConflictSnapshot(latestLocal);
-    applyServerSnapshot(serverSnapshot, !sameContent ? "conflict" : null);
-    emit({ syncState: "saved", pendingCount: 0 });
-    return;
-  }
-
-  syncRuntime.latestLocal = serverSnapshot;
-  writeLocalSnapshot(serverSnapshot);
+  applyServerSnapshot(serverSnapshot);
   emit({ syncState: "saved", pendingCount: 0 });
 }
 

@@ -3,7 +3,7 @@ id: architecture-offline-sync
 type: architecture
 status: accepted
 last_updated: 2026-09-01
-related: [architecture-data, architecture-security, architecture-map, product-roadmap, ADR-0011, ADR-0013, ADR-0021]
+related: [architecture-data, architecture-security, architecture-map, product-roadmap, ADR-0011, ADR-0013, ADR-0021, ADR-0022]
 source_of_truth_for: [offline-queue, synchronization, conflict-handling]
 ---
 
@@ -160,7 +160,7 @@ Worker authorization remains authoritative:
 
 The client sync label is UX only and is never an authorization boundary.
 
-Under ADR-0013, existing reviewed Street source and House geometry/source/parent snapshots are protected from accidental mutation by the legacy full-snapshot compatibility write, including for Admin. Deleting the entire Task is distinct from silently rewriting reviewed source data.
+Under ADR-0013, existing reviewed Street source and House geometry/source/parent snapshots are protected from accidental mutation by ordinary task mutations, including for Admin. Deleting the entire Task is distinct from silently rewriting reviewed source data. A full-snapshot compatibility write is no longer available.
 
 ## Active draw/edit safety
 
@@ -173,13 +173,13 @@ Protected modes include:
 
 The existing interaction-block mechanism continues to prevent canonical server refresh from silently destroying active geometry. Saved MapLibre data changes only when Campaign snapshot state changes.
 
-## Legacy transition path
+## Snapshot cache and retired legacy write
 
-A pre-M5 optimistic local snapshot can exist without a corresponding IndexedDB queue record. During transition, the authorized coarse snapshot PUT may be used only for compatibility/recovery behavior that remains intentionally supported.
+A pre-M5 optimistic local snapshot can exist without a corresponding IndexedDB queue record. The local snapshot remains a startup cache and conflict/recovery copy, not an upload payload.
 
-New ordinary edits must use the mutation queue and must not return to arbitrary full-snapshot replacement as their normal delivery path.
+If the queue is empty and the local snapshot differs from the canonical server snapshot, the client preserves the local state in the existing conflict storage, applies the canonical server state and exposes a visible conflict/recovery hint. It does not perform an automatic server write. Queued domain mutations remain authoritative and are retried through the M5 queue.
 
-The compatibility write detects missing M6 schema before revision claim. It may preserve/delete whole reviewed Tasks when authorized, but may not strip or rewrite reviewed provenance/geometry while retaining the Task.
+`PUT /api/campaigns/:id/snapshot` is retired. The Worker returns HTTP 410 with `legacy_snapshot_write_retired` before accepting the payload, claiming a revision or touching D1. `POST /api/campaigns` remains a create-only revision-0 bootstrap.
 
 ## Website-only constraints
 
@@ -201,4 +201,4 @@ M6 persistence does not change ADR-0010:
 - active draw/edit/review interaction remains outside the saved persistent layer model until Task creation;
 - normal browse has no application loop projecting all saved geometry.
 
-See ADR-0011 for mutation/idempotency behavior and ADR-0013 for Smart Street/House identity/source geometry.
+See ADR-0011 for mutation/idempotency behavior, ADR-0013 for Smart Street/House identity/source geometry and ADR-0022 for the final no-legacy-snapshot-write boundary.

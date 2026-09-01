@@ -3,7 +3,7 @@ id: architecture-security
 type: architecture
 status: accepted
 last_updated: 2026-09-01
-related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, ADR-0021, plan-012-platform-app-expansion]
+related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, ADR-0021, ADR-0022, plan-012-platform-app-expansion]
 source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, m6-smart-task-security, future-security-boundaries]
 ---
 
@@ -38,11 +38,9 @@ Current roles:
 
 The Worker enforces scope on every write and protected data request.
 
-During the M5 transition:
-- legacy snapshot PUT remains diff-authorized against previous server state;
-- M5/M6 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence.
+M5/M6 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence. `POST /api/campaigns` is limited to validated revision-0 initial creation.
 
-This prevents a client from bypassing scope by lying about a mutation type or target.
+`PUT /api/campaigns/:id/snapshot` is retired. The Worker returns HTTP 410 with `legacy_snapshot_write_retired` before access resolution, payload processing, revision claim or D1 access. This prevents a client from bypassing scope through a complete-snapshot write.
 
 ## Current access grants and sessions
 
@@ -61,7 +59,7 @@ Every protected request resolves the session's backing grant. Revoking the grant
 
 Team Editor grant creation verifies that the scoped Team exists. Access resolution also verifies the Team still exists.
 
-There is intentionally no D1 Team foreign key on the grant while the legacy snapshot-replacement compatibility path exists; see `docs/architecture/DATA.md`.
+There is intentionally no D1 Team foreign key on the grant because this is the historical migration-0002 schema. Removing the legacy snapshot-replacement path does not silently add or alter that foreign key; see `docs/architecture/DATA.md`.
 
 For mutations, Team Editor scope is not inferred from client mutation payload alone. The Worker:
 1. loads canonical current snapshot;
@@ -135,7 +133,7 @@ Shared boundaries:
 Street-specific boundaries:
 - reviewed Street geometry is a validated LineString snapshot;
 - Street source accepts `OpenStreetMap` / `way` / positive unique `objectIds`;
-- existing reviewed Street geometry/source is immutable through ordinary rename/status or legacy full-snapshot writes.
+- existing reviewed Street geometry/source is immutable through ordinary rename/status writes; a full-snapshot write is not an available compatibility path.
 
 House-specific boundaries:
 - reviewed House geometry is a validated Polygon footprint snapshot;

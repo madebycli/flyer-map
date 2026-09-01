@@ -18,6 +18,19 @@ Manueller Deploy: verboten
 Neuer Branch/PR: verboten
 ```
 
+## Abgeschlossener M5-Transition: kein Legacy-Snapshot-Write
+
+Der Snapshot ist nach Abschluss der M5-Transition ausschließlich Read Model, UI-Modell, Startup-Cache und Konflikt-/Sicherheitskopie:
+
+- `POST /api/campaigns` ist ein einmaliger, atomarer Initial-Create mit validierter `revision: 0`; bestehende Campaigns werden nicht ersetzt;
+- `GET /api/campaigns/:id/snapshot` und `GET /api/campaigns/:id/version` bleiben erhalten;
+- `PUT /api/campaigns/:id/snapshot` antwortet mit HTTP 410 und `legacy_snapshot_write_retired`, ohne Payload-Verarbeitung, Access-Auflösung, Revision-Claim oder D1-Write;
+- `replaceCampaignSnapshot`, der Client-Helper `putCampaignSnapshot` und automatische Legacy-Recovery sind entfernt;
+- normale Campaign-, Team-, Area-, Street-, House-, Collection- und Pickup-Änderungen laufen über explizite M5- oder spezialisierte Mutationen;
+- bei leerer Queue speichert der Store einen lokalen Mismatch als Konfliktkopie, übernimmt den kanonischen Serverzustand und zeigt einen sichtbaren Konflikthinweis; ein automatischer Server-PUT findet nicht statt.
+
+Dieser Slice ändert keine Migration und führt keine zweite Queue, Datenbank oder Mutation-Domain ein.
+
 Letzter vollständig grüner FC5.2-Runtime-Code-Checkpoint:
 
 ```text
@@ -163,7 +176,7 @@ Normaler Admin-Pfad:
 - `CollectionAdminPickupWorkspace` nutzt dieselbe MapLibre-Engine und denselben `PickupPanel`-Composer;
 - Admin kann suchen, Karte fokussieren, manuell positionieren, erstellen, Status ändern, Kommentare nutzen, später Titel/Adresse/Beschreibung/Position bearbeiten und soft archivieren;
 - Assignment bleibt im bestehenden Admin-Assignment-Editor;
-- alle Snapshot-Writes laufen weiter über den zentralen `onSnapshotChange`/`commitSnapshot`-Weg und dadurch über dieselbe M5-Queue;
+- alle fachlichen Pickup-Änderungen laufen weiter über den zentralen `onSnapshotChange`/`commitSnapshot`-Weg und dadurch über dieselbe M5-Queue; der Snapshot selbst wird nicht als allgemeiner Schreibpayload versendet;
 - keine zweite Pickup API, Queue, Datenbank oder Map-Engine.
 
 Gezielte Regression: `tests/pickupLifecycleUi.test.ts` hält Edit/Archive/Admin-Produktgraph und den bestehenden M5-Update-/Archive-Vertrag fest.
@@ -206,6 +219,8 @@ Parallel offen bleiben reale Android-/iPhone-Touch-/Dense-Mobile-Abnahmen für F
 - Keine Secrets im Client oder in Map Properties.
 - Keine kontinuierliche GPS-Historie.
 - Keine zweite Datenbank/Queue/Map-Engine.
+- vollständige Snapshot-PUTs sind kein Schreibweg und liefern 410 `legacy_snapshot_write_retired`;
+- `POST /api/campaigns` bleibt Create-only mit Revision 0;
 - Keine Preview-/Mock-Daten im normalen Produktpfad.
 - Remote D1 bleibt dokumentiert nur 0001 bis 0003 applied.
 - Migrationen 0007/0008 nicht historisch verändern.

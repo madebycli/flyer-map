@@ -13,6 +13,18 @@ Verteil-Flyer bleibt eine mobile-first normale Website mit React, TypeScript, Vi
 
 Repository und GitHub sind Source of Truth. Aktiver Entwicklungsbranch ist `plan-feature-complete-platform`, Draft PR #72 läuft gegen `ui-app-launcher-sheet`. Nicht mergen, nicht Ready setzen, keinen neuen Branch/PR erstellen und keine Migration oder manuellen Deploy remote ausführen.
 
+## M5 finaler Schreibvertrag
+
+Der M5-Transition-Slice ist im Code umgesetzt:
+- der Campaign-Snapshot bleibt Read Model, UI-Modell, Startup-Cache und Konflikt-/Sicherheitskopie;
+- `POST /api/campaigns` ist ausschließlich der atomare Initial-Create mit Revision 0;
+- Snapshot-GET und Version-GET bleiben erhalten, der Snapshot-PUT antwortet mit HTTP 410 `legacy_snapshot_write_retired` und schreibt nicht nach D1;
+- `replaceCampaignSnapshot`, `putCampaignSnapshot` und automatische Legacy-Recovery sind entfernt;
+- normale Campaign-, Team-, Area-, Street-, House-, Collection- und Pickup-Änderungen bleiben auf expliziten M5- oder spezialisierten Mutationen;
+- bei leerer Queue bewahrt der Store einen abweichenden lokalen Zustand als Konfliktkopie, zeigt den kanonischen Serverzustand und macht den Konflikt sichtbar.
+
+Die Repository-, HTTP- und statischen Guard-Tests decken den Insert-only-Create, den 410-Vertrag und das Fehlen des alten Snapshot-Write-Pfads ab. Der exakte Runtime-Head und CI-Checkpoint werden nach GitHub-Verifikation ergänzt.
+
 ## Feature-Complete-Linie
 
 Plan 017 bleibt die übergeordnete Delivery-Linie. Abgeschlossen sind Plan 018 House Polygon Renderer, die historischen Smart-Runtimes aus Plan 019/020, Plan 023 Backend-Vorbereitung, Plan 024 normaler Preparation-UI-Flow, FC5.1 Collection Access/Areas/Runs und der vollständige FC5.2-Runtime-Scope. Plan 021 bleibt für FC5.3 sowie die noch offenen realen Geräte-/Touch-Gates aktiv.

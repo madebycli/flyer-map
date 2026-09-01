@@ -2,8 +2,8 @@
 id: plan-017-feature-complete-platform
 type: plan
 status: active
-last_updated: 2026-08-31
-related: [plan-012-platform-app-expansion, plan-016-app-launcher-sheet, product-roadmap, product-ux, architecture-live-teams, architecture-collaboration, architecture-identity-permissions, architecture-organizations, ADR-0014, ADR-0015, ADR-0016, ADR-0017, ADR-0018, quality]
+last_updated: 2026-09-01
+related: [plan-012-platform-app-expansion, plan-016-app-launcher-sheet, product-roadmap, product-ux, architecture-live-teams, architecture-collaboration, architecture-identity-permissions, architecture-organizations, ADR-0014, ADR-0015, ADR-0016, ADR-0017, ADR-0018, ADR-0022, plan-m5-remove-legacy-snapshot-writes, quality]
 ---
 
 # Plan 017: Feature-Complete Platform Delivery
@@ -217,7 +217,7 @@ FC1 darf erst als produktiv ausgerollt gelten, wenn:
 
 ### Team-Lifecycle bewusst nicht in FC1 verstecken
 
-Die bestehende persistente Teamstruktur besitzt keinen Archivstatus. Team-Editor-Grants hängen außerdem an der aktuellen Team-Existenz und die Legacy-Snapshot-Kompatibilität beeinflusst FK-Entscheidungen.
+Die bestehende persistente Teamstruktur besitzt keinen Archivstatus. Team-Editor-Grants hängen außerdem an der aktuellen Team-Existenz. Der fehlende Grant-to-Team-FK ist eine historische Migration-0002-Entscheidung; der entfernte Snapshot-Replacement-Pfad läuft nicht mehr, aber die Schemafrage wird durch FC1 nicht verändert.
 
 Darum wird in FC1 **kein neuer Team-Hard-Delete oder improvisierter Archivstatus** eingebaut.
 
@@ -469,7 +469,7 @@ Vor Plattform-Feature-Complete:
 - UI-Rechte ersetzen niemals Worker-Autorisierung;
 - Statistics dürfen Street/House/Collection-Einheiten nicht irreführend vermischen;
 - retained history macht Archive/Delete-Semantik dauerhaft relevant;
-- Team-Lifecycle darf nicht über Legacy-Snapshot-/Grant-Grenzen improvisiert werden.
+- Team-Lifecycle muss die historischen Team-Grant-/FK-Semantiken respektieren und darf keinen Archiv- oder Löschpfad über Grant-Grenzen improvisieren.
 
 ## Nicht-Ziele
 

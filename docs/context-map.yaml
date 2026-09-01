@@ -1,4 +1,4 @@
-version: 18
+version: 19
 
 entrypoints:
   always:
@@ -26,6 +26,7 @@ routing_rules:
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
   - FC5.2 Pickup runtime is complete through visibility, search/composer, MapLibre rendering, comments, assignment, edit, soft archive, archive review and normal Admin/Collector product flows; route new runtime work to FC5.3 Road Sections, separated statistics, actor highlight/attribution and compensating revert while keeping real-device acceptance separate
+  - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
   - id: product
@@ -231,12 +232,26 @@ nodes:
     topics: [automatic-area-preparation, generated-tasks, osm, preparation-generation, recovery, migration-0014]
     load_when: [server Area preparation, automatic Street Tasks, automatic House Tasks, preparation recovery, migration 0014]
 
+  - id: adr-m5-no-legacy-snapshot-writes
+    path: docs/decisions/ADR-0022-no-legacy-snapshot-writes.md
+    type: decision
+    status: accepted
+    topics: [M5, snapshot, legacy-write, mutations, create-only, conflicts, queue, security]
+    load_when: [final M5 write contract, retired Snapshot PUT, create-only Campaign bootstrap, Snapshot conflict recovery]
+
   - id: plan-m5-sync
     path: docs/plans/completed/010-m5-resilient-mutation-sync.md
     type: plan
     status: completed
     topics: [M5, mutation-queue, indexeddb, idempotency, conflicts]
     load_when: [M5 history, durable mutation queue architecture]
+
+  - id: plan-m5-remove-legacy-snapshot-writes
+    path: docs/plans/completed/025-m5-remove-legacy-snapshot-writes.md
+    type: plan
+    status: completed
+    topics: [M5, snapshot, legacy-write, mutations, create-only, conflicts, queue]
+    load_when: [final M5 write contract, retired Snapshot PUT, create-only Campaign bootstrap, Snapshot conflict recovery]
 
   - id: plan-offline-map
     path: docs/plans/active/011-offline-map-area.md
@@ -340,7 +355,7 @@ nodes:
     path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
     type: onboarding
     status: current
-    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime, automatic-area-preparation, collection, FC5, FC5.2-complete, FC5.3, collection-access, collection-runs]
+    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime, automatic-area-preparation, collection, FC5, FC5.2-complete, FC5.3, collection-access, collection-runs, m5-final-write-contract, legacy-snapshot-write-retired]
     load_when: [fresh AI session, planner chat, verify current Plan 017 state, continue current Plan 017 development, continue FC5]
 
   - id: prompt-house-polygon-renderer
@@ -412,6 +427,10 @@ edges:
   - { from: adr-action-templates-analytics, to: plan-action-templates-analytics, relation: governs }
   - { from: collaboration, to: adr-deterministic-automations, relation: governed_by }
   - { from: plan-m5-sync, to: offline-sync, relation: implemented }
+  - { from: plan-m5-remove-legacy-snapshot-writes, to: adr-m5-no-legacy-snapshot-writes, relation: records_decision }
+  - { from: plan-m5-remove-legacy-snapshot-writes, to: data, relation: updates_write_contract }
+  - { from: plan-m5-remove-legacy-snapshot-writes, to: offline-sync, relation: updates_conflict_recovery }
+  - { from: plan-m5-remove-legacy-snapshot-writes, to: quality, relation: validated_by }
   - { from: plan-m6-house-persistence, to: data, relation: implemented_foundation }
   - { from: plan-app-launcher-sheet, to: ux, relation: implemented }
   - { from: plan-feature-complete-platform, to: live-teams, relation: implements_current_slice }
@@ -429,6 +448,7 @@ edges:
   - { from: prompt-latest-feature-complete, to: plan-smart-house-runtime, relation: records_completed_slice }
   - { from: prompt-latest-feature-complete, to: plan-auto-area-ui-server-preparation, relation: records_completed_slice }
   - { from: prompt-latest-feature-complete, to: plan-collection-pickup-persistence, relation: continues_fc5 }
+  - { from: prompt-latest-feature-complete, to: plan-m5-remove-legacy-snapshot-writes, relation: records_completed_slice }
   - { from: prompt-house-polygon-renderer, to: plan-house-polygon-renderer, relation: plans }
   - { from: plan-smart-street-runtime, to: plan-feature-complete-platform, relation: implements_fc4_slice }
   - { from: plan-smart-street-runtime, to: plan-offline-map, relation: reuses_prepared_data }
@@ -471,6 +491,9 @@ edges:
   - { from: adr-collection-access-areas-runs, to: security, relation: constrains }
   - { from: adr-collection-access-areas-runs, to: map, relation: constrains }
   - { from: adr-server-prepared-automatic-area-work, to: data, relation: governs }
+  - { from: adr-m5-no-legacy-snapshot-writes, to: data, relation: governs }
+  - { from: adr-m5-no-legacy-snapshot-writes, to: offline-sync, relation: governs }
+  - { from: adr-m5-no-legacy-snapshot-writes, to: security, relation: governs }
   - { from: adr-server-prepared-automatic-area-work, to: security, relation: governs }
   - { from: adr-server-prepared-automatic-area-work, to: map, relation: governs }
   - { from: plan-auto-area-task-preparation, to: plan-feature-complete-platform, relation: implements_backend_slice }

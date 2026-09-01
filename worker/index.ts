@@ -2,7 +2,7 @@ import {
   campaignExists,
   getCampaignRevision,
   loadCampaignSnapshot,
-  replaceCampaignSnapshot,
+  createInitialCampaignState,
   hasCollectionSchema,
   StoredSnapshotError,
   type D1DatabaseLike,
@@ -36,7 +36,6 @@ import {
   collectionSessionCookie,
 } from "./collectionAccess.ts";
 import { collectionSnapshotOrEmpty } from "../src/domain/collection.ts";
-import { authorizeSnapshotWrite } from "./authorization.ts";
 import { createRecoveredAdminAccess, operatorSecretMatches } from "./operatorRecovery.ts";
 import { handleCampaignMutation } from "./mutationHandler.ts";
 import { handleActivityApi } from "./activity.ts";
@@ -47,10 +46,7 @@ import {
   areaTaskPreparationRoute,
   handleAreaTaskPreparationApi,
 } from "./areaTaskPreparationApi.ts";
-import {
-  areaHasStartedAutomaticWork,
-  type AreaPreparationExecutionContext,
-} from "./areaTaskPreparation.ts";
+import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -339,106 +335,12 @@ async function getSnapshot(db: D1DatabaseLike, campaignId: string) {
   });
 }
 
-async function putSnapshot(
-  request: Request,
-  db: D1DatabaseLike,
-  campaignId: string,
-  access: AccessContext,
-) {
-  const parsedBody = await readJsonBody(request);
-  if (!parsedBody.ok) return parsedBody.response;
-  if (
-    typeof parsedBody.value !== "object" ||
-    parsedBody.value === null ||
-    Array.isArray(parsedBody.value)
-  ) {
-    return errorResponse(400, "invalid_request", "Request-Body ist ungültig.");
-  }
-
-  const body = parsedBody.value as Record<string, unknown>;
-  const baseRevision = body.baseRevision;
-  if (
-    baseRevision !== null &&
-    (typeof baseRevision !== "number" || !Number.isInteger(baseRevision) || baseRevision < 0)
-  ) {
-    return errorResponse(
-      400,
-      "invalid_base_revision",
-      "baseRevision muss null oder eine nichtnegative Ganzzahl sein.",
-    );
-  }
-  if (baseRevision === null) {
-    return errorResponse(
-      403,
-      "bootstrap_forbidden",
-      "Bestehende Campaigns können nicht per Snapshot-PUT übernommen werden.",
-    );
-  }
-
-  const validation = validateCampaignSnapshot(body.snapshot, campaignId);
-  if (!validation.valid) {
-    return errorResponse(422, "snapshot_invalid", validation.message);
-  }
-
-  const previous = await loadCampaignSnapshot(db, campaignId);
-  if (!previous) return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
-
-  if (JSON.stringify(previous.collection ?? null) !== JSON.stringify(validation.snapshot.collection ?? null)) {
-    return errorResponse(
-      400,
-      "collection_mutation_required",
-      "Collection-Änderungen müssen über den Collection-Mutationspfad gespeichert werden.",
-    );
-  }
-
-  const authorization = authorizeSnapshotWrite(access, previous, validation.snapshot);
-  if (!authorization.allowed) {
-    return errorResponse(
-      403,
-      "write_forbidden",
-      "Die Änderung liegt außerhalb deiner Berechtigung.",
-    );
-  }
-
-  for (const previousArea of previous.areas) {
-    const nextArea = validation.snapshot.areas.find((area) => area.id === previousArea.id);
-    if (
-      nextArea &&
-      JSON.stringify(nextArea.geometry) !== JSON.stringify(previousArea.geometry) &&
-      await areaHasStartedAutomaticWork(db, campaignId, previousArea.id)
-    ) {
-      return errorResponse(
-        409,
-        "area_has_started_work",
-        "Die Area kann nicht mehr geändert werden, weil automatische Arbeit bereits begonnen wurde.",
-      );
-    }
-  }
-
-  const result = await replaceCampaignSnapshot(db, validation.snapshot, baseRevision as number);
-  if (!result.ok) {
-    return errorResponse(
-      409,
-      "revision_conflict",
-      "Der Campaign-Stand wurde auf einem anderen Gerät geändert.",
-      result.currentRevision,
-    );
-  }
-
-  const stored = await loadCampaignSnapshot(db, campaignId);
-  if (!stored) {
-    return errorResponse(
-      500,
-      "write_verification_failed",
-      "Gespeicherter Campaign-Stand konnte nicht erneut geladen werden.",
-    );
-  }
-
-  return json(stored, {
-    headers: {
-      etag: `"${campaignId}:${stored.revision}"`,
-    },
-  });
+export function legacySnapshotWriteResponse() {
+  return errorResponse(
+    410,
+    "legacy_snapshot_write_retired",
+    "Campaign-Änderungen müssen über den Mutationspfad gespeichert werden.",
+  );
 }
 
 async function createCampaign(request: Request, db: D1DatabaseLike) {
@@ -473,8 +375,24 @@ async function createCampaign(request: Request, db: D1DatabaseLike) {
     );
   }
 
-  const result = await replaceCampaignSnapshot(db, validation.snapshot, null);
-  if (!result.ok) return errorResponse(409, "campaign_exists", "Campaign existiert bereits.");
+  const result = await createInitialCampaignState(db, validation.snapshot);
+  if (!result.ok) {
+    if (result.reason === "campaign_exists") {
+      return errorResponse(409, "campaign_exists", "Campaign existiert bereits.");
+    }
+    if (result.reason === "schema_migration_required") {
+      return errorResponse(
+        503,
+        "schema_migration_required",
+        "Die initiale Campaign benötigt eine vorbereitete D1-Migration.",
+      );
+    }
+    return errorResponse(
+      422,
+      "initial_revision_invalid",
+      "Neue Campaigns müssen mit Revision 0 beginnen.",
+    );
+  }
 
   const created = await createAccessGrant(db, {
     campaignId,
@@ -491,6 +409,13 @@ async function createCampaign(request: Request, db: D1DatabaseLike) {
   };
   const session = await createSessionForGrant(db, access);
   const stored = await loadCampaignSnapshot(db, campaignId);
+  if (!stored) {
+    return errorResponse(
+      500,
+      "write_verification_failed",
+      "Gespeicherter Campaign-Stand konnte nicht erneut geladen werden.",
+    );
+  }
 
   return json(
     {
@@ -939,6 +864,10 @@ export default {
     }
 
     const route = campaignRoute(url.pathname);
+    if (route?.resource === "snapshot" && request.method === "PUT") {
+      return legacySnapshotWriteResponse();
+    }
+
     if (route && db) {
       try {
         const auth = await requireAccess(db, request, route.campaignId);
@@ -946,20 +875,10 @@ export default {
 
         if (route.resource === "snapshot") {
           if (request.method === "GET") return await getSnapshot(db, route.campaignId);
-          if (request.method === "PUT") {
-            if (auth.access.role === "viewer") {
-              return errorResponse(
-                403,
-                "viewer_read_only",
-                "Read-only Viewer dürfen nichts verändern.",
-              );
-            }
-            return await putSnapshot(request, db, route.campaignId, auth.access);
-          }
           return errorResponse(
             405,
             "method_not_allowed",
-            "Für diesen Endpunkt ist nur GET oder PUT erlaubt.",
+            "Für diesen Endpunkt ist nur GET erlaubt.",
           );
         }
 
