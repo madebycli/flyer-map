@@ -49,6 +49,7 @@ const MAX_RETRY_DELAY_MS = 60_000;
 
 export type CampaignLoadResult = { snapshot: CampaignSnapshot; warning: string | null };
 export type RefreshState = "idle" | "loading" | "current" | "error" | "available";
+export type CampaignAccessState = "idle" | "pending" | "authenticated" | "required";
 export type SyncMessageCode = "access_required" | "network" | "conflict" | "forbidden" | "schema_migration_required" | null;
 export type MutationSyncState =
   | "saved"
@@ -61,6 +62,7 @@ export type MutationSyncState =
 export type CampaignStoreUpdate = {
   snapshot?: CampaignSnapshot;
   access?: AccessInfo | null;
+  accessState?: CampaignAccessState;
   refreshState?: RefreshState;
   messageCode?: SyncMessageCode;
   initialAccessUrl?: string;
@@ -83,6 +85,7 @@ type SyncRuntime = {
   serverRevision: number | null;
   remoteRevision: number | null;
   access: AccessInfo | null;
+  accessState: CampaignAccessState;
   initialized: boolean;
   initializeInFlight: boolean;
   queueInFlight: boolean;
@@ -100,6 +103,7 @@ const syncRuntime: SyncRuntime = {
   serverRevision: null,
   remoteRevision: null,
   access: null,
+  accessState: "idle",
   initialized: false,
   initializeInFlight: false,
   queueInFlight: false,
@@ -332,7 +336,12 @@ function retryDelay(attemptCount: number) {
 
 function setAccess(access: AccessInfo | null) {
   syncRuntime.access = access;
-  emit({ access, messageCode: access ? null : "access_required" });
+  syncRuntime.accessState = access ? "authenticated" : "required";
+  emit({
+    access,
+    accessState: syncRuntime.accessState,
+    messageCode: access ? null : "access_required",
+  });
 }
 
 function applyServerSnapshot(snapshot: CampaignSnapshot, messageCode: SyncMessageCode = null) {
@@ -651,6 +660,8 @@ async function initializeSharedPersistence() {
   const targetCampaignId = urlCampaignId ?? localAtStart.campaign.id;
   syncRuntime.targetCampaignId = targetCampaignId;
   setCampaignIdInUrl(targetCampaignId);
+  syncRuntime.accessState = "pending";
+  emit({ accessState: syncRuntime.accessState });
 
   try {
     const collectionToken = collectionAccessTokenFromUrl();
@@ -693,12 +704,14 @@ async function initializeSharedPersistence() {
     if (!loadedExistingSnapshot && !urlCampaignId && localAtStart.campaign.id === targetCampaignId) {
       const created = await createCampaignSnapshot(localAtStart);
       syncRuntime.access = created.access;
+      syncRuntime.accessState = "authenticated";
       syncRuntime.initialized = true;
       syncRuntime.targetCampaignId = created.snapshot.campaign.id;
       setCampaignIdInUrl(created.snapshot.campaign.id);
       applyServerSnapshot(created.snapshot);
       emit({
         access: created.access,
+        accessState: syncRuntime.accessState,
         initialAccessUrl: buildCampaignAccessUrl(
           created.snapshot.campaign.id,
           created.initialAccessToken,
@@ -715,12 +728,14 @@ async function initializeSharedPersistence() {
   } catch (error) {
     syncRuntime.initialized = false;
     if (isRetryableError(error)) {
-      emit({ messageCode: "network", syncState: "offline" });
+      syncRuntime.accessState = "idle";
+      emit({ accessState: syncRuntime.accessState, messageCode: "network", syncState: "offline" });
     } else if (isAccessError(error)) {
       setAccess(null);
     } else {
+      syncRuntime.accessState = "idle";
       console.warn("campaign_sync_initialize_failed", error);
-      emit({ syncState: "failed" });
+      emit({ accessState: syncRuntime.accessState, syncState: "failed" });
     }
   } finally {
     syncRuntime.initializeInFlight = false;
@@ -830,7 +845,7 @@ function startSharedPersistenceRuntime() {
 
 export function subscribeCampaignStore(listener: (update: CampaignStoreUpdate) => void) {
   listeners.add(listener);
-  if (syncRuntime.access) listener({ access: syncRuntime.access });
+  listener({ access: syncRuntime.access, accessState: syncRuntime.accessState });
   return () => {
     listeners.delete(listener);
   };
