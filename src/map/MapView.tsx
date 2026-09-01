@@ -65,7 +65,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 export type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house" | "collection-main-draw" | "collection-area-draw" | "collection-area-edit";
 type RenderArea = Area & { color: string };
-type RenderTask = DistributionTask & { color: string };
+type RenderTask = DistributionTask & { color: string; completedColor: string };
 
 type AreaFeatureCollection = {
   type: "FeatureCollection";
@@ -95,6 +95,7 @@ type StreetFeatureCollection = {
       areaId: string;
       label: string;
       color: string;
+      completedColor: string;
       status: DistributionTask["status"];
     };
     geometry: {
@@ -201,17 +202,17 @@ type MapViewProps = {
   onEditVertexSelect: (index: number) => void;
   onEditVertexMove: (index: number, point: LngLat) => void;
   onStreetDrawPoint: (point: LngLat) => void;
-  smartRoads: SmartRoadCandidate[];
-  smartSelectedSourceIds: readonly string[];
-  smartStartAnchor: SmartRoadPointAnchor | null;
-  smartEndAnchor: SmartRoadPointAnchor | null;
-  smartWaypointAnchors: SmartRoadPointAnchor[];
-  smartPreviewGeometry: LineStringGeometry | null;
-  smartStreetColor: string;
-  onSmartStreetPoint: (point: LngLat, sourceIds: string[]) => void;
-  smartHouseBuildings: SmartBuildingCandidate[];
-  smartHouseSelectedSourceIds: readonly string[];
-  onSmartHousePoint: (point: LngLat, sourceIds: string[]) => void;
+  smartRoads?: SmartRoadCandidate[];
+  smartSelectedSourceIds?: readonly string[];
+  smartStartAnchor?: SmartRoadPointAnchor | null;
+  smartEndAnchor?: SmartRoadPointAnchor | null;
+  smartWaypointAnchors?: SmartRoadPointAnchor[];
+  smartPreviewGeometry?: LineStringGeometry | null;
+  smartStreetColor?: string;
+  onSmartStreetPoint?: (point: LngLat, sourceIds: string[]) => void;
+  smartHouseBuildings?: SmartBuildingCandidate[];
+  smartHouseSelectedSourceIds?: readonly string[];
+  onSmartHousePoint?: (point: LngLat, sourceIds: string[]) => void;
   onOfflineMapPackageChange?: (pkg: OfflineMapPackage | null) => void;
 
   collectionVisible?: boolean;
@@ -498,6 +499,7 @@ function streetsToGeoJson(tasks: RenderTask[]): StreetFeatureCollection {
         areaId: task.areaId,
         label: task.label,
         color: task.color,
+        completedColor: task.completedColor,
         status: task.status,
       },
       geometry: {
@@ -718,7 +720,12 @@ function buildApplicationMapStyle(): StyleSpecification {
           ["==", ["get", "status"], "completed"],
         ],
         paint: {
-          "line-color": ["get", "color"],
+          "line-color": [
+            "case",
+            ["==", ["get", "status"], "completed"],
+            ["get", "completedColor"],
+            ["get", "color"],
+          ],
           "line-opacity": 0.9,
           "line-width": HOUSE_WIDTH_EXPRESSION,
         },
@@ -797,8 +804,8 @@ function buildApplicationMapStyle(): StyleSpecification {
         source: STREET_SOURCE_ID,
         filter: ["==", ["get", "status"], "completed"],
         paint: {
-          "line-color": ["get", "color"],
-          "line-opacity": 0.42,
+          "line-color": ["get", "completedColor"],
+          "line-opacity": 0.98,
           "line-width": STREET_WIDTH_EXPRESSION,
         },
         layout: {
@@ -1619,17 +1626,17 @@ export function MapView({
   onEditVertexSelect,
   onEditVertexMove,
   onStreetDrawPoint,
-  smartRoads,
-  smartSelectedSourceIds,
-  smartStartAnchor,
-  smartEndAnchor,
-  smartWaypointAnchors,
-  smartPreviewGeometry,
-  smartStreetColor,
-  onSmartStreetPoint,
-  smartHouseBuildings,
-  smartHouseSelectedSourceIds,
-  onSmartHousePoint,
+  smartRoads = [],
+  smartSelectedSourceIds = [],
+  smartStartAnchor = null,
+  smartEndAnchor = null,
+  smartWaypointAnchors = [],
+  smartPreviewGeometry = null,
+  smartStreetColor = "#64748b",
+  onSmartStreetPoint = () => {},
+  smartHouseBuildings = [],
+  smartHouseSelectedSourceIds = [],
+  onSmartHousePoint = () => {},
   onOfflineMapPackageChange,
   collectionVisible = false,
   collectionMainArea = null,

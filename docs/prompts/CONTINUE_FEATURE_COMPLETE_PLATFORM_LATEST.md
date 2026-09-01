@@ -27,16 +27,16 @@ CI: #807 success
 
 CI #807 ist auf exakt diesem Head grün mit Tests, Typecheck, Dependency Audit und Production Build. Dieser Prompt kann auf einem späteren reinen Living-Docs-Head liegen; vor weiterer Runtime-Arbeit muss auch dessen exakte CI verifiziert werden.
 
-## Nachfolgender Map-/Smart-Data-Fix
+## Abgeschlossener Map-/Smart-Data-Hardening-Slice
 
 Der nächste Map-Hardening-Slice aktualisiert den bestehenden PR #72 ohne neuen Branch oder neue Architektur:
 
 - aktive Basemap ist OpenFreeMap Bright (`/styles/bright`), Provider-`fill-extrusion` wird entfernt und MapLibre bleibt auf 2D-Pitch 0;
 - der kontrollierte Hausnummern-Layer bleibt `openmaptiles` / `housenumber`, ist ab Zoom 16 zoom-skaliert größer und behält normale Collision-Erkennung;
 - der bestehende MapLibre-GeolocateControl läuft mit `trackUserLocation: true`, schnellem kürzlich bekannten Fix und offiziellem Active-/Passive-Follow, ohne GPS-Persistenz oder History;
-- `/offline-map/package` akzeptiert optional `kind: all | roads | buildings` (ohne `kind` weiterhin `all`), Smart Street lädt `roads`, Smart House `buildings`, Settings über den Wrapper weiterhin `all`;
-- Smart Street und Smart House besitzen getrennte ephemere Caches, Ladezustände, Dedupe-Schlüssel und Fehleranzeigen. Ein Paket wird aus keinem anderen Smart-Flow wiederverwendet;
-- die Smart-Aktionsbuttons zeigen ihren jeweiligen Ladezustand unmittelbar, der manuelle Fallback bleibt verfügbar.
+- historische Smart Street/House-Helfer und die begrenzte Paket-API können als isolierter Bestand bleiben, sind aber kein normaler Area-Sheet-Pfad;
+- der normale Produktweg wird durch Plan 023/024 serverseitig vorbereitet, nicht durch browserseitige OSM-Paket-Fetches;
+- Settings hat keinen normalen Offline-Karten-Download mehr, M5 und Snapshot-Cache bleiben unverändert.
 
 Der Fix ist auf Runtime-Head `619cf690859ff21a4a8599f7762f38b0e27a013d` mit GitHub-CI #816 (Tests, Typecheck, Dependency Audit und Production Build) grün verifiziert; der automatisierte Workers-Build-Check ist ebenfalls erfolgreich. Reale WebGL-/Android-/iPhone-Abnahme bleibt offen, sofern sie nicht tatsächlich durchgeführt wurde.
 
@@ -49,7 +49,9 @@ Plan 023 ergänzt den bestehenden PR ohne neue Produkt-Queue oder Kartenengine:
 - automatische Tasks tragen eine servereigene Preparation-Generation, manuelle Tasks bleiben unverändert; Statusänderungen sind normal möglich, Client-Delete automatischer Tasks ist gesperrt;
 - die enge Preparation-Status/Retry-Route besitzt dieselbe Area-Scope-Autorisierung; Viewer und Field-Group-Mitglieder dürfen nicht starten;
 - Migration 0014 ist prepared-only. Kein Remote-Rollout, kein Massenvorbereiten alter Areas und kein Browser-OSM-Job als persistente Wahrheit;
-- ein späterer UI-Slice kann nach einem bewusst kontrollierten 0014-Rollout eine sichtbare Prepare/Retry-Aktion für ältere editierbare Areas anbieten.
+- Plan 024 ist abgeschlossen: der editierbare normale Area Sheet liest den Status, startet `missing` genau einmal, pollt `pending` nur offen, refresht bei `ready` genau einmal und bietet bei `failed` einen autorisierten Retry ohne Schema-Retry-Loop;
+- die Smart-Auswahlbuttons, per-Device Smart-Paket-Fetches und der Settings-Download sind aus dem normalen Produktweg entfernt; `Straße manuell hinzufügen` bleibt verfügbar;
+- automatische Street-/House-Tasks nutzen ausschließlich `vf-streets` und `vf-houses`; automatische Streets sind nicht umbenennbar/löschbar, Status bleibt normal änderbar.
 
 ## Pflichtkontext
 
@@ -61,6 +63,7 @@ Lies zuerst vollständig:
 4. `docs/plans/active/017-feature-complete-platform.md`
 5. `docs/plans/active/021-collection-pickup-persistence.md`
 6. `docs/plans/completed/023-auto-area-task-preparation.md` bei automatischer Area-Vorbereitung oder Migration 0014
+7. `docs/plans/completed/024-auto-area-ui-server-preparation.md` bei normalem Area-Sheet, Preparation-Polling/Retry, Completed-Farbe oder Smart-/Offline-UI-Entfernung
 
 Folge für FC5 im Context Graph ab `plan-collection-pickup-persistence` insbesondere zu Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams und Quality. Keine parallele FC5-Topologie einführen, solange die bestehende Graph-Struktur ausreicht.
 

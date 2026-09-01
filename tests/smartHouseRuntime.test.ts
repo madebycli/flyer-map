@@ -26,17 +26,14 @@ function building(index: number): SmartBuildingCandidate {
   };
 }
 
-test("normal Smart House flow uses real package candidates and never the workbench preview graph", async () => {
+test("normal Area flow has no browser Smart House entry and no workbench preview graph", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const map = await readFile("src/map/MapView.tsx", "utf8");
   const panel = await readFile("src/map/SmartHouseSelectionPanel.tsx", "utf8");
   const combined = `${app}\n${map}\n${panel}`;
 
-  assert.match(app, /smartCandidatesForArea/u);
-  assert.match(app, /availableSmartBuildingsForCreation/u);
-  assert.match(app, /setMode\("smart-house"\)/u);
-  assert.match(app, /createSmartHouseTaskSnapshot/u);
-  assert.match(app, /parentStreetTaskId: smartHouseParentStreetTaskId/u);
+  assert.match(app, /createAreaPreparationPoller/u);
+  assert.doesNotMatch(app, /smartCandidatesForArea|availableSmartBuildingsForCreation|setMode\("smart-house"\)|createSmartHouseTaskSnapshot/u);
   assert.doesNotMatch(combined, /PREVIEW_BUILDINGS|Mock Buildings|M6SelectionPreview/u);
 });
 
@@ -88,26 +85,23 @@ test("house batch mutation stays on the existing M5 queue and preserves App iden
   assert.match(store, /schema_migration_required/u);
 });
 
-test("parent Street context is passed explicitly and no addr:street inference is introduced", async () => {
+test("automatic House status has no addr:street inference or manual Smart House entry", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const selection = await readFile("src/domain/smartBuildingSelection.ts", "utf8");
-  assert.match(app, /startSmartHouseSelection\(selectedTask\.id\)/u);
-  assert.match(app, /parentStreetTaskId: smartHouseParentStreetTaskId/u);
+  assert.match(app, /changeHouseTaskStatus/u);
+  assert.match(app, /canChangeSelectedHouseTaskStatus/u);
+  assert.doesNotMatch(app, /startSmartHouseSelection|smartHouseParentStreetTaskId/u);
   assert.doesNotMatch(`${app}\n${selection}`, /addr:street.*parent|parent.*addr:street/iu);
 });
 
-test("Smart House keeps cancel, permission, duplicate-submit and existing retry boundaries", async () => {
+test("automatic House Tasks keep normal status controls and existing M5 retry boundaries", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const store = await readFile("src/data/campaignStore.ts", "utf8");
 
-  assert.match(app, /if \(!selectedArea \|\| !canEditSelectedArea/u);
-  assert.match(app, /const pkg = await ensureSmartMapPackage\("buildings"\)/u);
-  assert.match(app, /smartHouseMapPackage/u);
-  assert.match(app, /smartHouseLoading/u);
-  assert.match(app, /aria-busy=\{smartHouseLoading\}/u);
-  assert.match(app, /const cancelSmartHouseSelection/u);
-  assert.match(app, /smartHouseSaveInFlight\.current/u);
-  assert.match(app, /setSheet\("task"\)/u);
+  assert.match(app, /selectedHouseTask\.status === status/u);
+  assert.match(app, /disabled=\{!canChangeSelectedHouseTaskStatus\}/u);
+  assert.match(app, /selectedTaskIsAutoPrepared/u);
+  assert.doesNotMatch(app, /ensureSmartMapPackage|smartHouseMapPackage|smartHouseLoading|cancelSmartHouseSelection/u);
   assert.match(store, /state: "retry"/u);
   assert.match(store, /messageCode: "schema_migration_required"/u);
 });

@@ -11,11 +11,14 @@ test("mobile Area and task sheets scroll vertically without horizontal overflow"
   assert.match(shared, /\.bottom-sheet\s*\{[\s\S]*?overflow-x: hidden[\s\S]*?overflow-y: auto/u);
 });
 
-test("Comment errors wrap and Area comments remain after primary actions", async () => {
+test("Area Sheet stays compact and keeps preparation, manual work, and comments in order", async () => {
   const commentsCss = await readFile("src/collaboration/comments-context-panel.css", "utf8");
   const app = await readFile("src/App.tsx", "utf8");
   assert.match(commentsCss, /\.comments-context-error\s*\{[\s\S]*?flex-wrap: wrap/u);
   assert.match(commentsCss, /\.comments-context-error span\s*\{[\s\S]*?overflow-wrap: anywhere/u);
-  assert.ok(app.indexOf('t(language, "addSmartHouse")') < app.indexOf('targetType="area"'));
-  assert.ok(app.indexOf('t(language, "addSmartStreet")') < app.indexOf('targetType="area"'));
+  assert.match(app, /area-preparation-status/u);
+  assert.match(app, /t\(language, "addManualStreet"\)/u);
+  assert.ok(app.indexOf('t(language, "areaPreparationPending")') < app.indexOf('t(language, "addManualStreet")'));
+  assert.ok(app.indexOf('t(language, "addManualStreet")') < app.indexOf('targetType="area"'));
+  assert.doesNotMatch(app, /addSmartHouse|addSmartStreet|smartMapRequestRef/u);
 });

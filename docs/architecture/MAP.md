@@ -107,7 +107,7 @@ Saved Street Tasks share one source and a constant small layer set:
 - later;
 - not-deliverable.
 
-Feature properties carry Team color/status. Line width is zoom-dependent and should remain road-like rather than highlighter-like.
+Feature properties carry Team color, a pure derived completed Team color and status. Completed Streets use the completed color at high opacity instead of becoming transparent; completed House outlines use the same derived color. Line width is zoom-dependent and should remain road-like rather than highlighter-like.
 
 The number of sources/layers stays effectively constant whether a Campaign contains 10 or thousands of Street features.
 
@@ -160,42 +160,19 @@ During active draw/edit, map movement imperatively reprojects only the active po
 - draw/edit shows temporary explicit vertices;
 - geometry validated client-side and Worker-side.
 
-### Current Street fallback
+### Current Street fallback and automatic preparation
 
-Manual Street Task drawing stores a GeoJSON LineString assigned to an Area and remains available as a fallback.
+Manual Street Task drawing stores a GeoJSON LineString assigned to an Area and remains available as `Straße manuell hinzufügen`.
 
-ADR-0013 confirms the Smart Street primary direction:
-- user chooses precise snapped start/end anchors on prepared OSM road geometry;
-- ambiguity is resolved through explicit route candidates and optional waypoints;
-- street names are display metadata only;
-- the reviewed selected route is clipped/stiched into one Campaign-owned LineString snapshot;
-- first/last source ways are clipped exactly at the reviewed anchors;
-- multi-way source coordinate order may be reversed for continuity;
-- a non-continuous route is rejected instead of silently stored as `MultiLineString`;
-- later OSM refreshes do not silently rewrite the saved geometry.
+The normal Area Sheet does not fetch or select browser OSM candidates. For an editable Area it reads the narrow server Preparation status. `missing` starts one authorized server job, `pending` polls only while the Sheet is open, `ready` refreshes the normal Campaign snapshot once and `failed` offers an authorized manual retry. A missing prepared-only schema is visible without retrying.
 
-The persistence stack keeps the renderer contract unchanged: after creation, a Smart Street is just another saved Street Task in `vf-streets`.
-
-The normal product runtime is online-first. A covering prepared IndexedDB package has priority. Without one, an online Smart Street/House action requests an ephemeral bounded package centered on the selected Area. The ephemeral result is not persisted. Offline use still requires a covering deliberately stored package. `smartCandidatesForArea()` supplies real candidates, MapLibre handles hit testing and preview, and the reviewed result enters the existing M5 mutation path. No preview road set, new map engine or new sync path is introduced.
-
-The request radius is the maximum distance from the Area-bounds center to its corners plus a small buffer, clamped to 250 through 3,000 m. Areas that cannot fit fully inside 3,000 m are rejected instead of presenting partial candidates as complete. A package is usable only when every Area polygon point lies inside its returned bounds. Identical in-flight requests are deduplicated.
+ADR-0021 keeps the renderer contract unchanged: server-clipped Roads and owned building footprints are persisted as normal Task snapshots. Streets render through `vf-streets`, Houses through `vf-houses`, with no per-Area source, browser work queue or alternate automatic-task renderer. Historical Smart selection helpers may remain isolated, but they are not a normal product entry.
 
 ## Prepared offline working area
 
 ADR-0012 is accepted with the bounded raw OSM subset approach.
 
-Initial direction:
-- user deliberately prepares approximately 3 km around the current map center;
-- browser requests the bounded package through the existing Worker;
-- Worker owns fixed Overpass-compatible query templates, validates radius/limits and keeps the upstream server-configurable;
-- normalized versioned JSON/GeoJSON preserves relevant OSM object identity/tags;
-- browser IndexedDB stores the package locally;
-- local roads/buildings/context render through batched MapLibre sources/layers while the already-loaded website is offline;
-- Campaign Areas/Streets remain above the local context and retain the existing selection/edit boundary;
-- the same prepared OSM data feeds Smart Street and Smart House source candidates while application-owned Task identity remains separate under ADR-0013;
-- no OpenFreeMap or OpenStreetMap Foundation tile bulk cache;
-- no Service Worker/PWA requirement;
-- no R2/PMTiles pipeline in v1.
+The retained cache boundary is intentionally not a normal Settings download feature. It may preserve already stored local map context, while Campaign Areas/Streets/Houses continue to render from the normal snapshot and M5 retains its existing queue/cache behavior. Server preparation never requires an offline browser package.
 
 The first local offline style should remain deliberately small rather than attempting to reproduce the complete Bright visual basemap. Required OSM attribution must remain visible.
 

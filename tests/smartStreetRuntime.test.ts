@@ -2,22 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("normal Area flow uses prepared OSM candidates and not the M6 preview graph", async () => {
+test("normal Area flow uses server preparation and keeps no browser Smart Street entry", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const map = await readFile("src/map/MapView.tsx", "utf8");
   const offline = await readFile("src/data/offlineMapRepository.ts", "utf8");
   const combined = `${app}\n${map}\n${offline}`;
 
-  assert.match(app, /smartCandidatesForArea/u);
-  assert.match(app, /onOfflineMapPackageChange=\{setOfflineMapPackage\}/u);
-  assert.match(app, /setMode\("smart-street"\)/u);
-  assert.match(app, /smartRoadPointAnchorCandidates/u);
-  assert.match(app, /selectSmartRoadRange/u);
-  assert.match(app, /selectSmartRoadRangeViaWaypoints/u);
-  assert.match(app, /smartRoadRouteOptions/u);
-  assert.match(app, /createSmartStreetTaskSnapshot/u);
-  assert.match(app, /smartStreetPendingAnchors/u);
-  assert.match(app, /smartStreetSaveInFlight/u);
+  assert.match(app, /createAreaPreparationPoller/u);
+  assert.match(app, /fetchAreaPreparation/u);
+  assert.match(app, /startAreaPreparation/u);
+  assert.match(app, /addManualStreet/u);
+  assert.doesNotMatch(app, /smartCandidatesForArea|smartRoadMapPackage|smartMapRequestRef|setMode\("smart-street"\)/u);
   assert.doesNotMatch(combined, /PREVIEW_ROADS|Mock Roads|M6SelectionPreview/u);
 });
 
@@ -37,32 +32,27 @@ test("MapLibre receives real candidate clicks and renders candidate, preview, an
   assert.doesNotMatch(map, /\.osmId/u);
 });
 
-test("Smart Street save keeps App identity and uses the durable mutation path", async () => {
+test("automatic Street Tasks use the durable normal task and mutation path", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const diff = await readFile("src/domain/mutationDiff.ts", "utf8");
   const baseDiff = await readFile("src/domain/mutationDiffBase.ts", "utf8");
   const store = await readFile("src/data/campaignStore.ts", "utf8");
 
-  assert.match(app, /taskId: createId\("task"\)/u);
-  assert.match(app, /sourceIds: smartStreetSelectedSourceIds/u);
-  assert.match(app, /commitSnapshot\(\(current\) => \(\{ \.\.\.current, tasks: \[\.\.\.current\.tasks, task\] \}\)\)/u);
-  assert.match(app, /smartStreetSaveInFlight\.current/u);
+  assert.match(app, /areaPreparationGeneration: null/u);
+  assert.match(app, /selectedTaskIsAutoPrepared/u);
+  assert.match(app, /selectedTask\.areaPreparationGeneration/u);
   assert.match(diff, /mutationDiffBase\.ts/u);
   assert.match(baseDiff, /\.\.\.\(task\.source \? \{ source: task\.source \} : \{\}\)/u);
   assert.match(store, /postCampaignMutation\(campaignId, record\.mutation\)/u);
 });
 
-test("Smart Street UI keeps editing permissions at the existing Area boundary", async () => {
+test("Area preparation keeps its existing Area permissions and bounded retry", async () => {
   const app = await readFile("src/App.tsx", "utf8");
 
-  assert.match(app, /const startSmartStreetSelection = async/u);
   assert.match(app, /if \(!selectedArea \|\| !canEditSelectedArea\) return/u);
-  assert.match(app, /const pkg = await ensureSmartMapPackage\("roads"\)/u);
-  assert.match(app, /fetchMapDataPackage/u);
-  assert.match(app, /smartRoadMapPackage/u);
-  assert.match(app, /request\.radiusMeters,\n\s*kind/u);
-  assert.match(app, /smartStreetLoading/u);
-  assert.match(app, /aria-busy=\{smartStreetLoading\}/u);
-  assert.match(app, /!canEditSelectedArea/u);
-  assert.match(app, /setSmartStreetMessage\(t\(language, "smartStreetDisconnected"\)\)/u);
+  assert.match(app, /areaPreparationPollerRef\.current\?\.retry\(\)/u);
+  assert.match(app, /areaPreparationSchemaUnavailable/u);
+  assert.match(app, /areaPreparationRequestFailed/u);
+  assert.match(app, /canAutoStart: \(\) => !areaPreparationAutoStartKeys\.current\.has/u);
+  assert.doesNotMatch(app, /ensureSmartMapPackage|fetchMapDataPackage|smartRoadMapPackage/u);
 });

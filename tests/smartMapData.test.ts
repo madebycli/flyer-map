@@ -64,15 +64,17 @@ test("Area request is centered, buffered, bounded, and rejects coverage beyond 3
   assert.equal(tooLarge, null);
 });
 
-test("normal Smart flow is online-first, deduplicated, and never writes IndexedDB", async () => {
+test("normal Area flow leaves OSM fetching and offline downloads out of the browser UI", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const settings = await readFile("src/settings/SettingsSheet.tsx", "utf8");
+  const store = await readFile("src/data/campaignStore.ts", "utf8");
 
-  assert.match(app, /offlineMapPackageCoversArea/u);
-  assert.match(app, /smartMapRequestRef\.current/u);
-  assert.match(app, /fetchMapDataPackage/u);
-  assert.match(app, /if \(!online\)/u);
-  assert.match(app, /smartMapOfflineNoPackage/u);
+  assert.match(app, /fetchAreaPreparation/u);
+  assert.match(app, /startAreaPreparation/u);
+  assert.doesNotMatch(app, /smartRoadMapPackage|smartHouseMapPackage|smartMapRequestRef|fetchMapDataPackage/u);
   assert.doesNotMatch(app, /browserOfflineMapRepository/u);
-  assert.match(settings, /browserOfflineMapRepository\.replace/u);
+  assert.doesNotMatch(settings, /downloadOfflineMapPackage|browserOfflineMapRepository|offline-map-section/u);
+  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation\)/u);
+  assert.match(store, /browserMutationQueue/u);
+  assert.match(store, /writeLocalSnapshot/u);
 });

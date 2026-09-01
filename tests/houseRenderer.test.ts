@@ -36,6 +36,7 @@ const house: RenderHouse = {
   createdAt: "2026-08-29T00:00:00.000Z",
   updatedAt: "2026-08-29T00:00:00.000Z",
   color: "#2563eb",
+  completedColor: "#1c4ab0",
 };
 
 test("housesToGeoJson keeps app identity and reviewed Polygon geometry", () => {
@@ -46,6 +47,7 @@ test("housesToGeoJson keeps app identity and reviewed Polygon geometry", () => {
   assert.equal(result.features[0].properties.houseTaskId, house.id);
   assert.equal(result.features[0].properties.status, "later");
   assert.equal(result.features[0].properties.color, house.color);
+  assert.equal(result.features[0].properties.completedColor, house.completedColor);
   assert.deepEqual(result.features[0].geometry, house.geometry);
   assert.notEqual(result.features[0].id, String(house.source?.objectIds[0]));
 });
@@ -54,6 +56,7 @@ test("House GeoJSON properties exclude provenance and unrelated domain data", ()
   const result = housesToGeoJson([house]);
   assert.deepEqual(Object.keys(result.features[0].properties).sort(), [
     "color",
+    "completedColor",
     "houseTaskId",
     "status",
   ]);

@@ -104,8 +104,7 @@
 }
 
 .compact-sheet .sheet-handle,
-.compact-sheet .area-fields,
-.compact-sheet .street-summary {
+.compact-sheet .area-fields {
   display: none;
 }
 
@@ -124,13 +123,18 @@
 }
 
 .compact-sheet > .button.full-width,
-.compact-sheet .smart-map-action .button,
 .compact-sheet .area-actions .button {
   min-height: 2.55rem;
   padding: 0.42rem 0.55rem;
   font-size: 0.72rem;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.compact-sheet .area-preparation-status {
+  margin: 0 0 0.4rem;
+  padding: 0.42rem 0.5rem;
+  font-size: 0.71rem;
 }
 
 .compact-sheet .area-actions.secondary-row {

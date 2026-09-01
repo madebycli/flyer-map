@@ -419,6 +419,40 @@ select:disabled {
   margin: 0.8rem 0;
 }
 
+.area-preparation-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  margin: 0.15rem 0 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #d7e4d9;
+  border-radius: 0.72rem;
+  color: #31503b;
+  background: #f1f7f2;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.area-preparation-status.is-ready {
+  border-color: #c9dfcf;
+  color: #1f5a31;
+  background: #eef8f0;
+}
+
+.area-preparation-status.is-failed,
+.area-preparation-status.is-unavailable {
+  border-color: #ead7bd;
+  color: #79521c;
+  background: #fff8ed;
+}
+
+.area-preparation-status .small-action {
+  min-width: auto;
+  min-height: 2rem;
+  padding: 0 0.48rem;
+}
+
 .storage-warning {
   position: absolute;
   z-index: 21;

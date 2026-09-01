@@ -1,11 +1,12 @@
 import type { HouseTask, PolygonGeometry, TaskStatus } from "../domain/campaign.ts";
 
-export type RenderHouse = HouseTask & { color: string };
+export type RenderHouse = HouseTask & { color: string; completedColor: string };
 
 export type HouseFeatureProperties = {
   houseTaskId: string;
   status: TaskStatus;
   color: string;
+  completedColor: string;
 };
 
 export type HouseFeature = {
@@ -49,6 +50,7 @@ export function housesToGeoJson(houses: readonly RenderHouse[]): HouseFeatureCol
         houseTaskId: house.id,
         status: house.status,
         color: house.color,
+        completedColor: house.completedColor,
       },
       geometry: house.geometry,
     })),

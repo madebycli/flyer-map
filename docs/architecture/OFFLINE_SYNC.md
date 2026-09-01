@@ -164,14 +164,12 @@ Under ADR-0013, existing reviewed Street source and House geometry/source/parent
 
 ## Active draw/edit safety
 
-Unsaved intermediate vertices and Smart selection drafts remain local UI interaction state and are not queued.
+Unsaved intermediate vertices remain local UI interaction state and are not queued. Historical Smart selection helpers, where retained outside the normal product path, also never enter the queue.
 
 Protected modes include:
 - Area draw;
 - Area edit;
 - Street draw;
-- Smart Street start/end/waypoint review;
-- Smart House selection before the user confirms creation.
 
 The existing interaction-block mechanism continues to prevent canonical server refresh from silently destroying active geometry. Saved MapLibre data changes only when Campaign snapshot state changes.
 
@@ -192,7 +190,7 @@ The compatibility write detects missing M6 schema before revision claim. It may 
 - no offline whole-area basemap cache;
 - synchronization progresses only while the website is open.
 
-Server preparation is not a browser offline-download requirement. Devices consume the persisted prepared Tasks through the normal snapshot; optional local offline OSM packages remain a separate map-context feature.
+Server preparation is not a browser offline-download requirement. Devices consume persisted prepared Tasks through the normal snapshot. M5 Mutation Queue and Snapshot-Cache remain the offline-relevant product boundary; retained local map context has no normal Settings download flow and cannot become preparation truth.
 
 ## Renderer boundary
 

@@ -41,7 +41,7 @@ A visible Launcher module is not considered delivered merely because local UI, f
 
 Internal `?workbench=` routes may remain useful for development, but they are not normal navigation and do not count as a completed product milestone.
 
-The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, bounded Activity, the first deterministic Automation, the first real Stats projection, the House renderer, normal-product Smart Street and normal-product Smart House on Draft PR #72. Remaining FC4 work is real-device/touch-density/dense-mobile acceptance including the documented `HOUSE_MIN_ZOOM` starting value 15.
+The current feature-complete delivery line has shipped the Team Hub, Live Field Groups, durable Field Sessions, Comments, bounded Activity, the first deterministic Automation, the first real Stats projection, the House renderer and server-prepared automatic Distribution Areas on Draft PR #72. The historical Smart Street/House runtime remains isolated from the normal Area Sheet. Remaining FC4 work is real-device/touch-density/dense-mobile acceptance including the documented `HOUSE_MIN_ZOOM` starting value 15.
 
 For FC5, Master selected the First-Class Collection/Pickup direction. Collection is not a second status on Distribution Street/House Tasks. It has its own Main Area, work Areas, Runs, Road Sections, Pickup Tasks, temporary Collector access and progress. FC5.1 Collection Access, Areas und Runs sowie der vollständige FC5.2-Runtime-Scope für Pickup-Persistenz, Visibility/Capabilities, Geoapify/OSM-derived Sonderadress-Suche, MapLibre-Pickup-Rendering, durable Pickup Comments, Run-/Collector-Assignment, Edit/Move, Soft-Archive, Archivprüfung und normale Admin-/Collector-Pickup-Flows sind als echte normale Produktwege implementiert. FC5.3 Road Sections, Collection/Pickup Stats, Actor Highlight/Attribution und compensating Revert bleiben weitere FC5-Slices. Reale Android-/iPhone-Abnahme bleibt ein separates Acceptance Gate.
 
@@ -84,31 +84,27 @@ Strict cold page start/reload while fully offline is a separate architecture que
 Goal: let a user deliberately prepare a small working area before going into poor connectivity.
 
 Direction:
-- Settings action for approximately 3 km around current map center;
-- browser-local map data stored durably;
-- offline-permitted OSM/OSM-derived source/format selected by ADR;
-- do not intentionally cache/store current CARTO raster content;
-- design data pipeline to help real Street/House geometry where practical.
+- M5 mutation queue and current snapshot cache stay durable while the website is open;
+- retained browser-local map context is not a normal Settings download flow;
+- offline-permitted OSM/OSM-derived source/format remains constrained by ADR;
+- do not intentionally cache/store current OpenFreeMap or OpenStreetMap Foundation tile content;
+- server-prepared Street/House geometry is never created from browser offline data.
 
 This does not by itself guarantee cold app-shell loading without network.
 
 ### M6 - Smart Street + House Tasks
 
-Goal: stop using freehand street tracing as the normal workflow.
+Goal: make complete Area work available as normal saved Street/House Tasks without a browser-side OSM generation path.
 
 Capabilities:
-- derive real road geometry from reviewed OSM/OSM-derived data;
-- Area can generate/propose road segments;
-- clip/split crossing roads according to accepted rules;
-- tap/select actual Street/segment;
-- manual drawing only as fallback;
-- House Mode for one/multiple buildings;
-- stable app-owned Street/House identities;
-- whole-city performance.
+- Worker derives bounded real road/building geometry from canonical persisted Areas;
+- Roads are clipped/split according to accepted rules;
+- normal snapshots expose the generated tasks to all devices;
+- `vf-streets` and `vf-houses` remain the sole Task renderer;
+- manual Street drawing remains a fallback;
+- app-owned Street/House identities and whole-city batching remain unchanged.
 
-Normal Smart Street, Smart House and the persisted House renderer are implemented. Real-device FC4 acceptance remains open.
-
-The completed backend-only Plan 023 adds server-prepared automatic Area work: a successful persisted Area create or geometry update can atomically publish ordinary clipped Street and House Tasks for all devices. It does not mass-prepare existing Areas and does not replace the Smart/manual flows. A follow-up UI slice may offer an explicit prepare/retry action for an older editable Area after migration 0014 has been deliberately rolled out.
+Plan 023 plus Plan 024 make server-prepared automatic Area work the normal Area Sheet path: a successful persisted Area create or geometry update can atomically publish ordinary clipped Street and House Tasks for all devices. Missing work starts once in the editable Area Sheet, Pending is visible and Ready refreshes the normal snapshot. No mass-preparation of older Areas and no remote migration rollout is implied. Real-device FC4 acceptance remains open.
 
 ### M6.5 - Clothes Collection / Pickup Mode
 

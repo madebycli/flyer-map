@@ -31,6 +31,17 @@ export type AccessGrant = Omit<AccessInfo, "role" | "groupId"> & {
   revokedAt: string | null;
 };
 
+export type AreaPreparationStatus = "missing" | "pending" | "ready" | "failed";
+
+export type AreaPreparationPublicState = {
+  status: AreaPreparationStatus;
+  roadCount: number;
+  houseCount: number;
+  sourceTimestamp: string | null;
+  errorCode: string | null;
+  updatedAt: string | null;
+};
+
 type ApiErrorPayload = {
   error?: {
     code?: string;
@@ -90,6 +101,20 @@ function campaignPath(
   resource: "snapshot" | "version" | "access" | "mutations",
 ) {
   return `/api/campaigns/${encodeURIComponent(campaignId)}/${resource}`;
+}
+
+function areaPreparationPath(campaignId: string, areaId: string) {
+  return `/api/campaigns/${encodeURIComponent(campaignId)}/areas/${encodeURIComponent(areaId)}/preparation`;
+}
+
+export async function fetchAreaPreparation(campaignId: string, areaId: string) {
+  const response = await apiFetch(areaPreparationPath(campaignId, areaId));
+  return (await response.json()) as AreaPreparationPublicState;
+}
+
+export async function startAreaPreparation(campaignId: string, areaId: string) {
+  const response = await apiFetch(areaPreparationPath(campaignId, areaId), { method: "POST" });
+  return (await response.json()) as AreaPreparationPublicState;
 }
 
 export async function fetchCampaignSnapshot(campaignId: string) {
