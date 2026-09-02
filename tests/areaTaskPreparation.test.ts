@@ -7,11 +7,8 @@ import {
   type LineStringGeometry,
   type PolygonGeometry,
 } from "../src/domain/campaign.ts";
-import {
-  clipLineStringToPolygon,
-  pointInOrOnPolygon,
-  polygonRepresentativePoint,
-} from "../src/domain/areaTaskPreparation.ts";
+import { pointInOrOnPolygon, polygonRepresentativePoint } from "../src/domain/areaTaskPreparation.ts";
+import { clipLineStringToPolygon } from "../worker/streetPreparation/clipRoadsToArea.ts";
 import { applyCampaignMutation, CampaignMutationConflictError } from "../src/domain/mutations.ts";
 import {
   areaGeometryHash,
