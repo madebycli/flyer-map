@@ -9,6 +9,7 @@ import {
   type OfflineMapPackage,
   type OfflineMapRoadFeature,
 } from "../src/domain/offlineMap.ts";
+import type { StreetPreparationSourceMetrics } from "./streetPreparation/types.ts";
 
 const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const DEFAULT_AREA_OVERPASS_URLS = [
@@ -122,6 +123,7 @@ export type OsmFeaturesForArea = {
   sourceTimestamp: string | null;
   fetchedAt: string;
   request: ParsedRequest;
+  metrics: StreetPreparationSourceMetrics;
 };
 
 /** A non-HTTP error contract for the canonical server-side Area OSM fetch. */
@@ -596,6 +598,7 @@ function retryableAreaFetchError(error: OfflineMapRequestError) {
 type AreaOverpassResponse = {
   payload: OverpassPayload;
   byteLength: number;
+  requestCount: number;
 };
 
 async function fetchAreaOverpass(
@@ -606,9 +609,11 @@ async function fetchAreaOverpass(
     ? [upstreamUrl(options.upstreamUrl)]
     : DEFAULT_AREA_OVERPASS_URLS.map((value) => upstreamUrl(value));
   let lastError: OfflineMapRequestError | null = null;
+  let requestCount = 0;
 
   for (let index = 0; index < endpoints.length; index += 1) {
     const endpoint = endpoints[index];
+    requestCount += 1;
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
@@ -668,7 +673,11 @@ async function fetchAreaOverpass(
           "OSM-Datenquelle hat ungültige Daten geliefert.",
         );
       }
-      return { payload: payload as OverpassPayload, byteLength: bytes.byteLength };
+      return {
+        payload: payload as OverpassPayload,
+        byteLength: bytes.byteLength,
+        requestCount,
+      };
     } catch (caught) {
       const error = areaFetchError(caught);
       lastError = error;
@@ -685,6 +694,10 @@ type AreaOverpassFeatures = {
   roads: OfflineMapRoadFeature[];
   buildings: OfflineMapBuildingFeature[];
   sourceTimestamp: string | null;
+  requestCount: number;
+  maxConcurrentRequests: number;
+  upstreamBytes: number;
+  parsedElementCount: number;
 };
 
 async function fetchAreaOverpassQueries(
@@ -696,13 +709,18 @@ async function fetchAreaOverpassQueries(
   const buildings = new Map<string, OfflineMapBuildingFeature>();
   let sourceTimestamp: string | null = null;
   let aggregateBytes = 0;
+  let requestCount = 0;
+  let maxConcurrentRequests = 0;
+  let parsedElementCount = 0;
 
   for (let offset = 0; offset < queries.length; offset += AREA_PREPARATION_FETCH_CONCURRENCY) {
     const batch = queries.slice(offset, offset + AREA_PREPARATION_FETCH_CONCURRENCY);
+    maxConcurrentRequests = Math.max(maxConcurrentRequests, batch.length);
     const settled = await Promise.allSettled(batch.map((query) => fetchAreaOverpass(query, options)));
     for (const result of settled) {
       if (result.status === "rejected") throw result.reason;
 
+      requestCount += result.value.requestCount;
       aggregateBytes += result.value.byteLength;
       if (aggregateBytes > maxAggregateBytes) {
         throw new OsmFeaturesForAreaError(
@@ -715,6 +733,7 @@ async function fetchAreaOverpassQueries(
       if (!Array.isArray(payload.elements)) {
         throw new OsmFeaturesForAreaError("invalid", "OSM-Antwort enthält keine Way-Collection.");
       }
+      parsedElementCount += payload.elements.length;
 
       const candidateTimestamp = payload.osm3s?.timestamp_osm_base;
       if (typeof candidateTimestamp === "string" && Number.isFinite(Date.parse(candidateTimestamp))) {
@@ -743,6 +762,10 @@ async function fetchAreaOverpassQueries(
     roads: [...roads.values()],
     buildings: [...buildings.values()],
     sourceTimestamp,
+    requestCount,
+    maxConcurrentRequests,
+    upstreamBytes: aggregateBytes,
+    parsedElementCount,
   };
 }
 
@@ -794,6 +817,16 @@ export async function fetchOsmFeaturesForArea(
       sourceTimestamp: features.sourceTimestamp,
       fetchedAt,
       request,
+      metrics: {
+        requestCount: features.requestCount,
+        tileCount: queries.length,
+        maxConcurrentRequests: features.maxConcurrentRequests,
+        upstreamBytes: features.upstreamBytes,
+        parsedElementCount: features.parsedElementCount,
+        normalizedRoadCount: features.roads.length,
+        normalizedBuildingCount: features.buildings.length,
+        packageBytes: serializedBytes,
+      },
     };
   } catch (error) {
     if (error instanceof OsmFeaturesForAreaError) throw error;
