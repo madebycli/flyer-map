@@ -822,13 +822,13 @@ export async function runAreaTaskPreparation(
           areaId,
           generation,
           geometryHash,
+          campaignId,
+          areaId,
+          campaignId,
+          areaId,
           areaId,
           campaignId,
           geometryJson,
-          campaignId,
-          areaId,
-          campaignId,
-          areaId,
         ),
       db
         .prepare(
