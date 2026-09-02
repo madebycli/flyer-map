@@ -1,4 +1,4 @@
-import type { LineStringGeometry, LngLat, PolygonGeometry } from "./campaign.ts";
+import type { LngLat, PolygonGeometry } from "./campaign.ts";
 
 const COORDINATE_EPSILON = 1e-10;
 const DETERMINANT_EPSILON = 1e-15;
