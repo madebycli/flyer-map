@@ -123,7 +123,7 @@ export function polygonRepresentativePoint(polygonGeometry: PolygonGeometry): Ln
   if (!normalized) return null;
   try {
     const area = new GeoJSONReader().read(normalized);
-    const coordinate = InteriorPointArea.getInteriorPoint(area).getCoordinate();
+    const coordinate = InteriorPointArea.getInteriorPoint(area);
     if (!coordinate || !Number.isFinite(coordinate.x) || !Number.isFinite(coordinate.y)) return null;
     const representative: LngLat = [coordinate.x, coordinate.y];
     return pointInOrOnPolygon(representative, normalized) ? representative : null;
