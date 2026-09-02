@@ -100,7 +100,7 @@ test("representative building point is deterministic and supports boundary owner
   assert.equal(pointInOrOnPolygon([0, 5], square), true);
 });
 
-test("preparation converts clipped OSM ways and owned buildings into normal tasks", () => {
+test("preparation converts clipped OSM ways into engine-neutral candidates and owned buildings into normal tasks", () => {
   let counter = 0;
   const prepared = prepareTasksForArea({
     campaignId: "campaign_auto",
@@ -140,23 +140,16 @@ test("preparation converts clipped OSM ways and owned buildings into normal task
     ],
   });
 
-  assert.equal(prepared.tasks.length, 2);
-  assert.deepEqual(prepared.tasks.map((task) => task.label), ["Ringstraße", "L 12"]);
-  assert.ok(prepared.tasks.every((task) => task.id.startsWith("task_")));
-  assert.ok(prepared.tasks.every((task) => task.status === "open"));
-  assert.ok(prepared.tasks.every((task) => task.areaPreparationGeneration));
-  assert.deepEqual(prepared.tasks[0].source, {
-    dataset: "OpenStreetMap",
-    objectType: "way",
-    objectIds: [100],
-  });
+  assert.equal(prepared.preparedFragments.length, 2);
+  assert.deepEqual(prepared.preparedFragments.map((candidate) => candidate.label), ["Ringstraße", "L 12"]);
+  assert.deepEqual(prepared.preparedFragments.map((candidate) => candidate.sourceOsmWayId), [100, 101]);
   assert.equal(prepared.houseTasks.length, 1);
   assert.equal(prepared.houseTasks[0].label, "Ringstraße 4");
   assert.equal(prepared.houseTasks[0].parentStreetTaskId, null);
   assert.equal(prepared.houseTasks[0].areaPreparationGeneration, "123e4567-e89b-42d3-a456-426614174000");
 });
 
-test("one OSM way split by a concave Area creates separate app-owned task fragments", () => {
+test("one OSM way split by a concave Area creates separate app-owned candidate fragments", () => {
   let counter = 0;
   const prepared = prepareTasksForArea({
     campaignId: "campaign_auto",
@@ -171,15 +164,11 @@ test("one OSM way split by a concave Area creates separate app-owned task fragme
     buildings: [],
   });
 
-  assert.deepEqual(prepared.tasks.map((task) => task.geometry), [
+  assert.deepEqual(prepared.preparedFragments.map((candidate) => candidate.geometry), [
     line([[0, 7], [4, 7]]),
     line([[6, 7], [10, 7]]),
   ]);
-  assert.notEqual(prepared.tasks[0].id, prepared.tasks[1].id);
-  assert.deepEqual(prepared.tasks.map((task) => task.source), [
-    { dataset: "OpenStreetMap", objectType: "way", objectIds: [777] },
-    { dataset: "OpenStreetMap", objectType: "way", objectIds: [777] },
-  ]);
+  assert.deepEqual(prepared.preparedFragments.map((candidate) => candidate.sourceOsmWayId), [777, 777]);
 });
 
 test("feature caps and bounded json chunks fail before a partial publish", () => {
