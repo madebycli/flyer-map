@@ -2,7 +2,7 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-01
+last_updated: 2026-09-02
 ---
 
 # Current Project State
@@ -21,6 +21,12 @@ Admin -> Teams/Gebiet -> serverseitige Area Preparation -> Streets/Houses
 Der normale Launcher ist für die Mission auf `Team`, `Fortschritt`, `Einstellungen` und bei berechtigtem Zugriff `Gebiet` reduziert. Bestehende Einsätze-, Activity-, Automation-, Comment- und Collection-Runtimes werden nicht gelöscht und keine Datenhistorie wird verändert. Sicherheits-, Sync-, Konflikt-, Access- und Area-Preparation-Fehler bleiben sichtbar.
 
 PR #72 bleibt Draft gegen `ui-app-launcher-sheet`. Kein Merge, kein Ready-for-Review und kein manueller Deploy ohne expliziten Auftrag.
+
+## Isolierter Street-Engine-Branch
+
+Die serverseitige Street Engine wird ausschließlich auf `feature/established-street-preparation-engine` entwickelt. Der Branch wurde gegen den am 2026-09-02 verifizierten Head von `plan-feature-complete-platform` gestartet: `4ddfc2da7cc44c78d82c2f831ef2d34513d8b1f8`. `mission-rxdb-sync` bleibt unangetastet und wird nur als separater Integrationsvertrag referenziert.
+
+Die Engine nutzt JSTS für serverseitiges exaktes LineString/Polygon-Clipping, modulare Turf-Pakete für Boundary-Test, Smart-Street-Snap und A/B-Slice, stabile automatische Street-IDs und Delta-Reconciliation. Browser-Overpass, Geräte-Recompute, D1-Migrationen, Merge und Deployment sind nicht Teil dieses Branches.
 
 ## Baseline
 
