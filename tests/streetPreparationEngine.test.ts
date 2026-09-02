@@ -45,7 +45,8 @@ test("the fixture matrix produces exact in-area fragments and diagnostics", () =
 
   const uStreet = prepared.tasks
     .filter((task) => task.source?.objectIds[0] === 101)
-    .map((task) => task.geometry.coordinates);
+    .map((task) => task.geometry.coordinates)
+    .sort((first, second) => first[0][0] - second[0][0]);
   assert.deepEqual(uStreet, [
     [[0, 7], [4, 7]],
     [[6, 7], [10, 7]],
