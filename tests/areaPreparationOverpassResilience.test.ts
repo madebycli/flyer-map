@@ -68,7 +68,7 @@ test("custom Area Overpass upstream is reused for isolated road and building pha
   assert.ok(calls.every((call) => call.url === "http://localhost/overpass"));
   assert.ok(calls.every((call) => {
     const headers = new Headers(call.init?.headers);
-    return /^flyer-map\\/1\\.0/u.test(headers.get("user-agent") ?? "");
+    return (headers.get("user-agent") ?? "").startsWith("flyer-map/1.0");
   }));
   const queries = calls.map((call) => String(new URLSearchParams(String(call.init?.body)).get("data")));
   assert.ok(queries.some((query) => query.includes('way["highway"]')));
