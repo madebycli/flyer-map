@@ -185,8 +185,8 @@ test("feature caps and bounded json chunks fail before a partial publish", () =>
       randomUUID: () => "00000000-0000-4000-8000-000000000001",
       maxRoadFragments: 1,
       roads: [
-        { properties: { osmId: 1, tags: {} }, geometry: line([[1, 1], [2, 1]]) },
-        { properties: { osmId: 2, tags: {} }, geometry: line([[3, 1], [4, 1]]) },
+        { properties: { osmId: 1, tags: { highway: "residential" } }, geometry: line([[1, 1], [2, 1]]) },
+        { properties: { osmId: 2, tags: { highway: "residential" } }, geometry: line([[3, 1], [4, 1]]) },
       ],
       buildings: [],
     }),
