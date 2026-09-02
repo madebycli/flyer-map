@@ -408,10 +408,10 @@ nodes:
     load_when: [exact street clipping, concave area fragments, geometry bakeoff]
 
   - id: street-preparation-reconcile
-    path: worker/serverPreparedStreetReconcile.ts
+    path: worker/streetPreparation/reconcilePreparedStreetTasks.ts
     type: code
     status: current
-    topics: [street-engine, stable-task-id, reprepare, user-owned-fields, worked-conflict, tombstone]
+    topics: [street-engine, stable-task-id, sha256, reprepare, user-owned-fields, updates, worked-conflict, action-required, tombstone]
     load_when: [prepared street reprepare, automatic task reconciliation, manual task preservation]
 
   - id: smart-house-runtime
