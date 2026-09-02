@@ -1,3 +1,4 @@
+import { distance } from "@turf/distance";
 import { lineString } from "@turf/helpers";
 import lineSliceAlong from "@turf/line-slice-along";
 import {
@@ -190,26 +191,19 @@ function sliceEndpointToAnchor(
   return sliceAnchorToEndpoint(road, anchor, endpoint).reverse();
 }
 
-function localSegmentDistanceMeters(first: LngLat, second: LngLat) {
-  const latitudeRadians = ((first[1] + second[1]) * Math.PI) / 360;
-  const longitudeMeters = (second[0] - first[0]) * Math.cos(latitudeRadians) * 111_320;
-  const latitudeMeters = (second[1] - first[1]) * 110_540;
-  return Math.hypot(longitudeMeters, latitudeMeters);
-}
-
 function distanceAlongRoadMeters(
   road: SmartRoadCandidate,
   anchor: SmartRoadPointAnchor,
 ) {
-  if (Number.isFinite(anchor.lineDistanceMeters)) return anchor.lineDistanceMeters;
   const coordinates = road.geometry.coordinates;
-  let distance = 0;
+  let distanceAlong = 0;
   for (let index = 0; index < anchor.segmentIndex; index += 1) {
-    distance += localSegmentDistanceMeters(coordinates[index], coordinates[index + 1]);
+    distanceAlong += distance(coordinates[index], coordinates[index + 1], { units: "meters" });
   }
-  return distance + anchor.segmentT * localSegmentDistanceMeters(
+  return distanceAlong + anchor.segmentT * distance(
     coordinates[anchor.segmentIndex],
     coordinates[anchor.segmentIndex + 1],
+    { units: "meters" },
   );
 }
 
