@@ -666,7 +666,7 @@ type AreaOverpassResponse = {
 async function fetchAreaOverpass(
   query: string,
   options: OfflineMapHandlerOptions,
-  phase: "roads" | "buildings",
+  _phase: "roads" | "buildings",
 ): Promise<AreaOverpassResponse> {
   const endpoints = options.upstreamUrl
     ? [upstreamUrl(options.upstreamUrl)]
@@ -880,7 +880,12 @@ export async function fetchOsmFeaturesForArea(
 ): Promise<OsmFeaturesForArea> {
   const bounds = areaBounds(options.geometry);
   if (!bounds) {
-    throw new OsmFeaturesForAreaError("invalid", "Area-Geometrie ist für den OSM-Abruf ungültig.");
+    throw new OsmFeaturesForAreaError(
+      "invalid",
+      "Area-Geometrie ist für den OSM-Abruf ungültig.",
+      "aggregate",
+      "invalid-area",
+    );
   }
   const roadQueries = buildAreaPreparationOverpassQueries(options.geometry, "roads");
   const buildingQueries = buildAreaPreparationOverpassQueries(options.geometry, "buildings");
