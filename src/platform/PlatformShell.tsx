@@ -57,6 +57,7 @@ export function PlatformShell() {
   const launcherItems = buildPlatformLauncherItems(appContext);
   const teamName = appContext?.activeTeam?.name.trim() || "Team";
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
+  const showActiveTeam = appContext?.accessRole !== "viewer" && Boolean(appContext?.activeTeam);
   const launcherAvailable = appContext?.launcherAvailable ?? true;
   const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen || activityOpen || statisticsOpen || automationsOpen;
 
@@ -126,14 +127,16 @@ export function PlatformShell() {
             >
               <MenuGridIcon />
             </button>
-            <div className="platform-active-team" title={teamName}>
-              <span
-                className="platform-active-team-dot"
-                style={{ backgroundColor: teamColor }}
-                aria-hidden="true"
-              />
-              <strong>{teamName}</strong>
-            </div>
+            {showActiveTeam ? (
+              <div className="platform-active-team" title={teamName}>
+                <span
+                  className="platform-active-team-dot"
+                  style={{ backgroundColor: teamColor }}
+                  aria-hidden="true"
+                />
+                <strong>{teamName}</strong>
+              </div>
+            ) : null}
           </div>
           {appContext?.canCreateManualStreet ? (
             <button
