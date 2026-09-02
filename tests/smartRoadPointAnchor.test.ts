@@ -27,6 +27,7 @@ test("a map click snaps to the nearest point inside one road segment", () => {
   assert.ok(Math.abs(candidates[0].snapped[1] - 49) < 0.000001);
   assert.ok(Math.abs(candidates[0].segmentT - 0.5) < 0.001);
   assert.ok(candidates[0].distanceMeters > 10 && candidates[0].distanceMeters < 12);
+  assert.ok((candidates[0].lineDistanceMeters ?? 0) > 150);
 });
 
 test("a click near an intersection can return multiple road choices instead of guessing", () => {
