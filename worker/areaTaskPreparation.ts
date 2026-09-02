@@ -1279,11 +1279,7 @@ async function publishHousePhase(
   let results: Awaited<ReturnType<D1DatabaseLike["batch"]>>;
   try {
     results = await db.batch(statements);
-  } catch (error) {
-    console.error(
-      "area preparation house publish failed",
-      error instanceof Error ? error.message : error,
-    );
+  } catch {
     await markPhaseFailed(db, {
       phase: "house",
       campaignId: run.campaignId,
