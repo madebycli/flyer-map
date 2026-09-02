@@ -20,7 +20,7 @@ const OVERPASS_USER_AGENT = "flyer-map/1.0 (+https://github.com/madebycli/flyer-
 const MAX_REQUEST_BYTES = 4_096;
 const MAX_UPSTREAM_BYTES = 8_000_000;
 const MAX_PACKAGE_BYTES = 10_000_000;
-const AREA_PREPARATION_MAX_AGGREGATE_BYTES = 32_000_000;
+export const AREA_PREPARATION_MAX_AGGREGATE_BYTES = 32_000_000;
 const UPSTREAM_TIMEOUT_MS = 18_000;
 const AREA_UPSTREAM_TIMEOUT_MS = 10_000;
 const AREA_BBOX_BUFFER_METERS = 120;
@@ -115,6 +115,8 @@ export type OsmFeaturesForAreaOptions = {
   fetchImpl?: FetchLike;
   now?: () => Date;
   limits?: OsmFeaturesForAreaLimits;
+  /** Load one phase when Area preparation needs isolated Street/House retries. */
+  phase?: "all" | "roads" | "buildings";
 };
 
 export type OsmFeaturesForArea = {
@@ -887,13 +889,23 @@ export async function fetchOsmFeaturesForArea(
       "invalid-area",
     );
   }
-  const roadQueries = buildAreaPreparationOverpassQueries(options.geometry, "roads");
-  const buildingQueries = buildAreaPreparationOverpassQueries(options.geometry, "buildings");
-  if (roadQueries.length === 0 || buildingQueries.length === 0) {
+
+  const phase = options.phase ?? "all";
+  const roadQueries = phase === "buildings"
+    ? []
+    : buildAreaPreparationOverpassQueries(options.geometry, "roads");
+  const buildingQueries = phase === "roads"
+    ? []
+    : buildAreaPreparationOverpassQueries(options.geometry, "buildings");
+  if (
+    (phase !== "roads" && phase !== "buildings" && (roadQueries.length === 0 || buildingQueries.length === 0)) ||
+    (phase === "roads" && roadQueries.length === 0) ||
+    (phase === "buildings" && buildingQueries.length === 0)
+  ) {
     throw new OsmFeaturesForAreaError(
       "invalid",
       "Area-Geometrie ist für den OSM-Abruf ungültig.",
-      "aggregate",
+      phase === "all" ? "aggregate" : phase,
       "invalid-area",
     );
   }
@@ -910,18 +922,40 @@ export async function fetchOsmFeaturesForArea(
 
   try {
     const maxAggregateBytes = options.limits?.maxAggregateBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES;
-    const roadFeatures = await fetchAreaOverpassQueries(
-      roadQueries,
-      handlerOptions,
-      maxAggregateBytes,
-      "roads",
-    );
-    const buildingFeatures = await fetchAreaOverpassQueries(
-      buildingQueries,
-      handlerOptions,
-      Math.max(0, maxAggregateBytes - roadFeatures.upstreamBytes),
-      "buildings",
-    );
+    const roadFeatures = roadQueries.length > 0
+      ? await fetchAreaOverpassQueries(
+          roadQueries,
+          handlerOptions,
+          maxAggregateBytes,
+          "roads",
+        )
+      : {
+          roads: [],
+          buildings: [],
+          sourceTimestamp: null,
+          requestCount: 0,
+          maxConcurrentRequests: 0,
+          upstreamBytes: 0,
+          parsedElementCount: 0,
+          normalizationRejectedCount: 0,
+        };
+    const buildingFeatures = buildingQueries.length > 0
+      ? await fetchAreaOverpassQueries(
+          buildingQueries,
+          handlerOptions,
+          Math.max(0, maxAggregateBytes - roadFeatures.upstreamBytes),
+          "buildings",
+        )
+      : {
+          roads: [],
+          buildings: [],
+          sourceTimestamp: null,
+          requestCount: 0,
+          maxConcurrentRequests: 0,
+          upstreamBytes: 0,
+          parsedElementCount: 0,
+          normalizationRejectedCount: 0,
+        };
     const fetchedAt = (options.now ?? (() => new Date()))().toISOString();
     const serializedBytes = new TextEncoder().encode(JSON.stringify({
       roads: { type: "FeatureCollection", features: roadFeatures.roads },
@@ -931,7 +965,7 @@ export async function fetchOsmFeaturesForArea(
       throw new OsmFeaturesForAreaError(
         "too_large",
         "OSM-Featuremenge überschreitet die Sicherheitsgrenze.",
-        "aggregate",
+        phase === "all" ? "aggregate" : phase,
         "package-too-large",
       );
     }
@@ -945,7 +979,7 @@ export async function fetchOsmFeaturesForArea(
       request,
       metrics: {
         requestCount: roadFeatures.requestCount + buildingFeatures.requestCount,
-        tileCount: roadQueries.length,
+        tileCount: roadQueries.length + buildingQueries.length,
         maxConcurrentRequests: Math.max(
           roadFeatures.maxConcurrentRequests,
           buildingFeatures.maxConcurrentRequests,
@@ -968,18 +1002,24 @@ export async function fetchOsmFeaturesForArea(
   } catch (error) {
     if (error instanceof OsmFeaturesForAreaError) throw error;
     if (error instanceof OfflineMapRequestError) {
+      const errorPhase = phase === "all" ? "aggregate" : phase;
       if (error.code === "osm_upstream_timeout") {
-        throw new OsmFeaturesForAreaError("timeout", error.message);
+        throw new OsmFeaturesForAreaError("timeout", error.message, errorPhase, "timeout");
       }
       if (error.code === "osm_response_invalid") {
-        throw new OsmFeaturesForAreaError("invalid", error.message);
+        throw new OsmFeaturesForAreaError("invalid", error.message, errorPhase, "invalid-response");
       }
       if (error.code === "osm_response_too_large") {
-        throw new OsmFeaturesForAreaError("too_large", error.message);
+        throw new OsmFeaturesForAreaError("too_large", error.message, errorPhase, "response-too-large");
       }
-      throw new OsmFeaturesForAreaError("failed", error.message);
+      throw new OsmFeaturesForAreaError("failed", error.message, errorPhase, sourceFailureReason(error));
     }
-    throw new OsmFeaturesForAreaError("failed", "OSM-Daten konnten nicht geladen werden.");
+    throw new OsmFeaturesForAreaError(
+      "failed",
+      "OSM-Daten konnten nicht geladen werden.",
+      phase === "all" ? "aggregate" : phase,
+      "upstream-failed",
+    );
   }
 }
 
