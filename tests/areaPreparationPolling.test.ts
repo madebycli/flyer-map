@@ -13,19 +13,29 @@ import {
 
 const pending: AreaPreparationPublicState = {
   status: "pending",
+  streetStatus: "pending",
+  houseStatus: "pending",
   roadCount: 0,
   houseCount: 0,
   sourceTimestamp: null,
   errorCode: null,
+  streetErrorCode: null,
+  houseErrorCode: null,
+  actionRequired: false,
   updatedAt: null,
 };
 
 const ready: AreaPreparationPublicState = {
   status: "ready",
+  streetStatus: "ready",
+  houseStatus: "ready",
   roadCount: 42,
   houseCount: 186,
   sourceTimestamp: "2026-09-01T10:00:00.000Z",
   errorCode: null,
+  streetErrorCode: null,
+  houseErrorCode: null,
+  actionRequired: false,
   updatedAt: "2026-09-01T10:01:00.000Z",
 };
 
@@ -390,4 +400,57 @@ test("failed and schema-unavailable responses do not create a retry loop", async
   await settle();
   assert.equal(startCalls, 1);
   assert.equal(timers.size, 0);
+});
+
+
+test("work-started state is visible without auto-start or explicit retry", async () => {
+  const timers = timerQueue();
+  const states: AreaPreparationPublicState[] = [];
+  let startCalls = 0;
+  const locked: AreaPreparationPublicState = {
+    ...ready,
+    status: "ready",
+    streetStatus: "ready",
+    houseStatus: "failed",
+    errorCode: "area_preparation_work_started",
+    houseErrorCode: "area_preparation_work_started",
+    actionRequired: true,
+  };
+  const poller = createAreaPreparationPoller({
+    campaignId: "campaign-1",
+    areaId: "area-1",
+    client: {
+      async fetchState() {
+        return locked;
+      },
+      async start() {
+        startCalls += 1;
+        return pending;
+      },
+    },
+    canAutoStart: () => true,
+    markAutoStarted() {
+      throw new Error("locked preparation must not auto-start");
+    },
+    markPending() {},
+    hasPending: () => false,
+    clearPending() {},
+    onState: (state) => states.push(state),
+    onReady() {},
+    onError(error) {
+      throw error;
+    },
+    scheduler: timers.scheduler,
+  });
+
+  poller.start();
+  await settle();
+  poller.retry();
+  await settle();
+
+  assert.equal(startCalls, 0);
+  assert.equal(timers.size, 0);
+  assert.equal(states.length, 1);
+  assert.equal(states[0]?.actionRequired, true);
+  assert.equal(states[0]?.status, "ready");
 });
