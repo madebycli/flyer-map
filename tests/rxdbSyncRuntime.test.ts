@@ -99,7 +99,9 @@ class SchemaUnavailableD1 implements D1DatabaseLike {
 }
 
 function installFakeWindowClock() {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousSetTimeout = Object.getOwnPropertyDescriptor(globalThis, "setTimeout");
+  const previousClearTimeout = Object.getOwnPropertyDescriptor(globalThis, "clearTimeout");
   let now = 0;
   let nextId = 1;
   const timers = new Map<number, { at: number; callback: () => void }>();
@@ -114,6 +116,8 @@ function installFakeWindowClock() {
     },
   };
   Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: fakeWindow });
+  Object.defineProperty(globalThis, "setTimeout", { configurable: true, writable: true, value: fakeWindow.setTimeout.bind(fakeWindow) });
+  Object.defineProperty(globalThis, "clearTimeout", { configurable: true, writable: true, value: fakeWindow.clearTimeout.bind(fakeWindow) });
   return {
     advance(milliseconds: number) {
       now += milliseconds;
@@ -129,8 +133,12 @@ function installFakeWindowClock() {
       }
     },
     restore() {
-      if (previous) Object.defineProperty(globalThis, "window", previous);
+      if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
       else Reflect.deleteProperty(globalThis, "window");
+      if (previousSetTimeout) Object.defineProperty(globalThis, "setTimeout", previousSetTimeout);
+      else Reflect.deleteProperty(globalThis, "setTimeout");
+      if (previousClearTimeout) Object.defineProperty(globalThis, "clearTimeout", previousClearTimeout);
+      else Reflect.deleteProperty(globalThis, "clearTimeout");
     },
   };
 }
@@ -363,7 +371,6 @@ test("a retryable Team push does not block an independent Street pull", async ()
     await waitForCondition(async () => Boolean(await collections.campaigns.findOne(campaignId).exec()));
     await waitForCondition(async () => Boolean(await collections.teams.findOne("team_a").exec()));
 
-    // Client A reaches the real Worker push handler and gets a retryable 503.
     await sync.applyMutation({
       id: "mutation_rxdb_failed_team_push",
       campaignId,
@@ -374,8 +381,6 @@ test("a retryable Team push does not block an independent Street pull", async ()
     } as any);
     await waitForCondition(async () => failedTeamPushStatus === 503);
 
-    // Client B creates a Street on canonical D1 while A's Team write is still
-    // pending. A's independent Street replication must still pull it.
     const remoteStreet = await handleCampaignMutation(new Request("https://flyer.test/mutations", {
       method: "POST",
       body: JSON.stringify({
@@ -474,8 +479,6 @@ test("one Campaign safety checkpoint recovers a missed signal without duplicate 
     }), db, safetyCampaignId, safetyAdminAccess);
     assert.equal(remoteStreet.status, 200, await remoteStreet.text());
 
-    // Simulate a dropped WebSocket invalidation.  One high-water request is
-    // enough to decide whether all five collection replications must catch up.
     await sync.safetyResync();
     assert.equal(checkpointCalls, 1);
     await waitForCondition(async () => Boolean(await collections.streetTasks.findOne("task_missed_signal").exec()));
@@ -511,8 +514,6 @@ test("global Campaign revision stays monotonic while stale Street writes and con
   const firstBody = await teamNameWrite.json() as { conflicts: unknown[]; rejections: unknown[] };
   assert.deepEqual(firstBody.rejections, []);
 
-  // This client intentionally keeps the old global baseRevision (3).  The
-  // Worker re-reads current D1 state and still accepts an independent Street.
   const staleStreet = await handleCampaignMutation(new Request("https://flyer.test/mutations", {
     method: "POST",
     body: JSON.stringify({
@@ -533,8 +534,6 @@ test("global Campaign revision stays monotonic while stale Street writes and con
   }), db, campaignId, adminAccess);
   assert.equal(staleStreet.status, 200, await staleStreet.text());
 
-  // A second client also started from the original Team document.  Its color
-  // field is independent of the first client's name field and must merge.
   const teamColorWrite = await handleRxdbPush(db, campaignId, "teams", adminAccess, {
     rows: [{
       assumedMasterState: initialTeam,
