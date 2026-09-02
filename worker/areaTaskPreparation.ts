@@ -9,7 +9,7 @@ import {
   pointInOrOnPolygon,
   polygonRepresentativePoint,
 } from "../src/domain/areaTaskPreparation.ts";
-import { validateLineStringVertices, validatePolygonVertices } from "../src/domain/geometry.ts";
+import { validatePolygonVertices } from "../src/domain/geometry.ts";
 import { createSmartHouseTaskSnapshot } from "../src/domain/smartHouseTask.ts";
 import { toSmartBuildingCandidate } from "../src/domain/smartCandidates.ts";
 import {
