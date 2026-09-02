@@ -15,6 +15,7 @@ source_of_truth_for: [street-engine-dependencies, street-engine-licenses]
 | --- | --- | --- | --- | --- |
 | `jsts` | `2.12.1` | `(EDL-1.0 OR EPL-1.0)` | Serverseitige robuste Topologie für LineString/Polygon-Intersection | [JSTS Repository](https://github.com/bjornharrtell/jsts) |
 | `@turf/helpers` | `7.4.0` | MIT | Kleine GeoJSON-Konstruktoren für Client- und Testpfade | [Turf helpers](https://github.com/Turfjs/turf/tree/master/packages/turf-helpers) |
+| `@turf/distance` | `7.4.0` | MIT | Geodesische Segmentdistanzen für validierte A/B-Positionen | [Turf distance](https://github.com/Turfjs/turf/tree/master/packages/turf-distance) |
 | `@turf/boolean-point-in-polygon` | `7.4.0` | MIT | Boundary-aware Point-in-Polygon-Invariant | [Turf boolean-point-in-polygon](https://github.com/Turfjs/turf/tree/master/packages/turf-boolean-point-in-polygon) |
 | `@turf/nearest-point-on-line` | `7.4.0` | MIT | Smart-Street-Snap auf vorbereitete LineStrings | [Turf nearest-point-on-line](https://github.com/Turfjs/turf/tree/master/packages/turf-nearest-point-on-line) |
 | `@turf/line-slice-along` | `7.4.0` | MIT | Exakte A/B-Teilstrecke auf einer geprüften Straße | [Turf line-slice-along](https://github.com/Turfjs/turf/tree/master/packages/turf-line-slice-along) |
