@@ -105,6 +105,7 @@ export type OsmFeaturesForAreaLimits = {
   timeoutMs?: number;
   maxUpstreamBytes?: number;
   maxPackageBytes?: number;
+  maxAggregateBytes?: number;
 };
 
 export type OsmFeaturesForAreaOptions = {
@@ -592,10 +593,15 @@ function retryableAreaFetchError(error: OfflineMapRequestError) {
   return error.code === "osm_upstream_timeout" || error.code === "osm_upstream_failed" || error.code === "osm_response_invalid";
 }
 
+type AreaOverpassResponse = {
+  payload: OverpassPayload;
+  byteLength: number;
+};
+
 async function fetchAreaOverpass(
   query: string,
   options: OfflineMapHandlerOptions,
-): Promise<OverpassPayload> {
+): Promise<AreaOverpassResponse> {
   const endpoints = options.upstreamUrl
     ? [upstreamUrl(options.upstreamUrl)]
     : DEFAULT_AREA_OVERPASS_URLS.map((value) => upstreamUrl(value));
@@ -662,7 +668,7 @@ async function fetchAreaOverpass(
           "OSM-Datenquelle hat ungültige Daten geliefert.",
         );
       }
-      return payload as OverpassPayload;
+      return { payload: payload as OverpassPayload, byteLength: bytes.byteLength };
     } catch (caught) {
       const error = areaFetchError(caught);
       lastError = error;
@@ -675,44 +681,68 @@ async function fetchAreaOverpass(
   throw lastError ?? new OfflineMapRequestError(502, "osm_upstream_failed", "OSM-Daten konnten nicht geladen werden.");
 }
 
+type AreaOverpassFeatures = {
+  roads: OfflineMapRoadFeature[];
+  buildings: OfflineMapBuildingFeature[];
+  sourceTimestamp: string | null;
+};
+
 async function fetchAreaOverpassQueries(
   queries: string[],
   options: OfflineMapHandlerOptions,
-) {
-  const payloads: OverpassPayload[] = [];
+  maxAggregateBytes: number,
+): Promise<AreaOverpassFeatures> {
+  const roads = new Map<string, OfflineMapRoadFeature>();
+  const buildings = new Map<string, OfflineMapBuildingFeature>();
+  let sourceTimestamp: string | null = null;
+  let aggregateBytes = 0;
+
   for (let offset = 0; offset < queries.length; offset += AREA_PREPARATION_FETCH_CONCURRENCY) {
     const batch = queries.slice(offset, offset + AREA_PREPARATION_FETCH_CONCURRENCY);
     const settled = await Promise.allSettled(batch.map((query) => fetchAreaOverpass(query, options)));
     for (const result of settled) {
       if (result.status === "rejected") throw result.reason;
-      payloads.push(result.value);
-    }
-  }
-  return payloads;
-}
 
-function mergeAreaOverpassPayloads(payloads: OverpassPayload[]): OverpassPayload {
-  const elements = new Map<string, OverpassWay>();
-  let sourceTimestamp: string | null = null;
-  for (const payload of payloads) {
-    if (!Array.isArray(payload.elements)) {
-      throw new OsmFeaturesForAreaError("invalid", "OSM-Antwort enthält keine Way-Collection.");
-    }
-    const candidateTimestamp = payload.osm3s?.timestamp_osm_base;
-    if (typeof candidateTimestamp === "string" && Number.isFinite(Date.parse(candidateTimestamp))) {
-      if (!sourceTimestamp || Date.parse(candidateTimestamp) > Date.parse(sourceTimestamp)) {
-        sourceTimestamp = candidateTimestamp;
+      aggregateBytes += result.value.byteLength;
+      if (aggregateBytes > maxAggregateBytes) {
+        throw new OsmFeaturesForAreaError(
+          "too_large",
+          "OSM-Antworten überschreiten zusammen die Sicherheitsgrenze.",
+        );
+      }
+
+      const payload = result.value.payload;
+      if (!Array.isArray(payload.elements)) {
+        throw new OsmFeaturesForAreaError("invalid", "OSM-Antwort enthält keine Way-Collection.");
+      }
+
+      const candidateTimestamp = payload.osm3s?.timestamp_osm_base;
+      if (typeof candidateTimestamp === "string" && Number.isFinite(Date.parse(candidateTimestamp))) {
+        if (!sourceTimestamp || Date.parse(candidateTimestamp) > Date.parse(sourceTimestamp)) {
+          sourceTimestamp = candidateTimestamp;
+        }
+      }
+
+      for (const element of payload.elements) {
+        if (!validWay(element)) continue;
+        const key = `${element.type}/${element.id}`;
+        if (roads.has(key) || buildings.has(key)) continue;
+
+        const building = normalizeBuilding(element);
+        if (building) {
+          buildings.set(key, building);
+          continue;
+        }
+        const road = normalizeRoad(element);
+        if (road) roads.set(key, road);
       }
     }
-    for (const element of payload.elements) {
-      if (!validWay(element)) continue;
-      const key = `${element.type}/${element.id}`;
-      if (!elements.has(key)) elements.set(key, element);
-    }
   }
+
   return {
-    elements: [...elements.values()],
-    ...(sourceTimestamp ? { osm3s: { timestamp_osm_base: sourceTimestamp } } : {}),
+    roads: [...roads.values()],
+    buildings: [...buildings.values()],
+    sourceTimestamp,
   };
 }
 
@@ -745,29 +775,24 @@ export async function fetchOsmFeaturesForArea(
   };
 
   try {
-    const payloads = await fetchAreaOverpassQueries(queries, handlerOptions);
-    const payload = mergeAreaOverpassPayloads(payloads);
-    const normalizationRequest: ParsedRequest = {
-      ...request,
-      radiusMeters: Math.min(request.radiusMeters, OFFLINE_MAP_RADIUS_METERS),
-    };
-    const pkg = normalizeOfflineMapPackage(
-      payload,
-      normalizationRequest,
-      (options.now ?? (() => new Date()))(),
+    const features = await fetchAreaOverpassQueries(
+      queries,
+      handlerOptions,
+      options.limits?.maxAggregateBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES,
     );
+    const fetchedAt = (options.now ?? (() => new Date()))().toISOString();
     const serializedBytes = new TextEncoder().encode(JSON.stringify({
-      roads: pkg.roads,
-      buildings: pkg.buildings,
+      roads: { type: "FeatureCollection", features: features.roads },
+      buildings: { type: "FeatureCollection", features: features.buildings },
     })).byteLength;
     if (serializedBytes > (options.limits?.maxPackageBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES)) {
       throw new OsmFeaturesForAreaError("too_large", "OSM-Featuremenge überschreitet die Sicherheitsgrenze.");
     }
     return {
-      roads: pkg.roads.features,
-      buildings: pkg.buildings.features,
-      sourceTimestamp: pkg.sourceTimestamp,
-      fetchedAt: pkg.fetchedAt,
+      roads: features.roads,
+      buildings: features.buildings,
+      sourceTimestamp: features.sourceTimestamp,
+      fetchedAt,
       request,
     };
   } catch (error) {
