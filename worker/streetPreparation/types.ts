@@ -28,6 +28,17 @@ export type StreetPreparationRoad = {
   geometry: StreetInputGeometry;
 };
 
+export type StreetPreparationSourceMetrics = {
+  requestCount: number;
+  tileCount: number;
+  maxConcurrentRequests: number;
+  upstreamBytes: number;
+  parsedElementCount: number;
+  normalizedRoadCount: number;
+  normalizedBuildingCount: number;
+  packageBytes: number;
+};
+
 export type StreetPreparationDiagnostics = {
   algorithmVersion: string;
   inputRoadCount: number;
@@ -37,6 +48,7 @@ export type StreetPreparationDiagnostics = {
   fragmentCount: number;
   duplicateFragmentCount: number;
   durationMs: number;
+  source: StreetPreparationSourceMetrics;
 };
 
 export type StreetPreparationResult = {
