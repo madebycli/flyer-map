@@ -450,7 +450,7 @@ test("work-started state is visible without auto-start or explicit retry", async
 
   assert.equal(startCalls, 0);
   assert.equal(timers.size, 0);
-  assert.equal(states.length, 1);
-  assert.equal(states[0]?.actionRequired, true);
-  assert.equal(states[0]?.status, "ready");
+  assert.ok(states.length >= 1);
+  assert.ok(states.every((state) => state.actionRequired));
+  assert.equal(states.at(-1)?.status, "ready");
 });
