@@ -115,6 +115,25 @@ export function polygonRepresentativePoint(polygonGeometry: PolygonGeometry): Ln
 }
 
 /**
+ * Validates containment with the same topology engine used for clipping.
+ * This is intentionally not a midpoint or endpoint heuristic.
+ */
+export function lineStringInsidePolygon(
+  geometry: LineStringGeometry,
+  polygonGeometry: PolygonGeometry,
+) {
+  const normalizedArea = normalizePolygonGeometry(polygonGeometry);
+  if (!normalizedArea || geometry.coordinates.length < 2) return false;
+  if (geometry.coordinates.some((coordinate) => !finiteCoordinate(coordinate))) return false;
+  try {
+    const reader = new GeoJSONReader();
+    return OverlayOp.difference(reader.read(geometry), reader.read(normalizedArea)).isEmpty();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Clips the complete input geometry with JTS OverlayOp. The result is never
  * approximated by a bbox, endpoint, midpoint or client-side fallback.
  */
