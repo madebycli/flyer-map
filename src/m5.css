@@ -1,6 +1,6 @@
 .mutation-sync-status {
   position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 4.35rem);
+  top: calc(env(safe-area-inset-top, 0px) + 0.55rem);
   right: 0.75rem;
   z-index: 45;
   display: inline-flex;
@@ -47,7 +47,7 @@
 
 @media (max-width: 420px) {
   .mutation-sync-status {
-    top: calc(env(safe-area-inset-top, 0px) + 4.05rem);
+    top: calc(env(safe-area-inset-top, 0px) + 0.55rem);
     right: 0.55rem;
     max-width: calc(100vw - 1.1rem);
     font-size: 0.75rem;
