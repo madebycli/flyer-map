@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
+import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
 import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
@@ -42,6 +43,7 @@ if (preview) {
     <StrictMode>
       <PlatformShell />
       <AccessRecoveryGate />
+      <FieldGroupJoinGate />
       <MapDiagnostics />
       <SyncStatus />
     </StrictMode>,
