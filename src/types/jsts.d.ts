@@ -25,3 +25,9 @@ declare module "jsts/org/locationtech/jts/operation/overlay/OverlayOp.js" {
     static difference(left: JstsGeometry, right: JstsGeometry): JstsGeometry;
   }
 }
+
+declare module "jsts/org/locationtech/jts/algorithm/InteriorPointArea.js" {
+  export default class InteriorPointArea {
+    static getInteriorPoint(geometry: JstsGeometry): JstsGeometry;
+  }
+}
