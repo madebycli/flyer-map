@@ -99,7 +99,7 @@ Eine obsolete offene automatische Street darf als Tombstone gelöscht werden. Ma
 
 ## Overpass source isolation
 
-Roads und Buildings werden als getrennte, serverseitig begrenzte Overpass-Phasen geladen. Road-Queries enthalten nur die Straßenklasse, Building-Queries nur die Gebäude-Klasse. Die Antworten werden getrennt normalisiert und erst danach für den atomaren Publish zusammengeführt. Shared concurrency, Aggregate-Byte-Budget, Einzelantwort-Byte-Budget und Feature-Limits bleiben wirksam.
+Roads und Buildings werden als getrennte, serverseitig begrenzte Overpass-Phasen geladen. Road-Queries enthalten nur die Straßenklasse, Building-Queries nur die Gebäude-Klasse. Die Antworten werden getrennt normalisiert und jede Phase wird nach ihrer eigenen Validierung in einem eigenen guarded Publish veröffentlicht. Shared concurrency, Aggregate-Byte-Budget, Einzelantwort-Byte-Budget und Feature-Limits bleiben wirksam.
 
 Diagnostics und Fehler müssen unterscheiden:
 
@@ -113,11 +113,19 @@ Diagnostics und Fehler müssen unterscheiden:
 - Street-Topologie;
 - guarded D1-Publish.
 
-Ein Fehler in einer Phase veröffentlicht keine Teilmenge. Die Client-Map bleibt map-first und erhält erst nach einem vollständigen Ready-Publish normale persistente Street-/House-Tasks.
+Ein Fehler innerhalb der Street-Phase veröffentlicht keine teilweise Street-Generation und markiert Streets nie fälschlich als ready. Ein House-Fehler rollt einen bereits erfolgreichen Street-Publish nicht zurück: der öffentliche Zustand bleibt für Streets ready und weist Houses als failed aus. Ein Street-Fehler darf Houses trotzdem erfolgreich veröffentlichen, während Streets failed bleiben. Die Client-Map bleibt map-first und verwendet für Smart Street nur die bereits persistierten Street Tasks.
+
+## Independent phase state
+
+Die Area-Preparation besitzt eine gemeinsame Generation, aber zwei explizite, unabhängig lesbare Phasen: `street_status` und `house_status`, jeweils mit eigenem Error-Code, Zeitstempeln, Source-Timestamp und Count. Der aggregierte `status` ist nur eine Rückwärtskompatibilitäts- und Recovery-Sicht: Street failed ergibt failed, ein noch pendinger Zweig ergibt pending, und Street ready ergibt ready. Daher ist `status = ready` zusammen mit `house_status = failed` gültig und darf nicht als vollständige House-Bereitschaft interpretiert werden.
+
+Jede Phase claimt und veröffentlicht ihre Tasks, Campaign-Revision und ihren Ready-State atomar innerhalb ihrer eigenen guarded D1-Grenze. Ein House-Retry lädt und schreibt nur Houses, wenn Streets bereits ready sind. Ein Street-Retry regeneriert weder fertige House Tasks noch deren Status. Ein zweiter Client darf eine vollständig ready Generation nur lesen; er startet keine neue Street- oder House-OSM-Erzeugung.
+
+Die lokale/CI-vorbereitete Migration `0015_area_task_preparation_split.sql` fügt diese Felder hinzu und backfillt bestehende 0014-Zeilen. Sie wurde in diesem Branch nicht remote angewendet. Der Sync-Workstream muss die beiden Phasenfelder als kanonischen Status übernehmen, statt aus einem kombinierten Fehlertext zu raten.
 
 ## Atomic publish
 
-State-Claim, Campaign-Revision, Write-Token, Area-Geometrie, Generation und Pending-State werden gemeinsam guarded geprüft. Canonical Task Inserts, server-owned Updates, zulässige Tombstones, House-Tasks, Feed-Events und Ready-State müssen dieselbe atomare Transaktionsgrenze oder die bereits etablierte äquivalente Guarded-Publish-Grenze verwenden. Kein Feed-Event darf vor erfolgreicher State-Publikation sichtbar werden.
+State-Claim, Campaign-Revision, Write-Token, Area-Geometrie, Generation und der jeweilige Pending-State werden pro Phase guarded geprüft. Für den Street-Zweig bilden Street-Task-Inserts, server-owned Street-Updates, zulässige Street-Tombstones und Street-Ready-State eine atomare Transaktionsgrenze. Für den House-Zweig bilden House-Task-Delete/Insert und House-Ready-State eine eigene atomare Transaktionsgrenze. Die beiden erfolgreichen Phasen müssen nicht dieselbe Transaktion teilen. Kein Feed-Event darf vor erfolgreicher Publikation des zugehörigen Phasen-States sichtbar werden.
 
 Nach einem erfolgreichen Commit darf der bestehende Campaign-/Sync-Invalidierungsweg auslösen. Vorher darf der Client weder Teilfragmente noch ready simulieren.
 
@@ -131,7 +139,8 @@ Nach Übernahme der Street-Engine müssen im Sync-Branch:
 4. die Engine-Kandidaten sourceKey und fragmentKey in die kanonische DistributionTask-Materialisierung überführt werden;
 5. D1-/Feed-Publikation, Tombstones, Generation Guards und RxDB-Replay auf die Deltas inserts, updates, deleteIds und unchangedIds ausgerichtet werden;
 6. nur server-owned Felder bei einem bestehenden stabilen ID-Task aktualisiert werden, während Nutzerfelder erhalten bleiben;
-7. Tests für stabile ID, neue Generation, user-owned Felder, updatedAt, no-churn, obsolete offene und worked automatische Tasks sowie atomaren Feed-Commit ergänzt werden.
+7. Tests für stabile ID, neue Generation, user-owned Felder, updatedAt, no-churn, obsolete offene und worked automatische Tasks sowie atomaren Feed-Commit ergänzt werden;
+8. Street-/House-Phasenstatus, House-only-Retry, Street-only-Retry und den Fall Street ready plus House failed explizit in Read-/Replay-Tests abbilden.
 
 ## Planner prompt
 
