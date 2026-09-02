@@ -18,7 +18,7 @@ Die bestehende Area-Preparation ruft OSM bereits serverseitig und begrenzt ab. D
 - JSTS 2.12.1 ist die serverseitige Topologie-Engine für LineString ∩ Polygon. Die Engine akzeptiert nur echte lineare Ergebnisgeometrien, zerlegt MultiLineString und GeometryCollection deterministisch und verwirft leere, ungültige oder nichtlineare Ergebnisse.
 - Turf 7.4.0 wird modular verwendet: @turf/boolean-point-in-polygon für Boundary-Invarianten, @turf/nearest-point-on-line für Smart-Street-Snap, @turf/line-slice-along für die A/B-Teilstrecke und @turf/helpers für GeoJSON-Werte.
 - OSM iD bleibt Referenz für etablierte OSM-Identitäts- und Tagging-Praxis. osmtogeojson bleibt eine mögliche Differential-Testreferenz. Beide werden nicht als Runtime-Abhängigkeit installiert.
-- Die Overpass-Schicht bleibt ein serverseitig gebundener Provider. Roads und Buildings werden in getrennten, begrenzten Phasen geladen und getrennt normalisiert. Der Browser sendet keine Overpass-Anfrage.
+- Die Overpass-Schicht bleibt ein serverseitig gebundener Provider. Roads und Buildings werden in getrennten, begrenzten Phasen geladen und getrennt normalisiert. Jede Phase besitzt einen eigenen guarded Publish. Der Browser sendet keine Overpass-Anfrage.
 - Die Engine läuft einmal je serverseitig beanspruchter Area-Generation und liefert Kandidaten mit sourceOsmWayId, sourceKey, fragmentKey, label und exakt geprüftem LineString.
 - Die Engine besitzt Normalisierung, Eligibility, exaktes Clipping, Fragmentidentität, Algorithmusversion und Smart-Street-Geometrie. Der Sync-/D1-Adapter besitzt kanonische DistributionTask-Materialisierung, D1-/Feed-Publish, Tombstones, RxDB-Feed und Realtime-Invalidierung.
 
@@ -54,6 +54,12 @@ Bei einer Reprepare wird über die stabile ID reconciled:
 - unveränderte IDs erscheinen in unchangedIds und erzeugen keinen Churn;
 - manuelle Tasks und automatische Tasks anderer Areas bleiben unverändert.
 
+## Unabhängige Street-/House-Preparation
+
+Die Area-Preparation besitzt eine gemeinsame Generation mit zwei expliziten Phasenstates: `street_status` und `house_status`. Street und House werden unabhängig geladen, verarbeitet und veröffentlicht. Street ready bleibt sichtbar und kanonisch, wenn House failed ist. House failed wird als eigener Zustand mit eigenem Error-Code angezeigt und kann ohne Street-Neugenerierung erneut versucht werden. Street failed darf House ready lassen, markiert Streets aber niemals fälschlich als ready.
+
+Der aggregierte Status bleibt für bestehende Recovery-Verträge erhalten: Street failed ergibt failed, pending in einem Zweig ergibt pending, und Street ready ergibt ready. Clients müssen für die konkrete Anzeige zusätzlich beide Phasenfelder lesen. Die vollständige lokale/CI-Schemaverbreiterung liegt in `migrations/0015_area_task_preparation_split.sql`; sie wurde nicht auf die Remote-D1 angewendet.
+
 ## Worked-Street-Policy
 
 Es gilt Policy A: lock after work started.
@@ -72,7 +78,7 @@ Sobald in der Ziel-Area ein automatischer Street- oder House-Task einen Status u
 
 Die Engine akzeptiert nur explizit unterstützte highway-Klassen und lehnt bekannte Nicht-Straßen-, Bau-, aufgegebene und private/no-access-Fälle ab. highway=* wird nicht blind übernommen. Die Policy ist versioniert und durch Fixtures abgedeckt.
 
-Fehlerdiagnostik unterscheidet Timeout, HTTP 429, HTTP 5xx, einzelne oder aggregierte Antwortgrößen, Road-Normalisierung, Building-Volumen, Street-Topologie und guarded D1-Publish. Jeder Fehler bleibt fail-closed und veröffentlicht keine partielle Generation.
+Fehlerdiagnostik unterscheidet Timeout, HTTP 429, HTTP 5xx, einzelne oder aggregierte Antwortgrößen, Road-Normalisierung, Building-Volumen, Street-Topologie und guarded D1-Publish. Jeder Fehler bleibt innerhalb seiner Phase fail-closed: eine fehlgeschlagene Street-Phase veröffentlicht keine Streets, ein House-Fehler versteckt keine bereits erfolgreichen Streets.
 
 ## UI-Vertrag
 
@@ -80,8 +86,8 @@ Ready vorbereitete Straßen erscheinen sofort als normale MapLibre-Straßen. Sma
 
 ## Konsequenzen
 
-JSTS erhöht die serverseitige Dependency- und Bundle-Größe, ersetzt aber risikoreiche Eigenmathematik an der Topologie-Grenze. Turf bleibt modular und wird nicht als Vollbundle installiert. Die separate RxDB-/D1-Feed-Integration wird in docs/SYNC_REQUIREMENTS_FOR_STREET_ENGINE.md spezifiziert und nicht in diesem Branch implementiert.
+JSTS erhöht die serverseitige Dependency- und Bundle-Größe, ersetzt aber risikoreiche Eigenmathematik an der Topologie-Grenze. Turf bleibt modular und wird nicht als Vollbundle installiert. Die unabhängigen Phasen erhöhen pro vollständiger Area-Preparation die guarded Revision-Schritte, sparen bei isolierten Retries aber erneute OSM- und D1-Arbeit. Die separate RxDB-/D1-Feed-Integration wird in docs/SYNC_REQUIREMENTS_FOR_STREET_ENGINE.md spezifiziert und nicht in diesem Branch implementiert. Migration 0015 bleibt vorbereitet, bis ein separater autorisierter Remote-Rollout erfolgt.
 
 ## Verifikation
 
-Die Abnahme umfasst Fixture-basierte Clipping- und Eligibility-Tests, stabile ID-/Reconcile-Tests, Reprepare-Delta-Tests, Smart-Street-Snap-/Slice-Tests, Layering-Contract-Tests, D1-Atomicity-Tests sowie npm test, npm run typecheck, npm run audit:dependencies und npm run build am exakten finalen Branch-Head. Echte Android-/iPhone-Geräte bleiben ein separates offenes Abnahme-Gate.
+Die Abnahme umfasst Fixture-basierte Clipping- und Eligibility-Tests, stabile ID-/Reconcile-Tests, Reprepare-Delta-Tests, unabhängige Street-/House-Publish- und Retry-Isolationstests, Smart-Street-Snap-/Slice-Tests, Layering-Contract-Tests, D1-Atomicity-Tests sowie npm test, npm run typecheck, npm run audit:dependencies und npm run build am exakten finalen Branch-Head. Echte Android-/iPhone-Geräte bleiben ein separates offenes Abnahme-Gate.
