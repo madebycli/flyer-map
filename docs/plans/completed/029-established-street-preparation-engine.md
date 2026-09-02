@@ -50,6 +50,14 @@ Eine produktionsnahe, serverseitige Street Engine, die vorbereitete OSM-Straßen
 - Plan 029 wird erst nach exaktem Head-CI, exaktem Cloudflare-Check und sauberem Sync-Handoff wieder abgeschlossen.
 
 
+## P0-Closure-Erweiterung
+
+- Street und House sind als unabhängige Preparation-Phasen mit explizitem Status, Fehlercode, Count, Source-Timestamp und Retry-Isolation umgesetzt.
+- Ein erfolgreicher Street-Publish bleibt bei House-Fehler sichtbar und kanonisch. Ein House-Retry lädt nur Buildings; ein Street-Retry lädt nur Roads.
+- Die lokale/CI-Migration `0015_area_task_preparation_split.sql` ist vorbereitet und in den Runtime-Tests installiert, aber nicht remote angewendet.
+- Die Action-required-UI für `area_preparation_work_started` ist statusunabhängig sichtbar, lokalisiert und besitzt weder Retry noch Auto-Start.
+- Die Abschlussprüfung bleibt abhängig von exaktem finalem GitHub-CI-/Cloudflare-Preview-Nachweis; reale Android-/iPhone-Abnahme bleibt separat.
+
 ## Abschluss
 
 - Ownership ist auf Engine-Kandidaten und einen gemeinsamen Street-Reconcile-Adapter getrennt.
