@@ -32,13 +32,20 @@ export type AccessGrant = Omit<AccessInfo, "role" | "groupId"> & {
 };
 
 export type AreaPreparationStatus = "missing" | "pending" | "ready" | "failed";
+export type AreaPreparationPhaseStatus = "missing" | "pending" | "ready" | "failed";
 
 export type AreaPreparationPublicState = {
+  /** Aggregate status kept for older clients. Street readiness is authoritative for the map. */
   status: AreaPreparationStatus;
+  streetStatus: AreaPreparationPhaseStatus;
+  houseStatus: AreaPreparationPhaseStatus;
   roadCount: number;
   houseCount: number;
   sourceTimestamp: string | null;
   errorCode: string | null;
+  streetErrorCode: string | null;
+  houseErrorCode: string | null;
+  actionRequired: boolean;
   updatedAt: string | null;
 };
 
