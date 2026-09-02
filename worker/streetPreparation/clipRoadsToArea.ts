@@ -180,7 +180,9 @@ export function clipLineGeometryToPolygon(
       fragments.push(fragment);
     }
     return fragments.sort((first, second) =>
-      canonicalStreetLineKey(first).localeCompare(canonicalStreetLineKey(second))
+      first.coordinates[0][0] - second.coordinates[0][0]
+      || first.coordinates[0][1] - second.coordinates[0][1]
+      || canonicalStreetLineKey(first).localeCompare(canonicalStreetLineKey(second))
     );
   } catch {
     return [];
