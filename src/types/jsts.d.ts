@@ -28,6 +28,6 @@ declare module "jsts/org/locationtech/jts/operation/overlay/OverlayOp.js" {
 
 declare module "jsts/org/locationtech/jts/algorithm/InteriorPointArea.js" {
   export default class InteriorPointArea {
-    static getInteriorPoint(geometry: JstsGeometry): JstsGeometry;
+    static getInteriorPoint(geometry: JstsGeometry): JstsCoordinate | null;
   }
 }
