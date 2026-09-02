@@ -22,6 +22,7 @@ import { MissionRxdbSync, type RxdbSyncIssue } from "./rxdbMissionSync.ts";
 import { createInitialSnapshot, normalizeAreaPreparationGenerations, type Area, type CampaignSnapshot, type DistributionTask, type HouseTask, type LineStringGeometry, type MapCameraView, type PolygonGeometry, type Team } from "../domain/campaign.ts";
 import { deriveCampaignMutation, MutationDerivationError } from "../domain/mutationDiff.ts";
 import type { CampaignMutation } from "../domain/mutations.ts";
+import type { DurableCampaignMutation } from "../domain/durableMutation.ts";
 
 const STORAGE_KEY = "verteil-flyer:campaign-snapshot";
 const BACKUP_STORAGE_KEY = "verteil-flyer:campaign-snapshot:backup";
@@ -379,7 +380,9 @@ function startListeners() {
 export function subscribeCampaignStore(listener: (update: CampaignStoreUpdate) => void) {
   listeners.add(listener);
   listener({ access: runtime.access, accessState: runtime.accessState });
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function setCampaignInteractionBlocked(blocked: boolean) {
@@ -458,7 +461,7 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
     void initializeSharedPersistence();
     return warning;
   }
-  let mutation: CampaignMutation | null;
+  let mutation: DurableCampaignMutation | null;
   try {
     mutation = deriveCampaignMutation(previous, snapshot);
   } catch (error) {
@@ -495,6 +498,9 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
     .then(async () => {
       if (!runtime.initialized) await initializeSharedPersistence();
       if (!runtime.sync) throw new Error("rxdb_not_initialized");
+      if (mutation.type.startsWith("collection.")) {
+        throw new Error("collection_mutation_requires_collection_mode");
+      }
       await runtime.sync.applyMutation(mutation);
     })
     .catch((error) => {

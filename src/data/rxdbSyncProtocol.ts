@@ -26,6 +26,12 @@ export type RxdbCheckpoint = { seq: number };
 export type RxdbDocumentBase = {
   id: string;
   campaignId: string;
+  /**
+   * RxDB collections are registered through a shared transport union.  Keep
+   * an index signature on that wire shape so collection-specific handlers can
+   * inspect their allow-listed fields after validating the collection name.
+   */
+  [key: string]: any;
   _deleted?: boolean;
   _rev?: string;
   _meta?: unknown;

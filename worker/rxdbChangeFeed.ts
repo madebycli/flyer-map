@@ -8,6 +8,8 @@ import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import type { CampaignMutation } from "../src/domain/mutations.ts";
 import type { D1DatabaseLike, D1PreparedStatement } from "./campaignRepository.ts";
 
+export type { RxdbChangeFeedEntry } from "../src/data/rxdbSyncProtocol.ts";
+
 const CHANGE_FEED_COLUMNS = [
   "seq",
   "campaign_id",

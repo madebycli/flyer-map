@@ -2,6 +2,7 @@ import { createRxDatabase } from "rxdb";
 import { replicateRxCollection } from "rxdb/plugins/replication";
 import { getRxStorageDexie } from "rxdb/plugins/storage-dexie";
 import type { CampaignMutation } from "../domain/mutations.ts";
+import type { DurableCampaignMutation } from "../domain/durableMutation.ts";
 import type { CampaignSnapshot } from "../domain/campaign.ts";
 import {
   materializeCampaignSnapshot,
@@ -17,6 +18,11 @@ const PUSH_BATCH_SIZE = 20;
 
 type RxdbCollections = Record<RxdbCollectionName, any>;
 type ReplicationState = ReturnType<typeof replicateRxCollection<any, { seq: number }>>;
+type RxdbReplicationDocument = RxdbDocument & { _deleted: boolean };
+
+function withDeletedMarker(document: RxdbDocument): RxdbReplicationDocument {
+  return { ...document, _deleted: document._deleted === true } as RxdbReplicationDocument;
+}
 
 export type RxdbSyncIssue = {
   kind: "network" | "schema" | "rejected";
@@ -185,7 +191,7 @@ export class MissionRxdbSync {
   private materializationTimer: number | null = null;
   private safetyTimer: number | null = null;
   private socketReconnectTimer: number | null = null;
-  private socket: { close(): void; onopen: (() => void) | null; onmessage: ((event: { data: unknown }) => void) | null; onerror: (() => void) | null; onclose: (() => void) | null } | null = null;
+  private socket: WebSocket | null = null;
   private socketReconnectDelay = 2_000;
   private initialized = false;
   private canonicalRevision = 0;
@@ -319,7 +325,10 @@ export class MissionRxdbSync {
           if (Number.isSafeInteger(result.campaignRevision) && result.campaignRevision >= 0) {
             this.canonicalRevision = Math.max(this.canonicalRevision, result.campaignRevision);
           }
-          return result;
+          return {
+            documents: result.documents.map(withDeletedMarker),
+            checkpoint: result.checkpoint,
+          };
         },
       },
       push: {
@@ -339,7 +348,7 @@ export class MissionRxdbSync {
           for (const rejection of result.rejections) {
             this.onIssue({ kind: "rejected", collectionName, documentId: rejection.documentId, code: rejection.code });
           }
-          return result.conflicts;
+          return result.conflicts.map(withDeletedMarker);
         },
       },
       live: true,
@@ -369,13 +378,7 @@ export class MissionRxdbSync {
   private connectSocket() {
     if (!this.initialized || this.socket || typeof window === "undefined" || typeof location === "undefined") return;
     const WebSocketConstructor = (globalThis as typeof globalThis & {
-      WebSocket?: new (url: string) => {
-        close(): void;
-        onopen: (() => void) | null;
-        onmessage: ((event: { data: unknown }) => void) | null;
-        onerror: (() => void) | null;
-        onclose: (() => void) | null;
-      };
+      WebSocket?: typeof WebSocket;
     }).WebSocket;
     if (!WebSocketConstructor) return;
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -496,14 +499,14 @@ export class MissionRxdbSync {
         if (document) finish(true);
       });
       if (settled) {
-        subscription.unsubscribe();
+        subscription?.unsubscribe();
         return;
       }
       timer = window.setTimeout(() => finish(false), timeoutMs);
     });
   }
 
-  private async mutateDocument(collectionName: RxdbCollectionName, id: string, updater: (document: RxdbDocument | null) => RxdbDocument | null) {
+  private async mutateDocument(collectionName: RxdbCollectionName, id: string, updater: (document: any) => any) {
     if (!this.collections) throw new Error("rxdb_not_initialized");
     const collection = this.collections[collectionName];
     const existing = await collection.findOne(id).exec();
@@ -516,7 +519,7 @@ export class MissionRxdbSync {
     await collection.upsert(withoutRxdbMetadata(next));
   }
 
-  async applyMutation(mutation: CampaignMutation) {
+  async applyMutation(mutation: DurableCampaignMutation) {
     if (!this.collections) throw new Error("rxdb_not_initialized");
     const now = mutation.createdAt;
     switch (mutation.type) {

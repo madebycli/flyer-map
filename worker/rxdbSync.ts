@@ -8,6 +8,7 @@ import {
 } from "../src/data/rxdbSyncProtocol.ts";
 import { deriveMutationFromRxdbWrite } from "../src/domain/rxdbMutationAdapter.ts";
 import type { AccessContext } from "./access.ts";
+import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import {
   loadCampaignSnapshot,
   type D1DatabaseLike,
@@ -264,7 +265,7 @@ function canReadDocument(access: AccessContext, collectionName: RxdbCollectionNa
   if (collectionName === "campaigns") return true;
   if (collectionName === "teams") return document.id === access.teamId;
   if (collectionName === "areas") return (document as { teamId: string }).teamId === access.teamId;
-  const area = snapshot.areas.find((candidate) => candidate.id === (document as { areaId: string }).areaId);
+  const area = snapshot.areas.find((candidate: CampaignSnapshot["areas"][number]) => candidate.id === (document as { areaId: string }).areaId);
   return area?.teamId === access.teamId;
 }
 

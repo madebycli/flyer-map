@@ -2,7 +2,7 @@ import {
   normalizeAreaPreparationGenerations,
   type CampaignSnapshot,
 } from "../domain/campaign.ts";
-import type { CampaignMutation } from "../domain/mutations";
+import type { DurableCampaignMutation } from "../domain/durableMutation.ts";
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
 
@@ -146,7 +146,7 @@ export async function createCampaignSnapshot(snapshot: CampaignSnapshot) {
 
 export async function postCampaignMutation(
   campaignId: string,
-  mutation: CampaignMutation,
+  mutation: DurableCampaignMutation,
   fieldGroupId: string | null = null,
 ) {
   const response = await apiFetch(campaignPath(campaignId, "mutations"), {

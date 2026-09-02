@@ -11,11 +11,11 @@ function same(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function plain<T extends RxdbDocument>(document: T) {
+function plain(document: RxdbDocument): RxdbDocument {
   // Keep the tombstone marker for the deletion branch; only RxDB's
   // transport-owned revision/metadata must be removed before domain checks.
   const { _rev: _rev, _meta: _meta, _attachments: _attachments, ...value } = document;
-  return value;
+  return value as RxdbDocument;
 }
 
 function comparableDocument(document: RxdbDocument) {
