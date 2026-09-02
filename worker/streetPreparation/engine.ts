@@ -1,18 +1,18 @@
 import type {
-  DistributionTask,
   LineStringGeometry,
   PolygonGeometry,
 } from "../../src/domain/campaign.ts";
 import { validateLineStringVertices } from "../../src/domain/geometry.ts";
-import { clipLineGeometryToPolygon } from "./clipRoadsToArea.ts";
+import { clipLineGeometryToPolygonDetailed } from "./clipRoadsToArea.ts";
 import { streetRoadEligibility, STREET_ENGINE_ALGORITHM_VERSION } from "./roadEligibility.ts";
 import {
   canonicalStreetGeometryKey,
-  canonicalStreetLineKey,
-  stableStreetTaskId,
+  preparedStreetFragmentKey,
+  preparedStreetSourceKey,
 } from "./roadIdentity.ts";
 import type {
   StreetInputGeometry,
+  StreetPreparationCandidate,
   StreetPreparationInput,
   StreetPreparationResult,
 } from "./types.ts";
@@ -30,14 +30,6 @@ export class StreetPreparationLimitError extends Error {
 
 function roadLabel(tags: Record<string, string>) {
   return tags.name?.trim() || tags.ref?.trim() || "Straße";
-}
-
-function taskSource(osmId: number) {
-  return {
-    dataset: "OpenStreetMap" as const,
-    objectType: "way" as const,
-    objectIds: [osmId],
-  };
 }
 
 function validCoordinate(coordinate: [number, number]) {
@@ -66,52 +58,45 @@ function validInputGeometry(geometry: StreetInputGeometry): boolean {
   return geometry.geometries.length > 0 && geometry.geometries.every(validInputGeometry);
 }
 
+function canonicalTagsJson(tags: Record<string, string>) {
+  return JSON.stringify(Object.fromEntries(Object.entries(tags).sort(([left], [right]) => left.localeCompare(right))));
+}
+
 function sortedRoads(input: StreetPreparationInput["roads"]) {
   return [...input].sort((first, second) =>
     first.properties.osmId - second.properties.osmId
     || canonicalStreetGeometryKey(first.geometry).localeCompare(canonicalStreetGeometryKey(second.geometry))
-    || JSON.stringify(first.properties.tags).localeCompare(JSON.stringify(second.properties.tags))
+    || canonicalTagsJson(first.properties.tags).localeCompare(canonicalTagsJson(second.properties.tags))
   );
 }
 
-function preparedTask(input: {
-  campaignId: string;
-  areaId: string;
-  generation: string;
+function preparedCandidate(input: {
   osmId: number;
+  sourceKey: string;
+  fragmentKey: string;
   tags: Record<string, string>;
   geometry: LineStringGeometry;
-  timestamp: string;
-}) {
+}): StreetPreparationCandidate {
   return {
-    id: stableStreetTaskId({
-      campaignId: input.campaignId,
-      areaId: input.areaId,
-      osmId: input.osmId,
-      geometry: input.geometry,
-    }),
-    campaignId: input.campaignId,
-    areaId: input.areaId,
-    taskType: "street" as const,
+    sourceOsmWayId: input.osmId,
+    sourceKey: input.sourceKey,
+    fragmentKey: input.fragmentKey,
     label: roadLabel(input.tags),
     geometry: input.geometry,
-    source: taskSource(input.osmId),
-    areaPreparationGeneration: input.generation,
-    status: "open" as const,
-    completedAt: null,
-    createdAt: input.timestamp,
-    updatedAt: input.timestamp,
-  } satisfies DistributionTask;
+  };
 }
 
-export function prepareStreetsForArea(input: StreetPreparationInput): StreetPreparationResult {
+export async function prepareStreetsForArea(
+  input: StreetPreparationInput,
+): Promise<StreetPreparationResult> {
   const startedAt = Date.now();
-  const tasks: DistributionTask[] = [];
+  const candidates: StreetPreparationCandidate[] = [];
   const seenInputRoads = new Set<string>();
   const seenFragments = new Set<string>();
   let eligibleRoadCount = 0;
   let rejectedRoadCount = 0;
   let invalidRoadCount = 0;
+  let topologyFailureCount = 0;
   let duplicateFragmentCount = 0;
 
   for (const road of sortedRoads(input.roads)) {
@@ -119,12 +104,15 @@ export function prepareStreetsForArea(input: StreetPreparationInput): StreetPrep
       invalidRoadCount += 1;
       continue;
     }
-    const inputKey = String(road.properties.osmId) + "|" + canonicalStreetGeometryKey(road.geometry);
-    if (seenInputRoads.has(inputKey)) {
+    const sourceKey = preparedStreetSourceKey({
+      sourceOsmWayId: road.properties.osmId,
+      geometry: road.geometry,
+    });
+    if (seenInputRoads.has(sourceKey)) {
       duplicateFragmentCount += 1;
       continue;
     }
-    seenInputRoads.add(inputKey);
+    seenInputRoads.add(sourceKey);
 
     if (!validInputGeometry(road.geometry)) {
       invalidRoadCount += 1;
@@ -137,42 +125,50 @@ export function prepareStreetsForArea(input: StreetPreparationInput): StreetPrep
     }
     eligibleRoadCount += 1;
 
-    const fragments = clipLineGeometryToPolygon(road.geometry, input.area);
-    for (const geometry of fragments) {
+    const clipped = clipLineGeometryToPolygonDetailed(road.geometry, input.area);
+    if (clipped.failure === "topology") {
+      topologyFailureCount += 1;
+    } else if (clipped.failure !== null) {
+      invalidRoadCount += 1;
+    }
+
+    for (const geometry of clipped.fragments) {
       if (!validateLineStringVertices(geometry.coordinates).valid) {
         invalidRoadCount += 1;
         continue;
       }
-      const fragmentKey = String(road.properties.osmId) + "|" + canonicalStreetLineKey(geometry);
+      const fragmentKey = preparedStreetFragmentKey({
+        sourceOsmWayId: road.properties.osmId,
+        geometry,
+      });
       if (seenFragments.has(fragmentKey)) {
         duplicateFragmentCount += 1;
         continue;
       }
-      if (tasks.length >= input.maxRoadFragments) {
+      if (candidates.length >= input.maxRoadFragments) {
         throw new StreetPreparationLimitError();
       }
       seenFragments.add(fragmentKey);
-      tasks.push(preparedTask({
-        campaignId: input.campaignId,
-        areaId: input.areaId,
-        generation: input.generation,
+      candidates.push(preparedCandidate({
         osmId: road.properties.osmId,
+        sourceKey,
+        fragmentKey,
         tags: road.properties.tags,
         geometry,
-        timestamp: input.timestamp,
       }));
     }
   }
 
   return {
-    tasks,
+    candidates,
     diagnostics: {
       algorithmVersion: STREET_ENGINE_ALGORITHM_VERSION,
       inputRoadCount: input.roads.length,
       eligibleRoadCount,
       rejectedRoadCount,
       invalidRoadCount,
-      fragmentCount: tasks.length,
+      topologyFailureCount,
+      fragmentCount: candidates.length,
       duplicateFragmentCount,
       durationMs: Math.max(0, Date.now() - startedAt),
       source: {
@@ -184,6 +180,14 @@ export function prepareStreetsForArea(input: StreetPreparationInput): StreetPrep
         normalizedRoadCount: input.roads.length,
         normalizedBuildingCount: 0,
         packageBytes: 0,
+        roadRequestCount: 0,
+        buildingRequestCount: 0,
+        roadUpstreamBytes: 0,
+        buildingUpstreamBytes: 0,
+        roadParsedElementCount: 0,
+        buildingParsedElementCount: 0,
+        roadNormalizationRejectedCount: 0,
+        buildingNormalizationRejectedCount: 0,
       },
     },
   };
