@@ -164,7 +164,6 @@ export function prepareStreetsForArea(input: StreetPreparationInput): StreetPrep
     }
   }
 
-  tasks.sort((first, second) => first.id.localeCompare(second.id));
   return {
     tasks,
     diagnostics: {
