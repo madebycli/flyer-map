@@ -47,12 +47,16 @@ function tiledSuccessResponse() {
 }
 
 test("large Area preparation is tiled instead of inheriting the 3 km offline-package limit", async () => {
-  const queries = buildAreaPreparationOverpassQueries(largeArea);
-  assert.ok(queries.length > 1);
-  assert.ok(queries.length <= 16);
-  assert.ok(queries.every((query) => query.includes('way["highway"](')));
-  assert.ok(queries.every((query) => query.includes('way["building"](')));
-  assert.ok(queries.every((query) => !query.includes("around:")));
+  const roadQueries = buildAreaPreparationOverpassQueries(largeArea, "roads");
+  const buildingQueries = buildAreaPreparationOverpassQueries(largeArea, "buildings");
+  assert.ok(roadQueries.length > 1);
+  assert.equal(buildingQueries.length, roadQueries.length);
+  assert.ok(roadQueries.length <= 16);
+  assert.ok(roadQueries.every((query) => query.includes('way["highway"](')));
+  assert.ok(buildingQueries.every((query) => query.includes('way["building"](')));
+  assert.ok(roadQueries.every((query) => !query.includes('["building"]')));
+  assert.ok(buildingQueries.every((query) => !query.includes('["highway"]')));
+  assert.ok([...roadQueries, ...buildingQueries].every((query) => !query.includes("around:")));
 
   const calls: Array<{ url: string; query: string }> = [];
   const result = await fetchOsmFeaturesForArea({
@@ -66,7 +70,7 @@ test("large Area preparation is tiled instead of inheriting the 3 km offline-pac
     now: () => new Date("2026-09-02T00:31:00.000Z"),
   });
 
-  assert.equal(calls.length, queries.length);
+  assert.equal(calls.length, roadQueries.length + buildingQueries.length);
   assert.ok(calls.length > 1);
   assert.ok(calls.every((call) => call.url === "http://localhost/overpass"));
   assert.ok(result.request.radiusMeters > 3_000);
@@ -77,8 +81,12 @@ test("large Area preparation is tiled instead of inheriting the 3 km offline-pac
   assert.equal(result.sourceTimestamp, "2026-09-02T00:30:00.000Z");
   assert.equal(result.metrics.tileCount, queries.length);
   assert.equal(result.metrics.requestCount, queries.length);
-  assert.equal(result.metrics.maxConcurrentRequests, Math.min(3, queries.length));
-  assert.equal(result.metrics.parsedElementCount, queries.length * 2);
+  assert.equal(result.metrics.maxConcurrentRequests, Math.min(3, roadQueries.length));
+  assert.equal(result.metrics.parsedElementCount, calls.length * 2);
+  assert.equal(result.metrics.roadRequestCount, roadQueries.length);
+  assert.equal(result.metrics.buildingRequestCount, buildingQueries.length);
+  assert.equal(result.metrics.roadParsedElementCount, roadQueries.length * 2);
+  assert.equal(result.metrics.buildingParsedElementCount, buildingQueries.length * 2);
   assert.equal(result.metrics.normalizedRoadCount, 1);
   assert.equal(result.metrics.normalizedBuildingCount, 1);
   assert.ok(result.metrics.upstreamBytes > 0);
@@ -86,7 +94,8 @@ test("large Area preparation is tiled instead of inheriting the 3 km offline-pac
 });
 
 test("large Area preparation caps tile fetch concurrency at three", async () => {
-  const queries = buildAreaPreparationOverpassQueries(largeArea);
+  const roadQueries = buildAreaPreparationOverpassQueries(largeArea, "roads");
+  const buildingQueries = buildAreaPreparationOverpassQueries(largeArea, "buildings");
   let active = 0;
   let maxActive = 0;
   let calls = 0;
@@ -104,12 +113,12 @@ test("large Area preparation caps tile fetch concurrency at three", async () => 
     }) as typeof fetch,
   });
 
-  assert.equal(calls, queries.length);
-  assert.equal(maxActive, Math.min(3, queries.length));
+  assert.equal(calls, roadQueries.length + buildingQueries.length);
+  assert.equal(maxActive, Math.min(3, roadQueries.length));
 });
 
 test("large Area preparation enforces aggregate upstream bytes before starting later batches", async () => {
-  const queries = buildAreaPreparationOverpassQueries(largeArea);
+  const roadQueries = buildAreaPreparationOverpassQueries(largeArea, "roads");
   let calls = 0;
 
   await assert.rejects(
@@ -128,11 +137,11 @@ test("large Area preparation enforces aggregate upstream bytes before starting l
     (error: unknown) => error instanceof OsmFeaturesForAreaError && error.code === "too_large",
   );
 
-  assert.equal(calls, Math.min(3, queries.length));
+  assert.equal(calls, Math.min(3, roadQueries.length));
 });
 
 test("large Area preparation is all-or-nothing when one required tile fails", async () => {
-  const queries = buildAreaPreparationOverpassQueries(largeArea);
+  const roadQueries = buildAreaPreparationOverpassQueries(largeArea, "roads");
   let calls = 0;
 
   await assert.rejects(
@@ -148,5 +157,39 @@ test("large Area preparation is all-or-nothing when one required tile fails", as
     (error: unknown) => error instanceof OsmFeaturesForAreaError && error.code === "failed",
   );
 
-  assert.equal(calls, Math.min(3, queries.length));
+  assert.equal(calls, Math.min(3, roadQueries.length));
+});
+
+test("area source failures expose phase and reason without geometry data", async () => {
+  const cases = [
+    { status: 429, reason: "rate-limited" as const },
+    { status: 503, reason: "server-error" as const },
+  ];
+
+  for (const sourceCase of cases) {
+    await assert.rejects(
+      fetchOsmFeaturesForArea({
+        geometry: largeArea,
+        upstreamUrl: "http://localhost/overpass",
+        fetchImpl: async () => new Response("busy", { status: sourceCase.status }),
+      }),
+      (error: unknown) =>
+        error instanceof OsmFeaturesForAreaError
+        && error.phase === "roads"
+        && error.reason === sourceCase.reason,
+    );
+  }
+
+  await assert.rejects(
+    fetchOsmFeaturesForArea({
+      geometry: largeArea,
+      upstreamUrl: "http://localhost/overpass",
+      limits: { maxUpstreamBytes: 10 },
+      fetchImpl: async () => tiledSuccessResponse(),
+    }),
+    (error: unknown) =>
+      error instanceof OsmFeaturesForAreaError
+      && error.phase === "roads"
+      && error.reason === "response-too-large",
+  );
 });
