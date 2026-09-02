@@ -218,8 +218,6 @@ export async function handleRxdbPull(
       if (!document) throw new Error("invalid_collection_document");
       return document;
     });
-    // Once the visible page is exhausted, advance over foreign-team rows too;
-    // those rows are intentionally filtered and must not cause a hot retry loop.
     const last = result.results.length < batchSize
       ? Math.max(checkpoint.seq, highWater)
       : result.results.at(-1)?.seq ?? checkpoint.seq;
@@ -229,10 +227,6 @@ export async function handleRxdbPull(
   }
 }
 
-/**
- * A single lightweight Campaign-level high-water check used by the safety
- * timer.  It deliberately does not bootstrap any collection or expose data.
- */
 export async function handleRxdbCheckpoint(
   db: D1DatabaseLike,
   campaignId: string,
@@ -269,6 +263,15 @@ function currentDocument(
   if (!snapshot) return toDeletedRxdbDocument(fallback);
   const current = documentForCollection(collectionName, snapshot, id);
   return current ?? toDeletedRxdbDocument(fallback);
+}
+
+function comparableDocument(document: RxdbDocument) {
+  const { createdAt: _createdAt, updatedAt: _updatedAt, _deleted: _deleted, _rev: _rev, _meta: _meta, _attachments: _attachments, ...value } = document;
+  return value;
+}
+
+function sameBusinessDocument(left: RxdbDocument, right: RxdbDocument) {
+  return JSON.stringify(comparableDocument(left)) === JSON.stringify(comparableDocument(right));
 }
 
 function canReadDocument(access: AccessContext, collectionName: RxdbCollectionName, document: RxdbDocument, snapshot: CampaignSnapshot | null) {
@@ -336,9 +339,13 @@ export async function handleRxdbPush(
         body: JSON.stringify({ mutation: decision.mutation, fieldGroupId: access.groupId ?? null }),
       });
       const mutationResponse = await handleCampaignMutation(request, db, campaignId, access);
-      if (mutationResponse.ok) continue;
-      // Retryable server/schema failures must stay in RxDB's pending state.
-      // Only a bounded client/auth/domain rejection is resolved for this row.
+      if (mutationResponse.ok) {
+        const canonical = await loadCampaignSnapshot(db, campaignId);
+        const master = currentDocument(canonical, collectionName, next.id, next);
+        if (sameBusinessDocument(master, next)) continue;
+        conflicts.push(canReadDocument(access, collectionName, master, canonical) ? master : { ...next, _deleted: true });
+        continue;
+      }
       if (mutationResponse.status >= 500) {
         throw new Error(await responseErrorCode(mutationResponse));
       }
