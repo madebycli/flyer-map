@@ -45,6 +45,7 @@ import {
 import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
 import {
   createAreaPreparationPoller,
+  isAreaPreparationActionRequired,
   type AreaPreparationPoller,
 } from "./areaPreparation/preparationPolling";
 import { preparedSmartRoadCandidates } from "./domain/preparedSmartRoads";
@@ -1776,12 +1777,22 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
             <button className="icon-button" type="button" onClick={() => { setSelectedAreaId(null); setSelectedTaskId(null); setSheet(null); }} aria-label={t(language, "close")}>×</button>
           </div>
 
-          {canEditSelectedArea && (areaPreparation?.status === "pending" || areaPreparationRetrying) ? (
+          {canEditSelectedArea && areaPreparation && isAreaPreparationActionRequired(areaPreparation) ? (
+            <div className="area-preparation-status is-action-required" role="alert">
+              {t(language, "areaPreparationActionRequired")}
+            </div>
+          ) : null}
+          {canEditSelectedArea && !areaPreparationSchemaUnavailable && !(
+            areaPreparation && isAreaPreparationActionRequired(areaPreparation)
+          ) && (areaPreparation?.status === "pending" || areaPreparationRetrying) ? (
             <div className="area-preparation-status is-pending" role="status" aria-live="polite">
               {t(language, "areaPreparationPending")}
             </div>
           ) : null}
-          {canEditSelectedArea && areaPreparation?.status === "ready" ? (
+          {canEditSelectedArea &&
+          areaPreparation?.status === "ready" &&
+          areaPreparation.houseStatus !== "failed" &&
+          !isAreaPreparationActionRequired(areaPreparation) ? (
             <div className="area-preparation-status is-ready" role="status" aria-live="polite">
               {t(language, "areaPreparationReady", {
                 roads: areaPreparation.roadCount,
@@ -1794,7 +1805,24 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
               {t(language, "areaPreparationSchemaUnavailable")}
             </div>
           ) : null}
-          {canEditSelectedArea && !areaPreparationSchemaUnavailable && (areaPreparation?.status === "failed" || areaPreparationRequestFailed) ? (
+          {canEditSelectedArea &&
+          !areaPreparationSchemaUnavailable &&
+          areaPreparation?.streetStatus === "ready" &&
+          areaPreparation.houseStatus === "failed" &&
+          !isAreaPreparationActionRequired(areaPreparation) ? (
+            <div className="area-preparation-status is-failed" role="status">
+              <span>{t(language, "areaPreparationHouseFailed")}</span>
+              <button className="small-action" type="button" onClick={retryAreaPreparation} disabled={areaPreparationRetrying}>
+                {t(language, "areaPreparationHouseRetry")}
+              </button>
+            </div>
+          ) : null}
+          {canEditSelectedArea &&
+          !areaPreparationSchemaUnavailable &&
+          !(
+            areaPreparation && isAreaPreparationActionRequired(areaPreparation)
+          ) &&
+          (areaPreparation?.streetStatus === "failed" || areaPreparationRequestFailed) ? (
             <div className="area-preparation-status is-failed" role="status">
               <span>{t(language, "areaPreparationFailed")}</span>
               <button className="small-action" type="button" onClick={retryAreaPreparation} disabled={areaPreparationRetrying}>

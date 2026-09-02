@@ -4,8 +4,10 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import {
   areaHasStartedAutomaticWork,
+  beginAreaTaskPreparation,
   getAreaTaskPreparationState,
   prepareAreaTasks,
+  runAreaTaskPreparation,
 } from "../worker/areaTaskPreparation.ts";
 import { handleAreaTaskPreparationApi } from "../worker/areaTaskPreparationApi.ts";
 import { handleCampaignMutation } from "../worker/mutationHandler.ts";
@@ -55,6 +57,7 @@ class SqliteD1 implements D1DatabaseLike {
       "0004_m6_task_source_provenance.sql",
       "0005_m6_house_tasks.sql",
       "0014_auto_area_task_preparation.sql",
+      "0015_area_task_preparation_split.sql",
     ]) {
       this.sqlite.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
     }
@@ -161,13 +164,28 @@ function options(counter = { value: 0 }) {
   };
 }
 
-test("prepared Area publishes real tasks atomically, keeps manual work, and bumps revision once", async () => {
+function overpassPhase(init: RequestInit | undefined) {
+  const query = new URLSearchParams(String(init?.body ?? "")).get("data") ?? "";
+  return query.includes("[\"building\"]") ? "house" : "street";
+}
+
+test("prepared Area publishes independent Street and House phases, keeping manual work", async () => {
   const db = new SqliteD1();
   seed(db);
-
-  const result = await prepareAreaTasks(db, campaignId, areaId, options());
+  let fetchCount = 0;
+  const preparationOptions = {
+    ...options(),
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return osmResponse();
+    },
+  };
+  const started = await beginAreaTaskPreparation(db, campaignId, areaId, preparationOptions);
+  assert.equal(started.outcome, "run");
+  if (started.outcome !== "run") throw new Error("Area preparation claim did not start");
+  assert.deepEqual(started.run.phases, ["street", "house"]);
+  const result = await runAreaTaskPreparation(db, started.run, preparationOptions);
   assert.equal(result.outcome, "ready");
-  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 4);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE campaign_id = ?").get(campaignId)?.count, 2);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM house_tasks WHERE campaign_id = ?").get(campaignId)?.count, 1);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE id = 'task_manual'").get()?.count, 1);
@@ -189,34 +207,151 @@ test("prepared Area publishes real tasks atomically, keeps manual work, and bump
   );
   const state = await getAreaTaskPreparationState(db, campaignId, areaId);
   assert.deepEqual(
-    { status: state?.status, roadCount: state?.roadCount, houseCount: state?.houseCount, sourceTimestamp: state?.sourceTimestamp },
-    { status: "ready", roadCount: 1, houseCount: 1, sourceTimestamp: time },
+    {
+      status: state?.status,
+      streetStatus: state?.streetStatus,
+      houseStatus: state?.houseStatus,
+      roadCount: state?.roadCount,
+      houseCount: state?.houseCount,
+      sourceTimestamp: state?.sourceTimestamp,
+    },
+    {
+      status: "ready",
+      streetStatus: "ready",
+      houseStatus: "ready",
+      roadCount: 1,
+      houseCount: 1,
+      sourceTimestamp: time,
+    },
   );
+  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 5);
+  assert.equal(fetchCount, 2);
 
   const repeated = await prepareAreaTasks(db, campaignId, areaId, options());
   assert.deepEqual(repeated, { outcome: "no-op", state: "ready" });
-  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 4);
+  assert.equal(fetchCount, 2);
+  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 5);
 });
 
-test("feature-cap failure records failed state and publishes no partial automatic rows", async () => {
+test("Street failure does not hide successful House preparation, and Street retry preserves Houses", async () => {
   const db = new SqliteD1();
   seed(db);
-  const result = await prepareAreaTasks(db, campaignId, areaId, {
+  const first = await prepareAreaTasks(db, campaignId, areaId, {
     ...options(),
     maxRoadFragments: 0,
   });
-  assert.deepEqual(result, { outcome: "failed", code: "area_preparation_too_many_features" });
-  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 3);
-  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE campaign_id = ?").get(campaignId)?.count, 1);
-  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM house_tasks WHERE campaign_id = ?").get(campaignId)?.count, 0);
-  const state = await getAreaTaskPreparationState(db, campaignId, areaId);
-  assert.equal(state?.status, "failed");
-  assert.equal(state?.lastErrorCode, "area_preparation_too_many_features");
-
-  const retry = await prepareAreaTasks(db, campaignId, areaId, options());
-  assert.equal(retry.outcome, "ready");
+  assert.deepEqual(first, { outcome: "failed", code: "area_preparation_too_many_features" });
   assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 4);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE campaign_id = ?").get(campaignId)?.count, 1);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM house_tasks WHERE campaign_id = ?").get(campaignId)?.count, 1);
+  const failedState = await getAreaTaskPreparationState(db, campaignId, areaId);
+  assert.deepEqual(
+    {
+      status: failedState?.status,
+      streetStatus: failedState?.streetStatus,
+      houseStatus: failedState?.houseStatus,
+      streetErrorCode: failedState?.streetErrorCode,
+      houseErrorCode: failedState?.houseErrorCode,
+    },
+    {
+      status: "failed",
+      streetStatus: "failed",
+      houseStatus: "ready",
+      streetErrorCode: "area_preparation_too_many_features",
+      houseErrorCode: null,
+    },
+  );
+  const houseBefore = db.sqlite.prepare(
+    "SELECT id, geometry_json, area_preparation_generation FROM house_tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId);
+  assert.ok(houseBefore);
+
+  const retryPhases: string[] = [];
+  const retry = await prepareAreaTasks(db, campaignId, areaId, {
+    ...options(),
+    fetchImpl: async (_input, init) => {
+      retryPhases.push(overpassPhase(init));
+      return osmResponse();
+    },
+  });
+  assert.equal(retry.outcome, "ready");
+  assert.deepEqual(retryPhases, ["street"]);
+  const houseAfter = db.sqlite.prepare(
+    "SELECT id, geometry_json, area_preparation_generation FROM house_tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId);
+  assert.deepEqual(houseAfter, houseBefore);
+  const readyState = await getAreaTaskPreparationState(db, campaignId, areaId);
+  assert.equal(readyState?.streetStatus, "ready");
+  assert.equal(readyState?.houseStatus, "ready");
+  assert.equal(readyState?.status, "ready");
 });
+
+test("House failure remains visible while ready Streets stay canonical, and House retry is isolated", async () => {
+  const db = new SqliteD1();
+  seed(db);
+  const firstPhases: string[] = [];
+  const first = await prepareAreaTasks(db, campaignId, areaId, {
+    ...options(),
+    fetchImpl: async (_input, init) => {
+      const phase = overpassPhase(init);
+      firstPhases.push(phase);
+      return phase === "house"
+        ? new Response("upstream unavailable", { status: 504 })
+        : osmResponse();
+    },
+  });
+  assert.equal(first.outcome, "ready");
+  assert.deepEqual(firstPhases, ["street", "house"]);
+  const failedState = await getAreaTaskPreparationState(db, campaignId, areaId);
+  assert.deepEqual(
+    {
+      status: failedState?.status,
+      streetStatus: failedState?.streetStatus,
+      houseStatus: failedState?.houseStatus,
+      roadCount: failedState?.roadCount,
+      houseCount: failedState?.houseCount,
+      houseErrorCode: failedState?.houseErrorCode,
+    },
+    {
+      status: "ready",
+      streetStatus: "ready",
+      houseStatus: "failed",
+      roadCount: 1,
+      houseCount: 0,
+      houseErrorCode: "area_preparation_osm_server_error",
+    },
+  );
+
+  const snapshotBefore = await loadCampaignSnapshot(db, campaignId);
+  const streetBefore = db.sqlite.prepare(
+    "SELECT id, geometry_json, area_preparation_generation FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId);
+  assert.ok(streetBefore);
+  assert.equal(snapshotBefore?.houseTasks?.length ?? 0, 0);
+
+  const retryPhases: string[] = [];
+  const retry = await prepareAreaTasks(db, campaignId, areaId, {
+    ...options(),
+    fetchImpl: async (_input, init) => {
+      retryPhases.push(overpassPhase(init));
+      return osmResponse();
+    },
+  });
+  assert.equal(retry.outcome, "ready");
+  assert.deepEqual(retryPhases, ["house"]);
+  const streetAfter = db.sqlite.prepare(
+    "SELECT id, geometry_json, area_preparation_generation FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId);
+  assert.deepEqual(streetAfter, streetBefore);
+  const snapshotAfter = await loadCampaignSnapshot(db, campaignId);
+  assert.equal(snapshotAfter?.houseTasks?.length ?? 0, 1);
+  const readyState = await getAreaTaskPreparationState(db, campaignId, areaId);
+  assert.equal(readyState?.streetStatus, "ready");
+  assert.equal(readyState?.houseStatus, "ready");
+  assert.equal(readyState?.status, "ready");
+});
+
+
 
 test("fresh pending preparation deduplicates before a second upstream request", async () => {
   const db = new SqliteD1();
@@ -230,8 +365,11 @@ test("fresh pending preparation deduplicates before a second upstream request", 
     ...options(),
     fetchImpl: async () => {
       fetchCount += 1;
-      startedResolve?.();
-      return response;
+      if (fetchCount === 1) {
+        startedResolve?.();
+        return response;
+      }
+      return osmResponse();
     },
   });
   await started;
@@ -249,11 +387,16 @@ test("geometry changed during OSM fetch makes the old generation stale without a
   let fetchStartedResolve: (() => void) | null = null;
   const fetchStarted = new Promise<void>((resolve) => { fetchStartedResolve = resolve; });
   const waitForResponse = new Promise<Response>((resolve) => { release = () => resolve(osmResponse()); });
+  let firstFetch = true;
   const running = prepareAreaTasks(db, campaignId, areaId, {
     ...options(),
     fetchImpl: async () => {
-      fetchStartedResolve?.();
-      return waitForResponse;
+      if (firstFetch) {
+        firstFetch = false;
+        fetchStartedResolve?.();
+        return waitForResponse;
+      }
+      return osmResponse();
     },
   });
   await fetchStarted;
@@ -283,13 +426,30 @@ test("recovery API scopes reads and queues only authorized server-side preparati
   const pendingResponse = new Promise<Response>((resolve) => {
     releasePending = () => resolve(osmResponse());
   });
-  const pendingOptions = { ...options(), fetchImpl: async () => pendingResponse };
+  let pendingFetchCount = 0;
+  const pendingOptions = {
+    ...options(),
+    fetchImpl: async () => {
+      pendingFetchCount += 1;
+      return pendingFetchCount === 1 ? pendingResponse : osmResponse();
+    },
+  };
 
   const get = await handleAreaTaskPreparationApi(
     new Request("https://example.test/api/campaigns/x/areas/x/preparation"), db, route, viewer, context,
   );
   assert.deepEqual(await get.json(), {
-    status: "missing", roadCount: 0, houseCount: 0, sourceTimestamp: null, errorCode: null, updatedAt: null,
+    status: "missing",
+    streetStatus: "missing",
+    houseStatus: "missing",
+    roadCount: 0,
+    houseCount: 0,
+    sourceTimestamp: null,
+    errorCode: null,
+    streetErrorCode: null,
+    houseErrorCode: null,
+    actionRequired: false,
+    updatedAt: null,
   });
   assert.equal((await handleAreaTaskPreparationApi(new Request("https://example.test", { method: "POST" }), db, route, wrongEditor, context)).status, 403);
   assert.equal((await handleAreaTaskPreparationApi(new Request("https://example.test", { method: "POST" }), db, route, viewer, context)).status, 403);
@@ -351,7 +511,7 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   assert.equal(created.status, 200);
   assert.equal(queued.length, 1);
   await Promise.all(queued);
-  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 5);
+  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 6);
 
   const replay = await handleCampaignMutation(request(create), db, campaignId, access, context, options());
   assert.equal(replay.status, 200);
@@ -360,7 +520,7 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   const update = {
     id: "mutation_area-update-auto",
     campaignId,
-    baseRevision: 5,
+    baseRevision: 6,
     createdAt: "2026-08-31T15:03:00.000Z",
     type: "area.update-geometry" as const,
     payload: {
@@ -378,7 +538,7 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   assert.equal(updated.status, 200);
   assert.equal(queued.length, 2);
   await Promise.all(queued);
-  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 7);
+  assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 9);
 
   const alternateTeamId = "team_auto-alternate";
   db.sqlite.prepare(
@@ -387,7 +547,7 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   const rename = {
     id: "mutation_area-rename-no-auto",
     campaignId,
-    baseRevision: 7,
+    baseRevision: 9,
     createdAt: "2026-08-31T15:04:00.000Z",
     type: "area.rename" as const,
     payload: { areaId: "area_created", name: "Umbenannt", expectedUpdatedAt: update.createdAt },
@@ -397,7 +557,7 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   const setTeam = {
     id: "mutation_area-team-no-auto",
     campaignId,
-    baseRevision: 8,
+    baseRevision: 10,
     createdAt: "2026-08-31T15:05:00.000Z",
     type: "area.set-team" as const,
     payload: {
@@ -412,7 +572,7 @@ test("only successful non-replayed Area create and geometry mutations schedule p
   const conflict = await handleCampaignMutation(request({
     ...update,
     id: "mutation_area-conflict-auto",
-    baseRevision: 9,
+    baseRevision: 11,
     payload: { ...update.payload, expectedUpdatedAt: "2026-01-01T00:00:00.000Z" },
   }), db, campaignId, access, context, options());
   assert.equal(conflict.status, 409);
@@ -438,7 +598,7 @@ test("non-open automatic tasks block Area geometry edits while open work can be 
     body: JSON.stringify({ mutation: {
       id: "mutation_started-work",
       campaignId,
-      baseRevision: 4,
+      baseRevision: 5,
       createdAt: "2026-08-31T15:04:00.000Z",
       type: "area.update-geometry",
       payload: {
@@ -469,7 +629,7 @@ test("real mutation endpoint returns the exact automatic-task delete conflict", 
     body: JSON.stringify({ mutation: {
       id: "mutation_delete-auto-runtime",
       campaignId,
-      baseRevision: 4,
+      baseRevision: 5,
       createdAt: "2026-08-31T15:05:00.000Z",
       type: "task.delete",
       payload: { taskId: automatic.id, expectedUpdatedAt: automatic.updated_at },
@@ -477,4 +637,70 @@ test("real mutation endpoint returns the exact automatic-task delete conflict", 
   }), db, campaignId, access);
   assert.equal(response.status, 409);
   assert.equal((await response.json() as { error: { code: string } }).error.code, "auto_prepared_task_delete_forbidden");
+});
+
+
+test("reprepare updates generation without changing stable identity", async () => {
+  const db = new SqliteD1();
+  seed(db);
+  const generationCounter = { value: 0 };
+  await prepareAreaTasks(db, campaignId, areaId, options(generationCounter));
+
+  const automatic = db.sqlite.prepare(
+    "SELECT id, area_preparation_generation, created_at FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId) as { id: string; area_preparation_generation: string; created_at: string };
+  db.sqlite.prepare(
+    "UPDATE tasks SET label = ? WHERE id = ?",
+  ).run("Vom Team geprüft", automatic.id);
+  db.sqlite.prepare(
+    "UPDATE area_task_preparations SET status = 'failed', geometry_hash = ?, last_error_code = ? WHERE campaign_id = ? AND area_id = ?",
+  ).run("old-fingerprint", "area_preparation_osm_failed", campaignId, areaId);
+
+  const reprepareTime = "2026-08-31T15:01:00.000Z";
+  const result = await prepareAreaTasks(db, campaignId, areaId, {
+    ...options(generationCounter),
+    now: () => new Date(reprepareTime),
+  });
+  assert.equal(result.outcome, "ready");
+  const after = db.sqlite.prepare(
+    "SELECT id, label, status, area_preparation_generation, created_at, updated_at FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId) as {
+    id: string;
+    label: string;
+    status: string;
+    area_preparation_generation: string;
+    created_at: string;
+    updated_at: string;
+  };
+  assert.equal(after.id, automatic.id);
+  assert.equal(after.label, "Vom Team geprüft");
+  assert.equal(after.status, "open");
+  assert.equal(after.created_at, automatic.created_at);
+  assert.notEqual(after.area_preparation_generation, automatic.area_preparation_generation);
+  assert.equal(after.updated_at, reprepareTime);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE id = 'task_manual'").get()?.count, 1);
+});
+
+test("worked automatic Streets expose action-required semantics without a retry loop", async () => {
+  const db = new SqliteD1();
+  seed(db);
+  await prepareAreaTasks(db, campaignId, areaId, options());
+  const automatic = db.sqlite.prepare(
+    "SELECT id FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId) as { id: string };
+  db.sqlite.prepare("UPDATE tasks SET status = 'later' WHERE id = ?").run(automatic.id);
+  db.sqlite.prepare(
+    "UPDATE area_task_preparations SET status = 'failed', geometry_hash = ?, last_error_code = ? WHERE campaign_id = ? AND area_id = ?",
+  ).run("old-fingerprint", "area_preparation_osm_failed", campaignId, areaId);
+
+  let fetchCount = 0;
+  const result = await prepareAreaTasks(db, campaignId, areaId, {
+    ...options(),
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return osmResponse();
+    },
+  });
+  assert.deepEqual(result, { outcome: "failed", code: "area_preparation_work_started" });
+  assert.equal(fetchCount, 0);
 });

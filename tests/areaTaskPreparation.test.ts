@@ -7,11 +7,8 @@ import {
   type LineStringGeometry,
   type PolygonGeometry,
 } from "../src/domain/campaign.ts";
-import {
-  clipLineStringToPolygon,
-  pointInOrOnPolygon,
-  polygonRepresentativePoint,
-} from "../src/domain/areaTaskPreparation.ts";
+import { pointInOrOnPolygon, polygonRepresentativePoint } from "../src/domain/areaTaskPreparation.ts";
+import { clipLineStringToPolygon } from "../worker/streetPreparation/clipRoadsToArea.ts";
 import { applyCampaignMutation, CampaignMutationConflictError } from "../src/domain/mutations.ts";
 import {
   areaGeometryHash,
@@ -93,9 +90,9 @@ test("representative building point is deterministic and supports boundary owner
   assert.equal(pointInOrOnPolygon([0, 5], square), true);
 });
 
-test("preparation converts clipped OSM ways and owned buildings into normal tasks", () => {
+test("preparation converts clipped OSM ways and owned buildings into normal tasks", async () => {
   let counter = 0;
-  const prepared = prepareTasksForArea({
+  const prepared = await prepareTasksForArea({
     campaignId: "campaign_auto",
     area,
     generation: "123e4567-e89b-42d3-a456-426614174000",
@@ -149,9 +146,9 @@ test("preparation converts clipped OSM ways and owned buildings into normal task
   assert.equal(prepared.houseTasks[0].areaPreparationGeneration, "123e4567-e89b-42d3-a456-426614174000");
 });
 
-test("one OSM way split by a concave Area creates separate app-owned task fragments", () => {
+test("one OSM way split by a concave Area creates separate app-owned task fragments", async () => {
   let counter = 0;
-  const prepared = prepareTasksForArea({
+  const prepared = await prepareTasksForArea({
     campaignId: "campaign_auto",
     area: { ...area, geometry: concave },
     generation: "123e4567-e89b-42d3-a456-426614174000",
@@ -175,8 +172,8 @@ test("one OSM way split by a concave Area creates separate app-owned task fragme
   ]);
 });
 
-test("feature caps and bounded json chunks fail before a partial publish", () => {
-  assert.throws(() =>
+test("feature caps and bounded json chunks fail before a partial publish", async () => {
+  await assert.rejects(
     prepareTasksForArea({
       campaignId: "campaign_auto",
       area,
@@ -185,8 +182,8 @@ test("feature caps and bounded json chunks fail before a partial publish", () =>
       randomUUID: () => "00000000-0000-4000-8000-000000000001",
       maxRoadFragments: 1,
       roads: [
-        { properties: { osmId: 1, tags: {} }, geometry: line([[1, 1], [2, 1]]) },
-        { properties: { osmId: 2, tags: {} }, geometry: line([[3, 1], [4, 1]]) },
+        { properties: { osmId: 1, tags: { highway: "residential" } }, geometry: line([[1, 1], [2, 1]]) },
+        { properties: { osmId: 2, tags: { highway: "residential" } }, geometry: line([[3, 1], [4, 1]]) },
       ],
       buildings: [],
     }),
@@ -202,7 +199,7 @@ test("canonical geometry hash is independent from object key order", async () =>
   assert.equal(await areaGeometryHash(square), await areaGeometryHash(reordered));
 });
 
-test("server-side area fetch makes one bounded roads and buildings request", async () => {
+test("server-side area fetch isolates bounded roads and buildings requests", async () => {
   const requests: RequestInit[] = [];
   const boundedArea = polygon([
     [13.7, 51.0],
@@ -233,14 +230,16 @@ test("server-side area fetch makes one bounded roads and buildings request", asy
       }), { headers: { "content-type": "application/json" } });
     },
   });
-  assert.equal(requests.length, 1);
-  assert.equal(
-    new Headers(requests[0].headers).get("content-type"),
-    "application/x-www-form-urlencoded",
+  assert.equal(requests.length, 2);
+  assert.ok(requests.every((request) =>
+    new Headers(request.headers).get("content-type") === "application/x-www-form-urlencoded"
+  ));
+  const queries = requests.map((request) =>
+    String(new URLSearchParams(String(request.body)).get("data"))
   );
-  const query = String(new URLSearchParams(String(requests[0].body)).get("data"));
-  assert.match(query, /\["highway"\]/u);
-  assert.match(query, /\["building"\]/u);
+  assert.ok(queries.some((query) => query.includes('["highway"]')));
+  assert.ok(queries.some((query) => query.includes('["building"]')));
+  assert.ok(queries.every((query) => query.includes("way[")));
   assert.equal(result.roads.length, 1);
   assert.equal(result.buildings.length, 1);
 });

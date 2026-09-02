@@ -25,3 +25,18 @@ test("Area Sheet stays compact and keeps preparation, Smart Street, manual fallb
   );
   assert.doesNotMatch(app, /addSmartHouse|smartMapRequestRef/u);
 });
+
+test("work-started preparation is visible without a retry control", async () => {
+  const [app, i18n, polling] = await Promise.all([
+    readFile("src/App.tsx", "utf8"),
+    readFile("src/i18n.ts", "utf8"),
+    readFile("src/areaPreparation/preparationPolling.ts", "utf8"),
+  ]);
+  const actionRequiredStart = app.indexOf('className="area-preparation-status is-action-required"');
+  const actionRequiredBlock = app.slice(actionRequiredStart, app.indexOf("</div>", actionRequiredStart));
+  assert.match(actionRequiredBlock, /areaPreparationActionRequired/u);
+  assert.doesNotMatch(actionRequiredBlock, /areaPreparationRetry|retryAreaPreparation/u);
+  assert.match(i18n, /areaPreparationActionRequired/u);
+  assert.match(polling, /isAreaPreparationActionRequired/u);
+  assert.match(polling, /actionRequired/u);
+});

@@ -232,6 +232,20 @@ nodes:
     topics: [automatic-area-preparation, generated-tasks, osm, preparation-generation, recovery, migration-0014]
     load_when: [server Area preparation, automatic Street Tasks, automatic House Tasks, preparation recovery, migration 0014]
 
+  - id: adr-established-street-engine
+    path: docs/decisions/ADR-0026-established-street-preparation-engine.md
+    type: decision
+    status: accepted
+    topics: [street-engine, automatic-area-preparation, jsts, turf, clipping, eligibility, stable-task-id, reconcile]
+    load_when: [established Street Engine, exact street clipping, prepared street identity, Smart Street snap/slice]
+
+  - id: sync-requirements-street-engine
+    path: docs/SYNC_REQUIREMENTS_FOR_STREET_ENGINE.md
+    type: contract
+    status: required
+    topics: [street-engine, rxdb, d1-feed, reconcile, atomicity, tombstone, worked-conflict]
+    load_when: [Street Engine sync integration, RxDB prepared street feed, prepared street ownership]
+ 
   - id: adr-m5-no-legacy-snapshot-writes
     path: docs/decisions/ADR-0022-no-legacy-snapshot-writes.md
     type: decision
@@ -337,6 +351,13 @@ nodes:
     topics: [automatic-area-preparation, area-sheet, preparation-status, polling, retry, completed-color, offline-map, smart-ui-removal, m5]
     load_when: [normal automatic Area Sheet, preparation polling, preparation retry, completed task color, browser Smart UI removal, offline download UI removal]
 
+  - id: plan-established-street-engine
+    path: docs/plans/completed/029-established-street-preparation-engine.md
+    type: plan
+    status: active
+    topics: [street-engine, jsts, turf, clipping, eligibility, stable-task-id, reconcile, smart-street, sync-boundary]
+    load_when: [Street Engine implementation, prepared street generation, exact clipping bakeoff, stable street reprepare]
+
   - id: plan-collection-pickup-persistence
     path: docs/plans/active/021-collection-pickup-persistence.md
     type: plan
@@ -371,6 +392,27 @@ nodes:
     status: current
     topics: [smart-streets, prepared-osm, maplibre, candidate-selection, route-ambiguity, task-persistence, m5-sync]
     load_when: [Smart Street normal product flow, candidate map interaction, Street Task creation from OSM candidates]
+
+  - id: street-preparation-engine
+    path: worker/streetPreparation/engine.ts
+    type: code
+    status: current
+    topics: [street-engine, automatic-area-preparation, jsts, turf, clipping, eligibility, stable-task-id, diagnostics]
+    load_when: [Street Engine runtime, prepared street generation, eligibility policy, street diagnostics]
+
+  - id: street-preparation-geometry
+    path: worker/streetPreparation/clipRoadsToArea.ts
+    type: code
+    status: current
+    topics: [street-engine, jsts, exact-clipping, polygon-boundary, multiline, geometry-collection]
+    load_when: [exact street clipping, concave area fragments, geometry bakeoff]
+
+  - id: street-preparation-reconcile
+    path: worker/streetPreparation/reconcilePreparedStreetTasks.ts
+    type: code
+    status: current
+    topics: [street-engine, stable-task-id, sha256, reprepare, user-owned-fields, updates, worked-conflict, action-required, tombstone]
+    load_when: [prepared street reprepare, automatic task reconciliation, manual task preservation]
 
   - id: smart-house-runtime
     path: src/App.tsx
@@ -510,6 +552,24 @@ edges:
   - { from: plan-auto-area-ui-server-preparation, to: map, relation: reuses_saved_renderer }
   - { from: plan-auto-area-ui-server-preparation, to: offline-sync, relation: preserves_m5_boundary }
   - { from: plan-auto-area-ui-server-preparation, to: adr-server-prepared-automatic-area-work, relation: governed_by }
+  - { from: plan-established-street-engine, to: plan-feature-complete-platform, relation: extends_prepared_area_work }
+  - { from: plan-established-street-engine, to: adr-established-street-engine, relation: implements_decision }
+  - { from: plan-established-street-engine, to: adr-server-prepared-automatic-area-work, relation: refines }
+  - { from: plan-established-street-engine, to: adr-smart-task-identity, relation: constrained_by }
+  - { from: plan-established-street-engine, to: plan-auto-area-task-preparation, relation: builds_on }
+  - { from: plan-established-street-engine, to: plan-smart-street-runtime, relation: refines_prepared_candidates }
+  - { from: plan-established-street-engine, to: street-preparation-engine, relation: implements }
+  - { from: plan-established-street-engine, to: street-preparation-geometry, relation: implements }
+  - { from: plan-established-street-engine, to: street-preparation-reconcile, relation: implements }
+  - { from: plan-established-street-engine, to: sync-requirements-street-engine, relation: hands_off }
+  - { from: plan-established-street-engine, to: quality, relation: validated_by }
+  - { from: adr-established-street-engine, to: street-preparation-engine, relation: governs }
+  - { from: adr-established-street-engine, to: street-preparation-geometry, relation: governs }
+  - { from: adr-established-street-engine, to: street-preparation-reconcile, relation: governs }
+  - { from: sync-requirements-street-engine, to: offline-sync, relation: constrains_future_integration }
+  - { from: street-preparation-engine, to: street-preparation-geometry, relation: uses }
+  - { from: street-preparation-engine, to: street-preparation-reconcile, relation: uses }
+  - { from: street-preparation-engine, to: smart-street-runtime, relation: publishes_candidates_for }
   - { from: plan-auto-area-ui-server-preparation, to: quality, relation: validated_by }
   - { from: plan-collection-pickup-persistence, to: adr-collection-access-areas-runs, relation: governed_by }
   - { from: plan-collection-pickup-persistence, to: plan-feature-complete-platform, relation: refines_next_milestone }

@@ -76,6 +76,9 @@ Current v1 stack:
 - normalized versioned JSON/GeoJSON package shared by Worker/client domain types;
 - roads and building footprints with reviewed OSM tag allowlist and preserved way ids;
 - hard radius, timeout and response/package limits;
+- JSTS `2.12.1` for server-side LineString/Polygon topology;
+- modular Turf `7.4.0` packages for boundary checks, snapping and A/B slicing;
+- deterministic prepared-street IDs and guarded delta reconciliation;
 - browser IndexedDB package lifecycle in the next slice.
 
 No client-controlled Overpass query text is accepted. Do not bulk-cache OpenFreeMap or OpenStreetMap Foundation raster/vector tile services.
@@ -91,6 +94,11 @@ Planned statistics/admin features should prefer server/domain data and small foc
 ## Dependency policy
 
 Add a dependency only when it solves a demonstrated problem more safely/cheaply than local code.
+
+The established Street Engine is the explicit exception for geometry primitives that are
+safety-critical at the server boundary: `jsts@2.12.1` handles exact topology and pinned
+modular Turf `7.4.0` handles client snapping/slicing and boundary predicates. The package
+and license review is recorded in `docs/THIRD_PARTY_STREET_ENGINE.md`.
 
 Avoid:
 - heavy component suites;

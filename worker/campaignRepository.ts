@@ -137,7 +137,7 @@ export async function hasHouseTasksTable(db: D1DatabaseLike) {
   return result.results.some((column) => column.name === "id");
 }
 
-/** True only after prepared migration 0014 has been applied as a complete unit. */
+/** True only after prepared migrations 0014 and 0015 have been applied as a complete unit. */
 export async function hasAreaTaskPreparationSchema(db: D1DatabaseLike) {
   const [preparations, tasks, houses] = await Promise.all([
     db.prepare("PRAGMA table_info(area_task_preparations)").all<{ name: string }>(),
@@ -160,6 +160,18 @@ export async function hasAreaTaskPreparationSchema(db: D1DatabaseLike) {
       "failed_at",
       "last_error_code",
       "updated_at",
+      "street_status",
+      "house_status",
+      "street_source_timestamp",
+      "house_source_timestamp",
+      "street_started_at",
+      "house_started_at",
+      "street_ready_at",
+      "house_ready_at",
+      "street_failed_at",
+      "house_failed_at",
+      "street_error_code",
+      "house_error_code",
     ].every((column) => preparationColumns.has(column)) &&
     tasks.results.some((column) => column.name === "area_preparation_generation") &&
     houses.results.some((column) => column.name === "area_preparation_generation")

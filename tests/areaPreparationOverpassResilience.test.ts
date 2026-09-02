@@ -53,7 +53,7 @@ test("Area preparation query uses a narrow buffered BBox instead of the offline 
   assert.doesNotMatch(query, /around:/u);
 });
 
-test("custom Area Overpass upstream remains single-attempt, identified and receives the BBox query", async () => {
+test("custom Area Overpass upstream is reused for isolated road and building phases", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const result = await fetchOsmFeaturesForArea({
     geometry: area,
@@ -64,12 +64,16 @@ test("custom Area Overpass upstream remains single-attempt, identified and recei
     },
   });
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "http://localhost/overpass");
-  const headers = new Headers(calls[0].init?.headers);
-  assert.match(headers.get("user-agent") ?? "", /^flyer-map\/1\.0/u);
-  const query = String(new URLSearchParams(String(calls[0].init?.body)).get("data"));
-  assert.doesNotMatch(query, /around:/u);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((call) => call.url === "http://localhost/overpass"));
+  assert.ok(calls.every((call) => {
+    const headers = new Headers(call.init?.headers);
+    return (headers.get("user-agent") ?? "").startsWith("flyer-map/1.0");
+  }));
+  const queries = calls.map((call) => String(new URLSearchParams(String(call.init?.body)).get("data")));
+  assert.ok(queries.some((query) => query.includes('way["highway"]')));
+  assert.ok(queries.some((query) => query.includes('way["building"]')));
+  assert.ok(queries.every((query) => !query.includes("around:")));
   assert.equal(result.roads.length, 1);
   assert.equal(result.buildings.length, 1);
 });
@@ -88,6 +92,7 @@ test("default Area preparation prefers private.coffee and fails over once after 
   assert.deepEqual(urls, [
     "https://overpass.private.coffee/api/interpreter",
     "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
   ]);
   assert.equal(result.roads.length, 1);
   assert.equal(result.buildings.length, 1);
