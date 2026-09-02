@@ -2,8 +2,8 @@
 id: architecture-data
 type: architecture
 status: accepted
-last_updated: 2026-08-26
-related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009, ADR-0011, ADR-0013]
+last_updated: 2026-09-01
+related: [architecture-security, architecture-offline-sync, product-roadmap, ADR-0009, ADR-0011, ADR-0013, ADR-0021, ADR-0022]
 source_of_truth_for: [domain-data-model, d1-baseline]
 ---
 
@@ -24,7 +24,7 @@ Browser and Worker use Campaign snapshot schema v3:
 
 D1 is the persisted shared source of truth. localStorage remains startup/last-known cache and conflict safety copy. Existing older local snapshots are migrated in-browser rather than deleted.
 
-M5 keeps the snapshot model for reads/UI while changing **new ordinary write delivery** from coarse snapshot replacement to explicit queued mutations.
+M5 keeps the snapshot model for reads/UI, startup cache and conflict safety copies. New ordinary write delivery uses explicit queued mutations, not a complete snapshot replacement.
 
 ## Current entities
 
@@ -80,11 +80,14 @@ Fields:
 - label;
 - reviewed LineString geometry snapshot;
 - optional external source provenance;
+- optional server-owned `areaPreparationGeneration`;
 - status;
 - completedAt;
 - timestamps.
 
 Manual Street Tasks remain valid without source provenance.
+
+`areaPreparationGeneration` is null for manual and user-reviewed Smart Tasks. A non-null UUID identifies a server-prepared automatic Task generation and is not client-controlled.
 
 Under accepted ADR-0013, a Smart Street Task keeps its durable application id separate from OSM. The reviewed selected route is copied into Task `geometry` as a Campaign-owned LineString snapshot. Optional `source` provenance is restricted to reviewed metadata such as:
 - `dataset: OpenStreetMap`;
@@ -106,6 +109,7 @@ Fields:
 - reviewed Polygon building geometry snapshot;
 - optional OSM source provenance;
 - optional `parentStreetTaskId`;
+- optional server-owned `areaPreparationGeneration`;
 - status;
 - completedAt;
 - timestamps.
@@ -115,6 +119,16 @@ For OSM-backed House Tasks, provenance is exactly one positive Way id. It remain
 Reviewed House geometry, source provenance and parent relation are immutable through ordinary writes. A future source-reconciliation feature must use an explicit reviewed mutation rather than silently accepting changed upstream OSM geometry.
 
 Deleting a parent Street clears the optional House-parent relationship rather than deleting the House Task. Deleting an Area cascades its Street and House Tasks.
+
+### Automatic Area preparation
+
+ADR-0021 adds a prepared-only server job that turns the canonical persisted Area geometry into ordinary open Street and House Tasks. It does not create a parallel work-item type.
+
+- `area_task_preparations` is keyed by `(campaign_id, area_id)` and records the current geometry hash, generation, `pending` / `ready` / `failed` status, counts, timestamps and a non-secret error code;
+- automatic Tasks retain normal application-owned ids, Task status and OSM provenance, but carry the server-created generation UUID;
+- the browser reads those Tasks through the ordinary Campaign snapshot; omitted legacy fields deserialize as null;
+- manual Tasks have null generation and are never replaced by a preparation run;
+- ordinary client mutations may change an automatic Task's status but may not delete or rewrite its automatic identity.
 
 ## Status vocabulary
 
@@ -147,15 +161,17 @@ Applied remote D1 history remains immutable:
 - `migrations/0002_m4_access.sql` - shared map focus + access grant/session tables;
 - `migrations/0003_m5_mutations.sql` - Campaign-scoped mutation idempotency ledger, applied successfully to remote `flyer-map-db` on 2026-08-25.
 
-M6 code currently adds, but has **not remotely applied**:
+Prepared code adds, but has **not remotely applied**:
 - `migrations/0004_m6_task_source_provenance.sql` - nullable `tasks.source_json` for external Street Task provenance;
 - `migrations/0005_m6_house_tasks.sql` - additive durable House Task table.
+- `migrations/0014_auto_area_task_preparation.sql` - automatic Task generation/state columns and `area_task_preparations`.
 
-Both migrations are intentionally additive. Existing/manual Street rows remain valid before them. Application code must not mark either migration production-applied until an explicit rollout and acceptance step is performed.
+These migrations are intentionally additive. Existing/manual Street rows remain valid before them. Application code must not mark any migration production-applied until an explicit rollout and acceptance step is performed.
 
 Pre-migration behavior is fail-safe:
 - before 0004, manual Street writes remain compatible while Smart Street provenance writes return `schema_migration_required`;
 - before 0005, Street reads/writes remain compatible while any durable House write returns `schema_migration_required` before the Campaign revision is claimed;
+- before 0014, automatic Area preparation and its status route fail closed with `area_preparation_schema_unavailable`; existing manual/M5 work remains compatible;
 - House data is never silently dropped or coerced into the Street table.
 
 Do not rewrite historical migrations.
@@ -170,6 +186,10 @@ Established domain tables:
 
 After migration 0005:
 - `house_tasks` for House Tasks.
+
+After migration 0014:
+- `area_task_preparations` for automatic Area preparation state;
+- nullable `area_preparation_generation` columns on `tasks` and `house_tasks`.
 
 Access tables:
 - `campaign_access_grants`;
@@ -204,15 +224,15 @@ Plaintext access/session secrets are never stored in D1; only SHA-256 hashes are
 
 `campaign_access_grants.team_id` scopes a Team Editor grant, but there is intentionally no D1 foreign key from the grant to the `teams` table.
 
-The legacy snapshot replacement path still exists during M5 transition and can delete/reinsert Team rows. A Team foreign key with cascading behavior could therefore revoke valid Team Editor grants during that compatibility write.
+The absence of a D1 foreign key from a Team Editor grant to `teams` is a historical choice from migration 0002. The old snapshot replacement could delete/reinsert Team rows, so adding a cascading FK without an explicit migration would have been unsafe. This M5 slice removes that replacement path but does not rewrite the historical schema.
 
-Instead:
+The existing safeguards remain:
 - grant creation verifies that the Team exists in the Campaign;
 - access resolution verifies that a Team Editor's scoped Team still exists;
 - if the Team no longer exists, that scoped access is invalid;
 - Campaign/grant/session foreign keys still enforce Campaign ownership where safe.
 
-Do not reintroduce a Team FK until legacy snapshot replacement is removed/redesigned and an explicit migration is accepted.
+Do not add a Team FK implicitly. Any future FK or Team-lifecycle change requires its own explicit migration and decision.
 
 ## Revision/write semantics
 
@@ -226,17 +246,20 @@ The Campaign revision is still the shared monotonic revision used to detect newe
 
 When 0005 exists, the Worker loads `house_tasks` into optional `CampaignSnapshot.houseTasks`. Before 0005, it does not query a missing House table and returns the established Street snapshot shape.
 
-### Legacy snapshot write
+### Initial Campaign create
 
-Authorized complete-snapshot PUT remains during M5 only as:
-- compatibility for pre-M5 optimistic local state;
-- transition/recovery path.
+`POST /api/campaigns` is the one-time server-side bootstrap for a new Campaign. The Worker validates a schema-v3 snapshot with `revision: 0` and calls `createInitialCampaignState`.
 
-It remains revision-checked and Worker-authorized. New ordinary M5/M6 saves must not use it as their normal delivery path.
+The repository claims the new Campaign with an atomic insert-only D1 batch:
+- Campaign is inserted only when its id does not already exist;
+- initial Teams, Areas and Street/House Tasks are inserted behind the internal write-token guard;
+- no existing Campaign is updated;
+- no child rows are deleted or replaced;
+- access grants and sessions are created by the surrounding create flow after the initial state succeeds.
 
-For M6 reviewed Smart Streets and Houses, source/geometry snapshots are immutable through this compatibility path for every role, including Admin. A future reviewed OSM reconciliation requires an explicit mutation rather than an accidental broad-snapshot overwrite.
+The endpoint remains protected by the server-only bootstrap contract. It returns a conflict for an existing Campaign and fails closed when an additive Task schema required by the initial snapshot is unavailable.
 
-Snapshot replacement detects 0004/0005 before claiming a revision. When 0005 exists, Street rows are inserted before House rows so optional parent Street FKs resolve correctly. When 0005 does not exist and no House data is present, the established Street-only replacement path remains compatible.
+Snapshot reads remain the protected read model. `PUT /api/campaigns/:id/snapshot` is retired and returns HTTP 410 without claiming a revision or writing D1. Normal Campaign, Team, Area, Street, House, Collection and Pickup changes use explicit M5 or specialized mutations.
 
 ### M5 mutation write
 
@@ -286,11 +309,24 @@ Requirements for future migration:
 
 See `docs/architecture/ORGANIZATIONS.md`.
 
-## Future collaboration/statistics data
+## Collaboration/statistics data
 
-Comments, activity/domain events, automation rules/runs and statistics rollups are planned but not current tables.
+The current prepared collaboration schema contains durable Comments, Field Sessions,
+minimized `domain_events` and deterministic Automation configuration. Activity and
+Statistics are projections/aggregations of those sources; they do not have a second
+history or rollup table.
 
-Prefer deriving statistics from durable state/events. Do not add continuous GPS history for analytics.
+The Stats read path derives current Street-/House-task denominators from `tasks`,
+`house_tasks` and their canonical Area/Team relationships. Session totals and the
+bounded recent session list derive from `field_sessions`. A bounded 90-day status-change
+series derives from `domain_events`. Collection session metrics remain separate from
+Distribution progress; Pickup progress is not fabricated before a persistent Pickup
+model exists.
+
+The Worker performs the Campaign-/Team-/Field-Group scope filtering before returning
+the small Stats DTO. The endpoint uses prepared queries and bounded reads. Prefer this
+derivation from durable state/events; add rollups only after a measured scale need.
+Do not add continuous GPS history for analytics.
 
 See `docs/architecture/COLLABORATION.md`.
 

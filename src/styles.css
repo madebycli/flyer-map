@@ -136,6 +136,16 @@ select:disabled {
   backdrop-filter: blur(12px);
 }
 
+.bottom-sheet.is-collapsed {
+  max-height: 6.25rem;
+  overflow: hidden;
+  bottom: calc(env(safe-area-inset-bottom) + 4.45rem);
+}
+
+.bottom-sheet.is-collapsed > :not(.sheet-handle-button):not(.sheet-header) {
+  display: none;
+}
+
 .map-toolbar {
   display: grid;
   gap: 0.65rem;
@@ -285,7 +295,8 @@ select:disabled {
 
 .bottom-sheet {
   max-height: min(72dvh, 38rem);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 0.45rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom));
   border-radius: 1.25rem 1.25rem 1rem 1rem;
   overscroll-behavior: contain;
@@ -301,6 +312,22 @@ select:disabled {
   margin: 0.12rem auto 0.72rem;
   border-radius: 999px;
   background: #c9d1ca;
+}
+
+.sheet-handle-button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sheet-handle-button:focus-visible {
+  outline: 2px solid #1f6b3a;
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
 .sheet-header {
@@ -418,6 +445,40 @@ select:disabled {
   margin: 0.8rem 0;
 }
 
+.area-preparation-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  margin: 0.15rem 0 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #d7e4d9;
+  border-radius: 0.72rem;
+  color: #31503b;
+  background: #f1f7f2;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.area-preparation-status.is-ready {
+  border-color: #c9dfcf;
+  color: #1f5a31;
+  background: #eef8f0;
+}
+
+.area-preparation-status.is-failed,
+.area-preparation-status.is-unavailable {
+  border-color: #ead7bd;
+  color: #79521c;
+  background: #fff8ed;
+}
+
+.area-preparation-status .small-action {
+  min-width: auto;
+  min-height: 2rem;
+  padding: 0 0.48rem;
+}
+
 .storage-warning {
   position: absolute;
   z-index: 21;
@@ -473,7 +534,9 @@ select:disabled {
 }
 
 .map-mode-draw .maplibregl-canvas,
-.map-mode-edit .maplibregl-canvas {
+.map-mode-edit .maplibregl-canvas,
+.map-mode-smart-street .maplibregl-canvas,
+.map-mode-smart-house .maplibregl-canvas {
   cursor: crosshair;
 }
 

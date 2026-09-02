@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { HouseTask } from "../src/domain/campaign.ts";
 import type { SmartBuildingCandidate } from "../src/domain/smartCandidates.ts";
 import {
+  availableSmartBuildingsForCreation,
   selectSmartBuildingsForStreet,
   selectedSmartBuildingLabels,
   smartBuildingLabel,
+  smartBuildingStreetOptions,
   toggleSmartBuildingSourceId,
 } from "../src/domain/smartBuildingSelection.ts";
 
@@ -70,4 +73,41 @@ test("building labels prefer explicit address and fall back to inert source iden
     "Hauptstraße 3",
     "Nebenstraße 2",
   ]);
+});
+
+test("available candidates deduplicate source ids and only exclude exact persisted OSM way provenance", () => {
+  const persisted = {
+    id: "task_house-201",
+    source: { dataset: "OpenStreetMap", objectType: "way", objectIds: [201] },
+  } as HouseTask;
+  const multiWay = {
+    id: "task_house-202",
+    source: { dataset: "OpenStreetMap", objectType: "way", objectIds: [202, 999] },
+  } as HouseTask;
+
+  const available = availableSmartBuildingsForCreation(
+    [...buildings, buildings[0]],
+    [persisted, multiWay],
+  );
+  assert.deepEqual(available.map((building) => building.sourceId), ["way/202", "way/203", "way/204"]);
+});
+
+test("street bulk options stay bounded while selection remains map-primary", () => {
+  const manyBuildings = Array.from({ length: 40 }, (_, index) =>
+    building(`way/${500 + index}`, `Straße ${index}`, String(index + 1)),
+  );
+  assert.equal(smartBuildingStreetOptions(manyBuildings).length, 24);
+  assert.equal(smartBuildingStreetOptions(manyBuildings, Number.MAX_SAFE_INTEGER).length, 40);
+});
+
+test("building selection stops at the atomic batch limit", () => {
+  const manyBuildings = Array.from({ length: 51 }, (_, index) =>
+    building(`way/${700 + index}`, "Hauptstraße", String(index + 1)),
+  );
+  let selected: string[] = [];
+  for (const candidate of manyBuildings) {
+    selected = toggleSmartBuildingSourceId(selected, candidate.sourceId, manyBuildings);
+  }
+  assert.equal(selected.length, 50);
+  assert.equal(selected.includes("way/750"), false);
 });

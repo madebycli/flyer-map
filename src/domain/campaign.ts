@@ -1,3 +1,5 @@
+import type { CollectionSnapshot } from "./collection";
+
 export type LngLat = [number, number];
 
 export type PolygonGeometry = {
@@ -65,6 +67,11 @@ export type DistributionTask = {
    * Smart Streets persist reviewed external provenance here, never as Task identity.
    */
   source?: TaskSourceProvenance | null;
+  /**
+   * Null (and missing legacy snapshots) means a normal/manual task. A non-null
+   * value is assigned exclusively by the server-side Area preparation job.
+   */
+  areaPreparationGeneration?: string | null;
   status: TaskStatus;
   completedAt: string | null;
   createdAt: string;
@@ -80,6 +87,8 @@ export type HouseTask = {
   geometry: PolygonGeometry;
   /** Optional reviewed source provenance. OSM ids never become House Task identity. */
   source?: TaskSourceProvenance | null;
+  /** See DistributionTask.areaPreparationGeneration. */
+  areaPreparationGeneration?: string | null;
   /** Optional relationship to a Street Task in the same Campaign and Area. */
   parentStreetTaskId: string | null;
   status: TaskStatus;
@@ -100,7 +109,32 @@ export type CampaignSnapshot = {
    * collection and are interpreted as having no House Tasks.
    */
   houseTasks?: HouseTask[];
+  /** First-class Collection state is independent from Distribution. */
+  collection?: CollectionSnapshot;
 };
+
+/**
+ * Keeps schema-v3 snapshots from before automatic Area preparation additive.
+ * The wire field is optional for backwards compatibility, while application
+ * state uses an explicit null for every non-automatic Task.
+ */
+export function normalizeAreaPreparationGenerations(snapshot: CampaignSnapshot): CampaignSnapshot {
+  return {
+    ...snapshot,
+    tasks: snapshot.tasks.map((task) => ({
+      ...task,
+      areaPreparationGeneration: task.areaPreparationGeneration ?? null,
+    })),
+    ...(snapshot.houseTasks
+      ? {
+          houseTasks: snapshot.houseTasks.map((task) => ({
+            ...task,
+            areaPreparationGeneration: task.areaPreparationGeneration ?? null,
+          })),
+        }
+      : {}),
+  };
+}
 
 export type TeamColor = {
   value: string;
@@ -120,6 +154,9 @@ export const TEAM_COLORS: readonly TeamColor[] = [
   { value: "#0369a1", label: "Petrolblau" },
   { value: "#a21caf", label: "Magenta" },
   { value: "#4d7c0f", label: "Olivgrün" },
+  { value: "#b91c1c", label: "Karminrot" },
+  { value: "#0e7490", label: "Seegrün" },
+  { value: "#6d28d9", label: "Lila" },
 ] as const;
 
 export const TASK_STATUS_OPTIONS: readonly { value: TaskStatus; label: string }[] = [
@@ -155,7 +192,25 @@ export function createInitialSnapshot(): CampaignSnapshot {
 
 export function nextAvailableTeamColor(teams: Team[]) {
   const used = new Set(teams.map((team) => team.color.toLowerCase()));
-  return TEAM_COLORS.find((color) => !used.has(color.value.toLowerCase()))?.value ?? null;
+  const preset = TEAM_COLORS.find((color) => !used.has(color.value.toLowerCase()))?.value;
+  if (preset) return preset;
+  for (let index = 0; index < 360; index += 1) {
+    const hue = (teams.length * 47 + index * 137) % 360;
+    const chroma = 62;
+    const light = 38;
+    const candidate = hslToHex(hue, chroma, light);
+    if (!used.has(candidate.toLowerCase())) return candidate;
+  }
+  return "#334155";
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number) {
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const k = (offset: number) => (offset + hue / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const channel = (offset: number) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(offset) - 3, 9 - k(offset), 1))));
+  return `#${[channel(0), channel(8), channel(4)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function openPolygonRing(geometry: PolygonGeometry): LngLat[] {

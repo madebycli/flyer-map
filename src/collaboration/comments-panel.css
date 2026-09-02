@@ -83,6 +83,65 @@
   line-height: 1.45;
 }
 
+.comment-card p.comment-tombstone {
+  color: #68756c;
+  font-style: italic;
+}
+
+.comment-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.comment-action {
+  min-height: 2.45rem;
+  padding: 0.42rem 0.65rem;
+  border: 1px solid #cfd9d1;
+  border-radius: 0.68rem;
+  color: #31503b;
+  background: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+
+.comment-action-primary {
+  border-color: #245b35;
+  color: #ffffff;
+  background: #245b35;
+}
+
+.comment-action-danger {
+  border-color: #d7b4b4;
+  color: #8b2529;
+}
+
+.comment-edit-form {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.comment-edit-form textarea {
+  width: 100%;
+  min-height: 5rem;
+  resize: vertical;
+  padding: 0.65rem;
+  border: 1px solid #cfd9d1;
+  border-radius: 0.72rem;
+  color: #25362b;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.comment-action:focus-visible,
+.comment-edit-form textarea:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .comment-composer {
   display: grid;
   gap: 0.45rem;

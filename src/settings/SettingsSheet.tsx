@@ -1,23 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildCampaignAccessUrl,
+  buildCampaignAdminPasswordResetUrl,
+  buildCampaignAdminSetupUrl,
   createCampaignAccessGrant,
+  createCampaignAdminPasswordResetInvite,
+  createCampaignAdminSetupInvite,
+  disableCampaignAdminAccount,
+  fetchCampaignAdminAccounts,
   fetchAccessGrants,
   revokeCampaignAccessGrant,
+  renameCampaignAdminAccount,
+  type CampaignAdminAccount,
   type AccessGrant,
   type AccessInfo,
-  type AccessRole,
+  type PersistentAccessRole,
 } from "../data/campaignApi";
-import {
-  downloadOfflineMapPackage,
-  OfflineMapApiError,
-} from "../data/offlineMapApi";
-import {
-  browserOfflineMapRepository,
-  type StoredOfflineMapPackage,
-} from "../data/offlineMapRepository";
 import type { Campaign, MapCameraView, Team } from "../domain/campaign";
-import { saveLanguage, t, type Language, type MessageKey } from "../i18n";
+import { saveLanguage, t, type Language } from "../i18n";
+import { ShareLinkModal } from "../share/ShareLinkModal.tsx";
 
 type Props = {
   language: Language;
@@ -34,40 +35,30 @@ type Props = {
   onRemoveFocus: () => void;
   onResetPersonalCamera: () => void;
   onClose: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 };
 
-type OfflineBusyState = "idle" | "downloading" | "deleting";
-
-function roleLabel(language: Language, role: AccessRole) {
+function roleLabel(language: Language, role: PersistentAccessRole) {
   if (role === "admin") return t(language, "admin");
   if (role === "team-editor") return t(language, "editor");
   return t(language, "viewer");
 }
 
-function offlineErrorMessage(error: unknown): MessageKey {
-  if (error instanceof OfflineMapApiError) {
-    if (error.status === 401 || error.status === 403) return "offlineMapAccessError";
-    if (error.code === "network_error") return "offlineMapNetworkError";
-    if (error.code === "osm_upstream_timeout") return "offlineMapTimeoutError";
-    if (error.status === 413) return "offlineMapTooLargeError";
-    return "offlineMapDownloadError";
-  }
-  return "offlineMapStorageError";
+function shareLabel(role: PersistentAccessRole) {
+  if (role === "team-editor") return "Team-Link";
+  if (role === "viewer") return "Nur-Lesen-Link";
+  return "Admin-Zugangslink";
 }
 
-function formatBytes(language: Language, bytes: number) {
-  const locale = language === "de" ? "de-DE" : "en-US";
-  if (bytes < 1_000_000) {
-    return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(bytes / 1_000)} KB`;
+function shareDescription(role: PersistentAccessRole) {
+  if (role === "team-editor") {
+    return "Dieser Link darf im ganzen Team geteilt werden und bleibt bis zum Widerruf gültig.";
   }
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / 1_000_000)} MB`;
-}
-
-function formatStoredDate(language: Language, value: string) {
-  return new Intl.DateTimeFormat(language === "de" ? "de-DE" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  if (role === "viewer") {
+    return "Dieser Link ist teilbar, wiederverwendbar und bleibt bis zum Widerruf nur lesbar.";
+  }
+  return "Dieser Link richtet einen weiteren Campaign-Admin ein. Teile ihn nur mit der vorgesehenen Person.";
 }
 
 export function SettingsSheet({
@@ -85,29 +76,33 @@ export function SettingsSheet({
   onRemoveFocus,
   onResetPersonalCamera,
   onClose,
+  collapsed,
+  onToggleCollapsed,
 }: Props) {
   const isAdmin = access?.role === "admin";
   const [grants, setGrants] = useState<AccessGrant[]>([]);
-  const [role, setRole] = useState<AccessRole>("viewer");
+  const [adminAccounts, setAdminAccounts] = useState<CampaignAdminAccount[]>([]);
+  const [role, setRole] = useState<PersistentAccessRole>("viewer");
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [label, setLabel] = useState("");
   const [createdUrl, setCreatedUrl] = useState<string | null>(initialAccessUrl);
+  const [createdRole, setCreatedRole] = useState<PersistentAccessRole>("admin");
   const [copyDone, setCopyDone] = useState(false);
+  const [shareTarget, setShareTarget] = useState<"access" | "admin" | "reset" | null>(null);
+  const [adminSetupUrl, setAdminSetupUrl] = useState<string | null>(null);
+  const [adminSetupCopied, setAdminSetupCopied] = useState(false);
+  const [adminResetUrl, setAdminResetUrl] = useState<string | null>(null);
+  const [adminResetUsername, setAdminResetUsername] = useState<string | null>(null);
+  const [adminResetCopied, setAdminResetCopied] = useState(false);
+  const [editingAdminAccountId, setEditingAdminAccountId] = useState<string | null>(null);
+  const [adminUsernameDraft, setAdminUsernameDraft] = useState("");
   const [accessBusy, setAccessBusy] = useState(false);
   const [accessError, setAccessError] = useState(false);
-  const [offlineRecord, setOfflineRecord] = useState<StoredOfflineMapPackage | null>(null);
-  const [offlineBusy, setOfflineBusy] = useState<OfflineBusyState>("idle");
-  const [offlineMessage, setOfflineMessage] = useState<MessageKey | null>(null);
-  const [offlineMessageError, setOfflineMessageError] = useState(false);
+  const [adminAccountError, setAdminAccountError] = useState<string | null>(null);
 
   const activeGrants = useMemo(
     () => grants.filter((grant) => grant.revokedAt === null),
     [grants],
-  );
-
-  const offlineSummary = useMemo(
-    () => (offlineRecord ? browserOfflineMapRepository.summary(offlineRecord) : null),
-    [offlineRecord],
   );
 
   const reloadGrants = async () => {
@@ -120,29 +115,19 @@ export function SettingsSheet({
     }
   };
 
-  useEffect(() => {
-    void reloadGrants();
-  }, [campaign.id, isAdmin]);
+  const reloadAdminAccounts = async () => {
+    if (!isAdmin) return;
+    try {
+      setAdminAccounts(await fetchCampaignAdminAccounts(campaign.id));
+    } catch {
+      // The password-account migration may not be applied on an older preview yet.
+    }
+  };
 
   useEffect(() => {
-    let active = true;
-    setOfflineMessage(null);
-    void browserOfflineMapRepository
-      .load(campaign.id)
-      .then((record) => {
-        if (!active) return;
-        setOfflineRecord(record);
-      })
-      .catch(() => {
-        if (!active) return;
-        setOfflineRecord(null);
-        setOfflineMessage("offlineMapStorageError");
-        setOfflineMessageError(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [campaign.id]);
+    void reloadGrants();
+    void reloadAdminAccounts();
+  }, [campaign.id, isAdmin]);
 
   useEffect(() => {
     if (!teamId && teams[0]) setTeamId(teams[0].id);
@@ -157,53 +142,6 @@ export function SettingsSheet({
     onLanguageChange(nextLanguage);
   };
 
-  const prepareOfflineMap = async () => {
-    if (!currentCamera) {
-      setOfflineMessage("offlineMapNoCamera");
-      setOfflineMessageError(true);
-      return;
-    }
-    if (!access) {
-      setOfflineMessage("offlineMapAccessError");
-      setOfflineMessageError(true);
-      return;
-    }
-
-    const [lng, lat] = currentCamera.center;
-    setOfflineBusy("downloading");
-    setOfflineMessage("offlineMapDownloading");
-    setOfflineMessageError(false);
-    try {
-      const pkg = await downloadOfflineMapPackage(campaign.id, { lat, lng });
-      const stored = await browserOfflineMapRepository.replace(campaign.id, pkg);
-      setOfflineRecord(stored);
-      setOfflineMessage("offlineMapStored");
-      setOfflineMessageError(false);
-    } catch (error) {
-      setOfflineMessage(offlineErrorMessage(error));
-      setOfflineMessageError(true);
-    } finally {
-      setOfflineBusy("idle");
-    }
-  };
-
-  const deleteOfflineMap = async () => {
-    if (!offlineRecord || offlineBusy !== "idle") return;
-    setOfflineBusy("deleting");
-    setOfflineMessage("offlineMapDeleting");
-    setOfflineMessageError(false);
-    try {
-      await browserOfflineMapRepository.remove(campaign.id);
-      setOfflineRecord(null);
-      setOfflineMessage(null);
-    } catch {
-      setOfflineMessage("offlineMapStorageError");
-      setOfflineMessageError(true);
-    } finally {
-      setOfflineBusy("idle");
-    }
-  };
-
   const createAccess = async () => {
     if (!isAdmin || (role === "team-editor" && !teamId)) return;
     setAccessBusy(true);
@@ -216,6 +154,7 @@ export function SettingsSheet({
         label,
       });
       setCreatedUrl(buildCampaignAccessUrl(campaign.id, created.token));
+      setCreatedRole(role);
       setLabel("");
       await reloadGrants();
     } catch {
@@ -250,9 +189,93 @@ export function SettingsSheet({
     }
   };
 
+  const createAdminSetup = async () => {
+    if (!isAdmin) return;
+    setAccessBusy(true);
+    setAdminAccountError(null);
+    try {
+      const invite = await createCampaignAdminSetupInvite(campaign.id);
+      setAdminSetupUrl(buildCampaignAdminSetupUrl(campaign.id, invite.token));
+    } catch (cause) {
+      setAdminAccountError(cause instanceof Error ? cause.message : "Admin-Konto konnte nicht vorbereitet werden.");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const copyAdminSetupUrl = async () => {
+    if (!adminSetupUrl) return;
+    try {
+      await navigator.clipboard.writeText(adminSetupUrl);
+      setAdminSetupCopied(true);
+      window.setTimeout(() => setAdminSetupCopied(false), 1600);
+    } catch {
+      setAdminSetupCopied(false);
+    }
+  };
+
+  const disableAdminAccount = async (accountId: string) => {
+    if (!isAdmin) return;
+    if (!window.confirm("Dieses Admin-Konto wird gesperrt und seine Sitzungen werden sofort beendet. Fortfahren?")) return;
+    setAccessBusy(true);
+    setAdminAccountError(null);
+    try {
+      await disableCampaignAdminAccount(campaign.id, accountId);
+      await reloadAdminAccounts();
+    } catch (cause) {
+      setAdminAccountError(cause instanceof Error ? cause.message : "Admin-Konto konnte nicht gesperrt werden.");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const saveAdminUsername = async (accountId: string) => {
+    if (!isAdmin || !adminUsernameDraft.trim()) return;
+    setAccessBusy(true);
+    setAdminAccountError(null);
+    try {
+      await renameCampaignAdminAccount(campaign.id, accountId, adminUsernameDraft.trim());
+      setEditingAdminAccountId(null);
+      setAdminUsernameDraft("");
+      await reloadAdminAccounts();
+    } catch (cause) {
+      setAdminAccountError(cause instanceof Error ? cause.message : "Benutzername konnte nicht geändert werden.");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const createAdminPasswordReset = async (account: CampaignAdminAccount) => {
+    if (!isAdmin) return;
+    setAccessBusy(true);
+    setAdminAccountError(null);
+    try {
+      const invite = await createCampaignAdminPasswordResetInvite(campaign.id, account.id);
+      setAdminResetUrl(buildCampaignAdminPasswordResetUrl(campaign.id, invite.token));
+      setAdminResetUsername(invite.username);
+      setAdminResetCopied(false);
+      setShareTarget("reset");
+    } catch (cause) {
+      setAdminAccountError(cause instanceof Error ? cause.message : "Passwort-Reset-Link konnte nicht erstellt werden.");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const copyAdminResetUrl = async () => {
+    if (!adminResetUrl) return;
+    try {
+      await navigator.clipboard.writeText(adminResetUrl);
+      setAdminResetCopied(true);
+      window.setTimeout(() => setAdminResetCopied(false), 1600);
+    } catch {
+      setAdminResetCopied(false);
+    }
+  };
+
   return (
-    <section className="bottom-sheet settings-sheet" aria-label={t(language, "settings")}>
-      <div className="sheet-handle" aria-hidden="true" />
+    <section className={`bottom-sheet settings-sheet ${collapsed ? "is-collapsed" : ""}`} aria-label={t(language, "settings")}>
+      <button className="sheet-handle-button" type="button" onClick={onToggleCollapsed} aria-label={collapsed ? "Fenster ausklappen" : "Fenster einklappen"} aria-expanded={!collapsed}><span className="sheet-handle" aria-hidden="true" /></button>
       <div className="sheet-header">
         <div>
           <span className="eyebrow">{t(language, "personal")}</span>
@@ -282,75 +305,6 @@ export function SettingsSheet({
             </button>
           ) : null}
         </div>
-      </section>
-
-      <section className="settings-section offline-map-section">
-        <h3>{t(language, "offlineMapArea")}</h3>
-        <p className="settings-help">{t(language, "offlineMapBody")}</p>
-
-        {offlineSummary ? (
-          <div className="offline-map-card">
-            <strong>{t(language, "offlineMapStored")}</strong>
-            <dl className="offline-map-meta">
-              <div>
-                <dt>{t(language, "offlineMapSavedAt")}</dt>
-                <dd>{formatStoredDate(language, offlineSummary.savedAt)}</dd>
-              </div>
-              <div>
-                <dt>{t(language, "offlineMapSize")}</dt>
-                <dd>{formatBytes(language, offlineSummary.byteSize)}</dd>
-              </div>
-              <div>
-                <dt>{t(language, "offlineMapRoads")}</dt>
-                <dd>{offlineSummary.roadCount}</dd>
-              </div>
-              <div>
-                <dt>{t(language, "offlineMapBuildings")}</dt>
-                <dd>{offlineSummary.buildingCount}</dd>
-              </div>
-              <div className="offline-map-meta-wide">
-                <dt>{t(language, "offlineMapCenter")}</dt>
-                <dd>
-                  {offlineSummary.center.lat.toFixed(5)}, {offlineSummary.center.lng.toFixed(5)} · {Math.round(offlineSummary.radiusMeters / 1_000)} km
-                </dd>
-              </div>
-            </dl>
-          </div>
-        ) : (
-          <p className="settings-muted">{t(language, "offlineMapNoPackage")}</p>
-        )}
-
-        <div className="settings-actions stacked-mobile">
-          <button
-            className="button primary"
-            type="button"
-            disabled={!access || !currentCamera || offlineBusy !== "idle"}
-            onClick={() => void prepareOfflineMap()}
-          >
-            {offlineRecord ? t(language, "offlineMapUpdate") : t(language, "offlineMapDownload")}
-          </button>
-          {offlineRecord ? (
-            <button
-              className="button danger"
-              type="button"
-              disabled={offlineBusy !== "idle"}
-              onClick={() => void deleteOfflineMap()}
-            >
-              {t(language, "offlineMapDelete")}
-            </button>
-          ) : null}
-        </div>
-
-        {offlineMessage ? (
-          <p
-            className={offlineMessageError ? "settings-error" : "offline-map-status"}
-            role="status"
-            aria-live="polite"
-          >
-            {t(language, offlineMessage)}
-          </p>
-        ) : null}
-        <p className="offline-map-attribution">{t(language, "offlineMapAttribution")}</p>
       </section>
 
       {isAdmin ? (
@@ -393,14 +347,80 @@ export function SettingsSheet({
           </section>
 
           <section className="settings-section access-section">
+            <h3>Admin-Konten</h3>
+            <p className="settings-help">Der Organisator richtet Konten ein, ändert Benutzernamen und erzeugt sichere Passwort-Reset-Links. Jede Person wählt ihr Passwort selbst, damit es nie an eine andere Person weitergegeben werden muss.</p>
+            <button className="button secondary full-width" type="button" disabled={accessBusy} onClick={() => void createAdminSetup()}>
+              Einmaligen Einrichtungslink erstellen
+            </button>
+            {adminSetupUrl ? (
+              <div className="access-link-result" role="status">
+                <strong>Admin-Konto: einmaliger Einrichtungslink</strong>
+                <span>Der Link ist 24 Stunden gültig und nach der Einrichtung verbraucht.</span>
+                <input readOnly value={adminSetupUrl} aria-label="Admin-Einrichtungslink" />
+                <div className="settings-actions">
+                  <button className="button secondary" type="button" onClick={copyAdminSetupUrl}>
+                    {adminSetupCopied ? t(language, "copied") : t(language, "copy")}
+                  </button>
+                  <button className="button secondary" type="button" onClick={() => setShareTarget("admin")}>
+                    QR-Code anzeigen
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <div className="access-list">
+              {adminAccounts.filter((account) => account.disabledAt === null).map((account) => (
+                <article className="access-card" key={account.id}>
+                  <div>
+                    <strong>{account.username}</strong>
+                    <span>Campaign-Admin</span>
+                    {editingAdminAccountId === account.id ? (
+                      <label className="field-label">
+                        <span>Neuer Benutzername</span>
+                        <input value={adminUsernameDraft} onChange={(event) => setAdminUsernameDraft(event.target.value)} autoComplete="username" maxLength={40} />
+                      </label>
+                    ) : null}
+                  </div>
+                  <div className="settings-actions">
+                    {editingAdminAccountId === account.id ? (
+                      <>
+                        <button className="small-action" type="button" disabled={accessBusy || !adminUsernameDraft.trim()} onClick={() => void saveAdminUsername(account.id)}>Speichern</button>
+                        <button className="small-action" type="button" disabled={accessBusy} onClick={() => { setEditingAdminAccountId(null); setAdminUsernameDraft(""); }}>Abbrechen</button>
+                      </>
+                    ) : (
+                      <button className="small-action" type="button" disabled={accessBusy} onClick={() => { setEditingAdminAccountId(account.id); setAdminUsernameDraft(account.username); }}>Name ändern</button>
+                    )}
+                    <button className="small-action" type="button" disabled={accessBusy} onClick={() => void createAdminPasswordReset(account)}>Passwort zurücksetzen</button>
+                    <button className="small-action danger-action" type="button" disabled={accessBusy} onClick={() => void disableAdminAccount(account.id)}>Sperren</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            {adminAccountError ? <p className="settings-error" role="alert">{adminAccountError}</p> : null}
+            {adminResetUrl ? (
+              <div className="access-link-result" role="status">
+                <strong>Passwort-Reset für {adminResetUsername}</strong>
+                <span>Der Link ist 24 Stunden gültig, nur einmal nutzbar und beendet beim Einlösen alle bisherigen Sitzungen dieses Kontos.</span>
+                <input readOnly value={adminResetUrl} aria-label="Admin-Passwort-Reset-Link" />
+                <div className="settings-actions">
+                  <button className="button secondary" type="button" onClick={copyAdminResetUrl}>{adminResetCopied ? t(language, "copied") : t(language, "copy")}</button>
+                  <button className="button secondary" type="button" onClick={() => setShareTarget("reset")}>QR-Code anzeigen</button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="settings-section access-section">
             <h3>{t(language, "access")}</h3>
             <div className="access-create-grid">
               <label className="field-label">
                 <span>{t(language, "accessRole")}</span>
-                <select value={role} onChange={(event) => setRole(event.target.value as AccessRole)}>
-                  <option value="admin">{t(language, "admin")}</option>
-                  <option value="team-editor">{t(language, "editor")}</option>
-                  <option value="viewer">{t(language, "viewer")}</option>
+                <select
+                  value={role}
+                  onChange={(event) => setRole(event.target.value as PersistentAccessRole)}
+                >
+                  <option value="admin">Admin-Zugangslink</option>
+                  <option value="team-editor">Team-Link</option>
+                  <option value="viewer">Nur-Lesen-Link</option>
                 </select>
               </label>
               {role === "team-editor" ? (
@@ -420,6 +440,7 @@ export function SettingsSheet({
                 <input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={120} />
               </label>
             </div>
+            <p className="settings-help">{shareDescription(role)}</p>
             <button
               className="button primary full-width"
               type="button"
@@ -431,11 +452,17 @@ export function SettingsSheet({
 
             {createdUrl ? (
               <div className="access-link-result" role="status">
-                <strong>{t(language, "accessLinkOnce")}</strong>
+                <strong>{shareLabel(createdRole)}: {t(language, "accessLinkOnce")}</strong>
+                <span>{shareDescription(createdRole)}</span>
                 <input readOnly value={createdUrl} aria-label={t(language, "access")} />
-                <button className="button secondary" type="button" onClick={copyCreatedUrl}>
-                  {copyDone ? t(language, "copied") : t(language, "copy")}
-                </button>
+                <div className="settings-actions">
+                  <button className="button secondary" type="button" onClick={copyCreatedUrl}>
+                    {copyDone ? t(language, "copied") : t(language, "copy")}
+                  </button>
+                  <button className="button secondary" type="button" onClick={() => setShareTarget("access")}>
+                    QR-Code anzeigen
+                  </button>
+                </div>
               </div>
             ) : null}
 
@@ -445,7 +472,7 @@ export function SettingsSheet({
               {activeGrants.map((grant) => (
                 <article className="access-card" key={grant.grantId}>
                   <div>
-                    <strong>{grant.label || roleLabel(language, grant.role)}</strong>
+                    <strong>{grant.label || shareLabel(grant.role)}</strong>
                     <span>
                       {roleLabel(language, grant.role)}
                       {grant.teamId
@@ -466,6 +493,30 @@ export function SettingsSheet({
             </div>
           </section>
         </>
+      ) : null}
+      {shareTarget === "access" && createdUrl ? (
+        <ShareLinkModal
+          title={shareLabel(createdRole)}
+          description={shareDescription(createdRole)}
+          url={createdUrl}
+          onClose={() => setShareTarget(null)}
+        />
+      ) : null}
+      {shareTarget === "admin" && adminSetupUrl ? (
+        <ShareLinkModal
+          title="Admin-Konto einrichten"
+          description="Einmaliger Link zum Festlegen eines kampagnenlokalen Admin-Passworts."
+          url={adminSetupUrl}
+          onClose={() => setShareTarget(null)}
+        />
+      ) : null}
+      {shareTarget === "reset" && adminResetUrl ? (
+        <ShareLinkModal
+          title={`Passwort-Reset für ${adminResetUsername ?? "Admin"}`}
+          description="Einmaliger Link zum Festlegen eines neuen kampagnenlokalen Admin-Passworts. Beim Einlösen werden bestehende Sitzungen beendet."
+          url={adminResetUrl}
+          onClose={() => setShareTarget(null)}
+        />
       ) : null}
     </section>
   );

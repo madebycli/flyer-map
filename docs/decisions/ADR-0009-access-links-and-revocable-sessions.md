@@ -23,6 +23,8 @@ Each grant contains an independent cryptographically random invite token. D1 sto
 
 Invite links carry the token only in the URL fragment. The browser sends the fragment token once to the Worker redemption endpoint, then removes it from the visible URL. Successful redemption creates a new opaque random session secret in a `Secure; HttpOnly; SameSite=Lax` cookie. D1 stores only the session hash.
 
+At application startup, the campaign store is the single client-side source of truth for this access transition. It marks access as pending while redeeming a fragment, and the operator recovery UI may appear only after the store reports that access is required. A pre-redemption 401 therefore cannot race the valid Access-Link redemption into an operator-recovery screen.
+
 Every protected request resolves the session and its backing grant again. A revoked grant therefore invalidates already-issued sessions immediately; revocation is not merely an invite-link disable switch.
 
 `campaignId` remains a selector only. Snapshot and revision endpoints return authorization errors without a valid Campaign-scoped credential.

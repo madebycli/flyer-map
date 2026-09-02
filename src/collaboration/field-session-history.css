@@ -3,7 +3,8 @@
   gap: 0.75rem;
 }
 
-.field-session-history > header {
+.field-session-history > header,
+.field-session-history-card-topline {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -16,8 +17,7 @@
 
 .field-session-history > header span,
 .field-session-history-date,
-.field-session-history-card dt,
-.field-session-history-selected {
+.field-session-history-card dt {
   color: #718078;
   font-size: 0.64rem;
   font-weight: 720;
@@ -43,26 +43,31 @@
   border-radius: 0.82rem;
   color: #2b3e32;
   background: #ffffff;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.field-session-history-card.is-selected {
-  border-color: #92bea0;
-  background: #eef8f1;
-  box-shadow: 0 0 0 2px rgb(37 93 55 / 10%);
 }
 
 .field-session-history-card > strong {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
+}
+
+.field-session-history-team {
+  color: #637168;
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+
+.field-session-history-team-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  flex: 0 0 auto;
+  border: 1px solid rgb(15 23 42 / 0.12);
+  border-radius: 50%;
 }
 
 .field-session-history-card dl {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.5rem;
-  margin: 0;
+  margin: 0.15rem 0 0;
 }
 
 .field-session-history-card dl > div {
@@ -81,22 +86,103 @@
   font-weight: 760;
 }
 
-.field-session-history-card > p {
+.field-session-history-note {
+  display: grid;
+  gap: 0.34rem;
+  margin-top: 0.22rem;
+  padding-top: 0.58rem;
+  border-top: 1px solid #edf1ee;
+}
+
+.field-session-history-note-heading,
+.field-session-history-note-editor-footer,
+.field-session-history-note-editor-footer > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.field-session-history-note-heading > span,
+.field-session-history-note-editor-footer > span {
+  color: #718078;
+  font-size: 0.64rem;
+  font-weight: 720;
+}
+
+.field-session-history-note-heading button,
+.field-session-history-note-editor-footer button {
+  min-height: 2rem;
+  padding: 0.32rem 0.55rem;
+  border: 1px solid #d5dfd8;
+  border-radius: 0.56rem;
+  color: #31523c;
+  background: #f7faf8;
+  font-size: 0.66rem;
+  font-weight: 760;
+}
+
+.field-session-history-note p {
   margin: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  color: #637168;
-  font-size: 0.7rem;
-  line-height: 1.42;
+  color: #3f5146;
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
-.field-session-history-selected {
-  color: #255d37;
+.field-session-history-note .field-session-history-note-empty {
+  color: #87928b;
 }
 
-.field-session-history-card:focus-visible {
-  outline: 3px solid #2563eb;
-  outline-offset: 2px;
+.field-session-history-note-editor {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.field-session-history-note-editor textarea {
+  width: 100%;
+  min-height: 5.2rem;
+  resize: vertical;
+  padding: 0.58rem 0.62rem;
+  border: 1px solid #cdd9d1;
+  border-radius: 0.65rem;
+  color: #22372a;
+  background: #fbfdfb;
+  font: inherit;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.field-session-history-note-editor textarea:focus-visible {
+  outline: 2px solid #527d5f;
+  outline-offset: 1px;
+}
+
+.field-session-history-note-editor-footer button:last-child {
+  color: #ffffff;
+  border-color: #356b46;
+  background: #356b46;
+}
+
+.field-session-history-note-editor-footer button:disabled {
+  opacity: 0.56;
+}
+
+.field-session-history-map-button {
+  min-height: 2.35rem;
+  margin-top: 0.28rem;
+  padding: 0.5rem 0.72rem;
+  border: 1px solid #ccd8cf;
+  border-radius: 0.68rem;
+  color: #244f35;
+  background: #edf5ef;
+  font-size: 0.72rem;
+  font-weight: 780;
+}
+
+.field-session-history-map-button:disabled {
+  opacity: 0.58;
 }
 
 @media (max-width: 560px) {

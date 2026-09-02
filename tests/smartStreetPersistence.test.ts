@@ -5,7 +5,7 @@ import type { AccessContext } from "../worker/access.ts";
 import { authorizeSnapshotWrite } from "../worker/authorization.ts";
 import {
   loadCampaignSnapshot,
-  replaceCampaignSnapshot,
+  createInitialCampaignState,
   type D1DatabaseLike,
   type D1PreparedStatement,
   type D1RunResult,
@@ -437,41 +437,43 @@ test("pre-migration D1 blocks Smart Street provenance before claiming a revision
   assert.equal(db.lastBatch.length, 0);
 });
 
-test("legacy snapshot replacement carries Smart Street provenance through its bound JSON batch", async () => {
+test("initial Campaign create carries Smart Street provenance through its bound JSON batch", async () => {
   const snapshot = baseSnapshot();
+  snapshot.revision = 0;
   snapshot.tasks = [smartTask()];
   const db = new CapturingDatabase();
 
-  const result = await replaceCampaignSnapshot(db, snapshot, snapshot.revision - 1);
-  assert.deepEqual(result, { ok: true, revision: snapshot.revision });
-  assert.equal(db.lastBatch.length, 7);
-  assert.match(db.lastBatch[6].query, /source_json/);
-  assert.doesNotMatch(db.lastBatch[6].query, /OpenStreetMap/);
+  const result = await createInitialCampaignState(db, snapshot);
+  assert.deepEqual(result, { ok: true, revision: 0 });
+  assert.equal(db.lastBatch.length, 4);
+  assert.match(db.lastBatch[3].query, /source_json/);
+  assert.doesNotMatch(db.lastBatch[3].query, /OpenStreetMap/);
 
-  const boundTasks = JSON.parse(String(db.lastBatch[6].values[0]));
+  const boundTasks = JSON.parse(String(db.lastBatch[3].values[0]));
   assert.deepEqual(boundTasks[0].source, smartTask().source);
 });
 
-test("pre-migration legacy snapshot replacement keeps manual Tasks compatible", async () => {
+test("pre-migration initial Campaign create keeps manual Tasks compatible", async () => {
   const snapshot = baseSnapshot();
+  snapshot.revision = 0;
   snapshot.tasks = [{ ...smartTask(), id: "task_manual-snapshot", source: undefined }];
   const db = new CapturingDatabase(false);
 
-  const result = await replaceCampaignSnapshot(db, snapshot, snapshot.revision - 1);
-  assert.deepEqual(result, { ok: true, revision: snapshot.revision });
-  assert.equal(db.lastBatch.length, 7);
-  assert.doesNotMatch(db.lastBatch[6].query, /source_json/u);
+  const result = await createInitialCampaignState(db, snapshot);
+  assert.deepEqual(result, { ok: true, revision: 0 });
+  assert.equal(db.lastBatch.length, 4);
+  assert.doesNotMatch(db.lastBatch[3].query, /source_json/u);
 });
 
-test("pre-migration legacy snapshot replacement refuses to discard Smart Street provenance", async () => {
+test("pre-migration initial Campaign create refuses Smart Street provenance", async () => {
   const snapshot = baseSnapshot();
+  snapshot.revision = 0;
   snapshot.tasks = [smartTask()];
   const db = new CapturingDatabase(false);
 
-  const result = await replaceCampaignSnapshot(db, snapshot, snapshot.revision - 1);
+  const result = await createInitialCampaignState(db, snapshot);
   assert.deepEqual(result, {
     ok: false,
-    currentRevision: snapshot.revision - 1,
     reason: "schema_migration_required",
   });
   assert.equal(db.lastBatch.length, 0);

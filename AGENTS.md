@@ -67,7 +67,8 @@ Platform:
 - Cloudflare D1 for shared persistence.
 
 Maps:
-- CARTO Voyager Retina raster basemap using OpenStreetMap-derived data;
+- OpenFreeMap Bright vector basemap using OpenStreetMap-derived data, without an API key;
+- standard house numbers from the Bright `openmaptiles` / `housenumber` contract through one app-owned symbol layer;
 - MapLibre owns camera/navigation/geolocation and persistent saved application geometry;
 - saved Areas and saved Street Tasks are long-lived GeoJSON sources/layers in MapLibre;
 - active draw/edit geometry and edit handles use the small independent SVG overlay only while an interaction is active;

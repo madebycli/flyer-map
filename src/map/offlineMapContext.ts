@@ -8,7 +8,6 @@ export const OFFLINE_BUILDING_SOURCE_ID = "vf-offline-buildings";
 export const OFFLINE_ROAD_SOURCE_ID = "vf-offline-roads";
 export const OFFLINE_BUILDING_LAYER_ID = "vf-offline-buildings-fill";
 export const OFFLINE_ROAD_LAYER_ID = "vf-offline-roads-line";
-export const CARTO_BASEMAP_LAYER_ID = "carto-basemap";
 
 export type OfflineBuildingFeatureCollection = {
   type: "FeatureCollection";
@@ -39,7 +38,6 @@ export function offlineRoadData(pkg: OfflineMapPackage | null): OfflineRoadFeatu
 }
 
 export type OfflineMapRendererMode = {
-  cartoVisibility: "visible" | "none";
   offlineVisibility: "visible" | "none";
 };
 
@@ -48,7 +46,6 @@ export function offlineMapRendererMode(
   pkg: OfflineMapPackage | null,
 ): OfflineMapRendererMode {
   return {
-    cartoVisibility: online ? "visible" : "none",
     offlineVisibility: !online && pkg ? "visible" : "none",
   };
 }

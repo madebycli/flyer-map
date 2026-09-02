@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   subscribeCampaignStore,
+  type SyncIssue,
   type MutationSyncState,
 } from "../data/campaignStore";
 import { detectLanguage, type Language } from "../i18n";
@@ -33,12 +34,18 @@ export function SyncStatus() {
   const [language, setLanguage] = useState<Language>(detectLanguage);
   const [state, setState] = useState<MutationSyncState>("saved");
   const [pendingCount, setPendingCount] = useState(0);
+  const [issue, setIssue] = useState<SyncIssue | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(
     () =>
       subscribeCampaignStore((update) => {
         if (update.syncState) setState(update.syncState);
         if (update.pendingCount !== undefined) setPendingCount(update.pendingCount);
+        if (update.syncIssue) {
+          setIssue(update.syncIssue);
+          setOpen(true);
+        }
       }),
     [],
   );
@@ -55,13 +62,25 @@ export function SyncStatus() {
 
   const label = statusLabel(language, state, pendingCount);
   return (
-    <div
-      className={`mutation-sync-status is-${state}`}
-      role="status"
-      aria-live={state === "conflict" || state === "failed" || state === "blocked-auth" ? "assertive" : "polite"}
-    >
-      <span className="mutation-sync-dot" aria-hidden="true" />
-      <span>{label}</span>
+    <div className="mutation-sync-status-wrap">
+      <button
+        className={`mutation-sync-status is-${state}`}
+        type="button"
+        onClick={() => issue && setOpen((visible) => !visible)}
+        aria-expanded={issue ? open : undefined}
+        aria-label={issue ? `${label}: ${issue.message}` : label}
+      >
+        <span className="mutation-sync-dot" aria-hidden="true" />
+        <span>{label}</span>
+      </button>
+      {issue && open ? (
+        <section className="mutation-sync-issue" role="dialog" aria-label="Synchronisierungsinfo">
+          <strong>{issue.kind === "server-wins" ? "Online-Version übernommen" : "Synchronisierungsinfo"}</strong>
+          <p>{issue.message}</p>
+          {issue.mutationType ? <small>Betroffen: {issue.mutationType}</small> : null}
+          <button type="button" className="small-action" onClick={() => setOpen(false)}>Verstanden</button>
+        </section>
+      ) : null}
     </div>
   );
 }

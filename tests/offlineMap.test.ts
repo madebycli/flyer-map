@@ -67,6 +67,93 @@ test("client query text is ignored and only the server-owned Overpass template i
   assert.match(query, /way\(around:3000,51\.050400,13\.737300\)\["building"\]/);
 });
 
+test("map-data kind selects an exact server-owned Overpass feature class", async () => {
+  const queryFor = async (kind: "roads" | "buildings") => {
+    let upstreamBody = "";
+    const response = await handleOfflineMapPackage(
+      request({ center: { lat: 51.05, lng: 13.74 }, radiusMeters: 3_000, kind }),
+      {
+        fetchImpl: async (_input, init) => {
+          upstreamBody = String(init?.body ?? "");
+          return Response.json({ elements: [] });
+        },
+      },
+    );
+    assert.equal(response.status, 200);
+    return new URLSearchParams(upstreamBody).get("data") ?? "";
+  };
+
+  const roads = await queryFor("roads");
+  assert.match(roads, /\["highway"\]/u);
+  assert.doesNotMatch(roads, /\["building"\]/u);
+
+  const buildings = await queryFor("buildings");
+  assert.match(buildings, /\["building"\]/u);
+  assert.doesNotMatch(buildings, /\["highway"\]/u);
+});
+
+test("invalid map-data kind is rejected before contacting Overpass", async () => {
+  let fetchCalls = 0;
+  const response = await handleOfflineMapPackage(
+    request({ center: { lat: 51.05, lng: 13.74 }, radiusMeters: 3_000, kind: "roads-and-buildings" }),
+    {
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        return Response.json({ elements: [] });
+      },
+    },
+  );
+  assert.equal(response.status, 400);
+  assert.equal(fetchCalls, 0);
+  const body = (await response.json()) as { error: { code: string } };
+  assert.equal(body.error.code, "invalid_kind");
+});
+
+test("explicit null map-data kind is not treated as an omitted default", async () => {
+  const response = await handleOfflineMapPackage(
+    request({ center: { lat: 51.05, lng: 13.74 }, radiusMeters: 3_000, kind: null }),
+    { fetchImpl: async () => Response.json({ elements: [] }) },
+  );
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as { error: { code: string } };
+  assert.equal(body.error.code, "invalid_kind");
+});
+
+test("partial map-data packages keep the common v1 schema with the other collection empty", async () => {
+  const response = await handleOfflineMapPackage(
+    request({ center: { lat: 51.05, lng: 13.74 }, radiusMeters: 3_000, kind: "roads" }),
+    {
+      fetchImpl: async () => Response.json({
+        elements: [
+          {
+            type: "way",
+            id: 123,
+            tags: { highway: "residential" },
+            geometry: [
+              { lat: 51.05, lon: 13.74 },
+              { lat: 51.051, lon: 13.741 },
+            ],
+          },
+          {
+            type: "way",
+            id: 456,
+            tags: { building: "yes" },
+            geometry: [
+              { lat: 51.05, lon: 13.74 },
+              { lat: 51.05, lon: 13.741 },
+              { lat: 51.051, lon: 13.741 },
+            ],
+          },
+        ],
+      }),
+    },
+  );
+  const pkg = await response.json() as { schemaVersion: number; roads: { features: unknown[] }; buildings: { features: unknown[] } };
+  assert.equal(pkg.schemaVersion, 1);
+  assert.equal(pkg.roads.features.length, 1);
+  assert.equal(pkg.buildings.features.length, 0);
+});
+
 test("Overpass ways normalize into a versioned package with whitelisted inert tags", async () => {
   const response = await handleOfflineMapPackage(
     request({ center: { lat: 51.05, lng: 13.74 }, radiusMeters: 3_000 }),

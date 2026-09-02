@@ -72,18 +72,16 @@ function packageFixture(): OfflineMapPackage {
   };
 }
 
-test("online renderer keeps CARTO visible and prepared OSM context hidden", () => {
+test("online renderer keeps prepared OSM context hidden", () => {
   const mode = offlineMapRendererMode(true, packageFixture());
-  assert.deepEqual(mode, { cartoVisibility: "visible", offlineVisibility: "none" });
+  assert.deepEqual(mode, { offlineVisibility: "none" });
 });
 
 test("offline renderer shows prepared OSM context only when a package exists", () => {
   assert.deepEqual(offlineMapRendererMode(false, packageFixture()), {
-    cartoVisibility: "none",
     offlineVisibility: "visible",
   });
   assert.deepEqual(offlineMapRendererMode(false, null), {
-    cartoVisibility: "none",
     offlineVisibility: "none",
   });
 });

@@ -2,7 +2,7 @@
 id: architecture-stack
 type: architecture
 status: accepted
-last_updated: 2026-08-25
+last_updated: 2026-08-31
 related: [architecture, architecture-map, ADR-0012]
 source_of_truth_for: [runtime-stack, dependency-policy, prepared-offline-map-stack]
 ---
@@ -36,8 +36,8 @@ The Worker entrypoint currently uses a narrow M5.5 wrapper that handles the prep
 
 ## Map
 
-- CARTO Voyager Retina raster basemap using OpenStreetMap-derived data
-- MapLibre for basemap, camera, rotation/compass, one-shot geolocation, saved Areas and saved Street Tasks
+- OpenFreeMap Bright vector basemap using OpenStreetMap-derived data
+- MapLibre for basemap, camera, rotation/compass, live/refining geolocation follow, saved Areas and saved Street Tasks
 - two long-lived application GeoJSON sources for saved geometry
 - a small constant set of MapLibre Fill/Line layers
 - independent SVG overlay only for active Area draw/edit and Street draw geometry/handles
@@ -78,7 +78,7 @@ Current v1 stack:
 - hard radius, timeout and response/package limits;
 - browser IndexedDB package lifecycle in the next slice.
 
-No client-controlled Overpass query text is accepted. Do not bulk-cache CARTO or OpenStreetMap Foundation raster/vector tile services.
+No client-controlled Overpass query text is accepted. Do not bulk-cache OpenFreeMap or OpenStreetMap Foundation raster/vector tile services.
 
 ## Future data/tooling
 

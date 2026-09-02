@@ -50,6 +50,7 @@ export function createSmartHouseTaskSnapshot(input: {
       objectType: "way",
       objectIds: [input.building.osmId],
     },
+    areaPreparationGeneration: null,
     parentStreetTaskId: input.parentStreetTaskId ?? null,
     status: "open",
     completedAt: null,

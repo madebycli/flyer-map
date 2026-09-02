@@ -1,4 +1,9 @@
-import type { CampaignSnapshot, DistributionTask, TaskStatus } from "./campaign.ts";
+import type {
+  CampaignSnapshot,
+  DistributionTask,
+  HouseTask,
+  TaskStatus,
+} from "./campaign.ts";
 
 export type ProgressSummary = {
   denominator: "street-tasks";
@@ -11,7 +16,16 @@ export type ProgressSummary = {
   percentCompleted: number | null;
 };
 
+export type HouseProgressSummary = Omit<ProgressSummary, "denominator"> & {
+  denominator: "house-tasks";
+};
+
 export type TeamProgressSummary = ProgressSummary & {
+  teamId: string;
+  areaCount: number;
+};
+
+export type TeamHouseProgressSummary = HouseProgressSummary & {
   teamId: string;
   areaCount: number;
 };
@@ -21,11 +35,13 @@ export type AreaProgressSummary = ProgressSummary & {
   teamId: string;
 };
 
-function countStatus(tasks: DistributionTask[], status: TaskStatus) {
+type StatusTask = Pick<DistributionTask | HouseTask, "status">;
+
+function countStatus(tasks: StatusTask[], status: TaskStatus) {
   return tasks.reduce((count, task) => count + (task.status === status ? 1 : 0), 0);
 }
 
-export function summarizeStreetTasks(tasks: DistributionTask[]): ProgressSummary {
+function summarizeStatuses(tasks: StatusTask[]) {
   const total = tasks.length;
   const completed = countStatus(tasks, "completed");
   const open = countStatus(tasks, "open");
@@ -33,7 +49,6 @@ export function summarizeStreetTasks(tasks: DistributionTask[]): ProgressSummary
   const notDeliverable = countStatus(tasks, "not-deliverable");
 
   return {
-    denominator: "street-tasks",
     total,
     completed,
     open,
@@ -41,6 +56,20 @@ export function summarizeStreetTasks(tasks: DistributionTask[]): ProgressSummary
     notDeliverable,
     remaining: total - completed,
     percentCompleted: total === 0 ? null : (completed / total) * 100,
+  };
+}
+
+export function summarizeStreetTasks(tasks: DistributionTask[]): ProgressSummary {
+  return {
+    denominator: "street-tasks",
+    ...summarizeStatuses(tasks),
+  };
+}
+
+export function summarizeHouseTasks(tasks: HouseTask[]): HouseProgressSummary {
+  return {
+    denominator: "house-tasks",
+    ...summarizeStatuses(tasks),
   };
 }
 
@@ -56,6 +85,23 @@ export function calculateTeamProgress(
     snapshot.areas.filter((area) => area.teamId === teamId).map((area) => area.id),
   );
   const summary = summarizeStreetTasks(snapshot.tasks.filter((task) => areaIds.has(task.areaId)));
+  return {
+    ...summary,
+    teamId,
+    areaCount: areaIds.size,
+  };
+}
+
+export function calculateTeamHouseProgress(
+  snapshot: CampaignSnapshot,
+  teamId: string,
+): TeamHouseProgressSummary {
+  const areaIds = new Set(
+    snapshot.areas.filter((area) => area.teamId === teamId).map((area) => area.id),
+  );
+  const summary = summarizeHouseTasks(
+    (snapshot.houseTasks ?? []).filter((task) => areaIds.has(task.areaId)),
+  );
   return {
     ...summary,
     teamId,

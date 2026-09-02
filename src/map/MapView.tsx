@@ -1,17 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
-import type { ExpressionSpecification, GeoJSONSource, StyleSpecification } from "maplibre-gl";
+import type {
+  ExpressionSpecification,
+  FilterSpecification,
+  GeoJSONSource,
+  LayerSpecification,
+  SourceSpecification,
+  StyleSpecification,
+} from "maplibre-gl";
 import {
   browserOfflineMapRepository,
   OFFLINE_MAP_CHANGED_EVENT,
 } from "../data/offlineMapRepository";
-import type { Area, DistributionTask, LngLat, MapCameraView } from "../domain/campaign";
+import type {
+  Area,
+  DistributionTask,
+  LineStringGeometry,
+  LngLat,
+  MapCameraView,
+} from "../domain/campaign";
+import type { CollectionArea, CollectionMainArea } from "../domain/collection";
 import type { OfflineMapPackage } from "../domain/offlineMap";
+import type { PickupTask } from "../domain/pickup.ts";
+import type { SmartBuildingCandidate, SmartRoadCandidate } from "../domain/smartCandidates";
+import type { SmartRoadPointAnchor } from "../domain/smartRoadPointAnchor";
 import type { Language } from "../i18n";
 import { t } from "../i18n";
+import { useSessionMapHighlight } from "../platform/sessionMapHighlight.tsx";
 import { loadPersonalMapView, savePersonalMapView } from "./cameraStore";
 import {
-  CARTO_BASEMAP_LAYER_ID,
+  smartHouseBuildingsToGeoJson,
+} from "./smartHouseCandidateData";
+import {
   OFFLINE_BUILDING_LAYER_ID,
   OFFLINE_BUILDING_SOURCE_ID,
   OFFLINE_ROAD_LAYER_ID,
@@ -22,11 +42,30 @@ import {
   offlineMapRendererMode,
   offlineRoadData,
 } from "./offlineMapContext";
+import {
+  HOUSE_FILL_LAYER_ID,
+  HOUSE_LATER_LAYER_ID,
+  HOUSE_MIN_ZOOM,
+  HOUSE_NOT_DELIVERABLE_LAYER_ID,
+  HOUSE_OUTLINE_LAYER_ID,
+  HOUSE_SELECTED_LAYER_ID,
+  HOUSE_SESSION_HIGHLIGHT_LAYER_ID,
+  HOUSE_SOURCE_ID,
+  housesToGeoJson,
+  type RenderHouse,
+} from "./houseRenderer";
+import {
+  COLLECTION_PICKUP_LAYER_IDS,
+  COLLECTION_PICKUP_MARKER_LAYER_ID,
+  COLLECTION_PICKUP_SELECTED_LAYER_ID,
+  COLLECTION_PICKUP_SOURCE_ID,
+  pickupsToGeoJson,
+} from "./pickupRenderer.ts";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-type MapMode = "browse" | "draw" | "edit" | "street-draw";
+export type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house" | "collection-main-draw" | "collection-area-draw" | "collection-area-edit";
 type RenderArea = Area & { color: string };
-type RenderTask = DistributionTask & { color: string };
+type RenderTask = DistributionTask & { color: string; completedColor: string };
 
 type AreaFeatureCollection = {
   type: "FeatureCollection";
@@ -56,11 +95,78 @@ type StreetFeatureCollection = {
       areaId: string;
       label: string;
       color: string;
+      completedColor: string;
       status: DistributionTask["status"];
     };
     geometry: {
       type: "LineString";
       coordinates: LngLat[];
+    };
+  }>;
+};
+
+type SmartRoadFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: {
+      sourceId: string;
+      name: string | null;
+      ref: string | null;
+      highway: string;
+      color: string;
+      selected: boolean;
+    };
+    geometry: {
+      type: "LineString";
+      coordinates: LngLat[];
+    };
+  }>;
+};
+
+type SmartPreviewFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: Record<string, never>;
+    geometry: {
+      type: "LineString";
+      coordinates: LngLat[];
+    };
+  }>;
+};
+
+
+type CollectionFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: {
+      areaId?: string;
+      status?: CollectionArea["status"];
+      color?: string;
+      selected?: boolean;
+      main?: boolean;
+    };
+    geometry: { type: "Polygon"; coordinates: LngLat[][] };
+  }>;
+};
+
+type SmartPointFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: {
+      role: "start" | "end" | "waypoint";
+      label: string;
+    };
+    geometry: {
+      type: "Point";
+      coordinates: LngLat;
     };
   }>;
 };
@@ -74,7 +180,9 @@ type MapViewProps = {
   language: Language;
   areas: RenderArea[];
   tasks: RenderTask[];
+  houses: RenderHouse[];
   selectedTaskId: string | null;
+  selectedHouseTaskId: string | null;
   mode: MapMode;
   draftVertices: LngLat[];
   draftColor: string;
@@ -89,13 +197,47 @@ type MapViewProps = {
   onRefresh: () => void;
   onAreaSelect: (areaId: string | null) => void;
   onTaskSelect: (taskId: string | null) => void;
+  onHouseTaskSelect: (taskId: string | null) => void;
   onDrawPoint: (point: LngLat) => void;
   onEditVertexSelect: (index: number) => void;
   onEditVertexMove: (index: number, point: LngLat) => void;
   onStreetDrawPoint: (point: LngLat) => void;
+  smartRoads?: SmartRoadCandidate[];
+  smartSelectedSourceIds?: readonly string[];
+  smartStartAnchor?: SmartRoadPointAnchor | null;
+  smartEndAnchor?: SmartRoadPointAnchor | null;
+  smartWaypointAnchors?: SmartRoadPointAnchor[];
+  smartPreviewGeometry?: LineStringGeometry | null;
+  smartStreetColor?: string;
+  onSmartStreetPoint?: (point: LngLat, sourceIds: string[]) => void;
+  smartHouseBuildings?: SmartBuildingCandidate[];
+  smartHouseSelectedSourceIds?: readonly string[];
+  onSmartHousePoint?: (point: LngLat, sourceIds: string[]) => void;
+  onOfflineMapPackageChange?: (pkg: OfflineMapPackage | null) => void;
+
+  collectionVisible?: boolean;
+  collectionMainArea?: CollectionMainArea | null;
+  collectionAreas?: CollectionArea[];
+  selectedCollectionAreaId?: string | null;
+  collectionPickups?: PickupTask[];
+  selectedCollectionPickupId?: string | null;
+  collectionDraftVertices?: LngLat[];
+  collectionEditingVertices?: LngLat[];
+  collectionColor?: string;
+  collectionSelectedVertexIndex?: number | null;
+  onCollectionAreaSelect?: (areaId: string | null) => void;
+  onCollectionPickupSelect?: (pickupId: string | null) => void;
+  onCollectionDrawPoint?: (point: LngLat) => void;
+  onCollectionEditVertexSelect?: (index: number) => void;
+  onCollectionEditVertexMove?: (index: number, point: LngLat) => void;
 };
 
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
+
+export const OPENFREE_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
+export const BASEMAP_VECTOR_SOURCE_ID = "openmaptiles";
+export const BASEMAP_HOUSENUMBER_SOURCE_LAYER = "housenumber";
+export const BASEMAP_HOUSENUMBER_LAYER_ID = "vf-basemap-housenumbers";
 
 const AREA_SOURCE_ID = "vf-areas";
 const AREA_FILL_LAYER_ID = "vf-areas-fill";
@@ -106,6 +248,28 @@ const STREET_OPEN_LAYER_ID = "vf-streets-open";
 const STREET_COMPLETED_LAYER_ID = "vf-streets-completed";
 const STREET_LATER_LAYER_ID = "vf-streets-later";
 const STREET_NOT_DELIVERABLE_LAYER_ID = "vf-streets-not-deliverable";
+const STREET_SESSION_HIGHLIGHT_LAYER_ID = "vf-streets-session-highlight";
+const SMART_ROAD_SOURCE_ID = "vf-smart-street-candidates";
+const SMART_ROAD_LAYER_ID = "vf-smart-street-candidates-line";
+const SMART_ROAD_SELECTED_LAYER_ID = "vf-smart-street-candidates-selected";
+const SMART_PREVIEW_SOURCE_ID = "vf-smart-street-preview";
+const SMART_PREVIEW_LAYER_ID = "vf-smart-street-preview-line";
+const SMART_POINT_SOURCE_ID = "vf-smart-street-points";
+const SMART_POINT_LAYER_ID = "vf-smart-street-points-circle";
+const SMART_POINT_LABEL_LAYER_ID = "vf-smart-street-points-label";
+const SMART_HOUSE_SOURCE_ID = "vf-smart-house-candidates";
+const SMART_HOUSE_FILL_LAYER_ID = "vf-smart-house-candidates-fill";
+const SMART_HOUSE_OUTLINE_LAYER_ID = "vf-smart-house-candidates-outline";
+const SMART_HOUSE_SELECTED_LAYER_ID = "vf-smart-house-candidates-selected";
+
+const COLLECTION_MAIN_SOURCE_ID = "vf-collection-main-area";
+const COLLECTION_AREAS_SOURCE_ID = "vf-collection-areas";
+const COLLECTION_MAIN_FILL_LAYER_ID = "vf-collection-main-area-fill";
+const COLLECTION_MAIN_OUTLINE_LAYER_ID = "vf-collection-main-area-outline";
+const COLLECTION_AREAS_FILL_LAYER_ID = "vf-collection-areas-fill";
+const COLLECTION_AREAS_OUTLINE_LAYER_ID = "vf-collection-areas-outline";
+const COLLECTION_AREAS_SELECTED_LAYER_ID = "vf-collection-areas-selected";
+
 const STREET_LAYER_IDS = [
   STREET_SELECTED_LAYER_ID,
   STREET_OPEN_LAYER_ID,
@@ -113,6 +277,54 @@ const STREET_LAYER_IDS = [
   STREET_LATER_LAYER_ID,
   STREET_NOT_DELIVERABLE_LAYER_ID,
 ] as const;
+
+const HOUSE_FILL_OPACITY_EXPRESSION: ExpressionSpecification = [
+  "match",
+  ["get", "status"],
+  "completed",
+  0.12,
+  "later",
+  0.1,
+  "not-deliverable",
+  0.08,
+  0.24,
+];
+
+const HOUSE_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  HOUSE_MIN_ZOOM,
+  0.9,
+  17,
+  1.3,
+  20,
+  2.2,
+];
+
+const HOUSE_HIGHLIGHT_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  HOUSE_MIN_ZOOM,
+  2.2,
+  17,
+  3.0,
+  20,
+  4.6,
+];
+
+const HOUSE_SELECTED_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  HOUSE_MIN_ZOOM,
+  2.8,
+  17,
+  3.7,
+  20,
+  5.4,
+];
 
 const STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   "interpolate",
@@ -182,6 +394,80 @@ const SELECTED_STREET_WIDTH_EXPRESSION: ExpressionSpecification = [
   4.8,
 ];
 
+const SESSION_HIGHLIGHT_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  5,
+  2.1,
+  8,
+  2.5,
+  11,
+  3.1,
+  14,
+  4.2,
+  17,
+  5.8,
+  20,
+  7.6,
+];
+
+const SMART_ROAD_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  10,
+  1.8,
+  13,
+  2.8,
+  16,
+  4.2,
+  19,
+  6.2,
+];
+
+const SMART_PREVIEW_WIDTH_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  10,
+  3.4,
+  13,
+  4.8,
+  16,
+  6.6,
+  19,
+  9,
+];
+
+const PICKUP_RADIUS_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  8,
+  4,
+  12,
+  5.5,
+  16,
+  7.5,
+  20,
+  10,
+];
+
+const PICKUP_SELECTED_RADIUS_EXPRESSION: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  8,
+  7,
+  12,
+  9,
+  16,
+  11.5,
+  20,
+  14,
+];
+
 function areasToGeoJson(areas: RenderArea[]): AreaFeatureCollection {
   return {
     type: "FeatureCollection",
@@ -213,6 +499,7 @@ function streetsToGeoJson(tasks: RenderTask[]): StreetFeatureCollection {
         areaId: task.areaId,
         label: task.label,
         color: task.color,
+        completedColor: task.completedColor,
         status: task.status,
       },
       geometry: {
@@ -223,24 +510,96 @@ function streetsToGeoJson(tasks: RenderTask[]): StreetFeatureCollection {
   };
 }
 
-function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean): StyleSpecification {
+function smartRoadsToGeoJson(
+  roads: SmartRoadCandidate[],
+  selectedSourceIds: readonly string[],
+  color: string,
+): SmartRoadFeatureCollection {
+  const selected = new Set(selectedSourceIds);
+  return {
+    type: "FeatureCollection",
+    features: roads.map((road) => ({
+      type: "Feature",
+      id: road.sourceId,
+      properties: {
+        sourceId: road.sourceId,
+        name: road.name,
+        ref: road.ref,
+        highway: road.highway,
+        color,
+        selected: selected.has(road.sourceId),
+      },
+      geometry: {
+        type: "LineString",
+        coordinates: road.geometry.coordinates,
+      },
+    })),
+  };
+}
+
+function smartHouseSelectionFilter(selectedSourceIds: readonly string[]): FilterSpecification {
+  return selectedSourceIds.length > 0
+    ? ["match", ["get", "sourceId"], [...selectedSourceIds], true, false]
+    : ["==", ["get", "sourceId"], "__none__"];
+}
+
+function smartPreviewToGeoJson(
+  geometry: LineStringGeometry | null,
+): SmartPreviewFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: geometry
+      ? [{
+          type: "Feature",
+          id: "smart-street-preview",
+          properties: {},
+          geometry: {
+            type: "LineString",
+            coordinates: geometry.coordinates,
+          },
+        }]
+      : [],
+  };
+}
+
+function smartPointsToGeoJson(
+  startAnchor: SmartRoadPointAnchor | null,
+  endAnchor: SmartRoadPointAnchor | null,
+  waypointAnchors: SmartRoadPointAnchor[],
+  language: Language,
+): SmartPointFeatureCollection {
+  const features: SmartPointFeatureCollection["features"] = [];
+  if (startAnchor) {
+    features.push({
+      type: "Feature",
+      id: "smart-street-start",
+      properties: { role: "start", label: t(language, "smartStreetStart") },
+      geometry: { type: "Point", coordinates: startAnchor.snapped },
+    });
+  }
+  waypointAnchors.forEach((anchor, index) => {
+    features.push({
+      type: "Feature",
+      id: `smart-street-waypoint-${index}`,
+      properties: { role: "waypoint", label: t(language, "smartStreetWaypoint", { index: index + 1 }) },
+      geometry: { type: "Point", coordinates: anchor.snapped },
+    });
+  });
+  if (endAnchor) {
+    features.push({
+      type: "Feature",
+      id: "smart-street-end",
+      properties: { role: "end", label: t(language, "smartStreetEnd") },
+      geometry: { type: "Point", coordinates: endAnchor.snapped },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+function buildApplicationMapStyle(): StyleSpecification {
   return {
     version: 8,
     sources: {
-      carto: {
-        type: "raster",
-        tiles: [
-          "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        ],
-        tileSize: 256,
-        minzoom: 0,
-        maxzoom: 20,
-        attribution:
-          '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · <a href="https://carto.com/attributions" target="_blank">© CARTO</a>',
-      },
       [OFFLINE_BUILDING_SOURCE_ID]: {
         type: "geojson",
         data: emptyOfflineBuildings(),
@@ -251,28 +610,46 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean
       },
       [AREA_SOURCE_ID]: {
         type: "geojson",
-        data: areasToGeoJson(areas),
+        data: areasToGeoJson([]),
       },
       [STREET_SOURCE_ID]: {
         type: "geojson",
-        data: streetsToGeoJson(tasks),
+        data: streetsToGeoJson([]),
+      },
+      [HOUSE_SOURCE_ID]: {
+        type: "geojson",
+        data: housesToGeoJson([]),
+      },
+      [COLLECTION_MAIN_SOURCE_ID]: {
+        type: "geojson",
+        data: collectionMainToGeoJson(null),
+      },
+      [COLLECTION_AREAS_SOURCE_ID]: {
+        type: "geojson",
+        data: collectionAreasToGeoJson([], null),
+      },
+      [COLLECTION_PICKUP_SOURCE_ID]: {
+        type: "geojson",
+        data: pickupsToGeoJson([]),
+      },
+      [SMART_ROAD_SOURCE_ID]: {
+        type: "geojson",
+        data: smartRoadsToGeoJson([], [], "#64748b"),
+      },
+      [SMART_PREVIEW_SOURCE_ID]: {
+        type: "geojson",
+        data: smartPreviewToGeoJson(null),
+      },
+      [SMART_POINT_SOURCE_ID]: {
+        type: "geojson",
+        data: smartPointsToGeoJson(null, null, [], "de"),
+      },
+      [SMART_HOUSE_SOURCE_ID]: {
+        type: "geojson",
+        data: smartHouseBuildingsToGeoJson([]),
       },
     },
     layers: [
-      {
-        id: "map-background",
-        type: "background",
-        paint: { "background-color": "#fbf8f3" },
-      },
-      {
-        id: CARTO_BASEMAP_LAYER_ID,
-        type: "raster",
-        source: "carto",
-        minzoom: 0,
-        maxzoom: 21,
-        layout: { visibility: online ? "visible" : "none" },
-        paint: { "raster-fade-duration": 0 },
-      },
       {
         id: OFFLINE_BUILDING_LAYER_ID,
         type: "fill",
@@ -323,6 +700,75 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean
         },
       },
       {
+        id: HOUSE_FILL_LAYER_ID,
+        type: "fill",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        paint: {
+          "fill-color": ["get", "color"],
+          "fill-opacity": HOUSE_FILL_OPACITY_EXPRESSION,
+        },
+      },
+      {
+        id: HOUSE_OUTLINE_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: [
+          "any",
+          ["==", ["get", "status"], "open"],
+          ["==", ["get", "status"], "completed"],
+        ],
+        paint: {
+          "line-color": [
+            "case",
+            ["==", ["get", "status"], "completed"],
+            ["get", "completedColor"],
+            ["get", "color"],
+          ],
+          "line-opacity": 0.9,
+          "line-width": HOUSE_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: HOUSE_LATER_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: ["==", ["get", "status"], "later"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.88,
+          "line-width": HOUSE_WIDTH_EXPRESSION,
+          "line-dasharray": [2, 2],
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: HOUSE_NOT_DELIVERABLE_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: ["==", ["get", "status"], "not-deliverable"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.86,
+          "line-width": HOUSE_WIDTH_EXPRESSION,
+          "line-dasharray": [0.7, 2.8],
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
         id: STREET_SELECTED_LAYER_ID,
         type: "line",
         source: STREET_SOURCE_ID,
@@ -358,8 +804,8 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean
         source: STREET_SOURCE_ID,
         filter: ["==", ["get", "status"], "completed"],
         paint: {
-          "line-color": ["get", "color"],
-          "line-opacity": 0.42,
+          "line-color": ["get", "completedColor"],
+          "line-opacity": 0.98,
           "line-width": STREET_WIDTH_EXPRESSION,
         },
         layout: {
@@ -399,7 +845,406 @@ function buildMapStyle(areas: RenderArea[], tasks: RenderTask[], online: boolean
           "line-cap": "round",
         },
       },
+      {
+        id: STREET_SESSION_HIGHLIGHT_LAYER_ID,
+        type: "line",
+        source: STREET_SOURCE_ID,
+        filter: ["==", ["get", "taskId"], "__none__"],
+        paint: {
+          "line-color": "#f59e0b",
+          "line-opacity": 0.92,
+          "line-width": SESSION_HIGHLIGHT_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: HOUSE_SESSION_HIGHLIGHT_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: ["==", ["get", "houseTaskId"], "__none__"],
+        paint: {
+          "line-color": "#f59e0b",
+          "line-opacity": 0.96,
+          "line-width": HOUSE_HIGHLIGHT_WIDTH_EXPRESSION,
+          "line-dasharray": [1, 1],
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: HOUSE_SELECTED_LAYER_ID,
+        type: "line",
+        source: HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: ["==", ["get", "houseTaskId"], "__none__"],
+        paint: {
+          "line-color": "#172019",
+          "line-opacity": 0.98,
+          "line-width": HOUSE_SELECTED_WIDTH_EXPRESSION,
+        },
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+      },
+      {
+        id: COLLECTION_MAIN_FILL_LAYER_ID,
+        type: "fill",
+        source: COLLECTION_MAIN_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: { "fill-color": "#9aa1a6", "fill-opacity": 0.18 },
+      },
+      {
+        id: COLLECTION_MAIN_OUTLINE_LAYER_ID,
+        type: "line",
+        source: COLLECTION_MAIN_SOURCE_ID,
+        layout: { visibility: "none", "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#70777d", "line-opacity": 0.9, "line-width": 2 },
+      },
+      {
+        id: COLLECTION_AREAS_FILL_LAYER_ID,
+        type: "fill",
+        source: COLLECTION_AREAS_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-color": ["get", "color"],
+          "fill-opacity": [
+            "match", ["get", "status"],
+            "completed", 0.34,
+            "in-progress", 0.3,
+            "claimed", 0.25,
+            0.2,
+          ],
+        },
+      },
+      {
+        id: COLLECTION_AREAS_OUTLINE_LAYER_ID,
+        type: "line",
+        source: COLLECTION_AREAS_SOURCE_ID,
+        layout: { visibility: "none", "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.95,
+          "line-width": 2,
+        },
+      },
+      {
+        id: COLLECTION_AREAS_SELECTED_LAYER_ID,
+        type: "line",
+        source: COLLECTION_AREAS_SOURCE_ID,
+        filter: ["==", ["get", "selected"], true],
+        layout: { visibility: "none", "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#111827", "line-opacity": 1, "line-width": 4 },
+      },
+      {
+        id: COLLECTION_PICKUP_MARKER_LAYER_ID,
+        type: "circle",
+        source: COLLECTION_PICKUP_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: {
+          "circle-color": [
+            "match",
+            ["get", "status"],
+            "collected", "#15803d",
+            "unavailable", "#6b7280",
+            "needs-follow-up", "#d97706",
+            "#dc2626",
+          ],
+          "circle-radius": PICKUP_RADIUS_EXPRESSION,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 2,
+          "circle-opacity": 0.96,
+        },
+      },
+      {
+        id: COLLECTION_PICKUP_SELECTED_LAYER_ID,
+        type: "circle",
+        source: COLLECTION_PICKUP_SOURCE_ID,
+        filter: ["==", ["get", "pickupId"], "__none__"],
+        layout: { visibility: "none" },
+        paint: {
+          "circle-color": "rgba(255,255,255,0)",
+          "circle-radius": PICKUP_SELECTED_RADIUS_EXPRESSION,
+          "circle-stroke-color": "#111827",
+          "circle-stroke-width": 3,
+        },
+      },
+      {
+        id: SMART_HOUSE_FILL_LAYER_ID,
+        type: "fill",
+        source: SMART_HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-color": "#9bc8a7",
+          "fill-opacity": 0.32,
+        },
+      },
+      {
+        id: SMART_HOUSE_OUTLINE_LAYER_ID,
+        type: "line",
+        source: SMART_HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#2d6a3f",
+          "line-opacity": 0.9,
+          "line-width": HOUSE_WIDTH_EXPRESSION,
+        },
+      },
+      {
+        id: SMART_HOUSE_SELECTED_LAYER_ID,
+        type: "line",
+        source: SMART_HOUSE_SOURCE_ID,
+        minzoom: HOUSE_MIN_ZOOM,
+        filter: smartHouseSelectionFilter([]),
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#172019",
+          "line-opacity": 0.98,
+          "line-width": HOUSE_SELECTED_WIDTH_EXPRESSION,
+        },
+      },
+      {
+        id: SMART_ROAD_LAYER_ID,
+        type: "line",
+        source: SMART_ROAD_SOURCE_ID,
+        filter: ["==", ["get", "selected"], false],
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#53635a",
+          "line-opacity": 0.88,
+          "line-width": SMART_ROAD_WIDTH_EXPRESSION,
+          "line-dasharray": [2, 1.5],
+        },
+      },
+      {
+        id: SMART_ROAD_SELECTED_LAYER_ID,
+        type: "line",
+        source: SMART_ROAD_SOURCE_ID,
+        filter: ["==", ["get", "selected"], true],
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.98,
+          "line-width": SMART_ROAD_WIDTH_EXPRESSION,
+        },
+      },
+      {
+        id: SMART_PREVIEW_LAYER_ID,
+        type: "line",
+        source: SMART_PREVIEW_SOURCE_ID,
+        layout: {
+          visibility: "none",
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "#f59e0b",
+          "line-opacity": 0.98,
+          "line-width": SMART_PREVIEW_WIDTH_EXPRESSION,
+        },
+      },
+      {
+        id: SMART_POINT_LAYER_ID,
+        type: "circle",
+        source: SMART_POINT_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: {
+          "circle-color": [
+            "match",
+            ["get", "role"],
+            "start",
+            "#1f6b3a",
+            "end",
+            "#b42318",
+            "#2563eb",
+          ],
+          "circle-radius": 8,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 3,
+        },
+      },
+      {
+        id: SMART_POINT_LABEL_LAYER_ID,
+        type: "symbol",
+        source: SMART_POINT_SOURCE_ID,
+        layout: {
+          visibility: "none",
+          "text-field": ["get", "label"],
+          "text-size": 12,
+          "text-offset": [0, 1.35],
+          "text-anchor": "top",
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#172019",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
+        },
+      },
     ],
+  };
+}
+
+const BELOW_BASEMAP_LABEL_LAYER_IDS = new Set([
+  OFFLINE_BUILDING_LAYER_ID,
+  OFFLINE_ROAD_LAYER_ID,
+  AREA_FILL_LAYER_ID,
+  AREA_OUTLINE_LAYER_ID,
+  HOUSE_FILL_LAYER_ID,
+  HOUSE_OUTLINE_LAYER_ID,
+  HOUSE_LATER_LAYER_ID,
+  HOUSE_NOT_DELIVERABLE_LAYER_ID,
+  STREET_OPEN_LAYER_ID,
+  STREET_COMPLETED_LAYER_ID,
+  STREET_LATER_LAYER_ID,
+  STREET_NOT_DELIVERABLE_LAYER_ID,
+  COLLECTION_MAIN_FILL_LAYER_ID,
+  COLLECTION_MAIN_OUTLINE_LAYER_ID,
+  COLLECTION_AREAS_FILL_LAYER_ID,
+  COLLECTION_AREAS_OUTLINE_LAYER_ID,
+  COLLECTION_AREAS_SELECTED_LAYER_ID,
+]);
+
+function installApplicationMapStyle(map: Map) {
+  if (!map.getSource(BASEMAP_VECTOR_SOURCE_ID)) {
+    throw new Error(`OpenFreeMap style source ${BASEMAP_VECTOR_SOURCE_ID} is unavailable.`);
+  }
+
+  // Bright may ship provider-owned 3D building layers. Remove every
+  // fill-extrusion before installing any application layers so the map stays
+  // deliberately 2D regardless of provider layer ids.
+  for (const layer of [...map.getStyle().layers]) {
+    if (layer.type === "fill-extrusion") {
+      map.removeLayer(layer.id);
+    }
+  }
+
+  for (const layer of [...map.getStyle().layers]) {
+    const providerLayer = layer as LayerSpecification & {
+      source?: string;
+      "source-layer"?: string;
+    };
+    if (
+      providerLayer.id !== BASEMAP_HOUSENUMBER_LAYER_ID &&
+      providerLayer.source === BASEMAP_VECTOR_SOURCE_ID &&
+      providerLayer["source-layer"] === BASEMAP_HOUSENUMBER_SOURCE_LAYER
+    ) {
+      map.removeLayer(providerLayer.id);
+    }
+  }
+
+  const firstBasemapSymbolLayerId = map.getStyle().layers.find(
+    (layer) => layer.type === "symbol",
+  )?.id;
+  if (!firstBasemapSymbolLayerId) {
+    throw new Error("OpenFreeMap Bright contains no symbol layer insertion point.");
+  }
+
+  const applicationStyle = buildApplicationMapStyle();
+  for (const [sourceId, source] of Object.entries(applicationStyle.sources)) {
+    if (!map.getSource(sourceId)) map.addSource(sourceId, source as SourceSpecification);
+  }
+
+  for (const layer of applicationStyle.layers) {
+    if (!BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;
+    if (!map.getLayer(layer.id)) map.addLayer(layer, firstBasemapSymbolLayerId);
+  }
+
+  if (!map.getLayer(BASEMAP_HOUSENUMBER_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: BASEMAP_HOUSENUMBER_LAYER_ID,
+        type: "symbol",
+        source: BASEMAP_VECTOR_SOURCE_ID,
+        "source-layer": BASEMAP_HOUSENUMBER_SOURCE_LAYER,
+        minzoom: 16,
+        layout: {
+          "text-field": ["get", "housenumber"],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            16, 12.5,
+            17, 13,
+            18, 14,
+            19, 15,
+            20, 16,
+          ],
+          "text-allow-overlap": false,
+          "text-ignore-placement": false,
+        },
+        paint: {
+          "text-color": "#625b55",
+          "text-halo-color": "rgba(255, 255, 255, 0.9)",
+          "text-halo-width": 1.4,
+          "text-halo-blur": 0.2,
+        },
+      },
+      firstBasemapSymbolLayerId,
+    );
+  }
+
+  for (const layer of applicationStyle.layers) {
+    if (BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;
+    if (!map.getLayer(layer.id)) map.addLayer(layer);
+  }
+}
+
+
+function collectionMainToGeoJson(mainArea: CollectionMainArea | null): CollectionFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: mainArea ? [{
+      type: "Feature",
+      id: mainArea.id,
+      properties: { main: true, color: "#9aa1a6" },
+      geometry: { type: "Polygon", coordinates: mainArea.geometry.coordinates },
+    }] : [],
+  };
+}
+
+function collectionAreasToGeoJson(
+  areas: CollectionArea[],
+  selectedAreaId: string | null,
+): CollectionFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: areas.filter((area) => area.status !== "archived").map((area) => ({
+      type: "Feature",
+      id: area.id,
+      properties: {
+        areaId: area.id,
+        status: area.status,
+        color: area.color,
+        selected: area.id === selectedAreaId,
+      },
+      geometry: { type: "Polygon", coordinates: area.geometry.coordinates },
+    })),
   };
 }
 
@@ -435,23 +1280,205 @@ function findEditVertex(map: Map, vertices: LngLat[], point: { x: number; y: num
   return hit;
 }
 
-function syncApplicationData(
+
+function syncCollectionData(
   map: Map,
-  areas: RenderArea[],
-  tasks: RenderTask[],
-  selectedTaskId: string | null,
+  mainArea: CollectionMainArea | null,
+  areas: CollectionArea[],
+  selectedAreaId: string | null,
+  visible: boolean,
 ) {
+  const mainSource = map.getSource(COLLECTION_MAIN_SOURCE_ID) as GeoJSONSource | undefined;
+  if (mainSource) mainSource.setData(collectionMainToGeoJson(mainArea));
+  const areaSource = map.getSource(COLLECTION_AREAS_SOURCE_ID) as GeoJSONSource | undefined;
+  if (areaSource) areaSource.setData(collectionAreasToGeoJson(areas, selectedAreaId));
+  const visibility = visible ? "visible" : "none";
+  for (const layerId of [
+    COLLECTION_MAIN_FILL_LAYER_ID,
+    COLLECTION_MAIN_OUTLINE_LAYER_ID,
+    COLLECTION_AREAS_FILL_LAYER_ID,
+    COLLECTION_AREAS_OUTLINE_LAYER_ID,
+    COLLECTION_AREAS_SELECTED_LAYER_ID,
+  ]) {
+    if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+  }
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) {
+    region.dataset.collectionMain = mainArea ? "1" : "0";
+    region.dataset.collectionAreas = String(areas.filter((area) => area.status !== "archived").length);
+    region.dataset.collectionSelectedArea = selectedAreaId ?? "";
+  }
+}
+
+function syncCollectionPickupData(map: Map, pickups: PickupTask[]) {
+  const pickupSource = map.getSource(COLLECTION_PICKUP_SOURCE_ID) as GeoJSONSource | undefined;
+  if (pickupSource) pickupSource.setData(pickupsToGeoJson(pickups));
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) {
+    region.dataset.collectionPickups = String(
+      pickups.filter((pickup) => pickup.archivedAt === null).length,
+    );
+  }
+}
+
+function syncCollectionPickupSelection(
+  map: Map,
+  selectedPickupId: string | null,
+  visible: boolean,
+) {
+  if (map.getLayer(COLLECTION_PICKUP_SELECTED_LAYER_ID)) {
+    map.setFilter(
+      COLLECTION_PICKUP_SELECTED_LAYER_ID,
+      ["==", ["get", "pickupId"], selectedPickupId ?? "__none__"],
+    );
+  }
+  if (map.getLayer(COLLECTION_PICKUP_MARKER_LAYER_ID)) {
+    map.setLayoutProperty(
+      COLLECTION_PICKUP_MARKER_LAYER_ID,
+      "visibility",
+      visible ? "visible" : "none",
+    );
+  }
+  if (map.getLayer(COLLECTION_PICKUP_SELECTED_LAYER_ID)) {
+    map.setLayoutProperty(
+      COLLECTION_PICKUP_SELECTED_LAYER_ID,
+      "visibility",
+      visible && selectedPickupId ? "visible" : "none",
+    );
+  }
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) region.dataset.collectionSelectedPickup = selectedPickupId ?? "";
+}
+
+function syncAreaData(map: Map, areas: RenderArea[]) {
   const areaSource = map.getSource(AREA_SOURCE_ID) as GeoJSONSource | undefined;
   if (areaSource) areaSource.setData(areasToGeoJson(areas));
+}
 
+function syncStreetData(map: Map, tasks: RenderTask[]) {
   const streetSource = map.getSource(STREET_SOURCE_ID) as GeoJSONSource | undefined;
   if (streetSource) streetSource.setData(streetsToGeoJson(tasks));
+}
+
+function syncHouseData(map: Map, houses: RenderHouse[]) {
+  const houseSource = map.getSource(HOUSE_SOURCE_ID) as GeoJSONSource | undefined;
+  if (houseSource) houseSource.setData(housesToGeoJson(houses));
+}
+
+function syncSmartStreetData(
+  map: Map,
+  roads: SmartRoadCandidate[],
+  selectedSourceIds: readonly string[],
+  previewGeometry: LineStringGeometry | null,
+  startAnchor: SmartRoadPointAnchor | null,
+  endAnchor: SmartRoadPointAnchor | null,
+  waypointAnchors: SmartRoadPointAnchor[],
+  color: string,
+  language: Language,
+  mode: MapMode,
+) {
+  const roadSource = map.getSource(SMART_ROAD_SOURCE_ID) as GeoJSONSource | undefined;
+  if (roadSource) roadSource.setData(smartRoadsToGeoJson(roads, selectedSourceIds, color));
+
+  const previewSource = map.getSource(SMART_PREVIEW_SOURCE_ID) as GeoJSONSource | undefined;
+  if (previewSource) previewSource.setData(smartPreviewToGeoJson(previewGeometry));
+
+  const pointSource = map.getSource(SMART_POINT_SOURCE_ID) as GeoJSONSource | undefined;
+  if (pointSource) pointSource.setData(smartPointsToGeoJson(startAnchor, endAnchor, waypointAnchors, language));
+
+  const visibility = mode === "smart-street" ? "visible" : "none";
+  for (const layerId of [
+    SMART_ROAD_LAYER_ID,
+    SMART_ROAD_SELECTED_LAYER_ID,
+    SMART_PREVIEW_LAYER_ID,
+    SMART_POINT_LAYER_ID,
+    SMART_POINT_LABEL_LAYER_ID,
+  ]) {
+    if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+  }
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) {
+    region.dataset.smartCandidateRoads = String(roads.length);
+    region.dataset.smartSelectedRoads = String(selectedSourceIds.length);
+  }
+}
+
+function syncSmartHouseData(map: Map, buildings: SmartBuildingCandidate[]) {
+  const source = map.getSource(SMART_HOUSE_SOURCE_ID) as GeoJSONSource | undefined;
+  if (source) source.setData(smartHouseBuildingsToGeoJson(buildings));
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) region.dataset.smartCandidateHouses = String(buildings.length);
+}
+
+function syncSmartHouseSelection(
+  map: Map,
+  selectedSourceIds: readonly string[],
+  mode: MapMode,
+) {
+  if (map.getLayer(SMART_HOUSE_SELECTED_LAYER_ID)) {
+    map.setFilter(
+      SMART_HOUSE_SELECTED_LAYER_ID,
+      smartHouseSelectionFilter(selectedSourceIds),
+    );
+  }
+
+  const visibility = mode === "smart-house" ? "visible" : "none";
+  for (const layerId of [
+    SMART_HOUSE_FILL_LAYER_ID,
+    SMART_HOUSE_OUTLINE_LAYER_ID,
+    SMART_HOUSE_SELECTED_LAYER_ID,
+  ]) {
+    if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+  }
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) region.dataset.smartSelectedHouses = String(selectedSourceIds.length);
+}
+
+function syncApplicationFilters(
+  map: Map,
+  selectedTaskId: string | null,
+  selectedHouseTaskId: string | null,
+  highlightedStreetTaskIds: readonly string[],
+  highlightedHouseTaskIds: readonly string[],
+) {
 
   if (map.getLayer(STREET_SELECTED_LAYER_ID)) {
     map.setFilter(
       STREET_SELECTED_LAYER_ID,
       ["==", ["get", "taskId"], selectedTaskId ?? "__none__"],
     );
+  }
+  if (map.getLayer(STREET_SESSION_HIGHLIGHT_LAYER_ID)) {
+    map.setFilter(
+      STREET_SESSION_HIGHLIGHT_LAYER_ID,
+      highlightedStreetTaskIds.length > 0
+        ? ["match", ["get", "taskId"], [...highlightedStreetTaskIds], true, false]
+        : ["==", ["get", "taskId"], "__none__"],
+    );
+  }
+
+  if (map.getLayer(HOUSE_SELECTED_LAYER_ID)) {
+    map.setFilter(
+      HOUSE_SELECTED_LAYER_ID,
+      ["==", ["get", "houseTaskId"], selectedHouseTaskId ?? "__none__"],
+    );
+  }
+  if (map.getLayer(HOUSE_SESSION_HIGHLIGHT_LAYER_ID)) {
+    map.setFilter(
+      HOUSE_SESSION_HIGHLIGHT_LAYER_ID,
+      highlightedHouseTaskIds.length > 0
+        ? ["match", ["get", "houseTaskId"], [...highlightedHouseTaskIds], true, false]
+        : ["==", ["get", "houseTaskId"], "__none__"],
+    );
+  }
+
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) {
+    region.dataset.sessionHighlightStreets = String(highlightedStreetTaskIds.length);
+    region.dataset.sessionHighlightHouses = String(highlightedHouseTaskIds.length);
   }
 }
 
@@ -463,9 +1490,6 @@ function syncOfflineMapData(map: Map, pkg: OfflineMapPackage | null, online: boo
   if (roadSource) roadSource.setData(offlineRoadData(pkg));
 
   const mode = offlineMapRendererMode(online, pkg);
-  if (map.getLayer(CARTO_BASEMAP_LAYER_ID)) {
-    map.setLayoutProperty(CARTO_BASEMAP_LAYER_ID, "visibility", mode.cartoVisibility);
-  }
   if (map.getLayer(OFFLINE_BUILDING_LAYER_ID)) {
     map.setLayoutProperty(OFFLINE_BUILDING_LAYER_ID, "visibility", mode.offlineVisibility);
   }
@@ -497,6 +1521,18 @@ function updateRendererDiagnostics(map: Map) {
       streetLayers.length > 0
         ? map.queryRenderedFeatures(undefined, { layers: [...streetLayers] })
         : [];
+    const sourceHouses = map.querySourceFeatures(HOUSE_SOURCE_ID).filter(
+      (feature) => typeof feature.properties?.houseTaskId === "string",
+    );
+    const renderedHouses = map.getLayer(HOUSE_FILL_LAYER_ID)
+      ? map.queryRenderedFeatures(undefined, { layers: [HOUSE_FILL_LAYER_ID] })
+      : [];
+    const sourcePickups = map.querySourceFeatures(COLLECTION_PICKUP_SOURCE_ID).filter(
+      (feature) => typeof feature.properties?.pickupId === "string",
+    );
+    const renderedPickups = map.getLayer(COLLECTION_PICKUP_MARKER_LAYER_ID)
+      ? map.queryRenderedFeatures(undefined, { layers: [COLLECTION_PICKUP_MARKER_LAYER_ID] })
+      : [];
     region.dataset.sourceAreas = String(new Set(sourceAreas.map((feature) => feature.properties?.areaId)).size);
     region.dataset.sourceStreets = String(
       new Set(sourceStreets.map((feature) => feature.properties?.taskId)).size,
@@ -506,6 +1542,18 @@ function updateRendererDiagnostics(map: Map) {
     );
     region.dataset.renderedStreets = String(
       new Set(renderedStreets.map((feature) => feature.properties?.taskId)).size,
+    );
+    region.dataset.sourceHouses = String(
+      new Set(sourceHouses.map((feature) => feature.properties?.houseTaskId)).size,
+    );
+    region.dataset.renderedHouses = String(
+      new Set(renderedHouses.map((feature) => feature.properties?.houseTaskId)).size,
+    );
+    region.dataset.sourceCollectionPickups = String(
+      new Set(sourcePickups.map((feature) => feature.properties?.pickupId)).size,
+    );
+    region.dataset.renderedCollectionPickups = String(
+      new Set(renderedPickups.map((feature) => feature.properties?.pickupId)).size,
     );
   } catch (cause) {
     console.warn("Map renderer diagnostics failed", cause);
@@ -556,7 +1604,9 @@ export function MapView({
   language,
   areas,
   tasks,
+  houses,
   selectedTaskId,
+  selectedHouseTaskId,
   mode,
   draftVertices,
   draftColor,
@@ -571,24 +1621,120 @@ export function MapView({
   onRefresh,
   onAreaSelect,
   onTaskSelect,
+  onHouseTaskSelect,
   onDrawPoint,
   onEditVertexSelect,
   onEditVertexMove,
   onStreetDrawPoint,
+  smartRoads = [],
+  smartSelectedSourceIds = [],
+  smartStartAnchor = null,
+  smartEndAnchor = null,
+  smartWaypointAnchors = [],
+  smartPreviewGeometry = null,
+  smartStreetColor = "#64748b",
+  onSmartStreetPoint = () => {},
+  smartHouseBuildings = [],
+  smartHouseSelectedSourceIds = [],
+  onSmartHousePoint = () => {},
+  onOfflineMapPackageChange,
+  collectionVisible = false,
+  collectionMainArea = null,
+  collectionAreas = [],
+  selectedCollectionAreaId = null,
+  collectionPickups = [],
+  selectedCollectionPickupId = null,
+  collectionDraftVertices = [],
+  collectionEditingVertices = [],
+  collectionColor = "#2563eb",
+  collectionSelectedVertexIndex = null,
+  onCollectionAreaSelect = () => {},
+  onCollectionPickupSelect = () => {},
+  onCollectionDrawPoint = () => {},
+  onCollectionEditVertexSelect = () => {},
+  onCollectionEditVertexMove = () => {},
 }: MapViewProps) {
+  const sessionMapHighlight = useSessionMapHighlight();
+  const highlightedStreetTaskIds = useMemo(
+    () =>
+      sessionMapHighlight?.campaignId === campaignId
+        ? [...sessionMapHighlight.streetTaskIds]
+        : [],
+    [campaignId, sessionMapHighlight],
+  );
+  const highlightedHouseTaskIds = useMemo(
+    () =>
+      sessionMapHighlight?.campaignId === campaignId
+        ? [...sessionMapHighlight.houseTaskIds]
+        : [],
+    [campaignId, sessionMapHighlight],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const cameraSaveTimerRef = useRef<number | null>(null);
   const suppressNextCameraSaveRef = useRef(false);
+  const geolocateFollowRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [offlineContextActive, setOfflineContextActive] = useState(false);
+  const offlineMapPackageChangeRef = useRef(onOfflineMapPackageChange);
+  offlineMapPackageChangeRef.current = onOfflineMapPackageChange;
 
   const activePrimaryRef = useRef<SVGPolygonElement | SVGPolylineElement | null>(null);
   const activeHaloRef = useRef<SVGPolygonElement | SVGPolylineElement | null>(null);
   const activeMarkerRefs = useRef(new globalThis.Map<number, SVGCircleElement>());
 
-  const dataRef = useRef({ areas, tasks, selectedTaskId });
-  dataRef.current = { areas, tasks, selectedTaskId };
+  const dataRef = useRef({
+    areas,
+    tasks,
+    houses,
+    selectedTaskId,
+    selectedHouseTaskId,
+    highlightedStreetTaskIds,
+    highlightedHouseTaskIds,
+    mode,
+    smartRoads,
+    smartSelectedSourceIds,
+    smartStartAnchor,
+    smartEndAnchor,
+    smartWaypointAnchors,
+    smartPreviewGeometry,
+    smartStreetColor,
+    smartHouseBuildings,
+    smartHouseSelectedSourceIds,
+    language,
+    collectionVisible,
+    collectionMainArea,
+    collectionAreas,
+    selectedCollectionAreaId,
+    collectionPickups,
+    selectedCollectionPickupId,
+  });
+  dataRef.current = {
+    areas,
+    tasks,
+    houses,
+    selectedTaskId,
+    selectedHouseTaskId,
+    highlightedStreetTaskIds,
+    highlightedHouseTaskIds,
+    mode,
+    smartRoads,
+    smartSelectedSourceIds,
+    smartStartAnchor,
+    smartEndAnchor,
+    smartWaypointAnchors,
+    smartPreviewGeometry,
+    smartStreetColor,
+    smartHouseBuildings,
+    smartHouseSelectedSourceIds,
+    language,
+    collectionVisible,
+    collectionMainArea,
+    collectionAreas,
+    selectedCollectionAreaId,
+    collectionPickups,
+    selectedCollectionPickupId,
+  };
 
   const interactionRef = useRef({
     mode,
@@ -598,10 +1744,22 @@ export function MapView({
     streetDraftVertices,
     onAreaSelect,
     onTaskSelect,
+    onHouseTaskSelect,
     onDrawPoint,
     onEditVertexSelect,
     onEditVertexMove,
     onStreetDrawPoint,
+    onSmartStreetPoint,
+    onSmartHousePoint,
+    collectionVisible,
+    collectionDraftVertices,
+    collectionEditingVertices,
+    collectionSelectedVertexIndex,
+    onCollectionAreaSelect,
+    onCollectionPickupSelect,
+    onCollectionDrawPoint,
+    onCollectionEditVertexSelect,
+    onCollectionEditVertexMove,
   });
   interactionRef.current = {
     mode,
@@ -611,18 +1769,39 @@ export function MapView({
     streetDraftVertices,
     onAreaSelect,
     onTaskSelect,
+    onHouseTaskSelect,
     onDrawPoint,
     onEditVertexSelect,
     onEditVertexMove,
     onStreetDrawPoint,
+    onSmartStreetPoint,
+    onSmartHousePoint,
+    collectionVisible,
+    collectionDraftVertices,
+    collectionEditingVertices,
+    collectionSelectedVertexIndex,
+    onCollectionAreaSelect,
+    onCollectionPickupSelect,
+    onCollectionDrawPoint,
+    onCollectionEditVertexSelect,
+    onCollectionEditVertexMove,
   };
 
   const activeCoordinates = useMemo(() => {
     if (mode === "draw") return draftVertices;
     if (mode === "edit") return editingVertices;
     if (mode === "street-draw") return streetDraftVertices;
+    if (mode === "collection-main-draw" || mode === "collection-area-draw") return collectionDraftVertices;
+    if (mode === "collection-area-edit") return collectionEditingVertices;
     return [];
-  }, [mode, draftVertices, editingVertices, streetDraftVertices]);
+  }, [
+    mode,
+    draftVertices,
+    editingVertices,
+    streetDraftVertices,
+    collectionDraftVertices,
+    collectionEditingVertices,
+  ]);
 
   const updateActiveOverlay = (map: Map) => {
     const interaction = interactionRef.current;
@@ -630,6 +1809,11 @@ export function MapView({
     if (interaction.mode === "draw") coordinates = interaction.draftVertices;
     else if (interaction.mode === "edit") coordinates = interaction.editingVertices;
     else if (interaction.mode === "street-draw") coordinates = interaction.streetDraftVertices;
+    else if (
+      interaction.mode === "collection-main-draw" ||
+      interaction.mode === "collection-area-draw"
+    ) coordinates = interaction.collectionDraftVertices;
+    else if (interaction.mode === "collection-area-edit") coordinates = interaction.collectionEditingVertices;
 
     if (activePrimaryRef.current) {
       activePrimaryRef.current.setAttribute("points", projectedPoints(map, coordinates));
@@ -651,15 +1835,18 @@ export function MapView({
     let active = true;
     let cleanupListeners = () => {};
     const initialCamera = loadPersonalMapView(campaignId) ?? campaignDefaultView ?? GERMANY_VIEW;
-    const initialData = dataRef.current;
 
     try {
       const map = new Map({
         container: containerRef.current,
-        style: buildMapStyle(initialData.areas, initialData.tasks, navigator.onLine),
+        style: OPENFREE_MAP_STYLE_URL,
         center: initialCamera.center,
         zoom: initialCamera.zoom,
         bearing: initialCamera.bearing,
+        pitch: 0,
+        maxPitch: 0,
+        pitchWithRotate: false,
+        touchPitch: false,
         maxZoom: 20,
         renderWorldCopies: false,
         cancelPendingTileRequestsWhileZooming: false,
@@ -673,11 +1860,13 @@ export function MapView({
           if (!active) return;
           const pkg = stored?.package ?? null;
           const online = navigator.onLine;
+          offlineMapPackageChangeRef.current?.(pkg);
           setOfflineContextActive(!online && Boolean(pkg));
           if (map.isStyleLoaded()) syncOfflineMapData(map, pkg, online);
         } catch (cause) {
           console.warn("Prepared offline map could not be loaded", cause);
           if (!active) return;
+          offlineMapPackageChangeRef.current?.(null);
           setOfflineContextActive(false);
           if (map.isStyleLoaded()) syncOfflineMapData(map, null, navigator.onLine);
         }
@@ -707,6 +1896,12 @@ export function MapView({
       };
 
       const persistCamera = () => {
+        // A live GeolocateControl follow move is transient device state. Keep
+        // it inside MapLibre, but never expose or write a GPS-derived camera center
+        // through the personal camera state/store.
+        if (geolocateFollowRef.current) {
+          return;
+        }
         if (suppressNextCameraSaveRef.current) {
           suppressNextCameraSaveRef.current = false;
           onCameraChange(cameraFromMap(map));
@@ -724,13 +1919,55 @@ export function MapView({
         console.error("MapLibre runtime error", event.error ?? event);
       });
 
-      map.once("load", () => {
+      map.once("style.load", () => {
         if (!active) return;
-        const current = dataRef.current;
-        syncApplicationData(map, current.areas, current.tasks, current.selectedTaskId);
-        void refreshOfflineContext();
-        updateActiveOverlay(map);
-        updateRendererDiagnostics(map);
+        try {
+          installApplicationMapStyle(map);
+          const current = dataRef.current;
+          syncAreaData(map, current.areas);
+          syncStreetData(map, current.tasks);
+          syncHouseData(map, current.houses);
+          syncCollectionData(
+            map,
+            current.collectionMainArea,
+            current.collectionAreas,
+            current.selectedCollectionAreaId,
+            current.collectionVisible,
+          );
+          syncCollectionPickupData(map, current.collectionPickups);
+          syncCollectionPickupSelection(
+            map,
+            current.selectedCollectionPickupId,
+            current.collectionVisible,
+          );
+          syncSmartStreetData(
+            map,
+            current.smartRoads,
+            current.smartSelectedSourceIds,
+            current.smartPreviewGeometry,
+            current.smartStartAnchor,
+            current.smartEndAnchor,
+            current.smartWaypointAnchors,
+            current.smartStreetColor,
+            current.language,
+            current.mode,
+          );
+          syncSmartHouseData(map, current.smartHouseBuildings);
+          syncSmartHouseSelection(map, current.smartHouseSelectedSourceIds, current.mode);
+          syncApplicationFilters(
+            map,
+            current.selectedTaskId,
+            current.selectedHouseTaskId,
+            current.highlightedStreetTaskIds,
+            current.highlightedHouseTaskIds,
+          );
+          void refreshOfflineContext();
+          updateActiveOverlay(map);
+          updateRendererDiagnostics(map);
+        } catch (cause) {
+          console.error("OpenFreeMap application layers could not be installed", cause);
+          setError(t(dataRef.current.language, "mapInitError"));
+        }
       });
 
       map.on("idle", () => {
@@ -749,12 +1986,106 @@ export function MapView({
         const interaction = interactionRef.current;
         const lngLat: LngLat = [event.lngLat.lng, event.lngLat.lat];
 
+        if (interaction.collectionVisible) {
+          if (
+            interaction.mode === "collection-main-draw" ||
+            interaction.mode === "collection-area-draw"
+          ) {
+            interaction.onCollectionDrawPoint(lngLat);
+            return;
+          }
+          if (interaction.mode === "collection-area-edit") {
+            const vertexIndex = findEditVertex(
+              map,
+              interaction.collectionEditingVertices,
+              event.point,
+            );
+            if (vertexIndex !== null) {
+              interaction.onCollectionEditVertexSelect(vertexIndex);
+              return;
+            }
+            if (interaction.collectionSelectedVertexIndex !== null) {
+              interaction.onCollectionEditVertexMove(
+                interaction.collectionSelectedVertexIndex,
+                lngLat,
+              );
+            }
+            return;
+          }
+          const pickupLayers = COLLECTION_PICKUP_LAYER_IDS.filter((layerId) => map.getLayer(layerId));
+          const pickupBbox: [[number, number], [number, number]] = [
+            [event.point.x - 12, event.point.y - 12],
+            [event.point.x + 12, event.point.y + 12],
+          ];
+          const pickupFeatures = pickupLayers.length > 0
+            ? map.queryRenderedFeatures(pickupBbox, { layers: [...pickupLayers] })
+            : [];
+          const pickupFeature = pickupFeatures.find(
+            (feature) => typeof feature.properties?.pickupId === "string",
+          );
+          if (pickupFeature && typeof pickupFeature.properties?.pickupId === "string") {
+            interaction.onCollectionPickupSelect(pickupFeature.properties.pickupId);
+            interaction.onCollectionAreaSelect(null);
+            return;
+          }
+          interaction.onCollectionPickupSelect(null);
+          const collectionLayers = [COLLECTION_AREAS_SELECTED_LAYER_ID, COLLECTION_AREAS_FILL_LAYER_ID]
+            .filter((layerId) => map.getLayer(layerId));
+          const collectionFeatures = collectionLayers.length > 0
+            ? map.queryRenderedFeatures(event.point, { layers: collectionLayers })
+            : [];
+          const collectionFeature = collectionFeatures.find(
+            (feature) => typeof feature.properties?.areaId === "string",
+          );
+          interaction.onCollectionAreaSelect(
+            collectionFeature && typeof collectionFeature.properties?.areaId === "string"
+              ? collectionFeature.properties.areaId
+              : null,
+          );
+          return;
+        }
+
         if (interaction.mode === "draw") {
           interaction.onDrawPoint(lngLat);
           return;
         }
         if (interaction.mode === "street-draw") {
           interaction.onStreetDrawPoint(lngLat);
+          return;
+        }
+        if (interaction.mode === "smart-street") {
+          const smartLayers = [SMART_ROAD_LAYER_ID, SMART_ROAD_SELECTED_LAYER_ID].filter(
+            (layerId) => map.getLayer(layerId),
+          );
+          const bbox: [[number, number], [number, number]] = [
+            [event.point.x - 10, event.point.y - 10],
+            [event.point.x + 10, event.point.y + 10],
+          ];
+          const smartFeatures = smartLayers.length > 0
+            ? map.queryRenderedFeatures(bbox, { layers: smartLayers })
+            : [];
+          const sourceIds = [...new Set(
+            smartFeatures
+              .map((feature) => feature.properties?.sourceId)
+              .filter((sourceId): sourceId is string => typeof sourceId === "string"),
+          )];
+          interaction.onSmartStreetPoint(lngLat, sourceIds);
+          return;
+        }
+        if (interaction.mode === "smart-house") {
+          const bbox: [[number, number], [number, number]] = [
+            [event.point.x - 10, event.point.y - 10],
+            [event.point.x + 10, event.point.y + 10],
+          ];
+          const smartFeatures = map.getLayer(SMART_HOUSE_FILL_LAYER_ID)
+            ? map.queryRenderedFeatures(bbox, { layers: [SMART_HOUSE_FILL_LAYER_ID] })
+            : [];
+          const sourceIds = [...new Set(
+            smartFeatures
+              .map((feature) => feature.properties?.sourceId)
+              .filter((sourceId): sourceId is string => typeof sourceId === "string"),
+          )];
+          interaction.onSmartHousePoint(lngLat, sourceIds);
           return;
         }
         if (interaction.mode === "edit") {
@@ -785,6 +2116,23 @@ export function MapView({
           }
         }
 
+        if (map.getLayer(HOUSE_FILL_LAYER_ID)) {
+          const bbox: [[number, number], [number, number]] = [
+            [event.point.x - 10, event.point.y - 10],
+            [event.point.x + 10, event.point.y + 10],
+          ];
+          const houseFeatures = map.queryRenderedFeatures(bbox, {
+            layers: [HOUSE_FILL_LAYER_ID],
+          });
+          const houseFeature = houseFeatures.find(
+            (feature) => typeof feature.properties?.houseTaskId === "string",
+          );
+          if (houseFeature && typeof houseFeature.properties?.houseTaskId === "string") {
+            interaction.onHouseTaskSelect(houseFeature.properties.houseTaskId);
+            return;
+          }
+        }
+
         interaction.onTaskSelect(null);
         if (map.getLayer(AREA_FILL_LAYER_ID)) {
           const areaFeatures = map.queryRenderedFeatures(event.point, { layers: [AREA_FILL_LAYER_ID] });
@@ -802,15 +2150,40 @@ export function MapView({
       });
 
       map.addControl(new NavigationControl({ showCompass: true, showZoom: true }), "top-right");
-      map.addControl(
-        new GeolocateControl({
-          positionOptions: { enableHighAccuracy: true },
-          trackUserLocation: false,
-          showUserLocation: true,
-          showAccuracyCircle: true,
-        }),
-        "top-right",
-      );
+      const geolocateControl = new GeolocateControl({
+        positionOptions: {
+          enableHighAccuracy: true,
+          maximumAge: 30_000,
+          timeout: 6_000,
+        },
+        fitBoundsOptions: { maxZoom: 18 },
+        trackUserLocation: true,
+        showUserLocation: true,
+        showAccuracyCircle: true,
+      });
+      // These are the official GeolocateControl state events. They only gate
+      // personal-camera persistence; the control retains ownership of live
+      // tracking, active/passive follow and recenter behavior.
+      const markGeolocateFollow = () => {
+        geolocateFollowRef.current = true;
+        if (cameraSaveTimerRef.current !== null) {
+          window.clearTimeout(cameraSaveTimerRef.current);
+          cameraSaveTimerRef.current = null;
+        }
+      };
+      geolocateControl.on("trackuserlocationstart", () => {
+        markGeolocateFollow();
+      });
+      geolocateControl.on("trackuserlocationend", () => {
+        geolocateFollowRef.current = false;
+      });
+      geolocateControl.on("userlocationfocus", () => {
+        markGeolocateFollow();
+      });
+      geolocateControl.on("userlocationlostfocus", () => {
+        geolocateFollowRef.current = false;
+      });
+      map.addControl(geolocateControl, "top-right");
       onCameraChange(initialCamera);
     } catch (cause) {
       console.error("Map initialization failed", cause);
@@ -823,14 +2196,112 @@ export function MapView({
       if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
+      geolocateFollowRef.current = false;
     };
   }, [campaignId]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    syncApplicationData(map, areas, tasks, selectedTaskId);
-  }, [areas, tasks, selectedTaskId]);
+    if (!map || !map.isStyleLoaded()) return;
+    syncAreaData(map, areas);
+  }, [areas]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncStreetData(map, tasks);
+  }, [tasks]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncHouseData(map, houses);
+  }, [houses]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncSmartHouseData(map, smartHouseBuildings);
+  }, [smartHouseBuildings]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncSmartHouseSelection(map, smartHouseSelectedSourceIds, mode);
+  }, [mode, smartHouseSelectedSourceIds]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncCollectionData(
+      map,
+      collectionMainArea,
+      collectionAreas,
+      selectedCollectionAreaId,
+      collectionVisible,
+    );
+  }, [
+    collectionAreas,
+    collectionMainArea,
+    collectionVisible,
+    selectedCollectionAreaId,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncCollectionPickupData(map, collectionPickups);
+  }, [collectionPickups]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncCollectionPickupSelection(map, selectedCollectionPickupId, collectionVisible);
+  }, [collectionVisible, selectedCollectionPickupId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncSmartStreetData(
+      map,
+      smartRoads,
+      smartSelectedSourceIds,
+      smartPreviewGeometry,
+      smartStartAnchor,
+      smartEndAnchor,
+      smartWaypointAnchors,
+      smartStreetColor,
+      language,
+      mode,
+    );
+  }, [
+    mode,
+    smartEndAnchor,
+    smartPreviewGeometry,
+    smartRoads,
+    smartSelectedSourceIds,
+    smartStartAnchor,
+    smartStreetColor,
+    smartWaypointAnchors,
+    language,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    syncApplicationFilters(
+      map,
+      selectedTaskId,
+      selectedHouseTaskId,
+      highlightedStreetTaskIds,
+      highlightedHouseTaskIds,
+    );
+  }, [
+    highlightedHouseTaskIds,
+    highlightedStreetTaskIds,
+    selectedHouseTaskId,
+    selectedTaskId,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -858,6 +2329,7 @@ export function MapView({
       className={`map-region map-mode-${mode}`}
       aria-label={t(language, "map")}
       data-renderer="maplibre-geojson"
+      data-collection-visible={collectionVisible ? "1" : "0"}
     >
       <div ref={containerRef} className="map" />
 
@@ -935,6 +2407,78 @@ export function MapView({
             </>
           ) : null}
 
+          {mode === "collection-main-draw" || mode === "collection-area-draw" ? (
+            <>
+              {collectionDraftVertices.length >= 2 ? (
+                <>
+                  <polyline
+                    ref={activeHaloRef as React.RefObject<SVGPolylineElement>}
+                    points={map ? projectedPoints(map, collectionDraftVertices) : ""}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={12}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polyline
+                    ref={activePrimaryRef as React.RefObject<SVGPolylineElement>}
+                    points={map ? projectedPoints(map, collectionDraftVertices) : ""}
+                    fill="none"
+                    stroke={collectionColor}
+                    strokeWidth={8}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              ) : null}
+              <ProjectedMarkers
+                map={map}
+                coordinates={collectionDraftVertices}
+                color={collectionColor}
+                radius={10}
+                markerRefs={activeMarkerRefs}
+              />
+            </>
+          ) : null}
+
+          {mode === "collection-area-edit" ? (
+            <>
+              {collectionEditingVertices.length >= 3 ? (
+                <>
+                  <polygon
+                    ref={activeHaloRef as React.RefObject<SVGPolygonElement>}
+                    points={map ? projectedPoints(map, collectionEditingVertices) : ""}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={14}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polygon
+                    ref={activePrimaryRef as React.RefObject<SVGPolygonElement>}
+                    points={map ? projectedPoints(map, collectionEditingVertices) : ""}
+                    fill={collectionColor}
+                    fillOpacity={0.24}
+                    stroke={collectionColor}
+                    strokeWidth={8}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              ) : null}
+              <ProjectedMarkers
+                map={map}
+                coordinates={collectionEditingVertices}
+                color={collectionColor}
+                selectedIndex={collectionSelectedVertexIndex}
+                radius={10}
+                markerRefs={activeMarkerRefs}
+              />
+            </>
+          ) : null}
+
           {mode === "street-draw" ? (
             <>
               {streetDraftVertices.length >= 2 ? (
@@ -986,8 +2530,16 @@ export function MapView({
             type="button"
             onClick={onRefresh}
             disabled={refreshState === "loading"}
-            aria-label={t(language, "refreshData")}
-            title={t(language, "refreshData")}
+            aria-label={
+              refreshState === "available"
+                ? `${t(language, "refreshData")}: ${t(language, "browseUpdateDeferred")}`
+                : t(language, "refreshData")
+            }
+            title={
+              refreshState === "available"
+                ? `${t(language, "refreshData")}: ${t(language, "browseUpdateDeferred")}`
+                : t(language, "refreshData")
+            }
           >
             <span aria-hidden="true">↻</span>
           </button>

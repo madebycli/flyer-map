@@ -1,4 +1,7 @@
-import type { CampaignMutation } from "../src/domain/mutations.ts";
+import {
+  HOUSE_CREATE_BATCH_MAX,
+  type CampaignMutation,
+} from "../src/domain/mutations.ts";
 
 export type MutationValidationResult =
   | { valid: true; mutation: CampaignMutation }
@@ -58,6 +61,10 @@ function isTaskSource(value: unknown, expectedObjectCount: number | null = null)
   return new Set(value.objectIds).size === value.objectIds.length;
 }
 
+function hasNoClientPreparationGeneration(payload: Record<string, unknown>) {
+  return !Object.prototype.hasOwnProperty.call(payload, "areaPreparationGeneration");
+}
+
 function validStatusPayload(payload: Record<string, unknown>) {
   return (
     (payload.status === "open" ||
@@ -66,6 +73,25 @@ function validStatusPayload(payload: Record<string, unknown>) {
       payload.status === "not-deliverable") &&
     (payload.completedAt === null || isTimestamp(payload.completedAt)) &&
     hasExpectedUpdatedAt(payload)
+  );
+}
+
+function validHouseCreateEntry(value: unknown) {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value).sort().join(",");
+  if (
+    keys !== "areaId,geometry,label,parentStreetTaskId,taskId" &&
+    keys !== "areaId,geometry,label,parentStreetTaskId,source,taskId"
+  ) {
+    return false;
+  }
+  return (
+    isTaskId(value.taskId) &&
+    isId(value.areaId) &&
+    isString(value.label, 160) &&
+    isRecord(value.geometry) &&
+    isTaskSource(value.source, 1) &&
+    (value.parentStreetTaskId === null || isTaskId(value.parentStreetTaskId))
   );
 }
 
@@ -128,6 +154,11 @@ export function validateCampaignMutation(
       }
       break;
     }
+    case "team.delete":
+      if (isId(payload.teamId) && hasExpectedUpdatedAt(payload)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
     case "area.create":
       if (
         isId(payload.areaId) &&
@@ -160,6 +191,7 @@ export function validateCampaignMutation(
       break;
     case "task.create":
       if (
+        hasNoClientPreparationGeneration(payload) &&
         isTaskId(payload.taskId) &&
         isId(payload.areaId) &&
         isString(payload.label, 160) &&
@@ -186,6 +218,7 @@ export function validateCampaignMutation(
       break;
     case "house.create":
       if (
+        hasNoClientPreparationGeneration(payload) &&
         isTaskId(payload.taskId) &&
         isId(payload.areaId) &&
         isString(payload.label, 160) &&
@@ -196,6 +229,20 @@ export function validateCampaignMutation(
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;
+    case "house.create-batch": {
+      if (
+        !hasNoClientPreparationGeneration(payload) ||
+        !Array.isArray(payload.houses) ||
+        payload.houses.length < 1 ||
+        payload.houses.length > HOUSE_CREATE_BATCH_MAX ||
+        !payload.houses.every(validHouseCreateEntry)
+      ) {
+        break;
+      }
+      const taskIds = payload.houses.map((house) => (house as Record<string, unknown>).taskId);
+      if (new Set(taskIds).size !== taskIds.length) break;
+      return { valid: true, mutation: value as CampaignMutation };
+    }
     case "house.rename":
       if (isTaskId(payload.taskId) && isString(payload.label, 160) && hasExpectedUpdatedAt(payload)) {
         return { valid: true, mutation: value as CampaignMutation };
@@ -208,6 +255,113 @@ export function validateCampaignMutation(
       break;
     case "house.delete":
       if (isTaskId(payload.taskId) && hasExpectedUpdatedAt(payload)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.main-area.create":
+      if (isId(payload.mainAreaId) && isString(payload.name, 160) && isRecord(payload.geometry)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.main-area.update":
+      if (
+        isId(payload.mainAreaId) &&
+        isString(payload.name, 160) &&
+        isRecord(payload.geometry) &&
+        hasExpectedUpdatedAt(payload)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.area.create":
+      if (
+        isId(payload.areaId) &&
+        isId(payload.mainAreaId) &&
+        isString(payload.name, 160) &&
+        isRecord(payload.geometry) &&
+        isString(payload.color, 32)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.area.update":
+      if (
+        isId(payload.areaId) &&
+        isString(payload.name, 160) &&
+        isRecord(payload.geometry) &&
+        isString(payload.color, 32) &&
+        hasExpectedUpdatedAt(payload)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.area.archive":
+      if (isId(payload.areaId) && hasExpectedUpdatedAt(payload)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.start":
+      if (
+        isId(payload.runId) &&
+        isId(payload.memberId) &&
+        isId(payload.mainAreaId) &&
+        isId(payload.collectorId) &&
+        isString(payload.label, 120)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.claim-areas":
+      if (
+        isId(payload.runId) &&
+        isId(payload.collectorId) &&
+        isString(payload.collectorLabel, 120) &&
+        Array.isArray(payload.areaIds) &&
+        payload.areaIds.length > 0 &&
+        payload.areaIds.every(isId) &&
+        new Set(payload.areaIds).size === payload.areaIds.length
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.start-area":
+      if (isId(payload.runId) && isId(payload.collectorId) && isId(payload.areaId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.join":
+      if (
+        isId(payload.runId) &&
+        isId(payload.memberId) &&
+        isId(payload.collectorId) &&
+        isString(payload.label, 120)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.leave":
+      if (isId(payload.runId) && isId(payload.collectorId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.release-area":
+      if (isId(payload.runId) && isId(payload.areaId) && isId(payload.collectorId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.admin.force-release-area":
+      if (isId(payload.runId) && isId(payload.areaId) && isId(payload.adminId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.complete-area":
+      if (isId(payload.runId) && isId(payload.areaId) && isId(payload.collectorId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.run.close":
+    case "collection.run.cancel":
+      if (isId(payload.runId) && isId(payload.collectorId)) {
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;

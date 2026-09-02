@@ -25,7 +25,7 @@ Die technische und produktseitige Source of Truth liegt im Repository unter `doc
 - TypeScript
 - React + Vite
 - MapLibre GL JS
-- CARTO Voyager Retina Raster-Basemap mit OpenStreetMap-abgeleiteten Kartendaten
+- OpenFreeMap Bright Vektor-Basemap mit OpenStreetMap-abgeleiteten Kartendaten
 - Verteil-Flyer GeoJSON-Layer für Teamgebiete und spätere Aufgaben
 - Cloudflare Workers + Static Assets
 - Cloudflare D1 ab Shared-Persistence-Milestone

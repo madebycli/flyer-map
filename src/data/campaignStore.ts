@@ -2,13 +2,18 @@ import {
   CampaignApiError,
   accessTokenFromUrl,
   buildCampaignAccessUrl,
+  collectionAccessTokenFromUrl,
+  collectionModeFromUrl,
+  fetchCollectionSnapshot,
+  fetchCurrentCollectionAccess,
+  redeemCollectionAccess,
+  removeCollectionAccessTokenFromUrl,
   campaignIdFromUrl,
   createCampaignSnapshot,
   fetchCampaignSnapshot,
   fetchCampaignVersion,
   fetchCurrentAccess,
   postCampaignMutation,
-  putCampaignSnapshot,
   redeemCampaignAccess,
   removeAccessTokenFromUrl,
   setCampaignIdInUrl,
@@ -20,6 +25,7 @@ import {
 } from "./mutationQueue";
 import {
   createInitialSnapshot,
+  normalizeAreaPreparationGenerations,
   type Area,
   type Campaign,
   type CampaignSnapshot,
@@ -33,17 +39,20 @@ import {
   deriveCampaignMutation,
   MutationDerivationError,
 } from "../domain/mutationDiff";
+import { sameSnapshotContent } from "../domain/snapshotComparison.ts";
 
 const STORAGE_KEY = "verteil-flyer:campaign-snapshot";
 const BACKUP_STORAGE_KEY = "verteil-flyer:campaign-snapshot:backup";
 const CONFLICT_STORAGE_KEY = "verteil-flyer:campaign-snapshot:conflict";
 const LEGACY_STORAGE_KEY = "verteil-flyer:m1:campaign-snapshot:v1";
-const POLL_INTERVAL_MS = 30_000;
+const POLL_INTERVAL_MS = 3_000;
 const MAX_RETRY_DELAY_MS = 60_000;
+const FIELD_GROUP_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 
 export type CampaignLoadResult = { snapshot: CampaignSnapshot; warning: string | null };
 export type RefreshState = "idle" | "loading" | "current" | "error" | "available";
-export type SyncMessageCode = "access_required" | "network" | "conflict" | "forbidden" | null;
+export type CampaignAccessState = "idle" | "pending" | "authenticated" | "required";
+export type SyncMessageCode = "access_required" | "network" | "conflict" | "forbidden" | "schema_migration_required" | null;
 export type MutationSyncState =
   | "saved"
   | "pending"
@@ -52,14 +61,24 @@ export type MutationSyncState =
   | "conflict"
   | "failed"
   | "blocked-auth";
+export type SyncIssue = {
+  kind: "server-wins" | "blocked-auth" | "network" | "schema";
+  mutationType?: string;
+  serverRevision?: number | null;
+  baseRevision?: number | null;
+  message: string;
+  occurredAt: string;
+};
 export type CampaignStoreUpdate = {
   snapshot?: CampaignSnapshot;
   access?: AccessInfo | null;
+  accessState?: CampaignAccessState;
   refreshState?: RefreshState;
   messageCode?: SyncMessageCode;
   initialAccessUrl?: string;
   syncState?: MutationSyncState;
   pendingCount?: number;
+  syncIssue?: SyncIssue | null;
 };
 
 type LegacyCampaign = Omit<Campaign, "defaultMapView">;
@@ -77,6 +96,7 @@ type SyncRuntime = {
   serverRevision: number | null;
   remoteRevision: number | null;
   access: AccessInfo | null;
+  accessState: CampaignAccessState;
   initialized: boolean;
   initializeInFlight: boolean;
   queueInFlight: boolean;
@@ -85,6 +105,7 @@ type SyncRuntime = {
   needsCanonicalRefresh: boolean;
   retryTimer: number | null;
   enqueuesPending: number;
+  activeFieldGroupId: string | null;
 };
 
 const syncRuntime: SyncRuntime = {
@@ -94,6 +115,7 @@ const syncRuntime: SyncRuntime = {
   serverRevision: null,
   remoteRevision: null,
   access: null,
+  accessState: "idle",
   initialized: false,
   initializeInFlight: false,
   queueInFlight: false,
@@ -102,6 +124,7 @@ const syncRuntime: SyncRuntime = {
   needsCanonicalRefresh: false,
   retryTimer: null,
   enqueuesPending: 0,
+  activeFieldGroupId: null,
 };
 
 const listeners = new Set<(update: CampaignStoreUpdate) => void>();
@@ -276,33 +299,33 @@ function parseSnapshot(raw: string | null): CampaignSnapshot | null {
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (isCampaignSnapshot(parsed)) return parsed;
-    if (isSnapshotV2(parsed)) return migrateV2(parsed);
-    if (isSnapshotV1(parsed)) return migrateV1(parsed);
+    if (isCampaignSnapshot(parsed)) return normalizeAreaPreparationGenerations(parsed);
+    if (isSnapshotV2(parsed)) return normalizeAreaPreparationGenerations(migrateV2(parsed));
+    if (isSnapshotV1(parsed)) return normalizeAreaPreparationGenerations(migrateV1(parsed));
     return null;
   } catch {
     return null;
   }
+}
+
+function localStorageKey(key: string) {
+  return collectionModeFromUrl() ? key + ":collection" : key;
 }
 
 function writeLocalSnapshot(snapshot: CampaignSnapshot) {
   if (typeof window === "undefined") return null;
   const serialized = JSON.stringify(snapshot);
   try {
-    window.localStorage.setItem(STORAGE_KEY, serialized);
+    window.localStorage.setItem(localStorageKey(STORAGE_KEY), serialized);
   } catch {
     return "Lokales Speichern ist fehlgeschlagen. Bitte diese Seite noch nicht neu laden.";
   }
   try {
-    window.localStorage.setItem(BACKUP_STORAGE_KEY, serialized);
+    window.localStorage.setItem(localStorageKey(BACKUP_STORAGE_KEY), serialized);
   } catch {
     return "Gespeichert, aber die lokale Sicherheitskopie konnte nicht aktualisiert werden.";
   }
   return null;
-}
-
-function sameSnapshotContent(a: CampaignSnapshot, b: CampaignSnapshot) {
-  return JSON.stringify({ ...a, revision: 0 }) === JSON.stringify({ ...b, revision: 0 });
 }
 
 function isAccessError(error: unknown) {
@@ -322,7 +345,12 @@ function retryDelay(attemptCount: number) {
 
 function setAccess(access: AccessInfo | null) {
   syncRuntime.access = access;
-  emit({ access, messageCode: access ? null : "access_required" });
+  syncRuntime.accessState = access ? "authenticated" : "required";
+  emit({
+    access,
+    accessState: syncRuntime.accessState,
+    messageCode: access ? null : "access_required",
+  });
 }
 
 function applyServerSnapshot(snapshot: CampaignSnapshot, messageCode: SyncMessageCode = null) {
@@ -350,6 +378,34 @@ function emitQueueState(records: QueuedCampaignMutation[]) {
   emit({
     syncState: stateFromQueue(records),
     pendingCount: records.length + syncRuntime.enqueuesPending,
+  });
+}
+
+function emitSyncIssue(issue: SyncIssue) {
+  emit({ syncIssue: issue });
+}
+
+function terminalServerWinsIssue(
+  record: QueuedCampaignMutation,
+  reason: string,
+  serverRevision: number | null = null,
+  serverMessage?: string,
+) {
+  if (syncRuntime.latestLocal) saveCampaignConflictSnapshot(syncRuntime.latestLocal);
+  console.warn(
+    "campaign_sync_server_wins",
+    `mutationType=${record.mutation.type}`,
+    `baseRevision=${record.mutation.baseRevision}`,
+    `serverRevision=${serverRevision ?? "unknown"}`,
+    `reason=${reason}`,
+  );
+  emitSyncIssue({
+    kind: "server-wins",
+    mutationType: record.mutation.type,
+    baseRevision: record.mutation.baseRevision,
+    serverRevision,
+    message: serverMessage ?? "Eine lokale Änderung konnte nicht übernommen werden. Die Online-Version wurde geladen; eine lokale Sicherheitskopie bleibt erhalten.",
+    occurredAt: new Date().toISOString(),
   });
 }
 
@@ -407,7 +463,9 @@ async function finalizeQueueIfPossible(campaignId: string) {
   }
 
   try {
-    const canonical = await fetchCampaignSnapshot(campaignId);
+    const canonical = collectionModeFromUrl()
+      ? await fetchCollectionSnapshot(campaignId)
+      : await fetchCampaignSnapshot(campaignId);
     applyServerSnapshot(canonical);
     emit({ syncState: "saved", pendingCount: 0 });
   } catch (error) {
@@ -447,7 +505,14 @@ async function processMutationQueue() {
   }
 
   const record = records[0];
-  if (record.state === "conflict" || record.state === "blocked-auth" || record.state === "invalid") {
+  if (record.state === "conflict" || record.state === "invalid") {
+    terminalServerWinsIssue(record, record.state);
+    await browserMutationQueue.remove(record.id);
+    syncRuntime.needsCanonicalRefresh = true;
+    await processMutationQueue();
+    return;
+  }
+  if (record.state === "blocked-auth") {
     emitQueueState(records);
     return;
   }
@@ -464,7 +529,7 @@ async function processMutationQueue() {
   emit({ syncState: "syncing", pendingCount: records.length + syncRuntime.enqueuesPending });
 
   try {
-    const result = await postCampaignMutation(campaignId, record.mutation);
+    const result = await postCampaignMutation(campaignId, record.mutation, record.fieldGroupId);
     await browserMutationQueue.remove(record.id);
     syncRuntime.serverRevision = result.appliedRevision;
     syncRuntime.lastServer = null;
@@ -475,18 +540,12 @@ async function processMutationQueue() {
     const lastError = error instanceof Error ? error.message : "Mutation konnte nicht synchronisiert werden.";
 
     if (apiError?.status === 409) {
-      await browserMutationQueue.update({
-        ...record,
-        state: "conflict",
-        attemptCount: record.attemptCount + 1,
-        lastError,
-      });
-      if (syncRuntime.latestLocal) saveCampaignConflictSnapshot(syncRuntime.latestLocal);
+      await browserMutationQueue.remove(record.id);
       if (apiError.revision !== undefined && apiError.revision !== null) {
         syncRuntime.serverRevision = apiError.revision;
       }
-      emit({ syncState: "conflict", messageCode: "conflict", pendingCount: records.length });
-      return;
+      terminalServerWinsIssue(record, "http_409", apiError.revision ?? null, apiError.message);
+      syncRuntime.needsCanonicalRefresh = true;
     }
 
     if (apiError && (apiError.status === 401 || apiError.status === 403)) {
@@ -500,23 +559,51 @@ async function processMutationQueue() {
         syncRuntime.initialized = false;
         setAccess(null);
       }
+      emitSyncIssue({
+        kind: "blocked-auth",
+        mutationType: record.mutation.type,
+        baseRevision: record.mutation.baseRevision,
+        message: "Eine Änderung wartet, weil sich dein Zugriff geändert hat.",
+        occurredAt: new Date().toISOString(),
+      });
       emit({
         syncState: "blocked-auth",
         messageCode: apiError.status === 403 ? "forbidden" : "access_required",
         pendingCount: records.length,
       });
+      emitSyncIssue({
+        kind: "schema",
+        mutationType: record.mutation.type,
+        baseRevision: record.mutation.baseRevision,
+        message: "Eine Änderung wartet, weil eine notwendige Datenbankmigration fehlt.",
+        occurredAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    if (apiError?.code === "schema_migration_required") {
+      const attemptCount = record.attemptCount + 1;
+      const nextAttemptAt = Date.now() + retryDelay(attemptCount);
+      await browserMutationQueue.update({
+        ...record,
+        state: "retry",
+        attemptCount,
+        nextAttemptAt,
+        lastError,
+      });
+      emit({
+        syncState: "failed",
+        messageCode: "schema_migration_required",
+        pendingCount: records.length,
+      });
+      if (navigator.onLine) scheduleRetry(nextAttemptAt - Date.now());
       return;
     }
 
     if (apiError && apiError.status >= 400 && apiError.status < 500 && !isRetryableError(apiError)) {
-      await browserMutationQueue.update({
-        ...record,
-        state: "invalid",
-        attemptCount: record.attemptCount + 1,
-        lastError,
-      });
-      emit({ syncState: "failed", messageCode: "conflict", pendingCount: records.length });
-      return;
+      await browserMutationQueue.remove(record.id);
+      terminalServerWinsIssue(record, `http_${apiError.status}`, apiError.revision ?? null);
+      syncRuntime.needsCanonicalRefresh = true;
     }
 
     const attemptCount = record.attemptCount + 1;
@@ -533,6 +620,13 @@ async function processMutationQueue() {
       messageCode: "network",
       pendingCount: records.length,
     });
+    emitSyncIssue({
+      kind: "network",
+      mutationType: record.mutation.type,
+      baseRevision: record.mutation.baseRevision,
+      message: "Die Änderung bleibt lokal gespeichert und wird erneut versucht, sobald die Verbindung stabil ist.",
+      occurredAt: new Date().toISOString(),
+    });
     if (navigator.onLine) scheduleRetry(nextAttemptAt - Date.now());
     return;
   } finally {
@@ -543,43 +637,16 @@ async function processMutationQueue() {
   if (!after) return;
   emitQueueState(after);
   if (after.length > 0) {
-    queueMicrotask(() => void processMutationQueue());
+    await processMutationQueue();
   } else {
     await finalizeQueueIfPossible(campaignId);
   }
 }
 
-async function recoverLegacyOptimisticSnapshot(
-  campaignId: string,
-  local: CampaignSnapshot,
-  server: CampaignSnapshot,
-) {
-  if (syncRuntime.access?.role === "viewer") return false;
-  if (local.revision <= server.revision || sameSnapshotContent(local, server)) return false;
-
-  try {
-    const outgoing: CampaignSnapshot = { ...local, revision: server.revision + 1 };
-    const stored = await putCampaignSnapshot(campaignId, server.revision, outgoing);
-    applyServerSnapshot(stored);
-    emit({ syncState: "saved", pendingCount: 0 });
-    return true;
-  } catch (error) {
-    saveCampaignConflictSnapshot(local);
-    if (isRetryableError(error)) {
-      emit({ syncState: "failed", messageCode: "network", pendingCount: 0 });
-    } else if (isAccessError(error)) {
-      syncRuntime.initialized = false;
-      setAccess(null);
-      emit({ syncState: "blocked-auth", pendingCount: 0 });
-    } else {
-      emit({ syncState: "conflict", messageCode: "conflict", pendingCount: 0 });
-    }
-    return true;
-  }
-}
-
 async function loadServerForAuthenticatedCampaign(targetCampaignId: string) {
-  const serverSnapshot = await fetchCampaignSnapshot(targetCampaignId);
+  const serverSnapshot = collectionModeFromUrl()
+    ? await fetchCollectionSnapshot(targetCampaignId)
+    : await fetchCampaignSnapshot(targetCampaignId);
   const latestLocal = syncRuntime.latestLocal;
   syncRuntime.serverRevision = serverSnapshot.revision;
   syncRuntime.lastServer = serverSnapshot;
@@ -618,33 +685,14 @@ async function loadServerForAuthenticatedCampaign(targetCampaignId: string) {
     return;
   }
 
-  if (syncRuntime.access?.role === "viewer") {
-    if (!sameSnapshotContent(latestLocal, serverSnapshot) && loadedExistingSnapshot) {
-      saveCampaignConflictSnapshot(latestLocal);
-    }
+  const sameContent = sameSnapshotContent(latestLocal, serverSnapshot);
+  if (!sameContent) {
     applyServerSnapshot(serverSnapshot);
     emit({ syncState: "saved", pendingCount: 0 });
     return;
   }
 
-  if (await recoverLegacyOptimisticSnapshot(targetCampaignId, latestLocal, serverSnapshot)) return;
-
-  const sameContent = sameSnapshotContent(latestLocal, serverSnapshot);
-  if (latestLocal.revision === serverSnapshot.revision && !sameContent) {
-    saveCampaignConflictSnapshot(latestLocal);
-    emit({ syncState: "conflict", messageCode: "conflict", pendingCount: 0 });
-    return;
-  }
-
-  if (serverSnapshot.revision > latestLocal.revision || !sameContent) {
-    if (!sameContent && loadedExistingSnapshot) saveCampaignConflictSnapshot(latestLocal);
-    applyServerSnapshot(serverSnapshot, !sameContent ? "conflict" : null);
-    emit({ syncState: "saved", pendingCount: 0 });
-    return;
-  }
-
-  syncRuntime.latestLocal = serverSnapshot;
-  writeLocalSnapshot(serverSnapshot);
+  applyServerSnapshot(serverSnapshot);
   emit({ syncState: "saved", pendingCount: 0 });
 }
 
@@ -665,8 +713,28 @@ async function initializeSharedPersistence() {
   const targetCampaignId = urlCampaignId ?? localAtStart.campaign.id;
   syncRuntime.targetCampaignId = targetCampaignId;
   setCampaignIdInUrl(targetCampaignId);
+  syncRuntime.accessState = "pending";
+  emit({ accessState: syncRuntime.accessState });
 
   try {
+    const collectionToken = collectionAccessTokenFromUrl();
+    if (collectionModeFromUrl()) {
+      try {
+        if (collectionToken) {
+          setAccess(await redeemCollectionAccess(targetCampaignId, collectionToken));
+          removeCollectionAccessTokenFromUrl();
+        } else {
+          setAccess(await fetchCurrentCollectionAccess(targetCampaignId));
+        }
+        await loadServerForAuthenticatedCampaign(targetCampaignId);
+        return;
+      } catch (error) {
+        if (!isAccessError(error)) throw error;
+        syncRuntime.initialized = false;
+        setAccess(null);
+        return;
+      }
+    }
     const fragmentToken = accessTokenFromUrl();
     if (fragmentToken) {
       try {
@@ -689,12 +757,14 @@ async function initializeSharedPersistence() {
     if (!loadedExistingSnapshot && !urlCampaignId && localAtStart.campaign.id === targetCampaignId) {
       const created = await createCampaignSnapshot(localAtStart);
       syncRuntime.access = created.access;
+      syncRuntime.accessState = "authenticated";
       syncRuntime.initialized = true;
       syncRuntime.targetCampaignId = created.snapshot.campaign.id;
       setCampaignIdInUrl(created.snapshot.campaign.id);
       applyServerSnapshot(created.snapshot);
       emit({
         access: created.access,
+        accessState: syncRuntime.accessState,
         initialAccessUrl: buildCampaignAccessUrl(
           created.snapshot.campaign.id,
           created.initialAccessToken,
@@ -711,12 +781,14 @@ async function initializeSharedPersistence() {
   } catch (error) {
     syncRuntime.initialized = false;
     if (isRetryableError(error)) {
-      emit({ messageCode: "network", syncState: "offline" });
+      syncRuntime.accessState = "idle";
+      emit({ accessState: syncRuntime.accessState, messageCode: "network", syncState: "offline" });
     } else if (isAccessError(error)) {
       setAccess(null);
     } else {
+      syncRuntime.accessState = "idle";
       console.warn("campaign_sync_initialize_failed", error);
-      emit({ syncState: "failed" });
+      emit({ accessState: syncRuntime.accessState, syncState: "failed" });
     }
   } finally {
     syncRuntime.initializeInFlight = false;
@@ -757,11 +829,20 @@ async function refreshFromServer(manual: boolean) {
         setRefreshState("available");
         return;
       }
-      applyServerSnapshot(await fetchCampaignSnapshot(syncRuntime.targetCampaignId));
+      applyServerSnapshot(
+        await (collectionModeFromUrl()
+          ? fetchCollectionSnapshot(syncRuntime.targetCampaignId)
+          : fetchCampaignSnapshot(syncRuntime.targetCampaignId)),
+      );
       if (manual) setRefreshState("current", true);
       return;
     }
 
+    if (collectionModeFromUrl()) {
+      applyServerSnapshot(await fetchCollectionSnapshot(syncRuntime.targetCampaignId));
+      if (manual) setRefreshState("current", true);
+      return;
+    }
     const revision = await fetchCampaignVersion(syncRuntime.targetCampaignId);
     if (revision <= syncRuntime.serverRevision) {
       if (manual) setRefreshState("current", true);
@@ -817,7 +898,7 @@ function startSharedPersistenceRuntime() {
 
 export function subscribeCampaignStore(listener: (update: CampaignStoreUpdate) => void) {
   listeners.add(listener);
-  if (syncRuntime.access) listener({ access: syncRuntime.access });
+  listener({ access: syncRuntime.access, accessState: syncRuntime.accessState });
   return () => {
     listeners.delete(listener);
   };
@@ -826,6 +907,14 @@ export function subscribeCampaignStore(listener: (update: CampaignStoreUpdate) =
 export function setCampaignInteractionBlocked(blocked: boolean) {
   syncRuntime.interactionBlocked = blocked;
   if (!blocked) void processMutationQueue().then(() => refreshFromServer(false));
+}
+
+/** Captures the active Tour only for mutations enqueued from this point onward. */
+export function setCampaignFieldGroupContext(fieldGroupId: string | null) {
+  syncRuntime.activeFieldGroupId =
+    typeof fieldGroupId === "string" && FIELD_GROUP_ID_PATTERN.test(fieldGroupId)
+      ? fieldGroupId
+      : null;
 }
 
 export function manualRefreshCampaign() {
@@ -846,9 +935,9 @@ export function loadCampaignSnapshot(): CampaignLoadResult {
   }
 
   try {
-    const primaryRaw = window.localStorage.getItem(STORAGE_KEY);
-    const backupRaw = window.localStorage.getItem(BACKUP_STORAGE_KEY);
-    const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    const primaryRaw = window.localStorage.getItem(localStorageKey(STORAGE_KEY));
+    const backupRaw = window.localStorage.getItem(localStorageKey(BACKUP_STORAGE_KEY));
+    const legacyRaw = window.localStorage.getItem(localStorageKey(LEGACY_STORAGE_KEY));
     const primary = parseSnapshot(primaryRaw);
     if (primary) {
       loadedExistingSnapshot = true;
@@ -933,7 +1022,9 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
   enqueueChain = enqueueChain
     .then(async () => {
       try {
-        await browserMutationQueue.enqueue(mutation);
+        await browserMutationQueue.enqueue(mutation, {
+          fieldGroupId: syncRuntime.activeFieldGroupId,
+        });
       } catch (error) {
         saveCampaignConflictSnapshot(snapshot);
         emit({ syncState: "failed", messageCode: "network" });
@@ -961,7 +1052,7 @@ export function saveCampaignConflictSnapshot(snapshot: CampaignSnapshot) {
   if (typeof window === "undefined") return false;
   try {
     window.localStorage.setItem(
-      CONFLICT_STORAGE_KEY,
+      localStorageKey(CONFLICT_STORAGE_KEY),
       JSON.stringify({ savedAt: new Date().toISOString(), snapshot }),
     );
     return true;

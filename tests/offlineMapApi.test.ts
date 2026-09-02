@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   downloadOfflineMapPackage,
+  fetchMapDataPackage,
   OfflineMapApiError,
 } from "../src/data/offlineMapApi.ts";
 import type { OfflineMapPackage } from "../src/domain/offlineMap.ts";
@@ -36,7 +37,7 @@ async function withFetch(
   }
 }
 
-test("offline map client sends only campaign route, center and fixed radius", async () => {
+test("offline map client sends campaign route, center, fixed radius and all kind", async () => {
   await withFetch(async (input, init) => {
     assert.equal(
       String(input),
@@ -48,6 +49,7 @@ test("offline map client sends only campaign route, center and fixed radius", as
     assert.deepEqual(JSON.parse(String(init?.body)), {
       center: { lat: 51.05, lng: 13.74 },
       radiusMeters: 3_000,
+      kind: "all",
     });
     return Response.json(packageFixture());
   }, async () => {
@@ -58,6 +60,30 @@ test("offline map client sends only campaign route, center and fixed radius", as
     assert.equal(pkg.schemaVersion, 1);
     assert.equal(pkg.radiusMeters, 3_000);
   });
+});
+
+test("smart map client sends the requested roads/buildings kind", async () => {
+  const kinds: string[] = [];
+  await withFetch(async (_input, init) => {
+    kinds.push(String((JSON.parse(String(init?.body)) as { kind: string }).kind));
+    return Response.json(packageFixture());
+  }, async () => {
+    await fetchMapDataPackage("campaign_smart", { lat: 51.05, lng: 13.74 }, 750, "roads");
+    await fetchMapDataPackage("campaign_smart", { lat: 51.05, lng: 13.74 }, 750, "buildings");
+  });
+  assert.deepEqual(kinds, ["roads", "buildings"]);
+});
+
+test("ephemeral and Settings map-data requests share the same non-persisting client", async () => {
+  let requests = 0;
+  await withFetch(async () => {
+    requests += 1;
+    return Response.json(packageFixture());
+  }, async () => {
+    await fetchMapDataPackage("campaign_smart", { lat: 51.05, lng: 13.74 }, 750);
+    await downloadOfflineMapPackage("campaign_settings", { lat: 51.05, lng: 13.74 });
+  });
+  assert.equal(requests, 2);
 });
 
 test("offline map client rejects structurally invalid success payloads", async () => {

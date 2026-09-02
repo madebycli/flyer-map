@@ -2,8 +2,8 @@
 id: architecture-security
 type: architecture
 status: accepted
-last_updated: 2026-08-26
-related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, plan-012-platform-app-expansion]
+last_updated: 2026-09-02
+related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, ADR-0021, ADR-0022, plan-012-platform-app-expansion]
 source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, m6-smart-task-security, future-security-boundaries]
 ---
 
@@ -38,11 +38,9 @@ Current roles:
 
 The Worker enforces scope on every write and protected data request.
 
-During the M5 transition:
-- legacy snapshot PUT remains diff-authorized against previous server state;
-- M5/M6 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence.
+M5/M6 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence. `POST /api/campaigns` is limited to validated revision-0 initial creation.
 
-This prevents a client from bypassing scope by lying about a mutation type or target.
+`PUT /api/campaigns/:id/snapshot` is retired. The Worker returns HTTP 410 with `legacy_snapshot_write_retired` before access resolution, payload processing, revision claim or D1 access. This prevents a client from bypassing scope through a complete-snapshot write.
 
 ## Current access grants and sessions
 
@@ -57,11 +55,35 @@ Successful redemption creates a separate opaque session secret in a `Secure; Htt
 
 Every protected request resolves the session's backing grant. Revoking the grant invalidates backed sessions on their next protected request.
 
+## Mission Campaign Admin accounts
+
+ADR-0023 adds a temporary, campaign-local password login alongside Access Links. It is not an Organization identity system.
+
+- setup requires an existing Campaign Admin and a single-use 24-hour setup link;
+- usernames are local to one Campaign and limited to ASCII letters, digits, `.`, `_` and `-`;
+- passwords are never returned, logged or stored client-side; D1 stores a unique-salt PBKDF2-HMAC-SHA-256 verifier with 600,000 iterations only;
+- login responses do not distinguish an unknown, disabled, locked or wrong-password account;
+- a durable username-scoped backoff locks after five failures for 15 minutes;
+- account sessions use a separate opaque hash-only `HttpOnly; Secure; SameSite=Lax` cookie and expire after 12 hours;
+- an existing Campaign Admin may rename a Campaign-local username or generate a
+  single-use 24-hour password-reset link. The recipient enters the new password; neither
+  the organizer nor the client persists a plaintext password;
+- issuing a new reset link invalidates any still-unused reset link for that account;
+  redeeming one invalidates all remaining reset links and revokes all existing account
+  sessions before issuing a new session;
+- disabling an account revokes its account sessions, but a single SQL guarded update
+  prevents removing the last active Campaign-local Admin even when requests race; its
+  backing Campaign grant remains the Worker authorization source of truth.
+
+Migration `0015` is additive for accounts and `0016` is additive for password resets.
+Both must be present before their endpoints are used. TOTP, recovery codes, e-mail
+identity and cross-Campaign accounts remain outside this mission scope.
+
 ## Current Team Editor scope
 
 Team Editor grant creation verifies that the scoped Team exists. Access resolution also verifies the Team still exists.
 
-There is intentionally no D1 Team foreign key on the grant while the legacy snapshot-replacement compatibility path exists; see `docs/architecture/DATA.md`.
+There is intentionally no D1 Team foreign key on the grant because this is the historical migration-0002 schema. Removing the legacy snapshot-replacement path does not silently add or alter that foreign key; see `docs/architecture/DATA.md`.
 
 For mutations, Team Editor scope is not inferred from client mutation payload alone. The Worker:
 1. loads canonical current snapshot;
@@ -135,7 +157,7 @@ Shared boundaries:
 Street-specific boundaries:
 - reviewed Street geometry is a validated LineString snapshot;
 - Street source accepts `OpenStreetMap` / `way` / positive unique `objectIds`;
-- existing reviewed Street geometry/source is immutable through ordinary rename/status or legacy full-snapshot writes.
+- existing reviewed Street geometry/source is immutable through ordinary rename/status writes; a full-snapshot write is not an available compatibility path.
 
 House-specific boundaries:
 - reviewed House geometry is a validated Polygon footprint snapshot;
@@ -152,6 +174,18 @@ Migration boundaries:
 - House data must never be silently discarded or coerced into the Street table for compatibility.
 
 A future OSM source reconciliation must be a dedicated explicit reviewed mutation with its own authorization and conflict semantics.
+
+## Automatic Area preparation security
+
+ADR-0021 keeps automatic work generation inside the Worker authorization and persistence boundary.
+
+- only a successful persisted, non-replayed Area create or geometry mutation may schedule work; a rename or Team reassignment does not;
+- the Worker loads the Area from canonical D1 state and derives the bounded OSM request itself. The preparation route accepts no client BBox, polygon or Overpass text;
+- the status read requires ordinary Area read access. Start/retry requires Admin or a Team Editor for that exact Area Team; Viewers and Field Group members cannot start it;
+- the bounded OSM request retains the fixed 3 km, request-size, response-size, timeout, normalizer/allowlist and feature-cap controls of the existing offline-map boundary. Raw upstream payloads are not persisted or exposed;
+- generated Task identity and `areaPreparationGeneration` are server-owned. A client cannot create, delete or rewrite automatic identity through a normal mutation, although normal authorized Task status changes remain available;
+- once automatic work begins, a geometry rewrite would invalidate completed work, so it returns `area_has_started_work`. Deleting the complete Area follows the scoped foreign-key cascade;
+- migration 0014 is required for this path and fails closed as `area_preparation_schema_unavailable`; no remote migration is performed by a request.
 
 No credential, account, role, TOTP or GPS behavior is introduced by this M6 slice.
 

@@ -2,7 +2,7 @@
 id: quality
 type: quality
 status: accepted
-last_updated: 2026-08-25
+last_updated: 2026-08-29
 related: [architecture, architecture-map, product-ux, product-roadmap]
 source_of_truth_for: [quality-gates, performance-acceptance, target-devices]
 ---
@@ -33,6 +33,8 @@ Add tests around domain/security/sync logic. Browser-visible map correctness sti
 Explicitly test:
 - saved Area visible + selectable;
 - saved Street visible + selectable;
+- prepared OSM Street candidates visible, snappable and selectable in the normal Area flow;
+- explicit resolution of candidate and route ambiguity;
 - pan/zoom/rotate alignment;
 - active edit handles only while editing/drawing;
 - geolocation allowed/denied;
@@ -55,7 +57,7 @@ Synthetic/representative acceptance targets:
 - 2,500 Streets;
 - 5,000 Streets.
 
-When House Mode is implemented, add realistic building-count tests for a 40k–60k resident city-scale Campaign.
+The current House renderer slice adds batched conversion checks at 1,000 / 2,500 / 5,000 / 10,000 / 20,000 House features. House Mode still requires real-device building-density acceptance for a 40k-60k resident city-scale Campaign before a final scale claim.
 
 Measure:
 - FPS / long frames;

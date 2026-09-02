@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import type { SmartBuildingCandidate } from "../domain/smartCandidates.ts";
 import {
+  smartBuildingStreetOptions,
   selectSmartBuildingsForStreet,
   smartBuildingLabel,
   toggleSmartBuildingSourceId,
 } from "../domain/smartBuildingSelection.ts";
+import { HOUSE_CREATE_BATCH_MAX } from "../domain/mutations.ts";
 import "./smart-house-selection.css";
 
 type Props = {
@@ -18,6 +20,9 @@ type Props = {
     selectStreet: string;
     clear: string;
     noBuildings: string;
+    noSelection: string;
+    selectionLimit: string;
+    moreStreets: string;
   };
 };
 
@@ -28,10 +33,13 @@ export function SmartHouseSelectionPanel({
   labels,
 }: Props) {
   const selected = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
-  const streetOptions = useMemo(
-    () =>
-      [...new Set(buildings.map((building) => building.street?.trim()).filter(Boolean) as string[])]
-        .sort((a, b) => a.localeCompare(b, "de-DE")),
+  const selectedBuildings = useMemo(
+    () => buildings.filter((building) => selected.has(building.sourceId)),
+    [buildings, selected],
+  );
+  const streetOptions = useMemo(() => smartBuildingStreetOptions(buildings), [buildings]);
+  const allStreetOptions = useMemo(
+    () => smartBuildingStreetOptions(buildings, Number.MAX_SAFE_INTEGER),
     [buildings],
   );
 
@@ -45,7 +53,12 @@ export function SmartHouseSelectionPanel({
     const streetIds = selectSmartBuildingsForStreet([...buildings], street);
     const next = new Set(selectedSourceIds);
     streetIds.forEach((sourceId) => next.add(sourceId));
-    onSelectionChange(buildings.filter((building) => next.has(building.sourceId)).map((building) => building.sourceId));
+    onSelectionChange(
+      buildings
+        .filter((building) => next.has(building.sourceId))
+        .slice(0, HOUSE_CREATE_BATCH_MAX)
+        .map((building) => building.sourceId),
+    );
   };
 
   return (
@@ -69,12 +82,16 @@ export function SmartHouseSelectionPanel({
               {labels.selectStreet}: {street}
             </button>
           ))}
+          {allStreetOptions.length > streetOptions.length ? (
+            <span className="smart-house-bounded-note">{labels.moreStreets}</span>
+          ) : null}
         </div>
       ) : null}
 
       <div className="smart-house-list">
         {buildings.length === 0 ? <p>{labels.noBuildings}</p> : null}
-        {buildings.map((building) => {
+        {buildings.length > 0 && selectedBuildings.length === 0 ? <p>{labels.noSelection}</p> : null}
+        {selectedBuildings.map((building) => {
           const checked = selected.has(building.sourceId);
           const addressLabel = smartBuildingLabel(building);
           return (
@@ -86,11 +103,14 @@ export function SmartHouseSelectionPanel({
               />
               <span className="smart-house-copy">
                 <strong>{addressLabel || labels.unnamedBuilding}</strong>
-                <small>{building.sourceId} · {building.buildingType}</small>
+                <small>{building.buildingType}</small>
               </span>
             </label>
           );
         })}
+        {selected.size >= HOUSE_CREATE_BATCH_MAX ? (
+          <p className="smart-house-bounded-note">{labels.selectionLimit}</p>
+        ) : null}
       </div>
     </section>
   );
