@@ -1,3 +1,4 @@
+import { distance } from "@turf/distance";
 import { lineString } from "@turf/helpers";
 import nearestPointOnLine from "@turf/nearest-point-on-line";
 import type { SmartRoadCandidate } from "./smartCandidates.ts";
@@ -67,8 +68,7 @@ function closestAnchorOnRoad(
       start[0] + (end[0] - start[0]) * segmentT,
       start[1] + (end[1] - start[1]) * segmentT,
     ];
-    const distanceMeters = finiteProperty(snapped.properties.pointDistance);
-    if (distanceMeters === null) return null;
+    const distanceMeters = distance(point, snappedCoordinate, { units: "meters" });
     const lineDistanceMeters = finiteProperty(snapped.properties.lineDistance);
     return {
       sourceId: road.sourceId,
