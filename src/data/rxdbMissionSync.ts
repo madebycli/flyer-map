@@ -1,14 +1,16 @@
 import { createRxDatabase } from "rxdb";
+import type { RxCollection, RxDatabase, RxJsonSchema } from "rxdb";
 import { replicateRxCollection } from "rxdb/plugins/replication";
 import { getRxStorageDexie } from "rxdb/plugins/storage-dexie";
-import type { CampaignMutation } from "../domain/mutations.ts";
 import type { DurableCampaignMutation } from "../domain/durableMutation.ts";
 import type { CampaignSnapshot } from "../domain/campaign.ts";
 import {
   materializeCampaignSnapshot,
+  narrowRxdbDocument,
   withoutRxdbMetadata,
   type RxdbCollectionName,
   type RxdbDocument,
+  type RxdbDocumentForCollection,
   type RxdbPullResponse,
   type RxdbPushRow,
 } from "./rxdbSyncProtocol.ts";
@@ -16,8 +18,15 @@ import {
 const PULL_BATCH_SIZE = 100;
 const PUSH_BATCH_SIZE = 20;
 
-type RxdbCollections = Record<RxdbCollectionName, any>;
-type ReplicationState = ReturnType<typeof replicateRxCollection<any, { seq: number }>>;
+type RxdbCollections = Record<RxdbCollectionName, RxCollection<RxdbDocument>>;
+type MissionRxdbDatabase = RxDatabase<RxdbCollections>;
+type ReplicationState = {
+  error$: { subscribe(handler: (error: unknown) => void): { unsubscribe(): void } };
+  received$: { subscribe(handler: () => void): { unsubscribe(): void } };
+  sent$: { subscribe(handler: () => void): { unsubscribe(): void } };
+  reSync(): void;
+  cancel(): Promise<unknown>;
+};
 type RxdbReplicationDocument = RxdbDocument & { _deleted: boolean };
 
 function withDeletedMarker(document: RxdbDocument): RxdbReplicationDocument {
@@ -76,7 +85,11 @@ const objectSchema = { type: "object", additionalProperties: true } as const;
 const nullableObjectSchema = { anyOf: [objectSchema, { type: "null" }] } as const;
 const nullableStringSchema = { anyOf: [{ type: "string" }, { type: "null" }] } as const;
 
-const schemas: Record<RxdbCollectionName, any> = {
+type RxdbSchemaMap = {
+  [N in RxdbCollectionName]: RxJsonSchema<Omit<RxdbDocumentForCollection<N>, "_deleted" | "_rev" | "_meta" | "_attachments">>;
+};
+
+const schemas: RxdbSchemaMap = {
   campaigns: {
     version: 0,
     primaryKey: "id",
@@ -183,7 +196,7 @@ export class MissionRxdbSync {
   private readonly fetchImpl: typeof fetch;
   private readonly onSnapshot: (snapshot: CampaignSnapshot) => void;
   private readonly onIssue: (issue: RxdbSyncIssue) => void;
-  private database: any = null;
+  private database: MissionRxdbDatabase | null = null;
   private collections: RxdbCollections | null = null;
   private readonly replications = new Map<RxdbCollectionName, ReplicationState>();
   private readonly checkpoints = new Map<RxdbCollectionName, number>();
@@ -286,25 +299,42 @@ export class MissionRxdbSync {
       this.collections.houseTasks.find({ selector: { campaignId: this.campaignId } }).exec(),
     ]);
     const visibleTeams = this.teamScopeId
-      ? teams.filter((document: any) => document.id === this.teamScopeId)
+      ? teams.filter((document) => narrowRxdbDocument("teams", document)?.id === this.teamScopeId)
       : teams;
     const visibleAreas = this.teamScopeId
-      ? areas.filter((document: any) => document.teamId === this.teamScopeId)
+      ? areas.filter((document) => narrowRxdbDocument("areas", document)?.teamId === this.teamScopeId)
       : areas;
-    const visibleAreaIds = new Set(visibleAreas.map((document: any) => document.id));
+    const visibleAreaIds = new Set(visibleAreas.map((document) => document.id));
     const visibleStreetTasks = this.teamScopeId
-      ? streetTasks.filter((document: any) => visibleAreaIds.has(document.areaId))
+      ? streetTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("streetTasks", document)?.areaId ?? ""))
       : streetTasks;
     const visibleHouseTasks = this.teamScopeId
-      ? houseTasks.filter((document: any) => visibleAreaIds.has(document.areaId))
+      ? houseTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("houseTasks", document)?.areaId ?? ""))
       : houseTasks;
+    const campaign = campaigns[0] ? narrowRxdbDocument("campaigns", campaigns[0].toJSON()) : null;
+    const teamDocuments = visibleTeams.flatMap((document) => {
+      const value = narrowRxdbDocument("teams", document.toJSON());
+      return value ? [value] : [];
+    });
+    const areaDocuments = visibleAreas.flatMap((document) => {
+      const value = narrowRxdbDocument("areas", document.toJSON());
+      return value ? [value] : [];
+    });
+    const streetTaskDocuments = visibleStreetTasks.flatMap((document) => {
+      const value = narrowRxdbDocument("streetTasks", document.toJSON());
+      return value ? [value] : [];
+    });
+    const houseTaskDocuments = visibleHouseTasks.flatMap((document) => {
+      const value = narrowRxdbDocument("houseTasks", document.toJSON());
+      return value ? [value] : [];
+    });
     const snapshot = materializeCampaignSnapshot({
       revision: this.canonicalRevision,
-      campaign: campaigns[0]?.toJSON(),
-      teams: visibleTeams.map((document: any) => document.toJSON()),
-      areas: visibleAreas.map((document: any) => document.toJSON()),
-      streetTasks: visibleStreetTasks.map((document: any) => document.toJSON()),
-      houseTasks: visibleHouseTasks.map((document: any) => document.toJSON()),
+      campaign,
+      teams: teamDocuments,
+      areas: areaDocuments,
+      streetTasks: streetTaskDocuments,
+      houseTasks: houseTaskDocuments,
       collection: this.collectionFallback,
     });
     if (snapshot) this.onSnapshot(snapshot);
@@ -314,7 +344,7 @@ export class MissionRxdbSync {
     const collection = this.collections?.[collectionName];
     if (!collection) throw new Error("rxdb_collection_missing");
     const persistenceGate = this.persistenceGates.get(collectionName);
-    const replication = replicateRxCollection({
+    const replication = replicateRxCollection<RxdbDocument, { seq: number }>({
       replicationIdentifier: "mission-rxdb-sync-v1:" + this.campaignId + ":" + (this.teamScopeId ?? "campaign") + ":" + collectionName,
       collection,
       pull: {
@@ -506,11 +536,15 @@ export class MissionRxdbSync {
     });
   }
 
-  private async mutateDocument(collectionName: RxdbCollectionName, id: string, updater: (document: any) => any) {
+  private async mutateDocument<N extends RxdbCollectionName>(
+    collectionName: N,
+    id: string,
+    updater: (document: RxdbDocumentForCollection<N> | null) => RxdbDocumentForCollection<N> | null,
+  ) {
     if (!this.collections) throw new Error("rxdb_not_initialized");
     const collection = this.collections[collectionName];
     const existing = await collection.findOne(id).exec();
-    const current = existing ? existing.toJSON() as RxdbDocument : null;
+    const current = existing ? existing.toJSON() as RxdbDocumentForCollection<N> : null;
     const next = updater(current);
     if (!next) {
       if (existing) await existing.remove();
@@ -528,13 +562,13 @@ export class MissionRxdbSync {
       case "campaign.set-default-map-view":
         return this.mutateDocument("campaigns", mutation.campaignId, (current) => current ? { ...current, defaultMapView: mutation.payload.defaultMapView, updatedAt: now } : current);
       case "team.create":
-        return this.mutateDocument("teams", mutation.payload.teamId, () => ({ id: mutation.payload.teamId, campaignId: mutation.campaignId, name: mutation.payload.name, color: mutation.payload.color, createdAt: now, updatedAt: now } as RxdbDocument));
+        return this.mutateDocument("teams", mutation.payload.teamId, () => ({ id: mutation.payload.teamId, campaignId: mutation.campaignId, name: mutation.payload.name, color: mutation.payload.color, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"teams">));
       case "team.update":
         return this.mutateDocument("teams", mutation.payload.teamId, (current) => current ? { ...current, ...(mutation.payload.name !== undefined ? { name: mutation.payload.name } : {}), ...(mutation.payload.color !== undefined ? { color: mutation.payload.color } : {}), updatedAt: now } : current);
       case "team.delete":
         return this.mutateDocument("teams", mutation.payload.teamId, () => null);
       case "area.create":
-        return this.mutateDocument("areas", mutation.payload.areaId, () => ({ id: mutation.payload.areaId, campaignId: mutation.campaignId, teamId: mutation.payload.teamId, name: mutation.payload.name, geometry: mutation.payload.geometry, createdAt: now, updatedAt: now } as RxdbDocument));
+        return this.mutateDocument("areas", mutation.payload.areaId, () => ({ id: mutation.payload.areaId, campaignId: mutation.campaignId, teamId: mutation.payload.teamId, name: mutation.payload.name, geometry: mutation.payload.geometry, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"areas">));
       case "area.rename":
         return this.mutateDocument("areas", mutation.payload.areaId, (current) => current ? { ...current, name: mutation.payload.name, updatedAt: now } : current);
       case "area.set-team":
@@ -549,7 +583,7 @@ export class MissionRxdbSync {
         ]);
         return;
       case "task.create":
-        return this.mutateDocument("streetTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "street", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, status: "open", completedAt: null, createdAt: now, updatedAt: now } as RxdbDocument));
+        return this.mutateDocument("streetTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "street", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"streetTasks">));
       case "task.rename":
         return this.mutateDocument("streetTasks", mutation.payload.taskId, (current) => current ? { ...current, label: mutation.payload.label, updatedAt: now } : current);
       case "task.set-status":
@@ -557,9 +591,9 @@ export class MissionRxdbSync {
       case "task.delete":
         return this.mutateDocument("streetTasks", mutation.payload.taskId, () => null);
       case "house.create":
-        return this.mutateDocument("houseTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "house", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, parentStreetTaskId: mutation.payload.parentStreetTaskId, status: "open", completedAt: null, createdAt: now, updatedAt: now } as RxdbDocument));
+        return this.mutateDocument("houseTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "house", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, parentStreetTaskId: mutation.payload.parentStreetTaskId, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"houseTasks">));
       case "house.create-batch":
-        await Promise.all(mutation.payload.houses.map((house) => this.mutateDocument("houseTasks", house.taskId, () => ({ id: house.taskId, campaignId: mutation.campaignId, areaId: house.areaId, taskType: "house", label: house.label, geometry: house.geometry, ...(house.source ? { source: house.source } : {}), areaPreparationGeneration: null, parentStreetTaskId: house.parentStreetTaskId, status: "open", completedAt: null, createdAt: now, updatedAt: now } as RxdbDocument))));
+        await Promise.all(mutation.payload.houses.map((house) => this.mutateDocument("houseTasks", house.taskId, () => ({ id: house.taskId, campaignId: mutation.campaignId, areaId: house.areaId, taskType: "house", label: house.label, geometry: house.geometry, ...(house.source ? { source: house.source } : {}), areaPreparationGeneration: null, parentStreetTaskId: house.parentStreetTaskId, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"houseTasks">))));
         return;
       case "house.rename":
         return this.mutateDocument("houseTasks", mutation.payload.taskId, (current) => current ? { ...current, label: mutation.payload.label, updatedAt: now } : current);

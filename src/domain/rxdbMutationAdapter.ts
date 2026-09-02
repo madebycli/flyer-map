@@ -1,5 +1,11 @@
-import type { RxdbCollectionName, RxdbDocument, RxdbPushRow } from "../data/rxdbSyncProtocol.ts";
-import type { CampaignSnapshot, DistributionTask, HouseTask } from "./campaign.ts";
+import {
+  narrowRxdbDocument,
+  withoutRxdbMetadata,
+  type RxdbCollectionName,
+  type RxdbDocument,
+  type RxdbPushRow,
+} from "../data/rxdbSyncProtocol.ts";
+import type { CampaignSnapshot } from "./campaign.ts";
 import type { CampaignMutation } from "./mutations.ts";
 
 export type RxdbMutationDecision =
@@ -14,8 +20,7 @@ function same(left: unknown, right: unknown) {
 function plain(document: RxdbDocument): RxdbDocument {
   // Keep the tombstone marker for the deletion branch; only RxDB's
   // transport-owned revision/metadata must be removed before domain checks.
-  const { _rev: _rev, _meta: _meta, _attachments: _attachments, ...value } = document;
-  return value as RxdbDocument;
+  return withoutRxdbMetadata(document);
 }
 
 function comparableDocument(document: RxdbDocument) {
@@ -70,7 +75,13 @@ export function deriveMutationFromRxdbWrite(
   canonicalCreatedAt: string,
 ): RxdbMutationDecision {
   const next = plain(row.newDocumentState);
+  if (!narrowRxdbDocument(collectionName, next)) {
+    return { kind: "conflict", reason: "invalid_collection_document" };
+  }
   const assumed = row.assumedMasterState ? plain(row.assumedMasterState) : undefined;
+  if (assumed && !narrowRxdbDocument(collectionName, assumed)) {
+    return { kind: "conflict", reason: "invalid_master_document" };
+  }
   const current = targetFor(collectionName, snapshot, next.id);
   const mutationBase = base(snapshot, canonicalCreatedAt);
 
@@ -101,16 +112,24 @@ export function deriveMutationFromRxdbWrite(
     switch (collectionName) {
       case "campaigns":
         return { kind: "conflict", reason: "campaign_create_forbidden" };
-      case "teams":
-        return { kind: "apply", mutation: { ...mutationBase, type: "team.create", payload: { teamId: next.id, name: next.name, color: next.color } } };
-      case "areas":
-        return { kind: "apply", mutation: { ...mutationBase, type: "area.create", payload: { areaId: next.id, teamId: next.teamId, name: next.name, geometry: next.geometry } } };
+      case "teams": {
+        const team = narrowRxdbDocument("teams", next);
+        if (!team) return { kind: "conflict", reason: "invalid_collection_document" };
+        return { kind: "apply", mutation: { ...mutationBase, type: "team.create", payload: { teamId: team.id, name: team.name, color: team.color } } };
+      }
+      case "areas": {
+        const area = narrowRxdbDocument("areas", next);
+        if (!area) return { kind: "conflict", reason: "invalid_collection_document" };
+        return { kind: "apply", mutation: { ...mutationBase, type: "area.create", payload: { areaId: area.id, teamId: area.teamId, name: area.name, geometry: area.geometry } } };
+      }
       case "streetTasks": {
-        const task = next as DistributionTask;
+        const task = narrowRxdbDocument("streetTasks", next);
+        if (!task) return { kind: "conflict", reason: "invalid_collection_document" };
         return { kind: "apply", mutation: { ...mutationBase, type: "task.create", payload: { taskId: task.id, areaId: task.areaId, label: task.label, geometry: task.geometry, ...(task.source ? { source: task.source } : {}) } } };
       }
       case "houseTasks": {
-        const task = next as HouseTask;
+        const task = narrowRxdbDocument("houseTasks", next);
+        if (!task) return { kind: "conflict", reason: "invalid_collection_document" };
         return { kind: "apply", mutation: { ...mutationBase, type: "house.create", payload: { taskId: task.id, areaId: task.areaId, label: task.label, geometry: task.geometry, ...(task.source ? { source: task.source } : {}), parentStreetTaskId: task.parentStreetTaskId } } };
       }
     }
@@ -121,50 +140,65 @@ export function deriveMutationFromRxdbWrite(
 
   switch (collectionName) {
     case "campaigns": {
-      const currentCampaign = current;
-      const assumedCampaign = assumed;
-      const changedName = next.name !== assumedCampaign.name;
-      const changedMap = !same(next.defaultMapView, assumedCampaign.defaultMapView);
-      if (next.status !== assumedCampaign.status || Number(changedName) + Number(changedMap) !== 1) {
+      const nextCampaign = narrowRxdbDocument("campaigns", next);
+      const currentCampaign = current && narrowRxdbDocument("campaigns", current);
+      const assumedCampaign = assumed && narrowRxdbDocument("campaigns", assumed);
+      if (!nextCampaign || !currentCampaign || !assumedCampaign) {
+        return { kind: "conflict", reason: "invalid_collection_document" };
+      }
+      const changedName = nextCampaign.name !== assumedCampaign.name;
+      const changedMap = !same(nextCampaign.defaultMapView, assumedCampaign.defaultMapView);
+      if (nextCampaign.status !== assumedCampaign.status || Number(changedName) + Number(changedMap) !== 1) {
         return { kind: "conflict", reason: "campaign_structural_change" };
       }
       if (changedName) {
         if (currentCampaign.name !== assumedCampaign.name) return { kind: "conflict", reason: "campaign_name_changed" };
-        return { kind: "apply", mutation: { ...mutationBase, type: "campaign.rename", payload: { name: next.name, expectedName: currentCampaign.name } } };
+        return { kind: "apply", mutation: { ...mutationBase, type: "campaign.rename", payload: { name: nextCampaign.name, expectedName: currentCampaign.name } } };
       }
       if (!same(currentCampaign.defaultMapView, assumedCampaign.defaultMapView)) return { kind: "conflict", reason: "campaign_map_changed" };
-      return { kind: "apply", mutation: { ...mutationBase, type: "campaign.set-default-map-view", payload: { defaultMapView: next.defaultMapView, expectedDefaultMapView: currentCampaign.defaultMapView } } };
+      return { kind: "apply", mutation: { ...mutationBase, type: "campaign.set-default-map-view", payload: { defaultMapView: nextCampaign.defaultMapView, expectedDefaultMapView: currentCampaign.defaultMapView } } };
     }
     case "teams": {
-      const currentTeam = current;
-      const assumedTeam = assumed;
-      if (next.createdAt !== assumedTeam.createdAt || next.campaignId !== assumedTeam.campaignId) {
+      const nextTeam = narrowRxdbDocument("teams", next);
+      const currentTeam = current && narrowRxdbDocument("teams", current);
+      const assumedTeam = assumed && narrowRxdbDocument("teams", assumed);
+      if (!nextTeam || !currentTeam || !assumedTeam) {
+        return { kind: "conflict", reason: "invalid_collection_document" };
+      }
+      if (nextTeam.createdAt !== assumedTeam.createdAt || nextTeam.campaignId !== assumedTeam.campaignId) {
         return { kind: "conflict", reason: "team_structural_change" };
       }
-      const nameChanged = next.name !== assumedTeam.name;
-      const colorChanged = next.color !== assumedTeam.color;
+      const nameChanged = nextTeam.name !== assumedTeam.name;
+      const colorChanged = nextTeam.color !== assumedTeam.color;
       if (!nameChanged && !colorChanged) return { kind: "ack" };
       const applyName = nameChanged && currentTeam.name === assumedTeam.name;
       const applyColor = colorChanged && currentTeam.color === assumedTeam.color;
       if (!applyName && !applyColor) return { kind: "conflict", reason: "team_field_changed" };
-      return { kind: "apply", mutation: { ...mutationBase, type: "team.update", payload: { teamId: next.id, ...(applyName ? { name: next.name } : {}), ...(applyColor ? { color: next.color } : {}), expectedUpdatedAt: currentTeam.updatedAt } } };
+      return { kind: "apply", mutation: { ...mutationBase, type: "team.update", payload: { teamId: nextTeam.id, ...(applyName ? { name: nextTeam.name } : {}), ...(applyColor ? { color: nextTeam.color } : {}), expectedUpdatedAt: currentTeam.updatedAt } } };
     }
     case "areas": {
-      const currentArea = current;
-      const assumedArea = assumed;
+      const nextArea = narrowRxdbDocument("areas", next);
+      const currentArea = current && narrowRxdbDocument("areas", current);
+      const assumedArea = assumed && narrowRxdbDocument("areas", assumed);
+      if (!nextArea || !currentArea || !assumedArea) {
+        return { kind: "conflict", reason: "invalid_collection_document" };
+      }
       if (currentArea.updatedAt !== assumedArea.updatedAt) return { kind: "conflict", reason: "area_changed" };
-      const nameChanged = next.name !== assumedArea.name;
-      const teamChanged = next.teamId !== assumedArea.teamId;
-      const geometryChanged = !same(next.geometry, assumedArea.geometry);
+      const nameChanged = nextArea.name !== assumedArea.name;
+      const teamChanged = nextArea.teamId !== assumedArea.teamId;
+      const geometryChanged = !same(nextArea.geometry, assumedArea.geometry);
       if (Number(nameChanged) + Number(teamChanged) + Number(geometryChanged) !== 1) return { kind: "conflict", reason: "area_structural_change" };
-      if (nameChanged) return { kind: "apply", mutation: { ...mutationBase, type: "area.rename", payload: { areaId: next.id, name: next.name, expectedUpdatedAt: currentArea.updatedAt } } };
-      if (teamChanged) return { kind: "apply", mutation: { ...mutationBase, type: "area.set-team", payload: { areaId: next.id, teamId: next.teamId, expectedUpdatedAt: currentArea.updatedAt } } };
-      return { kind: "apply", mutation: { ...mutationBase, type: "area.update-geometry", payload: { areaId: next.id, geometry: next.geometry, expectedUpdatedAt: currentArea.updatedAt } } };
+      if (nameChanged) return { kind: "apply", mutation: { ...mutationBase, type: "area.rename", payload: { areaId: nextArea.id, name: nextArea.name, expectedUpdatedAt: currentArea.updatedAt } } };
+      if (teamChanged) return { kind: "apply", mutation: { ...mutationBase, type: "area.set-team", payload: { areaId: nextArea.id, teamId: nextArea.teamId, expectedUpdatedAt: currentArea.updatedAt } } };
+      return { kind: "apply", mutation: { ...mutationBase, type: "area.update-geometry", payload: { areaId: nextArea.id, geometry: nextArea.geometry, expectedUpdatedAt: currentArea.updatedAt } } };
     }
     case "streetTasks": {
-      const task = next as DistributionTask;
-      const currentTask = current as DistributionTask;
-      const assumedTask = assumed as DistributionTask;
+      const task = narrowRxdbDocument("streetTasks", next);
+      const currentTask = current && narrowRxdbDocument("streetTasks", current);
+      const assumedTask = assumed && narrowRxdbDocument("streetTasks", assumed);
+      if (!task || !currentTask || !assumedTask) {
+        return { kind: "conflict", reason: "invalid_collection_document" };
+      }
       if (task.areaId !== assumedTask.areaId || !same(task.geometry, assumedTask.geometry) || !same(task.source ?? null, assumedTask.source ?? null) || (task.areaPreparationGeneration ?? null) !== (assumedTask.areaPreparationGeneration ?? null)) return { kind: "conflict", reason: "task_structural_change" };
       const statusChanged = task.status !== assumedTask.status || task.completedAt !== assumedTask.completedAt;
       const labelChanged = task.label !== assumedTask.label;
@@ -178,9 +212,12 @@ export function deriveMutationFromRxdbWrite(
       return { kind: "apply", mutation: { ...mutationBase, type: "task.rename", payload: { taskId: task.id, label: task.label, expectedUpdatedAt: currentTask.updatedAt } } };
     }
     case "houseTasks": {
-      const task = next as HouseTask;
-      const currentTask = current as HouseTask;
-      const assumedTask = assumed as HouseTask;
+      const task = narrowRxdbDocument("houseTasks", next);
+      const currentTask = current && narrowRxdbDocument("houseTasks", current);
+      const assumedTask = assumed && narrowRxdbDocument("houseTasks", assumed);
+      if (!task || !currentTask || !assumedTask) {
+        return { kind: "conflict", reason: "invalid_collection_document" };
+      }
       if (task.areaId !== assumedTask.areaId || task.parentStreetTaskId !== assumedTask.parentStreetTaskId || !same(task.geometry, assumedTask.geometry) || !same(task.source ?? null, assumedTask.source ?? null) || (task.areaPreparationGeneration ?? null) !== (assumedTask.areaPreparationGeneration ?? null)) return { kind: "conflict", reason: "house_structural_change" };
       const statusChanged = task.status !== assumedTask.status || task.completedAt !== assumedTask.completedAt;
       const labelChanged = task.label !== assumedTask.label;

@@ -2,6 +2,7 @@ import type { RxdbChangeFeedEntry, RxdbCollectionName, RxdbDocument } from "../s
 import {
   documentForCollection,
   documentsForCollection,
+  narrowRxdbDocument,
   toDeletedRxdbDocument,
 } from "../src/data/rxdbSyncProtocol.ts";
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
@@ -38,8 +39,12 @@ function teamScopeForDocument(
 ) {
   if (collectionName === "campaigns") return null;
   if (collectionName === "teams") return document.id;
-  if (collectionName === "areas") return document.teamId;
-  const areaId = document.areaId;
+  if (collectionName === "areas") return narrowRxdbDocument("areas", document)?.teamId ?? null;
+  const task = collectionName === "streetTasks"
+    ? narrowRxdbDocument("streetTasks", document)
+    : narrowRxdbDocument("houseTasks", document);
+  if (!task) return null;
+  const areaId = task.areaId;
   return snapshot.areas.find((area) => area.id === areaId)?.teamId ?? null;
 }
 
@@ -52,7 +57,8 @@ function changeFor(
   const current = documentForCollection(collectionName, before, id);
   const next = documentForCollection(collectionName, after, id);
   if (!current && !next) return null;
-  const document = next ?? toDeletedRxdbDocument(current as RxdbDocument);
+  const document = next ?? (current ? toDeletedRxdbDocument(current) : null);
+  if (!document) return null;
   return {
     collectionName,
     document,
@@ -81,7 +87,8 @@ export function rxdbChangeFeedEntriesForSnapshotDelta(
       const next = documentForCollection(collectionName, after, id);
       if (!previous && !next) continue;
       if (previous && next && wireDocumentEqual(previous, next)) continue;
-      const document = next ?? toDeletedRxdbDocument(previous as RxdbDocument);
+      const document = next ?? (previous ? toDeletedRxdbDocument(previous) : null);
+      if (!document) continue;
       const previousScope = previous ? teamScopeForDocument(collectionName, previous, before) : null;
       const nextScope = next ? teamScopeForDocument(collectionName, next, after) : null;
       if (previous && next && previousScope !== null && nextScope !== null && previousScope !== nextScope) {

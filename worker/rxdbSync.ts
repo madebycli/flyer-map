@@ -1,10 +1,17 @@
 import {
   documentForCollection,
+  narrowRxdbDocument,
+  toDeletedRxdbDocument,
   type RxdbCheckpoint,
   type RxdbCollectionName,
+  type RxdbAreaDocument,
+  type RxdbCampaignDocument,
   type RxdbDocument,
+  type RxdbHouseTaskDocument,
   type RxdbPullResponse,
   type RxdbPushRow,
+  type RxdbStreetTaskDocument,
+  type RxdbTeamDocument,
 } from "../src/data/rxdbSyncProtocol.ts";
 import { deriveMutationFromRxdbWrite } from "../src/domain/rxdbMutationAdapter.ts";
 import type { AccessContext } from "./access.ts";
@@ -50,8 +57,8 @@ type TaskRow = {
 };
 type HouseRow = TaskRow & { parent_street_task_id: string | null };
 
-function parseJson(raw: string) {
-  return JSON.parse(raw) as unknown;
+function parseJson<T>(raw: string): T {
+  return JSON.parse(raw) as T;
 }
 
 function fieldGroupScope(access: AccessContext) {
@@ -62,45 +69,45 @@ function fieldGroupScopeIsValid(access: AccessContext) {
   return access.role !== "field-group-member" || Boolean(access.teamId);
 }
 
-function campaignDocument(row: CampaignRow): RxdbDocument {
-  const hasMapView = row.map_center_lng !== null && row.map_center_lat !== null && row.map_zoom !== null;
+function campaignDocument(row: CampaignRow): RxdbCampaignDocument {
+  const defaultMapView: RxdbCampaignDocument["defaultMapView"] = row.map_center_lng === null || row.map_center_lat === null || row.map_zoom === null
+    ? null
+    : { center: [row.map_center_lng, row.map_center_lat], zoom: row.map_zoom, bearing: row.map_bearing ?? 0 };
   return {
     id: row.id,
     campaignId: row.id,
     name: row.name,
     status: row.status,
-    defaultMapView: hasMapView
-      ? { center: [row.map_center_lng as number, row.map_center_lat as number], zoom: row.map_zoom as number, bearing: row.map_bearing ?? 0 }
-      : null,
+    defaultMapView,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function teamDocument(row: TeamRow): RxdbDocument {
+function teamDocument(row: TeamRow): RxdbTeamDocument {
   return { id: row.id, campaignId: row.campaign_id, name: row.name, color: row.color, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
-function areaDocument(row: AreaRow): RxdbDocument {
-  return { id: row.id, campaignId: row.campaign_id, teamId: row.team_id, name: row.name, geometry: parseJson(row.geometry_json), createdAt: row.created_at, updatedAt: row.updated_at } as RxdbDocument;
+function areaDocument(row: AreaRow): RxdbAreaDocument {
+  return { id: row.id, campaignId: row.campaign_id, teamId: row.team_id, name: row.name, geometry: parseJson<RxdbAreaDocument["geometry"]>(row.geometry_json), createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
-function streetDocument(row: TaskRow): RxdbDocument {
+function streetDocument(row: TaskRow): RxdbStreetTaskDocument {
   return {
     id: row.id, campaignId: row.campaign_id, areaId: row.area_id, taskType: "street", label: row.label,
-    geometry: parseJson(row.geometry_json), ...(row.source_json ? { source: parseJson(row.source_json) } : {}),
+    geometry: parseJson<RxdbStreetTaskDocument["geometry"]>(row.geometry_json), ...(row.source_json ? { source: parseJson<NonNullable<RxdbStreetTaskDocument["source"]>>(row.source_json) } : {}),
     areaPreparationGeneration: row.area_preparation_generation, status: row.status,
     completedAt: row.completed_at, createdAt: row.created_at, updatedAt: row.updated_at,
-  } as RxdbDocument;
+  };
 }
 
-function houseDocument(row: HouseRow): RxdbDocument {
+function houseDocument(row: HouseRow): RxdbHouseTaskDocument {
   return {
     id: row.id, campaignId: row.campaign_id, areaId: row.area_id, taskType: "house", label: row.label,
-    geometry: parseJson(row.geometry_json), ...(row.source_json ? { source: parseJson(row.source_json) } : {}),
+    geometry: parseJson<RxdbHouseTaskDocument["geometry"]>(row.geometry_json), ...(row.source_json ? { source: parseJson<NonNullable<RxdbHouseTaskDocument["source"]>>(row.source_json) } : {}),
     areaPreparationGeneration: row.area_preparation_generation, parentStreetTaskId: row.parent_street_task_id,
     status: row.status, completedAt: row.completed_at, createdAt: row.created_at, updatedAt: row.updated_at,
-  } as RxdbDocument;
+  };
 }
 
 async function bootstrapDocuments(
@@ -206,7 +213,11 @@ export async function handleRxdbPull(
     ? await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, groupTeamId, batchSize).all<{ seq: number; document_json: string }>()
     : await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, batchSize).all<{ seq: number; document_json: string }>();
   try {
-    const documents = result.results.map((row) => parseJson(row.document_json) as RxdbDocument);
+    const documents = result.results.map((row) => {
+      const document = narrowRxdbDocument(collectionName, parseJson<unknown>(row.document_json));
+      if (!document) throw new Error("invalid_collection_document");
+      return document;
+    });
     // Once the visible page is exhausted, advance over foreign-team rows too;
     // those rows are intentionally filtered and must not cause a hot retry loop.
     const last = result.results.length < batchSize
@@ -255,17 +266,21 @@ function currentDocument(
   id: string,
   fallback: RxdbDocument,
 ) {
-  if (!snapshot) return { ...fallback, _deleted: true } as RxdbDocument;
+  if (!snapshot) return toDeletedRxdbDocument(fallback);
   const current = documentForCollection(collectionName, snapshot, id);
-  return current ?? ({ ...fallback, _deleted: true } as RxdbDocument);
+  return current ?? toDeletedRxdbDocument(fallback);
 }
 
 function canReadDocument(access: AccessContext, collectionName: RxdbCollectionName, document: RxdbDocument, snapshot: CampaignSnapshot | null) {
   if (access.role !== "field-group-member" || !access.teamId || !snapshot) return true;
   if (collectionName === "campaigns") return true;
   if (collectionName === "teams") return document.id === access.teamId;
-  if (collectionName === "areas") return (document as { teamId: string }).teamId === access.teamId;
-  const area = snapshot.areas.find((candidate: CampaignSnapshot["areas"][number]) => candidate.id === (document as { areaId: string }).areaId);
+  if (collectionName === "areas") return narrowRxdbDocument("areas", document)?.teamId === access.teamId;
+  const task = collectionName === "streetTasks"
+    ? narrowRxdbDocument("streetTasks", document)
+    : narrowRxdbDocument("houseTasks", document);
+  if (!task) return false;
+  const area = snapshot.areas.find((candidate) => candidate.id === task.areaId);
   return area?.teamId === access.teamId;
 }
 
@@ -306,7 +321,7 @@ export async function handleRxdbPush(
       rejections.push({ documentId: typeof candidate?.id === "string" ? candidate.id : "unknown", code: "invalid_rxdb_push" });
       continue;
     }
-    const next = row.newDocumentState as RxdbDocument;
+    const next = row.newDocumentState;
     if (typeof next.id !== "string" || typeof next.campaignId !== "string" || next.campaignId !== campaignId) {
       return errorResponse(400, "invalid_rxdb_document", "RxDB-Dokument gehört nicht zur angeforderten Campaign.");
     }

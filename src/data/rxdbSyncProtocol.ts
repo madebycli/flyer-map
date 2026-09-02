@@ -26,12 +26,6 @@ export type RxdbCheckpoint = { seq: number };
 export type RxdbDocumentBase = {
   id: string;
   campaignId: string;
-  /**
-   * RxDB collections are registered through a shared transport union.  Keep
-   * an index signature on that wire shape so collection-specific handlers can
-   * inspect their allow-listed fields after validating the collection name.
-   */
-  [key: string]: any;
   _deleted?: boolean;
   _rev?: string;
   _meta?: unknown;
@@ -43,21 +37,31 @@ export type RxdbTeamDocument = Team & RxdbDocumentBase;
 export type RxdbAreaDocument = Area & RxdbDocumentBase;
 export type RxdbStreetTaskDocument = DistributionTask & RxdbDocumentBase;
 export type RxdbHouseTaskDocument = HouseTask & RxdbDocumentBase;
-export type RxdbDocument =
-  | RxdbCampaignDocument
-  | RxdbTeamDocument
-  | RxdbAreaDocument
-  | RxdbStreetTaskDocument
-  | RxdbHouseTaskDocument;
 
-export type RxdbPushRow = {
-  assumedMasterState?: RxdbDocument;
-  newDocumentState: RxdbDocument;
+/**
+ * The collection name is the wire-level discriminator.  It is kept outside
+ * the persisted document so the existing RxDB schemas and D1 feed remain
+ * backwards compatible, while callers still get collection-specific fields.
+ */
+export type RxdbDocumentMap = {
+  campaigns: RxdbCampaignDocument;
+  teams: RxdbTeamDocument;
+  areas: RxdbAreaDocument;
+  streetTasks: RxdbStreetTaskDocument;
+  houseTasks: RxdbHouseTaskDocument;
 };
 
-export type RxdbChangeFeedEntry = {
-  collectionName: RxdbCollectionName;
-  document: RxdbDocument;
+export type RxdbDocumentForCollection<N extends RxdbCollectionName> = RxdbDocumentMap[N];
+export type RxdbDocument = RxdbDocumentForCollection<RxdbCollectionName>;
+
+export type RxdbPushRow<N extends RxdbCollectionName = RxdbCollectionName> = {
+  assumedMasterState?: RxdbDocumentForCollection<N>;
+  newDocumentState: RxdbDocumentForCollection<N>;
+};
+
+export type RxdbChangeFeedEntry<N extends RxdbCollectionName = RxdbCollectionName> = {
+  collectionName: N;
+  document: RxdbDocumentForCollection<N>;
   scopeTeamId: string | null;
 };
 
@@ -72,10 +76,131 @@ export function isRxdbCollectionName(value: unknown): value is RxdbCollectionNam
   return typeof value === "string" && (RXDB_COLLECTION_NAMES as readonly string[]).includes(value);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasString(record: Record<string, unknown>, key: string): boolean {
+  return typeof record[key] === "string";
+}
+
+function isCampaignDocument(value: unknown): value is RxdbCampaignDocument {
+  if (!isRecord(value)) return false;
+  return hasString(value, "id") && hasString(value, "campaignId") && hasString(value, "name") &&
+    hasString(value, "status") && "defaultMapView" in value && hasString(value, "createdAt") &&
+    hasString(value, "updatedAt");
+}
+
+function isTeamDocument(value: unknown): value is RxdbTeamDocument {
+  if (!isRecord(value)) return false;
+  return hasString(value, "id") && hasString(value, "campaignId") && hasString(value, "name") &&
+    hasString(value, "color") && hasString(value, "createdAt") && hasString(value, "updatedAt");
+}
+
+function isAreaDocument(value: unknown): value is RxdbAreaDocument {
+  if (!isRecord(value)) return false;
+  return hasString(value, "id") && hasString(value, "campaignId") && hasString(value, "teamId") &&
+    hasString(value, "name") && "geometry" in value && hasString(value, "createdAt") &&
+    hasString(value, "updatedAt");
+}
+
+function isStreetTaskDocument(value: unknown): value is RxdbStreetTaskDocument {
+  if (!isRecord(value)) return false;
+  return hasString(value, "id") && hasString(value, "campaignId") && hasString(value, "areaId") &&
+    value.taskType === "street" && hasString(value, "label") && "geometry" in value &&
+    hasString(value, "status") && "completedAt" in value && hasString(value, "createdAt") &&
+    hasString(value, "updatedAt");
+}
+
+function isHouseTaskDocument(value: unknown): value is RxdbHouseTaskDocument {
+  if (!isRecord(value)) return false;
+  return hasString(value, "id") && hasString(value, "campaignId") && hasString(value, "areaId") &&
+    value.taskType === "house" && hasString(value, "label") && "geometry" in value &&
+    "parentStreetTaskId" in value && hasString(value, "status") && "completedAt" in value &&
+    hasString(value, "createdAt") && hasString(value, "updatedAt");
+}
+
+/**
+ * Narrows the transport union after the collection name has been validated.
+ * The collection name is the discriminator; no synthetic field is written to
+ * the existing RxDB documents just to satisfy TypeScript.
+ */
+export function narrowRxdbDocument(
+  collectionName: "campaigns",
+  document: unknown,
+): RxdbCampaignDocument | null;
+export function narrowRxdbDocument(
+  collectionName: "teams",
+  document: unknown,
+): RxdbTeamDocument | null;
+export function narrowRxdbDocument(
+  collectionName: "areas",
+  document: unknown,
+): RxdbAreaDocument | null;
+export function narrowRxdbDocument(
+  collectionName: "streetTasks",
+  document: unknown,
+): RxdbStreetTaskDocument | null;
+export function narrowRxdbDocument(
+  collectionName: "houseTasks",
+  document: unknown,
+): RxdbHouseTaskDocument | null;
+export function narrowRxdbDocument(
+  collectionName: RxdbCollectionName,
+  document: unknown,
+): RxdbDocument | null;
+export function narrowRxdbDocument(
+  collectionName: RxdbCollectionName,
+  document: unknown,
+): RxdbDocument | null {
+  switch (collectionName) {
+    case "campaigns":
+      return isCampaignDocument(document) ? document : null;
+    case "teams":
+      return isTeamDocument(document) ? document : null;
+    case "areas":
+      return isAreaDocument(document) ? document : null;
+    case "streetTasks":
+      return isStreetTaskDocument(document) ? document : null;
+    case "houseTasks":
+      return isHouseTaskDocument(document) ? document : null;
+  }
+}
+
 export function campaignToRxdbDocument(campaign: Campaign): RxdbCampaignDocument {
   return { ...campaign, campaignId: campaign.id };
 }
 
+export function documentForCollection(
+  collectionName: "campaigns",
+  snapshot: CampaignSnapshot,
+  id: string,
+): RxdbCampaignDocument | null;
+export function documentForCollection(
+  collectionName: "teams",
+  snapshot: CampaignSnapshot,
+  id: string,
+): RxdbTeamDocument | null;
+export function documentForCollection(
+  collectionName: "areas",
+  snapshot: CampaignSnapshot,
+  id: string,
+): RxdbAreaDocument | null;
+export function documentForCollection(
+  collectionName: "streetTasks",
+  snapshot: CampaignSnapshot,
+  id: string,
+): RxdbStreetTaskDocument | null;
+export function documentForCollection(
+  collectionName: "houseTasks",
+  snapshot: CampaignSnapshot,
+  id: string,
+): RxdbHouseTaskDocument | null;
+export function documentForCollection(
+  collectionName: RxdbCollectionName,
+  snapshot: CampaignSnapshot,
+  id: string,
+): RxdbDocument | null;
 export function documentForCollection(
   collectionName: RxdbCollectionName,
   snapshot: CampaignSnapshot,
@@ -96,6 +221,30 @@ export function documentForCollection(
 }
 
 export function documentsForCollection(
+  collectionName: "campaigns",
+  snapshot: CampaignSnapshot,
+): RxdbCampaignDocument[];
+export function documentsForCollection(
+  collectionName: "teams",
+  snapshot: CampaignSnapshot,
+): RxdbTeamDocument[];
+export function documentsForCollection(
+  collectionName: "areas",
+  snapshot: CampaignSnapshot,
+): RxdbAreaDocument[];
+export function documentsForCollection(
+  collectionName: "streetTasks",
+  snapshot: CampaignSnapshot,
+): RxdbStreetTaskDocument[];
+export function documentsForCollection(
+  collectionName: "houseTasks",
+  snapshot: CampaignSnapshot,
+): RxdbHouseTaskDocument[];
+export function documentsForCollection(
+  collectionName: RxdbCollectionName,
+  snapshot: CampaignSnapshot,
+): RxdbDocument[];
+export function documentsForCollection(
   collectionName: RxdbCollectionName,
   snapshot: CampaignSnapshot,
 ): RxdbDocument[] {
@@ -113,11 +262,20 @@ export function documentsForCollection(
   }
 }
 
+export function toDeletedRxdbDocument<N extends RxdbCollectionName>(document: RxdbDocumentForCollection<N>): RxdbDocumentForCollection<N>;
+export function toDeletedRxdbDocument(document: RxdbDocument): RxdbDocument;
 export function toDeletedRxdbDocument(document: RxdbDocument): RxdbDocument {
   return { ...document, _deleted: true };
 }
 
 /** Removes transport metadata before comparing domain content or sending HTTP. */
+export function withoutRxdbMetadata(document: RxdbCampaignDocument): RxdbCampaignDocument;
+export function withoutRxdbMetadata(document: RxdbTeamDocument): RxdbTeamDocument;
+export function withoutRxdbMetadata(document: RxdbAreaDocument): RxdbAreaDocument;
+export function withoutRxdbMetadata(document: RxdbStreetTaskDocument): RxdbStreetTaskDocument;
+export function withoutRxdbMetadata(document: RxdbHouseTaskDocument): RxdbHouseTaskDocument;
+export function withoutRxdbMetadata<N extends RxdbCollectionName>(document: RxdbDocumentForCollection<N>): RxdbDocumentForCollection<N>;
+export function withoutRxdbMetadata(document: RxdbDocument): RxdbDocument;
 export function withoutRxdbMetadata(document: RxdbDocument): RxdbDocument {
   const { _deleted, _rev: _rev, _meta: _meta, _attachments: _attachments, ...plain } = document;
   return _deleted ? { ...plain, _deleted: true } : plain;
@@ -153,10 +311,10 @@ export function materializeCampaignSnapshot(input: {
     schemaVersion: 3,
     revision: input.revision,
     campaign: domainCampaign,
-    teams: sortByCreated(input.teams).map(withoutRxdbMetadata) as Team[],
-    areas: sortByCreated(input.areas).map(withoutRxdbMetadata) as Area[],
-    tasks: sortByCreated(input.streetTasks).map(withoutRxdbMetadata) as DistributionTask[],
-    houseTasks: sortByCreated(input.houseTasks).map(withoutRxdbMetadata) as HouseTask[],
+    teams: sortByCreated(input.teams).map((document) => withoutRxdbMetadata(document)),
+    areas: sortByCreated(input.areas).map((document) => withoutRxdbMetadata(document)),
+    tasks: sortByCreated(input.streetTasks).map((document) => withoutRxdbMetadata(document)),
+    houseTasks: sortByCreated(input.houseTasks).map((document) => withoutRxdbMetadata(document)),
     ...(input.collection ? { collection: input.collection } : {}),
   };
 }
