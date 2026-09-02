@@ -90,7 +90,7 @@ export async function prepareStreetsForArea(
   input: StreetPreparationInput,
 ): Promise<StreetPreparationResult> {
   const startedAt = Date.now();
-  const candidates: StreetPreparationCandidate[] = [];
+  const candidates: PreparedStreetCandidate[] = [];
   const seenInputRoads = new Set<string>();
   const seenFragments = new Set<string>();
   let eligibleRoadCount = 0;
