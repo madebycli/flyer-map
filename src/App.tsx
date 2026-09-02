@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AccessInfo } from "./data/campaignApi";
+import {
+  CampaignApiError,
+  collectionModeFromUrl,
+  fetchAreaPreparation,
+  removeCollectionAccessTokenFromUrl,
+  startAreaPreparation,
+  type AccessInfo,
+  type AreaPreparationPublicState,
+} from "./data/campaignApi";
 import {
   loadCampaignSnapshot,
   manualRefreshCampaign,
@@ -19,24 +27,76 @@ import {
   type Area,
   type CampaignSnapshot,
   type DistributionTask,
+  type HouseTask,
+  type LineStringGeometry,
   type LngLat,
   type MapCameraView,
   type TaskStatus,
   type Team,
 } from "./domain/campaign";
+import { darkenHexColor } from "./domain/color";
+import {
+  collectionAreaColor,
+  collectionSnapshotOrEmpty,
+  createCollectionId,
+  type CollectionArea,
+  type CollectionMainArea,
+} from "./domain/collection";
 import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
+import {
+  createAreaPreparationPoller,
+  type AreaPreparationPoller,
+} from "./areaPreparation/preparationPolling";
+import { preparedSmartRoadCandidates } from "./domain/preparedSmartRoads";
+import type { SmartRoadCandidate } from "./domain/smartCandidates";
+import {
+  smartRoadPointAnchorCandidates,
+  type SmartRoadPointAnchor,
+} from "./domain/smartRoadPointAnchor";
+import {
+  selectSmartRoadRange,
+  smartRoadRouteOptions,
+  smartRoadSelectionLabel,
+  type SmartRoadRouteOption,
+} from "./domain/smartRoadSelection";
+import { createSmartStreetTaskSnapshot } from "./domain/smartStreetTask";
 import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } from "./i18n";
 import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
+import { CollectionAdminPanel } from "./collection/CollectionAdminPanel";
+import { CollectionCollectorView } from "./collection/CollectionCollectorView";
+import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";
+import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
 import { SettingsSheet } from "./settings/SettingsSheet";
 
-type MapMode = "browse" | "draw" | "edit" | "street-draw";
-type Sheet = "teams" | "area" | "task" | "settings" | null;
+type MapMode =
+  | "browse"
+  | "draw"
+  | "edit"
+  | "street-draw"
+  | "smart-street"
+  | "collection-main-draw"
+  | "collection-area-draw"
+  | "collection-area-edit";
+type Sheet =
+  | "teams"
+  | "area"
+  | "task"
+  | "house"
+  | "campaign-comments"
+  | "settings"
+  | "collection-admin"
+  | null;
+type SmartStreetAnchorKind = "start" | "end";
 type UndoStatusChange = {
   taskId: string;
   label: string;
   previousStatus: TaskStatus;
   previousCompletedAt: string | null;
+};
+type AppProps = {
+  platformCommand?: PlatformAppCommand | null;
+  onPlatformContextChange?: (context: PlatformAppContext) => void;
 };
 
 const GERMANY_VIEW: MapCameraView = {
@@ -70,16 +130,22 @@ function nextStreetName(tasks: DistributionTask[], areaId: string, language: Lan
   return `${t(language, "street")} ${count + 1}`;
 }
 
+function smartRoadLabel(road: SmartRoadCandidate | undefined, language: Language) {
+  if (!road) return t(language, "smartStreetSection");
+  return road.name?.trim() || road.ref?.trim() || t(language, "smartStreetSection");
+}
+
 function syncMessage(language: Language, code: SyncMessageCode, refreshState: RefreshState) {
   if (refreshState === "available") return t(language, "browseUpdateDeferred");
   if (code === "access_required") return t(language, "accessRequired");
   if (code === "network") return t(language, "unavailable");
   if (code === "forbidden") return t(language, "permissionDenied");
+  if (code === "schema_migration_required") return t(language, "schemaMigrationRequired");
   if (code === "conflict") return t(language, "newData");
   return null;
 }
 
-export default function App() {
+export default function App({ platformCommand = null, onPlatformContextChange }: AppProps = {}) {
   const online = useOnlineStatus();
   const [initialLoad] = useState(loadCampaignSnapshot);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(initialLoad.snapshot);
@@ -92,6 +158,7 @@ export default function App() {
   const [currentCamera, setCurrentCamera] = useState<MapCameraView | null>(null);
   const [cameraCommand, setCameraCommand] = useState<MapCameraCommand>(null);
   const cameraCommandId = useRef(0);
+  const handledPlatformCommandId = useRef(0);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(
     initialLoad.snapshot.teams[0]?.id ?? null,
   );
@@ -99,10 +166,31 @@ export default function App() {
   const [mode, setMode] = useState<MapMode>("browse");
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedHouseTaskId, setSelectedHouseTaskId] = useState<string | null>(null);
   const [draftVertices, setDraftVertices] = useState<LngLat[]>([]);
   const [editingVertices, setEditingVertices] = useState<LngLat[]>([]);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
   const [streetDraftVertices, setStreetDraftVertices] = useState<LngLat[]>([]);
+  const [smartStreetStartAnchor, setSmartStreetStartAnchor] = useState<SmartRoadPointAnchor | null>(null);
+  const [smartStreetEndAnchor, setSmartStreetEndAnchor] = useState<SmartRoadPointAnchor | null>(null);
+  const [smartStreetSelectedSourceIds, setSmartStreetSelectedSourceIds] = useState<string[]>([]);
+  const [smartStreetAnchorKind, setSmartStreetAnchorKind] = useState<SmartStreetAnchorKind | null>(null);
+  const [smartStreetPendingAnchors, setSmartStreetPendingAnchors] = useState<SmartRoadPointAnchor[]>([]);
+  const [smartStreetRouteOptions, setSmartStreetRouteOptions] = useState<SmartRoadRouteOption[]>([]);
+  const [smartStreetMessage, setSmartStreetMessage] = useState<string | null>(null);
+  const smartStreetSaveInFlight = useRef(false);
+  const [collectionDraftVertices, setCollectionDraftVertices] = useState<LngLat[]>([]);
+  const [collectionEditingVertices, setCollectionEditingVertices] = useState<LngLat[]>([]);
+  const [collectionEditingAreaId, setCollectionEditingAreaId] = useState<string | null>(null);
+  const [selectedCollectionAreaId, setSelectedCollectionAreaId] = useState<string | null>(null);
+  const [collectionSelectedVertexIndex, setCollectionSelectedVertexIndex] = useState<number | null>(null);
+  const [areaPreparation, setAreaPreparation] = useState<AreaPreparationPublicState | null>(null);
+  const [areaPreparationSchemaUnavailable, setAreaPreparationSchemaUnavailable] = useState(false);
+  const [areaPreparationRequestFailed, setAreaPreparationRequestFailed] = useState(false);
+  const [areaPreparationRetrying, setAreaPreparationRetrying] = useState(false);
+  const areaPreparationPollerRef = useRef<AreaPreparationPoller | null>(null);
+  const areaPreparationAutoStartKeys = useRef(new Set<string>());
+  const areaPreparationPendingKeys = useRef(new Set<string>());
   const [undoStatusChange, setUndoStatusChange] = useState<UndoStatusChange | null>(null);
 
   useEffect(
@@ -133,7 +221,10 @@ export default function App() {
   }, [undoStatusChange]);
 
   useEffect(() => {
-    if (access?.role === "team-editor" && access.teamId) {
+    if (
+      (access?.role === "team-editor" || access?.role === "field-group-member") &&
+      access.teamId
+    ) {
       setActiveTeamId(access.teamId);
       return;
     }
@@ -150,12 +241,42 @@ export default function App() {
       setSelectedTaskId(null);
       if (sheet === "task") setSheet(selectedAreaId ? "area" : null);
     }
-  }, [snapshot, selectedAreaId, selectedTaskId, sheet]);
+    if (selectedHouseTaskId && !(snapshot.houseTasks ?? []).some((task) => task.id === selectedHouseTaskId)) {
+      setSelectedHouseTaskId(null);
+      if (sheet === "house") setSheet(selectedAreaId ? "area" : null);
+    }
+  }, [snapshot, selectedAreaId, selectedHouseTaskId, selectedTaskId, sheet]);
 
   const isAdmin = access?.role === "admin";
   const isEditor = access?.role === "team-editor";
+  const isFieldGroupMember = access?.role === "field-group-member";
   const canEditTeam = (teamId: string) => isAdmin || (isEditor && access?.teamId === teamId);
   const canEditArea = (area: Area | null) => Boolean(area && canEditTeam(area.teamId));
+  const canChangeTaskStatusInArea = (area: Area | null) =>
+    Boolean(
+      area &&
+        (canEditTeam(area.teamId) ||
+          (isFieldGroupMember && access?.teamId === area.teamId && Boolean(access.groupId))),
+    );
+
+  const collection = collectionSnapshotOrEmpty(snapshot.collection);
+  const collectionMode = collectionModeFromUrl();
+  const collectionSelectedArea = collection.areas.find(
+    (area) => area.id === (collectionEditingAreaId ?? selectedCollectionAreaId),
+  ) ?? null;
+  const collectionColor = collectionSelectedArea?.color ?? collectionAreaColor(collection.areas.length);
+  const collectionVisible =
+    Boolean(isAdmin) &&
+    (sheet === "collection-admin" || mode === "collection-main-draw" ||
+      mode === "collection-area-draw" || mode === "collection-area-edit");
+  const collectionDraftValidation = useMemo(
+    () => validatePolygonVertices(collectionDraftVertices),
+    [collectionDraftVertices],
+  );
+  const collectionEditValidation = useMemo(
+    () => validatePolygonVertices(collectionEditingVertices),
+    [collectionEditingVertices],
+  );
 
   const activeTeam = snapshot.teams.find((team) => team.id === activeTeamId) ?? null;
   const selectedArea = snapshot.areas.find((area) => area.id === selectedAreaId) ?? null;
@@ -169,11 +290,109 @@ export default function App() {
   const selectedTaskTeam = selectedTaskArea
     ? snapshot.teams.find((team) => team.id === selectedTaskArea.teamId) ?? null
     : null;
-  const selectedAreaTasks = selectedArea
-    ? snapshot.tasks.filter((task) => task.areaId === selectedArea.id)
-    : [];
+  const selectedHouseTask = snapshot.houseTasks?.find((task) => task.id === selectedHouseTaskId) ?? null;
+  const selectedHouseTaskArea = selectedHouseTask
+    ? snapshot.areas.find((area) => area.id === selectedHouseTask.areaId) ?? null
+    : null;
+  const selectedHouseTaskTeam = selectedHouseTaskArea
+    ? snapshot.teams.find((team) => team.id === selectedHouseTaskArea.teamId) ?? null
+    : null;
+  const selectedAreaHouseTasks = useMemo(
+    () =>
+      selectedArea
+        ? (snapshot.houseTasks ?? []).filter((task) => task.areaId === selectedArea.id)
+        : [],
+    [selectedArea, snapshot.houseTasks],
+  );
+  const smartRoads = useMemo(
+    () => selectedArea ? preparedSmartRoadCandidates(snapshot.tasks, selectedArea.id) : [],
+    [selectedArea, snapshot.tasks],
+  );
   const canEditSelectedArea = canEditArea(selectedArea);
   const canEditSelectedTask = canEditArea(selectedTaskArea);
+  const canChangeSelectedTaskStatus = canChangeTaskStatusInArea(selectedTaskArea);
+  const canChangeSelectedHouseTaskStatus = canChangeTaskStatusInArea(selectedHouseTaskArea);
+  const selectedTaskIsAutoPrepared = Boolean(selectedTask?.areaPreparationGeneration);
+  const selectedAreaPreparationKey = selectedArea
+    ? `${snapshot.campaign.id}:${selectedArea.id}`
+    : null;
+
+  useEffect(() => {
+    areaPreparationPollerRef.current?.stop();
+    areaPreparationPollerRef.current = null;
+    setAreaPreparation(null);
+    setAreaPreparationSchemaUnavailable(false);
+    setAreaPreparationRequestFailed(false);
+    setAreaPreparationRetrying(false);
+
+    if (
+      sheet !== "area" ||
+      !selectedArea ||
+      !selectedAreaPreparationKey ||
+      !canEditSelectedArea
+    ) {
+      return;
+    }
+
+    const poller = createAreaPreparationPoller({
+      campaignId: snapshot.campaign.id,
+      areaId: selectedArea.id,
+      client: {
+        fetchState: fetchAreaPreparation,
+        start: startAreaPreparation,
+      },
+      canAutoStart: () => !areaPreparationAutoStartKeys.current.has(selectedAreaPreparationKey),
+      markAutoStarted: () => areaPreparationAutoStartKeys.current.add(selectedAreaPreparationKey),
+      markPending: () => areaPreparationPendingKeys.current.add(selectedAreaPreparationKey),
+      hasPending: () => areaPreparationPendingKeys.current.has(selectedAreaPreparationKey),
+      clearPending: () => areaPreparationPendingKeys.current.delete(selectedAreaPreparationKey),
+      onState: (state) => {
+        setAreaPreparation(state);
+        setAreaPreparationSchemaUnavailable(false);
+        setAreaPreparationRequestFailed(false);
+        setAreaPreparationRetrying(false);
+      },
+      onReady: manualRefreshCampaign,
+      onError: (error) => {
+        setAreaPreparationRetrying(false);
+        setAreaPreparation(null);
+        if (error instanceof CampaignApiError && error.code === "area_preparation_schema_unavailable") {
+          setAreaPreparationSchemaUnavailable(true);
+          return;
+        }
+        setAreaPreparationRequestFailed(true);
+      },
+    });
+    areaPreparationPollerRef.current = poller;
+    poller.start();
+
+    return () => {
+      poller.stop();
+      if (areaPreparationPollerRef.current === poller) {
+        areaPreparationPollerRef.current = null;
+      }
+    };
+  }, [canEditSelectedArea, selectedArea?.id, selectedAreaPreparationKey, sheet, snapshot.campaign.id]);
+
+  useEffect(() => {
+    onPlatformContextChange?.({
+      campaignId: snapshot.campaign.id,
+      accessRole: access?.role ?? null,
+      accessTeamId: access?.teamId ?? null,
+      activeGroupId: access?.groupId ?? null,
+      activeTeam: activeTeam
+        ? {
+            id: activeTeam.id,
+            name: activeTeam.name,
+            color: activeTeam.color,
+          }
+        : null,
+      teams: snapshot.teams.map((team) => ({ id: team.id, name: team.name, color: team.color })),
+      launcherAvailable: mode === "browse" && sheet === null,
+      canManageTeams: Boolean(isAdmin),
+      canCreateArea: Boolean(activeTeam && canEditTeam(activeTeam.id)),
+    });
+  }, [access, activeTeam, isAdmin, mode, sheet, onPlatformContextChange, snapshot.campaign.id, snapshot.teams]);
 
   const renderedAreas = useMemo(
     () =>
@@ -192,9 +411,24 @@ export default function App() {
         return {
           ...task,
           color: team?.color ?? "#64748b",
+          completedColor: darkenHexColor(team?.color ?? "#64748b", 0.25),
         };
       }),
     [snapshot.tasks, snapshot.areas, snapshot.teams],
+  );
+
+  const renderedHouses = useMemo(
+    () =>
+      (snapshot.houseTasks ?? []).map((house) => {
+        const area = snapshot.areas.find((candidate) => candidate.id === house.areaId);
+        const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
+        return {
+          ...house,
+          color: team?.color ?? "#64748b",
+          completedColor: darkenHexColor(team?.color ?? "#64748b", 0.25),
+        };
+      }),
+    [snapshot.houseTasks, snapshot.areas, snapshot.teams],
   );
 
   const drawValidation = useMemo(
@@ -209,6 +443,44 @@ export default function App() {
     () => validateLineStringVertices(streetDraftVertices),
     [streetDraftVertices],
   );
+  const smartStreetLabel = useMemo(
+    () => smartRoadSelectionLabel(smartRoads, smartStreetSelectedSourceIds)
+      ?? (selectedArea ? nextStreetName(snapshot.tasks, selectedArea.id, language) : t(language, "street")),
+    [language, selectedArea, smartRoads, smartStreetSelectedSourceIds, snapshot.tasks],
+  );
+  const smartStreetPreviewGeometry = useMemo<LineStringGeometry | null>(() => {
+    if (
+      !selectedArea ||
+      !smartStreetStartAnchor ||
+      !smartStreetEndAnchor ||
+      smartStreetSelectedSourceIds.length === 0
+    ) {
+      return null;
+    }
+    try {
+      return createSmartStreetTaskSnapshot({
+        campaignId: snapshot.campaign.id,
+        areaId: selectedArea.id,
+        label: smartStreetLabel,
+        roads: smartRoads,
+        sourceIds: smartStreetSelectedSourceIds,
+        startAnchor: smartStreetStartAnchor,
+        endAnchor: smartStreetEndAnchor,
+        taskId: "task_smart-preview",
+        timestamp: "2026-01-01T00:00:00.000Z",
+      }).geometry;
+    } catch {
+      return null;
+    }
+  }, [
+    selectedArea,
+    smartRoads,
+    smartStreetEndAnchor,
+    smartStreetLabel,
+    smartStreetSelectedSourceIds,
+    smartStreetStartAnchor,
+    snapshot.campaign.id,
+  ]);
 
   const commitSnapshot = (update: (current: CampaignSnapshot) => CampaignSnapshot) => {
     if (!access || access.role === "viewer") return;
@@ -294,15 +566,221 @@ export default function App() {
     setSheet(null);
     setSelectedAreaId(null);
     setSelectedTaskId(null);
+    setSelectedHouseTaskId(null);
     setDraftVertices([]);
     setEditingVertices([]);
     setStreetDraftVertices([]);
     setSelectedVertexIndex(null);
   };
 
+  useEffect(() => {
+    if (!platformCommand || platformCommand.id <= handledPlatformCommandId.current) return;
+    handledPlatformCommandId.current = platformCommand.id;
+    if (mode !== "browse") return;
+
+    if (platformCommand.type === "open-settings") {
+      setSheet("settings");
+      return;
+    }
+
+    if (platformCommand.type === "open-campaign-comments") {
+      setSelectedAreaId(null);
+      setSelectedTaskId(null);
+      setSelectedHouseTaskId(null);
+      setSheet("campaign-comments");
+      return;
+    }
+
+    if (platformCommand.type === "open-team-management") {
+      if (isAdmin) setSheet("teams");
+      return;
+    }
+
+    if (platformCommand.type === "select-active-team") {
+      const candidate = snapshot.teams.find((team) => team.id === platformCommand.teamId);
+      if (!candidate || !access) return;
+      if (
+        (access.role === "team-editor" || access.role === "field-group-member") &&
+        access.teamId !== candidate.id
+      ) {
+        return;
+      }
+      setActiveTeamId(candidate.id);
+      return;
+    }
+
+    if (platformCommand.type === "start-area-drawing") {
+      startDrawing();
+    }
+  }, [platformCommand, mode, isAdmin, activeTeam, access, snapshot.teams]);
+
   const cancelDrawing = () => {
     setMode("browse");
     setDraftVertices([]);
+  };
+
+  const startCollectionMainArea = () => {
+    if (!isAdmin || collection.mainArea) return;
+    setMode("collection-main-draw");
+    setSheet(null);
+    setCollectionDraftVertices([]);
+    setCollectionEditingVertices([]);
+    setCollectionEditingAreaId(null);
+    setCollectionSelectedVertexIndex(null);
+  };
+
+  const startCollectionArea = () => {
+    if (!isAdmin || !collection.mainArea) return;
+    setMode("collection-area-draw");
+    setSheet(null);
+    setCollectionDraftVertices([]);
+    setCollectionEditingVertices([]);
+    setCollectionEditingAreaId(null);
+    setCollectionSelectedVertexIndex(null);
+  };
+
+  const startCollectionAreaEditing = (areaId: string) => {
+    if (!isAdmin) return;
+    const area = collection.areas.find((candidate) => candidate.id === areaId);
+    if (!area || area.status !== "open") return;
+    setSelectedCollectionAreaId(area.id);
+    setCollectionEditingAreaId(area.id);
+    setCollectionEditingVertices(openPolygonRing(area.geometry));
+    setCollectionSelectedVertexIndex(null);
+    setMode("collection-area-edit");
+    setSheet(null);
+  };
+
+  const cancelCollectionGeometry = () => {
+    setMode("browse");
+    setCollectionDraftVertices([]);
+    setCollectionEditingVertices([]);
+    setCollectionEditingAreaId(null);
+    setCollectionSelectedVertexIndex(null);
+    setSheet("collection-admin");
+  };
+
+  const moveCollectionEditVertex = (index: number, point: LngLat) => {
+    setCollectionEditingVertices((current) =>
+      current.map((vertex, vertexIndex) => (vertexIndex === index ? point : vertex)),
+    );
+    setCollectionSelectedVertexIndex(null);
+  };
+
+  const saveCollectionGeometry = () => {
+    if (!isAdmin) return;
+    const now = new Date().toISOString();
+    if (mode === "collection-main-draw") {
+      if (!collectionDraftValidation.valid || collection.mainArea) return;
+      const mainArea: CollectionMainArea = {
+        id: createCollectionId("main"),
+        campaignId: snapshot.campaign.id,
+        name: language === "en" ? "Collection Main Area" : "Collection Main Area",
+        geometry: createPolygonGeometry(collectionDraftVertices),
+        createdAt: now,
+        updatedAt: now,
+      };
+      commitSnapshot((current) => ({
+        ...current,
+        collection: {
+          ...collectionSnapshotOrEmpty(current.collection),
+          mainArea,
+        },
+      }));
+      setSelectedCollectionAreaId(null);
+      setCollectionDraftVertices([]);
+      setMode("browse");
+      setSheet("collection-admin");
+      return;
+    }
+
+    if (mode === "collection-area-draw") {
+      if (!collectionDraftValidation.valid || !collection.mainArea) return;
+      const area: CollectionArea = {
+        id: createCollectionId("area"),
+        campaignId: snapshot.campaign.id,
+        mainAreaId: collection.mainArea.id,
+        name: language === "en"
+          ? "Collection Area " + (collection.areas.length + 1)
+          : "Collection Area " + (collection.areas.length + 1),
+        geometry: createPolygonGeometry(collectionDraftVertices),
+        color: collectionAreaColor(collection.areas.length),
+        status: "open",
+        runId: null,
+        claimedByCollectorId: null,
+        claimedByLabel: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      commitSnapshot((current) => ({
+        ...current,
+        collection: {
+          ...collectionSnapshotOrEmpty(current.collection),
+          areas: [...collectionSnapshotOrEmpty(current.collection).areas, area],
+        },
+      }));
+      setSelectedCollectionAreaId(area.id);
+      setCollectionDraftVertices([]);
+      setMode("browse");
+      setSheet("collection-admin");
+      return;
+    }
+
+    if (mode === "collection-area-edit") {
+      const area = collectionSelectedArea;
+      if (!area || !collectionEditValidation.valid) return;
+      commitSnapshot((current) => ({
+        ...current,
+        collection: {
+          ...collectionSnapshotOrEmpty(current.collection),
+          areas: collectionSnapshotOrEmpty(current.collection).areas.map((candidate) =>
+            candidate.id === area.id
+              ? { ...candidate, geometry: createPolygonGeometry(collectionEditingVertices), updatedAt: now }
+              : candidate,
+          ),
+        },
+      }));
+      setCollectionEditingVertices([]);
+      setCollectionEditingAreaId(null);
+      setCollectionSelectedVertexIndex(null);
+      setMode("browse");
+      setSheet("collection-admin");
+    }
+  };
+
+  const forceReleaseCollectionArea = (areaId: string, runId: string) => {
+    if (!isAdmin) return;
+    const area = collection.areas.find((candidate) => candidate.id === areaId);
+    if (!area || area.runId !== runId || area.status === "completed") return;
+    const now = new Date().toISOString();
+    commitSnapshot((current) => {
+      const currentCollection = collectionSnapshotOrEmpty(current.collection);
+      return {
+        ...current,
+        collection: {
+          ...currentCollection,
+          areas: currentCollection.areas.map((candidate) =>
+            candidate.id === areaId
+              ? {
+                  ...candidate,
+                  status: "open",
+                  runId: null,
+                  claimedByCollectorId: null,
+                  claimedByLabel: null,
+                  completedAt: null,
+                  updatedAt: now,
+                }
+              : candidate,
+          ),
+          runs: currentCollection.runs.map((run) =>
+            run.id === runId
+              ? { ...run, areaIds: run.areaIds.filter((id) => id !== areaId), updatedAt: now }
+              : run,
+          ),
+        },
+      };
+    });
   };
 
   const saveDraftArea = () => {
@@ -329,6 +807,7 @@ export default function App() {
   const selectArea = (areaId: string | null) => {
     if (mode !== "browse") return;
     setSelectedTaskId(null);
+    setSelectedHouseTaskId(null);
     setSelectedAreaId(areaId);
     setSheet(areaId ? "area" : null);
   };
@@ -343,8 +822,25 @@ export default function App() {
     const task = snapshot.tasks.find((candidate) => candidate.id === taskId);
     if (!task) return;
     setSelectedTaskId(task.id);
+    setSelectedHouseTaskId(null);
     setSelectedAreaId(task.areaId);
     setSheet("task");
+  };
+
+  const selectHouseTask = (taskId: string | null) => {
+    if (mode !== "browse") return;
+    if (!taskId) {
+      setSelectedHouseTaskId(null);
+      setSheet(selectedAreaId ? "area" : null);
+      return;
+    }
+
+    const task: HouseTask | undefined = snapshot.houseTasks?.find((candidate) => candidate.id === taskId);
+    if (!task) return;
+    setSelectedTaskId(null);
+    setSelectedHouseTaskId(task.id);
+    setSelectedAreaId(task.areaId);
+    setSheet("house");
   };
 
   const updateSelectedArea = (patch: Partial<Pick<Area, "name" | "teamId">>) => {
@@ -377,6 +873,9 @@ export default function App() {
       ...current,
       areas: current.areas.filter((area) => area.id !== selectedArea.id),
       tasks: current.tasks.filter((task) => task.areaId !== selectedArea.id),
+      ...(current.houseTasks
+        ? { houseTasks: current.houseTasks.filter((task) => task.areaId !== selectedArea.id) }
+        : {}),
     }));
     setSelectedAreaId(null);
     setSelectedTaskId(null);
@@ -423,12 +922,178 @@ export default function App() {
     setSheet("area");
   };
 
+  const resetSmartStreetSelection = () => {
+    setSmartStreetStartAnchor(null);
+    setSmartStreetEndAnchor(null);
+    setSmartStreetSelectedSourceIds([]);
+    setSmartStreetAnchorKind(null);
+    setSmartStreetPendingAnchors([]);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetMessage(null);
+    smartStreetSaveInFlight.current = false;
+  };
+
+  const startSmartStreetSelection = () => {
+    if (!selectedArea || !canEditSelectedArea || smartRoads.length === 0) return;
+    resetSmartStreetSelection();
+    setSelectedTaskId(null);
+    setSelectedHouseTaskId(null);
+    setSmartStreetAnchorKind("start");
+    setSmartStreetMessage(t(language, "smartStreetStartHint"));
+    setMode("smart-street");
+    setSheet(null);
+  };
+
+  const cancelSmartStreetSelection = () => {
+    resetSmartStreetSelection();
+    setMode("browse");
+    if (selectedAreaId) setSheet("area");
+  };
+
+  const acceptSmartStreetAnchor = (anchor: SmartRoadPointAnchor) => {
+    setSmartStreetPendingAnchors([]);
+    if (smartStreetAnchorKind === "start") {
+      setSmartStreetStartAnchor(anchor);
+      setSmartStreetEndAnchor(null);
+      setSmartStreetSelectedSourceIds([]);
+      setSmartStreetRouteOptions([]);
+      setSmartStreetAnchorKind("end");
+      setSmartStreetMessage(t(language, "smartStreetEndHint"));
+      return;
+    }
+
+    if (smartStreetAnchorKind === "end" && smartStreetStartAnchor) {
+      const selection = selectSmartRoadRange(
+        smartRoads,
+        smartStreetStartAnchor.sourceId,
+        anchor.sourceId,
+      );
+      if (selection.state === "selected") {
+        setSmartStreetEndAnchor(anchor);
+        setSmartStreetSelectedSourceIds(selection.sourceIds);
+        setSmartStreetRouteOptions([]);
+        setSmartStreetAnchorKind(null);
+        setSmartStreetMessage(t(language, "smartStreetPreviewReady"));
+        return;
+      }
+      if (selection.state === "ambiguous") {
+        setSmartStreetEndAnchor(anchor);
+        setSmartStreetSelectedSourceIds([]);
+        setSmartStreetRouteOptions(
+          smartRoadRouteOptions(
+            smartRoads,
+            smartStreetStartAnchor.sourceId,
+            anchor.sourceId,
+            3,
+          ),
+        );
+        setSmartStreetAnchorKind(null);
+        setSmartStreetMessage(t(language, "smartStreetChooseRoute"));
+        return;
+      }
+      setSmartStreetEndAnchor(null);
+      setSmartStreetSelectedSourceIds([]);
+      setSmartStreetRouteOptions([]);
+      setSmartStreetAnchorKind("end");
+      setSmartStreetMessage(t(language, "smartStreetDisconnected"));
+    }
+  };
+
+  const handleSmartStreetPoint = (point: LngLat, sourceIds: string[]) => {
+    if (!smartStreetAnchorKind) {
+      setSmartStreetMessage(t(language, "smartStreetUseActions"));
+      return;
+    }
+    const visibleRoads = smartRoads.filter((road) => sourceIds.includes(road.sourceId));
+    const anchors = smartRoadPointAnchorCandidates(visibleRoads, point, 25, 4);
+    if (anchors.length === 0) {
+      setSmartStreetPendingAnchors([]);
+      setSmartStreetMessage(t(language, "smartStreetTapCandidate"));
+      return;
+    }
+    if (anchors.length === 1) {
+      acceptSmartStreetAnchor(anchors[0]);
+      return;
+    }
+    setSmartStreetPendingAnchors(anchors);
+    setSmartStreetMessage(t(language, "smartStreetChooseCandidate"));
+  };
+
+  const chooseSmartStreetRoute = (option: SmartRoadRouteOption) => {
+    setSmartStreetSelectedSourceIds(option.sourceIds);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetMessage(t(language, "smartStreetPreviewReady"));
+  };
+
+  const resetSmartStreetStart = () => {
+    setSmartStreetStartAnchor(null);
+    setSmartStreetEndAnchor(null);
+    setSmartStreetSelectedSourceIds([]);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetPendingAnchors([]);
+    setSmartStreetAnchorKind("start");
+    setSmartStreetMessage(t(language, "smartStreetStartHint"));
+  };
+
+  const resetSmartStreetEnd = () => {
+    if (!smartStreetStartAnchor) return;
+    setSmartStreetEndAnchor(null);
+    setSmartStreetSelectedSourceIds([]);
+    setSmartStreetRouteOptions([]);
+    setSmartStreetPendingAnchors([]);
+    setSmartStreetAnchorKind("end");
+    setSmartStreetMessage(t(language, "smartStreetEndHint"));
+  };
+
+  const saveSmartStreetTask = () => {
+    if (
+      smartStreetSaveInFlight.current ||
+      !selectedArea ||
+      !canEditSelectedArea ||
+      !smartStreetStartAnchor ||
+      !smartStreetEndAnchor ||
+      smartStreetSelectedSourceIds.length === 0
+    ) {
+      return;
+    }
+    smartStreetSaveInFlight.current = true;
+    try {
+      const now = new Date().toISOString();
+      const task = createSmartStreetTaskSnapshot({
+        campaignId: snapshot.campaign.id,
+        areaId: selectedArea.id,
+        label: smartStreetLabel,
+        roads: smartRoads,
+        sourceIds: smartStreetSelectedSourceIds,
+        startAnchor: smartStreetStartAnchor,
+        endAnchor: smartStreetEndAnchor,
+        taskId: createId("task"),
+        timestamp: now,
+      });
+      commitSnapshot((current) => ({ ...current, tasks: [...current.tasks, task] }));
+      resetSmartStreetSelection();
+      setSelectedTaskId(task.id);
+      setMode("browse");
+      setSheet("task");
+    } catch {
+      smartStreetSaveInFlight.current = false;
+      setSmartStreetMessage(t(language, "smartStreetSaveError"));
+    }
+  };
+
   const startStreetDrawing = () => {
     if (!selectedArea || !canEditSelectedArea) return;
+    resetSmartStreetSelection();
     setStreetDraftVertices([]);
     setSelectedTaskId(null);
     setMode("street-draw");
     setSheet(null);
+  };
+
+  const retryAreaPreparation = () => {
+    if (!selectedArea || !canEditSelectedArea) return;
+    setAreaPreparationRetrying(true);
+    areaPreparationPollerRef.current?.retry();
   };
 
   const cancelStreetDrawing = () => {
@@ -447,6 +1112,7 @@ export default function App() {
       taskType: "street",
       label: nextStreetName(snapshot.tasks, selectedArea.id, language),
       geometry: createLineStringGeometry(streetDraftVertices),
+      areaPreparationGeneration: null,
       status: "open",
       completedAt: null,
       createdAt: now,
@@ -485,7 +1151,7 @@ export default function App() {
   };
 
   const changeTaskStatus = (status: TaskStatus) => {
-    if (!selectedTask || !canEditSelectedTask || selectedTask.status === status) return;
+    if (!selectedTask || !canChangeSelectedTaskStatus || selectedTask.status === status) return;
     const now = new Date().toISOString();
     setUndoStatusChange({
       taskId: selectedTask.id,
@@ -493,14 +1159,50 @@ export default function App() {
       previousStatus: selectedTask.status,
       previousCompletedAt: selectedTask.completedAt,
     });
-    updateSelectedTask({ status, completedAt: status === "completed" ? now : null });
+    commitSnapshot((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) =>
+        task.id === selectedTask.id
+          ? {
+              ...task,
+              status,
+              completedAt: status === "completed" ? now : null,
+              updatedAt: now,
+            }
+          : task,
+      ),
+    }));
+  };
+
+  const changeHouseTaskStatus = (status: TaskStatus) => {
+    if (
+      !selectedHouseTask ||
+      !canChangeSelectedHouseTaskStatus ||
+      selectedHouseTask.status === status
+    ) {
+      return;
+    }
+    const now = new Date().toISOString();
+    commitSnapshot((current) => ({
+      ...current,
+      houseTasks: (current.houseTasks ?? []).map((task) =>
+        task.id === selectedHouseTask.id
+          ? {
+              ...task,
+              status,
+              completedAt: status === "completed" ? now : null,
+              updatedAt: now,
+            }
+          : task,
+      ),
+    }));
   };
 
   const undoLastStatusChange = () => {
     if (!undoStatusChange) return;
     const task = snapshot.tasks.find((candidate) => candidate.id === undoStatusChange.taskId) ?? null;
     const area = task ? snapshot.areas.find((candidate) => candidate.id === task.areaId) ?? null : null;
-    if (!task || !canEditArea(area)) return;
+    if (!task || !canChangeTaskStatusInArea(area)) return;
     const now = new Date().toISOString();
     commitSnapshot((current) => ({
       ...current,
@@ -519,7 +1221,7 @@ export default function App() {
   };
 
   const deleteSelectedTask = () => {
-    if (!selectedTask || !canEditSelectedTask) return;
+    if (!selectedTask || !canEditSelectedTask || selectedTask.areaPreparationGeneration) return;
     if (!window.confirm(t(language, "confirmDeleteStreet", { name: selectedTask.label }))) return;
     commitSnapshot((current) => ({
       ...current,
@@ -567,6 +1269,47 @@ export default function App() {
   const displayedStorageWarning =
     storageWarning && language === "de" ? storageWarning : storageWarning ? t(language, "refreshError") : null;
 
+  if (collectionMode) {
+    if (access?.role === "collection-collector") {
+      return (
+        <CollectionCollectorView
+          campaignId={snapshot.campaign.id}
+          language={language}
+          snapshot={snapshot}
+          access={access}
+          online={online}
+          refreshState={refreshState}
+          onRefresh={manualRefreshCampaign}
+          onSnapshotChange={commitSnapshot}
+          onExit={() => {
+            removeCollectionAccessTokenFromUrl();
+            const url = new URL(window.location.href);
+            url.searchParams.delete("collection");
+            window.history.replaceState(null, "", url);
+            window.location.reload();
+          }}
+        />
+      );
+    }
+    return (
+      <main className="collection-screen">
+        <section className="collection-card">
+          <h1>{t(language, "accessRequired")}</h1>
+          <p>{t(language, "permissionDenied")}</p>
+          <button type="button" onClick={() => {
+            removeCollectionAccessTokenFromUrl();
+            const url = new URL(window.location.href);
+            url.searchParams.delete("collection");
+            window.history.replaceState(null, "", url);
+            window.location.reload();
+          }}>
+            {t(language, "close")}
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -585,7 +1328,9 @@ export default function App() {
         language={language}
         areas={renderedAreas}
         tasks={renderedTasks}
+        houses={renderedHouses}
         selectedTaskId={selectedTaskId}
+        selectedHouseTaskId={selectedHouseTaskId}
         mode={mode}
         draftVertices={draftVertices}
         draftColor={activeTeam?.color ?? "#2563eb"}
@@ -600,12 +1345,35 @@ export default function App() {
         onRefresh={manualRefreshCampaign}
         onAreaSelect={selectArea}
         onTaskSelect={selectTask}
+        onHouseTaskSelect={selectHouseTask}
         onDrawPoint={(point) => setDraftVertices((current) => [...current, point])}
         onEditVertexSelect={(index) =>
           setSelectedVertexIndex((current) => (current === index ? null : index))
         }
         onEditVertexMove={moveEditVertex}
         onStreetDrawPoint={(point) => setStreetDraftVertices((current) => [...current, point])}
+        smartRoads={smartRoads}
+        smartSelectedSourceIds={smartStreetSelectedSourceIds}
+        smartStartAnchor={smartStreetStartAnchor}
+        smartEndAnchor={smartStreetEndAnchor}
+        smartWaypointAnchors={[]}
+        smartPreviewGeometry={smartStreetPreviewGeometry}
+        smartStreetColor={streetColor}
+        onSmartStreetPoint={handleSmartStreetPoint}
+        collectionVisible={collectionVisible}
+        collectionMainArea={collection.mainArea}
+        collectionAreas={collection.areas}
+        selectedCollectionAreaId={selectedCollectionAreaId}
+        collectionDraftVertices={collectionDraftVertices}
+        collectionEditingVertices={collectionEditingVertices}
+        collectionColor={collectionSelectedArea?.color ?? collectionAreaColor(collection.areas.length)}
+        collectionSelectedVertexIndex={collectionSelectedVertexIndex}
+        onCollectionAreaSelect={setSelectedCollectionAreaId}
+        onCollectionDrawPoint={(point) => setCollectionDraftVertices((current) => [...current, point])}
+        onCollectionEditVertexSelect={(index) =>
+          setCollectionSelectedVertexIndex((current) => (current === index ? null : index))
+        }
+        onCollectionEditVertexMove={moveCollectionEditVertex}
       />
 
       {displayedStorageWarning || message ? (
@@ -627,7 +1395,7 @@ export default function App() {
 
       {mode === "browse" && sheet === null ? (
         <section className={`map-toolbar ${access?.role === "viewer" ? "viewer-toolbar" : ""}`} aria-label={t(language, "mapActions")}>
-          {access && access.role !== "viewer" ? (
+          {access && (access.role === "admin" || access.role === "team-editor") ? (
             <label className="team-picker">
               <span>{t(language, "activeTeam")}</span>
               <select
@@ -655,11 +1423,82 @@ export default function App() {
                 {t(language, "teams")}
               </button>
             ) : null}
-            {access && access.role !== "viewer" ? (
+            {isAdmin ? (
+              <button className="button secondary" type="button" onClick={() => setSheet("collection-admin")}>
+                Collection
+              </button>
+            ) : null}
+            {access && (access.role === "admin" || access.role === "team-editor") ? (
               <button className="button primary" type="button" onClick={startDrawing}>
                 {t(language, "drawArea")}
               </button>
             ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {mode === "collection-main-draw" || mode === "collection-area-draw" ? (
+        <section className="mode-sheet collection-mode-sheet" aria-label="Collection">
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Collection</span>
+              <strong>
+                {mode === "collection-main-draw" ? "Collection Main Area" : "Collection Area"}
+              </strong>
+            </div>
+            <span className="team-color-preview" style={{ backgroundColor: collectionColor }} aria-hidden="true" />
+          </div>
+          <p>
+            {mode === "collection-main-draw"
+              ? "Zeichne das gemeinsame Collection-Hauptgebiet."
+              : "Zeichne ein auswählbares Collection-Untergebiet."}
+          </p>
+          <p className={`geometry-status ${collectionDraftValidation.valid ? "is-valid" : "is-invalid"}`}>
+            {collectionDraftValidation.valid
+              ? `${collectionDraftVertices.length} Punkte bereit`
+              : geometryReason(language, collectionDraftValidation.reason)}
+          </p>
+          <div className="mode-actions three-actions">
+            <button className="button secondary" type="button" onClick={cancelCollectionGeometry}>{t(language, "cancel")}</button>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={collectionDraftVertices.length === 0}
+              onClick={() => setCollectionDraftVertices((current) => current.slice(0, -1))}
+            >
+              {t(language, "undo")}
+            </button>
+            <button className="button primary" type="button" disabled={!collectionDraftValidation.valid} onClick={saveCollectionGeometry}>
+              {t(language, "save")}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {mode === "collection-area-edit" ? (
+        <section className="mode-sheet collection-mode-sheet" aria-label="Collection Area bearbeiten">
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Collection</span>
+              <strong>{collectionSelectedArea?.name || "Collection Area"}</strong>
+            </div>
+            <span className="team-color-preview" style={{ backgroundColor: collectionSelectedArea?.color ?? "#2563eb" }} aria-hidden="true" />
+          </div>
+          <p>
+            {collectionSelectedVertexIndex === null
+              ? "Wähle einen Punkt auf der Karte und verschiebe ihn."
+              : `Punkt ${collectionSelectedVertexIndex + 1} ausgewählt`}
+          </p>
+          <p className={`geometry-status ${collectionEditValidation.valid ? "is-valid" : "is-invalid"}`}>
+            {collectionEditValidation.valid
+              ? "Geometrie ist gültig"
+              : geometryReason(language, collectionEditValidation.reason)}
+          </p>
+          <div className="mode-actions">
+            <button className="button secondary" type="button" onClick={cancelCollectionGeometry}>{t(language, "cancel")}</button>
+            <button className="button primary" type="button" disabled={!collectionEditValidation.valid} onClick={saveCollectionGeometry}>
+              {t(language, "saveChanges")}
+            </button>
           </div>
         </section>
       ) : null}
@@ -710,6 +1549,78 @@ export default function App() {
         </section>
       ) : null}
 
+      {mode === "smart-street" ? (
+        <section className="mode-sheet smart-street-sheet" aria-label={t(language, "addSmartStreet")}>
+          <div className="mode-title-row">
+            <div>
+              <span className="eyebrow">Smart Street</span>
+              <strong>{selectedArea?.name || t(language, "area")}</strong>
+            </div>
+            <span className="team-color-preview" style={{ backgroundColor: streetColor }} aria-hidden="true" />
+          </div>
+          <div className="smart-street-message" role="status">
+            {smartStreetMessage || t(language, "smartStreetStartHint")}
+          </div>
+          <div className="smart-street-meta">
+            <span>{t(language, "smartStreetCandidates", { count: smartRoads.length })}</span>
+            {smartStreetSelectedSourceIds.length > 0 ? (
+              <span>{t(language, "smartStreetSelected", { count: smartStreetSelectedSourceIds.length })}</span>
+            ) : null}
+          </div>
+          {smartStreetPendingAnchors.length > 0 ? (
+            <div className="smart-street-choice-list">
+              <strong>{t(language, "smartStreetChooseCandidate")}</strong>
+              {smartStreetPendingAnchors.map((anchor) => (
+                <button
+                  className="smart-street-choice"
+                  type="button"
+                  key={`${anchor.sourceId}:${anchor.segmentIndex}:${anchor.segmentT}`}
+                  onClick={() => acceptSmartStreetAnchor(anchor)}
+                >
+                  <span>{smartRoadLabel(smartRoads.find((road) => road.sourceId === anchor.sourceId), language)}</span>
+                  <small>{Math.round(anchor.distanceMeters)} m</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {smartStreetRouteOptions.length > 0 ? (
+            <div className="smart-street-choice-list">
+              <strong>{t(language, "smartStreetChooseRoute")}</strong>
+              {smartStreetRouteOptions.map((option, index) => (
+                <button
+                  className="smart-street-choice"
+                  type="button"
+                  key={option.sourceIds.join("/")}
+                  onClick={() => chooseSmartStreetRoute(option)}
+                >
+                  <span>
+                    {t(language, "smartStreetRoute", { index: index + 1 })} · {smartRoadSelectionLabel(smartRoads, option.sourceIds)}
+                  </span>
+                  <small>{option.sourceIds.length}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="smart-street-actions">
+            <button className="button secondary" type="button" onClick={cancelSmartStreetSelection}>{t(language, "cancel")}</button>
+            {smartStreetStartAnchor ? (
+              <button className="button secondary" type="button" onClick={resetSmartStreetStart}>{t(language, "smartStreetResetStart")}</button>
+            ) : null}
+            {smartStreetStartAnchor && smartStreetEndAnchor ? (
+              <button className="button secondary" type="button" onClick={resetSmartStreetEnd}>{t(language, "smartStreetResetEnd")}</button>
+            ) : null}
+            <button
+              className="button primary"
+              type="button"
+              disabled={!smartStreetPreviewGeometry || smartStreetRouteOptions.length > 0}
+              onClick={saveSmartStreetTask}
+            >
+              {t(language, "saveStreet")}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {mode === "edit" ? (
         <section className="mode-sheet" aria-label={t(language, "editShape")}>
           <div className="mode-title-row">
@@ -751,6 +1662,29 @@ export default function App() {
           onResetPersonalCamera={resetPersonalCamera}
           onClose={() => setSheet(null)}
         />
+      ) : null}
+
+      {sheet === "campaign-comments" && mode === "browse" ? (
+        <section className="bottom-sheet comment-sheet" aria-label="Kommentare">
+          <div className="sheet-handle" aria-hidden="true" />
+          <div className="sheet-header">
+            <div>
+              <span className="eyebrow">{t(language, "campaignSettings")}</span>
+              <strong>{language === "de" ? "Campaign-Kommentare" : "Campaign comments"}</strong>
+            </div>
+            <button className="icon-button" type="button" onClick={() => setSheet(null)} aria-label={t(language, "close")}>×</button>
+          </div>
+          <CommentsContextPanel
+            campaignId={snapshot.campaign.id}
+            targetType="campaign"
+            targetId={snapshot.campaign.id}
+            targetLabel={campaignDisplayName}
+            targetTeamId={null}
+            access={access}
+            online={online}
+            language={language}
+          />
+        </section>
       ) : null}
 
       {sheet === "teams" && mode === "browse" && isAdmin ? (
@@ -814,6 +1748,20 @@ export default function App() {
         </section>
       ) : null}
 
+      {sheet === "collection-admin" && mode === "browse" && isAdmin ? (
+        <CollectionAdminPanel
+          campaignId={snapshot.campaign.id}
+          language={language}
+          snapshot={snapshot}
+          onSnapshotChange={commitSnapshot}
+          onClose={() => setSheet(null)}
+          onStartMainArea={startCollectionMainArea}
+          onStartArea={startCollectionArea}
+          onEditArea={startCollectionAreaEditing}
+          onForceReleaseArea={forceReleaseCollectionArea}
+        />
+      ) : null}
+
       {sheet === "area" && mode === "browse" && selectedArea ? (
         <section className="bottom-sheet compact-sheet" aria-label={t(language, "area")}>
           <div className="sheet-handle" aria-hidden="true" />
@@ -827,6 +1775,33 @@ export default function App() {
             </div>
             <button className="icon-button" type="button" onClick={() => { setSelectedAreaId(null); setSelectedTaskId(null); setSheet(null); }} aria-label={t(language, "close")}>×</button>
           </div>
+
+          {canEditSelectedArea && (areaPreparation?.status === "pending" || areaPreparationRetrying) ? (
+            <div className="area-preparation-status is-pending" role="status" aria-live="polite">
+              {t(language, "areaPreparationPending")}
+            </div>
+          ) : null}
+          {canEditSelectedArea && areaPreparation?.status === "ready" ? (
+            <div className="area-preparation-status is-ready" role="status" aria-live="polite">
+              {t(language, "areaPreparationReady", {
+                roads: areaPreparation.roadCount,
+                houses: areaPreparation.houseCount,
+              })}
+            </div>
+          ) : null}
+          {canEditSelectedArea && areaPreparationSchemaUnavailable ? (
+            <div className="area-preparation-status is-unavailable" role="status">
+              {t(language, "areaPreparationSchemaUnavailable")}
+            </div>
+          ) : null}
+          {canEditSelectedArea && !areaPreparationSchemaUnavailable && (areaPreparation?.status === "failed" || areaPreparationRequestFailed) ? (
+            <div className="area-preparation-status is-failed" role="status">
+              <span>{t(language, "areaPreparationFailed")}</span>
+              <button className="small-action" type="button" onClick={retryAreaPreparation} disabled={areaPreparationRetrying}>
+                {t(language, "areaPreparationRetry")}
+              </button>
+            </div>
+          ) : null}
 
           {canEditSelectedArea ? (
             <div className="area-fields">
@@ -843,20 +1818,60 @@ export default function App() {
             </div>
           ) : null}
 
-          <div className="street-summary">
-            <span>{selectedAreaTasks.length} {t(language, "streets")}</span>
-            <span>{selectedAreaTasks.filter((task) => task.status === "completed").length} {t(language, "completed")}</span>
-          </div>
-
           {canEditSelectedArea ? (
             <>
-              <button className="button primary full-width" type="button" onClick={startStreetDrawing}>{t(language, "addStreet")}</button>
+              <button
+                className="button primary full-width"
+                type="button"
+                onClick={startSmartStreetSelection}
+                disabled={smartRoads.length === 0}
+              >
+                {t(language, "addSmartStreet")}
+              </button>
+              {smartRoads.length > 0 ? (
+                <p className="smart-street-area-note">
+                  {t(language, "smartStreetCandidates", { count: smartRoads.length })}
+                </p>
+              ) : areaPreparation?.status === "ready" ? (
+                <p className="smart-street-area-note">{t(language, "smartStreetNoCandidates")}</p>
+              ) : null}
+              <button className="button secondary full-width" type="button" onClick={startStreetDrawing}>{t(language, "smartStreetManualFallback")}</button>
               <div className="area-actions secondary-row">
                 <button className="button secondary" type="button" onClick={startEditing}>{t(language, "editShape")}</button>
                 <button className="button danger" type="button" onClick={deleteSelectedArea}>{t(language, "deleteArea")}</button>
               </div>
             </>
           ) : null}
+
+          {snapshot.houseTasks ? (
+            <div className="context-task-list">
+              <div className="context-task-list-header">
+                <strong>{language === "de" ? "Haus-Aufgaben" : "House tasks"}</strong>
+                <span>{selectedAreaHouseTasks.length}</span>
+              </div>
+              {selectedAreaHouseTasks.length === 0 ? (
+                <p>{language === "de" ? "Keine Haus-Aufgaben in diesem Gebiet." : "No house tasks in this area."}</p>
+              ) : (
+                selectedAreaHouseTasks.map((task) => (
+                  <button className="context-task-row" type="button" key={task.id} onClick={() => selectHouseTask(task.id)}>
+                    <span>{task.label.trim() || (language === "de" ? "Haus" : "House")}</span>
+                    <small>{taskStatusLabel(language, task.status)}</small>
+                  </button>
+                ))
+              )}
+            </div>
+          ) : null}
+
+          <CommentsContextPanel
+            campaignId={snapshot.campaign.id}
+            targetType="area"
+            targetId={selectedArea.id}
+            targetLabel={selectedArea.name.trim() || t(language, "area")}
+            targetTeamId={selectedArea.teamId}
+            access={access}
+            online={online}
+            language={language}
+          />
         </section>
       ) : null}
 
@@ -874,7 +1889,7 @@ export default function App() {
             <button className="icon-button" type="button" onClick={() => { setSelectedTaskId(null); setSheet(selectedAreaId ? "area" : null); }} aria-label={t(language, "close")}>×</button>
           </div>
 
-          {canEditSelectedTask ? (
+          {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
             <label className="field-label">
               <span>{t(language, "name")}</span>
               <input value={selectedTask.label} onChange={(event) => updateSelectedTask({ label: event.target.value })} onBlur={normalizeTaskLabel} maxLength={60} />
@@ -891,7 +1906,7 @@ export default function App() {
               <button
                 key={status}
                 type="button"
-                disabled={!canEditSelectedTask}
+                disabled={!canChangeSelectedTaskStatus}
                 className={`status-button status-${status} ${selectedTask.status === status ? "is-selected" : ""}`}
                 aria-pressed={selectedTask.status === status}
                 onClick={() => changeTaskStatus(status)}
@@ -901,9 +1916,67 @@ export default function App() {
             ))}
           </div>
 
-          {canEditSelectedTask ? (
+          {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
             <button className="button danger full-width task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>
           ) : null}
+
+          <CommentsContextPanel
+            campaignId={snapshot.campaign.id}
+            targetType="street-task"
+            targetId={selectedTask.id}
+            targetLabel={selectedTask.label.trim() || t(language, "street")}
+            targetTeamId={selectedTaskArea?.teamId ?? null}
+            access={access}
+            online={online}
+            language={language}
+          />
+        </section>
+      ) : null}
+
+      {sheet === "house" && mode === "browse" && selectedHouseTask ? (
+        <section className="bottom-sheet task-sheet commentable-task-sheet" aria-label={language === "de" ? "Haus-Aufgabe" : "House task"}>
+          <div className="sheet-handle" aria-hidden="true" />
+          <div className="sheet-header">
+            <div className="area-heading">
+              <span className="team-dot large-dot" style={{ backgroundColor: selectedHouseTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />
+              <div>
+                <span className="eyebrow">{language === "de" ? "Haus-Aufgabe" : "House task"} · {selectedHouseTaskArea?.name || t(language, "area")}</span>
+                <strong>{selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}</strong>
+              </div>
+            </div>
+            <button className="icon-button" type="button" onClick={() => { setSelectedHouseTaskId(null); setSheet(selectedAreaId ? "area" : null); }} aria-label={t(language, "close")}>×</button>
+          </div>
+
+          <div className="task-current-status">
+            <span>{t(language, "current")}</span>
+            <strong>{taskStatusLabel(language, selectedHouseTask.status)}</strong>
+          </div>
+
+          <div className="status-grid" aria-label={t(language, "current")}>
+            {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
+              <button
+                key={status}
+                type="button"
+                disabled={!canChangeSelectedHouseTaskStatus}
+                className={`status-button status-${status} ${selectedHouseTask.status === status ? "is-selected" : ""}`}
+                aria-pressed={selectedHouseTask.status === status}
+                onClick={() => changeHouseTaskStatus(status)}
+              >
+                {taskStatusLabel(language, status)}
+              </button>
+            ))}
+          </div>
+
+          <CommentsContextPanel
+            campaignId={snapshot.campaign.id}
+            targetType="house-task"
+            targetId={selectedHouseTask.id}
+            targetLabel={selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}
+            targetTeamId={selectedHouseTaskArea?.teamId ?? null}
+            access={access}
+            online={online}
+            language={language}
+          />
         </section>
       ) : null}
     </main>

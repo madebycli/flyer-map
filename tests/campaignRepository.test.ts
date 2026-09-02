@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import {
-  replaceCampaignSnapshot,
+  createInitialCampaignState,
   type D1DatabaseLike,
   type D1PreparedStatement,
   type D1RunResult,
@@ -66,7 +66,7 @@ function snapshotWithManyTasks(taskCount = 120): CampaignSnapshot {
 
   return {
     schemaVersion: 3,
-    revision: 8,
+    revision: 0,
     campaign: {
       id: campaignId,
       name: "Testaktion",
@@ -131,26 +131,42 @@ function snapshotWithManyTasks(taskCount = 120): CampaignSnapshot {
   };
 }
 
-test("snapshot replacement uses a constant seven-statement D1 batch", async () => {
+test("initial campaign creation uses an insert-only D1 batch", async () => {
   const db = new FakeDatabase(1, 7);
-  const result = await replaceCampaignSnapshot(db, snapshotWithManyTasks(), 7);
+  const result = await createInitialCampaignState(db, snapshotWithManyTasks());
 
-  assert.deepEqual(result, { ok: true, revision: 8 });
-  assert.equal(db.lastBatch.length, 7);
-  assert.match(db.lastBatch[0].query, /map_center_lng/);
-  assert.match(db.lastBatch[4].query, /json_each\(\?\)/);
-  assert.match(db.lastBatch[5].query, /json_each\(\?\)/);
-  assert.match(db.lastBatch[6].query, /json_each\(\?\)/);
+  assert.deepEqual(result, { ok: true, revision: 0 });
+  assert.equal(db.lastBatch.length, 4);
+  assert.match(db.lastBatch[0].query, /INSERT OR IGNORE INTO campaigns/u);
+  assert.match(db.lastBatch[0].query, /map_center_lng/u);
+  assert.match(db.lastBatch[1].query, /json_each\(\?\)/u);
+  assert.match(db.lastBatch[2].query, /json_each\(\?\)/u);
+  assert.match(db.lastBatch[3].query, /json_each\(\?\)/u);
+  assert.doesNotMatch(
+    db.lastBatch.map((statement) => statement.query).join("\n"),
+    /DELETE FROM|UPDATE campaigns/u,
+  );
 });
 
-test("a failed revision claim reports conflict instead of success", async () => {
+test("an existing campaign is rejected without reporting a successful create", async () => {
   const db = new FakeDatabase(0, 9);
-  const result = await replaceCampaignSnapshot(db, snapshotWithManyTasks(1), 7);
+  const result = await createInitialCampaignState(db, snapshotWithManyTasks(1));
 
   assert.deepEqual(result, {
     ok: false,
-    currentRevision: 9,
-    reason: "revision_conflict",
+    reason: "campaign_exists",
   });
-  assert.equal(db.lastBatch.length, 7);
+  assert.equal(db.lastBatch.length, 4);
+});
+
+test("initial creation rejects a nonzero revision before touching D1", async () => {
+  const db = new FakeDatabase(1, 7);
+  const snapshot = snapshotWithManyTasks(1);
+  snapshot.revision = 1;
+
+  assert.deepEqual(await createInitialCampaignState(db, snapshot), {
+    ok: false,
+    reason: "initial_revision_invalid",
+  });
+  assert.equal(db.lastBatch.length, 0);
 });

@@ -1,3 +1,5 @@
+import type { CollectionSnapshot } from "./collection";
+
 export type LngLat = [number, number];
 
 export type PolygonGeometry = {
@@ -65,6 +67,11 @@ export type DistributionTask = {
    * Smart Streets persist reviewed external provenance here, never as Task identity.
    */
   source?: TaskSourceProvenance | null;
+  /**
+   * Null (and missing legacy snapshots) means a normal/manual task. A non-null
+   * value is assigned exclusively by the server-side Area preparation job.
+   */
+  areaPreparationGeneration?: string | null;
   status: TaskStatus;
   completedAt: string | null;
   createdAt: string;
@@ -80,6 +87,8 @@ export type HouseTask = {
   geometry: PolygonGeometry;
   /** Optional reviewed source provenance. OSM ids never become House Task identity. */
   source?: TaskSourceProvenance | null;
+  /** See DistributionTask.areaPreparationGeneration. */
+  areaPreparationGeneration?: string | null;
   /** Optional relationship to a Street Task in the same Campaign and Area. */
   parentStreetTaskId: string | null;
   status: TaskStatus;
@@ -100,7 +109,32 @@ export type CampaignSnapshot = {
    * collection and are interpreted as having no House Tasks.
    */
   houseTasks?: HouseTask[];
+  /** First-class Collection state is independent from Distribution. */
+  collection?: CollectionSnapshot;
 };
+
+/**
+ * Keeps schema-v3 snapshots from before automatic Area preparation additive.
+ * The wire field is optional for backwards compatibility, while application
+ * state uses an explicit null for every non-automatic Task.
+ */
+export function normalizeAreaPreparationGenerations(snapshot: CampaignSnapshot): CampaignSnapshot {
+  return {
+    ...snapshot,
+    tasks: snapshot.tasks.map((task) => ({
+      ...task,
+      areaPreparationGeneration: task.areaPreparationGeneration ?? null,
+    })),
+    ...(snapshot.houseTasks
+      ? {
+          houseTasks: snapshot.houseTasks.map((task) => ({
+            ...task,
+            areaPreparationGeneration: task.areaPreparationGeneration ?? null,
+          })),
+        }
+      : {}),
+  };
+}
 
 export type TeamColor = {
   value: string;

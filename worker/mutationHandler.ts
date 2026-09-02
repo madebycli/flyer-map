@@ -8,6 +8,9 @@ import {
   loadCampaignSnapshot,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
+import { hasFieldSessionHistorySchema } from "./fieldSessionHistory.ts";
+import { buildMutationDomainEvent } from "./mutationEvents.ts";
+import { buildAutomationExecution } from "./automationRuntime.ts";
 import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 import {
   getAppliedMutation,
@@ -15,6 +18,15 @@ import {
 } from "./mutationRepository.ts";
 import { validateCampaignMutation } from "./mutationValidation.ts";
 import { validateCampaignSnapshot } from "./snapshotValidation.ts";
+import { isPickupMutationInput } from "./pickupMutationRuntime.ts";
+import { handlePickupMutationRequest } from "./pickupMutationEntry.ts";
+import {
+  areaHasStartedAutomaticWork,
+  beginAreaTaskPreparation,
+  runAreaTaskPreparation,
+  type AreaPreparationExecutionContext,
+  type AreaTaskPreparationOptions,
+} from "./areaTaskPreparation.ts";
 
 const MAX_MUTATION_BYTES = 256_000;
 const MAX_PERSIST_ATTEMPTS = 3;
@@ -82,6 +94,8 @@ export async function handleCampaignMutation(
   db: D1DatabaseLike,
   campaignId: string,
   access: AccessContext,
+  context?: AreaPreparationExecutionContext,
+  options?: AreaTaskPreparationOptions,
 ) {
   if (request.method !== "POST") {
     return errorResponse(405, "method_not_allowed", "Für Mutationen ist nur POST erlaubt.");
@@ -93,11 +107,55 @@ export async function handleCampaignMutation(
   const parsed = await readMutationBody(request);
   if (!parsed.ok) return parsed.response;
 
+  if (isPickupMutationInput(parsed.value.mutation)) {
+    return handlePickupMutationRequest(db, campaignId, access, parsed.value.mutation);
+  }
+
   const validation = validateCampaignMutation(parsed.value.mutation, campaignId);
   if (!validation.valid) {
     return errorResponse(422, "mutation_invalid", validation.message);
   }
   const mutation = validation.mutation;
+  const isCollectionMutation = mutation.type.startsWith("collection.");
+  if (access.role === "collection-collector") {
+    if (!isCollectionMutation || !access.collectorId) {
+      return errorResponse(
+        403,
+        "collection_scope_forbidden",
+        "Collection-Helfer dürfen nur Collection-Mutationen ausführen.",
+      );
+    }
+    const actorId =
+      typeof (mutation.payload as Record<string, unknown>).collectorId === "string"
+        ? (mutation.payload as Record<string, unknown>).collectorId
+        : null;
+    if (actorId !== access.collectorId) {
+      return errorResponse(
+        403,
+        "collection_actor_forbidden",
+        "Die Mutation gehört nicht zu diesem Collection-Gerät.",
+      );
+    }
+  } else if (isCollectionMutation && access.role !== "admin") {
+    return errorResponse(
+      403,
+      "collection_scope_forbidden",
+      "Nur Admins oder Collection-Helfer dürfen Collection ändern.",
+    );
+  }
+
+  if (
+    access.role === "field-group-member" &&
+    mutation.type !== "task.set-status" &&
+    mutation.type !== "house.set-status"
+  ) {
+    return errorResponse(
+      403,
+      "field_group_scope_forbidden",
+      "Temporäre Gruppenmitglieder dürfen nur Arbeitsstatus im eigenen Team ändern.",
+    );
+  }
+
   const fingerprint = await fingerprintCampaignMutation(mutation);
 
   const existing = await getAppliedMutation(db, campaignId, mutation.id);
@@ -123,11 +181,33 @@ export async function handleCampaignMutation(
       return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
     }
 
+    if (mutation.type === "collection.admin.force-release-area") {
+      const area = current.collection?.areas.find(
+        (candidate) => candidate.id === mutation.payload.areaId,
+      );
+      if (!area || area.runId !== mutation.payload.runId) {
+        return errorResponse(
+          409,
+          "mutation_conflict",
+          "Collection Area und Run passen nicht zum aktuellen Serverstand.",
+          current.revision,
+        );
+      }
+    }
+
     let candidate;
     try {
       candidate = applyCampaignMutation(current, mutation);
     } catch (error) {
       if (error instanceof CampaignMutationConflictError) {
+        if (error.reason === "auto_prepared_task_delete_forbidden") {
+          return errorResponse(
+            409,
+            "auto_prepared_task_delete_forbidden",
+            "Automatisch vorbereitete Tasks werden über ihren Status gesteuert und nicht gelöscht.",
+            current.revision,
+          );
+        }
         return errorResponse(
           409,
           "mutation_conflict",
@@ -153,13 +233,64 @@ export async function handleCampaignMutation(
       );
     }
 
+    if (
+      mutation.type === "area.update-geometry" &&
+      await areaHasStartedAutomaticWork(db, campaignId, mutation.payload.areaId)
+    ) {
+      return errorResponse(
+        409,
+        "area_has_started_work",
+        "Die Area kann nicht mehr geändert werden, weil automatische Arbeit bereits begonnen wurde.",
+        current.revision,
+      );
+    }
+
+    const eventSchemaAvailable =
+      (mutation.type === "task.set-status" || mutation.type === "house.set-status") &&
+      (await hasFieldSessionHistorySchema(db));
+    const domainEvent = eventSchemaAvailable
+      ? await buildMutationDomainEvent(
+          db,
+          current,
+          mutation,
+          access,
+          parsed.value.fieldGroupId,
+        )
+      : null;
+    const automationExecution =
+      eventSchemaAvailable && mutation.type === "house.set-status"
+        ? await buildAutomationExecution(
+            db,
+            current,
+            candidate,
+            mutation,
+            domainEvent?.fieldSessionId ?? null,
+          )
+        : null;
+
     const persisted = await persistCampaignMutation(
       db,
       mutation,
       current.revision,
       fingerprint,
+      domainEvent,
+      automationExecution,
     );
     if (persisted.ok) {
+      if (
+        !persisted.alreadyApplied &&
+        (mutation.type === "area.create" || mutation.type === "area.update-geometry")
+      ) {
+        const preparation = await beginAreaTaskPreparation(
+          db,
+          campaignId,
+          mutation.payload.areaId,
+          options,
+        );
+        if (preparation.outcome === "run") {
+          context?.waitUntil(runAreaTaskPreparation(db, preparation.run, options));
+        }
+      }
       return json({
         mutationId: mutation.id,
         appliedRevision: persisted.revision,

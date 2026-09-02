@@ -2,76 +2,162 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-26
+last_updated: 2026-09-01
 ---
 
 # Current Project State
 
-## Product baseline
+## Mission Release Override
 
-Verteil-Flyer is a mobile-first normal website. The architecture still explicitly excludes native app runtime, installable PWA behavior, Service Worker, Web App Manifest and Background Sync.
+Die reale Distribution-Mission startet am 2026-09-02. Bis nach der Mission gilt auf `plan-feature-complete-platform` ein Distribution-P0-Fokus. Collection/Pickup, FC5.3 und langfristige Plattformarbeit dürfen den Release-Pfad nicht verlängern.
 
-The field map remains MapLibre GL JS 5.7.1 with the CARTO online basemap. Prepared offline OSM context is stored separately in browser IndexedDB and does not bulk-cache CARTO/OSMF tiles.
+Mission-kritischer Produktfluss:
 
-M4 access/session authorization, M5 resilient mutation synchronization and the M5.5 prepared-offline-map storage lifecycle are established foundations.
+```text
+Admin -> Teams/Gebiet -> serverseitige Area Preparation -> Streets/Houses
+-> Street-/House-Status -> M5 Queue/Sync -> gemeinsamer Stand auf weiteren Geräten
+```
 
-## Unified platform UI
+Der normale Launcher ist für die Mission auf `Team`, `Fortschritt`, `Einstellungen` und bei berechtigtem Zugriff `Gebiet` reduziert. Bestehende Einsätze-, Activity-, Automation-, Comment- und Collection-Runtimes werden nicht gelöscht und keine Datenhistorie wird verändert. Sicherheits-, Sync-, Konflikt-, Access- und Area-Preparation-Fehler bleiben sichtbar.
 
-The normal website starts in one unified platform shell while the map remains mounted as the primary field workspace.
+PR #72 bleibt Draft gegen `ui-app-launcher-sheet`. Kein Merge, kein Ready-for-Review und kein manueller Deploy ohne expliziten Auftrag.
 
-Plan 016 defines the current mobile field chrome:
-- permanent Team dropdown removed from the composed field UI;
-- permanent Settings/Teams/Draw-Area toolbar removed from the composed browse chrome;
-- bottom-left now shows only a compact 3x3 app-grid button plus the visible Team name, with Team color only as a supporting marker;
-- former toolbar actions stay out of the permanent bottom bar and may later move into the launcher according to effective permissions;
-- the app menu is a rounded sheet over the map, visually aligned with the existing Settings/Teams sheet family;
-- launcher destinations use large phone-style rounded icons with short labels such as Karte, Stats, Team, Feedback, Smart and Einsätze;
-- Admin-only launcher destinations remain hidden unless current access is Admin;
-- selecting a launcher destination may still open its dedicated full module surface.
+## Baseline
 
-Integrated modules still include Campaign progress, operational comments/Pickup/Field Session foundations, Smart Streets/Houses, Live Groups, Actions/Analytics, Support and authorized Admin foundations.
+Verteil-Flyer bleibt eine mobile-first normale Website mit React, TypeScript, Vite, MapLibre GL JS 5.7.1, OpenFreeMap Bright, Cloudflare Workers und D1. M4 Access/Session und die resiliente M5 Mutation Queue bleiben die gemeinsame Grundlage. Keine native App, keine installierbare PWA, kein Service Worker, keine Background Sync API und keine kontinuierliche GPS-Historie.
 
-Local Foundation UI does not imply durable server persistence. Comments/Pickup/Field Session integration remains explicitly local until the corresponding reviewed persistence slices are implemented. Admin/Live Group security-gated surfaces continue to show only non-authoritative Foundation behavior.
+## Verifizierter Remote-D1-Stand
 
-## M6 Street and House persistence
+Der vorherige Claim `remote nur 0001-0003` ist überholt.
 
-ADR-0013 is accepted: durable Street/House identity is application-owned, OSM ids are provenance only, reviewed geometry becomes Campaign-owned snapshot data, and later OSM refreshes must not silently rewrite Task identity or reviewed geometry/provenance.
+Am 2026-09-01 wurde der kontrollierte D1-Rollout über GitHub Actions Run `33540449723` erfolgreich abgeschlossen. Verifiziert wurden:
 
-### Smart Street
+- Migration Registry 0001 bis 0014 vollständig angewendet;
+- Time-Travel-Recovery-Point und SQL-Export vor dem Rollout;
+- Foreign-Key-Check vor und nach dem Rollout sauber;
+- bestehende Baseline Counts unverändert erhalten;
+- kritisches Schema von 0013 und 0014 vorhanden;
+- versionierte Preview und Branch-Alias lieferten passende Assets und erfolgreiche Health-Checks.
 
-`migrations/0004_m6_task_source_provenance.sql` adds nullable `tasks.source_json` for Smart Street provenance. It is prepared but is not recorded as remotely applied.
+Die beim Rollout erhaltenen Baseline Counts waren:
 
-Before 0004 existing/manual Street Tasks remain readable/writable, while Smart Street provenance writes fail before Campaign revision claim with `schema_migration_required`. Provenance is never silently discarded.
+```text
+campaigns: 53
+teams: 32
+areas: 39
+tasks: 77
+access_grants: 62
+sessions: 66
+mutations: 188
+```
 
-### House Tasks
+Damit ist Migration 0014 für die serverseitige automatische Area-Vorbereitung remote vorhanden. Historische Plan-/ADR-Texte, die den damaligen Zustand `prepared only` beschreiben, bleiben historische Evidence und sind nicht als aktueller Deployment-State zu lesen.
 
-Plan 015 adds the durable House persistence foundation without changing the established Street renderer/progress denominator:
-- optional `CampaignSnapshot.houseTasks` extension;
-- application-owned House Task ids;
-- reviewed Polygon building snapshots;
-- optional exactly-one-Way OSM provenance;
-- optional parent Street Task constrained to the same Campaign and Area;
-- House create/rename/status/delete through the existing M5 queue/idempotency/revision model;
-- Worker-side scope validation;
-- reviewed House geometry/source/parent immutability;
-- parent relationship clears safely when its Street is deleted.
+## M4 Admin-Handoff
 
-`migrations/0005_m6_house_tasks.sql` adds the separate `house_tasks` table. It is additive and is not remotely applied by development work.
+Der bestehende Campaign-Access-Flow bleibt der Mission-Admin-Weg. Ein bestehender Admin kann in `Einstellungen -> Zugriff` einen neuen Grant mit Rolle `admin` erzeugen und den einmalig angezeigten Zugangslink weitergeben.
 
-Before 0005 Street reads/writes continue normally, House reads do not query a missing table, and House writes fail explicitly with `schema_migration_required` before revision claim.
+Sicherheitsvertrag:
 
-House rendering remains a deliberate follow-up. `vf-streets` continues to contain only Street LineStrings until a batched House Polygon layer is implemented and density-tested.
+- Invite Token ist kryptographisch zufällig;
+- D1 speichert nur den SHA-256-Hash des Invite Tokens;
+- Redemption erzeugt eine separate opaque Session in `Secure; HttpOnly; SameSite=Lax`;
+- D1 speichert nur den Session-Hash;
+- jeder geschützte Request löst Grant und Revocation erneut serverseitig auf;
+- Grant-Revocation invalidiert bestehende Sessions auf dem nächsten geschützten Request;
+- normaler Admin-Handoff benötigt kein GitHub, Cloudflare, Wrangler, Deployment Secret oder D1-Zugriff.
 
-## Security/release gates
+Username/Password/TOTP und Organization-Migration bleiben nach der Mission.
 
-Every promoted integration head must pass the automated test suite, strict TypeScript check, production build, high-severity dependency audit, static source guards and Cloudflare Worker build/preview verification.
+## M5 finaler Schreibvertrag
 
-Prepared/parameterized SQL remains mandatory. External/user-controlled content renders inertly. IDs are selectors, not authorization. Worker-side scope checks remain authoritative. Secrets, session material and future password/TOTP/recovery data must never be logged.
+Der Campaign-Snapshot bleibt Read Model, UI-Modell, Startup-Cache und Konflikt-/Sicherheitskopie.
 
-## Architecture still blocked for later milestones
+- `POST /api/campaigns` ist ausschließlich Initial-Create mit Revision 0;
+- `GET snapshot` und `GET version` bleiben Read-Pfade;
+- `PUT /api/campaigns/:id/snapshot` antwortet HTTP 410 `legacy_snapshot_write_retired` und schreibt nicht nach D1;
+- normale Campaign-, Team-, Area-, Street-, House-, Collection- und Pickup-Änderungen laufen über explizite M5- oder spezialisierte Mutationen;
+- unbestätigte M5-Änderungen liegen dauerhaft in IndexedDB;
+- kurze Netzfehler werden mit begrenztem Backoff wiederholt;
+- gleiche Mutation-ID plus gleicher Fingerprint ist idempotent;
+- Conflict, 401/403 und invalide Mutationen bleiben sichtbar und werden nicht heimlich überschrieben;
+- bei leerer Queue wird ein abweichender lokaler Snapshot als Konfliktkopie bewahrt, statt ihn automatisch zum Server hochzuladen.
 
-Do not silently implement Organization account/password/TOTP/session runtime before accepted ADR-0015 and threat-model review, configurable capability enforcement before accepted ADR-0016, Live Group credential runtime before accepted ADR-0014, durable Field Session event history before its accepted retention/event decision, durable Action/Templates/Analytics persistence before its accepted architecture decision, Service Worker/PWA/Background Sync, or continuous GPS history.
+## Automatische Distribution-Area-Vorbereitung
 
-## Immediate next
+ADR-0021 ist der normale Mission-Pfad:
 
-Verify the corrected bottom launcher branch on its exact final head. Keep migrations 0004 and 0005 as separate intentional D1 rollout operations. After the navigation polish, the next M6 product slice remains the batched House map/runtime interaction layer.
+- erfolgreicher, nicht wiederholter `area.create` oder `area.update-geometry` Write kann Worker-seitig Vorbereitung planen;
+- canonical Area-Geometrie und BBox werden serverseitig ermittelt;
+- bounded OSM-Daten werden serverseitig geladen und normalisiert;
+- Straßenfragmente werden als normale persistente Street Tasks gespeichert;
+- Gebäude werden als normale persistente House Tasks gespeichert;
+- automatische Tasks besitzen app-eigene IDs und eine serverseitige Preparation-Generation;
+- manuelle Streets bleiben mit `areaPreparationGeneration = null` erhalten;
+- Publish von Tasks, Ready-State und Campaign-Revision erfolgt guarded/atomar;
+- gleiche Ready-Geometrie ist No-op, frisches Pending dedupliziert und veraltete Generationen dürfen nicht publishen;
+- Fehler veröffentlichen keine partiellen Tasks;
+- autorisierter Retry ist möglich;
+- automatische Tasks dürfen normal ihren Status ändern, aber nicht über normale Client-Mutationen gelöscht werden;
+- nach begonnenem automatischem Work wird eine Geometrieänderung kontrolliert mit `area_has_started_work` blockiert.
+
+Der normale Area Sheet startet `missing` genau einmal, pollt `pending` nur solange das Sheet offen ist, refresht bei `ready` einmal den normalen Campaign-Snapshot und bietet bei `failed` einen autorisierten Retry. Nach lokaler Area-Erstellung oder Geometrieänderung toleriert der Poller den kurzen M5-Persistenz-Race mit höchstens fünf weiteren `404 area_not_found`-Reads im Zwei-Sekunden-Takt; andere Fehler bleiben explizit retrybar. Der serverseitige Overpass-Formularrequest verwendet den produktiv kompatiblen `application/x-www-form-urlencoded`-Content-Type ohne den von Overpass abgelehnten Charset-Zusatz. Leere additive House-/Collection-Felder werden beim lokalen/kanonischen Vergleich gleich behandelt, echte Datenabweichungen bleiben Konflikte. `Straße manuell hinzufügen` bleibt Fallback. Die alten Smart-Street-/Smart-House-Auswahlbuttons sind kein normaler Produkteinstieg mehr.
+
+## Map und Task-Darstellung
+
+- gespeicherte Areas, Streets und Houses laufen über feste MapLibre GeoJSON Sources/Layers;
+- House Tasks werden ab dem definierten House-Zoom sichtbar und per rendered-feature hit test ausgewählt;
+- Street-Auswahl hat Priorität vor House, danach Area;
+- Statuswerte sind `open`, `completed`, `later`, `not-deliverable`;
+- erledigte Streets und House-Outlines verwenden eine reine um 25 Prozent abgedunkelte Teamfarbe;
+- GPS nutzt MapLibre Geolocate mit live/refining Fixes und Follow-Verhalten, ohne persistierte GPS-Historie;
+- persönliche Kamera bleibt lokal und wird durch Remote-Sync nicht zurückgesetzt.
+
+## Automatisierte Qualitäts-Evidence
+
+Der Runtime-Head vor dem Mission-Trim war:
+
+```text
+129bc30cc408cfb2fd840390faaa6e37c5164148
+CI #823 / run 33523056178: success
+```
+
+Diese Suite enthält Regressionen für Access/Revocation, Authorization, M5 Queue/Idempotency, Legacy-Snapshot-410, Area Preparation, automatische Task-Persistenz, House-Renderer, Statusfarben, mobile Sheets, Security Guards und Production Build.
+
+Jeder neue Mission-Commit muss wieder auf seinem exakten Head durch CI verifiziert werden. Ein vorher grüner Head reicht nicht als Release-Evidence für einen späteren Head.
+
+## Offene reale Mission-Gates
+
+Automatisierte Tests ersetzen folgende Abnahmen nicht:
+
+1. echter Admin-A -> Admin-B-Handoff in einem frischen Browser/Gerät einschließlich weiterer Admin-Link-Erzeugung und Revocation;
+2. echter Area-End-to-End-Flow auf der Release-Preview: Team -> Gebiet -> pending -> ready -> persistente Streets/Houses;
+3. zweites autorisiertes Gerät sieht Statusänderungen;
+4. kurzer Netzverlust während Street-/House-Statusänderung und erfolgreiche Wiederkehr;
+5. reales Android Chromium Smoke;
+6. reales iPhone Safari Smoke, falls kein iPhone verfügbar ist, muss das ausdrücklich als akzeptiertes Restrisiko dokumentiert werden;
+7. finalen Mission-Head und dessen stabile Release-URL einfrieren und danach Feature Freeze.
+
+Cloud-/CI-Tests oder ein Browser ohne echte Mobile/WebGL-Eigenschaften dürfen nicht als Ersatz für diese Gates behauptet werden.
+
+## Für die Mission ausdrücklich verschoben
+
+- FC5.3 Collection Road Sections;
+- Collection/Pickup Stats;
+- Collection Actor Attribution/Highlight/Revert;
+- vollständige Organizations-Migration;
+- Username/Password/TOTP;
+- generische Capability-/Permission-Matrix;
+- Action Templates und langfristige Analytics;
+- vollständiger Desktop-Admin-Neubau;
+- neue Support-/Appearance-Features;
+- sonstige Roadmap-Features ohne direkten Distribution-P0-Nutzen.
+
+## Nächster Schritt
+
+1. Mission-Trim auf exaktem neuen Head durch CI verifizieren.
+2. Versioned Preview und Branch-Alias für diesen Head verifizieren.
+3. echten Distribution E2E und Admin-Handoff durchführen.
+4. Android/iPhone Mission Smoke durchführen.
+5. danach Mission-Head und Release-URL einfrieren, Feature Freeze.
+6. Erst nach der Mission zu Plan 017/FC5.3 und langfristiger Plattformarbeit zurückkehren.

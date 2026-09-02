@@ -5,7 +5,7 @@ import type { AccessContext } from "../worker/access.ts";
 import { authorizeSnapshotWrite } from "../worker/authorization.ts";
 import {
   loadCampaignSnapshot,
-  replaceCampaignSnapshot,
+  createInitialCampaignState,
   type D1DatabaseLike,
   type D1PreparedStatement,
   type D1RunResult,
@@ -115,6 +115,44 @@ function createHouseMutation() {
   return { previous, house, mutation };
 }
 
+function createHouseBatchMutation(count = 2) {
+  const previous = baseSnapshot();
+  const houses = Array.from({ length: count }, (_, index) => {
+    const candidate = building();
+    candidate.sourceId = `way/${501 + index}`;
+    candidate.osmId = 501 + index;
+    candidate.houseNumber = String(12 + index);
+    candidate.geometry = {
+      type: "Polygon",
+      coordinates: [[
+        [10.01 + index * 0.001, 50.001],
+        [10.012 + index * 0.001, 50.001],
+        [10.012 + index * 0.001, 50.003],
+        [10.01 + index * 0.001, 50.001],
+      ]],
+    };
+    return createSmartHouseTaskSnapshot({
+      campaignId: previous.campaign.id,
+      areaId: "area_a",
+      building: candidate,
+      parentStreetTaskId: "task_street-1",
+      taskId: `task_house-${index + 1}`,
+      timestamp: "2026-08-26T19:05:00.000Z",
+    });
+  });
+  const next: CampaignSnapshot = {
+    ...previous,
+    revision: previous.revision + 1,
+    campaign: { ...previous.campaign, updatedAt: houses[0].createdAt },
+    houseTasks: houses,
+  };
+  const mutation = deriveCampaignMutation(previous, next);
+  if (!mutation || mutation.type !== "house.create-batch") {
+    throw new Error("expected house.create-batch");
+  }
+  return { previous, houses, mutation };
+}
+
 const admin: AccessContext = {
   grantId: "grant_admin",
   campaignId: "campaign_house-test",
@@ -128,6 +166,14 @@ const editor: AccessContext = {
   campaignId: "campaign_house-test",
   role: "team-editor",
   teamId: "team_a",
+  label: null,
+};
+
+const viewer: AccessContext = {
+  grantId: "grant_viewer",
+  campaignId: "campaign_house-test",
+  role: "viewer",
+  teamId: null,
   label: null,
 };
 
@@ -154,6 +200,68 @@ test("House create derives, validates and applies through the M5 mutation model"
   assert.equal(applied.houseTasks?.[0].id, "task_house-1");
   assert.equal(validateCampaignSnapshot(applied, previous.campaign.id).valid, true);
   assert.equal(authorizeSnapshotWrite(editor, previous, applied).allowed, true);
+  assert.deepEqual(authorizeSnapshotWrite(viewer, previous, applied), {
+    allowed: false,
+    reason: "viewer_read_only",
+  });
+});
+
+test("multiple reviewed Houses derive into one bounded atomic batch mutation", () => {
+  const { previous, houses, mutation } = createHouseBatchMutation();
+  assert.equal(validateCampaignMutation(mutation, previous.campaign.id).valid, true);
+  const applied = applyCampaignMutation(previous, mutation);
+  assert.deepEqual(applied.houseTasks?.map((house) => house.id), houses.map((house) => house.id));
+  assert.equal(applied.revision, previous.revision + 1);
+  assert.equal(validateCampaignSnapshot(applied, previous.campaign.id).valid, true);
+  assert.equal(authorizeSnapshotWrite(editor, previous, applied).allowed, true);
+});
+
+test("House batch rejects duplicate IDs, cross-area parents and more than 50 entries", () => {
+  const { previous, mutation } = createHouseBatchMutation();
+  const duplicate = {
+    ...mutation,
+    payload: { houses: [mutation.payload.houses[0], mutation.payload.houses[0]] },
+  };
+  assert.equal(validateCampaignMutation(duplicate, previous.campaign.id).valid, false);
+
+  const { mutation: fifty } = createHouseBatchMutation(50);
+  const tooMany = {
+    ...fifty,
+    payload: {
+      houses: [
+        ...fifty.payload.houses,
+        { ...fifty.payload.houses[0], taskId: "task_house-51" },
+      ],
+    },
+  };
+  assert.equal(validateCampaignMutation(tooMany, previous.campaign.id).valid, false);
+
+  const crossAreaPrevious = structuredClone(previous);
+  crossAreaPrevious.areas.push({
+    ...crossAreaPrevious.areas[0],
+    id: "area_b",
+    teamId: "team_a",
+    name: "Gebiet B",
+  });
+  crossAreaPrevious.tasks.push({
+    ...crossAreaPrevious.tasks[0],
+    id: "task_street-foreign",
+    areaId: "area_b",
+    label: "Fremde Straße",
+  });
+  const crossArea = {
+    ...mutation,
+    payload: {
+      houses: mutation.payload.houses.map((house) => ({
+        ...house,
+        parentStreetTaskId: "task_street-foreign",
+      })),
+    },
+  };
+  assert.throws(
+    () => applyCampaignMutation(crossAreaPrevious, crossArea),
+    (error) => error instanceof Error && error.message === "house_parent_area_mismatch",
+  );
 });
 
 test("House validation rejects multi-way provenance and missing/cross-area parents", () => {
@@ -381,6 +489,32 @@ test("House create uses bound JSON and the additive house_tasks table", async ()
   assert.equal(db.lastBatch[1].values.includes(JSON.stringify(mutation.payload.source)), true);
 });
 
+test("House batch uses one bound JSON statement and never puts OSM into SQL", async () => {
+  const { previous, mutation } = createHouseBatchMutation();
+  const db = new CapturingDatabase(true);
+
+  const result = await persistCampaignMutation(db, mutation, previous.revision, "c".repeat(64));
+  assert.deepEqual(result, { ok: true, revision: 8, alreadyApplied: false });
+  assert.equal(db.lastBatch.length, 3);
+  assert.match(db.lastBatch[1].query, /INSERT INTO house_tasks/u);
+  assert.match(db.lastBatch[1].query, /json_each\(\?\)/u);
+  assert.doesNotMatch(db.lastBatch[1].query, /OpenStreetMap/u);
+  assert.equal(db.lastBatch[1].values.includes(JSON.stringify(mutation.payload.houses)), true);
+});
+
+test("pre-0005 House batch fails before claiming a Campaign revision", async () => {
+  const { previous, mutation } = createHouseBatchMutation();
+  const db = new CapturingDatabase(false);
+
+  const result = await persistCampaignMutation(db, mutation, previous.revision, "d".repeat(64));
+  assert.deepEqual(result, {
+    ok: false,
+    currentRevision: previous.revision,
+    reason: "schema_migration_required",
+  });
+  assert.equal(db.lastBatch.length, 0);
+});
+
 test("Campaign snapshot loading joins durable House Tasks only when 0005 exists", async () => {
   const snapshot = await loadCampaignSnapshot(new HouseReadDatabase(), "campaign_house-test");
   assert.ok(snapshot);
@@ -390,23 +524,23 @@ test("Campaign snapshot loading joins durable House Tasks only when 0005 exists"
   assert.equal(validateCampaignSnapshot(snapshot, "campaign_house-test").valid, true);
 });
 
-test("legacy snapshot replacement blocks House data before 0005 and persists it after 0005", async () => {
+test("initial Campaign create blocks House data before 0005 and persists it after 0005", async () => {
   const snapshot = baseSnapshot();
+  snapshot.revision = 0;
   snapshot.houseTasks = [houseTask()];
 
   const oldDb = new CapturingDatabase(false);
-  const blocked = await replaceCampaignSnapshot(oldDb, snapshot, snapshot.revision - 1);
+  const blocked = await createInitialCampaignState(oldDb, snapshot);
   assert.deepEqual(blocked, {
     ok: false,
-    currentRevision: snapshot.revision - 1,
     reason: "schema_migration_required",
   });
   assert.equal(oldDb.lastBatch.length, 0);
 
   const newDb = new CapturingDatabase(true);
-  const persisted = await replaceCampaignSnapshot(newDb, snapshot, snapshot.revision - 1);
-  assert.deepEqual(persisted, { ok: true, revision: snapshot.revision });
-  assert.equal(newDb.lastBatch.length, 9);
+  const persisted = await createInitialCampaignState(newDb, snapshot);
+  assert.deepEqual(persisted, { ok: true, revision: 0 });
+  assert.equal(newDb.lastBatch.length, 5);
   assert.match(newDb.lastBatch.at(-1)!.query, /INSERT INTO house_tasks/u);
 });
 

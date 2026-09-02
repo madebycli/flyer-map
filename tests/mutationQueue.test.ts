@@ -93,7 +93,7 @@ function installFakeWindowStorage(options?: {
   };
 }
 
-test("durable mutation queue survives a storage reload", async () => {
+test("durable mutation queue survives a storage reload with captured Field Group context", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "flyer-map-queue-"));
   const filePath = path.join(directory, "queue.json");
 
@@ -104,18 +104,46 @@ test("durable mutation queue survives a storage reload", async () => {
       4,
       "2026-08-24T10:00:00.000Z",
     );
-    await firstQueue.enqueue(mutation);
+    await firstQueue.enqueue(mutation, { fieldGroupId: "field_group_alpha" });
 
     const reloadedQueue = new MutationQueue(new JsonFileQueueStorage(filePath));
     const records = await reloadedQueue.list(mutation.campaignId);
 
     assert.equal(records.length, 1);
     assert.deepEqual(records[0].mutation, mutation);
+    assert.equal(records[0].fieldGroupId, "field_group_alpha");
     assert.equal(records[0].state, "pending");
     assert.equal(records[0].attemptCount, 0);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("legacy queued records without Field Group context remain compatible", async () => {
+  const mutation = renameMutation(
+    "mutation_legacy-context",
+    5,
+    "2026-08-24T10:01:00.000Z",
+  );
+  const legacy = {
+    id: mutation.id,
+    campaignId: mutation.campaignId,
+    createdAt: mutation.createdAt,
+    mutation,
+    state: "pending" as const,
+    attemptCount: 0,
+    nextAttemptAt: 0,
+  };
+  const storage: MutationQueueStorage = {
+    async getAll() {
+      return [legacy as QueuedCampaignMutation];
+    },
+    async put() {},
+    async delete() {},
+  };
+
+  const records = await new MutationQueue(storage).list(mutation.campaignId);
+  assert.equal(records[0]?.fieldGroupId, null);
 });
 
 test("queue preserves dependency order by local base revision", async () => {
@@ -163,7 +191,10 @@ test("failed durable enqueue is recovered from the emergency local shadow on nex
       async delete() {},
     };
     const firstQueue = new MutationQueue(failingStorage);
-    await assert.rejects(() => firstQueue.enqueue(mutation), /IndexedDB write unavailable/);
+    await assert.rejects(
+      () => firstQueue.enqueue(mutation, { fieldGroupId: "field_group_emergency" }),
+      /IndexedDB write unavailable/,
+    );
 
     const recovered = new Map<string, QueuedCampaignMutation>();
     const recoveredStorage: MutationQueueStorage = {
@@ -184,6 +215,7 @@ test("failed durable enqueue is recovered from the emergency local shadow on nex
     assert.equal(records.length, 1);
     assert.equal(records[0].id, mutation.id);
     assert.deepEqual(records[0].mutation, mutation);
+    assert.equal(records[0].fieldGroupId, "field_group_emergency");
     assert.equal(fakeWindow.values.has(EMERGENCY_RECORD_KEY), false);
   } finally {
     fakeWindow.restore();
@@ -216,6 +248,7 @@ test("localStorage emergency shadow failure does not block a successful IndexedD
     const listed = await queue.list(mutation.campaignId);
     assert.equal(listed.length, 1);
     assert.equal(listed[0].id, mutation.id);
+    assert.equal(listed[0].fieldGroupId, null);
   } finally {
     fakeWindow.restore();
   }

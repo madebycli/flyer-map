@@ -3,16 +3,19 @@ import {
   CampaignApiError,
   buildCampaignAccessUrl,
   campaignIdFromUrl,
-  fetchCurrentAccess,
   recoverCampaignAdminAccess,
 } from "../data/campaignApi";
+import {
+  subscribeCampaignStore,
+  type CampaignAccessState,
+} from "../data/campaignStore";
 import { detectLanguage } from "../i18n";
 
 export function AccessRecoveryGate() {
   const language = useMemo(detectLanguage, []);
   const campaignId = campaignIdFromUrl();
   const [checking, setChecking] = useState(Boolean(campaignId));
-  const [needsRecovery, setNeedsRecovery] = useState(false);
+  const [accessState, setAccessState] = useState<CampaignAccessState>("idle");
   const [secret, setSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,25 +30,21 @@ export function AccessRecoveryGate() {
       return;
     }
 
-    let active = true;
-    void fetchCurrentAccess(campaignId)
-      .then(() => {
-        if (active) setNeedsRecovery(false);
-      })
-      .catch((cause) => {
-        if (!active) return;
-        if (cause instanceof CampaignApiError && cause.status === 401) setNeedsRecovery(true);
-      })
-      .finally(() => {
-        if (active) setChecking(false);
-      });
+    setChecking(true);
+    const unsubscribe = subscribeCampaignStore((update) => {
+      const nextState = update.accessState ?? "idle";
+      setAccessState(nextState);
+      setChecking(nextState === "idle" || nextState === "pending");
+    });
 
-    return () => {
-      active = false;
-    };
+    return unsubscribe;
   }, [campaignId]);
 
-  if (!campaignId || checking || (!needsRecovery && !recoveredUrl)) return null;
+  if (
+    !campaignId ||
+    (checking && !recoveredUrl) ||
+    (accessState !== "required" && !recoveredUrl)
+  ) return null;
 
   const submit = async () => {
     if (!secret.trim() || submitting) return;
@@ -56,7 +55,6 @@ export function AccessRecoveryGate() {
       const accessUrl = buildCampaignAccessUrl(campaignId, recovered.initialAccessToken);
       setSecret("");
       setRecoveredUrl(accessUrl);
-      setNeedsRecovery(false);
       window.dispatchEvent(new Event("online"));
     } catch (cause) {
       setError(
@@ -104,6 +102,8 @@ export function AccessRecoveryGate() {
                 type="button"
                 onClick={() => {
                   setRecoveredUrl(null);
+                  setAccessState("pending");
+                  setChecking(true);
                   window.dispatchEvent(new Event("online"));
                 }}
               >

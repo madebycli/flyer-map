@@ -5,6 +5,7 @@ import test from "node:test";
 
 const SOURCE_ROOTS = ["src", "worker"];
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
+const AUDITED_WORKER_LOGGER = "worker/fieldGroupAudit.ts";
 
 async function sourceFiles() {
   const files: string[] = [];
@@ -55,10 +56,16 @@ test("security static guard: credential-like values are not written to web stora
   assert.doesNotMatch(source, dangerousStorageWrite);
 });
 
-test("security static guard: Worker contains no console logging sinks", async () => {
-  const files = (await sourceFiles()).filter((path) => path.startsWith("worker/"));
+test("security static guard: Worker logging is limited to the audited field group logger", async () => {
+  const files = (await sourceFiles()).filter(
+    (path) => path.startsWith("worker/") && path !== AUDITED_WORKER_LOGGER,
+  );
   const workerSource = (await Promise.all(files.map((path) => readFile(path, "utf8")))).join("\n");
   assert.doesNotMatch(workerSource, /\bconsole\.(?:log|info|debug|warn|error)\s*\(/u);
+
+  const auditSource = await readFile(AUDITED_WORKER_LOGGER, "utf8");
+  const loggingCalls = auditSource.match(/\bconsole\.(?:log|info|debug|warn|error)\s*\(/gu) ?? [];
+  assert.deepEqual(loggingCalls, ["console.info("]);
 });
 
 test("security static guard: SQL template interpolation is limited to the audited write guard", async () => {

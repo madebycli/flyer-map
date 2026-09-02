@@ -1,6 +1,7 @@
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 
-export type AccessRole = "admin" | "team-editor" | "viewer";
+export type PersistentAccessRole = "admin" | "team-editor" | "viewer";
+export type AccessRole = PersistentAccessRole | "field-group-member" | "collection-collector";
 
 export type AccessContext = {
   grantId: string;
@@ -8,9 +9,14 @@ export type AccessContext = {
   role: AccessRole;
   teamId: string | null;
   label: string | null;
+  groupId?: string | null;
+  membershipId?: string | null;
+  collectorId?: string | null;
+  collectionAccessId?: string | null;
 };
 
-export type AccessGrantSummary = AccessContext & {
+export type AccessGrantSummary = Omit<AccessContext, "role" | "groupId" | "membershipId"> & {
+  role: PersistentAccessRole;
   createdAt: string;
   revokedAt: string | null;
 };
@@ -18,7 +24,7 @@ export type AccessGrantSummary = AccessContext & {
 type AccessRow = {
   grant_id: string;
   campaign_id: string;
-  role: AccessRole;
+  role: PersistentAccessRole;
   team_id: string | null;
   label: string | null;
 };
@@ -26,15 +32,30 @@ type AccessRow = {
 type GrantRow = {
   id: string;
   campaign_id: string;
-  role: AccessRole;
+  role: PersistentAccessRole;
   team_id: string | null;
   label: string | null;
   created_at: string;
   revoked_at: string | null;
 };
 
+type FieldGroupAccessRow = {
+  membership_id: string;
+  campaign_id: string;
+  group_id: string;
+  team_id: string;
+  expires_at: string;
+  left_at: string | null;
+  removed_at: string | null;
+  label: string;
+  state: "active" | "closed" | "expired";
+  hard_expires_at: string;
+};
+
 const SESSION_COOKIE = "vf_session";
+const FIELD_GROUP_SESSION_COOKIE = "vf_field_group_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
+const FIELD_GROUP_SESSION_SECONDS = 60 * 60 * 24;
 
 function bytesToBase64Url(bytes: Uint8Array) {
   let binary = "";
@@ -51,7 +72,7 @@ export async function hashSecret(secret: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function cookieValue(request: Request, name: string) {
+export function cookieValue(request: Request, name: string) {
   const header = request.headers.get("cookie");
   if (!header) return null;
   for (const part of header.split(";")) {
@@ -65,11 +86,19 @@ export function sessionCookie(secret: string) {
   return `${SESSION_COOKIE}=${encodeURIComponent(secret)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_SECONDS}`;
 }
 
+export function fieldGroupSessionCookie(secret: string) {
+  return `${FIELD_GROUP_SESSION_COOKIE}=${encodeURIComponent(secret)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${FIELD_GROUP_SESSION_SECONDS}`;
+}
+
 export function clearSessionCookie() {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
-export async function resolveAccess(
+export function clearFieldGroupSessionCookie() {
+  return `${FIELD_GROUP_SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+}
+
+export async function resolvePersistentAccess(
   db: D1DatabaseLike,
   request: Request,
   campaignId?: string,
@@ -102,14 +131,106 @@ export async function resolveAccess(
     role: row.role,
     teamId: row.team_id,
     label: row.label,
+    groupId: null,
+    membershipId: null,
   };
+}
+
+async function expireFieldGroupForSession(
+  db: D1DatabaseLike,
+  row: FieldGroupAccessRow,
+  now: string,
+) {
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE field_groups
+         SET state = 'expired', closed_at = hard_expires_at, updated_at = ?
+         WHERE id = ? AND campaign_id = ? AND state = 'active' AND hard_expires_at <= ?`,
+      )
+      .bind(now, row.group_id, row.campaign_id, now),
+    db
+      .prepare(
+        `UPDATE field_group_join_credentials
+         SET revoked_at = COALESCE(revoked_at, ?)
+         WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,
+      )
+      .bind(row.hard_expires_at, row.group_id, row.campaign_id),
+  ]);
+}
+
+async function resolveFieldGroupAccess(
+  db: D1DatabaseLike,
+  request: Request,
+  campaignId?: string,
+): Promise<AccessContext | null> {
+  const sessionSecret = cookieValue(request, FIELD_GROUP_SESSION_COOKIE);
+  if (!sessionSecret || sessionSecret.length > 256) return null;
+  const sessionHash = await hashSecret(sessionSecret);
+  const now = new Date().toISOString();
+
+  try {
+    const row = await db
+      .prepare(
+        `SELECT
+           m.id AS membership_id,
+           m.campaign_id,
+           m.group_id,
+           m.team_id,
+           m.expires_at,
+           m.left_at,
+           m.removed_at,
+           g.label,
+           g.state,
+           g.hard_expires_at
+         FROM field_group_memberships m
+         JOIN field_groups g
+           ON g.id = m.group_id AND g.campaign_id = m.campaign_id
+         WHERE m.temp_session_hash = ?
+           AND (? IS NULL OR m.campaign_id = ?)
+         LIMIT 1`,
+      )
+      .bind(sessionHash, campaignId ?? null, campaignId ?? null)
+      .first<FieldGroupAccessRow>();
+
+    if (!row || row.left_at || row.removed_at || row.expires_at <= now) return null;
+    if (row.state === "active" && row.hard_expires_at <= now) {
+      await expireFieldGroupForSession(db, row, now);
+      return null;
+    }
+    if (row.state !== "active") return null;
+
+    return {
+      grantId: `field-group:${row.membership_id}`,
+      campaignId: row.campaign_id,
+      role: "field-group-member",
+      teamId: row.team_id,
+      label: row.label,
+      groupId: row.group_id,
+      membershipId: row.membership_id,
+    };
+  } catch {
+    // Migration 0006 may intentionally not be applied yet. Existing campaign
+    // access must remain available until the FC1 schema is rolled out.
+    return null;
+  }
+}
+
+export async function resolveAccess(
+  db: D1DatabaseLike,
+  request: Request,
+  campaignId?: string,
+): Promise<AccessContext | null> {
+  const persistent = await resolvePersistentAccess(db, request, campaignId);
+  if (persistent) return persistent;
+  return resolveFieldGroupAccess(db, request, campaignId);
 }
 
 export async function createAccessGrant(
   db: D1DatabaseLike,
   input: {
     campaignId: string;
-    role: AccessRole;
+    role: PersistentAccessRole;
     teamId: string | null;
     label?: string | null;
   },
@@ -158,6 +279,9 @@ export async function createSessionForGrant(
   db: D1DatabaseLike,
   grant: AccessContext,
 ) {
+  if (grant.role === "field-group-member" || grant.role === "collection-collector") {
+    throw new Error("persistent_session_role_required");
+  }
   const sessionSecret = randomSecret();
   const sessionHash = await hashSecret(sessionSecret);
   const sessionId = `session_${crypto.randomUUID()}`;
@@ -203,7 +327,7 @@ export async function redeemAccessToken(
     .first<{
       id: string;
       campaign_id: string;
-      role: AccessRole;
+      role: PersistentAccessRole;
       team_id: string | null;
       label: string | null;
     }>();
@@ -215,6 +339,8 @@ export async function redeemAccessToken(
     role: row.role,
     teamId: row.team_id,
     label: row.label,
+    groupId: null,
+    membershipId: null,
   };
   const session = await createSessionForGrant(db, access);
   return { access, ...session };
@@ -283,9 +409,27 @@ export async function teamExistsInCampaign(
 
 export async function revokeCurrentSession(db: D1DatabaseLike, request: Request) {
   const secret = cookieValue(request, SESSION_COOKIE);
-  if (!secret) return;
-  const hash = await hashSecret(secret);
-  await db.batch([
-    db.prepare("DELETE FROM campaign_sessions WHERE session_hash = ?").bind(hash),
-  ]);
+  if (secret) {
+    const hash = await hashSecret(secret);
+    await db.batch([
+      db.prepare("DELETE FROM campaign_sessions WHERE session_hash = ?").bind(hash),
+    ]);
+  }
+
+  const fieldGroupSecret = cookieValue(request, FIELD_GROUP_SESSION_COOKIE);
+  if (!fieldGroupSecret) return;
+  const fieldGroupHash = await hashSecret(fieldGroupSecret);
+  try {
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE field_group_memberships
+           SET left_at = COALESCE(left_at, ?)
+           WHERE temp_session_hash = ? AND removed_at IS NULL`,
+        )
+        .bind(new Date().toISOString(), fieldGroupHash),
+    ]);
+  } catch {
+    // Migration 0006 may not be applied yet.
+  }
 }

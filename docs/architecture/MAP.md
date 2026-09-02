@@ -2,8 +2,8 @@
 id: architecture-map
 type: architecture
 status: accepted
-last_updated: 2026-08-26
-related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012, ADR-0013]
+last_updated: 2026-09-01
+related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012, ADR-0013, ADR-0021]
 source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera, saved-geometry-renderer, prepared-offline-map-rendering]
 ---
 
@@ -12,12 +12,13 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-came
 ## Current renderer baseline
 
 MapLibre GL JS **5.7.1** owns the persistent map rendering pipeline:
-- CARTO Voyager Retina raster basemap;
+- OpenFreeMap Bright vector basemap;
 - camera movement, zoom and bearing;
 - navigation/compass controls;
-- one-shot browser geolocation display;
+- live/refining browser geolocation display and follow;
 - saved Verteil-Flyer Areas through one GeoJSON source plus Fill/Outline layers;
-- saved Street Tasks through one GeoJSON source plus a small fixed set of Line layers.
+- saved Street Tasks through one GeoJSON source plus a small fixed set of Line layers;
+- saved House Tasks through one GeoJSON source plus a small fixed set of Fill/Line layers.
 
 The independent SVG overlay is reserved for active geometry input only:
 - Area draw preview and points;
@@ -43,32 +44,48 @@ Green TypeScript/CI alone is insufficient for a map-runtime upgrade.
 
 ## Basemap
 
-Primary online provider is CARTO Voyager Retina raster:
+Primary online provider is OpenFreeMap Bright:
 
-`https://{a-d}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png`
+`https://tiles.openfreemap.org/styles/bright`
 
-The provider remains replaceable. Labels are provider-rendered raster content and are not dynamically translated by application language.
+The provider remains replaceable. Bright requires no application API key, account or secret. MapLibre remains pinned to 5.7.1.
 
-Current zoom contract:
-- CARTO raster source `maxzoom` = 20;
-- Map instance `maxZoom` = 20;
-- raster style layer must remain visible at zoom 20, so its layer `maxzoom` must be greater than 20 (currently 21) or omitted.
+The loaded Bright contract uses vector source `openmaptiles`. Standard house numbers are enabled by default through exactly one app-owned symbol layer:
 
-Do not set the raster layer `maxzoom` back to 20: MapLibre hides a style layer at zoom values equal to or greater than its layer maxzoom, which caused a real-browser white-basemap regression at maximum zoom.
+- layer id `vf-basemap-housenumbers`;
+- source `openmaptiles`;
+- source-layer `housenumber`;
+- text field `housenumber`;
+- `Noto Sans Regular` from the loaded Bright glyph contract;
+- minimum zoom 16, zoom-scaled text from 12.5 px through 16 px, a light halo and normal collision handling.
 
-CARTO Basemap content is **online-only** in the current architecture. CARTO Basemap terms prohibit storing/saving/caching map content, so deliberate offline-map downloads must not cache these raster tiles.
+Provider house-number layers for the same source/source-layer are removed before the app-owned layer is added, so labels are never duplicated. Any provider `fill-extrusion` layer is also removed before application layers are installed, keeping the map deliberately 2D. If Bright no longer provides `openmaptiles`, `housenumber` or the required Noto Sans glyph contract, do not silently substitute another schema. Stop and re-evaluate the provider contract.
 
-ADR-0012 defines the separate prepared offline-data path. OpenStreetMap Foundation raster/vector tile services also must not be bulk-prefetched for this feature.
+The online Bright style is not the deliberate offline-download payload. ADR-0012 continues to define the separate prepared raw-OSM package path. OpenStreetMap Foundation raster/vector tile services must not be bulk-prefetched for this feature.
 
 ## Saved application GeoJSON
 
-### Sources
+### Sources and style installation
 
 Two persistent sources exist for the current field renderer:
 - `vf-areas` - all saved Areas;
 - `vf-streets` - all saved Street Tasks.
+- `vf-houses` - all saved House Tasks.
 
-The initial MapLibre style is built with these application sources/layers already present using the latest Campaign data available at map construction time. They are not recreated during pan/zoom/rotate.
+MapLibre first loads Bright. On the single `style.load` event, Verteil-Flyer installs its fixed application sources/layers once and immediately synchronizes current data through the existing `sync*()` functions. Data updates do not recreate the Map instance or style.
+
+Normal context layers are inserted below the first Bright symbol/label layer:
+- prepared offline roads/buildings;
+- Areas;
+- normal Houses;
+- normal Streets;
+- Collection Main/Areas.
+
+Interaction overlays stay above Bright labels:
+- Street/House selection and Session Highlight;
+- Pickup markers and selection;
+- Smart Street/House candidates and selections;
+- Smart preview, points and point labels.
 
 Actual Campaign data changes update the existing `GeoJSONSource` data with `setData()`.
 
@@ -90,11 +107,13 @@ Saved Street Tasks share one source and a constant small layer set:
 - later;
 - not-deliverable.
 
-Feature properties carry Team color/status. Line width is zoom-dependent and should remain road-like rather than highlighter-like.
+Feature properties carry Team color, a pure derived completed Team color and status. Completed Streets use the completed color at high opacity instead of becoming transparent; completed House outlines use the same derived color. Line width is zoom-dependent and should remain road-like rather than highlighter-like.
 
 The number of sources/layers stays effectively constant whether a Campaign contains 10 or thousands of Street features.
 
 ADR-0013 does not create a second Street renderer path. A persisted Smart Street becomes the same saved Campaign Street feature after its reviewed OSM-derived route is copied into a validated LineString snapshot. OSM provenance is metadata and is not needed to render the saved Street.
+
+ADR-0021 uses that same renderer boundary for server-prepared work: clipped OSM road fragments and owned building footprints are persisted as ordinary Task snapshots, then flow through `vf-streets` and `vf-houses`. The map does not run automatic OSM preparation and gains no per-Area source/layer, browser-side work queue or alternate Task renderer.
 
 ### House persistence boundary
 
@@ -105,9 +124,15 @@ M6 now has a durable House Task data/persistence foundation under ADR-0013:
 - optional parent Street Task in the same Area;
 - independent Task status.
 
-House Tasks intentionally **do not yet enter `vf-streets`**. The current field renderer remains Street-only until a dedicated House map-layer slice defines batched building fill/outline/selection styling and real-device density acceptance. This avoids accidentally treating Polygon House geometry as Street LineString geometry.
+House Tasks intentionally **do not enter `vf-streets`**. They now render through the separate `vf-houses` source with fixed building fill, status outline, selection and Session Highlight layers. This avoids treating Polygon House geometry as Street LineString geometry.
 
-When House rendering is added it must follow the same persistent MapLibre rule: one/few batched GeoJSON sources and a fixed small layer set, never one layer or React/SVG element per building.
+The current House renderer uses:
+- `HOUSE_MIN_ZOOM = 15` as the dense-mobile starting boundary;
+- `Feature.id` and `houseTaskId` as the stable application-owned House Task identity;
+- only `houseTaskId`, `status` and resolved Team `color` in renderer properties;
+- no layer, marker, React component or SVG element per building.
+
+Normal House layers remain below Street layers. Selected Houses and Session Highlights use fixed overlay layers above the normal map presentation.
 
 ## Browse interaction
 
@@ -117,9 +142,9 @@ Street selection uses a small screen-space hit box around the pointer/tap so a t
 
 Area selection queries the Area fill layer at the interaction point.
 
-Normal browse movement must perform **zero Verteil-Flyer `map.project()` loops over all saved Areas/Streets**.
+Normal browse movement must perform **zero Verteil-Flyer `map.project()` loops over all saved Areas/Streets/Houses**.
 
-Future House browse selection must use rendered-feature queries over the batched House source, not per-House DOM hit targets.
+House browse selection uses a rendered-feature query over `vf-houses-fill` with a small screen-space hit box. Street selection remains first, followed by House, then Area. There are no per-House DOM hit targets.
 
 ## Active draw/edit SVG
 
@@ -135,40 +160,21 @@ During active draw/edit, map movement imperatively reprojects only the active po
 - draw/edit shows temporary explicit vertices;
 - geometry validated client-side and Worker-side.
 
-### Current Street fallback
+### Current Street fallback and automatic preparation
 
-Manual Street Task drawing stores a GeoJSON LineString assigned to an Area and remains available as a fallback.
+Manual Street Task drawing stores a GeoJSON LineString assigned to an Area and remains available as `Straße manuell hinzufügen`.
 
-ADR-0013 confirms the Smart Street primary direction:
-- user chooses precise snapped start/end anchors on prepared OSM road geometry;
-- ambiguity is resolved through explicit route candidates and optional waypoints;
-- street names are display metadata only;
-- the reviewed selected route is clipped/stiched into one Campaign-owned LineString snapshot;
-- first/last source ways are clipped exactly at the reviewed anchors;
-- multi-way source coordinate order may be reversed for continuity;
-- a non-continuous route is rejected instead of silently stored as `MultiLineString`;
-- later OSM refreshes do not silently rewrite the saved geometry.
+The normal Area Sheet does not fetch or select browser OSM candidates. For an editable Area it reads the narrow server Preparation status. `missing` starts one authorized server job, `pending` polls only while the Sheet is open, `ready` refreshes the normal Campaign snapshot once and `failed` offers an authorized manual retry. A missing prepared-only schema is visible without retrying.
 
-The persistence stack keeps the renderer contract unchanged: after creation, a Smart Street is just another saved Street Task in `vf-streets`.
+ADR-0021 keeps the renderer contract unchanged: server-clipped Roads and owned building footprints are persisted as normal Task snapshots. Streets render through `vf-streets`, Houses through `vf-houses`, with no per-Area source, browser work queue or alternate automatic-task renderer. Historical Smart selection helpers may remain isolated, but they are not a normal product entry.
 
 ## Prepared offline working area
 
 ADR-0012 is accepted with the bounded raw OSM subset approach.
 
-Initial direction:
-- user deliberately prepares approximately 3 km around the current map center;
-- browser requests the bounded package through the existing Worker;
-- Worker owns fixed Overpass-compatible query templates, validates radius/limits and keeps the upstream server-configurable;
-- normalized versioned JSON/GeoJSON preserves relevant OSM object identity/tags;
-- browser IndexedDB stores the package locally;
-- local roads/buildings/context render through batched MapLibre sources/layers while the already-loaded website is offline;
-- Campaign Areas/Streets remain above the local context and retain the existing selection/edit boundary;
-- the same prepared OSM data feeds Smart Street and Smart House source candidates while application-owned Task identity remains separate under ADR-0013;
-- no CARTO or OpenStreetMap Foundation tile bulk cache;
-- no Service Worker/PWA requirement;
-- no R2/PMTiles pipeline in v1.
+The retained cache boundary is intentionally not a normal Settings download feature. It may preserve already stored local map context, while Campaign Areas/Streets/Houses continue to render from the normal snapshot and M5 retains its existing queue/cache behavior. Server preparation never requires an offline browser package.
 
-The first local offline style should remain deliberately small rather than attempting to reproduce the complete CARTO visual basemap. Required OSM attribution must remain visible.
+The first local offline style should remain deliberately small rather than attempting to reproduce the complete Bright visual basemap. Required OSM attribution must remain visible.
 
 ## Smart Street + House constraints
 
@@ -180,7 +186,7 @@ Road/building import must preserve the persistent renderer pattern:
 - use application-owned durable Task ids and reviewed geometry snapshots under ADR-0013;
 - if a different production-scale map pipeline becomes necessary, decide it explicitly rather than silently creating a duplicate source of truth.
 
-House persistence is now a separate additive data slice. House map rendering remains an explicit follow-up, not an implicit extension of the Street LineString source.
+House persistence and map rendering remain separate from the Street LineString source. The renderer consumes the already-authorized Campaign snapshot and does not add a new persistence or authorization path.
 
 ## Camera state
 
@@ -195,15 +201,15 @@ Remote synchronization must never reset the personal camera.
 
 ## Rotation and geolocation
 
-Normal bearing/rotation stays enabled with a compass. Active SVG geometry must remain aligned at arbitrary bearing.
+Normal bearing/rotation stays enabled with a compass while pitch is fixed at zero (`maxPitch: 0`, touch pitch disabled). Active SVG geometry must remain aligned at arbitrary bearing.
 
-Geolocation is user-initiated and one-shot. GPS coordinates are not persisted as route history or statistics.
+The MapLibre `GeolocateControl` uses high accuracy, a 30-second maximum age, a 6-second timeout, an approximately zoom-18 fit bound and `trackUserLocation: true`. Its official active/passive behavior provides live fixes and active camera follow while leaving the location point updating after a deliberate map pan. A second location-button activation recenters and resumes the official active lock. GPS coordinates remain transient client state and are never persisted as route history or statistics.
 
 ## Diagnostics/performance acceptance
 
 The opt-in `?diag=1` panel is used for renderer troubleshooting and real-browser acceptance.
 
-Whole-city acceptance must include representative dense tests, currently targeted at 500 / 1,000 / 2,500 / 5,000 Street features. House Mode requires additional building-scale tests before its persistent layer is promoted into the field map.
+Whole-city acceptance must include representative dense tests, currently targeted at 500 / 1,000 / 2,500 / 5,000 Street features and 1,000 / 2,500 / 5,000 / 10,000 / 20,000 House features. Real mobile browser acceptance remains required for the final House `minzoom` decision and touch density behavior.
 
 Prepared 3 km offline packages must be measured with dense representative urban data on real mobile devices. If normalized GeoJSON package/render size becomes unsuitable, revisit transport/render storage through a new ADR rather than silently introducing a second map pipeline.
 
