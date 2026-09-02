@@ -301,18 +301,18 @@ async function startRxdb(campaignId: string) {
     onSnapshot: applyRxdbSnapshot,
     onIssue: reportRxdbIssue,
     onRemoteEvent: (event) => {
-      if (event !== "sent" || runtime.sync !== sync) return;
-      emit({
-        syncState: runtime.pendingWrites > 0 ? "waiting-server" : "server-confirmed",
-        pendingCount: runtime.pendingWrites,
-        messageCode: null,
-      });
+      if (runtime.sync !== sync) return;
+      if (event === "push-pending") {
+        emit({ syncState: navigator.onLine ? "waiting-server" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
+      } else if (event === "push-idle") {
+        emit({ syncState: navigator.onLine ? "server-confirmed" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
+      }
     },
   });
   runtime.sync = sync;
   await sync.start();
   runtime.initialized = true;
-  emit({ syncState: navigator.onLine ? "waiting-server" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
+  emit({ syncState: navigator.onLine ? "syncing" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
   // Legacy M5 intents are copied only after the replica has a canonical
   // Campaign. The old network writer never starts here, and a timeout leaves
   // recovery records intact for the next online start.
@@ -424,12 +424,10 @@ async function runManualRefresh() {
   if (!runtime.initialized || !sync) throw new Error("rxdb_refresh_not_initialized");
   await sync.refreshAndWait();
   if (runtime.sync !== sync) throw new Error("rxdb_refresh_replaced");
-  emit({ syncState: "server-confirmed", pendingCount: runtime.pendingWrites, messageCode: null });
 }
 
 export function manualRefreshCampaign() {
   setRefreshState("loading");
-  emit({ syncState: "syncing", pendingCount: runtime.pendingWrites });
   void runManualRefresh()
     .then(() => setRefreshState("current", true))
     .catch((error) => {
