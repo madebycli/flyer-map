@@ -6,6 +6,7 @@ import { addRxPlugin, createRxDatabase } from "rxdb";
 import { RxDBDevModePlugin } from "rxdb/plugins/dev-mode";
 import { replicateRxCollection } from "rxdb/plugins/replication";
 import { getRxStorageMemory } from "rxdb/plugins/storage-memory";
+import { wrappedValidateAjvStorage } from "rxdb/plugins/validate-ajv";
 import { MissionRxdbSync, RxdbSyncHttpError } from "../src/data/rxdbMissionSync.ts";
 import type { RxdbCollectionName } from "../src/data/rxdbSyncProtocol.ts";
 import type { AccessContext } from "../worker/access.ts";
@@ -268,7 +269,7 @@ function statusMutation(campaignId: string, taskId: string, status: "completed" 
 
 test("Field Group A offline intent remains isolated from Group B and resumes only as A", async () => {
   const browser = installWindow();
-  const storage = getRxStorageMemory();
+  const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
   const campaignId = `campaign_actor_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
   const server = new FakeMissionServer(campaignId);
   server.online.set("group_a", true);
@@ -425,7 +426,7 @@ test("lost HTTP response after committed RxDB push retries to exactly one domain
 
 test("two RxDB tabs elect one replication leader and leader handover does not duplicate writes", async () => {
   const campaignId = `campaign_tabs_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-  const storage = getRxStorageMemory();
+  const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
   const schema = {
     version: 0,
     primaryKey: "id",
