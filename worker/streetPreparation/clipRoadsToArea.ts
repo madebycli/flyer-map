@@ -1,5 +1,6 @@
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { point, polygon } from "@turf/helpers";
+import InteriorPointArea from "jsts/org/locationtech/jts/algorithm/InteriorPointArea.js";
 import GeoJSONReader from "jsts/org/locationtech/jts/io/GeoJSONReader.js";
 import OverlayOp from "jsts/org/locationtech/jts/operation/overlay/OverlayOp.js";
 import type { LineStringGeometry, LngLat, PolygonGeometry } from "../../src/domain/campaign.ts";
@@ -20,6 +21,23 @@ function finiteCoordinate(coordinate: LngLat) {
 function sameCoordinate(first: LngLat, second: LngLat) {
   return Math.abs(first[0] - second[0]) <= COORDINATE_EPSILON
     && Math.abs(first[1] - second[1]) <= COORDINATE_EPSILON;
+}
+
+function validInputGeometry(geometry: StreetInputGeometry): boolean {
+  if (geometry.type === "LineString") {
+    return geometry.coordinates.length >= 2
+      && geometry.coordinates.every(finiteCoordinate)
+      && geometry.coordinates.some((coordinate, index, coordinates) =>
+        index > 0 && !sameCoordinate(coordinate, coordinates[index - 1])
+      );
+  }
+  if (geometry.type === "MultiLineString") {
+    return geometry.coordinates.length > 0
+      && geometry.coordinates.every((coordinates) =>
+        validInputGeometry({ type: "LineString", coordinates })
+      );
+  }
+  return geometry.geometries.length > 0 && geometry.geometries.every(validInputGeometry);
 }
 
 function cleanCoordinates(coordinates: LngLat[]) {
@@ -105,7 +123,7 @@ export function polygonRepresentativePoint(polygonGeometry: PolygonGeometry): Ln
   if (!normalized) return null;
   try {
     const area = new GeoJSONReader().read(normalized);
-    const coordinate = area.getInteriorPoint().getCoordinate();
+    const coordinate = InteriorPointArea.getInteriorPoint(area).getCoordinate();
     if (!coordinate || !Number.isFinite(coordinate.x) || !Number.isFinite(coordinate.y)) return null;
     const representative: LngLat = [coordinate.x, coordinate.y];
     return pointInOrOnPolygon(representative, normalized) ? representative : null;
@@ -123,7 +141,7 @@ export function lineStringInsidePolygon(
   polygonGeometry: PolygonGeometry,
 ) {
   const normalizedArea = normalizePolygonGeometry(polygonGeometry);
-  if (!normalizedArea || geometry.coordinates.length < 2) return false;
+  if (!normalizedArea || !validInputGeometry(geometry)) return false;
   if (geometry.coordinates.some((coordinate) => !finiteCoordinate(coordinate))) return false;
   try {
     const reader = new GeoJSONReader();
@@ -142,7 +160,7 @@ export function clipLineGeometryToPolygon(
   polygonGeometry: PolygonGeometry,
 ): LineStringGeometry[] {
   const normalizedArea = normalizePolygonGeometry(polygonGeometry);
-  if (!normalizedArea) return [];
+  if (!normalizedArea || !validInputGeometry(geometry)) return [];
   try {
     const reader = new GeoJSONReader();
     const intersection = OverlayOp.intersection(reader.read(geometry), reader.read(normalizedArea));
