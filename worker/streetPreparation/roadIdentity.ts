@@ -17,7 +17,7 @@ function lineKey(coordinates: LngLat[]) {
   return forward < reverse ? forward : reverse;
 }
 
-export function canonicalStreetGeometryKey(geometry: StreetInputGeometry) {
+export function canonicalStreetGeometryKey(geometry: StreetInputGeometry): string {
   if (geometry.type === "LineString") return "LineString:" + lineKey(geometry.coordinates);
   if (geometry.type === "MultiLineString") {
     return "MultiLineString:" + geometry.coordinates
