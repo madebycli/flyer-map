@@ -61,7 +61,8 @@ export type AreaPreparationFailureCode =
   | "area_preparation_publish_failed"
   | "area_preparation_stale";
 
-export type AreaPreparationStateStatus = "pending" | "ready" | "failed";
+export type AreaPreparationPhaseStatus = "pending" | "ready" | "failed";
+export type AreaPreparationStateStatus = AreaPreparationPhaseStatus;
 
 export type AreaPreparationState = {
   campaignId: string;
@@ -69,22 +70,39 @@ export type AreaPreparationState = {
   geometryHash: string;
   generation: string;
   status: AreaPreparationStateStatus;
+  streetStatus: AreaPreparationPhaseStatus;
+  houseStatus: AreaPreparationPhaseStatus;
   roadCount: number;
   houseCount: number;
   sourceTimestamp: string | null;
+  streetSourceTimestamp: string | null;
+  houseSourceTimestamp: string | null;
   startedAt: string | null;
   readyAt: string | null;
   failedAt: string | null;
+  streetStartedAt: string | null;
+  houseStartedAt: string | null;
+  streetReadyAt: string | null;
+  houseReadyAt: string | null;
+  streetFailedAt: string | null;
+  houseFailedAt: string | null;
   lastErrorCode: AreaPreparationFailureCode | null;
+  streetErrorCode: AreaPreparationFailureCode | null;
+  houseErrorCode: AreaPreparationFailureCode | null;
   updatedAt: string;
 };
 
 export type AreaPreparationPublicState = {
   status: "missing" | AreaPreparationStateStatus;
+  streetStatus: "missing" | AreaPreparationPhaseStatus;
+  houseStatus: "missing" | AreaPreparationPhaseStatus;
   roadCount: number;
   houseCount: number;
   sourceTimestamp: string | null;
   errorCode: AreaPreparationFailureCode | null;
+  streetErrorCode: AreaPreparationFailureCode | null;
+  houseErrorCode: AreaPreparationFailureCode | null;
+  actionRequired: boolean;
   updatedAt: string | null;
 };
 
@@ -115,12 +133,9 @@ export type AreaTaskPreparationRun = {
   area: Area;
   geometryHash: string;
   generation: string;
+  phases: Array<"street" | "house">;
   now: string;
 };
-
-export type BeginAreaTaskPreparationResult =
-  | { outcome: "run"; run: AreaTaskPreparationRun }
-  | { outcome: "result"; result: PrepareAreaTasksResult };
 
 /** Minimal Cloudflare boundary used by Worker route code only. */
 export type AreaPreparationExecutionContext = {
@@ -141,9 +156,21 @@ type AreaPreparationRow = {
   failed_at: string | null;
   last_error_code: AreaPreparationFailureCode | null;
   updated_at: string;
+  street_status: AreaPreparationPhaseStatus;
+  house_status: AreaPreparationPhaseStatus;
+  street_source_timestamp: string | null;
+  house_source_timestamp: string | null;
+  street_started_at: string | null;
+  house_started_at: string | null;
+  street_ready_at: string | null;
+  house_ready_at: string | null;
+  street_failed_at: string | null;
+  house_failed_at: string | null;
+  street_error_code: AreaPreparationFailureCode | null;
+  house_error_code: AreaPreparationFailureCode | null;
 };
 
-class PreparationFailure extends Error {
+class PreparationFailureclass PreparationFailure extends Error {
   readonly code: AreaPreparationFailureCode;
 
   constructor(code: AreaPreparationFailureCode, message: string) {
@@ -153,42 +180,95 @@ class PreparationFailure extends Error {
   }
 }
 
+function aggregatePreparationStatus(
+  streetStatus: AreaPreparationPhaseStatus,
+  houseStatus: AreaPreparationPhaseStatus,
+): AreaPreparationStateStatus {
+  if (streetStatus === "failed") return "failed";
+  if (streetStatus === "pending" || houseStatus === "pending") return "pending";
+  if (streetStatus === "ready") return "ready";
+  return "failed";
+}
+
+function isActionRequiredState(state: AreaPreparationState | null) {
+  return Boolean(
+    state?.streetErrorCode === "area_preparation_work_started" ||
+    state?.houseErrorCode === "area_preparation_work_started" ||
+    state?.lastErrorCode === "area_preparation_work_started",
+  );
+}
+
+function latestTimestamp(values: Array<string | null>) {
+  return values
+    .filter((value): value is string => value !== null)
+    .sort((first, second) => Date.parse(second) - Date.parse(first))[0] ?? null;
+}
+
 function toState(row: AreaPreparationRow): AreaPreparationState {
   return {
     campaignId: row.campaign_id,
     areaId: row.area_id,
     geometryHash: row.geometry_hash,
     generation: row.generation,
-    status: row.status,
+    status: aggregatePreparationStatus(row.street_status, row.house_status),
+    streetStatus: row.street_status,
+    houseStatus: row.house_status,
     roadCount: row.road_count,
     houseCount: row.house_count,
     sourceTimestamp: row.source_timestamp,
+    streetSourceTimestamp: row.street_source_timestamp,
+    houseSourceTimestamp: row.house_source_timestamp,
     startedAt: row.started_at,
     readyAt: row.ready_at,
     failedAt: row.failed_at,
+    streetStartedAt: row.street_started_at,
+    houseStartedAt: row.house_started_at,
+    streetReadyAt: row.street_ready_at,
+    houseReadyAt: row.house_ready_at,
+    streetFailedAt: row.street_failed_at,
+    houseFailedAt: row.house_failed_at,
     lastErrorCode: row.last_error_code,
+    streetErrorCode: row.street_error_code,
+    houseErrorCode: row.house_error_code,
     updatedAt: row.updated_at,
   };
 }
 
 function publicState(state: AreaPreparationState | null): AreaPreparationPublicState {
-  return state
-    ? {
-        status: state.status,
-        roadCount: state.roadCount,
-        houseCount: state.houseCount,
-        sourceTimestamp: state.sourceTimestamp,
-        errorCode: state.lastErrorCode,
-        updatedAt: state.updatedAt,
-      }
-    : {
-        status: "missing",
-        roadCount: 0,
-        houseCount: 0,
-        sourceTimestamp: null,
-        errorCode: null,
-        updatedAt: null,
-      };
+  if (!state) {
+    return {
+      status: "missing",
+      streetStatus: "missing",
+      houseStatus: "missing",
+      roadCount: 0,
+      houseCount: 0,
+      sourceTimestamp: null,
+      errorCode: null,
+      streetErrorCode: null,
+      houseErrorCode: null,
+      actionRequired: false,
+      updatedAt: null,
+    };
+  }
+  const streetErrorCode = state.streetErrorCode;
+  const houseErrorCode = state.houseErrorCode;
+  return {
+    status: aggregatePreparationStatus(state.streetStatus, state.houseStatus),
+    streetStatus: state.streetStatus,
+    houseStatus: state.houseStatus,
+    roadCount: state.roadCount,
+    houseCount: state.houseCount,
+    sourceTimestamp: latestTimestamp([
+      state.sourceTimestamp,
+      state.streetSourceTimestamp,
+      state.houseSourceTimestamp,
+    ]),
+    errorCode: streetErrorCode ?? houseErrorCode,
+    streetErrorCode,
+    houseErrorCode,
+    actionRequired: isActionRequiredState(state),
+    updatedAt: state.updatedAt,
+  };
 }
 
 export async function getAreaTaskPreparationState(
@@ -199,7 +279,10 @@ export async function getAreaTaskPreparationState(
   const row = await db
     .prepare(
       `SELECT campaign_id, area_id, geometry_hash, generation, status, road_count, house_count,
-              source_timestamp, started_at, ready_at, failed_at, last_error_code, updated_at
+              source_timestamp, started_at, ready_at, failed_at, last_error_code, updated_at,
+              street_status, house_status, street_source_timestamp, house_source_timestamp,
+              street_started_at, house_started_at, street_ready_at, house_ready_at,
+              street_failed_at, house_failed_at, street_error_code, house_error_code
        FROM area_task_preparations
        WHERE campaign_id = ? AND area_id = ?`,
     )
@@ -258,10 +341,10 @@ export async function areaPreparationFingerprint(geometry: PolygonGeometry) {
 function isFreshPending(state: AreaPreparationState, geometryHash: string, now: Date) {
   const updatedAt = Date.parse(state.updatedAt);
   return (
-    state.status === "pending" &&
     state.geometryHash === geometryHash &&
     Number.isFinite(updatedAt) &&
-    now.getTime() - updatedAt < AREA_PREPARATION_PENDING_FRESH_MS
+    now.getTime() - updatedAt < AREA_PREPARATION_PENDING_FRESH_MS &&
+    (state.streetStatus === "pending" || state.houseStatus === "pending")
   );
 }
 
@@ -274,32 +357,28 @@ function validBuildingGeometry(geometry: PolygonGeometry) {
   return validatePolygonVertices(ring.slice(0, -1)).valid;
 }
 
-export async function prepareTasksForArea(input: {
+type AreaPreparationRoad = {
+  properties: { osmId: number; tags: Record<string, string> };
+  geometry: DistributionTask["geometry"];
+};
+
+type AreaPreparationBuilding = {
+  id: string;
+  properties: { osmId: number; tags: Record<string, string> };
+  geometry: HouseTask["geometry"];
+};
+
+export async function prepareStreetTasksForArea(input: {
   campaignId: string;
   area: Area;
   generation: string;
-  roads: Array<{
-    properties: { osmId: number; tags: Record<string, string> };
-    geometry: DistributionTask["geometry"];
-  }>;
-  buildings: Array<{
-    id: string;
-    properties: { osmId: number; tags: Record<string, string> };
-    geometry: HouseTask["geometry"];
-  }>;
+  roads: AreaPreparationRoad[];
   timestamp: string;
-  randomUUID: () => string;
   maxRoadFragments?: number;
-  maxBuildings?: number;
   streetSourceMetrics?: StreetPreparationSourceMetrics;
   onStreetDiagnostics?: (diagnostics: StreetPreparationDiagnostics) => void;
-}): Promise<{
-  tasks: DistributionTask[];
-  houseTasks: HouseTask[];
-  streetDiagnostics: StreetPreparationDiagnostics;
-}> {
+}): Promise<{ tasks: DistributionTask[]; streetDiagnostics: StreetPreparationDiagnostics }> {
   const maxRoadFragments = input.maxRoadFragments ?? AREA_PREPARATION_MAX_ROAD_FRAGMENTS;
-  const maxBuildings = input.maxBuildings ?? AREA_PREPARATION_MAX_BUILDINGS;
   const preparedStreets = await prepareStreetsForArea({
     campaignId: input.campaignId,
     areaId: input.area.id,
@@ -316,6 +395,24 @@ export async function prepareTasksForArea(input: {
     generation: input.generation,
     timestamp: input.timestamp,
   });
+  const streetDiagnostics: StreetPreparationDiagnostics = {
+    ...preparedStreets.diagnostics,
+    source: input.streetSourceMetrics ?? preparedStreets.diagnostics.source,
+  };
+  input.onStreetDiagnostics?.(streetDiagnostics);
+  return { tasks, streetDiagnostics };
+}
+
+export async function prepareHouseTasksForArea(input: {
+  campaignId: string;
+  area: Area;
+  generation: string;
+  buildings: AreaPreparationBuilding[];
+  timestamp: string;
+  randomUUID: () => string;
+  maxBuildings?: number;
+}): Promise<HouseTask[]> {
+  const maxBuildings = input.maxBuildings ?? AREA_PREPARATION_MAX_BUILDINGS;
   const houseTasks: HouseTask[] = [];
   const buildingIds = new Set<number>();
   for (const building of input.buildings) {
@@ -350,19 +447,53 @@ export async function prepareTasksForArea(input: {
     });
     houseTasks.push({ ...house, areaPreparationGeneration: input.generation });
   }
-  const streetDiagnostics: StreetPreparationDiagnostics = {
-    ...preparedStreets.diagnostics,
-    source: input.streetSourceMetrics ?? preparedStreets.diagnostics.source,
-  };
-  input.onStreetDiagnostics?.(streetDiagnostics);
+  return houseTasks;
+}
+
+export async function prepareTasksForArea(input: {
+  campaignId: string;
+  area: Area;
+  generation: string;
+  roads: AreaPreparationRoad[];
+  buildings: AreaPreparationBuilding[];
+  timestamp: string;
+  randomUUID: () => string;
+  maxRoadFragments?: number;
+  maxBuildings?: number;
+  streetSourceMetrics?: StreetPreparationSourceMetrics;
+  onStreetDiagnostics?: (diagnostics: StreetPreparationDiagnostics) => void;
+}): Promise<{
+  tasks: DistributionTask[];
+  houseTasks: HouseTask[];
+  streetDiagnostics: StreetPreparationDiagnostics;
+}> {
+  const streets = await prepareStreetTasksForArea({
+    campaignId: input.campaignId,
+    area: input.area,
+    generation: input.generation,
+    roads: input.roads,
+    timestamp: input.timestamp,
+    maxRoadFragments: input.maxRoadFragments,
+    streetSourceMetrics: input.streetSourceMetrics,
+    onStreetDiagnostics: input.onStreetDiagnostics,
+  });
+  const houseTasks = await prepareHouseTasksForArea({
+    campaignId: input.campaignId,
+    area: input.area,
+    generation: input.generation,
+    buildings: input.buildings,
+    timestamp: input.timestamp,
+    randomUUID: input.randomUUID,
+    maxBuildings: input.maxBuildings,
+  });
   return {
-    tasks,
+    tasks: streets.tasks,
     houseTasks,
-    streetDiagnostics,
+    streetDiagnostics: streets.streetDiagnostics,
   };
 }
 
-/** Splits JSON rows into bounded `json_each(?)` payloads without partial output. */
+/** Splits JSON rows/** Splits JSON rows into bounded `json_each(?)` payloads without partial output. */
 export function chunkAreaPreparationRows<T>(rows: T[], maxBytes = AREA_PREPARATION_CHUNK_BYTES) {
   const chunks: T[][] = [];
   let current: T[] = [];
@@ -385,10 +516,36 @@ export function chunkAreaPreparationRows<T>(rows: T[], maxBytes = AREA_PREPARATI
   return chunks;
 }
 
-function stateGuardSql() {
+type PreparationPhase = "street" | "house";
+
+function phaseStatusColumn(phase: PreparationPhase) {
+  return phase === "street" ? "street_status" : "house_status";
+}
+
+function phaseErrorColumn(phase: PreparationPhase) {
+  return phase === "street" ? "street_error_code" : "house_error_code";
+}
+
+function phaseFailedAtColumn(phase: PreparationPhase) {
+  return phase === "street" ? "street_failed_at" : "house_failed_at";
+}
+
+function aggregateStatusSql(phase: PreparationPhase, nextStatus: AreaPreparationPhaseStatus) {
+  const streetStatus = phase === "street" ? `'${nextStatus}'` : "street_status";
+  const houseStatus = phase === "house" ? `'${nextStatus}'` : "house_status";
+  return `CASE
+    WHEN ${streetStatus} = 'failed' THEN 'failed'
+    WHEN ${streetStatus} = 'pending' OR ${houseStatus} = 'pending' THEN 'pending'
+    WHEN ${streetStatus} = 'ready' THEN 'ready'
+    ELSE 'failed'
+  END`;
+}
+
+function stateGuardSql(phase: PreparationPhase) {
   return `EXISTS (
     SELECT 1 FROM area_task_preparations
-    WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ? AND status = 'pending'
+    WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ?
+      AND ${phaseStatusColumn(phase)} = 'pending'
   )`;
 }
 
@@ -405,9 +562,9 @@ function automaticWorkGuardSql() {
     )`;
 }
 
-function publishGuardSql() {
+function publishGuardSql(phase: PreparationPhase) {
   return `EXISTS (SELECT 1 FROM campaigns WHERE id = ? AND write_token = ?)
-    AND ${stateGuardSql()}
+    AND ${stateGuardSql(phase)}
     AND EXISTS (
       SELECT 1 FROM areas WHERE id = ? AND campaign_id = ? AND geometry_json = ?
     )
@@ -421,6 +578,7 @@ function publishGuardBindings(input: {
   generation: string;
   geometryHash: string;
   geometryJson: string;
+  phase: PreparationPhase;
 }) {
   return [
     input.campaignId,
@@ -439,9 +597,10 @@ function publishGuardBindings(input: {
   ];
 }
 
-async function markPreparationFailed(
+async function markPhaseFailed(
   db: D1DatabaseLike,
   input: {
+    phase: PreparationPhase;
     campaignId: string;
     areaId: string;
     generation: string;
@@ -450,14 +609,29 @@ async function markPreparationFailed(
     now: string;
   },
 ) {
+  const statusColumn = phaseStatusColumn(input.phase);
+  const errorColumn = phaseErrorColumn(input.phase);
+  const failedAtColumn = phaseFailedAtColumn(input.phase);
+  const lastErrorExpression = input.phase === "street"
+    ? "?"
+    : "COALESCE(street_error_code, ?)";
   await db.batch([
     db
       .prepare(
         `UPDATE area_task_preparations
-         SET status = 'failed', failed_at = ?, last_error_code = ?, updated_at = ?
-         WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ? AND status = 'pending'`,
+         SET ${statusColumn} = 'failed',
+             ${failedAtColumn} = ?,
+             ${errorColumn} = ?,
+             status = ${aggregateStatusSql(input.phase, "failed")},
+             failed_at = ?,
+             last_error_code = ${lastErrorExpression},
+             updated_at = ?
+         WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ?
+           AND ${statusColumn} = 'pending'`,
       )
       .bind(
+        input.now,
+        input.code,
         input.now,
         input.code,
         input.now,
@@ -469,7 +643,7 @@ async function markPreparationFailed(
   ]);
 }
 
-function upsertPendingStatement(
+function newGenerationPendingStatement(
   db: D1DatabaseLike,
   input: {
     campaignId: string;
@@ -483,9 +657,13 @@ function upsertPendingStatement(
   return db
     .prepare(
       `INSERT INTO area_task_preparations (
-         campaign_id, area_id, geometry_hash, generation, status, road_count, house_count,
-         source_timestamp, started_at, ready_at, failed_at, last_error_code, updated_at
-       ) VALUES (?, ?, ?, ?, 'pending', 0, 0, NULL, ?, NULL, NULL, NULL, ?)
+         campaign_id, area_id, geometry_hash, generation, status,
+         road_count, house_count, source_timestamp, started_at, ready_at, failed_at, last_error_code,
+         street_status, house_status, street_source_timestamp, house_source_timestamp,
+         street_started_at, house_started_at, street_ready_at, house_ready_at,
+         street_failed_at, house_failed_at, street_error_code, house_error_code, updated_at
+       ) VALUES (?, ?, ?, ?, 'pending', 0, 0, NULL, ?, NULL, NULL, NULL,
+                 'pending', 'pending', NULL, NULL, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?)
        ON CONFLICT(campaign_id, area_id) DO UPDATE SET
          geometry_hash = excluded.geometry_hash,
          generation = excluded.generation,
@@ -497,6 +675,18 @@ function upsertPendingStatement(
          ready_at = NULL,
          failed_at = NULL,
          last_error_code = NULL,
+         street_status = 'pending',
+         house_status = 'pending',
+         street_source_timestamp = NULL,
+         house_source_timestamp = NULL,
+         street_started_at = excluded.street_started_at,
+         house_started_at = excluded.house_started_at,
+         street_ready_at = NULL,
+         house_ready_at = NULL,
+         street_failed_at = NULL,
+         house_failed_at = NULL,
+         street_error_code = NULL,
+         house_error_code = NULL,
          updated_at = excluded.updated_at
        WHERE NOT (
          area_task_preparations.status = 'pending'
@@ -511,7 +701,117 @@ function upsertPendingStatement(
       input.generation,
       input.now,
       input.now,
+      input.now,
+      input.now,
       input.freshPendingCutoff,
+    );
+}
+
+function retryPendingStatement(
+  db: D1DatabaseLike,
+  input: {
+    campaignId: string;
+    areaId: string;
+    geometryHash: string;
+    generation: string;
+    now: string;
+    phases: PreparationPhase[];
+  },
+) {
+  const assignments = [
+    "status = 'pending'",
+    "started_at = ?",
+    "failed_at = NULL",
+    "last_error_code = NULL",
+  ];
+  const bindings: unknown[] = [input.now];
+  const pendingConditions: string[] = [];
+  if (input.phases.includes("street")) {
+    assignments.push(
+      "street_status = 'pending'",
+      "street_started_at = ?",
+      "street_ready_at = NULL",
+      "street_failed_at = NULL",
+      "street_error_code = NULL",
+      "street_source_timestamp = NULL",
+      "road_count = 0",
+    );
+    bindings.push(input.now);
+    pendingConditions.push("street_status <> 'pending'");
+  }
+  if (input.phases.includes("house")) {
+    assignments.push(
+      "house_status = 'pending'",
+      "house_started_at = ?",
+      "house_ready_at = NULL",
+      "house_failed_at = NULL",
+      "house_error_code = NULL",
+      "house_source_timestamp = NULL",
+      "house_count = 0",
+    );
+    bindings.push(input.now);
+    pendingConditions.push("house_status <> 'pending'");
+  }
+  assignments.push("updated_at = ?");
+  bindings.push(input.now);
+  return db
+    .prepare(
+      `UPDATE area_task_preparations
+       SET ${assignments.join(", ")}
+       WHERE campaign_id = ? AND area_id = ? AND geometry_hash = ? AND generation = ?
+         AND ${pendingConditions.join(" AND ")}`,
+    )
+    .bind(
+      ...bindings,
+      input.campaignId,
+      input.areaId,
+      input.geometryHash,
+      input.generation,
+    );
+}
+
+function campaignPublishStatement(
+  db: D1DatabaseLike,
+  input: {
+    phase: PreparationPhase;
+    campaignId: string;
+    areaId: string;
+    revision: number;
+    writeToken: string;
+    generation: string;
+    geometryHash: string;
+    geometryJson: string;
+    now: string;
+  },
+) {
+  return db
+    .prepare(
+      `UPDATE campaigns
+       SET revision = ?, write_token = ?, updated_at = ?
+       WHERE id = ? AND revision = ?
+         AND ${stateGuardSql(input.phase)}
+         AND ${automaticWorkGuardSql()}
+         AND EXISTS (
+           SELECT 1 FROM areas WHERE id = ? AND campaign_id = ? AND geometry_json = ?
+         )`,
+    )
+    .bind(
+      input.revision + 1,
+      input.writeToken,
+      input.now,
+      input.campaignId,
+      input.revision,
+      input.campaignId,
+      input.areaId,
+      input.generation,
+      input.geometryHash,
+      input.campaignId,
+      input.areaId,
+      input.campaignId,
+      input.areaId,
+      input.areaId,
+      input.campaignId,
+      input.geometryJson,
     );
 }
 
@@ -539,7 +839,7 @@ function tasksInsertStatement(
          json_extract(value, '$.createdAt'),
          json_extract(value, '$.updatedAt')
        FROM json_each(?)
-       WHERE ${publishGuardSql()}`,
+       WHERE ${publishGuardSql("street")}`,
     )
     .bind(JSON.stringify(rows), ...guard);
 }
@@ -550,7 +850,7 @@ function streetTasksUpdateStatement(
   guard: ReturnType<typeof publishGuardBindings>,
 ) {
   if (input.rows.length === 0) {
-    return db.prepare("SELECT 1 WHERE " + publishGuardSql()).bind(...guard);
+    return db.prepare("SELECT 1 WHERE " + publishGuardSql("street")).bind(...guard);
   }
   const serialized = JSON.stringify(input.rows);
   return db
@@ -581,7 +881,7 @@ function streetTasksUpdateStatement(
          AND id IN (
            SELECT json_extract(value, '$.id') FROM json_each(?)
          )
-         AND ${publishGuardSql()}`,
+         AND ${publishGuardSql("street")}`,
     )
     .bind(
       serialized,
@@ -601,7 +901,7 @@ function streetTasksDeleteStatement(
   guard: ReturnType<typeof publishGuardBindings>,
 ) {
   if (input.deleteIds.length === 0) {
-    return db.prepare("SELECT 1 WHERE " + publishGuardSql()).bind(...guard);
+    return db.prepare("SELECT 1 WHERE " + publishGuardSql("street")).bind(...guard);
   }
   return db
     .prepare(
@@ -609,9 +909,24 @@ function streetTasksDeleteStatement(
         + "WHERE campaign_id = ? AND area_id = ?\n"
         + "  AND id IN (SELECT value FROM json_each(?))\n"
         + "  AND area_preparation_generation IS NOT NULL AND status = 'open'\n"
-        + "  AND " + publishGuardSql(),
+        + "  AND " + publishGuardSql("street"),
     )
     .bind(input.campaignId, input.areaId, JSON.stringify(input.deleteIds), ...guard);
+}
+
+function houseTasksDeleteStatement(
+  db: D1DatabaseLike,
+  input: { campaignId: string; areaId: string },
+  guard: ReturnType<typeof publishGuardBindings>,
+) {
+  return db
+    .prepare(
+      "DELETE FROM house_tasks\n"
+        + "WHERE campaign_id = ? AND area_id = ?\n"
+        + "  AND area_preparation_generation IS NOT NULL AND status = 'open'\n"
+        + "  AND " + publishGuardSql("house"),
+    )
+    .bind(input.campaignId, input.areaId, ...guard);
 }
 
 function houseTasksInsertStatement(
@@ -638,12 +953,91 @@ function houseTasksInsertStatement(
          json_extract(value, '$.createdAt'),
          json_extract(value, '$.updatedAt')
        FROM json_each(?)
-       WHERE ${publishGuardSql()}`,
+       WHERE ${publishGuardSql("house")}`,
     )
     .bind(JSON.stringify(rows), ...guard);
 }
 
-function failureCode(error: unknown): AreaPreparationFailureCode {
+function phaseReadyStatement(
+  db: D1DatabaseLike,
+  input: {
+    phase: PreparationPhase;
+    campaignId: string;
+    areaId: string;
+    generation: string;
+    geometryHash: string;
+    count: number;
+    sourceTimestamp: string | null;
+    now: string;
+  },
+  guard: ReturnType<typeof publishGuardBindings>,
+) {
+  if (input.phase === "street") {
+    return db
+      .prepare(
+        `UPDATE area_task_preparations
+         SET street_status = 'ready',
+             road_count = ?,
+             street_source_timestamp = ?,
+             street_ready_at = ?,
+             street_failed_at = NULL,
+             street_error_code = NULL,
+             status = ${aggregateStatusSql("street", "ready")},
+             source_timestamp = COALESCE(?, house_source_timestamp),
+             ready_at = CASE WHEN house_status = 'ready' THEN ? ELSE NULL END,
+             failed_at = NULL,
+             last_error_code = house_error_code,
+             updated_at = ?
+         WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ?
+           AND street_status = 'pending' AND ${publishGuardSql("street")}`,
+      )
+      .bind(
+        input.count,
+        input.sourceTimestamp,
+        input.now,
+        input.sourceTimestamp,
+        input.now,
+        input.now,
+        input.campaignId,
+        input.areaId,
+        input.generation,
+        input.geometryHash,
+        ...guard,
+      );
+  }
+  return db
+    .prepare(
+      `UPDATE area_task_preparations
+       SET house_status = 'ready',
+           house_count = ?,
+           house_source_timestamp = ?,
+           house_ready_at = ?,
+           house_failed_at = NULL,
+           house_error_code = NULL,
+           status = ${aggregateStatusSql("house", "ready")},
+           source_timestamp = COALESCE(?, street_source_timestamp),
+           ready_at = CASE WHEN street_status = 'ready' THEN ? ELSE NULL END,
+           last_error_code = street_error_code,
+           updated_at = ?
+       WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ?
+         AND house_status = 'pending' AND ${publishGuardSql("house")}`,
+    )
+    .bind(
+      input.count,
+      input.sourceTimestamp,
+      input.now,
+      input.sourceTimestamp,
+      input.now,
+      input.now,
+      input.campaignId,
+      input.areaId,
+      input.generation,
+      input.geometryHash,
+      ...guard,
+    );
+}
+
+function failureCodefunction failureCode(error: unknown): AreaPreparationFailureCode {
   if (error instanceof StreetPreparationLimitError) {
     return "area_preparation_too_many_features";
   }
@@ -670,10 +1064,267 @@ function failureCode(error: unknown): AreaPreparationFailureCode {
   return "area_preparation_osm_failed";
 }
 
+function phaseFailureResult(
+  state: AreaPreparationState | null,
+  phase: PreparationPhase,
+): PrepareAreaTasksResult {
+  const code = phase === "street"
+    ? state?.streetErrorCode
+    : state?.houseErrorCode;
+  return { outcome: "failed", code: code ?? "area_preparation_osm_failed" };
+}
+
+async function markPhaseError(
+  db: D1DatabaseLike,
+  input: {
+    phase: PreparationPhase;
+    campaignId: string;
+    areaId: string;
+    generation: string;
+    geometryHash: string;
+    now: string;
+  },
+  error: unknown,
+) {
+  const code = failureCode(error);
+  await markPhaseFailed(db, { ...input, code });
+  return { status: "failed" as const, code };
+}
+
+type PhasePublishResult =
+  | { status: "ready"; count: number }
+  | { status: "failed"; code: AreaPreparationFailureCode }
+  | { status: "stale" };
+
+async function publishStreetPhase(
+  db: D1DatabaseLike,
+  run: AreaTaskPreparationRun,
+  options: AreaTaskPreparationOptions,
+  tasks: DistributionTask[],
+  sourceTimestamp: string | null,
+): Promise<PhasePublishResult> {
+  const snapshot = await loadCampaignSnapshot(db, run.campaignId);
+  if (!snapshot) return { status: "stale" };
+  const reconciliation = reconcilePreparedStreetTasks({
+    existingTasks: snapshot.tasks,
+    preparedTasks: tasks,
+    campaignId: run.campaignId,
+    areaId: run.areaId,
+  });
+  if (reconciliation.outcome === "blocked-worked") {
+    await markPhaseFailed(db, {
+      phase: "street",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      code: "area_preparation_work_started",
+      now: run.now,
+    });
+    return { status: "failed", code: "area_preparation_work_started" };
+  }
+  const taskChunks = chunkAreaPreparationRows(reconciliation.inserts, options.chunkBytes);
+  const updateChunks = chunkAreaPreparationRows(reconciliation.updates, options.chunkBytes);
+  if (taskChunks.length + updateChunks.length > AREA_PREPARATION_MAX_INSERT_CHUNKS) {
+    await markPhaseFailed(db, {
+      phase: "street",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      code: "area_preparation_too_many_features",
+      now: run.now,
+    });
+    return { status: "failed", code: "area_preparation_too_many_features" };
+  }
+  const writeToken = (options.randomUUID ?? (() => crypto.randomUUID()))();
+  const geometryJson = JSON.stringify(run.area.geometry);
+  const guard = publishGuardBindings({
+    campaignId: run.campaignId,
+    areaId: run.areaId,
+    writeToken,
+    generation: run.generation,
+    geometryHash: run.geometryHash,
+    geometryJson,
+    phase: "street",
+  });
+  const statements: D1PreparedStatement[] = [
+    campaignPublishStatement(db, {
+      phase: "street",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      revision: snapshot.revision,
+      writeToken,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      geometryJson,
+      now: run.now,
+    }),
+    streetTasksDeleteStatement(
+      db,
+      { campaignId: run.campaignId, areaId: run.areaId, deleteIds: reconciliation.deleteIds },
+      guard,
+    ),
+    ...updateChunks.map((rows) =>
+      streetTasksUpdateStatement(db, {
+        campaignId: run.campaignId,
+        areaId: run.areaId,
+        rows,
+      }, guard)
+    ),
+    ...taskChunks.map((chunk) => tasksInsertStatement(db, chunk, guard)),
+    phaseReadyStatement(db, {
+      phase: "street",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      count: tasks.length,
+      sourceTimestamp,
+      now: run.now,
+    }, guard),
+  ];
+  let results: Awaited<ReturnType<D1DatabaseLike["batch"]>>;
+  try {
+    results = await db.batch(statements);
+  } catch {
+    await markPhaseFailed(db, {
+      phase: "street",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      code: "area_preparation_publish_failed",
+      now: run.now,
+    });
+    return { status: "failed", code: "area_preparation_publish_failed" };
+  }
+  if (
+    (results[0]?.meta?.changes ?? 0) !== 1 ||
+    (results[results.length - 1]?.meta?.changes ?? 0) !== 1
+  ) {
+    const code = await areaHasStartedAutomaticWork(db, run.campaignId, run.areaId)
+      ? "area_preparation_work_started"
+      : "area_preparation_stale";
+    await markPhaseFailed(db, {
+      phase: "street",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      code,
+      now: run.now,
+    });
+    return code === "area_preparation_stale"
+      ? { status: "stale" }
+      : { status: "failed", code };
+  }
+  return { status: "ready", count: tasks.length };
+}
+
+async function publishHousePhase(
+  db: D1DatabaseLike,
+  run: AreaTaskPreparationRun,
+  options: AreaTaskPreparationOptions,
+  houseTasks: HouseTask[],
+  sourceTimestamp: string | null,
+): Promise<PhasePublishResult> {
+  const snapshot = await loadCampaignSnapshot(db, run.campaignId);
+  if (!snapshot) return { status: "stale" };
+  const writeToken = (options.randomUUID ?? (() => crypto.randomUUID()))();
+  const geometryJson = JSON.stringify(run.area.geometry);
+  const guard = publishGuardBindings({
+    campaignId: run.campaignId,
+    areaId: run.areaId,
+    writeToken,
+    generation: run.generation,
+    geometryHash: run.geometryHash,
+    geometryJson,
+    phase: "house",
+  });
+  const statements: D1PreparedStatement[] = [
+    campaignPublishStatement(db, {
+      phase: "house",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      revision: snapshot.revision,
+      writeToken,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      geometryJson,
+      now: run.now,
+    }),
+    houseTasksDeleteStatement(db, {
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+    }, guard),
+    houseTasksInsertStatement(db, houseTasks, guard),
+    phaseReadyStatement(db, {
+      phase: "house",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      count: houseTasks.length,
+      sourceTimestamp,
+      now: run.now,
+    }, guard),
+  ];
+  let results: Awaited<ReturnType<D1DatabaseLike["batch"]>>;
+  try {
+    results = await db.batch(statements);
+  } catch {
+    await markPhaseFailed(db, {
+      phase: "house",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      code: "area_preparation_publish_failed",
+      now: run.now,
+    });
+    return { status: "failed", code: "area_preparation_publish_failed" };
+  }
+  if (
+    (results[0]?.meta?.changes ?? 0) !== 1 ||
+    (results[results.length - 1]?.meta?.changes ?? 0) !== 1
+  ) {
+    const code = await areaHasStartedAutomaticWork(db, run.campaignId, run.areaId)
+      ? "area_preparation_work_started"
+      : "area_preparation_stale";
+    await markPhaseFailed(db, {
+      phase: "house",
+      campaignId: run.campaignId,
+      areaId: run.areaId,
+      generation: run.generation,
+      geometryHash: run.geometryHash,
+      code,
+      now: run.now,
+    });
+    return code === "area_preparation_stale"
+      ? { status: "stale" }
+      : { status: "failed", code };
+  }
+  return { status: "ready", count: houseTasks.length };
+}
+
+function phaseLimits(
+  options: AreaTaskPreparationOptions,
+  consumedUpstreamBytes: number,
+  consumedPackageBytes: number,
+) {
+  const maxAggregateBytes = options.limits?.maxAggregateBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES;
+  const maxPackageBytes = options.limits?.maxPackageBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES;
+  return {
+    ...options.limits,
+    maxAggregateBytes: Math.max(0, maxAggregateBytes - consumedUpstreamBytes),
+    maxPackageBytes: Math.max(0, maxPackageBytes - consumedPackageBytes),
+  };
+}
+
 /**
- * Claims one durable pending generation before any upstream request starts.
- * This lets recovery POST return an honest pending state and prevents a second
- * request from scheduling another OSM fetch for the same fresh geometry.
+ * Claims one durable pending generation before any phase upstream request starts.
+ * A partial retry keeps the already-ready phase and reuses the same generation.
  */
 export async function beginAreaTaskPreparation(
   db: D1DatabaseLike,
@@ -695,33 +1346,53 @@ export async function beginAreaTaskPreparation(
   const now = nowDate.toISOString();
   const geometryHash = await areaPreparationFingerprint(area.geometry);
   const current = await getAreaTaskPreparationState(db, campaignId, areaId);
-  if (current?.status === "ready" && current.geometryHash === geometryHash) {
+  const sameGeometry = current?.geometryHash === geometryHash;
+  const phases: PreparationPhase[] = sameGeometry && current
+    ? [
+        ...(current.streetStatus === "ready" ? [] : ["street" as const]),
+        ...(current.houseStatus === "ready" ? [] : ["house" as const]),
+      ]
+    : ["street", "house"];
+  if (phases.length === 0) {
     return { outcome: "result", result: { outcome: "no-op", state: "ready" } };
   }
   if (current && isFreshPending(current, geometryHash, nowDate)) {
     return { outcome: "result", result: { outcome: "no-op", state: "pending" } };
   }
-  if (await areaHasStartedAutomaticWork(db, campaignId, areaId)) {
+  if (
+    (current && isActionRequiredState(current)) ||
+    (await areaHasStartedAutomaticWork(db, campaignId, areaId))
+  ) {
     return {
       outcome: "result",
       result: { outcome: "failed", code: "area_preparation_work_started" },
     };
   }
 
-  const generation = (options.randomUUID ?? (() => crypto.randomUUID()))();
+  const generation = sameGeometry && current
+    ? current.generation
+    : (options.randomUUID ?? (() => crypto.randomUUID()))();
   try {
-    const freshPendingCutoff = new Date(
-      nowDate.getTime() - AREA_PREPARATION_PENDING_FRESH_MS,
-    ).toISOString();
     const started = await db.batch([
-      upsertPendingStatement(db, {
-        campaignId,
-        areaId,
-        geometryHash,
-        generation,
-        now,
-        freshPendingCutoff,
-      }),
+      sameGeometry && current
+        ? retryPendingStatement(db, {
+            campaignId,
+            areaId,
+            geometryHash,
+            generation,
+            now,
+            phases,
+          })
+        : newGenerationPendingStatement(db, {
+            campaignId,
+            areaId,
+            geometryHash,
+            generation,
+            now,
+            freshPendingCutoff: new Date(
+              nowDate.getTime() - AREA_PREPARATION_PENDING_FRESH_MS,
+            ).toISOString(),
+          }),
     ]);
     if ((started[0]?.meta?.changes ?? 0) === 0) {
       return { outcome: "result", result: { outcome: "no-op", state: "pending" } };
@@ -735,178 +1406,120 @@ export async function beginAreaTaskPreparation(
 
   return {
     outcome: "run",
-    run: { campaignId, areaId, snapshot, area, geometryHash, generation, now },
+    run: { campaignId, areaId, snapshot, area, geometryHash, generation, phases, now },
   };
 }
 
 /**
- * Runs the upstream fetch and the guarded atomic publish for a previously
- * claimed generation. The only publish boundary is the final D1 batch, so
- * failed or stale jobs cannot expose partial automatic Tasks.
+ * Runs independent Road/Street and Building/House branches. Each branch has an
+ * atomic guarded publish, so a House upstream failure never hides ready Streets.
  */
 export async function runAreaTaskPreparation(
   db: D1DatabaseLike,
   run: AreaTaskPreparationRun,
   options: AreaTaskPreparationOptions = {},
 ): Promise<PrepareAreaTasksResult> {
-  const { campaignId, areaId, snapshot, area, geometryHash, generation, now } = run;
+  const { campaignId, areaId, area, geometryHash, generation, now } = run;
+  let roadFeatures: Awaited<ReturnType<typeof fetchOsmFeaturesForArea>> | null = null;
+  let stale = false;
 
-  try {
-    const osm = await fetchOsmFeaturesForArea({
-      geometry: area.geometry,
-      upstreamUrl: options.upstreamUrl,
-      fetchImpl: options.fetchImpl,
-      now: options.now,
-      limits: options.limits,
-    });
-    const prepared = await prepareTasksForArea({
-      campaignId,
-      area,
-      generation,
-      roads: osm.roads,
-      buildings: osm.buildings,
-      timestamp: now,
-      randomUUID: options.randomUUID ?? (() => crypto.randomUUID()),
-      maxRoadFragments: options.maxRoadFragments,
-      maxBuildings: options.maxBuildings,
-      streetSourceMetrics: osm.metrics,
-      onStreetDiagnostics: options.onStreetDiagnostics,
-    });
-    const reconciliation = reconcilePreparedStreetTasks({
-      existingTasks: snapshot.tasks,
-      preparedTasks: prepared.tasks,
-      campaignId,
-      areaId,
-    });
-    if (reconciliation.outcome === "blocked-worked") {
-      throw new PreparationFailure(
-        "area_preparation_work_started",
-        "Die Area ist nach begonnener Arbeit für eine automatische Neuvorbereitung gesperrt.",
-      );
-    }
-    const taskChunks = chunkAreaPreparationRows(reconciliation.inserts, options.chunkBytes);
-    const updateChunks = chunkAreaPreparationRows(reconciliation.updates, options.chunkBytes);
-    const houseChunks = chunkAreaPreparationRows(prepared.houseTasks, options.chunkBytes);
-    if (taskChunks.length + updateChunks.length + houseChunks.length > AREA_PREPARATION_MAX_INSERT_CHUNKS) {
-      throw new PreparationFailure(
-        "area_preparation_too_many_features",
-        "Die vorbereitete Task-Menge überschreitet die atomare Publish-Grenze.",
-      );
-    }
-    const writeToken = (options.randomUUID ?? (() => crypto.randomUUID()))();
-    const geometryJson = JSON.stringify(area.geometry);
-    const guard = publishGuardBindings({
-      campaignId,
-      areaId,
-      writeToken,
-      generation,
-      geometryHash,
-      geometryJson,
-    });
-    const nextRevision = snapshot.revision + 1;
-    const statements: D1PreparedStatement[] = [
-      db
-        .prepare(
-          `UPDATE campaigns
-           SET revision = ?, write_token = ?, updated_at = ?
-           WHERE id = ? AND revision = ?
-             AND ${stateGuardSql()}
-             AND ${automaticWorkGuardSql()}
-             AND EXISTS (
-               SELECT 1 FROM areas WHERE id = ? AND campaign_id = ? AND geometry_json = ?
-             )`,
-        )
-        .bind(
-          nextRevision,
-          writeToken,
-          now,
-          campaignId,
-          snapshot.revision,
-          campaignId,
-          areaId,
-          generation,
-          geometryHash,
-          campaignId,
-          areaId,
-          campaignId,
-          areaId,
-          areaId,
-          campaignId,
-          geometryJson,
-        ),
-      db
-        .prepare(
-          `DELETE FROM house_tasks
-           WHERE campaign_id = ? AND area_id = ?
-             AND area_preparation_generation IS NOT NULL AND status = 'open'
-             AND ${publishGuardSql()}`,
-        )
-        .bind(campaignId, areaId, ...guard),
-      streetTasksDeleteStatement(
-        db,
-        { campaignId, areaId, deleteIds: reconciliation.deleteIds },
-        guard,
-      ),
-      ...updateChunks.map((rows) =>
-        streetTasksUpdateStatement(db, { campaignId, areaId, rows }, guard)
-      ),
-      ...taskChunks.map((chunk) => tasksInsertStatement(db, chunk, guard)),
-      ...houseChunks.map((chunk) => houseTasksInsertStatement(db, chunk, guard)),
-      db
-        .prepare(
-          `UPDATE area_task_preparations
-           SET status = 'ready', road_count = ?, house_count = ?, source_timestamp = ?,
-               ready_at = ?, failed_at = NULL, last_error_code = NULL, updated_at = ?
-           WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ?
-             AND status = 'pending' AND ${publishGuardSql()}`,
-        )
-        .bind(
-          prepared.tasks.length,
-          prepared.houseTasks.length,
-          osm.sourceTimestamp,
-          now,
-          now,
-          campaignId,
-          areaId,
-          generation,
-          geometryHash,
-          ...guard,
-        ),
-    ];
-    let results: Awaited<ReturnType<D1DatabaseLike["batch"]>>;
+  if (run.phases.includes("street")) {
     try {
-      results = await db.batch(statements);
-    } catch {
-      throw new PreparationFailure(
-        "area_preparation_publish_failed",
-        "Die vorbereiteten Tasks konnten nicht atomar veröffentlicht werden.",
+      roadFeatures = await fetchOsmFeaturesForArea({
+        geometry: area.geometry,
+        upstreamUrl: options.upstreamUrl,
+        fetchImpl: options.fetchImpl,
+        now: options.now,
+        limits: options.limits,
+        phase: "roads",
+      });
+      const preparedStreets = await prepareStreetTasksForArea({
+        campaignId,
+        area,
+        generation,
+        roads: roadFeatures.roads,
+        timestamp: now,
+        maxRoadFragments: options.maxRoadFragments,
+        streetSourceMetrics: roadFeatures.metrics,
+        onStreetDiagnostics: options.onStreetDiagnostics,
+      });
+      const published = await publishStreetPhase(
+        db,
+        run,
+        options,
+        preparedStreets.tasks,
+        roadFeatures.sourceTimestamp,
       );
-    }
-    if ((results[0]?.meta?.changes ?? 0) !== 1) {
-      await markPreparationFailed(db, {
+      if (published.status === "stale") stale = true;
+    } catch (error) {
+      await markPhaseError(db, {
+        phase: "street",
         campaignId,
         areaId,
         generation,
         geometryHash,
-        code: "area_preparation_stale",
         now,
-      });
-      return { outcome: "stale", code: "area_preparation_stale" };
+      }, error);
     }
+  }
+
+  if (run.phases.includes("house") && !stale) {
+    try {
+      const buildingFeatures = await fetchOsmFeaturesForArea({
+        geometry: area.geometry,
+        upstreamUrl: options.upstreamUrl,
+        fetchImpl: options.fetchImpl,
+        now: options.now,
+        limits: phaseLimits(
+          options,
+          roadFeatures?.metrics.upstreamBytes ?? 0,
+          roadFeatures?.metrics.packageBytes ?? 0,
+        ),
+        phase: "buildings",
+      });
+      const houseTasks = await prepareHouseTasksForArea({
+        campaignId,
+        area,
+        generation,
+        buildings: buildingFeatures.buildings,
+        timestamp: now,
+        randomUUID: options.randomUUID ?? (() => crypto.randomUUID()),
+        maxBuildings: options.maxBuildings,
+      });
+      const published = await publishHousePhase(
+        db,
+        run,
+        options,
+        houseTasks,
+        buildingFeatures.sourceTimestamp,
+      );
+      if (published.status === "stale") stale = true;
+    } catch (error) {
+      await markPhaseError(db, {
+        phase: "house",
+        campaignId,
+        areaId,
+        generation,
+        geometryHash,
+        now,
+      }, error);
+    }
+  }
+
+  if (stale) return { outcome: "stale", code: "area_preparation_stale" };
+  const state = await getAreaTaskPreparationState(db, campaignId, areaId);
+  if (state?.streetStatus === "ready") {
     return {
       outcome: "ready",
-      roadCount: prepared.tasks.length,
-      houseCount: prepared.houseTasks.length,
-      generation,
+      roadCount: state.roadCount,
+      houseCount: state.houseCount,
+      generation: state.generation,
     };
-  } catch (error) {
-    const code = failureCode(error);
-    await markPreparationFailed(db, { campaignId, areaId, generation, geometryHash, code, now });
-    return { outcome: "failed", code };
   }
+  return phaseFailureResult(state, "street");
 }
 
-/** Starts and, when claimed, completes a server-owned Area preparation job. */
+/** Starts and, when claimed, completes server-owned Area preparation phases. */
 export async function prepareAreaTasks(
   db: D1DatabaseLike,
   campaignId: string,
@@ -919,7 +1532,7 @@ export async function prepareAreaTasks(
     : started.result;
 }
 
-export async function areaHasStartedAutomaticWork(
+export async function areaHasStartedAutomaticWorkexport async function areaHasStartedAutomaticWork(
   db: D1DatabaseLike,
   campaignId: string,
   areaId: string,
@@ -958,19 +1571,30 @@ export async function shouldStartAreaPreparation(
   }
   const geometryHash = await areaPreparationFingerprint(area.geometry);
   const state = await getAreaTaskPreparationState(db, campaignId, area.id);
-  if (state?.status === "ready" && state.geometryHash === geometryHash) {
+  const sameGeometry = state?.geometryHash === geometryHash;
+  const complete = Boolean(
+    sameGeometry &&
+    state &&
+    state.streetStatus === "ready" &&
+    state.houseStatus === "ready",
+  );
+  if (complete) {
     return { schemaAvailable: true as const, shouldStart: false, state: publicState(state) };
   }
   if (state && isFreshPending(state, geometryHash, now)) {
     return { schemaAvailable: true as const, shouldStart: false, state: publicState(state) };
   }
-  if (await areaHasStartedAutomaticWork(db, campaignId, area.id)) {
+  if (
+    (state && isActionRequiredState(state)) ||
+    (await areaHasStartedAutomaticWork(db, campaignId, area.id))
+  ) {
     return {
       schemaAvailable: true as const,
       shouldStart: false,
       state: {
         ...publicState(state),
         errorCode: "area_preparation_work_started",
+        actionRequired: true,
       },
     };
   }
