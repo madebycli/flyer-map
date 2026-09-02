@@ -32,10 +32,8 @@ test("work-started preparation is visible without a retry control", async () => 
     readFile("src/i18n.ts", "utf8"),
     readFile("src/areaPreparation/preparationPolling.ts", "utf8"),
   ]);
-  const actionRequiredBlock = app.slice(
-    app.indexOf('className="area-preparation-status is-action-required"'),
-    app.indexOf('t(language, "areaPreparationPending")'),
-  );
+  const actionRequiredStart = app.indexOf('className="area-preparation-status is-action-required"');
+  const actionRequiredBlock = app.slice(actionRequiredStart, app.indexOf("</div>", actionRequiredStart));
   assert.match(actionRequiredBlock, /areaPreparationActionRequired/u);
   assert.doesNotMatch(actionRequiredBlock, /areaPreparationRetry|retryAreaPreparation/u);
   assert.match(i18n, /areaPreparationActionRequired/u);
