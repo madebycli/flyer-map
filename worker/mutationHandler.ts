@@ -29,6 +29,10 @@ import {
   type AreaTaskPreparationOptions,
 } from "./areaTaskPreparation.ts";
 import { AUTO_AREA_PREPARATION_ENABLED } from "../src/domain/missionPolicy.ts";
+import {
+  hasRxdbSyncSchema,
+  rxdbChangeFeedEntriesForMutation,
+} from "./rxdbChangeFeed.ts";
 
 const MAX_MUTATION_BYTES = 256_000;
 const MAX_PERSIST_ATTEMPTS = 3;
@@ -309,8 +313,24 @@ export async function handleCampaignMutation(
             candidate,
             mutation,
             domainEvent?.fieldSessionId ?? null,
-          )
-        : null;
+        )
+      : null;
+    let syncAfter = snapshotValidation.snapshot;
+    if (automationExecution && mutation.type === "house.set-status") {
+      // The guarded D1 batch applies this parent completion after the direct
+      // House change. Materialize the expected post-batch parent for the feed.
+      syncAfter = {
+        ...syncAfter,
+        tasks: syncAfter.tasks.map((task) =>
+          task.id === automationExecution.parentStreetTaskId && task.status === "open"
+            ? { ...task, status: "completed", completedAt: mutation.createdAt, updatedAt: mutation.createdAt }
+            : task,
+        ),
+      };
+    }
+    const syncChanges = (await hasRxdbSyncSchema(db))
+      ? rxdbChangeFeedEntriesForMutation(current, syncAfter, mutation)
+      : [];
 
     const persisted = await persistCampaignMutation(
       db,
@@ -319,6 +339,7 @@ export async function handleCampaignMutation(
       fingerprint,
       domainEvent,
       automationExecution,
+      syncChanges,
     );
     if (persisted.ok) {
       if (

@@ -2,8 +2,8 @@
 id: architecture-live-teams
 type: architecture
 status: accepted
-last_updated: 2026-08-27
-related: [product-roadmap, architecture-security, architecture-data, architecture-identity-permissions, architecture-collaboration, plan-012-platform-app-expansion, ADR-0014, ADR-0017]
+last_updated: 2026-09-02
+related: [product-roadmap, architecture-security, architecture-data, architecture-identity-permissions, architecture-collaboration, plan-012-platform-app-expansion, ADR-0014, ADR-0017, ADR-0025]
 source_of_truth_for: [live-field-groups, team-qr-codes, team-join-codes, live-group-discoverability, temporary-group-memberships]
 ---
 
@@ -179,7 +179,9 @@ Multiple devices in one Field Group share authoritative Campaign/Team progress t
 
 Rules:
 - new join always requires online Worker redemption;
-- no WebSocket, Service Worker or Background Sync requirement is introduced;
+- the optional ADR-0025 WebSocket carries only a Campaign invalidation hint; it
+  is not a data source, authorization channel or offline-write path;
+- no Service Worker or Background Sync requirement is introduced;
 - already authorized temporary participants may queue permitted status work through M5 while offline;
 - every reconnect mutation is re-authorized against current membership/group state;
 - removed/closed/expired access becomes visibly blocked instead of retrying forever.

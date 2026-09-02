@@ -261,6 +261,17 @@ The endpoint remains protected by the server-only bootstrap contract. It returns
 
 Snapshot reads remain the protected read model. `PUT /api/campaigns/:id/snapshot` is retired and returns HTTP 410 without claiming a revision or writing D1. Normal Campaign, Team, Area, Street, House, Collection and Pickup changes use explicit M5 or specialized mutations.
 
+### RxDB entity change feed (Mission branch)
+
+Migration `0017_rxdb_sync_changes.sql` is additive and intentionally prepared
+only. It stores a monotonic `seq`, Campaign id, one of five collection names,
+document id, upsert/delete operation, scope Team id, bounded canonical document
+JSON and timestamp. `campaign_sync_changes` is not a second source of truth:
+the same Worker transaction first claims the Campaign revision and persists the
+canonical narrow mutation, then appends entity deltas/tombstones guarded by that
+claim. The RxDB pull endpoint pages it by checkpoint and never expands it to a
+full Campaign snapshot per poll.
+
 ### M5 mutation write
 
 Protected endpoint:

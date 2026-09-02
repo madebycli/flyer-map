@@ -18,7 +18,9 @@
     "maplibre-gl": "5.7.1",
     "qrcode.react": "4.2.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "rxdb": "17.5.0",
+    "rxjs": "7.8.2"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.54.0",

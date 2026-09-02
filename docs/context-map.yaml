@@ -1,4 +1,4 @@
-version: 22
+version: 23
 
 entrypoints:
   always:
@@ -25,6 +25,7 @@ routing_rules:
   - for the 2026-09-02 mission branch, manual Street creation, dormant automatic preparation, campaign-local Admin passwords, password reset or migrations 0015/0016, load ADR-0023 before proposed Organization identity documents
   - for post-mission automatic Street editing, load plan-smart-street-edit-after-mission and ADR-0023, then follow Smart Street runtime, automatic Area preparation, Map, Offline Sync, Security and Quality edges
   - for mission day-one sync recovery, Tour QR startup, Viewer team scope or terminal M5 queue records, load plan-mission-day-one-fixpack and follow Offline Sync, Security, Live Teams, UX and Quality edges
+  - for the RxDB-first mission sync, migration 0017, checkpoint feed, Durable-Object invalidation or M5-to-RxDB recovery import, load ADR-0024, ADR-0025 and plan-028, then follow Data, Offline Sync, Security, Stack and Quality edges
   - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
@@ -200,6 +201,20 @@ nodes:
     topics: [mission-release, manual-streets, area-validation, campaign-admin, username, password, password-reset, sessions, migration-0015, migration-0016]
     load_when: [mission branch, manual Street, automatic preparation disabled, Campaign Admin password, setup link, password reset, login, migration 0015, migration 0016]
 
+  - id: adr-rxdb-local-first-mission-sync
+    path: docs/decisions/ADR-0024-rxdb-local-first-mission-sync.md
+    type: decision
+    status: accepted
+    topics: [mission-release, rxdb, indexeddb, dexie, sync, checkpoint, change-feed, migration-0017, oss]
+    load_when: [RxDB, local-first sync, change feed, migration 0017, multi-device sync, M5 legacy import]
+
+  - id: adr-rxdb-campaign-invalidation
+    path: docs/decisions/ADR-0025-rxdb-campaign-invalidation.md
+    type: decision
+    status: accepted
+    topics: [mission-release, rxdb, websocket, durable-object, hibernation, invalidation, checkpoint, safety-resync]
+    load_when: [RxDB realtime, Campaign WebSocket, Durable Object invalidation, missed signal, safety resync]
+
   - id: adr-capability-roles
     path: docs/decisions/ADR-0016-capability-role-templates.md
     type: decision
@@ -361,6 +376,20 @@ nodes:
     topics: [mission-release, m5, sync, conflict-recovery, field-groups, viewer, team-colors]
     load_when: [mission Day-One fixpack, Street refresh, stale IndexedDB queue, Tour QR, Viewer Team leak]
 
+  - id: plan-028-rxdb-local-first-mission-sync
+    path: docs/plans/active/028-rxdb-local-first-mission-sync.md
+    type: plan
+    status: active
+    topics: [mission-release, rxdb, dexie, indexeddb, sync, checkpoint, change-feed, migration-0017, multi-device]
+    load_when: [RxDB mission sync, offline replication, checkpoint pull, entity conflict, 50 devices]
+
+  - id: prompt-continue-rxdb-sync-latest
+    path: docs/prompts/CONTINUE_RXDB_SYNC_LATEST.md
+    type: handoff
+    status: current
+    topics: [rxdb, mission-release, handoff, ci, migration-0017]
+    load_when: [continue RxDB sync, latest RxDB handoff, exact feature head]
+
   - id: plan-collection-pickup-persistence
     path: docs/plans/active/021-collection-pickup-persistence.md
     type: plan
@@ -455,6 +484,20 @@ edges:
   - { from: plan-m5-remove-legacy-snapshot-writes, to: data, relation: updates_write_contract }
   - { from: plan-m5-remove-legacy-snapshot-writes, to: offline-sync, relation: updates_conflict_recovery }
   - { from: plan-m5-remove-legacy-snapshot-writes, to: quality, relation: validated_by }
+  - { from: adr-rxdb-local-first-mission-sync, to: offline-sync, relation: governs }
+  - { from: adr-rxdb-local-first-mission-sync, to: security, relation: constrains }
+  - { from: adr-rxdb-local-first-mission-sync, to: stack, relation: selects_dependency }
+  - { from: adr-rxdb-campaign-invalidation, to: adr-rxdb-local-first-mission-sync, relation: extends }
+  - { from: adr-rxdb-campaign-invalidation, to: offline-sync, relation: governs_realtime }
+  - { from: adr-rxdb-campaign-invalidation, to: security, relation: constrains }
+  - { from: adr-rxdb-campaign-invalidation, to: stack, relation: selects_runtime }
+  - { from: plan-028-rxdb-local-first-mission-sync, to: adr-rxdb-local-first-mission-sync, relation: records_decision }
+  - { from: plan-028-rxdb-local-first-mission-sync, to: data, relation: implements_change_feed }
+  - { from: plan-028-rxdb-local-first-mission-sync, to: offline-sync, relation: implements }
+  - { from: plan-028-rxdb-local-first-mission-sync, to: security, relation: constrained_by }
+  - { from: plan-028-rxdb-local-first-mission-sync, to: quality, relation: validated_by }
+  - { from: prompt-continue-rxdb-sync-latest, to: plan-028-rxdb-local-first-mission-sync, relation: hands_off }
+  - { from: prompt-continue-rxdb-sync-latest, to: adr-rxdb-local-first-mission-sync, relation: references }
   - { from: plan-m6-house-persistence, to: data, relation: implemented_foundation }
   - { from: plan-app-launcher-sheet, to: ux, relation: implemented }
   - { from: plan-feature-complete-platform, to: live-teams, relation: implements_current_slice }

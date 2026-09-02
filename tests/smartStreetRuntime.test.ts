@@ -43,7 +43,8 @@ test("automatic Street Tasks use the durable normal task and mutation path", asy
   assert.match(app, /selectedTask\.areaPreparationGeneration/u);
   assert.match(diff, /mutationDiffBase\.ts/u);
   assert.match(baseDiff, /\.\.\.\(task\.source \? \{ source: task\.source \} : \{\}\)/u);
-  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation, record\.fieldGroupId\)/u);
+  assert.match(store, /runtime\.sync\.applyMutation\(mutation\)/u);
+  assert.doesNotMatch(store, /processMutationQueue\(/u);
 });
 
 test("manual Street creation retains Area permission and never activates preparation polling", async () => {

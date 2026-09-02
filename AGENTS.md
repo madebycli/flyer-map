@@ -170,6 +170,11 @@ When behavior, architecture, data structures, security assumptions, deployment o
 
 `docs/status/CURRENT.md` must stay short. It is current state, not a changelog.
 
+For a durable dependency or cloud-product choice, record the evaluated
+alternatives, licensing/cost/SaaS requirement, lock version and rollback path in
+an ADR or architecture document. Prefer an OSS-first, self-hosted-compatible
+path unless a paid or managed service has explicit product approval.
+
 ## Decision records
 
 Architecture decisions that would be expensive or confusing to reverse require an ADR in `docs/decisions/`.

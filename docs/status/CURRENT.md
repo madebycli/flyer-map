@@ -15,12 +15,37 @@ Mission-kritischer Produktfluss:
 
 ```text
 Admin -> Teams/Gebiet -> manuelle Streets/Houses
--> Street-/House-Status -> M5 Queue/Sync -> gemeinsamer Stand auf weiteren Geräten
+-> Street-/House-Status -> RxDB Pull/Push + D1 Change Feed -> gemeinsamer Stand auf weiteren Geräten
 ```
 
 Der normale Launcher ist für die Mission auf `Team`, `Fortschritt`, `Einstellungen` und bei berechtigtem Zugriff `Gebiet` reduziert. Bestehende Einsätze-, Activity-, Automation-, Comment- und Collection-Runtimes werden nicht gelöscht und keine Datenhistorie wird verändert. Sicherheits-, Sync-, Konflikt-, Access- und Area-Preparation-Fehler bleiben sichtbar.
 
-PR #72 bleibt Draft gegen `ui-app-launcher-sheet`. Kein Merge, kein Ready-for-Review und kein manueller Deploy ohne expliziten Auftrag.
+PR #73 bleibt Draft gegen `ui-app-launcher-sheet`. Kein Merge, kein Ready-for-Review und kein manueller Deploy ohne expliziten Auftrag.
+
+## RxDB Mission Sync candidate
+
+Die verifizierte Rollback-Basis ist `mission-release-2026-09-02-manual` auf
+`5e7148d2a32f6237861e7e6a05e022eeb67c91ce` mit erfolgreichem CI-Run
+`33597980789`. Davon leitet sich lokal `mission-rxdb-sync` ab. Diese neue Linie
+ersetzt den normalen M5-Browser-Schreiber durch RxDB/Dexie mit fünf
+normalisierten Collections und Worker Pull/Push, ohne die kanonische D1- oder
+Autorisierungsgrenze zu ändern. Der alte M5-Store bleibt nur für einen
+gesicherten Einmalimport älterer Offline-Intents.
+
+Realtime ist jetzt als optionales Campaign-Signal ergänzt: Nach einem D1-/Feed-
+Commit benachrichtigt der authentifizierte Worker ein hibernierendes Durable
+Object; WebSocket-Clients erhalten nur `changed` plus Sequenz und holen die
+kanonischen Dokumente weiterhin über RxDB HTTP. Ein einzelner Campaign-
+Checkpoint prüft den High-Water-Mark alle 45 Sekunden und fängt verlorene
+Signale auf.
+
+Migration `0017_rxdb_sync_changes.sql` ist vorbereitet und **nicht remote
+angewendet**. Es gab keinen manuellen Deploy, Merge, Ready-for-Review oder
+Remote-D1-Eingriff; der Branch-Push und Draft-PR erfolgen erst nach den lokalen
+Gates. Vor einem Release sind der reviewed Migrations-Rollout, CI
+auf dem exakten gepushten Head, Preview sowie Zwei-Browser-, Android- und
+iPhone-Off-/Reconnect-Smokes Pflicht. ADR-0024 und Plan 028 sind dafür die
+aktuelle Entscheidungs- und Evidence-Route.
 
 ## Baseline
 

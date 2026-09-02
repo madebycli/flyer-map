@@ -26,9 +26,9 @@ test("fresh Access-Link startup waits for redemption before operator recovery", 
   assert.match(gateSource, /nextState === "idle" \|\| nextState === "pending"/u);
   assert.match(gateSource, /accessState !== "required"/u);
 
-  const pendingIndex = storeSource.indexOf('syncRuntime.accessState = "pending"');
+  const pendingIndex = storeSource.indexOf('runtime.accessState = "pending"');
   const redeemIndex = storeSource.indexOf(
-    "redeemCampaignAccess(targetCampaignId, fragmentToken)",
+    "redeemCampaignAccess(targetCampaignId, token)",
   );
   const removeIndex = storeSource.indexOf("removeAccessTokenFromUrl()", redeemIndex);
   assert.ok(pendingIndex >= 0);

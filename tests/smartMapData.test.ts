@@ -73,7 +73,8 @@ test("normal Area flow leaves OSM fetching and offline downloads out of the brow
   assert.doesNotMatch(app, /smartRoadMapPackage|smartHouseMapPackage|smartMapRequestRef|fetchMapDataPackage/u);
   assert.doesNotMatch(app, /browserOfflineMapRepository/u);
   assert.doesNotMatch(settings, /downloadOfflineMapPackage|browserOfflineMapRepository|offline-map-section/u);
-  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation, record\.fieldGroupId\)/u);
+  assert.match(store, /runtime\.sync\.applyMutation\(mutation\)/u);
+  assert.doesNotMatch(store, /processMutationQueue\(/u);
   assert.match(store, /browserMutationQueue/u);
   assert.match(store, /writeLocalSnapshot/u);
 });

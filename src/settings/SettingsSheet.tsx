@@ -30,6 +30,7 @@ type Props = {
   onLanguageChange: (language: Language) => void;
   onRenameCampaign: (name: string) => void;
   onNormalizeCampaignName: () => void;
+  onCommitCampaignDraft: () => void;
   onSaveCurrentFocus: () => void;
   onJumpToFocus: () => void;
   onRemoveFocus: () => void;
@@ -71,6 +72,7 @@ export function SettingsSheet({
   onLanguageChange,
   onRenameCampaign,
   onNormalizeCampaignName,
+  onCommitCampaignDraft,
   onSaveCurrentFocus,
   onJumpToFocus,
   onRemoveFocus,
@@ -316,7 +318,8 @@ export function SettingsSheet({
               <input
                 value={campaign.name}
                 onChange={(event) => onRenameCampaign(event.target.value)}
-                onBlur={onNormalizeCampaignName}
+                onBlur={() => { onNormalizeCampaignName(); onCommitCampaignDraft(); }}
+                onKeyDown={(event) => { if (event.key === "Enter") onCommitCampaignDraft(); }}
                 maxLength={80}
               />
             </label>

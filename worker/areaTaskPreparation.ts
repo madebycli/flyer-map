@@ -25,6 +25,11 @@ import {
   type FetchLike,
   type OsmFeaturesForAreaLimits,
 } from "./offlineMap.ts";
+import {
+  hasRxdbSyncSchema,
+  rxdbChangeFeedEntriesForSnapshotDelta,
+  rxdbChangeFeedStatements,
+} from "./rxdbChangeFeed.ts";
 
 export const AREA_PREPARATION_PENDING_FRESH_MS = 60_000;
 export const AREA_PREPARATION_MAX_ROAD_FRAGMENTS = 2_000;
@@ -85,6 +90,8 @@ export type AreaTaskPreparationOptions = {
   maxRoadFragments?: number;
   maxBuildings?: number;
   chunkBytes?: number;
+  /** Runs after the guarded D1/feed publish; failures must not roll back the publish. */
+  onCommitted?: () => void | Promise<void>;
 };
 
 /** A claimed, server-owned run whose pending state is already durable in D1. */
@@ -657,6 +664,25 @@ export async function runAreaTaskPreparation(
       geometryJson,
     });
     const nextRevision = snapshot.revision + 1;
+    const afterSnapshot: CampaignSnapshot = {
+      ...snapshot,
+      revision: nextRevision,
+      tasks: [
+        ...snapshot.tasks.filter((task) =>
+          !(task.areaId === areaId && task.areaPreparationGeneration !== null && task.status === "open"),
+        ),
+        ...prepared.tasks,
+      ],
+      houseTasks: [
+        ...(snapshot.houseTasks ?? []).filter((task) =>
+          !(task.areaId === areaId && task.areaPreparationGeneration !== null && task.status === "open"),
+        ),
+        ...prepared.houseTasks,
+      ],
+    };
+    const syncChanges = (await hasRxdbSyncSchema(db))
+      ? rxdbChangeFeedEntriesForSnapshotDelta(snapshot, afterSnapshot)
+      : [];
     const statements: D1PreparedStatement[] = [
       db
         .prepare(
@@ -721,6 +747,11 @@ export async function runAreaTaskPreparation(
           ...guard,
         ),
     ];
+    if (syncChanges.length > 0) {
+      statements.push(
+        ...rxdbChangeFeedStatements(db, campaignId, writeToken, now, syncChanges),
+      );
+    }
     const results = await db.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) {
       await markPreparationFailed(db, {
@@ -733,6 +764,7 @@ export async function runAreaTaskPreparation(
       });
       return { outcome: "stale", code: "area_preparation_stale" };
     }
+    void Promise.resolve(options.onCommitted?.()).catch(() => undefined);
     return {
       outcome: "ready",
       roadCount: prepared.tasks.length,

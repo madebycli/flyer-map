@@ -6,6 +6,7 @@ import {
 } from "./data/campaignApi";
 import {
   loadCampaignSnapshot,
+  flushRxdbDrafts,
   manualRefreshCampaign,
   saveCampaignSnapshot,
   setCampaignFieldGroupContext,
@@ -1359,11 +1360,12 @@ export default function App({
           onLanguageChange={setLanguage}
           onRenameCampaign={renameCampaign}
           onNormalizeCampaignName={normalizeCampaignName}
+          onCommitCampaignDraft={flushRxdbDrafts}
           onSaveCurrentFocus={saveCurrentFocus}
           onJumpToFocus={jumpToFocus}
           onRemoveFocus={removeFocus}
           onResetPersonalCamera={resetPersonalCamera}
-          onClose={() => setSheet(null)}
+          onClose={() => { flushRxdbDrafts(); setSheet(null); }}
           collapsed={sheetCollapsed}
           onToggleCollapsed={() => setSheetCollapsed((collapsed) => !collapsed)}
         />
@@ -1377,7 +1379,7 @@ export default function App({
               <span className="eyebrow">{t(language, "campaignSettings")}</span>
               <strong>{language === "de" ? "Campaign-Kommentare" : "Campaign comments"}</strong>
             </div>
-            <button className="icon-button" type="button" onClick={() => setSheet(null)} aria-label={t(language, "close")}>×</button>
+            <button className="icon-button" type="button" onClick={() => { flushRxdbDrafts(); setSheet(null); }} aria-label={t(language, "close")}>×</button>
           </div>
           <CommentsContextPanel
             campaignId={snapshot.campaign.id}
@@ -1400,7 +1402,7 @@ export default function App({
               <span className="eyebrow">{t(language, "campaignSettings")}</span>
               <strong>{t(language, "manageTeams")}</strong>
             </div>
-            <button className="icon-button" type="button" onClick={() => setSheet(null)} aria-label={t(language, "close")}>×</button>
+            <button className="icon-button" type="button" onClick={() => { flushRxdbDrafts(); setSheet(null); }} aria-label={t(language, "close")}>×</button>
           </div>
 
           <div className="team-list">
@@ -1419,7 +1421,8 @@ export default function App({
                     aria-label={t(language, "teamName", { name: team.name || t(language, "team") })}
                     value={team.name}
                     onChange={(event) => updateTeam(team.id, { name: event.target.value })}
-                    onBlur={() => normalizeTeamName(team)}
+                    onBlur={() => { normalizeTeamName(team); flushRxdbDrafts(); }}
+                    onKeyDown={(event) => { if (event.key === "Enter") flushRxdbDrafts(); }}
                     maxLength={40}
                   />
                   <button className="small-action" type="button" onClick={() => setActiveTeamId(team.id)} aria-pressed={team.id === activeTeamId}>
@@ -1443,7 +1446,7 @@ export default function App({
                   })}
                   <label className="color-picker-label">
                     <span>Eigene Farbe</span>
-                    <input type="color" value={/^#[0-9a-f]{6}$/iu.test(team.color) ? team.color : "#334155"} onChange={(event) => updateTeam(team.id, { color: event.target.value })} aria-label="Eigene Teamfarbe" />
+                    <input type="color" value={/^#[0-9a-f]{6}$/iu.test(team.color) ? team.color : "#334155"} onChange={(event) => updateTeam(team.id, { color: event.target.value })} onBlur={flushRxdbDrafts} aria-label="Eigene Teamfarbe" />
                   </label>
                 </div>
                 <button className="button danger full-width" type="button" onClick={() => deleteTeam(team)} disabled={snapshot.areas.some((area) => area.teamId === team.id)} title={snapshot.areas.some((area) => area.teamId === team.id) ? "Zuerst alle Gebiete diesem Team entfernen oder umhängen." : undefined}>
