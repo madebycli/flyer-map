@@ -75,7 +75,14 @@ function taskSource(sourceOsmWayId: number) {
 export async function materializePreparedStreetTasks(
   input: PreparedStreetMaterializationInput,
 ): Promise<DistributionTask[]> {
-  return Promise.all(input.candidates.map(async (candidate) => ({
+  const uniqueCandidates: PreparedStreetCandidate[] = [];
+  const seenFragmentKeys = new Set<string>();
+  for (const candidate of input.candidates) {
+    if (seenFragmentKeys.has(candidate.fragmentKey)) continue;
+    seenFragmentKeys.add(candidate.fragmentKey);
+    uniqueCandidates.push(candidate);
+  }
+  return Promise.all(uniqueCandidates.map(async (candidate) => ({
     id: await stablePreparedStreetTaskId({
       campaignId: input.campaignId,
       areaId: input.areaId,
