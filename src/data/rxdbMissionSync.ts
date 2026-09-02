@@ -52,11 +52,6 @@ export class RxdbSyncHttpError extends Error {
   }
 }
 
-/**
- * Holds RxDB's upstream persistence window open until the trailing edit has
- * settled.  The gate is deliberately small and scheduler-based so the UI can
- * flush it synchronously on blur/Enter while normal typing still coalesces.
- */
 export class TrailingPersistenceGate {
   private timer: number | null = null;
   private resolvers: Array<() => void> = [];
@@ -174,7 +169,6 @@ async function responseError(response: Response) {
   try {
     payload = await response.json() as { error?: { code?: string; message?: string } };
   } catch {
-    // Keep the generic error below.
   }
   return new RxdbSyncHttpError(
     response.status,
@@ -214,10 +208,8 @@ export class MissionRxdbSync {
     campaignId: string;
     teamScopeId?: string | null;
     collectionFallback?: CampaignSnapshot["collection"];
-    /** Optional test storage; production defaults to the Dexie adapter. */
     storage?: any;
     multiInstance?: boolean;
-    /** Optional isolated fetcher for Worker/Miniflare integration tests. */
     fetchImpl?: typeof fetch;
     onSnapshot: (snapshot: CampaignSnapshot) => void;
     onIssue: (issue: RxdbSyncIssue) => void;
@@ -234,11 +226,7 @@ export class MissionRxdbSync {
     this.persistenceGates.set("teams", new TrailingPersistenceGate());
   }
 
-  private async request<T>(
-    operation: "pull" | "push",
-    collectionName: RxdbCollectionName,
-    body: unknown,
-  ): Promise<T> {
+  private async request<T>(operation: "pull" | "push", collectionName: RxdbCollectionName, body: unknown): Promise<T> {
     let response: Response;
     try {
       response = await this.fetchImpl(collectionPath(this.campaignId, operation, collectionName), {
@@ -267,10 +255,7 @@ export class MissionRxdbSync {
       throw new RxdbSyncHttpError(0, "network_error", "Server ist momentan nicht erreichbar.");
     }
     if (!response.ok) throw await responseError(response);
-    const payload = await response.json() as {
-      checkpoint?: { seq?: unknown };
-      campaignRevision?: unknown;
-    };
+    const payload = await response.json() as { checkpoint?: { seq?: unknown }; campaignRevision?: unknown };
     const seq = payload.checkpoint?.seq;
     if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) {
       throw new RxdbSyncHttpError(502, "invalid_checkpoint", "Der Server hat keinen gültigen RxDB-Checkpoint geliefert.");
@@ -298,36 +283,16 @@ export class MissionRxdbSync {
       this.collections.streetTasks.find({ selector: { campaignId: this.campaignId } }).exec(),
       this.collections.houseTasks.find({ selector: { campaignId: this.campaignId } }).exec(),
     ]);
-    const visibleTeams = this.teamScopeId
-      ? teams.filter((document) => narrowRxdbDocument("teams", document)?.id === this.teamScopeId)
-      : teams;
-    const visibleAreas = this.teamScopeId
-      ? areas.filter((document) => narrowRxdbDocument("areas", document)?.teamId === this.teamScopeId)
-      : areas;
+    const visibleTeams = this.teamScopeId ? teams.filter((document) => narrowRxdbDocument("teams", document)?.id === this.teamScopeId) : teams;
+    const visibleAreas = this.teamScopeId ? areas.filter((document) => narrowRxdbDocument("areas", document)?.teamId === this.teamScopeId) : areas;
     const visibleAreaIds = new Set(visibleAreas.map((document) => document.id));
-    const visibleStreetTasks = this.teamScopeId
-      ? streetTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("streetTasks", document)?.areaId ?? ""))
-      : streetTasks;
-    const visibleHouseTasks = this.teamScopeId
-      ? houseTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("houseTasks", document)?.areaId ?? ""))
-      : houseTasks;
+    const visibleStreetTasks = this.teamScopeId ? streetTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("streetTasks", document)?.areaId ?? "")) : streetTasks;
+    const visibleHouseTasks = this.teamScopeId ? houseTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("houseTasks", document)?.areaId ?? "")) : houseTasks;
     const campaign = campaigns[0] ? narrowRxdbDocument("campaigns", campaigns[0].toJSON()) : null;
-    const teamDocuments = visibleTeams.flatMap((document) => {
-      const value = narrowRxdbDocument("teams", document.toJSON());
-      return value ? [value] : [];
-    });
-    const areaDocuments = visibleAreas.flatMap((document) => {
-      const value = narrowRxdbDocument("areas", document.toJSON());
-      return value ? [value] : [];
-    });
-    const streetTaskDocuments = visibleStreetTasks.flatMap((document) => {
-      const value = narrowRxdbDocument("streetTasks", document.toJSON());
-      return value ? [value] : [];
-    });
-    const houseTaskDocuments = visibleHouseTasks.flatMap((document) => {
-      const value = narrowRxdbDocument("houseTasks", document.toJSON());
-      return value ? [value] : [];
-    });
+    const teamDocuments = visibleTeams.flatMap((document) => { const value = narrowRxdbDocument("teams", document.toJSON()); return value ? [value] : []; });
+    const areaDocuments = visibleAreas.flatMap((document) => { const value = narrowRxdbDocument("areas", document.toJSON()); return value ? [value] : []; });
+    const streetTaskDocuments = visibleStreetTasks.flatMap((document) => { const value = narrowRxdbDocument("streetTasks", document.toJSON()); return value ? [value] : []; });
+    const houseTaskDocuments = visibleHouseTasks.flatMap((document) => { const value = narrowRxdbDocument("houseTasks", document.toJSON()); return value ? [value] : []; });
     const snapshot = materializeCampaignSnapshot({
       revision: this.canonicalRevision,
       campaign,
@@ -352,32 +317,21 @@ export class MissionRxdbSync {
         handler: async (checkpoint: { seq: number } | undefined, batchSize: number) => {
           const result = await this.request<RxdbPullResponse>("pull", collectionName, { checkpoint: checkpoint ?? null, batchSize });
           this.checkpoints.set(collectionName, result.checkpoint.seq);
-          if (Number.isSafeInteger(result.campaignRevision) && result.campaignRevision >= 0) {
-            this.canonicalRevision = Math.max(this.canonicalRevision, result.campaignRevision);
-          }
-          return {
-            documents: result.documents.map(withDeletedMarker),
-            checkpoint: result.checkpoint,
-          };
+          if (Number.isSafeInteger(result.campaignRevision) && result.campaignRevision >= 0) this.canonicalRevision = Math.max(this.canonicalRevision, result.campaignRevision);
+          return { documents: result.documents.map(withDeletedMarker), checkpoint: result.checkpoint };
         },
       },
       push: {
         batchSize: PUSH_BATCH_SIZE,
         ...(persistenceGate ? { waitBeforePersist: () => persistenceGate.wait() } : {}),
         handler: async (rows: RxdbPushRow[]) => {
-          const result = await this.request<{ conflicts: RxdbDocument[]; rejections: Array<{ documentId: string; code: string }> }>(
-            "push",
-            collectionName,
-            {
-              rows: rows.map((row) => ({
-                ...(row.assumedMasterState ? { assumedMasterState: asWireDocument(row.assumedMasterState) } : {}),
-                newDocumentState: asWireDocument(row.newDocumentState),
-              })),
-            },
-          );
-          for (const rejection of result.rejections) {
-            this.onIssue({ kind: "rejected", collectionName, documentId: rejection.documentId, code: rejection.code });
-          }
+          const result = await this.request<{ conflicts: RxdbDocument[]; rejections: Array<{ documentId: string; code: string }> }>("push", collectionName, {
+            rows: rows.map((row) => ({
+              ...(row.assumedMasterState ? { assumedMasterState: asWireDocument(row.assumedMasterState) } : {}),
+              newDocumentState: asWireDocument(row.newDocumentState),
+            })),
+          });
+          for (const rejection of result.rejections) this.onIssue({ kind: "rejected", collectionName, documentId: rejection.documentId, code: rejection.code });
           return result.conflicts.map(withDeletedMarker);
         },
       },
@@ -389,15 +343,9 @@ export class MissionRxdbSync {
     this.subscriptions.push(
       replication.error$.subscribe((error: unknown) => {
         const message = error instanceof Error ? error.message : "rxdb_replication_error";
-        const details = (() => {
-          try { return JSON.stringify(error); } catch { return message; }
-        })();
+        const details = (() => { try { return JSON.stringify(error); } catch { return message; } })();
         const code = error instanceof RxdbSyncHttpError ? error.code : message + details;
-        this.onIssue({
-          kind: code.includes("rxdb_sync_schema_unavailable") ? "schema" : "network",
-          collectionName,
-          code,
-        });
+        this.onIssue({ kind: code.includes("rxdb_sync_schema_unavailable") ? "schema" : "network", collectionName, code });
       }),
       replication.received$.subscribe(() => this.scheduleMaterialization()),
       replication.sent$.subscribe(() => this.scheduleMaterialization()),
@@ -407,59 +355,43 @@ export class MissionRxdbSync {
 
   private connectSocket() {
     if (!this.initialized || this.socket || typeof window === "undefined" || typeof location === "undefined") return;
-    const WebSocketConstructor = (globalThis as typeof globalThis & {
-      WebSocket?: typeof WebSocket;
-    }).WebSocket;
+    const WebSocketConstructor = (globalThis as typeof globalThis & { WebSocket?: typeof WebSocket }).WebSocket;
     if (!WebSocketConstructor) return;
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocketConstructor(protocol + "//" + location.host + realtimePath(this.campaignId));
     this.socket = socket;
-    socket.onopen = () => {
-      this.socketReconnectDelay = 2_000;
-    };
+    socket.onopen = () => { this.socketReconnectDelay = 2_000; };
     socket.onmessage = (event) => {
       let payload: unknown;
-      try {
-        payload = typeof event.data === "string" ? JSON.parse(event.data) : null;
-      } catch {
-        return;
-      }
+      try { payload = typeof event.data === "string" ? JSON.parse(event.data) : null; } catch { return; }
       if (!payload || typeof payload !== "object") return;
       const value = payload as Record<string, unknown>;
       const seq = value.seq;
-      if (value.type === "changed" && typeof seq === "number" && Number.isSafeInteger(seq) && seq > this.maxKnownCheckpoint()) {
-        this.refresh();
-      }
+      if (value.type === "changed" && typeof seq === "number" && Number.isSafeInteger(seq) && seq > this.minimumKnownCheckpoint()) this.refresh();
     };
-    socket.onerror = () => {
-      try { socket.close(); } catch { /* socket already closed */ }
-    };
+    socket.onerror = () => { try { socket.close(); } catch {} };
     socket.onclose = () => {
       if (this.socket === socket) this.socket = null;
       if (!this.initialized || typeof window === "undefined" || this.socketReconnectTimer !== null) return;
       const delay = this.socketReconnectDelay;
       this.socketReconnectDelay = Math.min(30_000, this.socketReconnectDelay * 2);
-      this.socketReconnectTimer = window.setTimeout(() => {
-        this.socketReconnectTimer = null;
-        this.connectSocket();
-      }, delay);
+      this.socketReconnectTimer = window.setTimeout(() => { this.socketReconnectTimer = null; this.connectSocket(); }, delay);
     };
   }
 
-  private maxKnownCheckpoint() {
-    let max = 0;
-    for (const checkpoint of this.checkpoints.values()) max = Math.max(max, checkpoint);
-    return max;
+  private minimumKnownCheckpoint() {
+    let minimum = Number.POSITIVE_INFINITY;
+    for (const collectionName of Object.keys(schemas) as RxdbCollectionName[]) {
+      minimum = Math.min(minimum, this.checkpoints.get(collectionName) ?? 0);
+    }
+    return Number.isFinite(minimum) ? minimum : 0;
   }
 
-  /** Pulls only a Campaign-level high-water mark before deciding to resync. */
   async safetyResync() {
     if (!this.initialized) return;
     try {
       const checkpoint = await this.requestCheckpoint();
-      if (checkpoint.seq > this.maxKnownCheckpoint() || checkpoint.campaignRevision > this.canonicalRevision) {
-        this.refresh();
-      }
+      if (checkpoint.seq > this.minimumKnownCheckpoint() || checkpoint.campaignRevision > this.canonicalRevision) this.refresh();
     } catch (error) {
       const code = error instanceof RxdbSyncHttpError ? error.code : "rxdb_checkpoint_failed";
       this.onIssue({ kind: code.includes("schema_unavailable") ? "schema" : "network", code });
@@ -486,9 +418,7 @@ export class MissionRxdbSync {
       this.subscriptions.push(this.collections[collectionName].find({ selector: { campaignId: this.campaignId } }).$.subscribe(() => this.scheduleMaterialization()));
       this.createReplication(collectionName);
     }
-    if (typeof window !== "undefined") {
-      this.safetyTimer = window.setInterval(() => { void this.safetyResync(); }, 45_000);
-    }
+    if (typeof window !== "undefined") this.safetyTimer = window.setInterval(() => { void this.safetyResync(); }, 45_000);
     this.connectSocket();
     this.scheduleMaterialization();
   }
@@ -498,18 +428,12 @@ export class MissionRxdbSync {
     for (const replication of this.replications.values()) replication.reSync();
   }
 
-  /** Blur, Enter and sheet-close use this without changing status-write behavior. */
   flushDebouncedWrites() {
     this.persistenceGates.get("campaigns")?.flush();
     this.persistenceGates.get("teams")?.flush();
     this.refresh();
   }
 
-  /**
-   * A legacy queue may only be migrated after this browser has a Campaign
-   * document in its local replica. Waiting for RxDB's replication promise is
-   * unsafe in a follower tab, because only the elected leader performs I/O.
-   */
   async waitForCampaignDocument(timeoutMs = 15_000) {
     const campaigns = this.collections?.campaigns;
     if (!campaigns || typeof window === "undefined") return false;
@@ -525,31 +449,19 @@ export class MissionRxdbSync {
         subscription?.unsubscribe();
         resolve(value);
       };
-      subscription = campaigns.findOne(this.campaignId).$.subscribe((document: unknown) => {
-        if (document) finish(true);
-      });
-      if (settled) {
-        subscription?.unsubscribe();
-        return;
-      }
+      subscription = campaigns.findOne(this.campaignId).$.subscribe((document: unknown) => { if (document) finish(true); });
+      if (settled) { subscription?.unsubscribe(); return; }
       timer = window.setTimeout(() => finish(false), timeoutMs);
     });
   }
 
-  private async mutateDocument<N extends RxdbCollectionName>(
-    collectionName: N,
-    id: string,
-    updater: (document: RxdbDocumentForCollection<N> | null) => RxdbDocumentForCollection<N> | null,
-  ) {
+  private async mutateDocument<N extends RxdbCollectionName>(collectionName: N, id: string, updater: (document: RxdbDocumentForCollection<N> | null) => RxdbDocumentForCollection<N> | null) {
     if (!this.collections) throw new Error("rxdb_not_initialized");
     const collection = this.collections[collectionName];
     const existing = await collection.findOne(id).exec();
     const current = existing ? existing.toJSON() as RxdbDocumentForCollection<N> : null;
     const next = updater(current);
-    if (!next) {
-      if (existing) await existing.remove();
-      return;
-    }
+    if (!next) { if (existing) await existing.remove(); return; }
     await collection.upsert(withoutRxdbMetadata(next));
   }
 
@@ -557,24 +469,15 @@ export class MissionRxdbSync {
     if (!this.collections) throw new Error("rxdb_not_initialized");
     const now = mutation.createdAt;
     switch (mutation.type) {
-      case "campaign.rename":
-        return this.mutateDocument("campaigns", mutation.campaignId, (current) => current ? { ...current, name: mutation.payload.name, updatedAt: now } : current);
-      case "campaign.set-default-map-view":
-        return this.mutateDocument("campaigns", mutation.campaignId, (current) => current ? { ...current, defaultMapView: mutation.payload.defaultMapView, updatedAt: now } : current);
-      case "team.create":
-        return this.mutateDocument("teams", mutation.payload.teamId, () => ({ id: mutation.payload.teamId, campaignId: mutation.campaignId, name: mutation.payload.name, color: mutation.payload.color, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"teams">));
-      case "team.update":
-        return this.mutateDocument("teams", mutation.payload.teamId, (current) => current ? { ...current, ...(mutation.payload.name !== undefined ? { name: mutation.payload.name } : {}), ...(mutation.payload.color !== undefined ? { color: mutation.payload.color } : {}), updatedAt: now } : current);
-      case "team.delete":
-        return this.mutateDocument("teams", mutation.payload.teamId, () => null);
-      case "area.create":
-        return this.mutateDocument("areas", mutation.payload.areaId, () => ({ id: mutation.payload.areaId, campaignId: mutation.campaignId, teamId: mutation.payload.teamId, name: mutation.payload.name, geometry: mutation.payload.geometry, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"areas">));
-      case "area.rename":
-        return this.mutateDocument("areas", mutation.payload.areaId, (current) => current ? { ...current, name: mutation.payload.name, updatedAt: now } : current);
-      case "area.set-team":
-        return this.mutateDocument("areas", mutation.payload.areaId, (current) => current ? { ...current, teamId: mutation.payload.teamId, updatedAt: now } : current);
-      case "area.update-geometry":
-        return this.mutateDocument("areas", mutation.payload.areaId, (current) => current ? { ...current, geometry: mutation.payload.geometry, updatedAt: now } : current);
+      case "campaign.rename": return this.mutateDocument("campaigns", mutation.campaignId, (current) => current ? { ...current, name: mutation.payload.name, updatedAt: now } : current);
+      case "campaign.set-default-map-view": return this.mutateDocument("campaigns", mutation.campaignId, (current) => current ? { ...current, defaultMapView: mutation.payload.defaultMapView, updatedAt: now } : current);
+      case "team.create": return this.mutateDocument("teams", mutation.payload.teamId, () => ({ id: mutation.payload.teamId, campaignId: mutation.campaignId, name: mutation.payload.name, color: mutation.payload.color, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"teams">));
+      case "team.update": return this.mutateDocument("teams", mutation.payload.teamId, (current) => current ? { ...current, ...(mutation.payload.name !== undefined ? { name: mutation.payload.name } : {}), ...(mutation.payload.color !== undefined ? { color: mutation.payload.color } : {}), updatedAt: now } : current);
+      case "team.delete": return this.mutateDocument("teams", mutation.payload.teamId, () => null);
+      case "area.create": return this.mutateDocument("areas", mutation.payload.areaId, () => ({ id: mutation.payload.areaId, campaignId: mutation.campaignId, teamId: mutation.payload.teamId, name: mutation.payload.name, geometry: mutation.payload.geometry, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"areas">));
+      case "area.rename": return this.mutateDocument("areas", mutation.payload.areaId, (current) => current ? { ...current, name: mutation.payload.name, updatedAt: now } : current);
+      case "area.set-team": return this.mutateDocument("areas", mutation.payload.areaId, (current) => current ? { ...current, teamId: mutation.payload.teamId, updatedAt: now } : current);
+      case "area.update-geometry": return this.mutateDocument("areas", mutation.payload.areaId, (current) => current ? { ...current, geometry: mutation.payload.geometry, updatedAt: now } : current);
       case "area.delete":
         await this.mutateDocument("areas", mutation.payload.areaId, () => null);
         await Promise.all([
@@ -582,27 +485,18 @@ export class MissionRxdbSync {
           this.collections.houseTasks.find({ selector: { campaignId: mutation.campaignId, areaId: mutation.payload.areaId } }).remove(),
         ]);
         return;
-      case "task.create":
-        return this.mutateDocument("streetTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "street", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"streetTasks">));
-      case "task.rename":
-        return this.mutateDocument("streetTasks", mutation.payload.taskId, (current) => current ? { ...current, label: mutation.payload.label, updatedAt: now } : current);
-      case "task.set-status":
-        return this.mutateDocument("streetTasks", mutation.payload.taskId, (current) => current ? { ...current, status: mutation.payload.status, completedAt: mutation.payload.completedAt, updatedAt: now } : current);
-      case "task.delete":
-        return this.mutateDocument("streetTasks", mutation.payload.taskId, () => null);
-      case "house.create":
-        return this.mutateDocument("houseTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "house", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, parentStreetTaskId: mutation.payload.parentStreetTaskId, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"houseTasks">));
+      case "task.create": return this.mutateDocument("streetTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "street", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"streetTasks">));
+      case "task.rename": return this.mutateDocument("streetTasks", mutation.payload.taskId, (current) => current ? { ...current, label: mutation.payload.label, updatedAt: now } : current);
+      case "task.set-status": return this.mutateDocument("streetTasks", mutation.payload.taskId, (current) => current ? { ...current, status: mutation.payload.status, completedAt: mutation.payload.completedAt, updatedAt: now } : current);
+      case "task.delete": return this.mutateDocument("streetTasks", mutation.payload.taskId, () => null);
+      case "house.create": return this.mutateDocument("houseTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "house", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, parentStreetTaskId: mutation.payload.parentStreetTaskId, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"houseTasks">));
       case "house.create-batch":
         await Promise.all(mutation.payload.houses.map((house) => this.mutateDocument("houseTasks", house.taskId, () => ({ id: house.taskId, campaignId: mutation.campaignId, areaId: house.areaId, taskType: "house", label: house.label, geometry: house.geometry, ...(house.source ? { source: house.source } : {}), areaPreparationGeneration: null, parentStreetTaskId: house.parentStreetTaskId, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"houseTasks">))));
         return;
-      case "house.rename":
-        return this.mutateDocument("houseTasks", mutation.payload.taskId, (current) => current ? { ...current, label: mutation.payload.label, updatedAt: now } : current);
-      case "house.set-status":
-        return this.mutateDocument("houseTasks", mutation.payload.taskId, (current) => current ? { ...current, status: mutation.payload.status, completedAt: mutation.payload.completedAt, updatedAt: now } : current);
-      case "house.delete":
-        return this.mutateDocument("houseTasks", mutation.payload.taskId, () => null);
-      default:
-        throw new Error("rxdb_collection_mutation_not_supported");
+      case "house.rename": return this.mutateDocument("houseTasks", mutation.payload.taskId, (current) => current ? { ...current, label: mutation.payload.label, updatedAt: now } : current);
+      case "house.set-status": return this.mutateDocument("houseTasks", mutation.payload.taskId, (current) => current ? { ...current, status: mutation.payload.status, completedAt: mutation.payload.completedAt, updatedAt: now } : current);
+      case "house.delete": return this.mutateDocument("houseTasks", mutation.payload.taskId, () => null);
+      default: throw new Error("rxdb_collection_mutation_not_supported");
     }
   }
 
@@ -615,9 +509,7 @@ export class MissionRxdbSync {
     this.socketReconnectTimer = null;
     const socket = this.socket;
     this.socket = null;
-    if (socket) {
-      try { socket.close(); } catch { /* socket already closed */ }
-    }
+    if (socket) { try { socket.close(); } catch {} }
     for (const subscription of this.subscriptions) subscription.unsubscribe();
     for (const replication of this.replications.values()) await replication.cancel();
     this.replications.clear();
