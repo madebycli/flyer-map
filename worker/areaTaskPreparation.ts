@@ -52,8 +52,13 @@ export type AreaPreparationFailureCode =
   | "area_preparation_osm_timeout"
   | "area_preparation_osm_failed"
   | "area_preparation_osm_invalid"
+  | "area_preparation_osm_rate_limited"
+  | "area_preparation_osm_server_error"
+  | "area_preparation_osm_response_too_large"
+  | "area_preparation_building_volume"
   | "area_preparation_too_many_features"
   | "area_preparation_work_started"
+  | "area_preparation_publish_failed"
   | "area_preparation_stale";
 
 export type AreaPreparationStateStatus = "pending" | "ready" | "failed";
@@ -644,6 +649,13 @@ function failureCode(error: unknown): AreaPreparationFailureCode {
   }
   if (error instanceof PreparationFailure) return error.code;
   if (error instanceof OsmFeaturesForAreaError) {
+    if (error.reason === "rate-limited") return "area_preparation_osm_rate_limited";
+    if (error.reason === "server-error") return "area_preparation_osm_server_error";
+    if (error.reason === "response-too-large") {
+      return error.phase === "buildings"
+        ? "area_preparation_building_volume"
+        : "area_preparation_osm_response_too_large";
+    }
     switch (error.code) {
       case "too_large": return "area_preparation_too_large";
       case "timeout": return "area_preparation_osm_timeout";
@@ -857,7 +869,15 @@ export async function runAreaTaskPreparation(
           ...guard,
         ),
     ];
-    const results = await db.batch(statements);
+    let results;
+    try {
+      results = await db.batch(statements);
+    } catch {
+      throw new PreparationFailure(
+        "area_preparation_publish_failed",
+        "Die vorbereiteten Tasks konnten nicht atomar veröffentlicht werden.",
+      );
+    }
     if ((results[0]?.meta?.changes ?? 0) !== 1) {
       await markPreparationFailed(db, {
         campaignId,
