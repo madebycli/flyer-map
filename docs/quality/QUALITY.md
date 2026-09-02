@@ -28,6 +28,8 @@ Every PR should at minimum pass the repository `check` flow (tests + TypeScript 
 
 Add tests around domain/security/sync logic. Browser-visible map correctness still requires browser acceptance because CI cannot prove that GeoJSON is actually visible/hit-testable on a device.
 
+Street preparation diagnostics must measure request count, tile count, upstream concurrency, response/package bytes, parsed ways, clipped candidates, output fragments and duplicate suppression. Diagnostics contain no private Area geometries or raw OSM payloads.
+
 ## Field/browser testing
 
 Explicitly test:
