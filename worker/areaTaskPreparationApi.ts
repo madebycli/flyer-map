@@ -12,6 +12,11 @@ import { parseCampaignId } from "./snapshotValidation.ts";
 
 type PreparationRoute = { campaignId: string; areaId: string };
 
+const PUBLIC_AREA_OVERPASS_URLS = new Set([
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+]);
+
 const json = (data: unknown, init: ResponseInit = {}) =>
   Response.json(data, {
     ...init,
@@ -24,6 +29,22 @@ const json = (data: unknown, init: ResponseInit = {}) =>
 
 const error = (status: number, code: string, message: string) =>
   json({ error: { code, message } }, { status });
+
+export function resilientAreaPreparationOptions(options?: AreaTaskPreparationOptions) {
+  const configured = options?.upstreamUrl;
+  if (!configured) return options;
+
+  let normalized: string;
+  try {
+    normalized = new URL(configured).toString();
+  } catch {
+    return options;
+  }
+  if (!PUBLIC_AREA_OVERPASS_URLS.has(normalized)) return options;
+
+  const { upstreamUrl: _configuredPublicUpstream, ...rest } = options;
+  return rest;
+}
 
 export function areaTaskPreparationRoute(pathname: string): PreparationRoute | null {
   const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/areas\/([^/]+)\/preparation$/u);
@@ -96,9 +117,10 @@ export async function handleAreaTaskPreparationApi(
     return json(decision.state, { status: decision.state.status === "ready" ? 200 : 202 });
   }
 
-  const preparation = await beginAreaTaskPreparation(db, route.campaignId, route.areaId, options);
+  const runtimeOptions = resilientAreaPreparationOptions(options);
+  const preparation = await beginAreaTaskPreparation(db, route.campaignId, route.areaId, runtimeOptions);
   if (preparation.outcome === "run") {
-    const job = runAreaTaskPreparation(db, preparation.run, options);
+    const job = runAreaTaskPreparation(db, preparation.run, runtimeOptions);
     if (context) context.waitUntil(job);
     else void job;
   } else if (
