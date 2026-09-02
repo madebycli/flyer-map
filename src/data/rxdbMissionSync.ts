@@ -74,7 +74,7 @@ export class RxdbSyncHttpError extends Error {
 }
 
 export class TrailingPersistenceGate {
-  private timer: number | null = null;
+  private timer: ReturnType<typeof globalThis.setTimeout> | null = null;
   private resolvers: Array<() => void> = [];
 
   private release() {
