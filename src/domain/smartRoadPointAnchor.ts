@@ -1,3 +1,5 @@
+import { lineString } from "@turf/helpers";
+import nearestPointOnLine from "@turf/nearest-point-on-line";
 import type { SmartRoadCandidate } from "./smartCandidates.ts";
 
 type Coordinate = [number, number];
@@ -8,39 +10,26 @@ export type SmartRoadPointAnchor = {
   segmentIndex: number;
   segmentT: number;
   distanceMeters: number;
+  lineDistanceMeters?: number;
 };
 
-const METERS_PER_DEGREE_LAT = 110_540;
-const METERS_PER_DEGREE_LNG_AT_EQUATOR = 111_320;
-
-function localMeters(origin: Coordinate, point: Coordinate): [number, number] {
-  const latitudeRadians = (origin[1] * Math.PI) / 180;
-  return [
-    (point[0] - origin[0]) * Math.cos(latitudeRadians) * METERS_PER_DEGREE_LNG_AT_EQUATOR,
-    (point[1] - origin[1]) * METERS_PER_DEGREE_LAT,
-  ];
-}
-
-function closestPointOnSegment(point: Coordinate, start: Coordinate, end: Coordinate) {
-  const [startX, startY] = localMeters(point, start);
-  const [endX, endY] = localMeters(point, end);
+function localSegmentParameter(point: Coordinate, start: Coordinate, end: Coordinate) {
+  const latitudeRadians = (point[1] * Math.PI) / 180;
+  const longitudeScale = Math.cos(latitudeRadians) * 111_320;
+  const latitudeScale = 110_540;
+  const startX = (start[0] - point[0]) * longitudeScale;
+  const startY = (start[1] - point[1]) * latitudeScale;
+  const endX = (end[0] - point[0]) * longitudeScale;
+  const endY = (end[1] - point[1]) * latitudeScale;
   const dx = endX - startX;
   const dy = endY - startY;
   const lengthSquared = dx * dx + dy * dy;
   const rawT = lengthSquared === 0 ? 0 : (-(startX * dx + startY * dy)) / lengthSquared;
-  const t = Math.max(0, Math.min(1, rawT));
-  const projectedX = startX + dx * t;
-  const projectedY = startY + dy * t;
-  const distanceMeters = Math.hypot(projectedX, projectedY);
+  return Math.max(0, Math.min(1, rawT));
+}
 
-  return {
-    t,
-    snapped: [
-      start[0] + (end[0] - start[0]) * t,
-      start[1] + (end[1] - start[1]) * t,
-    ] as Coordinate,
-    distanceMeters,
-  };
+function finiteProperty(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function closestAnchorOnRoad(
@@ -50,20 +39,41 @@ function closestAnchorOnRoad(
   const coordinates = road.geometry.coordinates;
   if (coordinates.length < 2) return null;
 
-  let best: SmartRoadPointAnchor | null = null;
-  for (let index = 0; index < coordinates.length - 1; index += 1) {
-    const candidate = closestPointOnSegment(point, coordinates[index], coordinates[index + 1]);
-    if (!best || candidate.distanceMeters < best.distanceMeters) {
-      best = {
-        sourceId: road.sourceId,
-        snapped: candidate.snapped,
-        segmentIndex: index,
-        segmentT: candidate.t,
-        distanceMeters: candidate.distanceMeters,
-      };
+  try {
+    const snapped = nearestPointOnLine(
+      lineString(coordinates),
+      point,
+      { units: "meters" },
+    );
+    const segmentIndex = snapped.properties.segmentIndex;
+    if (
+      !Number.isSafeInteger(segmentIndex)
+      || segmentIndex < 0
+      || segmentIndex >= coordinates.length - 1
+    ) {
+      return null;
     }
+    const start = coordinates[segmentIndex];
+    const end = coordinates[segmentIndex + 1];
+    const segmentT = localSegmentParameter(point, start, end);
+    const snappedCoordinate: Coordinate = [
+      start[0] + (end[0] - start[0]) * segmentT,
+      start[1] + (end[1] - start[1]) * segmentT,
+    ];
+    const distanceMeters = finiteProperty(snapped.properties.pointDistance);
+    if (distanceMeters === null) return null;
+    const lineDistanceMeters = finiteProperty(snapped.properties.lineDistance);
+    return {
+      sourceId: road.sourceId,
+      snapped: snappedCoordinate,
+      segmentIndex,
+      segmentT,
+      distanceMeters,
+      ...(lineDistanceMeters === null ? {} : { lineDistanceMeters }),
+    };
+  } catch {
+    return null;
   }
-  return best;
 }
 
 export function smartRoadPointAnchorCandidates(
