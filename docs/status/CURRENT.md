@@ -28,6 +28,7 @@ Die serverseitige Street Engine wird ausschließlich auf `feature/established-st
 
 Die Engine nutzt JSTS für serverseitiges exaktes LineString/Polygon-Clipping, modulare Turf-Pakete für Boundary-Test, Smart-Street-Snap und A/B-Slice, stabile automatische Street-IDs und Delta-Reconciliation. Browser-Overpass, Geräte-Recompute, D1-Migrationen, Merge und Deployment sind nicht Teil dieses Branches.
 
+Für das aktuelle Hardening gelten zusätzlich: Die Engine liefert Kandidaten mit sourceKey und fragmentKey, der Adapter materialisiert die kanonische SHA-256-ID und den Reconcile-Delta-Satz inserts/updates/deleteIds/unchangedIds. Die konkurrierende Reconcile-Datei auf PR #74 ist ein Integrationskonflikt und darf nicht als zweiter Street-Adapter fortbestehen.
 ## Baseline
 
 Verteil-Flyer bleibt eine mobile-first normale Website mit React, TypeScript, Vite, MapLibre GL JS 5.7.1, OpenFreeMap Bright, Cloudflare Workers und D1. M4 Access/Session und die resiliente M5 Mutation Queue bleiben die gemeinsame Grundlage. Keine native App, keine installierbare PWA, kein Service Worker, keine Background Sync API und keine kontinuierliche GPS-Historie.
@@ -103,7 +104,7 @@ ADR-0021 ist der normale Mission-Pfad:
 - Publish von Tasks, Ready-State und Campaign-Revision erfolgt guarded/atomar;
 - gleiche Ready-Geometrie ist No-op, frisches Pending dedupliziert und veraltete Generationen dürfen nicht publishen;
 - Fehler veröffentlichen keine partiellen Tasks;
-- autorisierter Retry ist möglich;
+- autorisierter Retry ist nur bei Fehlern vor begonnenem automatischem Work möglich; danach ist die Area action-required gesperrt und startet keine nutzlose Retry-Schleife;
 - automatische Tasks dürfen normal ihren Status ändern, aber nicht über normale Client-Mutationen gelöscht werden;
 - nach begonnenem automatischem Work wird eine Geometrieänderung kontrolliert mit `area_has_started_work` blockiert.
 
