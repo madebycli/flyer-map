@@ -36,7 +36,7 @@ export type CampaignLoadResult = { snapshot: CampaignSnapshot; warning: string |
 export type RefreshState = "idle" | "loading" | "current" | "error" | "available";
 export type CampaignAccessState = "idle" | "pending" | "authenticated" | "required";
 export type SyncMessageCode = "access_required" | "network" | "conflict" | "forbidden" | "schema_migration_required" | null;
-export type MutationSyncState = "saved" | "pending" | "syncing" | "offline" | "conflict" | "failed" | "blocked-auth";
+export type MutationSyncState = "local-saved" | "waiting-server" | "server-confirmed" | "syncing" | "offline" | "conflict" | "failed" | "blocked-auth";
 export type SyncIssue = {
   kind: "server-wins" | "blocked-auth" | "network" | "schema";
   mutationType?: string;
@@ -225,12 +225,12 @@ function applyRxdbSnapshot(snapshot: CampaignSnapshot) {
   }
   runtime.latestLocal = normalized;
   writeLocalSnapshot(normalized);
-  emit({ snapshot: normalized, syncState: runtime.pendingWrites > 0 ? "pending" : "saved", pendingCount: runtime.pendingWrites, messageCode: null });
+  emit({ snapshot: normalized, pendingCount: runtime.pendingWrites, messageCode: null });
 }
 
 function reportRxdbIssue(issue: RxdbSyncIssue) {
   const schema = issue.kind === "schema" || issue.code.includes("schema_unavailable");
-  const blocked = issue.code.includes("forbidden") || issue.code.includes("read_only") || issue.code.includes("access_required");
+  const blocked = issue.code.includes("forbidden") || issue.code.includes("read_only") || issue.code.includes("access_required") || issue.code.includes("field_group_actor_scope");
   const syncIssue: SyncIssue = {
     kind: schema ? "schema" : blocked ? "blocked-auth" : issue.kind === "rejected" ? "server-wins" : "network",
     mutationType: issue.collectionName,
@@ -287,17 +287,32 @@ async function migrateLegacyM5Records(campaignId: string, sync: MissionRxdbSync)
 async function startRxdb(campaignId: string) {
   runtime.retryLegacyMigration = null;
   if (runtime.sync) await runtime.sync.destroy();
+  const fieldGroupAccess = runtime.access?.role === "field-group-member" ? runtime.access : null;
+  const teamScopeId = fieldGroupAccess?.teamId ?? null;
+  const actorScopeId = fieldGroupAccess?.groupId ?? null;
+  if (fieldGroupAccess && (!teamScopeId || !actorScopeId || !FIELD_GROUP_ID_PATTERN.test(actorScopeId))) {
+    throw new Error("field_group_actor_scope_required");
+  }
   const sync = new MissionRxdbSync({
     campaignId,
-    teamScopeId: runtime.access?.role === "field-group-member" ? runtime.access.teamId : null,
-    collectionFallback: runtime.latestLocal?.collection,
+    teamScopeId,
+    actorScopeId,
+    collectionFallback: fieldGroupAccess ? undefined : runtime.latestLocal?.collection,
     onSnapshot: applyRxdbSnapshot,
     onIssue: reportRxdbIssue,
+    onRemoteEvent: (event) => {
+      if (event !== "sent" || runtime.sync !== sync) return;
+      emit({
+        syncState: runtime.pendingWrites > 0 ? "waiting-server" : "server-confirmed",
+        pendingCount: runtime.pendingWrites,
+        messageCode: null,
+      });
+    },
   });
   runtime.sync = sync;
   await sync.start();
   runtime.initialized = true;
-  emit({ syncState: "saved", pendingCount: 0, messageCode: null });
+  emit({ syncState: navigator.onLine ? "waiting-server" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
   // Legacy M5 intents are copied only after the replica has a canonical
   // Campaign. The old network writer never starts here, and a timeout leaves
   // recovery records intact for the next online start.
@@ -398,33 +413,29 @@ export function setCampaignFieldGroupContext(fieldGroupId: string | null) {
   runtime.activeFieldGroupId = typeof fieldGroupId === "string" && FIELD_GROUP_ID_PATTERN.test(fieldGroupId) ? fieldGroupId : null;
 }
 
+async function runManualRefresh() {
+  if (!runtime.initialized) await initializeSharedPersistence();
+  if (collectionModeFromUrl()) {
+    if (!runtime.targetCampaignId || !runtime.initialized) throw new Error("collection_refresh_not_initialized");
+    applyRxdbSnapshot(await fetchCollectionSnapshot(runtime.targetCampaignId));
+    return;
+  }
+  const sync = runtime.sync;
+  if (!runtime.initialized || !sync) throw new Error("rxdb_refresh_not_initialized");
+  await sync.refreshAndWait();
+  if (runtime.sync !== sync) throw new Error("rxdb_refresh_replaced");
+  emit({ syncState: "server-confirmed", pendingCount: runtime.pendingWrites, messageCode: null });
+}
+
 export function manualRefreshCampaign() {
-  if (!runtime.initialized) {
-    setRefreshState("loading");
-    void initializeSharedPersistence().then(() => setRefreshState(runtime.initialized ? "current" : "error", true));
-    return;
-  }
-  if (collectionModeFromUrl() && runtime.targetCampaignId) {
-    setRefreshState("loading");
-    void fetchCollectionSnapshot(runtime.targetCampaignId)
-      .then((snapshot) => {
-        applyRxdbSnapshot(snapshot);
-        setRefreshState("current", true);
-      })
-      .catch((error) => {
-        reportRxdbIssue({ kind: "network", code: error instanceof Error ? error.message : "collection_refresh_failed" });
-        setRefreshState("error", true);
-      });
-    return;
-  }
   setRefreshState("loading");
-  emit({ syncState: "syncing" });
-  runtime.sync?.refresh();
-  window.setTimeout(() => {
-    runtime.sync?.refresh();
-    emit({ syncState: runtime.pendingWrites > 0 ? "pending" : "saved", pendingCount: runtime.pendingWrites });
-    setRefreshState("current", true);
-  }, 250);
+  emit({ syncState: "syncing", pendingCount: runtime.pendingWrites });
+  void runManualRefresh()
+    .then(() => setRefreshState("current", true))
+    .catch((error) => {
+      reportRxdbIssue({ kind: "network", code: error instanceof Error ? error.message : "campaign_refresh_failed" });
+      setRefreshState("error", true);
+    });
 }
 
 /** Completes the 900 ms campaign/team trailing window on explicit user commit. */
@@ -477,12 +488,13 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
     return warning;
   }
   runtime.pendingWrites += 1;
-  emit({ syncState: navigator.onLine ? "pending" : "offline", pendingCount: runtime.pendingWrites });
+  emit({ syncState: navigator.onLine ? "local-saved" : "offline", pendingCount: runtime.pendingWrites });
   if (collectionModeFromUrl() && mutation.type.startsWith("collection.")) {
     saveChain = saveChain
       .then(async () => {
         await postCampaignMutation(snapshot.campaign.id, mutation, runtime.activeFieldGroupId);
         applyRxdbSnapshot(await fetchCollectionSnapshot(snapshot.campaign.id));
+        emit({ syncState: "server-confirmed", pendingCount: runtime.pendingWrites, messageCode: null });
       })
       .catch((error) => {
         saveCampaignConflictSnapshot(snapshot);
@@ -490,7 +502,7 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
       })
       .finally(() => {
         runtime.pendingWrites = Math.max(0, runtime.pendingWrites - 1);
-        emit({ syncState: runtime.pendingWrites > 0 ? "pending" : "saved", pendingCount: runtime.pendingWrites });
+        emit({ pendingCount: runtime.pendingWrites });
       });
     return warning;
   }
@@ -502,6 +514,7 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
         throw new Error("collection_mutation_requires_collection_mode");
       }
       await runtime.sync.applyMutation(mutation);
+      emit({ syncState: navigator.onLine ? "waiting-server" : "offline", pendingCount: runtime.pendingWrites });
     })
     .catch((error) => {
       saveCampaignConflictSnapshot(snapshot);
@@ -509,7 +522,7 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
     })
     .finally(() => {
       runtime.pendingWrites = Math.max(0, runtime.pendingWrites - 1);
-      emit({ syncState: runtime.pendingWrites > 0 ? "pending" : "saved", pendingCount: runtime.pendingWrites });
+      emit({ pendingCount: runtime.pendingWrites });
     });
   return warning;
 }

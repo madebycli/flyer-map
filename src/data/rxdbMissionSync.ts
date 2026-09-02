@@ -17,6 +17,9 @@ import {
 
 const PULL_BATCH_SIZE = 100;
 const PUSH_BATCH_SIZE = 20;
+const REFRESH_POLL_INTERVAL_MS = 50;
+const FIELD_GROUP_ACTOR_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
+const COLLECTION_NAMES = ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const satisfies readonly RxdbCollectionName[];
 
 type RxdbCollections = Record<RxdbCollectionName, RxCollection<RxdbDocument>>;
 type MissionRxdbDatabase = RxDatabase<RxdbCollections>;
@@ -28,9 +31,27 @@ type ReplicationState = {
   cancel(): Promise<unknown>;
 };
 type RxdbReplicationDocument = RxdbDocument & { _deleted: boolean };
+type StoredSyncProgress = {
+  checkpoints?: Partial<Record<RxdbCollectionName, number>>;
+  campaignRevision?: number;
+};
+export type RxdbRemoteSyncEvent = "received" | "sent";
 
 function withDeletedMarker(document: RxdbDocument): RxdbReplicationDocument {
   return { ...document, _deleted: document._deleted === true } as RxdbReplicationDocument;
+}
+
+function safeDatabaseSegment(value: string) {
+  return Array.from(new TextEncoder().encode(value), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function progressStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 export type RxdbSyncIssue = {
@@ -184,12 +205,16 @@ function asWireDocument(document: RxdbDocument) {
 export class MissionRxdbSync {
   private readonly campaignId: string;
   private readonly teamScopeId: string | null;
+  private readonly actorScopeId: string | null;
+  private readonly replicaScope: string;
+  private readonly progressKey: string;
   private readonly collectionFallback: CampaignSnapshot["collection"];
   private readonly storage: any;
   private readonly multiInstance: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly onSnapshot: (snapshot: CampaignSnapshot) => void;
   private readonly onIssue: (issue: RxdbSyncIssue) => void;
+  private readonly onRemoteEvent: (event: RxdbRemoteSyncEvent) => void;
   private database: MissionRxdbDatabase | null = null;
   private collections: RxdbCollections | null = null;
   private readonly replications = new Map<RxdbCollectionName, ReplicationState>();
@@ -207,21 +232,32 @@ export class MissionRxdbSync {
   constructor(input: {
     campaignId: string;
     teamScopeId?: string | null;
+    actorScopeId?: string | null;
     collectionFallback?: CampaignSnapshot["collection"];
     storage?: any;
     multiInstance?: boolean;
     fetchImpl?: typeof fetch;
     onSnapshot: (snapshot: CampaignSnapshot) => void;
     onIssue: (issue: RxdbSyncIssue) => void;
+    onRemoteEvent?: (event: RxdbRemoteSyncEvent) => void;
   }) {
     this.campaignId = input.campaignId;
     this.teamScopeId = input.teamScopeId ?? null;
+    this.actorScopeId = input.actorScopeId ?? null;
+    if (this.actorScopeId && !FIELD_GROUP_ACTOR_ID_PATTERN.test(this.actorScopeId)) throw new Error("invalid_field_group_actor_scope");
+    this.replicaScope = this.actorScopeId
+      ? "field-group:" + (this.teamScopeId ?? "unscoped") + ":" + this.actorScopeId
+      : this.teamScopeId
+        ? "team:" + this.teamScopeId
+        : "campaign";
+    this.progressKey = "verteil-flyer:rxdb-progress:v1:" + encodeURIComponent(this.campaignId) + ":" + encodeURIComponent(this.replicaScope);
     this.collectionFallback = input.collectionFallback;
     this.storage = input.storage ?? getRxStorageDexie();
     this.multiInstance = input.multiInstance ?? true;
     this.fetchImpl = input.fetchImpl ?? fetch;
     this.onSnapshot = input.onSnapshot;
     this.onIssue = input.onIssue;
+    this.onRemoteEvent = input.onRemoteEvent ?? (() => undefined);
     this.persistenceGates.set("campaigns", new TrailingPersistenceGate());
     this.persistenceGates.set("teams", new TrailingPersistenceGate());
   }
@@ -264,6 +300,67 @@ export class MissionRxdbSync {
       ? payload.campaignRevision
       : this.canonicalRevision;
     return { seq, campaignRevision };
+  }
+
+  private readStoredProgress(): StoredSyncProgress {
+    const storage = progressStorage();
+    if (!storage) return {};
+    try {
+      const raw = storage.getItem(this.progressKey);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      const value = parsed as Record<string, unknown>;
+      const checkpointsValue = value.checkpoints;
+      const checkpoints: Partial<Record<RxdbCollectionName, number>> = {};
+      if (checkpointsValue && typeof checkpointsValue === "object" && !Array.isArray(checkpointsValue)) {
+        const checkpointRecord = checkpointsValue as Record<string, unknown>;
+        for (const collectionName of COLLECTION_NAMES) {
+          const seq = checkpointRecord[collectionName];
+          if (typeof seq === "number" && Number.isSafeInteger(seq) && seq >= 0) checkpoints[collectionName] = seq;
+        }
+      }
+      const campaignRevision = value.campaignRevision;
+      return {
+        checkpoints,
+        ...(typeof campaignRevision === "number" && Number.isSafeInteger(campaignRevision) && campaignRevision >= 0 ? { campaignRevision } : {}),
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  private recordPullProgress(collectionName: RxdbCollectionName, seq: number, campaignRevision: number) {
+    const current = this.checkpoints.get(collectionName);
+    this.checkpoints.set(collectionName, current === undefined ? seq : Math.max(current, seq));
+    this.canonicalRevision = Math.max(this.canonicalRevision, campaignRevision);
+    const storage = progressStorage();
+    if (!storage) return;
+    try {
+      const stored = this.readStoredProgress();
+      const checkpoints = { ...(stored.checkpoints ?? {}) };
+      checkpoints[collectionName] = Math.max(checkpoints[collectionName] ?? 0, seq);
+      storage.setItem(this.progressKey, JSON.stringify({
+        checkpoints,
+        campaignRevision: Math.max(stored.campaignRevision ?? 0, campaignRevision),
+      } satisfies StoredSyncProgress));
+    } catch {
+    }
+  }
+
+  private knownCheckpoint(collectionName: RxdbCollectionName) {
+    const local = this.checkpoints.get(collectionName);
+    const stored = this.readStoredProgress().checkpoints?.[collectionName];
+    if (local === undefined) return stored;
+    if (stored === undefined) return local;
+    return Math.max(local, stored);
+  }
+
+  private allCollectionsAtOrBeyond(seq: number) {
+    return COLLECTION_NAMES.every((collectionName) => {
+      const checkpoint = this.knownCheckpoint(collectionName);
+      return checkpoint !== undefined && checkpoint >= seq;
+    });
   }
 
   private scheduleMaterialization() {
@@ -310,14 +407,13 @@ export class MissionRxdbSync {
     if (!collection) throw new Error("rxdb_collection_missing");
     const persistenceGate = this.persistenceGates.get(collectionName);
     const replication = replicateRxCollection<RxdbDocument, { seq: number }>({
-      replicationIdentifier: "mission-rxdb-sync-v1:" + this.campaignId + ":" + (this.teamScopeId ?? "campaign") + ":" + collectionName,
+      replicationIdentifier: "mission-rxdb-sync-v1:" + this.campaignId + ":" + this.replicaScope + ":" + collectionName,
       collection,
       pull: {
         batchSize: PULL_BATCH_SIZE,
         handler: async (checkpoint: { seq: number } | undefined, batchSize: number) => {
           const result = await this.request<RxdbPullResponse>("pull", collectionName, { checkpoint: checkpoint ?? null, batchSize });
-          this.checkpoints.set(collectionName, result.checkpoint.seq);
-          if (Number.isSafeInteger(result.campaignRevision) && result.campaignRevision >= 0) this.canonicalRevision = Math.max(this.canonicalRevision, result.campaignRevision);
+          this.recordPullProgress(collectionName, result.checkpoint.seq, result.campaignRevision);
           return { documents: result.documents.map(withDeletedMarker), checkpoint: result.checkpoint };
         },
       },
@@ -347,8 +443,14 @@ export class MissionRxdbSync {
         const code = error instanceof RxdbSyncHttpError ? error.code : message + details;
         this.onIssue({ kind: code.includes("rxdb_sync_schema_unavailable") ? "schema" : "network", collectionName, code });
       }),
-      replication.received$.subscribe(() => this.scheduleMaterialization()),
-      replication.sent$.subscribe(() => this.scheduleMaterialization()),
+      replication.received$.subscribe(() => {
+        this.onRemoteEvent("received");
+        this.scheduleMaterialization();
+      }),
+      replication.sent$.subscribe(() => {
+        this.onRemoteEvent("sent");
+        this.scheduleMaterialization();
+      }),
     );
     this.replications.set(collectionName, replication);
   }
@@ -381,8 +483,8 @@ export class MissionRxdbSync {
 
   private minimumKnownCheckpoint() {
     let minimum = Number.POSITIVE_INFINITY;
-    for (const collectionName of Object.keys(schemas) as RxdbCollectionName[]) {
-      minimum = Math.min(minimum, this.checkpoints.get(collectionName) ?? 0);
+    for (const collectionName of COLLECTION_NAMES) {
+      minimum = Math.min(minimum, this.knownCheckpoint(collectionName) ?? 0);
     }
     return Number.isFinite(minimum) ? minimum : 0;
   }
@@ -391,7 +493,8 @@ export class MissionRxdbSync {
     if (!this.initialized) return;
     try {
       const checkpoint = await this.requestCheckpoint();
-      if (checkpoint.seq > this.minimumKnownCheckpoint() || checkpoint.campaignRevision > this.canonicalRevision) this.refresh();
+      const storedRevision = this.readStoredProgress().campaignRevision ?? this.canonicalRevision;
+      if (checkpoint.seq > this.minimumKnownCheckpoint() || checkpoint.campaignRevision > Math.max(this.canonicalRevision, storedRevision)) this.refresh();
     } catch (error) {
       const code = error instanceof RxdbSyncHttpError ? error.code : "rxdb_checkpoint_failed";
       this.onIssue({ kind: code.includes("schema_unavailable") ? "schema" : "network", code });
@@ -400,8 +503,9 @@ export class MissionRxdbSync {
 
   async start() {
     if (this.initialized) return;
+    const actorSuffix = this.actorScopeId ? "-actor-" + safeDatabaseSegment(this.actorScopeId) : "";
     this.database = await createRxDatabase({
-      name: "verteil-flyer-mission-rxdb-v1-" + this.campaignId + (this.teamScopeId ? "-field-group-" + this.teamScopeId : ""),
+      name: "verteil-flyer-mission-rxdb-v1-" + this.campaignId + (this.teamScopeId ? "-field-group-" + this.teamScopeId + actorSuffix : ""),
       storage: this.storage,
       multiInstance: this.multiInstance,
       eventReduce: true,
@@ -426,6 +530,71 @@ export class MissionRxdbSync {
   refresh() {
     this.connectSocket();
     for (const replication of this.replications.values()) replication.reSync();
+  }
+
+  async refreshAndWait(timeoutMs = 15_000) {
+    if (!this.initialized) throw new RxdbSyncHttpError(0, "rxdb_not_initialized", "RxDB-Synchronisation ist noch nicht gestartet.");
+    const target = await this.requestCheckpoint();
+    this.refresh();
+    if (this.allCollectionsAtOrBeyond(target.seq)) {
+      this.canonicalRevision = Math.max(this.canonicalRevision, target.campaignRevision);
+      this.scheduleMaterialization();
+      return target;
+    }
+
+    return await new Promise<{ seq: number; campaignRevision: number }>((resolve, reject) => {
+      const deadline = Date.now() + Math.max(1, timeoutMs);
+      const temporarySubscriptions: Array<{ unsubscribe(): void }> = [];
+      let pollTimer: ReturnType<typeof setTimeout> | null = null;
+      let settled = false;
+      const onStorage = (event: StorageEvent) => {
+        if (event.key === this.progressKey) check();
+      };
+      const cleanup = () => {
+        if (pollTimer !== null) clearTimeout(pollTimer);
+        for (const subscription of temporarySubscriptions) subscription.unsubscribe();
+        if (typeof window !== "undefined" && typeof window.removeEventListener === "function") window.removeEventListener("storage", onStorage);
+      };
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        this.canonicalRevision = Math.max(this.canonicalRevision, target.campaignRevision);
+        this.scheduleMaterialization();
+        resolve(target);
+      };
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error instanceof Error ? error : new RxdbSyncHttpError(0, "rxdb_refresh_failed", "RxDB-Aktualisierung ist fehlgeschlagen."));
+      };
+      const check = () => {
+        if (settled) return;
+        if (!this.initialized) {
+          fail(new RxdbSyncHttpError(0, "rxdb_refresh_cancelled", "RxDB-Aktualisierung wurde beendet."));
+          return;
+        }
+        if (this.allCollectionsAtOrBeyond(target.seq)) {
+          finish();
+          return;
+        }
+        if (Date.now() >= deadline) {
+          fail(new RxdbSyncHttpError(0, "rxdb_refresh_timeout", "Nicht alle Datenbereiche konnten rechtzeitig bestätigt werden."));
+          return;
+        }
+        pollTimer = setTimeout(check, REFRESH_POLL_INTERVAL_MS);
+      };
+      for (const replication of this.replications.values()) {
+        temporarySubscriptions.push(
+          replication.received$.subscribe(check),
+          replication.sent$.subscribe(check),
+          replication.error$.subscribe((error: unknown) => fail(error)),
+        );
+      }
+      if (typeof window !== "undefined" && typeof window.addEventListener === "function") window.addEventListener("storage", onStorage);
+      check();
+    });
   }
 
   flushDebouncedWrites() {
@@ -510,7 +679,7 @@ export class MissionRxdbSync {
     const socket = this.socket;
     this.socket = null;
     if (socket) { try { socket.close(); } catch {} }
-    for (const subscription of this.subscriptions) subscription.unsubscribe();
+    for (const subscription of this.subscriptions.splice(0)) subscription.unsubscribe();
     for (const replication of this.replications.values()) await replication.cancel();
     this.replications.clear();
     if (this.database) await this.database.close();
