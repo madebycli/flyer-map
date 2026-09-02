@@ -146,7 +146,7 @@ test("an independent sent document cannot globally confirm while another RxDB pu
   });
   try {
     await sync.start();
-    await waitForCondition(() => events.includes("push-idle"));
+    await sync.refreshAndWait(1_000);
     events.length = 0;
 
     server.blockTeamPush = true;
