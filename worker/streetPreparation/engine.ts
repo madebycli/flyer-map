@@ -176,6 +176,16 @@ export function prepareStreetsForArea(input: StreetPreparationInput): StreetPrep
       fragmentCount: tasks.length,
       duplicateFragmentCount,
       durationMs: Math.max(0, Date.now() - startedAt),
+      source: {
+        requestCount: 0,
+        tileCount: 0,
+        maxConcurrentRequests: 0,
+        upstreamBytes: 0,
+        parsedElementCount: 0,
+        normalizedRoadCount: input.roads.length,
+        normalizedBuildingCount: 0,
+        packageBytes: 0,
+      },
     },
   };
 }
