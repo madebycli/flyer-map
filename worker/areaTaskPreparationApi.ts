@@ -106,7 +106,7 @@ export async function handleAreaTaskPreparationApi(
     return error(
       503,
       "area_preparation_schema_unavailable",
-      "Die vorbereitete Migration 0014 ist serverseitig noch nicht verfügbar.",
+      "Die vorbereiteten Migrationen 0014 und 0015 sind serverseitig noch nicht verfügbar.",
     );
   }
   if (request.method === "GET") return json(decision.state);
@@ -130,7 +130,7 @@ export async function handleAreaTaskPreparationApi(
     return error(
       503,
       "area_preparation_schema_unavailable",
-      "Die vorbereitete Migration 0014 ist serverseitig noch nicht verfügbar.",
+      "Die vorbereiteten Migrationen 0014 und 0015 sind serverseitig noch nicht verfügbar.",
     );
   } else if (preparation.result.outcome === "missing") {
     return error(404, "area_not_found", "Area wurde nicht gefunden.");
