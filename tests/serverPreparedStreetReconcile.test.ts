@@ -63,7 +63,7 @@ test("reconcile preserves existing user-owned fields and only inserts/deletes th
   assert.equal(result.outcome, "ready");
   if (result.outcome !== "ready") return;
   assert.deepEqual(result.deleteIds, ["task_auto_obsolete"]);
-  assert.deepEqual(result.unchangedIds, ["task_auto_new", "task_auto_same"].sort());
+  assert.deepEqual(result.unchangedIds, ["task_auto_same"]);
   assert.deepEqual(result.inserts.map((candidate) => candidate.id), ["task_auto_new"]);
   assert.equal(result.afterTasks.find((candidate) => candidate.id === "task_manual")?.label, "Manuell");
   assert.equal(result.afterTasks.find((candidate) => candidate.id === "task_auto_same")?.label, "Vom Nutzer umbenannt");
