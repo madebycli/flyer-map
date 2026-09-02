@@ -26,7 +26,7 @@ PR #72 bleibt Draft gegen `ui-app-launcher-sheet`. Kein Merge, kein Ready-for-Re
 
 Die serverseitige Street Engine wird ausschließlich auf `feature/established-street-preparation-engine` entwickelt. Der Branch wurde gegen den am 2026-09-02 verifizierten Head von `plan-feature-complete-platform` gestartet: `4ddfc2da7cc44c78d82c2f831ef2d34513d8b1f8`. `mission-rxdb-sync` bleibt unangetastet und wird nur als separater Integrationsvertrag referenziert.
 
-Die Engine nutzt JSTS für serverseitiges exaktes LineString/Polygon-Clipping, modulare Turf-Pakete für Boundary-Test, Smart-Street-Snap und A/B-Slice, stabile automatische Street-IDs und Delta-Reconciliation. Browser-Overpass, Geräte-Recompute, D1-Migrationen, Merge und Deployment sind nicht Teil dieses Branches.
+Die Engine nutzt JSTS für serverseitiges exaktes LineString/Polygon-Clipping, modulare Turf-Pakete für Boundary-Test, Smart-Street-Snap und A/B-Slice, stabile automatische Street-IDs und Delta-Reconciliation. Browser-Overpass, Geräte-Recompute, Remote-D1-Migrationen, Merge und Deployment sind nicht Teil dieses Branches.
 
 Für das aktuelle Hardening gelten zusätzlich: Die Engine liefert Kandidaten mit sourceKey und fragmentKey, der Adapter materialisiert die kanonische SHA-256-ID und den Reconcile-Delta-Satz inserts/updates/deleteIds/unchangedIds. Die konkurrierende Reconcile-Datei auf PR #74 ist ein Integrationskonflikt und darf nicht als zweiter Street-Adapter fortbestehen.
 ## Baseline
@@ -58,7 +58,7 @@ sessions: 66
 mutations: 188
 ```
 
-Damit ist Migration 0014 für die serverseitige automatische Area-Vorbereitung remote vorhanden. Historische Plan-/ADR-Texte, die den damaligen Zustand `prepared only` beschreiben, bleiben historische Evidence und sind nicht als aktueller Deployment-State zu lesen.
+Damit ist Migration 0014 für die serverseitige automatische Area-Vorbereitung remote vorhanden. Der aktuelle P0-Closure-Branch bereitet Migration 0015 für unabhängige Street-/House-States vor, hat sie aber nicht remote angewendet. Bis zu einem separaten autorisierten Rollout bleibt die Live-Vorschau mit einem Remote-Schema ohne 0015 ein offenes Integrations-Gate. Historische Plan-/ADR-Texte, die den damaligen Zustand `prepared only` beschreiben, bleiben historische Evidence und sind nicht als aktueller Deployment-State zu lesen.
 
 ## M4 Admin-Handoff
 
@@ -101,14 +101,19 @@ ADR-0021 ist der normale Mission-Pfad:
 - Gebäude werden als normale persistente House Tasks gespeichert;
 - automatische Tasks besitzen app-eigene IDs und eine serverseitige Preparation-Generation;
 - manuelle Streets bleiben mit `areaPreparationGeneration = null` erhalten;
-- Publish von Tasks, Ready-State und Campaign-Revision erfolgt guarded/atomar;
-- gleiche Ready-Geometrie ist No-op, frisches Pending dedupliziert und veraltete Generationen dürfen nicht publishen;
-- Fehler veröffentlichen keine partiellen Tasks;
-- autorisierter Retry ist nur bei Fehlern vor begonnenem automatischem Work möglich; danach ist die Area action-required gesperrt und startet keine nutzlose Retry-Schleife;
+- Street und House besitzen unabhängige Status-, Fehler-, Count-, Source- und Zeitstempelfelder unter einer gemeinsamen Generation;
+- Street-Task-Publish und House-Task-Publish sind je Phase guarded/atomar;
+- gleiche Ready-Generation ist No-op, frisches Pending dedupliziert und veraltete Generationen dürfen nicht publishen;
+- ein House-Fehler versteckt keinen bereits erfolgreichen Street-Publish; ein Street-Fehler markiert Streets nicht fälschlich als ready;
+- autorisierter Retry ist je Phase nur bei Fehlern vor begonnenem automatischem Work möglich; danach ist die Area action-required gesperrt und startet keine nutzlose Retry-Schleife;
 - automatische Tasks dürfen normal ihren Status ändern, aber nicht über normale Client-Mutationen gelöscht werden;
 - nach begonnenem automatischem Work wird eine Geometrieänderung kontrolliert mit `area_has_started_work` blockiert.
 
 Der normale Area Sheet startet `missing` genau einmal, pollt `pending` nur solange das Sheet offen ist, refresht bei `ready` einmal den normalen Campaign-Snapshot und bietet bei `failed` einen autorisierten Retry. Nach lokaler Area-Erstellung oder Geometrieänderung toleriert der Poller den kurzen M5-Persistenz-Race mit höchstens fünf weiteren `404 area_not_found`-Reads im Zwei-Sekunden-Takt; andere Fehler bleiben explizit retrybar. Der serverseitige Overpass-Formularrequest verwendet den produktiv kompatiblen `application/x-www-form-urlencoded`-Content-Type ohne den von Overpass abgelehnten Charset-Zusatz. Leere additive House-/Collection-Felder werden beim lokalen/kanonischen Vergleich gleich behandelt, echte Datenabweichungen bleiben Konflikte. `Straße manuell hinzufügen` bleibt Fallback. Die alten Smart-Street-/Smart-House-Auswahlbuttons sind kein normaler Produkteinstieg mehr.
+
+## P0 Closure: unabhängige Area-Preparation
+
+Der aktuelle Branch führt die automatische Vorbereitung als zwei wahrheitsgetreue Phasen: Streets werden nach erfolgreichem serverseitigem JSTS-Publish sofort kanonisch und für Smart Street nutzbar; Houses werden separat geladen, gespeichert und angezeigt. Ein House-Fehler setzt Streets nicht zurück. Ein expliziter House-Retry regeneriert keine Streets, ein Street-Retry schreibt keine fertigen Houses. `area_preparation_work_started` ist eine lokalisierte action-required-Anzeige ohne Retry, ohne Auto-Start und ohne destruktiven Reset, auch wenn der aggregierte Status nicht `failed` lautet.
 
 ## Map und Task-Darstellung
 
@@ -162,7 +167,7 @@ Cloud-/CI-Tests oder ein Browser ohne echte Mobile/WebGL-Eigenschaften dürfen n
 
 ## Nächster Schritt
 
-1. Mission-Trim auf exaktem neuen Head durch CI verifizieren.
+1. P0-Closure-Branch auf exaktem neuen Head durch CI verifizieren.
 2. Versioned Preview und Branch-Alias für diesen Head verifizieren.
 3. echten Distribution E2E und Admin-Handoff durchführen.
 4. Android/iPhone Mission Smoke durchführen.
