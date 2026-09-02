@@ -49,4 +49,3 @@ test("50-60 client sanity model follows the implemented batch/checkpoint limits"
   assert.ok(model.safetyCheckpointRequests < 40_000);
   assert.equal(model.websocketConnections, 60);
 });
-
