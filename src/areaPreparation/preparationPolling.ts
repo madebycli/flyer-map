@@ -41,10 +41,15 @@ type AreaPreparationPollerOptions = {
 function pendingState(): AreaPreparationPublicState {
   return {
     status: "pending",
+    streetStatus: "pending",
+    houseStatus: "pending",
     roadCount: 0,
     houseCount: 0,
     sourceTimestamp: null,
     errorCode: null,
+    streetErrorCode: null,
+    houseErrorCode: null,
+    actionRequired: false,
     updatedAt: null,
   };
 }
@@ -60,14 +65,29 @@ function isAreaNotYetPersistedError(error: unknown) {
   return error instanceof CampaignApiError && error.status === 404 && error.code === "area_not_found";
 }
 
+export function isAreaPreparationActionRequired(state: AreaPreparationPublicState) {
+  return Boolean(
+    state.actionRequired ||
+    state.errorCode === "area_preparation_work_started" ||
+    state.streetErrorCode === "area_preparation_work_started" ||
+    state.houseErrorCode === "area_preparation_work_started",
+  );
+}
+
 function isStalePending(state: AreaPreparationPublicState) {
-  if (state.status !== "pending" || !state.updatedAt) return false;
+  if (
+    (state.streetStatus !== "pending" && state.houseStatus !== "pending") ||
+    !state.updatedAt
+  ) {
+    return false;
+  }
   const updatedAt = Date.parse(state.updatedAt);
   return !Number.isFinite(updatedAt) || Date.now() - updatedAt >= AREA_PREPARATION_STALE_PENDING_MS;
 }
 
 function shouldAutoRecover(state: AreaPreparationPublicState) {
-  return state.status === "missing" || state.status === "failed" || isStalePending(state);
+  if (isAreaPreparationActionRequired(state)) return false;
+  return state.status === "missing" || state.streetStatus === "failed" || isStalePending(state);
 }
 
 /**
@@ -84,6 +104,7 @@ export function createAreaPreparationPoller(
   let inFlight = false;
   let pollTimeout: number | null = null;
   let notYetPersistedRetryCount = 0;
+  let lastState: AreaPreparationPublicState | null = null;
 
   const clearPoll = () => {
     if (pollTimeout === null) return;
@@ -102,6 +123,7 @@ export function createAreaPreparationPoller(
   const applyState = (state: AreaPreparationPublicState) => {
     if (stopped) return;
     notYetPersistedRetryCount = 0;
+    lastState = state;
     options.onState(state);
     if (state.status === "pending") {
       options.markPending();
@@ -116,6 +138,10 @@ export function createAreaPreparationPoller(
   };
 
   const runStart = async () => {
+    if (lastState && isAreaPreparationActionRequired(lastState)) {
+      options.onState(lastState);
+      return;
+    }
     options.markPending();
     options.onState(pendingState());
     const state = await options.client.start(options.campaignId, options.areaId);
@@ -128,6 +154,7 @@ export function createAreaPreparationPoller(
     try {
       const state = await options.client.fetchState(options.campaignId, options.areaId);
       if (stopped) return;
+      lastState = state;
       if (allowAutoStart && shouldAutoRecover(state) && options.canAutoStart()) {
         options.markAutoStarted();
         await runStart();
@@ -159,6 +186,10 @@ export function createAreaPreparationPoller(
     },
     retry() {
       if (stopped || inFlight) return;
+      if (lastState && isAreaPreparationActionRequired(lastState)) {
+        options.onState(lastState);
+        return;
+      }
       clearPoll();
       notYetPersistedRetryCount = 0;
       inFlight = true;
