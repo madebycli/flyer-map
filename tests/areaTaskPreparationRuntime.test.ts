@@ -500,10 +500,8 @@ test("reprepare keeps stable automatic Street identity and user-owned fields", a
   const after = db.sqlite.prepare(
     "SELECT id, label, status FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
   ).get(campaignId) as { id: string; label: string; status: string };
-  assert.deepEqual(after, {
-    id: automatic.id,
-    label: "Vom Team geprüft",
-    status: "later",
-  });
+  assert.equal(after.id, automatic.id);
+  assert.equal(after.label, "Vom Team geprüft");
+  assert.equal(after.status, "later");
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE id = 'task_manual'").get()?.count, 1);
 });
