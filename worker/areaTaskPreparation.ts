@@ -326,8 +326,8 @@ export async function prepareTasksForArea(input: {
     if (!representative || !pointInOrOnPolygon(representative, input.area.geometry)) continue;
     if (houseTasks.length >= maxBuildings) {
       throw new PreparationFailure(
-        "area_preparation_too_many_features",
-        "Zu viele Gebäude in der Area.",
+        "area_preparation_building_volume",
+        "Das Gebäudevolumen der Area überschreitet die Sicherheitsgrenze.",
       );
     }
     const house = createSmartHouseTaskSnapshot({
@@ -651,10 +651,14 @@ function failureCode(error: unknown): AreaPreparationFailureCode {
   if (error instanceof OsmFeaturesForAreaError) {
     if (error.reason === "rate-limited") return "area_preparation_osm_rate_limited";
     if (error.reason === "server-error") return "area_preparation_osm_server_error";
+    if (
+      error.phase === "buildings"
+      && (error.reason === "response-too-large" || error.reason === "aggregate-too-large")
+    ) {
+      return "area_preparation_building_volume";
+    }
     if (error.reason === "response-too-large") {
-      return error.phase === "buildings"
-        ? "area_preparation_building_volume"
-        : "area_preparation_osm_response_too_large";
+      return "area_preparation_osm_response_too_large";
     }
     switch (error.code) {
       case "too_large": return "area_preparation_too_large";
