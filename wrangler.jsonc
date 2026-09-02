@@ -26,7 +26,7 @@
   "migrations": [
     {
       "tag": "v1-campaign-sync",
-      "new_classes": ["CampaignSyncDurableObject"]
+      "new_sqlite_classes": ["CampaignSyncDurableObject"]
     }
   ],
   "ratelimits": [
