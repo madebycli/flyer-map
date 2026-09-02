@@ -47,6 +47,7 @@ class SqliteD1 implements D1DatabaseLike {
       "0004_m6_task_source_provenance.sql",
       "0005_m6_house_tasks.sql",
       "0014_auto_area_task_preparation.sql",
+      "0015_area_task_preparation_split.sql",
     ]) {
       this.sqlite.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
     }
