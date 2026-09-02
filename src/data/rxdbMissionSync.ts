@@ -28,7 +28,6 @@ type ReplicationState = {
   error$: { subscribe(handler: (error: unknown) => void): { unsubscribe(): void } };
   received$: { subscribe(handler: () => void): { unsubscribe(): void } };
   sent$: { subscribe(handler: () => void): { unsubscribe(): void } };
-  awaitInSync(): Promise<true>;
   awaitDocumentPushed(document: RxDocument<RxdbDocument>): Promise<void>;
   reSync(): void;
   cancel(): Promise<unknown>;
@@ -246,7 +245,8 @@ export class MissionRxdbSync {
   private socketReconnectDelay = 2_000;
   private initialized = false;
   private canonicalRevision = 0;
-  private pendingPushProofs = 0;
+  private readonly pendingPushProofs = new Map<string, number>();
+  private pushProofGeneration = 0;
   private readonly persistenceGates = new Map<RxdbCollectionName, TrailingPersistenceGate>();
 
   constructor(input: {
@@ -441,36 +441,29 @@ export class MissionRxdbSync {
 
   private trackPushProofs(proofs: RxdbPushProof[]) {
     if (proofs.length === 0) return;
-    this.pendingPushProofs += proofs.length;
-    this.onRemoteEvent("push-pending");
     for (const proof of proofs) {
       const replication = this.replications.get(proof.collectionName);
+      const proofKey = proof.collectionName + ":" + proof.document.primary;
+      const generation = ++this.pushProofGeneration;
+      this.pendingPushProofs.set(proofKey, generation);
       if (!replication) {
         this.onIssue({ kind: "network", collectionName: proof.collectionName, documentId: proof.document.primary, code: "rxdb_replication_missing" });
         continue;
       }
       void replication.awaitDocumentPushed(proof.document)
         .then(() => {
-          this.pendingPushProofs = Math.max(0, this.pendingPushProofs - 1);
-          if (this.initialized && this.pendingPushProofs === 0) this.onRemoteEvent("push-idle");
+          if (this.pendingPushProofs.get(proofKey) !== generation) return;
+          this.pendingPushProofs.delete(proofKey);
+          if (this.initialized && this.pendingPushProofs.size === 0) this.onRemoteEvent("push-idle");
         })
         .catch((error: unknown) => {
+          if (this.pendingPushProofs.get(proofKey) !== generation) return;
+          this.pendingPushProofs.delete(proofKey);
           const code = error instanceof Error ? error.message : "rxdb_push_confirmation_failed";
           this.onIssue({ kind: "network", collectionName: proof.collectionName, documentId: proof.document.primary, code });
         });
     }
-  }
-
-  private proveInitialPushIdle() {
-    const replications = [...this.replications.values()];
-    void Promise.all(replications.map((replication) => replication.awaitInSync()))
-      .then(() => {
-        if (this.initialized && this.pendingPushProofs === 0) this.onRemoteEvent("push-idle");
-      })
-      .catch((error: unknown) => {
-        const code = error instanceof Error ? error.message : "rxdb_initial_push_confirmation_failed";
-        this.onIssue({ kind: "network", code });
-      });
+    this.onRemoteEvent("push-pending");
   }
 
   private createReplication(collectionName: RxdbCollectionName) {
@@ -597,7 +590,6 @@ export class MissionRxdbSync {
       this.subscriptions.push(this.collections[collectionName].find({ selector: { campaignId: this.campaignId } }).$.subscribe(() => this.scheduleMaterialization()));
       this.createReplication(collectionName);
     }
-    this.proveInitialPushIdle();
     if (typeof window !== "undefined") this.safetyTimer = window.setInterval(() => { void this.safetyResync(); }, 45_000);
     this.connectSocket();
     this.scheduleMaterialization();
@@ -774,11 +766,11 @@ export class MissionRxdbSync {
     this.replications.clear();
     this.pendingPullProgress.clear();
     this.pullApplyFailures.clear();
+    this.pendingPushProofs.clear();
     for (const gate of this.persistenceGates.values()) gate.flush();
     if (this.database) await this.database.close();
     this.database = null;
     this.collections = null;
-    this.pendingPushProofs = 0;
     this.initialized = false;
   }
 }
