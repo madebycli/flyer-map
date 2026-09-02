@@ -58,9 +58,9 @@ function normalizePolygonGeometry(geometry: PolygonGeometry) {
     if (ring.some((coordinate) => !finiteCoordinate(coordinate))) return null;
     const clean = ring.map(([lng, lat]) => [lng, lat] as LngLat);
     if (clean.length < 3) return null;
-    const closed = sameCoordinate(clean[0], clean[clean.length - 1])
+    const closed: LngLat[] = sameCoordinate(clean[0], clean[clean.length - 1])
       ? clean
-      : [...clean, [clean[0][0], clean[0][1]]];
+      : [...clean, [clean[0][0], clean[0][1]] as LngLat];
     if (closed.length < 4) return null;
     rings.push(closed);
   }
