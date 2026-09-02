@@ -230,8 +230,11 @@ test("fresh pending preparation deduplicates before a second upstream request", 
     ...options(),
     fetchImpl: async () => {
       fetchCount += 1;
-      startedResolve?.();
-      return response;
+      if (fetchCount === 1) {
+        startedResolve?.();
+        return response;
+      }
+      return osmResponse();
     },
   });
   await started;
