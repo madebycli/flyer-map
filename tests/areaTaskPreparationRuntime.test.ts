@@ -4,8 +4,10 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import {
   areaHasStartedAutomaticWork,
+  beginAreaTaskPreparation,
   getAreaTaskPreparationState,
   prepareAreaTasks,
+  runAreaTaskPreparation,
 } from "../worker/areaTaskPreparation.ts";
 import { handleAreaTaskPreparationApi } from "../worker/areaTaskPreparationApi.ts";
 import { handleCampaignMutation } from "../worker/mutationHandler.ts";
@@ -171,14 +173,18 @@ test("prepared Area publishes independent Street and House phases, keeping manua
   const db = new SqliteD1();
   seed(db);
   let fetchCount = 0;
-
-  const result = await prepareAreaTasks(db, campaignId, areaId, {
+  const preparationOptions = {
     ...options(),
     fetchImpl: async () => {
       fetchCount += 1;
       return osmResponse();
     },
-  });
+  };
+  const started = await beginAreaTaskPreparation(db, campaignId, areaId, preparationOptions);
+  assert.equal(started.outcome, "run");
+  if (started.outcome !== "run") throw new Error("Area preparation claim did not start");
+  assert.deepEqual(started.run.phases, ["street", "house"]);
+  const result = await runAreaTaskPreparation(db, started.run, preparationOptions);
   assert.equal(result.outcome, "ready");
   assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 5);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE campaign_id = ?").get(campaignId)?.count, 2);
