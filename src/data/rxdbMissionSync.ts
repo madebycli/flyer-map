@@ -78,7 +78,7 @@ export class TrailingPersistenceGate {
   private resolvers: Array<() => void> = [];
 
   private release() {
-    if (this.timer !== null) window.clearTimeout(this.timer);
+    if (this.timer !== null) globalThis.clearTimeout(this.timer);
     this.timer = null;
     const resolvers = this.resolvers.splice(0);
     for (const pending of resolvers) pending();
@@ -87,8 +87,8 @@ export class TrailingPersistenceGate {
   wait() {
     return new Promise<void>((resolve) => {
       this.resolvers.push(resolve);
-      if (this.timer !== null) window.clearTimeout(this.timer);
-      this.timer = window.setTimeout(() => this.release(), 900);
+      if (this.timer !== null) globalThis.clearTimeout(this.timer);
+      this.timer = globalThis.setTimeout(() => this.release(), 900);
     });
   }
 
@@ -197,7 +197,6 @@ async function responseError(response: Response) {
     payload?.error?.message ?? "RxDB-Synchronisation ist momentan nicht verfügbar.",
   );
 }
-
 function asWireDocument(document: RxdbDocument) {
   return withoutRxdbMetadata(document);
 }
@@ -682,6 +681,7 @@ export class MissionRxdbSync {
     for (const subscription of this.subscriptions.splice(0)) subscription.unsubscribe();
     for (const replication of this.replications.values()) await replication.cancel();
     this.replications.clear();
+    for (const gate of this.persistenceGates.values()) gate.flush();
     if (this.database) await this.database.close();
     this.database = null;
     this.collections = null;
