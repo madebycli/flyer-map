@@ -31,34 +31,63 @@ export function canonicalStreetGeometryKey(geometry: StreetInputGeometry): strin
     .join("|");
 }
 
-function fnv1a64(value: string, offset: bigint) {
-  let hash = offset;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= BigInt(value.charCodeAt(index));
-    hash = BigInt.asUintN(64, hash * 1099511628211n);
-  }
-  return hash.toString(16).padStart(16, "0");
-}
-
 export function canonicalStreetLineKey(geometry: LineStringGeometry) {
   return lineKey(geometry.coordinates);
 }
 
-export function stableStreetTaskId(input: {
-  campaignId: string;
-  areaId: string;
-  osmId: number;
+/**
+ * This exact JSON form is the cross-branch canonical fragment representation.
+ * It is direction-invariant and intentionally matches the SHA-256 contract
+ * already used by the RxDB integration branch.
+ */
+export function canonicalStreetFragmentGeometryJson(geometry: LineStringGeometry) {
+  const forward = geometry.coordinates;
+  const reversed = [...forward].reverse();
+  const forwardJson = JSON.stringify(forward);
+  const reversedJson = JSON.stringify(reversed);
+  const coordinates = reversedJson < forwardJson ? reversed : forward;
+  return JSON.stringify({ type: "LineString", coordinates });
+}
+
+/** Stable source identity before clipping, never used as a user-visible Task ID. */
+export function preparedStreetSourceKey(input: {
+  sourceOsmWayId: number;
+  geometry: StreetInputGeometry;
+}) {
+  return "osm-way:" + input.sourceOsmWayId + ":" + canonicalStreetGeometryKey(input.geometry);
+}
+
+/** Stable clipped fragment identity used for deduplication and adapter input. */
+export function preparedStreetFragmentKey(input: {
+  sourceOsmWayId: number;
   geometry: LineStringGeometry;
 }) {
-  const canonical = [
-    "flyer-map",
-    "prepared-street",
-    input.campaignId,
-    input.areaId,
-    String(input.osmId),
-    canonicalStreetLineKey(input.geometry),
-  ].join("|");
-  const first = fnv1a64(canonical, 14695981039346656037n);
-  const second = fnv1a64("v2|" + canonical, 1099511628211n);
-  return "task_auto_" + first + second;
+  return "osm-way:" + input.sourceOsmWayId + ":" + canonicalStreetFragmentGeometryJson(input.geometry);
+}
+
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Canonical app-owned identity. Keep this byte-for-byte aligned with the
+ * server-prepared-street-v1 contract on the Sync branch.
+ */
+export async function stablePreparedStreetTaskId(input: {
+  campaignId: string;
+  areaId: string;
+  sourceOsmWayId: number;
+  geometry: LineStringGeometry;
+}) {
+  const identity = JSON.stringify({
+    namespace: "server-prepared-street-v1",
+    campaignId: input.campaignId,
+    areaId: input.areaId,
+    sourceOsmWayId: input.sourceOsmWayId,
+    geometry: canonicalStreetFragmentGeometryJson(input.geometry),
+  });
+  return "task_auto_" + await sha256Hex(identity);
 }
