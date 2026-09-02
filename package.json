@@ -23,7 +23,8 @@
     "maplibre-gl": "5.7.1",
     "qrcode.react": "4.2.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "@turf/distance": "7.4.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.54.0",
