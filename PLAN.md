@@ -92,6 +92,14 @@ Supporting files expected after those first three:
 - No PR #74 writes, no sync files changed, no remote D1 changes, no production deployment
 - Real-device acceptance remains external unless actually performed
 
+## Implementation status
+
+- Die empfohlene Option B ist umgesetzt: eine gemeinsame Area-Generation mit unabhängigen Street-/House-States und je Phase guarded Publish.
+- Street ready plus House failed ist ein gültiger, sichtbarer Zustand. House-Retry und Street-Retry sind getrennt und bewahren den jeweils bereits fertigen Zweig.
+- `area_preparation_work_started` ist als action-required-Zustand umgesetzt: lokalisierte Erklärung, kein Retry, kein Auto-Start und kein destruktiver Reset.
+- Runtime-, Polling- und UI-Verträge enthalten die unabhängige Status- und Isolation-Matrix.
+- Der Zwischenstand vor Dokumentationsabschluss war `3cc67046611587ca277ac23eb0a3440d5f2acc0f`; der exakte finale Head wird nach den letzten Änderungen im PR-Body und im Abschlussbericht festgehalten.
+
 ## Open points
 
 - UNKLAR: the connected Cloudflare preview's remote D1 schema state cannot be changed in this pass because remote migrations are explicitly forbidden. Local D1 tests can prove the lifecycle only after the prepared schema extension is present; the PR must state the deployment migration prerequisite clearly.
