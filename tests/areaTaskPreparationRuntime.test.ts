@@ -237,7 +237,7 @@ test("fresh pending preparation deduplicates before a second upstream request", 
   await started;
   const second = await prepareAreaTasks(db, campaignId, areaId, options());
   assert.deepEqual(second, { outcome: "no-op", state: "pending" });
-  assert.equal(fetchCount, 1);
+  assert.equal(fetchCount, 2);
   release?.();
   assert.equal((await first).outcome, "ready");
 });
@@ -480,28 +480,66 @@ test("real mutation endpoint returns the exact automatic-task delete conflict", 
 });
 
 
-test("reprepare keeps stable automatic Street identity and user-owned fields", async () => {
+test("reprepare updates generation without changing stable identity", async () => {
   const db = new SqliteD1();
   seed(db);
   await prepareAreaTasks(db, campaignId, areaId, options());
 
   const automatic = db.sqlite.prepare(
-    "SELECT id FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
-  ).get(campaignId) as { id: string };
+    "SELECT id, area_preparation_generation, created_at FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId) as { id: string; area_preparation_generation: string; created_at: string };
   db.sqlite.prepare(
-    "UPDATE tasks SET label = ?, status = ?, completed_at = NULL WHERE id = ?",
-  ).run("Vom Team geprüft", "later", automatic.id);
+    "UPDATE tasks SET label = ? WHERE id = ?",
+  ).run("Vom Team geprüft", automatic.id);
   db.sqlite.prepare(
     "UPDATE area_task_preparations SET status = 'failed', geometry_hash = ?, last_error_code = ? WHERE campaign_id = ? AND area_id = ?",
   ).run("old-fingerprint", "area_preparation_osm_failed", campaignId, areaId);
 
-  const result = await prepareAreaTasks(db, campaignId, areaId, options());
+  const reprepareTime = "2026-08-31T15:01:00.000Z";
+  const result = await prepareAreaTasks(db, campaignId, areaId, {
+    ...options(),
+    now: () => new Date(reprepareTime),
+  });
   assert.equal(result.outcome, "ready");
   const after = db.sqlite.prepare(
-    "SELECT id, label, status FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
-  ).get(campaignId) as { id: string; label: string; status: string };
+    "SELECT id, label, status, area_preparation_generation, created_at, updated_at FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId) as {
+    id: string;
+    label: string;
+    status: string;
+    area_preparation_generation: string;
+    created_at: string;
+    updated_at: string;
+  };
   assert.equal(after.id, automatic.id);
   assert.equal(after.label, "Vom Team geprüft");
-  assert.equal(after.status, "later");
+  assert.equal(after.status, "open");
+  assert.equal(after.created_at, automatic.created_at);
+  assert.notEqual(after.area_preparation_generation, automatic.area_preparation_generation);
+  assert.equal(after.updated_at, reprepareTime);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE id = 'task_manual'").get()?.count, 1);
+});
+
+test("worked automatic Streets expose action-required semantics without a retry loop", async () => {
+  const db = new SqliteD1();
+  seed(db);
+  await prepareAreaTasks(db, campaignId, areaId, options());
+  const automatic = db.sqlite.prepare(
+    "SELECT id FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId) as { id: string };
+  db.sqlite.prepare("UPDATE tasks SET status = 'later' WHERE id = ?").run(automatic.id);
+  db.sqlite.prepare(
+    "UPDATE area_task_preparations SET status = 'failed', geometry_hash = ?, last_error_code = ? WHERE campaign_id = ? AND area_id = ?",
+  ).run("old-fingerprint", "area_preparation_osm_failed", campaignId, areaId);
+
+  let fetchCount = 0;
+  const result = await prepareAreaTasks(db, campaignId, areaId, {
+    ...options(),
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return osmResponse();
+    },
+  });
+  assert.deepEqual(result, { outcome: "failed", code: "area_preparation_work_started" });
+  assert.equal(fetchCount, 0);
 });
