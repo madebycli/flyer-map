@@ -332,7 +332,8 @@ async function initializeSharedPersistence() {
   if (typeof window === "undefined" || !navigator.onLine || runtime.initialized || runtime.initializing || !runtime.latestLocal) return;
   runtime.initializing = true;
   const local = runtime.latestLocal;
-  const targetCampaignId = campaignIdFromUrl() ?? local.campaign.id;
+  const explicitCampaignId = campaignIdFromUrl();
+  const targetCampaignId = explicitCampaignId ?? local.campaign.id;
   runtime.targetCampaignId = targetCampaignId;
   setCampaignIdInUrl(targetCampaignId);
   runtime.accessState = "pending";
@@ -359,7 +360,7 @@ async function initializeSharedPersistence() {
       return;
     } catch (error) {
       if (!isAccessError(error)) throw error;
-      if (!loadedExistingSnapshot && !campaignIdFromUrl() && local.campaign.id === targetCampaignId) {
+      if (!loadedExistingSnapshot && !explicitCampaignId && local.campaign.id === targetCampaignId) {
         const created = await createCampaignSnapshot(local);
         setAccess(created.access);
         runtime.targetCampaignId = created.snapshot.campaign.id;
