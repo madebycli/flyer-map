@@ -2,7 +2,7 @@
 id: quality
 type: quality
 status: accepted
-last_updated: 2026-08-29
+last_updated: 2026-09-02
 related: [architecture, architecture-map, product-ux, product-roadmap]
 source_of_truth_for: [quality-gates, performance-acceptance, target-devices]
 ---
