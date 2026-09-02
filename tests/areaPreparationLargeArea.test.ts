@@ -4,6 +4,7 @@ import type { PolygonGeometry } from "../src/domain/campaign.ts";
 import {
   buildAreaPreparationOverpassQueries,
   fetchOsmFeaturesForArea,
+  OsmFeaturesForAreaError,
 } from "../worker/offlineMap.ts";
 
 const largeArea: PolygonGeometry = {
@@ -74,4 +75,70 @@ test("large Area preparation is tiled instead of inheriting the 3 km offline-pac
   assert.equal(result.roads[0]?.properties.osmId, 501);
   assert.equal(result.buildings[0]?.properties.osmId, 502);
   assert.equal(result.sourceTimestamp, "2026-09-02T00:30:00.000Z");
+});
+
+test("large Area preparation caps tile fetch concurrency at three", async () => {
+  const queries = buildAreaPreparationOverpassQueries(largeArea);
+  let active = 0;
+  let maxActive = 0;
+  let calls = 0;
+
+  await fetchOsmFeaturesForArea({
+    geometry: largeArea,
+    upstreamUrl: "http://localhost/overpass",
+    fetchImpl: (async () => {
+      calls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return tiledSuccessResponse();
+    }) as typeof fetch,
+  });
+
+  assert.equal(calls, queries.length);
+  assert.equal(maxActive, Math.min(3, queries.length));
+});
+
+test("large Area preparation enforces aggregate upstream bytes before starting later batches", async () => {
+  const queries = buildAreaPreparationOverpassQueries(largeArea);
+  let calls = 0;
+
+  await assert.rejects(
+    fetchOsmFeaturesForArea({
+      geometry: largeArea,
+      upstreamUrl: "http://localhost/overpass",
+      limits: {
+        maxUpstreamBytes: 1_000_000,
+        maxAggregateBytes: 100,
+      },
+      fetchImpl: (async () => {
+        calls += 1;
+        return tiledSuccessResponse();
+      }) as typeof fetch,
+    }),
+    (error: unknown) => error instanceof OsmFeaturesForAreaError && error.code === "too_large",
+  );
+
+  assert.equal(calls, Math.min(3, queries.length));
+});
+
+test("large Area preparation is all-or-nothing when one required tile fails", async () => {
+  const queries = buildAreaPreparationOverpassQueries(largeArea);
+  let calls = 0;
+
+  await assert.rejects(
+    fetchOsmFeaturesForArea({
+      geometry: largeArea,
+      upstreamUrl: "http://localhost/overpass",
+      fetchImpl: (async () => {
+        calls += 1;
+        if (calls === 2) return new Response("busy", { status: 503 });
+        return tiledSuccessResponse();
+      }) as typeof fetch,
+    }),
+    (error: unknown) => error instanceof OsmFeaturesForAreaError && error.code === "failed",
+  );
+
+  assert.equal(calls, Math.min(3, queries.length));
 });
