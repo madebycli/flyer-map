@@ -478,3 +478,32 @@ test("real mutation endpoint returns the exact automatic-task delete conflict", 
   assert.equal(response.status, 409);
   assert.equal((await response.json() as { error: { code: string } }).error.code, "auto_prepared_task_delete_forbidden");
 });
+
+
+test("reprepare keeps stable automatic Street identity and user-owned fields", async () => {
+  const db = new SqliteD1();
+  seed(db);
+  await prepareAreaTasks(db, campaignId, areaId, options());
+
+  const automatic = db.sqlite.prepare(
+    "SELECT id FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId) as { id: string };
+  db.sqlite.prepare(
+    "UPDATE tasks SET label = ?, status = ?, completed_at = NULL WHERE id = ?",
+  ).run("Vom Team geprüft", "later", automatic.id);
+  db.sqlite.prepare(
+    "UPDATE area_task_preparations SET status = 'failed', geometry_hash = ?, last_error_code = ? WHERE campaign_id = ? AND area_id = ?",
+  ).run("old-fingerprint", "area_preparation_osm_failed", campaignId, areaId);
+
+  const result = await prepareAreaTasks(db, campaignId, areaId, options());
+  assert.equal(result.outcome, "ready");
+  const after = db.sqlite.prepare(
+    "SELECT id, label, status FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
+  ).get(campaignId) as { id: string; label: string; status: string };
+  assert.deepEqual(after, {
+    id: automatic.id,
+    label: "Vom Team geprüft",
+    status: "later",
+  });
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE id = 'task_manual'").get()?.count, 1);
+});
