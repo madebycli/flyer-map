@@ -19,8 +19,9 @@ test("Area Sheet stays compact and keeps preparation, Smart Street, manual fallb
   assert.match(app, /area-preparation-status/u);
   assert.match(app, /t\(language, "addSmartStreet"\)/u);
   assert.match(app, /t\(language, "smartStreetManualFallback"\)/u);
-  assert.ok(app.indexOf('t(language, "areaPreparationPending")') < app.indexOf('t(language, "addSmartStreet")'));
-  assert.ok(app.indexOf('t(language, "addSmartStreet")') < app.indexOf('t(language, "smartStreetManualFallback")'));
-  assert.ok(app.indexOf('t(language, "smartStreetManualFallback")') < app.indexOf('targetType="area"'));
+  assert.match(
+    app,
+    /area-preparation-status[\s\S]*?onClick=\{startSmartStreetSelection\}[\s\S]*?t\(language, "addSmartStreet"\)[\s\S]*?onClick=\{startStreetDrawing\}[\s\S]*?t\(language, "smartStreetManualFallback"\)[\s\S]*?targetType="area"/u,
+  );
   assert.doesNotMatch(app, /addSmartHouse|smartMapRequestRef/u);
 });
