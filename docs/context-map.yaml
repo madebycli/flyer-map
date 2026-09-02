@@ -352,7 +352,7 @@ nodes:
     load_when: [normal automatic Area Sheet, preparation polling, preparation retry, completed task color, browser Smart UI removal, offline download UI removal]
 
   - id: plan-established-street-engine
-    path: docs/plans/active/029-established-street-preparation-engine.md
+    path: docs/plans/completed/029-established-street-preparation-engine.md
     type: plan
     status: active
     topics: [street-engine, jsts, turf, clipping, eligibility, stable-task-id, reconcile, smart-street, sync-boundary]
