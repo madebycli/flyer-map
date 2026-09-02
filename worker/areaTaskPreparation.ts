@@ -137,6 +137,11 @@ export type AreaTaskPreparationRun = {
   now: string;
 };
 
+/** Result of the guarded claim before phase execution begins. */
+export type BeginAreaTaskPreparationResult =
+  | { outcome: "run"; run: AreaTaskPreparationRun }
+  | { outcome: "result"; result: PrepareAreaTasksResult };
+
 /** Minimal Cloudflare boundary used by Worker route code only. */
 export type AreaPreparationExecutionContext = {
   waitUntil(promise: Promise<unknown>): void;
