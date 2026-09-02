@@ -29,7 +29,10 @@ import {
   STREET_ENGINE_ALGORITHM_VERSION,
   StreetPreparationLimitError,
 } from "./streetPreparation/engine.ts";
-import type { StreetPreparationDiagnostics } from "./streetPreparation/types.ts";
+import type {
+  StreetPreparationDiagnostics,
+  StreetPreparationSourceMetrics,
+} from "./streetPreparation/types.ts";
 import { reconcileServerPreparedStreetTasks } from "./serverPreparedStreetReconcile.ts";
 
 export const AREA_PREPARATION_PENDING_FRESH_MS = 60_000;
@@ -280,8 +283,13 @@ export function prepareTasksForArea(input: {
   randomUUID: () => string;
   maxRoadFragments?: number;
   maxBuildings?: number;
+  streetSourceMetrics?: StreetPreparationSourceMetrics;
   onStreetDiagnostics?: (diagnostics: StreetPreparationDiagnostics) => void;
-}): { tasks: DistributionTask[]; houseTasks: HouseTask[] } {
+}): {
+  tasks: DistributionTask[];
+  houseTasks: HouseTask[];
+  streetDiagnostics: StreetPreparationDiagnostics;
+} {
   const maxRoadFragments = input.maxRoadFragments ?? AREA_PREPARATION_MAX_ROAD_FRAGMENTS;
   const maxBuildings = input.maxBuildings ?? AREA_PREPARATION_MAX_BUILDINGS;
   const preparedStreets = prepareStreetsForArea({
@@ -293,8 +301,6 @@ export function prepareTasksForArea(input: {
     timestamp: input.timestamp,
     maxRoadFragments,
   });
-  input.onStreetDiagnostics?.(preparedStreets.diagnostics);
-
   const houseTasks: HouseTask[] = [];
   const buildingIds = new Set<number>();
   for (const building of input.buildings) {
@@ -329,7 +335,16 @@ export function prepareTasksForArea(input: {
     });
     houseTasks.push({ ...house, areaPreparationGeneration: input.generation });
   }
-  return { tasks: preparedStreets.tasks, houseTasks };
+  const streetDiagnostics: StreetPreparationDiagnostics = {
+    ...preparedStreets.diagnostics,
+    source: input.streetSourceMetrics ?? preparedStreets.diagnostics.source,
+  };
+  input.onStreetDiagnostics?.(streetDiagnostics);
+  return {
+    tasks: preparedStreets.tasks,
+    houseTasks,
+    streetDiagnostics,
+  };
 }
 
 /** Splits JSON rows into bounded `json_each(?)` payloads without partial output. */
@@ -653,6 +668,7 @@ export async function runAreaTaskPreparation(
       randomUUID: options.randomUUID ?? (() => crypto.randomUUID()),
       maxRoadFragments: options.maxRoadFragments,
       maxBuildings: options.maxBuildings,
+      streetSourceMetrics: osm.metrics,
       onStreetDiagnostics: options.onStreetDiagnostics,
     });
     const reconciliation = reconcileServerPreparedStreetTasks({
