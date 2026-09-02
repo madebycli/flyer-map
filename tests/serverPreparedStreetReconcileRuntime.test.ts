@@ -98,6 +98,7 @@ const campaignId = "campaign_reconcile-runtime";
 const areaId = "area_reconcile-runtime";
 const teamId = "team_reconcile-runtime";
 const time = "2026-09-02T18:00:00.000Z";
+let uuidCounter = 0;
 const admin: AccessContext = {
   grantId: "admin",
   campaignId,
@@ -150,11 +151,10 @@ function osmResponse(includeRoad = true) {
 }
 
 function options(input: { includeRoad?: boolean; fetchImpl?: () => Promise<Response> } = {}) {
-  let counter = 0;
   return {
     upstreamUrl: "http://localhost/overpass",
     now: () => new Date(time),
-    randomUUID: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`,
+    randomUUID: () => `00000000-0000-4000-8000-${String(++uuidCounter).padStart(12, "0")}`,
     fetchImpl: input.fetchImpl ?? (async () => osmResponse(input.includeRoad ?? true)),
   };
 }
@@ -200,7 +200,7 @@ test("forced same-result recompute keeps stable Street ID with zero D1 Street in
   const manual = db.sqlite.prepare(
     "SELECT label, status, area_preparation_generation FROM tasks WHERE id = 'task_manual'",
   ).get() as { label: string; status: string; area_preparation_generation: string | null };
-  assert.deepEqual(manual, { label: "Manual", status: "later", area_preparation_generation: null });
+  assert.deepEqual({ ...manual }, { label: "Manual", status: "later", area_preparation_generation: null });
 });
 
 test("ready same fingerprint is no-op while an older algorithm fingerprint requires a new run", async () => {
@@ -230,10 +230,10 @@ test("obsolete worked auto Street blocks reprepare without revision, deletion, s
   assert.deepEqual(result, { outcome: "failed", code: "area_preparation_work_started" });
   assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, revision);
   assert.equal(maxSeq(db), seq);
-  assert.deepEqual(
-    db.sqlite.prepare("SELECT status, completed_at FROM tasks WHERE id = ?").get(automatic.id),
-    { status: "completed", completed_at: time },
-  );
+  const worked = db.sqlite.prepare(
+    "SELECT status, completed_at FROM tasks WHERE id = ?",
+  ).get(automatic.id) as { status: string; completed_at: string | null };
+  assert.deepEqual({ ...worked }, { status: "completed", completed_at: time });
 });
 
 test("status becoming worked during OSM fetch is caught by the atomic publish guard", async () => {
