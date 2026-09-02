@@ -180,7 +180,6 @@ test("prepared Area publishes independent Street and House phases, keeping manua
     },
   });
   assert.equal(result.outcome, "ready");
-  assert.equal(fetchCount, 2);
   assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 5);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE campaign_id = ?").get(campaignId)?.count, 2);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM house_tasks WHERE campaign_id = ?").get(campaignId)?.count, 1);
@@ -220,6 +219,7 @@ test("prepared Area publishes independent Street and House phases, keeping manua
       sourceTimestamp: time,
     },
   );
+  assert.equal(fetchCount, 2);
 
   const repeated = await prepareAreaTasks(db, campaignId, areaId, options());
   assert.deepEqual(repeated, { outcome: "no-op", state: "ready" });
