@@ -6,7 +6,7 @@ import {
   clipLineStringToPolygon,
   lineStringInsidePolygon,
   pointInOrOnPolygon,
-} from "../src/domain/areaTaskPreparation.ts";
+} from "../worker/streetPreparation/clipRoadsToArea.ts";
 
 function polygon(points: LngLat[], closed = true): PolygonGeometry {
   const ring = points.map(([lng, lat]) => [lng, lat] as LngLat);
