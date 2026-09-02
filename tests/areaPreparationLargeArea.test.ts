@@ -79,8 +79,8 @@ test("large Area preparation is tiled instead of inheriting the 3 km offline-pac
   assert.equal(result.roads[0]?.properties.osmId, 501);
   assert.equal(result.buildings[0]?.properties.osmId, 502);
   assert.equal(result.sourceTimestamp, "2026-09-02T00:30:00.000Z");
-  assert.equal(result.metrics.tileCount, queries.length);
-  assert.equal(result.metrics.requestCount, queries.length);
+  assert.equal(result.metrics.tileCount, roadQueries.length);
+  assert.equal(result.metrics.requestCount, calls.length);
   assert.equal(result.metrics.maxConcurrentRequests, Math.min(3, roadQueries.length));
   assert.equal(result.metrics.parsedElementCount, calls.length * 2);
   assert.equal(result.metrics.roadRequestCount, roadQueries.length);
