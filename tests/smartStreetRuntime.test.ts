@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("normal Area flow uses server preparation and keeps no browser Smart Street entry", async () => {
+test("normal Area flow uses server preparation as the Smart Street source without browser Overpass", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const map = await readFile("src/map/MapView.tsx", "utf8");
   const offline = await readFile("src/data/offlineMapRepository.ts", "utf8");
@@ -12,7 +12,9 @@ test("normal Area flow uses server preparation and keeps no browser Smart Street
   assert.match(app, /fetchAreaPreparation/u);
   assert.match(app, /startAreaPreparation/u);
   assert.match(app, /addManualStreet/u);
-  assert.doesNotMatch(app, /smartCandidatesForArea|smartRoadMapPackage|smartMapRequestRef|setMode\("smart-street"\)/u);
+  assert.match(app, /preparedSmartRoadCandidates/u);
+  assert.match(app, /setMode\("smart-street"\)/u);
+  assert.doesNotMatch(app, /smartCandidatesForArea|smartRoadMapPackage|smartMapRequestRef/u);
   assert.doesNotMatch(combined, /PREVIEW_ROADS|Mock Roads|M6SelectionPreview/u);
 });
 
