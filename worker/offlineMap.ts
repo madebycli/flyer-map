@@ -126,14 +126,36 @@ export type OsmFeaturesForArea = {
   metrics: StreetPreparationSourceMetrics;
 };
 
+export type OsmSourcePhase = "roads" | "buildings" | "aggregate";
+
+export type OsmSourceFailureReason =
+  | "invalid-area"
+  | "timeout"
+  | "rate-limited"
+  | "server-error"
+  | "upstream-failed"
+  | "response-too-large"
+  | "invalid-response"
+  | "aggregate-too-large"
+  | "package-too-large";
+
 /** A non-HTTP error contract for the canonical server-side Area OSM fetch. */
 export class OsmFeaturesForAreaError extends Error {
   readonly code: "too_large" | "timeout" | "failed" | "invalid";
+  readonly phase: OsmSourcePhase;
+  readonly reason: OsmSourceFailureReason;
 
-  constructor(code: "too_large" | "timeout" | "failed" | "invalid", message: string) {
+  constructor(
+    code: "too_large" | "timeout" | "failed" | "invalid",
+    message: string,
+    phase: OsmSourcePhase = "aggregate",
+    reason: OsmSourceFailureReason = "upstream-failed",
+  ) {
     super(message);
     this.name = "OsmFeaturesForAreaError";
     this.code = code;
+    this.phase = phase;
+    this.reason = reason;
   }
 }
 
@@ -301,11 +323,21 @@ function areaBounds(geometry: OfflineMapAreaGeometry) {
 
 type AreaBounds = NonNullable<ReturnType<typeof areaBounds>>;
 
-function buildAreaPreparationQueryForBounds(bounds: AreaBounds) {
+export type AreaPreparationQueryKind = "all" | "roads" | "buildings";
+
+function buildAreaPreparationQueryForBounds(
+  bounds: AreaBounds,
+  kind: AreaPreparationQueryKind = "all",
+) {
   const bbox = [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((value) => value.toFixed(7))
     .join(",");
-  return `[out:json][timeout:8];\n(\n  way["highway"](${bbox});\n  way["building"](${bbox});\n);\nout tags geom qt;`;
+  const selectors = kind === "roads"
+    ? [`way["highway"](${bbox});`]
+    : kind === "buildings"
+      ? [`way["building"](${bbox});`]
+      : [`way["highway"](${bbox});`, `way["building"](${bbox});`];
+  return `[out:json][timeout:8];\n(\n  ${selectors.join("\n  ")}\n);\nout tags geom qt;`;
 }
 
 function areaPreparationRequest(bounds: AreaBounds): ParsedRequest {
@@ -352,16 +384,24 @@ function areaPreparationTileBounds(bounds: AreaBounds) {
  * Area preparation uses the canonical server-side Area BBox plus a small road-node
  * buffer. The hard ownership boundary remains the polygon clip before persistence.
  */
-export function buildAreaPreparationOverpassQuery(geometry: OfflineMapAreaGeometry) {
+export function buildAreaPreparationOverpassQuery(
+  geometry: OfflineMapAreaGeometry,
+  kind: AreaPreparationQueryKind = "all",
+) {
   const bounds = areaBounds(geometry);
-  return bounds ? buildAreaPreparationQueryForBounds(bounds) : null;
+  return bounds ? buildAreaPreparationQueryForBounds(bounds, kind) : null;
 }
 
 /** Large Areas are split only for upstream load control; polygon clipping remains authoritative. */
-export function buildAreaPreparationOverpassQueries(geometry: OfflineMapAreaGeometry) {
+export function buildAreaPreparationOverpassQueries(
+  geometry: OfflineMapAreaGeometry,
+  kind: AreaPreparationQueryKind = "all",
+) {
   const bounds = areaBounds(geometry);
   if (!bounds) return [];
-  return areaPreparationTileBounds(bounds).map(buildAreaPreparationQueryForBounds);
+  return areaPreparationTileBounds(bounds).map((tile) =>
+    buildAreaPreparationQueryForBounds(tile, kind)
+  );
 }
 
 function normalizeTags(tags: Record<string, unknown> | undefined) {
@@ -592,7 +632,29 @@ function areaFetchError(error: unknown) {
 }
 
 function retryableAreaFetchError(error: OfflineMapRequestError) {
-  return error.code === "osm_upstream_timeout" || error.code === "osm_upstream_failed" || error.code === "osm_response_invalid";
+  return error.code === "osm_upstream_timeout"
+    || error.code === "osm_upstream_failed"
+    || error.code === "osm_upstream_rate_limited"
+    || error.code === "osm_upstream_server_error"
+    || error.code === "osm_response_invalid";
+}
+
+function sourceFailureReason(error: OfflineMapRequestError): OsmSourceFailureReason {
+  switch (error.code) {
+    case "osm_upstream_timeout": return "timeout";
+    case "osm_upstream_rate_limited": return "rate-limited";
+    case "osm_upstream_server_error": return "server-error";
+    case "osm_response_too_large": return "response-too-large";
+    case "osm_response_invalid": return "invalid-response";
+    default: return "upstream-failed";
+  }
+}
+
+function sourceFailureCode(error: OfflineMapRequestError): "too_large" | "timeout" | "failed" | "invalid" {
+  if (error.code === "osm_upstream_timeout") return "timeout";
+  if (error.code === "osm_response_too_large") return "too_large";
+  if (error.code === "osm_response_invalid") return "invalid";
+  return "failed";
 }
 
 type AreaOverpassResponse = {
@@ -604,6 +666,7 @@ type AreaOverpassResponse = {
 async function fetchAreaOverpass(
   query: string,
   options: OfflineMapHandlerOptions,
+  phase: "roads" | "buildings",
 ): Promise<AreaOverpassResponse> {
   const endpoints = options.upstreamUrl
     ? [upstreamUrl(options.upstreamUrl)]
@@ -631,9 +694,14 @@ async function fetchAreaOverpass(
         signal: controller.signal,
       });
       if (!response.ok) {
+        const code = response.status === 429
+          ? "osm_upstream_rate_limited"
+          : response.status >= 500
+            ? "osm_upstream_server_error"
+            : "osm_upstream_failed";
         throw new OfflineMapRequestError(
           response.status,
-          "osm_upstream_failed",
+          code,
           "OSM-Daten konnten nicht geladen werden.",
         );
       }
@@ -698,12 +766,14 @@ type AreaOverpassFeatures = {
   maxConcurrentRequests: number;
   upstreamBytes: number;
   parsedElementCount: number;
+  normalizationRejectedCount: number;
 };
 
 async function fetchAreaOverpassQueries(
   queries: string[],
   options: OfflineMapHandlerOptions,
   maxAggregateBytes: number,
+  phase: "roads" | "buildings",
 ): Promise<AreaOverpassFeatures> {
   const roads = new Map<string, OfflineMapRoadFeature>();
   const buildings = new Map<string, OfflineMapBuildingFeature>();
@@ -712,13 +782,30 @@ async function fetchAreaOverpassQueries(
   let requestCount = 0;
   let maxConcurrentRequests = 0;
   let parsedElementCount = 0;
+  let normalizationRejectedCount = 0;
 
   for (let offset = 0; offset < queries.length; offset += AREA_PREPARATION_FETCH_CONCURRENCY) {
     const batch = queries.slice(offset, offset + AREA_PREPARATION_FETCH_CONCURRENCY);
     maxConcurrentRequests = Math.max(maxConcurrentRequests, batch.length);
-    const settled = await Promise.allSettled(batch.map((query) => fetchAreaOverpass(query, options)));
+    const settled = await Promise.allSettled(
+      batch.map((query) => fetchAreaOverpass(query, options, phase)),
+    );
     for (const result of settled) {
-      if (result.status === "rejected") throw result.reason;
+      if (result.status === "rejected") {
+        const error = result.reason instanceof OfflineMapRequestError
+          ? result.reason
+          : new OfflineMapRequestError(
+              502,
+              "osm_upstream_failed",
+              "OSM-Daten konnten nicht geladen werden.",
+            );
+        throw new OsmFeaturesForAreaError(
+          sourceFailureCode(error),
+          error.message,
+          phase,
+          sourceFailureReason(error),
+        );
+      }
 
       requestCount += result.value.requestCount;
       aggregateBytes += result.value.byteLength;
@@ -726,12 +813,19 @@ async function fetchAreaOverpassQueries(
         throw new OsmFeaturesForAreaError(
           "too_large",
           "OSM-Antworten überschreiten zusammen die Sicherheitsgrenze.",
+          phase,
+          "aggregate-too-large",
         );
       }
 
       const payload = result.value.payload;
       if (!Array.isArray(payload.elements)) {
-        throw new OsmFeaturesForAreaError("invalid", "OSM-Antwort enthält keine Way-Collection.");
+        throw new OsmFeaturesForAreaError(
+          "invalid",
+          "OSM-Antwort enthält keine Way-Collection.",
+          phase,
+          "invalid-response",
+        );
       }
       parsedElementCount += payload.elements.length;
 
@@ -743,17 +837,22 @@ async function fetchAreaOverpassQueries(
       }
 
       for (const element of payload.elements) {
-        if (!validWay(element)) continue;
-        const key = `${element.type}/${element.id}`;
-        if (roads.has(key) || buildings.has(key)) continue;
-
-        const building = normalizeBuilding(element);
-        if (building) {
-          buildings.set(key, building);
+        if (!validWay(element)) {
+          normalizationRejectedCount += 1;
           continue;
         }
-        const road = normalizeRoad(element);
-        if (road) roads.set(key, road);
+        const key = `${element.type}/${element.id}`;
+        if (phase === "roads") {
+          if (roads.has(key)) continue;
+          const road = normalizeRoad(element);
+          if (road) roads.set(key, road);
+          else normalizationRejectedCount += 1;
+        } else {
+          if (buildings.has(key)) continue;
+          const building = normalizeBuilding(element);
+          if (building) buildings.set(key, building);
+          else normalizationRejectedCount += 1;
+        }
       }
     }
   }
@@ -766,6 +865,7 @@ async function fetchAreaOverpassQueries(
     maxConcurrentRequests,
     upstreamBytes: aggregateBytes,
     parsedElementCount,
+    normalizationRejectedCount,
   };
 }
 
@@ -782,9 +882,15 @@ export async function fetchOsmFeaturesForArea(
   if (!bounds) {
     throw new OsmFeaturesForAreaError("invalid", "Area-Geometrie ist für den OSM-Abruf ungültig.");
   }
-  const queries = buildAreaPreparationOverpassQueries(options.geometry);
-  if (queries.length === 0) {
-    throw new OsmFeaturesForAreaError("invalid", "Area-Geometrie ist für den OSM-Abruf ungültig.");
+  const roadQueries = buildAreaPreparationOverpassQueries(options.geometry, "roads");
+  const buildingQueries = buildAreaPreparationOverpassQueries(options.geometry, "buildings");
+  if (roadQueries.length === 0 || buildingQueries.length === 0) {
+    throw new OsmFeaturesForAreaError(
+      "invalid",
+      "Area-Geometrie ist für den OSM-Abruf ungültig.",
+      "aggregate",
+      "invalid-area",
+    );
   }
 
   const request = areaPreparationRequest(bounds);
@@ -798,34 +904,60 @@ export async function fetchOsmFeaturesForArea(
   };
 
   try {
-    const features = await fetchAreaOverpassQueries(
-      queries,
+    const maxAggregateBytes = options.limits?.maxAggregateBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES;
+    const roadFeatures = await fetchAreaOverpassQueries(
+      roadQueries,
       handlerOptions,
-      options.limits?.maxAggregateBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES,
+      maxAggregateBytes,
+      "roads",
+    );
+    const buildingFeatures = await fetchAreaOverpassQueries(
+      buildingQueries,
+      handlerOptions,
+      Math.max(0, maxAggregateBytes - roadFeatures.upstreamBytes),
+      "buildings",
     );
     const fetchedAt = (options.now ?? (() => new Date()))().toISOString();
     const serializedBytes = new TextEncoder().encode(JSON.stringify({
-      roads: { type: "FeatureCollection", features: features.roads },
-      buildings: { type: "FeatureCollection", features: features.buildings },
+      roads: { type: "FeatureCollection", features: roadFeatures.roads },
+      buildings: { type: "FeatureCollection", features: buildingFeatures.buildings },
     })).byteLength;
     if (serializedBytes > (options.limits?.maxPackageBytes ?? AREA_PREPARATION_MAX_AGGREGATE_BYTES)) {
-      throw new OsmFeaturesForAreaError("too_large", "OSM-Featuremenge überschreitet die Sicherheitsgrenze.");
+      throw new OsmFeaturesForAreaError(
+        "too_large",
+        "OSM-Featuremenge überschreitet die Sicherheitsgrenze.",
+        "aggregate",
+        "package-too-large",
+      );
     }
     return {
-      roads: features.roads,
-      buildings: features.buildings,
-      sourceTimestamp: features.sourceTimestamp,
+      roads: roadFeatures.roads,
+      buildings: buildingFeatures.buildings,
+      sourceTimestamp: [roadFeatures.sourceTimestamp, buildingFeatures.sourceTimestamp]
+        .filter((value): value is string => value !== null)
+        .sort((first, second) => Date.parse(second) - Date.parse(first))[0] ?? null,
       fetchedAt,
       request,
       metrics: {
-        requestCount: features.requestCount,
-        tileCount: queries.length,
-        maxConcurrentRequests: features.maxConcurrentRequests,
-        upstreamBytes: features.upstreamBytes,
-        parsedElementCount: features.parsedElementCount,
-        normalizedRoadCount: features.roads.length,
-        normalizedBuildingCount: features.buildings.length,
+        requestCount: roadFeatures.requestCount + buildingFeatures.requestCount,
+        tileCount: roadQueries.length,
+        maxConcurrentRequests: Math.max(
+          roadFeatures.maxConcurrentRequests,
+          buildingFeatures.maxConcurrentRequests,
+        ),
+        upstreamBytes: roadFeatures.upstreamBytes + buildingFeatures.upstreamBytes,
+        parsedElementCount: roadFeatures.parsedElementCount + buildingFeatures.parsedElementCount,
+        normalizedRoadCount: roadFeatures.roads.length,
+        normalizedBuildingCount: buildingFeatures.buildings.length,
         packageBytes: serializedBytes,
+        roadRequestCount: roadFeatures.requestCount,
+        buildingRequestCount: buildingFeatures.requestCount,
+        roadUpstreamBytes: roadFeatures.upstreamBytes,
+        buildingUpstreamBytes: buildingFeatures.upstreamBytes,
+        roadParsedElementCount: roadFeatures.parsedElementCount,
+        buildingParsedElementCount: buildingFeatures.parsedElementCount,
+        roadNormalizationRejectedCount: roadFeatures.normalizationRejectedCount,
+        buildingNormalizationRejectedCount: buildingFeatures.normalizationRejectedCount,
       },
     };
   } catch (error) {
