@@ -13,18 +13,13 @@ export type SmartRoadPointAnchor = {
   lineDistanceMeters?: number;
 };
 
-function localSegmentParameter(point: Coordinate, start: Coordinate, end: Coordinate) {
-  const latitudeRadians = (point[1] * Math.PI) / 180;
-  const longitudeScale = Math.cos(latitudeRadians) * 111_320;
-  const latitudeScale = 110_540;
-  const startX = (start[0] - point[0]) * longitudeScale;
-  const startY = (start[1] - point[1]) * latitudeScale;
-  const endX = (end[0] - point[0]) * longitudeScale;
-  const endY = (end[1] - point[1]) * latitudeScale;
-  const dx = endX - startX;
-  const dy = endY - startY;
+function segmentParameter(point: Coordinate, start: Coordinate, end: Coordinate) {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
   const lengthSquared = dx * dx + dy * dy;
-  const rawT = lengthSquared === 0 ? 0 : (-(startX * dx + startY * dy)) / lengthSquared;
+  const rawT = lengthSquared === 0
+    ? 0
+    : ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / lengthSquared;
   return Math.max(0, Math.min(1, rawT));
 }
 
@@ -55,7 +50,19 @@ function closestAnchorOnRoad(
     }
     const start = coordinates[segmentIndex];
     const end = coordinates[segmentIndex + 1];
-    const segmentT = localSegmentParameter(point, start, end);
+    const nearestCoordinate = snapped.geometry.coordinates;
+    if (
+      nearestCoordinate.length < 2
+      || !Number.isFinite(nearestCoordinate[0])
+      || !Number.isFinite(nearestCoordinate[1])
+    ) {
+      return null;
+    }
+    const segmentT = segmentParameter(
+      [nearestCoordinate[0], nearestCoordinate[1]],
+      start,
+      end,
+    );
     const snappedCoordinate: Coordinate = [
       start[0] + (end[0] - start[0]) * segmentT,
       start[1] + (end[1] - start[1]) * segmentT,
