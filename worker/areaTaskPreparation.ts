@@ -274,7 +274,7 @@ function validBuildingGeometry(geometry: PolygonGeometry) {
   return validatePolygonVertices(ring.slice(0, -1)).valid;
 }
 
-export function prepareTasksForArea(input: {
+export async function prepareTasksForArea(input: {
   campaignId: string;
   area: Area;
   generation: string;
