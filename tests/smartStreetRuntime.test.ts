@@ -11,7 +11,7 @@ test("normal Area flow uses server preparation as the Smart Street source withou
   assert.match(app, /createAreaPreparationPoller/u);
   assert.match(app, /fetchAreaPreparation/u);
   assert.match(app, /startAreaPreparation/u);
-  assert.match(app, /addManualStreet/u);
+  assert.match(app, /startStreetDrawing/u);
   assert.match(app, /preparedSmartRoadCandidates/u);
   assert.match(app, /setMode\("smart-street"\)/u);
   assert.doesNotMatch(app, /smartCandidatesForArea|smartRoadMapPackage|smartMapRequestRef/u);
