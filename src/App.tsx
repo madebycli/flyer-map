@@ -1789,7 +1789,10 @@ export default function App({ platformCommand = null, onPlatformContextChange }:
               {t(language, "areaPreparationPending")}
             </div>
           ) : null}
-          {canEditSelectedArea && areaPreparation?.status === "ready" && !isAreaPreparationActionRequired(areaPreparation) ? (
+          {canEditSelectedArea &&
+          areaPreparation?.status === "ready" &&
+          areaPreparation.houseStatus !== "failed" &&
+          !isAreaPreparationActionRequired(areaPreparation) ? (
             <div className="area-preparation-status is-ready" role="status" aria-live="polite">
               {t(language, "areaPreparationReady", {
                 roads: areaPreparation.roadCount,
