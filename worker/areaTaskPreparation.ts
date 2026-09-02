@@ -170,7 +170,7 @@ type AreaPreparationRow = {
   house_error_code: AreaPreparationFailureCode | null;
 };
 
-class PreparationFailureclass PreparationFailure extends Error {
+class PreparationFailure extends Error {
   readonly code: AreaPreparationFailureCode;
 
   constructor(code: AreaPreparationFailureCode, message: string) {
@@ -493,7 +493,7 @@ export async function prepareTasksForArea(input: {
   };
 }
 
-/** Splits JSON rows/** Splits JSON rows into bounded `json_each(?)` payloads without partial output. */
+/** Splits JSON rows into bounded `json_each(?)` payloads without partial output. */
 export function chunkAreaPreparationRows<T>(rows: T[], maxBytes = AREA_PREPARATION_CHUNK_BYTES) {
   const chunks: T[][] = [];
   let current: T[] = [];
@@ -1037,7 +1037,7 @@ function phaseReadyStatement(
     );
 }
 
-function failureCodefunction failureCode(error: unknown): AreaPreparationFailureCode {
+function failureCode(error: unknown): AreaPreparationFailureCode {
   if (error instanceof StreetPreparationLimitError) {
     return "area_preparation_too_many_features";
   }
@@ -1353,12 +1353,6 @@ export async function beginAreaTaskPreparation(
         ...(current.houseStatus === "ready" ? [] : ["house" as const]),
       ]
     : ["street", "house"];
-  if (phases.length === 0) {
-    return { outcome: "result", result: { outcome: "no-op", state: "ready" } };
-  }
-  if (current && isFreshPending(current, geometryHash, nowDate)) {
-    return { outcome: "result", result: { outcome: "no-op", state: "pending" } };
-  }
   if (
     (current && isActionRequiredState(current)) ||
     (await areaHasStartedAutomaticWork(db, campaignId, areaId))
@@ -1367,6 +1361,12 @@ export async function beginAreaTaskPreparation(
       outcome: "result",
       result: { outcome: "failed", code: "area_preparation_work_started" },
     };
+  }
+  if (phases.length === 0) {
+    return { outcome: "result", result: { outcome: "no-op", state: "ready" } };
+  }
+  if (current && isFreshPending(current, geometryHash, nowDate)) {
+    return { outcome: "result", result: { outcome: "no-op", state: "pending" } };
   }
 
   const generation = sameGeometry && current
@@ -1532,7 +1532,7 @@ export async function prepareAreaTasks(
     : started.result;
 }
 
-export async function areaHasStartedAutomaticWorkexport async function areaHasStartedAutomaticWork(
+export async function areaHasStartedAutomaticWork(
   db: D1DatabaseLike,
   campaignId: string,
   areaId: string,
