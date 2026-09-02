@@ -75,6 +75,14 @@ test("large Area preparation is tiled instead of inheriting the 3 km offline-pac
   assert.equal(result.roads[0]?.properties.osmId, 501);
   assert.equal(result.buildings[0]?.properties.osmId, 502);
   assert.equal(result.sourceTimestamp, "2026-09-02T00:30:00.000Z");
+  assert.equal(result.metrics.tileCount, queries.length);
+  assert.equal(result.metrics.requestCount, queries.length);
+  assert.equal(result.metrics.maxConcurrentRequests, Math.min(3, queries.length));
+  assert.equal(result.metrics.parsedElementCount, queries.length * 2);
+  assert.equal(result.metrics.normalizedRoadCount, 1);
+  assert.equal(result.metrics.normalizedBuildingCount, 1);
+  assert.ok(result.metrics.upstreamBytes > 0);
+  assert.ok(result.metrics.packageBytes > 0);
 });
 
 test("large Area preparation caps tile fetch concurrency at three", async () => {
