@@ -14,7 +14,9 @@ related: [plan-028-rxdb-local-first-mission-sync, ADR-0024, ADR-0025]
 - Baseline: `mission-release-2026-09-02-manual`
 - Baseline head: `5e7148d2a32f6237861e7e6a05e022eeb67c91ce`
 - PR #73: open, Draft, unmerged
-- Current feature head: `d0e8872` (`feat: add campaign websocket invalidation`)
+- PR #74: open, Draft, unmerged; base `mission-release-2026-09-02-manual`
+- Current implementation head (local): `f13355d` (`fix: satisfy strict RxDB sync typecheck`)
+- Published implementation head (GitHub): `11fca7ad2175fd2d46378d4b90116100b8d73554`
 
 ## Completed
 
@@ -54,21 +56,24 @@ related: [plan-028-rxdb-local-first-mission-sync, ADR-0024, ADR-0025]
   canonical D1 converges to both fields with monotonic revisions.
 - `npm run audit:dependencies` reports 0 vulnerabilities; the locked RxDB tree
   contains patched `ws` versions.
-- Focused RxDB/Worker/SQLite tests and the full 629-test suite pass (629/629).
+- Focused RxDB/Worker/SQLite tests and the full 637-test suite pass (637/637).
+- GitHub Actions CI run `33637502582` / #864 passes Test, Typecheck, Dependency
+  audit and Production build on the published implementation head.
 
 ## Open gates
 
-- Push the branch, create/update its Draft PR against the manual rollback base,
-  run CI on the exact pushed feature head and verify the branch preview.
+- Verify the branch preview for PR #74; the branch and Draft PR are already
+  published and CI is green on the exact implementation head above.
 - Configure the CampaignSync Durable Object binding/migration locally; do not
   apply that DO migration or D1 migration 0017 remotely from this branch.
-- `npm run typecheck` remains blocked by the sandbox's TypeScript 7 native
-  `/proc/self/exe` lookup; no TypeScript diagnostic output is produced.
+- Local `npm run typecheck` remains blocked by the sandbox's TypeScript 7 native
+  `/proc/self/exe` lookup; GitHub CI provides the authoritative TypeScript gate
+  and passes after the strict RxDB type fixes.
 - Apply migration 0017 only through the approved remote workflow after review.
 - Perform two-browser, Android Chromium and iPhone Safari offline/reconnect smokes.
 - Do not merge, mark Ready-for-Review, deploy production or apply D1 from code.
 
 ## Next step
 
-Push `mission-rxdb-sync` without force, verify the exact GitHub CI head, and
-replace the pending feature-head line above if a newer commit is created.
+Keep `mission-rxdb-sync` and PR #74 open/Draft, verify the branch preview, and
+replace the implementation-head lines above if a new code commit is created.

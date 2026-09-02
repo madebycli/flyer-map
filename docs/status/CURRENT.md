@@ -21,6 +21,8 @@ Admin -> Teams/Gebiet -> manuelle Streets/Houses
 Der normale Launcher ist für die Mission auf `Team`, `Fortschritt`, `Einstellungen` und bei berechtigtem Zugriff `Gebiet` reduziert. Bestehende Einsätze-, Activity-, Automation-, Comment- und Collection-Runtimes werden nicht gelöscht und keine Datenhistorie wird verändert. Sicherheits-, Sync-, Konflikt-, Access- und Area-Preparation-Fehler bleiben sichtbar.
 
 PR #73 bleibt Draft gegen `ui-app-launcher-sheet`. Kein Merge, kein Ready-for-Review und kein manueller Deploy ohne expliziten Auftrag.
+Der RxDB-Kandidat ist separat als PR #74 gegen `mission-release-2026-09-02-manual`
+veröffentlicht, bleibt ebenfalls Draft/offen und ist nicht gemergt.
 
 ## RxDB Mission Sync candidate
 
@@ -40,10 +42,11 @@ Checkpoint prüft den High-Water-Mark alle 45 Sekunden und fängt verlorene
 Signale auf.
 
 Migration `0017_rxdb_sync_changes.sql` ist vorbereitet und **nicht remote
-angewendet**. Es gab keinen manuellen Deploy, Merge, Ready-for-Review oder
-Remote-D1-Eingriff; der Branch-Push und Draft-PR erfolgen erst nach den lokalen
-Gates. Vor einem Release sind der reviewed Migrations-Rollout, CI
-auf dem exakten gepushten Head, Preview sowie Zwei-Browser-, Android- und
+angewendet**. Der Branch `mission-rxdb-sync` und Draft-PR #74 sind über GitHub
+veröffentlicht; CI-Run `33637502582` ist auf dem exakten Implementierungs-Head
+`11fca7ad2175fd2d46378d4b90116100b8d73554` grün. Es gab keinen manuellen
+Deploy, Merge, Ready-for-Review oder Remote-D1-Eingriff. Vor einem Release sind
+der reviewed Migrations-Rollout, Preview sowie Zwei-Browser-, Android- und
 iPhone-Off-/Reconnect-Smokes Pflicht. ADR-0024 und Plan 028 sind dafür die
 aktuelle Entscheidungs- und Evidence-Route.
 
