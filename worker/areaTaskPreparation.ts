@@ -869,7 +869,7 @@ export async function runAreaTaskPreparation(
           ...guard,
         ),
     ];
-    let results;
+    let results: Awaited<ReturnType<D1DatabaseLike["batch"]>>;
     try {
       results = await db.batch(statements);
     } catch {
