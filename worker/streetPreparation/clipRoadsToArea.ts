@@ -37,7 +37,8 @@ function normalizePolygonGeometry(geometry: PolygonGeometry) {
   if (geometry.type !== "Polygon") return null;
   const rings: LngLat[][] = [];
   for (const ring of geometry.coordinates) {
-    const clean = ring.filter(finiteCoordinate).map(([lng, lat]) => [lng, lat] as LngLat);
+    if (ring.some((coordinate) => !finiteCoordinate(coordinate))) return null;
+    const clean = ring.map(([lng, lat]) => [lng, lat] as LngLat);
     if (clean.length < 3) return null;
     const closed = sameCoordinate(clean[0], clean[clean.length - 1])
       ? clean
