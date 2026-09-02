@@ -22,5 +22,6 @@ declare module "jsts/org/locationtech/jts/io/GeoJSONReader.js" {
 declare module "jsts/org/locationtech/jts/operation/overlay/OverlayOp.js" {
   export default class OverlayOp {
     static intersection(left: JstsGeometry, right: JstsGeometry): JstsGeometry;
+    static difference(left: JstsGeometry, right: JstsGeometry): JstsGeometry;
   }
 }
