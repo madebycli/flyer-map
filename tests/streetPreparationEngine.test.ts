@@ -8,8 +8,8 @@ import {
   streetEngineMatrixRoads,
 } from "./fixtures/streetEngineMatrix.ts";
 
-test("the fixture matrix produces exact in-area fragments and diagnostics", () => {
-  const prepared = prepareStreetsForArea({
+test("the fixture matrix produces exact in-area fragments and diagnostics", async () => {
+  const prepared = await prepareStreetsForArea({
     campaignId: "campaign_engine",
     areaId: "area_u",
     area: streetEngineMatrixArea,
@@ -25,34 +25,33 @@ test("the fixture matrix produces exact in-area fragments and diagnostics", () =
   assert.equal(prepared.diagnostics.rejectedRoadCount, 3);
   assert.equal(prepared.diagnostics.invalidRoadCount, 1);
   assert.equal(prepared.diagnostics.duplicateFragmentCount, 1);
-  assert.equal(prepared.diagnostics.fragmentCount, prepared.tasks.length);
-  assert.equal(prepared.tasks.length, 9);
+  assert.equal(prepared.diagnostics.fragmentCount, prepared.candidates.length);
+  assert.equal(prepared.candidates.length, 9);
   assert.ok(prepared.diagnostics.durationMs >= 0);
 
-  const sourceIds = new Set(prepared.tasks.flatMap((task) => task.source?.objectIds ?? []));
+  const sourceIds = new Set(prepared.candidates.map((candidate) => candidate.sourceOsmWayId));
   assert.deepEqual(
     [...sourceIds].sort((first, second) => first - second),
     [100, 101, 102, 103, 108, 109],
   );
-  assert.ok(prepared.tasks.every((task) =>
-    task.id.startsWith("task_auto_")
-    && task.areaPreparationGeneration === "generation-1"
-    && task.status === "open"
-    && task.geometry.coordinates.every((coordinate) =>
+  assert.ok(prepared.candidates.every((candidate) =>
+    candidate.sourceKey.length > 0
+    && candidate.fragmentKey.length > 0
+    && candidate.geometry.coordinates.every((coordinate) =>
       pointInOrOnPolygon(coordinate, streetEngineMatrixArea)
     )
   ));
 
-  const uStreet = prepared.tasks
-    .filter((task) => task.source?.objectIds[0] === 101)
-    .map((task) => task.geometry.coordinates)
+  const uStreet = prepared.candidates
+    .filter((candidate) => candidate.sourceOsmWayId === 101)
+    .map((candidate) => candidate.geometry.coordinates)
     .sort((first, second) => first[0][0] - second[0][0]);
   assert.deepEqual(uStreet, [
     [[0, 7], [4, 7]],
     [[6, 7], [10, 7]],
   ]);
 
-  const repeated = prepareStreetsForArea({
+  const repeated = await prepareStreetsForArea({
     campaignId: "campaign_engine",
     areaId: "area_u",
     area: streetEngineMatrixArea,
@@ -62,8 +61,8 @@ test("the fixture matrix produces exact in-area fragments and diagnostics", () =
     maxRoadFragments: 30,
   });
   assert.deepEqual(
-    repeated.tasks.map((task) => task.id),
-    prepared.tasks.map((task) => task.id),
+    repeated.candidates.map((candidate) => candidate.fragmentKey),
+    prepared.candidates.map((candidate) => candidate.fragmentKey),
   );
 });
 
@@ -92,9 +91,9 @@ test("eligibility is explicit and rejects highways or access that are unsafe for
   assert.equal(streetRoadEligibility({}).eligible, false);
 });
 
-test("fragment limits fail closed before a too-large prepared set is published", () => {
-  assert.throws(
-    () => prepareStreetsForArea({
+test("fragment limits fail closed before a too-large prepared set is published", async () => {
+  await assert.rejects(
+    prepareStreetsForArea({
       campaignId: "campaign_engine",
       areaId: "area_u",
       area: streetEngineMatrixArea,
