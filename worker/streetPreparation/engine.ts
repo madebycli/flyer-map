@@ -12,7 +12,7 @@ import {
 } from "./roadIdentity.ts";
 import type {
   StreetInputGeometry,
-  StreetPreparationCandidate,
+  PreparedStreetCandidate,
   StreetPreparationInput,
   StreetPreparationResult,
 } from "./types.ts";
@@ -76,7 +76,7 @@ function preparedCandidate(input: {
   fragmentKey: string;
   tags: Record<string, string>;
   geometry: LineStringGeometry;
-}): StreetPreparationCandidate {
+}): PreparedStreetCandidate {
   return {
     sourceOsmWayId: input.osmId,
     sourceKey: input.sourceKey,
