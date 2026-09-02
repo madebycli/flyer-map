@@ -15,6 +15,11 @@
     "deploy": "npm run check && wrangler deploy"
   },
   "dependencies": {
+    "@turf/boolean-point-in-polygon": "7.4.0",
+    "@turf/helpers": "7.4.0",
+    "@turf/line-slice-along": "7.4.0",
+    "@turf/nearest-point-on-line": "7.4.0",
+    "jsts": "2.12.1",
     "maplibre-gl": "5.7.1",
     "qrcode.react": "4.2.0",
     "react": "19.2.8",
