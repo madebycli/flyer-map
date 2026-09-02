@@ -1,5 +1,4 @@
 import type {
-  DistributionTask,
   LineStringGeometry,
   LngLat,
   PolygonGeometry,
@@ -28,6 +27,14 @@ export type StreetPreparationRoad = {
   geometry: StreetInputGeometry;
 };
 
+export type PreparedStreetCandidate = {
+  sourceOsmWayId: number;
+  sourceKey: string;
+  fragmentKey: string;
+  label: string;
+  geometry: LineStringGeometry;
+};
+
 export type StreetPreparationSourceMetrics = {
   requestCount: number;
   tileCount: number;
@@ -37,6 +44,14 @@ export type StreetPreparationSourceMetrics = {
   normalizedRoadCount: number;
   normalizedBuildingCount: number;
   packageBytes: number;
+  roadRequestCount: number;
+  buildingRequestCount: number;
+  roadUpstreamBytes: number;
+  buildingUpstreamBytes: number;
+  roadParsedElementCount: number;
+  buildingParsedElementCount: number;
+  roadNormalizationRejectedCount: number;
+  buildingNormalizationRejectedCount: number;
 };
 
 export type StreetPreparationDiagnostics = {
@@ -45,6 +60,7 @@ export type StreetPreparationDiagnostics = {
   eligibleRoadCount: number;
   rejectedRoadCount: number;
   invalidRoadCount: number;
+  topologyFailureCount: number;
   fragmentCount: number;
   duplicateFragmentCount: number;
   durationMs: number;
@@ -52,7 +68,7 @@ export type StreetPreparationDiagnostics = {
 };
 
 export type StreetPreparationResult = {
-  tasks: DistributionTask[];
+  candidates: PreparedStreetCandidate[];
   diagnostics: StreetPreparationDiagnostics;
 };
 
@@ -66,9 +82,4 @@ export type StreetPreparationInput = {
   maxRoadFragments: number;
 };
 
-export type StreetFragment = {
-  osmId: number;
-  tags: Record<string, string>;
-  geometry: LineStringGeometry;
-  fragmentKey: string;
-};
+export type StreetFragment = PreparedStreetCandidate;
