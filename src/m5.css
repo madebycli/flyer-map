@@ -11,14 +11,38 @@
   padding: 0.38rem 0.65rem;
   border: 1px solid rgba(15, 23, 42, 0.14);
   border-radius: 999px;
+  border: 0;
+  white-space: nowrap;
+  cursor: pointer;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
   color: #334155;
   font-size: 0.78rem;
   font-weight: 650;
   line-height: 1.1;
-  pointer-events: none;
+  pointer-events: auto;
   backdrop-filter: blur(8px);
+}
+
+.mutation-sync-issue {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 3.35rem);
+  right: 0.55rem;
+  z-index: 46;
+  width: min(20rem, calc(100vw - 1.1rem));
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid #d7b6a0;
+  border-radius: 0.8rem;
+  color: #3c2d20;
+  background: #fffaf4;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 16%);
+}
+
+.mutation-sync-issue p,
+.mutation-sync-issue small {
+  margin: 0;
 }
 
 .mutation-sync-dot {

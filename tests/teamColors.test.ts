@@ -40,11 +40,10 @@ test("new teams receive the first unused product-order color", () => {
   );
 });
 
-test("all exhausted palette colors return null rather than silently duplicating a team color", () => {
-  assert.equal(
-    nextAvailableTeamColor(
-      TEAM_COLORS.map((color, index) => team(`team_${index}`, color.value)),
-    ),
-    null,
-  );
+test("all exhausted palette colors receive a deterministic unused fallback", () => {
+  const teams = TEAM_COLORS.map((color, index) => team(`team_${index}`, color.value));
+  const fallback = nextAvailableTeamColor(teams);
+  assert.match(fallback, /^#[0-9a-f]{6}$/iu);
+  assert.equal(teams.some((item) => item.color.toLowerCase() === fallback.toLowerCase()), false);
+  assert.equal(nextAvailableTeamColor(teams), fallback);
 });

@@ -189,6 +189,10 @@ export default function App({
   }, [undoStatusChange]);
 
   useEffect(() => {
+    if (access?.role === "viewer") {
+      setActiveTeamId(null);
+      return;
+    }
     if (
       (access?.role === "team-editor" || access?.role === "field-group-member") &&
       access.teamId
@@ -386,7 +390,6 @@ export default function App({
   const createTeam = () => {
     if (!isAdmin) return;
     const color = nextAvailableTeamColor(snapshot.teams);
-    if (!color) return;
 
     const now = new Date().toISOString();
     const team: Team = {
@@ -1400,27 +1403,30 @@ export default function App({
                 </div>
                 <div className="color-palette" aria-label={t(language, "teamColor", { name: team.name || t(language, "team") })}>
                   {TEAM_COLORS.map((color) => {
-                    const usedByOther = snapshot.teams.some((other) => other.id !== team.id && other.color === color.value);
+                    const usedByOther = snapshot.teams.some((other) => other.id !== team.id && other.color.toLowerCase() === color.value.toLowerCase());
                     return (
                       <button
                         key={color.value}
                         type="button"
                         className={`color-swatch ${team.color === color.value ? "is-selected" : ""}`}
                         style={{ backgroundColor: color.value }}
-                        disabled={usedByOther}
                         onClick={() => updateTeam(team.id, { color: color.value })}
                         aria-label={`${t(language, "teamColor", { name: color.value })}${usedByOther ? " · ×" : ""}`}
                         aria-pressed={team.color === color.value}
                       />
                     );
                   })}
+                  <label className="color-picker-label">
+                    <span>Eigene Farbe</span>
+                    <input type="color" value={/^#[0-9a-f]{6}$/iu.test(team.color) ? team.color : "#334155"} onChange={(event) => updateTeam(team.id, { color: event.target.value })} aria-label="Eigene Teamfarbe" />
+                  </label>
                 </div>
               </article>
             ))}
           </div>
 
-          <button className="button primary full-width" type="button" onClick={createTeam} disabled={nextAvailableTeamColor(snapshot.teams) === null}>
-            {nextAvailableTeamColor(snapshot.teams) === null ? t(language, "allColorsUsed") : t(language, "addTeam")}
+          <button className="button primary full-width" type="button" onClick={createTeam}>
+            {t(language, "addTeam")}
           </button>
         </section>
       ) : null}
@@ -1478,22 +1484,18 @@ export default function App({
             </>
           ) : null}
 
-          {snapshot.houseTasks ? (
+          {selectedAreaHouseTasks.length > 0 ? (
             <div className="context-task-list">
               <div className="context-task-list-header">
                 <strong>{language === "de" ? "Haus-Aufgaben" : "House tasks"}</strong>
                 <span>{selectedAreaHouseTasks.length}</span>
               </div>
-              {selectedAreaHouseTasks.length === 0 ? (
-                <p>{language === "de" ? "Keine Haus-Aufgaben in diesem Gebiet." : "No house tasks in this area."}</p>
-              ) : (
-                selectedAreaHouseTasks.map((task) => (
-                  <button className="context-task-row" type="button" key={task.id} onClick={() => selectHouseTask(task.id)}>
-                    <span>{task.label.trim() || (language === "de" ? "Haus" : "House")}</span>
-                    <small>{taskStatusLabel(language, task.status)}</small>
-                  </button>
-                ))
-              )}
+              {selectedAreaHouseTasks.map((task) => (
+                <button className="context-task-row" type="button" key={task.id} onClick={() => selectHouseTask(task.id)}>
+                  <span>{task.label.trim() || (language === "de" ? "Haus" : "House")}</span>
+                  <small>{taskStatusLabel(language, task.status)}</small>
+                </button>
+              ))}
             </div>
           ) : null}
 

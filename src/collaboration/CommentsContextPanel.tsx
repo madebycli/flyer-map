@@ -147,6 +147,14 @@ export function CommentsContextPanel({
       })
       .catch((reason: unknown) => {
         if (cancelled || (reason instanceof DOMException && reason.name === "AbortError")) return;
+        if (reason instanceof CampaignApiError && reason.status === 404) {
+          setComments([]);
+          setNextCursor(null);
+          setServerCanCreate(false);
+          setError(null);
+          setErrorCanRetry(false);
+          return;
+        }
         setError(errorMessage(reason, language));
         setErrorCanRetry(commentErrorCanRetry(reason));
       })

@@ -16,6 +16,7 @@ import {
   subscribeCampaignStore,
   type CampaignAccessState,
 } from "../data/campaignStore";
+import { fieldGroupQrTokenFromUrl } from "../data/fieldGroupApi.ts";
 import { detectLanguage } from "../i18n";
 
 export function AccessRecoveryGate() {
@@ -36,6 +37,7 @@ export function AccessRecoveryGate() {
   const de = language === "de";
   const resetToken = useMemo(campaignAdminPasswordResetTokenFromUrl, []);
   const setupToken = useMemo(campaignAdminSetupTokenFromUrl, []);
+  const fieldGroupToken = useMemo(fieldGroupQrTokenFromUrl, []);
   const accountLinkOpen = Boolean(resetToken || setupToken);
 
   useEffect(() => {
@@ -56,6 +58,7 @@ export function AccessRecoveryGate() {
 
   if (
     !campaignId ||
+    fieldGroupToken ||
     (checking && !recoveredUrl && !accountLinkOpen) ||
     (accessState !== "required" && !recoveredUrl && !accountLinkOpen)
   ) return null;

@@ -83,6 +83,14 @@ Der Campaign-Snapshot bleibt Read Model, UI-Modell, Startup-Cache und Konflikt-/
 - Conflict, 401/403 und invalide Mutationen bleiben sichtbar und werden nicht heimlich überschrieben;
 - bei leerer Queue wird ein abweichender lokaler Snapshot als Konfliktkopie bewahrt, statt ihn automatisch zum Server hochzuladen.
 
+Für die Mission gilt bei terminalen M5-Fehlern ein enger Server-Wins-Recovery-Pfad:
+HTTP-409- und nicht-retrybare 4xx-Records erzeugen zuerst eine lokale Sicherheitskopie,
+werden einzeln aus der Queue entfernt und lösen danach einen kanonischen Snapshot-Refresh
+aus. Alte `conflict`/`invalid`-Records können damit keinen späteren Street-Refresh mehr
+blockieren. 401/403, `blocked-auth`, Netzwerk-/429-/5xx- und Schemafehler bleiben
+wartend erhalten. Sichtbare Online-Polls laufen alle drei Sekunden, ohne parallele
+Requests.
+
 ## Manuelle Distribution-Areas
 
 ADR-0023 überschreibt ADR-0021 nur für die Mission: erfolgreiche `area.create`- und `area.update-geometry`-Mutationen starten keine OSM-Vorbereitung, keinen Worker-Job und keinen Browser-Poller. Der vorhandene automatische Runtime-Code bleibt unverändert erhalten, wird aber durch die zentrale Missions-Policy nicht aufgerufen.

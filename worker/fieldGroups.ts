@@ -528,7 +528,15 @@ async function createGroup(
     ]);
 
     if ((result[0]?.meta?.changes ?? 0) !== 1) {
-      return errorResponse(409, "group_create_conflict", "Gruppe konnte nicht erstellt werden.");
+      const persisted = await loadCreateRequest(db, campaignId, requestId);
+      if (persisted?.create_payload_hash === payloadHash && persisted.id === groupId) {
+        // D1 can omit batch metadata although the committed row is visible. This request
+        // still owns the freshly generated one-time credentials, so complete normally.
+      } else {
+        const concurrentReplay = await createReplayResponse(db, campaignId, requestId, payloadHash);
+        if (concurrentReplay) return concurrentReplay;
+        return errorResponse(409, "group_create_conflict", "Gruppe konnte nicht erstellt werden.");
+      }
     }
   } catch (error) {
     const concurrentReplay = await createReplayResponse(db, campaignId, requestId, payloadHash);

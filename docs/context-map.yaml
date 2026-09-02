@@ -1,4 +1,4 @@
-version: 21
+version: 22
 
 entrypoints:
   always:
@@ -24,6 +24,7 @@ routing_rules:
   - for the normal automatic Area Sheet, Preparation polling/retry, completed task color or removal of browser Smart/offline-download UI, load plan-auto-area-ui-server-preparation after plan-auto-area-task-preparation, then follow UX, Map, Offline Sync, Quality and ADR-0021 edges
   - for the 2026-09-02 mission branch, manual Street creation, dormant automatic preparation, campaign-local Admin passwords, password reset or migrations 0015/0016, load ADR-0023 before proposed Organization identity documents
   - for post-mission automatic Street editing, load plan-smart-street-edit-after-mission and ADR-0023, then follow Smart Street runtime, automatic Area preparation, Map, Offline Sync, Security and Quality edges
+  - for mission day-one sync recovery, Tour QR startup, Viewer team scope or terminal M5 queue records, load plan-mission-day-one-fixpack and follow Offline Sync, Security, Live Teams, UX and Quality edges
   - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
@@ -353,6 +354,13 @@ nodes:
     topics: [mission-release, post-mission, automatic-area-preparation, smart-streets, street-edit, two-point-selection, maplibre, m5, override]
     load_when: [post-mission automatic Street edit, Smart Street edit button, highlighted route between two points, automatic Street correction]
 
+  - id: plan-mission-day-one-fixpack
+    path: docs/plans/active/027-mission-day-one-fixpack.md
+    type: plan
+    status: active
+    topics: [mission-release, m5, sync, conflict-recovery, field-groups, viewer, team-colors]
+    load_when: [mission Day-One fixpack, Street refresh, stale IndexedDB queue, Tour QR, Viewer Team leak]
+
   - id: plan-collection-pickup-persistence
     path: docs/plans/active/021-collection-pickup-persistence.md
     type: plan
@@ -517,6 +525,11 @@ edges:
   - { from: plan-smart-street-edit-after-mission, to: offline-sync, relation: reuses_m5 }
   - { from: plan-smart-street-edit-after-mission, to: security, relation: constrained_by }
   - { from: plan-smart-street-edit-after-mission, to: quality, relation: validated_by }
+  - { from: plan-mission-day-one-fixpack, to: offline-sync, relation: hardens }
+  - { from: plan-mission-day-one-fixpack, to: security, relation: constrained_by }
+  - { from: plan-mission-day-one-fixpack, to: live-teams, relation: preserves_credentials }
+  - { from: plan-mission-day-one-fixpack, to: ux, relation: hardens }
+  - { from: plan-mission-day-one-fixpack, to: quality, relation: validated_by }
   - { from: adr-m5-no-legacy-snapshot-writes, to: data, relation: governs }
   - { from: adr-m5-no-legacy-snapshot-writes, to: offline-sync, relation: governs }
   - { from: adr-m5-no-legacy-snapshot-writes, to: security, relation: governs }

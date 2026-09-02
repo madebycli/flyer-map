@@ -154,6 +154,9 @@ export const TEAM_COLORS: readonly TeamColor[] = [
   { value: "#0369a1", label: "Petrolblau" },
   { value: "#a21caf", label: "Magenta" },
   { value: "#4d7c0f", label: "Olivgrün" },
+  { value: "#b91c1c", label: "Karminrot" },
+  { value: "#0e7490", label: "Seegrün" },
+  { value: "#6d28d9", label: "Lila" },
 ] as const;
 
 export const TASK_STATUS_OPTIONS: readonly { value: TaskStatus; label: string }[] = [
@@ -189,7 +192,25 @@ export function createInitialSnapshot(): CampaignSnapshot {
 
 export function nextAvailableTeamColor(teams: Team[]) {
   const used = new Set(teams.map((team) => team.color.toLowerCase()));
-  return TEAM_COLORS.find((color) => !used.has(color.value.toLowerCase()))?.value ?? null;
+  const preset = TEAM_COLORS.find((color) => !used.has(color.value.toLowerCase()))?.value;
+  if (preset) return preset;
+  for (let index = 0; index < 360; index += 1) {
+    const hue = (teams.length * 47 + index * 137) % 360;
+    const chroma = 62;
+    const light = 38;
+    const candidate = hslToHex(hue, chroma, light);
+    if (!used.has(candidate.toLowerCase())) return candidate;
+  }
+  return "#334155";
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number) {
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const k = (offset: number) => (offset + hue / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const channel = (offset: number) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(offset) - 3, 9 - k(offset), 1))));
+  return `#${[channel(0), channel(8), channel(4)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function openPolygonRing(geometry: PolygonGeometry): LngLat[] {

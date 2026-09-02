@@ -20,6 +20,8 @@ test("fresh Access-Link startup waits for redemption before operator recovery", 
   assert.equal(accessHash.get("access"), accessToken);
 
   assert.match(gateSource, /subscribeCampaignStore/u);
+  assert.match(gateSource, /fieldGroupQrTokenFromUrl/u);
+  assert.match(gateSource, /fieldGroupToken/u);
   assert.doesNotMatch(gateSource, /fetchCurrentAccess/u);
   assert.match(gateSource, /nextState === "idle" \|\| nextState === "pending"/u);
   assert.match(gateSource, /accessState !== "required"/u);
