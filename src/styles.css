@@ -136,6 +136,16 @@ select:disabled {
   backdrop-filter: blur(12px);
 }
 
+.bottom-sheet.is-collapsed {
+  max-height: 6.25rem;
+  overflow: hidden;
+  bottom: calc(env(safe-area-inset-bottom) + 4.45rem);
+}
+
+.bottom-sheet.is-collapsed > :not(.sheet-handle-button):not(.sheet-header) {
+  display: none;
+}
+
 .map-toolbar {
   display: grid;
   gap: 0.65rem;
@@ -302,6 +312,22 @@ select:disabled {
   margin: 0.12rem auto 0.72rem;
   border-radius: 999px;
   background: #c9d1ca;
+}
+
+.sheet-handle-button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sheet-handle-button:focus-visible {
+  outline: 2px solid #1f6b3a;
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
 .sheet-header {

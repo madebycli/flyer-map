@@ -156,6 +156,15 @@ export function deriveCampaignMutation(
     };
   }
 
+  if (teams.removed.length === 1 && collectionDeltaCount === 1 && collectionEntityDeltaCount === 0) {
+    const team = teams.removed[0];
+    return {
+      ...mutationBase(previous, next.campaign.updatedAt),
+      type: "team.delete",
+      payload: { teamId: team.id, expectedUpdatedAt: team.updatedAt },
+    };
+  }
+
   if (areas.added.length === 1 && collectionDeltaCount === 1) {
     const area = areas.added[0];
     return {

@@ -389,6 +389,7 @@ function terminalServerWinsIssue(
   record: QueuedCampaignMutation,
   reason: string,
   serverRevision: number | null = null,
+  serverMessage?: string,
 ) {
   if (syncRuntime.latestLocal) saveCampaignConflictSnapshot(syncRuntime.latestLocal);
   console.warn(
@@ -403,7 +404,7 @@ function terminalServerWinsIssue(
     mutationType: record.mutation.type,
     baseRevision: record.mutation.baseRevision,
     serverRevision,
-    message: "Eine lokale Änderung konnte nicht übernommen werden. Die Online-Version wurde geladen; eine lokale Sicherheitskopie bleibt erhalten.",
+    message: serverMessage ?? "Eine lokale Änderung konnte nicht übernommen werden. Die Online-Version wurde geladen; eine lokale Sicherheitskopie bleibt erhalten.",
     occurredAt: new Date().toISOString(),
   });
 }
@@ -543,7 +544,7 @@ async function processMutationQueue() {
       if (apiError.revision !== undefined && apiError.revision !== null) {
         syncRuntime.serverRevision = apiError.revision;
       }
-      terminalServerWinsIssue(record, "http_409", apiError.revision ?? null);
+      terminalServerWinsIssue(record, "http_409", apiError.revision ?? null, apiError.message);
       syncRuntime.needsCanonicalRefresh = true;
     }
 

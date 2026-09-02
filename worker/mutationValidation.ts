@@ -154,6 +154,11 @@ export function validateCampaignMutation(
       }
       break;
     }
+    case "team.delete":
+      if (isId(payload.teamId) && hasExpectedUpdatedAt(payload)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
     case "area.create":
       if (
         isId(payload.areaId) &&

@@ -103,7 +103,6 @@
   border-radius: 0.85rem;
 }
 
-.compact-sheet .sheet-handle,
 .compact-sheet .area-fields {
   display: none;
 }
@@ -150,7 +149,6 @@
   border-radius: 0.85rem;
 }
 
-.task-sheet .sheet-handle,
 .task-sheet > .field-label,
 .task-sheet .task-current-status {
   display: none;

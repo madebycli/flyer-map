@@ -35,6 +35,8 @@ type Props = {
   onRemoveFocus: () => void;
   onResetPersonalCamera: () => void;
   onClose: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 };
 
 function roleLabel(language: Language, role: PersistentAccessRole) {
@@ -74,6 +76,8 @@ export function SettingsSheet({
   onRemoveFocus,
   onResetPersonalCamera,
   onClose,
+  collapsed,
+  onToggleCollapsed,
 }: Props) {
   const isAdmin = access?.role === "admin";
   const [grants, setGrants] = useState<AccessGrant[]>([]);
@@ -270,8 +274,8 @@ export function SettingsSheet({
   };
 
   return (
-    <section className="bottom-sheet settings-sheet" aria-label={t(language, "settings")}>
-      <div className="sheet-handle" aria-hidden="true" />
+    <section className={`bottom-sheet settings-sheet ${collapsed ? "is-collapsed" : ""}`} aria-label={t(language, "settings")}>
+      <button className="sheet-handle-button" type="button" onClick={onToggleCollapsed} aria-label={collapsed ? "Fenster ausklappen" : "Fenster einklappen"} aria-expanded={!collapsed}><span className="sheet-handle" aria-hidden="true" /></button>
       <div className="sheet-header">
         <div>
           <span className="eyebrow">{t(language, "personal")}</span>

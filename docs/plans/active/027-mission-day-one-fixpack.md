@@ -27,11 +27,15 @@ bleibt auf Feldarbeit beschränkt.
    Request geprüft, damit der erste erfolgreiche Request nicht fälschlich 409 meldet.
 5. Field-Group-QRs unterdrücken den Admin-Recovery-Gate; Viewer erhalten keinen geerbten
    aktiven Team-Scope; leere House- und erwartete Kommentar-404-Flächen werden verborgen.
+6. `team.delete` ist eine enge M5-Mutation: nur Admin, mit `expectedUpdatedAt`, ohne
+   Snapshot-Cascade und mit fail-closed D1-Prüfung für Gebiete, Touren, Sessions,
+   Historie und aktive Team-Links.
+7. Mission-Sheets für Team, Gebiet, Straße, Haus, Campaign-Kommentare und Einstellungen
+   lassen sich über den zugänglichen Griff einklappen. Der Zustand bleibt nur für das
+   aktuell geöffnete Sheet und liegt oberhalb der permanenten Feldleiste.
 
 ## Noch offen
 
-- gemeinsame einklappbare Bottom-Sheet-Leiste;
-- echte M5-Team-Löschung mit Abhängigkeitsgrenzen und UI;
 - Restabnahme der neuen Farbwahl und Chrome auf realen Geräten;
 - reale Zwei-Browser-/Tour-Smoketests;
 - remote D1-Migrationen 0015/0016 ausschließlich nach expliziter Master-Freigabe.

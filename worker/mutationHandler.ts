@@ -15,6 +15,7 @@ import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 import {
   getAppliedMutation,
   persistCampaignMutation,
+  teamDeleteBlocker,
 } from "./mutationRepository.ts";
 import { validateCampaignMutation } from "./mutationValidation.ts";
 import { validateCampaignSnapshot } from "./snapshotValidation.ts";
@@ -117,6 +118,9 @@ export async function handleCampaignMutation(
     return errorResponse(422, "mutation_invalid", validation.message);
   }
   const mutation = validation.mutation;
+  if (mutation.type === "team.delete" && access.role !== "admin") {
+    return errorResponse(403, "team_delete_forbidden", "Nur Admins dürfen Teams löschen.");
+  }
   const isCollectionMutation = mutation.type.startsWith("collection.");
   if (access.role === "collection-collector") {
     if (!isCollectionMutation || !access.collectorId) {
@@ -217,6 +221,22 @@ export async function handleCampaignMutation(
             current.revision,
           );
         }
+        if (error.reason === "team_has_areas") {
+          return errorResponse(
+            409,
+            "team_delete_has_areas",
+            "Team kann nicht gelöscht werden, solange Gebiete zugeordnet sind.",
+            current.revision,
+          );
+        }
+        if (error.reason === "team_missing" || error.reason === "team_changed") {
+          return errorResponse(
+            409,
+            error.reason,
+            error.reason === "team_missing" ? "Das Team wurde bereits gelöscht." : "Das Team wurde inzwischen geändert.",
+            current.revision,
+          );
+        }
         return errorResponse(
           409,
           "mutation_conflict",
@@ -240,6 +260,21 @@ export async function handleCampaignMutation(
         "Die Änderung liegt außerhalb deiner Berechtigung.",
         current.revision,
       );
+    }
+
+    if (mutation.type === "team.delete") {
+      const blocker = await teamDeleteBlocker(db, campaignId, mutation.payload.teamId);
+      if (blocker) {
+        const messages: Record<string, string> = {
+          team_delete_has_areas: "Team kann nicht gelöscht werden, solange Gebiete zugeordnet sind.",
+          team_delete_has_field_groups: "Team kann nicht gelöscht werden, weil Einsätze/Touren darauf verweisen.",
+          team_delete_has_sessions: "Team kann nicht gelöscht werden, weil Einsatzhistorie vorhanden ist.",
+          team_delete_has_history: "Team kann nicht gelöscht werden, weil Einsatzhistorie vorhanden ist.",
+          team_delete_has_access_grants: "Team kann nicht gelöscht werden, solange ein aktiver Team-Link existiert.",
+          team_delete_schema_unavailable: "Team kann nicht sicher gelöscht werden, weil die Serverdatenbank noch nicht vollständig geprüft werden kann.",
+        };
+        return errorResponse(409, blocker, messages[blocker], current.revision);
+      }
     }
 
     if (

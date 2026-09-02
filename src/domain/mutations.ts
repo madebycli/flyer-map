@@ -39,6 +39,7 @@ export type CampaignMutation =
       "team.update",
       { teamId: string; name?: string; color?: string; expectedUpdatedAt: string }
     >
+  | MutationBase<"team.delete", { teamId: string; expectedUpdatedAt: string }>
   | MutationBase<
       "area.create",
       { areaId: string; teamId: string; name: string; geometry: PolygonGeometry }
@@ -276,6 +277,18 @@ export function applyCampaignMutation(
             : candidate,
         ),
       };
+      break;
+    }
+    case "team.delete": {
+      const team = snapshot.teams.find((candidate) => candidate.id === mutation.payload.teamId);
+      requireExpectedUpdatedAt(
+        team?.updatedAt,
+        mutation.payload.expectedUpdatedAt,
+        "team_missing",
+        "team_changed",
+      );
+      if (snapshot.areas.some((area) => area.teamId === mutation.payload.teamId)) conflict("team_has_areas");
+      next = { ...snapshot, teams: snapshot.teams.filter((candidate) => candidate.id !== mutation.payload.teamId) };
       break;
     }
     case "area.create": {

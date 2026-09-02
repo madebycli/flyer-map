@@ -141,6 +141,7 @@ export default function App({
     initialLoad.snapshot.teams[0]?.id ?? null,
   );
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [mode, setMode] = useState<MapMode>("browse");
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -203,6 +204,10 @@ export default function App({
     if (activeTeamId && snapshot.teams.some((team) => team.id === activeTeamId)) return;
     setActiveTeamId(snapshot.teams[0]?.id ?? null);
   }, [access, snapshot.teams, activeTeamId]);
+
+  useEffect(() => {
+    setSheetCollapsed(false);
+  }, [sheet]);
 
   useEffect(() => {
     if (selectedAreaId && !snapshot.areas.some((area) => area.id === selectedAreaId)) {
@@ -429,6 +434,24 @@ export default function App({
     if (team.name.trim()) return;
     updateTeam(team.id, { name: t(language, "team") });
   };
+
+  const deleteTeam = (team: Team) => {
+    if (!isAdmin) return;
+    if (snapshot.areas.some((area) => area.teamId === team.id)) {
+      window.alert("Team kann nicht gelöscht werden, solange Gebiete zugeordnet sind.");
+      return;
+    }
+    if (!window.confirm(`Team „${team.name.trim() || t(language, "team")}“ wirklich löschen?`)) return;
+    commitSnapshot((current) => ({
+      ...current,
+      teams: current.teams.filter((candidate) => candidate.id !== team.id),
+    }));
+    if (activeTeamId === team.id) {
+      setActiveTeamId(snapshot.teams.find((candidate) => candidate.id !== team.id)?.id ?? null);
+    }
+  };
+
+  const sheetToggleLabel = sheetCollapsed ? "Fenster ausklappen" : "Fenster einklappen";
 
   const startDrawing = () => {
     if (!activeTeam || !canEditTeam(activeTeam.id)) {
@@ -1341,12 +1364,14 @@ export default function App({
           onRemoveFocus={removeFocus}
           onResetPersonalCamera={resetPersonalCamera}
           onClose={() => setSheet(null)}
+          collapsed={sheetCollapsed}
+          onToggleCollapsed={() => setSheetCollapsed((collapsed) => !collapsed)}
         />
       ) : null}
 
       {sheet === "campaign-comments" && mode === "browse" ? (
-        <section className="bottom-sheet comment-sheet" aria-label="Kommentare">
-          <div className="sheet-handle" aria-hidden="true" />
+        <section className={`bottom-sheet comment-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label="Kommentare">
+          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
           <div className="sheet-header">
             <div>
               <span className="eyebrow">{t(language, "campaignSettings")}</span>
@@ -1368,8 +1393,8 @@ export default function App({
       ) : null}
 
       {sheet === "teams" && mode === "browse" && isAdmin ? (
-        <section className="bottom-sheet" aria-label={t(language, "manageTeams")}>
-          <div className="sheet-handle" aria-hidden="true" />
+        <section className={`bottom-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={t(language, "manageTeams")}>
+          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
           <div className="sheet-header">
             <div>
               <span className="eyebrow">{t(language, "campaignSettings")}</span>
@@ -1421,6 +1446,9 @@ export default function App({
                     <input type="color" value={/^#[0-9a-f]{6}$/iu.test(team.color) ? team.color : "#334155"} onChange={(event) => updateTeam(team.id, { color: event.target.value })} aria-label="Eigene Teamfarbe" />
                   </label>
                 </div>
+                <button className="button danger full-width" type="button" onClick={() => deleteTeam(team)} disabled={snapshot.areas.some((area) => area.teamId === team.id)} title={snapshot.areas.some((area) => area.teamId === team.id) ? "Zuerst alle Gebiete diesem Team entfernen oder umhängen." : undefined}>
+                  Team löschen
+                </button>
               </article>
             ))}
           </div>
@@ -1446,8 +1474,8 @@ export default function App({
       ) : null}
 
       {sheet === "area" && mode === "browse" && selectedArea ? (
-        <section className="bottom-sheet compact-sheet" aria-label={t(language, "area")}>
-          <div className="sheet-handle" aria-hidden="true" />
+        <section className={`bottom-sheet compact-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={t(language, "area")}>
+          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
           <div className="sheet-header">
             <div className="area-heading">
               <span className="team-dot large-dot" style={{ backgroundColor: selectedAreaTeam?.color ?? "#64748b" }} aria-hidden="true" />
@@ -1513,8 +1541,8 @@ export default function App({
       ) : null}
 
       {sheet === "task" && mode === "browse" && selectedTask ? (
-        <section className="bottom-sheet task-sheet" aria-label={t(language, "streetMode")}>
-          <div className="sheet-handle" aria-hidden="true" />
+        <section className={`bottom-sheet task-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={t(language, "streetMode")}>
+          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
           <div className="sheet-header">
             <div className="area-heading">
               <span className="team-dot large-dot" style={{ backgroundColor: selectedTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />
@@ -1571,8 +1599,8 @@ export default function App({
       ) : null}
 
       {sheet === "house" && mode === "browse" && selectedHouseTask ? (
-        <section className="bottom-sheet task-sheet commentable-task-sheet" aria-label={language === "de" ? "Haus-Aufgabe" : "House task"}>
-          <div className="sheet-handle" aria-hidden="true" />
+        <section className={`bottom-sheet task-sheet commentable-task-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={language === "de" ? "Haus-Aufgabe" : "House task"}>
+          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
           <div className="sheet-header">
             <div className="area-heading">
               <span className="team-dot large-dot" style={{ backgroundColor: selectedHouseTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />

@@ -27,6 +27,74 @@ export type MutationPersistenceResult =
       reason: "revision_conflict" | "mutation_id_reused" | "schema_migration_required";
     };
 
+export type TeamDeleteBlocker =
+  | "team_delete_has_areas"
+  | "team_delete_has_field_groups"
+  | "team_delete_has_sessions"
+  | "team_delete_has_history"
+  | "team_delete_has_access_grants"
+  | "team_delete_schema_unavailable";
+
+const TEAM_DELETE_TABLE_INFO_SQL = {
+  areas: "PRAGMA table_info(areas)",
+  field_groups: "PRAGMA table_info(field_groups)",
+  field_sessions: "PRAGMA table_info(field_sessions)",
+  domain_events: "PRAGMA table_info(domain_events)",
+  campaign_access_grants: "PRAGMA table_info(campaign_access_grants)",
+} as const;
+
+type TeamDeleteDependencyTable = keyof typeof TEAM_DELETE_TABLE_INFO_SQL;
+
+async function tableHasColumns(
+  db: D1DatabaseLike,
+  table: TeamDeleteDependencyTable,
+  required: string[],
+) {
+  try {
+    const result = await db.prepare(TEAM_DELETE_TABLE_INFO_SQL[table]).all<{ name: string }>();
+    const columns = new Set(result.results.map((column) => column.name));
+    return required.every((column) => columns.has(column));
+  } catch {
+    return false;
+  }
+}
+
+async function tableHasRows(
+  db: D1DatabaseLike,
+  table: TeamDeleteDependencyTable,
+  requiredColumns: string[],
+  query: string,
+  values: unknown[],
+) {
+  if (!(await tableHasColumns(db, table, requiredColumns))) return "schema" as const;
+  try {
+    return (await db.prepare(query).bind(...values).first<{ present: number }>()) ? "present" as const : "none" as const;
+  } catch {
+    return "schema" as const;
+  }
+}
+
+/** Fail closed: a Team is removed only when no canonical D1 dependency remains. */
+export async function teamDeleteBlocker(
+  db: D1DatabaseLike,
+  campaignId: string,
+  teamId: string,
+): Promise<TeamDeleteBlocker | null> {
+  const checks: Array<[TeamDeleteBlocker, TeamDeleteDependencyTable, string[], string, unknown[]]> = [
+    ["team_delete_has_areas", "areas", ["campaign_id", "team_id"], "SELECT 1 AS present FROM areas WHERE campaign_id = ? AND team_id = ? LIMIT 1", [campaignId, teamId]],
+    ["team_delete_has_field_groups", "field_groups", ["campaign_id", "team_id"], "SELECT 1 AS present FROM field_groups WHERE campaign_id = ? AND team_id = ? LIMIT 1", [campaignId, teamId]],
+    ["team_delete_has_sessions", "field_sessions", ["campaign_id", "team_id"], "SELECT 1 AS present FROM field_sessions WHERE campaign_id = ? AND team_id = ? LIMIT 1", [campaignId, teamId]],
+    ["team_delete_has_history", "domain_events", ["campaign_id", "team_id"], "SELECT 1 AS present FROM domain_events WHERE campaign_id = ? AND team_id = ? LIMIT 1", [campaignId, teamId]],
+    ["team_delete_has_access_grants", "campaign_access_grants", ["campaign_id", "team_id", "revoked_at"], "SELECT 1 AS present FROM campaign_access_grants WHERE campaign_id = ? AND team_id = ? AND revoked_at IS NULL LIMIT 1", [campaignId, teamId]],
+  ];
+  for (const [blocker, table, columns, query, values] of checks) {
+    const result = await tableHasRows(db, table, columns, query, values);
+    if (result === "schema") return "team_delete_schema_unavailable";
+    if (result === "present") return blocker;
+  }
+  return null;
+}
+
 export async function getAppliedMutation(
   db: D1DatabaseLike,
   campaignId: string,
@@ -118,6 +186,16 @@ function mutationStatement(
           mutation.createdAt,
           mutation.payload.teamId,
           mutation.campaignId,
+          mutation.campaignId,
+          writeToken,
+        );
+    case "team.delete":
+      return db
+        .prepare(`DELETE FROM teams WHERE id = ? AND campaign_id = ? AND updated_at = ? AND ${guard}`)
+        .bind(
+          mutation.payload.teamId,
+          mutation.campaignId,
+          mutation.payload.expectedUpdatedAt,
           mutation.campaignId,
           writeToken,
         );
