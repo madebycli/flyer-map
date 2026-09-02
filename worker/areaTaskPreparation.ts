@@ -19,6 +19,7 @@ import {
   type D1PreparedStatement,
 } from "./campaignRepository.ts";
 import {
+  AREA_PREPARATION_MAX_AGGREGATE_BYTES,
   fetchOsmFeaturesForArea,
   OsmFeaturesForAreaError,
   type FetchLike,
