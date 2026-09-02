@@ -100,9 +100,14 @@ function normalizedAreaForTurf(geometry: PolygonGeometry) {
   }
 }
 
-/**
- * Boundary-aware point test backed by Turf. Invalid input is rejected.
- */
+export type StreetClipFailure = "invalid-area" | "invalid-input" | "topology";
+
+export type StreetClipResult = {
+  fragments: LineStringGeometry[];
+  failure: StreetClipFailure | null;
+};
+
+/** Boundary-aware point test backed by Turf. Invalid input is rejected. */
 export function pointInOrOnPolygon(pointValue: LngLat, polygonGeometry: PolygonGeometry) {
   if (!finiteCoordinate(pointValue)) return false;
   const area = normalizedAreaForTurf(polygonGeometry);
@@ -133,7 +138,7 @@ export function polygonRepresentativePoint(polygonGeometry: PolygonGeometry): Ln
 }
 
 /**
- * Validates containment with the same topology engine used for clipping.
+ * Validates containment with the same topology engine used by clipping.
  * This is intentionally not a midpoint or endpoint heuristic.
  */
 export function lineStringInsidePolygon(
@@ -155,12 +160,13 @@ export function lineStringInsidePolygon(
  * Clips the complete input geometry with JTS OverlayOp. The result is never
  * approximated by a bbox, endpoint, midpoint or client-side fallback.
  */
-export function clipLineGeometryToPolygon(
+export function clipLineGeometryToPolygonDetailed(
   geometry: StreetInputGeometry,
   polygonGeometry: PolygonGeometry,
-): LineStringGeometry[] {
+): StreetClipResult {
   const normalizedArea = normalizePolygonGeometry(polygonGeometry);
-  if (!normalizedArea || !validInputGeometry(geometry)) return [];
+  if (!normalizedArea) return { fragments: [], failure: "invalid-area" };
+  if (!validInputGeometry(geometry)) return { fragments: [], failure: "invalid-input" };
   try {
     const reader = new GeoJSONReader();
     const intersection = OverlayOp.intersection(reader.read(geometry), reader.read(normalizedArea));
@@ -179,14 +185,24 @@ export function clipLineGeometryToPolygon(
       seen.add(key);
       fragments.push(fragment);
     }
-    return fragments.sort((first, second) =>
-      first.coordinates[0][0] - second.coordinates[0][0]
-      || first.coordinates[0][1] - second.coordinates[0][1]
-      || canonicalStreetLineKey(first).localeCompare(canonicalStreetLineKey(second))
-    );
+    return {
+      fragments: fragments.sort((first, second) =>
+        first.coordinates[0][0] - second.coordinates[0][0]
+        || first.coordinates[0][1] - second.coordinates[0][1]
+        || canonicalStreetLineKey(first).localeCompare(canonicalStreetLineKey(second))
+      ),
+      failure: null,
+    };
   } catch {
-    return [];
+    return { fragments: [], failure: "topology" };
   }
+}
+
+export function clipLineGeometryToPolygon(
+  geometry: StreetInputGeometry,
+  polygonGeometry: PolygonGeometry,
+) {
+  return clipLineGeometryToPolygonDetailed(geometry, polygonGeometry).fragments;
 }
 
 export function clipLineStringToPolygon(
