@@ -30,6 +30,14 @@ import {
   rxdbChangeFeedEntriesForSnapshotDelta,
   rxdbChangeFeedStatements,
 } from "./rxdbChangeFeed.ts";
+import {
+  AREA_STREET_PREPARATION_ALGORITHM_VERSION,
+  areaStreetPreparationFingerprint,
+  reconcileServerPreparedStreetTasks,
+  type PreparedStreetCandidate,
+} from "./serverPreparedStreetReconcile.ts";
+
+export { AREA_STREET_PREPARATION_ALGORITHM_VERSION };
 
 export const AREA_PREPARATION_PENDING_FRESH_MS = 60_000;
 export const AREA_PREPARATION_MAX_ROAD_FRAGMENTS = 2_000;
@@ -45,6 +53,7 @@ export type AreaPreparationFailureCode =
   | "area_preparation_osm_failed"
   | "area_preparation_osm_invalid"
   | "area_preparation_too_many_features"
+  | "area_preparation_work_started"
   | "area_preparation_stale";
 
 export type AreaPreparationStateStatus = "pending" | "ready" | "failed";
@@ -100,6 +109,7 @@ export type AreaTaskPreparationRun = {
   areaId: string;
   snapshot: CampaignSnapshot;
   area: Area;
+  /** Versioned area-preparation fingerprint stored in the legacy geometry_hash column. */
   geometryHash: string;
   generation: string;
   now: string;
@@ -230,6 +240,13 @@ export async function areaGeometryHash(geometry: PolygonGeometry) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+export function areaPreparationFingerprint(
+  geometry: PolygonGeometry,
+  algorithmVersion = AREA_STREET_PREPARATION_ALGORITHM_VERSION,
+) {
+  return areaStreetPreparationFingerprint(canonicalAreaGeometryJson(geometry), algorithmVersion);
+}
+
 function isFreshPending(state: AreaPreparationState, geometryHash: string, now: Date) {
   const updatedAt = Date.parse(state.updatedAt);
   return (
@@ -238,10 +255,6 @@ function isFreshPending(state: AreaPreparationState, geometryHash: string, now: 
     Number.isFinite(updatedAt) &&
     now.getTime() - updatedAt < AREA_PREPARATION_PENDING_FRESH_MS
   );
-}
-
-function taskSource(osmId: number) {
-  return { dataset: "OpenStreetMap" as const, objectType: "way" as const, objectIds: [osmId] };
 }
 
 function roadLabel(tags: Record<string, string>) {
@@ -257,6 +270,10 @@ function validBuildingGeometry(geometry: PolygonGeometry) {
   return validatePolygonVertices(ring.slice(0, -1)).valid;
 }
 
+/**
+ * Existing clipping is intentionally kept outside the persistence contract.
+ * A future geometry engine only has to produce these plain prepared fragments.
+ */
 export function prepareTasksForArea(input: {
   campaignId: string;
   area: Area;
@@ -274,10 +291,10 @@ export function prepareTasksForArea(input: {
   randomUUID: () => string;
   maxRoadFragments?: number;
   maxBuildings?: number;
-}): { tasks: DistributionTask[]; houseTasks: HouseTask[] } {
+}): { preparedFragments: PreparedStreetCandidate[]; houseTasks: HouseTask[] } {
   const maxRoadFragments = input.maxRoadFragments ?? AREA_PREPARATION_MAX_ROAD_FRAGMENTS;
   const maxBuildings = input.maxBuildings ?? AREA_PREPARATION_MAX_BUILDINGS;
-  const tasks: DistributionTask[] = [];
+  const preparedFragments: PreparedStreetCandidate[] = [];
   const roadIds = new Set<number>();
   for (const road of input.roads) {
     if (roadIds.has(road.properties.osmId)) continue;
@@ -285,25 +302,16 @@ export function prepareTasksForArea(input: {
     const fragments = clipLineStringToPolygon(road.geometry, input.area.geometry);
     for (const geometry of fragments) {
       if (!validateLineStringVertices(geometry.coordinates).valid) continue;
-      if (tasks.length >= maxRoadFragments) {
+      if (preparedFragments.length >= maxRoadFragments) {
         throw new PreparationFailure(
           "area_preparation_too_many_features",
           "Zu viele Straßenfragmente in der Area.",
         );
       }
-      tasks.push({
-        id: `task_${input.randomUUID()}`,
-        campaignId: input.campaignId,
-        areaId: input.area.id,
-        taskType: "street",
+      preparedFragments.push({
+        sourceOsmWayId: road.properties.osmId,
         label: roadLabel(road.properties.tags),
         geometry,
-        source: taskSource(road.properties.osmId),
-        areaPreparationGeneration: input.generation,
-        status: "open",
-        completedAt: null,
-        createdAt: input.timestamp,
-        updatedAt: input.timestamp,
       });
     }
   }
@@ -342,7 +350,7 @@ export function prepareTasksForArea(input: {
     });
     houseTasks.push({ ...house, areaPreparationGeneration: input.generation });
   }
-  return { tasks, houseTasks };
+  return { preparedFragments, houseTasks };
 }
 
 /** Splits JSON rows into bounded `json_each(?)` payloads without partial output. */
@@ -375,12 +383,26 @@ function stateGuardSql() {
   )`;
 }
 
+function automaticWorkGuardSql() {
+  return `NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE campaign_id = ? AND area_id = ?
+        AND area_preparation_generation IS NOT NULL AND status <> 'open'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM house_tasks
+      WHERE campaign_id = ? AND area_id = ?
+        AND area_preparation_generation IS NOT NULL AND status <> 'open'
+    )`;
+}
+
 function publishGuardSql() {
   return `EXISTS (SELECT 1 FROM campaigns WHERE id = ? AND write_token = ?)
     AND ${stateGuardSql()}
     AND EXISTS (
       SELECT 1 FROM areas WHERE id = ? AND campaign_id = ? AND geometry_json = ?
-    )`;
+    )
+    AND ${automaticWorkGuardSql()}`;
 }
 
 function publishGuardBindings(input: {
@@ -401,6 +423,10 @@ function publishGuardBindings(input: {
     input.areaId,
     input.campaignId,
     input.geometryJson,
+    input.campaignId,
+    input.areaId,
+    input.campaignId,
+    input.areaId,
   ];
 }
 
@@ -509,6 +535,24 @@ function tasksInsertStatement(
     .bind(JSON.stringify(rows), ...guard);
 }
 
+function tasksDeleteStatement(
+  db: D1DatabaseLike,
+  ids: string[],
+  campaignId: string,
+  areaId: string,
+  guard: ReturnType<typeof publishGuardBindings>,
+) {
+  return db
+    .prepare(
+      `DELETE FROM tasks
+       WHERE campaign_id = ? AND area_id = ?
+         AND id IN (SELECT value FROM json_each(?))
+         AND area_preparation_generation IS NOT NULL AND status = 'open'
+         AND ${publishGuardSql()}`,
+    )
+    .bind(campaignId, areaId, JSON.stringify(ids), ...guard);
+}
+
 function houseTasksInsertStatement(
   db: D1DatabaseLike,
   rows: HouseTask[],
@@ -554,7 +598,7 @@ function failureCode(error: unknown): AreaPreparationFailureCode {
 /**
  * Claims one durable pending generation before any upstream request starts.
  * This lets recovery POST return an honest pending state and prevents a second
- * request from scheduling another OSM fetch for the same fresh geometry.
+ * request from scheduling another OSM fetch for the same fresh fingerprint.
  */
 export async function beginAreaTaskPreparation(
   db: D1DatabaseLike,
@@ -574,13 +618,19 @@ export async function beginAreaTaskPreparation(
 
   const nowDate = (options.now ?? (() => new Date()))();
   const now = nowDate.toISOString();
-  const geometryHash = await areaGeometryHash(area.geometry);
+  const geometryHash = await areaPreparationFingerprint(area.geometry);
   const current = await getAreaTaskPreparationState(db, campaignId, areaId);
   if (current?.status === "ready" && current.geometryHash === geometryHash) {
     return { outcome: "result", result: { outcome: "no-op", state: "ready" } };
   }
   if (current && isFreshPending(current, geometryHash, nowDate)) {
     return { outcome: "result", result: { outcome: "no-op", state: "pending" } };
+  }
+  if (await areaHasStartedAutomaticWork(db, campaignId, areaId)) {
+    return {
+      outcome: "result",
+      result: { outcome: "failed", code: "area_preparation_work_started" },
+    };
   }
 
   const generation = (options.randomUUID ?? (() => crypto.randomUUID()))();
@@ -617,7 +667,7 @@ export async function beginAreaTaskPreparation(
 /**
  * Runs the upstream fetch and the guarded atomic publish for a previously
  * claimed generation. The only publish boundary is the final D1 batch, so
- * failed or stale jobs cannot expose partial automatic Tasks.
+ * failed or stale jobs cannot expose partial automatic Tasks or feed entries.
  */
 export async function runAreaTaskPreparation(
   db: D1DatabaseLike,
@@ -645,9 +695,27 @@ export async function runAreaTaskPreparation(
       maxRoadFragments: options.maxRoadFragments,
       maxBuildings: options.maxBuildings,
     });
-    const taskChunks = chunkAreaPreparationRows(prepared.tasks, options.chunkBytes);
+    const streetReconcile = await reconcileServerPreparedStreetTasks({
+      existingTasks: snapshot.tasks,
+      preparedFragments: prepared.preparedFragments,
+      campaignId,
+      areaId,
+      generation,
+      timestamp: now,
+    });
+    if (streetReconcile.outcome === "blocked-worked") {
+      throw new PreparationFailure(
+        "area_preparation_work_started",
+        "Bereits bearbeitete automatische Straßen verhindern ein sicheres Reprepare.",
+      );
+    }
+    const roadCount = streetReconcile.afterTasks.filter(
+      (task) => task.areaId === areaId && task.areaPreparationGeneration !== null,
+    ).length;
+    const taskChunks = chunkAreaPreparationRows(streetReconcile.inserts, options.chunkBytes);
+    const taskDeleteChunks = chunkAreaPreparationRows(streetReconcile.deleteIds, options.chunkBytes);
     const houseChunks = chunkAreaPreparationRows(prepared.houseTasks, options.chunkBytes);
-    if (taskChunks.length + houseChunks.length > AREA_PREPARATION_MAX_INSERT_CHUNKS) {
+    if (taskChunks.length + taskDeleteChunks.length + houseChunks.length > AREA_PREPARATION_MAX_INSERT_CHUNKS) {
       throw new PreparationFailure(
         "area_preparation_too_many_features",
         "Die vorbereitete Task-Menge überschreitet die atomare Publish-Grenze.",
@@ -667,12 +735,7 @@ export async function runAreaTaskPreparation(
     const afterSnapshot: CampaignSnapshot = {
       ...snapshot,
       revision: nextRevision,
-      tasks: [
-        ...snapshot.tasks.filter((task) =>
-          !(task.areaId === areaId && task.areaPreparationGeneration !== null && task.status === "open"),
-        ),
-        ...prepared.tasks,
-      ],
+      tasks: streetReconcile.afterTasks,
       houseTasks: [
         ...(snapshot.houseTasks ?? []).filter((task) =>
           !(task.areaId === areaId && task.areaPreparationGeneration !== null && task.status === "open"),
@@ -692,7 +755,8 @@ export async function runAreaTaskPreparation(
              AND ${stateGuardSql()}
              AND EXISTS (
                SELECT 1 FROM areas WHERE id = ? AND campaign_id = ? AND geometry_json = ?
-             )`,
+             )
+             AND ${automaticWorkGuardSql()}`,
         )
         .bind(
           nextRevision,
@@ -707,6 +771,10 @@ export async function runAreaTaskPreparation(
           areaId,
           campaignId,
           geometryJson,
+          campaignId,
+          areaId,
+          campaignId,
+          areaId,
         ),
       db
         .prepare(
@@ -716,14 +784,7 @@ export async function runAreaTaskPreparation(
              AND ${publishGuardSql()}`,
         )
         .bind(campaignId, areaId, ...guard),
-      db
-        .prepare(
-          `DELETE FROM tasks
-           WHERE campaign_id = ? AND area_id = ?
-             AND area_preparation_generation IS NOT NULL AND status = 'open'
-             AND ${publishGuardSql()}`,
-        )
-        .bind(campaignId, areaId, ...guard),
+      ...taskDeleteChunks.map((chunk) => tasksDeleteStatement(db, chunk, campaignId, areaId, guard)),
       ...taskChunks.map((chunk) => tasksInsertStatement(db, chunk, guard)),
       ...houseChunks.map((chunk) => houseTasksInsertStatement(db, chunk, guard)),
       db
@@ -735,7 +796,7 @@ export async function runAreaTaskPreparation(
              AND status = 'pending' AND ${publishGuardSql()}`,
         )
         .bind(
-          prepared.tasks.length,
+          roadCount,
           prepared.houseTasks.length,
           osm.sourceTimestamp,
           now,
@@ -754,20 +815,26 @@ export async function runAreaTaskPreparation(
     }
     const results = await db.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) {
+      const workStarted = await areaHasStartedAutomaticWork(db, campaignId, areaId);
+      const code: AreaPreparationFailureCode = workStarted
+        ? "area_preparation_work_started"
+        : "area_preparation_stale";
       await markPreparationFailed(db, {
         campaignId,
         areaId,
         generation,
         geometryHash,
-        code: "area_preparation_stale",
+        code,
         now,
       });
-      return { outcome: "stale", code: "area_preparation_stale" };
+      return workStarted
+        ? { outcome: "failed", code }
+        : { outcome: "stale", code: "area_preparation_stale" };
     }
     void Promise.resolve(options.onCommitted?.()).catch(() => undefined);
     return {
       outcome: "ready",
-      roadCount: prepared.tasks.length,
+      roadCount,
       houseCount: prepared.houseTasks.length,
       generation,
     };
@@ -828,12 +895,15 @@ export async function shouldStartAreaPreparation(
   if (!(await hasAreaTaskPreparationSchema(db))) {
     return { schemaAvailable: false as const, shouldStart: false, state: publicState(null) };
   }
-  const geometryHash = await areaGeometryHash(area.geometry);
+  const geometryHash = await areaPreparationFingerprint(area.geometry);
   const state = await getAreaTaskPreparationState(db, campaignId, area.id);
   if (state?.status === "ready" && state.geometryHash === geometryHash) {
     return { schemaAvailable: true as const, shouldStart: false, state: publicState(state) };
   }
   if (state && isFreshPending(state, geometryHash, now)) {
+    return { schemaAvailable: true as const, shouldStart: false, state: publicState(state) };
+  }
+  if (await areaHasStartedAutomaticWork(db, campaignId, area.id)) {
     return { schemaAvailable: true as const, shouldStart: false, state: publicState(state) };
   }
   return { schemaAvailable: true as const, shouldStart: true, state: publicState(state) };
