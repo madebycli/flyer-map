@@ -237,7 +237,7 @@ test("fresh pending preparation deduplicates before a second upstream request", 
   await started;
   const second = await prepareAreaTasks(db, campaignId, areaId, options());
   assert.deepEqual(second, { outcome: "no-op", state: "pending" });
-  assert.equal(fetchCount, 2);
+  assert.equal(fetchCount, 1);
   release?.();
   assert.equal((await first).outcome, "ready");
 });
@@ -249,11 +249,16 @@ test("geometry changed during OSM fetch makes the old generation stale without a
   let fetchStartedResolve: (() => void) | null = null;
   const fetchStarted = new Promise<void>((resolve) => { fetchStartedResolve = resolve; });
   const waitForResponse = new Promise<Response>((resolve) => { release = () => resolve(osmResponse()); });
+  let firstFetch = true;
   const running = prepareAreaTasks(db, campaignId, areaId, {
     ...options(),
     fetchImpl: async () => {
-      fetchStartedResolve?.();
-      return waitForResponse;
+      if (firstFetch) {
+        firstFetch = false;
+        fetchStartedResolve?.();
+        return waitForResponse;
+      }
+      return osmResponse();
     },
   });
   await fetchStarted;
@@ -283,7 +288,14 @@ test("recovery API scopes reads and queues only authorized server-side preparati
   const pendingResponse = new Promise<Response>((resolve) => {
     releasePending = () => resolve(osmResponse());
   });
-  const pendingOptions = { ...options(), fetchImpl: async () => pendingResponse };
+  let pendingFetchCount = 0;
+  const pendingOptions = {
+    ...options(),
+    fetchImpl: async () => {
+      pendingFetchCount += 1;
+      return pendingFetchCount === 1 ? pendingResponse : osmResponse();
+    },
+  };
 
   const get = await handleAreaTaskPreparationApi(
     new Request("https://example.test/api/campaigns/x/areas/x/preparation"), db, route, viewer, context,
@@ -483,7 +495,8 @@ test("real mutation endpoint returns the exact automatic-task delete conflict", 
 test("reprepare updates generation without changing stable identity", async () => {
   const db = new SqliteD1();
   seed(db);
-  await prepareAreaTasks(db, campaignId, areaId, options());
+  const generationCounter = { value: 0 };
+  await prepareAreaTasks(db, campaignId, areaId, options(generationCounter));
 
   const automatic = db.sqlite.prepare(
     "SELECT id, area_preparation_generation, created_at FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
@@ -497,7 +510,7 @@ test("reprepare updates generation without changing stable identity", async () =
 
   const reprepareTime = "2026-08-31T15:01:00.000Z";
   const result = await prepareAreaTasks(db, campaignId, areaId, {
-    ...options(),
+    ...options(generationCounter),
     now: () => new Date(reprepareTime),
   });
   assert.equal(result.outcome, "ready");
