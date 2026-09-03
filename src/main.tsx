@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
+import { OrganizationApp } from "./organization/OrganizationApp";
+import { isOrganizationAdminPath } from "./organization/organizationRoutes";
 import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
 import { ActionWorkbenchPreview } from "./workbench/ActionWorkbenchPreview";
@@ -37,6 +39,9 @@ const preview = workbenchMode && workbenchMode in previews
 if (preview) {
   document.title = preview.title;
   root.render(<StrictMode>{preview.component}</StrictMode>);
+} else if (isOrganizationAdminPath(window.location.pathname)) {
+  document.title = "Organizer Admin | Flyer Map";
+  root.render(<StrictMode><OrganizationApp /></StrictMode>);
 } else {
   document.title = "Verteil-Flyer";
   root.render(
