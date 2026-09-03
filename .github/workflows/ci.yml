@@ -27,7 +27,19 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Test
-        run: npm test
+        shell: bash
+        run: |
+          set +e
+          npm test 2>&1 | tee test-output.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            summary="$(grep -E 'not ok|error|Error|Assertion|ERR_|SQLITE|failureType|location|message' test-output.log | tail -n 24 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            if [ -z "$summary" ]; then
+              summary="$(tail -n 24 test-output.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            fi
+            echo "::error title=npm test failed::$summary"
+            exit "$status"
+          fi
       - name: Typecheck
         run: npm run typecheck
       - name: Dependency audit
