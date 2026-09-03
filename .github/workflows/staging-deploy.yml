@@ -48,8 +48,326 @@ jobs:
           CLOUDFLARE_ENV: staging
         run: npm run build
 
+      - name: Verify generated staging deploy config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const input = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          const staging = input.env?.staging;
+          const prodDb = (input.d1_databases || []).find((binding) => binding.binding === 'DB');
+          const stagingDb = (staging?.d1_databases || []).find((binding) => binding.binding === 'DB');
+          if (!staging || !prodDb?.database_id || !stagingDb?.database_id) {
+            throw new Error('Cannot prove input staging/production isolation before inspecting Vite output.');
+          }
+
+          const redirectPath = '.wrangler/deploy/config.json';
+          if (!fs.existsSync(redirectPath)) throw new Error('Vite did not create .wrangler/deploy/config.json.');
+          const redirect = JSON.parse(fs.readFileSync(redirectPath, 'utf8'));
+          if (typeof redirect.configPath !== 'string' || redirect.configPath.length === 0) {
+            throw new Error('Generated Wrangler redirect is missing configPath.');
+          }
+
+          const generatedPath = path.resolve(path.dirname(redirectPath), redirect.configPath);
+          if (!fs.existsSync(generatedPath)) throw new Error(`Generated Wrangler config is missing: ${generatedPath}`);
+          const generated = JSON.parse(fs.readFileSync(generatedPath, 'utf8'));
+          if (generated.name !== 'flyer-map-staging') {
+            throw new Error(`Vite output is not the staging Worker: ${generated.name}`);
+          }
+          if (!generated.assets?.directory) throw new Error('Generated staging assets.directory is missing.');
+          const generatedAssetsPath = path.resolve(path.dirname(generatedPath), generated.assets.directory);
+          if (!fs.existsSync(generatedAssetsPath)) {
+            throw new Error(`Generated staging assets directory does not exist: ${generatedAssetsPath}`);
+          }
+
+          const generatedDb = (generated.d1_databases || []).find((binding) => binding.binding === 'DB');
+          if (!generatedDb?.database_id || generatedDb.database_id !== stagingDb.database_id) {
+            throw new Error(`Generated staging D1 does not match input staging D1: ${generatedDb?.database_id}`);
+          }
+          if (generatedDb.database_id === prodDb.database_id) {
+            throw new Error('Generated staging config points at production D1.');
+          }
+
+          const generatedDo = generated.durable_objects?.bindings || [];
+          if (generatedDo.length !== 1 || generatedDo[0].name !== 'CAMPAIGN_SYNC' || generatedDo[0].class_name !== 'CampaignSyncDurableObject') {
+            throw new Error('Generated staging Durable Object binding is unexpected.');
+          }
+
+          if (JSON.stringify(generated).includes(prodDb.database_id)) {
+            throw new Error('Production D1 identifier leaked into generated staging deployment config.');
+          }
+          console.log(`Generated staging deploy config verified: ${generatedPath}`);
+          console.log(`Generated assets directory verified: ${generatedAssetsPath}`);
+          NODE
+
+      - name: Resolve and verify Cloudflare account
+        id: cloudflare
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "Missing GitHub secret CLOUDFLARE_API_TOKEN" >&2
+            exit 1
+          fi
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error \
+            'https://api.cloudflare.com/client/v4/accounts?per_page=50' \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json')"
+          if [[ "$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.success')" != "true" ]]; then
+            printf '%s\n' "$ACCOUNTS_JSON" | jq '{success,errors,messages}' >&2
+            exit 1
+          fi
+          ACCOUNT_COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq '.result | length')"
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            MATCH_COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '[.result[] | select(.id == $id)] | length')"
+            if [[ "$MATCH_COUNT" == "1" ]]; then
+              CLOUDFLARE_ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
+            elif [[ "$ACCOUNT_COUNT" == "1" ]]; then
+              CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
+              echo "Configured CLOUDFLARE_ACCOUNT_ID is inaccessible; using the single account exposed by CLOUDFLARE_API_TOKEN."
+            else
+              echo "Configured CLOUDFLARE_ACCOUNT_ID is inaccessible and token exposes ${ACCOUNT_COUNT} accounts; refusing to guess." >&2
+              exit 1
+            fi
+          elif [[ "$ACCOUNT_COUNT" == "1" ]]; then
+            CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
+          else
+            echo "Cloudflare token can access ${ACCOUNT_COUNT} accounts and CLOUDFLARE_ACCOUNT_ID is not configured; refusing to guess." >&2
+            exit 1
+          fi
+          echo "account_id=$CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          echo "Cloudflare account verified for isolated staging operations."
+
+      - name: Locate isolated staging D1
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROD_D1_ID="$(node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8")); const b=(c.d1_databases||[]).find(x=>x.binding==="DB"); if(!b?.database_id) process.exit(2); process.stdout.write(b.database_id)')"
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          MATCH_COUNT="$(printf '%s' "$LIST_JSON" | jq --arg name "$STAGING_DB_NAME" '[.[] | select(.name == $name)] | length')"
+          if [[ "$MATCH_COUNT" != "1" ]]; then
+            echo "Expected exactly one existing D1 database named ${STAGING_DB_NAME}; found ${MATCH_COUNT}. Refusing to guess or create another database." >&2
+            exit 1
+          fi
+          STAGING_D1_ID="$(printf '%s' "$LIST_JSON" | jq -r --arg name "$STAGING_DB_NAME" '.[] | select(.name == $name) | .uuid')"
+          if [[ -z "$STAGING_D1_ID" || "$STAGING_D1_ID" == "null" ]]; then
+            echo "Could not resolve staging D1 UUID." >&2
+            exit 1
+          fi
+          if [[ "$STAGING_D1_ID" == "$PROD_D1_ID" ]]; then
+            echo "Safety stop: staging D1 resolved to production D1." >&2
+            exit 1
+          fi
+          echo "Resolved staging D1: ${STAGING_DB_NAME} (${STAGING_D1_ID})"
+          echo "database_id=$STAGING_D1_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Verify checked-in staging isolation
+        env:
+          RESOLVED_STAGING_D1_ID: ${{ steps.d1.outputs.database_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          const staging = config.env?.staging;
+          if (!staging) throw new Error('env.staging is missing.');
+          if (staging.name !== 'flyer-map-staging') throw new Error(`Unexpected staging Worker name: ${staging.name}`);
+          if (staging.workers_dev !== true) throw new Error('Staging workers_dev must be true.');
+
+          const prodDb = (config.d1_databases || []).find((binding) => binding.binding === 'DB');
+          const stagingDb = (staging.d1_databases || []).find((binding) => binding.binding === 'DB');
+          if (!prodDb?.database_id) throw new Error('Production DB binding missing; cannot prove isolation.');
+          if (!stagingDb?.database_id) throw new Error('Staging DB binding missing.');
+          if (stagingDb.database_name !== 'flyer-map-staging-db') throw new Error(`Unexpected staging DB name: ${stagingDb.database_name}`);
+          if (stagingDb.database_id !== process.env.RESOLVED_STAGING_D1_ID) {
+            throw new Error(`Checked-in staging D1 ${stagingDb.database_id} does not match Cloudflare-resolved ${process.env.RESOLVED_STAGING_D1_ID}.`);
+          }
+          if (stagingDb.database_id === prodDb.database_id) throw new Error('Staging D1 equals production D1.');
+
+          const doBindings = staging.durable_objects?.bindings || [];
+          if (doBindings.length !== 1 || doBindings[0].name !== 'CAMPAIGN_SYNC' || doBindings[0].class_name !== 'CampaignSyncDurableObject') {
+            throw new Error('Unexpected staging Durable Object binding.');
+          }
+          const migrations = config.migrations || [];
+          if (!migrations.some((migration) => (migration.new_sqlite_classes || []).includes('CampaignSyncDurableObject'))) {
+            throw new Error('CampaignSyncDurableObject SQLite migration is missing.');
+          }
+
+          const prodRateIds = new Set((config.ratelimits || []).map((entry) => String(entry.namespace_id)));
+          const stagingRateIds = (staging.ratelimits || []).map((entry) => String(entry.namespace_id));
+          if (stagingRateIds.length !== 3 || new Set(stagingRateIds).size !== stagingRateIds.length) {
+            throw new Error('Staging rate-limit namespaces must contain three unique IDs.');
+          }
+          for (const id of stagingRateIds) {
+            if (prodRateIds.has(id)) throw new Error(`Staging rate-limit namespace collides with production: ${id}`);
+          }
+          console.log(`Isolation verified: staging D1 ${stagingDb.database_id} differs from production ${prodDb.database_id}.`);
+          NODE
+
       - name: Wrangler staging dry run
-        run: npx wrangler deploy --env staging --dry-run
+        run: npx wrangler deploy --dry-run --outdir .wrangler-staging-dry-run
+      - name: Verify staging D1 is fresh or fully migrated
+        shell: bash
+        run: |
+          set -euo pipefail
+          TABLES_SQL="SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'd1_migrations' ORDER BY name;"
+          TABLES_JSON="$(npx wrangler d1 execute "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote --json --command "$TABLES_SQL")"
+          USER_TABLE_COUNT="$(printf '%s' "$TABLES_JSON" | jq '[.[].results[]?] | length')"
+          LEDGER_TABLE_SQL="SELECT name FROM sqlite_master WHERE type='table' AND name='d1_migrations';"
+          LEDGER_TABLES_JSON="$(npx wrangler d1 execute "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote --json --command "$LEDGER_TABLE_SQL")"
+          LEDGER_TABLE_COUNT="$(printf '%s' "$LEDGER_TABLES_JSON" | jq '[.[].results[]?] | length')"
+
+          if [[ "$USER_TABLE_COUNT" == "0" && "$LEDGER_TABLE_COUNT" == "0" ]]; then
+            echo "Staging D1 is fresh before migrations."
+            exit 0
+          fi
+
+          if [[ "$LEDGER_TABLE_COUNT" != "1" ]]; then
+            echo "Staging D1 contains user tables but no migration ledger; refusing ambiguous bootstrap." >&2
+            printf '%s\n' "$TABLES_JSON" | jq . >&2
+            exit 1
+          fi
+
+          LEDGER_COUNT_SQL="SELECT COUNT(*) AS count FROM d1_migrations;"
+          LEDGER_COUNT_JSON="$(npx wrangler d1 execute "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote --json --command "$LEDGER_COUNT_SQL")"
+          LEDGER_COUNT="$(printf '%s' "$LEDGER_COUNT_JSON" | jq -r '[.[].results[]?.count] | first // 0')"
+
+          if [[ "$USER_TABLE_COUNT" == "0" && "$LEDGER_COUNT" == "0" ]]; then
+            echo "Staging D1 has an empty migration ledger; continuing with migrations."
+            exit 0
+          fi
+
+          if [[ "$USER_TABLE_COUNT" == "0" || "$LEDGER_COUNT" != "17" ]]; then
+            echo "Staging D1 is neither fresh nor fully migrated; expected 17 applied migrations for a non-empty database, found ${LEDGER_COUNT}." >&2
+            printf '%s\n' "$TABLES_JSON" | jq . >&2
+            printf '%s\n' "$LEDGER_COUNT_JSON" | jq . >&2
+            exit 1
+          fi
+
+          echo "Staging D1 already has the complete 17-migration ledger; continuing idempotently."
+
+      - name: Inspect staging migration ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote | tee /tmp/staging-migrations-before.txt
+          if grep -F 'No migrations to apply!' /tmp/staging-migrations-before.txt >/dev/null; then
+            echo "Staging migration ledger is already complete; apply remains idempotent."
+          else
+            echo "Staging migration plan recorded for the pending migration apply."
+          fi
+      - name: Apply staging migrations only
+        run: npx wrangler d1 migrations apply "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote
+
+      - name: Verify staging migration ledger and D1 integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote | tee /tmp/staging-migrations-after.txt
+          for migration in \
+            0001_initial.sql \
+            0002_m4_access.sql \
+            0003_m5_mutations.sql \
+            0004_m6_task_source_provenance.sql \
+            0005_m6_house_tasks.sql \
+            0006_fc1_field_groups.sql \
+            0007_field_sessions_events.sql \
+            0008_comments.sql \
+            0009_automations.sql \
+            0010_fc5_collection_access_areas_runs.sql \
+            0011_fc5_collection_pickups.sql \
+            0012_fc5_collection_pickup_visibility.sql \
+            0013_fc5_pickup_comments.sql \
+            0014_auto_area_task_preparation.sql \
+            0015_mission_campaign_admin_accounts.sql \
+            0016_mission_campaign_admin_password_resets.sql \
+            0017_rxdb_sync_changes.sql; do
+            if grep -F "$migration" /tmp/staging-migrations-after.txt >/dev/null; then
+              echo "Migration is still pending after apply: $migration" >&2
+              exit 1
+            fi
+          done
+
+          LEDGER_JSON="$(npx wrangler d1 execute "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote --json --command 'SELECT name FROM d1_migrations ORDER BY id;')"
+          LEDGER_COUNT="$(printf '%s' "$LEDGER_JSON" | jq '[.[].results[]?.name] | length')"
+          if [[ "$LEDGER_COUNT" != "17" ]]; then
+            echo "Expected 17 applied staging migrations, found ${LEDGER_COUNT}." >&2
+            printf '%s\n' "$LEDGER_JSON" | jq . >&2
+            exit 1
+          fi
+
+          FK_JSON="$(npx wrangler d1 execute "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote --json --command 'PRAGMA foreign_key_check;')"
+          FK_COUNT="$(printf '%s' "$FK_JSON" | jq '[.[].results[]?] | length')"
+          if [[ "$FK_COUNT" != "0" ]]; then
+            echo "Foreign-key integrity check failed." >&2
+            printf '%s\n' "$FK_JSON" | jq . >&2
+            exit 1
+          fi
+
+          SCHEMA_SQL="SELECT name, type FROM sqlite_master WHERE name IN ('campaign_sync_changes','idx_campaign_sync_changes_campaign_collection_seq','idx_campaign_sync_changes_campaign_scope_collection_seq') ORDER BY name;"
+          SCHEMA_JSON="$(npx wrangler d1 execute "$STAGING_DB_NAME" --env staging --config wrangler.jsonc --remote --json --command "$SCHEMA_SQL")"
+          printf '%s\n' "$SCHEMA_JSON" | jq .
+          if ! printf '%s' "$SCHEMA_JSON" | jq -e '[.[].results[]?.name] | index("campaign_sync_changes") != null and index("idx_campaign_sync_changes_campaign_collection_seq") != null and index("idx_campaign_sync_changes_campaign_scope_collection_seq") != null' >/dev/null; then
+            echo "campaign_sync_changes or a required RxDB sync index is missing after migrations." >&2
+            exit 1
+          fi
 
       - name: Deploy isolated staging Worker
-        run: npx wrangler deploy --env staging
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy 2>&1 | tee /tmp/staging-deploy.log
+          TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/staging-deploy.log | tail -n1 || true)"
+          if [[ -z "$TEST_URL" ]]; then
+            echo "Wrangler did not report a workers.dev URL." >&2
+            exit 1
+          fi
+          echo "test_url=$TEST_URL" >> "$GITHUB_OUTPUT"
+          echo "Staging URL: $TEST_URL"
+      - name: Verify staging URL
+        env:
+          TEST_URL: ${{ steps.deploy.outputs.test_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS="000"
+          for attempt in $(seq 1 24); do
+            STATUS="$(curl --silent --show-error --location --output /tmp/staging-index.html --write-out '%{http_code}' "$TEST_URL" || printf '000')"
+            if [[ "$STATUS" -ge 200 && "$STATUS" -lt 400 ]]; then
+              break
+            fi
+            echo "Staging URL attempt ${attempt}/24 returned HTTP ${STATUS}; waiting for deployment propagation."
+            if [[ "$attempt" -eq 24 ]]; then
+              echo "Staging URL did not become healthy after the bounded deployment propagation wait; last HTTP ${STATUS}." >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          if grep -F '0113e775-1e43-4d96-8b97-51fdeec7355b' /tmp/staging-index.html >/dev/null; then
+            echo "Production D1 identifier leaked into public staging response." >&2
+            exit 1
+          fi
+          echo "Verified staging URL with HTTP $STATUS: $TEST_URL"
+      - name: Staging summary
+        env:
+          STAGING_D1_ID: ${{ steps.d1.outputs.database_id }}
+          TEST_URL: ${{ steps.deploy.outputs.test_url }}
+        shell: bash
+        run: |
+          {
+            echo '## RxDB staging deployment'
+            echo
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+            echo "- Worker: \`${STAGING_WORKER_NAME}\`"
+            echo "- D1: \`${STAGING_DB_NAME}\`"
+            echo "- D1 ID: \`${STAGING_D1_ID}\`"
+            echo "- URL: ${TEST_URL}"
+            echo '- Production deploy: NO'
+          } >> "$GITHUB_STEP_SUMMARY"
