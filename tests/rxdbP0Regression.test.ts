@@ -87,6 +87,51 @@ test("created or redeemed session is confirmed before RxDB startup", async () =>
   }
 });
 
+test("default browser fetch keeps its global receiver during RxDB pulls", async () => {
+  const campaignId = `campaign_fetch_receiver_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+  const previousFetch = globalThis.fetch;
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    writable: true,
+    value: {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      setInterval: globalThis.setInterval.bind(globalThis),
+      clearInterval: globalThis.clearInterval.bind(globalThis),
+    },
+  });
+  const requests: RxdbCollectionName[] = [];
+  globalThis.fetch = (function (this: unknown, input: string | URL | Request) {
+    if (this !== globalThis) throw new TypeError("Illegal invocation");
+    const url = new URL(String(input), "https://flyer.test");
+    const operation = url.pathname.split("/").at(-2);
+    const collectionName = url.pathname.split("/").at(-1);
+    if (operation !== "pull" || !collectionNames.includes(collectionName as RxdbCollectionName)) return Promise.resolve(new Response(null, { status: 404 }));
+    requests.push(collectionName as RxdbCollectionName);
+    return Promise.resolve(Response.json({ documents: [], checkpoint: { seq: 0 }, campaignRevision: 0 }));
+  }) as typeof fetch;
+
+  const sync = new MissionRxdbSync({
+    campaignId,
+    storage: getRxStorageMemory(),
+    multiInstance: false,
+    onSnapshot: () => undefined,
+    onIssue: () => undefined,
+  });
+
+  try {
+    await sync.start();
+    await waitForCondition(() => collectionNames.every((collectionName) => requests.includes(collectionName)));
+    assert.deepEqual(new Set(requests), new Set(collectionNames));
+  } finally {
+    await sync.destroy();
+    globalThis.fetch = previousFetch;
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
 test("fresh startup starts all five pulls and recovers a transient collection auth response", async () => {
   const campaignId = `campaign_startup_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");

@@ -319,7 +319,7 @@ export class MissionRxdbSync {
     this.collectionFallback = input.collectionFallback;
     this.storage = input.storage ?? getRxStorageDexie();
     this.multiInstance = input.multiInstance ?? true;
-    this.fetchImpl = input.fetchImpl ?? fetch;
+    this.fetchImpl = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.onSnapshot = input.onSnapshot;
     this.onIssue = input.onIssue;
     this.onIssueResolved = input.onIssueResolved ?? (() => undefined);
@@ -338,10 +338,15 @@ export class MissionRxdbSync {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-    } catch {
+    } catch (error) {
+      console.error("[rxdb-sync]", { event: "transport-failure", operation, collectionName, code: "network_error", ...(error instanceof Error ? { errorName: error.name, errorMessage: error.message } : {}) });
       throw new RxdbSyncHttpError(0, "network_error", "Server ist momentan nicht erreichbar.");
     }
-    if (!response.ok) throw await responseError(response);
+    if (!response.ok) {
+      const error = await responseError(response);
+      console.error("[rxdb-sync]", { event: "http-failure", operation, collectionName, status: error.status, code: error.code });
+      throw error;
+    }
     const payload = await response.json() as T;
     this.onIssueResolved(collectionName);
     return payload;
@@ -355,10 +360,15 @@ export class MissionRxdbSync {
         credentials: "same-origin",
         cache: "no-store",
       });
-    } catch {
+    } catch (error) {
+      console.error("[rxdb-sync]", { event: "transport-failure", operation: "checkpoint", code: "network_error", ...(error instanceof Error ? { errorName: error.name, errorMessage: error.message } : {}) });
       throw new RxdbSyncHttpError(0, "network_error", "Server ist momentan nicht erreichbar.");
     }
-    if (!response.ok) throw await responseError(response);
+    if (!response.ok) {
+      const error = await responseError(response);
+      console.error("[rxdb-sync]", { event: "http-failure", operation: "checkpoint", status: error.status, code: error.code });
+      throw error;
+    }
     const payload = await response.json() as { checkpoint?: { seq?: unknown }; campaignRevision?: unknown };
     this.onIssueResolved();
     const seq = payload.checkpoint?.seq;
