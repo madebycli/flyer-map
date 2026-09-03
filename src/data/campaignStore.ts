@@ -519,7 +519,13 @@ async function runManualRefresh() {
   }
   const sync = runtime.sync;
   if (!runtime.initialized || !sync) throw new Error("rxdb_refresh_not_initialized");
-  await sync.refreshAndWait();
+  console.info("[rxdb-sync]", { event: "manual-refresh-start" });
+  const target = await sync.refreshAndWait();
+  console.info("[rxdb-sync]", {
+    event: "manual-refresh-complete",
+    targetSeq: target.seq,
+    campaignRevision: target.campaignRevision,
+  });
   if (runtime.sync !== sync) throw new Error("rxdb_refresh_replaced");
 }
 

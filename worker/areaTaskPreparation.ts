@@ -831,7 +831,13 @@ export async function runAreaTaskPreparation(
         ? { outcome: "failed", code }
         : { outcome: "stale", code: "area_preparation_stale" };
     }
-    void Promise.resolve(options.onCommitted?.()).catch(() => undefined);
+    try {
+      await options.onCommitted?.();
+    } catch {
+      // The D1 commit and RxDB change feed are already durable here. Realtime
+      // notification is best-effort, but it must stay inside this waitUntil-owned
+      // promise so the Worker is not allowed to terminate it early.
+    }
     return {
       outcome: "ready",
       roadCount,

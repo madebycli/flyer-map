@@ -4,8 +4,10 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import {
   areaHasStartedAutomaticWork,
+  beginAreaTaskPreparation,
   getAreaTaskPreparationState,
   prepareAreaTasks,
+  runAreaTaskPreparation,
 } from "../worker/areaTaskPreparation.ts";
 import { handleAreaTaskPreparationApi } from "../worker/areaTaskPreparationApi.ts";
 import { handleCampaignMutation } from "../worker/mutationHandler.ts";
@@ -196,6 +198,36 @@ test("prepared Area publishes real tasks atomically, keeps manual work, and bump
   const repeated = await prepareAreaTasks(db, campaignId, areaId, options());
   assert.deepEqual(repeated, { outcome: "no-op", state: "ready" });
   assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 4);
+});
+
+test("successful publish keeps worker lifetime open until realtime notify settles", async () => {
+  const db = new SqliteD1();
+  seed(db);
+  const preparedOptions = options();
+  const begun = await beginAreaTaskPreparation(db, campaignId, areaId, preparedOptions);
+  assert.equal(begun.outcome, "run");
+  if (begun.outcome !== "run") return;
+
+  let releaseNotify: (() => void) | null = null;
+  let notifyStartedResolve: (() => void) | null = null;
+  const notifyStarted = new Promise<void>((resolve) => { notifyStartedResolve = resolve; });
+  const notifyGate = new Promise<void>((resolve) => { releaseNotify = resolve; });
+  let settled = false;
+  const running = runAreaTaskPreparation(db, begun.run, {
+    ...preparedOptions,
+    onCommitted: async () => {
+      notifyStartedResolve?.();
+      await notifyGate;
+    },
+  }).then((result) => { settled = true; return result; });
+
+  await notifyStarted;
+  assert.equal((await getAreaTaskPreparationState(db, campaignId, areaId))?.status, "ready");
+  assert.equal(settled, false, "waitUntil-owned job must stay alive while realtime notify is pending");
+  releaseNotify?.();
+  const result = await running;
+  assert.equal(result.outcome, "ready");
+  assert.equal(settled, true);
 });
 
 test("feature-cap failure records failed state and publishes no partial automatic rows", async () => {

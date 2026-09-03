@@ -537,6 +537,16 @@ export class MissionRxdbSync {
         batchSize: PULL_BATCH_SIZE,
         handler: async (checkpoint: { seq: number } | undefined, batchSize: number) => {
           const result = await this.request<RxdbPullResponse>("pull", collectionName, { checkpoint: checkpoint ?? null, batchSize });
+          if (collectionName === "streetTasks" || result.documents.length > 0) {
+            console.info("[rxdb-sync]", {
+              event: "pull-complete",
+              collectionName,
+              fromSeq: checkpoint?.seq ?? null,
+              toSeq: result.checkpoint.seq,
+              documentCount: result.documents.length,
+              campaignRevision: result.campaignRevision,
+            });
+          }
           this.queuePullProgress(collectionName, result.checkpoint.seq, result.campaignRevision);
           return { documents: result.documents.map(withDeletedMarker), checkpoint: result.checkpoint };
         },
@@ -599,7 +609,14 @@ export class MissionRxdbSync {
       if (!payload || typeof payload !== "object") return;
       const value = payload as Record<string, unknown>;
       const seq = value.seq;
-      if (value.type === "changed" && typeof seq === "number" && Number.isSafeInteger(seq) && seq > this.minimumKnownCheckpoint()) this.refresh();
+      if (value.type === "changed" && typeof seq === "number" && Number.isSafeInteger(seq) && seq > this.minimumKnownCheckpoint()) {
+        console.info("[rxdb-sync]", {
+          event: "realtime-change",
+          seq,
+          minimumCheckpoint: this.minimumKnownCheckpoint(),
+        });
+        this.refresh();
+      }
     };
     socket.onerror = () => { try { socket.close(); } catch {} };
     socket.onclose = () => {
