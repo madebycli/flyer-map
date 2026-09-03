@@ -120,7 +120,16 @@ function appendCookie(response: Response, cookie: string) {
   return response;
 }
 
-function authError(code: "authentication_required" | "mfa_required" | "forbidden") {
+type OrganizationAuthorizationErrorCode = "authentication_required" | "mfa_required" | "forbidden";
+
+function isOrganizationAuthorizationErrorCode(code: string): code is OrganizationAuthorizationErrorCode {
+  return code === "authentication_required" || code === "mfa_required" || code === "forbidden";
+}
+
+function authError(code: string) {
+  if (!isOrganizationAuthorizationErrorCode(code)) {
+    return errorResponse(500, "authorization_error", "Organization-Autorisierung ist fehlgeschlagen.");
+  }
   if (code === "authentication_required") {
     return errorResponse(401, code, "Organization-Anmeldung ist erforderlich.");
   }
