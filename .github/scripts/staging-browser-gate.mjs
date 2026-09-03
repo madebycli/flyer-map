@@ -22,7 +22,7 @@ const snapshot = {
     id: campaignId,
     name: `Browser Gate ${suffix.slice(0, 8)}`,
     status: "active",
-    defaultMapView: null,
+    defaultMapView: { center: [12.57, 55.68], zoom: 15, bearing: 0 },
     createdAt: now,
     updatedAt: now,
   },
@@ -58,7 +58,7 @@ const snapshot = {
     areaId,
     taskType: "street",
     label: "Initial Street",
-    geometry: { type: "LineString", coordinates: [[12.565, 55.675], [12.575, 55.685]] },
+    geometry: { type: "LineString", coordinates: [[12.564, 55.674], [12.569, 55.679]] },
     areaPreparationGeneration: null,
     status: "open",
     completedAt: null,
@@ -146,6 +146,41 @@ function documentPullGate(page, collectionName, documentId, label) {
   });
 }
 
+async function waitForStreetRenderer(page, sourceCount, renderedCount, label) {
+  await page.waitForFunction(
+    ({ sourceCount, renderedCount }) => {
+      const region = document.querySelector(".map-region");
+      return region instanceof HTMLElement
+        && region.dataset.sourceStreets === String(sourceCount)
+        && region.dataset.renderedStreets === String(renderedCount);
+    },
+    { sourceCount, renderedCount },
+    { timeout: 30_000 },
+  );
+
+  const diagnostic = await page.locator(".map-region").evaluate((region) => ({
+    sourceStreets: region.dataset.sourceStreets ?? null,
+    renderedStreets: region.dataset.renderedStreets ?? null,
+  }));
+  if (diagnostic.sourceStreets !== String(sourceCount) || diagnostic.renderedStreets !== String(renderedCount)) {
+    throw new Error(`${label}: renderer mismatch ${JSON.stringify(diagnostic)}`);
+  }
+}
+
+async function postMutation(page, mutation) {
+  return page.evaluate(async ({ campaignId, mutation }) => {
+    const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/mutations`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mutation, fieldGroupId: null }),
+    });
+    let body = null;
+    try { body = await response.json(); } catch {}
+    return { status: response.status, body };
+  }, { campaignId, mutation });
+}
+
 async function accessOf(context) {
   const response = await context.request.get(`${baseUrl}/api/access/current?campaign=${encodeURIComponent(campaignId)}`);
   const body = await response.json();
@@ -191,7 +226,7 @@ try {
     }
   }
 
-  await pageB.waitForTimeout(500);
+  await waitForStreetRenderer(pageB, 1, 1, "browser B initial map");
   const textB = await pageB.locator("body").innerText();
   if (/Synchronisierung fehlgeschlagen|Datenbankmigration/i.test(textB)) {
     throw new Error(`browser B still shows sync/migration error: ${textB.slice(0, 1000)}`);
@@ -201,8 +236,10 @@ try {
   pageB.on("framenavigated", (frame) => {
     if (frame === pageB.mainFrame()) mainFrameNavigations += 1;
   });
-  const livePull = documentPullGate(pageB, "streetTasks", liveStreetId, "browser B");
-  const mutation = {
+
+  const createdAt = new Date().toISOString();
+  const createPull = documentPullGate(pageB, "streetTasks", liveStreetId, "browser B create");
+  const createMutation = {
     id: `mutation_${crypto.randomUUID()}`,
     campaignId,
     type: "task.create",
@@ -210,39 +247,77 @@ try {
       taskId: liveStreetId,
       areaId,
       label: liveStreetLabel,
-      geometry: { type: "LineString", coordinates: [[12.566, 55.676], [12.576, 55.686]] },
+      geometry: { type: "LineString", coordinates: [[12.571, 55.678], [12.576, 55.683]] },
       source: null,
     },
     baseRevision: 0,
-    createdAt: new Date().toISOString(),
+    createdAt,
   };
-
-  const mutationResult = await pageA.evaluate(async ({ campaignId, mutation }) => {
-    const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/mutations`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mutation, fieldGroupId: null }),
-    });
-    let body = null;
-    try { body = await response.json(); } catch {}
-    return { status: response.status, body };
-  }, { campaignId, mutation });
-  if (mutationResult.status !== 200) {
-    throw new Error(`browser A mutation failed ${mutationResult.status} ${JSON.stringify(mutationResult.body)}`);
+  const createResult = await postMutation(pageA, createMutation);
+  if (createResult.status !== 200) {
+    throw new Error(`browser A create failed ${createResult.status} ${JSON.stringify(createResult.body)}`);
   }
-
-  const liveBody = await livePull;
-  if (!liveBody.documents.some((document) => document.id === liveStreetId && document.label === liveStreetLabel)) {
-    throw new Error("browser B live pull did not contain expected street document");
+  const createBody = await createPull;
+  if (!createBody.documents.some((document) => document.id === liveStreetId && document.label === liveStreetLabel && document._deleted !== true)) {
+    throw new Error("browser B create pull did not contain expected live street document");
   }
+  await waitForStreetRenderer(pageB, 2, 2, "browser B after live create");
+
+  const completedAt = new Date().toISOString();
+  const statusPull = documentPullGate(pageB, "streetTasks", liveStreetId, "browser B status");
+  const statusMutation = {
+    id: `mutation_${crypto.randomUUID()}`,
+    campaignId,
+    type: "task.set-status",
+    payload: {
+      taskId: liveStreetId,
+      status: "completed",
+      completedAt,
+      expectedUpdatedAt: createdAt,
+    },
+    baseRevision: createResult.body.appliedRevision,
+    createdAt: completedAt,
+  };
+  const statusResult = await postMutation(pageA, statusMutation);
+  if (statusResult.status !== 200) {
+    throw new Error(`browser A status failed ${statusResult.status} ${JSON.stringify(statusResult.body)}`);
+  }
+  const statusBody = await statusPull;
+  if (!statusBody.documents.some((document) => document.id === liveStreetId && document.status === "completed" && document._deleted !== true)) {
+    throw new Error("browser B status pull did not contain completed street document");
+  }
+  await waitForStreetRenderer(pageB, 2, 2, "browser B after live status change");
+
+  const deletedAt = new Date().toISOString();
+  const deletePull = documentPullGate(pageB, "streetTasks", liveStreetId, "browser B delete");
+  const deleteMutation = {
+    id: `mutation_${crypto.randomUUID()}`,
+    campaignId,
+    type: "task.delete",
+    payload: {
+      taskId: liveStreetId,
+      expectedUpdatedAt: completedAt,
+    },
+    baseRevision: statusResult.body.appliedRevision,
+    createdAt: deletedAt,
+  };
+  const deleteResult = await postMutation(pageA, deleteMutation);
+  if (deleteResult.status !== 200) {
+    throw new Error(`browser A delete failed ${deleteResult.status} ${JSON.stringify(deleteResult.body)}`);
+  }
+  const deleteBody = await deletePull;
+  if (!deleteBody.documents.some((document) => document.id === liveStreetId && document._deleted === true)) {
+    throw new Error("browser B delete pull did not contain street tombstone");
+  }
+  await waitForStreetRenderer(pageB, 1, 1, "browser B after live delete");
+
   if (mainFrameNavigations !== 0) {
-    throw new Error(`browser B navigated/reloaded ${mainFrameNavigations} times during live sync`);
+    throw new Error(`browser B navigated/reloaded ${mainFrameNavigations} times during renderer lifecycle`);
   }
 
   const finalTextB = await pageB.locator("body").innerText();
   if (/Synchronisierung fehlgeschlagen|Datenbankmigration/i.test(finalTextB)) {
-    throw new Error(`browser B entered sync error after live update: ${finalTextB.slice(0, 1000)}`);
+    throw new Error(`browser B entered sync error after renderer lifecycle: ${finalTextB.slice(0, 1000)}`);
   }
 
   console.log(JSON.stringify({
@@ -253,7 +328,12 @@ try {
     initialPullsA: collections,
     initialPullsB: collections,
     adminReceivedTeam: teamName,
-    liveStreetReceivedWithoutReload: liveStreetId,
+    visibleStreetLifecycleWithoutReload: {
+      initial: { source: 1, rendered: 1 },
+      created: { source: 2, rendered: 2 },
+      completed: { source: 2, rendered: 2 },
+      deleted: { source: 1, rendered: 1 },
+    },
   }, null, 2));
 
   await contextA.close();
