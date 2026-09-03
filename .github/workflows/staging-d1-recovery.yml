@@ -1,0 +1,140 @@
+name: Staging D1 migration recovery
+
+on:
+  push:
+    branches:
+      - mission-rxdb-staging
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rxdb-staging-d1-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover-staging-d1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_DB_NAME: flyer-map-staging-db
+      EXPECTED_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve Cloudflare account safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "Missing GitHub secret CLOUDFLARE_API_TOKEN" >&2
+            exit 1
+          fi
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error \
+            'https://api.cloudflare.com/client/v4/accounts?per_page=50' \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json')"
+          if [[ "$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.success')" != "true" ]]; then
+            printf '%s\n' "$ACCOUNTS_JSON" | jq '{success,errors,messages}' >&2
+            exit 1
+          fi
+          ACCOUNT_COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq '.result | length')"
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            MATCH_COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '[.result[] | select(.id == $id)] | length')"
+            if [[ "$MATCH_COUNT" == "1" ]]; then
+              CLOUDFLARE_ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
+            elif [[ "$ACCOUNT_COUNT" == "1" ]]; then
+              CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
+            else
+              echo "Configured account is inaccessible and token exposes ${ACCOUNT_COUNT} accounts; refusing to guess." >&2
+              exit 1
+            fi
+          elif [[ "$ACCOUNT_COUNT" == "1" ]]; then
+            CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
+          else
+            echo "Token exposes ${ACCOUNT_COUNT} accounts and no unique account is configured; refusing to guess." >&2
+            exit 1
+          fi
+          echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+
+      - name: Prove exact isolated staging database
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIST_JSON="$(npx wrangler@4.33.1 d1 list --json)"
+          MATCH_COUNT="$(printf '%s' "$LIST_JSON" | jq --arg name "$STAGING_DB_NAME" '[.[] | select(.name == $name)] | length')"
+          if [[ "$MATCH_COUNT" != "1" ]]; then
+            echo "Expected exactly one D1 named ${STAGING_DB_NAME}; found ${MATCH_COUNT}." >&2
+            exit 1
+          fi
+          RESOLVED_ID="$(printf '%s' "$LIST_JSON" | jq -r --arg name "$STAGING_DB_NAME" '.[] | select(.name == $name) | .uuid')"
+          if [[ "$RESOLVED_ID" != "$EXPECTED_STAGING_D1_ID" ]]; then
+            echo "Safety stop: ${STAGING_DB_NAME} resolved to unexpected D1 ${RESOLVED_ID}." >&2
+            exit 1
+          fi
+          mkdir -p .staging-recovery
+          cat > .staging-recovery/wrangler.jsonc <<JSON
+          {
+            "name": "flyer-map-staging-migration-recovery",
+            "main": "worker/index.ts",
+            "compatibility_date": "2026-09-01",
+            "d1_databases": [
+              {
+                "binding": "DB",
+                "database_name": "${STAGING_DB_NAME}",
+                "database_id": "${RESOLVED_ID}",
+                "migrations_dir": "../migrations"
+              }
+            ]
+          }
+          JSON
+          echo "Exact staging D1 identity verified: ${RESOLVED_ID}."
+
+      - name: Verify recoverable migration state
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL='SELECT COUNT(*) AS count FROM d1_migrations;'
+          RESULT="$(npx wrangler@4.33.1 d1 execute "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote --json --command "$SQL")"
+          COUNT="$(printf '%s' "$RESULT" | jq -r '[.[].results[]?.count] | first // -1')"
+          case "$COUNT" in
+            16)
+              echo "Verified known recovery state: 16 migrations applied, 0017 pending."
+              ;;
+            17)
+              echo "Staging D1 already has all 17 migrations; recovery is idempotent."
+              ;;
+            *)
+              echo "Safety stop: expected migration ledger count 16 or 17, found ${COUNT}." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Apply pending staging migration only
+        run: npx wrangler@4.33.1 d1 migrations apply "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote
+
+      - name: Verify migration 0017 and final ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          LEDGER="$(npx wrangler@4.33.1 d1 execute "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote --json --command 'SELECT COUNT(*) AS count FROM d1_migrations;')"
+          COUNT="$(printf '%s' "$LEDGER" | jq -r '[.[].results[]?.count] | first // -1')"
+          if [[ "$COUNT" != "17" ]]; then
+            echo "Expected 17 applied migrations after recovery, found ${COUNT}." >&2
+            exit 1
+          fi
+          SCHEMA="$(npx wrangler@4.33.1 d1 execute "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote --json --command \"SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='campaign_sync_changes';\")"
+          TABLE_COUNT="$(printf '%s' "$SCHEMA" | jq -r '[.[].results[]?.count] | first // 0')"
+          if [[ "$TABLE_COUNT" != "1" ]]; then
+            echo "campaign_sync_changes table is missing after migration recovery." >&2
+            exit 1
+          fi
+          echo "Staging D1 recovery complete: 17 migrations and campaign_sync_changes present."
