@@ -121,20 +121,25 @@ jobs:
       - name: Apply pending staging migration only
         run: npx wrangler@4.33.1 d1 migrations apply "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote
 
-      - name: Verify migration 0017 and final ledger
+      - name: Verify migration 0017 schema exactly
         shell: bash
         run: |
           set -euo pipefail
-          LEDGER="$(npx wrangler@4.33.1 d1 execute "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote --json --command 'SELECT COUNT(*) AS count FROM d1_migrations;')"
+          LEDGER_SQL='SELECT COUNT(*) AS count FROM d1_migrations;'
+          LEDGER="$(npx wrangler@4.33.1 d1 execute "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote --json --command "$LEDGER_SQL")"
           COUNT="$(printf '%s' "$LEDGER" | jq -r '[.[].results[]?.count] | first // -1')"
           if [[ "$COUNT" != "17" ]]; then
             echo "Expected 17 applied migrations after recovery, found ${COUNT}." >&2
             exit 1
           fi
-          SCHEMA="$(npx wrangler@4.33.1 d1 execute "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote --json --command \"SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='campaign_sync_changes';\")"
-          TABLE_COUNT="$(printf '%s' "$SCHEMA" | jq -r '[.[].results[]?.count] | first // 0')"
-          if [[ "$TABLE_COUNT" != "1" ]]; then
-            echo "campaign_sync_changes table is missing after migration recovery." >&2
+
+          COLUMNS="$(npx wrangler@4.33.1 d1 execute "$STAGING_DB_NAME" --config .staging-recovery/wrangler.jsonc --remote --json --command 'PRAGMA table_info(campaign_sync_changes);')"
+          NAMES="$(printf '%s' "$COLUMNS" | jq -r '[.[].results[]?.name] | sort | join(",")')"
+          EXPECTED='campaign_id,changed_at,collection_name,document_id,document_json,operation,scope_team_id,seq'
+          if [[ "$NAMES" != "$EXPECTED" ]]; then
+            echo "campaign_sync_changes schema mismatch." >&2
+            echo "Expected: $EXPECTED" >&2
+            echo "Actual:   $NAMES" >&2
             exit 1
           fi
-          echo "Staging D1 recovery complete: 17 migrations and campaign_sync_changes present."
+          echo "Staging D1 verified: 17 migrations and complete RxDB change-feed schema."
