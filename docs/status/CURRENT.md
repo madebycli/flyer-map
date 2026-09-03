@@ -2,191 +2,104 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-02
+last_updated: 2026-09-03
 ---
 
 # Current Project State
 
 ## Mission Release Override
 
-Die reale Distribution-Mission startet am 2026-09-02. Bis nach der Mission gilt auf `plan-feature-complete-platform` ein Distribution-P0-Fokus. Collection/Pickup, FC5.3 und langfristige Plattformarbeit dürfen den Release-Pfad nicht verlängern.
-
-Mission-kritischer Produktfluss:
+Die reale Distribution-Mission hat Vorrang vor langfristiger Plattformarbeit. Mission-kritisch ist der Flow:
 
 ```text
 Admin -> Teams/Gebiet -> manuelle Streets/Houses
--> Street-/House-Status -> RxDB Pull/Push + D1 Change Feed -> gemeinsamer Stand auf weiteren Geräten
+-> Street-/House-Status -> RxDB Pull/Push + D1 Change Feed
+-> reaktiver Campaign-Read-Stand -> MapLibre
+-> gemeinsamer sichtbarer Stand auf weiteren Geräten
 ```
 
-Der normale Launcher ist für die Mission auf `Team`, `Fortschritt`, `Einstellungen` und bei berechtigtem Zugriff `Gebiet` reduziert. Bestehende Einsätze-, Activity-, Automation-, Comment- und Collection-Runtimes werden nicht gelöscht und keine Datenhistorie wird verändert. Sicherheits-, Sync-, Konflikt-, Access- und Area-Preparation-Fehler bleiben sichtbar.
+Der Rollback-Branch `mission-release-2026-09-02-manual` bleibt unverändert. Der RxDB-Kandidat liegt auf `mission-rxdb-sync`; Draft-PR #74 gegen die Rollback-Basis bleibt offen, Draft und ungemergt. Kein Production-Deploy und keine Production-D1-Migration ohne expliziten Auftrag.
 
-PR #73 bleibt Draft gegen `ui-app-launcher-sheet`. Kein Merge, kein Ready-for-Review und kein manueller Deploy ohne expliziten Auftrag.
-Der RxDB-Kandidat ist separat als PR #74 gegen `mission-release-2026-09-02-manual`
-veröffentlicht, bleibt ebenfalls Draft/offen und ist nicht gemergt.
+## RxDB Mission Sync: verifizierter Stand
 
-## RxDB Mission Sync candidate
+- Rollback-Basis: `mission-release-2026-09-02-manual` auf `5e7148d2a32f6237861e7e6a05e022eeb67c91ce`.
+- Verifizierter Anwendungscode-Baseline-Head: `aa0031cd88970bf7ca8b4256066663cde640f5ad`.
+- Canonical CI Push-Run `33789550729`: success.
+- Canonical PR-CI-Run `33789557529`: success.
+- Tests, Typecheck, Dependency Audit und Production Build sind auf diesem Code-Baseline-Head grün.
+- Isoliertes Staging: `mission-rxdb-staging`, getesteter Head `4fc12270ff948ba246dd0c804076720cc65f37b8`.
+- Staging-Deploy-Run `33789841058`: success; isolierte Staging-D1-Prüfung/Migration, Wrangler Dry Run, Worker-Deploy und URL-Check grün.
+- Reales Chromium-Zwei-Browser-Gate `33789841106`: success.
+- Der Benutzer hat anschließend den zuvor fehlerhaften sichtbaren Street-Flow auf realen Geräten manuell bestätigt: „geht wieder“.
 
-Die verifizierte Rollback-Basis ist `mission-release-2026-09-02-manual` auf
-`5e7148d2a32f6237861e7e6a05e022eeb67c91ce` mit erfolgreichem CI-Run
-`33597980789`. Davon leitet sich lokal `mission-rxdb-sync` ab. Diese neue Linie
-ersetzt den normalen M5-Browser-Schreiber durch RxDB/Dexie mit fünf
-normalisierten Collections und Worker Pull/Push, ohne die kanonische D1- oder
-Autorisierungsgrenze zu ändern. Der alte M5-Store bleibt nur für einen
-gesicherten Einmalimport älterer Offline-Intents.
+RxDB 17/Dexie hält fünf normalisierte Collections (`campaigns`, `teams`, `areas`, `streetTasks`, `houseTasks`). D1 bleibt kanonisch; der Worker bleibt die einzige Autoritäts- und Sicherheitsgrenze. Pull/Push läuft über authentifizierte Worker-Routen und den monotonen D1 Change Feed. Campaign-Durable-Object/WebSocket-Nachrichten sind nur Invalidierungs-Hinweise; kanonische Daten werden danach per HTTP/RxDB gezogen. Ein Campaign-Checkpoint fängt verlorene Signale auf.
 
-Realtime ist jetzt als optionales Campaign-Signal ergänzt: Nach einem D1-/Feed-
-Commit benachrichtigt der authentifizierte Worker ein hibernierendes Durable
-Object; WebSocket-Clients erhalten nur `changed` plus Sequenz und holen die
-kanonischen Dokumente weiterhin über RxDB HTTP. Ein einzelner Campaign-
-Checkpoint prüft den High-Water-Mark alle 45 Sekunden und fängt verlorene
-Signale auf.
+## Geschlossene P0-Sync-/Renderer-Fehler
 
-Migration `0017_rxdb_sync_changes.sql` ist vorbereitet und **nicht remote
-angewendet**. Der Branch `mission-rxdb-sync` und Draft-PR #74 sind über GitHub
-veröffentlicht; CI-Run `33637502582` ist auf dem exakten Implementierungs-Head
-`11fca7ad2175fd2d46378d4b90116100b8d73554` grün. Es gab keinen manuellen
-Deploy, Merge, Ready-for-Review oder Remote-D1-Eingriff. Vor einem Release sind
-der reviewed Migrations-Rollout, Preview sowie Zwei-Browser-, Android- und
-iPhone-Off-/Reconnect-Smokes Pflicht. ADR-0024 und Plan 028 sind dafür die
-aktuelle Entscheidungs- und Evidence-Route.
+### 1. Prepared-Street-Realtime-Lifecycle
 
-## Baseline
+`worker/areaTaskPreparation.ts` hatte den Realtime-Callback nach erfolgreichem D1-/Change-Feed-Commit als losgelöste Promise gestartet. Dadurch konnte der `waitUntil()`-Job enden, bevor `notifyCampaignSync()` zum Durable Object/WebSocket abgeschlossen war. D1 und Change Feed waren dann korrekt, aber ein bereits geöffneter Client konnte den Wakeup verpassen.
 
-Verteil-Flyer bleibt eine mobile-first normale Website mit React, TypeScript, Vite, MapLibre GL JS 5.7.1, OpenFreeMap Bright, Cloudflare Workers und D1. M4 Access/Session und die resiliente M5 Mutation Queue bleiben die gemeinsame Grundlage. Keine native App, keine installierbare PWA, kein Service Worker, keine Background Sync API und keine kontinuierliche GPS-Historie.
+Fix: `options.onCommitted?.()` wird innerhalb des `waitUntil()`-getragenen Preparation-Promises `await`et. Ein Realtime-Fehler nach durablem D1-Commit bleibt best effort und rollt den Commit nicht zurück. Regressionen liegen in `tests/areaTaskPreparationRuntime.test.ts` und `tests/streetSyncLifecycleContract.test.ts`.
 
-## Verifizierter Remote-D1-Stand
-
-Der vorherige Claim `remote nur 0001-0003` ist überholt.
-
-Am 2026-09-01 wurde der kontrollierte D1-Rollout über GitHub Actions Run `33540449723` erfolgreich abgeschlossen. Verifiziert wurden:
-
-- Migration Registry 0001 bis 0014 vollständig angewendet;
-- Time-Travel-Recovery-Point und SQL-Export vor dem Rollout;
-- Foreign-Key-Check vor und nach dem Rollout sauber;
-- bestehende Baseline Counts unverändert erhalten;
-- kritisches Schema von 0013 und 0014 vorhanden;
-- versionierte Preview und Branch-Alias lieferten passende Assets und erfolgreiche Health-Checks.
-
-Die beim Rollout erhaltenen Baseline Counts waren:
+Client-Diagnostik für diesen Pfad:
 
 ```text
-campaigns: 53
-teams: 32
-areas: 39
-tasks: 77
-access_grants: 62
-sessions: 66
-mutations: 188
+[rxdb-sync] realtime-change
+[rxdb-sync] pull-complete
+[rxdb-sync] manual-refresh-start
+[rxdb-sync] manual-refresh-complete
 ```
 
-Damit ist Migration 0014 für die serverseitige automatische Area-Vorbereitung remote vorhanden. Historische Plan-/ADR-Texte, die den damaligen Zustand `prepared only` beschreiben, bleiben historische Evidence und sind nicht als aktueller Deployment-State zu lesen.
+Direktes `console.*` im Worker bleibt durch `tests/securityStaticGuards.test.ts` verboten, außer im auditierten Worker-Logger.
 
-## Mission-Admin-Handoff
+### 2. MapLibre „Daten aktuell, Linie alt“
 
-Der bestehende Campaign-Access-Flow bleibt der Mission-Admin-Weg. Ein bestehender Admin kann in `Einstellungen -> Zugriff` einen neuen Grant mit Rolle `admin` erzeugen und den einmalig angezeigten Zugangslink weitergeben.
+Der entscheidende reale Befund war: Eine serverseitig/RxDB-seitig bereits gelöschte Straße blieb auf dem zweiten Gerät als Linie sichtbar, war dort aber nicht mehr anklickbar. Damit waren Server, RxDB und App-State aktuell; nur die MapLibre-Grafik war stale.
 
-Sicherheitsvertrag:
+Ursache: Zehn React-Live-Effekte in `src/map/MapView.tsx` verwendeten `if (!map || !map.isStyleLoaded()) return;`. Während MapLibre Source-/Style-Arbeit konnte `isStyleLoaded()` kurzfristig `false` liefern. Der betreffende React-Prop-Stand wurde dann vollständig verworfen und bis zum Seitenreload nicht nachgeholt.
 
-- Invite Token ist kryptographisch zufällig;
-- D1 speichert nur den SHA-256-Hash des Invite Tokens;
-- Redemption erzeugt eine separate opaque Session in `Secure; HttpOnly; SameSite=Lax`;
-- D1 speichert nur den Session-Hash;
-- jeder geschützte Request löst Grant und Revocation erneut serverseitig auf;
-- Grant-Revocation invalidiert bestehende Sessions auf dem nächsten geschützten Request;
-- normaler Admin-Handoff benötigt kein GitHub, Cloudflare, Wrangler, Deployment Secret oder D1-Zugriff.
+Fix: Die Live-Effekte prüfen nur noch, ob die Map-Instanz existiert, und rufen die jeweiligen `sync*`-Funktionen direkt auf. Die `style.load`-Hydrierung aus den neuesten Refs bleibt erhalten. Der Fix gilt konsistent für Areas, Streets, Houses, Smart-House-/Collection-Daten und Filter. Regression: `tests/mapRendererLiveSync.test.ts`.
 
-Zusätzlich erlaubt ADR-0023 kampagnenlokale Admin-Konten für die Mission. Ein bestehender Campaign Admin erzeugt unter `Einstellungen -> Admin-Konten` einen einmaligen, 24 Stunden gültigen Einrichtungslink. Die Empfängerperson legt einen eigenen Benutzernamen und ein eigenes Passwort fest und erhält eine serverseitig widerrufbare, 12-stündige Session. Der Organisator kann Benutzername ändern, Konten sperren und einen einmaligen 24-Stunden-Passwort-Reset-Link mit QR-Code übergeben. Beim Reset werden alte Reset-Links und alle bestehenden Sessions dieses Kontos ungültig; das letzte aktive Campaign-Admin-Konto bleibt gegen Sperren geschützt. D1 speichert nur PBKDF2-HMAC-SHA-256-Verifier mit individuellem Salt und 600.000 Iterationen, Setup-/Reset-/Session-Hashes und ein persistentes Login-Backoff. Es gibt bewusst kein TOTP, keine E-Mail-Anforderung und keine Campaign-übergreifenden Konten. Migrationen `0015` und `0016` müssen in dieser Reihenfolge vor dem Worker-Rollout angewendet werden.
-
-## M5 finaler Schreibvertrag
-
-Der Campaign-Snapshot bleibt Read Model, UI-Modell, Startup-Cache und Konflikt-/Sicherheitskopie.
-
-- `POST /api/campaigns` ist ausschließlich Initial-Create mit Revision 0;
-- `GET snapshot` und `GET version` bleiben Read-Pfade;
-- `PUT /api/campaigns/:id/snapshot` antwortet HTTP 410 `legacy_snapshot_write_retired` und schreibt nicht nach D1;
-- normale Campaign-, Team-, Area-, Street-, House-, Collection- und Pickup-Änderungen laufen über explizite M5- oder spezialisierte Mutationen;
-- unbestätigte M5-Änderungen liegen dauerhaft in IndexedDB;
-- kurze Netzfehler werden mit begrenztem Backoff wiederholt;
-- gleiche Mutation-ID plus gleicher Fingerprint ist idempotent;
-- Conflict, 401/403 und invalide Mutationen bleiben sichtbar und werden nicht heimlich überschrieben;
-- bei leerer Queue wird ein abweichender lokaler Snapshot als Konfliktkopie bewahrt, statt ihn automatisch zum Server hochzuladen.
-
-Für die Mission gilt bei terminalen M5-Fehlern ein enger Server-Wins-Recovery-Pfad:
-HTTP-409- und nicht-retrybare 4xx-Records erzeugen zuerst eine lokale Sicherheitskopie,
-werden einzeln aus der Queue entfernt und lösen danach einen kanonischen Snapshot-Refresh
-aus. Alte `conflict`/`invalid`-Records können damit keinen späteren Street-Refresh mehr
-blockieren. 401/403, `blocked-auth`, Netzwerk-/429-/5xx- und Schemafehler bleiben
-wartend erhalten. Sichtbare Online-Polls laufen alle drei Sekunden, ohne parallele
-Requests.
-
-## Manuelle Distribution-Areas
-
-ADR-0023 überschreibt ADR-0021 nur für die Mission: erfolgreiche `area.create`- und `area.update-geometry`-Mutationen starten keine OSM-Vorbereitung, keinen Worker-Job und keinen Browser-Poller. Der vorhandene automatische Runtime-Code bleibt unverändert erhalten, wird aber durch die zentrale Missions-Policy nicht aufgerufen.
-
-`Straße manuell hinzufügen` ist als grüner globaler Plus-Button sichtbar und im Gebiet weiterhin verfügbar. Bei mehreren editierbaren Gebieten wählt die Person zuerst eines aus. Die Street-Prüfung akzeptiert nur eine vollständige Linie innerhalb oder auf der Gebietsgrenze und der Worker weist Umgehungsversuche mit `street_outside_area` zurück. Historische automatisch vorbereitete Tasks bleiben normale darstellbare und statusänderbare Daten.
-
-Der nachgelagerte Plan `026-smart-street-edit-after-mission.md` beschreibt verbindlich
-den späteren Wechsel: Erst nach einem separaten Ende-des-Missions-Gate wird der grüne
-Plus-Button für bereite automatische Areas zu „Straßen bearbeiten“. Er startet die
-vorhandene Smart-Street-Zwei-Punkt-Auswahl und hebt die geprüfte Strecke zwischen Start
-und Ende vor einer einzigen M5-Override-Mutation hervor. Dieser Plan verändert die
-aktuelle manuelle Mission nicht.
-
-## Map und Task-Darstellung
-
-- gespeicherte Areas, Streets und Houses laufen über feste MapLibre GeoJSON Sources/Layers;
-- House Tasks werden ab dem definierten House-Zoom sichtbar und per rendered-feature hit test ausgewählt;
-- Street-Auswahl hat Priorität vor House, danach Area;
-- Statuswerte sind `open`, `completed`, `later`, `not-deliverable`;
-- erledigte Streets und House-Outlines verwenden eine reine um 25 Prozent abgedunkelte Teamfarbe;
-- GPS nutzt MapLibre Geolocate mit live/refining Fixes und Follow-Verhalten, ohne persistierte GPS-Historie;
-- persönliche Kamera bleibt lokal und wird durch Remote-Sync nicht zurückgesetzt.
-
-## Automatisierte Qualitäts-Evidence
-
-Der Runtime-Head vor dem Mission-Trim war:
+Das reale Chromium-Gate prüft seitdem nicht nur Netzwerk/Pull, sondern die sichtbare MapLibre-Quelle in Browser B ohne Navigation/Reload:
 
 ```text
-129bc30cc408cfb2fd840390faaa6e37c5164148
-CI #823 / run 33523056178: success
+initial:   source=1 rendered=1
+created:   source=2 rendered=2
+completed: source=2 rendered=2
+deleted:   source=1 rendered=1
+reloads:   0
 ```
 
-Diese Suite enthält Regressionen für Access/Revocation, Authorization, M5 Queue/Idempotency, Legacy-Snapshot-410, Area Preparation, automatische Task-Persistenz, House-Renderer, Statusfarben, mobile Sheets, Security Guards und Production Build.
+Damit ist der konkrete Street-Create/Status/Delete-Renderer-Fehler automatisiert und manuell geschlossen.
 
-Jeder neue Mission-Commit muss wieder auf seinem exakten Head durch CI verifiziert werden. Ein vorher grüner Head reicht nicht als Release-Evidence für einen späteren Head.
+## D1-/Deployment-Grenze
 
-## Offene reale Mission-Gates
+Migration `0017_rxdb_sync_changes.sql` ist in der **isolierten Staging-D1** angewendet/verifiziert. Das ist keine Production-Freigabe. Für **Production** bleibt 0017 unangetastet, bis ein explizit freigegebener Release-/Migrationsschritt erfolgt.
 
-Automatisierte Tests ersetzen folgende Abnahmen nicht:
+Die bereits früher kontrolliert verifizierte Production-D1-Basis bis Migration 0014 bleibt davon unberührt. Keine in diesem RxDB-Fixlauf ausgeführte Aktion hat Production deployed oder Production D1 verändert.
 
-1. echter Admin-A -> Admin-B-Handoff in einem frischen Browser/Gerät einschließlich weiterer Admin-Link-Erzeugung und Revocation;
-2. echter Area-End-to-End-Flow auf der Release-Preview: Team -> Gebiet -> manuelle Street -> persistenter Status auf zweitem Gerät;
-3. zweites autorisiertes Gerät sieht Statusänderungen;
-4. kurzer Netzverlust während Street-/House-Statusänderung und erfolgreiche Wiederkehr;
-5. reales Android Chromium Smoke;
-6. reales iPhone Safari Smoke, falls kein iPhone verfügbar ist, muss das ausdrücklich als akzeptiertes Restrisiko dokumentiert werden;
-7. finalen Mission-Head und dessen stabile Release-URL einfrieren und danach Feature Freeze.
+## Mission-Policy für Areas
 
-Cloud-/CI-Tests oder ein Browser ohne echte Mobile/WebGL-Eigenschaften dürfen nicht als Ersatz für diese Gates behauptet werden.
+Automatische Area-Vorbereitung nach normaler `area.create`-/`area.update-geometry`-Mutation ist auf dieser Mission-Linie absichtlich deaktiviert. Das darf nicht als Bug „repariert“ werden. Explizite Area-Preparation bleibt ein eigener Pfad. Manuelle Streets/Houses und deren Status sind der Mission-Flow.
 
-## Für die Mission ausdrücklich verschoben
+## Sicherheitsvertrag
 
-- FC5.3 Collection Road Sections;
-- Collection/Pickup Stats;
-- Collection Actor Attribution/Highlight/Revert;
-- vollständige Organizations-Migration;
-- Organization-Username/Password/TOTP und generische Konten;
-- generische Capability-/Permission-Matrix;
-- Action Templates und langfristige Analytics;
-- vollständiger Desktop-Admin-Neubau;
-- neue Support-/Appearance-Features;
-- sonstige Roadmap-Features ohne direkten Distribution-P0-Nutzen.
+- Browser ist nicht vertrauenswürdig; Worker/D1 sind autoritativ.
+- Access, Rollen, Revocation und Domain-Validierung bleiben serverseitig.
+- Sessions sind opaque und `Secure; HttpOnly; SameSite=Lax`; D1 speichert Session-Hashes.
+- Konflikte, Auth-Fehler und terminale Sync-Probleme dürfen nicht still überschrieben werden.
+- Kein Service Worker, keine Background Sync API, keine kontinuierliche GPS-Historie.
 
-## Nächster Schritt
+## Noch offene reale Release-Gates
 
-1. Mission-Trim einschließlich Admin-Konten und Reset auf exaktem neuen Head durch CI verifizieren.
-2. Versioned Preview und Branch-Alias für diesen Head verifizieren.
-3. echten Distribution E2E, Admin-Handoff sowie Passwort-Reset durchführen.
-4. Android/iPhone Mission Smoke durchführen.
-5. danach Mission-Head und Release-URL einfrieren, Feature Freeze.
-6. Erst nach der Mission zu Plan 017/FC5.3 und langfristiger Plattformarbeit zurückkehren.
+1. Android Chromium Offline-/Reconnect-Smoke mit dem aktuellen RxDB-Head.
+2. iPhone Safari Offline-/Reconnect-Smoke; falls kein iPhone verfügbar ist, Restrisiko ausdrücklich dokumentieren.
+3. Danach eine bewusste Release-Entscheidung für Production einschließlich reviewed Production-Migration 0017 und Production-Deploy.
+4. Erst nach expliziter Freigabe PR #74 aus Draft/Release-Pfad weiterbewegen. Nicht automatisch mergen oder Ready-for-Review markieren.
+
+Die Staging-Zwei-Browser-/Renderer-Gates sind grün und ersetzen die echten Mobile-Smokes nicht.
+
+## Nächster Produktkontext, noch nicht beauftragt
+
+Ein neuer/sauberer URL-Aufruf soll später optional in ein Projekt-Onboarding mit Projektname sowie erstem Admin-Benutzernamen/Passwort führen. Dieser Punkt war wegen des Street-P0 blockiert und ist **noch keine Implementierungsfreigabe**. Sicherheitsanforderung: Passwort niemals in LocalStorage, IndexedDB, RxDB, URL oder App-State; nur serverseitige Verifier und HttpOnly-Session. Für die Architektur existieren mehrere mögliche Wege und der Benutzer hat noch keinen gewählt. Vor Umsetzung mindestens zwei Varianten vorlegen und wählen lassen.
