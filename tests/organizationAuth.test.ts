@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import type {
@@ -47,8 +47,12 @@ class OrganizationDb implements D1DatabaseLike {
 
   constructor() {
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const migration of ["0001_initial.sql", "0002_m4_access.sql", "0018_organization_admin_platform.sql"]) {
-      this.sqlite.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
+    const migrationsUrl = new URL("../migrations/", import.meta.url);
+    const migrations = readdirSync(migrationsUrl)
+      .filter((name) => /^\d{4}_.+\.sql$/.test(name))
+      .sort();
+    for (const migration of migrations) {
+      this.sqlite.exec(readFileSync(new URL(migration, migrationsUrl), "utf8"));
     }
   }
 
