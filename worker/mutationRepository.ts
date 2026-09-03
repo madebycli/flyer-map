@@ -12,6 +12,10 @@ import type { MutationDomainEvent } from "./mutationEvents.ts";
 import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
 import type { AutomationExecution } from "./automationRuntime.ts";
 import { collectionMutationStatements } from "./collectionMutationRepository.ts";
+import {
+  rxdbChangeFeedStatements,
+  type RxdbChangeFeedEntry,
+} from "./rxdbChangeFeed.ts";
 
 export type AppliedMutation = {
   mutationType: CampaignMutation["type"];
@@ -747,6 +751,7 @@ export async function persistCampaignMutation(
   fingerprintOverride?: string,
   domainEvent: MutationDomainEvent | null = null,
   automationExecution: AutomationExecution | null = null,
+  syncChanges: readonly RxdbChangeFeedEntry[] = [],
 ): Promise<MutationPersistenceResult> {
   const fingerprint = fingerprintOverride ?? (await fingerprintCampaignMutation(mutation));
   const existing = await getAppliedMutation(db, mutation.campaignId, mutation.id);
@@ -836,6 +841,17 @@ export async function persistCampaignMutation(
       automationParentStatement(db, mutation, writeToken, automationExecution),
       automationParentEventStatement(db, mutation, writeToken, automationExecution),
       automationExecutedEventStatement(db, mutation, writeToken, automationExecution),
+    );
+  }
+  if (syncChanges.length > 0) {
+    statements.push(
+      ...rxdbChangeFeedStatements(
+        db,
+        mutation.campaignId,
+        writeToken,
+        mutation.createdAt,
+        syncChanges,
+      ),
     );
   }
 

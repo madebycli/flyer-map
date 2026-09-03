@@ -2,7 +2,7 @@ import {
   normalizeAreaPreparationGenerations,
   type CampaignSnapshot,
 } from "../domain/campaign.ts";
-import type { CampaignMutation } from "../domain/mutations";
+import type { DurableCampaignMutation } from "../domain/durableMutation.ts";
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
 
@@ -146,7 +146,7 @@ export async function createCampaignSnapshot(snapshot: CampaignSnapshot) {
 
 export async function postCampaignMutation(
   campaignId: string,
-  mutation: CampaignMutation,
+  mutation: DurableCampaignMutation,
   fieldGroupId: string | null = null,
 ) {
   const response = await apiFetch(campaignPath(campaignId, "mutations"), {
@@ -250,6 +250,28 @@ export async function recoverCampaignAdminAccess(campaignId: string, secret: str
 export async function fetchCurrentAccess(campaignId: string) {
   const response = await apiFetch(`/api/access/current?campaign=${encodeURIComponent(campaignId)}`);
   return ((await response.json()) as { access: AccessInfo }).access;
+}
+
+/**
+ * A create/redeem response also sets the persistent session cookie. Confirm
+ * that the browser sends that cookie back before RxDB opens all collections.
+ * Browsers can finish applying Set-Cookie just after the response promise
+ * resolves, so access_required is retried with a short bounded backoff.
+ */
+export async function confirmCampaignSession(campaignId: string) {
+  const retryDelays = [0, 50, 150, 350, 700];
+  let lastAccessError: CampaignApiError | null = null;
+  for (const delay of retryDelays) {
+    if (delay > 0) await new Promise<void>((resolve) => globalThis.setTimeout(resolve, delay));
+    try {
+      return await fetchCurrentAccess(campaignId);
+    } catch (error) {
+      if (!(error instanceof CampaignApiError) || (error.status !== 401 && error.code !== "access_required")) throw error;
+      lastAccessError = error;
+    }
+  }
+  if (lastAccessError) throw lastAccessError;
+  throw new CampaignApiError(401, "access_required", "Gültiger Campaign-Zugriff ist erforderlich.");
 }
 
 export async function fetchAccessGrants(campaignId: string) {

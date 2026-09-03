@@ -115,6 +115,18 @@ A stable mutation id allows safe retry. It does not authorize the retry. Every r
 
 If an already-applied mutation id is replayed, the Worker returns its previous applied revision only after the request has passed protected access resolution. The ledger is not a public lookup service.
 
+## RxDB replication security (Mission branch)
+
+`POST /api/campaigns/:campaignId/rxdb/pull/:collection` and `push` are
+same-origin, Campaign-authenticated endpoints. Pull filters Field Group members
+to their Team before bootstrapping or reading a checkpoint. Push rejects Viewers
+before mutation work, validates bounded rows/documents, converts the write to a
+narrow domain mutation, and invokes the existing Worker authorization and D1
+transaction path. A foreign or structurally conflicting document returns only a
+per-document rejection and an allowed canonical document or tombstone; it never
+grants a field member a broader read/write scope. Client RxDB metadata is
+transport-only and is stripped before domain comparison/persistence.
+
 ## M5.5 prepared offline map request security
 
 Protected endpoint:

@@ -15,6 +15,20 @@
       "database_id": "0113e775-1e43-4d96-8b97-51fdeec7355b"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CAMPAIGN_SYNC",
+        "class_name": "CampaignSyncDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-campaign-sync",
+      "new_sqlite_classes": ["CampaignSyncDurableObject"]
+    }
+  ],
   "ratelimits": [
     {
       "name": "FIELD_GROUP_JOIN_ACTOR_LIMITER",

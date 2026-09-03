@@ -49,7 +49,12 @@ The browser owns:
 
 The browser is untrusted for authorization. Button visibility is never the permission boundary.
 
-Current synchronization still uses coarse Campaign revisions and complete snapshots. M5 is planned to replace the fragile write path with a durable mutation queue and idempotent narrower operations without changing the map-rendering boundary.
+On the stable/rollback line synchronization uses the M5 mutation queue. The separate
+`mission-rxdb-sync` line replaces its normal browser writer with an RxDB/Dexie
+local replica: five entity collections replicate through authenticated Worker
+pull/push endpoints, then materialize the same Campaign read model for React and
+MapLibre. D1 remains canonical and the Worker retains validation, authorization,
+revision claims and idempotency. The map-rendering boundary does not change.
 
 ## Worker responsibilities
 

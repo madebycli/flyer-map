@@ -62,6 +62,12 @@ import {
   renameCampaignAdminAccount,
   revokeCurrentCampaignAdminAccountSession,
 } from "./adminAuth.ts";
+import { isRxdbCollectionName } from "../src/data/rxdbSyncProtocol.ts";
+import { handleRxdbCheckpoint, handleRxdbPull, handleRxdbPush } from "./rxdbSync.ts";
+import {
+  notifyCampaignSync,
+  type CampaignSyncNamespace,
+} from "./campaignSyncDurableObject.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -69,6 +75,7 @@ type Env = {
   DB?: D1DatabaseLike;
   M4_BOOTSTRAP_SECRET?: string;
   OSM_OVERPASS_URL?: string;
+  CAMPAIGN_SYNC?: CampaignSyncNamespace;
 };
 
 type ErrorBody = {
@@ -157,6 +164,51 @@ function mutationRoute(pathname: string) {
   } catch {
     return null;
   }
+}
+
+function rxdbRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/rxdb\/(pull|push)\/([^/]+)$/);
+  if (!match) return null;
+  try {
+    const campaignId = parseCampaignId(decodeURIComponent(match[1]));
+    const collectionName = decodeURIComponent(match[3]);
+    if (!campaignId || !isRxdbCollectionName(collectionName)) return null;
+    return { campaignId, operation: match[2] as "pull" | "push", collectionName };
+  } catch {
+    return null;
+  }
+}
+
+function rxdbCheckpointRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/rxdb\/checkpoint$/u);
+  if (!match) return null;
+  try {
+    return parseCampaignId(decodeURIComponent(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+function rxdbSocketRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/rxdb\/ws$/u);
+  if (!match) return null;
+  try {
+    return parseCampaignId(decodeURIComponent(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+function scheduleCampaignSyncNotification(
+  namespace: CampaignSyncNamespace | undefined,
+  db: D1DatabaseLike,
+  campaignId: string,
+  response: Response,
+  context: AreaPreparationExecutionContext | undefined,
+) {
+  if (!namespace || !response.ok) return;
+  const notification = notifyCampaignSync(namespace, db, campaignId).catch(() => undefined);
+  if (context) context.waitUntil(notification);
 }
 
 function accessRoute(pathname: string) {
@@ -1060,14 +1112,18 @@ export default {
       try {
         const auth = await requireAccess(db, request, preparationRoute.campaignId);
         if (!auth.ok) return auth.response;
-        return await handleAreaTaskPreparationApi(
+        const response = await handleAreaTaskPreparationApi(
           request,
           db,
           preparationRoute,
           auth.access,
           context,
-          { upstreamUrl: env.OSM_OVERPASS_URL },
+          {
+            upstreamUrl: env.OSM_OVERPASS_URL,
+            onCommitted: () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, preparationRoute.campaignId),
+          },
         );
+        return response;
       } catch (error) {
         if (error instanceof StoredSnapshotError) {
           return errorResponse(500, "stored_snapshot_invalid", error.message);
@@ -1076,14 +1132,105 @@ export default {
       }
     }
 
+    const rxdbSocketCampaignId = rxdbSocketRoute(url.pathname);
+    if (rxdbSocketCampaignId && db) {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "Campaign-Realtime verwendet GET mit WebSocket-Upgrade.");
+      }
+      if (!env.CAMPAIGN_SYNC) {
+        return errorResponse(503, "realtime_unavailable", "Campaign-Realtime ist in diesem Worker noch nicht gebunden.");
+      }
+      try {
+        const auth = await requireAccess(db, request, rxdbSocketCampaignId);
+        if (!auth.ok) return auth.response;
+        const id = env.CAMPAIGN_SYNC.idFromName(rxdbSocketCampaignId);
+        const socketRequest = new Request("https://campaign-sync.internal/ws", {
+          method: "GET",
+          headers: {
+            Upgrade: "websocket",
+            "x-campaign-sync-internal": "1",
+          },
+        });
+        return await env.CAMPAIGN_SYNC.get(id).fetch(socketRequest);
+      } catch {
+        return errorResponse(503, "realtime_unavailable", "Campaign-Realtime konnte nicht aufgebaut werden.");
+      }
+    }
+
+    const rxdbCheckpointCampaignId = rxdbCheckpointRoute(url.pathname);
+    if (rxdbCheckpointCampaignId && db) {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "Der RxDB-Checkpoint verwendet GET.");
+      }
+      try {
+        const auth = await requireAccess(db, request, rxdbCheckpointCampaignId);
+        if (!auth.ok) return auth.response;
+        return await handleRxdbCheckpoint(db, rxdbCheckpointCampaignId, auth.access);
+      } catch {
+        return errorResponse(500, "internal_error", "RxDB-Checkpoint konnte nicht gelesen werden.");
+      }
+    }
+
+    const rxdbSyncRoute = rxdbRoute(url.pathname);
+    if (rxdbSyncRoute && db) {
+      if (request.method !== "POST") {
+        return errorResponse(405, "method_not_allowed", "RxDB Pull und Push verwenden POST.");
+      }
+      const parsed = await readJsonBody(request);
+      if (!parsed.ok) return parsed.response;
+      try {
+        const auth = await requireAccess(db, request, rxdbSyncRoute.campaignId);
+        if (!auth.ok) return auth.response;
+        const response = rxdbSyncRoute.operation === "pull"
+          ? await handleRxdbPull(
+              db,
+              rxdbSyncRoute.campaignId,
+              rxdbSyncRoute.collectionName,
+              auth.access,
+              parsed.value,
+            )
+          : await handleRxdbPush(
+              db,
+              rxdbSyncRoute.campaignId,
+              rxdbSyncRoute.collectionName,
+              auth.access,
+              parsed.value,
+            );
+        if (rxdbSyncRoute.operation === "push") {
+          scheduleCampaignSyncNotification(
+            env.CAMPAIGN_SYNC,
+            db,
+            rxdbSyncRoute.campaignId,
+            response,
+            context,
+          );
+        }
+        return response;
+      } catch (error) {
+        if (error instanceof StoredSnapshotError) {
+          return errorResponse(500, "stored_snapshot_invalid", error.message);
+        }
+        return errorResponse(500, "internal_error", "RxDB-Synchronisation konnte nicht verarbeitet werden.");
+      }
+    }
+
     const mutationCampaignId = mutationRoute(url.pathname);
     if (mutationCampaignId && db) {
       try {
         const auth = await requireMutationAccess(db, request, mutationCampaignId);
         if (!auth.ok) return auth.response;
-        return await handleCampaignMutation(request, db, mutationCampaignId, auth.access, context, {
+        const response = await handleCampaignMutation(request, db, mutationCampaignId, auth.access, context, {
           upstreamUrl: env.OSM_OVERPASS_URL,
+          onCommitted: () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, mutationCampaignId),
         });
+        scheduleCampaignSyncNotification(
+          env.CAMPAIGN_SYNC,
+          db,
+          mutationCampaignId,
+          response,
+          context,
+        );
+        return response;
       } catch (error) {
         if (error instanceof StoredSnapshotError) {
           return errorResponse(500, "stored_snapshot_invalid", error.message);

@@ -68,7 +68,7 @@ test("Smart House review renders only selected rows and bounded street shortcuts
   assert.doesNotMatch(panel, /buildings\.map\(\(building\) => \{/u);
 });
 
-test("house batch mutation stays on the existing M5 queue and preserves App identity", async () => {
+test("house batch mutation stays on the normal App identity and enters RxDB locally", async () => {
   const mutations = await readFile("src/domain/mutations.ts", "utf8");
   const diff = await readFile("src/domain/mutationDiff.ts", "utf8");
   const baseDiff = await readFile("src/domain/mutationDiffBase.ts", "utf8");
@@ -81,7 +81,8 @@ test("house batch mutation stays on the existing M5 queue and preserves App iden
   assert.match(baseDiff, /type: "house\.create-batch"/u);
   assert.match(repository, /FROM json_each\(\?\)/u);
   assert.match(repository, /INSERT INTO house_tasks/u);
-  assert.match(store, /postCampaignMutation\(campaignId, record\.mutation, record\.fieldGroupId\)/u);
+  assert.match(store, /runtime\.sync\.applyMutation\(mutation\)/u);
+  assert.doesNotMatch(store, /processMutationQueue\(/u);
   assert.match(store, /schema_migration_required/u);
 });
 
@@ -94,7 +95,7 @@ test("automatic House status has no addr:street inference or manual Smart House 
   assert.doesNotMatch(`${app}\n${selection}`, /addr:street.*parent|parent.*addr:street/iu);
 });
 
-test("automatic House Tasks keep normal status controls and existing M5 retry boundaries", async () => {
+test("automatic House Tasks keep normal status controls and isolated RxDB retry boundaries", async () => {
   const app = await readFile("src/App.tsx", "utf8");
   const store = await readFile("src/data/campaignStore.ts", "utf8");
 
@@ -102,6 +103,7 @@ test("automatic House Tasks keep normal status controls and existing M5 retry bo
   assert.match(app, /disabled=\{!canChangeSelectedHouseTaskStatus\}/u);
   assert.match(app, /selectedTaskIsAutoPrepared/u);
   assert.doesNotMatch(app, /ensureSmartMapPackage|smartHouseMapPackage|smartHouseLoading|cancelSmartHouseSelection/u);
-  assert.match(store, /state: "retry"/u);
-  assert.match(store, /messageCode: "schema_migration_required"/u);
+  assert.match(store, /schema_unavailable/u);
+  assert.match(store, /reportRxdbIssue/u);
+  assert.match(store, /schema_migration_required/u);
 });

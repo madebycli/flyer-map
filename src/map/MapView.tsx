@@ -2202,37 +2202,37 @@ export function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncAreaData(map, areas);
   }, [areas]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncStreetData(map, tasks);
   }, [tasks]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncHouseData(map, houses);
   }, [houses]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncSmartHouseData(map, smartHouseBuildings);
   }, [smartHouseBuildings]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncSmartHouseSelection(map, smartHouseSelectedSourceIds, mode);
   }, [mode, smartHouseSelectedSourceIds]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncCollectionData(
       map,
       collectionMainArea,
@@ -2249,19 +2249,19 @@ export function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncCollectionPickupData(map, collectionPickups);
   }, [collectionPickups]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncCollectionPickupSelection(map, selectedCollectionPickupId, collectionVisible);
   }, [collectionVisible, selectedCollectionPickupId]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncSmartStreetData(
       map,
       smartRoads,
@@ -2288,7 +2288,7 @@ export function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
     syncApplicationFilters(
       map,
       selectedTaskId,

@@ -2,68 +2,50 @@ import {
   CampaignApiError,
   accessTokenFromUrl,
   buildCampaignAccessUrl,
+  campaignIdFromUrl,
   collectionAccessTokenFromUrl,
   collectionModeFromUrl,
-  fetchCollectionSnapshot,
-  fetchCurrentCollectionAccess,
-  redeemCollectionAccess,
-  removeCollectionAccessTokenFromUrl,
-  campaignIdFromUrl,
   createCampaignSnapshot,
-  fetchCampaignSnapshot,
-  fetchCampaignVersion,
+  fetchCollectionSnapshot,
+  confirmCampaignSession,
   fetchCurrentAccess,
+  fetchCurrentCollectionAccess,
   postCampaignMutation,
   redeemCampaignAccess,
+  redeemCollectionAccess,
   removeAccessTokenFromUrl,
+  removeCollectionAccessTokenFromUrl,
   setCampaignIdInUrl,
   type AccessInfo,
-} from "./campaignApi";
-import {
-  browserMutationQueue,
-  type QueuedCampaignMutation,
-} from "./mutationQueue";
-import {
-  createInitialSnapshot,
-  normalizeAreaPreparationGenerations,
-  type Area,
-  type Campaign,
-  type CampaignSnapshot,
-  type DistributionTask,
-  type LineStringGeometry,
-  type MapCameraView,
-  type PolygonGeometry,
-  type Team,
-} from "../domain/campaign";
-import {
-  deriveCampaignMutation,
-  MutationDerivationError,
-} from "../domain/mutationDiff";
-import { sameSnapshotContent } from "../domain/snapshotComparison.ts";
+} from "./campaignApi.ts";
+import { browserMutationQueue } from "./mutationQueue.ts";
+import { MissionRxdbSync, type RxdbSyncIssue, type RxdbSyncOperation } from "./rxdbMissionSync.ts";
+import type { RxdbCollectionName } from "./rxdbSyncProtocol.ts";
+import { createInitialSnapshot, normalizeAreaPreparationGenerations, type Area, type CampaignSnapshot, type DistributionTask, type HouseTask, type LineStringGeometry, type MapCameraView, type PolygonGeometry, type Team } from "../domain/campaign.ts";
+import { deriveCampaignMutation, MutationDerivationError } from "../domain/mutationDiff.ts";
+import type { CampaignMutation } from "../domain/mutations.ts";
+import type { DurableCampaignMutation } from "../domain/durableMutation.ts";
 
 const STORAGE_KEY = "verteil-flyer:campaign-snapshot";
 const BACKUP_STORAGE_KEY = "verteil-flyer:campaign-snapshot:backup";
 const CONFLICT_STORAGE_KEY = "verteil-flyer:campaign-snapshot:conflict";
 const LEGACY_STORAGE_KEY = "verteil-flyer:m1:campaign-snapshot:v1";
-const POLL_INTERVAL_MS = 3_000;
-const MAX_RETRY_DELAY_MS = 60_000;
+const RXDB_LEGACY_MIGRATION_KEY_PREFIX = "verteil-flyer:rxdb-m5-migration:v1";
+const RXDB_LEGACY_ARCHIVE_KEY_PREFIX = "verteil-flyer:rxdb-m5-archive";
 const FIELD_GROUP_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 
 export type CampaignLoadResult = { snapshot: CampaignSnapshot; warning: string | null };
 export type RefreshState = "idle" | "loading" | "current" | "error" | "available";
 export type CampaignAccessState = "idle" | "pending" | "authenticated" | "required";
 export type SyncMessageCode = "access_required" | "network" | "conflict" | "forbidden" | "schema_migration_required" | null;
-export type MutationSyncState =
-  | "saved"
-  | "pending"
-  | "syncing"
-  | "offline"
-  | "conflict"
-  | "failed"
-  | "blocked-auth";
+export type MutationSyncState = "local-saved" | "waiting-server" | "server-confirmed" | "syncing" | "offline" | "conflict" | "failed" | "blocked-auth";
 export type SyncIssue = {
   kind: "server-wins" | "blocked-auth" | "network" | "schema";
   mutationType?: string;
+  affectedCollections?: RxdbCollectionName[];
+  scope?: "collection" | "multiple" | "server";
+  operation?: RxdbSyncOperation;
+  code?: string;
   serverRevision?: number | null;
   baseRevision?: number | null;
   message: string;
@@ -81,235 +63,69 @@ export type CampaignStoreUpdate = {
   syncIssue?: SyncIssue | null;
 };
 
-type LegacyCampaign = Omit<Campaign, "defaultMapView">;
-type SnapshotV2 = Omit<CampaignSnapshot, "schemaVersion" | "campaign"> & {
-  schemaVersion: 2;
-  campaign: LegacyCampaign;
-};
-type SnapshotV1 = Omit<SnapshotV2, "schemaVersion" | "tasks"> & {
-  schemaVersion: 1;
-};
-type SyncRuntime = {
+type Runtime = {
   targetCampaignId: string | null;
   latestLocal: CampaignSnapshot | null;
-  lastServer: CampaignSnapshot | null;
-  serverRevision: number | null;
-  remoteRevision: number | null;
   access: AccessInfo | null;
   accessState: CampaignAccessState;
   initialized: boolean;
-  initializeInFlight: boolean;
-  queueInFlight: boolean;
+  initializing: boolean;
   listenersStarted: boolean;
   interactionBlocked: boolean;
-  needsCanonicalRefresh: boolean;
-  retryTimer: number | null;
-  enqueuesPending: number;
+  deferredSnapshot: CampaignSnapshot | null;
   activeFieldGroupId: string | null;
+  sync: MissionRxdbSync | null;
+  pendingWrites: number;
+  retryLegacyMigration: (() => void) | null;
 };
 
-const syncRuntime: SyncRuntime = {
+const runtime: Runtime = {
   targetCampaignId: null,
   latestLocal: null,
-  lastServer: null,
-  serverRevision: null,
-  remoteRevision: null,
   access: null,
   accessState: "idle",
   initialized: false,
-  initializeInFlight: false,
-  queueInFlight: false,
+  initializing: false,
   listenersStarted: false,
   interactionBlocked: false,
-  needsCanonicalRefresh: false,
-  retryTimer: null,
-  enqueuesPending: 0,
+  deferredSnapshot: null,
   activeFieldGroupId: null,
+  sync: null,
+  pendingWrites: 0,
+  retryLegacyMigration: null,
 };
 
 const listeners = new Set<(update: CampaignStoreUpdate) => void>();
 let loadedExistingSnapshot = false;
+let saveChain: Promise<void> = Promise.resolve();
 let refreshResetTimer: number | null = null;
-let enqueueChain: Promise<void> = Promise.resolve();
+const rxdbCollectionOrder = ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const satisfies readonly RxdbCollectionName[];
+const activeRxdbIssues = new Map<RxdbCollectionName, RxdbSyncIssue>();
+let activeGlobalRxdbIssue: RxdbSyncIssue | null = null;
 
 function emit(update: CampaignStoreUpdate) {
   for (const listener of listeners) listener(update);
 }
 
+function setAccess(access: AccessInfo | null) {
+  runtime.access = access;
+  runtime.accessState = access ? "authenticated" : "required";
+  emit({ access, accessState: runtime.accessState, messageCode: access ? null : "access_required" });
+}
+
+function isAccessError(error: unknown) {
+  return error instanceof CampaignApiError && (error.status === 401 || error.code === "access_required");
+}
+
 function setRefreshState(state: RefreshState, reset = false) {
   emit({ refreshState: state });
-  if (typeof window === "undefined") return;
+  if (!reset || typeof window === "undefined") return;
   if (refreshResetTimer !== null) window.clearTimeout(refreshResetTimer);
-  if (reset) {
-    refreshResetTimer = window.setTimeout(() => emit({ refreshState: "idle" }), 1800);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isLngLat(value: unknown) {
-  return (
-    Array.isArray(value) &&
-    value.length === 2 &&
-    typeof value[0] === "number" &&
-    Number.isFinite(value[0]) &&
-    typeof value[1] === "number" &&
-    Number.isFinite(value[1])
-  );
-}
-
-function isMapCameraView(value: unknown): value is MapCameraView {
-  return (
-    isRecord(value) &&
-    isLngLat(value.center) &&
-    typeof value.zoom === "number" &&
-    Number.isFinite(value.zoom) &&
-    typeof value.bearing === "number" &&
-    Number.isFinite(value.bearing)
-  );
-}
-
-function isPolygonGeometry(value: unknown): value is PolygonGeometry {
-  if (!isRecord(value) || value.type !== "Polygon" || !Array.isArray(value.coordinates)) {
-    return false;
-  }
-  const firstRing = value.coordinates[0];
-  return Array.isArray(firstRing) && firstRing.every(isLngLat);
-}
-
-function isLineStringGeometry(value: unknown): value is LineStringGeometry {
-  return (
-    isRecord(value) &&
-    value.type === "LineString" &&
-    Array.isArray(value.coordinates) &&
-    value.coordinates.every(isLngLat)
-  );
-}
-
-function isTeam(value: unknown): value is Team {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.campaignId === "string" &&
-    typeof value.name === "string" &&
-    typeof value.color === "string" &&
-    typeof value.createdAt === "string" &&
-    typeof value.updatedAt === "string"
-  );
-}
-
-function isArea(value: unknown): value is Area {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.campaignId === "string" &&
-    typeof value.teamId === "string" &&
-    typeof value.name === "string" &&
-    isPolygonGeometry(value.geometry) &&
-    typeof value.createdAt === "string" &&
-    typeof value.updatedAt === "string"
-  );
-}
-
-function isDistributionTask(value: unknown): value is DistributionTask {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.campaignId === "string" &&
-    typeof value.areaId === "string" &&
-    value.taskType === "street" &&
-    typeof value.label === "string" &&
-    isLineStringGeometry(value.geometry) &&
-    (value.status === "open" ||
-      value.status === "completed" ||
-      value.status === "later" ||
-      value.status === "not-deliverable") &&
-    (value.completedAt === null || typeof value.completedAt === "string") &&
-    typeof value.createdAt === "string" &&
-    typeof value.updatedAt === "string"
-  );
-}
-
-function hasValidCampaign(value: Record<string, unknown>, requireMapView: boolean) {
-  const campaign = value.campaign;
-  if (
-    !isRecord(campaign) ||
-    typeof campaign.id !== "string" ||
-    typeof campaign.name !== "string" ||
-    (campaign.status !== "draft" && campaign.status !== "active" && campaign.status !== "archived") ||
-    typeof campaign.createdAt !== "string" ||
-    typeof campaign.updatedAt !== "string"
-  ) {
-    return false;
-  }
-  if (!requireMapView) return true;
-  return campaign.defaultMapView === null || isMapCameraView(campaign.defaultMapView);
-}
-
-function hasValidBaseCollections(value: Record<string, unknown>, requireMapView: boolean) {
-  return (
-    typeof value.revision === "number" &&
-    hasValidCampaign(value, requireMapView) &&
-    Array.isArray(value.teams) &&
-    value.teams.every(isTeam) &&
-    Array.isArray(value.areas) &&
-    value.areas.every(isArea)
-  );
-}
-
-function isCampaignSnapshot(value: unknown): value is CampaignSnapshot {
-  return (
-    isRecord(value) &&
-    value.schemaVersion === 3 &&
-    hasValidBaseCollections(value, true) &&
-    Array.isArray(value.tasks) &&
-    value.tasks.every(isDistributionTask)
-  );
-}
-
-function isSnapshotV2(value: unknown): value is SnapshotV2 {
-  return (
-    isRecord(value) &&
-    value.schemaVersion === 2 &&
-    hasValidBaseCollections(value, false) &&
-    Array.isArray(value.tasks) &&
-    value.tasks.every(isDistributionTask)
-  );
-}
-
-function isSnapshotV1(value: unknown): value is SnapshotV1 {
-  return isRecord(value) && value.schemaVersion === 1 && hasValidBaseCollections(value, false);
-}
-
-function migrateV2(snapshot: SnapshotV2): CampaignSnapshot {
-  return {
-    ...snapshot,
-    schemaVersion: 3,
-    campaign: { ...snapshot.campaign, defaultMapView: null },
-  };
-}
-
-function migrateV1(snapshot: SnapshotV1): CampaignSnapshot {
-  return migrateV2({ ...snapshot, schemaVersion: 2, tasks: [] });
-}
-
-function parseSnapshot(raw: string | null): CampaignSnapshot | null {
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (isCampaignSnapshot(parsed)) return normalizeAreaPreparationGenerations(parsed);
-    if (isSnapshotV2(parsed)) return normalizeAreaPreparationGenerations(migrateV2(parsed));
-    if (isSnapshotV1(parsed)) return normalizeAreaPreparationGenerations(migrateV1(parsed));
-    return null;
-  } catch {
-    return null;
-  }
+  refreshResetTimer = window.setTimeout(() => emit({ refreshState: "idle" }), 1800);
 }
 
 function localStorageKey(key: string) {
-  return collectionModeFromUrl() ? key + ":collection" : key;
+  return collectionModeFromUrl() ? `${key}:collection` : key;
 }
 
 function writeLocalSnapshot(snapshot: CampaignSnapshot) {
@@ -318,743 +134,504 @@ function writeLocalSnapshot(snapshot: CampaignSnapshot) {
   try {
     window.localStorage.setItem(localStorageKey(STORAGE_KEY), serialized);
   } catch {
-    return "Lokales Speichern ist fehlgeschlagen. Bitte diese Seite noch nicht neu laden.";
+    return "Lokale Daten konnten nicht dauerhaft gespeichert werden.";
   }
   try {
     window.localStorage.setItem(localStorageKey(BACKUP_STORAGE_KEY), serialized);
+    return null;
   } catch {
     return "Gespeichert, aber die lokale Sicherheitskopie konnte nicht aktualisiert werden.";
   }
-  return null;
 }
 
-function isAccessError(error: unknown) {
-  return error instanceof CampaignApiError && (error.status === 401 || error.code === "access_required");
+type LegacyCampaign = Omit<CampaignSnapshot["campaign"], "defaultMapView">;
+type SnapshotV2 = Omit<CampaignSnapshot, "schemaVersion" | "campaign"> & { schemaVersion: 2; campaign: LegacyCampaign };
+type SnapshotV1 = Omit<SnapshotV2, "schemaVersion" | "tasks"> & { schemaVersion: 1 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isRetryableError(error: unknown) {
-  return (
-    error instanceof CampaignApiError &&
-    (error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500)
-  );
+function isLngLat(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 && typeof value[0] === "number" && Number.isFinite(value[0]) && typeof value[1] === "number" && Number.isFinite(value[1]);
 }
 
-function retryDelay(attemptCount: number) {
-  return Math.min(MAX_RETRY_DELAY_MS, 1500 * 2 ** Math.min(attemptCount, 5));
+function isMapCameraView(value: unknown): value is MapCameraView {
+  return isRecord(value) && isLngLat(value.center) && typeof value.zoom === "number" && Number.isFinite(value.zoom) && typeof value.bearing === "number" && Number.isFinite(value.bearing);
 }
 
-function setAccess(access: AccessInfo | null) {
-  syncRuntime.access = access;
-  syncRuntime.accessState = access ? "authenticated" : "required";
-  emit({
-    access,
-    accessState: syncRuntime.accessState,
-    messageCode: access ? null : "access_required",
-  });
+function isPolygonGeometry(value: unknown): value is PolygonGeometry {
+  if (!isRecord(value) || value.type !== "Polygon" || !Array.isArray(value.coordinates)) return false;
+  const firstRing = value.coordinates[0];
+  return Array.isArray(firstRing) && firstRing.every(isLngLat);
 }
 
-function applyServerSnapshot(snapshot: CampaignSnapshot, messageCode: SyncMessageCode = null) {
-  syncRuntime.latestLocal = snapshot;
-  syncRuntime.lastServer = snapshot;
-  syncRuntime.serverRevision = snapshot.revision;
-  syncRuntime.remoteRevision = null;
-  syncRuntime.needsCanonicalRefresh = false;
-  writeLocalSnapshot(snapshot);
-  emit({ snapshot, messageCode });
+function isLineStringGeometry(value: unknown): value is LineStringGeometry {
+  return isRecord(value) && value.type === "LineString" && Array.isArray(value.coordinates) && value.coordinates.every(isLngLat);
 }
 
-function stateFromQueue(records: QueuedCampaignMutation[]): MutationSyncState {
-  if (records.some((record) => record.state === "conflict")) return "conflict";
-  if (records.some((record) => record.state === "blocked-auth")) return "blocked-auth";
-  if (records.some((record) => record.state === "invalid")) return "failed";
-  if (records.length === 0 && syncRuntime.enqueuesPending === 0) return "saved";
-  if (typeof navigator !== "undefined" && !navigator.onLine) return "offline";
-  if (syncRuntime.queueInFlight) return "syncing";
-  if (records.some((record) => record.state === "retry")) return "failed";
-  return "pending";
+function isTeam(value: unknown): value is Team {
+  return isRecord(value) && typeof value.id === "string" && typeof value.campaignId === "string" && typeof value.name === "string" && typeof value.color === "string" && typeof value.createdAt === "string" && typeof value.updatedAt === "string";
 }
 
-function emitQueueState(records: QueuedCampaignMutation[]) {
-  emit({
-    syncState: stateFromQueue(records),
-    pendingCount: records.length + syncRuntime.enqueuesPending,
-  });
+function isArea(value: unknown): value is Area {
+  return isRecord(value) && typeof value.id === "string" && typeof value.campaignId === "string" && typeof value.teamId === "string" && typeof value.name === "string" && isPolygonGeometry(value.geometry) && typeof value.createdAt === "string" && typeof value.updatedAt === "string";
 }
 
-function emitSyncIssue(issue: SyncIssue) {
-  emit({ syncIssue: issue });
+function isDistributionTask(value: unknown): value is DistributionTask {
+  return isRecord(value) && typeof value.id === "string" && typeof value.campaignId === "string" && typeof value.areaId === "string" && value.taskType === "street" && typeof value.label === "string" && isLineStringGeometry(value.geometry) && (value.status === "open" || value.status === "completed" || value.status === "later" || value.status === "not-deliverable") && (value.completedAt === null || typeof value.completedAt === "string") && typeof value.createdAt === "string" && typeof value.updatedAt === "string";
 }
 
-function terminalServerWinsIssue(
-  record: QueuedCampaignMutation,
-  reason: string,
-  serverRevision: number | null = null,
-  serverMessage?: string,
-) {
-  if (syncRuntime.latestLocal) saveCampaignConflictSnapshot(syncRuntime.latestLocal);
-  console.warn(
-    "campaign_sync_server_wins",
-    `mutationType=${record.mutation.type}`,
-    `baseRevision=${record.mutation.baseRevision}`,
-    `serverRevision=${serverRevision ?? "unknown"}`,
-    `reason=${reason}`,
-  );
-  emitSyncIssue({
-    kind: "server-wins",
-    mutationType: record.mutation.type,
-    baseRevision: record.mutation.baseRevision,
-    serverRevision,
-    message: serverMessage ?? "Eine lokale Änderung konnte nicht übernommen werden. Die Online-Version wurde geladen; eine lokale Sicherheitskopie bleibt erhalten.",
-    occurredAt: new Date().toISOString(),
-  });
+function isHouseTask(value: unknown): value is HouseTask {
+  return isRecord(value) && typeof value.id === "string" && typeof value.campaignId === "string" && typeof value.areaId === "string" && value.taskType === "house" && typeof value.label === "string" && isPolygonGeometry(value.geometry) && (value.parentStreetTaskId === null || typeof value.parentStreetTaskId === "string") && (value.status === "open" || value.status === "completed" || value.status === "later" || value.status === "not-deliverable") && (value.completedAt === null || typeof value.completedAt === "string") && typeof value.createdAt === "string" && typeof value.updatedAt === "string";
 }
 
-async function listQueue(campaignId: string) {
+function hasValidCampaign(value: Record<string, unknown>, requireMapView: boolean) {
+  const campaign = value.campaign;
+  if (!isRecord(campaign) || typeof campaign.id !== "string" || typeof campaign.name !== "string" || (campaign.status !== "draft" && campaign.status !== "active" && campaign.status !== "archived") || typeof campaign.createdAt !== "string" || typeof campaign.updatedAt !== "string") return false;
+  return !requireMapView || campaign.defaultMapView === null || isMapCameraView(campaign.defaultMapView);
+}
+
+function hasValidBaseCollections(value: Record<string, unknown>, requireMapView: boolean) {
+  return typeof value.revision === "number" && Number.isFinite(value.revision) && hasValidCampaign(value, requireMapView) && Array.isArray(value.teams) && value.teams.every(isTeam) && Array.isArray(value.areas) && value.areas.every(isArea);
+}
+
+function isCampaignSnapshot(value: unknown): value is CampaignSnapshot {
+  return isRecord(value) && value.schemaVersion === 3 && hasValidBaseCollections(value, true) && Array.isArray(value.tasks) && value.tasks.every(isDistributionTask) && (value.houseTasks === undefined || Array.isArray(value.houseTasks) && value.houseTasks.every(isHouseTask));
+}
+
+function isSnapshotV2(value: unknown): value is SnapshotV2 {
+  return isRecord(value) && value.schemaVersion === 2 && hasValidBaseCollections(value, false) && Array.isArray(value.tasks) && value.tasks.every(isDistributionTask);
+}
+
+function isSnapshotV1(value: unknown): value is SnapshotV1 {
+  return isRecord(value) && value.schemaVersion === 1 && hasValidBaseCollections(value, false);
+}
+
+function parseSnapshot(raw: string | null) {
+  if (!raw) return null;
   try {
-    return await browserMutationQueue.list(campaignId);
-  } catch (error) {
-    console.warn("mutation_queue_read_failed", error);
-    emit({ syncState: "failed", messageCode: "network" });
+    const parsed = JSON.parse(raw) as unknown;
+    const migrated = isCampaignSnapshot(parsed)
+      ? parsed
+      : isSnapshotV2(parsed)
+        ? { ...parsed, schemaVersion: 3, campaign: { ...parsed.campaign, defaultMapView: null } }
+        : isSnapshotV1(parsed)
+          ? { ...parsed, schemaVersion: 3, tasks: [], campaign: { ...parsed.campaign, defaultMapView: null } }
+          : null;
+    return migrated ? normalizeAreaPreparationGenerations(migrated as CampaignSnapshot) : null;
+  } catch {
     return null;
   }
 }
 
-function clearRetryTimer() {
-  if (typeof window === "undefined" || syncRuntime.retryTimer === null) return;
-  window.clearTimeout(syncRuntime.retryTimer);
-  syncRuntime.retryTimer = null;
+function applyRxdbSnapshot(snapshot: CampaignSnapshot) {
+  const normalized = normalizeAreaPreparationGenerations(snapshot);
+  if (runtime.interactionBlocked) {
+    runtime.deferredSnapshot = normalized;
+    setRefreshState("available");
+    return;
+  }
+  runtime.latestLocal = normalized;
+  writeLocalSnapshot(normalized);
+  emit({ snapshot: normalized, pendingCount: runtime.pendingWrites, messageCode: null });
 }
 
-function scheduleRetry(delayMs: number) {
-  if (typeof window === "undefined") return;
-  clearRetryTimer();
-  syncRuntime.retryTimer = window.setTimeout(() => {
-    syncRuntime.retryTimer = null;
-    void processMutationQueue();
-  }, Math.max(1000, delayMs));
+function isBlockedRxdbIssue(issue: RxdbSyncIssue) {
+  return issue.status === 401 || issue.status === 403 || issue.code.includes("forbidden") || issue.code.includes("read_only") || issue.code.includes("access_required") || issue.code.includes("field_group_actor_scope");
 }
 
-async function resumeBlockedMutations(campaignId: string) {
-  const records = await listQueue(campaignId);
-  if (!records) return;
+function aggregateRxdbIssues(): SyncIssue | null {
+  const collectionIssues = rxdbCollectionOrder.flatMap((collectionName) => {
+    const issue = activeRxdbIssues.get(collectionName);
+    return issue ? [issue] : [];
+  });
+  const sources = activeGlobalRxdbIssue ? [activeGlobalRxdbIssue, ...collectionIssues] : collectionIssues;
+  if (sources.length === 0) return null;
+
+  const schema = sources.some((issue) => issue.kind === "schema" || issue.code.includes("schema_unavailable"));
+  const blocked = sources.some(isBlockedRxdbIssue);
+  const rejected = sources.some((issue) => issue.kind === "rejected");
+  const kind = schema ? "schema" : blocked ? "blocked-auth" : rejected ? "server-wins" : "network";
+  const affectedCollections = collectionIssues.map((issue) => issue.collectionName).filter((value): value is RxdbCollectionName => value !== undefined);
+  const scope = activeGlobalRxdbIssue || affectedCollections.length === 0
+    ? "server"
+    : affectedCollections.length === 1
+      ? "collection"
+      : "multiple";
+  const representative = sources[0];
+  const message = scope === "server"
+    ? schema
+      ? "Der gemeinsame Serverstand benötigt die vorbereitete Datenbankmigration."
+      : blocked
+        ? "Der gemeinsame Serverstand ist mit dem aktuellen Zugriff nicht erreichbar."
+        : "Der gemeinsame Serverstand momentan nicht erreichbar. Die Verbindung wird erneut aufgebaut. Bereits geladene Daten bleiben verfügbar."
+    : schema
+      ? scope === "multiple"
+        ? "Mehrere Datenbereiche warten auf die vorbereitete Datenbankmigration."
+        : "Dieser Datenbereich wartet auf die vorbereitete Datenbankmigration."
+      : blocked
+        ? scope === "multiple"
+          ? "Mehrere Datenbereiche dürfen mit dem aktuellen Zugriff nicht synchronisiert werden."
+          : "Dieser Datenbereich darf mit dem aktuellen Zugriff nicht synchronisiert werden."
+        : rejected
+          ? scope === "multiple"
+            ? "Mehrere Änderungen konnten nicht automatisch übernommen werden."
+            : "Diese Änderung konnte nicht automatisch übernommen werden."
+          : scope === "multiple"
+            ? "Mehrere Datenbereiche sind momentan nicht erreichbar. Die Verbindung wird erneut aufgebaut."
+            : "Die Verbindung wird erneut aufgebaut. Bereits geladene Daten bleiben verfügbar.";
+
+  return {
+    kind,
+    ...(affectedCollections.length > 0 ? { affectedCollections } : {}),
+    ...(scope === "collection" ? { mutationType: affectedCollections[0] } : {}),
+    scope,
+    ...(representative.operation ? { operation: representative.operation } : {}),
+    code: representative.code,
+    message,
+    occurredAt: new Date().toISOString(),
+  } satisfies SyncIssue;
+}
+
+function emitAggregatedRxdbIssue() {
+  const syncIssue = aggregateRxdbIssues();
+  if (!syncIssue) {
+    emit({ syncIssue: null, syncState: navigator.onLine ? "server-confirmed" : "offline", messageCode: null });
+    return;
+  }
+  const syncState = syncIssue.kind === "schema"
+    ? "failed"
+    : syncIssue.kind === "blocked-auth"
+      ? "blocked-auth"
+      : syncIssue.kind === "server-wins"
+        ? "conflict"
+        : navigator.onLine ? "failed" : "offline";
+  emit({ syncIssue, syncState, messageCode: syncIssue.kind === "schema" ? "schema_migration_required" : syncIssue.kind === "blocked-auth" ? "forbidden" : syncIssue.kind === "server-wins" ? "conflict" : "network" });
+}
+
+function reportRxdbIssue(issue: RxdbSyncIssue) {
+  if (issue.collectionName) activeRxdbIssues.set(issue.collectionName, issue);
+  else activeGlobalRxdbIssue = issue;
+  emitAggregatedRxdbIssue();
+}
+
+function clearRxdbIssue(collectionName?: RxdbCollectionName) {
+  if (collectionName) activeRxdbIssues.delete(collectionName);
+  else activeGlobalRxdbIssue = null;
+  emitAggregatedRxdbIssue();
+}
+
+function resetRxdbIssues() {
+  const hadIssues = activeGlobalRxdbIssue !== null || activeRxdbIssues.size > 0;
+  activeGlobalRxdbIssue = null;
+  activeRxdbIssues.clear();
+  if (hadIssues) emit({ syncIssue: null, messageCode: null });
+}
+
+export function syncIssueAffectedLabel(issue: SyncIssue) {
+  if (issue.scope === "server") return "Betroffen: gemeinsamer Serverstand";
+  const affectedCollections = issue.affectedCollections ?? [];
+  if (affectedCollections.length === 1) return `Betroffen: ${affectedCollections[0]}`;
+  if (affectedCollections.length > 1) return `Betroffen: mehrere Datenbereiche (${affectedCollections.join(", ")})`;
+  return issue.mutationType ? `Betroffen: ${issue.mutationType}` : null;
+}
+
+function isReplayableLegacyMutation(mutation: CampaignMutation) {
+  return mutation.type === "campaign.rename" || mutation.type === "team.update" || mutation.type === "task.set-status" || mutation.type === "house.set-status";
+}
+
+async function migrateLegacyM5Records(campaignId: string, sync: MissionRxdbSync) {
+  const migrationKey = `${RXDB_LEGACY_MIGRATION_KEY_PREFIX}:${encodeURIComponent(campaignId)}`;
+  const archiveKey = `${RXDB_LEGACY_ARCHIVE_KEY_PREFIX}:${encodeURIComponent(campaignId)}`;
+  if (typeof window === "undefined" || window.localStorage.getItem(migrationKey)) return;
+  const records = await browserMutationQueue.list(campaignId);
+  const backup = { migratedAt: new Date().toISOString(), records, replayedMutationIds: [] as string[], needsResolutionMutationIds: [] as string[] };
+  const persistArchive = () => window.localStorage.setItem(archiveKey, JSON.stringify(backup));
+  // Never remove a queue record before the complete recovery archive is durable.
+  try {
+    persistArchive();
+  } catch {
+    return;
+  }
   for (const record of records) {
-    if (record.state !== "blocked-auth") continue;
-    await browserMutationQueue.update({
-      ...record,
-      state: "pending",
-      nextAttemptAt: 0,
-      lastError: undefined,
-    });
-  }
-}
-
-async function finalizeQueueIfPossible(campaignId: string) {
-  if (syncRuntime.enqueuesPending > 0) return;
-  const remaining = await listQueue(campaignId);
-  if (!remaining || remaining.length > 0) {
-    if (remaining) emitQueueState(remaining);
-    return;
-  }
-
-  emitQueueState([]);
-  if (syncRuntime.interactionBlocked) {
-    syncRuntime.needsCanonicalRefresh = true;
-    return;
-  }
-
-  try {
-    const canonical = collectionModeFromUrl()
-      ? await fetchCollectionSnapshot(campaignId)
-      : await fetchCampaignSnapshot(campaignId);
-    applyServerSnapshot(canonical);
-    emit({ syncState: "saved", pendingCount: 0 });
-  } catch (error) {
-    syncRuntime.needsCanonicalRefresh = true;
-    if (isAccessError(error)) {
-      syncRuntime.initialized = false;
-      setAccess(null);
-      emit({ syncState: "blocked-auth", pendingCount: 0 });
+    if (isReplayableLegacyMutation(record.mutation)) {
+      try {
+        await sync.applyMutation(record.mutation);
+        backup.replayedMutationIds.push(record.id);
+      } catch {
+        backup.needsResolutionMutationIds.push(record.id);
+      }
     } else {
-      emit({ syncState: "failed", messageCode: "network", pendingCount: 0 });
+      backup.needsResolutionMutationIds.push(record.id);
     }
+    persistArchive();
+    await browserMutationQueue.remove(record.id);
+  }
+  persistArchive();
+  window.localStorage.setItem(migrationKey, JSON.stringify({ completedAt: backup.migratedAt }));
+  if (backup.needsResolutionMutationIds.length > 0) {
+    emit({ syncState: "conflict", syncIssue: { kind: "server-wins", message: "Strukturelle alte Offline-Änderungen wurden sicher gesichert und nicht blind wiederholt. Die übrigen Daten werden weiter synchronisiert.", occurredAt: backup.migratedAt } });
   }
 }
 
-async function processMutationQueue() {
-  if (
-    typeof window === "undefined" ||
-    !navigator.onLine ||
-    !syncRuntime.initialized ||
-    syncRuntime.queueInFlight ||
-    !syncRuntime.targetCampaignId ||
-    syncRuntime.access?.role === "viewer"
-  ) {
-    if (syncRuntime.targetCampaignId) {
-      const records = await listQueue(syncRuntime.targetCampaignId);
-      if (records) emitQueueState(records);
-    }
-    return;
+async function startRxdb(campaignId: string) {
+  runtime.retryLegacyMigration = null;
+  if (runtime.sync) await runtime.sync.destroy();
+  resetRxdbIssues();
+  const fieldGroupAccess = runtime.access?.role === "field-group-member" ? runtime.access : null;
+  const teamScopeId = fieldGroupAccess?.teamId ?? null;
+  const actorScopeId = fieldGroupAccess?.groupId ?? null;
+  if (fieldGroupAccess && (!teamScopeId || !actorScopeId || !FIELD_GROUP_ID_PATTERN.test(actorScopeId))) {
+    throw new Error("field_group_actor_scope_required");
   }
-
-  const campaignId = syncRuntime.targetCampaignId;
-  const records = await listQueue(campaignId);
-  if (!records) return;
-  if (records.length === 0) {
-    await finalizeQueueIfPossible(campaignId);
-    return;
-  }
-
-  const record = records[0];
-  if (record.state === "conflict" || record.state === "invalid") {
-    terminalServerWinsIssue(record, record.state);
-    await browserMutationQueue.remove(record.id);
-    syncRuntime.needsCanonicalRefresh = true;
-    await processMutationQueue();
-    return;
-  }
-  if (record.state === "blocked-auth") {
-    emitQueueState(records);
-    return;
-  }
-
-  const delay = record.nextAttemptAt - Date.now();
-  if (delay > 0) {
-    emitQueueState(records);
-    scheduleRetry(delay);
-    return;
-  }
-
-  clearRetryTimer();
-  syncRuntime.queueInFlight = true;
-  emit({ syncState: "syncing", pendingCount: records.length + syncRuntime.enqueuesPending });
-
-  try {
-    const result = await postCampaignMutation(campaignId, record.mutation, record.fieldGroupId);
-    await browserMutationQueue.remove(record.id);
-    syncRuntime.serverRevision = result.appliedRevision;
-    syncRuntime.lastServer = null;
-    syncRuntime.remoteRevision = null;
-    syncRuntime.needsCanonicalRefresh = true;
-  } catch (error) {
-    const apiError = error instanceof CampaignApiError ? error : null;
-    const lastError = error instanceof Error ? error.message : "Mutation konnte nicht synchronisiert werden.";
-
-    if (apiError?.status === 409) {
-      await browserMutationQueue.remove(record.id);
-      if (apiError.revision !== undefined && apiError.revision !== null) {
-        syncRuntime.serverRevision = apiError.revision;
+  const sync = new MissionRxdbSync({
+    campaignId,
+    teamScopeId,
+    actorScopeId,
+    collectionFallback: fieldGroupAccess ? undefined : runtime.latestLocal?.collection,
+    onSnapshot: applyRxdbSnapshot,
+    onIssue: (issue) => { if (runtime.sync === sync) reportRxdbIssue(issue); },
+    onIssueResolved: (collectionName) => { if (runtime.sync === sync) clearRxdbIssue(collectionName); },
+    onRemoteEvent: (event) => {
+      if (runtime.sync !== sync) return;
+      if (event === "push-pending") {
+        emit({ syncState: navigator.onLine ? "waiting-server" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
+      } else if (event === "push-idle") {
+        emit({ syncState: navigator.onLine ? "server-confirmed" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
       }
-      terminalServerWinsIssue(record, "http_409", apiError.revision ?? null, apiError.message);
-      syncRuntime.needsCanonicalRefresh = true;
-    }
-
-    if (apiError && (apiError.status === 401 || apiError.status === 403)) {
-      await browserMutationQueue.update({
-        ...record,
-        state: "blocked-auth",
-        attemptCount: record.attemptCount + 1,
-        lastError,
-      });
-      if (apiError.status === 401) {
-        syncRuntime.initialized = false;
-        setAccess(null);
-      }
-      emitSyncIssue({
-        kind: "blocked-auth",
-        mutationType: record.mutation.type,
-        baseRevision: record.mutation.baseRevision,
-        message: "Eine Änderung wartet, weil sich dein Zugriff geändert hat.",
-        occurredAt: new Date().toISOString(),
-      });
-      emit({
-        syncState: "blocked-auth",
-        messageCode: apiError.status === 403 ? "forbidden" : "access_required",
-        pendingCount: records.length,
-      });
-      emitSyncIssue({
-        kind: "schema",
-        mutationType: record.mutation.type,
-        baseRevision: record.mutation.baseRevision,
-        message: "Eine Änderung wartet, weil eine notwendige Datenbankmigration fehlt.",
-        occurredAt: new Date().toISOString(),
-      });
-      return;
-    }
-
-    if (apiError?.code === "schema_migration_required") {
-      const attemptCount = record.attemptCount + 1;
-      const nextAttemptAt = Date.now() + retryDelay(attemptCount);
-      await browserMutationQueue.update({
-        ...record,
-        state: "retry",
-        attemptCount,
-        nextAttemptAt,
-        lastError,
-      });
-      emit({
-        syncState: "failed",
-        messageCode: "schema_migration_required",
-        pendingCount: records.length,
-      });
-      if (navigator.onLine) scheduleRetry(nextAttemptAt - Date.now());
-      return;
-    }
-
-    if (apiError && apiError.status >= 400 && apiError.status < 500 && !isRetryableError(apiError)) {
-      await browserMutationQueue.remove(record.id);
-      terminalServerWinsIssue(record, `http_${apiError.status}`, apiError.revision ?? null);
-      syncRuntime.needsCanonicalRefresh = true;
-    }
-
-    const attemptCount = record.attemptCount + 1;
-    const nextAttemptAt = Date.now() + retryDelay(attemptCount);
-    await browserMutationQueue.update({
-      ...record,
-      state: "retry",
-      attemptCount,
-      nextAttemptAt,
-      lastError,
-    });
-    emit({
-      syncState: navigator.onLine ? "failed" : "offline",
-      messageCode: "network",
-      pendingCount: records.length,
-    });
-    emitSyncIssue({
-      kind: "network",
-      mutationType: record.mutation.type,
-      baseRevision: record.mutation.baseRevision,
-      message: "Die Änderung bleibt lokal gespeichert und wird erneut versucht, sobald die Verbindung stabil ist.",
-      occurredAt: new Date().toISOString(),
-    });
-    if (navigator.onLine) scheduleRetry(nextAttemptAt - Date.now());
-    return;
-  } finally {
-    syncRuntime.queueInFlight = false;
-  }
-
-  const after = await listQueue(campaignId);
-  if (!after) return;
-  emitQueueState(after);
-  if (after.length > 0) {
-    await processMutationQueue();
-  } else {
-    await finalizeQueueIfPossible(campaignId);
-  }
-}
-
-async function loadServerForAuthenticatedCampaign(targetCampaignId: string) {
-  const serverSnapshot = collectionModeFromUrl()
-    ? await fetchCollectionSnapshot(targetCampaignId)
-    : await fetchCampaignSnapshot(targetCampaignId);
-  const latestLocal = syncRuntime.latestLocal;
-  syncRuntime.serverRevision = serverSnapshot.revision;
-  syncRuntime.lastServer = serverSnapshot;
-  syncRuntime.remoteRevision = null;
-  syncRuntime.needsCanonicalRefresh = false;
-  syncRuntime.initialized = true;
-
-  await resumeBlockedMutations(targetCampaignId);
-  const queue = await listQueue(targetCampaignId);
-  if (!queue) return;
-
-  if (queue.length > 0) {
-    if (!latestLocal || latestLocal.campaign.id !== targetCampaignId) {
-      if (latestLocal && loadedExistingSnapshot) saveCampaignConflictSnapshot(latestLocal);
-      applyServerSnapshot(serverSnapshot);
-    }
-    if (syncRuntime.access?.role === "viewer") {
-      const first = queue[0];
-      await browserMutationQueue.update({
-        ...first,
-        state: "blocked-auth",
-        lastError: "Read-only Viewer dürfen keine wartenden Änderungen schreiben.",
-      });
-      emit({ syncState: "blocked-auth", pendingCount: queue.length, messageCode: "forbidden" });
-      return;
-    }
-    emitQueueState(queue);
-    void processMutationQueue();
-    return;
-  }
-
-  if (!latestLocal || latestLocal.campaign.id !== targetCampaignId) {
-    if (latestLocal && loadedExistingSnapshot) saveCampaignConflictSnapshot(latestLocal);
-    applyServerSnapshot(serverSnapshot);
-    emit({ syncState: "saved", pendingCount: 0 });
-    return;
-  }
-
-  const sameContent = sameSnapshotContent(latestLocal, serverSnapshot);
-  if (!sameContent) {
-    applyServerSnapshot(serverSnapshot);
-    emit({ syncState: "saved", pendingCount: 0 });
-    return;
-  }
-
-  applyServerSnapshot(serverSnapshot);
-  emit({ syncState: "saved", pendingCount: 0 });
+    },
+  });
+  runtime.sync = sync;
+  await sync.start();
+  runtime.initialized = true;
+  emit({ syncState: navigator.onLine ? "syncing" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
+  // Legacy M5 intents are copied only after the replica has a canonical
+  // Campaign. The old network writer never starts here, and a timeout leaves
+  // recovery records intact for the next online start.
+  let migrationAttempt: Promise<void> | null = null;
+  const retryLegacyMigration = () => {
+    if (migrationAttempt) return;
+    migrationAttempt = sync.waitForCampaignDocument()
+      .then((ready) => ready && runtime.sync === sync ? migrateLegacyM5Records(campaignId, sync) : undefined)
+      .catch(() => reportRxdbIssue({ kind: "network", code: "legacy_migration_failed" }))
+      .finally(() => { migrationAttempt = null; });
+  };
+  runtime.retryLegacyMigration = retryLegacyMigration;
+  retryLegacyMigration();
 }
 
 async function initializeSharedPersistence() {
-  if (
-    typeof window === "undefined" ||
-    !navigator.onLine ||
-    syncRuntime.initialized ||
-    syncRuntime.initializeInFlight ||
-    !syncRuntime.latestLocal
-  ) {
-    return;
-  }
-
-  syncRuntime.initializeInFlight = true;
-  const localAtStart = syncRuntime.latestLocal;
-  const urlCampaignId = campaignIdFromUrl();
-  const targetCampaignId = urlCampaignId ?? localAtStart.campaign.id;
-  syncRuntime.targetCampaignId = targetCampaignId;
+  if (typeof window === "undefined" || !navigator.onLine || runtime.initialized || runtime.initializing || !runtime.latestLocal) return;
+  runtime.initializing = true;
+  const local = runtime.latestLocal;
+  const explicitCampaignId = campaignIdFromUrl();
+  const targetCampaignId = explicitCampaignId ?? local.campaign.id;
+  runtime.targetCampaignId = targetCampaignId;
   setCampaignIdInUrl(targetCampaignId);
-  syncRuntime.accessState = "pending";
-  emit({ accessState: syncRuntime.accessState });
-
+  runtime.accessState = "pending";
+  emit({ accessState: "pending" });
   try {
-    const collectionToken = collectionAccessTokenFromUrl();
     if (collectionModeFromUrl()) {
-      try {
-        if (collectionToken) {
-          setAccess(await redeemCollectionAccess(targetCampaignId, collectionToken));
-          removeCollectionAccessTokenFromUrl();
-        } else {
-          setAccess(await fetchCurrentCollectionAccess(targetCampaignId));
-        }
-        await loadServerForAuthenticatedCampaign(targetCampaignId);
-        return;
-      } catch (error) {
-        if (!isAccessError(error)) throw error;
-        syncRuntime.initialized = false;
-        setAccess(null);
-        return;
-      }
-    }
-    const fragmentToken = accessTokenFromUrl();
-    if (fragmentToken) {
-      try {
-        setAccess(await redeemCampaignAccess(targetCampaignId, fragmentToken));
-      } finally {
-        removeAccessTokenFromUrl();
-      }
-      await loadServerForAuthenticatedCampaign(targetCampaignId);
+      const token = collectionAccessTokenFromUrl();
+      const access = token ? await redeemCollectionAccess(targetCampaignId, token) : await fetchCurrentCollectionAccess(targetCampaignId);
+      if (token) removeCollectionAccessTokenFromUrl();
+      setAccess(access);
+      applyRxdbSnapshot(await fetchCollectionSnapshot(targetCampaignId));
+      runtime.initialized = true;
       return;
     }
-
+    const token = accessTokenFromUrl();
+    if (token) {
+      try {
+        await redeemCampaignAccess(targetCampaignId, token);
+        setAccess(await confirmCampaignSession(targetCampaignId));
+      } finally { removeAccessTokenFromUrl(); }
+      await startRxdb(targetCampaignId);
+      return;
+    }
     try {
       setAccess(await fetchCurrentAccess(targetCampaignId));
-      await loadServerForAuthenticatedCampaign(targetCampaignId);
+      await startRxdb(targetCampaignId);
       return;
     } catch (error) {
       if (!isAccessError(error)) throw error;
-    }
-
-    if (!loadedExistingSnapshot && !urlCampaignId && localAtStart.campaign.id === targetCampaignId) {
-      const created = await createCampaignSnapshot(localAtStart);
-      syncRuntime.access = created.access;
-      syncRuntime.accessState = "authenticated";
-      syncRuntime.initialized = true;
-      syncRuntime.targetCampaignId = created.snapshot.campaign.id;
-      setCampaignIdInUrl(created.snapshot.campaign.id);
-      applyServerSnapshot(created.snapshot);
-      emit({
-        access: created.access,
-        accessState: syncRuntime.accessState,
-        initialAccessUrl: buildCampaignAccessUrl(
-          created.snapshot.campaign.id,
-          created.initialAccessToken,
-        ),
-        messageCode: null,
-        syncState: "saved",
-        pendingCount: 0,
-      });
-      return;
-    }
-
-    syncRuntime.initialized = false;
-    setAccess(null);
-  } catch (error) {
-    syncRuntime.initialized = false;
-    if (isRetryableError(error)) {
-      syncRuntime.accessState = "idle";
-      emit({ accessState: syncRuntime.accessState, messageCode: "network", syncState: "offline" });
-    } else if (isAccessError(error)) {
-      setAccess(null);
-    } else {
-      syncRuntime.accessState = "idle";
-      console.warn("campaign_sync_initialize_failed", error);
-      emit({ accessState: syncRuntime.accessState, syncState: "failed" });
-    }
-  } finally {
-    syncRuntime.initializeInFlight = false;
-  }
-}
-
-async function refreshFromServer(manual: boolean) {
-  if (manual) setRefreshState("loading");
-
-  if (
-    typeof window === "undefined" ||
-    !navigator.onLine ||
-    !syncRuntime.targetCampaignId ||
-    syncRuntime.serverRevision === null
-  ) {
-    if (manual) setRefreshState("error", true);
-    return;
-  }
-
-  const queue = await listQueue(syncRuntime.targetCampaignId);
-  if (!queue) {
-    if (manual) setRefreshState("error", true);
-    return;
-  }
-
-  if (queue.length > 0 || syncRuntime.enqueuesPending > 0 || syncRuntime.queueInFlight) {
-    await processMutationQueue();
-    const remaining = await listQueue(syncRuntime.targetCampaignId);
-    if (!remaining || remaining.length > 0 || syncRuntime.enqueuesPending > 0) {
-      if (manual) setRefreshState("error", true);
-      return;
-    }
-  }
-
-  try {
-    if (syncRuntime.needsCanonicalRefresh) {
-      if (syncRuntime.interactionBlocked) {
-        setRefreshState("available");
+      if (!loadedExistingSnapshot && !explicitCampaignId && local.campaign.id === targetCampaignId) {
+        const created = await createCampaignSnapshot(local);
+        setAccess(await confirmCampaignSession(created.snapshot.campaign.id));
+        runtime.targetCampaignId = created.snapshot.campaign.id;
+        setCampaignIdInUrl(created.snapshot.campaign.id);
+        runtime.latestLocal = created.snapshot;
+        writeLocalSnapshot(created.snapshot);
+        await startRxdb(created.snapshot.campaign.id);
+        emit({ initialAccessUrl: buildCampaignAccessUrl(created.snapshot.campaign.id, created.initialAccessToken) });
         return;
       }
-      applyServerSnapshot(
-        await (collectionModeFromUrl()
-          ? fetchCollectionSnapshot(syncRuntime.targetCampaignId)
-          : fetchCampaignSnapshot(syncRuntime.targetCampaignId)),
-      );
-      if (manual) setRefreshState("current", true);
-      return;
-    }
-
-    if (collectionModeFromUrl()) {
-      applyServerSnapshot(await fetchCollectionSnapshot(syncRuntime.targetCampaignId));
-      if (manual) setRefreshState("current", true);
-      return;
-    }
-    const revision = await fetchCampaignVersion(syncRuntime.targetCampaignId);
-    if (revision <= syncRuntime.serverRevision) {
-      if (manual) setRefreshState("current", true);
-      return;
-    }
-
-    syncRuntime.remoteRevision = revision;
-    if (syncRuntime.interactionBlocked) {
-      setRefreshState("available");
-      return;
-    }
-
-    applyServerSnapshot(await fetchCampaignSnapshot(syncRuntime.targetCampaignId));
-    if (manual) setRefreshState("current", true);
-    else setRefreshState("idle");
-  } catch (error) {
-    if (isAccessError(error)) {
-      syncRuntime.initialized = false;
       setAccess(null);
-      emit({ syncState: "blocked-auth" });
-    } else if (isRetryableError(error)) {
-      emit({ messageCode: "network" });
-    } else {
-      console.warn("campaign_version_poll_failed", error);
     }
-    if (manual) setRefreshState("error", true);
+  } catch (error) {
+    runtime.initialized = false;
+    const message = error instanceof Error ? error.message : "sync_initialize_failed";
+    reportRxdbIssue({ kind: message.includes("schema") ? "schema" : "network", code: message });
+  } finally {
+    runtime.initializing = false;
   }
 }
 
-function startSharedPersistenceRuntime() {
-  if (typeof window === "undefined" || syncRuntime.listenersStarted) return;
-  syncRuntime.listenersStarted = true;
-
-  window.addEventListener("online", () => {
-    if (!syncRuntime.initialized) void initializeSharedPersistence();
-    else void processMutationQueue().then(() => refreshFromServer(false));
-  });
-  window.addEventListener("offline", () => {
-    if (!syncRuntime.targetCampaignId) return;
-    void listQueue(syncRuntime.targetCampaignId).then((records) => {
-      if (records) emitQueueState(records);
-    });
-  });
+function startListeners() {
+  if (typeof window === "undefined" || runtime.listenersStarted) return;
+  runtime.listenersStarted = true;
+  window.addEventListener("online", () => { if (!runtime.initialized) void initializeSharedPersistence(); else { runtime.sync?.refresh(); runtime.retryLegacyMigration?.(); } });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return;
-    if (!syncRuntime.initialized) void initializeSharedPersistence();
-    else void processMutationQueue().then(() => refreshFromServer(false));
+    if (document.visibilityState === "visible") {
+      if (!runtime.initialized) void initializeSharedPersistence(); else { runtime.sync?.refresh(); runtime.retryLegacyMigration?.(); }
+    }
   });
-  window.setInterval(() => {
-    if (syncRuntime.initialized) void refreshFromServer(false);
-  }, POLL_INTERVAL_MS);
 }
 
 export function subscribeCampaignStore(listener: (update: CampaignStoreUpdate) => void) {
   listeners.add(listener);
-  listener({ access: syncRuntime.access, accessState: syncRuntime.accessState });
+  listener({ access: runtime.access, accessState: runtime.accessState });
   return () => {
     listeners.delete(listener);
   };
 }
 
 export function setCampaignInteractionBlocked(blocked: boolean) {
-  syncRuntime.interactionBlocked = blocked;
-  if (!blocked) void processMutationQueue().then(() => refreshFromServer(false));
+  runtime.interactionBlocked = blocked;
+  if (!blocked && runtime.deferredSnapshot) {
+    const deferred = runtime.deferredSnapshot;
+    runtime.deferredSnapshot = null;
+    applyRxdbSnapshot(deferred);
+  }
 }
 
-/** Captures the active Tour only for mutations enqueued from this point onward. */
 export function setCampaignFieldGroupContext(fieldGroupId: string | null) {
-  syncRuntime.activeFieldGroupId =
-    typeof fieldGroupId === "string" && FIELD_GROUP_ID_PATTERN.test(fieldGroupId)
-      ? fieldGroupId
-      : null;
+  runtime.activeFieldGroupId = typeof fieldGroupId === "string" && FIELD_GROUP_ID_PATTERN.test(fieldGroupId) ? fieldGroupId : null;
+}
+
+async function runManualRefresh() {
+  if (!runtime.initialized) await initializeSharedPersistence();
+  if (collectionModeFromUrl()) {
+    if (!runtime.targetCampaignId || !runtime.initialized) throw new Error("collection_refresh_not_initialized");
+    applyRxdbSnapshot(await fetchCollectionSnapshot(runtime.targetCampaignId));
+    return;
+  }
+  const sync = runtime.sync;
+  if (!runtime.initialized || !sync) throw new Error("rxdb_refresh_not_initialized");
+  console.info("[rxdb-sync]", { event: "manual-refresh-start" });
+  const target = await sync.refreshAndWait();
+  console.info("[rxdb-sync]", {
+    event: "manual-refresh-complete",
+    targetSeq: target.seq,
+    campaignRevision: target.campaignRevision,
+  });
+  if (runtime.sync !== sync) throw new Error("rxdb_refresh_replaced");
 }
 
 export function manualRefreshCampaign() {
-  if (!syncRuntime.initialized) {
-    setRefreshState("loading");
-    void initializeSharedPersistence().finally(() => {
-      if (syncRuntime.initialized) void refreshFromServer(true);
-      else setRefreshState("error", true);
+  setRefreshState("loading");
+  void runManualRefresh()
+    .then(() => setRefreshState("current", true))
+    .catch((error) => {
+      reportRxdbIssue({ kind: "network", code: error instanceof Error ? error.message : "campaign_refresh_failed" });
+      setRefreshState("error", true);
     });
-    return;
-  }
-  void refreshFromServer(true);
+}
+
+/** Completes the 900 ms campaign/team trailing window on explicit user commit. */
+export function flushRxdbDrafts() {
+  runtime.sync?.flushDebouncedWrites();
 }
 
 export function loadCampaignSnapshot(): CampaignLoadResult {
-  if (typeof window === "undefined") {
-    return { snapshot: createInitialSnapshot(), warning: null };
-  }
-
+  if (typeof window === "undefined") return { snapshot: createInitialSnapshot(), warning: null };
   try {
-    const primaryRaw = window.localStorage.getItem(localStorageKey(STORAGE_KEY));
-    const backupRaw = window.localStorage.getItem(localStorageKey(BACKUP_STORAGE_KEY));
-    const legacyRaw = window.localStorage.getItem(localStorageKey(LEGACY_STORAGE_KEY));
-    const primary = parseSnapshot(primaryRaw);
-    if (primary) {
-      loadedExistingSnapshot = true;
-      return { snapshot: primary, warning: null };
-    }
-
-    const backup = parseSnapshot(backupRaw);
-    if (backup) {
-      loadedExistingSnapshot = true;
-      return {
-        snapshot: backup,
-        warning: primaryRaw
-          ? "Die lokale Hauptdatei war beschädigt. Eine lokale Sicherung wurde geladen."
-          : null,
-      };
-    }
-
-    const legacy = parseSnapshot(legacyRaw);
-    if (legacy) {
-      loadedExistingSnapshot = true;
-      writeLocalSnapshot(legacy);
-      return { snapshot: legacy, warning: null };
-    }
-
+    const primary = parseSnapshot(window.localStorage.getItem(localStorageKey(STORAGE_KEY)));
+    const backup = parseSnapshot(window.localStorage.getItem(localStorageKey(BACKUP_STORAGE_KEY)));
+    const legacy = parseSnapshot(window.localStorage.getItem(localStorageKey(LEGACY_STORAGE_KEY)));
+    if (primary) { loadedExistingSnapshot = true; return { snapshot: primary, warning: null }; }
+    if (backup) { loadedExistingSnapshot = true; return { snapshot: backup, warning: "Die lokale Hauptdatei war beschädigt. Eine lokale Sicherung wurde geladen." }; }
+    if (legacy) { loadedExistingSnapshot = true; writeLocalSnapshot(legacy); return { snapshot: legacy, warning: null }; }
     loadedExistingSnapshot = false;
-    if (primaryRaw || backupRaw || legacyRaw) {
-      return {
-        snapshot: createInitialSnapshot(),
-        warning: "Lokale Daten konnten nicht wiederhergestellt werden.",
-      };
-    }
     return { snapshot: createInitialSnapshot(), warning: null };
   } catch {
     loadedExistingSnapshot = false;
-    return {
-      snapshot: createInitialSnapshot(),
-      warning: "Lokale Daten konnten nicht gelesen werden.",
-    };
+    return { snapshot: createInitialSnapshot(), warning: "Lokale Daten konnten nicht gelesen werden." };
   }
 }
 
 export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
   const warning = writeLocalSnapshot(snapshot);
   if (typeof window === "undefined") return warning;
-
-  startSharedPersistenceRuntime();
-  const previous = syncRuntime.latestLocal;
-  syncRuntime.latestLocal = snapshot;
-
-  if (!previous) {
+  startListeners();
+  const previous = runtime.latestLocal;
+  runtime.latestLocal = snapshot;
+  if (!previous || previous.campaign.id !== snapshot.campaign.id) {
+    runtime.initialized = false;
+    runtime.targetCampaignId = snapshot.campaign.id;
     void initializeSharedPersistence();
     return warning;
   }
-
-  if (previous.campaign.id !== snapshot.campaign.id) {
-    syncRuntime.initialized = false;
-    syncRuntime.targetCampaignId = snapshot.campaign.id;
-    void initializeSharedPersistence();
-    return warning;
-  }
-
-  let mutation;
+  let mutation: DurableCampaignMutation | null;
   try {
     mutation = deriveCampaignMutation(previous, snapshot);
   } catch (error) {
     if (error instanceof MutationDerivationError) {
       saveCampaignConflictSnapshot(snapshot);
       emit({ syncState: "failed", messageCode: "conflict" });
-      console.warn("mutation_derivation_failed", error.message);
       return warning;
     }
     throw error;
   }
-
   if (!mutation) {
-    if (!syncRuntime.initialized) void initializeSharedPersistence();
+    if (!runtime.initialized) void initializeSharedPersistence();
     return warning;
   }
-
-  syncRuntime.enqueuesPending += 1;
-  emit({ syncState: navigator.onLine ? "pending" : "offline" });
-  enqueueChain = enqueueChain
-    .then(async () => {
-      try {
-        await browserMutationQueue.enqueue(mutation, {
-          fieldGroupId: syncRuntime.activeFieldGroupId,
-        });
-      } catch (error) {
+  runtime.pendingWrites += 1;
+  emit({ syncState: navigator.onLine ? "local-saved" : "offline", pendingCount: runtime.pendingWrites });
+  if (collectionModeFromUrl() && mutation.type.startsWith("collection.")) {
+    saveChain = saveChain
+      .then(async () => {
+        await postCampaignMutation(snapshot.campaign.id, mutation, runtime.activeFieldGroupId);
+        applyRxdbSnapshot(await fetchCollectionSnapshot(snapshot.campaign.id));
+        emit({ syncState: "server-confirmed", pendingCount: runtime.pendingWrites, messageCode: null });
+      })
+      .catch((error) => {
         saveCampaignConflictSnapshot(snapshot);
-        emit({ syncState: "failed", messageCode: "network" });
-        console.warn("mutation_queue_write_failed", error);
-        return;
-      } finally {
-        syncRuntime.enqueuesPending -= 1;
+        reportRxdbIssue({ kind: "network", code: error instanceof Error ? error.message : "collection_mutation_failed" });
+      })
+      .finally(() => {
+        runtime.pendingWrites = Math.max(0, runtime.pendingWrites - 1);
+        emit({ pendingCount: runtime.pendingWrites });
+      });
+    return warning;
+  }
+  saveChain = saveChain
+    .then(async () => {
+      if (!runtime.initialized) await initializeSharedPersistence();
+      if (!runtime.sync) throw new Error("rxdb_not_initialized");
+      if (mutation.type.startsWith("collection.")) {
+        throw new Error("collection_mutation_requires_collection_mode");
       }
-
-      const records = await listQueue(mutation.campaignId);
-      if (records) emitQueueState(records);
-      if (!syncRuntime.initialized) await initializeSharedPersistence();
-      await processMutationQueue();
+      await runtime.sync.applyMutation(mutation);
+      emit({ syncState: navigator.onLine ? "waiting-server" : "offline", pendingCount: runtime.pendingWrites });
     })
     .catch((error) => {
-      syncRuntime.enqueuesPending = Math.max(0, syncRuntime.enqueuesPending - 1);
-      console.warn("mutation_enqueue_chain_failed", error);
-      emit({ syncState: "failed", messageCode: "network" });
+      saveCampaignConflictSnapshot(snapshot);
+      reportRxdbIssue({ kind: "network", code: error instanceof Error ? error.message : "rxdb_local_write_failed" });
+    })
+    .finally(() => {
+      runtime.pendingWrites = Math.max(0, runtime.pendingWrites - 1);
+      emit({ pendingCount: runtime.pendingWrites });
     });
-
   return warning;
 }
 
 export function saveCampaignConflictSnapshot(snapshot: CampaignSnapshot) {
   if (typeof window === "undefined") return false;
   try {
-    window.localStorage.setItem(
-      localStorageKey(CONFLICT_STORAGE_KEY),
-      JSON.stringify({ savedAt: new Date().toISOString(), snapshot }),
-    );
+    window.localStorage.setItem(localStorageKey(CONFLICT_STORAGE_KEY), JSON.stringify({ savedAt: new Date().toISOString(), snapshot }));
     return true;
   } catch {
     return false;

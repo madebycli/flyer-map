@@ -19,6 +19,10 @@ import {
 } from "./pickupSearch.ts";
 import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 
+// Wrangler's Durable Object migration resolves the class from the module
+// entrypoint, while the base Worker keeps the HTTP/auth implementation.
+export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
+
 type Env = Parameters<typeof baseWorker.fetch>[1] & PickupSearchEnv;
 
 const json = (data: unknown, init: ResponseInit = {}) =>

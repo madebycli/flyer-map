@@ -2,18 +2,58 @@
 id: architecture-offline-sync
 type: architecture
 status: accepted
-last_updated: 2026-09-01
-related: [architecture-data, architecture-security, architecture-map, product-roadmap, ADR-0011, ADR-0013, ADR-0021, ADR-0022]
+last_updated: 2026-09-02
+related: [architecture-data, architecture-security, architecture-map, product-roadmap, ADR-0011, ADR-0013, ADR-0021, ADR-0022, ADR-0024, ADR-0025, plan-028-rxdb-local-first-mission-sync]
 source_of_truth_for: [offline-queue, synchronization, conflict-handling]
 ---
 
 # Offline Synchronization
+
+## Mission RxDB branch
+
+ADR-0024 governs `mission-rxdb-sync`, a separate branch from the verified
+manual-mission rollback. RxDB/Dexie is the durable local replica for normalized
+Campaign, Team, Area, Street Task and House Task collections. Its Worker pull
+uses bounded per-collection checkpoints; push failures and conflicts return a
+canonical document/tombstone for that entity only, so a rejected Team write
+cannot halt Street/House pull.
+
+The Worker adapts each accepted RxDB document write to the existing narrow M5
+domain mutation path. D1 remains canonical and appends an entity delta or
+tombstone to `campaign_sync_changes` in the same guarded D1 batch. Campaign and
+Team text/color use a 900 ms trailing commit, flushable on blur, Enter and
+sheet-close. Status writes remain immediate. The old M5 queue is import-only
+for one guarded legacy recovery pass, never a concurrent normal writer.
+
+Collection/Pickup mode remains on its established specialized mutation endpoint;
+it is outside the five distribution collections and the RxDB-first branch.
+
+### Realtime invalidation and safety recovery
+
+ADR-0025 adds one Durable Object per Campaign as a hibernating WebSocket
+fan-out. After a committed D1/feed write the Worker emits only a monotonic
+`changed` sequence hint. Clients then use the authenticated per-collection Pull
+endpoints; the DO never contains canonical documents, secrets or write
+permissions. Duplicate, late or missed signals are safe because each replica
+keeps its own checkpoint. A single Campaign-level checkpoint request runs every
+45 seconds and triggers incremental Pull only when the high-water mark or global
+revision advanced. No idle DO timer, Service Worker or Background Sync API is
+used.
+
+Migration `0017_rxdb_sync_changes.sql` is prepared only. A missing remote
+schema returns explicit `rxdb_sync_schema_unavailable`; it must never be
+applied, deployed or marked released by application code.
 
 ## Goal
 
 A field user must not silently lose important saved changes because connectivity disappears, the page reloads, or another device edits the same Campaign.
 
 M5 implements this through a page-owned durable mutation queue while preserving the website-only architecture.
+
+The preceding M5 description and the queue-specific sections below describe the
+stable/rollback line. On `mission-rxdb-sync`, RxDB/Dexie is the normal local
+replica and the legacy queue is import-only; the Worker idempotency and
+authorization contract remains shared.
 
 ## Deployment state
 
@@ -30,18 +70,20 @@ The 0014 automatic preparation path instead fails closed as `area_preparation_sc
 
 ## Local state layers
 
-### localStorage snapshot
+### localStorage snapshot (all lines)
 
 The versioned Campaign snapshot remains cached in localStorage as:
 - fast startup state;
 - recovery/safety copy;
 - convenient React UI model.
 
-It is not the durable delivery source of truth for new unacknowledged writes.
+It is not the durable delivery source of truth for new unacknowledged writes on
+the stable line. The mission branch also keeps it as a startup/recovery cache,
+while RxDB is the durable delivery source.
 
 Schema-v3 compatibility is retained while M6 adds optional Street source provenance and optional `houseTasks`. Older/manual Street snapshots without either extension remain valid.
 
-### IndexedDB mutation queue
+### IndexedDB mutation queue (stable/rollback line)
 
 New saved domain changes are represented as explicit `CampaignMutation` records and persisted to IndexedDB before network delivery.
 
@@ -102,7 +144,11 @@ Preconditions:
 
 If the target itself changed or disappeared, the Worker returns an explicit conflict. There is no intentional silent last-write-wins merge.
 
-## Queue processing
+## Queue processing (stable/rollback line)
+
+The mission branch uses RxDB's per-collection replication retry and leader
+election instead. The legacy queue is read only for the guarded one-time import
+described in the Mission RxDB section above.
 
 The active Campaign queue is processed sequentially in local revision order.
 
@@ -190,14 +236,14 @@ If the queue is empty and the local snapshot differs from the canonical server s
 - no offline whole-area basemap cache;
 - synchronization progresses only while the website is open.
 
-Server preparation is not a browser offline-download requirement. Devices consume persisted prepared Tasks through the normal snapshot. M5 Mutation Queue and Snapshot-Cache remain the offline-relevant product boundary; retained local map context has no normal Settings download flow and cannot become preparation truth.
+Server preparation is not a browser offline-download requirement. Devices consume persisted prepared Tasks through the normal snapshot. On the stable line the M5 Mutation Queue and Snapshot-Cache remain the offline-relevant product boundary; on the mission branch the RxDB replica replaces the normal queue. Retained local map context has no normal Settings download flow and cannot become preparation truth.
 
 ## Renderer boundary
 
 M6 persistence does not change ADR-0010:
 - MapLibre GL JS remains pinned to 5.7.1;
 - saved Areas/Streets remain persistent MapLibre GeoJSON sources/layers;
-- durable House data exists separately until a dedicated batched House map-layer slice is accepted/tested;
+- durable House data exists separately until a dedicated batched House map-layer slice is accepted/tested on the stable line; the mission branch materializes its RxDB `houseTasks` collection into the same read model;
 - active draw/edit/review interaction remains outside the saved persistent layer model until Task creation;
 - normal browse has no application loop projecting all saved geometry.
 
