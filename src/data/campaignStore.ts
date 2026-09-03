@@ -7,6 +7,7 @@ import {
   collectionModeFromUrl,
   createCampaignSnapshot,
   fetchCollectionSnapshot,
+  confirmCampaignSession,
   fetchCurrentAccess,
   fetchCurrentCollectionAccess,
   postCampaignMutation,
@@ -18,7 +19,8 @@ import {
   type AccessInfo,
 } from "./campaignApi.ts";
 import { browserMutationQueue } from "./mutationQueue.ts";
-import { MissionRxdbSync, type RxdbSyncIssue } from "./rxdbMissionSync.ts";
+import { MissionRxdbSync, type RxdbSyncIssue, type RxdbSyncOperation } from "./rxdbMissionSync.ts";
+import type { RxdbCollectionName } from "./rxdbSyncProtocol.ts";
 import { createInitialSnapshot, normalizeAreaPreparationGenerations, type Area, type CampaignSnapshot, type DistributionTask, type HouseTask, type LineStringGeometry, type MapCameraView, type PolygonGeometry, type Team } from "../domain/campaign.ts";
 import { deriveCampaignMutation, MutationDerivationError } from "../domain/mutationDiff.ts";
 import type { CampaignMutation } from "../domain/mutations.ts";
@@ -40,6 +42,10 @@ export type MutationSyncState = "local-saved" | "waiting-server" | "server-confi
 export type SyncIssue = {
   kind: "server-wins" | "blocked-auth" | "network" | "schema";
   mutationType?: string;
+  affectedCollections?: RxdbCollectionName[];
+  scope?: "collection" | "multiple" | "server";
+  operation?: RxdbSyncOperation;
+  code?: string;
   serverRevision?: number | null;
   baseRevision?: number | null;
   message: string;
@@ -93,6 +99,9 @@ const listeners = new Set<(update: CampaignStoreUpdate) => void>();
 let loadedExistingSnapshot = false;
 let saveChain: Promise<void> = Promise.resolve();
 let refreshResetTimer: number | null = null;
+const rxdbCollectionOrder = ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const satisfies readonly RxdbCollectionName[];
+const activeRxdbIssues = new Map<RxdbCollectionName, RxdbSyncIssue>();
+let activeGlobalRxdbIssue: RxdbSyncIssue | null = null;
 
 function emit(update: CampaignStoreUpdate) {
   for (const listener of listeners) listener(update);
@@ -228,22 +237,104 @@ function applyRxdbSnapshot(snapshot: CampaignSnapshot) {
   emit({ snapshot: normalized, pendingCount: runtime.pendingWrites, messageCode: null });
 }
 
-function reportRxdbIssue(issue: RxdbSyncIssue) {
-  const schema = issue.kind === "schema" || issue.code.includes("schema_unavailable");
-  const blocked = issue.code.includes("forbidden") || issue.code.includes("read_only") || issue.code.includes("access_required") || issue.code.includes("field_group_actor_scope");
-  const syncIssue: SyncIssue = {
-    kind: schema ? "schema" : blocked ? "blocked-auth" : issue.kind === "rejected" ? "server-wins" : "network",
-    mutationType: issue.collectionName,
-    message: schema
-      ? "Diese eine Änderung wartet auf die vorbereitete Datenbankmigration. Die übrigen Daten können weiter gelesen werden."
+function isBlockedRxdbIssue(issue: RxdbSyncIssue) {
+  return issue.status === 401 || issue.status === 403 || issue.code.includes("forbidden") || issue.code.includes("read_only") || issue.code.includes("access_required") || issue.code.includes("field_group_actor_scope");
+}
+
+function aggregateRxdbIssues(): SyncIssue | null {
+  const collectionIssues = rxdbCollectionOrder.flatMap((collectionName) => {
+    const issue = activeRxdbIssues.get(collectionName);
+    return issue ? [issue] : [];
+  });
+  const sources = activeGlobalRxdbIssue ? [activeGlobalRxdbIssue, ...collectionIssues] : collectionIssues;
+  if (sources.length === 0) return null;
+
+  const schema = sources.some((issue) => issue.kind === "schema" || issue.code.includes("schema_unavailable"));
+  const blocked = sources.some(isBlockedRxdbIssue);
+  const rejected = sources.some((issue) => issue.kind === "rejected");
+  const kind = schema ? "schema" : blocked ? "blocked-auth" : rejected ? "server-wins" : "network";
+  const affectedCollections = collectionIssues.map((issue) => issue.collectionName).filter((value): value is RxdbCollectionName => value !== undefined);
+  const scope = activeGlobalRxdbIssue || affectedCollections.length === 0
+    ? "server"
+    : affectedCollections.length === 1
+      ? "collection"
+      : "multiple";
+  const representative = sources[0];
+  const message = scope === "server"
+    ? schema
+      ? "Der gemeinsame Serverstand benötigt die vorbereitete Datenbankmigration."
       : blocked
-        ? "Diese eine Änderung darf mit dem aktuellen Zugriff nicht übernommen werden. Die übrigen Daten werden weiter synchronisiert."
-        : issue.kind === "rejected"
-          ? "Diese eine Änderung konnte nicht automatisch übernommen werden. Die übrigen Daten werden weiter synchronisiert."
-          : "Die Verbindung wird erneut aufgebaut. Bereits geladene Daten bleiben verfügbar.",
+        ? "Der gemeinsame Serverstand ist mit dem aktuellen Zugriff nicht erreichbar."
+        : "Der gemeinsame Serverstand momentan nicht erreichbar. Die Verbindung wird erneut aufgebaut. Bereits geladene Daten bleiben verfügbar."
+    : schema
+      ? scope === "multiple"
+        ? "Mehrere Datenbereiche warten auf die vorbereitete Datenbankmigration."
+        : "Dieser Datenbereich wartet auf die vorbereitete Datenbankmigration."
+      : blocked
+        ? scope === "multiple"
+          ? "Mehrere Datenbereiche dürfen mit dem aktuellen Zugriff nicht synchronisiert werden."
+          : "Dieser Datenbereich darf mit dem aktuellen Zugriff nicht synchronisiert werden."
+        : rejected
+          ? scope === "multiple"
+            ? "Mehrere Änderungen konnten nicht automatisch übernommen werden."
+            : "Diese Änderung konnte nicht automatisch übernommen werden."
+          : scope === "multiple"
+            ? "Mehrere Datenbereiche sind momentan nicht erreichbar. Die Verbindung wird erneut aufgebaut."
+            : "Die Verbindung wird erneut aufgebaut. Bereits geladene Daten bleiben verfügbar.";
+
+  return {
+    kind,
+    ...(affectedCollections.length > 0 ? { affectedCollections } : {}),
+    ...(scope === "collection" ? { mutationType: affectedCollections[0] } : {}),
+    scope,
+    ...(representative.operation ? { operation: representative.operation } : {}),
+    code: representative.code,
+    message,
     occurredAt: new Date().toISOString(),
-  };
-  emit({ syncIssue, syncState: schema ? "failed" : blocked ? "blocked-auth" : issue.kind === "rejected" ? "conflict" : navigator.onLine ? "failed" : "offline", messageCode: schema ? "schema_migration_required" : blocked ? "forbidden" : "network" });
+  } satisfies SyncIssue;
+}
+
+function emitAggregatedRxdbIssue() {
+  const syncIssue = aggregateRxdbIssues();
+  if (!syncIssue) {
+    emit({ syncIssue: null, syncState: navigator.onLine ? "server-confirmed" : "offline", messageCode: null });
+    return;
+  }
+  const syncState = syncIssue.kind === "schema"
+    ? "failed"
+    : syncIssue.kind === "blocked-auth"
+      ? "blocked-auth"
+      : syncIssue.kind === "server-wins"
+        ? "conflict"
+        : navigator.onLine ? "failed" : "offline";
+  emit({ syncIssue, syncState, messageCode: syncIssue.kind === "schema" ? "schema_migration_required" : syncIssue.kind === "blocked-auth" ? "forbidden" : syncIssue.kind === "server-wins" ? "conflict" : "network" });
+}
+
+function reportRxdbIssue(issue: RxdbSyncIssue) {
+  if (issue.collectionName) activeRxdbIssues.set(issue.collectionName, issue);
+  else activeGlobalRxdbIssue = issue;
+  emitAggregatedRxdbIssue();
+}
+
+function clearRxdbIssue(collectionName?: RxdbCollectionName) {
+  if (collectionName) activeRxdbIssues.delete(collectionName);
+  else activeGlobalRxdbIssue = null;
+  emitAggregatedRxdbIssue();
+}
+
+function resetRxdbIssues() {
+  const hadIssues = activeGlobalRxdbIssue !== null || activeRxdbIssues.size > 0;
+  activeGlobalRxdbIssue = null;
+  activeRxdbIssues.clear();
+  if (hadIssues) emit({ syncIssue: null, messageCode: null });
+}
+
+export function syncIssueAffectedLabel(issue: SyncIssue) {
+  if (issue.scope === "server") return "Betroffen: gemeinsamer Serverstand";
+  const affectedCollections = issue.affectedCollections ?? [];
+  if (affectedCollections.length === 1) return `Betroffen: ${affectedCollections[0]}`;
+  if (affectedCollections.length > 1) return `Betroffen: mehrere Datenbereiche (${affectedCollections.join(", ")})`;
+  return issue.mutationType ? `Betroffen: ${issue.mutationType}` : null;
 }
 
 function isReplayableLegacyMutation(mutation: CampaignMutation) {
@@ -287,6 +378,7 @@ async function migrateLegacyM5Records(campaignId: string, sync: MissionRxdbSync)
 async function startRxdb(campaignId: string) {
   runtime.retryLegacyMigration = null;
   if (runtime.sync) await runtime.sync.destroy();
+  resetRxdbIssues();
   const fieldGroupAccess = runtime.access?.role === "field-group-member" ? runtime.access : null;
   const teamScopeId = fieldGroupAccess?.teamId ?? null;
   const actorScopeId = fieldGroupAccess?.groupId ?? null;
@@ -299,7 +391,8 @@ async function startRxdb(campaignId: string) {
     actorScopeId,
     collectionFallback: fieldGroupAccess ? undefined : runtime.latestLocal?.collection,
     onSnapshot: applyRxdbSnapshot,
-    onIssue: reportRxdbIssue,
+    onIssue: (issue) => { if (runtime.sync === sync) reportRxdbIssue(issue); },
+    onIssueResolved: (collectionName) => { if (runtime.sync === sync) clearRxdbIssue(collectionName); },
     onRemoteEvent: (event) => {
       if (runtime.sync !== sync) return;
       if (event === "push-pending") {
@@ -350,7 +443,10 @@ async function initializeSharedPersistence() {
     }
     const token = accessTokenFromUrl();
     if (token) {
-      try { setAccess(await redeemCampaignAccess(targetCampaignId, token)); } finally { removeAccessTokenFromUrl(); }
+      try {
+        await redeemCampaignAccess(targetCampaignId, token);
+        setAccess(await confirmCampaignSession(targetCampaignId));
+      } finally { removeAccessTokenFromUrl(); }
       await startRxdb(targetCampaignId);
       return;
     }
@@ -362,7 +458,7 @@ async function initializeSharedPersistence() {
       if (!isAccessError(error)) throw error;
       if (!loadedExistingSnapshot && !explicitCampaignId && local.campaign.id === targetCampaignId) {
         const created = await createCampaignSnapshot(local);
-        setAccess(created.access);
+        setAccess(await confirmCampaignSession(created.snapshot.campaign.id));
         runtime.targetCampaignId = created.snapshot.campaign.id;
         setCampaignIdInUrl(created.snapshot.campaign.id);
         runtime.latestLocal = created.snapshot;

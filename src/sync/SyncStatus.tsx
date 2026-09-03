@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   subscribeCampaignStore,
+  syncIssueAffectedLabel,
   type SyncIssue,
   type MutationSyncState,
 } from "../data/campaignStore";
@@ -44,9 +45,10 @@ export function SyncStatus() {
       subscribeCampaignStore((update) => {
         if (update.syncState) setState(update.syncState);
         if (update.pendingCount !== undefined) setPendingCount(update.pendingCount);
-        if (update.syncIssue) {
-          setIssue(update.syncIssue);
-          setOpen(true);
+        if ("syncIssue" in update) {
+          setIssue(update.syncIssue ?? null);
+          if (update.syncIssue) setOpen(true);
+          else setOpen(false);
         }
       }),
     [],
@@ -79,7 +81,7 @@ export function SyncStatus() {
         <section className="mutation-sync-issue" role="dialog" aria-label="Synchronisierungsinfo">
           <strong>{issue.kind === "server-wins" ? "Online-Version übernommen" : "Synchronisierungsinfo"}</strong>
           <p>{issue.message}</p>
-          {issue.mutationType ? <small>Betroffen: {issue.mutationType}</small> : null}
+          {syncIssueAffectedLabel(issue) ? <small>{syncIssueAffectedLabel(issue)}</small> : null}
           <button type="button" className="small-action" onClick={() => setOpen(false)}>Verstanden</button>
         </section>
       ) : null}

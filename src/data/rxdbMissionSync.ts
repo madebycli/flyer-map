@@ -18,6 +18,7 @@ import {
 const PULL_BATCH_SIZE = 100;
 const PUSH_BATCH_SIZE = 20;
 const REFRESH_POLL_INTERVAL_MS = 50;
+const REPLICATION_START_BARRIER_TIMEOUT_MS = 5_000;
 const FIELD_GROUP_ACTOR_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 const COLLECTION_NAMES = ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const satisfies readonly RxdbCollectionName[];
 
@@ -28,7 +29,9 @@ type ReplicationState = {
   error$: { subscribe(handler: (error: unknown) => void): { unsubscribe(): void } };
   received$: { subscribe(handler: () => void): { unsubscribe(): void } };
   sent$: { subscribe(handler: () => void): { unsubscribe(): void } };
+  startPromise: Promise<void>;
   awaitDocumentPushed(document: RxDocument<RxdbDocument>): Promise<void>;
+  awaitInitialReplication(): Promise<void>;
   reSync(): void;
   cancel(): Promise<unknown>;
 };
@@ -40,6 +43,7 @@ type StoredSyncProgress = {
 type PendingPullProgress = { seq: number; campaignRevision: number };
 type RxdbPushProof = { collectionName: RxdbCollectionName; document: RxDocument<RxdbDocument> };
 export type RxdbRemoteSyncEvent = "received" | "sent" | "push-pending" | "push-idle";
+export type RxdbSyncOperation = "pull" | "push" | "checkpoint";
 
 function withDeletedMarker(document: RxdbDocument): RxdbReplicationDocument {
   return { ...document, _deleted: document._deleted === true } as RxdbReplicationDocument;
@@ -62,21 +66,60 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : null;
 }
 
-function replicationErrorDirection(error: unknown): "pull" | "push" | null {
-  const value = recordValue(error);
-  if (!value) return null;
-  if (value.code === "RC_PULL") return "pull";
-  if (value.code === "RC_PUSH") return "push";
-  const parameters = recordValue(value.parameters);
-  return parameters?.direction === "pull" ? "pull" : parameters?.direction === "push" ? "push" : null;
-}
-
 export type RxdbSyncIssue = {
   kind: "network" | "schema" | "rejected";
   collectionName?: RxdbCollectionName;
   documentId?: string;
+  operation?: RxdbSyncOperation;
+  status?: number;
   code: string;
 };
+
+export type RxdbSyncErrorDetails = {
+  direction: "pull" | "push" | null;
+  code: string | null;
+  status: number | null;
+};
+
+/**
+ * RxDB wraps handler failures in RC_PULL/RC_PUSH errors. Keep the nested
+ * Worker error instead of reporting the wrapper as the actual failure.
+ */
+export function describeRxdbSyncError(error: unknown): RxdbSyncErrorDetails {
+  const queue: unknown[] = [error];
+  const seen = new Set<object>();
+  let direction: "pull" | "push" | null = null;
+  let fallbackCode: string | null = null;
+  let code: string | null = null;
+  let status: number | null = null;
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current && typeof current === "object") {
+      if (seen.has(current)) continue;
+      seen.add(current);
+    }
+    const value = recordValue(current);
+    if (!value) continue;
+    const currentCode = value.code;
+    if (typeof currentCode === "string") {
+      if (!fallbackCode) fallbackCode = currentCode;
+      if (currentCode === "RC_PULL") direction = direction ?? "pull";
+      else if (currentCode === "RC_PUSH") direction = direction ?? "push";
+      else if (!code) code = currentCode;
+    }
+    const currentStatus = value.status;
+    if (status === null && typeof currentStatus === "number" && Number.isSafeInteger(currentStatus)) status = currentStatus;
+    const parameters = recordValue(value.parameters);
+    if (parameters?.direction === "pull" || parameters?.direction === "push") direction = direction ?? parameters.direction;
+    for (const nested of [value.parameters, value.errors, value.error, value.originalError]) {
+      if (Array.isArray(nested)) queue.push(...nested);
+      else if (nested && typeof nested === "object") queue.push(nested);
+    }
+  }
+
+  return { direction, code: code ?? fallbackCode, status };
+}
 
 export class RxdbSyncHttpError extends Error {
   readonly status: number;
@@ -230,6 +273,7 @@ export class MissionRxdbSync {
   private readonly fetchImpl: typeof fetch;
   private readonly onSnapshot: (snapshot: CampaignSnapshot) => void;
   private readonly onIssue: (issue: RxdbSyncIssue) => void;
+  private readonly onIssueResolved: (collectionName?: RxdbCollectionName) => void;
   private readonly onRemoteEvent: (event: RxdbRemoteSyncEvent) => void;
   private database: MissionRxdbDatabase | null = null;
   private collections: RxdbCollections | null = null;
@@ -259,6 +303,7 @@ export class MissionRxdbSync {
     fetchImpl?: typeof fetch;
     onSnapshot: (snapshot: CampaignSnapshot) => void;
     onIssue: (issue: RxdbSyncIssue) => void;
+    onIssueResolved?: (collectionName?: RxdbCollectionName) => void;
     onRemoteEvent?: (event: RxdbRemoteSyncEvent) => void;
   }) {
     this.campaignId = input.campaignId;
@@ -277,6 +322,7 @@ export class MissionRxdbSync {
     this.fetchImpl = input.fetchImpl ?? fetch;
     this.onSnapshot = input.onSnapshot;
     this.onIssue = input.onIssue;
+    this.onIssueResolved = input.onIssueResolved ?? (() => undefined);
     this.onRemoteEvent = input.onRemoteEvent ?? (() => undefined);
     this.persistenceGates.set("campaigns", new TrailingPersistenceGate());
     this.persistenceGates.set("teams", new TrailingPersistenceGate());
@@ -296,7 +342,9 @@ export class MissionRxdbSync {
       throw new RxdbSyncHttpError(0, "network_error", "Server ist momentan nicht erreichbar.");
     }
     if (!response.ok) throw await responseError(response);
-    return await response.json() as T;
+    const payload = await response.json() as T;
+    this.onIssueResolved(collectionName);
+    return payload;
   }
 
   private async requestCheckpoint() {
@@ -312,6 +360,7 @@ export class MissionRxdbSync {
     }
     if (!response.ok) throw await responseError(response);
     const payload = await response.json() as { checkpoint?: { seq?: unknown }; campaignRevision?: unknown };
+    this.onIssueResolved();
     const seq = payload.checkpoint?.seq;
     if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) {
       throw new RxdbSyncHttpError(502, "invalid_checkpoint", "Der Server hat keinen gültigen RxDB-Checkpoint geliefert.");
@@ -447,7 +496,7 @@ export class MissionRxdbSync {
       const generation = ++this.pushProofGeneration;
       this.pendingPushProofs.set(proofKey, generation);
       if (!replication) {
-        this.onIssue({ kind: "network", collectionName: proof.collectionName, documentId: proof.document.primary, code: "rxdb_replication_missing" });
+        this.onIssue({ kind: "network", collectionName: proof.collectionName, documentId: proof.document.primary, operation: "push", code: "rxdb_replication_missing" });
         continue;
       }
       void replication.awaitDocumentPushed(proof.document)
@@ -460,13 +509,14 @@ export class MissionRxdbSync {
           if (this.pendingPushProofs.get(proofKey) !== generation) return;
           this.pendingPushProofs.delete(proofKey);
           const code = error instanceof Error ? error.message : "rxdb_push_confirmation_failed";
-          this.onIssue({ kind: "network", collectionName: proof.collectionName, documentId: proof.document.primary, code });
+          const status = error instanceof RxdbSyncHttpError ? error.status : undefined;
+          this.onIssue({ kind: "network", collectionName: proof.collectionName, documentId: proof.document.primary, operation: "push", ...(status !== undefined ? { status } : {}), code });
         });
     }
     this.onRemoteEvent("push-pending");
   }
 
-  private createReplication(collectionName: RxdbCollectionName) {
+  private createReplication(collectionName: RxdbCollectionName): ReplicationState {
     const collection = this.collections?.[collectionName];
     if (!collection) throw new Error("rxdb_collection_missing");
     const persistenceGate = this.persistenceGates.get(collectionName);
@@ -505,11 +555,12 @@ export class MissionRxdbSync {
         if (!active) this.commitAppliedPullProgress(collectionName);
       }),
       replication.error$.subscribe((error: unknown) => {
-        if (replicationErrorDirection(error) === "pull") this.pullApplyFailures.add(collectionName);
+        const details = describeRxdbSyncError(error);
+        if (details.direction === "pull") this.pullApplyFailures.add(collectionName);
         const message = error instanceof Error ? error.message : "rxdb_replication_error";
-        const details = (() => { try { return JSON.stringify(error); } catch { return message; } })();
-        const code = error instanceof RxdbSyncHttpError ? error.code : message + details;
-        this.onIssue({ kind: code.includes("rxdb_sync_schema_unavailable") ? "schema" : "network", collectionName, code });
+        const code = error instanceof RxdbSyncHttpError ? error.code : details.code ?? message;
+        const operation = details.direction ?? "pull";
+        this.onIssue({ kind: code.includes("rxdb_sync_schema_unavailable") ? "schema" : "network", collectionName, operation, ...(details.status !== null ? { status: details.status } : {}), code });
       }),
       replication.received$.subscribe(() => {
         this.onRemoteEvent("received");
@@ -521,6 +572,7 @@ export class MissionRxdbSync {
       }),
     );
     this.replications.set(collectionName, replication);
+    return replication;
   }
 
   private connectSocket() {
@@ -586,9 +638,17 @@ export class MissionRxdbSync {
       houseTasks: { schema: schemas.houseTasks },
     }) as RxdbCollections;
     this.initialized = true;
+    const startupDeadline = Date.now() + REPLICATION_START_BARRIER_TIMEOUT_MS;
     for (const collectionName of Object.keys(this.collections) as RxdbCollectionName[]) {
       this.subscriptions.push(this.collections[collectionName].find({ selector: { campaignId: this.campaignId } }).$.subscribe(() => this.scheduleMaterialization()));
-      this.createReplication(collectionName);
+      const replication = this.createReplication(collectionName);
+      const remaining = startupDeadline - Date.now();
+      if (remaining > 0) {
+        await Promise.race([
+          replication.startPromise,
+          new Promise<void>((resolve) => globalThis.setTimeout(resolve, remaining)),
+        ]);
+      }
     }
     if (typeof window !== "undefined") this.safetyTimer = window.setInterval(() => { void this.safetyResync(); }, 45_000);
     this.connectSocket();

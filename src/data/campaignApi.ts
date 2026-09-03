@@ -252,6 +252,28 @@ export async function fetchCurrentAccess(campaignId: string) {
   return ((await response.json()) as { access: AccessInfo }).access;
 }
 
+/**
+ * A create/redeem response also sets the persistent session cookie. Confirm
+ * that the browser sends that cookie back before RxDB opens all collections.
+ * Browsers can finish applying Set-Cookie just after the response promise
+ * resolves, so access_required is retried with a short bounded backoff.
+ */
+export async function confirmCampaignSession(campaignId: string) {
+  const retryDelays = [0, 50, 150, 350, 700];
+  let lastAccessError: CampaignApiError | null = null;
+  for (const delay of retryDelays) {
+    if (delay > 0) await new Promise<void>((resolve) => globalThis.setTimeout(resolve, delay));
+    try {
+      return await fetchCurrentAccess(campaignId);
+    } catch (error) {
+      if (!(error instanceof CampaignApiError) || (error.status !== 401 && error.code !== "access_required")) throw error;
+      lastAccessError = error;
+    }
+  }
+  if (lastAccessError) throw lastAccessError;
+  throw new CampaignApiError(401, "access_required", "Gültiger Campaign-Zugriff ist erforderlich.");
+}
+
 export async function fetchAccessGrants(campaignId: string) {
   const response = await apiFetch(campaignPath(campaignId, "access"));
   return ((await response.json()) as { grants: AccessGrant[] }).grants;
