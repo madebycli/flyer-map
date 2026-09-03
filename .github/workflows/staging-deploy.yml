@@ -1,0 +1,55 @@
+name: RxDB Staging Deploy
+
+on:
+  push:
+    branches:
+      - mission-rxdb-staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rxdb-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_DB_NAME: flyer-map-staging-db
+      STAGING_WORKER_NAME: flyer-map-staging
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Dependency audit
+        run: npm run audit:dependencies
+
+      - name: Staging build
+        env:
+          CLOUDFLARE_ENV: staging
+        run: npm run build
+
+      - name: Wrangler staging dry run
+        run: npx wrangler deploy --env staging --dry-run
+
+      - name: Deploy isolated staging Worker
+        run: npx wrangler deploy --env staging
