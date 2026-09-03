@@ -87,6 +87,7 @@ test("created or redeemed session is confirmed before RxDB startup", async () =>
   }
 });
 
+// Browser-native fetch is WebIDL receiver-sensitive. Calling it as a class method must never reintroduce Illegal invocation.
 test("default browser fetch keeps its global receiver during RxDB pulls", async () => {
   const campaignId = `campaign_fetch_receiver_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
   const previousFetch = globalThis.fetch;
