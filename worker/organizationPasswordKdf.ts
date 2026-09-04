@@ -1,4 +1,4 @@
-import { pbkdf2Sync } from "node:crypto";
+import { createHmac, pbkdf2Sync } from "node:crypto";
 
 const PASSWORD_KEY_BYTES = 32;
 const MAX_PASSWORD_PBKDF2_ITERATIONS = 5_000_000;
@@ -47,6 +47,41 @@ export async function deriveOrganizationPasswordPbkdf2Local(
   const derivedKey = pbkdf2Sync(password, workerSalt, iterations, PASSWORD_KEY_BYTES, "sha256");
   const output = new Uint8Array(derivedKey.byteLength);
   output.set(derivedKey);
+  return output;
+}
+
+/**
+ * Standards-equivalent PBKDF2-HMAC-SHA-256 for runtimes whose native PBKDF2
+ * primitive enforces a lower iteration ceiling than our accepted 600k policy.
+ *
+ * The Organization verifier is exactly one SHA-256 block (32 bytes), so PBKDF2
+ * only needs block index 1. HMAC itself remains native; only the iteration loop
+ * is expressed here. This keeps the stored verifier byte-for-byte compatible
+ * with node:crypto PBKDF2 without reducing the configured work factor.
+ */
+export async function deriveOrganizationPasswordPbkdf2Portable(
+  password: string,
+  salt: Uint8Array,
+  iterations: number,
+) {
+  validateIterations(iterations);
+  const workerSalt = new Uint8Array(salt.byteLength);
+  workerSalt.set(salt);
+  const key = new TextEncoder().encode(password);
+  const blockIndex = new Uint8Array([0, 0, 0, 1]);
+
+  let previous = createHmac("sha256", key)
+    .update(workerSalt)
+    .update(blockIndex)
+    .digest();
+  const output = Uint8Array.from(previous);
+
+  for (let iteration = 2; iteration <= iterations; iteration += 1) {
+    previous = createHmac("sha256", key).update(previous).digest();
+    for (let index = 0; index < PASSWORD_KEY_BYTES; index += 1) {
+      output[index] ^= previous[index];
+    }
+  }
   return output;
 }
 
