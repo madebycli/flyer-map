@@ -1,9 +1,8 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "flyer-map",
-  "main": "./worker/indexOrganizer.ts",
+  "main": "./worker/indexFc52.ts",
   "compatibility_date": "2026-08-01",
-  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
@@ -53,14 +52,6 @@
       "simple": {
         "limit": 20,
         "period": 10
-      }
-    },
-    {
-      "name": "ORGANIZATION_LOGIN_LIMITER",
-      "namespace_id": "91714004",
-      "simple": {
-        "limit": 12,
-        "period": 60
       }
     }
   ]
