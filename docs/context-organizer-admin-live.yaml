@@ -66,7 +66,8 @@ hard_boundaries:
   - do not weaken tests, TypeScript, audit, authz or security-header gates
 
 handoff:
-  prompt: docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
+  prompt: docs/prompts/CONTINUE_ORGANIZER_ADMIN_2026-09-04_1710.md
+  legacy_latest_prompt: docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
   status_snapshot: docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
   plan: docs/plans/active/030-organizer-admin-platform.md
   operations: docs/operations/ORGANIZER_ADMIN_STAGING.md
