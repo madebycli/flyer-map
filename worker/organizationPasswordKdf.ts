@@ -3,6 +3,7 @@ import { createHmac, pbkdf2Sync } from "node:crypto";
 const PASSWORD_KEY_BYTES = 32;
 const MAX_PASSWORD_PBKDF2_ITERATIONS = 5_000_000;
 const PASSWORD_PBKDF2_CHUNK_ITERATIONS = 25_000;
+const DURABLE_OBJECT_FETCH_ATTEMPTS = 3;
 const INTERNAL_KDF_URL = "https://organization-password-kdf.internal/derive";
 const INTERNAL_KDF_HEADER = "x-organization-password-kdf-internal";
 const SAFE_KDF_CODE = /^[a-z0-9_]{1,80}$/u;
@@ -57,6 +58,27 @@ export function configureOrganizationPasswordKdfRuntime(namespace: OrganizationP
 
 export function resetOrganizationPasswordKdfRuntimeForTests() {
   runtimeNamespace = undefined;
+}
+
+/**
+ * Durable Objects can transiently reset during a Worker code rollout. Retrying a
+ * thrown fetch is safe for this KDF because neither the orchestrator nor a chunk
+ * mutates persistent state, and callers only accept state from successful replies.
+ */
+export async function fetchOrganizationPasswordKdfDurableObjectWithRetry(
+  stub: { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> },
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < DURABLE_OBJECT_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      return await stub.fetch(input, init);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 export async function deriveOrganizationPasswordPbkdf2Local(
@@ -182,7 +204,7 @@ async function deriveThroughDurableObject(
 
   let response: Response;
   try {
-    response = await stub.fetch(INTERNAL_KDF_URL, {
+    response = await fetchOrganizationPasswordKdfDurableObjectWithRetry(stub, INTERNAL_KDF_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",

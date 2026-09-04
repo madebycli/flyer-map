@@ -55,6 +55,79 @@ test("organization password KDF uses one outer DO request and bounded child DO c
   }
 });
 
+test("organization password KDF retries a transient outer Durable Object reset", async () => {
+  const salt = new Uint8Array(16).fill(4);
+  const password = "outer-reset-password";
+  const expected = await deriveOrganizationPasswordPbkdf2Local(password, salt, 2_000);
+  let calls = 0;
+  const namespace: OrganizationPasswordKdfNamespace = {
+    idFromName(name) {
+      return name;
+    },
+    get() {
+      return {
+        async fetch() {
+          calls += 1;
+          if (calls === 1) throw new Error("Durable Object reset because its code was updated.");
+          return Response.json({ derivedKey: Array.from(expected) });
+        },
+      };
+    },
+  };
+
+  configureOrganizationPasswordKdfRuntime(namespace);
+  try {
+    const actual = await deriveOrganizationPasswordPbkdf2(password, salt, 2_000);
+    assert.deepEqual(actual, expected);
+    assert.equal(calls, 2);
+  } finally {
+    resetOrganizationPasswordKdfRuntimeForTests();
+  }
+});
+
+test("organization password KDF retries a transient child Durable Object reset without advancing state", async () => {
+  const salt = new Uint8Array(16).fill(5);
+  const password = "child-reset-password";
+  const iterations = 2_000;
+  const expected = await deriveOrganizationPasswordPbkdf2Local(password, salt, iterations);
+  let outerCalls = 0;
+  let childCalls = 0;
+  let orchestrator: OrganizationPasswordKdfDurableObject;
+  let child: OrganizationPasswordKdfDurableObject;
+
+  const namespace: OrganizationPasswordKdfNamespace = {
+    idFromName(name) {
+      return name;
+    },
+    get(id) {
+      return {
+        async fetch(input, init) {
+          const request = new Request(input, init);
+          if (String(id).startsWith("chunk:")) {
+            childCalls += 1;
+            if (childCalls === 1) throw new Error("Durable Object reset because its code was updated.");
+            return child.fetch(request);
+          }
+          outerCalls += 1;
+          return orchestrator.fetch(request);
+        },
+      };
+    },
+  };
+  orchestrator = new OrganizationPasswordKdfDurableObject({}, { ORGANIZATION_PASSWORD_KDF: namespace });
+  child = new OrganizationPasswordKdfDurableObject({}, { ORGANIZATION_PASSWORD_KDF: namespace });
+
+  configureOrganizationPasswordKdfRuntime(namespace);
+  try {
+    const actual = await deriveOrganizationPasswordPbkdf2(password, salt, iterations);
+    assert.deepEqual(actual, expected);
+    assert.equal(outerCalls, 1);
+    assert.equal(childCalls, 2);
+  } finally {
+    resetOrganizationPasswordKdfRuntimeForTests();
+  }
+});
+
 test("organization password KDF preserves the accepted 600k PBKDF2 verifier across chunks", async () => {
   const salt = Uint8Array.from({ length: 16 }, (_, index) => 31 - index);
   const password = "six-hundred-thousand-iterations";

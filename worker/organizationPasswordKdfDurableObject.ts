@@ -1,5 +1,6 @@
 import {
   deriveOrganizationPasswordPbkdf2PortableChunk,
+  fetchOrganizationPasswordKdfDurableObjectWithRetry,
   ORGANIZATION_PASSWORD_KDF_CHUNK_ITERATIONS,
   ORGANIZATION_PASSWORD_KDF_INTERNAL_HEADER,
   type OrganizationPasswordKdfNamespace,
@@ -76,7 +77,7 @@ async function deriveThroughChildDurableObject(
 
   for (let requestIndex = 0; requestIndex < maxRequests; requestIndex += 1) {
     const priorCompleted = state?.completedIterations ?? 0;
-    const response = await child.fetch(INTERNAL_CHUNK_URL, {
+    const response = await fetchOrganizationPasswordKdfDurableObjectWithRetry(child, INTERNAL_CHUNK_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
