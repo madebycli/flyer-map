@@ -65,6 +65,15 @@ jobs:
           from pathlib import Path
           path = Path('.staging/admin-v9-release.sh')
           text = path.read_text()
+
+          totp_marker = 'TOTP_KEY="$(openssl rand -hex 32)"\n'
+          totp_replacement = '''TOTP_KEY="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+          [[ "$TOTP_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || { echo 'Invalid generated TOTP key.' >&2; exit 1; }
+          '''
+          if text.count(totp_marker) != 1:
+              raise SystemExit('TOTP key generation marker changed')
+          text = text.replace(totp_marker, totp_replacement, 1)
+
           marker = 'for attempt in $(seq 1 24); do\n  START='
           if text.count(marker) != 1:
               raise SystemExit('candidate convergence loop marker changed')
@@ -189,6 +198,7 @@ jobs:
           browser = browser.replace(context_marker, 'browser.newContext({ ...versionContext,')
           browser_path.write_text(browser)
           PY
+          grep -q 'Invalid generated TOTP key' .staging/admin-v9-release.sh
           grep -q 'CANDIDATE_CONSECUTIVE' .staging/admin-v9-release.sh
           grep -q 'CANDIDATE_VERSION_HEADER' .staging/admin-v9-release.sh
           grep -q 'unset -f curl' .staging/admin-v9-release.sh
