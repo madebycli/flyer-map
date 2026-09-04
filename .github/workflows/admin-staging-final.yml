@@ -1,0 +1,208 @@
+name: Organizer Admin Staging Final
+
+on:
+  push:
+    branches:
+      - organizer-admin-staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: organizer-admin-staging-final-v1
+  cancel-in-progress: false
+
+jobs:
+  final:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ADMIN_DB_NAME: flyer-map-admin-staging-db
+      ADMIN_WORKER_NAME: flyer-map-admin-staging
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+      AUDITED_BASE_SHA: f8f00b2b49dd554d037fac23231d25037f72d58d
+      BOOTSTRAP_SECRET_SHA256: 003e2c8e7d2c8395bca964bd00baddcae95cc586435bb1d3d47e51ae848566ca
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify dependency audit provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "${AUDITED_BASE_SHA}^{commit}"
+          if ! git diff --quiet "$AUDITED_BASE_SHA" -- package.json package-lock.json; then
+            echo "Dependency manifests changed since the last green high-severity audit; refusing inherited audit provenance." >&2
+            git diff -- "$AUDITED_BASE_SHA" -- package.json package-lock.json >&2
+            exit 1
+          fi
+          echo "Dependency manifests exactly match audited commit ${AUDITED_BASE_SHA}."
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Resolve Cloudflare account and isolated D1
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.success')" == "true" ]] || exit 1
+          ACCOUNT_COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq '.result | length')"
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && printf '%s' "$ACCOUNTS_JSON" | jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[] | select(.id == $id)' >/dev/null; then
+            CLOUDFLARE_ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
+          elif [[ "$ACCOUNT_COUNT" == "1" ]]; then
+            CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
+          else
+            echo "Cloudflare account ambiguous; refusing to guess." >&2
+            exit 1
+          fi
+          echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          ADMIN_D1_ID="$(printf '%s' "$LIST_JSON" | jq -r --arg name "$ADMIN_DB_NAME" '[.[] | select(.name == $name)] | if length == 1 then .[0].uuid else empty end')"
+          [[ -n "$ADMIN_D1_ID" ]] || { echo "Isolated admin D1 not uniquely resolvable." >&2; exit 1; }
+          [[ "$ADMIN_D1_ID" != "$PROD_D1_ID" && "$ADMIN_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo "Admin D1 collides with protected D1." >&2; exit 1; }
+          echo "ADMIN_D1_ID=$ADMIN_D1_ID" >> "$GITHUB_ENV"
+          echo "database_id=$ADMIN_D1_ID" >> "$GITHUB_OUTPUT"
+      - name: Materialize isolated config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const c = JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          const prod = (c.d1_databases || []).find(x => x.binding === 'DB');
+          if (prod?.database_id !== process.env.PROD_D1_ID) throw new Error('Production D1 baseline changed.');
+          if (c.main !== './worker/indexOrganizer.ts') throw new Error(`Unexpected Worker entrypoint ${c.main}.`);
+          c.env = c.env || {};
+          c.env.admin_staging = {
+            name: process.env.ADMIN_WORKER_NAME,
+            workers_dev: true,
+            vars: { ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.BOOTSTRAP_SECRET_SHA256 },
+            d1_databases: [{ binding:'DB', database_name:process.env.ADMIN_DB_NAME, database_id:process.env.ADMIN_D1_ID, migrations_dir:'migrations' }],
+            durable_objects: { bindings:[{ name:'CAMPAIGN_SYNC', class_name:'CampaignSyncDurableObject' }] },
+            ratelimits: [
+              { name:'FIELD_GROUP_JOIN_ACTOR_LIMITER', namespace_id:'91914001', simple:{limit:30,period:60} },
+              { name:'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER', namespace_id:'91914002', simple:{limit:8,period:60} },
+              { name:'PICKUP_SEARCH_LIMITER', namespace_id:'91914003', simple:{limit:20,period:10} },
+              { name:'ORGANIZATION_LOGIN_LIMITER', namespace_id:'91914004', simple:{limit:12,period:60} }
+            ]
+          };
+          const protectedIds = new Set([...(c.ratelimits || []).map(x=>String(x.namespace_id)),'91814001','91814002','91814003']);
+          for (const r of c.env.admin_staging.ratelimits) if (protectedIds.has(String(r.namespace_id))) throw new Error(`Rate-limit collision ${r.namespace_id}`);
+          fs.writeFileSync('wrangler.jsonc', JSON.stringify(c,null,2)+'\n');
+          NODE
+      - name: Apply isolated migrations
+        run: npx wrangler d1 migrations apply "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote
+      - name: Verify exact migration chain and integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/admin-final
+          find migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]_*.sql' -printf '%f\n' | sort > /tmp/admin-final/local.txt
+          [[ "$(wc -l < /tmp/admin-final/local.txt | tr -d ' ')" == "19" ]] || { echo "Local migration chain is not 19 files." >&2; exit 1; }
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'SELECT id,name FROM d1_migrations ORDER BY id;' > /tmp/admin-final/ledger.json
+          jq -r '.[].results[]?.name' /tmp/admin-final/ledger.json > /tmp/admin-final/remote.txt
+          diff -u /tmp/admin-final/local.txt /tmp/admin-final/remote.txt
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('organization_accounts','organization_memberships','organization_password_resets','organization_feature_settings') ORDER BY name;" > /tmp/admin-final/tables.json
+          [[ "$(jq '[.[].results[]?.name] | unique | length' /tmp/admin-final/tables.json)" == "4" ]] || exit 1
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'PRAGMA foreign_key_check;' > /tmp/admin-final/fk.json
+          [[ "$(jq '[.[].results[]?] | length' /tmp/admin-final/fk.json)" == "0" ]] || exit 1
+      - name: Build admin staging
+        env:
+          CLOUDFLARE_ENV: admin_staging
+        run: npm run build
+      - name: Verify generated isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs'), path=require('node:path');
+          const redirect=JSON.parse(fs.readFileSync('.wrangler/deploy/config.json','utf8'));
+          const generated=JSON.parse(fs.readFileSync(path.resolve('.wrangler/deploy',redirect.configPath),'utf8'));
+          if (generated.name !== process.env.ADMIN_WORKER_NAME) throw new Error(`Unexpected Worker ${generated.name}`);
+          const db=(generated.d1_databases||[]).find(x=>x.binding==='DB');
+          if (db?.database_id !== process.env.ADMIN_D1_ID) throw new Error('Wrong D1 binding.');
+          if (generated.vars?.ORGANIZATION_BOOTSTRAP_SECRET_SHA256 !== process.env.BOOTSTRAP_SECRET_SHA256) throw new Error('Wrong bootstrap digest.');
+          const s=JSON.stringify(generated);
+          if (s.includes(process.env.PROD_D1_ID) || s.includes(process.env.RXDB_STAGING_D1_ID)) throw new Error('Protected D1 leaked into generated config.');
+          for (const id of ['91914001','91914002','91914003','91914004']) if (!s.includes(id)) throw new Error(`Missing rate namespace ${id}.`);
+          NODE
+      - name: Dry run
+        run: npx wrangler deploy --dry-run --outdir .wrangler-admin-final-dry-run
+      - name: Deploy isolated Worker
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy 2>&1 | tee /tmp/admin-final/deploy.log
+          TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-final/deploy.log | tail -n1 || true)"
+          [[ -n "$TEST_URL" ]] || { echo "No workers.dev URL reported." >&2; exit 1; }
+          echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
+          echo "test_url=$TEST_URL" >> "$GITHUB_OUTPUT"
+      - name: Configure TOTP encryption key
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATE="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'SELECT COUNT(*) AS count FROM organization_bootstrap_state;')"
+          CLAIMED="$(printf '%s' "$STATE" | jq -r '[.[].results[]?.count] | first // 0')"
+          if [[ "$CLAIMED" == "0" ]]; then
+            TOTP_KEY="$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')"
+            printf '%s' "$TOTP_KEY" | npx wrangler secret put ORGANIZATION_TOTP_KEY --name "$ADMIN_WORKER_NAME"
+            unset TOTP_KEY
+          else
+            echo "Already bootstrapped; preserving existing TOTP key."
+          fi
+      - name: Smoke test real deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            STATUS="$(curl --silent --show-error --location --output /tmp/admin-final/start.html --write-out '%{http_code}' "$TEST_URL/start" || printf '000')"
+            [[ "$STATUS" -ge 200 && "$STATUS" -lt 400 ]] && break
+            [[ "$attempt" -lt 24 ]] || { echo "UI unhealthy: HTTP ${STATUS}." >&2; exit 1; }
+            sleep 5
+          done
+          ME="$(curl --silent --show-error --output /tmp/admin-final/me.json --write-out '%{http_code}' "$TEST_URL/api/organization/me")"
+          [[ "$ME" == "401" ]] || { echo "Expected /me 401, got ${ME}." >&2; cat /tmp/admin-final/me.json >&2; exit 1; }
+          BAD_ORIGIN="$(curl --silent --show-error --output /tmp/admin-final/origin.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H 'Origin: https://invalid.example' -H 'Content-Type: application/json' --data '{}')"
+          [[ "$BAD_ORIGIN" == "403" ]] || { echo "Wrong-origin bootstrap was not rejected." >&2; exit 1; }
+          BAD_SECRET="$(curl --silent --show-error --output /tmp/admin-final/bootstrap.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data '{"organizationName":"Smoke Test","username":"smoke-test","password":"not-a-real-password","bootstrapSecret":"definitely-wrong"}')"
+          [[ "$BAD_SECRET" == "403" ]] || { echo "Wrong bootstrap secret was not rejected: ${BAD_SECRET}." >&2; cat /tmp/admin-final/bootstrap.json >&2; exit 1; }
+          curl --silent --show-error --head "$TEST_URL/api/organization/me" > /tmp/admin-final/headers.txt
+          grep -Eqi '^x-frame-options: DENY' /tmp/admin-final/headers.txt || { echo "Missing X-Frame-Options DENY." >&2; exit 1; }
+          ! grep -F "$PROD_D1_ID" /tmp/admin-final/start.html >/dev/null
+          ! grep -F "$RXDB_STAGING_D1_ID" /tmp/admin-final/start.html >/dev/null
+          printf '%s\n' "$TEST_URL" > /tmp/admin-final/test-url.txt
+      - name: Upload verified handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-staging-final-handoff
+          path: /tmp/admin-final/
+          retention-days: 1
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo '## Verified Organizer Admin staging'
+            echo
+            echo "- Source: \`${GITHUB_SHA}\`"
+            echo "- Worker: \`${ADMIN_WORKER_NAME}\`"
+            echo "- D1: \`${ADMIN_DB_NAME}\`"
+            echo "- D1 ID: \`${ADMIN_D1_ID}\`"
+            echo "- URL: ${TEST_URL}"
+            echo "- Dependency manifests inherited from audited \`${AUDITED_BASE_SHA}\`: YES"
+            echo '- Bootstrap plaintext in GitHub/Actions: NO'
+            echo '- Production deploy: NO'
+          } >> "$GITHUB_STEP_SUMMARY"
