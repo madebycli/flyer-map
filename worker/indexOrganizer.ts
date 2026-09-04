@@ -12,6 +12,11 @@ import {
 } from "./organizationPasswordKdf.ts";
 import { handleOrganizationSecurityApi } from "./organizationSecurityApi.ts";
 import { guardOrganizationSecurityQuery } from "./organizationSecurityRequest.ts";
+import { guardOrganizationDelegationRequest } from "./organizationDelegationGuard.ts";
+import {
+  guardOrganizationManagedLegacyAdminRequest,
+  rewriteOrganizationManagedAccessResponse,
+} from "./organizationLegacyGuard.ts";
 import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 
 export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
@@ -57,6 +62,10 @@ export default {
       if (methodGuard) return harden(methodGuard);
       const queryGuard = guardOrganizationSecurityQuery(request);
       if (queryGuard) return harden(queryGuard);
+      const delegationGuard = await guardOrganizationDelegationRequest(request, env.DB);
+      if (delegationGuard) return harden(delegationGuard);
+      const legacyGuard = await guardOrganizationManagedLegacyAdminRequest(request, env.DB);
+      if (legacyGuard) return harden(legacyGuard);
       const bootstrapHashResponse = await handleOrganizationBootstrapHashApi(request, env);
       if (bootstrapHashResponse) return harden(bootstrapHashResponse);
       const securityResponse = await handleOrganizationSecurityApi(request, env);
@@ -64,7 +73,8 @@ export default {
       const organizationResponse = await handleOrganizationApi(request, env);
       if (organizationResponse) return harden(organizationResponse);
       const baseResponse = await baseWorker.fetch(request, env, context);
-      return harden(failClosedOrganizationApiFallback(request, baseResponse));
+      const identityAwareResponse = await rewriteOrganizationManagedAccessResponse(request, env.DB, baseResponse);
+      return harden(failClosedOrganizationApiFallback(request, identityAwareResponse));
     } catch (error) {
       if (error instanceof OrganizationPasswordKdfUnavailableError) {
         return kdfUnavailableResponse(error, env.ORGANIZATION_KDF_DIAGNOSTICS === "1");
