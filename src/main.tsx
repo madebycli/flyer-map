@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
+import { FunnyFocusVideo } from "./platform/FunnyFocusVideo";
 import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
 import { ActionWorkbenchPreview } from "./workbench/ActionWorkbenchPreview";
@@ -42,6 +43,7 @@ if (preview) {
   root.render(
     <StrictMode>
       <PlatformShell />
+      <FunnyFocusVideo />
       <AccessRecoveryGate />
       <FieldGroupJoinGate />
       <MapDiagnostics />
