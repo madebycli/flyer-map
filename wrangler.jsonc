@@ -6,7 +6,9 @@
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": [
+      "/api/*"
+    ]
   },
   "d1_databases": [
     {
@@ -26,7 +28,9 @@
   "migrations": [
     {
       "tag": "v1-campaign-sync",
-      "new_sqlite_classes": ["CampaignSyncDurableObject"]
+      "new_sqlite_classes": [
+        "CampaignSyncDurableObject"
+      ]
     }
   ],
   "ratelimits": [
@@ -62,5 +66,8 @@
         "period": 60
       }
     }
+  ],
+  "compatibility_flags": [
+    "nodejs_compat"
   ]
 }
