@@ -1,5 +1,6 @@
 import { cookieValue, hashSecret, randomSecret } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
+import { deriveOrganizationPasswordPbkdf2 } from "./organizationPasswordKdf.ts";
 
 const ACCOUNT_SESSION_COOKIE = "__Host-vf_organization_session";
 const LOGIN_CHALLENGE_COOKIE = "__Host-vf_organization_login";
@@ -188,21 +189,7 @@ function validOrganizationName(value: unknown): value is string {
 }
 
 async function derivePassword(password: string, salt: Uint8Array, iterations: number) {
-  const workerSalt = new Uint8Array(salt.byteLength);
-  workerSalt.set(salt);
-  const material = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt: workerSalt, iterations },
-    material,
-    256,
-  );
-  return new Uint8Array(bits);
+  return deriveOrganizationPasswordPbkdf2(password, salt, iterations);
 }
 
 async function passwordRecord(password: string) {

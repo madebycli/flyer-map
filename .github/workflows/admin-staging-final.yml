@@ -10,13 +10,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: organizer-admin-staging-final-v1
+  group: organizer-admin-staging-final-v2
   cancel-in-progress: false
 
 jobs:
   final:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -25,7 +25,7 @@ jobs:
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
       AUDITED_BASE_SHA: f8f00b2b49dd554d037fac23231d25037f72d58d
-      BOOTSTRAP_SECRET_SHA256: 43d22637007ffbbb7d443a1ea87412f2b5c0c6aa73ee50ac49d9b5f99051ccc4
+      FINAL_BOOTSTRAP_SECRET_SHA256: 330d968a1282453edd0427601226526df39f7ff8a3b3ea6566466a0f40017e1d
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,7 +75,7 @@ jobs:
           [[ "$ADMIN_D1_ID" != "$PROD_D1_ID" && "$ADMIN_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo "Admin D1 collides with protected D1." >&2; exit 1; }
           echo "ADMIN_D1_ID=$ADMIN_D1_ID" >> "$GITHUB_ENV"
           echo "database_id=$ADMIN_D1_ID" >> "$GITHUB_OUTPUT"
-      - name: Materialize isolated config
+      - name: Apply isolated migrations
         shell: bash
         run: |
           set -euo pipefail
@@ -89,7 +89,7 @@ jobs:
           c.env.admin_staging = {
             name: process.env.ADMIN_WORKER_NAME,
             workers_dev: true,
-            vars: { ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.BOOTSTRAP_SECRET_SHA256 },
+            vars: { ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.FINAL_BOOTSTRAP_SECRET_SHA256 },
             d1_databases: [{ binding:'DB', database_name:process.env.ADMIN_DB_NAME, database_id:process.env.ADMIN_D1_ID, migrations_dir:'migrations' }],
             durable_objects: { bindings:[{ name:'CAMPAIGN_SYNC', class_name:'CampaignSyncDurableObject' }] },
             ratelimits: [
@@ -103,9 +103,8 @@ jobs:
           for (const r of c.env.admin_staging.ratelimits) if (protectedIds.has(String(r.namespace_id))) throw new Error(`Rate-limit collision ${r.namespace_id}`);
           fs.writeFileSync('wrangler.jsonc', JSON.stringify(c,null,2)+'\n');
           NODE
-      - name: Apply isolated migrations
-        run: npx wrangler d1 migrations apply "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote
-      - name: Verify exact migration chain and integrity
+          npx wrangler d1 migrations apply "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote
+      - name: Verify exact migration chain and pristine bootstrap state
         shell: bash
         run: |
           set -euo pipefail
@@ -119,7 +118,35 @@ jobs:
           [[ "$(jq '[.[].results[]?.name] | unique | length' /tmp/admin-final/tables.json)" == "4" ]] || exit 1
           npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'PRAGMA foreign_key_check;' > /tmp/admin-final/fk.json
           [[ "$(jq '[.[].results[]?] | length' /tmp/admin-final/fk.json)" == "0" ]] || exit 1
-      - name: Build admin staging
+          STATE="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT (SELECT COUNT(*) FROM organization_bootstrap_state) AS bootstrap_count, (SELECT COUNT(*) FROM organizations) AS organization_count, (SELECT COUNT(*) FROM organization_accounts) AS account_count, (SELECT COUNT(*) FROM campaigns WHERE organization_id IS NOT NULL) AS owned_campaign_count;")"
+          printf '%s' "$STATE" > /tmp/admin-final/pre-smoke-state.json
+          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].bootstrap_count')" == "0" ]] || { echo "Admin staging is already bootstrapped; refusing destructive runtime smoke." >&2; exit 1; }
+          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].organization_count')" == "0" ]] || { echo "Admin staging has organization data; refusing destructive runtime smoke." >&2; exit 1; }
+          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].account_count')" == "0" ]] || { echo "Admin staging has account data; refusing destructive runtime smoke." >&2; exit 1; }
+          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].owned_campaign_count')" == "0" ]] || { echo "Admin staging has owned campaign data; refusing destructive runtime smoke." >&2; exit 1; }
+      - name: Create ephemeral bootstrap probe credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          SMOKE_BOOTSTRAP_SECRET="$(openssl rand -hex 32)"
+          SMOKE_PASSWORD="Smoke-$(openssl rand -hex 24)"
+          echo "::add-mask::$SMOKE_BOOTSTRAP_SECRET"
+          echo "::add-mask::$SMOKE_PASSWORD"
+          SMOKE_DIGEST="$(printf '%s' "$SMOKE_BOOTSTRAP_SECRET" | sha256sum | awk '{print $1}')"
+          echo "SMOKE_BOOTSTRAP_SECRET=$SMOKE_BOOTSTRAP_SECRET" >> "$GITHUB_ENV"
+          echo "SMOKE_PASSWORD=$SMOKE_PASSWORD" >> "$GITHUB_ENV"
+          echo "BOOTSTRAP_SECRET_SHA256=$SMOKE_DIGEST" >> "$GITHUB_ENV"
+      - name: Materialize isolated smoke config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const c = JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          c.env.admin_staging.vars.ORGANIZATION_BOOTSTRAP_SECRET_SHA256 = process.env.BOOTSTRAP_SECRET_SHA256;
+          fs.writeFileSync('wrangler.jsonc', JSON.stringify(c,null,2)+'\n');
+          NODE
+      - name: Build admin staging smoke candidate
         env:
           CLOUDFLARE_ENV: admin_staging
         run: npm run build
@@ -141,30 +168,23 @@ jobs:
           NODE
       - name: Dry run
         run: npx wrangler deploy --dry-run --outdir .wrangler-admin-final-dry-run
-      - name: Deploy isolated Worker
-        id: deploy
+      - name: Deploy smoke candidate
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy 2>&1 | tee /tmp/admin-final/deploy.log
-          TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-final/deploy.log | tail -n1 || true)"
+          npx wrangler deploy 2>&1 | tee /tmp/admin-final/deploy-smoke.log
+          TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-final/deploy-smoke.log | tail -n1 || true)"
           [[ -n "$TEST_URL" ]] || { echo "No workers.dev URL reported." >&2; exit 1; }
           echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
-          echo "test_url=$TEST_URL" >> "$GITHUB_OUTPUT"
       - name: Configure TOTP encryption key
         shell: bash
         run: |
           set -euo pipefail
-          STATE="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'SELECT COUNT(*) AS count FROM organization_bootstrap_state;')"
-          CLAIMED="$(printf '%s' "$STATE" | jq -r '[.[].results[]?.count] | first // 0')"
-          if [[ "$CLAIMED" == "0" ]]; then
-            TOTP_KEY="$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')"
-            printf '%s' "$TOTP_KEY" | npx wrangler secret put ORGANIZATION_TOTP_KEY --name "$ADMIN_WORKER_NAME"
-            unset TOTP_KEY
-          else
-            echo "Already bootstrapped; preserving existing TOTP key."
-          fi
-      - name: Smoke test real deployment
+          TOTP_KEY="$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')"
+          echo "::add-mask::$TOTP_KEY"
+          printf '%s' "$TOTP_KEY" | npx wrangler secret put ORGANIZATION_TOTP_KEY --name "$ADMIN_WORKER_NAME"
+          unset TOTP_KEY
+      - name: Real successful bootstrap, password, TOTP and session smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -174,12 +194,91 @@ jobs:
             [[ "$attempt" -lt 24 ]] || { echo "UI unhealthy: HTTP ${STATUS}." >&2; exit 1; }
             sleep 5
           done
+          SMOKE_USERNAME="runtime.smoke.${GITHUB_RUN_ID}"
+          SMOKE_ORG="Runtime Smoke ${GITHUB_RUN_ID}"
+          jq -n --arg organizationName "$SMOKE_ORG" --arg username "$SMOKE_USERNAME" --arg password "$SMOKE_PASSWORD" --arg bootstrapSecret "$SMOKE_BOOTSTRAP_SECRET" '{organizationName:$organizationName,username:$username,password:$password,bootstrapSecret:$bootstrapSecret}' > /tmp/admin-final/bootstrap-payload.json
+          BOOTSTRAP_STATUS="$(curl --silent --show-error --output /tmp/admin-final/bootstrap-response.json --write-out '%{http_code}' --cookie-jar /tmp/admin-final/cookies.txt -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data-binary @/tmp/admin-final/bootstrap-payload.json)"
+          if [[ "$BOOTSTRAP_STATUS" != "201" ]]; then
+            echo "Real bootstrap failed with HTTP ${BOOTSTRAP_STATUS}." >&2
+            jq -c '.error // {error:"non-json-or-unexpected"}' /tmp/admin-final/bootstrap-response.json >&2 || true
+            exit 1
+          fi
+          jq -e '(.organization.id|type=="string") and (.account.id|type=="string") and (.recoveryCodes|length==10) and (.otpauthUri|startswith("otpauth://totp/"))' /tmp/admin-final/bootstrap-response.json >/dev/null
+          jq -n --arg username "$SMOKE_USERNAME" --arg password "$SMOKE_PASSWORD" '{username:$username,password:$password}' > /tmp/admin-final/login-payload.json
+          LOGIN_STATUS="$(curl --silent --show-error --output /tmp/admin-final/login-response.json --write-out '%{http_code}' --cookie /tmp/admin-final/cookies.txt --cookie-jar /tmp/admin-final/cookies.txt -X POST "$TEST_URL/api/organization/login/password" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data-binary @/tmp/admin-final/login-payload.json)"
+          [[ "$LOGIN_STATUS" == "200" ]] || { echo "Password login failed with HTTP ${LOGIN_STATUS}." >&2; jq -c '.error // {}' /tmp/admin-final/login-response.json >&2 || true; exit 1; }
+          OTP_SECRET="$(jq -r '.otpauthUri' /tmp/admin-final/bootstrap-response.json | node -e 'let s=""; process.stdin.on("data",d=>s+=d); process.stdin.on("end",()=>process.stdout.write(new URL(s.trim()).searchParams.get("secret")||""));')"
+          [[ -n "$OTP_SECRET" ]] || { echo "TOTP secret missing from bootstrap response." >&2; exit 1; }
+          echo "::add-mask::$OTP_SECRET"
+          TOTP_CODE="$(python - "$OTP_SECRET" <<'PY'
+          import base64, hashlib, hmac, struct, sys, time
+          secret = base64.b32decode(sys.argv[1], casefold=True)
+          counter = int(time.time()) // 30
+          digest = hmac.new(secret, struct.pack('>Q', counter), hashlib.sha1).digest()
+          offset = digest[-1] & 0x0f
+          binary = ((digest[offset] & 0x7f) << 24) | ((digest[offset+1] & 0xff) << 16) | ((digest[offset+2] & 0xff) << 8) | (digest[offset+3] & 0xff)
+          print(f'{binary % 1000000:06d}')
+          PY
+          )"
+          echo "::add-mask::$TOTP_CODE"
+          MFA_STATUS="$(curl --silent --show-error --output /tmp/admin-final/totp-response.json --write-out '%{http_code}' --cookie /tmp/admin-final/cookies.txt --cookie-jar /tmp/admin-final/cookies.txt -X POST "$TEST_URL/api/organization/login/totp" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data "{\"code\":\"$TOTP_CODE\"}")"
+          [[ "$MFA_STATUS" == "200" ]] || { echo "TOTP login failed with HTTP ${MFA_STATUS}." >&2; jq -c '.error // {}' /tmp/admin-final/totp-response.json >&2 || true; exit 1; }
+          ME_STATUS="$(curl --silent --show-error --output /tmp/admin-final/me-smoke.json --write-out '%{http_code}' --cookie /tmp/admin-final/cookies.txt "$TEST_URL/api/organization/me")"
+          [[ "$ME_STATUS" == "200" ]] || { echo "Authenticated /me failed with HTTP ${ME_STATUS}." >&2; exit 1; }
+          jq -e '.assurance == "mfa" and (.memberships|length==1) and .memberships[0].role == "organizer"' /tmp/admin-final/me-smoke.json >/dev/null
+      - name: Verify smoke persistence then clean isolated D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATE="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT (SELECT COUNT(*) FROM organization_bootstrap_state) AS bootstrap_count, (SELECT COUNT(*) FROM organizations) AS organization_count, (SELECT COUNT(*) FROM organization_accounts) AS account_count;")"
+          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].bootstrap_count')" == "1" ]] || exit 1
+          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].organization_count')" == "1" ]] || exit 1
+          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].account_count')" == "1" ]] || exit 1
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --command "DELETE FROM organization_bootstrap_state; DELETE FROM organizations; DELETE FROM organization_accounts;"
+          CLEAN="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT (SELECT COUNT(*) FROM organization_bootstrap_state) AS bootstrap_count, (SELECT COUNT(*) FROM organizations) AS organization_count, (SELECT COUNT(*) FROM organization_accounts) AS account_count, (SELECT COUNT(*) FROM campaigns WHERE organization_id IS NOT NULL) AS owned_campaign_count;")"
+          [[ "$(printf '%s' "$CLEAN" | jq -r '.[0].results[0].bootstrap_count')" == "0" ]] || exit 1
+          [[ "$(printf '%s' "$CLEAN" | jq -r '.[0].results[0].organization_count')" == "0" ]] || exit 1
+          [[ "$(printf '%s' "$CLEAN" | jq -r '.[0].results[0].account_count')" == "0" ]] || exit 1
+          [[ "$(printf '%s' "$CLEAN" | jq -r '.[0].results[0].owned_campaign_count')" == "0" ]] || exit 1
+          rm -f /tmp/admin-final/bootstrap-payload.json /tmp/admin-final/bootstrap-response.json /tmp/admin-final/login-payload.json /tmp/admin-final/login-response.json /tmp/admin-final/totp-response.json /tmp/admin-final/me-smoke.json /tmp/admin-final/cookies.txt
+      - name: Restore private user bootstrap digest and rebuild
+        shell: bash
+        env:
+          CLOUDFLARE_ENV: admin_staging
+        run: |
+          set -euo pipefail
+          echo "BOOTSTRAP_SECRET_SHA256=$FINAL_BOOTSTRAP_SECRET_SHA256" >> "$GITHUB_ENV"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const c = JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          c.env.admin_staging.vars.ORGANIZATION_BOOTSTRAP_SECRET_SHA256 = process.env.FINAL_BOOTSTRAP_SECRET_SHA256;
+          fs.writeFileSync('wrangler.jsonc', JSON.stringify(c,null,2)+'\n');
+          NODE
+          rm -rf dist .wrangler/deploy
+          npm run build
+      - name: Deploy verified final candidate
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy 2>&1 | tee /tmp/admin-final/deploy-final.log
+          FINAL_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-final/deploy-final.log | tail -n1 || true)"
+          [[ -n "$FINAL_URL" ]] || { echo "No workers.dev URL reported." >&2; exit 1; }
+          echo "TEST_URL=$FINAL_URL" >> "$GITHUB_ENV"
+          echo "test_url=$FINAL_URL" >> "$GITHUB_OUTPUT"
+      - name: Final public smoke and bootstrap rotation proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS="$(curl --silent --show-error --location --output /tmp/admin-final/start.html --write-out '%{http_code}' "$TEST_URL/start")"
+          [[ "$STATUS" -ge 200 && "$STATUS" -lt 400 ]] || { echo "Final UI unhealthy: HTTP ${STATUS}." >&2; exit 1; }
           ME="$(curl --silent --show-error --output /tmp/admin-final/me.json --write-out '%{http_code}' "$TEST_URL/api/organization/me")"
-          [[ "$ME" == "401" ]] || { echo "Expected /me 401, got ${ME}." >&2; cat /tmp/admin-final/me.json >&2; exit 1; }
+          [[ "$ME" == "401" ]] || { echo "Expected /me 401, got ${ME}." >&2; exit 1; }
           BAD_ORIGIN="$(curl --silent --show-error --output /tmp/admin-final/origin.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H 'Origin: https://invalid.example' -H 'Content-Type: application/json' --data '{}')"
           [[ "$BAD_ORIGIN" == "403" ]] || { echo "Wrong-origin bootstrap was not rejected." >&2; exit 1; }
-          BAD_SECRET="$(curl --silent --show-error --output /tmp/admin-final/bootstrap.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data '{"organizationName":"Smoke Test","username":"smoke-test","password":"not-a-real-password","bootstrapSecret":"definitely-wrong"}')"
-          [[ "$BAD_SECRET" == "403" ]] || { echo "Wrong bootstrap secret was not rejected: ${BAD_SECRET}." >&2; cat /tmp/admin-final/bootstrap.json >&2; exit 1; }
+          OLD_SMOKE="$(jq -n --arg s "$SMOKE_BOOTSTRAP_SECRET" '{organizationName:"Rotation Test",username:"rotation.test",password:"not-a-real-password-123",bootstrapSecret:$s}')"
+          ROTATED="$(curl --silent --show-error --output /tmp/admin-final/rotated.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data "$OLD_SMOKE")"
+          [[ "$ROTATED" == "403" ]] || { echo "Ephemeral bootstrap credential was not rotated out: ${ROTATED}." >&2; exit 1; }
           curl --silent --show-error --head "$TEST_URL/api/organization/me" > /tmp/admin-final/headers.txt
           grep -Eqi '^x-frame-options: DENY' /tmp/admin-final/headers.txt || { echo "Missing X-Frame-Options DENY." >&2; exit 1; }
           ! grep -F "$PROD_D1_ID" /tmp/admin-final/start.html >/dev/null
@@ -202,7 +301,9 @@ jobs:
             echo "- D1: \`${ADMIN_DB_NAME}\`"
             echo "- D1 ID: \`${ADMIN_D1_ID}\`"
             echo "- URL: ${TEST_URL}"
+            echo '- Real bootstrap + password + TOTP + authenticated /me: VERIFIED'
+            echo '- Disposable bootstrap data removed from isolated D1: YES'
+            echo '- Private user bootstrap digest restored after smoke: YES'
             echo "- Dependency manifests inherited from audited \`${AUDITED_BASE_SHA}\`: YES"
-            echo '- Bootstrap plaintext in GitHub/Actions: NO'
             echo '- Production deploy: NO'
           } >> "$GITHUB_STEP_SUMMARY"
