@@ -19,6 +19,8 @@ type BridgeState = {
   membershipId: string;
   membershipDisabled: boolean;
   role: "organizer" | "admin";
+  capabilities: string[];
+  templateCapabilities: string[];
   organizationId: string;
   campaignId: string;
   campaignOrganizationId: string | null;
@@ -58,7 +60,6 @@ class BridgeStatement implements D1PreparedStatement {
       state.assurance !== "mfa" ||
       state.accountDisabled ||
       state.membershipDisabled ||
-      state.role !== "organizer" ||
       !state.campaignOrganizationId ||
       state.campaignOrganizationId !== state.organizationId
     ) {
@@ -68,6 +69,11 @@ class BridgeStatement implements D1PreparedStatement {
     return {
       membership_id: state.membershipId,
       campaign_id: state.campaignId,
+      role_kind: state.role,
+      capabilities_json: JSON.stringify(state.capabilities),
+      template_capabilities_json: state.templateCapabilities.length
+        ? JSON.stringify(state.templateCapabilities)
+        : null,
     } as T;
   }
 
@@ -104,6 +110,8 @@ async function state(overrides: Partial<BridgeState> = {}): Promise<BridgeState>
     membershipId: "membership_a",
     membershipDisabled: false,
     role: "organizer",
+    capabilities: [],
+    templateCapabilities: [],
     organizationId: "org_a",
     campaignId: "campaign_a",
     campaignOrganizationId: "org_a",
@@ -131,6 +139,7 @@ test("MFA Organizer receives synthetic admin access for an owned Campaign", asyn
   assert.deepEqual(bridge, {
     membershipId: current.membershipId,
     campaignId: current.campaignId,
+    organizationRole: "organizer",
   });
 
   const access = await resolveAccess(db, request(current.sessionSecret), current.campaignId);
@@ -141,13 +150,32 @@ test("MFA Organizer receives synthetic admin access for an owned Campaign", asyn
 
   assert.match(db.lastBridgeQuery, /a\.disabled_at IS NULL/u);
   assert.match(db.lastBridgeQuery, /m\.disabled_at IS NULL/u);
-  assert.match(db.lastBridgeQuery, /m\.role_kind = 'organizer'/u);
   assert.match(db.lastBridgeQuery, /c\.organization_id = m\.organization_id/u);
   assert.match(db.lastBridgeQuery, /s\.revoked_at IS NULL/u);
   assert.match(db.lastBridgeQuery, /s\.assurance = 'mfa'/u);
 });
 
-test("Organizer bridge rejects foreign and legacy-unowned Campaigns", async () => {
+test("Organization Admin receives Campaign admin access only with campaign.manage", async () => {
+  const direct = await state({ role: "admin", capabilities: ["campaign.manage"] });
+  assert.equal(
+    (await resolveAccess(new BridgeDb(direct), request(direct.sessionSecret), direct.campaignId))?.role,
+    "admin",
+  );
+
+  const viaTemplate = await state({ role: "admin", templateCapabilities: ["campaign.manage"] });
+  assert.equal(
+    (await resolveAccess(new BridgeDb(viaTemplate), request(viaTemplate.sessionSecret), viaTemplate.campaignId))?.role,
+    "admin",
+  );
+
+  const restricted = await state({ role: "admin", capabilities: ["audit.read"] });
+  assert.equal(
+    await resolveAccess(new BridgeDb(restricted), request(restricted.sessionSecret), restricted.campaignId),
+    null,
+  );
+});
+
+test("Organization bridge rejects foreign and legacy-unowned Campaigns", async () => {
   const foreign = await state({ campaignOrganizationId: "org_b" });
   assert.equal(
     await resolveOrganizationCampaignOrganizerAccess(
@@ -169,7 +197,7 @@ test("Organizer bridge rejects foreign and legacy-unowned Campaigns", async () =
   );
 });
 
-test("Organizer bridge rejects recovery assurance, disabled identities, revoked and expired sessions", async () => {
+test("Organization bridge rejects recovery assurance, disabled identities, revoked and expired sessions", async () => {
   const cases: Partial<BridgeState>[] = [
     { assurance: "recovery" },
     { accountDisabled: true },
@@ -189,14 +217,6 @@ test("Organizer bridge rejects recovery assurance, disabled identities, revoked 
       null,
     );
   }
-});
-
-test("Organization Admin does not inherit legacy full-admin access without capability mapping", async () => {
-  const current = await state({ role: "admin" });
-  assert.equal(
-    await resolveAccess(new BridgeDb(current), request(current.sessionSecret), current.campaignId),
-    null,
-  );
 });
 
 test("missing Organization schema fails closed without breaking legacy-compatible access resolution", async () => {
