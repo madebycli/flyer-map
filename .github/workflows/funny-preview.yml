@@ -97,11 +97,12 @@ jobs:
             echo "Cannot resolve exactly one Cloudflare account" >&2
             exit 1
           fi
+          export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID"
           echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
 
-          PROD_D1_ID="$(node -e 'const c=require("./wrangler.jsonc"); process.stdout.write(c.d1_databases.find(x=>x.binding==="DB").database_id)')"
+          PROD_D1_ID="$(node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8")); process.stdout.write(c.d1_databases.find(x=>x.binding==="DB").database_id)')"
           FUNNY_D1_ID="$(node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8")); process.stdout.write(c.env.funny.d1_databases.find(x=>x.binding==="DB").database_id)')"
-          LIST_JSON="$(npx wrangler d1 list --json)"
+          LIST_JSON="$(CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID" npx wrangler d1 list --json)"
           RESOLVED_D1_ID="$(printf '%s' "$LIST_JSON" | jq -r --arg name "$STAGING_DB_NAME" '[.[] | select(.name == $name)] | if length == 1 then .[0].uuid else empty end')"
           if [[ -z "$RESOLVED_D1_ID" || "$RESOLVED_D1_ID" != "$FUNNY_D1_ID" || "$RESOLVED_D1_ID" == "$PROD_D1_ID" ]]; then
             echo "Safety stop: funny preview D1 isolation could not be proven" >&2
