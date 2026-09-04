@@ -2,7 +2,7 @@
 id: operations-organizer-admin-staging
 type: operations
 status: active
-last_updated: 2026-09-04
+last_updated: 2026-09-05
 related: [plan-030-organizer-admin-platform, ADR-0026, plan-028-rxdb-local-first-mission-sync]
 ---
 
@@ -10,74 +10,108 @@ related: [plan-030-organizer-admin-platform, ADR-0026, plan-028-rxdb-local-first
 
 ## Zweck
 
-Organizer/Admin benötigt eine vollständig isolierte Cloudflare-Testlinie. Sie darf weder Production-D1/Worker noch das bestehende RxDB-Staging für Organization-/Credential-Migrationen wiederverwenden.
+Organizer/Admin verwendet eine vollständig isolierte Cloudflare-Testlinie. Production-D1/Worker und RxDB-Staging dürfen für Organization-/Credential-Migrationen niemals wiederverwendet werden.
 
 ## Geschützte Ressourcen
 
 Production:
 
-- Worker-Konfiguration im Repository: `wrangler.jsonc`;
-- Entry Point: `./worker/indexFc52.ts`;
-- D1: `0113e775-1e43-4d96-8b97-51fdeec7355b`;
-- Rate-Limit Namespaces: `91714001`, `91714002`, `91714003`.
+- committed `wrangler.jsonc`;
+- Entry Point `./worker/indexFc52.ts`;
+- D1 `0113e775-1e43-4d96-8b97-51fdeec7355b`;
+- Rate-Limit Namespaces `91714001`, `91714002`, `91714003`.
 
 RxDB-Staging:
 
-- Worker: `flyer-map-staging`;
-- D1: `bcec3432-18ec-42a2-970a-64d52c8263d5`.
-
-Diese Ressourcen dürfen von Admin-Staging nicht als Organization-D1 oder Organizer-Worker benutzt werden.
+- Worker `flyer-map-staging`;
+- D1 `bcec3432-18ec-42a2-970a-64d52c8263d5`.
 
 ## Dedizierte Admin-Staging-Ziele
 
-- Branch: `organizer-admin-staging`;
-- Worker: `flyer-map-admin-staging`;
-- D1-Name: `flyer-map-admin-staging-db`;
-- Organizer Entry Point: `worker/indexOrganizer.ts`;
-- Organization Password KDF Durable Object: `OrganizationPasswordKdfDurableObject`;
-- eigene Rate-Limit Namespaces, getrennt von Production und RxDB-Staging;
-- `ORGANIZATION_TOTP_KEY` ausschließlich als Worker Secret;
-- Bootstrap-Secret ausschließlich serverseitig/hash-basiert, nie in Repository, URL oder öffentlichen Logs.
+- Branch `organizer-admin-staging`;
+- Worker `flyer-map-admin-staging`;
+- D1 `flyer-map-admin-staging-db`;
+- Organizer Entry Point `worker/indexOrganizer.ts`;
+- Organization Password KDF DO `OrganizationPasswordKdfDurableObject`;
+- separate Staging Rate-Limit Namespaces `91914001`, `91914002`, `91914003`, `91914004`;
+- `ORGANIZATION_TOTP_KEY` nur als Worker Secret;
+- Bootstrap nur hash-basiert serverseitig.
 
-## Aktueller Handoff-Hinweis
+## Kanonischer Release-Gate: V9
 
-Auf `organizer-admin-staging` existiert eine Workflow-Generation `admin-staging-release-v6.yml`. Sie wurde gegen einen älteren Organizer-Head gebaut und enthält eine inzwischen falsche Annahme: sie erwartet vor der Staging-Materialisierung, dass die committed `wrangler.jsonc` bereits `./worker/indexOrganizer.ts` als `main` verwendet.
+Workflow: `.github/workflows/admin-staging-release-v9.yml`.
 
-Die kanonische Production-Konfiguration wurde danach absichtlich auf `./worker/indexFc52.ts` zurückgesetzt. Deshalb darf die V6-Fassung nicht blind erneut deployed werden.
+Der Workflow muss einen exakten grünen Feature-Commit über `AUDITED_SOURCE_SHA` auditieren und erlaubt gegenüber diesem Source-Baum ausschließlich die drei Staging-Harness-Dateien als Abweichung:
 
-## Erforderlicher Fix vor dem nächsten Staging-Deploy
+- `.github/workflows/admin-staging-release-v9.yml`;
+- `.staging/admin-v9-release.sh`;
+- `.staging/admin-v9-browser.mjs`.
 
-1. Frischen `feature/organizer-admin-platform` Head und erfolgreiche CI verifizieren.
-2. Staging-Branch ausschließlich von diesem geprüften Head aktualisieren.
-3. Committed `wrangler.jsonc` zuerst gegen die Production-Baseline prüfen (`indexFc52.ts`, Production-D1, nur Production Rate-Limit 91714001-3).
-4. Eine **separate temporäre/deploy-spezifische Admin-Konfiguration** materialisieren, die ausschließlich für Admin-Staging:
-   - `worker/indexOrganizer.ts` nutzt;
-   - `flyer-map-admin-staging-db` bindet;
-   - `OrganizationPasswordKdfDurableObject` bindet und migriert;
-   - eigene Organization-Login- und bestehende Rate-Limit Namespaces benutzt;
-   - niemals Production-/RxDB-Staging-D1 referenziert.
-5. Migrationen 0018/0019 ausschließlich auf der isolierten Admin-D1 anwenden.
-6. Vor echtem Deploy Tests, Typecheck, Dependency Audit, Build und Wrangler Dry Run ausführen.
-7. Reales Runtime-Smoke durchführen: `/start`, Bootstrap, Passwort-Challenge, TOTP, `/me`, Logout, erneuter Login. Secrets maskieren und private temporäre Antworten nicht als Artifact hochladen.
-8. Disposable Smoke-Identity/Organization nach Prüfung entfernen oder eine explizit definierte Testidentität sicher behandeln.
-9. Finale Konfiguration ohne Diagnostics/Smoke-Bootstrap-Secret deployen.
-10. URL und isolierte Resource-IDs erst nach erfolgreicher Safety-Prüfung als Teststand dokumentieren.
+Staging-spezifische Secrets/Digests dürfen nur in der isolierten Workflow-/Runner-Konfiguration vorkommen. Der Klartext des finalen einmaligen Bootstrap-Testschlüssels darf niemals ins Repository oder Artifact.
 
-## Safety Checks
+## Erster vollständig grüner Lauf
 
-Jeder Admin-Staging-Workflow muss fail-closed prüfen:
+V9 Run `33924415528` / #23 auf Staging-Head `6414aad45489cd2800e7dcf2f9e6bc917e4106b2` war vollständig erfolgreich und auditierte Runtime-Source `c62385a8c400f68753d1f1f811e2315551153885`.
 
-- Admin-D1-ID ist weder Production-D1 noch RxDB-Staging-D1;
-- Worker-Name ist `flyer-map-admin-staging`;
-- generierte Admin-Konfiguration enthält die Organization-KDF-DO-Bindung;
-- generierte Admin-Konfiguration enthält keine geschützte D1-ID;
-- Production `wrangler.jsonc` bleibt im Commit unverändert;
-- keine Secrets in `set -x`, JSON-Artifacts, HTML-Artefakten oder GitHub-Logs;
-- `/api/organization/me` ist ohne Session 401;
-- Organization-Schreibrequest mit fremdem Origin wird abgewiesen;
-- alte/rotierte Bootstrap-Credentials funktionieren im finalen Stand nicht;
-- finale Worker-Antworten tragen die vorgesehenen Security Header.
+Belegt wurden:
+
+- exact-source derivation;
+- Tests, Typecheck, Dependency Audit, Production Build;
+- Admin-D1-/Production-/RxDB-Isolation;
+- Migrationen nur auf `flyer-map-admin-staging-db`;
+- Candidate-Version-Pinning über `Cloudflare-Workers-Version-Overrides`;
+- 5-fache Candidate-Konvergenz;
+- Bootstrap -> Password -> TOTP -> `/me`;
+- Campaign A+B + Fresh-Browser-Persistenz;
+- Clean-Browser Admin Invite + Token-Scrubbing + MFA;
+- Mobile Chromium 390x844 ohne Overflow;
+- Cleanup auf 0 Organization-Testdaten und fehlerfreie Foreign Keys;
+- finaler ungepinnter public-worker Safety-Gate.
+
+## Static Asset Security Headers
+
+Cloudflare Workers Static Assets können HTML direkt vor dem Worker bedienen. Deshalb reicht die Härtung in `worker/indexOrganizer.ts` für `/start` und andere statische Antworten nicht aus.
+
+`public/_headers` setzt für alle statischen Assets:
+
+- `X-Content-Type-Options: nosniff`;
+- `X-Frame-Options: DENY`;
+- `Referrer-Policy: strict-origin-when-cross-origin`;
+- `Cross-Origin-Opener-Policy: same-origin`.
+
+V9 prüft die Header sowohl für statisches `/start` als auch für Worker-generierte API-Antworten. Dieses Gate nicht abschwächen.
+
+## Release-Ablauf
+
+1. Feature-Head, PR #76 und exact-head CI neu verifizieren.
+2. Committed Production Wrangler gegen `indexFc52.ts`, Production-D1 und 91714001-3 prüfen.
+3. Exakte Staging-Derivation gegen den auditierten Source-Head prüfen.
+4. `npm ci`, Tests, Typecheck, Dependency Audit, Production Build.
+5. Isolierte Admin-Konfiguration materialisieren; Production-/RxDB-D1 IDs fail-closed ausschließen.
+6. Migrationen ausschließlich auf `flyer-map-admin-staging-db` anwenden.
+7. Candidate deployen und exakte Worker-Version für API/Browser-Smokes pinnen.
+8. API-Smoke und Chromium-Acceptance vollständig ausführen.
+9. Testdaten remote bereinigen und Foreign Keys prüfen.
+10. Finalen Worker ohne Diagnostics und mit finalem Bootstrap-Digest deployen.
+11. Version-Pin entfernen und die echte öffentliche `workers.dev`-URL prüfen.
+12. Erst nach grünem Final-Safety-Gate `test-url.txt` und `final-safety.json` erzeugen.
+
+## Final Public Safety
+
+Der ungepinnte finale Worker muss mindestens erfüllen:
+
+- `GET /start` 2xx/3xx;
+- unauthenticated `/api/organization/me` = 401;
+- `HEAD /api/organization/me` = 405, niemals SPA HTML 200;
+- fremder Origin auf Organization-Schreibroute = 403;
+- rotierte Smoke-Bootstrap-Credentials = 403;
+- statische und API Security Header vollständig;
+- bereinigte Admin-D1 und keine Foreign-Key-Verletzung.
+
+## Credential-Regel für Benutzer-Test
+
+Der finale Teststand ist nach V9 bewusst leer. Für den ersten Organizer wird ein einmaliger Bootstrap-Testschlüssel verwendet. Das Repository enthält nur dessen SHA-256. Der Klartext darf erst nach einem vollständig grünen Final-Run über einen privaten Übergabekanal an den Tester gegeben werden. Nach erfolgreichem Bootstrap ist der Schlüssel verbraucht.
 
 ## Production-Gate
 
-Ein erfolgreiches Admin-Staging ist **keine** Production-Freigabe. Production-D1-Migrationen 0017/0018/0019, Production-Worker-Wechsel, PR-Merge oder Ready-for-Review benötigen einen separaten ausdrücklichen Auftrag.
+Ein grünes Admin-Staging ist keine Production-Freigabe. Production-D1-Migrationen 0017/0018/0019, Production-Worker-Wechsel, PR-Merge oder Ready-for-Review benötigen weiterhin einen separaten ausdrücklichen Auftrag.
