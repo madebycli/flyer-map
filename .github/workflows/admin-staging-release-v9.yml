@@ -20,7 +20,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      AUDITED_SOURCE_SHA: 521dd25c6d52c209f94092f28edfbe2b572b3f3e
+      AUDITED_SOURCE_SHA: f26bbeb32a3ad93832ff43bcdffdd2c436e7cbaf
       FINAL_BOOTSTRAP_SECRET_SHA256: 75ce557d4c0ed79819d55ecfeffaa5de67a39e925845bb2dc6840d9ba60af0db
     steps:
       - name: Checkout staging derivation

@@ -9,18 +9,10 @@ import {
 const MAX_BODY_BYTES = 4_096;
 const PASSWORD_KEY_BYTES = 32;
 const INTERNAL_CHUNK_URL = "https://organization-password-kdf.internal/chunk";
-const SAFE_KDF_CODE = /^[a-z0-9_]{1,80}$/u;
 
 type OrganizationPasswordKdfDurableObjectEnv = {
   ORGANIZATION_PASSWORD_KDF?: OrganizationPasswordKdfNamespace;
 };
-
-class ChildKdfError extends Error {
-  constructor(readonly reason: string) {
-    super(reason);
-    this.name = "ChildKdfError";
-  }
-}
 
 function json(data: unknown, init: ResponseInit = {}) {
   return Response.json(data, {
@@ -72,22 +64,6 @@ function readChunkState(payload: unknown, priorCompleted: number, iterations: nu
   } satisfies OrganizationPasswordPbkdf2ChunkState;
 }
 
-async function responseErrorCode(response: Response) {
-  try {
-    const payload = await response.clone().json() as unknown;
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      const error = (payload as Record<string, unknown>).error;
-      if (error && typeof error === "object" && !Array.isArray(error)) {
-        const code = (error as Record<string, unknown>).code;
-        if (typeof code === "string" && SAFE_KDF_CODE.test(code)) return code;
-      }
-    }
-  } catch {
-    // A platform-generated response can be HTML; status + unknown stays safe.
-  }
-  return "unknown";
-}
-
 async function deriveThroughChildDurableObject(
   namespace: OrganizationPasswordKdfNamespace,
   password: string,
@@ -100,46 +76,38 @@ async function deriveThroughChildDurableObject(
 
   for (let requestIndex = 0; requestIndex < maxRequests; requestIndex += 1) {
     const priorCompleted = state?.completedIterations ?? 0;
-    let response: Response;
-    try {
-      response = await child.fetch(INTERNAL_CHUNK_URL, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          [ORGANIZATION_PASSWORD_KDF_INTERNAL_HEADER]: "1",
-        },
-        body: JSON.stringify({
-          password,
-          salt: Array.from(salt),
-          iterations,
-          ...(state ? {
-            completedIterations: state.completedIterations,
-            previous: Array.from(state.previous),
-            accumulator: Array.from(state.accumulator),
-          } : {}),
-        }),
-      });
-    } catch {
-      throw new ChildKdfError("kdf_child_fetch_exception");
-    }
-    if (!response.ok) {
-      const code = await responseErrorCode(response);
-      throw new ChildKdfError(`kdf_child_response_${response.status}_${code}`);
-    }
+    const response = await child.fetch(INTERNAL_CHUNK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [ORGANIZATION_PASSWORD_KDF_INTERNAL_HEADER]: "1",
+      },
+      body: JSON.stringify({
+        password,
+        salt: Array.from(salt),
+        iterations,
+        ...(state ? {
+          completedIterations: state.completedIterations,
+          previous: Array.from(state.previous),
+          accumulator: Array.from(state.accumulator),
+        } : {}),
+      }),
+    });
+    if (!response.ok) throw new Error("organization_password_kdf_child_failed");
 
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
-      throw new ChildKdfError("kdf_child_invalid_json");
+      throw new Error("organization_password_kdf_child_invalid_json");
     }
     const next = readChunkState(payload, priorCompleted, iterations);
-    if (!next) throw new ChildKdfError("kdf_child_invalid_state");
+    if (!next) throw new Error("organization_password_kdf_child_invalid_state");
     state = next;
     if (state.completedIterations === iterations) return state.accumulator;
   }
 
-  throw new ChildKdfError("kdf_child_limit_exceeded");
+  throw new Error("organization_password_kdf_child_limit_exceeded");
 }
 
 export class OrganizationPasswordKdfDurableObject {
@@ -205,11 +173,8 @@ export class OrganizationPasswordKdfDurableObject {
       try {
         const derivedKey = await deriveThroughChildDurableObject(namespace, password, salt, iterations);
         return json({ derivedKey: Array.from(derivedKey) });
-      } catch (error) {
-        const code = error instanceof ChildKdfError && SAFE_KDF_CODE.test(error.reason)
-          ? error.reason
-          : "kdf_child_failed";
-        return json({ error: { code, message: "Passwort-Ableitung ist fehlgeschlagen." } }, { status: 500 });
+      } catch {
+        return json({ error: { code: "kdf_failed", message: "Passwort-Ableitung ist fehlgeschlagen." } }, { status: 500 });
       }
     }
 
@@ -238,7 +203,7 @@ export class OrganizationPasswordKdfDurableObject {
         accumulator: Array.from(chunk.accumulator),
       });
     } catch {
-      return json({ error: { code: "kdf_chunk_failed", message: "Passwort-Ableitung ist fehlgeschlagen." } }, { status: 500 });
+      return json({ error: { code: "kdf_failed", message: "Passwort-Ableitung ist fehlgeschlagen." } }, { status: 500 });
     }
   }
 }
