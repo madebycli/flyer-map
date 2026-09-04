@@ -191,6 +191,71 @@ test("organization password KDF orchestrator fails closed without its child bind
   assert.equal(payload.error.code, "kdf_binding_missing");
 });
 
+test("organization password KDF orchestrator reports a sanitized child platform response", async () => {
+  const namespace: OrganizationPasswordKdfNamespace = {
+    idFromName(name) {
+      return name;
+    },
+    get() {
+      return {
+        async fetch() {
+          return new Response("platform failure", { status: 500, headers: { "content-type": "text/html" } });
+        },
+      };
+    },
+  };
+  const durableObject = new OrganizationPasswordKdfDurableObject({}, { ORGANIZATION_PASSWORD_KDF: namespace });
+  const response = await durableObject.fetch(new Request("https://organization-password-kdf.internal/derive", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-organization-password-kdf-internal": "1",
+    },
+    body: JSON.stringify({
+      password: "do-runtime-password-123",
+      salt: Array.from({ length: 16 }, (_, index) => index + 10),
+      iterations: 30_000,
+    }),
+  }));
+  assert.equal(response.status, 500);
+  const payload = await response.json() as { error: { code: string } };
+  assert.equal(payload.error.code, "kdf_child_response_500_unknown");
+});
+
+test("organization password KDF orchestrator reports exhausted child reset retries", async () => {
+  let calls = 0;
+  const namespace: OrganizationPasswordKdfNamespace = {
+    idFromName(name) {
+      return name;
+    },
+    get() {
+      return {
+        async fetch() {
+          calls += 1;
+          throw new Error("Durable Object reset because its code was updated.");
+        },
+      };
+    },
+  };
+  const durableObject = new OrganizationPasswordKdfDurableObject({}, { ORGANIZATION_PASSWORD_KDF: namespace });
+  const response = await durableObject.fetch(new Request("https://organization-password-kdf.internal/derive", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-organization-password-kdf-internal": "1",
+    },
+    body: JSON.stringify({
+      password: "do-runtime-password-123",
+      salt: Array.from({ length: 16 }, (_, index) => index + 10),
+      iterations: 30_000,
+    }),
+  }));
+  assert.equal(calls, 3);
+  assert.equal(response.status, 500);
+  const payload = await response.json() as { error: { code: string } };
+  assert.equal(payload.error.code, "kdf_child_fetch_exception");
+});
+
 test("organization password KDF child Durable Object validates continuation state", async () => {
   const durableObject = new OrganizationPasswordKdfDurableObject({}, {});
   const salt = Array.from({ length: 16 }, (_, index) => index + 10);
