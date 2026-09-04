@@ -1,3 +1,32 @@
+function methodNotAllowed(request: Request) {
+  return new Response(
+    request.method === "HEAD"
+      ? null
+      : JSON.stringify({
+          error: {
+            code: "method_not_allowed",
+            message: "Diese Methode ist für den API-Endpunkt nicht erlaubt.",
+          },
+        }),
+    {
+      status: 405,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        allow: "GET",
+      },
+    },
+  );
+}
+
+export function guardOrganizationApiMethod(request: Request) {
+  const url = new URL(request.url);
+  if (url.pathname === "/api/organization/me" && request.method !== "GET") {
+    return methodNotAllowed(request);
+  }
+  return null;
+}
+
 export function failClosedOrganizationApiFallback(request: Request, response: Response) {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/")) return response;

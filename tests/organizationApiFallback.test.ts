@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { failClosedOrganizationApiFallback } from "../worker/organizationApiFallback.ts";
+import {
+  failClosedOrganizationApiFallback,
+  guardOrganizationApiMethod,
+} from "../worker/organizationApiFallback.ts";
 
 function spaResponse() {
   return new Response("<!doctype html><html><body>spa</body></html>", {
@@ -13,9 +16,30 @@ function spaResponse() {
   });
 }
 
+test("known organization me route rejects HEAD before downstream routing", async () => {
+  const response = guardOrganizationApiMethod(
+    new Request("https://flyer.test/api/organization/me", { method: "HEAD" }),
+  );
+
+  assert.ok(response);
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("allow"), "GET");
+  assert.equal(await response.text(), "");
+});
+
+test("organization me GET and unrelated API routes are not blocked by method guard", () => {
+  assert.equal(guardOrganizationApiMethod(new Request("https://flyer.test/api/organization/me")), null);
+  assert.equal(
+    guardOrganizationApiMethod(new Request("https://flyer.test/api/organizations", { method: "POST" })),
+    null,
+  );
+});
+
 test("HEAD API fallthrough fails closed instead of returning SPA HTML", async () => {
   const response = failClosedOrganizationApiFallback(
-    new Request("https://flyer.test/api/organization/me", { method: "HEAD" }),
+    new Request("https://flyer.test/api/organization/not-a-route", { method: "HEAD" }),
     spaResponse(),
   );
 

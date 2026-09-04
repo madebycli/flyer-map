@@ -1,6 +1,9 @@
 import baseWorker from "./indexFc52.ts";
 import { handleOrganizationApi, type OrganizationApiEnv } from "./organizationApi.ts";
-import { failClosedOrganizationApiFallback } from "./organizationApiFallback.ts";
+import {
+  failClosedOrganizationApiFallback,
+  guardOrganizationApiMethod,
+} from "./organizationApiFallback.ts";
 import { handleOrganizationBootstrapHashApi, type OrganizationBootstrapHashEnv } from "./organizationBootstrapHashApi.ts";
 import {
   configureOrganizationPasswordKdfRuntime,
@@ -50,6 +53,8 @@ export default {
   async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
     configureOrganizationPasswordKdfRuntime(env.ORGANIZATION_PASSWORD_KDF);
     try {
+      const methodGuard = guardOrganizationApiMethod(request);
+      if (methodGuard) return harden(methodGuard);
       const queryGuard = guardOrganizationSecurityQuery(request);
       if (queryGuard) return harden(queryGuard);
       const bootstrapHashResponse = await handleOrganizationBootstrapHashApi(request, env);
