@@ -54,5 +54,53 @@
         "period": 10
       }
     }
-  ]
+  ],
+  "env": {
+    "funny": {
+      "name": "flyer-map-funny",
+      "workers_dev": true,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "flyer-map-staging-db",
+          "database_id": "bcec3432-18ec-42a2-970a-64d52c8263d5",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "CAMPAIGN_SYNC",
+            "class_name": "CampaignSyncDurableObject"
+          }
+        ]
+      },
+      "ratelimits": [
+        {
+          "name": "FIELD_GROUP_JOIN_ACTOR_LIMITER",
+          "namespace_id": "91814001",
+          "simple": {
+            "limit": 30,
+            "period": 60
+          }
+        },
+        {
+          "name": "FIELD_GROUP_JOIN_CREDENTIAL_LIMITER",
+          "namespace_id": "91814002",
+          "simple": {
+            "limit": 8,
+            "period": 60
+          }
+        },
+        {
+          "name": "PICKUP_SEARCH_LIMITER",
+          "namespace_id": "91814003",
+          "simple": {
+            "limit": 20,
+            "period": 10
+          }
+        }
+      ]
+    }
+  }
 }
