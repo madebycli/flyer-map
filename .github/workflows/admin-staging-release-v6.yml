@@ -1,0 +1,293 @@
+name: Organizer Admin Staging Release V6
+
+on:
+  push:
+    branches:
+      - organizer-admin-staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: organizer-admin-staging-release-v6
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ADMIN_DB_NAME: flyer-map-admin-staging-db
+      ADMIN_WORKER_NAME: flyer-map-admin-staging
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+      AUDITED_SOURCE_SHA: 746ef4d651d35713a022b6e4c34729dc32199b0b
+      FINAL_BOOTSTRAP_SECRET_SHA256: cae8013acc419559c73b247443829e66df6f7bd872b55b2428309db0d608f566
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify audited dependency provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "${AUDITED_SOURCE_SHA}^{commit}"
+          git diff --quiet "$AUDITED_SOURCE_SHA" -- package.json package-lock.json || {
+            echo 'Dependency manifests differ from audited feature head.' >&2
+            exit 1
+          }
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Resolve isolated Cloudflare resources
+        id: resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/admin-v6 /tmp/admin-v6-private
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.success')" == 'true' ]] || exit 1
+          COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq '.result|length')"
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && printf '%s' "$ACCOUNTS_JSON" | jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' >/dev/null; then
+            ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
+          elif [[ "$COUNT" == '1' ]]; then
+            ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
+          else
+            echo 'Cloudflare account is ambiguous.' >&2
+            exit 1
+          fi
+          echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          ADMIN_D1_ID="$(printf '%s' "$LIST_JSON" | jq -r --arg name "$ADMIN_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end')"
+          [[ -n "$ADMIN_D1_ID" ]] || { echo 'Admin D1 missing or ambiguous.' >&2; exit 1; }
+          [[ "$ADMIN_D1_ID" != "$PROD_D1_ID" && "$ADMIN_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo 'Protected D1 collision.' >&2; exit 1; }
+          echo "ADMIN_D1_ID=$ADMIN_D1_ID" >> "$GITHUB_ENV"
+          echo "d1_id=$ADMIN_D1_ID" >> "$GITHUB_OUTPUT"
+      - name: Materialize isolated admin config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          if(c.main!=='./worker/indexOrganizer.ts') throw new Error(`Unexpected organizer entrypoint ${c.main}`);
+          if(!(c.compatibility_flags||[]).includes('nodejs_compat')) throw new Error('nodejs_compat missing');
+          const prod=(c.d1_databases||[]).find(x=>x.binding==='DB');
+          if(prod?.database_id!==process.env.PROD_D1_ID) throw new Error('Production D1 baseline changed');
+          c.env=c.env||{};
+          c.env.admin_staging={
+            name:process.env.ADMIN_WORKER_NAME,
+            workers_dev:true,
+            vars:{ORGANIZATION_BOOTSTRAP_SECRET_SHA256:process.env.FINAL_BOOTSTRAP_SECRET_SHA256},
+            d1_databases:[{binding:'DB',database_name:process.env.ADMIN_DB_NAME,database_id:process.env.ADMIN_D1_ID,migrations_dir:'migrations'}],
+            durable_objects:{bindings:[
+              {name:'CAMPAIGN_SYNC',class_name:'CampaignSyncDurableObject'},
+              {name:'ORGANIZATION_PASSWORD_KDF',class_name:'OrganizationPasswordKdfDurableObject'}
+            ]},
+            ratelimits:[
+              {name:'FIELD_GROUP_JOIN_ACTOR_LIMITER',namespace_id:'91914001',simple:{limit:30,period:60}},
+              {name:'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER',namespace_id:'91914002',simple:{limit:8,period:60}},
+              {name:'PICKUP_SEARCH_LIMITER',namespace_id:'91914003',simple:{limit:20,period:10}},
+              {name:'ORGANIZATION_LOGIN_LIMITER',namespace_id:'91914004',simple:{limit:12,period:60}}
+            ]
+          };
+          c.migrations=c.migrations||[];
+          if(!c.migrations.some(x=>x.tag==='v2-organization-password-kdf')) c.migrations.push({tag:'v2-organization-password-kdf',new_sqlite_classes:['OrganizationPasswordKdfDurableObject']});
+          const protectedIds=new Set([...(c.ratelimits||[]).map(x=>String(x.namespace_id)),'91814001','91814002','91814003']);
+          for(const r of c.env.admin_staging.ratelimits) if(protectedIds.has(String(r.namespace_id))) throw new Error(`Rate collision ${r.namespace_id}`);
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(c,null,2)+'\n');
+          NODE
+      - name: Verify isolated D1 pristine state
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations apply "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'PRAGMA foreign_key_check;' > /tmp/admin-v6/fk-before.json
+          jq -e '[.[].results[]?]|length==0' /tmp/admin-v6/fk-before.json >/dev/null
+          STATE="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT (SELECT COUNT(*) FROM organization_bootstrap_state) bootstrap_count,(SELECT COUNT(*) FROM organizations) organization_count,(SELECT COUNT(*) FROM organization_accounts) account_count,(SELECT COUNT(*) FROM campaigns WHERE organization_id IS NOT NULL) owned_campaign_count;")"
+          printf '%s' "$STATE" > /tmp/admin-v6/state-before.json
+          jq -e '.[0].results[0]|.bootstrap_count==0 and .organization_count==0 and .account_count==0 and .owned_campaign_count==0' <<<"$STATE" >/dev/null || { echo 'Admin staging not pristine.' >&2; exit 1; }
+      - name: Create disposable credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          SMOKE_BOOTSTRAP_SECRET="$(openssl rand -hex 32)"
+          SMOKE_PASSWORD="Smoke-$(openssl rand -hex 24)"
+          echo "::add-mask::$SMOKE_BOOTSTRAP_SECRET"
+          echo "::add-mask::$SMOKE_PASSWORD"
+          SMOKE_DIGEST="$(printf '%s' "$SMOKE_BOOTSTRAP_SECRET"|sha256sum|awk '{print $1}')"
+          echo "SMOKE_BOOTSTRAP_SECRET=$SMOKE_BOOTSTRAP_SECRET" >> "$GITHUB_ENV"
+          echo "SMOKE_PASSWORD=$SMOKE_PASSWORD" >> "$GITHUB_ENV"
+          echo "SMOKE_DIGEST=$SMOKE_DIGEST" >> "$GITHUB_ENV"
+      - name: Build smoke candidate with KDF diagnostics
+        env:
+          CLOUDFLARE_ENV: admin_staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          c.env.admin_staging.vars.ORGANIZATION_BOOTSTRAP_SECRET_SHA256=process.env.SMOKE_DIGEST;
+          c.env.admin_staging.vars.ORGANIZATION_KDF_DIAGNOSTICS='1';
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(c,null,2)+'\n');
+          NODE
+          npm run build
+          node <<'NODE'
+          const fs=require('node:fs'),path=require('node:path');
+          const redirect=JSON.parse(fs.readFileSync('.wrangler/deploy/config.json','utf8'));
+          const generated=JSON.parse(fs.readFileSync(path.resolve('.wrangler/deploy',redirect.configPath),'utf8'));
+          if(generated.name!==process.env.ADMIN_WORKER_NAME) throw new Error('Wrong Worker');
+          if((generated.d1_databases||[]).find(x=>x.binding==='DB')?.database_id!==process.env.ADMIN_D1_ID) throw new Error('Wrong D1');
+          if(!(generated.durable_objects?.bindings||[]).some(x=>x.name==='ORGANIZATION_PASSWORD_KDF'&&x.class_name==='OrganizationPasswordKdfDurableObject')) throw new Error('KDF binding missing');
+          if(generated.vars?.ORGANIZATION_KDF_DIAGNOSTICS!=='1') throw new Error('Smoke KDF diagnostics missing');
+          const s=JSON.stringify(generated);
+          if(s.includes(process.env.PROD_D1_ID)||s.includes(process.env.RXDB_STAGING_D1_ID)) throw new Error('Protected D1 leaked');
+          NODE
+          npx wrangler deploy --dry-run --outdir .wrangler-admin-v6-dry-run
+      - name: Deploy smoke candidate
+        id: smoke_deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy 2>&1|tee /tmp/admin-v6/deploy-smoke.log
+          TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-v6/deploy-smoke.log|tail -n1||true)"
+          [[ -n "$TEST_URL" ]] || exit 1
+          grep -F 'ORGANIZATION_PASSWORD_KDF' /tmp/admin-v6/deploy-smoke.log >/dev/null
+          echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
+      - name: Configure TOTP encryption key
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOTP_KEY="$(openssl rand 32|base64|tr '+/' '-_'|tr -d '=\n')"
+          echo "::add-mask::$TOTP_KEY"
+          printf '%s' "$TOTP_KEY"|npx wrangler secret put ORGANIZATION_TOTP_KEY --name "$ADMIN_WORKER_NAME"
+      - name: Real bootstrap password TOTP session smoke
+        id: runtime_smoke
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail_diag(){ jq -n --arg stage "$1" --arg status "$2" --arg code "$3" --arg reason "${4:-}" '{ok:false,stage:$stage,http_status:$status,error_code:$code,reason:$reason}' > /tmp/admin-v6/runtime-smoke.json; exit 1; }
+          for attempt in $(seq 1 24); do
+            S="$(curl -sSLo /tmp/admin-v6-private/start.html -w '%{http_code}' "$TEST_URL/start"||printf 000)"
+            [[ "$S" -ge 200 && "$S" -lt 400 ]] && break
+            [[ "$attempt" -lt 24 ]] || fail_diag ui "$S" unavailable
+            sleep 5
+          done
+          USERNAME="runtime.smoke.${GITHUB_RUN_ID}"
+          ORG="Runtime Smoke ${GITHUB_RUN_ID}"
+          jq -n --arg organizationName "$ORG" --arg username "$USERNAME" --arg password "$SMOKE_PASSWORD" --arg bootstrapSecret "$SMOKE_BOOTSTRAP_SECRET" '{organizationName:$organizationName,username:$username,password:$password,bootstrapSecret:$bootstrapSecret}' > /tmp/admin-v6-private/bootstrap.json
+          B="$(curl -sS -o /tmp/admin-v6-private/bootstrap-response.json -w '%{http_code}' -c /tmp/admin-v6-private/cookies.txt -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data-binary @/tmp/admin-v6-private/bootstrap.json||printf 000)"
+          if [[ "$B" != '201' ]]; then CODE="$(jq -r '.error.code//"non_json"' /tmp/admin-v6-private/bootstrap-response.json 2>/dev/null||printf non_json)"; REASON="$(jq -r '.error.details.reason//""' /tmp/admin-v6-private/bootstrap-response.json 2>/dev/null||true)"; fail_diag bootstrap "$B" "$CODE" "$REASON"; fi
+          jq -e '(.organization.id|type=="string") and (.account.id|type=="string") and (.recoveryCodes|length==10) and (.otpauthUri|startswith("otpauth://totp/"))' /tmp/admin-v6-private/bootstrap-response.json >/dev/null || fail_diag bootstrap_contract 201 invalid_contract
+          jq -n --arg username "$USERNAME" --arg password "$SMOKE_PASSWORD" '{username:$username,password:$password}' > /tmp/admin-v6-private/login.json
+          L="$(curl -sS -o /tmp/admin-v6-private/login-response.json -w '%{http_code}' -b /tmp/admin-v6-private/cookies.txt -c /tmp/admin-v6-private/cookies.txt -X POST "$TEST_URL/api/organization/login/password" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data-binary @/tmp/admin-v6-private/login.json||printf 000)"
+          [[ "$L" == '200' ]] || fail_diag password_login "$L" "$(jq -r '.error.code//"non_json"' /tmp/admin-v6-private/login-response.json 2>/dev/null||printf non_json)"
+          OTP_SECRET="$(jq -r '.otpauthUri' /tmp/admin-v6-private/bootstrap-response.json|node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(new URL(s.trim()).searchParams.get("secret")||""));')"
+          echo "::add-mask::$OTP_SECRET"
+          OTP="$(python - "$OTP_SECRET" <<'PY'
+          import base64,hashlib,hmac,struct,sys,time
+          key=base64.b32decode(sys.argv[1],casefold=True); c=int(time.time())//30
+          d=hmac.new(key,struct.pack('>Q',c),hashlib.sha1).digest(); o=d[-1]&15
+          n=((d[o]&127)<<24)|((d[o+1]&255)<<16)|((d[o+2]&255)<<8)|(d[o+3]&255)
+          print(f'{n%1000000:06d}')
+          PY
+          )"
+          M="$(curl -sS -o /tmp/admin-v6-private/totp-response.json -w '%{http_code}' -b /tmp/admin-v6-private/cookies.txt -c /tmp/admin-v6-private/cookies.txt -X POST "$TEST_URL/api/organization/login/totp" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data "{\"code\":\"$OTP\"}"||printf 000)"
+          [[ "$M" == '200' ]] || fail_diag totp_login "$M" "$(jq -r '.error.code//"non_json"' /tmp/admin-v6-private/totp-response.json 2>/dev/null||printf non_json)"
+          ME="$(curl -sS -o /tmp/admin-v6-private/me.json -w '%{http_code}' -b /tmp/admin-v6-private/cookies.txt "$TEST_URL/api/organization/me"||printf 000)"
+          [[ "$ME" == '200' ]] || fail_diag session_me "$ME" unavailable
+          jq -e '.assurance=="mfa" and (.memberships|length==1) and .memberships[0].role=="organizer"' /tmp/admin-v6-private/me.json >/dev/null || fail_diag session_contract 200 invalid_contract
+          jq -n --arg bootstrap "$B" --arg password "$L" --arg totp "$M" --arg me "$ME" '{ok:true,bootstrap_status:$bootstrap,password_status:$password,totp_status:$totp,me_status:$me}' > /tmp/admin-v6/runtime-smoke.json
+      - name: Clean disposable admin state
+        id: cleanup
+        if: always() && steps.resources.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --command "DELETE FROM organization_bootstrap_state; DELETE FROM organizations; DELETE FROM organization_accounts; DELETE FROM organization_login_throttles;"
+          CLEAN="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT (SELECT COUNT(*) FROM organization_bootstrap_state) bootstrap_count,(SELECT COUNT(*) FROM organizations) organization_count,(SELECT COUNT(*) FROM organization_accounts) account_count,(SELECT COUNT(*) FROM campaigns WHERE organization_id IS NOT NULL) owned_campaign_count;")"
+          printf '%s' "$CLEAN" > /tmp/admin-v6/clean-state.json
+          jq -e '.[0].results[0]|.bootstrap_count==0 and .organization_count==0 and .account_count==0 and .owned_campaign_count==0' <<<"$CLEAN" >/dev/null
+      - name: Restore final private setup and rebuild
+        id: restore
+        if: always() && steps.resources.outcome == 'success'
+        env:
+          CLOUDFLARE_ENV: admin_staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          c.env.admin_staging.vars.ORGANIZATION_BOOTSTRAP_SECRET_SHA256=process.env.FINAL_BOOTSTRAP_SECRET_SHA256;
+          delete c.env.admin_staging.vars.ORGANIZATION_KDF_DIAGNOSTICS;
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(c,null,2)+'\n');
+          NODE
+          rm -rf dist .wrangler/deploy
+          npm run build
+          node <<'NODE'
+          const fs=require('node:fs'),path=require('node:path');
+          const redirect=JSON.parse(fs.readFileSync('.wrangler/deploy/config.json','utf8'));
+          const generated=JSON.parse(fs.readFileSync(path.resolve('.wrangler/deploy',redirect.configPath),'utf8'));
+          if(generated.vars?.ORGANIZATION_BOOTSTRAP_SECRET_SHA256!==process.env.FINAL_BOOTSTRAP_SECRET_SHA256) throw new Error('Final setup digest mismatch');
+          if('ORGANIZATION_KDF_DIAGNOSTICS' in (generated.vars||{})) throw new Error('KDF diagnostics leaked into final candidate');
+          NODE
+      - name: Deploy final candidate
+        id: final_deploy
+        if: always() && steps.restore.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy 2>&1|tee /tmp/admin-v6/deploy-final.log
+          FINAL_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-v6/deploy-final.log|tail -n1||true)"
+          [[ -n "$FINAL_URL" ]] || exit 1
+          grep -F 'ORGANIZATION_PASSWORD_KDF' /tmp/admin-v6/deploy-final.log >/dev/null
+          printf '%s\n' "$FINAL_URL" > /tmp/admin-v6/test-url.txt
+          echo "TEST_URL=$FINAL_URL" >> "$GITHUB_ENV"
+      - name: Verify final public state
+        id: safety
+        if: always() && steps.final_deploy.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          START="$(curl -sSLo /tmp/admin-v6-private/final-start.html -w '%{http_code}' "$TEST_URL/start")"
+          [[ "$START" -ge 200 && "$START" -lt 400 ]]
+          [[ "$(curl -sS -o /tmp/admin-v6-private/final-me.json -w '%{http_code}' "$TEST_URL/api/organization/me")" == '401' ]]
+          [[ "$(curl -sS -o /tmp/admin-v6-private/final-origin.json -w '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H 'Origin: https://invalid.example' -H 'Content-Type: application/json' --data '{}')" == '403' ]]
+          ROTATION_PAYLOAD="$(jq -n --arg s "$SMOKE_BOOTSTRAP_SECRET" '{organizationName:"Rotation Test",username:"rotation.test",password:"not-a-real-password-123",bootstrapSecret:$s}')"
+          [[ "$(curl -sS -o /tmp/admin-v6-private/final-rotation.json -w '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data "$ROTATION_PAYLOAD")" == '403' ]]
+          curl -sS --head "$TEST_URL/api/organization/me" > /tmp/admin-v6/final-headers.txt
+          grep -Eqi '^x-frame-options: DENY' /tmp/admin-v6/final-headers.txt
+          ! grep -F "$PROD_D1_ID" /tmp/admin-v6-private/final-start.html >/dev/null
+          ! grep -F "$RXDB_STAGING_D1_ID" /tmp/admin-v6-private/final-start.html >/dev/null
+      - name: Upload sanitized diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-staging-v6-diagnostics
+          path: /tmp/admin-v6/
+          retention-days: 1
+          if-no-files-found: warn
+      - name: Final gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ steps.runtime_smoke.outcome }}" == 'success' ]]
+          [[ "${{ steps.cleanup.outcome }}" == 'success' ]]
+          [[ "${{ steps.restore.outcome }}" == 'success' ]]
+          [[ "${{ steps.final_deploy.outcome }}" == 'success' ]]
+          [[ "${{ steps.safety.outcome }}" == 'success' ]]
