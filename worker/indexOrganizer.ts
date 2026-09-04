@@ -1,5 +1,6 @@
 import baseWorker from "./indexFc52.ts";
 import { handleOrganizationApi, type OrganizationApiEnv } from "./organizationApi.ts";
+import { failClosedOrganizationApiFallback } from "./organizationApiFallback.ts";
 import { handleOrganizationBootstrapHashApi, type OrganizationBootstrapHashEnv } from "./organizationBootstrapHashApi.ts";
 import {
   configureOrganizationPasswordKdfRuntime,
@@ -57,7 +58,8 @@ export default {
       if (securityResponse) return harden(securityResponse);
       const organizationResponse = await handleOrganizationApi(request, env);
       if (organizationResponse) return harden(organizationResponse);
-      return harden(await baseWorker.fetch(request, env, context));
+      const baseResponse = await baseWorker.fetch(request, env, context);
+      return harden(failClosedOrganizationApiFallback(request, baseResponse));
     } catch (error) {
       if (error instanceof OrganizationPasswordKdfUnavailableError) {
         return kdfUnavailableResponse(error, env.ORGANIZATION_KDF_DIAGNOSTICS === "1");
