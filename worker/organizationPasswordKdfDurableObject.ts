@@ -1,5 +1,5 @@
 import {
-  deriveOrganizationPasswordPbkdf2Local,
+  deriveOrganizationPasswordPbkdf2Portable,
   ORGANIZATION_PASSWORD_KDF_INTERNAL_HEADER,
 } from "./organizationPasswordKdf.ts";
 
@@ -67,7 +67,7 @@ export class OrganizationPasswordKdfDurableObject {
     }
 
     try {
-      const derived = await deriveOrganizationPasswordPbkdf2Local(
+      const derived = await deriveOrganizationPasswordPbkdf2Portable(
         record.password,
         Uint8Array.from(record.salt),
         record.iterations,

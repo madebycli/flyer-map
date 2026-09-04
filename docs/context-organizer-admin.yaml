@@ -1,0 +1,193 @@
+version: 1
+last_updated: 2026-09-04
+purpose: Organizer/Admin continuation overlay for the main docs/context-map.yaml routing graph.
+
+entrypoints:
+  after_main_graph:
+    - docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
+    - docs/plans/active/030-organizer-admin-platform.md
+    - docs/decisions/ADR-0026-organization-admin-identity-and-authorization.md
+    - docs/operations/ORGANIZER_ADMIN_STAGING.md
+
+routing_rules:
+  - for Organization, Organizer, Admin accounts, MFA, invites, security center, role templates, campaign tenancy or Admin staging, load this overlay after the normal AGENTS/CURRENT/context-map entrypoints
+  - GitHub remote refs, PR state and exact-head CI outrank handoff SHAs embedded in documentation
+  - ADR-0026 is accepted and is the current Organization identity/authorization decision; ADR-0015 and ADR-0016 remain supporting/proposed context where ADR-0026 does not supersede their detail
+  - Organization is the tenant boundary; account identity is global and memberships are Organization-scoped
+  - ids are selectors only; Worker/D1 authorization must resolve the current session, membership and server-known capability on every protected mutation
+  - RxDB remains operative Campaign data only; credentials, TOTP, recovery, sessions, memberships, roles and audit never belong in RxDB
+  - committed production wrangler config must remain on worker/indexFc52.ts until a separately approved production release
+  - admin staging must derive an isolated organizer config without mutating the committed production runtime contract
+  - legacy campaigns must never be automatically claimed by first bootstrap or Organization creation
+  - never mark PR 76 ready, merge it, deploy Production or apply Production migrations without explicit separate approval
+
+nodes:
+  - id: organizer-admin-handoff
+    path: docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
+    type: handoff
+    status: current
+    topics: [organization, organizer, admin, handoff, github, ci, acceptance, staging]
+    load_when: [fresh chat, continue organizer admin, resume Plan 030, handoff]
+
+  - id: plan-030-organizer-admin-platform
+    path: docs/plans/active/030-organizer-admin-platform.md
+    type: plan
+    status: active
+    topics: [organizations, accounts, admin, campaigns, roles, permissions, security, staging]
+    load_when: [Organizer Admin implementation, Plan 030, release acceptance]
+
+  - id: ADR-0026
+    path: docs/decisions/ADR-0026-organization-admin-identity-and-authorization.md
+    type: decision
+    status: accepted
+    topics: [organization, account, membership, password, totp, recovery, sessions, tenant, authorization]
+    load_when: [admin identity, organization authorization, TOTP, recovery, session, tenant boundary]
+
+  - id: organizations
+    path: docs/architecture/ORGANIZATIONS.md
+    type: architecture
+    status: proposed
+    topics: [organizations, multi-tenant, membership, admin-panel]
+    load_when: [organization model, multi-organization UX, tenant model]
+
+  - id: identity-permissions
+    path: docs/architecture/IDENTITY_PERMISSIONS.md
+    type: architecture
+    status: proposed
+    topics: [identity, capabilities, role-templates, permissions, cross-team]
+    load_when: [role template, capability registry, own-team permission, cross-team permission]
+
+  - id: identity-threat-model
+    path: docs/architecture/IDENTITY_THREAT_MODEL.md
+    type: architecture
+    status: proposed
+    topics: [password, totp, sessions, csrf, xss, recovery, tenant-isolation]
+    load_when: [security review, threat model, high-risk reauth, reset flow]
+
+  - id: security
+    path: docs/architecture/SECURITY.md
+    type: architecture
+    status: accepted
+    topics: [authorization, session, csrf, secrets, rate-limit]
+    load_when: [protected API, security boundary, credential handling]
+
+  - id: data
+    path: docs/architecture/DATA.md
+    type: architecture
+    status: accepted
+    topics: [d1, migrations, campaign, teams, areas, tasks]
+    load_when: [organization migration, campaign tenancy, adoption, audit persistence]
+
+  - id: adr-capability-roles
+    path: docs/decisions/ADR-0016-capability-role-templates.md
+    type: decision
+    status: proposed
+    topics: [capabilities, role-templates, delegation, tenant-isolation]
+    load_when: [role-template implementation, permission registry, admin delegation]
+
+  - id: adr-rxdb-local-first-mission-sync
+    path: docs/decisions/ADR-0024-rxdb-local-first-mission-sync.md
+    type: decision
+    status: accepted
+    topics: [rxdb, mission-release, change-feed, sync]
+    load_when: [Organizer changes touching field data or RxDB boundary]
+
+  - id: plan-028-rxdb-local-first-mission-sync
+    path: docs/plans/active/028-rxdb-local-first-mission-sync.md
+    type: plan
+    status: active
+    topics: [rxdb, mission-release, regression-baseline]
+    load_when: [verify field regression, sync baseline, staging isolation]
+
+  - id: organizer-admin-staging
+    path: docs/operations/ORGANIZER_ADMIN_STAGING.md
+    type: operations
+    status: active
+    topics: [cloudflare, staging, d1, worker, durable-object, rate-limit, e2e]
+    load_when: [Admin staging, test link, Cloudflare deploy, browser smoke]
+
+  - id: organization-runtime
+    path: worker/indexOrganizer.ts
+    type: code
+    status: current
+    topics: [worker, organization-api, security-api, password-kdf]
+    load_when: [organization runtime entrypoint, API routing, admin staging worker]
+
+  - id: organization-auth-runtime
+    path: worker/organizationAuth.ts
+    type: code
+    status: current
+    topics: [password, totp, recovery, sessions, membership, capability]
+    load_when: [authentication, session resolution, last organizer, capability enforcement]
+
+  - id: organization-security-runtime
+    path: worker/organizationSecurity.ts
+    type: code
+    status: current
+    topics: [security-center, account-security, invite, reset, session-revocation]
+    load_when: [account security, invite/reset, session management]
+
+  - id: organization-api-runtime
+    path: worker/organizationApi.ts
+    type: code
+    status: current
+    topics: [organization-api, campaign-scope, tenant-authorization]
+    load_when: [Organization endpoint, Campaign tenant scope, campaign creation]
+
+  - id: organization-ui-runtime
+    path: src/organization/OrganizationApp.tsx
+    type: code
+    status: current
+    topics: [start, login, dashboard, new-campaign, campaign-console]
+    load_when: [Organizer Admin UI, routes, campaign wizard]
+
+  - id: organization-security-ui
+    path: src/organization/OrganizationSecurityCenter.tsx
+    type: code
+    status: current
+    topics: [account-security, sessions, recovery, password, totp]
+    load_when: [security center UI, account settings]
+
+  - id: migration-0018
+    path: migrations/0018_organization_admin_platform.sql
+    type: data
+    status: prepared
+    topics: [organization-schema, account, membership, totp, recovery, sessions, invites, audit, campaign-tenancy]
+    load_when: [Organization D1 schema, isolated Admin staging migration]
+
+  - id: migration-0019
+    path: migrations/0019_organization_security_hardening.sql
+    type: data
+    status: prepared
+    topics: [organization-security, reset, session-hardening]
+    load_when: [security schema, reset/invite hardening, Admin staging migration]
+
+edges:
+  - { from: organizer-admin-handoff, to: plan-030-organizer-admin-platform, relation: continues }
+  - { from: organizer-admin-handoff, to: organizer-admin-staging, relation: records_environment_state }
+  - { from: plan-030-organizer-admin-platform, to: ADR-0026, relation: governed_by }
+  - { from: plan-030-organizer-admin-platform, to: organizations, relation: implements }
+  - { from: plan-030-organizer-admin-platform, to: identity-permissions, relation: implements }
+  - { from: plan-030-organizer-admin-platform, to: identity-threat-model, relation: validated_by }
+  - { from: plan-030-organizer-admin-platform, to: security, relation: constrained_by }
+  - { from: plan-030-organizer-admin-platform, to: data, relation: extends_additively }
+  - { from: plan-030-organizer-admin-platform, to: adr-capability-roles, relation: requires_for_roles }
+  - { from: plan-030-organizer-admin-platform, to: plan-028-rxdb-local-first-mission-sync, relation: must_not_regress }
+  - { from: ADR-0026, to: identity-threat-model, relation: resolves_identity_boundary }
+  - { from: ADR-0026, to: security, relation: constrained_by }
+  - { from: ADR-0026, to: data, relation: defines_tenant_persistence }
+  - { from: ADR-0026, to: adr-capability-roles, relation: uses_capability_model }
+  - { from: ADR-0026, to: adr-rxdb-local-first-mission-sync, relation: preserves_operational_data_boundary }
+  - { from: organization-runtime, to: organization-api-runtime, relation: routes }
+  - { from: organization-runtime, to: organization-security-runtime, relation: routes }
+  - { from: organization-api-runtime, to: organization-auth-runtime, relation: authorizes_with }
+  - { from: organization-security-runtime, to: organization-auth-runtime, relation: secures_account_with }
+  - { from: organization-ui-runtime, to: organization-api-runtime, relation: calls }
+  - { from: organization-security-ui, to: organization-security-runtime, relation: calls }
+  - { from: migration-0018, to: data, relation: extends }
+  - { from: migration-0018, to: ADR-0026, relation: implements }
+  - { from: migration-0019, to: migration-0018, relation: hardens }
+  - { from: organizer-admin-staging, to: organization-runtime, relation: deploys_isolated }
+  - { from: organizer-admin-staging, to: migration-0018, relation: applies_only_to_isolated_d1 }
+  - { from: organizer-admin-staging, to: migration-0019, relation: applies_only_to_isolated_d1 }
+  - { from: organizer-admin-staging, to: plan-028-rxdb-local-first-mission-sync, relation: must_use_separate_resources }

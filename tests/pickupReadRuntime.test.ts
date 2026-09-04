@@ -176,11 +176,9 @@ test("FC5.2 wrapper leaves snapshots without Collection untouched", async () => 
   assert.deepEqual(await response.json(), { schemaVersion: 3, revision: 4 });
 });
 
-test("Wrangler points at the Organizer wrapper while preserving the FC5.2 worker chain", () => {
+test("Wrangler points at the FC5.2 wrapper without changing the previous worker chain", () => {
   const config = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
-  assert.match(config, /"main": "\.\/worker\/indexOrganizer\.ts"/u);
-  const organizerWrapper = readFileSync(new URL("../worker/indexOrganizer.ts", import.meta.url), "utf8");
-  assert.match(organizerWrapper, /import baseWorker from "\.\/indexFc52\.ts"/u);
+  assert.match(config, /"main": "\.\/worker\/indexFc52\.ts"/u);
   const fc52Wrapper = readFileSync(new URL("../worker/indexFc52.ts", import.meta.url), "utf8");
   assert.match(fc52Wrapper, /import baseWorker from "\.\/indexM55\.ts"/u);
 });

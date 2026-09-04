@@ -1,0 +1,73 @@
+version: 1
+last_updated: 2026-09-04T17:10:00+02:00
+purpose: Live Organizer/Admin continuation overlay. Load after docs/context-organizer-admin.yaml when resuming Plan 030.
+
+verified:
+  source_branch: { name: mission-rxdb-sync, head: 33ab9c0d757da44e0b20b278982a548eafe732aa }
+  feature_branch:
+    name: feature/organizer-admin-platform
+    head: b772906d1cbf046cb982afc46d682c3cbba596c4
+    ci_run_id: 33881431786
+    ci_run_number: 1079
+    ci_conclusion: success
+  pull_requests:
+    pr_74: { state: open, draft: true, merged: false, head: 33ab9c0d757da44e0b20b278982a548eafe732aa }
+    pr_75: { state: open, draft: true, merged: false, head: 501b8058302342358c8eaed5c67e378b02deb0c0 }
+    pr_76: { state: open, draft: true, merged: false, mergeable: true, head: b772906d1cbf046cb982afc46d682c3cbba596c4, base: mission-rxdb-sync }
+  production:
+    wrangler_main: ./worker/indexFc52.ts
+    d1: 0113e775-1e43-4d96-8b97-51fdeec7355b
+    rate_limit_namespaces: [91714001, 91714002, 91714003]
+    organization_login_limiter_committed: false
+  admin_staging:
+    branch: organizer-admin-staging
+    head: f0e17da54592d37ae6b8c9b3bc23089e2b369e6f
+    workflow: .github/workflows/admin-staging-release-v7.yml
+    run_id: 33875342446
+    conclusion: failure
+    worker: flyer-map-admin-staging
+    d1_name: flyer-map-admin-staging-db
+    url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
+    test_ready: false
+    bootstrap_failure:
+      http_status: 503
+      code: organization_password_kdf_unavailable
+      reason: response_500_kdf_failed
+    cleanup: { bootstrap_count: 0, organization_count: 0, account_count: 0, owned_campaign_count: 0 }
+    final_worker_version: 1f9734ce-1bb6-47b3-9137-59f2fcc600a1
+    public_checks:
+      start_get: 200
+      unauthenticated_me_get: 401
+      cross_origin_bootstrap: 403
+      rotated_smoke_bootstrap_eventually_rejected: true
+    second_failure:
+      request: HEAD /api/organization/me
+      status: 200
+      content_type: text/html
+      problem: SPA/assets fallback on an API path; expected API fail-closed behavior and security headers are bypassed
+
+priority:
+  - fix KDF Durable Object internal 500 without lowering PBKDF2 600000
+  - add regression covering actual serialized Durable Object fetch contract
+  - fix /api/* HEAD and unsupported-method fallback so API paths never become SPA HTML 200
+  - exact-head feature CI green
+  - rebuild isolated Admin staging from exact green feature head
+  - real API smoke bootstrap 201 -> password -> TOTP -> authenticated /me
+  - then Chromium multi-campaign logout cookie-clear login persistence gate
+  - then clean-browser invite enrollment and desktop/mobile smoke
+
+hard_boundaries:
+  - no merge or Ready on PR 76
+  - no Production deploy or Production D1 migration
+  - do not touch mission-release-2026-09-02-manual
+  - do not mix PR 74 or PR 75 into this branch
+  - committed Production Wrangler stays on indexFc52.ts
+  - no secrets in repo, logs, URLs, browser storage, RxDB or public artifacts
+  - do not weaken tests, TypeScript, audit, authz or security-header gates
+
+handoff:
+  prompt: docs/prompts/CONTINUE_ORGANIZER_ADMIN_2026-09-04_1710.md
+  legacy_latest_prompt: docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
+  status_snapshot: docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
+  plan: docs/plans/active/030-organizer-admin-platform.md
+  operations: docs/operations/ORGANIZER_ADMIN_STAGING.md
