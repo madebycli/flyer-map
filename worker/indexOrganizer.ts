@@ -1,5 +1,6 @@
 import baseWorker from "./indexFc52.ts";
 import { handleOrganizationApi, type OrganizationApiEnv } from "./organizationApi.ts";
+import { handleOrganizationBootstrapHashApi, type OrganizationBootstrapHashEnv } from "./organizationBootstrapHashApi.ts";
 import { handleOrganizationSecurityApi } from "./organizationSecurityApi.ts";
 import { guardOrganizationSecurityQuery } from "./organizationSecurityRequest.ts";
 import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
@@ -7,7 +8,7 @@ import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
 
 type BaseEnv = Parameters<typeof baseWorker.fetch>[1];
-type Env = BaseEnv & OrganizationApiEnv;
+type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv;
 
 function harden(response: Response) {
   const headers = new Headers(response.headers);
@@ -26,6 +27,8 @@ export default {
   async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
     const queryGuard = guardOrganizationSecurityQuery(request);
     if (queryGuard) return harden(queryGuard);
+    const bootstrapHashResponse = await handleOrganizationBootstrapHashApi(request, env);
+    if (bootstrapHashResponse) return harden(bootstrapHashResponse);
     const securityResponse = await handleOrganizationSecurityApi(request, env);
     if (securityResponse) return harden(securityResponse);
     const organizationResponse = await handleOrganizationApi(request, env);
