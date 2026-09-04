@@ -1,0 +1,83 @@
+name: Organizer Admin Staging Smoke Diagnostic
+
+on:
+  push:
+    branches:
+      - organizer-admin-staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ADMIN_WORKER_NAME: flyer-map-admin-staging
+    steps:
+      - name: Resolve public Worker URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/admin-smoke
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && printf '%s' "$ACCOUNTS_JSON" | jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[] | select(.id == $id)' >/dev/null; then
+            CLOUDFLARE_ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
+          elif [[ "$(printf '%s' "$ACCOUNTS_JSON" | jq '.result | length')" == "1" ]]; then
+            CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
+          else
+            echo 'Cloudflare account ambiguous.' >&2
+            exit 1
+          fi
+          SUBDOMAIN_JSON="$(curl --fail-with-body --silent --show-error "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          SUBDOMAIN="$(printf '%s' "$SUBDOMAIN_JSON" | jq -r '.result.subdomain // empty')"
+          [[ -n "$SUBDOMAIN" ]] || { echo 'Workers subdomain unavailable.' >&2; exit 1; }
+          TEST_URL="https://${ADMIN_WORKER_NAME}.${SUBDOMAIN}.workers.dev"
+          printf '%s\n' "$TEST_URL" | tee /tmp/admin-smoke/test-url.txt
+          echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
+      - name: Capture safe HTTP diagnostics
+        shell: bash
+        run: |
+          set +e
+          mkdir -p /tmp/admin-smoke
+          : > /tmp/admin-smoke/summary.txt
+          probe() {
+            local label="$1" method="$2" url="$3" body_file="/tmp/admin-smoke/${label}.body" headers_file="/tmp/admin-smoke/${label}.headers"
+            local status
+            status="$(curl --connect-timeout 10 --max-time 30 --silent --show-error --location -X "$method" -D "$headers_file" -o "$body_file" -w '%{http_code}' "$url")"
+            local rc=$?
+            {
+              echo "[$label] rc=$rc status=$status url=$url"
+              sed -n '1,20p' "$headers_file" | grep -Ei '^(HTTP/|content-type:|location:|x-frame-options:|content-security-policy:|server:|cf-ray:)' || true
+              echo 'BODY:'
+              head -c 1000 "$body_file" 2>/dev/null || true
+              echo
+              echo '---'
+            } >> /tmp/admin-smoke/summary.txt
+          }
+          probe start GET "$TEST_URL/start"
+          probe login GET "$TEST_URL/login"
+          probe root GET "$TEST_URL/"
+          probe me GET "$TEST_URL/api/organization/me"
+
+          BAD_ORIGIN_STATUS="$(curl --connect-timeout 10 --max-time 30 --silent --show-error -o /tmp/admin-smoke/bad-origin.body -D /tmp/admin-smoke/bad-origin.headers -w '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H 'Origin: https://invalid.example' -H 'Content-Type: application/json' --data '{}')"
+          echo "[bad-origin] status=$BAD_ORIGIN_STATUS" >> /tmp/admin-smoke/summary.txt
+          head -c 1000 /tmp/admin-smoke/bad-origin.body >> /tmp/admin-smoke/summary.txt 2>/dev/null || true
+          echo >> /tmp/admin-smoke/summary.txt
+
+          BAD_SECRET_STATUS="$(curl --connect-timeout 10 --max-time 30 --silent --show-error -o /tmp/admin-smoke/bad-secret.body -D /tmp/admin-smoke/bad-secret.headers -w '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data '{"organizationName":"Smoke Test","username":"smoke-test","password":"not-a-real-password","bootstrapSecret":"definitely-wrong"}')"
+          echo "[bad-secret] status=$BAD_SECRET_STATUS" >> /tmp/admin-smoke/summary.txt
+          head -c 1000 /tmp/admin-smoke/bad-secret.body >> /tmp/admin-smoke/summary.txt 2>/dev/null || true
+          echo >> /tmp/admin-smoke/summary.txt
+          cat /tmp/admin-smoke/summary.txt
+          exit 0
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-staging-smoke-diagnostic
+          path: /tmp/admin-smoke/
+          retention-days: 1
