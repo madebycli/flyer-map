@@ -2,191 +2,115 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-02
+last_updated: 2026-09-05
 ---
 
 # Current Project State
 
-## Mission Release Override
+## Preferred product foundation
 
-Die reale Distribution-Mission startet am 2026-09-02. Bis nach der Mission gilt auf `plan-feature-complete-platform` ein Distribution-P0-Fokus. Collection/Pickup, FC5.3 und langfristige Plattformarbeit dürfen den Release-Pfad nicht verlängern.
+The current general product foundation is:
 
-Mission-kritischer Produktfluss:
+`foundation-verified-rxdb-brainrot`
 
-```text
-Admin -> Teams/Gebiet -> manuelle Streets/Houses
--> Street-/House-Status -> RxDB Pull/Push + D1 Change Feed -> gemeinsamer Stand auf weiteren Geräten
-```
+It was created directly from the exact verified RxDB staging reference:
 
-Der normale Launcher ist für die Mission auf `Team`, `Fortschritt`, `Einstellungen` und bei berechtigtem Zugriff `Gebiet` reduziert. Bestehende Einsätze-, Activity-, Automation-, Comment- und Collection-Runtimes werden nicht gelöscht und keine Datenhistorie wird verändert. Sicherheits-, Sync-, Konflikt-, Access- und Area-Preparation-Fehler bleiben sichtbar.
+`mission-rxdb-staging@4fc12270ff948ba246dd0c804076720cc65f37b8`
 
-PR #73 bleibt Draft gegen `ui-app-launcher-sheet`. Kein Merge, kein Ready-for-Review und kein manueller Deploy ohne expliziten Auftrag.
-Der RxDB-Kandidat ist separat als PR #74 gegen `mission-release-2026-09-02-manual`
-veröffentlicht, bleibt ebenfalls Draft/offen und ist nicht gemergt.
+That staging reference must remain available as safety/evidence history. Do not delete, reset or repurpose it merely to simplify branches.
 
-## RxDB Mission Sync candidate
+The foundation preserves the verified RxDB/Street/MapLibre state and adds the complete product-side Brainrot/Funny long-hold mode from `fun/menu-hold-xxl-runner` without copying the Funny-specific Cloudflare preview environment.
 
-Die verifizierte Rollback-Basis ist `mission-release-2026-09-02-manual` auf
-`5e7148d2a32f6237861e7e6a05e022eeb67c91ce` mit erfolgreichem CI-Run
-`33597980789`. Davon leitet sich lokal `mission-rxdb-sync` ab. Diese neue Linie
-ersetzt den normalen M5-Browser-Schreiber durch RxDB/Dexie mit fünf
-normalisierten Collections und Worker Pull/Push, ohne die kanonische D1- oder
-Autorisierungsgrenze zu ändern. Der alte M5-Store bleibt nur für einen
-gesicherten Einmalimport älterer Offline-Intents.
+Durable branch/integration context lives in `docs/context/BRANCH_CONVERGENCE.md`.
 
-Realtime ist jetzt als optionales Campaign-Signal ergänzt: Nach einem D1-/Feed-
-Commit benachrichtigt der authentifizierte Worker ein hibernierendes Durable
-Object; WebSocket-Clients erhalten nur `changed` plus Sequenz und holen die
-kanonischen Dokumente weiterhin über RxDB HTTP. Ein einzelner Campaign-
-Checkpoint prüft den High-Water-Mark alle 45 Sekunden und fängt verlorene
-Signale auf.
+## RxDB / realtime / renderer baseline
 
-Migration `0017_rxdb_sync_changes.sql` ist vorbereitet und **nicht remote
-angewendet**. Der Branch `mission-rxdb-sync` und Draft-PR #74 sind über GitHub
-veröffentlicht; CI-Run `33637502582` ist auf dem exakten Implementierungs-Head
-`11fca7ad2175fd2d46378d4b90116100b8d73554` grün. Es gab keinen manuellen
-Deploy, Merge, Ready-for-Review oder Remote-D1-Eingriff. Vor einem Release sind
-der reviewed Migrations-Rollout, Preview sowie Zwei-Browser-, Android- und
-iPhone-Off-/Reconnect-Smokes Pflicht. ADR-0024 und Plan 028 sind dafür die
-aktuelle Entscheidungs- und Evidence-Route.
-
-## Baseline
-
-Verteil-Flyer bleibt eine mobile-first normale Website mit React, TypeScript, Vite, MapLibre GL JS 5.7.1, OpenFreeMap Bright, Cloudflare Workers und D1. M4 Access/Session und die resiliente M5 Mutation Queue bleiben die gemeinsame Grundlage. Keine native App, keine installierbare PWA, kein Service Worker, keine Background Sync API und keine kontinuierliche GPS-Historie.
-
-## Verifizierter Remote-D1-Stand
-
-Der vorherige Claim `remote nur 0001-0003` ist überholt.
-
-Am 2026-09-01 wurde der kontrollierte D1-Rollout über GitHub Actions Run `33540449723` erfolgreich abgeschlossen. Verifiziert wurden:
-
-- Migration Registry 0001 bis 0014 vollständig angewendet;
-- Time-Travel-Recovery-Point und SQL-Export vor dem Rollout;
-- Foreign-Key-Check vor und nach dem Rollout sauber;
-- bestehende Baseline Counts unverändert erhalten;
-- kritisches Schema von 0013 und 0014 vorhanden;
-- versionierte Preview und Branch-Alias lieferten passende Assets und erfolgreiche Health-Checks.
-
-Die beim Rollout erhaltenen Baseline Counts waren:
+Current architecture remains:
 
 ```text
-campaigns: 53
-teams: 32
-areas: 39
-tasks: 77
-access_grants: 62
-sessions: 66
-mutations: 188
+UI/domain mutation
+-> RxDB/Dexie local replica
+-> authenticated Worker Pull/Push
+-> canonical D1 commit + rxdb_sync_changes
+-> optional Campaign Durable Object/WebSocket changed hint
+-> incremental Pull/checkpoint recovery
+-> RxDB/read model
+-> React
+-> MapLibre
 ```
 
-Damit ist Migration 0014 für die serverseitige automatische Area-Vorbereitung remote vorhanden. Historische Plan-/ADR-Texte, die den damaligen Zustand `prepared only` beschreiben, bleiben historische Evidence und sind nicht als aktueller Deployment-State zu lesen.
+Collections:
 
-## Mission-Admin-Handoff
+- `campaigns`
+- `teams`
+- `areas`
+- `streetTasks`
+- `houseTasks`
 
-Der bestehende Campaign-Access-Flow bleibt der Mission-Admin-Weg. Ein bestehender Admin kann in `Einstellungen -> Zugriff` einen neuen Grant mit Rolle `admin` erzeugen und den einmalig angezeigten Zugangslink weitergeben.
+Critical fixes that must not regress:
 
-Sicherheitsvertrag:
+- browser `fetch` is bound correctly for RxDB transport;
+- prepared-Street post-commit realtime notification remains inside the Worker lifecycle;
+- MapLibre live source updates must not permanently drop React state transitions during transient style loading;
+- D1/Worker remain authoritative; browser and Durable Object are not canonical data stores.
 
-- Invite Token ist kryptographisch zufällig;
-- D1 speichert nur den SHA-256-Hash des Invite Tokens;
-- Redemption erzeugt eine separate opaque Session in `Secure; HttpOnly; SameSite=Lax`;
-- D1 speichert nur den Session-Hash;
-- jeder geschützte Request löst Grant und Revocation erneut serverseitig auf;
-- Grant-Revocation invalidiert bestehende Sessions auf dem nächsten geschützten Request;
-- normaler Admin-Handoff benötigt kein GitHub, Cloudflare, Wrangler, Deployment Secret oder D1-Zugriff.
+The historical Staging evidence includes isolated deployment/migration checks, real Chromium two-browser synchronization and the visible MapLibre Street lifecycle gate.
 
-Zusätzlich erlaubt ADR-0023 kampagnenlokale Admin-Konten für die Mission. Ein bestehender Campaign Admin erzeugt unter `Einstellungen -> Admin-Konten` einen einmaligen, 24 Stunden gültigen Einrichtungslink. Die Empfängerperson legt einen eigenen Benutzernamen und ein eigenes Passwort fest und erhält eine serverseitig widerrufbare, 12-stündige Session. Der Organisator kann Benutzername ändern, Konten sperren und einen einmaligen 24-Stunden-Passwort-Reset-Link mit QR-Code übergeben. Beim Reset werden alte Reset-Links und alle bestehenden Sessions dieses Kontos ungültig; das letzte aktive Campaign-Admin-Konto bleibt gegen Sperren geschützt. D1 speichert nur PBKDF2-HMAC-SHA-256-Verifier mit individuellem Salt und 600.000 Iterationen, Setup-/Reset-/Session-Hashes und ein persistentes Login-Backoff. Es gibt bewusst kein TOTP, keine E-Mail-Anforderung und keine Campaign-übergreifenden Konten. Migrationen `0015` und `0016` müssen in dieser Reihenfolge vor dem Worker-Rollout angewendet werden.
+## Brainrot/Funny mode
 
-## M5 finaler Schreibvertrag
+The foundation contains:
 
-Der Campaign-Snapshot bleibt Read Model, UI-Modell, Startup-Cache und Konflikt-/Sicherheitskopie.
+- `src/platform/FunnyFocusVideo.tsx`
+- `src/platform/funny-focus-video.css`
+- `src/main.tsx` integration
+- `tests/funnyFocusVideoContract.test.ts`
 
-- `POST /api/campaigns` ist ausschließlich Initial-Create mit Revision 0;
-- `GET snapshot` und `GET version` bleiben Read-Pfade;
-- `PUT /api/campaigns/:id/snapshot` antwortet HTTP 410 `legacy_snapshot_write_retired` und schreibt nicht nach D1;
-- normale Campaign-, Team-, Area-, Street-, House-, Collection- und Pickup-Änderungen laufen über explizite M5- oder spezialisierte Mutationen;
-- unbestätigte M5-Änderungen liegen dauerhaft in IndexedDB;
-- kurze Netzfehler werden mit begrenztem Backoff wiederholt;
-- gleiche Mutation-ID plus gleicher Fingerprint ist idempotent;
-- Conflict, 401/403 und invalide Mutationen bleiben sichtbar und werden nicht heimlich überschrieben;
-- bei leerer Queue wird ein abweichender lokaler Snapshot als Konfliktkopie bewahrt, statt ihn automatisch zum Server hochzuladen.
+It is a local-only UI feature: five-second menu-button hold, alternating configured focus clips, no Campaign/RxDB/API persistence, and no LocalStorage/IndexedDB state.
 
-Für die Mission gilt bei terminalen M5-Fehlern ein enger Server-Wins-Recovery-Pfad:
-HTTP-409- und nicht-retrybare 4xx-Records erzeugen zuerst eine lokale Sicherheitskopie,
-werden einzeln aus der Queue entfernt und lösen danach einen kanonischen Snapshot-Refresh
-aus. Alte `conflict`/`invalid`-Records können damit keinen späteren Street-Refresh mehr
-blockieren. 401/403, `blocked-auth`, Netzwerk-/429-/5xx- und Schemafehler bleiben
-wartend erhalten. Sichtbare Online-Polls laufen alle drei Sekunden, ohne parallele
-Requests.
+## Organizer/Admin remains parallel
 
-## Manuelle Distribution-Areas
+Current known Organizer/Admin source head at this update:
 
-ADR-0023 überschreibt ADR-0021 nur für die Mission: erfolgreiche `area.create`- und `area.update-geometry`-Mutationen starten keine OSM-Vorbereitung, keinen Worker-Job und keinen Browser-Poller. Der vorhandene automatische Runtime-Code bleibt unverändert erhalten, wird aber durch die zentrale Missions-Policy nicht aufgerufen.
+`feature/organizer-admin-platform@46931e119f23a5ba5bea44a174944c215e06ae0b`
 
-`Straße manuell hinzufügen` ist als grüner globaler Plus-Button sichtbar und im Gebiet weiterhin verfügbar. Bei mehreren editierbaren Gebieten wählt die Person zuerst eines aus. Die Street-Prüfung akzeptiert nur eine vollständige Linie innerhalb oder auf der Gebietsgrenze und der Worker weist Umgehungsversuche mit `street_outside_area` zurück. Historische automatisch vorbereitete Tasks bleiben normale darstellbare und statusänderbare Daten.
+PR #76 remains OPEN + DRAFT + UNMERGED against `mission-rxdb-sync`.
 
-Der nachgelagerte Plan `026-smart-street-edit-after-mission.md` beschreibt verbindlich
-den späteren Wechsel: Erst nach einem separaten Ende-des-Missions-Gate wird der grüne
-Plus-Button für bereite automatische Areas zu „Straßen bearbeiten“. Er startet die
-vorhandene Smart-Street-Zwei-Punkt-Auswahl und hebt die geprüfte Strecke zwischen Start
-und Ende vor einer einzigen M5-Override-Mutation hervor. Dieser Plan verändert die
-aktuelle manuelle Mission nicht.
+Do not integrate Organizer/Admin into the product foundation until the user explicitly declares the Admin panel ready. At that point, first perform a read-only branch/convergence audit and create an integration plan from the then-current foundation.
 
-## Map und Task-Darstellung
+## Established Street/House engine remains later work
 
-- gespeicherte Areas, Streets und Houses laufen über feste MapLibre GeoJSON Sources/Layers;
-- House Tasks werden ab dem definierten House-Zoom sichtbar und per rendered-feature hit test ausgewählt;
-- Street-Auswahl hat Priorität vor House, danach Area;
-- Statuswerte sind `open`, `completed`, `later`, `not-deliverable`;
-- erledigte Streets und House-Outlines verwenden eine reine um 25 Prozent abgedunkelte Teamfarbe;
-- GPS nutzt MapLibre Geolocate mit live/refining Fixes und Follow-Verhalten, ohne persistierte GPS-Historie;
-- persönliche Kamera bleibt lokal und wird durch Remote-Sync nicht zurückgesetzt.
+Current known source:
 
-## Automatisierte Qualitäts-Evidence
+`feature/established-street-preparation-engine@501b8058302342358c8eaed5c67e378b02deb0c0`
 
-Der Runtime-Head vor dem Mission-Trim war:
+This is an older parallel lineage. Later work should selectively port its valuable preparation engine semantics/modules onto the modern RxDB foundation rather than making the old branch the new base.
 
-```text
-129bc30cc408cfb2fd840390faaa6e37c5164148
-CI #823 / run 33523056178: success
-```
+## Safety boundaries
 
-Diese Suite enthält Regressionen für Access/Revocation, Authorization, M5 Queue/Idempotency, Legacy-Snapshot-410, Area Preparation, automatische Task-Persistenz, House-Renderer, Statusfarben, mobile Sheets, Security Guards und Production Build.
+Without explicit new user approval:
 
-Jeder neue Mission-Commit muss wieder auf seinem exakten Head durch CI verifiziert werden. Ein vorher grüner Head reicht nicht als Release-Evidence für einen späteren Head.
+- no Production deploy;
+- no Production D1 migration;
+- no PR #74 merge or Ready-for-Review transition;
+- no PR #76 merge;
+- no replacement of staging isolation with Funny preview configuration;
+- no deletion/reset of the verified staging reference;
+- no wholesale merge of the old Street/House engine;
+- no hidden suppression of sync errors instead of root-cause fixes.
 
-## Offene reale Mission-Gates
+## Current planning state
 
-Automatisierte Tests ersetzen folgende Abnahmen nicht:
+Active plan:
 
-1. echter Admin-A -> Admin-B-Handoff in einem frischen Browser/Gerät einschließlich weiterer Admin-Link-Erzeugung und Revocation;
-2. echter Area-End-to-End-Flow auf der Release-Preview: Team -> Gebiet -> manuelle Street -> persistenter Status auf zweitem Gerät;
-3. zweites autorisiertes Gerät sieht Statusänderungen;
-4. kurzer Netzverlust während Street-/House-Statusänderung und erfolgreiche Wiederkehr;
-5. reales Android Chromium Smoke;
-6. reales iPhone Safari Smoke, falls kein iPhone verfügbar ist, muss das ausdrücklich als akzeptiertes Restrisiko dokumentiert werden;
-7. finalen Mission-Head und dessen stabile Release-URL einfrieren und danach Feature Freeze.
+`docs/plans/active/029-verified-rxdb-brainrot-foundation.md`
 
-Cloud-/CI-Tests oder ein Browser ohne echte Mobile/WebGL-Eigenschaften dürfen nicht als Ersatz für diese Gates behauptet werden.
+Fresh planner handoff:
 
-## Für die Mission ausdrücklich verschoben
+`docs/prompts/CONTINUE_VERIFIED_RXDB_FOUNDATION.md`
 
-- FC5.3 Collection Road Sections;
-- Collection/Pickup Stats;
-- Collection Actor Attribution/Highlight/Revert;
-- vollständige Organizations-Migration;
-- Organization-Username/Password/TOTP und generische Konten;
-- generische Capability-/Permission-Matrix;
-- Action Templates und langfristige Analytics;
-- vollständiger Desktop-Admin-Neubau;
-- neue Support-/Appearance-Features;
-- sonstige Roadmap-Features ohne direkten Distribution-P0-Nutzen.
+Next major convergence gate:
 
-## Nächster Schritt
-
-1. Mission-Trim einschließlich Admin-Konten und Reset auf exaktem neuen Head durch CI verifizieren.
-2. Versioned Preview und Branch-Alias für diesen Head verifizieren.
-3. echten Distribution E2E, Admin-Handoff sowie Passwort-Reset durchführen.
-4. Android/iPhone Mission Smoke durchführen.
-5. danach Mission-Head und Release-URL einfrieren, Feature Freeze.
-6. Erst nach der Mission zu Plan 017/FC5.3 und langfristiger Plattformarbeit zurückkehren.
+1. verify this Foundation exact head with CI/tests;
+2. keep Admin development independent until explicitly declared ready;
+3. when Admin is ready, audit and plan its integration onto the current Foundation;
+4. after stable Admin convergence, plan the Street/House preparation-engine port unless priorities change.
