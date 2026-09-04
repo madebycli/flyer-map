@@ -1,4 +1,4 @@
-name: Organizer Admin Staging Deploy
+name: Organizer Admin Staging Release
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: organizer-admin-staging-deploy
+  group: organizer-admin-staging-release
   cancel-in-progress: false
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
       ADMIN_WORKER_NAME: flyer-map-admin-staging
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
-      BOOTSTRAP_SECRET_SHA256: 017e6774aa2c34260df2a04c789c47a5fbb94bb9ee18cc8a8809f83cfbe94dab
+      BOOTSTRAP_SECRET_SHA256: 003e2c8e7d2c8395bca964bd00baddcae95cc586435bb1d3d47e51ae848566ca
     steps:
       - name: Checkout admin staging branch
         uses: actions/checkout@v4
@@ -68,29 +68,17 @@ jobs:
             exit 1
           fi
           ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
-          if [[ "$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.success')" != "true" ]]; then
-            printf '%s\n' "$ACCOUNTS_JSON" | jq '{success,errors,messages}' >&2
-            exit 1
-          fi
+          [[ "$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.success')" == "true" ]] || { printf '%s\n' "$ACCOUNTS_JSON" | jq '{success,errors,messages}' >&2; exit 1; }
           ACCOUNT_COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq '.result | length')"
-          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
-            MATCH_COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '[.result[] | select(.id == $id)] | length')"
-            if [[ "$MATCH_COUNT" == "1" ]]; then
-              CLOUDFLARE_ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
-            elif [[ "$ACCOUNT_COUNT" == "1" ]]; then
-              CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
-            else
-              echo "Configured account is inaccessible and token exposes ${ACCOUNT_COUNT} accounts; refusing to guess." >&2
-              exit 1
-            fi
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && printf '%s' "$ACCOUNTS_JSON" | jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[] | select(.id == $id)' >/dev/null; then
+            CLOUDFLARE_ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
           elif [[ "$ACCOUNT_COUNT" == "1" ]]; then
             CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
           else
-            echo "Cloudflare token exposes ${ACCOUNT_COUNT} accounts and no usable account ID is configured; refusing to guess." >&2
+            echo "Cloudflare account cannot be resolved unambiguously; refusing to guess." >&2
             exit 1
           fi
           echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
-          echo "Cloudflare account verified for isolated admin staging."
 
       - name: Resolve isolated admin D1
         id: d1
@@ -104,19 +92,10 @@ jobs:
             LIST_JSON="$(npx wrangler d1 list --json)"
             MATCH_COUNT="$(printf '%s' "$LIST_JSON" | jq --arg name "$ADMIN_DB_NAME" '[.[] | select(.name == $name)] | length')"
           fi
-          if [[ "$MATCH_COUNT" != "1" ]]; then
-            echo "Expected exactly one D1 named ${ADMIN_DB_NAME}; found ${MATCH_COUNT}." >&2
-            exit 1
-          fi
+          [[ "$MATCH_COUNT" == "1" ]] || { echo "Expected exactly one D1 named ${ADMIN_DB_NAME}; found ${MATCH_COUNT}." >&2; exit 1; }
           ADMIN_D1_ID="$(printf '%s' "$LIST_JSON" | jq -r --arg name "$ADMIN_DB_NAME" '.[] | select(.name == $name) | .uuid')"
-          if [[ -z "$ADMIN_D1_ID" || "$ADMIN_D1_ID" == "null" ]]; then
-            echo "Could not resolve admin staging D1 UUID." >&2
-            exit 1
-          fi
-          if [[ "$ADMIN_D1_ID" == "$PROD_D1_ID" || "$ADMIN_D1_ID" == "$RXDB_STAGING_D1_ID" ]]; then
-            echo "Safety stop: admin staging D1 collides with a protected environment." >&2
-            exit 1
-          fi
+          [[ -n "$ADMIN_D1_ID" && "$ADMIN_D1_ID" != "null" ]] || { echo "Admin D1 UUID unresolved." >&2; exit 1; }
+          [[ "$ADMIN_D1_ID" != "$PROD_D1_ID" && "$ADMIN_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo "Safety stop: admin staging D1 collides with protected database." >&2; exit 1; }
           echo "ADMIN_D1_ID=$ADMIN_D1_ID" >> "$GITHUB_ENV"
           echo "database_id=$ADMIN_D1_ID" >> "$GITHUB_OUTPUT"
           echo "Resolved isolated admin D1 ${ADMIN_DB_NAME} (${ADMIN_D1_ID})."
@@ -128,17 +107,15 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
-          const adminD1Id = process.env.ADMIN_D1_ID;
-          if (!adminD1Id) throw new Error('ADMIN_D1_ID missing.');
           const prodDb = (config.d1_databases || []).find((entry) => entry.binding === 'DB');
-          if (!prodDb?.database_id || prodDb.database_id !== process.env.PROD_D1_ID) throw new Error('Production D1 baseline changed; refusing staging materialization.');
-          if (config.main !== './worker/indexOrganizer.ts') throw new Error(`Admin staging requires organizer entrypoint, got ${config.main}.`);
+          if (prodDb?.database_id !== process.env.PROD_D1_ID) throw new Error('Production D1 baseline changed; refusing staging materialization.');
+          if (config.main !== './worker/indexOrganizer.ts') throw new Error(`Organizer entrypoint required, got ${config.main}.`);
           config.env = config.env || {};
           config.env.admin_staging = {
             name: process.env.ADMIN_WORKER_NAME,
             workers_dev: true,
             vars: { ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.BOOTSTRAP_SECRET_SHA256 },
-            d1_databases: [{ binding: 'DB', database_name: process.env.ADMIN_DB_NAME, database_id: adminD1Id, migrations_dir: 'migrations' }],
+            d1_databases: [{ binding: 'DB', database_name: process.env.ADMIN_DB_NAME, database_id: process.env.ADMIN_D1_ID, migrations_dir: 'migrations' }],
             durable_objects: { bindings: [{ name: 'CAMPAIGN_SYNC', class_name: 'CampaignSyncDurableObject' }] },
             ratelimits: [
               { name: 'FIELD_GROUP_JOIN_ACTOR_LIMITER', namespace_id: '91914001', simple: { limit: 30, period: 60 } },
@@ -147,52 +124,49 @@ jobs:
               { name: 'ORGANIZATION_LOGIN_LIMITER', namespace_id: '91914004', simple: { limit: 12, period: 60 } },
             ],
           };
-          const protectedRateIds = new Set([...(config.ratelimits || []).map((entry) => String(entry.namespace_id)), '91814001', '91814002', '91814003']);
-          for (const entry of config.env.admin_staging.ratelimits) if (protectedRateIds.has(String(entry.namespace_id))) throw new Error(`Admin staging rate-limit collision: ${entry.namespace_id}`);
+          const protectedIds = new Set([...(config.ratelimits || []).map((entry) => String(entry.namespace_id)), '91814001', '91814002', '91814003']);
+          for (const entry of config.env.admin_staging.ratelimits) if (protectedIds.has(String(entry.namespace_id))) throw new Error(`Rate-limit collision: ${entry.namespace_id}`);
           fs.writeFileSync('wrangler.jsonc', `${JSON.stringify(config, null, 2)}\n`);
           NODE
 
       - name: Apply admin staging migrations only
         run: npx wrangler d1 migrations apply "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote
 
-      - name: Verify admin schema and migration ledger
+      - name: Verify exact remote migration ledger
         shell: bash
         run: |
           set -euo pipefail
-          LEDGER_COUNT_JSON="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'SELECT COUNT(*) AS count FROM d1_migrations;')"
-          LEDGER_COUNT="$(printf '%s' "$LEDGER_COUNT_JSON" | jq -r '[.[].results[]?.count] | first // 0')"
-          echo "Applied migration count: ${LEDGER_COUNT}"
-          if [[ "$LEDGER_COUNT" != "19" ]]; then
-            printf '%s\n' "$LEDGER_COUNT_JSON" | jq . >&2
-            echo "Expected exactly 19 applied admin staging migrations." >&2
-            exit 1
-          fi
-          REQUIRED_JSON="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command \"SELECT COUNT(*) AS count FROM d1_migrations WHERE name IN ('0018_organization_admin_platform.sql','0019_organization_security_hardening.sql');\")"
-          REQUIRED_COUNT="$(printf '%s' "$REQUIRED_JSON" | jq -r '[.[].results[]?.count] | first // 0')"
-          if [[ "$REQUIRED_COUNT" != "2" ]]; then
-            printf '%s\n' "$REQUIRED_JSON" | jq . >&2
-            echo "Organization migrations 0018/0019 are not both in the remote ledger." >&2
-            exit 1
-          fi
-          TABLES_JSON="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command \"SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('organization_accounts','organization_memberships','organization_password_resets','organization_feature_settings');\")"
-          TABLE_COUNT="$(printf '%s' "$TABLES_JSON" | jq -r '[.[].results[]?.count] | first // 0')"
-          if [[ "$TABLE_COUNT" != "4" ]]; then
-            printf '%s\n' "$TABLES_JSON" | jq . >&2
-            echo "Organization admin schema is incomplete." >&2
-            exit 1
-          fi
-          FK_JSON="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'PRAGMA foreign_key_check;')"
-          FK_COUNT="$(printf '%s' "$FK_JSON" | jq '[.[].results[]?] | length')"
-          if [[ "$FK_COUNT" != "0" ]]; then
-            printf '%s\n' "$FK_JSON" | jq . >&2
-            echo "Admin staging foreign-key check failed." >&2
-            exit 1
-          fi
-          npx wrangler d1 migrations list "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote | tee /tmp/admin-migrations-pending.txt
-          if ! grep -F 'No migrations to apply!' /tmp/admin-migrations-pending.txt >/dev/null; then
-            echo "Admin staging still has pending migrations after apply." >&2
-            exit 1
-          fi
+          mkdir -p /tmp/admin-schema-diagnostics
+          find migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]_*.sql' -printf '%f\n' | sort > /tmp/admin-schema-diagnostics/local-migrations.txt
+          LOCAL_COUNT="$(wc -l < /tmp/admin-schema-diagnostics/local-migrations.txt | tr -d ' ')"
+          [[ "$LOCAL_COUNT" == "19" ]] || { echo "Expected exactly 19 local migrations, found ${LOCAL_COUNT}." >&2; exit 1; }
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'SELECT id, name FROM d1_migrations ORDER BY id;' > /tmp/admin-schema-diagnostics/remote-ledger.json
+          jq -r '.[].results[]?.name' /tmp/admin-schema-diagnostics/remote-ledger.json > /tmp/admin-schema-diagnostics/remote-migrations.txt
+          REMOTE_COUNT="$(wc -l < /tmp/admin-schema-diagnostics/remote-migrations.txt | tr -d ' ')"
+          [[ "$REMOTE_COUNT" == "19" ]] || { echo "Expected exactly 19 remote migrations, found ${REMOTE_COUNT}." >&2; cat /tmp/admin-schema-diagnostics/remote-ledger.json >&2; exit 1; }
+          diff -u /tmp/admin-schema-diagnostics/local-migrations.txt /tmp/admin-schema-diagnostics/remote-migrations.txt || { echo "Remote D1 migration ledger differs from checked-in migration chain." >&2; exit 1; }
+          grep -Fx '0018_organization_admin_platform.sql' /tmp/admin-schema-diagnostics/remote-migrations.txt >/dev/null
+          grep -Fx '0019_organization_security_hardening.sql' /tmp/admin-schema-diagnostics/remote-migrations.txt >/dev/null
+
+      - name: Verify admin schema and integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('organization_accounts','organization_memberships','organization_password_resets','organization_feature_settings') ORDER BY name;" > /tmp/admin-schema-diagnostics/required-tables.json
+          TABLE_COUNT="$(jq '[.[].results[]?.name] | unique | length' /tmp/admin-schema-diagnostics/required-tables.json)"
+          [[ "$TABLE_COUNT" == "4" ]] || { echo "Organization admin schema incomplete." >&2; cat /tmp/admin-schema-diagnostics/required-tables.json >&2; exit 1; }
+          npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'PRAGMA foreign_key_check;' > /tmp/admin-schema-diagnostics/foreign-keys.json
+          FK_COUNT="$(jq '[.[].results[]?] | length' /tmp/admin-schema-diagnostics/foreign-keys.json)"
+          [[ "$FK_COUNT" == "0" ]] || { echo "Foreign-key integrity failed." >&2; cat /tmp/admin-schema-diagnostics/foreign-keys.json >&2; exit 1; }
+
+      - name: Upload safe schema diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-schema-release-diagnostics
+          path: /tmp/admin-schema-diagnostics/
+          retention-days: 1
+          if-no-files-found: ignore
 
       - name: Admin staging build
         env:
@@ -209,15 +183,16 @@ jobs:
           const redirectPath = '.wrangler/deploy/config.json';
           if (!fs.existsSync(redirectPath)) throw new Error('Vite did not create Wrangler deployment redirect.');
           const redirect = JSON.parse(fs.readFileSync(redirectPath, 'utf8'));
+          if (!redirect.configPath) throw new Error('Generated Wrangler redirect missing configPath.');
           const generatedPath = path.resolve(path.dirname(redirectPath), redirect.configPath);
           const generated = JSON.parse(fs.readFileSync(generatedPath, 'utf8'));
-          if (generated.name !== process.env.ADMIN_WORKER_NAME) throw new Error(`Unexpected generated Worker: ${generated.name}`);
+          if (generated.name !== process.env.ADMIN_WORKER_NAME) throw new Error(`Unexpected generated Worker ${generated.name}.`);
           const db = (generated.d1_databases || []).find((entry) => entry.binding === 'DB');
-          if (db?.database_id !== process.env.ADMIN_D1_ID) throw new Error('Generated admin D1 binding does not match resolved isolated D1.');
-          if (generated.vars?.ORGANIZATION_BOOTSTRAP_SECRET_SHA256 !== process.env.BOOTSTRAP_SECRET_SHA256) throw new Error('Bootstrap digest missing from generated admin config.');
+          if (db?.database_id !== process.env.ADMIN_D1_ID) throw new Error('Generated D1 binding is not isolated admin D1.');
+          if (generated.vars?.ORGANIZATION_BOOTSTRAP_SECRET_SHA256 !== process.env.BOOTSTRAP_SECRET_SHA256) throw new Error('Bootstrap digest missing from generated config.');
           const serialized = JSON.stringify(generated);
-          if (serialized.includes(process.env.PROD_D1_ID) || serialized.includes(process.env.RXDB_STAGING_D1_ID)) throw new Error('Protected D1 identifier leaked into generated admin staging config.');
-          for (const id of ['91914001','91914002','91914003','91914004']) if (!serialized.includes(id)) throw new Error(`Missing admin staging rate-limit namespace ${id}.`);
+          if (serialized.includes(process.env.PROD_D1_ID) || serialized.includes(process.env.RXDB_STAGING_D1_ID)) throw new Error('Protected D1 identifier leaked into generated config.');
+          for (const id of ['91914001','91914002','91914003','91914004']) if (!serialized.includes(id)) throw new Error(`Missing staging rate namespace ${id}.`);
           NODE
 
       - name: Wrangler admin staging dry run
@@ -230,10 +205,7 @@ jobs:
           set -euo pipefail
           npx wrangler deploy 2>&1 | tee /tmp/admin-staging-deploy.log
           TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-staging-deploy.log | tail -n1 || true)"
-          if [[ -z "$TEST_URL" ]]; then
-            echo "Wrangler did not report an admin staging workers.dev URL." >&2
-            exit 1
-          fi
+          [[ -n "$TEST_URL" ]] || { echo "Wrangler did not report a workers.dev URL." >&2; exit 1; }
           echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
           echo "test_url=$TEST_URL" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$TEST_URL" > /tmp/test-url.txt
@@ -248,9 +220,9 @@ jobs:
             TOTP_KEY="$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')"
             printf '%s' "$TOTP_KEY" | npx wrangler secret put ORGANIZATION_TOTP_KEY --name "$ADMIN_WORKER_NAME"
             unset TOTP_KEY
-            echo "Configured a staging-only TOTP encryption key; bootstrap plaintext was never present in Actions."
+            echo "Configured staging-only TOTP encryption key."
           else
-            echo "Admin staging is already bootstrapped; existing TOTP key was deliberately left unchanged."
+            echo "Already bootstrapped; existing TOTP key deliberately unchanged."
           fi
 
       - name: Verify deployed admin staging endpoints
@@ -261,7 +233,7 @@ jobs:
           for attempt in $(seq 1 24); do
             STATUS="$(curl --silent --show-error --location --output /tmp/admin-start.html --write-out '%{http_code}' "$TEST_URL/start" || printf '000')"
             if [[ "$STATUS" -ge 200 && "$STATUS" -lt 400 ]]; then break; fi
-            if [[ "$attempt" -eq 24 ]]; then echo "Admin staging URL unhealthy; last HTTP ${STATUS}." >&2; exit 1; fi
+            [[ "$attempt" -lt 24 ]] || { echo "Admin staging URL unhealthy; last HTTP ${STATUS}." >&2; exit 1; }
             sleep 5
           done
           ME_STATUS="$(curl --silent --show-error --output /tmp/admin-me.json --write-out '%{http_code}' "$TEST_URL/api/organization/me")"
@@ -270,8 +242,8 @@ jobs:
           [[ "$ORIGIN_STATUS" == "403" ]] || { echo "Expected wrong-origin bootstrap 403, got ${ORIGIN_STATUS}." >&2; cat /tmp/admin-origin.json >&2; exit 1; }
           BOOTSTRAP_STATUS="$(curl --silent --show-error --output /tmp/admin-bootstrap.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data '{"organizationName":"Smoke Test","username":"smoke-test","password":"not-a-real-password","bootstrapSecret":"definitely-wrong"}')"
           [[ "$BOOTSTRAP_STATUS" == "403" ]] || { echo "Expected wrong bootstrap 403, got ${BOOTSTRAP_STATUS}." >&2; cat /tmp/admin-bootstrap.json >&2; exit 1; }
-          HEADERS="$(curl --silent --show-error --head "$TEST_URL/api/organization/me")"
-          printf '%s' "$HEADERS" | grep -Eqi '^x-frame-options: DENY' || { echo "Expected X-Frame-Options DENY." >&2; exit 1; }
+          curl --silent --show-error --head "$TEST_URL/api/organization/me" > /tmp/admin-headers.txt
+          grep -Eqi '^x-frame-options: DENY' /tmp/admin-headers.txt || { echo "Expected X-Frame-Options DENY." >&2; exit 1; }
           if grep -F "$PROD_D1_ID" /tmp/admin-start.html >/dev/null || grep -F "$RXDB_STAGING_D1_ID" /tmp/admin-start.html >/dev/null; then echo "Protected D1 identifier leaked into public response." >&2; exit 1; fi
           echo "Verified admin staging UI/API at $TEST_URL"
 
@@ -295,14 +267,14 @@ jobs:
         shell: bash
         run: |
           {
-            echo '## Organizer Admin staging deployment'
+            echo '## Organizer Admin staging release'
             echo
             echo "- Source commit: \`${GITHUB_SHA}\`"
             echo "- Worker: \`${ADMIN_WORKER_NAME}\`"
             echo "- D1: \`${ADMIN_DB_NAME}\`"
             echo "- D1 ID: \`${ADMIN_D1_ID}\`"
             echo "- URL: ${TEST_URL}"
-            echo '- Bootstrap credential in GitHub/Actions artifacts: NO'
+            echo '- Bootstrap plaintext in GitHub/Actions: NO'
             echo '- Production deploy: NO'
             echo '- Production D1 migration: NO'
           } >> "$GITHUB_STEP_SUMMARY"
