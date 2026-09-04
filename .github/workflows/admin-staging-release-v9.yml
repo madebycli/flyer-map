@@ -58,6 +58,42 @@ jobs:
       - name: Exact-head production build
         run: npm run build
 
+      - name: Harden isolated candidate rollout convergence
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          path = Path('.staging/admin-v9-release.sh')
+          text = path.read_text()
+          marker = 'for attempt in $(seq 1 24); do\n  START='
+          if text.count(marker) != 1:
+              raise SystemExit('candidate convergence loop marker changed')
+          text = text.replace(marker, 'CANDIDATE_CONSECUTIVE=0\n' + marker, 1)
+          old = '  if [[ "$START" -ge 200 && "$START" -lt 400 && "$CODE" == \'400\' ]]; then break; fi\n'
+          new = '''  if [[ "$START" -ge 200 && "$START" -lt 400 && "$CODE" == '400' ]]; then
+            CANDIDATE_CONSECUTIVE=$((CANDIDATE_CONSECUTIVE+1))
+            [[ "$CANDIDATE_CONSECUTIVE" -ge 5 ]] && break
+          else
+            CANDIDATE_CONSECUTIVE=0
+          fi
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('candidate convergence condition changed')
+          text = text.replace(old, new, 1)
+          old_tail = '  sleep 5\ndone\n\nHEAD_CODE='
+          new_tail = '''  sleep 4
+          done
+          [[ "$CANDIDATE_CONSECUTIVE" -ge 5 ]] || { echo 'Candidate did not converge stably.' >&2; exit 1; }
+          jq -n --arg start "$START" --arg probe "$CODE" --argjson consecutive "$CANDIDATE_CONSECUTIVE" '{ok:true,start_status:$start,bootstrap_probe_status:$probe,consecutive:$consecutive}' > "$OUT/candidate-convergence.json"
+
+          HEAD_CODE='''
+          if text.count(old_tail) != 1:
+              raise SystemExit('candidate convergence tail changed')
+          text = text.replace(old_tail, new_tail, 1)
+          path.write_text(text)
+          PY
+          grep -q 'CANDIDATE_CONSECUTIVE' .staging/admin-v9-release.sh
+
       - name: Run isolated Admin staging acceptance
         shell: bash
         run: bash .staging/admin-v9-release.sh
