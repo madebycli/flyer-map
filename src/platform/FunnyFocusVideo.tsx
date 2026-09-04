@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import "./funny-focus-video.css";
 
-const HOLD_TO_ACTIVATE_MS = 5_000;
-const VIDEO_ID = "RbVMiu4ubT0";
-const VIDEO_URL = `https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&mute=1&controls=0&loop=1&playlist=${VIDEO_ID}&playsinline=1&rel=0&modestbranding=1&disablekb=1&fs=0&iv_load_policy=3`;
+const HOLD_TO_TOGGLE_MS = 5_000;
+const VIDEO_IDS = ["RbVMiu4ubT0", "91aqFhjxWB4"] as const;
+
+function videoUrl(videoId: string) {
+  return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}&playsinline=1&rel=0&modestbranding=1&disablekb=1&fs=0&iv_load_policy=3`;
+}
 
 function menuButtonFromEvent(event: Event) {
   const target = event.target;
@@ -12,7 +15,7 @@ function menuButtonFromEvent(event: Event) {
 
 export function FunnyFocusVideo() {
   const [visible, setVisible] = useState(false);
-  const [selected, setSelected] = useState(false);
+  const [videoIndex, setVideoIndex] = useState(-1);
   const holdTimer = useRef<number | null>(null);
   const consumeNextMenuClick = useRef(false);
 
@@ -30,10 +33,13 @@ export function FunnyFocusVideo() {
       holdTimer.current = window.setTimeout(() => {
         holdTimer.current = null;
         consumeNextMenuClick.current = true;
-        setSelected(false);
-        setVisible(true);
+        setVisible((currentlyVisible) => {
+          if (currentlyVisible) return false;
+          setVideoIndex((current) => (current + 1) % VIDEO_IDS.length);
+          return true;
+        });
         navigator.vibrate?.(35);
-      }, HOLD_TO_ACTIVATE_MS);
+      }, HOLD_TO_TOGGLE_MS);
     };
 
     const handlePointerEnd = () => {
@@ -69,51 +75,22 @@ export function FunnyFocusVideo() {
     };
   }, []);
 
-  if (!visible) return null;
+  if (!visible || videoIndex < 0) return null;
 
-  const selectVideo = () => setSelected(true);
+  const videoId = VIDEO_IDS[videoIndex];
 
   return (
-    <aside
-      className={`funny-focus-video ${selected ? "is-selected" : ""}`}
-      aria-label="Lokales Fokus-Video"
-    >
-      <div
-        className="funny-focus-video__surface"
-        role="button"
-        tabIndex={0}
-        aria-pressed={selected}
-        aria-label={selected ? "Fokus-Video ausgewählt" : "Fokus-Video auswählen"}
-        onClick={selectVideo}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          selectVideo();
-        }}
-      >
+    <aside className="funny-focus-video" aria-label="Lokales Fokus-Video">
+      <div className="funny-focus-video__surface">
         <iframe
-          src={VIDEO_URL}
+          src={videoUrl(videoId)}
           title="Fokus-Video"
           allow="autoplay; encrypted-media"
           referrerPolicy="strict-origin-when-cross-origin"
+          tabIndex={-1}
         />
-        <span className="funny-focus-video__badge" aria-hidden="true">
-          {selected ? "ausgewählt" : "brainrot mode"}
-        </span>
+        <span className="funny-focus-video__badge" aria-hidden="true">brainrot mode</span>
       </div>
-
-      {selected ? (
-        <button
-          className="funny-focus-video__delete"
-          type="button"
-          onClick={() => {
-            setSelected(false);
-            setVisible(false);
-          }}
-        >
-          Video löschen
-        </button>
-      ) : null}
     </aside>
   );
 }
