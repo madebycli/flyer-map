@@ -58,7 +58,7 @@ jobs:
       - name: Exact-head production build
         run: npm run build
 
-      - name: Harden isolated candidate rollout convergence
+      - name: Harden isolated candidate rollout convergence and diagnostics
         shell: bash
         run: |
           python <<'PY'
@@ -90,9 +90,52 @@ jobs:
           if text.count(old_tail) != 1:
               raise SystemExit('candidate convergence tail changed')
           text = text.replace(old_tail, new_tail, 1)
+
+          cleanup_marker = '''cleanup_remote() {
+            if [[ "$CLEANUP_READY" != '1' || "$CLEANED" == '1' ]]; then return 0; fi
+          '''
+          cleanup_replacement = '''cleanup_remote() {
+            if [[ -n "${TAIL_PID:-}" ]]; then
+              kill "$TAIL_PID" >/dev/null 2>&1 || true
+              wait "$TAIL_PID" >/dev/null 2>&1 || true
+            fi
+            if [[ "$CLEANUP_READY" != '1' || "$CLEANED" == '1' ]]; then return 0; fi
+          '''
+          if text.count(cleanup_marker) != 1:
+              raise SystemExit('cleanup marker changed')
+          text = text.replace(cleanup_marker, cleanup_replacement, 1)
+
+          bootstrap_marker = 'SMOKE_USERNAME="runtime.smoke.${GITHUB_RUN_ID}"\n'
+          tail_setup = '''npx wrangler tail "$ADMIN_WORKER_NAME" --format json --status error > "$PRIVATE/tail-errors.jsonl" 2> "$PRIVATE/tail-errors.stderr" &
+          TAIL_PID=$!
+          sleep 4
+
+          SMOKE_USERNAME="runtime.smoke.${GITHUB_RUN_ID}"
+          '''
+          if text.count(bootstrap_marker) != 1:
+              raise SystemExit('bootstrap marker changed')
+          text = text.replace(bootstrap_marker, tail_setup, 1)
+
+          failure_marker = '''  jq -n --arg status "$B" --arg code "$CODE" --arg reason "$REASON" '{ok:false,stage:"bootstrap",http_status:$status,error_code:$code,reason:$reason}' > "$OUT/runtime-smoke.json"
+            exit 1
+          '''
+          failure_replacement = '''  jq -n --arg status "$B" --arg code "$CODE" --arg reason "$REASON" '{ok:false,stage:"bootstrap",http_status:$status,error_code:$code,reason:$reason}' > "$OUT/runtime-smoke.json"
+            sleep 3
+            if [[ -s "$PRIVATE/tail-errors.jsonl" ]]; then
+              jq -c '{outcome,exceptions:[(.exceptions//[])[]|{name,message}],event:{request:{method:.event.request.method,url:.event.request.url}}}' "$PRIVATE/tail-errors.jsonl" > "$OUT/tail-errors-sanitized.jsonl" || true
+            fi
+            if [[ -s "$PRIVATE/tail-errors.stderr" ]]; then
+              sed -E 's/[A-Fa-f0-9]{32,}/[redacted]/g' "$PRIVATE/tail-errors.stderr" | tail -n 40 > "$OUT/tail-errors.stderr" || true
+            fi
+            exit 1
+          '''
+          if text.count(failure_marker) != 1:
+              raise SystemExit('bootstrap failure marker changed')
+          text = text.replace(failure_marker, failure_replacement, 1)
           path.write_text(text)
           PY
           grep -q 'CANDIDATE_CONSECUTIVE' .staging/admin-v9-release.sh
+          grep -q 'tail-errors-sanitized' .staging/admin-v9-release.sh
 
       - name: Run isolated Admin staging acceptance
         shell: bash
