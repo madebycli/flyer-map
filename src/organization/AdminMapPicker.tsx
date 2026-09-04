@@ -36,7 +36,6 @@ export function AdminMapPicker({ value, onChange }: Props) {
       center: [value.lng, value.lat],
       zoom: value.zoom,
       bearing: value.bearing,
-      attributionControl: true,
     });
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
     const publish = () => {
