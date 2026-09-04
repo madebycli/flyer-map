@@ -15,7 +15,7 @@ import { OrganizationPasswordKdfDurableObject } from "../worker/organizationPass
 test("organization password KDF routes Worker hashing through bounded Durable Object chunks", async () => {
   const salt = Uint8Array.from({ length: 16 }, (_, index) => index + 1);
   const password = "correct horse battery staple";
-  const iterations = 52_000;
+  const iterations = 320_000;
   const expected = await deriveOrganizationPasswordPbkdf2Local(password, salt, iterations);
   const durableObject = new OrganizationPasswordKdfDurableObject({}, {});
   let calls = 0;
@@ -40,8 +40,9 @@ test("organization password KDF routes Worker hashing through bounded Durable Ob
   try {
     const actual = await deriveOrganizationPasswordPbkdf2(password, salt, iterations);
     assert.deepEqual(actual, expected);
-    assert.equal(calls, 3);
-    assert.equal(ORGANIZATION_PASSWORD_KDF_CHUNK_ITERATIONS, 25_000);
+    assert.equal(calls, 2);
+    assert.equal(ORGANIZATION_PASSWORD_KDF_CHUNK_ITERATIONS, 300_000);
+    assert.equal(Math.ceil(600_000 / ORGANIZATION_PASSWORD_KDF_CHUNK_ITERATIONS), 2);
     assert.match(partition, /^[a-f0-9]{32}$/u);
   } finally {
     resetOrganizationPasswordKdfRuntimeForTests();
@@ -104,8 +105,8 @@ test("organization password KDF Durable Object validates continuation state", as
     body: JSON.stringify({
       password: "do-runtime-password-123",
       salt,
-      iterations: 30_000,
-      completedIterations: 25_000,
+      iterations: 320_000,
+      completedIterations: 300_000,
     }),
   }));
   assert.equal(response.status, 400);
