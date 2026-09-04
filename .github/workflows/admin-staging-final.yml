@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: organizer-admin-staging-final-v3
+  group: organizer-admin-staging-final-v4
   cancel-in-progress: false
 
 jobs:
@@ -66,7 +66,7 @@ jobs:
           [[ "$ADMIN_D1_ID" != "$PROD_D1_ID" && "$ADMIN_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo 'Admin D1 collides with a protected database.' >&2; exit 1; }
           echo "ADMIN_D1_ID=$ADMIN_D1_ID" >> "$GITHUB_ENV"
           echo "d1_id=$ADMIN_D1_ID" >> "$GITHUB_OUTPUT"
-      - name: Materialize isolated admin config
+      - name: Materialize isolated admin config with KDF Durable Object
         shell: bash
         run: |
           set -euo pipefail
@@ -82,7 +82,10 @@ jobs:
             workers_dev: true,
             vars: { ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.FINAL_BOOTSTRAP_SECRET_SHA256 },
             d1_databases: [{ binding:'DB', database_name:process.env.ADMIN_DB_NAME, database_id:process.env.ADMIN_D1_ID, migrations_dir:'migrations' }],
-            durable_objects: { bindings:[{ name:'CAMPAIGN_SYNC', class_name:'CampaignSyncDurableObject' }] },
+            durable_objects: { bindings:[
+              { name:'CAMPAIGN_SYNC', class_name:'CampaignSyncDurableObject' },
+              { name:'ORGANIZATION_PASSWORD_KDF', class_name:'OrganizationPasswordKdfDurableObject' }
+            ] },
             ratelimits: [
               { name:'FIELD_GROUP_JOIN_ACTOR_LIMITER', namespace_id:'91914001', simple:{limit:30,period:60} },
               { name:'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER', namespace_id:'91914002', simple:{limit:8,period:60} },
@@ -90,13 +93,18 @@ jobs:
               { name:'ORGANIZATION_LOGIN_LIMITER', namespace_id:'91914004', simple:{limit:12,period:60} }
             ]
           };
+          const kdfTag = 'v2-organization-password-kdf';
+          c.migrations = c.migrations || [];
+          if (!c.migrations.some(m => m.tag === kdfTag)) {
+            c.migrations.push({ tag:kdfTag, new_sqlite_classes:['OrganizationPasswordKdfDurableObject'] });
+          }
           const protectedIds = new Set([...(c.ratelimits || []).map(x => String(x.namespace_id)), '91814001','91814002','91814003']);
           for (const limiter of c.env.admin_staging.ratelimits) {
             if (protectedIds.has(String(limiter.namespace_id))) throw new Error(`Rate-limit collision ${limiter.namespace_id}`);
           }
           fs.writeFileSync('wrangler.jsonc', JSON.stringify(c,null,2)+'\n');
           NODE
-      - name: Apply and verify isolated migrations
+      - name: Apply and verify isolated D1 migrations
         shell: bash
         run: |
           set -euo pipefail
@@ -105,10 +113,7 @@ jobs:
           [[ "$(jq '[.[].results[]?] | length' /tmp/admin-final/pre-fk.json)" == "0" ]] || { echo 'Foreign-key check failed.' >&2; exit 1; }
           STATE="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT (SELECT COUNT(*) FROM organization_bootstrap_state) AS bootstrap_count, (SELECT COUNT(*) FROM organizations) AS organization_count, (SELECT COUNT(*) FROM organization_accounts) AS account_count, (SELECT COUNT(*) FROM campaigns WHERE organization_id IS NOT NULL) AS owned_campaign_count;")"
           printf '%s' "$STATE" > /tmp/admin-final/pre-smoke-state.json
-          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].bootstrap_count')" == "0" ]] || { echo 'Admin staging is already bootstrapped; refusing destructive smoke.' >&2; exit 1; }
-          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].organization_count')" == "0" ]] || exit 1
-          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].account_count')" == "0" ]] || exit 1
-          [[ "$(printf '%s' "$STATE" | jq -r '.[0].results[0].owned_campaign_count')" == "0" ]] || exit 1
+          jq -e '.[0].results[0] | .bootstrap_count==0 and .organization_count==0 and .account_count==0 and .owned_campaign_count==0' <<<"$STATE" >/dev/null || { echo 'Admin staging is not pristine; refusing destructive smoke.' >&2; exit 1; }
       - name: Create ephemeral runtime credentials
         shell: bash
         run: |
@@ -121,7 +126,7 @@ jobs:
           echo "SMOKE_BOOTSTRAP_SECRET=$SMOKE_BOOTSTRAP_SECRET" >> "$GITHUB_ENV"
           echo "SMOKE_PASSWORD=$SMOKE_PASSWORD" >> "$GITHUB_ENV"
           echo "SMOKE_DIGEST=$SMOKE_DIGEST" >> "$GITHUB_ENV"
-      - name: Build isolated smoke candidate
+      - name: Build and verify isolated smoke candidate
         env:
           CLOUDFLARE_ENV: admin_staging
         shell: bash
@@ -134,6 +139,19 @@ jobs:
           fs.writeFileSync('wrangler.jsonc', JSON.stringify(c,null,2)+'\n');
           NODE
           npm run build
+          node <<'NODE'
+          const fs=require('node:fs'), path=require('node:path');
+          const redirect=JSON.parse(fs.readFileSync('.wrangler/deploy/config.json','utf8'));
+          const generated=JSON.parse(fs.readFileSync(path.resolve('.wrangler/deploy',redirect.configPath),'utf8'));
+          if (generated.name !== process.env.ADMIN_WORKER_NAME) throw new Error(`Unexpected Worker ${generated.name}`);
+          const db=(generated.d1_databases||[]).find(x=>x.binding==='DB');
+          if (db?.database_id !== process.env.ADMIN_D1_ID) throw new Error('Wrong D1 binding.');
+          const bindings=generated.durable_objects?.bindings||[];
+          if (!bindings.some(x=>x.name==='ORGANIZATION_PASSWORD_KDF' && x.class_name==='OrganizationPasswordKdfDurableObject')) throw new Error('KDF Durable Object binding missing.');
+          if (!(generated.migrations||[]).some(x=>x.tag==='v2-organization-password-kdf' && (x.new_sqlite_classes||[]).includes('OrganizationPasswordKdfDurableObject'))) throw new Error('KDF Durable Object migration missing.');
+          const s=JSON.stringify(generated);
+          if (s.includes(process.env.PROD_D1_ID) || s.includes(process.env.RXDB_STAGING_D1_ID)) throw new Error('Protected D1 leaked into generated config.');
+          NODE
           npx wrangler deploy --dry-run --outdir .wrangler-admin-final-dry-run
       - name: Deploy isolated smoke candidate
         id: smoke_deploy
@@ -143,6 +161,7 @@ jobs:
           npx wrangler deploy 2>&1 | tee /tmp/admin-final/deploy-smoke.log
           TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-final/deploy-smoke.log | tail -n1 || true)"
           [[ -n "$TEST_URL" ]] || { echo 'No workers.dev URL reported.' >&2; exit 1; }
+          grep -F 'ORGANIZATION_PASSWORD_KDF' /tmp/admin-final/deploy-smoke.log >/dev/null || { echo 'KDF binding not reported by Wrangler.' >&2; exit 1; }
           echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
           echo "url=$TEST_URL" >> "$GITHUB_OUTPUT"
       - name: Configure TOTP encryption key
@@ -175,17 +194,11 @@ jobs:
           ORG="Runtime Smoke ${GITHUB_RUN_ID}"
           jq -n --arg organizationName "$ORG" --arg username "$USERNAME" --arg password "$SMOKE_PASSWORD" --arg bootstrapSecret "$SMOKE_BOOTSTRAP_SECRET" '{organizationName:$organizationName,username:$username,password:$password,bootstrapSecret:$bootstrapSecret}' > /tmp/admin-private/bootstrap-payload.json
           BSTATUS="$(curl --silent --show-error --output /tmp/admin-private/bootstrap-response.json --write-out '%{http_code}' --cookie-jar /tmp/admin-private/cookies.txt -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data-binary @/tmp/admin-private/bootstrap-payload.json || printf '000')"
-          if [[ "$BSTATUS" != "201" ]]; then
-            CODE="$(jq -r '.error.code // "non_json"' /tmp/admin-private/bootstrap-response.json 2>/dev/null || printf 'non_json')"
-            diag_fail bootstrap "$BSTATUS" "$CODE"
-          fi
+          if [[ "$BSTATUS" != "201" ]]; then CODE="$(jq -r '.error.code // "non_json"' /tmp/admin-private/bootstrap-response.json 2>/dev/null || printf 'non_json')"; diag_fail bootstrap "$BSTATUS" "$CODE"; fi
           jq -e '(.organization.id|type=="string") and (.account.id|type=="string") and (.recoveryCodes|length==10) and (.otpauthUri|startswith("otpauth://totp/"))' /tmp/admin-private/bootstrap-response.json >/dev/null || diag_fail bootstrap_contract 201 invalid_contract
           jq -n --arg username "$USERNAME" --arg password "$SMOKE_PASSWORD" '{username:$username,password:$password}' > /tmp/admin-private/login-payload.json
           LSTATUS="$(curl --silent --show-error --output /tmp/admin-private/login-response.json --write-out '%{http_code}' --cookie /tmp/admin-private/cookies.txt --cookie-jar /tmp/admin-private/cookies.txt -X POST "$TEST_URL/api/organization/login/password" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data-binary @/tmp/admin-private/login-payload.json || printf '000')"
-          if [[ "$LSTATUS" != "200" ]]; then
-            CODE="$(jq -r '.error.code // "non_json"' /tmp/admin-private/login-response.json 2>/dev/null || printf 'non_json')"
-            diag_fail password_login "$LSTATUS" "$CODE"
-          fi
+          if [[ "$LSTATUS" != "200" ]]; then CODE="$(jq -r '.error.code // "non_json"' /tmp/admin-private/login-response.json 2>/dev/null || printf 'non_json')"; diag_fail password_login "$LSTATUS" "$CODE"; fi
           OTP_SECRET="$(jq -r '.otpauthUri' /tmp/admin-private/bootstrap-response.json | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(new URL(s.trim()).searchParams.get("secret")||""));')"
           [[ -n "$OTP_SECRET" ]] || diag_fail totp_secret 201 missing_secret
           echo "::add-mask::$OTP_SECRET"
@@ -201,10 +214,7 @@ jobs:
           )"
           echo "::add-mask::$TOTP_CODE"
           MSTATUS="$(curl --silent --show-error --output /tmp/admin-private/totp-response.json --write-out '%{http_code}' --cookie /tmp/admin-private/cookies.txt --cookie-jar /tmp/admin-private/cookies.txt -X POST "$TEST_URL/api/organization/login/totp" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data "{\"code\":\"$TOTP_CODE\"}" || printf '000')"
-          if [[ "$MSTATUS" != "200" ]]; then
-            CODE="$(jq -r '.error.code // "non_json"' /tmp/admin-private/totp-response.json 2>/dev/null || printf 'non_json')"
-            diag_fail totp_login "$MSTATUS" "$CODE"
-          fi
+          if [[ "$MSTATUS" != "200" ]]; then CODE="$(jq -r '.error.code // "non_json"' /tmp/admin-private/totp-response.json 2>/dev/null || printf 'non_json')"; diag_fail totp_login "$MSTATUS" "$CODE"; fi
           MESTATUS="$(curl --silent --show-error --output /tmp/admin-private/me.json --write-out '%{http_code}' --cookie /tmp/admin-private/cookies.txt "$TEST_URL/api/organization/me" || printf '000')"
           [[ "$MESTATUS" == "200" ]] || diag_fail session_me "$MESTATUS" unavailable
           jq -e '.assurance == "mfa" and (.memberships|length==1) and .memberships[0].role == "organizer"' /tmp/admin-private/me.json >/dev/null || diag_fail session_contract 200 invalid_contract
@@ -247,6 +257,7 @@ jobs:
           npx wrangler deploy 2>&1 | tee /tmp/admin-final/deploy-final.log
           FINAL_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/admin-final/deploy-final.log | tail -n1 || true)"
           [[ -n "$FINAL_URL" ]] || { echo 'No final workers.dev URL reported.' >&2; exit 1; }
+          grep -F 'ORGANIZATION_PASSWORD_KDF' /tmp/admin-final/deploy-final.log >/dev/null || { echo 'Final KDF binding not reported by Wrangler.' >&2; exit 1; }
           echo "TEST_URL=$FINAL_URL" >> "$GITHUB_ENV"
           echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$FINAL_URL" > /tmp/admin-final/test-url.txt
@@ -262,11 +273,9 @@ jobs:
           [[ "$ME" == "401" ]] || { echo "Expected final /me 401, got ${ME}." >&2; exit 1; }
           BAD_ORIGIN="$(curl --silent --show-error --output /tmp/admin-private/final-origin.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H 'Origin: https://invalid.example' -H 'Content-Type: application/json' --data '{}')"
           [[ "$BAD_ORIGIN" == "403" ]] || { echo 'Wrong-origin bootstrap was not rejected.' >&2; exit 1; }
-          if [[ -n "${SMOKE_BOOTSTRAP_SECRET:-}" ]]; then
-            ROTATION_PAYLOAD="$(jq -n --arg s "$SMOKE_BOOTSTRAP_SECRET" '{organizationName:"Rotation Test",username:"rotation.test",password:"not-a-real-password-123",bootstrapSecret:$s}')"
-            ROTATED="$(curl --silent --show-error --output /tmp/admin-private/final-rotation.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data "$ROTATION_PAYLOAD")"
-            [[ "$ROTATED" == "403" ]] || { echo "Ephemeral bootstrap credential still active: ${ROTATED}." >&2; exit 1; }
-          fi
+          ROTATION_PAYLOAD="$(jq -n --arg s "$SMOKE_BOOTSTRAP_SECRET" '{organizationName:"Rotation Test",username:"rotation.test",password:"not-a-real-password-123",bootstrapSecret:$s}')"
+          ROTATED="$(curl --silent --show-error --output /tmp/admin-private/final-rotation.json --write-out '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data "$ROTATION_PAYLOAD")"
+          [[ "$ROTATED" == "403" ]] || { echo "Ephemeral bootstrap credential still active: ${ROTATED}." >&2; exit 1; }
           curl --silent --show-error --head "$TEST_URL/api/organization/me" > /tmp/admin-final/final-headers.txt
           grep -Eqi '^x-frame-options: DENY' /tmp/admin-final/final-headers.txt
           ! grep -F "$PROD_D1_ID" /tmp/admin-private/final-start.html >/dev/null
