@@ -96,10 +96,10 @@ jobs:
           CANDIDATE_VERSION_ID="$(sed -n 's/^Current Version ID: //p' "$OUT/deploy-smoke.log" | tail -n1)"
           [[ "$CANDIDATE_VERSION_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo 'No valid candidate Worker version ID found.' >&2; exit 1; }
           export WORKER_VERSION_ID="$CANDIDATE_VERSION_ID"
-          CANDIDATE_CURL_HOME="$PRIVATE/curl-candidate"
-          mkdir -p "$CANDIDATE_CURL_HOME"
-          printf 'header = "Cloudflare-Workers-Version-Overrides: %s=\\"%s\\""\n' "$ADMIN_WORKER_NAME" "$CANDIDATE_VERSION_ID" > "$CANDIDATE_CURL_HOME/.curlrc"
-          export CURL_HOME="$CANDIDATE_CURL_HOME"
+          CANDIDATE_VERSION_HEADER="Cloudflare-Workers-Version-Overrides: ${ADMIN_WORKER_NAME}=\\"${CANDIDATE_VERSION_ID}\\""
+          curl() {
+            command curl -H "$CANDIDATE_VERSION_HEADER" "$@"
+          }
 
           CANDIDATE_CONSECUTIVE=0
           for attempt in $(seq 1 24); do
@@ -152,7 +152,8 @@ jobs:
 
           browser_done_marker = 'node .staging/admin-v9-browser.mjs\n\ncleanup_remote\n'
           browser_done_replacement = '''node .staging/admin-v9-browser.mjs
-          unset CURL_HOME
+          unset -f curl
+          unset CANDIDATE_VERSION_HEADER
           unset WORKER_VERSION_ID
 
           cleanup_remote
@@ -189,7 +190,8 @@ jobs:
           browser_path.write_text(browser)
           PY
           grep -q 'CANDIDATE_CONSECUTIVE' .staging/admin-v9-release.sh
-          grep -q 'WORKER_VERSION_ID' .staging/admin-v9-release.sh
+          grep -q 'CANDIDATE_VERSION_HEADER' .staging/admin-v9-release.sh
+          grep -q 'unset -f curl' .staging/admin-v9-release.sh
           grep -q 'tail-errors-sanitized' .staging/admin-v9-release.sh
           grep -q 'Cloudflare-Workers-Version-Overrides' .staging/admin-v9-browser.mjs
 
