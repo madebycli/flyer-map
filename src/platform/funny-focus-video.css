@@ -4,6 +4,7 @@
   top: calc(env(safe-area-inset-top) + 4.35rem);
   right: 0.65rem;
   width: clamp(9.5rem, 22vw, 16rem);
+  pointer-events: none;
   user-select: none;
 }
 
@@ -16,8 +17,6 @@
   border-radius: 1.15rem;
   background: #111;
   box-shadow: 0 0.6rem 1.8rem rgb(15 23 18 / 28%);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .funny-focus-video__surface iframe {
@@ -43,29 +42,6 @@
   letter-spacing: 0.03em;
   text-transform: uppercase;
   backdrop-filter: blur(8px);
-}
-
-.funny-focus-video.is-selected .funny-focus-video__surface {
-  border-color: #16803c;
-  box-shadow: 0 0 0 3px rgb(22 128 60 / 22%), 0 0.7rem 2rem rgb(15 23 18 / 32%);
-}
-
-.funny-focus-video__delete {
-  width: 100%;
-  min-height: 2.55rem;
-  margin-top: 0.48rem;
-  border: 1px solid rgb(137 31 31 / 28%);
-  border-radius: 0.8rem;
-  color: #8b1e1e;
-  background: rgb(255 255 255 / 97%);
-  box-shadow: 0 0.3rem 1rem rgb(15 23 18 / 14%);
-  font-size: 0.78rem;
-  font-weight: 800;
-  backdrop-filter: blur(10px);
-}
-
-.funny-focus-video__delete:active {
-  transform: scale(0.98);
 }
 
 @media (max-width: 600px) {
