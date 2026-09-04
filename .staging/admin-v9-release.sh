@@ -142,10 +142,13 @@ grep -Eqi '^cache-control: no-store' "$OUT/head-api-headers.txt"
 grep -Eqi '^allow: GET' "$OUT/head-api-headers.txt"
 grep -Eqi '^x-frame-options: DENY' "$OUT/head-api-headers.txt"
 grep -Eqi '^x-content-type-options: nosniff' "$OUT/head-api-headers.txt"
-UNKNOWN="$(curl -sS -o "$OUT/unknown-api.json" -w '%{http_code}' "$TEST_URL/api/organization/not-a-route" || printf 000)"
+UNKNOWN="$(curl -sS -D "$OUT/unknown-api-headers.txt" -o "$OUT/unknown-api.json" -w '%{http_code}' "$TEST_URL/api/organization/not-a-route" || printf 000)"
 [[ "$UNKNOWN" == '404' ]]
-jq -e '.error.code=="api_route_not_found"' "$OUT/unknown-api.json" >/dev/null
-jq -n --arg head "$HEAD_CODE" --arg unknown "$UNKNOWN" '{ok:true,head_status:$head,unknown_status:$unknown}' > "$OUT/method-gate.json"
+grep -Eqi '^content-type: application/json' "$OUT/unknown-api-headers.txt"
+grep -Eqi '^cache-control: no-store' "$OUT/unknown-api-headers.txt"
+grep -Eqi '^x-content-type-options: nosniff' "$OUT/unknown-api-headers.txt"
+jq -e '.error.code=="not_found"' "$OUT/unknown-api.json" >/dev/null
+jq -n --arg head "$HEAD_CODE" --arg unknown "$UNKNOWN" --arg unknown_code "$(jq -r '.error.code' "$OUT/unknown-api.json")" '{ok:true,head_status:$head,unknown_status:$unknown,unknown_error_code:$unknown_code}' > "$OUT/method-gate.json"
 
 SMOKE_USERNAME="runtime.smoke.${GITHUB_RUN_ID}"
 ORGANIZATION_NAME="Runtime Smoke ${GITHUB_RUN_ID}"
