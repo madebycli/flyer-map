@@ -1,30 +1,47 @@
 version: 1
-last_updated: 2026-09-04
+last_updated: 2026-09-05
 purpose: Organizer/Admin continuation overlay for the main docs/context-map.yaml routing graph.
 
 entrypoints:
   after_main_graph:
-    - docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
+    - docs/context-organizer-admin-live.yaml
+    - docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
     - docs/plans/active/030-organizer-admin-platform.md
     - docs/decisions/ADR-0026-organization-admin-identity-and-authorization.md
     - docs/operations/ORGANIZER_ADMIN_STAGING.md
 
 routing_rules:
   - for Organization, Organizer, Admin accounts, MFA, invites, security center, role templates, campaign tenancy or Admin staging, load this overlay after the normal AGENTS/CURRENT/context-map entrypoints
-  - GitHub remote refs, PR state and exact-head CI outrank handoff SHAs embedded in documentation
-  - ADR-0026 is accepted and is the current Organization identity/authorization decision; ADR-0015 and ADR-0016 remain supporting/proposed context where ADR-0026 does not supersede their detail
+  - GitHub remote refs, PR state, exact-head CI and the latest V9 artifact outrank embedded handoff SHAs
+  - ADR-0026 is accepted and governs Organization identity/authorization
   - Organization is the tenant boundary; account identity is global and memberships are Organization-scoped
-  - ids are selectors only; Worker/D1 authorization must resolve the current session, membership and server-known capability on every protected mutation
+  - ids are selectors only; Worker/D1 resolves session, membership and server-known capability for protected mutations
   - RxDB remains operative Campaign data only; credentials, TOTP, recovery, sessions, memberships, roles and audit never belong in RxDB
-  - committed production wrangler config must remain on worker/indexFc52.ts until a separately approved production release
-  - admin staging must derive an isolated organizer config without mutating the committed production runtime contract
+  - committed production wrangler config remains on worker/indexFc52.ts until a separately approved Production release
+  - admin staging derives an isolated organizer config and must never bind Production-D1 or RxDB-Staging-D1
   - legacy campaigns must never be automatically claimed by first bootstrap or Organization creation
+  - static Cloudflare assets are hardened through public/_headers while Worker-generated organizer responses are hardened in worker/indexOrganizer.ts
   - never mark PR 76 ready, merge it, deploy Production or apply Production migrations without explicit separate approval
 
+current_runtime_proof:
+  feature_runtime_head: c62385a8c400f68753d1f1f811e2315551153885
+  feature_ci_run: 33924375460
+  admin_staging_v9_run: 33924415528
+  admin_staging_v9_run_number: 23
+  public_url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
+  status: first_full_green
+
 nodes:
+  - id: organizer-admin-live-context
+    path: docs/context-organizer-admin-live.yaml
+    type: context
+    status: current
+    topics: [organization, organizer, admin, github, ci, staging, acceptance]
+    load_when: [fresh chat, continue organizer admin, resume Plan 030, handoff]
+
   - id: organizer-admin-handoff
-    path: docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
-    type: handoff
+    path: docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
+    type: status
     status: current
     topics: [organization, organizer, admin, handoff, github, ci, acceptance, staging]
     load_when: [fresh chat, continue organizer admin, resume Plan 030, handoff]
@@ -68,8 +85,8 @@ nodes:
     path: docs/architecture/SECURITY.md
     type: architecture
     status: accepted
-    topics: [authorization, session, csrf, secrets, rate-limit]
-    load_when: [protected API, security boundary, credential handling]
+    topics: [authorization, session, csrf, secrets, rate-limit, headers]
+    load_when: [protected API, security boundary, credential handling, security headers]
 
   - id: data
     path: docs/architecture/DATA.md
@@ -77,27 +94,6 @@ nodes:
     status: accepted
     topics: [d1, migrations, campaign, teams, areas, tasks]
     load_when: [organization migration, campaign tenancy, adoption, audit persistence]
-
-  - id: adr-capability-roles
-    path: docs/decisions/ADR-0016-capability-role-templates.md
-    type: decision
-    status: proposed
-    topics: [capabilities, role-templates, delegation, tenant-isolation]
-    load_when: [role-template implementation, permission registry, admin delegation]
-
-  - id: adr-rxdb-local-first-mission-sync
-    path: docs/decisions/ADR-0024-rxdb-local-first-mission-sync.md
-    type: decision
-    status: accepted
-    topics: [rxdb, mission-release, change-feed, sync]
-    load_when: [Organizer changes touching field data or RxDB boundary]
-
-  - id: plan-028-rxdb-local-first-mission-sync
-    path: docs/plans/active/028-rxdb-local-first-mission-sync.md
-    type: plan
-    status: active
-    topics: [rxdb, mission-release, regression-baseline]
-    load_when: [verify field regression, sync baseline, staging isolation]
 
   - id: organizer-admin-staging
     path: docs/operations/ORGANIZER_ADMIN_STAGING.md
@@ -110,8 +106,15 @@ nodes:
     path: worker/indexOrganizer.ts
     type: code
     status: current
-    topics: [worker, organization-api, security-api, password-kdf]
+    topics: [worker, organization-api, security-api, password-kdf, security-headers]
     load_when: [organization runtime entrypoint, API routing, admin staging worker]
+
+  - id: static-security-headers
+    path: public/_headers
+    type: config
+    status: current
+    topics: [cloudflare-static-assets, security-headers, clickjacking, nosniff]
+    load_when: [static asset security, Cloudflare headers, /start hardening]
 
   - id: organization-auth-runtime
     path: worker/organizationAuth.ts
@@ -163,6 +166,7 @@ nodes:
     load_when: [security schema, reset/invite hardening, Admin staging migration]
 
 edges:
+  - { from: organizer-admin-live-context, to: organizer-admin-handoff, relation: summarizes }
   - { from: organizer-admin-handoff, to: plan-030-organizer-admin-platform, relation: continues }
   - { from: organizer-admin-handoff, to: organizer-admin-staging, relation: records_environment_state }
   - { from: plan-030-organizer-admin-platform, to: ADR-0026, relation: governed_by }
@@ -171,23 +175,13 @@ edges:
   - { from: plan-030-organizer-admin-platform, to: identity-threat-model, relation: validated_by }
   - { from: plan-030-organizer-admin-platform, to: security, relation: constrained_by }
   - { from: plan-030-organizer-admin-platform, to: data, relation: extends_additively }
-  - { from: plan-030-organizer-admin-platform, to: adr-capability-roles, relation: requires_for_roles }
-  - { from: plan-030-organizer-admin-platform, to: plan-028-rxdb-local-first-mission-sync, relation: must_not_regress }
-  - { from: ADR-0026, to: identity-threat-model, relation: resolves_identity_boundary }
-  - { from: ADR-0026, to: security, relation: constrained_by }
-  - { from: ADR-0026, to: data, relation: defines_tenant_persistence }
-  - { from: ADR-0026, to: adr-capability-roles, relation: uses_capability_model }
-  - { from: ADR-0026, to: adr-rxdb-local-first-mission-sync, relation: preserves_operational_data_boundary }
   - { from: organization-runtime, to: organization-api-runtime, relation: routes }
-  - { from: organization-runtime, to: organization-security-runtime, relation: routes }
   - { from: organization-api-runtime, to: organization-auth-runtime, relation: authorizes_with }
   - { from: organization-security-runtime, to: organization-auth-runtime, relation: secures_account_with }
   - { from: organization-ui-runtime, to: organization-api-runtime, relation: calls }
   - { from: organization-security-ui, to: organization-security-runtime, relation: calls }
-  - { from: migration-0018, to: data, relation: extends }
-  - { from: migration-0018, to: ADR-0026, relation: implements }
-  - { from: migration-0019, to: migration-0018, relation: hardens }
+  - { from: static-security-headers, to: security, relation: hardens_static_assets }
   - { from: organizer-admin-staging, to: organization-runtime, relation: deploys_isolated }
+  - { from: organizer-admin-staging, to: static-security-headers, relation: validates }
   - { from: organizer-admin-staging, to: migration-0018, relation: applies_only_to_isolated_d1 }
   - { from: organizer-admin-staging, to: migration-0019, relation: applies_only_to_isolated_d1 }
-  - { from: organizer-admin-staging, to: plan-028-rxdb-local-first-mission-sync, relation: must_use_separate_resources }
