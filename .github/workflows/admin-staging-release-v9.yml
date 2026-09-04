@@ -91,6 +91,22 @@ jobs:
               raise SystemExit('candidate convergence tail changed')
           text = text.replace(old_tail, new_tail, 1)
 
+          version_marker = 'export TEST_URL\n\nfor attempt in $(seq 1 24); do\n'
+          version_setup = '''export TEST_URL
+          CANDIDATE_VERSION_ID="$(sed -n 's/^Current Version ID: //p' "$OUT/deploy-smoke.log" | tail -n1)"
+          [[ "$CANDIDATE_VERSION_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo 'No valid candidate Worker version ID found.' >&2; exit 1; }
+          export WORKER_VERSION_ID="$CANDIDATE_VERSION_ID"
+          CANDIDATE_CURL_HOME="$PRIVATE/curl-candidate"
+          mkdir -p "$CANDIDATE_CURL_HOME"
+          printf 'header = "Cloudflare-Workers-Version-Overrides: %s=\\"%s\\""\n' "$ADMIN_WORKER_NAME" "$CANDIDATE_VERSION_ID" > "$CANDIDATE_CURL_HOME/.curlrc"
+          export CURL_HOME="$CANDIDATE_CURL_HOME"
+
+          for attempt in $(seq 1 24); do
+          '''
+          if text.count(version_marker) != 1:
+              raise SystemExit('candidate version marker changed')
+          text = text.replace(version_marker, version_setup, 1)
+
           cleanup_marker = '''cleanup_remote() {
             if [[ "$CLEANUP_READY" != '1' || "$CLEANED" == '1' ]]; then return 0; fi
           '''
@@ -132,10 +148,49 @@ jobs:
           if text.count(failure_marker) != 1:
               raise SystemExit('bootstrap failure marker changed')
           text = text.replace(failure_marker, failure_replacement, 1)
+
+          browser_done_marker = 'node .staging/admin-v9-browser.mjs\n\ncleanup_remote\n'
+          browser_done_replacement = '''node .staging/admin-v9-browser.mjs
+          unset CURL_HOME
+          unset WORKER_VERSION_ID
+
+          cleanup_remote
+          '''
+          if text.count(browser_done_marker) != 1:
+              raise SystemExit('browser completion marker changed')
+          text = text.replace(browser_done_marker, browser_done_replacement, 1)
           path.write_text(text)
+
+          browser_path = Path('.staging/admin-v9-browser.mjs')
+          browser = browser_path.read_text()
+          run_marker = "const runId = process.env.GITHUB_RUN_ID;\n"
+          version_context = '''const runId = process.env.GITHUB_RUN_ID;
+          const workerName = process.env.ADMIN_WORKER_NAME;
+          const workerVersionId = process.env.WORKER_VERSION_ID;
+          const versionContext = workerName && workerVersionId ? {
+            extraHTTPHeaders: {
+              'Cloudflare-Workers-Version-Overrides': `${workerName}="${workerVersionId}"`,
+            },
+          } : {};
+          '''
+          if browser.count(run_marker) != 1:
+              raise SystemExit('browser run marker changed')
+          browser = browser.replace(run_marker, version_context, 1)
+          guard_old = 'if (!url || !username || !password || !invitePassword || !organizerSecret || !organizationId || !runId) {'
+          guard_new = 'if (!url || !username || !password || !invitePassword || !organizerSecret || !organizationId || !runId || !workerName || !workerVersionId) {'
+          if browser.count(guard_old) != 1:
+              raise SystemExit('browser input guard changed')
+          browser = browser.replace(guard_old, guard_new, 1)
+          context_marker = 'browser.newContext({'
+          if browser.count(context_marker) != 4:
+              raise SystemExit('browser context count changed')
+          browser = browser.replace(context_marker, 'browser.newContext({ ...versionContext,')
+          browser_path.write_text(browser)
           PY
           grep -q 'CANDIDATE_CONSECUTIVE' .staging/admin-v9-release.sh
+          grep -q 'WORKER_VERSION_ID' .staging/admin-v9-release.sh
           grep -q 'tail-errors-sanitized' .staging/admin-v9-release.sh
+          grep -q 'Cloudflare-Workers-Version-Overrides' .staging/admin-v9-browser.mjs
 
       - name: Run isolated Admin staging acceptance
         shell: bash
