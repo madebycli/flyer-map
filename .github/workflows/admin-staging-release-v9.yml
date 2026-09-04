@@ -91,7 +91,7 @@ jobs:
               raise SystemExit('candidate convergence tail changed')
           text = text.replace(old_tail, new_tail, 1)
 
-          version_marker = 'export TEST_URL\n\nfor attempt in $(seq 1 24); do\n'
+          version_marker = 'export TEST_URL\n\nCANDIDATE_CONSECUTIVE=0\nfor attempt in $(seq 1 24); do\n'
           version_setup = '''export TEST_URL
           CANDIDATE_VERSION_ID="$(sed -n 's/^Current Version ID: //p' "$OUT/deploy-smoke.log" | tail -n1)"
           [[ "$CANDIDATE_VERSION_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo 'No valid candidate Worker version ID found.' >&2; exit 1; }
@@ -101,6 +101,7 @@ jobs:
           printf 'header = "Cloudflare-Workers-Version-Overrides: %s=\\"%s\\""\n' "$ADMIN_WORKER_NAME" "$CANDIDATE_VERSION_ID" > "$CANDIDATE_CURL_HOME/.curlrc"
           export CURL_HOME="$CANDIDATE_CURL_HOME"
 
+          CANDIDATE_CONSECUTIVE=0
           for attempt in $(seq 1 24); do
           '''
           if text.count(version_marker) != 1:
