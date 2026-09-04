@@ -171,6 +171,7 @@ async function main() {
     invitePage.setDefaultTimeout(25_000);
     const invitedUsername = `invited.admin.${runId}`;
     await invitePage.goto(`${url}/join#token=${encodeURIComponent(invite.secret)}`, { waitUntil: 'domcontentloaded' });
+    await invitePage.waitForFunction(() => !window.location.hash.includes('token='));
     if (invitePage.url().includes('#token=')) throw new Error('Invite token remained in browser URL');
     await invitePage.getByLabel('Benutzername').fill(invitedUsername);
     await invitePage.getByLabel('Passwort', { exact: true }).fill(invitePassword);
