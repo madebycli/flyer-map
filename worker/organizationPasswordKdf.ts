@@ -2,6 +2,7 @@ import { createHmac, pbkdf2Sync } from "node:crypto";
 
 const PASSWORD_KEY_BYTES = 32;
 const MAX_PASSWORD_PBKDF2_ITERATIONS = 5_000_000;
+const PASSWORD_PBKDF2_CHUNK_ITERATIONS = 25_000;
 const INTERNAL_KDF_URL = "https://organization-password-kdf.internal/derive";
 const INTERNAL_KDF_HEADER = "x-organization-password-kdf-internal";
 const SAFE_KDF_CODE = /^[a-z0-9_]{1,80}$/u;
@@ -9,6 +10,12 @@ const SAFE_KDF_CODE = /^[a-z0-9_]{1,80}$/u;
 export type OrganizationPasswordKdfNamespace = {
   idFromName(name: string): unknown;
   get(id: unknown): { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> };
+};
+
+export type OrganizationPasswordPbkdf2ChunkState = {
+  completedIterations: number;
+  previous: Uint8Array;
+  accumulator: Uint8Array;
 };
 
 export class OrganizationPasswordKdfUnavailableError extends Error {
@@ -23,6 +30,22 @@ let runtimeNamespace: OrganizationPasswordKdfNamespace | null | undefined;
 function validateIterations(iterations: number) {
   if (!Number.isInteger(iterations) || iterations < 1 || iterations > MAX_PASSWORD_PBKDF2_ITERATIONS) {
     throw new Error("organization_password_iterations_invalid");
+  }
+}
+
+function validChunkBytes(value: Uint8Array) {
+  return value.byteLength === PASSWORD_KEY_BYTES;
+}
+
+function validateChunkState(state: OrganizationPasswordPbkdf2ChunkState, iterations: number) {
+  if (
+    !Number.isInteger(state.completedIterations) ||
+    state.completedIterations < 1 ||
+    state.completedIterations > iterations ||
+    !validChunkBytes(state.previous) ||
+    !validChunkBytes(state.accumulator)
+  ) {
+    throw new Error("organization_password_kdf_state_invalid");
   }
 }
 
@@ -51,38 +74,72 @@ export async function deriveOrganizationPasswordPbkdf2Local(
 }
 
 /**
+ * Computes at most one bounded slice of the standard PBKDF2-HMAC-SHA-256
+ * iteration chain. The state is exactly the PBKDF2 U value and XOR accumulator,
+ * so chaining slices is byte-for-byte equivalent to a single 600k PBKDF2 call.
+ */
+export async function deriveOrganizationPasswordPbkdf2PortableChunk(
+  password: string,
+  salt: Uint8Array,
+  iterations: number,
+  state?: OrganizationPasswordPbkdf2ChunkState,
+) {
+  validateIterations(iterations);
+  const workerSalt = new Uint8Array(salt.byteLength);
+  workerSalt.set(salt);
+  const key = new TextEncoder().encode(password);
+
+  let completedIterations = 0;
+  let previous: Uint8Array;
+  let accumulator: Uint8Array;
+  let performedIterations = 0;
+
+  if (state) {
+    validateChunkState(state, iterations);
+    completedIterations = state.completedIterations;
+    previous = Uint8Array.from(state.previous);
+    accumulator = Uint8Array.from(state.accumulator);
+  } else {
+    const blockIndex = new Uint8Array([0, 0, 0, 1]);
+    const first = createHmac("sha256", key)
+      .update(workerSalt)
+      .update(blockIndex)
+      .digest();
+    previous = Uint8Array.from(first);
+    accumulator = Uint8Array.from(first);
+    completedIterations = 1;
+    performedIterations = 1;
+  }
+
+  while (
+    completedIterations < iterations &&
+    performedIterations < PASSWORD_PBKDF2_CHUNK_ITERATIONS
+  ) {
+    previous = Uint8Array.from(createHmac("sha256", key).update(previous).digest());
+    for (let index = 0; index < PASSWORD_KEY_BYTES; index += 1) {
+      accumulator[index] ^= previous[index];
+    }
+    completedIterations += 1;
+    performedIterations += 1;
+  }
+
+  return { completedIterations, previous, accumulator } satisfies OrganizationPasswordPbkdf2ChunkState;
+}
+
+/**
  * Standards-equivalent PBKDF2-HMAC-SHA-256 for runtimes whose native PBKDF2
  * primitive enforces a lower iteration ceiling than our accepted 600k policy.
- *
- * The Organization verifier is exactly one SHA-256 block (32 bytes), so PBKDF2
- * only needs block index 1. HMAC itself remains native; only the iteration loop
- * is expressed here. This keeps the stored verifier byte-for-byte compatible
- * with node:crypto PBKDF2 without reducing the configured work factor.
  */
 export async function deriveOrganizationPasswordPbkdf2Portable(
   password: string,
   salt: Uint8Array,
   iterations: number,
 ) {
-  validateIterations(iterations);
-  const workerSalt = new Uint8Array(salt.byteLength);
-  workerSalt.set(salt);
-  const key = new TextEncoder().encode(password);
-  const blockIndex = new Uint8Array([0, 0, 0, 1]);
-
-  let previous = createHmac("sha256", key)
-    .update(workerSalt)
-    .update(blockIndex)
-    .digest();
-  const output = Uint8Array.from(previous);
-
-  for (let iteration = 2; iteration <= iterations; iteration += 1) {
-    previous = createHmac("sha256", key).update(previous).digest();
-    for (let index = 0; index < PASSWORD_KEY_BYTES; index += 1) {
-      output[index] ^= previous[index];
-    }
-  }
-  return output;
+  let state: OrganizationPasswordPbkdf2ChunkState | undefined;
+  do {
+    state = await deriveOrganizationPasswordPbkdf2PortableChunk(password, salt, iterations, state);
+  } while (state.completedIterations < iterations);
+  return state.accumulator;
 }
 
 async function responseFailureReason(response: Response) {
@@ -102,6 +159,17 @@ async function responseFailureReason(response: Response) {
   return `response_${response.status}_${code}`;
 }
 
+function readByteArray(value: unknown) {
+  if (
+    !Array.isArray(value) ||
+    value.length !== PASSWORD_KEY_BYTES ||
+    value.some((item) => typeof item !== "number" || !Number.isInteger(item) || item < 0 || item > 255)
+  ) {
+    return null;
+  }
+  return Uint8Array.from(value as number[]);
+}
+
 async function deriveThroughDurableObject(
   namespace: OrganizationPasswordKdfNamespace,
   password: string,
@@ -111,38 +179,64 @@ async function deriveThroughDurableObject(
   validateIterations(iterations);
   const partition = Array.from(salt, (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32) || "default";
   const stub = namespace.get(namespace.idFromName(partition));
-  let response: Response;
-  try {
-    response = await stub.fetch(INTERNAL_KDF_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [INTERNAL_KDF_HEADER]: "1",
-      },
-      body: JSON.stringify({ password, salt: Array.from(salt), iterations }),
-    });
-  } catch {
-    throw new OrganizationPasswordKdfUnavailableError("fetch_exception");
+  let state: OrganizationPasswordPbkdf2ChunkState | undefined;
+  const maxRequests = Math.ceil(iterations / PASSWORD_PBKDF2_CHUNK_ITERATIONS) + 1;
+
+  for (let requestIndex = 0; requestIndex < maxRequests; requestIndex += 1) {
+    let response: Response;
+    try {
+      response = await stub.fetch(INTERNAL_KDF_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [INTERNAL_KDF_HEADER]: "1",
+        },
+        body: JSON.stringify({
+          password,
+          salt: Array.from(salt),
+          iterations,
+          ...(state ? {
+            completedIterations: state.completedIterations,
+            previous: Array.from(state.previous),
+            accumulator: Array.from(state.accumulator),
+          } : {}),
+        }),
+      });
+    } catch {
+      throw new OrganizationPasswordKdfUnavailableError("fetch_exception");
+    }
+    if (!response.ok) throw new OrganizationPasswordKdfUnavailableError(await responseFailureReason(response));
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new OrganizationPasswordKdfUnavailableError("invalid_json");
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new OrganizationPasswordKdfUnavailableError("invalid_response");
+    }
+    const record = payload as Record<string, unknown>;
+    const completedIterations = record.completedIterations;
+    const previous = readByteArray(record.previous);
+    const accumulator = readByteArray(record.accumulator);
+    const priorCompleted = state?.completedIterations ?? 0;
+    const expectedCompleted = Math.min(iterations, priorCompleted + PASSWORD_PBKDF2_CHUNK_ITERATIONS);
+    if (
+      typeof completedIterations !== "number" ||
+      !Number.isInteger(completedIterations) ||
+      completedIterations !== expectedCompleted ||
+      !previous ||
+      !accumulator
+    ) {
+      throw new OrganizationPasswordKdfUnavailableError("invalid_chunk_state");
+    }
+
+    state = { completedIterations, previous, accumulator };
+    if (completedIterations === iterations) return accumulator;
   }
-  if (!response.ok) throw new OrganizationPasswordKdfUnavailableError(await responseFailureReason(response));
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new OrganizationPasswordKdfUnavailableError("invalid_json");
-  }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new OrganizationPasswordKdfUnavailableError("invalid_response");
-  }
-  const derivedKey = (payload as Record<string, unknown>).derivedKey;
-  if (
-    !Array.isArray(derivedKey) ||
-    derivedKey.length !== PASSWORD_KEY_BYTES ||
-    derivedKey.some((value) => typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 255)
-  ) {
-    throw new OrganizationPasswordKdfUnavailableError("invalid_derived_key");
-  }
-  return Uint8Array.from(derivedKey as number[]);
+
+  throw new OrganizationPasswordKdfUnavailableError("chunk_limit_exceeded");
 }
 
 export async function deriveOrganizationPasswordPbkdf2(
@@ -160,3 +254,4 @@ export async function deriveOrganizationPasswordPbkdf2(
 }
 
 export const ORGANIZATION_PASSWORD_KDF_INTERNAL_HEADER = INTERNAL_KDF_HEADER;
+export const ORGANIZATION_PASSWORD_KDF_CHUNK_ITERATIONS = PASSWORD_PBKDF2_CHUNK_ITERATIONS;

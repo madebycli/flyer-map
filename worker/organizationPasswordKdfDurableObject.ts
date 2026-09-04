@@ -1,6 +1,7 @@
 import {
-  deriveOrganizationPasswordPbkdf2Portable,
+  deriveOrganizationPasswordPbkdf2PortableChunk,
   ORGANIZATION_PASSWORD_KDF_INTERNAL_HEADER,
+  type OrganizationPasswordPbkdf2ChunkState,
 } from "./organizationPasswordKdf.ts";
 
 const MAX_BODY_BYTES = 4_096;
@@ -21,6 +22,12 @@ function validSalt(value: unknown): value is number[] {
   return Array.isArray(value) &&
     value.length >= 8 &&
     value.length <= 64 &&
+    value.every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0 && item <= 255);
+}
+
+function validKeyBytes(value: unknown): value is number[] {
+  return Array.isArray(value) &&
+    value.length === PASSWORD_KEY_BYTES &&
     value.every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0 && item <= 255);
 }
 
@@ -66,14 +73,39 @@ export class OrganizationPasswordKdfDurableObject {
       return json({ error: { code: "invalid_request", message: "KDF-Parameter sind ungültig." } }, { status: 400 });
     }
 
+    const hasContinuation =
+      record.completedIterations !== undefined ||
+      record.previous !== undefined ||
+      record.accumulator !== undefined;
+    let state: OrganizationPasswordPbkdf2ChunkState | undefined;
+    if (hasContinuation) {
+      if (
+        typeof record.completedIterations !== "number" ||
+        !Number.isInteger(record.completedIterations) ||
+        !validKeyBytes(record.previous) ||
+        !validKeyBytes(record.accumulator)
+      ) {
+        return json({ error: { code: "invalid_request", message: "KDF-Fortsetzung ist ungültig." } }, { status: 400 });
+      }
+      state = {
+        completedIterations: record.completedIterations,
+        previous: Uint8Array.from(record.previous),
+        accumulator: Uint8Array.from(record.accumulator),
+      };
+    }
+
     try {
-      const derived = await deriveOrganizationPasswordPbkdf2Portable(
+      const chunk = await deriveOrganizationPasswordPbkdf2PortableChunk(
         record.password,
         Uint8Array.from(record.salt),
         record.iterations,
+        state,
       );
-      if (derived.byteLength !== PASSWORD_KEY_BYTES) throw new Error("organization_password_kdf_length_invalid");
-      return json({ derivedKey: Array.from(derived) });
+      return json({
+        completedIterations: chunk.completedIterations,
+        previous: Array.from(chunk.previous),
+        accumulator: Array.from(chunk.accumulator),
+      });
     } catch {
       return json({ error: { code: "kdf_failed", message: "Passwort-Ableitung ist fehlgeschlagen." } }, { status: 500 });
     }

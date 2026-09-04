@@ -4,17 +4,20 @@ import {
   configureOrganizationPasswordKdfRuntime,
   deriveOrganizationPasswordPbkdf2,
   deriveOrganizationPasswordPbkdf2Local,
+  deriveOrganizationPasswordPbkdf2Portable,
+  ORGANIZATION_PASSWORD_KDF_CHUNK_ITERATIONS,
   OrganizationPasswordKdfUnavailableError,
   resetOrganizationPasswordKdfRuntimeForTests,
   type OrganizationPasswordKdfNamespace,
 } from "../worker/organizationPasswordKdf.ts";
 import { OrganizationPasswordKdfDurableObject } from "../worker/organizationPasswordKdfDurableObject.ts";
 
-test("organization password KDF routes Worker hashing through the configured Durable Object binding", async () => {
+test("organization password KDF routes Worker hashing through bounded Durable Object chunks", async () => {
   const salt = Uint8Array.from({ length: 16 }, (_, index) => index + 1);
   const password = "correct horse battery staple";
-  const iterations = 2_000;
+  const iterations = 52_000;
   const expected = await deriveOrganizationPasswordPbkdf2Local(password, salt, iterations);
+  const durableObject = new OrganizationPasswordKdfDurableObject({}, {});
   let calls = 0;
   let partition = "";
 
@@ -25,17 +28,9 @@ test("organization password KDF routes Worker hashing through the configured Dur
     },
     get() {
       return {
-        async fetch(_input, init) {
+        async fetch(input, init) {
           calls += 1;
-          assert.equal(init?.method, "POST");
-          const body = typeof init?.body === "string" ? init.body : "{}";
-          const payload = JSON.parse(body) as { password: string; salt: number[]; iterations: number };
-          const derived = await deriveOrganizationPasswordPbkdf2Local(
-            payload.password,
-            Uint8Array.from(payload.salt),
-            payload.iterations,
-          );
-          return Response.json({ derivedKey: Array.from(derived) });
+          return durableObject.fetch(new Request(input, init));
         },
       };
     },
@@ -45,11 +40,20 @@ test("organization password KDF routes Worker hashing through the configured Dur
   try {
     const actual = await deriveOrganizationPasswordPbkdf2(password, salt, iterations);
     assert.deepEqual(actual, expected);
-    assert.equal(calls, 1);
+    assert.equal(calls, 3);
+    assert.equal(ORGANIZATION_PASSWORD_KDF_CHUNK_ITERATIONS, 25_000);
     assert.match(partition, /^[a-f0-9]{32}$/u);
   } finally {
     resetOrganizationPasswordKdfRuntimeForTests();
   }
+});
+
+test("organization password KDF preserves the accepted 600k PBKDF2 verifier across chunks", async () => {
+  const salt = Uint8Array.from({ length: 16 }, (_, index) => 31 - index);
+  const password = "six-hundred-thousand-iterations";
+  const expected = await deriveOrganizationPasswordPbkdf2Local(password, salt, 600_000);
+  const actual = await deriveOrganizationPasswordPbkdf2Portable(password, salt, 600_000);
+  assert.deepEqual(actual, expected);
 });
 
 test("organization password KDF fails closed in a Worker runtime without its Durable Object binding", async () => {
@@ -88,7 +92,7 @@ test("organization password KDF preserves a safe Durable Object failure reason",
   }
 });
 
-test("organization password KDF Durable Object derives the same key as the local backend", async () => {
+test("organization password KDF Durable Object validates continuation state", async () => {
   const durableObject = new OrganizationPasswordKdfDurableObject({}, {});
   const salt = Array.from({ length: 16 }, (_, index) => index + 10);
   const response = await durableObject.fetch(new Request("https://organization-password-kdf.internal/derive", {
@@ -97,14 +101,14 @@ test("organization password KDF Durable Object derives the same key as the local
       "content-type": "application/json",
       "x-organization-password-kdf-internal": "1",
     },
-    body: JSON.stringify({ password: "do-runtime-password-123", salt, iterations: 2_000 }),
+    body: JSON.stringify({
+      password: "do-runtime-password-123",
+      salt,
+      iterations: 30_000,
+      completedIterations: 25_000,
+    }),
   }));
-  assert.equal(response.status, 200);
-  const payload = await response.json() as { derivedKey: number[] };
-  const expected = await deriveOrganizationPasswordPbkdf2Local(
-    "do-runtime-password-123",
-    Uint8Array.from(salt),
-    2_000,
-  );
-  assert.deepEqual(Uint8Array.from(payload.derivedKey), expected);
+  assert.equal(response.status, 400);
+  const payload = await response.json() as { error: { code: string } };
+  assert.equal(payload.error.code, "invalid_request");
 });
