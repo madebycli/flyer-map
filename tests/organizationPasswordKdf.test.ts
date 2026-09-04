@@ -1,19 +1,64 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveOrganizationPasswordPbkdf2 } from "../worker/organizationPasswordKdf.ts";
+import {
+  configureOrganizationPasswordKdfRuntime,
+  deriveOrganizationPasswordPbkdf2,
+  deriveOrganizationPasswordPbkdf2Local,
+  OrganizationPasswordKdfUnavailableError,
+  resetOrganizationPasswordKdfRuntimeForTests,
+  type OrganizationPasswordKdfNamespace,
+} from "../worker/organizationPasswordKdf.ts";
 
-const salt = Uint8Array.from({ length: 16 }, (_, index) => index);
+test("organization password KDF routes Worker hashing through the configured Durable Object binding", async () => {
+  const salt = Uint8Array.from({ length: 16 }, (_, index) => index + 1);
+  const password = "correct horse battery staple";
+  const iterations = 2_000;
+  const expected = await deriveOrganizationPasswordPbkdf2Local(password, salt, iterations);
+  let calls = 0;
+  let partition = "";
 
-test("organization password KDF keeps PBKDF2-SHA256 at 600k without WebCrypto", async () => {
-  const derived = await deriveOrganizationPasswordPbkdf2("runtime-cap-regression", salt, 600_000);
-  assert.equal(derived.byteLength, 32);
-  assert.equal(
-    Buffer.from(derived).toString("hex"),
-    "638cc00358a9d560acc69d469fd79834b780b264f165acf82f965b7ca7edb69c",
-  );
+  const namespace: OrganizationPasswordKdfNamespace = {
+    idFromName(name) {
+      partition = name;
+      return name;
+    },
+    get() {
+      return {
+        async fetch(_input, init) {
+          calls += 1;
+          assert.equal(init?.method, "POST");
+          const body = typeof init?.body === "string" ? init.body : "{}";
+          const payload = JSON.parse(body) as { password: string; salt: number[]; iterations: number };
+          const derived = await deriveOrganizationPasswordPbkdf2Local(
+            payload.password,
+            Uint8Array.from(payload.salt),
+            payload.iterations,
+          );
+          return Response.json({ derivedKey: Array.from(derived) });
+        },
+      };
+    },
+  };
+
+  configureOrganizationPasswordKdfRuntime(namespace);
+  try {
+    const actual = await deriveOrganizationPasswordPbkdf2(password, salt, iterations);
+    assert.deepEqual(actual, expected);
+    assert.equal(calls, 1);
+    assert.match(partition, /^[a-f0-9]{32}$/u);
+  } finally {
+    resetOrganizationPasswordKdfRuntimeForTests();
+  }
 });
 
-test("organization password KDF rejects invalid work factors", async () => {
-  await assert.rejects(() => deriveOrganizationPasswordPbkdf2("password", salt, 0));
-  await assert.rejects(() => deriveOrganizationPasswordPbkdf2("password", salt, 5_000_001));
+test("organization password KDF fails closed in a Worker runtime without its Durable Object binding", async () => {
+  configureOrganizationPasswordKdfRuntime(undefined);
+  try {
+    await assert.rejects(
+      deriveOrganizationPasswordPbkdf2("valid-password-123", new Uint8Array(16).fill(7), 2_000),
+      OrganizationPasswordKdfUnavailableError,
+    );
+  } finally {
+    resetOrganizationPasswordKdfRuntimeForTests();
+  }
 });
