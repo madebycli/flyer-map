@@ -1,0 +1,133 @@
+name: Apply Organization KDF Fix
+
+on:
+  push:
+    branches:
+      - feature/organizer-admin-platform
+    paths:
+      - .github/workflows/apply-organization-kdf-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact KDF compatibility patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          import json
+
+          helper = '''import { pbkdf2 } from "node:crypto";
+
+          const PASSWORD_KEY_BYTES = 32;
+          const MAX_PASSWORD_PBKDF2_ITERATIONS = 5_000_000;
+
+          export async function deriveOrganizationPasswordPbkdf2(
+            password: string,
+            salt: Uint8Array,
+            iterations: number,
+          ) {
+            if (!Number.isInteger(iterations) || iterations < 1 || iterations > MAX_PASSWORD_PBKDF2_ITERATIONS) {
+              throw new Error("organization_password_iterations_invalid");
+            }
+            const workerSalt = new Uint8Array(salt.byteLength);
+            workerSalt.set(salt);
+            return new Promise<Uint8Array>((resolve, reject) => {
+              pbkdf2(password, workerSalt, iterations, PASSWORD_KEY_BYTES, "sha256", (error, derivedKey) => {
+                if (error) {
+                  reject(error);
+                  return;
+                }
+                const output = new Uint8Array(derivedKey.byteLength);
+                output.set(derivedKey);
+                resolve(output);
+              });
+            });
+          }
+          '''
+
+          test = '''import assert from "node:assert/strict";
+          import test from "node:test";
+          import { deriveOrganizationPasswordPbkdf2 } from "../worker/organizationPasswordKdf.ts";
+
+          const salt = Uint8Array.from({ length: 16 }, (_, index) => index);
+
+          test("organization password KDF keeps PBKDF2-SHA256 at 600k without WebCrypto", async () => {
+            const derived = await deriveOrganizationPasswordPbkdf2("runtime-cap-regression", salt, 600_000);
+            assert.equal(derived.byteLength, 32);
+            assert.equal(
+              Buffer.from(derived).toString("hex"),
+              "638cc00358a9d560acc69d469fd79834b780b264f165acf82f965b7ca7edb69c",
+            );
+          });
+
+          test("organization password KDF rejects invalid work factors", async () => {
+            await assert.rejects(() => deriveOrganizationPasswordPbkdf2("password", salt, 0));
+            await assert.rejects(() => deriveOrganizationPasswordPbkdf2("password", salt, 5_000_001));
+          });
+          '''
+
+          Path("worker/organizationPasswordKdf.ts").write_text(helper, encoding="utf-8")
+          Path("tests/organizationPasswordKdf.test.ts").write_text(test, encoding="utf-8")
+
+          import_old = 'import type { D1DatabaseLike } from "./campaignRepository.ts";\n'
+          import_new = import_old + 'import { deriveOrganizationPasswordPbkdf2 } from "./organizationPasswordKdf.ts";\n'
+          derive_old = '''async function derivePassword(password: string, salt: Uint8Array, iterations: number) {
+            const workerSalt = new Uint8Array(salt.byteLength);
+            workerSalt.set(salt);
+            const material = await crypto.subtle.importKey(
+              "raw",
+              new TextEncoder().encode(password),
+              "PBKDF2",
+              false,
+              ["deriveBits"],
+            );
+            const bits = await crypto.subtle.deriveBits(
+              { name: "PBKDF2", hash: "SHA-256", salt: workerSalt, iterations },
+              material,
+              256,
+            );
+            return new Uint8Array(bits);
+          }
+          '''
+          derive_new = '''async function derivePassword(password: string, salt: Uint8Array, iterations: number) {
+            return deriveOrganizationPasswordPbkdf2(password, salt, iterations);
+          }
+          '''
+
+          for filename in ("worker/organizationAuth.ts", "worker/organizationSecurity.ts"):
+            path = Path(filename)
+            source = path.read_text(encoding="utf-8")
+            if source.count(import_old) != 1:
+              raise SystemExit(f"unexpected import anchor count in {filename}")
+            if source.count(derive_old) != 1:
+              raise SystemExit(f"unexpected derivePassword block count in {filename}")
+            source = source.replace(import_old, import_new, 1).replace(derive_old, derive_new, 1)
+            path.write_text(source, encoding="utf-8")
+
+          wrangler_path = Path("wrangler.jsonc")
+          config = json.loads(wrangler_path.read_text(encoding="utf-8"))
+          flags = list(config.get("compatibility_flags", []))
+          if "nodejs_compat" not in flags:
+            flags.append("nodejs_compat")
+          config["compatibility_flags"] = flags
+          wrangler_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+          PY
+      - name: Commit exact patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add worker/organizationAuth.ts worker/organizationSecurity.ts worker/organizationPasswordKdf.ts tests/organizationPasswordKdf.test.ts wrangler.jsonc
+          git diff --cached --check
+          git commit -m 'fix: make organization password KDF Workers-compatible'
+          git push origin HEAD:feature/organizer-admin-platform
