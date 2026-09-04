@@ -81,7 +81,7 @@ async function login(page, accountUsername = username, accountPassword = passwor
 }
 
 async function createCampaign(page, name) {
-  await page.getByRole('button', { name: /Neue Aktion/u }).click();
+  await page.getByRole('button', { name: '+ Neue Aktion', exact: true }).click();
   await page.waitForURL('**/new*');
   await page.getByLabel('Name der Aktion').fill(name);
   await page.getByRole('button', { name: 'Aktion erstellen', exact: true }).click();
