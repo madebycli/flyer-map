@@ -2,92 +2,95 @@
 id: status-organizer-admin-live-handoff
 type: status
 status: active
-last_updated: 2026-09-04
+last_updated: 2026-09-05
 ---
 
-# Organizer/Admin Live Handoff — 2026-09-04 17:10 CEST
+# Organizer/Admin Live Handoff — first full V9 green
 
-This file is an additive, lossless live snapshot. Older context/history remains in Git; when values conflict, GitHub remote state and exact-head CI win.
+This is the current additive live snapshot. Older history remains in Git. GitHub remote state and exact-head CI always outrank embedded SHAs.
 
-## Exact verified repository state
+## Verified runtime source and CI
 
-- Source `mission-rxdb-sync`: `33ab9c0d757da44e0b20b278982a548eafe732aa`.
-- Feature `feature/organizer-admin-platform`: `b772906d1cbf046cb982afc46d682c3cbba596c4` (`docs: expand organizer admin handoff graph`).
-- Exact-head CI: run `33881431786`, CI #1079 = success.
-- PR #76: open, Draft, unmerged, mergeable; base `mission-rxdb-sync`.
-- PR #74: open, Draft, unmerged; head `33ab9c0d...`.
-- PR #75: open, Draft, unmerged; head `501b8058...`.
-- Rollback `mission-release-2026-09-02-manual`: do not touch.
+- Base: `mission-rxdb-sync` = `33ab9c0d757da44e0b20b278982a548eafe732aa` at the start of this slice; reverify before new writes.
+- First fully accepted runtime feature head: `c62385a8c400f68753d1f1f811e2315551153885` (`fix: harden static asset responses`).
+- Exact-head PR CI on that runtime head: run `33924375460`, CI #1121 = success; tests, typecheck, dependency audit and production build all green.
+- PR #76 remained open, Draft, unmerged and mergeable with base `mission-rxdb-sync`.
+- Documentation-only commits may advance the feature head after the runtime proof; reverify the exact current head and its CI before further work.
 
-## Production isolation — verified invariant
+## Production isolation — unchanged
 
-Committed `wrangler.jsonc` on the feature head is production-safe:
+Committed `wrangler.jsonc` remains production-safe:
 
 - `main = ./worker/indexFc52.ts`;
 - Production D1 `0113e775-1e43-4d96-8b97-51fdeec7355b`;
 - Production rate namespaces `91714001`, `91714002`, `91714003`;
-- no committed `ORGANIZATION_LOGIN_LIMITER`;
-- no Organizer entrypoint in committed Production config.
+- no committed Organizer login limiter;
+- no committed Organizer entry point.
 
-`worker/indexOrganizer.ts` remains deploy-specific and must only be bound by isolated Admin staging or a separately approved Production release.
+No Production deploy and no Production D1 migration were performed. `worker/indexOrganizer.ts` remains isolated deployment-only.
 
-## Admin staging — current blocker
+## Isolated Admin staging — first full green
 
-- Branch `organizer-admin-staging`.
-- Head `f0e17da54592d37ae6b8c9b3bc23089e2b369e6f` (`ci: harden admin staging release gate`).
-- Workflow `.github/workflows/admin-staging-release-v7.yml`.
-- Run `33875342446` = failure.
-- Worker `flyer-map-admin-staging`.
-- D1 `flyer-map-admin-staging-db`.
-- Public URL exists: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`.
-- **The URL is not test-ready. Do not hand it out as finished.**
+- Branch: `organizer-admin-staging`.
+- Workflow: `.github/workflows/admin-staging-release-v9.yml`.
+- First completely green V9 run: `33924415528` / #23.
+- Run head: `6414aad45489cd2800e7dcf2f9e6bc917e4106b2`.
+- Worker: `flyer-map-admin-staging`.
+- D1: `flyer-map-admin-staging-db`.
+- Public URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`.
+- Runtime source audited by that run: `c62385a8c400f68753d1f1f811e2315551153885`.
 
-Sanitized `admin-staging-v7-diagnostics` evidence:
+### Evidence from V9 #23
 
-- tests, typecheck, dependency audit, production-safe build, D1 isolation, migrations, TOTP secret, candidate deploy and convergence all succeeded;
-- candidate has `ORGANIZATION_PASSWORD_KDF` bound to `OrganizationPasswordKdfDurableObject`;
-- candidate has `ORGANIZATION_PASSWORD_KDF_ITERATIONS = 600000`;
-- real bootstrap fails with HTTP `503`, `error.code = organization_password_kdf_unavailable`, diagnostic reason `response_500_kdf_failed`;
-- browser gates were skipped because bootstrap failed;
-- cleanup succeeded and left `bootstrap_count=0`, `organization_count=0`, `account_count=0`, `owned_campaign_count=0`;
-- final private worker was restored/deployed as version `1f9734ce-1bb6-47b3-9137-59f2fcc600a1`;
-- final `GET /start` = 200;
+Static gates:
+
+- exact feature derivation passed;
+- npm tests passed;
+- TypeScript passed;
+- dependency audit passed;
+- production build passed;
+- checked-in staging harness validation passed.
+
+Real Cloudflare/API/browser gates:
+
+- candidate version convergence passed;
+- API unsupported-method/fail-closed gates passed;
+- bootstrap 201 -> password -> TOTP -> authenticated `/api/organization/me` passed;
+- Campaign A and Campaign B were created and persisted server-side;
+- logout + storage/cookie clear + fresh Chromium context + login/TOTP showed both campaigns again;
+- one-time Admin invite opened in a clean browser, fragment token was removed from the URL, account enrollment completed and invited Admin MFA was accepted;
+- mobile Chromium at 390x844 passed with no horizontal overflow;
+- cleanup left bootstrap/organization/account/owned-campaign counts at zero and `PRAGMA foreign_key_check` returned no rows.
+
+Final unpinned public safety:
+
+- `GET /start` = 200;
 - unauthenticated `GET /api/organization/me` = 401;
-- cross-origin bootstrap = 403;
-- rotated smoke bootstrap is rejected after convergence;
-- second real defect: `HEAD /api/organization/me` falls through to SPA/assets and returns `200 text/html`, so the API safety/header gate fails and the response lacks the expected `X-Frame-Options: DENY` API header.
+- `HEAD /api/organization/me` = 405;
+- cross-origin Organization write = 403;
+- stale smoke bootstrap credential rejected;
+- static HTML and API responses both carry `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Cross-Origin-Opener-Policy: same-origin`.
 
-## Immediate continuation order
+The final static-header defect from V9 #21 was fixed with `public/_headers`, the supported Cloudflare Workers Static Assets header mechanism. Worker-generated responses remain hardened independently in `worker/indexOrganizer.ts`.
 
-1. Reverify exact current feature/staging heads before every write.
-2. Read `worker/organizationPasswordKdf.ts`, `worker/organizationPasswordKdfDurableObject.ts`, `worker/indexOrganizer.ts` and the V7 generated binding contract.
-3. Reproduce the internal KDF DO 500 with sanitized diagnostics; do not log password, salt, derived key, TOTP key or bootstrap secret.
-4. Fix the DO request/response/runtime root cause. Keep PBKDF2-HMAC-SHA-256 at 600,000; do not silently reduce it just to pass Free-tier runtime.
-5. Add a regression test covering the actual serialized DO fetch interface and fail-closed behavior.
-6. Fix `/api/*` unsupported-method/HEAD handling so API paths never become SPA HTML 200. Preserve security headers and add regression coverage.
-7. Get exact-head feature CI fully green: tests, typecheck, audit, build.
-8. Rebuild Admin staging from the exact green feature head without changing committed Production Wrangler.
-9. Real API smoke must pass: `/start` -> bootstrap 201 -> password challenge/login -> TOTP -> authenticated `/me` with MFA.
-10. Then run real Chromium gate: create Campaign A and B, logout, clear cookies/storage, login + TOTP, confirm A+B persist server-side.
-11. Run Invite Enrollment in a clean browser.
-12. Run desktop and mobile Chromium smoke.
-13. Only then expose the staging URL/setup procedure as a finished test version.
+## Test bootstrap credential policy
 
-## Remaining master acceptance after the runtime P0
+The final test environment is intentionally clean. A one-time bootstrap credential is required for the first organizer setup. Only its SHA-256 is stored in the isolated staging workflow. Plaintext must never be committed, logged, placed in URLs, browser storage, RxDB or public artifacts. If the test credential is rotated, rerun the entire V9 workflow and only disclose the plaintext after the final run is green.
 
-- explicit Legacy Campaign adoption with audit and negative tenant/race tests;
-- Admin/Organizer one-time expiring hash-only invites and clean-browser enrollment;
-- complete account security: username/password change, organizer reset link, TOTP reset, recovery regeneration, session list/revoke one/all;
-- Organizer/Admin management and concurrent last-organizer protection;
-- named Role Templates backed by a server-known Capability Registry;
-- own-team vs other-team vs explicit cross-team server authorization;
-- Campaign Admin console without fake KPIs;
-- root Organizer entry without hijacking the Field Map;
-- lifecycle and Organizer-only permanent delete with fresh reauth;
-- audit/threat-model/rate-limit/CSP/security-header closure;
-- no RxDB/Field regression;
-- browser acceptance for bootstrap/TOTP/recovery/invite/multi-campaign/logout/cookie-clear/login and desktop/mobile.
+## Remaining Master acceptance before Production
+
+The isolated staging version is testable; this is not a Production release. Remaining evidence-driven work includes:
+
+- explicit Legacy Campaign adoption + audit + negative tenant/race cases;
+- full account security/reset/TOTP/recovery/session lifecycle matrix;
+- multiple Organizer/Admin management and concurrent last-organizer protection;
+- named Role Templates + server-known Capability Registry;
+- own-team/other-team/explicit cross-team authorization;
+- Organizer-only permanent Campaign deletion with fresh high-risk reauth;
+- audit/threat-model/rate-limit/CSP closure;
+- final root Organizer entry and complete Admin console/lifecycle UX;
+- preservation of all RxDB/Field regression gates.
 
 ## Hard boundaries
 
-No merge, no Ready, no Production deploy, no Production D1 migration, no rollback-branch changes, no mixing PR #74/#75 into PR #76, no test/type/security weakening, no secrets in repo/logs/URLs/browser storage/RxDB/artifacts.
+No merge, no Ready, no Production deploy, no Production D1 migration, no rollback-branch changes, no mixing PR #74/#75 into PR #76, no test/type/security weakening, no secrets in repository/logs/URLs/browser storage/RxDB/artifacts.
