@@ -2,7 +2,7 @@ import { createHmac, pbkdf2Sync } from "node:crypto";
 
 const PASSWORD_KEY_BYTES = 32;
 const MAX_PASSWORD_PBKDF2_ITERATIONS = 5_000_000;
-const PASSWORD_PBKDF2_CHUNK_ITERATIONS = 25_000;
+const PASSWORD_PBKDF2_CHUNK_ITERATIONS = 300_000;
 const INTERNAL_KDF_URL = "https://organization-password-kdf.internal/derive";
 const INTERNAL_KDF_HEADER = "x-organization-password-kdf-internal";
 const SAFE_KDF_CODE = /^[a-z0-9_]{1,80}$/u;
@@ -77,6 +77,8 @@ export async function deriveOrganizationPasswordPbkdf2Local(
  * Computes at most one bounded slice of the standard PBKDF2-HMAC-SHA-256
  * iteration chain. The state is exactly the PBKDF2 U value and XOR accumulator,
  * so chaining slices is byte-for-byte equivalent to a single 600k PBKDF2 call.
+ * A 300k slice keeps the outer Free-plan Worker to two DO round trips for the
+ * accepted 600k policy while remaining far below the Durable Object CPU budget.
  */
 export async function deriveOrganizationPasswordPbkdf2PortableChunk(
   password: string,
