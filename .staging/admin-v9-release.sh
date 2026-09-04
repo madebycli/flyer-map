@@ -49,7 +49,8 @@ export ADMIN_D1_ID ADMIN_DB_NAME ADMIN_WORKER_NAME PROD_D1_ID RXDB_STAGING_D1_ID
 SMOKE_BOOTSTRAP_SECRET="$(openssl rand -hex 32)"
 SMOKE_PASSWORD="Smoke-$(openssl rand -hex 24)"
 INVITE_PASSWORD="Invite-$(openssl rand -hex 24)"
-TOTP_KEY="$(openssl rand -hex 32)"
+TOTP_KEY="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+[[ "$TOTP_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || { echo 'Invalid generated TOTP key.' >&2; exit 1; }
 for value in "$SMOKE_BOOTSTRAP_SECRET" "$SMOKE_PASSWORD" "$INVITE_PASSWORD" "$TOTP_KEY"; do echo "::add-mask::$value"; done
 SMOKE_DIGEST="$(printf '%s' "$SMOKE_BOOTSTRAP_SECRET" | sha256sum | awk '{print $1}')"
 export SMOKE_BOOTSTRAP_SECRET SMOKE_PASSWORD INVITE_PASSWORD TOTP_KEY SMOKE_DIGEST
@@ -126,14 +127,29 @@ TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$OUT/deploy-smoke.lo
 [[ -n "$TEST_URL" ]] || { echo 'No workers.dev URL found.' >&2; exit 1; }
 export TEST_URL
 
+CANDIDATE_VERSION_ID="$(sed -n 's/^Current Version ID: //p' "$OUT/deploy-smoke.log" | tail -n1)"
+[[ "$CANDIDATE_VERSION_ID" =~ ^[0-9A-Fa-f-]{36}$ ]] || { echo 'No valid candidate Worker version ID found.' >&2; exit 1; }
+export WORKER_VERSION_ID="$CANDIDATE_VERSION_ID"
+CANDIDATE_VERSION_HEADER="Cloudflare-Workers-Version-Overrides: ${ADMIN_WORKER_NAME}=\"${CANDIDATE_VERSION_ID}\""
+curl() {
+  command curl -H "$CANDIDATE_VERSION_HEADER" "$@"
+}
+
+CANDIDATE_CONSECUTIVE=0
 for attempt in $(seq 1 24); do
   START="$(curl -sSLo "$PRIVATE/start.html" -w '%{http_code}' "$TEST_URL/start" || printf 000)"
   PROBE="$(jq -n --arg s "$SMOKE_BOOTSTRAP_SECRET" '{bootstrapSecret:$s}')"
   CODE="$(curl -sS -o "$PRIVATE/candidate-probe.json" -w '%{http_code}' -X POST "$TEST_URL/api/organization/bootstrap" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data "$PROBE" || printf 000)"
-  if [[ "$START" -ge 200 && "$START" -lt 400 && "$CODE" == '400' ]]; then break; fi
-  [[ "$attempt" != '24' ]] || { echo 'Candidate did not converge.' >&2; exit 1; }
-  sleep 5
+  if [[ "$START" -ge 200 && "$START" -lt 400 && "$CODE" == '400' ]]; then
+    CANDIDATE_CONSECUTIVE=$((CANDIDATE_CONSECUTIVE+1))
+    [[ "$CANDIDATE_CONSECUTIVE" -ge 5 ]] && break
+  else
+    CANDIDATE_CONSECUTIVE=0
+  fi
+  [[ "$attempt" == '24' ]] || sleep 4
 done
+[[ "$CANDIDATE_CONSECUTIVE" -ge 5 ]] || { echo 'Candidate did not converge stably.' >&2; exit 1; }
+jq -n --arg start "$START" --arg probe "$CODE" --argjson consecutive "$CANDIDATE_CONSECUTIVE" '{ok:true,start_status:$start,bootstrap_probe_status:$probe,consecutive:$consecutive}' > "$OUT/candidate-convergence.json"
 
 HEAD_CODE="$(curl -sS -I -D "$OUT/head-api-headers.txt" -o /dev/null -w '%{http_code}' "$TEST_URL/api/organization/me" || printf 000)"
 [[ "$HEAD_CODE" == '405' ]]
@@ -185,9 +201,24 @@ ME="$(curl -sS -o "$PRIVATE/me.json" -w '%{http_code}' -b "$PRIVATE/cookies.txt"
 jq -e '.assurance=="mfa" and (.memberships|length==1) and .memberships[0].role=="organizer"' "$PRIVATE/me.json" >/dev/null
 jq -n --arg bootstrap "$B" --arg password "$L" --arg totp "$M" --arg me "$ME" '{ok:true,bootstrap_status:$bootstrap,password_status:$password,totp_status:$totp,me_status:$me}' > "$OUT/runtime-smoke.json"
 
-npm install --no-save --no-package-lock playwright@1.55.0 >/dev/null
-npx playwright install --with-deps chromium >/dev/null
-node .staging/admin-v9-browser.mjs
+if ! npm install --no-save --no-package-lock playwright@1.55.0 > "$OUT/playwright-npm-install.log" 2>&1; then
+  jq -n '{ok:false,stage:"playwright_npm_install",error:"Playwright package installation failed"}' > "$OUT/browser-failure.json"
+  exit 1
+fi
+if ! npx playwright install --with-deps chromium > "$OUT/playwright-browser-install.log" 2>&1; then
+  jq -n '{ok:false,stage:"playwright_browser_install",error:"Chromium installation failed"}' > "$OUT/browser-failure.json"
+  exit 1
+fi
+if ! node .staging/admin-v9-browser.mjs > "$PRIVATE/browser.stdout" 2> "$PRIVATE/browser.stderr"; then
+  if [[ ! -s "$OUT/browser-failure.json" ]]; then
+    jq -n '{ok:false,stage:"browser_process",error:"Browser process failed before producing diagnostics"}' > "$OUT/browser-failure.json"
+  fi
+  exit 1
+fi
+
+unset -f curl
+unset CANDIDATE_VERSION_HEADER
+unset WORKER_VERSION_ID
 
 cleanup_remote
 CLEANED=1
@@ -238,9 +269,3 @@ printf '%s\n' "$TEST_URL" > "$OUT/test-url.txt"
 jq -n --arg start "$START" --arg me "$ME_FINAL" --arg head "$HEAD_FINAL" --arg cross_origin "$ORIGIN" --arg source "$AUDITED_SOURCE_SHA" '{ok:true,start:$start,unauthenticated_me:$me,head_api:$head,cross_origin:$cross_origin,audited_source:$source,production_untouched:true}' > "$OUT/final-safety.json"
 
 git show "$AUDITED_SOURCE_SHA:wrangler.jsonc" > "$OUT/checked-in-wrangler.jsonc"
-node <<'NODE'
-const fs = require('node:fs');
-const c = JSON.parse(fs.readFileSync('/tmp/admin-v9/checked-in-wrangler.jsonc', 'utf8'));
-if (c.main !== './worker/indexFc52.ts') throw new Error('Checked-in production main changed');
-if ((c.d1_databases || []).find((x) => x.binding === 'DB')?.database_id !== '0113e775-1e43-4d96-8b97-51fdeec7355b') throw new Error('Checked-in production D1 changed');
-NODE

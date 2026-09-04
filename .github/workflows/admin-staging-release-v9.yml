@@ -58,152 +58,23 @@ jobs:
       - name: Exact-head production build
         run: npm run build
 
-      - name: Harden isolated candidate rollout convergence and diagnostics
+      - name: Validate checked-in isolated staging harness
         shell: bash
         run: |
-          python <<'PY'
-          from pathlib import Path
-          path = Path('.staging/admin-v9-release.sh')
-          text = path.read_text()
-
-          totp_marker = 'TOTP_KEY="$(openssl rand -hex 32)"\n'
-          totp_replacement = '''TOTP_KEY="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
-          [[ "$TOTP_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || { echo 'Invalid generated TOTP key.' >&2; exit 1; }
-          '''
-          if text.count(totp_marker) != 1:
-              raise SystemExit('TOTP key generation marker changed')
-          text = text.replace(totp_marker, totp_replacement, 1)
-
-          marker = 'for attempt in $(seq 1 24); do\n  START='
-          if text.count(marker) != 1:
-              raise SystemExit('candidate convergence loop marker changed')
-          text = text.replace(marker, 'CANDIDATE_CONSECUTIVE=0\n' + marker, 1)
-          old = '  if [[ "$START" -ge 200 && "$START" -lt 400 && "$CODE" == \'400\' ]]; then break; fi\n'
-          new = '''  if [[ "$START" -ge 200 && "$START" -lt 400 && "$CODE" == '400' ]]; then
-            CANDIDATE_CONSECUTIVE=$((CANDIDATE_CONSECUTIVE+1))
-            [[ "$CANDIDATE_CONSECUTIVE" -ge 5 ]] && break
-          else
-            CANDIDATE_CONSECUTIVE=0
-          fi
-          '''
-          if text.count(old) != 1:
-              raise SystemExit('candidate convergence condition changed')
-          text = text.replace(old, new, 1)
-          old_tail = '  sleep 5\ndone\n\nHEAD_CODE='
-          new_tail = '''  sleep 4
-          done
-          [[ "$CANDIDATE_CONSECUTIVE" -ge 5 ]] || { echo 'Candidate did not converge stably.' >&2; exit 1; }
-          jq -n --arg start "$START" --arg probe "$CODE" --argjson consecutive "$CANDIDATE_CONSECUTIVE" '{ok:true,start_status:$start,bootstrap_probe_status:$probe,consecutive:$consecutive}' > "$OUT/candidate-convergence.json"
-
-          HEAD_CODE='''
-          if text.count(old_tail) != 1:
-              raise SystemExit('candidate convergence tail changed')
-          text = text.replace(old_tail, new_tail, 1)
-
-          version_marker = 'export TEST_URL\n\nCANDIDATE_CONSECUTIVE=0\nfor attempt in $(seq 1 24); do\n'
-          version_setup = '''export TEST_URL
-          CANDIDATE_VERSION_ID="$(sed -n 's/^Current Version ID: //p' "$OUT/deploy-smoke.log" | tail -n1)"
-          [[ "$CANDIDATE_VERSION_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo 'No valid candidate Worker version ID found.' >&2; exit 1; }
-          export WORKER_VERSION_ID="$CANDIDATE_VERSION_ID"
-          CANDIDATE_VERSION_HEADER="Cloudflare-Workers-Version-Overrides: ${ADMIN_WORKER_NAME}=\\"${CANDIDATE_VERSION_ID}\\""
-          curl() {
-            command curl -H "$CANDIDATE_VERSION_HEADER" "$@"
-          }
-
-          CANDIDATE_CONSECUTIVE=0
-          for attempt in $(seq 1 24); do
-          '''
-          if text.count(version_marker) != 1:
-              raise SystemExit('candidate version marker changed')
-          text = text.replace(version_marker, version_setup, 1)
-
-          cleanup_marker = '''cleanup_remote() {
-            if [[ "$CLEANUP_READY" != '1' || "$CLEANED" == '1' ]]; then return 0; fi
-          '''
-          cleanup_replacement = '''cleanup_remote() {
-            if [[ -n "${TAIL_PID:-}" ]]; then
-              kill "$TAIL_PID" >/dev/null 2>&1 || true
-              wait "$TAIL_PID" >/dev/null 2>&1 || true
-            fi
-            if [[ "$CLEANUP_READY" != '1' || "$CLEANED" == '1' ]]; then return 0; fi
-          '''
-          if text.count(cleanup_marker) != 1:
-              raise SystemExit('cleanup marker changed')
-          text = text.replace(cleanup_marker, cleanup_replacement, 1)
-
-          bootstrap_marker = 'SMOKE_USERNAME="runtime.smoke.${GITHUB_RUN_ID}"\n'
-          tail_setup = '''npx wrangler tail "$ADMIN_WORKER_NAME" --format json --status error > "$PRIVATE/tail-errors.jsonl" 2> "$PRIVATE/tail-errors.stderr" &
-          TAIL_PID=$!
-          sleep 4
-
-          SMOKE_USERNAME="runtime.smoke.${GITHUB_RUN_ID}"
-          '''
-          if text.count(bootstrap_marker) != 1:
-              raise SystemExit('bootstrap marker changed')
-          text = text.replace(bootstrap_marker, tail_setup, 1)
-
-          failure_marker = '''  jq -n --arg status "$B" --arg code "$CODE" --arg reason "$REASON" '{ok:false,stage:"bootstrap",http_status:$status,error_code:$code,reason:$reason}' > "$OUT/runtime-smoke.json"
-            exit 1
-          '''
-          failure_replacement = '''  jq -n --arg status "$B" --arg code "$CODE" --arg reason "$REASON" '{ok:false,stage:"bootstrap",http_status:$status,error_code:$code,reason:$reason}' > "$OUT/runtime-smoke.json"
-            sleep 3
-            if [[ -s "$PRIVATE/tail-errors.jsonl" ]]; then
-              jq -c '{outcome,exceptions:[(.exceptions//[])[]|{name,message}],event:{request:{method:.event.request.method,url:.event.request.url}}}' "$PRIVATE/tail-errors.jsonl" > "$OUT/tail-errors-sanitized.jsonl" || true
-            fi
-            if [[ -s "$PRIVATE/tail-errors.stderr" ]]; then
-              sed -E 's/[A-Fa-f0-9]{32,}/[redacted]/g' "$PRIVATE/tail-errors.stderr" | tail -n 40 > "$OUT/tail-errors.stderr" || true
-            fi
-            exit 1
-          '''
-          if text.count(failure_marker) != 1:
-              raise SystemExit('bootstrap failure marker changed')
-          text = text.replace(failure_marker, failure_replacement, 1)
-
-          browser_done_marker = 'node .staging/admin-v9-browser.mjs\n\ncleanup_remote\n'
-          browser_done_replacement = '''node .staging/admin-v9-browser.mjs
-          unset -f curl
-          unset CANDIDATE_VERSION_HEADER
-          unset WORKER_VERSION_ID
-
-          cleanup_remote
-          '''
-          if text.count(browser_done_marker) != 1:
-              raise SystemExit('browser completion marker changed')
-          text = text.replace(browser_done_marker, browser_done_replacement, 1)
-          path.write_text(text)
-
-          browser_path = Path('.staging/admin-v9-browser.mjs')
-          browser = browser_path.read_text()
-          run_marker = "const runId = process.env.GITHUB_RUN_ID;\n"
-          version_context = '''const runId = process.env.GITHUB_RUN_ID;
-          const workerName = process.env.ADMIN_WORKER_NAME;
-          const workerVersionId = process.env.WORKER_VERSION_ID;
-          const versionContext = workerName && workerVersionId ? {
-            extraHTTPHeaders: {
-              'Cloudflare-Workers-Version-Overrides': `${workerName}="${workerVersionId}"`,
-            },
-          } : {};
-          '''
-          if browser.count(run_marker) != 1:
-              raise SystemExit('browser run marker changed')
-          browser = browser.replace(run_marker, version_context, 1)
-          guard_old = 'if (!url || !username || !password || !invitePassword || !organizerSecret || !organizationId || !runId) {'
-          guard_new = 'if (!url || !username || !password || !invitePassword || !organizerSecret || !organizationId || !runId || !workerName || !workerVersionId) {'
-          if browser.count(guard_old) != 1:
-              raise SystemExit('browser input guard changed')
-          browser = browser.replace(guard_old, guard_new, 1)
-          context_marker = 'browser.newContext({'
-          if browser.count(context_marker) != 4:
-              raise SystemExit('browser context count changed')
-          browser = browser.replace(context_marker, 'browser.newContext({ ...versionContext,')
-          browser_path.write_text(browser)
-          PY
-          grep -q 'Invalid generated TOTP key' .staging/admin-v9-release.sh
-          grep -q 'CANDIDATE_CONSECUTIVE' .staging/admin-v9-release.sh
-          grep -q 'CANDIDATE_VERSION_HEADER' .staging/admin-v9-release.sh
-          grep -q 'unset -f curl' .staging/admin-v9-release.sh
-          grep -q 'tail-errors-sanitized' .staging/admin-v9-release.sh
-          grep -q 'Cloudflare-Workers-Version-Overrides' .staging/admin-v9-browser.mjs
+          set -euo pipefail
+          bash -n .staging/admin-v9-release.sh
+          node --check .staging/admin-v9-browser.mjs
+          grep -Fq 'randomBytes(32).toString("base64url")' .staging/admin-v9-release.sh
+          grep -Fq 'CANDIDATE_CONSECUTIVE' .staging/admin-v9-release.sh
+          grep -Fq 'CANDIDATE_VERSION_HEADER' .staging/admin-v9-release.sh
+          grep -Fq 'unset -f curl' .staging/admin-v9-release.sh
+          grep -Fq 'browser-failure.json' .staging/admin-v9-release.sh
+          grep -Fq 'Cloudflare-Workers-Version-Overrides' .staging/admin-v9-browser.mjs
+          grep -Fq 'WORKER_VERSION_ID' .staging/admin-v9-browser.mjs
+          grep -Fq 'browser-progress.json' .staging/admin-v9-browser.mjs
+          grep -Fq 'browser-failure.json' .staging/admin-v9-browser.mjs
+          [[ "$(grep -Fc 'browser.newContext({ ...versionContext,' .staging/admin-v9-browser.mjs)" == '3' ]]
+          [[ "$(grep -Fc '...versionContext,' .staging/admin-v9-browser.mjs)" == '4' ]]
 
       - name: Run isolated Admin staging acceptance
         shell: bash
