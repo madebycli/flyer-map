@@ -25,7 +25,7 @@ jobs:
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
       AUDITED_BASE_SHA: f8f00b2b49dd554d037fac23231d25037f72d58d
-      BOOTSTRAP_SECRET_SHA256: 003e2c8e7d2c8395bca964bd00baddcae95cc586435bb1d3d47e51ae848566ca
+      BOOTSTRAP_SECRET_SHA256: 43d22637007ffbbb7d443a1ea87412f2b5c0c6aa73ee50ac49d9b5f99051ccc4
     steps:
       - name: Checkout
         uses: actions/checkout@v4
