@@ -1,4 +1,4 @@
-version: 23
+version: 24
 
 entrypoints:
   always:
@@ -26,6 +26,7 @@ routing_rules:
   - for post-mission automatic Street editing, load plan-smart-street-edit-after-mission and ADR-0023, then follow Smart Street runtime, automatic Area preparation, Map, Offline Sync, Security and Quality edges
   - for mission day-one sync recovery, Tour QR startup, Viewer team scope or terminal M5 queue records, load plan-mission-day-one-fixpack and follow Offline Sync, Security, Live Teams, UX and Quality edges
   - for the RxDB-first mission sync, migration 0017, checkpoint feed, Durable-Object invalidation or M5-to-RxDB recovery import, load ADR-0024, ADR-0025 and plan-028, then follow Data, Offline Sync, Security, Stack and Quality edges
+  - for the current verified RxDB product foundation, Brainrot mode, branch convergence or post-Admin integration planning, load branch-convergence, plan-029-verified-rxdb-brainrot-foundation and prompt-continue-verified-rxdb-foundation after the entrypoints, then follow plan-028, Map, Offline Sync, Deployment, Organizations, Identity/Permissions, Security and Quality edges
   - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
   - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
   - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
@@ -383,12 +384,40 @@ nodes:
     topics: [mission-release, rxdb, dexie, indexeddb, sync, checkpoint, change-feed, migration-0017, multi-device]
     load_when: [RxDB mission sync, offline replication, checkpoint pull, entity conflict, 50 devices]
 
+  - id: plan-029-verified-rxdb-brainrot-foundation
+    path: docs/plans/active/029-verified-rxdb-brainrot-foundation.md
+    type: plan
+    status: active
+    topics: [foundation, rxdb, staging, branch-convergence, brainrot, funny-focus-video, admin-convergence, street-house-port]
+    load_when: [verified product foundation, Brainrot integration, branch convergence, Admin ready gate, future Street House port]
+
+  - id: branch-convergence
+    path: docs/context/BRANCH_CONVERGENCE.md
+    type: context
+    status: current
+    topics: [branches, foundation, staging-reference, rxdb, brainrot, admin, organizer, street-house-engine, convergence]
+    load_when: [branch roles, choose development base, integrate Admin, integrate Street House engine, planner handoff]
+
+  - id: brainrot-focus-mode
+    path: src/platform/FunnyFocusVideo.tsx
+    type: code
+    status: current
+    topics: [brainrot, funny-focus-video, long-press, local-ui, easter-egg]
+    load_when: [Brainrot mode, menu hold, focus video, local-only UI behavior]
+
   - id: prompt-continue-rxdb-sync-latest
     path: docs/prompts/CONTINUE_RXDB_SYNC_LATEST.md
     type: handoff
     status: current
     topics: [rxdb, mission-release, handoff, ci, migration-0017]
     load_when: [continue RxDB sync, latest RxDB handoff, exact feature head]
+
+  - id: prompt-continue-verified-rxdb-foundation
+    path: docs/prompts/CONTINUE_VERIFIED_RXDB_FOUNDATION.md
+    type: handoff
+    status: current
+    topics: [foundation, rxdb, staging, branch-convergence, planner, brainrot, admin-ready, street-house-port]
+    load_when: [fresh planner chat, continue verified foundation, Admin convergence planning, choose current product base]
 
   - id: plan-collection-pickup-persistence
     path: docs/plans/active/021-collection-pickup-persistence.md
@@ -498,6 +527,17 @@ edges:
   - { from: plan-028-rxdb-local-first-mission-sync, to: quality, relation: validated_by }
   - { from: prompt-continue-rxdb-sync-latest, to: plan-028-rxdb-local-first-mission-sync, relation: hands_off }
   - { from: prompt-continue-rxdb-sync-latest, to: adr-rxdb-local-first-mission-sync, relation: references }
+  - { from: plan-029-verified-rxdb-brainrot-foundation, to: plan-028-rxdb-local-first-mission-sync, relation: builds_on_verified_sync }
+  - { from: plan-029-verified-rxdb-brainrot-foundation, to: branch-convergence, relation: records_branch_strategy }
+  - { from: plan-029-verified-rxdb-brainrot-foundation, to: brainrot-focus-mode, relation: integrates }
+  - { from: plan-029-verified-rxdb-brainrot-foundation, to: deployment, relation: preserves_staging_isolation }
+  - { from: plan-029-verified-rxdb-brainrot-foundation, to: quality, relation: validated_by }
+  - { from: prompt-continue-verified-rxdb-foundation, to: branch-convergence, relation: hands_off }
+  - { from: prompt-continue-verified-rxdb-foundation, to: plan-029-verified-rxdb-brainrot-foundation, relation: continues }
+  - { from: prompt-continue-verified-rxdb-foundation, to: plan-028-rxdb-local-first-mission-sync, relation: preserves_sync_context }
+  - { from: branch-convergence, to: organizations, relation: defers_admin_convergence_until_ready }
+  - { from: branch-convergence, to: offline-sync, relation: preserves_verified_foundation }
+  - { from: brainrot-focus-mode, to: ux, relation: local_ui_extension }
   - { from: plan-m6-house-persistence, to: data, relation: implemented_foundation }
   - { from: plan-app-launcher-sheet, to: ux, relation: implemented }
   - { from: plan-feature-complete-platform, to: live-teams, relation: implements_current_slice }
