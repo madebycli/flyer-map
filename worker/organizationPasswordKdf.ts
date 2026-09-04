@@ -1,9 +1,10 @@
-import { pbkdf2 } from "node:crypto";
+import { pbkdf2Sync } from "node:crypto";
 
 const PASSWORD_KEY_BYTES = 32;
 const MAX_PASSWORD_PBKDF2_ITERATIONS = 5_000_000;
 const INTERNAL_KDF_URL = "https://organization-password-kdf.internal/derive";
 const INTERNAL_KDF_HEADER = "x-organization-password-kdf-internal";
+const SAFE_KDF_CODE = /^[a-z0-9_]{1,80}$/u;
 
 export type OrganizationPasswordKdfNamespace = {
   idFromName(name: string): unknown;
@@ -11,7 +12,7 @@ export type OrganizationPasswordKdfNamespace = {
 };
 
 export class OrganizationPasswordKdfUnavailableError extends Error {
-  constructor() {
+  constructor(readonly reason = "unavailable") {
     super("organization_password_kdf_unavailable");
     this.name = "OrganizationPasswordKdfUnavailableError";
   }
@@ -43,17 +44,27 @@ export async function deriveOrganizationPasswordPbkdf2Local(
   validateIterations(iterations);
   const workerSalt = new Uint8Array(salt.byteLength);
   workerSalt.set(salt);
-  return new Promise<Uint8Array>((resolve, reject) => {
-    pbkdf2(password, workerSalt, iterations, PASSWORD_KEY_BYTES, "sha256", (error, derivedKey) => {
-      if (error) {
-        reject(error);
-        return;
+  const derivedKey = pbkdf2Sync(password, workerSalt, iterations, PASSWORD_KEY_BYTES, "sha256");
+  const output = new Uint8Array(derivedKey.byteLength);
+  output.set(derivedKey);
+  return output;
+}
+
+async function responseFailureReason(response: Response) {
+  let code = "unknown";
+  try {
+    const payload = await response.clone().json() as unknown;
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      const error = (payload as Record<string, unknown>).error;
+      if (error && typeof error === "object" && !Array.isArray(error)) {
+        const candidate = (error as Record<string, unknown>).code;
+        if (typeof candidate === "string" && SAFE_KDF_CODE.test(candidate)) code = candidate;
       }
-      const output = new Uint8Array(derivedKey.byteLength);
-      output.set(derivedKey);
-      resolve(output);
-    });
-  });
+    }
+  } catch {
+    // The status itself is enough for a safe staging diagnostic.
+  }
+  return `response_${response.status}_${code}`;
 }
 
 async function deriveThroughDurableObject(
@@ -76,17 +87,17 @@ async function deriveThroughDurableObject(
       body: JSON.stringify({ password, salt: Array.from(salt), iterations }),
     });
   } catch {
-    throw new OrganizationPasswordKdfUnavailableError();
+    throw new OrganizationPasswordKdfUnavailableError("fetch_exception");
   }
-  if (!response.ok) throw new OrganizationPasswordKdfUnavailableError();
+  if (!response.ok) throw new OrganizationPasswordKdfUnavailableError(await responseFailureReason(response));
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
-    throw new OrganizationPasswordKdfUnavailableError();
+    throw new OrganizationPasswordKdfUnavailableError("invalid_json");
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new OrganizationPasswordKdfUnavailableError();
+    throw new OrganizationPasswordKdfUnavailableError("invalid_response");
   }
   const derivedKey = (payload as Record<string, unknown>).derivedKey;
   if (
@@ -94,7 +105,7 @@ async function deriveThroughDurableObject(
     derivedKey.length !== PASSWORD_KEY_BYTES ||
     derivedKey.some((value) => typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 255)
   ) {
-    throw new OrganizationPasswordKdfUnavailableError();
+    throw new OrganizationPasswordKdfUnavailableError("invalid_derived_key");
   }
   return Uint8Array.from(derivedKey as number[]);
 }
@@ -109,7 +120,7 @@ export async function deriveOrganizationPasswordPbkdf2(
     // also verifies compatibility with the Durable Object implementation.
     return deriveOrganizationPasswordPbkdf2Local(password, salt, iterations);
   }
-  if (runtimeNamespace === null) throw new OrganizationPasswordKdfUnavailableError();
+  if (runtimeNamespace === null) throw new OrganizationPasswordKdfUnavailableError("binding_missing");
   return deriveThroughDurableObject(runtimeNamespace, password, salt, iterations);
 }
 

@@ -16,6 +16,7 @@ export { OrganizationPasswordKdfDurableObject } from "./organizationPasswordKdfD
 type BaseEnv = Parameters<typeof baseWorker.fetch>[1];
 type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & {
   ORGANIZATION_PASSWORD_KDF?: OrganizationPasswordKdfNamespace;
+  ORGANIZATION_KDF_DIAGNOSTICS?: string;
 };
 
 function harden(response: Response) {
@@ -31,11 +32,12 @@ function harden(response: Response) {
   });
 }
 
-function kdfUnavailableResponse() {
+function kdfUnavailableResponse(error: OrganizationPasswordKdfUnavailableError, diagnostics: boolean) {
   return harden(Response.json({
     error: {
       code: "organization_password_kdf_unavailable",
       message: "Passwort-Ableitung ist vorübergehend nicht verfügbar.",
+      ...(diagnostics ? { details: { reason: error.reason } } : {}),
     },
   }, {
     status: 503,
@@ -57,7 +59,9 @@ export default {
       if (organizationResponse) return harden(organizationResponse);
       return harden(await baseWorker.fetch(request, env, context));
     } catch (error) {
-      if (error instanceof OrganizationPasswordKdfUnavailableError) return kdfUnavailableResponse();
+      if (error instanceof OrganizationPasswordKdfUnavailableError) {
+        return kdfUnavailableResponse(error, env.ORGANIZATION_KDF_DIAGNOSTICS === "1");
+      }
       throw error;
     }
   },
