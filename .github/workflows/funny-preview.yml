@@ -1,0 +1,153 @@
+name: Funny Preview Deploy
+
+on:
+  push:
+    branches:
+      - fun/menu-hold-xxl-runner
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flyer-map-funny-preview
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      FUNNY_WORKER_NAME: flyer-map-funny
+      STAGING_DB_NAME: flyer-map-staging-db
+    steps:
+      - name: Checkout funny branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build funny preview
+        env:
+          CLOUDFLARE_ENV: funny
+        run: npm run build
+
+      - name: Verify funny environment isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          const funny = config.env?.funny;
+          const prodDb = (config.d1_databases || []).find((entry) => entry.binding === 'DB');
+          const funnyDb = (funny?.d1_databases || []).find((entry) => entry.binding === 'DB');
+          if (!funny) throw new Error('env.funny is missing');
+          if (funny.name !== 'flyer-map-funny') throw new Error(`Unexpected funny worker: ${funny.name}`);
+          if (funny.workers_dev !== true) throw new Error('Funny preview must use workers.dev');
+          if (funnyDb?.database_name !== 'flyer-map-staging-db') throw new Error(`Funny preview is not bound to staging D1: ${funnyDb?.database_name}`);
+          if (!prodDb?.database_id || !funnyDb?.database_id) throw new Error('Cannot prove D1 isolation');
+          if (prodDb.database_id === funnyDb.database_id) throw new Error('Safety stop: funny preview points at production D1');
+
+          const redirectPath = '.wrangler/deploy/config.json';
+          if (!fs.existsSync(redirectPath)) throw new Error('Vite deploy redirect missing');
+          const redirect = JSON.parse(fs.readFileSync(redirectPath, 'utf8'));
+          const generatedPath = path.resolve(path.dirname(redirectPath), redirect.configPath);
+          const generated = JSON.parse(fs.readFileSync(generatedPath, 'utf8'));
+          if (generated.name !== 'flyer-map-funny') throw new Error(`Generated worker is not funny preview: ${generated.name}`);
+          const generatedDb = (generated.d1_databases || []).find((entry) => entry.binding === 'DB');
+          if (generatedDb?.database_id !== funnyDb.database_id) throw new Error('Generated funny D1 does not match checked-in funny D1');
+          if (JSON.stringify(generated).includes(prodDb.database_id)) throw new Error('Production D1 identifier leaked into funny deploy config');
+          console.log(`Funny preview isolation verified: ${generated.name} -> ${generatedDb.database_id}`);
+          NODE
+
+      - name: Resolve Cloudflare account and staging D1
+        id: cloudflare
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "Missing CLOUDFLARE_API_TOKEN" >&2
+            exit 1
+          fi
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error \
+            'https://api.cloudflare.com/client/v4/accounts?per_page=50' \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json')"
+          ACCOUNT_COUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq '.result | length')"
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && [[ "$(printf '%s' "$ACCOUNTS_JSON" | jq --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '[.result[] | select(.id == $id)] | length')" == "1" ]]; then
+            ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
+          elif [[ "$ACCOUNT_COUNT" == "1" ]]; then
+            ACCOUNT_ID="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[0].id')"
+          else
+            echo "Cannot resolve exactly one Cloudflare account" >&2
+            exit 1
+          fi
+          echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
+
+          PROD_D1_ID="$(node -e 'const c=require("./wrangler.jsonc"); process.stdout.write(c.d1_databases.find(x=>x.binding==="DB").database_id)')"
+          FUNNY_D1_ID="$(node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8")); process.stdout.write(c.env.funny.d1_databases.find(x=>x.binding==="DB").database_id)')"
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          RESOLVED_D1_ID="$(printf '%s' "$LIST_JSON" | jq -r --arg name "$STAGING_DB_NAME" '[.[] | select(.name == $name)] | if length == 1 then .[0].uuid else empty end')"
+          if [[ -z "$RESOLVED_D1_ID" || "$RESOLVED_D1_ID" != "$FUNNY_D1_ID" || "$RESOLVED_D1_ID" == "$PROD_D1_ID" ]]; then
+            echo "Safety stop: funny preview D1 isolation could not be proven" >&2
+            exit 1
+          fi
+
+          SUBDOMAIN_JSON="$(curl --fail-with-body --silent --show-error \
+            "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/subdomain" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json')"
+          SUBDOMAIN="$(printf '%s' "$SUBDOMAIN_JSON" | jq -r '.result.subdomain // empty')"
+          if [[ -z "$SUBDOMAIN" ]]; then
+            echo "Could not resolve workers.dev subdomain" >&2
+            exit 1
+          fi
+          FUNNY_URL="https://${FUNNY_WORKER_NAME}.${SUBDOMAIN}.workers.dev"
+          echo "url=$FUNNY_URL" >> "$GITHUB_OUTPUT"
+          echo "FUNNY_URL=$FUNNY_URL" >> "$GITHUB_ENV"
+          echo "Funny preview URL: $FUNNY_URL"
+
+      - name: Wrangler dry run
+        run: npx wrangler deploy --dry-run --outdir .wrangler-funny-dry-run
+
+      - name: Deploy funny preview only
+        run: npx wrangler deploy
+
+      - name: Verify funny preview URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            STATUS="$(curl --silent --output /tmp/funny.html --write-out '%{http_code}' "$FUNNY_URL/" || true)"
+            if [[ "$STATUS" == "200" ]]; then
+              grep -F '<div id="root"></div>' /tmp/funny.html >/dev/null
+              echo "Funny preview is live: $FUNNY_URL"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Funny preview did not become healthy" >&2
+          exit 1
+
+      - name: Summary
+        run: |
+          echo "### Funny preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: $FUNNY_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Worker: $FUNNY_WORKER_NAME" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Database: $STAGING_DB_NAME (staging only)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- D1 migrations: not run" >> "$GITHUB_STEP_SUMMARY"
