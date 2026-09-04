@@ -4,6 +4,8 @@ import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
 import { OrganizationApp } from "./organization/OrganizationApp";
+import { OrganizationInviteRedeemPage, OrganizationPasswordResetPage } from "./organization/OrganizationPublicLinks";
+import { OrganizationSecurityCenter } from "./organization/OrganizationSecurityCenter";
 import { isOrganizationAdminPath } from "./organization/organizationRoutes";
 import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
@@ -39,6 +41,15 @@ const preview = workbenchMode && workbenchMode in previews
 if (preview) {
   document.title = preview.title;
   root.render(<StrictMode>{preview.component}</StrictMode>);
+} else if (window.location.pathname === "/join") {
+  document.title = "Einladung | Flyer Map";
+  root.render(<StrictMode><OrganizationInviteRedeemPage /></StrictMode>);
+} else if (window.location.pathname === "/reset") {
+  document.title = "Passwort-Reset | Flyer Map";
+  root.render(<StrictMode><OrganizationPasswordResetPage /></StrictMode>);
+} else if (window.location.pathname === "/admin/security") {
+  document.title = "Sicherheit | Flyer Map";
+  root.render(<StrictMode><OrganizationSecurityCenter /></StrictMode>);
 } else if (isOrganizationAdminPath(window.location.pathname)) {
   document.title = "Organizer Admin | Flyer Map";
   root.render(<StrictMode><OrganizationApp /></StrictMode>);

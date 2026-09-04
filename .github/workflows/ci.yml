@@ -73,16 +73,29 @@ jobs:
         shell: bash
         run: |
           set +e
-          npm run audit:dependencies 2>&1 | tee audit-output.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            summary="$(grep -E 'high|critical|vulnerabilit|advisory|fix available|No fix available|node_modules' audit-output.log | tail -n 30 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
-            if [ -z "$summary" ]; then
-              summary="$(tail -n 30 audit-output.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+          : > audit-output.log
+          status=1
+          for attempt in 1 2 3; do
+            echo "Dependency audit attempt ${attempt}" | tee -a audit-output.log
+            npm run audit:dependencies 2>&1 | tee audit-attempt.log
+            status=${PIPESTATUS[0]}
+            cat audit-attempt.log >> audit-output.log
+            if [ "$status" -eq 0 ]; then
+              exit 0
             fi
-            echo "::error title=dependency audit failed::$summary"
-            exit "$status"
+            if ! grep -Eqi 'audit endpoint returned an error|Service Unavailable|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout' audit-attempt.log; then
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 5
+            fi
+          done
+          summary="$(grep -E 'high|critical|vulnerabilit|advisory|fix available|No fix available|node_modules|audit endpoint returned an error|Service Unavailable|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND' audit-output.log | tail -n 30 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+          if [ -z "$summary" ]; then
+            summary="$(tail -n 30 audit-output.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
           fi
+          echo "::error title=dependency audit failed::$summary"
+          exit "$status"
       - name: Upload failed dependency audit output
         if: failure()
         uses: actions/upload-artifact@v4

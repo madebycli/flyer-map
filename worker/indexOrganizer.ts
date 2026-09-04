@@ -1,6 +1,7 @@
 import baseWorker from "./indexFc52.ts";
 import { handleOrganizationApi, type OrganizationApiEnv } from "./organizationApi.ts";
 import { handleOrganizationSecurityApi } from "./organizationSecurityApi.ts";
+import { guardOrganizationSecurityQuery } from "./organizationSecurityRequest.ts";
 import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 
 export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
@@ -23,6 +24,8 @@ function harden(response: Response) {
 
 export default {
   async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
+    const queryGuard = guardOrganizationSecurityQuery(request);
+    if (queryGuard) return harden(queryGuard);
     const securityResponse = await handleOrganizationSecurityApi(request, env);
     if (securityResponse) return harden(securityResponse);
     const organizationResponse = await handleOrganizationApi(request, env);

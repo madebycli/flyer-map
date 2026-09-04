@@ -1,10 +1,20 @@
-export const ORGANIZATION_ADMIN_PATHS = ["/start", "/login", "/new", "/admin"] as const;
+export const ORGANIZATION_ADMIN_PATHS = ["/start", "/login", "/join", "/reset", "/new", "/admin", "/admin/security"] as const;
 
 export function isOrganizationAdminPath(pathname: string) {
   return pathname === "/start" ||
     pathname === "/login" ||
+    pathname === "/join" ||
+    pathname === "/reset" ||
     pathname === "/new" ||
     pathname === "/admin" ||
+    pathname === "/admin/security" ||
+    pathname.startsWith("/admin/campaign/");
+}
+
+function isAuthenticatedOrganizationDestination(pathname: string) {
+  return pathname === "/new" ||
+    pathname === "/admin" ||
+    pathname === "/admin/security" ||
     pathname.startsWith("/admin/campaign/");
 }
 
@@ -16,7 +26,7 @@ export function safeOrganizationNext(value: string | null | undefined, fallback 
   } catch {
     return fallback;
   }
-  if (url.origin !== "https://flyer-map.invalid" || !isOrganizationAdminPath(url.pathname)) return fallback;
+  if (url.origin !== "https://flyer-map.invalid" || !isAuthenticatedOrganizationDestination(url.pathname)) return fallback;
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
