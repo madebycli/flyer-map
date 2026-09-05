@@ -33,6 +33,10 @@ In dieser Reihenfolge:
 
 Danach GitHub Remote-Head, PR #76, changed files und exact-head CI neu lesen. SHAs in Docs sind nur Marker, weil Doku-Commits den Branch bewegen.
 
+## Master-Anforderung in einem Satz
+
+Das Grid-Menü aus `PlatformShell` ist die einzige primäre Field-Navigation; Team darf nicht wieder zu einem Container mit Rooms/Fortschritt/Kommentare-Tabs werden. Die eigenständigen Launcher-Apps, draggable Sheets, korrekte Street-Navigation und sichere Room-Credential-Semantik sind auf diesem Branch vollständig umzusetzen und anschließend auf isoliertem Staging zu verifizieren.
+
 ## Nicht missverstehen
 
 ### 1. Screenshot-2-Menü ist die primäre Navigation
@@ -59,7 +63,7 @@ plus `.team-center-tabs` in `src/team/TeamCenter.tsx`.
 
 Diese Tabs dürfen nicht als primäre Navigation bestehen bleiben oder später unter anderem Namen neu entstehen.
 
-Ziel-Launcher in dieser ersten Reihenfolge:
+Ziel-Launcher, erste Reihenfolge:
 
 1. `team` / Team
 2. `rooms` / Rooms
@@ -73,9 +77,9 @@ Responsive darf das Grid umbrechen. Informationsarchitektur bleibt flach.
 
 ### 2. Team ist kein App-Container
 
-`Team` enthält Team-Auswahl/-Management und höchstens kompakte Team-Zusammenfassung. Kein Rooms-/Progress-/Comments-Tab.
+`Team` enthält Team-Auswahl/-Management und höchstens eine kompakte Team-Zusammenfassung. Kein Rooms-/Progress-/Comments-Tab.
 
-`src/team/TeamHub.tsx` ist aktuell nur Compatibility-Reexport von `TeamCenter`. Löse diese Übergangsstruktur sauber auf.
+`src/team/TeamHub.tsx` ist aktuell nur Compatibility-Reexport von `TeamCenter`. Löse diese Übergangsstruktur sauber auf. `TeamHub` soll danach eine fokussierte Team-Oberfläche sein, nicht ein umbenannter Multi-App-Container.
 
 ### 3. Kein „App Store“ bauen
 
@@ -83,7 +87,7 @@ Nicht zusätzlich Sessions, Activity, Automations oder historische Hubs ungefrag
 
 ### 4. `stats` bedeutet hier Team-Fortschritt
 
-Der Field-Launcher `stats` zeigt den Fortschritt des `PlatformAppContext.activeTeam`. Kein Campaign-weites Admin-Default. `TeamProgressPanel.tsx` bevorzugt wiederverwenden. `StatisticsHub.tsx` nur, wenn Team-Scope explizit und serverseitig korrekt ist.
+Der Field-Launcher `stats` zeigt den Fortschritt von `PlatformAppContext.activeTeam`. Kein Campaign-weites Admin-Default. `TeamProgressPanel.tsx` bevorzugt wiederverwenden. `StatisticsHub.tsx` nur, wenn Team-Scope explizit und serverseitig korrekt ist.
 
 ### 5. Streets ist vorbereitet, nicht erfunden
 
@@ -106,10 +110,10 @@ Nach `saveStreetTask()` kommt Street Detail. Beim Schließen nach Statusänderun
 In `src/App.tsx` mindestens diese drei Stellen prüfen:
 
 - Close-Handler `sheet === "task"`;
-- Snapshot-/Selection-Effect, der bei fehlendem selectedTask aktuell auf `area` fällt;
+- Snapshot-/Selection-Effect, der bei fehlendem `selectedTaskId` aktuell auf `area` fällt;
 - `deleteSelectedTask()`.
 
-Keinen versteckten Parent-Sheet-Stack bewahren.
+Keinen versteckten Parent-Sheet-Stack bewahren. Area öffnet erst wieder durch bewusste Area-Auswahl oder später einen ausdrücklich sichtbaren Zurück-Button.
 
 ### 8. `Online anzeigen` ist nur Discovery
 
@@ -126,9 +130,23 @@ Manager müssen hidden Rooms trotzdem verwalten/auflisten können. Aktuell ist `
 
 Normalfall: denselben aktuell gültigen Code/QR/Link später wieder anzeigen.
 
-Separate Operation: „Join-Zugang erneuern“ = Rotation. Rotation macht alten Code/QR für **zukünftige** Joins ungültig, lässt bestehende `field_group_memberships` aber bestehen. Das ist im aktuellen Worker bereits so und muss regressionsgeschützt bleiben.
+Separate Operation: `Join-Zugang erneuern` = Rotation. Rotation macht alten Code/QR für **zukünftige** Joins ungültig, lässt bestehende `field_group_memberships` aber bestehen. Das ist im aktuellen Worker bereits so und muss regressionsgeschützt bleiben.
 
-### 10. Hash-only nicht mit Plaintext „fixen“
+`Join sperren` blockiert neue Joins, entfernt aber nicht automatisch bestehende Memberships.
+
+### 10. „Permanent“ bedeutet nicht „für immer gültig“
+
+Der Master will den aktuellen Join-Zugang während der **aktiven Lebenszeit des Rooms** wieder anzeigen können, auch wenn das erste Modal geschlossen wurde oder jemand 30 Minuten später kommt.
+
+Nicht daraus machen:
+
+- forever credential;
+- Credential ohne `hard_expires_at`;
+- Credential, das Rotation/Revoke/Close/Expiry ignoriert.
+
+Room-Lifecycle und ADR-0014 bleiben die Obergrenze.
+
+### 11. Hash-only nicht mit Plaintext „fixen“
 
 Aktuell sind Room/QR Credentials hash-only in D1; Plaintext existiert nur bei Issuance/Rotation. Deshalb ist Re-show des gleichen Codes nach Dialog-Close heute technisch nicht möglich.
 
@@ -142,19 +160,39 @@ Bevor Reveal implementiert wird:
 - Rotation/revoke/close/expiry invalidiert alten Reveal;
 - niemals Plaintext in D1/RxDB/LocalStorage/IndexedDB/Audit/Logs.
 
+Verwende für recoverable Room-Credentials einen dedizierten serverseitigen Encryption-Key. **Nicht** den Organization-TOTP-Key, Session-Secret oder irgendeinen Client-Key wiederverwenden. Key niemals ins Repository committen. Isoliertes Staging bekommt nur eine eigene Staging-Bindung/Secret.
+
 Keine Production-Migration. Eine neue Migration darf nur vorbereitet und in isoliertem Staging angewandt werden.
 
-### 11. Kommentare müssen auf Mobil schreibbar bleiben
+### 12. Bestehende hash-only Rooms nicht „rekonstruieren“
+
+Für einen bereits existierenden Room ohne verschlüsseltes recoverable Material kann der alte Code aus dem Hash nicht zurückgewonnen werden.
+
+Korrektes Verhalten nach Einführung des Reveal-Designs:
+
+- Server gibt für solchen Legacy-active-Room keinen erfundenen Code zurück;
+- UI erklärt, dass der vorhandene Zugang aus der älteren Hash-only-Version nicht erneut angezeigt werden kann;
+- Manager kann **bewusst einmal** `Join-Zugang erneuern` wählen;
+- die neue Rotation erzeugt recoverable current credentials;
+- bestehende Memberships bleiben dabei aktiv.
+
+Keine automatische Rotation beim Öffnen des Dialogs. Kein verstecktes Ausloggen. Kein Hash-Bruteforce.
+
+### 13. Kommentare müssen auf Mobil schreibbar bleiben
 
 `CommentsContextPanel` bleibt standardmäßig collapsed (`.comments-context-toggle`). Expanded müssen viele Kommentare scrollen, während der Composer erreichbar bleibt. Software-Keyboard, Browser Bottom Bar, Safe Area und `visualViewport` testen. Kein nested-scroll deadlock.
 
-### 12. Healthy Sync ist keine große Pill
+### 14. Healthy Sync ist keine große Pill
 
-Der dominante `Serverbestätigt`/Healthy-Status muss weg. Ziel: kleine `platform-sync-indicator`-artige Anzeige in der bestehenden `.platform-field-bar`, links in derselben Field-Control-Zeile wie Launcher/aktives Team. Kein permanenter Healthy-Text.
+Der dominante `Serverbestätigt`/Healthy-Status muss weg. Ziel: kleine `platform-sync-indicator`-artige Anzeige innerhalb der bestehenden `.platform-field-bar`, links in derselben Field-Control-Zeile wie `.platform-grid-button` und `.platform-active-team`. Kein permanenter Healthy-Text.
+
+Die Klasse `.platform-field-bar` existiert bereits in `PlatformShell.tsx`; **keine neue zweite Bottom-Bar erfinden**.
 
 `offline/error/conflict/new data` bleiben sichtbar. Der manuelle `.map-refresh-button` unten rechts darf funktional bleiben. Prüfe alle Renderpfade `refreshState`, `syncMessageCode`, `.connection`, `.map-refresh-control`, bevor du einen entfernst.
 
-### 13. Brainrot nicht kaputtmachen
+Wenn `PlatformShell` den Status benötigt, erweitere `PlatformAppContext` um einen minimalen Präsentationszustand aus `App.tsx`, statt einen zweiten unabhängigen Sync-Algorithmus in `PlatformShell` zu implementieren.
+
+### 15. Brainrot nicht kaputtmachen
 
 `.platform-grid-button` bleibt Long-Press-Target. Etwa 5 Sekunden Hold öffnet Brainrot. Nach erfolgreichem Long-Press normalen Menü-Klick schlucken.
 
@@ -176,6 +214,7 @@ Der dominante `Serverbestätigt`/Healthy-Status muss weg. Ziel: kleine `platform
 - Server ist Source of Truth für Auth/Authz/Team/Room/Tenant.
 - Keine Tests oder Security Guards abschwächen.
 - Keine UI-only Berechtigungen.
+- Group QR darf wie bisher im URL-Fragment für Redemption existieren; nicht in Query-String oder persistente Browserstores verschieben.
 
 ## Code-Landkarte
 
@@ -191,7 +230,9 @@ Der dominante `Serverbestätigt`/Healthy-Status muss weg. Ziel: kleine `platform
 - `launcherItems`
 - `overlayOpen`
 - `dispatchSimpleCommand()`
+- `.platform-field-bar`
 - `.platform-grid-button`
+- `.platform-active-team`
 - `.platform-menu-sheet`
 - `.platform-menu-grid`
 
@@ -206,7 +247,7 @@ Der dominante `Serverbestätigt`/Healthy-Status muss weg. Ziel: kleine `platform
 
 `src/team/TeamHub.tsx`
 
-- Compatibility-Reexport, nicht Zielarchitektur.
+- aktueller Compatibility-Reexport, nicht Zielarchitektur.
 
 `src/team/TeamCenter.tsx`
 
@@ -243,6 +284,8 @@ Der dominante `Serverbestätigt`/Healthy-Status muss weg. Ziel: kleine `platform
 - `startManualStreet()`
 - `openStreetDrawing()`
 - `PlatformAppCommand` handling
+- `onPlatformContextChange`
+- `refreshState` / `syncMessageCode`
 
 `src/styles.css`
 
@@ -321,15 +364,15 @@ Wenn du einen Namen aus technischen Gründen ändern musst, aktualisiere Plan/Gr
 1. Current remote head + PR #76 + CI verifizieren.
 2. Bestehende Tests rund um PlatformShell/TeamCenter/Field Groups/App sheets lokalisieren.
 3. Neue Regressionstests zuerst für:
-   - Launcher-Items;
+   - Launcher-Items und Reihenfolge;
    - keine TeamCenter primary tabs;
    - hidden Room manager visibility;
    - code/QR join hidden + visible;
    - rotation preserves membership;
-   - Street close -> map;
+   - Street close/effect/delete -> map;
    - Brainrot long-press contract.
 
-Keine Tests auf eine gewünschte Implementierung „umlügen“, wenn sie eine bestehende Security-Invariante schützen.
+Keine Tests auf eine gewünschte Implementierung „umlügen“, wenn sie eine echte Security-/Production-Invariante schützen.
 
 ### Phase B: Navigation extrahieren
 
@@ -373,16 +416,17 @@ Keine Tests auf eine gewünschte Implementierung „umlügen“, wenn sie eine b
 1. ADR-0014 + LIVE_TEAMS vor Code reviewen/ändern.
 2. Threat Model dokumentieren.
 3. nächste freie Migration im aktuellen Tree wählen, nicht Nummer raten.
-4. current credential encrypted-at-rest + hash lookup.
-5. Manager reveal endpoint + same-origin/no-store + canonical authz.
-6. Rotation/revoke/close/expiry invalidation.
-7. bestehende Rooms ohne recoverable ciphertext fail-safe behandeln; keine automatische unsichere Rekonstruktion.
-8. Staging Migration nur isolierte D1.
+4. dedizierten Room-Credential Encryption-Key in Runtime-Vertrag einführen, ohne TOTP-Key-Reuse.
+5. current credential encrypted-at-rest + hash lookup.
+6. Manager reveal endpoint + same-origin/no-store + canonical authz.
+7. Rotation/revoke/close/expiry invalidation.
+8. existierende hash-only Rooms: expliziter unavailable-to-reveal Zustand, bewusste Rotation nötig, keine Rekonstruktion.
+9. Staging Migration nur isolierte D1.
 
 ### Phase G: Comments / status / onboarding
 
 - Comments Composer mobile/keyboard reparieren.
-- Healthy sync in `.platform-field-bar` minimieren.
+- Healthy sync in bestehender `.platform-field-bar` minimieren.
 - actionable states sichtbar.
 - Group onboarding nach erfolgreicher Redemption, Deutsch default.
 - Read-only onboarding Deutsch default; keine Authz-Änderung.
@@ -401,7 +445,7 @@ Staging/live:
 - exact feature derivation;
 - keine Production Bindings;
 - D1 fingerprint/state/FK before-after;
-- launcher separate items;
+- Launcher separate Items in richtiger Struktur;
 - mobile sheet drag + content scroll;
 - many comments + keyboard + composer;
 - Street draw/save/status/close -> map;
@@ -410,7 +454,9 @@ Staging/live:
 - hidden Room QR join;
 - visible Room Code/QR join;
 - current Join-Zugang re-show ohne Rotation;
-- rotation old future join blocked/new future join works;
+- Legacy-active hash-only Room zeigt keinen erfundenen Credential und rotiert nicht automatisch;
+- bewusste Rotation macht neuen Credential re-showable;
+- Rotation: old future join blocked/new future join works;
 - already joined membership survives rotation;
 - revoke future join blocked/membership survives;
 - Brainrot long hold;
@@ -427,6 +473,20 @@ Vor Remote-Schreiboperationen Head erneut prüfen. Bei parallel geänderten Date
 
 Dokumentation/Graph/Plan/Prompt im selben Slice aktualisieren, wenn sich Identifier oder akzeptierte Architektur ändern.
 
+## Selbstkritik dieses Prompts und eingebaute Korrekturen
+
+Der erste Prompt-Draft wurde gegen Plan 031, Screenshots und Servercode geprüft. Folgende Missverständnisse wurden in dieser Fassung ausdrücklich geschlossen:
+
+1. **„Permanenter Join-Link“ konnte als forever credential gelesen werden.** Jetzt ist klar: wiederanzeigbar nur innerhalb normaler aktiver Room-Lebenszeit und weiterhin rotate/revoke/close/expiry-fähig.
+2. **Bestehende hash-only Rooms konnten zu erfundener Rekonstruktion verleiten.** Jetzt ist eine bewusste einmalige Rotation der einzige Übergang zu recoverable credentials; keine automatische Rotation und kein Hash-Bruteforce.
+3. **Encryption-Key war nicht isoliert genug beschrieben.** Jetzt ist TOTP-/Session-Key-Reuse ausdrücklich verboten und ein dedizierter serverseitiger Key verlangt.
+4. **Sync-Ziel konnte als neue zweite Leiste interpretiert werden.** Jetzt ist die bereits existierende `.platform-field-bar` der konkrete Zielcontainer.
+5. **Street-Fix konnte wieder nur das X ändern.** Jetzt sind Close, Task-loss Effect und Delete explizit gemeinsam zu prüfen.
+6. **Team-Fortschritt konnte wieder Campaign-Stats werden.** Jetzt ist `stats` im Field Launcher ausdrücklich an `activeTeam` gebunden.
+7. **Future Streets konnte als Auftrag für neue Map-/OSM-Engine gelesen werden.** Jetzt ist der Slice auf vorhandene manuelle Funktion plus vorbereitete Integrationsfläche begrenzt.
+
+Wenn die Implementation von einem dieser Punkte abweichen muss, zuerst Plan/ADR aktualisieren und die Abweichung begründen. Nicht still eine andere Informations- oder Security-Architektur bauen.
+
 ## Abschlussbericht
 
 Am Ende mindestens:
@@ -435,12 +495,12 @@ Am Ende mindestens:
 - PR #76 OPEN/DRAFT/unmerged;
 - exact-head CI run/job und alle Gates;
 - veränderte relevante Dateien;
-- Room-Credential-Architektur und Migration nur Staging/prepared;
+- Room-Credential-Architektur, dedizierter Key-Vertrag und Migration nur Staging/prepared;
 - Production-Wrangler-Invarianten bestätigt;
 - Staging run/job + URL;
 - D1 fingerprint/state/FK proof;
 - mobile Browser-Matrix;
-- Room visible/hidden Code/QR + rotation membership preservation;
+- Room visible/hidden Code/QR + current reveal + rotation membership preservation;
 - Street close flow;
 - comments keyboard/composer;
 - launcher/menu + Brainrot;
