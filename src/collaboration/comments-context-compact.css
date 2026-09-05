@@ -1,0 +1,62 @@
+.comments-context-compact {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.25rem;
+}
+
+.comments-context-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgb(148 163 184 / 0.28);
+  border-radius: 0.78rem;
+  background: rgb(248 250 252 / 0.9);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.comments-context-toggle strong {
+  min-width: 0;
+  font-size: 0.88rem;
+}
+
+.comments-context-toggle em {
+  min-width: 1.65rem;
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  background: rgb(37 99 235 / 0.1);
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  text-align: center;
+}
+
+.comments-context-submenu {
+  display: grid;
+  gap: 0.65rem;
+  max-height: min(44dvh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.15rem 0.1rem 0.25rem;
+}
+
+@media (max-width: 699px) {
+  .comments-context-submenu {
+    max-height: 38dvh;
+  }
+
+  .bottom-sheet.settings-sheet:not(.is-collapsed),
+  .bottom-sheet.compact-sheet:not(.is-collapsed),
+  .bottom-sheet.task-sheet:not(.is-collapsed) {
+    max-height: 58dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
