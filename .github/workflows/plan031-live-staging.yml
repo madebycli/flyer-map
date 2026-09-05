@@ -65,6 +65,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p product/.staging
           cp runner/.staging/admin-v9-release.sh product/.staging/admin-v9-release.sh
           cp runner/.staging/admin-v9-browser.mjs product/.staging/admin-v9-browser.mjs
           cp runner/.staging/plan031-field-browser.mjs product/.staging/plan031-field-browser.mjs
