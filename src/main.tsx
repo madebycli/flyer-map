@@ -1,10 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { AccessLinkOnboardingGate } from "./access/AccessLinkOnboardingGate";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { campaignIdFromUrl } from "./data/campaignApi";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
+import { OrganizationAdminNavEnhancer } from "./organization/OrganizationAdminNavEnhancer";
 import { OrganizationApp } from "./organization/OrganizationApp";
+import { OrganizationInviteCenter } from "./organization/OrganizationInviteCenter";
 import { OrganizationInviteRedeemPage, OrganizationPasswordResetPage } from "./organization/OrganizationPublicLinks";
 import { OrganizationSecurityCenter } from "./organization/OrganizationSecurityCenter";
 import { isOrganizationAdminPath } from "./organization/organizationRoutes";
@@ -48,12 +51,15 @@ if (preview) {
 } else if (window.location.pathname === "/reset") {
   document.title = "Passwort-Reset | Flyer Map";
   root.render(<StrictMode><OrganizationPasswordResetPage /></StrictMode>);
+} else if (window.location.pathname === "/admin/invites") {
+  document.title = "Einladungen | Flyer Map";
+  root.render(<StrictMode><OrganizationInviteCenter /></StrictMode>);
 } else if (window.location.pathname === "/admin/security") {
   document.title = "Sicherheit | Flyer Map";
-  root.render(<StrictMode><OrganizationSecurityCenter /></StrictMode>);
+  root.render(<StrictMode><><OrganizationSecurityCenter /><OrganizationAdminNavEnhancer /></></StrictMode>);
 } else if (isOrganizationAdminPath(window.location.pathname)) {
   document.title = "Organizer Admin | Flyer Map";
-  root.render(<StrictMode><OrganizationApp /></StrictMode>);
+  root.render(<StrictMode><><OrganizationApp /><OrganizationAdminNavEnhancer /></></StrictMode>);
 } else if (!campaignIdFromUrl()) {
   document.title = "Anmeldung | Flyer Map";
   window.location.replace("/login");
@@ -63,6 +69,7 @@ if (preview) {
     <StrictMode>
       <PlatformShell />
       <AccessRecoveryGate />
+      <AccessLinkOnboardingGate />
       <FieldGroupJoinGate />
       <MapDiagnostics />
       <SyncStatus />
