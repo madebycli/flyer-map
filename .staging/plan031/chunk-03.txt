@@ -1,0 +1,370 @@
+replace_exact(
+    'src/platform/platformContract.ts',
+    '      { id: "streets", label: "Straßen", icon: "🛣️", command: null, opensStreetsHub: true },',
+    '      { id: "streets", label: "Streets", icon: "🛣️", command: null, opensStreetsHub: true },',
+)
+replace_exact(
+    'src/platform/platformContract.ts',
+    '''  items.push({ id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" });\n\n  if (context?.canCreateArea) {\n    items.push({ id: "area-create", label: "Gebiet", icon: "➕", command: "start-area-drawing" });\n  }''',
+    '''  if (context?.canCreateArea) {\n    items.push({ id: "area-create", label: "Gebiet", icon: "➕", command: "start-area-drawing" });\n  }\n\n  items.push({ id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" });''',
+)
+
+write('src/platform/PlatformShell.tsx', r'''
+import { useRef, useState } from "react";
+import App from "../App";
+import { CommentsHub } from "../collaboration/CommentsHub.tsx";
+import { manualRefreshCampaign } from "../data/campaignStore.ts";
+import { StreetsHub } from "../streets/StreetsHub.tsx";
+import { RoomsHub } from "../team/RoomsHub.tsx";
+import { TeamHub } from "../team/TeamHub.tsx";
+import { TeamProgressHub } from "../team/TeamProgressHub.tsx";
+import { FieldBottomSheet } from "./FieldBottomSheet.tsx";
+import {
+  buildPlatformLauncherItems,
+  type PlatformAppCommand,
+  type PlatformAppCommandType,
+  type PlatformAppContext,
+} from "./platformContract.ts";
+import { SessionMapHighlightProvider } from "./sessionMapHighlight.tsx";
+import "./platform-shell.css";
+
+function MenuGridIcon() {
+  return (
+    <span className="platform-grid-glyph" aria-hidden="true">
+      {Array.from({ length: 9 }, (_, index) => <i key={index} />)}
+    </span>
+  );
+}
+
+function useOnlineStatus() {
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useState(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  });
+  return online;
+}
+
+type PrimaryHub = "team" | "rooms" | "progress" | "comments" | "streets" | null;
+
+export function PlatformShell() {
+  const online = useOnlineStatus();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [primaryHub, setPrimaryHub] = useState<PrimaryHub>(null);
+  const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
+  const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
+  const [activeFieldGroupId, setActiveFieldGroupId] = useState<string | null>(null);
+  const commandId = useRef(0);
+
+  const launcherItems = buildPlatformLauncherItems(appContext);
+  const teamName = appContext?.activeTeam?.name.trim() || "Team";
+  const teamColor = appContext?.activeTeam?.color ?? "#64748b";
+  const showActiveTeam = appContext?.accessRole !== "viewer" && Boolean(appContext?.activeTeam);
+  const launcherAvailable = appContext?.launcherAvailable ?? true;
+  const overlayOpen = menuOpen || primaryHub !== null;
+  const syncState = appContext?.syncState ?? (online ? "healthy" : "offline");
+  const syncLabel = appContext?.syncLabel ?? (syncState === "offline" ? "Offline" : null);
+
+  const closeOverlays = () => {
+    setMenuOpen(false);
+    setPrimaryHub(null);
+  };
+
+  const dispatchSimpleCommand = (
+    type: Exclude<PlatformAppCommandType, "select-active-team" | "open-street-task">,
+  ) => {
+    commandId.current += 1;
+    setAppCommand({ id: commandId.current, type });
+    closeOverlays();
+  };
+
+  const selectActiveTeam = (teamId: string) => {
+    commandId.current += 1;
+    setAppCommand({ id: commandId.current, type: "select-active-team", teamId });
+  };
+
+  const openStreetTask = (taskId: string) => {
+    commandId.current += 1;
+    setAppCommand({ id: commandId.current, type: "open-street-task", taskId });
+    closeOverlays();
+  };
+
+  return (
+    <div className="platform-shell">
+      <div className="platform-map-layer" aria-hidden={overlayOpen || undefined}>
+        <SessionMapHighlightProvider value={null}>
+          <App
+            platformCommand={appCommand}
+            activeFieldGroupId={activeFieldGroupId}
+            onPlatformContextChange={setAppContext}
+          />
+        </SessionMapHighlightProvider>
+      </div>
+
+      {launcherAvailable ? (
+        <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
+          <button
+            className="platform-grid-button"
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Menü öffnen"
+            title="Menü öffnen"
+          >
+            <MenuGridIcon />
+          </button>
+          {showActiveTeam ? (
+            <div className="platform-active-team" title={teamName}>
+              <span className="platform-active-team-dot" style={{ backgroundColor: teamColor }} aria-hidden="true" />
+              <strong>{teamName}</strong>
+            </div>
+          ) : null}
+          <div
+            className={`platform-sync-indicator is-${syncState}`}
+            role={syncState === "healthy" ? undefined : "status"}
+            aria-label={syncState === "healthy" ? "Serverstand aktuell" : syncLabel ?? "Synchronisationsstatus"}
+            title={syncState === "healthy" ? "Serverstand aktuell" : syncLabel ?? "Synchronisationsstatus"}
+          >
+            <span aria-hidden="true" />
+            {syncState !== "healthy" && syncLabel ? <strong>{syncLabel}</strong> : null}
+          </div>
+        </div>
+      ) : null}
+
+      {menuOpen ? (
+        <FieldBottomSheet open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="compact" className="platform-menu-sheet">
+          <div className="platform-menu-grid">
+            {launcherItems.map((item) => (
+              <button
+                className="platform-app-item"
+                type="button"
+                key={item.id}
+                onClick={() => {
+                  if (item.opensTeamHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("team");
+                  } else if (item.opensRoomsHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("rooms");
+                  } else if (item.opensProgressHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("progress");
+                  } else if (item.opensCommentsHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("comments");
+                  } else if (item.opensStreetsHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("streets");
+                  } else if (item.command) {
+                    dispatchSimpleCommand(item.command);
+                  }
+                }}
+              >
+                <span className={`platform-app-icon platform-app-icon--${item.id}`} aria-hidden="true">{item.icon}</span>
+                <strong>{item.label}</strong>
+              </button>
+            ))}
+          </div>
+        </FieldBottomSheet>
+      ) : null}
+
+      {primaryHub === "team" ? (
+        <TeamHub
+          context={appContext}
+          online={online}
+          onClose={() => setPrimaryHub(null)}
+          onSelectTeam={selectActiveTeam}
+          onManageTeams={() => dispatchSimpleCommand("open-team-management")}
+        />
+      ) : null}
+
+      {primaryHub === "rooms" ? (
+        <RoomsHub
+          context={appContext}
+          online={online}
+          onClose={() => setPrimaryHub(null)}
+          onSelectTeam={selectActiveTeam}
+          onAccessChanged={manualRefreshCampaign}
+          onOperationalGroupChange={setActiveFieldGroupId}
+        />
+      ) : null}
+
+      {primaryHub === "progress" ? (
+        <TeamProgressHub
+          context={appContext}
+          online={online}
+          onClose={() => setPrimaryHub(null)}
+          onSelectTeam={selectActiveTeam}
+        />
+      ) : null}
+
+      {primaryHub === "comments" ? (
+        <CommentsHub
+          context={appContext}
+          online={online}
+          onClose={() => setPrimaryHub(null)}
+          onChanged={manualRefreshCampaign}
+        />
+      ) : null}
+
+      {primaryHub === "streets" ? (
+        <StreetsHub
+          context={appContext}
+          onClose={() => setPrimaryHub(null)}
+          onManualStreet={() => dispatchSimpleCommand("start-manual-street")}
+          onOpenStreet={openStreetTask}
+        />
+      ) : null}
+    </div>
+  );
+}
+''')
+
+replace_exact(
+    'src/App.tsx',
+    'import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";\nimport { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";',
+    'import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";\nimport { useLegacyFieldSheetDragBridge } from "./platform/FieldBottomSheet.tsx";\nimport { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";',
+)
+replace_exact(
+    'src/App.tsx',
+    '  const online = useOnlineStatus();\n  const [initialLoad] = useState(loadCampaignSnapshot);',
+    '  const online = useOnlineStatus();\n  const collectionMode = collectionModeFromUrl();\n  useLegacyFieldSheetDragBridge(!collectionMode);\n  const [initialLoad] = useState(loadCampaignSnapshot);',
+)
+replace_exact('src/App.tsx', '  const collectionMode = collectionModeFromUrl();\n', '', count=1)
+replace_exact(
+    'src/App.tsx',
+    '      if (sheet === "task") setSheet(selectedAreaId ? "area" : null);',
+    '      if (sheet === "task") setSheet(null);',
+)
+replace_exact(
+    'src/App.tsx',
+    '''  const selectedTaskIsAutoPrepared = Boolean(selectedTask?.areaPreparationGeneration);\n  useEffect(() => {\n    onPlatformContextChange?.({\n      campaignId: snapshot.campaign.id,\n      accessRole: access?.role ?? null,\n      accessTeamId: access?.teamId ?? null,\n      activeGroupId: access?.groupId ?? activeFieldGroupId,\n      activeTeam: activeTeam\n        ? {\n            id: activeTeam.id,\n            name: activeTeam.name,\n            color: activeTeam.color,\n          }\n        : null,\n      teams: snapshot.teams.map((team) => ({ id: team.id, name: team.name, color: team.color })),\n      launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection,\n      canManageTeams: Boolean(isAdmin),\n      canCreateArea: Boolean(activeTeam && canEditTeam(activeTeam.id)),\n      canCreateManualStreet: snapshot.areas.some((area) => canEditArea(area)),\n    });\n  }, [access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, sheet, onPlatformContextChange, snapshot.areas, snapshot.campaign.id, snapshot.teams]);''',
+    '''  const selectedTaskIsAutoPrepared = Boolean(selectedTask?.areaPreparationGeneration);\n  const platformStreets = useMemo(() => snapshot.tasks.map((task) => {\n    const area = snapshot.areas.find((candidate) => candidate.id === task.areaId);\n    const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;\n    return {\n      id: task.id,\n      label: task.label,\n      areaId: task.areaId,\n      areaName: area?.name ?? "Gebiet",\n      teamId: area?.teamId ?? "",\n      teamName: team?.name ?? "Team",\n      status: task.status,\n    };\n  }).filter((street) => Boolean(street.teamId)), [snapshot.areas, snapshot.tasks, snapshot.teams]);\n  const platformSyncState = !online\n    ? "offline" as const\n    : refreshState === "loading"\n      ? "refreshing" as const\n      : refreshState === "available" || syncMessageCode === "conflict"\n        ? "new-data" as const\n        : refreshState === "error" || Boolean(syncMessageCode)\n          ? "error" as const\n          : "healthy" as const;\n  const platformSyncLabel = platformSyncState === "offline"\n    ? "Offline"\n    : platformSyncState === "refreshing"\n      ? "Aktualisiert …"\n      : platformSyncState === "new-data"\n        ? "Neue Serverdaten"\n        : platformSyncState === "error"\n          ? "Synchronisierung prüfen"\n          : null;\n  useEffect(() => {\n    onPlatformContextChange?.({\n      campaignId: snapshot.campaign.id,\n      accessRole: access?.role ?? null,\n      accessTeamId: access?.teamId ?? null,\n      activeGroupId: access?.groupId ?? activeFieldGroupId,\n      activeTeam: activeTeam\n        ? { id: activeTeam.id, name: activeTeam.name, color: activeTeam.color }\n        : null,\n      teams: snapshot.teams.map((team) => ({ id: team.id, name: team.name, color: team.color })),\n      streets: platformStreets,\n      launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection,\n      canManageTeams: Boolean(isAdmin),\n      canCreateArea: Boolean(activeTeam && canEditTeam(activeTeam.id)),\n      canCreateManualStreet: snapshot.areas.some((area) => canEditArea(area)),\n      syncState: platformSyncState,\n      syncLabel: platformSyncLabel,\n    });\n  }, [access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, onPlatformContextChange, platformStreets, platformSyncLabel, platformSyncState, sheet, snapshot.areas, snapshot.campaign.id, snapshot.teams]);''',
+)
+replace_exact(
+    'src/App.tsx',
+    '''    if (platformCommand.type === "start-area-drawing") {\n      startDrawing();\n    }\n    if (platformCommand.type === "start-manual-street") {\n      startManualStreet();\n    }''',
+    '''    if (platformCommand.type === "open-street-task") {\n      const task = snapshot.tasks.find((candidate) => candidate.id === platformCommand.taskId);\n      if (!task) return;\n      setSelectedTaskId(task.id);\n      setSelectedHouseTaskId(null);\n      setSelectedAreaId(task.areaId);\n      setSheet("task");\n      return;\n    }\n    if (platformCommand.type === "start-area-drawing") {\n      startDrawing();\n    }\n    if (platformCommand.type === "start-manual-street") {\n      startManualStreet();\n    }''',
+)
+replace_exact(
+    'src/App.tsx',
+    '    setSelectedTaskId(null);\n    setSheet("area");\n  };\n\n  const commandCamera',
+    '    setSelectedTaskId(null);\n    setSheet(null);\n  };\n\n  const commandCamera',
+)
+replace_exact(
+    'src/App.tsx',
+    'onClick={() => { setSelectedTaskId(null); setSheet(selectedAreaId ? "area" : null); }}',
+    'onClick={() => { setSelectedTaskId(null); setSheet(null); }}',
+)
+
+append_once(
+    'src/data/fieldGroupApi.ts',
+    'export async function revealFieldGroupCredentials',
+    r'''
+export async function revealFieldGroupCredentials(campaignId: string, groupId: string) {
+  const response = await apiFetch(`${groupPath(campaignId, groupId)}/credentials/current`);
+  return ((await response.json()) as { credentials: FieldGroupCredentials }).credentials;
+}
+''',
+)
+
+write('src/collaboration/comments-context-compact.css', r'''
+.comments-context-compact {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.25rem;
+}
+
+.comments-context-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgb(148 163 184 / 0.28);
+  border-radius: 0.78rem;
+  background: rgb(248 250 252 / 0.9);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.comments-context-toggle strong { min-width: 0; font-size: 0.88rem; }
+.comments-context-toggle em {
+  min-width: 1.65rem;
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  background: rgb(37 99 235 / 0.1);
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  text-align: center;
+}
+
+.comments-context-submenu {
+  display: grid;
+  gap: 0.65rem;
+  min-height: 0;
+  overflow: visible;
+  padding: 0.15rem 0.1rem 0.25rem;
+}
+
+.comments-context-submenu textarea,
+.comments-context-submenu input {
+  scroll-margin-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+''')
+
+replace_exact('src/platform/platform-shell.css', 'grid-template-columns: repeat(4, minmax(0, 1fr));', 'grid-template-columns: repeat(3, minmax(0, 1fr));')
+replace_exact('src/platform/platform-shell.css', 'grid-template-columns: repeat(3, minmax(0, 1fr));', 'grid-template-columns: repeat(2, minmax(0, 1fr));', count=1)
+append_once(
+    'src/platform/platform-shell.css',
+    '.platform-sync-indicator {',
+    r'''
+.platform-sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 1.2rem;
+  min-height: 1.8rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  color: #435047;
+  background: rgb(237 242 238 / 86%);
+  font-size: 0.68rem;
+}
+
+.platform-sync-indicator > span {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #238446;
+}
+
+.platform-sync-indicator strong { white-space: nowrap; }
+.platform-sync-indicator.is-refreshing > span { background: #4f7d5e; animation: platform-sync-pulse 1s ease-in-out infinite; }
+.platform-sync-indicator.is-offline > span { background: #64748b; }
+.platform-sync-indicator.is-new-data > span { background: #d97706; }
+.platform-sync-indicator.is-error > span { background: #b42318; }
+.platform-sync-indicator.is-offline,
+.platform-sync-indicator.is-new-data,
+.platform-sync-indicator.is-error { padding-inline: 0.48rem 0.58rem; }
+
+@keyframes platform-sync-pulse {
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.platform-app-icon--rooms { background: linear-gradient(145deg, #8b73d6, #5d47af); }
+.platform-app-icon--comments { background: linear-gradient(145deg, #39a79f, #17736d); }
+.platform-app-icon--streets { background: linear-gradient(145deg, #e49a40, #b8651f); }
+''',
+)
