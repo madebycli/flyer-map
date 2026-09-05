@@ -11,6 +11,7 @@ import { CampaignApiError, type AccessInfo } from "../data/campaignApi.ts";
 import type { Language } from "../i18n.ts";
 import { CommentsPanel, type CommentListItem } from "./CommentsPanel.tsx";
 import "./comments-context-panel.css";
+import "./comments-context-compact.css";
 
 type Props = {
   campaignId: string;
@@ -27,28 +28,20 @@ function errorMessage(error: unknown, language: Language) {
   if (error instanceof CampaignApiError) {
     if (error.code === "pickup_comments_schema_unavailable") {
       return language === "de"
-        ? "Pickup-Kommentare sind vorbereitet, aber Migration 0013 ist noch nicht ausgerollt."
-        : "Pickup comments are prepared, but migration 0013 has not been rolled out yet.";
+        ? "Pickup-Kommentare sind vorbereitet, aber die Migration fehlt noch."
+        : "Pickup comments are prepared, but the migration is still missing.";
     }
     if (error.code === "comments_schema_unavailable") {
       return language === "de"
-        ? "Kommentare sind vorbereitet, aber Migration 0008 ist noch nicht ausgerollt."
-        : "Comments are prepared, but migration 0008 has not been rolled out yet.";
+        ? "Kommentare sind vorbereitet, aber die Datenbankmigration fehlt noch."
+        : "Comments are prepared, but the database migration is still missing.";
     }
-    if (error.status === 401) {
-      return language === "de" ? "Für Kommentare fehlt ein gültiger Zugriff." : "Valid access is required for comments.";
-    }
-    if (error.status === 403) {
-      return language === "de" ? "Dieser Kommentar-Kontext liegt außerhalb deines Zugriffs." : "This comment context is outside your access scope.";
-    }
-    if (error.code === "network_error") {
-      return language === "de" ? "Kommentare sind gerade nicht erreichbar." : "Comments are currently unavailable.";
-    }
+    if (error.status === 401) return language === "de" ? "Für Kommentare fehlt ein gültiger Zugriff." : "Valid access is required for comments.";
+    if (error.status === 403) return language === "de" ? "Dieser Kommentar-Kontext liegt außerhalb deines Zugriffs." : "This comment context is outside your access scope.";
+    if (error.code === "network_error") return language === "de" ? "Kommentare sind gerade nicht erreichbar." : "Comments are currently unavailable.";
     return error.message;
   }
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
   return language === "de" ? "Kommentare konnten nicht geladen werden." : "Comments could not be loaded.";
 }
 
@@ -59,9 +52,7 @@ export function commentErrorCanRetry(error: unknown) {
     error.code === "pickup_comments_schema_unavailable" ||
     error.status === 401 ||
     error.status === 403
-  ) {
-    return false;
-  }
+  ) return false;
   return error.code === "network_error" || error.status >= 500;
 }
 
@@ -96,10 +87,11 @@ export function CommentsContextPanel({
   online,
   language,
 }: Props) {
+  const [expanded, setExpanded] = useState(false);
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [serverCanCreate, setServerCanCreate] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorCanRetry, setErrorCanRetry] = useState(false);
@@ -113,6 +105,7 @@ export function CommentsContextPanel({
   );
 
   useEffect(() => {
+    setExpanded(false);
     setComments([]);
     setNextCursor(null);
     setServerCanCreate(null);
@@ -122,6 +115,7 @@ export function CommentsContextPanel({
   }, [contextKey]);
 
   useEffect(() => {
+    if (!expanded) return;
     const controller = new AbortController();
     let cancelled = false;
 
@@ -166,7 +160,7 @@ export function CommentsContextPanel({
       cancelled = true;
       controller.abort();
     };
-  }, [campaignId, language, online, retryToken, targetId, targetType]);
+  }, [campaignId, expanded, language, online, retryToken, targetId, targetType]);
 
   const retry = () => setRetryToken((current) => current + 1);
 
@@ -191,21 +185,13 @@ export function CommentsContextPanel({
   const submit = async (body: string) => {
     if (!online) throw new Error(language === "de" ? "Offline. Kommentar wurde nicht gespeichert." : "Offline. Comment was not saved.");
     const existing = pendingCreate.current;
-    const id = existing && existing.body === body
-      ? existing.id
-      : `comment_${crypto.randomUUID()}`;
+    const id = existing && existing.body === body ? existing.id : `comment_${crypto.randomUUID()}`;
     pendingCreate.current = { id, body };
     try {
-      const result = await createComment(campaignId, {
-        commentId: id,
-        targetType,
-        targetId,
-        body,
-      });
+      const result = await createComment(campaignId, { commentId: id, targetType, targetId, body });
       setComments((current) => [result.comment, ...current.filter((comment) => comment.id !== result.comment.id)]);
       setServerCanCreate(true);
       setError(null);
-      setErrorCanRetry(false);
       pendingCreate.current = null;
     } catch (reason) {
       setError(errorMessage(reason, language));
@@ -224,7 +210,6 @@ export function CommentsContextPanel({
       });
       setComments((current) => current.map((comment) => comment.id === commentId ? result.comment : comment));
       setError(null);
-      setErrorCanRetry(false);
     } catch (reason) {
       setError(errorMessage(reason, language));
       setErrorCanRetry(commentErrorCanRetry(reason));
@@ -238,7 +223,6 @@ export function CommentsContextPanel({
       const result = await deleteComment(campaignId, commentId, `delete:${commentId}`);
       setComments((current) => current.map((comment) => comment.id === commentId ? result.comment : comment));
       setError(null);
-      setErrorCanRetry(false);
     } catch (reason) {
       setError(errorMessage(reason, language));
       setErrorCanRetry(commentErrorCanRetry(reason));
@@ -255,7 +239,7 @@ export function CommentsContextPanel({
         submit: "Kommentar speichern",
         submitting: "Speichern …",
         invalid: "Kommentar muss 1 bis 2000 Zeichen enthalten.",
-        readOnly: "Nur-Lese-Zugriff",
+        readOnly: "Nur-Lesen",
         edit: "Bearbeiten",
         saveEdit: "Änderung speichern",
         cancelEdit: "Abbrechen",
@@ -286,28 +270,43 @@ export function CommentsContextPanel({
   const canCreate = online && !loading && !initialReadFailed && (serverCanCreate ?? canCreateFallback);
 
   return (
-    <section className="comments-context-panel" aria-label={labels.title}>
-      {error ? (
-        <div className="comments-context-error" role="alert">
-          <span>{error}</span>
-          {online && errorCanRetry ? <button type="button" onClick={retry}>{language === "de" ? "Erneut versuchen" : "Retry"}</button> : null}
+    <section className={`comments-context-panel comments-context-compact ${expanded ? "is-expanded" : ""}`} aria-label={labels.title}>
+      <button
+        className="comments-context-toggle"
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span>💬</span>
+        <strong>{expanded ? (language === "de" ? "Kommentare schließen" : "Close comments") : (language === "de" ? "Kommentare anzeigen" : "Show comments")}</strong>
+        {comments.length > 0 ? <em>{comments.filter((comment) => !comment.deleted).length}</em> : null}
+      </button>
+
+      {expanded ? (
+        <div className="comments-context-submenu">
+          {error ? (
+            <div className="comments-context-error" role="alert">
+              <span>{error}</span>
+              {online && errorCanRetry ? <button type="button" onClick={retry}>{language === "de" ? "Erneut versuchen" : "Retry"}</button> : null}
+            </div>
+          ) : null}
+          {!initialReadFailed ? (
+            <CommentsPanel
+              targetLabel={targetLabel}
+              comments={comments.map(toPanelComment)}
+              canCreate={canCreate}
+              onSubmit={submit}
+              onEdit={edit}
+              onDelete={remove}
+              labels={labels}
+            />
+          ) : null}
+          {nextCursor ? (
+            <button className="comments-load-more" type="button" disabled={!online || loadingMore} onClick={() => void loadMore()}>
+              {loadingMore ? (language === "de" ? "Weitere Kommentare werden geladen …" : "Loading more comments …") : (language === "de" ? "Weitere Kommentare" : "Load more comments")}
+            </button>
+          ) : null}
         </div>
-      ) : null}
-      {!initialReadFailed ? (
-        <CommentsPanel
-          targetLabel={targetLabel}
-          comments={comments.map(toPanelComment)}
-          canCreate={canCreate}
-          onSubmit={submit}
-          onEdit={edit}
-          onDelete={remove}
-          labels={labels}
-        />
-      ) : null}
-      {nextCursor ? (
-        <button className="comments-load-more" type="button" disabled={!online || loadingMore} onClick={() => void loadMore()}>
-          {loadingMore ? (language === "de" ? "Weitere Kommentare werden geladen …" : "Loading more comments …") : (language === "de" ? "Weitere Kommentare" : "Load more comments")}
-        </button>
       ) : null}
     </section>
   );
