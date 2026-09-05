@@ -1,0 +1,5 @@
+replace_exact(
+    'src/collaboration/CommentsHub.tsx',
+    'import { TeamCommentsSummary } from "./TeamCommentsSummary.tsx";',
+    'import { TeamCommentsSummary } from "../team/TeamCommentsSummary.tsx";',
+)
