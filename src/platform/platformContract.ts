@@ -56,19 +56,8 @@ export function buildPlatformLauncherItems(
 ): PlatformLauncherItem[] {
   const items: PlatformLauncherItem[] = [
     { id: "team", label: "Team", icon: "👥", command: null, opensTeamHub: true },
+    { id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" },
   ];
-
-  if (context?.accessRole) {
-    items.push({
-      id: "stats",
-      label: "Fortschritt",
-      icon: "📊",
-      command: null,
-      opensStatistics: true,
-    });
-  }
-
-  items.push({ id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" });
 
   if (context?.canCreateArea) {
     items.push({ id: "area-create", label: "Gebiet", icon: "➕", command: "start-area-drawing" });
