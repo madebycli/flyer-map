@@ -78,4 +78,70 @@ replace_once(
     'plan031_checkpoint "rotate_http" "$ROTATE"\n[[ "$ROTATE" == \'200\' ]]\n',
 )
 
+replace_once(
+    '[[ "$REVEAL2" == \'200\' ]]\n',
+    'plan031_checkpoint "reveal_rotated_http" "$REVEAL2"\n[[ "$REVEAL2" == \'200\' ]]\n',
+)
+
+replace_once(
+    '[[ "$OLD_JOIN" == \'401\' ]]\n',
+    'plan031_checkpoint "old_join_http" "$OLD_JOIN"\n[[ "$OLD_JOIN" == \'401\' ]]\n',
+)
+
+replace_once(
+    '[[ "$NEW_JOIN" == \'200\' ]]\n',
+    'plan031_checkpoint "new_join_http" "$NEW_JOIN"\n[[ "$NEW_JOIN" == \'200\' ]]\n',
+)
+
+replace_once(
+    '[[ "$REVOKE" == \'200\' ]]\n',
+    'plan031_checkpoint "revoke_http" "$REVOKE"\n[[ "$REVOKE" == \'200\' ]]\n',
+)
+
+replace_once(
+    '[[ "$REVOKE_REVEAL" == \'409\' ]]\n',
+    'plan031_checkpoint "revoke_reveal_http" "$REVOKE_REVEAL"\n[[ "$REVOKE_REVEAL" == \'409\' ]]\n',
+)
+
+replace_once(
+    '[[ "$(jq -r \'.[0].results[0].n\' <<<"$REVOKE_RECOVERY")" == \'0\' ]]\n',
+    'REVOKE_RECOVERY_COUNT="$(jq -r \'.[0].results[0].n\' <<<"$REVOKE_RECOVERY")"\nplan031_checkpoint "revoke_recovery_rows" "$REVOKE_RECOVERY_COUNT"\n[[ "$REVOKE_RECOVERY_COUNT" == \'0\' ]]\n',
+)
+
+replace_once(
+    '[[ "$CLOSE" == \'200\' ]]\n',
+    'plan031_checkpoint "close_http" "$CLOSE"\n[[ "$CLOSE" == \'200\' ]]\n',
+)
+
+replace_once(
+    '[[ "$(jq -r \'.[0].results[0].n\' <<<"$CLOSE_RECOVERY")" == \'0\' ]]\n',
+    'CLOSE_RECOVERY_COUNT="$(jq -r \'.[0].results[0].n\' <<<"$CLOSE_RECOVERY")"\nplan031_checkpoint "close_recovery_rows" "$CLOSE_RECOVERY_COUNT"\n[[ "$CLOSE_RECOVERY_COUNT" == \'0\' ]]\n',
+)
+
+replace_once(
+    '''npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --command "UPDATE field_groups SET hard_expires_at='2000-01-01T00:00:00.000Z' WHERE id='$EXPIRY_GROUP_ID' AND campaign_id='$PLAN031_CAMPAIGN_ID';" >/dev/null
+''',
+    '''plan031_checkpoint "expiry_force_start"
+npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --command "UPDATE field_groups SET hard_expires_at='2000-01-01T00:00:00.000Z' WHERE id='$EXPIRY_GROUP_ID' AND campaign_id='$PLAN031_CAMPAIGN_ID';" >/dev/null
+plan031_checkpoint "expiry_force_done"
+''',
+)
+
+replace_once(
+    '[[ "$EXPIRY_TRIGGER" == \'200\' ]]\n',
+    'plan031_checkpoint "expiry_trigger_http" "$EXPIRY_TRIGGER"\n[[ "$EXPIRY_TRIGGER" == \'200\' ]]\n',
+)
+
+replace_once(
+    '''[[ "$(jq -r '.[0].results[0].state' <<<"$EXPIRY_STATE")" == 'expired' ]]
+[[ "$(jq -r '.[0].results[0].recovery_count' <<<"$EXPIRY_STATE")" == '0' ]]
+''',
+    '''EXPIRY_FINAL_STATE="$(jq -r '.[0].results[0].state' <<<"$EXPIRY_STATE")"
+EXPIRY_RECOVERY_COUNT="$(jq -r '.[0].results[0].recovery_count' <<<"$EXPIRY_STATE")"
+plan031_checkpoint "expiry_db_state" "state=${EXPIRY_FINAL_STATE};recovery=${EXPIRY_RECOVERY_COUNT}"
+[[ "$EXPIRY_FINAL_STATE" == 'expired' ]]
+[[ "$EXPIRY_RECOVERY_COUNT" == '0' ]]
+''',
+)
+
 path.write_text(source, encoding='utf-8')
