@@ -1,0 +1,173 @@
+name: Plan 031 Transform And Verify
+
+on:
+  push:
+    branches:
+      - organizer-admin-staging
+    paths:
+      - '.staging/plan031/chunk-*.txt'
+      - '.github/workflows/plan031-transform-and-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: plan031-transform-and-verify
+  cancel-in-progress: false
+
+jobs:
+  transform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      EXPECTED_PRODUCT_SHA: 3e763049a8a20f0378f064e1c82824e36248a7e8
+      PRODUCT_BRANCH: feature/organizer-admin-platform
+    steps:
+      - name: Checkout isolated runner
+        uses: actions/checkout@v4
+        with:
+          ref: organizer-admin-staging
+          path: runner
+          fetch-depth: 1
+
+      - name: Checkout exact Product branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/organizer-admin-platform
+          path: product
+          fetch-depth: 0
+
+      - name: Verify Product head and Draft PR 76
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          actual="$(git -C product rev-parse HEAD)"
+          [[ "$actual" == "$EXPECTED_PRODUCT_SHA" ]]
+          pr_head="$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.sha')"
+          pr_ref="$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.ref')"
+          pr_draft="$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.draft')"
+          pr_state="$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.state')"
+          [[ "$pr_head" == "$EXPECTED_PRODUCT_SHA" ]]
+          [[ "$pr_ref" == "$PRODUCT_BRANCH" ]]
+          [[ "$pr_draft" == "true" ]]
+          [[ "$pr_state" == "open" ]]
+
+      - name: Assemble fail-fast transformer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat runner/.staging/plan031/chunk-*.txt > /tmp/plan031.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/plan031.py')
+          source = path.read_text(encoding='utf-8')
+          bad_lines = [
+              "replace_exact('src/App.tsx', '  const collectionMode = collectionModeFromUrl();\\n', '', count=1)\n",
+              "replace_exact('src/platform/platform-shell.css', 'grid-template-columns: repeat(3, minmax(0, 1fr));', 'grid-template-columns: repeat(2, minmax(0, 1fr));', count=1)\n",
+          ]
+          for bad in bad_lines:
+              if bad not in source:
+                  raise SystemExit(f'expected transformer compatibility line missing: {bad!r}')
+              source = source.replace(bad, '', 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+          python -m py_compile /tmp/plan031.py
+
+      - name: Apply Plan 031 transformation
+        shell: bash
+        working-directory: product
+        run: |
+          set -euo pipefail
+          python /tmp/plan031.py | tee /tmp/plan031-transform.log
+          git diff --check
+          git status --short | tee /tmp/plan031-status.txt
+          git diff --binary HEAD > /tmp/plan031.patch
+          tar -czf /tmp/plan031-changed-files.tar.gz $(git diff --name-only HEAD)
+
+      - name: Verify hard Production boundaries
+        shell: bash
+        working-directory: product
+        run: |
+          set -euo pipefail
+          git diff --exit-code HEAD -- wrangler.jsonc
+          grep -Fq '"main": "./worker/indexFc52.ts"' wrangler.jsonc
+          grep -Fq '0113e775-1e43-4d96-8b97-51fdeec7355b' wrangler.jsonc
+          grep -Fq '91714001' wrangler.jsonc
+          grep -Fq '91714002' wrangler.jsonc
+          grep -Fq '91714003' wrangler.jsonc
+          ! grep -Fq 'nodejs_compat' wrangler.jsonc
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: product/package-lock.json
+
+      - name: Install exact dependencies
+        working-directory: product
+        run: npm ci --no-audit --no-fund
+
+      - name: Tests
+        working-directory: product
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/plan031-test.log
+
+      - name: Typecheck
+        working-directory: product
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee /tmp/plan031-typecheck.log
+
+      - name: Dependency audit
+        working-directory: product
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/plan031-audit.log
+          status=1
+          for attempt in 1 2 3; do
+            echo "audit attempt $attempt" | tee -a /tmp/plan031-audit.log
+            set +e
+            npm run audit:dependencies 2>&1 | tee /tmp/plan031-audit-attempt.log
+            status=${PIPESTATUS[0]}
+            set -e
+            cat /tmp/plan031-audit-attempt.log >> /tmp/plan031-audit.log
+            if [[ "$status" -eq 0 ]]; then exit 0; fi
+            if ! grep -Eqi 'Service Unavailable|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout|audit endpoint returned an error' /tmp/plan031-audit-attempt.log; then
+              exit "$status"
+            fi
+            sleep 4
+          done
+          exit "$status"
+
+      - name: Production build
+        working-directory: product
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee /tmp/plan031-build.log
+
+      - name: Upload verified transformation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan031-transform-output
+          path: |
+            /tmp/plan031.patch
+            /tmp/plan031-changed-files.tar.gz
+            /tmp/plan031-transform.log
+            /tmp/plan031-status.txt
+            /tmp/plan031-test.log
+            /tmp/plan031-typecheck.log
+            /tmp/plan031-audit.log
+            /tmp/plan031-build.log
+          if-no-files-found: ignore
+          retention-days: 3
