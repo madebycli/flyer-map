@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canDelegateOrganizationAccess } from "../worker/organizationDelegationGuard.ts";
+import {
+  canCreateOrganizationCampaign,
+  canDelegateOrganizationAccess,
+} from "../worker/organizationDelegationGuard.ts";
 
 test("Organizer may delegate any registered Organization capability", () => {
   assert.deepEqual(
@@ -49,4 +52,9 @@ test("Admin can never create an Organizer identity", () => {
     ),
     { ok: false, code: "organizer_only" },
   );
+});
+
+test("only Organizer role may create a new Organization Campaign", () => {
+  assert.equal(canCreateOrganizationCampaign("organizer"), true);
+  assert.equal(canCreateOrganizationCampaign("admin"), false);
 });
