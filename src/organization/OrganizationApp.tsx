@@ -61,7 +61,7 @@ function PageFrame({ children, compact = false }: { children: ReactNode; compact
   return (
     <main className={compact ? "org-page org-page--compact" : "org-page"}>
       <header className="org-public-header">
-        <a className="org-brand" href="/">Flyer Map</a>
+        <a className="org-brand" href="/login">Flyer Map</a>
         <span>Organizer Admin</span>
       </header>
       {children}
@@ -71,6 +71,7 @@ function PageFrame({ children, compact = false }: { children: ReactNode; compact
 
 function AdminTopbar({ me, navigate }: { me: OrganizationMeDto; navigate: Navigate }) {
   const [busy, setBusy] = useState(false);
+  const canCreateCampaign = me.memberships.some((membership) => membership.role === "organizer");
   const logout = async () => {
     if (busy) return;
     setBusy(true);
@@ -85,9 +86,8 @@ function AdminTopbar({ me, navigate }: { me: OrganizationMeDto; navigate: Naviga
       <button className="org-brand org-brand--button" type="button" onClick={() => navigate("/admin")}>Flyer Map</button>
       <nav aria-label="Organizer Navigation">
         <button type="button" onClick={() => navigate("/admin")}>Aktionen</button>
-        <button type="button" onClick={() => navigate("/new")}>Neue Aktion</button>
+        {canCreateCampaign ? <button type="button" onClick={() => navigate("/new")}>Neue Aktion</button> : null}
         <a href="/admin/security">Sicherheit</a>
-        <a href="/">Feldkarte</a>
       </nav>
       <div className="org-account-chip">
         <span>{me.account.username}</span>
@@ -321,6 +321,7 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
   if (!meState.value) return <PageFrame><section className="org-status org-error">{meState.error ?? "Sitzung konnte nicht geladen werden."}</section></PageFrame>;
   const me = meState.value;
   const membership = me.memberships.find((item) => item.organizationId === organizationId) ?? me.memberships[0] ?? null;
+  const canCreateCampaign = Boolean(me.assurance === "mfa" && membership?.role === "organizer");
 
   return (
     <main className="org-admin-page">
@@ -328,7 +329,7 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
       <section className="org-admin-content">
         <div className="org-heading-row">
           <div><span className="org-eyebrow">Organization</span><h1>Aktionen</h1></div>
-          <button className="org-primary" type="button" disabled={me.assurance !== "mfa" || me.memberships.length === 0} onClick={() => navigate(`/new${organizationId ? `?organization=${encodeURIComponent(organizationId)}` : ""}`)}>+ Neue Aktion</button>
+          {membership?.role === "organizer" ? <button className="org-primary" type="button" disabled={!canCreateCampaign} onClick={() => navigate(`/new${organizationId ? `?organization=${encodeURIComponent(organizationId)}` : ""}`)}>+ Neue Aktion</button> : null}
         </div>
         {me.memberships.length > 1 ? (
           <label className="org-select-label">Organization<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{me.memberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</select></label>
@@ -337,7 +338,7 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
         {me.memberships.length === 0 ? <div className="org-empty"><h2>Keine Organization-Zuordnung</h2><p>Dieser Account besitzt aktuell keine aktive Mitgliedschaft.</p></div> : null}
         {campaignError ? <p className="org-error" role="alert">{campaignError}</p> : null}
         {loadingCampaigns ? <p className="org-status">Aktionen werden geladen …</p> : null}
-        {!loadingCampaigns && !campaignError && me.assurance === "mfa" && campaigns.length === 0 && organizationId ? <div className="org-empty"><h2>Noch keine Aktion</h2><p>Erstelle die erste serverseitig persistierte Aktion für diese Organization.</p><button className="org-primary" type="button" onClick={() => navigate(`/new?organization=${encodeURIComponent(organizationId)}`)}>Erste Aktion erstellen</button></div> : null}
+        {!loadingCampaigns && !campaignError && me.assurance === "mfa" && campaigns.length === 0 && organizationId ? <div className="org-empty"><h2>Noch keine Aktion</h2><p>{membership?.role === "organizer" ? "Erstelle die erste serverseitig persistierte Aktion für diese Organization." : "Für diese Organization ist noch keine für deinen Admin sichtbare Aktion vorhanden."}</p>{membership?.role === "organizer" ? <button className="org-primary" type="button" onClick={() => navigate(`/new?organization=${encodeURIComponent(organizationId)}`)}>Erste Aktion erstellen</button> : null}</div> : null}
         <div className="org-campaign-grid">
           {campaigns.map((campaign) => (
             <button className="org-campaign-card" type="button" key={campaign.id} onClick={() => navigate(`/admin/campaign/${encodeURIComponent(campaign.id)}`)}>
@@ -363,13 +364,15 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (organizationId || !meState.value) return;
-    setOrganizationId(meState.value.memberships[0]?.organizationId ?? "");
+    if (!meState.value) return;
+    const selected = meState.value.memberships.find((item) => item.organizationId === organizationId);
+    if (selected?.role === "organizer") return;
+    setOrganizationId(meState.value.memberships.find((item) => item.role === "organizer")?.organizationId ?? "");
   }, [organizationId, meState.value]);
 
   const canCreate = useMemo(() => {
     const membership = meState.value?.memberships.find((item) => item.organizationId === organizationId);
-    return Boolean(meState.value?.assurance === "mfa" && membership?.capabilities.includes("campaign.create"));
+    return Boolean(meState.value?.assurance === "mfa" && membership?.role === "organizer");
   }, [meState.value, organizationId]);
 
   const submit = async (event: FormEvent) => {
@@ -390,6 +393,19 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
   if (meState.loading) return <PageFrame><section className="org-status">Admin wird geladen …</section></PageFrame>;
   if (!meState.value) return <PageFrame><section className="org-status org-error">{meState.error}</section></PageFrame>;
   const me = meState.value;
+  const organizerMemberships = me.memberships.filter((item) => item.role === "organizer");
+
+  if (organizerMemberships.length === 0) {
+    return (
+      <main className="org-admin-page">
+        <AdminTopbar me={me} navigate={navigate} />
+        <section className="org-admin-content org-admin-content--narrow">
+          <button className="org-back" type="button" onClick={() => navigate("/admin")}>← Aktionen</button>
+          <section className="org-card org-card--wide"><h1>Nur für Organizer</h1><p>Neue Campaigns können ausschließlich von einem Organizer mit vollständig bestätigter MFA-Sitzung angelegt werden.</p></section>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="org-admin-page">
@@ -398,11 +414,11 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
         <button className="org-back" type="button" onClick={() => navigate("/admin")}>← Aktionen</button>
         <div><span className="org-eyebrow">Neue Aktion</span><h1>Aktion erstellen</h1><p>Name, Organization, Startstatus und Kartenfokus werden serverseitig gespeichert.</p></div>
         <form className="org-form org-form--panel" onSubmit={(event) => void submit(event)}>
-          <label>Organization<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} required>{me.memberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</select></label>
+          <label>Organization<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} required>{organizerMemberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</select></label>
           <label>Name der Aktion<input value={name} minLength={2} maxLength={160} onChange={(event) => setName(event.target.value)} placeholder="z. B. Frühjahr 2027" required /></label>
           <fieldset className="org-radio"><legend>Startstatus</legend><label><input type="radio" checked={lifecycle === "draft"} onChange={() => setLifecycle("draft")} /> Entwurf</label><label><input type="radio" checked={lifecycle === "active"} onChange={() => setLifecycle("active")} /> Aktiv</label></fieldset>
           <div><strong>Kartenfokus</strong><p className="org-help">Verschiebe die Karte an den Arbeitsbereich. Die Mitte und Zoomstufe werden mit der Aktion gespeichert.</p><AdminMapPicker value={map} onChange={setMap} /></div>
-          {!canCreate ? <p className="org-error">Für diese Organization fehlt eine vollständig bestätigte MFA-Sitzung oder die Berechtigung <code>campaign.create</code>.</p> : null}
+          {!canCreate ? <p className="org-error">Für neue Campaigns ist eine Organizer-Rolle mit vollständig bestätigter MFA-Sitzung erforderlich.</p> : null}
           {error ? <p className="org-error" role="alert">{error}</p> : null}
           <button className="org-primary" disabled={!canCreate || busy}>{busy ? "Aktion wird erstellt …" : "Aktion erstellen"}</button>
         </form>
