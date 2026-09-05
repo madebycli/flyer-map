@@ -220,7 +220,7 @@ test("Organizer runtime routes central Campaign access and keeps tenant/capabili
   assert.deepEqual(await restrictedResult.response.json(), {
     error: {
       code: "organization_access_required",
-      message: "Für diese Organization-Campaign ist ein gültiger Organization-Zugang erforderlich.",
+      message: "Für diese Campaign ist eine zentrale Organization-Anmeldung mit ausreichender Berechtigung erforderlich.",
     },
   });
 
@@ -234,7 +234,7 @@ test("Organizer runtime routes central Campaign access and keeps tenant/capabili
   assert.deepEqual(await foreignResult.response.json(), {
     error: {
       code: "organization_access_required",
-      message: "Für diese Organization-Campaign ist ein gültiger Organization-Zugang erforderlich.",
+      message: "Für diese Campaign ist eine zentrale Organization-Anmeldung mit ausreichender Berechtigung erforderlich.",
     },
   });
 });
