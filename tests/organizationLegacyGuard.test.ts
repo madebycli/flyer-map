@@ -43,6 +43,18 @@ function post(path: string, body: unknown) {
   });
 }
 
+test("new Campaign creation is central Organizer-only instead of legacy autocreate", async () => {
+  const response = await guardOrganizationManagedLegacyAdminRequest(
+    post("/api/campaigns", { snapshot: {} }),
+    new Db(null),
+  );
+  assert.equal(response?.status, 409);
+  assert.equal(
+    (await response!.json() as { error: { code: string } }).error.code,
+    "organization_campaign_create_required",
+  );
+});
+
 test("Organization Campaign rejects local admin setup/reset/recovery endpoints", async () => {
   const db = new Db("org_a");
   for (const path of [
