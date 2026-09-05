@@ -64,7 +64,7 @@ jobs:
           cat runner/.staging/plan031/chunk-00.txt >> /tmp/plan031.py
           cat runner/.staging/plan031/chunk-01.txt >> /tmp/plan031.py
           cat runner/.staging/plan031/chunk-02.txt >> /tmp/plan031.py
-          for chunk in runner/.staging/plan031/chunk-0{3,4,5,6,7,8}.txt; do
+          for chunk in runner/.staging/plan031/chunk-0{3,4,5,6,7,8,9}.txt; do
             printf '\n' >> /tmp/plan031.py
             cat "$chunk" >> /tmp/plan031.py
           done
@@ -90,10 +90,12 @@ jobs:
         run: |
           set -euo pipefail
           python /tmp/plan031.py | tee /tmp/plan031-transform.log
+          git add -N .
           git diff --check
           git status --short | tee /tmp/plan031-status.txt
           git diff --binary HEAD > /tmp/plan031.patch
           mapfile -t changed < <(git diff --name-only HEAD)
+          test "${#changed[@]}" -gt 0
           tar -czf /tmp/plan031-changed-files.tar.gz "${changed[@]}"
 
       - name: Verify hard Production boundaries
