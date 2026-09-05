@@ -1,0 +1,210 @@
+write('tests/activityUi.test.ts', r'''
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("Activity remains implemented but is not promoted in the Plan 031 primary launcher", async () => {
+  const [worker, api, shell, hub, css, contract] = await Promise.all([
+    readFile("worker/activity.ts", "utf8"),
+    readFile("src/data/activityApi.ts", "utf8"),
+    readFile("src/platform/PlatformShell.tsx", "utf8"),
+    readFile("src/collaboration/ActivityHub.tsx", "utf8"),
+    readFile("src/collaboration/activity-hub.css", "utf8"),
+    readFile("src/platform/platformContract.ts", "utf8"),
+  ]);
+
+  assert.match(worker, /domain_events/u);
+  assert.match(worker, /automation\.executed/u);
+  assert.match(worker, /COMPLETE_PARENT_STREET_RULE_TYPE/u);
+  assert.match(worker, /LIMIT \?/u);
+  assert.match(worker, /ORDER BY e\.occurred_at DESC, e\.id DESC/u);
+  assert.match(worker, /payload_json/u);
+  assert.match(api, /credentials: "same-origin"/u);
+  assert.match(api, /cache: "no-store"/u);
+  assert.match(api, /cursor/u);
+  assert.doesNotMatch(contract, /label: "Aktivität"/u);
+  assert.doesNotMatch(contract, /id: "activity"/u);
+  assert.doesNotMatch(shell, /<ActivityHub|activityOpen/u);
+  assert.match(hub, /Aktivität wird geladen/u);
+  assert.match(hub, /Noch keine Aktivität vorhanden/u);
+  assert.match(hub, /Erneut laden/u);
+  assert.match(hub, /Mehr laden/u);
+  assert.match(hub, /automatisch abgeschlossen/u);
+  assert.match(hub, /bereits geladene Aktivität bleibt sichtbar/u);
+  assert.doesNotMatch(hub, /dangerouslySetInnerHTML/u);
+  assert.doesNotMatch(hub, /fake|mock|Workbench/iu);
+  assert.match(css, /min-height: 2\.55rem/u);
+  assert.match(css, /max-height: min\(92dvh/u);
+});
+''')
+
+write('tests/automationUi.test.ts', r'''
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("Automationen remain server-controlled but are not promoted in the Plan 031 primary launcher", async () => {
+  const [worker, api, shell, hub, css, contract, domain] = await Promise.all([
+    readFile("worker/automationConfig.ts", "utf8"),
+    readFile("src/data/automationApi.ts", "utf8"),
+    readFile("src/platform/PlatformShell.tsx", "utf8"),
+    readFile("src/collaboration/AutomationHub.tsx", "utf8"),
+    readFile("src/collaboration/automation-hub.css", "utf8"),
+    readFile("src/platform/platformContract.ts", "utf8"),
+    readFile("src/domain/automations.ts", "utf8"),
+  ]);
+
+  assert.match(worker, /access\.role !== "admin"/u);
+  assert.match(worker, /automation_rules/u);
+  assert.match(worker, /request\.method !== "GET" && request\.method !== "PATCH"/u);
+  assert.match(api, /credentials: "same-origin"/u);
+  assert.match(api, /cache: "no-store"/u);
+  assert.match(api, /method: "PATCH"/u);
+  assert.doesNotMatch(contract, /label: "Automationen"/u);
+  assert.doesNotMatch(contract, /id: "automations"/u);
+  assert.doesNotMatch(shell, /<AutomationHub|automationsOpen/u);
+  assert.match(hub, /Migration 0009/u);
+  assert.match(hub, /bereits geladene Konfiguration bleibt sichtbar/u);
+  assert.match(hub, /Wird gespeichert/u);
+  assert.match(hub, /disabled=\{!online/u);
+  assert.match(hub, /role="switch"/u);
+  assert.doesNotMatch(hub, /setInterval|setTimeout|setImmediate/u);
+  assert.doesNotMatch(hub, /dangerouslySetInnerHTML/u);
+  assert.doesNotMatch(hub, /fake|mock|Workbench/iu);
+  assert.match(css, /min-height: 2\.55rem/u);
+  assert.match(css, /max-height: min\(92dvh/u);
+  assert.match(domain, /complete-parent-street-when-all-houses-complete/u);
+});
+''')
+
+write('tests/fieldGroupMembersUi.test.ts', r'''
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("Rooms keeps manager member controls in the Plan 031 production component graph", async () => {
+  const shell = await readFile("src/platform/PlatformShell.tsx", "utf8");
+  const rooms = await readFile("src/team/RoomsHub.tsx", "utf8");
+  const teamHub = await readFile("src/team/TeamHub.tsx", "utf8");
+  const panel = await readFile("src/team/FieldGroupMembersPanel.tsx", "utf8");
+  const styles = await readFile("src/team/field-group-members.css", "utf8");
+
+  assert.match(shell, /<RoomsHub/u);
+  assert.match(rooms, /import \{ FieldGroupMembersPanel \} from "\.\/FieldGroupMembersPanel\.tsx";/u);
+  assert.match(rooms, /<FieldGroupMembersPanel/u);
+  assert.match(rooms, /canManageGroup\(selectedGroup\)/u);
+  assert.doesNotMatch(teamHub, /FieldGroupMembersPanel|Rooms/u);
+  assert.match(panel, /fetchFieldGroupMembers/u);
+  assert.match(panel, /removeFieldGroupMember/u);
+  assert.match(panel, /Mitgliederverwaltung benötigt Internet/u);
+  assert.match(styles, /\.field-group-members/u);
+  assert.doesNotMatch(panel, /session_hash|secret_hash|qrToken|roomCode|cf-connecting-ip/iu);
+});
+''')
+
+write('tests/fieldSessionsUi.test.ts', r'''
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("real Einsätze history remains implemented without becoming a Plan 031 primary launcher destination", async () => {
+  const shell = await readFile("src/platform/PlatformShell.tsx", "utf8");
+  const contract = await readFile("src/platform/platformContract.ts", "utf8");
+  const hub = await readFile("src/collaboration/FieldSessionsHub.tsx", "utf8");
+  const history = await readFile("src/collaboration/FieldSessionHistory.tsx", "utf8");
+  const api = await readFile("src/data/fieldSessionApi.ts", "utf8");
+  const map = await readFile("src/map/MapView.tsx", "utf8");
+  const worker = await readFile("worker/fieldSessions.ts", "utf8");
+  const noteWorker = await readFile("worker/fieldSessionNote.ts", "utf8");
+  const taskWorker = await readFile("worker/fieldSessionTasks.ts", "utf8");
+  const workerEntry = await readFile("worker/indexM55.ts", "utf8");
+
+  assert.doesNotMatch(contract, /id: "sessions"|label: "Einsätze"/u);
+  assert.doesNotMatch(shell, /<FieldSessionsHub|fieldSessionsOpen/u);
+  assert.match(shell, /SessionMapHighlightProvider/u);
+  assert.match(hub, /fetchFieldSessions/u);
+  assert.match(hub, /fetchAllFieldSessionTaskRefs/u);
+  assert.match(hub, /updateFieldSessionNote/u);
+  assert.match(hub, /canEditSessionNote/u);
+  assert.match(hub, /Mehr laden/u);
+  assert.match(hub, /Migration 0007/u);
+  assert.match(history, /participantCount \?\? "–"/u);
+  assert.match(history, /personSeconds/u);
+  assert.match(history, /affectedTaskCount/u);
+  assert.match(history, />Aufgaben</u);
+  assert.match(history, />Notiz</u);
+  assert.match(history, /FIELD_SESSION_NOTE_MAX_LENGTH/u);
+  assert.match(history, /Auf Karte zeigen/u);
+  assert.match(api, /note: string \| null/u);
+  assert.match(api, /updateFieldSessionNote/u);
+  assert.match(api, /method: "PATCH"/u);
+  assert.match(api, /fetchFieldSessionTaskRefs/u);
+  assert.match(api, /fetchAllFieldSessionTaskRefs/u);
+  assert.match(api, /\/field-sessions/u);
+  assert.match(worker, /COUNT\(DISTINCT e\.entity_type \|\| '\|' \|\| e\.entity_id\)/u);
+  assert.match(worker, /e\.event_type = 'task\.status\.changed'/u);
+  assert.match(worker, /s\.note/u);
+  assert.match(worker, /affectedTaskCount: row\.affected_task_count/u);
+  assert.match(noteWorker, /MAX_NOTE_LENGTH = 1_000/u);
+  assert.match(noteWorker, /access\.role === "admin"/u);
+  assert.match(noteWorker, /access\.role === "team-editor"/u);
+  assert.match(taskWorker, /SELECT DISTINCT entity_type, entity_id/u);
+  assert.match(workerEntry, /handleFieldSessionNoteApi/u);
+  assert.match(workerEntry, /handleFieldSessionTasksApi/u);
+  assert.match(map, /vf-streets-session-highlight/u);
+  assert.match(map, /HOUSE_SESSION_HIGHLIGHT_LAYER_ID/u);
+  assert.match(map, /useSessionMapHighlight/u);
+  assert.match(hub, /if \(taskRefs\.length === 0\)/u);
+
+  const combined = `${hub}\n${history}\n${api}\n${map}\n${worker}\n${noteWorker}\n${taskWorker}`;
+  assert.doesNotMatch(combined, /session_hash|secret_hash|qrToken|roomCode|cf-connecting-ip/iu);
+});
+''')
+
+write('tests/statisticsUi.test.ts', r'''
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("full Stats remains implemented while Plan 031 promotes focused Fortschritt instead", async () => {
+  const [worker, api, shell, hub, progressHub, css, domain, contract] = await Promise.all([
+    readFile("worker/statistics.ts", "utf8"),
+    readFile("src/data/statisticsApi.ts", "utf8"),
+    readFile("src/platform/PlatformShell.tsx", "utf8"),
+    readFile("src/collaboration/StatisticsHub.tsx", "utf8"),
+    readFile("src/team/TeamProgressHub.tsx", "utf8"),
+    readFile("src/collaboration/statistics-hub.css", "utf8"),
+    readFile("src/domain/statistics.ts", "utf8"),
+    readFile("src/platform/platformContract.ts", "utf8"),
+  ]);
+
+  assert.match(worker, /domain_events/u);
+  assert.match(worker, /field_sessions/u);
+  assert.match(worker, /LIMIT \?/u);
+  assert.match(worker, /PROGRESS_HISTORY_DAYS = 90/u);
+  assert.match(worker, /teamPredicate/u);
+  assert.match(worker, /field_group_id/u);
+  assert.doesNotMatch(worker, /SELECT \* /u);
+  assert.match(api, /credentials: "same-origin"/u);
+  assert.match(api, /cache: "no-store"/u);
+  assert.doesNotMatch(shell, /<StatisticsHub|statisticsOpen/u);
+  assert.match(shell, /<TeamProgressHub/u);
+  assert.match(contract, /label: "Fortschritt"/u);
+  assert.match(progressHub, /<TeamProgressPanel/u);
+  assert.match(hub, /Stats werden geladen/u);
+  assert.match(hub, /Noch keine Aufgaben oder Einsätze vorhanden/u);
+  assert.match(hub, /Erneut laden/u);
+  assert.match(hub, /Offline: bereits geladene Stats bleiben sichtbar/u);
+  assert.match(hub, /Mehr|Weitere Einsätze/u);
+  assert.doesNotMatch(hub, /dangerouslySetInnerHTML/u);
+  assert.doesNotMatch(hub, /fake|mock|Workbench/iu);
+  assert.match(css, /min-height: 2\.55rem/u);
+  assert.match(domain, /denominator: "street-tasks" \| "house-tasks"/u);
+});
+''')
+
+replace_exact(
+    'tests/platformLauncher.test.ts',
+    '''  assert.match(appSource, /setSelectedTaskId\\(null\\);\\n    setSheet\\(null\\);\\n  };\\n\\n  const commandCamera/u);''',
+    '''  assert.ok(appSource.includes("setSelectedTaskId(null);\\n    setSheet(null);\\n  };\\n\\n  const commandCamera"));''',
+)
