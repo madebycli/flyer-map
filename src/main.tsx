@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
+import { campaignIdFromUrl } from "./data/campaignApi";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
 import { OrganizationApp } from "./organization/OrganizationApp";
 import { OrganizationInviteRedeemPage, OrganizationPasswordResetPage } from "./organization/OrganizationPublicLinks";
@@ -53,6 +54,9 @@ if (preview) {
 } else if (isOrganizationAdminPath(window.location.pathname)) {
   document.title = "Organizer Admin | Flyer Map";
   root.render(<StrictMode><OrganizationApp /></StrictMode>);
+} else if (!campaignIdFromUrl()) {
+  document.title = "Anmeldung | Flyer Map";
+  window.location.replace("/login");
 } else {
   document.title = "Verteil-Flyer";
   root.render(
