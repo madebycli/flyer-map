@@ -71,6 +71,14 @@ export async function guardOrganizationManagedLegacyAdminRequest(
   if (!db) return null;
   const url = new URL(request.url);
 
+  if (url.pathname === "/api/campaigns" && request.method === "POST") {
+    return errorResponse(
+      409,
+      "organization_campaign_create_required",
+      "Neue Campaigns werden ausschließlich von einem Organizer über die zentrale Organization-Verwaltung angelegt.",
+    );
+  }
+
   let campaignId = campaignIdFromLegacyAccountPath(url.pathname);
   if (!campaignId && LEGACY_ADMIN_PATHS.has(url.pathname) && request.method === "POST") {
     campaignId = await bodyCampaignId(request);
