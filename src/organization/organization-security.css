@@ -1,3 +1,7 @@
+.org-admin-page .org-admin-topbar nav a[href="/"] {
+  display: none;
+}
+
 .org-security-center .org-form button:not(.org-primary):not(.org-link-button),
 .org-security-center .org-warning button {
   min-height: 40px;
