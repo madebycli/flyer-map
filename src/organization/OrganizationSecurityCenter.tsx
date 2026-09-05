@@ -31,19 +31,26 @@ import {
   type OrganizationSessionDto,
 } from "./organizationApiClient.ts";
 import "./organization-admin.css";
+import "./organization-security.css";
 
 const CAPABILITIES = [
   "organization.create",
   "organization.manage",
   "account.manage",
   "role.manage",
-  "campaign.create",
   "campaign.manage",
   "campaign.delete",
   "team.cross_manage",
   "audit.read",
   "security.manage",
 ] as const;
+
+type OneTimeLinkState = {
+  kind: "invite" | "password-reset";
+  targetId: string;
+  title: string;
+  link: string;
+};
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unbekannter Fehler.";
@@ -53,11 +60,45 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
+function OneTimeLinkDialog({ value, onClose }: { value: OneTimeLinkState; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => setCopied(false), [value.link]);
+  return (
+    <div className="org-link-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="org-link-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="org-one-time-link-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="org-link-dialog__header">
+          <div>
+            <span className="org-eyebrow">One-time-Link</span>
+            <h2 id="org-one-time-link-title">{value.title}</h2>
+          </div>
+          <button className="org-link-dialog__close" type="button" onClick={onClose} aria-label="Dialog schließen">×</button>
+        </div>
+        <p>Der Link wird aus Sicherheitsgründen nur in diesem Tab gespeichert. Nach einem Reload kann der geheime Token nicht erneut aus der Datenbank gelesen werden.</p>
+        <code className="org-link-dialog__code">{value.link}</code>
+        <div className="org-link-dialog__actions">
+          <button
+            className="org-security-action org-security-action--primary"
+            type="button"
+            onClick={() => void copyText(value.link).then(() => setCopied(true))}
+          >
+            {copied ? "Kopiert ✓" : "Link kopieren"}
+          </button>
+          <button className="org-security-action" type="button" onClick={onClose}>Schließen</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SecurityHeader({ me }: { me: OrganizationMeDto }) {
   const [busy, setBusy] = useState(false);
-  const canCreateCampaign = me.memberships.some((membership) =>
-    membership.role === "organizer" || membership.capabilities.includes("campaign.create"),
-  );
+  const canCreateCampaign = me.memberships.some((membership) => membership.role === "organizer");
   const logout = async () => {
     if (busy) return;
     setBusy(true);
@@ -188,7 +229,6 @@ export function OrganizationSecurityCenter() {
   const [events, setEvents] = useState<OrganizationAuditEventDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [totpEnrollment, setTotpEnrollment] = useState<{ otpauthUri: string; recoveryCodes: string[] } | null>(null);
   const [factorCode, setFactorCode] = useState("");
@@ -197,7 +237,7 @@ export function OrganizationSecurityCenter() {
   const has = (capability: string) => Boolean(membership?.role === "organizer" || membership?.capabilities.includes(capability));
   const delegableCapabilities = membership?.role === "organizer"
     ? [...CAPABILITIES]
-    : membership?.capabilities ?? [];
+    : membership?.capabilities.filter((capability) => capability !== "campaign.create") ?? [];
 
   const refresh = async (nextOrganizationId = organizationId) => {
     if (!nextOrganizationId) return;
@@ -253,12 +293,11 @@ export function OrganizationSecurityCenter() {
   return (
     <main className="org-admin-page">
       <SecurityHeader me={me} />
-      <section className="org-admin-content">
+      <section className="org-admin-content org-security-center">
         <div className="org-heading-row"><div><span className="org-eyebrow">Organization Security</span><h1>Sicherheit & Zugriffe</h1></div><a className="org-secondary" href="/admin">Zurück zu Aktionen</a></div>
         {me.memberships.length > 1 ? <label className="org-select-label">Organization<select value={membership.organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{me.memberships.map((item) => <option value={item.organizationId} key={item.id}>{item.organizationName}</option>)}</select></label> : <p className="org-organization-name">{membership.organizationName} · {membership.role}</p>}
         {membership.role === "admin" ? <p className="org-status">Deine Ansicht ist auf die vom Organizer delegierten Berechtigungen begrenzt.</p> : null}
         {error ? <p className="org-error" role="alert">{error}</p> : null}
-        {generatedLink ? <section className="org-warning"><strong>One-time-Link</strong><p>Dieser Link wird nur jetzt angezeigt. Der Token liegt ausschließlich im URL-Fragment.</p><code className="org-break-code">{generatedLink}</code><button type="button" onClick={() => void copyText(generatedLink)}>Link kopieren</button><button type="button" onClick={() => setGeneratedLink(null)}>Ausblenden</button></section> : null}
         {recoveryCodes ? <section className="org-warning"><strong>Neue Recovery-Codes</strong><pre>{recoveryCodes.join("\n")}</pre><button type="button" onClick={() => void copyText(recoveryCodes.join("\n"))}>Codes kopieren</button><button type="button" onClick={() => setRecoveryCodes(null)}>Ausblenden</button></section> : null}
 
         <section className="org-card org-card--wide">
@@ -270,10 +309,10 @@ export function OrganizationSecurityCenter() {
 
         <section className="org-card org-card--wide">
           <h2>Aktive Sitzungen</h2>
-          {sessions.length === 0 ? <p>Keine aktive Sitzung gefunden.</p> : sessions.map((session) => <div className="org-heading-row" key={session.id}><div><strong>{session.current ? "Diese Sitzung" : session.id}</strong><p>{session.assurance} · bis {new Date(session.expiresAt).toLocaleString("de-DE")}</p></div>{!session.current ? <button type="button" onClick={() => void revokeOrganizationSession(session.id).then(() => refresh())}>Widerrufen</button> : null}</div>)}
+          {sessions.length === 0 ? <p>Keine aktive Sitzung gefunden.</p> : sessions.map((session) => <div className="org-heading-row" key={session.id}><div><strong>{session.current ? "Diese Sitzung" : session.id}</strong><p>{session.assurance} · bis {new Date(session.expiresAt).toLocaleString("de-DE")}</p></div>{!session.current ? <button className="org-security-action org-security-action--danger" type="button" onClick={() => void revokeOrganizationSession(session.id).then(() => refresh())}>Widerrufen</button> : null}</div>)}
         </section>
 
-        {has("account.manage") ? <MembersAndInvites organizationId={membership.organizationId} members={members} invites={invites} organizer={membership.role === "organizer"} allowedCapabilities={delegableCapabilities} onLink={setGeneratedLink} onRefresh={() => refresh()} /> : null}
+        {has("account.manage") ? <MembersAndInvites organizationId={membership.organizationId} members={members} invites={invites} organizer={membership.role === "organizer"} allowedCapabilities={delegableCapabilities} onRefresh={() => refresh()} /> : null}
         {has("role.manage") ? <RoleTemplates organizationId={membership.organizationId} roles={roles} allowedCapabilities={delegableCapabilities} onRefresh={() => refresh()} /> : null}
         {has("organization.manage") ? <FeatureSettings organizationId={membership.organizationId} features={features} onRefresh={() => refresh()} /> : null}
         {has("audit.read") ? <AuditLog events={events} /> : null}
@@ -309,37 +348,125 @@ function TotpReenrollment({ enrollment, factorCode, setFactorCode, onDone }: { e
   return <section className="org-warning"><h3>TOTP-Rotation abschließen</h3><div className="org-qr"><QRCodeSVG value={enrollment.otpauthUri} size={180} level="M" /></div><pre>{enrollment.recoveryCodes.join("\n")}</pre><form className="org-form" onSubmit={(event) => { event.preventDefault(); completeOrganizationTotp(factorCode).then(onDone).catch((cause: unknown) => setError(errorMessage(cause))); }}><label>6-stelliger Code<input value={factorCode} onChange={(event) => setFactorCode(event.target.value)} pattern="[0-9]{6}" maxLength={6} required /></label>{error ? <p className="org-error">{error}</p> : null}<button>Rotation bestätigen</button></form></section>;
 }
 
-function MembersAndInvites({ organizationId, members, invites, organizer, allowedCapabilities, onLink, onRefresh }: { organizationId: string; members: OrganizationMemberDto[]; invites: OrganizationInviteDto[]; organizer: boolean; allowedCapabilities: readonly string[]; onLink: (link: string) => void; onRefresh: () => Promise<void> | void }) {
+function MembersAndInvites({ organizationId, members, invites, organizer, allowedCapabilities, onRefresh }: { organizationId: string; members: OrganizationMemberDto[]; invites: OrganizationInviteDto[]; organizer: boolean; allowedCapabilities: readonly string[]; onRefresh: () => Promise<void> | void }) {
   const [role, setRole] = useState<"organizer" | "admin">("admin");
-  const [capabilities, setCapabilities] = useState<string[]>(() => ["campaign.create", "campaign.manage"].filter((capability) => allowedCapabilities.includes(capability)));
+  const [capabilities, setCapabilities] = useState<string[]>(() => ["campaign.manage"].filter((capability) => allowedCapabilities.includes(capability)));
   const [error, setError] = useState<string | null>(null);
+  const [oneTimeLink, setOneTimeLink] = useState<OneTimeLinkState | null>(null);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+
   useEffect(() => {
     setCapabilities((current) => current.filter((capability) => allowedCapabilities.includes(capability)));
     if (!organizer) setRole("admin");
   }, [allowedCapabilities, organizer]);
+
   const createInvite = async (event: FormEvent) => {
     event.preventDefault(); setError(null);
-    try { const result = await createOrganizationInvite(organizationId, { role, capabilities, expiresInHours: 24 }); onLink(`${window.location.origin}/join#token=${encodeURIComponent(result.secret)}`); await onRefresh(); } catch (cause) { setError(errorMessage(cause)); }
+    try {
+      const result = await createOrganizationInvite(organizationId, { role, capabilities, expiresInHours: 24 });
+      setOneTimeLink({
+        kind: "invite",
+        targetId: result.invite.id,
+        title: `${role === "organizer" ? "Organizer" : "Admin"}-Einladung`,
+        link: `${window.location.origin}/join#token=${encodeURIComponent(result.secret)}`,
+      });
+      setLinkDialogOpen(true);
+      await onRefresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
   };
-  const reset = async (accountId: string) => {
-    try { const result = await createOrganizationPasswordReset(organizationId, accountId); onLink(`${window.location.origin}/reset#token=${encodeURIComponent(result.secret)}`); } catch (cause) { setError(errorMessage(cause)); }
+
+  const reset = async (accountId: string, username: string) => {
+    setError(null);
+    try {
+      const result = await createOrganizationPasswordReset(organizationId, accountId);
+      setOneTimeLink({
+        kind: "password-reset",
+        targetId: accountId,
+        title: `Passwort-Reset für ${username}`,
+        link: `${window.location.origin}/reset#token=${encodeURIComponent(result.secret)}`,
+      });
+      setLinkDialogOpen(true);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
   };
-  return <section className="org-card org-card--wide"><h2>Mitglieder & Einladungen</h2><form className="org-form org-form--panel" onSubmit={(event) => void createInvite(event)}><label>Rolle<select value={role} onChange={(event) => setRole(event.target.value as "organizer" | "admin")}><option value="admin">Admin</option>{organizer ? <option value="organizer">Organizer</option> : null}</select></label><CapabilityPicker value={capabilities} onChange={setCapabilities} allowedCapabilities={allowedCapabilities} />{!organizer ? <p className="org-help">Du kannst nur Rechte weitergeben, die dein eigener Admin-Account besitzt.</p> : null}{error ? <p className="org-error">{error}</p> : null}<button className="org-primary">One-time-Einladung erzeugen</button></form><h3>Aktive Mitglieder</h3>{members.map((member) => <div className="org-heading-row" key={member.id}><div><strong>{member.username}</strong><p>{member.role} · {member.capabilities.join(", ") || "keine Zusatzrechte"}</p></div>{organizer || member.role !== "organizer" ? <button type="button" onClick={() => void reset(member.accountId)}>Passwort-Reset</button> : null}</div>)}<h3>Einladungen</h3>{invites.length === 0 ? <p>Keine Einladungen.</p> : invites.map((invite) => <div className="org-heading-row" key={invite.id}><div><strong>{invite.role}</strong><p>bis {new Date(invite.expiresAt).toLocaleString("de-DE")} · {invite.usedAt ? "verwendet" : invite.revokedAt ? "widerrufen" : "aktiv"}</p></div>{!invite.usedAt && !invite.revokedAt && (organizer || invite.role !== "organizer") ? <button type="button" onClick={() => void revokeOrganizationInvite(organizationId, invite.id).then(() => onRefresh())}>Widerrufen</button> : null}</div>)}</section>;
+
+  const revokeInvite = async (inviteId: string) => {
+    setError(null);
+    try {
+      await revokeOrganizationInvite(organizationId, inviteId);
+      if (oneTimeLink?.kind === "invite" && oneTimeLink.targetId === inviteId) {
+        setOneTimeLink(null);
+        setLinkDialogOpen(false);
+      }
+      await onRefresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  };
+
+  return (
+    <section className="org-card org-card--wide">
+      <h2>Mitglieder & Einladungen</h2>
+      <form className="org-form org-form--panel" onSubmit={(event) => void createInvite(event)}>
+        <label>Rolle<select value={role} onChange={(event) => setRole(event.target.value as "organizer" | "admin")}><option value="admin">Admin</option>{organizer ? <option value="organizer">Organizer</option> : null}</select></label>
+        <CapabilityPicker value={capabilities} onChange={setCapabilities} allowedCapabilities={allowedCapabilities} />
+        {!organizer ? <p className="org-help">Du kannst nur Rechte weitergeben, die dein eigener Admin-Account besitzt.</p> : null}
+        {error ? <p className="org-error">{error}</p> : null}
+        <button className="org-primary">One-time-Einladung erzeugen</button>
+      </form>
+
+      <h3>Aktive Mitglieder</h3>
+      {members.map((member) => {
+        const hasResetLink = oneTimeLink?.kind === "password-reset" && oneTimeLink.targetId === member.accountId;
+        return (
+          <div className="org-heading-row" key={member.id}>
+            <div><strong>{member.username}</strong><p>{member.role} · {member.capabilities.filter((capability) => capability !== "campaign.create").join(", ") || "keine Zusatzrechte"}</p></div>
+            {organizer || member.role !== "organizer" ? (
+              <div className="org-security-actions">
+                {hasResetLink ? <button className="org-security-action org-security-action--primary" type="button" onClick={() => setLinkDialogOpen(true)}>Link anzeigen</button> : null}
+                <button className="org-security-action" type="button" onClick={() => void reset(member.accountId, member.username)}>Passwort-Reset</button>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+
+      <h3>Einladungen</h3>
+      {invites.length === 0 ? <p>Keine Einladungen.</p> : invites.map((invite) => {
+        const active = !invite.usedAt && !invite.revokedAt;
+        const hasInviteLink = oneTimeLink?.kind === "invite" && oneTimeLink.targetId === invite.id;
+        return (
+          <div className="org-heading-row" key={invite.id}>
+            <div><strong>{invite.role}</strong><p>bis {new Date(invite.expiresAt).toLocaleString("de-DE")} · {invite.usedAt ? "verwendet" : invite.revokedAt ? "widerrufen" : "aktiv"}</p></div>
+            <div className="org-security-actions">
+              {hasInviteLink ? <button className="org-security-action org-security-action--primary" type="button" onClick={() => setLinkDialogOpen(true)}>Link anzeigen</button> : null}
+              {active && (organizer || invite.role !== "organizer") ? <button className="org-security-action org-security-action--danger" type="button" onClick={() => void revokeInvite(invite.id)}>Widerrufen</button> : null}
+            </div>
+          </div>
+        );
+      })}
+
+      {linkDialogOpen && oneTimeLink ? <OneTimeLinkDialog value={oneTimeLink} onClose={() => setLinkDialogOpen(false)} /> : null}
+    </section>
+  );
 }
 
 function RoleTemplates({ organizationId, roles, allowedCapabilities, onRefresh }: { organizationId: string; roles: OrganizationRoleDto[]; allowedCapabilities: readonly string[]; onRefresh: () => Promise<void> | void }) {
   const [name, setName] = useState("");
-  const [capabilities, setCapabilities] = useState<string[]>(() => ["campaign.create", "campaign.manage"].filter((capability) => allowedCapabilities.includes(capability)));
+  const [capabilities, setCapabilities] = useState<string[]>(() => ["campaign.manage"].filter((capability) => allowedCapabilities.includes(capability)));
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setCapabilities((current) => current.filter((capability) => allowedCapabilities.includes(capability)));
   }, [allowedCapabilities]);
-  return <section className="org-card org-card--wide"><h2>Rollen-Vorlagen</h2><form className="org-form org-form--panel" onSubmit={(event) => { event.preventDefault(); setError(null); createOrganizationRole(organizationId, name, capabilities).then(() => { setName(""); return onRefresh(); }).catch((cause: unknown) => setError(errorMessage(cause))); }}><label>Name<input value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={80} required /></label><CapabilityPicker value={capabilities} onChange={setCapabilities} allowedCapabilities={allowedCapabilities} />{error ? <p className="org-error">{error}</p> : null}<button>Rolle anlegen</button></form>{roles.map((role) => <div className="org-heading-row" key={role.id}><div><strong>{role.name}</strong><p>{role.capabilities.join(", ")}</p></div><button type="button" onClick={() => void deleteOrganizationRole(organizationId, role.id).then(() => onRefresh())}>Löschen</button></div>)}</section>;
+  return <section className="org-card org-card--wide"><h2>Rollen-Vorlagen</h2><form className="org-form org-form--panel" onSubmit={(event) => { event.preventDefault(); setError(null); createOrganizationRole(organizationId, name, capabilities).then(() => { setName(""); return onRefresh(); }).catch((cause: unknown) => setError(errorMessage(cause))); }}><label>Name<input value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={80} required /></label><CapabilityPicker value={capabilities} onChange={setCapabilities} allowedCapabilities={allowedCapabilities} />{error ? <p className="org-error">{error}</p> : null}<button>Rolle anlegen</button></form>{roles.map((role) => <div className="org-heading-row" key={role.id}><div><strong>{role.name}</strong><p>{role.capabilities.filter((capability) => capability !== "campaign.create").join(", ")}</p></div><button className="org-security-action org-security-action--danger" type="button" onClick={() => void deleteOrganizationRole(organizationId, role.id).then(() => onRefresh())}>Löschen</button></div>)}</section>;
 }
 
 function FeatureSettings({ organizationId, features, onRefresh }: { organizationId: string; features: OrganizationFeatureDto[]; onRefresh: () => Promise<void> | void }) {
   const [key, setKey] = useState(""); const [enabled, setEnabled] = useState(true); const [error, setError] = useState<string | null>(null);
-  return <section className="org-card org-card--wide"><h2>Feature-Flags</h2><p>Berechtigungen und Features bleiben getrennt. Ein Feature-Flag erteilt niemals automatisch Rechte.</p><form className="org-form org-form--panel" onSubmit={(event) => { event.preventDefault(); setError(null); updateOrganizationFeature(organizationId, key, enabled).then(() => { setKey(""); return onRefresh(); }).catch((cause: unknown) => setError(errorMessage(cause))); }}><label>Feature-Key<input value={key} onChange={(event) => setKey(event.target.value)} pattern="[a-z0-9][a-z0-9._-]{0,79}" required /></label><label><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> aktiviert</label>{error ? <p className="org-error">{error}</p> : null}<button>Speichern</button></form>{features.map((feature) => <div className="org-heading-row" key={feature.key}><strong>{feature.key}</strong><button type="button" onClick={() => void updateOrganizationFeature(organizationId, feature.key, !feature.enabled).then(() => onRefresh())}>{feature.enabled ? "Deaktivieren" : "Aktivieren"}</button></div>)}</section>;
+  return <section className="org-card org-card--wide"><h2>Feature-Flags</h2><p>Berechtigungen und Features bleiben getrennt. Ein Feature-Flag erteilt niemals automatisch Rechte.</p><form className="org-form org-form--panel" onSubmit={(event) => { event.preventDefault(); setError(null); updateOrganizationFeature(organizationId, key, enabled).then(() => { setKey(""); return onRefresh(); }).catch((cause: unknown) => setError(errorMessage(cause))); }}><label>Feature-Key<input value={key} onChange={(event) => setKey(event.target.value)} pattern="[a-z0-9][a-z0-9._-]{0,79}" required /></label><label><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> aktiviert</label>{error ? <p className="org-error">{error}</p> : null}<button>Speichern</button></form>{features.map((feature) => <div className="org-heading-row" key={feature.key}><strong>{feature.key}</strong><button className="org-security-action" type="button" onClick={() => void updateOrganizationFeature(organizationId, feature.key, !feature.enabled).then(() => onRefresh())}>{feature.enabled ? "Deaktivieren" : "Aktivieren"}</button></div>)}</section>;
 }
 
 function AuditLog({ events }: { events: OrganizationAuditEventDto[] }) {
