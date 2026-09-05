@@ -123,13 +123,34 @@ replace_once(
 ''',
     '''plan031_checkpoint "expiry_force_start"
 npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --command "UPDATE field_groups SET hard_expires_at='2000-01-01T00:00:00.000Z' WHERE id='$EXPIRY_GROUP_ID' AND campaign_id='$PLAN031_CAMPAIGN_ID';" >/dev/null
-plan031_checkpoint "expiry_force_done"
+EXPIRY_FORCED_DB="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT hard_expires_at FROM field_groups WHERE id='$EXPIRY_GROUP_ID' AND campaign_id='$PLAN031_CAMPAIGN_ID';")"
+EXPIRY_FORCED_VALUE="$(jq -r '.[0].results[0].hard_expires_at // "missing"' <<<"$EXPIRY_FORCED_DB")"
+plan031_checkpoint "expiry_force_done" "$EXPIRY_FORCED_VALUE"
+[[ "$EXPIRY_FORCED_VALUE" == '2000-01-01T00:00:00.000Z' ]]
 ''',
 )
 
 replace_once(
     '[[ "$EXPIRY_TRIGGER" == \'200\' ]]\n',
-    'plan031_checkpoint "expiry_trigger_http" "$EXPIRY_TRIGGER"\n[[ "$EXPIRY_TRIGGER" == \'200\' ]]\n',
+    '''plan031_checkpoint "expiry_trigger_http" "$EXPIRY_TRIGGER"
+[[ "$EXPIRY_TRIGGER" == '200' ]]
+EXPIRY_POLL_STATE='active'
+EXPIRY_POLL_RECOVERY='2'
+for expiry_attempt in $(seq 1 15); do
+  EXPIRY_POLL_DB="$(npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT state,(SELECT COUNT(*) FROM field_group_recoverable_credentials r WHERE r.campaign_id='$PLAN031_CAMPAIGN_ID' AND r.group_id='$EXPIRY_GROUP_ID') AS recovery_count FROM field_groups WHERE id='$EXPIRY_GROUP_ID' AND campaign_id='$PLAN031_CAMPAIGN_ID';")"
+  EXPIRY_POLL_STATE="$(jq -r '.[0].results[0].state // "missing"' <<<"$EXPIRY_POLL_DB")"
+  EXPIRY_POLL_RECOVERY="$(jq -r '.[0].results[0].recovery_count // "missing"' <<<"$EXPIRY_POLL_DB")"
+  plan031_checkpoint "expiry_poll_${expiry_attempt}" "state=${EXPIRY_POLL_STATE};recovery=${EXPIRY_POLL_RECOVERY}"
+  if [[ "$EXPIRY_POLL_STATE" == 'expired' && "$EXPIRY_POLL_RECOVERY" == '0' ]]; then
+    break
+  fi
+  [[ "$expiry_attempt" == '15' ]] && break
+  sleep 2
+  EXPIRY_TRIGGER="$(curl -sS -o "$PRIVATE/expiry-trigger.json" -w '%{http_code}' -b "$PRIVATE/cookies.txt" "$TEST_URL/api/campaigns/${PLAN031_CAMPAIGN_ID}/field-groups" || printf 000)"
+  plan031_checkpoint "expiry_retry_http_${expiry_attempt}" "$EXPIRY_TRIGGER"
+  [[ "$EXPIRY_TRIGGER" == '200' ]]
+done
+''',
 )
 
 replace_once(
