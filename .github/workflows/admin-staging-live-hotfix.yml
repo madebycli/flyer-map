@@ -1,0 +1,157 @@
+name: Organizer Admin Live Identity Cutover
+
+on:
+  push:
+    branches:
+      - organizer-admin-live-hotfix
+
+permissions:
+  contents: read
+
+concurrency:
+  group: organizer-admin-live-hotfix
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AUDITED_SOURCE_SHA: 46afda90a331412887b9b7f626ba985099d2413d
+      FINAL_BOOTSTRAP_SECRET_SHA256: db8d5633992642d92c903db9d0fec8dbb9171d47086f8bf2a6d1cdcbc415f797
+    steps:
+      - name: Checkout live hotfix
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact feature derivation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$AUDITED_SOURCE_SHA^{commit}"
+          git diff --exit-code "$AUDITED_SOURCE_SHA" HEAD -- . \
+            ':(exclude).github/workflows/admin-staging-live-hotfix.yml' \
+            ':(exclude).staging/admin-live-identity-cutover.sh'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Tests
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Dependency audit
+        run: npm run audit:dependencies
+
+      - name: Production build
+        run: npm run build
+
+      - name: Prepare extended staging acceptance harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('.staging/admin-live-identity-cutover.sh')
+          source = path.read_text()
+
+          old_filter = "name NOT LIKE 'sqlite_%' ORDER BY name;"
+          new_filter = "name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' ORDER BY name;"
+          if source.count(old_filter) != 1:
+              raise SystemExit('Expected exactly one legacy D1 fingerprint table filter')
+          source = source.replace(old_filter, new_filter)
+
+          old_caps = r"""'[\"campaign.manage\",\"account.manage\"]'"""
+          new_caps = r"""'[\"campaign.create\",\"campaign.manage\",\"account.manage\"]'"""
+          if source.count(old_caps) != 1:
+              raise SystemExit('Expected exactly one allowed Admin capability fixture')
+          source = source.replace(old_caps, new_caps)
+
+          marker = "\nCONSECUTIVE=0\n"
+          if source.count(marker) != 1:
+              raise SystemExit('Expected one public convergence marker')
+          probes = r'''
+          ADMIN_CAMPAIGN_CREATE_STATUS="$(curl -sS -o "$OUT/admin-campaign-create.json" -w '%{http_code}' -X POST "$TEST_URL/api/organizations/${ORGANIZATION_ID}/campaigns" -H "$PIN_HEADER" -H "Cookie: __Host-vf_organization_session=${ALLOWED_SECRET}" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data '{"name":"admin-must-not-create","lifecycle":"draft","map":{"lng":13.405,"lat":52.52,"zoom":10,"bearing":0}}')"
+          [[ "$ADMIN_CAMPAIGN_CREATE_STATUS" == '403' ]]
+          jq -e '.error.code=="organizer_only"' "$OUT/admin-campaign-create.json" >/dev/null
+
+          ORGANIZER_CAMPAIGN_GATE_STATUS="$(curl -sS -o "$OUT/organizer-campaign-gate.json" -w '%{http_code}' -X POST "$TEST_URL/api/organizations/${ORGANIZATION_ID}/campaigns" -H "$PIN_HEADER" -H "Cookie: __Host-vf_organization_session=${ORGANIZER_SECRET}" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data '{}')"
+          [[ "$ORGANIZER_CAMPAIGN_GATE_STATUS" == '400' ]]
+          jq -e '.error.code=="invalid_campaign_name"' "$OUT/organizer-campaign-gate.json" >/dev/null
+
+          LEGACY_CAMPAIGN_CREATE_STATUS="$(curl -sS -o "$OUT/legacy-campaign-create.json" -w '%{http_code}' -X POST "$TEST_URL/api/campaigns" -H "$PIN_HEADER" -H "Origin: $TEST_URL" -H 'Content-Type: application/json' --data '{"snapshot":{}}')"
+          [[ "$LEGACY_CAMPAIGN_CREATE_STATUS" == '409' ]]
+          jq -e '.error.code=="organization_campaign_create_required"' "$OUT/legacy-campaign-create.json" >/dev/null
+
+          ROOT_STATUS="$(curl -sS -D "$OUT/bare-root-headers.txt" -o /dev/null -w '%{http_code}' -H "$PIN_HEADER" "$TEST_URL/")"
+          [[ "$ROOT_STATUS" == '302' ]]
+          ROOT_LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {gsub(/\r/,""); print $2}' "$OUT/bare-root-headers.txt" | tail -n1)"
+          [[ "$ROOT_LOCATION" == "$TEST_URL/login" ]]
+
+          FIELD_ENTRY_STATUS="$(curl -sS -o "$OUT/field-campaign-entry.html" -w '%{http_code}' -H "$PIN_HEADER" "$TEST_URL/?campaign=${CAMPAIGN_ID}")"
+          [[ "$FIELD_ENTRY_STATUS" == '200' ]]
+
+          jq -n \
+            --arg admin_campaign_create "$ADMIN_CAMPAIGN_CREATE_STATUS" \
+            --arg organizer_campaign_gate "$ORGANIZER_CAMPAIGN_GATE_STATUS" \
+            --arg legacy_campaign_create "$LEGACY_CAMPAIGN_CREATE_STATUS" \
+            --arg bare_root "$ROOT_STATUS" \
+            --arg root_location "$ROOT_LOCATION" \
+            --arg field_entry "$FIELD_ENTRY_STATUS" \
+            '{admin_campaign_create_rejected:$admin_campaign_create,organizer_campaign_create_gate:$organizer_campaign_gate,legacy_campaign_create_rejected:$legacy_campaign_create,bare_root_redirect:$bare_root,root_location:$root_location,field_campaign_entry:$field_entry}' > "$OUT/root-campaign-security.json"
+          '''
+          source = source.replace(marker, "\n" + probes + "\nCONSECUTIVE=0\n")
+          path.write_text(source)
+          PY
+
+      - name: Validate identity cutover harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .staging/admin-live-identity-cutover.sh
+          ! grep -Fq 'DELETE FROM organizations' .staging/admin-live-identity-cutover.sh
+          ! grep -Fq 'DELETE FROM campaigns' .staging/admin-live-identity-cutover.sh
+          grep -Fq "name NOT GLOB '_cf_*'" .staging/admin-live-identity-cutover.sh
+          grep -Fq 'database_state_preserved:true' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'database_fingerprint_preserved:true' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'capability_delegation_forbidden' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'organization_admin_invite_required' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'organization_access_required' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'organization_campaign_create_required' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'admin_campaign_create_rejected' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'bare_root_redirect' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'identityProvider=="organization"' .staging/admin-live-identity-cutover.sh
+          grep -Fq 'Mit Organization-Konto anmelden' src/access/AccessRecoveryGate.tsx
+          grep -Fq 'Admins, Rollen & Einladungen verwalten' src/settings/SettingsSheet.tsx
+          grep -Fq '<a href="/admin/security">Sicherheit</a>' src/organization/OrganizationApp.tsx
+          grep -Fq 'overflow-y: auto;' src/organization/organization-admin.css
+          grep -Fq 'flex-wrap: wrap;' src/organization/organization-admin.css
+          grep -Fq '>Link anzeigen</button>' src/organization/OrganizationSecurityCenter.tsx
+          grep -Fq '.org-link-dialog-backdrop' src/organization/organization-security.css
+          grep -Fq 'redirectBareRootToOrganizationLogin' worker/indexOrganizer.ts
+          grep -Fq 'Nur Organizer dürfen neue Campaigns anlegen.' worker/organizationDelegationGuard.ts
+          ! grep -Fq 'Melde dich mit deinem kampagnenlokalen Admin-Konto an.' src/access/AccessRecoveryGate.tsx
+
+      - name: Non-destructive staging deploy and central Admin verification
+        shell: bash
+        run: bash .staging/admin-live-identity-cutover.sh
+
+      - name: Upload sanitized identity cutover diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-live-identity-cutover-diagnostics
+          path: /tmp/admin-live-identity-cutover/
+          retention-days: 3
+          if-no-files-found: warn
