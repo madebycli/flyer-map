@@ -1,0 +1,77 @@
+replace_exact(
+    'src/platform/platformContract.ts',
+    'export type PlatformSyncState = "healthy" | "refreshing" | "offline" | "new-data" | "error";',
+    'export type PlatformSyncState = "healthy" | "refreshing" | "offline" | "new-data" | "conflict" | "error";',
+)
+replace_exact(
+    'src/App.tsx',
+    '''  const platformSyncState = !online\n    ? "offline" as const\n    : refreshState === "loading"\n      ? "refreshing" as const\n      : refreshState === "available" || syncMessageCode === "conflict"\n        ? "new-data" as const\n        : refreshState === "error" || Boolean(syncMessageCode)\n          ? "error" as const\n          : "healthy" as const;''',
+    '''  const platformSyncState = !online\n    ? "offline" as const\n    : refreshState === "loading"\n      ? "refreshing" as const\n      : syncMessageCode === "conflict"\n        ? "conflict" as const\n        : refreshState === "available"\n          ? "new-data" as const\n          : refreshState === "error" || Boolean(syncMessageCode)\n            ? "error" as const\n            : "healthy" as const;''',
+)
+replace_exact(
+    'src/App.tsx',
+    '''      : platformSyncState === "new-data"\n        ? "Neue Serverdaten"\n        : platformSyncState === "error"\n          ? "Synchronisierung prüfen"\n          : null;''',
+    '''      : platformSyncState === "new-data"\n        ? "Neue Serverdaten"\n        : platformSyncState === "conflict"\n          ? "Konflikt prüfen"\n          : platformSyncState === "error"\n            ? "Synchronisierung prüfen"\n            : null;''',
+)
+replace_exact(
+    'src/platform/platform-shell.css',
+    '''.platform-sync-indicator.is-new-data > span { background: #d97706; }\n.platform-sync-indicator.is-error > span { background: #b42318; }\n.platform-sync-indicator.is-offline,\n.platform-sync-indicator.is-new-data,\n.platform-sync-indicator.is-error { padding-inline: 0.48rem 0.58rem; }''',
+    '''.platform-sync-indicator.is-new-data > span { background: #d97706; }\n.platform-sync-indicator.is-conflict > span { background: #c2410c; }\n.platform-sync-indicator.is-error > span { background: #b42318; }\n.platform-sync-indicator.is-offline,\n.platform-sync-indicator.is-new-data,\n.platform-sync-indicator.is-conflict,\n.platform-sync-indicator.is-error { padding-inline: 0.48rem 0.58rem; }''',
+)
+
+append_once(
+    'docs/product/UX.md',
+    '### Plan 031 Field launcher and draggable sheets',
+    r'''
+### Plan 031 Field launcher and draggable sheets
+
+The Field UI uses one flat primary launcher in `PlatformShell`: Team, Rooms, Fortschritt, Kommentare, Streets, Gebiet and Einstellungen. Team is no longer a container for Room/progress/comment tabs. Focused field modules open as draggable bottom sheets with semantic compact/expanded/near-fullscreen heights. Only the non-scrolling handle changes sheet height; body scrolling never changes the snap point. The shared sheet contract uses Pointer Events, pointer capture, keyboard height controls, `visualViewport` and safe-area-aware scroll padding.
+
+Street creation follows Area detail -> Street draw -> Street detail -> Map. Closing or deleting the Street detail never implicitly re-opens the parent Area sheet. Contextual comments stay collapsed by default and use the parent sheet scroll surface so the composer remains reachable with long threads and the mobile keyboard.
+
+Healthy sync is intentionally quiet in the lower-left field bar. Offline, conflict, errors and newly available server data remain visible. The manual map refresh control stays a separate action.
+''',
+)
+append_once(
+    'docs/quality/QUALITY.md',
+    '### Plan 031 mobile Field acceptance',
+    r'''
+### Plan 031 mobile Field acceptance
+
+Plan 031 acceptance requires structure tests for the flat seven-destination launcher, dedicated Room/progress/comment/Street hubs, shared draggable-sheet behavior and Street close-to-map semantics. Mobile browser acceptance covers at least a 390x844-class viewport plus a narrower viewport, handle dragging across snap heights, normal body scroll without snap changes, close at every snap, long comment threads with reachable composer and keyboard-aware `visualViewport` handling. Brainrot long-press remains a regression gate on `.platform-grid-button`.
+
+Room acceptance covers visible and hidden creation, manager visibility of hidden Rooms, Code and QR join in both states, repeated reveal of identical current credentials without rotation, rotation invalidating only future join material, membership preservation across rotation/revoke, and fail-closed reveal after revoke/close/expiry. Tests and diagnostics must not log plaintext Room Code, QR token, session material or encryption keys.
+''',
+)
+append_once(
+    'docs/plans/active/031-field-ui-navigation-rooms-sheets.md',
+    '## Implementierter Vertragsstand für die Abnahme',
+    r'''
+## Implementierter Vertragsstand für die Abnahme
+
+The implementation slice introduces focused `TeamHub`, `RoomsHub`, `TeamProgressHub`, `CommentsHub` and `StreetsHub` surfaces behind the existing Platform launcher, plus the shared `FieldBottomSheet` contract. The active Field Group API is aligned with the manager-list scope for hidden Rooms. Current credential reveal uses migration 0020 and the reviewed AES-GCM recovery contract from the ADR-0014 amendment and threat model. This section records implementation shape only; Plan 031 remains active until exact-head CI and the isolated live Staging matrix are green.
+''',
+)
+append_once(
+    'docs/prompts/CONTINUE_FIELD_UI_NAVIGATION_LATEST.md',
+    '## Plan-031 Implementation Contract Update',
+    r'''
+## Plan-031 Implementation Contract Update
+
+The implementation target now includes the focused Field hubs, shared `FieldBottomSheet`, Street-detail close-to-map state machine, manager-visible hidden Rooms, manager-only current credential reveal backed by migration 0020/AES-GCM, and the compact sync indicator. The branch is not considered complete until exact-head CI plus the isolated Staging live matrix for the same Product head pass. Do not replace current-credential reveal with implicit rotation and do not weaken the no-plaintext-at-rest contract.
+''',
+)
+
+context_path = 'docs/context-field-ui-navigation.yaml'
+context = read(context_path)
+context = context.replace(
+    '''  - id: team-hub-compat\n    path: src/team/TeamHub.tsx\n    type: code\n    status: transition-debt\n    topics: [team, compatibility-export]\n    identifiers: [TeamHub, TeamCenter]\n    load_when: [Team launcher wiring, removing TeamCenter alias architecture]''',
+    '''  - id: team-hub-compat\n    path: src/team/TeamHub.tsx\n    type: code\n    status: current\n    topics: [team, primary-field-surface]\n    identifiers: [TeamHub, FieldBottomSheet]\n    load_when: [Team launcher wiring, Team selection and management]''',
+    1,
+)
+context = context.replace(
+    '''  - id: team-center-transition\n    path: src/team/TeamCenter.tsx\n    type: code\n    status: transition-debt''',
+    '''  - id: team-center-transition\n    path: src/team/TeamCenter.tsx\n    type: code\n    status: legacy-unwired''',
+    1,
+)
+write(context_path, context)
