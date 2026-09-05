@@ -12,6 +12,10 @@
   backdrop-filter: blur(2px);
 }
 
+.field-sheet-overlay ~ .team-center-modal-backdrop {
+  z-index: 3500;
+}
+
 .field-bottom-sheet {
   display: flex;
   flex-direction: column;
