@@ -23,7 +23,13 @@ import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 // entrypoint, while the base Worker keeps the HTTP/auth implementation.
 export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
 
-type Env = Parameters<typeof baseWorker.fetch>[1] & PickupSearchEnv;
+type AssetBinding = {
+  fetch(request: Request): Promise<Response>;
+};
+
+type Env = Parameters<typeof baseWorker.fetch>[1] & PickupSearchEnv & {
+  ASSETS?: AssetBinding;
+};
 
 const json = (data: unknown, init: ResponseInit = {}) =>
   Response.json(data, {
@@ -46,6 +52,11 @@ function snapshotCampaignId(pathname: string) {
   } catch {
     return null;
   }
+}
+
+function shouldServeRootAsset(request: Request) {
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  return new URL(request.url).pathname === "/";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -134,6 +145,10 @@ export async function augmentPickupSnapshotResponse(
 
 export default {
   async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
+    if (shouldServeRootAsset(request) && env.ASSETS) {
+      return env.ASSETS.fetch(request);
+    }
+
     if (env.DB) {
       const capabilityResponse = await handlePickupCapabilitiesApi(request, env.DB);
       if (capabilityResponse) return capabilityResponse;
