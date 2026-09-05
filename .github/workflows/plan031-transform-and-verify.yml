@@ -60,7 +60,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat runner/.staging/plan031/chunk-*.txt > /tmp/plan031.py
+          : > /tmp/plan031.py
+          cat runner/.staging/plan031/chunk-00.txt >> /tmp/plan031.py
+          cat runner/.staging/plan031/chunk-01.txt >> /tmp/plan031.py
+          cat runner/.staging/plan031/chunk-02.txt >> /tmp/plan031.py
+          for chunk in runner/.staging/plan031/chunk-0{3,4,5,6,7}.txt; do
+            printf '\n' >> /tmp/plan031.py
+            cat "$chunk" >> /tmp/plan031.py
+          done
           python - <<'PY'
           from pathlib import Path
           path = Path('/tmp/plan031.py')
@@ -86,7 +93,8 @@ jobs:
           git diff --check
           git status --short | tee /tmp/plan031-status.txt
           git diff --binary HEAD > /tmp/plan031.patch
-          tar -czf /tmp/plan031-changed-files.tar.gz $(git diff --name-only HEAD)
+          mapfile -t changed < <(git diff --name-only HEAD)
+          tar -czf /tmp/plan031-changed-files.tar.gz "${changed[@]}"
 
       - name: Verify hard Production boundaries
         shell: bash
