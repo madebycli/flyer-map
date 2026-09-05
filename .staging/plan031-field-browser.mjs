@@ -56,15 +56,22 @@ function totp(secret) {
   return String(binary % 1_000_000).padStart(6, '0');
 }
 
+async function nextCounter() {
+  const waitMs = 30_000 - (Date.now() % 30_000) + 1_500;
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+}
+
 async function login(page) {
   await page.goto(`${url}/login`, { waitUntil: 'domcontentloaded' });
   await page.getByLabel('Benutzername').fill(username);
   await page.getByLabel('Passwort').fill(password);
   await page.getByRole('button', { name: 'Weiter', exact: true }).click();
   await page.getByLabel('6-stelliger Code').waitFor();
+  await nextCounter();
   await page.getByLabel('6-stelliger Code').fill(totp(organizerSecret));
   await page.getByRole('button', { name: 'Anmelden', exact: true }).click();
   await page.waitForURL('**/admin');
+  await page.getByRole('heading', { name: 'Aktionen', exact: true }).waitFor();
 }
 
 async function openFieldApp(page) {
