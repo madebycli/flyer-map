@@ -31,7 +31,7 @@ export function StreetsHub({
   }, [context?.activeTeam, context?.streets, query]);
 
   return (
-    <FieldBottomSheet open title="Straßen" kicker={context?.activeTeam?.name ?? "Karte"} onClose={onClose}>
+    <FieldBottomSheet open title="Streets" kicker={context?.activeTeam?.name ?? "Karte"} onClose={onClose}>
       <div className="team-center-view">
         <section className="team-center-card">
           <div className="team-center-section-heading"><div><span>Straßen</span><strong>{streets.length} im aktiven Team</strong></div></div>
