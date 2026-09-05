@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: read
 
 concurrency:
@@ -24,6 +24,7 @@ jobs:
     env:
       EXPECTED_PRODUCT_SHA: 3e763049a8a20f0378f064e1c82824e36248a7e8
       PRODUCT_BRANCH: feature/organizer-admin-platform
+      CANDIDATE_BRANCH: plan031-verified-candidate-20260905
     steps:
       - name: Checkout isolated runner
         uses: actions/checkout@v4
@@ -55,6 +56,9 @@ jobs:
           [[ "$pr_ref" == "$PRODUCT_BRANCH" ]]
           [[ "$pr_draft" == "true" ]]
           [[ "$pr_state" == "open" ]]
+          [[ "$CANDIDATE_BRANCH" != "$PRODUCT_BRANCH" ]]
+          candidate="$(git -C product ls-remote origin "refs/heads/$CANDIDATE_BRANCH" | awk '{print $1}')"
+          [[ "$candidate" == "$EXPECTED_PRODUCT_SHA" ]]
 
       - name: Assemble fail-fast transformer
         shell: bash
@@ -165,6 +169,26 @@ jobs:
           set -o pipefail
           npm run build 2>&1 | tee /tmp/plan031-build.log
 
+      - name: Publish verified candidate branch
+        working-directory: product
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_BRANCH" == "plan031-verified-candidate-20260905" ]]
+          [[ "$CANDIDATE_BRANCH" != "$PRODUCT_BRANCH" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_PRODUCT_SHA" ]]
+          remote_candidate="$(git ls-remote origin "refs/heads/$CANDIDATE_BRANCH" | awk '{print $1}')"
+          [[ "$remote_candidate" == "$EXPECTED_PRODUCT_SHA" ]]
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat: implement Plan 031 field workflow'
+          candidate_sha="$(git rev-parse HEAD)"
+          [[ "$(git rev-parse HEAD^)" == "$EXPECTED_PRODUCT_SHA" ]]
+          git push origin "HEAD:refs/heads/$CANDIDATE_BRANCH"
+          printf '%s\n' "$candidate_sha" | tee /tmp/plan031-candidate-sha.txt
+
       - name: Upload verified transformation
         if: always()
         uses: actions/upload-artifact@v4
@@ -179,5 +203,6 @@ jobs:
             /tmp/plan031-typecheck.log
             /tmp/plan031-audit.log
             /tmp/plan031-build.log
+            /tmp/plan031-candidate-sha.txt
           if-no-files-found: ignore
           retention-days: 3
