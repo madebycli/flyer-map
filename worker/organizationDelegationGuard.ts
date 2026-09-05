@@ -27,6 +27,10 @@ export function canDelegateOrganizationAccess(
     : { ok: false, code: "capability_escalation" };
 }
 
+export function canCreateOrganizationCampaign(actorRole: OrganizationMembershipRole) {
+  return actorRole === "organizer";
+}
+
 function jsonError(code: string, message: string) {
   return Response.json(
     { error: { code, message } },
@@ -71,6 +75,16 @@ export async function guardOrganizationDelegationRequest(
 ): Promise<Response | null> {
   if (!db) return null;
   const url = new URL(request.url);
+
+  const campaignCollection = url.pathname.match(/^\/api\/organizations\/([^/]+)\/campaigns$/u);
+  if (campaignCollection && request.method === "POST") {
+    const organizationId = decodeSelector(campaignCollection[1]);
+    if (!organizationId) return null;
+    const actor = await actorMembership(db, request, organizationId);
+    return actor && !canCreateOrganizationCampaign(actor.role)
+      ? jsonError("organizer_only", "Nur Organizer dürfen neue Campaigns anlegen.")
+      : null;
+  }
 
   const security = url.pathname.match(
     /^\/api\/organizations\/([^/]+)\/(invites|roles)(?:\/([^/]+))?$/u,
