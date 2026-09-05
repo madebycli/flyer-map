@@ -46,7 +46,7 @@ function encodeBase64Url(value: Uint8Array) {
 
 function aad(context: RecoverableCredentialContext) {
   return new TextEncoder().encode(
-    `field-group-credential:v1:${context.campaignId}:${context.groupId}:${context.credentialId}:${context.kind}`,
+    `flyer-map:field-group-credential:v1:${context.campaignId}:${context.groupId}:${context.credentialId}:${context.kind}`,
   );
 }
 

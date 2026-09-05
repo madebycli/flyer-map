@@ -259,6 +259,13 @@ function canManageTeam(access: AccessContext, teamId: string) {
   return access.role === "admin" || (access.role === "team-editor" && access.teamId === teamId);
 }
 
+function persistedCampaignGrantId(access: AccessContext) {
+  // Organization identities deliberately bridge into Campaign authorization without
+  // manufacturing a legacy campaign_access_grants row. Persisting that synthetic
+  // identity into created_by_grant_id would violate the table's real FK.
+  return access.grantId.startsWith("organization:") ? null : access.grantId;
+}
+
 async function teamRow(db: D1DatabaseLike, campaignId: string, teamId: string) {
   return db
     .prepare("SELECT id, name, color FROM teams WHERE id = ? AND campaign_id = ?")
@@ -526,7 +533,7 @@ async function createGroup(
           mode,
           discoverable ? 1 : 0,
           participantCount,
-          access.grantId,
+          persistedCampaignGrantId(access),
           requestId,
           payloadHash,
           createdAt,
@@ -1727,7 +1734,7 @@ export async function handleFieldGroupApi(
       return errorResponse(405, "method_not_allowed", "Methode für Gruppe nicht erlaubt.");
     }
 
-    if (route.kind === "reveal" && request.method === "GET") {
+    if (route.kind === "reveal" && request.method === "POST") {
       return await revealCredentials(db, route.campaignId, route.groupId, access, env.FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY);
     }
     if (route.kind === "rotate" && request.method === "POST") {

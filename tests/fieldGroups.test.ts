@@ -64,6 +64,7 @@ class FieldGroupStatement implements D1PreparedStatement {
   async first<T>() {
     const query = this.query.replace(/\s+/gu, " ");
     if (query.includes("FROM campaign_sessions s")) {
+      if (this.db.organizationMembershipId) return null;
       const campaignId = this.values[2] as string | null;
       if (campaignId && campaignId !== "campaign_a") return null;
       return {
@@ -72,6 +73,17 @@ class FieldGroupStatement implements D1PreparedStatement {
         role: this.db.role,
         team_id: this.db.teamId,
         label: "Test access",
+      } as T;
+    }
+
+    if (query.includes("FROM organization_account_sessions s") && query.includes("JOIN organization_memberships m")) {
+      if (!this.db.organizationMembershipId) return null;
+      return {
+        membership_id: this.db.organizationMembershipId,
+        campaign_id: "campaign_a",
+        role_kind: "organizer",
+        capabilities_json: "[]",
+        template_capabilities_json: null,
       } as T;
     }
 
@@ -153,6 +165,8 @@ class FieldGroupDb implements D1DatabaseLike {
   role: PersistentAccessRole = "admin";
   teamId: string | null = null;
   simulateMissingSchema = false;
+  organizationMembershipId: string | null = null;
+  campaignGrantIds = new Set(["grant_admin", "grant_team-editor", "grant_viewer"]);
   capturedValues: unknown[][] = [];
   credentialHashes: string[] = [];
   credentials: StoredCredential[] = [];
@@ -182,7 +196,7 @@ class FieldGroupDb implements D1DatabaseLike {
           mode,
           discoverable,
           participantCount,
-          ,
+          createdByGrantId,
           requestId,
           payloadHash,
           createdAt,
@@ -196,13 +210,16 @@ class FieldGroupDb implements D1DatabaseLike {
           "distribution" | "collection",
           number,
           number | null,
-          string,
+          string | null,
           string,
           string,
           string,
           string,
           string,
         ];
+        if (createdByGrantId !== null && !this.campaignGrantIds.has(createdByGrantId)) {
+          throw new Error("D1_ERROR: FOREIGN KEY constraint failed: field_groups.created_by_grant_id");
+        }
         const team = this.teams.get(teamId)!;
         this.groups.push({
           id,
@@ -503,6 +520,62 @@ test("create stores only credential hashes and enforces legacy team management s
   );
   assert.equal(viewer?.status, 403);
   assert.equal(viewerDb.groups.length, 0);
+});
+
+test("organization organizer room creation does not persist a synthetic campaign-grant foreign key", async () => {
+  const db = new FieldGroupDb();
+  db.organizationMembershipId = "membership_organizer";
+  const response = await quietAudit(() =>
+    handleFieldGroupApi(
+      request(
+        "/api/campaigns/campaign_a/field-groups",
+        "POST",
+        {
+          label: "Organizer Room",
+          teamId: "team_a",
+          discoverable: false,
+          requestId: "create-organizer-001",
+        },
+        { cookie: "__Host-vf_organization_session=organization-session" },
+      ),
+      { DB: db, FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY: TEST_RECOVERY_KEY },
+    ),
+  );
+  assert.equal(response?.status, 201);
+  const groupInsert = db.capturedValues.find((values) => values[0]?.toString().startsWith("field_group_"));
+  assert.ok(groupInsert);
+  assert.equal(groupInsert[7], null);
+});
+
+test("same-current credential reveal accepts POST and rejects legacy GET", async () => {
+  const db = new FieldGroupDb();
+  const created = await quietAudit(() =>
+    handleFieldGroupApi(
+      request("/api/campaigns/campaign_a/field-groups", "POST", {
+        label: "Reveal Contract",
+        teamId: "team_a",
+        requestId: "create-reveal-contract-001",
+      }),
+      { DB: db, FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY: TEST_RECOVERY_KEY },
+    ),
+  );
+  assert.equal(created?.status, 201);
+  const groupId = (await created?.json()).group.id as string;
+  const path = `/api/campaigns/campaign_a/field-groups/${groupId}/credentials/current`;
+
+  const post = await handleFieldGroupApi(
+    request(path, "POST"),
+    { DB: db, FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY: TEST_RECOVERY_KEY },
+  );
+  assert.equal(post?.status, 409);
+  assert.equal((await post?.json()).error.code, "credential_recovery_unavailable");
+
+  const get = await handleFieldGroupApi(
+    request(path, "GET"),
+    { DB: db, FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY: TEST_RECOVERY_KEY },
+  );
+  assert.equal(get?.status, 405);
+  assert.equal((await get?.json()).error.code, "method_not_allowed");
 });
 
 test("create replay returns the original group without issuing secrets or duplicating state", async () => {
