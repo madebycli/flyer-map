@@ -1,0 +1,218 @@
+name: Organizer Admin Persistent Staging
+
+on:
+  push:
+    branches:
+      - feature/organizer-admin-platform
+    paths:
+      - '.github/workflows/organizer-admin-persistent-staging.yml'
+      - 'src/**'
+      - 'worker/**'
+      - 'migrations/**'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.*'
+      - 'wrangler.jsonc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: organizer-admin-persistent-staging
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PERSISTENT_WORKER_NAME: flyer-map-admin-staging
+      PERSISTENT_DB_NAME: flyer-map-admin-staging-db
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+      PERSISTENT_BOOTSTRAP_SECRET_SHA256: 3fd3fc4a7a7ed29ea3a5114d6a20990bd7d0ba3ecb655672633baded2be0b271
+    steps:
+      - name: Checkout exact Product head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Product and Production invariants
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.ref')" == 'feature/organizer-admin-platform' ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.draft')" == 'true' ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.state')" == 'open' ]]
+          grep -Fq '"main": "./worker/indexFc52.ts"' wrangler.jsonc
+          grep -Fq "$PROD_D1_ID" wrangler.jsonc
+          grep -Fq '91714001' wrangler.jsonc
+          grep -Fq '91714002' wrangler.jsonc
+          grep -Fq '91714003' wrangler.jsonc
+          ! grep -Fq 'nodejs_compat' wrangler.jsonc
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Product gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test
+          npm run typecheck
+          npm run audit:dependencies
+          npm run build
+
+      - name: Resolve persistent staging resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          elif [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+          else
+            echo 'Cloudflare account is ambiguous.' >&2
+            exit 1
+          fi
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          PERSISTENT_D1_ID="$(jq -r --arg name "$PERSISTENT_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
+          [[ -n "$PERSISTENT_D1_ID" ]] || { echo 'Persistent Admin Staging D1 missing or ambiguous.' >&2; exit 1; }
+          [[ "$PERSISTENT_D1_ID" != "$PROD_D1_ID" && "$PERSISTENT_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo 'Protected D1 collision.' >&2; exit 1; }
+          echo "PERSISTENT_D1_ID=$PERSISTENT_D1_ID" >> "$GITHUB_ENV"
+
+      - name: Verify persistent Worker secrets are already provisioned
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET_LIST="$(npx wrangler secret list --name "$PERSISTENT_WORKER_NAME" --json)"
+          jq -e '.[] | select(.name=="ORGANIZATION_TOTP_KEY")' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.[] | select(.name=="FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY")' <<<"$SECRET_LIST" >/dev/null
+
+      - name: Snapshot persistent data before deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT (SELECT COUNT(*) FROM organizations) organization_count,(SELECT COUNT(*) FROM organization_accounts) account_count,(SELECT COUNT(*) FROM campaigns WHERE organization_id IS NOT NULL) campaign_count,(SELECT COUNT(*) FROM organization_bootstrap_state) bootstrap_count;")"
+          printf '%s' "$BEFORE" > /tmp/persistent-before.json
+          jq -e '.[0].results[0] | .organization_count>=0 and .account_count>=0 and .campaign_count>=0 and .bootstrap_count>=0' <<<"$BEFORE" >/dev/null
+
+      - name: Materialize persistent staging config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const c = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          c.main = './worker/indexOrganizer.ts';
+          c.compatibility_flags = [...new Set([...(c.compatibility_flags || []), 'nodejs_compat'])];
+          c.env = c.env || {};
+          c.env.admin_staging = {
+            name: process.env.PERSISTENT_WORKER_NAME,
+            workers_dev: true,
+            vars: {
+              ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.PERSISTENT_BOOTSTRAP_SECRET_SHA256,
+              ORGANIZATION_PASSWORD_KDF_ITERATIONS: '600000',
+              ORGANIZATION_KDF_DIAGNOSTICS: '0'
+            },
+            d1_databases: [{
+              binding: 'DB',
+              database_name: process.env.PERSISTENT_DB_NAME,
+              database_id: process.env.PERSISTENT_D1_ID,
+              migrations_dir: 'migrations'
+            }],
+            durable_objects: { bindings: [
+              { name: 'CAMPAIGN_SYNC', class_name: 'CampaignSyncDurableObject' },
+              { name: 'ORGANIZATION_PASSWORD_KDF', class_name: 'OrganizationPasswordKdfDurableObject' }
+            ]},
+            ratelimits: [
+              { name: 'FIELD_GROUP_JOIN_ACTOR_LIMITER', namespace_id: '91914001', simple: { limit: 30, period: 60 } },
+              { name: 'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER', namespace_id: '91914002', simple: { limit: 8, period: 60 } },
+              { name: 'PICKUP_SEARCH_LIMITER', namespace_id: '91914003', simple: { limit: 20, period: 10 } },
+              { name: 'ORGANIZATION_LOGIN_LIMITER', namespace_id: '91914004', simple: { limit: 12, period: 60 } }
+            ]
+          };
+          c.migrations = c.migrations || [];
+          if (!c.migrations.some((x) => x.tag === 'v2-organization-password-kdf')) {
+            c.migrations.push({ tag: 'v2-organization-password-kdf', new_sqlite_classes: ['OrganizationPasswordKdfDurableObject'] });
+          }
+          const protectedIds = new Set(['91714001','91714002','91714003','91814001','91814002','91814003']);
+          for (const limiter of c.env.admin_staging.ratelimits) {
+            if (protectedIds.has(String(limiter.namespace_id))) throw new Error(`Rate collision ${limiter.namespace_id}`);
+          }
+          if (c.env.admin_staging.d1_databases[0].database_id === process.env.PROD_D1_ID || c.env.admin_staging.d1_databases[0].database_id === process.env.RXDB_STAGING_D1_ID) {
+            throw new Error('Protected D1 leaked into persistent staging config');
+          }
+          fs.writeFileSync('wrangler.jsonc', JSON.stringify(c, null, 2) + '\n');
+          NODE
+
+      - name: Apply additive migrations only to persistent staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations apply "$PERSISTENT_DB_NAME" --env admin_staging --config wrangler.jsonc --remote
+
+      - name: Build and deploy persistent staging without secret rotation
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CLOUDFLARE_ENV=admin_staging
+          rm -rf dist .wrangler
+          npm run build
+          npx wrangler deploy 2>&1 | tee /tmp/persistent-deploy.log
+          TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/persistent-deploy.log | tail -n1 || true)"
+          [[ -n "$TEST_URL" ]] || TEST_URL='https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev'
+          echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
+
+      - name: Verify data persisted and public staging is healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          AFTER="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command "SELECT (SELECT COUNT(*) FROM organizations) organization_count,(SELECT COUNT(*) FROM organization_accounts) account_count,(SELECT COUNT(*) FROM campaigns WHERE organization_id IS NOT NULL) campaign_count,(SELECT COUNT(*) FROM organization_bootstrap_state) bootstrap_count;")"
+          printf '%s' "$AFTER" > /tmp/persistent-after.json
+          jq -e --slurpfile before /tmp/persistent-before.json '
+            .[0].results[0] as $after |
+            $before[0][0].results[0] as $before |
+            $after.organization_count==$before.organization_count and
+            $after.account_count==$before.account_count and
+            $after.campaign_count==$before.campaign_count and
+            $after.bootstrap_count==$before.bootstrap_count
+          ' <<<"$AFTER" >/dev/null
+          ROOT="$(curl -sS -o /tmp/persistent-root.html -w '%{http_code}' "$TEST_URL/" || printf 000)"
+          START="$(curl -sS -o /tmp/persistent-start.html -w '%{http_code}' "$TEST_URL/start" || printf 000)"
+          ME="$(curl -sS -o /tmp/persistent-me.json -w '%{http_code}' "$TEST_URL/api/organization/me" || printf 000)"
+          HEAD="$(curl -sS -I -o /dev/null -w '%{http_code}' "$TEST_URL/api/organization/me" || printf 000)"
+          [[ "$ROOT" -ge 200 && "$ROOT" -lt 400 ]]
+          [[ "$START" -ge 200 && "$START" -lt 400 ]]
+          [[ "$ME" == '401' ]]
+          [[ "$HEAD" == '405' ]]
+          jq -n --arg url "$TEST_URL" --arg source "$GITHUB_SHA" '{ok:true,url:$url,source:$source,persistent_data_preserved:true,secrets_rotated:false,production_untouched:true}' > /tmp/persistent-staging-safety.json
+          printf '%s\n' "$TEST_URL" > /tmp/persistent-staging-url.txt
+
+      - name: Upload sanitized persistent staging evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: organizer-admin-persistent-staging
+          path: |
+            /tmp/persistent-before.json
+            /tmp/persistent-after.json
+            /tmp/persistent-staging-safety.json
+            /tmp/persistent-staging-url.txt
+          retention-days: 7
