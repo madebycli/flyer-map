@@ -6,6 +6,7 @@ import { buildPlatformLauncherItems, type PlatformAppContext } from "../src/plat
 const shellSource = readFileSync(new URL("../src/platform/PlatformShell.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const contractSource = readFileSync(new URL("../src/platform/platformContract.ts", import.meta.url), "utf8");
+const teamCenterSource = readFileSync(new URL("../src/team/TeamCenter.tsx", import.meta.url), "utf8");
 const shellCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
 
 function context(overrides: Partial<PlatformAppContext> = {}): PlatformAppContext {
@@ -19,6 +20,7 @@ function context(overrides: Partial<PlatformAppContext> = {}): PlatformAppContex
     launcherAvailable: true,
     canManageTeams: false,
     canCreateArea: false,
+    canCreateManualStreet: false,
     ...overrides,
   };
 }
@@ -48,16 +50,15 @@ test("PlatformShell keeps real collaboration surfaces available without exposing
   assert.doesNotMatch(shellSource, /querySelector|click\(\)/);
 });
 
-test("mission launcher gives authenticated viewers only distribution coordination destinations", () => {
+test("mission launcher keeps authenticated viewer navigation compact and moves progress into TeamCenter", () => {
   assert.deepEqual(
     buildPlatformLauncherItems(context()).map((item) => item.id),
-    ["team", "stats", "settings"],
+    ["team", "settings"],
   );
   assert.equal(buildPlatformLauncherItems(context()).find((item) => item.id === "team")?.opensTeamHub, true);
-  assert.equal(
-    buildPlatformLauncherItems(context()).find((item) => item.id === "stats")?.opensStatistics,
-    true,
-  );
+  assert.equal(buildPlatformLauncherItems(context()).some((item) => item.id === "stats"), false);
+  assert.match(teamCenterSource, /\["progress", "Fortschritt"\]/u);
+  assert.match(teamCenterSource, /<TeamProgressPanel/u);
   assert.doesNotMatch(shellSource, /Foundation|Security-Gate|menuLabel: "Stats"|menuLabel: "Feedback"/);
 });
 
@@ -73,26 +74,26 @@ test("unauthenticated launcher remains limited to Team join and Settings", () =>
   );
 });
 
-test("mission launcher hides sessions, activity, automations and campaign comments for every role", () => {
+test("mission launcher hides sessions, activity, automations, standalone stats and campaign comments for every role", () => {
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "team-editor", accessTeamId: "team_one", canCreateArea: true }),
     ).map((item) => item.id),
-    ["team", "stats", "settings", "area-create"],
+    ["team", "settings", "area-create"],
   );
 
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.id),
-    ["team", "stats", "settings", "area-create"],
+    ["team", "settings", "area-create"],
   );
 
   assert.deepEqual(
     buildPlatformLauncherItems(
       context({ accessRole: "field-group-member", accessTeamId: "team_one" }),
     ).map((item) => item.id),
-    ["team", "stats", "settings"],
+    ["team", "settings"],
   );
 });
 
@@ -102,8 +103,9 @@ test("launcher remains a compact rounded mission sheet rather than a fullscreen 
     buildPlatformLauncherItems(
       context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }),
     ).map((item) => item.label),
-    ["Team", "Fortschritt", "Einstellungen", "Gebiet"],
+    ["Team", "Einstellungen", "Gebiet"],
   );
+  assert.match(teamCenterSource, /\["progress", "Fortschritt"\]/u);
   assert.match(shellCss, /\.platform-menu-overlay\s*\{[\s\S]*align-items: flex-end;/);
   assert.match(shellCss, /\.platform-menu-grid\s*\{[\s\S]*grid-template-columns: repeat\(4,/);
   assert.doesNotMatch(shellSource, /Was möchtest du öffnen\?/);
