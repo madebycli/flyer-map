@@ -1,0 +1,113 @@
+name: Plan 031 Product Runtime Fix
+
+on:
+  push:
+    branches:
+      - organizer-admin-staging
+    paths:
+      - '.github/workflows/plan031-product-runtime-fix.yml'
+      - '.staging/plan031-product-runtime-fix.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plan031-product-runtime-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PRODUCT_BRANCH: feature/organizer-admin-platform
+      BASE_SHA: 8a751e50b12067db6164465276abdf11bda6960e
+    steps:
+      - name: Checkout runner
+        uses: actions/checkout@v4
+        with:
+          ref: organizer-admin-staging
+          path: runner
+          fetch-depth: 1
+
+      - name: Checkout exact Product head
+        uses: actions/checkout@v4
+        with:
+          ref: feature/organizer-admin-platform
+          path: product
+          fetch-depth: 0
+
+      - name: Verify exact Product base and Production invariants
+        working-directory: product
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$BASE_SHA" ]]
+          grep -Fq '"main": "./worker/indexFc52.ts"' wrangler.jsonc
+          grep -Fq '0113e775-1e43-4d96-8b97-51fdeec7355b' wrangler.jsonc
+          grep -Fq '91714001' wrangler.jsonc
+          grep -Fq '91714002' wrangler.jsonc
+          grep -Fq '91714003' wrangler.jsonc
+          ! grep -Fq 'nodejs_compat' wrangler.jsonc
+
+      - name: Apply guarded runtime fix
+        working-directory: product
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ../runner/.staging/plan031-product-runtime-fix.py
+          grep -Fq 'persistedCampaignGrantId(access)' worker/fieldGroups.ts
+          grep -Fq 'route.kind === "reveal" && request.method === "POST"' worker/fieldGroups.ts
+          grep -Fq 'flyer-map:field-group-credential:v1:' worker/fieldGroupCredentialRecovery.ts
+          git diff --check
+          git diff --exit-code "$BASE_SHA" -- wrangler.jsonc
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: product/package-lock.json
+
+      - name: Install exact dependencies
+        working-directory: product
+        run: npm ci --no-audit --no-fund
+
+      - name: Test
+        working-directory: product
+        run: npm test
+
+      - name: Typecheck
+        working-directory: product
+        run: npm run typecheck
+
+      - name: Dependency audit
+        working-directory: product
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npm run audit:dependencies; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          exit 1
+
+      - name: Production build
+        working-directory: product
+        run: npm run build
+
+      - name: Race guard, commit and push Product fix
+        working-directory: product
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_sha="$(git ls-remote origin refs/heads/$PRODUCT_BRANCH | awk '{print $1}')"
+          [[ "$remote_sha" == "$BASE_SHA" ]]
+          git diff --exit-code "$BASE_SHA" -- wrangler.jsonc
+          test -n "$(git status --porcelain)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add worker/fieldGroups.ts worker/fieldGroupCredentialRecovery.ts tests/fieldGroups.test.ts
+          git commit -m 'fix: harden Plan 031 room runtime contracts'
+          git push origin HEAD:$PRODUCT_BRANCH
