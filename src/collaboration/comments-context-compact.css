@@ -1,3 +1,4 @@
+
 .comments-context-compact {
   display: grid;
   gap: 0.65rem;
@@ -21,11 +22,7 @@
   cursor: pointer;
 }
 
-.comments-context-toggle strong {
-  min-width: 0;
-  font-size: 0.88rem;
-}
-
+.comments-context-toggle strong { min-width: 0; font-size: 0.88rem; }
 .comments-context-toggle em {
   min-width: 1.65rem;
   padding: 0.18rem 0.42rem;
@@ -41,22 +38,12 @@
 .comments-context-submenu {
   display: grid;
   gap: 0.65rem;
-  max-height: min(44dvh, 26rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  min-height: 0;
+  overflow: visible;
   padding: 0.15rem 0.1rem 0.25rem;
 }
 
-@media (max-width: 699px) {
-  .comments-context-submenu {
-    max-height: 38dvh;
-  }
-
-  .bottom-sheet.settings-sheet:not(.is-collapsed),
-  .bottom-sheet.compact-sheet:not(.is-collapsed),
-  .bottom-sheet.task-sheet:not(.is-collapsed) {
-    max-height: 58dvh;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
+.comments-context-submenu textarea,
+.comments-context-submenu input {
+  scroll-margin-bottom: calc(5rem + env(safe-area-inset-bottom));
 }

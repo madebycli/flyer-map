@@ -68,7 +68,7 @@ nodes:
   - id: team-center-transition
     path: src/team/TeamCenter.tsx
     type: code
-    status: transition-debt
+    status: legacy-unwired
     topics: [team, rooms, progress, comments, room-credentials]
     identifiers: [TeamCenter, View, Modal, submitJoin, submitCreate, rotateCredentials, revokeCredentials, team-center-tabs, issuedAccess]
     load_when: [Team UI, Room extraction, Team tab removal, join access UX]
@@ -76,10 +76,10 @@ nodes:
   - id: team-hub-compat
     path: src/team/TeamHub.tsx
     type: code
-    status: transition-debt
-    topics: [team, compatibility-export]
-    identifiers: [TeamHub, TeamCenter]
-    load_when: [Team launcher wiring, removing TeamCenter alias architecture]
+    status: current
+    topics: [team, primary-field-surface]
+    identifiers: [TeamHub, FieldBottomSheet]
+    load_when: [Team launcher wiring, Team selection and management]
 
   - id: team-progress-panel
     path: src/team/TeamProgressPanel.tsx

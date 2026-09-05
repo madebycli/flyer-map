@@ -505,3 +505,8 @@ Am Ende mindestens:
 - comments keyboard/composer;
 - launcher/menu + Brainrot;
 - bekannte Restrisiken.
+
+
+## Plan-031 Implementation Contract Update
+
+The implementation target now includes the focused Field hubs, shared `FieldBottomSheet`, Street-detail close-to-map state machine, manager-visible hidden Rooms, manager-only current credential reveal backed by migration 0020/AES-GCM, and the compact sync indicator. The branch is not considered complete until exact-head CI plus the isolated Staging live matrix for the same Product head pass. Do not replace current-credential reveal with implicit rotation and do not weaken the no-plaintext-at-rest contract.

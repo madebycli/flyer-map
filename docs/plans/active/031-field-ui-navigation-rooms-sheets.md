@@ -648,3 +648,8 @@ Im selben Slice aktualisieren, wenn sich der Vertrag real ändert:
 ## Wiederaufnahme
 
 `AGENTS.md` -> `docs/status/CURRENT.md` -> `docs/context-map.yaml` -> `docs/context-organizer-admin.yaml` -> `docs/context-field-ui-navigation.yaml` -> dieser Plan -> `docs/architecture/LIVE_TEAMS.md` -> UX/MAP/COLLABORATION/SECURITY/QUALITY -> aktueller Remote-Head/CI.
+
+
+## Implementierter Vertragsstand für die Abnahme
+
+The implementation slice introduces focused `TeamHub`, `RoomsHub`, `TeamProgressHub`, `CommentsHub` and `StreetsHub` surfaces behind the existing Platform launcher, plus the shared `FieldBottomSheet` contract. The active Field Group API is aligned with the manager-list scope for hidden Rooms. Current credential reveal uses migration 0020 and the reviewed AES-GCM recovery contract from the ADR-0014 amendment and threat model. This section records implementation shape only; Plan 031 remains active until exact-head CI and the isolated live Staging matrix are green.

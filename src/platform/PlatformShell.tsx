@@ -1,21 +1,20 @@
+
 import { useEffect, useRef, useState } from "react";
 import App from "../App";
-import { AutomationHub } from "../collaboration/AutomationHub.tsx";
-import { ActivityHub } from "../collaboration/ActivityHub.tsx";
-import { FieldSessionsHub } from "../collaboration/FieldSessionsHub.tsx";
-import { StatisticsHub } from "../collaboration/StatisticsHub.tsx";
+import { CommentsHub } from "../collaboration/CommentsHub.tsx";
 import { manualRefreshCampaign } from "../data/campaignStore.ts";
+import { StreetsHub } from "../streets/StreetsHub.tsx";
+import { RoomsHub } from "../team/RoomsHub.tsx";
 import { TeamHub } from "../team/TeamHub.tsx";
+import { TeamProgressHub } from "../team/TeamProgressHub.tsx";
+import { FieldBottomSheet } from "./FieldBottomSheet.tsx";
 import {
   buildPlatformLauncherItems,
   type PlatformAppCommand,
   type PlatformAppCommandType,
   type PlatformAppContext,
 } from "./platformContract.ts";
-import {
-  SessionMapHighlightProvider,
-  type SessionMapHighlight,
-} from "./sessionMapHighlight.tsx";
+import { SessionMapHighlightProvider } from "./sessionMapHighlight.tsx";
 import "./platform-shell.css";
 
 function MenuGridIcon() {
@@ -40,18 +39,15 @@ function useOnlineStatus() {
   return online;
 }
 
+type PrimaryHub = "team" | "rooms" | "progress" | "comments" | "streets" | null;
+
 export function PlatformShell() {
   const online = useOnlineStatus();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [teamHubOpen, setTeamHubOpen] = useState(false);
-  const [fieldSessionsOpen, setFieldSessionsOpen] = useState(false);
-  const [activityOpen, setActivityOpen] = useState(false);
-  const [statisticsOpen, setStatisticsOpen] = useState(false);
-  const [automationsOpen, setAutomationsOpen] = useState(false);
+  const [primaryHub, setPrimaryHub] = useState<PrimaryHub>(null);
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
   const [activeFieldGroupId, setActiveFieldGroupId] = useState<string | null>(null);
-  const [sessionMapHighlight, setSessionMapHighlight] = useState<SessionMapHighlight | null>(null);
   const commandId = useRef(0);
 
   const launcherItems = buildPlatformLauncherItems(appContext);
@@ -59,26 +55,21 @@ export function PlatformShell() {
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const showActiveTeam = appContext?.accessRole !== "viewer" && Boolean(appContext?.activeTeam);
   const launcherAvailable = appContext?.launcherAvailable ?? true;
-  const overlayOpen = menuOpen || teamHubOpen || fieldSessionsOpen || activityOpen || statisticsOpen || automationsOpen;
+  const overlayOpen = menuOpen || primaryHub !== null;
+  const syncState = appContext?.syncState ?? (online ? "healthy" : "offline");
+  const syncLabel = appContext?.syncLabel ?? (syncState === "offline" ? "Offline" : null);
 
-  useEffect(() => {
-    if (!sessionMapHighlight || !appContext?.campaignId) return;
-    if (sessionMapHighlight.campaignId !== appContext.campaignId) {
-      setSessionMapHighlight(null);
-    }
-  }, [appContext?.campaignId, sessionMapHighlight]);
+  const closeOverlays = () => {
+    setMenuOpen(false);
+    setPrimaryHub(null);
+  };
 
   const dispatchSimpleCommand = (
-    type: Exclude<PlatformAppCommandType, "select-active-team">,
+    type: Exclude<PlatformAppCommandType, "select-active-team" | "open-street-task">,
   ) => {
     commandId.current += 1;
     setAppCommand({ id: commandId.current, type });
-    setMenuOpen(false);
-    setTeamHubOpen(false);
-    setFieldSessionsOpen(false);
-    setActivityOpen(false);
-    setStatisticsOpen(false);
-    setAutomationsOpen(false);
+    closeOverlays();
   };
 
   const selectActiveTeam = (teamId: string) => {
@@ -86,10 +77,16 @@ export function PlatformShell() {
     setAppCommand({ id: commandId.current, type: "select-active-team", teamId });
   };
 
+  const openStreetTask = (taskId: string) => {
+    commandId.current += 1;
+    setAppCommand({ id: commandId.current, type: "open-street-task", taskId });
+    closeOverlays();
+  };
+
   return (
     <div className="platform-shell">
       <div className="platform-map-layer" aria-hidden={overlayOpen || undefined}>
-        <SessionMapHighlightProvider value={sessionMapHighlight}>
+        <SessionMapHighlightProvider value={null}>
           <App
             platformCommand={appCommand}
             activeFieldGroupId={activeFieldGroupId}
@@ -98,199 +95,117 @@ export function PlatformShell() {
         </SessionMapHighlightProvider>
       </div>
 
-      {sessionMapHighlight && !overlayOpen ? (
-        <div className="platform-session-highlight" role="status">
-          <div>
-            <strong>Einsatz hervorgehoben</strong>
-            <span>
-              {sessionMapHighlight.label} · {sessionMapHighlight.streetTaskIds.length} Straßen
-              {sessionMapHighlight.houseTaskIds.length > 0
-                ? ` · ${sessionMapHighlight.houseTaskIds.length} Häuser`
-                : ""}
-            </span>
-          </div>
-          <button type="button" onClick={() => setSessionMapHighlight(null)}>
-            Ausblenden
-          </button>
-        </div>
-      ) : null}
-
       {launcherAvailable ? (
-        <>
-          <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
-            <button
-              className="platform-grid-button"
-              type="button"
-              onClick={() => setMenuOpen(true)}
-              aria-label="Menü öffnen"
-              title="Menü öffnen"
-            >
-              <MenuGridIcon />
-            </button>
-            {showActiveTeam ? (
-              <div className="platform-active-team" title={teamName}>
-                <span
-                  className="platform-active-team-dot"
-                  style={{ backgroundColor: teamColor }}
-                  aria-hidden="true"
-                />
-                <strong>{teamName}</strong>
-              </div>
-            ) : null}
-          </div>
-          {appContext?.canCreateManualStreet ? (
-            <button
-              className="platform-manual-street-button"
-              type="button"
-              onClick={() => dispatchSimpleCommand("start-manual-street")}
-              aria-label="Straße manuell hinzufügen"
-              title="Straße manuell hinzufügen"
-            >
-              <span aria-hidden="true">+</span>
-            </button>
+        <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
+          <button
+            className="platform-grid-button"
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Menü öffnen"
+            title="Menü öffnen"
+          >
+            <MenuGridIcon />
+          </button>
+          {showActiveTeam ? (
+            <div className="platform-active-team" title={teamName}>
+              <span className="platform-active-team-dot" style={{ backgroundColor: teamColor }} aria-hidden="true" />
+              <strong>{teamName}</strong>
+            </div>
           ) : null}
-        </>
+          <div
+            className={`platform-sync-indicator is-${syncState}`}
+            role={syncState === "healthy" ? undefined : "status"}
+            aria-label={syncState === "healthy" ? "Serverstand aktuell" : syncLabel ?? "Synchronisationsstatus"}
+            title={syncState === "healthy" ? "Serverstand aktuell" : syncLabel ?? "Synchronisationsstatus"}
+          >
+            <span aria-hidden="true" />
+            {syncState !== "healthy" && syncLabel ? <strong>{syncLabel}</strong> : null}
+          </div>
+        </div>
       ) : null}
 
       {menuOpen ? (
-        <div className="platform-menu-overlay" role="presentation" onMouseDown={() => setMenuOpen(false)}>
-          <section
-            className="platform-menu-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="platform-menu-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="platform-menu-handle" aria-hidden="true" />
-            <header className="platform-menu-header">
-              <div>
-                <span>Verteil-Flyer</span>
-                <strong id="platform-menu-title">Menü</strong>
-              </div>
-              <button type="button" onClick={() => setMenuOpen(false)} aria-label="Menü schließen">×</button>
-            </header>
-
-            <div className="platform-menu-grid">
-              {launcherItems.map((item) => (
-                <button
-                  className="platform-app-item"
-                  type="button"
-                  key={item.id}
-                  onClick={() => {
-                    if (item.opensTeamHub) {
-                      setMenuOpen(false);
-                      setFieldSessionsOpen(false);
-                      setActivityOpen(false);
-                      setStatisticsOpen(false);
-                      setAutomationsOpen(false);
-                      setTeamHubOpen(true);
-                    } else if (item.opensFieldSessions) {
-                      setMenuOpen(false);
-                      setTeamHubOpen(false);
-                      setActivityOpen(false);
-                      setStatisticsOpen(false);
-                      setAutomationsOpen(false);
-                      setFieldSessionsOpen(true);
-                    } else if (item.opensActivity) {
-                      setMenuOpen(false);
-                      setTeamHubOpen(false);
-                      setFieldSessionsOpen(false);
-                      setStatisticsOpen(false);
-                      setActivityOpen(true);
-                      setAutomationsOpen(false);
-                    } else if (item.opensStatistics) {
-                      setMenuOpen(false);
-                      setTeamHubOpen(false);
-                      setFieldSessionsOpen(false);
-                      setActivityOpen(false);
-                      setStatisticsOpen(true);
-                      setAutomationsOpen(false);
-                    } else if (item.opensAutomations) {
-                      setMenuOpen(false);
-                      setTeamHubOpen(false);
-                      setFieldSessionsOpen(false);
-                      setActivityOpen(false);
-                      setStatisticsOpen(false);
-                      setAutomationsOpen(true);
-                    } else if (item.command) {
-                      dispatchSimpleCommand(item.command);
-                    } else {
-                      setMenuOpen(false);
-                    }
-                  }}
-                >
-                  <span className={`platform-app-icon platform-app-icon--${item.id}`} aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <strong>{item.label}</strong>
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
+        <FieldBottomSheet open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="compact" className="platform-menu-sheet">
+          <div className="platform-menu-grid">
+            {launcherItems.map((item) => (
+              <button
+                className="platform-app-item"
+                type="button"
+                key={item.id}
+                onClick={() => {
+                  if (item.opensTeamHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("team");
+                  } else if (item.opensRoomsHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("rooms");
+                  } else if (item.opensProgressHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("progress");
+                  } else if (item.opensCommentsHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("comments");
+                  } else if (item.opensStreetsHub) {
+                    setMenuOpen(false);
+                    setPrimaryHub("streets");
+                  } else if (item.command) {
+                    dispatchSimpleCommand(item.command);
+                  }
+                }}
+              >
+                <span className={`platform-app-icon platform-app-icon--${item.id}`} aria-hidden="true">{item.icon}</span>
+                <strong>{item.label}</strong>
+              </button>
+            ))}
+          </div>
+        </FieldBottomSheet>
       ) : null}
 
-      {teamHubOpen ? (
+      {primaryHub === "team" ? (
         <TeamHub
           context={appContext}
           online={online}
-          onClose={() => setTeamHubOpen(false)}
+          onClose={() => setPrimaryHub(null)}
           onSelectTeam={selectActiveTeam}
           onManageTeams={() => dispatchSimpleCommand("open-team-management")}
+        />
+      ) : null}
+
+      {primaryHub === "rooms" ? (
+        <RoomsHub
+          context={appContext}
+          online={online}
+          onClose={() => setPrimaryHub(null)}
+          onSelectTeam={selectActiveTeam}
           onAccessChanged={manualRefreshCampaign}
           onOperationalGroupChange={setActiveFieldGroupId}
         />
       ) : null}
 
-      {fieldSessionsOpen ? (
-        <FieldSessionsHub
+      {primaryHub === "progress" ? (
+        <TeamProgressHub
           context={appContext}
           online={online}
-          onClose={() => setFieldSessionsOpen(false)}
-          onShowSessionOnMap={(session, taskRefs) => {
-            const streetTaskIds = taskRefs
-              .filter((taskRef) => taskRef.entityType === "street-task")
-              .map((taskRef) => taskRef.entityId);
-            const houseTaskIds = taskRefs
-              .filter((taskRef) => taskRef.entityType === "house-task")
-              .map((taskRef) => taskRef.entityId);
-            setSessionMapHighlight({
-              campaignId: session.campaignId,
-              sessionId: session.id,
-              label: session.teamName,
-              streetTaskIds,
-              houseTaskIds,
-            });
-            setFieldSessionsOpen(false);
-          }}
+          onClose={() => setPrimaryHub(null)}
+          onSelectTeam={selectActiveTeam}
         />
       ) : null}
 
-      {activityOpen ? (
-        <ActivityHub
+      {primaryHub === "comments" ? (
+        <CommentsHub
           context={appContext}
           online={online}
-          onClose={() => setActivityOpen(false)}
+          onClose={() => setPrimaryHub(null)}
+          onChanged={manualRefreshCampaign}
         />
       ) : null}
 
-      {statisticsOpen ? (
-        <StatisticsHub
+      {primaryHub === "streets" ? (
+        <StreetsHub
           context={appContext}
-          online={online}
-          onClose={() => setStatisticsOpen(false)}
-          onOpenSessions={() => {
-            setStatisticsOpen(false);
-            setFieldSessionsOpen(true);
-          }}
-        />
-      ) : null}
-
-      {automationsOpen ? (
-        <AutomationHub
-          context={appContext}
-          online={online}
-          onClose={() => setAutomationsOpen(false)}
+          onClose={() => setPrimaryHub(null)}
+          onManualStreet={() => dispatchSimpleCommand("start-manual-street")}
+          onOpenStreet={openStreetTask}
         />
       ) : null}
     </div>

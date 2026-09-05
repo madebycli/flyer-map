@@ -80,3 +80,14 @@ test("admin invite center is a first-class route", async () => {
   assert.match(main, /OrganizationInviteCenter/u);
   assert.match(main, /AccessLinkOnboardingGate/u);
 });
+
+
+test("active field-group endpoint uses manager-scoped listing and manager-only reveal", async () => {
+  const source = await readFile(new URL("../worker/fieldGroups.ts", import.meta.url), "utf8");
+  assert.match(source, /async function listManagedGroups/u);
+  assert.match(source, /access\.role === "team-editor"/u);
+  assert.match(source, /access\.role === "viewer"[\s\S]*listDiscoverableGroups/u);
+  assert.match(source, /async function revealCredentials/u);
+  assert.match(source, /requireManagedGroup\(db, campaignId, groupId, access\)/u);
+  assert.match(source, /field_group_recoverable_credentials/u);
+});

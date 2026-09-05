@@ -368,3 +368,8 @@ Field Sessions may store operational values such as date, duration, participant 
 Future Organization identity should not collect email/phone merely because account systems often do so if username/password/TOTP meets the accepted product/security design.
 
 See ADR-0009 for Campaign access/session, ADR-0011 for durable mutation/idempotency behavior, ADR-0012 for the prepared offline-map data boundary and ADR-0013 for Smart Street/House identity and reviewed source snapshots.
+
+
+### Field Group credential reveal
+
+Current Field Group join material may be re-shown only through a server-authorized manager endpoint. Lookup hashes remain one-way. The recoverable copy is AES-256-GCM ciphertext using the dedicated `FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY`; AAD binds Campaign, Group, credential row and kind. Responses are `no-store`. Viewer, temporary member and foreign Team/Campaign requests fail closed. No plaintext credential may enter browser persistence, D1 plaintext fields, logs or audit.
