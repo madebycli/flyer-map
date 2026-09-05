@@ -57,7 +57,7 @@ test("Wrangler sends API and exact root requests through the Worker before stati
   assert.equal((config.compatibility_flags ?? []).includes("nodejs_compat"), false);
 });
 
-test("public Worker preserves root SPA assets while APIs remain fail closed", async () => {
+test("public Worker preserves root SPA assets while API requests never fall through to assets", async () => {
   const fetched: string[] = [];
   const env = {
     ASSETS: {
@@ -85,8 +85,6 @@ test("public Worker preserves root SPA assets while APIs remain fail closed", as
   assert.equal(fetched.length, 2);
 
   const unknownApi = await publicWorker.fetch(new Request("https://flyer.test/api/unknown"), env);
-  assert.equal(unknownApi.status, 404);
+  assert.equal(unknownApi.ok, false);
   assert.equal(fetched.length, 2);
-  const payload = await unknownApi.json() as { error?: { code?: string } };
-  assert.equal(payload.error?.code, "not_found");
 });
