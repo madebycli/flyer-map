@@ -28,6 +28,19 @@ V9 #23 belegt gegen den echten Cloudflare-Worker:
 
 Die statischen Header werden über `public/_headers` gesetzt. Der Organizer-Worker setzt dieselben Header weiterhin für Worker-generierte Antworten. Der Staging-Testzugang verwendet einen einmaligen Bootstrap-Schlüssel; nur dessen SHA-256 liegt in der isolierten Workflow-Konfiguration, der Klartext gehört weder ins Repository noch in Logs/Artifacts.
 
+### Plan 031 Field-UI/Rooms Runtime-Kandidat
+
+Plan 031 ist auf der Product-Linie implementiert. Die erste vollständige Live-Staging-Matrix hat nach erfolgreicher Migration `0020`, Recovery-Key-Konfiguration, Worker-Deploy, MFA, Campaign-Erstellung und Team-Fixture einen reproduzierbaren Room-Create-500 gezeigt. Die Ursache war ein echter Authorization/Persistence-Vertragsfehler: Organization-Organizer werden absichtlich ohne Legacy-Campaign-Grant über `grantId = organization:<membershipId>` in die Campaign-Autorisierung gebridged, `field_groups.created_by_grant_id` referenziert dagegen ausschließlich reale `campaign_access_grants(id)`. Der Room-Create versuchte die synthetische Organizer-ID in diesen Foreign Key zu schreiben.
+
+Der Runtime-Fix wurde auf Parent-Head `8a751e50b12067db6164465276abdf11bda6960e` evidence-driven gebaut und als `6888595c4809e947f9079c40f4520a578f103b4d` gepusht. Vor diesem Push waren Tests, Typecheck, Dependency Audit und Production Build im guarded Fix-Runner grün. Der Fix:
+
+- persistiert für Organization-Organizer kein synthetisches `created_by_grant_id`, während echte Campaign-Grants unverändert erhalten bleiben;
+- vereinheitlicht Same-Current-Credential-Reveal auf `POST /credentials/current` zwischen Client und Worker;
+- bindet AES-GCM-AAD an den projektspezifischen Namespace `flyer-map:field-group-credential:v1:...`;
+- ergänzt Regressionstests für Organizer-Room-Create unter Foreign-Key-Semantik und für den POST-only Reveal-Vertrag.
+
+Die isolierte Plan-031-Staging-Harness wurde zusätzlich FK-sicher gemacht: historische organizer-owned Fixtures werden Kind-zu-Eltern entfernt, bevor Campaign/Team gelöscht werden. Diese Cleanup-Härtung betrifft nur `organizer-admin-staging`, nicht Production. Der Product-Kandidat gilt erst dann als vollständig live-verifiziert, wenn die normale GitHub-CI auf dem finalen Product-Head und die vollständige isolierte Plan-031-Cloudflare-Akzeptanz auf exakt demselben Head grün sind.
+
 ### Harte Production-Isolation
 
 Die kanonische `wrangler.jsonc` bleibt Production-sicher:
