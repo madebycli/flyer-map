@@ -1,0 +1,239 @@
+replace_exact('src/platform/PlatformShell.tsx', 'import { useRef, useState } from "react";', 'import { useEffect, useRef, useState } from "react";')
+replace_exact(
+    'src/platform/PlatformShell.tsx',
+    '''  useState(() => {\n    const update = () => setOnline(navigator.onLine);\n    window.addEventListener("online", update);\n    window.addEventListener("offline", update);\n    return () => {\n      window.removeEventListener("online", update);\n      window.removeEventListener("offline", update);\n    };\n  });''',
+    '''  useEffect(() => {\n    const update = () => setOnline(navigator.onLine);\n    window.addEventListener("online", update);\n    window.addEventListener("offline", update);\n    return () => {\n      window.removeEventListener("online", update);\n      window.removeEventListener("offline", update);\n    };\n  }, []);''',
+)
+
+write('worker/fieldGroupCredentialRecovery.ts', r'''
+export type RecoverableCredentialKind = "room-code" | "qr";
+
+export type RecoverableCredentialContext = {
+  campaignId: string;
+  groupId: string;
+  credentialId: string;
+  kind: RecoverableCredentialKind;
+};
+
+export type EncryptedFieldGroupCredential = {
+  ivB64: string;
+  ciphertextB64: string;
+};
+
+export class FieldGroupCredentialRecoveryError extends Error {
+  readonly code: "credential_recovery_unconfigured" | "credential_recovery_failed";
+
+  constructor(code: FieldGroupCredentialRecoveryError["code"], message: string) {
+    super(message);
+    this.name = "FieldGroupCredentialRecoveryError";
+    this.code = code;
+  }
+}
+
+function decodeBase64Url(value: string) {
+  if (!/^[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new FieldGroupCredentialRecoveryError("credential_recovery_unconfigured", "Credential-Recovery-Key ist ungültig.");
+  }
+  const normalized = value.replace(/-/gu, "+").replace(/_/gu, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  let binary: string;
+  try {
+    binary = atob(padded);
+  } catch {
+    throw new FieldGroupCredentialRecoveryError("credential_recovery_unconfigured", "Credential-Recovery-Key ist ungültig.");
+  }
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function encodeBase64Url(value: Uint8Array) {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
+}
+
+function aad(context: RecoverableCredentialContext) {
+  return new TextEncoder().encode(
+    `field-group-credential:v1:${context.campaignId}:${context.groupId}:${context.credentialId}:${context.kind}`,
+  );
+}
+
+async function keyFromSecret(secret: string | undefined, usage: KeyUsage[]) {
+  if (!secret) {
+    throw new FieldGroupCredentialRecoveryError(
+      "credential_recovery_unconfigured",
+      "Credential-Recovery-Key ist nicht konfiguriert.",
+    );
+  }
+  const raw = decodeBase64Url(secret);
+  if (raw.byteLength !== 32) {
+    throw new FieldGroupCredentialRecoveryError(
+      "credential_recovery_unconfigured",
+      "Credential-Recovery-Key muss 32 Byte lang sein.",
+    );
+  }
+  try {
+    return await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, usage);
+  } catch {
+    throw new FieldGroupCredentialRecoveryError(
+      "credential_recovery_unconfigured",
+      "Credential-Recovery-Key konnte nicht geladen werden.",
+    );
+  }
+}
+
+export async function encryptFieldGroupCredential(
+  secret: string | undefined,
+  context: RecoverableCredentialContext,
+  plaintext: string,
+): Promise<EncryptedFieldGroupCredential> {
+  const key = await keyFromSecret(secret, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  try {
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv, additionalData: aad(context), tagLength: 128 },
+      key,
+      new TextEncoder().encode(plaintext),
+    );
+    return {
+      ivB64: encodeBase64Url(iv),
+      ciphertextB64: encodeBase64Url(new Uint8Array(ciphertext)),
+    };
+  } catch {
+    throw new FieldGroupCredentialRecoveryError(
+      "credential_recovery_failed",
+      "Credential konnte nicht verschlüsselt werden.",
+    );
+  }
+}
+
+export async function decryptFieldGroupCredential(
+  secret: string | undefined,
+  context: RecoverableCredentialContext,
+  encrypted: EncryptedFieldGroupCredential,
+) {
+  const key = await keyFromSecret(secret, ["decrypt"]);
+  try {
+    const iv = decodeBase64Url(encrypted.ivB64);
+    const ciphertext = decodeBase64Url(encrypted.ciphertextB64);
+    if (iv.byteLength !== 12) throw new Error("invalid iv");
+    const plaintext = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv, additionalData: aad(context), tagLength: 128 },
+      key,
+      ciphertext,
+    );
+    return new TextDecoder().decode(plaintext);
+  } catch (error) {
+    if (error instanceof FieldGroupCredentialRecoveryError) throw error;
+    throw new FieldGroupCredentialRecoveryError(
+      "credential_recovery_failed",
+      "Credential konnte nicht entschlüsselt werden.",
+    );
+  }
+}
+''')
+
+write('migrations/0020_field_group_recoverable_credentials.sql', r'''
+-- Recoverable current Field Group join material for manager-only reveal.
+-- Lookup authorization continues to use SHA-256 hashes in field_group_join_credentials.
+-- Plaintext is never persisted. Ciphertext is AES-256-GCM with Worker-held key material.
+-- This migration is additive and must not be applied to Production by application code.
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE field_group_recoverable_credentials (
+  credential_id TEXT PRIMARY KEY,
+  campaign_id TEXT NOT NULL,
+  group_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('room-code', 'qr')),
+  key_version INTEGER NOT NULL DEFAULT 1 CHECK (key_version = 1),
+  iv_b64 TEXT NOT NULL,
+  ciphertext_b64 TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (credential_id)
+    REFERENCES field_group_join_credentials(id) ON DELETE CASCADE,
+  FOREIGN KEY (group_id, campaign_id)
+    REFERENCES field_groups(id, campaign_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_field_group_recoverable_group
+  ON field_group_recoverable_credentials(campaign_id, group_id, kind);
+''')
+
+write('docs/security/FIELD_GROUP_CREDENTIAL_RECOVERY_THREAT_MODEL.md', r'''
+# Field Group Credential Recovery Threat Model
+
+## Scope
+
+Plan 031 adds manager-only re-display of the currently active Field Group Room Code and QR token. Join lookup remains hash-based. The additional recoverable copy is AES-256-GCM ciphertext only and is never client-persisted.
+
+## Assets and trust boundaries
+
+- `FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY` is a dedicated Worker secret, separate from Organization TOTP or bootstrap material.
+- D1 stores lookup hashes plus IV/ciphertext, never plaintext.
+- Browser receives plaintext only after canonical server-side manager authorization and with `Cache-Control: no-store`.
+- Campaign, Group and Team ids are selectors, never credentials.
+
+## AAD and tenant binding
+
+AES-GCM additional authenticated data binds version, Campaign id, Group id, credential id and credential kind. Copying ciphertext between tenants, groups, credential rows or kinds therefore fails authentication.
+
+## Key lifecycle
+
+The first accepted format is key version 1 with exactly 32 random bytes encoded as base64url. Staging configures the key independently. Production key provisioning and Production migration remain outside Plan 031. Key loss makes reveal fail closed but does not make lookup hashes reversible.
+
+## Legacy active Rooms
+
+Rooms created before migration 0020 have hash-only credentials. They remain joinable while valid, but reveal returns `credential_recovery_unavailable`. A manager may explicitly rotate to create a new recoverable current credential pair. Reveal never rotates implicitly.
+
+## Rotation, revoke, close and expiry
+
+Rotation revokes old lookup rows and deletes their recoverable ciphertext before adding the new current pair. Existing memberships are unchanged. Revoke, close and expiry remove recoverable ciphertext for the revoked pair. No old plaintext can be reconstructed through the reveal endpoint afterward.
+
+## Corruption and tampering
+
+Invalid key material, malformed IV/ciphertext, wrong AAD or AES-GCM authentication failure returns a generic fail-closed recovery error. Secret material is never copied into errors, audit events or logs.
+
+## Rollback
+
+Rolling back application code leaves additive ciphertext rows inert. Migration 0020 must not be rolled back by destructive Production DDL. A code rollback cannot turn ciphertext into join authority because joins continue to resolve only against active lookup hashes.
+
+## Authorization abuse cases
+
+- Admin: may reveal active Rooms in the Campaign.
+- Team Editor: may reveal only Rooms belonging to the canonical server-side Team scope.
+- Viewer and temporary Field Group member: denied.
+- Foreign Campaign/Team/Group selectors never widen access.
+''')
+
+append_once(
+    'docs/decisions/ADR-0014-live-field-group-credentials.md',
+    '## Plan 031 amendment: recoverable current join material',
+    r'''
+## Plan 031 amendment: recoverable current join material
+
+Accepted on 2026-09-05 for manager-only re-display of the current active Room Code and QR token.
+
+The original hash-only lookup contract remains authoritative for joining. An additional recoverable copy may be stored only as AES-256-GCM ciphertext in `field_group_recoverable_credentials`, with a dedicated Worker-held 32-byte key. AAD binds Campaign id, Group id, credential id and credential kind. Plaintext remains forbidden in D1, RxDB, LocalStorage, IndexedDB, logs and audit.
+
+`GET /api/campaigns/:campaignId/field-groups/:groupId/credentials/current` is manager-only, uses canonical group/team authorization and returns `Cache-Control: no-store`. It never rotates credentials. Legacy hash-only active Rooms return an explicit recovery-unavailable response. Rotation remains the only action that replaces current join material and continues to preserve existing memberships.
+
+Revoke, close, expiry and rotation invalidate reveal of the old pair. Production migration/key rollout is not authorized by this amendment.
+''',
+)
+append_once(
+    'docs/architecture/LIVE_TEAMS.md',
+    '### Recoverable current credentials',
+    r'''
+### Recoverable current credentials
+
+Plan 031 permits manager-only re-display of the current Room Code/QR pair without weakening hash-based join lookup. Migration 0020 stores only AES-256-GCM ciphertext plus IV for active credentials. A dedicated Worker secret provides the 32-byte key and AAD binds tenant/group/credential/kind. Reveal is no-store and requires canonical manager authorization. Legacy hash-only Rooms remain valid for direct join but cannot be revealed until an explicit rotation creates a new recoverable pair. Rotation/revoke/close/expiry invalidate old recovery material and never remove already joined memberships by themselves.
+''',
+)
+append_once(
+    'docs/architecture/SECURITY.md',
+    '### Field Group credential reveal',
+    r'''
+### Field Group credential reveal
+
+Current Field Group join material may be re-shown only through a server-authorized manager endpoint. Lookup hashes remain one-way. The recoverable copy is AES-256-GCM ciphertext using the dedicated `FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY`; AAD binds Campaign, Group, credential row and kind. Responses are `no-store`. Viewer, temporary member and foreign Team/Campaign requests fail closed. No plaintext credential may enter browser persistence, D1 plaintext fields, logs or audit.
+''',
+)
