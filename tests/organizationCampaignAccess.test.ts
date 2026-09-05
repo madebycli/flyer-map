@@ -208,6 +208,8 @@ test("Organizer runtime routes central Campaign access and keeps tenant/capabili
       role: "admin",
       teamId: null,
       label: "Organizer",
+      collectorId: null,
+      collectionAccessId: null,
       identityProvider: "organization",
     },
   });
