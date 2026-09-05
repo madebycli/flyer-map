@@ -1,0 +1,342 @@
+eet.dataset.fieldSnap = targetSnap;
+      dragState.sheet.classList.remove("field-sheet-dragging");
+      if (dragState.moved) blockClickUntil = performance.now() + 350;
+      dragState = null;
+    };
+
+    const onClickCapture = (event: MouseEvent) => {
+      if (performance.now() > blockClickUntil) return;
+      const handle = event.target instanceof Element ? event.target.closest(".sheet-handle-button") : null;
+      if (!handle) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      blockClickUntil = 0;
+    };
+
+    const onViewport = () => applyEnhancement();
+    const vv = window.visualViewport;
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointermove", onPointerMove, { capture: true, passive: false });
+    document.addEventListener("pointerup", finish, true);
+    document.addEventListener("pointercancel", finish, true);
+    document.addEventListener("click", onClickCapture, true);
+    window.addEventListener("resize", onViewport);
+    vv?.addEventListener("resize", onViewport);
+    vv?.addEventListener("scroll", onViewport);
+
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointermove", onPointerMove, true);
+      document.removeEventListener("pointerup", finish, true);
+      document.removeEventListener("pointercancel", finish, true);
+      document.removeEventListener("click", onClickCapture, true);
+      window.removeEventListener("resize", onViewport);
+      vv?.removeEventListener("resize", onViewport);
+      vv?.removeEventListener("scroll", onViewport);
+    };
+  }, [active]);
+}
+''')
+
+write('src/platform/field-bottom-sheet.css', r'''
+.field-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3400;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.45rem;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 0.45rem);
+  background: rgb(16 24 18 / 24%);
+  backdrop-filter: blur(2px);
+}
+
+.field-bottom-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(38rem, 100%);
+  height: min(var(--field-sheet-height), calc(100dvh - env(safe-area-inset-top) - 0.8rem));
+  max-height: calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 0.8rem);
+  min-height: 12rem;
+  overflow: hidden;
+  border: 1px solid rgb(23 32 25 / 11%);
+  border-radius: 1.3rem 1.3rem 1rem 1rem;
+  color: #172019;
+  background: rgb(255 255 255 / 99%);
+  box-shadow: 0 0.55rem 2rem rgb(20 35 24 / 24%);
+  overscroll-behavior: contain;
+}
+
+.field-sheet-handle-button {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 1.4rem;
+  flex: 0 0 auto;
+  padding: 0.35rem 0 0.2rem;
+  border: 0;
+  background: transparent;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.field-sheet-handle {
+  width: 2.8rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: #c8d0c9;
+}
+
+.field-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex: 0 0 auto;
+  padding: 0.35rem 0.9rem 0.72rem;
+  border-bottom: 1px solid rgb(23 32 25 / 8%);
+}
+
+.field-sheet-header > div { min-width: 0; }
+.field-sheet-header span {
+  display: block;
+  margin-bottom: 0.16rem;
+  color: #687169;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.field-sheet-header strong {
+  display: block;
+  overflow: hidden;
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field-sheet-header > button {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 auto;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 999px;
+  color: #172019;
+  background: #edf2ee;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.field-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem 0.9rem calc(1rem + env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.field-sheet-footer {
+  flex: 0 0 auto;
+  padding: 0.65rem 0.9rem calc(0.65rem + env(safe-area-inset-bottom));
+  border-top: 1px solid rgb(23 32 25 / 8%);
+  background: rgb(255 255 255 / 98%);
+}
+
+.bottom-sheet.field-sheet-enhanced {
+  height: min(var(--field-sheet-height), calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem));
+  max-height: calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.bottom-sheet.field-sheet-enhanced.field-sheet-dragging {
+  user-select: none;
+  transition: none !important;
+}
+
+.bottom-sheet.field-sheet-enhanced .sheet-handle-button {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  touch-action: none;
+  background: inherit;
+}
+
+.bottom-sheet.field-sheet-enhanced .sheet-header {
+  position: sticky;
+  top: 1.25rem;
+  z-index: 3;
+  background: inherit;
+}
+
+@media (min-width: 760px) {
+  .field-sheet-overlay { align-items: center; }
+  .field-bottom-sheet { border-radius: 1.3rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .field-bottom-sheet:not(.field-sheet-dragging),
+  .bottom-sheet.field-sheet-enhanced:not(.field-sheet-dragging) {
+    transition: height 160ms ease, max-height 160ms ease;
+  }
+}
+''')
+
+write('src/team/TeamHub.tsx', r'''
+import type { PlatformAppContext } from "../platform/platformContract.ts";
+import { FieldBottomSheet } from "../platform/FieldBottomSheet.tsx";
+import "./team-center.css";
+
+type Props = {
+  context: PlatformAppContext | null;
+  online: boolean;
+  onClose: () => void;
+  onSelectTeam: (teamId: string) => void;
+  onManageTeams: () => void;
+};
+
+export function TeamHub({ context, online, onClose, onSelectTeam, onManageTeams }: Props) {
+  const activeTeam = context?.activeTeam ?? null;
+  const accessibleTeams = (context?.teams ?? []).filter(
+    (team) => context?.accessRole === "admin" || team.id === context?.accessTeamId,
+  );
+
+  return (
+    <FieldBottomSheet open title={activeTeam?.name ?? "Team"} kicker="Team" onClose={onClose} initialSnap="compact">
+      <div className="team-center-view">
+        {!online ? <div className="team-center-notice">Offline: Die aktive Team-Auswahl bleibt lokal verfügbar.</div> : null}
+        <section className="team-center-card">
+          <div className="team-center-section-heading">
+            <div><span>Aktuelles Team</span><strong>{activeTeam?.name ?? "Noch kein Team aktiv"}</strong></div>
+            <span className="team-center-team-dot" style={{ backgroundColor: activeTeam?.color ?? "#64748b" }} aria-hidden="true" />
+          </div>
+          {context && accessibleTeams.length > 1 ? (
+            <label className="team-center-field">
+              <span>Team wechseln</span>
+              <select value={activeTeam?.id ?? ""} onChange={(event) => onSelectTeam(event.target.value)}>
+                {accessibleTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+          {context?.canManageTeams ? (
+            <button className="team-center-secondary" type="button" onClick={onManageTeams}>Teams verwalten</button>
+          ) : null}
+        </section>
+      </div>
+    </FieldBottomSheet>
+  );
+}
+''')
+
+write('src/team/TeamProgressHub.tsx', r'''
+import type { PlatformAppContext } from "../platform/platformContract.ts";
+import { FieldBottomSheet } from "../platform/FieldBottomSheet.tsx";
+import { TeamProgressPanel } from "./TeamProgressPanel.tsx";
+import "./team-center.css";
+
+export function TeamProgressHub({
+  context,
+  online,
+  onClose,
+  onSelectTeam,
+}: {
+  context: PlatformAppContext | null;
+  online: boolean;
+  onClose: () => void;
+  onSelectTeam: (teamId: string) => void;
+}) {
+  const activeTeam = context?.activeTeam ?? null;
+  const accessibleTeams = (context?.teams ?? []).filter(
+    (team) => context?.accessRole === "admin" || team.id === context?.accessTeamId,
+  );
+
+  return (
+    <FieldBottomSheet open title={activeTeam?.name ? `Fortschritt · ${activeTeam.name}` : "Fortschritt"} kicker="Team" onClose={onClose}>
+      <section className="team-center-card">
+        <div className="team-center-section-heading">
+          <div><span>Team-Fortschritt</span><strong>{activeTeam?.name ?? "Team"}</strong></div>
+          <span className="team-center-team-dot" style={{ backgroundColor: activeTeam?.color ?? "#64748b" }} aria-hidden="true" />
+        </div>
+        {accessibleTeams.length > 1 ? (
+          <label className="team-center-field"><span>Team</span><select value={activeTeam?.id ?? ""} onChange={(event) => onSelectTeam(event.target.value)}>{accessibleTeams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label>
+        ) : null}
+        <TeamProgressPanel campaignId={context?.campaignId ?? null} teamId={activeTeam?.id ?? null} online={online} />
+      </section>
+    </FieldBottomSheet>
+  );
+}
+''')
+
+write('src/team/CommentsHub.tsx', r'''
+import type { PlatformAppContext } from "../platform/platformContract.ts";
+import { FieldBottomSheet } from "../platform/FieldBottomSheet.tsx";
+import { TeamCommentsSummary } from "./TeamCommentsSummary.tsx";
+import "./team-center.css";
+
+export function CommentsHub({
+  context,
+  online,
+  onClose,
+  onChanged,
+}: {
+  context: PlatformAppContext | null;
+  online: boolean;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  return (
+    <FieldBottomSheet open title="Kommentare" kicker="Campaign & Team" onClose={onClose} initialSnap="expanded">
+      {context ? <TeamCommentsSummary context={context} online={online} onChanged={onChanged} /> : <div className="team-center-empty">Für Kommentare ist ein gültiger Zugriff nötig.</div>}
+    </FieldBottomSheet>
+  );
+}
+''')
+
+write('src/team/StreetsHub.tsx', r'''
+import { useMemo, useState } from "react";
+import type { PlatformAppContext } from "../platform/platformContract.ts";
+import { FieldBottomSheet } from "../platform/FieldBottomSheet.tsx";
+import "./team-center.css";
+
+function statusLabel(status: string) {
+  if (status === "completed") return "Erledigt";
+  if (status === "later") return "Später";
+  if (status === "not-deliverable") return "Nicht zustellbar";
+  return "Offen";
+}
+
+export function StreetsHub({
+  context,
+  onClose,
+  onManualStreet,
+  onOpenStreet,
+}: {
+  context: PlatformAppContext | null;
+  onClose: () => void;
+  onManualStreet: () => void;
+  onOpenStreet: (taskId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const streets = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase("de-DE");
+    const scoped = (context?.streets ?? []).filter((street) => !context?.activeTeam || street.teamId === context.activeTeam.id);
+    if (!normalized) return scoped;
+    return scoped.filter((street) => `${street.label} ${street.areaName}`.toLocaleLowerCase("de-DE").includes(normalized));
+  }, [context?.activeTeam, context?.streets, query]);
+
+  return (
+    <FieldBottomSheet open title="Straßen" kicker={context?.activeTeam?.name ?? "Karte"} onClose={onClose}>
+      <div className="team-center-view">
+        <section className="team-center-card">
+          <div className="team-center-section-heading"><div><span>Straßen</span><strong>{streets.length} im aktiven Team</strong></div></div>
+          <label className="team-center-field"><span>Straße suchen</span><input value={query} placeholder="Name oder Gebiet" onChange={(event) => setQuery(event.target.value)} /></label>
+          {context?.canCreateManualStreet ? <button className="team-center-primary" type="button" onClick={onManualStreet}>Straße manuell hinzufügen</button> : null}
+          <p className="team-center-help">Smart Street wird später genau hier an die bestehende Karten- und Straßenlogik angebunden. Es e
