@@ -86,6 +86,7 @@ function AdminTopbar({ me, navigate }: { me: OrganizationMeDto; navigate: Naviga
       <nav aria-label="Organizer Navigation">
         <button type="button" onClick={() => navigate("/admin")}>Aktionen</button>
         <button type="button" onClick={() => navigate("/new")}>Neue Aktion</button>
+        <a href="/admin/security">Sicherheit</a>
         <a href="/">Feldkarte</a>
       </nav>
       <div className="org-account-chip">
