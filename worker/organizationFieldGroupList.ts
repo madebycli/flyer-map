@@ -1,5 +1,6 @@
 import { resolveAccess, type AccessContext } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
+import { emitFieldGroupAudit } from "./fieldGroupAudit.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
 
 export type OrganizationFieldGroupListEnv = {
@@ -23,6 +24,12 @@ type FieldGroupRow = {
   team_color: string;
   join_available: number;
   membership_count: number;
+};
+
+type ExpiringGroupRow = {
+  id: string;
+  team_id: string;
+  hard_expires_at: string;
 };
 
 const json = (data: unknown, init: ResponseInit = {}) =>
@@ -133,6 +140,59 @@ export function fieldGroupListScope(access: AccessContext, requestedTeamId: stri
   };
 }
 
+export async function expireOrganizationFieldGroups(
+  db: D1DatabaseLike,
+  campaignId: string,
+  now: string,
+) {
+  const expiring = await db
+    .prepare(
+      `SELECT id, team_id, hard_expires_at
+       FROM field_groups
+       WHERE campaign_id = ? AND state = 'active' AND hard_expires_at <= ?`,
+    )
+    .bind(campaignId, now)
+    .all<ExpiringGroupRow>();
+
+  for (const group of expiring.results) {
+    const result = await db.batch([
+      db
+        .prepare(
+          `UPDATE field_groups
+           SET state = 'expired', closed_at = hard_expires_at, updated_at = ?
+           WHERE id = ? AND campaign_id = ? AND state = 'active' AND hard_expires_at <= ?`,
+        )
+        .bind(now, group.id, campaignId, now),
+      db
+        .prepare(
+          `UPDATE field_group_join_credentials
+           SET revoked_at = COALESCE(revoked_at, ?)
+           WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,
+        )
+        .bind(group.hard_expires_at, group.id, campaignId),
+      db
+        .prepare(
+          `DELETE FROM field_group_recoverable_credentials
+           WHERE credential_id IN (
+             SELECT id FROM field_group_join_credentials
+             WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NOT NULL
+           )`,
+        )
+        .bind(group.id, campaignId),
+    ]);
+    if ((result[0]?.meta?.changes ?? 0) === 1) {
+      emitFieldGroupAudit({
+        kind: "field_group.expired",
+        campaignId,
+        groupId: group.id,
+        teamId: group.team_id,
+        actorKind: "system",
+        at: group.hard_expires_at,
+      });
+    }
+  }
+}
+
 async function listRows(
   db: D1DatabaseLike,
   campaignId: string,
@@ -203,6 +263,7 @@ export async function handleOrganizationFieldGroupList(
   }
 
   try {
+    await expireOrganizationFieldGroups(env.DB, campaignId, new Date().toISOString());
     const groups = await listRows(env.DB, campaignId, scope);
     return json({ groups: groups.map(publicGroup) });
   } catch (error) {
