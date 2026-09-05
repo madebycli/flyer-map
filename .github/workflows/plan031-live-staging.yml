@@ -8,6 +8,7 @@ on:
       - '.github/workflows/plan031-live-staging.yml'
       - '.staging/plan031-live-patch.py'
       - '.staging/plan031-live-diagnostics-patch.py'
+      - '.staging/plan031-reveal-method-patch.py'
       - '.staging/plan031-preflight-cleanup.py'
       - '.staging/plan031-field-browser.mjs'
   workflow_dispatch:
@@ -73,10 +74,12 @@ jobs:
           cp runner/.staging/plan031-field-browser.mjs product/.staging/plan031-field-browser.mjs
           cp runner/.staging/plan031-live-patch.py product/.staging/plan031-live-patch.py
           cp runner/.staging/plan031-live-diagnostics-patch.py product/.staging/plan031-live-diagnostics-patch.py
+          cp runner/.staging/plan031-reveal-method-patch.py product/.staging/plan031-reveal-method-patch.py
           cp runner/.staging/plan031-preflight-cleanup.py product/.staging/plan031-preflight-cleanup.py
           cd product
           python .staging/plan031-live-patch.py
           python .staging/plan031-live-diagnostics-patch.py
+          python .staging/plan031-reveal-method-patch.py
           python .staging/plan031-preflight-cleanup.py
           bash -n .staging/admin-v9-release.sh
           node --check .staging/admin-v9-browser.mjs
@@ -84,6 +87,7 @@ jobs:
           grep -Fq 'FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY' .staging/admin-v9-release.sh
           grep -Fq 'field_group_recoverable_credentials' .staging/admin-v9-release.sh
           grep -Fq 'plan031_checkpoint' .staging/admin-v9-release.sh
+          grep -Fq -- '-X POST "$TEST_URL/api/campaigns/${PLAN031_CAMPAIGN_ID}/field-groups/${BROWSER_GROUP_ID}/credentials/current"' .staging/admin-v9-release.sh
           grep -Fq 'DELETE FROM campaigns WHERE organization_id IS NOT NULL' .staging/admin-v9-release.sh
           grep -Fq 'plan031-api.json' .staging/admin-v9-release.sh
           grep -Fq 'plan031-field-browser.mjs' .staging/admin-v9-release.sh
@@ -108,7 +112,7 @@ jobs:
           npm test
           npm run typecheck
           npm run build
-          git diff --exit-code "$AUDITED_SOURCE_SHA" -- . ':(exclude).staging/admin-v9-release.sh' ':(exclude).staging/admin-v9-browser.mjs' ':(exclude).staging/plan031-field-browser.mjs' ':(exclude).staging/plan031-live-patch.py' ':(exclude).staging/plan031-live-diagnostics-patch.py' ':(exclude).staging/plan031-preflight-cleanup.py'
+          git diff --exit-code "$AUDITED_SOURCE_SHA" -- . ':(exclude).staging/admin-v9-release.sh' ':(exclude).staging/admin-v9-browser.mjs' ':(exclude).staging/plan031-field-browser.mjs' ':(exclude).staging/plan031-live-patch.py' ':(exclude).staging/plan031-live-diagnostics-patch.py' ':(exclude).staging/plan031-reveal-method-patch.py' ':(exclude).staging/plan031-preflight-cleanup.py'
 
       - name: Run isolated Plan 031 Cloudflare acceptance
         working-directory: product
