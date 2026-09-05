@@ -306,3 +306,14 @@ Before FC1 is called feature complete, tests must cover at minimum:
 - membership remove/leave/close/expiry revokes temporary privileged requests;
 - no secrets or IP addresses in structured audit payloads;
 - discovery responses contain no join credential material.
+
+
+## Plan 031 amendment: recoverable current join material
+
+Accepted on 2026-09-05 for manager-only re-display of the current active Room Code and QR token.
+
+The original hash-only lookup contract remains authoritative for joining. An additional recoverable copy may be stored only as AES-256-GCM ciphertext in `field_group_recoverable_credentials`, with a dedicated Worker-held 32-byte key. AAD binds Campaign id, Group id, credential id and credential kind. Plaintext remains forbidden in D1, RxDB, LocalStorage, IndexedDB, logs and audit.
+
+`GET /api/campaigns/:campaignId/field-groups/:groupId/credentials/current` is manager-only, uses canonical group/team authorization and returns `Cache-Control: no-store`. It never rotates credentials. Legacy hash-only active Rooms return an explicit recovery-unavailable response. Rotation remains the only action that replaces current join material and continues to preserve existing memberships.
+
+Revoke, close, expiry and rotation invalidate reveal of the old pair. Production migration/key rollout is not authorized by this amendment.

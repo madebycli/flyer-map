@@ -179,6 +179,6 @@ test("FC5.2 wrapper leaves snapshots without Collection untouched", async () => 
 test("Wrangler points at the FC5.2 wrapper without changing the previous worker chain", () => {
   const config = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   assert.match(config, /"main": "\.\/worker\/indexFc52\.ts"/u);
-  const wrapper = readFileSync(new URL("../worker/indexFc52.ts", import.meta.url), "utf8");
-  assert.match(wrapper, /import baseWorker from "\.\/indexM55\.ts"/u);
+  const fc52Wrapper = readFileSync(new URL("../worker/indexFc52.ts", import.meta.url), "utf8");
+  assert.match(fc52Wrapper, /import baseWorker from "\.\/indexM55\.ts"/u);
 });

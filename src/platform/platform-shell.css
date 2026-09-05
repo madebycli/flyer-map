@@ -219,7 +219,7 @@
 
 .platform-menu-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem 0.55rem;
   padding: 0.25rem 0.1rem 0.45rem;
 }
@@ -462,7 +462,7 @@
 
 @media (max-width: 370px) {
   .platform-menu-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .platform-app-icon {
@@ -508,3 +508,44 @@
     transform: scale(0.96);
   }
 }
+
+
+.platform-sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 1.2rem;
+  min-height: 1.8rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  color: #435047;
+  background: rgb(237 242 238 / 86%);
+  font-size: 0.68rem;
+}
+
+.platform-sync-indicator > span {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #238446;
+}
+
+.platform-sync-indicator strong { white-space: nowrap; }
+.platform-sync-indicator.is-refreshing > span { background: #4f7d5e; animation: platform-sync-pulse 1s ease-in-out infinite; }
+.platform-sync-indicator.is-offline > span { background: #64748b; }
+.platform-sync-indicator.is-new-data > span { background: #d97706; }
+.platform-sync-indicator.is-conflict > span { background: #c2410c; }
+.platform-sync-indicator.is-error > span { background: #b42318; }
+.platform-sync-indicator.is-offline,
+.platform-sync-indicator.is-new-data,
+.platform-sync-indicator.is-conflict,
+.platform-sync-indicator.is-error { padding-inline: 0.48rem 0.58rem; }
+
+@keyframes platform-sync-pulse {
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.platform-app-icon--rooms { background: linear-gradient(145deg, #8b73d6, #5d47af); }
+.platform-app-icon--comments { background: linear-gradient(145deg, #39a79f, #17736d); }
+.platform-app-icon--streets { background: linear-gradient(145deg, #e49a40, #b8651f); }

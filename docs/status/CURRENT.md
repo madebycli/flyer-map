@@ -2,104 +2,74 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-03
+last_updated: 2026-09-05
 ---
 
 # Current Project State
 
-## Mission Release Override
+## Aktive isolierte Linie: Organizer/Admin Platform
 
-Die reale Distribution-Mission hat Vorrang vor langfristiger Plattformarbeit. Mission-kritisch ist der Flow:
+Plan 030 wird ausschließlich auf `feature/organizer-admin-platform` gegen `mission-rxdb-sync` entwickelt. Draft-PR #76 bleibt Draft und ungemergt. PR #74/#75 bleiben getrennt; `mission-release-2026-09-02-manual` bleibt unangetastet. Kein Production-Deploy und keine Production-D1-Migration ohne separate ausdrückliche Freigabe.
 
-```text
-Admin -> Teams/Gebiet -> manuelle Streets/Houses
--> Street-/House-Status -> RxDB Pull/Push + D1 Change Feed
--> reaktiver Campaign-Read-Stand -> MapLibre
--> gemeinsamer sichtbarer Stand auf weiteren Geräten
-```
+### Aktuell verifizierter Organizer/Admin-Stand
 
-Der Rollback-Branch `mission-release-2026-09-02-manual` bleibt unverändert. Der RxDB-Kandidat liegt auf `mission-rxdb-sync`; Draft-PR #74 gegen die Rollback-Basis bleibt offen, Draft und ungemergt. Kein Production-Deploy und keine Production-D1-Migration ohne expliziten Auftrag.
+Der erste vollständig grüne isolierte Admin-Staging-Gate ist V9 Run `33924415528` / #23. Auditiert wurde Feature-Head `c62385a8c400f68753d1f1f811e2315551153885` (`fix: harden static asset responses`). Die exact-head PR-CI auf diesem Head ist vollständig grün: Tests, Typecheck, Dependency Audit und Production Build.
 
-## RxDB Mission Sync: verifizierter Stand
+V9 #23 belegt gegen den echten Cloudflare-Worker:
 
-- Rollback-Basis: `mission-release-2026-09-02-manual` auf `5e7148d2a32f6237861e7e6a05e022eeb67c91ce`.
-- Verifizierter Anwendungscode-Baseline-Head: `aa0031cd88970bf7ca8b4256066663cde640f5ad`.
-- Canonical CI Push-Run `33789550729`: success.
-- Canonical PR-CI-Run `33789557529`: success.
-- Tests, Typecheck, Dependency Audit und Production Build sind auf diesem Code-Baseline-Head grün.
-- Isoliertes Staging: `mission-rxdb-staging`, getesteter Head `4fc12270ff948ba246dd0c804076720cc65f37b8`.
-- Staging-Deploy-Run `33789841058`: success; isolierte Staging-D1-Prüfung/Migration, Wrangler Dry Run, Worker-Deploy und URL-Check grün.
-- Reales Chromium-Zwei-Browser-Gate `33789841106`: success.
-- Der Benutzer hat anschließend den zuvor fehlerhaften sichtbaren Street-Flow auf realen Geräten manuell bestätigt: „geht wieder“.
+- Candidate-Version-Konvergenz und fail-closed API-Method-Gates;
+- Bootstrap -> Password -> TOTP -> authentifiziertes `/api/organization/me`;
+- zwei serverseitig persistierte Campaigns nach Logout, Storage/Cookie-Clear und frischem Browser-Kontext;
+- Admin-Invite in sauberem Browser, Fragment-Token-Scrubbing und MFA-Enrolment;
+- Mobile Chromium 390x844 ohne horizontales Overflow;
+- Remote-Cleanup auf 0 Bootstrap-/Organization-/Account-/owned-Campaign-Datensätze und fehlerfreien `PRAGMA foreign_key_check`;
+- finalen ungepinnten öffentlichen Worker: `/start` 200, unauthenticated `/me` 401, HEAD API 405, fremder Origin 403;
+- identische Security-Härtung auf Worker- und statischen Asset-Antworten: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Cross-Origin-Opener-Policy: same-origin`.
 
-RxDB 17/Dexie hält fünf normalisierte Collections (`campaigns`, `teams`, `areas`, `streetTasks`, `houseTasks`). D1 bleibt kanonisch; der Worker bleibt die einzige Autoritäts- und Sicherheitsgrenze. Pull/Push läuft über authentifizierte Worker-Routen und den monotonen D1 Change Feed. Campaign-Durable-Object/WebSocket-Nachrichten sind nur Invalidierungs-Hinweise; kanonische Daten werden danach per HTTP/RxDB gezogen. Ein Campaign-Checkpoint fängt verlorene Signale auf.
+Die statischen Header werden über `public/_headers` gesetzt. Der Organizer-Worker setzt dieselben Header weiterhin für Worker-generierte Antworten. Der Staging-Testzugang verwendet einen einmaligen Bootstrap-Schlüssel; nur dessen SHA-256 liegt in der isolierten Workflow-Konfiguration, der Klartext gehört weder ins Repository noch in Logs/Artifacts.
 
-## Geschlossene P0-Sync-/Renderer-Fehler
+### Harte Production-Isolation
 
-### 1. Prepared-Street-Realtime-Lifecycle
+Die kanonische `wrangler.jsonc` bleibt Production-sicher:
 
-`worker/areaTaskPreparation.ts` hatte den Realtime-Callback nach erfolgreichem D1-/Change-Feed-Commit als losgelöste Promise gestartet. Dadurch konnte der `waitUntil()`-Job enden, bevor `notifyCampaignSync()` zum Durable Object/WebSocket abgeschlossen war. D1 und Change Feed waren dann korrekt, aber ein bereits geöffneter Client konnte den Wakeup verpassen.
+- `main`: `./worker/indexFc52.ts`;
+- Production-D1: `0113e775-1e43-4d96-8b97-51fdeec7355b`;
+- Production Rate-Limit Namespaces: `91714001`, `91714002`, `91714003`;
+- kein `ORGANIZATION_LOGIN_LIMITER` in der committed Production-Konfiguration;
+- `worker/indexOrganizer.ts` bleibt ausschließlich ein isolierter Organizer/Admin-Wrapper.
 
-Fix: `options.onCommitted?.()` wird innerhalb des `waitUntil()`-getragenen Preparation-Promises `await`et. Ein Realtime-Fehler nach durablem D1-Commit bleibt best effort und rollt den Commit nicht zurück. Regressionen liegen in `tests/areaTaskPreparationRuntime.test.ts` und `tests/streetSyncLifecycleContract.test.ts`.
+Production wurde durch das Admin-Staging nicht deployed und die Production-D1 wurde nicht migriert. Migrationen 0017/0018/0019 bleiben Production-unapplied.
 
-Client-Diagnostik für diesen Pfad:
+### Admin-Staging
 
-```text
-[rxdb-sync] realtime-change
-[rxdb-sync] pull-complete
-[rxdb-sync] manual-refresh-start
-[rxdb-sync] manual-refresh-complete
-```
+- Branch: `organizer-admin-staging`;
+- Workflow: `.github/workflows/admin-staging-release-v9.yml`;
+- Worker: `flyer-map-admin-staging`;
+- D1: `flyer-map-admin-staging-db`;
+- URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
+- RxDB-Staging-D1 `bcec3432-18ec-42a2-970a-64d52c8263d5` und Production-D1 werden durch Guards ausgeschlossen.
 
-Direktes `console.*` im Worker bleibt durch `tests/securityStaticGuards.test.ts` verboten, außer im auditierten Worker-Logger.
+Die V9-Linie pinnt Candidate/API/Browser-Smokes auf die exakte Cloudflare Worker Version und prüft den finalen Benutzerstand danach absichtlich ungepinnt über die öffentliche `workers.dev`-URL. Sanitized Artifacts enthalten keine Passwörter, Bootstrap-Secrets, TOTP-Keys oder Invite-Tokens.
 
-### 2. MapLibre „Daten aktuell, Linie alt“
+## Noch offene Organizer/Admin-Master-Akzeptanz vor Production
 
-Der entscheidende reale Befund war: Eine serverseitig/RxDB-seitig bereits gelöschte Straße blieb auf dem zweiten Gerät als Linie sichtbar, war dort aber nicht mehr anklickbar. Damit waren Server, RxDB und App-State aktuell; nur die MapLibre-Grafik war stale.
+Der isolierte Teststand ist jetzt browser-testbar. Das ist ausdrücklich noch keine Production-Freigabe. Vor Production müssen die verbleibenden Master-Gates evidence-driven abgeschlossen werden, insbesondere:
 
-Ursache: Zehn React-Live-Effekte in `src/map/MapView.tsx` verwendeten `if (!map || !map.isStyleLoaded()) return;`. Während MapLibre Source-/Style-Arbeit konnte `isStyleLoaded()` kurzfristig `false` liefern. Der betreffende React-Prop-Stand wurde dann vollständig verworfen und bis zum Seitenreload nicht nachgeholt.
+1. explizite Legacy-Campaign-Adoption mit Audit und negativen Foreign-/Owned-/Race-Tests;
+2. vollständige Account-Security-Matrix: Username/Password, sichere Reset-Links, TOTP-Reset, Recovery-Regeneration, Sessions einzeln/alle widerrufen;
+3. mehrere Organizer/Admins inklusive concurrent last-organizer invariant;
+4. Named Role Templates + serverbekannte Capability Registry;
+5. own-team/other-team/explizite cross-team Durchsetzung an kanonischen Campaign/Team/Area/Task-Beziehungen;
+6. Organizer-only permanente Campaign-Löschung mit fresh high-risk reauth und exakter Bestätigung;
+7. Audit-/Threat-Model-/Rate-Limit-/CSP-Abschluss;
+8. gewünschter Root-Organizer-Einstieg ohne die normale Field Map zu hijacken;
+9. vollständige Admin-Console-/Lifecycle-UX ohne Fake-KPIs;
+10. komplette RxDB-/Field-Regressionsuite weiter grün halten.
 
-Fix: Die Live-Effekte prüfen nur noch, ob die Map-Instanz existiert, und rufen die jeweiligen `sync*`-Funktionen direkt auf. Die `style.load`-Hydrierung aus den neuesten Refs bleibt erhalten. Der Fix gilt konsistent für Areas, Streets, Houses, Smart-House-/Collection-Daten und Filter. Regression: `tests/mapRendererLiveSync.test.ts`.
+## Verifizierte RxDB-Mission-Basis – nicht regressieren
 
-Das reale Chromium-Gate prüft seitdem nicht nur Netzwerk/Pull, sondern die sichtbare MapLibre-Quelle in Browser B ohne Navigation/Reload:
+`mission-rxdb-sync` bleibt die separate RxDB-Basis; Draft-PR #74 bleibt getrennt. D1 bleibt kanonisch, RxDB/Dexie hält lokale operative Campaign-Daten, Worker/D1 bleiben Autoritäts- und Sicherheitsgrenze. Die bereits geschlossenen Prepared-Street-/MapLibre-/Realtime-P0s dürfen durch Organizer/Admin-Arbeit nicht zurückkehren.
 
-```text
-initial:   source=1 rendered=1
-created:   source=2 rendered=2
-completed: source=2 rendered=2
-deleted:   source=1 rendered=1
-reloads:   0
-```
+## Arbeitsregel bei Wiederaufnahme
 
-Damit ist der konkrete Street-Create/Status/Delete-Renderer-Fehler automatisiert und manuell geschlossen.
-
-## D1-/Deployment-Grenze
-
-Migration `0017_rxdb_sync_changes.sql` ist in der **isolierten Staging-D1** angewendet/verifiziert. Das ist keine Production-Freigabe. Für **Production** bleibt 0017 unangetastet, bis ein explizit freigegebener Release-/Migrationsschritt erfolgt.
-
-Die bereits früher kontrolliert verifizierte Production-D1-Basis bis Migration 0014 bleibt davon unberührt. Keine in diesem RxDB-Fixlauf ausgeführte Aktion hat Production deployed oder Production D1 verändert.
-
-## Mission-Policy für Areas
-
-Automatische Area-Vorbereitung nach normaler `area.create`-/`area.update-geometry`-Mutation ist auf dieser Mission-Linie absichtlich deaktiviert. Das darf nicht als Bug „repariert“ werden. Explizite Area-Preparation bleibt ein eigener Pfad. Manuelle Streets/Houses und deren Status sind der Mission-Flow.
-
-## Sicherheitsvertrag
-
-- Browser ist nicht vertrauenswürdig; Worker/D1 sind autoritativ.
-- Access, Rollen, Revocation und Domain-Validierung bleiben serverseitig.
-- Sessions sind opaque und `Secure; HttpOnly; SameSite=Lax`; D1 speichert Session-Hashes.
-- Konflikte, Auth-Fehler und terminale Sync-Probleme dürfen nicht still überschrieben werden.
-- Kein Service Worker, keine Background Sync API, keine kontinuierliche GPS-Historie.
-
-## Noch offene reale Release-Gates
-
-1. Android Chromium Offline-/Reconnect-Smoke mit dem aktuellen RxDB-Head.
-2. iPhone Safari Offline-/Reconnect-Smoke; falls kein iPhone verfügbar ist, Restrisiko ausdrücklich dokumentieren.
-3. Danach eine bewusste Release-Entscheidung für Production einschließlich reviewed Production-Migration 0017 und Production-Deploy.
-4. Erst nach expliziter Freigabe PR #74 aus Draft/Release-Pfad weiterbewegen. Nicht automatisch mergen oder Ready-for-Review markieren.
-
-Die Staging-Zwei-Browser-/Renderer-Gates sind grün und ersetzen die echten Mobile-Smokes nicht.
-
-## Nächster Produktkontext, noch nicht beauftragt
-
-Ein neuer/sauberer URL-Aufruf soll später optional in ein Projekt-Onboarding mit Projektname sowie erstem Admin-Benutzernamen/Passwort führen. Dieser Punkt war wegen des Street-P0 blockiert und ist **noch keine Implementierungsfreigabe**. Sicherheitsanforderung: Passwort niemals in LocalStorage, IndexedDB, RxDB, URL oder App-State; nur serverseitige Verifier und HttpOnly-Session. Für die Architektur existieren mehrere mögliche Wege und der Benutzer hat noch keinen gewählt. Vor Umsetzung mindestens zwei Varianten vorlegen und wählen lassen.
+GitHub ist Source of Truth. Zuerst `AGENTS.md`, diese Datei, `docs/context-map.yaml`, danach `docs/context-organizer-admin.yaml`, `docs/context-organizer-admin-live.yaml`, Plan 030, ADR-0026 und den aktuellen Handoff lesen. Remote-Heads, PR #76, exact-head CI und aktuellen V9-Run immer neu verifizieren; dokumentierte SHAs sind Übergabemarker.

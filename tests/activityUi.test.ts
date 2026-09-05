@@ -1,8 +1,9 @@
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("Activity remains implemented but is not promoted in the mission launcher", async () => {
+test("Activity remains implemented but is not promoted in the Plan 031 primary launcher", async () => {
   const [worker, api, shell, hub, css, contract] = await Promise.all([
     readFile("worker/activity.ts", "utf8"),
     readFile("src/data/activityApi.ts", "utf8"),
@@ -21,10 +22,9 @@ test("Activity remains implemented but is not promoted in the mission launcher",
   assert.match(api, /credentials: "same-origin"/u);
   assert.match(api, /cache: "no-store"/u);
   assert.match(api, /cursor/u);
-  assert.match(contract, /id: "settings" \| "team" \| "sessions" \| "activity"/u);
   assert.doesNotMatch(contract, /label: "Aktivität"/u);
-  assert.match(shell, /<ActivityHub/u);
-  assert.match(shell, /activityOpen/u);
+  assert.doesNotMatch(contract, /id: "activity"/u);
+  assert.doesNotMatch(shell, /<ActivityHub|activityOpen/u);
   assert.match(hub, /Aktivität wird geladen/u);
   assert.match(hub, /Noch keine Aktivität vorhanden/u);
   assert.match(hub, /Erneut laden/u);

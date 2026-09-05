@@ -257,3 +257,9 @@ export function removeFieldGroupQrTokenFromUrl() {
   url.hash = params.toString();
   window.history.replaceState(null, "", url);
 }
+
+
+export async function revealFieldGroupCredentials(campaignId: string, groupId: string) {
+  const response = await apiFetch(`${groupPath(campaignId, groupId)}/credentials/current`);
+  return ((await response.json()) as { credentials: FieldGroupCredentials }).credentials;
+}

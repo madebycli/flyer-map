@@ -47,6 +47,7 @@ import { MapView, type MapCameraCommand } from "./map/MapView";
 import { CollectionAdminPanel } from "./collection/CollectionAdminPanel";
 import { CollectionCollectorView } from "./collection/CollectionCollectorView";
 import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";
+import { useLegacyFieldSheetDragBridge } from "./platform/FieldBottomSheet.tsx";
 import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
 import { SettingsSheet } from "./settings/SettingsSheet";
 
@@ -126,6 +127,8 @@ export default function App({
   onPlatformContextChange,
 }: AppProps = {}) {
   const online = useOnlineStatus();
+  const collectionMode = collectionModeFromUrl();
+  useLegacyFieldSheetDragBridge(!collectionMode);
   const [initialLoad] = useState(loadCampaignSnapshot);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(initialLoad.snapshot);
   const [storageWarning, setStorageWarning] = useState<string | null>(initialLoad.warning);
@@ -217,7 +220,7 @@ export default function App({
     }
     if (selectedTaskId && !snapshot.tasks.some((task) => task.id === selectedTaskId)) {
       setSelectedTaskId(null);
-      if (sheet === "task") setSheet(selectedAreaId ? "area" : null);
+      if (sheet === "task") setSheet(null);
     }
     if (selectedHouseTaskId && !(snapshot.houseTasks ?? []).some((task) => task.id === selectedHouseTaskId)) {
       setSelectedHouseTaskId(null);
@@ -238,7 +241,6 @@ export default function App({
     );
 
   const collection = collectionSnapshotOrEmpty(snapshot.collection);
-  const collectionMode = collectionModeFromUrl();
   const collectionSelectedArea = collection.areas.find(
     (area) => area.id === (collectionEditingAreaId ?? selectedCollectionAreaId),
   ) ?? null;
@@ -287,6 +289,41 @@ export default function App({
   const canChangeSelectedTaskStatus = canChangeTaskStatusInArea(selectedTaskArea);
   const canChangeSelectedHouseTaskStatus = canChangeTaskStatusInArea(selectedHouseTaskArea);
   const selectedTaskIsAutoPrepared = Boolean(selectedTask?.areaPreparationGeneration);
+  const platformStreets = useMemo(() => snapshot.tasks.map((task) => {
+    const area = snapshot.areas.find((candidate) => candidate.id === task.areaId);
+    const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
+    return {
+      id: task.id,
+      label: task.label,
+      areaId: task.areaId,
+      areaName: area?.name ?? "Gebiet",
+      teamId: area?.teamId ?? "",
+      teamName: team?.name ?? "Team",
+      status: task.status,
+    };
+  }).filter((street) => Boolean(street.teamId)), [snapshot.areas, snapshot.tasks, snapshot.teams]);
+  const platformSyncState = !online
+    ? "offline" as const
+    : refreshState === "loading"
+      ? "refreshing" as const
+      : syncMessageCode === "conflict"
+        ? "conflict" as const
+        : refreshState === "available"
+          ? "new-data" as const
+          : refreshState === "error" || Boolean(syncMessageCode)
+            ? "error" as const
+            : "healthy" as const;
+  const platformSyncLabel = platformSyncState === "offline"
+    ? "Offline"
+    : platformSyncState === "refreshing"
+      ? "Aktualisiert …"
+      : platformSyncState === "new-data"
+        ? "Neue Serverdaten"
+        : platformSyncState === "conflict"
+          ? "Konflikt prüfen"
+          : platformSyncState === "error"
+            ? "Synchronisierung prüfen"
+            : null;
   useEffect(() => {
     onPlatformContextChange?.({
       campaignId: snapshot.campaign.id,
@@ -294,19 +331,18 @@ export default function App({
       accessTeamId: access?.teamId ?? null,
       activeGroupId: access?.groupId ?? activeFieldGroupId,
       activeTeam: activeTeam
-        ? {
-            id: activeTeam.id,
-            name: activeTeam.name,
-            color: activeTeam.color,
-          }
+        ? { id: activeTeam.id, name: activeTeam.name, color: activeTeam.color }
         : null,
       teams: snapshot.teams.map((team) => ({ id: team.id, name: team.name, color: team.color })),
+      streets: platformStreets,
       launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection,
       canManageTeams: Boolean(isAdmin),
       canCreateArea: Boolean(activeTeam && canEditTeam(activeTeam.id)),
       canCreateManualStreet: snapshot.areas.some((area) => canEditArea(area)),
+      syncState: platformSyncState,
+      syncLabel: platformSyncLabel,
     });
-  }, [access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, sheet, onPlatformContextChange, snapshot.areas, snapshot.campaign.id, snapshot.teams]);
+  }, [access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, onPlatformContextChange, platformStreets, platformSyncLabel, platformSyncState, sheet, snapshot.areas, snapshot.campaign.id, snapshot.teams]);
 
   const renderedAreas = useMemo(
     () =>
@@ -537,6 +573,15 @@ export default function App({
       return;
     }
 
+    if (platformCommand.type === "open-street-task") {
+      const task = snapshot.tasks.find((candidate) => candidate.id === platformCommand.taskId);
+      if (!task) return;
+      setSelectedTaskId(task.id);
+      setSelectedHouseTaskId(null);
+      setSelectedAreaId(task.areaId);
+      setSheet("task");
+      return;
+    }
     if (platformCommand.type === "start-area-drawing") {
       startDrawing();
     }
@@ -996,7 +1041,7 @@ export default function App({
     }));
     if (undoStatusChange?.taskId === selectedTask.id) setUndoStatusChange(null);
     setSelectedTaskId(null);
-    setSheet("area");
+    setSheet(null);
   };
 
   const commandCamera = (view: MapCameraView, persist = true) => {
@@ -1554,7 +1599,7 @@ export default function App({
                 <strong>{selectedTask.label.trim() || t(language, "street")}</strong>
               </div>
             </div>
-            <button className="icon-button" type="button" onClick={() => { setSelectedTaskId(null); setSheet(selectedAreaId ? "area" : null); }} aria-label={t(language, "close")}>×</button>
+            <button className="icon-button" type="button" onClick={() => { setSelectedTaskId(null); setSheet(null); }} aria-label={t(language, "close")}>×</button>
           </div>
 
           {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (

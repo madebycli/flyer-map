@@ -68,12 +68,12 @@ test("missing migration 0008 is simulated as a specific 503 after access resolut
 });
 
 test("read-heavy launcher modules wire error and empty states through the shared state model", async () => {
-  const [sessions, activity, automation, comments, teamHub] = await Promise.all([
+  const [sessions, activity, automation, comments, teamCenter] = await Promise.all([
     readFile("src/collaboration/FieldSessionsHub.tsx", "utf8"),
     readFile("src/collaboration/ActivityHub.tsx", "utf8"),
     readFile("src/collaboration/AutomationHub.tsx", "utf8"),
     readFile("src/collaboration/CommentsContextPanel.tsx", "utf8"),
-    readFile("src/team/TeamHub.tsx", "utf8"),
+    readFile("src/team/TeamCenter.tsx", "utf8"),
   ]);
 
   assert.match(sessions, /resolveRemoteReadState/u);
@@ -92,6 +92,7 @@ test("read-heavy launcher modules wire error and empty states through the shared
   assert.match(comments, /online && errorCanRetry/u);
   assert.match(comments, /initialReadFailed/u);
   assert.match(comments, /!initialReadFailed/u);
-  assert.match(teamHub, /field_group_schema_unavailable/u);
-  assert.match(teamHub, /Datenbankmigration ist noch nicht ausgerollt/u);
+  assert.match(teamCenter, /error instanceof CampaignApiError/u);
+  assert.match(teamCenter, /return error\.message/u);
+  assert.match(teamCenter, /setError\(errorMessage\(cause\)\)/u);
 });

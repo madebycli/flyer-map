@@ -7,6 +7,7 @@ on:
       - main
       - "release-*"
       - mission-rxdb-sync
+      - feature/organizer-admin-platform
 
 permissions:
   contents: read
@@ -26,10 +27,82 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Test
-        run: npm test
+        shell: bash
+        run: |
+          set +e
+          npm test 2>&1 | tee test-output.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            summary="$(grep -E 'not ok|error|Error|Assertion|ERR_|SQLITE|failureType|location|message' test-output.log | tail -n 24 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            if [ -z "$summary" ]; then
+              summary="$(tail -n 24 test-output.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            fi
+            echo "::error title=npm test failed::$summary"
+            exit "$status"
+          fi
+      - name: Upload failed test output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: test-output.log
+          retention-days: 1
       - name: Typecheck
-        run: npm run typecheck
+        shell: bash
+        run: |
+          set +e
+          npm run typecheck 2>&1 | tee typecheck-output.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            summary="$(grep -E 'error TS[0-9]+:' typecheck-output.log | head -n 24 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            if [ -z "$summary" ]; then
+              summary="$(tail -n 24 typecheck-output.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            fi
+            echo "::error title=typecheck failed::$summary"
+            exit "$status"
+          fi
+      - name: Upload failed typecheck output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-output
+          path: typecheck-output.log
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Dependency audit
-        run: npm run audit:dependencies
+        shell: bash
+        run: |
+          set +e
+          : > audit-output.log
+          status=1
+          for attempt in 1 2 3; do
+            echo "Dependency audit attempt ${attempt}" | tee -a audit-output.log
+            npm run audit:dependencies 2>&1 | tee audit-attempt.log
+            status=${PIPESTATUS[0]}
+            cat audit-attempt.log >> audit-output.log
+            if [ "$status" -eq 0 ]; then
+              exit 0
+            fi
+            if ! grep -Eqi 'audit endpoint returned an error|Service Unavailable|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout' audit-attempt.log; then
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 5
+            fi
+          done
+          summary="$(grep -E 'high|critical|vulnerabilit|advisory|fix available|No fix available|node_modules|audit endpoint returned an error|Service Unavailable|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND' audit-output.log | tail -n 30 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+          if [ -z "$summary" ]; then
+            summary="$(tail -n 30 audit-output.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+          fi
+          echo "::error title=dependency audit failed::$summary"
+          exit "$status"
+      - name: Upload failed dependency audit output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-output
+          path: audit-output.log
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Production build
         run: npm run build

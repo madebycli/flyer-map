@@ -212,3 +212,8 @@ Do not add:
 ## Rollout status
 
 The runtime code and migrations are prepared on Draft PR #72, but migrations 0006 and 0007 are not recorded as remotely applied. Production D1 rollout remains a separate explicit operation.
+
+
+### Recoverable current credentials
+
+Plan 031 permits manager-only re-display of the current Room Code/QR pair without weakening hash-based join lookup. Migration 0020 stores only AES-256-GCM ciphertext plus IV for active credentials. A dedicated Worker secret provides the 32-byte key and AAD binds tenant/group/credential/kind. Reveal is no-store and requires canonical manager authorization. Legacy hash-only Rooms remain valid for direct join but cannot be revealed until an explicit rotation creates a new recoverable pair. Rotation/revoke/close/expiry invalidate old recovery material and never remove already joined memberships by themselves.
