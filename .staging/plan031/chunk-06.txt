@@ -1,0 +1,216 @@
+replace_exact(
+    'src/App.tsx',
+    '''  const collection = collectionSnapshotOrEmpty(snapshot.collection);\n  const collectionMode = collectionModeFromUrl();\n  const collectionSelectedArea = collection.areas.find(''',
+    '''  const collection = collectionSnapshotOrEmpty(snapshot.collection);\n  const collectionSelectedArea = collection.areas.find(''',
+)
+replace_exact(
+    'src/platform/platform-shell.css',
+    '''@media (max-width: 370px) {\n  .platform-menu-grid {\n    grid-template-columns: repeat(3, minmax(0, 1fr));\n  }''',
+    '''@media (max-width: 370px) {\n  .platform-menu-grid {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }''',
+)
+
+replace_exact(
+    'worker/fieldGroups.ts',
+    '''      db\n        .prepare(\n          `UPDATE field_group_join_credentials\n           SET revoked_at = COALESCE(revoked_at, ?)\n           WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,\n        )\n        .bind(group.hard_expires_at, group.id, campaignId),\n    ]);''',
+    '''      db\n        .prepare(\n          `UPDATE field_group_join_credentials\n           SET revoked_at = COALESCE(revoked_at, ?)\n           WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,\n        )\n        .bind(group.hard_expires_at, group.id, campaignId),\n      db\n        .prepare(\n          `DELETE FROM field_group_recoverable_credentials\n           WHERE credential_id IN (\n             SELECT id FROM field_group_join_credentials\n             WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NOT NULL\n           )`,\n        )\n        .bind(group.id, campaignId),\n    ]);''',
+)
+replace_exact(
+    'worker/fieldGroups.ts',
+    '''    db\n      .prepare(\n        `UPDATE field_group_join_credentials\n         SET revoked_at = COALESCE(revoked_at, ?)\n         WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,\n      )\n      .bind(now, groupId, campaignId),\n  ]);\n  if ((result[0]?.meta?.changes ?? 0) !== 1) {''',
+    '''    db\n      .prepare(\n        `UPDATE field_group_join_credentials\n         SET revoked_at = COALESCE(revoked_at, ?)\n         WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,\n      )\n      .bind(now, groupId, campaignId),\n    db\n      .prepare(\n        `DELETE FROM field_group_recoverable_credentials\n         WHERE credential_id IN (\n           SELECT id FROM field_group_join_credentials\n           WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NOT NULL\n         )`,\n      )\n      .bind(groupId, campaignId),\n  ]);\n  if ((result[0]?.meta?.changes ?? 0) !== 1) {''',
+)
+
+write('tests/platformLauncher.test.ts', r'''
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { buildPlatformLauncherItems, type PlatformAppContext } from "../src/platform/platformContract.ts";
+
+const shellSource = readFileSync(new URL("../src/platform/PlatformShell.tsx", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+const teamHubSource = readFileSync(new URL("../src/team/TeamHub.tsx", import.meta.url), "utf8");
+const roomHubSource = readFileSync(new URL("../src/team/RoomsHub.tsx", import.meta.url), "utf8");
+const commentsHubSource = readFileSync(new URL("../src/collaboration/CommentsHub.tsx", import.meta.url), "utf8");
+const streetsHubSource = readFileSync(new URL("../src/streets/StreetsHub.tsx", import.meta.url), "utf8");
+const sheetSource = readFileSync(new URL("../src/platform/FieldBottomSheet.tsx", import.meta.url), "utf8");
+const sheetCss = readFileSync(new URL("../src/platform/field-bottom-sheet.css", import.meta.url), "utf8");
+const shellCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
+
+function context(overrides: Partial<PlatformAppContext> = {}): PlatformAppContext {
+  return {
+    campaignId: "campaign_one",
+    accessRole: "viewer",
+    accessTeamId: null,
+    activeGroupId: null,
+    activeTeam: null,
+    teams: [{ id: "team_one", name: "Team Nord", color: "#2563eb" }],
+    streets: [],
+    launcherAvailable: true,
+    canManageTeams: false,
+    canCreateArea: false,
+    canCreateManualStreet: false,
+    syncState: "healthy",
+    syncLabel: null,
+    ...overrides,
+  };
+}
+
+test("field launcher is the single flat primary navigation", () => {
+  const items = buildPlatformLauncherItems(context({ accessRole: "admin", canManageTeams: true, canCreateArea: true }));
+  assert.deepEqual(items.map((item) => item.id), ["team", "rooms", "stats", "comments", "streets", "area-create", "settings"]);
+  assert.deepEqual(items.map((item) => item.label), ["Team", "Rooms", "Fortschritt", "Kommentare", "Streets", "Gebiet", "Einstellungen"]);
+  assert.match(shellSource, /className="platform-grid-button"/u);
+  assert.match(shellSource, /className="platform-menu-grid"/u);
+  assert.match(shellSource, /<RoomsHub/u);
+  assert.match(shellSource, /<TeamProgressHub/u);
+  assert.match(shellSource, /<CommentsHub/u);
+  assert.match(shellSource, /<StreetsHub/u);
+  assert.doesNotMatch(teamHubSource, /team-center-tabs|Rooms|Fortschritt|Kommentare/u);
+});
+
+test("unauthenticated launcher keeps only safe entry surfaces", () => {
+  assert.deepEqual(buildPlatformLauncherItems(context({ accessRole: null })).map((item) => item.id), ["team", "settings"]);
+});
+
+test("focused hubs reuse real field capabilities instead of fake apps", () => {
+  assert.match(roomHubSource, /Room beitreten/u);
+  assert.match(roomHubSource, /Join-Zugang anzeigen/u);
+  assert.match(roomHubSource, /Join-Zugang erneuern/u);
+  assert.match(roomHubSource, /Bereits beigetretene Mitglieder bleiben aktiv/u);
+  assert.match(commentsHubSource, /TeamCommentsSummary/u);
+  assert.match(streetsHubSource, /Straße manuell hinzufügen/u);
+  assert.match(streetsHubSource, /keine zweite Karten-Engine/u);
+});
+
+test("shared field sheet has pointer capture, semantic snaps and independent body scrolling", () => {
+  assert.match(sheetSource, /"compact" \| "expanded" \| "full"/u);
+  assert.match(sheetSource, /visualViewport/u);
+  assert.match(sheetSource, /onPointerDown/u);
+  assert.match(sheetSource, /onPointerMove/u);
+  assert.match(sheetSource, /onPointerUp/u);
+  assert.match(sheetSource, /onPointerCancel/u);
+  assert.match(sheetSource, /setPointerCapture/u);
+  assert.match(sheetSource, /ArrowUp/u);
+  assert.match(sheetCss, /\.field-sheet-body[\s\S]*overflow: auto/u);
+  assert.match(sheetCss, /\.field-sheet-handle-button[\s\S]*touch-action: none/u);
+});
+
+test("street detail closes and deletes to map without implicit area navigation", () => {
+  assert.match(appSource, /if \(sheet === "task"\) setSheet\(null\)/u);
+  assert.match(appSource, /setSelectedTaskId\(null\);\n    setSheet\(null\);\n  };\n\n  const commandCamera/u);
+  assert.match(appSource, /setSelectedTaskId\(null\); setSheet\(null\);/u);
+});
+
+test("healthy sync is a compact field-bar indicator and map refresh remains separate", () => {
+  assert.match(shellSource, /platform-sync-indicator/u);
+  assert.match(shellSource, /syncState !== "healthy" && syncLabel/u);
+  assert.match(appSource, /syncState: platformSyncState/u);
+  assert.match(shellCss, /\.platform-sync-indicator/u);
+});
+''')
+
+write('tests/teamHubProgress.test.ts', r'''
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const teamHubSource = readFileSync(new URL("../src/team/TeamHub.tsx", import.meta.url), "utf8");
+const progressHubSource = readFileSync(new URL("../src/team/TeamProgressHub.tsx", import.meta.url), "utf8");
+const progressSource = readFileSync(new URL("../src/team/TeamProgressPanel.tsx", import.meta.url), "utf8");
+
+test("Team Hub is focused and progress is its own primary surface", () => {
+  assert.doesNotMatch(teamHubSource, /TeamCenter|team-center-tabs|Rooms|Kommentare/u);
+  assert.match(progressHubSource, /<TeamProgressPanel/u);
+  assert.match(progressHubSource, /context\?\.activeTeam/u);
+});
+
+test("Team progress reads a canonical snapshot and keeps Street and House denominators separate", () => {
+  assert.match(progressSource, /fetchCampaignSnapshot\(campaignId\)/u);
+  assert.match(progressSource, /calculateTeamProgress\(snapshot, teamId\)/u);
+  assert.match(progressSource, /calculateTeamHouseProgress\(snapshot, teamId\)/u);
+  assert.match(progressSource, />Straßen</u);
+  assert.match(progressSource, />Häuser</u);
+});
+
+test("offline Team progress is explicitly sourced from the local campaign snapshot", () => {
+  assert.match(progressSource, /loadCampaignSnapshot\(\)\.snapshot/u);
+  assert.match(progressSource, /source === "local" \? "Lokaler Stand" : "Serverstand"/u);
+});
+''')
+
+test_path = 'tests/fieldGroups.test.ts'
+test_source = read(test_path)
+if 'const TEST_RECOVERY_KEY' not in test_source:
+    test_source = test_source.replace(
+        'type StoredGroup = {',
+        'const TEST_RECOVERY_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";\n\ntype StoredGroup = {',
+        1,
+    )
+import re
+test_source = re.sub(
+    r'\{ DB: ([A-Za-z_][A-Za-z0-9_]*) \}',
+    r'{ DB: \1, FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY: TEST_RECOVERY_KEY }',
+    test_source,
+)
+test_source = test_source.replace(
+    'assert.deepEqual(parseFieldGroupRoute("/api/campaigns/campaign_a/field-groups"), {',
+    'assert.deepEqual(parseFieldGroupRoute("/api/campaigns/campaign_a/field-groups/field_group_a/credentials/current"), { kind: "reveal", campaignId: "campaign_a", groupId: "field_group_a" });\n  assert.deepEqual(parseFieldGroupRoute("/api/campaigns/campaign_a/field-groups"), {',
+    1,
+)
+write(test_path, test_source)
+
+write('tests/fieldGroupCredentialRecovery.test.ts', r'''
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  decryptFieldGroupCredential,
+  encryptFieldGroupCredential,
+  FieldGroupCredentialRecoveryError,
+} from "../worker/fieldGroupCredentialRecovery.ts";
+
+const KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const CONTEXT = {
+  campaignId: "campaign_a",
+  groupId: "field_group_a",
+  credentialId: "credential_a",
+  kind: "room-code" as const,
+};
+
+test("recoverable Room credential round-trips only with matching AES-GCM AAD", async () => {
+  const encrypted = await encryptFieldGroupCredential(KEY, CONTEXT, "23456789AB");
+  assert.notEqual(encrypted.ciphertextB64, "23456789AB");
+  assert.equal(await decryptFieldGroupCredential(KEY, CONTEXT, encrypted), "23456789AB");
+
+  await assert.rejects(
+    () => decryptFieldGroupCredential(KEY, { ...CONTEXT, groupId: "field_group_b" }, encrypted),
+    (error: unknown) => error instanceof FieldGroupCredentialRecoveryError && error.code === "credential_recovery_failed",
+  );
+});
+
+test("credential recovery fails closed for missing or malformed key material", async () => {
+  await assert.rejects(
+    () => encryptFieldGroupCredential(undefined, CONTEXT, "23456789AB"),
+    (error: unknown) => error instanceof FieldGroupCredentialRecoveryError && error.code === "credential_recovery_unconfigured",
+  );
+  await assert.rejects(
+    () => encryptFieldGroupCredential("short", CONTEXT, "23456789AB"),
+    (error: unknown) => error instanceof FieldGroupCredentialRecoveryError && error.code === "credential_recovery_unconfigured",
+  );
+});
+''')
+
+append_once(
+    'tests/teamCenterSecurity.test.ts',
+    'active field-group endpoint uses manager-scoped listing',
+    r'''
+test("active field-group endpoint uses manager-scoped listing and manager-only reveal", async () => {
+  const source = await readFile(new URL("../worker/fieldGroups.ts", import.meta.url), "utf8");
+  assert.match(source, /async function listManagedGroups/u);
+  assert.match(source, /access\.role === "team-editor"/u);
+  assert.match(source, /access\.role === "viewer"[\s\S]*listDiscoverableGroups/u);
+  assert.match(source, /async function revealCredentials/u);
+  assert.match(source, /requireManagedGroup\(db, campaignId, groupId, access\)/u);
+  assert.match(source, /field_group_recoverable_credentials/u);
+});
+''',
+)
