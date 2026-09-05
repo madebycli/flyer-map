@@ -1,0 +1,202 @@
+version: 1
+last_updated: 2026-09-05
+purpose: >-
+  Continuation overlay for the mobile Field UI navigation, Rooms, comments,
+  draggable bottom sheets, Street flow and sync-status work being planned on
+  feature/organizer-admin-platform. This overlay exists to prevent a future
+  agent from rebuilding primary launcher apps as tabs inside TeamCenter.
+
+entrypoints:
+  after_main_graph:
+    - docs/context-organizer-admin.yaml
+    - docs/plans/active/031-field-ui-navigation-rooms-sheets.md
+    - docs/architecture/LIVE_TEAMS.md
+    - docs/product/UX.md
+    - docs/architecture/MAP.md
+    - docs/architecture/COLLABORATION.md
+    - docs/architecture/SECURITY.md
+    - docs/quality/QUALITY.md
+
+routing_rules:
+  - the primary Field app navigation is PlatformShell -> buildPlatformLauncherItems() -> .platform-menu-grid; do not create a second primary navigation inside TeamCenter
+  - .platform-grid-button is the field launcher button and remains the Brainrot long-press target; a completed long press must suppress the normal menu click
+  - Team, Rooms, Fortschritt, Kommentare, Streets, Einstellungen and Gebiet are separate primary launcher destinations; do not represent Rooms/Fortschritt/Kommentare as .team-center-tabs
+  - TeamHub/TeamCenter is for persistent Team selection/management and a concise Team overview only; full Room, progress and comment workflows belong to their own launcher surfaces
+  - the current TeamCenter View union overview|rooms|progress|comments and .team-center-tabs are known transition debt, not the target architecture
+  - Streets is a reserved primary launcher surface for street search and future Street Engine work; reuse existing Smart Street/MapView contracts where applicable and do not invent a second map engine
+  - all mobile sheets should converge on one shared draggable-bottom-sheet behavior: fixed drag handle/header, snap heights, independently scrollable body, safe-area/keyboard-aware footer/composer
+  - normal content scrolling must never change sheet height; only dragging the non-scrolling handle/chrome changes the sheet snap point
+  - contextual comments remain collapsed behind CommentsContextPanel .comments-context-toggle until requested; when expanded the composer must remain reachable after many comments and with the mobile keyboard open
+  - manual Street creation transitions AREA_DETAIL -> STREET_DRAW -> STREET_DETAIL -> CLOSED; closing the Street detail must not reveal the parent Area sheet again
+  - Online anzeigen is Field Group discoverability only; it must not decide whether a Room exists and must not gate valid Room Code or QR joins
+  - normal Room invite reuse means showing the current active join material again, not rotating it; rotation is a separate credential lifecycle operation
+  - current Field Group rotation revokes old join credentials for future joins but preserves existing field_group_memberships; do not describe or implement it as kicking joined members out
+  - current accepted LIVE_TEAMS architecture stores only credential hashes and returns plaintext only at issuance/rotation; satisfying later re-show of the same current code requires an explicit reviewed credential-reveal design or ADR amendment before persistence changes
+  - never solve Room credential re-show by storing plaintext Room Codes or QR tokens in D1, RxDB, LocalStorage, IndexedDB, logs or audit
+  - healthy sync state should be quiet; the current persistent Serverbestätigt/sync status UI is to be reduced to a small unobtrusive indicator while actionable offline/error/conflict states remain visible
+  - Read-only/group-link onboarding defaults to German and may appear once per new device, but Group onboarding must occur only after successful server redemption so it cannot consume, remove or block the join token
+  - privileged Organizer/Admin invitations remain separate from Room credentials and Team links; server authorization remains authoritative
+  - PR 76 stays Draft/unmerged; no Production deploy/migration and no write to mission-release-2026-09-02-manual
+
+known_runtime_state:
+  branch: feature/organizer-admin-platform
+  last_verified_product_head: 0d45dc02e88d3a89fa6174211775f7d2b0e80c85
+  note: documentation commits advance the branch; always re-read PR 76 head and exact-head CI before implementation
+  last_verified_staging_run: 33981025532
+  last_verified_staging_job: 101346148405
+  staging_url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
+  staging_result: success
+  d1_fingerprint_before_after: 47ea1432c290bd89089ee723b33e71950bcf40abafffcd0405261553eaac8088
+
+nodes:
+  - id: field-platform-shell
+    path: src/platform/PlatformShell.tsx
+    type: code
+    status: current
+    topics: [launcher, menu, overlay, team-hub, brainrot]
+    identifiers: [PlatformShell, MenuGridIcon, dispatchSimpleCommand, selectActiveTeam, platform-grid-button, platform-menu-sheet, platform-menu-grid]
+    load_when: [field launcher, primary menu, launcher app, Brainrot hold, overlay orchestration]
+
+  - id: field-platform-contract
+    path: src/platform/platformContract.ts
+    type: code
+    status: current
+    topics: [launcher-contract, commands, context, app-items]
+    identifiers: [PlatformAppCommand, PlatformAppContext, PlatformLauncherItem, buildPlatformLauncherItems]
+    load_when: [new launcher item, new primary app surface, command routing]
+
+  - id: team-center-transition
+    path: src/team/TeamCenter.tsx
+    type: code
+    status: transition-debt
+    topics: [team, rooms, progress, comments, room-credentials]
+    identifiers: [TeamCenter, View, Modal, submitJoin, submitCreate, rotateCredentials, revokeCredentials, team-center-tabs, issuedAccess]
+    load_when: [Team UI, Room extraction, Team tab removal, join access UX]
+
+  - id: team-hub-compat
+    path: src/team/TeamHub.tsx
+    type: code
+    status: transition-debt
+    topics: [team, compatibility-export]
+    identifiers: [TeamHub, TeamCenter]
+    load_when: [Team launcher wiring, removing TeamCenter alias architecture]
+
+  - id: team-progress-panel
+    path: src/team/TeamProgressPanel.tsx
+    type: code
+    status: current
+    topics: [team-progress, statistics]
+    load_when: [Fortschritt launcher, Team-scoped progress]
+
+  - id: team-comments-summary
+    path: src/team/TeamCommentsSummary.tsx
+    type: code
+    status: current
+    topics: [team-comments, area-grouping]
+    load_when: [Kommentare launcher, Team/all comment summary]
+
+  - id: statistics-hub
+    path: src/collaboration/StatisticsHub.tsx
+    type: code
+    status: current
+    topics: [statistics, progress, team-filter, sessions]
+    identifiers: [StatisticsHub, ProgressBlock]
+    load_when: [Fortschritt launcher, statistics reuse, team-scoped metrics]
+
+  - id: comments-context-panel
+    path: src/collaboration/CommentsContextPanel.tsx
+    type: code
+    status: current
+    topics: [comments, context, collapsed-submenu, composer]
+    identifiers: [CommentsContextPanel, comments-context-toggle, comments-context-submenu]
+    load_when: [Area comments, Street comments, House comments, mobile comment composer]
+
+  - id: field-app-state
+    path: src/App.tsx
+    type: code
+    status: current
+    topics: [sheet-state, map-mode, street-flow, area-flow, sync-status, platform-command]
+    identifiers: [Sheet, MapMode, sheet, sheetCollapsed, saveStreetTask, selectTask, startManualStreet, openStreetDrawing, PlatformAppCommand]
+    load_when: [Street create flow, bottom sheets, Area/Task navigation, launcher command, sync status]
+
+  - id: shared-field-sheet-css
+    path: src/styles.css
+    type: code
+    status: current
+    topics: [bottom-sheet, handle, scrolling, mobile, safe-area]
+    identifiers: [bottom-sheet, compact-sheet, sheet-handle-button, sheet-handle, sheet-header]
+    load_when: [draggable sheet, mobile scroll, comment composer, Area/Street sheet]
+
+  - id: field-refresh-css
+    path: src/m4.css
+    type: code
+    status: current
+    topics: [map-refresh, settings, sync-status]
+    identifiers: [map-refresh-control, map-refresh-button, is-loading, is-error, is-current, is-available]
+    load_when: [Serverbestätigt indicator, map refresh status, settings sheet]
+
+  - id: field-map-view
+    path: src/map/MapView.tsx
+    type: code
+    status: current
+    topics: [maplibre, refresh-state, smart-street, street-renderer]
+    identifiers: [MapRefreshState, MapView, SMART_ROAD_SOURCE_ID, SMART_PREVIEW_SOURCE_ID]
+    load_when: [sync-status rendering, Streets launcher, Street Engine preparation]
+
+  - id: field-group-client
+    path: src/data/fieldGroupApi.ts
+    type: code
+    status: current
+    topics: [rooms, join, code, qr, credentials]
+    identifiers: [FieldGroupSummary, FieldGroupCredentials, createFieldGroup, fetchFieldGroups, fetchFieldGroup, joinFieldGroup, rotateFieldGroupCredentials, revokeFieldGroupCredentials, buildFieldGroupQrJoinUrl]
+    load_when: [Rooms hub, code join, QR join, join credential UX]
+
+  - id: field-group-server
+    path: worker/fieldGroups.ts
+    type: code
+    status: current
+    topics: [rooms, discoverability, credentials, memberships, authorization]
+    identifiers: [listGroups, listDiscoverableGroups, rotateCredentials, revokeCredentials, credentialPair, requireManagedGroup]
+    load_when: [Room visibility, join credential lifecycle, membership preservation, manager authorization]
+
+  - id: live-teams-architecture
+    path: docs/architecture/LIVE_TEAMS.md
+    type: architecture
+    status: accepted
+    topics: [field-groups, room-code, qr, rotation, membership, discoverability]
+    load_when: [Room credential design, QR/Code join, re-show credentials]
+
+  - id: field-ui-plan
+    path: docs/plans/active/031-field-ui-navigation-rooms-sheets.md
+    type: plan
+    status: active
+    topics: [launcher, team, rooms, progress, comments, streets, draggable-sheets, street-flow, sync-status]
+    load_when: [implement approved Field UI restructure, handoff]
+
+  - id: field-ui-prompt
+    path: docs/prompts/CONTINUE_FIELD_UI_NAVIGATION_LATEST.md
+    type: handoff
+    status: current
+    topics: [implementation, handoff, field-ui, rooms, sheets]
+    load_when: [fresh implementation agent, continue approved Field UI restructure]
+
+edges:
+  - { from: field-platform-shell, to: field-platform-contract, relation: renders_contract }
+  - { from: field-platform-contract, to: team-hub-compat, relation: currently_opens }
+  - { from: team-hub-compat, to: team-center-transition, relation: currently_reexports }
+  - { from: field-ui-plan, to: field-platform-shell, relation: restructures_primary_navigation }
+  - { from: field-ui-plan, to: team-center-transition, relation: removes_primary_tabs_from }
+  - { from: field-ui-plan, to: team-progress-panel, relation: promotes_to_primary_surface }
+  - { from: field-ui-plan, to: team-comments-summary, relation: promotes_to_primary_surface }
+  - { from: field-ui-plan, to: statistics-hub, relation: may_reuse_team_scoped_metrics_from }
+  - { from: field-ui-plan, to: field-app-state, relation: fixes_sheet_state_machine }
+  - { from: field-ui-plan, to: shared-field-sheet-css, relation: replaces_scroll_container_with_shared_sheet_contract }
+  - { from: comments-context-panel, to: shared-field-sheet-css, relation: constrained_by_mobile_sheet }
+  - { from: field-ui-plan, to: field-refresh-css, relation: simplifies_healthy_status }
+  - { from: field-refresh-css, to: field-map-view, relation: styles_refresh_state_from }
+  - { from: field-ui-plan, to: field-map-view, relation: reserves_streets_surface_for }
+  - { from: team-center-transition, to: field-group-client, relation: currently_calls }
+  - { from: field-group-client, to: field-group-server, relation: calls }
+  - { from: field-group-server, to: live-teams-architecture, relation: governed_by }
+  - { from: field-ui-plan, to: live-teams-architecture, relation: must_not_silently_violate }
+  - { from: field-ui-prompt, to: field-ui-plan, relation: executes }
