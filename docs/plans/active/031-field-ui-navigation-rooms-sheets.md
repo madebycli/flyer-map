@@ -10,7 +10,7 @@ related: [ux, map, live-teams, collaboration, security, quality, context-organiz
 
 ## Ziel
 
-Die mobile Field-Oberfläche wird auf dem bestehenden `feature/organizer-admin-platform`-Stand strukturell bereinigt. Die primäre Navigation bleibt das Launcher-Grid aus `PlatformShell`; Team-interne Tabs werden entfernt. Rooms, Fortschritt, Kommentare und Streets werden eigenständige Launcher-Ziele. Gleichzeitig werden Bottom Sheets auf ein gemeinsames Google-Maps-artiges Drag-/Snap-Verhalten umgestellt, der Street-Erstellflow beendet ohne unnötigen Rücksprung in das Area-Sheet, Room-Join-Material wird verständlich und sicher verwaltbar, und der gesunde Sync-Zustand verschwindet aus der permanent dominanten Karten-UI.
+Die mobile Field-Oberfläche wird auf dem bestehenden `feature/organizer-admin-platform`-Stand strukturell bereinigt. Die primäre Navigation bleibt das Launcher-Grid aus `PlatformShell`; Team-interne Tabs werden entfernt. Rooms, Fortschritt, Kommentare und Streets werden eigenständige Launcher-Ziele. Gleichzeitig werden Bottom Sheets auf ein gemeinsames Google-Maps-artiges Drag-/Snap-Verhalten umgestellt, der Street-Erstellflow endet ohne unnötigen Rücksprung in das Area-Sheet, Room-Join-Material wird verständlich und sicher verwaltbar, und der gesunde Sync-Zustand verschwindet aus der permanent dominanten Karten-UI.
 
 Dieser Plan ist absichtlich präzise zu Code-Identifiern, weil die vorherige Implementierung die Master-Anforderung falsch als `TeamCenter`-Tabnavigation interpretiert hat.
 
@@ -54,17 +54,11 @@ Das Grid aus `.platform-menu-grid` ist die **einzige primäre Field-App-Navigati
 
 `src/platform/platformContract.ts` enthält `PlatformAppCommand`, `PlatformAppContext`, `PlatformLauncherItem` und `buildPlatformLauncherItems()`.
 
-Aktuell rendert `buildPlatformLauncherItems()` tatsächlich nur:
-
-- `team`;
-- `settings`;
-- optional `area-create`.
-
-Die Union von `PlatformLauncherItem.id` enthält historisch weitere IDs, ist aber nicht gleichbedeutend mit aktuell sichtbaren Apps.
+Aktuell rendert `buildPlatformLauncherItems()` tatsächlich nur `team`, `settings` und optional `area-create`. Die breitere historische ID-Union ist keine Aussage über aktuell sichtbare Apps.
 
 ### Falsch aufgebaute Team-Navigation
 
-`src/team/TeamHub.tsx` ist aktuell nur:
+`src/team/TeamHub.tsx` ist aktuell nur ein Compatibility-Reexport:
 
 ```ts
 export { TeamCenter as TeamHub } from "./TeamCenter.tsx";
@@ -82,7 +76,7 @@ Diese Struktur ist **Transition Debt und nicht das Zielmodell**.
 
 ### Street-/Sheet-State
 
-`src/App.tsx` hält die Feld-Navigation mit:
+`src/App.tsx` hält die Feld-Navigation unter anderem mit:
 
 - `type Sheet = "teams" | "area" | "task" | "house" | "campaign-comments" | "settings" | "collection-admin" | null`;
 - `sheet`;
@@ -102,7 +96,9 @@ setSelectedTaskId(null);
 setSheet(selectedAreaId ? "area" : null);
 ```
 
-Damit erscheint nach dem Schließen einer eben gezeichneten Straße erneut das Area-Sheet. Dieser zusätzliche Rücksprung ist explizit unerwünscht.
+Zusätzlich besitzt der Snapshot-Konsistenz-Effect einen impliziten Parent-Fallback: wenn `selectedTaskId` verschwindet und `sheet === "task"`, wird ebenfalls `selectedAreaId ? "area" : null` gewählt. `deleteSelectedTask()` setzt aktuell ebenfalls `sheet = "area"`.
+
+Damit kann das Area-Sheet nach einer Street-Detail-Aktion wieder erscheinen, obwohl der Nutzer den Street-Flow schließen wollte. Diese gesamte implizite Parent-Sheet-Semantik muss überprüft werden, nicht nur das `X`.
 
 ### Aktuelle Bottom Sheets
 
@@ -119,37 +115,21 @@ Relevante Klassen:
 
 ### Kommentare
 
-`src/collaboration/CommentsContextPanel.tsx` verwendet:
-
-- `expanded`;
-- `.comments-context-toggle`;
-- `.comments-context-submenu`;
-- `CommentsPanel`.
+`src/collaboration/CommentsContextPanel.tsx` verwendet `expanded`, `.comments-context-toggle`, `.comments-context-submenu` und `CommentsPanel`.
 
 Der kompakte Default `Kommentare anzeigen` ist richtig. Das mobile Problem entsteht beim expandierten Inhalt in einem Sheet, dessen ganzer Container scrollt: Bei vielen Kommentaren kann der Composer unter Browser-/Safe-Area-/Keyboard-Grenzen unzugänglich werden.
 
 ### Rooms / Field Groups
 
-`src/team/TeamCenter.tsx` enthält aktuell Room-Create, Join, List, Details und Credentials. Relevante Funktionen:
-
-- `submitJoin()`;
-- `submitCreate()`;
-- `loadGroups()`;
-- `toggleDiscoverability()`;
-- `rotateCredentials()`;
-- `revokeCredentials()`;
-- `closeRoom()`;
-- `leaveRoom()`;
-- `issuedAccess`;
-- `issuedJoinUrl`.
+`src/team/TeamCenter.tsx` enthält aktuell Room-Create, Join, List, Details und Credentials. Relevante Funktionen sind `submitJoin()`, `submitCreate()`, `loadGroups()`, `toggleDiscoverability()`, `rotateCredentials()`, `revokeCredentials()`, `closeRoom()`, `leaveRoom()`, `issuedAccess` und `issuedJoinUrl`.
 
 Client-API: `src/data/fieldGroupApi.ts`.
 
 Server: `worker/fieldGroups.ts`.
 
-Wichtig: `rotateCredentials()` im Worker widerruft die bisherigen `field_group_join_credentials` und legt neue Code-/QR-Hashes an. Es verändert **nicht** `field_group_memberships`. Bereits beigetretene Mitglieder bleiben daher aktiv. Rotation invalidiert ausschließlich das alte Join-Material für zukünftige Beitritte.
+`rotateCredentials()` im Worker widerruft die bisherigen `field_group_join_credentials` und legt neue Code-/QR-Hashes an. Es verändert **nicht** `field_group_memberships`. Bereits beigetretene Mitglieder bleiben daher aktiv. Rotation invalidiert ausschließlich das alte Join-Material für zukünftige Beitritte.
 
-`LIVE_TEAMS.md` akzeptiert aktuell:
+`docs/architecture/LIVE_TEAMS.md` akzeptiert aktuell:
 
 - D1 speichert SHA-256 Lookup-Hashes der Room Codes/QR-Tokens;
 - Plaintext wird nur bei Issuance/Rotation zurückgegeben;
@@ -157,9 +137,9 @@ Wichtig: `rotateCredentials()` im Worker widerruft die bisherigen `field_group_j
 - `discoverable` darf direkten Join nicht deaktivieren;
 - kein „reusable forever join code“.
 
-## Zielarchitektur der primären Navigation
+## Normative Navigationsarchitektur
 
-### Keine TeamCenter-Tabs
+### Eine primäre Navigation
 
 Nach diesem Slice darf die primäre Navigation **nicht** so aussehen:
 
@@ -168,7 +148,7 @@ Team
   -> Übersicht | Rooms | Fortschritt | Kommentare
 ```
 
-Ziel:
+Die einzige primäre Navigation ist:
 
 ```text
 .platform-grid-button
@@ -179,44 +159,52 @@ Ziel:
         -> Fortschritt
         -> Kommentare
         -> Streets
-        -> Einstellungen
         -> Gebiet
+        -> Einstellungen
 ```
 
-Diese sieben Einträge sind eigenständige Launcher-Ziele. Es sollen nicht zusätzlich historische/technische Hubs ohne klaren Nutzerwert in das Grid gekippt werden.
+Die Reihenfolge oben ist normativ für den ersten korrigierten Stand. Responsive Layout darf daraus 2 oder 3 Spalten machen, aber die Informationsarchitektur bleibt flach. Keine zusätzliche Reihe historischer/technischer „Apps“ ohne explizite Master-Anforderung.
 
-### Vorgesehene Launcher-IDs
+### Launcher-IDs und Routing
 
-Bestehende IDs möglichst erhalten, neue IDs explizit ergänzen:
+`PlatformLauncherItem` und `buildPlatformLauncherItems()` bleiben Source of Truth.
 
-- `team` -> Label `Team`;
-- `rooms` -> Label `Rooms`;
-- `stats` -> Label `Fortschritt`;
-- `comments` -> Label `Kommentare`;
-- `streets` -> Label `Streets`;
-- `settings` -> Label `Einstellungen`;
-- `area-create` -> Label `Gebiet`.
+Vorgesehene IDs:
 
-`PlatformLauncherItem` und `buildPlatformLauncherItems()` sind die Source of Truth für diese Sichtbarkeit. Nicht zusätzlich ein zweites statisches Menü in `TeamCenter` erzeugen.
+- `team` -> `Team`;
+- `rooms` -> `Rooms`;
+- `stats` -> `Fortschritt`;
+- `comments` -> `Kommentare`;
+- `streets` -> `Streets`;
+- `area-create` -> `Gebiet`;
+- `settings` -> `Einstellungen`.
+
+`stats` bedeutet in **diesem Field Launcher ausdrücklich den Fortschritt des aktiven Teams**. Es darf nicht still wieder zu einem Campaign-weiten Admin-Dashboard werden. Historische `StatisticsHub`-Funktionalität kann wiederverwendet werden, aber nur mit korrekt erzwungenem Team-Scope.
+
+Launcher-Sichtbarkeit darf aus `PlatformAppContext` abgeleitet werden, ist aber nur UX. Jede Operation bleibt serverseitig beziehungsweise durch die existierende Field-Autorisierung geschützt. Ein versteckter Button ist kein Authz-Guard.
+
+## Zieloberflächen
 
 ### Team
 
-`Team` ist Team-Identität/Management, nicht ein Container für andere Apps.
+`Team` ist Team-Identität/Management, nicht Container für andere Apps.
 
 Zielinhalt:
 
-- aktives Team sichtbar;
-- Team wechseln, soweit Role/Scope erlaubt;
-- Organizer/Admin kann bestehendes Team-Management öffnen;
-- Name/Farbe/Team-Lifecycle bleiben in der bestehenden Team-Management-Logik;
-- eine kleine, nicht interaktive Zusammenfassung des aktiven Teams ist zulässig;
-- **kein** `Rooms`, `Fortschritt` oder `Kommentare` Tab im Team-Hub.
+- aktives Team;
+- Team wechseln, soweit bestehender Role/Scope erlaubt;
+- Organizer/Admin kann das bestehende Team-Management öffnen;
+- Name/Farbe/Lifecycle bleiben in der bestehenden Team-Management-Logik;
+- eine kleine kompakte Team-Zusammenfassung darf sichtbar sein;
+- **kein** `Rooms`, `Fortschritt` oder `Kommentare` Tab.
 
-Die bestehende `TeamHub.tsx -> TeamCenter` Compatibility-Reexport-Struktur wird aufgelöst. Der Implementation-Agent soll entweder `TeamHub` zu einem echten fokussierten Team-Hub machen oder einen klar benannten Team-Hub einführen und die Compatibility-Schicht entfernen. Keine weitere Alias-Kaskade.
+Der vollständige Fortschrittsbildschirm bleibt im separaten Launcher `stats`. Team darf also eine kurze Kennzahl zeigen, aber nicht die gesamte Fortschritt-App duplizieren.
+
+Die `TeamHub.tsx -> TeamCenter` Compatibility-Reexport-Struktur wird aufgelöst. `TeamHub` soll am Ende ein echter fokussierter Team-Hub sein oder auf einen eindeutig benannten Team-Management-Baustein zeigen, nicht wieder auf einen Multi-App-Container.
 
 ### Rooms
 
-Neue fokussierte Oberfläche, empfohlener Identifier `RoomsHub` in `src/team/RoomsHub.tsx`.
+Neue fokussierte Oberfläche, Ziel-Identifier `RoomsHub` in `src/team/RoomsHub.tsx`.
 
 Sie übernimmt aus `TeamCenter` ausschließlich Room-Funktionalität:
 
@@ -224,409 +212,425 @@ Sie übernimmt aus `TeamCenter` ausschließlich Room-Funktionalität:
 - `Room erstellen`;
 - `Aktive unterwegs`;
 - Room-Detail;
-- Participant count;
+- Teilnehmerzahl;
 - `Online anzeigen` / verborgen;
 - aktive Mitglieder;
-- Join-Zugang anzeigen/rotieren/sperren;
+- Join-Zugang anzeigen/erneuern/sperren;
 - Room beenden/verlassen.
 
 Kein Team-Stats-/Comment-Tab in `RoomsHub`.
 
 ### Fortschritt
 
-Eigenständiger Launcher-Eintrag `stats` mit Label `Fortschritt`.
+Eigenständiger Launcher `stats`, Label `Fortschritt`.
 
-Ziel ist der Fortschritt des aktiven Teams, nicht eine zweite Team-Navigation. `TeamProgressPanel.tsx` ist die naheliegende bestehende Anzeige. `StatisticsHub.tsx` darf nur wiederverwendet werden, wenn seine Campaign-/Team-Scope-Semantik exakt dem gewünschten aktiven Team entspricht. Kein Campaign-weiter Admin-Default, wenn der Nutzer explizit Team-Fortschritt erwartet.
+Ziel ist das aktuell aktive Team. Bestehender `TeamProgressPanel.tsx` ist der primäre Wiederverwendungskandidat. `StatisticsHub.tsx` darf nur eingebunden werden, wenn sein Request/Scope explizit auf `context.activeTeam.id` festgelegt wird und der Server diesen Scope akzeptiert. Kein `teamFilter = "all"` als Field-Launcher-Default für Admins.
 
-Empfohlener fokussierter Wrapper: `TeamProgressHub`.
+Ziel-Identifier für den fokussierten Wrapper: `TeamProgressHub`.
 
 ### Kommentare
 
-Eigenständiger Launcher-Eintrag `comments`.
+Eigenständiger Launcher `comments`.
+
+Ziel-Identifier: `CommentsHub` unter `src/collaboration/CommentsHub.tsx`.
 
 Zieloberfläche:
 
-- standardmäßig aktuelles Team;
+- initial aktuelles Team;
 - optional `Alle`, nur wenn der serverseitige Zugriff dies erlaubt;
-- Kommentare nach Gebiet gruppiert;
-- Kontext/Street/House verständlich anzeigen;
-- vorhandene `TeamCommentsSummary`-Logik wiederverwenden, nicht duplizieren;
-- Server ist Source of Truth für Read/Create/Edit/Delete.
-
-Empfohlener Identifier: `CommentsHub` unter `src/collaboration/CommentsHub.tsx`.
+- nach Gebieten gruppiert;
+- Street/House/Area-Kontext erkennbar;
+- bestehende `TeamCommentsSummary`-/Comments-API-Logik wiederverwenden;
+- Server bleibt Source of Truth für Read/Create/Edit/Delete.
 
 ### Streets
 
-Eigenständiger Launcher-Eintrag `streets` mit Label `Streets`.
+Eigenständiger Launcher `streets`, Label `Streets`.
 
-Er ist jetzt bereits als echte Oberfläche vorzubereiten, aber kein erfundenes zweites Street-Backend bauen.
+Ziel-Identifier: `StreetsHub` unter `src/streets/StreetsHub.tsx`.
 
-Erwartete erste Struktur:
+Erste echte Funktionalität:
 
-- Einstieg in bestehende manuelle Street-Erstellung;
-- Platz für Straßennamen-Suche;
-- Platz für zukünftige Street Engine / automatische Markierung;
-- vorhandene Smart-Street-/MapView-Contracts als Integrationspunkt berücksichtigen (`SMART_ROAD_*`, Smart anchors/preview, `onSmartStreetPoint`).
+- Einstieg in die vorhandene manuelle Street-Erstellung (`start-manual-street` / `startManualStreet()`);
+- klarer vorbereiteter Bereich für Straßennamen-Suche;
+- klarer vorbereiteter Bereich für die spätere Street Engine.
 
-Empfohlener Identifier: `StreetsHub` unter `src/streets/StreetsHub.tsx`.
+**Nicht in diesem Slice erfinden:** eine zweite Map Engine, ungeprüfte OSM-Suche oder neue automatische Markierungslogik. Die bestehende Smart-Street-Infrastruktur in `MapView.tsx` (`SMART_ROAD_*`, Smart anchors/preview, `onSmartStreetPoint`) ist der spätere Integrationspunkt. Ein sichtbarer Streets-Hub darf zukünftige Funktionen als vorbereitet kennzeichnen, aber keine Fake-Funktion vortäuschen.
 
 ## Gemeinsames draggable Bottom Sheet
 
-### Ziel
+### Zielbaustein
 
-Das aktuelle Muster „jede Komponente baut eigenen Overlay/Scrollcontainer“ wird für Field-Sheets vereinheitlicht.
+Empfohlener gemeinsamer Baustein: `FieldBottomSheet` unter `src/platform/FieldBottomSheet.tsx` mit gemeinsamem CSS.
 
-Empfohlener gemeinsamer Baustein: `FieldBottomSheet` unter `src/platform/FieldBottomSheet.tsx` mit zugehörigem CSS.
-
-### Struktur
+Struktur:
 
 ```text
 FieldBottomSheet
-  fixed/sticky chrome
+  chrome (nicht content-scrollbar)
     drag handle
     header/title
     close button
   scroll viewport
     body
   optional footer
-    composer / primary actions
+    composer / primäre Aktion
 ```
 
-Der Drag-Handle selbst scrollt nie mit.
+Der Handle und der für die Interaktion notwendige Header scrollen nicht mit dem Content.
 
 ### Snap Points
 
-Mindestens drei semantische Zustände:
+Semantische Zustände:
 
 - `compact`;
 - `expanded`;
-- `full` oder `near-fullscreen`.
+- `near-fullscreen`.
 
-Keine hart verdrahteten Pixelwerte pro Feature. Snap-Höhen relativ zu `visualViewport.height`/`100dvh` und Safe Areas berechnen. Beispielgrößen sind Designparameter, keine API: ungefähr 34%, 64%, 90% der verfügbaren Höhe.
+Snap-Höhen relativ zur tatsächlich verfügbaren Höhe berechnen (`visualViewport.height` wo verfügbar, sonst `100dvh`) und Safe Areas berücksichtigen. Ausgangswerte können ungefähr 34%, 64%, 90% sein, sind aber Designparameter, keine Feature-spezifischen Magic Numbers.
 
 ### Pointer-/Touch-Verhalten
 
-- Drag startet ausschließlich am Handle/Chrome, nicht im Content.
-- Pointer Events verwenden (`pointerdown/move/up/cancel`).
-- während Drag `setPointerCapture()` oder äquivalent stabil verwenden;
-- `touch-action: none` nur auf der Drag-Zone, nicht auf dem scrollbaren Body;
-- Content-Scroll darf den Sheet-Snap nicht verändern;
-- beim Loslassen nearest snap wählen, optional Velocity berücksichtigen;
-- `prefers-reduced-motion` respektieren;
-- Keyboard-/Accessibility-Fallback zum Expand/Collapse behalten, also Handle nicht nur gestisch bedienbar machen.
+- Drag startet ausschließlich an Handle/Drag-Zone.
+- Pointer Events (`pointerdown`, `pointermove`, `pointerup`, `pointercancel`).
+- `setPointerCapture()` oder gleichwertig stabilisieren.
+- `touch-action: none` nur an der Drag-Zone.
+- normaler Body-Scroll verändert den Snap Point nicht.
+- beim Release nearest snap, optional Velocity.
+- `prefers-reduced-motion` respektieren.
+- Handle behält einen tastaturbedienbaren Expand/Collapse-Fallback; die Funktion darf nicht gesten-only sein.
 
-### Scroll und Keyboard
+### Scroll, Safe Area und Keyboard
 
-- Header/Handle bleibt sichtbar;
-- Body bekommt eigenes `overflow-y: auto`;
+- Body hat eigenes `overflow-y: auto`;
 - `overscroll-behavior: contain`;
-- Safe Area unten berücksichtigen;
-- `window.visualViewport` berücksichtigen, damit mobile Browser-UI/Keyboard den Composer nicht überdecken;
-- bei Comment-Sheets optionaler Footer/Composer darf nicht unter dem Keyboard verschwinden.
+- Footer/Composer bleibt innerhalb der sichtbaren Sheet-Fläche;
+- Software-Keyboard über `visualViewport` berücksichtigen;
+- Safe-Area-Inset unten einrechnen;
+- kein nested-scroll deadlock.
 
 ### Migration
 
-Nicht alle Overlays blind gleichzeitig umschreiben. Zuerst gemeinsamer Baustein + Contract-Test, danach nacheinander:
+Schrittweise migrieren:
 
 1. `.platform-menu-sheet`;
-2. Street-/Area-/House `.bottom-sheet` aus `App.tsx`;
+2. Street-/Area-/House-Sheets in `App.tsx`;
 3. Comments;
-4. Settings;
+4. `SettingsSheet`;
 5. Team;
-6. Rooms/Progress/Streets-Hubs.
+6. Rooms/Progress/Streets.
 
-Nach jeder Migration prüfen, dass Map-Interaktionen hinter modalem Sheet blockiert bleiben und Scroll/Close unverändert korrekt sind.
+Desktop darf ein stabiles großes Sheet/Panel verwenden; die mobile Drag-Semantik darf Desktop-Scroll und Tastaturbedienung nicht verschlechtern.
 
 ## Street-State-Machine
 
-### Gewünschter Erstellflow
+### Normativer Flow
 
 ```text
 AREA_DETAIL
   -> STREET_DRAW
   -> STREET_DETAIL
-  -> CLOSED/MAP
+  -> MAP
 ```
 
-Nach `saveStreetTask()` ist das neu erzeugte Street-Task-Sheet der einzige sichtbare Detailkontext.
+Nach `saveStreetTask()` ist das neu erzeugte Street-Detail der einzige sichtbare Detailkontext.
 
-### Verbotener Flow
+Verboten:
 
 ```text
 AREA_DETAIL
   -> STREET_DRAW
-  -> STREET_DETAIL over hidden AREA_DETAIL
-  -> AREA_DETAIL after close
+  -> STREET_DETAIL über verstecktem AREA_DETAIL
+  -> AREA_DETAIL beim Schließen
 ```
 
-### Konkrete Änderung
+### Konkrete State-Korrekturen
 
-Der Close-Handler des `sheet === "task"` Street-Sheets darf nicht mehr implizit `setSheet(selectedAreaId ? "area" : null)` ausführen.
+Mindestens drei Stellen prüfen:
 
-Für den vereinbarten UX-Vertrag schließt Street-Detail auf die Karte:
+1. Close-Handler des `sheet === "task"`-Sheets: `setSheet(null)`, nicht `selectedAreaId ? "area" : null`.
+2. Snapshot-/Selection-Konsistenz-Effect: beim Verlust von `selectedTaskId` keinen impliziten Area-Sheet-Rücksprung erzeugen, solange keine explizite Area-Navigation angefordert wurde.
+3. `deleteSelectedTask()`: nach Delete nicht automatisch Area-Sheet öffnen; Ziel ist Map, sofern kein expliziter sichtbarer „Zurück zum Gebiet“-Flow eingeführt wird.
 
-- `setSelectedTaskId(null)`;
-- `setSheet(null)`;
-- `selectedAreaId` darf intern als Kontext erhalten bleiben, darf aber kein Area-Sheet automatisch anzeigen.
+`selectedAreaId` darf als Datenkontext intern erhalten bleiben, ist aber kein versteckter Navigation-Stack.
 
-Statusänderungen `open`, `completed`, `later`, `not-deliverable` beeinflussen diesen Rückweg nicht.
+Statusänderungen `open`, `completed`, `later`, `not-deliverable` beeinflussen den Close-Rückweg nicht.
 
-Wenn später ein expliziter „Zurück zum Gebiet“-Button gewünscht wird, muss das eine sichtbare Nutzeraktion sein, kein versteckter Parent-Sheet-Stack.
+Ein späterer „Zurück zum Gebiet“-Button wäre eine **explizite** Aktion und ist nicht Teil des aktuellen Auftrags.
 
-Regressionstests müssen mindestens abdecken:
+Regressionen:
 
-- Area -> Street draw -> Save -> Street detail;
-- Street status ändern -> Close -> Map, kein Area-Sheet;
-- Street detail direkt von Map geöffnet -> Close -> Map;
-- erneutes bewusstes Antippen eines Areas öffnet Area-Sheet wieder.
+- Area -> Street draw -> Save -> nur Street detail;
+- Status ändern -> Close -> Map;
+- Street direkt von Map öffnen -> Close -> Map;
+- Street löschen -> Map;
+- Area anschließend bewusst antippen -> Area-Sheet.
 
 ## Kommentare auf Mobil
 
-`CommentsContextPanel` bleibt initial collapsed.
+`CommentsContextPanel` bleibt initial collapsed hinter `.comments-context-toggle`.
 
 Beim Expandieren:
 
-- Kommentar-Liste scrollt im Body;
+- vorhandene Kommentare scrollen im Sheet-Body;
 - Composer bleibt erreichbar;
-- viele Kommentare dürfen den Composer nicht unter den Viewport drücken;
-- bei geöffneter Software-Tastatur bleibt das Texteingabefeld plus Submit-Aktion sichtbar oder durch `scrollIntoView`/Viewport-Anpassung zuverlässig erreichbar;
-- Safe Area/Browser Bottom Bar berücksichtigen;
-- kein nested-scroll deadlock zwischen `.comments-context-submenu` und Sheet-Root.
+- viele Kommentare dürfen Composer/Submit nicht unter den Viewport drücken;
+- Software-Tastatur darf den Composer nicht dauerhaft verdecken;
+- Fokus auf Textarea darf bei Bedarf den Body gezielt nachscrollen;
+- keine zweite unabhängige Vollhöhen-Scrollbar in `.comments-context-submenu` erzeugen.
 
-Akzeptanzgerät: mobile Chromium ungefähr 390x844 plus ein schmalerer Viewport; echte Browser-Bottom-Bar/Keyboard-Situation testen, nicht nur Desktop responsive mode.
+Akzeptanz mindestens mobile Chromium um 390x844 plus schmalerer Viewport, mit echter Browser-Bottom-Bar und Software-Keyboard, nicht nur Desktop Responsive Mode.
+
+Dasselbe Sheet-Prinzip gilt für Settings: keine riesige statische Mobile-Fläche, sondern drag-/scrollbarer gemeinsamer Sheet-Vertrag.
 
 ## Rooms: Discoverability und Manager-Liste
 
-`Online anzeigen` ist **nur** `discoverable`.
+`Online anzeigen` ist ausschließlich `discoverable`.
 
 Serververtrag:
 
-- Room wird bei `discoverable=false` vollständig erstellt;
+- `discoverable=false` erstellt den Room vollständig;
 - Room Code funktioniert;
 - QR Join funktioniert;
 - direkter Join funktioniert;
-- Hard expiry/close/revoke bleiben unverändert;
-- ein Manager muss seinen eigenen aktiven versteckten Room weiterhin in der Management-Liste sehen können.
+- Hard expiry/close/revoke bleiben gleich;
+- Manager sieht seinen aktiven versteckten Room weiter in der Management-Liste.
 
-Aktuell verwendet `worker/fieldGroups.ts -> listGroups()` für Nicht-Member `listDiscoverableGroups()`, also ausschließlich `g.discoverable = 1`. Das ist für Manager-Verwaltung falsch.
+Aktuell verwendet `worker/fieldGroups.ts -> listGroups()` für Nicht-Member `listDiscoverableGroups()` und filtert damit auf `g.discoverable = 1`. Das ist für Manager-Verwaltung falsch.
 
-Ziel-Query/Semantik:
+Ziel:
 
-- `admin`: alle aktiven Campaign-Rooms verwaltbar/auflistbar, unabhängig `discoverable`;
-- `team-editor`: aktive Rooms seines serverseitig kanonischen Teams unabhängig `discoverable`;
-- `viewer`: nur discoverable Rooms, sofern Discovery für diese Rolle weiterhin vorgesehen ist;
+- `admin`: alle aktiven Campaign-Rooms unabhängig `discoverable`;
+- `team-editor`: aktive Rooms des serverseitig kanonischen eigenen Teams unabhängig `discoverable`;
+- `viewer`: nur discoverable Rooms, sofern Discovery für Viewer weiterhin vorgesehen ist;
 - `field-group-member`: nur eigener Room;
-- optionaler `team`-Filter darf Scope nur verengen, nie erweitern.
+- optionaler `team`-Filter verengt, erweitert nie.
 
-Tests müssen `discoverable=false` + Manager-Liste + Code Join + QR Join abdecken.
+## Rooms: aktueller Join-Zugang und Rotation
 
-## Rooms: aktueller Join-Zugang vs Rotation
+### Zwei getrennte Nutzeraktionen
 
-### Semantik korrigieren
+**Join-Zugang anzeigen**
 
-Im UI sind zwei Operationen strikt zu trennen:
+- zeigt den aktuell gültigen Room Code, QR und Link;
+- verändert keinen Credential-State;
+- ist der normale Wiederholungsfall, wenn später jemand dazukommt;
+- loggt niemanden aus.
 
-1. **Join-Zugang anzeigen**
-   - zeigt den aktuell gültigen Room Code, QR und Link;
-   - verändert keinen Credential-State;
-   - loggt niemanden aus;
-   - soll der normale Wiederholungsfall sein, wenn später eine weitere Person beitreten soll.
+**Join-Zugang erneuern**
 
-2. **Join-Zugang erneuern**
-   - explizite Rotation;
-   - alter Code/QR/Link funktioniert danach nicht mehr für neue Beitritte;
-   - bereits beigetretene Memberships bleiben aktiv;
-   - separate Warnung/Bestätigung.
+- explizite Rotation;
+- alter Code/QR/Link wird für zukünftige Beitritte ungültig;
+- bereits beigetretene Memberships bleiben aktiv;
+- separate Bestätigung mit genau dieser Formulierung.
 
-`Join sperren` bleibt separate Revocation und blockiert neue Joins, ohne bestehende Memberships zu entfernen.
+`Join sperren` bleibt separate Revocation: neue Joins aus, bestehende Memberships bleiben bis normaler Membership-/Group-Lifecycle aktiv.
 
-### Architekturproblem: Hash-only ist nicht wiederanzeigbar
+### Hash-only-Konflikt
 
-Der aktuelle akzeptierte Vertrag in `LIVE_TEAMS.md` lautet: D1 speichert nur SHA-256 Lookup-Hashes, Plaintext nur bei Issuance/Rotation. Damit kann der Server denselben bestehenden Code später mathematisch nicht wiederherstellen.
+Aktuell speichert D1 nur Hashes. Deshalb kann derselbe bestehende Code nach Schließen des `issuedAccess`-Dialogs nicht wiederhergestellt werden.
 
-**Verboten:** zur schnellen Lösung Plaintext `roomCode`/`qrToken` in D1, RxDB, LocalStorage, IndexedDB oder Audit speichern.
+Verboten ist die schnelle Lösung, Plaintext in D1/RxDB/LocalStorage/IndexedDB/Audit/Logs zu speichern.
 
-### Vorgeschlagener sicherer Lösungsweg
+### Geplanter Security-Gate für Wiederanzeige
 
-Vor Implementation der Wiederanzeige ADR-0014/LIVE_TEAMS explizit erweitern. Bevorzugtes Design:
+Vor Implementation ADR-0014 und `LIVE_TEAMS.md` bewusst erweitern. Bevorzugtes Design:
 
-- Lookup-Hash bleibt für Join-Auflösung bestehen;
-- nur für den aktuell gültigen Credential-Satz wird zusätzlich recoverable Material **verschlüsselt at rest** gespeichert;
-- AES-GCM mit dediziertem Worker-Secret/Key, nicht mit einem Browser-Schlüssel;
-- AAD bindet mindestens Campaign ID, Group ID, Credential ID und Kind;
-- Manager-Reveal-Endpunkt autorisiert serverseitig über `requireManagedGroup` oder äquivalente kanonische Prüfung;
-- Antwort `Cache-Control: no-store`;
-- keine Secrets in Audit/Logs;
-- Reveal niemals für viewer/field-group-member;
-- Rotation/revoke/close/expiry invalidiert Reveal des alten Materials;
-- Hard expiry bleibt unverändert;
-- Secret-Key-Ausfall fail-closed;
-- keine Production-Migration in diesem Auftrag.
+- Lookup-Hash bleibt für Join-Auflösung;
+- nur der aktuell gültige Credential-Satz erhält zusätzlich recoverable, **AES-GCM-verschlüsseltes** Material at rest;
+- dediziertes serverseitiges Worker-Secret/Key;
+- AAD bindet mindestens Campaign ID, Group ID, Credential ID und Credential Kind;
+- Reveal-Endpunkt autorisiert über serverseitiges `requireManagedGroup` oder äquivalente kanonische Prüfung;
+- `Cache-Control: no-store`;
+- keine Secret-Werte in Audit/Logs;
+- kein Reveal für viewer/field-group-member;
+- Rotation/revoke/close/expiry invalidiert den alten Reveal;
+- Hard expiry unverändert;
+- Key/Ciphertext-Fehler fail-closed;
+- Production-Migration bleibt außerhalb dieses Auftrags.
 
-Bevor Code geschrieben wird, Threat Model prüfen: Key lifecycle, rollback, migration existing active Rooms, corrupted ciphertext, unauthorized tenant/group selector, audit event ohne Secret.
+Vor Code: Threat Model für Key lifecycle, bestehende aktive Rooms ohne Ciphertext, Tenant/Team-Tampering, corrupted ciphertext und Rollback dokumentieren. Falls ein besseres Design dieselben Eigenschaften erreicht, kann es nach dokumentierter Review gewählt werden. Silent Plaintext-Downgrade ist nicht erlaubt.
 
-Alternative Designs sind nur zulässig, wenn sie dieselbe Wiederanzeige ohne Plaintext-at-rest und ohne clientseitige Autorität erreichen und die Änderung dokumentiert wird.
+Tests:
 
-### Tests
-
-- Reveal current credential als Manager -> 200, gleiche Werte wiederholt;
-- Reveal als fremder Team Editor -> 403;
-- Reveal als viewer/member -> 403;
-- Rotation -> alter Join 401/Join unavailable, neuer Join erfolgreich;
-- Rotation -> bestehende Membership bleibt autorisiert;
-- Revoke -> neuer Join blockiert, bestehende Membership bleibt bis normaler Membership-/Group-Lifecycle aktiv;
+- Manager Reveal -> 200 und wiederholt identische aktuelle Werte;
+- fremder Team Editor -> 403;
+- viewer/member -> 403;
+- Rotation -> alter Future-Join blockiert, neuer erfolgreich;
+- Rotation -> bestehende Membership weiterhin autorisiert;
+- Revoke -> Future-Join blockiert, Membership bleibt;
 - close/expiry -> Reveal/Join fail-closed;
-- keine Secret-Werte in DB-Dump-/Audit-Testausgaben.
+- keine Secrets in Audit/Test-Dumps.
 
 ## Join-/Read-only-Onboarding und Sprache
 
-- Gruppenlink behält `#groupJoin=...` nur bis erfolgreiche Server-Redemption abgeschlossen ist.
-- Einführungs-Popup erscheint **nach** erfolgreicher Redemption, nicht davor.
-- Onboarding kann per versionspezifischem lokalen UI-Flag pro Gerät als gesehen markiert werden; dieses Flag ist keine Authentifizierung und enthält kein Secret.
-- Link-/Join-Onboarding startet standardmäßig Deutsch.
-- Read-only-Link-Onboarding ebenfalls standardmäßig Deutsch.
-- Sprache kann danach über normale Einstellungen geändert werden.
-- Onboarding darf Token nicht vorzeitig aus URL entfernen, rotieren oder konsumieren.
+- Group QR bleibt Fragment `#groupJoin=...` bis zur erfolgreichen serverseitigen Redemption.
+- Gruppen-Onboarding erscheint erst **nach** erfolgreicher Redemption.
+- Onboarding darf den Token nicht vorzeitig entfernen, rotieren oder konsumieren.
+- versionspezifisches lokales „gesehen“-Flag ist erlaubt, enthält aber kein Secret und keine Autorität.
+- Group-/Read-only-Link-Einstieg ist standardmäßig Deutsch; spätere Spracheinstellung bleibt möglich.
+- Read-only-Zugang darf nicht durch ein Onboarding-Popup in einen Schreibzugang verwandelt werden.
 
-## Sync-/Serverstatus entschlacken
+## Sync-/Serverstatus
 
-### Problem
+### Zielort statt neuer Floating Pill
 
-Auf der Karte ist aktuell ein prominenter gesunder Status wie `Serverbestätigt`/Sync-Status sichtbar. Gesunder Zustand ist keine dauerhafte Warnung und konkurriert mit Map-Control-Fläche.
+Gesunder Sync-Zustand wird in der Field-Shell auf die bestehende untere linke Control-Ebene verlagert: `.platform-field-bar` neben beziehungsweise in derselben visuellen Zeile wie Grid-Button/aktives Team. Ziel-Identifier für die neue kleine Anzeige kann `platform-sync-indicator` sein.
 
-### Ziel
+Dafür soll `PlatformAppContext` einen minimalen, UI-tauglichen Sync-Zustand aus `App.tsx` erhalten, statt `PlatformShell` einen zweiten unabhängigen Serverstatus erfinden zu lassen. Source bleibt `refreshState`/`syncMessageCode` plus Connectivity; keine Client-Autorität entsteht dadurch.
 
-- Healthy/current: höchstens kleiner ruhiger Punkt/Icon, keine große Text-Pill.
-- Syncing: kurzer dezenter Zustand, kein dominanter persistenter Text.
-- Offline/Error/Conflict/New data: sichtbar und verständlich.
-- Nutzer muss bei einem Problem erkennen können, was passiert und welche Aktion möglich ist.
+Zustände:
 
-Vor Änderung den exakten Renderpfad in `MapView.tsx` für `MapRefreshState` sowie `.map-refresh-control`/`.map-refresh-button` in `m4.css` lokalisieren. Nicht nur `.connection` in der Topbar ändern, wenn der Screenshot-Status aus dem Refresh-Control kommt.
+- healthy/current: kleiner grüner/neutraler Punkt oder Icon, kein permanenter Text;
+- loading/syncing: kurz sichtbarer dezenter Zustand;
+- offline/error/conflict/new data: sichtbarer Text/Popover/Badge mit Handlungsmöglichkeit.
 
-Akzeptanz:
+`MapView.tsx` behält den separaten manuellen `.map-refresh-button` unten rechts, wenn er funktional gebraucht wird. Der Button ist nicht der dauerhafte „Serverbestätigt“-Text.
 
-- `current` nimmt minimalen Raum ein;
-- `loading` ist erkennbar, aber nicht störend;
-- `error` bleibt auffällig;
-- `available` bleibt mit Update-Hinweis erkennbar;
-- normaler Zustand ist auf derselben linken Status-/Control-Ebene ausgerichtet, nicht als große schwebende Pill oben rechts.
+Vor Änderung alle Renderpfade prüfen, die `refreshState`, `syncMessageCode`, `.connection`, `.map-refresh-control` oder verwandte Status-Pills rendern. Am Ende darf es nicht gleichzeitig zwei gesunde Statusanzeigen geben.
 
-## Admin/Invite-Grenze
+## Admin-/Invite-Grenze
 
-Diese Field-UI-Arbeit vermischt keine privilegierten Organization-Einladungen mit Rooms.
+- Organizer/Admin Invites gehören zur Admin-/Organization-Einladungsoberfläche.
+- Room Join gehört zu `RoomsHub`/Field Groups.
+- Team Read-only Sharing wird **nicht** als Campaign-weite Viewer-Abkürzung gebaut. Es kommt erst, wenn ein echter serverseitiger Team-Scope existiert.
 
-- Organizer/Admin Invites: Admin-Einladungsoberfläche / Organization Security Runtime.
-- Room Join: `RoomsHub` / Field Group Credentials.
-- Team Read-only Sharing: nur nach echtem serverseitigem Team-Scope; niemals Campaign-weiten Viewer-Link als angeblichen Team-Link ausgeben.
+Dieser Plan reserviert diese Grenze, implementiert aber keine neue Team-Read-only-Autorisierungsarchitektur ohne separaten Security-Slice.
 
 ## Brainrot-Invariante
 
-Der aus `fun/menu-hold-xxl-runner` übernommene Fun-Mode bleibt unabhängig von der Launcher-Neustruktur:
+Der Fun-Mode bleibt unabhängig:
 
 - Target `.platform-grid-button`;
 - ungefähr fünf Sekunden Hold;
-- nach erfolgreichem Long-Press normalen Menü-Klick unterdrücken;
+- nach erfolgreichem Hold normalen Menü-Klick unterdrücken;
 - Overlay schließen/wieder öffnen funktioniert;
-- Launcher-Refactor darf Event-/Pointer-Handling nicht brechen.
+- Launcher- und Pointer-Refactor darf die Hold-Erkennung nicht brechen.
+
+## Bewusst nicht in diesem Slice erfinden
+
+- keine vollständige neue Street Engine;
+- keine neue OSM-/Straßensuche ohne bestehenden Daten-/Privacy-/Rate-Limit-Vertrag;
+- kein Campaign-weites Read-only als angeblicher Team-Link;
+- kein zweites primäres Menü innerhalb Team/Rooms;
+- kein client-only Authz;
+- keine Plaintext-Credentials at rest;
+- keine Production-Migration oder Production-Deploy.
 
 ## Implementierungsreihenfolge
 
-1. Remote-Head/PR/CI re-verifizieren.
-2. Tests für Launcher-Vertrag hinzufügen: separate Items, keine `TeamCenter`-Tabs als primäre Navigation.
-3. Shared `FieldBottomSheet` + Pointer/Snap/Accessibility-Tests.
-4. `PlatformShell`/`platformContract` auf separate Launcher-Ziele umbauen.
-5. Team fokussieren und Room-/Progress-/Comment-Code aus `TeamCenter` extrahieren.
-6. `RoomsHub` inkl. hidden-manager-list fix und Discoverability/Join-Regressionen.
-7. Credential-Reveal-Architektur als ADR-/Schema-/Server-Slice implementieren, erst nach expliziter Security-Review im selben Branch; keine Production-Migration.
-8. `Fortschritt` als team-scoped Hub.
-9. `Kommentare` als eigenständiger Hub + mobile composer/sheet hardening.
-10. `StreetsHub` als eigener Launcher, vorhandene Street/Smart-Street Contracts anbinden ohne Future Engine vorzutäuschen.
-11. Street close-state fix in `App.tsx`.
-12. Server-/Sync-Indikator reduzieren.
-13. Join/Read-only-Onboarding deutsch und token-safe.
-14. komplette Tests/typecheck/audit/build.
+1. Remote-Head/PR/CI re-verifizieren und Plan/Graph lesen.
+2. Contract-/Structure-Tests für Launcher: separate Items, keine `.team-center-tabs`-Primärnavigation.
+3. `FieldBottomSheet` mit Pointer/Snap/Keyboard/Accessibility-Tests.
+4. `PlatformShell`/`platformContract` auf sieben getrennte Launcher-Ziele umbauen.
+5. `TeamHub` fokussieren; Room/Progress/Comment-Logik aus `TeamCenter` extrahieren.
+6. `RoomsHub` plus hidden-manager-list fix und Discoverability-Code/QR-Regressionen.
+7. Credential-Reveal-Architektur reviewen, ADR/LIVE_TEAMS aktualisieren, dann erst Schema/Server/UI; keine Production-Migration.
+8. `TeamProgressHub` mit festem active-Team-Scope.
+9. `CommentsHub` plus mobile Composer/Keyboard-Hardening.
+10. `StreetsHub` mit echtem manuellen Einstieg und sauber reserviertem Future-Bereich.
+11. Street-State-Machine in `App.tsx` inklusive Effect/Delete-Fallbacks korrigieren.
+12. Sync-State in `PlatformAppContext` und kleinen `.platform-field-bar`-Indicator überführen; doppelte Healthy-Pills entfernen.
+13. Group-/Read-only-Onboarding Deutsch und token-safe.
+14. Tests, Typecheck, Dependency Audit, Build.
 15. exact-head CI.
-16. isolierten Staging-Branch von exakt diesem Product-Head ableiten; keine Production-Bindings.
-17. Live-Smoke/Browser: Navigation, Sheets, Street flow, comments/keyboard, Rooms on/off, code+QR, membership preservation, Brainrot.
+16. isoliertes Staging exakt von Product-Head ableiten.
+17. Live Browser/Worker Matrix inklusive Rooms visible/hidden, QR/Code, Membership preservation, drag sheets, comments keyboard, Street close, Brainrot.
 18. D1/FK/Cleanup/State-Preservation prüfen.
-19. Erst dann Testlink an Master geben.
+19. Erst dann Testlink an Master.
 
 ## Testmatrix
 
 ### Launcher
 
-- Menü öffnet über `.platform-grid-button`.
-- Grid zeigt erwartete separate Items entsprechend Capability/Context.
-- Team öffnet keinen Tab-Container mit Rooms/Fortschritt/Kommentare.
-- Rooms/Fortschritt/Kommentare/Streets jeweils direkt aus Grid erreichbar.
-- Gebiet nur wenn `canCreateArea`.
-- Settings weiterhin erreichbar.
+- `.platform-grid-button` öffnet Launcher.
+- Grid zeigt die sieben erwarteten Funktionen, soweit Kontext/Capability sie sinnvoll zulässt.
+- Reihenfolge bleibt Team, Rooms, Fortschritt, Kommentare, Streets, Gebiet, Einstellungen.
+- Team öffnet keinen Tabs-Container mit Rooms/Fortschritt/Kommentare.
+- Rooms/Fortschritt/Kommentare/Streets direkt aus Grid erreichbar.
 - Brainrot Long-Press öffnet Brainrot und nicht zusätzlich Menü.
 
-### Bottom Sheets mobile
+### Bottom Sheets
 
 - compact -> expanded -> near-fullscreen per Handle drag.
-- Content scroll lässt Snap-Höhe unverändert.
+- Content scroll verändert Snap-Höhe nicht.
 - Handle/Header bleiben sichtbar.
-- Close funktioniert an jedem Snap.
-- 390x844 und schmaler Viewport.
+- Close an jedem Snap.
+- 390x844 plus schmalerer Viewport.
 - Browser Bottom Bar + Software Keyboard.
 - viele Kommentare -> Composer erreichbar.
+- Settings bleibt vollständig erreichbar.
 
 ### Street
 
-- manuell zeichnen -> speichern -> nur Street detail.
+- Area -> manuell zeichnen -> speichern -> nur Street detail.
 - Status setzen -> schließen -> Map.
-- kein Area-Sheet-Autoreopen.
+- kein Area-Autoreopen durch Close oder Effect.
+- Delete -> Map.
 - Area bewusst antippen -> Area-Sheet.
 
 ### Rooms
 
-- create discoverable=true -> Room + code + QR.
-- create discoverable=false -> Room + code + QR.
-- Manager sieht hidden Room weiterhin.
-- Code join bei visible/hidden.
-- QR join bei visible/hidden.
+- create discoverable=true -> Room + Code + QR.
+- create discoverable=false -> Room + Code + QR.
+- Manager sieht hidden Room.
+- Code join visible/hidden.
+- QR join visible/hidden.
 - current credential reveal wiederholt identisch.
-- Rotation ändert future join material, Membership bleibt.
-- Revoke blockiert future join, Membership bleibt.
-- Close/expiry blockiert join gemäß Lifecycle.
+- Reveal rotiert nichts.
+- Rotation invalidiert nur Future-Join-Material, bestehende Membership bleibt.
+- Revoke blockiert Future Join, Membership bleibt.
+- close/expiry gemäß Lifecycle.
 
 ### Sync
 
-- current healthy minimal.
+- healthy/current minimal in `.platform-field-bar`.
 - loading dezent.
 - offline/error/conflict sichtbar.
-- refresh/update action bleibt zugänglich.
+- manueller Refresh bleibt zugänglich.
+- keine zweite permanente Healthy-Pill.
 
 ### Security/Regression
 
 - fremde Campaign/Team-IDs erweitern keinen Scope.
 - unbekannte API fail-closed.
 - Organization-/Admin-Gates unverändert.
-- Production `wrangler.jsonc` Invarianten unverändert.
+- Production `wrangler.jsonc`: `main=./worker/indexFc52.ts`, D1 `0113e775-1e43-4d96-8b97-51fdeec7355b`, Rate IDs `91714001/2/3`, kein `nodejs_compat`, kein Organizer-Staging-Limiter.
 - kein Production-Deploy/Migration.
 
 ## Abnahmekriterien
 
 - Primäre Field-Navigation ist `.platform-menu-grid`, nicht `.team-center-tabs`.
-- Es gibt keine interne `overview|rooms|progress|comments` Primärnavigation mehr in TeamCenter.
-- Team ist fokussiert auf Team-Verwaltung/Identität.
+- `type View = "overview" | "rooms" | "progress" | "comments"` ist nicht mehr die primäre Team-Navigation.
+- Team ist fokussiert auf Team-Verwaltung/Identität plus höchstens kompakte Zusammenfassung.
 - Rooms, Fortschritt, Kommentare und Streets sind eigenständig erreichbar.
-- Bottom-Sheet-Chrome bleibt beim Content-Scroll stehen und lässt sich per Handle aufziehen.
+- Bottom-Sheet-Chrome bleibt beim Content-Scroll stehen und lässt sich am Handle vergrößern/verkleinern.
 - Kommentar-Composer bleibt mobil bei vielen Kommentaren/Keyboard erreichbar.
-- Street-Create-/Status-/Close-Flow endet direkt auf Map.
+- Street-Create-/Status-/Close-Flow endet auf Map.
 - `Online anzeigen` beeinflusst nur Discovery.
 - Hidden Room bleibt für seinen Manager verwaltbar.
 - Code/QR join visible und hidden.
 - `Join-Zugang anzeigen` rotiert nichts.
 - `Join-Zugang erneuern` wirft bestehende Mitglieder nicht raus.
-- Room-Reveal-Lösung speichert kein Secret im Klartext und ist serverseitig autorisiert.
-- Healthy sync status ist unaufdringlich; echte Fehler bleiben sichtbar.
+- Room-Reveal speichert kein Secret im Klartext und ist serverseitig autorisiert.
+- Healthy sync status ist klein und links in der Field-Control-Ebene; echte Fehler bleiben sichtbar.
 - Brainrot Long-Press bleibt funktionsfähig.
-- Tests/typecheck/audit/build grün.
-- Staging-Live-Matrix grün und Datenzustand preserved.
+- Tests/typecheck/audit/build und Staging-Live-Matrix grün.
 - PR #76 bleibt Draft/unmerged.
+
+## Selbstkritik des ersten Drafts und Korrekturen
+
+Der erste Draft wurde gegen Screenshots und Source erneut geprüft. Folgende Fehlinterpretationen waren möglich und sind in dieser Fassung geschlossen:
+
+1. **`stats` war semantisch noch zu offen.** Korrektur: Field-Launcher `stats` bedeutet aktives Team, nicht Campaign-weite Default-Stats.
+2. **Street-Rücksprung war zu eng am X-Handler beschrieben.** Korrektur: auch Snapshot-Effect und `deleteSelectedTask()` sind Teil der impliziten Parent-Navigation und müssen geprüft/entkoppelt werden.
+3. **Sync-Ziel war nur „kleiner“.** Korrektur: Healthy-State gehört konkret in/bei `.platform-field-bar`; `PlatformAppContext` transportiert den UI-State, statt eine neue unabhängige Pill zu bauen.
+4. **Launcher-Reihenfolge war nicht eindeutig genug.** Korrektur: sieben Items mit fester erster Reihenfolge; keine zweite App-Liste in Team.
+5. **Streets konnte als Auftrag für eine neue Engine gelesen werden.** Korrektur: nur echte vorhandene manuelle Funktion anbinden und Future Engine/Suche sauber reservieren.
+6. **Team-Kurzstats und Fortschritt hätten doppelt werden können.** Korrektur: Team darf nur kompakte Zusammenfassung zeigen; vollständige Fortschritt-App ist separat.
+7. **Room-Wiederanzeige hätte zu Plaintext-Persistenz verleiten können.** Korrektur: ADR-/Threat-Model-Gate und verschlüsseltes-at-rest Design vor Schema-Code zwingend.
+
+Wenn Implementation von einer dieser korrigierten Aussagen abweichen soll, muss die Abweichung vor Code als Plan-/ADR-Änderung dokumentiert werden, nicht still im UI entstehen.
 
 ## Dokumentation bei Implementation
 
@@ -637,8 +641,8 @@ Im selben Slice aktualisieren, wenn sich der Vertrag real ändert:
 - dieser Plan;
 - `docs/product/UX.md`;
 - `docs/architecture/LIVE_TEAMS.md` und ADR-0014, falls recoverable Join Credentials akzeptiert werden;
-- `docs/architecture/SECURITY.md`, falls neuer Credential-encryption/reveal Endpoint entsteht;
-- `docs/quality/QUALITY.md` für mobile Sheet/keyboard acceptance soweit nötig;
+- `docs/architecture/SECURITY.md` bei Credential-encryption/reveal Endpoint;
+- `docs/quality/QUALITY.md` für mobile Sheet/Keyboard Acceptance soweit nötig;
 - `docs/prompts/CONTINUE_FIELD_UI_NAVIGATION_LATEST.md`.
 
 ## Wiederaufnahme
