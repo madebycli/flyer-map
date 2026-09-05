@@ -28,6 +28,8 @@ type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & {
   ORGANIZATION_KDF_DIAGNOSTICS?: string;
 };
 
+const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/u;
+
 function harden(response: Response) {
   const headers = new Headers(response.headers);
   headers.set("x-content-type-options", "nosniff");
@@ -39,6 +41,17 @@ function harden(response: Response) {
     statusText: response.statusText,
     headers,
   });
+}
+
+export function redirectBareRootToOrganizationLogin(request: Request): Response | null {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const url = new URL(request.url);
+  if (url.pathname !== "/") return null;
+  if (url.searchParams.has("workbench")) return null;
+  const campaignId = url.searchParams.get("campaign");
+  if (campaignId && CAMPAIGN_ID_PATTERN.test(campaignId)) return null;
+  const login = new URL("/login", url);
+  return Response.redirect(login.toString(), 302);
 }
 
 function kdfUnavailableResponse(error: OrganizationPasswordKdfUnavailableError, diagnostics: boolean) {
@@ -58,6 +71,8 @@ export default {
   async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
     configureOrganizationPasswordKdfRuntime(env.ORGANIZATION_PASSWORD_KDF);
     try {
+      const rootRedirect = redirectBareRootToOrganizationLogin(request);
+      if (rootRedirect) return harden(rootRedirect);
       const methodGuard = guardOrganizationApiMethod(request);
       if (methodGuard) return harden(methodGuard);
       const queryGuard = guardOrganizationSecurityQuery(request);
