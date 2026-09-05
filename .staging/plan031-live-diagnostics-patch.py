@@ -42,7 +42,15 @@ replace_once(
 
 replace_once(
     '  [[ "$status" == \'201\' ]]\n',
-    '  plan031_checkpoint "create_group_http" "$status"\n  [[ "$status" == \'201\' ]]\n',
+    '''  plan031_checkpoint "create_group_http" "$status"
+  if [[ "$status" != '201' ]]; then
+    local error_code
+    error_code="$(jq -r '.error.code // "unknown"' "$output" 2>/dev/null || printf 'unparseable')"
+    jq -n --arg stage "create_group" --arg status "$status" --arg errorCode "$error_code" \
+      '{stage:$stage,http_status:$status,error_code:$errorCode}' > "$OUT/plan031-create-group-failure.json"
+  fi
+  [[ "$status" == '201' ]]
+''',
 )
 
 replace_once(
