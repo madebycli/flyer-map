@@ -17,13 +17,21 @@ import {
   guardOrganizationManagedLegacyAdminRequest,
   rewriteOrganizationManagedAccessResponse,
 } from "./organizationLegacyGuard.ts";
+import {
+  handleOrganizationFieldGroupList,
+  type OrganizationFieldGroupListEnv,
+} from "./organizationFieldGroupList.ts";
+import {
+  handleTeamCommentsSummary,
+  type TeamCommentsSummaryEnv,
+} from "./teamCommentsSummary.ts";
 import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 
 export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
 export { OrganizationPasswordKdfDurableObject } from "./organizationPasswordKdfDurableObject.ts";
 
 type BaseEnv = Parameters<typeof baseWorker.fetch>[1];
-type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & {
+type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & OrganizationFieldGroupListEnv & TeamCommentsSummaryEnv & {
   ORGANIZATION_PASSWORD_KDF?: OrganizationPasswordKdfNamespace;
   ORGANIZATION_KDF_DIAGNOSTICS?: string;
 };
@@ -87,6 +95,10 @@ export default {
       if (securityResponse) return harden(securityResponse);
       const organizationResponse = await handleOrganizationApi(request, env);
       if (organizationResponse) return harden(organizationResponse);
+      const roomListResponse = await handleOrganizationFieldGroupList(request, env);
+      if (roomListResponse) return harden(roomListResponse);
+      const teamCommentsResponse = await handleTeamCommentsSummary(request, env);
+      if (teamCommentsResponse) return harden(teamCommentsResponse);
       const baseResponse = await baseWorker.fetch(request, env, context);
       const identityAwareResponse = await rewriteOrganizationManagedAccessResponse(request, env.DB, baseResponse);
       return harden(failClosedOrganizationApiFallback(request, identityAwareResponse));
