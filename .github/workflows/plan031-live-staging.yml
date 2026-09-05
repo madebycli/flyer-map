@@ -1,0 +1,128 @@
+name: Plan 031 Live Staging Acceptance
+
+on:
+  push:
+    branches:
+      - organizer-admin-staging
+    paths:
+      - '.github/workflows/plan031-live-staging.yml'
+      - '.staging/plan031-live-patch.py'
+      - '.staging/plan031-field-browser.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: plan031-live-staging
+  cancel-in-progress: true
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AUDITED_SOURCE_SHA: 8a751e50b12067db6164465276abdf11bda6960e
+      PRODUCT_BRANCH: feature/organizer-admin-platform
+      FINAL_BOOTSTRAP_SECRET_SHA256: db8d5633992642d92c903db9d0fec8dbb9171d47086f8bf2a6d1cdcbc415f797
+    steps:
+      - name: Checkout staging harness
+        uses: actions/checkout@v4
+        with:
+          ref: organizer-admin-staging
+          path: runner
+          fetch-depth: 1
+
+      - name: Checkout exact Product head
+        uses: actions/checkout@v4
+        with:
+          ref: feature/organizer-admin-platform
+          path: product
+          fetch-depth: 0
+
+      - name: Verify exact Product head and Draft PR 76
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$(git -C product rev-parse HEAD)" == "$AUDITED_SOURCE_SHA" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.sha')" == "$AUDITED_SOURCE_SHA" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.ref')" == "$PRODUCT_BRANCH" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.draft')" == 'true' ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.state')" == 'open' ]]
+          grep -Fq '"main": "./worker/indexFc52.ts"' product/wrangler.jsonc
+          grep -Fq '0113e775-1e43-4d96-8b97-51fdeec7355b' product/wrangler.jsonc
+          grep -Fq '91714001' product/wrangler.jsonc
+          grep -Fq '91714002' product/wrangler.jsonc
+          grep -Fq '91714003' product/wrangler.jsonc
+          ! grep -Fq 'nodejs_compat' product/wrangler.jsonc
+
+      - name: Assemble isolated Plan 031 harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp runner/.staging/admin-v9-release.sh product/.staging/admin-v9-release.sh
+          cp runner/.staging/admin-v9-browser.mjs product/.staging/admin-v9-browser.mjs
+          cp runner/.staging/plan031-field-browser.mjs product/.staging/plan031-field-browser.mjs
+          cp runner/.staging/plan031-live-patch.py product/.staging/plan031-live-patch.py
+          cd product
+          python .staging/plan031-live-patch.py
+          bash -n .staging/admin-v9-release.sh
+          node --check .staging/admin-v9-browser.mjs
+          node --check .staging/plan031-field-browser.mjs
+          grep -Fq 'FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY' .staging/admin-v9-release.sh
+          grep -Fq 'field_group_recoverable_credentials' .staging/admin-v9-release.sh
+          grep -Fq 'plan031-api.json' .staging/admin-v9-release.sh
+          grep -Fq 'plan031-field-browser.mjs' .staging/admin-v9-release.sh
+          git diff --exit-code "$AUDITED_SOURCE_SHA" -- wrangler.jsonc
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: product/package-lock.json
+
+      - name: Install exact Product dependencies
+        working-directory: product
+        run: npm ci --no-audit --no-fund
+
+      - name: Reconfirm Product gates before remote staging write
+        working-directory: product
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test
+          npm run typecheck
+          npm run build
+          git diff --exit-code "$AUDITED_SOURCE_SHA" -- . ':(exclude).staging/admin-v9-release.sh' ':(exclude).staging/admin-v9-browser.mjs' ':(exclude).staging/plan031-field-browser.mjs' ':(exclude).staging/plan031-live-patch.py'
+
+      - name: Run isolated Plan 031 Cloudflare acceptance
+        working-directory: product
+        shell: bash
+        run: bash .staging/admin-v9-release.sh
+
+      - name: Verify sanitized acceptance evidence
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '.ok==true' /tmp/admin-v9/plan031-api.json >/dev/null
+          jq -e '.ok==true' /tmp/admin-v9/plan031-browser.json >/dev/null
+          jq -e '.ok==true and .field_group_recovery_key_configured==true and .key_bytes==32' /tmp/admin-v9/plan031-recovery-secret.json >/dev/null
+          jq -e '.[0].results[0] | .group_count==0 and .credential_count==0 and .recovery_count==0 and .membership_count==0' /tmp/admin-v9/plan031-clean-state.json >/dev/null
+          jq -e '.production_untouched==true and .audited_source==env.AUDITED_SOURCE_SHA' /tmp/admin-v9/final-safety.json >/dev/null
+          test -s /tmp/admin-v9/test-url.txt
+
+      - name: Upload sanitized Plan 031 staging diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan031-live-staging-diagnostics
+          path: /tmp/admin-v9/
+          retention-days: 3
+          if-no-files-found: warn
