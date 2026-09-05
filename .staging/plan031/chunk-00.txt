@@ -1,0 +1,352 @@
+from pathlib import Path
+
+ROOT = Path.cwd()
+
+
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding='utf-8')
+
+
+def write(path: str, content: str) -> None:
+    target = ROOT / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content.rstrip() + '\n', encoding='utf-8')
+    print(f'WRITE {path}')
+
+
+def replace_exact(path: str, old: str, new: str, count: int = 1) -> None:
+    target = ROOT / path
+    text = target.read_text(encoding='utf-8')
+    actual = text.count(old)
+    if actual != count:
+        raise RuntimeError(f'{path}: expected {count} occurrence(s), found {actual}: {old[:120]!r}')
+    target.write_text(text.replace(old, new, count), encoding='utf-8')
+    print(f'PATCH {path}')
+
+
+def append_once(path: str, marker: str, content: str) -> None:
+    target = ROOT / path
+    text = target.read_text(encoding='utf-8')
+    if marker in text:
+        print(f'SKIP {path}: {marker}')
+        return
+    target.write_text(text.rstrip() + '\n\n' + content.rstrip() + '\n', encoding='utf-8')
+    print(f'APPEND {path}')
+
+
+write('src/platform/platformContract.ts', r'''
+import type { AccessRole } from "../data/campaignApi.ts";
+
+export type PlatformSyncState = "healthy" | "refreshing" | "offline" | "new-data" | "error";
+
+export type PlatformAppCommand =
+  | {
+      id: number;
+      type:
+        | "open-settings"
+        | "open-team-management"
+        | "open-campaign-comments"
+        | "start-area-drawing"
+        | "start-manual-street";
+    }
+  | {
+      id: number;
+      type: "select-active-team";
+      teamId: string;
+    }
+  | {
+      id: number;
+      type: "open-street-task";
+      taskId: string;
+    };
+
+export type PlatformAppCommandType = PlatformAppCommand["type"];
+
+export type PlatformActiveTeam = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+export type PlatformTeam = PlatformActiveTeam;
+
+export type PlatformStreetSummary = {
+  id: string;
+  label: string;
+  areaId: string;
+  areaName: string;
+  teamId: string;
+  teamName: string;
+  status: "open" | "completed" | "later" | "not-deliverable";
+};
+
+export type PlatformAppContext = {
+  campaignId: string;
+  accessRole: AccessRole | null;
+  accessTeamId: string | null;
+  activeGroupId: string | null;
+  activeTeam: PlatformActiveTeam | null;
+  teams: PlatformTeam[];
+  streets: PlatformStreetSummary[];
+  launcherAvailable: boolean;
+  canManageTeams: boolean;
+  canCreateArea: boolean;
+  canCreateManualStreet: boolean;
+  syncState: PlatformSyncState;
+  syncLabel: string | null;
+};
+
+export type PlatformLauncherItem = {
+  id: "team" | "rooms" | "stats" | "comments" | "streets" | "settings" | "area-create";
+  label: string;
+  icon: string;
+  command: Exclude<PlatformAppCommandType, "select-active-team" | "open-street-task"> | null;
+  opensTeamHub?: boolean;
+  opensRoomsHub?: boolean;
+  opensProgressHub?: boolean;
+  opensCommentsHub?: boolean;
+  opensStreetsHub?: boolean;
+};
+
+export function buildPlatformLauncherItems(
+  context: PlatformAppContext | null,
+): PlatformLauncherItem[] {
+  const items: PlatformLauncherItem[] = [
+    { id: "team", label: "Team", icon: "👥", command: null, opensTeamHub: true },
+  ];
+
+  if (context?.accessRole && context.accessRole !== "collection-collector") {
+    items.push(
+      { id: "rooms", label: "Rooms", icon: "🚐", command: null, opensRoomsHub: true },
+      { id: "stats", label: "Fortschritt", icon: "📊", command: null, opensProgressHub: true },
+      { id: "comments", label: "Kommentare", icon: "💬", command: null, opensCommentsHub: true },
+      { id: "streets", label: "Straßen", icon: "🛣️", command: null, opensStreetsHub: true },
+    );
+  }
+
+  items.push({ id: "settings", label: "Einstellungen", icon: "⚙️", command: "open-settings" });
+
+  if (context?.canCreateArea) {
+    items.push({ id: "area-create", label: "Gebiet", icon: "➕", command: "start-area-drawing" });
+  }
+
+  return items;
+}
+''')
+
+write('src/platform/FieldBottomSheet.tsx', r'''
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import "./field-bottom-sheet.css";
+
+export type FieldSheetSnap = "compact" | "expanded" | "full";
+
+const SNAP_RATIOS: Record<FieldSheetSnap, number> = {
+  compact: 0.34,
+  expanded: 0.62,
+  full: 0.88,
+};
+const SNAP_ORDER: FieldSheetSnap[] = ["compact", "expanded", "full"];
+const MIN_DRAG_PX = 8;
+
+function viewportHeight() {
+  return Math.max(320, window.visualViewport?.height ?? window.innerHeight);
+}
+
+function snapHeight(snap: FieldSheetSnap, viewport: number) {
+  return Math.round(viewport * SNAP_RATIOS[snap]);
+}
+
+function nearestSnap(height: number, viewport: number): FieldSheetSnap {
+  return SNAP_ORDER.reduce((best, candidate) => {
+    const bestDistance = Math.abs(height - snapHeight(best, viewport));
+    const candidateDistance = Math.abs(height - snapHeight(candidate, viewport));
+    return candidateDistance < bestDistance ? candidate : best;
+  }, "expanded" as FieldSheetSnap);
+}
+
+function clampHeight(height: number, viewport: number) {
+  return Math.max(snapHeight("compact", viewport), Math.min(snapHeight("full", viewport), height));
+}
+
+export function FieldBottomSheet({
+  open,
+  title,
+  kicker,
+  onClose,
+  initialSnap = "expanded",
+  className = "",
+  children,
+  footer,
+}: {
+  open: boolean;
+  title: string;
+  kicker?: string;
+  onClose: () => void;
+  initialSnap?: FieldSheetSnap;
+  className?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  const [snap, setSnap] = useState<FieldSheetSnap>(initialSnap);
+  const [viewport, setViewport] = useState(() => viewportHeight());
+  const [dragHeight, setDragHeight] = useState<number | null>(null);
+  const drag = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+
+  useEffect(() => {
+    if (open) setSnap(initialSnap);
+  }, [initialSnap, open]);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const update = () => setViewport(viewportHeight());
+    window.addEventListener("resize", update);
+    vv?.addEventListener("resize", update);
+    vv?.addEventListener("scroll", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      vv?.removeEventListener("resize", update);
+      vv?.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  const committedHeight = useMemo(() => snapHeight(snap, viewport), [snap, viewport]);
+  const displayedHeight = dragHeight ?? committedHeight;
+
+  const finishDrag = useCallback((height: number) => {
+    setSnap(nearestSnap(height, viewport));
+    setDragHeight(null);
+    drag.current = null;
+  }, [viewport]);
+
+  if (!open) return null;
+
+  return (
+    <div className="field-sheet-overlay" role="presentation" onMouseDown={onClose}>
+      <section
+        className={`field-bottom-sheet ${className}`.trim()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        data-snap={snap}
+        style={{ "--field-sheet-height": `${displayedHeight}px` } as CSSProperties}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button
+          className="field-sheet-handle-button"
+          type="button"
+          aria-label="Fensterhöhe ändern"
+          aria-valuetext={snap === "compact" ? "Kompakt" : snap === "expanded" ? "Erweitert" : "Fast Vollbild"}
+          onPointerDown={(event) => {
+            drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: committedHeight };
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+            const next = clampHeight(drag.current.startHeight + drag.current.startY - event.clientY, viewport);
+            setDragHeight(next);
+          }}
+          onPointerUp={(event) => {
+            if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+            const next = clampHeight(drag.current.startHeight + drag.current.startY - event.clientY, viewport);
+            finishDrag(next);
+          }}
+          onPointerCancel={() => {
+            setDragHeight(null);
+            drag.current = null;
+          }}
+          onKeyDown={(event) => {
+            const index = SNAP_ORDER.indexOf(snap);
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setSnap(SNAP_ORDER[Math.min(SNAP_ORDER.length - 1, index + 1)]);
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setSnap(SNAP_ORDER[Math.max(0, index - 1)]);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              setSnap("compact");
+            } else if (event.key === "End") {
+              event.preventDefault();
+              setSnap("full");
+            }
+          }}
+        >
+          <span className="field-sheet-handle" aria-hidden="true" />
+        </button>
+        <header className="field-sheet-header">
+          <div>
+            {kicker ? <span>{kicker}</span> : null}
+            <strong>{title}</strong>
+          </div>
+          <button type="button" onClick={onClose} aria-label={`${title} schließen`}>×</button>
+        </header>
+        <div className="field-sheet-body">{children}</div>
+        {footer ? <footer className="field-sheet-footer">{footer}</footer> : null}
+      </section>
+    </div>
+  );
+}
+
+export function useLegacyFieldSheetDragBridge(active = true) {
+  useEffect(() => {
+    if (!active) return;
+    let dragState: {
+      pointerId: number;
+      handle: HTMLElement;
+      sheet: HTMLElement;
+      startY: number;
+      startHeight: number;
+      moved: boolean;
+    } | null = null;
+    let blockClickUntil = 0;
+
+    const applyEnhancement = () => {
+      const viewport = viewportHeight();
+      document.documentElement.style.setProperty("--field-sheet-viewport-height", `${viewport}px`);
+      document.querySelectorAll<HTMLElement>(".bottom-sheet").forEach((sheet) => {
+        sheet.classList.add("field-sheet-enhanced");
+        if (!sheet.style.getPropertyValue("--field-sheet-height")) {
+          sheet.style.setProperty("--field-sheet-height", `${snapHeight("expanded", viewport)}px`);
+        }
+      });
+    };
+
+    const observer = new MutationObserver(applyEnhancement);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+    applyEnhancement();
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>(".sheet-handle-button") : null;
+      const sheet = target?.closest<HTMLElement>(".bottom-sheet");
+      if (!target || !sheet) return;
+      const currentHeight = sheet.getBoundingClientRect().height;
+      dragState = {
+        pointerId: event.pointerId,
+        handle: target,
+        sheet,
+        startY: event.clientY,
+        startHeight: currentHeight,
+        moved: false,
+      };
+      target.setPointerCapture?.(event.pointerId);
+      sheet.classList.add("field-sheet-dragging");
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      const delta = dragState.startY - event.clientY;
+      if (Math.abs(delta) >= MIN_DRAG_PX) dragState.moved = true;
+      if (!dragState.moved) return;
+      event.preventDefault();
+      const viewport = viewportHeight();
+      const next = clampHeight(dragState.startHeight + delta, viewport);
+      dragState.sheet.style.setProperty("--field-sheet-height", `${next}px`);
+    };
+
+    const finish = (event: PointerEvent) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      const current = dragState.sheet.getBoundingClientRect().height;
+      const viewport = viewportHeight();
+      const targetSnap = nearestSnap(current, viewport);
+      dragState.sheet.style.setProperty("--field-sheet-height", `${snapHeight(targetSnap, viewport)}px`);
+      dragState.sh
