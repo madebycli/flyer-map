@@ -11,6 +11,7 @@ import { OrganizationInviteCenter } from "./organization/OrganizationInviteCente
 import { OrganizationInviteRedeemPage, OrganizationPasswordResetPage } from "./organization/OrganizationPublicLinks";
 import { OrganizationSecurityCenter } from "./organization/OrganizationSecurityCenter";
 import { isOrganizationAdminPath } from "./organization/organizationRoutes";
+import { FunnyFocusVideo } from "./platform/FunnyFocusVideo";
 import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
 import { ActionWorkbenchPreview } from "./workbench/ActionWorkbenchPreview";
@@ -68,6 +69,7 @@ if (preview) {
   root.render(
     <StrictMode>
       <PlatformShell />
+      <FunnyFocusVideo />
       <AccessRecoveryGate />
       <AccessLinkOnboardingGate />
       <FieldGroupJoinGate />
