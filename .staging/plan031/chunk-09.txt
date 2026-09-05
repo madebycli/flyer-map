@@ -3,3 +3,15 @@ replace_exact(
     'import { TeamCommentsSummary } from "./TeamCommentsSummary.tsx";',
     'import { TeamCommentsSummary } from "../team/TeamCommentsSummary.tsx";',
 )
+
+replace_exact(
+    'src/collaboration/CommentsHub.tsx',
+    'import "./team-center.css";',
+    'import "../team/team-center.css";',
+)
+
+replace_exact(
+    'src/streets/StreetsHub.tsx',
+    'import "./team-center.css";',
+    'import "../team/team-center.css";',
+)
