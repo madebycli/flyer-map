@@ -28,6 +28,28 @@ export type CommentPage = {
   canCreate: boolean;
 };
 
+export type TeamCommentSummaryItem = {
+  id: string;
+  targetType: Exclude<CommentTargetType, "pickup-task">;
+  targetId: string;
+  targetLabel: string;
+  body: string;
+  authorLabel: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TeamCommentSummaryGroup = {
+  areaId: string | null;
+  areaName: string;
+  comments: TeamCommentSummaryItem[];
+};
+
+export type TeamCommentSummary = {
+  scope: { kind: "team" | "all"; teamId: string | null };
+  groups: TeamCommentSummaryGroup[];
+};
+
 async function parseError(response: Response) {
   let payload: { error?: { code?: string; message?: string } } | null = null;
   try {
@@ -77,6 +99,19 @@ export async function fetchComments(
     signal: options.signal,
   });
   return (await response.json()) as CommentPage;
+}
+
+export async function fetchTeamCommentSummary(
+  campaignId: string,
+  teamId: string | "all",
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ team: teamId });
+  const response = await commentsFetch(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/team-comments?${params.toString()}`,
+    { signal },
+  );
+  return (await response.json()) as TeamCommentSummary;
 }
 
 export async function createComment(
