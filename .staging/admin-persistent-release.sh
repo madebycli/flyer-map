@@ -89,7 +89,7 @@ const protectedIds = new Set(['91714001', '91714002', '91714003', '91814001', '9
 for (const limiter of c.env.admin_staging.ratelimits) {
   if (protectedIds.has(String(limiter.namespace_id))) throw new Error(`Rate collision ${limiter.namespace_id}`);
 }
-fs.writeFileSync('wrangler.jsonc', JSON.stringify(c, null, 2) + '\\n');
+fs.writeFileSync('wrangler.jsonc', JSON.stringify(c, null, 2) + '\n');
 NODE
 
 npx wrangler d1 migrations apply "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote
@@ -172,7 +172,7 @@ NODE
 
 npx wrangler deploy --dry-run --outdir .wrangler-admin-persistent-dry-run >/dev/null
 npx wrangler deploy 2>&1 | tee "$OUT/deploy.log"
-TEST_URL="$(grep -Eo 'https://[^[:space:]]+\\.workers\\.dev' "$OUT/deploy.log" | tail -n1 || true)"
+TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$OUT/deploy.log" | tail -n1 || true)"
 [[ -n "$TEST_URL" ]] || fail 'No workers.dev URL found.'
 export TEST_URL
 
@@ -202,5 +202,5 @@ diff -u "$PRIVATE/state-before-normalized.json" "$PRIVATE/state-after-normalized
 npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'PRAGMA foreign_key_check;' > "$OUT/fk-after.json"
 jq -e '[.[].results[]?] | length == 0' "$OUT/fk-after.json" >/dev/null
 
-printf '%s\\n' "$TEST_URL" > "$OUT/test-url.txt"
+printf '%s\n' "$TEST_URL" > "$OUT/test-url.txt"
 jq -n   --arg url "$TEST_URL"   --arg product "${PRODUCT_SHA:-unknown}"   --arg me "$ME_STATUS"   --arg head "$HEAD_STATUS"   --arg origin "$ORIGIN_STATUS"   --arg start "$START_STATUS"   '{ok:true,persistent:true,data_preserved:true,url:$url,product_head:$product,start:$start,unauthenticated_me:$me,head_api:$head,cross_origin:$origin,production_untouched:true,no_cleanup:true,secrets_rotated_only_when_empty:true}'   > "$OUT/final-safety.json"
