@@ -13,9 +13,9 @@ Plan 030 und Plan 031 werden ausschließlich auf `feature/organizer-admin-platfo
 
 ### Aktuell verifizierter Product-Head
 
-- Product-Head: `b22114d4e15774e563d1581cb798ad52f87ccf96`;
+- Product-Head: `085d09078fc76278b9b60d43ad1c040de322c363`;
 - PR #76: offen, Draft, ungemergt, Base `mission-rxdb-sync`;
-- exact-head GitHub Actions CI: Run `34000044120`, vollständig erfolgreich;
+- exact-head GitHub Actions CI: Run `34025756097`, vollständig erfolgreich;
 - Product-Gates im persistenten und disposable Staging: Tests, Typecheck, Dependency Audit und Production Build grün.
 
 ### Persistentes manuelles Admin-Staging
@@ -25,8 +25,8 @@ Plan 030 und Plan 031 werden ausschließlich auf `feature/organizer-admin-platfo
 - Worker `flyer-map-admin-staging`;
 - D1 `flyer-map-admin-staging-db`;
 - URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
-- persistenter Nachweis: Run `34023422212`;
-- Artifact-Digest: `sha256:68513fe257e19bd4e3311277da7e2cba2539f8fe65bd395fabced59f685bec17`.
+- persistenter Nachweis: Run `34025753720` (zusätzlich staging-branch Run `34025152382`);
+- Artifact-Digest: `sha256:e0714439aa071e858ebbf83cf6e45540cdde95269b8856e56b3079f68c22f414`.
 
 Dieser Run bestätigt:
 
@@ -38,18 +38,18 @@ Dieser Run bestätigt:
 
 Der Setup-Key ist stabil an den persistenten Bootstrap-Digest gebunden und nur für den einmaligen `/start`-Bootstrap erforderlich. Sein Klartext liegt nicht im Repository, in Logs oder Artifacts. Der finale Klartext wird ausschließlich privat an den Nutzer übergeben.
 
-Der finale persistente Deploy lief auf Staging-Checkpoint `acad72ec9b7b342591daad3eaa6096037185760c` erfolgreich durch und erhielt die leere manuelle D1 unverändert.
+Der aktuelle persistente Product-Deploy lief auf `085d09078fc76278b9b60d43ad1c040de322c363` erfolgreich durch, erhielt die manuelle D1 unverändert und rotierte keine bestehenden Secrets.
 
 ### Disposable Plan-031-Acceptance
 
 - Workflow `.github/workflows/plan031-live-staging.yml`;
 - Worker `flyer-map-admin-acceptance`;
 - D1 `flyer-map-admin-acceptance-db`;
-- aktueller grüner Run `34007347508`;
-- auditiert exakt Product-Head `b22114d4e15774e563d1581cb798ad52f87ccf96`;
-- Artifact: `plan031-live-staging-diagnostics`, ID `9981428962`.
+- aktueller grüner Run `34025856207`;
+- auditiert exakt Product-Head `085d09078fc76278b9b60d43ad1c040de322c363`;
+- Artifact: `plan031-live-staging-diagnostics`, ID `9987076941`, Digest `sha256:c22f11f5580d7eba787d3fb0ed45c5bdd60a63dced0d9c37b19bbcf6e060388b`.
 
-Belegt sind die vollständige Room-/Credential-Lifecycle-Matrix, Recovery-Cleanup, additive Migration 0020, Desktop-/Mobile-Browser ohne Overflow, Root-/Method-/Origin-Safety und `production_untouched=true`. Die Acceptance-D1 wird nach dem Lauf bereinigt; sie ist nicht die manuelle Persistenz-D1.
+Belegt sind die vollständige Room-/Credential-Lifecycle-Matrix, Recovery-Cleanup, additive Migration 0020 mit Recovery-Tabelle und Foreign Keys, Desktop-/Mobile-Browser ohne Overflow, der mobile Launcher mit `expanded` Initial-Snap, Root-/Method-/Origin-Safety und `production_untouched=true`. Die Acceptance-D1 wird nach dem Lauf bereinigt; sie ist nicht die manuelle Persistenz-D1.
 
 ### Harte Production-Isolation
 
