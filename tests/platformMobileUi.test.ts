@@ -23,8 +23,8 @@ test("sheet dragging updates the DOM without a React render per pointer move", a
   const source = await readFile("src/platform/FieldBottomSheet.tsx", "utf8");
   assert.doesNotMatch(source, /dragHeight|setDragHeight/u);
   assert.match(source, /field-sheet-dragging/u);
-  assert.match(source, /drag\.current\.sheet\.style\.setProperty\("--field-sheet-height"/u);
-  assert.match(source, /observer\.observe\(document\.body, \{ childList: true, subtree: true \}\)/u);
+  assert.match(source, /style\.setProperty\("--field-sheet-height"/u);
+  assert.match(source, /observer\.observe\(document\.body, \{ childList: true, subtree: true, attributes: true, attributeFilter: \["class"\] \}\)/u);
 });
 
 test("platform settings and team commands open legacy sheets even after a mode transition", async () => {
