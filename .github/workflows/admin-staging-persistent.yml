@@ -1,4 +1,5 @@
 name: Organizer Admin Persistent Staging
+# Persistent deploys resolve the latest green Draft PR head without resetting manual staging.
 
 on:
   push:
