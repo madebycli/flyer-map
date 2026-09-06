@@ -47,6 +47,51 @@ ADMIN_D1_ID="$(jq -r --arg name "$ADMIN_DB_NAME" '[.[]|select(.name==$name)]|if 
 [[ "$ADMIN_D1_ID" != "$PROD_D1_ID" && "$ADMIN_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || fail 'Protected D1 collision.'
 export ADMIN_D1_ID ADMIN_DB_NAME ADMIN_WORKER_NAME PROD_D1_ID RXDB_STAGING_D1_ID
 
+node <<'NODE'
+const fs = require('node:fs');
+const c = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+c.main = './worker/indexOrganizer.ts';
+c.compatibility_flags = [...new Set([...(c.compatibility_flags || []), 'nodejs_compat'])];
+c.env = c.env || {};
+c.env.admin_staging = {
+  name: process.env.ADMIN_WORKER_NAME,
+  workers_dev: true,
+  vars: {
+    ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.PERSISTENT_BOOTSTRAP_SECRET_SHA256,
+    ORGANIZATION_PASSWORD_KDF_ITERATIONS: '600000'
+  },
+  d1_databases: [{
+    binding: 'DB',
+    database_name: process.env.ADMIN_DB_NAME,
+    database_id: process.env.ADMIN_D1_ID,
+    migrations_dir: 'migrations'
+  }],
+  durable_objects: { bindings: [
+    { name: 'CAMPAIGN_SYNC', class_name: 'CampaignSyncDurableObject' },
+    { name: 'ORGANIZATION_PASSWORD_KDF', class_name: 'OrganizationPasswordKdfDurableObject' }
+  ]},
+  ratelimits: [
+    { name: 'FIELD_GROUP_JOIN_ACTOR_LIMITER', namespace_id: '91914001', simple: { limit: 30, period: 60 },
+    },
+    { name: 'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER', namespace_id: '91914002', simple: { limit: 8, period: 60 },
+    },
+    { name: 'PICKUP_SEARCH_LIMITER', namespace_id: '91914003', simple: { limit: 20, period: 10 },
+    },
+    { name: 'ORGANIZATION_LOGIN_LIMITER', namespace_id: '91914004', simple: { limit: 12, period: 60 },
+    }
+  ]
+};
+c.migrations = c.migrations || [];
+if (!c.migrations.some((x) => x.tag === 'v2-organization-password-kdf')) {
+  c.migrations.push({ tag: 'v2-organization-password-kdf', new_sqlite_classes: ['OrganizationPasswordKdfDurableObject'] });
+}
+const protectedIds = new Set(['91714001', '91714002', '91714003', '91814001', '91814002', '91814003']);
+for (const limiter of c.env.admin_staging.ratelimits) {
+  if (protectedIds.has(String(limiter.namespace_id))) throw new Error(`Rate collision ${limiter.namespace_id}`);
+}
+fs.writeFileSync('wrangler.jsonc', JSON.stringify(c, null, 2) + '\\n');
+NODE
+
 npx wrangler d1 migrations apply "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote
 npx wrangler d1 execute "$ADMIN_DB_NAME" --env admin_staging --config wrangler.jsonc --remote --json --command 'PRAGMA foreign_key_check;' > "$OUT/fk-before.json"
 jq -e '[.[].results[]?] | length == 0' "$OUT/fk-before.json" >/dev/null
@@ -103,50 +148,7 @@ if ! has_secret FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY; then
   printf '%s' "$FIELD_GROUP_KEY" | npx wrangler secret put FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY --name "$ADMIN_WORKER_NAME" >/dev/null
 fi
 
-node <<'NODE'
-const fs = require('node:fs');
-const c = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
-c.main = './worker/indexOrganizer.ts';
-c.compatibility_flags = [...new Set([...(c.compatibility_flags || []), 'nodejs_compat'])];
-c.env = c.env || {};
-c.env.admin_staging = {
-  name: process.env.ADMIN_WORKER_NAME,
-  workers_dev: true,
-  vars: {
-    ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.PERSISTENT_BOOTSTRAP_SECRET_SHA256,
-    ORGANIZATION_PASSWORD_KDF_ITERATIONS: '600000'
-  },
-  d1_databases: [{
-    binding: 'DB',
-    database_name: process.env.ADMIN_DB_NAME,
-    database_id: process.env.ADMIN_D1_ID,
-    migrations_dir: 'migrations'
-  }],
-  durable_objects: { bindings: [
-    { name: 'CAMPAIGN_SYNC', class_name: 'CampaignSyncDurableObject' },
-    { name: 'ORGANIZATION_PASSWORD_KDF', class_name: 'OrganizationPasswordKdfDurableObject' }
-  ]},
-  ratelimits: [
-    { name: 'FIELD_GROUP_JOIN_ACTOR_LIMITER', namespace_id: '91914001', simple: { limit: 30, period: 60 },
-    },
-    { name: 'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER', namespace_id: '91914002', simple: { limit: 8, period: 60 },
-    },
-    { name: 'PICKUP_SEARCH_LIMITER', namespace_id: '91914003', simple: { limit: 20, period: 10 },
-    },
-    { name: 'ORGANIZATION_LOGIN_LIMITER', namespace_id: '91914004', simple: { limit: 12, period: 60 },
-    }
-  ]
-};
-c.migrations = c.migrations || [];
-if (!c.migrations.some((x) => x.tag === 'v2-organization-password-kdf')) {
-  c.migrations.push({ tag: 'v2-organization-password-kdf', new_sqlite_classes: ['OrganizationPasswordKdfDurableObject'] });
-}
-const protectedIds = new Set(['91714001', '91714002', '91714003', '91814001', '91814002', '91814003']);
-for (const limiter of c.env.admin_staging.ratelimits) {
-  if (protectedIds.has(String(limiter.namespace_id))) throw new Error(`Rate collision ${limiter.namespace_id}`);
-}
-fs.writeFileSync('wrangler.jsonc', JSON.stringify(c, null, 2) + '\\n');
-NODE
+
 
 export CLOUDFLARE_ENV=admin_staging
 rm -rf dist .wrangler
