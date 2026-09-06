@@ -36,7 +36,7 @@ No Production deploy and no Production D1 migration were performed. `worker/inde
 - worker: `flyer-map-admin-staging`;
 - D1: `flyer-map-admin-staging-db`;
 - public URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
-- green run: `34007250234`.
+- green run: `34023422212`.
 
 Persistent evidence:
 
@@ -47,7 +47,9 @@ Persistent evidence:
 - Production safety is green;
 - missing TOTP/recovery secrets may be generated only for an empty safe state, and existing secrets are preserved.
 
-The persistent bootstrap digest is stable across code deploys. The plaintext setup key is a one-time private handoff for `/start`; it is never committed, logged or placed into artifacts, URLs, browser storage or RxDB.
+The persistent bootstrap digest is now bound to the final private setup-key handoff and remains stable across later code deploys. The plaintext setup key is a one-time private handoff for `/start`; it is never committed, logged or placed into artifacts, URLs, browser storage or RxDB.
+
+The final persistent deploy is Run `34023422212` on staging checkpoint `acad72ec9b7b342591daad3eaa6096037185760c`; it preserved the empty manual D1 and passed all safety gates.
 
 ## Disposable Plan-031 acceptance
 
