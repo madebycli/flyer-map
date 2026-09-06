@@ -67,9 +67,9 @@ export function PlatformShell() {
   const dispatchSimpleCommand = (
     type: Exclude<PlatformAppCommandType, "select-active-team" | "open-street-task">,
   ) => {
+    closeOverlays();
     commandId.current += 1;
     setAppCommand({ id: commandId.current, type });
-    closeOverlays();
   };
 
   const selectActiveTeam = (teamId: string) => {
@@ -125,7 +125,7 @@ export function PlatformShell() {
       ) : null}
 
       {menuOpen ? (
-        <FieldBottomSheet open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="compact" className="platform-menu-sheet">
+        <FieldBottomSheet open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="expanded" className="platform-menu-sheet">
           <div className="platform-menu-grid">
             {launcherItems.map((item) => (
               <button
