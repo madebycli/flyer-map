@@ -1,5 +1,5 @@
 version: 1
-last_updated: 2026-09-06T02:55:00+00:00
+last_updated: 2026-09-06T09:02:00+00:00
 purpose: Live Organizer/Admin continuation overlay. Load after docs/context-organizer-admin.yaml when resuming Plan 030 or Plan 031.
 
 verified:
@@ -30,7 +30,7 @@ verified:
     acceptance_worker: flyer-map-admin-acceptance
     acceptance_d1_name: flyer-map-admin-acceptance-db
     url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
-    persistent_green_run_id: 34007250234
+    persistent_green_run_id: 34023422212
     acceptance_green_run_id: 34007347508
     audited_product_head: b22114d4e15774e563d1581cb798ad52f87ccf96
     persistence:
