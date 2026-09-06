@@ -177,7 +177,7 @@ unset -f curl
   fi
   exit 1
 fi
-if ! node .staging/plan031-field-browser.mjs > "$PRIVATE/plan031-browser.stdout" 2> "$PRIVATE/plan031-browser.stderr"; then
+if ! timeout --foreground 300s node .staging/plan031-field-browser.mjs > "$PRIVATE/plan031-browser.stdout" 2> "$PRIVATE/plan031-browser.stderr"; then
   if [[ ! -s "$OUT/plan031-browser-failure.json" ]]; then
     jq -n '{ok:false,stage:"plan031_browser_process",error:"Plan 031 browser process failed before producing diagnostics"}' > "$OUT/plan031-browser-failure.json"
   fi
