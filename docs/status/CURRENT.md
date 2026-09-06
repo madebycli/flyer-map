@@ -2,31 +2,52 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 # Current Project State
 
 ## Aktive isolierte Linie: Organizer/Admin Platform
 
-Plan 030 wird ausschließlich auf `feature/organizer-admin-platform` gegen `mission-rxdb-sync` entwickelt. Draft-PR #76 bleibt Draft und ungemergt. PR #74/#75 bleiben getrennt; `mission-release-2026-09-02-manual` bleibt unangetastet. Kein Production-Deploy und keine Production-D1-Migration ohne separate ausdrückliche Freigabe.
+Plan 030 und Plan 031 werden ausschließlich auf `feature/organizer-admin-platform` gegen `mission-rxdb-sync` entwickelt. Draft-PR #76 bleibt Draft und ungemergt. PR #74/#75 bleiben getrennt; `mission-release-2026-09-02-manual` bleibt unangetastet. Kein Production-Deploy und keine Production-D1-Migration ohne separate ausdrückliche Freigabe.
 
-### Aktuell verifizierter Organizer/Admin-Stand
+### Aktuell verifizierter Product-Head
 
-Der erste vollständig grüne isolierte Admin-Staging-Gate ist V9 Run `33924415528` / #23. Auditiert wurde Feature-Head `c62385a8c400f68753d1f1f811e2315551153885` (`fix: harden static asset responses`). Die exact-head PR-CI auf diesem Head ist vollständig grün: Tests, Typecheck, Dependency Audit und Production Build.
+- Product-Head: `b22114d4e15774e563d1581cb798ad52f87ccf96`;
+- PR #76: offen, Draft, ungemergt, Base `mission-rxdb-sync`;
+- exact-head GitHub Actions CI: Run `34000044120`, vollständig erfolgreich;
+- Product-Gates im persistenten und disposable Staging: Tests, Typecheck, Dependency Audit und Production Build grün.
 
-V9 #23 belegt gegen den echten Cloudflare-Worker:
+### Persistentes manuelles Admin-Staging
 
-- Candidate-Version-Konvergenz und fail-closed API-Method-Gates;
-- Bootstrap -> Password -> TOTP -> authentifiziertes `/api/organization/me`;
-- zwei serverseitig persistierte Campaigns nach Logout, Storage/Cookie-Clear und frischem Browser-Kontext;
-- Admin-Invite in sauberem Browser, Fragment-Token-Scrubbing und MFA-Enrolment;
-- Mobile Chromium 390x844 ohne horizontales Overflow;
-- Remote-Cleanup auf 0 Bootstrap-/Organization-/Account-/owned-Campaign-Datensätze und fehlerfreien `PRAGMA foreign_key_check`;
-- finalen ungepinnten öffentlichen Worker: `/start` 200, unauthenticated `/me` 401, HEAD API 405, fremder Origin 403;
-- identische Security-Härtung auf Worker- und statischen Asset-Antworten: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Cross-Origin-Opener-Policy: same-origin`.
+- Branch `organizer-admin-staging`;
+- Workflow `.github/workflows/admin-staging-persistent.yml`;
+- Worker `flyer-map-admin-staging`;
+- D1 `flyer-map-admin-staging-db`;
+- URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
+- persistenter Nachweis: Run `34007250234`;
+- Artifact-Digest: `sha256:68513fe257e19bd4e3311277da7e2cba2539f8fe65bd395fabced59f685bec17`.
 
-Die statischen Header werden über `public/_headers` gesetzt. Der Organizer-Worker setzt dieselben Header weiterhin für Worker-generierte Antworten. Der Staging-Testzugang verwendet einen einmaligen Bootstrap-Schlüssel; nur dessen SHA-256 liegt in der isolierten Workflow-Konfiguration, der Klartext gehört weder ins Repository noch in Logs/Artifacts.
+Dieser Run bestätigt:
+
+- keine Datenänderung zwischen State-before und State-after;
+- `PRAGMA foreign_key_check` ohne Fehler;
+- `/start=200`, unauthenticated `/api/organization/me=401`, `HEAD=405`, fremder Origin `403`;
+- `production_untouched=true`, `no_cleanup=true`;
+- Secret-Generierung nur im leeren Zustand und keine Rotation bei bestehender Datenbank.
+
+Der Setup-Key ist stabil an den persistenten Bootstrap-Digest gebunden und nur für den einmaligen `/start`-Bootstrap erforderlich. Sein Klartext liegt nicht im Repository, in Logs oder Artifacts.
+
+### Disposable Plan-031-Acceptance
+
+- Workflow `.github/workflows/plan031-live-staging.yml`;
+- Worker `flyer-map-admin-acceptance`;
+- D1 `flyer-map-admin-acceptance-db`;
+- aktueller grüner Run `34007347508`;
+- auditiert exakt Product-Head `b22114d4e15774e563d1581cb798ad52f87ccf96`;
+- Artifact: `plan031-live-staging-diagnostics`, ID `9981428962`.
+
+Belegt sind die vollständige Room-/Credential-Lifecycle-Matrix, Recovery-Cleanup, additive Migration 0020, Desktop-/Mobile-Browser ohne Overflow, Root-/Method-/Origin-Safety und `production_untouched=true`. Die Acceptance-D1 wird nach dem Lauf bereinigt; sie ist nicht die manuelle Persistenz-D1.
 
 ### Harte Production-Isolation
 
@@ -40,20 +61,9 @@ Die kanonische `wrangler.jsonc` bleibt Production-sicher:
 
 Production wurde durch das Admin-Staging nicht deployed und die Production-D1 wurde nicht migriert. Migrationen 0017/0018/0019 bleiben Production-unapplied.
 
-### Admin-Staging
-
-- Branch: `organizer-admin-staging`;
-- Workflow: `.github/workflows/admin-staging-release-v9.yml`;
-- Worker: `flyer-map-admin-staging`;
-- D1: `flyer-map-admin-staging-db`;
-- URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
-- RxDB-Staging-D1 `bcec3432-18ec-42a2-970a-64d52c8263d5` und Production-D1 werden durch Guards ausgeschlossen.
-
-Die V9-Linie pinnt Candidate/API/Browser-Smokes auf die exakte Cloudflare Worker Version und prüft den finalen Benutzerstand danach absichtlich ungepinnt über die öffentliche `workers.dev`-URL. Sanitized Artifacts enthalten keine Passwörter, Bootstrap-Secrets, TOTP-Keys oder Invite-Tokens.
-
 ## Noch offene Organizer/Admin-Master-Akzeptanz vor Production
 
-Der isolierte Teststand ist jetzt browser-testbar. Das ist ausdrücklich noch keine Production-Freigabe. Vor Production müssen die verbleibenden Master-Gates evidence-driven abgeschlossen werden, insbesondere:
+Der isolierte laufende Staging-Stand ist grün und testbar. Das ist ausdrücklich noch keine Production-Freigabe. Vor Production müssen die verbleibenden Master-Gates separat und evidence-driven abgeschlossen werden:
 
 1. explizite Legacy-Campaign-Adoption mit Audit und negativen Foreign-/Owned-/Race-Tests;
 2. vollständige Account-Security-Matrix: Username/Password, sichere Reset-Links, TOTP-Reset, Recovery-Regeneration, Sessions einzeln/alle widerrufen;
@@ -66,10 +76,6 @@ Der isolierte Teststand ist jetzt browser-testbar. Das ist ausdrücklich noch ke
 9. vollständige Admin-Console-/Lifecycle-UX ohne Fake-KPIs;
 10. komplette RxDB-/Field-Regressionsuite weiter grün halten.
 
-## Verifizierte RxDB-Mission-Basis – nicht regressieren
-
-`mission-rxdb-sync` bleibt die separate RxDB-Basis; Draft-PR #74 bleibt getrennt. D1 bleibt kanonisch, RxDB/Dexie hält lokale operative Campaign-Daten, Worker/D1 bleiben Autoritäts- und Sicherheitsgrenze. Die bereits geschlossenen Prepared-Street-/MapLibre-/Realtime-P0s dürfen durch Organizer/Admin-Arbeit nicht zurückkehren.
-
 ## Arbeitsregel bei Wiederaufnahme
 
-GitHub ist Source of Truth. Zuerst `AGENTS.md`, diese Datei, `docs/context-map.yaml`, danach `docs/context-organizer-admin.yaml`, `docs/context-organizer-admin-live.yaml`, Plan 030, ADR-0026 und den aktuellen Handoff lesen. Remote-Heads, PR #76, exact-head CI und aktuellen V9-Run immer neu verifizieren; dokumentierte SHAs sind Übergabemarker.
+GitHub ist Source of Truth. Zuerst `AGENTS.md`, diese Datei, `docs/context-map.yaml`, danach `docs/context-organizer-admin.yaml`, `docs/context-organizer-admin-live.yaml`, Plan 030, Plan 031, ADR-0026, ADR-0014 und den aktuellen Handoff lesen. Remote-Heads, PR #76, exact-head CI, persistenten Run und aktuellen Acceptance-Run immer neu verifizieren; dokumentierte SHAs sind Übergabemarker.
