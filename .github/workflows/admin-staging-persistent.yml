@@ -70,9 +70,11 @@ jobs:
           const c = JSON.parse(fs.readFileSync('product/wrangler.jsonc', 'utf8'));
           if (c.main !== './worker/indexFc52.ts') throw new Error('Production main changed');
           if ((c.d1_databases || []).find((x) => x.binding === 'DB')?.database_id !== '0113e775-1e43-4d96-8b97-51fdeec7355b') throw new Error('Production D1 changed');
-          if ((c.ratelimits || []).some((x) => ['91714001', '91714002', '91714003'].includes(String(x.namespace_id)))) {
-            throw new Error('Production rate limit contract changed');
+          const rateLimits = c.ratelimits || [];
+          for (const namespaceId of ['91714001', '91714002', '91714003']) {
+            if (!rateLimits.some((x) => String(x.namespace_id) === namespaceId)) throw new Error(`Production rate limit missing: ${namespaceId}`);
           }
+          if (rateLimits.some((x) => x.name === 'ORGANIZATION_LOGIN_LIMITER')) throw new Error('Organizer limiter leaked into production config');
           if ((c.compatibility_flags || []).includes('nodejs_compat')) throw new Error('Production compatibility flag changed');
           NODE
 
