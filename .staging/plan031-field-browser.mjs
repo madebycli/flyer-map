@@ -110,6 +110,7 @@ async function main() {
   };
 
   let browser;
+  const pageEvents = [];
   try {
     await markStage('launch');
     browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
@@ -117,6 +118,10 @@ async function main() {
     await markStage('desktop_login');
     const desktop = await browser.newContext({ ...versionContext, viewport: { width: 1440, height: 900 } });
     const page = await desktop.newPage();
+    page.on('console', (message) => pageEvents.push({ type: 'console', level: message.type(), text: safeErrorMessage(message.text()) }));
+    page.on('pageerror', (error) => pageEvents.push({ type: 'pageerror', text: safeErrorMessage(error) }));
+    page.on('crash', () => pageEvents.push({ type: 'crash' }));
+    page.on('close', () => pageEvents.push({ type: 'close' }));
     page.setDefaultTimeout(25_000);
     await login(page);
     await openFieldApp(page);
@@ -129,15 +134,30 @@ async function main() {
 
     await markStage('desktop_legacy_navigation');
     const settingsButton = menu.getByRole('button', { name: 'Einstellungen', exact: true });
-    await saveJson('desktop-legacy-before.json', await page.evaluate(() => ({
-      settingsButtons: [...document.querySelectorAll('button')].filter((node) => node.textContent?.trim() === 'Einstellungen').map((node) => ({
-        disabled: node.disabled,
+    const settingsInfo = await settingsButton.evaluate((node) => ({
+      text: node.textContent?.trim() ?? '',
+      ariaLabel: node.getAttribute('aria-label'),
+      disabled: node.disabled,
+      rect: node.getBoundingClientRect().toJSON(),
+      pointerEvents: getComputedStyle(node).pointerEvents,
+      display: getComputedStyle(node).display,
+      visibility: getComputedStyle(node).visibility,
+      centerElement: document.elementFromPoint(
+        node.getBoundingClientRect().left + node.getBoundingClientRect().width / 2,
+        node.getBoundingClientRect().top + node.getBoundingClientRect().height / 2,
+      )?.outerHTML?.slice(0, 240) ?? null,
+    }));
+    await saveJson('desktop-legacy-before.json', {
+      settingsCount: await settingsButton.count(),
+      settingsInfo,
+      launcherItems: await page.locator('.platform-app-item').evaluateAll((nodes) => nodes.map((node) => ({
+        text: node.textContent?.trim() ?? '',
+        ariaLabel: node.getAttribute('aria-label'),
         rect: node.getBoundingClientRect().toJSON(),
-        pointerEvents: getComputedStyle(node).pointerEvents,
-      })),
+      }))),
       activeElement: document.activeElement?.outerHTML?.slice(0, 300) ?? null,
       overlays: document.querySelectorAll('.field-sheet-overlay').length,
-    })));
+    });
     await Promise.race([
       settingsButton.click({ timeout: 10_000 }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Settings locator click timed out')), 12_000)),
@@ -235,6 +255,7 @@ async function main() {
       mobile: { width: 390, height: 844, initialSnap: 'expanded', fullSnap: true, horizontalOverflow: false },
     });
   } catch (error) {
+    await saveJson('desktop-legacy-events.json', pageEvents);
     await saveJson('plan031-browser-failure.json', { ok: false, stage: currentStage, error: safeErrorMessage(error) });
     throw error;
   } finally {
