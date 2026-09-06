@@ -292,3 +292,12 @@ When newer shared data arrives during active draw/edit:
 - touch-friendly targets;
 - reduced-motion support;
 - QR/code flows also have non-camera/manual alternatives.
+
+
+### Plan 031 Field launcher and draggable sheets
+
+The Field UI uses one flat primary launcher in `PlatformShell`: Team, Rooms, Fortschritt, Kommentare, Streets, Gebiet and Einstellungen. Team is no longer a container for Room/progress/comment tabs. Focused field modules open as draggable bottom sheets with semantic compact/expanded/near-fullscreen heights. Only the non-scrolling handle changes sheet height; body scrolling never changes the snap point. The shared sheet contract uses Pointer Events, pointer capture, keyboard height controls, `visualViewport` and safe-area-aware scroll padding.
+
+Street creation follows Area detail -> Street draw -> Street detail -> Map. Closing or deleting the Street detail never implicitly re-opens the parent Area sheet. Contextual comments stay collapsed by default and use the parent sheet scroll surface so the composer remains reachable with long threads and the mobile keyboard.
+
+Healthy sync is intentionally quiet in the lower-left field bar. Offline, conflict, errors and newly available server data remain visible. The manual map refresh control stays a separate action.

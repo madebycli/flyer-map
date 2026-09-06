@@ -1,5 +1,6 @@
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import { resolveCampaignAdminAccountAccess } from "./adminAuth.ts";
+import { resolveOrganizationCampaignOrganizerAccess } from "./organizationCampaignAccess.ts";
 
 export type PersistentAccessRole = "admin" | "team-editor" | "viewer";
 export type AccessRole = PersistentAccessRole | "field-group-member" | "collection-collector";
@@ -226,6 +227,18 @@ export async function resolveAccess(
   if (persistent) return persistent;
   const account = await resolveCampaignAdminAccountAccess(db, request, campaignId);
   if (account) return account;
+  const organizer = await resolveOrganizationCampaignOrganizerAccess(db, request, campaignId);
+  if (organizer) {
+    return {
+      grantId: `organization:${organizer.membershipId}`,
+      campaignId: organizer.campaignId,
+      role: "admin",
+      teamId: null,
+      label: "Organizer",
+      groupId: null,
+      membershipId: null,
+    };
+  }
   return resolveFieldGroupAccess(db, request, campaignId);
 }
 

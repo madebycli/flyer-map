@@ -90,3 +90,10 @@ A map-runtime upgrade must pass a dedicated browser test with real saved Area + 
 - critical state not color-only;
 - accessible contrast in future light/dark themes;
 - admin/statistics UI must remain readable and keyboard navigable on desktop.
+
+
+### Plan 031 mobile Field acceptance
+
+Plan 031 acceptance requires structure tests for the flat seven-destination launcher, dedicated Room/progress/comment/Street hubs, shared draggable-sheet behavior and Street close-to-map semantics. Mobile browser acceptance covers at least a 390x844-class viewport plus a narrower viewport, handle dragging across snap heights, normal body scroll without snap changes, close at every snap, long comment threads with reachable composer and keyboard-aware `visualViewport` handling. Brainrot long-press remains a regression gate on `.platform-grid-button`.
+
+Room acceptance covers visible and hidden creation, manager visibility of hidden Rooms, Code and QR join in both states, repeated reveal of identical current credentials without rotation, rotation invalidating only future join material, membership preservation across rotation/revoke, and fail-closed reveal after revoke/close/expiry. Tests and diagnostics must not log plaintext Room Code, QR token, session material or encryption keys.

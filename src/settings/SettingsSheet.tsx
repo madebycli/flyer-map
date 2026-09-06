@@ -82,6 +82,8 @@ export function SettingsSheet({
   onToggleCollapsed,
 }: Props) {
   const isAdmin = access?.role === "admin";
+  const organizationManaged =
+    (access as (AccessInfo & { identityProvider?: "organization" }) | null)?.identityProvider === "organization";
   const [grants, setGrants] = useState<AccessGrant[]>([]);
   const [adminAccounts, setAdminAccounts] = useState<CampaignAdminAccount[]>([]);
   const [role, setRole] = useState<PersistentAccessRole>("viewer");
@@ -118,22 +120,26 @@ export function SettingsSheet({
   };
 
   const reloadAdminAccounts = async () => {
-    if (!isAdmin) return;
+    if (!isAdmin || organizationManaged) return;
     try {
       setAdminAccounts(await fetchCampaignAdminAccounts(campaign.id));
     } catch {
-      // The password-account migration may not be applied on an older preview yet.
+      // Legacy Campaigns may not have the local password-account schema.
     }
   };
 
   useEffect(() => {
     void reloadGrants();
     void reloadAdminAccounts();
-  }, [campaign.id, isAdmin]);
+  }, [campaign.id, isAdmin, organizationManaged]);
 
   useEffect(() => {
     if (!teamId && teams[0]) setTeamId(teams[0].id);
   }, [teams, teamId]);
+
+  useEffect(() => {
+    if (organizationManaged && role === "admin") setRole("viewer");
+  }, [organizationManaged, role]);
 
   useEffect(() => {
     if (initialAccessUrl) setCreatedUrl(initialAccessUrl);
@@ -145,7 +151,11 @@ export function SettingsSheet({
   };
 
   const createAccess = async () => {
-    if (!isAdmin || (role === "team-editor" && !teamId)) return;
+    if (
+      !isAdmin ||
+      (organizationManaged && role === "admin") ||
+      (role === "team-editor" && !teamId)
+    ) return;
     setAccessBusy(true);
     setAccessError(false);
     setCreatedUrl(null);
@@ -192,7 +202,7 @@ export function SettingsSheet({
   };
 
   const createAdminSetup = async () => {
-    if (!isAdmin) return;
+    if (!isAdmin || organizationManaged) return;
     setAccessBusy(true);
     setAdminAccountError(null);
     try {
@@ -217,7 +227,7 @@ export function SettingsSheet({
   };
 
   const disableAdminAccount = async (accountId: string) => {
-    if (!isAdmin) return;
+    if (!isAdmin || organizationManaged) return;
     if (!window.confirm("Dieses Admin-Konto wird gesperrt und seine Sitzungen werden sofort beendet. Fortfahren?")) return;
     setAccessBusy(true);
     setAdminAccountError(null);
@@ -232,7 +242,7 @@ export function SettingsSheet({
   };
 
   const saveAdminUsername = async (accountId: string) => {
-    if (!isAdmin || !adminUsernameDraft.trim()) return;
+    if (!isAdmin || organizationManaged || !adminUsernameDraft.trim()) return;
     setAccessBusy(true);
     setAdminAccountError(null);
     try {
@@ -248,7 +258,7 @@ export function SettingsSheet({
   };
 
   const createAdminPasswordReset = async (account: CampaignAdminAccount) => {
-    if (!isAdmin) return;
+    if (!isAdmin || organizationManaged) return;
     setAccessBusy(true);
     setAdminAccountError(null);
     try {
@@ -349,68 +359,80 @@ export function SettingsSheet({
             </div>
           </section>
 
-          <section className="settings-section access-section">
-            <h3>Admin-Konten</h3>
-            <p className="settings-help">Der Organisator richtet Konten ein, ändert Benutzernamen und erzeugt sichere Passwort-Reset-Links. Jede Person wählt ihr Passwort selbst, damit es nie an eine andere Person weitergegeben werden muss.</p>
-            <button className="button secondary full-width" type="button" disabled={accessBusy} onClick={() => void createAdminSetup()}>
-              Einmaligen Einrichtungslink erstellen
-            </button>
-            {adminSetupUrl ? (
-              <div className="access-link-result" role="status">
-                <strong>Admin-Konto: einmaliger Einrichtungslink</strong>
-                <span>Der Link ist 24 Stunden gültig und nach der Einrichtung verbraucht.</span>
-                <input readOnly value={adminSetupUrl} aria-label="Admin-Einrichtungslink" />
-                <div className="settings-actions">
-                  <button className="button secondary" type="button" onClick={copyAdminSetupUrl}>
-                    {adminSetupCopied ? t(language, "copied") : t(language, "copy")}
-                  </button>
-                  <button className="button secondary" type="button" onClick={() => setShareTarget("admin")}>
-                    QR-Code anzeigen
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            <div className="access-list">
-              {adminAccounts.filter((account) => account.disabledAt === null).map((account) => (
-                <article className="access-card" key={account.id}>
-                  <div>
-                    <strong>{account.username}</strong>
-                    <span>Campaign-Admin</span>
-                    {editingAdminAccountId === account.id ? (
-                      <label className="field-label">
-                        <span>Neuer Benutzername</span>
-                        <input value={adminUsernameDraft} onChange={(event) => setAdminUsernameDraft(event.target.value)} autoComplete="username" maxLength={40} />
-                      </label>
-                    ) : null}
-                  </div>
+          {organizationManaged ? (
+            <section className="settings-section access-section">
+              <h3>Admins & Berechtigungen</h3>
+              <p className="settings-help">
+                Diese Campaign verwendet zentrale Organization-Konten. Admins melden sich mit demselben Passwort- und MFA-Login wie Organizer an. Rechte, Rollen, Einladungen und Passwort-Resets werden zentral verwaltet; kampagnenlokale Admin-Passwörter gibt es hier nicht mehr.
+              </p>
+              <a className="button primary full-width" href="/admin/security">
+                Admins, Rollen & Einladungen verwalten
+              </a>
+            </section>
+          ) : (
+            <section className="settings-section access-section">
+              <h3>Legacy Admin-Konten</h3>
+              <p className="settings-help">Diese nicht migrierte Campaign verwendet noch den alten kampagnenlokalen Kompatibilitätszugang. Neue Organization-Campaigns verwenden ausschließlich zentrale Admin-Einladungen.</p>
+              <button className="button secondary full-width" type="button" disabled={accessBusy} onClick={() => void createAdminSetup()}>
+                Legacy-Einrichtungslink erstellen
+              </button>
+              {adminSetupUrl ? (
+                <div className="access-link-result" role="status">
+                  <strong>Legacy Admin-Konto: einmaliger Einrichtungslink</strong>
+                  <span>Der Link ist 24 Stunden gültig und nach der Einrichtung verbraucht.</span>
+                  <input readOnly value={adminSetupUrl} aria-label="Admin-Einrichtungslink" />
                   <div className="settings-actions">
-                    {editingAdminAccountId === account.id ? (
-                      <>
-                        <button className="small-action" type="button" disabled={accessBusy || !adminUsernameDraft.trim()} onClick={() => void saveAdminUsername(account.id)}>Speichern</button>
-                        <button className="small-action" type="button" disabled={accessBusy} onClick={() => { setEditingAdminAccountId(null); setAdminUsernameDraft(""); }}>Abbrechen</button>
-                      </>
-                    ) : (
-                      <button className="small-action" type="button" disabled={accessBusy} onClick={() => { setEditingAdminAccountId(account.id); setAdminUsernameDraft(account.username); }}>Name ändern</button>
-                    )}
-                    <button className="small-action" type="button" disabled={accessBusy} onClick={() => void createAdminPasswordReset(account)}>Passwort zurücksetzen</button>
-                    <button className="small-action danger-action" type="button" disabled={accessBusy} onClick={() => void disableAdminAccount(account.id)}>Sperren</button>
+                    <button className="button secondary" type="button" onClick={copyAdminSetupUrl}>
+                      {adminSetupCopied ? t(language, "copied") : t(language, "copy")}
+                    </button>
+                    <button className="button secondary" type="button" onClick={() => setShareTarget("admin")}>
+                      QR-Code anzeigen
+                    </button>
                   </div>
-                </article>
-              ))}
-            </div>
-            {adminAccountError ? <p className="settings-error" role="alert">{adminAccountError}</p> : null}
-            {adminResetUrl ? (
-              <div className="access-link-result" role="status">
-                <strong>Passwort-Reset für {adminResetUsername}</strong>
-                <span>Der Link ist 24 Stunden gültig, nur einmal nutzbar und beendet beim Einlösen alle bisherigen Sitzungen dieses Kontos.</span>
-                <input readOnly value={adminResetUrl} aria-label="Admin-Passwort-Reset-Link" />
-                <div className="settings-actions">
-                  <button className="button secondary" type="button" onClick={copyAdminResetUrl}>{adminResetCopied ? t(language, "copied") : t(language, "copy")}</button>
-                  <button className="button secondary" type="button" onClick={() => setShareTarget("reset")}>QR-Code anzeigen</button>
                 </div>
+              ) : null}
+              <div className="access-list">
+                {adminAccounts.filter((account) => account.disabledAt === null).map((account) => (
+                  <article className="access-card" key={account.id}>
+                    <div>
+                      <strong>{account.username}</strong>
+                      <span>Legacy Campaign-Admin</span>
+                      {editingAdminAccountId === account.id ? (
+                        <label className="field-label">
+                          <span>Neuer Benutzername</span>
+                          <input value={adminUsernameDraft} onChange={(event) => setAdminUsernameDraft(event.target.value)} autoComplete="username" maxLength={40} />
+                        </label>
+                      ) : null}
+                    </div>
+                    <div className="settings-actions">
+                      {editingAdminAccountId === account.id ? (
+                        <>
+                          <button className="small-action" type="button" disabled={accessBusy || !adminUsernameDraft.trim()} onClick={() => void saveAdminUsername(account.id)}>Speichern</button>
+                          <button className="small-action" type="button" disabled={accessBusy} onClick={() => { setEditingAdminAccountId(null); setAdminUsernameDraft(""); }}>Abbrechen</button>
+                        </>
+                      ) : (
+                        <button className="small-action" type="button" disabled={accessBusy} onClick={() => { setEditingAdminAccountId(account.id); setAdminUsernameDraft(account.username); }}>Name ändern</button>
+                      )}
+                      <button className="small-action" type="button" disabled={accessBusy} onClick={() => void createAdminPasswordReset(account)}>Passwort zurücksetzen</button>
+                      <button className="small-action danger-action" type="button" disabled={accessBusy} onClick={() => void disableAdminAccount(account.id)}>Sperren</button>
+                    </div>
+                  </article>
+                ))}
               </div>
-            ) : null}
-          </section>
+              {adminAccountError ? <p className="settings-error" role="alert">{adminAccountError}</p> : null}
+              {adminResetUrl ? (
+                <div className="access-link-result" role="status">
+                  <strong>Legacy Passwort-Reset für {adminResetUsername}</strong>
+                  <span>Der Link ist 24 Stunden gültig, nur einmal nutzbar und beendet beim Einlösen alle bisherigen Sitzungen dieses Kontos.</span>
+                  <input readOnly value={adminResetUrl} aria-label="Admin-Passwort-Reset-Link" />
+                  <div className="settings-actions">
+                    <button className="button secondary" type="button" onClick={copyAdminResetUrl}>{adminResetCopied ? t(language, "copied") : t(language, "copy")}</button>
+                    <button className="button secondary" type="button" onClick={() => setShareTarget("reset")}>QR-Code anzeigen</button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          )}
 
           <section className="settings-section access-section">
             <h3>{t(language, "access")}</h3>
@@ -421,7 +443,7 @@ export function SettingsSheet({
                   value={role}
                   onChange={(event) => setRole(event.target.value as PersistentAccessRole)}
                 >
-                  <option value="admin">Admin-Zugangslink</option>
+                  {!organizationManaged ? <option value="admin">Legacy Admin-Zugangslink</option> : null}
                   <option value="team-editor">Team-Link</option>
                   <option value="viewer">Nur-Lesen-Link</option>
                 </select>
@@ -443,11 +465,15 @@ export function SettingsSheet({
                 <input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={120} />
               </label>
             </div>
-            <p className="settings-help">{shareDescription(role)}</p>
+            <p className="settings-help">
+              {organizationManaged && role === "viewer"
+                ? "Dieser Link ist für Feld-/Leseszenarien. Neue Admins werden ausschließlich über den zentralen Bereich „Admins, Rollen & Einladungen“ eingeladen."
+                : shareDescription(role)}
+            </p>
             <button
               className="button primary full-width"
               type="button"
-              disabled={accessBusy || (role === "team-editor" && !teamId)}
+              disabled={accessBusy || (role === "team-editor" && !teamId) || (organizationManaged && role === "admin")}
               onClick={createAccess}
             >
               {t(language, "createAccess")}
@@ -505,18 +531,18 @@ export function SettingsSheet({
           onClose={() => setShareTarget(null)}
         />
       ) : null}
-      {shareTarget === "admin" && adminSetupUrl ? (
+      {!organizationManaged && shareTarget === "admin" && adminSetupUrl ? (
         <ShareLinkModal
-          title="Admin-Konto einrichten"
-          description="Einmaliger Link zum Festlegen eines kampagnenlokalen Admin-Passworts."
+          title="Legacy Admin-Konto einrichten"
+          description="Kompatibilitätslink zum Festlegen eines kampagnenlokalen Admin-Passworts für eine nicht migrierte Campaign."
           url={adminSetupUrl}
           onClose={() => setShareTarget(null)}
         />
       ) : null}
-      {shareTarget === "reset" && adminResetUrl ? (
+      {!organizationManaged && shareTarget === "reset" && adminResetUrl ? (
         <ShareLinkModal
-          title={`Passwort-Reset für ${adminResetUsername ?? "Admin"}`}
-          description="Einmaliger Link zum Festlegen eines neuen kampagnenlokalen Admin-Passworts. Beim Einlösen werden bestehende Sitzungen beendet."
+          title={`Legacy Passwort-Reset für ${adminResetUsername ?? "Admin"}`}
+          description="Kompatibilitätslink für ein kampagnenlokales Admin-Passwort. Neue Organization-Campaigns verwenden den zentralen Passwort-Reset."
           url={adminResetUrl}
           onClose={() => setShareTarget(null)}
         />

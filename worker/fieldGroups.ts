@@ -10,6 +10,11 @@ import {
 } from "./access.ts";
 import type { D1DatabaseLike, D1PreparedStatement } from "./campaignRepository.ts";
 import { emitFieldGroupAudit } from "./fieldGroupAudit.ts";
+import {
+  decryptFieldGroupCredential,
+  encryptFieldGroupCredential,
+  FieldGroupCredentialRecoveryError,
+} from "./fieldGroupCredentialRecovery.ts";
 import { resolveFieldGroupLeaveSession } from "./fieldGroupLeaveSession.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
 
@@ -25,6 +30,7 @@ export type FieldGroupEnv = {
   DB?: D1DatabaseLike;
   FIELD_GROUP_JOIN_ACTOR_LIMITER?: RateLimitBinding;
   FIELD_GROUP_JOIN_CREDENTIAL_LIMITER?: RateLimitBinding;
+  FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY?: string;
 };
 
 type FieldGroupState = "active" | "closed" | "expired";
@@ -88,11 +94,19 @@ type CredentialRequestRow = {
   id: string;
 };
 
+type RecoverableCredentialRow = {
+  credential_id: string;
+  kind: CredentialKind;
+  iv_b64: string;
+  ciphertext_b64: string;
+};
+
 type FieldGroupRoute =
   | { kind: "join" }
   | { kind: "collection"; campaignId: string }
   | { kind: "group"; campaignId: string; groupId: string }
   | { kind: "rotate"; campaignId: string; groupId: string }
+  | { kind: "reveal"; campaignId: string; groupId: string }
   | { kind: "revoke"; campaignId: string; groupId: string }
   | { kind: "close"; campaignId: string; groupId: string }
   | { kind: "leave"; campaignId: string; groupId: string }
@@ -245,6 +259,13 @@ function canManageTeam(access: AccessContext, teamId: string) {
   return access.role === "admin" || (access.role === "team-editor" && access.teamId === teamId);
 }
 
+function persistedCampaignGrantId(access: AccessContext) {
+  // Organization identities deliberately bridge into Campaign authorization without
+  // manufacturing a legacy campaign_access_grants row. Persisting that synthetic
+  // identity into created_by_grant_id would violate the table's real FK.
+  return access.grantId.startsWith("organization:") ? null : access.grantId;
+}
+
 async function teamRow(db: D1DatabaseLike, campaignId: string, teamId: string) {
   return db
     .prepare("SELECT id, name, color FROM teams WHERE id = ? AND campaign_id = ?")
@@ -278,6 +299,15 @@ async function expireCampaignGroups(db: D1DatabaseLike, campaignId: string, now:
            WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,
         )
         .bind(group.hard_expires_at, group.id, campaignId),
+      db
+        .prepare(
+          `DELETE FROM field_group_recoverable_credentials
+           WHERE credential_id IN (
+             SELECT id FROM field_group_join_credentials
+             WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NOT NULL
+           )`,
+        )
+        .bind(group.id, campaignId),
     ]);
     if ((result[0]?.meta?.changes ?? 0) === 1) {
       emitFieldGroupAudit({
@@ -433,6 +463,7 @@ async function createGroup(
   db: D1DatabaseLike,
   campaignId: string,
   access: AccessContext,
+  recoveryKey: string | undefined,
 ) {
   const parsed = await readJsonBody(request);
   if (!parsed.ok) return parsed.response;
@@ -469,8 +500,20 @@ async function createGroup(
 
   const credentials = await credentialPair();
   const groupId = `field_group_${crypto.randomUUID()}`;
+  const roomCredentialId = `field_group_credential_${crypto.randomUUID()}`;
+  const qrCredentialId = `field_group_credential_${crypto.randomUUID()}`;
   const createdAt = new Date().toISOString();
   const hardExpiresAt = new Date(Date.parse(createdAt) + LIVE_GROUP_MAX_LIFETIME_MS).toISOString();
+  const roomRecovery = await encryptFieldGroupCredential(
+    recoveryKey,
+    { campaignId, groupId, credentialId: roomCredentialId, kind: "room-code" },
+    credentials.roomCode,
+  );
+  const qrRecovery = await encryptFieldGroupCredential(
+    recoveryKey,
+    { campaignId, groupId, credentialId: qrCredentialId, kind: "qr" },
+    credentials.qrToken,
+  );
 
   try {
     const result = await db.batch([
@@ -490,7 +533,7 @@ async function createGroup(
           mode,
           discoverable ? 1 : 0,
           participantCount,
-          access.grantId,
+          persistedCampaignGrantId(access),
           requestId,
           payloadHash,
           createdAt,
@@ -504,7 +547,7 @@ async function createGroup(
            VALUES (?, ?, ?, 'room-code', 'create', ?, ?, ?, NULL)`,
         )
         .bind(
-          `field_group_credential_${crypto.randomUUID()}`,
+          roomCredentialId,
           campaignId,
           groupId,
           requestId,
@@ -518,13 +561,27 @@ async function createGroup(
            VALUES (?, ?, ?, 'qr', 'create', ?, ?, ?, NULL)`,
         )
         .bind(
-          `field_group_credential_${crypto.randomUUID()}`,
+          qrCredentialId,
           campaignId,
           groupId,
           requestId,
           credentials.qrTokenHash,
           createdAt,
         ),
+      db
+        .prepare(
+          `INSERT INTO field_group_recoverable_credentials
+            (credential_id, campaign_id, group_id, kind, key_version, iv_b64, ciphertext_b64, created_at)
+           VALUES (?, ?, ?, 'room-code', 1, ?, ?, ?)`,
+        )
+        .bind(roomCredentialId, campaignId, groupId, roomRecovery.ivB64, roomRecovery.ciphertextB64, createdAt),
+      db
+        .prepare(
+          `INSERT INTO field_group_recoverable_credentials
+            (credential_id, campaign_id, group_id, kind, key_version, iv_b64, ciphertext_b64, created_at)
+           VALUES (?, ?, ?, 'qr', 1, ?, ?, ?)`,
+        )
+        .bind(qrCredentialId, campaignId, groupId, qrRecovery.ivB64, qrRecovery.ciphertextB64, createdAt),
     ]);
 
     if ((result[0]?.meta?.changes ?? 0) !== 1) {
@@ -566,6 +623,38 @@ async function createGroup(
   );
 }
 
+async function listManagedGroups(
+  db: D1DatabaseLike,
+  campaignId: string,
+  teamId: string | null,
+) {
+  const now = new Date().toISOString();
+  const teamClause = teamId ? "AND g.team_id = ?" : "";
+  const result = await db
+    .prepare(
+      `SELECT
+         g.id, g.campaign_id, g.team_id, g.label, g.mode, g.discoverable, g.state,
+         g.participant_count, g.created_at, g.hard_expires_at, g.closed_at, g.updated_at,
+         t.name AS team_name, t.color AS team_color,
+         CASE WHEN EXISTS (
+           SELECT 1 FROM field_group_join_credentials c
+           WHERE c.group_id = g.id AND c.campaign_id = g.campaign_id AND c.revoked_at IS NULL
+         ) THEN 1 ELSE 0 END AS join_available,
+         (
+           SELECT COUNT(*) FROM field_group_memberships m
+           WHERE m.group_id = g.id AND m.campaign_id = g.campaign_id
+             AND m.left_at IS NULL AND m.removed_at IS NULL AND m.expires_at > ?
+         ) AS membership_count
+       FROM field_groups g
+       JOIN teams t ON t.id = g.team_id AND t.campaign_id = g.campaign_id
+       WHERE g.campaign_id = ? AND g.state = 'active' AND g.hard_expires_at > ? ${teamClause}
+       ORDER BY g.created_at DESC, g.id DESC`,
+    )
+    .bind(now, campaignId, now, ...(teamId ? [teamId] : []))
+    .all<FieldGroupRow>();
+  return result.results;
+}
+
 async function listGroups(
   db: D1DatabaseLike,
   campaignId: string,
@@ -574,15 +663,39 @@ async function listGroups(
 ) {
   const now = new Date().toISOString();
   await expireCampaignGroups(db, campaignId, now);
+  if (teamFilter && !validSelector(teamFilter)) {
+    return errorResponse(400, "invalid_team_filter", "Team-Filter ist ungültig.");
+  }
 
   if (access.role === "field-group-member") {
-    if (!access.groupId) return json({ groups: [] });
+    if (!access.groupId || !access.teamId) return json({ groups: [] });
+    if (teamFilter && teamFilter !== access.teamId) {
+      return errorResponse(403, "group_scope_forbidden", "Dieser Team-Filter liegt außerhalb deines Zugriffs.");
+    }
     const group = await loadGroupRow(db, campaignId, access.groupId);
     return json({ groups: group ? [groupPublic(group)] : [] });
   }
 
-  let groups = await listDiscoverableGroups(db, campaignId);
-  if (teamFilter) groups = groups.filter((group) => group.team_id === teamFilter);
+  if (access.role === "team-editor") {
+    if (!access.teamId) return errorResponse(403, "editor_team_scope_missing", "Team-Scope fehlt.");
+    if (teamFilter && teamFilter !== access.teamId) {
+      return errorResponse(403, "group_scope_forbidden", "Dieser Team-Filter liegt außerhalb deines Zugriffs.");
+    }
+    const groups = await listManagedGroups(db, campaignId, access.teamId);
+    return json({ groups: groups.map(groupPublic) });
+  }
+
+  if (access.role === "viewer") {
+    if (access.teamId && teamFilter && teamFilter !== access.teamId) {
+      return errorResponse(403, "group_scope_forbidden", "Dieser Team-Filter liegt außerhalb deines Zugriffs.");
+    }
+    let groups = await listDiscoverableGroups(db, campaignId);
+    const scopedTeam = access.teamId ?? teamFilter;
+    if (scopedTeam) groups = groups.filter((group) => group.team_id === scopedTeam);
+    return json({ groups: groups.map(groupPublic) });
+  }
+
+  const groups = await listManagedGroups(db, campaignId, teamFilter);
   return json({ groups: groups.map(groupPublic) });
 }
 
@@ -740,6 +853,7 @@ async function rotateCredentials(
   campaignId: string,
   groupId: string,
   access: AccessContext,
+  recoveryKey: string | undefined,
 ) {
   const managed = await requireManagedGroup(db, campaignId, groupId, access);
   if (!managed.ok) return managed.response;
@@ -760,7 +874,19 @@ async function rotateCredentials(
   }
 
   const credentials = await credentialPair();
+  const roomCredentialId = `field_group_credential_${crypto.randomUUID()}`;
+  const qrCredentialId = `field_group_credential_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
+  const roomRecovery = await encryptFieldGroupCredential(
+    recoveryKey,
+    { campaignId, groupId, credentialId: roomCredentialId, kind: "room-code" },
+    credentials.roomCode,
+  );
+  const qrRecovery = await encryptFieldGroupCredential(
+    recoveryKey,
+    { campaignId, groupId, credentialId: qrCredentialId, kind: "qr" },
+    credentials.qrToken,
+  );
   try {
     await db.batch([
       db
@@ -772,12 +898,21 @@ async function rotateCredentials(
         .bind(now, groupId, campaignId),
       db
         .prepare(
+          `DELETE FROM field_group_recoverable_credentials
+           WHERE credential_id IN (
+             SELECT id FROM field_group_join_credentials
+             WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NOT NULL
+           )`,
+        )
+        .bind(groupId, campaignId),
+      db
+        .prepare(
           `INSERT INTO field_group_join_credentials
             (id, campaign_id, group_id, kind, issuance_type, request_id, secret_hash, created_at, revoked_at)
            VALUES (?, ?, ?, 'room-code', 'rotate', ?, ?, ?, NULL)`,
         )
         .bind(
-          `field_group_credential_${crypto.randomUUID()}`,
+          roomCredentialId,
           campaignId,
           groupId,
           requestId,
@@ -791,13 +926,27 @@ async function rotateCredentials(
            VALUES (?, ?, ?, 'qr', 'rotate', ?, ?, ?, NULL)`,
         )
         .bind(
-          `field_group_credential_${crypto.randomUUID()}`,
+          qrCredentialId,
           campaignId,
           groupId,
           requestId,
           credentials.qrTokenHash,
           now,
         ),
+      db
+        .prepare(
+          `INSERT INTO field_group_recoverable_credentials
+            (credential_id, campaign_id, group_id, kind, key_version, iv_b64, ciphertext_b64, created_at)
+           VALUES (?, ?, ?, 'room-code', 1, ?, ?, ?)`,
+        )
+        .bind(roomCredentialId, campaignId, groupId, roomRecovery.ivB64, roomRecovery.ciphertextB64, now),
+      db
+        .prepare(
+          `INSERT INTO field_group_recoverable_credentials
+            (credential_id, campaign_id, group_id, kind, key_version, iv_b64, ciphertext_b64, created_at)
+           VALUES (?, ?, ?, 'qr', 1, ?, ?, ?)`,
+        )
+        .bind(qrCredentialId, campaignId, groupId, qrRecovery.ivB64, qrRecovery.ciphertextB64, now),
     ]);
   } catch (error) {
     if (await loadCredentialRequest(db, campaignId, groupId, "rotate", requestId)) {
@@ -827,6 +976,54 @@ async function rotateCredentials(
   });
 }
 
+
+async function revealCredentials(
+  db: D1DatabaseLike,
+  campaignId: string,
+  groupId: string,
+  access: AccessContext,
+  recoveryKey: string | undefined,
+) {
+  const managed = await requireManagedGroup(db, campaignId, groupId, access);
+  if (!managed.ok) return managed.response;
+  const result = await db
+    .prepare(
+      `SELECT c.id AS credential_id, c.kind, r.iv_b64, r.ciphertext_b64
+       FROM field_group_join_credentials c
+       JOIN field_group_recoverable_credentials r ON r.credential_id = c.id
+       WHERE c.campaign_id = ? AND c.group_id = ? AND c.revoked_at IS NULL
+       ORDER BY c.kind ASC`,
+    )
+    .bind(campaignId, groupId)
+    .all<RecoverableCredentialRow>();
+  const room = result.results.find((row) => row.kind === "room-code") ?? null;
+  const qr = result.results.find((row) => row.kind === "qr") ?? null;
+  if (!room || !qr || result.results.length !== 2) {
+    return errorResponse(
+      409,
+      "credential_recovery_unavailable",
+      "Aktueller Join-Zugang ist für diesen Room nicht wiederanzeigbar.",
+    );
+  }
+  const roomCode = await decryptFieldGroupCredential(
+    recoveryKey,
+    { campaignId, groupId, credentialId: room.credential_id, kind: "room-code" },
+    { ivB64: room.iv_b64, ciphertextB64: room.ciphertext_b64 },
+  );
+  const qrToken = await decryptFieldGroupCredential(
+    recoveryKey,
+    { campaignId, groupId, credentialId: qr.credential_id, kind: "qr" },
+    { ivB64: qr.iv_b64, ciphertextB64: qr.ciphertext_b64 },
+  );
+  if (!canonicalizeFieldGroupRoomCode(roomCode) || !canonicalizeFieldGroupQrToken(qrToken)) {
+    throw new FieldGroupCredentialRecoveryError(
+      "credential_recovery_failed",
+      "Entschlüsseltes Credential ist ungültig.",
+    );
+  }
+  return json({ credentials: { roomCode, qrToken } });
+}
+
 async function revokeCredentials(
   db: D1DatabaseLike,
   campaignId: string,
@@ -844,6 +1041,15 @@ async function revokeCredentials(
          WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,
       )
       .bind(now, groupId, campaignId),
+    db
+      .prepare(
+        `DELETE FROM field_group_recoverable_credentials
+         WHERE credential_id IN (
+           SELECT id FROM field_group_join_credentials
+           WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NOT NULL
+         )`,
+      )
+      .bind(groupId, campaignId),
   ]);
   const changed = (results[0]?.meta?.changes ?? 0) > 0;
   if (changed) {
@@ -947,6 +1153,15 @@ async function closeGroup(
          WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NULL`,
       )
       .bind(now, groupId, campaignId),
+    db
+      .prepare(
+        `DELETE FROM field_group_recoverable_credentials
+         WHERE credential_id IN (
+           SELECT id FROM field_group_join_credentials
+           WHERE group_id = ? AND campaign_id = ? AND revoked_at IS NOT NULL
+         )`,
+      )
+      .bind(groupId, campaignId),
   ]);
   if ((result[0]?.meta?.changes ?? 0) !== 1) {
     const concurrent = await loadGroupRow(db, campaignId, groupId);
@@ -1431,6 +1646,9 @@ export function parseFieldGroupRoute(pathname: string): FieldGroupRoute | null {
   if (segments.length === 3 && segments[1] === "credentials" && segments[2] === "rotate") {
     return { kind: "rotate", campaignId, groupId };
   }
+  if (segments.length === 3 && segments[1] === "credentials" && segments[2] === "current") {
+    return { kind: "reveal", campaignId, groupId };
+  }
   if (segments.length === 3 && segments[1] === "credentials" && segments[2] === "revoke") {
     return { kind: "revoke", campaignId, groupId };
   }
@@ -1451,7 +1669,7 @@ export function parseFieldGroupRoute(pathname: string): FieldGroupRoute | null {
 
 function schemaUnavailable(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return /(?:no such (?:table|column)|does not exist).*field[_ ]groups?|field[_ ]groups?.*(?:no such (?:table|column)|does not exist)/iu.test(message);
+  return /(?:no such (?:table|column)|does not exist).*field[_ ]group|field[_ ]group.*(?:no such (?:table|column)|does not exist)/iu.test(message);
 }
 
 export async function handleFieldGroupApi(
@@ -1501,7 +1719,7 @@ export async function handleFieldGroupApi(
         );
       }
       if (request.method === "POST") {
-        return await createGroup(request, db, route.campaignId, access);
+        return await createGroup(request, db, route.campaignId, access, env.FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY);
       }
       return errorResponse(405, "method_not_allowed", "Methode für Gruppenliste nicht erlaubt.");
     }
@@ -1516,8 +1734,11 @@ export async function handleFieldGroupApi(
       return errorResponse(405, "method_not_allowed", "Methode für Gruppe nicht erlaubt.");
     }
 
+    if (route.kind === "reveal" && request.method === "POST") {
+      return await revealCredentials(db, route.campaignId, route.groupId, access, env.FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY);
+    }
     if (route.kind === "rotate" && request.method === "POST") {
-      return await rotateCredentials(request, db, route.campaignId, route.groupId, access);
+      return await rotateCredentials(request, db, route.campaignId, route.groupId, access, env.FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY);
     }
     if (route.kind === "revoke" && request.method === "POST") {
       return await revokeCredentials(db, route.campaignId, route.groupId, access);
@@ -1537,6 +1758,13 @@ export async function handleFieldGroupApi(
 
     return errorResponse(405, "method_not_allowed", "Methode für Gruppenaktion nicht erlaubt.");
   } catch (error) {
+    if (error instanceof FieldGroupCredentialRecoveryError) {
+      return errorResponse(
+        503,
+        error.code,
+        "Der aktuelle Join-Zugang kann serverseitig nicht sicher verarbeitet werden.",
+      );
+    }
     if (schemaUnavailable(error)) {
       return errorResponse(
         503,

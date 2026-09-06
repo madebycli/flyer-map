@@ -1,0 +1,95 @@
+version: 2
+last_updated: 2026-09-05T20:30:00+02:00
+purpose: >-
+  Live Organizer/Admin continuation overlay. Load after docs/context-organizer-admin.yaml.
+  The current approved continuation also loads docs/context-field-ui-navigation.yaml
+  and Plan 031 before touching Field launcher/Rooms/sheets.
+
+verified:
+  source_branch: { name: mission-rxdb-sync, head: 33ab9c0d757da44e0b20b278982a548eafe732aa }
+  feature_branch:
+    name: feature/organizer-admin-platform
+    last_verified_product_head: 0d45dc02e88d3a89fa6174211775f7d2b0e80c85
+    runtime_green_ci_run_id: 33980904285
+    runtime_green_ci_job_id: 101345820530
+    runtime_green_ci_conclusion: success
+    note: documentation commits advance the branch; always reverify exact remote head and CI before implementation
+  pull_requests:
+    pr_76: { state: open, draft: true, merged: false, base: mission-rxdb-sync }
+  production:
+    wrangler_main: ./worker/indexFc52.ts
+    d1: 0113e775-1e43-4d96-8b97-51fdeec7355b
+    rate_limit_namespaces: [91714001, 91714002, 91714003]
+    organization_login_limiter_committed: false
+    nodejs_compat_committed: false
+    deployed_by_admin_staging: false
+    organization_migrations_applied: false
+    assets_run_worker_first: [/api/*, /]
+  admin_staging:
+    branch: organizer-admin-live-hotfix
+    workflow: .github/workflows/admin-staging-live-hotfix.yml
+    latest_full_green_run_id: 33981025532
+    latest_full_green_job_id: 101346148405
+    latest_full_green_head: b54134fa5fcf072fac20993c7527a7d4242dca7a
+    worker: flyer-map-admin-staging
+    d1_name: flyer-map-admin-staging-db
+    url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
+    test_ready_for_last_verified_product_head: true
+    audited_runtime_source: 0d45dc02e88d3a89fa6174211775f7d2b0e80c85
+    d1_fingerprint_before_after: 47ea1432c290bd89089ee723b33e71950bcf40abafffcd0405261553eaac8088
+    public_checks:
+      bare_root: { status: 302, location: /login }
+      explicit_field_campaign_entry: 200
+      admin_campaign_create: 403
+      legacy_campaign_create: 409
+      unknown_org_api: 404
+      cross_origin_write: 403
+      temporary_identities_removed: true
+      foreign_keys_clean: true
+      state_preserved: true
+
+current_field_ui_slice:
+  context: docs/context-field-ui-navigation.yaml
+  plan: docs/plans/active/031-field-ui-navigation-rooms-sheets.md
+  prompt: docs/prompts/CONTINUE_FIELD_UI_NAVIGATION_LATEST.md
+  master_intent:
+    - primary navigation is PlatformShell buildPlatformLauncherItems and .platform-menu-grid
+    - no Rooms/Fortschritt/Kommentare primary tabs inside TeamCenter
+    - separate Team, Rooms, Fortschritt, Kommentare, Streets, Gebiet, Einstellungen launcher destinations
+    - shared draggable FieldBottomSheet with fixed handle/header and scrollable body
+    - Street save/status/close flow ends on Map instead of reopening Area
+    - Online anzeigen affects discovery only, never valid direct Code/QR join
+    - normal Join-Zugang anzeigen must not rotate credentials
+    - rotation preserves existing memberships
+    - same current join credential re-show needs reviewed recoverable-secret design because current D1 contract is hash-only
+    - healthy sync status becomes quiet and left-aligned with the platform field controls; actionable errors remain visible
+    - group/read-only onboarding defaults to German and cannot break token redemption
+    - .platform-grid-button remains Brainrot long-press target
+
+security_header_fix:
+  path: public/_headers
+  applies_to: static assets served directly by Cloudflare Workers Static Assets
+  headers:
+    - X-Content-Type-Options: nosniff
+    - X-Frame-Options: DENY
+    - Referrer-Policy: strict-origin-when-cross-origin
+    - Cross-Origin-Opener-Policy: same-origin
+  worker_generated_responses: hardened separately by worker/indexOrganizer.ts
+
+hard_boundaries:
+  - no merge or Ready on PR 76
+  - no Production deploy or Production D1 migration
+  - do not touch mission-release-2026-09-02-manual
+  - committed Production Wrangler stays on indexFc52.ts with the frozen Production D1/rate namespace IDs
+  - no privilege or tenant decision from client state
+  - no plaintext credentials in repository, D1, logs, audit, LocalStorage, IndexedDB or RxDB
+  - temporary Group QR tokens may exist in the URL fragment for redemption as designed; do not move them into query strings or persistence
+  - do not weaken tests, TypeScript, audit, authz or security-header gates
+
+handoff:
+  organizer_prompt: docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
+  field_ui_prompt: docs/prompts/CONTINUE_FIELD_UI_NAVIGATION_LATEST.md
+  status_snapshot: docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
+  organizer_plan: docs/plans/active/030-organizer-admin-platform.md
+  field_ui_plan: docs/plans/active/031-field-ui-navigation-rooms-sheets.md
+  operations: docs/operations/ORGANIZER_ADMIN_STAGING.md
