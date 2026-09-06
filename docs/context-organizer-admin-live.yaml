@@ -1,16 +1,15 @@
 version: 1
-last_updated: 2026-09-05T00:20:00+02:00
-purpose: Live Organizer/Admin continuation overlay. Load after docs/context-organizer-admin.yaml when resuming Plan 030.
+last_updated: 2026-09-06T02:55:00+00:00
+purpose: Live Organizer/Admin continuation overlay. Load after docs/context-organizer-admin.yaml when resuming Plan 030 or Plan 031.
 
 verified:
   source_branch: { name: mission-rxdb-sync, head: 33ab9c0d757da44e0b20b278982a548eafe732aa }
   feature_branch:
     name: feature/organizer-admin-platform
-    runtime_green_head: c62385a8c400f68753d1f1f811e2315551153885
-    runtime_green_ci_run_id: 33924375460
-    runtime_green_ci_run_number: 1121
+    runtime_green_head: b22114d4e15774e563d1581cb798ad52f87ccf96
+    runtime_green_ci_run_id: 34000044120
     runtime_green_ci_conclusion: success
-    note: documentation commits may advance the branch; always reverify the exact remote head and CI
+    note: always reverify the exact remote head and CI before new writes
   pull_requests:
     pr_76: { state: open, draft: true, merged: false, mergeable: true, base: mission-rxdb-sync }
   production:
@@ -22,16 +21,26 @@ verified:
     deployed_by_admin_staging: false
     organization_migrations_applied: false
   admin_staging:
+    mode: persistent_manual_plus_disposable_acceptance
     branch: organizer-admin-staging
-    workflow: .github/workflows/admin-staging-release-v9.yml
-    first_full_green_run_id: 33924415528
-    first_full_green_run_number: 23
-    first_full_green_head: 6414aad45489cd2800e7dcf2f9e6bc917e4106b2
-    worker: flyer-map-admin-staging
-    d1_name: flyer-map-admin-staging-db
+    persistent_workflow: .github/workflows/admin-staging-persistent.yml
+    acceptance_workflow: .github/workflows/plan031-live-staging.yml
+    persistent_worker: flyer-map-admin-staging
+    persistent_d1_name: flyer-map-admin-staging-db
+    acceptance_worker: flyer-map-admin-acceptance
+    acceptance_d1_name: flyer-map-admin-acceptance-db
     url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
-    test_ready: true
-    audited_runtime_source: c62385a8c400f68753d1f1f811e2315551153885
+    persistent_green_run_id: 34007250234
+    acceptance_green_run_id: 34007347508
+    audited_product_head: b22114d4e15774e563d1581cb798ad52f87ccf96
+    persistence:
+      persistent_deploy_performs_remote_cleanup: false
+      persistent_deploy_performs_sql_delete: false
+      state_before_equals_state_after: true
+      foreign_key_errors: 0
+      production_untouched: true
+      existing_totp_secret_rotated: false
+      existing_field_group_recovery_secret_rotated: false
     browser:
       desktop_chromium: true
       campaign_a: true
@@ -42,7 +51,25 @@ verified:
       invited_admin_mfa: true
       mobile_390x844: true
       mobile_overflow: false
-    cleanup: { bootstrap_count: 0, organization_count: 0, account_count: 0, owned_campaign_count: 0, foreign_key_errors: 0 }
+    plan031_api:
+      ok: true
+      campaign_create: 201
+      hidden_room_list: 200
+      reveal_after_rotation: 200
+      revoke: 200
+      close: 200
+      expiry_trigger: 200
+      recovery_rows_after_rotate: 2
+      recovery_rows_after_revoke: 0
+      recovery_rows_after_close: 0
+      recovery_rows_after_expiry: 0
+    cleanup:
+      persistent_state_preserved: true
+      acceptance_group_count: 0
+      acceptance_credential_count: 0
+      acceptance_recovery_count: 0
+      acceptance_membership_count: 0
+      foreign_key_errors: 0
     public_checks:
       start_get: 200
       unauthenticated_me_get: 401
@@ -50,32 +77,11 @@ verified:
       cross_origin_write: 403
       static_security_headers: true
       api_security_headers: true
-    bootstrap_test_credential:
-      one_time: true
+    bootstrap_setup:
+      stable_digest: true
       plaintext_in_repository: false
       plaintext_in_artifacts: false
-      repository_contains_sha256_only: true
-
-security_header_fix:
-  path: public/_headers
-  applies_to: static assets served directly by Cloudflare Workers Static Assets
-  headers:
-    - X-Content-Type-Options: nosniff
-    - X-Frame-Options: DENY
-    - Referrer-Policy: strict-origin-when-cross-origin
-    - Cross-Origin-Opener-Policy: same-origin
-  worker_generated_responses: hardened separately by worker/indexOrganizer.ts
-
-remaining_master_acceptance:
-  - explicit legacy campaign adoption with audit and negative race/tenant tests
-  - full account security/reset/recovery/session lifecycle matrix
-  - multi-organizer/admin management and concurrent last-organizer invariant
-  - role templates plus server-known capability registry
-  - own-team/other-team/explicit cross-team authorization
-  - organizer-only permanent campaign delete with fresh reauth
-  - audit/threat-model/rate-limit/CSP closure
-  - root organizer entry and complete admin console/lifecycle UX
-  - preserve full RxDB/Field regression baseline
+      one_time_use: true
 
 hard_boundaries:
   - no merge or Ready on PR 76
@@ -90,4 +96,5 @@ handoff:
   prompt: docs/prompts/CONTINUE_ORGANIZER_ADMIN_2026-09-04_1710.md
   status_snapshot: docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
   plan: docs/plans/active/030-organizer-admin-platform.md
+  plan031: docs/plans/active/031-field-ui-navigation-rooms-sheets.md
   operations: docs/operations/ORGANIZER_ADMIN_STAGING.md
