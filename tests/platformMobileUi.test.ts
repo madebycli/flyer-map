@@ -28,7 +28,11 @@ test("sheet dragging updates the DOM without a React render per pointer move", a
 });
 
 test("platform settings and team commands open legacy sheets even after a mode transition", async () => {
-  const source = await readFile("src/App.tsx", "utf8");
+  const [source, shell] = await Promise.all([
+    readFile("src/App.tsx", "utf8"),
+    readFile("src/platform/PlatformShell.tsx", "utf8"),
+  ]);
+  assert.match(shell, /closeOverlays\(\);[\s\S]*?window\.setTimeout\(\(\) => \{[\s\S]*?setAppCommand\(\{ id: nextCommandId, type \}\)/u);
   assert.match(source, /const openLegacySheet = \(nextSheet: "settings" \| "teams" \| "campaign-comments"\)/u);
   assert.match(source, /platformCommand\.type === "open-settings"[\s\S]*?openLegacySheet\("settings"\)/u);
   assert.match(source, /platformCommand\.type === "open-team-management"[\s\S]*?openLegacySheet\("teams"\)/u);
