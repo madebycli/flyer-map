@@ -177,7 +177,7 @@ async function main() {
     await openFieldApp(mobilePage);
     await assertNoHorizontalOverflow(mobilePage);
     menu = await openLauncher(mobilePage);
-    if ((await menu.getAttribute('data-snap')) !== 'compact') throw new Error('Mobile launcher did not open compact');
+    if ((await menu.getAttribute('data-snap')) !== 'expanded') throw new Error('Mobile launcher did not open expanded');
     await menu.getByRole('button', { name: 'Rooms' }).click();
     const mobileRooms = mobilePage.getByRole('dialog', { name: 'Rooms' });
     await mobileRooms.waitFor();
