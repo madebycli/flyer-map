@@ -1,0 +1,119 @@
+name: Organizer Admin Persistent Staging
+
+on:
+  push:
+    branches:
+      - organizer-admin-staging
+    paths:
+      - '.github/workflows/admin-staging-persistent.yml'
+      - '.staging/admin-persistent-release.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+
+concurrency:
+  group: organizer-admin-persistent-staging
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PERSISTENT_BOOTSTRAP_SECRET_SHA256: db8d5633992642d92c903db9d0fec8dbb9171d47086f8bf2a6d1cdcbc415f797
+    steps:
+      - name: Checkout staging harness
+        uses: actions/checkout@v4
+        with:
+          ref: organizer-admin-staging
+          path: runner
+          fetch-depth: 1
+
+      - name: Resolve current Draft PR 76 head
+        id: product
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/76")"
+          [[ "$(jq -r '.state' <<<"$pr_json")" == 'open' ]]
+          [[ "$(jq -r '.draft' <<<"$pr_json")" == 'true' ]]
+          [[ "$(jq -r '.head.ref' <<<"$pr_json")" == 'feature/organizer-admin-platform' ]]
+          echo "sha=$(jq -r '.head.sha' <<<"$pr_json")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact Product head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.product.outputs.sha }}
+          path: product
+          fetch-depth: 0
+
+      - name: Verify exact Product head and Production boundary
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT_SHA: ${{ steps.product.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git -C product rev-parse HEAD)" == "$PRODUCT_SHA" ]]
+          checks="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${PRODUCT_SHA}/check-runs?per_page=100")"
+          jq -e '[.check_runs[] | select(.name == "CI")] | length >= 1 and all(.[]; .status == "completed" and .conclusion == "success")' <<<"$checks" >/dev/null
+          node <<'NODE'
+          const fs = require('node:fs');
+          const c = JSON.parse(fs.readFileSync('product/wrangler.jsonc', 'utf8'));
+          if (c.main !== './worker/indexFc52.ts') throw new Error('Production main changed');
+          if ((c.d1_databases || []).find((x) => x.binding === 'DB')?.database_id !== '0113e775-1e43-4d96-8b97-51fdeec7355b') throw new Error('Production D1 changed');
+          if ((c.ratelimits || []).some((x) => ['91714001', '91714002', '91714003'].includes(String(x.namespace_id)))) {
+            throw new Error('Production rate limit contract changed');
+          }
+          if ((c.compatibility_flags || []).includes('nodejs_compat')) throw new Error('Production compatibility flag changed');
+          NODE
+
+      - name: Install persistent staging harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 0755 runner/.staging/admin-persistent-release.sh product/.staging/admin-persistent-release.sh
+          bash -n product/.staging/admin-persistent-release.sh
+          ! grep -Fq 'DELETE FROM' product/.staging/admin-persistent-release.sh
+          grep -Fq 'refusing to rotate' product/.staging/admin-persistent-release.sh
+
+      - name: Install exact Product dependencies and rerun gates
+        working-directory: product
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run typecheck
+          npm run audit:dependencies
+          npm run build
+
+      - name: Deploy persistent Admin staging
+        working-directory: product
+        env:
+          PRODUCT_SHA: ${{ steps.product.outputs.sha }}
+        run: bash .staging/admin-persistent-release.sh
+
+      - name: Verify persistent staging evidence
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '.ok == true and .persistent == true and .data_preserved == true' /tmp/admin-persistent/final-safety.json >/dev/null
+          jq -e '[.[].results[]?] | length == 0' /tmp/admin-persistent/fk-after.json >/dev/null
+          test -s /tmp/admin-persistent/test-url.txt
+
+      - name: Upload sanitized persistent staging diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-persistent-staging-diagnostics
+          path: /tmp/admin-persistent/
+          retention-days: 7
+          if-no-files-found: warn
