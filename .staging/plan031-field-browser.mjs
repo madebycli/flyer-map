@@ -128,7 +128,17 @@ async function main() {
     if (launcherButtons !== 7) throw new Error(`Expected 7 launcher buttons, got ${launcherButtons}`);
 
     await markStage('desktop_legacy_navigation');
-    await menu.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+    const settingsButton = menu.getByRole('button', { name: 'Einstellungen', exact: true });
+    await saveJson('desktop-legacy-before.json', await page.evaluate(() => ({
+      settingsButtons: [...document.querySelectorAll('button')].filter((node) => node.textContent?.trim() === 'Einstellungen').map((node) => ({
+        disabled: node.disabled,
+        rect: node.getBoundingClientRect().toJSON(),
+        pointerEvents: getComputedStyle(node).pointerEvents,
+      })),
+      activeElement: document.activeElement?.outerHTML?.slice(0, 300) ?? null,
+      overlays: document.querySelectorAll('.field-sheet-overlay').length,
+    })));
+    await settingsButton.click({ timeout: 10_000 });
     await page.waitForTimeout(250);
     await saveJson('desktop-legacy-debug.json', await page.evaluate(() => ({
       settingsCount: document.querySelectorAll('section.settings-sheet').length,
