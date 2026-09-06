@@ -35,7 +35,7 @@ jobs:
       PERSISTENT_DB_NAME: flyer-map-admin-staging-db
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
-      PERSISTENT_BOOTSTRAP_SECRET_SHA256: 3fd3fc4a7a7ed29ea3a5114d6a20990bd7d0ba3ecb655672633baded2be0b271
+      PERSISTENT_BOOTSTRAP_SECRET_SHA256: 33876e84366c1f5207a7459dc055177d9d4a0374550536f6b5413146b2785a3b
     steps:
       - name: Checkout exact Product head
         uses: actions/checkout@v4
@@ -102,9 +102,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SECRET_LIST="$(npx wrangler secret list --name "$PERSISTENT_WORKER_NAME" --json)"
-          jq -e '.[] | select(.name=="ORGANIZATION_TOTP_KEY")' <<<"$SECRET_LIST" >/dev/null
-          jq -e '.[] | select(.name=="FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY")' <<<"$SECRET_LIST" >/dev/null
+          SECRET_LIST="$(curl --fail-with-body --silent --show-error "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${PERSISTENT_WORKER_NAME}/secrets" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          jq -e '.success == true' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.result[] | select(.name=="ORGANIZATION_TOTP_KEY")' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.result[] | select(.name=="FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY")' <<<"$SECRET_LIST" >/dev/null
 
       - name: Snapshot persistent data before deploy
         shell: bash
