@@ -69,7 +69,10 @@ export function PlatformShell() {
   ) => {
     closeOverlays();
     commandId.current += 1;
-    setAppCommand({ id: commandId.current, type });
+    const nextCommandId = commandId.current;
+    window.setTimeout(() => {
+      setAppCommand({ id: nextCommandId, type });
+    }, 0);
   };
 
   const selectActiveTeam = (teamId: string) => {
