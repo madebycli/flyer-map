@@ -12,8 +12,8 @@ This is the current additive live snapshot. GitHub remote state and exact-head C
 ## Product and PR state
 
 - Product branch: `feature/organizer-admin-platform`;
-- current Product head: `b22114d4e15774e563d1581cb798ad52f87ccf96`;
-- exact-head GitHub Actions CI: Run `34000044120`, conclusion `success`;
+- current Product head: `085d09078fc76278b9b60d43ad1c040de322c363`;
+- exact-head GitHub Actions CI: Run `34025756097`, conclusion `success`;
 - PR #76: open, Draft, unmerged, base `mission-rxdb-sync`;
 - PR #74/#75 remain separate.
 
@@ -36,7 +36,7 @@ No Production deploy and no Production D1 migration were performed. `worker/inde
 - worker: `flyer-map-admin-staging`;
 - D1: `flyer-map-admin-staging-db`;
 - public URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
-- green run: `34023422212`.
+- green run: `34025753720` (automatic Product-branch persistent deploy);
 
 Persistent evidence:
 
@@ -49,15 +49,15 @@ Persistent evidence:
 
 The persistent bootstrap digest is now bound to the final private setup-key handoff and remains stable across later code deploys. The plaintext setup key is a one-time private handoff for `/start`; it is never committed, logged or placed into artifacts, URLs, browser storage or RxDB.
 
-The final persistent deploy is Run `34023422212` on staging checkpoint `acad72ec9b7b342591daad3eaa6096037185760c`; it preserved the empty manual D1 and passed all safety gates.
+The current persistent deploy is Run `34025753720` on Product head `085d09078fc76278b9b60d43ad1c040de322c363`; it preserved the manual D1, kept the stable setup digest, and passed all safety gates. The staging-branch persistent harness also remains green in Run `34025152382`.
 
 ## Disposable Plan-031 acceptance
 
 - workflow: `.github/workflows/plan031-live-staging.yml`;
 - worker: `flyer-map-admin-acceptance`;
 - D1: `flyer-map-admin-acceptance-db`;
-- green run: `34007347508`;
-- audited Product source: `b22114d4e15774e563d1581cb798ad52f87ccf96`.
+- green run: `34025856207`;
+- audited Product source: `085d09078fc76278b9b60d43ad1c040de322c363`.
 
 The sanitized acceptance artifact confirms:
 
@@ -68,7 +68,7 @@ The sanitized acceptance artifact confirms:
 - revoke and close `200`;
 - expiry transition `200`;
 - recovery rows: `2` after rotate, then `0` after revoke, close and expiry;
-- desktop and mobile browser `ok=true`;
+- desktop and mobile browser `ok=true`; mobile `390x844` opens the launcher at `expanded`, supports the full snap and has no horizontal overflow;
 - mobile width `390x844`, no horizontal overflow;
 - final cleanup counts are zero;
 - migration 0020 exists with encrypted recovery columns and green foreign-key checks;
