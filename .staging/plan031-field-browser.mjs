@@ -127,6 +127,17 @@ async function main() {
     const launcherButtons = await menu.locator('.platform-app-item').count();
     if (launcherButtons !== 7) throw new Error(`Expected 7 launcher buttons, got ${launcherButtons}`);
 
+    await markStage('desktop_legacy_navigation');
+    await menu.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+    const settingsSheet = page.locator('section.settings-sheet');
+    await settingsSheet.waitFor();
+    await settingsSheet.getByRole('button', { name: 'Schließen', exact: true }).click();
+    menu = await openLauncher(page);
+    await menu.getByRole('button', { name: 'Team', exact: true }).click();
+    const teamManagementSheet = page.locator('section.bottom-sheet[aria-label="Teams verwalten"]');
+    await teamManagementSheet.waitFor();
+    await teamManagementSheet.getByRole('button', { name: 'Schließen', exact: true }).click();
+
     await markStage('desktop_rooms');
     await menu.getByRole('button', { name: 'Rooms' }).click();
     const rooms = page.getByRole('dialog', { name: 'Rooms' });
