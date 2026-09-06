@@ -24,7 +24,13 @@ test("sheet dragging updates the DOM without a React render per pointer move", a
   assert.doesNotMatch(source, /dragHeight|setDragHeight/u);
   assert.match(source, /field-sheet-dragging/u);
   assert.match(source, /style\.setProperty\("--field-sheet-height"/u);
-  assert.match(source, /observer\.observe\(document\.body, \{ childList: true, subtree: true, attributes: true, attributeFilter: \["class"\] \}\)/u);
+});
+
+test("legacy sheet enhancement cannot feed back through its own class mutation", async () => {
+  const source = await readFile("src/platform/FieldBottomSheet.tsx", "utf8");
+  assert.match(source, /if \(!sheet\.classList\.contains\("field-sheet-enhanced"\)\) \{[\s\S]*?sheet\.classList\.add\("field-sheet-enhanced"\)/u);
+  assert.match(source, /observer\.observe\(document\.body, \{ childList: true, subtree: true \}\)/u);
+  assert.doesNotMatch(source, /attributes: true|attributeFilter: \["class"\]/u);
 });
 
 test("platform settings and team commands open legacy sheets even after a mode transition", async () => {

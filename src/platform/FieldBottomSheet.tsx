@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import "./field-bottom-sheet.css";
 
@@ -176,7 +175,9 @@ export function useLegacyFieldSheetDragBridge(active = true) {
       const viewport = viewportHeight();
       document.documentElement.style.setProperty("--field-sheet-viewport-height", `${viewport}px`);
       document.querySelectorAll<HTMLElement>(".bottom-sheet").forEach((sheet) => {
-        sheet.classList.add("field-sheet-enhanced");
+        if (!sheet.classList.contains("field-sheet-enhanced")) {
+          sheet.classList.add("field-sheet-enhanced");
+        }
         if (!sheet.style.getPropertyValue("--field-sheet-height")) {
           sheet.style.setProperty("--field-sheet-height", `${snapHeight("expanded", viewport)}px`);
         }
@@ -184,7 +185,7 @@ export function useLegacyFieldSheetDragBridge(active = true) {
     };
 
     const observer = new MutationObserver(applyEnhancement);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+    observer.observe(document.body, { childList: true, subtree: true });
     applyEnhancement();
 
     const onPointerDown = (event: PointerEvent) => {
