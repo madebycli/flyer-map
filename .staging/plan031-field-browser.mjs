@@ -94,6 +94,44 @@ async function assertNoHorizontalOverflow(page) {
   if (overflow.width > overflow.viewport + 2) throw new Error(`Horizontal overflow: ${overflow.width}/${overflow.viewport}`);
 }
 
+async function assertResponsive(page, label) {
+  const result = await page.waitForFunction(
+    () => new Promise((resolve) => window.requestAnimationFrame(() => resolve(document.readyState === 'complete'))),
+    undefined,
+    { timeout: 5_000 },
+  );
+  if (await result.jsonValue() !== true) throw new Error(`${label}: main thread stopped responding`);
+}
+
+async function exerciseLegacyNavigation(page, viewportLabel) {
+  let menu = await openLauncher(page);
+  const settingsButton = menu.getByRole('button', { name: 'Einstellungen', exact: true });
+  await settingsButton.click({ timeout: 10_000 });
+  const settingsSheet = page.locator('section.settings-sheet');
+  await settingsSheet.waitFor({ state: 'visible', timeout: 5_000 });
+  if (await page.locator('.platform-menu-sheet').count() !== 0) throw new Error(`${viewportLabel}: menu overlay remained mounted under settings`);
+  if (await page.locator('.platform-hub-sheet').count() !== 0) throw new Error(`${viewportLabel}: hub overlay remained mounted under settings`);
+  await assertResponsive(page, `${viewportLabel} settings`);
+  await settingsSheet.getByRole('button', { name: 'Schließen', exact: true }).click();
+  await page.getByRole('button', { name: 'Menü öffnen', exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+  await assertResponsive(page, `${viewportLabel} after settings close`);
+
+  menu = await openLauncher(page);
+  await menu.getByRole('button', { name: 'Team', exact: true }).click();
+  const teamHub = page.getByRole('dialog', { name: 'Team', exact: true });
+  await teamHub.waitFor({ state: 'visible', timeout: 5_000 });
+  await assertResponsive(page, `${viewportLabel} team hub`);
+  await teamHub.getByRole('button', { name: 'Teams verwalten', exact: true }).click();
+  const teamManagementSheet = page.locator('section.bottom-sheet[aria-label="Teams verwalten"]');
+  await teamManagementSheet.waitFor({ state: 'visible', timeout: 5_000 });
+  if (await page.locator('.platform-menu-sheet').count() !== 0) throw new Error(`${viewportLabel}: menu overlay remained mounted under team management`);
+  if (await page.locator('.platform-hub-sheet').count() !== 0) throw new Error(`${viewportLabel}: team hub remained mounted under team management`);
+  await assertResponsive(page, `${viewportLabel} team management`);
+  await teamManagementSheet.getByRole('button', { name: 'Schließen', exact: true }).click();
+  await page.getByRole('button', { name: 'Menü öffnen', exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+  await assertResponsive(page, `${viewportLabel} after team management close`);
+}
+
 async function main() {
   const missing = [
     ['TEST_URL', url], ['SMOKE_USERNAME', username], ['SMOKE_PASSWORD', password],
@@ -158,31 +196,16 @@ async function main() {
       activeElement: await page.evaluate(() => document.activeElement?.outerHTML?.slice(0, 300) ?? null),
       overlays: await page.evaluate(() => document.querySelectorAll('.field-sheet-overlay').length),
     });
-    await Promise.race([
-      settingsButton.click({ timeout: 10_000 }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Settings locator click timed out')), 12_000)),
-    ]);
-    await page.waitForTimeout(250);
+    await exerciseLegacyNavigation(page, 'desktop');
     await saveJson('desktop-legacy-debug.json', await page.evaluate(() => ({
       settingsCount: document.querySelectorAll('section.settings-sheet').length,
       bottomSheetCount: document.querySelectorAll('section.bottom-sheet').length,
-      visibleSections: [...document.querySelectorAll('section')].map((node) => ({
-        className: node.className,
-        ariaLabel: node.getAttribute('aria-label'),
-        visible: Boolean(node.getClientRects().length),
-      })).filter((entry) => entry.visible).slice(-16),
       overlayCount: document.querySelectorAll('.field-sheet-overlay').length,
+      responsive: true,
     })));
-    const settingsSheet = page.locator('section.settings-sheet');
-    await settingsSheet.waitFor();
-    await settingsSheet.getByRole('button', { name: 'Schließen', exact: true }).click();
-    menu = await openLauncher(page);
-    await menu.getByRole('button', { name: 'Team', exact: true }).click();
-    const teamManagementSheet = page.locator('section.bottom-sheet[aria-label="Teams verwalten"]');
-    await teamManagementSheet.waitFor();
-    await teamManagementSheet.getByRole('button', { name: 'Schließen', exact: true }).click();
 
     await markStage('desktop_rooms');
+    menu = await openLauncher(page);
     await menu.getByRole('button', { name: 'Rooms' }).click();
     const rooms = page.getByRole('dialog', { name: 'Rooms' });
     await rooms.waitFor();
@@ -231,8 +254,15 @@ async function main() {
     mobilePage.setDefaultTimeout(25_000);
     await openFieldApp(mobilePage);
     await assertNoHorizontalOverflow(mobilePage);
+
+    await markStage('mobile_legacy_navigation');
     menu = await openLauncher(mobilePage);
     if ((await menu.getAttribute('data-snap')) !== 'expanded') throw new Error('Mobile launcher did not open expanded');
+    await menu.getByRole('button', { name: 'Menü schließen', exact: true }).click();
+    await exerciseLegacyNavigation(mobilePage, 'mobile');
+
+    await markStage('mobile_rooms');
+    menu = await openLauncher(mobilePage);
     await menu.getByRole('button', { name: 'Rooms' }).click();
     const mobileRooms = mobilePage.getByRole('dialog', { name: 'Rooms' });
     await mobileRooms.waitFor();
@@ -251,8 +281,8 @@ async function main() {
 
     await saveJson('plan031-browser.json', {
       ok: true,
-      desktop: { width: 1440, height: 900, launcherItems: 7, reveal: true, focusedHubs: ['Rooms', 'Kommentare', 'Streets'] },
-      mobile: { width: 390, height: 844, initialSnap: 'expanded', fullSnap: true, horizontalOverflow: false },
+      desktop: { width: 1440, height: 900, launcherItems: 7, legacyNavigationResponsive: true, reveal: true, focusedHubs: ['Rooms', 'Kommentare', 'Streets'] },
+      mobile: { width: 390, height: 844, legacyNavigationResponsive: true, initialSnap: 'expanded', fullSnap: true, horizontalOverflow: false },
     });
   } catch (error) {
     await saveJson('desktop-legacy-events.json', pageEvents);
