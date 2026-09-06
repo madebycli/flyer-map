@@ -19,7 +19,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: plan031-live-staging
+  group: plan031-live-staging-followup
   cancel-in-progress: true
 
 jobs:
