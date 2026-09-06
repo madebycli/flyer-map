@@ -138,7 +138,10 @@ async function main() {
       activeElement: document.activeElement?.outerHTML?.slice(0, 300) ?? null,
       overlays: document.querySelectorAll('.field-sheet-overlay').length,
     })));
-    await settingsButton.click({ timeout: 10_000 });
+    await Promise.race([
+      settingsButton.click({ timeout: 10_000 }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Settings locator click timed out')), 12_000)),
+    ]);
     await page.waitForTimeout(250);
     await saveJson('desktop-legacy-debug.json', await page.evaluate(() => ({
       settingsCount: document.querySelectorAll('section.settings-sheet').length,
