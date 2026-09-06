@@ -25,7 +25,7 @@ Plan 030 und Plan 031 werden ausschließlich auf `feature/organizer-admin-platfo
 - Worker `flyer-map-admin-staging`;
 - D1 `flyer-map-admin-staging-db`;
 - URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
-- persistenter Nachweis: Run `34007250234`;
+- persistenter Nachweis: Run `34023422212`;
 - Artifact-Digest: `sha256:68513fe257e19bd4e3311277da7e2cba2539f8fe65bd395fabced59f685bec17`.
 
 Dieser Run bestätigt:
@@ -36,7 +36,9 @@ Dieser Run bestätigt:
 - `production_untouched=true`, `no_cleanup=true`;
 - Secret-Generierung nur im leeren Zustand und keine Rotation bei bestehender Datenbank.
 
-Der Setup-Key ist stabil an den persistenten Bootstrap-Digest gebunden und nur für den einmaligen `/start`-Bootstrap erforderlich. Sein Klartext liegt nicht im Repository, in Logs oder Artifacts.
+Der Setup-Key ist stabil an den persistenten Bootstrap-Digest gebunden und nur für den einmaligen `/start`-Bootstrap erforderlich. Sein Klartext liegt nicht im Repository, in Logs oder Artifacts. Der finale Klartext wird ausschließlich privat an den Nutzer übergeben.
+
+Der finale persistente Deploy lief auf Staging-Checkpoint `acad72ec9b7b342591daad3eaa6096037185760c` erfolgreich durch und erhielt die leere manuelle D1 unverändert.
 
 ### Disposable Plan-031-Acceptance
 
