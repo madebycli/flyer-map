@@ -53,8 +53,7 @@ export function FieldBottomSheet({
 }) {
   const [snap, setSnap] = useState<FieldSheetSnap>(initialSnap);
   const [viewport, setViewport] = useState(() => viewportHeight());
-  const [dragHeight, setDragHeight] = useState<number | null>(null);
-  const drag = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+  const drag = useRef<{ pointerId: number; startY: number; startHeight: number; sheet: HTMLElement } | null>(null);
 
   useEffect(() => {
     if (open) setSnap(initialSnap);
@@ -74,11 +73,15 @@ export function FieldBottomSheet({
   }, []);
 
   const committedHeight = useMemo(() => snapHeight(snap, viewport), [snap, viewport]);
-  const displayedHeight = dragHeight ?? committedHeight;
 
   const finishDrag = useCallback((height: number) => {
-    setSnap(nearestSnap(height, viewport));
-    setDragHeight(null);
+    const activeDrag = drag.current;
+    const nextSnap = nearestSnap(height, viewport);
+    if (activeDrag) {
+      activeDrag.sheet.style.setProperty("--field-sheet-height", snapHeight(nextSnap, viewport) + "px");
+      activeDrag.sheet.classList.remove("field-sheet-dragging");
+    }
+    setSnap(nextSnap);
     drag.current = null;
   }, [viewport]);
 
@@ -92,7 +95,7 @@ export function FieldBottomSheet({
         aria-modal="true"
         aria-label={title}
         data-snap={snap}
-        style={{ "--field-sheet-height": `${displayedHeight}px` } as CSSProperties}
+        style={{ "--field-sheet-height": committedHeight + "px" } as CSSProperties}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button
@@ -101,13 +104,17 @@ export function FieldBottomSheet({
           aria-label="Fensterhöhe ändern"
           aria-valuetext={snap === "compact" ? "Kompakt" : snap === "expanded" ? "Erweitert" : "Fast Vollbild"}
           onPointerDown={(event) => {
-            drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: committedHeight };
+            const sheet = event.currentTarget.closest<HTMLElement>(".field-bottom-sheet");
+            if (!sheet) return;
+            drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: committedHeight, sheet };
+            sheet.classList.add("field-sheet-dragging");
             event.currentTarget.setPointerCapture?.(event.pointerId);
           }}
           onPointerMove={(event) => {
             if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+            event.preventDefault();
             const next = clampHeight(drag.current.startHeight + drag.current.startY - event.clientY, viewport);
-            setDragHeight(next);
+            drag.current.sheet.style.setProperty("--field-sheet-height", next + "px");
           }}
           onPointerUp={(event) => {
             if (!drag.current || drag.current.pointerId !== event.pointerId) return;
@@ -115,7 +122,8 @@ export function FieldBottomSheet({
             finishDrag(next);
           }}
           onPointerCancel={() => {
-            setDragHeight(null);
+            const activeDrag = drag.current;
+            if (activeDrag) activeDrag.sheet.classList.remove("field-sheet-dragging");
             drag.current = null;
           }}
           onKeyDown={(event) => {
