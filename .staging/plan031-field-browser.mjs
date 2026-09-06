@@ -129,6 +129,17 @@ async function main() {
 
     await markStage('desktop_legacy_navigation');
     await menu.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+    await page.waitForTimeout(250);
+    await saveJson('desktop-legacy-debug.json', await page.evaluate(() => ({
+      settingsCount: document.querySelectorAll('section.settings-sheet').length,
+      bottomSheetCount: document.querySelectorAll('section.bottom-sheet').length,
+      visibleSections: [...document.querySelectorAll('section')].map((node) => ({
+        className: node.className,
+        ariaLabel: node.getAttribute('aria-label'),
+        visible: Boolean(node.getClientRects().length),
+      })).filter((entry) => entry.visible).slice(-16),
+      overlayCount: document.querySelectorAll('.field-sheet-overlay').length,
+    })));
     const settingsSheet = page.locator('section.settings-sheet');
     await settingsSheet.waitFor();
     await settingsSheet.getByRole('button', { name: 'Schließen', exact: true }).click();
