@@ -155,8 +155,8 @@ async function main() {
         ariaLabel: node.getAttribute('aria-label'),
         rect: node.getBoundingClientRect().toJSON(),
       }))),
-      activeElement: document.activeElement?.outerHTML?.slice(0, 300) ?? null,
-      overlays: document.querySelectorAll('.field-sheet-overlay').length,
+      activeElement: await page.evaluate(() => document.activeElement?.outerHTML?.slice(0, 300) ?? null),
+      overlays: await page.evaluate(() => document.querySelectorAll('.field-sheet-overlay').length),
     });
     await Promise.race([
       settingsButton.click({ timeout: 10_000 }),
