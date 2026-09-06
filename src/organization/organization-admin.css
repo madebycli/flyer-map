@@ -70,7 +70,8 @@ body:has(.org-page), body:has(.org-admin-page) {
 .org-segmented button { border: 0; border-radius: 8px; padding: 9px; background: transparent; color: var(--org-muted); font-weight: 750; }
 .org-segmented button.is-active { background: white; color: var(--org-text); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 .org-admin-topbar { min-width: 0; justify-content: space-between; }
-.org-admin-topbar nav { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; }
+.org-admin-topbar nav { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.org-admin-topbar nav::-webkit-scrollbar { display: none; }
 .org-admin-topbar nav button, .org-admin-topbar nav a, .org-account-chip button { border: 0; background: transparent; padding: 9px 10px; color: var(--org-muted); text-decoration: none; border-radius: 8px; }
 .org-admin-topbar nav button:hover, .org-admin-topbar nav a:hover { background: #f0f2ef; color: var(--org-text); }
 .org-account-chip { display: flex; min-width: 0; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
@@ -116,13 +117,38 @@ body:has(.org-page), body:has(.org-admin-page) {
 
 @media (max-width: 760px) {
   .org-public-header, .org-admin-topbar { padding: 0 16px; }
-  .org-admin-topbar { position: static; display: grid; grid-template-columns: 1fr auto; gap: 8px; padding-top: 12px; padding-bottom: 12px; }
-  .org-admin-topbar nav { grid-column: 1 / -1; overflow-x: auto; flex-wrap: nowrap; order: 3; }
+  .org-admin-topbar {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .org-admin-topbar nav {
+    grid-column: 1 / -1;
+    order: 3;
+    width: 100%;
+    min-width: 0;
+    gap: 4px;
+    padding: 4px 0 1px;
+    border-top: 1px solid var(--org-border);
+  }
+  .org-admin-topbar nav button,
+  .org-admin-topbar nav a {
+    min-height: 44px;
+    flex: 0 0 auto;
+    padding: 10px 12px;
+  }
+  .org-account-chip { min-width: 0; }
   .org-account-chip span { display: none; }
+  .org-account-chip button { min-height: 44px; padding: 10px 12px; }
   .org-card { margin: 20px auto; padding: 22px; }
   .org-admin-content, .org-admin-content--narrow { width: min(100% - 24px, 100%); padding-top: 28px; }
   .org-heading-row { align-items: stretch; flex-direction: column; }
   .org-heading-row .org-primary { width: 100%; }
+  .org-lifecycle-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .org-lifecycle-actions button { min-width: 0; min-height: 48px; padding: 11px 8px; }
   .org-recovery-box pre { columns: 1; }
   .org-map-picker__map { height: 310px; }
   .org-map-picker__crosshair { top: 155px; }
