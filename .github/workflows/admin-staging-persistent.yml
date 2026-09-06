@@ -82,6 +82,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p product/.staging
           install -m 0755 runner/.staging/admin-persistent-release.sh product/.staging/admin-persistent-release.sh
           bash -n product/.staging/admin-persistent-release.sh
           ! grep -Fq 'DELETE FROM' product/.staging/admin-persistent-release.sh
