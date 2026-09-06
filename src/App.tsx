@@ -540,10 +540,16 @@ export default function App({
   useEffect(() => {
     if (!platformCommand || platformCommand.id <= handledPlatformCommandId.current) return;
     handledPlatformCommandId.current = platformCommand.id;
-    if (mode !== "browse") return;
+
+    const openLegacySheet = (nextSheet: "settings" | "teams" | "campaign-comments") => {
+      setMode("browse");
+      setManualStreetAreaSelection(false);
+      setSheetCollapsed(false);
+      setSheet(nextSheet);
+    };
 
     if (platformCommand.type === "open-settings") {
-      setSheet("settings");
+      openLegacySheet("settings");
       return;
     }
 
@@ -551,14 +557,16 @@ export default function App({
       setSelectedAreaId(null);
       setSelectedTaskId(null);
       setSelectedHouseTaskId(null);
-      setSheet("campaign-comments");
+      openLegacySheet("campaign-comments");
       return;
     }
 
     if (platformCommand.type === "open-team-management") {
-      if (isAdmin) setSheet("teams");
+      if (isAdmin) openLegacySheet("teams");
       return;
     }
+
+    if (mode !== "browse") return;
 
     if (platformCommand.type === "select-active-team") {
       const candidate = snapshot.teams.find((team) => team.id === platformCommand.teamId);
