@@ -1,13 +1,13 @@
 version: 1
-last_updated: 2026-09-06T09:02:00+00:00
+last_updated: 2026-09-06T10:00:00+00:00
 purpose: Live Organizer/Admin continuation overlay. Load after docs/context-organizer-admin.yaml when resuming Plan 030 or Plan 031.
 
 verified:
   source_branch: { name: mission-rxdb-sync, head: 33ab9c0d757da44e0b20b278982a548eafe732aa }
   feature_branch:
     name: feature/organizer-admin-platform
-    runtime_green_head: b22114d4e15774e563d1581cb798ad52f87ccf96
-    runtime_green_ci_run_id: 34000044120
+    runtime_green_head: 085d09078fc76278b9b60d43ad1c040de322c363
+    runtime_green_ci_run_id: 34025756097
     runtime_green_ci_conclusion: success
     note: always reverify the exact remote head and CI before new writes
   pull_requests:
@@ -30,9 +30,11 @@ verified:
     acceptance_worker: flyer-map-admin-acceptance
     acceptance_d1_name: flyer-map-admin-acceptance-db
     url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
-    persistent_green_run_id: 34023422212
-    acceptance_green_run_id: 34007347508
-    audited_product_head: b22114d4e15774e563d1581cb798ad52f87ccf96
+    persistent_green_run_id: 34025753720
+    persistent_artifact_id: 9986821967
+    persistent_artifact_digest: sha256:e0714439aa071e858ebbf83cf6e45540cdde95269b8856e56b3079f68c22f414
+    acceptance_green_run_id: 34025856207
+    audited_product_head: 085d09078fc76278b9b60d43ad1c040de322c363
     persistence:
       persistent_deploy_performs_remote_cleanup: false
       persistent_deploy_performs_sql_delete: false
@@ -50,6 +52,7 @@ verified:
       invite_clean_browser: true
       invited_admin_mfa: true
       mobile_390x844: true
+      mobile_initial_snap: expanded
       mobile_overflow: false
     plan031_api:
       ok: true
@@ -70,6 +73,8 @@ verified:
       acceptance_recovery_count: 0
       acceptance_membership_count: 0
       foreign_key_errors: 0
+      artifact_id: 9987076941
+      artifact_digest: sha256:c22f11f5580d7eba787d3fb0ed45c5bdd60a63dced0d9c37b19bbcf6e060388b
     public_checks:
       start_get: 200
       unauthenticated_me_get: 401
