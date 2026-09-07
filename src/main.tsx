@@ -4,6 +4,7 @@ import { AccessLinkOnboardingGate } from "./access/AccessLinkOnboardingGate";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { campaignIdFromUrl } from "./data/campaignApi";
+import { installRxdbFetchGuard } from "./data/rxdbFetchGuard";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
 import { OrganizationAdminNavEnhancer } from "./organization/OrganizationAdminNavEnhancer";
 import { OrganizationApp } from "./organization/OrganizationApp";
@@ -28,6 +29,8 @@ import "./m5.css";
 import "./access-recovery.css";
 import "./diagnostics/map-diagnostics.css";
 import "./map-context-ui.css";
+
+installRxdbFetchGuard();
 
 const workbenchMode = new URLSearchParams(window.location.search).get("workbench");
 const root = createRoot(document.getElementById("root")!);
