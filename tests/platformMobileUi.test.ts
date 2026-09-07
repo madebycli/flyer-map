@@ -15,8 +15,18 @@ test("launcher opens expanded while the focused team summary stays compact", asy
     readFile("src/platform/PlatformShell.tsx", "utf8"),
     readFile("src/team/TeamHub.tsx", "utf8"),
   ]);
-  assert.match(shell, /title="Menü"[\s\S]*?initialSnap="expanded"[\s\S]*?platform-menu-sheet/u);
+  assert.match(shell, /title="Menü"[\s\S]*?initialSnap="expanded"/u);
+  assert.doesNotMatch(shell, /className="platform-menu-sheet"/u);
   assert.match(team, /kicker="Team"[\s\S]*?initialSnap="compact"/u);
+});
+
+test("all field HUD headers share one geometry contract", async () => {
+  const css = await readFile("src/platform/field-bottom-sheet.css", "utf8");
+  assert.match(css, /\.field-bottom-sheet,\s*\.bottom-sheet\.field-sheet-enhanced\s*\{[\s\S]*?--field-hud-handle-min-height: 1\.4rem[\s\S]*?--field-hud-header-padding-inline: 0\.9rem[\s\S]*?--field-hud-close-size: 2\.75rem/u);
+  assert.match(css, /\.field-sheet-handle-button\s*\{[\s\S]*?min-height: var\(--field-hud-handle-min-height\)[\s\S]*?padding: var\(--field-hud-handle-padding-top\) 0 var\(--field-hud-handle-padding-bottom\)/u);
+  assert.match(css, /\.field-sheet-header\s*\{[\s\S]*?min-height: calc\(var\(--field-hud-close-size\)[\s\S]*?padding: var\(--field-hud-header-padding-top\) var\(--field-hud-header-padding-inline\) var\(--field-hud-header-padding-bottom\)[\s\S]*?border-bottom: var\(--field-hud-header-divider\)/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-handle-button\s*\{[\s\S]*?min-height: var\(--field-hud-handle-min-height\)[\s\S]*?padding: var\(--field-hud-handle-padding-top\) var\(--field-hud-header-padding-inline\) var\(--field-hud-handle-padding-bottom\)/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-header\s*\{[\s\S]*?top: var\(--field-hud-handle-min-height\)[\s\S]*?margin: 0 calc\(-1 \* var\(--field-hud-header-padding-inline\)\) 0\.85rem[\s\S]*?border-bottom: var\(--field-hud-header-divider\)/u);
 });
 
 test("sheet dragging updates the DOM without a React render per pointer move", async () => {
@@ -35,9 +45,9 @@ test("legacy sheet enhancement cannot feed back through its own class mutation",
 
 test("legacy sheet chrome stays opaque and contiguous while content scrolls", async () => {
   const css = await readFile("src/platform/field-bottom-sheet.css", "utf8");
-  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-handle-button\s*\{[\s\S]*?top: 0[\s\S]*?min-height: 1\.45rem[\s\S]*?background: #fff/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-handle-button\s*\{[\s\S]*?top: 0[\s\S]*?min-height: var\(--field-hud-handle-min-height\)[\s\S]*?background: #fff/u);
   assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-handle\s*\{[\s\S]*?margin: 0 auto/u);
-  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-header\s*\{[\s\S]*?top: 1\.45rem[\s\S]*?padding: 0\.35rem 0\.9rem 0\.72rem[\s\S]*?background: #fff/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-header\s*\{[\s\S]*?top: var\(--field-hud-handle-min-height\)[\s\S]*?padding: var\(--field-hud-header-padding-top\) var\(--field-hud-header-padding-inline\) var\(--field-hud-header-padding-bottom\)[\s\S]*?background: #fff/u);
   assert.match(css, /\.bottom-sheet\.field-sheet-enhanced\s*\{[\s\S]*?scroll-padding-top: 5\.4rem/u);
 });
 
