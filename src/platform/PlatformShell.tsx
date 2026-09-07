@@ -101,7 +101,7 @@ export function PlatformShell() {
       </div>
 
       {launcherAvailable ? (
-        <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
+        <div className={`platform-field-bar ${menuOpen ? "is-behind-menu" : primaryHub !== null ? "is-above-hub" : ""}`}>
           <button
             className="platform-grid-button"
             type="button"

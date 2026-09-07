@@ -59,9 +59,9 @@ test("launcher and focused hubs share one reusable field UI base", () => {
   assert.match(roomHubSource, /<FieldBottomSheet open/u);
 });
 
-test("field launcher chrome stays behind every open sheet", () => {
-  assert.match(shellSource, /overlayOpen \? "is-behind-menu" : ""/u);
-  assert.doesNotMatch(shellSource, /is-above-hub/u);
+test("field launcher widget stays above focused hubs and behind the app menu", () => {
+  assert.match(shellSource, /menuOpen \? "is-behind-menu" : primaryHub !== null \? "is-above-hub" : ""/u);
+  assert.match(shellCss, /\.platform-field-bar\.is-above-hub[\s\S]*?z-index: 3450/u);
   assert.match(shellCss, /\.platform-field-bar\.is-behind-menu[\s\S]*?pointer-events: none/u);
 });
 
