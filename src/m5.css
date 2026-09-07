@@ -1,7 +1,7 @@
 .mutation-sync-status {
   position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + 0.55rem);
-  right: 0.75rem;
+  left: 0.75rem;
   z-index: 45;
   display: inline-flex;
   align-items: center;
@@ -9,9 +9,8 @@
   max-width: min(78vw, 18rem);
   min-height: 2rem;
   padding: 0.38rem 0.65rem;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  border-radius: 999px;
   border: 0;
+  border-radius: 999px;
   white-space: nowrap;
   cursor: pointer;
   background: rgba(255, 255, 255, 0.94);
@@ -24,10 +23,25 @@
   backdrop-filter: blur(8px);
 }
 
+.mutation-sync-status.is-server-confirmed.is-compact {
+  width: 1.35rem;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  min-height: 1.35rem;
+  justify-content: center;
+  padding: 0;
+  color: #16803c;
+  background: transparent;
+  box-shadow: none;
+  cursor: default;
+  pointer-events: none;
+  backdrop-filter: none;
+}
+
 .mutation-sync-issue {
   position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + 3.35rem);
-  right: 0.55rem;
+  left: 0.55rem;
   z-index: 46;
   width: min(20rem, calc(100vw - 1.1rem));
   display: grid;
@@ -53,11 +67,8 @@
   background: currentColor;
 }
 
-.mutation-sync-status.is-saved {
-  color: #166534;
-}
-
-.mutation-sync-status.is-pending,
+.mutation-sync-status.is-local-saved,
+.mutation-sync-status.is-waiting-server,
 .mutation-sync-status.is-syncing,
 .mutation-sync-status.is-offline {
   color: #92400e;
@@ -72,7 +83,7 @@
 @media (max-width: 420px) {
   .mutation-sync-status {
     top: calc(env(safe-area-inset-top, 0px) + 0.55rem);
-    right: 0.55rem;
+    left: 0.55rem;
     max-width: calc(100vw - 1.1rem);
     font-size: 0.75rem;
   }

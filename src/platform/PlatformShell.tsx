@@ -56,8 +56,6 @@ export function PlatformShell() {
   const showActiveTeam = appContext?.accessRole !== "viewer" && Boolean(appContext?.activeTeam);
   const launcherAvailable = appContext?.launcherAvailable ?? true;
   const overlayOpen = menuOpen || primaryHub !== null;
-  const syncState = appContext?.syncState ?? (online ? "healthy" : "offline");
-  const syncLabel = appContext?.syncLabel ?? (syncState === "offline" ? "Offline" : null);
 
   const closeOverlays = () => {
     setMenuOpen(false);
@@ -120,15 +118,6 @@ export function PlatformShell() {
               <strong>{teamName}</strong>
             </div>
           ) : null}
-          <div
-            className={`platform-sync-indicator is-${syncState}`}
-            role={syncState === "healthy" ? undefined : "status"}
-            aria-label={syncState === "healthy" ? "Serverstand aktuell" : syncLabel ?? "Synchronisationsstatus"}
-            title={syncState === "healthy" ? "Serverstand aktuell" : syncLabel ?? "Synchronisationsstatus"}
-          >
-            <span aria-hidden="true" />
-            {syncState !== "healthy" && syncLabel ? <strong>{syncLabel}</strong> : null}
-          </div>
         </div>
       ) : null}
 

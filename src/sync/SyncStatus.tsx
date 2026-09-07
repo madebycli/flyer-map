@@ -64,21 +64,36 @@ export function SyncStatus() {
     };
   }, []);
 
-  if (state === "server-confirmed" && !issue) return null;
-
   const label = statusLabel(language, state, pendingCount);
+  const serverConfirmed = state === "server-confirmed" && !issue;
+
   return (
-    <div className="mutation-sync-status-wrap">
-      <button
-        className={`mutation-sync-status is-${state}`}
-        type="button"
-        onClick={() => issue && setOpen((visible) => !visible)}
-        aria-expanded={issue ? open : undefined}
-        aria-label={issue ? `${label}: ${issue.message}` : label}
-      >
-        <span className="mutation-sync-dot" aria-hidden="true" />
-        <span>{label}</span>
-      </button>
+    <div
+      className="mutation-sync-status-wrap"
+      aria-live={state === "conflict" || state === "failed" || state === "blocked-auth" ? "assertive" : "polite"}
+    >
+      {serverConfirmed ? (
+        <div
+          className="mutation-sync-status is-server-confirmed is-compact"
+          role="status"
+          aria-label={label}
+          title={label}
+        >
+          <span className="mutation-sync-dot" aria-hidden="true" />
+        </div>
+      ) : (
+        <button
+          className={`mutation-sync-status is-${state}`}
+          type="button"
+          onClick={() => issue && setOpen((visible) => !visible)}
+          aria-expanded={issue ? open : undefined}
+          aria-label={issue ? `${label}: ${issue.message}` : label}
+          title={label}
+        >
+          <span className="mutation-sync-dot" aria-hidden="true" />
+          <span>{label}</span>
+        </button>
+      )}
       {issue && open ? (
         <section className="mutation-sync-issue" role="dialog" aria-label="Synchronisierungsinfo">
           <strong>{issue.kind === "server-wins" ? "Online-Version übernommen" : "Synchronisierungsinfo"}</strong>

@@ -5,11 +5,14 @@ import test from "node:test";
 const teamHub = readFileSync(new URL("../src/team/TeamHub.tsx", import.meta.url), "utf8");
 const progressHub = readFileSync(new URL("../src/team/TeamProgressHub.tsx", import.meta.url), "utf8");
 const progressPanel = readFileSync(new URL("../src/team/TeamProgressPanel.tsx", import.meta.url), "utf8");
+const roomsHub = readFileSync(new URL("../src/team/RoomsHub.tsx", import.meta.url), "utf8");
+const joinAccessCss = readFileSync(new URL("../src/team/join-access.css", import.meta.url), "utf8");
 const fieldSheet = readFileSync(new URL("../src/platform/FieldBottomSheet.tsx", import.meta.url), "utf8");
 const fieldSheetCss = readFileSync(new URL("../src/platform/field-bottom-sheet.css", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src/platform/PlatformShell.tsx", import.meta.url), "utf8");
 const shellCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
 const syncStatus = readFileSync(new URL("../src/sync/SyncStatus.tsx", import.meta.url), "utf8");
+const syncCss = readFileSync(new URL("../src/m5.css", import.meta.url), "utf8");
 
 test("short Team surfaces start compact instead of reserving an empty expanded sheet", () => {
   assert.match(teamHub, /initialSnap="compact"/u);
@@ -35,8 +38,23 @@ test("launcher remains reachable above a primary hub and opening it closes that 
   assert.match(shellCss, /\.platform-field-bar\.is-above-hub\s*\{\s*z-index:\s*3450;/u);
 });
 
-test("healthy server confirmation is represented only by the compact field indicator", () => {
-  assert.match(syncStatus, /if \(state === "server-confirmed" && !issue\) return null;/u);
+test("one upper sync status owns confirmation while the lower field bar stays clean", () => {
+  assert.doesNotMatch(shell, /platform-sync-indicator/u);
+  assert.match(syncStatus, /const serverConfirmed = state === "server-confirmed" && !issue;/u);
+  assert.match(syncStatus, /is-server-confirmed is-compact/u);
   assert.match(syncStatus, /state === "failed"/u);
   assert.match(syncStatus, /state === "blocked-auth"/u);
+  assert.match(syncCss, /\.mutation-sync-status \{[\s\S]*left: 0\.75rem;/u);
+  assert.match(syncCss, /\.mutation-sync-status\.is-server-confirmed\.is-compact/u);
+  assert.match(syncCss, /\.mutation-sync-status\.is-waiting-server/u);
+});
+
+test("join access uses a larger QR and compact inline copy icon controls", () => {
+  assert.match(roomsHub, /QRCodeSVG value=\{issuedJoinUrl\} size=\{256\}/u);
+  assert.match(roomsHub, /className="join-access-row"/u);
+  assert.match(roomsHub, /join-access-copy-button/u);
+  assert.match(roomsHub, /Room-Code kopieren/u);
+  assert.match(roomsHub, /Join-Link kopieren/u);
+  assert.match(joinAccessCss, /grid-template-columns: minmax\(0, 1fr\) 2\.35rem/u);
+  assert.match(joinAccessCss, /\.join-access-qr svg[\s\S]*width: min\(16rem/u);
 });

@@ -79,9 +79,9 @@ test("street detail closes and deletes to map without implicit area navigation",
   assert.match(appSource, /setSelectedTaskId\(null\); setSheet\(null\);/u);
 });
 
-test("healthy sync is a compact field-bar indicator and map refresh remains separate", () => {
-  assert.match(shellSource, /platform-sync-indicator/u);
-  assert.match(shellSource, /syncState !== "healthy" && syncLabel/u);
+test("global sync remains separate from the launcher field bar and map refresh state", () => {
+  assert.doesNotMatch(shellSource, /platform-sync-indicator/u);
   assert.match(appSource, /syncState: platformSyncState/u);
-  assert.match(shellCss, /\.platform-sync-indicator/u);
+  assert.match(shellSource, /className="platform-field-bar/u);
+  assert.match(shellCss, /\.platform-field-bar/u);
 });

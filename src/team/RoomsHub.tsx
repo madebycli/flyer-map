@@ -22,6 +22,7 @@ import { FieldBottomSheet } from "../platform/FieldBottomSheet.tsx";
 import type { PlatformAppContext } from "../platform/platformContract.ts";
 import { FieldGroupMembersPanel } from "./FieldGroupMembersPanel.tsx";
 import "./team-center.css";
+import "./join-access.css";
 
 type Props = {
   context: PlatformAppContext | null;
@@ -328,12 +329,30 @@ export function RoomsHub({ context, online, onClose, onSelectTeam, onAccessChang
 
       {issuedAccess && issuedJoinUrl ? (
         <Modal kicker="Aktueller Join-Zugang" title={issuedAccess.group.label} onClose={() => { setIssuedAccess(null); setCopied(null); }}>
-          <p className="team-center-help">Dieser Code und QR-Link sind der aktuell gültige Join-Zugang. Anzeigen rotiert nichts und bestehende Mitglieder bleiben unverändert.</p>
-          <div className="team-center-room-code">{issuedAccess.credentials.roomCode}</div>
-          <button className="team-center-secondary" type="button" onClick={() => void copyValue("code", issuedAccess.credentials.roomCode)}>{copied === "code" ? "Code kopiert ✓" : "Code kopieren"}</button>
-          <div className="team-center-qr"><QRCodeSVG value={issuedJoinUrl} size={196} level="M" includeMargin title={`QR-Code: ${issuedAccess.group.label}`} /></div>
-          <input className="team-center-link-input" readOnly value={issuedJoinUrl} aria-label="Room-Link" />
-          <button className="team-center-primary" type="button" onClick={() => void copyValue("link", issuedJoinUrl)}>{copied === "link" ? "Link kopiert ✓" : "Link kopieren"}</button>
+          <div className="join-access-panel">
+            <p className="team-center-help">Dieser Code und QR-Link sind der aktuell gültige Join-Zugang. Anzeigen rotiert nichts und bestehende Mitglieder bleiben unverändert.</p>
+            <div className="join-access-qr"><QRCodeSVG value={issuedJoinUrl} size={256} level="M" includeMargin title={`QR-Code: ${issuedAccess.group.label}`} /></div>
+            <div className="join-access-row">
+              <div className="join-access-value join-access-code"><span>Room-Code</span><strong>{issuedAccess.credentials.roomCode}</strong></div>
+              <button
+                className={`join-access-copy-button ${copied === "code" ? "is-copied" : ""}`}
+                type="button"
+                onClick={() => void copyValue("code", issuedAccess.credentials.roomCode)}
+                aria-label={copied === "code" ? "Room-Code kopiert" : "Room-Code kopieren"}
+                title={copied === "code" ? "Kopiert" : "Room-Code kopieren"}
+              ><span aria-hidden="true">{copied === "code" ? "✓" : "⧉"}</span></button>
+            </div>
+            <div className="join-access-row">
+              <div className="join-access-value join-access-link"><span>Join-Link</span><input className="team-center-link-input" readOnly value={issuedJoinUrl} aria-label="Room-Link" /></div>
+              <button
+                className={`join-access-copy-button ${copied === "link" ? "is-copied" : ""}`}
+                type="button"
+                onClick={() => void copyValue("link", issuedJoinUrl)}
+                aria-label={copied === "link" ? "Join-Link kopiert" : "Join-Link kopieren"}
+                title={copied === "link" ? "Kopiert" : "Join-Link kopieren"}
+              ><span aria-hidden="true">{copied === "link" ? "✓" : "⧉"}</span></button>
+            </div>
+          </div>
         </Modal>
       ) : null}
     </>
