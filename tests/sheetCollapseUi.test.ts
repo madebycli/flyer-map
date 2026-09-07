@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-test("mission sheets use a real accessible collapse control and keep headers visible", async () => {
+test("legacy mission map sheets keep accessible collapse controls while Settings uses FieldHub", async () => {
   const [app, settings, css] = await Promise.all([
     readFile("src/App.tsx", "utf8"), readFile("src/settings/SettingsSheet.tsx", "utf8"), readFile("src/styles.css", "utf8"),
   ]);
   assert.match(app, /const sheetToggleLabel = sheetCollapsed \? "Fenster ausklappen" : "Fenster einklappen"/u);
   assert.match(app, /sheet-handle-button[\s\S]*aria-label=\{sheetToggleLabel\}/u);
-  assert.match(settings, /sheet-handle-button[\s\S]*Fenster einklappen/u);
+  assert.match(settings, /<FieldHub[\s\S]*?title=\{t\(language, "settings"\)\}/u);
+  assert.doesNotMatch(settings, /sheet-handle-button/u);
   assert.match(app, /useEffect\(\(\) => \{\s*setSheetCollapsed\(false\);\s*\}, \[sheet\]\)/u);
   assert.match(css, /\.bottom-sheet\.is-collapsed > :not\(\.sheet-handle-button\):not\(\.sheet-header\)/u);
   assert.match(css, /bottom: calc\(env\(safe-area-inset-bottom\) \+ 4\.45rem\)/u);
