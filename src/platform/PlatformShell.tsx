@@ -100,8 +100,8 @@ export function PlatformShell() {
         </SessionMapHighlightProvider>
       </div>
 
-      {launcherAvailable ? (
-        <div className={`platform-field-bar ${menuOpen ? "is-behind-menu" : primaryHub !== null ? "is-above-hub" : ""}`}>
+      {launcherAvailable && !overlayOpen ? (
+        <div className="platform-field-bar">
           <button
             className="platform-grid-button"
             type="button"

@@ -59,10 +59,12 @@ test("launcher and focused hubs share one reusable field UI base", () => {
   assert.match(roomHubSource, /<FieldBottomSheet open/u);
 });
 
-test("field launcher widget stays above focused hubs and behind the app menu", () => {
-  assert.match(shellSource, /menuOpen \? "is-behind-menu" : primaryHub !== null \? "is-above-hub" : ""/u);
-  assert.match(shellCss, /\.platform-field-bar\.is-above-hub[\s\S]*?z-index: 3450/u);
-  assert.match(shellCss, /\.platform-field-bar\.is-behind-menu[\s\S]*?pointer-events: none/u);
+test("field launcher widget is visible only on the bare map", () => {
+  assert.match(shellSource, /launcherAvailable && !overlayOpen \? \(/u);
+  assert.match(shellSource, /const overlayOpen = menuOpen \|\| primaryHub !== null/u);
+  assert.doesNotMatch(shellSource, /is-above-hub/u);
+  assert.doesNotMatch(shellSource, /is-behind-menu/u);
+  assert.match(appSource, /launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection/u);
 });
 
 test("unauthenticated launcher keeps only safe entry surfaces", () => {
