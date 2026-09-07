@@ -17,3 +17,33 @@
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+
+/*
+ * Area detail and Street status are still legacy bottom sheets. Keep their
+ * implementation scoped, but make their chrome match the proven Field HUD
+ * geometry exactly. This intentionally excludes House task sheets and every
+ * modern FieldHub so a legacy mobile override cannot squeeze the close button
+ * into the divider or cover the first action when the sheet opens untouched.
+ */
+.bottom-sheet.field-sheet-enhanced.compact-sheet,
+.bottom-sheet.field-sheet-enhanced.task-sheet:not(.commentable-task-sheet) {
+  --field-hud-sheet-padding-inline: 0.9rem;
+  --field-hud-sheet-padding-inline-negative: -0.9rem;
+  --field-hud-handle-min-height: 1.4rem;
+  --field-hud-handle-padding-top: 0.35rem;
+  --field-hud-handle-padding-bottom: 0.2rem;
+  --field-hud-handle-width: 2.8rem;
+  --field-hud-handle-height: 0.3rem;
+  --field-hud-header-padding-top: 0.35rem;
+  --field-hud-header-padding-inline: 0.9rem;
+  --field-hud-header-padding-bottom: 0.72rem;
+  --field-hud-close-size: 2.75rem;
+  padding: 0.45rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom));
+  border-radius: 1.3rem 1.3rem 1rem 1rem;
+}
+
+.bottom-sheet.field-sheet-enhanced.compact-sheet .sheet-header,
+.bottom-sheet.field-sheet-enhanced.task-sheet:not(.commentable-task-sheet) .sheet-header {
+  min-height: calc(var(--field-hud-close-size) + var(--field-hud-header-padding-top) + var(--field-hud-header-padding-bottom));
+  margin-bottom: 0.85rem;
+}
