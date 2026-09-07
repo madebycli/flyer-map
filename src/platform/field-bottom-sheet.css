@@ -15,6 +15,20 @@
   z-index: 3500;
 }
 
+.field-bottom-sheet,
+.bottom-sheet.field-sheet-enhanced {
+  --field-hud-handle-min-height: 1.4rem;
+  --field-hud-handle-padding-top: 0.35rem;
+  --field-hud-handle-padding-bottom: 0.2rem;
+  --field-hud-handle-width: 2.8rem;
+  --field-hud-handle-height: 0.3rem;
+  --field-hud-header-padding-top: 0.35rem;
+  --field-hud-header-padding-inline: 0.9rem;
+  --field-hud-header-padding-bottom: 0.72rem;
+  --field-hud-header-divider: 1px solid rgb(23 32 25 / 8%);
+  --field-hud-close-size: 2.75rem;
+}
+
 .field-bottom-sheet {
   display: flex;
   flex-direction: column;
@@ -35,9 +49,9 @@
   display: grid;
   place-items: center;
   width: 100%;
-  min-height: 1.4rem;
+  min-height: var(--field-hud-handle-min-height);
   flex: 0 0 auto;
-  padding: 0.35rem 0 0.2rem;
+  padding: var(--field-hud-handle-padding-top) 0 var(--field-hud-handle-padding-bottom);
   border: 0;
   background: transparent;
   cursor: ns-resize;
@@ -45,8 +59,8 @@
 }
 
 .field-sheet-handle {
-  width: 2.8rem;
-  height: 0.3rem;
+  width: var(--field-hud-handle-width);
+  height: var(--field-hud-handle-height);
   border-radius: 999px;
   background: #c8d0c9;
 }
@@ -56,9 +70,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
+  min-height: calc(var(--field-hud-close-size) + var(--field-hud-header-padding-top) + var(--field-hud-header-padding-bottom));
   flex: 0 0 auto;
-  padding: 0.35rem 0.9rem 0.72rem;
-  border-bottom: 1px solid rgb(23 32 25 / 8%);
+  padding: var(--field-hud-header-padding-top) var(--field-hud-header-padding-inline) var(--field-hud-header-padding-bottom);
+  border-bottom: var(--field-hud-header-divider);
 }
 
 .field-sheet-header > div { min-width: 0; }
@@ -81,8 +96,8 @@
 .field-sheet-header > button {
   display: grid;
   place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: var(--field-hud-close-size);
+  height: var(--field-hud-close-size);
   flex: 0 0 auto;
   border: 1px solid rgb(23 32 25 / 12%);
   border-radius: 999px;
@@ -141,17 +156,17 @@
   display: grid;
   place-items: center;
   width: calc(100% + 1.8rem);
-  min-height: 1.45rem;
+  min-height: var(--field-hud-handle-min-height);
   margin: -0.45rem -0.9rem 0;
-  padding: 0.45rem 0.9rem 0.2rem;
+  padding: var(--field-hud-handle-padding-top) var(--field-hud-header-padding-inline) var(--field-hud-handle-padding-bottom);
   background: #fff;
   cursor: ns-resize;
   touch-action: none;
 }
 
 .bottom-sheet.field-sheet-enhanced .sheet-handle {
-  width: 2.8rem;
-  height: 0.3rem;
+  width: var(--field-hud-handle-width);
+  height: var(--field-hud-handle-height);
   margin: 0 auto;
   border-radius: 999px;
   background: #c8d0c9;
@@ -159,11 +174,12 @@
 
 .bottom-sheet.field-sheet-enhanced .sheet-header {
   position: sticky;
-  top: 1.45rem;
+  top: var(--field-hud-handle-min-height);
   z-index: 4;
-  margin: 0 -0.9rem 0.85rem;
-  padding: 0.35rem 0.9rem 0.72rem;
-  border-bottom: 1px solid rgb(23 32 25 / 8%);
+  min-height: calc(var(--field-hud-close-size) + var(--field-hud-header-padding-top) + var(--field-hud-header-padding-bottom));
+  margin: 0 calc(-1 * var(--field-hud-header-padding-inline)) 0.85rem;
+  padding: var(--field-hud-header-padding-top) var(--field-hud-header-padding-inline) var(--field-hud-header-padding-bottom);
+  border-bottom: var(--field-hud-header-divider);
   background: #fff;
   box-shadow: 0 1px 0 rgb(23 32 25 / 4%);
 }
