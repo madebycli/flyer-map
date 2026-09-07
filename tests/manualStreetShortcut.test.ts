@@ -16,6 +16,6 @@ test("bare map exposes the green manual Street shortcut only when creation is al
 
 test("manual Street command keeps the existing direct-start and Area-selection behavior", () => {
   assert.match(app, /platformCommand\.type === "start-manual-street"[\s\S]*?startManualStreet/u);
-  assert.match(app, /editableAreas\.length === 1[\s\S]*?startManualStreetForArea/u);
+  assert.match(app, /editableAreas\.length === 1[\s\S]*?openStreetDrawing\(editableAreas\[0\]\)/u);
   assert.match(app, /editableAreas\.length > 1[\s\S]*?setManualStreetAreaSelection\(true\)/u);
 });
