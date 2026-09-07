@@ -33,6 +33,14 @@ test("legacy sheet enhancement cannot feed back through its own class mutation",
   assert.doesNotMatch(source, /attributes: true|attributeFilter: \["class"\]/u);
 });
 
+test("legacy sheet chrome stays opaque and contiguous while content scrolls", async () => {
+  const css = await readFile("src/platform/field-bottom-sheet.css", "utf8");
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-handle-button\s*\{[\s\S]*?top: 0[\s\S]*?min-height: 1\.45rem[\s\S]*?background: #fff/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-handle\s*\{[\s\S]*?margin: 0 auto/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-header\s*\{[\s\S]*?top: 1\.45rem[\s\S]*?padding: 0\.35rem 0\.9rem 0\.72rem[\s\S]*?background: #fff/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced\s*\{[\s\S]*?scroll-padding-top: 5\.4rem/u);
+});
+
 test("platform settings and team commands open legacy sheets even after a mode transition", async () => {
   const [source, shell] = await Promise.all([
     readFile("src/App.tsx", "utf8"),
