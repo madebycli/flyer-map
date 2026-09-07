@@ -135,7 +135,7 @@ export function PlatformShell() {
       ) : null}
 
       {menuOpen ? (
-        <FieldHub open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="expanded" className="platform-menu-sheet">
+        <FieldHub open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="expanded">
           <div className="platform-menu-grid">
             {launcherItems.map((item) => (
               <button
