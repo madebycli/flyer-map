@@ -1,0 +1,120 @@
+.field-group-members {
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.15rem;
+}
+
+.field-group-members-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.field-group-members-heading > div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.field-group-members-heading span {
+  color: var(--muted, #64748b);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.field-group-members-heading strong {
+  font-size: 0.92rem;
+}
+
+.field-group-members-heading button {
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(148 163 184 / 0.16);
+  color: inherit;
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.field-group-members-heading button:disabled,
+.field-group-member button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.field-group-members-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.field-group-member {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.68rem;
+  border: 1px solid rgb(148 163 184 / 0.2);
+  border-radius: 0.78rem;
+  background: var(--surface, #fff);
+}
+
+.field-group-member > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.field-group-member strong,
+.field-group-member small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-group-member strong {
+  font-size: 0.86rem;
+}
+
+.field-group-member small,
+.field-group-members-muted,
+.field-group-members-error {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.field-group-member small,
+.field-group-members-muted {
+  color: var(--muted, #64748b);
+}
+
+.field-group-members-error {
+  color: #991b1b;
+}
+
+.field-group-member button {
+  min-height: 2.45rem;
+  border: 0;
+  border-radius: 0.72rem;
+  padding: 0.55rem 0.72rem;
+  background: #fee2e2;
+  color: #991b1b;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+@media (max-width: 420px) {
+  .field-group-member {
+    grid-template-columns: 1fr;
+  }
+
+  .field-group-member button {
+    width: 100%;
+  }
+}

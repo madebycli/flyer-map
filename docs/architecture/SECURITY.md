@@ -2,9 +2,9 @@
 id: architecture-security
 type: architecture
 status: accepted
-last_updated: 2026-08-25
-related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, plan-012-platform-app-expansion]
-source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, future-security-boundaries]
+last_updated: 2026-09-02
+related: [architecture-data, architecture-offline-sync, product, product-roadmap, architecture-organizations, architecture-identity-permissions, architecture-live-teams, ADR-0009, ADR-0011, ADR-0012, ADR-0013, ADR-0021, ADR-0022, plan-012-platform-app-expansion]
+source_of_truth_for: [authorization, privacy-baseline, current-access-model, m5-mutation-security, m5-5-offline-map-security, m6-smart-task-security, future-security-boundaries]
 ---
 
 # Security and Privacy
@@ -30,19 +30,17 @@ Current roles:
 | Campaign settings/map focus | yes | no | no |
 | Manage Teams | yes | no | no |
 | Create/edit/delete Areas | yes | own Team only | no |
-| Create/edit/delete Tasks/status | yes | own Team Areas only | no |
+| Create/edit/delete Street/House Tasks/status | yes | own Team Areas only | no |
 | Modify another Team | yes | no | no |
 | Create/revoke Campaign Access Links | yes | no | no |
-| Submit M5 domain mutations | yes | own authorized scope only | no |
+| Submit M5/M6 domain mutations | yes | own authorized scope only | no |
 | Prepare local OSM map package | yes | yes | yes |
 
 The Worker enforces scope on every write and protected data request.
 
-During the M5 transition:
-- legacy snapshot PUT remains diff-authorized against previous server state;
-- M5 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence.
+M5/M6 mutation writes are converted into a current/candidate snapshot in the Worker and passed through the same existing authorization policy before D1 persistence. `POST /api/campaigns` is limited to validated revision-0 initial creation.
 
-This prevents a client from bypassing scope by lying about a mutation type or target.
+`PUT /api/campaigns/:id/snapshot` is retired. The Worker returns HTTP 410 with `legacy_snapshot_write_retired` before access resolution, payload processing, revision claim or D1 access. This prevents a client from bypassing scope through a complete-snapshot write.
 
 ## Current access grants and sessions
 
@@ -57,18 +55,44 @@ Successful redemption creates a separate opaque session secret in a `Secure; Htt
 
 Every protected request resolves the session's backing grant. Revoking the grant invalidates backed sessions on their next protected request.
 
+## Mission Campaign Admin accounts
+
+ADR-0023 adds a temporary, campaign-local password login alongside Access Links. It is not an Organization identity system.
+
+- setup requires an existing Campaign Admin and a single-use 24-hour setup link;
+- usernames are local to one Campaign and limited to ASCII letters, digits, `.`, `_` and `-`;
+- passwords are never returned, logged or stored client-side; D1 stores a unique-salt PBKDF2-HMAC-SHA-256 verifier with 600,000 iterations only;
+- login responses do not distinguish an unknown, disabled, locked or wrong-password account;
+- a durable username-scoped backoff locks after five failures for 15 minutes;
+- account sessions use a separate opaque hash-only `HttpOnly; Secure; SameSite=Lax` cookie and expire after 12 hours;
+- an existing Campaign Admin may rename a Campaign-local username or generate a
+  single-use 24-hour password-reset link. The recipient enters the new password; neither
+  the organizer nor the client persists a plaintext password;
+- issuing a new reset link invalidates any still-unused reset link for that account;
+  redeeming one invalidates all remaining reset links and revokes all existing account
+  sessions before issuing a new session;
+- disabling an account revokes its account sessions, but a single SQL guarded update
+  prevents removing the last active Campaign-local Admin even when requests race; its
+  backing Campaign grant remains the Worker authorization source of truth.
+
+Migration `0015` is additive for accounts and `0016` is additive for password resets.
+Both must be present before their endpoints are used. TOTP, recovery codes, e-mail
+identity and cross-Campaign accounts remain outside this mission scope.
+
 ## Current Team Editor scope
 
 Team Editor grant creation verifies that the scoped Team exists. Access resolution also verifies the Team still exists.
 
-There is intentionally no D1 Team foreign key on the grant while the legacy snapshot-replacement compatibility path exists; see `docs/architecture/DATA.md`.
+There is intentionally no D1 Team foreign key on the grant because this is the historical migration-0002 schema. Removing the legacy snapshot-replacement path does not silently add or alter that foreign key; see `docs/architecture/DATA.md`.
 
-For M5 mutations, Team Editor scope is not inferred from client mutation payload alone. The Worker:
+For mutations, Team Editor scope is not inferred from client mutation payload alone. The Worker:
 1. loads canonical current snapshot;
 2. applies the proposed mutation in memory;
 3. validates the candidate snapshot;
 4. compares current/candidate through the existing snapshot authorization policy;
 5. persists only if allowed.
+
+House Tasks use the same Area -> Team ownership rule as Street Tasks. An optional House parent Street never expands authority: both House Area and parent Street must remain in the same Campaign/Area.
 
 ## M5 mutation request security
 
@@ -90,6 +114,18 @@ Controls:
 A stable mutation id allows safe retry. It does not authorize the retry. Every retry still resolves current access first.
 
 If an already-applied mutation id is replayed, the Worker returns its previous applied revision only after the request has passed protected access resolution. The ledger is not a public lookup service.
+
+## RxDB replication security (Mission branch)
+
+`POST /api/campaigns/:campaignId/rxdb/pull/:collection` and `push` are
+same-origin, Campaign-authenticated endpoints. Pull filters Field Group members
+to their Team before bootstrapping or reading a checkpoint. Push rejects Viewers
+before mutation work, validates bounded rows/documents, converts the write to a
+narrow domain mutation, and invokes the existing Worker authorization and D1
+transaction path. A foreign or structurally conflicting document returns only a
+per-document rejection and an allowed canonical document or tombstone; it never
+grants a field member a broader read/write scope. Client RxDB metadata is
+transport-only and is stripped before domain comparison/persistence.
 
 ## M5.5 prepared offline map request security
 
@@ -117,9 +153,59 @@ The route does not write OSM data into D1 and does not include Campaign snapshot
 
 Worker error logging for this route must never log request bodies, cookies, Access Link tokens, session secrets or raw upstream data. A stable error category/name is sufficient for operational diagnosis.
 
+## M6 Smart Street and House persistence security
+
+ADR-0013 separates durable application identity from external OSM provenance.
+
+Shared boundaries:
+- every new Smart Street/House uses an application-owned generated `task_*` id;
+- OSM way ids remain ordinary non-secret provenance values and never authorize access;
+- reviewed geometry is copied into Campaign-owned snapshots rather than being a live remote reference;
+- unexpected nested provenance fields are rejected at the Worker validation boundary rather than persisted by object spreading;
+- source/geometry values are passed through D1 prepared/parameterized bindings and never concatenated into SQL;
+- malformed stored provenance is treated as invalid stored data, not evaluated content;
+- OSM labels/tags remain inert text if later surfaced alongside provenance ids.
+
+Street-specific boundaries:
+- reviewed Street geometry is a validated LineString snapshot;
+- Street source accepts `OpenStreetMap` / `way` / positive unique `objectIds`;
+- existing reviewed Street geometry/source is immutable through ordinary rename/status writes; a full-snapshot write is not an available compatibility path.
+
+House-specific boundaries:
+- reviewed House geometry is a validated Polygon footprint snapshot;
+- OSM House provenance, when present, is exactly one positive Way id;
+- `parentStreetTaskId`, when present, must resolve to a Street Task in the same Campaign and same Area;
+- House geometry, provenance and parent relation are immutable through ordinary House rename/status writes;
+- deleting a parent Street may only clear the optional parent relation, never silently delete/reassign the House;
+- House ids must not collide with Street Task ids inside a Campaign snapshot;
+- Team Editors may create/edit/delete Houses only inside Areas owned by their scoped Team.
+
+Migration boundaries:
+- `0004_m6_task_source_provenance.sql` and `0005_m6_house_tasks.sql` are not remotely applied merely because they exist in a branch/PR;
+- before the required schema exists, affected M6 writes return explicit `schema_migration_required` before Campaign revision claim;
+- House data must never be silently discarded or coerced into the Street table for compatibility.
+
+A future OSM source reconciliation must be a dedicated explicit reviewed mutation with its own authorization and conflict semantics.
+
+## Automatic Area preparation security
+
+ADR-0021 keeps automatic work generation inside the Worker authorization and persistence boundary.
+
+- only a successful persisted, non-replayed Area create or geometry mutation may schedule work; a rename or Team reassignment does not;
+- the Worker loads the Area from canonical D1 state and derives the bounded OSM request itself. The preparation route accepts no client BBox, polygon or Overpass text;
+- the status read requires ordinary Area read access. Start/retry requires Admin or a Team Editor for that exact Area Team; Viewers and Field Group members cannot start it;
+- the bounded OSM request retains the fixed 3 km, request-size, response-size, timeout, normalizer/allowlist and feature-cap controls of the existing offline-map boundary. Raw upstream payloads are not persisted or exposed;
+- generated Task identity and `areaPreparationGeneration` are server-owned. A client cannot create, delete or rewrite automatic identity through a normal mutation, although normal authorized Task status changes remain available;
+- once automatic work begins, a geometry rewrite would invalidate completed work, so it returns `area_has_started_work`. Deleting the complete Area follows the scoped foreign-key cascade;
+- migration 0014 is required for this path and fails closed as `area_preparation_schema_unavailable`; no remote migration is performed by a request.
+
+No credential, account, role, TOTP or GPS behavior is introduced by this M6 slice.
+
 ## Queue and revocation behavior
 
 IndexedDB queue records may contain domain mutation payloads necessary to retry saved work. They do not contain plaintext Access Link tokens or session secrets.
+
+Smart Street/House create payloads may include reviewed geometry and OSM way provenance. Those values are operational domain data, not credentials.
 
 When a queued request receives 401/403:
 - the record remains locally preserved;
@@ -139,7 +225,7 @@ Initial bootstrap/recovery remains protected by the server-only configured secre
 
 Campaign id alone never creates ownership.
 
-Operator recovery remains a privileged operator mechanism, not an ordinary account login system. M5 does not weaken or replace it.
+Operator recovery remains a privileged operator mechanism, not an ordinary account login system. M5/M6 does not weaken or replace it.
 
 ## Request protections
 
@@ -199,7 +285,7 @@ Security requirements:
 All user-controlled input is inert data.
 
 Mandatory:
-- never concatenate username/password/code/comment/form input into SQL;
+- never concatenate username/password/code/comment/form/OSM input into SQL;
 - use D1 prepared/parameterized queries;
 - never pass user input to `eval`, dynamic code execution, shell execution or raw HTML rendering;
 - safely encode output;
@@ -208,7 +294,7 @@ Mandatory:
 
 If an attacker types SQL, HTML, JavaScript or other code-like text into a username/password/form field, it must remain data and never execute.
 
-The same rule applies to external OSM tags: code-like text from map data remains inert map metadata and is not executable content.
+The same rule applies to external OSM tags and provenance metadata: code-like text from map data remains inert data and is not executable content.
 
 ## Future capability authorization
 
@@ -275,8 +361,15 @@ M5 stores only domain payload and metadata needed to deliver/reconcile queued sa
 
 Prepared offline OSM packages contain public map geometry/metadata and local package metadata only. They do not need user identity, continuous GPS history or private Campaign state.
 
+M6 Smart Street/House persistence stores only reviewed route/building geometry plus OSM Way ids needed for source traceability. It does not store raw Overpass responses, browsing history or device location trails in D1.
+
 Field Sessions may store operational values such as date, duration, participant count and Task events. They should not become individual movement surveillance.
 
 Future Organization identity should not collect email/phone merely because account systems often do so if username/password/TOTP meets the accepted product/security design.
 
-See ADR-0009 for Campaign access/session, ADR-0011 for durable mutation/idempotency behavior and ADR-0012 for the prepared offline-map data boundary.
+See ADR-0009 for Campaign access/session, ADR-0011 for durable mutation/idempotency behavior, ADR-0012 for the prepared offline-map data boundary and ADR-0013 for Smart Street/House identity and reviewed source snapshots.
+
+
+### Field Group credential reveal
+
+Current Field Group join material may be re-shown only through a server-authorized manager endpoint. Lookup hashes remain one-way. The recoverable copy is AES-256-GCM ciphertext using the dedicated `FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY`; AAD binds Campaign, Group, credential row and kind. Responses are `no-store`. Viewer, temporary member and foreign Team/Campaign requests fail closed. No plaintext credential may enter browser persistence, D1 plaintext fields, logs or audit.

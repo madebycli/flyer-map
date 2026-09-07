@@ -235,6 +235,27 @@ test("team editor cannot mutate an area owned by another team", () => {
   });
 });
 
+test("manual Street creation is rejected when any segment leaves its selected Area", () => {
+  const current = snapshot();
+  const mutation: CampaignMutation = {
+    id: "mutation_street-outside",
+    campaignId: current.campaign.id,
+    type: "task.create",
+    payload: {
+      taskId: "task_outside",
+      areaId: "area_a",
+      label: "Außerhalb",
+      geometry: { type: "LineString", coordinates: [[8.601, 49.401], [8.63, 49.43]] },
+    },
+    baseRevision: current.revision,
+    createdAt: "2026-08-24T09:09:00.000Z",
+  };
+  assert.throws(
+    () => applyCampaignMutation(current, mutation),
+    (error) => error instanceof CampaignMutationConflictError && error.reason === "street_outside_area",
+  );
+});
+
 test("worker rejects unknown mutation types before persistence", () => {
   const current = snapshot();
   const result = validateCampaignMutation(

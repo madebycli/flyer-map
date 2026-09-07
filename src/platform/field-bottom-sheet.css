@@ -1,0 +1,225 @@
+.field-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3400;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.45rem;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 0.45rem);
+  background: rgb(16 24 18 / 24%);
+  backdrop-filter: blur(2px);
+}
+
+.field-sheet-overlay ~ .team-center-modal-backdrop {
+  z-index: 3500;
+}
+
+/* One chrome contract for every draggable Field HUD, independent of sheet body height. */
+.field-bottom-sheet,
+.bottom-sheet.field-sheet-enhanced {
+  --field-hud-sheet-padding-inline: 0.9rem;
+  --field-hud-sheet-padding-inline-negative: -0.9rem;
+  --field-hud-handle-min-height: 1.4rem;
+  --field-hud-handle-padding-top: 0.35rem;
+  --field-hud-handle-padding-bottom: 0.2rem;
+  --field-hud-handle-width: 2.8rem;
+  --field-hud-handle-height: 0.3rem;
+  --field-hud-header-padding-top: 0.35rem;
+  --field-hud-header-padding-inline: 0.9rem;
+  --field-hud-header-padding-bottom: 0.72rem;
+  --field-hud-header-divider: 1px solid rgb(23 32 25 / 8%);
+  --field-hud-close-size: 2.75rem;
+}
+
+.field-bottom-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(38rem, 100%);
+  height: min(var(--field-sheet-height), calc(100dvh - env(safe-area-inset-top) - 0.8rem));
+  max-height: calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 0.8rem);
+  min-height: 12rem;
+  overflow: hidden;
+  border: 1px solid rgb(23 32 25 / 11%);
+  border-radius: 1.3rem 1.3rem 1rem 1rem;
+  color: #172019;
+  background: rgb(255 255 255 / 99%);
+  box-shadow: 0 0.55rem 2rem rgb(20 35 24 / 24%);
+  overscroll-behavior: contain;
+}
+
+.field-sheet-handle-button {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: var(--field-hud-handle-min-height);
+  flex: 0 0 auto;
+  padding: var(--field-hud-handle-padding-top) 0 var(--field-hud-handle-padding-bottom);
+  border: 0;
+  background: transparent;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.field-sheet-handle {
+  width: var(--field-hud-handle-width);
+  height: var(--field-hud-handle-height);
+  border-radius: 999px;
+  background: #c8d0c9;
+}
+
+.field-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  min-height: calc(var(--field-hud-close-size) + var(--field-hud-header-padding-top) + var(--field-hud-header-padding-bottom));
+  flex: 0 0 auto;
+  padding: var(--field-hud-header-padding-top) var(--field-hud-header-padding-inline) var(--field-hud-header-padding-bottom);
+  border-bottom: var(--field-hud-header-divider);
+}
+
+.field-sheet-header > div { min-width: 0; }
+.field-sheet-header span {
+  display: block;
+  margin-bottom: 0.16rem;
+  color: #687169;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.field-sheet-header strong {
+  display: block;
+  overflow: hidden;
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field-sheet-header > button {
+  display: grid;
+  place-items: center;
+  width: var(--field-hud-close-size);
+  height: var(--field-hud-close-size);
+  flex: 0 0 auto;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 999px;
+  color: #172019;
+  background: #edf2ee;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.field-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem 0.9rem calc(1rem + env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.field-sheet-footer {
+  flex: 0 0 auto;
+  padding: 0.65rem 0.9rem calc(0.65rem + env(safe-area-inset-bottom));
+  border-top: 1px solid rgb(23 32 25 / 8%);
+  background: rgb(255 255 255 / 98%);
+}
+
+.bottom-sheet.field-sheet-enhanced {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-top: 5.4rem;
+  scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.bottom-sheet.field-sheet-enhanced.compact-sheet,
+.bottom-sheet.field-sheet-enhanced.task-sheet {
+  --field-hud-sheet-padding-inline: 0.45rem;
+  --field-hud-sheet-padding-inline-negative: -0.45rem;
+  --field-hud-handle-min-height: 0.78rem;
+  --field-hud-handle-padding-top: 0.08rem;
+  --field-hud-handle-padding-bottom: 0.05rem;
+  --field-hud-header-padding-top: 0;
+  --field-hud-header-padding-bottom: 0;
+}
+
+/* Area and Street detail are map-context HUDs. Keep the 44px close target,
+   but make their chrome as compact as possible so the map remains the focus. */
+.bottom-sheet.field-sheet-enhanced.compact-sheet .sheet-header,
+.bottom-sheet.field-sheet-enhanced.task-sheet .sheet-header {
+  min-height: var(--field-hud-close-size);
+  margin-bottom: 0.3rem;
+}
+
+.bottom-sheet.field-sheet-enhanced.field-sheet-dragging,
+.bottom-sheet.field-sheet-enhanced[data-field-snap] {
+  height: min(var(--field-sheet-height), calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem));
+  max-height: calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem);
+}
+
+.bottom-sheet.field-sheet-enhanced.is-collapsed {
+  height: auto;
+  max-height: 6.25rem;
+  overflow: hidden;
+}
+
+.bottom-sheet.field-sheet-enhanced.field-sheet-dragging {
+  user-select: none;
+  transition: none !important;
+}
+
+.bottom-sheet.field-sheet-enhanced .sheet-handle-button {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: calc(100% + var(--field-hud-sheet-padding-inline) + var(--field-hud-sheet-padding-inline));
+  min-height: var(--field-hud-handle-min-height);
+  margin: -0.45rem var(--field-hud-sheet-padding-inline-negative) 0;
+  padding: var(--field-hud-handle-padding-top) var(--field-hud-header-padding-inline) var(--field-hud-handle-padding-bottom);
+  background: #fff;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.bottom-sheet.field-sheet-enhanced .sheet-handle {
+  width: var(--field-hud-handle-width);
+  height: var(--field-hud-handle-height);
+  margin: 0 auto;
+  border-radius: 999px;
+  background: #c8d0c9;
+}
+
+.bottom-sheet.field-sheet-enhanced .sheet-header {
+  position: sticky;
+  top: var(--field-hud-handle-min-height);
+  z-index: 4;
+  min-height: calc(var(--field-hud-close-size) + var(--field-hud-header-padding-top) + var(--field-hud-header-padding-bottom));
+  margin: 0 var(--field-hud-sheet-padding-inline-negative) 0.85rem;
+  padding: var(--field-hud-header-padding-top) var(--field-hud-header-padding-inline) var(--field-hud-header-padding-bottom);
+  border-bottom: var(--field-hud-header-divider);
+  background: #fff;
+  box-shadow: 0 1px 0 rgb(23 32 25 / 4%);
+}
+
+.bottom-sheet.field-sheet-enhanced .sheet-header .icon-button {
+  width: var(--field-hud-close-size);
+  height: var(--field-hud-close-size);
+}
+
+@media (min-width: 760px) {
+  .field-sheet-overlay { align-items: center; }
+  .field-bottom-sheet { border-radius: 1.3rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .field-bottom-sheet:not(.field-sheet-dragging),
+  .bottom-sheet.field-sheet-enhanced:not(.field-sheet-dragging) {
+    transition: height 160ms ease, max-height 160ms ease;
+  }
+}

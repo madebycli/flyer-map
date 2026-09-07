@@ -1,0 +1,67 @@
+.platform-session-highlight {
+  position: fixed;
+  z-index: 20;
+  right: 0.55rem;
+  bottom: calc(env(safe-area-inset-bottom) + 0.55rem);
+  left: min(16rem, 42vw);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  width: fit-content;
+  max-width: min(34rem, calc(100vw - 1.1rem));
+  min-height: 3rem;
+  margin-left: auto;
+  padding: 0.48rem 0.52rem 0.48rem 0.72rem;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 0.92rem;
+  color: #172019;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 0.3rem 1.1rem rgb(20 35 24 / 14%);
+  backdrop-filter: blur(12px);
+}
+
+.platform-session-highlight > div {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.platform-session-highlight strong,
+.platform-session-highlight span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-session-highlight strong {
+  font-size: 0.76rem;
+}
+
+.platform-session-highlight span {
+  color: #657169;
+  font-size: 0.65rem;
+  font-weight: 680;
+}
+
+.platform-session-highlight button {
+  min-height: 2.15rem;
+  flex: 0 0 auto;
+  padding: 0.42rem 0.65rem;
+  border: 1px solid #ccd8cf;
+  border-radius: 0.65rem;
+  color: #244f35;
+  background: #edf5ef;
+  font-size: 0.68rem;
+  font-weight: 780;
+}
+
+@media (max-width: 680px) {
+  .platform-session-highlight {
+    right: 0.55rem;
+    bottom: calc(env(safe-area-inset-bottom) + 4.05rem);
+    left: 0.55rem;
+    width: auto;
+    max-width: none;
+  }
+}

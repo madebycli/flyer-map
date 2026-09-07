@@ -1,0 +1,265 @@
+version: 2
+last_updated: 2026-09-05
+purpose: Organizer/Admin continuation overlay for the main docs/context-map.yaml routing graph.
+
+entrypoints:
+  after_main_graph:
+    - docs/context-organizer-admin-live.yaml
+    - docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
+    - docs/plans/active/030-organizer-admin-platform.md
+    - docs/decisions/ADR-0026-organization-admin-identity-and-authorization.md
+    - docs/operations/ORGANIZER_ADMIN_STAGING.md
+    - docs/context-field-ui-navigation.yaml
+    - docs/plans/active/031-field-ui-navigation-rooms-sheets.md
+    - docs/prompts/CONTINUE_FIELD_UI_NAVIGATION_LATEST.md
+
+routing_rules:
+  - for Organization, Organizer, Admin accounts, MFA, invites, security center, role templates, campaign tenancy or Admin staging, load this overlay after the normal AGENTS/CURRENT/context-map entrypoints
+  - for the approved Field launcher/Rooms/comments/Streets/draggable-sheet continuation on PR 76, load context-field-ui-navigation and plan-031 after this overlay before changing PlatformShell, TeamHub/TeamCenter, App sheets or field-group UX
+  - GitHub remote refs, PR state, exact-head CI and the latest successful staging artifact outrank embedded handoff SHAs
+  - ADR-0026 is accepted and governs Organization identity/authorization
+  - Organization is the tenant boundary; account identity is global and memberships are Organization-scoped
+  - ids are selectors only; Worker/D1 resolves session, membership and server-known capability for protected mutations
+  - RxDB remains operative Campaign data only; credentials, TOTP, recovery, sessions, memberships, roles and audit never belong in RxDB
+  - committed production wrangler config remains on worker/indexFc52.ts until a separately approved Production release
+  - committed production assets.run_worker_first includes /api/* and exact / so Organizer staging can redirect bare root while indexFc52 preserves normal SPA assets through ASSETS.fetch
+  - admin staging derives an isolated organizer config and must never bind Production-D1 or RxDB-Staging-D1
+  - legacy campaigns must never be automatically claimed by first bootstrap or Organization creation
+  - static Cloudflare assets are hardened through public/_headers while Worker-generated organizer responses are hardened in worker/indexOrganizer.ts
+  - the Field primary launcher is PlatformShell/buildPlatformLauncherItems/.platform-menu-grid; do not rebuild Rooms/Fortschritt/Kommentare as TeamCenter tabs
+  - Field Group credential rotation preserves existing memberships; current credentials are hash-only and cannot be re-shown without an explicit reviewed architecture change
+  - never mark PR 76 ready, merge it, deploy Production or apply Production migrations without explicit separate approval
+
+current_runtime_proof:
+  last_verified_product_head: 0d45dc02e88d3a89fa6174211775f7d2b0e80c85
+  feature_ci_run: 33980904285
+  feature_ci_job: 101345820530
+  feature_ci_conclusion: success
+  admin_staging_run: 33981025532
+  admin_staging_job: 101346148405
+  admin_staging_conclusion: success
+  public_url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
+  d1_fingerprint_before_after: 47ea1432c290bd89089ee723b33e71950bcf40abafffcd0405261553eaac8088
+  root_redirect: "302 / -> /login"
+  explicit_field_entry: "200 /?campaign=..."
+  note: documentation commits follow this product proof; reverify the new remote head and exact-head CI before implementation
+
+nodes:
+  - id: organizer-admin-live-context
+    path: docs/context-organizer-admin-live.yaml
+    type: context
+    status: current
+    topics: [organization, organizer, admin, github, ci, staging, acceptance]
+    load_when: [fresh chat, continue organizer admin, resume Plan 030, handoff]
+
+  - id: organizer-admin-handoff
+    path: docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
+    type: status
+    status: current
+    topics: [organization, organizer, admin, handoff, github, ci, acceptance, staging]
+    load_when: [fresh chat, continue organizer admin, resume Plan 030, handoff]
+
+  - id: plan-030-organizer-admin-platform
+    path: docs/plans/active/030-organizer-admin-platform.md
+    type: plan
+    status: active
+    topics: [organizations, accounts, admin, campaigns, roles, permissions, security, staging]
+    load_when: [Organizer Admin implementation, Plan 030, release acceptance]
+
+  - id: context-field-ui-navigation
+    path: docs/context-field-ui-navigation.yaml
+    type: context-graph
+    status: current
+    topics: [field-ui, launcher, team, rooms, progress, comments, streets, bottom-sheet, sync-status]
+    load_when: [Field launcher restructure, TeamCenter tab removal, Room UX, draggable sheet, Street flow, comments mobile]
+
+  - id: plan-031-field-ui-navigation-rooms-sheets
+    path: docs/plans/active/031-field-ui-navigation-rooms-sheets.md
+    type: plan
+    status: active
+    topics: [launcher, team, rooms, progress, comments, streets, draggable-sheets, street-flow, sync-status]
+    load_when: [implement approved Field UI restructure, PR 76 field UI continuation]
+
+  - id: prompt-field-ui-navigation-latest
+    path: docs/prompts/CONTINUE_FIELD_UI_NAVIGATION_LATEST.md
+    type: handoff
+    status: current
+    topics: [handoff, implementation, field-ui, rooms, sheets, street-flow]
+    load_when: [fresh implementation agent, continue Plan 031]
+
+  - id: ADR-0026
+    path: docs/decisions/ADR-0026-organization-admin-identity-and-authorization.md
+    type: decision
+    status: accepted
+    topics: [organization, account, membership, password, totp, recovery, sessions, tenant, authorization]
+    load_when: [admin identity, organization authorization, TOTP, recovery, session, tenant boundary]
+
+  - id: organizations
+    path: docs/architecture/ORGANIZATIONS.md
+    type: architecture
+    status: proposed
+    topics: [organizations, multi-tenant, membership, admin-panel]
+    load_when: [organization model, multi-organization UX, tenant model]
+
+  - id: identity-permissions
+    path: docs/architecture/IDENTITY_PERMISSIONS.md
+    type: architecture
+    status: proposed
+    topics: [identity, capabilities, role-templates, permissions, cross-team]
+    load_when: [role template, capability registry, own-team permission, cross-team permission]
+
+  - id: identity-threat-model
+    path: docs/architecture/IDENTITY_THREAT_MODEL.md
+    type: architecture
+    status: proposed
+    topics: [password, totp, sessions, csrf, xss, recovery, tenant-isolation]
+    load_when: [security review, threat model, high-risk reauth, reset flow]
+
+  - id: security
+    path: docs/architecture/SECURITY.md
+    type: architecture
+    status: accepted
+    topics: [authorization, session, csrf, secrets, rate-limit, headers]
+    load_when: [protected API, security boundary, credential handling, security headers]
+
+  - id: live-teams
+    path: docs/architecture/LIVE_TEAMS.md
+    type: architecture
+    status: accepted
+    topics: [field-groups, room-code, qr, rotation, membership, discoverability]
+    load_when: [Room Code, QR join, Room credential reveal, membership preservation]
+
+  - id: collaboration
+    path: docs/architecture/COLLABORATION.md
+    type: architecture
+    status: active
+    topics: [comments, statistics, field-sessions, activity]
+    load_when: [Comments Hub, Team progress, comment scope, statistics]
+
+  - id: ux
+    path: docs/product/UX.md
+    type: product
+    status: accepted
+    topics: [mobile, launcher, bottom-sheet, comments, settings, field-ui]
+    load_when: [Field launcher, mobile sheet, comment composer, menu UX]
+
+  - id: map
+    path: docs/architecture/MAP.md
+    type: architecture
+    status: accepted
+    topics: [maplibre, streets, smart-street, renderer]
+    load_when: [Streets Hub, manual Street, future Street Engine integration]
+
+  - id: quality
+    path: docs/quality/QUALITY.md
+    type: quality
+    status: accepted
+    topics: [tests, mobile, browsers, accessibility, security-testing]
+    load_when: [mobile sheet acceptance, keyboard, browser smoke, release gate]
+
+  - id: data
+    path: docs/architecture/DATA.md
+    type: architecture
+    status: accepted
+    topics: [d1, migrations, campaign, teams, areas, tasks]
+    load_when: [organization migration, campaign tenancy, Room credential schema, audit persistence]
+
+  - id: organizer-admin-staging
+    path: docs/operations/ORGANIZER_ADMIN_STAGING.md
+    type: operations
+    status: active
+    topics: [cloudflare, staging, d1, worker, durable-object, rate-limit, e2e]
+    load_when: [Admin staging, test link, Cloudflare deploy, browser smoke]
+
+  - id: organization-runtime
+    path: worker/indexOrganizer.ts
+    type: code
+    status: current
+    topics: [worker, organization-api, security-api, password-kdf, security-headers, root-redirect]
+    load_when: [organization runtime entrypoint, API routing, admin staging worker]
+
+  - id: static-security-headers
+    path: public/_headers
+    type: config
+    status: current
+    topics: [cloudflare-static-assets, security-headers, clickjacking, nosniff]
+    load_when: [static asset security, Cloudflare headers, /start hardening]
+
+  - id: organization-auth-runtime
+    path: worker/organizationAuth.ts
+    type: code
+    status: current
+    topics: [password, totp, recovery, sessions, membership, capability]
+    load_when: [authentication, session resolution, last organizer, capability enforcement]
+
+  - id: organization-security-runtime
+    path: worker/organizationSecurity.ts
+    type: code
+    status: current
+    topics: [security-center, account-security, invite, reset, session-revocation]
+    load_when: [account security, invite/reset, session management]
+
+  - id: organization-api-runtime
+    path: worker/organizationApi.ts
+    type: code
+    status: current
+    topics: [organization-api, campaign-scope, tenant-authorization]
+    load_when: [Organization endpoint, Campaign tenant scope, campaign creation]
+
+  - id: organization-ui-runtime
+    path: src/organization/OrganizationApp.tsx
+    type: code
+    status: current
+    topics: [start, login, dashboard, new-campaign, campaign-console]
+    load_when: [Organizer Admin UI, routes, campaign wizard]
+
+  - id: organization-security-ui
+    path: src/organization/OrganizationSecurityCenter.tsx
+    type: code
+    status: current
+    topics: [account-security, sessions, recovery, password, totp]
+    load_when: [security center UI, account settings]
+
+  - id: migration-0018
+    path: migrations/0018_organization_admin_platform.sql
+    type: data
+    status: prepared
+    topics: [organization-schema, account, membership, totp, recovery, sessions, invites, audit, campaign-tenancy]
+    load_when: [Organization D1 schema, isolated Admin staging migration]
+
+  - id: migration-0019
+    path: migrations/0019_organization_security_hardening.sql
+    type: data
+    status: prepared
+    topics: [organization-security, reset, session-hardening]
+    load_when: [security schema, reset/invite hardening, Admin staging migration]
+
+edges:
+  - { from: organizer-admin-live-context, to: organizer-admin-handoff, relation: summarizes }
+  - { from: organizer-admin-handoff, to: plan-030-organizer-admin-platform, relation: continues }
+  - { from: organizer-admin-handoff, to: organizer-admin-staging, relation: records_environment_state }
+  - { from: plan-030-organizer-admin-platform, to: ADR-0026, relation: governed_by }
+  - { from: plan-030-organizer-admin-platform, to: organizations, relation: implements }
+  - { from: plan-030-organizer-admin-platform, to: identity-permissions, relation: implements }
+  - { from: plan-030-organizer-admin-platform, to: identity-threat-model, relation: validated_by }
+  - { from: plan-030-organizer-admin-platform, to: security, relation: constrained_by }
+  - { from: plan-030-organizer-admin-platform, to: data, relation: extends_additively }
+  - { from: plan-030-organizer-admin-platform, to: plan-031-field-ui-navigation-rooms-sheets, relation: hosts_current_field_ui_slice }
+  - { from: context-field-ui-navigation, to: plan-031-field-ui-navigation-rooms-sheets, relation: routes_to }
+  - { from: plan-031-field-ui-navigation-rooms-sheets, to: live-teams, relation: constrained_by }
+  - { from: plan-031-field-ui-navigation-rooms-sheets, to: collaboration, relation: reuses }
+  - { from: plan-031-field-ui-navigation-rooms-sheets, to: ux, relation: implements }
+  - { from: plan-031-field-ui-navigation-rooms-sheets, to: map, relation: integrates_with }
+  - { from: plan-031-field-ui-navigation-rooms-sheets, to: security, relation: constrained_by }
+  - { from: plan-031-field-ui-navigation-rooms-sheets, to: quality, relation: validated_by }
+  - { from: prompt-field-ui-navigation-latest, to: plan-031-field-ui-navigation-rooms-sheets, relation: executes }
+  - { from: organization-runtime, to: organization-api-runtime, relation: routes }
+  - { from: organization-api-runtime, to: organization-auth-runtime, relation: authorizes_with }
+  - { from: organization-security-runtime, to: organization-auth-runtime, relation: secures_account_with }
+  - { from: organization-ui-runtime, to: organization-api-runtime, relation: calls }
+  - { from: organization-security-ui, to: organization-security-runtime, relation: calls }
+  - { from: static-security-headers, to: security, relation: hardens_static_assets }
+  - { from: organizer-admin-staging, to: organization-runtime, relation: deploys_isolated }
+  - { from: organizer-admin-staging, to: static-security-headers, relation: validates }
+  - { from: organizer-admin-staging, to: migration-0018, relation: applies_only_to_isolated_d1 }
+  - { from: organizer-admin-staging, to: migration-0019, relation: applies_only_to_isolated_d1 }

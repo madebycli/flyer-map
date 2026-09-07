@@ -1,4 +1,5 @@
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
+import type { CollectionArea, CollectionMainArea, CollectionRun, CollectionRunMember, CollectionSnapshot } from "../src/domain/collection.ts";
 
 export type D1RunResult = {
   success: boolean;
@@ -56,6 +57,45 @@ type TaskRow = {
   task_type: "street";
   label: string;
   geometry_json: string;
+  source_json: string | null;
+  area_preparation_generation: string | null;
+  status: "open" | "completed" | "later" | "not-deliverable";
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+
+type CollectionMainAreaRow = {
+  id: string; campaign_id: string; name: string; geometry_json: string;
+  created_at: string; updated_at: string;
+};
+type CollectionAreaRow = {
+  id: string; campaign_id: string; main_area_id: string; name: string;
+  geometry_json: string; color: string; status: CollectionArea["status"];
+  run_id: string | null; claimed_by_collector_id: string | null;
+  claimed_by_label: string | null; completed_at: string | null;
+  created_at: string; updated_at: string;
+};
+type CollectionRunRow = {
+  id: string; campaign_id: string; main_area_id: string; status: CollectionRun["status"];
+  started_at: string; ended_at: string | null; created_by_collector_id: string;
+  area_ids_json: string; created_at: string; updated_at: string;
+};
+type CollectionMemberRow = {
+  id: string; run_id: string; campaign_id: string; collector_id: string;
+  label: string; joined_at: string; left_at: string | null;
+};
+
+type HouseTaskRow = {
+  id: string;
+  campaign_id: string;
+  area_id: string;
+  parent_street_task_id: string | null;
+  label: string;
+  geometry_json: string;
+  source_json: string | null;
+  area_preparation_generation: string | null;
   status: "open" | "completed" | "later" | "not-deliverable";
   completed_at: string | null;
   created_at: string;
@@ -77,6 +117,55 @@ export async function campaignExists(db: D1DatabaseLike, campaignId: string) {
   return (await getCampaignRevision(db, campaignId)) !== null;
 }
 
+export async function hasTaskSourceProvenanceColumn(db: D1DatabaseLike) {
+  const result = await db
+    .prepare("PRAGMA table_info(tasks)")
+    .all<{ name: string }>();
+  return result.results.some((column) => column.name === "source_json");
+}
+
+
+export async function hasCollectionSchema(db: D1DatabaseLike) {
+  const result = await db.prepare("PRAGMA table_info(collection_main_areas)").all<{ name: string }>();
+  return result.results.some((column) => column.name === "id");
+}
+
+export async function hasHouseTasksTable(db: D1DatabaseLike) {
+  const result = await db
+    .prepare("PRAGMA table_info(house_tasks)")
+    .all<{ name: string }>();
+  return result.results.some((column) => column.name === "id");
+}
+
+/** True only after prepared migration 0014 has been applied as a complete unit. */
+export async function hasAreaTaskPreparationSchema(db: D1DatabaseLike) {
+  const [preparations, tasks, houses] = await Promise.all([
+    db.prepare("PRAGMA table_info(area_task_preparations)").all<{ name: string }>(),
+    db.prepare("PRAGMA table_info(tasks)").all<{ name: string }>(),
+    db.prepare("PRAGMA table_info(house_tasks)").all<{ name: string }>(),
+  ]);
+  const preparationColumns = new Set(preparations.results.map((column) => column.name));
+  return (
+    [
+      "campaign_id",
+      "area_id",
+      "geometry_hash",
+      "generation",
+      "status",
+      "road_count",
+      "house_count",
+      "source_timestamp",
+      "started_at",
+      "ready_at",
+      "failed_at",
+      "last_error_code",
+      "updated_at",
+    ].every((column) => preparationColumns.has(column)) &&
+    tasks.results.some((column) => column.name === "area_preparation_generation") &&
+    houses.results.some((column) => column.name === "area_preparation_generation")
+  );
+}
+
 export async function loadCampaignSnapshot(
   db: D1DatabaseLike,
   campaignId: string,
@@ -93,7 +182,50 @@ export async function loadCampaignSnapshot(
 
   if (!campaign) return null;
 
-  const [teamResult, areaResult, taskResult] = await Promise.all([
+  const [hasTaskSource, hasHouses, hasCollection, hasPreparation] = await Promise.all([
+    hasTaskSourceProvenanceColumn(db),
+    hasHouseTasksTable(db),
+    hasCollectionSchema(db),
+    hasAreaTaskPreparationSchema(db),
+  ]);
+  const taskSelect = hasTaskSource
+    ? hasPreparation
+      ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
+      : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
+    : hasPreparation
+      ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
+      : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id";
+
+  const houseSelect = hasPreparation
+    ? "SELECT id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM house_tasks WHERE campaign_id = ? ORDER BY created_at, id"
+    : "SELECT id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM house_tasks WHERE campaign_id = ? ORDER BY created_at, id";
+
+  const housePromise = hasHouses
+    ? db
+        .prepare(houseSelect)
+        .bind(campaignId)
+        .all<HouseTaskRow>()
+    : Promise.resolve({ results: [] as HouseTaskRow[] });
+
+
+  const collectionPromise = hasCollection
+    ? Promise.all([
+        db.prepare(
+          "SELECT id, campaign_id, name, geometry_json, created_at, updated_at FROM collection_main_areas WHERE campaign_id = ?",
+        ).bind(campaignId).all<CollectionMainAreaRow>(),
+        db.prepare(
+          "SELECT id, campaign_id, main_area_id, name, geometry_json, color, status, run_id, claimed_by_collector_id, claimed_by_label, completed_at, created_at, updated_at FROM collection_areas WHERE campaign_id = ? ORDER BY created_at, id",
+        ).bind(campaignId).all<CollectionAreaRow>(),
+        db.prepare(
+          "SELECT id, campaign_id, main_area_id, status, started_at, ended_at, created_by_collector_id, area_ids_json, created_at, updated_at FROM collection_runs WHERE campaign_id = ? ORDER BY started_at, id",
+        ).bind(campaignId).all<CollectionRunRow>(),
+        db.prepare(
+          "SELECT id, run_id, campaign_id, collector_id, label, joined_at, left_at FROM collection_run_members WHERE campaign_id = ? ORDER BY joined_at, id",
+        ).bind(campaignId).all<CollectionMemberRow>(),
+      ])
+    : Promise.resolve(null);
+
+  const [teamResult, areaResult, taskResult, houseResult] = await Promise.all([
     db
       .prepare(
         "SELECT id, campaign_id, name, color, created_at, updated_at FROM teams WHERE campaign_id = ? ORDER BY created_at, id",
@@ -106,13 +238,70 @@ export async function loadCampaignSnapshot(
       )
       .bind(campaignId)
       .all<AreaRow>(),
-    db
-      .prepare(
-        "SELECT id, campaign_id, area_id, task_type, label, geometry_json, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id",
-      )
-      .bind(campaignId)
-      .all<TaskRow>(),
+    db.prepare(taskSelect).bind(campaignId).all<TaskRow>(),
+    housePromise,
   ]);
+  const collectionResult = await collectionPromise;
+
+
+    const collection = collectionResult
+      ? (() => {
+          const [mainResult, areaResult, runResult, memberResult] = collectionResult;
+          const main = mainResult.results[0];
+          const areas = areaResult.results.map((area): CollectionArea => ({
+            id: area.id,
+            campaignId: area.campaign_id,
+            mainAreaId: area.main_area_id,
+            name: area.name,
+            geometry: JSON.parse(area.geometry_json),
+            color: area.color,
+            status: area.status,
+            runId: area.run_id,
+            claimedByCollectorId: area.claimed_by_collector_id,
+            claimedByLabel: area.claimed_by_label,
+            completedAt: area.completed_at,
+            createdAt: area.created_at,
+            updatedAt: area.updated_at,
+          }));
+          const membersByRun = new Map<string, CollectionMemberRow[]>();
+          for (const member of memberResult.results) {
+            const members = membersByRun.get(member.run_id) ?? [];
+            members.push(member);
+            membersByRun.set(member.run_id, members);
+          }
+          return {
+            mainArea: main ? ({
+              id: main.id,
+              campaignId: main.campaign_id,
+              name: main.name,
+              geometry: JSON.parse(main.geometry_json),
+              createdAt: main.created_at,
+              updatedAt: main.updated_at,
+            } satisfies CollectionMainArea) : null,
+            areas,
+            runs: runResult.results.map((run): CollectionRun => ({
+              id: run.id,
+              campaignId: run.campaign_id,
+              mainAreaId: run.main_area_id,
+              status: run.status,
+              startedAt: run.started_at,
+              endedAt: run.ended_at,
+              createdByCollectorId: run.created_by_collector_id,
+              areaIds: areas.filter((area) => area.runId === run.id).map((area) => area.id),
+              members: (membersByRun.get(run.id) ?? []).map((member): CollectionRunMember => ({
+                id: member.id,
+                runId: member.run_id,
+                collectorId: member.collector_id,
+                label: member.label,
+                joinedAt: member.joined_at,
+                leftAt: member.left_at,
+              })),
+              createdAt: run.created_at,
+              updatedAt: run.updated_at,
+            })),
+          } satisfies CollectionSnapshot;
+        })()
+      : null;
 
   const hasDefaultMapView =
     campaign.map_center_lng !== null &&
@@ -161,14 +350,36 @@ export async function loadCampaignSnapshot(
         taskType: task.task_type,
         label: task.label,
         geometry: JSON.parse(task.geometry_json),
+        ...(task.source_json ? { source: JSON.parse(task.source_json) } : {}),
+        areaPreparationGeneration: task.area_preparation_generation ?? null,
         status: task.status,
         completedAt: task.completed_at,
         createdAt: task.created_at,
         updatedAt: task.updated_at,
       })),
+      ...(hasHouses
+        ? {
+            houseTasks: houseResult.results.map((task) => ({
+              id: task.id,
+              campaignId: task.campaign_id,
+              areaId: task.area_id,
+              taskType: "house" as const,
+              label: task.label,
+              geometry: JSON.parse(task.geometry_json),
+              ...(task.source_json ? { source: JSON.parse(task.source_json) } : {}),
+              areaPreparationGeneration: task.area_preparation_generation ?? null,
+              parentStreetTaskId: task.parent_street_task_id,
+              status: task.status,
+              completedAt: task.completed_at,
+              createdAt: task.created_at,
+              updatedAt: task.updated_at,
+            })),
+          }
+        : {}),
+      ...(hasCollection ? { collection: collection as CollectionSnapshot } : {}),
     };
   } catch {
-    throw new StoredSnapshotError("Stored campaign geometry is not valid JSON.");
+    throw new StoredSnapshotError("Stored campaign geometry or Task provenance is not valid JSON.");
   }
 }
 
@@ -176,7 +387,7 @@ function guardExistsSql() {
   return "EXISTS (SELECT 1 FROM campaigns WHERE id = ? AND write_token = ?)";
 }
 
-function teamsBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
+function insertInitialTeams(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
   return db
     .prepare(
       `INSERT INTO teams (id, campaign_id, name, color, created_at, updated_at)
@@ -193,7 +404,7 @@ function teamsBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeTo
     .bind(JSON.stringify(snapshot.teams), snapshot.campaign.id, writeToken);
 }
 
-function areasBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
+function insertInitialAreas(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
   return db
     .prepare(
       `INSERT INTO areas (id, campaign_id, team_id, name, geometry_json, created_at, updated_at)
@@ -211,115 +422,211 @@ function areasBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeTo
     .bind(JSON.stringify(snapshot.areas), snapshot.campaign.id, writeToken);
 }
 
-function tasksBulkInsert(db: D1DatabaseLike, snapshot: CampaignSnapshot, writeToken: string) {
+function insertInitialTasks(
+  db: D1DatabaseLike,
+  snapshot: CampaignSnapshot,
+  writeToken: string,
+  hasTaskSource: boolean,
+  hasPreparation: boolean,
+) {
+  const query =
+    hasTaskSource && hasPreparation
+      ? `INSERT INTO tasks (
+           id, campaign_id, area_id, task_type, label, geometry_json, source_json,
+           area_preparation_generation, status, completed_at, created_at, updated_at
+         )
+         SELECT
+           json_extract(value, '$.id'),
+           json_extract(value, '$.campaignId'),
+           json_extract(value, '$.areaId'),
+           json_extract(value, '$.taskType'),
+           json_extract(value, '$.label'),
+           json_extract(value, '$.geometry'),
+           CASE
+             WHEN json_type(value, '$.source') IS NULL THEN NULL
+             ELSE json_extract(value, '$.source')
+           END,
+           json_extract(value, '$.areaPreparationGeneration'),
+           json_extract(value, '$.status'),
+           json_extract(value, '$.completedAt'),
+           json_extract(value, '$.createdAt'),
+           json_extract(value, '$.updatedAt')
+         FROM json_each(?)
+         WHERE ${guardExistsSql()}`
+      : hasTaskSource
+        ? `INSERT INTO tasks (
+             id, campaign_id, area_id, task_type, label, geometry_json, source_json,
+             status, completed_at, created_at, updated_at
+           )
+           SELECT
+             json_extract(value, '$.id'),
+             json_extract(value, '$.campaignId'),
+             json_extract(value, '$.areaId'),
+             json_extract(value, '$.taskType'),
+             json_extract(value, '$.label'),
+             json_extract(value, '$.geometry'),
+             CASE
+               WHEN json_type(value, '$.source') IS NULL THEN NULL
+               ELSE json_extract(value, '$.source')
+             END,
+             json_extract(value, '$.status'),
+             json_extract(value, '$.completedAt'),
+             json_extract(value, '$.createdAt'),
+             json_extract(value, '$.updatedAt')
+           FROM json_each(?)
+           WHERE ${guardExistsSql()}`
+        : `INSERT INTO tasks (
+             id, campaign_id, area_id, task_type, label, geometry_json,
+             status, completed_at, created_at, updated_at
+           )
+           SELECT
+             json_extract(value, '$.id'),
+             json_extract(value, '$.campaignId'),
+             json_extract(value, '$.areaId'),
+             json_extract(value, '$.taskType'),
+             json_extract(value, '$.label'),
+             json_extract(value, '$.geometry'),
+             json_extract(value, '$.status'),
+             json_extract(value, '$.completedAt'),
+             json_extract(value, '$.createdAt'),
+             json_extract(value, '$.updatedAt')
+           FROM json_each(?)
+           WHERE ${guardExistsSql()}`;
+
   return db
-    .prepare(
-      `INSERT INTO tasks (
-         id, campaign_id, area_id, task_type, label, geometry_json,
+    .prepare(query)
+    .bind(JSON.stringify(snapshot.tasks), snapshot.campaign.id, writeToken);
+}
+
+function insertInitialHouseTasks(
+  db: D1DatabaseLike,
+  snapshot: CampaignSnapshot,
+  writeToken: string,
+  hasPreparation: boolean,
+) {
+  const query = hasPreparation
+    ? `INSERT INTO house_tasks (
+         id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
+         area_preparation_generation, status, completed_at, created_at, updated_at
+       )
+       SELECT
+         json_extract(value, '$.id'),
+         json_extract(value, '$.campaignId'),
+         json_extract(value, '$.areaId'),
+         json_extract(value, '$.parentStreetTaskId'),
+         json_extract(value, '$.label'),
+         json_extract(value, '$.geometry'),
+         CASE
+           WHEN json_type(value, '$.source') IS NULL THEN NULL
+           ELSE json_extract(value, '$.source')
+         END,
+         json_extract(value, '$.areaPreparationGeneration'),
+         json_extract(value, '$.status'),
+         json_extract(value, '$.completedAt'),
+         json_extract(value, '$.createdAt'),
+         json_extract(value, '$.updatedAt')
+       FROM json_each(?)
+       WHERE ${guardExistsSql()}`
+    : `INSERT INTO house_tasks (
+         id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
          status, completed_at, created_at, updated_at
        )
        SELECT
          json_extract(value, '$.id'),
          json_extract(value, '$.campaignId'),
          json_extract(value, '$.areaId'),
-         json_extract(value, '$.taskType'),
+         json_extract(value, '$.parentStreetTaskId'),
          json_extract(value, '$.label'),
          json_extract(value, '$.geometry'),
+         CASE
+           WHEN json_type(value, '$.source') IS NULL THEN NULL
+           ELSE json_extract(value, '$.source')
+         END,
          json_extract(value, '$.status'),
          json_extract(value, '$.completedAt'),
          json_extract(value, '$.createdAt'),
          json_extract(value, '$.updatedAt')
        FROM json_each(?)
-       WHERE ${guardExistsSql()}`,
-    )
-    .bind(JSON.stringify(snapshot.tasks), snapshot.campaign.id, writeToken);
+       WHERE ${guardExistsSql()}`;
+
+  return db
+    .prepare(query)
+    .bind(JSON.stringify(snapshot.houseTasks ?? []), snapshot.campaign.id, writeToken);
 }
 
-export type ReplaceSnapshotResult =
-  | { ok: true; revision: number }
-  | { ok: false; currentRevision: number | null };
+export type CreateInitialCampaignStateResult =
+  | { ok: true; revision: 0 }
+  | {
+      ok: false;
+      reason: "campaign_exists" | "initial_revision_invalid" | "schema_migration_required";
+    };
 
-export async function replaceCampaignSnapshot(
+export async function createInitialCampaignState(
   db: D1DatabaseLike,
   snapshot: CampaignSnapshot,
-  baseRevision: number | null,
-): Promise<ReplaceSnapshotResult> {
-  const writeToken = crypto.randomUUID();
-  const nextRevision = baseRevision === null ? snapshot.revision : baseRevision + 1;
-  const mapView = snapshot.campaign.defaultMapView;
-
-  const claim =
-    baseRevision === null
-      ? db
-          .prepare(
-            `INSERT OR IGNORE INTO campaigns (
-               id, name, status, revision, write_token,
-               map_center_lng, map_center_lat, map_zoom, map_bearing,
-               created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .bind(
-            snapshot.campaign.id,
-            snapshot.campaign.name,
-            snapshot.campaign.status,
-            nextRevision,
-            writeToken,
-            mapView?.center[0] ?? null,
-            mapView?.center[1] ?? null,
-            mapView?.zoom ?? null,
-            mapView?.bearing ?? null,
-            snapshot.campaign.createdAt,
-            snapshot.campaign.updatedAt,
-          )
-      : db
-          .prepare(
-            `UPDATE campaigns SET
-               name = ?, status = ?, revision = ?, write_token = ?,
-               map_center_lng = ?, map_center_lat = ?, map_zoom = ?, map_bearing = ?,
-               created_at = ?, updated_at = ?
-             WHERE id = ? AND revision = ?`,
-          )
-          .bind(
-            snapshot.campaign.name,
-            snapshot.campaign.status,
-            nextRevision,
-            writeToken,
-            mapView?.center[0] ?? null,
-            mapView?.center[1] ?? null,
-            mapView?.zoom ?? null,
-            mapView?.bearing ?? null,
-            snapshot.campaign.createdAt,
-            snapshot.campaign.updatedAt,
-            snapshot.campaign.id,
-            baseRevision,
-          );
-
-  // Keep snapshot replacement to a constant seven D1 statements. The three child
-  // collections are passed as JSON and expanded inside SQLite via json_each().
-  const results = await db.batch([
-    claim,
-    db
-      .prepare(`DELETE FROM tasks WHERE campaign_id = ? AND ${guardExistsSql()}`)
-      .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
-    db
-      .prepare(`DELETE FROM areas WHERE campaign_id = ? AND ${guardExistsSql()}`)
-      .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
-    db
-      .prepare(`DELETE FROM teams WHERE campaign_id = ? AND ${guardExistsSql()}`)
-      .bind(snapshot.campaign.id, snapshot.campaign.id, writeToken),
-    teamsBulkInsert(db, snapshot, writeToken),
-    areasBulkInsert(db, snapshot, writeToken),
-    tasksBulkInsert(db, snapshot, writeToken),
-  ]);
-
-  const claimChanges = results[0]?.meta?.changes ?? 0;
-
-  if (claimChanges !== 1) {
-    return {
-      ok: false,
-      currentRevision: await getCampaignRevision(db, snapshot.campaign.id),
-    };
+): Promise<CreateInitialCampaignStateResult> {
+  if (snapshot.revision !== 0) {
+    return { ok: false, reason: "initial_revision_invalid" };
   }
 
-  return { ok: true, revision: nextRevision };
+  const [hasTaskSource, hasHouses, hasPreparation] = await Promise.all([
+    hasTaskSourceProvenanceColumn(db),
+    hasHouseTasksTable(db),
+    hasAreaTaskPreparationSchema(db),
+  ]);
+  if (!hasTaskSource && snapshot.tasks.some((task) => task.source)) {
+    return { ok: false, reason: "schema_migration_required" };
+  }
+  if (!hasHouses && (snapshot.houseTasks?.length ?? 0) > 0) {
+    return { ok: false, reason: "schema_migration_required" };
+  }
+  if (
+    !hasPreparation &&
+    [...snapshot.tasks, ...(snapshot.houseTasks ?? [])].some(
+      (task) => task.areaPreparationGeneration !== undefined && task.areaPreparationGeneration !== null,
+    )
+  ) {
+    return { ok: false, reason: "schema_migration_required" };
+  }
+
+  const writeToken = crypto.randomUUID();
+  const mapView = snapshot.campaign.defaultMapView;
+  const claim = db
+    .prepare(
+      `INSERT OR IGNORE INTO campaigns (
+         id, name, status, revision, write_token,
+         map_center_lng, map_center_lat, map_zoom, map_bearing,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      snapshot.campaign.id,
+      snapshot.campaign.name,
+      snapshot.campaign.status,
+      writeToken,
+      mapView?.center[0] ?? null,
+      mapView?.center[1] ?? null,
+      mapView?.zoom ?? null,
+      mapView?.bearing ?? null,
+      snapshot.campaign.createdAt,
+      snapshot.campaign.updatedAt,
+    );
+
+  // D1 batches are atomic. The internal token makes all child INSERTs no-ops
+  // if the create claim lost the campaign-id race.
+  const childStatements: D1PreparedStatement[] = [
+    insertInitialTeams(db, snapshot, writeToken),
+    insertInitialAreas(db, snapshot, writeToken),
+    insertInitialTasks(db, snapshot, writeToken, hasTaskSource, hasPreparation),
+  ];
+  if (hasHouses) {
+    childStatements.push(insertInitialHouseTasks(db, snapshot, writeToken, hasPreparation));
+  }
+
+  const results = await db.batch([claim, ...childStatements]);
+  if ((results[0]?.meta?.changes ?? 0) !== 1) {
+    return { ok: false, reason: "campaign_exists" };
+  }
+
+  return { ok: true, revision: 0 };
 }

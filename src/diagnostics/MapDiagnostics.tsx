@@ -17,14 +17,17 @@ type DiagnosticSnapshot = {
   data: {
     areas: number;
     streetTasks: number;
+    houseTasks: number;
   };
   renderer: {
     kind: string;
     maplibreCanvases: number;
     sourceAreas: number | null;
     sourceStreets: number | null;
+    sourceHouses: number | null;
     renderedAreas: number | null;
     renderedStreets: number | null;
+    renderedHouses: number | null;
     activeSvgNodes: number;
     totalDomNodes: number;
   };
@@ -80,14 +83,19 @@ function redact(value: unknown) {
 function readDataCounts() {
   try {
     const raw = window.localStorage.getItem(SNAPSHOT_STORAGE_KEY);
-    if (!raw) return { areas: 0, streetTasks: 0 };
-    const snapshot = JSON.parse(raw) as { areas?: unknown[]; tasks?: unknown[] };
+    if (!raw) return { areas: 0, streetTasks: 0, houseTasks: 0 };
+    const snapshot = JSON.parse(raw) as {
+      areas?: unknown[];
+      tasks?: unknown[];
+      houseTasks?: unknown[];
+    };
     return {
       areas: Array.isArray(snapshot.areas) ? snapshot.areas.length : 0,
       streetTasks: Array.isArray(snapshot.tasks) ? snapshot.tasks.length : 0,
+      houseTasks: Array.isArray(snapshot.houseTasks) ? snapshot.houseTasks.length : 0,
     };
   } catch {
-    return { areas: -1, streetTasks: -1 };
+    return { areas: -1, streetTasks: -1, houseTasks: -1 };
   }
 }
 
@@ -100,7 +108,7 @@ function currentMode() {
 function basemapStats() {
   const entries = performance
     .getEntriesByType("resource")
-    .filter((entry) => entry.name.includes("basemaps.cartocdn.com"));
+    .filter((entry) => entry.name.includes("tiles.openfreemap.org"));
   if (entries.length === 0) {
     return { requests: 0, averageDurationMs: null, maxDurationMs: null };
   }
@@ -129,8 +137,10 @@ function rendererStats() {
     maplibreCanvases: document.querySelectorAll(".maplibregl-canvas").length,
     sourceAreas: readDatasetNumber(region?.dataset.sourceAreas),
     sourceStreets: readDatasetNumber(region?.dataset.sourceStreets),
+    sourceHouses: readDatasetNumber(region?.dataset.sourceHouses),
     renderedAreas: readDatasetNumber(region?.dataset.renderedAreas),
     renderedStreets: readDatasetNumber(region?.dataset.renderedStreets),
+    renderedHouses: readDatasetNumber(region?.dataset.renderedHouses),
     activeSvgNodes: document.querySelectorAll(".active-geometry-overlay *").length,
     totalDomNodes: document.getElementsByTagName("*").length,
   };
@@ -277,13 +287,13 @@ export function MapDiagnostics() {
           <span>Schlimmster Frame: {worstFrame.toFixed(1)} ms</span>
           <span>Frames &gt;32 ms / 5 s: {longFrames}</span>
           <span>
-            Daten: {readDataCounts().areas} Gebiete · {readDataCounts().streetTasks} Straßen
+            Daten: {readDataCounts().areas} Gebiete · {readDataCounts().streetTasks} Straßen · {readDataCounts().houseTasks} Häuser
           </span>
           <span>
-            Source: {renderer.sourceAreas ?? "–"} Gebiete · {renderer.sourceStreets ?? "–"} Straßen
+            Source: {renderer.sourceAreas ?? "–"} Gebiete · {renderer.sourceStreets ?? "–"} Straßen · {renderer.sourceHouses ?? "–"} Häuser
           </span>
           <span>
-            Sichtbar: {renderer.renderedAreas ?? "–"} Gebiete · {renderer.renderedStreets ?? "–"} Straßen
+            Sichtbar: {renderer.renderedAreas ?? "–"} Gebiete · {renderer.renderedStreets ?? "–"} Straßen · {renderer.renderedHouses ?? "–"} Häuser
           </span>
           <span>MapLibre Canvas: {renderer.maplibreCanvases} · aktive SVG-Nodes: {renderer.activeSvgNodes}</span>
           <button type="button" onClick={() => void copyDiagnostics()}>

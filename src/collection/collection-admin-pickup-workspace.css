@@ -1,0 +1,64 @@
+.collection-admin-pickup-workspace {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.collection-admin-pickup-map {
+  position: relative;
+  height: min(42vh, 25rem);
+  min-height: 18rem;
+  overflow: hidden;
+  border: 1px solid #d7e1da;
+  border-radius: 0.95rem;
+  background: #eef3ef;
+}
+
+.collection-admin-pickup-map > div:first-child {
+  height: 100%;
+}
+
+.collection-admin-pickup-map.is-positioning::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px rgb(37 99 235 / 0.45);
+}
+
+.collection-admin-pickup-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 8;
+  width: 2rem;
+  height: 2rem;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+
+.collection-admin-pickup-pin::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 3px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  background: #2563eb;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
+  transform: translateX(-50%) rotate(-45deg);
+}
+
+.collection-admin-pickup-pin span {
+  position: absolute;
+  left: 50%;
+  bottom: 0.45rem;
+  z-index: 1;
+  width: 0.32rem;
+  height: 0.32rem;
+  border-radius: 50%;
+  background: #fff;
+  transform: translateX(-50%);
+}

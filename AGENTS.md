@@ -67,7 +67,8 @@ Platform:
 - Cloudflare D1 for shared persistence.
 
 Maps:
-- CARTO Voyager Retina raster basemap using OpenStreetMap-derived data;
+- OpenFreeMap Bright vector basemap using OpenStreetMap-derived data, without an API key;
+- standard house numbers from the Bright `openmaptiles` / `housenumber` contract through one app-owned symbol layer;
 - MapLibre owns camera/navigation/geolocation and persistent saved application geometry;
 - saved Areas and saved Street Tasks are long-lived GeoJSON sources/layers in MapLibre;
 - active draw/edit geometry and edit handles use the small independent SVG overlay only while an interaction is active;
@@ -168,6 +169,11 @@ Documentation is part of the implementation.
 When behavior, architecture, data structures, security assumptions, deployment or UX rules change, update the corresponding docs in the same change.
 
 `docs/status/CURRENT.md` must stay short. It is current state, not a changelog.
+
+For a durable dependency or cloud-product choice, record the evaluated
+alternatives, licensing/cost/SaaS requirement, lock version and rollback path in
+an ADR or architecture document. Prefer an OSS-first, self-hosted-compatible
+path unless a paid or managed service has explicit product approval.
 
 ## Decision records
 

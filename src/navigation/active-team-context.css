@@ -1,0 +1,67 @@
+.active-team-context {
+  display: grid;
+  gap: 0.34rem;
+  min-width: 8rem;
+  max-width: min(48vw, 16rem);
+  padding: 0.42rem 0.58rem;
+  border: 1px solid rgb(41 61 48 / 12%);
+  border-radius: 0.78rem;
+  color: #26342b;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 0.2rem 0.7rem rgb(20 35 24 / 8%);
+  text-align: left;
+}
+
+.active-team-context-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.active-team-context-dot {
+  width: 0.72rem;
+  height: 0.72rem;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgb(20 35 24 / 20%);
+}
+
+.active-team-context-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.active-team-context-percent {
+  color: #66736a;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.active-team-context-track {
+  height: 0.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7ece8;
+}
+
+.active-team-context-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 180ms ease-out;
+}
+
+.active-team-context:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .active-team-context-track > span {
+    transition: none;
+  }
+}

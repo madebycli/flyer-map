@@ -12,6 +12,101 @@
   font-weight: 700;
 }
 
+.smart-map-action {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.smart-street-sheet {
+  max-height: min(76dvh, 42rem);
+  overflow: auto;
+}
+
+.smart-house-sheet {
+  max-height: min(82dvh, 48rem);
+  overflow: auto;
+}
+
+.smart-street-message {
+  margin: 0.7rem 0 0;
+  padding: 0.65rem 0.72rem;
+  border-radius: 0.78rem;
+  color: #334239;
+  background: #eef4ef;
+  font-size: 0.77rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.smart-street-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin: 0.55rem 0;
+  color: #657067;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.smart-street-choice-list {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0.65rem 0;
+  padding-top: 0.65rem;
+  border-top: 1px solid #dfe8e0;
+}
+
+.smart-street-choice-list > strong {
+  font-size: 0.74rem;
+}
+
+.smart-street-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #cad8cc;
+  border-radius: 0.7rem;
+  color: #243128;
+  background: #f8fbf8;
+  text-align: left;
+}
+
+.smart-street-choice span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-street-choice small {
+  flex: 0 0 auto;
+  color: #657067;
+  font-size: 0.66rem;
+}
+
+.smart-street-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+.smart-street-actions .button.primary {
+  grid-column: 1 / -1;
+}
+
+.smart-street-area-note {
+  margin: 0.55rem 0 0;
+  color: #6c796f;
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
 .area-actions.secondary-row {
   margin-top: 0.6rem;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -85,6 +180,80 @@
   margin-top: 0.7rem;
 }
 
+.task-house-action {
+  margin-top: 0.7rem;
+}
+
+.context-task-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #e0e7e2;
+}
+
+.context-task-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  color: #4f5d53;
+  font-size: 0.73rem;
+}
+
+.context-task-list-header span {
+  color: #748078;
+  font-weight: 700;
+}
+
+.context-task-list > p {
+  margin: 0;
+  color: #6c796f;
+  font-size: 0.72rem;
+}
+
+.context-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-height: 2.65rem;
+  padding: 0.48rem 0.62rem;
+  border: 1px solid #dbe4dd;
+  border-radius: 0.7rem;
+  color: #334239;
+  background: #f8faf8;
+  text-align: left;
+}
+
+.context-task-row span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.73rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-task-row small {
+  flex: 0 0 auto;
+  color: #748078;
+  font-size: 0.64rem;
+}
+
+.context-task-row:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.comment-sheet {
+  max-height: min(76dvh, 42rem);
+}
+
+.commentable-task-sheet {
+  max-height: min(76dvh, 42rem);
+}
+
 .undo-toast {
   position: absolute;
   z-index: 32;
@@ -125,7 +294,9 @@
   font-weight: 800;
 }
 
-.map-mode-street-draw .maplibregl-canvas {
+.map-mode-street-draw .maplibregl-canvas,
+.map-mode-smart-street .maplibregl-canvas,
+.map-mode-smart-house .maplibregl-canvas {
   cursor: crosshair;
 }
 

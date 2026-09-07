@@ -1,0 +1,133 @@
+.live-group-tour-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 18px;
+  background: var(--surface, #fff);
+  color: var(--text, #0f172a);
+}
+
+.live-group-tour-panel header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.live-group-tour-panel header span,
+.live-group-tour-panel dt {
+  color: var(--text-muted, #64748b);
+  font-size: 0.8rem;
+}
+
+.live-group-tour-panel h2 {
+  margin: 2px 0 0;
+  font-size: 1.05rem;
+}
+
+.live-group-tour-panel header > strong {
+  flex: none;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.1);
+  font-size: 0.78rem;
+}
+
+.live-group-tour-panel header > strong[data-state="closed"],
+.live-group-tour-panel header > strong[data-state="expired"] {
+  background: rgba(100, 116, 139, 0.12);
+}
+
+.live-group-tour-panel__facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.live-group-tour-panel__facts > div {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.live-group-tour-panel dd {
+  margin: 4px 0 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.live-group-tour-panel label {
+  display: grid;
+  gap: 7px;
+  font-weight: 700;
+}
+
+.live-group-tour-panel__participant-row {
+  display: flex;
+  gap: 8px;
+}
+
+.live-group-tour-panel__participant-row input {
+  min-width: 0;
+  flex: 1;
+}
+
+.live-group-tour-panel input,
+.live-group-tour-panel button {
+  min-height: 44px;
+  border-radius: 12px;
+  font: inherit;
+}
+
+.live-group-tour-panel input {
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  padding: 9px 11px;
+  background: var(--surface, #fff);
+  color: inherit;
+}
+
+.live-group-tour-panel button {
+  border: 0;
+  padding: 9px 13px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.live-group-tour-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.live-group-tour-panel__close {
+  background: #0f172a;
+  color: #fff;
+}
+
+.live-group-tour-panel__hint,
+.live-group-tour-panel__warning {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.live-group-tour-panel__hint {
+  color: var(--text-muted, #64748b);
+}
+
+.live-group-tour-panel__warning {
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .live-group-tour-panel__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .live-group-tour-panel__participant-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

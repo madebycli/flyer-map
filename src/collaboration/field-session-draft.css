@@ -1,0 +1,145 @@
+.field-session-draft {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.9rem;
+  border: 1px solid #dbe4dd;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.field-session-draft > header {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.field-session-draft > header > strong {
+  font-size: 0.88rem;
+}
+
+.field-session-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.field-session-mode label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.55rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #d7e0d9;
+  border-radius: 0.72rem;
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+.field-session-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.field-session-grid label,
+.field-session-note {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.field-session-grid label:last-child {
+  grid-column: 1 / -1;
+}
+
+.field-session-grid span,
+.field-session-note > span,
+.field-session-metrics dt {
+  color: #6c796f;
+  font-size: 0.66rem;
+  font-weight: 720;
+}
+
+.field-session-grid input,
+.field-session-note textarea {
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.55rem 0.62rem;
+  border: 1px solid #cfd9d1;
+  border-radius: 0.72rem;
+  color: #25372b;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.field-session-note textarea {
+  min-height: 5.4rem;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.field-session-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.field-session-metrics > div {
+  padding: 0.62rem;
+  border: 1px solid #dce5de;
+  border-radius: 0.72rem;
+  background: #f7faf8;
+}
+
+.field-session-metrics dt,
+.field-session-metrics dd {
+  margin: 0;
+}
+
+.field-session-metrics dd {
+  margin-top: 0.16rem;
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.field-session-error {
+  margin: 0;
+  color: #8f2427;
+  font-size: 0.72rem;
+}
+
+.field-session-draft > button {
+  min-height: 2.7rem;
+  padding: 0.55rem 0.8rem;
+  border: 0;
+  border-radius: 0.75rem;
+  color: #ffffff;
+  background: #255d37;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.field-session-draft > button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.field-session-draft input:focus-visible,
+.field-session-draft textarea:focus-visible,
+.field-session-draft button:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .field-session-grid,
+  .field-session-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .field-session-grid label:last-child {
+    grid-column: auto;
+  }
+}

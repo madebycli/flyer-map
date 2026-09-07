@@ -7,6 +7,8 @@ const DATABASE_NAME = "verteil-flyer-offline-map";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "packages";
 
+export const OFFLINE_MAP_CHANGED_EVENT = "verteil-flyer:offline-map-changed";
+
 export type StoredOfflineMapPackage = {
   campaignId: string;
   savedAt: string;
@@ -61,6 +63,15 @@ function validCampaignId(campaignId: string) {
 
 function encodedByteSize(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+function notifyOfflineMapChanged(campaignId: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(OFFLINE_MAP_CHANGED_EVENT, {
+      detail: { campaignId },
+    }),
+  );
 }
 
 function isStoredOfflineMapPackage(value: unknown): value is StoredOfflineMapPackage {
@@ -184,6 +195,7 @@ export class OfflineMapPackageRepository {
     };
 
     await this.storage.put(record);
+    notifyOfflineMapChanged(campaignId);
     return record;
   }
 
@@ -192,6 +204,7 @@ export class OfflineMapPackageRepository {
       throw new Error("Campaign id is invalid for offline map storage.");
     }
     await this.storage.delete(campaignId);
+    notifyOfflineMapChanged(campaignId);
   }
 
   summary(record: StoredOfflineMapPackage): OfflineMapPackageSummary {

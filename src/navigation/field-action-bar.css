@@ -1,0 +1,87 @@
+.field-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  width: min(calc(100% - 1rem), 40rem);
+  min-height: 4rem;
+  padding: 0.55rem;
+  border: 1px solid rgb(31 53 38 / 10%);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 0.5rem 1.7rem rgb(28 49 34 / 12%);
+  backdrop-filter: blur(14px);
+}
+
+.field-action-secondary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.field-icon-action {
+  display: grid;
+  width: 2.8rem;
+  height: 2.8rem;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d5dfd7;
+  border-radius: 0.78rem;
+  color: #2f4536;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.field-icon-action svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.field-icon-action svg circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+.field-primary-action {
+  min-height: 2.8rem;
+  padding: 0.58rem 1rem;
+  border: 0;
+  border-radius: 0.8rem;
+  color: #ffffff;
+  background: #255e38;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.field-icon-action:hover,
+.field-icon-action:active {
+  background: #f3f7f4;
+}
+
+.field-primary-action:hover,
+.field-primary-action:active {
+  background: #1f5230;
+}
+
+.field-icon-action:focus-visible,
+.field-primary-action:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (max-width: 430px) {
+  .field-action-bar {
+    width: calc(100% - 0.8rem);
+  }
+
+  .field-primary-action {
+    flex: 1;
+  }
+}

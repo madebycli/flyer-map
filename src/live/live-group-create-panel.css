@@ -1,0 +1,98 @@
+.live-group-create-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid #d8e0db;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.live-group-create-panel header {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.live-group-create-panel header span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.live-group-create-panel h2,
+.live-group-create-panel p {
+  margin: 0;
+}
+
+.live-group-create-panel header p {
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.live-group-create-panel > label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.live-group-create-panel input,
+.live-group-create-panel select {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #ced8d0;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+}
+
+.live-group-create-panel__team-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #526159;
+  font-size: 0.78rem;
+}
+
+.live-group-create-panel__team-preview > span {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 14%);
+}
+
+.live-group-create-panel > button {
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid #294f35;
+  border-radius: 0.78rem;
+  background: #315f3e;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.live-group-create-panel > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.live-group-create-panel__error {
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.7rem;
+  background: #fff1f0;
+  color: #9b2f25;
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+
+.live-group-create-panel input:focus-visible,
+.live-group-create-panel select:focus-visible,
+.live-group-create-panel button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}

@@ -1,0 +1,81 @@
+.admin-analytics-export {
+  display: grid;
+  gap: 1rem;
+  max-width: 44rem;
+  padding: 1rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.admin-analytics-export h2,
+.admin-analytics-export p {
+  margin: 0;
+}
+
+.admin-analytics-export > div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.admin-analytics-export > div:first-child > span {
+  color: var(--text-muted, #64748b);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.admin-analytics-export > div:first-child p,
+.admin-analytics-export__privacy p {
+  color: var(--text-muted, #64748b);
+  line-height: 1.5;
+}
+
+.admin-analytics-export ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-analytics-export li {
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.05);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.admin-analytics-export__privacy {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 0.8rem;
+  background: rgba(248, 250, 252, 0.95);
+}
+
+.admin-analytics-export button {
+  min-height: 2.8rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 0.8rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.admin-analytics-export button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-analytics-export button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}

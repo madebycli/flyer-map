@@ -2,8 +2,8 @@
 id: architecture-stack
 type: architecture
 status: accepted
-last_updated: 2026-08-25
-related: [architecture, architecture-map, ADR-0012]
+last_updated: 2026-09-02
+related: [architecture, architecture-map, ADR-0012, ADR-0024, ADR-0025]
 source_of_truth_for: [runtime-stack, dependency-policy, prepared-offline-map-stack]
 ---
 
@@ -36,8 +36,8 @@ The Worker entrypoint currently uses a narrow M5.5 wrapper that handles the prep
 
 ## Map
 
-- CARTO Voyager Retina raster basemap using OpenStreetMap-derived data
-- MapLibre for basemap, camera, rotation/compass, one-shot geolocation, saved Areas and saved Street Tasks
+- OpenFreeMap Bright vector basemap using OpenStreetMap-derived data
+- MapLibre for basemap, camera, rotation/compass, live/refining geolocation follow, saved Areas and saved Street Tasks
 - two long-lived application GeoJSON sources for saved geometry
 - a small constant set of MapLibre Fill/Line layers
 - independent SVG overlay only for active Area draw/edit and Street draw geometry/handles
@@ -52,7 +52,7 @@ The tested `6.4.1` runtime produced a real-browser GeoJSON rendering regression 
 
 ## Persistence and sync
 
-Current shared persistence:
+Stable/rollback shared persistence:
 - Cloudflare D1 as server source of truth;
 - localStorage last-known snapshot/cache;
 - protected Worker snapshot/version API;
@@ -61,6 +61,15 @@ Current shared persistence:
 - secure Campaign-scoped access/session authorization.
 
 There is no service worker or Background Sync API.
+
+`mission-rxdb-sync` additionally pins `rxdb@17.5.0` and `rxjs@7.8.2`. RxDB's
+Apache-2.0 core, HTTP replication and Dexie/IndexedDB storage use a custom
+same-origin Worker transport, without RxDB Cloud or another SaaS. The branch
+uses exactly five entity collections and RxDB leader election for multi-tab
+network I/O. ADR-0025 adds a same-origin Durable-Object WebSocket only as a
+tiny invalidation hint; canonical documents still travel through authenticated
+HTTP pull/push. It deliberately enables neither a Service Worker nor Background
+Sync API; RxDB's package dependency tree may contain unused peer transports.
 
 Prepared offline map packages use a separate browser IndexedDB repository and are not Campaign D1 state.
 
@@ -78,7 +87,7 @@ Current v1 stack:
 - hard radius, timeout and response/package limits;
 - browser IndexedDB package lifecycle in the next slice.
 
-No client-controlled Overpass query text is accepted. Do not bulk-cache CARTO or OpenStreetMap Foundation raster/vector tile services.
+No client-controlled Overpass query text is accepted. Do not bulk-cache OpenFreeMap or OpenStreetMap Foundation raster/vector tile services.
 
 ## Future data/tooling
 

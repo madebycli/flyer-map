@@ -1,0 +1,114 @@
+.admin-workbench-preview {
+  min-height: 100dvh;
+  padding: 1rem;
+  color: #1f2937;
+  background: #f5f7f6;
+}
+
+.admin-workbench-preview__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  width: min(100%, 76rem);
+  margin: 0 auto 1rem;
+  padding: 1rem;
+  border: 1px solid #d8e0db;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.admin-workbench-preview__header > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.admin-workbench-preview__header span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.admin-workbench-preview__header strong {
+  font-size: 1.15rem;
+}
+
+.admin-workbench-preview__header p,
+.admin-workbench-preview__header a {
+  margin: 0;
+  color: #64748b;
+}
+
+.admin-workbench-preview__header a {
+  min-height: 2.65rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #d4ddd6;
+  border-radius: 0.8rem;
+  background: #ffffff;
+  color: #294130;
+  font-size: 0.78rem;
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.admin-workbench-preview__status,
+.admin-workbench-preview__section,
+.admin-workbench-preview__roles {
+  width: min(100%, 76rem);
+  margin-inline: auto;
+}
+
+.admin-workbench-preview__status {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.8rem;
+  background: #eef5ff;
+  color: #35506f;
+  font-size: 0.8rem;
+}
+
+.admin-workbench-preview__section {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #d8e0db;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.admin-workbench-preview__roles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-workbench-preview__roles > section {
+  padding: 1rem;
+  border: 1px solid #d8e0db;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.admin-workbench-preview__header a:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .admin-workbench-preview__roles {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-workbench-preview {
+    padding: 0.7rem;
+  }
+
+  .admin-workbench-preview__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

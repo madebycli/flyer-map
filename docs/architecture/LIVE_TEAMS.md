@@ -1,153 +1,219 @@
 ---
 id: architecture-live-teams
 type: architecture
-status: proposed
-last_updated: 2026-08-25
-related: [product-roadmap, architecture-security, architecture-data, architecture-identity-permissions, architecture-collaboration, plan-012-platform-app-expansion]
-source_of_truth_for: [future-live-field-groups, future-team-qr-codes, future-team-join-codes, future-team-live-discoverability]
+status: accepted
+last_updated: 2026-09-02
+related: [product-roadmap, architecture-security, architecture-data, architecture-identity-permissions, architecture-collaboration, plan-012-platform-app-expansion, ADR-0014, ADR-0017, ADR-0025]
+source_of_truth_for: [live-field-groups, team-qr-codes, team-join-codes, live-group-discoverability, temporary-group-memberships]
 ---
 
-# Live Field Groups and Multi-Device Joining — Proposed
+# Live Field Groups and Multi-Device Joining
 
 ## Purpose
 
-Define the future model for temporary groups that are actively distributing/collecting and can be joined from multiple devices.
+Define the accepted runtime boundary for temporary Field Groups used during one distribution or collection outing.
 
-This is not yet implemented.
+The feature-complete FC1 runtime lives on the current Plan-017 branch. ADR-0014 governs credentials, membership and temporary authorization. ADR-0017 governs the durable Field Session created when a group closes or expires.
 
 ## Persistent Team vs temporary Field Group
 
-Keep two concepts separate:
+These remain separate concepts.
 
 ### Team
-Persistent colored Campaign group with Areas, metadata, permissions and long-lived access policy.
+
+A persistent colored Campaign group with Areas, metadata and long-lived access policy.
 
 ### Field Group / Einsatzgruppe
-Temporary active working group inside one Team for one outing/session.
 
-A Field Group must never silently become a permanent Team credential or admin role.
+A temporary active working group inside exactly one Team for one outing/tour.
+
+Joining a Field Group never creates a persistent Team credential, never grants Admin authority and never widens an existing Campaign role.
+
+## Accepted lifecycle
+
+A Field Group uses:
+- `active`;
+- `closed`;
+- `expired`.
+
+Rules:
+- one Field Group represents one tour;
+- normal tours are expected to be roughly 2 to 3 hours, but this is not a normal-duration limit;
+- normal end is explicit manual close;
+- close immediately blocks new joins and invalidates temporary privileged access;
+- forgotten active groups expire no later than 24 hours from original creation;
+- credential rotation/revocation never extends the original hard expiry;
+- every relevant read, join and authorization path resolves server-side expiry.
+
+## Participant count
+
+Participant count is explicit operational data, not identity or authorization.
+
+Rules:
+- optional while the tour is active;
+- positive integer from 1 through 500 when present;
+- final participant count is mandatory for normal manual close;
+- it feeds Field Session person-time;
+- expiry may preserve an unknown participant count rather than inventing one;
+- no GPS trail is used to derive participants or duration.
 
 ## Discoverability
 
-Requested default:
-- new Field Groups are discoverable by default;
-- creator may opt out;
-- discoverability is only inside the authorized Campaign context;
-- there is no public internet directory of active groups.
+Discovery is Campaign-scoped only.
 
-The exact audience requires an ADR, but must be limited to callers already authorized to access the Campaign or Organization context according to policy.
+Accepted behavior:
+- new groups are discoverable by default;
+- an authorized manager may disable discoverability without revoking direct join material;
+- normal discovery returns only active discoverable groups;
+- Team filter can narrow, never widen, Campaign scope;
+- discovery never returns Room Codes, QR tokens, hashes, session secrets or device/IP data.
 
-## Joining
+## Join credentials
 
-Candidate join methods:
-- QR code;
-- short human-enterable group code;
-- optional additional group password.
+ADR-0014 accepts two independent credential kinds.
 
-Security requirements:
-- codes are random/non-sequential;
-- short enough for humans but protected against brute force with rate limiting and expiry;
-- QR contains only the minimum join material;
-- temporary join credentials expire/revoke;
-- do not expose persistent Admin or Team access tokens through a QR intended only for a Field Group;
-- optional password is hashed/verified safely and never stored in plaintext;
-- successful join returns normal scoped session/member state rather than trusting the code forever.
+### Room Code
 
-## Multi-device collaboration
+- 10 characters;
+- human-safe Base32 alphabet `23456789ABCDEFGHJKLMNPQRSTUVWXYZ`;
+- cryptographically random;
+- canonical uppercase input, visual spaces/hyphens may be normalized;
+- D1 stores SHA-256 lookup hash only;
+- plaintext returned only on issuance/rotation.
 
-Multiple devices in one Field Group may:
-- see the same Team/Field Group identity;
-- see shared current progress;
-- create authorized Task mutations;
-- contribute to one Field Session;
-- see relevant synchronization/conflict state.
+### QR token
 
-Concurrent mutation behavior must reuse the M5 durable mutation/conflict architecture rather than adding last-write-wins shortcuts.
+- separate 32-byte cryptographically random token;
+- base64url representation;
+- not the Room Code and not a Campaign/Admin access token;
+- D1 stores SHA-256 lookup hash only;
+- QR redemption creates membership/session state rather than trusting the token forever.
 
-## Presence
+An optional additional group password is not part of FC1 and is not required for feature completion.
 
-Avoid invasive presence tracking.
+## Rotation and revoke
 
-Allowed direction:
-- active/inactive Field Group state;
-- optional count of active joined participants/devices where useful;
-- last activity time where operationally justified.
+Authorized managers may:
+- rotate both active credentials atomically;
+- revoke join credentials without closing the group;
+- close the group;
+- remove an active membership.
 
-Do not require:
-- continuous GPS upload;
-- exact live movement trails;
-- permanent hardware/device fingerprinting.
+Rotation:
+- invalidates old join material immediately;
+- issues new Room Code and QR material once;
+- preserves existing memberships;
+- never changes `hard_expires_at`.
+
+Revoke without close blocks new joins while existing memberships remain active.
+
+## Membership and authorization
+
+Successful join always creates an explicit membership.
+
+### Existing Campaign access
+
+If a browser already has valid Campaign access:
+- membership references the existing Campaign grant;
+- no second more privileged identity is created;
+- existing role remains the authorization ceiling;
+- Viewer is not elevated by joining;
+- Team Editor scope is not widened by joining.
+
+### Temporary participant
+
+A user without persistent Campaign access may receive `vf_field_group_session`:
+- opaque high-entropy cookie;
+- HttpOnly, Secure, SameSite=Lax;
+- D1 stores only its hash;
+- scoped to one Campaign, Team and Field Group;
+- expires no later than group hard expiry;
+- leave, manager removal, close or expiry revokes subsequent privileged requests.
+
+Temporary members may read the required target-Team map context and submit reviewed typed Street/House status mutations for that Team. They may not manage Teams, Areas, Task identity/geometry, access links, group credentials, other members, Campaign settings or Admin/Organization functions.
+
+## Manager authorization during the legacy Campaign-role phase
+
+Until future Organization/capability runtime replaces legacy roles:
+- `admin` manages any group in the Campaign;
+- `team-editor` manages only groups for its canonical scoped Team;
+- `viewer` may discover/join but receives no management rights;
+- temporary members cannot manage the group.
+
+Worker authorization remains authoritative. Client Team ids and membership ids are selectors only.
+
+## Manager member roster
+
+FC1 exposes a server-authorized active-member roster only to group managers.
+
+The roster returns minimum operational metadata:
+- membership id;
+- membership kind: existing Campaign access or temporary;
+- safe display label when available;
+- joined timestamp.
+
+It never exposes:
+- temporary session hash/secret;
+- Campaign session/access secret;
+- Room Code or QR token/hash;
+- connecting IP;
+- device fingerprint.
+
+Removing a membership is an explicit destructive action. Temporary authorization becomes invalid on the next protected request after removal.
+
+## Join abuse protection
+
+Join redemption is online-only and fail-closed when rate-limit bindings are unavailable.
+
+Current Cloudflare limits:
+- actor key: 30 attempts per 60 seconds per Campaign plus connecting IP;
+- candidate key: 8 attempts per 60 seconds per Campaign plus canonical candidate hash.
+
+The connecting IP is used only as a rate-limit key and is not persisted or included in product audit/history.
+
+Join failures use generic unavailable wording so unknown/revoked/rotated/closed/expired credentials are not distinguishable through normal responses.
+
+## Multi-device and offline behavior
+
+Multiple devices in one Field Group share authoritative Campaign/Team progress through existing APIs and M5 mutation synchronization.
+
+Rules:
+- new join always requires online Worker redemption;
+- the optional ADR-0025 WebSocket carries only a Campaign invalidation hint; it
+  is not a data source, authorization channel or offline-write path;
+- no Service Worker or Background Sync requirement is introduced;
+- already authorized temporary participants may queue permitted status work through M5 while offline;
+- every reconnect mutation is re-authorized against current membership/group state;
+- removed/closed/expired access becomes visibly blocked instead of retrying forever.
 
 ## Field Session relationship
 
-A Field Group normally maps to or participates in a Field Session.
+ADR-0017 is accepted.
 
-Session may collect:
-- date;
-- duration;
-- participant count;
-- optional note;
-- Task events/changes;
-- distribution or collection mode.
+`migrations/0007_field_sessions_events.sql` provides the first durable relationship:
+- deterministic one-to-one Field Session for a Field Group end state;
+- manual close stores duration, final participants and person-time;
+- safety expiry stores duration and preserves participant/person-time as unknown when they were never explicitly supplied;
+- deduplicated `field_session.closed` or `field_session.expired` event;
+- no continuous route/GPS history.
 
-The exact session lifecycle requires schema/event design in M7.
+Broader session history reads, Task-event attribution, notes, comments and Activity are FC2 work.
 
-## Team-specific invites
+## Privacy and security non-goals
 
-The current generic Campaign access links must later be redesigned.
+Do not add:
+- public group directory;
+- continuous GPS upload or route history;
+- permanent hardware/device fingerprinting;
+- persistent Admin/Team credential in QR;
+- client-only authorization;
+- reusable forever join code.
 
-Future separation:
-- Organization/Admin account invitations;
-- persistent Campaign/Team access invitations;
-- temporary Field Group join QR/code/password.
+## Rollout status
 
-These credentials have different scopes and lifetimes and must not reuse one ambiguous token type.
+The runtime code and migrations are prepared on Draft PR #72, but migrations 0006 and 0007 are not recorded as remotely applied. Production D1 rollout remains a separate explicit operation.
 
-## Revocation
 
-Administrators/authorized Team managers need to be able to:
-- close a Field Group;
-- rotate/disable join credentials;
-- remove a joined participant if policy allows;
-- disable discoverability;
-- revoke persistent Team access separately.
+### Recoverable current credentials
 
-Revocation must be checked server-side.
-
-## Abuse protection
-
-Join endpoints require:
-- request size/schema validation;
-- rate limiting;
-- expiry checks;
-- constant-time secret/password comparison where applicable;
-- no useful enumeration of valid group codes beyond successful authorized join;
-- audit/activity events for sensitive join-policy changes where appropriate.
-
-## UI direction
-
-The mobile app menu contains Teams / Join Team.
-
-Possible views:
-- current Team and Field Group;
-- live discoverable Field Groups;
-- join via code;
-- scan/show QR;
-- current group progress;
-- leave/close group according to permissions.
-
-The active Team name and compact progress remain visible near the top-bar Menu control while working.
-
-## ADR required before implementation
-
-Before building join credentials, accept an ADR defining:
-- Field Group lifecycle;
-- discoverability audience;
-- code entropy/length/expiry;
-- QR payload;
-- password semantics;
-- membership/session schema;
-- rate limiting;
-- revocation;
-- relationship to Team access and Field Sessions;
-- offline behavior when a device already joined before losing connectivity.
+Plan 031 permits manager-only re-display of the current Room Code/QR pair without weakening hash-based join lookup. Migration 0020 stores only AES-256-GCM ciphertext plus IV for active credentials. A dedicated Worker secret provides the 32-byte key and AAD binds tenant/group/credential/kind. Reveal is no-store and requires canonical manager authorization. Legacy hash-only Rooms remain valid for direct join but cannot be revealed until an explicit rotation creates a new recoverable pair. Rotation/revoke/close/expiry invalidate old recovery material and never remove already joined memberships by themselves.

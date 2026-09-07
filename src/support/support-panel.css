@@ -1,0 +1,132 @@
+.support-panel {
+  display: grid;
+  gap: 0.85rem;
+  width: min(100%, 44rem);
+  margin: 0 auto;
+}
+
+.support-panel > h2 {
+  margin: 0;
+  color: #243229;
+  font-size: 1.2rem;
+}
+
+.support-panel-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid #dbe4dd;
+  border-radius: 1rem;
+  background: #ffffff;
+  box-shadow: 0 0.25rem 1rem rgb(27 44 32 / 7%);
+}
+
+.support-panel-card h3,
+.support-panel-card p {
+  margin: 0;
+}
+
+.support-panel-card h3 {
+  color: #2a3a30;
+  font-size: 0.88rem;
+}
+
+.support-panel-card p {
+  color: #66736a;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.support-diagnostics {
+  max-width: 100%;
+  margin: 0;
+  padding: 0.7rem;
+  overflow: auto;
+  border-radius: 0.75rem;
+  color: #334139;
+  background: #f5f7f5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.support-field {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.support-field > span,
+.support-context-toggle > span {
+  color: #445149;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.support-field input,
+.support-field select,
+.support-field textarea {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #cbd6cd;
+  border-radius: 0.72rem;
+  color: #243229;
+  background: #ffffff;
+  font: inherit;
+}
+
+.support-field textarea {
+  min-height: 8rem;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.support-context-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.support-context-toggle input {
+  margin-top: 0.15rem;
+}
+
+.support-primary-button,
+.support-secondary-button {
+  min-height: 2.8rem;
+  padding: 0.6rem 0.8rem;
+  border: 0;
+  border-radius: 0.75rem;
+  font: inherit;
+  font-weight: 800;
+}
+
+.support-primary-button {
+  color: #ffffff;
+  background: #2f6f43;
+}
+
+.support-secondary-button {
+  color: #31503b;
+  background: #edf3ee;
+}
+
+.support-primary-button:focus-visible,
+.support-secondary-button:focus-visible,
+.support-field input:focus-visible,
+.support-field select:focus-visible,
+.support-field textarea:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.support-primary-button:disabled {
+  opacity: 0.6;
+}
+
+.support-error {
+  color: #8f1f22 !important;
+  font-weight: 700;
+}

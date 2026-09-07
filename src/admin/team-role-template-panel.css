@@ -1,0 +1,110 @@
+.team-role-template-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.team-role-template-panel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.team-role-template-panel > header > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.team-role-template-panel h2,
+.team-role-template-panel p {
+  margin: 0;
+}
+
+.team-role-template-panel header span {
+  color: var(--text-muted, #64748b);
+  font-size: 0.72rem;
+  font-weight: 780;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.team-role-template-panel header p,
+.team-role-template-panel__note {
+  color: var(--text-muted, #64748b);
+  line-height: 1.45;
+}
+
+.team-role-template-panel button {
+  min-height: 2.65rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 0.78rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 730;
+  cursor: pointer;
+}
+
+.team-role-template-panel button:disabled,
+.team-role-template-panel fieldset:disabled {
+  opacity: 0.56;
+}
+
+.team-role-template-panel fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid rgba(15, 23, 42, 0.11);
+  border-radius: 0.9rem;
+}
+
+.team-role-template-panel legend {
+  padding: 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.team-role-template-panel label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.6rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(15, 23, 42, 0.09);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.96);
+  font-size: 0.78rem;
+}
+
+.team-role-template-panel input {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.team-role-template-panel button:focus-visible,
+.team-role-template-panel input:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+.team-role-template-panel__note {
+  padding: 0.8rem;
+  border-radius: 0.8rem;
+  background: rgba(15, 23, 42, 0.04);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .team-role-template-panel > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .team-role-template-panel fieldset {
+    grid-template-columns: 1fr;
+  }
+}

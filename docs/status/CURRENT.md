@@ -2,124 +2,87 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-08-25
+last_updated: 2026-09-05
 ---
 
 # Current Project State
 
-## Baseline
+## Aktive isolierte Linie: Organizer/Admin Platform
 
-M4 access/session authorization and PR #21 are merged on `main`.
+Plan 030 wird ausschließlich auf `feature/organizer-admin-platform` gegen `mission-rxdb-sync` entwickelt. Draft-PR #76 bleibt Draft und ungemergt. PR #74/#75 bleiben getrennt; `mission-release-2026-09-02-manual` bleibt unangetastet. Kein Production-Deploy und keine Production-D1-Migration ohne separate ausdrückliche Freigabe.
 
-M5 resilient mutation synchronization is complete and PR #24 is merged on `main`.
+### Aktuell verifizierter Organizer/Admin-Stand
 
-Accepted M5 behavior includes:
-- durable IndexedDB-backed mutation queue;
-- Worker-side idempotency and conflict preconditions;
-- explicit blocked-auth / conflict / invalid / retry states;
-- reconnect delivery without duplicate effect;
-- saved Area/Street renderer behavior preserved;
-- remote D1 mutation-ledger migration applied;
-- strict cold fully-offline website startup remains outside the current no-Service-Worker architecture.
+Der erste vollständig grüne isolierte Admin-Staging-Gate ist V9 Run `33924415528` / #23. Auditiert wurde Feature-Head `c62385a8c400f68753d1f1f811e2315551153885` (`fix: harden static asset responses`). Die exact-head PR-CI auf diesem Head ist vollständig grün: Tests, Typecheck, Dependency Audit und Production Build.
 
-Verteil-Flyer remains a mobile-first normal website:
-- no native app;
-- no installable PWA;
-- no Service Worker;
-- no Background Sync API.
+V9 #23 belegt gegen den echten Cloudflare-Worker:
 
-Current renderer baseline:
-- MapLibre GL JS **5.7.1 pinned**;
-- CARTO Voyager Retina online basemap;
-- saved Areas/Streets in persistent MapLibre GeoJSON sources/layers;
-- active draw/edit geometry only in SVG;
-- no application-side dense saved-geometry projection loop during browse.
+- Candidate-Version-Konvergenz und fail-closed API-Method-Gates;
+- Bootstrap -> Password -> TOTP -> authentifiziertes `/api/organization/me`;
+- zwei serverseitig persistierte Campaigns nach Logout, Storage/Cookie-Clear und frischem Browser-Kontext;
+- Admin-Invite in sauberem Browser, Fragment-Token-Scrubbing und MFA-Enrolment;
+- Mobile Chromium 390x844 ohne horizontales Overflow;
+- Remote-Cleanup auf 0 Bootstrap-/Organization-/Account-/owned-Campaign-Datensätze und fehlerfreien `PRAGMA foreign_key_check`;
+- finalen ungepinnten öffentlichen Worker: `/start` 200, unauthenticated `/me` 401, HEAD API 405, fremder Origin 403;
+- identische Security-Härtung auf Worker- und statischen Asset-Antworten: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Cross-Origin-Opener-Policy: same-origin`.
 
-Current Campaign roles remain Admin, Team Editor scoped to one Team, and Viewer. Worker authorization is authoritative.
+Die statischen Header werden über `public/_headers` gesetzt. Der Organizer-Worker setzt dieselben Header weiterhin für Worker-generierte Antworten. Der Staging-Testzugang verwendet einen einmaligen Bootstrap-Schlüssel; nur dessen SHA-256 liegt in der isolierten Workflow-Konfiguration, der Klartext gehört weder ins Repository noch in Logs/Artifacts.
 
-## Active M5.5 prepared offline area
+### Plan 031 Field-UI/Rooms Runtime-Kandidat
 
-`docs/plans/active/011-offline-map-area.md` is the active implementation plan.
+Plan 031 ist auf der Product-Linie implementiert. Die erste vollständige Live-Staging-Matrix hat nach erfolgreicher Migration `0020`, Recovery-Key-Konfiguration, Worker-Deploy, MFA, Campaign-Erstellung und Team-Fixture einen reproduzierbaren Room-Create-500 gezeigt. Die Ursache war ein echter Authorization/Persistence-Vertragsfehler: Organization-Organizer werden absichtlich ohne Legacy-Campaign-Grant über `grantId = organization:<membershipId>` in die Campaign-Autorisierung gebridged, `field_groups.created_by_grant_id` referenziert dagegen ausschließlich reale `campaign_access_grants(id)`. Der Room-Create versuchte die synthetische Organizer-ID in diesen Foreign Key zu schreiben.
 
-ADR-0012 is accepted with **Approach A**:
-- bounded approximately 3 km raw OSM subset package;
-- existing Worker owns fixed Overpass-compatible query templates and validation;
-- upstream endpoint is server-configurable/replaceable;
-- normalized versioned JSON/GeoJSON package preserves OSM identity/tags;
-- browser IndexedDB stores the prepared package locally;
-- local MapLibre sources/layers will render prepared context while the already-loaded website is offline;
-- no CARTO or OSM Foundation tile bulk cache;
-- no R2/PMTiles pipeline for v1;
-- same OSM identity/data direction should later feed M6 Smart Streets/Houses.
+Der Runtime-Fix wurde auf Parent-Head `8a751e50b12067db6164465276abdf11bda6960e` evidence-driven gebaut und als `6888595c4809e947f9079c40f4520a578f103b4d` gepusht. Vor diesem Push waren Tests, Typecheck, Dependency Audit und Production Build im guarded Fix-Runner grün. Der Fix:
 
-### Slice 1 Worker/package contract
+- persistiert für Organization-Organizer kein synthetisches `created_by_grant_id`, während echte Campaign-Grants unverändert erhalten bleiben;
+- vereinheitlicht Same-Current-Credential-Reveal auf `POST /credentials/current` zwischen Client und Worker;
+- bindet AES-GCM-AAD an den projektspezifischen Namespace `flyer-map:field-group-credential:v1:...`;
+- ergänzt Regressionstests für Organizer-Room-Create unter Foreign-Key-Semantik und für den POST-only Reveal-Vertrag.
 
-Complete and merged in PR #26 as `e5a97ac147168c9dcc3a53079324e3494508474f`.
+Die isolierte Plan-031-Staging-Harness wurde zusätzlich FK-sicher gemacht: historische organizer-owned Fixtures werden Kind-zu-Eltern entfernt, bevor Campaign/Team gelöscht werden. Diese Cleanup-Härtung betrifft nur `organizer-admin-staging`, nicht Production. Der Product-Kandidat gilt erst dann als vollständig live-verifiziert, wenn die normale GitHub-CI auf dem finalen Product-Head und die vollständige isolierte Plan-031-Cloudflare-Akzeptanz auf exakt demselben Head grün sind.
 
-Implemented:
-- shared `OfflineMapPackage v1` contract and validator;
-- authenticated Campaign-scoped package endpoint;
-- fixed server-owned Overpass query and 3 km maximum;
-- server-configurable upstream;
-- bounded request/upstream/package sizes and timeout;
-- normalized roads/buildings with preserved OSM way ids and inert reviewed tags;
-- OSM attribution/license/source timestamps;
-- tests for hostile query text, limits, normalization and timeout.
+### Harte Production-Isolation
 
-### Slice 2 IndexedDB lifecycle
+Die kanonische `wrangler.jsonc` bleibt Production-sicher:
 
-Implemented on PR #27 / branch `m55-offline-map-storage`:
-- separate `verteil-flyer-offline-map` IndexedDB database, isolated from the M5 mutation queue;
-- one package per Campaign;
-- validate-before-replace and transactional `put` without delete-first;
-- failed replacement preserves the previous valid package;
-- read/delete lifecycle;
-- byte-size metadata and package summary;
-- corruption detection;
-- reload/replacement/delete/summary/corruption tests.
+- `main`: `./worker/indexFc52.ts`;
+- Production-D1: `0113e775-1e43-4d96-8b97-51fdeec7355b`;
+- Production Rate-Limit Namespaces: `91714001`, `91714002`, `91714003`;
+- kein `ORGANIZATION_LOGIN_LIMITER` in der committed Production-Konfiguration;
+- `worker/indexOrganizer.ts` bleibt ausschließlich ein isolierter Organizer/Admin-Wrapper.
 
-CI #287 exposed only an explicit TypeScript ESM import-extension issue. Commit `996dd5428dc5ce77cf7a57f76e97717411be44d5` fixed it and CI #288 passed tests, strict TypeScript and production build. Final docs-only head still needs normal CI before merge.
+Production wurde durch das Admin-Staging nicht deployed und die Production-D1 wurde nicht migriert. Migrationen 0017/0018/0019 bleiben Production-unapplied.
 
-Implementation order remaining:
-1. merge Slice 2 after final green CI;
-2. Settings download/update/delete UX;
-3. MapLibre offline context;
-4. dense real-mobile acceptance/performance.
+### Admin-Staging
 
-## Full platform expansion
+- Branch: `organizer-admin-staging`;
+- Workflow: `.github/workflows/admin-staging-release-v9.yml`;
+- Worker: `flyer-map-admin-staging`;
+- D1: `flyer-map-admin-staging-db`;
+- URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
+- RxDB-Staging-D1 `bcec3432-18ec-42a2-970a-64d52c8263d5` und Production-D1 werden durch Guards ausgeschlossen.
 
-Primary umbrella plan:
-- `docs/plans/active/012-platform-app-expansion.md`.
+Die V9-Linie pinnt Candidate/API/Browser-Smokes auf die exakte Cloudflare Worker Version und prüft den finalen Benutzerstand danach absichtlich ungepinnt über die öffentliche `workers.dev`-URL. Sanitized Artifacts enthalten keine Passwörter, Bootstrap-Secrets, TOTP-Keys oder Invite-Tokens.
 
-Planned sequence after M5.5:
-1. M6 Smart Street + House geometry;
-2. M6.5 Clothes Collection / Pickup mode;
-3. M7 Field Sessions + Live Field Groups + comments/activity/automations;
-4. M8 Organizations + username/password/TOTP admin accounts + configurable permissions + desktop Admin;
-5. M9 statistics/progress + app-like navigation + Support/Feedback + appearance;
-6. M10 security/field hardening/release.
+## Noch offene Organizer/Admin-Master-Akzeptanz vor Production
 
-## Security boundary for future accounts
+Der isolierte Teststand ist jetzt browser-testbar. Das ist ausdrücklich noch keine Production-Freigabe. Vor Production müssen die verbleibenden Master-Gates evidence-driven abgeschlossen werden, insbesondere:
 
-Account/permissions work is not approved for ad-hoc implementation.
+1. explizite Legacy-Campaign-Adoption mit Audit und negativen Foreign-/Owned-/Race-Tests;
+2. vollständige Account-Security-Matrix: Username/Password, sichere Reset-Links, TOTP-Reset, Recovery-Regeneration, Sessions einzeln/alle widerrufen;
+3. mehrere Organizer/Admins inklusive concurrent last-organizer invariant;
+4. Named Role Templates + serverbekannte Capability Registry;
+5. own-team/other-team/explizite cross-team Durchsetzung an kanonischen Campaign/Team/Area/Task-Beziehungen;
+6. Organizer-only permanente Campaign-Löschung mit fresh high-risk reauth und exakter Bestätigung;
+7. Audit-/Threat-Model-/Rate-Limit-/CSP-Abschluss;
+8. gewünschter Root-Organizer-Einstieg ohne die normale Field Map zu hijacken;
+9. vollständige Admin-Console-/Lifecycle-UX ohne Fake-KPIs;
+10. komplette RxDB-/Field-Regressionsuite weiter grün halten.
 
-Before M8 account implementation, an accepted ADR/threat model must define password hashing, TOTP secret protection, account sessions/recovery, rate limiting, role/capability evaluation and legacy Campaign Admin migration.
+## Verifizierte RxDB-Mission-Basis – nicht regressieren
 
-Mandatory direction already recorded:
-- parameterized/prepared D1 queries;
-- no SQL concatenation with user input;
-- raw passwords/TOTP secrets never logged;
-- injected SQL/HTML/JS/code-like input remains inert data;
-- authentication never replaces Worker-side authorization;
-- Organization tenant isolation is non-bypassable;
-- security/admin/permission changes are audited.
+`mission-rxdb-sync` bleibt die separate RxDB-Basis; Draft-PR #74 bleibt getrennt. D1 bleibt kanonisch, RxDB/Dexie hält lokale operative Campaign-Daten, Worker/D1 bleiben Autoritäts- und Sicherheitsgrenze. Die bereits geschlossenen Prepared-Street-/MapLibre-/Realtime-P0s dürfen durch Organizer/Admin-Arbeit nicht zurückkehren.
 
-## Known follow-ups
+## Arbeitsregel bei Wiederaufnahme
 
-Existing follow-ups remain visible:
-- GitHub #22: desktop bottom-toolbar fit/spacing;
-- GitHub #23: production health/recovery/diagnostics and dense Street validation.
-
-## Immediate next
-
-Finish/merge PR #27 with final green CI, then implement Plan 011 Slice 3 Settings UX. Do not introduce Service Worker/PWA behavior or cache CARTO/OSMF tiles. Keep M6 behavior outside the current slice until the prepared-area package path is stable.
+GitHub ist Source of Truth. Zuerst `AGENTS.md`, diese Datei, `docs/context-map.yaml`, danach `docs/context-organizer-admin.yaml`, `docs/context-organizer-admin-live.yaml`, Plan 030, ADR-0026 und den aktuellen Handoff lesen. Remote-Heads, PR #76, exact-head CI und aktuellen V9-Run immer neu verifizieren; dokumentierte SHAs sind Übergabemarker.

@@ -96,15 +96,14 @@
 }
 
 .compact-sheet {
-  max-height: none;
-  overflow: visible;
+  max-height: min(82dvh, 46rem);
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 0.45rem;
   border-radius: 0.85rem;
 }
 
-.compact-sheet .sheet-handle,
-.compact-sheet .area-fields,
-.compact-sheet .street-summary {
+.compact-sheet .area-fields {
   display: none;
 }
 
@@ -127,6 +126,14 @@
   min-height: 2.55rem;
   padding: 0.42rem 0.55rem;
   font-size: 0.72rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.compact-sheet .area-preparation-status {
+  margin: 0 0 0.4rem;
+  padding: 0.42rem 0.5rem;
+  font-size: 0.71rem;
 }
 
 .compact-sheet .area-actions.secondary-row {
@@ -135,13 +142,13 @@
 }
 
 .task-sheet {
-  max-height: none;
-  overflow: visible;
+  max-height: min(82dvh, 46rem);
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 0.45rem;
   border-radius: 0.85rem;
 }
 
-.task-sheet .sheet-handle,
 .task-sheet > .field-label,
 .task-sheet .task-current-status {
   display: none;

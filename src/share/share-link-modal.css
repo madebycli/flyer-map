@@ -1,0 +1,84 @@
+.share-link-overlay {
+  position: fixed;
+  z-index: 3400;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: calc(env(safe-area-inset-top) + 0.75rem) 0.75rem calc(env(safe-area-inset-bottom) + 0.75rem);
+  background: rgb(16 24 18 / 34%);
+  backdrop-filter: blur(2px);
+}
+
+.share-link-modal {
+  display: grid;
+  gap: 0.75rem;
+  width: min(25rem, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 1rem;
+  color: #172019;
+  background: #fff;
+  box-shadow: 0 0.6rem 2rem rgb(20 35 24 / 25%);
+}
+
+.share-link-modal header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.share-link-modal header span,
+.share-link-modal p {
+  color: #5b685f;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.share-link-modal header span,
+.share-link-modal header strong {
+  display: block;
+}
+
+.share-link-modal header strong {
+  margin-top: 0.15rem;
+  font-size: 1.05rem;
+}
+
+.share-link-modal header button {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 0.75rem;
+  color: #172019;
+  background: #edf2ee;
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.share-link-modal p {
+  margin: 0;
+}
+
+.share-link-modal input {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #c8d5cb;
+  border-radius: 0.65rem;
+  background: #fff;
+  font-size: 0.7rem;
+}
+
+.share-link-qr {
+  display: grid;
+  place-items: center;
+  padding: 0.65rem;
+  border: 1px solid #dce4dd;
+  border-radius: 0.8rem;
+  background: #f8faf8;
+}
