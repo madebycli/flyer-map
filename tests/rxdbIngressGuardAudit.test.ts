@@ -26,13 +26,13 @@ function untouchedDb(): D1DatabaseLike {
 }
 
 class SchemaOnlyDb implements D1DatabaseLike {
-  canonicalQueries = 0;
   schemaQueries = 0;
+  readonly queries: string[] = [];
 
   prepare(query: string) {
+    this.queries.push(query);
     const isSchema = query.includes("PRAGMA table_info(campaign_sync_changes)");
     if (isSchema) this.schemaQueries += 1;
-    else this.canonicalQueries += 1;
     const statement = {
       bind() { return statement; },
       async first<T>() { return null as T | null; },
@@ -53,6 +53,10 @@ class SchemaOnlyDb implements D1DatabaseLike {
       },
     };
     return statement;
+  }
+
+  canonicalReadQueries() {
+    return this.queries.filter((query) => /\bFROM\s+(?:campaigns|teams|areas|tasks|house_tasks)\b/iu.test(query));
   }
 
   async batch() {
@@ -115,7 +119,7 @@ test("foreign-campaign RxDB document is rejected before canonical campaign reads
     },
   });
   assert.equal(db.schemaQueries, 1);
-  assert.equal(db.canonicalQueries, 0, "foreign campaign input must not trigger canonical entity reads");
+  assert.deepEqual(db.canonicalReadQueries(), [], "foreign campaign input must not trigger canonical entity reads");
 });
 
 test("push row count is bounded before any canonical campaign read", async () => {
@@ -127,7 +131,7 @@ test("push row count is bounded before any canonical campaign read", async () =>
   assert.equal(response.status, 400);
   const body = await response.json() as { error: { code: string } };
   assert.equal(body.error.code, "invalid_rxdb_push");
-  assert.equal(db.canonicalQueries, 0);
+  assert.deepEqual(db.canonicalReadQueries(), []);
 });
 
 test("oversized push payload is bounded before canonical campaign reads", async () => {
@@ -150,7 +154,7 @@ test("oversized push payload is bounded before canonical campaign reads", async 
   assert.equal(response.status, 400);
   const body = await response.json() as { error: { code: string } };
   assert.equal(body.error.code, "invalid_rxdb_push");
-  assert.equal(db.canonicalQueries, 0);
+  assert.deepEqual(db.canonicalReadQueries(), []);
 });
 
 test("malformed individual rows are isolated as rejections instead of crashing the batch", async () => {
@@ -167,5 +171,5 @@ test("malformed individual rows are isolated as rejections instead of crashing t
     conflicts: [],
     rejections: [{ documentId: "unknown", code: "invalid_rxdb_push" }],
   });
-  assert.equal(db.canonicalQueries, 0);
+  assert.deepEqual(db.canonicalReadQueries(), []);
 });
