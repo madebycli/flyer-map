@@ -39,6 +39,8 @@ class AtomicAuditDb implements D1DatabaseLike {
     for (const file of [
       "0001_initial.sql",
       "0003_m5_mutations.sql",
+      "0004_m6_task_source_provenance.sql",
+      "0005_m6_house_tasks.sql",
       "0014_auto_area_task_preparation.sql",
       "0017_rxdb_sync_changes.sql",
     ]) {
