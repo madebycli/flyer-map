@@ -90,7 +90,7 @@ export function SyncStatus() {
       window.clearTimeout(recoveryTimer);
       window.clearTimeout(stallTimer);
     };
-  }, [state, pendingCount]);
+  }, [state]);
 
   const visibleState: MutationSyncState = stalled && state === "waiting-server" ? "failed" : state;
   const label = stalled && state === "waiting-server" ? stalledLabel(language) : statusLabel(language, state, pendingCount);
