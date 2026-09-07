@@ -54,7 +54,8 @@ export function PlatformShell() {
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const showActiveTeam = appContext?.accessRole !== "viewer" && Boolean(appContext?.activeTeam);
   const launcherAvailable = appContext?.launcherAvailable ?? true;
-  // The Field bar is bare-map chrome. Every open Platform hub or menu suppresses it.
+  const canCreateManualStreet = Boolean(appContext?.canCreateManualStreet);
+  // The Field bar and quick actions are bare-map chrome. Every open Platform hub or menu suppresses them.
   const overlayOpen = menuOpen || primaryHub !== null;
 
   const closeOverlays = () => {
@@ -119,6 +120,18 @@ export function PlatformShell() {
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {launcherAvailable && !overlayOpen && canCreateManualStreet ? (
+        <button
+          className="platform-manual-street-button"
+          type="button"
+          onClick={() => dispatchSimpleCommand("start-manual-street")}
+          aria-label="Straße manuell hinzufügen"
+          title="Straße manuell hinzufügen"
+        >
+          <span aria-hidden="true">+</span>
+        </button>
       ) : null}
 
       {menuOpen ? (
