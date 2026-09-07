@@ -24,6 +24,7 @@
  * geometry exactly. This intentionally excludes House task sheets and every
  * modern FieldHub so a legacy mobile override cannot squeeze the close button
  * into the divider or cover the first action when the sheet opens untouched.
+ * Regression contract: tests/mapDetailSheetChrome.test.ts.
  */
 .bottom-sheet.field-sheet-enhanced.compact-sheet,
 .bottom-sheet.field-sheet-enhanced.task-sheet:not(.commentable-task-sheet) {
