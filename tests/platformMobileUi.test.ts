@@ -26,7 +26,7 @@ test("all field HUD headers share one geometry contract", async () => {
   assert.match(css, /\.field-sheet-handle-button\s*\{[\s\S]*?min-height: var\(--field-hud-handle-min-height\)[\s\S]*?padding: var\(--field-hud-handle-padding-top\) 0 var\(--field-hud-handle-padding-bottom\)/u);
   assert.match(css, /\.field-sheet-header\s*\{[\s\S]*?min-height: calc\(var\(--field-hud-close-size\)[\s\S]*?padding: var\(--field-hud-header-padding-top\) var\(--field-hud-header-padding-inline\) var\(--field-hud-header-padding-bottom\)[\s\S]*?border-bottom: var\(--field-hud-header-divider\)/u);
   assert.match(css, /\.bottom-sheet\.field-sheet-enhanced\.compact-sheet,\s*\.bottom-sheet\.field-sheet-enhanced\.task-sheet\s*\{[\s\S]*?--field-hud-sheet-padding-inline: 0\.45rem/u);
-  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-handle-button\s*\{[\s\S]*?width: calc\(100% \+ \(2 \* var\(--field-hud-sheet-padding-inline\)\)\)[\s\S]*?margin: -0\.45rem calc\(-1 \* var\(--field-hud-sheet-padding-inline\)\) 0/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-handle-button\s*\{[\s\S]*?width: calc\(100% \+ var\(--field-hud-sheet-padding-inline\) \+ var\(--field-hud-sheet-padding-inline\)\)[\s\S]*?margin: -0\.45rem calc\(-1 \* var\(--field-hud-sheet-padding-inline\)\) 0/u);
   assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-header\s*\{[\s\S]*?top: var\(--field-hud-handle-min-height\)[\s\S]*?margin: 0 calc\(-1 \* var\(--field-hud-sheet-padding-inline\)\) 0\.85rem[\s\S]*?border-bottom: var\(--field-hud-header-divider\)/u);
   assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-header \.icon-button\s*\{[\s\S]*?width: var\(--field-hud-close-size\)[\s\S]*?height: var\(--field-hud-close-size\)/u);
 });
