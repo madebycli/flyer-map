@@ -1,0 +1,19 @@
+/*
+ * Map-critical field controls must leave the basemap sharp.
+ *
+ * Every current .mode-sheet is an active map workflow: Area draw/edit,
+ * manual Street Area selection/draw, and Collection Area draw/edit.
+ * .compact-sheet is the Area detail surface, while .task-sheet is the
+ * Street/House status surface. These contexts require the map as visual
+ * evidence, so they intentionally do not use backdrop blur.
+ *
+ * Browse/admin hubs such as Settings, Team management, Campaign comments,
+ * Collection admin and the launcher keep their existing visual treatment.
+ */
+.map-toolbar,
+.mode-sheet,
+.bottom-sheet.compact-sheet,
+.bottom-sheet.task-sheet {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

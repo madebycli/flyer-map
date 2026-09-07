@@ -27,6 +27,7 @@ import "./m4.css";
 import "./m5.css";
 import "./access-recovery.css";
 import "./diagnostics/map-diagnostics.css";
+import "./map-context-ui.css";
 
 const workbenchMode = new URLSearchParams(window.location.search).get("workbench");
 const root = createRoot(document.getElementById("root")!);
