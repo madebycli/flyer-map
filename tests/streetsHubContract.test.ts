@@ -7,8 +7,8 @@ const shellSource = readFileSync(new URL("../src/platform/PlatformShell.tsx", im
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 
 test("Streets hub uses the primary launcher name for its dialog", () => {
-  assert.match(source, /<FieldBottomSheet open title="Streets"/u);
-  assert.doesNotMatch(source, /<FieldBottomSheet open title="Straßen"/u);
+  assert.match(source, /<FieldHub open title="Streets"/u);
+  assert.doesNotMatch(source, /<FieldHub open title="Straßen"/u);
 });
 
 test("manual Street creation stays visible and reuses the existing map draw flow", () => {

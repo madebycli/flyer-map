@@ -1,4 +1,3 @@
-
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -8,8 +7,11 @@ const shellSource = readFileSync(new URL("../src/platform/PlatformShell.tsx", im
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const teamHubSource = readFileSync(new URL("../src/team/TeamHub.tsx", import.meta.url), "utf8");
 const roomHubSource = readFileSync(new URL("../src/team/RoomsHub.tsx", import.meta.url), "utf8");
+const progressHubSource = readFileSync(new URL("../src/team/TeamProgressHub.tsx", import.meta.url), "utf8");
 const commentsHubSource = readFileSync(new URL("../src/collaboration/CommentsHub.tsx", import.meta.url), "utf8");
 const streetsHubSource = readFileSync(new URL("../src/streets/StreetsHub.tsx", import.meta.url), "utf8");
+const hubSource = readFileSync(new URL("../src/platform/FieldHub.tsx", import.meta.url), "utf8");
+const hubCss = readFileSync(new URL("../src/platform/field-hub.css", import.meta.url), "utf8");
 const sheetSource = readFileSync(new URL("../src/platform/FieldBottomSheet.tsx", import.meta.url), "utf8");
 const sheetCss = readFileSync(new URL("../src/platform/field-bottom-sheet.css", import.meta.url), "utf8");
 const shellCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
@@ -44,6 +46,23 @@ test("field launcher is the single flat primary navigation", () => {
   assert.match(shellSource, /<CommentsHub/u);
   assert.match(shellSource, /<StreetsHub/u);
   assert.doesNotMatch(teamHubSource, /team-center-tabs|Rooms|Fortschritt|Kommentare/u);
+});
+
+test("launcher and focused hubs share one reusable field UI base", () => {
+  assert.match(hubSource, /<FieldBottomSheet/u);
+  assert.match(hubCss, /\.field-hub-card/u);
+  assert.match(shellSource, /<FieldHub open title="Menü"/u);
+  assert.match(teamHubSource, /<FieldHub open/u);
+  assert.match(progressHubSource, /<FieldHub open/u);
+  assert.match(commentsHubSource, /<FieldHub open/u);
+  assert.match(streetsHubSource, /<FieldHub open/u);
+  assert.match(roomHubSource, /<FieldBottomSheet open/u);
+});
+
+test("field launcher chrome stays behind every open sheet", () => {
+  assert.match(shellSource, /overlayOpen \? "is-behind-menu" : ""/u);
+  assert.doesNotMatch(shellSource, /is-above-hub/u);
+  assert.match(shellCss, /\.platform-field-bar\.is-behind-menu[\s\S]*?pointer-events: none/u);
 });
 
 test("unauthenticated launcher keeps only safe entry surfaces", () => {

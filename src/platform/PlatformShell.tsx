@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 import App from "../App";
 import { CommentsHub } from "../collaboration/CommentsHub.tsx";
@@ -7,7 +6,7 @@ import { StreetsHub } from "../streets/StreetsHub.tsx";
 import { RoomsHub } from "../team/RoomsHub.tsx";
 import { TeamHub } from "../team/TeamHub.tsx";
 import { TeamProgressHub } from "../team/TeamProgressHub.tsx";
-import { FieldBottomSheet } from "./FieldBottomSheet.tsx";
+import { FieldHub } from "./FieldHub.tsx";
 import {
   buildPlatformLauncherItems,
   type PlatformAppCommand,
@@ -102,7 +101,7 @@ export function PlatformShell() {
       </div>
 
       {launcherAvailable ? (
-        <div className={`platform-field-bar ${menuOpen ? "is-behind-menu" : primaryHub !== null ? "is-above-hub" : ""}`}>
+        <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
           <button
             className="platform-grid-button"
             type="button"
@@ -122,7 +121,7 @@ export function PlatformShell() {
       ) : null}
 
       {menuOpen ? (
-        <FieldBottomSheet open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="expanded" className="platform-menu-sheet">
+        <FieldHub open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="expanded" className="platform-menu-sheet">
           <div className="platform-menu-grid">
             {launcherItems.map((item) => (
               <button
@@ -155,7 +154,7 @@ export function PlatformShell() {
               </button>
             ))}
           </div>
-        </FieldBottomSheet>
+        </FieldHub>
       ) : null}
 
       {primaryHub === "team" ? (
