@@ -64,6 +64,8 @@ export function SyncStatus() {
     };
   }, []);
 
+  if (state === "server-confirmed" && !issue) return null;
+
   const label = statusLabel(language, state, pendingCount);
   return (
     <div className="mutation-sync-status-wrap">

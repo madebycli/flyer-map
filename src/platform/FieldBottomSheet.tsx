@@ -177,9 +177,11 @@ export function useLegacyFieldSheetDragBridge(active = true) {
       document.querySelectorAll<HTMLElement>(".bottom-sheet").forEach((sheet) => {
         if (!sheet.classList.contains("field-sheet-enhanced")) {
           sheet.classList.add("field-sheet-enhanced");
+          sheet.scrollTop = 0;
         }
-        if (!sheet.style.getPropertyValue("--field-sheet-height")) {
-          sheet.style.setProperty("--field-sheet-height", `${snapHeight("expanded", viewport)}px`);
+        const savedSnap = sheet.dataset.fieldSnap as FieldSheetSnap | undefined;
+        if (savedSnap && SNAP_ORDER.includes(savedSnap)) {
+          sheet.style.setProperty("--field-sheet-height", `${snapHeight(savedSnap, viewport)}px`);
         }
       });
     };

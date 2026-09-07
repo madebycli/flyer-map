@@ -111,12 +111,23 @@
 }
 
 .bottom-sheet.field-sheet-enhanced {
-  height: min(var(--field-sheet-height), calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem));
-  max-height: calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem);
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  scroll-padding-top: 4.5rem;
   scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.bottom-sheet.field-sheet-enhanced.field-sheet-dragging,
+.bottom-sheet.field-sheet-enhanced[data-field-snap] {
+  height: min(var(--field-sheet-height), calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem));
+  max-height: calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem);
+}
+
+.bottom-sheet.field-sheet-enhanced.is-collapsed {
+  height: auto;
+  max-height: 6.25rem;
+  overflow: hidden;
 }
 
 .bottom-sheet.field-sheet-enhanced.field-sheet-dragging {

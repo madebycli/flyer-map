@@ -53,6 +53,10 @@
   backdrop-filter: blur(12px);
 }
 
+.platform-field-bar.is-above-hub {
+  z-index: 3450;
+}
+
 .platform-field-bar.is-behind-menu {
   pointer-events: none;
 }

@@ -21,7 +21,7 @@ export function TeamProgressHub({
   );
 
   return (
-    <FieldBottomSheet open title={activeTeam?.name ? `Fortschritt · ${activeTeam.name}` : "Fortschritt"} kicker="Team" onClose={onClose}>
+    <FieldBottomSheet open title={activeTeam?.name ? `Fortschritt · ${activeTeam.name}` : "Fortschritt"} kicker="Team" onClose={onClose} initialSnap="compact">
       <section className="team-center-card">
         <div className="team-center-section-heading">
           <div><span>Team-Fortschritt</span><strong>{activeTeam?.name ?? "Team"}</strong></div>

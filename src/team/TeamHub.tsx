@@ -18,7 +18,7 @@ export function TeamHub({ context, online, onClose, onSelectTeam, onManageTeams 
   );
 
   return (
-    <FieldBottomSheet open title={activeTeam?.name ?? "Team"} kicker="Team" onClose={onClose} initialSnap="expanded">
+    <FieldBottomSheet open title={activeTeam?.name ?? "Team"} kicker="Team" onClose={onClose} initialSnap="compact">
       <div className="team-center-view">
         {!online ? <div className="team-center-notice">Offline: Die aktive Team-Auswahl bleibt lokal verfügbar.</div> : null}
         <section className="team-center-card">

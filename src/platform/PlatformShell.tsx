@@ -64,6 +64,11 @@ export function PlatformShell() {
     setPrimaryHub(null);
   };
 
+  const openMenu = () => {
+    setPrimaryHub(null);
+    setMenuOpen(true);
+  };
+
   const dispatchSimpleCommand = (
     type: Exclude<PlatformAppCommandType, "select-active-team" | "open-street-task">,
   ) => {
@@ -99,11 +104,11 @@ export function PlatformShell() {
       </div>
 
       {launcherAvailable ? (
-        <div className={`platform-field-bar ${overlayOpen ? "is-behind-menu" : ""}`}>
+        <div className={`platform-field-bar ${menuOpen ? "is-behind-menu" : primaryHub !== null ? "is-above-hub" : ""}`}>
           <button
             className="platform-grid-button"
             type="button"
-            onClick={() => setMenuOpen(true)}
+            onClick={openMenu}
             aria-label="Menü öffnen"
             title="Menü öffnen"
           >

@@ -82,15 +82,15 @@ export function TeamProgressPanel({ campaignId, teamId, online }: TeamProgressPa
   if (!campaignId || !teamId) return null;
 
   return (
-    <div className="team-hub-progress" aria-live="polite">
-      <div className="team-hub-meta-row">
+    <div className="team-center-view" aria-live="polite">
+      <div className="team-center-section-heading">
         <span>Team-Fortschritt</span>
         <strong>{source === "local" ? "Lokaler Stand" : "Serverstand"}</strong>
       </div>
       {loadState === "loading" ? <p>Fortschritt wird geladen ...</p> : null}
       {loadState === "error" ? <p>Fortschritt ist gerade nicht verfügbar.</p> : null}
       {loadState === "ready" && progress ? (
-        <div className="team-hub-info-grid">
+        <div className="team-center-info-grid">
           <div>
             <span>Straßen</span>
             <strong>
