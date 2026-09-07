@@ -54,6 +54,7 @@ export function PlatformShell() {
   const teamColor = appContext?.activeTeam?.color ?? "#64748b";
   const showActiveTeam = appContext?.accessRole !== "viewer" && Boolean(appContext?.activeTeam);
   const launcherAvailable = appContext?.launcherAvailable ?? true;
+  // The Field bar is bare-map chrome. Every open Platform hub or menu suppresses it.
   const overlayOpen = menuOpen || primaryHub !== null;
 
   const closeOverlays = () => {
