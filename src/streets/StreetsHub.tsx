@@ -29,6 +29,7 @@ export function StreetsHub({
     if (!normalized) return scoped;
     return scoped.filter((street) => `${street.label} ${street.areaName}`.toLocaleLowerCase("de-DE").includes(normalized));
   }, [context?.activeTeam, context?.streets, query]);
+  const canCreateManualStreet = Boolean(context?.canCreateManualStreet);
 
   return (
     <FieldBottomSheet open title="Streets" kicker={context?.activeTeam?.name ?? "Karte"} onClose={onClose}>
@@ -36,7 +37,8 @@ export function StreetsHub({
         <section className="team-center-card">
           <div className="team-center-section-heading"><div><span>Straßen</span><strong>{streets.length} im aktiven Team</strong></div></div>
           <label className="team-center-field"><span>Straße suchen</span><input value={query} placeholder="Name oder Gebiet" onChange={(event) => setQuery(event.target.value)} /></label>
-          {context?.canCreateManualStreet ? <button className="team-center-primary" type="button" onClick={onManualStreet}>Straße manuell hinzufügen</button> : null}
+          <button className="team-center-primary" type="button" onClick={onManualStreet} disabled={!canCreateManualStreet}>Straße manuell hinzufügen</button>
+          {!canCreateManualStreet ? <p className="team-center-help">Manuelle Straßen können nur in einem bearbeitbaren Gebiet angelegt werden.</p> : null}
           <p className="team-center-help">Smart Street wird später genau hier an die bestehende Karten- und Straßenlogik angebunden. Es existiert bewusst keine zweite Karten-Engine.</p>
           <div className="team-center-room-list">
             {streets.slice(0, 80).map((street) => (

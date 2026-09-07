@@ -10,13 +10,13 @@ test("organizer navigation and lifecycle controls stay usable on mobile", async 
   assert.match(css, /\.org-lifecycle-actions button[\s\S]*?min-height: 48px/u);
 });
 
-test("launcher and team hub open at an expanded mobile snap", async () => {
+test("launcher opens expanded while the focused team summary stays compact", async () => {
   const [shell, team] = await Promise.all([
     readFile("src/platform/PlatformShell.tsx", "utf8"),
     readFile("src/team/TeamHub.tsx", "utf8"),
   ]);
   assert.match(shell, /title="Menü"[\s\S]*?initialSnap="expanded"[\s\S]*?platform-menu-sheet/u);
-  assert.match(team, /kicker="Team"[\s\S]*?initialSnap="expanded"/u);
+  assert.match(team, /kicker="Team"[\s\S]*?initialSnap="compact"/u);
 });
 
 test("sheet dragging updates the DOM without a React render per pointer move", async () => {

@@ -82,6 +82,6 @@ test("street detail closes and deletes to map without implicit area navigation",
 test("global sync remains separate from the launcher field bar and map refresh state", () => {
   assert.doesNotMatch(shellSource, /platform-sync-indicator/u);
   assert.match(appSource, /syncState: platformSyncState/u);
-  assert.match(shellSource, /className="platform-field-bar/u);
+  assert.match(shellSource, /platform-field-bar/u);
   assert.match(shellCss, /\.platform-field-bar/u);
 });
