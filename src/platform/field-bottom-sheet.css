@@ -18,6 +18,8 @@
 /* One chrome contract for every draggable Field HUD, independent of sheet body height. */
 .field-bottom-sheet,
 .bottom-sheet.field-sheet-enhanced {
+  --field-hud-sheet-padding-inline: 0.9rem;
+  --field-hud-sheet-padding-inline-negative: -0.9rem;
   --field-hud-handle-min-height: 1.4rem;
   --field-hud-handle-padding-top: 0.35rem;
   --field-hud-handle-padding-bottom: 0.2rem;
@@ -126,11 +128,18 @@
 }
 
 .bottom-sheet.field-sheet-enhanced {
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scroll-padding-top: 5.4rem;
   scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.bottom-sheet.field-sheet-enhanced.compact-sheet,
+.bottom-sheet.field-sheet-enhanced.task-sheet {
+  --field-hud-sheet-padding-inline: 0.45rem;
+  --field-hud-sheet-padding-inline-negative: -0.45rem;
 }
 
 .bottom-sheet.field-sheet-enhanced.field-sheet-dragging,
@@ -156,9 +165,9 @@
   z-index: 5;
   display: grid;
   place-items: center;
-  width: calc(100% + 1.8rem);
+  width: calc(100% + var(--field-hud-sheet-padding-inline) + var(--field-hud-sheet-padding-inline));
   min-height: var(--field-hud-handle-min-height);
-  margin: -0.45rem -0.9rem 0;
+  margin: -0.45rem var(--field-hud-sheet-padding-inline-negative) 0;
   padding: var(--field-hud-handle-padding-top) var(--field-hud-header-padding-inline) var(--field-hud-handle-padding-bottom);
   background: #fff;
   cursor: ns-resize;
@@ -178,11 +187,16 @@
   top: var(--field-hud-handle-min-height);
   z-index: 4;
   min-height: calc(var(--field-hud-close-size) + var(--field-hud-header-padding-top) + var(--field-hud-header-padding-bottom));
-  margin: 0 calc(-1 * var(--field-hud-header-padding-inline)) 0.85rem;
+  margin: 0 var(--field-hud-sheet-padding-inline-negative) 0.85rem;
   padding: var(--field-hud-header-padding-top) var(--field-hud-header-padding-inline) var(--field-hud-header-padding-bottom);
   border-bottom: var(--field-hud-header-divider);
   background: #fff;
   box-shadow: 0 1px 0 rgb(23 32 25 / 4%);
+}
+
+.bottom-sheet.field-sheet-enhanced .sheet-header .icon-button {
+  width: var(--field-hud-close-size);
+  height: var(--field-hud-close-size);
 }
 
 @media (min-width: 760px) {
