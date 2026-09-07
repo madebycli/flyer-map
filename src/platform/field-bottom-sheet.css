@@ -142,6 +142,20 @@
   --field-hud-sheet-padding-inline-negative: -0.45rem;
 }
 
+/* The Area sheet is intentionally compact. Keep the close hit target at 44px,
+   but do not reserve the generic HUD's larger vertical chrome around it. */
+.bottom-sheet.field-sheet-enhanced.compact-sheet {
+  --field-hud-handle-min-height: 1.05rem;
+  --field-hud-handle-padding-top: 0.22rem;
+  --field-hud-handle-padding-bottom: 0.1rem;
+  --field-hud-header-padding-top: 0.12rem;
+  --field-hud-header-padding-bottom: 0.25rem;
+}
+
+.bottom-sheet.field-sheet-enhanced.compact-sheet .sheet-header {
+  margin-bottom: 0.5rem;
+}
+
 .bottom-sheet.field-sheet-enhanced.field-sheet-dragging,
 .bottom-sheet.field-sheet-enhanced[data-field-snap] {
   height: min(var(--field-sheet-height), calc(var(--field-sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 0.7rem));

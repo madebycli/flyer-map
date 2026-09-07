@@ -29,6 +29,10 @@ test("replica snapshots and sync status distinguish local persistence from serve
   assert.match(store, /runtime\.sync\.applyMutation\(mutation\)/u);
   assert.match(sync, /allCollectionsAtOrBeyond/u);
   assert.match(sync, /rxdb_refresh_timeout/u);
+  assert.match(sync, /rxdb_request_timeout/u);
+  assert.match(sync, /rxdb_push_confirmation_timeout/u);
+  assert.match(sync, /pushConfirmationTimeoutMs/u);
+  assert.match(sync, /replication\.reSync\(\)/u);
   assert.doesNotMatch(sync, /awaitInSync\(/u);
 });
 

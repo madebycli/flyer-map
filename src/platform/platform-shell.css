@@ -475,6 +475,26 @@
   }
 }
 
+/* The launcher keeps all three rows discoverable on short mobile visual viewports.
+   The sheet still scrolls, but the final Settings row no longer starts below the fold. */
+@media (max-height: 720px) {
+  .platform-menu-grid {
+    gap: 0.55rem;
+    padding-block: 0.1rem 0.25rem;
+  }
+
+  .platform-app-item {
+    gap: 0.28rem;
+    min-height: 4.45rem;
+  }
+
+  .platform-app-icon {
+    width: 3.2rem;
+    height: 3.2rem;
+    font-size: 1.35rem;
+  }
+}
+
 @media (min-width: 700px) {
   .platform-menu-overlay {
     align-items: center;

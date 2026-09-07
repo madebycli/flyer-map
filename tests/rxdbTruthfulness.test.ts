@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { getRxStorageMemory } from "rxdb/plugins/storage-memory";
-import { MissionRxdbSync, type RxdbRemoteSyncEvent } from "../src/data/rxdbMissionSync.ts";
+import { MissionRxdbSync, type RxdbRemoteSyncEvent, type RxdbSyncIssue } from "../src/data/rxdbMissionSync.ts";
 import type { RxdbCollectionName } from "../src/data/rxdbSyncProtocol.ts";
 
 const timestamp = "2026-09-02T10:00:00.000Z";
@@ -51,6 +51,7 @@ class TruthServer {
   seq = 0;
   revision = 3;
   blockTeamPush = false;
+  hangTeamPush = false;
   failedTeamPushes = 0;
   targetStreetPulls = 0;
   readonly documents: Record<RxdbCollectionName, MissionDocument[]>;
@@ -91,6 +92,9 @@ class TruthServer {
       return Response.json({ documents, checkpoint: { seq: this.seq }, campaignRevision: this.revision });
     }
     if (operation === "push") {
+      if (collectionName === "teams" && this.hangTeamPush) {
+        return await new Promise<Response>(() => undefined);
+      }
       if (collectionName === "teams" && this.blockTeamPush) {
         this.failedTeamPushes += 1;
         throw new TypeError("team_network_retry");
@@ -178,6 +182,65 @@ test("an independent sent document cannot globally confirm while another RxDB pu
     server.blockTeamPush = false;
     await waitForCondition(() => teamName(server) === "Team A waiting", 5_000);
     await waitForCondition(() => events.includes("push-idle"));
+    assert.equal(state, "server-confirmed");
+  } finally {
+    await sync.destroy();
+    browser.restore();
+  }
+});
+
+test("a stalled push request leaves waiting state and retries without losing the local mutation", async () => {
+  const browser = installWindow();
+  const campaignId = `campaign_timeout_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+  const server = new TruthServer(campaignId);
+  const events: RxdbRemoteSyncEvent[] = [];
+  const issues: RxdbSyncIssue[] = [];
+  let state: "waiting-server" | "failed" | "server-confirmed" = "server-confirmed";
+  const sync = new MissionRxdbSync({
+    campaignId,
+    storage: getRxStorageMemory(),
+    multiInstance: false,
+    fetchImpl: server.fetch,
+    requestTimeoutMs: 80,
+    pushConfirmationTimeoutMs: 160,
+    onSnapshot: () => undefined,
+    onIssue: (issue) => {
+      issues.push(issue);
+      state = "failed";
+    },
+    onRemoteEvent: (event) => {
+      events.push(event);
+      if (event === "push-pending") state = "waiting-server";
+      if (event === "push-idle") state = "server-confirmed";
+    },
+  });
+  try {
+    await sync.start();
+    await sync.refreshAndWait(1_000);
+    events.length = 0;
+    issues.length = 0;
+
+    server.hangTeamPush = true;
+    await sync.applyMutation({
+      id: "mutation_team_timeout",
+      campaignId,
+      baseRevision: 3,
+      createdAt: "2026-09-02T10:03:00.000Z",
+      type: "team.update",
+      payload: { teamId: "team_a", name: "Team A after timeout", expectedUpdatedAt: timestamp },
+    });
+    sync.flushDebouncedWrites();
+    await waitForCondition(() => events.includes("push-pending"));
+    assert.equal(state, "waiting-server");
+
+    await waitForCondition(() => issues.some((issue) => issue.code === "rxdb_request_timeout"), 1_000);
+    assert.equal(state, "failed", "a request that never settles must not leave the UI in waiting-server indefinitely");
+    assert.equal(events.includes("push-idle"), false, "timeout is not a server acknowledgement");
+
+    server.hangTeamPush = false;
+    sync.refresh();
+    await waitForCondition(() => teamName(server) === "Team A after timeout", 5_000);
+    await waitForCondition(() => events.includes("push-idle"), 5_000);
     assert.equal(state, "server-confirmed");
   } finally {
     await sync.destroy();

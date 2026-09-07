@@ -19,6 +19,8 @@ const PULL_BATCH_SIZE = 100;
 const PUSH_BATCH_SIZE = 20;
 const REFRESH_POLL_INTERVAL_MS = 50;
 const REPLICATION_START_BARRIER_TIMEOUT_MS = 5_000;
+const REQUEST_TIMEOUT_MS = 12_000;
+const PUSH_CONFIRMATION_TIMEOUT_MS = 20_000;
 const FIELD_GROUP_ACTOR_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 const COLLECTION_NAMES = ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const satisfies readonly RxdbCollectionName[];
 
@@ -271,6 +273,8 @@ export class MissionRxdbSync {
   private readonly storage: any;
   private readonly multiInstance: boolean;
   private readonly fetchImpl: typeof fetch;
+  private readonly requestTimeoutMs: number;
+  private readonly pushConfirmationTimeoutMs: number;
   private readonly onSnapshot: (snapshot: CampaignSnapshot) => void;
   private readonly onIssue: (issue: RxdbSyncIssue) => void;
   private readonly onIssueResolved: (collectionName?: RxdbCollectionName) => void;
@@ -301,6 +305,8 @@ export class MissionRxdbSync {
     storage?: any;
     multiInstance?: boolean;
     fetchImpl?: typeof fetch;
+    requestTimeoutMs?: number;
+    pushConfirmationTimeoutMs?: number;
     onSnapshot: (snapshot: CampaignSnapshot) => void;
     onIssue: (issue: RxdbSyncIssue) => void;
     onIssueResolved?: (collectionName?: RxdbCollectionName) => void;
@@ -320,6 +326,8 @@ export class MissionRxdbSync {
     this.storage = input.storage ?? getRxStorageDexie();
     this.multiInstance = input.multiInstance ?? true;
     this.fetchImpl = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.requestTimeoutMs = Math.max(1, input.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
+    this.pushConfirmationTimeoutMs = Math.max(1, input.pushConfirmationTimeoutMs ?? PUSH_CONFIRMATION_TIMEOUT_MS);
     this.onSnapshot = input.onSnapshot;
     this.onIssue = input.onIssue;
     this.onIssueResolved = input.onIssueResolved ?? (() => undefined);
@@ -328,10 +336,29 @@ export class MissionRxdbSync {
     this.persistenceGates.set("teams", new TrailingPersistenceGate());
   }
 
+  private async fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeout = globalThis.setTimeout(() => {
+        controller.abort();
+        reject(new RxdbSyncHttpError(0, "rxdb_request_timeout", "Die Server-Anfrage hat zu lange gedauert und wird erneut versucht."));
+      }, this.requestTimeoutMs);
+    });
+    try {
+      return await Promise.race([
+        this.fetchImpl(input, { ...init, signal: controller.signal }),
+        timeoutPromise,
+      ]);
+    } finally {
+      if (timeout !== null) globalThis.clearTimeout(timeout);
+    }
+  }
+
   private async request<T>(operation: "pull" | "push", collectionName: RxdbCollectionName, body: unknown): Promise<T> {
     let response: Response;
     try {
-      response = await this.fetchImpl(collectionPath(this.campaignId, operation, collectionName), {
+      response = await this.fetchWithTimeout(collectionPath(this.campaignId, operation, collectionName), {
         method: "POST",
         credentials: "same-origin",
         cache: "no-store",
@@ -339,6 +366,7 @@ export class MissionRxdbSync {
         body: JSON.stringify(body),
       });
     } catch (error) {
+      if (error instanceof RxdbSyncHttpError) throw error;
       console.error("[rxdb-sync]", { event: "transport-failure", operation, collectionName, code: "network_error", ...(error instanceof Error ? { errorName: error.name, errorMessage: error.message } : {}) });
       throw new RxdbSyncHttpError(0, "network_error", "Server ist momentan nicht erreichbar.");
     }
@@ -355,12 +383,13 @@ export class MissionRxdbSync {
   private async requestCheckpoint() {
     let response: Response;
     try {
-      response = await this.fetchImpl(checkpointPath(this.campaignId), {
+      response = await this.fetchWithTimeout(checkpointPath(this.campaignId), {
         method: "GET",
         credentials: "same-origin",
         cache: "no-store",
       });
     } catch (error) {
+      if (error instanceof RxdbSyncHttpError) throw error;
       console.error("[rxdb-sync]", { event: "transport-failure", operation: "checkpoint", code: "network_error", ...(error instanceof Error ? { errorName: error.name, errorMessage: error.message } : {}) });
       throw new RxdbSyncHttpError(0, "network_error", "Server ist momentan nicht erreichbar.");
     }
@@ -509,13 +538,27 @@ export class MissionRxdbSync {
         this.onIssue({ kind: "network", collectionName: proof.collectionName, documentId: proof.document.primary, operation: "push", code: "rxdb_replication_missing" });
         continue;
       }
+      const confirmationTimer = globalThis.setTimeout(() => {
+        if (!this.initialized || this.pendingPushProofs.get(proofKey) !== generation) return;
+        this.onIssue({
+          kind: "network",
+          collectionName: proof.collectionName,
+          documentId: proof.document.primary,
+          operation: "push",
+          code: "rxdb_push_confirmation_timeout",
+        });
+        replication.reSync();
+      }, this.pushConfirmationTimeoutMs);
       void replication.awaitDocumentPushed(proof.document)
         .then(() => {
+          globalThis.clearTimeout(confirmationTimer);
           if (this.pendingPushProofs.get(proofKey) !== generation) return;
           this.pendingPushProofs.delete(proofKey);
+          this.onIssueResolved(proof.collectionName);
           if (this.initialized && this.pendingPushProofs.size === 0) this.onRemoteEvent("push-idle");
         })
         .catch((error: unknown) => {
+          globalThis.clearTimeout(confirmationTimer);
           if (this.pendingPushProofs.get(proofKey) !== generation) return;
           this.pendingPushProofs.delete(proofKey);
           const code = error instanceof Error ? error.message : "rxdb_push_confirmation_failed";
