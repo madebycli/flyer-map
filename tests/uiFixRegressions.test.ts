@@ -10,7 +10,6 @@ const joinAccessCss = readFileSync(new URL("../src/team/join-access.css", import
 const fieldSheet = readFileSync(new URL("../src/platform/FieldBottomSheet.tsx", import.meta.url), "utf8");
 const fieldSheetCss = readFileSync(new URL("../src/platform/field-bottom-sheet.css", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src/platform/PlatformShell.tsx", import.meta.url), "utf8");
-const shellCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
 const syncStatus = readFileSync(new URL("../src/sync/SyncStatus.tsx", import.meta.url), "utf8");
 const syncCss = readFileSync(new URL("../src/m5.css", import.meta.url), "utf8");
 
@@ -32,10 +31,11 @@ test("legacy sheets preserve natural content height until the user actually drag
   assert.match(fieldSheetCss, /\.bottom-sheet\.field-sheet-enhanced\[data-field-snap\]/u);
 });
 
-test("launcher remains reachable above a primary hub and opening it closes that hub", () => {
+test("launcher stays hidden for every open primary hub while menu opening closes the current hub", () => {
   assert.match(shell, /const openMenu = \(\) => \{\s*setPrimaryHub\(null\);\s*setMenuOpen\(true\);\s*\}/u);
-  assert.match(shell, /primaryHub !== null \? "is-above-hub"/u);
-  assert.match(shellCss, /\.platform-field-bar\.is-above-hub\s*\{\s*z-index:\s*3450;/u);
+  assert.match(shell, /const overlayOpen = menuOpen \|\| primaryHub !== null/u);
+  assert.match(shell, /launcherAvailable && !overlayOpen \? \(/u);
+  assert.doesNotMatch(shell, /is-above-hub|is-behind-menu/u);
 });
 
 test("one upper sync status owns confirmation while the lower field bar stays clean", () => {
