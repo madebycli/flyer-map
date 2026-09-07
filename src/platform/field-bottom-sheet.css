@@ -15,6 +15,7 @@
   z-index: 3500;
 }
 
+/* One chrome contract for every draggable Field HUD, independent of sheet body height. */
 .field-bottom-sheet,
 .bottom-sheet.field-sheet-enhanced {
   --field-hud-handle-min-height: 1.4rem;
