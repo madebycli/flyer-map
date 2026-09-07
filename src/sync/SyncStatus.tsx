@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import {
+  flushRxdbDrafts,
+  manualRefreshCampaign,
   subscribeCampaignStore,
   syncIssueAffectedLabel,
   type SyncIssue,
   type MutationSyncState,
 } from "../data/campaignStore";
 import { detectLanguage, type Language } from "../i18n";
+
+const WAITING_SERVER_RECOVERY_MS = 8_000;
+const WAITING_SERVER_STALL_MS = 30_000;
 
 function statusLabel(language: Language, state: MutationSyncState, pendingCount: number) {
   if (language === "en") {
@@ -33,12 +38,17 @@ function statusLabel(language: Language, state: MutationSyncState, pendingCount:
   return "Serverbestätigt";
 }
 
+function stalledLabel(language: Language) {
+  return language === "en" ? "Server confirmation timed out, tap to retry" : "Serverbestätigung dauert zu lange, zum Wiederholen tippen";
+}
+
 export function SyncStatus() {
   const [language, setLanguage] = useState<Language>(detectLanguage);
   const [state, setState] = useState<MutationSyncState>("local-saved");
   const [pendingCount, setPendingCount] = useState(0);
   const [issue, setIssue] = useState<SyncIssue | null>(null);
   const [open, setOpen] = useState(false);
+  const [stalled, setStalled] = useState(false);
 
   useEffect(
     () =>
@@ -64,13 +74,37 @@ export function SyncStatus() {
     };
   }, []);
 
-  const label = statusLabel(language, state, pendingCount);
+  useEffect(() => {
+    if (state !== "waiting-server") {
+      setStalled(false);
+      return;
+    }
+
+    setStalled(false);
+    const recoveryTimer = window.setTimeout(() => {
+      flushRxdbDrafts();
+      manualRefreshCampaign();
+    }, WAITING_SERVER_RECOVERY_MS);
+    const stallTimer = window.setTimeout(() => setStalled(true), WAITING_SERVER_STALL_MS);
+    return () => {
+      window.clearTimeout(recoveryTimer);
+      window.clearTimeout(stallTimer);
+    };
+  }, [state, pendingCount]);
+
+  const visibleState: MutationSyncState = stalled && state === "waiting-server" ? "failed" : state;
+  const label = stalled && state === "waiting-server" ? stalledLabel(language) : statusLabel(language, state, pendingCount);
   const serverConfirmed = state === "server-confirmed" && !issue;
+
+  const retryStalledSync = () => {
+    flushRxdbDrafts();
+    manualRefreshCampaign();
+  };
 
   return (
     <div
       className="mutation-sync-status-wrap"
-      aria-live={state === "conflict" || state === "failed" || state === "blocked-auth" ? "assertive" : "polite"}
+      aria-live={visibleState === "conflict" || visibleState === "failed" || visibleState === "blocked-auth" ? "assertive" : "polite"}
     >
       {serverConfirmed ? (
         <div
@@ -83,9 +117,12 @@ export function SyncStatus() {
         </div>
       ) : (
         <button
-          className={`mutation-sync-status is-${state}`}
+          className={`mutation-sync-status is-${visibleState}`}
           type="button"
-          onClick={() => issue && setOpen((visible) => !visible)}
+          onClick={() => {
+            if (issue) setOpen((visible) => !visible);
+            else if (stalled) retryStalledSync();
+          }}
           aria-expanded={issue ? open : undefined}
           aria-label={issue ? `${label}: ${issue.message}` : label}
           title={label}
