@@ -140,20 +140,19 @@
 .bottom-sheet.field-sheet-enhanced.task-sheet {
   --field-hud-sheet-padding-inline: 0.45rem;
   --field-hud-sheet-padding-inline-negative: -0.45rem;
+  --field-hud-handle-min-height: 0.78rem;
+  --field-hud-handle-padding-top: 0.08rem;
+  --field-hud-handle-padding-bottom: 0.05rem;
+  --field-hud-header-padding-top: 0;
+  --field-hud-header-padding-bottom: 0;
 }
 
-/* The Area sheet is intentionally compact. Keep the close hit target at 44px,
-   but do not reserve the generic HUD's larger vertical chrome around it. */
-.bottom-sheet.field-sheet-enhanced.compact-sheet {
-  --field-hud-handle-min-height: 1.05rem;
-  --field-hud-handle-padding-top: 0.22rem;
-  --field-hud-handle-padding-bottom: 0.1rem;
-  --field-hud-header-padding-top: 0.12rem;
-  --field-hud-header-padding-bottom: 0.25rem;
-}
-
-.bottom-sheet.field-sheet-enhanced.compact-sheet .sheet-header {
-  margin-bottom: 0.5rem;
+/* Area and Street detail are map-context HUDs. Keep the 44px close target,
+   but make their chrome as compact as possible so the map remains the focus. */
+.bottom-sheet.field-sheet-enhanced.compact-sheet .sheet-header,
+.bottom-sheet.field-sheet-enhanced.task-sheet .sheet-header {
+  min-height: var(--field-hud-close-size);
+  margin-bottom: 0.3rem;
 }
 
 .bottom-sheet.field-sheet-enhanced.field-sheet-dragging,
