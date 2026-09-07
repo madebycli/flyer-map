@@ -38,11 +38,11 @@ test("all field HUD headers share one geometry contract", async () => {
   assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-header \.icon-button\s*\{[\s\S]*?width: var\(--field-hud-close-size\)[\s\S]*?height: var\(--field-hud-close-size\)/u);
 });
 
-test("compact Area chrome trims whitespace without shrinking the 44px close target", async () => {
+test("compact Area and Street chrome trims whitespace without shrinking the 44px close target", async () => {
   const css = await readFile("src/platform/field-bottom-sheet.css", "utf8");
   assert.match(css, /--field-hud-close-size: 2\.75rem/u);
-  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced\.compact-sheet\s*\{[\s\S]*?--field-hud-handle-min-height: 1\.05rem[\s\S]*?--field-hud-header-padding-top: 0\.12rem[\s\S]*?--field-hud-header-padding-bottom: 0\.25rem/u);
-  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced\.compact-sheet \.sheet-header\s*\{[\s\S]*?margin-bottom: 0\.5rem/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced\.compact-sheet,\s*\.bottom-sheet\.field-sheet-enhanced\.task-sheet\s*\{[\s\S]*?--field-hud-handle-min-height: 0\.78rem[\s\S]*?--field-hud-header-padding-top: 0[\s\S]*?--field-hud-header-padding-bottom: 0/u);
+  assert.match(css, /\.bottom-sheet\.field-sheet-enhanced\.compact-sheet \.sheet-header,\s*\.bottom-sheet\.field-sheet-enhanced\.task-sheet \.sheet-header\s*\{[\s\S]*?min-height: var\(--field-hud-close-size\)[\s\S]*?margin-bottom: 0\.3rem/u);
 });
 
 test("sheet dragging updates the DOM without a React render per pointer move", async () => {
@@ -67,15 +67,16 @@ test("legacy sheet chrome stays opaque and contiguous while content scrolls", as
   assert.match(css, /\.bottom-sheet\.field-sheet-enhanced \.sheet-header\s*\{[\s\S]*?top: var\(--field-hud-handle-min-height\)[\s\S]*?padding: var\(--field-hud-header-padding-top\) var\(--field-hud-header-padding-inline\) var\(--field-hud-header-padding-bottom\)[\s\S]*?background: #fff/u);
 });
 
-test("platform settings and team commands open legacy sheets even after a mode transition", async () => {
-  const [source, shell] = await Promise.all([
+test("platform settings and team commands remain reachable after a mode transition", async () => {
+  const [source, shell, settings] = await Promise.all([
     readFile("src/App.tsx", "utf8"),
     readFile("src/platform/PlatformShell.tsx", "utf8"),
+    readFile("src/settings/SettingsSheet.tsx", "utf8"),
   ]);
   assert.match(shell, /closeOverlays\(\);[\s\S]*?window\.setTimeout\(\(\) => \{[\s\S]*?setAppCommand\(\{ id: nextCommandId, type \}\)/u);
   assert.match(source, /const openLegacySheet = \(nextSheet: "settings" \| "teams" \| "campaign-comments"\)/u);
   assert.match(source, /platformCommand\.type === "open-settings"[\s\S]*?openLegacySheet\("settings"\)/u);
   assert.match(source, /platformCommand\.type === "open-team-management"[\s\S]*?openLegacySheet\("teams"\)/u);
-  assert.match(source, /setSheetCollapsed\(false\)/u);
+  assert.match(settings, /<FieldHub[\s\S]*?title=\{t\(language, "settings"\)\}/u);
   assert.match(source, /if \(mode !== "browse"\) return;/u);
 });
