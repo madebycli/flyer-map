@@ -122,6 +122,13 @@ export async function handleCampaignMutation(
     return errorResponse(422, "mutation_invalid", validation.message);
   }
   const mutation = validation.mutation;
+  if (mutation.type === "task.create" && mutation.payload.taskId.startsWith("task_auto_")) {
+    return errorResponse(
+      422,
+      "auto_street_id_reserved",
+      "Automatische Street-IDs sind ausschließlich serverseitig reserviert.",
+    );
+  }
   if (mutation.type === "team.delete" && access.role !== "admin") {
     return errorResponse(403, "team_delete_forbidden", "Nur Admins dürfen Teams löschen.");
   }
@@ -313,8 +320,8 @@ export async function handleCampaignMutation(
             candidate,
             mutation,
             domainEvent?.fieldSessionId ?? null,
-        )
-      : null;
+          )
+        : null;
     let syncAfter = snapshotValidation.snapshot;
     if (automationExecution && mutation.type === "house.set-status") {
       // The guarded D1 batch applies this parent completion after the direct
