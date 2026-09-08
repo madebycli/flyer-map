@@ -18,6 +18,7 @@ import type { AccessContext } from "./access.ts";
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import {
   loadCampaignSnapshot,
+  hasStreetNetworkSchema,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
 import { handleCampaignMutation } from "./mutationHandler.ts";
@@ -51,6 +52,7 @@ type TeamRow = { id: string; campaign_id: string; name: string; color: string; c
 type AreaRow = { id: string; campaign_id: string; team_id: string; name: string; geometry_json: string; created_at: string; updated_at: string };
 type TaskRow = {
   id: string; campaign_id: string; area_id: string; label: string; geometry_json: string;
+  network_json?: string | null; position_json?: string | null;
   source_json: string | null; area_preparation_generation: string | null;
   status: "open" | "completed" | "later" | "not-deliverable";
   completed_at: string | null; created_at: string; updated_at: string;
@@ -96,6 +98,7 @@ function streetDocument(row: TaskRow): RxdbStreetTaskDocument {
   return {
     id: row.id, campaignId: row.campaign_id, areaId: row.area_id, taskType: "street", label: row.label,
     geometry: parseJson<RxdbStreetTaskDocument["geometry"]>(row.geometry_json), ...(row.source_json ? { source: parseJson<NonNullable<RxdbStreetTaskDocument["source"]>>(row.source_json) } : {}),
+    ...(row.network_json ? { network: parseJson<NonNullable<RxdbStreetTaskDocument["network"]>>(row.network_json) } : {}),
     areaPreparationGeneration: row.area_preparation_generation, status: row.status,
     completedAt: row.completed_at, createdAt: row.created_at, updatedAt: row.updated_at,
   };
@@ -105,6 +108,7 @@ function houseDocument(row: HouseRow): RxdbHouseTaskDocument {
   return {
     id: row.id, campaignId: row.campaign_id, areaId: row.area_id, taskType: "house", label: row.label,
     geometry: parseJson<RxdbHouseTaskDocument["geometry"]>(row.geometry_json), ...(row.source_json ? { source: parseJson<NonNullable<RxdbHouseTaskDocument["source"]>>(row.source_json) } : {}),
+    ...(row.position_json ? { roadPosition: parseJson<NonNullable<RxdbHouseTaskDocument["roadPosition"]>>(row.position_json) } : {}),
     areaPreparationGeneration: row.area_preparation_generation, parentStreetTaskId: row.parent_street_task_id,
     status: row.status, completedAt: row.completed_at, createdAt: row.created_at, updatedAt: row.updated_at,
   };
@@ -139,13 +143,17 @@ async function bootstrapDocuments(
       }
       case "streetTasks": {
         const sql = "SELECT t.id, t.campaign_id, t.area_id, t.label, t.geometry_json, t.source_json, t.area_preparation_generation, t.status, t.completed_at, t.created_at, t.updated_at FROM tasks t JOIN areas a ON a.id = t.area_id AND a.campaign_id = t.campaign_id WHERE t.campaign_id = ?" + (groupTeamId ? " AND a.team_id = ?" : "") + " ORDER BY t.created_at, t.id";
-        const statement = db.prepare(sql);
+        const hasNetwork = await hasStreetNetworkSchema(db);
+        const withNetwork = sql.replace(' FROM tasks t', ', (SELECT network_json FROM street_network_state WHERE task_id=t.id) AS network_json FROM tasks t');
+        const statement = db.prepare(hasNetwork ? withNetwork : sql);
         const result = groupTeamId ? await statement.bind(campaignId, groupTeamId).all<TaskRow>() : await statement.bind(campaignId).all<TaskRow>();
         return result.results.map(streetDocument);
       }
       case "houseTasks": {
         const sql = "SELECT h.id, h.campaign_id, h.area_id, h.parent_street_task_id, h.label, h.geometry_json, h.source_json, h.area_preparation_generation, h.status, h.completed_at, h.created_at, h.updated_at FROM house_tasks h JOIN areas a ON a.id = h.area_id AND a.campaign_id = h.campaign_id WHERE h.campaign_id = ?" + (groupTeamId ? " AND a.team_id = ?" : "") + " ORDER BY h.created_at, h.id";
-        const statement = db.prepare(sql);
+        const hasNetwork = await hasStreetNetworkSchema(db);
+        const withNetwork = sql.replace(' FROM house_tasks h', ', (SELECT position_json FROM house_road_positions WHERE house_id=h.id) AS position_json FROM house_tasks h');
+        const statement = db.prepare(hasNetwork ? withNetwork : sql);
         const result = groupTeamId ? await statement.bind(campaignId, groupTeamId).all<HouseRow>() : await statement.bind(campaignId).all<HouseRow>();
         return result.results.map(houseDocument);
       }

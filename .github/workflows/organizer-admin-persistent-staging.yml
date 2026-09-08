@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/organizer-admin-platform
+      - integration/main-street-runtime
     paths:
       - '.github/workflows/organizer-admin-persistent-staging.yml'
       - 'src/**'
@@ -49,16 +50,31 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.sha')" == "$GITHUB_SHA" ]]
-          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.ref')" == 'feature/organizer-admin-platform' ]]
-          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.draft')" == 'true' ]]
-          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.state')" == 'open' ]]
-          grep -Fq '"main": "./worker/indexFc52.ts"' wrangler.jsonc
+          case "$GITHUB_REF" in
+            refs/heads/feature/organizer-admin-platform)
+              PR_NUMBER=76
+              EXPECTED_ENTRY='./worker/indexFc52.ts'
+              ;;
+            refs/heads/integration/main-street-runtime)
+              PR_NUMBER=84
+              EXPECTED_ENTRY='./worker/indexOrganizer.ts'
+              ;;
+            *) exit 1 ;;
+          esac
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.head.ref')" == "${GITHUB_REF#refs/heads/}" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.draft')" == 'true' ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.state')" == 'open' ]]
+          node -e "const fs=require('node:fs');const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));if(c.main!==process.argv[1])process.exit(1)" "$EXPECTED_ENTRY"
           grep -Fq "$PROD_D1_ID" wrangler.jsonc
           grep -Fq '91714001' wrangler.jsonc
           grep -Fq '91714002' wrangler.jsonc
           grep -Fq '91714003' wrangler.jsonc
-          ! grep -Fq 'nodejs_compat' wrangler.jsonc
+          if [[ "$PR_NUMBER" == 84 ]]; then
+            grep -Fq 'nodejs_compat' wrangler.jsonc
+          else
+            ! grep -Fq 'nodejs_compat' wrangler.jsonc
+          fi
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
@@ -114,6 +130,24 @@ jobs:
           BEFORE="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT (SELECT COUNT(*) FROM organizations) organization_count,(SELECT COUNT(*) FROM organization_accounts) account_count,(SELECT COUNT(*) FROM campaigns WHERE organization_id IS NOT NULL) campaign_count,(SELECT COUNT(*) FROM organization_bootstrap_state) bootstrap_count;")"
           printf '%s' "$BEFORE" > /tmp/persistent-before.json
           jq -e '.[0].results[0] | .organization_count>=0 and .account_count>=0 and .campaign_count>=0 and .bootstrap_count>=0' <<<"$BEFORE" >/dev/null
+
+      - name: Capture sanitized Street schema and job evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIGRATIONS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT name FROM d1_migrations WHERE name IN ('0014_auto_area_task_preparation.sql','0017_rxdb_sync_changes.sql','0018_organization_admin_platform.sql','0019_organization_security_hardening.sql','0020_field_group_recoverable_credentials.sql','0022_street_house_network.sql') ORDER BY name;")"
+          SCHEMA="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT type,name,tbl_name FROM sqlite_master WHERE name IN ('area_task_preparations','street_network_state','house_road_positions','street_network_jobs','street_network_staging','street_network_intents') OR (type='index' AND tbl_name IN ('area_task_preparations','street_network_jobs','street_network_staging','street_network_intents')) ORDER BY type,name;")"
+          PREPARATIONS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT status,COALESCE(last_error_code,'') error_code,COUNT(*) count,MAX(updated_at) latest FROM area_task_preparations GROUP BY status,COALESCE(last_error_code,'') ORDER BY latest DESC;")"
+          JOBS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT phase,COALESCE(error_code,'') error_code,CASE WHEN lease IS NULL THEN 0 ELSE 1 END has_lease,COUNT(*) count,MAX(lease_until) latest_lease_until FROM street_network_jobs GROUP BY phase,COALESCE(error_code,''),CASE WHEN lease IS NULL THEN 0 ELSE 1 END ORDER BY phase,error_code;")"
+          STAGING="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT kind,COUNT(*) count FROM street_network_staging GROUP BY kind ORDER BY kind;")"
+          jq -n \
+            --argjson migrations "$MIGRATIONS" \
+            --argjson schema "$SCHEMA" \
+            --argjson preparations "$PREPARATIONS" \
+            --argjson jobs "$JOBS" \
+            --argjson staging "$STAGING" \
+            '{migrations:$migrations,schema:$schema,preparations:$preparations,jobs:$jobs,staging:$staging}' \
+            > /tmp/street-live-diagnostics.json
 
       - name: Materialize persistent staging config
         shell: bash
@@ -216,4 +250,5 @@ jobs:
             /tmp/persistent-after.json
             /tmp/persistent-staging-safety.json
             /tmp/persistent-staging-url.txt
+            /tmp/street-live-diagnostics.json
           retention-days: 7

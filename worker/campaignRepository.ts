@@ -58,6 +58,8 @@ type TaskRow = {
   label: string;
   geometry_json: string;
   source_json: string | null;
+  network_json?: string | null;
+  position_json?: string | null;
   area_preparation_generation: string | null;
   status: "open" | "completed" | "later" | "not-deliverable";
   completed_at: string | null;
@@ -95,6 +97,8 @@ type HouseTaskRow = {
   label: string;
   geometry_json: string;
   source_json: string | null;
+  network_json?: string | null;
+  position_json?: string | null;
   area_preparation_generation: string | null;
   status: "open" | "completed" | "later" | "not-deliverable";
   completed_at: string | null;
@@ -188,6 +192,7 @@ export async function loadCampaignSnapshot(
     hasCollectionSchema(db),
     hasAreaTaskPreparationSchema(db),
   ]);
+  const hasNetwork = await hasStreetNetworkSchema(db);
   const taskSelect = hasTaskSource
     ? hasPreparation
       ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
@@ -202,7 +207,7 @@ export async function loadCampaignSnapshot(
 
   const housePromise = hasHouses
     ? db
-        .prepare(houseSelect)
+        .prepare(hasNetwork ? houseSelect.replace(' FROM house_tasks WHERE', ', (SELECT position_json FROM house_road_positions WHERE house_id = house_tasks.id) AS position_json FROM house_tasks WHERE') : houseSelect)
         .bind(campaignId)
         .all<HouseTaskRow>()
     : Promise.resolve({ results: [] as HouseTaskRow[] });
@@ -238,7 +243,7 @@ export async function loadCampaignSnapshot(
       )
       .bind(campaignId)
       .all<AreaRow>(),
-    db.prepare(taskSelect).bind(campaignId).all<TaskRow>(),
+    db.prepare(hasNetwork ? taskSelect.replace(' FROM tasks WHERE', ', (SELECT network_json FROM street_network_state WHERE task_id = tasks.id) AS network_json FROM tasks WHERE') : taskSelect).bind(campaignId).all<TaskRow>(),
     housePromise,
   ]);
   const collectionResult = await collectionPromise;
@@ -351,6 +356,8 @@ export async function loadCampaignSnapshot(
         label: task.label,
         geometry: JSON.parse(task.geometry_json),
         ...(task.source_json ? { source: JSON.parse(task.source_json) } : {}),
+        ...(task.network_json ? { network: JSON.parse(task.network_json) } : {}),
+        ...(task.position_json ? { roadPosition: JSON.parse(task.position_json) } : {}),
         areaPreparationGeneration: task.area_preparation_generation ?? null,
         status: task.status,
         completedAt: task.completed_at,
@@ -367,7 +374,9 @@ export async function loadCampaignSnapshot(
               label: task.label,
               geometry: JSON.parse(task.geometry_json),
               ...(task.source_json ? { source: JSON.parse(task.source_json) } : {}),
-              areaPreparationGeneration: task.area_preparation_generation ?? null,
+              ...(task.network_json ? { network: JSON.parse(task.network_json) } : {}),
+        ...(task.position_json ? { roadPosition: JSON.parse(task.position_json) } : {}),
+        areaPreparationGeneration: task.area_preparation_generation ?? null,
               parentStreetTaskId: task.parent_street_task_id,
               status: task.status,
               completedAt: task.completed_at,
@@ -629,4 +638,9 @@ export async function createInitialCampaignState(
   }
 
   return { ok: true, revision: 0 };
+}
+
+export async function hasStreetNetworkSchema(db: D1DatabaseLike) {
+  const result = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'street_network_jobs'").first<{name: string}>();
+  return Boolean(result);
 }

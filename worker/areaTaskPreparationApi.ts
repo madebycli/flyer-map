@@ -1,6 +1,6 @@
 import type { Area } from "../src/domain/campaign.ts";
 import type { AccessContext } from "./access.ts";
-import { loadCampaignSnapshot, type D1DatabaseLike } from "./campaignRepository.ts";
+import { hasStreetNetworkSchema, loadCampaignSnapshot, type D1DatabaseLike } from "./campaignRepository.ts";
 import {
   beginAreaTaskPreparation,
   runAreaTaskPreparation,
@@ -47,6 +47,27 @@ function canStartAreaPreparation(access: AccessContext, area: Area) {
   return access.role === "admin" || (access.role === "team-editor" && access.teamId === area.teamId);
 }
 
+async function hasPreparationPayload(request: Request): Promise<boolean> {
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > 0) return true;
+  if (!request.body) return false;
+  // An incoming empty POST can have a stream. Reject actual bytes, not the
+  // transport representation, and never buffer client geometry or OSM queries.
+  const reader = request.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return false;
+      if (value.byteLength > 0) return true;
+    }
+  } catch {
+    return true;
+  } finally {
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 export async function handleAreaTaskPreparationApi(
   request: Request,
   db: D1DatabaseLike,
@@ -68,11 +89,7 @@ export async function handleAreaTaskPreparationApi(
   if (!canReadArea(access, area)) {
     return error(403, "forbidden", "Diese Area liegt außerhalb deines Zugriffs.");
   }
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (
-    request.method === "POST" &&
-    (request.body !== null || (Number.isFinite(declaredLength) && declaredLength > 0))
-  ) {
+  if (request.method === "POST" && await hasPreparationPayload(request)) {
     return error(
       400,
       "invalid_request",
@@ -81,26 +98,29 @@ export async function handleAreaTaskPreparationApi(
   }
 
   const decision = await shouldStartAreaPreparation(db, route.campaignId, area);
-  if (!decision.schemaAvailable) {
+  if (!decision.schemaAvailable || !await hasStreetNetworkSchema(db)) {
     return error(
       503,
       "area_preparation_schema_unavailable",
-      "Die vorbereitete Migration 0014 ist serverseitig noch nicht verfügbar.",
+      "Die Migrationen für die Straßen- und Hausvorbereitung sind serverseitig noch nicht verfügbar.",
     );
   }
   if (request.method === "GET") return json(decision.state);
   if (!canStartAreaPreparation(access, area)) {
     return error(403, "forbidden", "Nur Admin oder der zuständige Team Editor darf vorbereiten.");
   }
-  if (!decision.shouldStart) {
+  if (!decision.shouldStart && decision.state.status !== "pending") {
     return json(decision.state, { status: decision.state.status === "ready" ? 200 : 202 });
   }
+
+  const leased = await db.prepare('SELECT lease_until FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND lease IS NOT NULL AND lease_until>?').bind(route.campaignId,route.areaId,(options?.now?.()??new Date()).toISOString()).first();
+  if (leased) return json(decision.state,{status:202});
 
   const preparation = await beginAreaTaskPreparation(db, route.campaignId, route.areaId, options);
   if (preparation.outcome === "run") {
     const job = runAreaTaskPreparation(db, preparation.run, options);
     if (context) context.waitUntil(job);
-    else void job;
+    else await job;
   } else if (
     preparation.result.outcome === "failed" &&
     preparation.result.code === "area_preparation_schema_unavailable"
@@ -108,7 +128,7 @@ export async function handleAreaTaskPreparationApi(
     return error(
       503,
       "area_preparation_schema_unavailable",
-      "Die vorbereitete Migration 0014 ist serverseitig noch nicht verfügbar.",
+      "Die Migrationen für die Straßen- und Hausvorbereitung sind serverseitig noch nicht verfügbar.",
     );
   } else if (preparation.result.outcome === "missing") {
     return error(404, "area_not_found", "Area wurde nicht gefunden.");

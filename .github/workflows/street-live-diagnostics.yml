@@ -1,0 +1,74 @@
+name: Street Live Read-only Diagnostics
+
+on:
+  push:
+    branches: [integration/main-street-runtime]
+    paths: ['.github/workflows/street-live-diagnostics.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.ref == 'refs/heads/integration/main-street-runtime'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PERSISTENT_DB_NAME: flyer-map-admin-staging-db
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned diagnostic CLI
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Resolve persistent staging resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          elif [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+          else
+            echo 'Cloudflare account is ambiguous.' >&2
+            exit 1
+          fi
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          PERSISTENT_D1_ID="$(jq -r --arg name "$PERSISTENT_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
+          [[ -n "$PERSISTENT_D1_ID" ]] || { echo 'Persistent Admin Staging D1 missing or ambiguous.' >&2; exit 1; }
+          [[ "$PERSISTENT_D1_ID" != "$PROD_D1_ID" && "$PERSISTENT_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo 'Protected D1 collision.' >&2; exit 1; }
+          echo "PERSISTENT_D1_ID=$PERSISTENT_D1_ID" >> "$GITHUB_ENV"
+
+      - name: Capture sanitized Street schema and job evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIGRATIONS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT name FROM d1_migrations WHERE name IN ('0014_auto_area_task_preparation.sql','0017_rxdb_sync_changes.sql','0018_organization_admin_platform.sql','0019_organization_security_hardening.sql','0020_field_group_recoverable_credentials.sql','0022_street_house_network.sql') ORDER BY name;")"
+          SCHEMA="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT type,name,tbl_name FROM sqlite_master WHERE name IN ('area_task_preparations','street_network_state','house_road_positions','street_network_jobs','street_network_staging','street_network_intents') OR (type='index' AND tbl_name IN ('area_task_preparations','street_network_jobs','street_network_staging','street_network_intents')) ORDER BY type,name;")"
+          PREPARATIONS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT status,COALESCE(last_error_code,'') error_code,COUNT(*) count,MAX(updated_at) latest FROM area_task_preparations GROUP BY status,COALESCE(last_error_code,'') ORDER BY latest DESC;")"
+          JOBS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT phase,COALESCE(error_code,'') error_code,CASE WHEN lease IS NULL THEN 0 ELSE 1 END has_lease,COUNT(*) count,MAX(lease_until) latest_lease_until FROM street_network_jobs GROUP BY phase,COALESCE(error_code,''),CASE WHEN lease IS NULL THEN 0 ELSE 1 END ORDER BY phase,error_code;")"
+          STAGING="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT kind,COUNT(*) count FROM street_network_staging GROUP BY kind ORDER BY kind;")"
+          jq -n \
+            --argjson migrations "$MIGRATIONS" \
+            --argjson schema "$SCHEMA" \
+            --argjson preparations "$PREPARATIONS" \
+            --argjson jobs "$JOBS" \
+            --argjson staging "$STAGING" \
+            '{migrations:$migrations,schema:$schema,preparations:$preparations,jobs:$jobs,staging:$staging}' \
+            > /tmp/street-live-diagnostics.json
+
+      - name: Upload sanitized read-only evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: street-live-readonly-diagnostics
+          path: /tmp/street-live-diagnostics.json
+          retention-days: 7

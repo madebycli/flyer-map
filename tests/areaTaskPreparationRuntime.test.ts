@@ -57,6 +57,8 @@ class SqliteD1 implements D1DatabaseLike {
       "0004_m6_task_source_provenance.sql",
       "0005_m6_house_tasks.sql",
       "0014_auto_area_task_preparation.sql",
+      "0017_rxdb_sync_changes.sql",
+      "0022_street_house_network.sql",
     ]) {
       this.sqlite.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
     }
@@ -213,7 +215,7 @@ test("successful publish keeps worker lifetime open until realtime notify settle
   const notifyStarted = new Promise<void>((resolve) => { notifyStartedResolve = resolve; });
   const notifyGate = new Promise<void>((resolve) => { releaseNotify = resolve; });
   let settled = false;
-  const running = runAreaTaskPreparation(db, begun.run, {
+  const running = prepareAreaTasks(db, campaignId, areaId, {
     ...preparedOptions,
     onCommitted: async () => {
       notifyStartedResolve?.();
@@ -245,7 +247,7 @@ test("feature-cap failure records failed state and publishes no partial automati
   assert.equal(state?.status, "failed");
   assert.equal(state?.lastErrorCode, "area_preparation_too_many_features");
 
-  const retry = await prepareAreaTasks(db, campaignId, areaId, options());
+  const retry = await prepareAreaTasks(db, campaignId, areaId, {...options(),now:()=>new Date(Date.parse(time)+65000)});
   assert.equal(retry.outcome, "ready");
   assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 4);
 });
@@ -263,12 +265,12 @@ test("fresh pending preparation deduplicates before a second upstream request", 
     fetchImpl: async () => {
       fetchCount += 1;
       startedResolve?.();
-      return response;
+      return (await response).clone();
     },
   });
   await started;
   const second = await prepareAreaTasks(db, campaignId, areaId, options());
-  assert.deepEqual(second, { outcome: "no-op", state: "pending" });
+  assert.deepEqual(second, { outcome: "pending" });
   assert.equal(fetchCount, 1);
   release?.();
   assert.equal((await first).outcome, "ready");
@@ -285,7 +287,7 @@ test("geometry changed during OSM fetch makes the old generation stale without a
     ...options(),
     fetchImpl: async () => {
       fetchStartedResolve?.();
-      return waitForResponse;
+      return (await waitForResponse).clone();
     },
   });
   await fetchStarted;
@@ -299,6 +301,26 @@ test("geometry changed during OSM fetch makes the old generation stale without a
   assert.equal(db.sqlite.prepare("SELECT revision FROM campaigns WHERE id = ?").get(campaignId)?.revision, 3);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE campaign_id = ?").get(campaignId)?.count, 1);
 });
+
+for (const headers of [undefined, { "content-length": "0" }]) {
+  test(`preparation accepts an empty transport body (length ${headers ? "zero" : "absent"})`, async () => {
+    const db = new SqliteD1();
+    seed(db);
+    const admin: AccessContext = { grantId: "admin", campaignId, role: "admin", teamId: null, label: null };
+    const queued: Promise<unknown>[] = [];
+    const request = new Request("https://example.test", {
+      method: "POST", body: "", headers,
+    });
+    assert.notEqual(request.body, null);
+    const response = await handleAreaTaskPreparationApi(
+      request, db, { campaignId, areaId }, admin,
+      { waitUntil: (job) => queued.push(job) }, options(),
+    );
+    assert.equal(response.status, 202);
+    assert.equal(queued.length, 1);
+    await Promise.all(queued);
+  });
+}
 
 test("recovery API scopes reads and queues only authorized server-side preparation", async () => {
   const db = new SqliteD1();
@@ -315,7 +337,7 @@ test("recovery API scopes reads and queues only authorized server-side preparati
   const pendingResponse = new Promise<Response>((resolve) => {
     releasePending = () => resolve(osmResponse());
   });
-  const pendingOptions = { ...options(), fetchImpl: async () => pendingResponse };
+  const pendingOptions = { ...options(), fetchImpl: async () => (await pendingResponse).clone() };
 
   const get = await handleAreaTaskPreparationApi(
     new Request("https://example.test/api/campaigns/x/areas/x/preparation"), db, route, viewer, context,
@@ -334,6 +356,11 @@ test("recovery API scopes reads and queues only authorized server-side preparati
     editor,
     context,
   )).status, 400);
+  // A claimed zero length must not bypass validation of actual request bytes.
+  assert.equal((await handleAreaTaskPreparationApi(
+    new Request("https://example.test", { method: "POST", body: " ", headers: { "content-length": "0" } }),
+    db, route, editor, context,
+  )).status, 400);
   assert.equal(queued.length, 0);
 
   const accepted = await handleAreaTaskPreparationApi(
@@ -348,6 +375,7 @@ test("recovery API scopes reads and queues only authorized server-side preparati
   assert.equal(queued.length, 1);
   releasePending?.();
   await Promise.all(queued);
+  await prepareAreaTasks(db,campaignId,areaId,options());
   const ready = await handleAreaTaskPreparationApi(
     new Request("https://example.test", { method: "POST" }), db, route, admin, context,
   );

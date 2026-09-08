@@ -34,6 +34,18 @@ routing_rules:
   - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
+  - id: street-house-network-recovery
+    path: docs/plans/active/032-street-house-network-recovery.md
+    type: plan
+    status: active
+    topics: [streets, houses, coverage, graph, preparation, rxdb]
+    load_when: [Street House Network Recovery, Smart A/B, House propagation]
+  - id: adr-street-house-network
+    path: docs/decisions/ADR-0027-street-house-network.md
+    type: decision
+    status: accepted
+    topics: [streets, houses, coverage, graph, preparation]
+    load_when: [canonical street network, preparation job, network mutation]
   - id: product
     path: docs/product/PRODUCT.md
     type: product
@@ -509,6 +521,15 @@ edges:
   - { from: plan-main-runtime-parity, to: deployment, relation: activates_through }
   - { from: adr-main-runtime-domain-aliases, to: organizations, relation: composes_runtime }
   - { from: adr-main-runtime-domain-aliases, to: data, relation: preserves_shared_identity }
+  - from: street-house-network-recovery
+    to: adr-street-house-network
+    relation: governed_by
+  - from: street-house-network-recovery
+    to: offline-sync
+    relation: constrained_by
+  - from: street-house-network-recovery
+    to: map
+    relation: constrained_by
   - { from: product, to: roadmap, relation: expands_into }
   - { from: ux, to: product, relation: implements_experience }
   - { from: architecture, to: product, relation: implements }
