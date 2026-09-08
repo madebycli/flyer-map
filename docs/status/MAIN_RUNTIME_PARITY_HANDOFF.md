@@ -12,6 +12,8 @@ related: [plan-033-main-runtime-parity-and-domain-aliases, ADR-0028, operations-
 
 - Source `origin/main`: `4d860e8640761c10afdadb62a10ebb59fd43841f`.
 - Arbeitsbranch: `fix/main-runtime-parity`, direkt von diesem Main erstellt.
+- Draft-PR: #80 gegen `main`.
+- Verifizierter Runtime-Head: `1c9e567abb2b37d585af5fc98d649485fbe35410`.
 - Kanonischer Main Entry Point: `worker/indexOrganizer.ts`.
 - Historische Feature- und Staging-Branches wurden nicht portiert oder verändert.
 - PR #79 bleibt ein getrennter pausierter Draft.
@@ -50,7 +52,7 @@ Organization `/me` liefert ohne Session 401. HEAD `/me` liefert 405. Password Lo
 - Dependency Audit: PASS, 0 Schwachstellen.
 - Production Build: PASS.
 - vollständiger lokaler Testlauf: Die fachlichen Tests bestehen; der Unix-Socket-basierte RxDB-Mehrtab-Test kann in dieser Sandbox nicht lauschen. GitHub CI muss den nativen TypeScript-7- und vollständigen Testlauf als verbindliches Gate ausführen.
-- exact-head GitHub CI: PENDING bis zum PR-Head-Lauf.
+- exact Runtime-Head GitHub CI: PASS, Run `34214219630`; Tests, nativer TypeScript-7-Typecheck, Dependency Audit und Production Build grün.
 
 ## Security-Auswirkung
 
@@ -82,5 +84,5 @@ Es wurden keine Production-Migration, kein Production-Deploy und keine Secret-Ro
 | ORGANIZATION-LOGIN-ROUTING | PASS | `/me` 401, HEAD 405, Password Route erkannt |
 | HOST-INDEPENDENT-DATA-ID | PASS | unveränderte Campaign-/Task-ID und ein Change-Feed-Scope |
 | SAME-ORIGIN-WRITE-GUARD | PASS | abweichender Origin 403 |
-| EXACT-HEAD-CI | PENDING | wird auf dem separaten Main-PR geprüft |
+| EXACT-RUNTIME-HEAD-CI | PASS | PR #80, Head `1c9e567a`, CI `34214219630` vollständig grün |
 | PRODUCTION-ACTIVATION | NOT AUTHORIZED | kein Merge, Deploy, D1-Write oder Secret-Wechsel |

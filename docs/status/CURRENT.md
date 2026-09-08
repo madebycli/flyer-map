@@ -19,6 +19,8 @@ Genehmigte Main-Domains sind Aliase desselben Workers und derselben D1. Sie verw
 
 Der Code ist ein Aktivierungskandidat. Production wurde nicht deployed, Production-D1 wurde nicht migriert und Secrets wurden nicht verändert. Vor Merge und Aktivierung müssen die Voraussetzungen in `docs/status/MAIN_RUNTIME_PARITY_HANDOFF.md` vollständig nachgewiesen werden. Main-Merges lösen den Production-Build aus und benötigen deshalb Masters separate Freigabe.
 
+Draft-PR #80 hält diesen Kandidaten getrennt von `main`. Runtime-Head `1c9e567abb2b37d585af5fc98d649485fbe35410` bestand CI Run `34214219630` vollständig.
+
 ## Offene getrennte Arbeit
 
 - Draft-PR #79 hält die Street-/House-Network-Arbeit und bleibt für diesen Main-only-Slice pausiert.

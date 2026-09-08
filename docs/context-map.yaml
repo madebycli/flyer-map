@@ -483,9 +483,9 @@ nodes:
     load_when: [Pickup domain/runtime, Pickup status, Pickup lifecycle, Collection persistence planning, FC5.2 history, FC5.3]
 
   - id: plan-main-runtime-parity
-    path: docs/plans/active/033-main-runtime-parity-and-domain-aliases.md
+    path: docs/plans/completed/033-main-runtime-parity-and-domain-aliases.md
     type: plan
-    status: active
+    status: completed
     topics: [main-runtime, organization, domain-aliases, shared-data, deployment]
     load_when: [Main UI API parity, Organizer login on Main, multiple domains same Campaign]
 

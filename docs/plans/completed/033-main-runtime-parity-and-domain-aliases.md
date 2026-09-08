@@ -1,7 +1,7 @@
 ---
 id: plan-033-main-runtime-parity-and-domain-aliases
 type: plan
-status: active
+status: completed
 last_updated: 2026-09-08
 related: [architecture, security, data, offline-sync, deployment, ADR-0026]
 ---
@@ -55,6 +55,10 @@ Ein Gateway könnte Domains auf UI- und API-Worker verteilen. Das erhöht Bindin
 6. Tests, Typecheck, Dependency Audit und Production Build ausführen.
 7. Dokumentation, Kontextgraph und Handoff aktualisieren.
 8. Separaten Draft-PR gegen `main` erstellen und exact-head CI prüfen.
+
+## Abschluss
+
+Draft-PR #80 wurde direkt gegen `main` erstellt. Der Runtime-Head `1c9e567abb2b37d585af5fc98d649485fbe35410` bestand in CI Run `34214219630` Tests, nativen TypeScript-7-Typecheck, Dependency Audit und Production Build. Production blieb unverändert.
 
 ## Risiken
 
