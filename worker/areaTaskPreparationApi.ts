@@ -47,6 +47,27 @@ function canStartAreaPreparation(access: AccessContext, area: Area) {
   return access.role === "admin" || (access.role === "team-editor" && access.teamId === area.teamId);
 }
 
+async function hasPreparationPayload(request: Request): Promise<boolean> {
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > 0) return true;
+  if (!request.body) return false;
+  // An incoming empty POST can have a stream. Reject actual bytes, not the
+  // transport representation, and never buffer client geometry or OSM queries.
+  const reader = request.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return false;
+      if (value.byteLength > 0) return true;
+    }
+  } catch {
+    return true;
+  } finally {
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 export async function handleAreaTaskPreparationApi(
   request: Request,
   db: D1DatabaseLike,
@@ -68,11 +89,7 @@ export async function handleAreaTaskPreparationApi(
   if (!canReadArea(access, area)) {
     return error(403, "forbidden", "Diese Area liegt außerhalb deines Zugriffs.");
   }
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (
-    request.method === "POST" &&
-    (request.body !== null || (Number.isFinite(declaredLength) && declaredLength > 0))
-  ) {
+  if (request.method === "POST" && await hasPreparationPayload(request)) {
     return error(
       400,
       "invalid_request",

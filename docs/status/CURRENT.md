@@ -19,6 +19,17 @@ Genehmigte Main-Domains sind Aliase desselben Workers und derselben D1. Sie verw
 
 ## Production-Status
 
+Street-Live-Fixkandidat: Ein leerer POST-Body-Stream wurde von `/preparation`
+fälschlich als Client-Payload mit HTTP 400 abgewiesen. Die Prüfung akzeptiert
+jetzt nur tatsächlich leere Streams und verwirft weiterhin jedes Nutzdatenbyte,
+auch bei behauptetem Content-Length 0. Die UI nennt bei Ablehnung den HTTP-Status.
+23 fokussierte Tests und der lokale JS-TypeScript-Check bestehen. Der lokale
+Build-Aufruf wurde wegen abgebrochener Netzwerkfreigabe nicht ausgeführt.
+Masters Live-Meldung (HTTP 400, 25 s, Antworttext in DevTools nicht verfügbar)
+passt zum reproduzierten Fehler, beweist aber noch nicht die gesamte Ursache.
+Deployment und authentifizierte Street-/House-/Sync-Live-Abnahme bleiben offen;
+STREET_ENGINE_LIVE_READY bleibt FALSE.
+
 Der Code ist ein Aktivierungskandidat. Production wurde nicht deployed, Production-D1 wurde nicht migriert und Secrets wurden nicht verändert. Vor Merge und Aktivierung müssen die Voraussetzungen in `docs/status/MAIN_RUNTIME_PARITY_HANDOFF.md` vollständig nachgewiesen werden. Main-Merges lösen den Production-Build aus und benötigen deshalb Masters separate Freigabe.
 
 Draft-PR #80 hält die Main-Komposition getrennt von `main`. Runtime-Head `1c9e567abb2b37d585af5fc98d649485fbe35410` bestand CI Run `34214219630` vollständig. Die Street/House-Integration wird separat getestet; Production bleibt unverändert.

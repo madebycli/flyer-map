@@ -43,6 +43,13 @@ Eine D1-Jobtabelle hält kleine idempotente Vorbereitungsschritte.
 7. PR und `docs/status/STREET_HOUSE_NETWORK_RECOVERY_HANDOFF.md` erstellen.
 
 ## Offene Fragen / Unklarheiten
+- Live-400-Fixkandidat: leere Transport-Streams statt Stream-Existenz prüfen.
+  Regression zuerst mit 400 statt 202 reproduziert, danach 23 fokussierte Tests
+  grün einschließlich Payload-Ablehnung und kanonischer Publikation. Lokaler
+  JS-TypeScript-Check grün; Build-Aufruf durch Netzwerkfreigabe blockiert.
+  Nächster Gate: CI/Staging dieses Kandidaten, danach Masters authentifizierter
+  Vorbereitungslauf mit echten OSM-Daten, Reload und Sync. 25-s-Live-Laufzeit und
+  fehlender Response-Text bleiben ohne konkrete Live-Antwort unaufgeklärt.
 - UNKLAR: Audit nennt andere ID-/Fingerprint-Formeln als PR #75 auf seinem
   angegebenen SHA. Der tatsächlich gelesene Vertrag verwendet SHA-256 über
   `server-prepared-street-v1` plus kanonische Geometrie. Keine blinde Umstellung.

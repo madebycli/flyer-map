@@ -62,7 +62,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     const url=`/api/campaigns/${encodeURIComponent(snapshot.campaign.id)}/areas/${encodeURIComponent(area.id)}/preparation`;
     const read=async(method:'GET'|'POST')=>{
       const response=await fetch(url,{method,credentials:'same-origin',signal:AbortSignal.timeout(25000)});
-      if(!response.ok)throw new Error('Vorbereitung derzeit nicht verfügbar. Bitte später erneut versuchen.');
+      if(!response.ok)throw new Error(`Vorbereitung derzeit nicht verfügbar (HTTP ${response.status}). Bitte später erneut versuchen.`);
       return response.json();
     };
     try{

@@ -302,6 +302,26 @@ test("geometry changed during OSM fetch makes the old generation stale without a
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tasks WHERE campaign_id = ?").get(campaignId)?.count, 1);
 });
 
+for (const headers of [undefined, { "content-length": "0" }]) {
+  test(`preparation accepts an empty transport body (length ${headers ? "zero" : "absent"})`, async () => {
+    const db = new SqliteD1();
+    seed(db);
+    const admin: AccessContext = { grantId: "admin", campaignId, role: "admin", teamId: null, label: null };
+    const queued: Promise<unknown>[] = [];
+    const request = new Request("https://example.test", {
+      method: "POST", body: "", headers,
+    });
+    assert.notEqual(request.body, null);
+    const response = await handleAreaTaskPreparationApi(
+      request, db, { campaignId, areaId }, admin,
+      { waitUntil: (job) => queued.push(job) }, options(),
+    );
+    assert.equal(response.status, 202);
+    assert.equal(queued.length, 1);
+    await Promise.all(queued);
+  });
+}
+
 test("recovery API scopes reads and queues only authorized server-side preparation", async () => {
   const db = new SqliteD1();
   seed(db);
@@ -335,6 +355,11 @@ test("recovery API scopes reads and queues only authorized server-side preparati
     route,
     editor,
     context,
+  )).status, 400);
+  // A claimed zero length must not bypass validation of actual request bytes.
+  assert.equal((await handleAreaTaskPreparationApi(
+    new Request("https://example.test", { method: "POST", body: " ", headers: { "content-length": "0" } }),
+    db, route, editor, context,
   )).status, 400);
   assert.equal(queued.length, 0);
 
