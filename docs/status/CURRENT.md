@@ -19,6 +19,14 @@ Genehmigte Main-Domains sind Aliase desselben Workers und derselben D1. Sie verw
 
 ## Production-Status
 
+Live-Fortschritt nach Deployment `58d30cb`: Master bestätigt POST 202/pending,
+anschließend failed mit `area_preparation_osm_failed`. Die Request-Annahme
+funktioniert jetzt; Ready ist weiterhin nicht erreicht. Ein separater Workflow
+`street-live-diagnostics.yml` liest ausschließlich aggregierte Schema-/Job-
+Fehlerdaten aus der bestehenden Admin-Staging-D1, ohne Deploy oder Migration.
+Der konkrete interne Job-Code muss vor einer weiteren Runtime-Korrektur gelesen
+werden, da der öffentliche OSM-Fehler auch andere Job-Fehler zusammenfasst.
+
 Street-Live-Fixkandidat: Ein leerer POST-Body-Stream wurde von `/preparation`
 fälschlich als Client-Payload mit HTTP 400 abgewiesen. Die Prüfung akzeptiert
 jetzt nur tatsächlich leere Streams und verwirft weiterhin jedes Nutzdatenbyte,

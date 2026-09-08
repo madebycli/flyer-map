@@ -43,6 +43,10 @@ Eine D1-Jobtabelle hält kleine idempotente Vorbereitungsschritte.
 7. PR und `docs/status/STREET_HOUSE_NETWORK_RECOVERY_HANDOFF.md` erstellen.
 
 ## Offene Fragen / Unklarheiten
+- Master bestätigt nach `58d30cb` erstmals POST 202, danach failed mit
+  `area_preparation_osm_failed`. Nächster Schritt: aggregierten internen
+  Job-Fehler über den getrennten Read-only-Diagnoseworkflow lesen. Keine
+  Änderung an Overpass-Quellen, Timeouts oder Retry-Logik ohne diesen Befund.
 - Live-400-Fixkandidat: leere Transport-Streams statt Stream-Existenz prüfen.
   Regression zuerst mit 400 statt 202 reproduziert, danach 23 fokussierte Tests
   grün einschließlich Payload-Ablehnung und kanonischer Publikation. Lokaler
