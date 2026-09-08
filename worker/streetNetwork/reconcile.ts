@@ -1,6 +1,6 @@
-import type { DistributionTask, LineStringGeometry } from "../src/domain/campaign.ts";
+import type { DistributionTask, LineStringGeometry } from "../../src/domain/campaign.ts";
 
-export const AREA_STREET_PREPARATION_ALGORITHM_VERSION = "street-v1";
+export const AREA_STREET_PREPARATION_ALGORITHM_VERSION = "street-network-v3";
 
 export const AUTO_STREET_SERVER_OWNED_FIELDS = [
   "id",
@@ -32,6 +32,7 @@ export type ServerPreparedStreetReconcilePlan =
       outcome: "ready";
       afterTasks: DistributionTask[];
       inserts: DistributionTask[];
+      updates: DistributionTask[];
       deleteIds: string[];
       unchangedIds: string[];
     }
@@ -52,7 +53,7 @@ export function canonicalStreetFragmentGeometryJson(geometry: LineStringGeometry
   return JSON.stringify({ type: "LineString", coordinates: canonicalCoordinates(geometry) });
 }
 
-async function sha256Hex(value: string) {
+export async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -121,6 +122,7 @@ export async function reconcileServerPreparedStreetTasks(input: {
   areaId: string;
   generation: string;
   timestamp: string;
+  preparedTasks?: DistributionTask[];
 }): Promise<ServerPreparedStreetReconcilePlan> {
   const preparedById = new Map<string, DistributionTask>();
   for (const candidate of input.preparedFragments) {
@@ -133,6 +135,8 @@ export async function reconcileServerPreparedStreetTasks(input: {
     });
     if (!preparedById.has(prepared.id)) preparedById.set(prepared.id, prepared);
   }
+
+  for (const task of input.preparedTasks ?? []) preparedById.set(task.id, task);
 
   const existingAutomatic = input.existingTasks.filter(
     (task) => task.areaId === input.areaId && task.areaPreparationGeneration !== null,
@@ -147,16 +151,24 @@ export async function reconcileServerPreparedStreetTasks(input: {
   }
 
   const inserts: DistributionTask[] = [];
+  const updates: DistributionTask[] = [];
   const unchangedIds: string[] = [];
   const reconciledAutomatic: DistributionTask[] = [];
   for (const prepared of preparedById.values()) {
     const existing = existingById.get(prepared.id);
     if (existing) {
-      // Same deterministic identity means the server-owned geometry/source are
-      // semantically unchanged. Keep the exact persisted entity to avoid feed
-      // churn and to preserve label/status/completedAt/createdAt.
-      reconciledAutomatic.push(existing);
-      unchangedIds.push(existing.id);
+      const next: DistributionTask = {
+        ...prepared, label: existing.label, status: existing.status,
+        completedAt: existing.completedAt, createdAt: existing.createdAt,
+        ...(prepared.network ? { network: { ...prepared.network, coverage: existing.network?.coverage ?? [] } } : {}),
+      };
+      if (JSON.stringify({...next, updatedAt: existing.updatedAt}) === JSON.stringify(existing)) {
+        reconciledAutomatic.push(existing);
+        unchangedIds.push(existing.id);
+      } else {
+        reconciledAutomatic.push(next);
+        updates.push(next);
+      }
     } else {
       reconciledAutomatic.push(prepared);
       inserts.push(prepared);
@@ -177,6 +189,7 @@ export async function reconcileServerPreparedStreetTasks(input: {
     outcome: "ready",
     afterTasks: [...unaffected, ...reconciledAutomatic],
     inserts,
+    updates,
     deleteIds,
     unchangedIds: unchangedIds.sort(),
   };

@@ -18,7 +18,7 @@ import {
   reconcileServerPreparedStreetTasks,
   stablePreparedStreetTaskId,
   type PreparedStreetCandidate,
-} from "../worker/serverPreparedStreetReconcile.ts";
+} from "../worker/streetNetwork/reconcile.ts";
 
 const campaignId = "campaign_reconcile";
 const areaId = "area_reconcile";
@@ -114,7 +114,7 @@ test("server/user ownership contract explicitly preserves editable label and wor
   assert.deepEqual(AUTO_STREET_USER_OWNED_FIELDS, ["label", "status", "completedAt", "createdAt"]);
 });
 
-test("unchanged stable auto Street preserves ID, label, status, completedAt, createdAt and generation", async () => {
+test("new generation updates server fields while preserving ID, label, status, completedAt and createdAt", async () => {
   const fragment = candidate(1);
   const created = await firstMaterialization([fragment]);
   const base = created.afterTasks[0];
@@ -137,13 +137,14 @@ test("unchanged stable auto Street preserves ID, label, status, completedAt, cre
     assert.equal(plan.outcome, "ready");
     assert.equal(plan.inserts.length, 0);
     assert.equal(plan.deleteIds.length, 0);
-    assert.deepEqual(plan.afterTasks, [existing]);
+    assert.deepEqual(plan.afterTasks, [{...existing,areaPreparationGeneration:"generation-2",updatedAt:nextTimestamp}]);
+    assert.equal(plan.updates.length,1);
     assert.equal(plan.afterTasks[0].id, base.id);
     assert.equal(plan.afterTasks[0].label, "User renamed label");
     assert.equal(plan.afterTasks[0].status, status);
     assert.equal(plan.afterTasks[0].completedAt, existing.completedAt);
     assert.equal(plan.afterTasks[0].createdAt, timestamp);
-    assert.equal(plan.afterTasks[0].areaPreparationGeneration, "generation-1");
+    assert.equal(plan.afterTasks[0].areaPreparationGeneration, "generation-2");
   }
 });
 
@@ -224,7 +225,7 @@ test("500 identical stable Streets cause zero Street inserts, deletes and feed e
     preparedFragments: fragments,
     campaignId,
     areaId,
-    generation: "generation-2",
+    generation: "generation-1",
     timestamp: nextTimestamp,
   });
   assert.equal(second.outcome, "ready");
@@ -251,7 +252,7 @@ test("changing one of 500 fragments produces exactly one insert, one delete and 
     preparedFragments: changed,
     campaignId,
     areaId,
-    generation: "generation-2",
+    generation: "generation-1",
     timestamp: nextTimestamp,
   });
   assert.equal(second.outcome, "ready");

@@ -43,7 +43,7 @@ export function ProgressSummaryCard({ title, summary, labels }: Props) {
         <span style={{ width: `${percent ?? 0}%` }} />
       </div>
 
-      <dl className="progress-summary-grid">
+      {summary.denominator !== "road-coverage" ? <dl className="progress-summary-grid">
         <div>
           <dt>{labels.completed}</dt>
           <dd>{summary.completed}</dd>
@@ -64,7 +64,7 @@ export function ProgressSummaryCard({ title, summary, labels }: Props) {
           <dt>{labels.notDeliverable}</dt>
           <dd>{summary.notDeliverable}</dd>
         </div>
-      </dl>
+      </dl> : null}
     </section>
   );
 }

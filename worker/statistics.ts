@@ -1,3 +1,5 @@
+import { loadCampaignSnapshot } from './campaignRepository.ts';
+import { summarizePrimaryProgress } from '../src/domain/progressStats.ts';
 import type {
   CampaignStatistics,
   StatisticsArea,
@@ -617,12 +619,17 @@ export async function handleStatisticsApi(
         status: row.status,
       }));
     const campaignAreas = areas;
+    const canonical = await loadCampaignSnapshot(db,route.campaignId);
+    const scopedSummary = (areaIds:Set<string>) => summarizePrimaryProgress(canonical?.tasks.filter(task=>areaIds.has(task.areaId))??[],canonical?.houseTasks?.filter(house=>areaIds.has(house.areaId))??[]);
+    for(const area of areas) area.overall=scopedSummary(new Set([area.areaId]));
+    for(const team of teamRows) team.overall=scopedSummary(new Set(areas.filter(area=>area.teamId===team.teamId).map(area=>area.areaId)));
     const response: CampaignStatistics = {
       schemaVersion: 1,
       scope: { kind: scope.kind, teamId: scope.teamId },
       campaign:
         scope.kind === "campaign"
           ? {
+              overall: scopedSummary(new Set(campaignAreas.map(area=>area.areaId))),
               streets: progressForAreas(campaignAreas, "streets"),
               houses: housesAvailable ? progressForAreas(campaignAreas, "houses") : null,
             }

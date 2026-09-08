@@ -1,3 +1,4 @@
+import { roadSlice } from '../domain/streetNetwork.ts';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
 import type {
@@ -491,9 +492,19 @@ function areasToGeoJson(areas: RenderArea[]): AreaFeatureCollection {
 function streetsToGeoJson(tasks: RenderTask[]): StreetFeatureCollection {
   return {
     type: "FeatureCollection",
-    features: tasks.map((task) => ({
+    features: tasks.flatMap((task) => {
+      if (!task.network) return [{ ...task, renderKey: task.id }];
+      const parts = []; let cursor = 0;
+      for (const range of task.network.coverage) {
+        if (range.from > cursor) parts.push({ ...task, renderKey: `${task.id}:${cursor}`, status: 'open' as const, geometry: roadSlice(task.geometry, cursor, range.from) });
+        parts.push({ ...task, renderKey: `${task.id}:${range.from}`, status: range.status, geometry: roadSlice(task.geometry, range.from, range.to) });
+        cursor = range.to;
+      }
+      if (cursor < task.network.length) parts.push({ ...task, renderKey: `${task.id}:${cursor}`, status: 'open' as const, geometry: roadSlice(task.geometry, cursor, task.network.length) });
+      return parts;
+    }).map((task) => ({
       type: "Feature",
-      id: task.id,
+      id: task.renderKey,
       properties: {
         taskId: task.id,
         areaId: task.areaId,

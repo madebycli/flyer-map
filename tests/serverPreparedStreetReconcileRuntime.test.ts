@@ -57,6 +57,7 @@ class SqliteD1 implements D1DatabaseLike {
       "0005_m6_house_tasks.sql",
       "0014_auto_area_task_preparation.sql",
       "0017_rxdb_sync_changes.sql",
+      "0022_street_house_network.sql",
     ]) {
       this.sqlite.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
     }
@@ -171,7 +172,7 @@ function forceRecompute(db: SqliteD1) {
   ).run(campaignId, areaId);
 }
 
-test("forced same-result recompute keeps stable Street ID with zero D1 Street insert/delete and zero Street feed churn", async () => {
+test("forced recompute keeps stable Street ID and publishes one generation upsert without delete", async () => {
   const db = new SqliteD1();
   const geometry = seed(db);
   const first = await prepareAreaTasks(db, campaignId, areaId, options());
@@ -192,11 +193,11 @@ test("forced same-result recompute keeps stable Street ID with zero D1 Street in
     "SELECT id FROM tasks WHERE campaign_id = ? AND area_preparation_generation IS NOT NULL",
   ).get(campaignId)?.id);
   assert.equal(secondId, firstId);
-  assert.equal(db.taskInserts, 0);
+  assert.equal(db.taskInserts, 1);
   assert.equal(db.taskDeletes, 0);
   assert.equal(db.sqlite.prepare(
     "SELECT COUNT(*) AS count FROM campaign_sync_changes WHERE campaign_id = ? AND collection_name = 'streetTasks' AND seq > ?",
-  ).get(campaignId, firstSeq)?.count, 0);
+  ).get(campaignId, firstSeq)?.count, 1);
   const manual = db.sqlite.prepare(
     "SELECT label, status, area_preparation_generation FROM tasks WHERE id = 'task_manual'",
   ).get() as { label: string; status: string; area_preparation_generation: string | null };
@@ -253,7 +254,7 @@ test("status becoming worked during OSM fetch is caught by the atomic publish gu
   const running = prepareAreaTasks(db, campaignId, areaId, options({
     fetchImpl: async () => {
       startedResolve?.();
-      return response;
+      return (await response).clone();
     },
   }));
   await started;

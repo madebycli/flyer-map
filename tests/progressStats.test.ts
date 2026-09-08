@@ -202,19 +202,19 @@ test("empty progress is unknown instead of pretending to be zero or complete", (
   assert.equal(houses.remaining, 0);
 });
 
-test("campaign progress reconciles exactly with all current street tasks", () => {
+test("campaign progress uses houses as the primary unit", () => {
   const summary = calculateCampaignProgress(snapshotFixture());
-  assert.equal(summary.total, 4);
-  assert.equal(summary.completed, 1);
-  assert.equal(summary.percentCompleted, 25);
-});
-
-test("team street progress includes only tasks owned through that team's areas", () => {
-  const summary = calculateTeamProgress(snapshotFixture(), "team_a");
-  assert.equal(summary.areaCount, 1);
   assert.equal(summary.total, 3);
   assert.equal(summary.completed, 1);
   assert.equal(summary.percentCompleted, (1 / 3) * 100);
+});
+
+test("team primary progress includes only houses owned through that team's areas", () => {
+  const summary = calculateTeamProgress(snapshotFixture(), "team_a");
+  assert.equal(summary.areaCount, 1);
+  assert.equal(summary.total, 2);
+  assert.equal(summary.completed, 1);
+  assert.equal(summary.percentCompleted, 50);
 });
 
 test("team house progress uses the same canonical Area to Team scope but a separate denominator", () => {
@@ -238,7 +238,9 @@ test("area progress keeps team ownership and returns null for unknown areas", ()
   const area = calculateAreaProgress(snapshot, "area_b1");
   assert.equal(area?.teamId, "team_b");
   assert.equal(area?.total, 1);
-  assert.equal(area?.notDeliverable, 1);
+  assert.equal(area?.notDeliverable, 0);
+  assert.equal(area?.later, 1);
+  assert.equal(area?.denominator, "house-tasks");
   assert.equal(area?.percentCompleted, 0);
   assert.equal(calculateAreaProgress(snapshot, "missing"), null);
 });

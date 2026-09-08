@@ -1,3 +1,4 @@
+import { runNetworkPreparationStep } from './streetNetwork/preparation.ts';
 import type {
   Area,
   CampaignSnapshot,
@@ -15,6 +16,7 @@ import { createSmartHouseTaskSnapshot } from "../src/domain/smartHouseTask.ts";
 import { toSmartBuildingCandidate } from "../src/domain/smartCandidates.ts";
 import {
   hasAreaTaskPreparationSchema,
+  hasStreetNetworkSchema,
   loadCampaignSnapshot,
   type D1DatabaseLike,
   type D1PreparedStatement,
@@ -35,7 +37,7 @@ import {
   areaStreetPreparationFingerprint,
   reconcileServerPreparedStreetTasks,
   type PreparedStreetCandidate,
-} from "./serverPreparedStreetReconcile.ts";
+} from "./streetNetwork/reconcile.ts";
 
 export { AREA_STREET_PREPARATION_ALGORITHM_VERSION };
 
@@ -84,6 +86,7 @@ export type AreaPreparationPublicState = {
 };
 
 export type PrepareAreaTasksResult =
+  | { outcome: "pending" }
   | { outcome: "ready"; roadCount: number; houseCount: number; generation: string }
   | { outcome: "no-op"; state: "ready" | "pending" }
   | { outcome: "failed"; code: AreaPreparationFailureCode }
@@ -606,7 +609,7 @@ export async function beginAreaTaskPreparation(
   areaId: string,
   options: AreaTaskPreparationOptions = {},
 ): Promise<BeginAreaTaskPreparationResult> {
-  if (!(await hasAreaTaskPreparationSchema(db))) {
+  if (!(await hasAreaTaskPreparationSchema(db)) || !(await hasStreetNetworkSchema(db)) || !(await hasRxdbSyncSchema(db))) {
     return {
       outcome: "result",
       result: { outcome: "failed", code: "area_preparation_schema_unavailable" },
@@ -622,6 +625,11 @@ export async function beginAreaTaskPreparation(
   const current = await getAreaTaskPreparationState(db, campaignId, areaId);
   if (current?.status === "ready" && current.geometryHash === geometryHash) {
     return { outcome: "result", result: { outcome: "no-op", state: "ready" } };
+  }
+  if ((current?.status === 'pending' || current?.status === 'failed') && current.geometryHash === geometryHash && await hasStreetNetworkSchema(db)) {
+    if (await areaHasStartedAutomaticWork(db,campaignId,areaId)) return {outcome:'result',result:{outcome:'failed',code:'area_preparation_work_started'}};
+    await db.batch([db.prepare("UPDATE area_task_preparations SET status='pending',last_error_code=NULL WHERE campaign_id=? AND area_id=? AND generation=?").bind(campaignId,areaId,current.generation)]);
+    return {outcome:'run',run:{campaignId,areaId,snapshot,area,geometryHash,generation:current.generation,now}};
   }
   if (current && isFreshPending(current, geometryHash, nowDate)) {
     return { outcome: "result", result: { outcome: "no-op", state: "pending" } };
@@ -674,181 +682,20 @@ export async function runAreaTaskPreparation(
   run: AreaTaskPreparationRun,
   options: AreaTaskPreparationOptions = {},
 ): Promise<PrepareAreaTasksResult> {
-  const { campaignId, areaId, snapshot, area, geometryHash, generation, now } = run;
-
-  try {
-    const osm = await fetchOsmFeaturesForArea({
-      geometry: area.geometry,
-      upstreamUrl: options.upstreamUrl,
-      fetchImpl: options.fetchImpl,
-      now: options.now,
-      limits: options.limits,
-    });
-    const prepared = prepareTasksForArea({
-      campaignId,
-      area,
-      generation,
-      roads: osm.roads,
-      buildings: osm.buildings,
-      timestamp: now,
-      randomUUID: options.randomUUID ?? (() => crypto.randomUUID()),
-      maxRoadFragments: options.maxRoadFragments,
-      maxBuildings: options.maxBuildings,
-    });
-    const streetReconcile = await reconcileServerPreparedStreetTasks({
-      existingTasks: snapshot.tasks,
-      preparedFragments: prepared.preparedFragments,
-      campaignId,
-      areaId,
-      generation,
-      timestamp: now,
-    });
-    if (streetReconcile.outcome === "blocked-worked") {
-      throw new PreparationFailure(
-        "area_preparation_work_started",
-        "Bereits bearbeitete automatische Straßen verhindern ein sicheres Reprepare.",
-      );
-    }
-    const roadCount = streetReconcile.afterTasks.filter(
-      (task) => task.areaId === areaId && task.areaPreparationGeneration !== null,
-    ).length;
-    const taskChunks = chunkAreaPreparationRows(streetReconcile.inserts, options.chunkBytes);
-    const taskDeleteChunks = chunkAreaPreparationRows(streetReconcile.deleteIds, options.chunkBytes);
-    const houseChunks = chunkAreaPreparationRows(prepared.houseTasks, options.chunkBytes);
-    if (taskChunks.length + taskDeleteChunks.length + houseChunks.length > AREA_PREPARATION_MAX_INSERT_CHUNKS) {
-      throw new PreparationFailure(
-        "area_preparation_too_many_features",
-        "Die vorbereitete Task-Menge überschreitet die atomare Publish-Grenze.",
-      );
-    }
-    const writeToken = (options.randomUUID ?? (() => crypto.randomUUID()))();
-    const geometryJson = JSON.stringify(area.geometry);
-    const guard = publishGuardBindings({
-      campaignId,
-      areaId,
-      writeToken,
-      generation,
-      geometryHash,
-      geometryJson,
-    });
-    const nextRevision = snapshot.revision + 1;
-    const afterSnapshot: CampaignSnapshot = {
-      ...snapshot,
-      revision: nextRevision,
-      tasks: streetReconcile.afterTasks,
-      houseTasks: [
-        ...(snapshot.houseTasks ?? []).filter((task) =>
-          !(task.areaId === areaId && task.areaPreparationGeneration !== null && task.status === "open"),
-        ),
-        ...prepared.houseTasks,
-      ],
-    };
-    const syncChanges = (await hasRxdbSyncSchema(db))
-      ? rxdbChangeFeedEntriesForSnapshotDelta(snapshot, afterSnapshot)
-      : [];
-    const statements: D1PreparedStatement[] = [
-      db
-        .prepare(
-          `UPDATE campaigns
-           SET revision = ?, write_token = ?, updated_at = ?
-           WHERE id = ? AND revision = ?
-             AND ${stateGuardSql()}
-             AND EXISTS (
-               SELECT 1 FROM areas WHERE id = ? AND campaign_id = ? AND geometry_json = ?
-             )
-             AND ${automaticWorkGuardSql()}`,
-        )
-        .bind(
-          nextRevision,
-          writeToken,
-          now,
-          campaignId,
-          snapshot.revision,
-          campaignId,
-          areaId,
-          generation,
-          geometryHash,
-          areaId,
-          campaignId,
-          geometryJson,
-          campaignId,
-          areaId,
-          campaignId,
-          areaId,
-        ),
-      db
-        .prepare(
-          `DELETE FROM house_tasks
-           WHERE campaign_id = ? AND area_id = ?
-             AND area_preparation_generation IS NOT NULL AND status = 'open'
-             AND ${publishGuardSql()}`,
-        )
-        .bind(campaignId, areaId, ...guard),
-      ...taskDeleteChunks.map((chunk) => tasksDeleteStatement(db, chunk, campaignId, areaId, guard)),
-      ...taskChunks.map((chunk) => tasksInsertStatement(db, chunk, guard)),
-      ...houseChunks.map((chunk) => houseTasksInsertStatement(db, chunk, guard)),
-      db
-        .prepare(
-          `UPDATE area_task_preparations
-           SET status = 'ready', road_count = ?, house_count = ?, source_timestamp = ?,
-               ready_at = ?, failed_at = NULL, last_error_code = NULL, updated_at = ?
-           WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ?
-             AND status = 'pending' AND ${publishGuardSql()}`,
-        )
-        .bind(
-          roadCount,
-          prepared.houseTasks.length,
-          osm.sourceTimestamp,
-          now,
-          now,
-          campaignId,
-          areaId,
-          generation,
-          geometryHash,
-          ...guard,
-        ),
-    ];
-    if (syncChanges.length > 0) {
-      statements.push(
-        ...rxdbChangeFeedStatements(db, campaignId, writeToken, now, syncChanges),
-      );
-    }
-    const results = await db.batch(statements);
-    if ((results[0]?.meta?.changes ?? 0) !== 1) {
-      const workStarted = await areaHasStartedAutomaticWork(db, campaignId, areaId);
-      const code: AreaPreparationFailureCode = workStarted
-        ? "area_preparation_work_started"
-        : "area_preparation_stale";
-      await markPreparationFailed(db, {
-        campaignId,
-        areaId,
-        generation,
-        geometryHash,
-        code,
-        now,
-      });
-      return workStarted
-        ? { outcome: "failed", code }
-        : { outcome: "stale", code: "area_preparation_stale" };
-    }
-    try {
-      await options.onCommitted?.();
-    } catch {
-      // The D1 commit and RxDB change feed are already durable here. Realtime
-      // notification is best-effort, but it must stay inside this waitUntil-owned
-      // promise so the Worker is not allowed to terminate it early.
-    }
-    return {
-      outcome: "ready",
-      roadCount,
-      houseCount: prepared.houseTasks.length,
-      generation,
-    };
-  } catch (error) {
-    const code = failureCode(error);
-    await markPreparationFailed(db, { campaignId, areaId, generation, geometryHash, code, now });
-    return { outcome: "failed", code };
+  if (!await hasStreetNetworkSchema(db)) return {outcome:'failed',code:'area_preparation_schema_unavailable'};
+  const result = await runNetworkPreparationStep(db,run,options);
+  if(result.outcome==='ready') {
+    const state=await getAreaTaskPreparationState(db,run.campaignId,run.areaId);
+    return {outcome:'ready',roadCount:state?.roadCount??0,houseCount:state?.houseCount??0,generation:run.generation};
   }
+  if(result.outcome==='failed') {
+    const code: AreaPreparationFailureCode = result.code.includes('budget') ? 'area_preparation_too_many_features'
+      : result.code.includes('worked') || result.code === 'area_preparation_work_started' ? (await areaHasStartedAutomaticWork(db,run.campaignId,run.areaId) ? 'area_preparation_work_started' : 'area_preparation_stale')
+      : result.code.includes('stale') ? 'area_preparation_stale' : 'area_preparation_osm_failed';
+    await markPreparationFailed(db,{campaignId:run.campaignId,areaId:run.areaId,generation:run.generation,geometryHash:run.geometryHash,code,now:new Date().toISOString()});
+    return code==='area_preparation_stale'?{outcome:'stale',code}:{outcome:'failed',code};
+  }
+  return {outcome:'pending'};
 }
 
 /** Starts and, when claimed, completes a server-owned Area preparation job. */
@@ -859,9 +706,13 @@ export async function prepareAreaTasks(
   options: AreaTaskPreparationOptions = {},
 ): Promise<PrepareAreaTasksResult> {
   const started = await beginAreaTaskPreparation(db, campaignId, areaId, options);
-  return started.outcome === "run"
-    ? runAreaTaskPreparation(db, started.run, options)
-    : started.result;
+  if (started.outcome !== 'run') return started.result;
+  // Explicit local/test convenience; HTTP handlers execute exactly one step.
+  for(let step=0;step<1024;step++) {
+    const result=await runAreaTaskPreparation(db,started.run,options);
+    if(result.outcome!=='pending')return result;
+  }
+  return {outcome:'pending'};
 }
 
 export async function areaHasStartedAutomaticWork(
@@ -888,7 +739,9 @@ export async function areaHasStartedAutomaticWork(
       .bind(campaignId, areaId)
       .first<{ id: string }>(),
   ]);
-  return Boolean(task || house);
+  if (task || house) return true;
+  if (!await hasStreetNetworkSchema(db)) return false;
+  return Boolean(await db.prepare("SELECT task_id FROM street_network_state JOIN tasks ON tasks.id=task_id WHERE campaign_id=? AND area_id=? AND json_array_length(network_json,'$.coverage')>0 LIMIT 1").bind(campaignId,areaId).first());
 }
 
 /** Helps the recovery endpoint decide whether it should queue a new job. */

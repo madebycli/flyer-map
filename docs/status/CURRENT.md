@@ -7,6 +7,16 @@ last_updated: 2026-09-05
 
 # Current Project State
 
+## Street/House Network Recovery, laufende Integration
+
+Aktuelle Recovery-Basis ist main `4d860e8640761c10afdadb62a10ebb59fd43841f`.
+Plan 032 und ADR-0027 führen Network-Coverage, House-Zuordnung und D1-Jobs
+auf `feature/street-house-network-recovery` zusammen. Die folgenden
+Organizer/Admin-Abschnitte enthalten historische Übergabemarker.
+Die Recovery ist noch nicht abgenommen; CI, Staging und Browser-Evidenz
+stehen im neuen Handoff. Production bleibt unverändert.
+SYNC-CURSOR-001 und die Admin-Audit-Findings bleiben separate Release-Blocker.
+
 ## Aktive isolierte Linie: Organizer/Admin Platform
 
 Plan 030 wird ausschließlich auf `feature/organizer-admin-platform` gegen `mission-rxdb-sync` entwickelt. Draft-PR #76 bleibt Draft und ungemergt. PR #74/#75 bleiben getrennt; `mission-release-2026-09-02-manual` bleibt unangetastet. Kein Production-Deploy und keine Production-D1-Migration ohne separate ausdrückliche Freigabe.

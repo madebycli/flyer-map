@@ -1,3 +1,4 @@
+import { handleNetworkIntent } from './streetNetwork/api.ts';
 import {
   campaignExists,
   getCampaignRevision,
@@ -1105,6 +1106,13 @@ export default {
           );
         }
       }
+    }
+
+    const networkRoute = url.pathname.match(/^\/api\/campaigns\/([A-Za-z0-9._:-]+)\/network$/);
+    if (networkRoute && db) {
+      const auth = await requireAccess(db, request, networkRoute[1]);
+      if (!auth.ok) return auth.response;
+      return handleNetworkIntent(request, db, networkRoute[1], auth.access, () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, networkRoute[1]));
     }
 
     const preparationRoute = areaTaskPreparationRoute(url.pathname);
