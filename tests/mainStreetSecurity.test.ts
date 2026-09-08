@@ -64,10 +64,10 @@ test("Street network rejects manipulated Area and Street ids, reused intent id a
   assert.equal(first.status, 200, await first.clone().text());
   const reused = await handleNetworkIntent(request({ ...intent, status: "later" }), db, "campaign_n", admin);
   assert.equal(reused.status, 409);
-  assert.equal(((await reused.json()) as { error: { code: string } }).error.code, "intent_id_reused");
+  assert.equal(((await reused.json()) as { code: string }).code, "intent_id_reused");
 });
 
-test("House mutation rejects a manipulated House id and stale revision", async () => {
+test("House mutation rejects a manipulated House id and stale entity revision", async () => {
   const db = await prepared();
   const snapshot = (await loadCampaignSnapshot(db, "campaign_n"))!;
   const house = snapshot.houseTasks![0];
@@ -88,9 +88,10 @@ test("House mutation rejects a manipulated House id and stale revision", async (
     baseRevision: Math.max(0, snapshot.revision - 1),
     createdAt: "2026-09-08T12:01:00.000Z",
     type: "house.set-status",
-    payload: { taskId: house.id, status: "completed", completedAt: "2026-09-08T12:01:00.000Z", expectedUpdatedAt: house.updatedAt },
+    payload: { taskId: house.id, status: "completed", completedAt: "2026-09-08T12:01:00.000Z", expectedUpdatedAt: "2026-01-01T00:00:00.000Z" },
   }), db, "campaign_n", admin);
   assert.equal(stale.status, 409);
+  assert.equal(((await stale.json()) as { error: { code: string } }).error.code, "mutation_conflict");
 });
 
 test("Viewer RxDB push is denied and the old snapshot writer stays retired", async () => {
