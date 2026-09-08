@@ -52,12 +52,12 @@ test("Area create can flow into authoritative server Street/House preparation an
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM street_network_streets WHERE campaign_id = 'campaign_n'").get()?.count, 1);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM street_network_houses WHERE campaign_id = 'campaign_n'").get()?.count, 3);
 
-  const streetPull = await handleRxdbPull(db, "campaign_n", "tasks", access, new URLSearchParams());
+  const streetPull = await handleRxdbPull(db, "campaign_n", "tasks", access, { batchSize: 100 });
   assert.equal(streetPull.status, 200);
   const streetBody = await streetPull.json() as { documents: Array<{ id: string }> };
   assert.equal(streetBody.documents.some((document) => document.id === snapshot.tasks[0].id), true);
 
-  const housePull = await handleRxdbPull(db, "campaign_n", "houseTasks", access, new URLSearchParams());
+  const housePull = await handleRxdbPull(db, "campaign_n", "houseTasks", access, { batchSize: 100 });
   assert.equal(housePull.status, 200);
   const houseBody = await housePull.json() as { documents: Array<{ id: string }> };
   assert.equal(houseBody.documents.length, 3);
