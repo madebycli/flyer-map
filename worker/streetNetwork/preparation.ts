@@ -13,6 +13,14 @@ const DEFAULT_OVERPASS_URLS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ] as const;
 const MAX_TRANSIENT_OVERPASS_ATTEMPTS = 3;
+function isTransientOverpassCode(code:string) {
+  return code==='overpass_rate_limited'||code==='overpass_timeout'||code==='overpass_transport_error'||/^overpass_http_5\d\d$/.test(code);
+}
+function normalizeOverpassError(error:unknown,timedOut:boolean) {
+  if(timedOut)return new Error('overpass_timeout');
+  if(error instanceof Error && /^(?:overpass_|osm_normalization_)/.test(error.message))return error;
+  return new Error('overpass_transport_error');
+}
 export function preparationTiles(area: Area): [number,number,number,number][] {
   const points=area.geometry.coordinates.flat();
   const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
@@ -33,28 +41,25 @@ function checkedOverpassUrl(url:string) {
 }
 async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTaskPreparationOptions,date?:string) {
   const urls=(options.upstreamUrl ? [options.upstreamUrl] : [...DEFAULT_OVERPASS_URLS]).map(checkedOverpassUrl);
-  const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),options.limits?.timeoutMs ?? 18000);
   const started=performance.now();
-  try {
-    const query=`[out:json][timeout:15]${date?`[date:\"${date}\"]`:''};way[\"${kind==='roads'?'highway':'building'}\"](${bbox.join(',')});out body geom;`;
-    let lastError:Error|undefined;
-    for(let index=0;index<urls.length;index++) {
+  const query=`[out:json][timeout:15]${date?`[date:\"${date}\"]`:''};way[\"${kind==='roads'?'highway':'building'}\"](${bbox.join(',')});out body geom;`;
+  let lastError:Error|undefined;
+  for(let index=0;index<urls.length;index++) {
+    const controller=new AbortController();let timedOut=false;
+    const timeout=setTimeout(()=>{timedOut=true;controller.abort();},options.limits?.timeoutMs ?? 18000);
+    try {
       const response=await (options.fetchImpl ?? fetch)(urls[index],{method:'POST',body:new URLSearchParams({data:query}),signal:controller.signal});
       if(!response.ok) {
         const code=response.status===429?'overpass_rate_limited':`overpass_http_${response.status}`;
-        const retryable=response.status===429 || response.status>=500;
-        if(!options.upstreamUrl && retryable && index<urls.length-1) {
-          try{await response.body?.cancel();}catch{/* ignore failed cleanup before failover */}
-          lastError=new Error(code);
-          continue;
-        }
+        try{await response.body?.cancel();}catch{/* ignore failed cleanup before retry/failover */}
         throw new Error(code);
       }
       const reader=response.body?.getReader(); if(!reader) throw new Error('overpass_partial_failure');
       const chunks:Uint8Array[]=[];let bytes=0;
       while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>(options.limits?.maxUpstreamBytes??4000000)){await reader.cancel();throw new Error('overpass_response_budget');}chunks.push(part.value);}
       const buffer=new Uint8Array(bytes);let offset=0;for(const chunk of chunks){buffer.set(chunk,offset);offset+=chunk.length;}
-      const payload=JSON.parse(new TextDecoder().decode(buffer));
+      let payload:any;
+      try{payload=JSON.parse(new TextDecoder().decode(buffer));}catch{throw new Error('overpass_partial_failure');}
       if(payload.remark || !Array.isArray(payload.elements)) throw new Error('overpass_partial_failure');
       const features:(RoadInput|Building)[]=[];
       for(const way of payload.elements){
@@ -73,9 +78,13 @@ async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTask
       const sourceTimestamp=payload.osm3s?.timestamp_osm_base;
       if(sourceTimestamp && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(sourceTimestamp))throw new Error('osm_normalization_timestamp');
       return {features,bytes,fetchMs:performance.now()-started,sourceTimestamp};
-    }
-    throw lastError ?? new Error('network_preparation_failure');
-  } finally {clearTimeout(timeout);}
+    } catch(error) {
+      const normalized=normalizeOverpassError(error,timedOut);
+      if(!options.upstreamUrl && isTransientOverpassCode(normalized.message) && index<urls.length-1){lastError=normalized;continue;}
+      throw normalized;
+    } finally {clearTimeout(timeout);}
+  }
+  throw lastError ?? new Error('overpass_transport_error');
 }
 async function staged<T>(db:D1DatabaseLike,run:AreaTaskPreparationRun,kind:string):Promise<T[]> {
   const rows=await db.prepare('SELECT payload_json FROM street_network_staging WHERE campaign_id=? AND area_id=? AND generation=? AND kind=? ORDER BY chunk_key').bind(run.campaignId,run.areaId,run.generation,kind).all<{payload_json:string}>();
@@ -147,12 +156,12 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
       metrics.publishMs=performance.now()-begin;phase='ready';
       try{await options.onCommitted?.();}catch{/* durable feed remains authoritative */}
     }
-    await db.batch([db.prepare(`UPDATE street_network_jobs SET phase=?,cursor=?,lease=NULL,lease_until=NULL,error_code=NULL,metrics_json=? WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?`).bind(phase,cursor,JSON.stringify(metrics),...ownership)]);
+    await db.batch([db.prepare(`UPDATE street_network_jobs SET phase=?,cursor=?,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=? WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?`).bind(phase,cursor,JSON.stringify(metrics),...ownership)]);
     return phase==='ready'?{outcome:'ready' as const}:{outcome:'pending' as const};
   } catch(error) {
     const code=error instanceof Error && /^[a-z][a-z0-9_]+$/.test(error.message)?error.message:'network_preparation_failure';
     const nextAttempts=job.attempts+1;
-    const retryable=code==='overpass_rate_limited'||/^overpass_http_5\d\d$/.test(code);
+    const retryable=isTransientOverpassCode(code);
     metrics.retries=(metrics.retries??0)+1;
     await db.batch([db.prepare(`UPDATE street_network_jobs SET lease=NULL,lease_until=?,attempts=attempts+1,error_code=?,metrics_json=? WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?`).bind(new Date(Date.parse(now)+Math.min(60000,1000*2**Math.min(job.attempts,6))).toISOString(),code,JSON.stringify(metrics),...ownership)]);
     return retryable && nextAttempts<MAX_TRANSIENT_OVERPASS_ATTEMPTS ? {outcome:'pending' as const} : {outcome:'failed' as const,code};
