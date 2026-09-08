@@ -85,7 +85,7 @@ export async function handleAreaTaskPreparationApi(
     return error(
       503,
       "area_preparation_schema_unavailable",
-      "Die vorbereitete Migration 0014 ist serverseitig noch nicht verfügbar.",
+      "Die Migrationen für die Straßen- und Hausvorbereitung sind serverseitig noch nicht verfügbar.",
     );
   }
   if (request.method === "GET") return json(decision.state);
@@ -103,7 +103,7 @@ export async function handleAreaTaskPreparationApi(
   if (preparation.outcome === "run") {
     const job = runAreaTaskPreparation(db, preparation.run, options);
     if (context) context.waitUntil(job);
-    else void job;
+    else await job;
   } else if (
     preparation.result.outcome === "failed" &&
     preparation.result.code === "area_preparation_schema_unavailable"
@@ -111,7 +111,7 @@ export async function handleAreaTaskPreparationApi(
     return error(
       503,
       "area_preparation_schema_unavailable",
-      "Die vorbereitete Migration 0014 ist serverseitig noch nicht verfügbar.",
+      "Die Migrationen für die Straßen- und Hausvorbereitung sind serverseitig noch nicht verfügbar.",
     );
   } else if (preparation.result.outcome === "missing") {
     return error(404, "area_not_found", "Area wurde nicht gefunden.");

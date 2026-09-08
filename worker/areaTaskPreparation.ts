@@ -22,20 +22,15 @@ import {
   type D1PreparedStatement,
 } from "./campaignRepository.ts";
 import {
-  fetchOsmFeaturesForArea,
-  OsmFeaturesForAreaError,
   type FetchLike,
   type OsmFeaturesForAreaLimits,
 } from "./offlineMap.ts";
 import {
   hasRxdbSyncSchema,
-  rxdbChangeFeedEntriesForSnapshotDelta,
-  rxdbChangeFeedStatements,
 } from "./rxdbChangeFeed.ts";
 import {
   AREA_STREET_PREPARATION_ALGORITHM_VERSION,
   areaStreetPreparationFingerprint,
-  reconcileServerPreparedStreetTasks,
   type PreparedStreetCandidate,
 } from "./streetNetwork/reconcile.ts";
 
@@ -379,60 +374,6 @@ export function chunkAreaPreparationRows<T>(rows: T[], maxBytes = AREA_PREPARATI
   return chunks;
 }
 
-function stateGuardSql() {
-  return `EXISTS (
-    SELECT 1 FROM area_task_preparations
-    WHERE campaign_id = ? AND area_id = ? AND generation = ? AND geometry_hash = ? AND status = 'pending'
-  )`;
-}
-
-function automaticWorkGuardSql() {
-  return `NOT EXISTS (
-      SELECT 1 FROM tasks
-      WHERE campaign_id = ? AND area_id = ?
-        AND area_preparation_generation IS NOT NULL AND status <> 'open'
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM house_tasks
-      WHERE campaign_id = ? AND area_id = ?
-        AND area_preparation_generation IS NOT NULL AND status <> 'open'
-    )`;
-}
-
-function publishGuardSql() {
-  return `EXISTS (SELECT 1 FROM campaigns WHERE id = ? AND write_token = ?)
-    AND ${stateGuardSql()}
-    AND EXISTS (
-      SELECT 1 FROM areas WHERE id = ? AND campaign_id = ? AND geometry_json = ?
-    )
-    AND ${automaticWorkGuardSql()}`;
-}
-
-function publishGuardBindings(input: {
-  campaignId: string;
-  areaId: string;
-  writeToken: string;
-  generation: string;
-  geometryHash: string;
-  geometryJson: string;
-}) {
-  return [
-    input.campaignId,
-    input.writeToken,
-    input.campaignId,
-    input.areaId,
-    input.generation,
-    input.geometryHash,
-    input.areaId,
-    input.campaignId,
-    input.geometryJson,
-    input.campaignId,
-    input.areaId,
-    input.campaignId,
-    input.areaId,
-  ];
-}
-
 async function markPreparationFailed(
   db: D1DatabaseLike,
   input: {
@@ -507,95 +448,6 @@ function upsertPendingStatement(
       input.now,
       input.freshPendingCutoff,
     );
-}
-
-function tasksInsertStatement(
-  db: D1DatabaseLike,
-  rows: DistributionTask[],
-  guard: ReturnType<typeof publishGuardBindings>,
-) {
-  return db
-    .prepare(
-      `INSERT INTO tasks (
-         id, campaign_id, area_id, task_type, label, geometry_json, source_json,
-         area_preparation_generation, status, completed_at, created_at, updated_at
-       )
-       SELECT
-         json_extract(value, '$.id'),
-         json_extract(value, '$.campaignId'),
-         json_extract(value, '$.areaId'),
-         'street',
-         json_extract(value, '$.label'),
-         json_extract(value, '$.geometry'),
-         json_extract(value, '$.source'),
-         json_extract(value, '$.areaPreparationGeneration'),
-         'open', NULL,
-         json_extract(value, '$.createdAt'),
-         json_extract(value, '$.updatedAt')
-       FROM json_each(?)
-       WHERE ${publishGuardSql()}`,
-    )
-    .bind(JSON.stringify(rows), ...guard);
-}
-
-function tasksDeleteStatement(
-  db: D1DatabaseLike,
-  ids: string[],
-  campaignId: string,
-  areaId: string,
-  guard: ReturnType<typeof publishGuardBindings>,
-) {
-  return db
-    .prepare(
-      `DELETE FROM tasks
-       WHERE campaign_id = ? AND area_id = ?
-         AND id IN (SELECT value FROM json_each(?))
-         AND area_preparation_generation IS NOT NULL AND status = 'open'
-         AND ${publishGuardSql()}`,
-    )
-    .bind(campaignId, areaId, JSON.stringify(ids), ...guard);
-}
-
-function houseTasksInsertStatement(
-  db: D1DatabaseLike,
-  rows: HouseTask[],
-  guard: ReturnType<typeof publishGuardBindings>,
-) {
-  return db
-    .prepare(
-      `INSERT INTO house_tasks (
-         id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
-         area_preparation_generation, status, completed_at, created_at, updated_at
-       )
-       SELECT
-         json_extract(value, '$.id'),
-         json_extract(value, '$.campaignId'),
-         json_extract(value, '$.areaId'),
-         NULL,
-         json_extract(value, '$.label'),
-         json_extract(value, '$.geometry'),
-         json_extract(value, '$.source'),
-         json_extract(value, '$.areaPreparationGeneration'),
-         'open', NULL,
-         json_extract(value, '$.createdAt'),
-         json_extract(value, '$.updatedAt')
-       FROM json_each(?)
-       WHERE ${publishGuardSql()}`,
-    )
-    .bind(JSON.stringify(rows), ...guard);
-}
-
-function failureCode(error: unknown): AreaPreparationFailureCode {
-  if (error instanceof PreparationFailure) return error.code;
-  if (error instanceof OsmFeaturesForAreaError) {
-    switch (error.code) {
-      case "too_large": return "area_preparation_too_large";
-      case "timeout": return "area_preparation_osm_timeout";
-      case "invalid": return "area_preparation_osm_invalid";
-      default: return "area_preparation_osm_failed";
-    }
-  }
-  return "area_preparation_osm_failed";
 }
 
 /**

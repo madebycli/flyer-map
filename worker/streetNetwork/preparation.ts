@@ -1,10 +1,9 @@
 import type { Area, DistributionTask, HouseTask, LngLat, PolygonGeometry } from '../../src/domain/campaign.ts';
 import type { AreaTaskPreparationRun, AreaTaskPreparationOptions } from '../areaTaskPreparation.ts';
 import { loadCampaignSnapshot, type D1DatabaseLike } from '../campaignRepository.ts';
-import { buildRoadNetwork, associateHouses, interiorPoint, clipNetworkLines, type RoadInput } from './geometry.ts';
+import { buildRoadNetwork, associateHouses, interiorPoint, polygonOwnsPoint, type RoadInput } from './geometry.ts';
 import { sha256Hex, reconcileServerPreparedStreetTasks, canonicalStreetFragmentGeometryJson } from './reconcile.ts';
 import { jsonChunks, persistNetworkSnapshot } from './persistence.ts';
-import { pointInOrOnPolygon } from '../../src/domain/areaTaskPreparation.ts';
 
 type Job = { generation:string;phase:string;cursor:number;lease:string|null;lease_until:string|null;attempts:number;metrics_json:string;geometry_json:string };
 type Building = { osmId:number;tags:Record<string,string>;geometry:PolygonGeometry };
@@ -85,12 +84,14 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
     if(phase==='roads'||phase==='buildings') {
       const result=await fetchTile(tiles[cursor],phase,options,metrics.sourceTimestamp);
       metrics.requests=(metrics.requests??0)+1;metrics.bytes=(metrics.bytes??0)+result.bytes;metrics.fetchMs=(metrics.fetchMs??0)+result.fetchMs;metrics.sourceTimestamp??=result.sourceTimestamp;
-      if(metrics.bytes>64000000)throw new Error('overpass_aggregate_budget');
+      if(metrics.bytes>16000000)throw new Error('overpass_aggregate_budget');
       await save(phase,String(cursor).padStart(6,'0'),result.features);
       if(++cursor>=tiles.length){phase=phase==='roads'?'graph':'link';cursor=0;}
     } else if(phase==='graph') {
       const begin=performance.now();
-      const tasks=await buildRoadNetwork({roads:await staged<RoadInput>(db,run,'roads'),area:run.area.geometry,campaignId,areaId,generation,timestamp:now});
+      const roads=await staged<RoadInput>(db,run,'roads');
+      if(roads.length>20000)throw new Error('graph_source_budget');
+      const tasks=await buildRoadNetwork({roads,area:run.area.geometry,campaignId,areaId,generation,timestamp:now});
       if(tasks.length>(options.maxRoadFragments??20000))throw new Error('graph_build_budget');
       await save('edges','all',tasks);metrics.graphMs=performance.now()-begin;phase='buildings';cursor=0;
     } else if(phase==='link') {
@@ -99,10 +100,10 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
       const byId=new Map<number,Building>();
       for(const building of buildings){const prior=byId.get(building.osmId);if(prior && JSON.stringify(prior)!==JSON.stringify(building))throw new Error('house_dedupe_conflict');byId.set(building.osmId,building);}
       const ordered=[...byId.values()].sort((a,b)=>a.osmId-b.osmId);
-      if(ordered.length>(options.maxBuildings??50000))throw new Error('house_assignment_budget');
+      if(ordered.length>(options.maxBuildings??10000))throw new Error('house_assignment_budget');
       const houses:HouseTask[]=[];const addresses=new Map<string,string>();
       for(const building of ordered.slice(cursor,cursor+250)) {
-        const point=interiorPoint(building.geometry);if(!pointInOrOnPolygon(point,run.area.geometry))continue;
+        const point=interiorPoint(building.geometry);if(!polygonOwnsPoint(run.area.geometry,point))continue;
         const id=`task_house_auto_${await sha256Hex(JSON.stringify({campaignId,areaId,osmId:building.osmId}))}`;
         houses.push({id,campaignId,areaId,taskType:'house',label:[building.tags['addr:street'],building.tags['addr:housenumber']].filter(Boolean).join(' ')||'Haus',geometry:building.geometry,source:{dataset:'OpenStreetMap',objectType:'way',objectIds:[building.osmId]},areaPreparationGeneration:generation,parentStreetTaskId:null,status:'open',completedAt:null,createdAt:now,updatedAt:now});
         if(building.tags['addr:street'])addresses.set(id,building.tags['addr:street']);

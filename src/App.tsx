@@ -1575,7 +1575,7 @@ export default function App({
             </>
           ) : null}
 
-          {networkWorkspace.areaActions(selectedArea, canEditSelectedArea)}
+          {networkWorkspace.areaActions(selectedArea, canEditSelectedArea, canChangeTaskStatusInArea(selectedArea))}
 
           {selectedAreaHouseTasks.length > 0 ? (
             <div className="context-task-list">

@@ -25,6 +25,10 @@ function checkedPolygon(polygon: PolygonGeometry) {
   if (!IsValidOp.isValid(geometry)) throw new Error('input_validation_polygon');
   return geometry;
 }
+/** Boundary-inclusive ownership respects inner rings as well as the outer ring. */
+export function polygonOwnsPoint(polygon: PolygonGeometry, point: LngLat): boolean {
+  return !OverlayOp.intersection(checkedPolygon(polygon), reader.read({type:'Point', coordinates:point})).isEmpty();
+}
 export function clipNetworkLines(input: LinearInput, area: PolygonGeometry): LineStringGeometry[] {
   const polygon = checkedPolygon(area);
   const result: LineStringGeometry[] = [];

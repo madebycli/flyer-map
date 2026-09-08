@@ -1,4 +1,4 @@
-import { useEffect,useMemo,useState } from 'react';
+import { useEffect,useMemo,useRef,useState } from 'react';
 import type { AccessInfo } from '../data/campaignApi.ts';
 import type { Area,CampaignSnapshot,DistributionTask,LngLat,TaskStatus } from '../domain/campaign.ts';
 import { RoadIndex,networkRoutes,networkProgress,applyNetworkCoverage,type NetworkRoute,type RoadSnap } from '../domain/streetNetwork.ts';
@@ -10,7 +10,9 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   const [routes,setRoutes]=useState<NetworkRoute[]>([]),[selected,setSelected]=useState<number|null>(null),[message,setMessage]=useState('');
   const [choices,setChoices]=useState<RoadSnap[]>([]),[pending,setPending]=useState<Awaited<ReturnType<typeof queuedNetworkIntents>>>([]);
   const [preparing,setPreparing]=useState<string|null>(null);
+  const preparationEpoch=useRef(0);
   const scope=[snapshot.campaign.id,access?.role,access?.teamId,access?.groupId??''].join(':');
+  useEffect(()=>{setAreaId(null);setPending([]);setPreparing(null);return()=>{preparationEpoch.current++;};},[scope]);
   const tasks=useMemo(()=>snapshot.tasks.filter(task=>task.areaId===areaId&&task.network),[snapshot.tasks,areaId]);
   const index=useMemo(()=>new RoadIndex(tasks),[tasks]);
   useEffect(()=>{
@@ -41,7 +43,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   };
   const commit=async(status:TaskStatus)=>{
     if(!start||!end||selected===null||!areaId)return;
-    await queue({id:`network_${crypto.randomUUID()}`,areaId,generation:start.task.areaPreparationGeneration!,start:{point:start.point,taskId:start.task.id},end:{point:end.point,taskId:end.task.id},selectedPath:routes[selected].ranges.map(range=>range.taskId),status});
+    try{await queue({id:`network_${crypto.randomUUID()}`,areaId,generation:start.task.areaPreparationGeneration!,start:{point:start.point,taskId:start.task.id},end:{point:end.point,taskId:end.task.id},selectedPath:routes[selected].ranges.map(range=>range.taskId),status});}catch{setMessage('Änderung konnte auf diesem Gerät nicht gespeichert werden. Bitte erneut versuchen.');return;}
     setStart(null);setEnd(null);setRoutes([]);setSelected(null);
   };
   const whole=(task:DistributionTask)=>{
@@ -54,17 +56,29 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     try{const found=networkRoutes(localTasks,a,b);setRoutes(found);const choice=found.findIndex(route=>route.ranges.length===1&&route.ranges[0].taskId===task.id);setSelected(choice<0?null:choice);setMessage('Nur diesen Straßenabschnitt markieren. Prüfe die Vorschau.');}catch{setMessage('Bitte A/B innerhalb dieses Abschnitts wählen.');}
   };
   const prepare=async(area:Area)=>{
-    if(preparing)return;setPreparing(area.id);setMessage('Straßen und Häuser werden vorbereitet …');
+    if(preparing)return;
+    const epoch=++preparationEpoch.current;
+    setPreparing(area.id);setMessage('Straßen und Häuser werden vorbereitet …');
+    const url=`/api/campaigns/${encodeURIComponent(snapshot.campaign.id)}/areas/${encodeURIComponent(area.id)}/preparation`;
+    const read=async(method:'GET'|'POST')=>{
+      const response=await fetch(url,{method,credentials:'same-origin',signal:AbortSignal.timeout(25000)});
+      if(!response.ok)throw new Error('Vorbereitung derzeit nicht verfügbar. Bitte später erneut versuchen.');
+      return response.json();
+    };
     try{
-      for(let step=0;step<1100;step++){
-        const response=await fetch(`/api/campaigns/${encodeURIComponent(snapshot.campaign.id)}/areas/${encodeURIComponent(area.id)}/preparation`,{method:'POST',credentials:'same-origin'});
-        const state=await response.json();
-        if(!response.ok)throw new Error('Vorbereitung derzeit nicht verfügbar. Bitte später erneut versuchen.');
-        if(state.status==='ready'){await refresh();setMessage('Straßen und Häuser sind bereit.');return;}
+      // Only an explicit user action resumes a failed job. Polling must expose failures.
+      let state=await read('POST');
+      for(let step=0;step<1100&&epoch===preparationEpoch.current;step++){
+        if(state.status==='ready'){await refresh();if(epoch===preparationEpoch.current)setMessage('Straßen und Häuser sind bereit.');return;}
         if(state.status==='failed')throw new Error('Vorbereitung unterbrochen. Erneut versuchen setzt die Arbeit fort.');
         await new Promise(resolve=>window.setTimeout(resolve,2000));
+        if(epoch!==preparationEpoch.current)return;
+        state=await read('GET');
+        if(state.status==='pending')state=await read('POST');
       }
-    }catch(error){setMessage(error instanceof Error?error.message:'Vorbereitung fehlgeschlagen.');}finally{setPreparing(null);}
+      if(epoch===preparationEpoch.current)setMessage('Vorbereitung pausiert. Erneut versuchen setzt die Arbeit fort.');
+    }catch(error){if(epoch===preparationEpoch.current)setMessage(error instanceof Error?error.message:'Vorbereitung fehlgeschlagen.');}
+    finally{if(epoch===preparationEpoch.current)setPreparing(null);}
   };
   const optimistic=useMemo(()=>{
     let result=snapshot;
@@ -88,11 +102,11 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     <div className="mode-actions"><button className="button secondary" onClick={reset}>A/B neu wählen</button><button className="button secondary" onClick={()=>setAreaId(null)}>Schließen</button></div>
     {pending.map(item=><p key={item.key}>{item.blocked?'Änderung braucht eine neue Auswahl.':'Änderung vorgemerkt.'} <button onClick={()=>void discardNetworkIntent(item.key).then(async()=>setPending(await queuedNetworkIntents(scope)))}>Verwerfen</button></p>)}
   </section>:null;
-  const areaActions=(area:Area,editable:boolean)=>{
+  const areaActions=(area:Area,editable:boolean,canMark:boolean)=>{
     const roads=optimistic.tasks.filter(task=>task.areaId===area.id),houses=(optimistic.houseTasks??[]).filter(house=>house.areaId===area.id);
     const progress=networkProgress(roads,houses);
     return <div><p>{Math.round(progress.percent)} % erledigt{houses.length?` · ${houses.filter(house=>house.status==='completed').length} von ${houses.length} Häusern`:''}</p>
-      {editable?<button className="button primary full-width" disabled={Boolean(preparing)} onClick={()=>roads.some(task=>task.network)?open(area.id):void prepare(area)}>{preparing===area.id?'Vorbereitung läuft …':roads.some(task=>task.network)?'Straßen bearbeiten':'Straßen und Häuser vorbereiten'}</button>:null}
+      {(roads.some(task=>task.network)?canMark:editable)?<button className="button primary full-width" disabled={Boolean(preparing)} onClick={()=>roads.some(task=>task.network)?open(area.id):void prepare(area)}>{preparing===area.id?'Vorbereitung läuft …':roads.some(task=>task.network)?'Straßen bearbeiten':'Straßen und Häuser vorbereiten'}</button>:null}
       {!areaId&&message?<p role="status">{message}</p>:null}</div>;
   };
   return {optimistic,active:Boolean(areaId),panel,areaActions,whole,mapProps:{smartRoads:tasks.map(task=>({sourceId:task.id,osmId:task.source?.objectIds[0]??0,name:task.label,ref:null,highway:'residential',geometry:task.geometry})),smartSelectedSourceIds:[],smartStartAnchor:start?{sourceId:start.task.id,snapped:start.point,segmentIndex:0,segmentT:0,distanceMeters:start.distance}:null,smartEndAnchor:end?{sourceId:end.task.id,snapped:end.point,segmentIndex:0,segmentT:0,distanceMeters:end.distance}:null,smartPreviewGeometry:activeRoute?.geometry??null,smartStreetColor:'#16a34a',onSmartStreetPoint:onPoint}};

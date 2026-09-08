@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildRoadNetwork, clipNetworkLines, associateHouses } from '../worker/streetNetwork/geometry.ts';
+import { buildRoadNetwork, clipNetworkLines, associateHouses, polygonOwnsPoint, eligibleRoad } from '../worker/streetNetwork/geometry.ts';
 import { RoadIndex, networkRoutes, setCoverage, applyNetworkCoverage, networkProgress } from '../src/domain/streetNetwork.ts';
 import type { HouseTask, PolygonGeometry } from '../src/domain/campaign.ts';
 
@@ -59,4 +59,30 @@ test('1000 and 5000 house corpus uses spatial candidates with reproducible assig
     assert.equal(linked.filter((h)=>h.parentStreetTaskId).length,count);
     t.diagnostic(JSON.stringify({houses:count,roads:tasks.length,graphMs,houseLinkMs:performance.now()-linkBegin,totalMs:performance.now()-begin}));
   }
+});
+
+test('polygon holes exclude houses and split road coverage; outer and inner boundaries remain owned',()=>{
+  const polygon:PolygonGeometry={...area,coordinates:[...area.coordinates,[[13.04,51.04],[13.04,51.06],[13.06,51.06],[13.06,51.04],[13.04,51.04]]]};
+  assert.equal(polygonOwnsPoint(polygon,[13.05,51.05]),false);
+  assert.equal(polygonOwnsPoint(polygon,[13.04,51.05]),true);
+  assert.equal(polygonOwnsPoint(polygon,[13,51.05]),true);
+  assert.equal(polygonOwnsPoint(polygon,[12.99,51.05]),false);
+  assert.equal(clipNetworkLines({type:'LineString',coordinates:[[13,51.05],[13.1,51.05]]},polygon).length,2);
+});
+test('roundabout offers explicit alternative routes and duplicate tile roads do not duplicate tasks',async()=>{
+  const ring={osmId:5,tags:{highway:'residential',junction:'roundabout'},geometry:{type:'LineString' as const,coordinates:[[13.02,51.02],[13.03,51.02],[13.03,51.03],[13.02,51.03],[13.02,51.02]] as [number,number][]}};
+  const tasks=await buildRoadNetwork({...base,roads:[ring,ring]});
+  assert.equal(tasks.length,2);
+  const index=new RoadIndex(tasks);
+  const routes=networkRoutes(tasks,index.candidates([13.025,51.02])[0],index.candidates([13.025,51.03])[0]);
+  assert.equal(routes.length,2);
+  assert.notDeepEqual(routes[0].geometry,routes[1].geometry);
+});
+test('private/service exclusions and unconnected grade crossings do not create false routes',async()=>{
+  assert.equal(eligibleRoad({highway:'service',service:'driveway'}),false);
+  assert.equal(eligibleRoad({highway:'residential',access:'private'}),false);
+  assert.equal(eligibleRoad({highway:'service',foot:'yes'}),true);
+  const tasks=await buildRoadNetwork({...base,roads:[roads[0],{...roads[1],tags:{...roads[1].tags,layer:'1'}}]});
+  const index=new RoadIndex(tasks);
+  assert.equal(networkRoutes(tasks,index.candidates([13.015,51.0125])[0],index.candidates([13.03,51.015])[0]).length,0);
 });

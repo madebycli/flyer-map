@@ -2,6 +2,7 @@ import type { AccessContext } from '../access.ts';
 import { loadCampaignSnapshot, hasStreetNetworkSchema, type D1DatabaseLike } from '../campaignRepository.ts';
 import { RoadIndex, snapNetworkPoint, networkRoutes, applyNetworkCoverage } from '../../src/domain/streetNetwork.ts';
 import type { LngLat, TaskStatus } from '../../src/domain/campaign.ts';
+import { networkEvents } from './events.ts';
 import { persistNetworkSnapshot } from './persistence.ts';
 
 export type NetworkIntent = { id: string; areaId: string; generation: string; start: { point: LngLat; taskId: string }; end: { point: LngLat; taskId: string }; selectedPath: string[]; status: TaskStatus };
@@ -43,7 +44,8 @@ export async function handleNetworkIntent(request: Request, db: D1DatabaseLike, 
       if (!route) return response(409,'network_route_changed');
       const timestamp = new Date().toISOString();
       const delta = applyNetworkCoverage(before.tasks,before.houseTasks ?? [],route.ranges,intent.status,timestamp);
-      const persisted = await persistNetworkSnapshot(db,before,{...before,...delta},{areaId:area.id,generation:intent.generation,preparing:false,timestamp,intent:{id:intent.id,fingerprint}});
+      const events=await networkEvents(db,before,{...before,...delta},access,intent.id,route.ranges[0].taskId,timestamp);
+      const persisted = await persistNetworkSnapshot(db,before,{...before,...delta},{areaId:area.id,generation:intent.generation,preparing:false,timestamp,events,intent:{id:intent.id,fingerprint}});
       if (persisted.committed) { try { await notify?.(); } catch { /* durable feed can be pulled without invalidation */ } return response(200,'applied',persisted); }
     } catch (error) {
       if (error instanceof Error && /^(network_|invalid_|coverage_)/.test(error.message)) return response(409,error.message);

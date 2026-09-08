@@ -18,7 +18,7 @@ export function flushNetworkIntents(scope:string,onApplied:()=>Promise<unknown>)
   const operation=(async()=>{
     for(const item of await queuedNetworkIntents(scope)) {
       if(item.blocked)continue;
-      const response=await fetch(`/api/campaigns/${encodeURIComponent(item.campaignId)}/network`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(item.intent)});
+      const response=await fetch(`/api/campaigns/${encodeURIComponent(item.campaignId)}/network`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(item.intent),signal:AbortSignal.timeout(25000)});
       if(response.ok){await discardNetworkIntent(item.key);await onApplied();continue;}
       if(response.status>=400 && response.status<500 && response.status!==429) {
         const body=await response.json().catch(()=>({}));
