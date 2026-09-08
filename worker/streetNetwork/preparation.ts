@@ -22,7 +22,7 @@ export function preparationTiles(area: Area): [number,number,number,number][] {
   return tiles;
 }
 async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTaskPreparationOptions,date?:string) {
-  const url=options.upstreamUrl ?? 'https://overpass-api.de/api/interpreter';
+  const url=options.upstreamUrl ?? 'https://overpass.private.coffee/api/interpreter';
   const parsed=new URL(url);
   if(parsed.protocol!=='https:' && !(parsed.protocol==='http:' && ['localhost','127.0.0.1'].includes(parsed.hostname))) throw new Error('overpass_invalid_upstream');
   const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),options.limits?.timeoutMs ?? 18000);
