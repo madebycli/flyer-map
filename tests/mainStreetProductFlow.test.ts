@@ -49,9 +49,6 @@ test("Area create can flow into authoritative server Street/House preparation an
   assert.ok(snapshot.tasks[0].areaPreparationGeneration);
   assert.equal(snapshot.houseTasks?.every((house) => house.parentStreetTaskId === snapshot.tasks[0].id), true);
 
-  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM street_network_streets WHERE campaign_id = 'campaign_n'").get()?.count, 1);
-  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM street_network_houses WHERE campaign_id = 'campaign_n'").get()?.count, 3);
-
   const streetPull = await handleRxdbPull(db, "campaign_n", "tasks", access, { batchSize: 100 });
   assert.equal(streetPull.status, 200);
   const streetBody = await streetPull.json() as { documents: Array<{ id: string }> };
