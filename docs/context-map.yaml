@@ -482,6 +482,20 @@ nodes:
     topics: [collection, pickup, status, address, edit, archive, assignment, comments, statistics]
     load_when: [Pickup domain/runtime, Pickup status, Pickup lifecycle, Collection persistence planning, FC5.2 history, FC5.3]
 
+  - id: plan-main-runtime-parity
+    path: docs/plans/active/033-main-runtime-parity-and-domain-aliases.md
+    type: plan
+    status: active
+    topics: [main-runtime, organization, domain-aliases, shared-data, deployment]
+    load_when: [Main UI API parity, Organizer login on Main, multiple domains same Campaign]
+
+  - id: adr-main-runtime-domain-aliases
+    path: docs/decisions/ADR-0028-main-runtime-and-domain-aliases.md
+    type: decision
+    status: accepted
+    topics: [worker-composition, same-origin, domain-aliases, shared-d1]
+    load_when: [Main Worker entry point, custom domains, domain identity, shared data plane]
+
   - id: prompts
     path: docs/prompts/NEW_AGENT.md
     type: onboarding
@@ -490,6 +504,11 @@ nodes:
     load_when: [generic fresh AI session]
 
 edges:
+  - { from: plan-main-runtime-parity, to: adr-main-runtime-domain-aliases, relation: governed_by }
+  - { from: plan-main-runtime-parity, to: security, relation: constrained_by }
+  - { from: plan-main-runtime-parity, to: deployment, relation: activates_through }
+  - { from: adr-main-runtime-domain-aliases, to: organizations, relation: composes_runtime }
+  - { from: adr-main-runtime-domain-aliases, to: data, relation: preserves_shared_identity }
   - { from: product, to: roadmap, relation: expands_into }
   - { from: ux, to: product, relation: implements_experience }
   - { from: architecture, to: product, relation: implements }

@@ -66,7 +66,9 @@ The Worker owns:
 - schema, geometry and ownership validation;
 - optimistic revision conflict handling;
 - D1 persistence;
-- future organization-scoped authorization when that architecture is implemented.
+- organization-scoped authorization through the full Main Worker composition.
+
+The canonical Main candidate entry is `worker/indexOrganizer.ts`. It wraps the existing Field, Collection, Pickup and RxDB chain, so UI and same-origin API capabilities ship in one artifact. Approved domains are aliases of this Worker and its single canonical D1; browser sessions remain origin-local.
 
 A Campaign id is a selector only, never a credential.
 
@@ -103,7 +105,7 @@ Roles:
 - Team Editor scoped to one Team;
 - Viewer.
 
-This model is the current Campaign authorization baseline, not the final multi-organization model. Future organization membership, multiple organization administrators and an Admin panel are planned separately and must preserve server-side scope enforcement.
+Legacy Campaign grants remain supported. Organization-owned Campaigns additionally resolve server-side account sessions and Organization memberships through ADR-0026. Hostnames never participate in tenant, Campaign or Task identity.
 
 See `docs/architecture/SECURITY.md` and `docs/architecture/ORGANIZATIONS.md`.
 

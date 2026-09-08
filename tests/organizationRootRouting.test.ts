@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import publicWorker from "../worker/indexFc52.ts";
+import publicWorker from "../worker/indexOrganizer.ts";
 import { redirectBareRootToOrganizationLogin } from "../worker/indexOrganizer.ts";
 
 test("bare Organizer Worker root redirects to central login", () => {
@@ -41,20 +41,20 @@ test("Wrangler sends API and exact root requests through the Worker before stati
   const config = JSON.parse(await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
   assert.deepEqual(config.assets?.run_worker_first, ["/api/*", "/"]);
 
-  assert.equal(config.main, "./worker/indexFc52.ts");
+  assert.equal(config.main, "./worker/indexOrganizer.ts");
   assert.equal(
     config.d1_databases?.find((entry: { binding?: string }) => entry.binding === "DB")?.database_id,
     "0113e775-1e43-4d96-8b97-51fdeec7355b",
   );
   assert.deepEqual(
     (config.ratelimits ?? []).map((entry: { namespace_id?: string }) => String(entry.namespace_id)),
-    ["91714001", "91714002", "91714003"],
+    ["91714001", "91714002", "91714003", "91714004"],
   );
   assert.equal(
     (config.ratelimits ?? []).some((entry: { name?: string }) => entry.name === "ORGANIZATION_LOGIN_LIMITER"),
-    false,
+    true,
   );
-  assert.equal((config.compatibility_flags ?? []).includes("nodejs_compat"), false);
+  assert.equal((config.compatibility_flags ?? []).includes("nodejs_compat"), true);
 });
 
 test("public Worker preserves root SPA assets while API requests never fall through to assets", async () => {
@@ -80,11 +80,39 @@ test("public Worker preserves root SPA assets while API requests never fall thro
   assert.deepEqual(fetched, ["https://flyer.test/?campaign=campaign_a"]);
 
   const publicRoot = await publicWorker.fetch(new Request("https://flyer.test/"), env);
-  assert.equal(publicRoot.status, 200);
-  assert.equal(await publicRoot.text(), "spa-shell");
-  assert.equal(fetched.length, 2);
+  assert.equal(publicRoot.status, 302);
+  assert.equal(publicRoot.headers.get("location"), "https://flyer.test/login");
+  assert.equal(fetched.length, 1);
 
   const unknownApi = await publicWorker.fetch(new Request("https://flyer.test/api/unknown"), env);
   assert.equal(unknownApi.ok, false);
-  assert.equal(fetched.length, 2);
+  assert.equal(fetched.length, 1);
+});
+
+test("Main runtime contract exposes composed capabilities without binding or secret details", async () => {
+  const response = await publicWorker.fetch(new Request("https://one.flyer.test/api/runtime"), {
+    RUNTIME_ENVIRONMENT: "main",
+    CF_VERSION_METADATA: { id: "version-test" },
+  } as never);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    version: "version-test",
+    environment: "main",
+    capabilities: {
+      organizationAuth: true,
+      organizationSecurity: true,
+      campaignRuntime: true,
+      rxdbSync: true,
+      collection: true,
+      fieldGroups: true,
+      statistics: true,
+    },
+  });
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+
+  const head = await publicWorker.fetch(new Request("https://two.flyer.test/api/runtime", { method: "HEAD" }), {} as never);
+  assert.equal(head.status, 405);
+  assert.equal(await head.text(), "");
 });

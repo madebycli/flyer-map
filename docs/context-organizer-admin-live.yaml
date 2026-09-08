@@ -17,11 +17,11 @@ verified:
   pull_requests:
     pr_76: { state: open, draft: true, merged: false, base: mission-rxdb-sync }
   production:
-    wrangler_main: ./worker/indexFc52.ts
+    wrangler_main_candidate: ./worker/indexOrganizer.ts
     d1: 0113e775-1e43-4d96-8b97-51fdeec7355b
-    rate_limit_namespaces: [91714001, 91714002, 91714003]
-    organization_login_limiter_committed: false
-    nodejs_compat_committed: false
+    rate_limit_namespaces_candidate: [91714001, 91714002, 91714003, 91714004]
+    organization_login_limiter_candidate: true
+    nodejs_compat_candidate: true
     deployed_by_admin_staging: false
     organization_migrations_applied: false
     assets_run_worker_first: [/api/*, /]
@@ -80,7 +80,7 @@ hard_boundaries:
   - no merge or Ready on PR 76
   - no Production deploy or Production D1 migration
   - do not touch mission-release-2026-09-02-manual
-  - committed Production Wrangler stays on indexFc52.ts with the frozen Production D1/rate namespace IDs
+  - Main candidate composes indexOrganizer.ts; Production activation remains separately authorized and must preserve the Production D1 identity
   - no privilege or tenant decision from client state
   - no plaintext credentials in repository, D1, logs, audit, LocalStorage, IndexedDB or RxDB
   - temporary Group QR tokens may exist in the URL fragment for redemption as designed; do not move them into query strings or persistence

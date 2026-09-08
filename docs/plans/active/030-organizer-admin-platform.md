@@ -31,16 +31,16 @@ Erster vollständig grüner Runtime-Stand:
 
 V9 #23 belegt Bootstrap/Password/TOTP, authentifiziertes `/me`, zwei persistente Campaigns nach komplett frischem Browser-Kontext, Clean-Browser Admin Invite + MFA, Mobile Chromium, Cleanup/FK-Safety und den finalen ungepinnten Public-Safety-Gate.
 
-## Production-Isolation
+## Historische Production-Isolation, durch Plan 033 aktualisiert
 
-Committed `wrangler.jsonc` bleibt:
+Die folgenden Werte beschreiben die isolierte Entwicklung vor der Main-Promotion:
 
 - `main = ./worker/indexFc52.ts`;
 - Production D1 `0113e775-1e43-4d96-8b97-51fdeec7355b`;
 - Rate namespaces `91714001`, `91714002`, `91714003`;
 - ohne Organizer Login Limiter oder Organizer Entry Point.
 
-`worker/indexOrganizer.ts` ist deploy-spezifisch und darf nur in isoliertem Admin-Staging oder einer später ausdrücklich genehmigten Production-Konfiguration verwendet werden.
+Diese frühere Einschränkung ist durch Plan 033 und ADR-0028 ersetzt: `worker/indexOrganizer.ts` ist jetzt der vollständige Main-Aktivierungskandidat. Merge, Migration und Production-Aktivierung bleiben weiterhin separat freigabepflichtig.
 
 ## Identity und Security
 
@@ -163,7 +163,7 @@ Tests/Operations:
 - Role Templates/Capabilities werden serverseitig durchgesetzt.
 - High-Risk-Aktionen verlangen die vorgesehene Assurance.
 - Field Map/RxDB bleiben grün.
-- Committed Production Wrangler bleibt auf `indexFc52.ts`.
+- Die frühere `indexFc52.ts`-Grenze wurde durch Plan 033 und ADR-0028 für den Main-Aktivierungskandidaten ersetzt. Production-Aktivierung bleibt separat freigabepflichtig.
 - Admin-Staging verwendet weder Production-D1 noch RxDB-Staging-D1.
 - Finaler öffentlicher Worker trägt Security Header auf UI und API.
 

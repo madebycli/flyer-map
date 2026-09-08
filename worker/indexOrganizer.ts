@@ -34,6 +34,8 @@ type BaseEnv = Parameters<typeof baseWorker.fetch>[1];
 type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & OrganizationFieldGroupListEnv & TeamCommentsSummaryEnv & {
   ORGANIZATION_PASSWORD_KDF?: OrganizationPasswordKdfNamespace;
   ORGANIZATION_KDF_DIAGNOSTICS?: string;
+  RUNTIME_ENVIRONMENT?: string;
+  CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
 };
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/u;
@@ -79,6 +81,42 @@ export default {
   async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
     configureOrganizationPasswordKdfRuntime(env.ORGANIZATION_PASSWORD_KDF);
     try {
+      const url = new URL(request.url);
+      if (url.pathname === "/api/runtime") {
+        if (request.method !== "GET") {
+          return harden(
+            new Response(
+              request.method === "HEAD"
+                ? null
+                : JSON.stringify({
+                    error: { code: "method_not_allowed", message: "Der Runtime-Vertrag verwendet GET." },
+                  }),
+              {
+                status: 405,
+                headers: {
+                  "content-type": "application/json; charset=utf-8",
+                  "cache-control": "no-store",
+                  allow: "GET",
+                },
+              },
+            ),
+          );
+        }
+        return harden(Response.json({
+          ok: true,
+          version: env.CF_VERSION_METADATA?.id ?? "development",
+          environment: env.RUNTIME_ENVIRONMENT ?? "development",
+          capabilities: {
+            organizationAuth: true,
+            organizationSecurity: true,
+            campaignRuntime: true,
+            rxdbSync: true,
+            collection: true,
+            fieldGroups: true,
+            statistics: true,
+          },
+        }, { headers: { "cache-control": "no-store" } }));
+      }
       const rootRedirect = redirectBareRootToOrganizationLogin(request);
       if (rootRedirect) return harden(rootRedirect);
       const methodGuard = guardOrganizationApiMethod(request);

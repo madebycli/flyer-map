@@ -21,8 +21,8 @@ routing_rules:
   - Organization is the tenant boundary; account identity is global and memberships are Organization-scoped
   - ids are selectors only; Worker/D1 resolves session, membership and server-known capability for protected mutations
   - RxDB remains operative Campaign data only; credentials, TOTP, recovery, sessions, memberships, roles and audit never belong in RxDB
-  - committed production wrangler config remains on worker/indexFc52.ts until a separately approved Production release
-  - committed production assets.run_worker_first includes /api/* and exact / so Organizer staging can redirect bare root while indexFc52 preserves normal SPA assets through ASSETS.fetch
+  - the Main activation candidate config points to worker/indexOrganizer.ts; Production remains unchanged until a separately approved merge/deploy
+  - assets.run_worker_first includes /api/* and exact / so the full Worker redirects bare root while Static Assets serves SPA routes
   - admin staging derives an isolated organizer config and must never bind Production-D1 or RxDB-Staging-D1
   - legacy campaigns must never be automatically claimed by first bootstrap or Organization creation
   - static Cloudflare assets are hardened through public/_headers while Worker-generated organizer responses are hardened in worker/indexOrganizer.ts

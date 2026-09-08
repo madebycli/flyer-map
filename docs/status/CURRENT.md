@@ -2,87 +2,26 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-05
+last_updated: 2026-09-08
 ---
 
 # Current Project State
 
-## Aktive isolierte Linie: Organizer/Admin Platform
+## Main Runtime Kandidat
 
-Plan 030 wird ausschließlich auf `feature/organizer-admin-platform` gegen `mission-rxdb-sync` entwickelt. Draft-PR #76 bleibt Draft und ungemergt. PR #74/#75 bleiben getrennt; `mission-release-2026-09-02-manual` bleibt unangetastet. Kein Production-Deploy und keine Production-D1-Migration ohne separate ausdrückliche Freigabe.
+`main` enthält die Organizer-/Admin-Oberfläche und die zugehörigen Organization-, Security- und Campaign-Module. Plan 033 verbindet diese ausgelieferte Oberfläche mit dem vollständigen Worker: `worker/indexOrganizer.ts` ist im Main-Kandidaten der kanonische Entry Point und umschließt weiterhin die bestehende Field-, Collection-, Pickup- und RxDB-Runtime.
 
-### Aktuell verifizierter Organizer/Admin-Stand
+Der Runtime-Vertrag `/api/runtime` meldet nicht-sensitive Capability- und Versionsinformationen. Organization Login-Routen werden im zusammengesetzten Worker erkannt. Bekannte API-Routen fallen nicht mehr auf die SPA oder den generischen API-404 zurück.
 
-Der erste vollständig grüne isolierte Admin-Staging-Gate ist V9 Run `33924415528` / #23. Auditiert wurde Feature-Head `c62385a8c400f68753d1f1f811e2315551153885` (`fix: harden static asset responses`). Die exact-head PR-CI auf diesem Head ist vollständig grün: Tests, Typecheck, Dependency Audit und Production Build.
+Genehmigte Main-Domains sind Aliase desselben Workers und derselben D1. Sie verwenden dieselben Organization-, Campaign-, Map-, Street-, House- und Change-Feed-Daten. Sessions bleiben durch sichere `__Host-`-Cookies je Origin getrennt, und Writes bleiben same-origin geschützt. Hostnamen sind kein Bestandteil fachlicher IDs.
 
-V9 #23 belegt gegen den echten Cloudflare-Worker:
+## Production-Status
 
-- Candidate-Version-Konvergenz und fail-closed API-Method-Gates;
-- Bootstrap -> Password -> TOTP -> authentifiziertes `/api/organization/me`;
-- zwei serverseitig persistierte Campaigns nach Logout, Storage/Cookie-Clear und frischem Browser-Kontext;
-- Admin-Invite in sauberem Browser, Fragment-Token-Scrubbing und MFA-Enrolment;
-- Mobile Chromium 390x844 ohne horizontales Overflow;
-- Remote-Cleanup auf 0 Bootstrap-/Organization-/Account-/owned-Campaign-Datensätze und fehlerfreien `PRAGMA foreign_key_check`;
-- finalen ungepinnten öffentlichen Worker: `/start` 200, unauthenticated `/me` 401, HEAD API 405, fremder Origin 403;
-- identische Security-Härtung auf Worker- und statischen Asset-Antworten: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Cross-Origin-Opener-Policy: same-origin`.
+Der Code ist ein Aktivierungskandidat. Production wurde nicht deployed, Production-D1 wurde nicht migriert und Secrets wurden nicht verändert. Vor Merge und Aktivierung müssen die Voraussetzungen in `docs/status/MAIN_RUNTIME_PARITY_HANDOFF.md` vollständig nachgewiesen werden. Main-Merges lösen den Production-Build aus und benötigen deshalb Masters separate Freigabe.
 
-Die statischen Header werden über `public/_headers` gesetzt. Der Organizer-Worker setzt dieselben Header weiterhin für Worker-generierte Antworten. Der Staging-Testzugang verwendet einen einmaligen Bootstrap-Schlüssel; nur dessen SHA-256 liegt in der isolierten Workflow-Konfiguration, der Klartext gehört weder ins Repository noch in Logs/Artifacts.
+## Offene getrennte Arbeit
 
-### Plan 031 Field-UI/Rooms Runtime-Kandidat
-
-Plan 031 ist auf der Product-Linie implementiert. Die erste vollständige Live-Staging-Matrix hat nach erfolgreicher Migration `0020`, Recovery-Key-Konfiguration, Worker-Deploy, MFA, Campaign-Erstellung und Team-Fixture einen reproduzierbaren Room-Create-500 gezeigt. Die Ursache war ein echter Authorization/Persistence-Vertragsfehler: Organization-Organizer werden absichtlich ohne Legacy-Campaign-Grant über `grantId = organization:<membershipId>` in die Campaign-Autorisierung gebridged, `field_groups.created_by_grant_id` referenziert dagegen ausschließlich reale `campaign_access_grants(id)`. Der Room-Create versuchte die synthetische Organizer-ID in diesen Foreign Key zu schreiben.
-
-Der Runtime-Fix wurde auf Parent-Head `8a751e50b12067db6164465276abdf11bda6960e` evidence-driven gebaut und als `6888595c4809e947f9079c40f4520a578f103b4d` gepusht. Vor diesem Push waren Tests, Typecheck, Dependency Audit und Production Build im guarded Fix-Runner grün. Der Fix:
-
-- persistiert für Organization-Organizer kein synthetisches `created_by_grant_id`, während echte Campaign-Grants unverändert erhalten bleiben;
-- vereinheitlicht Same-Current-Credential-Reveal auf `POST /credentials/current` zwischen Client und Worker;
-- bindet AES-GCM-AAD an den projektspezifischen Namespace `flyer-map:field-group-credential:v1:...`;
-- ergänzt Regressionstests für Organizer-Room-Create unter Foreign-Key-Semantik und für den POST-only Reveal-Vertrag.
-
-Die isolierte Plan-031-Staging-Harness wurde zusätzlich FK-sicher gemacht: historische organizer-owned Fixtures werden Kind-zu-Eltern entfernt, bevor Campaign/Team gelöscht werden. Diese Cleanup-Härtung betrifft nur `organizer-admin-staging`, nicht Production. Der Product-Kandidat gilt erst dann als vollständig live-verifiziert, wenn die normale GitHub-CI auf dem finalen Product-Head und die vollständige isolierte Plan-031-Cloudflare-Akzeptanz auf exakt demselben Head grün sind.
-
-### Harte Production-Isolation
-
-Die kanonische `wrangler.jsonc` bleibt Production-sicher:
-
-- `main`: `./worker/indexFc52.ts`;
-- Production-D1: `0113e775-1e43-4d96-8b97-51fdeec7355b`;
-- Production Rate-Limit Namespaces: `91714001`, `91714002`, `91714003`;
-- kein `ORGANIZATION_LOGIN_LIMITER` in der committed Production-Konfiguration;
-- `worker/indexOrganizer.ts` bleibt ausschließlich ein isolierter Organizer/Admin-Wrapper.
-
-Production wurde durch das Admin-Staging nicht deployed und die Production-D1 wurde nicht migriert. Migrationen 0017/0018/0019 bleiben Production-unapplied.
-
-### Admin-Staging
-
-- Branch: `organizer-admin-staging`;
-- Workflow: `.github/workflows/admin-staging-release-v9.yml`;
-- Worker: `flyer-map-admin-staging`;
-- D1: `flyer-map-admin-staging-db`;
-- URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`;
-- RxDB-Staging-D1 `bcec3432-18ec-42a2-970a-64d52c8263d5` und Production-D1 werden durch Guards ausgeschlossen.
-
-Die V9-Linie pinnt Candidate/API/Browser-Smokes auf die exakte Cloudflare Worker Version und prüft den finalen Benutzerstand danach absichtlich ungepinnt über die öffentliche `workers.dev`-URL. Sanitized Artifacts enthalten keine Passwörter, Bootstrap-Secrets, TOTP-Keys oder Invite-Tokens.
-
-## Noch offene Organizer/Admin-Master-Akzeptanz vor Production
-
-Der isolierte Teststand ist jetzt browser-testbar. Das ist ausdrücklich noch keine Production-Freigabe. Vor Production müssen die verbleibenden Master-Gates evidence-driven abgeschlossen werden, insbesondere:
-
-1. explizite Legacy-Campaign-Adoption mit Audit und negativen Foreign-/Owned-/Race-Tests;
-2. vollständige Account-Security-Matrix: Username/Password, sichere Reset-Links, TOTP-Reset, Recovery-Regeneration, Sessions einzeln/alle widerrufen;
-3. mehrere Organizer/Admins inklusive concurrent last-organizer invariant;
-4. Named Role Templates + serverbekannte Capability Registry;
-5. own-team/other-team/explizite cross-team Durchsetzung an kanonischen Campaign/Team/Area/Task-Beziehungen;
-6. Organizer-only permanente Campaign-Löschung mit fresh high-risk reauth und exakter Bestätigung;
-7. Audit-/Threat-Model-/Rate-Limit-/CSP-Abschluss;
-8. gewünschter Root-Organizer-Einstieg ohne die normale Field Map zu hijacken;
-9. vollständige Admin-Console-/Lifecycle-UX ohne Fake-KPIs;
-10. komplette RxDB-/Field-Regressionsuite weiter grün halten.
-
-## Verifizierte RxDB-Mission-Basis – nicht regressieren
-
-`mission-rxdb-sync` bleibt die separate RxDB-Basis; Draft-PR #74 bleibt getrennt. D1 bleibt kanonisch, RxDB/Dexie hält lokale operative Campaign-Daten, Worker/D1 bleiben Autoritäts- und Sicherheitsgrenze. Die bereits geschlossenen Prepared-Street-/MapLibre-/Realtime-P0s dürfen durch Organizer/Admin-Arbeit nicht zurückkehren.
-
-## Arbeitsregel bei Wiederaufnahme
-
-GitHub ist Source of Truth. Zuerst `AGENTS.md`, diese Datei, `docs/context-map.yaml`, danach `docs/context-organizer-admin.yaml`, `docs/context-organizer-admin-live.yaml`, Plan 030, ADR-0026 und den aktuellen Handoff lesen. Remote-Heads, PR #76, exact-head CI und aktuellen V9-Run immer neu verifizieren; dokumentierte SHAs sind Übergabemarker.
+- Draft-PR #79 hält die Street-/House-Network-Arbeit und bleibt für diesen Main-only-Slice pausiert.
+- SYNC-CURSOR-001 bleibt separat offen.
+- Die bekannten Admin-Security-Findings SEC-001 bis SEC-007 und Fresh-MFA bleiben sichtbar und werden durch die Runtime-Komposition nicht als gelöst erklärt.
+- Historische Feature- und Staging-Branches werden von Plan 033 nicht verändert oder portiert.

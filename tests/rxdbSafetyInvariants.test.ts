@@ -71,8 +71,17 @@ test("push success is only acknowledged when the post-commit master matches the 
 
 test("Cloudflare Durable Object namespace is provisioned as SQLite and entrypoint exports the class", async () => {
   const wrangler = await readFile("wrangler.jsonc", "utf8");
-  const entrypoint = await readFile("worker/indexFc52.ts", "utf8");
-  assert.match(wrangler, /"new_sqlite_classes"\s*:\s*\["CampaignSyncDurableObject"\]/u);
-  assert.doesNotMatch(wrangler, /"new_classes"\s*:/u);
+  const entrypoint = await readFile("worker/indexOrganizer.ts", "utf8");
+  const config = JSON.parse(wrangler) as {
+    migrations?: Array<{ new_sqlite_classes?: string[]; new_classes?: string[] }>;
+  };
+  assert.ok(config.migrations?.some((migration) => migration.new_sqlite_classes?.includes("CampaignSyncDurableObject")));
+  assert.ok(
+    config.migrations?.some((migration) =>
+      migration.new_sqlite_classes?.includes("OrganizationPasswordKdfDurableObject"),
+    ),
+  );
+  assert.ok(config.migrations?.every((migration) => !migration.new_classes));
   assert.match(entrypoint, /export \{ CampaignSyncDurableObject \} from "\.\/campaignSyncDurableObject\.ts";/u);
+  assert.match(entrypoint, /export \{ OrganizationPasswordKdfDurableObject \} from "\.\/organizationPasswordKdfDurableObject\.ts";/u);
 });
