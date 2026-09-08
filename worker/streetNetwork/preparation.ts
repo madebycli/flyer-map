@@ -8,6 +8,11 @@ import { jsonChunks, persistNetworkSnapshot } from './persistence.ts';
 type Job = { generation:string;phase:string;cursor:number;lease:string|null;lease_until:string|null;attempts:number;metrics_json:string;geometry_json:string };
 type Building = { osmId:number;tags:Record<string,string>;geometry:PolygonGeometry };
 type Metrics = { requests?:number;retries?:number;bytes?:number;fetchMs?:number;graphMs?:number;linkMs?:number;publishMs?:number;sourceTimestamp?:string };
+const DEFAULT_OVERPASS_URLS = [
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+] as const;
+const MAX_TRANSIENT_OVERPASS_ATTEMPTS = 3;
 export function preparationTiles(area: Area): [number,number,number,number][] {
   const points=area.geometry.coordinates.flat();
   const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
@@ -21,39 +26,55 @@ export function preparationTiles(area: Area): [number,number,number,number][] {
   }
   return tiles;
 }
-async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTaskPreparationOptions,date?:string) {
-  const url=options.upstreamUrl ?? 'https://overpass.private.coffee/api/interpreter';
+function checkedOverpassUrl(url:string) {
   const parsed=new URL(url);
   if(parsed.protocol!=='https:' && !(parsed.protocol==='http:' && ['localhost','127.0.0.1'].includes(parsed.hostname))) throw new Error('overpass_invalid_upstream');
+  return url;
+}
+async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTaskPreparationOptions,date?:string) {
+  const urls=(options.upstreamUrl ? [options.upstreamUrl] : [...DEFAULT_OVERPASS_URLS]).map(checkedOverpassUrl);
   const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),options.limits?.timeoutMs ?? 18000);
   const started=performance.now();
   try {
-    const query=`[out:json][timeout:15]${date?`[date:"${date}"]`:''};way["${kind==='roads'?'highway':'building'}"](${bbox.join(',')});out body geom;`;
-    const response=await (options.fetchImpl ?? fetch)(url,{method:'POST',body:new URLSearchParams({data:query}),signal:controller.signal});
-    if(!response.ok) throw new Error(response.status===429?'overpass_rate_limited':`overpass_http_${response.status}`);
-    const reader=response.body?.getReader(); if(!reader) throw new Error('overpass_partial_failure');
-    const chunks:Uint8Array[]=[];let bytes=0;
-    while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>(options.limits?.maxUpstreamBytes??4000000)){await reader.cancel();throw new Error('overpass_response_budget');}chunks.push(part.value);}
-    const buffer=new Uint8Array(bytes);let offset=0;for(const chunk of chunks){buffer.set(chunk,offset);offset+=chunk.length;}
-    const payload=JSON.parse(new TextDecoder().decode(buffer));
-    if(payload.remark || !Array.isArray(payload.elements)) throw new Error('overpass_partial_failure');
-    const features:(RoadInput|Building)[]=[];
-    for(const way of payload.elements){
-      if(way.type!=='way')continue;
-      if(!way.tags?.[kind==='roads'?'highway':'building'])continue;
-      if(!Number.isSafeInteger(way.id) || !Array.isArray(way.geometry) || way.geometry.length<2) throw new Error('osm_normalization_missing_nodes');
-      const coordinates:LngLat[]=way.geometry.map((p:{lon:number;lat:number})=>[p.lon,p.lat]);
-      if(coordinates.some(p=>!p.every(Number.isFinite)||Math.abs(p[0])>180||Math.abs(p[1])>85))throw new Error('osm_normalization_invalid_coordinate');
-      const tags=Object.fromEntries(Object.entries(way.tags).filter(([,value])=>typeof value==='string')) as Record<string,string>;
-      if(kind==='roads')features.push({osmId:way.id,tags,geometry:JSON.parse(canonicalStreetFragmentGeometryJson({type:'LineString',coordinates}))});
-      else {
-        if(coordinates.length<4 || JSON.stringify(coordinates[0])!==JSON.stringify(coordinates.at(-1)))throw new Error('osm_normalization_open_building');
-        features.push({osmId:way.id,tags,geometry:{type:'Polygon',coordinates:[coordinates]}});
+    const query=`[out:json][timeout:15]${date?`[date:\"${date}\"]`:''};way[\"${kind==='roads'?'highway':'building'}\"](${bbox.join(',')});out body geom;`;
+    let lastError:Error|undefined;
+    for(let index=0;index<urls.length;index++) {
+      const response=await (options.fetchImpl ?? fetch)(urls[index],{method:'POST',body:new URLSearchParams({data:query}),signal:controller.signal});
+      if(!response.ok) {
+        const code=response.status===429?'overpass_rate_limited':`overpass_http_${response.status}`;
+        const retryable=response.status===429 || response.status>=500;
+        if(!options.upstreamUrl && retryable && index<urls.length-1) {
+          try{await response.body?.cancel();}catch{/* ignore failed cleanup before failover */}
+          lastError=new Error(code);
+          continue;
+        }
+        throw new Error(code);
       }
+      const reader=response.body?.getReader(); if(!reader) throw new Error('overpass_partial_failure');
+      const chunks:Uint8Array[]=[];let bytes=0;
+      while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>(options.limits?.maxUpstreamBytes??4000000)){await reader.cancel();throw new Error('overpass_response_budget');}chunks.push(part.value);}
+      const buffer=new Uint8Array(bytes);let offset=0;for(const chunk of chunks){buffer.set(chunk,offset);offset+=chunk.length;}
+      const payload=JSON.parse(new TextDecoder().decode(buffer));
+      if(payload.remark || !Array.isArray(payload.elements)) throw new Error('overpass_partial_failure');
+      const features:(RoadInput|Building)[]=[];
+      for(const way of payload.elements){
+        if(way.type!=='way')continue;
+        if(!way.tags?.[kind==='roads'?'highway':'building'])continue;
+        if(!Number.isSafeInteger(way.id) || !Array.isArray(way.geometry) || way.geometry.length<2) throw new Error('osm_normalization_missing_nodes');
+        const coordinates:LngLat[]=way.geometry.map((p:{lon:number;lat:number})=>[p.lon,p.lat]);
+        if(coordinates.some(p=>!p.every(Number.isFinite)||Math.abs(p[0])>180||Math.abs(p[1])>85))throw new Error('osm_normalization_invalid_coordinate');
+        const tags=Object.fromEntries(Object.entries(way.tags).filter(([,value])=>typeof value==='string')) as Record<string,string>;
+        if(kind==='roads')features.push({osmId:way.id,tags,geometry:JSON.parse(canonicalStreetFragmentGeometryJson({type:'LineString',coordinates}))});
+        else {
+          if(coordinates.length<4 || JSON.stringify(coordinates[0])!==JSON.stringify(coordinates.at(-1)))throw new Error('osm_normalization_open_building');
+          features.push({osmId:way.id,tags,geometry:{type:'Polygon',coordinates:[coordinates]}});
+        }
+      }
+      const sourceTimestamp=payload.osm3s?.timestamp_osm_base;
+      if(sourceTimestamp && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(sourceTimestamp))throw new Error('osm_normalization_timestamp');
+      return {features,bytes,fetchMs:performance.now()-started,sourceTimestamp};
     }
-    const sourceTimestamp=payload.osm3s?.timestamp_osm_base;
-    if(sourceTimestamp && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(sourceTimestamp))throw new Error('osm_normalization_timestamp');
-    return {features,bytes,fetchMs:performance.now()-started,sourceTimestamp};
+    throw lastError ?? new Error('network_preparation_failure');
   } finally {clearTimeout(timeout);}
 }
 async function staged<T>(db:D1DatabaseLike,run:AreaTaskPreparationRun,kind:string):Promise<T[]> {
@@ -130,8 +151,10 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
     return phase==='ready'?{outcome:'ready' as const}:{outcome:'pending' as const};
   } catch(error) {
     const code=error instanceof Error && /^[a-z][a-z0-9_]+$/.test(error.message)?error.message:'network_preparation_failure';
+    const nextAttempts=job.attempts+1;
+    const retryable=code==='overpass_rate_limited'||/^overpass_http_5\d\d$/.test(code);
     metrics.retries=(metrics.retries??0)+1;
     await db.batch([db.prepare(`UPDATE street_network_jobs SET lease=NULL,lease_until=?,attempts=attempts+1,error_code=?,metrics_json=? WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?`).bind(new Date(Date.parse(now)+Math.min(60000,1000*2**Math.min(job.attempts,6))).toISOString(),code,JSON.stringify(metrics),...ownership)]);
-    return {outcome:'failed' as const,code};
+    return retryable && nextAttempts<MAX_TRANSIENT_OVERPASS_ATTEMPTS ? {outcome:'pending' as const} : {outcome:'failed' as const,code};
   }
 }
