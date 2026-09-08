@@ -131,6 +131,24 @@ jobs:
           printf '%s' "$BEFORE" > /tmp/persistent-before.json
           jq -e '.[0].results[0] | .organization_count>=0 and .account_count>=0 and .campaign_count>=0 and .bootstrap_count>=0' <<<"$BEFORE" >/dev/null
 
+      - name: Capture sanitized Street schema and job evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIGRATIONS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT name FROM d1_migrations WHERE name IN ('0014_auto_area_task_preparation.sql','0017_rxdb_sync_changes.sql','0018_organization_admin_platform.sql','0019_organization_security_hardening.sql','0020_field_group_recoverable_credentials.sql','0022_street_house_network.sql') ORDER BY name;")"
+          SCHEMA="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT type,name,tbl_name FROM sqlite_master WHERE name IN ('area_task_preparations','street_network_state','house_road_positions','street_network_jobs','street_network_staging','street_network_intents') OR (type='index' AND tbl_name IN ('area_task_preparations','street_network_jobs','street_network_staging','street_network_intents')) ORDER BY type,name;")"
+          PREPARATIONS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT status,COALESCE(last_error_code,'') error_code,COUNT(*) count,MAX(updated_at) latest FROM area_task_preparations GROUP BY status,COALESCE(last_error_code,'') ORDER BY latest DESC;")"
+          JOBS="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT phase,COALESCE(error_code,'') error_code,CASE WHEN lease IS NULL THEN 0 ELSE 1 END has_lease,COUNT(*) count,MAX(lease_until) latest_lease_until FROM street_network_jobs GROUP BY phase,COALESCE(error_code,''),CASE WHEN lease IS NULL THEN 0 ELSE 1 END ORDER BY phase,error_code;")"
+          STAGING="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT kind,COUNT(*) count FROM street_network_staging GROUP BY kind ORDER BY kind;")"
+          jq -n \
+            --argjson migrations "$MIGRATIONS" \
+            --argjson schema "$SCHEMA" \
+            --argjson preparations "$PREPARATIONS" \
+            --argjson jobs "$JOBS" \
+            --argjson staging "$STAGING" \
+            '{migrations:$migrations,schema:$schema,preparations:$preparations,jobs:$jobs,staging:$staging}' \
+            > /tmp/street-live-diagnostics.json
+
       - name: Materialize persistent staging config
         shell: bash
         run: |
@@ -232,4 +250,5 @@ jobs:
             /tmp/persistent-after.json
             /tmp/persistent-staging-safety.json
             /tmp/persistent-staging-url.txt
+            /tmp/street-live-diagnostics.json
           retention-days: 7
