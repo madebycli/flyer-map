@@ -1,7 +1,7 @@
 name: Street Network Isolated Staging
 on:
   push:
-    branches: [feature/street-house-network-recovery]
+    branches: [feature/street-house-network-recovery, integration/main-street-runtime]
     paths: ['src/**', 'worker/**', 'migrations/**', 'tests/**', 'scripts/street-network-*', 'package*.json', '.github/workflows/street-network-staging.yml']
 permissions:
   contents: read
@@ -27,10 +27,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF" == 'refs/heads/feature/street-house-network-recovery' ]]
+          case "$GITHUB_REF" in
+            refs/heads/feature/street-house-network-recovery) PR_NUMBER=79 ;;
+            refs/heads/integration/main-street-runtime) PR_NUMBER=84 ;;
+            *) exit 1 ;;
+          esac
+          echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_ENV"
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/79 --jq '.head.sha')" == "$GITHUB_SHA" ]]
-          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/79 --jq '.state')" == 'open' ]]
+          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER --jq '.state')" == 'open' ]]
       - run: npm ci --no-audit --no-fund
       - name: Candidate verification
         run: npm run check
@@ -76,7 +81,7 @@ jobs:
             if(/\bDROP\s+(TABLE|COLUMN)|\bDELETE\s+FROM/i.test(fs.readFileSync('migrations/'+name,'utf8')))throw Error('non_additive_migration:'+name);
           }
           NODE
-          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/79 --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER --jq '.head.sha')" == "$GITHUB_SHA" ]]
           npx wrangler d1 migrations apply flyer-map-staging-db --env staging --config wrangler.jsonc --remote
       - name: Build isolated candidate
         env:
@@ -95,9 +100,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/79 --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER --jq '.head.sha')" == "$GITHUB_SHA" ]]
           npx wrangler deploy 2>&1 | tee /tmp/network-deploy.log
-          TEST_URL="$(rg -o 'https://flyer-map-staging\.[a-zA-Z0-9-]+\.workers\.dev' /tmp/network-deploy.log | tail -n1)"
+          TEST_URL="$(grep -Eo 'https://flyer-map-staging\.[a-zA-Z0-9-]+\.workers\.dev' /tmp/network-deploy.log | tail -n1)"
           test -n "$TEST_URL"
           curl --fail --silent --show-error --retry 5 --retry-all-errors "$TEST_URL/login" -o /tmp/network-login.html
           jq -n --arg sha "$GITHUB_SHA" --arg url "$TEST_URL" '{sha:$sha,url:$url,productionUntouched:true,secretsRotated:false}' > /tmp/network-staging-evidence.json
