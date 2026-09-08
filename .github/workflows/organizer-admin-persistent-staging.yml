@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/organizer-admin-platform
+      - integration/main-street-runtime
     paths:
       - '.github/workflows/organizer-admin-persistent-staging.yml'
       - 'src/**'
@@ -49,16 +50,31 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.sha')" == "$GITHUB_SHA" ]]
-          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.head.ref')" == 'feature/organizer-admin-platform' ]]
-          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.draft')" == 'true' ]]
-          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/76 --jq '.state')" == 'open' ]]
-          grep -Fq '"main": "./worker/indexFc52.ts"' wrangler.jsonc
+          case "$GITHUB_REF" in
+            refs/heads/feature/organizer-admin-platform)
+              PR_NUMBER=76
+              EXPECTED_ENTRY='./worker/indexFc52.ts'
+              ;;
+            refs/heads/integration/main-street-runtime)
+              PR_NUMBER=84
+              EXPECTED_ENTRY='./worker/indexOrganizer.ts'
+              ;;
+            *) exit 1 ;;
+          esac
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.head.ref')" == "${GITHUB_REF#refs/heads/}" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.draft')" == 'true' ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.state')" == 'open' ]]
+          node -e "const fs=require('node:fs');const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));if(c.main!==process.argv[1])process.exit(1)" "$EXPECTED_ENTRY"
           grep -Fq "$PROD_D1_ID" wrangler.jsonc
           grep -Fq '91714001' wrangler.jsonc
           grep -Fq '91714002' wrangler.jsonc
           grep -Fq '91714003' wrangler.jsonc
-          ! grep -Fq 'nodejs_compat' wrangler.jsonc
+          if [[ "$PR_NUMBER" == 84 ]]; then
+            grep -Fq 'nodejs_compat' wrangler.jsonc
+          else
+            ! grep -Fq 'nodejs_compat' wrangler.jsonc
+          fi
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
