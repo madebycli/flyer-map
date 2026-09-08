@@ -60,21 +60,20 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     const epoch=++preparationEpoch.current;
     setPreparing(area.id);setMessage('Straßen und Häuser werden vorbereitet …');
     const url=`/api/campaigns/${encodeURIComponent(snapshot.campaign.id)}/areas/${encodeURIComponent(area.id)}/preparation`;
-    const read=async(method:'GET'|'POST')=>{
-      const response=await fetch(url,{method,credentials:'same-origin',signal:AbortSignal.timeout(25000)});
+    const advance=async()=>{
+      const response=await fetch(url,{method:'POST',credentials:'same-origin',signal:AbortSignal.timeout(25000)});
       if(!response.ok)throw new Error(`Vorbereitung derzeit nicht verfügbar (HTTP ${response.status}). Bitte später erneut versuchen.`);
       return response.json();
     };
     try{
-      // Only an explicit user action resumes a failed job. Polling must expose failures.
-      let state=await read('POST');
+      // The explicit user action owns this bounded server-side work loop. One POST advances at most one step.
+      let state=await advance();
       for(let step=0;step<1100&&epoch===preparationEpoch.current;step++){
         if(state.status==='ready'){await refresh();if(epoch===preparationEpoch.current)setMessage('Straßen und Häuser sind bereit.');return;}
         if(state.status==='failed')throw new Error('Vorbereitung unterbrochen. Erneut versuchen setzt die Arbeit fort.');
-        await new Promise(resolve=>window.setTimeout(resolve,2000));
+        await new Promise(resolve=>window.setTimeout(resolve,2500));
         if(epoch!==preparationEpoch.current)return;
-        state=await read('GET');
-        if(state.status==='pending')state=await read('POST');
+        state=await advance();
       }
       if(epoch===preparationEpoch.current)setMessage('Vorbereitung pausiert. Erneut versuchen setzt die Arbeit fort.');
     }catch(error){if(epoch===preparationEpoch.current)setMessage(error instanceof Error?error.message:'Vorbereitung fehlgeschlagen.');}
