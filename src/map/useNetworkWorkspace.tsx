@@ -66,7 +66,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       return response.json();
     };
     try{
-      // The explicit user action owns this bounded server-side work loop. One POST advances at most one step.
+      // The explicit user action owns the bounded server-side work loop, with exactly one advancing POST per interval.
       let state=await advance();
       for(let step=0;step<1100&&epoch===preparationEpoch.current;step++){
         if(state.status==='ready'){await refresh();if(epoch===preparationEpoch.current)setMessage('Straßen und Häuser sind bereit.');return;}
