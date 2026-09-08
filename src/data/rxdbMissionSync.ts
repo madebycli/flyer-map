@@ -1,4 +1,5 @@
-import { createRxDatabase } from "rxdb";
+import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
+import { createRxDatabase, addRxPlugin } from "rxdb";
 import type { RxCollection, RxDatabase, RxDocument, RxJsonSchema } from "rxdb";
 import { replicateRxCollection } from "rxdb/plugins/replication";
 import { getRxStorageDexie } from "rxdb/plugins/storage-dexie";
@@ -14,6 +15,8 @@ import {
   type RxdbPullResponse,
   type RxdbPushRow,
 } from "./rxdbSyncProtocol.ts";
+
+addRxPlugin(RxDBMigrationSchemaPlugin);
 
 const PULL_BATCH_SIZE = 100;
 const PUSH_BATCH_SIZE = 20;
@@ -206,13 +209,13 @@ const schemas: RxdbSchemaMap = {
     additionalProperties: false,
   },
   streetTasks: {
-    version: 0,
+    version: 1,
     primaryKey: "id",
     type: "object",
     properties: {
       id: { type: "string", maxLength: 200 }, campaignId: { type: "string", maxLength: 200 }, areaId: { type: "string", maxLength: 200 },
       taskType: { type: "string" }, label: { type: "string" }, geometry: objectSchema, source: nullableObjectSchema,
-      areaPreparationGeneration: nullableStringSchema, status: { type: "string" }, completedAt: nullableStringSchema,
+      network: objectSchema, areaPreparationGeneration: nullableStringSchema, status: { type: "string" }, completedAt: nullableStringSchema,
       createdAt: { type: "string" }, updatedAt: { type: "string" },
     },
     required: ["id", "campaignId", "areaId", "taskType", "label", "geometry", "areaPreparationGeneration", "status", "completedAt", "createdAt", "updatedAt"],
@@ -220,13 +223,13 @@ const schemas: RxdbSchemaMap = {
     additionalProperties: false,
   },
   houseTasks: {
-    version: 0,
+    version: 1,
     primaryKey: "id",
     type: "object",
     properties: {
       id: { type: "string", maxLength: 200 }, campaignId: { type: "string", maxLength: 200 }, areaId: { type: "string", maxLength: 200 },
       taskType: { type: "string" }, label: { type: "string" }, geometry: objectSchema, source: nullableObjectSchema,
-      areaPreparationGeneration: nullableStringSchema, parentStreetTaskId: nullableStringSchema,
+      roadPosition: objectSchema, areaPreparationGeneration: nullableStringSchema, parentStreetTaskId: nullableStringSchema,
       status: { type: "string" }, completedAt: nullableStringSchema, createdAt: { type: "string" }, updatedAt: { type: "string" },
     },
     required: ["id", "campaignId", "areaId", "taskType", "label", "geometry", "areaPreparationGeneration", "parentStreetTaskId", "status", "completedAt", "createdAt", "updatedAt"],
@@ -704,8 +707,8 @@ export class MissionRxdbSync {
       campaigns: { schema: schemas.campaigns },
       teams: { schema: schemas.teams },
       areas: { schema: schemas.areas },
-      streetTasks: { schema: schemas.streetTasks },
-      houseTasks: { schema: schemas.houseTasks },
+      streetTasks: { schema: schemas.streetTasks, migrationStrategies: { 1: (doc: unknown) => doc } },
+      houseTasks: { schema: schemas.houseTasks, migrationStrategies: { 1: (doc: unknown) => doc } },
     }) as RxdbCollections;
     this.initialized = true;
     const startupDeadline = Date.now() + REPLICATION_START_BARRIER_TIMEOUT_MS;

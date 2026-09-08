@@ -1,7 +1,7 @@
 export type StatisticsScopeKind = "campaign" | "team" | "field-group";
 
 export type StatisticsProgress = {
-  denominator: "street-tasks" | "house-tasks";
+  denominator: "street-tasks" | "house-tasks" | "road-coverage";
   total: number;
   completed: number;
   open: number;
@@ -12,6 +12,7 @@ export type StatisticsProgress = {
 };
 
 export type StatisticsTeam = {
+  overall?: StatisticsProgress;
   teamId: string;
   name: string;
   color: string;
@@ -21,6 +22,7 @@ export type StatisticsTeam = {
 };
 
 export type StatisticsArea = {
+  overall?: StatisticsProgress;
   areaId: string;
   teamId: string;
   name: string;
@@ -72,6 +74,7 @@ export type CampaignStatistics = {
     teamId: string | null;
   };
   campaign: {
+    overall?: StatisticsProgress;
     streets: StatisticsProgress;
     houses: StatisticsProgress | null;
   } | null;

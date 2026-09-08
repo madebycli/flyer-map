@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("prepared Street realtime notification stays inside the Worker lifetime", async () => {
-  const source = await readFile("worker/areaTaskPreparation.ts", "utf8");
+  const source = await readFile("worker/streetNetwork/preparation.ts", "utf8");
 
   assert.match(source, /await options\.onCommitted\?\.\(\)/u);
   assert.doesNotMatch(

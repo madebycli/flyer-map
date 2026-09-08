@@ -1,3 +1,4 @@
+import { useNetworkWorkspace } from './map/useNetworkWorkspace.tsx';
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collectionModeFromUrl,
@@ -353,9 +354,10 @@ export default function App({
     [snapshot.areas, snapshot.teams],
   );
 
+  const networkWorkspace = useNetworkWorkspace(snapshot, access, async () => { await manualRefreshCampaign(); });
   const renderedTasks = useMemo(
     () =>
-      snapshot.tasks.map((task) => {
+      networkWorkspace.optimistic.tasks.map((task) => {
         const area = snapshot.areas.find((candidate) => candidate.id === task.areaId);
         const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
         return {
@@ -364,12 +366,12 @@ export default function App({
           completedColor: darkenHexColor(team?.color ?? "#64748b", 0.25),
         };
       }),
-    [snapshot.tasks, snapshot.areas, snapshot.teams],
+    [networkWorkspace.optimistic.tasks, snapshot.areas, snapshot.teams],
   );
 
   const renderedHouses = useMemo(
     () =>
-      (snapshot.houseTasks ?? []).map((house) => {
+      (networkWorkspace.optimistic.houseTasks ?? []).map((house) => {
         const area = snapshot.areas.find((candidate) => candidate.id === house.areaId);
         const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
         return {
@@ -378,7 +380,7 @@ export default function App({
           completedColor: darkenHexColor(team?.color ?? "#64748b", 0.25),
         };
       }),
-    [snapshot.houseTasks, snapshot.areas, snapshot.teams],
+    [networkWorkspace.optimistic.houseTasks, snapshot.areas, snapshot.teams],
   );
 
   const drawValidation = useMemo(
@@ -970,8 +972,11 @@ export default function App({
     });
   };
 
+
   const changeTaskStatus = (status: TaskStatus) => {
-    if (!selectedTask || !canChangeSelectedTaskStatus || selectedTask.status === status) return;
+    if (!selectedTask || !canChangeSelectedTaskStatus) return;
+    if (selectedTask.network) { networkWorkspace.whole(selectedTask); return; }
+    if (selectedTask.status === status) return;
     const now = new Date().toISOString();
     setUndoStatusChange({
       taskId: selectedTask.id,
@@ -1151,7 +1156,8 @@ export default function App({
         houses={renderedHouses}
         selectedTaskId={selectedTaskId}
         selectedHouseTaskId={selectedHouseTaskId}
-        mode={mode}
+        mode={networkWorkspace.active ? "smart-street" : mode}
+        {...networkWorkspace.mapProps}
         draftVertices={draftVertices}
         draftColor={activeTeam?.color ?? "#2563eb"}
         editingVertices={editingVertices}
@@ -1529,7 +1535,8 @@ export default function App({
         />
       ) : null}
 
-      {sheet === "area" && mode === "browse" && selectedArea ? (
+      {networkWorkspace.panel}
+      {sheet === "area" && mode === "browse" && !networkWorkspace.active && selectedArea ? (
         <section className={`bottom-sheet compact-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={t(language, "area")}>
           <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
           <div className="sheet-header">
@@ -1568,6 +1575,8 @@ export default function App({
             </>
           ) : null}
 
+          {networkWorkspace.areaActions(selectedArea, canEditSelectedArea, canChangeTaskStatusInArea(selectedArea))}
+
           {selectedAreaHouseTasks.length > 0 ? (
             <div className="context-task-list">
               <div className="context-task-list-header">
@@ -1596,7 +1605,7 @@ export default function App({
         </section>
       ) : null}
 
-      {sheet === "task" && mode === "browse" && selectedTask ? (
+      {sheet === "task" && mode === "browse" && !networkWorkspace.active && selectedTask ? (
         <section className={`bottom-sheet task-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={t(language, "streetMode")}>
           <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
           <div className="sheet-header">

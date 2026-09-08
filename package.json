@@ -15,8 +15,13 @@
     "deploy": "npm run check && wrangler deploy"
   },
   "dependencies": {
+    "@turf/length": "7.3.1",
+    "@turf/line-slice-along": "7.3.1",
+    "@turf/nearest-point-on-line": "7.3.1",
+    "jsts": "2.12.1",
     "maplibre-gl": "5.7.1",
     "qrcode.react": "4.2.0",
+    "rbush": "4.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "rxdb": "17.5.0",
@@ -24,6 +29,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.54.0",
+    "@types/rbush": "4.0.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.1.0",

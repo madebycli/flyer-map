@@ -1,0 +1,109 @@
+name: Street Network Isolated Staging
+on:
+  push:
+    branches: [feature/street-house-network-recovery]
+    paths: ['src/**', 'worker/**', 'migrations/**', 'tests/**', 'scripts/street-network-*', 'package*.json', '.github/workflows/street-network-staging.yml']
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: rxdb-staging-deploy
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify open recovery PR and exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/feature/street-house-network-recovery' ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/79 --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/79 --jq '.state')" == 'open' ]]
+      - run: npm ci --no-audit --no-fund
+      - name: Candidate verification
+        run: npm run check
+      - name: Resolve existing staging resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          ACCOUNTS_JSON="$(curl --fail --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
+          if [[ -n "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          else
+            [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]
+            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+          fi
+      - name: Verify D1 identity and materialize staging-only config
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 list --json > /tmp/network-d1-list.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const list=JSON.parse(fs.readFileSync('/tmp/network-d1-list.json','utf8'));
+          const matches=list.filter(db=>db.name==='flyer-map-staging-db');
+          if(matches.length!==1||matches[0].uuid!=='bcec3432-18ec-42a2-970a-64d52c8263d5')throw Error('staging_identity_mismatch');
+          const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          if(config.name!=='flyer-map'||config.d1_databases[0].database_id!=='0113e775-1e43-4d96-8b97-51fdeec7355b')throw Error('production_baseline_changed');
+          config.env={staging:{name:'flyer-map-staging',workers_dev:true,d1_databases:[{binding:'DB',database_name:matches[0].name,database_id:matches[0].uuid,migrations_dir:'migrations'}],durable_objects:config.durable_objects,ratelimits:config.ratelimits.map((entry,i)=>({...entry,namespace_id:String(91814001+i)}))}};
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2));
+          NODE
+      - name: Verify migration plan is additive
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute flyer-map-staging-db --env staging --config wrangler.jsonc --remote --json --command 'SELECT name FROM d1_migrations ORDER BY id' > /tmp/network-ledger.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const names=JSON.parse(fs.readFileSync('/tmp/network-ledger.json','utf8')).flatMap(r=>r.results).map(r=>r.name);
+          const local=fs.readdirSync('migrations').filter(name=>name.endsWith('.sql'));
+          if(!names.length||names.some(name=>!local.includes(name)))throw Error('unknown_staging_migration_history');
+          for(const name of local.filter(name=>!names.includes(name))){
+            if(/\bDROP\s+(TABLE|COLUMN)|\bDELETE\s+FROM/i.test(fs.readFileSync('migrations/'+name,'utf8')))throw Error('non_additive_migration:'+name);
+          }
+          NODE
+          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/79 --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          npx wrangler d1 migrations apply flyer-map-staging-db --env staging --config wrangler.jsonc --remote
+      - name: Build isolated candidate
+        env:
+          CLOUDFLARE_ENV: staging
+        run: npm run build
+      - name: Verify generated deployment isolation
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'),path=require('node:path');
+          const redirect=JSON.parse(fs.readFileSync('.wrangler/deploy/config.json','utf8'));
+          const file=path.resolve('.wrangler/deploy',redirect.configPath);
+          const config=JSON.parse(fs.readFileSync(file,'utf8'));
+          if(config.name!=='flyer-map-staging'||config.d1_databases.length!==1||config.d1_databases[0].database_id!=='bcec3432-18ec-42a2-970a-64d52c8263d5'||JSON.stringify(config).includes('0113e775-1e43-4d96-8b97-51fdeec7355b'))throw Error('unsafe_generated_config');
+          NODE
+      - name: Deploy only existing isolated Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(gh api repos/$GITHUB_REPOSITORY/pulls/79 --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          npx wrangler deploy 2>&1 | tee /tmp/network-deploy.log
+          TEST_URL="$(rg -o 'https://flyer-map-staging\.[a-zA-Z0-9-]+\.workers\.dev' /tmp/network-deploy.log | tail -n1)"
+          test -n "$TEST_URL"
+          curl --fail --silent --show-error --retry 5 --retry-all-errors "$TEST_URL/login" -o /tmp/network-login.html
+          jq -n --arg sha "$GITHUB_SHA" --arg url "$TEST_URL" '{sha:$sha,url:$url,productionUntouched:true,secretsRotated:false}' > /tmp/network-staging-evidence.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: street-network-staging-evidence
+          path: /tmp/network-staging-evidence.json
+          if-no-files-found: ignore

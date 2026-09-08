@@ -80,11 +80,11 @@ export function rxdbChangeFeedEntriesForSnapshotDelta(
 ): RxdbChangeFeedEntry[] {
   const entries: RxdbChangeFeedEntry[] = [];
   for (const collectionName of ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const) {
-    const beforeIds = new Set(documentsForCollection(collectionName, before).map((document) => document.id));
-    const afterIds = new Set(documentsForCollection(collectionName, after).map((document) => document.id));
-    for (const id of new Set([...beforeIds, ...afterIds])) {
-      const previous = documentForCollection(collectionName, before, id);
-      const next = documentForCollection(collectionName, after, id);
+    const beforeById = new Map(documentsForCollection(collectionName, before).map((document) => [document.id, document]));
+    const afterById = new Map(documentsForCollection(collectionName, after).map((document) => [document.id, document]));
+    for (const id of new Set([...beforeById.keys(), ...afterById.keys()])) {
+      const previous = beforeById.get(id);
+      const next = afterById.get(id);
       if (!previous && !next) continue;
       if (previous && next && wireDocumentEqual(previous, next)) continue;
       const document = next ?? (previous ? toDeletedRxdbDocument(previous) : null);

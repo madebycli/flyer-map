@@ -42,8 +42,8 @@ export function ProgressOverviewTable({ overview, labels }: Props) {
                 </span>
               </td>
               <td>{row.name}</td>
-              <td>{row.progress.completed}</td>
-              <td>{row.progress.total}</td>
+              <td>{row.progress.denominator === "road-coverage" ? "" : row.progress.completed}</td>
+              <td>{row.progress.denominator === "road-coverage" ? "" : row.progress.total}</td>
               <td>{percent(row.progress.percentCompleted, labels.noTasks)}</td>
             </tr>
           ))}
