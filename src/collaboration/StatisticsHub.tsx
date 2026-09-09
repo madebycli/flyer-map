@@ -33,10 +33,12 @@ function errorMessage(error: unknown) {
 
 function percentLabel(progress: StatisticsProgress) {
   if (progress.total === 0) return "Noch keine Aufgaben";
+  if(progress.denominator === "road-coverage") return `${Math.round(progress.percentCompleted??0)} %`;
   return `${progress.completed} / ${progress.total} · ${Math.round(progress.percentCompleted ?? 0)} %`;
 }
 
 function denominatorLabel(denominator: StatisticsProgress["denominator"]) {
+  if(denominator === "road-coverage") return "Straßenabdeckung";
   return denominator === "street-tasks" ? "Straßen-Aufgaben" : "Haus-Aufgaben";
 }
 
@@ -129,7 +131,7 @@ function AreaRows({ data }: { data: CampaignStatistics }) {
               <strong>{area.name}</strong>
               <span>{area.teamName}</span>
             </div>
-            <ProgressBlock id={`statistics-area-streets-${area.areaId}`} title="Straßen" progress={area.streets} />
+            <ProgressBlock id={`statistics-area-streets-${area.areaId}`} title="Gesamtfortschritt" progress={area.overall ?? area.houses ?? area.streets} />
             {area.houses ? (
               <ProgressBlock id={`statistics-area-houses-${area.areaId}`} title="Häuser" progress={area.houses} />
             ) : null}
@@ -276,7 +278,7 @@ export function StatisticsHub({ context, online, onClose, onOpenSessions }: Prop
                     <strong>Gesamte Aktion</strong>
                   </div>
                   <div className="statistics-progress-grid">
-                    <ProgressBlock id="statistics-campaign-streets" title="Straßen" progress={statistics.campaign.streets} />
+                    <ProgressBlock id="statistics-campaign-streets" title="Gesamtfortschritt" progress={statistics.campaign.overall ?? statistics.campaign.houses ?? statistics.campaign.streets} />
                     {statistics.campaign.houses ? (
                       <ProgressBlock id="statistics-campaign-houses" title="Häuser" progress={statistics.campaign.houses} />
                     ) : null}
@@ -304,7 +306,7 @@ export function StatisticsHub({ context, online, onClose, onOpenSessions }: Prop
                           <span>{team.areaCount} Gebiete</span>
                         </div>
                         <div className="statistics-progress-grid">
-                          <ProgressBlock id={`statistics-team-streets-${team.teamId}`} title="Straßen" progress={team.streets} />
+                          <ProgressBlock id={`statistics-team-streets-${team.teamId}`} title="Gesamtfortschritt" progress={team.overall ?? team.houses ?? team.streets} />
                           {team.houses ? (
                             <ProgressBlock id={`statistics-team-houses-${team.teamId}`} title="Häuser" progress={team.houses} />
                           ) : null}

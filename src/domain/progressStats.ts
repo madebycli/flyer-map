@@ -1,3 +1,4 @@
+import { networkProgress } from './streetNetwork.ts';
 import type {
   CampaignSnapshot,
   DistributionTask,
@@ -6,7 +7,7 @@ import type {
 } from "./campaign.ts";
 
 export type ProgressSummary = {
-  denominator: "street-tasks";
+  denominator: "street-tasks" | "house-tasks" | "road-coverage";
   total: number;
   completed: number;
   open: number;
@@ -74,7 +75,7 @@ export function summarizeHouseTasks(tasks: HouseTask[]): HouseProgressSummary {
 }
 
 export function calculateCampaignProgress(snapshot: CampaignSnapshot): ProgressSummary {
-  return summarizeStreetTasks(snapshot.tasks);
+  return summarizePrimaryProgress(snapshot.tasks,snapshot.houseTasks??[]);
 }
 
 export function calculateTeamProgress(
@@ -84,7 +85,7 @@ export function calculateTeamProgress(
   const areaIds = new Set(
     snapshot.areas.filter((area) => area.teamId === teamId).map((area) => area.id),
   );
-  const summary = summarizeStreetTasks(snapshot.tasks.filter((task) => areaIds.has(task.areaId)));
+  const summary = summarizePrimaryProgress(snapshot.tasks.filter((task) => areaIds.has(task.areaId)),(snapshot.houseTasks??[]).filter(house=>areaIds.has(house.areaId)));
   return {
     ...summary,
     teamId,
@@ -115,10 +116,19 @@ export function calculateAreaProgress(
 ): AreaProgressSummary | null {
   const area = snapshot.areas.find((candidate) => candidate.id === areaId);
   if (!area) return null;
-  const summary = summarizeStreetTasks(snapshot.tasks.filter((task) => task.areaId === areaId));
+  const summary = summarizePrimaryProgress(snapshot.tasks.filter((task) => task.areaId === areaId),(snapshot.houseTasks??[]).filter(house=>house.areaId===areaId));
   return {
     ...summary,
     areaId,
     teamId: area.teamId,
   };
+}
+
+/** Houses are the primary unit. Coverage is a percent-only fallback. */
+export function summarizePrimaryProgress(tasks:DistributionTask[],houses:HouseTask[]):ProgressSummary {
+  if(houses.length)return summarizeHouseTasks(houses);
+  const progress=networkProgress(tasks,[]);
+  // Keep operational task counts for detailed lists; only primary percentage
+  // uses length weighting. UI hides these counts for the coverage denominator.
+  return {...summarizeStreetTasks(tasks),denominator:'road-coverage',percentCompleted:progress.totalLength?progress.percent:null};
 }

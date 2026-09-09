@@ -56,6 +56,8 @@ export type Area = {
 };
 
 export type DistributionTask = {
+  /** Server-owned topology and canonical coverage, absent for legacy/manual tasks. */
+  network?: import('./streetNetwork.ts').RoadNetwork;
   id: string;
   campaignId: string;
   areaId: string;
@@ -79,6 +81,8 @@ export type DistributionTask = {
 };
 
 export type HouseTask = {
+  /** Server-owned association confidence and measure on the parent edge. */
+  roadPosition?: import('./streetNetwork.ts').HouseRoadPosition;
   id: string;
   campaignId: string;
   areaId: string;

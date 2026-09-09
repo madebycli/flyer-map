@@ -122,6 +122,12 @@ export async function handleCampaignMutation(
     return errorResponse(422, "mutation_invalid", validation.message);
   }
   const mutation = validation.mutation;
+  const createdIds = mutation.type === 'task.create' || mutation.type === 'house.create'
+    ? [mutation.payload.taskId]
+    : mutation.type === 'house.create-batch' ? mutation.payload.houses.map(house => house.taskId) : [];
+  if (createdIds.some(id => id.startsWith('task_auto_') || id.startsWith('task_house_auto_'))) {
+    return errorResponse(422, 'auto_street_id_reserved', 'Automatische IDs sind ausschließlich serverseitig reserviert.');
+  }
   if (mutation.type === "team.delete" && access.role !== "admin") {
     return errorResponse(403, "team_delete_forbidden", "Nur Admins dürfen Teams löschen.");
   }
@@ -293,6 +299,10 @@ export async function handleCampaignMutation(
       );
     }
 
+    if (mutation.type === 'task.set-status' && current.tasks.find(task => task.id === mutation.payload.taskId)?.network) {
+      return errorResponse(409, 'network_intent_required', 'Bitte den vorbereiteten Straßenabschnitt auswählen.', current.revision);
+    }
+
     const eventSchemaAvailable =
       (mutation.type === "task.set-status" || mutation.type === "house.set-status") &&
       (await hasFieldSessionHistorySchema(db));
@@ -306,7 +316,7 @@ export async function handleCampaignMutation(
         )
       : null;
     const automationExecution =
-      eventSchemaAvailable && mutation.type === "house.set-status"
+      eventSchemaAvailable && mutation.type === "house.set-status" && !current.tasks.find(task => task.id === current.houseTasks?.find(house => house.id === mutation.payload.taskId)?.parentStreetTaskId)?.network
         ? await buildAutomationExecution(
             db,
             current,

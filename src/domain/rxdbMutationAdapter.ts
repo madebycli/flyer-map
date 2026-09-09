@@ -83,6 +83,16 @@ export function deriveMutationFromRxdbWrite(
     return { kind: "conflict", reason: "invalid_master_document" };
   }
   const current = targetFor(collectionName, snapshot, next.id);
+  if (collectionName === 'streetTasks') {
+    const task = narrowRxdbDocument('streetTasks', next)!;
+    const canonical = current && narrowRxdbDocument('streetTasks', current);
+    if (task.network && !canonical?.network) return {kind:'conflict', reason:'network_server_owned'};
+  }
+  if (collectionName === 'houseTasks') {
+    const task = narrowRxdbDocument('houseTasks', next)!;
+    const canonical = current && narrowRxdbDocument('houseTasks', current);
+    if (!same(task.roadPosition, canonical?.roadPosition)) return {kind:'conflict', reason:'house_position_server_owned'};
+  }
   const mutationBase = base(snapshot, canonicalCreatedAt);
 
   if (next.campaignId !== snapshot.campaign.id) return { kind: "conflict", reason: "campaign_mismatch" };
@@ -199,7 +209,7 @@ export function deriveMutationFromRxdbWrite(
       if (!task || !currentTask || !assumedTask) {
         return { kind: "conflict", reason: "invalid_collection_document" };
       }
-      if (task.areaId !== assumedTask.areaId || !same(task.geometry, assumedTask.geometry) || !same(task.source ?? null, assumedTask.source ?? null) || (task.areaPreparationGeneration ?? null) !== (assumedTask.areaPreparationGeneration ?? null)) return { kind: "conflict", reason: "task_structural_change" };
+      if (!same(task.network, assumedTask.network) || task.areaId !== assumedTask.areaId || !same(task.geometry, assumedTask.geometry) || !same(task.source ?? null, assumedTask.source ?? null) || (task.areaPreparationGeneration ?? null) !== (assumedTask.areaPreparationGeneration ?? null)) return { kind: "conflict", reason: "task_structural_change" };
       const statusChanged = task.status !== assumedTask.status || task.completedAt !== assumedTask.completedAt;
       const labelChanged = task.label !== assumedTask.label;
       if (Number(statusChanged) + Number(labelChanged) !== 1) return { kind: "conflict", reason: "task_compound_change" };
