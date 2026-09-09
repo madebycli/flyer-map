@@ -34,6 +34,13 @@ routing_rules:
   - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
+  - id: adr-renderer-security-candidate
+    path: docs/decisions/ADR-0030-maplibre-security-candidate.md
+    topics: [map, security, dependencies]
+    type: decision
+    status: candidate
+    load_when: [MapLibre upgrade, security audit, renderer release acceptance]
+
   - id: adr-street-base-budget
     path: docs/decisions/ADR-0029-street-base-chunks-and-budget.md
     type: decision
@@ -528,6 +535,8 @@ nodes:
     load_when: [generic fresh AI session]
 
 edges:
+  - { from: adr-renderer-security-candidate, to: map, relation: governs }
+  - { from: adr-renderer-security-candidate, to: security, relation: constrained_by }
   - { from: adr-street-base-budget, to: adr-street-house-network, relation: supersedes_storage }
   - { from: adr-street-base-budget, to: street-d1-budget, relation: supported_by }
   - { from: street-house-network-recovery, to: adr-street-base-budget, relation: governed_by }

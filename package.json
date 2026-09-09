@@ -19,7 +19,7 @@
     "@turf/line-slice-along": "7.3.1",
     "@turf/nearest-point-on-line": "7.3.1",
     "jsts": "2.12.1",
-    "maplibre-gl": "5.7.1",
+    "maplibre-gl": "6.9.0",
     "qrcode.react": "4.2.0",
     "rbush": "4.0.1",
     "react": "19.2.8",
@@ -45,7 +45,8 @@
     "brace-expansion": "3.0.6",
     "fast-uri": "3.1.6",
     "js-yaml": "4.3.1",
-    "nanoid": "3.3.18"
+    "nanoid": "3.3.18",
+    "sharp": "0.35.4"
   },
   "engines": {
     "node": ">=22"

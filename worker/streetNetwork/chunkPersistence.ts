@@ -32,11 +32,16 @@ export async function persistChunkSnapshot(db:D1DatabaseLike,before:CampaignSnap
   const changes=rxdbChangeFeedEntriesForSnapshotDelta(before,{...after,revision:before.revision+1});
   statements.push(...rxdbChangeFeedStatements(db,campaignId,token,options.timestamp,changes,true));
   if(options.intent)statements.push(db.prepare(`INSERT INTO street_network_intents(campaign_id,intent_id,fingerprint,revision) SELECT ?,?,?,? WHERE ${guard}`).bind(campaignId,options.intent.id,options.intent.fingerprint,before.revision+1,campaignId,token));
-  // Retain every history event and its dedupe identity, but bind bounded JSON
-  // batches so history-enabled campaigns do not exceed the invocation query cap.
-  for(const chunk of boundedChunks(options.events??[],800_000))statements.push(db.prepare(`INSERT INTO domain_events(id,campaign_id,team_id,field_session_id,entity_type,entity_id,event_type,occurred_at,actor_kind,actor_ref,payload_version,payload_json,dedupe_key,created_at)
-    SELECT json_extract(value,'$.id'),?,json_extract(value,'$.teamId'),json_extract(value,'$.fieldSessionId'),json_extract(value,'$.entityType'),json_extract(value,'$.entityId'),json_extract(value,'$.eventType'),json_extract(value,'$.occurredAt'),json_extract(value,'$.actorKind'),json_extract(value,'$.actorRef'),1,json_extract(value,'$.payload'),json_extract(value,'$.dedupeKey'),? FROM json_each(?) WHERE ${guard}`)
-    .bind(campaignId,options.timestamp,JSON.stringify(chunk),campaignId,token));
+  // Store bounded batches, expose every original event through the history view.
+  // Attribution, per-entity identity, status payload and dedupe key stay unchanged.
+  const events=options.events??[];
+  const actor=events[0];
+  if(actor){
+    if(events.some(e=>e.teamId!==actor.teamId||e.fieldSessionId!==actor.fieldSessionId||e.occurredAt!==actor.occurredAt||e.actorKind!==actor.actorKind||e.actorRef!==actor.actorRef))throw new Error('network_history_actor_mismatch');
+    const records=events.map(({id,entityType,entityId,eventType,payload,dedupeKey})=>({id,entityType,entityId,eventType,payload,dedupeKey}));
+    boundedChunks(records,800_000).forEach((chunk,part)=>statements.push(db.prepare(`INSERT INTO street_network_history(campaign_id,intent_id,part,team_id,field_session_id,occurred_at,created_at,actor_kind,actor_ref,payload_json)
+      SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${guard}`).bind(campaignId,options.intent?.id??token,part,actor.teamId,actor.fieldSessionId,actor.occurredAt,options.timestamp,actor.actorKind,actor.actorRef,JSON.stringify(chunk),campaignId,token)));
+  }
   if(statements.length>35)throw new Error('network_transaction_budget');
   const result=await db.batch(statements);
   return {committed:result[0]?.meta?.changes===1,revision:before.revision+1,statements:statements.length,taskWrites:changed.filter(entity=>entity.taskType==='street').length,houseWrites:changed.filter(entity=>entity.taskType==='house').length,feedWrites:changes.length};

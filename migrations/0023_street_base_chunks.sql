@@ -58,3 +58,26 @@ CREATE TABLE street_manual_house_parents (
   FOREIGN KEY(house_id,campaign_id) REFERENCES house_tasks(id,campaign_id) ON DELETE CASCADE,
   FOREIGN KEY(area_id,campaign_id) REFERENCES areas(id,campaign_id) ON DELETE CASCADE
 );
+
+-- Physical history batches preserve individual event identities through a read view.
+CREATE TABLE street_network_history (
+  campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  intent_id TEXT NOT NULL,
+  part INTEGER NOT NULL,
+  team_id TEXT,
+  field_session_id TEXT REFERENCES field_sessions(id) ON DELETE CASCADE,
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  actor_kind TEXT NOT NULL,
+  actor_ref TEXT,
+  payload_json TEXT NOT NULL CHECK(json_valid(payload_json)) CHECK(length(payload_json)<1000000),
+  PRIMARY KEY(campaign_id,intent_id,part)
+);
+CREATE INDEX street_history_session ON street_network_history(field_session_id,occurred_at);
+CREATE VIEW domain_event_history AS
+  SELECT id,campaign_id,team_id,field_session_id,entity_type,entity_id,event_type,occurred_at,actor_kind,actor_ref,payload_version,payload_json,dedupe_key,created_at FROM domain_events
+  UNION ALL
+  SELECT json_extract(e.value,'$.id'),b.campaign_id,b.team_id,b.field_session_id,
+    json_extract(e.value,'$.entityType'),json_extract(e.value,'$.entityId'),json_extract(e.value,'$.eventType'),b.occurred_at,b.actor_kind,b.actor_ref,
+    1,json_extract(e.value,'$.payload'),json_extract(e.value,'$.dedupeKey'),b.created_at
+  FROM street_network_history b,json_each(b.payload_json) e;

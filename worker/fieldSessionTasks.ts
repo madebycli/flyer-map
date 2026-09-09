@@ -1,3 +1,4 @@
+import { domainEventHistoryRelation } from './domainEventHistory.ts';
 import { resolveAccess, type AccessContext } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
@@ -158,7 +159,7 @@ export async function handleFieldSessionTasksApi(
     const result = await db
       .prepare(
         `SELECT DISTINCT entity_type, entity_id
-         FROM domain_events
+         FROM ${await domainEventHistoryRelation(db)}
          WHERE campaign_id = ?
            AND field_session_id = ?
            AND event_type = 'task.status.changed'

@@ -43,7 +43,15 @@ test('10k preparation and canonical delete stay within measured write and invoca
   const marking=await instance.fetch(new Request('https://campaign-sync.internal/execute',{method:'POST',headers:{'x-campaign-sync-internal':'1'},body:JSON.stringify({campaignId:'campaign_n',access:{campaignId:'campaign_n',role:'admin',teamId:null,label:null,grantId:'test'},operation:'network',input:{id:'budget_mark',areaId:'area_n',generation:street.areaPreparationGeneration,start:{point:street.geometry.coordinates[0],taskId:street.id},end:{point:street.geometry.coordinates.at(-1),taskId:street.id},selectedPath:[street.id],status:'completed'}})}));
   assert.equal(marking.status,200);
   const markBudget=db.report();assert.ok(markBudget.statements<=50);
-  assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM domain_events WHERE entity_type='house-task'").get()!.n,500);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM domain_event_history WHERE entity_type='house-task'").get()!.n,500);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM domain_events').get()!.n,0);
+  const history=db.sqlite.prepare("SELECT entity_id,actor_ref,payload_json,dedupe_key FROM domain_event_history WHERE campaign_id='campaign_n' AND entity_type='house-task'").all();
+  assert.equal(new Set(history.map(row=>row.entity_id)).size,500);
+  assert.ok(history.every(row=>row.actor_ref==='test'&&JSON.parse(String(row.payload_json)).newStatus==='completed'));
+  assert.equal(new Set(history.map(row=>row.dedupe_key)).size,500);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM domain_event_history WHERE campaign_id='other'").get()!.n,0);
+
+  assert.ok(markBudget.estimatedTotalRowsWritten<100,`history marking writes: ${markBudget.estimatedTotalRowsWritten}`);
   t.diagnostic(JSON.stringify({historyEnabledMarkQueries:markBudget.statements,historyEnabledMarkWrites:markBudget.estimatedTotalRowsWritten}));
   const area=snapshot.areas[0];db.resetBudget();
   const response=await instance.fetch(new Request('https://campaign-sync.internal/execute',{method:'POST',headers:{'x-campaign-sync-internal':'1'},body:JSON.stringify({campaignId:'campaign_n',access:{campaignId:'campaign_n',role:'admin',teamId:null,label:null,grantId:'test'},operation:'push',collectionName:'areas',input:{rows:[{assumedMasterState:area,newDocumentState:{...area,_deleted:true}}]}})}));

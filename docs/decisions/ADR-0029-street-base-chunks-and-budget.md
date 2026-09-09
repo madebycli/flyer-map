@@ -74,3 +74,22 @@ reconnect, scope changes, user edits, 10k local preparation/deletion and complet
 request query budgets before enabling the candidate. Do not roll an older reader
 onto a database containing chunk-only Areas without restoring a compatible reader
 or explicitly exporting those Areas. New storage is not proven complete by this ADR.
+
+## History compaction refinement, 2026-09-09
+
+Network marks store bounded history batches instead of one physical row per House.
+The domain_event_history UNION ALL view exposes every original per-entity event,
+including actor, session, status payload, event ID and dedupe key. Activity, Tour
+counts and Tour task readers query this relation; existing single-mutation events
+remain in domain_events. No event is summarized away.
+
+The full-schema 500-House mark drops from 3,053 to 50 estimated writes while retaining
+24 queries and 501 readable events. The write regression threshold is 100, which
+rejects an accidental return to indexed per-House history rows. History reads now
+expand bounded JSON batches: campaign/session filtering uses batch keys/indexes,
+but selective entity history can require more parsing. Measure that read tradeoff
+before release; it is not a claim of universally cheaper history reads.
+
+A new generation removes obsolete staging chunks only after the canonical job
+generation changes. A deferred A fetch after C publishes cannot write obsolete
+staging or publish A, verified by the A/B/C integration test.

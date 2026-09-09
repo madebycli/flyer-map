@@ -11,7 +11,7 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-came
 
 ## Current renderer baseline
 
-MapLibre GL JS **5.7.1** owns the persistent map rendering pipeline:
+MapLibre GL JS **6.9.0** in the PR #92 security candidate owns the persistent map rendering pipeline:
 - OpenFreeMap Bright vector basemap;
 - camera movement, zoom and bearing;
 - navigation/compass controls;
@@ -29,11 +29,11 @@ Stored edit/corner points are never shown in browse mode.
 
 ADR-0010 defines this saved-vs-active rendering boundary.
 
-## Why MapLibre is pinned to 5.7.1
+## Historical 5.7.1 pin and current security candidate
 
 A tested upgrade to MapLibre GL JS 6.4.1 produced a real-browser GeoJSON regression in this project: the basemap rendered and frame rate stayed healthy, while saved application GeoJSON became invisible and non-interactive.
 
-The current working baseline therefore pins 5.7.1. Do not upgrade MapLibre casually. Any runtime upgrade requires browser acceptance that proves:
+The historical working baseline therefore pinned 5.7.1. ADR-0030 replaces it with the security-fixed 6.9.0 candidate after a critical dependency advisory. Real-browser acceptance remains open. Any runtime upgrade requires browser acceptance that proves:
 - saved Area visible;
 - saved Street visible;
 - Area selectable;
@@ -48,7 +48,7 @@ Primary online provider is OpenFreeMap Bright:
 
 `https://tiles.openfreemap.org/styles/bright`
 
-The provider remains replaceable. Bright requires no application API key, account or secret. MapLibre remains pinned to 5.7.1.
+The provider remains replaceable. Bright requires no application API key, account or secret. MapLibre is pinned to the ADR-0030 candidate version.
 
 The loaded Bright contract uses vector source `openmaptiles`. Standard house numbers are enabled by default through exactly one app-owned symbol layer:
 

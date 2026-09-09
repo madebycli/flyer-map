@@ -1,3 +1,4 @@
+import { domainEventHistoryRelation } from './domainEventHistory.ts';
 import {
   ACTIVITY_EVENT_TYPES,
   type ActivityActorCategory,
@@ -622,7 +623,7 @@ async function listActivity(
            fs.person_seconds,
            street_task.label AS street_task_label,
            street_area.name AS street_area_label,${houseProjection}${commentProjection}
-         FROM domain_events e
+         FROM ${await domainEventHistoryRelation(db)} e
          LEFT JOIN teams event_team
            ON event_team.id = e.team_id
           AND event_team.campaign_id = e.campaign_id

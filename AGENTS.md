@@ -59,7 +59,7 @@ Frontend:
 - React;
 - Vite;
 - plain CSS;
-- MapLibre GL JS **5.7.1 pinned for the current renderer baseline**.
+- MapLibre GL JS **6.9.0 pinned for the PR #92 security candidate**, with browser acceptance still required by ADR-0030; the historical accepted renderer baseline was 5.7.1.
 
 Platform:
 - Cloudflare Workers;
