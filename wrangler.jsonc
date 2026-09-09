@@ -1,12 +1,15 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "flyer-map",
-  "main": "./worker/indexFc52.ts",
+  "main": "./worker/indexOrganizer.ts",
   "compatibility_date": "2026-08-01",
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/"]
+    "run_worker_first": [
+      "/api/*",
+      "/"
+    ]
   },
   "d1_databases": [
     {
@@ -20,13 +23,25 @@
       {
         "name": "CAMPAIGN_SYNC",
         "class_name": "CampaignSyncDurableObject"
+      },
+      {
+        "name": "ORGANIZATION_PASSWORD_KDF",
+        "class_name": "OrganizationPasswordKdfDurableObject"
       }
     ]
   },
   "migrations": [
     {
       "tag": "v1-campaign-sync",
-      "new_sqlite_classes": ["CampaignSyncDurableObject"]
+      "new_sqlite_classes": [
+        "CampaignSyncDurableObject"
+      ]
+    },
+    {
+      "tag": "v2-organization-password-kdf",
+      "new_sqlite_classes": [
+        "OrganizationPasswordKdfDurableObject"
+      ]
     }
   ],
   "ratelimits": [
@@ -53,6 +68,24 @@
         "limit": 20,
         "period": 10
       }
+    },
+    {
+      "name": "ORGANIZATION_LOGIN_LIMITER",
+      "namespace_id": "91714004",
+      "simple": {
+        "limit": 12,
+        "period": 60
+      }
     }
-  ]
+  ],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "vars": {
+    "RUNTIME_ENVIRONMENT": "main",
+    "ORGANIZATION_KDF_DIAGNOSTICS": "0"
+  },
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  }
 }

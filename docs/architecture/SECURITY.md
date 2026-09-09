@@ -238,7 +238,7 @@ Current and future protected routes require:
 
 ## Future Organizations and accounts
 
-Multi-organization administration is planned but not implemented by current Campaign roles.
+Organization administration is implemented through Organization accounts and memberships under ADR-0026. The full Main candidate composes these routes in `worker/indexOrganizer.ts`; known SEC findings remain tracked separately. Approved domain aliases keep origin-local `__Host-` cookies and strict same-origin writes while sharing only the canonical server data plane.
 
 Before implementation, accepted ADR(s) and threat-model review must define:
 - Organization identity/membership/session behavior;

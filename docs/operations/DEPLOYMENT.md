@@ -17,6 +17,25 @@ One Cloudflare Worker deployment containing:
 
 The repository is the source of truth. Normal releases flow from GitHub `main` to Cloudflare automatically; downloading/uploading builds from a phone is not part of the release process.
 
+## Main Runtime Aktivierungskandidat
+
+Der vollständige Main-Kandidat verwendet `worker/indexOrganizer.ts`. Dieser Entry umschließt `indexFc52.ts` und enthält damit Organization Auth/Security sowie die bestehende Field-, Collection-, Pickup- und RxDB-Runtime in einem Artefakt. `/api/runtime` liefert nur Umgebung, Cloudflare-Version und Capability-Flags, keine Secrets oder Binding-IDs.
+
+Mehrere genehmigte Domains dürfen denselben Worker als Alias verwenden. Jede Domain ruft ihre eigene Origin auf und besitzt eine eigene `__Host-vf_organization_session`. Alle Domains müssen dieselbe Production-D1, dieselbe Campaign-Sync-Durable-Object-Bindung und denselben Worker-Code verwenden. Eine Domain darf niemals Campaign- oder Project-Identität erzeugen.
+
+Vor einem Main-Merge müssen extern nachgewiesen werden:
+
+1. Production-D1-Backup und aktueller Migrationsledger;
+2. additive Anwendung von 0017, 0018, 0019 und 0020 in dieser Reihenfolge;
+3. Bindings `DB`, `CAMPAIGN_SYNC`, `ORGANIZATION_PASSWORD_KDF` und `ORGANIZATION_LOGIN_LIMITER`;
+4. Secrets `ORGANIZATION_TOTP_KEY` und `FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY`;
+5. Bootstrap entweder über `ORGANIZATION_BOOTSTRAP_SECRET_SHA256` oder einen bereits vollständig initialisierten Organization-Bestand;
+6. `nodejs_compat`, KDF-Iteration 600000 und beide Durable-Object-Migrationstags;
+7. jede genehmigte Custom Domain zeigt auf denselben Worker und nicht auf eine eigene Datenbank;
+8. exakter PR-Head hat grüne CI, anschließend separat autorisierter Merge und Production-Smoke.
+
+Fehlt eine Voraussetzung, bleibt die Organization-Funktion fail-closed. Diese Checkliste autorisiert weder Migration noch Deploy.
+
 ## Existing production connection
 
 Cloudflare Workers Builds is connected to `madebycli/flyer-map` and deploys `main` to the existing Workers deployment. Non-production branches produce Worker preview versions/URLs.
@@ -27,12 +46,7 @@ Repository configuration in `wrangler.jsonc` remains the deployment source of tr
 
 Production uses one D1 database named `flyer-map-db` with Worker binding name `DB`.
 
-Current `wrangler.jsonc` defines only:
-- `binding: DB`;
-- `database_name: flyer-map-db`;
-- the existing `database_id`.
-
-It does **not** define a separate Wrangler environment or `preview_database_id` for M5 browser acceptance.
+Current `wrangler.jsonc` defines exactly one D1 binding for the canonical Production database plus the Durable Object and rate-limit bindings used by the full Main runtime. It does **not** define a separate Wrangler environment or `preview_database_id`. Branch previews therefore must not be treated as data-isolated unless an external binding override is proven.
 
 Cloudflare Worker versions capture their bindings, while state changes in bound D1/KV/R2 resources are not versioned with the Worker. Workers Builds also does not natively create different production/non-production bindings merely because a branch has a preview URL.
 
@@ -43,7 +57,7 @@ Operational consequence:
 - use a deliberately disposable/test Campaign for destructive browser acceptance where practical;
 - do not assume a preview URL implies a separate database.
 
-A future dedicated staging D1 would require an explicit environment/build configuration. Current M5 does not add that infrastructure.
+Dedicated staging exists through separately guarded workflows and external resources. It is not encoded as the default `wrangler.jsonc` environment and does not authorize branch previews to use Production D1 for mutations.
 
 ## D1 migrations
 
