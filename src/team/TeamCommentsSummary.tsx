@@ -102,9 +102,16 @@ export function TeamCommentsSummary({ context, online, onChanged }: Props) {
       context.accessRole !== "admin" &&
       !(context.accessRole === "team-editor" && context.accessTeamId === currentArea.teamId)
     ) return;
+    if (normalized === currentArea.name) {
+      setEditingAreaId(null);
+      setAreaName("");
+      return;
+    }
     const now = new Date().toISOString();
     saveCampaignSnapshot({
       ...loaded,
+      revision: loaded.revision + 1,
+      campaign: { ...loaded.campaign, updatedAt: now },
       areas: loaded.areas.map((area) =>
         area.id === editingAreaId ? { ...area, name: normalized, updatedAt: now } : area,
       ),
