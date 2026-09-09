@@ -13,8 +13,17 @@ export type RxdbMutationDecision =
   | { kind: "conflict"; reason: string }
   | { kind: "apply"; mutation: CampaignMutation };
 
+type ThreeWayFieldState = "unchanged" | "canonical" | "apply" | "conflict";
+
 function same(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function threeWayFieldState(current: unknown, assumed: unknown, next: unknown): ThreeWayFieldState {
+  if (same(next, assumed)) return "unchanged";
+  if (same(current, next)) return "canonical";
+  if (same(current, assumed)) return "apply";
+  return "conflict";
 }
 
 function plain(document: RxdbDocument): RxdbDocument {
@@ -67,6 +76,11 @@ function isSameOrNewCanonical(current: RxdbDocument | null, next: RxdbDocument) 
 /**
  * Converts one optimistic RxDB document write to the existing narrow mutation
  * contract. The Worker always compares against current canonical D1 data.
+ *
+ * The client master can legitimately be older than the current D1 row. Only
+ * the field that the client actually changed participates in conflict
+ * detection. Timestamp drift and unrelated canonical changes must not turn a
+ * safe field-level rebase into a server-wins rejection.
  */
 export function deriveMutationFromRxdbWrite(
   collectionName: RxdbCollectionName,
@@ -83,16 +97,6 @@ export function deriveMutationFromRxdbWrite(
     return { kind: "conflict", reason: "invalid_master_document" };
   }
   const current = targetFor(collectionName, snapshot, next.id);
-  if (collectionName === 'streetTasks') {
-    const task = narrowRxdbDocument('streetTasks', next)!;
-    const canonical = current && narrowRxdbDocument('streetTasks', current);
-    if (task.network && !canonical?.network) return {kind:'conflict', reason:'network_server_owned'};
-  }
-  if (collectionName === 'houseTasks') {
-    const task = narrowRxdbDocument('houseTasks', next)!;
-    const canonical = current && narrowRxdbDocument('houseTasks', current);
-    if (!same(task.roadPosition, canonical?.roadPosition)) return {kind:'conflict', reason:'house_position_server_owned'};
-  }
   const mutationBase = base(snapshot, canonicalCreatedAt);
 
   if (next.campaignId !== snapshot.campaign.id) return { kind: "conflict", reason: "campaign_mismatch" };
@@ -135,11 +139,13 @@ export function deriveMutationFromRxdbWrite(
       case "streetTasks": {
         const task = narrowRxdbDocument("streetTasks", next);
         if (!task) return { kind: "conflict", reason: "invalid_collection_document" };
+        if (task.network) return { kind: "conflict", reason: "network_server_owned" };
         return { kind: "apply", mutation: { ...mutationBase, type: "task.create", payload: { taskId: task.id, areaId: task.areaId, label: task.label, geometry: task.geometry, ...(task.source ? { source: task.source } : {}) } } };
       }
       case "houseTasks": {
         const task = narrowRxdbDocument("houseTasks", next);
         if (!task) return { kind: "conflict", reason: "invalid_collection_document" };
+        if (task.roadPosition) return { kind: "conflict", reason: "house_position_server_owned" };
         return { kind: "apply", mutation: { ...mutationBase, type: "house.create", payload: { taskId: task.id, areaId: task.areaId, label: task.label, geometry: task.geometry, ...(task.source ? { source: task.source } : {}), parentStreetTaskId: task.parentStreetTaskId } } };
       }
     }
@@ -158,14 +164,19 @@ export function deriveMutationFromRxdbWrite(
       }
       const changedName = nextCampaign.name !== assumedCampaign.name;
       const changedMap = !same(nextCampaign.defaultMapView, assumedCampaign.defaultMapView);
-      if (nextCampaign.status !== assumedCampaign.status || Number(changedName) + Number(changedMap) !== 1) {
+      if (nextCampaign.status !== assumedCampaign.status || Number(changedName) + Number(changedMap) > 1) {
         return { kind: "conflict", reason: "campaign_structural_change" };
       }
+      if (!changedName && !changedMap) return { kind: "ack" };
       if (changedName) {
-        if (currentCampaign.name !== assumedCampaign.name) return { kind: "conflict", reason: "campaign_name_changed" };
+        const state = threeWayFieldState(currentCampaign.name, assumedCampaign.name, nextCampaign.name);
+        if (state === "canonical") return { kind: "ack" };
+        if (state === "conflict") return { kind: "conflict", reason: "campaign_name_changed" };
         return { kind: "apply", mutation: { ...mutationBase, type: "campaign.rename", payload: { name: nextCampaign.name, expectedName: currentCampaign.name } } };
       }
-      if (!same(currentCampaign.defaultMapView, assumedCampaign.defaultMapView)) return { kind: "conflict", reason: "campaign_map_changed" };
+      const state = threeWayFieldState(currentCampaign.defaultMapView, assumedCampaign.defaultMapView, nextCampaign.defaultMapView);
+      if (state === "canonical") return { kind: "ack" };
+      if (state === "conflict") return { kind: "conflict", reason: "campaign_map_changed" };
       return { kind: "apply", mutation: { ...mutationBase, type: "campaign.set-default-map-view", payload: { defaultMapView: nextCampaign.defaultMapView, expectedDefaultMapView: currentCampaign.defaultMapView } } };
     }
     case "teams": {
@@ -178,12 +189,15 @@ export function deriveMutationFromRxdbWrite(
       if (nextTeam.createdAt !== assumedTeam.createdAt || nextTeam.campaignId !== assumedTeam.campaignId) {
         return { kind: "conflict", reason: "team_structural_change" };
       }
-      const nameChanged = nextTeam.name !== assumedTeam.name;
-      const colorChanged = nextTeam.color !== assumedTeam.color;
-      if (!nameChanged && !colorChanged) return { kind: "ack" };
-      const applyName = nameChanged && currentTeam.name === assumedTeam.name;
-      const applyColor = colorChanged && currentTeam.color === assumedTeam.color;
-      if (!applyName && !applyColor) return { kind: "conflict", reason: "team_field_changed" };
+      const nameState = threeWayFieldState(currentTeam.name, assumedTeam.name, nextTeam.name);
+      const colorState = threeWayFieldState(currentTeam.color, assumedTeam.color, nextTeam.color);
+      if (nameState === "unchanged" && colorState === "unchanged") return { kind: "ack" };
+      const applyName = nameState === "apply";
+      const applyColor = colorState === "apply";
+      if (!applyName && !applyColor) {
+        if (nameState === "conflict" || colorState === "conflict") return { kind: "conflict", reason: "team_field_changed" };
+        return { kind: "ack" };
+      }
       return { kind: "apply", mutation: { ...mutationBase, type: "team.update", payload: { teamId: nextTeam.id, ...(applyName ? { name: nextTeam.name } : {}), ...(applyColor ? { color: nextTeam.color } : {}), expectedUpdatedAt: currentTeam.updatedAt } } };
     }
     case "areas": {
@@ -193,13 +207,30 @@ export function deriveMutationFromRxdbWrite(
       if (!nextArea || !currentArea || !assumedArea) {
         return { kind: "conflict", reason: "invalid_collection_document" };
       }
-      if (currentArea.updatedAt !== assumedArea.updatedAt) return { kind: "conflict", reason: "area_changed" };
+      if (nextArea.createdAt !== assumedArea.createdAt || nextArea.campaignId !== assumedArea.campaignId) {
+        return { kind: "conflict", reason: "area_structural_change" };
+      }
       const nameChanged = nextArea.name !== assumedArea.name;
       const teamChanged = nextArea.teamId !== assumedArea.teamId;
       const geometryChanged = !same(nextArea.geometry, assumedArea.geometry);
-      if (Number(nameChanged) + Number(teamChanged) + Number(geometryChanged) !== 1) return { kind: "conflict", reason: "area_structural_change" };
-      if (nameChanged) return { kind: "apply", mutation: { ...mutationBase, type: "area.rename", payload: { areaId: nextArea.id, name: nextArea.name, expectedUpdatedAt: currentArea.updatedAt } } };
-      if (teamChanged) return { kind: "apply", mutation: { ...mutationBase, type: "area.set-team", payload: { areaId: nextArea.id, teamId: nextArea.teamId, expectedUpdatedAt: currentArea.updatedAt } } };
+      const changedCount = Number(nameChanged) + Number(teamChanged) + Number(geometryChanged);
+      if (changedCount > 1) return { kind: "conflict", reason: "area_structural_change" };
+      if (changedCount === 0) return { kind: "ack" };
+      if (nameChanged) {
+        const state = threeWayFieldState(currentArea.name, assumedArea.name, nextArea.name);
+        if (state === "canonical") return { kind: "ack" };
+        if (state === "conflict") return { kind: "conflict", reason: "area_changed" };
+        return { kind: "apply", mutation: { ...mutationBase, type: "area.rename", payload: { areaId: nextArea.id, name: nextArea.name, expectedUpdatedAt: currentArea.updatedAt } } };
+      }
+      if (teamChanged) {
+        const state = threeWayFieldState(currentArea.teamId, assumedArea.teamId, nextArea.teamId);
+        if (state === "canonical") return { kind: "ack" };
+        if (state === "conflict") return { kind: "conflict", reason: "area_changed" };
+        return { kind: "apply", mutation: { ...mutationBase, type: "area.set-team", payload: { areaId: nextArea.id, teamId: nextArea.teamId, expectedUpdatedAt: currentArea.updatedAt } } };
+      }
+      const state = threeWayFieldState(currentArea.geometry, assumedArea.geometry, nextArea.geometry);
+      if (state === "canonical") return { kind: "ack" };
+      if (state === "conflict") return { kind: "conflict", reason: "area_changed" };
       return { kind: "apply", mutation: { ...mutationBase, type: "area.update-geometry", payload: { areaId: nextArea.id, geometry: nextArea.geometry, expectedUpdatedAt: currentArea.updatedAt } } };
     }
     case "streetTasks": {
@@ -212,13 +243,22 @@ export function deriveMutationFromRxdbWrite(
       if (!same(task.network, assumedTask.network) || task.areaId !== assumedTask.areaId || !same(task.geometry, assumedTask.geometry) || !same(task.source ?? null, assumedTask.source ?? null) || (task.areaPreparationGeneration ?? null) !== (assumedTask.areaPreparationGeneration ?? null)) return { kind: "conflict", reason: "task_structural_change" };
       const statusChanged = task.status !== assumedTask.status || task.completedAt !== assumedTask.completedAt;
       const labelChanged = task.label !== assumedTask.label;
-      if (Number(statusChanged) + Number(labelChanged) !== 1) return { kind: "conflict", reason: "task_compound_change" };
-      const remoteStatusChanged = currentTask.status !== assumedTask.status || currentTask.completedAt !== assumedTask.completedAt;
+      const changedCount = Number(statusChanged) + Number(labelChanged);
+      if (changedCount > 1) return { kind: "conflict", reason: "task_compound_change" };
+      if (changedCount === 0) return { kind: "ack" };
       if (statusChanged) {
-        if (remoteStatusChanged) return { kind: "conflict", reason: "task_status_changed" };
+        const state = threeWayFieldState(
+          { status: currentTask.status, completedAt: currentTask.completedAt },
+          { status: assumedTask.status, completedAt: assumedTask.completedAt },
+          { status: task.status, completedAt: task.completedAt },
+        );
+        if (state === "canonical") return { kind: "ack" };
+        if (state === "conflict") return { kind: "conflict", reason: "task_status_changed" };
         return { kind: "apply", mutation: { ...mutationBase, type: "task.set-status", payload: { taskId: task.id, status: task.status, completedAt: task.completedAt, expectedUpdatedAt: currentTask.updatedAt } } };
       }
-      if (currentTask.label !== assumedTask.label) return { kind: "conflict", reason: "task_label_changed" };
+      const state = threeWayFieldState(currentTask.label, assumedTask.label, task.label);
+      if (state === "canonical") return { kind: "ack" };
+      if (state === "conflict") return { kind: "conflict", reason: "task_label_changed" };
       return { kind: "apply", mutation: { ...mutationBase, type: "task.rename", payload: { taskId: task.id, label: task.label, expectedUpdatedAt: currentTask.updatedAt } } };
     }
     case "houseTasks": {
@@ -228,16 +268,25 @@ export function deriveMutationFromRxdbWrite(
       if (!task || !currentTask || !assumedTask) {
         return { kind: "conflict", reason: "invalid_collection_document" };
       }
-      if (task.areaId !== assumedTask.areaId || task.parentStreetTaskId !== assumedTask.parentStreetTaskId || !same(task.geometry, assumedTask.geometry) || !same(task.source ?? null, assumedTask.source ?? null) || (task.areaPreparationGeneration ?? null) !== (assumedTask.areaPreparationGeneration ?? null)) return { kind: "conflict", reason: "house_structural_change" };
+      if (!same(task.roadPosition, assumedTask.roadPosition) || task.areaId !== assumedTask.areaId || task.parentStreetTaskId !== assumedTask.parentStreetTaskId || !same(task.geometry, assumedTask.geometry) || !same(task.source ?? null, assumedTask.source ?? null) || (task.areaPreparationGeneration ?? null) !== (assumedTask.areaPreparationGeneration ?? null)) return { kind: "conflict", reason: "house_structural_change" };
       const statusChanged = task.status !== assumedTask.status || task.completedAt !== assumedTask.completedAt;
       const labelChanged = task.label !== assumedTask.label;
-      if (Number(statusChanged) + Number(labelChanged) !== 1) return { kind: "conflict", reason: "house_compound_change" };
-      const remoteStatusChanged = currentTask.status !== assumedTask.status || currentTask.completedAt !== assumedTask.completedAt;
+      const changedCount = Number(statusChanged) + Number(labelChanged);
+      if (changedCount > 1) return { kind: "conflict", reason: "house_compound_change" };
+      if (changedCount === 0) return { kind: "ack" };
       if (statusChanged) {
-        if (remoteStatusChanged) return { kind: "conflict", reason: "house_status_changed" };
+        const state = threeWayFieldState(
+          { status: currentTask.status, completedAt: currentTask.completedAt },
+          { status: assumedTask.status, completedAt: assumedTask.completedAt },
+          { status: task.status, completedAt: task.completedAt },
+        );
+        if (state === "canonical") return { kind: "ack" };
+        if (state === "conflict") return { kind: "conflict", reason: "house_status_changed" };
         return { kind: "apply", mutation: { ...mutationBase, type: "house.set-status", payload: { taskId: task.id, status: task.status, completedAt: task.completedAt, expectedUpdatedAt: currentTask.updatedAt } } };
       }
-      if (currentTask.label !== assumedTask.label) return { kind: "conflict", reason: "house_label_changed" };
+      const state = threeWayFieldState(currentTask.label, assumedTask.label, task.label);
+      if (state === "canonical") return { kind: "ack" };
+      if (state === "conflict") return { kind: "conflict", reason: "house_label_changed" };
       return { kind: "apply", mutation: { ...mutationBase, type: "house.rename", payload: { taskId: task.id, label: task.label, expectedUpdatedAt: currentTask.updatedAt } } };
     }
   }
