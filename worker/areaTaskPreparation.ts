@@ -1,4 +1,5 @@
-import { runNetworkPreparationStep } from './streetNetwork/preparation.ts';
+import { runNetworkPreparationStep, preparationTiles } from './streetNetwork/preparation.ts';
+import { hasBaseStorage } from './streetNetwork/baseStorage.ts';
 import type {
   Area,
   CampaignSnapshot,
@@ -44,6 +45,7 @@ export const AREA_PREPARATION_CHUNK_BYTES = 450_000;
 export const AREA_PREPARATION_MAX_INSERT_CHUNKS = 90;
 
 export type AreaPreparationFailureCode =
+  | "area_preparation_runner_unavailable"
   | "area_preparation_schema_unavailable"
   | "area_preparation_too_large"
   | "area_preparation_osm_timeout"
@@ -71,7 +73,9 @@ export type AreaPreparationState = {
   updatedAt: string;
 };
 
+export type AreaPreparationProgress = { phase:string; totalTiles:number; completedRoadTiles:number; completedBuildingTiles:number; processedBuildings:number; totalBuildings:number; percent:number };
 export type AreaPreparationPublicState = {
+  progress?: AreaPreparationProgress;
   status: "missing" | AreaPreparationStateStatus;
   roadCount: number;
   houseCount: number;
@@ -89,6 +93,8 @@ export type PrepareAreaTasksResult =
   | { outcome: "missing" };
 
 export type AreaTaskPreparationOptions = {
+  onProgress?: (area:Area,state:AreaPreparationPublicState)=>void;
+  schedule?: (campaignId:string, restart?:boolean) => Promise<void>;
   upstreamUrl?: string;
   fetchImpl?: FetchLike;
   now?: () => Date;
@@ -98,14 +104,14 @@ export type AreaTaskPreparationOptions = {
   maxBuildings?: number;
   chunkBytes?: number;
   /** Runs after the guarded D1/feed publish; failures must not roll back the publish. */
-  onCommitted?: () => void | Promise<void>;
+  onCommitted?: (db?:D1DatabaseLike) => void | Promise<void>;
 };
 
 /** A claimed, server-owned run whose pending state is already durable in D1. */
 export type AreaTaskPreparationRun = {
   campaignId: string;
   areaId: string;
-  snapshot: CampaignSnapshot;
+  snapshot?: CampaignSnapshot;
   area: Area;
   /** Versioned area-preparation fingerprint stored in the legacy geometry_hash column. */
   geometryHash: string;
@@ -203,6 +209,27 @@ export async function getAreaTaskPreparationState(
   return row ? toState(row) : null;
 }
 
+async function withProgress(db:D1DatabaseLike,state:AreaPreparationState|null):Promise<AreaPreparationPublicState> {
+  const result=publicState(state);
+  if(!state || !await hasStreetNetworkSchema(db))return result;
+  const job=await db.prepare('SELECT phase,cursor,geometry_json,metrics_json FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND generation=?').bind(state.campaignId,state.areaId,state.generation).first<{phase:string;cursor:number;geometry_json:string;metrics_json:string}>();
+  if(!job)return result;
+  const totalTiles=preparationTiles({geometry:JSON.parse(job.geometry_json)} as Area).length;
+  const metrics=JSON.parse(job.metrics_json);
+  return {...result,roadCount:state.status==='ready'?state.roadCount:metrics.roads??0,houseCount:state.status==='ready'?state.houseCount:metrics.houses??0,progress:preparationProgress(job.phase,job.cursor,totalTiles,metrics,state.status==='ready')};
+}
+
+export function preparationProgress(phase:string,cursor:number,totalTiles:number,metrics:{addressableBuildings?:number},ready=false):AreaPreparationProgress{
+  const phases=['roads','graph','buildings','addresses','link','publish','ready'];
+  const phaseIndex=phases.indexOf(phase);
+  const completedRoadTiles=phaseIndex>0?totalTiles:Math.min(cursor,totalTiles);
+  const completedBuildingTiles=phaseIndex>2?totalTiles:phaseIndex===2?Math.min(cursor,totalTiles):0;
+  const totalBuildings=metrics.addressableBuildings??0;
+  const processedBuildings=phaseIndex>4?totalBuildings:phaseIndex===4?Math.min(cursor,totalBuildings):0;
+  const percent=ready?100:Math.min(99,Math.floor(30*completedRoadTiles/Math.max(1,totalTiles)+(phaseIndex>1?10:0)+30*completedBuildingTiles/Math.max(1,totalTiles)+(phaseIndex>4?25:25*processedBuildings/Math.max(1,totalBuildings))));
+  return {phase,totalTiles,completedRoadTiles,completedBuildingTiles,processedBuildings,totalBuildings,percent};
+}
+
 export async function getAreaTaskPreparationPublicState(
   db: D1DatabaseLike,
   campaignId: string,
@@ -211,7 +238,7 @@ export async function getAreaTaskPreparationPublicState(
   if (!(await hasAreaTaskPreparationSchema(db))) {
     return publicState(null);
   }
-  return publicState(await getAreaTaskPreparationState(db, campaignId, areaId));
+  return withProgress(db,await getAreaTaskPreparationState(db, campaignId, areaId));
 }
 
 function stableValue(value: unknown): unknown {
@@ -475,18 +502,19 @@ export async function beginAreaTaskPreparation(
   const now = nowDate.toISOString();
   const geometryHash = await areaPreparationFingerprint(area.geometry);
   const current = await getAreaTaskPreparationState(db, campaignId, areaId);
+  const canReconcileWork=await hasBaseStorage(db);
   if (current?.status === "ready" && current.geometryHash === geometryHash) {
     return { outcome: "result", result: { outcome: "no-op", state: "ready" } };
   }
   if ((current?.status === 'pending' || current?.status === 'failed') && current.geometryHash === geometryHash && await hasStreetNetworkSchema(db)) {
-    if (await areaHasStartedAutomaticWork(db,campaignId,areaId)) return {outcome:'result',result:{outcome:'failed',code:'area_preparation_work_started'}};
+    if (!canReconcileWork&&await areaHasStartedAutomaticWork(db,campaignId,areaId)) return {outcome:'result',result:{outcome:'failed',code:'area_preparation_work_started'}};
     await db.batch([db.prepare("UPDATE area_task_preparations SET status='pending',last_error_code=NULL WHERE campaign_id=? AND area_id=? AND generation=?").bind(campaignId,areaId,current.generation)]);
     return {outcome:'run',run:{campaignId,areaId,snapshot,area,geometryHash,generation:current.generation,now}};
   }
   if (current && isFreshPending(current, geometryHash, nowDate)) {
     return { outcome: "result", result: { outcome: "no-op", state: "pending" } };
   }
-  if (await areaHasStartedAutomaticWork(db, campaignId, areaId)) {
+  if (!canReconcileWork&&await areaHasStartedAutomaticWork(db, campaignId, areaId)) {
     return {
       outcome: "result",
       result: { outcome: "failed", code: "area_preparation_work_started" },
@@ -537,14 +565,15 @@ export async function runAreaTaskPreparation(
   if (!await hasStreetNetworkSchema(db)) return {outcome:'failed',code:'area_preparation_schema_unavailable'};
   const result = await runNetworkPreparationStep(db,run,options);
   if(result.outcome==='ready') {
-    const state=await getAreaTaskPreparationState(db,run.campaignId,run.areaId);
-    return {outcome:'ready',roadCount:state?.roadCount??0,houseCount:state?.houseCount??0,generation:run.generation};
+    return {outcome:'ready',roadCount:result.roadCount,houseCount:result.houseCount,generation:run.generation};
   }
   if(result.outcome==='failed') {
     const code: AreaPreparationFailureCode = result.code.includes('budget') ? 'area_preparation_too_many_features'
       : result.code.includes('worked') || result.code === 'area_preparation_work_started' ? (await areaHasStartedAutomaticWork(db,run.campaignId,run.areaId) ? 'area_preparation_work_started' : 'area_preparation_stale')
       : result.code.includes('stale') ? 'area_preparation_stale' : 'area_preparation_osm_failed';
     await markPreparationFailed(db,{campaignId:run.campaignId,areaId:run.areaId,generation:run.generation,geometryHash:run.geometryHash,code,now:new Date().toISOString()});
+    const failed=await getAreaTaskPreparationState(db,run.campaignId,run.areaId);
+    if(failed?.generation===run.generation&&failed.status==='failed')try{options.onProgress?.(run.area,publicState(failed));}catch{/* Best-effort push; the failure remains durable. */}
     return code==='area_preparation_stale'?{outcome:'stale',code}:{outcome:'failed',code};
   }
   return {outcome:'pending'};
@@ -609,13 +638,13 @@ export async function shouldStartAreaPreparation(
   const geometryHash = await areaPreparationFingerprint(area.geometry);
   const state = await getAreaTaskPreparationState(db, campaignId, area.id);
   if (state?.status === "ready" && state.geometryHash === geometryHash) {
-    return { schemaAvailable: true as const, shouldStart: false, state: publicState(state) };
+    return { schemaAvailable: true as const, shouldStart: false, state: await withProgress(db,state) };
   }
   if (state && isFreshPending(state, geometryHash, now)) {
-    return { schemaAvailable: true as const, shouldStart: false, state: publicState(state) };
+    return { schemaAvailable: true as const, shouldStart: false, state: await withProgress(db,state) };
   }
   if (await areaHasStartedAutomaticWork(db, campaignId, area.id)) {
-    return { schemaAvailable: true as const, shouldStart: false, state: publicState(state) };
+    return { schemaAvailable: true as const, shouldStart: false, state: await withProgress(db,state) };
   }
-  return { schemaAvailable: true as const, shouldStart: true, state: publicState(state) };
+  return { schemaAvailable: true as const, shouldStart: true, state: await withProgress(db,state) };
 }

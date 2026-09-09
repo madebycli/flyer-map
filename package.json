@@ -32,7 +32,10 @@
     "@types/rbush": "4.0.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "@types/react-test-renderer": "19.1.0",
     "@vitejs/plugin-react": "6.1.0",
+    "fake-indexeddb": "6.2.5",
+    "react-test-renderer": "19.2.8",
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "wrangler": "4.125.0"

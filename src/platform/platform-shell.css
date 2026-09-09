@@ -573,3 +573,10 @@
 .platform-app-icon--rooms { background: linear-gradient(145deg, #8b73d6, #5d47af); }
 .platform-app-icon--comments { background: linear-gradient(145deg, #39a79f, #17736d); }
 .platform-app-icon--streets { background: linear-gradient(145deg, #e49a40, #b8651f); }
+.platform-smart-mark-button {
+  right: calc(1.1rem + var(--platform-field-control-size));
+  background: #6d28d9;
+  border-color: #4c1d95;
+}
+.platform-smart-mark-button:active { background: #4c1d95; }
+.platform-smart-mark-button:focus-visible { outline: 3px solid #ffffff; outline-offset: 3px; }

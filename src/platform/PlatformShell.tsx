@@ -134,6 +134,10 @@ export function PlatformShell() {
         </button>
       ) : null}
 
+      {launcherAvailable && !overlayOpen && appContext?.canSmartMark ? (
+        <button className="platform-manual-street-button platform-smart-mark-button" type="button" onClick={()=>dispatchSimpleCommand('start-smart-marking')} aria-label="Straßenabschnitt markieren" title="Straßenabschnitt markieren"><span aria-hidden="true">✎</span></button>
+      ) : null}
+
       {menuOpen ? (
         <FieldHub open title="Menü" kicker="Verteil-Flyer" onClose={() => setMenuOpen(false)} initialSnap="expanded">
           <div className="platform-menu-grid">
@@ -215,6 +219,7 @@ export function PlatformShell() {
           context={appContext}
           onClose={() => setPrimaryHub(null)}
           onManualStreet={() => dispatchSimpleCommand("start-manual-street")}
+          onSmartMark={() => dispatchSimpleCommand("start-smart-marking")}
           onOpenStreet={openStreetTask}
         />
       ) : null}

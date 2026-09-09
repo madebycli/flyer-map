@@ -34,6 +34,18 @@ routing_rules:
   - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
+  - id: adr-street-base-budget
+    path: docs/decisions/ADR-0029-street-base-chunks-and-budget.md
+    type: decision
+    status: accepted
+    topics: [streets, houses, d1, budget, chunks]
+    load_when: [Street D1 budget, prepared base storage]
+  - id: street-d1-budget
+    path: docs/architecture/STREET_D1_BUDGET.md
+    type: architecture
+    status: active
+    topics: [d1, budget, performance]
+    load_when: [D1 usage, Street budget regression]
   - id: street-house-network-recovery
     path: docs/plans/active/032-street-house-network-recovery.md
     type: plan
@@ -516,6 +528,9 @@ nodes:
     load_when: [generic fresh AI session]
 
 edges:
+  - { from: adr-street-base-budget, to: adr-street-house-network, relation: supersedes_storage }
+  - { from: adr-street-base-budget, to: street-d1-budget, relation: supported_by }
+  - { from: street-house-network-recovery, to: adr-street-base-budget, relation: governed_by }
   - { from: plan-main-runtime-parity, to: adr-main-runtime-domain-aliases, relation: governed_by }
   - { from: plan-main-runtime-parity, to: security, relation: constrained_by }
   - { from: plan-main-runtime-parity, to: deployment, relation: activates_through }

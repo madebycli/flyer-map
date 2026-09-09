@@ -575,7 +575,7 @@ test("Campaign and Team text/color bursts trail into one upstream window", async
   assert.match(sync, /visibleAreaIds/u);
   assert.match(sync, /new WebSocketConstructor/u);
   assert.match(sync, /async safetyResync/u);
-  assert.match(sync, /45_000/u);
+  assert.match(sync, /120_000/u);
   assert.match(app, /onBlur=\{\(\) => \{ normalizeTeamName\(team\); flushRxdbDrafts\(\); \}\}/u);
   assert.match(app, /onKeyDown=\{\(event\) => \{ if \(event\.key === "Enter"\) flushRxdbDrafts\(\); \}\}/u);
   assert.match(settings, /onBlur=\{\(\) => \{ onNormalizeCampaignName\(\); onCommitCampaignDraft\(\); \}\}/u);

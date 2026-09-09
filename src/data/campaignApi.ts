@@ -42,6 +42,7 @@ export type CampaignAdminAccount = {
 export type AreaPreparationStatus = "missing" | "pending" | "ready" | "failed";
 
 export type AreaPreparationPublicState = {
+  progress?: {phase:string;totalTiles:number;completedRoadTiles:number;completedBuildingTiles:number;processedBuildings:number;totalBuildings:number;percent:number};
   status: AreaPreparationStatus;
   roadCount: number;
   houseCount: number;

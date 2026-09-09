@@ -1,3 +1,4 @@
+import { GenerationVisibility } from './generationVisibility.ts';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 import { createRxDatabase, addRxPlugin } from "rxdb";
 import type { RxCollection, RxDatabase, RxDocument, RxJsonSchema } from "rxdb";
@@ -26,6 +27,15 @@ const REQUEST_TIMEOUT_MS = 12_000;
 const PUSH_CONFIRMATION_TIMEOUT_MS = 20_000;
 const FIELD_GROUP_ACTOR_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 const COLLECTION_NAMES = ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const satisfies readonly RxdbCollectionName[];
+function collectionHeads(value:unknown):Partial<Record<RxdbCollectionName,number>>|null{
+  if(!value||typeof value!=='object'||Array.isArray(value))return null;
+  const heads:Partial<Record<RxdbCollectionName,number>>={};
+  for(const [name,seq] of Object.entries(value)){
+    if(!COLLECTION_NAMES.includes(name as RxdbCollectionName)||typeof seq!=='number'||!Number.isSafeInteger(seq)||seq<0)return null;
+    heads[name as RxdbCollectionName]=seq;
+  }
+  return heads;
+}
 
 type RxdbCollections = Record<RxdbCollectionName, RxCollection<RxdbDocument>>;
 type MissionRxdbDatabase = RxDatabase<RxdbCollections>;
@@ -284,11 +294,14 @@ export class MissionRxdbSync {
   private readonly onRemoteEvent: (event: RxdbRemoteSyncEvent) => void;
   private database: MissionRxdbDatabase | null = null;
   private collections: RxdbCollections | null = null;
+  private readonly generationVisibility = new GenerationVisibility();
+  private readonly deletedAreaHints = new Map<string,number>();
   private readonly replications = new Map<RxdbCollectionName, ReplicationState>();
   private readonly checkpoints = new Map<RxdbCollectionName, number>();
   private readonly pendingPullProgress = new Map<RxdbCollectionName, PendingPullProgress>();
   private readonly pullApplyFailures = new Set<RxdbCollectionName>();
   private readonly subscriptions: Array<{ unsubscribe(): void }> = [];
+  private readonly collectionDocuments = new Map<RxdbCollectionName, any[]>();
   private materializationTimer: number | null = null;
   private safetyTimer: number | null = null;
   private socketReconnectTimer: number | null = null;
@@ -401,7 +414,7 @@ export class MissionRxdbSync {
       console.error("[rxdb-sync]", { event: "http-failure", operation: "checkpoint", status: error.status, code: error.code });
       throw error;
     }
-    const payload = await response.json() as { checkpoint?: { seq?: unknown }; campaignRevision?: unknown };
+    const payload = await response.json() as { checkpoint?: { seq?: unknown }; campaignRevision?: unknown; collections?:unknown };
     this.onIssueResolved();
     const seq = payload.checkpoint?.seq;
     if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) {
@@ -410,7 +423,7 @@ export class MissionRxdbSync {
     const campaignRevision = typeof payload.campaignRevision === "number" && Number.isSafeInteger(payload.campaignRevision) && payload.campaignRevision >= 0
       ? payload.campaignRevision
       : this.canonicalRevision;
-    return { seq, campaignRevision };
+    return { seq, campaignRevision,collections:collectionHeads(payload.collections) };
   }
 
   private readStoredProgress(): StoredSyncProgress {
@@ -501,18 +514,15 @@ export class MissionRxdbSync {
 
   private async materialize() {
     if (!this.collections) return;
-    const [campaigns, teams, areas, streetTasks, houseTasks] = await Promise.all([
-      this.collections.campaigns.find({ selector: { campaignId: this.campaignId } }).exec(),
-      this.collections.teams.find({ selector: { campaignId: this.campaignId } }).exec(),
-      this.collections.areas.find({ selector: { campaignId: this.campaignId } }).exec(),
-      this.collections.streetTasks.find({ selector: { campaignId: this.campaignId } }).exec(),
-      this.collections.houseTasks.find({ selector: { campaignId: this.campaignId } }).exec(),
-    ]);
+    // The live queries already provide consistent collection results. Reuse them
+    // instead of executing all five queries again after every collection event.
+    if (COLLECTION_NAMES.some(name => !this.collectionDocuments.has(name))) return;
+    const [campaigns, teams, areas, streetTasks, houseTasks] = COLLECTION_NAMES.map(name => this.collectionDocuments.get(name)!);
     const visibleTeams = this.teamScopeId ? teams.filter((document) => narrowRxdbDocument("teams", document)?.id === this.teamScopeId) : teams;
-    const visibleAreas = this.teamScopeId ? areas.filter((document) => narrowRxdbDocument("areas", document)?.teamId === this.teamScopeId) : areas;
+    const visibleAreas = areas.filter(document=>!this.deletedAreaHints.has(document.id) && (!this.teamScopeId || narrowRxdbDocument("areas",document)?.teamId===this.teamScopeId));
     const visibleAreaIds = new Set(visibleAreas.map((document) => document.id));
-    const visibleStreetTasks = this.teamScopeId ? streetTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("streetTasks", document)?.areaId ?? "")) : streetTasks;
-    const visibleHouseTasks = this.teamScopeId ? houseTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("houseTasks", document)?.areaId ?? "")) : houseTasks;
+    const visibleStreetTasks = streetTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("streetTasks", document)?.areaId ?? ""));
+    const visibleHouseTasks = houseTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("houseTasks", document)?.areaId ?? ""));
     const campaign = campaigns[0] ? narrowRxdbDocument("campaigns", campaigns[0].toJSON()) : null;
     const teamDocuments = visibleTeams.flatMap((document) => { const value = narrowRxdbDocument("teams", document.toJSON()); return value ? [value] : []; });
     const areaDocuments = visibleAreas.flatMap((document) => { const value = narrowRxdbDocument("areas", document.toJSON()); return value ? [value] : []; });
@@ -527,7 +537,7 @@ export class MissionRxdbSync {
       houseTasks: houseTaskDocuments,
       collection: this.collectionFallback,
     });
-    if (snapshot) this.onSnapshot(snapshot);
+    if (snapshot) this.onSnapshot(this.generationVisibility.project(snapshot));
   }
 
   private trackPushProofs(proofs: RxdbPushProof[]) {
@@ -593,6 +603,17 @@ export class MissionRxdbSync {
               campaignRevision: result.campaignRevision,
             });
           }
+          if(result.generationState){
+            if(this.generationVisibility.accept(result.generationState.manifests,result.generationState.revision))try{progressStorage()?.setItem(this.progressKey+':generations',JSON.stringify(this.generationVisibility.state()));}catch{/* Read-model hint only; replication remains durable. */}
+            this.scheduleMaterialization();
+          }
+          for(const id of result.deletedAreaIds??[])this.deletedAreaHints.set(id,result.checkpoint.seq);
+          if(collectionName==='areas')for(const document of result.documents){
+            if(!document._deleted && result.checkpoint.seq>(this.deletedAreaHints.get(document.id)??Infinity))this.deletedAreaHints.delete(document.id);
+          }
+          // A canonical parent-deletion hint makes the read model atomic even
+          // when paginated child tombstones arrive before the Area collection.
+          if(result.deletedAreaIds?.length)this.scheduleMaterialization();
           this.queuePullProgress(collectionName, result.checkpoint.seq, result.campaignRevision);
           return { documents: result.documents.map(withDeletedMarker), checkpoint: result.checkpoint };
         },
@@ -654,7 +675,13 @@ export class MissionRxdbSync {
       try { payload = typeof event.data === "string" ? JSON.parse(event.data) : null; } catch { return; }
       if (!payload || typeof payload !== "object") return;
       const value = payload as Record<string, unknown>;
+      if(value.type==='preparation'&&typeof value.areaId==='string'&&value.state&&typeof value.state==='object'){
+        window.dispatchEvent(new CustomEvent('campaign-preparation',{detail:{campaignId:this.campaignId,areaId:value.areaId,state:value.state}}));
+        return;
+      }
       const seq = value.seq;
+      const heads=collectionHeads(value.collections);
+      if(value.type==='changed'&&heads){this.refresh(COLLECTION_NAMES.filter(name=>(heads[name]??0)>(this.knownCheckpoint(name)??0)));return;}
       if (value.type === "changed" && typeof seq === "number" && Number.isSafeInteger(seq) && seq > this.minimumKnownCheckpoint()) {
         console.info("[rxdb-sync]", {
           event: "realtime-change",
@@ -687,7 +714,8 @@ export class MissionRxdbSync {
     try {
       const checkpoint = await this.requestCheckpoint();
       const storedRevision = this.readStoredProgress().campaignRevision ?? this.canonicalRevision;
-      if (checkpoint.seq > this.minimumKnownCheckpoint() || checkpoint.campaignRevision > Math.max(this.canonicalRevision, storedRevision)) this.refresh();
+      if(checkpoint.collections)this.refresh(COLLECTION_NAMES.filter(name=>(checkpoint.collections![name]??0)>(this.knownCheckpoint(name)??0)));
+      else if (checkpoint.seq > this.minimumKnownCheckpoint() || checkpoint.campaignRevision > Math.max(this.canonicalRevision, storedRevision)) this.refresh();
     } catch (error) {
       const code = error instanceof RxdbSyncHttpError ? error.code : "rxdb_checkpoint_failed";
       this.onIssue({ kind: code.includes("schema_unavailable") ? "schema" : "network", code });
@@ -695,6 +723,7 @@ export class MissionRxdbSync {
   }
 
   async start() {
+    try{const value=JSON.parse(progressStorage()?.getItem(this.progressKey+':generations')??'null');if(value)this.generationVisibility.accept(value.manifests,value.revision);}catch{/* Malformed hints cannot block canonical pulls. */}
     if (this.initialized) return;
     const actorSuffix = this.actorScopeId ? "-actor-" + safeDatabaseSegment(this.actorScopeId) : "";
     this.database = await createRxDatabase({
@@ -713,7 +742,10 @@ export class MissionRxdbSync {
     this.initialized = true;
     const startupDeadline = Date.now() + REPLICATION_START_BARRIER_TIMEOUT_MS;
     for (const collectionName of Object.keys(this.collections) as RxdbCollectionName[]) {
-      this.subscriptions.push(this.collections[collectionName].find({ selector: { campaignId: this.campaignId } }).$.subscribe(() => this.scheduleMaterialization()));
+      this.subscriptions.push(this.collections[collectionName].find({ selector: { campaignId: this.campaignId } }).$.subscribe((documents: any[]) => {
+        this.collectionDocuments.set(collectionName, documents);
+        this.scheduleMaterialization();
+      }));
       const replication = this.createReplication(collectionName);
       const remaining = startupDeadline - Date.now();
       if (remaining > 0) {
@@ -723,24 +755,25 @@ export class MissionRxdbSync {
         ]);
       }
     }
-    if (typeof window !== "undefined") this.safetyTimer = window.setInterval(() => { void this.safetyResync(); }, 45_000);
+    if (typeof window !== "undefined") this.safetyTimer = window.setInterval(() => { if(document.visibilityState!=='hidden')void this.safetyResync(); }, 120_000);
     this.connectSocket();
     this.scheduleMaterialization();
   }
 
-  refresh() {
+  refresh(names:readonly RxdbCollectionName[]=COLLECTION_NAMES) {
     this.connectSocket();
-    for (const replication of this.replications.values()) replication.reSync();
+    for (const name of names) this.replications.get(name)?.reSync();
   }
 
   async refreshAndWait(timeoutMs = 15_000) {
     if (!this.initialized) throw new RxdbSyncHttpError(0, "rxdb_not_initialized", "RxDB-Synchronisation ist noch nicht gestartet.");
     const target = await this.requestCheckpoint();
-    this.refresh();
-    if (this.allCollectionsAtOrBeyond(target.seq)) {
+    const reached=()=>target.collections?COLLECTION_NAMES.every(name=>(this.knownCheckpoint(name)??0)>=(target.collections![name]??0)):this.allCollectionsAtOrBeyond(target.seq);
+    this.refresh(target.collections?COLLECTION_NAMES.filter(name=>(target.collections![name]??0)>(this.knownCheckpoint(name)??0)):COLLECTION_NAMES);
+    if (reached()) {
       this.canonicalRevision = Math.max(this.canonicalRevision, target.campaignRevision);
       this.scheduleMaterialization();
-      return target;
+      return {seq:target.seq,campaignRevision:target.campaignRevision};
     }
 
     return await new Promise<{ seq: number; campaignRevision: number }>((resolve, reject) => {
@@ -762,7 +795,7 @@ export class MissionRxdbSync {
         cleanup();
         this.canonicalRevision = Math.max(this.canonicalRevision, target.campaignRevision);
         this.scheduleMaterialization();
-        resolve(target);
+        resolve({seq:target.seq,campaignRevision:target.campaignRevision});
       };
       const fail = (error: unknown) => {
         if (settled) return;
@@ -776,7 +809,7 @@ export class MissionRxdbSync {
           fail(new RxdbSyncHttpError(0, "rxdb_refresh_cancelled", "RxDB-Aktualisierung wurde beendet."));
           return;
         }
-        if (this.allCollectionsAtOrBeyond(target.seq)) {
+        if (reached()) {
           finish();
           return;
         }
@@ -856,18 +889,8 @@ export class MissionRxdbSync {
       case "area.update-geometry": proofs = await this.mutateDocument("areas", mutation.payload.areaId, (current) => current ? { ...current, geometry: mutation.payload.geometry, updatedAt: now } : current); break;
       case "area.delete": {
         proofs = await this.mutateDocument("areas", mutation.payload.areaId, () => null);
-        const [streetDocuments, houseDocuments] = await Promise.all([
-          this.collections.streetTasks.find({ selector: { campaignId: mutation.campaignId, areaId: mutation.payload.areaId } }).exec(),
-          this.collections.houseTasks.find({ selector: { campaignId: mutation.campaignId, areaId: mutation.payload.areaId } }).exec(),
-        ]);
-        const [removedStreetTasks, removedHouseTasks] = await Promise.all([
-          Promise.all(streetDocuments.map((document) => document.remove())),
-          Promise.all(houseDocuments.map((document) => document.remove())),
-        ]);
-        proofs.push(
-          ...removedStreetTasks.map((document) => ({ collectionName: "streetTasks" as const, document })),
-          ...removedHouseTasks.map((document) => ({ collectionName: "houseTasks" as const, document })),
-        );
+        // D1 owns the cascade and publishes all child tombstones atomically.
+        // Local child writes race that cascade and violate prepared-task guards.
         break;
       }
       case "task.create": proofs = await this.mutateDocument("streetTasks", mutation.payload.taskId, () => ({ id: mutation.payload.taskId, campaignId: mutation.campaignId, areaId: mutation.payload.areaId, taskType: "street", label: mutation.payload.label, geometry: mutation.payload.geometry, ...(mutation.payload.source ? { source: mutation.payload.source } : {}), areaPreparationGeneration: null, status: "open", completedAt: null, createdAt: now, updatedAt: now } satisfies RxdbDocumentForCollection<"streetTasks">)); break;
@@ -895,6 +918,7 @@ export class MissionRxdbSync {
     this.socket = null;
     if (socket) { try { socket.close(); } catch {} }
     for (const subscription of this.subscriptions.splice(0)) subscription.unsubscribe();
+    this.collectionDocuments.clear();
     for (const replication of this.replications.values()) await replication.cancel();
     this.replications.clear();
     this.pendingPullProgress.clear();

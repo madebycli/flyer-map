@@ -1,8 +1,8 @@
 name: Street Network Isolated Staging
 on:
-  push:
-    branches: [feature/street-house-network-recovery, integration/main-street-runtime]
-    paths: ['src/**', 'worker/**', 'migrations/**', 'tests/**', 'scripts/street-network-*', 'package*.json', '.github/workflows/street-network-staging.yml']
+  # Remote D1 is account-budgeted. Run only a selected, locally verified candidate.
+  workflow_dispatch:
+
 permissions:
   contents: read
   pull-requests: read

@@ -1,25 +1,12 @@
-import { StrictMode } from "react";
+import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AccessLinkOnboardingGate } from "./access/AccessLinkOnboardingGate";
 import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { campaignIdFromUrl } from "./data/campaignApi";
 import { installRxdbFetchGuard } from "./data/rxdbFetchGuard";
-import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
-import { OrganizationAdminNavEnhancer } from "./organization/OrganizationAdminNavEnhancer";
-import { OrganizationApp } from "./organization/OrganizationApp";
-import { OrganizationInviteCenter } from "./organization/OrganizationInviteCenter";
-import { OrganizationInviteRedeemPage, OrganizationPasswordResetPage } from "./organization/OrganizationPublicLinks";
-import { OrganizationSecurityCenter } from "./organization/OrganizationSecurityCenter";
 import { isOrganizationAdminPath } from "./organization/organizationRoutes";
-import { FunnyFocusVideo } from "./platform/FunnyFocusVideo";
-import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
-import { ActionWorkbenchPreview } from "./workbench/ActionWorkbenchPreview";
-import { AdminWorkbenchPreview } from "./workbench/AdminWorkbenchPreview";
-import { LiveGroupWorkbenchPreview } from "./workbench/LiveGroupWorkbenchPreview";
-import { M6SelectionPreview } from "./workbench/M6SelectionPreview";
-import { WorkbenchPreview } from "./workbench/WorkbenchPreview";
 import "./styles.css";
 import "./street-mode.css";
 import "./mobile-stability.css";
@@ -29,6 +16,21 @@ import "./m5.css";
 import "./access-recovery.css";
 import "./diagnostics/map-diagnostics.css";
 import "./map-context-ui.css";
+
+const MapDiagnostics = lazy(() => import("./diagnostics/MapDiagnostics").then(module => ({ default: module.MapDiagnostics })));
+const OrganizationAdminNavEnhancer = lazy(() => import("./organization/OrganizationAdminNavEnhancer").then(module => ({ default: module.OrganizationAdminNavEnhancer })));
+const OrganizationApp = lazy(() => import("./organization/OrganizationApp").then(module => ({ default: module.OrganizationApp })));
+const OrganizationInviteCenter = lazy(() => import("./organization/OrganizationInviteCenter").then(module => ({ default: module.OrganizationInviteCenter })));
+const OrganizationInviteRedeemPage = lazy(() => import("./organization/OrganizationPublicLinks").then(module => ({ default: module.OrganizationInviteRedeemPage })));
+const OrganizationPasswordResetPage = lazy(() => import("./organization/OrganizationPublicLinks").then(module => ({ default: module.OrganizationPasswordResetPage })));
+const OrganizationSecurityCenter = lazy(() => import("./organization/OrganizationSecurityCenter").then(module => ({ default: module.OrganizationSecurityCenter })));
+const FunnyFocusVideo = lazy(() => import("./platform/FunnyFocusVideo").then(module => ({ default: module.FunnyFocusVideo })));
+const PlatformShell = lazy(() => import("./platform/PlatformShell").then(module => ({ default: module.PlatformShell })));
+const ActionWorkbenchPreview = lazy(() => import("./workbench/ActionWorkbenchPreview").then(module => ({ default: module.ActionWorkbenchPreview })));
+const AdminWorkbenchPreview = lazy(() => import("./workbench/AdminWorkbenchPreview").then(module => ({ default: module.AdminWorkbenchPreview })));
+const LiveGroupWorkbenchPreview = lazy(() => import("./workbench/LiveGroupWorkbenchPreview").then(module => ({ default: module.LiveGroupWorkbenchPreview })));
+const M6SelectionPreview = lazy(() => import("./workbench/M6SelectionPreview").then(module => ({ default: module.M6SelectionPreview })));
+const WorkbenchPreview = lazy(() => import("./workbench/WorkbenchPreview").then(module => ({ default: module.WorkbenchPreview })));
 
 installRxdbFetchGuard();
 
@@ -49,29 +51,29 @@ const preview = workbenchMode && workbenchMode in previews
 
 if (preview) {
   document.title = preview.title;
-  root.render(<StrictMode>{preview.component}</StrictMode>);
+  root.render(<StrictMode><Suspense fallback={<div role="status" className="app-loading">Lade …</div>}>{preview.component}</Suspense></StrictMode>);
 } else if (window.location.pathname === "/join") {
   document.title = "Einladung | Flyer Map";
-  root.render(<StrictMode><OrganizationInviteRedeemPage /></StrictMode>);
+  root.render(<StrictMode><Suspense fallback={<div role="status" className="app-loading">Lade …</div>}><OrganizationInviteRedeemPage /></Suspense></StrictMode>);
 } else if (window.location.pathname === "/reset") {
   document.title = "Passwort-Reset | Flyer Map";
-  root.render(<StrictMode><OrganizationPasswordResetPage /></StrictMode>);
+  root.render(<StrictMode><Suspense fallback={<div role="status" className="app-loading">Lade …</div>}><OrganizationPasswordResetPage /></Suspense></StrictMode>);
 } else if (window.location.pathname === "/admin/invites") {
   document.title = "Einladungen | Flyer Map";
-  root.render(<StrictMode><OrganizationInviteCenter /></StrictMode>);
+  root.render(<StrictMode><Suspense fallback={<div role="status" className="app-loading">Lade …</div>}><OrganizationInviteCenter /></Suspense></StrictMode>);
 } else if (window.location.pathname === "/admin/security") {
   document.title = "Sicherheit | Flyer Map";
-  root.render(<StrictMode><><OrganizationSecurityCenter /><OrganizationAdminNavEnhancer /></></StrictMode>);
+  root.render(<StrictMode><Suspense fallback={<div role="status" className="app-loading">Lade …</div>}><><OrganizationSecurityCenter /><OrganizationAdminNavEnhancer /></></Suspense></StrictMode>);
 } else if (isOrganizationAdminPath(window.location.pathname)) {
   document.title = "Organizer Admin | Flyer Map";
-  root.render(<StrictMode><><OrganizationApp /><OrganizationAdminNavEnhancer /></></StrictMode>);
+  root.render(<StrictMode><Suspense fallback={<div role="status" className="app-loading">Lade …</div>}><><OrganizationApp /><OrganizationAdminNavEnhancer /></></Suspense></StrictMode>);
 } else if (!campaignIdFromUrl()) {
   document.title = "Anmeldung | Flyer Map";
   window.location.replace("/login");
 } else {
   document.title = "Verteil-Flyer";
   root.render(
-    <StrictMode>
+    <StrictMode><Suspense fallback={<div role="status" className="app-loading">Lade …</div>}>
       <PlatformShell />
       <FunnyFocusVideo />
       <AccessRecoveryGate />
@@ -79,6 +81,6 @@ if (preview) {
       <FieldGroupJoinGate />
       <MapDiagnostics />
       <SyncStatus />
-    </StrictMode>,
+    </Suspense></StrictMode>,
   );
 }

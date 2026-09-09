@@ -14,11 +14,13 @@ export function StreetsHub({
   context,
   onClose,
   onManualStreet,
+  onSmartMark,
   onOpenStreet,
 }: {
   context: PlatformAppContext | null;
   onClose: () => void;
   onManualStreet: () => void;
+  onSmartMark?: () => void;
   onOpenStreet: (taskId: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -38,7 +40,7 @@ export function StreetsHub({
           <label className="team-center-field"><span>Straße suchen</span><input value={query} placeholder="Name oder Gebiet" onChange={(event) => setQuery(event.target.value)} /></label>
           <button className="team-center-primary" type="button" onClick={onManualStreet} disabled={!canCreateManualStreet}>Straße manuell hinzufügen</button>
           {!canCreateManualStreet ? <p className="team-center-help">Manuelle Straßen können nur in einem bearbeitbaren Gebiet angelegt werden.</p> : null}
-          <p className="team-center-help">Smart Street wird später genau hier an die bestehende Karten- und Straßenlogik angebunden. Es existiert bewusst keine zweite Karten-Engine.</p>
+          {context?.canSmartMark?<button className="team-center-primary" type="button" onClick={onSmartMark}>Straßenabschnitt markieren</button>:null}
           <div className="team-center-room-list">
             {streets.slice(0, 80).map((street) => (
               <button key={street.id} type="button" onClick={() => onOpenStreet(street.id)}>

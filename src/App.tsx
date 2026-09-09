@@ -325,6 +325,7 @@ export default function App({
           : platformSyncState === "error"
             ? "Synchronisierung prüfen"
             : null;
+  const networkWorkspace = useNetworkWorkspace(snapshot, access, async () => { await manualRefreshCampaign(); }, canChangeTaskStatusInArea);
   useEffect(() => {
     onPlatformContextChange?.({
       campaignId: snapshot.campaign.id,
@@ -336,14 +337,15 @@ export default function App({
         : null,
       teams: snapshot.teams.map((team) => ({ id: team.id, name: team.name, color: team.color })),
       streets: platformStreets,
-      launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection,
+      launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection && !networkWorkspace.active,
+      canSmartMark: networkWorkspace.available,
       canManageTeams: Boolean(isAdmin),
       canCreateArea: Boolean(activeTeam && canEditTeam(activeTeam.id)),
       canCreateManualStreet: snapshot.areas.some((area) => canEditArea(area)),
       syncState: platformSyncState,
       syncLabel: platformSyncLabel,
     });
-  }, [access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, onPlatformContextChange, platformStreets, platformSyncLabel, platformSyncState, sheet, snapshot.areas, snapshot.campaign.id, snapshot.teams]);
+  }, [networkWorkspace.active, networkWorkspace.available, access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, onPlatformContextChange, platformStreets, platformSyncLabel, platformSyncState, sheet, snapshot.areas, snapshot.campaign.id, snapshot.teams]);
 
   const renderedAreas = useMemo(
     () =>
@@ -354,7 +356,6 @@ export default function App({
     [snapshot.areas, snapshot.teams],
   );
 
-  const networkWorkspace = useNetworkWorkspace(snapshot, access, async () => { await manualRefreshCampaign(); });
   const renderedTasks = useMemo(
     () =>
       networkWorkspace.optimistic.tasks.map((task) => {
@@ -594,6 +595,10 @@ export default function App({
     }
     if (platformCommand.type === "start-area-drawing") {
       startDrawing();
+    }
+    if(platformCommand.type === 'start-smart-marking') {
+      if(!networkWorkspace.available)return;
+      setSheet(null);setMode('browse');setManualStreetAreaSelection(false);networkWorkspace.open(null);return;
     }
     if (platformCommand.type === "start-manual-street") {
       startManualStreet();
@@ -1228,7 +1233,7 @@ export default function App({
         </section>
       ) : null}
 
-      {mode === "browse" && sheet === null ? (
+      {mode === "browse" && sheet === null && !networkWorkspace.active ? (
         <section className={`map-toolbar ${access?.role === "viewer" ? "viewer-toolbar" : ""}`} aria-label={t(language, "mapActions")}>
           {access && (access.role === "admin" || access.role === "team-editor") ? (
             <label className="team-picker">
@@ -1250,6 +1255,7 @@ export default function App({
             </label>
           ) : null}
           <div className="toolbar-actions">
+            {networkWorkspace.available?<button className="button primary" type="button" onClick={()=>{setManualStreetAreaSelection(false);networkWorkspace.open(null);}}>Straßenabschnitt markieren</button>:null}
             <button className="button secondary" type="button" onClick={() => setSheet("settings")}>
               {t(language, "settings")}
             </button>

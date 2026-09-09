@@ -1,6 +1,8 @@
 import type { DistributionTask, LineStringGeometry } from "../../src/domain/campaign.ts";
+import nearestPointOnLine from '@turf/nearest-point-on-line';
+import { roadSlice, setCoverage } from '../../src/domain/streetNetwork.ts';
 
-export const AREA_STREET_PREPARATION_ALGORITHM_VERSION = "street-network-v3";
+export const AREA_STREET_PREPARATION_ALGORITHM_VERSION = "street-network-v4-addressed";
 
 export const AUTO_STREET_SERVER_OWNED_FIELDS = [
   "id",
@@ -123,6 +125,7 @@ export async function reconcileServerPreparedStreetTasks(input: {
   generation: string;
   timestamp: string;
   preparedTasks?: DistributionTask[];
+  allowRemovedWork?: boolean;
 }): Promise<ServerPreparedStreetReconcilePlan> {
   const preparedById = new Map<string, DistributionTask>();
   for (const candidate of input.preparedFragments) {
@@ -146,7 +149,7 @@ export async function reconcileServerPreparedStreetTasks(input: {
     .filter((task) => !preparedById.has(task.id) && task.status !== "open")
     .map((task) => task.id)
     .sort();
-  if (workedTaskIds.length > 0) {
+  if (workedTaskIds.length > 0 && !input.allowRemovedWork) {
     return { outcome: "blocked-worked", workedTaskIds };
   }
 
@@ -170,8 +173,29 @@ export async function reconcileServerPreparedStreetTasks(input: {
         updates.push(next);
       }
     } else {
-      reconciledAutomatic.push(prepared);
-      inserts.push(prepared);
+      let next=prepared;
+      if(input.allowRemovedWork&&prepared.network){
+        let coverage=prepared.network.coverage;
+        let inherited:DistributionTask|undefined;
+        for(const old of existingAutomatic){
+          if(!old.network?.coverage.length||!old.source?.objectIds.some(id=>prepared.source?.objectIds.includes(id)))continue;
+          for(const range of old.network.coverage){
+            const line=roadSlice(old.geometry,range.from,range.to);
+            const points:number[]=[];
+            for(const point of [line.coordinates[0],line.coordinates.at(-1)!]){
+              const snap=nearestPointOnLine(prepared.geometry,point,{units:'meters'});
+              if(snap.properties.dist<0.5)points.push(snap.properties.location);
+            }
+            for(const [point,measure] of [[prepared.geometry.coordinates[0],0],[prepared.geometry.coordinates.at(-1)!,prepared.network.length]] as const){
+              if(nearestPointOnLine(line,point,{units:'meters'}).properties.dist<0.5)points.push(measure);
+            }
+            if(points.length>=2){const from=Math.max(0,Math.min(...points)),to=Math.min(prepared.network.length,Math.max(...points));if(to-from>0.001){coverage=setCoverage(coverage,from,to,range.status,prepared.network.length);inherited=old;}}
+          }
+        }
+        if(inherited){const full=coverage.length===1&&coverage[0].from<0.001&&coverage[0].to>=prepared.network.length-0.001;const status=full?coverage[0].status:'open';next={...prepared,label:inherited.label,createdAt:inherited.createdAt,network:{...prepared.network,coverage},status,completedAt:status==='completed'?inherited.completedAt:null};}
+      }
+      reconciledAutomatic.push(next);
+      inserts.push(next);
     }
   }
 

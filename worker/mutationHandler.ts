@@ -18,6 +18,9 @@ import {
   teamDeleteBlocker,
 } from "./mutationRepository.ts";
 import { validateCampaignMutation } from "./mutationValidation.ts";
+import { requestDatabase } from './requestDatabase.ts';
+import { hasBaseStorage } from './streetNetwork/baseStorage.ts';
+import { areaPreparationFingerprint } from './areaTaskPreparation.ts';
 import { validateCampaignSnapshot } from "./snapshotValidation.ts";
 import { isPickupMutationInput } from "./pickupMutationRuntime.ts";
 import { handlePickupMutationRequest } from "./pickupMutationEntry.ts";
@@ -103,6 +106,7 @@ export async function handleCampaignMutation(
   context?: AreaPreparationExecutionContext,
   options?: AreaTaskPreparationOptions,
 ) {
+  db=requestDatabase(db);
   if (request.method !== "POST") {
     return errorResponse(405, "method_not_allowed", "Für Mutationen ist nur POST erlaubt.");
   }
@@ -190,8 +194,9 @@ export async function handleCampaignMutation(
     });
   }
 
-  for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
-    const current = await loadCampaignSnapshot(db, campaignId);
+  const persistAttempts=await hasBaseStorage(db)?1:MAX_PERSIST_ATTEMPTS;
+  for (let attempt = 0; attempt < persistAttempts; attempt += 1) {
+    const current = await loadCampaignSnapshot(db, campaignId, {includeCollection:mutation.type.startsWith("collection."),houseId:mutation.type==='house.set-status'||mutation.type==='house.rename'?mutation.payload.taskId:undefined});
     if (!current) {
       return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
     }
@@ -289,6 +294,7 @@ export async function handleCampaignMutation(
 
     if (
       mutation.type === "area.update-geometry" &&
+      !await hasBaseStorage(db) &&
       await areaHasStartedAutomaticWork(db, campaignId, mutation.payload.areaId)
     ) {
       return errorResponse(
@@ -338,10 +344,15 @@ export async function handleCampaignMutation(
         ),
       };
     }
+    const chunkAreaDelete=mutation.type==='area.delete'&&await hasBaseStorage(db)&&await db.prepare('SELECT generation FROM street_base_areas WHERE campaign_id=? AND area_id=?').bind(campaignId,mutation.payload.areaId).first();
     const syncChanges = (await hasRxdbSyncSchema(db))
-      ? rxdbChangeFeedEntriesForMutation(current, syncAfter, mutation)
+      ? chunkAreaDelete
+        ? rxdbChangeFeedEntriesForMutation({...current,tasks:[],houseTasks:[]},{...syncAfter,tasks:[],houseTasks:[]},mutation)
+        : rxdbChangeFeedEntriesForMutation(current, syncAfter, mutation)
       : [];
 
+    const automaticPreparation=(mutation.type==='area.create'||mutation.type==='area.update-geometry')&&await hasBaseStorage(db)
+      ? {areaId:mutation.payload.areaId,geometryHash:await areaPreparationFingerprint(syncAfter.areas.find(area=>area.id===mutation.payload.areaId)!.geometry),generation:crypto.randomUUID()}:undefined;
     const persisted = await persistCampaignMutation(
       db,
       mutation,
@@ -350,8 +361,17 @@ export async function handleCampaignMutation(
       domainEvent,
       automationExecution,
       syncChanges,
+      mutation.type==='house.set-status'||mutation.type==='house.rename'
+        ? syncAfter.houseTasks?.find(house=>house.id===mutation.payload.taskId&&house.areaPreparationGeneration)
+        : mutation.type==='task.rename'?syncAfter.tasks.find(task=>task.id===mutation.payload.taskId&&task.areaPreparationGeneration):undefined,
+      automaticPreparation,
     );
     if (persisted.ok) {
+      if(automaticPreparation&&!persisted.alreadyApplied){
+        try{await options?.schedule?.(campaignId,true);}catch{
+          await db.batch([db.prepare("UPDATE area_task_preparations SET status='failed',last_error_code='area_preparation_runner_unavailable',failed_at=?,updated_at=? WHERE campaign_id=? AND area_id=? AND generation=?").bind(mutation.createdAt,mutation.createdAt,campaignId,automaticPreparation.areaId,automaticPreparation.generation)]);
+        }
+      }
       if (
         AUTO_AREA_PREPARATION_ENABLED &&
         !persisted.alreadyApplied &&
@@ -392,7 +412,7 @@ export async function handleCampaignMutation(
       );
     }
 
-    if (attempt === MAX_PERSIST_ATTEMPTS - 1) {
+    if (attempt === persistAttempts - 1) {
       return errorResponse(
         409,
         "revision_conflict",

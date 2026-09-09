@@ -1,4 +1,5 @@
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
+import { mergePreparedSnapshot } from './streetNetwork/baseStorage.ts';
 import type { CollectionArea, CollectionMainArea, CollectionRun, CollectionRunMember, CollectionSnapshot } from "../src/domain/collection.ts";
 
 export type D1RunResult = {
@@ -173,6 +174,7 @@ export async function hasAreaTaskPreparationSchema(db: D1DatabaseLike) {
 export async function loadCampaignSnapshot(
   db: D1DatabaseLike,
   campaignId: string,
+  options: { includeCollection?: boolean; areaId?: string; houseId?: string } = {},
 ): Promise<CampaignSnapshot | null> {
   const campaign = await db
     .prepare(
@@ -189,11 +191,11 @@ export async function loadCampaignSnapshot(
   const [hasTaskSource, hasHouses, hasCollection, hasPreparation] = await Promise.all([
     hasTaskSourceProvenanceColumn(db),
     hasHouseTasksTable(db),
-    hasCollectionSchema(db),
+    options.includeCollection === false ? Promise.resolve(false) : hasCollectionSchema(db),
     hasAreaTaskPreparationSchema(db),
   ]);
   const hasNetwork = await hasStreetNetworkSchema(db);
-  const taskSelect = hasTaskSource
+  let taskSelect = hasTaskSource
     ? hasPreparation
       ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
       : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
@@ -201,14 +203,21 @@ export async function loadCampaignSnapshot(
       ? "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id"
       : "SELECT id, campaign_id, area_id, task_type, label, geometry_json, NULL AS source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM tasks WHERE campaign_id = ? ORDER BY created_at, id";
 
-  const houseSelect = hasPreparation
+  let houseSelect = hasPreparation
     ? "SELECT id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json, area_preparation_generation, status, completed_at, created_at, updated_at FROM house_tasks WHERE campaign_id = ? ORDER BY created_at, id"
     : "SELECT id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json, NULL AS area_preparation_generation, status, completed_at, created_at, updated_at FROM house_tasks WHERE campaign_id = ? ORDER BY created_at, id";
 
+  const entityValues=options.areaId?[campaignId,options.areaId]:[campaignId];
+  if(options.areaId){
+    taskSelect=taskSelect.replace('ORDER BY created_at, id','AND area_id = ? ORDER BY created_at, id');
+    houseSelect=houseSelect.replace('ORDER BY created_at, id','AND area_id = ? ORDER BY created_at, id');
+  }
+  const houseValues=[...entityValues,...(options.houseId?[options.houseId]:[])];
+  if(options.houseId)houseSelect=houseSelect.replace('ORDER BY created_at, id','AND id = ? ORDER BY created_at, id');
   const housePromise = hasHouses
     ? db
         .prepare(hasNetwork ? houseSelect.replace(' FROM house_tasks WHERE', ', (SELECT position_json FROM house_road_positions WHERE house_id = house_tasks.id) AS position_json FROM house_tasks WHERE') : houseSelect)
-        .bind(campaignId)
+        .bind(...houseValues)
         .all<HouseTaskRow>()
     : Promise.resolve({ results: [] as HouseTaskRow[] });
 
@@ -243,7 +252,7 @@ export async function loadCampaignSnapshot(
       )
       .bind(campaignId)
       .all<AreaRow>(),
-    db.prepare(hasNetwork ? taskSelect.replace(' FROM tasks WHERE', ', (SELECT network_json FROM street_network_state WHERE task_id = tasks.id) AS network_json FROM tasks WHERE') : taskSelect).bind(campaignId).all<TaskRow>(),
+    db.prepare(hasNetwork ? taskSelect.replace(' FROM tasks WHERE', ', (SELECT network_json FROM street_network_state WHERE task_id = tasks.id) AS network_json FROM tasks WHERE') : taskSelect).bind(...entityValues).all<TaskRow>(),
     housePromise,
   ]);
   const collectionResult = await collectionPromise;
@@ -314,7 +323,7 @@ export async function loadCampaignSnapshot(
     campaign.map_zoom !== null;
 
   try {
-    return {
+    return await mergePreparedSnapshot(db, {
       schemaVersion: 3,
       revision: campaign.revision,
       campaign: {
@@ -386,10 +395,15 @@ export async function loadCampaignSnapshot(
           }
         : {}),
       ...(hasCollection ? { collection: collection as CollectionSnapshot } : {}),
-    };
+    }, options.areaId, options.houseId);
   } catch {
     throw new StoredSnapshotError("Stored campaign geometry or Task provenance is not valid JSON.");
   }
+}
+
+export async function loadCanonicalArea(db:D1DatabaseLike,campaignId:string,areaId:string):Promise<import('../src/domain/campaign.ts').Area|null>{
+  const row=await db.prepare('SELECT id,campaign_id,team_id,name,geometry_json,created_at,updated_at FROM areas WHERE campaign_id=? AND id=?').bind(campaignId,areaId).first<AreaRow>();
+  return row?{id:row.id,campaignId:row.campaign_id,teamId:row.team_id,name:row.name,geometry:JSON.parse(row.geometry_json),createdAt:row.created_at,updatedAt:row.updated_at}:null;
 }
 
 function guardExistsSql() {

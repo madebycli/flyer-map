@@ -78,7 +78,8 @@ test("focused hubs reuse real field capabilities instead of fake apps", () => {
   assert.match(roomHubSource, /Bereits beigetretene Mitglieder bleiben aktiv/u);
   assert.match(commentsHubSource, /TeamCommentsSummary/u);
   assert.match(streetsHubSource, /Straße manuell hinzufügen/u);
-  assert.match(streetsHubSource, /keine zweite Karten-Engine/u);
+  assert.match(streetsHubSource, /Straßenabschnitt markieren/u);
+  assert.match(streetsHubSource, /onSmartMark/u);
 });
 
 test("shared field sheet has pointer capture, semantic snaps and independent body scrolling", () => {

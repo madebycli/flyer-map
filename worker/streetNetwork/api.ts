@@ -4,6 +4,8 @@ import { RoadIndex, snapNetworkPoint, networkRoutes, applyNetworkCoverage } from
 import type { LngLat, TaskStatus } from '../../src/domain/campaign.ts';
 import { networkEvents } from './events.ts';
 import { persistNetworkSnapshot } from './persistence.ts';
+import { requestDatabase } from '../requestDatabase.ts';
+import { hasBaseStorage } from './baseStorage.ts';
 
 export type NetworkIntent = { id: string; areaId: string; generation: string; start: { point: LngLat; taskId: string }; end: { point: LngLat; taskId: string }; selectedPath: string[]; status: TaskStatus };
 const id = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9._:-]{1,200}$/.test(value);
@@ -15,6 +17,7 @@ export function validNetworkIntent(value: unknown): value is NetworkIntent {
 }
 const response = (status: number, code: string, extra = {}) => Response.json({ code, ...extra }, { status, headers: {'cache-control':'no-store'} });
 export async function handleNetworkIntent(request: Request, db: D1DatabaseLike, campaignId: string, access: AccessContext, notify?: () => Promise<unknown>) {
+  db=requestDatabase(db);
   if (request.method !== 'POST') return response(405,'method_not_allowed');
   if (access.campaignId !== campaignId || !['admin','team-editor','field-group-member'].includes(access.role)) return response(403,'forbidden');
   const reader = request.body?.getReader();
@@ -27,8 +30,9 @@ export async function handleNetworkIntent(request: Request, db: D1DatabaseLike, 
   if (!await hasStreetNetworkSchema(db)) return response(503,'network_schema_unavailable');
   const intent = input;
   const fingerprint = JSON.stringify({ areaId:intent.areaId,generation:intent.generation,start:intent.start,end:intent.end,selectedPath:intent.selectedPath,status:intent.status });
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const before = await loadCampaignSnapshot(db,campaignId);
+  const maxAttempts=await hasBaseStorage(db)?1:3;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const before = await loadCampaignSnapshot(db,campaignId,{includeCollection:false,areaId:intent.areaId});
     const area = before?.areas.find((area) => area.id === intent.areaId);
     if (!before || !area) return response(404,'area_not_found');
     if (access.role !== 'admin' && access.teamId !== area.teamId) return response(403,'forbidden');

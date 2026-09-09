@@ -63,6 +63,7 @@ import {
   pickupsToGeoJson,
 } from "./pickupRenderer.ts";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { syncIncrementalGeoJson } from './incrementalGeoJson.ts';
 
 export type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house" | "collection-main-draw" | "collection-area-draw" | "collection-area-edit";
 type RenderArea = Area & { color: string };
@@ -862,7 +863,7 @@ function buildApplicationMapStyle(): StyleSpecification {
         source: STREET_SOURCE_ID,
         filter: ["==", ["get", "taskId"], "__none__"],
         paint: {
-          "line-color": "#f59e0b",
+          "line-color": "#6d28d9",
           "line-opacity": 0.92,
           "line-width": SESSION_HIGHLIGHT_WIDTH_EXPRESSION,
         },
@@ -878,7 +879,7 @@ function buildApplicationMapStyle(): StyleSpecification {
         minzoom: HOUSE_MIN_ZOOM,
         filter: ["==", ["get", "houseTaskId"], "__none__"],
         paint: {
-          "line-color": "#f59e0b",
+          "line-color": "#6d28d9",
           "line-opacity": 0.96,
           "line-width": HOUSE_HIGHLIGHT_WIDTH_EXPRESSION,
           "line-dasharray": [1, 1],
@@ -1073,7 +1074,7 @@ function buildApplicationMapStyle(): StyleSpecification {
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#f59e0b",
+          "line-color": "#6d28d9",
           "line-opacity": 0.98,
           "line-width": SMART_PREVIEW_WIDTH_EXPRESSION,
         },
@@ -1368,12 +1369,12 @@ function syncAreaData(map: Map, areas: RenderArea[]) {
 
 function syncStreetData(map: Map, tasks: RenderTask[]) {
   const streetSource = map.getSource(STREET_SOURCE_ID) as GeoJSONSource | undefined;
-  if (streetSource) streetSource.setData(streetsToGeoJson(tasks));
+  if (streetSource) syncIncrementalGeoJson(streetSource,tasks,task=>JSON.stringify([task.updatedAt,task.areaPreparationGeneration,task.label,task.status,task.color,task.completedColor,task.network?.coverage]),streetsToGeoJson);
 }
 
 function syncHouseData(map: Map, houses: RenderHouse[]) {
   const houseSource = map.getSource(HOUSE_SOURCE_ID) as GeoJSONSource | undefined;
-  if (houseSource) houseSource.setData(housesToGeoJson(houses));
+  if (houseSource) syncIncrementalGeoJson(houseSource,houses,house=>JSON.stringify([house.updatedAt,house.areaPreparationGeneration,house.status,house.color,house.completedColor]),housesToGeoJson);
 }
 
 function syncSmartStreetData(

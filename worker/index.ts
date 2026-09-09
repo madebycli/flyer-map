@@ -1,4 +1,6 @@
 import { handleNetworkIntent } from './streetNetwork/api.ts';
+import { requestDatabase } from './requestDatabase.ts';
+import { executeInCampaign } from './campaignExecution.ts';
 import {
   campaignExists,
   getCampaignRevision,
@@ -67,6 +69,7 @@ import { isRxdbCollectionName } from "../src/data/rxdbSyncProtocol.ts";
 import { handleRxdbCheckpoint, handleRxdbPull, handleRxdbPush } from "./rxdbSync.ts";
 import {
   notifyCampaignSync,
+  schedulePreparation,
   type CampaignSyncNamespace,
 } from "./campaignSyncDurableObject.ts";
 
@@ -877,7 +880,7 @@ export default {
         "D1 ist für diesen Worker noch nicht gebunden.",
       );
     }
-    const db = env.DB;
+    const db = env.DB ? requestDatabase(env.DB,50) : undefined;
 
 
     if (db) {
@@ -1112,6 +1115,10 @@ export default {
     if (networkRoute && db) {
       const auth = await requireAccess(db, request, networkRoute[1]);
       if (!auth.ok) return auth.response;
+      if(env.CAMPAIGN_SYNC&&request.method==='POST'){
+        const parsed=await readJsonBody(request);if(!parsed.ok)return parsed.response;
+        return executeInCampaign(env.CAMPAIGN_SYNC,{campaignId:networkRoute[1],access:auth.access,operation:'network',input:parsed.value});
+      }
       return handleNetworkIntent(request, db, networkRoute[1], auth.access, () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, networkRoute[1]));
     }
 
@@ -1127,6 +1134,7 @@ export default {
           auth.access,
           context,
           {
+            schedule: (campaignId, restart) => schedulePreparation(env.CAMPAIGN_SYNC, campaignId, restart),
             upstreamUrl: env.OSM_OVERPASS_URL,
             onCommitted: () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, preparationRoute.campaignId),
           },
@@ -1157,6 +1165,7 @@ export default {
           headers: {
             Upgrade: "websocket",
             "x-campaign-sync-internal": "1",
+            "x-campaign-sync-team": auth.access.role==='admin'||auth.access.role==='viewer'?'*':auth.access.teamId??'',
           },
         });
         return await env.CAMPAIGN_SYNC.get(id).fetch(socketRequest);
@@ -1189,6 +1198,7 @@ export default {
       try {
         const auth = await requireAccess(db, request, rxdbSyncRoute.campaignId);
         if (!auth.ok) return auth.response;
+        if(env.CAMPAIGN_SYNC)return executeInCampaign(env.CAMPAIGN_SYNC,{campaignId:rxdbSyncRoute.campaignId,access:auth.access,operation:rxdbSyncRoute.operation,collectionName:rxdbSyncRoute.collectionName,input:parsed.value});
         const response = rxdbSyncRoute.operation === "pull"
           ? await handleRxdbPull(
               db,
@@ -1203,6 +1213,7 @@ export default {
               rxdbSyncRoute.collectionName,
               auth.access,
               parsed.value,
+              {schedule:(campaignId,restart)=>schedulePreparation(env.CAMPAIGN_SYNC,campaignId,restart)},
             );
         if (rxdbSyncRoute.operation === "push") {
           scheduleCampaignSyncNotification(
@@ -1228,6 +1239,7 @@ export default {
         const auth = await requireMutationAccess(db, request, mutationCampaignId);
         if (!auth.ok) return auth.response;
         const response = await handleCampaignMutation(request, db, mutationCampaignId, auth.access, context, {
+          schedule:(campaignId,restart)=>schedulePreparation(env.CAMPAIGN_SYNC,campaignId,restart),
           upstreamUrl: env.OSM_OVERPASS_URL,
           onCommitted: () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, mutationCampaignId),
         });

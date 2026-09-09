@@ -23,6 +23,10 @@ import {
 } from "./campaignRepository.ts";
 import { handleCampaignMutation } from "./mutationHandler.ts";
 import { hasRxdbSyncSchema } from "./rxdbChangeFeed.ts";
+import { requestDatabase } from './requestDatabase.ts';
+import type { AreaTaskPreparationOptions } from './areaTaskPreparation.ts';
+import { syncHeads } from './syncHeads.ts';
+import { hasBaseStorage, readPreparedEntities, restoreManualHouseParents } from './streetNetwork/baseStorage.ts';
 
 const MAX_PULL_BATCH = 250;
 const MAX_PUSH_ROWS = 40;
@@ -180,6 +184,19 @@ function batchSizeFrom(value: unknown) {
     : 100;
 }
 
+async function generationState(db:D1DatabaseLike,campaignId:string,access:AccessContext){
+  if(!await hasBaseStorage(db))return undefined;
+  const team=fieldGroupScope(access);
+  // Revision and manifests come from one SQL snapshot. A separate revision read
+  // could incorrectly label an older manifest with a newer concurrent commit.
+  const row=await db.prepare(`SELECT c.revision,(SELECT json_group_array(json_object('areaId',b.area_id,'generation',b.generation,'streets',p.road_count,'houses',p.house_count))
+    FROM street_base_areas b JOIN area_task_preparations p ON p.campaign_id=b.campaign_id AND p.area_id=b.area_id AND p.generation=b.generation
+    JOIN areas a ON a.campaign_id=b.campaign_id AND a.id=b.area_id
+    WHERE b.campaign_id=c.id AND p.status='ready'${team?' AND a.team_id=?':''}) AS manifests FROM campaigns c WHERE c.id=?`)
+    .bind(...(team?[team]:[]),campaignId).first<{revision:number;manifests:string}>();
+  return row?{revision:row.revision,manifests:JSON.parse(row.manifests) as import('../src/data/generationVisibility.ts').GenerationManifest[]}:undefined;
+}
+
 export async function handleRxdbPull(
   db: D1DatabaseLike,
   campaignId: string,
@@ -200,12 +217,22 @@ export async function handleRxdbPull(
   const batchSize = batchSizeFrom(input.batchSize);
 
   if (!checkpoint) {
-    const highWater = await db.prepare(
-      "SELECT COALESCE(MAX(seq), 0) AS seq FROM campaign_sync_changes WHERE campaign_id = ?",
-    ).bind(campaignId).first<{ seq: number }>();
+    const highWater = await syncHeads(db,campaignId);
     try {
       const documents = await bootstrapDocuments(db, campaignId, collectionName, access);
-      return json({ documents, checkpoint: { seq: highWater?.seq ?? 0 }, campaignRevision: await currentCampaignRevision(db, campaignId) } satisfies RxdbPullResponse);
+      if((collectionName==='streetTasks'||collectionName==='houseTasks')&&await hasBaseStorage(db)){
+        const entities=await readPreparedEntities(db,campaignId);
+        const group=fieldGroupScope(access);
+        const permitted=group?await db.prepare('SELECT id FROM areas WHERE campaign_id=? AND team_id=?').bind(campaignId,group).all<{id:string}>():null;
+        const ids=permitted?new Set(permitted.results.map(row=>row.id)):null;
+        if(collectionName==='houseTasks'&&documents.length){
+          const legacy=await bootstrapDocuments(db,campaignId,'streetTasks',access);
+          const houses=await restoreManualHouseParents(db,campaignId,documents as import('../src/domain/campaign.ts').HouseTask[],[...legacy,...entities.filter(e=>e.taskType==='street')] as import('../src/domain/campaign.ts').DistributionTask[]);
+          documents.splice(0,documents.length,...houses);
+        }
+        documents.push(...entities.filter(entity=>(collectionName==='streetTasks'?entity.taskType==='street':entity.taskType==='house')&&(!ids||ids.has(entity.areaId))));
+      }
+      return json({ generationState:await generationState(db,campaignId,access), documents, checkpoint: { seq: highWater?.seq ?? 0 }, campaignRevision: await currentCampaignRevision(db, campaignId) } satisfies RxdbPullResponse);
     } catch {
       return errorResponse(503, "rxdb_bootstrap_unavailable", "RxDB-Bootstrap benötigt die vorbereiteten Task-Schemas.");
     }
@@ -213,7 +240,7 @@ export async function handleRxdbPull(
 
   const groupTeamId = fieldGroupScope(access);
   const scopedToTeam = Boolean(groupTeamId && collectionName !== "campaigns");
-  const highWaterRow = await db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM campaign_sync_changes WHERE campaign_id = ?").bind(campaignId).first<{ seq: number }>();
+  const highWaterRow = await syncHeads(db,campaignId);
   const highWater = typeof highWaterRow?.seq === "number" && Number.isSafeInteger(highWaterRow.seq) ? highWaterRow.seq : checkpoint.seq;
   const sql = "SELECT seq, document_json FROM campaign_sync_changes WHERE campaign_id = ? AND collection_name = ? AND seq > ? AND seq <= ?" + (scopedToTeam ? " AND scope_team_id = ?" : "") + " ORDER BY seq ASC LIMIT ?";
   const statement = db.prepare(sql);
@@ -221,15 +248,27 @@ export async function handleRxdbPull(
     ? await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, groupTeamId, batchSize).all<{ seq: number; document_json: string }>()
     : await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, batchSize).all<{ seq: number; document_json: string }>();
   try {
-    const documents = result.results.map((row) => {
-      const document = narrowRxdbDocument(collectionName, parseJson<unknown>(row.document_json));
-      if (!document) throw new Error("invalid_collection_document");
-      return document;
+    const expanded = result.results.flatMap((row) => {
+      const raw=parseJson<unknown>(row.document_json);
+      const values=raw&&typeof raw==='object'&&'documents' in raw&&Array.isArray(raw.documents)?raw.documents:[raw];
+      return values.map(value=>{const document=narrowRxdbDocument(collectionName,value);if(!document)throw new Error('invalid_collection_document');return document;});
     });
+    // A compact row can overlap a later change to the same entity. RxDB must
+    // receive one final state per primary key, while the cursor consumes every row.
+    const documents = [...new Map(expanded.map(document => [document.id, document])).values()];
     const last = result.results.length < batchSize
       ? Math.max(checkpoint.seq, highWater)
       : result.results.at(-1)?.seq ?? checkpoint.seq;
-    return json({ documents, checkpoint: { seq: last }, campaignRevision: await currentCampaignRevision(db, campaignId) } satisfies RxdbPullResponse);
+    let deletedAreaIds:string[]|undefined;
+    if(collectionName==='streetTasks'||collectionName==='houseTasks') {
+      const ids=[...new Set(documents.flatMap(document=>document._deleted && 'areaId' in document?[document.areaId]:[]))];
+      if(ids.length){
+        const live=await db.prepare('SELECT id FROM areas WHERE campaign_id=? AND id IN (SELECT value FROM json_each(?))').bind(campaignId,JSON.stringify(ids)).all<{id:string}>();
+        const liveIds=new Set(live.results.map(row=>row.id));
+        deletedAreaIds=ids.filter(id=>!liveIds.has(id));
+      }
+    }
+    return json({ generationState:await generationState(db,campaignId,access), documents, ...(deletedAreaIds?.length?{deletedAreaIds}:{}), checkpoint: { seq: last }, campaignRevision: await currentCampaignRevision(db, campaignId) } satisfies RxdbPullResponse);
   } catch {
     return errorResponse(500, "rxdb_change_feed_invalid", "Der kanonische RxDB-Change-Feed enthält ungültige Daten.");
   }
@@ -246,11 +285,9 @@ export async function handleRxdbCheckpoint(
   if (!(await hasRxdbSyncSchema(db))) {
     return errorResponse(503, "rxdb_sync_schema_unavailable", "RxDB-Synchronisation benötigt die vorbereitete Migration 0017.");
   }
-  const row = await db.prepare(
-    "SELECT COALESCE(MAX(seq), 0) AS seq FROM campaign_sync_changes WHERE campaign_id = ?",
-  ).bind(campaignId).first<{ seq: number }>();
+  const row = await syncHeads(db,campaignId);
   const seq = typeof row?.seq === "number" && Number.isSafeInteger(row.seq) && row.seq >= 0 ? row.seq : 0;
-  return json({ checkpoint: { seq }, campaignRevision: await currentCampaignRevision(db, campaignId) });
+  return json({ checkpoint: { seq }, collections:row.collections, campaignRevision: await currentCampaignRevision(db, campaignId) });
 }
 
 function isPushRow(value: unknown): value is RxdbPushRow {
@@ -310,7 +347,9 @@ export async function handleRxdbPush(
   collectionName: RxdbCollectionName,
   access: AccessContext,
   body: unknown,
+  options?: AreaTaskPreparationOptions,
 ): Promise<Response> {
+  db=requestDatabase(db);
   if (access.role === "viewer") return errorResponse(403, "viewer_read_only", "Read-only Viewer dürfen nichts verändern.");
   if (!fieldGroupScopeIsValid(access)) return errorResponse(403, "field_group_scope_forbidden", "Temporäre Gruppenmitglieder benötigen ein kanonisches Team.");
   if (!(await hasRxdbSyncSchema(db))) {
@@ -336,7 +375,7 @@ export async function handleRxdbPush(
     if (typeof next.id !== "string" || typeof next.campaignId !== "string" || next.campaignId !== campaignId) {
       return errorResponse(400, "invalid_rxdb_document", "RxDB-Dokument gehört nicht zur angeforderten Campaign.");
     }
-    const snapshot = await loadCampaignSnapshot(db, campaignId);
+    const snapshot = await loadCampaignSnapshot(db, campaignId, {includeCollection:false,houseId:collectionName==='houseTasks'?next.id:undefined});
     if (!snapshot) return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
     const decision = deriveMutationFromRxdbWrite(collectionName, snapshot, row, new Date().toISOString());
     if (decision.kind === "ack") continue;
@@ -346,9 +385,9 @@ export async function handleRxdbPush(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mutation: decision.mutation, fieldGroupId: access.groupId ?? null }),
       });
-      const mutationResponse = await handleCampaignMutation(request, db, campaignId, access);
+      const mutationResponse = await handleCampaignMutation(request, db, campaignId, access,undefined,options);
       if (mutationResponse.ok) {
-        const canonical = await loadCampaignSnapshot(db, campaignId);
+        const canonical = await loadCampaignSnapshot(db, campaignId, {includeCollection:false,houseId:collectionName==='houseTasks'?next.id:undefined});
         const master = currentDocument(canonical, collectionName, next.id, next);
         if (sameBusinessDocument(master, next)) continue;
         conflicts.push(canReadDocument(access, collectionName, master, canonical) ? master : { ...next, _deleted: true });
@@ -361,7 +400,7 @@ export async function handleRxdbPush(
     } else {
       rejections.push({ documentId: next.id, code: decision.reason });
     }
-    const canonical = await loadCampaignSnapshot(db, campaignId);
+    const canonical = await loadCampaignSnapshot(db, campaignId, {includeCollection:false,houseId:collectionName==='houseTasks'?next.id:undefined});
     const master = currentDocument(canonical, collectionName, next.id, next);
     conflicts.push(canReadDocument(access, collectionName, master, canonical) ? master : { ...next, _deleted: true });
   }

@@ -1,20 +1,7 @@
 name: Organizer Admin Persistent Staging
 
 on:
-  push:
-    branches:
-      - feature/organizer-admin-platform
-      - integration/main-street-runtime
-    paths:
-      - '.github/workflows/organizer-admin-persistent-staging.yml'
-      - 'src/**'
-      - 'worker/**'
-      - 'migrations/**'
-      - 'public/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vite.config.*'
-      - 'wrangler.jsonc'
+  # Remote D1 is account-budgeted. Run only a selected, locally verified candidate.
   workflow_dispatch:
 
 permissions:

@@ -8,6 +8,7 @@ import {
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import type { CampaignMutation } from "../src/domain/mutations.ts";
 import type { D1DatabaseLike, D1PreparedStatement } from "./campaignRepository.ts";
+import { boundedChunks } from './streetNetwork/baseStorage.ts';
 
 export type { RxdbChangeFeedEntry } from "../src/data/rxdbSyncProtocol.ts";
 
@@ -205,7 +206,16 @@ export function rxdbChangeFeedStatements(
   writeToken: string,
   changedAt: string,
   entries: readonly RxdbChangeFeedEntry[],
+  compact = false,
 ): D1PreparedStatement[] {
+  if(compact){
+    const groups=new Map<string,RxdbChangeFeedEntry[]>();
+    for(const entry of entries){const key=JSON.stringify([entry.collectionName,entry.scopeTeamId]);const group=groups.get(key)??[];group.push(entry);groups.set(key,group);}
+    const rows=[...groups.values()].flatMap(group=>boundedChunks(group.map(entry=>entry.document)).map(documents=>({collection:group[0].collectionName,scope:group[0].scopeTeamId,id:documents[0].id,payload:JSON.stringify({documents})})));
+    return boundedChunks(rows,1_000_000).map(chunk=>db.prepare(`INSERT INTO campaign_sync_changes(campaign_id,collection_name,document_id,operation,scope_team_id,document_json,changed_at)
+      SELECT ?,json_extract(value,'$.collection'),json_extract(value,'$.id'),'upsert',json_extract(value,'$.scope'),json_extract(value,'$.payload'),? FROM json_each(?)
+      WHERE EXISTS(SELECT 1 FROM campaigns WHERE id=? AND write_token=?)`).bind(campaignId,changedAt,JSON.stringify(chunk),campaignId,writeToken));
+  }
   return entries.map((entry) =>
     db
       .prepare(
