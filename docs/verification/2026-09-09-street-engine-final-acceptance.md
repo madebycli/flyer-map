@@ -21,6 +21,13 @@ Der Bericht wird als Dokumentations-Checkpoint committed. Der Bewertungs-Head ob
 - Der ausschließlich lesende Versuch `wrangler d1 list --json` konnte wegen fehlender Netzwerkfreigabe nicht gestartet werden (Approval vor Ausführung abgebrochen). Es gab keinen D1-Request, keine Migration und keinen Write. G4 und G6 bleiben deshalb BLOCKED.
 - Kein reproduzierbarer Runtime-Fehler, kein Fix und keine neue Regression.
 
+## Authentifizierter Browser-Versuch (2026-09-09T20:50Z)
+
+- Die sichere Anmeldung war erfolgreich. Die vorhandene Staging-Aktion öffnete die Feldkarte; die Seite zeigte den Map-Bereich und den Status `Serverbestätigt`.
+- MapLibre scheiterte zweimal beim WebGL-Kontextaufbau. Die Browser-Konsole meldete `Failed to initialize WebGL`, `GL_VENDOR = Disabled`, `GL_RENDERER = Disabled`, `Sandboxed = yes` und `BindToCurrentSequence failed`.
+- Die Browser-Inventur bot ausschließlich Chrome/CDP; kein iOS-Safari-/WebKit- und kein Android-Chromium-Gerät war verfügbar. Die reproduzierte Ursache ist damit die deaktivierte WebGL-Fähigkeit dieser Cloud-Browser-Umgebung, nicht ein eingegrenzter App-Codefehler.
+- Wegen des fehlenden Karten-Renderings konnten Pan/Zoom/Touch, Street-/House-Auswahl, Smart Marking, Overpass-E2E und Reload-Smoke nicht belastbar ausgeführt werden. G2, G7 und G10 bleiben BLOCKED; es wurde kein Runtime-Fix vorgenommen.
+
 ## Gate-Matrix
 
 | Gate | Ergebnis | Nachweis / fehlende Voraussetzung |
