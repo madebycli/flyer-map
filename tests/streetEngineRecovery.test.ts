@@ -120,3 +120,58 @@ test('offline Area delete with 100 Streets and 1000 Houses converges in two repl
     assert.equal((await loadCampaignSnapshot(db,'campaign_n'))!.houseTasks?.length,0);
   }finally{await Promise.all(clients.map(client=>client.destroy()));if(oldWindow)Object.defineProperty(globalThis,'window',oldWindow);else delete (globalThis as {window?:unknown}).window;}
 });
+
+test('independent RxDB clients converge after mutual status writes and reject a stale offline child after Area deletion',async()=>{
+  const db=new NetworkD1(true,true);seedNetwork(db);
+  await prepareAreaTasks(db,'campaign_n','area_n',{fetchImpl:async()=>networkOsm()});
+  const access={campaignId:'campaign_n',role:'admin' as const,teamId:null,label:null,grantId:'test'};
+  const snapshots:Record<string,CampaignSnapshot>={};const issues:{name:string;kind:string;code:string}[]=[];const pushed:string[]=[];const offline:Record<string,boolean>={a:false,b:false};
+  const oldWindow=Object.getOwnPropertyDescriptor(globalThis,'window');
+  Object.defineProperty(globalThis,'window',{configurable:true,value:{setTimeout:globalThis.setTimeout.bind(globalThis),clearTimeout:globalThis.clearTimeout.bind(globalThis),setInterval:globalThis.setInterval.bind(globalThis),clearInterval:globalThis.clearInterval.bind(globalThis),addEventListener(){},removeEventListener(){}}});
+  const clients=['a','b'].map(name=>new MissionRxdbSync({campaignId:'campaign_n',teamScopeId:'team_n',actorScopeId:'independent_'+name,storage:getRxStorageMemory(),multiInstance:false,
+    fetchImpl:async(input,init)=>{
+      if(offline[name])throw new TypeError('offline');
+      const path=new URL(String(input),'https://example.test').pathname;
+      const body=typeof init?.body==='string'?JSON.parse(init.body):{};
+      if(path.endsWith('/checkpoint'))return handleRxdbCheckpoint(db,'campaign_n',access);
+      const collection=path.split('/').at(-1) as 'areas';
+      if(path.includes('/pull/'))return handleRxdbPull(db,'campaign_n',collection,access,body);
+      if(path.includes('/push/')){pushed.push(`${name}:${collection}`);return handleRxdbPush(db,'campaign_n',collection,access,body);}
+      return new Response(null,{status:404});
+    },
+    onSnapshot:snapshot=>{snapshots[name]=snapshot;},
+    onIssue:issue=>{if(offline[name]&&issue.kind==='network')return;issues.push({name,kind:issue.kind,code:issue.code});},
+  }));
+  const wait=async(predicate:()=>boolean|Promise<boolean>,label='state')=>{const end=Date.now()+15000;while(!(await predicate())){if(Date.now()>end){const state=await loadCampaignSnapshot(db,'campaign_n');throw new Error(`independent_client_convergence_timeout:${label}:${JSON.stringify({issues,pushed,areas:state?.areas.length,house:state?.houseTasks?.map(h=>({id:h.id,label:h.label,status:h.status,gen:h.areaPreparationGeneration}))})}`);}await new Promise(resolve=>setTimeout(resolve,20));}};
+  try{
+    await Promise.all(clients.map(client=>client.start()));
+    await wait(()=>snapshots.a?.houseTasks?.length===3&&snapshots.b?.houseTasks?.length===3);
+    const aHouse=snapshots.a.houseTasks![0];
+    await clients[0].applyMutation({id:'mutation_independent_a_status',campaignId:'campaign_n',baseRevision:snapshots.a.revision,createdAt:new Date().toISOString(),type:'house.set-status',payload:{taskId:aHouse.id,status:'later',completedAt:null}} as never);
+    await wait(async()=>Boolean((await loadCampaignSnapshot(db,'campaign_n'))?.houseTasks?.find(h=>h.id===aHouse.id)?.status==='later'),'server-status');
+    await clients[1].refresh();await wait(()=>snapshots.b.houseTasks?.find(h=>h.id===aHouse.id)?.status==='later');
+    const bHouse=snapshots.b.houseTasks!.find(h=>h.id!==aHouse.id)!;
+    await clients[1].applyMutation({id:'mutation_independent_b_status',campaignId:'campaign_n',baseRevision:snapshots.b.revision,createdAt:new Date().toISOString(),type:'house.set-status',payload:{taskId:bHouse.id,status:'later',completedAt:null}} as never);
+    await wait(async()=>Boolean((await loadCampaignSnapshot(db,'campaign_n'))?.houseTasks?.find(h=>h.id===bHouse.id)?.status==='later'),'server-status-b');
+    await clients[0].refresh();await wait(()=>snapshots.a.houseTasks?.find(h=>h.id===bHouse.id)?.status==='later');
+
+    const area=snapshots.a.areas[0];const staleHouse=snapshots.b.houseTasks!.find(h=>h.id===bHouse.id)!;
+    offline.b=true;
+    await clients[0].applyMutation({id:'mutation_independent_a_delete',campaignId:'campaign_n',baseRevision:snapshots.a.revision,createdAt:new Date().toISOString(),type:'area.delete',payload:{areaId:area.id,expectedUpdatedAt:area.updatedAt}} as never);
+    await wait(()=>db.sqlite.prepare('SELECT COUNT(*) n FROM areas WHERE id=?').get(area.id)?.n===0);
+    await wait(()=>snapshots.a.areas.length===0&&snapshots.a.houseTasks?.length===0);
+    await clients[1].applyMutation({id:'mutation_independent_b_stale_child',campaignId:'campaign_n',baseRevision:snapshots.b.revision,createdAt:new Date().toISOString(),type:'house.set-status',payload:{taskId:staleHouse.id,status:'completed',completedAt:new Date().toISOString()}} as never);
+    offline.b=false;clients[1].refresh();await wait(()=>snapshots.b.areas.length===0&&snapshots.b.houseTasks?.length===0);
+    await clients[1].refreshAndWait();
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM areas WHERE id=?').get(area.id)?.n,0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM house_tasks WHERE area_id=?').get(area.id)?.n,0);
+    assert.ok(pushed.includes('a:houseTasks')&&pushed.includes('b:houseTasks'),JSON.stringify(pushed));
+    assert.ok(pushed.includes('a:areas'),JSON.stringify(pushed));
+    assert.equal(issues.filter(issue=>issue.kind==='network').length,0,JSON.stringify(issues));
+    assert.ok(issues.some(issue=>issue.kind==='rejected'&&['target_deleted','house_position_server_owned'].includes(issue.code)),JSON.stringify(issues));
+  }finally{
+    await Promise.all(clients.map(client=>client.destroy()));
+    if(oldWindow)Object.defineProperty(globalThis,'window',oldWindow);else delete (globalThis as {window?:unknown}).window;
+    db.sqlite.close();
+  }
+});
