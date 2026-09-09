@@ -14,6 +14,13 @@ Stand: 2026-09-09 (UTC)
 
 Der Bericht wird als Dokumentations-Checkpoint committed. Der Bewertungs-Head oben bezeichnet den Runtime-Stand, auf dem die technische Evidenz erhoben wurde; ein späterer reiner Dokumentations-Commit ändert keine Runtime-Datei und erhält die Beweiskette.
 
+## Follow-up-Gate-Versuch (2026-09-09T20:19Z)
+
+- Der tatsächliche PR-Head wurde vor dem Versuch live geprüft: `de59b3d14a26ce47139c299a4d5413a936a50f7f`. Es gab keine Runtime-Änderung.
+- Die vorhandenen Staging-Origins `flyer-map-staging.cloudflare-eleven035.workers.dev` und `flyer-map-admin-staging.cloudflare-eleven035.workers.dev` liefern beide denselben Organizer-Login (`/login`) mit Benutzername, Passwort und `Weiter`. Die sichere Browser-Anmeldung endete als `user_took_over`; der Nutzer meldete anschließend, dass der Login abgewiesen wird. Eine Domain-/Credential-Zuordnung ist damit nicht bewiesen, und es entstand keine authentifizierte Produktseite. Es gab weder iPhone-Safari/WebKit noch Android-Chromium-Gerätesevidence und keinen MapLibre-/Overpass-Smoke. G2, G7 und G10 bleiben deshalb BLOCKED.
+- Der ausschließlich lesende Versuch `wrangler d1 list --json` konnte wegen fehlender Netzwerkfreigabe nicht gestartet werden (Approval vor Ausführung abgebrochen). Es gab keinen D1-Request, keine Migration und keinen Write. G4 und G6 bleiben deshalb BLOCKED.
+- Kein reproduzierbarer Runtime-Fehler, kein Fix und keine neue Regression.
+
 ## Gate-Matrix
 
 | Gate | Ergebnis | Nachweis / fehlende Voraussetzung |
