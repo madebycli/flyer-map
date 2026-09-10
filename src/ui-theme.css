@@ -1,0 +1,264 @@
+:root {
+  --ui-bg: #eef2ee;
+  --ui-surface: #ffffff;
+  --ui-surface-soft: #f4f6f3;
+  --ui-surface-muted: #edf2ee;
+  --ui-text: #172019;
+  --ui-muted: #667067;
+  --ui-border: rgb(23 32 25 / 12%);
+  --ui-shadow: rgb(20 35 24 / 16%);
+  --ui-accent: #1f6b3a;
+  --ui-danger-bg: #fde9e8;
+  --ui-danger-text: #8f1f22;
+  --ui-warning-bg: #fff8ed;
+  --ui-warning-text: #79521c;
+}
+
+:root[data-ui-theme="dark"] {
+  --ui-bg: #101411;
+  --ui-surface: #171d19;
+  --ui-surface-soft: #1c231e;
+  --ui-surface-muted: #232c25;
+  --ui-text: #edf5ef;
+  --ui-muted: #a6b2a9;
+  --ui-border: rgb(221 235 225 / 14%);
+  --ui-shadow: rgb(0 0 0 / 40%);
+  --ui-accent: #62b77c;
+  --ui-danger-bg: #3a2021;
+  --ui-danger-text: #ffb7ba;
+  --ui-warning-bg: #332a19;
+  --ui-warning-text: #f1cf8c;
+
+  --org-bg: #101411;
+  --org-panel: #171d19;
+  --org-text: #edf5ef;
+  --org-muted: #a6b2a9;
+  --org-border: #313b34;
+  --org-accent: #62b77c;
+  --org-accent-strong: #78c990;
+  --org-danger: #ff9a9f;
+  --org-warning: #332a19;
+}
+
+:root[data-ui-theme="dark"] body {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+}
+
+/* Keep the actual map intentionally bright. No filter, opacity or color-scheme
+   transform is ever applied to the MapLibre canvas or its style. */
+:root[data-ui-theme="dark"] .map,
+:root[data-ui-theme="dark"] .map-region,
+:root[data-ui-theme="dark"] .platform-map-layer,
+:root[data-ui-theme="dark"] .maplibregl-map,
+:root[data-ui-theme="dark"] .maplibregl-canvas-container,
+:root[data-ui-theme="dark"] .maplibregl-canvas {
+  filter: none !important;
+}
+
+:root[data-ui-theme="dark"] :where(
+  .topbar,
+  .map-toolbar,
+  .mode-sheet,
+  .bottom-sheet,
+  .map-loading,
+  .map-error,
+  .team-card,
+  .empty-state,
+  .platform-field-bar,
+  .platform-menu-sheet,
+  .platform-module-overlay,
+  .platform-module-header,
+  .platform-card,
+  .platform-team-progress-card,
+  .platform-session-list article,
+  .field-hub,
+  .field-bottom-sheet,
+  .field-bottom-sheet__surface,
+  .settings-section,
+  .access-card,
+  .access-link-result,
+  .share-link-modal,
+  .share-link-modal__panel,
+  .team-hub,
+  .rooms-hub,
+  .streets-hub,
+  .comments-hub,
+  .collection-card,
+  .collection-map-card,
+  .pickup-lifecycle-panel,
+  .org-card,
+  .org-form--panel,
+  .org-campaign-card,
+  .org-admin-topbar,
+  .org-public-header
+) {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: 0 0.35rem 1.3rem var(--ui-shadow);
+}
+
+:root[data-ui-theme="dark"] :where(
+  .platform-module-content,
+  .org-page,
+  .org-admin-page,
+  .org-admin-content,
+  .team-hub__content,
+  .rooms-hub__content,
+  .streets-hub__content,
+  .comments-hub__content
+) {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+}
+
+:root[data-ui-theme="dark"] :where(
+  .subtitle,
+  .eyebrow,
+  .platform-menu-header span,
+  .platform-module-header span,
+  .platform-card-heading span,
+  .platform-team-progress-card span,
+  .platform-team-progress-card small,
+  .platform-session-list span,
+  .platform-session-list p,
+  .settings-help,
+  .org-card p,
+  .org-admin-content p,
+  .org-campaign-card dt,
+  .org-detail-grid dt
+) {
+  color: var(--ui-muted);
+}
+
+:root[data-ui-theme="dark"] :where(
+  button,
+  input,
+  select,
+  textarea
+) {
+  color: var(--ui-text);
+}
+
+:root[data-ui-theme="dark"] :where(
+  input,
+  select,
+  textarea,
+  .team-picker select,
+  .field-label input,
+  .field-label select,
+  .team-card-header input,
+  .org-form input,
+  .org-form select,
+  .org-select-label select
+) {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+:root[data-ui-theme="dark"] :where(
+  .button.secondary,
+  .icon-button,
+  .small-action,
+  .platform-grid-button,
+  .platform-menu-header button,
+  .platform-module-header button,
+  .org-secondary,
+  .org-lifecycle-actions button,
+  .org-recovery-box button
+) {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-muted);
+}
+
+:root[data-ui-theme="dark"] :where(
+  .button.primary,
+  .org-primary,
+  .org-lifecycle-actions button.is-current
+) {
+  color: #ffffff;
+  background: #267849;
+}
+
+:root[data-ui-theme="dark"] :where(.button.danger, .danger-action, .org-error) {
+  color: var(--ui-danger-text);
+  background: var(--ui-danger-bg);
+}
+
+:root[data-ui-theme="dark"] :where(
+  .storage-warning,
+  .area-preparation-status.is-failed,
+  .area-preparation-status.is-unavailable,
+  .org-warning,
+  .platform-foundation-note
+) {
+  color: var(--ui-warning-text);
+  border-color: rgb(241 207 140 / 28%);
+  background: var(--ui-warning-bg);
+}
+
+:root[data-ui-theme="dark"] .platform-menu-overlay {
+  background: rgb(0 0 0 / 54%);
+}
+
+:root[data-ui-theme="dark"] .platform-app-item {
+  color: var(--ui-text);
+}
+
+:root[data-ui-theme="dark"] .platform-active-team-dot,
+:root[data-ui-theme="dark"] .team-dot,
+:root[data-ui-theme="dark"] .team-color-preview,
+:root[data-ui-theme="dark"] .color-swatch {
+  border-color: var(--ui-surface);
+}
+
+:root[data-ui-theme="dark"] .sheet-handle,
+:root[data-ui-theme="dark"] .platform-menu-handle {
+  background: #536057;
+}
+
+:root[data-ui-theme="dark"] .org-segmented {
+  background: #202822;
+}
+
+:root[data-ui-theme="dark"] .org-segmented button.is-active,
+:root[data-ui-theme="dark"] .org-detail-grid div,
+:root[data-ui-theme="dark"] .org-recovery-box,
+:root[data-ui-theme="dark"] .org-empty {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+:root[data-ui-theme="dark"] .org-qr {
+  color: #172019;
+  background: #ffffff;
+}
+
+:root[data-ui-theme="dark"] a:not(.maplibregl-ctrl-attrib a) {
+  color: #8fd2a4;
+}
+
+:root[data-ui-theme="dark"] ::selection {
+  color: #ffffff;
+  background: #2f7e4d;
+}
+
+.ui-theme-select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.58rem 2.2rem 0.58rem 0.7rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.78rem;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+}
+
+.ui-theme-hint {
+  margin: 0.45rem 0 0;
+  color: var(--ui-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
