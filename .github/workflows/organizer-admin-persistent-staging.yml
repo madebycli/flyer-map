@@ -5,7 +5,6 @@ on:
     branches:
       - feature/organizer-admin-platform
       - integration/main-street-runtime
-      - fix/live-map-sync-organizer-2026-09-10
     paths:
       - '.github/workflows/organizer-admin-persistent-staging.yml'
       - 'src/**'
@@ -60,10 +59,6 @@ jobs:
               PR_NUMBER=84
               EXPECTED_ENTRY='./worker/indexOrganizer.ts'
               ;;
-            refs/heads/fix/live-map-sync-organizer-2026-09-10)
-              PR_NUMBER=93
-              EXPECTED_ENTRY='./worker/indexOrganizer.ts'
-              ;;
             *) exit 1 ;;
           esac
           [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/$PR_NUMBER --jq '.head.sha')" == "$GITHUB_SHA" ]]
@@ -75,7 +70,7 @@ jobs:
           grep -Fq '91714001' wrangler.jsonc
           grep -Fq '91714002' wrangler.jsonc
           grep -Fq '91714003' wrangler.jsonc
-          if [[ "$PR_NUMBER" == 84 || "$PR_NUMBER" == 93 ]]; then
+          if [[ "$PR_NUMBER" == 84 ]]; then
             grep -Fq 'nodejs_compat' wrangler.jsonc
           else
             ! grep -Fq 'nodejs_compat' wrangler.jsonc
