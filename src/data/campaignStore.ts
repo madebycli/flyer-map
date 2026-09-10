@@ -33,6 +33,7 @@ const LEGACY_STORAGE_KEY = "verteil-flyer:m1:campaign-snapshot:v1";
 const RXDB_LEGACY_MIGRATION_KEY_PREFIX = "verteil-flyer:rxdb-m5-migration:v1";
 const RXDB_LEGACY_ARCHIVE_KEY_PREFIX = "verteil-flyer:rxdb-m5-archive";
 const FIELD_GROUP_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
+const SERVER_WRITE_SETTLEMENT_TIMEOUT_MS = 15_000;
 
 export type CampaignLoadResult = { snapshot: CampaignSnapshot; warning: string | null };
 export type RefreshState = "idle" | "loading" | "current" | "error" | "available";
@@ -76,6 +77,7 @@ type Runtime = {
   activeFieldGroupId: string | null;
   sync: MissionRxdbSync | null;
   pendingWrites: number;
+  serverWritePending: boolean;
   retryLegacyMigration: (() => void) | null;
 };
 
@@ -92,6 +94,7 @@ const runtime: Runtime = {
   activeFieldGroupId: null,
   sync: null,
   pendingWrites: 0,
+  serverWritePending: false,
   retryLegacyMigration: null,
 };
 
@@ -177,7 +180,6 @@ function isTeam(value: unknown): value is Team {
 function isArea(value: unknown): value is Area {
   return isRecord(value) && typeof value.id === "string" && typeof value.campaignId === "string" && typeof value.teamId === "string" && typeof value.name === "string" && isPolygonGeometry(value.geometry) && typeof value.createdAt === "string" && typeof value.updatedAt === "string";
 }
-
 function isDistributionTask(value: unknown): value is DistributionTask {
   return isRecord(value) && typeof value.id === "string" && typeof value.campaignId === "string" && typeof value.areaId === "string" && value.taskType === "street" && typeof value.label === "string" && isLineStringGeometry(value.geometry) && (value.status === "open" || value.status === "completed" || value.status === "later" || value.status === "not-deliverable") && (value.completedAt === null || typeof value.completedAt === "string") && typeof value.createdAt === "string" && typeof value.updatedAt === "string";
 }
@@ -225,9 +227,13 @@ function parseSnapshot(raw: string | null) {
   }
 }
 
+function remoteSnapshotMustWait() {
+  return runtime.interactionBlocked || runtime.pendingWrites > 0 || runtime.serverWritePending;
+}
+
 function applyRxdbSnapshot(snapshot: CampaignSnapshot) {
   const normalized = normalizeAreaPreparationGenerations(snapshot);
-  if (runtime.interactionBlocked) {
+  if (remoteSnapshotMustWait()) {
     runtime.deferredSnapshot = normalized;
     setRefreshState("available");
     return;
@@ -235,6 +241,13 @@ function applyRxdbSnapshot(snapshot: CampaignSnapshot) {
   runtime.latestLocal = normalized;
   writeLocalSnapshot(normalized);
   emit({ snapshot: normalized, pendingCount: runtime.pendingWrites, messageCode: null });
+}
+
+function applyDeferredSnapshotIfSafe() {
+  if (!runtime.deferredSnapshot || remoteSnapshotMustWait()) return;
+  const deferred = runtime.deferredSnapshot;
+  runtime.deferredSnapshot = null;
+  applyRxdbSnapshot(deferred);
 }
 
 function isBlockedRxdbIssue(issue: RxdbSyncIssue) {
@@ -375,8 +388,49 @@ async function migrateLegacyM5Records(campaignId: string, sync: MissionRxdbSync)
   }
 }
 
+function waitForServerWriteSettlement(sync: MissionRxdbSync, timeoutMs = SERVER_WRITE_SETTLEMENT_TIMEOUT_MS) {
+  if (runtime.sync !== sync || !runtime.serverWritePending) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const deadline = Date.now() + timeoutMs;
+    const check = () => {
+      if (runtime.sync !== sync) {
+        reject(new Error("rxdb_refresh_replaced"));
+        return;
+      }
+      if (!runtime.serverWritePending) {
+        resolve();
+        return;
+      }
+      if (Date.now() >= deadline) {
+        reject(new Error("rxdb_local_write_unconfirmed"));
+        return;
+      }
+      globalThis.setTimeout(check, 40);
+    };
+    check();
+  });
+}
+
+function refreshAfterQueuedLocalWrites() {
+  const sync = runtime.sync;
+  if (!sync) return;
+  void saveChain
+    .then(async () => {
+      if (runtime.sync !== sync) return;
+      sync.flushDebouncedWrites();
+      await waitForServerWriteSettlement(sync);
+      if (runtime.sync === sync) sync.refresh();
+    })
+    .catch((error) => {
+      if (runtime.sync !== sync) return;
+      reportRxdbIssue({ kind: "network", code: error instanceof Error ? error.message : "rxdb_refresh_failed" });
+    });
+}
+
 async function startRxdb(campaignId: string) {
   runtime.retryLegacyMigration = null;
+  runtime.serverWritePending = false;
+  runtime.deferredSnapshot = null;
   if (runtime.sync) await runtime.sync.destroy();
   resetRxdbIssues();
   const fieldGroupAccess = runtime.access?.role === "field-group-member" ? runtime.access : null;
@@ -396,9 +450,16 @@ async function startRxdb(campaignId: string) {
     onRemoteEvent: (event) => {
       if (runtime.sync !== sync) return;
       if (event === "push-pending") {
+        runtime.serverWritePending = true;
         emit({ syncState: navigator.onLine ? "waiting-server" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
       } else if (event === "push-idle") {
+        runtime.serverWritePending = false;
+        // A snapshot received before the acknowledgement can contain the old
+        // canonical master. Never replay that stale deferred value after the
+        // push completes. Ask RxDB for the post-ack canonical state instead.
+        runtime.deferredSnapshot = null;
         emit({ syncState: navigator.onLine ? "server-confirmed" : "offline", pendingCount: runtime.pendingWrites, messageCode: null });
+        sync.refresh();
       }
     },
   });
@@ -481,10 +542,20 @@ async function initializeSharedPersistence() {
 function startListeners() {
   if (typeof window === "undefined" || runtime.listenersStarted) return;
   runtime.listenersStarted = true;
-  window.addEventListener("online", () => { if (!runtime.initialized) void initializeSharedPersistence(); else { runtime.sync?.refresh(); runtime.retryLegacyMigration?.(); } });
+  window.addEventListener("online", () => {
+    if (!runtime.initialized) void initializeSharedPersistence();
+    else {
+      refreshAfterQueuedLocalWrites();
+      runtime.retryLegacyMigration?.();
+    }
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      if (!runtime.initialized) void initializeSharedPersistence(); else { runtime.sync?.refresh(); runtime.retryLegacyMigration?.(); }
+      if (!runtime.initialized) void initializeSharedPersistence();
+      else {
+        refreshAfterQueuedLocalWrites();
+        runtime.retryLegacyMigration?.();
+      }
     }
   });
 }
@@ -499,11 +570,7 @@ export function subscribeCampaignStore(listener: (update: CampaignStoreUpdate) =
 
 export function setCampaignInteractionBlocked(blocked: boolean) {
   runtime.interactionBlocked = blocked;
-  if (!blocked && runtime.deferredSnapshot) {
-    const deferred = runtime.deferredSnapshot;
-    runtime.deferredSnapshot = null;
-    applyRxdbSnapshot(deferred);
-  }
+  if (!blocked) applyDeferredSnapshotIfSafe();
 }
 
 export function setCampaignFieldGroupContext(fieldGroupId: string | null) {
@@ -514,12 +581,21 @@ async function runManualRefresh() {
   if (!runtime.initialized) await initializeSharedPersistence();
   if (collectionModeFromUrl()) {
     if (!runtime.targetCampaignId || !runtime.initialized) throw new Error("collection_refresh_not_initialized");
+    await saveChain;
     applyRxdbSnapshot(await fetchCollectionSnapshot(runtime.targetCampaignId));
     return;
   }
   const sync = runtime.sync;
   if (!runtime.initialized || !sync) throw new Error("rxdb_refresh_not_initialized");
   console.info("[rxdb-sync]", { event: "manual-refresh-start" });
+  // Explicit refresh is a synchronization barrier: first finish every local
+  // mutation already accepted by the UI, release its trailing persistence
+  // gate, and wait for the server acknowledgement. Pulling first can feed an
+  // older master back into RxDB and visually undo the user's edit.
+  await saveChain;
+  if (runtime.sync !== sync) throw new Error("rxdb_refresh_replaced");
+  sync.flushDebouncedWrites();
+  await waitForServerWriteSettlement(sync);
   const target = await sync.refreshAndWait();
   console.info("[rxdb-sync]", {
     event: "manual-refresh-complete",
@@ -604,6 +680,7 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
       .finally(() => {
         runtime.pendingWrites = Math.max(0, runtime.pendingWrites - 1);
         emit({ pendingCount: runtime.pendingWrites });
+        applyDeferredSnapshotIfSafe();
       });
     return warning;
   }
@@ -624,6 +701,7 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
     .finally(() => {
       runtime.pendingWrites = Math.max(0, runtime.pendingWrites - 1);
       emit({ pendingCount: runtime.pendingWrites });
+      applyDeferredSnapshotIfSafe();
     });
   return warning;
 }
