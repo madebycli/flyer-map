@@ -594,6 +594,7 @@ export class MissionRxdbSync {
             });
           }
           this.queuePullProgress(collectionName, result.checkpoint.seq, result.campaignRevision);
+          if (result.documents.length === 0) this.commitAppliedPullProgress(collectionName);
           return { documents: result.documents.map(withDeletedMarker), checkpoint: result.checkpoint };
         },
       },
@@ -682,6 +683,19 @@ export class MissionRxdbSync {
     return Number.isFinite(minimum) ? minimum : 0;
   }
 
+  private async waitForPendingPushes(deadline: number) {
+    for (const gate of this.persistenceGates.values()) gate.flush();
+    while (this.pendingPushProofs.size > 0) {
+      if (!this.initialized) {
+        throw new RxdbSyncHttpError(0, "rxdb_refresh_cancelled", "RxDB-Aktualisierung wurde beendet.");
+      }
+      if (Date.now() >= deadline) {
+        throw new RxdbSyncHttpError(0, "rxdb_refresh_timeout", "Lokale Änderungen konnten nicht rechtzeitig vom Server bestätigt werden.");
+      }
+      await new Promise<void>((resolve) => globalThis.setTimeout(resolve, Math.min(REFRESH_POLL_INTERVAL_MS, Math.max(1, deadline - Date.now()))));
+    }
+  }
+
   async safetyResync() {
     if (!this.initialized) return;
     try {
@@ -735,7 +749,10 @@ export class MissionRxdbSync {
 
   async refreshAndWait(timeoutMs = 15_000) {
     if (!this.initialized) throw new RxdbSyncHttpError(0, "rxdb_not_initialized", "RxDB-Synchronisation ist noch nicht gestartet.");
+    const deadline = Date.now() + Math.max(1, timeoutMs);
+    await this.waitForPendingPushes(deadline);
     const target = await this.requestCheckpoint();
+    if (Date.now() >= deadline) throw new RxdbSyncHttpError(0, "rxdb_refresh_timeout", "RxDB-Aktualisierung hat das Zeitlimit überschritten.");
     this.refresh();
     if (this.allCollectionsAtOrBeyond(target.seq)) {
       this.canonicalRevision = Math.max(this.canonicalRevision, target.campaignRevision);
@@ -744,7 +761,6 @@ export class MissionRxdbSync {
     }
 
     return await new Promise<{ seq: number; campaignRevision: number }>((resolve, reject) => {
-      const deadline = Date.now() + Math.max(1, timeoutMs);
       const temporarySubscriptions: Array<{ unsubscribe(): void }> = [];
       let pollTimer: ReturnType<typeof setTimeout> | null = null;
       let settled = false;
@@ -784,7 +800,7 @@ export class MissionRxdbSync {
           fail(new RxdbSyncHttpError(0, "rxdb_refresh_timeout", "Nicht alle Datenbereiche konnten rechtzeitig bestätigt werden."));
           return;
         }
-        pollTimer = setTimeout(check, REFRESH_POLL_INTERVAL_MS);
+        pollTimer = setTimeout(check, Math.min(REFRESH_POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())));
       };
       for (const replication of this.replications.values()) {
         temporarySubscriptions.push(
