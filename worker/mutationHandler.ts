@@ -21,7 +21,7 @@ import { validateCampaignMutation } from "./mutationValidation.ts";
 import { requestDatabase } from './requestDatabase.ts';
 import { hasBaseStorage } from './streetNetwork/baseStorage.ts';
 import { areaPreparationFingerprint } from './areaTaskPreparation.ts';
-import { validateCampaignSnapshot } from "./snapshotValidation.ts";
+import { validateCampaignSnapshotWithLegacyHouseTolerance } from "./snapshotValidation.ts";
 import { isPickupMutationInput } from "./pickupMutationRuntime.ts";
 import { handlePickupMutationRequest } from "./pickupMutationEntry.ts";
 import {
@@ -262,7 +262,11 @@ export async function handleCampaignMutation(
       throw error;
     }
 
-    const snapshotValidation = validateCampaignSnapshot(candidate, campaignId);
+    const snapshotValidation = validateCampaignSnapshotWithLegacyHouseTolerance(
+      current,
+      candidate,
+      campaignId,
+    );
     if (!snapshotValidation.valid) {
       return errorResponse(422, "mutation_invalid", snapshotValidation.message, current.revision);
     }

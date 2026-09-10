@@ -9,6 +9,7 @@ import { requestDatabase } from '../requestDatabase.ts';
 import { hasBaseStorage, restoreManualHouseParents } from './baseStorage.ts';
 import { cachedSourceTile } from './sourceCache.ts';
 import { jsonChunks, persistNetworkSnapshot } from './persistence.ts';
+import { validatePolygonVertices } from '../../src/domain/geometry.ts';
 
 type Job = { generation:string;phase:string;cursor:number;lease:string|null;lease_until:string|null;attempts:number;metrics_json:string;geometry_json:string };
 type Building = { osmId:number;tags:Record<string,string>;geometry:PolygonGeometry };
@@ -89,6 +90,10 @@ async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTask
         if(kind==='roads')features.push({osmId:way.id,tags,geometry:JSON.parse(canonicalStreetFragmentGeometryJson({type:'LineString',coordinates}))});
         else {
           if(coordinates.length<4 || JSON.stringify(coordinates[0])!==JSON.stringify(coordinates.at(-1)))throw new Error('osm_normalization_open_building');
+          // Public OSM can contain closed ways that still violate the stricter
+          // application polygon contract. Skip only that building so one bad
+          // source object cannot poison every later Campaign mutation.
+          if(!validatePolygonVertices(coordinates.slice(0,-1)).valid)continue;
           features.push({osmId:way.id,tags,geometry:{type:'Polygon',coordinates:[coordinates]}});
         }
       }

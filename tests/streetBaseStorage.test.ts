@@ -64,6 +64,34 @@ test('failed compact feed publish rolls base and manifest back together',async()
   db.sqlite.close();
 });
 
+test('one legacy invalid prepared House does not reject unrelated RxDB writes',async()=>{
+  const db=new NetworkD1(true);seedNetwork(db);
+  assert.equal((await prepareAreaTasks(db,'campaign_n','area_n',options)).outcome,'ready');
+  const snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;
+  const poisoned={...snapshot.houseTasks![0],id:'task_house_auto_poisoned',geometry:{type:'Polygon',coordinates:[[[13.002,51.005],[13.003,51.006],[13.002,51.006],[13.003,51.005],[13.002,51.005]]]}};
+  db.sqlite.prepare("INSERT INTO street_base_chunks(campaign_id,area_id,content_hash,kind,bucket,payload_json) VALUES('campaign_n','area_n','poisoned','house',0,?)").run(JSON.stringify([poisoned]));
+
+  const team=(await loadCampaignSnapshot(db,'campaign_n'))!.teams[0];
+  const response=await handleRxdbPush(db,'campaign_n','teams',access,{rows:[{assumedMasterState:team,newDocumentState:{...team,name:'Team neu'}}]});
+  const body=await response.json() as any;
+  assert.deepEqual(body.rejections,[]);
+  assert.equal((await loadCampaignSnapshot(db,'campaign_n'))!.teams[0].name,'Team neu');
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM street_base_chunks WHERE content_hash='poisoned'").get()!.n,1,'legacy base remains immutable');
+  assert.ok(Math.max(...db.batchSizes)<=35,'legacy tolerance must not expand the bounded write transaction');
+  db.sqlite.close();
+});
+
+test('preparation skips an invalid OSM building instead of poisoning later sync',async()=>{
+  const db=new NetworkD1(true);seedNetwork(db);
+  const source=()=>new Response(JSON.stringify({osm3s:{timestamp_osm_base:'2026-09-07T00:00:00Z'},elements:[
+    {type:'way',id:1,tags:{highway:'residential',name:'Straße'},geometry:[{lon:13.001,lat:51.005},{lon:13.009,lat:51.005}]},
+    {type:'way',id:999,tags:{building:'house','addr:street':'Straße','addr:housenumber':'9'},geometry:[{lon:13.002,lat:51.005},{lon:13.003,lat:51.006},{lon:13.002,lat:51.006},{lon:13.003,lat:51.005},{lon:13.002,lat:51.005}]},
+  ]}));
+  assert.equal((await prepareAreaTasks(db,'campaign_n','area_n',{fetchImpl:async()=>source()})).outcome,'ready');
+  assert.equal((await loadCampaignSnapshot(db,'campaign_n'))!.houseTasks!.length,0);
+  db.sqlite.close();
+});
+
 test('manual House parent refers to chunk Street and survives bootstrap and geometry reconciliation',async()=>{
  const db=new NetworkD1(true,true);seedNetwork(db);await prepareAreaTasks(db,'campaign_n','area_n',options);
  let snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;
