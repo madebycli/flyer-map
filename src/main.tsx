@@ -15,6 +15,7 @@ import { isOrganizationAdminPath } from "./organization/organizationRoutes";
 import { FunnyFocusVideo } from "./platform/FunnyFocusVideo";
 import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
+import { installUiTheme } from "./theme/uiTheme";
 import { ActionWorkbenchPreview } from "./workbench/ActionWorkbenchPreview";
 import { AdminWorkbenchPreview } from "./workbench/AdminWorkbenchPreview";
 import { LiveGroupWorkbenchPreview } from "./workbench/LiveGroupWorkbenchPreview";
@@ -29,7 +30,9 @@ import "./m5.css";
 import "./access-recovery.css";
 import "./diagnostics/map-diagnostics.css";
 import "./map-context-ui.css";
+import "./ui-theme.css";
 
+installUiTheme();
 installRxdbFetchGuard();
 
 const workbenchMode = new URLSearchParams(window.location.search).get("workbench");
