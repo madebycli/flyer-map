@@ -6,7 +6,6 @@ import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { campaignIdFromUrl } from "./data/campaignApi";
 import { installRxdbFetchGuard } from "./data/rxdbFetchGuard";
 import { MapDiagnostics } from "./diagnostics/MapDiagnostics";
-import { installFieldMapStyleRecovery } from "./map/mapStyleRecovery";
 import { OrganizationAdminNavEnhancer } from "./organization/OrganizationAdminNavEnhancer";
 import { OrganizationApp } from "./organization/OrganizationApp";
 import { OrganizationInviteCenter } from "./organization/OrganizationInviteCenter";
@@ -31,7 +30,6 @@ import "./access-recovery.css";
 import "./diagnostics/map-diagnostics.css";
 import "./map-context-ui.css";
 
-installFieldMapStyleRecovery();
 installRxdbFetchGuard();
 
 const workbenchMode = new URLSearchParams(window.location.search).get("workbench");
