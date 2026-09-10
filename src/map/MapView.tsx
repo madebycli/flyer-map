@@ -237,6 +237,18 @@ type MapViewProps = {
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
 
 export const OPENFREE_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
+export const RASTER_BASEMAP_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    "openstreetmap-raster": {
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors",
+    },
+  },
+  layers: [{ id: "openstreetmap-raster", type: "raster", source: "openstreetmap-raster" }],
+};
 export const BASEMAP_VECTOR_SOURCE_ID = "openmaptiles";
 export const BASEMAP_HOUSENUMBER_SOURCE_LAYER = "housenumber";
 export const BASEMAP_HOUSENUMBER_LAYER_ID = "vf-basemap-housenumbers";
@@ -1142,9 +1154,7 @@ const BELOW_BASEMAP_LABEL_LAYER_IDS = new Set([
 ]);
 
 function installApplicationMapStyle(map: Map) {
-  if (!map.getSource(BASEMAP_VECTOR_SOURCE_ID)) {
-    throw new Error(`OpenFreeMap style source ${BASEMAP_VECTOR_SOURCE_ID} is unavailable.`);
-  }
+  const hasVectorBasemap = Boolean(map.getSource(BASEMAP_VECTOR_SOURCE_ID));
 
   // Bright may ship provider-owned 3D building layers. Remove every
   // fill-extrusion before installing any application layers so the map stays
@@ -1172,10 +1182,6 @@ function installApplicationMapStyle(map: Map) {
   const firstBasemapSymbolLayerId = map.getStyle().layers.find(
     (layer) => layer.type === "symbol",
   )?.id;
-  if (!firstBasemapSymbolLayerId) {
-    throw new Error("OpenFreeMap Bright contains no symbol layer insertion point.");
-  }
-
   const applicationStyle = buildApplicationMapStyle();
   for (const [sourceId, source] of Object.entries(applicationStyle.sources)) {
     if (!map.getSource(sourceId)) map.addSource(sourceId, source as SourceSpecification);
@@ -1186,7 +1192,7 @@ function installApplicationMapStyle(map: Map) {
     if (!map.getLayer(layer.id)) map.addLayer(layer, firstBasemapSymbolLayerId);
   }
 
-  if (!map.getLayer(BASEMAP_HOUSENUMBER_LAYER_ID)) {
+  if (hasVectorBasemap && !map.getLayer(BASEMAP_HOUSENUMBER_LAYER_ID)) {
     map.addLayer(
       {
         id: BASEMAP_HOUSENUMBER_LAYER_ID,
@@ -1846,6 +1852,7 @@ export function MapView({
     if (!containerRef.current || mapRef.current) return;
     let active = true;
     let cleanupListeners = () => {};
+    let styleLoadTimeout: number | null = null;
     const initialCamera = loadPersonalMapView(campaignId) ?? campaignDefaultView ?? GERMANY_VIEW;
 
     try {
@@ -1927,13 +1934,32 @@ export function MapView({
         }, 350);
       };
 
+      let rasterFallbackApplied = false;
+      let styleReady = false;
+      const activateRasterFallback = () => {
+        if (!active || rasterFallbackApplied) return;
+        rasterFallbackApplied = true;
+        styleReady = false;
+        map.setStyle(RASTER_BASEMAP_STYLE);
+      };
+      styleLoadTimeout = window.setTimeout(() => {
+        if (!styleReady) activateRasterFallback();
+      }, 8_000);
+
       map.on("error", (event) => {
         console.error("MapLibre runtime error", event.error ?? event);
+        const message = event.error instanceof Error ? event.error.message : String(event.error ?? "");
+        if (!rasterFallbackApplied && (!map.isStyleLoaded() || /openfreemap|failed to fetch|network|http/iu.test(message))) {
+          activateRasterFallback();
+        }
       });
 
-      map.once("style.load", () => {
+      const installCurrentStyle = () => {
         if (!active) return;
         try {
+          styleReady = true;
+          if (styleLoadTimeout !== null) window.clearTimeout(styleLoadTimeout);
+          setError(null);
           installApplicationMapStyle(map);
           const current = dataRef.current;
           syncAreaData(map, current.areas);
@@ -1977,10 +2003,11 @@ export function MapView({
           updateActiveOverlay(map);
           updateRendererDiagnostics(map);
         } catch (cause) {
-          console.error("OpenFreeMap application layers could not be installed", cause);
+          console.error("Map application layers could not be installed", cause);
           setError(t(dataRef.current.language, "mapInitError"));
         }
-      });
+      };
+      map.on("style.load", installCurrentStyle);
 
       map.on("idle", () => {
         if (active) updateRendererDiagnostics(map);
@@ -2205,6 +2232,7 @@ export function MapView({
     return () => {
       active = false;
       cleanupListeners();
+      if (styleLoadTimeout !== null) window.clearTimeout(styleLoadTimeout);
       if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
       mapRef.current?.remove();
       mapRef.current = null;

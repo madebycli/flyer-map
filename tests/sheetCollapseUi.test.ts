@@ -20,4 +20,7 @@ test("Team deletion remains an Admin-only destructive action with a local Area g
   assert.match(app, /if \(!isAdmin\) return;[\s\S]*Team kann nicht gelöscht werden/u);
   assert.match(app, /Team „\$\{team\.name/u);
   assert.match(app, /disabled=\{snapshot\.areas\.some\(\(area\) => area\.teamId === team\.id\)\}/u);
+  assert.match(app, /const deleteTeam = async \(team: Team\)[\s\S]*await postCampaignMutation\(/u);
+  const deleteBlock = /const deleteTeam = async \(team: Team\)([\s\S]*?)\n  const sheetToggleLabel/u.exec(app)?.[1] ?? "";
+  assert.doesNotMatch(deleteBlock, /commitSnapshot/u, "a constrained Team delete must not disappear locally before the server accepts it");
 });

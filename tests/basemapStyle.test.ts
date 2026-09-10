@@ -7,6 +7,9 @@ test("MapView installs OpenFreeMap Bright and one constant housenumber layer", a
   const diagnostics = await readFile("src/diagnostics/MapDiagnostics.tsx", "utf8");
 
   assert.match(map, /https:\/\/tiles\.openfreemap\.org\/styles\/bright/u);
+  assert.match(map, /https:\/\/tile\.openstreetmap\.org\/\{z\}\/\{x\}\/\{y\}\.png/u);
+  assert.match(map, /map\.setStyle\(RASTER_BASEMAP_STYLE\)/u);
+  assert.match(map, /map\.on\("style\.load", installCurrentStyle\)/u);
   assert.match(map, /BASEMAP_HOUSENUMBER_LAYER_ID = "vf-basemap-housenumbers"/u);
   assert.match(map, /BASEMAP_VECTOR_SOURCE_ID = "openmaptiles"/u);
   assert.match(map, /BASEMAP_HOUSENUMBER_SOURCE_LAYER = "housenumber"/u);
@@ -29,7 +32,7 @@ test("MapView installs OpenFreeMap Bright and one constant housenumber layer", a
   assert.match(map, /geolocateFollowRef\.current/u);
   assert.match(map, /GPS-derived camera center/u);
   assert.doesNotMatch(map, /geolocation\.watchPosition\s*\(/u);
-  assert.match(map, /map\.once\("style\.load"/u);
+  assert.doesNotMatch(map, /map\.once\("style\.load"/u);
   assert.match(map, /COLLECTION_PICKUP_SOURCE_ID/u);
   assert.match(map, /COLLECTION_PICKUP_MARKER_LAYER_ID/u);
   assert.doesNotMatch(`${map}\n${diagnostics}`, /carto.*cdn|CARTO_BASEMAP_LAYER_ID/u);

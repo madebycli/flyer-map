@@ -1,7 +1,9 @@
 import { useNetworkWorkspace } from './map/useNetworkWorkspace.tsx';
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CampaignApiError,
   collectionModeFromUrl,
+  postCampaignMutation,
   removeCollectionAccessTokenFromUrl,
   type AccessInfo,
 } from "./data/campaignApi";
@@ -475,19 +477,28 @@ export default function App({
     updateTeam(team.id, { name: t(language, "team") });
   };
 
-  const deleteTeam = (team: Team) => {
+  const deleteTeam = async (team: Team) => {
     if (!isAdmin) return;
     if (snapshot.areas.some((area) => area.teamId === team.id)) {
       window.alert("Team kann nicht gelöscht werden, solange Gebiete zugeordnet sind.");
       return;
     }
     if (!window.confirm(`Team „${team.name.trim() || t(language, "team")}“ wirklich löschen?`)) return;
-    commitSnapshot((current) => ({
-      ...current,
-      teams: current.teams.filter((candidate) => candidate.id !== team.id),
-    }));
-    if (activeTeamId === team.id) {
-      setActiveTeamId(snapshot.teams.find((candidate) => candidate.id !== team.id)?.id ?? null);
+    const createdAt = new Date().toISOString();
+    try {
+      await postCampaignMutation(snapshot.campaign.id, {
+        id: `mutation_team_delete_${crypto.randomUUID()}`,
+        campaignId: snapshot.campaign.id,
+        type: "team.delete",
+        payload: { teamId: team.id, expectedUpdatedAt: team.updatedAt },
+        baseRevision: snapshot.revision,
+        createdAt,
+      });
+      manualRefreshCampaign();
+    } catch (error) {
+      window.alert(error instanceof CampaignApiError
+        ? error.message
+        : "Team konnte nicht sicher gelöscht werden. Bitte erneut versuchen.");
     }
   };
 
@@ -1514,7 +1525,7 @@ export default function App({
                     <input type="color" value={/^#[0-9a-f]{6}$/iu.test(team.color) ? team.color : "#334155"} onChange={(event) => updateTeam(team.id, { color: event.target.value })} onBlur={flushRxdbDrafts} aria-label="Eigene Teamfarbe" />
                   </label>
                 </div>
-                <button className="button danger full-width" type="button" onClick={() => deleteTeam(team)} disabled={snapshot.areas.some((area) => area.teamId === team.id)} title={snapshot.areas.some((area) => area.teamId === team.id) ? "Zuerst alle Gebiete diesem Team entfernen oder umhängen." : undefined}>
+                <button className="button danger full-width" type="button" onClick={() => void deleteTeam(team)} disabled={snapshot.areas.some((area) => area.teamId === team.id)} title={snapshot.areas.some((area) => area.teamId === team.id) ? "Zuerst alle Gebiete diesem Team entfernen oder umhängen." : undefined}>
                   Team löschen
                 </button>
               </article>
