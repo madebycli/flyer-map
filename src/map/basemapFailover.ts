@@ -1,4 +1,6 @@
 const OPENFREE_MAP_BRIGHT_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
+const OPENFREE_MAP_VECTOR_TILE_URL = "https://tiles.openfreemap.org/planet/latest/{z}/{x}/{y}.pbf";
+const OPENFREE_MAP_GLYPHS_URL = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
 const OSM_RASTER_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const STYLE_REQUEST_TIMEOUT_MS = 4_000;
 
@@ -14,7 +16,18 @@ function emergencyBasemapStyle() {
   return {
     version: 8 as const,
     name: "Flyer Map emergency basemap",
+    glyphs: OPENFREE_MAP_GLYPHS_URL,
     sources: {
+      // Keep the source contract expected by MapView even when the Bright
+      // style document itself is unavailable. Using direct ZXY tiles avoids
+      // making style installation depend on a second TileJSON request.
+      openmaptiles: {
+        type: "vector" as const,
+        tiles: [OPENFREE_MAP_VECTOR_TILE_URL],
+        minzoom: 0,
+        maxzoom: 14,
+        attribution: "OpenFreeMap © OpenMapTiles Data from OpenStreetMap",
+      },
       "vf-emergency-osm": {
         type: "raster" as const,
         tiles: [OSM_RASTER_TILE_URL],
@@ -32,6 +45,10 @@ function emergencyBasemapStyle() {
         type: "raster" as const,
         source: "vf-emergency-osm",
       },
+      // MapView inserts normal Area/Street/House context below the first
+      // symbol layer and interaction overlays above it. Preserve that exact
+      // insertion contract so emergency basemap mode never suppresses the
+      // application layers.
       {
         id: "vf-emergency-label-anchor",
         type: "symbol" as const,
