@@ -31,18 +31,25 @@ test("basemap failover never touches unrelated requests", async () => {
   assert.equal(response, expected);
 });
 
-test("failed Bright style gets a visible raster basemap with an application-layer anchor", async () => {
+test("failed Bright style preserves the MapView source/layer insertion contract", async () => {
   const fetchImpl = (async () => new Response("upstream unavailable", { status: 503 })) as typeof fetch;
 
   const response = await fetchWithBasemapFailover(fetchImpl, BRIGHT_STYLE_URL, undefined, 25);
   const style = await response.json() as {
     version: number;
+    glyphs?: string;
     sources: Record<string, { type?: string; tiles?: string[] }>;
     layers: Array<{ id: string; type: string }>;
   };
 
   assert.equal(response.status, 200);
   assert.equal(style.version, 8);
+  assert.equal(style.sources.openmaptiles?.type, "vector");
+  assert.match(
+    style.sources.openmaptiles?.tiles?.[0] ?? "",
+    /tiles\.openfreemap\.org\/planet\/latest\/\{z\}\/\{x\}\/\{y\}\.pbf/,
+  );
+  assert.match(style.glyphs ?? "", /tiles\.openfreemap\.org\/fonts/);
   assert.equal(style.sources["vf-emergency-osm"]?.type, "raster");
   assert.match(style.sources["vf-emergency-osm"]?.tiles?.[0] ?? "", /tile\.openstreetmap\.org/);
   assert.equal(style.layers[0]?.type, "raster");
@@ -53,13 +60,17 @@ test("hung Bright style cannot keep every campaign layer permanently uninstalled
   const fetchImpl = (() => new Promise<Response>(() => {})) as typeof fetch;
 
   const response = await fetchWithBasemapFailover(fetchImpl, BRIGHT_STYLE_URL, undefined, 1);
-  const style = await response.json() as { layers: Array<{ type: string }> };
+  const style = await response.json() as {
+    sources: Record<string, { type?: string }>;
+    layers: Array<{ type: string }>;
+  };
 
   assert.equal(response.status, 200);
+  assert.equal(style.sources.openmaptiles?.type, "vector");
   assert.equal(style.layers.at(-1)?.type, "symbol");
 });
 
-test("field map activates failover without changing MapView or Street Engine rendering", async () => {
+test("fallback contract matches MapView while Street Engine rendering stays untouched", async () => {
   const mainSource = await readFile("src/main.tsx", "utf8");
   const mapSource = await readFile("src/map/MapView.tsx", "utf8");
 
@@ -68,6 +79,7 @@ test("field map activates failover without changing MapView or Street Engine ren
     mapSource,
     /export const OPENFREE_MAP_STYLE_URL = "https:\/\/tiles\.openfreemap\.org\/styles\/bright";/,
   );
+  assert.match(mapSource, /export const BASEMAP_VECTOR_SOURCE_ID = "openmaptiles";/);
   assert.match(mapSource, /style:\s*OPENFREE_MAP_STYLE_URL/);
   assert.match(mapSource, /const AREA_SOURCE_ID = "vf-areas";/);
   assert.match(mapSource, /const STREET_SOURCE_ID = "vf-streets";/);
