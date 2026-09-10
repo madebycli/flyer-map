@@ -3,13 +3,51 @@ const OPENFREE_MAP_VECTOR_TILE_URL = "https://tiles.openfreemap.org/planet/lates
 const OPENFREE_MAP_GLYPHS_URL = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
 const OSM_RASTER_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const STYLE_REQUEST_TIMEOUT_MS = 4_000;
+const BASEMAP_VECTOR_SOURCE_ID = "openmaptiles";
+const EMERGENCY_LABEL_ANCHOR_SOURCE_ID = "vf-emergency-label-anchor";
+const EMERGENCY_LABEL_ANCHOR_LAYER_ID = "vf-emergency-label-anchor";
 
 let installed = false;
+
+type BasemapStyleDocument = {
+  version?: number;
+  name?: string;
+  glyphs?: string;
+  sources?: Record<string, unknown>;
+  layers?: Array<{ id?: string; type?: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
 
 function requestUrl(input: RequestInfo | URL) {
   if (typeof input === "string") return input;
   if (input instanceof URL) return input.href;
   return input.url;
+}
+
+function emergencyVectorSource() {
+  return {
+    type: "vector" as const,
+    tiles: [OPENFREE_MAP_VECTOR_TILE_URL],
+    minzoom: 0,
+    maxzoom: 14,
+    attribution: "OpenFreeMap © OpenMapTiles Data from OpenStreetMap",
+  };
+}
+
+function emergencyLabelAnchorSource() {
+  return {
+    type: "geojson" as const,
+    data: { type: "FeatureCollection" as const, features: [] },
+  };
+}
+
+function emergencyLabelAnchorLayer() {
+  return {
+    id: EMERGENCY_LABEL_ANCHOR_LAYER_ID,
+    type: "symbol" as const,
+    source: EMERGENCY_LABEL_ANCHOR_SOURCE_ID,
+    layout: { "text-field": "" },
+  };
 }
 
 function emergencyBasemapStyle() {
@@ -19,25 +57,16 @@ function emergencyBasemapStyle() {
     glyphs: OPENFREE_MAP_GLYPHS_URL,
     sources: {
       // Keep the source contract expected by MapView even when the Bright
-      // style document itself is unavailable. Using direct ZXY tiles avoids
-      // making style installation depend on a second TileJSON request.
-      openmaptiles: {
-        type: "vector" as const,
-        tiles: [OPENFREE_MAP_VECTOR_TILE_URL],
-        minzoom: 0,
-        maxzoom: 14,
-        attribution: "OpenFreeMap © OpenMapTiles Data from OpenStreetMap",
-      },
+      // style document itself is unavailable. Direct ZXY vector tiles avoid
+      // making application-layer installation depend on TileJSON metadata.
+      [BASEMAP_VECTOR_SOURCE_ID]: emergencyVectorSource(),
       "vf-emergency-osm": {
         type: "raster" as const,
         tiles: [OSM_RASTER_TILE_URL],
         tileSize: 256,
         attribution: "© OpenStreetMap contributors",
       },
-      "vf-emergency-label-anchor": {
-        type: "geojson" as const,
-        data: { type: "FeatureCollection" as const, features: [] },
-      },
+      [EMERGENCY_LABEL_ANCHOR_SOURCE_ID]: emergencyLabelAnchorSource(),
     },
     layers: [
       {
@@ -45,28 +74,63 @@ function emergencyBasemapStyle() {
         type: "raster" as const,
         source: "vf-emergency-osm",
       },
-      // MapView inserts normal Area/Street/House context below the first
-      // symbol layer and interaction overlays above it. Preserve that exact
-      // insertion contract so emergency basemap mode never suppresses the
-      // application layers.
-      {
-        id: "vf-emergency-label-anchor",
-        type: "symbol" as const,
-        source: "vf-emergency-label-anchor",
-        layout: { "text-field": "" },
-      },
+      emergencyLabelAnchorLayer(),
     ],
   };
 }
 
-function emergencyStyleResponse() {
-  return new Response(JSON.stringify(emergencyBasemapStyle()), {
-    status: 200,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-    },
+function styleResponse(style: BasemapStyleDocument, original?: Response) {
+  const headers = new Headers(original?.headers);
+  headers.set("content-type", "application/json; charset=utf-8");
+  if (!original) headers.set("cache-control", "no-store");
+  return new Response(JSON.stringify(style), {
+    status: original?.status ?? 200,
+    statusText: original?.statusText,
+    headers,
   });
+}
+
+function emergencyStyleResponse() {
+  return styleResponse(emergencyBasemapStyle());
+}
+
+function normalizeBrightStyle(style: BasemapStyleDocument) {
+  if (style.version !== 8 || !style.sources || !Array.isArray(style.layers)) return null;
+
+  const hasRequiredVectorSource = Boolean(style.sources[BASEMAP_VECTOR_SOURCE_ID]);
+  const hasSymbolInsertionPoint = style.layers.some((layer) => layer.type === "symbol");
+  const hasGlyphs = typeof style.glyphs === "string" && style.glyphs.length > 0;
+
+  if (hasRequiredVectorSource && hasSymbolInsertionPoint && hasGlyphs) return style;
+
+  const sources = { ...style.sources };
+  const layers = [...style.layers];
+  if (!hasRequiredVectorSource) sources[BASEMAP_VECTOR_SOURCE_ID] = emergencyVectorSource();
+  if (!hasSymbolInsertionPoint) {
+    if (!sources[EMERGENCY_LABEL_ANCHOR_SOURCE_ID]) {
+      sources[EMERGENCY_LABEL_ANCHOR_SOURCE_ID] = emergencyLabelAnchorSource();
+    }
+    layers.push(emergencyLabelAnchorLayer());
+  }
+
+  return {
+    ...style,
+    glyphs: hasGlyphs ? style.glyphs : OPENFREE_MAP_GLYPHS_URL,
+    sources,
+    layers,
+  };
+}
+
+async function healthyOrNormalizedBrightStyle(response: Response) {
+  try {
+    const style = await response.clone().json() as BasemapStyleDocument;
+    const normalized = normalizeBrightStyle(style);
+    if (!normalized) return null;
+    if (normalized === style) return response;
+    return styleResponse(normalized, response);
+  } catch {
+    return null;
+  }
 }
 
 function timedFetch(
@@ -106,7 +170,10 @@ export async function fetchWithBasemapFailover(
 
   try {
     const response = await timedFetch(fetchImpl, input, init, timeoutMs);
-    if (response.ok) return response;
+    if (response.ok) {
+      const usableStyle = await healthyOrNormalizedBrightStyle(response);
+      if (usableStyle) return usableStyle;
+    }
   } catch (error) {
     if (isAbortError(error)) throw error;
   }
