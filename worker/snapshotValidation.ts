@@ -12,6 +12,7 @@ import type {
   Team,
 } from "../src/domain/campaign.ts";
 import {
+  validateHousePolygonVertices,
   validateLineStringVertices,
   validatePolygonVertices,
 } from "../src/domain/geometry.ts";
@@ -82,7 +83,7 @@ function samePoint(a: LngLat, b: LngLat) {
   return a[0] === b[0] && a[1] === b[1];
 }
 
-function parsePolygonGeometry(value: unknown): PolygonGeometry | null {
+function parsePolygonGeometry(value: unknown, house = false): PolygonGeometry | null {
   if (!isRecord(value) || value.type !== "Polygon" || !Array.isArray(value.coordinates)) {
     return null;
   }
@@ -93,7 +94,9 @@ function parsePolygonGeometry(value: unknown): PolygonGeometry | null {
   if (!samePoint(ring[0], ring[ring.length - 1])) return null;
 
   const vertices = ring.slice(0, -1);
-  const validation = validatePolygonVertices(vertices);
+  const validation = house
+    ? validateHousePolygonVertices(vertices)
+    : validatePolygonVertices(vertices);
   if (!validation.valid) return null;
 
   return value as PolygonGeometry;
@@ -212,7 +215,7 @@ function parseHouseTask(value: unknown, campaignId: string): HouseTask | null {
   if (!isId(value.id) || value.campaignId !== campaignId || !isId(value.areaId)) return null;
   if (value.taskType !== "house") return null;
   if (!isBoundedString(value.label, 160)) return null;
-  if (!parsePolygonGeometry(value.geometry)) return null;
+  if (!parsePolygonGeometry(value.geometry, true)) return null;
   if (value.source !== undefined && value.source !== null && !parseTaskSource(value.source, 1)) return null;
   const areaPreparationGeneration = parseAreaPreparationGeneration(value.areaPreparationGeneration);
   if (value.areaPreparationGeneration !== undefined && value.areaPreparationGeneration !== null && !areaPreparationGeneration) {

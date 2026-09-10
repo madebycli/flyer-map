@@ -82,7 +82,7 @@ function signedArea(vertices: LngLat[]) {
   return sum / 2;
 }
 
-export function validatePolygonVertices(vertices: LngLat[]): GeometryValidation {
+function validatePolygonVerticesWithMinimumArea(vertices: LngLat[], minimumArea: number): GeometryValidation {
   if (vertices.length < 3) {
     return { valid: false, reason: "Mindestens 3 Eckpunkte setzen." };
   }
@@ -104,7 +104,7 @@ export function validatePolygonVertices(vertices: LngLat[]): GeometryValidation 
     }
   }
 
-  if (Math.abs(signedArea(vertices)) < EPSILON) {
+  if (Math.abs(signedArea(vertices)) < minimumArea) {
     return { valid: false, reason: "Das Gebiet hat keine nutzbare Fläche." };
   }
 
@@ -113,6 +113,15 @@ export function validatePolygonVertices(vertices: LngLat[]): GeometryValidation 
   }
 
   return { valid: true };
+}
+
+export function validatePolygonVertices(vertices: LngLat[]): GeometryValidation {
+  return validatePolygonVerticesWithMinimumArea(vertices, EPSILON);
+}
+
+/** House footprints are legitimately much smaller than editable Area polygons. */
+export function validateHousePolygonVertices(vertices: LngLat[]): GeometryValidation {
+  return validatePolygonVerticesWithMinimumArea(vertices, 1e-14);
 }
 
 export function validateLineStringVertices(vertices: LngLat[]): GeometryValidation {
