@@ -15,6 +15,7 @@ import { isOrganizationAdminPath } from "./organization/organizationRoutes";
 import { FunnyFocusVideo } from "./platform/FunnyFocusVideo";
 import { PlatformShell } from "./platform/PlatformShell";
 import { SyncStatus } from "./sync/SyncStatus";
+import { ThemeSettingsBridge } from "./theme/ThemeSettingsBridge";
 import { installUiTheme } from "./theme/uiTheme";
 import { ActionWorkbenchPreview } from "./workbench/ActionWorkbenchPreview";
 import { AdminWorkbenchPreview } from "./workbench/AdminWorkbenchPreview";
@@ -76,6 +77,7 @@ if (preview) {
   root.render(
     <StrictMode>
       <PlatformShell />
+      <ThemeSettingsBridge />
       <FunnyFocusVideo />
       <AccessRecoveryGate />
       <AccessLinkOnboardingGate />
