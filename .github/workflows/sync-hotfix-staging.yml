@@ -1,5 +1,5 @@
 name: Sync Hotfix Persistent Staging
-# Candidate source: 717cee6b0d73da8eee49e73727e43750a176ac57 plus style-load regression
+# Candidate source: e5b24bf1c00525e14e2b6d1b2ab65a496af5eccd global sync validation fix
 
 on:
   push:
