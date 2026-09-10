@@ -25,7 +25,8 @@ test("MapLibre live source effects never drop a prop update while style work is 
 });
 
 test("style.load still hydrates every primary application GeoJSON source from latest refs", () => {
-  const styleLoad = source.slice(source.indexOf('map.once("style.load"'), source.indexOf('map.on("idle"'));
+  const styleLoad = source.slice(source.indexOf('const installCurrentStyle = () =>'), source.indexOf('map.on("idle"'));
+  assert.match(styleLoad, /map\.on\("style\.load", installCurrentStyle\);/);
   assert.match(styleLoad, /const current = dataRef\.current;/);
   assert.match(styleLoad, /syncAreaData\(map, current\.areas\);/);
   assert.match(styleLoad, /syncStreetData\(map, current\.tasks\);/);

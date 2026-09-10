@@ -1,5 +1,5 @@
 name: Sync Hotfix Persistent Staging
-# Candidate source: fc7eb2b65e4015d667aba52e15fe233078d572fb
+# Candidate source: 717cee6b0d73da8eee49e73727e43750a176ac57 plus style-load regression
 
 on:
   push:
