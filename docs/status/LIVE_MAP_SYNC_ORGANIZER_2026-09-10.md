@@ -10,20 +10,23 @@
 
 Master clarified that the map module itself is visible and **the layer pipeline is the failure**. Do not treat this as a container, sizing or generic MapLibre mount problem.
 
-The first recovery attempt was too aggressive because it always replaced the healthy OpenFreeMap Bright style with a minimal fallback. That would itself discard normal provider layers.
+The temporary basemap-recovery shim introduced on 2026-09-10 is now withdrawn. It changed the established startup path by intercepting the global `fetch` used for the OpenFreeMap Bright style and substituting a synthetic fallback style on selected failures. Because the missing-layer regression appeared while this path was active, the safest recovery is to restore the previously established map startup before changing any more rendering behavior.
 
-The corrected candidate now:
+Restored map startup contract:
 
-- fetches and preserves the real Bright style when it is healthy;
-- verifies the required `openmaptiles` source and at least one symbol insertion layer;
-- falls back only after a provider transport failure, HTTP failure or structurally unusable style;
-- keeps a minimal raster layer plus `openmaptiles` and a symbol anchor only for that fallback case;
-- leaves unrelated fetches unchanged.
+- `src/main.tsx` no longer installs or imports a map-style fetch interceptor;
+- `MapView` again lets MapLibre load `https://tiles.openfreemap.org/styles/bright` directly through `OPENFREE_MAP_STYLE_URL`;
+- Area, Street and House overlay source/layer logic remains in place;
+- Street/House network rendering and Sync fixes are not rolled back by this map-only recovery;
+- the unused `src/map/mapStyleRecovery.ts` shim is removed.
 
-Implementation checkpoint: `b31c17abb816d0f7f64799775d6d6ab99ca27139`.
-Regression-test checkpoint: `9073fbda2948ffa41c317a6804a4df73e9366db6`.
+Rollback checkpoints:
 
-This is a code-level candidate, not yet a live PASS. Real staging still has to prove that the expected map layers are visible.
+- `9dd334b94d3d3c2331843481c4ba5c16af26dffd` restores direct MapLibre basemap startup;
+- `13b51717e9f175b99a13482b473057faf3a73d6c` locks the restored startup contract in tests;
+- `8aa59a559f5882f5d44d173095db0dbdb8a204d2` removes the abandoned recovery shim.
+
+This is still a code-level recovery, not a live PASS. Real staging must prove that the expected basemap and saved campaign overlays are visible after reload.
 
 ## Execution contract
 
