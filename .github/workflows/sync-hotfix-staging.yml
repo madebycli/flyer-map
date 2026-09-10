@@ -147,6 +147,8 @@ jobs:
 
       - name: Build and deploy exact hotfix to persistent Staging only
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/92 --jq '.head.sha')" == "$GITHUB_SHA" ]]
