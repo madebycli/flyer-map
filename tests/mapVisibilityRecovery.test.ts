@@ -5,9 +5,26 @@ import { fetchWithBasemapFailover } from "../src/map/basemapFailover.ts";
 
 const BRIGHT_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
 
+function healthyBrightStyle() {
+  return {
+    version: 8,
+    glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+    sources: {
+      openmaptiles: {
+        type: "vector",
+        tiles: ["https://tiles.openfreemap.org/planet/latest/{z}/{x}/{y}.pbf"],
+      },
+    },
+    layers: [
+      { id: "background", type: "background" },
+      { id: "place-label", type: "symbol", source: "openmaptiles", "source-layer": "place" },
+    ],
+  };
+}
+
 test("healthy OpenFreeMap Bright startup stays on the established fast path", async () => {
   let calls = 0;
-  const expected = new Response('{"version":8,"layers":[]}', {
+  const expected = new Response(JSON.stringify(healthyBrightStyle()), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
@@ -29,6 +46,47 @@ test("basemap failover never touches unrelated requests", async () => {
   const response = await fetchWithBasemapFailover(fetchImpl, "/api/rxdb/pull", undefined, 25);
 
   assert.equal(response, expected);
+});
+
+test("successful Bright response missing openmaptiles is normalized without replacing provider layers", async () => {
+  const style = healthyBrightStyle();
+  style.sources = {} as typeof style.sources;
+  const fetchImpl = (async () => new Response(JSON.stringify(style), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })) as typeof fetch;
+
+  const response = await fetchWithBasemapFailover(fetchImpl, BRIGHT_STYLE_URL, undefined, 25);
+  const normalized = await response.json() as {
+    sources: Record<string, { type?: string; tiles?: string[] }>;
+    layers: Array<{ id: string; type: string }>;
+  };
+
+  assert.equal(normalized.sources.openmaptiles?.type, "vector");
+  assert.match(normalized.sources.openmaptiles?.tiles?.[0] ?? "", /planet\/latest/);
+  assert.deepEqual(normalized.layers.map((layer) => layer.id), ["background", "place-label"]);
+});
+
+test("successful Bright response missing labels gains only an insertion anchor", async () => {
+  const style = healthyBrightStyle();
+  style.layers = [{ id: "background", type: "background" }];
+  const fetchImpl = (async () => new Response(JSON.stringify(style), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })) as typeof fetch;
+
+  const response = await fetchWithBasemapFailover(fetchImpl, BRIGHT_STYLE_URL, undefined, 25);
+  const normalized = await response.json() as {
+    sources: Record<string, { type?: string }>;
+    layers: Array<{ id: string; type: string }>;
+  };
+
+  assert.equal(normalized.sources.openmaptiles?.type, "vector");
+  assert.deepEqual(normalized.layers.map((layer) => layer.id), [
+    "background",
+    "vf-emergency-label-anchor",
+  ]);
+  assert.equal(normalized.layers.at(-1)?.type, "symbol");
 });
 
 test("failed Bright style preserves the MapView source/layer insertion contract", async () => {
