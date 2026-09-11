@@ -15,11 +15,12 @@
     "deploy": "npm run check && wrangler deploy"
   },
   "dependencies": {
+    "@mapbox/unitbezier": "0.0.1",
     "@turf/length": "7.3.1",
     "@turf/line-slice-along": "7.3.1",
     "@turf/nearest-point-on-line": "7.3.1",
     "jsts": "2.12.1",
-    "maplibre-gl": "6.9.0",
+    "maplibre-gl": "5.7.1",
     "qrcode.react": "4.2.0",
     "rbush": "4.0.1",
     "react": "19.2.8",
