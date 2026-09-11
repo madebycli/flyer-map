@@ -22,9 +22,28 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Show exact paint-property call sites
+      - name: Pin only MapLibre to historical 5.7.1
         shell: bash
         run: |
           set -euo pipefail
-          grep -n -C 6 'setPaintProperty' src/map/MapView.tsx
-          exit 1
+          npm ci --no-audit --no-fund
+          npm install --save-exact --no-audit --no-fund maplibre-gl@5.7.1
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          if (pkg.dependencies?.['maplibre-gl'] !== '5.7.1') throw new Error('package.json is not pinned to MapLibre 5.7.1');
+          if (lock.packages?.['']?.dependencies?.['maplibre-gl'] !== '5.7.1') throw new Error('package-lock root is not pinned to MapLibre 5.7.1');
+          if (lock.packages?.['node_modules/maplibre-gl']?.version !== '5.7.1') throw new Error('resolved MapLibre package is not 5.7.1');
+          NODE
+      - name: Verify unchanged application runtime against MapLibre 5.7.1
+        run: npm run check
+      - name: Commit verified version isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json
+          git commit -m 'test: isolate MapLibre 5.7.1 renderer'
+          git push origin HEAD:fix/street-engine-smart-marking
