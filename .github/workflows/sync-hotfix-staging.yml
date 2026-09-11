@@ -188,3 +188,5 @@ jobs:
 # Renderer checkpoint: default MapLibre 5.7.1 + complete GeoJSON setData path.
 
 # Renderer secure candidate checkpoint: MapLibre 6.9.0 with complete GeoJSON setData path.
+
+# Login diagnostics checkpoint: preserve diag=1 through root, admin and field-map redirects.
