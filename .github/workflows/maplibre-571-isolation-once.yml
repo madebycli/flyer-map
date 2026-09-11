@@ -6,6 +6,7 @@ on:
       - fix/street-engine-smart-marking
     paths:
       - .github/workflows/maplibre-571-isolation-once.yml
+      - tests/basemapStyle.test.ts
 
 permissions:
   contents: write

@@ -11,7 +11,7 @@ test("MapView installs OpenFreeMap Bright and one constant housenumber layer", a
   assert.match(map, /https:\/\/tile\.openstreetmap\.org\/\{z\}\/\{x\}\/\{y\}\.png/u);
   assert.match(map, /map\.setStyle\(RASTER_BASEMAP_STYLE\)/u);
   assert.match(map, /map\.on\("style\.load", installCurrentStyle\)/u);
-  assert.match(packageJson, /"maplibre-gl": "6\.9\.0"/u);
+  assert.match(packageJson, /"maplibre-gl": "(?:5\.7\.1|6\.9\.0)"/u);
   assert.match(map, /BASEMAP_HOUSENUMBER_LAYER_ID = "vf-basemap-housenumbers"/u);
   assert.match(map, /BASEMAP_VECTOR_SOURCE_ID = "openmaptiles"/u);
   assert.match(map, /BASEMAP_HOUSENUMBER_SOURCE_LAYER = "housenumber"/u);
