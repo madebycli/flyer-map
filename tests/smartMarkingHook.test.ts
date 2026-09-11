@@ -29,7 +29,7 @@ test('real React Smart Mark hook chooses Area from A/B, previews and queues offl
   set('fetch',async()=>Response.json({status:'ready',updatedAt:'2026-09-09T00:00:00Z'}));
   let renderer:ReactTestRenderer|undefined;let workspace:any;
   t.after(async()=>{if(renderer)await act(async()=>renderer!.unmount());for(const [key,descriptor]of originals){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}db.sqlite.close();});
-  function Harness(){workspace=useNetworkWorkspace(snapshot,{role:'admin',teamId:null},async()=>{},()=>true);return workspace.panel;}
+  function Harness(){workspace=useNetworkWorkspace(snapshot,{role:'admin',teamId:null},async()=>{},()=>true);return null;}
   await act(async()=>{renderer=create(createElement(Harness));});
   await act(async()=>workspace.open(null));
   assert.equal(workspace.active,true);
@@ -37,9 +37,9 @@ test('real React Smart Mark hook chooses Area from A/B, previews and queues offl
   assert.equal(workspace.mapProps.smartStartAnchor.sourceId,road.id);
   await act(async()=>workspace.mapProps.onSmartStreetPoint(road.geometry.coordinates.at(-1),[road.id]));
   assert.ok(workspace.mapProps.smartPreviewGeometry);
-  const complete=renderer!.root.findAllByType('button').find(button=>button.children.includes('Erledigt'))!;
-  assert.equal(complete.props.disabled,false);
-  await act(async()=>{complete.props.onClick();await new Promise(resolve=>setTimeout(resolve,30));});
+  assert.ok(workspace.panelState);
+  assert.equal(workspace.panelState.activeRoute !== null,true);
+  await act(async()=>{await workspace.panelState.onCommit('completed');});
   const queued=await queuedNetworkIntents('campaign_n:admin::');
   assert.equal(queued.length,1);assert.equal(queued[0].intent.areaId,'area_n');
   assert.equal(workspace.mapProps.smartStartAnchor,null);

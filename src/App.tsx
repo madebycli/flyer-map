@@ -1,4 +1,5 @@
 import { useNetworkWorkspace } from './map/useNetworkWorkspace.tsx';
+import { NetworkWorkspacePanel } from './map/NetworkWorkspacePanel.tsx';
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CampaignApiError,
@@ -1566,7 +1567,7 @@ export default function App({
         />
       ) : null}
 
-      {networkWorkspace.panel}
+      {networkWorkspace.panelState ? <NetworkWorkspacePanel state={networkWorkspace.panelState} /> : null}
       {sheet === "area" && mode === "browse" && !networkWorkspace.active && selectedArea ? (
         <FieldHub
           open

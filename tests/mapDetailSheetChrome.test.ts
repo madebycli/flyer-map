@@ -6,6 +6,7 @@ test("map detail and map workflow surfaces use the universal FieldHub chrome", a
   const app = await readFile("src/App.tsx", "utf8");
   const collection = await readFile("src/collection/CollectionAdminPanel.tsx", "utf8");
   const network = await readFile("src/map/useNetworkWorkspace.tsx", "utf8");
+  const networkPanel = await readFile("src/map/NetworkWorkspacePanel.tsx", "utf8");
   const fieldHub = await readFile("src/platform/FieldHub.tsx", "utf8");
 
   assert.match(app, /import \{ FieldHub \} from "\.\/platform\/FieldHub\.tsx";/u);
@@ -18,8 +19,10 @@ test("map detail and map workflow surfaces use the universal FieldHub chrome", a
 
   assert.match(collection, /import \{ FieldHub \} from "\.\.\/platform\/FieldHub\.tsx";/u);
   assert.doesNotMatch(collection, /className="bottom-sheet/u);
-  assert.match(network, /import \{ FieldHub \} from "\.\.\/platform\/FieldHub\.tsx";/u);
-  assert.match(network, /<FieldHub open title="Straßenabschnitt markieren"/u);
+  assert.match(app, /import \{ NetworkWorkspacePanel \} from "\.\/map\/NetworkWorkspacePanel\.tsx";/u);
+  assert.doesNotMatch(network, /from ['"]\.\.\/platform\/FieldHub\.tsx['"]/u);
+  assert.match(networkPanel, /import \{ FieldHub \} from "\.\.\/platform\/FieldHub\.tsx";/u);
+  assert.match(networkPanel, /<FieldHub[\s\S]*?title="Straßenabschnitt markieren"/u);
   assert.match(fieldHub, /FieldBottomSheet/u);
 });
 

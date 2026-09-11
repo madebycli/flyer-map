@@ -5,7 +5,6 @@ import { RoadIndex,networkRoutes,networkProgress,applyNetworkCoverage,type Netwo
 import { enqueueNetworkIntent,flushNetworkIntents,queuedNetworkIntents,discardNetworkIntent } from '../data/networkIntentQueue.ts';
 import type { NetworkIntent } from '../../worker/streetNetwork/api.ts';
 import { AREA_PREPARATION_POLL_INTERVAL_MS } from '../areaPreparation/preparationPolling.ts';
-import { FieldHub } from '../platform/FieldHub.tsx';
 
 export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|null,refresh:()=>Promise<unknown>,canMark:(area:Area)=>boolean) {
   const [marking,setMarking]=useState(false);
@@ -124,16 +123,8 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   },[snapshot,pending]);
   const activeRoute=selected!==null&&selected>=0?routes[selected]:null;
   const closeMarking=()=>{setAreaId(null);setMarking(false);reset()};
-  const panel=marking?<FieldHub open title="Straßenabschnitt markieren" kicker="Karte" onClose={closeMarking} initialSnap="expanded" className="map-context-hub map-network-hub">
-    <div className="map-context-content">
-      <p role="status">{message}</p>
-      {choices.map(choice=><button className="button secondary" key={choice.task.id} onClick={()=>accept(choice)}>{choice.task.label}</button>)}
-      {routes.length>1?<div className="mode-actions">{routes.map((route,i)=><button className={"button " + (selected===i?'primary':'secondary')} key={i} onClick={()=>setSelected(i)}>Route {i+1} · {route.ranges.length} Abschnitte</button>)}</div>:null}
-      <div className="mode-actions">{(['completed','later','not-deliverable','open'] as const).map((status,i)=><button className="button secondary" key={status} disabled={!activeRoute} onClick={()=>void commit(status)}>{['Erledigt','Später','Nicht zustellbar','Wieder öffnen'][i]}</button>)}</div>
-      <div className="mode-actions"><button className="button secondary" onClick={reset}>A/B neu wählen</button><button className="button secondary" onClick={closeMarking}>Schließen</button></div>
-      {pending.map(item=><p key={item.key}>{item.blocked?'Änderung braucht eine neue Auswahl.':'Änderung vorgemerkt.'} <button onClick={()=>void discardNetworkIntent(item.key).then(async()=>setPending(await queuedNetworkIntents(scope)))}>Verwerfen</button></p>)}
-    </div>
-  </FieldHub>:null;
+  const discard=async(key:string)=>{await discardNetworkIntent(key);setPending(await queuedNetworkIntents(scope));};
+  const panelState=marking?{message,choices,routes,selected,activeRoute,pending:pending.map(item=>({key:item.key,blocked:item.blocked})),onChoice:accept,onRouteSelect:(index:number)=>setSelected(index),onCommit:commit,onReset:reset,onClose:closeMarking,onDiscard:discard}:null;
   const areaActions=(area:Area,editable:boolean,canMark:boolean)=>{
     const roads=optimistic.tasks.filter(task=>task.areaId===area.id),houses=(optimistic.houseTasks??[]).filter(house=>house.areaId===area.id);
     const progress=networkProgress(roads,houses);
@@ -152,5 +143,5 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       {!marking&&message?<p role="status">{message}</p>:null}
     </div>;
   };
-  return {optimistic,open,available:permittedAreas.some(area=>snapshot.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panel,areaActions,whole,mapProps:{smartRoads:tasks.map(task=>({sourceId:task.id,osmId:task.source?.objectIds[0]??0,name:task.label,ref:null,highway:'residential',geometry:task.geometry})),smartSelectedSourceIds:[],smartStartAnchor:start?{sourceId:start.task.id,snapped:start.point,segmentIndex:0,segmentT:0,distanceMeters:start.distance}:null,smartEndAnchor:end?{sourceId:end.task.id,snapped:end.point,segmentIndex:0,segmentT:0,distanceMeters:end.distance}:null,smartPreviewGeometry:activeRoute?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
+  return {optimistic,open,available:permittedAreas.some(area=>snapshot.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panelState,areaActions,whole,mapProps:{smartRoads:tasks.map(task=>({sourceId:task.id,osmId:task.source?.objectIds[0]??0,name:task.label,ref:null,highway:'residential',geometry:task.geometry})),smartSelectedSourceIds:[],smartStartAnchor:start?{sourceId:start.task.id,snapped:start.point,segmentIndex:0,segmentT:0,distanceMeters:start.distance}:null,smartEndAnchor:end?{sourceId:end.task.id,snapped:end.point,segmentIndex:0,segmentT:0,distanceMeters:end.distance}:null,smartPreviewGeometry:activeRoute?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
 }

@@ -201,3 +201,5 @@ jobs:
 # GeoJSON frame fallback checkpoint: guarantee deferred hydration even when the initial render event is absorbed.
 
 # Direct source seed checkpoint: create Area, Street and House sources with current GeoJSON instead of empty-then-setData. MapLibre 5.7.1 admin staging candidate.
+
+# UI FieldHub render extraction checkpoint: keep the smart-street panel out of the hook runtime.
