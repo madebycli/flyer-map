@@ -30,16 +30,15 @@ jobs:
           from pathlib import Path
           path = Path('src/map/MapView.tsx')
           text = path.read_text()
-          replacements = {
-              'map.setPaintProperty(layer.id, "line-opacity", layer.paint["line-opacity"]);': 'map.setPaintProperty(layer.id, "line-opacity", layer.paint["line-opacity"] as number | ExpressionSpecification | undefined);',
-              'map.setPaintProperty(layer.id, "circle-opacity", layer.paint["circle-opacity"]);': 'map.setPaintProperty(layer.id, "circle-opacity", layer.paint["circle-opacity"] as number | ExpressionSpecification | undefined);',
-              'map.setPaintProperty(layer.id, "fill-opacity", layer.paint["fill-opacity"]);': 'map.setPaintProperty(layer.id, "fill-opacity", layer.paint["fill-opacity"] as number | ExpressionSpecification | undefined);',
-          }
-          for old, new in replacements.items():
-              count = text.count(old)
+          for prop in ('line-opacity', 'circle-opacity', 'fill-opacity'):
+              needle = f'layer.paint["{prop}"]'
+              count = text.count(needle)
               if count != 1:
-                  raise SystemExit(f'expected exactly one occurrence, found {count}: {old}')
-              text = text.replace(old, new)
+                  raise SystemExit(f'expected exactly one occurrence, found {count}: {needle}')
+              text = text.replace(
+                  needle,
+                  f'({needle} as number | ExpressionSpecification | undefined)',
+              )
           path.write_text(text)
           PY
       - name: Pin only MapLibre to historical 5.7.1
