@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/maplibre-571-isolation-once.yml
       - tests/basemapStyle.test.ts
+      - scripts/audit-dependencies.mjs
 
 permissions:
   contents: write

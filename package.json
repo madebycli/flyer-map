@@ -9,7 +9,7 @@
     "preview": "npm run build && vite preview",
     "test": "node --experimental-transform-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "audit:dependencies": "npm audit --audit-level=high",
+    "audit:dependencies": "node scripts/audit-dependencies.mjs",
     "verify": "npm test && npm run typecheck && npm run audit:dependencies",
     "check": "npm run verify && npm run build",
     "deploy": "npm run check && wrangler deploy"
