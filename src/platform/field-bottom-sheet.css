@@ -223,3 +223,16 @@
     transition: height 160ms ease, max-height 160ms ease;
   }
 }
+
+
+.field-sheet-header > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.field-sheet-header-aside {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+}

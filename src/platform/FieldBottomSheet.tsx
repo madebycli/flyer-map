@@ -35,6 +35,7 @@ export function FieldBottomSheet({
   open,
   title,
   kicker,
+  headerAside,
   onClose,
   initialSnap = "expanded",
   className = "",
@@ -44,6 +45,7 @@ export function FieldBottomSheet({
   open: boolean;
   title: string;
   kicker?: string;
+  headerAside?: ReactNode;
   onClose: () => void;
   initialSnap?: FieldSheetSnap;
   className?: string;
@@ -149,6 +151,7 @@ export function FieldBottomSheet({
             {kicker ? <span>{kicker}</span> : null}
             <strong>{title}</strong>
           </div>
+          {headerAside ? <div className="field-sheet-header-aside">{headerAside}</div> : null}
           <button type="button" onClick={onClose} aria-label={`${title} schließen`}>×</button>
         </header>
         <div className="field-sheet-body">{children}</div>

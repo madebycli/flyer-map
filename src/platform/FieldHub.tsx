@@ -6,6 +6,7 @@ type FieldHubProps = {
   open?: boolean;
   title: string;
   kicker?: string;
+  headerAside?: ReactNode;
   onClose: () => void;
   initialSnap?: FieldSheetSnap;
   className?: string;
@@ -17,6 +18,7 @@ export function FieldHub({
   open = true,
   title,
   kicker,
+  headerAside,
   onClose,
   initialSnap = "expanded",
   className = "",
@@ -28,6 +30,7 @@ export function FieldHub({
       open={open}
       title={title}
       kicker={kicker}
+      headerAside={headerAside}
       onClose={onClose}
       initialSnap={initialSnap}
       className={`field-hub ${className}`.trim()}

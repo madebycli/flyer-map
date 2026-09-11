@@ -48,3 +48,108 @@
   min-height: calc(var(--field-hud-close-size) + var(--field-hud-header-padding-top) + var(--field-hud-header-padding-bottom));
   margin-bottom: 0.85rem;
 }
+
+
+/*
+ * Map detail and edit surfaces use the same FieldHub/FieldBottomSheet
+ * contract as Team, Rooms, Admin and Settings. Their bodies keep the
+ * existing map controls; only the legacy outer sheet chrome is removed.
+ */
+.field-bottom-sheet.map-context-hub {
+  width: min(38rem, 100%);
+}
+
+.map-context-hub .map-context-content {
+  display: grid;
+  gap: 0.72rem;
+  min-width: 0;
+}
+
+.map-context-hub .map-context-content > p {
+  margin: 0.1rem 0 0;
+  color: #526058;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.map-context-hub .mode-actions {
+  margin-top: 0.1rem;
+}
+
+.map-context-hub .area-fields {
+  margin: 0;
+}
+
+.map-context-hub .area-actions.secondary-row {
+  margin-top: 0;
+}
+
+.map-context-hub .context-task-list {
+  margin-top: 0.05rem;
+}
+
+.area-actions-content {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.area-preparation-summary {
+  margin: 0;
+  color: #526058;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.area-preparation-progress {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.7rem;
+  border: 1px solid #d7e4d9;
+  border-radius: 0.78rem;
+  background: #f1f7f2;
+}
+
+.area-preparation-progress-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.area-preparation-progress-header strong {
+  font-size: 0.82rem;
+}
+
+.area-preparation-progress-header span {
+  color: #657067;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.area-preparation-progress progress {
+  display: block;
+  width: 100%;
+  height: 0.75rem;
+  accent-color: #1f6b3a;
+}
+
+.area-preparation-progress p {
+  margin: 0;
+  color: #526058;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.field-bottom-sheet.map-context-hub .comments-context-panel {
+  margin-top: 0.05rem;
+}
+
+@media (max-width: 699px) {
+  .field-bottom-sheet.map-context-hub {
+    width: 100%;
+  }
+
+  .field-bottom-sheet.map-context-hub .field-sheet-body {
+    padding-inline: 0.72rem;
+  }
+}

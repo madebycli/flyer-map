@@ -1,4 +1,5 @@
 name: Sync Hotfix Persistent Staging
+# UI FieldHub port checkpoint: map detail surfaces use the shared AppMenu/Team/Rooms sheet contract.
 # Candidate source: e5b24bf1c00525e14e2b6d1b2ab65a496af5eccd global sync validation fix
 
 on:

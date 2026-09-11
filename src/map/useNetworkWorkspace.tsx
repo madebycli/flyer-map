@@ -4,6 +4,8 @@ import type { Area,CampaignSnapshot,DistributionTask,LngLat,TaskStatus } from '.
 import { RoadIndex,networkRoutes,networkProgress,applyNetworkCoverage,type NetworkRoute,type RoadSnap } from '../domain/streetNetwork.ts';
 import { enqueueNetworkIntent,flushNetworkIntents,queuedNetworkIntents,discardNetworkIntent } from '../data/networkIntentQueue.ts';
 import type { NetworkIntent } from '../../worker/streetNetwork/api.ts';
+import { AREA_PREPARATION_POLL_INTERVAL_MS } from '../areaPreparation/preparationPolling.ts';
+import { FieldHub } from '../platform/FieldHub.tsx';
 
 export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|null,refresh:()=>Promise<unknown>,canMark:(area:Area)=>boolean) {
   const [marking,setMarking]=useState(false);
@@ -69,12 +71,12 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       if(stopped||!permittedAreas.some(area=>area.id===id))return;
       if(known[id]?.updatedAt&&state.updatedAt&&known[id].updatedAt!>state.updatedAt)return;
       const prior=known[id];known[id]=state;setStates(current=>({...current,[id]:state}));
-      if(state.status==='ready'&&prior?.status==='pending')void refresh();
+      if(state.status==='ready'&&(!prior||prior.status==='pending'))void refresh();
       if(state.status==='pending'&&!reading&&timer===undefined)schedulePoll();
     };
     const onProgress=(event:Event)=>{const value=(event as CustomEvent).detail;if(value?.campaignId===snapshot.campaign.id&&value.state)acceptState(value.areaId,value.state);};
     window.addEventListener('campaign-preparation',onProgress);
-    const schedulePoll=()=>{if(!stopped&&timer===undefined)timer=window.setTimeout(()=>void poll(),30000+Math.floor(Math.random()*5000));};
+    const schedulePoll=()=>{if(!stopped&&timer===undefined)timer=window.setTimeout(()=>void poll(),AREA_PREPARATION_POLL_INTERVAL_MS);};
     const poll=async()=>{
       timer=undefined;
       if(reading)return;reading=true;
@@ -97,13 +99,13 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   },[scope,permittedIds,preparing]);
   const prepare=async(area:Area)=>{
     if(preparing)return;
-    setPreparing(area.id);
+    setPreparing(area.id);setMessage('');
     try{
       const response=await fetch(preparationUrl(area.id),{method:'POST',credentials:'same-origin',signal:AbortSignal.timeout(25000)});
       if(!response.ok)throw new Error(`Vorbereitung derzeit nicht verfügbar (HTTP ${response.status}).`);
       const state=await response.json() as AreaPreparationPublicState;
       setStates(current=>({...current,[area.id]:state}));
-      setMessage('Vorbereitung läuft serverseitig. Du kannst die Seite schließen.');
+      setMessage('');
     }catch(error){setMessage(error instanceof Error?error.message:'Vorbereitung fehlgeschlagen.');}
     finally{setPreparing(null);}
   };
@@ -121,24 +123,34 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     return result;
   },[snapshot,pending]);
   const activeRoute=selected!==null&&selected>=0?routes[selected]:null;
-  const panel=marking?<section className="mode-sheet" aria-label="Straßenabschnitt markieren">
-    <strong>Straßenabschnitt markieren</strong><p role="status">{message}</p>
-    {choices.map(choice=><button className="button secondary" key={choice.task.id} onClick={()=>accept(choice)}>{choice.task.label}</button>)}
-    {routes.length>1?<div className="mode-actions">{routes.map((route,i)=><button className={`button ${selected===i?'primary':'secondary'}`} key={i} onClick={()=>setSelected(i)}>Route {i+1} · {route.ranges.length} Abschnitte</button>)}</div>:null}
-    <div className="mode-actions">{(['completed','later','not-deliverable','open'] as const).map((status,i)=><button className="button secondary" key={status} disabled={!activeRoute} onClick={()=>void commit(status)}>{['Erledigt','Später','Nicht zustellbar','Wieder öffnen'][i]}</button>)}</div>
-    <div className="mode-actions"><button className="button secondary" onClick={reset}>A/B neu wählen</button><button className="button secondary" onClick={()=>{setAreaId(null);setMarking(false);reset();}}>Schließen</button></div>
-    {pending.map(item=><p key={item.key}>{item.blocked?'Änderung braucht eine neue Auswahl.':'Änderung vorgemerkt.'} <button onClick={()=>void discardNetworkIntent(item.key).then(async()=>setPending(await queuedNetworkIntents(scope)))}>Verwerfen</button></p>)}
-  </section>:null;
+  const closeMarking=()=>{setAreaId(null);setMarking(false);reset()};
+  const panel=marking?<FieldHub open title="Straßenabschnitt markieren" kicker="Karte" onClose={closeMarking} initialSnap="expanded" className="map-context-hub map-network-hub">
+    <div className="map-context-content">
+      <p role="status">{message}</p>
+      {choices.map(choice=><button className="button secondary" key={choice.task.id} onClick={()=>accept(choice)}>{choice.task.label}</button>)}
+      {routes.length>1?<div className="mode-actions">{routes.map((route,i)=><button className={"button " + (selected===i?'primary':'secondary')} key={i} onClick={()=>setSelected(i)}>Route {i+1} · {route.ranges.length} Abschnitte</button>)}</div>:null}
+      <div className="mode-actions">{(['completed','later','not-deliverable','open'] as const).map((status,i)=><button className="button secondary" key={status} disabled={!activeRoute} onClick={()=>void commit(status)}>{['Erledigt','Später','Nicht zustellbar','Wieder öffnen'][i]}</button>)}</div>
+      <div className="mode-actions"><button className="button secondary" onClick={reset}>A/B neu wählen</button><button className="button secondary" onClick={closeMarking}>Schließen</button></div>
+      {pending.map(item=><p key={item.key}>{item.blocked?'Änderung braucht eine neue Auswahl.':'Änderung vorgemerkt.'} <button onClick={()=>void discardNetworkIntent(item.key).then(async()=>setPending(await queuedNetworkIntents(scope)))}>Verwerfen</button></p>)}
+    </div>
+  </FieldHub>:null;
   const areaActions=(area:Area,editable:boolean,canMark:boolean)=>{
     const roads=optimistic.tasks.filter(task=>task.areaId===area.id),houses=(optimistic.houseTasks??[]).filter(house=>house.areaId===area.id);
     const progress=networkProgress(roads,houses);
     const state=states[area.id];
     const running=state?.status==='pending';
-    return <div><p>{Math.round(progress.percent)} % erledigt{houses.length?` · ${houses.filter(house=>house.status==='completed').length} von ${houses.length} Häusern`:''}</p>
+    const phaseLabel=({roads:'Straßen laden',graph:'Straßennetz aufbauen',buildings:'Gebäude laden',addresses:'Adressen prüfen',link:'Häuser zuordnen',publish:'Speichern',ready:'Bereit'} as Record<string,string>)[state?.progress?.phase??'']??'Vorbereitung';
+    return <div className="area-actions-content">
+      <p className="area-preparation-summary">{Math.round(progress.percent) + " % erledigt" + (houses.length ? " · " + houses.filter(house=>house.status==='completed').length + " von " + houses.length + " Häusern" : "")}</p>
       {(roads.some(task=>task.network)?canMark:editable)?<button className="button primary full-width" disabled={Boolean(preparing)||running} onClick={()=>roads.some(task=>task.network)?open(area.id):void prepare(area)}>{preparing===area.id||running?'Vorbereitung läuft …':roads.some(task=>task.network)?'Straßen bearbeiten':'Straßen und Häuser vorbereiten'}</button>:null}
-      {state?.progress && running?<div role="status"><progress max={100} value={state.progress.percent} aria-label="Vorbereitung"/><p>{state.progress.percent} % · {({roads:'Straßen laden',graph:'Straßennetz aufbauen',buildings:'Gebäude laden',addresses:'Adressen prüfen',link:'Häuser zuordnen',publish:'Speichern',ready:'Bereit'} as Record<string,string>)[state.progress.phase]??'Vorbereitung'} · Straßen-Tiles {state.progress.completedRoadTiles}/{state.progress.totalTiles} · Gebäude-Tiles {state.progress.completedBuildingTiles}/{state.progress.totalTiles} · {state.houseCount} Häuser</p></div>:null}
+      {state?.progress && running?<div className="area-preparation-progress" role="status">
+        <div className="area-preparation-progress-header"><strong>{state.progress.percent} %</strong><span>{phaseLabel}</span></div>
+        <progress max={100} value={state.progress.percent} aria-label="Vorbereitung" />
+        <p>Straßen-Tiles {state.progress.completedRoadTiles}/{state.progress.totalTiles} · Gebäude-Tiles {state.progress.completedBuildingTiles}/{state.progress.totalTiles} · {state.progress.processedBuildings}/{state.progress.totalBuildings} Gebäude · {state.houseCount} Häuser</p>
+      </div>:null}
       {state?.status==='failed'?<p role="alert">Vorbereitung fehlgeschlagen. Erneut versuchen setzt den gespeicherten Job fort.</p>:null}
-      {!marking&&message?<p role="status">{message}</p>:null}</div>;
+      {!marking&&message?<p role="status">{message}</p>:null}
+    </div>;
   };
   return {optimistic,open,available:permittedAreas.some(area=>snapshot.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panel,areaActions,whole,mapProps:{smartRoads:tasks.map(task=>({sourceId:task.id,osmId:task.source?.objectIds[0]??0,name:task.label,ref:null,highway:'residential',geometry:task.geometry})),smartSelectedSourceIds:[],smartStartAnchor:start?{sourceId:start.task.id,snapped:start.point,segmentIndex:0,segmentT:0,distanceMeters:start.distance}:null,smartEndAnchor:end?{sourceId:end.task.id,snapped:end.point,segmentIndex:0,segmentT:0,distanceMeters:end.distance}:null,smartPreviewGeometry:activeRoute?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
 }
