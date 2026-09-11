@@ -196,3 +196,5 @@ jobs:
 # Resume rehydrate checkpoint: resize and complete GeoJSON setData after pageshow/visibilitychange.
 
 # GeoJSON lifecycle checkpoint: coalesce first vf source hydration across a guaranteed render boundary.
+
+# GeoJSON frame fallback checkpoint: guarantee deferred hydration even when the initial render event is absorbed.
