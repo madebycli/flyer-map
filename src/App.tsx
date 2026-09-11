@@ -54,6 +54,12 @@ import type { PlatformAppCommand, PlatformAppContext } from "./platform/platform
 import { FieldHub } from "./platform/FieldHub.tsx";
 import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
 import { SettingsSheet } from "./settings/SettingsSheet";
+import {
+  applyAppearancePreference,
+  loadAppearancePreference,
+  saveAppearancePreference,
+  type AppearancePreference,
+} from "./settings/appearance.ts";
 
 type MapMode =
   | "browse"
@@ -137,6 +143,7 @@ export default function App({
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(initialLoad.snapshot);
   const [storageWarning, setStorageWarning] = useState<string | null>(initialLoad.warning);
   const [language, setLanguage] = useState<Language>(detectLanguage);
+  const [appearance, setAppearance] = useState<AppearancePreference>(() => loadAppearancePreference());
   const [access, setAccess] = useState<AccessInfo | null>(null);
   const [refreshState, setRefreshState] = useState<RefreshState>("idle");
   const [syncMessageCode, setSyncMessageCode] = useState<SyncMessageCode>(null);
@@ -166,6 +173,12 @@ export default function App({
   const [collectionSelectedVertexIndex, setCollectionSelectedVertexIndex] = useState<number | null>(null);
   const [manualStreetAreaSelection, setManualStreetAreaSelection] = useState(false);
   const [undoStatusChange, setUndoStatusChange] = useState<UndoStatusChange | null>(null);
+
+  const changeAppearance = (preference: AppearancePreference) => {
+    setAppearance(preference);
+    saveAppearancePreference(preference);
+    applyAppearancePreference(preference);
+  };
 
   useEffect(
     () =>
@@ -1486,6 +1499,8 @@ export default function App({
           access={access}
           currentCamera={currentCamera}
           initialAccessUrl={initialAccessUrl}
+          appearance={appearance}
+          onAppearanceChange={changeAppearance}
           onLanguageChange={setLanguage}
           onRenameCampaign={renameCampaign}
           onNormalizeCampaignName={normalizeCampaignName}

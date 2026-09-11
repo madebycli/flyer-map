@@ -49,6 +49,21 @@
   overscroll-behavior: contain;
 }
 
+.field-bottom-sheet.field-sheet-auto {
+  height: auto;
+  min-height: 0;
+}
+
+.field-bottom-sheet.field-sheet-auto .field-sheet-body {
+  flex: 0 1 auto;
+  max-height: calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 6rem);
+}
+
+.field-bottom-sheet.field-sheet-dragging {
+  height: min(var(--field-sheet-height), calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 0.8rem));
+  max-height: calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 0.8rem);
+}
+
 .field-sheet-handle-button {
   display: grid;
   place-items: center;

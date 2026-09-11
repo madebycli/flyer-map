@@ -48,3 +48,12 @@ test("area renaming is local until one explicit save", () => {
   assert.match(fieldHub, /overlayClassName\?: string;/u);
   assert.match(fieldSheet, /onTitleClick\?: \(\) => void;/u);
 });
+
+test("FieldHub opens at natural content height and snaps only after user sizing", () => {
+  assert.match(fieldSheet, /field-sheet-auto/u);
+  assert.match(fieldSheet, /getBoundingClientRect\(\)\.height/u);
+  assert.match(fieldSheet, /setUserSized\(true\)/u);
+  assert.match(sheetCss, /\.field-bottom-sheet\.field-sheet-auto\s*\{[\s\S]*?height:\s*auto;[\s\S]*?min-height:\s*0;/u);
+  assert.match(sheetCss, /\.field-bottom-sheet\.field-sheet-auto \.field-sheet-body[\s\S]*?flex:\s*0 1 auto/u);
+  assert.match(sheetCss, /\.field-bottom-sheet\.field-sheet-dragging\s*\{/u);
+});

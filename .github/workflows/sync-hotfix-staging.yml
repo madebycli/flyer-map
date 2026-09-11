@@ -211,3 +211,5 @@ jobs:
 # Test contract correction: use a literal draft-state assertion so the test parser remains portable.
 
 # Test contract correction: allow the shared responsive FieldHub edge variable.
+
+# Content-fit checkpoint: FieldHub opens at natural content height; appearance control lives in Settings.

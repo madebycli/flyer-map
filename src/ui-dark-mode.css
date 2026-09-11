@@ -1,6 +1,6 @@
 /* UI-only appearance layer.
    Deliberately does not target MapLibre, the map canvas, map sources, or map layers. */
-.platform-appearance-panel {
+.settings-appearance-panel {
   margin: 0.65rem 0.1rem 0.2rem;
   padding-top: 0.8rem;
   border-top: 1px solid rgb(23 32 25 / 10%);
@@ -153,7 +153,7 @@ html[data-appearance="dark"] .platform-app-item {
   color: var(--ui-text);
 }
 
-html[data-appearance="dark"] .platform-appearance-panel {
+html[data-appearance="dark"] .settings-appearance-panel {
   border-top-color: var(--ui-border);
 }
 

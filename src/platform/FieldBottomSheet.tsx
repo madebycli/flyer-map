@@ -58,10 +58,14 @@ export function FieldBottomSheet({
 }) {
   const [snap, setSnap] = useState<FieldSheetSnap>(initialSnap);
   const [viewport, setViewport] = useState(() => viewportHeight());
+  const [userSized, setUserSized] = useState(false);
   const drag = useRef<{ pointerId: number; startY: number; startHeight: number; sheet: HTMLElement } | null>(null);
 
   useEffect(() => {
-    if (open) setSnap(initialSnap);
+    if (open) {
+      setSnap(initialSnap);
+      setUserSized(false);
+    }
   }, [initialSnap, open]);
 
   useEffect(() => {
@@ -79,14 +83,19 @@ export function FieldBottomSheet({
 
   const committedHeight = useMemo(() => snapHeight(snap, viewport), [snap, viewport]);
 
-  const finishDrag = useCallback((height: number) => {
+  const finishDrag = useCallback((height: number, moved: boolean) => {
     const activeDrag = drag.current;
-    const nextSnap = nearestSnap(height, viewport);
-    if (activeDrag) {
-      activeDrag.sheet.style.setProperty("--field-sheet-height", snapHeight(nextSnap, viewport) + "px");
+    if (!activeDrag) return;
+    if (!moved) {
       activeDrag.sheet.classList.remove("field-sheet-dragging");
+      drag.current = null;
+      return;
     }
+    const nextSnap = nearestSnap(height, viewport);
+    activeDrag.sheet.style.setProperty("--field-sheet-height", snapHeight(nextSnap, viewport) + "px");
+    activeDrag.sheet.classList.remove("field-sheet-dragging");
     setSnap(nextSnap);
+    setUserSized(true);
     drag.current = null;
   }, [viewport]);
 
@@ -99,7 +108,7 @@ export function FieldBottomSheet({
       onMouseDown={onClose}
     >
       <section
-        className={`field-bottom-sheet ${className}`.trim()}
+        className={`field-bottom-sheet ${userSized ? "" : "field-sheet-auto"} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -115,7 +124,9 @@ export function FieldBottomSheet({
           onPointerDown={(event) => {
             const sheet = event.currentTarget.closest<HTMLElement>(".field-bottom-sheet");
             if (!sheet) return;
-            drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: committedHeight, sheet };
+            const startHeight = sheet.getBoundingClientRect().height;
+            drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight, sheet };
+            sheet.style.setProperty("--field-sheet-height", startHeight + "px");
             sheet.classList.add("field-sheet-dragging");
             event.currentTarget.setPointerCapture?.(event.pointerId);
           }}
@@ -127,8 +138,10 @@ export function FieldBottomSheet({
           }}
           onPointerUp={(event) => {
             if (!drag.current || drag.current.pointerId !== event.pointerId) return;
-            const next = clampHeight(drag.current.startHeight + drag.current.startY - event.clientY, viewport);
-            finishDrag(next);
+            const activeDrag = drag.current;
+            if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+            const next = clampHeight(activeDrag.startHeight + activeDrag.startY - event.clientY, viewport);
+            finishDrag(next, Math.abs(event.clientY - activeDrag.startY) >= MIN_DRAG_PX);
           }}
           onPointerCancel={() => {
             const activeDrag = drag.current;
@@ -139,15 +152,19 @@ export function FieldBottomSheet({
             const index = SNAP_ORDER.indexOf(snap);
             if (event.key === "ArrowUp") {
               event.preventDefault();
+              setUserSized(true);
               setSnap(SNAP_ORDER[Math.min(SNAP_ORDER.length - 1, index + 1)]);
             } else if (event.key === "ArrowDown") {
               event.preventDefault();
+              setUserSized(true);
               setSnap(SNAP_ORDER[Math.max(0, index - 1)]);
             } else if (event.key === "Home") {
               event.preventDefault();
+              setUserSized(true);
               setSnap("compact");
             } else if (event.key === "End") {
               event.preventDefault();
+              setUserSized(true);
               setSnap("full");
             }
           }}

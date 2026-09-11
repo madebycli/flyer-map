@@ -18,6 +18,8 @@ import {
 } from "../data/campaignApi";
 import type { Campaign, MapCameraView, Team } from "../domain/campaign";
 import { saveLanguage, t, type Language } from "../i18n";
+import { AppearanceControl } from "./AppearanceControl.tsx";
+import type { AppearancePreference } from "./appearance.ts";
 import { FieldHub } from "../platform/FieldHub.tsx";
 import { ShareLinkModal } from "../share/ShareLinkModal.tsx";
 
@@ -28,6 +30,8 @@ type Props = {
   access: AccessInfo | null;
   currentCamera: MapCameraView | null;
   initialAccessUrl: string | null;
+  appearance: AppearancePreference;
+  onAppearanceChange: (preference: AppearancePreference) => void;
   onLanguageChange: (language: Language) => void;
   onRenameCampaign: (name: string) => void;
   onNormalizeCampaignName: () => void;
@@ -70,6 +74,8 @@ export function SettingsSheet({
   access,
   currentCamera,
   initialAccessUrl,
+  appearance,
+  onAppearanceChange,
   onLanguageChange,
   onRenameCampaign,
   onNormalizeCampaignName,
@@ -319,6 +325,13 @@ export function SettingsSheet({
                 {t(language, "jumpToFocus")}
               </button>
             ) : null}
+          </div>
+          <div className="settings-appearance-panel">
+            <AppearanceControl
+              value={appearance}
+              labels={{ title: "Darstellung", system: "System", light: "Hell", dark: "Dunkel" }}
+              onChange={onAppearanceChange}
+            />
           </div>
         </section>
 
