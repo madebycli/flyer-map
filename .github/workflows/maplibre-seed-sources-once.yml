@@ -50,6 +50,8 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/map/MapView.tsx src/main.tsx tests/mapRendererLifecycleCompat.test.ts src/map/maplibreGeoJsonLifecycleCompat.ts
+          git add src/map/MapView.tsx src/main.tsx tests/mapRendererLifecycleCompat.test.ts tests/houseRenderer.test.ts src/map/maplibreGeoJsonLifecycleCompat.ts
           git commit -m 'fix: seed application GeoJSON at source creation'
           git push origin HEAD:fix/street-engine-smart-marking
+
+# Retry after updating the House renderer regression to require seeded initial data.
