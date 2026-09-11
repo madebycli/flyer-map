@@ -11,7 +11,7 @@ test("bare map exposes the green manual Street shortcut only when creation is al
   assert.match(shell, /launcherAvailable && !overlayOpen && canCreateManualStreet \? \([\s\S]*?className="platform-manual-street-button"/u);
   assert.match(shell, /aria-label="Straße manuell hinzufügen"/u);
   assert.match(shell, /onClick=\{\(\) => dispatchSimpleCommand\("start-manual-street"\)\}/u);
-  assert.match(shellCss, /\.platform-manual-street-button\s*\{[\s\S]*?right: 0\.55rem;[\s\S]*?background: #16803c/u);
+  assert.match(shellCss, /\.platform-manual-street-button\s*\{[\s\S]*?right: (?:0\.55rem|var\(--platform-field-edge-gap\));[\s\S]*?background: #16803c/u);
 });
 
 test("manual Street command keeps the existing direct-start and Area-selection behavior", () => {
