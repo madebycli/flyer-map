@@ -184,3 +184,5 @@ jobs:
             /tmp/sync-hotfix-staging-evidence.json
           retention-days: 7
           if-no-files-found: ignore
+
+# Renderer checkpoint: default MapLibre 5.7.1 + complete GeoJSON setData path.
