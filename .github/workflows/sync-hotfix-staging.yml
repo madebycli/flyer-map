@@ -194,3 +194,5 @@ jobs:
 # Layer-order checkpoint: insert app geometry above provider fills/roads and below final labels.
 
 # Resume rehydrate checkpoint: resize and complete GeoJSON setData after pageshow/visibilitychange.
+
+# GeoJSON lifecycle checkpoint: defer dirty-style setData until after the next MapLibre render recalc.
