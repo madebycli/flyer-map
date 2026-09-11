@@ -18,7 +18,10 @@ test("MapLibre GeoJSON compatibility coalesces initial vf source hydration until
   assert.match(compat, /pending\.data = data;/u);
   assert.match(compat, /map\.once\("render", apply\);/u);
   assert.match(compat, /hydratedSources\.add\(this\);/u);
-  assert.doesNotMatch(compat, /map\.isStyleLoaded\(\)/u);
+  assert.match(
+    compat,
+    /if \(!map \|\| !this\.id\.startsWith\(APPLICATION_SOURCE_PREFIX\) \|\| hydratedSources\.has\(this\)\)/u,
+  );
   assert.match(compat, /maplibre\/maplibre-gl-js#7634/u);
 });
 
