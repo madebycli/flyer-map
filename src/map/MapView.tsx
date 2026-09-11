@@ -619,7 +619,13 @@ function smartPointsToGeoJson(
   return { type: "FeatureCollection", features };
 }
 
-function buildApplicationMapStyle(): StyleSpecification {
+type InitialApplicationSourceData = {
+  areas: RenderArea[];
+  tasks: RenderTask[];
+  houses: RenderHouse[];
+};
+
+function buildApplicationMapStyle(initialData?: InitialApplicationSourceData): StyleSpecification {
   return {
     version: 8,
     sources: {
@@ -633,15 +639,15 @@ function buildApplicationMapStyle(): StyleSpecification {
       },
       [AREA_SOURCE_ID]: {
         type: "geojson",
-        data: areasToGeoJson([]),
+        data: areasToGeoJson(initialData?.areas ?? []),
       },
       [STREET_SOURCE_ID]: {
         type: "geojson",
-        data: streetsToGeoJson([]),
+        data: streetsToGeoJson(initialData?.tasks ?? []),
       },
       [HOUSE_SOURCE_ID]: {
         type: "geojson",
-        data: housesToGeoJson([]),
+        data: housesToGeoJson(initialData?.houses ?? []),
       },
       [COLLECTION_MAIN_SOURCE_ID]: {
         type: "geojson",
@@ -1160,8 +1166,9 @@ const BELOW_BASEMAP_LABEL_LAYER_IDS = new Set([
   COLLECTION_AREAS_SELECTED_LAYER_ID,
 ]);
 
-function installApplicationMapStyle(map: Map) {
+function installApplicationMapStyle(map: Map, initialData?: InitialApplicationSourceData) {
   const hasVectorBasemap = Boolean(map.getSource(BASEMAP_VECTOR_SOURCE_ID));
+  const seeded = { areas: false, streets: false, houses: false };
 
   // Bright may ship provider-owned 3D building layers. Remove every
   // fill-extrusion before installing any application layers so the map stays
@@ -1193,9 +1200,21 @@ function installApplicationMapStyle(map: Map) {
   const basemapLabelInsertionLayerId = [...map.getStyle().layers].reverse().find(
     (layer) => layer.type === "symbol",
   )?.id;
-  const applicationStyle = buildApplicationMapStyle();
+  const applicationStyle = buildApplicationMapStyle(initialData);
   for (const [sourceId, source] of Object.entries(applicationStyle.sources)) {
-    if (!map.getSource(sourceId)) map.addSource(sourceId, source as SourceSpecification);
+    if (map.getSource(sourceId)) continue;
+    map.addSource(sourceId, source as SourceSpecification);
+    const region = map.getContainer().closest<HTMLElement>(".map-region");
+    if (sourceId === AREA_SOURCE_ID) {
+      seeded.areas = true;
+      if (region) region.dataset.appliedAreas = String(initialData?.areas.length ?? 0);
+    } else if (sourceId === STREET_SOURCE_ID) {
+      seeded.streets = true;
+      if (region) region.dataset.appliedStreets = String(initialData?.tasks.length ?? 0);
+    } else if (sourceId === HOUSE_SOURCE_ID) {
+      seeded.houses = true;
+      if (region) region.dataset.appliedHouses = String(initialData?.houses.length ?? 0);
+    }
   }
 
   for (const layer of applicationStyle.layers) {
@@ -1242,6 +1261,8 @@ function installApplicationMapStyle(map: Map) {
     if (BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;
     if (!map.getLayer(layer.id)) map.addLayer(layer);
   }
+
+  return seeded;
 }
 
 
@@ -2017,11 +2038,15 @@ export function MapView({
           styleReady = true;
           if (styleLoadTimeout !== null) window.clearTimeout(styleLoadTimeout);
           setError(null);
-          installApplicationMapStyle(map);
           const current = dataRef.current;
-          syncAreaData(map, current.areas);
-          syncStreetData(map, current.tasks);
-          syncHouseData(map, current.houses);
+          const seeded = installApplicationMapStyle(map, current);
+          // MapLibre 6 can lose an immediate setData() when a newly-added
+          // GeoJSON source has not yet crossed its first style recalculation.
+          // Seed new core sources with their real FeatureCollections instead;
+          // only existing sources use the normal incremental setData() path.
+          if (!seeded.areas) syncAreaData(map, current.areas);
+          if (!seeded.streets) syncStreetData(map, current.tasks);
+          if (!seeded.houses) syncHouseData(map, current.houses);
           syncCollectionData(
             map,
             current.collectionMainArea,
