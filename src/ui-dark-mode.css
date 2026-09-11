@@ -1,5 +1,11 @@
 /* UI-only appearance layer.
    Deliberately does not target MapLibre, the map canvas, map sources, or map layers. */
+.platform-appearance-panel {
+  margin: 0.65rem 0.1rem 0.2rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgb(23 32 25 / 10%);
+}
+
 html[data-appearance="dark"] {
   --ui-bg: #101612;
   --ui-surface: #18211b;
@@ -148,9 +154,25 @@ html[data-appearance="dark"] .platform-app-item {
 }
 
 html[data-appearance="dark"] .platform-appearance-panel {
-  margin: 0.65rem 0.1rem 0.2rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid var(--ui-border);
+  border-top-color: var(--ui-border);
+}
+
+html[data-appearance="dark"] .appearance-control legend {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .appearance-control-options {
+  background: #111813;
+}
+
+html[data-appearance="dark"] .appearance-control-option span {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .appearance-control-option input:checked + span {
+  color: var(--ui-text);
+  background: var(--ui-surface-raised);
+  box-shadow: 0 0.15rem 0.55rem rgb(0 0 0 / 28%);
 }
 
 html[data-appearance="dark"] :where(.connection.is-online, .area-preparation-status.is-ready) {
