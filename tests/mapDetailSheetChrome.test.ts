@@ -19,7 +19,7 @@ test("map detail and map workflow surfaces use the universal FieldHub chrome", a
 
   assert.match(collection, /import \{ FieldHub \} from "\.\.\/platform\/FieldHub\.tsx";/u);
   assert.doesNotMatch(collection, /className="bottom-sheet/u);
-  assert.match(app, /import \{ NetworkWorkspacePanel \} from "\.\/map\/NetworkWorkspacePanel\.tsx";/u);
+  assert.match(app, /import \{ NetworkWorkspacePanel \} from ['"]\.\/map\/NetworkWorkspacePanel\.tsx['"];/u);
   assert.doesNotMatch(network, /from ['"]\.\.\/platform\/FieldHub\.tsx['"]/u);
   assert.match(networkPanel, /import \{ FieldHub \} from "\.\.\/platform\/FieldHub\.tsx";/u);
   assert.match(networkPanel, /<FieldHub[\s\S]*?title="Straßenabschnitt markieren"/u);

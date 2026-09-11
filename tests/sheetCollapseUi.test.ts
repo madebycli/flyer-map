@@ -2,17 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-test("legacy mission map sheets keep accessible collapse controls while Settings uses FieldHub", async () => {
-  const [app, settings, css] = await Promise.all([
-    readFile("src/App.tsx", "utf8"), readFile("src/settings/SettingsSheet.tsx", "utf8"), readFile("src/styles.css", "utf8"),
+test("mission map sheets use universal FieldHub chrome while Settings does too", async () => {
+  const [app, settings] = await Promise.all([
+    readFile("src/App.tsx", "utf8"),
+    readFile("src/settings/SettingsSheet.tsx", "utf8"),
   ]);
-  assert.match(app, /const sheetToggleLabel = sheetCollapsed \? "Fenster ausklappen" : "Fenster einklappen"/u);
-  assert.match(app, /sheet-handle-button[\s\S]*aria-label=\{sheetToggleLabel\}/u);
+  assert.match(app, /import \{ FieldHub \} from "\.\/platform\/FieldHub\.tsx";/u);
+  assert.match(app, /sheet === "area"[\s\S]*?<FieldHub[\s\S]*?map-area-hub/u);
+  assert.match(app, /sheet === "task"[\s\S]*?<FieldHub[\s\S]*?map-task-hub/u);
+  assert.match(app, /sheet === "house"[\s\S]*?<FieldHub[\s\S]*?map-house-hub/u);
+  assert.doesNotMatch(app, /const sheetToggleLabel/u);
+  assert.doesNotMatch(app, /sheet-handle-button/u);
   assert.match(settings, /<FieldHub[\s\S]*?title=\{t\(language, "settings"\)\}/u);
   assert.doesNotMatch(settings, /sheet-handle-button/u);
-  assert.match(app, /useEffect\(\(\) => \{\s*setSheetCollapsed\(false\);\s*\}, \[sheet\]\)/u);
-  assert.match(css, /\.bottom-sheet\.is-collapsed > :not\(\.sheet-handle-button\):not\(\.sheet-header\)/u);
-  assert.match(css, /bottom: calc\(env\(safe-area-inset-bottom\) \+ 4\.45rem\)/u);
 });
 
 test("Team deletion remains an Admin-only destructive action with a local Area guard", async () => {
@@ -21,6 +23,6 @@ test("Team deletion remains an Admin-only destructive action with a local Area g
   assert.match(app, /Team „\$\{team\.name/u);
   assert.match(app, /disabled=\{snapshot\.areas\.some\(\(area\) => area\.teamId === team\.id\)\}/u);
   assert.match(app, /const deleteTeam = async \(team: Team\)[\s\S]*await postCampaignMutation\(/u);
-  const deleteBlock = /const deleteTeam = async \(team: Team\)([\s\S]*?)\n  const sheetToggleLabel/u.exec(app)?.[1] ?? "";
+  const deleteBlock = /const deleteTeam = async \(team: Team\)([\s\S]*?)\n  const startDrawing/u.exec(app)?.[1] ?? "";
   assert.doesNotMatch(deleteBlock, /commitSnapshot/u, "a constrained Team delete must not disappear locally before the server accepts it");
 });
