@@ -1540,7 +1540,11 @@ function updateRendererDiagnostics(map: Map) {
   try {
     const missingSources = APPLICATION_STYLE_IDS.sourceIds.filter((sourceId) => !map.getSource(sourceId));
     const missingLayers = APPLICATION_STYLE_IDS.layerIds.filter((layerId) => !map.getLayer(layerId));
+    const container = map.getContainer();
+    const canvas = map.getCanvas();
     region.dataset.mapStyleReady = map.isStyleLoaded() ? "1" : "0";
+    region.dataset.mapContainerSize = `${container.clientWidth}x${container.clientHeight}`;
+    region.dataset.mapCanvasSize = `${canvas.clientWidth}x${canvas.clientHeight}`;
     region.dataset.applicationSources = `${APPLICATION_STYLE_IDS.sourceIds.length - missingSources.length}/${APPLICATION_STYLE_IDS.sourceIds.length}`;
     region.dataset.applicationLayers = `${APPLICATION_STYLE_IDS.layerIds.length - missingLayers.length}/${APPLICATION_STYLE_IDS.layerIds.length}`;
     region.dataset.missingApplicationSources = missingSources.join(",");
@@ -1929,19 +1933,42 @@ export function MapView({
         if (detail?.campaignId && detail.campaignId !== campaignId) return;
         void refreshOfflineContext();
       };
+      let resumeRehydrateTimer: number | null = null;
+      let rehydrateAfterResume = () => {};
+      const scheduleResumeRehydrate = () => {
+        if (!active || document.visibilityState !== "visible") return;
+        if (resumeRehydrateTimer !== null) window.clearTimeout(resumeRehydrateTimer);
+        // Wait one task so Safari/iOS can commit the visible container size
+        // before MapLibre measures its canvas again.
+        resumeRehydrateTimer = window.setTimeout(() => {
+          resumeRehydrateTimer = null;
+          rehydrateAfterResume();
+        }, 0);
+      };
       const handleVisibilityChange = () => {
-        if (document.visibilityState === "visible") void refreshOfflineContext();
+        if (document.visibilityState === "visible") {
+          void refreshOfflineContext();
+          scheduleResumeRehydrate();
+        }
+      };
+      const handlePageShow = () => {
+        void refreshOfflineContext();
+        scheduleResumeRehydrate();
       };
 
       window.addEventListener("online", handleConnectivityChange);
       window.addEventListener("offline", handleConnectivityChange);
       window.addEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
+      window.addEventListener("pageshow", handlePageShow);
       document.addEventListener("visibilitychange", handleVisibilityChange);
       cleanupListeners = () => {
         window.removeEventListener("online", handleConnectivityChange);
         window.removeEventListener("offline", handleConnectivityChange);
         window.removeEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
+        window.removeEventListener("pageshow", handlePageShow);
         document.removeEventListener("visibilitychange", handleVisibilityChange);
+        if (resumeRehydrateTimer !== null) window.clearTimeout(resumeRehydrateTimer);
+        resumeRehydrateTimer = null;
       };
 
       const persistCamera = () => {
@@ -2029,6 +2056,8 @@ export function MapView({
             current.highlightedStreetTaskIds,
             current.highlightedHouseTaskIds,
           );
+          const container = map.getContainer();
+          if (container.clientWidth > 0 && container.clientHeight > 0) map.resize();
           void refreshOfflineContext();
           updateActiveOverlay(map);
           updateRendererDiagnostics(map);
@@ -2037,6 +2066,25 @@ export function MapView({
           const region = map.getContainer().closest<HTMLElement>(".map-region");
           if (region) region.dataset.mapRendererError = cause instanceof Error ? cause.message : String(cause);
           setError(t(dataRef.current.language, "mapInitError"));
+        }
+      };
+      rehydrateAfterResume = () => {
+        if (!active || document.visibilityState !== "visible") return;
+        const container = map.getContainer();
+        if (container.clientWidth <= 0 || container.clientHeight <= 0) return;
+        try {
+          // MapLibre's documented resize path fixes maps created while a
+          // mobile/WebView container was hidden. Reinstalling and replaying
+          // complete GeoJSON also recovers a worker that stopped processing
+          // setData while the page was suspended.
+          map.resize();
+          if (!map.isStyleLoaded()) return;
+          installCurrentStyle();
+          map.triggerRepaint();
+        } catch (cause) {
+          console.error("Map resume rehydrate failed", cause);
+          const region = map.getContainer().closest<HTMLElement>(".map-region");
+          if (region) region.dataset.mapRendererError = cause instanceof Error ? cause.message : String(cause);
         }
       };
       map.on("style.load", installCurrentStyle);

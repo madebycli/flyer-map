@@ -19,10 +19,12 @@ type DiagnosticSnapshot = {
     streetTasks: number;
     houseTasks: number;
   };
-  renderer: {
-    kind: string;
-    maplibreCanvases: number;
-    sourceAreas: number | null;
+    renderer: {
+      kind: string;
+      maplibreCanvases: number;
+      mapContainerSize: string | null;
+      mapCanvasSize: string | null;
+      sourceAreas: number | null;
     sourceStreets: number | null;
     sourceHouses: number | null;
     renderedAreas: number | null;
@@ -135,6 +137,8 @@ function rendererStats() {
   return {
     kind: region?.dataset.renderer ?? "unknown",
     maplibreCanvases: document.querySelectorAll(".maplibregl-canvas").length,
+    mapContainerSize: region?.dataset.mapContainerSize ?? null,
+    mapCanvasSize: region?.dataset.mapCanvasSize ?? null,
     sourceAreas: readDatasetNumber(region?.dataset.sourceAreas),
     sourceStreets: readDatasetNumber(region?.dataset.sourceStreets),
     sourceHouses: readDatasetNumber(region?.dataset.sourceHouses),
@@ -302,6 +306,7 @@ export function MapDiagnostics() {
             Sichtbar: {renderer.renderedAreas ?? "–"} Gebiete · {renderer.renderedStreets ?? "–"} Straßen · {renderer.renderedHouses ?? "–"} Häuser
           </span>
           <span>MapLibre Canvas: {renderer.maplibreCanvases} · aktive SVG-Nodes: {renderer.activeSvgNodes}</span>
+          <span>Container: {renderer.mapContainerSize ?? "–"} · Canvas: {renderer.mapCanvasSize ?? "–"}</span>
           <span>
             App-Layer: {renderer.applicationLayers ?? "–"} · Quellen: {renderer.applicationSources ?? "–"} · Style geladen: {renderer.mapStyleReady ? "ja" : "nein"}
           </span>

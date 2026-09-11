@@ -40,3 +40,10 @@ test("default renderer data path keeps complete GeoJSON setData writes", () => {
   assert.match(source, /dataset\.applicationLayers/);
   assert.match(source, /dataset\.missingApplicationLayers/);
 });
+
+test("mobile resume remeasures the map and rehydrates GeoJSON workers", () => {
+  assert.match(source, /window\.addEventListener\("pageshow", handlePageShow\)/);
+  assert.match(source, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /map\.resize\(\)/);
+  assert.match(source, /installCurrentStyle\(\);\s*map\.triggerRepaint\(\);/);
+});
