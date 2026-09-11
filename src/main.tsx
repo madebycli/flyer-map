@@ -6,6 +6,7 @@ import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { campaignIdFromUrl } from "./data/campaignApi";
 import { installRxdbFetchGuard } from "./data/rxdbFetchGuard";
 import { isOrganizationAdminPath, preserveDiagnosticFlag } from "./organization/organizationRoutes";
+import { initializeAppearance } from "./settings/appearance.ts";
 import { SyncStatus } from "./sync/SyncStatus";
 import "./styles.css";
 import "./street-mode.css";
@@ -16,6 +17,7 @@ import "./m5.css";
 import "./access-recovery.css";
 import "./diagnostics/map-diagnostics.css";
 import "./map-context-ui.css";
+import "./ui-dark-mode.css";
 
 const MapDiagnostics = lazy(() => import("./diagnostics/MapDiagnostics").then(module => ({ default: module.MapDiagnostics })));
 const OrganizationAdminNavEnhancer = lazy(() => import("./organization/OrganizationAdminNavEnhancer").then(module => ({ default: module.OrganizationAdminNavEnhancer })));
@@ -33,6 +35,7 @@ const M6SelectionPreview = lazy(() => import("./workbench/M6SelectionPreview").t
 const WorkbenchPreview = lazy(() => import("./workbench/WorkbenchPreview").then(module => ({ default: module.WorkbenchPreview })));
 
 installRxdbFetchGuard();
+initializeAppearance();
 
 const workbenchMode = new URLSearchParams(window.location.search).get("workbench");
 const root = createRoot(document.getElementById("root")!);
