@@ -68,7 +68,7 @@ html[data-appearance="dark"] :where(.team-hub-notice.is-error) {
 }
 
 html[data-appearance="dark"] .team-hub-team-dot {
-  box-shadow: 0 0 0 0.22rem rgb(29 40 33 / 88%);
+  box-shadow: 0 0 0 0.22rem rgb(33 33 33 / 88%);
 }
 
 html[data-appearance="dark"] .join-access-value {

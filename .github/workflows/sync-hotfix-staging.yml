@@ -213,3 +213,5 @@ jobs:
 # Test contract correction: allow the shared responsive FieldHub edge variable.
 
 # Content-fit checkpoint: FieldHub opens at natural content height; appearance control lives in Settings.
+
+# Neutral dark palette checkpoint: use grayscale UI surfaces and keep MapLibre untouched.

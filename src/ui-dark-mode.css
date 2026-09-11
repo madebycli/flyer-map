@@ -1,5 +1,6 @@
 /* UI-only appearance layer.
-   Deliberately does not target MapLibre, the map canvas, map sources, or map layers. */
+   Deliberately does not target MapLibre, the map canvas, map sources, or map layers.
+   The dark base follows a neutral YouTube-style grayscale system. */
 .settings-appearance-panel {
   margin: 0.65rem 0.1rem 0.2rem;
   padding-top: 0.8rem;
@@ -7,18 +8,18 @@
 }
 
 html[data-appearance="dark"] {
-  --ui-bg: #101612;
-  --ui-surface: #18211b;
-  --ui-surface-raised: #1d2821;
-  --ui-surface-soft: #222f27;
-  --ui-text: #eef5ef;
-  --ui-muted: #aab8ad;
-  --ui-border: rgb(225 240 229 / 16%);
-  --ui-border-strong: rgb(225 240 229 / 24%);
-  --ui-accent: #69c487;
-  --ui-accent-strong: #85d49e;
-  --ui-danger: #ff9b9f;
-  --ui-warning: #efc36f;
+  --ui-bg: #0f0f0f;
+  --ui-surface: #181818;
+  --ui-surface-raised: #212121;
+  --ui-surface-soft: #272727;
+  --ui-text: #f1f1f1;
+  --ui-muted: #aaaaaa;
+  --ui-border: rgb(255 255 255 / 14%);
+  --ui-border-strong: rgb(255 255 255 / 24%);
+  --ui-accent: #3f3f3f;
+  --ui-accent-strong: #5a5a5a;
+  --ui-danger: #ffb4ab;
+  --ui-warning: #fdd663;
 
   --org-bg: var(--ui-bg);
   --org-panel: var(--ui-surface);
@@ -28,7 +29,7 @@ html[data-appearance="dark"] {
   --org-accent: var(--ui-accent);
   --org-accent-strong: var(--ui-accent-strong);
   --org-danger: var(--ui-danger);
-  --org-warning: #332b19;
+  --org-warning: #2a2517;
 }
 
 html[data-appearance="dark"] body {
@@ -81,7 +82,7 @@ html[data-appearance="dark"] :where(
   .field-sheet-handle,
   .platform-menu-handle
 ) {
-  background: #66756a;
+  background: #666666;
 }
 
 html[data-appearance="dark"] :where(
@@ -122,7 +123,7 @@ html[data-appearance="dark"] :where(
 }
 
 html[data-appearance="dark"] :where(input, textarea):not(.maplibregl-map *)::placeholder {
-  color: #829087;
+  color: #8a8a8a;
 }
 
 html[data-appearance="dark"] :where(
@@ -140,7 +141,8 @@ html[data-appearance="dark"] :where(
 }
 
 html[data-appearance="dark"] .button.primary {
-  color: #07130b;
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border-strong);
   background: var(--ui-accent);
 }
 
@@ -162,7 +164,7 @@ html[data-appearance="dark"] .appearance-control legend {
 }
 
 html[data-appearance="dark"] .appearance-control-options {
-  background: #111813;
+  background: var(--ui-bg);
 }
 
 html[data-appearance="dark"] .appearance-control-option span {
@@ -211,7 +213,7 @@ html[data-appearance="dark"] .color-swatch.is-selected {
 
 /* Organization/admin UI uses shared variables, plus a few historical literal surfaces. */
 html[data-appearance="dark"] :where(.org-public-header, .org-admin-topbar) {
-  background: rgb(24 33 27 / 96%);
+  background: rgb(24 24 24 / 96%);
 }
 
 html[data-appearance="dark"] :where(
@@ -250,7 +252,7 @@ html[data-appearance="dark"] .org-admin-topbar nav :where(button, a):hover {
 
 html[data-appearance="dark"] .org-empty {
   border-color: var(--org-border);
-  background: rgb(24 33 27 / 70%);
+  background: rgb(24 24 24 / 70%);
 }
 
 html[data-appearance="dark"] .org-warning p {
