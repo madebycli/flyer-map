@@ -65,7 +65,7 @@ if (unexpected.length > 0 || (audit.status ?? 1) !== 0 && !allBlockingAreAllowed
             : item
         ),
         nodes: vulnerability.nodes
-      }),
+      })),
       null,
       2
     )
