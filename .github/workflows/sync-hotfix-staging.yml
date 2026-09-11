@@ -207,3 +207,5 @@ jobs:
 # UI FieldHub typecheck checkpoint: normalize pending intent status for the extracted panel.
 
 # Map UI checkpoint: no map backdrop blur, shared PC bottom-left FieldHub, and explicit local area-name save.
+
+# Test contract correction: use a literal draft-state assertion so the test parser remains portable.

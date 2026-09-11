@@ -39,7 +39,7 @@ test("interactive map modes pass pointer input through the narrow HUD", () => {
 
 test("area renaming is local until one explicit save", () => {
   assert.match(app, /\| "area-name"/u);
-  assert.match(app, /const \[areaNameDraft, setAreaNameDraft\] = useState\("");/u);
+  assert.ok(app.includes('const [areaNameDraft, setAreaNameDraft] = useState("");'));
   assert.match(app, /onTitleClick=\{canEditSelectedArea \? openAreaNameEditor : undefined\}/u);
   assert.match(app, /const saveAreaName = \(\) => \{[\s\S]*?commitSnapshot/u);
   assert.match(app, /sheet === "area-name"[\s\S]*?setAreaNameDraft\(event\.target\.value\)/u);
