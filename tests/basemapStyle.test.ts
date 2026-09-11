@@ -5,11 +5,13 @@ import test from "node:test";
 test("MapView installs OpenFreeMap Bright and one constant housenumber layer", async () => {
   const map = await readFile("src/map/MapView.tsx", "utf8");
   const diagnostics = await readFile("src/diagnostics/MapDiagnostics.tsx", "utf8");
+  const packageJson = await readFile("package.json", "utf8");
 
   assert.match(map, /https:\/\/tiles\.openfreemap\.org\/styles\/bright/u);
   assert.match(map, /https:\/\/tile\.openstreetmap\.org\/\{z\}\/\{x\}\/\{y\}\.png/u);
   assert.match(map, /map\.setStyle\(RASTER_BASEMAP_STYLE\)/u);
   assert.match(map, /map\.on\("style\.load", installCurrentStyle\)/u);
+  assert.match(packageJson, /"maplibre-gl": "5\.7\.1"/u);
   assert.match(map, /BASEMAP_HOUSENUMBER_LAYER_ID = "vf-basemap-housenumbers"/u);
   assert.match(map, /BASEMAP_VECTOR_SOURCE_ID = "openmaptiles"/u);
   assert.match(map, /BASEMAP_HOUSENUMBER_SOURCE_LAYER = "housenumber"/u);

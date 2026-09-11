@@ -141,6 +141,12 @@ function rendererStats() {
     renderedAreas: readDatasetNumber(region?.dataset.renderedAreas),
     renderedStreets: readDatasetNumber(region?.dataset.renderedStreets),
     renderedHouses: readDatasetNumber(region?.dataset.renderedHouses),
+    mapStyleReady: region?.dataset.mapStyleReady === "1",
+    applicationSources: region?.dataset.applicationSources ?? null,
+    applicationLayers: region?.dataset.applicationLayers ?? null,
+    missingApplicationSources: region?.dataset.missingApplicationSources ?? null,
+    missingApplicationLayers: region?.dataset.missingApplicationLayers ?? null,
+    rendererError: region?.dataset.mapRendererError || null,
     activeSvgNodes: document.querySelectorAll(".active-geometry-overlay *").length,
     totalDomNodes: document.getElementsByTagName("*").length,
   };
@@ -296,6 +302,11 @@ export function MapDiagnostics() {
             Sichtbar: {renderer.renderedAreas ?? "–"} Gebiete · {renderer.renderedStreets ?? "–"} Straßen · {renderer.renderedHouses ?? "–"} Häuser
           </span>
           <span>MapLibre Canvas: {renderer.maplibreCanvases} · aktive SVG-Nodes: {renderer.activeSvgNodes}</span>
+          <span>
+            App-Layer: {renderer.applicationLayers ?? "–"} · Quellen: {renderer.applicationSources ?? "–"} · Style geladen: {renderer.mapStyleReady ? "ja" : "nein"}
+          </span>
+          {renderer.rendererError ? <span>Renderer-Fehler: {renderer.rendererError}</span> : null}
+          {renderer.missingApplicationLayers ? <span>Fehlende Layer: {renderer.missingApplicationLayers}</span> : null}
           <button type="button" onClick={() => void copyDiagnostics()}>
             {copied ? "Kopiert ✓" : "Diagnose kopieren"}
           </button>

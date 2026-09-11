@@ -31,4 +31,12 @@ test("style.load still hydrates every primary application GeoJSON source from la
   assert.match(styleLoad, /syncAreaData\(map, current\.areas\);/);
   assert.match(styleLoad, /syncStreetData\(map, current\.tasks\);/);
   assert.match(styleLoad, /syncHouseData\(map, current\.houses\);/);
+  assert.match(styleLoad, /if \(map\.isStyleLoaded\(\)\) window\.setTimeout\(installCurrentStyle, 0\);/);
+});
+
+test("default renderer data path keeps complete GeoJSON setData writes", () => {
+  assert.match(source, /if \(streetSource\) streetSource\.setData\(streetsToGeoJson\(tasks\)\);/);
+  assert.match(source, /if \(houseSource\) houseSource\.setData\(housesToGeoJson\(houses\)\);/);
+  assert.match(source, /dataset\.applicationLayers/);
+  assert.match(source, /dataset\.missingApplicationLayers/);
 });

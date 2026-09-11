@@ -63,7 +63,6 @@ import {
   pickupsToGeoJson,
 } from "./pickupRenderer.ts";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { syncIncrementalGeoJson } from './incrementalGeoJson.ts';
 
 export type MapMode = "browse" | "draw" | "edit" | "street-draw" | "smart-street" | "smart-house" | "collection-main-draw" | "collection-area-draw" | "collection-area-edit";
 type RenderArea = Area & { color: string };
@@ -1133,6 +1132,14 @@ function buildApplicationMapStyle(): StyleSpecification {
   };
 }
 
+const APPLICATION_STYLE_IDS = (() => {
+  const style = buildApplicationMapStyle();
+  return {
+    sourceIds: Object.keys(style.sources),
+    layerIds: style.layers.map((layer) => layer.id),
+  };
+})();
+
 const BELOW_BASEMAP_LABEL_LAYER_IDS = new Set([
   OFFLINE_BUILDING_LAYER_ID,
   OFFLINE_ROAD_LAYER_ID,
@@ -1375,12 +1382,12 @@ function syncAreaData(map: Map, areas: RenderArea[]) {
 
 function syncStreetData(map: Map, tasks: RenderTask[]) {
   const streetSource = map.getSource(STREET_SOURCE_ID) as GeoJSONSource | undefined;
-  if (streetSource) syncIncrementalGeoJson(streetSource,tasks,task=>JSON.stringify([task.updatedAt,task.areaPreparationGeneration,task.label,task.status,task.color,task.completedColor,task.network?.coverage]),streetsToGeoJson);
+  if (streetSource) streetSource.setData(streetsToGeoJson(tasks));
 }
 
 function syncHouseData(map: Map, houses: RenderHouse[]) {
   const houseSource = map.getSource(HOUSE_SOURCE_ID) as GeoJSONSource | undefined;
-  if (houseSource) syncIncrementalGeoJson(houseSource,houses,house=>JSON.stringify([house.updatedAt,house.areaPreparationGeneration,house.status,house.color,house.completedColor]),housesToGeoJson);
+  if (houseSource) houseSource.setData(housesToGeoJson(houses));
 }
 
 function syncSmartStreetData(
@@ -1527,6 +1534,14 @@ function updateRendererDiagnostics(map: Map) {
   const region = map.getContainer().closest<HTMLElement>(".map-region");
   if (!region) return;
   try {
+    const missingSources = APPLICATION_STYLE_IDS.sourceIds.filter((sourceId) => !map.getSource(sourceId));
+    const missingLayers = APPLICATION_STYLE_IDS.layerIds.filter((layerId) => !map.getLayer(layerId));
+    region.dataset.mapStyleReady = map.isStyleLoaded() ? "1" : "0";
+    region.dataset.applicationSources = `${APPLICATION_STYLE_IDS.sourceIds.length - missingSources.length}/${APPLICATION_STYLE_IDS.sourceIds.length}`;
+    region.dataset.applicationLayers = `${APPLICATION_STYLE_IDS.layerIds.length - missingLayers.length}/${APPLICATION_STYLE_IDS.layerIds.length}`;
+    region.dataset.missingApplicationSources = missingSources.join(",");
+    region.dataset.missingApplicationLayers = missingLayers.join(",");
+    region.dataset.mapRendererError = "";
     const sourceAreas = map.querySourceFeatures(AREA_SOURCE_ID).filter(
       (feature) => typeof feature.properties?.areaId === "string",
     );
@@ -1574,6 +1589,7 @@ function updateRendererDiagnostics(map: Map) {
       new Set(renderedPickups.map((feature) => feature.properties?.pickupId)).size,
     );
   } catch (cause) {
+    region.dataset.mapRendererError = cause instanceof Error ? cause.message : String(cause);
     console.warn("Map renderer diagnostics failed", cause);
   }
 }
@@ -2004,10 +2020,17 @@ export function MapView({
           updateRendererDiagnostics(map);
         } catch (cause) {
           console.error("Map application layers could not be installed", cause);
+          const region = map.getContainer().closest<HTMLElement>(".map-region");
+          if (region) region.dataset.mapRendererError = cause instanceof Error ? cause.message : String(cause);
           setError(t(dataRef.current.language, "mapInitError"));
         }
       };
       map.on("style.load", installCurrentStyle);
+      // MapLibre can finish a cached initial style before the listener is
+      // attached. The default renderer must still install the application
+      // sources/layers in that race; later style changes continue through the
+      // persistent style.load listener above.
+      if (map.isStyleLoaded()) window.setTimeout(installCurrentStyle, 0);
 
       map.on("idle", () => {
         if (active) updateRendererDiagnostics(map);
