@@ -12,11 +12,14 @@ const diagnostics = readFileSync(
 );
 const main = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
 
-test("MapLibre GeoJSON compatibility coalesces initial vf source hydration until a render", () => {
+test("MapLibre GeoJSON compatibility coalesces initial vf source hydration across a guaranteed frame boundary", () => {
   assert.match(compat, /this\.id\.startsWith\(APPLICATION_SOURCE_PREFIX\)/u);
   assert.match(compat, /const pendingHydrations = new WeakMap<GeoJSONSource, PendingHydration>\(\);/u);
   assert.match(compat, /pending\.data = data;/u);
-  assert.match(compat, /map\.once\("render", apply\);/u);
+  assert.match(compat, /map\.once\("render", finish\);/u);
+  assert.match(compat, /view\.requestAnimationFrame\(\(\) => \{/u);
+  assert.match(compat, /map\.triggerRepaint\(\);/u);
+  assert.match(compat, /view\.requestAnimationFrame\(finish\);/u);
   assert.match(compat, /hydratedSources\.add\(this\);/u);
   assert.match(
     compat,
