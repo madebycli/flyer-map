@@ -192,3 +192,5 @@ jobs:
 # Login diagnostics checkpoint: preserve diag=1 through root, admin and field-map redirects.
 
 # Layer-order checkpoint: insert app geometry above provider fills/roads and below final labels.
+
+# Resume rehydrate checkpoint: resize and complete GeoJSON setData after pageshow/visibilitychange.
