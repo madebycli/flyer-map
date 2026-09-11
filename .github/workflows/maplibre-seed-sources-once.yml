@@ -23,66 +23,28 @@ jobs:
           node-version: 22
           cache: npm
       - name: Replace initial setData hydration with source seeding
+        run: python3 scripts/maplibre_seed_sources_once.py
+      - name: Verify candidate
+        id: verify
         shell: bash
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          p = Path('src/map/MapView.tsx')
-          s = p.read_text()
-
-          old = '''function buildApplicationMapStyle(): StyleSpecification {\n  return {'''
-          new = '''type InitialApplicationSourceData = {\n  areas: RenderArea[];\n  tasks: RenderTask[];\n  houses: RenderHouse[];\n};\n\nfunction buildApplicationMapStyle(initialData?: InitialApplicationSourceData): StyleSpecification {\n  return {'''
-          assert s.count(old) == 1
-          s = s.replace(old, new)
-
-          replacements = {
-            'data: areasToGeoJson([]),': 'data: areasToGeoJson(initialData?.areas ?? []),',
-            'data: streetsToGeoJson([]),': 'data: streetsToGeoJson(initialData?.tasks ?? []),',
-            'data: housesToGeoJson([]),': 'data: housesToGeoJson(initialData?.houses ?? []),',
-          }
-          for old_text, new_text in replacements.items():
-            assert s.count(old_text) == 1, old_text
-            s = s.replace(old_text, new_text)
-
-          old = '''function installApplicationMapStyle(map: Map) {\n  const hasVectorBasemap = Boolean(map.getSource(BASEMAP_VECTOR_SOURCE_ID));'''
-          new = '''function installApplicationMapStyle(map: Map, initialData?: InitialApplicationSourceData) {\n  const hasVectorBasemap = Boolean(map.getSource(BASEMAP_VECTOR_SOURCE_ID));\n  const seeded = { areas: false, streets: false, houses: false };'''
-          assert s.count(old) == 1
-          s = s.replace(old, new)
-
-          old = '''  const applicationStyle = buildApplicationMapStyle();\n  for (const [sourceId, source] of Object.entries(applicationStyle.sources)) {\n    if (!map.getSource(sourceId)) map.addSource(sourceId, source as SourceSpecification);\n  }'''
-          new = '''  const applicationStyle = buildApplicationMapStyle(initialData);\n  for (const [sourceId, source] of Object.entries(applicationStyle.sources)) {\n    if (map.getSource(sourceId)) continue;\n    map.addSource(sourceId, source as SourceSpecification);\n    const region = map.getContainer().closest<HTMLElement>(\".map-region\");\n    if (sourceId === AREA_SOURCE_ID) {\n      seeded.areas = true;\n      if (region) region.dataset.appliedAreas = String(initialData?.areas.length ?? 0);\n    } else if (sourceId === STREET_SOURCE_ID) {\n      seeded.streets = true;\n      if (region) region.dataset.appliedStreets = String(initialData?.tasks.length ?? 0);\n    } else if (sourceId === HOUSE_SOURCE_ID) {\n      seeded.houses = true;\n      if (region) region.dataset.appliedHouses = String(initialData?.houses.length ?? 0);\n    }\n  }'''
-          assert s.count(old) == 1
-          s = s.replace(old, new)
-
-          old = '''  for (const layer of applicationStyle.layers) {\n    if (BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;\n    if (!map.getLayer(layer.id)) map.addLayer(layer);\n  }\n}'''
-          new = '''  for (const layer of applicationStyle.layers) {\n    if (BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;\n    if (!map.getLayer(layer.id)) map.addLayer(layer);\n  }\n\n  return seeded;\n}'''
-          assert s.count(old) == 1
-          s = s.replace(old, new)
-
-          old = '''          installApplicationMapStyle(map);\n          const current = dataRef.current;\n          syncAreaData(map, current.areas);\n          syncStreetData(map, current.tasks);\n          syncHouseData(map, current.houses);'''
-          new = '''          const current = dataRef.current;\n          const seeded = installApplicationMapStyle(map, current);\n          // MapLibre 6 can lose an immediate setData() when a newly-added\n          // GeoJSON source has not yet crossed its first style recalculation.\n          // Seed new core sources with their real FeatureCollections instead;\n          // only existing sources use the normal incremental setData() path.\n          if (!seeded.areas) syncAreaData(map, current.areas);\n          if (!seeded.streets) syncStreetData(map, current.tasks);\n          if (!seeded.houses) syncHouseData(map, current.houses);'''
-          assert s.count(old) == 1
-          s = s.replace(old, new)
-          p.write_text(s)
-
-          p = Path('src/main.tsx')
-          s = p.read_text()
-          old = '''const PlatformShell = lazy(async () => {\n  const { installMapLibreGeoJsonLifecycleCompat } = await import(\"./map/maplibreGeoJsonLifecycleCompat\");\n  installMapLibreGeoJsonLifecycleCompat();\n  const module = await import(\"./platform/PlatformShell\");\n  return { default: module.PlatformShell };\n});'''
-          new = '''const PlatformShell = lazy(() => import(\"./platform/PlatformShell\").then(module => ({ default: module.PlatformShell })));'''
-          assert s.count(old) == 1
-          p.write_text(s.replace(old, new))
-
-          Path('src/map/maplibreGeoJsonLifecycleCompat.ts').unlink()
-
-          p = Path('tests/mapRendererLifecycleCompat.test.ts')
-          p.write_text('''import assert from "node:assert/strict";\nimport { readFileSync } from "node:fs";\nimport test from "node:test";\n\nconst mapView = readFileSync(new URL("../src/map/MapView.tsx", import.meta.url), "utf8");\nconst main = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");\n\ntest("new application GeoJSON sources are seeded with current core data", () => {\n  assert.match(mapView, /buildApplicationMapStyle\\(initialData\\?: InitialApplicationSourceData\\)/u);\n  assert.match(mapView, /data: areasToGeoJson\\(initialData\\?\\.areas \\?\\? \\[\\]\\)/u);\n  assert.match(mapView, /data: streetsToGeoJson\\(initialData\\?\\.tasks \\?\\? \\[\\]\\)/u);\n  assert.match(mapView, /data: housesToGeoJson\\(initialData\\?\\.houses \\?\\? \\[\\]\\)/u);\n  assert.match(mapView, /const seeded = installApplicationMapStyle\\(map, current\\);/u);\n  assert.match(mapView, /if \\(!seeded\\.areas\\) syncAreaData\\(map, current\\.areas\\);/u);\n  assert.match(mapView, /if \\(!seeded\\.streets\\) syncStreetData\\(map, current\\.tasks\\);/u);\n  assert.match(mapView, /if \\(!seeded\\.houses\\) syncHouseData\\(map, current\\.houses\\);/u);\n});\n\ntest("source seeding records direct hydration diagnostics", () => {\n  assert.match(mapView, /dataset\\.appliedAreas = String\\(initialData\\?\\.areas\\.length \\?\\? 0\\)/u);\n  assert.match(mapView, /dataset\\.appliedStreets = String\\(initialData\\?\\.tasks\\.length \\?\\? 0\\)/u);\n  assert.match(mapView, /dataset\\.appliedHouses = String\\(initialData\\?\\.houses\\.length \\?\\? 0\\)/u);\n});\n\ntest("campaign runtime no longer installs a global GeoJSONSource prototype guard", () => {\n  assert.doesNotMatch(main, /maplibreGeoJsonLifecycleCompat/u);\n  assert.doesNotMatch(main, /installMapLibreGeoJsonLifecycleCompat/u);\n});\n''')
-          PY
-      - name: Verify candidate
-        run: |
-          npm ci --no-audit --no-fund
-          npm run check
+          set +e
+          npm ci --no-audit --no-fund 2>&1 | tee /tmp/maplibre-seed-check.log
+          install_status=${PIPESTATUS[0]}
+          if [[ "$install_status" -ne 0 ]]; then
+            exit "$install_status"
+          fi
+          npm run check 2>&1 | tee -a /tmp/maplibre-seed-check.log
+          exit ${PIPESTATUS[0]}
+      - name: Upload failed check output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maplibre-seed-check-failure
+          path: /tmp/maplibre-seed-check.log
+          retention-days: 2
       - name: Commit verified source-seeding fix
+        if: success()
         shell: bash
         run: |
           set -euo pipefail
