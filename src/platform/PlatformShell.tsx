@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import App from "../App";
 import { CommentsHub } from "../collaboration/CommentsHub.tsx";
 import { manualRefreshCampaign } from "../data/campaignStore.ts";
+import { AppearanceControl } from "../settings/AppearanceControl.tsx";
+import {
+  applyAppearancePreference,
+  loadAppearancePreference,
+  saveAppearancePreference,
+  type AppearancePreference,
+} from "../settings/appearance.ts";
 import { StreetsHub } from "../streets/StreetsHub.tsx";
 import { RoomsHub } from "../team/RoomsHub.tsx";
 import { TeamHub } from "../team/TeamHub.tsx";
@@ -47,6 +54,7 @@ export function PlatformShell() {
   const [appContext, setAppContext] = useState<PlatformAppContext | null>(null);
   const [appCommand, setAppCommand] = useState<PlatformAppCommand | null>(null);
   const [activeFieldGroupId, setActiveFieldGroupId] = useState<string | null>(null);
+  const [appearance, setAppearance] = useState<AppearancePreference>(() => loadAppearancePreference());
   const commandId = useRef(0);
 
   const launcherItems = buildPlatformLauncherItems(appContext);
@@ -66,6 +74,12 @@ export function PlatformShell() {
   const openMenu = () => {
     setPrimaryHub(null);
     setMenuOpen(true);
+  };
+
+  const changeAppearance = (preference: AppearancePreference) => {
+    setAppearance(preference);
+    saveAppearancePreference(preference);
+    applyAppearancePreference(preference);
   };
 
   const dispatchSimpleCommand = (
@@ -171,6 +185,13 @@ export function PlatformShell() {
                 <strong>{item.label}</strong>
               </button>
             ))}
+          </div>
+          <div className="platform-appearance-panel">
+            <AppearanceControl
+              value={appearance}
+              labels={{ title: "Darstellung", system: "System", light: "Hell", dark: "Dunkel" }}
+              onChange={changeAppearance}
+            />
           </div>
         </FieldHub>
       ) : null}
