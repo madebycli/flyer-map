@@ -204,4 +204,4 @@ jobs:
 
 # UI FieldHub render extraction checkpoint: keep the smart-street panel out of the hook runtime.
 
-# UI FieldHub typecheck checkpoint: preserve the complete CollectionAdminPanel function boundary.
+# UI FieldHub typecheck checkpoint: normalize pending intent status for the extracted panel.
