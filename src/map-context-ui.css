@@ -7,8 +7,8 @@
  * Street/House status surface. These contexts require the map as visual
  * evidence, so they intentionally do not use backdrop blur.
  *
- * Browse/admin hubs such as Settings, Team management, Campaign comments,
- * Collection admin and the launcher keep their existing visual treatment.
+ * Browse/admin hubs share the same chrome; map-facing overlays additionally expose
+ * an explicit pointer-through contract for drawing and area selection.
  */
 .map-toolbar,
 .mode-sheet,
@@ -145,6 +145,10 @@
 }
 
 @media (max-width: 699px) {
+  .field-bottom-sheet.map-area-selection-hub {
+    width: 100%;
+  }
+
   .field-bottom-sheet.map-context-hub {
     width: 100%;
   }
@@ -152,4 +156,35 @@
   .field-bottom-sheet.map-context-hub .field-sheet-body {
     padding-inline: 0.72rem;
   }
+}
+
+
+/* Map-facing FieldHubs keep the basemap sharp and let interactive modes reach the map. */
+.field-sheet-overlay.map-context-overlay {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.field-sheet-overlay.map-interaction-overlay {
+  pointer-events: none;
+}
+
+.field-sheet-overlay.map-interaction-overlay > .field-bottom-sheet {
+  pointer-events: auto;
+}
+
+.field-sheet-overlay.map-area-selection-overlay {
+  background: transparent;
+}
+
+.field-bottom-sheet.map-area-selection-hub {
+  width: min(30rem, 100%);
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.field-bottom-sheet.map-area-selection-hub .field-sheet-body {
+  flex: 0 0 auto;
+  overflow: visible;
 }

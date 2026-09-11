@@ -66,6 +66,7 @@ type MapMode =
 type Sheet =
   | "teams"
   | "area"
+  | "area-name"
   | "task"
   | "house"
   | "campaign-comments"
@@ -148,6 +149,7 @@ export default function App({
     initialLoad.snapshot.teams[0]?.id ?? null,
   );
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [areaNameDraft, setAreaNameDraft] = useState("");
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [mode, setMode] = useState<MapMode>("browse");
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
@@ -219,7 +221,10 @@ export default function App({
   useEffect(() => {
     if (selectedAreaId && !snapshot.areas.some((area) => area.id === selectedAreaId)) {
       setSelectedAreaId(null);
-      if (sheet === "area") setSheet(null);
+      if (sheet === "area" || sheet === "area-name") {
+        setAreaNameDraft("");
+        setSheet(null);
+      }
     }
     if (selectedTaskId && !snapshot.tasks.some((task) => task.id === selectedTaskId)) {
       setSelectedTaskId(null);
@@ -556,6 +561,7 @@ export default function App({
     const openLegacySheet = (nextSheet: "settings" | "teams" | "campaign-comments") => {
       setMode("browse");
       setManualStreetAreaSelection(false);
+      setAreaNameDraft("");
       setSheetCollapsed(false);
       setSheet(nextSheet);
     };
@@ -848,6 +854,39 @@ export default function App({
     setSheet("house");
   };
 
+  const openAreaNameEditor = () => {
+    if (!selectedArea || !canEditSelectedArea) return;
+    setAreaNameDraft(selectedArea.name);
+    setSheet("area-name");
+  };
+
+  const cancelAreaName = () => {
+    setAreaNameDraft("");
+    setSheet(selectedAreaId ? "area" : null);
+  };
+
+  const saveAreaName = () => {
+    if (!selectedArea || !canEditSelectedArea) {
+      cancelAreaName();
+      return;
+    }
+
+    const nextName = areaNameDraft.trim()
+      ? areaNameDraft
+      : nextAreaName(snapshot.areas.filter((area) => area.id !== selectedArea.id), language);
+    if (nextName !== selectedArea.name) {
+      const now = new Date().toISOString();
+      commitSnapshot((current) => ({
+        ...current,
+        areas: current.areas.map((area) =>
+          area.id === selectedArea.id ? { ...area, name: nextName, updatedAt: now } : area,
+        ),
+      }));
+    }
+    setAreaNameDraft("");
+    setSheet("area");
+  };
+
   const updateSelectedArea = (patch: Partial<Pick<Area, "name" | "teamId">>) => {
     if (!selectedArea || !canEditSelectedArea) return;
     if (patch.teamId && !isAdmin) return;
@@ -861,13 +900,6 @@ export default function App({
     }));
 
     if (patch.teamId) setActiveTeamId(patch.teamId);
-  };
-
-  const normalizeAreaName = () => {
-    if (!selectedArea || selectedArea.name.trim()) return;
-    updateSelectedArea({
-      name: nextAreaName(snapshot.areas.filter((area) => area.id !== selectedArea.id), language),
-    });
   };
 
   const deleteSelectedArea = () => {
@@ -884,6 +916,7 @@ export default function App({
     }));
     setSelectedAreaId(null);
     setSelectedTaskId(null);
+    setAreaNameDraft("");
     setSheet(null);
   };
 
@@ -1232,7 +1265,8 @@ export default function App({
           kicker="Straße manuell hinzufügen"
           onClose={() => setManualStreetAreaSelection(false)}
           initialSnap="compact"
-          className="map-context-hub map-mode-hub"
+          overlayClassName="map-context-overlay map-interaction-overlay map-area-selection-overlay"
+          className="map-context-hub map-mode-hub map-area-selection-hub"
         >
           <div className="map-context-content">
             <p>Tippe auf ein Gebiet, in dem du Straßen bearbeiten darfst.</p>
@@ -1298,6 +1332,7 @@ export default function App({
           headerAside={<span className="team-color-preview" style={{ backgroundColor: collectionColor }} aria-hidden="true" />}
           onClose={cancelCollectionGeometry}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay map-interaction-overlay"
           className="map-context-hub map-mode-hub collection-mode-hub"
         >
           <div className="map-context-content">
@@ -1337,6 +1372,7 @@ export default function App({
           headerAside={<span className="team-color-preview" style={{ backgroundColor: collectionSelectedArea?.color ?? "#2563eb" }} aria-hidden="true" />}
           onClose={cancelCollectionGeometry}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay map-interaction-overlay"
           className="map-context-hub map-mode-hub collection-mode-hub"
         >
           <div className="map-context-content">
@@ -1368,6 +1404,7 @@ export default function App({
           headerAside={<span className="team-color-preview" style={{ backgroundColor: activeTeam?.color ?? "#2563eb" }} aria-hidden="true" />}
           onClose={cancelDrawing}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay map-interaction-overlay"
           className="map-context-hub map-mode-hub"
         >
           <div className="map-context-content">
@@ -1394,6 +1431,7 @@ export default function App({
           headerAside={<span className="team-color-preview" style={{ backgroundColor: streetColor }} aria-hidden="true" />}
           onClose={cancelStreetDrawing}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay map-interaction-overlay"
           className="map-context-hub map-mode-hub"
         >
           <div className="map-context-content">
@@ -1420,6 +1458,7 @@ export default function App({
           headerAside={<span className="team-color-preview" style={{ backgroundColor: editColor }} aria-hidden="true" />}
           onClose={cancelEditing}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay map-interaction-overlay"
           className="map-context-hub map-mode-hub"
         >
           <div className="map-context-content">
@@ -1468,6 +1507,7 @@ export default function App({
           kicker={t(language, "campaignSettings")}
           onClose={() => { flushRxdbDrafts(); setSheet(null); }}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay"
           className="map-context-hub map-comment-hub"
         >
           <div className="map-context-content">
@@ -1492,6 +1532,7 @@ export default function App({
           kicker={t(language, "campaignSettings")}
           onClose={() => { flushRxdbDrafts(); setSheet(null); }}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay"
           className="map-context-hub map-team-management-hub"
         >
           <div className="map-context-content">
@@ -1568,23 +1609,50 @@ export default function App({
       ) : null}
 
       {networkWorkspace.panelState ? <NetworkWorkspacePanel state={networkWorkspace.panelState} /> : null}
+      {sheet === "area-name" && mode === "browse" && !networkWorkspace.active && selectedArea && canEditSelectedArea ? (
+        <FieldHub
+          open
+          title={selectedArea.name.trim() || t(language, "area")}
+          kicker={t(language, "name")}
+          headerAside={<span className="team-dot large-dot" style={{ backgroundColor: selectedAreaTeam?.color ?? "#64748b" }} aria-hidden="true" />}
+          onClose={cancelAreaName}
+          initialSnap="compact"
+          overlayClassName="map-context-overlay"
+          className="map-context-hub map-area-name-hub"
+        >
+          <div className="map-context-content">
+            <label className="field-label">
+              <span>{t(language, "name")}</span>
+              <input
+                autoFocus
+                value={areaNameDraft}
+                onChange={(event) => setAreaNameDraft(event.target.value)}
+                maxLength={60}
+              />
+            </label>
+            <div className="mode-actions">
+              <button className="button secondary" type="button" onClick={cancelAreaName}>{t(language, "cancel")}</button>
+              <button className="button primary" type="button" onClick={saveAreaName}>{t(language, "saveChanges")}</button>
+            </div>
+          </div>
+        </FieldHub>
+      ) : null}
+
       {sheet === "area" && mode === "browse" && !networkWorkspace.active && selectedArea ? (
         <FieldHub
           open
           title={selectedArea.name.trim() || t(language, "area")}
           kicker={t(language, "area")}
           headerAside={<span className="team-dot large-dot" style={{ backgroundColor: selectedAreaTeam?.color ?? "#64748b" }} aria-hidden="true" />}
-          onClose={() => { setSelectedAreaId(null); setSelectedTaskId(null); setSheet(null); }}
+          onTitleClick={canEditSelectedArea ? openAreaNameEditor : undefined}
+          onClose={() => { setSelectedAreaId(null); setSelectedTaskId(null); setAreaNameDraft(""); setSheet(null); }}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay"
           className="map-context-hub map-area-hub"
         >
           <div className="map-context-content">
             {canEditSelectedArea ? (
               <div className="area-fields">
-                <label className="field-label">
-                  <span>{t(language, "name")}</span>
-                  <input value={selectedArea.name} onChange={(event) => updateSelectedArea({ name: event.target.value })} onBlur={normalizeAreaName} maxLength={60} />
-                </label>
                 <label className="field-label">
                   <span>{t(language, "team")}</span>
                   <select value={selectedArea.teamId} disabled={!isAdmin} onChange={(event) => updateSelectedArea({ teamId: event.target.value })}>
@@ -1643,6 +1711,7 @@ export default function App({
           headerAside={<span className="team-dot large-dot" style={{ backgroundColor: selectedTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />}
           onClose={() => { setSelectedTaskId(null); setSheet(null); }}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay"
           className="map-context-hub map-task-hub"
         >
           <div className="map-context-content">
@@ -1699,6 +1768,7 @@ export default function App({
           headerAside={<span className="team-dot large-dot" style={{ backgroundColor: selectedHouseTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />}
           onClose={() => { setSelectedHouseTaskId(null); setSheet(selectedAreaId ? "area" : null); }}
           initialSnap="expanded"
+          overlayClassName="map-context-overlay"
           className="map-context-hub map-house-hub"
         >
           <div className="map-context-content">

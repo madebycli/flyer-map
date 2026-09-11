@@ -4,11 +4,12 @@
   z-index: 3400;
   display: flex;
   align-items: flex-end;
-  justify-content: center;
-  padding: 0.45rem;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 0.45rem);
+  justify-content: flex-start;
+  padding: var(--platform-field-edge-gap, 0.55rem);
+  padding-bottom: calc(env(safe-area-inset-bottom) + var(--platform-field-edge-gap, 0.55rem));
   background: rgb(16 24 18 / 24%);
-  backdrop-filter: blur(2px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .field-sheet-overlay ~ .team-center-modal-backdrop {
@@ -213,7 +214,6 @@
 }
 
 @media (min-width: 760px) {
-  .field-sheet-overlay { align-items: center; }
   .field-bottom-sheet { border-radius: 1.3rem; }
 }
 
@@ -235,4 +235,22 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
+}
+
+
+.field-sheet-title-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.field-sheet-title-button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
 }

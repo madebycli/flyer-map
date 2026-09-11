@@ -37,6 +37,8 @@ export function FieldBottomSheet({
   kicker,
   headerAside,
   onClose,
+  onTitleClick,
+  overlayClassName = "",
   initialSnap = "expanded",
   className = "",
   children,
@@ -47,6 +49,8 @@ export function FieldBottomSheet({
   kicker?: string;
   headerAside?: ReactNode;
   onClose: () => void;
+  onTitleClick?: () => void;
+  overlayClassName?: string;
   initialSnap?: FieldSheetSnap;
   className?: string;
   children: ReactNode;
@@ -89,7 +93,11 @@ export function FieldBottomSheet({
   if (!open) return null;
 
   return (
-    <div className="field-sheet-overlay" role="presentation" onMouseDown={onClose}>
+    <div
+      className={`field-sheet-overlay ${overlayClassName}`.trim()}
+      role="presentation"
+      onMouseDown={onClose}
+    >
       <section
         className={`field-bottom-sheet ${className}`.trim()}
         role="dialog"
@@ -149,7 +157,18 @@ export function FieldBottomSheet({
         <header className="field-sheet-header">
           <div>
             {kicker ? <span>{kicker}</span> : null}
-            <strong>{title}</strong>
+            {onTitleClick ? (
+              <button
+                className="field-sheet-title-button"
+                type="button"
+                onClick={onTitleClick}
+                aria-label={`${title} bearbeiten`}
+              >
+                <strong>{title}</strong>
+              </button>
+            ) : (
+              <strong>{title}</strong>
+            )}
           </div>
           {headerAside ? <div className="field-sheet-header-aside">{headerAside}</div> : null}
           <button type="button" onClick={onClose} aria-label={`${title} schließen`}>×</button>

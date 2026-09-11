@@ -30,6 +30,7 @@ export function NetworkWorkspacePanel({ state }: { state: NetworkWorkspacePanelS
       kicker="Karte"
       onClose={state.onClose}
       initialSnap="expanded"
+      overlayClassName="map-context-overlay"
       className="map-context-hub map-network-hub"
     >
       <div className="map-context-content">

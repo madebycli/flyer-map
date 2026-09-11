@@ -8,9 +8,10 @@
 .platform-shell {
   position: relative;
   overflow: hidden;
+  --platform-field-edge-gap: 0.55rem;
   --platform-field-control-size: max(2.75rem, 44px);
   --platform-field-control-radius: 0.7rem;
-  --platform-field-control-bottom: calc(env(safe-area-inset-bottom) + 0.55rem);
+  --platform-field-control-bottom: calc(env(safe-area-inset-bottom) + var(--platform-field-edge-gap));
 }
 
 .platform-map-layer {
@@ -38,8 +39,8 @@
 .platform-field-bar {
   position: fixed;
   z-index: 19;
-  bottom: calc(env(safe-area-inset-bottom) + 0.55rem);
-  left: 0.55rem;
+  bottom: calc(env(safe-area-inset-bottom) + var(--platform-field-edge-gap));
+  left: var(--platform-field-edge-gap);
   display: inline-flex;
   align-items: center;
   gap: 0.32rem;
@@ -50,7 +51,8 @@
   border-radius: 0.92rem;
   background: rgb(255 255 255 / 96%);
   box-shadow: 0 0.3rem 1.1rem rgb(20 35 24 / 14%);
-  backdrop-filter: blur(12px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .platform-field-bar.is-above-hub {
@@ -79,7 +81,7 @@
 .platform-manual-street-button {
   position: fixed;
   z-index: 19;
-  right: 0.55rem;
+  right: var(--platform-field-edge-gap);
   bottom: var(--platform-field-control-bottom);
   border: 1px solid rgb(20 92 47 / 55%);
   color: #ffffff;
@@ -145,7 +147,8 @@
   padding: 0.55rem;
   padding-bottom: calc(env(safe-area-inset-bottom) + 0.55rem);
   background: rgb(16 24 18 / 22%);
-  backdrop-filter: blur(2px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .platform-menu-sheet {
@@ -506,17 +509,16 @@
 }
 
 @media (min-width: 900px) {
+  .platform-shell {
+    --platform-field-edge-gap: 0.75rem;
+  }
+
   .platform-module-header {
     padding-inline: 1.25rem;
   }
 
   .platform-module-content {
     padding: 1.25rem;
-  }
-
-  .platform-field-bar {
-    bottom: 0.75rem;
-    left: 0.75rem;
   }
 }
 

@@ -205,3 +205,5 @@ jobs:
 # UI FieldHub render extraction checkpoint: keep the smart-street panel out of the hook runtime.
 
 # UI FieldHub typecheck checkpoint: normalize pending intent status for the extracted panel.
+
+# Map UI checkpoint: no map backdrop blur, shared PC bottom-left FieldHub, and explicit local area-name save.

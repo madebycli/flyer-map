@@ -8,6 +8,8 @@ type FieldHubProps = {
   kicker?: string;
   headerAside?: ReactNode;
   onClose: () => void;
+  onTitleClick?: () => void;
+  overlayClassName?: string;
   initialSnap?: FieldSheetSnap;
   className?: string;
   children: ReactNode;
@@ -20,6 +22,8 @@ export function FieldHub({
   kicker,
   headerAside,
   onClose,
+  onTitleClick,
+  overlayClassName = "",
   initialSnap = "expanded",
   className = "",
   children,
@@ -32,6 +36,8 @@ export function FieldHub({
       kicker={kicker}
       headerAside={headerAside}
       onClose={onClose}
+      onTitleClick={onTitleClick}
+      overlayClassName={overlayClassName}
       initialSnap={initialSnap}
       className={`field-hub ${className}`.trim()}
       footer={footer}
