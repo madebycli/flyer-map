@@ -478,3 +478,4 @@ export function CollectionAdminPanel({
       {message ? <p className="collection-message" role="status">{message}</p> : null}
   </FieldHub>
 );
+}

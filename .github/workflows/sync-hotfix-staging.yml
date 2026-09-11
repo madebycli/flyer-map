@@ -203,3 +203,5 @@ jobs:
 # Direct source seed checkpoint: create Area, Street and House sources with current GeoJSON instead of empty-then-setData. MapLibre 5.7.1 admin staging candidate.
 
 # UI FieldHub render extraction checkpoint: keep the smart-street panel out of the hook runtime.
+
+# UI FieldHub typecheck checkpoint: preserve the complete CollectionAdminPanel function boundary.
