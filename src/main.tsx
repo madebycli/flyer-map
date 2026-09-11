@@ -18,6 +18,7 @@ import "./access-recovery.css";
 import "./diagnostics/map-diagnostics.css";
 import "./map-context-ui.css";
 import "./ui-dark-mode.css";
+import "./ui-dark-mode-modules.css";
 
 const MapDiagnostics = lazy(() => import("./diagnostics/MapDiagnostics").then(module => ({ default: module.MapDiagnostics })));
 const OrganizationAdminNavEnhancer = lazy(() => import("./organization/OrganizationAdminNavEnhancer").then(module => ({ default: module.OrganizationAdminNavEnhancer })));
