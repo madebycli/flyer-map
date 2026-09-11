@@ -19,17 +19,29 @@ type DiagnosticSnapshot = {
     streetTasks: number;
     houseTasks: number;
   };
-    renderer: {
-      kind: string;
-      maplibreCanvases: number;
-      mapContainerSize: string | null;
-      mapCanvasSize: string | null;
-      sourceAreas: number | null;
+  renderer: {
+    kind: string;
+    maplibreCanvases: number;
+    mapContainerSize: string | null;
+    mapCanvasSize: string | null;
+    sourceAreas: number | null;
     sourceStreets: number | null;
     sourceHouses: number | null;
+    queuedAreas: number | null;
+    queuedStreets: number | null;
+    queuedHouses: number | null;
+    appliedAreas: number | null;
+    appliedStreets: number | null;
+    appliedHouses: number | null;
     renderedAreas: number | null;
     renderedStreets: number | null;
     renderedHouses: number | null;
+    mapStyleReady: boolean;
+    applicationSources: string | null;
+    applicationLayers: string | null;
+    missingApplicationSources: string | null;
+    missingApplicationLayers: string | null;
+    rendererError: string | null;
     activeSvgNodes: number;
     totalDomNodes: number;
   };
@@ -142,6 +154,12 @@ function rendererStats() {
     sourceAreas: readDatasetNumber(region?.dataset.sourceAreas),
     sourceStreets: readDatasetNumber(region?.dataset.sourceStreets),
     sourceHouses: readDatasetNumber(region?.dataset.sourceHouses),
+    queuedAreas: readDatasetNumber(region?.dataset.queuedAreas),
+    queuedStreets: readDatasetNumber(region?.dataset.queuedStreets),
+    queuedHouses: readDatasetNumber(region?.dataset.queuedHouses),
+    appliedAreas: readDatasetNumber(region?.dataset.appliedAreas),
+    appliedStreets: readDatasetNumber(region?.dataset.appliedStreets),
+    appliedHouses: readDatasetNumber(region?.dataset.appliedHouses),
     renderedAreas: readDatasetNumber(region?.dataset.renderedAreas),
     renderedStreets: readDatasetNumber(region?.dataset.renderedStreets),
     renderedHouses: readDatasetNumber(region?.dataset.renderedHouses),
@@ -298,6 +316,12 @@ export function MapDiagnostics() {
           <span>Frames &gt;32 ms / 5 s: {longFrames}</span>
           <span>
             Daten: {readDataCounts().areas} Gebiete · {readDataCounts().streetTasks} Straßen · {readDataCounts().houseTasks} Häuser
+          </span>
+          <span>
+            Hydration geplant: {renderer.queuedAreas ?? "–"} Gebiete · {renderer.queuedStreets ?? "–"} Straßen · {renderer.queuedHouses ?? "–"} Häuser
+          </span>
+          <span>
+            Hydration angewendet: {renderer.appliedAreas ?? "–"} Gebiete · {renderer.appliedStreets ?? "–"} Straßen · {renderer.appliedHouses ?? "–"} Häuser
           </span>
           <span>
             Source: {renderer.sourceAreas ?? "–"} Gebiete · {renderer.sourceStreets ?? "–"} Straßen · {renderer.sourceHouses ?? "–"} Häuser

@@ -6,13 +6,35 @@ const compat = readFileSync(
   new URL("../src/map/maplibreGeoJsonLifecycleCompat.ts", import.meta.url),
   "utf8",
 );
+const diagnostics = readFileSync(
+  new URL("../src/diagnostics/MapDiagnostics.tsx", import.meta.url),
+  "utf8",
+);
 const main = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
 
-test("MapLibre GeoJSON compatibility waits for a render only while the style is dirty", () => {
-  assert.match(compat, /if \(!map \|\| map\.isStyleLoaded\(\)\) return originalSetData\.call\(this, data\);/u);
+test("MapLibre GeoJSON compatibility coalesces initial vf source hydration until a render", () => {
+  assert.match(compat, /this\.id\.startsWith\(APPLICATION_SOURCE_PREFIX\)/u);
+  assert.match(compat, /const pendingHydrations = new WeakMap<GeoJSONSource, PendingHydration>\(\);/u);
+  assert.match(compat, /pending\.data = data;/u);
   assert.match(compat, /map\.once\("render", apply\);/u);
-  assert.match(compat, /map\.triggerRepaint\(\);/u);
+  assert.match(compat, /hydratedSources\.add\(this\);/u);
+  assert.doesNotMatch(compat, /map\.isStyleLoaded\(\)/u);
   assert.match(compat, /maplibre\/maplibre-gl-js#7634/u);
+});
+
+test("map diagnostics distinguish queued and applied GeoJSON payloads from source queries", () => {
+  for (const field of [
+    "queuedAreas",
+    "queuedStreets",
+    "queuedHouses",
+    "appliedAreas",
+    "appliedStreets",
+    "appliedHouses",
+  ]) {
+    assert.match(diagnostics, new RegExp(`dataset\\.${field}`));
+  }
+  assert.match(compat, /recordFeatureCount\(map, this\.id, "queued", data\)/u);
+  assert.match(compat, /recordFeatureCount\(map, this\.id, "applied", latest\.data\)/u);
 });
 
 test("campaign runtime installs the GeoJSON lifecycle guard before loading PlatformShell", () => {
