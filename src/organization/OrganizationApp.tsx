@@ -17,6 +17,7 @@ import {
 } from "./organizationApiClient.ts";
 import {
   campaignIdFromOrganizationPath,
+  preserveDiagnosticFlag,
   safeOrganizationNext,
 } from "./organizationRoutes.ts";
 import "./organization-admin.css";
@@ -197,7 +198,10 @@ function StartPage({ navigate }: { navigate: Navigate }) {
 }
 
 function LoginPage({ navigate }: { navigate: Navigate }) {
-  const next = safeOrganizationNext(new URLSearchParams(window.location.search).get("next"));
+  const next = preserveDiagnosticFlag(
+    safeOrganizationNext(new URLSearchParams(window.location.search).get("next")),
+    window.location.search,
+  );
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [phase, setPhase] = useState<"password" | "factor" | "recovery-done">("password");
@@ -249,7 +253,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
           <span className="org-eyebrow">Recovery bestätigt</span>
           <h1>Sicherheitsfaktor erneuern</h1>
           <p>Die Recovery-Sitzung ist absichtlich eingeschränkt. Privilegierte Organizer-Aktionen bleiben gesperrt, bis TOTP neu eingerichtet wurde.</p>
-          <button className="org-primary" type="button" onClick={() => navigate("/admin")}>Sitzungsstatus öffnen</button>
+          <button className="org-primary" type="button" onClick={() => navigate(preserveDiagnosticFlag("/admin", window.location.search))}>Sitzungsstatus öffnen</button>
         </section>
       </PageFrame>
     );
@@ -341,7 +345,7 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
         {!loadingCampaigns && !campaignError && me.assurance === "mfa" && campaigns.length === 0 && organizationId ? <div className="org-empty"><h2>Noch keine Aktion</h2><p>{membership?.role === "organizer" ? "Erstelle die erste serverseitig persistierte Aktion für diese Organization." : "Für diese Organization ist noch keine für deinen Admin sichtbare Aktion vorhanden."}</p>{membership?.role === "organizer" ? <button className="org-primary" type="button" onClick={() => navigate(`/new?organization=${encodeURIComponent(organizationId)}`)}>Erste Aktion erstellen</button> : null}</div> : null}
         <div className="org-campaign-grid">
           {campaigns.map((campaign) => (
-            <button className="org-campaign-card" type="button" key={campaign.id} onClick={() => navigate(`/admin/campaign/${encodeURIComponent(campaign.id)}`)}>
+            <button className="org-campaign-card" type="button" key={campaign.id} onClick={() => navigate(preserveDiagnosticFlag(`/admin/campaign/${encodeURIComponent(campaign.id)}`, window.location.search))}>
               <div><span className={`org-lifecycle org-lifecycle--${campaign.lifecycle}`}>{campaign.lifecycle}</span><h2>{campaign.name}</h2></div>
               <dl><div><dt>Kartenfokus</dt><dd>{campaign.map ? `${campaign.map.lat.toFixed(3)}, ${campaign.map.lng.toFixed(3)} · z${campaign.map.zoom.toFixed(1)}` : "Nicht gesetzt"}</dd></div><div><dt>Aktualisiert</dt><dd>{new Date(campaign.updatedAt).toLocaleString("de-DE")}</dd></div></dl>
               <span>Öffnen →</span>
@@ -495,7 +499,7 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
         {error ? <p className="org-error" role="alert">{error}</p> : null}
         {campaign ? (
           <>
-            <div className="org-heading-row"><div><span className={`org-lifecycle org-lifecycle--${campaign.lifecycle}`}>{campaign.lifecycle}</span><h1>{campaign.name}</h1></div><a className="org-secondary" href={`/?campaign=${encodeURIComponent(campaign.id)}`}>Feldkarte öffnen</a></div>
+            <div className="org-heading-row"><div><span className={`org-lifecycle org-lifecycle--${campaign.lifecycle}`}>{campaign.lifecycle}</span><h1>{campaign.name}</h1></div><a className="org-secondary" href={preserveDiagnosticFlag(`/?campaign=${encodeURIComponent(campaign.id)}`, window.location.search)}>Feldkarte öffnen</a></div>
             <section className="org-card org-card--wide">
               <h2>Lebenszyklus</h2>
               <div className="org-lifecycle-actions">{(["draft", "active", "completed", "archived"] as const).map((value) => <button type="button" key={value} disabled={busy || campaign.lifecycle === value} className={campaign.lifecycle === value ? "is-current" : ""} onClick={() => void setLifecycle(value)}>{value}</button>)}</div>

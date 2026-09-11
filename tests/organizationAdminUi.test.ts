@@ -53,6 +53,6 @@ test("Admin UI reserves new Campaign creation for Organizer memberships", () => 
 
 test("bare field root redirects to central login instead of mounting or creating a Campaign", () => {
   assert.match(mainSource, /else if \(!campaignIdFromUrl\(\)\) \{/u);
-  assert.match(mainSource, /window\.location\.replace\("\/login"\)/u);
-  assert.match(appSource, /href=\{`\/\?campaign=\$\{encodeURIComponent\(campaign\.id\)\}`\}>Feldkarte öffnen/u);
+  assert.match(mainSource, /window\.location\.replace\(preserveDiagnosticFlag\("\/login", window\.location\.search\)\)/u);
+  assert.match(appSource, /href=\{preserveDiagnosticFlag\(`\/\?campaign=\$\{encodeURIComponent\(campaign\.id\)\}`, window\.location\.search\)\}>Feldkarte öffnen/u);
 });

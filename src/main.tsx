@@ -5,7 +5,7 @@ import { AccessRecoveryGate } from "./access/AccessRecoveryGate";
 import { FieldGroupJoinGate } from "./access/FieldGroupJoinGate";
 import { campaignIdFromUrl } from "./data/campaignApi";
 import { installRxdbFetchGuard } from "./data/rxdbFetchGuard";
-import { isOrganizationAdminPath } from "./organization/organizationRoutes";
+import { isOrganizationAdminPath, preserveDiagnosticFlag } from "./organization/organizationRoutes";
 import { SyncStatus } from "./sync/SyncStatus";
 import "./styles.css";
 import "./street-mode.css";
@@ -69,7 +69,7 @@ if (preview) {
   root.render(<StrictMode><Suspense fallback={<div role="status" className="app-loading">Lade …</div>}><><OrganizationApp /><OrganizationAdminNavEnhancer /></></Suspense></StrictMode>);
 } else if (!campaignIdFromUrl()) {
   document.title = "Anmeldung | Flyer Map";
-  window.location.replace("/login");
+  window.location.replace(preserveDiagnosticFlag("/login", window.location.search));
 } else {
   document.title = "Verteil-Flyer";
   root.render(

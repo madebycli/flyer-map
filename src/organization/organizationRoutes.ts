@@ -30,6 +30,20 @@ export function safeOrganizationNext(value: string | null | undefined, fallback 
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+/** Carry the opt-in renderer diagnostics flag across internal admin redirects. */
+export function preserveDiagnosticFlag(path: string, currentSearch = "") {
+  if (new URLSearchParams(currentSearch).get("diag") !== "1") return path;
+  let url: URL;
+  try {
+    url = new URL(path, "https://flyer-map.invalid");
+  } catch {
+    return path;
+  }
+  if (url.origin !== "https://flyer-map.invalid") return path;
+  url.searchParams.set("diag", "1");
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export function campaignIdFromOrganizationPath(pathname: string) {
   const match = pathname.match(/^\/admin\/campaign\/([^/]+)$/u);
   if (!match) return null;

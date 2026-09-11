@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   campaignIdFromOrganizationPath,
   isOrganizationAdminPath,
+  preserveDiagnosticFlag,
   safeOrganizationNext,
 } from "../src/organization/organizationRoutes.ts";
 
@@ -37,4 +38,15 @@ test("campaign id extraction is strict and decoded", () => {
   assert.equal(campaignIdFromOrganizationPath("/admin/campaign/campaign%3Aabc"), "campaign:abc");
   assert.equal(campaignIdFromOrganizationPath("/admin/campaign/a/b"), null);
   assert.equal(campaignIdFromOrganizationPath("/admin/campaign/%2F%2Fevil"), null);
+});
+
+test("renderer diagnostics flag survives internal login redirects", () => {
+  assert.equal(preserveDiagnosticFlag("/login", "?diag=1"), "/login?diag=1");
+  assert.equal(preserveDiagnosticFlag("/admin", "?diag=1"), "/admin?diag=1");
+  assert.equal(
+    preserveDiagnosticFlag("/admin/campaign/campaign_123?tab=settings", "?diag=1"),
+    "/admin/campaign/campaign_123?tab=settings&diag=1",
+  );
+  assert.equal(preserveDiagnosticFlag("/admin", "?diag=0"), "/admin");
+  assert.equal(preserveDiagnosticFlag("/admin", "?campaign=campaign_123"), "/admin");
 });
