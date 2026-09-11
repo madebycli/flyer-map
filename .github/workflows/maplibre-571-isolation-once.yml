@@ -22,19 +22,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Pin only MapLibre to historical 5.7.1
+      - name: Pin historical MapLibre dependency set
         shell: bash
         run: |
           set -euo pipefail
           npm ci --no-audit --no-fund
-          npm install --save-exact --no-audit --no-fund maplibre-gl@5.7.1
+          npm install --save-exact --no-audit --no-fund maplibre-gl@5.7.1 @mapbox/unitbezier@0.0.1
           node - <<'NODE'
           const fs = require('node:fs');
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
           if (pkg.dependencies?.['maplibre-gl'] !== '5.7.1') throw new Error('package.json is not pinned to MapLibre 5.7.1');
+          if (pkg.dependencies?.['@mapbox/unitbezier'] !== '0.0.1') throw new Error('package.json is not pinned to @mapbox/unitbezier 0.0.1');
           if (lock.packages?.['']?.dependencies?.['maplibre-gl'] !== '5.7.1') throw new Error('package-lock root is not pinned to MapLibre 5.7.1');
+          if (lock.packages?.['']?.dependencies?.['@mapbox/unitbezier'] !== '0.0.1') throw new Error('package-lock root is not pinned to @mapbox/unitbezier 0.0.1');
           if (lock.packages?.['node_modules/maplibre-gl']?.version !== '5.7.1') throw new Error('resolved MapLibre package is not 5.7.1');
+          if (lock.packages?.['node_modules/@mapbox/unitbezier']?.version !== '0.0.1') throw new Error('resolved @mapbox/unitbezier package is not 0.0.1');
           NODE
       - name: Verify unchanged application runtime against MapLibre 5.7.1
         run: npm run check
