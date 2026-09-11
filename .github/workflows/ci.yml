@@ -69,6 +69,7 @@ jobs:
           path: typecheck-output.log
           if-no-files-found: ignore
           retention-days: 1
+      # The audit script records the exact, temporary MapLibre 5.7.1 isolation exception.
       - name: Dependency audit
         shell: bash
         run: |
