@@ -190,3 +190,5 @@ jobs:
 # Renderer secure candidate checkpoint: MapLibre 6.9.0 with complete GeoJSON setData path.
 
 # Login diagnostics checkpoint: preserve diag=1 through root, admin and field-map redirects.
+
+# Layer-order checkpoint: insert app geometry above provider fills/roads and below final labels.
