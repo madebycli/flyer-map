@@ -47,6 +47,7 @@ test("normal app geometry is below Bright labels and interaction overlays remain
   assert.match(map, /HOUSE_FILL_LAYER_ID/u);
   assert.match(map, /STREET_OPEN_LAYER_ID/u);
   assert.match(map, /COLLECTION_AREAS_FILL_LAYER_ID/u);
-  assert.match(map, /map\.addLayer\(layer, firstBasemapSymbolLayerId\)/u);
+  assert.match(map, /const basemapLabelInsertionLayerId = \[\.\.\.map\.getStyle\(\)\.layers\]\.reverse\(\)\.find/u);
+  assert.match(map, /map\.addLayer\(layer, basemapLabelInsertionLayerId\)/u);
   assert.match(map, /if \(BELOW_BASEMAP_LABEL_LAYER_IDS\.has\(layer\.id\)\) continue;\s+if \(!map\.getLayer\(layer\.id\)\) map\.addLayer\(layer\)/u);
 });

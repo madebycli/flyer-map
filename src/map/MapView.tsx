@@ -1186,7 +1186,11 @@ function installApplicationMapStyle(map: Map) {
     }
   }
 
-  const firstBasemapSymbolLayerId = map.getStyle().layers.find(
+  // Bright's provider layers are not a stable contract. Put application
+  // geometry above all provider fills/roads, but keep the final provider
+  // labels above it. Using the first symbol can place the data underneath
+  // later opaque basemap geometry and make every app layer appear invisible.
+  const basemapLabelInsertionLayerId = [...map.getStyle().layers].reverse().find(
     (layer) => layer.type === "symbol",
   )?.id;
   const applicationStyle = buildApplicationMapStyle();
@@ -1196,7 +1200,7 @@ function installApplicationMapStyle(map: Map) {
 
   for (const layer of applicationStyle.layers) {
     if (!BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;
-    if (!map.getLayer(layer.id)) map.addLayer(layer, firstBasemapSymbolLayerId);
+    if (!map.getLayer(layer.id)) map.addLayer(layer, basemapLabelInsertionLayerId);
   }
 
   if (hasVectorBasemap && !map.getLayer(BASEMAP_HOUSENUMBER_LAYER_ID)) {
@@ -1230,7 +1234,7 @@ function installApplicationMapStyle(map: Map) {
           "text-halo-blur": 0.2,
         },
       },
-      firstBasemapSymbolLayerId,
+      basemapLabelInsertionLayerId,
     );
   }
 
@@ -1542,27 +1546,37 @@ function updateRendererDiagnostics(map: Map) {
     region.dataset.missingApplicationSources = missingSources.join(",");
     region.dataset.missingApplicationLayers = missingLayers.join(",");
     region.dataset.mapRendererError = "";
-    const sourceAreas = map.querySourceFeatures(AREA_SOURCE_ID).filter(
-      (feature) => typeof feature.properties?.areaId === "string",
-    );
-    const sourceStreets = map.querySourceFeatures(STREET_SOURCE_ID).filter(
-      (feature) => typeof feature.properties?.taskId === "string",
-    );
-    const renderedAreas = map.queryRenderedFeatures(undefined, { layers: [AREA_FILL_LAYER_ID] });
+    const sourceAreas = map.getSource(AREA_SOURCE_ID)
+      ? map.querySourceFeatures(AREA_SOURCE_ID).filter(
+          (feature) => typeof feature.properties?.areaId === "string",
+        )
+      : [];
+    const sourceStreets = map.getSource(STREET_SOURCE_ID)
+      ? map.querySourceFeatures(STREET_SOURCE_ID).filter(
+          (feature) => typeof feature.properties?.taskId === "string",
+        )
+      : [];
+    const renderedAreas = map.getLayer(AREA_FILL_LAYER_ID)
+      ? map.queryRenderedFeatures(undefined, { layers: [AREA_FILL_LAYER_ID] })
+      : [];
     const streetLayers = STREET_LAYER_IDS.filter((layerId) => map.getLayer(layerId));
     const renderedStreets =
       streetLayers.length > 0
         ? map.queryRenderedFeatures(undefined, { layers: [...streetLayers] })
         : [];
-    const sourceHouses = map.querySourceFeatures(HOUSE_SOURCE_ID).filter(
-      (feature) => typeof feature.properties?.houseTaskId === "string",
-    );
+    const sourceHouses = map.getSource(HOUSE_SOURCE_ID)
+      ? map.querySourceFeatures(HOUSE_SOURCE_ID).filter(
+          (feature) => typeof feature.properties?.houseTaskId === "string",
+        )
+      : [];
     const renderedHouses = map.getLayer(HOUSE_FILL_LAYER_ID)
       ? map.queryRenderedFeatures(undefined, { layers: [HOUSE_FILL_LAYER_ID] })
       : [];
-    const sourcePickups = map.querySourceFeatures(COLLECTION_PICKUP_SOURCE_ID).filter(
-      (feature) => typeof feature.properties?.pickupId === "string",
-    );
+    const sourcePickups = map.getSource(COLLECTION_PICKUP_SOURCE_ID)
+      ? map.querySourceFeatures(COLLECTION_PICKUP_SOURCE_ID).filter(
+          (feature) => typeof feature.properties?.pickupId === "string",
+        )
+      : [];
     const renderedPickups = map.getLayer(COLLECTION_PICKUP_MARKER_LAYER_ID)
       ? map.queryRenderedFeatures(undefined, { layers: [COLLECTION_PICKUP_MARKER_LAYER_ID] })
       : [];
