@@ -195,4 +195,4 @@ jobs:
 
 # Resume rehydrate checkpoint: resize and complete GeoJSON setData after pageshow/visibilitychange.
 
-# GeoJSON lifecycle checkpoint: defer dirty-style setData until after the next MapLibre render recalc.
+# GeoJSON lifecycle checkpoint: coalesce first vf source hydration across a guaranteed render boundary.
