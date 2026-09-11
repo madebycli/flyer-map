@@ -35,6 +35,38 @@ function recordFeatureCount(map: Map, sourceId: string, phase: DiagnosticPhase, 
   region.dataset[`${phase}${suffix}`] = String(count);
 }
 
+function afterInitialStyleBoundary(map: Map, apply: () => void) {
+  let completed = false;
+  const view = map.getContainer().ownerDocument.defaultView;
+
+  const finish = () => {
+    if (completed) return;
+    completed = true;
+    map.off("render", finish);
+    apply();
+  };
+
+  map.once("render", finish);
+  map.triggerRepaint();
+
+  if (!view) {
+    window.setTimeout(finish, 0);
+    return;
+  }
+
+  // A render requested from inside style.load can be absorbed by the render
+  // already in progress. Cross-device diagnostics proved that waiting only for
+  // map.once("render") can then leave every initial application setData()
+  // unresolved forever. Cross one browser frame, request a fresh MapLibre
+  // repaint from outside that style turn, then use the following frame as a
+  // deterministic fallback after MapLibre had the first chance to recalculate.
+  view.requestAnimationFrame(() => {
+    if (completed) return;
+    map.triggerRepaint();
+    view.requestAnimationFrame(finish);
+  });
+}
+
 /**
  * MapLibre's post-5.7 TileManager lifecycle can drop the first GeoJSON
  * setData() when a source and its backing layers were just added. The first
@@ -43,8 +75,9 @@ function recordFeatureCount(map: Map, sourceId: string, phase: DiagnosticPhase, 
  *
  * Do not use map.isStyleLoaded() as the gate here: style.load may already have
  * fired while newly-added application sources still have not crossed their
- * first render/recalculate boundary. Instead, coalesce every setData() for a
- * new `vf-*` source until that first render, then keep the normal direct path.
+ * first render/recalculate boundary. Coalesce every setData() for a new `vf-*`
+ * source, prefer the next MapLibre render, and guarantee completion with a
+ * two-frame fallback if that render event is absorbed by the current turn.
  */
 export function installMapLibreGeoJsonLifecycleCompat() {
   if (installed) return;
@@ -104,8 +137,7 @@ export function installMapLibreGeoJsonLifecycleCompat() {
         }
       };
 
-      map.once("render", apply);
-      map.triggerRepaint();
+      afterInitialStyleBoundary(map, apply);
     });
   };
 }
