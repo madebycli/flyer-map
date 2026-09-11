@@ -25,7 +25,12 @@ const OrganizationInviteRedeemPage = lazy(() => import("./organization/Organizat
 const OrganizationPasswordResetPage = lazy(() => import("./organization/OrganizationPublicLinks").then(module => ({ default: module.OrganizationPasswordResetPage })));
 const OrganizationSecurityCenter = lazy(() => import("./organization/OrganizationSecurityCenter").then(module => ({ default: module.OrganizationSecurityCenter })));
 const FunnyFocusVideo = lazy(() => import("./platform/FunnyFocusVideo").then(module => ({ default: module.FunnyFocusVideo })));
-const PlatformShell = lazy(() => import("./platform/PlatformShell").then(module => ({ default: module.PlatformShell })));
+const PlatformShell = lazy(async () => {
+  const { installMapLibreGeoJsonLifecycleCompat } = await import("./map/maplibreGeoJsonLifecycleCompat");
+  installMapLibreGeoJsonLifecycleCompat();
+  const module = await import("./platform/PlatformShell");
+  return { default: module.PlatformShell };
+});
 const ActionWorkbenchPreview = lazy(() => import("./workbench/ActionWorkbenchPreview").then(module => ({ default: module.ActionWorkbenchPreview })));
 const AdminWorkbenchPreview = lazy(() => import("./workbench/AdminWorkbenchPreview").then(module => ({ default: module.AdminWorkbenchPreview })));
 const LiveGroupWorkbenchPreview = lazy(() => import("./workbench/LiveGroupWorkbenchPreview").then(module => ({ default: module.LiveGroupWorkbenchPreview })));
