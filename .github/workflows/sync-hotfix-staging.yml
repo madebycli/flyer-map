@@ -198,3 +198,5 @@ jobs:
 # GeoJSON lifecycle checkpoint: coalesce first vf source hydration across a guaranteed render boundary.
 
 # GeoJSON frame fallback checkpoint: guarantee deferred hydration even when the initial render event is absorbed.
+
+# Direct source seed checkpoint: create Area, Street and House sources with current GeoJSON instead of empty-then-setData.
