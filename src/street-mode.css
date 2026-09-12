@@ -185,8 +185,8 @@
 
 .task-auxiliary-actions {
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: flex-start;
   gap: 0.55rem;
   min-width: 0;
@@ -216,14 +216,6 @@
 .task-status-tools > .task-auxiliary-actions {
   width: max-content;
   max-width: 100%;
-}
-
-.map-task-hub .task-status-tools {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.map-task-hub .status-grid {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .task-status-tools:has(.comments-context-panel.is-expanded) {

@@ -64,3 +64,4 @@ jobs:
 # Final context trigger: rerun the committed 5.7.1 isolation proof for the final documentation head.
 # Vertical Street status action checkpoint: rerun exact-head UI verification after stacking status controls.
 # Context docs current-head checkpoint: rerun isolation for the synchronized project context.
+# Street status grid rollback checkpoint: verify the compact two-column task layout.

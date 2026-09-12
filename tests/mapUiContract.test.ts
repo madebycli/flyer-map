@@ -85,9 +85,9 @@ test("street headers expose compact undo/cancel/confirm controls and task status
   assert.match(commentsCss, /\.comments-context-panel\.is-icon\s*\{[\s\S]*?justify-self:\s*start;[\s\S]*?width:\s*max-content;/u);
   assert.match(commentsCss, /\.comments-context-panel\.is-icon \.comments-context-toggle\s*\{[\s\S]*?width:\s*2\.7rem;[\s\S]*?min-height:\s*2\.7rem;/u);
   assert.match(streetCss, /\.task-delete-icon-button\s*\{[\s\S]*?width:\s*2\.7rem;[\s\S]*?height:\s*2\.7rem;[\s\S]*?padding:\s*0\.4rem;/u);
-  assert.match(streetCss, /\.task-auxiliary-actions\s*\{[\s\S]*?flex-direction:\s*row;/u);
-  assert.match(streetCss, /\.map-task-hub \.task-status-tools\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/u);
-  assert.match(streetCss, /\.map-task-hub \.status-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/u);
+  assert.match(streetCss, /\.task-auxiliary-actions\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*stretch;/u);
+  assert.doesNotMatch(streetCss, /\.map-task-hub \.status-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/u);
+  assert.match(mapCss, /\.map-context-hub \.mode-actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/u);
 });
 
 test("map action controls share the overlay hide contract and compact task rows", () => {
