@@ -56,3 +56,4 @@ jobs:
             git commit -m 'test: isolate MapLibre 5.7.1 renderer'
             git push origin HEAD:fix/street-engine-smart-marking
           fi
+# UI context sheet contract verification trigger.
