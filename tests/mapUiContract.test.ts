@@ -57,3 +57,15 @@ test("FieldHub opens at natural content height and snaps only after user sizing"
   assert.match(sheetCss, /\.field-bottom-sheet\.field-sheet-auto \.field-sheet-body[\s\S]*?flex:\s*0 1 auto/u);
   assert.match(sheetCss, /\.field-bottom-sheet\.field-sheet-dragging\s*\{/u);
 });
+
+test("map context sheets can retract without blocking the map", () => {
+  assert.match(fieldSheet, /retractable\?: boolean/u);
+  assert.match(fieldSheet, /initialRetracted\?: boolean/u);
+  assert.match(fieldSheet, /field-sheet-retracted/u);
+  assert.match(sheetCss, /\.field-bottom-sheet\.field-sheet-retracted \.field-sheet-body[\s\S]*?max-height:\s*0/u);
+  assert.match(mapCss, /\.field-sheet-overlay\.map-context-overlay\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?pointer-events:\s*none;/u);
+  assert.match(app, /areaTasksExpanded/u);
+  assert.match(app, /context-task-list-header/u);
+  assert.match(app, /<CommentsContextPanel\s+compact/u);
+  assert.doesNotMatch(app, /Tippe auf den Startpunkt A\./u);
+});

@@ -68,6 +68,10 @@ html[data-appearance="dark"] :where(
   box-shadow: 0 0.35rem 1.3rem rgb(0 0 0 / 28%);
 }
 
+html[data-appearance="dark"] .field-bottom-sheet {
+  --field-hud-header-divider: 1px solid var(--ui-border);
+}
+
 html[data-appearance="dark"] :where(
   .bottom-sheet.field-sheet-enhanced .sheet-handle-button,
   .bottom-sheet.field-sheet-enhanced .sheet-header
@@ -379,7 +383,6 @@ html[data-appearance="dark"] .field-hub-heading span {
 }
 
 html[data-appearance="dark"] .map-context-hub .map-context-content > p,
-html[data-appearance="dark"] .area-preparation-summary,
 html[data-appearance="dark"] .area-preparation-progress p,
 html[data-appearance="dark"] .smart-street-meta,
 html[data-appearance="dark"] .smart-street-area-note,
@@ -441,6 +444,16 @@ html[data-appearance="dark"] .smart-street-choice small {
 
 html[data-appearance="dark"] .context-task-list-header {
   color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .context-task-list-header > span > strong,
+html[data-appearance="dark"] .context-task-list-header > b {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .task-title-editor,
+html[data-appearance="dark"] .area-title-editor {
+  border-bottom-color: var(--ui-border);
 }
 
 html[data-appearance="dark"] .context-task-row {
@@ -515,6 +528,18 @@ html[data-appearance="dark"] .comment-action-danger {
 
 html[data-appearance="dark"] .settings-section h3 {
   color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .settings-area-team-row {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .settings-area-team-row select {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface);
 }
 
 html[data-appearance="dark"] .settings-subsection > strong {

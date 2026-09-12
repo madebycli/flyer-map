@@ -33,7 +33,13 @@ export function StreetsHub({
   const canCreateManualStreet = Boolean(context?.canCreateManualStreet);
 
   return (
-    <FieldHub open title="Streets" kicker={context?.activeTeam?.name ?? "Karte"} onClose={onClose}>
+    <FieldHub open title="Streets"
+      kicker={context?.activeTeam?.name ?? "Karte"}
+      onClose={onClose}
+      initialSnap="compact"
+      retractable
+      className="streets-field-hub"
+    >
       <FieldHubStack>
         <FieldHubCard>
           <FieldHubHeading eyebrow="Straßen" title={`${streets.length} im aktiven Team`} />

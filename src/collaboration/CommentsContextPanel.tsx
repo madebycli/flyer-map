@@ -22,6 +22,7 @@ type Props = {
   access: AccessInfo | null;
   online: boolean;
   language: Language;
+  compact?: boolean;
 };
 
 function errorMessage(error: unknown, language: Language) {
@@ -86,6 +87,7 @@ export function CommentsContextPanel({
   access,
   online,
   language,
+  compact = false,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [comments, setComments] = useState<CommentItem[]>([]);
@@ -270,11 +272,15 @@ export function CommentsContextPanel({
   const canCreate = online && !loading && !initialReadFailed && (serverCanCreate ?? canCreateFallback);
 
   return (
-    <section className={`comments-context-panel comments-context-compact ${expanded ? "is-expanded" : ""}`} aria-label={labels.title}>
+    <section className={`comments-context-panel comments-context-compact ${compact ? "is-icon" : ""} ${expanded ? "is-expanded" : ""}`} aria-label={labels.title}>
       <button
         className="comments-context-toggle"
         type="button"
         aria-expanded={expanded}
+        aria-label={expanded
+          ? (language === "de" ? "Kommentare schließen" : "Close comments")
+          : (language === "de" ? "Kommentare öffnen" : "Open comments")}
+        title={language === "de" ? "Kommentare" : "Comments"}
         onClick={() => setExpanded((current) => !current)}
       >
         <span>💬</span>

@@ -29,8 +29,10 @@ export function NetworkWorkspacePanel({ state }: { state: NetworkWorkspacePanelS
       title="Straßenabschnitt markieren"
       kicker="Karte"
       onClose={state.onClose}
-      initialSnap="expanded"
-      overlayClassName="map-context-overlay"
+      initialSnap="compact"
+      retractable
+      initialRetracted
+      overlayClassName="map-context-overlay map-interaction-overlay"
       className="map-context-hub map-network-hub"
     >
       <div className="map-context-content">

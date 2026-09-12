@@ -268,6 +268,7 @@ export function CollectionAdminPanel({
       kicker="Collection"
       onClose={onClose}
       initialSnap="expanded"
+      retractable
       overlayClassName="map-context-overlay"
       className="collection-admin-sheet map-context-hub"
     >

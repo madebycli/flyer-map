@@ -40,6 +40,8 @@ export function FieldBottomSheet({
   onTitleClick,
   overlayClassName = "",
   initialSnap = "expanded",
+  retractable = false,
+  initialRetracted = false,
   className = "",
   children,
   footer,
@@ -52,6 +54,8 @@ export function FieldBottomSheet({
   onTitleClick?: () => void;
   overlayClassName?: string;
   initialSnap?: FieldSheetSnap;
+  retractable?: boolean;
+  initialRetracted?: boolean;
   className?: string;
   children: ReactNode;
   footer?: ReactNode;
@@ -59,14 +63,17 @@ export function FieldBottomSheet({
   const [snap, setSnap] = useState<FieldSheetSnap>(initialSnap);
   const [viewport, setViewport] = useState(() => viewportHeight());
   const [userSized, setUserSized] = useState(false);
+  const [retracted, setRetracted] = useState(initialRetracted);
+  const suppressHandleClick = useRef(false);
   const drag = useRef<{ pointerId: number; startY: number; startHeight: number; sheet: HTMLElement } | null>(null);
 
   useEffect(() => {
     if (open) {
       setSnap(initialSnap);
       setUserSized(false);
+      setRetracted(initialRetracted);
     }
-  }, [initialSnap, open]);
+  }, [initialRetracted, initialSnap, open]);
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -108,7 +115,7 @@ export function FieldBottomSheet({
       onMouseDown={onClose}
     >
       <section
-        className={`field-bottom-sheet ${userSized ? "" : "field-sheet-auto"} ${className}`.trim()}
+        className={`field-bottom-sheet ${userSized ? "" : "field-sheet-auto"} ${retractable ? "field-sheet-retractable" : ""} ${retracted ? "field-sheet-retracted" : ""} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -119,9 +126,18 @@ export function FieldBottomSheet({
         <button
           className="field-sheet-handle-button"
           type="button"
-          aria-label="Fensterhöhe ändern"
+          aria-label={retractable ? (retracted ? "Fenster öffnen" : "Fenster einfahren") : "Fensterhöhe ändern"}
+          aria-expanded={retractable ? !retracted : undefined}
           aria-valuetext={snap === "compact" ? "Kompakt" : snap === "expanded" ? "Erweitert" : "Fast Vollbild"}
+          onClick={() => {
+            if (!retractable || suppressHandleClick.current) {
+              suppressHandleClick.current = false;
+              return;
+            }
+            setRetracted((current) => !current);
+          }}
           onPointerDown={(event) => {
+            suppressHandleClick.current = false;
             const sheet = event.currentTarget.closest<HTMLElement>(".field-bottom-sheet");
             if (!sheet) return;
             const startHeight = sheet.getBoundingClientRect().height;
@@ -141,11 +157,14 @@ export function FieldBottomSheet({
             const activeDrag = drag.current;
             if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
             const next = clampHeight(activeDrag.startHeight + activeDrag.startY - event.clientY, viewport);
-            finishDrag(next, Math.abs(event.clientY - activeDrag.startY) >= MIN_DRAG_PX);
+            const moved = Math.abs(event.clientY - activeDrag.startY) >= MIN_DRAG_PX;
+            suppressHandleClick.current = moved;
+            finishDrag(next, moved);
           }}
           onPointerCancel={() => {
             const activeDrag = drag.current;
             if (activeDrag) activeDrag.sheet.classList.remove("field-sheet-dragging");
+            suppressHandleClick.current = false;
             drag.current = null;
           }}
           onKeyDown={(event) => {

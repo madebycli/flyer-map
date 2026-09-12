@@ -1,7 +1,7 @@
 import { useEffect,useMemo,useState } from 'react';
 import type { AccessInfo, AreaPreparationPublicState } from '../data/campaignApi.ts';
 import type { Area,CampaignSnapshot,DistributionTask,LngLat,TaskStatus } from '../domain/campaign.ts';
-import { RoadIndex,networkRoutes,networkProgress,applyNetworkCoverage,type NetworkRoute,type RoadSnap } from '../domain/streetNetwork.ts';
+import { RoadIndex,networkRoutes,applyNetworkCoverage,type NetworkRoute,type RoadSnap } from '../domain/streetNetwork.ts';
 import { enqueueNetworkIntent,flushNetworkIntents,queuedNetworkIntents,discardNetworkIntent } from '../data/networkIntentQueue.ts';
 import type { NetworkIntent } from '../../worker/streetNetwork/api.ts';
 import { AREA_PREPARATION_POLL_INTERVAL_MS } from '../areaPreparation/preparationPolling.ts';
@@ -12,9 +12,9 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   const [areaId,setAreaId]=useState<string|null>(null),[start,setStart]=useState<RoadSnap|null>(null),[end,setEnd]=useState<RoadSnap|null>(null);
   const [routes,setRoutes]=useState<NetworkRoute[]>([]),[selected,setSelected]=useState<number|null>(null),[message,setMessage]=useState('');
   const [choices,setChoices]=useState<RoadSnap[]>([]),[pending,setPending]=useState<Awaited<ReturnType<typeof queuedNetworkIntents>>>([]);
-  const [preparing,setPreparing]=useState<string|null>(null);
+  const [preparing,setPreparing]=useState<string|null>(null),[preparationError,setPreparationError]=useState('');
   const scope=[snapshot.campaign.id,access?.role,access?.teamId,access?.groupId??''].join(':');
-  useEffect(()=>{setAreaId(null);setMarking(false);setPending([]);setPreparing(null);setStates({});},[scope]);
+  useEffect(()=>{setAreaId(null);setMarking(false);setPending([]);setPreparing(null);setPreparationError('');setStates({});},[scope]);
   const permittedAreas=snapshot.areas.filter(canMark);
   const permittedIds=permittedAreas.map(area=>area.id+':'+area.updatedAt).sort().join('|');
   const tasks=useMemo(()=>snapshot.tasks.filter(task=>(!areaId||task.areaId===areaId)&&task.network&&permittedAreas.some(area=>area.id===task.areaId)),[snapshot.tasks,areaId,permittedIds]);
@@ -25,12 +25,12 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     void flush();const timer=window.setInterval(()=>void flush(),5000);window.addEventListener('online',flush);
     return()=>{stopped=true;window.clearInterval(timer);window.removeEventListener('online',flush);};
   },[scope]);
-  const reset=()=>{setStart(null);setEnd(null);setRoutes([]);setSelected(null);setChoices([]);setMessage('Tippe auf den Startpunkt A.');};
+  const reset=()=>{setStart(null);setEnd(null);setRoutes([]);setSelected(null);setChoices([]);setMessage('Wähle einen Straßenabschnitt auf der Karte.');};
   const open=(id:string|null)=>{setMarking(true);setAreaId(id);reset();};
   const accept=(snap:RoadSnap)=>{
     setChoices([]);
     setAreaId(snap.task.areaId);
-    if(!start||end){setStart(snap);setEnd(null);setRoutes([]);setSelected(null);setMessage('Tippe auf den Endpunkt B.');return;}
+    if(!start||end){setStart(snap);setEnd(null);setRoutes([]);setSelected(null);setMessage('Wähle jetzt den zweiten Punkt.');return;}
     setEnd(snap);
     try{const found=networkRoutes(tasks,start,snap);setRoutes(found);setSelected(found.length===1?0:null);setMessage(found.length?'Prüfe die Vorschau und wähle einen Status.':'Keine Verbindung. Bitte neu auswählen.');}
     catch{setRoutes([]);setMessage('Die Route ist zu mehrdeutig. Wähle einen kürzeren Abschnitt.');}
@@ -49,7 +49,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   const commit=async(status:TaskStatus)=>{
     if(!start||!end||selected===null||!areaId)return;
     try{await queue({id:`network_${crypto.randomUUID()}`,areaId,generation:start.task.areaPreparationGeneration!,start:{point:start.point,taskId:start.task.id},end:{point:end.point,taskId:end.task.id},selectedPath:routes[selected].ranges.map(range=>range.taskId),status});}catch{setMessage('Änderung konnte auf diesem Gerät nicht gespeichert werden. Bitte erneut versuchen.');return;}
-    setStart(null);setEnd(null);setRoutes([]);setSelected(null);setAreaId(null);setMessage('Gespeichert oder vorgemerkt. Tippe auf den nächsten Startpunkt A.');
+    setStart(null);setEnd(null);setRoutes([]);setSelected(null);setAreaId(null);setMessage('Gespeichert oder vorgemerkt.');
   };
   const whole=(task:DistributionTask)=>{
     open(task.areaId);
@@ -117,7 +117,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   },[scope,permittedIds]);
   const prepare=async(area:Area)=>{
     if(preparing)return;
-    setPreparing(area.id);setMessage('');
+    setPreparing(area.id);setPreparationError('');setMessage('');
     try{
       const response=await fetch(preparationUrl(area.id),{method:'POST',credentials:'same-origin',signal:AbortSignal.timeout(25000)});
       if(!response.ok)throw new Error(`Vorbereitung derzeit nicht verfügbar (HTTP ${response.status}).`);
@@ -125,7 +125,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       setStates(current=>({...current,[area.id]:state}));
       window.dispatchEvent(new CustomEvent('campaign-preparation',{detail:{campaignId:snapshot.campaign.id,areaId:area.id,state}}));
       setMessage('');
-    }catch(error){setMessage(error instanceof Error?error.message:'Vorbereitung fehlgeschlagen.');}
+    }catch(error){setPreparationError(error instanceof Error?error.message:'Vorbereitung fehlgeschlagen.');}
     finally{setPreparing(null);}
   };
   const optimistic=useMemo(()=>{
@@ -146,13 +146,11 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   const discard=async(key:string)=>{await discardNetworkIntent(key);setPending(await queuedNetworkIntents(scope));};
   const panelState=marking?{message,choices,routes,selected,activeRoute,pending:pending.map(item=>({key:item.key,blocked:Boolean(item.blocked)})),onChoice:accept,onRouteSelect:(index:number)=>setSelected(index),onCommit:commit,onReset:reset,onClose:closeMarking,onDiscard:discard}:null;
   const areaActions=(area:Area,editable:boolean,canMark:boolean)=>{
-    const roads=optimistic.tasks.filter(task=>task.areaId===area.id),houses=(optimistic.houseTasks??[]).filter(house=>house.areaId===area.id);
-    const progress=networkProgress(roads,houses);
+    const roads=optimistic.tasks.filter(task=>task.areaId===area.id);
     const state=states[area.id];
     const running=state?.status==='pending';
     const phaseLabel=({roads:'Straßen laden',graph:'Straßennetz aufbauen',buildings:'Gebäude laden',addresses:'Adressen prüfen',link:'Häuser zuordnen',publish:'Speichern',ready:'Bereit'} as Record<string,string>)[state?.progress?.phase??'']??'Vorbereitung';
     return <div className="area-actions-content">
-      <p className="area-preparation-summary">{Math.round(progress.percent) + " % erledigt" + (houses.length ? " · " + houses.filter(house=>house.status==='completed').length + " von " + houses.length + " Häusern" : "")}</p>
       {(roads.some(task=>task.network)?canMark:editable)?<button className="button primary full-width" disabled={Boolean(preparing)||running} onClick={()=>roads.some(task=>task.network)?open(area.id):void prepare(area)}>{preparing===area.id||running?'Vorbereitung läuft …':roads.some(task=>task.network)?'Straßen bearbeiten':'Straßen und Häuser vorbereiten'}</button>:null}
       {state?.progress && running?<div className="area-preparation-progress" role="status">
         <div className="area-preparation-progress-header"><strong>{state.progress.percent} %</strong><span>{phaseLabel}</span></div>
@@ -160,7 +158,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
         <p>Straßen-Tiles {state.progress.completedRoadTiles}/{state.progress.totalTiles} · Gebäude-Tiles {state.progress.completedBuildingTiles}/{state.progress.totalTiles} · {state.progress.processedBuildings}/{state.progress.totalBuildings} Gebäude · {state.houseCount} Häuser</p>
       </div>:null}
       {state?.status==='failed'?<p role="alert">Vorbereitung fehlgeschlagen. Erneut versuchen setzt den gespeicherten Job fort.</p>:null}
-      {!marking&&message?<p role="status">{message}</p>:null}
+      {preparationError?<p role="alert">{preparationError}</p>:null}
     </div>;
   };
   return {optimistic,open,available:permittedAreas.some(area=>snapshot.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panelState,areaActions,whole,mapProps:{smartRoads:tasks.map(task=>({sourceId:task.id,osmId:task.source?.objectIds[0]??0,name:task.label,ref:null,highway:'residential',geometry:task.geometry})),smartSelectedSourceIds:[],smartStartAnchor:start?{sourceId:start.task.id,snapped:start.point,segmentIndex:0,segmentT:0,distanceMeters:start.distance}:null,smartEndAnchor:end?{sourceId:end.task.id,snapped:end.point,segmentIndex:0,segmentT:0,distanceMeters:end.distance}:null,smartPreviewGeometry:activeRoute?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};

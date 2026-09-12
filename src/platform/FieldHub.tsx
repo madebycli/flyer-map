@@ -11,6 +11,8 @@ type FieldHubProps = {
   onTitleClick?: () => void;
   overlayClassName?: string;
   initialSnap?: FieldSheetSnap;
+  retractable?: boolean;
+  initialRetracted?: boolean;
   className?: string;
   children: ReactNode;
   footer?: ReactNode;
@@ -25,6 +27,8 @@ export function FieldHub({
   onTitleClick,
   overlayClassName = "",
   initialSnap = "expanded",
+  retractable = false,
+  initialRetracted = false,
   className = "",
   children,
   footer,
@@ -39,6 +43,8 @@ export function FieldHub({
       onTitleClick={onTitleClick}
       overlayClassName={overlayClassName}
       initialSnap={initialSnap}
+      retractable={retractable}
+      initialRetracted={initialRetracted}
       className={`field-hub ${className}`.trim()}
       footer={footer}
     >

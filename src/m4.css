@@ -206,6 +206,42 @@
   flex: 1 1 11rem;
 }
 
+.settings-area-team-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.settings-area-team-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 12rem);
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #dce4dd;
+  border-radius: 0.78rem;
+  background: #f8faf8;
+}
+
+.settings-area-team-row > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-area-team-row select {
+  min-height: 2.35rem;
+  padding: 0.42rem 1.8rem 0.42rem 0.58rem;
+  border: 1px solid #cfd7d0;
+  border-radius: 0.65rem;
+  color: #172019;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.72rem;
+}
+
 .access-create-grid {
   display: grid;
   gap: 0.65rem;
@@ -312,6 +348,10 @@
 
   .settings-actions.stacked-mobile .button {
     width: 100%;
+  }
+
+  .settings-area-team-row {
+    grid-template-columns: 1fr;
   }
 
   .access-card {

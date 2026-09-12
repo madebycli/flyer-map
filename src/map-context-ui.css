@@ -56,12 +56,16 @@
  * existing map controls; only the legacy outer sheet chrome is removed.
  */
 .field-bottom-sheet.map-context-hub {
-  width: min(38rem, 100%);
+  width: min(31rem, 100%);
+}
+
+.field-bottom-sheet.streets-field-hub {
+  max-height: min(72dvh, 40rem);
 }
 
 .map-context-hub .map-context-content {
   display: grid;
-  gap: 0.72rem;
+  gap: 0.58rem;
   min-width: 0;
 }
 
@@ -88,16 +92,18 @@
   margin-top: 0.05rem;
 }
 
+.map-context-hub .button {
+  min-height: 2.6rem;
+  padding-block: 0.55rem;
+}
+
+.map-context-hub .status-button {
+  min-height: 2.7rem;
+}
+
 .area-actions-content {
   display: grid;
   gap: 0.62rem;
-}
-
-.area-preparation-summary {
-  margin: 0;
-  color: #526058;
-  font-size: 0.78rem;
-  line-height: 1.35;
 }
 
 .area-preparation-progress {
@@ -161,8 +167,14 @@
 
 /* Map-facing FieldHubs keep the basemap sharp and let interactive modes reach the map. */
 .field-sheet-overlay.map-context-overlay {
+  background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  pointer-events: none;
+}
+
+.field-sheet-overlay.map-context-overlay > .field-bottom-sheet {
+  pointer-events: auto;
 }
 
 .field-sheet-overlay.map-interaction-overlay {
@@ -187,4 +199,12 @@
 .field-bottom-sheet.map-area-selection-hub .field-sheet-body {
   flex: 0 0 auto;
   overflow: visible;
+}
+
+.field-bottom-sheet.map-context-hub .field-sheet-body {
+  padding-top: 0.68rem;
+}
+
+.field-bottom-sheet.map-context-hub.field-sheet-retracted .field-sheet-body {
+  padding-top: 0;
 }
