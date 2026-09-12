@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchTeamCommentSummary, type TeamCommentSummaryGroup } from "../data/commentsApi.ts";
-import {
-  flushRxdbDrafts,
-  loadCampaignSnapshot,
-  saveCampaignSnapshot,
-} from "../data/campaignStore.ts";
 import type { PlatformAppContext } from "../platform/platformContract.ts";
 
 type Props = {
   context: PlatformAppContext;
   online: boolean;
-  onChanged: () => void;
+  onChanged?: () => void;
 };
 
 function formatDate(value: string) {
@@ -31,15 +26,13 @@ function targetTypeLabel(value: string) {
   return "Aktion";
 }
 
-export function TeamCommentsSummary({ context, online, onChanged }: Props) {
+export function TeamCommentsSummary({ context, online }: Props) {
   const canSeeAll = context.accessRole === "admin";
   const defaultTeamId = context.activeTeam?.id ?? context.accessTeamId ?? context.teams[0]?.id ?? "";
   const [scope, setScope] = useState<string>(defaultTeamId || (canSeeAll ? "all" : ""));
   const [groups, setGroups] = useState<TeamCommentSummaryGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
-  const [areaName, setAreaName] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
 
   useEffect(() => {
@@ -78,44 +71,6 @@ export function TeamCommentsSummary({ context, online, onChanged }: Props) {
     [context.teams, scope],
   );
 
-  const canRenameArea = (areaId: string) => {
-    if (context.accessRole === "admin") return true;
-    if (context.accessRole !== "team-editor" || !context.accessTeamId) return false;
-    const snapshot = loadCampaignSnapshot().snapshot;
-    return snapshot.areas.some((area) => area.id === areaId && area.teamId === context.accessTeamId);
-  };
-
-  const startRename = (group: TeamCommentSummaryGroup) => {
-    if (!group.areaId || !canRenameArea(group.areaId)) return;
-    setEditingAreaId(group.areaId);
-    setAreaName(group.areaName);
-  };
-
-  const commitRename = () => {
-    if (!editingAreaId) return;
-    const normalized = areaName.trim().replace(/\s+/gu, " ").slice(0, 60);
-    if (!normalized) return;
-    const loaded = loadCampaignSnapshot().snapshot;
-    const currentArea = loaded.areas.find((area) => area.id === editingAreaId);
-    if (!currentArea) return;
-    if (
-      context.accessRole !== "admin" &&
-      !(context.accessRole === "team-editor" && context.accessTeamId === currentArea.teamId)
-    ) return;
-    const now = new Date().toISOString();
-    saveCampaignSnapshot({
-      ...loaded,
-      areas: loaded.areas.map((area) =>
-        area.id === editingAreaId ? { ...area, name: normalized, updatedAt: now } : area,
-      ),
-    });
-    flushRxdbDrafts();
-    setEditingAreaId(null);
-    setAreaName("");
-    onChanged();
-    window.setTimeout(() => setRefreshToken((value) => value + 1), 250);
-  };
-
   if (!online) {
     return <div className="team-center-empty">Kommentare benötigen für die Zusammenfassung eine Verbindung zum Server.</div>;
   }
@@ -151,27 +106,8 @@ export function TeamCommentsSummary({ context, online, onChanged }: Props) {
             <header>
               <div>
                 <span>{group.areaId ? "Gebiet" : "Allgemein"}</span>
-                {editingAreaId === group.areaId ? (
-                  <input
-                    value={areaName}
-                    maxLength={60}
-                    autoFocus
-                    onChange={(event) => setAreaName(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") commitRename();
-                      if (event.key === "Escape") setEditingAreaId(null);
-                    }}
-                  />
-                ) : <strong>{group.areaName}</strong>}
+                <strong>{group.areaName}</strong>
               </div>
-              {group.areaId && canRenameArea(group.areaId) ? (
-                editingAreaId === group.areaId ? (
-                  <div className="team-comments-area-actions">
-                    <button type="button" onClick={commitRename}>Speichern</button>
-                    <button type="button" onClick={() => setEditingAreaId(null)}>Abbrechen</button>
-                  </div>
-                ) : <button type="button" onClick={() => startRename(group)}>Umbenennen</button>
-              ) : null}
             </header>
             <div className="team-comments-list">
               {group.comments.map((comment) => (

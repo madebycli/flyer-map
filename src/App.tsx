@@ -1,7 +1,10 @@
 import { useNetworkWorkspace } from './map/useNetworkWorkspace.tsx';
+import { NetworkWorkspacePanel } from './map/NetworkWorkspacePanel.tsx';
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CampaignApiError,
   collectionModeFromUrl,
+  postCampaignMutation,
   removeCollectionAccessTokenFromUrl,
   type AccessInfo,
 } from "./data/campaignApi";
@@ -40,17 +43,29 @@ import {
   type CollectionArea,
   type CollectionMainArea,
 } from "./domain/collection";
-import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
+import {
+  AREA_MAX_VERTICES,
+  validateAreaPolygonVertices,
+  validateLineStringVertices,
+  validatePolygonVertices,
+} from "./domain/geometry";
 import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } from "./i18n";
 import { lineStringIsFullyInsideOrOnPolygon } from "./domain/areaTaskPreparation.ts";
+import { networkProgress } from "./domain/streetNetwork.ts";
 import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
 import { CollectionAdminPanel } from "./collection/CollectionAdminPanel";
 import { CollectionCollectorView } from "./collection/CollectionCollectorView";
 import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";
-import { useLegacyFieldSheetDragBridge } from "./platform/FieldBottomSheet.tsx";
+import { FieldHub } from "./platform/FieldHub.tsx";
 import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
 import { SettingsSheet } from "./settings/SettingsSheet";
+import {
+  applyAppearancePreference,
+  loadAppearancePreference,
+  saveAppearancePreference,
+  type AppearancePreference,
+} from "./settings/appearance.ts";
 
 type MapMode =
   | "browse"
@@ -63,6 +78,7 @@ type MapMode =
 type Sheet =
   | "teams"
   | "area"
+  | "area-name"
   | "task"
   | "house"
   | "campaign-comments"
@@ -112,6 +128,17 @@ function nextStreetName(tasks: DistributionTask[], areaId: string, language: Lan
   return `${t(language, "street")} ${count + 1}`;
 }
 
+function areaGeometryStatus(
+  language: Language,
+  count: number,
+  validation: ReturnType<typeof validateAreaPolygonVertices>,
+) {
+  const points = `${count}/${AREA_MAX_VERTICES} ${language === "de" ? "Eckpunkte" : "corners"}`;
+  return validation.valid
+    ? `Approved · ${points}`
+    : `${points} · ${geometryReason(language, validation.reason)}`;
+}
+
 function syncMessage(language: Language, code: SyncMessageCode, refreshState: RefreshState) {
   if (refreshState === "available") return null;
   if (code === "access_required") return t(language, "accessRequired");
@@ -129,11 +156,11 @@ export default function App({
 }: AppProps = {}) {
   const online = useOnlineStatus();
   const collectionMode = collectionModeFromUrl();
-  useLegacyFieldSheetDragBridge(!collectionMode);
   const [initialLoad] = useState(loadCampaignSnapshot);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(initialLoad.snapshot);
   const [storageWarning, setStorageWarning] = useState<string | null>(initialLoad.warning);
   const [language, setLanguage] = useState<Language>(detectLanguage);
+  const [appearance, setAppearance] = useState<AppearancePreference>(() => loadAppearancePreference());
   const [access, setAccess] = useState<AccessInfo | null>(null);
   const [refreshState, setRefreshState] = useState<RefreshState>("idle");
   const [syncMessageCode, setSyncMessageCode] = useState<SyncMessageCode>(null);
@@ -146,6 +173,11 @@ export default function App({
     initialLoad.snapshot.teams[0]?.id ?? null,
   );
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [areaNameDraft, setAreaNameDraft] = useState("");
+  const [areaNameEditing, setAreaNameEditing] = useState(false);
+  const [streetNameDraft, setStreetNameDraft] = useState("");
+  const [streetNameEditing, setStreetNameEditing] = useState(false);
+  const [areaTasksExpanded, setAreaTasksExpanded] = useState(false);
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [mode, setMode] = useState<MapMode>("browse");
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
@@ -153,6 +185,7 @@ export default function App({
   const [selectedHouseTaskId, setSelectedHouseTaskId] = useState<string | null>(null);
   const [draftVertices, setDraftVertices] = useState<LngLat[]>([]);
   const [editingVertices, setEditingVertices] = useState<LngLat[]>([]);
+  const [editingUndoStack, setEditingUndoStack] = useState<LngLat[][]>([]);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
   const [streetDraftVertices, setStreetDraftVertices] = useState<LngLat[]>([]);
   const [collectionDraftVertices, setCollectionDraftVertices] = useState<LngLat[]>([]);
@@ -162,6 +195,12 @@ export default function App({
   const [collectionSelectedVertexIndex, setCollectionSelectedVertexIndex] = useState<number | null>(null);
   const [manualStreetAreaSelection, setManualStreetAreaSelection] = useState(false);
   const [undoStatusChange, setUndoStatusChange] = useState<UndoStatusChange | null>(null);
+
+  const changeAppearance = (preference: AppearancePreference) => {
+    setAppearance(preference);
+    saveAppearancePreference(preference);
+    applyAppearancePreference(preference);
+  };
 
   useEffect(
     () =>
@@ -215,9 +254,19 @@ export default function App({
   }, [sheet]);
 
   useEffect(() => {
+    setAreaTasksExpanded(false);
+    setAreaNameEditing(false);
+    setStreetNameEditing(false);
+    setStreetNameDraft("");
+  }, [selectedAreaId]);
+
+  useEffect(() => {
     if (selectedAreaId && !snapshot.areas.some((area) => area.id === selectedAreaId)) {
       setSelectedAreaId(null);
-      if (sheet === "area") setSheet(null);
+      if (sheet === "area" || sheet === "area-name") {
+        setAreaNameDraft("");
+        setSheet(null);
+      }
     }
     if (selectedTaskId && !snapshot.tasks.some((task) => task.id === selectedTaskId)) {
       setSelectedTaskId(null);
@@ -325,6 +374,18 @@ export default function App({
           : platformSyncState === "error"
             ? "Synchronisierung prüfen"
             : null;
+  const networkWorkspace = useNetworkWorkspace(snapshot, access, async () => { await manualRefreshCampaign(); }, canChangeTaskStatusInArea);
+  const selectedAreaProgress = useMemo(() => {
+    if (!selectedArea) return null;
+    const roads = networkWorkspace.optimistic.tasks.filter((task) => task.areaId === selectedArea.id);
+    const houses = (networkWorkspace.optimistic.houseTasks ?? []).filter((task) => task.areaId === selectedArea.id);
+    return networkProgress(roads, houses);
+  }, [networkWorkspace.optimistic.houseTasks, networkWorkspace.optimistic.tasks, selectedArea]);
+  const selectedAreaProgressLabel = selectedAreaProgress
+    ? selectedAreaProgress.totalHouses > 0
+      ? `${Math.round(selectedAreaProgress.percent)} % · ${selectedAreaHouseTasks.filter((task) => task.status === "completed").length.toLocaleString(language === "de" ? "de-DE" : "en-US")} ${language === "de" ? "von" : "of"} ${selectedAreaProgress.totalHouses.toLocaleString(language === "de" ? "de-DE" : "en-US")}`
+      : `${Math.round(selectedAreaProgress.percent)} %`
+    : "";
   useEffect(() => {
     onPlatformContextChange?.({
       campaignId: snapshot.campaign.id,
@@ -336,14 +397,15 @@ export default function App({
         : null,
       teams: snapshot.teams.map((team) => ({ id: team.id, name: team.name, color: team.color })),
       streets: platformStreets,
-      launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection,
+      launcherAvailable: mode === "browse" && sheet === null && !manualStreetAreaSelection && !networkWorkspace.active,
+      canSmartMark: networkWorkspace.available,
       canManageTeams: Boolean(isAdmin),
       canCreateArea: Boolean(activeTeam && canEditTeam(activeTeam.id)),
       canCreateManualStreet: snapshot.areas.some((area) => canEditArea(area)),
       syncState: platformSyncState,
       syncLabel: platformSyncLabel,
     });
-  }, [access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, onPlatformContextChange, platformStreets, platformSyncLabel, platformSyncState, sheet, snapshot.areas, snapshot.campaign.id, snapshot.teams]);
+  }, [networkWorkspace.active, networkWorkspace.available, access, activeFieldGroupId, activeTeam, isAdmin, manualStreetAreaSelection, mode, onPlatformContextChange, platformStreets, platformSyncLabel, platformSyncState, sheet, snapshot.areas, snapshot.campaign.id, snapshot.teams]);
 
   const renderedAreas = useMemo(
     () =>
@@ -354,7 +416,6 @@ export default function App({
     [snapshot.areas, snapshot.teams],
   );
 
-  const networkWorkspace = useNetworkWorkspace(snapshot, access, async () => { await manualRefreshCampaign(); });
   const renderedTasks = useMemo(
     () =>
       networkWorkspace.optimistic.tasks.map((task) => {
@@ -384,11 +445,11 @@ export default function App({
   );
 
   const drawValidation = useMemo(
-    () => validatePolygonVertices(draftVertices),
+    () => validateAreaPolygonVertices(draftVertices),
     [draftVertices],
   );
   const editValidation = useMemo(
-    () => validatePolygonVertices(editingVertices),
+    () => validateAreaPolygonVertices(editingVertices),
     [editingVertices],
   );
   const streetValidation = useMemo(() => {
@@ -474,23 +535,30 @@ export default function App({
     updateTeam(team.id, { name: t(language, "team") });
   };
 
-  const deleteTeam = (team: Team) => {
+  const deleteTeam = async (team: Team) => {
     if (!isAdmin) return;
     if (snapshot.areas.some((area) => area.teamId === team.id)) {
       window.alert("Team kann nicht gelöscht werden, solange Gebiete zugeordnet sind.");
       return;
     }
     if (!window.confirm(`Team „${team.name.trim() || t(language, "team")}“ wirklich löschen?`)) return;
-    commitSnapshot((current) => ({
-      ...current,
-      teams: current.teams.filter((candidate) => candidate.id !== team.id),
-    }));
-    if (activeTeamId === team.id) {
-      setActiveTeamId(snapshot.teams.find((candidate) => candidate.id !== team.id)?.id ?? null);
+    const createdAt = new Date().toISOString();
+    try {
+      await postCampaignMutation(snapshot.campaign.id, {
+        id: `mutation_team_delete_${crypto.randomUUID()}`,
+        campaignId: snapshot.campaign.id,
+        type: "team.delete",
+        payload: { teamId: team.id, expectedUpdatedAt: team.updatedAt },
+        baseRevision: snapshot.revision,
+        createdAt,
+      });
+      manualRefreshCampaign();
+    } catch (error) {
+      window.alert(error instanceof CampaignApiError
+        ? error.message
+        : "Team konnte nicht sicher gelöscht werden. Bitte erneut versuchen.");
     }
   };
-
-  const sheetToggleLabel = sheetCollapsed ? "Fenster ausklappen" : "Fenster einklappen";
 
   const startDrawing = () => {
     if (!activeTeam || !canEditTeam(activeTeam.id)) {
@@ -505,6 +573,7 @@ export default function App({
     setSelectedHouseTaskId(null);
     setDraftVertices([]);
     setEditingVertices([]);
+    setEditingUndoStack([]);
     setStreetDraftVertices([]);
     setSelectedVertexIndex(null);
   };
@@ -546,6 +615,7 @@ export default function App({
     const openLegacySheet = (nextSheet: "settings" | "teams" | "campaign-comments") => {
       setMode("browse");
       setManualStreetAreaSelection(false);
+      setAreaNameDraft("");
       setSheetCollapsed(false);
       setSheet(nextSheet);
     };
@@ -595,6 +665,10 @@ export default function App({
     if (platformCommand.type === "start-area-drawing") {
       startDrawing();
     }
+    if(platformCommand.type === 'start-smart-marking') {
+      if(!networkWorkspace.available)return;
+      setSheet(null);setMode('browse');setManualStreetAreaSelection(false);networkWorkspace.open(null);return;
+    }
     if (platformCommand.type === "start-manual-street") {
       startManualStreet();
     }
@@ -603,6 +677,7 @@ export default function App({
   const cancelDrawing = () => {
     setMode("browse");
     setDraftVertices([]);
+    setEditingUndoStack([]);
   };
 
   const startCollectionMainArea = () => {
@@ -807,6 +882,7 @@ export default function App({
     if (mode !== "browse") return;
     if (!taskId) {
       setSelectedTaskId(null);
+      cancelStreetNameEditor();
       return;
     }
 
@@ -815,6 +891,8 @@ export default function App({
     setSelectedTaskId(task.id);
     setSelectedHouseTaskId(null);
     setSelectedAreaId(task.areaId);
+    setStreetNameDraft("");
+    setStreetNameEditing(false);
     setSheet("task");
   };
 
@@ -834,26 +912,55 @@ export default function App({
     setSheet("house");
   };
 
-  const updateSelectedArea = (patch: Partial<Pick<Area, "name" | "teamId">>) => {
+  const openAreaNameEditor = () => {
     if (!selectedArea || !canEditSelectedArea) return;
-    if (patch.teamId && !isAdmin) return;
+    setAreaNameDraft(selectedArea.name);
+    setAreaNameEditing(true);
+  };
+
+  const cancelAreaName = () => {
+    setAreaNameDraft("");
+    setAreaNameEditing(false);
+    setSheet(selectedAreaId ? "area" : null);
+  };
+
+  const saveAreaName = () => {
+    if (!selectedArea || !canEditSelectedArea) {
+      cancelAreaName();
+      return;
+    }
+
+    const nextName = areaNameDraft.trim()
+      ? areaNameDraft
+      : nextAreaName(snapshot.areas.filter((area) => area.id !== selectedArea.id), language);
+    if (nextName !== selectedArea.name) {
+      const now = new Date().toISOString();
+      commitSnapshot((current) => ({
+        ...current,
+        areas: current.areas.map((area) =>
+          area.id === selectedArea.id ? { ...area, name: nextName, updatedAt: now } : area,
+        ),
+      }));
+    }
+    setAreaNameDraft("");
+    setAreaNameEditing(false);
+    setSheet("area");
+  };
+
+  const updateAreaTeam = (areaId: string, teamId: string) => {
+    if (!isAdmin || !snapshot.teams.some((team) => team.id === teamId)) return;
+    const area = snapshot.areas.find((candidate) => candidate.id === areaId);
+    if (!area || area.teamId === teamId) return;
     const now = new Date().toISOString();
 
     commitSnapshot((current) => ({
       ...current,
       areas: current.areas.map((area) =>
-        area.id === selectedArea.id ? { ...area, ...patch, updatedAt: now } : area,
+        area.id === areaId ? { ...area, teamId, updatedAt: now } : area,
       ),
     }));
 
-    if (patch.teamId) setActiveTeamId(patch.teamId);
-  };
-
-  const normalizeAreaName = () => {
-    if (!selectedArea || selectedArea.name.trim()) return;
-    updateSelectedArea({
-      name: nextAreaName(snapshot.areas.filter((area) => area.id !== selectedArea.id), language),
-    });
+    if (selectedAreaId === areaId) setActiveTeamId(teamId);
   };
 
   const deleteSelectedArea = () => {
@@ -870,12 +977,14 @@ export default function App({
     }));
     setSelectedAreaId(null);
     setSelectedTaskId(null);
+    setAreaNameDraft("");
     setSheet(null);
   };
 
   const startEditing = () => {
     if (!selectedArea || !canEditSelectedArea) return;
     setEditingVertices(openPolygonRing(selectedArea.geometry));
+    setEditingUndoStack([]);
     setSelectedVertexIndex(null);
     setMode("edit");
     setSheet(null);
@@ -884,19 +993,34 @@ export default function App({
   const cancelEditing = () => {
     setMode("browse");
     setEditingVertices([]);
+    setEditingUndoStack([]);
     setSelectedVertexIndex(null);
     if (selectedAreaId) setSheet("area");
   };
 
   const moveEditVertex = (index: number, point: LngLat) => {
+    const previous = editingVertices[index];
+    if (!previous || (previous[0] === point[0] && previous[1] === point[1])) return;
+    setEditingUndoStack((history) => [
+      ...history,
+      editingVertices.map(([lng, lat]) => [lng, lat] as LngLat),
+    ]);
     setEditingVertices((current) =>
       current.map((vertex, vertexIndex) => (vertexIndex === index ? point : vertex)),
     );
     setSelectedVertexIndex(null);
   };
 
+  const undoEditVertex = () => {
+    const previous = editingUndoStack.at(-1);
+    if (!previous) return;
+    setEditingVertices(previous);
+    setEditingUndoStack((history) => history.slice(0, -1));
+    setSelectedVertexIndex(null);
+  };
+
   const saveEditedArea = () => {
-    if (!selectedArea || !canEditSelectedArea || !editValidation.valid) return;
+    if (!selectedArea || !canEditSelectedArea || !editValidation.valid || editingUndoStack.length === 0) return;
     const now = new Date().toISOString();
 
     commitSnapshot((current) => ({
@@ -909,6 +1033,7 @@ export default function App({
     }));
     setMode("browse");
     setEditingVertices([]);
+    setEditingUndoStack([]);
     setSelectedVertexIndex(null);
     setSheet("area");
   };
@@ -961,15 +1086,27 @@ export default function App({
     }));
   };
 
-  const normalizeTaskLabel = () => {
-    if (!selectedTask || selectedTask.label.trim()) return;
-    updateSelectedTask({
-      label: nextStreetName(
-        snapshot.tasks.filter((task) => task.id !== selectedTask.id),
-        selectedTask.areaId,
-        language,
-      ),
-    });
+  const openStreetNameEditor = () => {
+    if (!selectedTask || !canEditSelectedTask || selectedTaskIsAutoPrepared) return;
+    setStreetNameDraft(selectedTask.label);
+    setStreetNameEditing(true);
+  };
+
+  const cancelStreetNameEditor = () => {
+    setStreetNameDraft("");
+    setStreetNameEditing(false);
+  };
+
+  const saveStreetName = () => {
+    if (!selectedTask || !canEditSelectedTask || selectedTaskIsAutoPrepared) {
+      cancelStreetNameEditor();
+      return;
+    }
+    const nextName = streetNameDraft.trim()
+      ? streetNameDraft
+      : nextStreetName(snapshot.tasks.filter((task) => task.id !== selectedTask.id), selectedTask.areaId, language);
+    if (nextName !== selectedTask.label) updateSelectedTask({ label: nextName });
+    cancelStreetNameEditor();
   };
 
 
@@ -1166,13 +1303,16 @@ export default function App({
         streetDraftVertices={streetDraftVertices}
         streetDraftColor={streetColor}
         refreshState={refreshState}
+        hideRefreshControl={mode !== "browse" || sheet !== null || manualStreetAreaSelection || networkWorkspace.active}
         cameraCommand={cameraCommand}
         onCameraChange={setCurrentCamera}
         onRefresh={manualRefreshCampaign}
         onAreaSelect={selectArea}
         onTaskSelect={selectTask}
         onHouseTaskSelect={selectHouseTask}
-        onDrawPoint={(point) => setDraftVertices((current) => [...current, point])}
+        onDrawPoint={(point) => setDraftVertices((current) =>
+          current.length >= AREA_MAX_VERTICES ? current : [...current, point],
+        )}
         onEditVertexSelect={(index) =>
           setSelectedVertexIndex((current) => (current === index ? null : index))
         }
@@ -1212,23 +1352,29 @@ export default function App({
       ) : null}
 
       {manualStreetAreaSelection ? (
-        <section className="mode-sheet" aria-label="Gebiet für manuelle Straße auswählen">
-          <div className="mode-title-row">
-            <div>
-              <span className="eyebrow">Straße manuell hinzufügen</span>
-              <strong>Gebiet auswählen</strong>
+        <FieldHub
+          open
+          title="Gebiet auswählen"
+          kicker="Straße manuell hinzufügen"
+          onClose={() => setManualStreetAreaSelection(false)}
+          initialSnap="compact"
+          retractable
+          initialRetracted
+          overlayClassName="map-context-overlay map-interaction-overlay map-area-selection-overlay"
+          className="map-context-hub map-mode-hub map-area-selection-hub"
+        >
+          <div className="map-context-content">
+            <p>Tippe auf ein Gebiet, in dem du Straßen bearbeiten darfst.</p>
+            <div className="mode-actions">
+              <button className="button secondary" type="button" onClick={() => setManualStreetAreaSelection(false)}>
+                {t(language, "cancel")}
+              </button>
             </div>
           </div>
-          <p>Tippe auf ein Gebiet, in dem du Straßen bearbeiten darfst.</p>
-          <div className="mode-actions">
-            <button className="button secondary" type="button" onClick={() => setManualStreetAreaSelection(false)}>
-              {t(language, "cancel")}
-            </button>
-          </div>
-        </section>
+        </FieldHub>
       ) : null}
 
-      {mode === "browse" && sheet === null ? (
+      {mode === "browse" && sheet === null && !networkWorkspace.active ? (
         <section className={`map-toolbar ${access?.role === "viewer" ? "viewer-toolbar" : ""}`} aria-label={t(language, "mapActions")}>
           {access && (access.role === "admin" || access.role === "team-editor") ? (
             <label className="team-picker">
@@ -1250,6 +1396,7 @@ export default function App({
             </label>
           ) : null}
           <div className="toolbar-actions">
+            {networkWorkspace.available?<button className="button primary" type="button" onClick={()=>{setManualStreetAreaSelection(false);networkWorkspace.open(null);}}>Straßenabschnitt markieren</button>:null}
             <button className="button secondary" type="button" onClick={() => setSheet("settings")}>
               {t(language, "settings")}
             </button>
@@ -1273,149 +1420,267 @@ export default function App({
       ) : null}
 
       {mode === "collection-main-draw" || mode === "collection-area-draw" ? (
-        <section className="mode-sheet collection-mode-sheet" aria-label="Collection">
-          <div className="mode-title-row">
-            <div>
-              <span className="eyebrow">Collection</span>
-              <strong>
-                {mode === "collection-main-draw" ? "Collection Main Area" : "Collection Area"}
-              </strong>
+        <FieldHub
+          open
+          title={mode === "collection-main-draw" ? "Collection Main Area" : "Collection Area"}
+          kicker="Collection"
+          headerAside={<span className="team-color-preview" style={{ backgroundColor: collectionColor }} aria-hidden="true" />}
+          onClose={cancelCollectionGeometry}
+          initialSnap="expanded"
+          retractable
+          initialRetracted
+          overlayClassName="map-context-overlay map-interaction-overlay"
+          className="map-context-hub map-mode-hub collection-mode-hub"
+        >
+          <div className="map-context-content">
+            <p>
+              {mode === "collection-main-draw"
+                ? "Zeichne das gemeinsame Collection-Hauptgebiet."
+                : "Zeichne ein auswählbares Collection-Untergebiet."}
+            </p>
+            <p className={"geometry-status " + (collectionDraftValidation.valid ? "is-valid" : "is-invalid")}>
+              {collectionDraftValidation.valid
+                ? collectionDraftVertices.length + " Punkte bereit"
+                : geometryReason(language, collectionDraftValidation.reason)}
+            </p>
+            <div className="mode-actions three-actions">
+              <button className="button secondary" type="button" onClick={cancelCollectionGeometry}>{t(language, "cancel")}</button>
+              <button
+                className="button secondary"
+                type="button"
+                disabled={collectionDraftVertices.length === 0}
+                onClick={() => setCollectionDraftVertices((current) => current.slice(0, -1))}
+              >
+                {t(language, "undo")}
+              </button>
+              <button className="button primary" type="button" disabled={!collectionDraftValidation.valid} onClick={saveCollectionGeometry}>
+                {t(language, "save")}
+              </button>
             </div>
-            <span className="team-color-preview" style={{ backgroundColor: collectionColor }} aria-hidden="true" />
           </div>
-          <p>
-            {mode === "collection-main-draw"
-              ? "Zeichne das gemeinsame Collection-Hauptgebiet."
-              : "Zeichne ein auswählbares Collection-Untergebiet."}
-          </p>
-          <p className={`geometry-status ${collectionDraftValidation.valid ? "is-valid" : "is-invalid"}`}>
-            {collectionDraftValidation.valid
-              ? `${collectionDraftVertices.length} Punkte bereit`
-              : geometryReason(language, collectionDraftValidation.reason)}
-          </p>
-          <div className="mode-actions three-actions">
-            <button className="button secondary" type="button" onClick={cancelCollectionGeometry}>{t(language, "cancel")}</button>
-            <button
-              className="button secondary"
-              type="button"
-              disabled={collectionDraftVertices.length === 0}
-              onClick={() => setCollectionDraftVertices((current) => current.slice(0, -1))}
-            >
-              {t(language, "undo")}
-            </button>
-            <button className="button primary" type="button" disabled={!collectionDraftValidation.valid} onClick={saveCollectionGeometry}>
-              {t(language, "save")}
-            </button>
-          </div>
-        </section>
+        </FieldHub>
       ) : null}
 
       {mode === "collection-area-edit" ? (
-        <section className="mode-sheet collection-mode-sheet" aria-label="Collection Area bearbeiten">
-          <div className="mode-title-row">
-            <div>
-              <span className="eyebrow">Collection</span>
-              <strong>{collectionSelectedArea?.name || "Collection Area"}</strong>
+        <FieldHub
+          open
+          title={collectionSelectedArea?.name || "Collection Area"}
+          kicker="Collection bearbeiten"
+          headerAside={<span className="team-color-preview" style={{ backgroundColor: collectionSelectedArea?.color ?? "#2563eb" }} aria-hidden="true" />}
+          onClose={cancelCollectionGeometry}
+          initialSnap="expanded"
+          retractable
+          initialRetracted
+          overlayClassName="map-context-overlay map-interaction-overlay"
+          className="map-context-hub map-mode-hub collection-mode-hub"
+        >
+          <div className="map-context-content">
+            <p>
+              {collectionSelectedVertexIndex === null
+                ? "Wähle einen Punkt auf der Karte und verschiebe ihn."
+                : "Punkt " + (collectionSelectedVertexIndex + 1) + " ausgewählt"}
+            </p>
+            <p className={"geometry-status " + (collectionEditValidation.valid ? "is-valid" : "is-invalid")}>
+              {collectionEditValidation.valid
+                ? "Geometrie ist gültig"
+                : geometryReason(language, collectionEditValidation.reason)}
+            </p>
+            <div className="mode-actions">
+              <button className="button secondary" type="button" onClick={cancelCollectionGeometry}>{t(language, "cancel")}</button>
+              <button className="button primary" type="button" disabled={!collectionEditValidation.valid} onClick={saveCollectionGeometry}>
+                {t(language, "saveChanges")}
+              </button>
             </div>
-            <span className="team-color-preview" style={{ backgroundColor: collectionSelectedArea?.color ?? "#2563eb" }} aria-hidden="true" />
           </div>
-          <p>
-            {collectionSelectedVertexIndex === null
-              ? "Wähle einen Punkt auf der Karte und verschiebe ihn."
-              : `Punkt ${collectionSelectedVertexIndex + 1} ausgewählt`}
-          </p>
-          <p className={`geometry-status ${collectionEditValidation.valid ? "is-valid" : "is-invalid"}`}>
-            {collectionEditValidation.valid
-              ? "Geometrie ist gültig"
-              : geometryReason(language, collectionEditValidation.reason)}
-          </p>
-          <div className="mode-actions">
-            <button className="button secondary" type="button" onClick={cancelCollectionGeometry}>{t(language, "cancel")}</button>
-            <button className="button primary" type="button" disabled={!collectionEditValidation.valid} onClick={saveCollectionGeometry}>
-              {t(language, "saveChanges")}
-            </button>
-          </div>
-        </section>
+        </FieldHub>
       ) : null}
 
       {mode === "draw" ? (
-        <section className="mode-sheet" aria-label={t(language, "drawArea")}>
-          <div className="mode-title-row">
-            <div>
-              <span className="eyebrow">{t(language, "drawing")}</span>
-              <strong>{t(language, "area")} · {activeTeam?.name || t(language, "team")}</strong>
+        <FieldHub
+          open
+          title={t(language, "area") + " · " + (activeTeam?.name || t(language, "team"))}
+          kicker={t(language, "drawing")}
+          headerAside={(
+            <span
+              className={`geometry-header-status ${drawValidation.valid ? "is-approved" : "is-pending"}`}
+              aria-label={areaGeometryStatus(language, draftVertices.length, drawValidation)}
+            >
+              {drawValidation.valid ? "✓ Approved" : "… Pending"} · {draftVertices.length}/{AREA_MAX_VERTICES}
+            </span>
+          )}
+          headerActions={() => (
+            <>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                disabled={draftVertices.length === 0}
+                onClick={() => setDraftVertices((current) => current.slice(0, -1))}
+                aria-label={t(language, "undo")}
+              >↶</button>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                onClick={cancelDrawing}
+                aria-label={t(language, "cancel")}
+              >×</button>
+              <button
+                className="field-sheet-header-action field-sheet-header-action-confirm"
+                type="button"
+                disabled={!drawValidation.valid}
+                onClick={saveDraftArea}
+                aria-label={t(language, "save")}
+              >✓</button>
+            </>
+          )}
+          showClose={false}
+          onClose={cancelDrawing}
+          initialSnap="expanded"
+          retractable
+          initialRetracted
+          overlayClassName="map-context-overlay map-interaction-overlay"
+          className="map-context-hub map-mode-hub"
+        >
+          <div className="map-context-content">
+            <p>{t(language, "drawHint")}</p>
+            <p className={"geometry-status " + (drawValidation.valid ? "is-valid" : "is-invalid")}>
+              {areaGeometryStatus(language, draftVertices.length, drawValidation)}
+            </p>
+            <div className="mode-actions three-actions">
+              <button className="button secondary" type="button" onClick={cancelDrawing}>{t(language, "cancel")}</button>
+              <button className="button secondary" type="button" disabled={draftVertices.length === 0} onClick={() => setDraftVertices((current) => current.slice(0, -1))}>{t(language, "undo")}</button>
+              <button className="button primary" type="button" disabled={!drawValidation.valid} onClick={saveDraftArea}>{t(language, "save")}</button>
             </div>
-            <span className="team-color-preview" style={{ backgroundColor: activeTeam?.color ?? "#2563eb" }} aria-hidden="true" />
           </div>
-          <p>{t(language, "drawHint")}</p>
-          <p className={`geometry-status ${drawValidation.valid ? "is-valid" : "is-invalid"}`}>
-            {drawValidation.valid
-              ? t(language, "readySaveCorners", { count: draftVertices.length })
-              : geometryReason(language, drawValidation.reason)}
-          </p>
-          <div className="mode-actions three-actions">
-            <button className="button secondary" type="button" onClick={cancelDrawing}>{t(language, "cancel")}</button>
-            <button className="button secondary" type="button" disabled={draftVertices.length === 0} onClick={() => setDraftVertices((current) => current.slice(0, -1))}>{t(language, "undo")}</button>
-            <button className="button primary" type="button" disabled={!drawValidation.valid} onClick={saveDraftArea}>{t(language, "save")}</button>
-          </div>
-        </section>
+        </FieldHub>
       ) : null}
 
       {mode === "street-draw" ? (
-        <section className="mode-sheet" aria-label={t(language, "saveStreet")}>
-          <div className="mode-title-row">
-            <div>
-              <span className="eyebrow">{t(language, "streetMode")}</span>
-              <strong>{selectedArea?.name || t(language, "area")}</strong>
+        <FieldHub
+          open
+          title={selectedArea ? nextStreetName(snapshot.tasks, selectedArea.id, language) : t(language, "street")}
+          kicker={t(language, "streetMode")}
+          headerActions={() => (
+            <>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                disabled={streetDraftVertices.length === 0}
+                onClick={() => setStreetDraftVertices((current) => current.slice(0, -1))}
+                aria-label={t(language, "undo")}
+              >↶</button>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                onClick={cancelStreetDrawing}
+                aria-label={t(language, "cancel")}
+              >×</button>
+              <button
+                className="field-sheet-header-action field-sheet-header-action-confirm"
+                type="button"
+                disabled={!streetValidation.valid}
+                onClick={saveStreetTask}
+                aria-label={t(language, "saveStreet")}
+              >✓</button>
+            </>
+          )}
+          showClose={false}
+          onClose={cancelStreetDrawing}
+          initialSnap="expanded"
+          retractable
+          initialRetracted
+          overlayClassName="map-context-overlay map-interaction-overlay"
+          className="map-context-hub map-mode-hub"
+        >
+          <div className="map-context-content">
+            <p>{t(language, "streetHint")}</p>
+            <p className={"geometry-status " + (streetValidation.valid ? "is-valid" : "is-invalid")}>
+              {streetValidation.valid
+                ? t(language, "readySaveStreet", { count: streetDraftVertices.length })
+                : geometryReason(language, streetValidation.reason)}
+            </p>
+            <div className="mode-actions three-actions">
+              <button className="button secondary" type="button" onClick={cancelStreetDrawing}>{t(language, "cancel")}</button>
+              <button className="button secondary" type="button" disabled={streetDraftVertices.length === 0} onClick={() => setStreetDraftVertices((current) => current.slice(0, -1))}>{t(language, "undo")}</button>
+              <button className="button primary" type="button" disabled={!streetValidation.valid} onClick={saveStreetTask}>{t(language, "saveStreet")}</button>
             </div>
-            <span className="team-color-preview" style={{ backgroundColor: streetColor }} aria-hidden="true" />
           </div>
-          <p>{t(language, "streetHint")}</p>
-          <p className={`geometry-status ${streetValidation.valid ? "is-valid" : "is-invalid"}`}>
-            {streetValidation.valid
-              ? t(language, "readySaveStreet", { count: streetDraftVertices.length })
-              : geometryReason(language, streetValidation.reason)}
-          </p>
-          <div className="mode-actions three-actions">
-            <button className="button secondary" type="button" onClick={cancelStreetDrawing}>{t(language, "cancel")}</button>
-            <button className="button secondary" type="button" disabled={streetDraftVertices.length === 0} onClick={() => setStreetDraftVertices((current) => current.slice(0, -1))}>{t(language, "undo")}</button>
-            <button className="button primary" type="button" disabled={!streetValidation.valid} onClick={saveStreetTask}>{t(language, "saveStreet")}</button>
-          </div>
-        </section>
+        </FieldHub>
       ) : null}
 
       {mode === "edit" ? (
-        <section className="mode-sheet" aria-label={t(language, "editShape")}>
-          <div className="mode-title-row">
-            <div>
-              <span className="eyebrow">{t(language, "edit")}</span>
-              <strong>{selectedArea?.name || t(language, "area")}</strong>
+        <FieldHub
+          open
+          title={selectedArea?.name || t(language, "area")}
+          kicker={t(language, "edit")}
+          headerAside={(
+            <span
+              className={`geometry-header-status ${editValidation.valid ? "is-approved" : "is-pending"}`}
+              aria-label={areaGeometryStatus(language, editingVertices.length, editValidation)}
+            >
+              {editValidation.valid ? "✓ Approved" : "… Pending"} · {editingVertices.length}/{AREA_MAX_VERTICES}
+            </span>
+          )}
+          headerActions={() => (
+            <>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                disabled={editingUndoStack.length === 0}
+                onClick={undoEditVertex}
+                aria-label={t(language, "undo")}
+              >↶</button>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                onClick={cancelEditing}
+                aria-label={t(language, "cancel")}
+              >×</button>
+              <button
+                className="field-sheet-header-action field-sheet-header-action-confirm"
+                type="button"
+                disabled={!editValidation.valid || editingUndoStack.length === 0}
+                onClick={saveEditedArea}
+                aria-label={t(language, "saveChanges")}
+              >✓</button>
+            </>
+          )}
+          showClose={false}
+          onClose={cancelEditing}
+          initialSnap="expanded"
+          retractable
+          initialRetracted
+          overlayClassName="map-context-overlay map-interaction-overlay"
+          className="map-context-hub map-mode-hub"
+        >
+          <div className="map-context-content">
+            <p>
+              {selectedVertexIndex === null
+                ? t(language, "editHint")
+                : t(language, "editHintSelected", { index: selectedVertexIndex + 1 })}
+            </p>
+            <p className={"geometry-status " + (editValidation.valid ? "is-valid" : "is-invalid")}>
+              {areaGeometryStatus(language, editingVertices.length, editValidation)}
+            </p>
+            <div className="mode-actions three-actions">
+              <button className="button secondary" type="button" onClick={cancelEditing}>{t(language, "cancel")}</button>
+              <button className="button secondary" type="button" disabled={editingUndoStack.length === 0} onClick={undoEditVertex}>{t(language, "undo")}</button>
+              <button className="button primary" type="button" disabled={!editValidation.valid || editingUndoStack.length === 0} onClick={saveEditedArea}>{t(language, "saveChanges")}</button>
             </div>
-            <span className="team-color-preview" style={{ backgroundColor: editColor }} aria-hidden="true" />
           </div>
-          <p>
-            {selectedVertexIndex === null
-              ? t(language, "editHint")
-              : t(language, "editHintSelected", { index: selectedVertexIndex + 1 })}
-          </p>
-          <p className={`geometry-status ${editValidation.valid ? "is-valid" : "is-invalid"}`}>
-            {editValidation.valid ? t(language, "geometryValid") : geometryReason(language, editValidation.reason)}
-          </p>
-          <div className="mode-actions">
-            <button className="button secondary" type="button" onClick={cancelEditing}>{t(language, "cancel")}</button>
-            <button className="button primary" type="button" disabled={!editValidation.valid} onClick={saveEditedArea}>{t(language, "saveChanges")}</button>
-          </div>
-        </section>
+        </FieldHub>
       ) : null}
 
       {sheet === "settings" && mode === "browse" ? (
         <SettingsSheet
           language={language}
           campaign={snapshot.campaign}
+          areas={snapshot.areas}
           teams={snapshot.teams}
           access={access}
           currentCamera={currentCamera}
           initialAccessUrl={initialAccessUrl}
+          appearance={appearance}
+          onAppearanceChange={changeAppearance}
           onLanguageChange={setLanguage}
           onRenameCampaign={renameCampaign}
           onNormalizeCampaignName={normalizeCampaignName}
@@ -1424,6 +1689,8 @@ export default function App({
           onJumpToFocus={jumpToFocus}
           onRemoveFocus={removeFocus}
           onResetPersonalCamera={resetPersonalCamera}
+          onAreaTeamChange={updateAreaTeam}
+          onReload={() => window.location.reload()}
           onClose={() => { flushRxdbDrafts(); setSheet(null); }}
           collapsed={sheetCollapsed}
           onToggleCollapsed={() => setSheetCollapsed((collapsed) => !collapsed)}
@@ -1431,94 +1698,97 @@ export default function App({
       ) : null}
 
       {sheet === "campaign-comments" && mode === "browse" ? (
-        <section className={`bottom-sheet comment-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label="Kommentare">
-          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
-          <div className="sheet-header">
-            <div>
-              <span className="eyebrow">{t(language, "campaignSettings")}</span>
-              <strong>{language === "de" ? "Campaign-Kommentare" : "Campaign comments"}</strong>
-            </div>
-            <button className="icon-button" type="button" onClick={() => { flushRxdbDrafts(); setSheet(null); }} aria-label={t(language, "close")}>×</button>
+        <FieldHub
+          open
+          title={language === "de" ? "Campaign-Kommentare" : "Campaign comments"}
+          kicker={t(language, "campaignSettings")}
+          onClose={() => { flushRxdbDrafts(); setSheet(null); }}
+          initialSnap="expanded"
+          overlayClassName="map-context-overlay"
+          className="map-context-hub map-comment-hub"
+        >
+          <div className="map-context-content">
+            <CommentsContextPanel
+              campaignId={snapshot.campaign.id}
+              targetType="campaign"
+              targetId={snapshot.campaign.id}
+              targetLabel={campaignDisplayName}
+              targetTeamId={null}
+              access={access}
+              online={online}
+              language={language}
+            />
           </div>
-          <CommentsContextPanel
-            campaignId={snapshot.campaign.id}
-            targetType="campaign"
-            targetId={snapshot.campaign.id}
-            targetLabel={campaignDisplayName}
-            targetTeamId={null}
-            access={access}
-            online={online}
-            language={language}
-          />
-        </section>
+        </FieldHub>
       ) : null}
 
       {sheet === "teams" && mode === "browse" && isAdmin ? (
-        <section className={`bottom-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={t(language, "manageTeams")}>
-          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
-          <div className="sheet-header">
-            <div>
-              <span className="eyebrow">{t(language, "campaignSettings")}</span>
-              <strong>{t(language, "manageTeams")}</strong>
-            </div>
-            <button className="icon-button" type="button" onClick={() => { flushRxdbDrafts(); setSheet(null); }} aria-label={t(language, "close")}>×</button>
-          </div>
+        <FieldHub
+          open
+          title={t(language, "manageTeams")}
+          kicker={t(language, "campaignSettings")}
+          onClose={() => { flushRxdbDrafts(); setSheet(null); }}
+          initialSnap="expanded"
+          overlayClassName="map-context-overlay"
+          className="map-context-hub map-team-management-hub"
+        >
+          <div className="map-context-content">
+            <div className="team-list">
+              {snapshot.teams.length === 0 ? (
+                <div className="empty-state">
+                  <strong>{t(language, "noTeamTitle")}</strong>
+                  <p>{t(language, "noTeamBody")}</p>
+                </div>
+              ) : null}
 
-          <div className="team-list">
-            {snapshot.teams.length === 0 ? (
-              <div className="empty-state">
-                <strong>{t(language, "noTeamTitle")}</strong>
-                <p>{t(language, "noTeamBody")}</p>
-              </div>
-            ) : null}
-
-            {snapshot.teams.map((team) => (
-              <article className={`team-card ${team.id === activeTeamId ? "is-active" : ""}`} key={team.id}>
-                <div className="team-card-header">
-                  <span className="team-dot" style={{ backgroundColor: team.color }} aria-hidden="true" />
-                  <input
-                    aria-label={t(language, "teamName", { name: team.name || t(language, "team") })}
-                    value={team.name}
-                    onChange={(event) => updateTeam(team.id, { name: event.target.value })}
-                    onBlur={() => { normalizeTeamName(team); flushRxdbDrafts(); }}
-                    onKeyDown={(event) => { if (event.key === "Enter") flushRxdbDrafts(); }}
-                    maxLength={40}
-                  />
-                  <button className="small-action" type="button" onClick={() => setActiveTeamId(team.id)} aria-pressed={team.id === activeTeamId}>
-                    {team.id === activeTeamId ? t(language, "active") : t(language, "choose")}
+              {snapshot.teams.map((team) => (
+                <article className={"team-card " + (team.id === activeTeamId ? "is-active" : "")} key={team.id}>
+                  <div className="team-card-header">
+                    <span className="team-dot" style={{ backgroundColor: team.color }} aria-hidden="true" />
+                    <input
+                      aria-label={t(language, "teamName", { name: team.name || t(language, "team") })}
+                      value={team.name}
+                      onChange={(event) => updateTeam(team.id, { name: event.target.value })}
+                      onBlur={() => { normalizeTeamName(team); flushRxdbDrafts(); }}
+                      onKeyDown={(event) => { if (event.key === "Enter") flushRxdbDrafts(); }}
+                      maxLength={40}
+                    />
+                    <button className="small-action" type="button" onClick={() => setActiveTeamId(team.id)} aria-pressed={team.id === activeTeamId}>
+                      {team.id === activeTeamId ? t(language, "active") : t(language, "choose")}
+                    </button>
+                  </div>
+                  <div className="color-palette" aria-label={t(language, "teamColor", { name: team.name || t(language, "team") })}>
+                    {TEAM_COLORS.map((color) => {
+                      const usedByOther = snapshot.teams.some((other) => other.id !== team.id && other.color.toLowerCase() === color.value.toLowerCase());
+                      return (
+                        <button
+                          key={color.value}
+                          type="button"
+                          className={"color-swatch " + (team.color === color.value ? "is-selected" : "")}
+                          style={{ backgroundColor: color.value }}
+                          onClick={() => updateTeam(team.id, { color: color.value })}
+                          aria-label={t(language, "teamColor", { name: color.value }) + (usedByOther ? " · ×" : "")}
+                          aria-pressed={team.color === color.value}
+                        />
+                      );
+                    })}
+                    <label className="color-picker-label">
+                      <span>Eigene Farbe</span>
+                      <input type="color" value={/^#[0-9a-f]{6}$/iu.test(team.color) ? team.color : "#334155"} onChange={(event) => updateTeam(team.id, { color: event.target.value })} onBlur={flushRxdbDrafts} aria-label="Eigene Teamfarbe" />
+                    </label>
+                  </div>
+                  <button className="button danger full-width" type="button" onClick={() => void deleteTeam(team)} disabled={snapshot.areas.some((area) => area.teamId === team.id)} title={snapshot.areas.some((area) => area.teamId === team.id) ? "Zuerst alle Gebiete diesem Team entfernen oder umhängen." : undefined}>
+                    Team löschen
                   </button>
-                </div>
-                <div className="color-palette" aria-label={t(language, "teamColor", { name: team.name || t(language, "team") })}>
-                  {TEAM_COLORS.map((color) => {
-                    const usedByOther = snapshot.teams.some((other) => other.id !== team.id && other.color.toLowerCase() === color.value.toLowerCase());
-                    return (
-                      <button
-                        key={color.value}
-                        type="button"
-                        className={`color-swatch ${team.color === color.value ? "is-selected" : ""}`}
-                        style={{ backgroundColor: color.value }}
-                        onClick={() => updateTeam(team.id, { color: color.value })}
-                        aria-label={`${t(language, "teamColor", { name: color.value })}${usedByOther ? " · ×" : ""}`}
-                        aria-pressed={team.color === color.value}
-                      />
-                    );
-                  })}
-                  <label className="color-picker-label">
-                    <span>Eigene Farbe</span>
-                    <input type="color" value={/^#[0-9a-f]{6}$/iu.test(team.color) ? team.color : "#334155"} onChange={(event) => updateTeam(team.id, { color: event.target.value })} onBlur={flushRxdbDrafts} aria-label="Eigene Teamfarbe" />
-                  </label>
-                </div>
-                <button className="button danger full-width" type="button" onClick={() => deleteTeam(team)} disabled={snapshot.areas.some((area) => area.teamId === team.id)} title={snapshot.areas.some((area) => area.teamId === team.id) ? "Zuerst alle Gebiete diesem Team entfernen oder umhängen." : undefined}>
-                  Team löschen
-                </button>
-              </article>
-            ))}
-          </div>
+                </article>
+              ))}
+            </div>
 
-          <button className="button primary full-width" type="button" onClick={createTeam}>
-            {t(language, "addTeam")}
-          </button>
-        </section>
+            <button className="button primary full-width" type="button" onClick={createTeam}>
+              {t(language, "addTeam")}
+            </button>
+          </div>
+        </FieldHub>
       ) : null}
 
       {sheet === "collection-admin" && mode === "browse" && isAdmin ? (
@@ -1535,180 +1805,252 @@ export default function App({
         />
       ) : null}
 
-      {networkWorkspace.panel}
-      {sheet === "area" && mode === "browse" && !networkWorkspace.active && selectedArea ? (
-        <section className={`bottom-sheet compact-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={t(language, "area")}>
-          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
-          <div className="sheet-header">
-            <div className="area-heading">
-              <span className="team-dot large-dot" style={{ backgroundColor: selectedAreaTeam?.color ?? "#64748b" }} aria-hidden="true" />
-              <div>
-                <span className="eyebrow">{t(language, "area")}</span>
-                <strong>{selectedArea.name.trim() || t(language, "area")}</strong>
-              </div>
+      {networkWorkspace.panelState ? <NetworkWorkspacePanel state={networkWorkspace.panelState} /> : null}
+      {sheet === "area-name" && mode === "browse" && !networkWorkspace.active && selectedArea && canEditSelectedArea ? (
+        <FieldHub
+          open
+          title={selectedArea.name.trim() || t(language, "area")}
+          kicker={t(language, "name")}
+          headerAside={<span className="team-dot large-dot" style={{ backgroundColor: selectedAreaTeam?.color ?? "#64748b" }} aria-hidden="true" />}
+          onClose={cancelAreaName}
+          initialSnap="compact"
+          overlayClassName="map-context-overlay"
+          className="map-context-hub map-area-name-hub"
+        >
+          <div className="map-context-content">
+            <label className="field-label">
+              <span>{t(language, "name")}</span>
+              <input
+                autoFocus
+                value={areaNameDraft}
+                onChange={(event) => setAreaNameDraft(event.target.value)}
+                maxLength={60}
+              />
+            </label>
+            <div className="mode-actions">
+              <button className="button secondary" type="button" onClick={cancelAreaName}>{t(language, "cancel")}</button>
+              <button className="button primary" type="button" onClick={saveAreaName}>{t(language, "saveChanges")}</button>
             </div>
-            <button className="icon-button" type="button" onClick={() => { setSelectedAreaId(null); setSelectedTaskId(null); setSheet(null); }} aria-label={t(language, "close")}>×</button>
           </div>
+        </FieldHub>
+      ) : null}
 
-          {canEditSelectedArea ? (
-            <div className="area-fields">
-              <label className="field-label">
-                <span>{t(language, "name")}</span>
-                <input value={selectedArea.name} onChange={(event) => updateSelectedArea({ name: event.target.value })} onBlur={normalizeAreaName} maxLength={60} />
-              </label>
-              <label className="field-label">
-                <span>{t(language, "team")}</span>
-                <select value={selectedArea.teamId} disabled={!isAdmin} onChange={(event) => updateSelectedArea({ teamId: event.target.value })}>
-                  {snapshot.teams.map((team) => <option value={team.id} key={team.id}>{team.name.trim() || t(language, "team")}</option>)}
-                </select>
-              </label>
-            </div>
-          ) : null}
+      {sheet === "area" && mode === "browse" && !networkWorkspace.active && selectedArea ? (
+        <FieldHub
+          open
+          title={selectedArea.name.trim() || t(language, "area")}
+          kicker={t(language, "area")}
+          headerAside={<span className="team-dot large-dot" style={{ backgroundColor: selectedAreaTeam?.color ?? "#64748b" }} aria-hidden="true" />}
+          onTitleClick={canEditSelectedArea ? openAreaNameEditor : undefined}
+          onClose={() => { setSelectedAreaId(null); setSelectedTaskId(null); setAreaNameDraft(""); setAreaNameEditing(false); setSheet(null); }}
+          initialSnap="expanded"
+          retractable
+          overlayClassName="map-context-overlay"
+          className="map-context-hub map-area-hub"
+        >
+          <div className="map-context-content">
+            {areaNameEditing ? (
+              <div className="area-title-editor">
+                <label className="field-label">
+                  <span>{t(language, "name")}</span>
+                  <input
+                    autoFocus
+                    value={areaNameDraft}
+                    onChange={(event) => setAreaNameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") saveAreaName();
+                      if (event.key === "Escape") cancelAreaName();
+                    }}
+                    maxLength={60}
+                  />
+                </label>
+                <div className="mode-actions">
+                  <button className="button secondary" type="button" onClick={cancelAreaName}>{t(language, "cancel")}</button>
+                  <button className="button primary" type="button" onClick={saveAreaName}>{t(language, "saveChanges")}</button>
+                </div>
+              </div>
+            ) : null}
 
-          {canEditSelectedArea ? (
-            <>
-              <button className="button secondary full-width" type="button" onClick={startStreetDrawing}>{t(language, "addManualStreet")}</button>
-              <div className="area-actions secondary-row">
+            {canEditSelectedArea ? (
+              <div className="area-action-grid">
+                <button className="button secondary area-action-manual" type="button" onClick={startStreetDrawing}>{t(language, "addManualStreet")}</button>
                 <button className="button secondary" type="button" onClick={startEditing}>{t(language, "editShape")}</button>
                 <button className="button danger" type="button" onClick={deleteSelectedArea}>{t(language, "deleteArea")}</button>
               </div>
-            </>
-          ) : null}
+            ) : null}
 
-          {networkWorkspace.areaActions(selectedArea, canEditSelectedArea, canChangeTaskStatusInArea(selectedArea))}
-
-          {selectedAreaHouseTasks.length > 0 ? (
-            <div className="context-task-list">
-              <div className="context-task-list-header">
-                <strong>{language === "de" ? "Haus-Aufgaben" : "House tasks"}</strong>
-                <span>{selectedAreaHouseTasks.length}</span>
-              </div>
-              {selectedAreaHouseTasks.map((task) => (
-                <button className="context-task-row" type="button" key={task.id} onClick={() => selectHouseTask(task.id)}>
-                  <span>{task.label.trim() || (language === "de" ? "Haus" : "House")}</span>
-                  <small>{taskStatusLabel(language, task.status)}</small>
-                </button>
-              ))}
+            <div className="area-tools-row">
+              {networkWorkspace.areaActions(selectedArea, canEditSelectedArea, canChangeTaskStatusInArea(selectedArea))}
+              <CommentsContextPanel
+                compact
+                campaignId={snapshot.campaign.id}
+                targetType="area"
+                targetId={selectedArea.id}
+                targetLabel={selectedArea.name.trim() || t(language, "area")}
+                targetTeamId={selectedArea.teamId}
+                access={access}
+                online={online}
+                language={language}
+              />
             </div>
-          ) : null}
 
-          <CommentsContextPanel
-            campaignId={snapshot.campaign.id}
-            targetType="area"
-            targetId={selectedArea.id}
-            targetLabel={selectedArea.name.trim() || t(language, "area")}
-            targetTeamId={selectedArea.teamId}
-            access={access}
-            online={online}
-            language={language}
-          />
-        </section>
+            {selectedAreaHouseTasks.length > 0 ? (
+              <section className="context-task-list" aria-label={language === "de" ? "Haus-Aufgaben" : "House tasks"}>
+                <button
+                  className="context-task-list-header"
+                  type="button"
+                  aria-expanded={areaTasksExpanded}
+                  onClick={() => setAreaTasksExpanded((current) => !current)}
+                >
+                  <span>
+                    <strong>{language === "de" ? "Haus-Aufgaben" : "House tasks"}</strong>
+                    <small>{selectedAreaProgressLabel}</small>
+                  </span>
+                  <b>{selectedAreaHouseTasks.length.toLocaleString(language === "de" ? "de-DE" : "en-US")}</b>
+                </button>
+                {areaTasksExpanded ? selectedAreaHouseTasks.map((task) => (
+                  <button className="context-task-row" type="button" key={task.id} onClick={() => selectHouseTask(task.id)}>
+                    <span>{task.label.trim() || (language === "de" ? "Haus" : "House")}</span>
+                    <small>{taskStatusLabel(language, task.status)}</small>
+                  </button>
+                )) : null}
+              </section>
+            ) : null}
+          </div>
+        </FieldHub>
       ) : null}
 
       {sheet === "task" && mode === "browse" && !networkWorkspace.active && selectedTask ? (
-        <section className={`bottom-sheet task-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={t(language, "streetMode")}>
-          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
-          <div className="sheet-header">
-            <div className="area-heading">
-              <span className="team-dot large-dot" style={{ backgroundColor: selectedTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />
-              <div>
-                <span className="eyebrow">{t(language, "streetMode")} · {selectedTaskArea?.name || t(language, "area")}</span>
-                <strong>{selectedTask.label.trim() || t(language, "street")}</strong>
+        <FieldHub
+          open
+          title={selectedTask.label.trim() || t(language, "street")}
+          kicker={t(language, "streetMode") + " · " + (selectedTaskArea?.name || t(language, "area"))}
+          headerAside={<span className="team-dot large-dot" style={{ backgroundColor: selectedTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />}
+          onTitleClick={canEditSelectedTask && !selectedTaskIsAutoPrepared ? openStreetNameEditor : undefined}
+          onClose={() => { setSelectedTaskId(null); setSheet(null); setStreetNameEditing(false); setStreetNameDraft(""); }}
+          initialSnap="expanded"
+          retractable
+          overlayClassName="map-context-overlay"
+          className="map-context-hub map-task-hub"
+        >
+          <div className="map-context-content">
+            {streetNameEditing ? (
+              <div className="task-title-editor">
+                <label className="field-label">
+                  <span>{t(language, "name")}</span>
+                  <input
+                    autoFocus
+                    value={streetNameDraft}
+                    onChange={(event) => setStreetNameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") saveStreetName();
+                      if (event.key === "Escape") cancelStreetNameEditor();
+                    }}
+                    maxLength={60}
+                  />
+                </label>
+                <div className="mode-actions">
+                  <button className="button secondary" type="button" onClick={cancelStreetNameEditor}>{t(language, "cancel")}</button>
+                  <button className="button primary" type="button" onClick={saveStreetName}>{t(language, "saveChanges")}</button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="task-status-tools">
+              <div className="status-grid" aria-label={t(language, "current")}>
+                {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    disabled={!canChangeSelectedTaskStatus}
+                    className={"status-button status-" + status + " " + (selectedTask.status === status ? "is-selected" : "")}
+                    aria-pressed={selectedTask.status === status}
+                    onClick={() => changeTaskStatus(status)}
+                  >
+                    {taskStatusLabel(language, status)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="task-auxiliary-actions">
+                <CommentsContextPanel
+                  compact
+                  campaignId={snapshot.campaign.id}
+                  targetType="street-task"
+                  targetId={selectedTask.id}
+                  targetLabel={selectedTask.label.trim() || t(language, "street")}
+                  targetTeamId={selectedTaskArea?.teamId ?? null}
+                  access={access}
+                  online={online}
+                  language={language}
+                />
+
+                {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
+                  <button
+                    className="button danger task-delete task-delete-icon-button"
+                    type="button"
+                    onClick={deleteSelectedTask}
+                    aria-label={t(language, "deleteStreet")}
+                    title={t(language, "deleteStreet")}
+                  >
+                    <svg className="task-delete-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 7h14M10 11v6M14 11v6M8 7l1-3h6l1 3m-10 0 .7 13h8.6L16 7" />
+                    </svg>
+                  </button>
+                ) : null}
               </div>
             </div>
-            <button className="icon-button" type="button" onClick={() => { setSelectedTaskId(null); setSheet(null); }} aria-label={t(language, "close")}>×</button>
           </div>
-
-          {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
-            <label className="field-label">
-              <span>{t(language, "name")}</span>
-              <input value={selectedTask.label} onChange={(event) => updateSelectedTask({ label: event.target.value })} onBlur={normalizeTaskLabel} maxLength={60} />
-            </label>
-          ) : null}
-
-          <div className="task-current-status">
-            <span>{t(language, "current")}</span>
-            <strong>{taskStatusLabel(language, selectedTask.status)}</strong>
-          </div>
-
-          <div className="status-grid" aria-label={t(language, "current")}>
-            {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
-              <button
-                key={status}
-                type="button"
-                disabled={!canChangeSelectedTaskStatus}
-                className={`status-button status-${status} ${selectedTask.status === status ? "is-selected" : ""}`}
-                aria-pressed={selectedTask.status === status}
-                onClick={() => changeTaskStatus(status)}
-              >
-                {taskStatusLabel(language, status)}
-              </button>
-            ))}
-          </div>
-
-          {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
-            <button className="button danger full-width task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>
-          ) : null}
-
-          <CommentsContextPanel
-            campaignId={snapshot.campaign.id}
-            targetType="street-task"
-            targetId={selectedTask.id}
-            targetLabel={selectedTask.label.trim() || t(language, "street")}
-            targetTeamId={selectedTaskArea?.teamId ?? null}
-            access={access}
-            online={online}
-            language={language}
-          />
-        </section>
+        </FieldHub>
       ) : null}
 
       {sheet === "house" && mode === "browse" && selectedHouseTask ? (
-        <section className={`bottom-sheet task-sheet commentable-task-sheet ${sheetCollapsed ? "is-collapsed" : ""}`} aria-label={language === "de" ? "Haus-Aufgabe" : "House task"}>
-          <button className="sheet-handle-button" type="button" onClick={() => setSheetCollapsed((collapsed) => !collapsed)} aria-label={sheetToggleLabel} aria-expanded={!sheetCollapsed}><span className="sheet-handle" aria-hidden="true" /></button>
-          <div className="sheet-header">
-            <div className="area-heading">
-              <span className="team-dot large-dot" style={{ backgroundColor: selectedHouseTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />
-              <div>
-                <span className="eyebrow">{language === "de" ? "Haus-Aufgabe" : "House task"} · {selectedHouseTaskArea?.name || t(language, "area")}</span>
-                <strong>{selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}</strong>
+        <FieldHub
+          open
+          title={selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}
+          kicker={(language === "de" ? "Haus-Aufgabe" : "House task") + " · " + (selectedHouseTaskArea?.name || t(language, "area"))}
+          headerAside={<span className="team-dot large-dot" style={{ backgroundColor: selectedHouseTaskTeam?.color ?? "#64748b" }} aria-hidden="true" />}
+          onClose={() => { setSelectedHouseTaskId(null); setSheet(selectedAreaId ? "area" : null); }}
+          initialSnap="expanded"
+          retractable
+          overlayClassName="map-context-overlay"
+          className="map-context-hub map-house-hub"
+        >
+          <div className="map-context-content">
+            <div className="task-status-tools">
+              <div className="status-grid" aria-label={t(language, "current")}>
+                {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    disabled={!canChangeSelectedHouseTaskStatus}
+                    className={"status-button status-" + status + " " + (selectedHouseTask.status === status ? "is-selected" : "")}
+                    aria-pressed={selectedHouseTask.status === status}
+                    onClick={() => changeHouseTaskStatus(status)}
+                  >
+                    {taskStatusLabel(language, status)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="task-auxiliary-actions">
+                <CommentsContextPanel
+                  compact
+                  campaignId={snapshot.campaign.id}
+                  targetType="house-task"
+                  targetId={selectedHouseTask.id}
+                  targetLabel={selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}
+                  targetTeamId={selectedHouseTaskArea?.teamId ?? null}
+                  access={access}
+                  online={online}
+                  language={language}
+                />
               </div>
             </div>
-            <button className="icon-button" type="button" onClick={() => { setSelectedHouseTaskId(null); setSheet(selectedAreaId ? "area" : null); }} aria-label={t(language, "close")}>×</button>
           </div>
-
-          <div className="task-current-status">
-            <span>{t(language, "current")}</span>
-            <strong>{taskStatusLabel(language, selectedHouseTask.status)}</strong>
-          </div>
-
-          <div className="status-grid" aria-label={t(language, "current")}>
-            {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
-              <button
-                key={status}
-                type="button"
-                disabled={!canChangeSelectedHouseTaskStatus}
-                className={`status-button status-${status} ${selectedHouseTask.status === status ? "is-selected" : ""}`}
-                aria-pressed={selectedHouseTask.status === status}
-                onClick={() => changeHouseTaskStatus(status)}
-              >
-                {taskStatusLabel(language, status)}
-              </button>
-            ))}
-          </div>
-
-          <CommentsContextPanel
-            campaignId={snapshot.campaign.id}
-            targetType="house-task"
-            targetId={selectedHouseTask.id}
-            targetLabel={selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}
-            targetTeamId={selectedHouseTaskArea?.teamId ?? null}
-            access={access}
-            online={online}
-            language={language}
-          />
-        </section>
+        </FieldHub>
       ) : null}
+
     </main>
   );
 }

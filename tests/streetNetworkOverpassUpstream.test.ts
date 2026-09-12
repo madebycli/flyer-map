@@ -40,6 +40,54 @@ test('default Overpass preparation fails over when the primary is rate limited',
   assert.deepEqual([...new Set(urls)], [primary, fallback]);
 });
 
+test('building preparation skips one open OSM building instead of aborting the tile', async () => {
+  const db = new NetworkD1();
+  seedNetwork(db);
+  let buildingQuery = false;
+
+  const result = await prepareAreaTasks(db, 'campaign_n', 'area_n', {
+    fetchImpl: async (_input, init) => {
+      const query = decodeURIComponent(String(init?.body ?? '')).replaceAll('+', ' ');
+      if (query.includes('way["building"]')) {
+        buildingQuery = true;
+        const response = networkOsm();
+        const payload = await response.json() as { elements: unknown[] };
+        payload.elements.push({
+          type: 'way',
+          id: 999,
+          tags: { building: 'yes' },
+          geometry: [{ lon: 13.003, lat: 51.006 }, { lon: 13.004, lat: 51.006 }],
+        });
+        return new Response(JSON.stringify(payload));
+      }
+      return networkOsm();
+    },
+  });
+
+  assert.equal(result.outcome, 'ready');
+  assert.equal(buildingQuery, true);
+  assert.equal(result.houseCount, 3);
+});
+
+test('default Overpass preparation fails over when the primary returns a partial building response', async () => {
+  const db = new NetworkD1();
+  seedNetwork(db);
+  const urls: string[] = [];
+
+  const result = await prepareAreaTasks(db, 'campaign_n', 'area_n', {
+    fetchImpl: async (input) => {
+      const url = String(input);
+      urls.push(url);
+      return url === primary
+        ? new Response(JSON.stringify({ remark: 'runtime error', elements: [] }))
+        : networkOsm();
+    },
+  });
+
+  assert.equal(result.outcome, 'ready');
+  assert.deepEqual([...new Set(urls)], [primary, fallback]);
+});
+
 test('default Overpass preparation fails over when fetch throws a transport error', async () => {
   const db = new NetworkD1();
   seedNetwork(db);

@@ -7,8 +7,8 @@
  * Street/House status surface. These contexts require the map as visual
  * evidence, so they intentionally do not use backdrop blur.
  *
- * Browse/admin hubs such as Settings, Team management, Campaign comments,
- * Collection admin and the launcher keep their existing visual treatment.
+ * Browse/admin hubs share the same chrome; map-facing overlays additionally expose
+ * an explicit pointer-through contract for drawing and area selection.
  */
 .map-toolbar,
 .mode-sheet,
@@ -47,4 +47,219 @@
 .bottom-sheet.field-sheet-enhanced.task-sheet:not(.commentable-task-sheet) .sheet-header {
   min-height: calc(var(--field-hud-close-size) + var(--field-hud-header-padding-top) + var(--field-hud-header-padding-bottom));
   margin-bottom: 0.85rem;
+}
+
+
+/*
+ * Map detail and edit surfaces use the same FieldHub/FieldBottomSheet
+ * contract as Team, Rooms, Admin and Settings. Their bodies keep the
+ * existing map controls; only the legacy outer sheet chrome is removed.
+ */
+.field-bottom-sheet.map-context-hub {
+  width: min(31rem, 100%);
+}
+
+.field-sheet-header .geometry-header-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: max-content;
+  margin: 0;
+  padding: 0.34rem 0.48rem;
+  border: 1px solid #b8d7bf;
+  border-radius: 999px;
+  color: #1c6a39;
+  background: #edf8ef;
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.field-sheet-header .geometry-header-status.is-pending {
+  border-color: #e3c58e;
+  color: #84531f;
+  background: #fff8e8;
+}
+
+.map-mode-hub .field-sheet-header {
+  gap: 0.55rem;
+}
+
+.field-bottom-sheet.streets-field-hub {
+  max-height: min(72dvh, 40rem);
+}
+
+.map-context-hub .map-context-content {
+  display: grid;
+  gap: 0.58rem;
+  min-width: 0;
+}
+
+.map-context-hub .map-context-content > p {
+  margin: 0.1rem 0 0;
+  color: #526058;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.map-context-hub .mode-actions {
+  margin-top: 0.1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.map-context-hub .area-fields {
+  margin: 0;
+}
+
+.map-context-hub .area-actions.secondary-row {
+  margin-top: 0;
+}
+
+.map-context-hub .context-task-list {
+  margin-top: 0.05rem;
+}
+
+.map-context-hub .button {
+  min-height: 2.6rem;
+  padding-block: 0.55rem;
+}
+
+.map-context-hub .status-button {
+  min-height: 2.7rem;
+}
+
+.area-actions-content {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.area-tools-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.area-tools-row > .area-actions-content {
+  min-width: 0;
+}
+
+.area-tools-row > .comments-context-panel {
+  align-self: start;
+  margin-top: 0;
+}
+
+.area-tools-row:has(> .comments-context-panel.is-expanded) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.area-tools-row:has(> .comments-context-panel.is-expanded) > .comments-context-panel {
+  width: 100%;
+}
+
+.area-preparation-progress {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.7rem;
+  border: 1px solid #d7e4d9;
+  border-radius: 0.78rem;
+  background: #f1f7f2;
+}
+
+.area-preparation-progress-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.area-preparation-progress-header strong {
+  font-size: 0.82rem;
+}
+
+.area-preparation-progress-header span {
+  color: #657067;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.area-preparation-progress progress {
+  display: block;
+  width: 100%;
+  height: 0.75rem;
+  accent-color: #1f6b3a;
+}
+
+.area-preparation-progress p {
+  margin: 0;
+  color: #526058;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.field-bottom-sheet.map-context-hub .comments-context-panel {
+  margin-top: 0.05rem;
+}
+
+@media (max-width: 699px) {
+  .field-bottom-sheet.map-area-selection-hub {
+    width: 100%;
+  }
+
+  .field-bottom-sheet.map-context-hub {
+    width: 100%;
+  }
+
+  .field-bottom-sheet.map-context-hub .field-sheet-body {
+    padding-inline: 0.72rem;
+  }
+}
+
+
+/* Map-facing FieldHubs keep the basemap sharp and let interactive modes reach the map. */
+.field-sheet-overlay.map-context-overlay {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
+}
+
+.field-sheet-overlay.map-context-overlay > .field-bottom-sheet {
+  pointer-events: auto;
+}
+
+.field-sheet-overlay.map-interaction-overlay {
+  pointer-events: none;
+}
+
+.field-sheet-overlay.map-interaction-overlay > .field-bottom-sheet {
+  pointer-events: auto;
+}
+
+.field-sheet-overlay.map-area-selection-overlay {
+  background: transparent;
+}
+
+.field-bottom-sheet.map-area-selection-hub {
+  width: min(30rem, 100%);
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.field-bottom-sheet.map-area-selection-hub .field-sheet-body {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.field-bottom-sheet.map-context-hub .field-sheet-body {
+  padding-top: 0.68rem;
+}
+
+.field-bottom-sheet.map-context-hub.field-sheet-retracted .field-sheet-body {
+  padding-top: 0;
 }

@@ -1,5 +1,5 @@
-version: 2
-last_updated: 2026-09-05
+version: 5
+last_updated: 2026-09-12
 purpose: Organizer/Admin continuation overlay for the main docs/context-map.yaml routing graph.
 
 entrypoints:
@@ -15,7 +15,7 @@ entrypoints:
 
 routing_rules:
   - for Organization, Organizer, Admin accounts, MFA, invites, security center, role templates, campaign tenancy or Admin staging, load this overlay after the normal AGENTS/CURRENT/context-map entrypoints
-  - for the approved Field launcher/Rooms/comments/Streets/draggable-sheet continuation on PR 76, load context-field-ui-navigation and plan-031 after this overlay before changing PlatformShell, TeamHub/TeamCenter, App sheets or field-group UX
+  - for the approved Field launcher/Rooms/comments/Streets/draggable-sheet continuation on Draft PR #92, load context-field-ui-navigation and plan-031 after this overlay before changing PlatformShell, TeamHub/TeamCenter, App sheets or field-group UX
   - GitHub remote refs, PR state, exact-head CI and the latest successful staging artifact outrank embedded handoff SHAs
   - ADR-0026 is accepted and governs Organization identity/authorization
   - Organization is the tenant boundary; account identity is global and memberships are Organization-scoped
@@ -28,21 +28,31 @@ routing_rules:
   - static Cloudflare assets are hardened through public/_headers while Worker-generated organizer responses are hardened in worker/indexOrganizer.ts
   - the Field primary launcher is PlatformShell/buildPlatformLauncherItems/.platform-menu-grid; do not rebuild Rooms/Fortschritt/Kommentare as TeamCenter tabs
   - Field Group credential rotation preserves existing memberships; current credentials are hash-only and cannot be re-shown without an explicit reviewed architecture change
-  - never mark PR 76 ready, merge it, deploy Production or apply Production migrations without explicit separate approval
+  - never mark PR #92 ready, merge it, deploy Production or apply Production migrations without explicit separate approval
 
 current_runtime_proof:
-  last_verified_product_head: 0d45dc02e88d3a89fa6174211775f7d2b0e80c85
-  feature_ci_run: 33980904285
-  feature_ci_job: 101345820530
+  repository: madebycli/flyer-map
+  branch: fix/street-engine-smart-marking
+  pull_request: 92
+  base_branch: integration/main-street-runtime
+  last_verified_product_head: a3479f5bd0825f120fa8ae0d5e3d048d54fb6237
+  feature_ci_run: 34708939943
+  feature_ci_job: 103594017969
   feature_ci_conclusion: success
-  admin_staging_run: 33981025532
-  admin_staging_job: 101346148405
+  isolation_run: 34708938074
+  isolation_job: 103594012867
+  isolation_conclusion: success
+  admin_staging_run: 34708938075
+  admin_staging_job: 103594012869
   admin_staging_conclusion: success
   public_url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
-  d1_fingerprint_before_after: 47ea1432c290bd89089ee723b33e71950bcf40abafffcd0405261553eaac8088
+  dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }
+  tests_passed: 869
+  ui_checkpoint: Street detail keeps an equal-width 2x2 status grid; compact red Danger trash-icon and comment actions are stacked vertically in the adjacent action column
+  device_gate: MAP_RENDER_P0=OPEN; STREET_ENGINE_LIVE_READY=FALSE
   root_redirect: "302 / -> /login"
   explicit_field_entry: "200 /?campaign=..."
-  note: documentation commits follow this product proof; reverify the new remote head and exact-head CI before implementation
+  note: this proof is for the exact current head; reverify the new remote head and exact-head CI after every documentation or code commit
 
 nodes:
   - id: organizer-admin-live-context
@@ -78,7 +88,7 @@ nodes:
     type: plan
     status: active
     topics: [launcher, team, rooms, progress, comments, streets, draggable-sheets, street-flow, sync-status]
-    load_when: [implement approved Field UI restructure, PR 76 field UI continuation]
+    load_when: [implement approved Field UI restructure, PR 92 field UI continuation]
 
   - id: prompt-field-ui-navigation-latest
     path: docs/prompts/CONTINUE_FIELD_UI_NAVIGATION_LATEST.md

@@ -1,4 +1,5 @@
 import type { CampaignMutation } from "../src/domain/mutations.ts";
+import { hasBaseStorage, overlayStatements, type PreparedEntity } from './streetNetwork/baseStorage.ts';
 import {
   getCampaignRevision,
   hasHouseTasksTable,
@@ -752,6 +753,8 @@ export async function persistCampaignMutation(
   domainEvent: MutationDomainEvent | null = null,
   automationExecution: AutomationExecution | null = null,
   syncChanges: readonly RxdbChangeFeedEntry[] = [],
+  preparedChange?: PreparedEntity,
+  preparation?: {areaId:string;geometryHash:string;generation:string},
 ): Promise<MutationPersistenceResult> {
   const fingerprint = fingerprintOverride ?? (await fingerprintCampaignMutation(mutation));
   const existing = await getAppliedMutation(db, mutation.campaignId, mutation.id);
@@ -825,14 +828,33 @@ export async function persistCampaignMutation(
       writeToken,
     );
 
-  const domainStatements = collectionMutation
+  const compact=await hasBaseStorage(db);
+  const createdHouses=mutation.type==='house.create'?[mutation.payload]:mutation.type==='house.create-batch'?mutation.payload.houses:[];
+  const parentIds=[...new Set(createdHouses.flatMap(h=>h.parentStreetTaskId?[h.parentStreetTaskId]:[]))];
+  const legacyParents=compact&&parentIds.length?await db.prepare('SELECT id FROM tasks WHERE campaign_id=? AND id IN(SELECT value FROM json_each(?))').bind(mutation.campaignId,JSON.stringify(parentIds)).all<{id:string}>():null;
+  const legacyIds=new Set(legacyParents?.results.map(row=>row.id));
+  const chunkParents=legacyParents?createdHouses.filter(h=>h.parentStreetTaskId&&!legacyIds.has(h.parentStreetTaskId)):[];
+  const mappedIds=new Set(chunkParents.map(h=>h.taskId));
+  const storedMutation:CampaignMutation=mutation.type==='house.create'&&mappedIds.has(mutation.payload.taskId)?{...mutation,payload:{...mutation.payload,parentStreetTaskId:null}}
+    :mutation.type==='house.create-batch'&&mappedIds.size?{...mutation,payload:{...mutation.payload,houses:mutation.payload.houses.map(h=>mappedIds.has(h.taskId)?{...h,parentStreetTaskId:null}:h)}}:mutation;
+  const useOverlay=compact&&preparedChange&&await db.prepare('SELECT generation FROM street_base_areas WHERE campaign_id=? AND area_id=?').bind(mutation.campaignId,preparedChange.areaId).first();
+  const domainStatements = useOverlay
+    ? await overlayStatements(db,mutation.campaignId,preparedChange!.areaId,[preparedChange!],writeToken)
+    : collectionMutation
     ? collectionMutationStatements(db, mutation as import("../src/domain/mutations.ts").CollectionMutation, writeToken)
-    : [mutationStatement(db, mutation, writeToken, hasTaskSource, hasPreparation)];
+    : [mutationStatement(db, storedMutation, writeToken, hasTaskSource, hasPreparation)];
   const statements = [
     claim,
     ...domainStatements,
     ledger,
   ];
+  if(chunkParents.length)statements.push(db.prepare(`INSERT INTO street_manual_house_parents(campaign_id,house_id,area_id,parent_task_id)
+    SELECT ?,json_extract(value,'$.taskId'),json_extract(value,'$.areaId'),json_extract(value,'$.parentStreetTaskId') FROM json_each(?) WHERE EXISTS(SELECT 1 FROM campaigns WHERE id=? AND write_token=?)`)
+    .bind(mutation.campaignId,JSON.stringify(chunkParents),mutation.campaignId,writeToken));
+  if(preparation)statements.push(db.prepare(`INSERT INTO area_task_preparations(campaign_id,area_id,geometry_hash,generation,status,road_count,house_count,started_at,updated_at)
+    SELECT ?,?,?,?,'pending',0,0,?,? WHERE EXISTS(SELECT 1 FROM campaigns WHERE id=? AND write_token=?)
+    ON CONFLICT(campaign_id,area_id) DO UPDATE SET geometry_hash=excluded.geometry_hash,generation=excluded.generation,status='pending',started_at=excluded.started_at,updated_at=excluded.updated_at,ready_at=NULL,failed_at=NULL,last_error_code=NULL`)
+    .bind(mutation.campaignId,preparation.areaId,preparation.geometryHash,preparation.generation,mutation.createdAt,mutation.createdAt,mutation.campaignId,writeToken));
   if (domainEvent) {
     statements.push(domainEventStatement(db, mutation, writeToken, domainEvent));
   }
@@ -851,6 +873,7 @@ export async function persistCampaignMutation(
         writeToken,
         mutation.createdAt,
         syncChanges,
+        compact,
       ),
     );
   }

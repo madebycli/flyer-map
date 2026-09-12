@@ -2,6 +2,8 @@ import type { NetworkEvent } from './events.ts';
 import type { CampaignSnapshot, DistributionTask, HouseTask } from '../../src/domain/campaign.ts';
 import { rxdbChangeFeedEntriesForSnapshotDelta } from '../rxdbChangeFeed.ts';
 import type { D1DatabaseLike, D1PreparedStatement } from '../campaignRepository.ts';
+import { hasBaseStorage } from './baseStorage.ts';
+import { persistChunkSnapshot } from './chunkPersistence.ts';
 
 export function jsonChunks<T>(rows: readonly T[], limit = 400_000): T[][] {
   const chunks: T[][] = []; let chunk: T[] = [], bytes = 2;
@@ -21,6 +23,7 @@ export async function persistNetworkSnapshot(db: D1DatabaseLike, before: Campaig
   sourceTimestamp?:string; lease?:string; events?:NetworkEvent[];
   intent?: { id: string; fingerprint: string };
 }) {
+  if(await hasBaseStorage(db))return persistChunkSnapshot(db,before,after,options);
   const campaignId = before.campaign.id, token = crypto.randomUUID();
   const area = before.areas.find((candidate) => candidate.id === options.areaId)!;
   const guard = 'EXISTS (SELECT 1 FROM campaigns WHERE id = ? AND write_token = ?)';

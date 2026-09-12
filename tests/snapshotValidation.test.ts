@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
+import { AREA_MAX_VERTICES } from "../src/domain/geometry.ts";
 import { validateCampaignSnapshot } from "../worker/snapshotValidation.ts";
 
 function validSnapshot(): CampaignSnapshot {
@@ -102,6 +103,18 @@ test("rejects a polygon that self-intersects", () => {
       [8.60, 49.40],
     ],
   ];
+
+  const result = validateCampaignSnapshot(snapshot, "campaign_test-1");
+  assert.equal(result.valid, false);
+});
+
+test("rejects an Area with more than the supported editable vertex count", () => {
+  const snapshot = validSnapshot();
+  const vertices = Array.from(
+    { length: AREA_MAX_VERTICES + 1 },
+    (_, index) => [8.60 + index * 0.00001, 49.40] as [number, number],
+  );
+  snapshot.areas[0].geometry.coordinates = [[...vertices, vertices[0]]];
 
   const result = validateCampaignSnapshot(snapshot, "campaign_test-1");
   assert.equal(result.valid, false);

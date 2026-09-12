@@ -1,9 +1,7 @@
 name: Street Live Read-only Diagnostics
 
 on:
-  push:
-    branches: [integration/main-street-runtime]
-    paths: ['.github/workflows/street-live-diagnostics.yml']
+  # Remote D1 is account-budgeted. Run only a selected, locally verified candidate.
   workflow_dispatch:
 
 permissions:

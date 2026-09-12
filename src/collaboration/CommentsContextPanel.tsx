@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   createComment,
   deleteComment,
@@ -22,6 +22,7 @@ type Props = {
   access: AccessInfo | null;
   online: boolean;
   language: Language;
+  compact?: boolean;
 };
 
 function errorMessage(error: unknown, language: Language) {
@@ -86,6 +87,7 @@ export function CommentsContextPanel({
   access,
   online,
   language,
+  compact = false,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [comments, setComments] = useState<CommentItem[]>([]);
@@ -95,8 +97,10 @@ export function CommentsContextPanel({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorCanRetry, setErrorCanRetry] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const pendingCreate = useRef<{ id: string; body: string } | null>(null);
+  const submenuId = `comments-context-submenu-${useId().replaceAll(":", "")}`;
 
   const contextKey = `${campaignId}:${targetType}:${targetId}`;
   const canCreateFallback = useMemo(
@@ -111,11 +115,13 @@ export function CommentsContextPanel({
     setServerCanCreate(null);
     setError(null);
     setErrorCanRetry(false);
+    setHasFetched(false);
+    setRetryToken(0);
     pendingCreate.current = null;
   }, [contextKey]);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded || (hasFetched && retryToken === 0)) return;
     const controller = new AbortController();
     let cancelled = false;
 
@@ -153,16 +159,23 @@ export function CommentsContextPanel({
         setErrorCanRetry(commentErrorCanRetry(reason));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setHasFetched(true);
+          setRetryToken(0);
+        }
       });
 
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [campaignId, expanded, language, online, retryToken, targetId, targetType]);
+  }, [campaignId, expanded, hasFetched, language, online, retryToken, targetId, targetType]);
 
-  const retry = () => setRetryToken((current) => current + 1);
+  const retry = () => {
+    setHasFetched(false);
+    setRetryToken((current) => current + 1);
+  };
 
   const loadMore = async () => {
     if (!online || !nextCursor || loadingMore) return;
@@ -270,20 +283,24 @@ export function CommentsContextPanel({
   const canCreate = online && !loading && !initialReadFailed && (serverCanCreate ?? canCreateFallback);
 
   return (
-    <section className={`comments-context-panel comments-context-compact ${expanded ? "is-expanded" : ""}`} aria-label={labels.title}>
+    <section className={`comments-context-panel comments-context-compact ${compact ? "is-icon" : ""} ${expanded ? "is-expanded" : ""}`} aria-label={labels.title}>
       <button
         className="comments-context-toggle"
         type="button"
         aria-expanded={expanded}
+        aria-pressed={expanded}
+        aria-controls={submenuId}
+        aria-label={language === "de" ? "Kommentare ein- oder ausblenden" : "Toggle comments"}
+        title={language === "de" ? "Kommentare" : "Comments"}
         onClick={() => setExpanded((current) => !current)}
       >
         <span>💬</span>
-        <strong>{expanded ? (language === "de" ? "Kommentare schließen" : "Close comments") : (language === "de" ? "Kommentare anzeigen" : "Show comments")}</strong>
+        <strong>{language === "de" ? "Kommentare" : "Comments"}</strong>
         {comments.length > 0 ? <em>{comments.filter((comment) => !comment.deleted).length}</em> : null}
       </button>
 
       {expanded ? (
-        <div className="comments-context-submenu">
+        <div className="comments-context-submenu" id={submenuId}>
           {error ? (
             <div className="comments-context-error" role="alert">
               <span>{error}</span>

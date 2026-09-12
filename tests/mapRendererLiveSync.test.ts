@@ -25,9 +25,25 @@ test("MapLibre live source effects never drop a prop update while style work is 
 });
 
 test("style.load still hydrates every primary application GeoJSON source from latest refs", () => {
-  const styleLoad = source.slice(source.indexOf('map.once("style.load"'), source.indexOf('map.on("idle"'));
+  const styleLoad = source.slice(source.indexOf('const installCurrentStyle = () =>'), source.indexOf('map.on("idle"'));
+  assert.match(styleLoad, /map\.on\("style\.load", installCurrentStyle\);/);
   assert.match(styleLoad, /const current = dataRef\.current;/);
   assert.match(styleLoad, /syncAreaData\(map, current\.areas\);/);
   assert.match(styleLoad, /syncStreetData\(map, current\.tasks\);/);
   assert.match(styleLoad, /syncHouseData\(map, current\.houses\);/);
+  assert.match(styleLoad, /if \(map\.isStyleLoaded\(\)\) window\.setTimeout\(installCurrentStyle, 0\);/);
+});
+
+test("default renderer data path keeps complete GeoJSON setData writes", () => {
+  assert.match(source, /if \(streetSource\) streetSource\.setData\(streetsToGeoJson\(tasks\)\);/);
+  assert.match(source, /if \(houseSource\) houseSource\.setData\(housesToGeoJson\(houses\)\);/);
+  assert.match(source, /dataset\.applicationLayers/);
+  assert.match(source, /dataset\.missingApplicationLayers/);
+});
+
+test("mobile resume remeasures the map and rehydrates GeoJSON workers", () => {
+  assert.match(source, /window\.addEventListener\("pageshow", handlePageShow\)/);
+  assert.match(source, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /map\.resize\(\)/);
+  assert.match(source, /installCurrentStyle\(\);\s*map\.triggerRepaint\(\);/);
 });

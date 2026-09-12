@@ -6,6 +6,7 @@ import type { AccessContext } from "./access.ts";
 import { authorizeSnapshotWrite } from "./authorization.ts";
 import {
   loadCampaignSnapshot,
+  type CampaignSnapshotLoadOptions,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
 import { hasFieldSessionHistorySchema } from "./fieldSessionHistory.ts";
@@ -18,7 +19,10 @@ import {
   teamDeleteBlocker,
 } from "./mutationRepository.ts";
 import { validateCampaignMutation } from "./mutationValidation.ts";
-import { validateCampaignSnapshot } from "./snapshotValidation.ts";
+import { requestDatabase } from './requestDatabase.ts';
+import { hasBaseStorage } from './streetNetwork/baseStorage.ts';
+import { areaPreparationFingerprint } from './areaTaskPreparation.ts';
+import { validateCampaignSnapshotWithLegacyHouseTolerance } from "./snapshotValidation.ts";
 import { isPickupMutationInput } from "./pickupMutationRuntime.ts";
 import { handlePickupMutationRequest } from "./pickupMutationEntry.ts";
 import {
@@ -29,6 +33,7 @@ import {
   type AreaTaskPreparationOptions,
 } from "./areaTaskPreparation.ts";
 import { AUTO_AREA_PREPARATION_ENABLED } from "../src/domain/missionPolicy.ts";
+import type { CampaignMutation } from "../src/domain/mutations.ts";
 import {
   hasRxdbSyncSchema,
   rxdbChangeFeedEntriesForMutation,
@@ -36,6 +41,80 @@ import {
 
 const MAX_MUTATION_BYTES = 256_000;
 const MAX_PERSIST_ATTEMPTS = 3;
+
+function fullMutationSnapshotOptions(mutation: CampaignMutation): CampaignSnapshotLoadOptions {
+  return {
+    includeCollection: mutation.type.startsWith("collection."),
+    houseId: mutation.type === "house.set-status" || mutation.type === "house.rename"
+      ? mutation.payload.taskId
+      : undefined,
+  };
+}
+
+/**
+ * Admin mutations that touch only campaign metadata, Teams, or Areas do not
+ * need an unrelated distribution snapshot to validate or publish their own
+ * feed entry. Area deletion is additionally scoped to the target Area: a
+ * prepared Area is represented by Base Storage and therefore must not be
+ * expanded into every generated Street and House just to publish its delete.
+ * Scoped editors retain the full snapshot because authorization compares
+ * their complete Team and task boundary.
+ */
+function mutationSnapshotOptions(
+  mutation: CampaignMutation,
+  access: AccessContext,
+  compactAreaDelete = false,
+): CampaignSnapshotLoadOptions {
+  const full = fullMutationSnapshotOptions(mutation);
+  if (access.role !== "admin") return full;
+
+  switch (mutation.type) {
+    case "campaign.rename":
+    case "campaign.set-default-map-view":
+      return {
+        includeCollection: false,
+        includeTeams: false,
+        includeAreas: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "team.create":
+    case "team.update":
+      return {
+        includeCollection: false,
+        includeAreas: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "team.delete":
+      return {
+        includeCollection: false,
+        includeAreas: true,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "area.create":
+    case "area.rename":
+    case "area.update-geometry":
+      return {
+        includeCollection: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "area.delete":
+      return {
+        includeCollection: false,
+        includeTasks: !compactAreaDelete,
+        includeHouses: !compactAreaDelete,
+        // Legacy/non-prepared Areas still need their child rows for the
+        // individual RxDB tombstones. Prepared Areas use deletedAreaIds and
+        // the Area tombstone, so reading those children is unnecessary.
+        ...(compactAreaDelete ? {} : { areaId: mutation.payload.areaId }),
+      };
+    default:
+      return full;
+  }
+}
 
 const json = (data: unknown, init: ResponseInit = {}) =>
   Response.json(data, {
@@ -103,6 +182,7 @@ export async function handleCampaignMutation(
   context?: AreaPreparationExecutionContext,
   options?: AreaTaskPreparationOptions,
 ) {
+  db=requestDatabase(db);
   if (request.method !== "POST") {
     return errorResponse(405, "method_not_allowed", "Für Mutationen ist nur POST erlaubt.");
   }
@@ -190,8 +270,20 @@ export async function handleCampaignMutation(
     });
   }
 
-  for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
-    const current = await loadCampaignSnapshot(db, campaignId);
+  const baseStorageAvailable = await hasBaseStorage(db);
+  const baseAreaDelete = mutation.type === "area.delete" && baseStorageAvailable
+    ? await db
+      .prepare("SELECT generation FROM street_base_areas WHERE campaign_id=? AND area_id=?")
+      .bind(campaignId, mutation.payload.areaId)
+      .first<{ generation: string }>()
+    : null;
+  const persistAttempts = baseStorageAvailable ? 1 : MAX_PERSIST_ATTEMPTS;
+  for (let attempt = 0; attempt < persistAttempts; attempt += 1) {
+    const current = await loadCampaignSnapshot(
+      db,
+      campaignId,
+      mutationSnapshotOptions(mutation, access, Boolean(baseAreaDelete)),
+    );
     if (!current) {
       return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
     }
@@ -257,7 +349,11 @@ export async function handleCampaignMutation(
       throw error;
     }
 
-    const snapshotValidation = validateCampaignSnapshot(candidate, campaignId);
+    const snapshotValidation = validateCampaignSnapshotWithLegacyHouseTolerance(
+      current,
+      candidate,
+      campaignId,
+    );
     if (!snapshotValidation.valid) {
       return errorResponse(422, "mutation_invalid", snapshotValidation.message, current.revision);
     }
@@ -289,6 +385,7 @@ export async function handleCampaignMutation(
 
     if (
       mutation.type === "area.update-geometry" &&
+      !baseStorageAvailable &&
       await areaHasStartedAutomaticWork(db, campaignId, mutation.payload.areaId)
     ) {
       return errorResponse(
@@ -338,10 +435,15 @@ export async function handleCampaignMutation(
         ),
       };
     }
+    const chunkAreaDelete = baseAreaDelete;
     const syncChanges = (await hasRxdbSyncSchema(db))
-      ? rxdbChangeFeedEntriesForMutation(current, syncAfter, mutation)
+      ? chunkAreaDelete
+        ? rxdbChangeFeedEntriesForMutation({...current,tasks:[],houseTasks:[]},{...syncAfter,tasks:[],houseTasks:[]},mutation)
+        : rxdbChangeFeedEntriesForMutation(current, syncAfter, mutation)
       : [];
 
+    const automaticPreparation=(mutation.type==='area.create'||mutation.type==='area.update-geometry')&&baseStorageAvailable
+      ? {areaId:mutation.payload.areaId,geometryHash:await areaPreparationFingerprint(syncAfter.areas.find(area=>area.id===mutation.payload.areaId)!.geometry),generation:crypto.randomUUID()}:undefined;
     const persisted = await persistCampaignMutation(
       db,
       mutation,
@@ -350,8 +452,17 @@ export async function handleCampaignMutation(
       domainEvent,
       automationExecution,
       syncChanges,
+      mutation.type==='house.set-status'||mutation.type==='house.rename'
+        ? syncAfter.houseTasks?.find(house=>house.id===mutation.payload.taskId&&house.areaPreparationGeneration)
+        : mutation.type==='task.rename'?syncAfter.tasks.find(task=>task.id===mutation.payload.taskId&&task.areaPreparationGeneration):undefined,
+      automaticPreparation,
     );
     if (persisted.ok) {
+      if(automaticPreparation&&!persisted.alreadyApplied){
+        try{await options?.schedule?.(campaignId,true);}catch{
+          await db.batch([db.prepare("UPDATE area_task_preparations SET status='failed',last_error_code='area_preparation_runner_unavailable',failed_at=?,updated_at=? WHERE campaign_id=? AND area_id=? AND generation=?").bind(mutation.createdAt,mutation.createdAt,campaignId,automaticPreparation.areaId,automaticPreparation.generation)]);
+        }
+      }
       if (
         AUTO_AREA_PREPARATION_ENABLED &&
         !persisted.alreadyApplied &&
@@ -392,7 +503,7 @@ export async function handleCampaignMutation(
       );
     }
 
-    if (attempt === MAX_PERSIST_ATTEMPTS - 1) {
+    if (attempt === persistAttempts - 1) {
       return errorResponse(
         409,
         "revision_conflict",

@@ -2,16 +2,26 @@
 id: architecture-map
 type: architecture
 status: accepted
-last_updated: 2026-09-01
+last_updated: 2026-09-12
 related: [architecture, product-ux, architecture-security, product-roadmap, ADR-0012, ADR-0013, ADR-0021]
 source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-camera, saved-geometry-renderer, prepared-offline-map-rendering]
 ---
 
 # Map Architecture
 
+## Current Street detail UI chrome
+
+The Street detail sheet uses a compact three-column/two-row action layout:
+`Offen`, `Erledigt`, `Später` and `Nicht zustellbar` remain in an equal-width
+two-column status grid, while the compact comment action and existing red Danger
+trash action are stacked vertically in the adjacent action column. Street
+marking status controls use equal-width columns as well. This is a
+presentation-only rule for Street detail; House status controls and task
+semantics remain unchanged.
+
 ## Current renderer baseline
 
-MapLibre GL JS **5.7.1** owns the persistent map rendering pipeline:
+MapLibre GL JS **5.7.1** in the current Draft PR #92 controlled isolation candidate owns the persistent map rendering pipeline:
 - OpenFreeMap Bright vector basemap;
 - camera movement, zoom and bearing;
 - navigation/compass controls;
@@ -29,11 +39,11 @@ Stored edit/corner points are never shown in browse mode.
 
 ADR-0010 defines this saved-vs-active rendering boundary.
 
-## Why MapLibre is pinned to 5.7.1
+## Historical 6.9.0 comparison and current 5.7.1 isolation pin
 
 A tested upgrade to MapLibre GL JS 6.4.1 produced a real-browser GeoJSON regression in this project: the basemap rendered and frame rate stayed healthy, while saved application GeoJSON became invisible and non-interactive.
 
-The current working baseline therefore pins 5.7.1. Do not upgrade MapLibre casually. Any runtime upgrade requires browser acceptance that proves:
+The current branch deliberately pins 5.7.1 together with `@mapbox/unitbezier` 0.0.1 for a controlled renderer test. MapLibre 6.9.0 is retained as historical/comparison context and is not the current branch pin. This controlled staging candidate does not close real-browser acceptance. Any renderer version change requires browser acceptance that proves:
 - saved Area visible;
 - saved Street visible;
 - Area selectable;
@@ -48,7 +58,7 @@ Primary online provider is OpenFreeMap Bright:
 
 `https://tiles.openfreemap.org/styles/bright`
 
-The provider remains replaceable. Bright requires no application API key, account or secret. MapLibre remains pinned to 5.7.1.
+The provider remains replaceable. Bright requires no application API key, account or secret. MapLibre is pinned to the current branch's controlled 5.7.1 candidate.
 
 The loaded Bright contract uses vector source `openmaptiles`. Standard house numbers are enabled by default through exactly one app-owned symbol layer:
 

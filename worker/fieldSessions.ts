@@ -1,3 +1,4 @@
+import { domainEventHistoryRelation } from './domainEventHistory.ts';
 import { resolveAccess, type AccessContext } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import { parseCampaignId } from "./snapshotValidation.ts";
@@ -184,7 +185,7 @@ export async function handleFieldSessionsApi(
            s.note,
            (
              SELECT COUNT(DISTINCT e.entity_type || '|' || e.entity_id)
-             FROM domain_events e
+             FROM ${await domainEventHistoryRelation(db)} e
              WHERE e.field_session_id = s.id
                AND e.event_type = 'task.status.changed'
            ) AS affected_task_count,

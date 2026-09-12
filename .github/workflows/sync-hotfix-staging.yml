@@ -1,0 +1,235 @@
+name: Sync Hotfix Persistent Staging
+# UI FieldHub port checkpoint: map detail surfaces use the shared AppMenu/Team/Rooms sheet contract.
+# Candidate source: e5b24bf1c00525e14e2b6d1b2ab65a496af5eccd global sync validation fix
+
+on:
+  push:
+    branches:
+      - fix/street-engine-smart-marking
+    paths:
+      - .github/workflows/sync-hotfix-staging.yml
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: sync-hotfix-persistent-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: contains(github.event.head_commit.message, '[deploy-sync-hotfix-staging]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PERSISTENT_WORKER_NAME: flyer-map-admin-staging
+      PERSISTENT_DB_NAME: flyer-map-admin-staging-db
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+      PERSISTENT_BOOTSTRAP_SECRET_SHA256: 33876e84366c1f5207a7459dc055177d9d4a0374550536f6b5413146b2785a3b
+    steps:
+      - name: Checkout exact PR 92 head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact Draft PR and Production invariants
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/fix/street-engine-smart-marking' ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/92 --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/92 --jq '.head.ref')" == 'fix/street-engine-smart-marking' ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/92 --jq '.draft')" == 'true' ]]
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/92 --jq '.state')" == 'open' ]]
+          node -e "const fs=require('node:fs');const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));if(c.main!=='./worker/indexOrganizer.ts'||c.d1_databases?.[0]?.database_id!==process.env.PROD_D1_ID)process.exit(1)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify candidate before staging deploy
+        run: |
+          npm ci --no-audit --no-fund
+          npm run check
+
+      - name: Resolve isolated persistent Staging resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          elif [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+          else
+            echo 'Cloudflare account is ambiguous.' >&2
+            exit 1
+          fi
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          PERSISTENT_D1_ID="$(jq -r --arg name "$PERSISTENT_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
+          [[ -n "$PERSISTENT_D1_ID" ]] || { echo 'Persistent Admin Staging D1 missing or ambiguous.' >&2; exit 1; }
+          [[ "$PERSISTENT_D1_ID" != "$PROD_D1_ID" && "$PERSISTENT_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo 'Protected D1 collision.' >&2; exit 1; }
+          echo "PERSISTENT_D1_ID=$PERSISTENT_D1_ID" >> "$GITHUB_ENV"
+
+      - name: Read-only verify required Sync schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCHEMA="$(npx wrangler d1 execute "$PERSISTENT_DB_NAME" --remote --json --command "SELECT name,type FROM sqlite_master WHERE name IN ('campaigns','areas','street_tasks','house_tasks','campaign_sync_changes') ORDER BY name;")"
+          printf '%s' "$SCHEMA" > /tmp/sync-hotfix-schema.json
+          jq -e '.[0].results | map(.name) | contains(["areas","campaign_sync_changes","campaigns"])' <<<"$SCHEMA" >/dev/null
+
+      - name: Verify persistent Worker secrets already exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET_LIST="$(curl --fail-with-body --silent --show-error "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${PERSISTENT_WORKER_NAME}/secrets" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          jq -e '.success == true' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.result[] | select(.name=="ORGANIZATION_TOTP_KEY")' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.result[] | select(.name=="FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY")' <<<"$SECRET_LIST" >/dev/null
+
+      - name: Materialize persistent Staging config without D1 migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const c = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          c.main = './worker/indexOrganizer.ts';
+          c.compatibility_flags = [...new Set([...(c.compatibility_flags || []), 'nodejs_compat'])];
+          c.env = c.env || {};
+          c.env.admin_staging = {
+            name: process.env.PERSISTENT_WORKER_NAME,
+            workers_dev: true,
+            vars: {
+              ORGANIZATION_BOOTSTRAP_SECRET_SHA256: process.env.PERSISTENT_BOOTSTRAP_SECRET_SHA256,
+              ORGANIZATION_PASSWORD_KDF_ITERATIONS: '600000',
+              ORGANIZATION_KDF_DIAGNOSTICS: '0'
+            },
+            d1_databases: [{
+              binding: 'DB',
+              database_name: process.env.PERSISTENT_DB_NAME,
+              database_id: process.env.PERSISTENT_D1_ID,
+              migrations_dir: 'migrations'
+            }],
+            durable_objects: { bindings: [
+              { name: 'CAMPAIGN_SYNC', class_name: 'CampaignSyncDurableObject' },
+              { name: 'ORGANIZATION_PASSWORD_KDF', class_name: 'OrganizationPasswordKdfDurableObject' }
+            ]},
+            ratelimits: [
+              { name: 'FIELD_GROUP_JOIN_ACTOR_LIMITER', namespace_id: '91914001', simple: { limit: 30, period: 60 } },
+              { name: 'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER', namespace_id: '91914002', simple: { limit: 8, period: 60 } },
+              { name: 'PICKUP_SEARCH_LIMITER', namespace_id: '91914003', simple: { limit: 20, period: 10 } },
+              { name: 'ORGANIZATION_LOGIN_LIMITER', namespace_id: '91914004', simple: { limit: 12, period: 60 } }
+            ]
+          };
+          c.migrations = c.migrations || [];
+          if (!c.migrations.some((x) => x.tag === 'v2-organization-password-kdf')) {
+            c.migrations.push({ tag: 'v2-organization-password-kdf', new_sqlite_classes: ['OrganizationPasswordKdfDurableObject'] });
+          }
+          const protectedIds = new Set(['91714001','91714002','91714003','91814001','91814002','91814003']);
+          for (const limiter of c.env.admin_staging.ratelimits) {
+            if (protectedIds.has(String(limiter.namespace_id))) throw new Error(`Rate collision ${limiter.namespace_id}`);
+          }
+          if (c.env.admin_staging.d1_databases[0].database_id === process.env.PROD_D1_ID || c.env.admin_staging.d1_databases[0].database_id === process.env.RXDB_STAGING_D1_ID) {
+            throw new Error('Protected D1 leaked into persistent staging config');
+          }
+          fs.writeFileSync('wrangler.jsonc', JSON.stringify(c, null, 2) + '\n');
+          NODE
+
+      - name: Build and deploy exact hotfix to persistent Staging only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$(gh api repos/${GITHUB_REPOSITORY}/pulls/92 --jq '.head.sha')" == "$GITHUB_SHA" ]]
+          export CLOUDFLARE_ENV=admin_staging
+          rm -rf dist .wrangler
+          npm run build
+          npx wrangler deploy 2>&1 | tee /tmp/sync-hotfix-deploy.log
+          TEST_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/sync-hotfix-deploy.log | tail -n1 || true)"
+          [[ -n "$TEST_URL" ]] || TEST_URL='https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev'
+          [[ "$TEST_URL" == 'https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev' ]]
+          echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
+
+      - name: Verify deployed Staging shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(curl -sS -o /tmp/sync-hotfix-root.html -w '%{http_code}' "$TEST_URL/" || printf 000)"
+          LOGIN="$(curl -sS -o /tmp/sync-hotfix-login.html -w '%{http_code}' "$TEST_URL/login" || printf 000)"
+          ME="$(curl -sS -o /tmp/sync-hotfix-me.json -w '%{http_code}' "$TEST_URL/api/organization/me" || printf 000)"
+          [[ "$ROOT" -ge 200 && "$ROOT" -lt 400 ]]
+          [[ "$LOGIN" -ge 200 && "$LOGIN" -lt 400 ]]
+          [[ "$ME" == '401' ]]
+          jq -n --arg sha "$GITHUB_SHA" --arg url "$TEST_URL" '{ok:true,sha:$sha,url:$url,d1MigrationApplied:false,secretsRotated:false,productionUntouched:true}' > /tmp/sync-hotfix-staging-evidence.json
+
+      - name: Upload sanitized deployment evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sync-hotfix-persistent-staging
+          path: |
+            /tmp/sync-hotfix-schema.json
+            /tmp/sync-hotfix-staging-evidence.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+# Renderer checkpoint: default MapLibre 5.7.1 + complete GeoJSON setData path.
+
+# Renderer secure candidate checkpoint: MapLibre 6.9.0 with complete GeoJSON setData path.
+
+# Login diagnostics checkpoint: preserve diag=1 through root, admin and field-map redirects.
+
+# Layer-order checkpoint: insert app geometry above provider fills/roads and below final labels.
+
+# Resume rehydrate checkpoint: resize and complete GeoJSON setData after pageshow/visibilitychange.
+
+# GeoJSON lifecycle checkpoint: coalesce first vf source hydration across a guaranteed render boundary.
+
+# GeoJSON frame fallback checkpoint: guarantee deferred hydration even when the initial render event is absorbed.
+
+# Direct source seed checkpoint: create Area, Street and House sources with current GeoJSON instead of empty-then-setData. MapLibre 5.7.1 admin staging candidate.
+
+# UI FieldHub render extraction checkpoint: keep the smart-street panel out of the hook runtime.
+
+# UI FieldHub typecheck checkpoint: normalize pending intent status for the extracted panel.
+
+# Map UI checkpoint: no map backdrop blur, shared PC bottom-left FieldHub, and explicit local area-name save.
+
+# Test contract correction: use a literal draft-state assertion so the test parser remains portable.
+
+# Test contract correction: allow the shared responsive FieldHub edge variable.
+
+# Content-fit checkpoint: FieldHub opens at natural content height; appearance control lives in Settings.
+
+# Neutral dark palette checkpoint: use grayscale UI surfaces and keep MapLibre untouched.
+
+# Contrast checkpoint: neutral dark surfaces and readable text for field, street, house, comments and settings UI.
+
+# Phase B bounded D1/RxDB read-path candidate; runtime tree verified by CI before staging trigger.
+# Verified compact map context UI and neutral dark mode candidate.
+
+# Final UI header action checkpoint: manual and Smart Street modes share compact undo/cancel/confirm controls.
+
+# Current UI action chrome checkpoint: deploy the exact tested candidate to Admin Staging only.
+
+# Compact delete action checkpoint: retain the Danger color with the matched comment-icon footprint.
+# Documentation context refresh checkpoint: keep current PR #92 state aligned with the exact tested head.
+# Context verification run checkpoint: deploy only the refreshed PR #92 exact head to Admin Staging.
+# Final context trigger: redeploy the final documentation head to Admin Staging only.
+# Historical Street status action checkpoint: the superseded stacked status layout.
+# Context docs current-head checkpoint: deploy the synchronized project context to Admin Staging only.
+# Street status grid rollback checkpoint: deploy the compact two-column task layout to Admin Staging only.
+# Street action width checkpoint: deploy equal-width marking-window status columns to Admin Staging only.

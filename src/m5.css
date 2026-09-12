@@ -20,7 +20,8 @@
   font-weight: 650;
   line-height: 1.1;
   pointer-events: auto;
-  backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .mutation-sync-status.is-server-confirmed.is-compact {

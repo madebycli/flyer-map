@@ -28,6 +28,6 @@ test("funny focus video stays local and alternates the two requested clips", asy
 test("funny focus video is mounted beside the platform shell, not inside map state", async () => {
   const source = await readFile(mainPath, "utf8");
 
-  assert.match(source, /import \{ FunnyFocusVideo \} from "\.\/platform\/FunnyFocusVideo";/u);
+  assert.match(source, /const FunnyFocusVideo = lazy\(\(\) => import\("\.\/platform\/FunnyFocusVideo"\)/u);
   assert.match(source, /<PlatformShell\s*\/>[\s\S]*<FunnyFocusVideo\s*\/>/u);
 });

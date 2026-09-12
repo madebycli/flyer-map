@@ -65,7 +65,7 @@ test("missing collection checkpoint is treated as zero until it has pulled", () 
 
 test("push success is only acknowledged when the post-commit master matches the requested business state", async () => {
   const worker = await readFile("worker/rxdbSync.ts", "utf8");
-  assert.match(worker, /const canonical = await loadCampaignSnapshot\(db, campaignId\);\s*const master = currentDocument\(canonical, collectionName, next\.id, next\);\s*if \(sameBusinessDocument\(master, next\)\) continue;/u);
+  assert.match(worker, /const canonical = await loadCampaignSnapshot\(db, campaignId, rxdbPushSnapshotOptions\(collectionName, next\.id\)\);\s*const master = currentDocument\(canonical, collectionName, next\.id, next\);\s*if \(sameBusinessDocument\(master, next\)\) continue;/u);
   assert.match(worker, /conflicts\.push\(canReadDocument\(access, collectionName, master, canonical\)/u);
 });
 

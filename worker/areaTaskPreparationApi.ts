@@ -1,6 +1,7 @@
 import type { Area } from "../src/domain/campaign.ts";
 import type { AccessContext } from "./access.ts";
-import { hasStreetNetworkSchema, loadCampaignSnapshot, type D1DatabaseLike } from "./campaignRepository.ts";
+import { hasStreetNetworkSchema, loadCanonicalArea, type D1DatabaseLike } from "./campaignRepository.ts";
+import { requestDatabase } from './requestDatabase.ts';
 import {
   beginAreaTaskPreparation,
   runAreaTaskPreparation,
@@ -76,15 +77,14 @@ export async function handleAreaTaskPreparationApi(
   context: AreaPreparationExecutionContext | undefined,
   options?: AreaTaskPreparationOptions,
 ): Promise<Response> {
+  db=requestDatabase(db);
   if (request.method !== "GET" && request.method !== "POST") {
     return error(405, "method_not_allowed", "Für die Area-Vorbereitung ist nur GET oder POST erlaubt.");
   }
   if (access.campaignId !== route.campaignId) {
     return error(403, "forbidden", "Der Zugriff gehört zu einer anderen Campaign.");
   }
-  const snapshot = await loadCampaignSnapshot(db, route.campaignId);
-  if (!snapshot) return error(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
-  const area = snapshot.areas.find((candidate) => candidate.id === route.areaId);
+  const area = await loadCanonicalArea(db, route.campaignId, route.areaId);
   if (!area) return error(404, "area_not_found", "Area wurde nicht gefunden.");
   if (!canReadArea(access, area)) {
     return error(403, "forbidden", "Diese Area liegt außerhalb deines Zugriffs.");
@@ -105,7 +105,10 @@ export async function handleAreaTaskPreparationApi(
       "Die Migrationen für die Straßen- und Hausvorbereitung sind serverseitig noch nicht verfügbar.",
     );
   }
-  if (request.method === "GET") return json(decision.state);
+  if (request.method === "GET") {
+    if(decision.state.status==='pending')await options?.schedule?.(route.campaignId);
+    return json(decision.state);
+  }
   if (!canStartAreaPreparation(access, area)) {
     return error(403, "forbidden", "Nur Admin oder der zuständige Team Editor darf vorbereiten.");
   }
@@ -118,9 +121,12 @@ export async function handleAreaTaskPreparationApi(
 
   const preparation = await beginAreaTaskPreparation(db, route.campaignId, route.areaId, options);
   if (preparation.outcome === "run") {
+    if(options?.schedule)await options.schedule(route.campaignId,true);
+    else {
     const job = runAreaTaskPreparation(db, preparation.run, options);
     if (context) context.waitUntil(job);
     else await job;
+    }
   } else if (
     preparation.result.outcome === "failed" &&
     preparation.result.code === "area_preparation_schema_unavailable"

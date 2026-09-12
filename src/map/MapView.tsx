@@ -193,6 +193,7 @@ type MapViewProps = {
   streetDraftVertices: LngLat[];
   streetDraftColor: string;
   refreshState: MapRefreshState;
+  hideRefreshControl?: boolean;
   cameraCommand: MapCameraCommand;
   onCameraChange: (camera: MapCameraView) => void;
   onRefresh: () => void;
@@ -236,6 +237,18 @@ type MapViewProps = {
 const GERMANY_VIEW: MapCameraView = { center: [10.45, 51.16], zoom: 5.3, bearing: 0 };
 
 export const OPENFREE_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
+export const RASTER_BASEMAP_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    "openstreetmap-raster": {
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors",
+    },
+  },
+  layers: [{ id: "openstreetmap-raster", type: "raster", source: "openstreetmap-raster" }],
+};
 export const BASEMAP_VECTOR_SOURCE_ID = "openmaptiles";
 export const BASEMAP_HOUSENUMBER_SOURCE_LAYER = "housenumber";
 export const BASEMAP_HOUSENUMBER_LAYER_ID = "vf-basemap-housenumbers";
@@ -607,7 +620,13 @@ function smartPointsToGeoJson(
   return { type: "FeatureCollection", features };
 }
 
-function buildApplicationMapStyle(): StyleSpecification {
+type InitialApplicationSourceData = {
+  areas: RenderArea[];
+  tasks: RenderTask[];
+  houses: RenderHouse[];
+};
+
+function buildApplicationMapStyle(initialData?: InitialApplicationSourceData): StyleSpecification {
   return {
     version: 8,
     sources: {
@@ -621,15 +640,15 @@ function buildApplicationMapStyle(): StyleSpecification {
       },
       [AREA_SOURCE_ID]: {
         type: "geojson",
-        data: areasToGeoJson([]),
+        data: areasToGeoJson(initialData?.areas ?? []),
       },
       [STREET_SOURCE_ID]: {
         type: "geojson",
-        data: streetsToGeoJson([]),
+        data: streetsToGeoJson(initialData?.tasks ?? []),
       },
       [HOUSE_SOURCE_ID]: {
         type: "geojson",
-        data: housesToGeoJson([]),
+        data: housesToGeoJson(initialData?.houses ?? []),
       },
       [COLLECTION_MAIN_SOURCE_ID]: {
         type: "geojson",
@@ -862,7 +881,7 @@ function buildApplicationMapStyle(): StyleSpecification {
         source: STREET_SOURCE_ID,
         filter: ["==", ["get", "taskId"], "__none__"],
         paint: {
-          "line-color": "#f59e0b",
+          "line-color": "#6d28d9",
           "line-opacity": 0.92,
           "line-width": SESSION_HIGHLIGHT_WIDTH_EXPRESSION,
         },
@@ -878,7 +897,7 @@ function buildApplicationMapStyle(): StyleSpecification {
         minzoom: HOUSE_MIN_ZOOM,
         filter: ["==", ["get", "houseTaskId"], "__none__"],
         paint: {
-          "line-color": "#f59e0b",
+          "line-color": "#6d28d9",
           "line-opacity": 0.96,
           "line-width": HOUSE_HIGHLIGHT_WIDTH_EXPRESSION,
           "line-dasharray": [1, 1],
@@ -1073,7 +1092,7 @@ function buildApplicationMapStyle(): StyleSpecification {
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#f59e0b",
+          "line-color": "#6d28d9",
           "line-opacity": 0.98,
           "line-width": SMART_PREVIEW_WIDTH_EXPRESSION,
         },
@@ -1120,6 +1139,14 @@ function buildApplicationMapStyle(): StyleSpecification {
   };
 }
 
+const APPLICATION_STYLE_IDS = (() => {
+  const style = buildApplicationMapStyle();
+  return {
+    sourceIds: Object.keys(style.sources),
+    layerIds: style.layers.map((layer) => layer.id),
+  };
+})();
+
 const BELOW_BASEMAP_LABEL_LAYER_IDS = new Set([
   OFFLINE_BUILDING_LAYER_ID,
   OFFLINE_ROAD_LAYER_ID,
@@ -1140,10 +1167,9 @@ const BELOW_BASEMAP_LABEL_LAYER_IDS = new Set([
   COLLECTION_AREAS_SELECTED_LAYER_ID,
 ]);
 
-function installApplicationMapStyle(map: Map) {
-  if (!map.getSource(BASEMAP_VECTOR_SOURCE_ID)) {
-    throw new Error(`OpenFreeMap style source ${BASEMAP_VECTOR_SOURCE_ID} is unavailable.`);
-  }
+function installApplicationMapStyle(map: Map, initialData?: InitialApplicationSourceData) {
+  const hasVectorBasemap = Boolean(map.getSource(BASEMAP_VECTOR_SOURCE_ID));
+  const seeded = { areas: false, streets: false, houses: false };
 
   // Bright may ship provider-owned 3D building layers. Remove every
   // fill-extrusion before installing any application layers so the map stays
@@ -1168,24 +1194,36 @@ function installApplicationMapStyle(map: Map) {
     }
   }
 
-  const firstBasemapSymbolLayerId = map.getStyle().layers.find(
+  // Bright's provider layers are not a stable contract. Put application
+  // geometry above all provider fills/roads, but keep the final provider
+  // labels above it. Using the first symbol can place the data underneath
+  // later opaque basemap geometry and make every app layer appear invisible.
+  const basemapLabelInsertionLayerId = [...map.getStyle().layers].reverse().find(
     (layer) => layer.type === "symbol",
   )?.id;
-  if (!firstBasemapSymbolLayerId) {
-    throw new Error("OpenFreeMap Bright contains no symbol layer insertion point.");
-  }
-
-  const applicationStyle = buildApplicationMapStyle();
+  const applicationStyle = buildApplicationMapStyle(initialData);
   for (const [sourceId, source] of Object.entries(applicationStyle.sources)) {
-    if (!map.getSource(sourceId)) map.addSource(sourceId, source as SourceSpecification);
+    if (map.getSource(sourceId)) continue;
+    map.addSource(sourceId, source as SourceSpecification);
+    const region = map.getContainer().closest<HTMLElement>(".map-region");
+    if (sourceId === AREA_SOURCE_ID) {
+      seeded.areas = true;
+      if (region) region.dataset.appliedAreas = String(initialData?.areas.length ?? 0);
+    } else if (sourceId === STREET_SOURCE_ID) {
+      seeded.streets = true;
+      if (region) region.dataset.appliedStreets = String(initialData?.tasks.length ?? 0);
+    } else if (sourceId === HOUSE_SOURCE_ID) {
+      seeded.houses = true;
+      if (region) region.dataset.appliedHouses = String(initialData?.houses.length ?? 0);
+    }
   }
 
   for (const layer of applicationStyle.layers) {
     if (!BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;
-    if (!map.getLayer(layer.id)) map.addLayer(layer, firstBasemapSymbolLayerId);
+    if (!map.getLayer(layer.id)) map.addLayer(layer, basemapLabelInsertionLayerId);
   }
 
-  if (!map.getLayer(BASEMAP_HOUSENUMBER_LAYER_ID)) {
+  if (hasVectorBasemap && !map.getLayer(BASEMAP_HOUSENUMBER_LAYER_ID)) {
     map.addLayer(
       {
         id: BASEMAP_HOUSENUMBER_LAYER_ID,
@@ -1216,7 +1254,7 @@ function installApplicationMapStyle(map: Map) {
           "text-halo-blur": 0.2,
         },
       },
-      firstBasemapSymbolLayerId,
+      basemapLabelInsertionLayerId,
     );
   }
 
@@ -1224,6 +1262,8 @@ function installApplicationMapStyle(map: Map) {
     if (BELOW_BASEMAP_LABEL_LAYER_IDS.has(layer.id)) continue;
     if (!map.getLayer(layer.id)) map.addLayer(layer);
   }
+
+  return seeded;
 }
 
 
@@ -1520,27 +1560,49 @@ function updateRendererDiagnostics(map: Map) {
   const region = map.getContainer().closest<HTMLElement>(".map-region");
   if (!region) return;
   try {
-    const sourceAreas = map.querySourceFeatures(AREA_SOURCE_ID).filter(
-      (feature) => typeof feature.properties?.areaId === "string",
-    );
-    const sourceStreets = map.querySourceFeatures(STREET_SOURCE_ID).filter(
-      (feature) => typeof feature.properties?.taskId === "string",
-    );
-    const renderedAreas = map.queryRenderedFeatures(undefined, { layers: [AREA_FILL_LAYER_ID] });
+    const missingSources = APPLICATION_STYLE_IDS.sourceIds.filter((sourceId) => !map.getSource(sourceId));
+    const missingLayers = APPLICATION_STYLE_IDS.layerIds.filter((layerId) => !map.getLayer(layerId));
+    const container = map.getContainer();
+    const canvas = map.getCanvas();
+    region.dataset.mapStyleReady = map.isStyleLoaded() ? "1" : "0";
+    region.dataset.mapContainerSize = `${container.clientWidth}x${container.clientHeight}`;
+    region.dataset.mapCanvasSize = `${canvas.clientWidth}x${canvas.clientHeight}`;
+    region.dataset.applicationSources = `${APPLICATION_STYLE_IDS.sourceIds.length - missingSources.length}/${APPLICATION_STYLE_IDS.sourceIds.length}`;
+    region.dataset.applicationLayers = `${APPLICATION_STYLE_IDS.layerIds.length - missingLayers.length}/${APPLICATION_STYLE_IDS.layerIds.length}`;
+    region.dataset.missingApplicationSources = missingSources.join(",");
+    region.dataset.missingApplicationLayers = missingLayers.join(",");
+    region.dataset.mapRendererError = "";
+    const sourceAreas = map.getSource(AREA_SOURCE_ID)
+      ? map.querySourceFeatures(AREA_SOURCE_ID).filter(
+          (feature) => typeof feature.properties?.areaId === "string",
+        )
+      : [];
+    const sourceStreets = map.getSource(STREET_SOURCE_ID)
+      ? map.querySourceFeatures(STREET_SOURCE_ID).filter(
+          (feature) => typeof feature.properties?.taskId === "string",
+        )
+      : [];
+    const renderedAreas = map.getLayer(AREA_FILL_LAYER_ID)
+      ? map.queryRenderedFeatures(undefined, { layers: [AREA_FILL_LAYER_ID] })
+      : [];
     const streetLayers = STREET_LAYER_IDS.filter((layerId) => map.getLayer(layerId));
     const renderedStreets =
       streetLayers.length > 0
         ? map.queryRenderedFeatures(undefined, { layers: [...streetLayers] })
         : [];
-    const sourceHouses = map.querySourceFeatures(HOUSE_SOURCE_ID).filter(
-      (feature) => typeof feature.properties?.houseTaskId === "string",
-    );
+    const sourceHouses = map.getSource(HOUSE_SOURCE_ID)
+      ? map.querySourceFeatures(HOUSE_SOURCE_ID).filter(
+          (feature) => typeof feature.properties?.houseTaskId === "string",
+        )
+      : [];
     const renderedHouses = map.getLayer(HOUSE_FILL_LAYER_ID)
       ? map.queryRenderedFeatures(undefined, { layers: [HOUSE_FILL_LAYER_ID] })
       : [];
-    const sourcePickups = map.querySourceFeatures(COLLECTION_PICKUP_SOURCE_ID).filter(
-      (feature) => typeof feature.properties?.pickupId === "string",
-    );
+    const sourcePickups = map.getSource(COLLECTION_PICKUP_SOURCE_ID)
+      ? map.querySourceFeatures(COLLECTION_PICKUP_SOURCE_ID).filter(
+          (feature) => typeof feature.properties?.pickupId === "string",
+        )
+      : [];
     const renderedPickups = map.getLayer(COLLECTION_PICKUP_MARKER_LAYER_ID)
       ? map.queryRenderedFeatures(undefined, { layers: [COLLECTION_PICKUP_MARKER_LAYER_ID] })
       : [];
@@ -1567,6 +1629,7 @@ function updateRendererDiagnostics(map: Map) {
       new Set(renderedPickups.map((feature) => feature.properties?.pickupId)).size,
     );
   } catch (cause) {
+    region.dataset.mapRendererError = cause instanceof Error ? cause.message : String(cause);
     console.warn("Map renderer diagnostics failed", cause);
   }
 }
@@ -1627,6 +1690,7 @@ export function MapView({
   streetDraftVertices,
   streetDraftColor,
   refreshState,
+  hideRefreshControl = false,
   cameraCommand,
   onCameraChange,
   onRefresh,
@@ -1845,6 +1909,7 @@ export function MapView({
     if (!containerRef.current || mapRef.current) return;
     let active = true;
     let cleanupListeners = () => {};
+    let styleLoadTimeout: number | null = null;
     const initialCamera = loadPersonalMapView(campaignId) ?? campaignDefaultView ?? GERMANY_VIEW;
 
     try {
@@ -1891,19 +1956,42 @@ export function MapView({
         if (detail?.campaignId && detail.campaignId !== campaignId) return;
         void refreshOfflineContext();
       };
+      let resumeRehydrateTimer: number | null = null;
+      let rehydrateAfterResume = () => {};
+      const scheduleResumeRehydrate = () => {
+        if (!active || document.visibilityState !== "visible") return;
+        if (resumeRehydrateTimer !== null) window.clearTimeout(resumeRehydrateTimer);
+        // Wait one task so Safari/iOS can commit the visible container size
+        // before MapLibre measures its canvas again.
+        resumeRehydrateTimer = window.setTimeout(() => {
+          resumeRehydrateTimer = null;
+          rehydrateAfterResume();
+        }, 0);
+      };
       const handleVisibilityChange = () => {
-        if (document.visibilityState === "visible") void refreshOfflineContext();
+        if (document.visibilityState === "visible") {
+          void refreshOfflineContext();
+          scheduleResumeRehydrate();
+        }
+      };
+      const handlePageShow = () => {
+        void refreshOfflineContext();
+        scheduleResumeRehydrate();
       };
 
       window.addEventListener("online", handleConnectivityChange);
       window.addEventListener("offline", handleConnectivityChange);
       window.addEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
+      window.addEventListener("pageshow", handlePageShow);
       document.addEventListener("visibilitychange", handleVisibilityChange);
       cleanupListeners = () => {
         window.removeEventListener("online", handleConnectivityChange);
         window.removeEventListener("offline", handleConnectivityChange);
         window.removeEventListener(OFFLINE_MAP_CHANGED_EVENT, handleOfflineMapChanged);
+        window.removeEventListener("pageshow", handlePageShow);
         document.removeEventListener("visibilitychange", handleVisibilityChange);
+        if (resumeRehydrateTimer !== null) window.clearTimeout(resumeRehydrateTimer);
+        resumeRehydrateTimer = null;
       };
 
       const persistCamera = () => {
@@ -1926,18 +2014,41 @@ export function MapView({
         }, 350);
       };
 
+      let rasterFallbackApplied = false;
+      let styleReady = false;
+      const activateRasterFallback = () => {
+        if (!active || rasterFallbackApplied) return;
+        rasterFallbackApplied = true;
+        styleReady = false;
+        map.setStyle(RASTER_BASEMAP_STYLE);
+      };
+      styleLoadTimeout = window.setTimeout(() => {
+        if (!styleReady) activateRasterFallback();
+      }, 8_000);
+
       map.on("error", (event) => {
         console.error("MapLibre runtime error", event.error ?? event);
+        const message = event.error instanceof Error ? event.error.message : String(event.error ?? "");
+        if (!rasterFallbackApplied && (!map.isStyleLoaded() || /openfreemap|failed to fetch|network|http/iu.test(message))) {
+          activateRasterFallback();
+        }
       });
 
-      map.once("style.load", () => {
+      const installCurrentStyle = () => {
         if (!active) return;
         try {
-          installApplicationMapStyle(map);
+          styleReady = true;
+          if (styleLoadTimeout !== null) window.clearTimeout(styleLoadTimeout);
+          setError(null);
           const current = dataRef.current;
-          syncAreaData(map, current.areas);
-          syncStreetData(map, current.tasks);
-          syncHouseData(map, current.houses);
+          const seeded = installApplicationMapStyle(map, current);
+          // MapLibre 6 can lose an immediate setData() when a newly-added
+          // GeoJSON source has not yet crossed its first style recalculation.
+          // Seed new core sources with their real FeatureCollections instead;
+          // only existing sources use the normal incremental setData() path.
+          if (!seeded.areas) syncAreaData(map, current.areas);
+          if (!seeded.streets) syncStreetData(map, current.tasks);
+          if (!seeded.houses) syncHouseData(map, current.houses);
           syncCollectionData(
             map,
             current.collectionMainArea,
@@ -1972,14 +2083,43 @@ export function MapView({
             current.highlightedStreetTaskIds,
             current.highlightedHouseTaskIds,
           );
+          const container = map.getContainer();
+          if (container.clientWidth > 0 && container.clientHeight > 0) map.resize();
           void refreshOfflineContext();
           updateActiveOverlay(map);
           updateRendererDiagnostics(map);
         } catch (cause) {
-          console.error("OpenFreeMap application layers could not be installed", cause);
+          console.error("Map application layers could not be installed", cause);
+          const region = map.getContainer().closest<HTMLElement>(".map-region");
+          if (region) region.dataset.mapRendererError = cause instanceof Error ? cause.message : String(cause);
           setError(t(dataRef.current.language, "mapInitError"));
         }
-      });
+      };
+      rehydrateAfterResume = () => {
+        if (!active || document.visibilityState !== "visible") return;
+        const container = map.getContainer();
+        if (container.clientWidth <= 0 || container.clientHeight <= 0) return;
+        try {
+          // MapLibre's documented resize path fixes maps created while a
+          // mobile/WebView container was hidden. Reinstalling and replaying
+          // complete GeoJSON also recovers a worker that stopped processing
+          // setData while the page was suspended.
+          map.resize();
+          if (!map.isStyleLoaded()) return;
+          installCurrentStyle();
+          map.triggerRepaint();
+        } catch (cause) {
+          console.error("Map resume rehydrate failed", cause);
+          const region = map.getContainer().closest<HTMLElement>(".map-region");
+          if (region) region.dataset.mapRendererError = cause instanceof Error ? cause.message : String(cause);
+        }
+      };
+      map.on("style.load", installCurrentStyle);
+      // MapLibre can finish a cached initial style before the listener is
+      // attached. The default renderer must still install the application
+      // sources/layers in that race; later style changes continue through the
+      // persistent style.load listener above.
+      if (map.isStyleLoaded()) window.setTimeout(installCurrentStyle, 0);
 
       map.on("idle", () => {
         if (active) updateRendererDiagnostics(map);
@@ -2204,6 +2344,7 @@ export function MapView({
     return () => {
       active = false;
       cleanupListeners();
+      if (styleLoadTimeout !== null) window.clearTimeout(styleLoadTimeout);
       if (cameraSaveTimerRef.current !== null) window.clearTimeout(cameraSaveTimerRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
@@ -2534,7 +2675,7 @@ export function MapView({
         </div>
       ) : null}
 
-      {mode === "browse" ? (
+      {mode === "browse" && !hideRefreshControl ? (
         <div className={`map-refresh-control is-${refreshState}`}>
           <button
             className="map-refresh-button"

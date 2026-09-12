@@ -15,3 +15,5 @@ Current accepted decisions relevant to active work include:
 - `ADR-0021-server-prepared-automatic-area-work.md`: a saved Distribution Area can atomically publish normal Street/House Tasks from bounded server-side OSM preparation; devices do not generate automatic work.
 - `ADR-0020-collection-access-areas-runs.md`: First-Class Collection Access, Main/Child Areas and Runs use additive D1 persistence, Collection-only temporary access and the existing M5/MapLibre boundaries.
 - `ADR-0022-no-legacy-snapshot-writes.md`: Nach M5 ist der Snapshot Read Model und lokaler Cache; normale Änderungen nutzen explizite Mutationen, der vollständige Snapshot-PUT ist mit 410 retired und Campaign-Create bleibt insert-only.
+
+- [ADR-0031: StreetEngine compute placement](ADR-0031-street-engine-compute-placement.md): server-first recovery, measured operator alternative; preserves ADR-0027/0029.

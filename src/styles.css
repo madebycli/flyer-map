@@ -75,7 +75,8 @@ select:disabled {
   border-radius: 1rem;
   background: rgb(255 255 255 / 95%);
   box-shadow: 0 0.25rem 1rem rgb(20 35 24 / 11%);
-  backdrop-filter: blur(10px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .brand-copy {
@@ -133,7 +134,8 @@ select:disabled {
   border: 1px solid rgb(30 50 35 / 11%);
   background: rgb(255 255 255 / 97%);
   box-shadow: 0 0.35rem 1.3rem rgb(20 35 24 / 16%);
-  backdrop-filter: blur(12px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .bottom-sheet.is-collapsed {

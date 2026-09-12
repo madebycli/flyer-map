@@ -24,6 +24,7 @@ import {
   type PickupAssignmentOption,
 } from "./PickupAssignmentEditor.tsx";
 import { CollectionAdminPickupWorkspace } from "./CollectionAdminPickupWorkspace.tsx";
+import { FieldHub } from "../platform/FieldHub.tsx";
 import "./collection-admin-panel.css";
 
 type Collector = {
@@ -261,16 +262,16 @@ export function CollectionAdminPanel({
   };
 
   return (
-    <section className="bottom-sheet collection-admin-sheet" aria-label={copy(language, "Collection verwalten", "Manage collection")}>
-      <div className="sheet-handle" aria-hidden="true" />
-      <div className="sheet-header">
-        <div>
-          <span className="eyebrow">Collection</span>
-          <strong>{copy(language, "Collection verwalten", "Manage collection")}</strong>
-        </div>
-        <button className="icon-button" type="button" onClick={onClose} aria-label={copy(language, "Schließen", "Close")}>×</button>
-      </div>
-
+    <FieldHub
+      open
+      title={copy(language, "Collection verwalten", "Manage collection")}
+      kicker="Collection"
+      onClose={onClose}
+      initialSnap="expanded"
+      retractable
+      overlayClassName="map-context-overlay"
+      className="collection-admin-sheet map-context-hub"
+    >
       <div className="collection-admin-actions">
         <button type="button" className="primary-action" onClick={onStartMainArea} disabled={Boolean(collection.mainArea)}>
           {collection.mainArea ? copy(language, "Main Area vorhanden", "Main area configured") : copy(language, "Main Area zeichnen", "Draw main area")}
@@ -477,6 +478,6 @@ export function CollectionAdminPanel({
       </div>
 
       {message ? <p className="collection-message" role="status">{message}</p> : null}
-    </section>
-  );
+  </FieldHub>
+);
 }

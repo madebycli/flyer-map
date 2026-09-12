@@ -119,7 +119,7 @@ test('full resumable pipeline publishes 1000 and 5000 houses with bounded tile r
     const roads=Array.from({length:20},(_,i)=>({type:'way',id:10+i,tags:{highway:'residential',name:`Road ${i}`},geometry:[{lon:13.0001+i*0.00049,lat:51.0001},{lon:13.0001+i*0.00049,lat:51.0099}]}));
     const buildings=Array.from({length:count},(_,i)=>{
       const x=13.00015+(i%20)*0.00049,y=51.00015+Math.floor(i/20)*0.000038;
-      return {type:'way',id:1000+i,tags:{building:'house','addr:street':`Road ${i%20}`},geometry:[{lon:x,lat:y},{lon:x+0.00001,lat:y},{lon:x+0.00001,lat:y+0.00001},{lon:x,lat:y}]};
+      return {type:'way',id:1000+i,tags:{building:'house','addr:street':`Road ${i%20}`,'addr:housenumber':String(Math.floor(i/20)+1)},geometry:[{lon:x,lat:y},{lon:x+0.00001,lat:y},{lon:x+0.00001,lat:y+0.00001},{lon:x,lat:y}]};
     });
     let requests=0;const start=performance.now();
     const result=await prepareAreaTasks(db,'campaign_n','area_n',{fetchImpl:async(_url,init)=>{

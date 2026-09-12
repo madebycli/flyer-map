@@ -1,13 +1,20 @@
 import type { ReactNode } from "react";
-import { FieldBottomSheet, type FieldSheetSnap } from "./FieldBottomSheet.tsx";
+import { FieldBottomSheet, type FieldSheetHeaderControls, type FieldSheetSnap } from "./FieldBottomSheet.tsx";
 import "./field-hub.css";
 
 type FieldHubProps = {
   open?: boolean;
   title: string;
   kicker?: string;
+  headerAside?: ReactNode;
+  headerActions?: (controls: FieldSheetHeaderControls) => ReactNode;
+  showClose?: boolean;
   onClose: () => void;
+  onTitleClick?: () => void;
+  overlayClassName?: string;
   initialSnap?: FieldSheetSnap;
+  retractable?: boolean;
+  initialRetracted?: boolean;
   className?: string;
   children: ReactNode;
   footer?: ReactNode;
@@ -17,8 +24,15 @@ export function FieldHub({
   open = true,
   title,
   kicker,
+  headerAside,
+  headerActions,
+  showClose = true,
   onClose,
+  onTitleClick,
+  overlayClassName = "",
   initialSnap = "expanded",
+  retractable = false,
+  initialRetracted = false,
   className = "",
   children,
   footer,
@@ -28,8 +42,15 @@ export function FieldHub({
       open={open}
       title={title}
       kicker={kicker}
+      headerAside={headerAside}
+      headerActions={headerActions}
+      showClose={showClose}
       onClose={onClose}
+      onTitleClick={onTitleClick}
+      overlayClassName={overlayClassName}
       initialSnap={initialSnap}
+      retractable={retractable}
+      initialRetracted={initialRetracted}
       className={`field-hub ${className}`.trim()}
       footer={footer}
     >

@@ -16,18 +16,23 @@ import {
   type AccessInfo,
   type PersistentAccessRole,
 } from "../data/campaignApi";
-import type { Campaign, MapCameraView, Team } from "../domain/campaign";
+import type { Area, Campaign, MapCameraView, Team } from "../domain/campaign";
 import { saveLanguage, t, type Language } from "../i18n";
+import { AppearanceControl } from "./AppearanceControl.tsx";
+import type { AppearancePreference } from "./appearance.ts";
 import { FieldHub } from "../platform/FieldHub.tsx";
 import { ShareLinkModal } from "../share/ShareLinkModal.tsx";
 
 type Props = {
   language: Language;
   campaign: Campaign;
+  areas: Area[];
   teams: Team[];
   access: AccessInfo | null;
   currentCamera: MapCameraView | null;
   initialAccessUrl: string | null;
+  appearance: AppearancePreference;
+  onAppearanceChange: (preference: AppearancePreference) => void;
   onLanguageChange: (language: Language) => void;
   onRenameCampaign: (name: string) => void;
   onNormalizeCampaignName: () => void;
@@ -36,6 +41,8 @@ type Props = {
   onJumpToFocus: () => void;
   onRemoveFocus: () => void;
   onResetPersonalCamera: () => void;
+  onAreaTeamChange: (areaId: string, teamId: string) => void;
+  onReload: () => void;
   onClose: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -66,10 +73,13 @@ function shareDescription(role: PersistentAccessRole) {
 export function SettingsSheet({
   language,
   campaign,
+  areas,
   teams,
   access,
   currentCamera,
   initialAccessUrl,
+  appearance,
+  onAppearanceChange,
   onLanguageChange,
   onRenameCampaign,
   onNormalizeCampaignName,
@@ -78,6 +88,8 @@ export function SettingsSheet({
   onJumpToFocus,
   onRemoveFocus,
   onResetPersonalCamera,
+  onAreaTeamChange,
+  onReload,
   onClose,
   collapsed,
   onToggleCollapsed,
@@ -319,6 +331,16 @@ export function SettingsSheet({
                 {t(language, "jumpToFocus")}
               </button>
             ) : null}
+            <button className="button secondary" type="button" onClick={onReload}>
+              App neu laden
+            </button>
+          </div>
+          <div className="settings-appearance-panel">
+            <AppearanceControl
+              value={appearance}
+              labels={{ title: "Darstellung", system: "System", light: "Hell", dark: "Dunkel" }}
+              onChange={onAppearanceChange}
+            />
           </div>
         </section>
 
@@ -359,6 +381,24 @@ export function SettingsSheet({
                     </>
                   ) : null}
                 </div>
+              </div>
+            </section>
+
+            <section className="settings-section settings-area-team-section">
+              <h3>Gebiete & Teams</h3>
+              <p className="settings-help">Team-Zuordnungen werden hier gesammelt geändert, nicht beim Öffnen eines Gebiets.</p>
+              <div className="settings-area-team-list">
+                {areas.map((area) => (
+                  <label className="settings-area-team-row" key={area.id}>
+                    <span>{area.name.trim() || t(language, "area")}</span>
+                    <select value={area.teamId} onChange={(event) => onAreaTeamChange(area.id, event.target.value)}>
+                      {teams.map((team) => (
+                        <option value={team.id} key={team.id}>{team.name.trim() || t(language, "team")}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+                {areas.length === 0 ? <p className="settings-muted">Noch keine Gebiete vorhanden.</p> : null}
               </div>
             </section>
 

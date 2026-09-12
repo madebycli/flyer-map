@@ -1,6 +1,13 @@
 .collection-admin-sheet {
   max-height: min(88dvh, 900px);
-  overflow: auto;
+}
+
+.field-bottom-sheet.collection-admin-sheet {
+  max-height: min(88dvh, 900px);
+}
+
+.field-bottom-sheet.collection-admin-sheet .field-sheet-body {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
 }
 
 .collection-admin-actions {

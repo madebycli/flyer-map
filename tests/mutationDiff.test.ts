@@ -138,3 +138,28 @@ test("rejects ambiguous compound snapshot changes instead of broad fallback writ
     (error) => error instanceof MutationDerivationError,
   );
 });
+
+
+test("derives an Area rename from the revisioned snapshot used by Team Comments", () => {
+  const previous = snapshot();
+  const changedAt = "2026-08-25T12:01:30.000Z";
+  const next: CampaignSnapshot = {
+    ...previous,
+    revision: previous.revision + 1,
+    campaign: { ...previous.campaign, updatedAt: changedAt },
+    areas: previous.areas.map((area) =>
+      area.id === "area_a" ? { ...area, name: "Gebiet A neu", updatedAt: changedAt } : area,
+    ),
+  };
+
+  const mutation = deriveCampaignMutation(previous, next);
+  assert.ok(mutation);
+  assert.equal(mutation.type, "area.rename");
+  if (mutation.type !== "area.rename") return;
+  assert.equal(mutation.baseRevision, 7);
+  assert.deepEqual(mutation.payload, {
+    areaId: "area_a",
+    name: "Gebiet A neu",
+    expectedUpdatedAt: initialTime,
+  });
+});

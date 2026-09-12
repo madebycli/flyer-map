@@ -1,0 +1,154 @@
+/* Dark surfaces for UI modules that still carry legacy literal light colors.
+   QR canvases and every MapLibre-rendered surface intentionally stay unchanged. */
+html[data-appearance="dark"] {
+  --surface: var(--ui-surface);
+  --muted: var(--ui-muted);
+}
+
+html[data-appearance="dark"] :where(.team-hub, .team-center) {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+}
+
+html[data-appearance="dark"] :where(
+  .team-hub-card,
+  .team-center-card,
+  .team-center-actions-card
+) {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] :where(
+  .team-hub-field input,
+  .team-hub-field select,
+  .team-hub-inline-form input,
+  .team-center-field input,
+  .team-center-field select,
+  .team-center-modal-form input,
+  .team-center-modal-form select,
+  .team-center-link-input,
+  .team-comments-area input,
+  .team-hub-group-item,
+  .team-center-quick-grid button
+) {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface);
+}
+
+html[data-appearance="dark"] :where(
+  .team-hub-secondary,
+  .team-hub-action-grid button,
+  .team-center-secondary,
+  .team-center-secondary-card,
+  .team-center-action-grid button,
+  .team-center-inline button,
+  .team-comments-area button,
+  .team-hub-close,
+  .team-hub-icon-action,
+  .team-center-header > button,
+  .team-center-modal > header > button,
+  .team-center-icon-button
+) {
+  color: var(--ui-text);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] :where(.team-hub-notice.is-offline) {
+  color: #f4d4a4;
+  background: #3b2a1c;
+}
+
+html[data-appearance="dark"] :where(.team-hub-notice.is-error) {
+  color: #ffc3c6;
+  background: #482326;
+}
+
+html[data-appearance="dark"] .team-hub-team-dot {
+  box-shadow: 0 0 0 0.22rem rgb(33 33 33 / 88%);
+}
+
+html[data-appearance="dark"] .join-access-value {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .join-access-copy-button {
+  color: var(--ui-text);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .join-access-copy-button.is-copied {
+  color: #b8f0c8;
+  background: #193524;
+}
+
+html[data-appearance="dark"] .share-link-modal {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+}
+
+html[data-appearance="dark"] :where(.share-link-modal header span, .share-link-modal p) {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .share-link-modal header button {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .share-link-modal input {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .collection-screen {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+}
+
+html[data-appearance="dark"] :where(.collection-header p, .collection-card p, .collection-footnote) {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] :where(.collection-card, .collection-map-card) {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: 0 8px 26px rgb(0 0 0 / 24%);
+}
+
+html[data-appearance="dark"] :where(
+  .collection-area-row,
+  .collection-run-row,
+  .collection-owned-row
+) {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] :where(
+  .collection-area-copy small,
+  .collection-run-row small,
+  .collection-owned-row small,
+  .collection-collector-row small
+) {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] :where(.collection-count, .collection-member-badge) {
+  color: #b8f0c8;
+  background: #193524;
+}
+
+html[data-appearance="dark"] .collection-color-dot {
+  border-color: var(--ui-surface-raised);
+}

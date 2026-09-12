@@ -1,17 +1,18 @@
 .map-refresh-control {
   position: absolute;
   z-index: 19;
-  right: 0.55rem;
-  bottom: calc(env(safe-area-inset-bottom) + 0.55rem + var(--platform-field-control-size, 2.8rem) + 0.45rem);
-  width: 2.8rem;
-  height: 2.8rem;
+  /* Center the sync control above the two quick actions. */
+  right: calc(var(--platform-field-edge-gap, 0.55rem) + 1.65rem);
+  bottom: calc(env(safe-area-inset-bottom) + var(--platform-field-edge-gap, 0.55rem) + var(--platform-field-control-size, 2.8rem) + 0.45rem);
+  width: var(--platform-field-control-size, 2.8rem);
+  height: var(--platform-field-control-size, 2.8rem);
   pointer-events: none;
 }
 
 .map-refresh-button {
   display: grid;
-  width: 2.8rem;
-  height: 2.8rem;
+  width: 100%;
+  height: 100%;
   place-items: center;
   padding: 0;
   border: 1px solid rgb(30 50 35 / 11%);
@@ -23,7 +24,8 @@
   font-weight: 760;
   line-height: 1;
   pointer-events: auto;
-  backdrop-filter: blur(10px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -76,7 +78,8 @@
   font-weight: 700;
   line-height: 1.3;
   pointer-events: none;
-  backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 @keyframes map-refresh-spin {
@@ -204,6 +207,42 @@
   flex: 1 1 11rem;
 }
 
+.settings-area-team-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.settings-area-team-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 12rem);
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #dce4dd;
+  border-radius: 0.78rem;
+  background: #f8faf8;
+}
+
+.settings-area-team-row > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-area-team-row select {
+  min-height: 2.35rem;
+  padding: 0.42rem 1.8rem 0.42rem 0.58rem;
+  border: 1px solid #cfd7d0;
+  border-radius: 0.65rem;
+  color: #172019;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.72rem;
+}
+
 .access-create-grid {
   display: grid;
   gap: 0.65rem;
@@ -294,8 +333,8 @@
 
 @media (max-width: 480px) {
   .map-refresh-control {
-    right: 0.55rem;
-    bottom: calc(env(safe-area-inset-bottom) + 0.55rem + var(--platform-field-control-size, 2.8rem) + 0.45rem);
+    right: calc(var(--platform-field-edge-gap, 0.55rem) + 1.65rem);
+    bottom: calc(env(safe-area-inset-bottom) + var(--platform-field-edge-gap, 0.55rem) + var(--platform-field-control-size, 2.8rem) + 0.45rem);
   }
 
   .offline-map-context-badge {
@@ -310,6 +349,10 @@
 
   .settings-actions.stacked-mobile .button {
     width: 100%;
+  }
+
+  .settings-area-team-row {
+    grid-template-columns: 1fr;
   }
 
   .access-card {

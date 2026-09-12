@@ -1,0 +1,686 @@
+/* UI-only appearance layer.
+   Deliberately does not target MapLibre, the map canvas, map sources, or map layers.
+   The dark base follows a neutral YouTube-style grayscale system. */
+.settings-appearance-panel {
+  margin: 0.65rem 0.1rem 0.2rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgb(23 32 25 / 10%);
+}
+
+html[data-appearance="dark"] {
+  --ui-bg: #0f0f0f;
+  --ui-surface: #181818;
+  --ui-surface-raised: #212121;
+  --ui-surface-soft: #272727;
+  --ui-text: #f1f1f1;
+  --ui-muted: #aaaaaa;
+  --ui-border: rgb(255 255 255 / 14%);
+  --ui-border-strong: rgb(255 255 255 / 24%);
+  --ui-accent: #3f3f3f;
+  --ui-accent-strong: #5a5a5a;
+  --ui-danger: #ffb4ab;
+  --ui-warning: #fdd663;
+
+  --org-bg: var(--ui-bg);
+  --org-panel: var(--ui-surface);
+  --org-text: var(--ui-text);
+  --org-muted: var(--ui-muted);
+  --org-border: var(--ui-border);
+  --org-accent: var(--ui-accent);
+  --org-accent-strong: var(--ui-accent-strong);
+  --org-danger: var(--ui-danger);
+  --org-warning: #2a2517;
+}
+
+html[data-appearance="dark"] body {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+}
+
+html[data-appearance="dark"] :where(.app-loading, .platform-module-overlay) {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+}
+
+html[data-appearance="dark"] :where(
+  .topbar,
+  .map-toolbar,
+  .mode-sheet,
+  .bottom-sheet,
+  .field-bottom-sheet,
+  .field-sheet-footer,
+  .platform-field-bar,
+  .platform-menu-sheet,
+  .platform-module-header,
+  .platform-card,
+  .platform-team-progress-card,
+  .platform-session-list article,
+  .team-card,
+  .settings-section,
+  .settings-subsection,
+  .access-card,
+  .access-link-result,
+  .empty-state
+) {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: 0 0.35rem 1.3rem rgb(0 0 0 / 28%);
+}
+
+html[data-appearance="dark"] .field-bottom-sheet {
+  --field-hud-header-divider: 1px solid var(--ui-border);
+}
+
+html[data-appearance="dark"] :where(
+  .bottom-sheet.field-sheet-enhanced .sheet-handle-button,
+  .bottom-sheet.field-sheet-enhanced .sheet-header
+) {
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+html[data-appearance="dark"] :where(
+  .sheet-handle,
+  .field-sheet-handle,
+  .platform-menu-handle
+) {
+  background: #666666;
+}
+
+html[data-appearance="dark"] :where(
+  .subtitle,
+  .eyebrow,
+  .team-picker > span,
+  .field-label > span,
+  .mode-sheet p,
+  .empty-state p,
+  .field-sheet-header span,
+  .platform-menu-header span,
+  .platform-module-header span,
+  .platform-card-heading span,
+  .platform-team-progress-card span,
+  .platform-team-progress-card small,
+  .platform-session-list span,
+  .platform-session-list p,
+  .settings-help,
+  .settings-section p,
+  .access-card span
+) {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] :where(
+  .team-picker select,
+  .field-label input,
+  .field-label select,
+  .team-card-header input,
+  .access-link-result input,
+  input,
+  select,
+  textarea
+):not(.maplibregl-map *) {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] :where(input, textarea):not(.maplibregl-map *)::placeholder {
+  color: #8a8a8a;
+}
+
+html[data-appearance="dark"] :where(
+  .button.secondary,
+  .icon-button,
+  .small-action,
+  .platform-grid-button,
+  .platform-menu-header button,
+  .platform-module-header button,
+  .field-sheet-header > button,
+  .field-sheet-header-action
+) {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .button.primary {
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-accent);
+}
+
+html[data-appearance="dark"] .button.danger {
+  color: #ffd8da;
+  background: #5a272b;
+}
+
+html[data-appearance="dark"] .platform-app-item {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .settings-appearance-panel {
+  border-top-color: var(--ui-border);
+}
+
+html[data-appearance="dark"] .appearance-control legend {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .appearance-control-options {
+  background: var(--ui-bg);
+}
+
+html[data-appearance="dark"] .appearance-control-option span {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .appearance-control-option input:checked + span {
+  color: var(--ui-text);
+  background: var(--ui-surface-raised);
+  box-shadow: 0 0.15rem 0.55rem rgb(0 0 0 / 28%);
+}
+
+html[data-appearance="dark"] :where(.connection.is-online, .area-preparation-status.is-ready) {
+  color: #b8f0c8;
+  border-color: #315e3d;
+  background: #193524;
+}
+
+html[data-appearance="dark"] :where(.connection.is-offline, .area-preparation-status.is-failed, .area-preparation-status.is-unavailable) {
+  color: #f3d39d;
+  border-color: #66502a;
+  background: #352b1c;
+}
+
+html[data-appearance="dark"] :where(.storage-warning, .platform-foundation-note) {
+  color: #f3dba8;
+  border-color: #66552e;
+  background: #332d1d;
+}
+
+html[data-appearance="dark"] .platform-foundation-note strong {
+  color: #f6dfa9;
+}
+
+html[data-appearance="dark"] :where(.team-dot, .platform-active-team-dot, .platform-team-dot) {
+  border-color: var(--ui-surface);
+}
+
+html[data-appearance="dark"] .color-swatch {
+  border-color: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .color-swatch.is-selected {
+  box-shadow: 0 0 0 3px var(--ui-text);
+}
+
+/* Organization/admin UI uses shared variables, plus a few historical literal surfaces. */
+html[data-appearance="dark"] :where(.org-public-header, .org-admin-topbar) {
+  background: rgb(24 24 24 / 96%);
+}
+
+html[data-appearance="dark"] .org-admin-page .org-lifecycle-actions button,
+html[data-appearance="dark"] .org-admin-page .org-detail-grid div {
+  color: var(--org-text);
+  border-color: var(--org-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .org-admin-page .org-lifecycle-actions button.is-current {
+  color: var(--ui-text);
+  border-color: var(--org-accent);
+  background: var(--org-accent);
+}
+
+html[data-appearance="dark"] .org-admin-page .org-campaign-card,
+html[data-appearance="dark"] .org-admin-page .org-empty {
+  color: var(--org-text);
+  border-color: var(--org-border);
+  background: var(--ui-surface);
+}
+
+html[data-appearance="dark"] .org-admin-page .org-empty {
+  background: rgb(24 24 24 / 70%);
+}
+
+html[data-appearance="dark"] :where(
+  .org-form input,
+  .org-form select,
+  .org-select-label select,
+  .org-secondary,
+  .org-campaign-card,
+  .org-lifecycle-actions button,
+  .org-recovery-box button
+) {
+  color: var(--org-text);
+  border-color: var(--org-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] :where(.org-recovery-box, .org-detail-grid div) {
+  color: var(--org-text);
+  border-color: var(--org-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .org-segmented {
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .org-segmented button.is-active {
+  color: var(--org-text);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .org-admin-topbar nav :where(button, a):hover {
+  color: var(--org-text);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .org-empty {
+  border-color: var(--org-border);
+  background: rgb(24 24 24 / 70%);
+}
+
+html[data-appearance="dark"] .org-warning p {
+  color: #e4d4a1;
+}
+
+html[data-appearance="dark"] .org-error {
+  color: #ffc1c3 !important;
+  background: #492326;
+}
+
+html[data-appearance="dark"] .org-lifecycle {
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .org-lifecycle--active {
+  color: #b9ecc8;
+  background: #183825;
+}
+
+html[data-appearance="dark"] .org-lifecycle--draft {
+  color: #c8d1e9;
+  background: #282d3a;
+}
+
+html[data-appearance="dark"] .org-lifecycle--completed {
+  color: #b9d9ef;
+  background: #1f3340;
+}
+
+html[data-appearance="dark"] .org-lifecycle--archived {
+  color: #d8c1b2;
+  background: #352c27;
+}
+
+
+/*
+ * Contrast checkpoint: keep every map-facing FieldHub readable in the neutral
+ * dark palette. These selectors deliberately target UI chrome only; no
+ * MapLibre canvas, source or layer is styled here.
+ */
+html[data-appearance="dark"] {
+  color-scheme: dark;
+}
+
+html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-handle-button,
+html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-header {
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-handle,
+html[data-appearance="dark"] .field-sheet-handle {
+  background: #666666;
+}
+
+html[data-appearance="dark"] .field-sheet-header > button,
+html[data-appearance="dark"] .field-sheet-header-action,
+html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-header .icon-button,
+html[data-appearance="dark"] .platform-menu-header button,
+html[data-appearance="dark"] .platform-module-header button {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .button.secondary,
+html[data-appearance="dark"] .icon-button,
+html[data-appearance="dark"] .small-action,
+html[data-appearance="dark"] .platform-grid-button,
+html[data-appearance="dark"] .status-button,
+html[data-appearance="dark"] .comments-context-toggle,
+html[data-appearance="dark"] .comments-context-error button,
+html[data-appearance="dark"] .comments-load-more {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .status-button.is-selected {
+  border-color: var(--ui-text);
+  box-shadow: inset 0 0 0 1px var(--ui-surface);
+}
+
+html[data-appearance="dark"] .platform-manual-street-button,
+html[data-appearance="dark"] .platform-manual-street-button:active,
+html[data-appearance="dark"] .platform-smart-mark-button,
+html[data-appearance="dark"] .platform-smart-mark-button:active {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-accent);
+  box-shadow: 0 0.3rem 1.1rem rgb(0 0 0 / 28%);
+}
+
+html[data-appearance="dark"] .platform-module-overlay {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+}
+
+html[data-appearance="dark"] .platform-sync-indicator {
+  color: var(--ui-text);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .platform-sync-indicator > span {
+  border-color: var(--ui-surface);
+}
+
+html[data-appearance="dark"] .field-hub-card {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .field-hub-empty {
+  color: var(--ui-muted);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .field-hub-heading span {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .map-context-hub .map-context-content > p,
+html[data-appearance="dark"] .area-preparation-progress p,
+html[data-appearance="dark"] .smart-street-meta,
+html[data-appearance="dark"] .smart-street-area-note,
+html[data-appearance="dark"] .context-task-list > p,
+html[data-appearance="dark"] .context-task-list-header span,
+html[data-appearance="dark"] .context-task-row small {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .area-preparation-progress {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .area-preparation-progress-header span {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .area-preparation-progress progress {
+  accent-color: var(--ui-accent-strong);
+}
+
+html[data-appearance="dark"] .geometry-status.is-valid {
+  color: #9be7ad;
+}
+
+html[data-appearance="dark"] .geometry-status.is-invalid {
+  color: var(--ui-warning);
+}
+
+html[data-appearance="dark"] .field-sheet-header .geometry-header-status.is-approved {
+  color: #b8f0c8;
+  border-color: #315e3d;
+  background: #193524;
+}
+
+html[data-appearance="dark"] .field-sheet-header .geometry-header-status.is-pending {
+  color: #f3d39d;
+  border-color: #66502a;
+  background: #352b1c;
+}
+
+html[data-appearance="dark"] .comments-context-panel.is-icon.is-expanded .comments-context-toggle {
+  border-color: #8ab4f8;
+  box-shadow: 0 0 0 2px rgb(138 180 248 / 0.2);
+}
+
+html[data-appearance="dark"] .street-summary {
+  color: var(--ui-text);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .smart-street-message {
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .smart-street-choice-list,
+html[data-appearance="dark"] .context-task-list {
+  border-color: var(--ui-border);
+}
+
+html[data-appearance="dark"] .smart-street-choice {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .smart-street-choice small {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .context-task-list-header {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .context-task-list-header > span > strong,
+html[data-appearance="dark"] .context-task-list-header > b {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .task-title-editor,
+html[data-appearance="dark"] .area-title-editor {
+  border-bottom-color: var(--ui-border);
+}
+
+html[data-appearance="dark"] .context-task-row {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .comments-context-toggle em {
+  color: var(--ui-text);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .comments-context-error {
+  color: #ffc1c3;
+  border-color: #6e3539;
+  background: #492326;
+}
+
+html[data-appearance="dark"] .comments-panel {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .comment-card {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .comments-empty,
+html[data-appearance="dark"] .comments-readonly,
+html[data-appearance="dark"] .comment-error,
+html[data-appearance="dark"] .comments-panel-header > div > span,
+html[data-appearance="dark"] .comments-panel-header > span,
+html[data-appearance="dark"] .comment-composer-footer > span,
+html[data-appearance="dark"] .comment-card-meta time {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .comment-card p,
+html[data-appearance="dark"] .comment-composer textarea,
+html[data-appearance="dark"] .comment-edit-form textarea {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .comment-edit-form textarea,
+html[data-appearance="dark"] .comment-composer textarea {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface);
+}
+
+html[data-appearance="dark"] .comment-action {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .comment-action-primary,
+html[data-appearance="dark"] .comment-composer-footer button {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-accent);
+}
+
+html[data-appearance="dark"] .comment-action-danger {
+  color: #ffc1c3;
+  border-color: #6e3539;
+  background: #492326;
+}
+
+html[data-appearance="dark"] .settings-section h3 {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .settings-area-team-row {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .settings-area-team-row select {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface);
+}
+
+html[data-appearance="dark"] .settings-subsection > strong {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .settings-subsection > p,
+html[data-appearance="dark"] .settings-help,
+html[data-appearance="dark"] .settings-muted,
+html[data-appearance="dark"] .offline-map-attribution,
+html[data-appearance="dark"] .offline-map-meta dt {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .settings-error {
+  color: #ffb4ab;
+}
+
+html[data-appearance="dark"] .offline-map-card {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .offline-map-card > strong,
+html[data-appearance="dark"] .offline-map-meta dd {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .offline-map-status {
+  color: #9be7ad;
+}
+
+html[data-appearance="dark"] .team-dot,
+html[data-appearance="dark"] .team-color-preview {
+  border-color: var(--ui-surface);
+  box-shadow: 0 0 0 1px var(--ui-border);
+}
+
+html[data-appearance="dark"] .map-refresh-button,
+html[data-appearance="dark"] .offline-map-context-badge,
+html[data-appearance="dark"] .map-error {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+  box-shadow: 0 0.3rem 1rem rgb(0 0 0 / 28%);
+}
+
+html[data-appearance="dark"] .map-refresh-control.is-error .map-refresh-button {
+  color: #f3d39d;
+  border-color: #66502a;
+  background: #352b1c;
+}
+
+html[data-appearance="dark"] .connection.is-online,
+html[data-appearance="dark"] .area-preparation-status.is-ready {
+  color: #b8f0c8;
+  border-color: #315e3d;
+  background: #193524;
+}
+
+html[data-appearance="dark"] .connection.is-offline,
+html[data-appearance="dark"] .area-preparation-status.is-failed,
+html[data-appearance="dark"] .area-preparation-status.is-unavailable {
+  color: #f3d39d;
+  border-color: #66502a;
+  background: #352b1c;
+}
+
+html[data-appearance="dark"] .storage-warning,
+html[data-appearance="dark"] .platform-foundation-note {
+  color: #f3dba8;
+  border-color: #66552e;
+  background: #332d1d;
+}
+
+html[data-appearance="dark"] .platform-foundation-note strong {
+  color: #f6dfa9;
+}
+
+html[data-appearance="dark"] .app-menu-surface {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="dark"] .app-menu-item {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+html[data-appearance="dark"] .app-menu-close {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .app-menu-item-state {
+  color: var(--ui-muted);
+}

@@ -1,0 +1,213 @@
+{
+  "sourceHead": "b126e70899ad5a5c206d8c3ed0fa1fe7b34766fe",
+  "observations": [
+    {
+      "scenario": "scale",
+      "houses": 0,
+      "tiles": 1,
+      "result": {
+        "outcome": "ready",
+        "roadCount": 20,
+        "houseCount": 0,
+        "generation": "b2aa43cd-2d35-445e-b04c-564881962eb4"
+      },
+      "phase": "ready",
+      "cursor": 0,
+      "errorCode": null,
+      "steps": 6,
+      "maxStatements": 27,
+      "totalStatements": 70,
+      "returnedRows": 58,
+      "estimatedReads": 68,
+      "writes": 67,
+      "requests": 2,
+      "sourceBytes": 3185,
+      "edgeReads": 2,
+      "edgeBytes": 25738,
+      "wallMs": 59,
+      "nodeCpuMs": 77.271,
+      "sampledProcessHeapBytes": 21991704,
+      "note": "SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; phase loop, not DO alarm overhead"
+    },
+    {
+      "scenario": "scale",
+      "houses": 399,
+      "tiles": 1,
+      "result": {
+        "outcome": "ready",
+        "roadCount": 20,
+        "houseCount": 399,
+        "generation": "64497263-fd22-44d2-bc51-13c46a9c59bd"
+      },
+      "phase": "ready",
+      "cursor": 0,
+      "errorCode": null,
+      "steps": 7,
+      "maxStatements": 27,
+      "totalStatements": 81,
+      "returnedRows": 66,
+      "estimatedReads": 78,
+      "writes": 136,
+      "requests": 2,
+      "sourceBytes": 108609,
+      "edgeReads": 3,
+      "edgeBytes": 38607,
+      "wallMs": 244,
+      "nodeCpuMs": 427.086,
+      "sampledProcessHeapBytes": 32371016,
+      "note": "SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; phase loop, not DO alarm overhead"
+    },
+    {
+      "scenario": "scale",
+      "houses": 1000,
+      "tiles": 1,
+      "result": {
+        "outcome": "ready",
+        "roadCount": 20,
+        "houseCount": 1000,
+        "generation": "592162d3-928f-47ed-906b-7ea09269874b"
+      },
+      "phase": "ready",
+      "cursor": 0,
+      "errorCode": null,
+      "steps": 9,
+      "maxStatements": 27,
+      "totalStatements": 97,
+      "returnedRows": 76,
+      "estimatedReads": 88,
+      "writes": 152,
+      "requests": 2,
+      "sourceBytes": 266664,
+      "edgeReads": 5,
+      "edgeBytes": 64345,
+      "wallMs": 360,
+      "nodeCpuMs": 573.463,
+      "sampledProcessHeapBytes": 46071584,
+      "note": "SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; phase loop, not DO alarm overhead"
+    },
+    {
+      "scenario": "scale",
+      "houses": 5000,
+      "tiles": 1,
+      "result": {
+        "outcome": "ready",
+        "roadCount": 20,
+        "houseCount": 5000,
+        "generation": "2e4ae1f7-5a55-4239-95e2-407bc5356147"
+      },
+      "phase": "ready",
+      "cursor": 0,
+      "errorCode": null,
+      "steps": 25,
+      "maxStatements": 33,
+      "totalStatements": 239,
+      "returnedRows": 163,
+      "estimatedReads": 181,
+      "writes": 315,
+      "requests": 2,
+      "sourceBytes": 1326524,
+      "edgeReads": 21,
+      "edgeBytes": 270249,
+      "wallMs": 1464,
+      "nodeCpuMs": 1864.681,
+      "sampledProcessHeapBytes": 106048720,
+      "note": "SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; phase loop, not DO alarm overhead"
+    },
+    {
+      "scenario": "scale",
+      "houses": 10000,
+      "tiles": 1,
+      "result": {
+        "outcome": "ready",
+        "roadCount": 20,
+        "houseCount": 10000,
+        "generation": "6dd1b03f-f56f-42ad-9550-7cc810d44b29"
+      },
+      "phase": "ready",
+      "cursor": 0,
+      "errorCode": null,
+      "steps": 45,
+      "maxStatements": 40,
+      "totalStatements": 415,
+      "returnedRows": 270,
+      "estimatedReads": 294,
+      "writes": 534,
+      "requests": 2,
+      "sourceBytes": 2651604,
+      "edgeReads": 41,
+      "edgeBytes": 527629,
+      "wallMs": 2630,
+      "nodeCpuMs": 2846.253,
+      "sampledProcessHeapBytes": 138265160,
+      "note": "SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; phase loop, not DO alarm overhead"
+    },
+    {
+      "scenario": "scale",
+      "houses": 20000,
+      "tiles": 2,
+      "result": {
+        "outcome": "failed",
+        "code": "area_preparation_too_many_features"
+      },
+      "phase": "addresses",
+      "cursor": 0,
+      "errorCode": "house_assignment_budget",
+      "steps": 6,
+      "maxStatements": 20,
+      "totalStatements": 79,
+      "returnedRows": 33,
+      "estimatedReads": 109,
+      "writes": 90,
+      "requests": 4,
+      "sourceBytes": 5313268,
+      "edgeReads": 0,
+      "edgeBytes": 0,
+      "wallMs": 449,
+      "nodeCpuMs": 518.504,
+      "sampledProcessHeapBytes": 146693096,
+      "note": "SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; phase loop, not DO alarm overhead"
+    },
+    {
+      "scenario": "all-open",
+      "result": {
+        "outcome": "ready",
+        "roadCount": 1,
+        "houseCount": 0,
+        "generation": "e6629294-3f57-474e-af28-9d788e073238"
+      },
+      "job": {
+        "phase": "ready",
+        "cursor": 0,
+        "error_code": null,
+        "metrics_json": "{\"tiles\":1,\"peakConcurrency\":1,\"sourceTimestamp\":\"2026-09-12T00:00:00Z\",\"cacheHits\":0,\"requests\":2,\"parseMs\":0.07101799999963987,\"normalizationMs\":0.024607999999716412,\"tileTimings\":[{\"kind\":\"roads\",\"tile\":0,\"bytes\":928,\"elapsedMs\":0.43129099999987375,\"attempts\":1},{\"kind\":\"buildings\",\"tile\":0,\"bytes\":158,\"elapsedMs\":0.45782099999996717,\"attempts\":1}],\"bytes\":1086,\"fetchMs\":0.8891119999998409,\"roads\":1,\"graphMs\":0.5021180000003369,\"buildings\":0,\"addressableBuildings\":0,\"targetChunks\":[],\"addressMs\":0.1546539999999368,\"houses\":0,\"linkMs\":0.30617200000051525,\"publishMs\":1.1695659999995769}"
+      }
+    },
+    {
+      "scenario": "null-node",
+      "result": {
+        "outcome": "pending"
+      },
+      "job": {
+        "phase": "buildings",
+        "cursor": 0,
+        "error_code": "overpass_transport_error",
+        "metrics_json": "{\"tiles\":1,\"peakConcurrency\":1,\"sourceTimestamp\":\"2026-09-12T00:00:00Z\",\"cacheHits\":0,\"requests\":1,\"parseMs\":0.029223999999885564,\"normalizationMs\":0.01268900000013673,\"tileTimings\":[{\"kind\":\"roads\",\"tile\":0,\"bytes\":928,\"elapsedMs\":0.26413899999988644,\"attempts\":1}],\"bytes\":928,\"fetchMs\":0.26413899999988644,\"roads\":1,\"graphMs\":0.4685570000001462,\"lastError\":{\"phase\":\"buildings\",\"cursor\":0,\"code\":\"overpass_transport_error\",\"attempt\":1},\"retries\":1}"
+      }
+    },
+    {
+      "scenario": "empty",
+      "result": {
+        "outcome": "ready",
+        "roadCount": 1,
+        "houseCount": 0,
+        "generation": "00ef854d-7a9e-4a4d-ab5f-74966913ce9e"
+      },
+      "job": {
+        "phase": "ready",
+        "cursor": 0,
+        "error_code": null,
+        "metrics_json": "{\"tiles\":1,\"peakConcurrency\":1,\"sourceTimestamp\":\"2026-09-12T00:00:00Z\",\"cacheHits\":0,\"requests\":2,\"parseMs\":0.037647000000106345,\"normalizationMs\":0.020911999999952968,\"tileTimings\":[{\"kind\":\"roads\",\"tile\":0,\"bytes\":928,\"elapsedMs\":0.2905689999997776,\"attempts\":1},{\"kind\":\"buildings\",\"tile\":0,\"bytes\":15,\"elapsedMs\":0.2101570000004358,\"attempts\":1}],\"bytes\":943,\"fetchMs\":0.5007260000002134,\"roads\":1,\"graphMs\":0.5310920000001715,\"buildings\":0,\"addressableBuildings\":0,\"targetChunks\":[],\"addressMs\":0.12111300000015035,\"houses\":0,\"linkMs\":0.14670200000000477,\"publishMs\":1.0608320000001186}"
+      }
+    }
+  ]
+}

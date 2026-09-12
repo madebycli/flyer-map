@@ -4,11 +4,12 @@
   z-index: 3400;
   display: flex;
   align-items: flex-end;
-  justify-content: center;
-  padding: 0.45rem;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 0.45rem);
-  background: rgb(16 24 18 / 24%);
-  backdrop-filter: blur(2px);
+  justify-content: flex-start;
+  padding: var(--platform-field-edge-gap, 0.55rem);
+  padding-bottom: calc(env(safe-area-inset-bottom) + var(--platform-field-edge-gap, 0.55rem));
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .field-sheet-overlay ~ .team-center-modal-backdrop {
@@ -35,7 +36,7 @@
 .field-bottom-sheet {
   display: flex;
   flex-direction: column;
-  width: min(38rem, 100%);
+  width: min(31rem, 100%);
   height: min(var(--field-sheet-height), calc(100dvh - env(safe-area-inset-top) - 0.8rem));
   max-height: calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 0.8rem);
   min-height: 12rem;
@@ -46,6 +47,51 @@
   background: rgb(255 255 255 / 99%);
   box-shadow: 0 0.55rem 2rem rgb(20 35 24 / 24%);
   overscroll-behavior: contain;
+}
+
+.field-bottom-sheet.field-sheet-auto {
+  height: auto;
+  min-height: 0;
+}
+
+.field-bottom-sheet.field-sheet-auto .field-sheet-body {
+  flex: 0 1 auto;
+  max-height: calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 6rem);
+}
+
+.field-bottom-sheet.field-sheet-retractable .field-sheet-body,
+.field-bottom-sheet.field-sheet-retractable .field-sheet-footer {
+  transition: max-height 180ms ease, opacity 140ms ease, padding 180ms ease;
+}
+
+.field-bottom-sheet.field-sheet-retracted {
+  height: auto;
+  min-height: 0;
+}
+
+.field-bottom-sheet.field-sheet-retracted .field-sheet-header {
+  border-bottom-color: transparent;
+}
+
+.field-bottom-sheet.field-sheet-retracted .field-sheet-body,
+.field-bottom-sheet.field-sheet-retracted .field-sheet-footer {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: 0;
+  overflow: hidden;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.field-bottom-sheet.field-sheet-retractable .field-sheet-handle-button {
+  cursor: pointer;
+}
+
+.field-bottom-sheet.field-sheet-dragging {
+  height: min(var(--field-sheet-height), calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 0.8rem));
+  max-height: calc((var(--field-sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 0.8rem);
 }
 
 .field-sheet-handle-button {
@@ -96,7 +142,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.field-sheet-header > button {
+.field-sheet-header > button,
+.field-sheet-header-action {
   display: grid;
   place-items: center;
   width: var(--field-hud-close-size);
@@ -108,6 +155,36 @@
   background: #edf2ee;
   font-size: 1.25rem;
   font-weight: 800;
+}
+
+.field-sheet-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.42rem;
+  margin-left: auto;
+}
+
+.field-sheet-header-action {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 999px;
+  color: #172019;
+  background: #edf2ee;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.field-sheet-header-action-confirm {
+  background: #dce9df;
+}
+
+.field-sheet-header-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .field-sheet-body {
@@ -213,7 +290,6 @@
 }
 
 @media (min-width: 760px) {
-  .field-sheet-overlay { align-items: center; }
   .field-bottom-sheet { border-radius: 1.3rem; }
 }
 
@@ -222,4 +298,42 @@
   .bottom-sheet.field-sheet-enhanced:not(.field-sheet-dragging) {
     transition: height 160ms ease, max-height 160ms ease;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field-bottom-sheet.field-sheet-retractable .field-sheet-body,
+  .field-bottom-sheet.field-sheet-retractable .field-sheet-footer {
+    transition: none;
+  }
+}
+
+
+.field-sheet-header > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.field-sheet-header-aside {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+
+.field-sheet-title-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.field-sheet-title-button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
 }

@@ -9,12 +9,13 @@
     "preview": "npm run build && vite preview",
     "test": "node --experimental-transform-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "audit:dependencies": "npm audit --audit-level=high",
+    "audit:dependencies": "node scripts/audit-dependencies.mjs",
     "verify": "npm test && npm run typecheck && npm run audit:dependencies",
     "check": "npm run verify && npm run build",
     "deploy": "npm run check && wrangler deploy"
   },
   "dependencies": {
+    "@mapbox/unitbezier": "0.0.1",
     "@turf/length": "7.3.1",
     "@turf/line-slice-along": "7.3.1",
     "@turf/nearest-point-on-line": "7.3.1",
@@ -32,7 +33,10 @@
     "@types/rbush": "4.0.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "@types/react-test-renderer": "19.1.0",
     "@vitejs/plugin-react": "6.1.0",
+    "fake-indexeddb": "6.2.5",
+    "react-test-renderer": "19.2.8",
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "wrangler": "4.125.0"
@@ -42,7 +46,8 @@
     "brace-expansion": "3.0.6",
     "fast-uri": "3.1.6",
     "js-yaml": "4.3.1",
-    "nanoid": "3.3.18"
+    "nanoid": "3.3.18",
+    "sharp": "0.35.4"
   },
   "engines": {
     "node": ">=22"

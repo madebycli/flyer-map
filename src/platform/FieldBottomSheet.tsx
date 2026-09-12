@@ -3,6 +3,13 @@ import "./field-bottom-sheet.css";
 
 export type FieldSheetSnap = "compact" | "expanded" | "full";
 
+export type FieldSheetHeaderControls = {
+  reveal: () => void;
+  retract: () => void;
+  toggle: () => void;
+  isRetracted: boolean;
+};
+
 const SNAP_RATIOS: Record<FieldSheetSnap, number> = {
   compact: 0.34,
   expanded: 0.62,
@@ -27,16 +34,28 @@ function nearestSnap(height: number, viewport: number): FieldSheetSnap {
   }, "expanded" as FieldSheetSnap);
 }
 
-function clampHeight(height: number, viewport: number) {
-  return Math.max(snapHeight("compact", viewport), Math.min(snapHeight("full", viewport), height));
+function clampHeight(height: number, viewport: number, allowRetracted = false) {
+  const minimum = allowRetracted ? 4.5 * 16 : snapHeight("compact", viewport);
+  return Math.max(minimum, Math.min(snapHeight("full", viewport), height));
+}
+
+function retractedDragThreshold(viewport: number) {
+  return Math.max(4.5 * 16, snapHeight("compact", viewport) * 0.72);
 }
 
 export function FieldBottomSheet({
   open,
   title,
   kicker,
+  headerAside,
+  headerActions,
+  showClose = true,
   onClose,
+  onTitleClick,
+  overlayClassName = "",
   initialSnap = "expanded",
+  retractable = false,
+  initialRetracted = false,
   className = "",
   children,
   footer,
@@ -44,19 +63,40 @@ export function FieldBottomSheet({
   open: boolean;
   title: string;
   kicker?: string;
+  headerAside?: ReactNode;
+  headerActions?: (controls: FieldSheetHeaderControls) => ReactNode;
+  showClose?: boolean;
   onClose: () => void;
+  onTitleClick?: () => void;
+  overlayClassName?: string;
   initialSnap?: FieldSheetSnap;
+  retractable?: boolean;
+  initialRetracted?: boolean;
   className?: string;
   children: ReactNode;
   footer?: ReactNode;
 }) {
   const [snap, setSnap] = useState<FieldSheetSnap>(initialSnap);
   const [viewport, setViewport] = useState(() => viewportHeight());
+  const [userSized, setUserSized] = useState(false);
+  const [retracted, setRetracted] = useState(initialRetracted);
+  const suppressHandleClick = useRef(false);
   const drag = useRef<{ pointerId: number; startY: number; startHeight: number; sheet: HTMLElement } | null>(null);
+  const reveal = useCallback(() => setRetracted(false), []);
+  const retract = useCallback(() => {
+    setSnap(initialSnap);
+    setUserSized(false);
+    setRetracted(true);
+  }, [initialSnap]);
+  const toggleRetracted = useCallback(() => setRetracted((current) => !current), []);
 
   useEffect(() => {
-    if (open) setSnap(initialSnap);
-  }, [initialSnap, open]);
+    if (open) {
+      setSnap(initialSnap);
+      setUserSized(false);
+      setRetracted(initialRetracted);
+    }
+  }, [initialRetracted, initialSnap, open]);
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -73,23 +113,41 @@ export function FieldBottomSheet({
 
   const committedHeight = useMemo(() => snapHeight(snap, viewport), [snap, viewport]);
 
-  const finishDrag = useCallback((height: number) => {
+  const finishDrag = useCallback((height: number, moved: boolean, shouldRetract: boolean) => {
     const activeDrag = drag.current;
-    const nextSnap = nearestSnap(height, viewport);
-    if (activeDrag) {
-      activeDrag.sheet.style.setProperty("--field-sheet-height", snapHeight(nextSnap, viewport) + "px");
+    if (!activeDrag) return;
+    if (!moved) {
       activeDrag.sheet.classList.remove("field-sheet-dragging");
+      drag.current = null;
+      return;
     }
+    if (shouldRetract) {
+      activeDrag.sheet.style.removeProperty("--field-sheet-height");
+      activeDrag.sheet.classList.remove("field-sheet-dragging");
+      setSnap(initialSnap);
+      setUserSized(false);
+      setRetracted(true);
+      drag.current = null;
+      return;
+    }
+    const nextSnap = nearestSnap(height, viewport);
+    activeDrag.sheet.style.setProperty("--field-sheet-height", snapHeight(nextSnap, viewport) + "px");
+    activeDrag.sheet.classList.remove("field-sheet-dragging");
     setSnap(nextSnap);
+    setUserSized(true);
     drag.current = null;
-  }, [viewport]);
+  }, [initialSnap, viewport]);
 
   if (!open) return null;
 
   return (
-    <div className="field-sheet-overlay" role="presentation" onMouseDown={onClose}>
+    <div
+      className={`field-sheet-overlay ${overlayClassName}`.trim()}
+      role="presentation"
+      onMouseDown={onClose}
+    >
       <section
-        className={`field-bottom-sheet ${className}`.trim()}
+        className={`field-bottom-sheet ${userSized ? "" : "field-sheet-auto"} ${retractable ? "field-sheet-retractable" : ""} ${retracted ? "field-sheet-retracted" : ""} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -100,44 +158,69 @@ export function FieldBottomSheet({
         <button
           className="field-sheet-handle-button"
           type="button"
-          aria-label="Fensterhöhe ändern"
+          aria-label={retractable ? (retracted ? "Fenster öffnen" : "Fenster einfahren") : "Fensterhöhe ändern"}
+          aria-expanded={retractable ? !retracted : undefined}
           aria-valuetext={snap === "compact" ? "Kompakt" : snap === "expanded" ? "Erweitert" : "Fast Vollbild"}
+          onClick={() => {
+            if (!retractable || suppressHandleClick.current) {
+              suppressHandleClick.current = false;
+              return;
+            }
+            toggleRetracted();
+          }}
           onPointerDown={(event) => {
+            suppressHandleClick.current = false;
             const sheet = event.currentTarget.closest<HTMLElement>(".field-bottom-sheet");
             if (!sheet) return;
-            drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: committedHeight, sheet };
+            const startHeight = sheet.getBoundingClientRect().height;
+            drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight, sheet };
+            sheet.style.setProperty("--field-sheet-height", startHeight + "px");
             sheet.classList.add("field-sheet-dragging");
             event.currentTarget.setPointerCapture?.(event.pointerId);
           }}
           onPointerMove={(event) => {
             if (!drag.current || drag.current.pointerId !== event.pointerId) return;
             event.preventDefault();
-            const next = clampHeight(drag.current.startHeight + drag.current.startY - event.clientY, viewport);
+            const next = clampHeight(
+              drag.current.startHeight + drag.current.startY - event.clientY,
+              viewport,
+              retractable,
+            );
             drag.current.sheet.style.setProperty("--field-sheet-height", next + "px");
           }}
           onPointerUp={(event) => {
             if (!drag.current || drag.current.pointerId !== event.pointerId) return;
-            const next = clampHeight(drag.current.startHeight + drag.current.startY - event.clientY, viewport);
-            finishDrag(next);
+            const activeDrag = drag.current;
+            if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+            const rawHeight = activeDrag.startHeight + activeDrag.startY - event.clientY;
+            const next = clampHeight(rawHeight, viewport, retractable);
+            const moved = Math.abs(event.clientY - activeDrag.startY) >= MIN_DRAG_PX;
+            suppressHandleClick.current = moved;
+            finishDrag(next, moved, retractable && rawHeight <= retractedDragThreshold(viewport));
           }}
           onPointerCancel={() => {
             const activeDrag = drag.current;
             if (activeDrag) activeDrag.sheet.classList.remove("field-sheet-dragging");
+            suppressHandleClick.current = false;
             drag.current = null;
           }}
           onKeyDown={(event) => {
             const index = SNAP_ORDER.indexOf(snap);
             if (event.key === "ArrowUp") {
               event.preventDefault();
+              setUserSized(true);
               setSnap(SNAP_ORDER[Math.min(SNAP_ORDER.length - 1, index + 1)]);
             } else if (event.key === "ArrowDown") {
               event.preventDefault();
+              setUserSized(true);
               setSnap(SNAP_ORDER[Math.max(0, index - 1)]);
             } else if (event.key === "Home") {
               event.preventDefault();
+              setUserSized(true);
               setSnap("compact");
             } else if (event.key === "End") {
               event.preventDefault();
+              setUserSized(true);
               setSnap("full");
             }
           }}
@@ -147,9 +230,26 @@ export function FieldBottomSheet({
         <header className="field-sheet-header">
           <div>
             {kicker ? <span>{kicker}</span> : null}
-            <strong>{title}</strong>
+            {onTitleClick ? (
+              <button
+                className="field-sheet-title-button"
+                type="button"
+                onClick={onTitleClick}
+                aria-label={`${title} bearbeiten`}
+              >
+                <strong>{title}</strong>
+              </button>
+            ) : (
+              <strong>{title}</strong>
+            )}
           </div>
-          <button type="button" onClick={onClose} aria-label={`${title} schließen`}>×</button>
+          {headerAside ? <div className="field-sheet-header-aside">{headerAside}</div> : null}
+          {headerActions ? (
+            <div className="field-sheet-header-actions">
+              {headerActions({ reveal, retract, toggle: toggleRetracted, isRetracted: retracted })}
+            </div>
+          ) : null}
+          {showClose ? <button className="field-sheet-close-button" type="button" onClick={onClose} aria-label={`${title} schließen`}>×</button> : null}
         </header>
         <div className="field-sheet-body">{children}</div>
         {footer ? <footer className="field-sheet-footer">{footer}</footer> : null}

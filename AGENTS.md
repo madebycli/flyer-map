@@ -8,6 +8,16 @@ The map is the primary field workspace. Users need to see assigned areas, real d
 
 The application must remain lightweight, reliable, privacy-conscious and easy to operate outdoors.
 
+## Current field UI checkpoint
+
+On Draft PR #92, the Street detail sheet keeps the existing red Danger color and
+uses a compact trash icon with the same footprint as the comment action. The
+four Street status actions stay in the existing two-column grid, while the
+compact comment and trash actions are stacked vertically in the adjacent action
+column. The Street marking status controls use equal-width columns. The House
+detail sheet keeps its two-column status grid. This is a presentation-only
+layout rule, not a change to task semantics or persistence.
+
 ## Product direction
 
 Current field model:
@@ -59,7 +69,7 @@ Frontend:
 - React;
 - Vite;
 - plain CSS;
-- MapLibre GL JS **5.7.1 pinned for the current renderer baseline**.
+- MapLibre GL JS **5.7.1** and `@mapbox/unitbezier` **0.0.1** are pinned on Draft PR #92 for the controlled renderer isolation test; 6.9.0 remains a historical comparison/release line. Real-device browser acceptance is still required by ADR-0030.
 
 Platform:
 - Cloudflare Workers;

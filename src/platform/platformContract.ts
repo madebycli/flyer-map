@@ -11,7 +11,8 @@ export type PlatformAppCommand =
         | "open-team-management"
         | "open-campaign-comments"
         | "start-area-drawing"
-        | "start-manual-street";
+        | "start-manual-street"
+        | "start-smart-marking";
     }
   | {
       id: number;
@@ -56,6 +57,7 @@ export type PlatformAppContext = {
   canManageTeams: boolean;
   canCreateArea: boolean;
   canCreateManualStreet: boolean;
+  canSmartMark?: boolean;
   syncState: PlatformSyncState;
   syncLabel: string | null;
 };

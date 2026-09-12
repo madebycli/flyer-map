@@ -66,6 +66,8 @@ export type RxdbChangeFeedEntry<N extends RxdbCollectionName = RxdbCollectionNam
 };
 
 export type RxdbPullResponse = {
+  generationState?: {revision:number;manifests:import('./generationVisibility.ts').GenerationManifest[]};
+  deletedAreaIds?: string[];
   documents: RxdbDocument[];
   checkpoint: RxdbCheckpoint;
   /** D1 Campaign revision; deliberately separate from the feed seq checkpoint. */

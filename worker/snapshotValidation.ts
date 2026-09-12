@@ -12,6 +12,8 @@ import type {
   Team,
 } from "../src/domain/campaign.ts";
 import {
+  validateAreaPolygonVertices,
+  validateHousePolygonVertices,
   validateLineStringVertices,
   validatePolygonVertices,
 } from "../src/domain/geometry.ts";
@@ -82,7 +84,7 @@ function samePoint(a: LngLat, b: LngLat) {
   return a[0] === b[0] && a[1] === b[1];
 }
 
-function parsePolygonGeometry(value: unknown): PolygonGeometry | null {
+function parsePolygonGeometry(value: unknown, kind: "area" | "house" | "generic" = "generic"): PolygonGeometry | null {
   if (!isRecord(value) || value.type !== "Polygon" || !Array.isArray(value.coordinates)) {
     return null;
   }
@@ -93,7 +95,11 @@ function parsePolygonGeometry(value: unknown): PolygonGeometry | null {
   if (!samePoint(ring[0], ring[ring.length - 1])) return null;
 
   const vertices = ring.slice(0, -1);
-  const validation = validatePolygonVertices(vertices);
+  const validation = kind === "area"
+    ? validateAreaPolygonVertices(vertices)
+    : kind === "house"
+      ? validateHousePolygonVertices(vertices)
+      : validatePolygonVertices(vertices);
   if (!validation.valid) return null;
 
   return value as PolygonGeometry;
@@ -161,7 +167,7 @@ function parseArea(value: unknown, campaignId: string): Area | null {
   if (!isRecord(value)) return null;
   if (!isId(value.id) || value.campaignId !== campaignId || !isId(value.teamId)) return null;
   if (!isBoundedString(value.name, 160)) return null;
-  if (!parsePolygonGeometry(value.geometry)) return null;
+  if (!parsePolygonGeometry(value.geometry, "area")) return null;
   if (!isTimestamp(value.createdAt) || !isTimestamp(value.updatedAt)) return null;
 
   return value as Area;
@@ -212,7 +218,7 @@ function parseHouseTask(value: unknown, campaignId: string): HouseTask | null {
   if (!isId(value.id) || value.campaignId !== campaignId || !isId(value.areaId)) return null;
   if (value.taskType !== "house") return null;
   if (!isBoundedString(value.label, 160)) return null;
-  if (!parsePolygonGeometry(value.geometry)) return null;
+  if (!parsePolygonGeometry(value.geometry, "house")) return null;
   if (value.source !== undefined && value.source !== null && !parseTaskSource(value.source, 1)) return null;
   const areaPreparationGeneration = parseAreaPreparationGeneration(value.areaPreparationGeneration);
   if (value.areaPreparationGeneration !== undefined && value.areaPreparationGeneration !== null && !areaPreparationGeneration) {
@@ -222,6 +228,62 @@ function parseHouseTask(value: unknown, campaignId: string): HouseTask | null {
   if (!validTaskStatus(value)) return null;
 
   return { ...value, areaPreparationGeneration } as HouseTask;
+}
+
+const INVALID_HOUSE_TASK_MESSAGE =
+  "Mindestens ein House Task, Polygon, Parent, Provenance oder Status ist ungültig.";
+
+function invalidHouseTaskEntries(value: unknown, campaignId: string) {
+  if (!isRecord(value) || !Array.isArray(value.houseTasks)) return null;
+  const invalid = new Map<string, string>();
+  for (const candidate of value.houseTasks) {
+    if (parseHouseTask(candidate, campaignId)) continue;
+    if (!isRecord(candidate) || !isId(candidate.id) || invalid.has(candidate.id)) return null;
+    const stableShape = {
+      id: candidate.id,
+      campaignId: candidate.campaignId,
+      areaId: candidate.areaId,
+      taskType: candidate.taskType,
+      geometry: candidate.geometry,
+      source: candidate.source,
+      areaPreparationGeneration: candidate.areaPreparationGeneration,
+      parentStreetTaskId: candidate.parentStreetTaskId,
+      createdAt: candidate.createdAt,
+    };
+    invalid.set(candidate.id, JSON.stringify(stableShape));
+  }
+  return invalid;
+}
+
+/**
+ * A malformed prepared House already stored by an older importer must not make
+ * every unrelated mutation impossible. This exception is deliberately narrow:
+ * the candidate may only carry forward the exact same invalid immutable shape,
+ * while the remainder of the snapshot must validate normally. New corruption
+ * and structural changes to the malformed House remain rejected.
+ */
+export function validateCampaignSnapshotWithLegacyHouseTolerance(
+  current: CampaignSnapshot,
+  candidate: CampaignSnapshot,
+  campaignId: string,
+): SnapshotValidationResult {
+  const validation = validateCampaignSnapshot(candidate, campaignId);
+  if (validation.valid || validation.message !== INVALID_HOUSE_TASK_MESSAGE) return validation;
+
+  const beforeInvalid = invalidHouseTaskEntries(current, campaignId);
+  const afterInvalid = invalidHouseTaskEntries(candidate, campaignId);
+  if (!beforeInvalid || !afterInvalid || afterInvalid.size === 0) return validation;
+  for (const [id, stableShape] of afterInvalid) {
+    if (beforeInvalid.get(id) !== stableShape) return validation;
+  }
+
+  const invalidIds = new Set(afterInvalid.keys());
+  const sanitized = {
+    ...candidate,
+    houseTasks: (candidate.houseTasks ?? []).filter((house) => !invalidIds.has(house.id)),
+  };
+  const sanitizedValidation = validateCampaignSnapshot(sanitized, campaignId);
+  return sanitizedValidation.valid ? { valid: true, snapshot: candidate } : validation;
 }
 
 function hasUniqueIds<T extends { id: string }>(values: T[]) {
@@ -403,7 +465,7 @@ export function validateCampaignSnapshot(
       if (!task) {
         return {
           valid: false,
-          message: "Mindestens ein House Task, Polygon, Parent, Provenance oder Status ist ungültig.",
+          message: INVALID_HOUSE_TASK_MESSAGE,
         };
       }
       houseTasks.push(task);
