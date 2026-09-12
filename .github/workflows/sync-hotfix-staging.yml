@@ -228,3 +228,4 @@ jobs:
 # Compact delete action checkpoint: retain the Danger color with the matched comment-icon footprint.
 # Documentation context refresh checkpoint: keep current PR #92 state aligned with the exact tested head.
 # Context verification run checkpoint: deploy only the refreshed PR #92 exact head to Admin Staging.
+# Final context trigger: redeploy the final documentation head to Admin Staging only.

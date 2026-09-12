@@ -61,3 +61,4 @@ jobs:
 # Current UI action chrome checkpoint: keep the 5.7.1 isolation run attached to the exact UI candidate.
 # Compact delete action checkpoint: retain the Danger color with the matched comment-icon footprint.
 # Context verification run checkpoint: validate the refreshed PR #92 context against the exact head.
+# Final context trigger: rerun the committed 5.7.1 isolation proof for the final documentation head.
