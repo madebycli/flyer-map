@@ -31,3 +31,9 @@ Nodes: street-house-network-recovery, adr-street-house-network, adr-street-base-
 ## Decisions / non-goals
 
 Keep MapLibre 5.7.1 and existing UI. No timing hacks, architecture replacement, added service or speculative index migration. Existing local query/write budgets are useful but are not proof of D1 billing or live source availability.
+
+## Phase A checkpoint / implementation ordering
+
+Seven new local characterizations and 47 existing focused tests pass. Confirmed: three whole-House reads for one Team rename, full snapshot on preparation begin, actual RxDB premature short-page completion, alias blindness in read estimation, missing campaign-leading Collection member index. Healthy idle/status helpers do not load House snapshots. Five-test checkpoint CI is green (863 tests).
+
+The audit contains the systemwide query inventory, scaling/frequency model, narrowed hypotheses and ordered fix/verification plan. Live preparation error and actual daily-read attribution are still missing, so Phase A remains open and Phase B has not started. Next input is the existing preparation response/job error and D1 usage window, not a new remote load test. Do not close gates or deploy the unchanged runtime as a fix.

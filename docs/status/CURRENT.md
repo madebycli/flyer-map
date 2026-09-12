@@ -7,6 +7,14 @@ last_updated: 2026-09-08
 
 # Current Project State
 
+## Aktuelle Untersuchung: PR #92, 2026-09-12
+
+Phase A untersucht StreetEngine, systemweite D1-Lesekosten und Sync auf dem
+Staging-Runtime-Stand `6adaf10`. Reproduktionstests und aktuelle CI-Nachweise
+stehen im [laufenden Audit](STREET_ENGINE_D1_AUDIT.md). Reale Preparation-Ursache
+und D1-Verbrauchszuordnung sind noch offen; kein Runtime-Fix oder Deploy in
+dieser Untersuchung. Die folgenden älteren Stände sind historische Einordnung.
+
 ## Main Runtime plus Street/House Integrationskandidat
 
 Die getrennte Integrationslinie kombiniert den grünen Main-Runtime-Kandidaten aus Draft-PR #80 mit der Street/House Network Recovery aus Draft-PR #79. Plan 032 und ADR-0027 führen kanonische Network-Coverage, House-Zuordnung, D1-Jobs, RxDB-Synchronisation und MapLibre-Darstellung in den vollständigen Organizer Worker ein.

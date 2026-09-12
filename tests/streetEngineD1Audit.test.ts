@@ -8,6 +8,7 @@ import { seedNetwork } from './helpers/networkD1.ts';
 import { handleRxdbCheckpoint, handleRxdbPull, handleRxdbPush } from '../worker/rxdbSync.ts';
 import { beginAreaTaskPreparation } from '../worker/areaTaskPreparation.ts';
 import { requestDatabase } from '../worker/requestDatabase.ts';
+import { handleAreaTaskPreparationApi } from '../worker/areaTaskPreparationApi.ts';
 import type { AccessContext } from '../worker/access.ts';
 
 // Phase A characterizations: these deliberately expose current defects. Replace
@@ -85,4 +86,21 @@ test('audit: legacy read estimator misses an aliased full scan',async(t)=>{
   await db.prepare(sql).first();
   assert.equal(db.report().estimatedRowsRead,1);
   t.diagnostic(JSON.stringify({operation:'aliased-full-scan',physicalTableRows:2000,estimatedRowsRead:db.report().estimatedRowsRead,plan}));
+});
+
+test('audit: pending preparation status reads no House snapshot',async(t)=>{
+  const db=new BudgetD1(true,true);t.after(()=>db.sqlite.close());seedNetwork(db);seedLegacyHouses(db,2000);
+  await beginAreaTaskPreparation(requestDatabase(db),'campaign_n','area_n');db.resetBudget();let schedules=0;
+  const response=await handleAreaTaskPreparationApi(new Request('https://audit.test/preparation'),requestDatabase(db),{campaignId:'campaign_n',areaId:'area_n'},access,undefined,{schedule:async()=>{schedules++;}});
+  assert.equal(response.status,200);assert.equal((await response.json() as any).status,'pending');assert.equal(schedules,1);
+  assert.equal(db.report().snapshotRows,1,'only the canonical Area is read');
+  t.diagnostic(JSON.stringify({operation:'pending-status-before-first-alarm',statements:db.report().statements,returnedRows:db.report().returnedRows,schedules}));
+});
+
+test('audit: collection snapshot member query has no campaign-leading index',async(t)=>{
+  const db=new BudgetD1(true,true);t.after(()=>db.sqlite.close());
+  const sql='SELECT id, run_id, campaign_id, collector_id, label, joined_at, left_at FROM collection_run_members WHERE campaign_id = ? ORDER BY joined_at, id';
+  const plan=db.sqlite.prepare('EXPLAIN QUERY PLAN '+sql).all('campaign_n');
+  assert.ok(plan.some(row=>String(row.detail)==='SCAN collection_run_members'));
+  t.diagnostic(JSON.stringify({operation:'collection-member-snapshot',plan,note:'schema plan, no live cardinality or billing claim'}));
 });
