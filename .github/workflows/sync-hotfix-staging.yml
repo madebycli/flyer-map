@@ -219,3 +219,4 @@ jobs:
 # Contrast checkpoint: neutral dark surfaces and readable text for field, street, house, comments and settings UI.
 
 # Phase B bounded D1/RxDB read-path candidate; runtime tree verified by CI before staging trigger.
+# Verified compact map context UI and neutral dark mode candidate.
