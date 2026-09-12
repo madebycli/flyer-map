@@ -13,10 +13,10 @@ Arbeite direkt am bestehenden GitHub-Projekt `madebycli/flyer-map` auf `fix/stre
 ## Verifizierter aktueller Stand 2026-09-12
 
 - Draft-PR #92 bleibt OPEN/DRAFT/UNMERGED gegen `integration/main-street-runtime`.
-- Exakter zuletzt geprüfter Produkt-/Staging-Head: `db4d073942ddea1aad83ce314eb7585d8c5e8ee2`.
+- Exakter zuletzt geprüfter Produkt-/Staging-Head: `a8e8427276dc893b56f046d10f5506accd072ffc`.
 - MapLibre GL JS `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind committed und durch den Isolation-Workflow verifiziert; `6.9.0` ist nur historische Vergleichsdokumentation.
-- Normale CI `34704937291` / Job `103583183044`, Isolation `34704934432` / Job `103583175314` und Admin-Staging `34704934518` / Job `103583175882` sind für diesen Head grün.
-- Die aktuelle UI-Änderung hält die bestehende Danger-Rotfarbe und nutzt für Street-Löschen ein gleich großes Mülltonnen-Icon wie die Kommentaraktion.
+- Normale CI `34707803140` / Job `103590926890`, Isolation `34707798921` / Job `103590916634` und Admin-Staging `34707798935` / Job `103590916871` sind für diesen Head grün.
+- Die aktuelle UI-Änderung hält die bestehende Danger-Rotfarbe, nutzt für Street-Löschen ein gleich großes Mülltonnen-Icon wie die Kommentaraktion und stapelt die vier Street-Statusaktionen untereinander.
 - `MAP_RENDER_P0=OPEN` und `STREET_ENGINE_LIVE_READY=FALSE` bleiben bis zur echten iPad-Safari-Bestätigung bestehen.
 
 ## Zuerst lesen

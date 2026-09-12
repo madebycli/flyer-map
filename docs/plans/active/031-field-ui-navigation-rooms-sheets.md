@@ -28,14 +28,16 @@ Dieser Plan ist absichtlich präzise zu Code-Identifiern, weil die vorherige Imp
 - Kein Room-/Invite-Secret in Logs, Audit, LocalStorage, IndexedDB oder RxDB.
 - Kein Produkt-Testlink, bevor exact-head CI und der aktuelle isolierte Staging-Lauf für den implementierten Head grün sind.
 
-Zuletzt verifizierter Product-/Staging-Head: `db4d073942ddea1aad83ce314eb7585d8c5e8ee2`. MapLibre `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind für die kontrollierte Isolation committed. Dokumentationscommits bewegen den Branch danach weiter. Vor Implementation immer Remote-Head, PR #92 und exact-head CI neu lesen.
+Zuletzt verifizierter Product-/Staging-Head: `a8e8427276dc893b56f046d10f5506accd072ffc`. MapLibre `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind für die kontrollierte Isolation committed. Der Street-Detail-Stand stapelt die vier Statusaktionen vertikal und hält Kommentar/Löschen als kompakte Symbole darunter. Dokumentationscommits bewegen den Branch danach weiter. Vor Implementation immer Remote-Head, PR #92 und exact-head CI neu lesen.
 
 ## Aktueller verifizierter Checkpoint 2026-09-12
 
-Der zuletzt verifizierte PR-Head `db4d073942ddea1aad83ce314eb7585d8c5e8ee2` hat normale CI,
+Der zuletzt verifizierte PR-Head `a8e8427276dc893b56f046d10f5506accd072ffc` hat normale CI,
 Dependency-Isolation und Admin-Staging erfolgreich durchlaufen. Die UI hält die
 Danger-Rotfarbe und stellt die Street-Löschaktion als kompakte Mülltonne in der
-Größe der Kommentaraktion dar. Der echte iPad-Renderer-Gate bleibt offen.
+Größe der Kommentaraktion dar. Die vier Street-Statusaktionen stehen
+untereinander; die Hausansicht bleibt im Zwei-Spalten-Raster. Der echte
+iPad-Renderer-Gate bleibt offen.
 
 ## Aktuelle Code-Realität
 

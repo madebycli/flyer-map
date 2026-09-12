@@ -1,17 +1,17 @@
-version: 26
+version: 27
 last_updated: 2026-09-12
 
 current_pr92_state:
   repository: madebycli/flyer-map
   branch: fix/street-engine-smart-marking
   pull_request: { number: 92, state: open, draft: true, merged: false, base: integration/main-street-runtime }
-  exact_head: db4d073942ddea1aad83ce314eb7585d8c5e8ee2
+  exact_head: a8e8427276dc893b56f046d10f5506accd072ffc
   dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }
-  normal_ci: { run: 34704937291, job: 103583183044, conclusion: success }
-  isolation: { run: 34704934432, job: 103583175314, conclusion: success }
-  admin_staging: { run: 34704934518, job: 103583175882, conclusion: success, url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev }
+  normal_ci: { run: 34707803140, job: 103590926890, conclusion: success }
+  isolation: { run: 34707798921, job: 103590916634, conclusion: success }
+  admin_staging: { run: 34707798935, job: 103590916871, conclusion: success, url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev }
   test_summary: 869 tests passed; typecheck, dependency audit and production build passed
-  ui_checkpoint: compact red Danger trash-icon action matches the comment-action footprint
+  ui_checkpoint: Street status actions are stacked vertically; compact red Danger trash-icon and comment actions remain same-footprint controls
   device_gate: MAP_RENDER_P0=OPEN; STREET_ENGINE_LIVE_READY=FALSE until real iPad geometry acceptance
   safety: no merge, Production deploy/change, remote-D1 migration/write or secret rotation
 

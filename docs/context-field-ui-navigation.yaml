@@ -42,21 +42,21 @@ known_runtime_state:
   branch: fix/street-engine-smart-marking
   pull_request: 92
   base_branch: integration/main-street-runtime
-  last_verified_product_head: db4d073942ddea1aad83ce314eb7585d8c5e8ee2
+  last_verified_product_head: a8e8427276dc893b56f046d10f5506accd072ffc
   note: documentation commits advance the branch; always re-read PR 92 head and exact-head CI before implementation
   maplibre_gl: 5.7.1
   unitbezier: 0.0.1
-  normal_ci_run: 34704937291
-  normal_ci_job: 103583183044
-  isolation_run: 34704934432
-  isolation_job: 103583175314
-  last_verified_staging_run: 34704934518
-  last_verified_staging_job: 103583175882
+  normal_ci_run: 34707803140
+  normal_ci_job: 103590926890
+  isolation_run: 34707798921
+  isolation_job: 103590916634
+  last_verified_staging_run: 34707798935
+  last_verified_staging_job: 103590916871
   staging_url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
   staging_result: success
   tests_passed: 869
   device_gate: MAP_RENDER_P0=OPEN; STREET_ENGINE_LIVE_READY=FALSE
-  ui_checkpoint: compact red Danger trash-icon action matches the comment-action footprint
+  ui_checkpoint: Street status actions are stacked vertically; compact red Danger trash-icon and comment actions remain same-footprint controls
 
 nodes:
   - id: field-platform-shell

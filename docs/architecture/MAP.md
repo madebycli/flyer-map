@@ -9,6 +9,14 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-came
 
 # Map Architecture
 
+## Current Street detail UI chrome
+
+The Street detail sheet uses a compact action layout: `Offen`, `Erledigt`,
+`Später` and `Nicht zustellbar` occupy one vertical column, with the compact
+comment action and the existing red Danger trash action below. This is a
+presentation-only rule for Street detail; House status controls and task
+semantics remain unchanged.
+
 ## Current renderer baseline
 
 MapLibre GL JS **5.7.1** in the current Draft PR #92 controlled isolation candidate owns the persistent map rendering pipeline:

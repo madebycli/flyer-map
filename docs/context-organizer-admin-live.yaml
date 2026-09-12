@@ -1,4 +1,4 @@
-version: 4
+version: 5
 last_updated: 2026-09-12T00:00:00+00:00
 purpose: >-
   Live Organizer/Admin continuation overlay. Load after docs/context-organizer-admin.yaml.
@@ -10,12 +10,12 @@ verified:
   feature_branch:
     name: fix/street-engine-smart-marking
     pull_request: 92
-    last_verified_product_head: db4d073942ddea1aad83ce314eb7585d8c5e8ee2
-    runtime_green_ci_run_id: 34704937291
-    runtime_green_ci_job_id: 103583183044
+    last_verified_product_head: a8e8427276dc893b56f046d10f5506accd072ffc
+    runtime_green_ci_run_id: 34707803140
+    runtime_green_ci_job_id: 103590926890
     runtime_green_ci_conclusion: success
-    isolation_run_id: 34704934432
-    isolation_job_id: 103583175314
+    isolation_run_id: 34707798921
+    isolation_job_id: 103590916634
     isolation_conclusion: success
     dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }
     note: documentation commits advance the branch; always reverify exact remote head and CI before implementation
@@ -33,14 +33,14 @@ verified:
   admin_staging:
     branch: fix/street-engine-smart-marking
     workflow: .github/workflows/sync-hotfix-staging.yml
-    latest_full_green_run_id: 34704934518
-    latest_full_green_job_id: 103583175882
-    latest_full_green_head: db4d073942ddea1aad83ce314eb7585d8c5e8ee2
+    latest_full_green_run_id: 34707798935
+    latest_full_green_job_id: 103590916871
+    latest_full_green_head: a8e8427276dc893b56f046d10f5506accd072ffc
     worker: flyer-map-admin-staging
     d1_name: flyer-map-admin-staging-db
     url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
     test_ready_for_last_verified_product_head: true
-    audited_runtime_source: db4d073942ddea1aad83ce314eb7585d8c5e8ee2
+    audited_runtime_source: a8e8427276dc893b56f046d10f5506accd072ffc
     test_summary: 869 tests passed; typecheck, dependency audit and production build passed
     public_checks:
       bare_root: { status: 302, location: /login }
@@ -70,6 +70,7 @@ current_field_ui_slice:
     - healthy sync status becomes quiet and left-aligned with the platform field controls; actionable errors remain visible
     - group/read-only onboarding defaults to German and cannot break token redemption
     - .platform-grid-button remains Brainrot long-press target
+    - Street detail stacks Offen, Erledigt, Später and Nicht zustellbar vertically; compact comment and red Danger trash actions remain below them
 
 security_header_fix:
   path: public/_headers
