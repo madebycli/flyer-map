@@ -2,7 +2,6 @@ import { runNetworkPreparationStep, preparationTiles } from './streetNetwork/pre
 import { hasBaseStorage } from './streetNetwork/baseStorage.ts';
 import type {
   Area,
-  CampaignSnapshot,
   DistributionTask,
   HouseTask,
   PolygonGeometry,
@@ -18,7 +17,7 @@ import { toSmartBuildingCandidate } from "../src/domain/smartCandidates.ts";
 import {
   hasAreaTaskPreparationSchema,
   hasStreetNetworkSchema,
-  loadCampaignSnapshot,
+  loadCanonicalArea,
   type D1DatabaseLike,
   type D1PreparedStatement,
 } from "./campaignRepository.ts";
@@ -111,7 +110,6 @@ export type AreaTaskPreparationOptions = {
 export type AreaTaskPreparationRun = {
   campaignId: string;
   areaId: string;
-  snapshot?: CampaignSnapshot;
   area: Area;
   /** Versioned area-preparation fingerprint stored in the legacy geometry_hash column. */
   geometryHash: string;
@@ -494,9 +492,8 @@ export async function beginAreaTaskPreparation(
       result: { outcome: "failed", code: "area_preparation_schema_unavailable" },
     };
   }
-  const snapshot = await loadCampaignSnapshot(db, campaignId);
-  const area = snapshot?.areas.find((candidate) => candidate.id === areaId);
-  if (!snapshot || !area) return { outcome: "result", result: { outcome: "missing" } };
+  const area = await loadCanonicalArea(db, campaignId, areaId);
+  if (!area) return { outcome: "result", result: { outcome: "missing" } };
 
   const nowDate = (options.now ?? (() => new Date()))();
   const now = nowDate.toISOString();
@@ -509,7 +506,7 @@ export async function beginAreaTaskPreparation(
   if ((current?.status === 'pending' || current?.status === 'failed') && current.geometryHash === geometryHash && await hasStreetNetworkSchema(db)) {
     if (!canReconcileWork&&await areaHasStartedAutomaticWork(db,campaignId,areaId)) return {outcome:'result',result:{outcome:'failed',code:'area_preparation_work_started'}};
     await db.batch([db.prepare("UPDATE area_task_preparations SET status='pending',last_error_code=NULL WHERE campaign_id=? AND area_id=? AND generation=?").bind(campaignId,areaId,current.generation)]);
-    return {outcome:'run',run:{campaignId,areaId,snapshot,area,geometryHash,generation:current.generation,now}};
+    return {outcome:'run',run:{campaignId,areaId,area,geometryHash,generation:current.generation,now}};
   }
   if (current && isFreshPending(current, geometryHash, nowDate)) {
     return { outcome: "result", result: { outcome: "no-op", state: "pending" } };
@@ -548,7 +545,7 @@ export async function beginAreaTaskPreparation(
 
   return {
     outcome: "run",
-    run: { campaignId, areaId, snapshot, area, geometryHash, generation, now },
+    run: { campaignId, areaId, area, geometryHash, generation, now },
   };
 }
 

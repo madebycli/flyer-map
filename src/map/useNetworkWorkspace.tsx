@@ -65,37 +65,56 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     let stopped=false;
     let timer:number|undefined;
     const known:Record<string,AreaPreparationPublicState>={};
+    const retryAt:Record<string,number>={};
+    const retryCounts:Record<string,number>={};
+    const stoppedAreas=new Set<string>();
     let reading=false;
+    const canRead=()=>navigator.onLine&&(typeof document==='undefined'||document.visibilityState!=='hidden');
+    const retryDelay=(attempt:number)=>Math.min(30_000,AREA_PREPARATION_POLL_INTERVAL_MS*2**Math.min(4,attempt-1));
     const acceptState=(id:string,state:AreaPreparationPublicState)=>{
       if(stopped||!permittedAreas.some(area=>area.id===id))return;
       if(known[id]?.updatedAt&&state.updatedAt&&known[id].updatedAt!>state.updatedAt)return;
       const prior=known[id];known[id]=state;setStates(current=>({...current,[id]:state}));
+      retryCounts[id]=0;delete retryAt[id];stoppedAreas.delete(id);
       if(state.status==='ready'&&(!prior||prior.status==='pending'))void refresh();
       if(state.status==='pending'&&!reading&&timer===undefined)schedulePoll();
     };
     const onProgress=(event:Event)=>{const value=(event as CustomEvent).detail;if(value?.campaignId===snapshot.campaign.id&&value.state)acceptState(value.areaId,value.state);};
     window.addEventListener('campaign-preparation',onProgress);
-    const schedulePoll=()=>{if(!stopped&&timer===undefined)timer=window.setTimeout(()=>void poll(),AREA_PREPARATION_POLL_INTERVAL_MS);};
+    const noteFailure=(id:string,status?:number)=>{
+      if(status===401||status===403){stoppedAreas.add(id);delete retryAt[id];return;}
+      const attempt=(retryCounts[id]??0)+1;retryCounts[id]=attempt;
+      if(attempt>5){stoppedAreas.add(id);delete retryAt[id];return;}
+      retryAt[id]=Date.now()+retryDelay(attempt);
+    };
+    const schedulePoll=()=>{
+      if(stopped||timer!==undefined||!canRead())return;
+      const delays=permittedAreas.filter(area=>!stoppedAreas.has(area.id)&&(!known[area.id]||known[area.id].status==='pending')).map(area=>Math.max(AREA_PREPARATION_POLL_INTERVAL_MS,(retryAt[area.id]??0)-Date.now()));
+      if(!delays.length)return;
+      timer=window.setTimeout(()=>{timer=undefined;void poll();},Math.min(...delays));
+    };
     const poll=async()=>{
-      timer=undefined;
-      if(reading)return;reading=true;
+      if(stopped||reading||!canRead()){schedulePoll();return;}reading=true;
       for(const area of permittedAreas){
-        if(stopped)return;
-        if(known[area.id] && known[area.id].status!=='pending')continue;
+        if(stopped)break;
+        if(stoppedAreas.has(area.id)||(known[area.id]&&known[area.id].status!=='pending')||(retryAt[area.id]??0)>Date.now())continue;
         try{
           const response=await fetch(preparationUrl(area.id),{credentials:'same-origin',signal:AbortSignal.timeout(10000)});
-          if(!response.ok)continue;
+          if(!response.ok){noteFailure(area.id,response.status);continue;}
           const state=await response.json() as AreaPreparationPublicState;
           if(stopped)return;
           acceptState(area.id,state);
-        }catch{/* A later read retries transport errors without creating jobs. */}
+        }catch{noteFailure(area.id);}
       }
       reading=false;
-      if(!stopped&&permittedAreas.some(area=>!known[area.id]||known[area.id].status==='pending'))schedulePoll();
+      if(!stopped)schedulePoll();
     };
+    const resume=()=>{if(stopped||reading)return;if(timer!==undefined){window.clearTimeout(timer);timer=undefined;}void poll();};
+    window.addEventListener('online',resume);
+    if(typeof document!=='undefined')document.addEventListener('visibilitychange',resume);
     void poll();
-    return()=>{stopped=true;window.removeEventListener('campaign-preparation',onProgress);if(timer!==undefined)window.clearTimeout(timer);};
-  },[scope,permittedIds,preparing]);
+    return()=>{stopped=true;window.removeEventListener('campaign-preparation',onProgress);window.removeEventListener('online',resume);if(typeof document!=='undefined')document.removeEventListener('visibilitychange',resume);if(timer!==undefined)window.clearTimeout(timer);};
+  },[scope,permittedIds]);
   const prepare=async(area:Area)=>{
     if(preparing)return;
     setPreparing(area.id);setMessage('');
@@ -104,6 +123,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       if(!response.ok)throw new Error(`Vorbereitung derzeit nicht verfügbar (HTTP ${response.status}).`);
       const state=await response.json() as AreaPreparationPublicState;
       setStates(current=>({...current,[area.id]:state}));
+      window.dispatchEvent(new CustomEvent('campaign-preparation',{detail:{campaignId:snapshot.campaign.id,areaId:area.id,state}}));
       setMessage('');
     }catch(error){setMessage(error instanceof Error?error.message:'Vorbereitung fehlgeschlagen.');}
     finally{setPreparing(null);}

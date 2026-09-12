@@ -11,8 +11,6 @@ import { requestDatabase } from '../worker/requestDatabase.ts';
 import { handleAreaTaskPreparationApi } from '../worker/areaTaskPreparationApi.ts';
 import type { AccessContext } from '../worker/access.ts';
 
-// Phase A characterizations: these deliberately expose current defects. Replace
-// the defect assertions with the desired invariants when their fixes are made.
 const stamp='2026-09-07T00:00:00.000Z';
 const access:AccessContext={campaignId:'campaign_n',grantId:'audit',role:'admin',teamId:null,label:null};
 const team={id:'team_n',campaignId:'campaign_n',name:'Team',color:'#2563eb',createdAt:stamp,updatedAt:stamp};
@@ -25,17 +23,18 @@ function seedLegacyHouses(db:BudgetD1,count:number){
   db.sqlite.exec('COMMIT');db.resetBudget();
 }
 
-test('audit: one Team rename rereads every unrelated legacy House three times',async(t)=>{
+test('audit: one Team rename uses projected reads instead of unrelated legacy Houses',async(t)=>{
   const db=new BudgetD1(true,true);t.after(()=>db.sqlite.close());seedNetwork(db);seedLegacyHouses(db,2000);
   const response=await handleRxdbPush(db,'campaign_n','teams',access,{rows:[{assumedMasterState:team,newDocumentState:{...team,name:'Renamed'}}]});
   assert.equal(response.status,200);assert.deepEqual((await response.json() as any).rejections,[]);
   const report=db.report();
-  assert.ok(report.returnedRows>=6000,JSON.stringify(report));
+  assert.ok(report.returnedRows<200,JSON.stringify(report));
+  assert.ok(report.snapshotRows<10,JSON.stringify(report));
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM house_tasks').get()!.n,2000);
   t.diagnostic(JSON.stringify({operation:'one-team-rename',houses:2000,statements:report.statements,returnedRows:report.returnedRows,snapshotRows:report.snapshotRows}));
 });
 
-test('audit: preparation begin loads unrelated Houses; repeated start keeps generation',async(t)=>{
+test('audit: preparation begin reads only the requested Area; repeated start keeps generation',async(t)=>{
   const db=new BudgetD1(true,true);t.after(()=>db.sqlite.close());seedNetwork(db);seedLegacyHouses(db,2000);
   const first=await beginAreaTaskPreparation(requestDatabase(db),'campaign_n','area_n');
   assert.equal(first.outcome,'run');const firstReport=db.report();db.resetBudget();
@@ -43,7 +42,7 @@ test('audit: preparation begin loads unrelated Houses; repeated start keeps gene
   assert.equal(second.outcome,'run');
   if(first.outcome!=='run'||second.outcome!=='run')throw new Error('missing run');
   assert.equal(first.run.generation,second.run.generation);
-  assert.ok(firstReport.returnedRows>=2000);assert.ok(db.report().returnedRows>=2000);
+  assert.ok(firstReport.returnedRows<200,JSON.stringify(firstReport));assert.ok(db.report().returnedRows<200,JSON.stringify(db.report()));
   t.diagnostic(JSON.stringify({operation:'begin-and-duplicate',firstReturnedRows:firstReport.returnedRows,duplicateReturnedRows:db.report().returnedRows}));
 });
 
@@ -54,7 +53,7 @@ test('audit: idle safety checkpoint reads no task snapshot even with 2000 Houses
   t.diagnostic(JSON.stringify({operation:'idle-checkpoint',statements:db.report().statements,returnedRows:db.report().returnedRows}));
 });
 
-test('audit: actual RxDB stops after a deduplicated short page before the feed head',async(t)=>{
+test('audit: actual RxDB keeps a full physical page when deduplication would shorten it',async(t)=>{
   const db=new BudgetD1(true,true);seedNetwork(db);t.after(()=>db.sqlite.close());
   const insert=db.sqlite.prepare("INSERT INTO campaign_sync_changes(campaign_id,collection_name,document_id,operation,scope_team_id,document_json,changed_at) VALUES('campaign_n','teams','team_n','upsert','team_n',?,?)");
   for(let i=1;i<=101;i++)insert.run(JSON.stringify({...team,name:`Version ${i}`}),stamp);
@@ -70,21 +69,24 @@ test('audit: actual RxDB stops after a deduplicated short page before the feed h
   try{
     await replication.awaitInitialReplication();
     const document=await collections.teams.findOne('team_n').exec();
-    assert.equal(document?.get('name'),'Version 100');
-    assert.deepEqual(calls,[{from:0,to:100,documents:1}]);
-    const next=await handleRxdbPull(requestDatabase(db),'campaign_n','teams',access,{checkpoint:{seq:100},batchSize:100});
-    assert.equal((await next.json() as any).documents[0].name,'Version 101');
-    t.diagnostic(JSON.stringify({operation:'actual-rxdb-short-page',calls,unreadFeedRows:1}));
+    assert.equal(document?.get('name'),'Version 101');
+    assert.deepEqual(calls,[{from:0,to:100,documents:100},{from:100,to:101,documents:1}]);
+    const next=await handleRxdbPull(requestDatabase(db),'campaign_n','teams',access,{checkpoint:{seq:101},batchSize:100});
+    const nextBody=await next.json() as any;
+    assert.deepEqual(nextBody.documents,[]);
+    assert.equal(nextBody.checkpoint.seq,101);
+    t.diagnostic(JSON.stringify({operation:'actual-rxdb-short-page',calls,unreadFeedRows:0}));
   }finally{await replication.cancel();await local.remove();}
 });
 
-test('audit: legacy read estimator misses an aliased full scan',async(t)=>{
+test('audit: read estimator attributes an aliased full scan to its physical table',async(t)=>{
   const db=new BudgetD1(true,true);t.after(()=>db.sqlite.close());seedNetwork(db);seedLegacyHouses(db,2000);
   const sql="SELECT COUNT(*) n FROM house_tasks h WHERE h.label='absent'";
   const plan=db.sqlite.prepare('EXPLAIN QUERY PLAN '+sql).all();
   assert.ok(plan.some(row=>String(row.detail)==='SCAN h'));
   await db.prepare(sql).first();
-  assert.equal(db.report().estimatedRowsRead,1);
+  assert.ok(db.report().estimatedRowsRead>=2001,JSON.stringify(db.report()));
+  assert.ok(db.report().potentialScans.some(scan=>scan.table==='house_tasks'),JSON.stringify(db.report()));
   t.diagnostic(JSON.stringify({operation:'aliased-full-scan',physicalTableRows:2000,estimatedRowsRead:db.report().estimatedRowsRead,plan}));
 });
 

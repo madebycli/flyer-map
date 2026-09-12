@@ -9,11 +9,14 @@ last_updated: 2026-09-08
 
 ## Aktuelle Untersuchung: PR #92, 2026-09-12
 
-Phase A untersucht StreetEngine, systemweite D1-Lesekosten und Sync auf dem
+Phase A untersuchte StreetEngine, systemweite D1-Lesekosten und Sync auf dem
 Staging-Runtime-Stand `6adaf10`. Reproduktionstests und aktuelle CI-Nachweise
-stehen im [laufenden Audit](STREET_ENGINE_D1_AUDIT.md). Reale Preparation-Ursache
-und D1-Verbrauchszuordnung sind noch offen; kein Runtime-Fix oder Deploy in
-dieser Untersuchung. Die folgenden älteren Stände sind historische Einordnung.
+stehen im [laufenden Audit](STREET_ENGINE_D1_AUDIT.md). Phase B enthält lokale
+Fixes für Area-only Preparation-Begin, Mutation-Snapshot-Projektionen, RxDB-
+Continuation, Workspace-Polling und Alias-Scan-Messung. Reale Preparation-
+Ursache und D1-Verbrauchszuordnung sind noch offen; die Phase-B-Änderungen sind
+noch nicht auf Staging deployed. Die folgenden älteren Stände sind historische
+Einordnung.
 
 ## Main Runtime plus Street/House Integrationskandidat
 

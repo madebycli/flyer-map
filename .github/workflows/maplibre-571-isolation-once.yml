@@ -49,6 +49,10 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package.json package-lock.json
-          git commit -m 'test: isolate MapLibre 5.7.1 renderer'
-          git push origin HEAD:fix/street-engine-smart-marking
+          if git diff --quiet -- package.json package-lock.json; then
+            echo 'MapLibre 5.7.1 and @mapbox/unitbezier 0.0.1 are already committed.'
+          else
+            git add package.json package-lock.json
+            git commit -m 'test: isolate MapLibre 5.7.1 renderer'
+            git push origin HEAD:fix/street-engine-smart-marking
+          fi

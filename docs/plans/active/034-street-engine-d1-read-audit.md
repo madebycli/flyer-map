@@ -1,6 +1,6 @@
 # Plan 034: StreetEngine, systemwide D1 reads and sync
 
-Status: active, Phase A. Date: 2026-09-12.
+Status: active, Phase B local fix checkpoint. Date: 2026-09-12.
 
 ## Goal and baseline
 
@@ -36,4 +36,4 @@ Keep MapLibre 5.7.1 and existing UI. No timing hacks, architecture replacement, 
 
 Seven new local characterizations and 47 existing focused tests pass. Confirmed: three whole-House reads for one Team rename, full snapshot on preparation begin, actual RxDB premature short-page completion, alias blindness in read estimation, missing campaign-leading Collection member index. Healthy idle/status helpers do not load House snapshots. Five-test checkpoint CI is green (863 tests).
 
-The audit contains the systemwide query inventory, scaling/frequency model, narrowed hypotheses and ordered fix/verification plan. Live preparation error and actual daily-read attribution are still missing, so Phase A remains open and Phase B has not started. Next input is the existing preparation response/job error and D1 usage window, not a new remote load test. Do not close gates or deploy the unchanged runtime as a fix.
+The audit contains the systemwide query inventory, scaling/frequency model, narrowed hypotheses and ordered fix/verification plan. Phase B now contains local fixes for Area-only preparation begin, metadata snapshot projections, RxDB physical-page continuation, workspace polling backoff/pause and alias-aware local scan accounting. Live preparation error and actual daily-read attribution are still missing. Next input is the existing preparation response/job error and D1 usage window, not a new remote load test. Do not close the real-device renderer gate or claim live remediation from local tests alone.

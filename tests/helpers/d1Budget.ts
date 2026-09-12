@@ -10,6 +10,17 @@ export type D1BudgetReport = {
   method:string;
 };
 const quote=(name:string)=>'"'+name.replaceAll('"','""')+'"';
+
+function scannedTable(detail:string, query:string, tableNames:Set<string>) {
+  const match=/SCAN (?:TABLE )?([A-Za-z_][\w]*)/u.exec(detail);
+  if(!match)return null;
+  const token=match[1];
+  if(tableNames.has(token))return token;
+  const escapedToken=token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const alias=new RegExp(`\\b(?:FROM|JOIN)\\s+(?:[A-Za-z_]\\w*\\.)?([A-Za-z_]\\w*)\\s+(?:AS\\s+)?${escapedToken}\\b`,'iu').exec(query);
+  return alias&&tableNames.has(alias[1])?alias[1]:null;
+}
+
 class BudgetStatement implements D1PreparedStatement {
   values:unknown[]=[];
   constructor(readonly query:string,readonly owner:BudgetD1){}
@@ -43,11 +54,11 @@ export class BudgetD1 extends NetworkD1 {
     try{
       const plan=this.sqlite.prepare('EXPLAIN QUERY PLAN '+query).all(...values) as {detail:string}[];
       for(const {detail} of plan){
-        const match=/SCAN (?:TABLE )?([\w]+)/u.exec(detail);
-        if(!match||!this.tableNames.has(match[1]))continue;
-        const rows=Number(this.sqlite.prepare(`SELECT COUNT(*) n FROM ${quote(match[1])}`).get()!.n);
+        const table=scannedTable(detail,query,this.tableNames);
+        if(!table)continue;
+        const rows=Number(this.sqlite.prepare(`SELECT COUNT(*) n FROM ${quote(table)}`).get()!.n);
         this.scanRows+=rows;
-        if(rows>0 && this.scans.length<100)this.scans.push({table:match[1],rows,sql:query.slice(0,180)});
+        if(rows>0 && this.scans.length<100)this.scans.push({table:table,rows,sql:query.slice(0,180)});
       }
     }catch{/* PRAGMA and other non-plannable statements still count as queries. */}
   }

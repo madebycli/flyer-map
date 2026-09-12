@@ -6,6 +6,7 @@ import type { AccessContext } from "./access.ts";
 import { authorizeSnapshotWrite } from "./authorization.ts";
 import {
   loadCampaignSnapshot,
+  type CampaignSnapshotLoadOptions,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
 import { hasFieldSessionHistorySchema } from "./fieldSessionHistory.ts";
@@ -32,6 +33,7 @@ import {
   type AreaTaskPreparationOptions,
 } from "./areaTaskPreparation.ts";
 import { AUTO_AREA_PREPARATION_ENABLED } from "../src/domain/missionPolicy.ts";
+import type { CampaignMutation } from "../src/domain/mutations.ts";
 import {
   hasRxdbSyncSchema,
   rxdbChangeFeedEntriesForMutation,
@@ -39,6 +41,66 @@ import {
 
 const MAX_MUTATION_BYTES = 256_000;
 const MAX_PERSIST_ATTEMPTS = 3;
+
+function fullMutationSnapshotOptions(mutation: CampaignMutation): CampaignSnapshotLoadOptions {
+  return {
+    includeCollection: mutation.type.startsWith("collection."),
+    houseId: mutation.type === "house.set-status" || mutation.type === "house.rename"
+      ? mutation.payload.taskId
+      : undefined,
+  };
+}
+
+/**
+ * Admin mutations that touch only campaign metadata, Teams, or Areas do not
+ * need an unrelated distribution snapshot to validate or publish their own
+ * feed entry. Scoped editors retain the full snapshot because authorization
+ * compares their complete Team and task boundary.
+ */
+function mutationSnapshotOptions(
+  mutation: CampaignMutation,
+  access: AccessContext,
+): CampaignSnapshotLoadOptions {
+  const full = fullMutationSnapshotOptions(mutation);
+  if (access.role !== "admin") return full;
+
+  switch (mutation.type) {
+    case "campaign.rename":
+    case "campaign.set-default-map-view":
+      return {
+        includeCollection: false,
+        includeTeams: false,
+        includeAreas: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "team.create":
+    case "team.update":
+      return {
+        includeCollection: false,
+        includeAreas: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "team.delete":
+      return {
+        includeCollection: false,
+        includeAreas: true,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "area.create":
+    case "area.rename":
+    case "area.update-geometry":
+      return {
+        includeCollection: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    default:
+      return full;
+  }
+}
 
 const json = (data: unknown, init: ResponseInit = {}) =>
   Response.json(data, {
@@ -196,7 +258,7 @@ export async function handleCampaignMutation(
 
   const persistAttempts=await hasBaseStorage(db)?1:MAX_PERSIST_ATTEMPTS;
   for (let attempt = 0; attempt < persistAttempts; attempt += 1) {
-    const current = await loadCampaignSnapshot(db, campaignId, {includeCollection:mutation.type.startsWith("collection."),houseId:mutation.type==='house.set-status'||mutation.type==='house.rename'?mutation.payload.taskId:undefined});
+    const current = await loadCampaignSnapshot(db, campaignId, mutationSnapshotOptions(mutation, access));
     if (!current) {
       return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
     }

@@ -19,6 +19,7 @@ import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import {
   loadCampaignSnapshot,
   hasStreetNetworkSchema,
+  type CampaignSnapshotLoadOptions,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
 import { handleCampaignMutation } from "./mutationHandler.ts";
@@ -253,9 +254,13 @@ export async function handleRxdbPull(
       const values=raw&&typeof raw==='object'&&'documents' in raw&&Array.isArray(raw.documents)?raw.documents:[raw];
       return values.map(value=>{const document=narrowRxdbDocument(collectionName,value);if(!document)throw new Error('invalid_collection_document');return document;});
     });
-    // A compact row can overlap a later change to the same entity. RxDB must
-    // receive one final state per primary key, while the cursor consumes every row.
-    const documents = [...new Map(expanded.map(document => [document.id, document])).values()];
+    const distinctDocuments = [...new Map(expanded.map(document => [document.id, document])).values()];
+    // RxDB coalesces documents by primary key before persisting. If a full
+    // physical page contains repeated changes to one entity, preserve that
+    // page length so RxDB asks for the next cursor instead of stopping early.
+    const documents = result.results.length === batchSize && distinctDocuments.length < batchSize
+      ? expanded
+      : distinctDocuments;
     const last = result.results.length < batchSize
       ? Math.max(checkpoint.seq, highWater)
       : result.results.at(-1)?.seq ?? checkpoint.seq;
@@ -332,6 +337,39 @@ function canReadDocument(access: AccessContext, collectionName: RxdbCollectionNa
   return area?.teamId === access.teamId;
 }
 
+function rxdbPushSnapshotOptions(
+  collectionName: RxdbCollectionName,
+  documentId: string,
+): CampaignSnapshotLoadOptions {
+  switch (collectionName) {
+    case "campaigns":
+      return {
+        includeCollection: false,
+        includeTeams: false,
+        includeAreas: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "teams":
+      return {
+        includeCollection: false,
+        includeAreas: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "areas":
+      return {
+        includeCollection: false,
+        includeTasks: false,
+        includeHouses: false,
+      };
+    case "houseTasks":
+      return { includeCollection: false, houseId: documentId };
+    case "streetTasks":
+      return { includeCollection: false };
+  }
+}
+
 async function responseErrorCode(response: Response) {
   try {
     const payload = await response.clone().json() as { error?: { code?: string } };
@@ -375,7 +413,7 @@ export async function handleRxdbPush(
     if (typeof next.id !== "string" || typeof next.campaignId !== "string" || next.campaignId !== campaignId) {
       return errorResponse(400, "invalid_rxdb_document", "RxDB-Dokument gehört nicht zur angeforderten Campaign.");
     }
-    const snapshot = await loadCampaignSnapshot(db, campaignId, {includeCollection:false,houseId:collectionName==='houseTasks'?next.id:undefined});
+    const snapshot = await loadCampaignSnapshot(db, campaignId, rxdbPushSnapshotOptions(collectionName, next.id));
     if (!snapshot) return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
     const decision = deriveMutationFromRxdbWrite(collectionName, snapshot, row, new Date().toISOString());
     if (decision.kind === "ack") continue;
@@ -387,7 +425,7 @@ export async function handleRxdbPush(
       });
       const mutationResponse = await handleCampaignMutation(request, db, campaignId, access,undefined,options);
       if (mutationResponse.ok) {
-        const canonical = await loadCampaignSnapshot(db, campaignId, {includeCollection:false,houseId:collectionName==='houseTasks'?next.id:undefined});
+        const canonical = await loadCampaignSnapshot(db, campaignId, rxdbPushSnapshotOptions(collectionName, next.id));
         const master = currentDocument(canonical, collectionName, next.id, next);
         if (sameBusinessDocument(master, next)) continue;
         conflicts.push(canReadDocument(access, collectionName, master, canonical) ? master : { ...next, _deleted: true });
@@ -400,7 +438,7 @@ export async function handleRxdbPush(
     } else {
       rejections.push({ documentId: next.id, code: decision.reason });
     }
-    const canonical = await loadCampaignSnapshot(db, campaignId, {includeCollection:false,houseId:collectionName==='houseTasks'?next.id:undefined});
+    const canonical = await loadCampaignSnapshot(db, campaignId, rxdbPushSnapshotOptions(collectionName, next.id));
     const master = currentDocument(canonical, collectionName, next.id, next);
     conflicts.push(canReadDocument(access, collectionName, master, canonical) ? master : { ...next, _deleted: true });
   }
