@@ -2,60 +2,34 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-08
+last_updated: 2026-09-12
 ---
 
 # Current Project State
 
-## Aktuelle Untersuchung: PR #92, 2026-09-12
+## Authoritative PR #92 checkpoint
 
-Phase A untersuchte StreetEngine, systemweite D1-Lesekosten und Sync auf dem
-Staging-Runtime-Stand `6adaf10`. Reproduktionstests und aktuelle CI-Nachweise
-stehen im [laufenden Audit](STREET_ENGINE_D1_AUDIT.md). Phase B enthält lokale
-Fixes für Area-only Preparation-Begin, Mutation-Snapshot-Projektionen, RxDB-
-Continuation, Workspace-Polling und Alias-Scan-Messung. Reale Preparation-
-Ursache und D1-Verbrauchszuordnung sind noch offen; die Phase-B-Änderungen sind
-noch nicht auf Staging deployed. Die folgenden älteren Stände sind historische
-Einordnung.
+- Repository: `madebycli/flyer-map`.
+- Branch: `fix/street-engine-smart-marking`.
+- Draft PR: #92, open, draft and unmerged; base `integration/main-street-runtime`.
+- Exact current branch head: `6e381da46547a2586b6ae726003a5c795542badf`.
+- The current UI slice keeps the existing red Danger color and renders Street delete as a compact trash-icon action with the same footprint as the comment action. It has an accessible label/title and no data or migration change.
+- MapLibre GL JS `5.7.1` and `@mapbox/unitbezier` `0.0.1` are committed for controlled isolation. MapLibre `6.9.0` is historical/comparison context, not the current branch pin.
+- Normal CI: run `34694648836`, job `103555926689`, success. Tests, typecheck, dependency audit and production build passed.
+- Isolation: run `34694647237`, job `103555922252`, success. The workflow verified the committed `5.7.1` / `0.0.1` dependency pair.
+- Admin staging: run `34694647278`, job `103555922438`, success. The exact branch commit was deployed and shell/API smoke checks passed.
+- Staging URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`.
 
-## Main Runtime plus Street/House Integrationskandidat
+## Safety and acceptance gates
 
-Die getrennte Integrationslinie kombiniert den grünen Main-Runtime-Kandidaten aus Draft-PR #80 mit der Street/House Network Recovery aus Draft-PR #79. Plan 032 und ADR-0027 führen kanonische Network-Coverage, House-Zuordnung, D1-Jobs, RxDB-Synchronisation und MapLibre-Darstellung in den vollständigen Organizer Worker ein.
+- No merge, Production deploy, Production change, remote-D1 migration, remote-D1 write or secret rotation was performed.
+- `MAP_RENDER_P0 = OPEN` and `STREET_ENGINE_LIVE_READY = FALSE` remain correct until the real iPad Safari test confirms visible Area and Street geometry. Green CI or a successful staging shell check does not close that device gate.
+- Existing direct Source seeding remains the runtime approach. No new GeoJSON lifecycle/timing hack or `GeoJSONSource.setData()` monkey-patch was introduced.
+- The known real-device acceptance target remains the seeded geometry values: `appliedAreas = 4`, `appliedStreets = 343`, `appliedHouses = 1233`, with `queued* = null`, followed by actual visible Area/Street geometry.
 
-`main` enthält die Organizer-/Admin-Oberfläche und die zugehörigen Organization-, Security- und Campaign-Module. Plan 033 verbindet diese ausgelieferte Oberfläche mit dem vollständigen Worker: `worker/indexOrganizer.ts` ist im Main-Kandidaten der kanonische Entry Point und umschließt weiterhin die bestehende Field-, Collection-, Pickup- und RxDB-Runtime.
+## Context maintenance
 
-Der Runtime-Vertrag `/api/runtime` meldet nicht-sensitive Capability- und Versionsinformationen. Organization Login-Routen werden im zusammengesetzten Worker erkannt. Bekannte API-Routen fallen nicht mehr auf die SPA oder den generischen API-404 zurück.
-
-Genehmigte Main-Domains sind Aliase desselben Workers und derselben D1. Sie verwenden dieselben Organization-, Campaign-, Map-, Street-, House- und Change-Feed-Daten. Sessions bleiben durch sichere `__Host-`-Cookies je Origin getrennt, und Writes bleiben same-origin geschützt. Hostnamen sind kein Bestandteil fachlicher IDs.
-
-## Production-Status
-
-Live-Fortschritt nach Deployment `58d30cb`: Master bestätigt POST 202/pending,
-anschließend failed mit `area_preparation_osm_failed`. Die Request-Annahme
-funktioniert jetzt; Ready ist weiterhin nicht erreicht. Ein separater Workflow
-`street-live-diagnostics.yml` liest ausschließlich aggregierte Schema-/Job-
-Fehlerdaten aus der bestehenden Admin-Staging-D1, ohne Deploy oder Migration.
-Der konkrete interne Job-Code muss vor einer weiteren Runtime-Korrektur gelesen
-werden, da der öffentliche OSM-Fehler auch andere Job-Fehler zusammenfasst.
-
-Street-Live-Fixkandidat: Ein leerer POST-Body-Stream wurde von `/preparation`
-fälschlich als Client-Payload mit HTTP 400 abgewiesen. Die Prüfung akzeptiert
-jetzt nur tatsächlich leere Streams und verwirft weiterhin jedes Nutzdatenbyte,
-auch bei behauptetem Content-Length 0. Die UI nennt bei Ablehnung den HTTP-Status.
-23 fokussierte Tests und der lokale JS-TypeScript-Check bestehen. Der lokale
-Build-Aufruf wurde wegen abgebrochener Netzwerkfreigabe nicht ausgeführt.
-Masters Live-Meldung (HTTP 400, 25 s, Antworttext in DevTools nicht verfügbar)
-passt zum reproduzierten Fehler, beweist aber noch nicht die gesamte Ursache.
-Deployment und authentifizierte Street-/House-/Sync-Live-Abnahme bleiben offen;
-STREET_ENGINE_LIVE_READY bleibt FALSE.
-
-Der Code ist ein Aktivierungskandidat. Production wurde nicht deployed, Production-D1 wurde nicht migriert und Secrets wurden nicht verändert. Vor Merge und Aktivierung müssen die Voraussetzungen in `docs/status/MAIN_RUNTIME_PARITY_HANDOFF.md` vollständig nachgewiesen werden. Main-Merges lösen den Production-Build aus und benötigen deshalb Masters separate Freigabe.
-
-Draft-PR #80 hält die Main-Komposition getrennt von `main`. Runtime-Head `1c9e567abb2b37d585af5fc98d649485fbe35410` bestand CI Run `34214219630` vollständig. Die Street/House-Integration wird separat getestet; Production bleibt unverändert.
-
-## Offene getrennte Arbeit
-
-- Draft-PR #79 liefert die Street-/House-Network-Basis für die getrennte Integrationslinie.
-- SYNC-CURSOR-001 bleibt separat offen.
-- Die bekannten Admin-Security-Findings SEC-001 bis SEC-007 und Fresh-MFA bleiben sichtbar und werden durch die Runtime-Komposition nicht als gelöst erklärt.
-- Historische Feature- und Staging-Branches werden von Plan 033 nicht verändert oder portiert.
+The current branch/runtime facts above supersede older feature-branch, PR #76,
+MapLibre `6.9.0` candidate and pre-`6e381da` staging entries in historical
+handoffs and audits. Those entries remain historical evidence and must not be
+read as the current branch state.

@@ -56,6 +56,7 @@ jobs:
             git commit -m 'test: isolate MapLibre 5.7.1 renderer'
             git push origin HEAD:fix/street-engine-smart-marking
           fi
+# Documentation context refresh checkpoint: keep current PR #92 state aligned with the exact tested head.
 # UI context sheet contract verification trigger.
 # Current UI action chrome checkpoint: keep the 5.7.1 isolation run attached to the exact UI candidate.
 # Compact delete action checkpoint: retain the Danger color with the matched comment-icon footprint.

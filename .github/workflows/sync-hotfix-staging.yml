@@ -226,3 +226,4 @@ jobs:
 # Current UI action chrome checkpoint: deploy the exact tested candidate to Admin Staging only.
 
 # Compact delete action checkpoint: retain the Danger color with the matched comment-icon footprint.
+# Documentation context refresh checkpoint: keep current PR #92 state aligned with the exact tested head.

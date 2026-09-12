@@ -2,7 +2,7 @@
 id: plan-031-field-ui-navigation-rooms-sheets
 type: plan
 status: active
-last_updated: 2026-09-05
+last_updated: 2026-09-12
 related: [ux, map, live-teams, collaboration, security, quality, context-organizer-admin, context-field-ui-navigation, plan-030-organizer-admin-platform, ADR-0014, ADR-0026]
 ---
 
@@ -10,16 +10,16 @@ related: [ux, map, live-teams, collaboration, security, quality, context-organiz
 
 ## Ziel
 
-Die mobile Field-Oberfläche wird auf dem bestehenden `feature/organizer-admin-platform`-Stand strukturell bereinigt. Die primäre Navigation bleibt das Launcher-Grid aus `PlatformShell`; Team-interne Tabs werden entfernt. Rooms, Fortschritt, Kommentare und Streets werden eigenständige Launcher-Ziele. Gleichzeitig werden Bottom Sheets auf ein gemeinsames Google-Maps-artiges Drag-/Snap-Verhalten umgestellt, der Street-Erstellflow endet ohne unnötigen Rücksprung in das Area-Sheet, Room-Join-Material wird verständlich und sicher verwaltbar, und der gesunde Sync-Zustand verschwindet aus der permanent dominanten Karten-UI.
+Die mobile Field-Oberfläche wird auf dem bestehenden `fix/street-engine-smart-marking`-Stand strukturell bereinigt. Die primäre Navigation bleibt das Launcher-Grid aus `PlatformShell`; Team-interne Tabs werden entfernt. Rooms, Fortschritt, Kommentare und Streets werden eigenständige Launcher-Ziele. Gleichzeitig werden Bottom Sheets auf ein gemeinsames Google-Maps-artiges Drag-/Snap-Verhalten umgestellt, der Street-Erstellflow endet ohne unnötigen Rücksprung in das Area-Sheet, Room-Join-Material wird verständlich und sicher verwaltbar, und der gesunde Sync-Zustand verschwindet aus der permanent dominanten Karten-UI.
 
 Dieser Plan ist absichtlich präzise zu Code-Identifiern, weil die vorherige Implementierung die Master-Anforderung falsch als `TeamCenter`-Tabnavigation interpretiert hat.
 
 ## Arbeitsbranch und harte Grenzen
 
 - Repository: `madebycli/flyer-map`.
-- Arbeitsbranch: `feature/organizer-admin-platform`.
-- Draft PR: #76 gegen `mission-rxdb-sync`.
-- PR #76 bleibt OPEN, DRAFT, UNMERGED.
+- Arbeitsbranch: `fix/street-engine-smart-marking`.
+- Draft PR: #92 gegen `integration/main-street-runtime`.
+- PR #92 bleibt OPEN, DRAFT, UNMERGED.
 - Kein Production-Deploy.
 - Keine Production-D1-Migration.
 - `mission-release-2026-09-02-manual` nicht verändern.
@@ -28,7 +28,14 @@ Dieser Plan ist absichtlich präzise zu Code-Identifiern, weil die vorherige Imp
 - Kein Room-/Invite-Secret in Logs, Audit, LocalStorage, IndexedDB oder RxDB.
 - Kein Produkt-Testlink, bevor exact-head CI und der aktuelle isolierte Staging-Lauf für den implementierten Head grün sind.
 
-Zuletzt vor diesem Dokumentationsslice verifizierter Product-Head: `0d45dc02e88d3a89fa6174211775f7d2b0e80c85`. Dokumentationscommits bewegen den Branch danach weiter. Vor Implementation immer Remote-Head, PR #76 und exact-head CI neu lesen.
+Zuletzt verifizierter Product-Head vor dem aktuellen Dokumentationsslice: `6e381da46547a2586b6ae726003a5c795542badf`. MapLibre `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind für die kontrollierte Isolation committed. Dokumentationscommits bewegen den Branch danach weiter. Vor Implementation immer Remote-Head, PR #92 und exact-head CI neu lesen.
+
+## Aktueller verifizierter Checkpoint 2026-09-12
+
+Der aktuelle PR-Head `6e381da46547a2586b6ae726003a5c795542badf` hat normale CI,
+Dependency-Isolation und Admin-Staging erfolgreich durchlaufen. Die UI hält die
+Danger-Rotfarbe und stellt die Street-Löschaktion als kompakte Mülltonne in der
+Größe der Kommentaraktion dar. Der echte iPad-Renderer-Gate bleibt offen.
 
 ## Aktuelle Code-Realität
 
@@ -616,7 +623,7 @@ Der Fun-Mode bleibt unabhängig:
 - Healthy sync status ist klein und links in der Field-Control-Ebene; echte Fehler bleiben sichtbar.
 - Brainrot Long-Press bleibt funktionsfähig.
 - Tests/typecheck/audit/build und Staging-Live-Matrix grün.
-- PR #76 bleibt Draft/unmerged.
+- PR #92 bleibt Draft/unmerged.
 
 ## Selbstkritik des ersten Drafts und Korrekturen
 

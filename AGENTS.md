@@ -59,7 +59,7 @@ Frontend:
 - React;
 - Vite;
 - plain CSS;
-- MapLibre GL JS **6.9.0 pinned for the PR #92 security candidate**, with browser acceptance still required by ADR-0030; the historical accepted renderer baseline was 5.7.1.
+- MapLibre GL JS **5.7.1** and `@mapbox/unitbezier` **0.0.1** are pinned on Draft PR #92 for the controlled renderer isolation test; 6.9.0 remains a historical comparison/release line. Real-device browser acceptance is still required by ADR-0030.
 
 Platform:
 - Cloudflare Workers;

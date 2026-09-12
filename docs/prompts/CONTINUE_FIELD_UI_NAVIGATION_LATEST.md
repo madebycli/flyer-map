@@ -2,13 +2,22 @@
 id: prompt-field-ui-navigation-latest
 type: handoff
 status: current
-last_updated: 2026-09-05
+last_updated: 2026-09-12
 related: [plan-031-field-ui-navigation-rooms-sheets, context-field-ui-navigation, context-organizer-admin, live-teams, ux, map, collaboration, security, quality, plan-030-organizer-admin-platform]
 ---
 
 # Continue Field UI Navigation / Rooms / Sheets — implementation handoff
 
-Arbeite direkt am bestehenden GitHub-Projekt `madebycli/flyer-map` auf `feature/organizer-admin-platform` weiter. Nicht neu anfangen, nicht resetten und nicht nur planen. GitHub/Repository ist Source of Truth. Der Master hat Plan 031 ausdrücklich bestätigt. Setze ihn evidence-driven um, ohne PR #76 zu mergen oder Production anzufassen.
+Arbeite direkt am bestehenden GitHub-Projekt `madebycli/flyer-map` auf `fix/street-engine-smart-marking` weiter. Nicht neu anfangen, nicht resetten und nicht nur planen. GitHub/Repository ist Source of Truth. Der Master hat Plan 031 ausdrücklich bestätigt. Setze ihn evidence-driven um, ohne Draft-PR #92 zu mergen oder Production anzufassen.
+
+## Verifizierter aktueller Stand 2026-09-12
+
+- Draft-PR #92 bleibt OPEN/DRAFT/UNMERGED gegen `integration/main-street-runtime`.
+- Exakter zuletzt geprüfter Head: `6e381da46547a2586b6ae726003a5c795542badf`.
+- MapLibre GL JS `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind committed und durch den Isolation-Workflow verifiziert; `6.9.0` ist nur historische Vergleichsdokumentation.
+- Normale CI `34694648836` / Job `103555926689`, Isolation `34694647237` / Job `103555922252` und Admin-Staging `34694647278` / Job `103555922438` sind für diesen Head grün.
+- Die aktuelle UI-Änderung hält die bestehende Danger-Rotfarbe und nutzt für Street-Löschen ein gleich großes Mülltonnen-Icon wie die Kommentaraktion.
+- `MAP_RENDER_P0=OPEN` und `STREET_ENGINE_LIVE_READY=FALSE` bleiben bis zur echten iPad-Safari-Bestätigung bestehen.
 
 ## Zuerst lesen
 
@@ -31,7 +40,7 @@ In dieser Reihenfolge:
 15. `docs/quality/QUALITY.md`
 16. `docs/operations/ORGANIZER_ADMIN_STAGING.md`
 
-Danach GitHub Remote-Head, PR #76, changed files und exact-head CI neu lesen. SHAs in Docs sind nur Marker, weil Doku-Commits den Branch bewegen.
+Danach GitHub Remote-Head, PR #92, changed files und exact-head CI neu lesen. SHAs in Docs sind nur Marker, weil Doku-Commits den Branch bewegen.
 
 ## Master-Anforderung in einem Satz
 
@@ -198,7 +207,7 @@ Wenn `PlatformShell` den Status benötigt, erweitere `PlatformAppContext` um ein
 
 ## Harte Release-/Security-Grenzen
 
-- PR #76 OPEN/DRAFT/unmerged lassen.
+- PR #92 OPEN/DRAFT/unmerged lassen.
 - Nicht Ready markieren.
 - Kein Merge.
 - Kein Production-Deploy.
@@ -361,7 +370,7 @@ Wenn du einen Namen aus technischen Gründen ändern musst, aktualisiere Plan/Gr
 
 ### Phase A: Baseline und Tests
 
-1. Current remote head + PR #76 + CI verifizieren.
+1. Current remote head + PR #92 + CI verifizieren.
 2. Bestehende Tests rund um PlatformShell/TeamCenter/Field Groups/App sheets lokalisieren.
 3. Neue Regressionstests zuerst für:
    - Launcher-Items und Reihenfolge;
@@ -492,7 +501,7 @@ Wenn die Implementation von einem dieser Punkte abweichen muss, zuerst Plan/ADR 
 Am Ende mindestens:
 
 - exakter Feature-Head;
-- PR #76 OPEN/DRAFT/unmerged;
+- PR #92 OPEN/DRAFT/unmerged;
 - exact-head CI run/job und alle Gates;
 - veränderte relevante Dateien;
 - Room-Credential-Architektur, dedizierter Key-Vertrag und Migration nur Staging/prepared;

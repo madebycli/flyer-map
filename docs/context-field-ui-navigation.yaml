@@ -1,9 +1,9 @@
-version: 1
-last_updated: 2026-09-05
+version: 2
+last_updated: 2026-09-12
 purpose: >-
   Continuation overlay for the mobile Field UI navigation, Rooms, comments,
   draggable bottom sheets, Street flow and sync-status work being planned on
-  feature/organizer-admin-platform. This overlay exists to prevent a future
+  fix/street-engine-smart-marking. This overlay exists to prevent a future
   agent from rebuilding primary launcher apps as tabs inside TeamCenter.
 
 entrypoints:
@@ -36,17 +36,27 @@ routing_rules:
   - healthy sync state should be quiet; the current persistent Serverbestätigt/sync status UI is to be reduced to a small unobtrusive indicator while actionable offline/error/conflict states remain visible
   - Read-only/group-link onboarding defaults to German and may appear once per new device, but Group onboarding must occur only after successful server redemption so it cannot consume, remove or block the join token
   - privileged Organizer/Admin invitations remain separate from Room credentials and Team links; server authorization remains authoritative
-  - PR 76 stays Draft/unmerged; no Production deploy/migration and no write to mission-release-2026-09-02-manual
+  - Draft PR #92 stays open/draft/unmerged; no Production deploy/migration and no write to mission-release-2026-09-02-manual
 
 known_runtime_state:
-  branch: feature/organizer-admin-platform
-  last_verified_product_head: 0d45dc02e88d3a89fa6174211775f7d2b0e80c85
-  note: documentation commits advance the branch; always re-read PR 76 head and exact-head CI before implementation
-  last_verified_staging_run: 33981025532
-  last_verified_staging_job: 101346148405
+  branch: fix/street-engine-smart-marking
+  pull_request: 92
+  base_branch: integration/main-street-runtime
+  last_verified_product_head: 6e381da46547a2586b6ae726003a5c795542badf
+  note: documentation commits advance the branch; always re-read PR 92 head and exact-head CI before implementation
+  maplibre_gl: 5.7.1
+  unitbezier: 0.0.1
+  normal_ci_run: 34694648836
+  normal_ci_job: 103555926689
+  isolation_run: 34694647237
+  isolation_job: 103555922252
+  last_verified_staging_run: 34694647278
+  last_verified_staging_job: 103555922438
   staging_url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
   staging_result: success
-  d1_fingerprint_before_after: 47ea1432c290bd89089ee723b33e71950bcf40abafffcd0405261553eaac8088
+  tests_passed: 869
+  device_gate: MAP_RENDER_P0=OPEN; STREET_ENGINE_LIVE_READY=FALSE
+  ui_checkpoint: compact red Danger trash-icon action matches the comment-action footprint
 
 nodes:
   - id: field-platform-shell
@@ -116,7 +126,7 @@ nodes:
     type: code
     status: current
     topics: [sheet-state, map-mode, street-flow, area-flow, sync-status, platform-command]
-    identifiers: [Sheet, MapMode, sheet, sheetCollapsed, saveStreetTask, selectTask, startManualStreet, openStreetDrawing, PlatformAppCommand]
+    identifiers: [Sheet, MapMode, sheet, sheetCollapsed, saveStreetTask, selectTask, startManualStreet, openStreetDrawing, PlatformAppCommand, task-delete-icon-button, task-delete-icon]
     load_when: [Street create flow, bottom sheets, Area/Task navigation, launcher command, sync status]
 
   - id: shared-field-sheet-css
