@@ -28,15 +28,16 @@ Dieser Plan ist absichtlich präzise zu Code-Identifiern, weil die vorherige Imp
 - Kein Room-/Invite-Secret in Logs, Audit, LocalStorage, IndexedDB oder RxDB.
 - Kein Produkt-Testlink, bevor exact-head CI und der aktuelle isolierte Staging-Lauf für den implementierten Head grün sind.
 
-Zuletzt verifizierter Product-/Staging-Head: `a8e8427276dc893b56f046d10f5506accd072ffc`. MapLibre `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind für die kontrollierte Isolation committed. Der Street-Detail-Stand stapelt die vier Statusaktionen vertikal und hält Kommentar/Löschen als kompakte Symbole darunter. Dokumentationscommits bewegen den Branch danach weiter. Vor Implementation immer Remote-Head, PR #92 und exact-head CI neu lesen.
+Zuletzt verifizierter Product-/Staging-Head: `a3479f5bd0825f120fa8ae0d5e3d048d54fb6237`. MapLibre `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind für die kontrollierte Isolation committed. Der Street-Detail-Stand hält die vier Statusaktionen in einem gleich breiten 2x2-Raster und stapelt Kommentar/Löschen als kompakte Symbole in der angrenzenden Aktionsspalte. Das Markierungsfenster verwendet ebenfalls gleich breite Statusspalten. Dokumentationscommits bewegen den Branch danach weiter. Vor Implementation immer Remote-Head, PR #92 und exact-head CI neu lesen.
 
 ## Aktueller verifizierter Checkpoint 2026-09-12
 
-Der zuletzt verifizierte PR-Head `a8e8427276dc893b56f046d10f5506accd072ffc` hat normale CI,
+Der zuletzt verifizierte PR-Head `a3479f5bd0825f120fa8ae0d5e3d048d54fb6237` hat normale CI,
 Dependency-Isolation und Admin-Staging erfolgreich durchlaufen. Die UI hält die
 Danger-Rotfarbe und stellt die Street-Löschaktion als kompakte Mülltonne in der
-Größe der Kommentaraktion dar. Die vier Street-Statusaktionen stehen
-untereinander; die Hausansicht bleibt im Zwei-Spalten-Raster. Der echte
+Größe der Kommentaraktion dar. Die vier Street-Statusaktionen bleiben im
+gleich breiten Zwei-Spalten-Raster; Kommentar und Löschen stehen vertikal in der
+angrenzenden Aktionsspalte. Die Hausansicht bleibt im Zwei-Spalten-Raster. Der echte
 iPad-Renderer-Gate bleibt offen.
 
 ## Aktuelle Code-Realität

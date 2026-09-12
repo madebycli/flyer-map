@@ -11,9 +11,11 @@ source_of_truth_for: [basemap, geolocation-display, map-layer-boundary, map-came
 
 ## Current Street detail UI chrome
 
-The Street detail sheet uses a compact action layout: `Offen`, `Erledigt`,
-`Später` and `Nicht zustellbar` occupy one vertical column, with the compact
-comment action and the existing red Danger trash action below. This is a
+The Street detail sheet uses a compact three-column/two-row action layout:
+`Offen`, `Erledigt`, `Später` and `Nicht zustellbar` remain in an equal-width
+two-column status grid, while the compact comment action and existing red Danger
+trash action are stacked vertically in the adjacent action column. Street
+marking status controls use equal-width columns as well. This is a
 presentation-only rule for Street detail; House status controls and task
 semantics remain unchanged.
 

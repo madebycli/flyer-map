@@ -12,12 +12,12 @@ last_updated: 2026-09-12
 - Repository: `madebycli/flyer-map`.
 - Branch: `fix/street-engine-smart-marking`.
 - Draft PR: #92, open, draft and unmerged; base `integration/main-street-runtime`.
-- Exact last verified product/deploy head: `a8e8427276dc893b56f046d10f5506accd072ffc`.
-- The current UI slice keeps the existing red Danger color and renders Street delete as a compact trash-icon action with the same footprint as the comment action. Street status actions are stacked vertically; the House status grid is unchanged. It has an accessible label/title and no data or migration change.
+- Exact last verified product/deploy head: `a3479f5bd0825f120fa8ae0d5e3d048d54fb6237`.
+- The current UI slice keeps the existing red Danger color and renders Street delete as a compact trash-icon action with the same footprint as the comment action. Street status actions keep an equal-width 2x2 grid, while compact comment/delete actions are stacked vertically in the adjacent action column. The House status grid is unchanged. It has an accessible label/title and no data or migration change.
 - MapLibre GL JS `5.7.1` and `@mapbox/unitbezier` `0.0.1` are committed for controlled isolation. MapLibre `6.9.0` is historical/comparison context, not the current branch pin.
-- Normal CI: run `34707803140`, job `103590926890`, success. Tests, typecheck, dependency audit and production build passed.
-- Isolation: run `34707798921`, job `103590916634`, success. The workflow verified the committed `5.7.1` / `0.0.1` dependency pair.
-- Admin staging: run `34707798935`, job `103590916871`, success. The exact branch commit was deployed and shell/API smoke checks passed.
+- Normal CI: run `34708939943`, job `103594017969`, success. Tests, typecheck, dependency audit and production build passed.
+- Isolation: run `34708938074`, job `103594012867`, success. The workflow verified the committed `5.7.1` / `0.0.1` dependency pair.
+- Admin staging: run `34708938075`, job `103594012869`, success. The exact branch commit was deployed and shell/API smoke checks passed.
 - Staging URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`.
 
 ## Safety and acceptance gates
@@ -30,6 +30,6 @@ last_updated: 2026-09-12
 ## Context maintenance
 
 The current branch/runtime facts above supersede older feature-branch, PR #76,
-MapLibre `6.9.0` candidate and pre-`a8e8427` staging entries in historical
+MapLibre `6.9.0` candidate and pre-`a3479f5` staging entries in historical
 handoffs and audits. Those entries remain historical evidence and must not be
 read as the current branch state.

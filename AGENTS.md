@@ -12,9 +12,11 @@ The application must remain lightweight, reliable, privacy-conscious and easy to
 
 On Draft PR #92, the Street detail sheet keeps the existing red Danger color and
 uses a compact trash icon with the same footprint as the comment action. The
-four Street status actions are stacked in one column; the House detail sheet
-keeps its two-column status grid. This is a Street-detail layout rule, not a
-change to task semantics or persistence.
+four Street status actions stay in the existing two-column grid, while the
+compact comment and trash actions are stacked vertically in the adjacent action
+column. The Street marking status controls use equal-width columns. The House
+detail sheet keeps its two-column status grid. This is a presentation-only
+layout rule, not a change to task semantics or persistence.
 
 ## Product direction
 

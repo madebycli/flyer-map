@@ -62,6 +62,7 @@ jobs:
 # Compact delete action checkpoint: retain the Danger color with the matched comment-icon footprint.
 # Context verification run checkpoint: validate the refreshed PR #92 context against the exact head.
 # Final context trigger: rerun the committed 5.7.1 isolation proof for the final documentation head.
-# Vertical Street status action checkpoint: rerun exact-head UI verification after stacking status controls.
+# Historical Street status action checkpoint: the superseded stacked status layout.
 # Context docs current-head checkpoint: rerun isolation for the synchronized project context.
 # Street status grid rollback checkpoint: verify the compact two-column task layout.
+# Street action width checkpoint: verify equal-width status columns in the marking window.
