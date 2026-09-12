@@ -288,3 +288,333 @@ html[data-appearance="dark"] .org-lifecycle--archived {
   color: #d8c1b2;
   background: #352c27;
 }
+
+
+/*
+ * Contrast checkpoint: keep every map-facing FieldHub readable in the neutral
+ * dark palette. These selectors deliberately target UI chrome only; no
+ * MapLibre canvas, source or layer is styled here.
+ */
+html[data-appearance="dark"] {
+  color-scheme: dark;
+}
+
+html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-handle-button,
+html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-header {
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-handle,
+html[data-appearance="dark"] .field-sheet-handle {
+  background: #666666;
+}
+
+html[data-appearance="dark"] .field-sheet-header > button,
+html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-header .icon-button,
+html[data-appearance="dark"] .platform-menu-header button,
+html[data-appearance="dark"] .platform-module-header button {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .button.secondary,
+html[data-appearance="dark"] .icon-button,
+html[data-appearance="dark"] .small-action,
+html[data-appearance="dark"] .platform-grid-button,
+html[data-appearance="dark"] .status-button,
+html[data-appearance="dark"] .comments-context-toggle,
+html[data-appearance="dark"] .comments-context-error button,
+html[data-appearance="dark"] .comments-load-more {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .status-button.is-selected {
+  border-color: var(--ui-text);
+  box-shadow: inset 0 0 0 1px var(--ui-surface);
+}
+
+html[data-appearance="dark"] .platform-manual-street-button,
+html[data-appearance="dark"] .platform-manual-street-button:active,
+html[data-appearance="dark"] .platform-smart-mark-button,
+html[data-appearance="dark"] .platform-smart-mark-button:active {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-accent);
+  box-shadow: 0 0.3rem 1.1rem rgb(0 0 0 / 28%);
+}
+
+html[data-appearance="dark"] .platform-module-overlay {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+}
+
+html[data-appearance="dark"] .platform-sync-indicator {
+  color: var(--ui-text);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .platform-sync-indicator > span {
+  border-color: var(--ui-surface);
+}
+
+html[data-appearance="dark"] .field-hub-card {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .field-hub-empty {
+  color: var(--ui-muted);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .field-hub-heading span {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .map-context-hub .map-context-content > p,
+html[data-appearance="dark"] .area-preparation-summary,
+html[data-appearance="dark"] .area-preparation-progress p,
+html[data-appearance="dark"] .smart-street-meta,
+html[data-appearance="dark"] .smart-street-area-note,
+html[data-appearance="dark"] .context-task-list > p,
+html[data-appearance="dark"] .context-task-list-header span,
+html[data-appearance="dark"] .context-task-row small,
+html[data-appearance="dark"] .task-current-status span {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .area-preparation-progress {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .area-preparation-progress-header span {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .area-preparation-progress progress {
+  accent-color: var(--ui-accent-strong);
+}
+
+html[data-appearance="dark"] .geometry-status.is-valid {
+  color: #9be7ad;
+}
+
+html[data-appearance="dark"] .geometry-status.is-invalid {
+  color: var(--ui-warning);
+}
+
+html[data-appearance="dark"] .street-summary,
+html[data-appearance="dark"] .task-current-status {
+  color: var(--ui-text);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .smart-street-message {
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .smart-street-choice-list,
+html[data-appearance="dark"] .context-task-list {
+  border-color: var(--ui-border);
+}
+
+html[data-appearance="dark"] .smart-street-choice {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .smart-street-choice small {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .context-task-list-header {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .context-task-row {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .comments-context-toggle em {
+  color: var(--ui-text);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .comments-context-error {
+  color: #ffc1c3;
+  border-color: #6e3539;
+  background: #492326;
+}
+
+html[data-appearance="dark"] .comments-panel {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .comment-card {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .comments-empty,
+html[data-appearance="dark"] .comments-readonly,
+html[data-appearance="dark"] .comment-error,
+html[data-appearance="dark"] .comments-panel-header > div > span,
+html[data-appearance="dark"] .comments-panel-header > span,
+html[data-appearance="dark"] .comment-composer-footer > span,
+html[data-appearance="dark"] .comment-card-meta time {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .comment-card p,
+html[data-appearance="dark"] .comment-composer textarea,
+html[data-appearance="dark"] .comment-edit-form textarea {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .comment-edit-form textarea,
+html[data-appearance="dark"] .comment-composer textarea {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface);
+}
+
+html[data-appearance="dark"] .comment-action {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .comment-action-primary,
+html[data-appearance="dark"] .comment-composer-footer button {
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-accent);
+}
+
+html[data-appearance="dark"] .comment-action-danger {
+  color: #ffc1c3;
+  border-color: #6e3539;
+  background: #492326;
+}
+
+html[data-appearance="dark"] .settings-section h3 {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .settings-subsection > strong {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .settings-subsection > p,
+html[data-appearance="dark"] .settings-help,
+html[data-appearance="dark"] .settings-muted,
+html[data-appearance="dark"] .offline-map-attribution,
+html[data-appearance="dark"] .offline-map-meta dt {
+  color: var(--ui-muted);
+}
+
+html[data-appearance="dark"] .settings-error {
+  color: #ffb4ab;
+}
+
+html[data-appearance="dark"] .offline-map-card {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+}
+
+html[data-appearance="dark"] .offline-map-card > strong,
+html[data-appearance="dark"] .offline-map-meta dd {
+  color: var(--ui-text);
+}
+
+html[data-appearance="dark"] .offline-map-status {
+  color: #9be7ad;
+}
+
+html[data-appearance="dark"] .team-dot,
+html[data-appearance="dark"] .team-color-preview {
+  border-color: var(--ui-surface);
+  box-shadow: 0 0 0 1px var(--ui-border);
+}
+
+html[data-appearance="dark"] .map-refresh-button,
+html[data-appearance="dark"] .offline-map-context-badge,
+html[data-appearance="dark"] .map-error {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-raised);
+  box-shadow: 0 0.3rem 1rem rgb(0 0 0 / 28%);
+}
+
+html[data-appearance="dark"] .map-refresh-control.is-error .map-refresh-button {
+  color: #f3d39d;
+  border-color: #66502a;
+  background: #352b1c;
+}
+
+html[data-appearance="dark"] .connection.is-online,
+html[data-appearance="dark"] .area-preparation-status.is-ready {
+  color: #b8f0c8;
+  border-color: #315e3d;
+  background: #193524;
+}
+
+html[data-appearance="dark"] .connection.is-offline,
+html[data-appearance="dark"] .area-preparation-status.is-failed,
+html[data-appearance="dark"] .area-preparation-status.is-unavailable {
+  color: #f3d39d;
+  border-color: #66502a;
+  background: #352b1c;
+}
+
+html[data-appearance="dark"] .storage-warning,
+html[data-appearance="dark"] .platform-foundation-note {
+  color: #f3dba8;
+  border-color: #66552e;
+  background: #332d1d;
+}
+
+html[data-appearance="dark"] .platform-foundation-note strong {
+  color: #f6dfa9;
+}
+
+html[data-appearance="dark"] .app-menu-surface {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="dark"] .app-menu-item {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+html[data-appearance="dark"] .app-menu-close {
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .app-menu-item-state {
+  color: var(--ui-muted);
+}

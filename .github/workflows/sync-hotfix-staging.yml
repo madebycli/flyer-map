@@ -215,3 +215,5 @@ jobs:
 # Content-fit checkpoint: FieldHub opens at natural content height; appearance control lives in Settings.
 
 # Neutral dark palette checkpoint: use grayscale UI surfaces and keep MapLibre untouched.
+
+# Contrast checkpoint: neutral dark surfaces and readable text for field, street, house, comments and settings UI.
