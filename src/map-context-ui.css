@@ -59,6 +59,35 @@
   width: min(31rem, 100%);
 }
 
+.field-sheet-header .geometry-header-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: max-content;
+  margin: 0;
+  padding: 0.34rem 0.48rem;
+  border: 1px solid #b8d7bf;
+  border-radius: 999px;
+  color: #1c6a39;
+  background: #edf8ef;
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.field-sheet-header .geometry-header-status.is-pending {
+  border-color: #e3c58e;
+  color: #84531f;
+  background: #fff8e8;
+}
+
+.map-mode-hub .field-sheet-header {
+  gap: 0.55rem;
+}
+
 .field-bottom-sheet.streets-field-hub {
   max-height: min(72dvh, 40rem);
 }

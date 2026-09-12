@@ -393,6 +393,7 @@ const geometryEnglish = new Map<string, string>([
   ["Mindestens 3 Eckpunkte setzen.", "Set at least 3 corner points."],
   ["Das Gebiet enthält einen ungültigen Kartenpunkt.", "The area contains an invalid map point."],
   ["Das Gebiet braucht 3 unterschiedliche Eckpunkte.", "The area needs 3 distinct corner points."],
+  ["Das Gebiet darf höchstens 50 Eckpunkte haben.", "The area may have at most 50 corner points."],
   ["Zwei benachbarte Eckpunkte liegen übereinander.", "Two adjacent corner points overlap."],
   ["Das Gebiet hat keine nutzbare Fläche.", "The area has no usable surface."],
   ["Die Gebietsgrenze darf sich nicht selbst kreuzen.", "The area boundary must not self-intersect."],

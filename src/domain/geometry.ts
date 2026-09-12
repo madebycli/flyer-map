@@ -6,6 +6,13 @@ export type GeometryValidation =
 
 const EPSILON = 1e-10;
 
+/**
+ * Editable campaign Areas stay intentionally small enough for reliable map
+ * interaction and bounded polygon validation. House footprints use their own
+ * validation path below and are not subject to this product limit.
+ */
+export const AREA_MAX_VERTICES = 50;
+
 function samePoint(a: LngLat, b: LngLat) {
   return Math.abs(a[0] - b[0]) < EPSILON && Math.abs(a[1] - b[1]) < EPSILON;
 }
@@ -82,9 +89,17 @@ function signedArea(vertices: LngLat[]) {
   return sum / 2;
 }
 
-function validatePolygonVerticesWithMinimumArea(vertices: LngLat[], minimumArea: number): GeometryValidation {
+function validatePolygonVerticesWithMinimumArea(
+  vertices: LngLat[],
+  minimumArea: number,
+  maxVertices?: number,
+): GeometryValidation {
   if (vertices.length < 3) {
     return { valid: false, reason: "Mindestens 3 Eckpunkte setzen." };
+  }
+
+  if (maxVertices !== undefined && vertices.length > maxVertices) {
+    return { valid: false, reason: `Das Gebiet darf höchstens ${maxVertices} Eckpunkte haben.` };
   }
 
   for (const point of vertices) {
@@ -117,6 +132,10 @@ function validatePolygonVerticesWithMinimumArea(vertices: LngLat[], minimumArea:
 
 export function validatePolygonVertices(vertices: LngLat[]): GeometryValidation {
   return validatePolygonVerticesWithMinimumArea(vertices, EPSILON);
+}
+
+export function validateAreaPolygonVertices(vertices: LngLat[]): GeometryValidation {
+  return validatePolygonVerticesWithMinimumArea(vertices, EPSILON, AREA_MAX_VERTICES);
 }
 
 /** House footprints are legitimately much smaller than editable Area polygons. */

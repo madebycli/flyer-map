@@ -61,19 +61,25 @@
 }
 
 .comments-context-panel.is-icon.is-expanded .comments-context-toggle {
-  width: 100%;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  place-items: center start;
-  text-align: left;
+  width: 2.7rem;
+  grid-template-columns: 1fr;
+  place-items: center;
+  text-align: center;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 0.14);
 }
 
 .comments-context-panel.is-icon.is-expanded .comments-context-toggle strong {
-  position: static;
-  width: auto;
-  height: auto;
-  overflow: visible;
-  clip: auto;
-  white-space: normal;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.comments-context-panel.is-icon.is-expanded .comments-context-submenu {
+  width: 100%;
 }
 
 .comments-context-toggle strong { min-width: 0; font-size: 0.88rem; }

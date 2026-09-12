@@ -43,7 +43,12 @@ import {
   type CollectionArea,
   type CollectionMainArea,
 } from "./domain/collection";
-import { validateLineStringVertices, validatePolygonVertices } from "./domain/geometry";
+import {
+  AREA_MAX_VERTICES,
+  validateAreaPolygonVertices,
+  validateLineStringVertices,
+  validatePolygonVertices,
+} from "./domain/geometry";
 import { detectLanguage, geometryReason, t, taskStatusLabel, type Language } from "./i18n";
 import { lineStringIsFullyInsideOrOnPolygon } from "./domain/areaTaskPreparation.ts";
 import { networkProgress } from "./domain/streetNetwork.ts";
@@ -123,6 +128,17 @@ function nextStreetName(tasks: DistributionTask[], areaId: string, language: Lan
   return `${t(language, "street")} ${count + 1}`;
 }
 
+function areaGeometryStatus(
+  language: Language,
+  count: number,
+  validation: ReturnType<typeof validateAreaPolygonVertices>,
+) {
+  const points = `${count}/${AREA_MAX_VERTICES} ${language === "de" ? "Eckpunkte" : "corners"}`;
+  return validation.valid
+    ? `Approved · ${points}`
+    : `${points} · ${geometryReason(language, validation.reason)}`;
+}
+
 function syncMessage(language: Language, code: SyncMessageCode, refreshState: RefreshState) {
   if (refreshState === "available") return null;
   if (code === "access_required") return t(language, "accessRequired");
@@ -169,6 +185,7 @@ export default function App({
   const [selectedHouseTaskId, setSelectedHouseTaskId] = useState<string | null>(null);
   const [draftVertices, setDraftVertices] = useState<LngLat[]>([]);
   const [editingVertices, setEditingVertices] = useState<LngLat[]>([]);
+  const [editingUndoStack, setEditingUndoStack] = useState<LngLat[][]>([]);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
   const [streetDraftVertices, setStreetDraftVertices] = useState<LngLat[]>([]);
   const [collectionDraftVertices, setCollectionDraftVertices] = useState<LngLat[]>([]);
@@ -428,11 +445,11 @@ export default function App({
   );
 
   const drawValidation = useMemo(
-    () => validatePolygonVertices(draftVertices),
+    () => validateAreaPolygonVertices(draftVertices),
     [draftVertices],
   );
   const editValidation = useMemo(
-    () => validatePolygonVertices(editingVertices),
+    () => validateAreaPolygonVertices(editingVertices),
     [editingVertices],
   );
   const streetValidation = useMemo(() => {
@@ -556,6 +573,7 @@ export default function App({
     setSelectedHouseTaskId(null);
     setDraftVertices([]);
     setEditingVertices([]);
+    setEditingUndoStack([]);
     setStreetDraftVertices([]);
     setSelectedVertexIndex(null);
   };
@@ -659,6 +677,7 @@ export default function App({
   const cancelDrawing = () => {
     setMode("browse");
     setDraftVertices([]);
+    setEditingUndoStack([]);
   };
 
   const startCollectionMainArea = () => {
@@ -965,6 +984,7 @@ export default function App({
   const startEditing = () => {
     if (!selectedArea || !canEditSelectedArea) return;
     setEditingVertices(openPolygonRing(selectedArea.geometry));
+    setEditingUndoStack([]);
     setSelectedVertexIndex(null);
     setMode("edit");
     setSheet(null);
@@ -973,19 +993,34 @@ export default function App({
   const cancelEditing = () => {
     setMode("browse");
     setEditingVertices([]);
+    setEditingUndoStack([]);
     setSelectedVertexIndex(null);
     if (selectedAreaId) setSheet("area");
   };
 
   const moveEditVertex = (index: number, point: LngLat) => {
+    const previous = editingVertices[index];
+    if (!previous || (previous[0] === point[0] && previous[1] === point[1])) return;
+    setEditingUndoStack((history) => [
+      ...history,
+      editingVertices.map(([lng, lat]) => [lng, lat] as LngLat),
+    ]);
     setEditingVertices((current) =>
       current.map((vertex, vertexIndex) => (vertexIndex === index ? point : vertex)),
     );
     setSelectedVertexIndex(null);
   };
 
+  const undoEditVertex = () => {
+    const previous = editingUndoStack.at(-1);
+    if (!previous) return;
+    setEditingVertices(previous);
+    setEditingUndoStack((history) => history.slice(0, -1));
+    setSelectedVertexIndex(null);
+  };
+
   const saveEditedArea = () => {
-    if (!selectedArea || !canEditSelectedArea || !editValidation.valid) return;
+    if (!selectedArea || !canEditSelectedArea || !editValidation.valid || editingUndoStack.length === 0) return;
     const now = new Date().toISOString();
 
     commitSnapshot((current) => ({
@@ -998,6 +1033,7 @@ export default function App({
     }));
     setMode("browse");
     setEditingVertices([]);
+    setEditingUndoStack([]);
     setSelectedVertexIndex(null);
     setSheet("area");
   };
@@ -1274,7 +1310,9 @@ export default function App({
         onAreaSelect={selectArea}
         onTaskSelect={selectTask}
         onHouseTaskSelect={selectHouseTask}
-        onDrawPoint={(point) => setDraftVertices((current) => [...current, point])}
+        onDrawPoint={(point) => setDraftVertices((current) =>
+          current.length >= AREA_MAX_VERTICES ? current : [...current, point],
+        )}
         onEditVertexSelect={(index) =>
           setSelectedVertexIndex((current) => (current === index ? null : index))
         }
@@ -1462,7 +1500,39 @@ export default function App({
           open
           title={t(language, "area") + " · " + (activeTeam?.name || t(language, "team"))}
           kicker={t(language, "drawing")}
-          headerAside={<span className="team-color-preview" style={{ backgroundColor: activeTeam?.color ?? "#2563eb" }} aria-hidden="true" />}
+          headerAside={(
+            <span
+              className={`geometry-header-status ${drawValidation.valid ? "is-approved" : "is-pending"}`}
+              aria-label={areaGeometryStatus(language, draftVertices.length, drawValidation)}
+            >
+              {drawValidation.valid ? "✓ Approved" : "… Pending"} · {draftVertices.length}/{AREA_MAX_VERTICES}
+            </span>
+          )}
+          headerActions={() => (
+            <>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                disabled={draftVertices.length === 0}
+                onClick={() => setDraftVertices((current) => current.slice(0, -1))}
+                aria-label={t(language, "undo")}
+              >↶</button>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                onClick={cancelDrawing}
+                aria-label={t(language, "cancel")}
+              >×</button>
+              <button
+                className="field-sheet-header-action field-sheet-header-action-confirm"
+                type="button"
+                disabled={!drawValidation.valid}
+                onClick={saveDraftArea}
+                aria-label={t(language, "save")}
+              >✓</button>
+            </>
+          )}
+          showClose={false}
           onClose={cancelDrawing}
           initialSnap="expanded"
           retractable
@@ -1473,9 +1543,7 @@ export default function App({
           <div className="map-context-content">
             <p>{t(language, "drawHint")}</p>
             <p className={"geometry-status " + (drawValidation.valid ? "is-valid" : "is-invalid")}>
-              {drawValidation.valid
-                ? t(language, "readySaveCorners", { count: draftVertices.length })
-                : geometryReason(language, drawValidation.reason)}
+              {areaGeometryStatus(language, draftVertices.length, drawValidation)}
             </p>
             <div className="mode-actions three-actions">
               <button className="button secondary" type="button" onClick={cancelDrawing}>{t(language, "cancel")}</button>
@@ -1544,7 +1612,39 @@ export default function App({
           open
           title={selectedArea?.name || t(language, "area")}
           kicker={t(language, "edit")}
-          headerAside={<span className="team-color-preview" style={{ backgroundColor: editColor }} aria-hidden="true" />}
+          headerAside={(
+            <span
+              className={`geometry-header-status ${editValidation.valid ? "is-approved" : "is-pending"}`}
+              aria-label={areaGeometryStatus(language, editingVertices.length, editValidation)}
+            >
+              {editValidation.valid ? "✓ Approved" : "… Pending"} · {editingVertices.length}/{AREA_MAX_VERTICES}
+            </span>
+          )}
+          headerActions={() => (
+            <>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                disabled={editingUndoStack.length === 0}
+                onClick={undoEditVertex}
+                aria-label={t(language, "undo")}
+              >↶</button>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                onClick={cancelEditing}
+                aria-label={t(language, "cancel")}
+              >×</button>
+              <button
+                className="field-sheet-header-action field-sheet-header-action-confirm"
+                type="button"
+                disabled={!editValidation.valid || editingUndoStack.length === 0}
+                onClick={saveEditedArea}
+                aria-label={t(language, "saveChanges")}
+              >✓</button>
+            </>
+          )}
+          showClose={false}
           onClose={cancelEditing}
           initialSnap="expanded"
           retractable
@@ -1559,11 +1659,12 @@ export default function App({
                 : t(language, "editHintSelected", { index: selectedVertexIndex + 1 })}
             </p>
             <p className={"geometry-status " + (editValidation.valid ? "is-valid" : "is-invalid")}>
-              {editValidation.valid ? t(language, "geometryValid") : geometryReason(language, editValidation.reason)}
+              {areaGeometryStatus(language, editingVertices.length, editValidation)}
             </p>
-            <div className="mode-actions">
+            <div className="mode-actions three-actions">
               <button className="button secondary" type="button" onClick={cancelEditing}>{t(language, "cancel")}</button>
-              <button className="button primary" type="button" disabled={!editValidation.valid} onClick={saveEditedArea}>{t(language, "saveChanges")}</button>
+              <button className="button secondary" type="button" disabled={editingUndoStack.length === 0} onClick={undoEditVertex}>{t(language, "undo")}</button>
+              <button className="button primary" type="button" disabled={!editValidation.valid || editingUndoStack.length === 0} onClick={saveEditedArea}>{t(language, "saveChanges")}</button>
             </div>
           </div>
         </FieldHub>

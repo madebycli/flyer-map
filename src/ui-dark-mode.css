@@ -440,6 +440,23 @@ html[data-appearance="dark"] .geometry-status.is-invalid {
   color: var(--ui-warning);
 }
 
+html[data-appearance="dark"] .field-sheet-header .geometry-header-status.is-approved {
+  color: #b8f0c8;
+  border-color: #315e3d;
+  background: #193524;
+}
+
+html[data-appearance="dark"] .field-sheet-header .geometry-header-status.is-pending {
+  color: #f3d39d;
+  border-color: #66502a;
+  background: #352b1c;
+}
+
+html[data-appearance="dark"] .comments-context-panel.is-icon.is-expanded .comments-context-toggle {
+  border-color: #8ab4f8;
+  box-shadow: 0 0 0 2px rgb(138 180 248 / 0.2);
+}
+
 html[data-appearance="dark"] .street-summary {
   color: var(--ui-text);
   background: var(--ui-surface-soft);

@@ -8,6 +8,9 @@ const fieldHub = readFileSync(new URL("../src/platform/FieldHub.tsx", import.met
 const sheetCss = readFileSync(new URL("../src/platform/field-bottom-sheet.css", import.meta.url), "utf8");
 const platformCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
 const mapCss = readFileSync(new URL("../src/map-context-ui.css", import.meta.url), "utf8");
+const geometry = readFileSync(new URL("../src/domain/geometry.ts", import.meta.url), "utf8");
+const commentsPanel = readFileSync(new URL("../src/collaboration/CommentsContextPanel.tsx", import.meta.url), "utf8");
+const commentsCompactCss = readFileSync(new URL("../src/collaboration/comments-context-compact.css", import.meta.url), "utf8");
 const mapView = readFileSync(new URL("../src/map/MapView.tsx", import.meta.url), "utf8");
 const streetCss = readFileSync(new URL("../src/street-mode.css", import.meta.url), "utf8");
 const m4Css = readFileSync(new URL("../src/m4.css", import.meta.url), "utf8");
@@ -103,4 +106,28 @@ test("map action controls share the overlay hide contract and compact task rows"
   assert.match(mapCss, /\.area-tools-row:has\(> \.comments-context-panel\.is-expanded\)/u);
   assert.match(streetCss, /\.task-status-tools\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto/u);
   assert.match(streetCss, /\.task-status-tools:has\(\.comments-context-panel\.is-expanded\)/u);
+});
+
+test("Area draw and edit share the Street HUD contract with approval and undo", () => {
+  assert.match(geometry, /export const AREA_MAX_VERTICES = 50;/u);
+  assert.match(geometry, /export function validateAreaPolygonVertices/u);
+  assert.match(app, /validateAreaPolygonVertices\(draftVertices\)/u);
+  assert.match(app, /validateAreaPolygonVertices\(editingVertices\)/u);
+  assert.match(app, /mode === "draw"[\s\S]*?field-sheet-header-action-confirm[\s\S]*?onClick=\{saveDraftArea\}/u);
+  assert.match(app, /mode === "edit"[\s\S]*?undoEditVertex[\s\S]*?field-sheet-header-action-confirm[\s\S]*?onClick=\{saveEditedArea\}/u);
+  assert.match(app, /Approved.*AREA_MAX_VERTICES/u);
+  assert.match(app, /editingUndoStack\.length === 0/u);
+  assert.match(app, /initialSnap="expanded"[\s\S]*?retractable[\s\S]*?initialRetracted/u);
+  assert.match(app, /showClose=\{false\}/u);
+});
+
+test("compact comments stay an icon toggle while their submenu is open", () => {
+  assert.match(commentsPanel, /aria-expanded=\{expanded\}/u);
+  assert.match(commentsPanel, /aria-pressed=\{expanded\}/u);
+  assert.match(commentsPanel, /Kommentare ein- oder ausblenden/u);
+  assert.match(commentsPanel, /aria-controls=\{submenuId\}/u);
+  assert.match(commentsPanel, /hasFetched/u);
+  assert.doesNotMatch(commentsPanel, /expanded\s*\?\s*\(language === "de" \? "Kommentare schließen"/u);
+  assert.match(commentsCompactCss, /\.comments-context-panel\.is-icon\.is-expanded \.comments-context-toggle\s*\{[\s\S]*?width:\s*2\.7rem;/u);
+  assert.match(commentsCompactCss, /\.comments-context-panel\.is-icon\.is-expanded \.comments-context-submenu\s*\{[\s\S]*?width:\s*100%;/u);
 });

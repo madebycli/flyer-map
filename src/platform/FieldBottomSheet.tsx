@@ -34,8 +34,13 @@ function nearestSnap(height: number, viewport: number): FieldSheetSnap {
   }, "expanded" as FieldSheetSnap);
 }
 
-function clampHeight(height: number, viewport: number) {
-  return Math.max(snapHeight("compact", viewport), Math.min(snapHeight("full", viewport), height));
+function clampHeight(height: number, viewport: number, allowRetracted = false) {
+  const minimum = allowRetracted ? 4.5 * 16 : snapHeight("compact", viewport);
+  return Math.max(minimum, Math.min(snapHeight("full", viewport), height));
+}
+
+function retractedDragThreshold(viewport: number) {
+  return Math.max(4.5 * 16, snapHeight("compact", viewport) * 0.72);
 }
 
 export function FieldBottomSheet({
@@ -78,7 +83,11 @@ export function FieldBottomSheet({
   const suppressHandleClick = useRef(false);
   const drag = useRef<{ pointerId: number; startY: number; startHeight: number; sheet: HTMLElement } | null>(null);
   const reveal = useCallback(() => setRetracted(false), []);
-  const retract = useCallback(() => setRetracted(true), []);
+  const retract = useCallback(() => {
+    setSnap(initialSnap);
+    setUserSized(false);
+    setRetracted(true);
+  }, [initialSnap]);
   const toggleRetracted = useCallback(() => setRetracted((current) => !current), []);
 
   useEffect(() => {
@@ -104,11 +113,20 @@ export function FieldBottomSheet({
 
   const committedHeight = useMemo(() => snapHeight(snap, viewport), [snap, viewport]);
 
-  const finishDrag = useCallback((height: number, moved: boolean) => {
+  const finishDrag = useCallback((height: number, moved: boolean, shouldRetract: boolean) => {
     const activeDrag = drag.current;
     if (!activeDrag) return;
     if (!moved) {
       activeDrag.sheet.classList.remove("field-sheet-dragging");
+      drag.current = null;
+      return;
+    }
+    if (shouldRetract) {
+      activeDrag.sheet.style.removeProperty("--field-sheet-height");
+      activeDrag.sheet.classList.remove("field-sheet-dragging");
+      setSnap(initialSnap);
+      setUserSized(false);
+      setRetracted(true);
       drag.current = null;
       return;
     }
@@ -118,7 +136,7 @@ export function FieldBottomSheet({
     setSnap(nextSnap);
     setUserSized(true);
     drag.current = null;
-  }, [viewport]);
+  }, [initialSnap, viewport]);
 
   if (!open) return null;
 
@@ -163,17 +181,22 @@ export function FieldBottomSheet({
           onPointerMove={(event) => {
             if (!drag.current || drag.current.pointerId !== event.pointerId) return;
             event.preventDefault();
-            const next = clampHeight(drag.current.startHeight + drag.current.startY - event.clientY, viewport);
+            const next = clampHeight(
+              drag.current.startHeight + drag.current.startY - event.clientY,
+              viewport,
+              retractable,
+            );
             drag.current.sheet.style.setProperty("--field-sheet-height", next + "px");
           }}
           onPointerUp={(event) => {
             if (!drag.current || drag.current.pointerId !== event.pointerId) return;
             const activeDrag = drag.current;
             if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
-            const next = clampHeight(activeDrag.startHeight + activeDrag.startY - event.clientY, viewport);
+            const rawHeight = activeDrag.startHeight + activeDrag.startY - event.clientY;
+            const next = clampHeight(rawHeight, viewport, retractable);
             const moved = Math.abs(event.clientY - activeDrag.startY) >= MIN_DRAG_PX;
             suppressHandleClick.current = moved;
-            finishDrag(next, moved);
+            finishDrag(next, moved, retractable && rawHeight <= retractedDragThreshold(viewport));
           }}
           onPointerCancel={() => {
             const activeDrag = drag.current;
@@ -220,11 +243,12 @@ export function FieldBottomSheet({
               <strong>{title}</strong>
             )}
           </div>
+          {headerAside ? <div className="field-sheet-header-aside">{headerAside}</div> : null}
           {headerActions ? (
             <div className="field-sheet-header-actions">
               {headerActions({ reveal, retract, toggle: toggleRetracted, isRetracted: retracted })}
             </div>
-          ) : headerAside ? <div className="field-sheet-header-aside">{headerAside}</div> : null}
+          ) : null}
           {showClose ? <button className="field-sheet-close-button" type="button" onClick={onClose} aria-label={`${title} schließen`}>×</button> : null}
         </header>
         <div className="field-sheet-body">{children}</div>

@@ -22,6 +22,9 @@ const MAX_TRANSIENT_OVERPASS_ATTEMPTS = 3;
 function isTransientOverpassCode(code:string) {
   return code==='overpass_rate_limited'||code==='overpass_timeout'||code==='overpass_transport_error'||/^overpass_http_5\d\d$/.test(code);
 }
+function isDefaultProviderFailureCode(code:string) {
+  return isTransientOverpassCode(code)||code==='overpass_partial_failure'||code==='overpass_response_budget';
+}
 function normalizeOverpassError(error:unknown,timedOut:boolean) {
   if(timedOut)return new Error('overpass_timeout');
   if(error instanceof Error && /^(?:overpass_|osm_normalization_)/.test(error.message))return error;
@@ -83,13 +86,19 @@ async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTask
         }
         if(way.type!=='way')continue;
         if(!way.tags?.[kind==='roads'?'highway':'building'])continue;
-        if(!Number.isSafeInteger(way.id) || !Array.isArray(way.geometry) || way.geometry.length<2) throw new Error('osm_normalization_missing_nodes');
+        if(!Number.isSafeInteger(way.id) || !Array.isArray(way.geometry) || way.geometry.length<2) {
+          if(kind==='buildings') continue;
+          throw new Error('osm_normalization_missing_nodes');
+        }
         const coordinates:LngLat[]=way.geometry.map((p:{lon:number;lat:number})=>[p.lon,p.lat]);
-        if(coordinates.some(p=>!p.every(Number.isFinite)||Math.abs(p[0])>180||Math.abs(p[1])>85))throw new Error('osm_normalization_invalid_coordinate');
+        if(coordinates.some(p=>!p.every(Number.isFinite)||Math.abs(p[0])>180||Math.abs(p[1])>85)) {
+          if(kind==='buildings') continue;
+          throw new Error('osm_normalization_invalid_coordinate');
+        }
         const tags=Object.fromEntries(Object.entries(way.tags).filter(([,value])=>typeof value==='string')) as Record<string,string>;
         if(kind==='roads')features.push({osmId:way.id,tags,geometry:JSON.parse(canonicalStreetFragmentGeometryJson({type:'LineString',coordinates}))});
         else {
-          if(coordinates.length<4 || JSON.stringify(coordinates[0])!==JSON.stringify(coordinates.at(-1)))throw new Error('osm_normalization_open_building');
+          if(coordinates.length<4 || JSON.stringify(coordinates[0])!==JSON.stringify(coordinates.at(-1)))continue;
           // Public OSM can contain closed ways that still violate the stricter
           // application polygon contract. Skip only that building so one bad
           // source object cannot poison every later Campaign mutation.
@@ -102,7 +111,7 @@ async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTask
       return {features,addressNodes,bytes,parseMs,normalizationMs:performance.now()-normalizeStarted,attempts:index+1,fetchMs:performance.now()-started,sourceTimestamp};
     } catch(error) {
       const normalized=normalizeOverpassError(error,timedOut);
-      if(!options.upstreamUrl && isTransientOverpassCode(normalized.message) && index<urls.length-1){lastError=normalized;continue;}
+      if(!options.upstreamUrl && isDefaultProviderFailureCode(normalized.message) && index<urls.length-1){lastError=normalized;continue;}
       throw normalized;
     } finally {clearTimeout(timeout);}
   }
