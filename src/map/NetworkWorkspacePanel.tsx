@@ -8,6 +8,7 @@ type PendingNetworkIntent = {
 };
 
 export type NetworkWorkspacePanelState = {
+  title: string;
   message: string;
   choices: RoadSnap[];
   routes: NetworkRoute[];
@@ -26,8 +27,16 @@ export function NetworkWorkspacePanel({ state }: { state: NetworkWorkspacePanelS
   return (
     <FieldHub
       open
-      title="Straßenabschnitt markieren"
-      kicker="Karte"
+      title={state.title}
+      kicker="Street Mode"
+      headerActions={({ reveal }) => (
+        <>
+          <button className="field-sheet-header-action" type="button" onClick={state.onReset} aria-label="A/B neu wählen">↶</button>
+          <button className="field-sheet-header-action" type="button" onClick={state.onClose} aria-label="Markierung abbrechen">×</button>
+          <button className="field-sheet-header-action field-sheet-header-action-confirm" type="button" disabled={!state.activeRoute} onClick={reveal} aria-label="Statusauswahl öffnen">✓</button>
+        </>
+      )}
+      showClose={false}
       onClose={state.onClose}
       initialSnap="compact"
       retractable
@@ -66,14 +75,6 @@ export function NetworkWorkspacePanel({ state }: { state: NetworkWorkspacePanelS
               {["Erledigt", "Später", "Nicht zustellbar", "Wieder öffnen"][index]}
             </button>
           ))}
-        </div>
-        <div className="mode-actions">
-          <button className="button secondary" onClick={state.onReset}>
-            A/B neu wählen
-          </button>
-          <button className="button secondary" onClick={state.onClose}>
-            Schließen
-          </button>
         </div>
         {state.pending.map((item) => (
           <p key={item.key}>

@@ -69,3 +69,14 @@ test("map context sheets can retract without blocking the map", () => {
   assert.match(app, /<CommentsContextPanel\s+compact/u);
   assert.doesNotMatch(app, /Tippe auf den Startpunkt A\./u);
 });
+
+test("street headers expose compact undo/cancel/confirm controls and task status has no filler row", () => {
+  const network = readFileSync(new URL("../src/map/NetworkWorkspacePanel.tsx", import.meta.url), "utf8");
+  const commentsCss = readFileSync(new URL("../src/collaboration/comments-context-compact.css", import.meta.url), "utf8");
+  assert.match(app, /mode === "street-draw"[\s\S]*?headerActions=\{\(\) =>[\s\S]*?field-sheet-header-action-confirm[\s\S]*?onClick=\{saveStreetTask\}/u);
+  assert.match(network, /headerActions=\{\(\{ reveal \}\) =>[\s\S]*?field-sheet-header-action-confirm[\s\S]*?onClick=\{reveal\}/u);
+  assert.match(app, /title=\{selectedArea \? nextStreetName\(snapshot\.tasks, selectedArea\.id, language\)/u);
+  assert.doesNotMatch(app, /className="task-current-status"/u);
+  assert.match(app, /className="task-auxiliary-actions"[\s\S]*?<CommentsContextPanel\s+compact[\s\S]*?task-delete/u);
+  assert.match(commentsCss, /\.comments-context-panel\.is-icon\s*\{[\s\S]*?justify-self:\s*start;[\s\S]*?width:\s*max-content;/u);
+});

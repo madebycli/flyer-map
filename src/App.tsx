@@ -1488,9 +1488,33 @@ export default function App({
       {mode === "street-draw" ? (
         <FieldHub
           open
-          title={selectedArea?.name || t(language, "area")}
+          title={selectedArea ? nextStreetName(snapshot.tasks, selectedArea.id, language) : t(language, "street")}
           kicker={t(language, "streetMode")}
-          headerAside={<span className="team-color-preview" style={{ backgroundColor: streetColor }} aria-hidden="true" />}
+          headerActions={() => (
+            <>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                disabled={streetDraftVertices.length === 0}
+                onClick={() => setStreetDraftVertices((current) => current.slice(0, -1))}
+                aria-label={t(language, "undo")}
+              >↶</button>
+              <button
+                className="field-sheet-header-action"
+                type="button"
+                onClick={cancelStreetDrawing}
+                aria-label={t(language, "cancel")}
+              >×</button>
+              <button
+                className="field-sheet-header-action field-sheet-header-action-confirm"
+                type="button"
+                disabled={!streetValidation.valid}
+                onClick={saveStreetTask}
+                aria-label={t(language, "saveStreet")}
+              >✓</button>
+            </>
+          )}
+          showClose={false}
           onClose={cancelStreetDrawing}
           initialSnap="expanded"
           retractable
@@ -1829,11 +1853,6 @@ export default function App({
               </div>
             ) : null}
 
-            <div className="task-current-status">
-              <span>{t(language, "current")}</span>
-              <strong>{taskStatusLabel(language, selectedTask.status)}</strong>
-            </div>
-
             <div className="status-grid" aria-label={t(language, "current")}>
               {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
                 <button
@@ -1849,21 +1868,23 @@ export default function App({
               ))}
             </div>
 
-            <CommentsContextPanel
-              compact
-              campaignId={snapshot.campaign.id}
-              targetType="street-task"
-              targetId={selectedTask.id}
-              targetLabel={selectedTask.label.trim() || t(language, "street")}
-              targetTeamId={selectedTaskArea?.teamId ?? null}
-              access={access}
-              online={online}
-              language={language}
-            />
+            <div className="task-auxiliary-actions">
+              <CommentsContextPanel
+                compact
+                campaignId={snapshot.campaign.id}
+                targetType="street-task"
+                targetId={selectedTask.id}
+                targetLabel={selectedTask.label.trim() || t(language, "street")}
+                targetTeamId={selectedTaskArea?.teamId ?? null}
+                access={access}
+                online={online}
+                language={language}
+              />
 
-            {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
-              <button className="button danger task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>
-            ) : null}
+              {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
+                <button className="button danger task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>
+              ) : null}
+            </div>
           </div>
         </FieldHub>
       ) : null}
@@ -1881,11 +1902,6 @@ export default function App({
           className="map-context-hub map-house-hub"
         >
           <div className="map-context-content">
-            <div className="task-current-status">
-              <span>{t(language, "current")}</span>
-              <strong>{taskStatusLabel(language, selectedHouseTask.status)}</strong>
-            </div>
-
             <div className="status-grid" aria-label={t(language, "current")}>
               {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
                 <button

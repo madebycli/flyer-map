@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FieldBottomSheet, type FieldSheetSnap } from "./FieldBottomSheet.tsx";
+import { FieldBottomSheet, type FieldSheetHeaderControls, type FieldSheetSnap } from "./FieldBottomSheet.tsx";
 import "./field-hub.css";
 
 type FieldHubProps = {
@@ -7,6 +7,8 @@ type FieldHubProps = {
   title: string;
   kicker?: string;
   headerAside?: ReactNode;
+  headerActions?: (controls: FieldSheetHeaderControls) => ReactNode;
+  showClose?: boolean;
   onClose: () => void;
   onTitleClick?: () => void;
   overlayClassName?: string;
@@ -23,6 +25,8 @@ export function FieldHub({
   title,
   kicker,
   headerAside,
+  headerActions,
+  showClose = true,
   onClose,
   onTitleClick,
   overlayClassName = "",
@@ -39,6 +43,8 @@ export function FieldHub({
       title={title}
       kicker={kicker}
       headerAside={headerAside}
+      headerActions={headerActions}
+      showClose={showClose}
       onClose={onClose}
       onTitleClick={onTitleClick}
       overlayClassName={overlayClassName}

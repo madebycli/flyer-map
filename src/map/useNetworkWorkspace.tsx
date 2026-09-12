@@ -144,7 +144,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   const activeRoute=selected!==null&&selected>=0?routes[selected]:null;
   const closeMarking=()=>{setAreaId(null);setMarking(false);reset()};
   const discard=async(key:string)=>{await discardNetworkIntent(key);setPending(await queuedNetworkIntents(scope));};
-  const panelState=marking?{message,choices,routes,selected,activeRoute,pending:pending.map(item=>({key:item.key,blocked:Boolean(item.blocked)})),onChoice:accept,onRouteSelect:(index:number)=>setSelected(index),onCommit:commit,onReset:reset,onClose:closeMarking,onDiscard:discard}:null;
+  const panelState=marking?{title:start?.task.label??choices[0]?.task.label??'Neue Straße',message,choices,routes,selected,activeRoute,pending:pending.map(item=>({key:item.key,blocked:Boolean(item.blocked)})),onChoice:accept,onRouteSelect:(index:number)=>setSelected(index),onCommit:commit,onReset:reset,onClose:closeMarking,onDiscard:discard}:null;
   const areaActions=(area:Area,editable:boolean,canMark:boolean)=>{
     const roads=optimistic.tasks.filter(task=>task.areaId===area.id);
     const state=states[area.id];

@@ -142,7 +142,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.field-sheet-header > button {
+.field-sheet-header > button,
+.field-sheet-header-action {
   display: grid;
   place-items: center;
   width: var(--field-hud-close-size);
@@ -154,6 +155,36 @@
   background: #edf2ee;
   font-size: 1.25rem;
   font-weight: 800;
+}
+
+.field-sheet-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.42rem;
+  margin-left: auto;
+}
+
+.field-sheet-header-action {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid rgb(23 32 25 / 12%);
+  border-radius: 999px;
+  color: #172019;
+  background: #edf2ee;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.field-sheet-header-action-confirm {
+  background: #dce9df;
+}
+
+.field-sheet-header-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .field-sheet-body {

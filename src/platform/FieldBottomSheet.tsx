@@ -3,6 +3,13 @@ import "./field-bottom-sheet.css";
 
 export type FieldSheetSnap = "compact" | "expanded" | "full";
 
+export type FieldSheetHeaderControls = {
+  reveal: () => void;
+  retract: () => void;
+  toggle: () => void;
+  isRetracted: boolean;
+};
+
 const SNAP_RATIOS: Record<FieldSheetSnap, number> = {
   compact: 0.34,
   expanded: 0.62,
@@ -36,6 +43,8 @@ export function FieldBottomSheet({
   title,
   kicker,
   headerAside,
+  headerActions,
+  showClose = true,
   onClose,
   onTitleClick,
   overlayClassName = "",
@@ -50,6 +59,8 @@ export function FieldBottomSheet({
   title: string;
   kicker?: string;
   headerAside?: ReactNode;
+  headerActions?: (controls: FieldSheetHeaderControls) => ReactNode;
+  showClose?: boolean;
   onClose: () => void;
   onTitleClick?: () => void;
   overlayClassName?: string;
@@ -66,6 +77,9 @@ export function FieldBottomSheet({
   const [retracted, setRetracted] = useState(initialRetracted);
   const suppressHandleClick = useRef(false);
   const drag = useRef<{ pointerId: number; startY: number; startHeight: number; sheet: HTMLElement } | null>(null);
+  const reveal = useCallback(() => setRetracted(false), []);
+  const retract = useCallback(() => setRetracted(true), []);
+  const toggleRetracted = useCallback(() => setRetracted((current) => !current), []);
 
   useEffect(() => {
     if (open) {
@@ -134,7 +148,7 @@ export function FieldBottomSheet({
               suppressHandleClick.current = false;
               return;
             }
-            setRetracted((current) => !current);
+            toggleRetracted();
           }}
           onPointerDown={(event) => {
             suppressHandleClick.current = false;
@@ -206,8 +220,12 @@ export function FieldBottomSheet({
               <strong>{title}</strong>
             )}
           </div>
-          {headerAside ? <div className="field-sheet-header-aside">{headerAside}</div> : null}
-          <button type="button" onClick={onClose} aria-label={`${title} schließen`}>×</button>
+          {headerActions ? (
+            <div className="field-sheet-header-actions">
+              {headerActions({ reveal, retract, toggle: toggleRetracted, isRetracted: retracted })}
+            </div>
+          ) : headerAside ? <div className="field-sheet-header-aside">{headerAside}</div> : null}
+          {showClose ? <button className="field-sheet-close-button" type="button" onClick={onClose} aria-label={`${title} schließen`}>×</button> : null}
         </header>
         <div className="field-sheet-body">{children}</div>
         {footer ? <footer className="field-sheet-footer">{footer}</footer> : null}

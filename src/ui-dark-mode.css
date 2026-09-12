@@ -137,7 +137,8 @@ html[data-appearance="dark"] :where(
   .platform-grid-button,
   .platform-menu-header button,
   .platform-module-header button,
-  .field-sheet-header > button
+  .field-sheet-header > button,
+  .field-sheet-header-action
 ) {
   color: var(--ui-text);
   border-color: var(--ui-border);
@@ -316,6 +317,7 @@ html[data-appearance="dark"] .field-sheet-handle {
 }
 
 html[data-appearance="dark"] .field-sheet-header > button,
+html[data-appearance="dark"] .field-sheet-header-action,
 html[data-appearance="dark"] .bottom-sheet.field-sheet-enhanced .sheet-header .icon-button,
 html[data-appearance="dark"] .platform-menu-header button,
 html[data-appearance="dark"] .platform-module-header button {
@@ -388,8 +390,7 @@ html[data-appearance="dark"] .smart-street-meta,
 html[data-appearance="dark"] .smart-street-area-note,
 html[data-appearance="dark"] .context-task-list > p,
 html[data-appearance="dark"] .context-task-list-header span,
-html[data-appearance="dark"] .context-task-row small,
-html[data-appearance="dark"] .task-current-status span {
+html[data-appearance="dark"] .context-task-row small {
   color: var(--ui-muted);
 }
 
@@ -415,8 +416,7 @@ html[data-appearance="dark"] .geometry-status.is-invalid {
   color: var(--ui-warning);
 }
 
-html[data-appearance="dark"] .street-summary,
-html[data-appearance="dark"] .task-current-status {
+html[data-appearance="dark"] .street-summary {
   color: var(--ui-text);
   background: var(--ui-surface-soft);
 }

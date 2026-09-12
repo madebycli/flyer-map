@@ -22,7 +22,9 @@ test("map detail and map workflow surfaces use the universal FieldHub chrome", a
   assert.match(app, /import \{ NetworkWorkspacePanel \} from ['"]\.\/map\/NetworkWorkspacePanel\.tsx['"];/u);
   assert.doesNotMatch(network, /from ['"]\.\.\/platform\/FieldHub\.tsx['"]/u);
   assert.match(networkPanel, /import \{ FieldHub \} from "\.\.\/platform\/FieldHub\.tsx";/u);
-  assert.match(networkPanel, /<FieldHub[\s\S]*?title="Straßenabschnitt markieren"/u);
+  assert.match(networkPanel, /<FieldHub[\s\S]*?title=\{state\.title\}/u);
+  assert.match(networkPanel, /kicker="Street Mode"/u);
+  assert.match(networkPanel, /headerActions=\{\(\{ reveal \}\)/u);
   assert.match(fieldHub, /FieldBottomSheet/u);
 });
 
@@ -32,10 +34,17 @@ test("the shared FieldHub header exposes a reusable optional header aside", asyn
   const css = await readFile("src/platform/field-bottom-sheet.css", "utf8");
 
   assert.match(fieldBottom, /headerAside\?: ReactNode/u);
+  assert.match(fieldBottom, /headerActions\?: \(controls: FieldSheetHeaderControls\) => ReactNode/u);
+  assert.match(fieldBottom, /showClose\?: boolean/u);
   assert.match(fieldBottom, /field-sheet-header-aside/u);
+  assert.match(fieldBottom, /field-sheet-header-actions/u);
   assert.match(fieldHub, /headerAside\?: ReactNode/u);
+  assert.match(fieldHub, /headerActions\?: \(controls: FieldSheetHeaderControls\) => ReactNode/u);
+  assert.match(fieldHub, /showClose\?: boolean/u);
   assert.match(fieldHub, /headerAside=\{headerAside\}/u);
+  assert.match(fieldHub, /headerActions=\{headerActions\}/u);
   assert.match(css, /\.field-sheet-header-aside/u);
+  assert.match(css, /\.field-sheet-header-actions/u);
 });
 
 test("preparation progress is polled on the persisted job and rendered as a full-width progress track", async () => {
