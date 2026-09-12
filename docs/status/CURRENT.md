@@ -1,28 +1,3 @@
-## Authoritative analysis checkpoint - 2026-09-12
-
-The current branch is fix/street-engine-smart-marking. This documentation
-checkpoint follows the last fully verified runtime head
-3e1dfb409cb63381b9a7154cd3a941252da95263. The completed audit masterplan is
-docs/status/STREET_ENGINE_D1_AUDIT.md at documentation commit
-e6641486e40806001c50bcf488df438093bb46b1.
-
-The audit keeps the 4.5M D1 Rows Read attribution open, narrows the visible
-StreetEngine failure to Buildings at cursor 0 after the 40 percent progress
-screen, and records the confirmed edge-staging reread hotspot. It also adds
-the requested Area draw/edit UX contract: one compact Street-style header,
-undo, cancel, approved/validity state, visible point count and maximum, and
-a confirm action gated by geometry validity. Comments are specified as a
-same-button toggle with no separate "Kommentare schließen" button and with
-the Field-HUD size, position, snap and minimum-height rules adjusted
-together.
-
-No runtime fix, migration, production action or remote D1 write was made by
-this checkpoint. Last full exact-head evidence remains the CI and staging
-evidence recorded for 3e1dfb4. Local focused tests were 50/50; local full
-tests were 868/869 because of the sandbox broadcast-channel EPERM, and local
-typecheck hit the environment's missing /proc/self/exe path. Do not treat
-those local caveats as a product failure or as a full local PASS.
-
 ---
 id: status-current
 type: status
@@ -44,6 +19,20 @@ last_updated: 2026-09-12
 - Isolation: run `34708938074`, job `103594012867`, success. The workflow verified the committed `5.7.1` / `0.0.1` dependency pair.
 - Admin staging: run `34708938075`, job `103594012869`, success. The exact branch commit was deployed and shell/API smoke checks passed.
 - Staging URL: `https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev`.
+
+## Current unpublished runtime checkpoint
+
+- The current branch implementation is published at
+  `8b1bec21a0fbe0e4ca26c297cb61169df79dde3b`.
+- Its CI run `34716226826` completed successfully with 875 tests, Typecheck,
+  dependency audit and production build.
+- This checkpoint includes the shared Area draw/edit HUD, the comments toggle,
+  Buildings recovery and the bounded prepared-Area delete snapshot. It is not
+  yet merged or deployed to Admin Staging.
+- The Area-delete budget regression uses 2,000 Houses and confirms only 5
+  snapshot rows and 55 returned rows before the cascade. The local sandbox
+  still cannot run the RxDB multi-tab test because its broadcast-channel Unix
+  socket is rejected with `EPERM`; the remote CI result is green.
 
 ## Safety and acceptance gates
 
