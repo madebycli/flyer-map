@@ -1,4 +1,4 @@
-version: 3
+version: 4
 last_updated: 2026-09-12
 purpose: Organizer/Admin continuation overlay for the main docs/context-map.yaml routing graph.
 
@@ -35,15 +35,15 @@ current_runtime_proof:
   branch: fix/street-engine-smart-marking
   pull_request: 92
   base_branch: integration/main-street-runtime
-  last_verified_product_head: 6e381da46547a2586b6ae726003a5c795542badf
-  feature_ci_run: 34694648836
-  feature_ci_job: 103555926689
+  last_verified_product_head: 6baa33af3278263034c8bcff3e0b99219c6599e2
+  feature_ci_run: 34695506872
+  feature_ci_job: 103558184925
   feature_ci_conclusion: success
-  isolation_run: 34694647237
-  isolation_job: 103555922252
+  isolation_run: 34695505016
+  isolation_job: 103558180275
   isolation_conclusion: success
-  admin_staging_run: 34694647278
-  admin_staging_job: 103555922438
+  admin_staging_run: 34695505035
+  admin_staging_job: 103558180395
   admin_staging_conclusion: success
   public_url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
   dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }
