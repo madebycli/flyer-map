@@ -34,6 +34,18 @@ routing_rules:
   - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
+  - id: street-engine-d1-read-audit
+    path: docs/status/STREET_ENGINE_D1_AUDIT.md
+    type: status
+    status: active
+    topics: [streets, preparation, d1, reads, sync]
+    load_when: [StreetEngine failure, systemwide D1 read audit]
+  - id: plan-street-engine-d1-read-audit
+    path: docs/plans/active/034-street-engine-d1-read-audit.md
+    type: plan
+    status: active
+    topics: [streets, preparation, d1, reads, sync]
+    load_when: [StreetEngine failure, systemwide D1 read audit]
   - id: adr-renderer-security-candidate
     path: docs/decisions/ADR-0030-maplibre-security-candidate.md
     topics: [map, security, dependencies]
@@ -535,6 +547,11 @@ nodes:
     load_when: [generic fresh AI session]
 
 edges:
+  - { from: plan-street-engine-d1-read-audit, to: street-engine-d1-read-audit, relation: records_evidence }
+  - { from: plan-street-engine-d1-read-audit, to: adr-street-base-budget, relation: constrained_by }
+  - { from: plan-street-engine-d1-read-audit, to: adr-street-house-network, relation: constrained_by }
+  - { from: plan-street-engine-d1-read-audit, to: offline-sync, relation: investigates }
+  - { from: plan-street-engine-d1-read-audit, to: quality, relation: validated_by }
   - { from: adr-renderer-security-candidate, to: map, relation: governs }
   - { from: adr-renderer-security-candidate, to: security, relation: constrained_by }
   - { from: adr-street-base-budget, to: adr-street-house-network, relation: supersedes_storage }
