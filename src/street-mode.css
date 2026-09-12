@@ -218,6 +218,14 @@
   max-width: 100%;
 }
 
+.map-task-hub .task-status-tools {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.map-task-hub .status-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .task-status-tools:has(.comments-context-panel.is-expanded) {
   grid-template-columns: minmax(0, 1fr);
 }
