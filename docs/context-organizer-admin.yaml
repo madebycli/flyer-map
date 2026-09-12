@@ -35,15 +35,15 @@ current_runtime_proof:
   branch: fix/street-engine-smart-marking
   pull_request: 92
   base_branch: integration/main-street-runtime
-  last_verified_product_head: 6baa33af3278263034c8bcff3e0b99219c6599e2
-  feature_ci_run: 34695506872
-  feature_ci_job: 103558184925
+  last_verified_product_head: db4d073942ddea1aad83ce314eb7585d8c5e8ee2
+  feature_ci_run: 34704937291
+  feature_ci_job: 103583183044
   feature_ci_conclusion: success
-  isolation_run: 34695505016
-  isolation_job: 103558180275
+  isolation_run: 34704934432
+  isolation_job: 103583175314
   isolation_conclusion: success
-  admin_staging_run: 34695505035
-  admin_staging_job: 103558180395
+  admin_staging_run: 34704934518
+  admin_staging_job: 103583175882
   admin_staging_conclusion: success
   public_url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev
   dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }

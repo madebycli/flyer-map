@@ -5,11 +5,11 @@ current_pr92_state:
   repository: madebycli/flyer-map
   branch: fix/street-engine-smart-marking
   pull_request: { number: 92, state: open, draft: true, merged: false, base: integration/main-street-runtime }
-  exact_head: 6baa33af3278263034c8bcff3e0b99219c6599e2
+  exact_head: db4d073942ddea1aad83ce314eb7585d8c5e8ee2
   dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }
-  normal_ci: { run: 34695506872, job: 103558184925, conclusion: success }
-  isolation: { run: 34695505016, job: 103558180275, conclusion: success }
-  admin_staging: { run: 34695505035, job: 103558180395, conclusion: success, url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev }
+  normal_ci: { run: 34704937291, job: 103583183044, conclusion: success }
+  isolation: { run: 34704934432, job: 103583175314, conclusion: success }
+  admin_staging: { run: 34704934518, job: 103583175882, conclusion: success, url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev }
   test_summary: 869 tests passed; typecheck, dependency audit and production build passed
   ui_checkpoint: compact red Danger trash-icon action matches the comment-action footprint
   device_gate: MAP_RENDER_P0=OPEN; STREET_ENGINE_LIVE_READY=FALSE until real iPad geometry acceptance

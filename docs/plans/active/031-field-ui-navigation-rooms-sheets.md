@@ -28,11 +28,11 @@ Dieser Plan ist absichtlich präzise zu Code-Identifiern, weil die vorherige Imp
 - Kein Room-/Invite-Secret in Logs, Audit, LocalStorage, IndexedDB oder RxDB.
 - Kein Produkt-Testlink, bevor exact-head CI und der aktuelle isolierte Staging-Lauf für den implementierten Head grün sind.
 
-Zuletzt verifizierter Product-/Staging-Head: `6baa33af3278263034c8bcff3e0b99219c6599e2`. MapLibre `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind für die kontrollierte Isolation committed. Dokumentationscommits bewegen den Branch danach weiter. Vor Implementation immer Remote-Head, PR #92 und exact-head CI neu lesen.
+Zuletzt verifizierter Product-/Staging-Head: `db4d073942ddea1aad83ce314eb7585d8c5e8ee2`. MapLibre `5.7.1` und `@mapbox/unitbezier` `0.0.1` sind für die kontrollierte Isolation committed. Dokumentationscommits bewegen den Branch danach weiter. Vor Implementation immer Remote-Head, PR #92 und exact-head CI neu lesen.
 
 ## Aktueller verifizierter Checkpoint 2026-09-12
 
-Der zuletzt verifizierte PR-Head `6baa33af3278263034c8bcff3e0b99219c6599e2` hat normale CI,
+Der zuletzt verifizierte PR-Head `db4d073942ddea1aad83ce314eb7585d8c5e8ee2` hat normale CI,
 Dependency-Isolation und Admin-Staging erfolgreich durchlaufen. Die UI hält die
 Danger-Rotfarbe und stellt die Street-Löschaktion als kompakte Mülltonne in der
 Größe der Kommentaraktion dar. Der echte iPad-Renderer-Gate bleibt offen.
