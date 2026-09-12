@@ -165,8 +165,9 @@
 
 .task-auxiliary-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 0.55rem;
   min-width: 0;
 }
@@ -178,6 +179,53 @@
 
 .task-auxiliary-actions .task-delete {
   flex: 0 0 auto;
+}
+
+.task-status-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.task-status-tools > .status-grid {
+  min-width: 0;
+}
+
+.task-status-tools > .task-auxiliary-actions {
+  width: max-content;
+  max-width: 100%;
+}
+
+.task-status-tools:has(.comments-context-panel.is-expanded) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.task-status-tools:has(.comments-context-panel.is-expanded) > .task-auxiliary-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+}
+
+.task-status-tools:has(.comments-context-panel.is-expanded) .comments-context-panel.is-expanded {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.task-status-tools:has(.comments-context-panel.is-expanded) .task-delete {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+@media (max-width: 380px) {
+  .task-status-tools {
+    gap: 0.4rem;
+  }
+
+  .task-status-tools > .task-auxiliary-actions {
+    gap: 0.4rem;
+  }
 }
 
 .task-title-editor {

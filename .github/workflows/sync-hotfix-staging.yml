@@ -222,3 +222,5 @@ jobs:
 # Verified compact map context UI and neutral dark mode candidate.
 
 # Final UI header action checkpoint: manual and Smart Street modes share compact undo/cancel/confirm controls.
+
+# Current UI action chrome checkpoint: deploy the exact tested candidate to Admin Staging only.

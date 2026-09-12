@@ -221,6 +221,30 @@ html[data-appearance="dark"] :where(.org-public-header, .org-admin-topbar) {
   background: rgb(24 24 24 / 96%);
 }
 
+html[data-appearance="dark"] .org-admin-page .org-lifecycle-actions button,
+html[data-appearance="dark"] .org-admin-page .org-detail-grid div {
+  color: var(--org-text);
+  border-color: var(--org-border);
+  background: var(--ui-surface-soft);
+}
+
+html[data-appearance="dark"] .org-admin-page .org-lifecycle-actions button.is-current {
+  color: var(--ui-text);
+  border-color: var(--org-accent);
+  background: var(--org-accent);
+}
+
+html[data-appearance="dark"] .org-admin-page .org-campaign-card,
+html[data-appearance="dark"] .org-admin-page .org-empty {
+  color: var(--org-text);
+  border-color: var(--org-border);
+  background: var(--ui-surface);
+}
+
+html[data-appearance="dark"] .org-admin-page .org-empty {
+  background: rgb(24 24 24 / 70%);
+}
+
 html[data-appearance="dark"] :where(
   .org-form input,
   .org-form select,

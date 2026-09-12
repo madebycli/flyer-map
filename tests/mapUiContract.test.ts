@@ -8,6 +8,9 @@ const fieldHub = readFileSync(new URL("../src/platform/FieldHub.tsx", import.met
 const sheetCss = readFileSync(new URL("../src/platform/field-bottom-sheet.css", import.meta.url), "utf8");
 const platformCss = readFileSync(new URL("../src/platform/platform-shell.css", import.meta.url), "utf8");
 const mapCss = readFileSync(new URL("../src/map-context-ui.css", import.meta.url), "utf8");
+const mapView = readFileSync(new URL("../src/map/MapView.tsx", import.meta.url), "utf8");
+const streetCss = readFileSync(new URL("../src/street-mode.css", import.meta.url), "utf8");
+const m4Css = readFileSync(new URL("../src/m4.css", import.meta.url), "utf8");
 
 test("all FieldHubs use the shared PC bottom-left edge gap and stay sharp over the map", () => {
   assert.match(sheetCss, /justify-content:\s*flex-start;/u);
@@ -79,4 +82,19 @@ test("street headers expose compact undo/cancel/confirm controls and task status
   assert.doesNotMatch(app, /className="task-current-status"/u);
   assert.match(app, /className="task-auxiliary-actions"[\s\S]*?<CommentsContextPanel\s+compact[\s\S]*?task-delete/u);
   assert.match(commentsCss, /\.comments-context-panel\.is-icon\s*\{[\s\S]*?justify-self:\s*start;[\s\S]*?width:\s*max-content;/u);
+});
+
+test("map action controls share the overlay hide contract and compact task rows", () => {
+  assert.match(app, /hideRefreshControl=\{mode !== "browse" \|\| sheet !== null \|\| manualStreetAreaSelection \|\| networkWorkspace\.active\}/u);
+  assert.match(mapView, /hideRefreshControl\?: boolean/u);
+  assert.match(mapView, /mode === "browse" && !hideRefreshControl/u);
+  assert.match(platformCss, /\.platform-map-layer\[aria-hidden="true"\] \.map-refresh-control\s*\{\s*display:\s*none;/u);
+  assert.match(m4Css, /right:\s*calc\(var\(--platform-field-edge-gap[\s\S]*?1\.65rem\)/u);
+  assert.match(m4Css, /width:\s*var\(--platform-field-control-size/u);
+  assert.match(platformCss, /--platform-field-control-gap:\s*0\.55rem;/u);
+  assert.match(platformCss, /\.platform-smart-mark-button\s*\{[\s\S]*?var\(--platform-field-control-gap\)/u);
+  assert.match(mapCss, /\.area-tools-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto/u);
+  assert.match(mapCss, /\.area-tools-row:has\(> \.comments-context-panel\.is-expanded\)/u);
+  assert.match(streetCss, /\.task-status-tools\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto/u);
+  assert.match(streetCss, /\.task-status-tools:has\(\.comments-context-panel\.is-expanded\)/u);
 });

@@ -45,6 +45,8 @@ test("dark theme is scoped to UI and explicitly excludes MapLibre form descendan
   assert.ok(themeSource.includes('html[data-appearance="dark"] .comments-panel'));
   assert.ok(themeSource.includes('html[data-appearance="dark"] .settings-section h3'));
   assert.ok(themeSource.includes('html[data-appearance="dark"] .geometry-status.is-valid'));
+  assert.ok(themeSource.includes('html[data-appearance="dark"] .org-admin-page .org-lifecycle-actions button'));
+  assert.ok(themeSource.includes('html[data-appearance="dark"] .org-admin-page .org-detail-grid div'));
   assert.match(themeSource, /:not\(\.maplibregl-map \*\)/);
   assert.doesNotMatch(themeSource, /filter:\s*(?:invert|brightness)/i);
   assert.doesNotMatch(themeSource, /\.maplibregl-(?:canvas|ctrl|popup)\s*\{/i);

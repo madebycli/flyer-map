@@ -57,3 +57,4 @@ jobs:
             git push origin HEAD:fix/street-engine-smart-marking
           fi
 # UI context sheet contract verification trigger.
+# Current UI action chrome checkpoint: keep the 5.7.1 isolation run attached to the exact UI candidate.

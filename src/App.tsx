@@ -1267,6 +1267,7 @@ export default function App({
         streetDraftVertices={streetDraftVertices}
         streetDraftColor={streetColor}
         refreshState={refreshState}
+        hideRefreshControl={mode !== "browse" || sheet !== null || manualStreetAreaSelection || networkWorkspace.active}
         cameraCommand={cameraCommand}
         onCameraChange={setCurrentCamera}
         onRefresh={manualRefreshCampaign}
@@ -1777,19 +1778,20 @@ export default function App({
               </div>
             ) : null}
 
-            <CommentsContextPanel
-              compact
-              campaignId={snapshot.campaign.id}
-              targetType="area"
-              targetId={selectedArea.id}
-              targetLabel={selectedArea.name.trim() || t(language, "area")}
-              targetTeamId={selectedArea.teamId}
-              access={access}
-              online={online}
-              language={language}
-            />
-
-            {networkWorkspace.areaActions(selectedArea, canEditSelectedArea, canChangeTaskStatusInArea(selectedArea))}
+            <div className="area-tools-row">
+              {networkWorkspace.areaActions(selectedArea, canEditSelectedArea, canChangeTaskStatusInArea(selectedArea))}
+              <CommentsContextPanel
+                compact
+                campaignId={snapshot.campaign.id}
+                targetType="area"
+                targetId={selectedArea.id}
+                targetLabel={selectedArea.name.trim() || t(language, "area")}
+                targetTeamId={selectedArea.teamId}
+                access={access}
+                online={online}
+                language={language}
+              />
+            </div>
 
             {selectedAreaHouseTasks.length > 0 ? (
               <section className="context-task-list" aria-label={language === "de" ? "Haus-Aufgaben" : "House tasks"}>
@@ -1853,37 +1855,39 @@ export default function App({
               </div>
             ) : null}
 
-            <div className="status-grid" aria-label={t(language, "current")}>
-              {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  disabled={!canChangeSelectedTaskStatus}
-                  className={"status-button status-" + status + " " + (selectedTask.status === status ? "is-selected" : "")}
-                  aria-pressed={selectedTask.status === status}
-                  onClick={() => changeTaskStatus(status)}
-                >
-                  {taskStatusLabel(language, status)}
-                </button>
-              ))}
-            </div>
+            <div className="task-status-tools">
+              <div className="status-grid" aria-label={t(language, "current")}>
+                {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    disabled={!canChangeSelectedTaskStatus}
+                    className={"status-button status-" + status + " " + (selectedTask.status === status ? "is-selected" : "")}
+                    aria-pressed={selectedTask.status === status}
+                    onClick={() => changeTaskStatus(status)}
+                  >
+                    {taskStatusLabel(language, status)}
+                  </button>
+                ))}
+              </div>
 
-            <div className="task-auxiliary-actions">
-              <CommentsContextPanel
-                compact
-                campaignId={snapshot.campaign.id}
-                targetType="street-task"
-                targetId={selectedTask.id}
-                targetLabel={selectedTask.label.trim() || t(language, "street")}
-                targetTeamId={selectedTaskArea?.teamId ?? null}
-                access={access}
-                online={online}
-                language={language}
-              />
+              <div className="task-auxiliary-actions">
+                <CommentsContextPanel
+                  compact
+                  campaignId={snapshot.campaign.id}
+                  targetType="street-task"
+                  targetId={selectedTask.id}
+                  targetLabel={selectedTask.label.trim() || t(language, "street")}
+                  targetTeamId={selectedTaskArea?.teamId ?? null}
+                  access={access}
+                  online={online}
+                  language={language}
+                />
 
-              {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
-                <button className="button danger task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>
-              ) : null}
+                {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
+                  <button className="button danger task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>
+                ) : null}
+              </div>
             </div>
           </div>
         </FieldHub>
@@ -1902,32 +1906,36 @@ export default function App({
           className="map-context-hub map-house-hub"
         >
           <div className="map-context-content">
-            <div className="status-grid" aria-label={t(language, "current")}>
-              {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  disabled={!canChangeSelectedHouseTaskStatus}
-                  className={"status-button status-" + status + " " + (selectedHouseTask.status === status ? "is-selected" : "")}
-                  aria-pressed={selectedHouseTask.status === status}
-                  onClick={() => changeHouseTaskStatus(status)}
-                >
-                  {taskStatusLabel(language, status)}
-                </button>
-              ))}
-            </div>
+            <div className="task-status-tools">
+              <div className="status-grid" aria-label={t(language, "current")}>
+                {(["open", "completed", "later", "not-deliverable"] as TaskStatus[]).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    disabled={!canChangeSelectedHouseTaskStatus}
+                    className={"status-button status-" + status + " " + (selectedHouseTask.status === status ? "is-selected" : "")}
+                    aria-pressed={selectedHouseTask.status === status}
+                    onClick={() => changeHouseTaskStatus(status)}
+                  >
+                    {taskStatusLabel(language, status)}
+                  </button>
+                ))}
+              </div>
 
-            <CommentsContextPanel
-              compact
-              campaignId={snapshot.campaign.id}
-              targetType="house-task"
-              targetId={selectedHouseTask.id}
-              targetLabel={selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}
-              targetTeamId={selectedHouseTaskArea?.teamId ?? null}
-              access={access}
-              online={online}
-              language={language}
-            />
+              <div className="task-auxiliary-actions">
+                <CommentsContextPanel
+                  compact
+                  campaignId={snapshot.campaign.id}
+                  targetType="house-task"
+                  targetId={selectedHouseTask.id}
+                  targetLabel={selectedHouseTask.label.trim() || (language === "de" ? "Haus" : "House")}
+                  targetTeamId={selectedHouseTaskArea?.teamId ?? null}
+                  access={access}
+                  online={online}
+                  language={language}
+                />
+              </div>
+            </div>
           </div>
         </FieldHub>
       ) : null}

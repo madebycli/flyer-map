@@ -193,6 +193,7 @@ type MapViewProps = {
   streetDraftVertices: LngLat[];
   streetDraftColor: string;
   refreshState: MapRefreshState;
+  hideRefreshControl?: boolean;
   cameraCommand: MapCameraCommand;
   onCameraChange: (camera: MapCameraView) => void;
   onRefresh: () => void;
@@ -1689,6 +1690,7 @@ export function MapView({
   streetDraftVertices,
   streetDraftColor,
   refreshState,
+  hideRefreshControl = false,
   cameraCommand,
   onCameraChange,
   onRefresh,
@@ -2673,7 +2675,7 @@ export function MapView({
         </div>
       ) : null}
 
-      {mode === "browse" ? (
+      {mode === "browse" && !hideRefreshControl ? (
         <div className={`map-refresh-control is-${refreshState}`}>
           <button
             className="map-refresh-button"

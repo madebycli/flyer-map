@@ -10,6 +10,7 @@
   overflow: hidden;
   --platform-field-edge-gap: 0.55rem;
   --platform-field-control-size: max(2.75rem, 44px);
+  --platform-field-control-gap: 0.55rem;
   --platform-field-control-radius: 0.7rem;
   --platform-field-control-bottom: calc(env(safe-area-inset-bottom) + var(--platform-field-edge-gap));
 }
@@ -23,6 +24,10 @@
    internally, but do not render it as permanent field chrome here. */
 .platform-map-layer .topbar,
 .platform-map-layer .map-toolbar {
+  display: none;
+}
+
+.platform-map-layer[aria-hidden="true"] .map-refresh-control {
   display: none;
 }
 
@@ -576,7 +581,7 @@
 .platform-app-icon--comments { background: linear-gradient(145deg, #39a79f, #17736d); }
 .platform-app-icon--streets { background: linear-gradient(145deg, #e49a40, #b8651f); }
 .platform-smart-mark-button {
-  right: calc(1.1rem + var(--platform-field-control-size));
+  right: calc(var(--platform-field-edge-gap) + var(--platform-field-control-gap) + var(--platform-field-control-size));
   background: #6d28d9;
   border-color: #4c1d95;
 }
