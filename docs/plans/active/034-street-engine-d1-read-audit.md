@@ -1,39 +1,57 @@
-# Plan 034: StreetEngine, systemwide D1 reads and sync
+# Plan 034: StreetEngine, systemweite D1-Reads und Sync
 
-Status: active, Phase B local fix checkpoint. Date: 2026-09-12.
+Status: aktiv, Analysecheckpoint 2026-09-12. Runtime-Fixes sind noch nicht
+freigegeben.
 
-## Goal and baseline
+## Ziel und belastbarer Stand
 
-Identify preparation/persistence/sync failures and systemwide read amplification before changing runtime. Baseline and ongoing evidence: [audit](../../status/STREET_ENGINE_D1_AUDIT.md), runtime `6adaf10`, draft PR #92.
+Der vollständige Audit- und Umsetzungsplan steht in
+[STREET_ENGINE_D1_AUDIT.md](../../status/STREET_ENGINE_D1_AUDIT.md). Er wurde
+auf dem Branch fix/street-engine-smart-marking als Dokumentationscommit
+e6641486e40806001c50bcf488df438093bb46b1 geschrieben.
 
-## Relevant context graph
+Der letzte vollständig verifizierte Runtime-Stand davor ist
+3e1dfb409cb63381b9a7154cd3a941252da95263. PR #92 ist weiterhin offen, Draft
+und ungemergt.
 
-Nodes: street-house-network-recovery, adr-street-house-network, adr-street-base-budget, street-d1-budget, data, offline-sync, security, quality. ADR-0027/0029 retain server-generated immutable base, user-owned overlays, guarded publication, D1 authority and existing DO coordination.
+## Analyseergebnis
 
-## Tasks
+- Die gemeldeten ungefähr 4,5 Millionen D1-Rows-Read sind nicht live
+  attribuiert. Die stärksten Kandidaten sind unpaged Cold-Bootstraps,
+  wiederholte Campaign-Snapshots, breite House-Zielpfade und
+  Collection-Member-Reads.
+- Der StreetEngine-Fehler ist durch die Screenshots auf 40 Prozent,
+  Gebäude laden, Buildings-Cursor 0 eingegrenzt. Die konkrete Upstream- oder
+  Job-Fehlerklasse fehlt noch.
+- Der bestätigte lokale Street-Hotspot ist das erneute vollständige Lesen
+  der Edge-Stagingdaten pro 250er-House-Slice.
+- Smart House ist im Haupt-App-Pfad noch nicht end-to-end verdrahtet.
+  Smart Marking bleibt ausdrücklich user-directed.
+- Gebiet zeichnen und Gebiet editieren sollen denselben kompakten
+  Street-Style-Header erhalten: Zurück, Abbrechen, Approved/Freigegeben,
+  Punktzahl n/max und Bestätigen nur bei gültiger Geometrie.
+- Kommentare werden als echter Toggle umgesetzt. Der breite sichtbare
+  Kommentare-schließen-Button entfällt; Snap, Mindesthöhe, Position und
+  Breite werden mit dem Field-HUD gemeinsam festgelegt.
 
-1. Verify current branch/deployment; re-fetch before edits and commits.
-2. Trace UI -> Preparation API -> DO/job -> source acquisition -> generation -> D1/feed -> RxDB -> map.
-3. Inventory systemwide reads: bootstrap, status, incremental sync, auth, Organizer, history/statistics, collection/pickup, sessions/groups.
-4. Reproduce relevant failures locally. Compare idle, one preparation, duplicate start, reconnect and multiple clients. Inspect EXPLAIN with synthetic data; never use a remote load test.
-5. Checkpoint findings/tests immediately. Identify confirmed causes separately from live unknowns. Complete prioritized fix and verification plan.
-6. Only then implement evidence-backed minimal fixes, test, run CI and authorized Admin Staging. Real-device acceptance remains distinct.
+## Nächste freigegebene Reihenfolge
 
-## Acceptance and risks
+1. Bestehende Job-, D1- und Network-Evidence read-only sichern.
+2. Buildings-Cursor-0-Fehler klassifizieren.
+3. D1-Read-Instrumentation und realistische lokale Kardinalitätstests
+   ergänzen.
+4. Unpaged Snapshots, Bootstrap, House-Zielpfad und Collection-Reads
+   begrenzen.
+5. Preparation-Idempotenz, Retry, Lease und Edge-Read-Amplifikation
+   reparieren.
+6. Sync-, Zwei-Client- und Real-Device-Gates schließen.
+7. Gemeinsamen Area-Geometry-Header, Kommentar-Toggle und danach Smart
+   Street/Smart House umsetzen.
+8. Erst danach CI, Admin-Staging und Geräteabnahme auf einem exact-head.
 
-- Every claimed cause has reproducible evidence or an explicit live trace.
-- Read costs distinguish returned rows, rows visited, request frequency and actual billing. No unsupported attribution of 4.5m reads.
-- Generation is atomic and idempotent; retries preserve user edits; two clients converge without reload or repeated bootstrap.
-- Preparation never performs autonomous Smart Marking.
-- No production action, merge, remote D1 mutation/migration, credentials changes, force push or overwrite of concurrent work.
-- Missing live metrics/device results are blocking evidence gaps, not a reason to guess or generate load.
+## Grenzen
 
-## Decisions / non-goals
-
-Keep MapLibre 5.7.1 and existing UI. No timing hacks, architecture replacement, added service or speculative index migration. Existing local query/write budgets are useful but are not proof of D1 billing or live source availability.
-
-## Phase A checkpoint / implementation ordering
-
-Seven new local characterizations and 47 existing focused tests pass. Confirmed: three whole-House reads for one Team rename, full snapshot on preparation begin, actual RxDB premature short-page completion, alias blindness in read estimation, missing campaign-leading Collection member index. Healthy idle/status helpers do not load House snapshots. Five-test checkpoint CI is green (863 tests).
-
-The audit contains the systemwide query inventory, scaling/frequency model, narrowed hypotheses and ordered fix/verification plan. Phase B now contains local fixes for Area-only preparation begin, metadata snapshot projections, RxDB physical-page continuation, workspace polling backoff/pause and alias-aware local scan accounting. Live preparation error and actual daily-read attribution are still missing. Next input is the existing preparation response/job error and D1 usage window, not a new remote load test. Do not close the real-device renderer gate or claim live remediation from local tests alone.
+Keine Produktionsänderung, kein Merge, kein Force-Push, keine Remote-D1-
+Migration oder Remote-D1-Schreiboperation und kein großer Lasttest wurde
+durchgeführt. Fehlende Live-Metriken und Geräte-Evidence bleiben offene
+Blocker.
