@@ -54,12 +54,16 @@ function fullMutationSnapshotOptions(mutation: CampaignMutation): CampaignSnapsh
 /**
  * Admin mutations that touch only campaign metadata, Teams, or Areas do not
  * need an unrelated distribution snapshot to validate or publish their own
- * feed entry. Scoped editors retain the full snapshot because authorization
- * compares their complete Team and task boundary.
+ * feed entry. Area deletion is additionally scoped to the target Area: a
+ * prepared Area is represented by Base Storage and therefore must not be
+ * expanded into every generated Street and House just to publish its delete.
+ * Scoped editors retain the full snapshot because authorization compares
+ * their complete Team and task boundary.
  */
 function mutationSnapshotOptions(
   mutation: CampaignMutation,
   access: AccessContext,
+  compactAreaDelete = false,
 ): CampaignSnapshotLoadOptions {
   const full = fullMutationSnapshotOptions(mutation);
   if (access.role !== "admin") return full;
@@ -96,6 +100,16 @@ function mutationSnapshotOptions(
         includeCollection: false,
         includeTasks: false,
         includeHouses: false,
+      };
+    case "area.delete":
+      return {
+        includeCollection: false,
+        includeTasks: !compactAreaDelete,
+        includeHouses: !compactAreaDelete,
+        // Legacy/non-prepared Areas still need their child rows for the
+        // individual RxDB tombstones. Prepared Areas use deletedAreaIds and
+        // the Area tombstone, so reading those children is unnecessary.
+        ...(compactAreaDelete ? {} : { areaId: mutation.payload.areaId }),
       };
     default:
       return full;
@@ -256,9 +270,20 @@ export async function handleCampaignMutation(
     });
   }
 
-  const persistAttempts=await hasBaseStorage(db)?1:MAX_PERSIST_ATTEMPTS;
+  const baseStorageAvailable = await hasBaseStorage(db);
+  const baseAreaDelete = mutation.type === "area.delete" && baseStorageAvailable
+    ? await db
+      .prepare("SELECT generation FROM street_base_areas WHERE campaign_id=? AND area_id=?")
+      .bind(campaignId, mutation.payload.areaId)
+      .first<{ generation: string }>()
+    : null;
+  const persistAttempts = baseStorageAvailable ? 1 : MAX_PERSIST_ATTEMPTS;
   for (let attempt = 0; attempt < persistAttempts; attempt += 1) {
-    const current = await loadCampaignSnapshot(db, campaignId, mutationSnapshotOptions(mutation, access));
+    const current = await loadCampaignSnapshot(
+      db,
+      campaignId,
+      mutationSnapshotOptions(mutation, access, Boolean(baseAreaDelete)),
+    );
     if (!current) {
       return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
     }
@@ -360,7 +385,7 @@ export async function handleCampaignMutation(
 
     if (
       mutation.type === "area.update-geometry" &&
-      !await hasBaseStorage(db) &&
+      !baseStorageAvailable &&
       await areaHasStartedAutomaticWork(db, campaignId, mutation.payload.areaId)
     ) {
       return errorResponse(
@@ -410,14 +435,14 @@ export async function handleCampaignMutation(
         ),
       };
     }
-    const chunkAreaDelete=mutation.type==='area.delete'&&await hasBaseStorage(db)&&await db.prepare('SELECT generation FROM street_base_areas WHERE campaign_id=? AND area_id=?').bind(campaignId,mutation.payload.areaId).first();
+    const chunkAreaDelete = baseAreaDelete;
     const syncChanges = (await hasRxdbSyncSchema(db))
       ? chunkAreaDelete
         ? rxdbChangeFeedEntriesForMutation({...current,tasks:[],houseTasks:[]},{...syncAfter,tasks:[],houseTasks:[]},mutation)
         : rxdbChangeFeedEntriesForMutation(current, syncAfter, mutation)
       : [];
 
-    const automaticPreparation=(mutation.type==='area.create'||mutation.type==='area.update-geometry')&&await hasBaseStorage(db)
+    const automaticPreparation=(mutation.type==='area.create'||mutation.type==='area.update-geometry')&&baseStorageAvailable
       ? {areaId:mutation.payload.areaId,geometryHash:await areaPreparationFingerprint(syncAfter.areas.find(area=>area.id===mutation.payload.areaId)!.geometry),generation:crypto.randomUUID()}:undefined;
     const persisted = await persistCampaignMutation(
       db,

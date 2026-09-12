@@ -14,6 +14,7 @@ import type { AccessContext } from '../worker/access.ts';
 const stamp='2026-09-07T00:00:00.000Z';
 const access:AccessContext={campaignId:'campaign_n',grantId:'audit',role:'admin',teamId:null,label:null};
 const team={id:'team_n',campaignId:'campaign_n',name:'Team',color:'#2563eb',createdAt:stamp,updatedAt:stamp};
+const area={id:'area_n',campaignId:'campaign_n',teamId:'team_n',name:'Area',geometry:{type:'Polygon',coordinates:[[[13,51],[13.01,51],[13.01,51.01],[13,51.01],[13,51]]]},createdAt:stamp,updatedAt:stamp};
 
 function seedLegacyHouses(db:BudgetD1,count:number){
   const insert=db.sqlite.prepare("INSERT INTO house_tasks(id,campaign_id,area_id,label,geometry_json,status,created_at,updated_at) VALUES(?,'campaign_n','area_n',? ,?,'open',?,?)");
@@ -32,6 +33,22 @@ test('audit: one Team rename uses projected reads instead of unrelated legacy Ho
   assert.ok(report.snapshotRows<10,JSON.stringify(report));
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM house_tasks').get()!.n,2000);
   t.diagnostic(JSON.stringify({operation:'one-team-rename',houses:2000,statements:report.statements,returnedRows:report.returnedRows,snapshotRows:report.snapshotRows}));
+});
+
+test('audit: deleting a prepared Area skips its generated child snapshot under D1 read pressure',async(t)=>{
+  const db=new BudgetD1(true,true);t.after(()=>db.sqlite.close());seedNetwork(db);seedLegacyHouses(db,2000);
+  db.sqlite.prepare('INSERT INTO street_base_areas(campaign_id,area_id,generation) VALUES(?,?,?)').run('campaign_n','area_n','generation-delete');
+  db.resetBudget();
+  const response=await handleRxdbPush(db,'campaign_n','areas',access,{rows:[{assumedMasterState:area,newDocumentState:{...area,_deleted:true}}]});
+  const body=await response.json() as any;
+  assert.equal(response.status,200,JSON.stringify(body));
+  assert.deepEqual(body.rejections,[]);
+  const report=db.report();
+  assert.ok(report.snapshotRows<20,JSON.stringify(report));
+  assert.ok(report.returnedRows<200,JSON.stringify(report));
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM areas WHERE id='area_n'").get()!.n,0);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM house_tasks WHERE area_id='area_n'").get()!.n,0);
+  t.diagnostic(JSON.stringify({operation:'prepared-area-delete',houses:2000,statements:report.statements,returnedRows:report.returnedRows,snapshotRows:report.snapshotRows,estimatedRowsRead:report.estimatedRowsRead}));
 });
 
 test('audit: preparation begin reads only the requested Area; repeated start keeps generation',async(t)=>{
