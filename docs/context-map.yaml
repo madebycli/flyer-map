@@ -49,6 +49,24 @@ routing_rules:
   - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
+  - id: street-engine-masterplan-audit
+    path: docs/status/STREET_ENGINE_MASTERPLAN_AUDIT.md
+    type: status
+    status: active
+    topics: [streets, houses, preparation, quality, d1, scaling]
+    load_when: [StreetEngine masterplan, Buildings cursor zero]
+  - id: plan-street-engine-masterplan
+    path: docs/plans/active/035-street-engine-masterplan.md
+    type: plan
+    status: active
+    topics: [streets, houses, preparation, scaling, compute]
+    load_when: [StreetEngine continuation, 20000 Houses]
+  - id: adr-street-engine-compute
+    path: docs/decisions/ADR-0031-street-engine-compute-placement.md
+    type: decision
+    status: accepted
+    topics: [streets, compute, operator, server, architecture]
+    load_when: [StreetEngine compute placement]
   - id: street-engine-d1-read-audit
     path: docs/status/STREET_ENGINE_D1_AUDIT.md
     type: status
@@ -562,6 +580,10 @@ nodes:
     load_when: [generic fresh AI session]
 
 edges:
+  - { from: plan-street-engine-masterplan, to: street-engine-masterplan-audit, relation: grounded_by }
+  - { from: plan-street-engine-masterplan, to: adr-street-engine-compute, relation: governed_by }
+  - { from: adr-street-engine-compute, to: adr-street-base-budget, relation: preserves }
+  - { from: street-engine-masterplan-audit, to: street-engine-d1-read-audit, relation: narrows }
   - { from: plan-street-engine-d1-read-audit, to: street-engine-d1-read-audit, relation: records_evidence }
   - { from: plan-street-engine-d1-read-audit, to: adr-street-base-budget, relation: constrained_by }
   - { from: plan-street-engine-d1-read-audit, to: adr-street-house-network, relation: constrained_by }

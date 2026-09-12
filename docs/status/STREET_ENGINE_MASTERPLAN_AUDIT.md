@@ -84,3 +84,11 @@ Erst nach ADR und Plan: Quelle typisiert diagnostizieren; einzelne verworfene Bu
 Sanitierter fehlgeschlagener Job mit Phase/Cursor/Attempt/Lease/error_code/metrics_json.lastError und zugehörigem Build-SHA; bestehende F12-Response und Zeitfenster; tatsächliche D1-meta.rows_read oder Analytics; kleine genehmigte Quellprobe; echte iPad-Safari-/iPhone-/Android-Prüfung mit Reload, Offline/Reconnect, zweitem Client und Area-Delete. Fehleranzeige allein beweist nicht die gemeldete Ursache.
 
 `STREET_ENGINE_LIVE_READY=FALSE`, `D1_ATTRIBUTION_CONFIRMED=FALSE`, `MAP_RENDER_P0=OPEN`.
+
+## P1-Implementierung, Kandidat nach dem Audit
+
+Die beiden roten Regressionen sind grün. `SourceFailure` unterscheidet Transport, JSON/HTML/remark und Normalisierung; nur allowlist-Metadaten werden persistiert. Null-Nodes werden vor Koordinatenzugriff geprüft. Building-Qualität zählt akzeptierte/verworfene Objekte und echte leere Tiles, zeigt höchstens zehn ID-/Tile-/Grundbeispiele. Ein vollständig verworfenes Building-Tile stoppt vor Cache und Publish. Cacheversion 2 verhindert Wiederverwendung der alten still reduzierten Cacheantworten. Bestehende `ready`-Generationen werden dadurch nicht automatisch neu erzeugt.
+
+Öffentlicher Status und WebSocket-Fortschritt enthalten Qualitätsdaten; fehlgeschlagene Jobs erhalten sichere Phase/Cursor/Code/Attempt-Details. Die UI zeigt einen verständlichen Fehler, Details, Qualitätsverlust und einen expliziten Null-Häuser-Hinweis. Providerheader/Rohantworten gelangen nicht in die öffentliche Diagnose. Endpunktpfade bei eigener Providerkonfiguration bleiben redigiert; Remarktexte werden nur kategorisiert.
+
+P1 braucht keine Migration, keine geänderten House-/D1-Limits und keinen Deploy. Großes 20k-, Pause-/Resume-, Graph-Read- und Live-Evidence-Gate bleiben offen. Exakte finale Tests/CI/SHAs stehen im Abschlusscheckpoint, nicht in den historischen Baselinezahlen oben.

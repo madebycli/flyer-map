@@ -1,3 +1,4 @@
+import { preparationFailureMessage } from '../domain/preparationDiagnostics.ts';
 import { useEffect,useMemo,useState } from 'react';
 import type { AccessInfo, AreaPreparationPublicState } from '../data/campaignApi.ts';
 import type { Area,CampaignSnapshot,DistributionTask,LngLat,TaskStatus } from '../domain/campaign.ts';
@@ -157,7 +158,9 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
         <progress max={100} value={state.progress.percent} aria-label="Vorbereitung" />
         <p>Straßen-Tiles {state.progress.completedRoadTiles}/{state.progress.totalTiles} · Gebäude-Tiles {state.progress.completedBuildingTiles}/{state.progress.totalTiles} · {state.progress.processedBuildings}/{state.progress.totalBuildings} Gebäude · {state.houseCount} Häuser</p>
       </div>:null}
-      {state?.status==='failed'?<p role="alert">Vorbereitung fehlgeschlagen. Erneut versuchen setzt den gespeicherten Job fort.</p>:null}
+      {state?.status==='failed'?<div role="alert"><p>{preparationFailureMessage(state.failure?.code??state.errorCode??undefined)}</p>{state.failure?<details><summary>Fehlerdetails</summary><p>{phaseLabel} · Cursor {state.failure.cursor} · Versuch {state.failure.attempt} · {state.failure.code}</p></details>:null}</div>:null}
+      {state?.quality?.rejectedBuildings?<div role="status"><p>{state.quality.rejectedBuildings} von {state.quality.receivedBuildings} Gebäudeobjekten konnten nicht verwendet werden. Die Hausliste kann dadurch unvollständig sein.</p><details><summary>Betroffene Quelldaten (maximal 10)</summary><ul>{state.quality.samples.map((sample,index)=><li key={index}>OSM {sample.osmId??'unbekannt'} · Tile {sample.tile} · {sample.reason}</li>)}</ul></details></div>:null}
+      {state?.status==='ready'&&state.houseCount===0?<p role="status">Die Vorbereitung ist abgeschlossen, aber es wurden keine adressierbaren Häuser gefunden.</p>:null}
       {preparationError?<p role="alert">{preparationError}</p>:null}
     </div>;
   };

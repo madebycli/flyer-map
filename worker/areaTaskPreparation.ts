@@ -1,3 +1,4 @@
+import type { PreparationQuality, PreparationFailureDetail } from '../src/domain/preparationDiagnostics.ts';
 import { runNetworkPreparationStep, preparationTiles } from './streetNetwork/preparation.ts';
 import { hasBaseStorage } from './streetNetwork/baseStorage.ts';
 import type {
@@ -74,6 +75,8 @@ export type AreaPreparationState = {
 
 export type AreaPreparationProgress = { phase:string; totalTiles:number; completedRoadTiles:number; completedBuildingTiles:number; processedBuildings:number; totalBuildings:number; percent:number };
 export type AreaPreparationPublicState = {
+  quality?: PreparationQuality;
+  failure?: PreparationFailureDetail;
   progress?: AreaPreparationProgress;
   status: "missing" | AreaPreparationStateStatus;
   roadCount: number;
@@ -210,11 +213,13 @@ export async function getAreaTaskPreparationState(
 async function withProgress(db:D1DatabaseLike,state:AreaPreparationState|null):Promise<AreaPreparationPublicState> {
   const result=publicState(state);
   if(!state || !await hasStreetNetworkSchema(db))return result;
-  const job=await db.prepare('SELECT phase,cursor,geometry_json,metrics_json FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND generation=?').bind(state.campaignId,state.areaId,state.generation).first<{phase:string;cursor:number;geometry_json:string;metrics_json:string}>();
+  const job=await db.prepare('SELECT phase,cursor,error_code,attempts,geometry_json,metrics_json FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND generation=?').bind(state.campaignId,state.areaId,state.generation).first<{phase:string;cursor:number;error_code:string|null;attempts:number;geometry_json:string;metrics_json:string}>();
   if(!job)return result;
   const totalTiles=preparationTiles({geometry:JSON.parse(job.geometry_json)} as Area).length;
   const metrics=JSON.parse(job.metrics_json);
-  return {...result,roadCount:state.status==='ready'?state.roadCount:metrics.roads??0,houseCount:state.status==='ready'?state.houseCount:metrics.houses??0,progress:preparationProgress(job.phase,job.cursor,totalTiles,metrics,state.status==='ready')};
+  const quality=state.status==='failed'&&metrics.lastError?.quality?metrics.lastError.quality:metrics.quality;
+  const failure=state.status==='failed'&&job.error_code?{phase:job.phase,cursor:job.cursor,code:job.error_code,attempt:job.attempts}:undefined;
+  return {...result,...(quality?{quality}:{}),...(failure?{failure}:{}),roadCount:state.status==='ready'?state.roadCount:metrics.roads??0,houseCount:state.status==='ready'?state.houseCount:metrics.houses??0,progress:preparationProgress(job.phase,job.cursor,totalTiles,metrics,state.status==='ready')};
 }
 
 export function preparationProgress(phase:string,cursor:number,totalTiles:number,metrics:{addressableBuildings?:number},ready=false):AreaPreparationProgress{
@@ -570,7 +575,7 @@ export async function runAreaTaskPreparation(
       : result.code.includes('stale') ? 'area_preparation_stale' : 'area_preparation_osm_failed';
     await markPreparationFailed(db,{campaignId:run.campaignId,areaId:run.areaId,generation:run.generation,geometryHash:run.geometryHash,code,now:new Date().toISOString()});
     const failed=await getAreaTaskPreparationState(db,run.campaignId,run.areaId);
-    if(failed?.generation===run.generation&&failed.status==='failed')try{options.onProgress?.(run.area,publicState(failed));}catch{/* Best-effort push; the failure remains durable. */}
+    if(failed?.generation===run.generation&&failed.status==='failed')try{options.onProgress?.(run.area,await withProgress(db,failed));}catch{/* Best-effort push; the failure remains durable. */}
     return code==='area_preparation_stale'?{outcome:'stale',code}:{outcome:'failed',code};
   }
   return {outcome:'pending'};

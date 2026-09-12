@@ -1,5 +1,8 @@
 # StreetEngine / systemwide D1 read audit
 
+> Current continuation: [StreetEngine masterplan audit](../status/STREET_ENGINE_MASTERPLAN_AUDIT.md). The prepared Area-delete read path is independently verified fixed locally; D1 work is limited to reproduced link-phase rereads. The current compute decision is ADR-0031 and the active continuation is Plan 035. Earlier measurements below remain historical.
+
+
 Status: Phase B, runtime fix checkpoint; live attribution and real-device acceptance remain blocked on current device/Cloudflare evidence. Recorded 2026-09-12 UTC. No staging deployment for the Phase B changes yet.
 
 ## Current implementation checkpoint

@@ -75,3 +75,21 @@ test('real workspace preparation polling backs off transient failures and stops 
   for(const expected of [4_000,8_000,16_000,30_000]){await runNext();assert.equal(delays.at(-1),expected);}
   await runNext();assert.equal(fetchCalls,6);assert.equal(callbacks.size,0);
 });
+
+test('workspace renders a Building quality failure and its bounded source details',async(t)=>{
+  const db=new NetworkD1(true);seedNetwork(db);const snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;
+  const useNetworkWorkspace=await loadWorkspaceHook(),events=new EventTarget();
+  const originals=new Map<string,PropertyDescriptor|undefined>();
+  const set=(name:string,value:unknown)=>{originals.set(name,Object.getOwnPropertyDescriptor(globalThis,name));Object.defineProperty(globalThis,name,{value,configurable:true,writable:true});};
+  set('window',{setInterval,clearInterval,setTimeout,clearTimeout,addEventListener:events.addEventListener.bind(events),removeEventListener:events.removeEventListener.bind(events)});
+  set('navigator',{onLine:false});set('indexedDB',indexedDB);set('IS_REACT_ACT_ENVIRONMENT',true);
+  let renderer:ReactTestRenderer|undefined;
+  t.after(async()=>{if(renderer)await act(async()=>renderer!.unmount());for(const [key,value]of originals){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}db.sqlite.close();});
+  function Harness(){const workspace=useNetworkWorkspace(snapshot,{role:'admin',teamId:null},async()=>{},()=>true);return workspace.areaActions(snapshot.areas[0],true);}
+  await act(async()=>{renderer=create(createElement(Harness));});
+  await act(async()=>events.dispatchEvent(new CustomEvent('campaign-preparation',{detail:{campaignId:'campaign_n',areaId:'area_n',state:{status:'failed',roadCount:1,houseCount:0,errorCode:'area_preparation_osm_failed',updatedAt:null,sourceTimestamp:null,progress:{phase:'buildings',percent:40,totalTiles:1,completedRoadTiles:1,completedBuildingTiles:0,processedBuildings:0,totalBuildings:0},failure:{phase:'buildings',cursor:0,code:'osm_normalization_no_trustworthy_buildings',attempt:1},quality:{receivedBuildings:1,acceptedBuildings:0,rejectedBuildings:1,emptyBuildingTiles:0,samples:[{osmId:999,tile:0,reason:'open_ring'}]}}}})));
+  const text=JSON.stringify(renderer!.toJSON());
+  assert.match(text,/keine neue Generation veröffentlicht/);assert.match(text,/Fehlerdetails/);
+  assert.match(text,/osm_normalization_no_trustworthy_buildings/);assert.match(text,/999/);assert.match(text,/open_ring/);
+  assert.ok(renderer!.root.findAllByProps({role:'alert'}).length>0);
+});
