@@ -81,7 +81,11 @@ test("street headers expose compact undo/cancel/confirm controls and task status
   assert.match(app, /title=\{selectedArea \? nextStreetName\(snapshot\.tasks, selectedArea\.id, language\)/u);
   assert.doesNotMatch(app, /className="task-current-status"/u);
   assert.match(app, /className="task-auxiliary-actions"[\s\S]*?<CommentsContextPanel\s+compact[\s\S]*?task-delete/u);
+  assert.match(app, /className="button danger task-delete task-delete-icon-button"[\s\S]*?aria-label=\{t\(language, "deleteStreet"\)\}[\s\S]*?<svg className="task-delete-icon"/u);
   assert.match(commentsCss, /\.comments-context-panel\.is-icon\s*\{[\s\S]*?justify-self:\s*start;[\s\S]*?width:\s*max-content;/u);
+  assert.match(commentsCss, /\.comments-context-panel\.is-icon \.comments-context-toggle\s*\{[\s\S]*?width:\s*2\.7rem;[\s\S]*?min-height:\s*2\.7rem;/u);
+  assert.match(streetCss, /\.task-delete-icon-button\s*\{[\s\S]*?width:\s*2\.7rem;[\s\S]*?height:\s*2\.7rem;[\s\S]*?padding:\s*0\.4rem;/u);
+  assert.match(streetCss, /\.task-auxiliary-actions\s*\{[\s\S]*?flex-direction:\s*row;/u);
 });
 
 test("map action controls share the overlay hide contract and compact task rows", () => {

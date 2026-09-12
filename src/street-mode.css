@@ -156,17 +156,37 @@
 }
 
 .task-delete {
-  width: fit-content;
   min-height: 2.35rem;
   margin: 0;
   padding-inline: 0.72rem;
   font-size: 0.72rem;
 }
 
+.task-delete-icon-button {
+  display: grid;
+  place-items: center;
+  width: 2.7rem;
+  min-width: 2.7rem;
+  height: 2.7rem;
+  min-height: 2.7rem;
+  padding: 0.4rem;
+  border-radius: 0.78rem;
+}
+
+.task-delete-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .task-auxiliary-actions {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  flex-direction: row;
+  align-items: flex-start;
   justify-content: flex-start;
   gap: 0.55rem;
   min-width: 0;

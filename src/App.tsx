@@ -1885,7 +1885,17 @@ export default function App({
                 />
 
                 {canEditSelectedTask && !selectedTaskIsAutoPrepared ? (
-                  <button className="button danger task-delete" type="button" onClick={deleteSelectedTask}>{t(language, "deleteStreet")}</button>
+                  <button
+                    className="button danger task-delete task-delete-icon-button"
+                    type="button"
+                    onClick={deleteSelectedTask}
+                    aria-label={t(language, "deleteStreet")}
+                    title={t(language, "deleteStreet")}
+                  >
+                    <svg className="task-delete-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 7h14M10 11v6M14 11v6M8 7l1-3h6l1 3m-10 0 .7 13h8.6L16 7" />
+                    </svg>
+                  </button>
                 ) : null}
               </div>
             </div>

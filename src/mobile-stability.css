@@ -185,6 +185,15 @@
   font-size: 0.7rem;
 }
 
+.task-sheet .task-delete-icon-button {
+  width: 2.7rem;
+  min-width: 2.7rem;
+  height: 2.7rem;
+  min-height: 2.7rem;
+  margin-top: 0;
+  padding: 0.4rem;
+}
+
 .undo-toast {
   top: calc(env(safe-area-inset-top) + 0.45rem);
   right: 3.7rem;

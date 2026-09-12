@@ -224,3 +224,5 @@ jobs:
 # Final UI header action checkpoint: manual and Smart Street modes share compact undo/cancel/confirm controls.
 
 # Current UI action chrome checkpoint: deploy the exact tested candidate to Admin Staging only.
+
+# Compact delete action checkpoint: retain the Danger color with the matched comment-icon footprint.
