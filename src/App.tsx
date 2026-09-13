@@ -1,5 +1,6 @@
 import { useNetworkWorkspace } from './map/useNetworkWorkspace.tsx';
 import { NetworkWorkspacePanel } from './map/NetworkWorkspacePanel.tsx';
+import { NetworkCoverageSummary } from './map/NetworkCoverageSummary.tsx';
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CampaignApiError,
@@ -383,7 +384,7 @@ export default function App({
   }, [networkWorkspace.optimistic.houseTasks, networkWorkspace.optimistic.tasks, selectedArea]);
   const selectedAreaProgressLabel = selectedAreaProgress
     ? selectedAreaProgress.totalHouses > 0
-      ? `${Math.round(selectedAreaProgress.percent)} % · ${selectedAreaHouseTasks.filter((task) => task.status === "completed").length.toLocaleString(language === "de" ? "de-DE" : "en-US")} ${language === "de" ? "von" : "of"} ${selectedAreaProgress.totalHouses.toLocaleString(language === "de" ? "de-DE" : "en-US")}`
+      ? `${Math.round(selectedAreaProgress.percent)} % · ${selectedAreaProgress.completedHouses.toLocaleString(language === "de" ? "de-DE" : "en-US")} ${language === "de" ? "von" : "of"} ${selectedAreaProgress.totalHouses.toLocaleString(language === "de" ? "de-DE" : "en-US")}`
       : `${Math.round(selectedAreaProgress.percent)} %`
     : "";
   useEffect(() => {
@@ -1955,6 +1956,8 @@ export default function App({
                 </div>
               </div>
             ) : null}
+
+            <NetworkCoverageSummary task={networkWorkspace.optimistic.tasks.find(task=>task.id===selectedTask.id)??selectedTask} language={language} />
 
             <div className="task-status-tools">
               <div className="status-grid" aria-label={t(language, "current")}>

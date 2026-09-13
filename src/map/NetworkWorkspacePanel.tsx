@@ -14,11 +14,15 @@ export type NetworkWorkspacePanelState = {
   routes: NetworkRoute[];
   selected: number | null;
   activeRoute: NetworkRoute | null;
+  pointCount: number;
+  maxPoints: number;
+  saving: boolean;
   pending: PendingNetworkIntent[];
   onChoice: (choice: RoadSnap) => void;
   onRouteSelect: (index: number) => void;
   onCommit: (status: TaskStatus) => void | Promise<void>;
   onReset: () => void;
+  onUndo: () => void;
   onClose: () => void;
   onDiscard: (key: string) => void | Promise<void>;
 };
@@ -29,10 +33,11 @@ export function NetworkWorkspacePanel({ state }: { state: NetworkWorkspacePanelS
       open
       title={state.title}
       kicker="Street Mode"
+      headerAside={<span>{state.pointCount}/{state.maxPoints} Punkte</span>}
       headerActions={({ reveal }) => (
         <>
-          <button className="field-sheet-header-action" type="button" onClick={state.onReset} aria-label="A/B neu wählen">↶</button>
-          <button className="field-sheet-header-action" type="button" onClick={state.onClose} aria-label="Markierung abbrechen">×</button>
+          <button className="field-sheet-header-action" type="button" onClick={state.onUndo} disabled={state.saving||!state.pointCount} aria-label="Letzten Punkt rückgängig machen">↶</button>
+          <button className="field-sheet-header-action" type="button" onClick={state.onClose} disabled={state.saving} aria-label="Markierung abbrechen">×</button>
           <button className="field-sheet-header-action field-sheet-header-action-confirm" type="button" disabled={!state.activeRoute} onClick={reveal} aria-label="Statusauswahl öffnen">✓</button>
         </>
       )}
@@ -46,6 +51,7 @@ export function NetworkWorkspacePanel({ state }: { state: NetworkWorkspacePanelS
     >
       <div className="map-context-content">
         <p role="status">{state.message}</p>
+        {state.pointCount>0?<button className="button secondary" disabled={state.saving} onClick={state.onReset}>Punktfolge verwerfen</button>:null}
         {state.choices.map((choice) => (
           <button className="button secondary" key={choice.task.id} onClick={() => state.onChoice(choice)}>
             {choice.task.label}

@@ -1,4 +1,4 @@
-import type { NetworkIntent } from '../../worker/streetNetwork/api.ts';
+import type { NetworkIntent } from '../domain/networkSelection.ts';
 type QueuedIntent = { key:string; scope:string; campaignId:string; intent:NetworkIntent; enqueuedAt:number; blocked?:string };
 function openQueue():Promise<IDBDatabase> {
   return new Promise((resolve,reject)=>{const request=indexedDB.open('flyer-map-network-intents',1);request.onupgradeneeded=()=>request.result.createObjectStore('intents',{keyPath:'key'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
@@ -17,7 +17,7 @@ export function flushNetworkIntents(scope:string,onApplied:()=>Promise<unknown>)
   const existing=flushing.get(scope);if(existing)return existing;
   const operation=(async()=>{
     for(const item of await queuedNetworkIntents(scope)) {
-      if(item.blocked)continue;
+      if(item.blocked)break;
       const response=await fetch(`/api/campaigns/${encodeURIComponent(item.campaignId)}/network`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(item.intent),signal:AbortSignal.timeout(25000)});
       if(response.ok){await discardNetworkIntent(item.key);await onApplied();continue;}
       if(response.status>=400 && response.status<500 && response.status!==429) {

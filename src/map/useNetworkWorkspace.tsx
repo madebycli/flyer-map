@@ -1,24 +1,39 @@
 import { preparationFailureMessage } from '../domain/preparationDiagnostics.ts';
-import { useEffect,useMemo,useState } from 'react';
+import { useEffect,useMemo,useRef,useState } from 'react';
 import type { AccessInfo, AreaPreparationPublicState } from '../data/campaignApi.ts';
 import type { Area,CampaignSnapshot,DistributionTask,LngLat,TaskStatus } from '../domain/campaign.ts';
 import { RoadIndex,networkRoutes,applyNetworkCoverage,type NetworkRoute,type RoadSnap } from '../domain/streetNetwork.ts';
 import { enqueueNetworkIntent,flushNetworkIntents,queuedNetworkIntents,discardNetworkIntent } from '../data/networkIntentQueue.ts';
-import type { NetworkIntent } from '../../worker/streetNetwork/api.ts';
+import { MAX_NETWORK_POINTS,joinNetworkRoutes,resolveNetworkIntent,networkSelectionState,type NetworkIntent } from '../domain/networkSelection.ts';
 import { AREA_PREPARATION_POLL_INTERVAL_MS } from '../areaPreparation/preparationPolling.ts';
 
 export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|null,refresh:()=>Promise<unknown>,canMark:(area:Area)=>boolean) {
   const [marking,setMarking]=useState(false);
   const [states,setStates]=useState<Record<string,AreaPreparationPublicState>>({});
-  const [areaId,setAreaId]=useState<string|null>(null),[start,setStart]=useState<RoadSnap|null>(null),[end,setEnd]=useState<RoadSnap|null>(null);
-  const [routes,setRoutes]=useState<NetworkRoute[]>([]),[selected,setSelected]=useState<number|null>(null),[message,setMessage]=useState('');
+  const [areaId,setAreaId]=useState<string|null>(null);
+  const [points,setPoints]=useState<RoadSnap[]>([]);
+  const [legs,setLegs]=useState<{routes:NetworkRoute[];selected:number|null}[]>([]);
+  const [selectionTasks,setSelectionTasks]=useState<DistributionTask[]|null>(null);
+  const [pendingPoint,setPendingPoint]=useState<LngLat|null>(null);
+  const [message,setMessage]=useState(''),[saving,setSaving]=useState(false);
+  const committing=useRef(false);
   const [choices,setChoices]=useState<RoadSnap[]>([]),[pending,setPending]=useState<Awaited<ReturnType<typeof queuedNetworkIntents>>>([]);
   const [preparing,setPreparing]=useState<string|null>(null),[preparationError,setPreparationError]=useState('');
   const scope=[snapshot.campaign.id,access?.role,access?.teamId,access?.groupId??''].join(':');
-  useEffect(()=>{setAreaId(null);setMarking(false);setPending([]);setPreparing(null);setPreparationError('');setStates({});},[scope]);
+  useEffect(()=>{setAreaId(null);setMarking(false);setPending([]);setPreparing(null);setPreparationError('');setStates({});reset();},[scope]);
   const permittedAreas=snapshot.areas.filter(canMark);
   const permittedIds=permittedAreas.map(area=>area.id+':'+area.updatedAt).sort().join('|');
-  const tasks=useMemo(()=>snapshot.tasks.filter(task=>(!areaId||task.areaId===areaId)&&task.network&&permittedAreas.some(area=>area.id===task.areaId)),[snapshot.tasks,areaId,permittedIds]);
+  const optimistic=useMemo(()=>{
+    let result=snapshot;
+    for(const item of pending){
+      if(item.blocked)break;
+      const intent=item.intent;
+      const roads=result.tasks.filter(task=>task.areaId===intent.areaId&&task.areaPreparationGeneration===intent.generation&&task.network);
+      try{const route=resolveNetworkIntent(roads,intent);result={...result,...applyNetworkCoverage(result.tasks,result.houseTasks??[],route.ranges,intent.status,new Date(item.enqueuedAt).toISOString())};}catch{break;}
+    }
+    return result;
+  },[snapshot,pending]);
+  const tasks=useMemo(()=>(selectionTasks??optimistic.tasks).filter(task=>(!areaId||task.areaId===areaId)&&task.network&&permittedAreas.some(area=>area.id===task.areaId)),[selectionTasks,optimistic.tasks,areaId,permittedIds]);
   const index=useMemo(()=>new RoadIndex(tasks),[tasks]);
   useEffect(()=>{
     let stopped=false;
@@ -26,21 +41,38 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     void flush();const timer=window.setInterval(()=>void flush(),5000);window.addEventListener('online',flush);
     return()=>{stopped=true;window.clearInterval(timer);window.removeEventListener('online',flush);};
   },[scope]);
-  const reset=()=>{setStart(null);setEnd(null);setRoutes([]);setSelected(null);setChoices([]);setMessage('Wähle einen Straßenabschnitt auf der Karte.');};
-  const open=(id:string|null)=>{setMarking(true);setAreaId(id);reset();};
+  const reset=()=>{if(committing.current)return;setPoints([]);setLegs([]);setSelectionTasks(null);setPendingPoint(null);setChoices([]);setMessage('Wähle einen Straßenabschnitt auf der Karte.');};
+  const open=(id:string|null)=>{if(committing.current)return;setMarking(true);setAreaId(id);reset();};
+  const lastLeg=legs.at(-1);
+  const routes=lastLeg?.routes??[],selected=lastLeg?.selected??null;
+  let preview:NetworkRoute|null=null;
+  try{preview=joinNetworkRoutes(legs.flatMap(leg=>leg.selected===null?[]:[leg.routes[leg.selected]]));}catch{/* explicit budget below */}
+  const activeRoute=!saving&&!pendingPoint&&legs.length>0&&legs.every(leg=>leg.selected!==null)?preview:null;
   const accept=(snap:RoadSnap)=>{
-    setChoices([]);
-    setAreaId(snap.task.areaId);
-    if(!start||end){setStart(snap);setEnd(null);setRoutes([]);setSelected(null);setMessage('Wähle jetzt den zweiten Punkt.');return;}
-    setEnd(snap);
-    try{const found=networkRoutes(tasks,start,snap);setRoutes(found);setSelected(found.length===1?0:null);setMessage(found.length?'Prüfe die Vorschau und wähle einen Status.':'Keine Verbindung. Bitte neu auswählen.');}
-    catch{setRoutes([]);setMessage('Die Route ist zu mehrdeutig. Wähle einen kürzeren Abschnitt.');}
+    if(committing.current||points.length>=MAX_NETWORK_POINTS||lastLeg?.selected===null)return;
+    setChoices([]);setPendingPoint(null);setAreaId(snap.task.areaId);
+    if(!points.length){setSelectionTasks(tasks);setPoints([snap]);setMessage('Wähle jetzt den zweiten Punkt.');return;}
+    setPoints([...points,snap]);
+    try{
+      const found=networkRoutes(tasks,points.at(-1)!,snap);
+      setLegs([...legs,{routes:found,selected:found.length===1?0:null}]);
+      setMessage(found.length>1?`Abschnitt ${points.length}: Welche Route meinst du?`:found.length?'Weiteren Punkt setzen oder Vorschau prüfen und Status wählen.':'Keine Verbindung. Letzten Punkt rückgängig machen.');
+    }catch{setLegs([...legs,{routes:[],selected:null}]);setMessage('Die Route ist zu groß oder mehrdeutig. Letzten Punkt rückgängig machen.');}
   };
   const onPoint=(point:LngLat,sourceIds:string[])=>{
+    if(committing.current)return;
+    if(pendingPoint||lastLeg?.selected===null){setMessage('Bitte zuerst die Straßenwahl klären oder den letzten Punkt rückgängig machen.');return;}
+    if(points.length>=MAX_NETWORK_POINTS){setMessage(`Maximal ${MAX_NETWORK_POINTS} Punkte. Auswahl speichern oder rückgängig machen.`);return;}
     const candidates=index.candidates(point).filter(snap=>!sourceIds.length||sourceIds.includes(snap.task.id));
-    if(!candidates.length){setMessage('Bitte näher auf eine vorbereitete Straße tippen.');return;}
-    if(candidates[1]&&candidates[1].distance-candidates[0].distance<4){setChoices(candidates.slice(0,5));setMessage('Welche Straße meinst du?');return;}
+    if(!candidates.length){setPendingPoint(point);setMessage('Keine vorbereitete Straße am Punkt. Bitte rückgängig machen und näher auf eine Straße tippen.');return;}
+    if(candidates[1]&&candidates[1].distance-candidates[0].distance<4){setPendingPoint(point);setChoices(candidates.slice(0,5));setMessage('Welche Straße meinst du?');return;}
     accept(candidates[0]);
+  };
+  const undo=()=>{
+    if(committing.current)return;
+    if(pendingPoint){setPendingPoint(null);setChoices([]);}
+    else{setPoints(points.slice(0,-1));setLegs(legs.slice(0,-1));if(points.length<=1)setSelectionTasks(null);}
+    setMessage('Letzter Punkt entfernt. Weiteren Punkt setzen oder Auswahl prüfen.');
   };
   const queue=async(intent:NetworkIntent)=>{
     await enqueueNetworkIntent(scope,snapshot.campaign.id,intent);setPending(await queuedNetworkIntents(scope));setMessage(navigator.onLine?'Wird gespeichert …':'Offline vorgemerkt. Wird bei Verbindung geprüft.');
@@ -48,19 +80,28 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     setPending(await queuedNetworkIntents(scope));
   };
   const commit=async(status:TaskStatus)=>{
-    if(!start||!end||selected===null||!areaId)return;
-    try{await queue({id:`network_${crypto.randomUUID()}`,areaId,generation:start.task.areaPreparationGeneration!,start:{point:start.point,taskId:start.task.id},end:{point:end.point,taskId:end.task.id},selectedPath:routes[selected].ranges.map(range=>range.taskId),status});}catch{setMessage('Änderung konnte auf diesem Gerät nicht gespeichert werden. Bitte erneut versuchen.');return;}
-    setStart(null);setEnd(null);setRoutes([]);setSelected(null);setAreaId(null);setMessage('Gespeichert oder vorgemerkt.');
+    if(committing.current||!activeRoute||!areaId)return;
+    committing.current=true;setSaving(true);
+    const anchor=(snap:RoadSnap)=>({point:snap.point,taskId:snap.task.id});
+    try{
+      await queue({id:`network_${crypto.randomUUID()}`,areaId,generation:points[0].task.areaPreparationGeneration!,start:anchor(points[0]),end:anchor(points.at(-1)!),via:points.slice(1,-1).map(anchor),paths:legs.map(leg=>leg.routes[leg.selected!].ranges.map(range=>range.taskId)),selectedPath:activeRoute.ranges.map(range=>range.taskId),expectedState:await networkSelectionState(tasks,activeRoute.ranges),status});
+    }catch{setMessage('Änderung konnte auf diesem Gerät nicht gespeichert werden. Bitte erneut versuchen.');return;}
+    finally{committing.current=false;setSaving(false);}
+    reset();setAreaId(null);setMessage('Gespeichert oder vorgemerkt.');
   };
   const whole=(task:DistributionTask)=>{
+    if(committing.current)return;
     open(task.areaId);
-    const localTasks=snapshot.tasks.filter(candidate=>candidate.areaId===task.areaId&&candidate.network);
+    const localTasks=optimistic.tasks.filter(candidate=>candidate.areaId===task.areaId&&candidate.network);
     const localIndex=new RoadIndex(localTasks);
     const a=localIndex.candidates(task.geometry.coordinates[0]).find(s=>s.task.id===task.id),b=localIndex.candidates(task.geometry.coordinates.at(-1)!).find(s=>s.task.id===task.id);
     if(!a||!b)return;
-    setStart(a);setEnd(b);
-    try{const found=networkRoutes(localTasks,a,b);setRoutes(found);const choice=found.findIndex(route=>route.ranges.length===1&&route.ranges[0].taskId===task.id);setSelected(choice<0?null:choice);setMessage('Nur diesen Straßenabschnitt markieren. Prüfe die Vorschau.');}catch{setMessage('Bitte A/B innerhalb dieses Abschnitts wählen.');}
+    setSelectionTasks(localTasks);setPoints([a,b]);
+    try{const found=networkRoutes(localTasks,a,b);const choice=found.findIndex(route=>route.ranges.length===1&&route.ranges[0].taskId===task.id);setLegs([{routes:found,selected:choice<0?null:choice}]);setMessage('Nur diesen Straßenabschnitt markieren. Prüfe die Vorschau.');}catch{setLegs([{routes:[],selected:null}]);setMessage('Bitte Punkte innerhalb dieses Abschnitts wählen.');}
   };
+  const closeMarking=()=>{if(committing.current)return;setAreaId(null);setMarking(false);reset();};
+  const discard=async(key:string)=>{await discardNetworkIntent(key);setPending(await queuedNetworkIntents(scope));};
+  const panelState=marking?{title:points[0]?.task.label??choices[0]?.task.label??'Neue Straße',message:legs.length&&legs.every(leg=>leg.selected!==null)&&!preview?'Auswahl zu groß. Letzten Punkt rückgängig machen.':message,choices,routes,selected,activeRoute,pointCount:points.length+(pendingPoint?1:0),maxPoints:MAX_NETWORK_POINTS,saving,pending:pending.map(item=>({key:item.key,blocked:Boolean(item.blocked)})),onChoice:accept,onRouteSelect:(index:number)=>{if(!committing.current&&routes[index])setLegs(legs.map((leg,i)=>i===legs.length-1?{...leg,selected:index}:leg));},onCommit:commit,onUndo:undo,onReset:reset,onClose:closeMarking,onDiscard:discard}:null;
   const preparationUrl=(id:string)=>`/api/campaigns/${encodeURIComponent(snapshot.campaign.id)}/areas/${encodeURIComponent(id)}/preparation`;
   useEffect(()=>{
     let stopped=false;
@@ -129,23 +170,6 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     }catch(error){setPreparationError(error instanceof Error?error.message:'Vorbereitung fehlgeschlagen.');}
     finally{setPreparing(null);}
   };
-  const optimistic=useMemo(()=>{
-    let result=snapshot;
-    for(const item of pending){
-      if(item.blocked)continue;
-      const intent=item.intent;
-      const roads=result.tasks.filter(task=>task.areaId===intent.areaId&&task.areaPreparationGeneration===intent.generation&&task.network);
-      const spatial=new RoadIndex(roads);
-      const a=spatial.candidates(intent.start.point).find(snap=>snap.task.id===intent.start.taskId),b=spatial.candidates(intent.end.point).find(snap=>snap.task.id===intent.end.taskId);
-      if(!a||!b)continue;
-      try{const route=networkRoutes(roads,a,b).find(route=>JSON.stringify(route.ranges.map(range=>range.taskId))===JSON.stringify(intent.selectedPath));if(route)result={...result,...applyNetworkCoverage(result.tasks,result.houseTasks??[],route.ranges,intent.status,new Date(item.enqueuedAt).toISOString())};}catch{/* surface conflict after canonical validation */}
-    }
-    return result;
-  },[snapshot,pending]);
-  const activeRoute=selected!==null&&selected>=0?routes[selected]:null;
-  const closeMarking=()=>{setAreaId(null);setMarking(false);reset()};
-  const discard=async(key:string)=>{await discardNetworkIntent(key);setPending(await queuedNetworkIntents(scope));};
-  const panelState=marking?{title:start?.task.label??choices[0]?.task.label??'Neue Straße',message,choices,routes,selected,activeRoute,pending:pending.map(item=>({key:item.key,blocked:Boolean(item.blocked)})),onChoice:accept,onRouteSelect:(index:number)=>setSelected(index),onCommit:commit,onReset:reset,onClose:closeMarking,onDiscard:discard}:null;
   const areaActions=(area:Area,editable:boolean,canMark:boolean)=>{
     const roads=optimistic.tasks.filter(task=>task.areaId===area.id);
     const state=states[area.id];
@@ -164,5 +188,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       {preparationError?<p role="alert">{preparationError}</p>:null}
     </div>;
   };
-  return {optimistic,open,available:permittedAreas.some(area=>snapshot.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panelState,areaActions,whole,mapProps:{smartRoads:tasks.map(task=>({sourceId:task.id,osmId:task.source?.objectIds[0]??0,name:task.label,ref:null,highway:'residential',geometry:task.geometry})),smartSelectedSourceIds:[],smartStartAnchor:start?{sourceId:start.task.id,snapped:start.point,segmentIndex:0,segmentT:0,distanceMeters:start.distance}:null,smartEndAnchor:end?{sourceId:end.task.id,snapped:end.point,segmentIndex:0,segmentT:0,distanceMeters:end.distance}:null,smartPreviewGeometry:activeRoute?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
+  const anchors=points.map(snap=>({sourceId:snap.task.id,snapped:snap.point,segmentIndex:0,segmentT:0,distanceMeters:snap.distance}));
+  if(pendingPoint)anchors.push({sourceId:'pending-point',snapped:pendingPoint,segmentIndex:0,segmentT:0,distanceMeters:0});
+  return {optimistic,open,available:permittedAreas.some(area=>snapshot.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panelState,areaActions,whole,mapProps:{smartRoads:tasks.map(task=>({sourceId:task.id,osmId:task.source?.objectIds[0]??0,name:task.label,ref:null,highway:'residential',geometry:task.geometry})),smartSelectedSourceIds:[],smartStartAnchor:anchors[0]??null,smartEndAnchor:anchors.length>1?anchors.at(-1)!:null,smartWaypointAnchors:anchors.slice(1,-1),smartPreviewGeometry:preview?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
 }
