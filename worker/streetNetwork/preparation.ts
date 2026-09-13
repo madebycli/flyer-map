@@ -23,6 +23,11 @@ const DEFAULT_OVERPASS_URLS = [
   'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ] as const;
+const OVERPASS_REQUEST_HEADERS = {
+  accept: 'application/json',
+  'content-type': 'application/x-www-form-urlencoded',
+  'user-agent': 'FlyerMap/0.2 (+https://github.com/madebycli/flyer-map)',
+} as const;
 const MAX_TRANSIENT_OVERPASS_ATTEMPTS = 3;
 const NETWORK_TARGET_BUCKETS = 16;
 const NETWORK_BOUNDED_BUILDING_THRESHOLD = 10_000;
@@ -33,7 +38,11 @@ function isTransientOverpassCode(code:string) {
   return code==='overpass_rate_limited'||code==='overpass_timeout'||code==='overpass_transport_error'||/^overpass_http_5\d\d$/.test(code);
 }
 function isDefaultProviderFailureCode(code:string) {
-  return isTransientOverpassCode(code)||code==='overpass_partial_failure'||code==='overpass_response_budget';
+  // A default provider can reject an otherwise valid request while the
+  // configured fallback still serves the same bounded query. Keep explicit
+  // upstream configuration strict, but fail over for the observed 400 from a
+  // default provider instead of terminally stopping at attempt 1.
+  return isTransientOverpassCode(code)||code==='overpass_http_400'||code==='overpass_partial_failure'||code==='overpass_response_budget';
 }
 function normalizeOverpassError(error:unknown,timedOut:boolean) {
   if(timedOut)return new Error('overpass_timeout');
@@ -97,7 +106,7 @@ async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTask
     const timeout=setTimeout(()=>{timedOut=true;controller.abort();},options.limits?.timeoutMs ?? 18000);
     try {
       let response:Response;
-      try { response=await (options.fetchImpl ?? fetch)(urls[index],{method:'POST',body:new URLSearchParams({data:query}),signal:controller.signal}); }
+      try { response=await (options.fetchImpl ?? fetch)(urls[index],{method:'POST',headers:OVERPASS_REQUEST_HEADERS,body:new URLSearchParams({data:query}),signal:controller.signal}); }
       catch { throw new Error(timedOut?'overpass_timeout':'overpass_transport_error'); }
       detail.status=response.status;detail.contentType=safeContentType(response.headers.get('content-type'));
       detail.contentLength=numericHeader(response.headers.get('content-length'));detail.retryAfterSeconds=numericHeader(response.headers.get('retry-after'));
