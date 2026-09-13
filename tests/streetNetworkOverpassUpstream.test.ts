@@ -23,6 +23,26 @@ test('street preparation uses the primary live-compatible default Overpass upstr
   assert.deepEqual([...new Set(urls)], [primary]);
 });
 
+test('default public Overpass preparation does not use attic date queries', async () => {
+  const db = new NetworkD1();
+  seedNetwork(db);
+  const queries: string[] = [];
+
+  const result = await prepareAreaTasks(db, 'campaign_n', 'area_n', {
+    now: () => new Date('2026-09-13T20:00:00.000Z'),
+    fetchImpl: async (_input, init) => {
+      const body = new URLSearchParams(String(init?.body ?? ''));
+      const query = body.get('data') ?? '';
+      queries.push(query);
+      return query.includes('[date:') ? new Response('attic query rejected', { status: 400 }) : networkOsm();
+    },
+  });
+
+  assert.equal(result.outcome, 'ready');
+  assert.ok(queries.length > 0);
+  assert.equal(queries.some((query) => query.includes('[date:')), false);
+});
+
 test('default Overpass preparation fails over when the primary is rate limited', async () => {
   const db = new NetworkD1();
   seedNetwork(db);
