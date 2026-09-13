@@ -25,6 +25,7 @@ const DEFAULT_OVERPASS_URLS = [
 ] as const;
 const MAX_TRANSIENT_OVERPASS_ATTEMPTS = 3;
 const NETWORK_TARGET_BUCKETS = 16;
+const NETWORK_BOUNDED_BUILDING_THRESHOLD = 10_000;
 const NETWORK_DEFAULT_MAX_BUILDINGS = 20_000;
 const NETWORK_LINK_BATCH = 250;
 
@@ -264,64 +265,72 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
       metrics.graphMs=performance.now()-begin;phase='buildings';cursor=0;
     } else if(phase==='addresses') {
       const begin=performance.now();
-      const rawEnd=tiles.length;
-      const normalizeEnd=rawEnd+NETWORK_TARGET_BUCKETS;
-      const dedupeEnd=normalizeEnd+NETWORK_TARGET_BUCKETS;
-      if(cursor<rawEnd) {
-        const tileKey=String(cursor).padStart(6,'0');
-        const local=addressBuildings(await stagedPrefix<Building>(db,run,'buildings',`${tileKey}:`),await stagedPrefix<AddressNode>(db,run,'addresses',`${tileKey}:`));
-        const groups=new Map<number,unknown[]>();
-        for(const target of local) {
-          const row:StagedTarget={targetKey:targetIdentity(target),target};
-          const bucket=Math.abs(target.osmId)%NETWORK_TARGET_BUCKETS;
-          const rows=groups.get(bucket)??[];rows.push(row);groups.set(bucket,rows);
-        }
-        await saveGroups('raw-targets',groups,tileKey);
-        cursor+=1;
-      } else if(cursor<normalizeEnd) {
-        const bucket=cursor-rawEnd;
-        const rows=await stagedPrefix<StagedTarget>(db,run,'raw-targets',`${bucketKey(bucket)}:`);
-        const byBuilding=new Map<number,Map<string,AddressedBuilding[]>>();
-        for(const row of rows) {
-          const byKey=byBuilding.get(row.target.osmId)??new Map<string,AddressedBuilding[]>();
-          const candidates=byKey.get(row.targetKey)??[];candidates.push(row.target);byKey.set(row.targetKey,candidates);byBuilding.set(row.target.osmId,byKey);
-        }
-        metrics.buildings=(metrics.buildings??0)+byBuilding.size;
-        const groups=new Map<number,unknown[]>();
-        for(const [osmId,byKey] of [...byBuilding.entries()].sort(([left],[right])=>left-right)) {
-          const keys=[...byKey.keys()].sort();
-          const nullKeys=keys.filter(key=>byKey.get(key)!.some(target=>target.identityAddress===null));
-          const primaryKey=(nullKeys[0]??keys[0])!;
-          for(const key of keys) {
-            const candidates=byKey.get(key)!;
-            candidates.sort((left,right)=>Number(right.identityAddress===null)-Number(left.identityAddress===null)||JSON.stringify(left).localeCompare(JSON.stringify(right)));
-            const target={...candidates[0],identityAddress:key===primaryKey?null:key};
-            const addressBucket=stableBucket(key);
-            const normalized=groups.get(addressBucket)??[];normalized.push({targetKey:key,target} satisfies StagedTarget);groups.set(addressBucket,normalized);
+      if((metrics.quality?.acceptedBuildings??0)<=NETWORK_BOUNDED_BUILDING_THRESHOLD) {
+        const buildings=await staged<Building>(db,run,'buildings');
+        const ordered=addressBuildings(buildings,await staged<AddressNode>(db,run,'addresses'));
+        metrics.buildings=buildings.length;metrics.addressableBuildings=ordered.length;
+        if(ordered.length>(options.maxBuildings??NETWORK_DEFAULT_MAX_BUILDINGS))throw new Error('house_assignment_budget');
+        metrics.targetChunks=await save('targets','all',ordered);phase='link';cursor=0;
+      } else {
+        const rawEnd=tiles.length;
+        const normalizeEnd=rawEnd+NETWORK_TARGET_BUCKETS;
+        const dedupeEnd=normalizeEnd+NETWORK_TARGET_BUCKETS;
+        if(cursor<rawEnd) {
+          const tileKey=String(cursor).padStart(6,'0');
+          const local=addressBuildings(await stagedPrefix<Building>(db,run,'buildings',`${tileKey}:`),await stagedPrefix<AddressNode>(db,run,'addresses',`${tileKey}:`));
+          const groups=new Map<number,unknown[]>();
+          for(const target of local) {
+            const row:StagedTarget={targetKey:targetIdentity(target),target};
+            const bucket=Math.abs(target.osmId)%NETWORK_TARGET_BUCKETS;
+            const rows=groups.get(bucket)??[];rows.push(row);groups.set(bucket,rows);
           }
+          await saveGroups('raw-targets',groups,tileKey);
+          cursor+=1;
+        } else if(cursor<normalizeEnd) {
+          const bucket=cursor-rawEnd;
+          const rows=await stagedPrefix<StagedTarget>(db,run,'raw-targets',`${bucketKey(bucket)}:`);
+          const byBuilding=new Map<number,Map<string,AddressedBuilding[]>>();
+          for(const row of rows) {
+            const byKey=byBuilding.get(row.target.osmId)??new Map<string,AddressedBuilding[]>();
+            const candidates=byKey.get(row.targetKey)??[];candidates.push(row.target);byKey.set(row.targetKey,candidates);byBuilding.set(row.target.osmId,byKey);
+          }
+          metrics.buildings=(metrics.buildings??0)+byBuilding.size;
+          const groups=new Map<number,unknown[]>();
+          for(const [osmId,byKey] of [...byBuilding.entries()].sort(([left],[right])=>left-right)) {
+            const keys=[...byKey.keys()].sort();
+            const nullKeys=keys.filter(key=>byKey.get(key)!.some(target=>target.identityAddress===null));
+            const primaryKey=(nullKeys[0]??keys[0])!;
+            for(const key of keys) {
+              const candidates=byKey.get(key)!;
+              candidates.sort((left,right)=>Number(right.identityAddress===null)-Number(left.identityAddress===null)||JSON.stringify(left).localeCompare(JSON.stringify(right)));
+              const target={...candidates[0],identityAddress:key===primaryKey?null:key};
+              const addressBucket=stableBucket(key);
+              const normalized=groups.get(addressBucket)??[];normalized.push({targetKey:key,target} satisfies StagedTarget);groups.set(addressBucket,normalized);
+            }
+          }
+          await saveGroups('normalized-targets',groups,bucketKey(bucket));
+          cursor+=1;
+        } else if(cursor<dedupeEnd) {
+          if(cursor===normalizeEnd){metrics.addressableBuildings=0;metrics.targetChunks=[];}
+          const bucket=cursor-normalizeEnd;
+          const rows=await stagedPrefix<StagedTarget>(db,run,'normalized-targets',`${bucketKey(bucket)}:`);
+          rows.sort((left,right)=>left.target.osmId-right.target.osmId||left.targetKey.localeCompare(right.targetKey));
+          const seen=new Set<string>();
+          const selected:AddressedBuilding[]=[];
+          for(const row of rows) {
+            if(seen.has(row.targetKey))continue;
+            seen.add(row.targetKey);selected.push(row.target);
+          }
+          selected.sort(targetSort);
+          const nextCount=(metrics.addressableBuildings??0)+selected.length;
+          if(nextCount>(options.maxBuildings??NETWORK_DEFAULT_MAX_BUILDINGS))throw new Error('house_assignment_budget');
+          const start=metrics.addressableBuildings??0;
+          const parts=await save('targets',bucketKey(bucket),selected);
+          metrics.targetChunks=[...(metrics.targetChunks??[]),...parts.map(part=>({...part,start:part.start+start}))];
+          metrics.addressableBuildings=nextCount;
+          cursor+=1;
+          if(cursor>=dedupeEnd){phase='link';cursor=0;}
         }
-        await saveGroups('normalized-targets',groups,bucketKey(bucket));
-        cursor+=1;
-      } else if(cursor<dedupeEnd) {
-        if(cursor===normalizeEnd){metrics.addressableBuildings=0;metrics.targetChunks=[];}
-        const bucket=cursor-normalizeEnd;
-        const rows=await stagedPrefix<StagedTarget>(db,run,'normalized-targets',`${bucketKey(bucket)}:`);
-        rows.sort((left,right)=>left.target.osmId-right.target.osmId||left.targetKey.localeCompare(right.targetKey));
-        const seen=new Set<string>();
-        const selected:AddressedBuilding[]=[];
-        for(const row of rows) {
-          if(seen.has(row.targetKey))continue;
-          seen.add(row.targetKey);selected.push(row.target);
-        }
-        selected.sort(targetSort);
-        const nextCount=(metrics.addressableBuildings??0)+selected.length;
-        if(nextCount>(options.maxBuildings??NETWORK_DEFAULT_MAX_BUILDINGS))throw new Error('house_assignment_budget');
-        const start=metrics.addressableBuildings??0;
-        const parts=await save('targets',bucketKey(bucket),selected);
-        metrics.targetChunks=[...(metrics.targetChunks??[]),...parts.map(part=>({...part,start:part.start+start}))];
-        metrics.addressableBuildings=nextCount;
-        cursor+=1;
-        if(cursor>=dedupeEnd){phase='link';cursor=0;}
       }
       metrics.addressMs=(metrics.addressMs??0)+performance.now()-begin;
     } else if(phase==='link') {
