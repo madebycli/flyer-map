@@ -236,3 +236,4 @@ jobs:
 # 2026-09-13 independent StreetEngine fix candidate: deploy exact CI-green head to Admin Staging.
 # 2026-09-13 Overpass HTTP 400 failover and request-header fix candidate.
 # 2026-09-13 Overpass HTTP 400 failover and request-header fix candidate.
+# 2026-09-13 live StreetEngine source fix: default public Overpass requests no longer use attic [date] queries.
