@@ -19,7 +19,7 @@ const AREA = {
   campaignId: 'campaign_n',
   teamId: 'team_n',
   name: 'Area',
-  geometry: { type: 'Polygon' as const, coordinates: [[[[13, 51], [13.01, 51], [13.01, 51.01], [13, 51.01], [13, 51]]]] },
+  geometry: { type: 'Polygon' as const, coordinates: [[[13, 51], [13.01, 51], [13.01, 51.01], [13, 51.01], [13, 51]]] },
   createdAt: STAMP,
   updatedAt: STAMP,
 };
