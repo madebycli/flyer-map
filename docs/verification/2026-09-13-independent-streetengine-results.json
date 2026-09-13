@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "auditDate": "2026-09-13",
+  "repository": "madebycli/flyer-map",
+  "pullRequest": 92,
+  "productSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+  "frozenBranchHead": "9734be5c19ab4307f5c33c0853958c269ac207bd",
+  "auditBranch": "audit/independent-streetengine-2026-09-13",
+  "auditPullRequest": 94,
+  "environment": {
+    "runner": "GitHub Actions ubuntu-latest",
+    "node": "v22.23.2",
+    "npm": "10.9.8",
+    "notes": "Fresh Actions checkouts. Local chat sandbox had no GitHub DNS. No remote D1, deployment, migration, secrets or paid provider used."
+  },
+  "flags": {
+    "INDEPENDENT_AUDIT": "FAIL",
+    "SMART_MARKING_LOCAL": "FAIL",
+    "SMART_MARKING_DEVICE": "BLOCKED",
+    "STREET_ENGINE_20K": "FAIL",
+    "AREA_DELETE_READ_PATH": "VERIFIED_FIXED",
+    "D1_STATUS": "OPEN",
+    "D1_ATTRIBUTION_CONFIRMED": false,
+    "MAP_RENDER_P0": "OPEN",
+    "STREET_ENGINE_LIVE_READY": false
+  },
+  "findings": [
+    {
+      "id": "QUEUE-FIFO-001",
+      "priority": "P1",
+      "kind": "product_bug",
+      "file": "src/data/networkIntentQueue.ts",
+      "functions": ["enqueueNetworkIntent", "queuedNetworkIntents", "flushNetworkIntents"],
+      "impact": "Dependent offline Smart-Marking actions can be sent out of user order when Date.now collides or wall-clock order regresses. The later action can become blocked and prevent the correct predecessor behind it from flushing.",
+      "minimalRepro": "tests/independentStreetEngineAudit.test.ts :: offline intent queue preserves user order when two actions share one millisecond",
+      "expected": "z-first-action then a-second-action; queue empty",
+      "observed": "a-second-action sent first, blocked with network_work_changed; z-first-action remains queued behind it",
+      "fixBoundary": "Persist a durable monotonic FIFO sequence per scope or equivalent IndexedDB ordering. Do not use wall-clock plus random key as authoritative ordering. Preserve compatibility for old queued entries.",
+      "evidence": [
+        "commit 5df17de338b74769261b3895b53d84a03185be51",
+        "CI run 34763554828 job 103740445480",
+        "CI run 34763796100 on 8f1959614ad117dac26f80a2ed8ab8dbd8a2b307"
+      ]
+    },
+    {
+      "id": "CAPACITY-20K-001",
+      "priority": "P1",
+      "kind": "capacity_blocker",
+      "file": "StreetEngine preparation/address capacity contract",
+      "impact": "The explicit approximately 20,000-house target is not supported. Current runtime rejects 20k before publish.",
+      "minimalRepro": "scripts/street-masterplan-audit.ts via Independent StreetEngine scale audit",
+      "expected": "20,000-house synthetic two-tile generation reaches ready only after all publish/sync gates are safe",
+      "observed": "outcome failed, phase addresses, error_code house_assignment_budget, public code area_preparation_too_many_features",
+      "fixBoundary": "Do not raise only the constant. Reduce graph rereads, profile phase CPU/heap, and prove 20k publish/feed/sync before changing the capability limit.",
+      "evidence": ["workflow 34763667410", "docs/verification/2026-09-13-independent-streetengine-scale.jsonl"]
+    },
+    {
+      "id": "D1-LINK-REREAD-001",
+      "priority": "P2",
+      "kind": "performance_cost_risk",
+      "file": "StreetEngine link staging path",
+      "impact": "Unchanged edge payload is repeatedly read/deserialized per 250-house link slice; retry/crash can multiply work.",
+      "minimalRepro": "10,000-house scale scenario",
+      "expected": "Bounded graph reuse or partitioned edge reads without changing canonical D1 authority",
+      "observed": "edgeReads 41, edgeBytes 527629 for 10,000 houses",
+      "fixBoundary": "Generation/hash-bound bounded cache or spatial partitioning with cold D1 recovery, measured against the same fixture.",
+      "evidence": ["workflow 34763667410", "docs/verification/2026-09-13-independent-streetengine-scale.jsonl"]
+    },
+    {
+      "id": "RENDERER-ADR-001",
+      "priority": "P1",
+      "kind": "decision_documentation_conflict",
+      "file": "docs/decisions/ADR-0030-maplibre-security-candidate.md",
+      "impact": "Release governance is contradictory: ADR-0030 says patched MapLibre 6.9.0 is accepted and retaining vulnerable 5.7.1 is rejected, while the current runtime explicitly pins 5.7.1 and whitelists GHSA-jrc7-96c5-q579. A green audit is therefore not advisory-free.",
+      "minimalRepro": "Compare ADR-0030, AGENTS.md, docs/status/CURRENT.md, package.json and scripts/audit-dependencies.mjs at the frozen head/runtime.",
+      "expected": "One non-contradictory accepted renderer decision and matching dependency policy",
+      "observed": "5.7.1 historical-renderer exception is active; no superseding accepted ADR found in the loaded decision set",
+      "fixBoundary": "Supersede ADR-0030 with an explicit temporary exception and exit criteria, or return to a patched renderer after browser/device acceptance.",
+      "evidence": ["ADR-0030", "scripts/audit-dependencies.mjs", "standard gate CI 34763412593"]
+    }
+  ],
+  "cases": [
+    {
+      "id": "FREEZE-001",
+      "category": "source_control",
+      "status": "PASS",
+      "testedSha": "9734be5c19ab4307f5c33c0853958c269ac207bd",
+      "environment": "GitHub repository metadata",
+      "commandOrTestName": "PR #92 / compare 4c2d01e...9734be5...",
+      "observed": "PR #92 open draft, base integration/main-street-runtime@f4facd6..., current branch head 9734be5...; post-runtime commits are documentation-only.",
+      "expected": "Freeze exact product runtime separately from later documentation.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-audit.md"
+    },
+    {
+      "id": "CI-INDEPENDENT-BASE-001",
+      "category": "standard_gates",
+      "status": "PASS",
+      "testedSha": "b0b03833be7bac710456134296ec13f75a7e0073",
+      "environment": "GitHub Actions ubuntu-latest Node 22",
+      "commandOrTestName": "CI run 34763412593 job 103740063861",
+      "observed": "Test, Typecheck, Dependency audit and Production build all success.",
+      "expected": "All regular project gates succeed before adversarial failure repro is introduced.",
+      "artifact": "https://github.com/madebycli/flyer-map/actions/runs/34763412593"
+    },
+    {
+      "id": "COVERAGE-ORACLE-001",
+      "category": "smart_marking_interval_semantics",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "fresh GitHub Actions checkout",
+      "commandOrTestName": "independent interval oracle preserves untouched work across randomized operations",
+      "observed": "2,000 deterministic random interval operations match an independent 100-cell reference model; seed 0x5eed2026.",
+      "expected": "No overlap corruption, direction dependency or unintended change outside the selected interval.",
+      "artifact": "tests/independentStreetEngineAudit.test.ts"
+    },
+    {
+      "id": "SMART-REGRESSION-RERUN-001",
+      "category": "smart_marking_routing_ui_contract",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "fresh GitHub Actions checkout",
+      "commandOrTestName": "full existing regression suite rerun",
+      "observed": "Existing six-waypoint, detour/backtracking, ambiguity, undo, stale-state, altered-anchor, 8-25 overlap and address-node conflict tests pass. This is a fresh rerun, not an independent oracle for every case.",
+      "expected": "Existing intended Smart-Marking contracts remain green.",
+      "artifact": "CI run 34763796100 test-output"
+    },
+    {
+      "id": "QUEUE-FIFO-001",
+      "category": "offline_replay",
+      "status": "FAIL",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "fresh GitHub Actions checkout with fake-indexeddb",
+      "commandOrTestName": "offline intent queue preserves user order when two actions share one millisecond",
+      "observed": "Later action sorts first, gets network_work_changed and blocks the earlier correct predecessor behind it.",
+      "expected": "Durable FIFO user order independent of timestamp collisions and random intent IDs.",
+      "artifact": "CI run 34763796100; tests/independentStreetEngineAudit.test.ts"
+    },
+    {
+      "id": "AREA-DELETE-PREPARED-001",
+      "category": "d1_delete_path",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "BudgetD1 SQLite fixture in GitHub Actions",
+      "commandOrTestName": "prepared Area delete does not read unrelated campaign Houses before compact deletion",
+      "observed": "21 statements, 58 returned rows, 8 snapshot rows, no potential scans; 2,000 unrelated Houses remain.",
+      "expected": "Prepared delete avoids campaign-wide child snapshot while deleting target children and compactly invalidating the Area.",
+      "artifact": "CI run 34763796100 test-output"
+    },
+    {
+      "id": "AREA-DELETE-LEGACY-001",
+      "category": "d1_delete_path",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "BudgetD1 SQLite fixture in GitHub Actions",
+      "commandOrTestName": "legacy Area delete scopes required child tombstones to the target Area",
+      "observed": "27 statements, 61 returned rows, 11 snapshot rows, no potential scans; target children removed, 2,000 unrelated Houses remain.",
+      "expected": "Legacy delete reads only target-Area children needed for tombstones, not unrelated campaign children.",
+      "artifact": "CI run 34763796100 test-output"
+    },
+    {
+      "id": "SOURCE-CORRUPT-OPEN-RING-001",
+      "category": "source_quality",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "synthetic provider mock",
+      "commandOrTestName": "street-masterplan-audit scenario all-open",
+      "observed": "Generation fails with osm_normalization_no_trustworthy_buildings; quality records open_ring.",
+      "expected": "Entirely corrupted building response must not publish ready with zero houses.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-scale.jsonl"
+    },
+    {
+      "id": "SOURCE-NULL-NODE-001",
+      "category": "source_quality",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "synthetic provider mock",
+      "commandOrTestName": "street-masterplan-audit scenario null-node",
+      "observed": "Controlled normalization failure; quality records invalid_coordinate.",
+      "expected": "Null geometry input is classified as data quality, not an uncaught transport error.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-scale.jsonl"
+    },
+    {
+      "id": "SOURCE-EMPTY-001",
+      "category": "source_quality",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "synthetic provider mock",
+      "commandOrTestName": "street-masterplan-audit scenario empty",
+      "observed": "ready with one road, zero houses and emptyBuildingTiles=1.",
+      "expected": "A genuine empty building response remains distinguishable from corrupted input.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-scale.jsonl"
+    },
+    {
+      "id": "SCALE-UP-TO-10K-001",
+      "category": "street_engine_scaling",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "GitHub Actions Node v22.23.2 synthetic BudgetD1/provider mock",
+      "commandOrTestName": "Independent StreetEngine scale audit run 34763667410",
+      "observed": "0, 399, 1k, 5k and 10k all reach ready. 10k: 45 steps, max 40 statements, 270 returned rows, 294 estimated reads, 534 estimated writes, 41 edge reads, 527629 edge bytes, sampled process heap 119592416 bytes.",
+      "expected": "Synthetic sizes through 10k complete without exceeding the current statement guard.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-scale.jsonl"
+    },
+    {
+      "id": "SCALE-20K-001",
+      "category": "street_engine_scaling",
+      "status": "FAIL",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "GitHub Actions Node v22.23.2 synthetic two-tile BudgetD1/provider mock",
+      "commandOrTestName": "20,000-house scale scenario",
+      "observed": "failed in addresses with house_assignment_budget; public code area_preparation_too_many_features; no publish/link completion.",
+      "expected": "20,000-house target completes only after full pipeline and sync safety are proven.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-scale.jsonl"
+    },
+    {
+      "id": "D1-LINK-REREAD-001",
+      "category": "d1_read_shape",
+      "status": "FAIL",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "BudgetD1 instrumentation",
+      "commandOrTestName": "10,000-house scale scenario edge instrumentation",
+      "observed": "41 full staged-edge payload reads totaling 527629 bytes.",
+      "expected": "Bounded graph reuse/partitioning instead of full unchanged edge payload per 250-house slice.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-scale.jsonl"
+    },
+    {
+      "id": "IMPLEMENTER-CI-SHA-001",
+      "category": "reported_ci_verification",
+      "status": "PASS",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "GitHub Actions metadata",
+      "commandOrTestName": "run 34761931839 job 103736181142",
+      "observed": "Run head_sha exactly matches productSha and Test, Typecheck, Dependency audit and Production build steps are success. Raw job logs were not available through the connector, so the reported numeric test count is not independently claimed from logs.",
+      "expected": "Reported CI must belong to the exact Smart-Marking runtime and have successful gates.",
+      "artifact": "https://github.com/madebycli/flyer-map/actions/runs/34761931839"
+    },
+    {
+      "id": "DEVICE-MAP-001",
+      "category": "real_device_map_rendering",
+      "status": "BLOCKED",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "no authorized real iPad/iPhone/Android browser available in this audit context",
+      "commandOrTestName": "real MapLibre pixel/touch/reload acceptance",
+      "observed": "No real-device/WebGL evidence produced.",
+      "expected": "Visible points/route/white borders, touch targets, resize/min-size, HUDs and reload verified on real supported devices.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-audit.md"
+    },
+    {
+      "id": "LIVE-STAGING-001",
+      "category": "live_acceptance",
+      "status": "BLOCKED",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "no new exact-SHA staging/device run performed",
+      "commandOrTestName": "real preparation job + reload + second client + offline reconnect + delete",
+      "observed": "No new staging deployment or exact-runtime live acceptance evidence.",
+      "expected": "Successful real job and convergent visible state on exact runtime before LIVE_READY.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-audit.md"
+    },
+    {
+      "id": "D1-ATTRIBUTION-001",
+      "category": "cloudflare_billing_attribution",
+      "status": "BLOCKED",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "no remote D1/analytics access used",
+      "commandOrTestName": "match reported approximately 4.5m reads to Cloudflare meta/analytics and time window",
+      "observed": "No matching Cloudflare metrics available; local estimates kept separate.",
+      "expected": "Real meta.rows_read or Analytics tied to the relevant database and time window.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-audit.md"
+    },
+    {
+      "id": "RENDERER-DECISION-001",
+      "category": "dependency_security_governance",
+      "status": "FAIL",
+      "testedSha": "4c2d01e2a0a873c9c233e525e50f20148c648bda",
+      "environment": "source/document inspection plus green dependency gate",
+      "commandOrTestName": "ADR-0030 vs current MapLibre pin/audit exception",
+      "observed": "Current runtime pins MapLibre 5.7.1 and explicitly permits GHSA-jrc7-96c5-q579, while ADR-0030 text says patched 6.9.0 is accepted and retaining 5.7.1 is rejected.",
+      "expected": "Current accepted ADR and dependency policy agree before release.",
+      "artifact": "docs/verification/2026-09-13-independent-streetengine-audit.md"
+    }
+  ]
+}
