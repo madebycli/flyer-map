@@ -8,7 +8,7 @@ import { requestDatabase } from '../worker/requestDatabase.ts';
 for (const count of [0,399,1000,5000,10000,20000]) {
   const db=new BudgetD1(true,true);seedNetwork(db);
   const tileCount=count>10000?2:1;
-  const queryBudget=count>10000?100:50; // Diagnostic headroom: workflow still records the true per-step statement maximum.
+  const queryBudget=50;
   if(tileCount===2)db.sqlite.prepare('UPDATE areas SET geometry_json=?').run(JSON.stringify({type:'Polygon',coordinates:[[[13,51],[13.02,51],[13.02,51.01],[13,51.01],[13,51]]]}));
   let fullEdgeReads=0,fullEdgeBytes=0,indexedEdgeReads=0,indexedEdgeBytes=0,requests=0,sourceBytes=0,maxStatements=0,totalStatements=0,returnedRows=0,estimatedReads=0,writes=0,steps=0;
   const originalPrepare=db.prepare.bind(db);
