@@ -423,7 +423,20 @@ export async function handleRxdbPush(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mutation: decision.mutation, fieldGroupId: access.groupId ?? null }),
       });
-      const mutationResponse = await handleCampaignMutation(request, db, campaignId, access,undefined,options);
+      let mutationResponse: Response;
+      try {
+        mutationResponse = await handleCampaignMutation(request, db, campaignId, access,undefined,options);
+      } catch (error) {
+        // A failed server write must never leave the browser in a permanent
+        // retry loop. Prefer the canonical server document and let RxDB resolve
+        // the optimistic local write as a server-wins conflict.
+        const code = error instanceof Error && error.message ? error.message : "rxdb_push_server_error";
+        const canonical = await loadCampaignSnapshot(db, campaignId, rxdbPushSnapshotOptions(collectionName, next.id));
+        const master = currentDocument(canonical, collectionName, next.id, next);
+        rejections.push({ documentId: next.id, code });
+        conflicts.push(canReadDocument(access, collectionName, master, canonical) ? master : { ...next, _deleted: true });
+        continue;
+      }
       if (mutationResponse.ok) {
         const canonical = await loadCampaignSnapshot(db, campaignId, rxdbPushSnapshotOptions(collectionName, next.id));
         const master = currentDocument(canonical, collectionName, next.id, next);
@@ -431,10 +444,18 @@ export async function handleRxdbPush(
         conflicts.push(canReadDocument(access, collectionName, master, canonical) ? master : { ...next, _deleted: true });
         continue;
       }
+      const rejectionCode = await responseErrorCode(mutationResponse);
       if (mutationResponse.status >= 500) {
-        throw new Error(await responseErrorCode(mutationResponse));
+        // HTTP 5xx is not a reason to keep replaying a doomed optimistic write
+        // forever. Return the readable canonical master so the client becomes
+        // usable immediately and can retry the user's action explicitly later.
+        const canonical = await loadCampaignSnapshot(db, campaignId, rxdbPushSnapshotOptions(collectionName, next.id));
+        const master = currentDocument(canonical, collectionName, next.id, next);
+        rejections.push({ documentId: next.id, code: rejectionCode });
+        conflicts.push(canReadDocument(access, collectionName, master, canonical) ? master : { ...next, _deleted: true });
+        continue;
       }
-      rejections.push({ documentId: next.id, code: await responseErrorCode(mutationResponse) });
+      rejections.push({ documentId: next.id, code: rejectionCode });
     } else {
       rejections.push({ documentId: next.id, code: decision.reason });
     }

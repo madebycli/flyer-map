@@ -838,11 +838,34 @@ export async function persistCampaignMutation(
   const storedMutation:CampaignMutation=mutation.type==='house.create'&&mappedIds.has(mutation.payload.taskId)?{...mutation,payload:{...mutation.payload,parentStreetTaskId:null}}
     :mutation.type==='house.create-batch'&&mappedIds.size?{...mutation,payload:{...mutation.payload,houses:mutation.payload.houses.map(h=>mappedIds.has(h.taskId)?{...h,parentStreetTaskId:null}:h)}}:mutation;
   const useOverlay=compact&&preparedChange&&await db.prepare('SELECT generation FROM street_base_areas WHERE campaign_id=? AND area_id=?').bind(mutation.campaignId,preparedChange.areaId).first();
+  // Prepared Areas can own thousands of generated entities. Remove their bounded
+  // server-owned storage explicitly before deleting the Area so D1 does not have
+  // to discover a deep cascade in one opaque foreign-key step. Every statement
+  // remains guarded by the same campaign write token and therefore stays atomic
+  // with the revision claim, ledger entry and RxDB tombstone publication.
+  const preparedAreaDeleteStatements = compact && mutation.type === "area.delete"
+    ? [
+        db.prepare(`DELETE FROM street_manual_house_parents WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM house_road_positions WHERE house_id IN (SELECT id FROM house_tasks WHERE campaign_id=? AND area_id=?) AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM street_network_state WHERE task_id IN (SELECT id FROM tasks WHERE campaign_id=? AND area_id=?) AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM street_work_overlays WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM street_base_chunks WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM street_base_areas WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM street_network_staging WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM area_task_preparations WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM house_tasks WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        db.prepare(`DELETE FROM tasks WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
+        mutationStatement(db, storedMutation, writeToken, hasTaskSource, hasPreparation),
+      ]
+    : null;
   const domainStatements = useOverlay
     ? await overlayStatements(db,mutation.campaignId,preparedChange!.areaId,[preparedChange!],writeToken)
-    : collectionMutation
-    ? collectionMutationStatements(db, mutation as import("../src/domain/mutations.ts").CollectionMutation, writeToken)
-    : [mutationStatement(db, storedMutation, writeToken, hasTaskSource, hasPreparation)];
+    : preparedAreaDeleteStatements
+      ? preparedAreaDeleteStatements
+      : collectionMutation
+        ? collectionMutationStatements(db, mutation as import("../src/domain/mutations.ts").CollectionMutation, writeToken)
+        : [mutationStatement(db, storedMutation, writeToken, hasTaskSource, hasPreparation)];
   const statements = [
     claim,
     ...domainStatements,
