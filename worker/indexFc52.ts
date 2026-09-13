@@ -118,7 +118,7 @@ export async function augmentPickupSnapshotResponse(
     const progress = Array.isArray(collection.progress) ? collection.progress : [];
     const pickupCounts = new Map<string, { total: number; collected: number }>();
     for (const pickup of pickups) {
-      if (!pickup.areaId) continue;
+      if (!pickup.areaId || pickup.archivedAt !== null) continue;
       const count = pickupCounts.get(pickup.areaId) ?? { total: 0, collected: 0 };
       count.total += 1;
       if (pickup.status === "collected") count.collected += 1;

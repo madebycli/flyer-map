@@ -4,6 +4,7 @@ import {
   isPickupSource,
   type PickupTask,
 } from "./pickup.ts";
+import { deriveCollectionProgress } from "./collectionProgress.ts";
 import type { RoadRange } from "./streetNetwork.ts";
 
 export type CollectionAreaStatus =
@@ -200,12 +201,17 @@ export function collectionSnapshotOrEmpty(
   value: CollectionSnapshot | undefined | null,
 ): NormalizedCollectionSnapshot {
   if (!value) return createEmptyCollectionSnapshot();
+  const pickups = Array.isArray(value.pickups) ? value.pickups : [];
+  const rooms = Array.isArray(value.rooms) ? value.rooms : [];
+  const roadSections = Array.isArray(value.roadSections) ? value.roadSections : [];
   return {
     ...value,
-    pickups: Array.isArray(value.pickups) ? value.pickups : [],
-    rooms: Array.isArray(value.rooms) ? value.rooms : [],
-    roadSections: Array.isArray(value.roadSections) ? value.roadSections : [],
-    progress: Array.isArray(value.progress) ? value.progress : [],
+    pickups,
+    rooms,
+    roadSections,
+    progress: value.roadSections !== undefined || value.pickups !== undefined
+      ? deriveCollectionProgress({ areas: value.areas, roadSections, pickups })
+      : Array.isArray(value.progress) ? value.progress : [],
   };
 }
 
