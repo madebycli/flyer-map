@@ -94,7 +94,7 @@ function checkedOverpassUrl(url:string) {
 async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTaskPreparationOptions,date?:string) {
   const urls=(options.upstreamUrl ? [options.upstreamUrl] : [...DEFAULT_OVERPASS_URLS]).map(checkedOverpassUrl);
   const started=performance.now();
-  const selection=kind==='roads'?`way["highway"](${bbox.join(',')});`:`(way["building"](${bbox.join(',')});node["addr:housenumber"](${bbox.join(',')}));`;
+  const selection=kind==='roads'?`way["highway"](${bbox.join(',')});`:`(way["building"](${bbox.join(',')});node["addr:housenumber"](${bbox.join(',')}););`;
   const query=`[out:json][timeout:15]${date?`[date:"${date}"]`:''};${selection}out body geom;`;
   const sourceAttempts:SourceAttempt[]=[];
   for(let index=0;index<urls.length;index++) {
