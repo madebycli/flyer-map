@@ -1,0 +1,230 @@
+name: Release Stable and Unstable Channels
+
+on:
+  push:
+    branches:
+      - main
+      - unstable
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  stable:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STABLE_WORKER_NAME: flyer-map
+      STABLE_DB_NAME: flyer-map-db
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify stable candidate
+        run: |
+          npm ci --no-audit --no-fund
+          npm run check
+      - name: Resolve Cloudflare account
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          elif [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+          else
+            echo 'Cloudflare account is ambiguous.' >&2
+            exit 1
+          fi
+      - name: Read-only verify stable StreetEngine schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCHEMA="$(npx wrangler d1 execute "$STABLE_DB_NAME" --remote --json --command "SELECT name FROM sqlite_master WHERE name IN ('campaign_sync_changes','area_task_preparations','street_network_jobs','street_network_staging','street_base_areas','street_base_chunks','street_work_overlays') ORDER BY name;")"
+          jq -e '.[0].results | map(.name) | contains(["area_task_preparations","campaign_sync_changes","street_base_areas","street_base_chunks","street_network_jobs","street_network_staging","street_work_overlays"])' <<<"$SCHEMA" >/dev/null
+      - name: Verify stable Worker secrets already exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET_LIST="$(curl --fail-with-body --silent --show-error "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${STABLE_WORKER_NAME}/secrets" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          jq -e '.success == true' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.result[] | select(.name=="ORGANIZATION_TOTP_KEY")' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.result[] | select(.name=="FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY")' <<<"$SECRET_LIST" >/dev/null
+      - name: Deploy exact main to Stable without D1 migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(node -p "JSON.parse(require('fs').readFileSync('wrangler.jsonc','utf8')).name")" == "$STABLE_WORKER_NAME" ]]
+          rm -rf dist .wrangler
+          npm run build
+          npx wrangler deploy 2>&1 | tee /tmp/stable-deploy.log
+          STABLE_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/stable-deploy.log | tail -n1 || true)"
+          [[ -n "$STABLE_URL" ]] || STABLE_URL='https://flyer-map.cloudflare-eleven035.workers.dev'
+          [[ "$STABLE_URL" == 'https://flyer-map.cloudflare-eleven035.workers.dev' ]]
+          echo "STABLE_URL=$STABLE_URL" >> "$GITHUB_ENV"
+      - name: Verify Stable shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(curl -sS -o /tmp/stable-root.html -w '%{http_code}' "$STABLE_URL/" || printf 000)"
+          LOGIN="$(curl -sS -o /tmp/stable-login.html -w '%{http_code}' "$STABLE_URL/login" || printf 000)"
+          ME="$(curl -sS -o /tmp/stable-me.json -w '%{http_code}' "$STABLE_URL/api/organization/me" || printf 000)"
+          [[ "$ROOT" -ge 200 && "$ROOT" -lt 400 ]]
+          [[ "$LOGIN" -ge 200 && "$LOGIN" -lt 400 ]]
+          [[ "$ME" == '401' ]]
+          jq -n --arg sha "$GITHUB_SHA" --arg url "$STABLE_URL" '{channel:"stable",ok:true,sha:$sha,url:$url,d1MigrationApplied:false}' > /tmp/stable-release.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stable-release-evidence
+          path: /tmp/stable-release.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  unstable:
+    if: github.ref == 'refs/heads/unstable'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BETA_BACKEND_WORKER: flyer-map-admin-staging
+      BETA_DB_NAME: flyer-map-admin-staging-db
+      UNSTABLE_ALIAS_WORKER: flyer-map-unstable
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify unstable candidate
+        run: |
+          npm ci --no-audit --no-fund
+          npm run check
+      - name: Resolve isolated beta resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          elif [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+          else
+            echo 'Cloudflare account is ambiguous.' >&2
+            exit 1
+          fi
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          BETA_D1_ID="$(jq -r --arg name "$BETA_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
+          [[ -n "$BETA_D1_ID" ]]
+          [[ "$BETA_D1_ID" != "$PROD_D1_ID" && "$BETA_D1_ID" != "$RXDB_STAGING_D1_ID" ]]
+          echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
+      - name: Verify isolated beta schema and existing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCHEMA="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "SELECT name FROM sqlite_master WHERE name IN ('campaign_sync_changes','area_task_preparations','street_network_jobs','street_network_staging','street_base_areas','street_base_chunks','street_work_overlays') ORDER BY name;")"
+          jq -e '.[0].results | map(.name) | contains(["area_task_preparations","campaign_sync_changes","street_base_areas","street_base_chunks","street_network_jobs","street_network_staging","street_work_overlays"])' <<<"$SCHEMA" >/dev/null
+          SECRET_LIST="$(curl --fail-with-body --silent --show-error "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${BETA_BACKEND_WORKER}/secrets" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          jq -e '.success == true' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.result[] | select(.name=="ORGANIZATION_TOTP_KEY")' <<<"$SECRET_LIST" >/dev/null
+          jq -e '.result[] | select(.name=="FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY")' <<<"$SECRET_LIST" >/dev/null
+      - name: Materialize isolated beta Worker config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const c = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          c.name = process.env.BETA_BACKEND_WORKER;
+          c.workers_dev = true;
+          c.vars = { ...(c.vars || {}), RUNTIME_ENVIRONMENT: 'unstable', ORGANIZATION_KDF_DIAGNOSTICS: '0' };
+          c.d1_databases = [{ binding: 'DB', database_name: process.env.BETA_DB_NAME, database_id: process.env.BETA_D1_ID, migrations_dir: 'migrations' }];
+          c.ratelimits = [
+            { name: 'FIELD_GROUP_JOIN_ACTOR_LIMITER', namespace_id: '91914001', simple: { limit: 30, period: 60 } },
+            { name: 'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER', namespace_id: '91914002', simple: { limit: 8, period: 60 } },
+            { name: 'PICKUP_SEARCH_LIMITER', namespace_id: '91914003', simple: { limit: 20, period: 10 } },
+            { name: 'ORGANIZATION_LOGIN_LIMITER', namespace_id: '91914004', simple: { limit: 12, period: 60 } },
+          ];
+          fs.writeFileSync('wrangler.jsonc', JSON.stringify(c, null, 2) + '\n');
+          NODE
+      - name: Deploy exact unstable branch to isolated beta backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist .wrangler
+          npm run build
+          npx wrangler deploy 2>&1 | tee /tmp/unstable-backend-deploy.log
+          grep -q 'flyer-map-admin-staging.cloudflare-eleven035.workers.dev' /tmp/unstable-backend-deploy.log
+      - name: Deploy permanent flyer-map-unstable alias
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/flyer-map-unstable
+          cat > /tmp/flyer-map-unstable/index.mjs <<'EOF'
+          const upstreamHost = 'flyer-map-admin-staging.cloudflare-eleven035.workers.dev';
+          export default {
+            async fetch(request) {
+              const url = new URL(request.url);
+              url.protocol = 'https:';
+              url.hostname = upstreamHost;
+              const upstreamRequest = new Request(url, request);
+              const response = await fetch(upstreamRequest);
+              const headers = new Headers(response.headers);
+              headers.set('x-flyer-release-channel', 'unstable');
+              return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+            },
+          };
+          EOF
+          cat > /tmp/flyer-map-unstable/wrangler.jsonc <<'EOF'
+          {
+            "name": "flyer-map-unstable",
+            "main": "index.mjs",
+            "compatibility_date": "2026-08-01",
+            "workers_dev": true
+          }
+          EOF
+          (cd /tmp/flyer-map-unstable && npx --yes wrangler@4 deploy --config wrangler.jsonc) 2>&1 | tee /tmp/unstable-alias-deploy.log
+          UNSTABLE_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/unstable-alias-deploy.log | tail -n1 || true)"
+          [[ -n "$UNSTABLE_URL" ]] || UNSTABLE_URL='https://flyer-map-unstable.cloudflare-eleven035.workers.dev'
+          [[ "$UNSTABLE_URL" == 'https://flyer-map-unstable.cloudflare-eleven035.workers.dev' ]]
+          echo "UNSTABLE_URL=$UNSTABLE_URL" >> "$GITHUB_ENV"
+      - name: Verify Unstable shell through standard alias
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(curl -sS -D /tmp/unstable-headers.txt -o /tmp/unstable-root.html -w '%{http_code}' "$UNSTABLE_URL/" || printf 000)"
+          LOGIN="$(curl -sS -o /tmp/unstable-login.html -w '%{http_code}' "$UNSTABLE_URL/login" || printf 000)"
+          ME="$(curl -sS -o /tmp/unstable-me.json -w '%{http_code}' "$UNSTABLE_URL/api/organization/me" || printf 000)"
+          [[ "$ROOT" -ge 200 && "$ROOT" -lt 400 ]]
+          [[ "$LOGIN" -ge 200 && "$LOGIN" -lt 400 ]]
+          [[ "$ME" == '401' ]]
+          grep -qi '^x-flyer-release-channel: unstable' /tmp/unstable-headers.txt
+          jq -n --arg sha "$GITHUB_SHA" --arg url "$UNSTABLE_URL" '{channel:"unstable",ok:true,sha:$sha,url:$url,productionUntouched:true,d1MigrationApplied:false}' > /tmp/unstable-release.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unstable-release-evidence
+          path: /tmp/unstable-release.json
+          retention-days: 14
+          if-no-files-found: ignore
