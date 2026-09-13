@@ -49,7 +49,7 @@ async function transact<T>(
 /**
  * Persist a per-scope sequence in the same IndexedDB transaction as the intent.
  * Date.now() remains useful display/debug metadata but is not an ordering oracle:
- * browsers can enqueue multiple user actions in one millisecond.
+ * browsers can enqueue multiple user actions in one millisecond and wall clocks can move backwards.
  */
 export async function enqueueNetworkIntent(scope: string, campaignId: string, intent: NetworkIntent) {
   const db = await openQueue();
@@ -85,13 +85,26 @@ export async function enqueueNetworkIntent(scope: string, campaignId: string, in
   }
 }
 
+function compareQueuedIntents(a: QueuedIntent, b: QueuedIntent) {
+  const aHasSequence = Number.isSafeInteger(a.sequence) && (a.sequence ?? 0) > 0;
+  const bHasSequence = Number.isSafeInteger(b.sequence) && (b.sequence ?? 0) > 0;
+
+  // Version-1 rows have no sequence. They predate every version-2 enqueue, so drain
+  // that legacy backlog first and retain the old timestamp/key ordering inside it.
+  if (aHasSequence !== bHasSequence) return aHasSequence ? 1 : -1;
+  if (!aHasSequence && !bHasSequence) {
+    return a.enqueuedAt - b.enqueuedAt || a.key.localeCompare(b.key);
+  }
+
+  // For version-2 rows the durable sequence is the ordering authority. Wall-clock
+  // timestamps are intentionally ignored so NTP/manual clock rollback cannot reorder work.
+  return (a.sequence! - b.sequence!) || a.key.localeCompare(b.key);
+}
+
 export async function queuedNetworkIntents(scope: string) {
   return (await transact('readonly', store => store.getAll()) as QueuedIntent[])
     .filter(item => item.scope === scope)
-    .sort((a, b) =>
-      a.enqueuedAt - b.enqueuedAt
-      || (a.sequence ?? 0) - (b.sequence ?? 0)
-      || a.key.localeCompare(b.key));
+    .sort(compareQueuedIntents);
 }
 
 export async function discardNetworkIntent(key: string) {
