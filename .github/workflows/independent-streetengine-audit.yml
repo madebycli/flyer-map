@@ -1,0 +1,53 @@
+name: Independent StreetEngine scale audit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run synthetic scale audit
+        shell: bash
+        run: |
+          printf '{"scenario":"environment","node":"%s","npm":"%s"}\n' "$(node --version)" "$(npm --version)" > independent-street-scale.jsonl
+          node --experimental-transform-types scripts/street-masterplan-audit.ts | tee -a independent-street-scale.jsonl
+      - name: Validate scale outcomes
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const rows = readFileSync('independent-street-scale.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+          const scale = rows.filter((row) => row.scenario === 'scale');
+          const byHouses = new Map(scale.map((row) => [row.houses, row]));
+          for (const houses of [0, 399, 1000, 5000, 10000]) {
+            const row = byHouses.get(houses);
+            if (!row || row.result?.outcome !== 'ready' || row.errorCode != null) {
+              throw new Error(`expected ready synthetic scale result for ${houses} houses: ${JSON.stringify(row)}`);
+            }
+          }
+          const twenty = byHouses.get(20000);
+          if (!twenty || twenty.result?.outcome === 'ready' || twenty.errorCode !== 'house_assignment_budget') {
+            throw new Error(`expected current 20k capacity rejection: ${JSON.stringify(twenty)}`);
+          }
+          console.log('Independent scale gate confirmed 0/399/1k/5k/10k ready and 20k rejected by house_assignment_budget.');
+          NODE
+      - name: Upload scale evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: independent-street-scale
+          path: independent-street-scale.jsonl
+          retention-days: 7
