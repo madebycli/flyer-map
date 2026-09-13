@@ -30,6 +30,10 @@ Synthetisch 0/399/1k/5k/10k durchgeführt. 20k mit zwei Tiles scheitert am beste
 
 Smart Marking erweitert den Distribution-Adapter um echte Zwischenziele, Undo, vollständige Vorschau und atomare Statusabsicht mit Zustandsschutz. Alte noch ungespeicherte A/B-Intents benötigen neue Auswahl. Gespeicherte Alt-Replays bleiben gültig. Gemeinsames zukünftiges Collection-Verhalten ist geplant, der Abholservice und Collection-Domain wurden nicht erweitert.
 
+## Unabhängige Prüfung auf Anweisung von Master
+
+Master hat am 2026-09-13 die weitere Test-/Abnahmearbeit einer anderen unabhängigen KI zugewiesen. Die Implementierer-KI führt ab dieser Anweisung keine weiteren Tests aus. Die oben genannten CI-Ergebnisse waren bereits vorher vorhanden und sind keine unabhängige Abnahme. [Vollständiger Prüfauftrag](../prompts/2026-09-13-independent-streetengine-audit.md). Status: `INDEPENDENT_AUDIT=NOT_STARTED`. Zuerst eigene Prüfung auf frischem Checkout; Produkt-SHA und Testbranch-SHA trennen.
+
 ## Nächster kleinster Schritt
 
 Die Kandidaten-CI ist grün. Als Nächstes einen sanitisierten bestehenden fehlgeschlagenen Job mitsamt Runtime-SHA/Fehlerzeit bereitstellen oder lesen, sofern ein autorisierter Zugang vorliegt. Dann eine kleine klar benannte Staging-Area mit begrenztem Budget, sichtbare Punkte/Area/Straßen/Häuser, Reload, Zweitclient, Offline-Reconnect und Delete nachweisen. Keine 5k/10k/20k-Livequelle zum Diagnostizieren verwenden. Bei fehlendem Gerät/Jobzugang an diesem Evidence-Gate stoppen.

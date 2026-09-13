@@ -27,3 +27,7 @@ Rollback: Code-Revert zusammengehöriger UI/API-Verträge. Vorhandene Coverage b
 ## Offene Abnahme
 
 Echtes iPad/iPhone/Android, MapLibre-Sichtbarkeit, Reload/Zweitclient auf Staging sowie live erfolgreicher Preparation-Job fehlen. PLAN-035 Pause/Resume, 20k, Quellfehler-Livezuordnung und Graph-Rereads bleiben offen. `STREET_ENGINE_LIVE_READY=FALSE`, `D1_ATTRIBUTION_CONFIRMED=FALSE`, `MAP_RENDER_P0=OPEN`.
+
+## Test-Handoff von Master
+
+Ab 2026-09-13 führt eine andere unabhängige KI die weitere Prüfung durch. [Prüfauftrag](../../prompts/2026-09-13-independent-streetengine-audit.md). Der Implementierer startet keine weiteren Tests. Vorhandene CI-Evidence bleibt SHA-genau dokumentiert; unabhängiges Urteil noch ausstehend.

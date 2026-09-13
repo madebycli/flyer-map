@@ -17,6 +17,7 @@ last_updated: 2026-09-13
 - Compute decision: server-first/server generation; operator compute remains conditional on measured CPU/memory benefit including validation/upload costs. [ADR-0031](../decisions/ADR-0031-street-engine-compute-placement.md).
 - Smart Marking: up to 32 visible waypoints, per-leg choices, Undo/Cancel, one atomic intent, stale-road state guard, exact partial coverage details and conflicting address-node rejection. [Plan036](../plans/active/036-smart-marking-waypoints.md); exact runtime CI green.
 - Active implementation plan: [035](../plans/active/035-street-engine-masterplan.md). P1 quality/diagnostics implemented. P2 pause/resume, P3 20k/graph reads, P4 integrity/real sync, P5 live acceptance remain open.
+- Master assigned further tests to an independent AI on 2026-09-13. [Independent audit prompt](../prompts/2026-09-13-independent-streetengine-audit.md); `INDEPENDENT_AUDIT=NOT_STARTED`. Existing CI is implementation evidence, not independent acceptance.
 - No new staging deployment, remote D1 read/write/migration, merge, Production change or secret change in this audit. Historical staging evidence is not evidence for this runtime.
 - `STREET_ENGINE_LIVE_READY=FALSE`, `D1_ATTRIBUTION_CONFIRMED=FALSE`, `MAP_RENDER_P0=OPEN`. The reported Buildings/cursor-0 live cause still needs its sanitized failed-job and deployed-SHA evidence.
 
