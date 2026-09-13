@@ -233,3 +233,4 @@ jobs:
 # Context docs current-head checkpoint: deploy the synchronized project context to Admin Staging only.
 # Street status grid rollback checkpoint: deploy the compact two-column task layout to Admin Staging only.
 # Street action width checkpoint: deploy equal-width marking-window status columns to Admin Staging only.
+# 2026-09-13 independent StreetEngine fix candidate: deploy exact CI-green head to Admin Staging.
