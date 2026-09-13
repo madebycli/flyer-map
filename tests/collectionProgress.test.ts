@@ -5,6 +5,7 @@ import {
   type CollectionArea,
   type CollectionRoadSection,
 } from "../src/domain/collection.ts";
+import { summarizeCollectionProgress } from "../src/domain/collectionProgress.ts";
 import type { PickupTask } from "../src/domain/pickup.ts";
 
 const stamp = "2026-09-13T10:00:00.000Z";
@@ -113,4 +114,40 @@ test("legacy collection snapshots retain stored progress until pickup fields are
   };
   const snapshot = collectionSnapshotOrEmpty({ mainArea: null, areas: [area], runs: [], progress: [storedProgress] });
   assert.deepEqual(snapshot.progress, [storedProgress]);
+});
+
+test("collection dashboard summary keeps pickup and road denominators separate", () => {
+  const summary = summarizeCollectionProgress([
+    {
+      areaId: "one",
+      roadSectionsTotal: 3,
+      roadSectionsDriven: 1,
+      roadSectionsOpen: 1,
+      roadSectionsLater: 1,
+      roadSectionsUnavailable: 0,
+      pickupsTotal: 2,
+      pickupsCollected: 1,
+      updatedAt: stamp,
+    },
+    {
+      areaId: "two",
+      roadSectionsTotal: 2,
+      roadSectionsDriven: 2,
+      roadSectionsOpen: 0,
+      roadSectionsLater: 0,
+      roadSectionsUnavailable: 0,
+      pickupsTotal: 1,
+      pickupsCollected: 0,
+      updatedAt: stamp,
+    },
+  ]);
+  assert.deepEqual(summary, {
+    roadSectionsTotal: 5,
+    roadSectionsDriven: 3,
+    roadSectionsOpen: 1,
+    roadSectionsLater: 1,
+    roadSectionsUnavailable: 0,
+    pickupsTotal: 3,
+    pickupsCollected: 1,
+  });
 });

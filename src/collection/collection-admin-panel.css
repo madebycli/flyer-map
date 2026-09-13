@@ -26,6 +26,39 @@
   margin-top: 14px;
 }
 
+.collection-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.collection-progress-stat {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid #e3ddd4;
+  border-radius: 14px;
+  background: #faf8f4;
+}
+
+.collection-progress-stat span,
+.collection-progress-stat small {
+  color: #69756b;
+  font-size: .8rem;
+}
+
+.collection-progress-stat strong {
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
+@media (max-width: 520px) {
+  .collection-progress-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .collection-admin-area-list,
 .collection-collector-list {
   display: grid;

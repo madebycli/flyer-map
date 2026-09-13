@@ -18,6 +18,7 @@ import {
   type CollectionRun,
   type CollectionSnapshot,
 } from "../domain/collection";
+import { summarizeCollectionProgress } from "../domain/collectionProgress.ts";
 import type { Language } from "../i18n";
 import {
   PickupAssignmentEditor,
@@ -107,6 +108,8 @@ export function CollectionAdminPanel({
   const [assignmentPickupId, setAssignmentPickupId] = useState<string | null>(null);
   const activeRuns = collection.runs.filter((run) => run.status === "active");
   const activePickups = collection.pickups.filter((pickup) => pickup.archivedAt === null);
+  const activeAreaIds = new Set(collection.areas.filter((area) => area.status !== "archived").map((area) => area.id));
+  const progress = summarizeCollectionProgress(collection.progress.filter((item) => activeAreaIds.has(item.areaId)));
   const assignmentPickup = assignmentPickupId
     ? activePickups.find((pickup) => pickup.id === assignmentPickupId) ?? null
     : null;
@@ -281,6 +284,29 @@ export function CollectionAdminPanel({
           {copy(language, "Collection Area zeichnen", "Draw collection area")}
         </button>
       </div>
+
+      {snapshot.campaign.actionType === "pickup" ? (
+        <div className="collection-admin-section collection-progress-section">
+          <div className="collection-section-heading">
+            <div>
+              <span className="eyebrow">{copy(language, "Dashboard", "Dashboard")}</span>
+              <h2>{copy(language, "Pickup-Fortschritt", "Pickup progress")}</h2>
+            </div>
+          </div>
+          <div className="collection-progress-grid" aria-label={copy(language, "Getrennte Pickup- und Straßenstatistik", "Separate pickup and road statistics")}>
+            <div className="collection-progress-stat">
+              <span>{copy(language, "Sonderadressen", "Pickup addresses")}</span>
+              <strong>{progress.pickupsCollected}/{progress.pickupsTotal}</strong>
+              <small>{copy(language, "eingesammelt", "collected")}</small>
+            </div>
+            <div className="collection-progress-stat">
+              <span>{copy(language, "Pickup-Straßen", "Pickup roads")}</span>
+              <strong>{progress.roadSectionsDriven}/{progress.roadSectionsTotal}</strong>
+              <small>{progress.roadSectionsOpen} {copy(language, "offen", "open")} · {progress.roadSectionsLater} {copy(language, "später", "later")} · {progress.roadSectionsUnavailable} {copy(language, "nicht möglich", "unavailable")}</small>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {snapshot.campaign.actionType === "pickup" ? (
         <div className="collection-admin-section">

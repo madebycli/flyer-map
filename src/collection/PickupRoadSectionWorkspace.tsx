@@ -35,6 +35,14 @@ function statusLabel(language: Language, status: CollectionRoadSectionStatus) {
   return copy(language, labels[status][0], labels[status][1]);
 }
 
+function actorLabel(language: Language, actor: { kind: "campaign-grant" | "collection-collector"; ref: string | null } | undefined) {
+  if (!actor) return null;
+  const subject = actor.kind === "collection-collector"
+    ? copy(language, "Sammler", "Collector")
+    : copy(language, "Admin", "Admin");
+  return `${subject}${actor.ref ? ` · ${actor.ref.slice(-8)}` : ""}`;
+}
+
 export function PickupRoadSectionWorkspace({ campaignId, language, snapshot, onSnapshotChange }: Props) {
   const collection = collectionSnapshotOrEmpty(snapshot.collection);
   const [sectionAreaId, setSectionAreaId] = useState<string | null>(null);
@@ -210,7 +218,7 @@ export function PickupRoadSectionWorkspace({ campaignId, language, snapshot, onS
       <div className="pickup-road-section-list pickup-road-section-admin-list">
         {collection.roadSections.map((section) => (
           <article className={`pickup-road-section-row is-${section.status}`} key={section.id}>
-            <div><strong>{section.label}</strong><small>{section.smartMarking ? `${section.smartMarking.via.length + 2} ${copy(language, "Punkte", "points")}` : copy(language, "manuell", "manual")}{verification[section.id] ? ` · ${verification[section.id]}` : ""}</small></div>
+            <div><strong>{section.label}</strong><small>{section.smartMarking ? `${section.smartMarking.via.length + 2} ${copy(language, "Punkte", "points")}` : copy(language, "manuell", "manual")}{verification[section.id] ? ` · ${verification[section.id]}` : ""}{actorLabel(language, section.updatedBy) ? ` · ${copy(language, "zuletzt", "last")}: ${actorLabel(language, section.updatedBy)}` : ""}</small></div>
             <div className="pickup-road-section-actions">
               <select aria-label={`${section.label}: ${copy(language, "Status", "Status")}`} value={section.status} onChange={(event) => updateStatus(section.id, event.target.value as CollectionRoadSectionStatus)}>{(["open", "driven", "later", "unavailable"] as CollectionRoadSectionStatus[]).map((status) => <option key={status} value={status}>{statusLabel(language, status)}</option>)}</select>
               {section.smartMarking ? <button type="button" className="text-action" disabled={verifyingId === section.id} onClick={() => void verify(section.id)}>{verifyingId === section.id ? "…" : copy(language, "Prüfen", "Verify")}</button> : null}
