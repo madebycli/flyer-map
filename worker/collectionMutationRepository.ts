@@ -64,9 +64,15 @@ function sectionEventStatement(
 ) {
   const resolved = sectionActor(actor);
   const payload = mutation.payload;
-  const details = eventType === "set-status"
-    ? { status: (payload as Extract<CollectionMutation, { type: "collection.pickup-section.set-status" }>['payload']).status }
-    : { label: (payload as Extract<CollectionMutation, { type: "collection.pickup-section.create" | "collection.pickup-section.update" }>['payload']).label };
+  const details = mutation.type === "collection.pickup-section.revert-status"
+    ? {
+        kind: "compensating-revert",
+        status: mutation.payload.status,
+        previousStatus: mutation.payload.expectedCurrentStatus,
+      }
+    : eventType === "set-status"
+      ? { status: (payload as Extract<CollectionMutation, { type: "collection.pickup-section.set-status" }>['payload']).status }
+      : { label: (payload as Extract<CollectionMutation, { type: "collection.pickup-section.create" | "collection.pickup-section.update" }>['payload']).label };
   const changedAtColumn = eventType === "create" ? "created_at" : "updated_at";
   return db.prepare(
     `INSERT INTO collection_road_section_events
@@ -344,11 +350,16 @@ export function collectionMutationStatements(
         sectionEventStatement(db, mutation, writeToken, actor, "update"),
       ];
     case "collection.pickup-section.set-status":
+    case "collection.pickup-section.revert-status": {
+      const isRevert = mutation.type === "collection.pickup-section.revert-status";
+      const expectedCurrentStatus = isRevert
+        ? (mutation as Extract<CollectionMutation, { type: "collection.pickup-section.revert-status" }>).payload.expectedCurrentStatus
+        : null;
       return [
         db.prepare(
           `UPDATE collection_road_sections
               SET status = ?, updated_by_kind = ?, updated_by_ref = ?, updated_at = ?
-            WHERE id = ? AND campaign_id = ? AND area_id = ? AND updated_at = ? AND @@GUARD@@`.replace("@@GUARD@@", guard),
+            WHERE id = ? AND campaign_id = ? AND area_id = ? AND updated_at = ?${isRevert ? " AND status = ?" : ""} AND @@GUARD@@`.replace("@@GUARD@@", guard),
         ).bind(
           mutation.payload.status,
           sectionActor(actor).kind,
@@ -358,11 +369,13 @@ export function collectionMutationStatements(
           mutation.campaignId,
           mutation.payload.areaId,
           mutation.payload.expectedUpdatedAt,
+          ...(isRevert ? [expectedCurrentStatus] : []),
           mutation.campaignId,
           writeToken,
         ),
         sectionEventStatement(db, mutation, writeToken, actor, "set-status"),
       ];
+    }
   }
   return [];
 }

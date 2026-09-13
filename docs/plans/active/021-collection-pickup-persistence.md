@@ -299,14 +299,18 @@ CI zählt nur, wenn sie auf exakt dem aktuellen Head grün ist.
 
 ## FC5.3: nächster Runtime-Scope
 
-FC5.3 bleibt separat:
-- First-Class Collection Road Sections;
+FC5.3 ist auf dem Pickup-Branch teilweise umgesetzt:
+- First-Class Collection Road Sections mit eigener ID, Geometrie, Status und Smart-Marking-Provenance;
 - Status Offen/Abgefahren/Später/Nicht befahrbar;
-- Fortschritt je Area/Run/Campaign;
-- getrennte Pickup- und Road-Nenner;
-- Actor Attribution und Highlight;
-- gezieltes serverseitiges compensating Revert mit Revision-/Konfliktprüfung;
-- Admin force release/reassignment bleibt verfügbar.
+- Fortschritt je Area und Campaign aus dem aktuellen Snapshot, inklusive getrennter Pickup- und Road-Nenner;
+- authoritative Actor Attribution in D1 und sichtbare letzte Actor-Provenance im Admin-Abschnittsbereich;
+- Admin Force Release bleibt über den bestehenden Room-/Mutation-Pfad verfügbar.
+
+Noch offen für den vollständigen FC5.3-Abschluss sind eine vollständige Actor-Historienansicht sowie reale Mobile-/Touch-Abnahme. Das serverseitig gezielte compensating Revert mit Revision-/Konfliktprüfung ist für Pickup-Road-Status jetzt als Admin-only Mutation umgesetzt. Diese offenen Punkte ändern den StreetEngine-Kernvertrag nicht.
+
+### Pickup-Branch-Checkpoint 2026-09-13
+
+Der Branch `feat/pickup-area-room-lifecycle-recovered` basiert auf dem verifizierten PR92-Runtime-Stand `3ad3fc755bbdcfa03a1b1110312a0f3ab198af31`. Die gemeinsamen StreetEngine-Dateien `src/domain/networkSelection.ts`, `src/domain/streetNetwork.ts` und `src/map/useNetworkWorkspace.tsx` bleiben gegenüber dem PR92-Stand unverändert. Die vorbereiteten Migrationen `0024_pickup_area_rooms_progress.sql` und `0025_pickup_section_actor_audit.sql` wurden nicht remote angewendet; es gab keinen D1-Write, keinen Deploy und keine Secret-Änderung.
 
 Keine FC5.3-Funktion in einen FC5.2-Hotfix zurückstapeln.
 

@@ -92,6 +92,14 @@
   flex: 0 0 auto;
 }
 
+.pickup-road-section-revert {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 5px;
+  border-left: 1px solid #e3ddd4;
+}
+
 .pickup-area-section-heading,
 .pickup-smart-actions,
 .pickup-road-section-actions,

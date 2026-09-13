@@ -226,6 +226,37 @@ test("Pickup section create and status writes use durable mutation validation", 
   assert.equal(db.sqlite.prepare("SELECT status FROM collection_road_sections WHERE id = ?").get("collection_section_one")?.status, "driven");
   assert.equal(db.sqlite.prepare("SELECT updated_by_ref FROM collection_road_sections WHERE id = ?").get("collection_section_one")?.updated_by_ref, "grant_admin");
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM collection_road_section_events WHERE section_id = ?").get("collection_section_one")?.n, 2);
+
+  const reverted = {
+    ...changed,
+    id: "mutation_pickup_section_revert",
+    baseRevision: 3,
+    createdAt: "2026-09-13T10:03:00.000Z",
+    type: "collection.pickup-section.revert-status",
+    payload: {
+      sectionId: "collection_section_one",
+      areaId,
+      status: "open",
+      expectedUpdatedAt: changed.createdAt,
+      expectedCurrentStatus: "driven",
+    },
+  } as const;
+  const revertedResponse = await handleCampaignMutation(new Request(`https://flyer.test/api/campaigns/${campaignId}/mutations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mutation: reverted }) }), db, campaignId, admin);
+  assert.equal(revertedResponse.status, 200, await revertedResponse.clone().text());
+  assert.equal(db.sqlite.prepare("SELECT status FROM collection_road_sections WHERE id = ?").get("collection_section_one")?.status, "open");
+  const revertDetails = JSON.parse(String(db.sqlite.prepare("SELECT details_json FROM collection_road_section_events WHERE section_id = ? ORDER BY created_at DESC LIMIT 1").get("collection_section_one")?.details_json));
+  assert.deepEqual(revertDetails, { kind: "compensating-revert", status: "open", previousStatus: "driven" });
+
+  const staleRevert = {
+    ...reverted,
+    id: "mutation_pickup_section_revert_stale",
+    baseRevision: 4,
+    createdAt: "2026-09-13T10:04:00.000Z",
+    payload: { ...reverted.payload, status: "later" },
+  } as const;
+  const staleResponse = await handleCampaignMutation(new Request(`https://flyer.test/api/campaigns/${campaignId}/mutations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mutation: staleRevert }) }), db, campaignId, admin);
+  assert.equal(staleResponse.status, 409);
+  assert.equal(((await json(staleResponse)).error as { code: string }).code, "mutation_conflict");
 });
 
 test("Collector section status requires active Room membership and records the collector actor", async () => {
@@ -296,6 +327,27 @@ test("Collector section status requires active Room membership and records the c
   }), db, campaignId, collectorTwo);
   assert.equal(outsider.status, 403);
   assert.equal(((await json(outsider)).error as { code: string }).code, "pickup_room_member_required");
+
+  const forbiddenRevert = {
+    ...statusMutation,
+    id: "mutation_pickup_collector_revert",
+    baseRevision: currentRevision + 1,
+    type: "collection.pickup-section.revert-status",
+    payload: {
+      sectionId: "collection_section_collector",
+      areaId,
+      status: "open",
+      expectedUpdatedAt: statusMutation.createdAt,
+      expectedCurrentStatus: "driven",
+    },
+  } as const;
+  const forbiddenRevertResponse = await handleCampaignMutation(new Request(`https://flyer.test/api/campaigns/${campaignId}/mutations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mutation: forbiddenRevert }),
+  }), db, campaignId, collectorOne);
+  assert.equal(forbiddenRevertResponse.status, 403);
+  assert.equal(((await json(forbiddenRevertResponse)).error as { code: string }).code, "pickup_section_revert_admin_required");
 });
 
 test("Pickup Smart Marking is revalidated against the current StreetEngine state before D1 write", async () => {

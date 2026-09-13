@@ -7,6 +7,8 @@ import {
   type CollectionRoadSectionStatus,
 } from "../domain/collection.ts";
 import { lineStringIntersectsPolygon } from "../domain/smartGeometry.ts";
+import { postCampaignMutation } from "../data/campaignApi.ts";
+import type { CampaignMutation } from "../domain/mutations.ts";
 import { createPickupRoadSectionFromSelection, verifyPickupRoadSectionAgainstDistribution } from "./pickupStreetEngineAdapter.ts";
 import { usePickupStreetWorkspace } from "./usePickupStreetWorkspace.ts";
 import type { Language } from "../i18n.ts";
@@ -49,6 +51,8 @@ export function PickupRoadSectionWorkspace({ campaignId, language, snapshot, onS
   const [sectionLabel, setSectionLabel] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [revertingId, setRevertingId] = useState<string | null>(null);
+  const [revertTargets, setRevertTargets] = useState<Record<string, CollectionRoadSectionStatus>>({});
   const [verification, setVerification] = useState<Record<string, string>>({});
   const marking = usePickupStreetWorkspace(snapshot.tasks, collection.areas);
   const selectedArea = collection.areas.find((area) => area.id === sectionAreaId) ?? null;
@@ -127,6 +131,37 @@ export function PickupRoadSectionWorkspace({ campaignId, language, snapshot, onS
         roadSections: collectionSnapshotOrEmpty(current.collection).roadSections.map((candidate) => candidate.id === sectionId ? { ...candidate, status, updatedAt: now } : candidate),
       },
     }));
+  };
+
+  const revertStatus = async (sectionId: string) => {
+    const section = collection.roadSections.find((candidate) => candidate.id === sectionId);
+    const status = section ? revertTargets[section.id] : undefined;
+    if (!section || !status || status === section.status || section.status === "open" || revertingId) return;
+    if (typeof window !== "undefined" && !window.confirm(copy(language, "Diese Änderung als kompensierende Admin-Aktion zurücksetzen?", "Revert this change as a compensating admin action?"))) return;
+    setRevertingId(sectionId);
+    try {
+      const mutation: CampaignMutation = {
+        id: `mutation_${crypto.randomUUID()}`,
+        campaignId,
+        type: "collection.pickup-section.revert-status",
+        baseRevision: snapshot.revision,
+        createdAt: new Date().toISOString(),
+        payload: {
+          sectionId: section.id,
+          areaId: section.areaId,
+          status,
+          expectedUpdatedAt: section.updatedAt,
+          expectedCurrentStatus: section.status,
+        },
+      };
+      await postCampaignMutation(campaignId, mutation);
+      setMessage(copy(language, "Pickup-Abschnitt kompensierend zurückgesetzt.", "Pickup section reverted with a compensating admin action."));
+      manualRefreshCampaign();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : copy(language, "Revert konnte nicht gespeichert werden.", "Revert could not be saved."));
+    } finally {
+      setRevertingId(null);
+    }
   };
 
   return (
@@ -222,6 +257,18 @@ export function PickupRoadSectionWorkspace({ campaignId, language, snapshot, onS
             <div className="pickup-road-section-actions">
               <select aria-label={`${section.label}: ${copy(language, "Status", "Status")}`} value={section.status} onChange={(event) => updateStatus(section.id, event.target.value as CollectionRoadSectionStatus)}>{(["open", "driven", "later", "unavailable"] as CollectionRoadSectionStatus[]).map((status) => <option key={status} value={status}>{statusLabel(language, status)}</option>)}</select>
               {section.smartMarking ? <button type="button" className="text-action" disabled={verifyingId === section.id} onClick={() => void verify(section.id)}>{verifyingId === section.id ? "…" : copy(language, "Prüfen", "Verify")}</button> : null}
+              {section.status !== "open" ? (
+                <div className="pickup-road-section-revert">
+                  <select
+                    aria-label={`${section.label}: ${copy(language, "Revert-Ziel", "Revert target")}`}
+                    value={revertTargets[section.id] && revertTargets[section.id] !== section.status ? revertTargets[section.id] : "open"}
+                    onChange={(event) => setRevertTargets((current) => ({ ...current, [section.id]: event.target.value as CollectionRoadSectionStatus }))}
+                  >
+                    {(["open", "driven", "later", "unavailable"] as CollectionRoadSectionStatus[]).filter((status) => status !== section.status).map((status) => <option key={status} value={status}>{statusLabel(language, status)}</option>)}
+                  </select>
+                  <button type="button" className="text-action danger-action" disabled={revertingId === section.id} onClick={() => void revertStatus(section.id)}>{revertingId === section.id ? "…" : copy(language, "Ausgleichen", "Revert")}</button>
+                </div>
+              ) : null}
             </div>
           </article>
         ))}

@@ -39,6 +39,7 @@ test("Collector lifecycle remains capability-gated and persists actor provenance
 test("Admin has the full real pickup product path on the existing map and snapshot runtime", () => {
   const admin = source("src/collection/CollectionAdminPanel.tsx");
   const workspace = source("src/collection/CollectionAdminPickupWorkspace.tsx");
+  const sectionWorkspace = source("src/collection/PickupRoadSectionWorkspace.tsx");
 
   assert.match(admin, /CollectionAdminPickupWorkspace/u);
   assert.match(workspace, /<MapView/u);
@@ -51,6 +52,8 @@ test("Admin has the full real pickup product path on the existing map and snapsh
   assert.match(workspace, /onSnapshotChange/u);
   assert.match(workspace, /archivedAt: now/u);
   assert.match(workspace, /manualRefreshCampaign/u);
+  assert.match(sectionWorkspace, /collection\.pickup-section\.revert-status/u);
+  assert.match(sectionWorkspace, /expectedCurrentStatus/u);
   assert.doesNotMatch(workspace, /new Map\(|mapboxgl\.Marker|new Marker/u);
 });
 

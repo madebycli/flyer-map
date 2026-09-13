@@ -434,6 +434,14 @@ export function validateCampaignMutation(
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;
+    case "collection.pickup-section.revert-status":
+      if (
+        isId(payload.sectionId) && isId(payload.areaId) && validSectionStatus(payload.status) &&
+        validSectionStatus(payload.expectedCurrentStatus) && hasExpectedUpdatedAt(payload)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
     default:
       return { valid: false, message: "Mutation-Typ wird nicht unterstützt." };
   }

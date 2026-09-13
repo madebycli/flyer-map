@@ -221,6 +221,16 @@ export type CampaignMutation =
         expectedUpdatedAt: string;
         roomId: string | null;
       }
+    >
+  | MutationBase<
+      "collection.pickup-section.revert-status",
+      {
+        sectionId: string;
+        areaId: string;
+        status: CollectionRoadSectionStatus;
+        expectedUpdatedAt: string;
+        expectedCurrentStatus: CollectionRoadSectionStatus;
+      }
     >;
 
 export type CollectionMutation = Extract<CampaignMutation, { type: `collection.${string}` }>;
@@ -1230,6 +1240,24 @@ export function applyCampaignMutation(
       const section = collection.roadSections.find((candidate) => candidate.id === mutation.payload.sectionId);
       if (!section || section.areaId !== mutation.payload.areaId) conflict("pickup_section_missing");
       requireExpectedUpdatedAt(section.updatedAt, mutation.payload.expectedUpdatedAt, "pickup_section_missing", "pickup_section_changed");
+      next = {
+        ...snapshot,
+        collection: {
+          ...collection,
+          roadSections: collection.roadSections.map((candidate) => candidate.id === section.id
+            ? { ...candidate, status: mutation.payload.status, updatedAt: mutation.createdAt }
+            : candidate),
+        },
+      };
+      break;
+    }
+    case "collection.pickup-section.revert-status": {
+      const collection = collectionSnapshotOrEmpty(snapshot.collection);
+      const section = collection.roadSections.find((candidate) => candidate.id === mutation.payload.sectionId);
+      if (!section || section.areaId !== mutation.payload.areaId) conflict("pickup_section_missing");
+      requireExpectedUpdatedAt(section.updatedAt, mutation.payload.expectedUpdatedAt, "pickup_section_missing", "pickup_section_changed");
+      if (section.status !== mutation.payload.expectedCurrentStatus) conflict("pickup_section_changed");
+      if (section.status === mutation.payload.status) conflict("pickup_section_status_unchanged");
       next = {
         ...snapshot,
         collection: {

@@ -416,6 +416,9 @@ export async function authorizePickupSectionMutation(
   if ((await campaignActionType(db, campaignId)) !== "pickup") {
     return errorResponse(409, "pickup_action_required", "Diese Campaign ist keine Pickup-Aktion.", revision);
   }
+  if (mutation.type === "collection.pickup-section.revert-status" && access.role !== "admin") {
+    return errorResponse(403, "pickup_section_revert_admin_required", "Nur Admins dürfen Pickup-Abschnittsänderungen kompensierend zurücksetzen.", revision);
+  }
   if (access.role === "admin") return null;
   if (access.role !== "collection-collector" || !access.collectorId) {
     return errorResponse(403, "pickup_section_forbidden", "Nur Admins oder aktive Pickup Room-Mitglieder dürfen Pickup-Abschnitte ändern.", revision);
