@@ -86,12 +86,13 @@ test('renderer baseline stays on MapLibre 5.7.1 and keeps the known working visi
 test('offline intent FIFO survives wall-clock rollback across IndexedDB reopen cycles', async (t) => {
   installFakeIndexedDb(t);
   const originalNow = Date.now;
-  const ticks = [2_000, 1_000];
-  Date.now = () => ticks.shift() ?? 0;
+  let now = 2_000;
+  Date.now = () => now;
   t.after(() => { Date.now = originalNow; });
 
   const scope = 'followup:clock-rollback';
   await enqueueNetworkIntent(scope, 'campaign_followup', intent('first'));
+  now = 1_000;
   await enqueueNetworkIntent(scope, 'campaign_followup', intent('second', 'later'));
 
   const queued = await queuedNetworkIntents(scope);
