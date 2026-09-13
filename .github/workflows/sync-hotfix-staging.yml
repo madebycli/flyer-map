@@ -237,3 +237,4 @@ jobs:
 # 2026-09-13 Overpass HTTP 400 failover and request-header fix candidate.
 # 2026-09-13 Overpass HTTP 400 failover and request-header fix candidate.
 # 2026-09-13 live StreetEngine source fix: default public Overpass requests no longer use attic [date] queries.
+# 2026-09-13 live building-query syntax fix: terminate the addr:housenumber statement before closing the Overpass union.
