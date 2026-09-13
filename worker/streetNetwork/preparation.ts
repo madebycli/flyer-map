@@ -241,9 +241,10 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
     if(phase==='roads'||phase==='buildings') {
       const kind=phase;
       const cacheEnabled=await hasBaseStorage(db);
-      const sourceDate=metrics.sourceTimestamp??new Date(Date.parse(now)-3600000).toISOString().slice(0,10)+'T00:00:00Z';
-      const result=cacheEnabled?await cachedSourceTile(db,{version:2,bbox:tiles[cursor],kind:phase,date:sourceDate,source:options.upstreamUrl??'default'},()=>fetchTile(tiles[cursor],kind,options,sourceDate)):{...await fetchTile(tiles[cursor],phase,options,metrics.sourceTimestamp),cacheHit:false};
-      if(cacheEnabled)metrics.sourceTimestamp=sourceDate;
+      const sourceCacheDate=new Date(Date.parse(now)-3600000).toISOString().slice(0,10)+'T00:00:00Z';
+      const historicalDate=options.upstreamUrl ? (metrics.sourceTimestamp??sourceCacheDate) : undefined;
+      const result=cacheEnabled?await cachedSourceTile(db,{version:3,bbox:tiles[cursor],kind:phase,date:sourceCacheDate,source:options.upstreamUrl??'default'},()=>fetchTile(tiles[cursor],kind,options,historicalDate)):{...await fetchTile(tiles[cursor],phase,options,historicalDate),cacheHit:false};
+      if(cacheEnabled && historicalDate)metrics.sourceTimestamp=historicalDate;
       if(!result.cacheHit){metrics.lastSourceAttempts=result.sourceAttempts;metrics.observedSourceBytes=(metrics.observedSourceBytes??0)+result.sourceAttempts.reduce((sum,attempt)=>sum+attempt.bytes,0);}
       metrics.cacheHits=(metrics.cacheHits??0)+(result.cacheHit?1:0);
       metrics.requests=(metrics.requests??0)+result.attempts;metrics.parseMs=(metrics.parseMs??0)+result.parseMs;metrics.normalizationMs=(metrics.normalizationMs??0)+result.normalizationMs;
