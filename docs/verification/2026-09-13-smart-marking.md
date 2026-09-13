@@ -24,7 +24,7 @@ Die bestehende D1-/DO-10k-Budgetregression verwendet jetzt denselben Zustandssch
 
 Fokussierter Street/House/Recovery-Lauf: 32/32 vor zwei zusätzlichen Vertrag-/Ringtests. Vollsuite danach: 894 Tests, zunächst 892 grün; ein veralteter UI-Chrome-Stringtest und die bekannte Sandbox-Socketgrenze. Der Header behält nun den festen Street-Mode-Kicker, der Punktezähler steht daneben; gezielter UI-Nachlauf 8/8 grün. Abschließende Vollsuite: 894 Tests, 893 bestanden, ausschließlich der bekannte Unix-Socket-EPERM im Zweitab-Leader-Test bleibt lokal blockiert. Exakte CI im Handoff prüfen.
 
-Build erfolgreich. Dependency Audit erfolgreich mit der bestehenden MapLibre-5.7.1-Ausnahme GHSA-jrc7-96c5-q579, nicht advisory-frei. Nativer TypeScript7-Prozess scheitert lokal an `readlink /proc/self/exe`; TypeScript5.9.3 `--noEmit` ist grün. Die echte Projekt-Typecheck-Freigabe benötigt die exakte GitHub-CI.
+Build erfolgreich. Dependency Audit erfolgreich mit der bestehenden MapLibre-5.7.1-Ausnahme GHSA-jrc7-96c5-q579, nicht advisory-frei. Nativer TypeScript7-Prozess scheitert lokal an `readlink /proc/self/exe`; TypeScript5.9.3 `--noEmit` ist grün. Exakte GitHub-CI für `4c2d01e2a0a873c9c233e525e50f20148c648bda`: Run34761931839, Job103736181142, 894/894 Tests sowie Typecheck7, Audit und Build erfolgreich. Dies beseitigt die lokale Sandbox-Evidence-Lücke für die Projekt-Gates; es ersetzt keine Geräteabnahme.
 
 ## Praktische Grenzen
 

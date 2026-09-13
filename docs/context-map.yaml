@@ -5,10 +5,10 @@ current_pr92_state:
   repository: madebycli/flyer-map
   branch: fix/street-engine-smart-marking
   pull_request: { number: 92, state: open, draft: true, merged: false, base: integration/main-street-runtime }
-  verified_runtime_head: 3ad3fc755bbdcfa03a1b1110312a0f3ab198af31
+  verified_runtime_head: 4c2d01e2a0a873c9c233e525e50f20148c648bda
   dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }
-  normal_ci: { run: 34720417354, job: 103625130098, conclusion: success }
-  deployment: no deployment of the current audit/quality fix
+  normal_ci: { run: 34761931839, job: 103736181142, conclusion: success }
+  deployment: no deployment of current quality or Smart Marking fixes
   test_summary: exact-head Test, Typecheck, Dependency audit with existing MapLibre exception, Production build success
   current_plan: docs/plans/active/035-street-engine-masterplan.md
   current_handoff: docs/status/STREET_ENGINE_MASTERPLAN_HANDOFF.md

@@ -16,7 +16,7 @@ Stand 2026-09-13. Repository `madebycli/flyer-map`, Branch `fix/street-engine-sm
 | Master-Context-Audit/ADR/Plan | `ba574eef32a03a0d473a5c608e98dfbc7472a7e1` |
 | Smart-Marking-Plan036 | `f85abd45fa534745cd6abb25c002bbc88cf9290b` |
 
-Der Smart-Marking-Kandidat wird nach Remote-Commit und CI hier mit exakter SHA ergänzt. [Lokale Smart-Evidence](../verification/2026-09-13-smart-marking.md), [Plan036](../plans/active/036-smart-marking-waypoints.md), [Gesamtplan035](../plans/active/035-street-engine-masterplan.md).
+Smart-Marking-Runtime `4c2d01e2a0a873c9c233e525e50f20148c648bda`, [CI34761931839](https://github.com/madebycli/flyer-map/actions/runs/34761931839), Job `103736181142`: 894/894 Tests, Typecheck7, Dependency Audit und Build erfolgreich. Lokal 893/894, ausschließlich Sandbox-Socket-EPERM; TS5.9.3 und Build grün, TS7-Start lokal blockiert. Alle 21 geänderten Dateien wurden nach dem Remote-Commit inhaltlich zurückgelesen; anschließender git-fetch-Abgleich ist sauber. [Lokale Smart-Evidence](../verification/2026-09-13-smart-marking.md), [Plan036](../plans/active/036-smart-marking-waypoints.md), [Gesamtplan035](../plans/active/035-street-engine-masterplan.md).
 
 ## Gelöst und weiterhin offen
 
@@ -32,7 +32,7 @@ Smart Marking erweitert den Distribution-Adapter um echte Zwischenziele, Undo, v
 
 ## Nächster kleinster Schritt
 
-Nach grüner Kandidaten-CI einen sanitisierten bestehenden fehlgeschlagenen Job mitsamt Runtime-SHA/Fehlerzeit bereitstellen oder lesen, sofern ein autorisierter Zugang vorliegt. Dann eine kleine klar benannte Staging-Area mit begrenztem Budget, sichtbare Punkte/Area/Straßen/Häuser, Reload, Zweitclient, Offline-Reconnect und Delete nachweisen. Keine 5k/10k/20k-Livequelle zum Diagnostizieren verwenden. Bei fehlendem Gerät/Jobzugang an diesem Evidence-Gate stoppen.
+Die Kandidaten-CI ist grün. Als Nächstes einen sanitisierten bestehenden fehlgeschlagenen Job mitsamt Runtime-SHA/Fehlerzeit bereitstellen oder lesen, sofern ein autorisierter Zugang vorliegt. Dann eine kleine klar benannte Staging-Area mit begrenztem Budget, sichtbare Punkte/Area/Straßen/Häuser, Reload, Zweitclient, Offline-Reconnect und Delete nachweisen. Keine 5k/10k/20k-Livequelle zum Diagnostizieren verwenden. Bei fehlendem Gerät/Jobzugang an diesem Evidence-Gate stoppen.
 
 `STREET_ENGINE_LIVE_READY=FALSE` · `D1_ATTRIBUTION_CONFIRMED=FALSE` · `MAP_RENDER_P0=OPEN`.
 

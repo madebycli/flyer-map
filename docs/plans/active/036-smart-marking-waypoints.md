@@ -1,6 +1,6 @@
 # PLAN: Smart Marking mit echten Zwischenzielen
 
-Stand 2026-09-13, aktiv: begrenzter Kandidat umgesetzt, lokale Regressionen bestanden, exakte Kandidaten-CI und Geräteabnahme ausstehend. Ergänzt PLAN-035. Evidence-Freeze: `fix/street-engine-smart-marking@3ad3fc755bbdcfa03a1b1110312a0f3ab198af31`, Draft PR92, Base `integration/main-street-runtime@f4facd6ef354c5ba6de861519b696bce6f46a209`. Keine neue Deployment-Evidence.
+Stand 2026-09-13, aktiv: begrenzter Fix umgesetzt und CI-verifiziert, Geräteabnahme ausstehend. Runtime `4c2d01e2a0a873c9c233e525e50f20148c648bda`, CI34761931839 / Job103736181142: Tests, Typecheck, Dependency Audit und Build erfolgreich. Ergänzt PLAN-035. Evidence-Freeze: `fix/street-engine-smart-marking@3ad3fc755bbdcfa03a1b1110312a0f3ab198af31`, Draft PR92, Base `integration/main-street-runtime@f4facd6ef354c5ba6de861519b696bce6f46a209`. Keine neue Deployment-Evidence.
 
 ## Befund und begrenzter Fix
 
