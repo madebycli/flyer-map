@@ -16,11 +16,18 @@ import { validateHousePolygonVertices } from '../../src/domain/geometry.ts';
 type Job = { generation:string;phase:string;cursor:number;lease:string|null;lease_until:string|null;attempts:number;metrics_json:string;geometry_json:string };
 type Building = { osmId:number;tags:Record<string,string>;geometry:PolygonGeometry };
 type Metrics = { cacheHits?:number; targetChunks?:{key:string;start:number;count:number}[]; addressMs?:number;normalizationMs?:number;parseMs?:number;tiles?:number;peakConcurrency?:number;tileTimings?:{kind:string;tile:number;bytes:number;elapsedMs:number;attempts:number}[]; quality?:PreparationQuality; lastSourceAttempts?:SourceAttempt[]; observedSourceBytes?:number; lastError?:{phase:string;cursor:number;code:string;attempt:number;sourceAttempts?:SourceAttempt[];quality?:PreparationQuality}; roads?:number;houses?:number;addressableBuildings?:number;buildings?:number; requests?:number;retries?:number;bytes?:number;fetchMs?:number;graphMs?:number;linkMs?:number;publishMs?:number;sourceTimestamp?:string };
+type AddressedBuilding = ReturnType<typeof addressBuildings>[number];
+type StagedTarget = { targetKey:string; target:AddressedBuilding };
+
 const DEFAULT_OVERPASS_URLS = [
   'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ] as const;
 const MAX_TRANSIENT_OVERPASS_ATTEMPTS = 3;
+const NETWORK_TARGET_BUCKETS = 16;
+const NETWORK_DEFAULT_MAX_BUILDINGS = 20_000;
+const NETWORK_LINK_BATCH = 250;
+
 function isTransientOverpassCode(code:string) {
   return code==='overpass_rate_limited'||code==='overpass_timeout'||code==='overpass_transport_error'||/^overpass_http_5\d\d$/.test(code);
 }
@@ -32,6 +39,28 @@ function normalizeOverpassError(error:unknown,timedOut:boolean) {
   if(error instanceof Error && /^(?:overpass_|osm_normalization_)/.test(error.message))return error;
   return new Error('osm_normalization_internal_error');
 }
+function normalizedRoadName(name:string) {
+  return name.normalize('NFKC').toLocaleLowerCase('de').replace(/[\s.]+/g,' ').trim();
+}
+function stableBucket(value:string,buckets=NETWORK_TARGET_BUCKETS) {
+  let hash=0x811c9dc5;
+  for(let index=0;index<value.length;index++) {
+    hash^=value.charCodeAt(index);
+    hash=Math.imul(hash,0x01000193);
+  }
+  return (hash>>>0)%buckets;
+}
+function bucketKey(bucket:number) {return String(bucket).padStart(2,'0');}
+function targetIdentity(target:AddressedBuilding) {
+  return target.address.key??`building:${target.osmId}:${target.address.number}`;
+}
+function targetSort(left:AddressedBuilding,right:AddressedBuilding) {
+  const leftStreet=left.tags['addr:street']?normalizedRoadName(left.tags['addr:street']):'';
+  const rightStreet=right.tags['addr:street']?normalizedRoadName(right.tags['addr:street']):'';
+  if(Boolean(leftStreet)!==Boolean(rightStreet))return leftStreet?-1:1;
+  return leftStreet.localeCompare(rightStreet)||left.osmId-right.osmId||(left.identityAddress??'').localeCompare(right.identityAddress??'');
+}
+
 export function preparationTiles(area: Area): [number,number,number,number][] {
   const points=area.geometry.coordinates.flat();
   const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
@@ -152,6 +181,16 @@ async function staged<T>(db:D1DatabaseLike,run:AreaTaskPreparationRun,kind:strin
   const rows=await db.prepare('SELECT payload_json FROM street_network_staging WHERE campaign_id=? AND area_id=? AND generation=? AND kind=? ORDER BY chunk_key').bind(run.campaignId,run.areaId,run.generation,kind).all<{payload_json:string}>();
   return rows.results.flatMap(row=>JSON.parse(row.payload_json) as T[]);
 }
+async function stagedPrefix<T>(db:D1DatabaseLike,run:AreaTaskPreparationRun,kind:string,prefix:string):Promise<T[]> {
+  const rows=await db.prepare('SELECT payload_json FROM street_network_staging WHERE campaign_id=? AND area_id=? AND generation=? AND kind=? AND chunk_key LIKE ? ORDER BY chunk_key').bind(run.campaignId,run.areaId,run.generation,kind,`${prefix}%`).all<{payload_json:string}>();
+  return rows.results.flatMap(row=>JSON.parse(row.payload_json) as T[]);
+}
+async function stagedBuckets<T>(db:D1DatabaseLike,run:AreaTaskPreparationRun,kind:string,buckets:number[]):Promise<T[]> {
+  if(!buckets.length)return [];
+  const keys=[...new Set(buckets)].sort((a,b)=>a-b).map(bucketKey);
+  const rows=await db.prepare("SELECT payload_json FROM street_network_staging WHERE campaign_id=? AND area_id=? AND generation=? AND kind=? AND substr(chunk_key,1,2) IN (SELECT value FROM json_each(?)) ORDER BY chunk_key").bind(run.campaignId,run.areaId,run.generation,kind,JSON.stringify(keys)).all<{payload_json:string}>();
+  return rows.results.flatMap(row=>JSON.parse(row.payload_json) as T[]);
+}
 
 /** One request performs one bounded fetch, graph phase, house chunk or final transaction. */
 export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPreparationRun,options:AreaTaskPreparationOptions={}) {
@@ -173,6 +212,17 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
     if(chunks.length>35)throw new Error('network_staging_batch_budget');
     await db.batch(chunks.map((chunk,i)=>db.prepare(`INSERT INTO street_network_staging(campaign_id,area_id,generation,kind,chunk_key,payload_json) SELECT ?,?,?,?,?,? WHERE ${guard} ON CONFLICT(campaign_id,area_id,generation,kind,chunk_key) DO UPDATE SET payload_json=excluded.payload_json`).bind(...scope,kind,`${key}:${String(i).padStart(6,'0')}`,JSON.stringify(chunk),...ownership)));
     let start=0;return chunks.map((chunk,i)=>{const part={key:`${key}:${String(i).padStart(6,'0')}`,start,count:chunk.length};start+=chunk.length;return part;});
+  };
+  const saveGroups=async(kind:string,groups:Map<number,unknown[]>,suffix:string)=>{
+    const statements=[];
+    for(const [bucket,rows] of [...groups.entries()].sort(([left],[right])=>left-right)) {
+      const chunks=jsonChunks(rows);
+      for(let index=0;index<chunks.length;index++) {
+        statements.push(db.prepare(`INSERT INTO street_network_staging(campaign_id,area_id,generation,kind,chunk_key,payload_json) SELECT ?,?,?,?,?,? WHERE ${guard} ON CONFLICT(campaign_id,area_id,generation,kind,chunk_key) DO UPDATE SET payload_json=excluded.payload_json`).bind(...scope,kind,`${bucketKey(bucket)}:${suffix}:${String(index).padStart(6,'0')}`,JSON.stringify(chunks[index]),...ownership));
+      }
+    }
+    if(statements.length>35)throw new Error('network_staging_batch_budget');
+    if(statements.length)await db.batch(statements);
   };
   let phase=job.phase,cursor=job.cursor;
   try {
@@ -203,31 +253,102 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
       if(roads.length>20000)throw new Error('graph_source_budget');
       const tasks=await buildRoadNetwork({roads,area:run.area.geometry,campaignId,areaId,generation,timestamp:now});
       if(tasks.length>(options.maxRoadFragments??20000))throw new Error('graph_build_budget');
-      metrics.roads=tasks.length;await save('edges','all',tasks);metrics.graphMs=performance.now()-begin;phase='buildings';cursor=0;
+      metrics.roads=tasks.length;
+      await save('edges','all',tasks);
+      const edgeBuckets=new Map<number,DistributionTask[]>();
+      for(const task of tasks) {
+        const bucket=stableBucket(normalizedRoadName(task.label));
+        const rows=edgeBuckets.get(bucket)??[];rows.push(task);edgeBuckets.set(bucket,rows);
+      }
+      for(const [bucket,rows] of [...edgeBuckets.entries()].sort(([left],[right])=>left-right))await save('edge-label-buckets',bucketKey(bucket),rows);
+      metrics.graphMs=performance.now()-begin;phase='buildings';cursor=0;
     } else if(phase==='addresses') {
       const begin=performance.now();
-      const buildings=await staged<Building>(db,run,'buildings');
-      const ordered=addressBuildings(buildings,await staged<AddressNode>(db,run,'addresses'));
-      metrics.buildings=buildings.length;metrics.addressableBuildings=ordered.length;
-      if(ordered.length>(options.maxBuildings??10000))throw new Error('house_assignment_budget');
-      metrics.targetChunks=await save('targets','all',ordered);metrics.addressMs=performance.now()-begin;phase='link';cursor=0;
+      const rawEnd=tiles.length;
+      const normalizeEnd=rawEnd+NETWORK_TARGET_BUCKETS;
+      const dedupeEnd=normalizeEnd+NETWORK_TARGET_BUCKETS;
+      if(cursor<rawEnd) {
+        const tileKey=String(cursor).padStart(6,'0');
+        const local=addressBuildings(await stagedPrefix<Building>(db,run,'buildings',`${tileKey}:`),await stagedPrefix<AddressNode>(db,run,'addresses',`${tileKey}:`));
+        const groups=new Map<number,unknown[]>();
+        for(const target of local) {
+          const row:StagedTarget={targetKey:targetIdentity(target),target};
+          const bucket=Math.abs(target.osmId)%NETWORK_TARGET_BUCKETS;
+          const rows=groups.get(bucket)??[];rows.push(row);groups.set(bucket,rows);
+        }
+        await saveGroups('raw-targets',groups,tileKey);
+        cursor+=1;
+      } else if(cursor<normalizeEnd) {
+        const bucket=cursor-rawEnd;
+        const rows=await stagedPrefix<StagedTarget>(db,run,'raw-targets',`${bucketKey(bucket)}:`);
+        const byBuilding=new Map<number,Map<string,AddressedBuilding[]>>();
+        for(const row of rows) {
+          const byKey=byBuilding.get(row.target.osmId)??new Map<string,AddressedBuilding[]>();
+          const candidates=byKey.get(row.targetKey)??[];candidates.push(row.target);byKey.set(row.targetKey,candidates);byBuilding.set(row.target.osmId,byKey);
+        }
+        metrics.buildings=(metrics.buildings??0)+byBuilding.size;
+        const groups=new Map<number,unknown[]>();
+        for(const [osmId,byKey] of [...byBuilding.entries()].sort(([left],[right])=>left-right)) {
+          const keys=[...byKey.keys()].sort();
+          const nullKeys=keys.filter(key=>byKey.get(key)!.some(target=>target.identityAddress===null));
+          const primaryKey=(nullKeys[0]??keys[0])!;
+          for(const key of keys) {
+            const candidates=byKey.get(key)!;
+            candidates.sort((left,right)=>Number(right.identityAddress===null)-Number(left.identityAddress===null)||JSON.stringify(left).localeCompare(JSON.stringify(right)));
+            const target={...candidates[0],identityAddress:key===primaryKey?null:key};
+            const addressBucket=stableBucket(key);
+            const normalized=groups.get(addressBucket)??[];normalized.push({targetKey:key,target} satisfies StagedTarget);groups.set(addressBucket,normalized);
+          }
+        }
+        await saveGroups('normalized-targets',groups,bucketKey(bucket));
+        cursor+=1;
+      } else if(cursor<dedupeEnd) {
+        if(cursor===normalizeEnd){metrics.addressableBuildings=0;metrics.targetChunks=[];}
+        const bucket=cursor-normalizeEnd;
+        const rows=await stagedPrefix<StagedTarget>(db,run,'normalized-targets',`${bucketKey(bucket)}:`);
+        rows.sort((left,right)=>left.target.osmId-right.target.osmId||left.targetKey.localeCompare(right.targetKey));
+        const seen=new Set<string>();
+        const selected:AddressedBuilding[]=[];
+        for(const row of rows) {
+          if(seen.has(row.targetKey))continue;
+          seen.add(row.targetKey);selected.push(row.target);
+        }
+        selected.sort(targetSort);
+        const nextCount=(metrics.addressableBuildings??0)+selected.length;
+        if(nextCount>(options.maxBuildings??NETWORK_DEFAULT_MAX_BUILDINGS))throw new Error('house_assignment_budget');
+        const start=metrics.addressableBuildings??0;
+        const parts=await save('targets',bucketKey(bucket),selected);
+        metrics.targetChunks=[...(metrics.targetChunks??[]),...parts.map(part=>({...part,start:part.start+start}))];
+        metrics.addressableBuildings=nextCount;
+        cursor+=1;
+        if(cursor>=dedupeEnd){phase='link';cursor=0;}
+      }
+      metrics.addressMs=(metrics.addressMs??0)+performance.now()-begin;
     } else if(phase==='link') {
       const begin=performance.now();
-      const selectedChunks=metrics.targetChunks?.filter(chunk=>chunk.start<cursor+250&&chunk.start+chunk.count>cursor);
+      const selectedChunks=metrics.targetChunks?.filter(chunk=>chunk.start<cursor+NETWORK_LINK_BATCH&&chunk.start+chunk.count>cursor);
       const selectedRows=selectedChunks?await db.prepare("SELECT payload_json FROM street_network_staging WHERE campaign_id=? AND area_id=? AND generation=? AND kind='targets' AND chunk_key IN(SELECT value FROM json_each(?)) ORDER BY chunk_key").bind(...scope,JSON.stringify(selectedChunks.map(chunk=>chunk.key))).all<{payload_json:string}>():null;
-      const ordered:ReturnType<typeof addressBuildings>=selectedRows?selectedRows.results.flatMap(row=>JSON.parse(row.payload_json)):await staged<ReturnType<typeof addressBuildings>[number]>(db,run,'targets');
+      const ordered:AddressedBuilding[]=selectedRows?selectedRows.results.flatMap(row=>JSON.parse(row.payload_json)):await staged<AddressedBuilding>(db,run,'targets');
       const localCursor=cursor-(selectedChunks?.[0]?.start??0);
       const houses:HouseTask[]=[];const addresses=new Map<string,string>();
-      for(const building of ordered.slice(localCursor,localCursor+250)) {
+      for(const building of ordered.slice(localCursor,localCursor+NETWORK_LINK_BATCH)) {
         const point=interiorPoint(building.geometry);if(!polygonOwnsPoint(run.area.geometry,point))continue;
         const id=`task_house_auto_${await sha256Hex(JSON.stringify({campaignId,areaId,osmId:building.osmId,...(building.identityAddress?{address:building.identityAddress}:{})}))}`;
         houses.push({id,campaignId,areaId,taskType:'house',label:building.address.label,geometry:building.geometry,source:{dataset:'OpenStreetMap',objectType:'way',objectIds:[building.osmId]},areaPreparationGeneration:generation,parentStreetTaskId:null,status:'open',completedAt:null,createdAt:now,updatedAt:now});
         if(building.tags['addr:street'])addresses.set(id,building.tags['addr:street']);
       }
-      const linked=associateHouses(await staged<DistributionTask>(db,run,'edges'),houses,addresses);
+      const addressed=houses.filter(house=>addresses.has(house.id));
+      const unaddressed=houses.filter(house=>!addresses.has(house.id));
+      const linkedById=new Map<string,HouseTask>();
+      if(addressed.length) {
+        const buckets=addressed.map(house=>stableBucket(normalizedRoadName(addresses.get(house.id)!)));
+        for(const house of associateHouses(await stagedBuckets<DistributionTask>(db,run,'edge-label-buckets',buckets),addressed,addresses))linkedById.set(house.id,house);
+      }
+      if(unaddressed.length)for(const house of associateHouses(await staged<DistributionTask>(db,run,'edges'),unaddressed))linkedById.set(house.id,house);
+      const linked=houses.map(house=>linkedById.get(house.id)??house);
       metrics.houses=(metrics.houses??0)+linked.length;
       await save('houses',String(cursor).padStart(6,'0'),linked);metrics.linkMs=(metrics.linkMs??0)+performance.now()-begin;
-      cursor+=250;if(cursor>=(metrics.addressableBuildings??ordered.length)){phase='publish';cursor=0;}
+      cursor+=NETWORK_LINK_BATCH;if(cursor>=(metrics.addressableBuildings??ordered.length)){phase='publish';cursor=0;}
     } else if(phase==='publish') {
       const before=await loadCampaignSnapshot(db,campaignId,{includeCollection:false,areaId});if(!before)throw new Error('reconcile_campaign_missing');
       if(JSON.stringify(before.areas.find(area=>area.id===areaId)?.geometry)!==JSON.stringify(run.area.geometry))throw new Error('reconcile_stale_geometry');
@@ -235,6 +356,7 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
       const reconcile=await reconcileServerPreparedStreetTasks({existingTasks:before.tasks,preparedFragments:[],preparedTasks:prepared,campaignId,areaId,generation,timestamp:now,allowRemovedWork:await hasBaseStorage(db)});
       if(reconcile.outcome!=='ready')throw new Error('area_preparation_work_started');
       const preparedHouses=await staged<HouseTask>(db,run,'houses');
+      metrics.houses=preparedHouses.length;
       const oldHouses=new Map((before.houseTasks??[]).map(h=>[h.id,h]));
       let houseTasks=[...(before.houseTasks??[]).filter(h=>h.areaId!==areaId||!h.areaPreparationGeneration),...preparedHouses.map(h=>{const prior=oldHouses.get(h.id);return prior?{...h,label:prior.label,status:prior.status,completedAt:prior.completedAt,createdAt:prior.createdAt}:h;})];
       if(await hasBaseStorage(db))houseTasks=await restoreManualHouseParents(db,campaignId,houseTasks,reconcile.afterTasks);
