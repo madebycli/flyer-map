@@ -60,25 +60,20 @@ async function writeLegacyIntent(scope: string, campaignId: string, entry: Netwo
   }
 }
 
-test('accepted renderer baseline is exactly MapLibre 6.9.0 with strict dependency auditing', async () => {
+test('renderer baseline stays on MapLibre 5.7.1 and keeps the known working visibility path', async () => {
   const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
   const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
   const stack = await readFile('docs/architecture/STACK.md', 'utf8');
-  const ci = await readFile('.github/workflows/ci.yml', 'utf8');
+  const auditScript = await readFile('scripts/audit-dependencies.mjs', 'utf8');
   const map = await readFile('src/map/MapView.tsx', 'utf8');
 
-  assert.equal(packageJson.dependencies['maplibre-gl'], '6.9.0');
-  assert.equal(packageJson.scripts['audit:dependencies'], 'npm audit --audit-level=high');
-  assert.equal(lock.packages[''].dependencies['maplibre-gl'], '6.9.0');
-  assert.equal(lock.packages['node_modules/maplibre-gl'].version, '6.9.0');
-  assert.equal(lock.packages[''].dependencies['@mapbox/unitbezier'], undefined);
-  assert.match(stack, /MapLibre GL JS \*\*6\.9\.0 pinned\*\*/u);
-  assert.doesNotMatch(stack, /5\.7\.1 pinned/u);
-  assert.doesNotMatch(ci, /MapLibre 5\.7\.1 isolation exception/u);
+  assert.equal(packageJson.dependencies['maplibre-gl'], '5.7.1');
+  assert.equal(lock.packages[''].dependencies['maplibre-gl'], '5.7.1');
+  assert.equal(lock.packages['node_modules/maplibre-gl'].version, '5.7.1');
+  assert.match(stack, /MapLibre GL JS \*\*5\.7\.1 pinned\*\*/u);
+  assert.match(auditScript, /GHSA-jrc7-96c5-q579/u);
+  assert.match(auditScript, /MapLibre 5\.7\.1 historical-renderer exception/u);
 
-  // Guard the actual 6.9 visibility fix: sources are seeded with current data,
-  // app geometry is inserted above opaque provider geometry, and state changes
-  // still drive setData for Areas, Streets and Houses.
   assert.match(map, /installApplicationMapStyle\(map: Map, initialData\?: InitialApplicationSourceData\)/u);
   assert.match(map, /const applicationStyle = buildApplicationMapStyle\(initialData\)/u);
   assert.match(map, /map\.addSource\(sourceId, source as SourceSpecification\)/u);
