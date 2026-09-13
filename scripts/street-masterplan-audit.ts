@@ -2,13 +2,13 @@ import { getHeapStatistics } from 'node:v8';
 import { BudgetD1 } from '../tests/helpers/d1Budget.ts';
 import { seedNetwork, networkOsm } from '../tests/helpers/networkD1.ts';
 import { beginAreaTaskPreparation, runAreaTaskPreparation, prepareAreaTasks } from '../worker/areaTaskPreparation.ts';
-import { handleRxdbPush } from '../worker/rxdbSync.ts';
 import { requestDatabase } from '../worker/requestDatabase.ts';
 
 // Synthetic, offline audit only. Never uses a network provider or remote D1.
 for (const count of [0,399,1000,5000,10000,20000]) {
   const db=new BudgetD1(true,true);seedNetwork(db);
   const tileCount=count>10000?2:1;
+  const queryBudget=count>10000?100:50; // Diagnostic headroom: workflow still records the true per-step statement maximum.
   if(tileCount===2)db.sqlite.prepare('UPDATE areas SET geometry_json=?').run(JSON.stringify({type:'Polygon',coordinates:[[[13,51],[13.02,51],[13.02,51.01],[13,51.01],[13,51]]]}));
   let fullEdgeReads=0,fullEdgeBytes=0,indexedEdgeReads=0,indexedEdgeBytes=0,requests=0,sourceBytes=0,maxStatements=0,totalStatements=0,returnedRows=0,estimatedReads=0,writes=0,steps=0;
   const originalPrepare=db.prepare.bind(db);
@@ -23,12 +23,12 @@ for (const count of [0,399,1000,5000,10000,20000]) {
     const buildings=Array.from({length:Math.min(10000,count-tile*10000)},(_,i)=>{const x=base+0.00015+(i%20)*0.00049,y=51.00015+Math.floor(i/20)*0.000019;return {type:'way',id:1000+tile*10000+i,tags:{building:'house','addr:street':`Road ${tile}-${i%20}`,'addr:housenumber':String(Math.floor(i/20)+1)},geometry:[{lon:x,lat:y},{lon:x+0.00003,lat:y},{lon:x+0.00003,lat:y+0.00003},{lon:x,lat:y}]};});
     const text=JSON.stringify({osm3s:{timestamp_osm_base:'2026-09-07T00:00:00Z'},elements:query.includes('highway')?roads:buildings});sourceBytes+=Buffer.byteLength(text);return new Response(text);
   };
-  db.resetBudget();const started=await beginAreaTaskPreparation(requestDatabase(db,50),'campaign_n','area_n');
+  db.resetBudget();const started=await beginAreaTaskPreparation(requestDatabase(db,queryBudget),'campaign_n','area_n');
   if(started.outcome!=='run')throw new Error('audit_start_failed');
   let result:any;const start=performance.now(),cpu=process.cpuUsage();let heap=getHeapStatistics().used_heap_size;
-  do {db.resetBudget();result=await runAreaTaskPreparation(requestDatabase(db,50),started.run,{fetchImpl});const report=db.report();maxStatements=Math.max(maxStatements,report.statements);totalStatements+=report.statements;returnedRows+=report.returnedRows;estimatedReads+=report.estimatedRowsRead;writes+=report.estimatedTotalRowsWritten;heap=Math.max(heap,getHeapStatistics().used_heap_size);steps++;}while(result.outcome==='pending'&&steps<300);
+  do {db.resetBudget();result=await runAreaTaskPreparation(requestDatabase(db,queryBudget),started.run,{fetchImpl});const report=db.report();maxStatements=Math.max(maxStatements,report.statements);totalStatements+=report.statements;returnedRows+=report.returnedRows;estimatedReads+=report.estimatedRowsRead;writes+=report.estimatedTotalRowsWritten;heap=Math.max(heap,getHeapStatistics().used_heap_size);steps++;}while(result.outcome==='pending'&&steps<300);
   const used=process.cpuUsage(cpu),job=db.sqlite.prepare('SELECT phase,cursor,error_code,metrics_json FROM street_network_jobs').get() as any;
-  console.log(JSON.stringify({scenario:'scale',houses:count,tiles:tileCount,result,phase:job.phase,cursor:job.cursor,errorCode:job.error_code,steps,maxStatements,totalStatements,returnedRows,estimatedReads,writes,requests,sourceBytes,edgeReads:fullEdgeReads,edgeBytes:fullEdgeBytes,fullEdgeReads,fullEdgeBytes,indexedEdgeReads,indexedEdgeBytes,wallMs:Math.round(performance.now()-start),nodeCpuMs:(used.user+used.system)/1000,sampledProcessHeapBytes:heap,note:'SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; fullEdge* is complete staged edge payload, indexedEdge* is bounded label-bucket payload'}));db.sqlite.close();
+  console.log(JSON.stringify({scenario:'scale',houses:count,tiles:tileCount,queryBudget,result,phase:job.phase,cursor:job.cursor,errorCode:job.error_code,steps,maxStatements,totalStatements,returnedRows,estimatedReads,writes,requests,sourceBytes,edgeReads:fullEdgeReads,edgeBytes:fullEdgeBytes,fullEdgeReads,fullEdgeBytes,indexedEdgeReads,indexedEdgeBytes,wallMs:Math.round(performance.now()-start),nodeCpuMs:(used.user+used.system)/1000,sampledProcessHeapBytes:heap,note:'SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; fullEdge* is complete staged edge payload, indexedEdge* is bounded label-bucket payload'}));db.sqlite.close();
 }
 for(const shape of ['all-open','null-node','empty']){
   const db=new BudgetD1(true,true);seedNetwork(db);
