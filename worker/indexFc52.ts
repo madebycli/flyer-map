@@ -1,6 +1,7 @@
 import baseWorker from "./indexM55.ts";
 import { resolvePersistentAccess } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
+import { hasPickupAreaRoomSchema } from "./campaignRepository.ts";
 import { resolveCollectionAccess } from "./collectionAccess.ts";
 import {
   augmentPickupCapabilitiesResponse,
@@ -110,14 +111,48 @@ export async function augmentPickupSnapshotResponse(
       ? await collectorCanViewPickups(request, db, campaignId)
       : true;
     const pickups = canView ? await loadPickupTasks(db, campaignId) : [];
+    const pickupRoomsAvailable = await hasPickupAreaRoomSchema(db);
+    const collection = payload.collection as Record<string, unknown>;
+    const areas = Array.isArray(collection.areas) ? collection.areas : [];
+    const roadSections = Array.isArray(collection.roadSections) ? collection.roadSections : [];
+    const progress = Array.isArray(collection.progress) ? collection.progress : [];
+    const pickupCounts = new Map<string, { total: number; collected: number }>();
+    for (const pickup of pickups) {
+      if (!pickup.areaId) continue;
+      const count = pickupCounts.get(pickup.areaId) ?? { total: 0, collected: 0 };
+      count.total += 1;
+      if (pickup.status === "collected") count.collected += 1;
+      pickupCounts.set(pickup.areaId, count);
+    }
+    const enrichedProgress = pickupRoomsAvailable
+      ? areas.map((area) => {
+          const areaId = isRecord(area) && typeof area.id === "string" ? area.id : "";
+          const sections = roadSections.filter((section) => isRecord(section) && section.areaId === areaId);
+          const counts = pickupCounts.get(areaId) ?? { total: 0, collected: 0 };
+          const prior = progress.find((item) => isRecord(item) && item.areaId === areaId);
+          return {
+            ...(isRecord(prior) ? prior : {}),
+            areaId,
+            roadSectionsTotal: sections.length,
+            roadSectionsDriven: sections.filter((section) => isRecord(section) && section.status === "driven").length,
+            roadSectionsOpen: sections.filter((section) => isRecord(section) && section.status === "open").length,
+            roadSectionsLater: sections.filter((section) => isRecord(section) && section.status === "later").length,
+            roadSectionsUnavailable: sections.filter((section) => isRecord(section) && section.status === "unavailable").length,
+            pickupsTotal: counts.total,
+            pickupsCollected: counts.collected,
+            updatedAt: isRecord(area) && typeof area.updatedAt === "string" ? area.updatedAt : new Date(0).toISOString(),
+          };
+        })
+      : progress;
     const headers = new Headers(response.headers);
     headers.delete("content-length");
     return Response.json(
       {
         ...payload,
         collection: {
-          ...payload.collection,
+          ...collection,
           pickups,
+          ...(pickupRoomsAvailable ? { progress: enrichedProgress } : {}),
         },
       },
       {

@@ -19,6 +19,7 @@ import {
   type AccessInfo,
 } from "./campaignApi.ts";
 import { browserMutationQueue } from "./mutationQueue.ts";
+import { collectionMutationQueue } from "./collectionMutationQueue.ts";
 import { MissionRxdbSync, type RxdbSyncIssue, type RxdbSyncOperation } from "./rxdbMissionSync.ts";
 import type { RxdbCollectionName } from "./rxdbSyncProtocol.ts";
 import { createInitialSnapshot, normalizeAreaPreparationGenerations, type Area, type CampaignSnapshot, type DistributionTask, type HouseTask, type LineStringGeometry, type MapCameraView, type PolygonGeometry, type Team } from "../domain/campaign.ts";
@@ -439,6 +440,8 @@ async function initializeSharedPersistence() {
       setAccess(access);
       applyRxdbSnapshot(await fetchCollectionSnapshot(targetCampaignId));
       runtime.initialized = true;
+      await refreshCollectionPendingCount(targetCampaignId);
+      if (navigator.onLine) void flushCollectionMutationQueue(targetCampaignId);
       return;
     }
     const token = accessTokenFromUrl();
@@ -478,13 +481,59 @@ async function initializeSharedPersistence() {
   }
 }
 
+let collectionFlush: Promise<void> | null = null;
+
+async function refreshCollectionPendingCount(campaignId: string) {
+  const count = collectionMutationQueue.list(campaignId).length;
+  runtime.pendingWrites = count;
+  emit({ pendingCount: count });
+  return count;
+}
+
+/** Sequentially retries collection mutations so expectedUpdatedAt remains ordered. */
+async function flushCollectionMutationQueue(campaignId: string) {
+  if (collectionFlush) return collectionFlush;
+  collectionFlush = (async () => {
+    try {
+      for (;;) {
+        const entry = collectionMutationQueue.list(campaignId)[0];
+        if (!entry || !navigator.onLine) break;
+        try {
+          await postCampaignMutation(campaignId, entry.mutation, runtime.activeFieldGroupId);
+          collectionMutationQueue.remove(campaignId, entry.id);
+          applyRxdbSnapshot(await fetchCollectionSnapshot(campaignId));
+          emit({ syncState: "server-confirmed", messageCode: null });
+        } catch (error) {
+          if (error instanceof CampaignApiError && [401, 403, 409, 410, 422].includes(error.status)) {
+            collectionMutationQueue.remove(campaignId, entry.id);
+            saveCampaignConflictSnapshot(runtime.latestLocal ?? createInitialSnapshot());
+            reportRxdbIssue({
+              kind: "rejected",
+              code: `${entry.mutation.type}:${error.code}`,
+              status: error.status,
+            });
+            try { applyRxdbSnapshot(await fetchCollectionSnapshot(campaignId)); } catch { /* preserve conflict archive */ }
+            continue;
+          }
+          reportRxdbIssue({ kind: "network", code: `${entry.mutation.type}:collection_mutation_retry` });
+          break;
+        }
+      }
+    } finally {
+      await refreshCollectionPendingCount(campaignId);
+      collectionFlush = null;
+    }
+  })();
+  return collectionFlush;
+}
+
 function startListeners() {
   if (typeof window === "undefined" || runtime.listenersStarted) return;
   runtime.listenersStarted = true;
-  window.addEventListener("online", () => { if (!runtime.initialized) void initializeSharedPersistence(); else { runtime.sync?.refresh(); runtime.retryLegacyMigration?.(); } });
+  window.addEventListener("online", () => { if (!runtime.initialized) void initializeSharedPersistence(); else { runtime.sync?.refresh(); runtime.retryLegacyMigration?.(); if (runtime.targetCampaignId && collectionModeFromUrl()) void flushCollectionMutationQueue(runtime.targetCampaignId); } });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      if (!runtime.initialized) void initializeSharedPersistence(); else { runtime.sync?.refresh(); runtime.retryLegacyMigration?.(); }
+      if (!runtime.initialized) void initializeSharedPersistence(); else { runtime.sync?.refresh(); runtime.retryLegacyMigration?.(); if (runtime.targetCampaignId && collectionModeFromUrl()) void flushCollectionMutationQueue(runtime.targetCampaignId); }
     }
   });
 }
@@ -514,6 +563,7 @@ async function runManualRefresh() {
   if (!runtime.initialized) await initializeSharedPersistence();
   if (collectionModeFromUrl()) {
     if (!runtime.targetCampaignId || !runtime.initialized) throw new Error("collection_refresh_not_initialized");
+    await flushCollectionMutationQueue(runtime.targetCampaignId);
     applyRxdbSnapshot(await fetchCollectionSnapshot(runtime.targetCampaignId));
     return;
   }
@@ -542,6 +592,7 @@ export function manualRefreshCampaign() {
 /** Completes the 900 ms campaign/team trailing window on explicit user commit. */
 export function flushRxdbDrafts() {
   runtime.sync?.flushDebouncedWrites();
+  if (runtime.targetCampaignId && collectionModeFromUrl()) void flushCollectionMutationQueue(runtime.targetCampaignId);
 }
 
 export function loadCampaignSnapshot(): CampaignLoadResult {
@@ -590,21 +641,16 @@ export function saveCampaignSnapshot(snapshot: CampaignSnapshot) {
   }
   runtime.pendingWrites += 1;
   emit({ syncState: navigator.onLine ? "local-saved" : "offline", pendingCount: runtime.pendingWrites });
-  if (collectionModeFromUrl() && mutation.type.startsWith("collection.")) {
-    saveChain = saveChain
-      .then(async () => {
-        await postCampaignMutation(snapshot.campaign.id, mutation, runtime.activeFieldGroupId);
-        applyRxdbSnapshot(await fetchCollectionSnapshot(snapshot.campaign.id));
-        emit({ syncState: "server-confirmed", pendingCount: runtime.pendingWrites, messageCode: null });
-      })
-      .catch((error) => {
-        saveCampaignConflictSnapshot(snapshot);
-        reportRxdbIssue({ kind: "network", code: error instanceof Error ? error.message : "collection_mutation_failed" });
-      })
-      .finally(() => {
-        runtime.pendingWrites = Math.max(0, runtime.pendingWrites - 1);
-        emit({ pendingCount: runtime.pendingWrites });
-      });
+  if (mutation.type.startsWith("collection.")) {
+    try {
+      collectionMutationQueue.enqueue(snapshot.campaign.id, mutation);
+      runtime.pendingWrites = collectionMutationQueue.list(snapshot.campaign.id).length;
+      emit({ syncState: navigator.onLine ? "local-saved" : "offline", pendingCount: runtime.pendingWrites });
+      if (navigator.onLine && runtime.initialized) void flushCollectionMutationQueue(snapshot.campaign.id);
+    } catch (error) {
+      saveCampaignConflictSnapshot(snapshot);
+      reportRxdbIssue({ kind: "network", code: error instanceof Error ? error.message : "collection_mutation_queue_failed" });
+    }
     return warning;
   }
   saveChain = saveChain

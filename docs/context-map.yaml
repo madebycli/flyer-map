@@ -1,19 +1,20 @@
 version: 28
-last_updated: 2026-09-12
+last_updated: 2026-09-13
 
 current_pr92_state:
   repository: madebycli/flyer-map
   branch: fix/street-engine-smart-marking
   pull_request: { number: 92, state: open, draft: true, merged: false, base: integration/main-street-runtime }
-  exact_head: a3479f5bd0825f120fa8ae0d5e3d048d54fb6237
+  verified_runtime_head: 3ad3fc755bbdcfa03a1b1110312a0f3ab198af31
   dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }
-  normal_ci: { run: 34708939943, job: 103594017969, conclusion: success }
-  isolation: { run: 34708938074, job: 103594012867, conclusion: success }
-  admin_staging: { run: 34708938075, job: 103594012869, conclusion: success, url: https://flyer-map-admin-staging.cloudflare-eleven035.workers.dev }
-  test_summary: 869 tests passed; typecheck, dependency audit and production build passed
-  ui_checkpoint: Street detail keeps an equal-width 2x2 status grid; compact red Danger trash-icon and comment actions are stacked vertically in the adjacent action column
-  device_gate: MAP_RENDER_P0=OPEN; STREET_ENGINE_LIVE_READY=FALSE until real iPad geometry acceptance
-  safety: no merge, Production deploy/change, remote-D1 migration/write or secret rotation
+  normal_ci: { run: 34720417354, job: 103625130098, conclusion: success }
+  deployment: no deployment of the current audit/quality fix
+  test_summary: exact-head Test, Typecheck, Dependency audit with existing MapLibre exception, Production build success
+  current_plan: docs/plans/active/035-street-engine-masterplan.md
+  current_handoff: docs/status/STREET_ENGINE_MASTERPLAN_HANDOFF.md
+  device_gate: MAP_RENDER_P0=OPEN; STREET_ENGINE_LIVE_READY=FALSE
+  d1_gate: prepared Area-delete read path locally verified fixed; D1_STATUS=OPEN only for link edge rereads; billing attribution false
+  safety: no merge, Production deploy/change, remote-D1 operations or secret rotation
 
 entrypoints:
   always:
@@ -49,6 +50,18 @@ routing_rules:
   - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
+  - id: plan-smart-marking-waypoints
+    path: docs/plans/active/036-smart-marking-waypoints.md
+    type: plan
+    status: active
+    topics: [streets, waypoints, coverage, offline, conflicts, houses]
+    load_when: [Smart Marking continuation]
+  - id: street-engine-masterplan-handoff
+    path: docs/status/STREET_ENGINE_MASTERPLAN_HANDOFF.md
+    type: status
+    status: active
+    topics: [streets, preparation, quality, evidence]
+    load_when: [StreetEngine continuation]
   - id: street-engine-masterplan-audit
     path: docs/status/STREET_ENGINE_MASTERPLAN_AUDIT.md
     type: status
@@ -580,6 +593,9 @@ nodes:
     load_when: [generic fresh AI session]
 
 edges:
+  - { from: plan-smart-marking-waypoints, to: plan-street-engine-masterplan, relation: extends }
+  - { from: street-engine-masterplan-handoff, to: plan-smart-marking-waypoints, relation: continues }
+  - { from: street-engine-masterplan-handoff, to: plan-street-engine-masterplan, relation: continues }
   - { from: plan-street-engine-masterplan, to: street-engine-masterplan-audit, relation: grounded_by }
   - { from: plan-street-engine-masterplan, to: adr-street-engine-compute, relation: governed_by }
   - { from: adr-street-engine-compute, to: adr-street-base-budget, relation: preserves }

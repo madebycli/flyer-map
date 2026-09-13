@@ -20,10 +20,14 @@ import {
 import type {
   CollectionArea,
   CollectionMainArea,
+  CollectionRoadSection,
+  CollectionRoom,
+  CollectionRoomParticipant,
   CollectionRun,
   CollectionRunMember,
   CollectionSnapshot,
 } from "../src/domain/collection.ts";
+import { isPickupSmartMarkingContext } from "../src/domain/collection.ts";
 
 export type SnapshotValidationResult =
   | { valid: true; snapshot: CampaignSnapshot }
@@ -47,6 +51,13 @@ function isId(value: unknown): value is string {
 
 function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && value.length <= 64 && Number.isFinite(Date.parse(value));
+}
+
+function isCollectionActor(value: unknown) {
+  return isRecord(value) &&
+    (value.kind === "campaign-grant" || value.kind === "collection-collector") &&
+    (value.ref === null || typeof value.ref === "string") &&
+    Object.keys(value).sort().join(",") === "kind,ref";
 }
 
 function isLngLat(value: unknown): value is LngLat {
@@ -145,6 +156,9 @@ function parseCampaign(value: unknown, campaignId: string): Campaign | null {
   if (value.id !== campaignId) return null;
   if (!isBoundedString(value.name, 160)) return null;
   if (value.status !== "draft" && value.status !== "active" && value.status !== "archived") {
+    return null;
+  }
+  if (value.actionType !== undefined && value.actionType !== "distribution" && value.actionType !== "pickup") {
     return null;
   }
   if (value.defaultMapView !== null && !parseMapCameraView(value.defaultMapView)) return null;
@@ -320,11 +334,23 @@ function parseCollectionSnapshot(value: unknown, campaignId: string): Collection
       (candidate.claimedByCollectorId !== null && !isId(candidate.claimedByCollectorId)) ||
       (candidate.claimedByLabel !== null && !isBoundedString(candidate.claimedByLabel, 120)) ||
       (candidate.completedAt !== null && !isTimestamp(candidate.completedAt)) ||
+      (candidate.pickupState !== undefined && candidate.pickupState !== "open" &&
+        candidate.pickupState !== "claimed" && candidate.pickupState !== "in-progress" &&
+        candidate.pickupState !== "completed" && candidate.pickupState !== "archived") ||
+      (candidate.roomId !== undefined && candidate.roomId !== null && !isId(candidate.roomId)) ||
       !isTimestamp(candidate.createdAt) || !isTimestamp(candidate.updatedAt)
     ) return null;
     areas.push(candidate as CollectionArea);
   }
   if (!hasUniqueIds(areas)) return null;
+  const pickupAreaIds = new Set<string>();
+  for (const area of areas) {
+    const pickupScoped = area.pickupState !== undefined || area.roomId !== undefined;
+    if (!pickupScoped) continue;
+    if (area.pickupState !== undefined && area.pickupState !== area.status) return null;
+    if (area.runId !== null) return null;
+    pickupAreaIds.add(area.id);
+  }
 
   const runs: CollectionRun[] = [];
   for (const candidate of value.runs) {
@@ -364,6 +390,18 @@ function parseCollectionSnapshot(value: unknown, campaignId: string): Collection
   const areaIds = new Set(areas.map((area) => area.id));
   for (const area of areas) {
     if (!mainArea || area.mainAreaId !== mainArea.id) return null;
+    if (pickupAreaIds.has(area.id)) {
+      if (area.status === "open" || area.status === "archived") {
+        if ((area.roomId ?? null) !== null || area.claimedByCollectorId !== null ||
+          area.claimedByLabel !== null || area.completedAt !== null) return null;
+      } else if (area.status === "completed") {
+        if ((area.roomId ?? null) !== null || area.claimedByCollectorId !== null ||
+          area.claimedByLabel !== null || !area.completedAt) return null;
+      } else if (!area.roomId || !area.claimedByCollectorId || !area.claimedByLabel || area.completedAt !== null) {
+        return null;
+      }
+      continue;
+    }
     if (area.status === "open" || area.status === "archived") {
       if (area.runId !== null || area.claimedByCollectorId !== null ||
         area.claimedByLabel !== null || area.completedAt !== null) return null;
@@ -385,7 +423,76 @@ function parseCollectionSnapshot(value: unknown, campaignId: string): Collection
   for (const area of areas) {
     if (area.runId && !runs.some((run) => run.id === area.runId && run.areaIds.includes(area.id))) return null;
   }
-  return { mainArea, areas, runs };
+
+  const rooms: CollectionRoom[] = [];
+  if (value.rooms !== undefined) {
+    if (!Array.isArray(value.rooms)) return null;
+    for (const candidate of value.rooms) {
+      if (!isRecord(candidate) || !isId(candidate.id) || candidate.campaignId !== campaignId ||
+        !isId(candidate.areaId) || !areaIds.has(candidate.areaId) ||
+        (candidate.status !== "active" && candidate.status !== "released" && candidate.status !== "completed" && candidate.status !== "force-released") ||
+        !isId(candidate.ownerCollectorId) || !isBoundedString(candidate.ownerLabel, 120) ||
+        !isTimestamp(candidate.createdAt) || !isTimestamp(candidate.updatedAt) ||
+        (candidate.closedAt !== null && !isTimestamp(candidate.closedAt)) || !Array.isArray(candidate.participants) ||
+        rooms.some((room) => room.id === candidate.id)) return null;
+      const participants: CollectionRoomParticipant[] = [];
+      for (const member of candidate.participants) {
+        if (!isRecord(member) || !isId(member.id) || member.roomId !== candidate.id ||
+          !isId(member.collectorId) || !isBoundedString(member.label, 120) ||
+          !isTimestamp(member.joinedAt) || (member.leftAt !== null && !isTimestamp(member.leftAt)) ||
+          participants.some((item) => item.id === member.id) ||
+          participants.some((item) => item.collectorId === member.collectorId)) return null;
+        participants.push(member as CollectionRoomParticipant);
+      }
+      if (!participants.some((member) => member.collectorId === candidate.ownerCollectorId)) return null;
+      rooms.push({ ...(candidate as CollectionRoom), participants });
+    }
+  }
+  const activePickupRooms = new Map<string, CollectionRoom>();
+  for (const room of rooms) {
+    if (room.status !== "active" || !pickupAreaIds.has(room.areaId)) continue;
+    if (activePickupRooms.has(room.areaId)) return null;
+    activePickupRooms.set(room.areaId, room);
+  }
+  for (const area of areas) {
+    if (!pickupAreaIds.has(area.id)) continue;
+    const activeRoom = activePickupRooms.get(area.id);
+    if (area.status === "claimed" || area.status === "in-progress") {
+      if (!activeRoom || activeRoom.id !== area.roomId) return null;
+    } else if (activeRoom) {
+      return null;
+    }
+  }
+
+  const roadSections: CollectionRoadSection[] = [];
+  if (value.roadSections !== undefined) {
+    if (!Array.isArray(value.roadSections)) return null;
+    for (const candidate of value.roadSections) {
+      if (!isRecord(candidate) || !isId(candidate.id) || candidate.campaignId !== campaignId ||
+        !isId(candidate.areaId) || !areaIds.has(candidate.areaId) || !isBoundedString(candidate.label, 240) ||
+        !parseLineStringGeometry(candidate.geometry) ||
+        (candidate.status !== "open" && candidate.status !== "driven" && candidate.status !== "later" && candidate.status !== "unavailable") ||
+        !Array.isArray(candidate.coverage) || !candidate.coverage.every((range) => isRecord(range) && isId(range.taskId) && typeof range.from === "number" && Number.isFinite(range.from) && range.from >= 0 && typeof range.to === "number" && Number.isFinite(range.to) && range.to >= range.from) ||
+        (candidate.sourceTaskId !== null && (!isId(candidate.sourceTaskId) || !candidate.sourceTaskId.startsWith("task_"))) ||
+        (candidate.sourceGeneration !== null && !isBoundedString(candidate.sourceGeneration, 120)) ||
+        (candidate.source !== null && candidate.source !== undefined && !parseTaskSource(candidate.source)) ||
+        (candidate.smartMarking !== null && !isPickupSmartMarkingContext(candidate.smartMarking)) ||
+        (candidate.createdBy !== undefined && !isCollectionActor(candidate.createdBy)) ||
+        (candidate.updatedBy !== undefined && !isCollectionActor(candidate.updatedBy)) ||
+        !isTimestamp(candidate.createdAt) || !isTimestamp(candidate.updatedAt) ||
+        roadSections.some((section) => section.id === candidate.id)) return null;
+      roadSections.push(candidate as CollectionRoadSection);
+    }
+  }
+
+  const progress = value.progress === undefined ? [] : value.progress;
+  if (!Array.isArray(progress)) return null;
+  for (const item of progress) {
+    if (!isRecord(item) || !isId(item.areaId) || !areaIds.has(item.areaId) || !isTimestamp(item.updatedAt) ||
+      !["roadSectionsTotal", "roadSectionsDriven", "roadSectionsOpen", "roadSectionsLater", "roadSectionsUnavailable", "pickupsTotal", "pickupsCollected"]
+        .every((key) => typeof item[key] === "number" && Number.isInteger(item[key]) && item[key] >= 0)) return null;
+  }
+  return { mainArea, areas, runs, ...(value.rooms !== undefined ? { rooms } : {}), ...(value.roadSections !== undefined ? { roadSections } : {}), ...(value.progress !== undefined ? { progress } : {}) };
 }
 
 export function validateCampaignSnapshot(

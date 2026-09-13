@@ -9,6 +9,7 @@ export type PreparationQuality = {
 export type PreparationFailureDetail = { phase: string; cursor: number; code: string; attempt: number };
 
 export function preparationFailureMessage(code: string | undefined) {
+  if (code === 'house_dedupe_conflict') return 'Die Gebäudedaten enthalten widersprüchliche Adress- oder Gebäude-IDs. Es wurde keine neue Generation veröffentlicht.';
   if (code === 'osm_normalization_no_trustworthy_buildings') return 'Die Gebäudedaten sind beschädigt. Es wurde keine neue Generation veröffentlicht.';
   if (code?.startsWith('osm_normalization_')) return 'Die Kartendaten konnten nicht sicher verarbeitet werden.';
   if (code?.includes('budget') || code === 'area_preparation_too_many_features') return 'Das Gebiet überschreitet eine Verarbeitungsgrenze. Ein erneuter Versuch mit denselben Daten löst das nicht.';

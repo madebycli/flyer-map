@@ -187,7 +187,7 @@ const schemas: RxdbSchemaMap = {
     type: "object",
     properties: {
       id: { type: "string", maxLength: 200 }, campaignId: { type: "string", maxLength: 200 },
-      name: { type: "string" }, status: { type: "string" }, defaultMapView: nullableObjectSchema,
+      name: { type: "string" }, status: { type: "string" }, actionType: { type: "string" }, defaultMapView: nullableObjectSchema,
       createdAt: { type: "string" }, updatedAt: { type: "string" },
     },
     required: ["id", "campaignId", "name", "status", "defaultMapView", "createdAt", "updatedAt"],

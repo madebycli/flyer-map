@@ -1,0 +1,175 @@
+.pickup-area-screen .collection-card,
+.pickup-area-screen .collection-map-card {
+  border-color: #ded6ea;
+}
+
+.pickup-area-map-card {
+  min-height: 44dvh;
+}
+
+.pickup-area-map-card .map-region {
+  min-height: 44dvh;
+  height: 52dvh;
+}
+
+.pickup-area-map-hint {
+  display: block;
+  padding: 8px 12px 10px;
+  color: #69756b;
+  font-size: .82rem;
+}
+
+.pickup-room-card {
+  border-color: #c6d9ca;
+}
+
+.pickup-room-sync-note {
+  margin: 12px 0 0;
+  color: #69756b;
+  font-size: .84rem;
+}
+
+.pickup-road-section-list,
+.pickup-area-prepare-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pickup-road-section-row,
+.pickup-area-prepare-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee9e1;
+}
+
+.pickup-road-section-row:last-child,
+.pickup-area-prepare-row:last-child {
+  border-bottom: 0;
+}
+
+.pickup-road-section-row > div:first-child,
+.pickup-area-prepare-row > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pickup-road-section-row small,
+.pickup-area-prepare-row small {
+  color: #69756b;
+}
+
+.pickup-road-section-row.is-driven strong {
+  color: #15803d;
+}
+
+.pickup-road-section-row.is-later strong {
+  color: #b45309;
+}
+
+.pickup-road-section-row.is-unavailable strong {
+  color: #6b7280;
+}
+
+.pickup-road-section-row select,
+.pickup-smart-toolbar input {
+  min-height: 38px;
+  border: 1px solid #d8d1c8;
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: #fff;
+  font: inherit;
+}
+
+.pickup-road-section-actions {
+  display: flex !important;
+  align-items: center;
+  gap: 6px !important;
+  flex: 0 0 auto;
+}
+
+.pickup-area-section-heading,
+.pickup-smart-actions,
+.pickup-road-section-actions,
+.pickup-smart-choice-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pickup-area-section-heading {
+  justify-content: space-between;
+}
+
+.pickup-area-section-heading h2 {
+  margin: 2px 0 0;
+}
+
+.pickup-smart-map-card {
+  margin-top: 14px;
+  min-height: 46dvh;
+  border: 1px solid #d8d1e8;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.pickup-smart-map-card .map-region {
+  min-height: 46dvh;
+  height: 54dvh;
+}
+
+.pickup-smart-toolbar {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.pickup-smart-toolbar label {
+  display: grid;
+  gap: 5px;
+  color: #59655c;
+  font-size: .82rem;
+}
+
+.pickup-smart-toolbar p {
+  margin: 0;
+  color: #59655c;
+  font-size: .86rem;
+}
+
+.pickup-smart-actions {
+  justify-content: flex-start;
+}
+
+.pickup-smart-choice-list {
+  margin-top: 10px;
+  padding: 9px;
+  border-radius: 12px;
+  background: #f6f2ec;
+}
+
+.pickup-smart-choice-list strong {
+  flex: 0 0 100%;
+  font-size: .84rem;
+}
+
+.small-action.is-selected {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 2px rgb(124 58 237 / 15%);
+}
+
+.pickup-road-section-admin-list {
+  margin-top: 18px;
+}
+
+@media (min-width: 760px) {
+  .pickup-area-screen {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+}

@@ -2,6 +2,8 @@ import {
   HOUSE_CREATE_BATCH_MAX,
   type CampaignMutation,
 } from "../src/domain/mutations.ts";
+import { isPickupSmartMarkingContext, type CollectionRoadSectionStatus } from "../src/domain/collection.ts";
+import { validateLineStringVertices } from "../src/domain/geometry.ts";
 
 export type MutationValidationResult =
   | { valid: true; mutation: CampaignMutation }
@@ -74,6 +76,19 @@ function validStatusPayload(payload: Record<string, unknown>) {
     (payload.completedAt === null || isTimestamp(payload.completedAt)) &&
     hasExpectedUpdatedAt(payload)
   );
+}
+
+function validLineString(value: unknown) {
+  if (!isRecord(value) || value.type !== "LineString" || !Array.isArray(value.coordinates)) return false;
+  return validateLineStringVertices(value.coordinates as [number, number][]).valid;
+}
+
+function validNullableSmartMarking(value: unknown) {
+  return value === null || isPickupSmartMarkingContext(value);
+}
+
+function validSectionStatus(value: unknown): value is CollectionRoadSectionStatus {
+  return value === "open" || value === "driven" || value === "later" || value === "unavailable";
 }
 
 function validHouseCreateEntry(value: unknown) {
@@ -362,6 +377,60 @@ export function validateCampaignMutation(
     case "collection.run.close":
     case "collection.run.cancel":
       if (isId(payload.runId) && isId(payload.collectorId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.pickup-room.claim":
+    case "collection.pickup-room.join":
+      if (isId(payload.roomId) && isId(payload.areaId) && isId(payload.collectorId) && isString(payload.label, 120)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.pickup-room.release":
+    case "collection.pickup-room.complete":
+      if (
+        isId(payload.roomId) && isId(payload.areaId) && isId(payload.collectorId) &&
+        typeof payload.expectedRevision === "number" && Number.isInteger(payload.expectedRevision) && payload.expectedRevision >= 0 &&
+        isTimestamp(payload.roomUpdatedAt) && typeof payload.pendingSyncCount === "number" &&
+        Number.isInteger(payload.pendingSyncCount) && payload.pendingSyncCount >= 0 &&
+        payload.completenessConfirmed === true
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.pickup-room.force-release":
+      if (isId(payload.roomId) && isId(payload.areaId) && isId(payload.adminId)) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.pickup-section.create":
+      if (
+        isId(payload.sectionId) && isId(payload.areaId) && isString(payload.label, 240) &&
+        validLineString(payload.geometry) &&
+        (payload.sourceTaskId === null || isTaskId(payload.sourceTaskId)) &&
+        (payload.sourceGeneration === null || isString(payload.sourceGeneration, 120)) &&
+        isTaskSource(payload.source) && validNullableSmartMarking(payload.smartMarking)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.pickup-section.update":
+      if (
+        isId(payload.sectionId) && isId(payload.areaId) && isString(payload.label, 240) &&
+        validLineString(payload.geometry) &&
+        (payload.sourceTaskId === null || isTaskId(payload.sourceTaskId)) &&
+        (payload.sourceGeneration === null || isString(payload.sourceGeneration, 120)) &&
+        isTaskSource(payload.source) && validNullableSmartMarking(payload.smartMarking) &&
+        hasExpectedUpdatedAt(payload)
+      ) {
+        return { valid: true, mutation: value as CampaignMutation };
+      }
+      break;
+    case "collection.pickup-section.set-status":
+      if (
+        isId(payload.sectionId) && isId(payload.areaId) && validSectionStatus(payload.status) &&
+        hasExpectedUpdatedAt(payload) && (payload.roomId === null || isId(payload.roomId))
+      ) {
         return { valid: true, mutation: value as CampaignMutation };
       }
       break;

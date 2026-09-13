@@ -196,5 +196,5 @@ export function applyNetworkCoverage(tasks: DistributionTask[], houses: HouseTas
 export function networkProgress(tasks: DistributionTask[], houses: HouseTask[]) {
   const totalLength = tasks.reduce((sum, task) => sum + (task.network?.length ?? roadLength(task.geometry)), 0);
   const completedLength = tasks.reduce((sum, task) => sum + (task.network ? task.network.coverage.filter((range) => range.status === 'completed').reduce((n, range) => n + range.to - range.from, 0) : task.status === 'completed' ? roadLength(task.geometry) : 0), 0);
-  return { basis: houses.length ? 'houses' : 'road-coverage', percent: houses.length ? houses.filter((house) => house.status === 'completed').length / houses.length * 100 : totalLength ? completedLength / totalLength * 100 : 0, totalHouses: houses.length, totalLength, completedLength };
+  return { basis: houses.length ? 'houses' : 'road-coverage', percent: houses.length ? houses.filter((house) => house.status === 'completed').length / houses.length * 100 : totalLength ? completedLength / totalLength * 100 : 0, totalHouses: houses.length, completedHouses: houses.filter(house => house.status === 'completed').length, totalLength, completedLength };
 }

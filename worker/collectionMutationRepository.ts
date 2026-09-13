@@ -1,4 +1,5 @@
 import type { CollectionMutation } from "../src/domain/mutations.ts";
+import type { CollectionActor } from "../src/domain/collection.ts";
 import type { D1DatabaseLike, D1PreparedStatement } from "./campaignRepository.ts";
 
 function guardExistsSql() {
@@ -50,10 +51,55 @@ function recomputeRunAreas(db: D1DatabaseLike, mutation: CollectionMutation, wri
   ];
 }
 
+function sectionActor(actor: CollectionActor | null | undefined): CollectionActor {
+  return actor ?? { kind: "campaign-grant", ref: null };
+}
+
+function sectionEventStatement(
+  db: D1DatabaseLike,
+  mutation: Extract<CollectionMutation, { type: `collection.pickup-section.${string}` }>,
+  writeToken: string,
+  actor: CollectionActor | null | undefined,
+  eventType: "create" | "update" | "set-status",
+) {
+  const resolved = sectionActor(actor);
+  const payload = mutation.payload;
+  const details = eventType === "set-status"
+    ? { status: (payload as Extract<CollectionMutation, { type: "collection.pickup-section.set-status" }>['payload']).status }
+    : { label: (payload as Extract<CollectionMutation, { type: "collection.pickup-section.create" | "collection.pickup-section.update" }>['payload']).label };
+  const changedAtColumn = eventType === "create" ? "created_at" : "updated_at";
+  return db.prepare(
+    `INSERT INTO collection_road_section_events
+       (id, campaign_id, area_id, section_id, event_type, actor_kind, actor_ref, details_json, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (
+         SELECT 1 FROM collection_road_sections
+          WHERE id = ? AND campaign_id = ? AND area_id = ? AND ${changedAtColumn} = ?
+       ) AND ${guardExistsSql()}`,
+  ).bind(
+    `collection_section_event_${crypto.randomUUID()}`,
+    mutation.campaignId,
+    payload.areaId,
+    payload.sectionId,
+    eventType,
+    resolved.kind,
+    resolved.ref,
+    JSON.stringify(details),
+    mutation.createdAt,
+    payload.sectionId,
+    mutation.campaignId,
+    payload.areaId,
+    mutation.createdAt,
+    mutation.campaignId,
+    writeToken,
+  );
+}
+
 export function collectionMutationStatements(
   db: D1DatabaseLike,
   mutation: CollectionMutation,
   writeToken: string,
+  actor: CollectionActor | null | undefined = null,
 ): D1PreparedStatement[] {
   const guard = guardExistsSql();
   switch (mutation.type) {
@@ -93,7 +139,7 @@ export function collectionMutationStatements(
         `UPDATE collection_areas SET name = ?, geometry_json = ?, color = ?, updated_at = ?
           WHERE id = ? AND campaign_id = ? AND updated_at = ? AND status <> 'archived' AND @@GUARD@@`.replace("@@GUARD@@", guard),
       ).bind(
-        mutation.payload.name, JSON.stringify(mutation.payload.geometry), mutation.createdAt,
+        mutation.payload.name, JSON.stringify(mutation.payload.geometry), mutation.payload.color, mutation.createdAt,
         mutation.payload.areaId, mutation.campaignId,
         mutation.payload.expectedUpdatedAt, mutation.campaignId, writeToken,
       )];
@@ -240,5 +286,83 @@ export function collectionMutationStatements(
         ),
         ...recomputeRunAreas(db, mutation, writeToken),
       ];
+    case "collection.pickup-section.create":
+      return [
+        db.prepare(
+          `INSERT INTO collection_road_sections
+              (id, campaign_id, area_id, label, geometry_json, status, coverage_json,
+               source_task_id, source_generation, source_json, smart_marking_json,
+               created_by_kind, created_by_ref, updated_by_kind, updated_by_ref, created_at, updated_at)
+            SELECT ?, ?, ?, ?, ?, 'open', '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE @@GUARD@@`.replace("@@GUARD@@", guard),
+        ).bind(
+          mutation.payload.sectionId,
+          mutation.campaignId,
+          mutation.payload.areaId,
+          mutation.payload.label.trim(),
+          JSON.stringify(mutation.payload.geometry),
+          mutation.payload.sourceTaskId,
+          mutation.payload.sourceGeneration,
+          mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
+          mutation.payload.smartMarking ? JSON.stringify(mutation.payload.smartMarking) : null,
+          sectionActor(actor).kind,
+          sectionActor(actor).ref,
+          sectionActor(actor).kind,
+          sectionActor(actor).ref,
+          mutation.createdAt,
+          mutation.createdAt,
+          mutation.campaignId,
+          writeToken,
+        ),
+        sectionEventStatement(db, mutation, writeToken, actor, "create"),
+      ];
+    case "collection.pickup-section.update":
+      return [
+        db.prepare(
+          `UPDATE collection_road_sections
+              SET label = ?, geometry_json = ?, source_task_id = ?, source_generation = ?,
+                  source_json = ?, smart_marking_json = ?, updated_by_kind = ?, updated_by_ref = ?, updated_at = ?
+            WHERE id = ? AND campaign_id = ? AND area_id = ? AND updated_at = ? AND status = 'open'
+              AND @@GUARD@@`.replace("@@GUARD@@", guard),
+        ).bind(
+          mutation.payload.label.trim(),
+          JSON.stringify(mutation.payload.geometry),
+          mutation.payload.sourceTaskId,
+          mutation.payload.sourceGeneration,
+          mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
+          mutation.payload.smartMarking ? JSON.stringify(mutation.payload.smartMarking) : null,
+          sectionActor(actor).kind,
+          sectionActor(actor).ref,
+          mutation.createdAt,
+          mutation.payload.sectionId,
+          mutation.campaignId,
+          mutation.payload.areaId,
+          mutation.payload.expectedUpdatedAt,
+          mutation.campaignId,
+          writeToken,
+        ),
+        sectionEventStatement(db, mutation, writeToken, actor, "update"),
+      ];
+    case "collection.pickup-section.set-status":
+      return [
+        db.prepare(
+          `UPDATE collection_road_sections
+              SET status = ?, updated_by_kind = ?, updated_by_ref = ?, updated_at = ?
+            WHERE id = ? AND campaign_id = ? AND area_id = ? AND updated_at = ? AND @@GUARD@@`.replace("@@GUARD@@", guard),
+        ).bind(
+          mutation.payload.status,
+          sectionActor(actor).kind,
+          sectionActor(actor).ref,
+          mutation.createdAt,
+          mutation.payload.sectionId,
+          mutation.campaignId,
+          mutation.payload.areaId,
+          mutation.payload.expectedUpdatedAt,
+          mutation.campaignId,
+          writeToken,
+        ),
+        sectionEventStatement(db, mutation, writeToken, actor, "set-status"),
+      ];
   }
+  return [];
 }

@@ -72,6 +72,7 @@ import {
   schedulePreparation,
   type CampaignSyncNamespace,
 } from "./campaignSyncDurableObject.ts";
+import { handlePickupRoomAction, type PickupRoomAction } from "./pickupRoomRuntime.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -165,6 +166,20 @@ function mutationRoute(pathname: string) {
   if (!match) return null;
   try {
     return parseCampaignId(decodeURIComponent(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+function pickupRoomRoute(pathname: string) {
+  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/pickup-areas\/([^/]+)\/(claim|join|release|complete|force-release)$/u);
+  if (!match) return null;
+  try {
+    const campaignId = parseCampaignId(decodeURIComponent(match[1]));
+    const areaId = decodeURIComponent(match[2]);
+    const action = match[3] as PickupRoomAction;
+    if (!campaignId || !/^[A-Za-z0-9._:-]{1,200}$/u.test(areaId)) return null;
+    return { campaignId, areaId, action };
   } catch {
     return null;
   }
@@ -1120,6 +1135,27 @@ export default {
         return executeInCampaign(env.CAMPAIGN_SYNC,{campaignId:networkRoute[1],access:auth.access,operation:'network',input:parsed.value});
       }
       return handleNetworkIntent(request, db, networkRoute[1], auth.access, () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, networkRoute[1]));
+    }
+
+    const pickupRoom = pickupRoomRoute(url.pathname);
+    if (pickupRoom && db) {
+      try {
+        const auth = await requireMutationAccess(db, request, pickupRoom.campaignId);
+        if (!auth.ok) return auth.response;
+        const response = await handlePickupRoomAction(
+          request,
+          db,
+          pickupRoom.campaignId,
+          pickupRoom.areaId,
+          pickupRoom.action,
+          auth.access,
+          () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, pickupRoom.campaignId),
+        );
+        scheduleCampaignSyncNotification(env.CAMPAIGN_SYNC, db, pickupRoom.campaignId, response, context);
+        return response;
+      } catch {
+        return errorResponse(500, "internal_error", "Pickup Room konnte nicht verarbeitet werden.");
+      }
     }
 
     const preparationRoute = areaTaskPreparationRoute(url.pathname);

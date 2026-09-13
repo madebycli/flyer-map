@@ -1,9 +1,11 @@
 import type { CampaignMutation } from "../src/domain/mutations.ts";
+import type { CollectionActor } from "../src/domain/collection.ts";
 import { hasBaseStorage, overlayStatements, type PreparedEntity } from './streetNetwork/baseStorage.ts';
 import {
   getCampaignRevision,
   hasHouseTasksTable,
   hasCollectionSchema,
+  hasPickupAreaRoomSchema,
   hasAreaTaskPreparationSchema,
   hasTaskSourceProvenanceColumn,
   type D1DatabaseLike,
@@ -755,6 +757,7 @@ export async function persistCampaignMutation(
   syncChanges: readonly RxdbChangeFeedEntry[] = [],
   preparedChange?: PreparedEntity,
   preparation?: {areaId:string;geometryHash:string;generation:string},
+  actor: CollectionActor | null = null,
 ): Promise<MutationPersistenceResult> {
   const fingerprint = fingerprintOverride ?? (await fingerprintCampaignMutation(mutation));
   const existing = await getAppliedMutation(db, mutation.campaignId, mutation.id);
@@ -771,6 +774,17 @@ export async function persistCampaignMutation(
 
   const collectionMutation = mutation.type.startsWith("collection.");
   if (collectionMutation && !(await hasCollectionSchema(db))) {
+    return {
+      ok: false,
+      currentRevision: fromRevision,
+      reason: "schema_migration_required",
+    };
+  }
+  if (
+    collectionMutation &&
+    (mutation.type.startsWith("collection.pickup-room.") || mutation.type.startsWith("collection.pickup-section.")) &&
+    !(await hasPickupAreaRoomSchema(db))
+  ) {
     return {
       ok: false,
       currentRevision: fromRevision,
@@ -841,7 +855,7 @@ export async function persistCampaignMutation(
   const domainStatements = useOverlay
     ? await overlayStatements(db,mutation.campaignId,preparedChange!.areaId,[preparedChange!],writeToken)
     : collectionMutation
-    ? collectionMutationStatements(db, mutation as import("../src/domain/mutations.ts").CollectionMutation, writeToken)
+    ? collectionMutationStatements(db, mutation as import("../src/domain/mutations.ts").CollectionMutation, writeToken, actor)
     : [mutationStatement(db, storedMutation, writeToken, hasTaskSource, hasPreparation)];
   const statements = [
     claim,

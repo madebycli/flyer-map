@@ -31,6 +31,15 @@ test('interval replacement is direction invariant and preserves unrelated covera
   assert.deepEqual(setCoverage(initial, 40, 10, 'completed', 100), initial);
   assert.deepEqual(setCoverage(initial, 15, 30, 'open', 100), [{from:10,to:15,status:'completed'},{from:30,to:40,status:'completed'}]);
 });
+test('the specified 8-to-25 percent overwrite splits only overlap, reopens and coalesces',()=>{
+  const prior=[{from:0,to:10,status:'completed' as const},{from:20,to:40,status:'later' as const}];
+  const expected=[{from:0,to:8,status:'completed'},{from:8,to:25,status:'not-deliverable'},{from:25,to:40,status:'later'}];
+  assert.deepEqual(setCoverage(prior,8,25,'not-deliverable',100),expected);
+  const reverse=setCoverage(prior,25,8,'not-deliverable',100);
+  assert.deepEqual(reverse,expected);
+  assert.deepEqual(setCoverage(reverse,25,8,'open',100),[{from:0,to:8,status:'completed'},{from:25,to:40,status:'later'}]);
+  assert.deepEqual(setCoverage(reverse,8,25,'later',100),[{from:0,to:8,status:'completed'},{from:8,to:40,status:'later'}]);
+});
 test('JSTS clips MultiLine and collections, rejects self-intersecting polygons and discards point touches', () => {
   assert.equal(clipNetworkLines({type:'GeometryCollection', geometries:[{type:'MultiLineString',coordinates:[[[12.9,51.05],[13.2,51.05]],[[12.9,51],[13,51]]]}]},area).length,1);
   assert.throws(() => clipNetworkLines(roads[0].geometry, {type:'Polygon',coordinates:[[[13,51],[13.1,51.1],[13,51.1],[13.1,51],[13,51]]]}), /input_validation/);

@@ -165,6 +165,36 @@ export async function postCampaignMutation(
   };
 }
 
+export type PickupRoomAction = "claim" | "join" | "release" | "complete" | "force-release";
+
+export async function postPickupRoomAction(
+  campaignId: string,
+  areaId: string,
+  action: PickupRoomAction,
+  input: Record<string, unknown> = {},
+  actionId = `pickup_action_${crypto.randomUUID()}`,
+) {
+  const response = await apiFetch(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/pickup-areas/${encodeURIComponent(areaId)}/${action}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": actionId,
+      },
+      // Server-owned route and action identifiers are appended after caller
+      // data so an embedded body field cannot redirect the operation.
+      body: JSON.stringify({ ...input, actionId }),
+    },
+  );
+  return (await response.json()) as {
+    actionId: string;
+    roomId: string;
+    appliedRevision: number;
+    alreadyApplied: boolean;
+  };
+}
+
 
 export async function fetchCollectionSnapshot(campaignId: string) {
   const response = await apiFetch(

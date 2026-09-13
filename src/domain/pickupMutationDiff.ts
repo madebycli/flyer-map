@@ -25,7 +25,14 @@ function nonPickupSnapshot(snapshot: CampaignSnapshot) {
     ...snapshot,
     revision: 0,
     campaign: { ...snapshot.campaign, updatedAt: "" },
-    collection: { ...collection, pickups: [] },
+    collection: {
+      ...collection,
+      areas: collection.areas.map(({ pickupState: _pickupState, roomId: _roomId, ...area }) => area),
+      pickups: [],
+      rooms: [],
+      roadSections: [],
+      progress: [],
+    },
   };
 }
 

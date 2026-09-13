@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("normal mission sync is RxDB-first and retains the M5 queue only for one-time import", async () => {
+test("normal mission sync is RxDB-first and keeps collection writes in their durable queue", async () => {
   const store = await readFile("src/data/campaignStore.ts", "utf8");
   assert.match(store, /MissionRxdbSync/u);
   assert.match(store, /migrateLegacyM5Records/u);
@@ -10,8 +10,9 @@ test("normal mission sync is RxDB-first and retains the M5 queue only for one-ti
   assert.match(store, /await browserMutationQueue\.remove\(record\.id\);/u);
   assert.doesNotMatch(store, /processMutationQueue\(/u);
   assert.doesNotMatch(store, /POLL_INTERVAL_MS/u);
-  assert.match(store, /collectionModeFromUrl\(\) && mutation\.type\.startsWith\("collection\."\)/u);
-  assert.match(store, /postCampaignMutation\(snapshot\.campaign\.id, mutation/u);
+  assert.match(store, /collectionMutationQueue\.enqueue\(snapshot\.campaign\.id, mutation\)/u);
+  assert.match(store, /flushCollectionMutationQueue\(snapshot\.campaign\.id\)/u);
+  assert.match(store, /postCampaignMutation\(campaignId, entry\.mutation/u);
 });
 
 test("replica snapshots and sync status distinguish local persistence from server acknowledgement", async () => {

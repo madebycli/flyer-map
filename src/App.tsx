@@ -1,5 +1,6 @@
 import { useNetworkWorkspace } from './map/useNetworkWorkspace.tsx';
 import { NetworkWorkspacePanel } from './map/NetworkWorkspacePanel.tsx';
+import { NetworkCoverageSummary } from './map/NetworkCoverageSummary.tsx';
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CampaignApiError,
@@ -56,6 +57,7 @@ import { clearPersonalMapView } from "./map/cameraStore";
 import { MapView, type MapCameraCommand } from "./map/MapView";
 import { CollectionAdminPanel } from "./collection/CollectionAdminPanel";
 import { CollectionCollectorView } from "./collection/CollectionCollectorView";
+import { PickupAreaCollectorView } from "./collection/PickupAreaCollectorView";
 import type { PlatformAppCommand, PlatformAppContext } from "./platform/platformContract.ts";
 import { FieldHub } from "./platform/FieldHub.tsx";
 import { CommentsContextPanel } from "./collaboration/CommentsContextPanel.tsx";
@@ -383,7 +385,7 @@ export default function App({
   }, [networkWorkspace.optimistic.houseTasks, networkWorkspace.optimistic.tasks, selectedArea]);
   const selectedAreaProgressLabel = selectedAreaProgress
     ? selectedAreaProgress.totalHouses > 0
-      ? `${Math.round(selectedAreaProgress.percent)} % · ${selectedAreaHouseTasks.filter((task) => task.status === "completed").length.toLocaleString(language === "de" ? "de-DE" : "en-US")} ${language === "de" ? "von" : "of"} ${selectedAreaProgress.totalHouses.toLocaleString(language === "de" ? "de-DE" : "en-US")}`
+      ? `${Math.round(selectedAreaProgress.percent)} % · ${selectedAreaProgress.completedHouses.toLocaleString(language === "de" ? "de-DE" : "en-US")} ${language === "de" ? "von" : "of"} ${selectedAreaProgress.totalHouses.toLocaleString(language === "de" ? "de-DE" : "en-US")}`
       : `${Math.round(selectedAreaProgress.percent)} %`
     : "";
   useEffect(() => {
@@ -1233,6 +1235,27 @@ export default function App({
 
   if (collectionMode) {
     if (access?.role === "collection-collector") {
+      if (snapshot.campaign.actionType === "pickup") {
+        return (
+          <PickupAreaCollectorView
+            campaignId={snapshot.campaign.id}
+            language={language}
+            snapshot={snapshot}
+            access={access}
+            online={online}
+            refreshState={refreshState}
+            onRefresh={manualRefreshCampaign}
+            onSnapshotChange={commitSnapshot}
+            onExit={() => {
+              removeCollectionAccessTokenFromUrl();
+              const url = new URL(window.location.href);
+              url.searchParams.delete("collection");
+              window.history.replaceState(null, "", url);
+              window.location.reload();
+            }}
+          />
+        );
+      }
       return (
         <CollectionCollectorView
           campaignId={snapshot.campaign.id}
@@ -1955,6 +1978,8 @@ export default function App({
                 </div>
               </div>
             ) : null}
+
+            <NetworkCoverageSummary task={networkWorkspace.optimistic.tasks.find(task=>task.id===selectedTask.id)??selectedTask} language={language} />
 
             <div className="task-status-tools">
               <div className="status-grid" aria-label={t(language, "current")}>

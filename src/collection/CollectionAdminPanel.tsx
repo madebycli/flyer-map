@@ -24,6 +24,7 @@ import {
   type PickupAssignmentOption,
 } from "./PickupAssignmentEditor.tsx";
 import { CollectionAdminPickupWorkspace } from "./CollectionAdminPickupWorkspace.tsx";
+import { PickupRoadSectionWorkspace } from "./PickupRoadSectionWorkspace.tsx";
 import { FieldHub } from "../platform/FieldHub.tsx";
 import "./collection-admin-panel.css";
 
@@ -280,6 +281,17 @@ export function CollectionAdminPanel({
           {copy(language, "Collection Area zeichnen", "Draw collection area")}
         </button>
       </div>
+
+      {snapshot.campaign.actionType === "pickup" ? (
+        <div className="collection-admin-section">
+          <PickupRoadSectionWorkspace
+            campaignId={campaignId}
+            language={language}
+            snapshot={snapshot}
+            onSnapshotChange={onSnapshotChange}
+          />
+        </div>
+      ) : null}
 
       <div className="collection-admin-section">
         <div className="collection-section-heading">

@@ -1,5 +1,5 @@
 import { cookieValue } from "./access.ts";
-import type { D1DatabaseLike } from "./campaignRepository.ts";
+import { hasCampaignActionTypeColumn, hasPickupAreaRoomSchema, type D1DatabaseLike } from "./campaignRepository.ts";
 import {
   beginOrganizationPasswordLogin,
   bootstrapOrganization,
@@ -232,12 +232,20 @@ async function createOrganizationCampaign(
   if (!parsed.ok) return parsed.response;
   const name = typeof parsed.value.name === "string" ? parsed.value.name.trim() : "";
   const lifecycle = parsed.value.lifecycle === "active" ? "active" : "draft";
+  const actionType = parsed.value.actionType === "pickup" ? "pickup" : parsed.value.actionType === "distribution" ? "distribution" : null;
   const map = parsed.value.map === undefined ? null : mapInput(parsed.value.map);
   if (name.length < 2 || name.length > 160) {
     return errorResponse(400, "invalid_campaign_name", "Aktionsname muss 2 bis 160 Zeichen lang sein.");
   }
   if (parsed.value.map !== undefined && !map) {
     return errorResponse(400, "invalid_map_focus", "Kartenfokus ist ungültig.");
+  }
+  if (!actionType) {
+    return errorResponse(400, "invalid_action_type", "Aktionstyp ist ungültig.");
+  }
+  const actionTypeColumn = await hasCampaignActionTypeColumn(db);
+  if (actionType === "pickup" && !(actionTypeColumn && await hasPickupAreaRoomSchema(db))) {
+    return errorResponse(503, "pickup_action_schema_unavailable", "Pickup-Aktionen benötigen die vorbereiteten Migrationen 0024 und 0025.");
   }
   const campaignId = `campaign_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
@@ -247,8 +255,8 @@ async function createOrganizationCampaign(
         `INSERT INTO campaigns (
            id, name, status, revision, write_token,
            map_center_lng, map_center_lat, map_zoom, map_bearing,
-           organization_id, admin_lifecycle_status, created_at, updated_at
-         ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ${actionTypeColumn ? "action_type, " : ""}organization_id, admin_lifecycle_status, created_at, updated_at
+         ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ${actionTypeColumn ? "?, " : ""}?, ?, ?, ?)`,
       )
       .bind(
         campaignId,
@@ -259,6 +267,7 @@ async function createOrganizationCampaign(
         map?.lat ?? null,
         map?.zoom ?? null,
         map?.bearing ?? null,
+        ...(actionTypeColumn ? [actionType] : []),
         organizationId,
         lifecycle,
         now,
@@ -282,7 +291,7 @@ async function createOrganizationCampaign(
   if (result.some((item) => item.success === false)) {
     return errorResponse(500, "campaign_create_failed", "Aktion konnte nicht erstellt werden.");
   }
-  return json({ campaign: { id: campaignId, name, lifecycle, map } }, { status: 201 });
+  return json({ campaign: { id: campaignId, name, lifecycle, actionType, map } }, { status: 201 });
 }
 
 async function listOrganizationCampaigns(
@@ -292,9 +301,11 @@ async function listOrganizationCampaigns(
 ) {
   const auth = await requireOrganizationCapability(db, request, organizationId, "campaign.manage");
   if (!auth.ok) return authError(auth.code);
+  const actionTypeColumn = await hasCampaignActionTypeColumn(db);
   const rows = await db
     .prepare(
       `SELECT id, name, admin_lifecycle_status,
+              ${actionTypeColumn ? "action_type" : "'distribution' AS action_type"},
               map_center_lng, map_center_lat, map_zoom, map_bearing,
               created_at, updated_at
        FROM campaigns
@@ -306,6 +317,7 @@ async function listOrganizationCampaigns(
       id: string;
       name: string;
       admin_lifecycle_status: "draft" | "active" | "completed" | "archived";
+      action_type: "distribution" | "pickup";
       map_center_lng: number | null;
       map_center_lat: number | null;
       map_zoom: number | null;
@@ -318,6 +330,7 @@ async function listOrganizationCampaigns(
       id: row.id,
       name: row.name,
       lifecycle: row.admin_lifecycle_status,
+      actionType: row.action_type === "pickup" ? "pickup" : "distribution",
       map: row.map_center_lng !== null && row.map_center_lat !== null && row.map_zoom !== null
         ? {
             lng: row.map_center_lng,

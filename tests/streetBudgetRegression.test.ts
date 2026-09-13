@@ -1,3 +1,4 @@
+import { networkSelectionState } from '../src/domain/networkSelection.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BudgetD1 } from './helpers/d1Budget.ts';
@@ -40,7 +41,7 @@ test('10k preparation and canonical delete stay within measured write and invoca
   // while rejecting any accidental return to per-House rows or feed entries.
   assert.ok(totalWrites<1000,`preparation estimated writes: ${totalWrites}`);
   const street=snapshot.tasks[0];db.resetBudget();
-  const marking=await instance.fetch(new Request('https://campaign-sync.internal/execute',{method:'POST',headers:{'x-campaign-sync-internal':'1'},body:JSON.stringify({campaignId:'campaign_n',access:{campaignId:'campaign_n',role:'admin',teamId:null,label:null,grantId:'test'},operation:'network',input:{id:'budget_mark',areaId:'area_n',generation:street.areaPreparationGeneration,start:{point:street.geometry.coordinates[0],taskId:street.id},end:{point:street.geometry.coordinates.at(-1),taskId:street.id},selectedPath:[street.id],status:'completed'}})}));
+  const marking=await instance.fetch(new Request('https://campaign-sync.internal/execute',{method:'POST',headers:{'x-campaign-sync-internal':'1'},body:JSON.stringify({campaignId:'campaign_n',access:{campaignId:'campaign_n',role:'admin',teamId:null,label:null,grantId:'test'},operation:'network',input:{id:'budget_mark',areaId:'area_n',generation:street.areaPreparationGeneration,start:{point:street.geometry.coordinates[0],taskId:street.id},end:{point:street.geometry.coordinates.at(-1),taskId:street.id},selectedPath:[street.id],expectedState:await networkSelectionState([street],[{taskId:street.id,from:0,to:1}]),status:'completed'}})}));
   assert.equal(marking.status,200);
   const markBudget=db.report();assert.ok(markBudget.statements<=50);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM domain_event_history WHERE entity_type='house-task'").get()!.n,500);

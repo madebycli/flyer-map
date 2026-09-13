@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { NetworkD1,seedNetwork,networkOsm } from './helpers/networkD1.ts';
 import { prepareAreaTasks,beginAreaTaskPreparation,runAreaTaskPreparation } from '../worker/areaTaskPreparation.ts';
 import { loadCampaignSnapshot } from '../worker/campaignRepository.ts';
-import { handleNetworkIntent } from '../worker/streetNetwork/api.ts';
+import { networkSelectionState, resolveNetworkIntent } from '../src/domain/networkSelection.ts';
+import { handleNetworkIntent, validNetworkIntent } from '../worker/streetNetwork/api.ts';
 import { handleCampaignMutation } from '../worker/mutationHandler.ts';
 import { handleRxdbPull, handleRxdbPush, handleRxdbCheckpoint } from '../worker/rxdbSync.ts';
 import { MissionRxdbSync } from '../src/data/rxdbMissionSync.ts';
@@ -13,8 +14,53 @@ import type { CampaignSnapshot } from '../src/domain/campaign.ts';
 const options={fetchImpl:async()=>networkOsm()};
 const access={campaignId:'campaign_n',role:'admin' as const,teamId:null,label:null,grantId:'test'};
 async function prepared(){const db=new NetworkD1();seedNetwork(db);const result=await prepareAreaTasks(db,'campaign_n','area_n',options);assert.equal(result.outcome,'ready');return db;}
-async function intentFor(db:NetworkD1){const snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;const task=snapshot.tasks[0];return {id:'network_test',areaId:'area_n',generation:task.areaPreparationGeneration!,start:{point:[13.0015,51.005],taskId:task.id},end:{point:[13.006,51.005],taskId:task.id},selectedPath:[task.id],status:'completed'};}
+async function intentFor(db:NetworkD1){const snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;const task=snapshot.tasks[0];return {id:'network_test',areaId:'area_n',generation:task.areaPreparationGeneration!,start:{point:[13.0015,51.005],taskId:task.id},end:{point:[13.006,51.005],taskId:task.id},selectedPath:[task.id],expectedState:await networkSelectionState(snapshot.tasks,[{taskId:task.id,from:0,to:1}]),status:'completed'};}
 const request=(input:unknown)=>new Request('https://example.test/api/campaigns/campaign_n/network',{method:'POST',body:JSON.stringify(input)});
+test('a stale second-client selection cannot silently replace changed road coverage',async()=>{
+  const db=await prepared();const first=await intentFor(db),stale={...first,id:'stale_other_client',status:'later'};
+  assert.equal((await handleNetworkIntent(request(first),db,'campaign_n',access)).status,200);
+  const before=await loadCampaignSnapshot(db,'campaign_n');
+  const result=await handleNetworkIntent(request(stale),db,'campaign_n',access);
+  assert.equal(result.status,409);
+  assert.deepEqual(await loadCampaignSnapshot(db,'campaign_n'),before);
+});
+test('six waypoints commit atomically, retain a detour after JSON reload and reject altered anchors',async()=>{
+  const db=await prepared(),snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;
+  const original=await intentFor(db),task=snapshot.tasks[0];
+  const anchors=[13.0015,13.0085,13.003,13.007,13.004,13.002].map(x=>({taskId:task.id,point:[x,51.005] as [number,number]}));
+  const input={...original,start:anchors[0],end:anchors.at(-1)!,via:anchors.slice(1,-1),paths:Array.from({length:5},()=>[task.id]),selectedPath:Array(5).fill(task.id)};
+  const intent=JSON.parse(JSON.stringify(input));
+  const route=resolveNetworkIntent(snapshot.tasks,intent);
+  assert.ok(route.length>task.network!.length*2);
+  const forged={...intent,via:[{...anchors[1],point:[13.008,51.009]},...intent.via.slice(1)]};
+  assert.equal((await handleNetworkIntent(request(forged),db,'campaign_n',access)).status,409);
+  assert.deepEqual(await loadCampaignSnapshot(db,'campaign_n'),snapshot);
+  db.failFeed=true;await assert.rejects(handleNetworkIntent(request(intent),db,'campaign_n',access),/injected_feed_failure/);db.failFeed=false;
+  assert.deepEqual(await loadCampaignSnapshot(db,'campaign_n'),snapshot);
+  assert.equal((await handleNetworkIntent(request(intent),db,'campaign_n',access)).status,200);
+  const after=(await loadCampaignSnapshot(db,'campaign_n'))!;
+  assert.equal(after.revision,snapshot.revision+1);
+  assert.equal(after.tasks[0].network!.coverage.length,1);
+  assert.equal(after.tasks[0].status,'open');
+  assert.equal(after.houseTasks!.filter(h=>h.status==='completed').length,3);
+  assert.equal((await (await handleNetworkIntent(request(intent),db,'campaign_n',access)).json()).code,'already_applied');
+  assert.deepEqual(await loadCampaignSnapshot(db,'campaign_n'),after);
+});
+test('legacy stored intents replay but an uncommitted selection without state evidence is blocked',async()=>{
+  const db=await prepared();const {expectedState,...intent}=await intentFor(db);
+  const blocked=await handleNetworkIntent(request(intent),db,'campaign_n',access);
+  assert.equal(blocked.status,409);assert.equal((await blocked.json()).code,'network_selection_upgrade_required');
+  const {id,...fingerprint}=intent;
+  db.sqlite.prepare('INSERT INTO street_network_intents(campaign_id,intent_id,fingerprint,revision) VALUES(?,?,?,?)').run('campaign_n',id,JSON.stringify(fingerprint),2);
+  assert.equal((await (await handleNetworkIntent(request(intent),db,'campaign_n',access)).json()).code,'already_applied');
+});
+test('waypoint contract rejects mismatched legs, excessive points and invalid state hashes',async()=>{
+  const db=await prepared(),intent=await intentFor(db);
+  assert.equal(validNetworkIntent({...intent,via:[],paths:[[...intent.selectedPath]]}),true);
+  assert.equal(validNetworkIntent({...intent,via:[intent.start],paths:[intent.selectedPath]}),false);
+  assert.equal(validNetworkIntent({...intent,via:Array(31).fill(intent.start),paths:Array(32).fill(intent.selectedPath),selectedPath:Array(32).fill(intent.selectedPath).flat()}),false);
+  assert.equal(validNetworkIntent({...intent,expectedState:'invalid'}),false);
+});
 test('resumable generation is invisible until complete; D1, metadata and feed agree',async()=>{
   const db=new NetworkD1();seedNetwork(db);const begun=await beginAreaTaskPreparation(db,'campaign_n','area_n',options);assert.equal(begun.outcome,'run');if(begun.outcome!=='run')return;
   assert.equal((await runAreaTaskPreparation(db,begun.run,options)).outcome,'pending');

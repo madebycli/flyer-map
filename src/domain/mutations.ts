@@ -7,6 +7,7 @@ import type { CampaignSnapshot,
   TaskSourceProvenance,
   TaskStatus,
 } from "./campaign";
+import type { CollectionRoadSectionStatus, PickupSmartMarkingContext } from "./collection.ts";
 
 type MutationBase<Type extends string, Payload> = {
   id: string;
@@ -147,7 +148,80 @@ export type CampaignMutation =
       { runId: string; areaId: string; collectorId: string }
     >
   | MutationBase<"collection.run.close", { runId: string; collectorId: string }>
-  | MutationBase<"collection.run.cancel", { runId: string; collectorId: string }>;
+  | MutationBase<"collection.run.cancel", { runId: string; collectorId: string }>
+  | MutationBase<
+      "collection.pickup-room.claim",
+      { roomId: string; areaId: string; collectorId: string; label: string }
+    >
+  | MutationBase<
+      "collection.pickup-room.join",
+      { roomId: string; areaId: string; collectorId: string; label: string }
+    >
+  | MutationBase<
+      "collection.pickup-room.release",
+      {
+        roomId: string;
+        areaId: string;
+        collectorId: string;
+        expectedRevision: number;
+        roomUpdatedAt: string;
+        pendingSyncCount: number;
+        completenessConfirmed: boolean;
+      }
+    >
+  | MutationBase<
+      "collection.pickup-room.complete",
+      {
+        roomId: string;
+        areaId: string;
+        collectorId: string;
+        expectedRevision: number;
+        roomUpdatedAt: string;
+        pendingSyncCount: number;
+        completenessConfirmed: boolean;
+      }
+    >
+  | MutationBase<
+      "collection.pickup-room.force-release",
+      { roomId: string; areaId: string; adminId: string }
+    >
+  | MutationBase<
+      "collection.pickup-section.create",
+      {
+        sectionId: string;
+        areaId: string;
+        label: string;
+        geometry: LineStringGeometry;
+        sourceTaskId: string | null;
+        sourceGeneration: string | null;
+        source: TaskSourceProvenance | null;
+        smartMarking: PickupSmartMarkingContext | null;
+      }
+    >
+  | MutationBase<
+      "collection.pickup-section.update",
+      {
+        sectionId: string;
+        areaId: string;
+        label: string;
+        geometry: LineStringGeometry;
+        sourceTaskId: string | null;
+        sourceGeneration: string | null;
+        source: TaskSourceProvenance | null;
+        smartMarking: PickupSmartMarkingContext | null;
+        expectedUpdatedAt: string;
+      }
+    >
+  | MutationBase<
+      "collection.pickup-section.set-status",
+      {
+        sectionId: string;
+        areaId: string;
+        status: CollectionRoadSectionStatus;
+        expectedUpdatedAt: string;
+        roomId: string | null;
+      }
+    >;
 
 export type CollectionMutation = Extract<CampaignMutation, { type: `collection.${string}` }>;
 
@@ -986,6 +1060,183 @@ export function applyCampaignMutation(
           runs: collection.runs.map((candidate) =>
             candidate.id === run.id ? { ...candidate, status: "cancelled", endedAt: mutation.createdAt, areaIds: [...completedIds], updatedAt: mutation.createdAt } : candidate,
           ),
+        },
+      };
+      break;
+    }
+    case "collection.pickup-room.claim": {
+      const collection = collectionSnapshotOrEmpty(snapshot.collection);
+      const area = collection.areas.find((candidate) => candidate.id === mutation.payload.areaId);
+      if (!area) conflict("collection_area_missing");
+      if (area.status === "completed" || area.status === "archived") conflict("pickup_area_not_claimable");
+      if (collection.rooms.some((room) => room.areaId === area.id && room.status === "active")) {
+        conflict("pickup_area_already_claimed");
+      }
+      if (collection.rooms.some((room) => room.id === mutation.payload.roomId)) {
+        conflict("pickup_room_already_exists");
+      }
+      next = {
+        ...snapshot,
+        collection: {
+          ...collection,
+          areas: collection.areas.map((candidate) => candidate.id === area.id
+            ? { ...candidate, status: "claimed", pickupState: "claimed", roomId: mutation.payload.roomId, updatedAt: mutation.createdAt }
+            : candidate),
+          rooms: [...collection.rooms, {
+            id: mutation.payload.roomId,
+            campaignId: snapshot.campaign.id,
+            areaId: area.id,
+            status: "active",
+            ownerCollectorId: mutation.payload.collectorId,
+            ownerLabel: mutation.payload.label,
+            participants: [{
+              id: `collection_participant_${mutation.payload.roomId}_${mutation.payload.collectorId}`,
+              roomId: mutation.payload.roomId,
+              collectorId: mutation.payload.collectorId,
+              label: mutation.payload.label,
+              joinedAt: mutation.createdAt,
+              leftAt: null,
+            }],
+            createdAt: mutation.createdAt,
+            updatedAt: mutation.createdAt,
+            closedAt: null,
+          }],
+        },
+      };
+      break;
+    }
+    case "collection.pickup-room.join": {
+      const collection = collectionSnapshotOrEmpty(snapshot.collection);
+      const room = collection.rooms.find((candidate) => candidate.id === mutation.payload.roomId && candidate.areaId === mutation.payload.areaId);
+      if (!room || room.status !== "active") conflict("pickup_room_not_active");
+      if (room.participants.some((participant) => participant.collectorId === mutation.payload.collectorId && participant.leftAt === null)) {
+        next = snapshot;
+        break;
+      }
+      next = {
+        ...snapshot,
+        collection: {
+          ...collection,
+          rooms: collection.rooms.map((candidate) => candidate.id === room.id
+            ? { ...candidate, participants: [...candidate.participants, {
+                id: `collection_participant_${room.id}_${mutation.payload.collectorId}`,
+                roomId: room.id,
+                collectorId: mutation.payload.collectorId,
+                label: mutation.payload.label,
+                joinedAt: mutation.createdAt,
+                leftAt: null,
+              }], updatedAt: mutation.createdAt }
+            : candidate),
+        },
+      };
+      break;
+    }
+    case "collection.pickup-room.release":
+    case "collection.pickup-room.complete":
+    case "collection.pickup-room.force-release": {
+      const collection = collectionSnapshotOrEmpty(snapshot.collection);
+      const room = collection.rooms.find((candidate) => candidate.id === mutation.payload.roomId && candidate.areaId === mutation.payload.areaId);
+      const area = collection.areas.find((candidate) => candidate.id === mutation.payload.areaId);
+      if (!room || !area) conflict("pickup_room_missing");
+      if (mutation.type !== "collection.pickup-room.force-release") {
+        if (room.status !== "active") conflict("pickup_room_not_active");
+        if (!room.participants.some((participant) => participant.collectorId === mutation.payload.collectorId && participant.leftAt === null)) {
+          conflict("pickup_room_member_required");
+        }
+        if (mutation.payload.pendingSyncCount !== 0 || !mutation.payload.completenessConfirmed) {
+          conflict("pickup_room_confirmation_required");
+        }
+        if (room.updatedAt !== mutation.payload.roomUpdatedAt || snapshot.revision !== mutation.payload.expectedRevision) {
+          conflict("pickup_room_changed");
+        }
+      } else if (room.status !== "active") {
+        conflict("pickup_room_not_active");
+      }
+      const completed = mutation.type === "collection.pickup-room.complete";
+      next = {
+        ...snapshot,
+        collection: {
+          ...collection,
+          areas: collection.areas.map((candidate) => candidate.id === area.id
+            ? {
+                ...candidate,
+                status: completed ? "completed" : "open",
+                pickupState: completed ? "completed" : "open",
+                roomId: null,
+                claimedByCollectorId: null,
+                claimedByLabel: null,
+                completedAt: completed ? mutation.createdAt : null,
+                updatedAt: mutation.createdAt,
+              }
+            : candidate),
+          rooms: collection.rooms.map((candidate) => candidate.id === room.id
+            ? {
+                ...candidate,
+                status: completed ? "completed" : mutation.type === "collection.pickup-room.force-release" ? "force-released" : "released",
+                updatedAt: mutation.createdAt,
+                closedAt: mutation.createdAt,
+              }
+            : candidate),
+        },
+      };
+      break;
+    }
+    case "collection.pickup-section.create": {
+      const collection = collectionSnapshotOrEmpty(snapshot.collection);
+      if (!collection.areas.some((area) => area.id === mutation.payload.areaId)) conflict("collection_area_missing");
+      if (collection.roadSections.some((section) => section.id === mutation.payload.sectionId)) conflict("pickup_section_already_exists");
+      next = {
+        ...snapshot,
+        collection: {
+          ...collection,
+          roadSections: [...collection.roadSections, {
+            id: mutation.payload.sectionId,
+            campaignId: snapshot.campaign.id,
+            areaId: mutation.payload.areaId,
+            label: mutation.payload.label,
+            geometry: mutation.payload.geometry,
+            status: "open",
+            coverage: [],
+            sourceTaskId: mutation.payload.sourceTaskId,
+            sourceGeneration: mutation.payload.sourceGeneration,
+            source: mutation.payload.source,
+            smartMarking: mutation.payload.smartMarking,
+            createdAt: mutation.createdAt,
+            updatedAt: mutation.createdAt,
+          }],
+        },
+      };
+      break;
+    }
+    case "collection.pickup-section.update": {
+      const collection = collectionSnapshotOrEmpty(snapshot.collection);
+      const section = collection.roadSections.find((candidate) => candidate.id === mutation.payload.sectionId);
+      if (!section || section.areaId !== mutation.payload.areaId) conflict("pickup_section_missing");
+      requireExpectedUpdatedAt(section.updatedAt, mutation.payload.expectedUpdatedAt, "pickup_section_missing", "pickup_section_changed");
+      if (section.status !== "open") conflict("pickup_section_not_editable");
+      next = {
+        ...snapshot,
+        collection: {
+          ...collection,
+          roadSections: collection.roadSections.map((candidate) => candidate.id === section.id
+            ? { ...candidate, label: mutation.payload.label, geometry: mutation.payload.geometry, sourceTaskId: mutation.payload.sourceTaskId, sourceGeneration: mutation.payload.sourceGeneration, source: mutation.payload.source, smartMarking: mutation.payload.smartMarking, updatedAt: mutation.createdAt }
+            : candidate),
+        },
+      };
+      break;
+    }
+    case "collection.pickup-section.set-status": {
+      const collection = collectionSnapshotOrEmpty(snapshot.collection);
+      const section = collection.roadSections.find((candidate) => candidate.id === mutation.payload.sectionId);
+      if (!section || section.areaId !== mutation.payload.areaId) conflict("pickup_section_missing");
+      requireExpectedUpdatedAt(section.updatedAt, mutation.payload.expectedUpdatedAt, "pickup_section_missing", "pickup_section_changed");
+      next = {
+        ...snapshot,
+        collection: {
+          ...collection,
+          roadSections: collection.roadSections.map((candidate) => candidate.id === section.id
+            ? { ...candidate, status: mutation.payload.status, updatedAt: mutation.createdAt }
+            : candidate),
         },
       };
       break;

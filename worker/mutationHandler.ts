@@ -25,6 +25,9 @@ import { areaPreparationFingerprint } from './areaTaskPreparation.ts';
 import { validateCampaignSnapshotWithLegacyHouseTolerance } from "./snapshotValidation.ts";
 import { isPickupMutationInput } from "./pickupMutationRuntime.ts";
 import { handlePickupMutationRequest } from "./pickupMutationEntry.ts";
+import { authorizePickupSectionMutation } from "./pickupRoomRuntime.ts";
+import { validatePickupSectionAgainstDistribution } from "./pickupSectionValidation.ts";
+import { collectionActorForAccess } from "./collectionActor.ts";
 import {
   areaHasStartedAutomaticWork,
   beginAreaTaskPreparation,
@@ -197,11 +200,30 @@ export async function handleCampaignMutation(
     return handlePickupMutationRequest(db, campaignId, access, parsed.value.mutation);
   }
 
+  if (
+    parsed.value.mutation &&
+    typeof parsed.value.mutation === "object" &&
+    !Array.isArray(parsed.value.mutation) &&
+    typeof (parsed.value.mutation as Record<string, unknown>).type === "string" &&
+    ((parsed.value.mutation as Record<string, unknown>).type as string).startsWith("collection.pickup-room.")
+  ) {
+    return errorResponse(410, "pickup_room_endpoint_required", "Pickup Room-Aktionen müssen über ihren autoritativen Room-Endpunkt erfolgen.");
+  }
+
   const validation = validateCampaignMutation(parsed.value.mutation, campaignId);
   if (!validation.valid) {
     return errorResponse(422, "mutation_invalid", validation.message);
   }
   const mutation = validation.mutation;
+  if (mutation.type.startsWith("collection.pickup-section.")) {
+    const sectionAuthorization = await authorizePickupSectionMutation(
+      db,
+      campaignId,
+      access,
+      mutation as Extract<CampaignMutation, { type: `collection.pickup-section.${string}` }>,
+    );
+    if (sectionAuthorization) return sectionAuthorization;
+  }
   const createdIds = mutation.type === 'task.create' || mutation.type === 'house.create'
     ? [mutation.payload.taskId]
     : mutation.type === 'house.create-batch' ? mutation.payload.houses.map(house => house.taskId) : [];
@@ -213,7 +235,8 @@ export async function handleCampaignMutation(
   }
   const isCollectionMutation = mutation.type.startsWith("collection.");
   if (access.role === "collection-collector") {
-    if (!isCollectionMutation || !access.collectorId) {
+    const pickupSectionMutation = mutation.type.startsWith("collection.pickup-section.");
+    if ((!isCollectionMutation && !pickupSectionMutation) || (!access.collectorId && !pickupSectionMutation)) {
       return errorResponse(
         403,
         "collection_scope_forbidden",
@@ -224,7 +247,7 @@ export async function handleCampaignMutation(
       typeof (mutation.payload as Record<string, unknown>).collectorId === "string"
         ? (mutation.payload as Record<string, unknown>).collectorId
         : null;
-    if (actorId !== access.collectorId) {
+    if (!pickupSectionMutation && actorId !== access.collectorId) {
       return errorResponse(
         403,
         "collection_actor_forbidden",
@@ -286,6 +309,25 @@ export async function handleCampaignMutation(
     );
     if (!current) {
       return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+    }
+
+    if (
+      mutation.type === "collection.pickup-section.create" ||
+      mutation.type === "collection.pickup-section.update"
+    ) {
+      const sectionValidation = await validatePickupSectionAgainstDistribution(
+        current.tasks,
+        mutation.payload,
+        current.collection?.areas.find((area) => area.id === mutation.payload.areaId)?.geometry ?? null,
+      );
+      if (!sectionValidation.valid) {
+        return errorResponse(
+          sectionValidation.code === "pickup_section_provenance_invalid" ? 422 : 409,
+          sectionValidation.code,
+          sectionValidation.message,
+          current.revision,
+        );
+      }
     }
 
     if (mutation.type === "collection.admin.force-release-area") {
@@ -456,6 +498,7 @@ export async function handleCampaignMutation(
         ? syncAfter.houseTasks?.find(house=>house.id===mutation.payload.taskId&&house.areaPreparationGeneration)
         : mutation.type==='task.rename'?syncAfter.tasks.find(task=>task.id===mutation.payload.taskId&&task.areaPreparationGeneration):undefined,
       automaticPreparation,
+      collectionActorForAccess(access),
     );
     if (persisted.ok) {
       if(automaticPreparation&&!persisted.alreadyApplied){

@@ -26,11 +26,15 @@ export type MapCameraView = {
 
 export type CampaignStatus = "draft" | "active" | "archived";
 export type TaskStatus = "open" | "completed" | "later" | "not-deliverable";
+/** The operational contract of an action. Legacy campaigns default to distribution. */
+export type CampaignActionType = "distribution" | "pickup";
 
 export type Campaign = {
   id: string;
   name: string;
   status: CampaignStatus;
+  /** Additive until migration 0024 is applied on the shared D1 database. */
+  actionType?: CampaignActionType;
   defaultMapView: MapCameraView | null;
   createdAt: string;
   updatedAt: string;
@@ -184,6 +188,7 @@ export function createInitialSnapshot(): CampaignSnapshot {
       id: campaignId,
       name: "Neue Verteilaktion",
       status: "active",
+      actionType: "distribution",
       defaultMapView: null,
       createdAt: now,
       updatedAt: now,

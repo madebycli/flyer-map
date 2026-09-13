@@ -29,7 +29,13 @@ export function addressBuildings(buildings: AddressBuilding[], nodes: AddressNod
   const tree = new RBush<(typeof boxes)[number]>();
   tree.load(boxes);
   const associated = new Map<number, AddressNode[]>();
-  for (const node of [...new Map(nodes.map(node => [node.osmId, node])).values()].sort((a,b) => a.osmId-b.osmId)) {
+  const uniqueNodes = new Map<number, AddressNode>();
+  for (const node of nodes) {
+    const prior = uniqueNodes.get(node.osmId);
+    if (prior && (JSON.stringify(prior.point) !== JSON.stringify(node.point) || JSON.stringify(Object.entries(prior.tags).sort()) !== JSON.stringify(Object.entries(node.tags).sort()))) throw new Error('house_dedupe_conflict');
+    uniqueNodes.set(node.osmId,node);
+  }
+  for (const node of [...uniqueNodes.values()].sort((a,b) => a.osmId-b.osmId)) {
     if (!postalAddress(node.tags)) continue;
     const [x,y] = node.point;
     const owners = tree.search({minX:x,maxX:x,minY:y,maxY:y}).filter(box => polygonOwnsPoint(box.building.geometry,node.point));

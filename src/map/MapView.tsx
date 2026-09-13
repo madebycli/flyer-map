@@ -20,7 +20,7 @@ import type {
   LngLat,
   MapCameraView,
 } from "../domain/campaign";
-import type { CollectionArea, CollectionMainArea } from "../domain/collection";
+import type { CollectionArea, CollectionMainArea, CollectionRoadSection } from "../domain/collection";
 import type { OfflineMapPackage } from "../domain/offlineMap";
 import type { PickupTask } from "../domain/pickup.ts";
 import type { SmartBuildingCandidate, SmartRoadCandidate } from "../domain/smartCandidates";
@@ -156,6 +156,20 @@ type CollectionFeatureCollection = {
   }>;
 };
 
+type CollectionRoadSectionFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: string;
+    properties: {
+      sectionId: string;
+      areaId: string;
+      status: CollectionRoadSection["status"];
+    };
+    geometry: LineStringGeometry;
+  }>;
+};
+
 type SmartPointFeatureCollection = {
   type: "FeatureCollection";
   features: Array<{
@@ -222,6 +236,8 @@ type MapViewProps = {
   collectionAreas?: CollectionArea[];
   selectedCollectionAreaId?: string | null;
   collectionPickups?: PickupTask[];
+  collectionRoadSections?: CollectionRoadSection[];
+  collectionSmartMarking?: boolean;
   selectedCollectionPickupId?: string | null;
   collectionDraftVertices?: LngLat[];
   collectionEditingVertices?: LngLat[];
@@ -229,6 +245,7 @@ type MapViewProps = {
   collectionSelectedVertexIndex?: number | null;
   onCollectionAreaSelect?: (areaId: string | null) => void;
   onCollectionPickupSelect?: (pickupId: string | null) => void;
+  onCollectionSmartPoint?: (point: LngLat) => void;
   onCollectionDrawPoint?: (point: LngLat) => void;
   onCollectionEditVertexSelect?: (index: number) => void;
   onCollectionEditVertexMove?: (index: number, point: LngLat) => void;
@@ -283,6 +300,8 @@ const COLLECTION_MAIN_OUTLINE_LAYER_ID = "vf-collection-main-area-outline";
 const COLLECTION_AREAS_FILL_LAYER_ID = "vf-collection-areas-fill";
 const COLLECTION_AREAS_OUTLINE_LAYER_ID = "vf-collection-areas-outline";
 const COLLECTION_AREAS_SELECTED_LAYER_ID = "vf-collection-areas-selected";
+const COLLECTION_ROAD_SECTIONS_SOURCE_ID = "vf-collection-road-sections";
+const COLLECTION_ROAD_SECTIONS_LAYER_ID = "vf-collection-road-sections-line";
 
 const STREET_LAYER_IDS = [
   STREET_SELECTED_LAYER_ID,
@@ -662,6 +681,10 @@ function buildApplicationMapStyle(initialData?: InitialApplicationSourceData): S
         type: "geojson",
         data: pickupsToGeoJson([]),
       },
+      [COLLECTION_ROAD_SECTIONS_SOURCE_ID]: {
+        type: "geojson",
+        data: collectionRoadSectionsToGeoJson([]),
+      },
       [SMART_ROAD_SOURCE_ID]: {
         type: "geojson",
         data: smartRoadsToGeoJson([], [], "#64748b"),
@@ -1006,6 +1029,25 @@ function buildApplicationMapStyle(initialData?: InitialApplicationSourceData): S
         },
       },
       {
+        id: COLLECTION_ROAD_SECTIONS_LAYER_ID,
+        type: "line",
+        source: COLLECTION_ROAD_SECTIONS_SOURCE_ID,
+        layout: { visibility: "none", "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": [
+            "match",
+            ["get", "status"],
+            "driven", "#15803d",
+            "later", "#d97706",
+            "unavailable", "#6b7280",
+            "#7c3aed",
+          ],
+          "line-opacity": 0.92,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 17, 6],
+          "line-dasharray": [1, 0],
+        },
+      },
+      {
         id: SMART_HOUSE_FILL_LAYER_ID,
         type: "fill",
         source: SMART_HOUSE_SOURCE_ID,
@@ -1299,6 +1341,20 @@ function collectionAreasToGeoJson(
   };
 }
 
+function collectionRoadSectionsToGeoJson(
+  sections: CollectionRoadSection[],
+): CollectionRoadSectionFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: sections.map((section) => ({
+      type: "Feature",
+      id: section.id,
+      properties: { sectionId: section.id, areaId: section.areaId, status: section.status },
+      geometry: section.geometry,
+    })),
+  };
+}
+
 function cameraFromMap(map: Map): MapCameraView {
   const center = map.getCenter();
   return {
@@ -1399,6 +1455,20 @@ function syncCollectionPickupSelection(
   }
   const region = map.getContainer().closest<HTMLElement>(".map-region");
   if (region) region.dataset.collectionSelectedPickup = selectedPickupId ?? "";
+}
+
+function syncCollectionRoadSectionData(
+  map: Map,
+  sections: CollectionRoadSection[],
+  visible: boolean,
+) {
+  const source = map.getSource(COLLECTION_ROAD_SECTIONS_SOURCE_ID) as GeoJSONSource | undefined;
+  if (source) source.setData(collectionRoadSectionsToGeoJson(sections));
+  if (map.getLayer(COLLECTION_ROAD_SECTIONS_LAYER_ID)) {
+    map.setLayoutProperty(COLLECTION_ROAD_SECTIONS_LAYER_ID, "visibility", visible ? "visible" : "none");
+  }
+  const region = map.getContainer().closest<HTMLElement>(".map-region");
+  if (region) region.dataset.collectionRoadSections = String(sections.length);
 }
 
 function syncAreaData(map: Map, areas: RenderArea[]) {
@@ -1718,6 +1788,8 @@ export function MapView({
   collectionAreas = [],
   selectedCollectionAreaId = null,
   collectionPickups = [],
+  collectionRoadSections = [],
+  collectionSmartMarking = false,
   selectedCollectionPickupId = null,
   collectionDraftVertices = [],
   collectionEditingVertices = [],
@@ -1725,6 +1797,7 @@ export function MapView({
   collectionSelectedVertexIndex = null,
   onCollectionAreaSelect = () => {},
   onCollectionPickupSelect = () => {},
+  onCollectionSmartPoint = () => {},
   onCollectionDrawPoint = () => {},
   onCollectionEditVertexSelect = () => {},
   onCollectionEditVertexMove = () => {},
@@ -1782,6 +1855,8 @@ export function MapView({
     collectionAreas,
     selectedCollectionAreaId,
     collectionPickups,
+    collectionRoadSections,
+    collectionSmartMarking,
     selectedCollectionPickupId,
   });
   dataRef.current = {
@@ -1808,6 +1883,8 @@ export function MapView({
     collectionAreas,
     selectedCollectionAreaId,
     collectionPickups,
+    collectionRoadSections,
+    collectionSmartMarking,
     selectedCollectionPickupId,
   };
 
@@ -1827,6 +1904,8 @@ export function MapView({
     onSmartStreetPoint,
     onSmartHousePoint,
     collectionVisible,
+    collectionSmartMarking,
+    onCollectionSmartPoint,
     collectionDraftVertices,
     collectionEditingVertices,
     collectionSelectedVertexIndex,
@@ -1852,6 +1931,8 @@ export function MapView({
     onSmartStreetPoint,
     onSmartHousePoint,
     collectionVisible,
+    collectionSmartMarking,
+    onCollectionSmartPoint,
     collectionDraftVertices,
     collectionEditingVertices,
     collectionSelectedVertexIndex,
@@ -2057,6 +2138,7 @@ export function MapView({
             current.collectionVisible,
           );
           syncCollectionPickupData(map, current.collectionPickups);
+          syncCollectionRoadSectionData(map, current.collectionRoadSections, current.collectionVisible);
           syncCollectionPickupSelection(
             map,
             current.selectedCollectionPickupId,
@@ -2138,6 +2220,10 @@ export function MapView({
         const lngLat: LngLat = [event.lngLat.lng, event.lngLat.lat];
 
         if (interaction.collectionVisible) {
+          if (interaction.collectionSmartMarking) {
+            interaction.onCollectionSmartPoint(lngLat);
+            return;
+          }
           if (
             interaction.mode === "collection-main-draw" ||
             interaction.mode === "collection-area-draw"
@@ -2404,6 +2490,12 @@ export function MapView({
     if (!map) return;
     syncCollectionPickupData(map, collectionPickups);
   }, [collectionPickups]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    syncCollectionRoadSectionData(map, collectionRoadSections, collectionVisible);
+  }, [collectionRoadSections, collectionVisible]);
 
   useEffect(() => {
     const map = mapRef.current;

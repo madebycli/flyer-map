@@ -1,6 +1,15 @@
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import { mergePreparedSnapshot } from './streetNetwork/baseStorage.ts';
-import type { CollectionArea, CollectionMainArea, CollectionRun, CollectionRunMember, CollectionSnapshot } from "../src/domain/collection.ts";
+import type {
+  CollectionArea,
+  CollectionMainArea,
+  CollectionRoadSection,
+  CollectionRoom,
+  CollectionRoomParticipant,
+  CollectionRun,
+  CollectionRunMember,
+  CollectionSnapshot,
+} from "../src/domain/collection.ts";
 
 export type D1RunResult = {
   success: boolean;
@@ -30,6 +39,7 @@ type CampaignRow = {
   map_bearing: number | null;
   created_at: string;
   updated_at: string;
+  action_type?: "distribution" | "pickup";
 };
 
 type TeamRow = {
@@ -90,6 +100,48 @@ type CollectionMemberRow = {
   label: string; joined_at: string; left_at: string | null;
 };
 
+type CollectionRoomRow = {
+  id: string;
+  campaign_id: string;
+  area_id: string;
+  status: CollectionRoom["status"];
+  owner_collector_id: string;
+  owner_label: string;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+};
+
+type CollectionRoomParticipantRow = {
+  id: string;
+  room_id: string;
+  campaign_id: string;
+  collector_id: string;
+  label: string;
+  joined_at: string;
+  left_at: string | null;
+};
+
+type CollectionRoadSectionRow = {
+  id: string;
+  campaign_id: string;
+  area_id: string;
+  label: string;
+  geometry_json: string;
+  status: CollectionRoadSection["status"];
+  coverage_json: string;
+  source_task_id: string | null;
+  source_generation: string | null;
+  source_json: string | null;
+  smart_marking_json: string | null;
+  created_by_kind: "campaign-grant" | "collection-collector";
+  created_by_ref: string | null;
+  updated_by_kind: "campaign-grant" | "collection-collector";
+  updated_by_ref: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type HouseTaskRow = {
   id: string;
   campaign_id: string;
@@ -133,6 +185,36 @@ export async function hasTaskSourceProvenanceColumn(db: D1DatabaseLike) {
 export async function hasCollectionSchema(db: D1DatabaseLike) {
   const result = await db.prepare("PRAGMA table_info(collection_main_areas)").all<{ name: string }>();
   return result.results.some((column) => column.name === "id");
+}
+
+export async function hasCampaignActionTypeColumn(db: D1DatabaseLike) {
+  try {
+    const result = await db.prepare("PRAGMA table_info(campaigns)").all<{ name: string }>();
+    return result.results.some((column) => column.name === "action_type");
+  } catch {
+    return false;
+  }
+}
+
+export async function hasPickupAreaRoomSchema(db: D1DatabaseLike) {
+  try {
+    const [rooms, participants, sections, events, sectionEvents] = await Promise.all([
+      db.prepare("PRAGMA table_info(collection_rooms)").all<{ name: string }>(),
+      db.prepare("PRAGMA table_info(collection_room_participants)").all<{ name: string }>(),
+      db.prepare("PRAGMA table_info(collection_road_sections)").all<{ name: string }>(),
+      db.prepare("PRAGMA table_info(collection_room_events)").all<{ name: string }>(),
+      db.prepare("PRAGMA table_info(collection_road_section_events)").all<{ name: string }>(),
+    ]);
+    const has = (result: { results: Array<{ name: string }> }, names: string[]) =>
+      names.every((name) => result.results.some((column) => column.name === name));
+    return has(rooms, ["id", "campaign_id", "area_id", "status", "owner_collector_id", "updated_at"]) &&
+      has(participants, ["id", "room_id", "campaign_id", "collector_id", "left_at"]) &&
+      has(sections, ["id", "campaign_id", "area_id", "geometry_json", "status", "coverage_json", "smart_marking_json", "created_by_kind", "created_by_ref", "updated_by_kind", "updated_by_ref"]) &&
+      has(events, ["id", "campaign_id", "area_id", "room_id", "event_type"]) &&
+      has(sectionEvents, ["id", "campaign_id", "area_id", "section_id", "event_type", "actor_kind"]);
+  } catch {
+    return false;
+  }
 }
 
 export async function hasHouseTasksTable(db: D1DatabaseLike) {
@@ -187,13 +269,18 @@ export async function loadCampaignSnapshot(
   campaignId: string,
   options: CampaignSnapshotLoadOptions = {},
 ): Promise<CampaignSnapshot | null> {
-  const campaign = await db
-    .prepare(
-      `SELECT id, name, status, revision,
+  const actionTypeColumn = await hasCampaignActionTypeColumn(db);
+  const campaignSelect = actionTypeColumn
+    ? `SELECT id, name, status, revision,
+              map_center_lng, map_center_lat, map_zoom, map_bearing,
+              created_at, updated_at, action_type
+       FROM campaigns WHERE id = ?`
+    : `SELECT id, name, status, revision,
               map_center_lng, map_center_lat, map_zoom, map_bearing,
               created_at, updated_at
-       FROM campaigns WHERE id = ?`,
-    )
+       FROM campaigns WHERE id = ?`;
+  const campaign = await db
+    .prepare(campaignSelect)
     .bind(campaignId)
     .first<CampaignRow>();
 
@@ -203,11 +290,12 @@ export async function loadCampaignSnapshot(
   const includeAreas = options.includeAreas !== false;
   const includeTasks = options.includeTasks !== false;
   const includeHouses = options.includeHouses !== false;
-  const [hasTaskSource, hasHouses, hasCollection, hasPreparation] = await Promise.all([
+  const [hasTaskSource, hasHouses, hasCollection, hasPreparation, hasPickupRooms] = await Promise.all([
     includeTasks ? hasTaskSourceProvenanceColumn(db) : Promise.resolve(false),
     includeHouses ? hasHouseTasksTable(db) : Promise.resolve(false),
     options.includeCollection === false ? Promise.resolve(false) : hasCollectionSchema(db),
     includeTasks || includeHouses ? hasAreaTaskPreparationSchema(db) : Promise.resolve(false),
+    options.includeCollection === false ? Promise.resolve(false) : hasPickupAreaRoomSchema(db),
   ]);
   const hasNetwork = includeTasks || includeHouses ? await hasStreetNetworkSchema(db) : false;
   let taskSelect = hasTaskSource
@@ -251,6 +339,21 @@ export async function loadCampaignSnapshot(
         db.prepare(
           "SELECT id, run_id, campaign_id, collector_id, label, joined_at, left_at FROM collection_run_members WHERE campaign_id = ? ORDER BY joined_at, id",
         ).bind(campaignId).all<CollectionMemberRow>(),
+        hasPickupRooms
+          ? db.prepare(
+              "SELECT id, campaign_id, area_id, status, owner_collector_id, owner_label, created_at, updated_at, closed_at FROM collection_rooms WHERE campaign_id = ? ORDER BY created_at, id",
+            ).bind(campaignId).all<CollectionRoomRow>()
+          : Promise.resolve({ results: [] as CollectionRoomRow[] }),
+        hasPickupRooms
+          ? db.prepare(
+              "SELECT id, room_id, campaign_id, collector_id, label, joined_at, left_at FROM collection_room_participants WHERE campaign_id = ? ORDER BY joined_at, id",
+            ).bind(campaignId).all<CollectionRoomParticipantRow>()
+          : Promise.resolve({ results: [] as CollectionRoomParticipantRow[] }),
+        hasPickupRooms
+          ? db.prepare(
+              "SELECT id, campaign_id, area_id, label, geometry_json, status, coverage_json, source_task_id, source_generation, source_json, smart_marking_json, created_by_kind, created_by_ref, updated_by_kind, updated_by_ref, created_at, updated_at FROM collection_road_sections WHERE campaign_id = ? ORDER BY created_at, id",
+            ).bind(campaignId).all<CollectionRoadSectionRow>()
+          : Promise.resolve({ results: [] as CollectionRoadSectionRow[] }),
       ])
     : Promise.resolve(null);
 
@@ -281,7 +384,7 @@ export async function loadCampaignSnapshot(
 
     const collection = collectionResult
       ? (() => {
-          const [mainResult, areaResult, runResult, memberResult] = collectionResult;
+          const [mainResult, areaResult, runResult, memberResult, roomResult, participantResult, sectionResult] = collectionResult;
           const main = mainResult.results[0];
           const areas = areaResult.results.map((area): CollectionArea => ({
             id: area.id,
@@ -304,6 +407,72 @@ export async function loadCampaignSnapshot(
             members.push(member);
             membersByRun.set(member.run_id, members);
           }
+          const participantsByRoom = new Map<string, CollectionRoomParticipantRow[]>();
+          for (const participant of participantResult.results) {
+            const participants = participantsByRoom.get(participant.room_id) ?? [];
+            participants.push(participant);
+            participantsByRoom.set(participant.room_id, participants);
+          }
+          const rooms = roomResult.results.map((room): CollectionRoom => ({
+            id: room.id,
+            campaignId: room.campaign_id,
+            areaId: room.area_id,
+            status: room.status,
+            ownerCollectorId: room.owner_collector_id,
+            ownerLabel: room.owner_label,
+            participants: (participantsByRoom.get(room.id) ?? []).map((participant): CollectionRoomParticipant => ({
+              id: participant.id,
+              roomId: participant.room_id,
+              collectorId: participant.collector_id,
+              label: participant.label,
+              joinedAt: participant.joined_at,
+              leftAt: participant.left_at,
+            })),
+            createdAt: room.created_at,
+            updatedAt: room.updated_at,
+            closedAt: room.closed_at,
+          }));
+          const roadSections = sectionResult.results.map((section): CollectionRoadSection => ({
+            id: section.id,
+            campaignId: section.campaign_id,
+            areaId: section.area_id,
+            label: section.label,
+            geometry: JSON.parse(section.geometry_json),
+            status: section.status,
+            coverage: JSON.parse(section.coverage_json),
+            sourceTaskId: section.source_task_id,
+            sourceGeneration: section.source_generation,
+            source: section.source_json ? JSON.parse(section.source_json) : null,
+            smartMarking: section.smart_marking_json ? JSON.parse(section.smart_marking_json) : null,
+            createdBy: { kind: section.created_by_kind, ref: section.created_by_ref },
+            updatedBy: { kind: section.updated_by_kind, ref: section.updated_by_ref },
+            createdAt: section.created_at,
+            updatedAt: section.updated_at,
+          }));
+          const progress = areas.map((area) => {
+            const areaSections = roadSections.filter((section) => section.areaId === area.id);
+            return {
+              areaId: area.id,
+              roadSectionsTotal: areaSections.length,
+              roadSectionsDriven: areaSections.filter((section) => section.status === "driven").length,
+              roadSectionsOpen: areaSections.filter((section) => section.status === "open").length,
+              roadSectionsLater: areaSections.filter((section) => section.status === "later").length,
+              roadSectionsUnavailable: areaSections.filter((section) => section.status === "unavailable").length,
+              pickupsTotal: 0,
+              pickupsCollected: 0,
+              updatedAt: area.updatedAt,
+            };
+          });
+          const activeRoomByArea = new Map(
+            rooms.filter((room) => room.status === "active").map((room) => [room.areaId, room.id]),
+          );
+          const pickupAreas = campaign.action_type === "pickup"
+            ? areas.map((area) => ({
+                ...area,
+                pickupState: area.status,
+                roomId: activeRoomByArea.get(area.id) ?? null,
+              }))
+            : areas;
           return {
             mainArea: main ? ({
               id: main.id,
@@ -313,7 +482,7 @@ export async function loadCampaignSnapshot(
               createdAt: main.created_at,
               updatedAt: main.updated_at,
             } satisfies CollectionMainArea) : null,
-            areas,
+            areas: pickupAreas,
             runs: runResult.results.map((run): CollectionRun => ({
               id: run.id,
               campaignId: run.campaign_id,
@@ -334,6 +503,7 @@ export async function loadCampaignSnapshot(
               createdAt: run.created_at,
               updatedAt: run.updated_at,
             })),
+            ...(hasPickupRooms ? { rooms, roadSections, progress } : {}),
           } satisfies CollectionSnapshot;
         })()
       : null;
@@ -351,6 +521,7 @@ export async function loadCampaignSnapshot(
         id: campaign.id,
         name: campaign.name,
         status: campaign.status,
+        ...(actionTypeColumn ? { actionType: campaign.action_type === "pickup" ? "pickup" : "distribution" } : {}),
         defaultMapView: hasDefaultMapView
           ? {
               center: [campaign.map_center_lng as number, campaign.map_center_lat as number],
@@ -619,11 +790,15 @@ export async function createInitialCampaignState(
     return { ok: false, reason: "initial_revision_invalid" };
   }
 
-  const [hasTaskSource, hasHouses, hasPreparation] = await Promise.all([
+  const [hasTaskSource, hasHouses, hasPreparation, hasActionType] = await Promise.all([
     hasTaskSourceProvenanceColumn(db),
     hasHouseTasksTable(db),
     hasAreaTaskPreparationSchema(db),
+    hasCampaignActionTypeColumn(db),
   ]);
+  if (snapshot.campaign.actionType === "pickup" && !hasActionType) {
+    return { ok: false, reason: "schema_migration_required" };
+  }
   if (!hasTaskSource && snapshot.tasks.some((task) => task.source)) {
     return { ok: false, reason: "schema_migration_required" };
   }
@@ -641,14 +816,19 @@ export async function createInitialCampaignState(
 
   const writeToken = crypto.randomUUID();
   const mapView = snapshot.campaign.defaultMapView;
-  const claim = db
-    .prepare(
-      `INSERT OR IGNORE INTO campaigns (
+  const campaignInsert = hasActionType
+    ? `INSERT OR IGNORE INTO campaigns (
+         id, name, status, revision, write_token,
+         map_center_lng, map_center_lat, map_zoom, map_bearing,
+         action_type, created_at, updated_at
+       ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
+    : `INSERT OR IGNORE INTO campaigns (
          id, name, status, revision, write_token,
          map_center_lng, map_center_lat, map_zoom, map_bearing,
          created_at, updated_at
-       ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+       ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`;
+  const claim = db
+    .prepare(campaignInsert)
     .bind(
       snapshot.campaign.id,
       snapshot.campaign.name,
@@ -658,6 +838,7 @@ export async function createInitialCampaignState(
       mapView?.center[1] ?? null,
       mapView?.zoom ?? null,
       mapView?.bearing ?? null,
+      ...(hasActionType ? [snapshot.campaign.actionType === "pickup" ? "pickup" : "distribution"] : []),
       snapshot.campaign.createdAt,
       snapshot.campaign.updatedAt,
     );

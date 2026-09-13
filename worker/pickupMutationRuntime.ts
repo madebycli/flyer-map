@@ -1,6 +1,8 @@
 import type { AccessContext } from "./access.ts";
 import {
   getCampaignRevision,
+  hasCampaignActionTypeColumn,
+  hasPickupAreaRoomSchema,
   type D1DatabaseLike,
   type D1PreparedStatement,
 } from "./campaignRepository.ts";
@@ -266,6 +268,30 @@ async function targetPickup(
     )
     .bind(pickupId, campaignId)
     .first<PickupRow>();
+}
+
+async function campaignActionType(db: D1DatabaseLike, campaignId: string) {
+  if (!(await hasCampaignActionTypeColumn(db))) return null;
+  const row = await db.prepare("SELECT action_type FROM campaigns WHERE id = ?").bind(campaignId).first<{ action_type: string }>();
+  return row?.action_type ?? null;
+}
+
+async function hasActivePickupRoomMembership(
+  db: D1DatabaseLike,
+  campaignId: string,
+  areaId: string,
+  collectorId: string,
+) {
+  const row = await db.prepare(
+    `SELECT r.id
+       FROM collection_rooms r
+       JOIN collection_room_participants p
+         ON p.room_id = r.id AND p.campaign_id = r.campaign_id
+      WHERE r.campaign_id = ? AND r.area_id = ? AND r.status = 'active'
+        AND p.collector_id = ? AND p.left_at IS NULL
+      LIMIT 1`,
+  ).bind(campaignId, areaId, collectorId).first<{ id: string }>();
+  return Boolean(row);
 }
 
 async function validateArea(
@@ -567,6 +593,24 @@ export async function handlePickupMutation(
     );
   }
 
+  const actionType = await campaignActionType(db, campaignId);
+  if (actionType === "distribution") {
+    return errorResponse(
+      409,
+      "pickup_action_required",
+      "Pickup-Mutationen sind nur für Pickup-Aktionen erlaubt.",
+      await getCampaignRevision(db, campaignId),
+    );
+  }
+  if (actionType === "pickup" && !(await hasPickupAreaRoomSchema(db))) {
+    return errorResponse(
+      503,
+      "pickup_room_schema_unavailable",
+      "Pickup-Fortschritt benötigt die vorbereiteten Migrationen 0024 und 0025.",
+      await getCampaignRevision(db, campaignId),
+    );
+  }
+
   if (access.role === "collection-collector") {
     if (!access.collectorId) {
       return errorResponse(403, "collection_actor_forbidden", "Collection-Gerät ist ungültig.");
@@ -581,12 +625,49 @@ export async function handlePickupMutation(
     }
   }
 
+  const fingerprint = await fingerprintCampaignMutation(
+    mutation as unknown as CampaignMutation,
+  );
+  const existing = await getAppliedMutation(db, campaignId, mutation.id);
+  if (existing) {
+    if (existing.mutationFingerprint !== fingerprint) {
+      return errorResponse(
+        409,
+        "mutation_id_reused",
+        "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.",
+        existing.appliedRevision,
+      );
+    }
+    return json({
+      mutationId: mutation.id,
+      appliedRevision: existing.appliedRevision,
+      alreadyApplied: true,
+    });
+  }
+
   const areaId =
     mutation.type === "collection.pickup.create" || mutation.type === "collection.pickup.update"
       ? mutation.payload.areaId
       : null;
   if (!(await validateArea(db, campaignId, areaId))) {
     return errorResponse(422, "pickup_area_invalid", "Collection Area gehört nicht zu dieser Campaign oder ist archiviert.");
+  }
+
+  if (access.role === "collection-collector" && actionType === "pickup") {
+    const target = mutation.type === "collection.pickup.create"
+      ? null
+      : await targetPickup(db, campaignId, mutation.payload.pickupId);
+    const roomAreaId = mutation.type === "collection.pickup.create"
+      ? mutation.payload.areaId
+      : target?.area_id ?? null;
+    if (!roomAreaId || !access.collectorId || !(await hasActivePickupRoomMembership(db, campaignId, roomAreaId, access.collectorId))) {
+      return errorResponse(
+        403,
+        "pickup_room_member_required",
+        "Pickup-Fortschritt darf nur im aktiven Pickup Room geändert werden.",
+        await getCampaignRevision(db, campaignId),
+      );
+    }
   }
 
   if (mutation.type === "collection.pickup.set-assignment") {
@@ -616,26 +697,6 @@ export async function handlePickupMutation(
       targetCheck.message,
       await getCampaignRevision(db, campaignId),
     );
-  }
-
-  const fingerprint = await fingerprintCampaignMutation(
-    mutation as unknown as CampaignMutation,
-  );
-  const existing = await getAppliedMutation(db, campaignId, mutation.id);
-  if (existing) {
-    if (existing.mutationFingerprint !== fingerprint) {
-      return errorResponse(
-        409,
-        "mutation_id_reused",
-        "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.",
-        existing.appliedRevision,
-      );
-    }
-    return json({
-      mutationId: mutation.id,
-      appliedRevision: existing.appliedRevision,
-      alreadyApplied: true,
-    });
   }
 
   for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {

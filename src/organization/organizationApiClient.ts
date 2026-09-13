@@ -17,6 +17,7 @@ export type OrganizationCampaignDto = {
   id: string;
   name: string;
   lifecycle: "draft" | "active" | "completed" | "archived";
+  actionType: "distribution" | "pickup";
   map: { lng: number; lat: number; zoom: number; bearing: number } | null;
   createdAt: string;
   updatedAt: string;
@@ -161,6 +162,7 @@ export function createOrganizationCampaign(
   input: {
     name: string;
     lifecycle: "draft" | "active";
+    actionType: "distribution" | "pickup";
     map: { lng: number; lat: number; zoom: number; bearing: number };
   },
 ) {

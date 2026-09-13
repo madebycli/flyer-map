@@ -347,7 +347,7 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
           {campaigns.map((campaign) => (
             <button className="org-campaign-card" type="button" key={campaign.id} onClick={() => navigate(preserveDiagnosticFlag(`/admin/campaign/${encodeURIComponent(campaign.id)}`, window.location.search))}>
               <div><span className={`org-lifecycle org-lifecycle--${campaign.lifecycle}`}>{campaign.lifecycle}</span><h2>{campaign.name}</h2></div>
-              <dl><div><dt>Kartenfokus</dt><dd>{campaign.map ? `${campaign.map.lat.toFixed(3)}, ${campaign.map.lng.toFixed(3)} · z${campaign.map.zoom.toFixed(1)}` : "Nicht gesetzt"}</dd></div><div><dt>Aktualisiert</dt><dd>{new Date(campaign.updatedAt).toLocaleString("de-DE")}</dd></div></dl>
+              <dl><div><dt>Aktionstyp</dt><dd>{campaign.actionType === "pickup" ? "Abholen" : "Verteilen"}</dd></div><div><dt>Kartenfokus</dt><dd>{campaign.map ? `${campaign.map.lat.toFixed(3)}, ${campaign.map.lng.toFixed(3)} · z${campaign.map.zoom.toFixed(1)}` : "Nicht gesetzt"}</dd></div><div><dt>Aktualisiert</dt><dd>{new Date(campaign.updatedAt).toLocaleString("de-DE")}</dd></div></dl>
               <span>Öffnen →</span>
             </button>
           ))}
@@ -363,6 +363,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
   const [organizationId, setOrganizationId] = useState(requestedOrganization);
   const [name, setName] = useState("");
   const [lifecycle, setLifecycle] = useState<"draft" | "active">("draft");
+  const [actionType, setActionType] = useState<"distribution" | "pickup">("distribution");
   const [map, setMap] = useState({ lng: 13.405, lat: 52.52, zoom: 11, bearing: 0 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -385,7 +386,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await createOrganizationCampaign(organizationId, { name, lifecycle, map });
+      const result = await createOrganizationCampaign(organizationId, { name, lifecycle, actionType, map });
       navigate(`/admin/campaign/${encodeURIComponent(result.campaign.id)}`, true);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -420,6 +421,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
         <form className="org-form org-form--panel" onSubmit={(event) => void submit(event)}>
           <label>Organization<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} required>{organizerMemberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</select></label>
           <label>Name der Aktion<input value={name} minLength={2} maxLength={160} onChange={(event) => setName(event.target.value)} placeholder="z. B. Frühjahr 2027" required /></label>
+          <fieldset className="org-radio"><legend>Aktionstyp</legend><label><input type="radio" checked={actionType === "distribution"} onChange={() => setActionType("distribution")} /> Flyer verteilen</label><label><input type="radio" checked={actionType === "pickup"} onChange={() => setActionType("pickup")} /> Flyer abholen</label><p className="org-help">Abholaktionen verwenden eigene Pickup Areas, Rooms und Straßenstatus. Verteil-Tasks bleiben unverändert.</p></fieldset>
           <fieldset className="org-radio"><legend>Startstatus</legend><label><input type="radio" checked={lifecycle === "draft"} onChange={() => setLifecycle("draft")} /> Entwurf</label><label><input type="radio" checked={lifecycle === "active"} onChange={() => setLifecycle("active")} /> Aktiv</label></fieldset>
           <div><strong>Kartenfokus</strong><p className="org-help">Verschiebe die Karte an den Arbeitsbereich. Die Mitte und Zoomstufe werden mit der Aktion gespeichert.</p><AdminMapPicker value={map} onChange={setMap} /></div>
           {!canCreate ? <p className="org-error">Für neue Campaigns ist eine Organizer-Rolle mit vollständig bestätigter MFA-Sitzung erforderlich.</p> : null}

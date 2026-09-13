@@ -1,6 +1,6 @@
 # PLAN: StreetEngine verlässlich bis 20.000 Houses
 
-Stand 2026-09-12. Status: aktiv, Audit abgeschlossen, begrenzter Qualitätsfix als nächster Schritt. Keine Live-Freigabe.
+Stand 2026-09-12. Status: aktiv, Audit abgeschlossen, P1-Qualitätsfix umgesetzt und CI-verifiziert. Keine Live-Freigabe.
 
 ## Ziel
 
@@ -38,9 +38,9 @@ Eine serverautoritativ erzeugte, vollständig verifizierte Generation pro Area f
 
 Aktuellen PR92-Head und Base prüfen, Route/Registry verifizieren, Checkpoint auf GitHub zurücklesen. 38 vorhandene fokussierte Tests grün, exakte Baseline-CI grün. Prepared-Delete-Read-Pfad ist lokal behoben; D1 bleibt nur für reproduzierte Link-Rereads offen. Keine neue systemweite D1-Neuarchitektur.
 
-### P1: Quellenqualität und Diagnose, unmittelbar umsetzbar
+### P1: Quellenqualität und Diagnose, umgesetzt
 
-Zwei rote Regressionen liegen vor. Normalisierung unterscheidet fehlende/null Nodes, ungültige Koordinaten, offene Ringe und ungültige Polygone. Einzelne Ausfälle mit Zähler, Tile, begrenzter ID-/Grundliste und sichtbarem Qualitätsverlust erlauben; sobald eine Buildingantwort Objekte liefert, aber kein einziges vertrauenswürdig ist, bleibt die Generation fehlgeschlagen und unveröffentlicht. Eine nach erfolgreichem, geprüftem Quelllauf echte leere Antwort wird als leer gekennzeichnet.
+Die zwei zunächst roten Regressionen bestehen jetzt. Implementierung `3ad3fc755bbdcfa03a1b1110312a0f3ab198af31`, CI `34720417354` vollständig grün. Zwölf neue Tests einschließlich echter React-Hook-Darstellung sichern P1; die Gesamtsuite umfasst 887 Tests.  Normalisierung unterscheidet fehlende/null Nodes, ungültige Koordinaten, offene Ringe und ungültige Polygone. Einzelne Ausfälle mit Zähler, Tile, begrenzter ID-/Grundliste und sichtbarem Qualitätsverlust erlauben; sobald eine Buildingantwort Objekte liefert, aber kein einziges vertrauenswürdig ist, bleibt die Generation fehlgeschlagen und unveröffentlicht. Eine nach erfolgreichem, geprüftem Quelllauf echte leere Antwort wird als leer gekennzeichnet.
 
 HTTP-/Transport-/Timeout-/JSON-/remark-/Normalisierungsfehler getrennt erfassen. Metadaten begrenzen: Status, sichere Endpointkennung, Content-Type/Length, Bytes bis Abbruch, Dauer, Antworttyp, Abortzustand, Versuch, Phase/Cursor. Keine Raw-HTML-/remark-Texte mit möglichen Geheimnissen persistieren; remark-Grund kategorisieren. Fehleranzeige zeigt verständlichen Grund und bei Bedarf sicheren Diagnosecode. Erfolg mit übersprungenen Buildings sichtbar markieren. Cacheversion anheben, damit vorangegangene still unvollständige Cacheeinträge nicht erneut genutzt werden.
 
@@ -99,6 +99,10 @@ Spätere Pause-/Manifest-/Archivänderungen brauchen additive Migration, kompati
 - Reale Geräte, echte aktuelle MapLibre-Geometrie und unabhängiger Zweitclient sind nicht nachgewiesen.
 - Kein Operatorgerät oder dedizierter Builddienst ist als verfügbar/fähig bestätigt.
 
+## Smart-Marking-Ergänzung vom 2026-09-13
+
+[Plan036](036-smart-marking-waypoints.md) konkretisiert echte Zwischenziele, atomare Mehrpunkt-Intents, konservativen Schutz gegen veraltete Straßenstände und Adress-ID-Konflikte. Der Kandidat verwendet maximal 32 Punkte und 500 Arcs, vorhandene MapLibre-Punktlayer und eine einzige bestehende Transaktion. Kein neues Schema und kein Abholservice. Die neue Straßen-Detailanzeige macht Coverage-Intervalle sichtbar; Hausfortschritt behält seine getrennte fachliche Bedeutung. Kandidaten-/CI-SHA und offene Geräteabnahme stehen im [Handoff](../../status/STREET_ENGINE_MASTERPLAN_HANDOFF.md).
+
 ## Stop-Regel und Status
 
-P1 nach Beleg umsetzen; bei fehlender Liveursache keine Provider-/Timeout-/Graph-Umschreibung auf Verdacht. P2-P5 bleiben konkrete Folgephasen. `STREET_ENGINE_LIVE_READY=FALSE`, `D1_ATTRIBUTION_CONFIRMED=FALSE`, `MAP_RENDER_P0=OPEN`. Alle Checkpoints in GitHub sichern und zurücklesen; relevante Master-Context-Nodes nach tatsächlichen Ergebnissen aktualisieren.
+P1 ist umgesetzt und verifiziert; bei fehlender Liveursache keine Provider-/Timeout-/Graph-Umschreibung auf Verdacht. P2-P5 bleiben konkrete Folgephasen. `STREET_ENGINE_LIVE_READY=FALSE`, `D1_ATTRIBUTION_CONFIRMED=FALSE`, `MAP_RENDER_P0=OPEN`. Alle Checkpoints in GitHub sichern und zurücklesen; relevante Master-Context-Nodes nach tatsächlichen Ergebnissen aktualisieren.

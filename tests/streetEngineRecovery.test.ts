@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { addressBuildings, postalAddress, type AddressBuilding } from '../worker/streetNetwork/addresses.ts';
+test('conflicting repeated address-node identities fail instead of last-source wins',()=>{
+  const node={osmId:77,point:[13.001,51.001] as [number,number],tags:{'addr:housenumber':'1'}};
+  assert.throws(()=>addressBuildings([building(1)],[node,{...node,tags:{'addr:housenumber':'2'}}]),/house_dedupe_conflict/);
+});
 const building = (osmId:number, tags:Record<string,string>={}):AddressBuilding => ({osmId,tags:{building:'yes',...tags},geometry:{type:'Polygon',coordinates:[[[13,51],[13.001,51],[13.001,51.001],[13,51.001],[13,51]]]}});
 test('only postal addresses create delivery targets, including addresses on garages',()=>{
   for(const kind of ['yes','garage','garages','shed','outbuilding'])assert.equal(addressBuildings([building(1,{building:kind})],[]).length,0);
