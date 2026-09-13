@@ -40,6 +40,28 @@ test('default Overpass preparation fails over when the primary is rate limited',
   assert.deepEqual([...new Set(urls)], [primary, fallback]);
 });
 
+test('default Overpass preparation fails over when the primary rejects the bounded query with HTTP 400', async () => {
+  const db = new NetworkD1();
+  seedNetwork(db);
+  const urls: string[] = [];
+  let firstHeaders: Headers | null = null;
+
+  const result = await prepareAreaTasks(db, 'campaign_n', 'area_n', {
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      urls.push(url);
+      if (url === primary) firstHeaders = new Headers(init?.headers);
+      return url === primary ? new Response('bad request', { status: 400 }) : networkOsm();
+    },
+  });
+
+  assert.equal(result.outcome, 'ready');
+  assert.deepEqual([...new Set(urls)], [primary, fallback]);
+  assert.equal(firstHeaders?.get('accept'), 'application/json');
+  assert.equal(firstHeaders?.get('content-type'), 'application/x-www-form-urlencoded');
+  assert.match(firstHeaders?.get('user-agent') ?? '', /^FlyerMap\/0\.2 \(\+https:\/\/github\.com\/madebycli\/flyer-map\)$/u);
+});
+
 test('building preparation skips one open OSM building instead of aborting the tile', async () => {
   const db = new NetworkD1();
   seedNetwork(db);
