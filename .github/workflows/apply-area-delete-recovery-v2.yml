@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Focused recovery regression
-        run: node --import tsx --test tests/rxdbPushServerWinsFallback.test.ts tests/streetEngineRecovery.test.ts
+        run: node --experimental-transform-types --test tests/rxdbPushServerWinsFallback.test.ts tests/streetEngineRecovery.test.ts
       - name: Repository gates
         run: npm run check
       - name: Commit verified fix
