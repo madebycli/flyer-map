@@ -59,6 +59,43 @@ function replicationDocument(document: RxdbDocument) {
   return { ...document, _deleted: document._deleted === true };
 }
 
+async function isAccessRequired(response: Response) {
+  if (response.status !== 401) return false;
+  try {
+    const body = await response.clone().json() as { error?: { code?: unknown } };
+    return body?.error?.code === "access_required";
+  } catch {
+    return false;
+  }
+}
+
+function rememberedAdminFetch(campaignId: string, fetchImpl: typeof fetch): typeof fetch {
+  let refreshPromise: Promise<boolean> | null = null;
+  const refresh = () => {
+    if (refreshPromise) return refreshPromise;
+    const pending = fetchImpl(
+      `/api/campaigns/${encodeURIComponent(campaignId)}/admin-accounts/session/refresh`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    ).then((response) => response.ok).catch(() => false).finally(() => {
+      if (refreshPromise === pending) refreshPromise = null;
+    });
+    refreshPromise = pending;
+    return pending;
+  };
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await fetchImpl(input, init);
+    if (!(await isAccessRequired(response))) return response;
+    if (!(await refresh())) return response;
+    return fetchImpl(input, init);
+  }) as typeof fetch;
+}
+
 /**
  * Public sync coordinator facade.
  *
@@ -87,11 +124,14 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
 
   constructor(input: MissionRxdbSyncInput) {
     const storage = input.storage ?? getRxStorageDexie();
+    const rawFetch = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    const authenticatedFetch = rememberedAdminFetch(input.campaignId, rawFetch);
     let instance: MissionRxdbSync | null = null;
     const userOnIssue = input.onIssue;
     super({
       ...input,
       storage,
+      fetchImpl: authenticatedFetch,
       onIssue: (issue) => {
         userOnIssue(issue);
         if (issue.operation === "pull" && issue.collectionName && issue.code === "rxdb_checkpoint_expired") {
