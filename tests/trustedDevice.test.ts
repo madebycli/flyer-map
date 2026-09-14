@@ -6,6 +6,7 @@ import {
   revokeTrustedDevicesForSubject,
   TRUSTED_DEVICE_ABSOLUTE_SECONDS,
   TRUSTED_DEVICE_IDLE_SECONDS,
+  TRUSTED_DEVICE_ROTATION_GRACE_SECONDS,
 } from "../worker/trustedDevice.ts";
 import { NetworkD1 } from "./helpers/networkD1.ts";
 
@@ -49,6 +50,43 @@ test("trusted device rotates on use and replay revokes the whole family", async 
     validateSubject: async () => true,
   });
   assert.deepEqual(familyAfterReplay, { ok: false, code: "invalid" });
+});
+
+test("a concurrent old-token retry is rejected without revoking the fresh replacement", async (t) => {
+  const db = new NetworkD1(true, true);
+  t.after(() => db.sqlite.close());
+  const first = await createTrustedDevice(db, {
+    subjectKind: "organization_account",
+    subjectId: "org_account_parallel",
+    assurance: "mfa",
+    now: start,
+  });
+  assert.ok(first);
+
+  const rotated = await consumeTrustedDevice(db, {
+    subjectKind: "organization_account",
+    secret: first.secret,
+    now: later(5),
+    validateSubject: async () => true,
+  });
+  assert.equal(rotated.ok, true);
+  if (!rotated.ok) return;
+
+  const concurrentRetry = await consumeTrustedDevice(db, {
+    subjectKind: "organization_account",
+    secret: first.secret,
+    now: later(5 + Math.max(1, TRUSTED_DEVICE_ROTATION_GRACE_SECONDS - 1)),
+    validateSubject: async () => true,
+  });
+  assert.deepEqual(concurrentRetry, { ok: false, code: "rotated" });
+
+  const replacementStillWorks = await consumeTrustedDevice(db, {
+    subjectKind: "organization_account",
+    secret: rotated.token.secret,
+    now: later(5 + TRUSTED_DEVICE_ROTATION_GRACE_SECONDS),
+    validateSubject: async () => true,
+  });
+  assert.equal(replacementStillWorks.ok, true, "benign cross-tab overlap must not revoke the replacement family");
 });
 
 test("trusted device enforces idle expiry and absolute family lifetime", async (t) => {
