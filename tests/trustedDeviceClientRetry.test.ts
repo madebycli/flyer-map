@@ -39,6 +39,32 @@ test("organization client refreshes a remembered device once after authenticatio
   ]);
 });
 
+test("parallel organization 401s share exactly one rotating remember refresh", async (t) => {
+  let meAttempts = 0;
+  let refreshes = 0;
+  withFetch(t, async (input) => {
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    const url = new URL(raw, "https://flyer.test");
+    if (url.pathname === "/api/organization/me") {
+      meAttempts += 1;
+      if (meAttempts <= 2) return Response.json({ error: { code: "authentication_required" } }, { status: 401 });
+      return Response.json({ account: { id: "org_account_a", username: "Alice" }, assurance: "mfa", memberships: [] });
+    }
+    if (url.pathname === "/api/organization/session/refresh") {
+      refreshes += 1;
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      return Response.json({ ok: true });
+    }
+    return new Response(null, { status: 404 });
+  });
+
+  const [left, right] = await Promise.all([getOrganizationMe(), getOrganizationMe()]);
+  assert.equal(left.account.id, "org_account_a");
+  assert.equal(right.account.id, "org_account_a");
+  assert.equal(refreshes, 1, "one-time remember credentials must not be consumed twice by parallel requests");
+  assert.equal(meAttempts, 4);
+});
+
 test("campaign client refreshes a remembered admin once after access_required and retries the original request", async (t) => {
   const calls: Array<{ path: string; method: string }> = [];
   let accessAttempts = 0;
@@ -66,6 +92,32 @@ test("campaign client refreshes a remembered admin once after access_required an
     { path: "/api/campaigns/campaign_n/admin-accounts/session/refresh", method: "POST" },
     { path: "/api/access/current?campaign=campaign_n", method: "GET" },
   ]);
+});
+
+test("parallel campaign 401s share one campaign-scoped remember refresh", async (t) => {
+  let accessAttempts = 0;
+  let refreshes = 0;
+  withFetch(t, async (input) => {
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    const url = new URL(raw, "https://flyer.test");
+    if (url.pathname === "/api/access/current") {
+      accessAttempts += 1;
+      if (accessAttempts <= 2) return Response.json({ error: { code: "access_required" } }, { status: 401 });
+      return Response.json({ access: { campaignId: "campaign_n", role: "admin", teamId: null, label: "Admin" } });
+    }
+    if (url.pathname === "/api/campaigns/campaign_n/admin-accounts/session/refresh") {
+      refreshes += 1;
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      return Response.json({ ok: true });
+    }
+    return new Response(null, { status: 404 });
+  });
+
+  const [left, right] = await Promise.all([fetchCurrentAccess("campaign_n"), fetchCurrentAccess("campaign_n")]);
+  assert.equal(left.role, "admin");
+  assert.equal(right.role, "admin");
+  assert.equal(refreshes, 1);
+  assert.equal(accessAttempts, 4);
 });
 
 test("remember refresh failure does not loop or hide the original authentication failure", async (t) => {
