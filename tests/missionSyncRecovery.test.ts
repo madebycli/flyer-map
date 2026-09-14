@@ -45,10 +45,14 @@ test("replica snapshots and sync status distinguish local persistence from serve
 });
 
 test("Field Group replicas are membership-scoped in addition to Team scope", async () => {
-  const [store, sync] = await Promise.all([
+  const [store, sync, api, fieldGroupWorker] = await Promise.all([
     readFile("src/data/campaignStore.ts", "utf8"),
     readSyncSource(),
+    readFile("src/data/campaignApi.ts", "utf8"),
+    readFile("worker/indexM55.ts", "utf8"),
   ]);
+  assert.match(api, /membershipId\?: string \| null/u);
+  assert.match(fieldGroupWorker, /membershipId: access\.membershipId \?\? null/u);
   assert.match(store, /actorScopeId = fieldGroupAccess\?\.membershipId/u);
   assert.doesNotMatch(store, /actorScopeId = fieldGroupAccess\?\.groupId/u);
   assert.match(store, /field_group_actor_scope_required/u);
