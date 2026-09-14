@@ -53,6 +53,9 @@ export async function handleOrganizationRememberRoute(request: Request, db?: D1D
 
   const refreshed = await refreshOrganizationRememberedDevice(db, request);
   if (!refreshed.ok) {
+    if (refreshed.code === "rotated") {
+      return errorResponse(409, "remembered_device_rotated", "Dieses Gerät wurde gerade in einem anderen Tab erneuert.");
+    }
     const response = errorResponse(401, "remembered_device_invalid", "Das gemerkte Gerät ist abgelaufen oder wurde widerrufen.");
     response.headers.append("set-cookie", clearOrganizationRememberCookie());
     return response;
@@ -84,7 +87,8 @@ export async function augmentOrganizationRememberResponse(
 
   const accountId = await accountIdFromResponse(response);
   if (!accountId) return response;
-  const remembered = await createOrganizationRememberedDevice(db, accountId, "mfa");
+  const assurance = pathname === "/api/organization/login/totp" ? "mfa" : "password";
+  const remembered = await createOrganizationRememberedDevice(db, accountId, assurance);
   if (remembered) response.headers.append("set-cookie", organizationRememberCookie(remembered.secret));
   return response;
 }
