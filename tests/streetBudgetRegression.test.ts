@@ -23,6 +23,16 @@ function source(count:number){
   const buildings=Array.from({length:count},(_,i)=>{const x=13.00015+(i%20)*0.00049,y=51.00015+Math.floor(i/20)*0.000019;return {type:'way',id:1000+i,tags:{building:'house','addr:street':`Road ${i%20}`,'addr:housenumber':String(Math.floor(i/20)+1)},geometry:[{lon:x,lat:y},{lon:x+0.00003,lat:y},{lon:x+0.00003,lat:y+0.00003},{lon:x,lat:y}]};});
   return async(_url:unknown,init?:RequestInit)=>Response.json({osm3s:{timestamp_osm_base:'2026-09-07T00:00:00Z'},elements:String(init?.body).includes('highway')?roads:buildings});
 }
+function tiledSource(count:number){
+  return async(_url:unknown,init?:RequestInit)=>{
+    const query=new URLSearchParams(String(init?.body)).get('data')??'';
+    const tile=query.includes('(51,13.01,')?1:0,base=13+tile*0.01;
+    const roads=Array.from({length:20},(_,i)=>({type:'way',id:tile*100+10+i,tags:{highway:'residential',name:`Road ${tile}-${i}`},geometry:[{lon:base+0.0001+i*0.00049,lat:51.0001},{lon:base+0.0001+i*0.00049,lat:51.0099}]}));
+    const buildingCount=Math.min(10000,Math.max(0,count-tile*10000));
+    const buildings=Array.from({length:buildingCount},(_,i)=>{const x=base+0.00015+(i%20)*0.00049,y=51.00015+Math.floor(i/20)*0.000019;return {type:'way',id:1000+tile*10000+i,tags:{building:'house','addr:street':`Road ${tile}-${i%20}`,'addr:housenumber':String(Math.floor(i/20)+1)},geometry:[{lon:x,lat:y},{lon:x+0.00003,lat:y},{lon:x+0.00003,lat:y+0.00003},{lon:x,lat:y}]};});
+    return Response.json({osm3s:{timestamp_osm_base:'2026-09-07T00:00:00Z'},elements:query.includes('highway')?roads:buildings});
+  };
+}
 
 test('10k preparation and canonical delete stay within measured write and invocation budgets',async(t)=>{
   const db=new BudgetD1(true,true);seedNetwork(db);db.resetBudget();
@@ -61,6 +71,26 @@ test('10k preparation and canonical delete stay within measured write and invoca
   assert.equal(deletion.tables.campaign_sync_changes.insert,1);
   assert.equal((await loadCampaignSnapshot(db,'campaign_n'))!.houseTasks!.length,0);
   t.diagnostic(JSON.stringify({invocations,maxQueries,totalWrites,doStorageReads:storage.reads,doStorageWrites:storage.writes,deleteQueries:deletion.statements,deleteWrites:deletion.estimatedTotalRowsWritten}));
+  db.sqlite.close();
+});
+
+test('20k durable runner stays inside the real per-alarm D1 query budget',async(t)=>{
+  const db=new BudgetD1(true,true);seedNetwork(db);
+  db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=? AND campaign_id=?').run(JSON.stringify({type:'Polygon',coordinates:[[[13,51],[13.02,51],[13.02,51.01],[13,51.01],[13,51]]]}),'area_n','campaign_n');
+  db.resetBudget();const start=await beginAreaTaskPreparation(db,'campaign_n','area_n');assert.equal(start.outcome,'run');
+  const storage=new AlarmStorage();const instance=new CampaignSyncDurableObject({storage,acceptWebSocket(){},getWebSockets:()=>[]},{DB:db});
+  const savedFetch=globalThis.fetch;globalThis.fetch=tiledSource(20000) as typeof fetch;t.after(()=>{globalThis.fetch=savedFetch;});
+  await instance.fetch(new Request('https://campaign-sync.internal/prepare',{method:'POST',headers:{'x-campaign-sync-internal':'1'},body:JSON.stringify({campaignId:'campaign_n'})}));
+  let invocations=0,maxQueries=0;
+  for(;storage.alarmAt!==null&&invocations<180;invocations++){
+    storage.alarmAt=null;db.resetBudget();await instance.alarm();
+    const report=db.report();maxQueries=Math.max(maxQueries,report.statements);
+    assert.ok(report.statements<=50,`20k alarm ${invocations}: ${report.statements} queries`);
+  }
+  assert.ok(invocations<180,'20k runner must finish instead of retrying forever');
+  const snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;
+  assert.equal(snapshot.houseTasks!.length,20000);
+  t.diagnostic(JSON.stringify({houses:20000,invocations,maxQueries,doStorageReads:storage.reads,doStorageWrites:storage.writes}));
   db.sqlite.close();
 });
 
