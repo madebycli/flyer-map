@@ -44,12 +44,13 @@ test("replica snapshots and sync status distinguish local persistence from serve
   assert.doesNotMatch(sync, /awaitInSync\(/u);
 });
 
-test("Field Group replicas are actor-scoped in addition to Team scope", async () => {
+test("Field Group replicas are membership-scoped in addition to Team scope", async () => {
   const [store, sync] = await Promise.all([
     readFile("src/data/campaignStore.ts", "utf8"),
     readSyncSource(),
   ]);
-  assert.match(store, /actorScopeId = fieldGroupAccess\?\.groupId/u);
+  assert.match(store, /actorScopeId = fieldGroupAccess\?\.membershipId/u);
+  assert.doesNotMatch(store, /actorScopeId = fieldGroupAccess\?\.groupId/u);
   assert.match(store, /field_group_actor_scope_required/u);
   assert.match(store, /if \(runtime\.sync\) await runtime\.sync\.destroy\(\)/u);
   assert.match(store, /collectionFallback: fieldGroupAccess \? undefined : runtime\.latestLocal\?\.collection/u);
