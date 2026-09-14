@@ -108,7 +108,9 @@ function campaignIdForRememberRefresh(path: string) {
   }
 }
 
-async function refreshRememberedCampaignAdminSession(campaignId: string) {
+const campaignRefreshPromises = new Map<string, Promise<boolean>>();
+
+async function performRememberedCampaignAdminRefresh(campaignId: string) {
   try {
     const response = await fetch(
       `/api/campaigns/${encodeURIComponent(campaignId)}/admin-accounts/session/refresh`,
@@ -120,10 +122,28 @@ async function refreshRememberedCampaignAdminSession(campaignId: string) {
         body: "{}",
       },
     );
-    return response.ok;
+    if (response.ok) return true;
+    if (response.status === 409) {
+      const error = await parseError(response.clone());
+      if (error.code === "remembered_device_rotated") {
+        await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 250));
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
   }
+}
+
+function refreshRememberedCampaignAdminSession(campaignId: string) {
+  const current = campaignRefreshPromises.get(campaignId);
+  if (current) return current;
+  const pending = performRememberedCampaignAdminRefresh(campaignId).finally(() => {
+    if (campaignRefreshPromises.get(campaignId) === pending) campaignRefreshPromises.delete(campaignId);
+  });
+  campaignRefreshPromises.set(campaignId, pending);
+  return pending;
 }
 
 async function apiFetch(path: string, init?: RequestInit) {
