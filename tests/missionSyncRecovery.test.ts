@@ -23,9 +23,10 @@ test("normal mission sync is RxDB-first and retains the M5 queue only for one-ti
 });
 
 test("replica snapshots and sync status distinguish local persistence from server acknowledgement", async () => {
-  const [store, sync] = await Promise.all([
+  const [store, sync, coordinator] = await Promise.all([
     readFile("src/data/campaignStore.ts", "utf8"),
     readSyncSource(),
+    readFile("src/data/rxdbMissionSync.ts", "utf8"),
   ]);
   assert.match(store, /function applyRxdbSnapshot/u);
   assert.match(store, /runtime\.deferredSnapshot = normalized/u);
@@ -41,7 +42,8 @@ test("replica snapshots and sync status distinguish local persistence from serve
   assert.match(sync, /rxdb_push_confirmation_timeout/u);
   assert.match(sync, /pushConfirmationTimeoutMs/u);
   assert.match(sync, /replication\.reSync\(\)/u);
-  assert.doesNotMatch(sync, /awaitInSync\(/u);
+  assert.doesNotMatch(coordinator, /override async refreshAndWait[\s\S]{0,2500}awaitInSync\(/u);
+  assert.match(coordinator, /recoverExpiredCheckpoint[\s\S]{0,2500}awaitInSync\(/u);
 });
 
 test("Field Group replicas are membership-scoped in addition to Team scope", async () => {
