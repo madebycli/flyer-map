@@ -5,6 +5,7 @@ import {
   consumeTrustedDevice,
   revokeTrustedDeviceBySecret,
   TRUSTED_DEVICE_ABSOLUTE_SECONDS,
+  type TrustedDeviceAssurance,
 } from "./trustedDevice.ts";
 
 const SESSION_SECONDS = 60 * 60 * 12;
@@ -32,7 +33,7 @@ export function clearOrganizationRememberCookie() {
 export async function createOrganizationRememberedDevice(
   db: D1DatabaseLike,
   accountId: string,
-  assurance: "mfa",
+  assurance: TrustedDeviceAssurance,
 ) {
   return createTrustedDevice(db, {
     subjectKind: "organization_account",
@@ -73,6 +74,12 @@ async function createSession(db: D1DatabaseLike, accountId: string, assurance: "
   return { secret, expiresAt, assurance };
 }
 
+function trustedAssuranceMatchesAccount(assurance: string | null, account: OrganizationSubjectRow) {
+  if (assurance === "mfa") return account.mfa_required === 1;
+  if (assurance === "password") return account.mfa_required === 0;
+  return false;
+}
+
 export async function refreshOrganizationRememberedDevice(db: D1DatabaseLike, request: Request) {
   const secret = rememberCookieValue(request);
   if (!secret) return { ok: false as const, code: "missing" as const };
@@ -81,12 +88,19 @@ export async function refreshOrganizationRememberedDevice(db: D1DatabaseLike, re
     secret,
     validateSubject: async (accountId, assurance) => {
       const account = await subjectRow(db, accountId);
-      return Boolean(account && !account.disabled_at && assurance === "mfa" && account.mfa_required === 1);
+      return Boolean(account && !account.disabled_at && trustedAssuranceMatchesAccount(assurance, account));
     },
   });
   if (!consumed.ok) return consumed;
   const account = await subjectRow(db, consumed.subjectId);
-  if (!account || account.disabled_at) return { ok: false as const, code: "subject_invalid" as const };
+  if (!account || account.disabled_at || !trustedAssuranceMatchesAccount(consumed.assurance, account)) {
+    return { ok: false as const, code: "subject_invalid" as const };
+  }
+  // Existing optional-MFA organization sessions intentionally use the platform's
+  // established "mfa" short-session assurance even when the remembered-device
+  // credential itself records password-only assurance. Enabling/disabling MFA
+  // revokes trusted-device families, so a password-only device cannot survive a
+  // later transition to required MFA.
   const session = await createSession(db, account.id, "mfa");
   return {
     ok: true as const,
