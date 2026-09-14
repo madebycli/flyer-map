@@ -1,0 +1,100 @@
+name: Production D1 Schema Diagnostic
+
+on:
+  push:
+    branches:
+      - fix/street-engine-smart-marking
+    paths:
+      - .github/workflows/prod-d1-schema-diagnostic.yml
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: production-d1-schema-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROD_D1_NAME: flyer-map-db
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+    steps:
+      - name: Checkout exact diagnostic head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Resolve and guard Production D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          elif [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+          else
+            echo 'Cloudflare account is ambiguous.' >&2
+            exit 1
+          fi
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          ACTUAL_ID="$(jq -r --arg name "$PROD_D1_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
+          [[ "$ACTUAL_ID" == "$PROD_D1_ID" ]] || { echo 'Production D1 identity mismatch.' >&2; exit 1; }
+
+      - name: Inspect migration registry and schema read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/prod-d1-diagnostic
+          npx wrangler d1 execute "$PROD_D1_NAME" --remote --json --command "SELECT name,type,sql FROM sqlite_master WHERE name IN ('d1_migrations','campaign_sync_changes','area_task_preparations','street_network_jobs','street_network_staging','street_base_areas','street_base_chunks','street_work_overlays','trg_areas_increment_source_revision') ORDER BY type,name;" > /tmp/prod-d1-diagnostic/schema.json
+          npx wrangler d1 execute "$PROD_D1_NAME" --remote --json --command "PRAGMA table_info('areas');" > /tmp/prod-d1-diagnostic/areas-columns.json
+          npx wrangler d1 execute "$PROD_D1_NAME" --remote --json --command "PRAGMA table_info('street_tasks');" > /tmp/prod-d1-diagnostic/street-task-columns.json
+          HAS_MIGRATIONS="$(jq -r '.[0].results | map(select(.name=="d1_migrations")) | length' /tmp/prod-d1-diagnostic/schema.json)"
+          if [[ "$HAS_MIGRATIONS" == '1' ]]; then
+            npx wrangler d1 execute "$PROD_D1_NAME" --remote --json --command "PRAGMA table_info('d1_migrations');" > /tmp/prod-d1-diagnostic/migration-columns.json
+            npx wrangler d1 execute "$PROD_D1_NAME" --remote --json --command "SELECT * FROM d1_migrations ORDER BY id;" > /tmp/prod-d1-diagnostic/migrations.json
+          else
+            printf '%s\n' '[{"results":[]}]' > /tmp/prod-d1-diagnostic/migration-columns.json
+            printf '%s\n' '[{"results":[]}]' > /tmp/prod-d1-diagnostic/migrations.json
+          fi
+          npx wrangler d1 migrations list "$PROD_D1_NAME" --remote > /tmp/prod-d1-diagnostic/wrangler-migrations-list.txt 2>&1 || true
+
+      - name: Print sanitized diagnostic summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== schema objects ==='
+          jq -r '.[0].results[] | [.type,.name] | @tsv' /tmp/prod-d1-diagnostic/schema.json
+          echo '=== areas columns ==='
+          jq -r '.[0].results[].name' /tmp/prod-d1-diagnostic/areas-columns.json
+          echo '=== street_tasks columns ==='
+          jq -r '.[0].results[].name' /tmp/prod-d1-diagnostic/street-task-columns.json
+          echo '=== recorded migrations ==='
+          cat /tmp/prod-d1-diagnostic/migrations.json | jq -c '.[0].results'
+          echo '=== wrangler migration view ==='
+          cat /tmp/prod-d1-diagnostic/wrangler-migrations-list.txt
+
+      - name: Upload read-only diagnostic evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-d1-schema-diagnostic
+          path: /tmp/prod-d1-diagnostic
+          retention-days: 7
+          if-no-files-found: error
