@@ -258,6 +258,15 @@ export async function handleRxdbPull(
     }
   }
 
+  const groupTeamId = fieldGroupScope(access);
+  const scopedToTeam = Boolean(groupTeamId && collectionName !== "campaigns");
+  const highWaterRow = await syncHeads(db,campaignId);
+  const highWater = typeof highWaterRow?.seq === "number" && Number.isSafeInteger(highWaterRow.seq) ? highWaterRow.seq : checkpoint.seq;
+  const sql = "SELECT seq, document_json FROM campaign_sync_changes WHERE campaign_id = ? AND collection_name = ? AND seq > ? AND seq <= ?" + (scopedToTeam ? " AND scope_team_id = ?" : "") + " ORDER BY seq ASC LIMIT ?";
+  const statement = db.prepare(sql);
+  const result = scopedToTeam
+    ? await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, groupTeamId, batchSize).all<{ seq: number; document_json: string }>()
+    : await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, batchSize).all<{ seq: number; document_json: string }>();
   const floor = await retainedCheckpointFloor(db, campaignId, collectionName);
   if (floor && checkpoint.seq < floor.minCheckpointSeq) {
     return json({
@@ -268,16 +277,6 @@ export async function handleRxdbPull(
       retention: floor,
     }, { status: 409 });
   }
-
-  const groupTeamId = fieldGroupScope(access);
-  const scopedToTeam = Boolean(groupTeamId && collectionName !== "campaigns");
-  const highWaterRow = await syncHeads(db,campaignId);
-  const highWater = typeof highWaterRow?.seq === "number" && Number.isSafeInteger(highWaterRow.seq) ? highWaterRow.seq : checkpoint.seq;
-  const sql = "SELECT seq, document_json FROM campaign_sync_changes WHERE campaign_id = ? AND collection_name = ? AND seq > ? AND seq <= ?" + (scopedToTeam ? " AND scope_team_id = ?" : "") + " ORDER BY seq ASC LIMIT ?";
-  const statement = db.prepare(sql);
-  const result = scopedToTeam
-    ? await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, groupTeamId, batchSize).all<{ seq: number; document_json: string }>()
-    : await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, batchSize).all<{ seq: number; document_json: string }>();
   try {
     const expanded = result.results.flatMap((row) => {
       const raw=parseJson<unknown>(row.document_json);
