@@ -26,6 +26,10 @@ import {
   handleCampaignAdminRememberRoute,
 } from "./campaignAdminRememberBridge.ts";
 import {
+  applyTrustedDeviceInvalidations,
+  captureTrustedDeviceInvalidations,
+} from "./trustedDeviceInvalidation.ts";
+import {
   handleOrganizationFieldGroupList,
   type OrganizationFieldGroupListEnv,
 } from "./organizationFieldGroupList.ts";
@@ -141,12 +145,17 @@ export default {
       if (legacyGuard) return harden(legacyGuard);
       const bootstrapHashResponse = await handleOrganizationBootstrapHashApi(request, env);
       if (bootstrapHashResponse) return harden(bootstrapHashResponse);
+
+      const invalidations = await captureTrustedDeviceInvalidations(request.clone(), env.DB);
       const securityResponse = await handleOrganizationSecurityApi(request, env);
-      if (securityResponse) return harden(securityResponse);
+      if (securityResponse) {
+        return harden(await applyTrustedDeviceInvalidations(env.DB, invalidations, securityResponse));
+      }
       const organizationRequest = request.clone();
       const organizationResponse = await handleOrganizationApi(request, env);
       if (organizationResponse) {
-        return harden(await augmentOrganizationRememberResponse(organizationRequest, env.DB, organizationResponse));
+        const remembered = await augmentOrganizationRememberResponse(organizationRequest, env.DB, organizationResponse);
+        return harden(await applyTrustedDeviceInvalidations(env.DB, invalidations, remembered));
       }
       const roomListResponse = await handleOrganizationFieldGroupList(request, env);
       if (roomListResponse) return harden(roomListResponse);
@@ -155,7 +164,8 @@ export default {
       const campaignAdminRequest = request.clone();
       const baseResponse = await baseWorker.fetch(request, env, context);
       const rememberedBaseResponse = await augmentCampaignAdminRememberResponse(campaignAdminRequest, env.DB, baseResponse);
-      const identityAwareResponse = await rewriteOrganizationManagedAccessResponse(campaignAdminRequest, env.DB, rememberedBaseResponse);
+      const invalidatedBaseResponse = await applyTrustedDeviceInvalidations(env.DB, invalidations, rememberedBaseResponse);
+      const identityAwareResponse = await rewriteOrganizationManagedAccessResponse(campaignAdminRequest, env.DB, invalidatedBaseResponse);
       return harden(failClosedOrganizationApiFallback(campaignAdminRequest, identityAwareResponse));
     } catch (error) {
       if (error instanceof OrganizationPasswordKdfUnavailableError) {
