@@ -9,6 +9,7 @@ export * from "./rxdbMissionSyncCore.ts";
 
 const BARRIER_POLL_INTERVAL_MS = 20;
 const AUTOMATIC_REFRESH_BARRIER_TIMEOUT_MS = 20_000;
+const COLLECTION_NAMES = ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const satisfies readonly RxdbCollectionName[];
 
 type PersistenceGateLike = { flush(): void };
 type MissionRxdbSyncInternals = {
@@ -22,29 +23,36 @@ type MissionRxdbSyncInternals = {
  * Public sync coordinator facade.
  *
  * The core owns RxDB replication mechanics. This facade owns refresh ordering:
- * no explicit, realtime, reconnect or visibility-triggered refresh may start
- * while a locally accepted write is still waiting for its push proof.
+ * a pull for one collection cannot overtake an already accepted local write in
+ * that same collection. Unrelated collections remain independently refreshable.
  *
- * This deliberately uses a conservative all-pending barrier. A generation
- * watermark becomes safe only together with an explicit rebase layer for writes
- * accepted after a closed round.
+ * Explicit refreshAndWait() is a global convergence barrier and therefore waits
+ * for all already accepted local writes before reading its canonical target.
  */
 export class MissionRxdbSync extends MissionRxdbSyncCore {
-  private automaticRefreshNames = new Set<RxdbCollectionName>();
-  private automaticRefreshBarrier: Promise<void> | null = null;
+  private readonly automaticRefreshQueued = new Set<RxdbCollectionName>();
+  private readonly automaticRefreshBarriers = new Map<RxdbCollectionName, Promise<void>>();
 
   private internals() {
     return this as unknown as MissionRxdbSyncInternals;
   }
 
-  private flushPersistenceGates() {
-    for (const gate of this.internals().persistenceGates.values()) gate.flush();
+  private flushPersistenceGates(names: readonly RxdbCollectionName[]) {
+    const gates = this.internals().persistenceGates;
+    for (const name of names) gates.get(name)?.flush();
   }
 
-  private async waitForPendingPushes(deadline: number) {
-    this.flushPersistenceGates();
-    const state = this.internals();
-    while (state.pendingPushProofs.size > 0) {
+  private hasPendingPush(collectionName: RxdbCollectionName) {
+    const prefix = collectionName + ":";
+    for (const proofKey of this.internals().pendingPushProofs.keys()) {
+      if (proofKey.startsWith(prefix)) return true;
+    }
+    return false;
+  }
+
+  private async waitForPendingPushes(names: readonly RxdbCollectionName[], deadline: number) {
+    this.flushPersistenceGates(names);
+    while (names.some((name) => this.hasPendingPush(name))) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         throw new RxdbSyncHttpError(
@@ -57,42 +65,55 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
     }
   }
 
-  override refresh(names?: readonly RxdbCollectionName[]) {
-    const requestedNames = names ?? (["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const);
-    this.flushPersistenceGates();
+  private scheduleAutomaticRefresh(collectionName: RxdbCollectionName) {
+    if (this.automaticRefreshBarriers.has(collectionName)) return;
     const state = this.internals();
-    if (state.pendingPushProofs.size === 0) {
-      super.refresh(requestedNames);
-      return;
-    }
-
-    for (const name of requestedNames) this.automaticRefreshNames.add(name);
-    if (this.automaticRefreshBarrier) return;
-
     const deadline = Date.now() + AUTOMATIC_REFRESH_BARRIER_TIMEOUT_MS;
-    this.automaticRefreshBarrier = this.waitForPendingPushes(deadline)
+    const barrier = this.waitForPendingPushes([collectionName], deadline)
       .then(() => {
-        if (!state.initialized) return;
-        const queued = [...this.automaticRefreshNames];
-        this.automaticRefreshNames.clear();
-        if (queued.length > 0) super.refresh(queued);
+        if (!state.initialized || !this.automaticRefreshQueued.has(collectionName)) return;
+        this.automaticRefreshQueued.delete(collectionName);
+        super.refresh([collectionName]);
       })
       .catch((error: unknown) => {
+        this.automaticRefreshQueued.delete(collectionName);
         state.onIssue({
           kind: "network",
+          collectionName,
           operation: "push",
           code: error instanceof RxdbSyncHttpError ? error.code : "rxdb_refresh_barrier_failed",
         });
       })
       .finally(() => {
-        this.automaticRefreshBarrier = null;
-        if (this.automaticRefreshNames.size > 0 && state.initialized) this.refresh([...this.automaticRefreshNames]);
+        this.automaticRefreshBarriers.delete(collectionName);
+        if (state.initialized && this.automaticRefreshQueued.has(collectionName)) {
+          this.scheduleAutomaticRefresh(collectionName);
+        }
       });
+    this.automaticRefreshBarriers.set(collectionName, barrier);
+  }
+
+  override refresh(names: readonly RxdbCollectionName[] = COLLECTION_NAMES) {
+    const requestedNames = [...new Set(names)];
+    this.flushPersistenceGates(requestedNames);
+
+    const ready: RxdbCollectionName[] = [];
+    for (const name of requestedNames) {
+      if (!this.hasPendingPush(name)) {
+        this.automaticRefreshQueued.delete(name);
+        ready.push(name);
+        continue;
+      }
+      this.automaticRefreshQueued.add(name);
+      this.scheduleAutomaticRefresh(name);
+    }
+
+    if (ready.length > 0) super.refresh(ready);
   }
 
   override async refreshAndWait(timeoutMs = 15_000) {
     const deadline = Date.now() + Math.max(1, timeoutMs);
-    await this.waitForPendingPushes(deadline);
+    await this.waitForPendingPushes(COLLECTION_NAMES, deadline);
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       throw new RxdbSyncHttpError(
