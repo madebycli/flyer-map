@@ -105,10 +105,14 @@ jobs:
         run: |
           set -euo pipefail
           npx wrangler d1 migrations apply "$BETA_DB_NAME" --remote --config wrangler.jsonc
-          SCHEMA="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "SELECT name FROM sqlite_master WHERE name IN ('organizations','organization_accounts','campaign_sync_changes','street_base_chunks') ORDER BY name;")"
-          jq -e '.[0].results | map(.name) | contains(["campaign_sync_changes","organization_accounts","organizations","street_base_chunks"])' <<<"$SCHEMA" >/dev/null
-          COLS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info('organization_accounts');")"
-          jq -e '.[0].results | map(.name) | contains(["mfa_required"])' <<<"$COLS" >/dev/null
+          SCHEMA="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "SELECT name FROM sqlite_master WHERE name IN ('organizations','organization_accounts','campaign_sync_changes','street_base_chunks','campaign_sync_retention','auth_trusted_devices') ORDER BY name;")"
+          jq -e '.[0].results | map(.name) | contains(["auth_trusted_devices","campaign_sync_changes","campaign_sync_retention","organization_accounts","organizations","street_base_chunks"])' <<<"$SCHEMA" >/dev/null
+          ORG_COLS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info('organization_accounts');")"
+          jq -e '.[0].results | map(.name) | contains(["mfa_required"])' <<<"$ORG_COLS" >/dev/null
+          RETENTION_COLS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info('campaign_sync_retention');")"
+          jq -e '.[0].results | map(.name) | contains(["campaign_id","collection_name","min_checkpoint_seq","epoch","updated_at"])' <<<"$RETENTION_COLS" >/dev/null
+          TRUSTED_COLS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info('auth_trusted_devices');")"
+          jq -e '.[0].results | map(.name) | contains(["subject_kind","subject_id","family_id","token_hash","idle_expires_at","absolute_expires_at","revoked_at","replaced_by_id"])' <<<"$TRUSTED_COLS" >/dev/null
 
       - name: Prepare missing Unstable secrets
         shell: bash
@@ -161,6 +165,9 @@ jobs:
               const response=await fetch(upstreamRequest);
               const headers=new Headers(response.headers);
               headers.set('x-flyer-release-channel','unstable');
+              if (response.webSocket) {
+                return new Response(null,{status:101,headers,webSocket:response.webSocket});
+              }
               return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
             }
           };
