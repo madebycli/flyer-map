@@ -6,6 +6,7 @@ export type TrustedDeviceAssurance = "mfa" | "password";
 
 export const TRUSTED_DEVICE_IDLE_SECONDS = 60 * 60 * 24 * 60;
 export const TRUSTED_DEVICE_ABSOLUTE_SECONDS = 60 * 60 * 24 * 90;
+export const TRUSTED_DEVICE_ROTATION_GRACE_SECONDS = 10;
 
 type TrustedDeviceRow = {
   id: string;
@@ -31,7 +32,7 @@ export type TrustedDeviceToken = {
 
 export type TrustedDeviceConsumeResult =
   | { ok: true; subjectId: string; assurance: string | null; token: TrustedDeviceToken }
-  | { ok: false; code: "invalid" | "expired" | "replayed" | "subject_invalid" | "schema_unavailable" };
+  | { ok: false; code: "invalid" | "expired" | "rotated" | "replayed" | "subject_invalid" | "schema_unavailable" };
 
 export async function hasTrustedDeviceSchema(db: D1DatabaseLike) {
   try {
@@ -116,6 +117,11 @@ async function revokeFamily(db: D1DatabaseLike, familyId: string, now: string) {
   ]);
 }
 
+function withinRotationGrace(revokedAt: string, now: Date) {
+  const revokedMs = Date.parse(revokedAt);
+  return Number.isFinite(revokedMs) && now.getTime() - revokedMs >= 0 && now.getTime() - revokedMs <= TRUSTED_DEVICE_ROTATION_GRACE_SECONDS * 1000;
+}
+
 export async function consumeTrustedDevice(
   db: D1DatabaseLike,
   input: {
@@ -133,6 +139,12 @@ export async function consumeTrustedDevice(
 
   if (row.revoked_at) {
     if (row.replaced_by_id) {
+      // Browser cookies are shared across tabs. A second tab can race the first
+      // rotation with the same old token. During a very short grace interval we
+      // reject that stale token without authenticating it and without revoking
+      // the valid replacement. Outside the grace interval it is a real replay
+      // signal and revokes the complete family.
+      if (withinRotationGrace(row.revoked_at, now)) return { ok: false, code: "rotated" };
       await revokeFamily(db, row.family_id, nowIso);
       return { ok: false, code: "replayed" };
     }
@@ -178,6 +190,10 @@ export async function consumeTrustedDevice(
     ),
   ]);
   if ((result[0]?.meta?.changes ?? 0) !== 1 || (result[1]?.meta?.changes ?? 0) !== 1) {
+    const current = await rowBySecret(db, input.secret, input.subjectKind);
+    if (current?.revoked_at && current.replaced_by_id && withinRotationGrace(current.revoked_at, now)) {
+      return { ok: false, code: "rotated" };
+    }
     await revokeFamily(db, row.family_id, nowIso);
     return { ok: false, code: "replayed" };
   }
