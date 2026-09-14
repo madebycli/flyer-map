@@ -10,7 +10,8 @@ for (const count of [0,399,1000,5000,10000,20000]) {
   const tileCount=count>10000?2:1;
   const queryBudget=50;
   if(tileCount===2)db.sqlite.prepare('UPDATE areas SET geometry_json=?').run(JSON.stringify({type:'Polygon',coordinates:[[[13,51],[13.02,51],[13.02,51.01],[13,51.01],[13,51]]]}));
-  let fullEdgeReads=0,fullEdgeBytes=0,indexedEdgeReads=0,indexedEdgeBytes=0,requests=0,sourceBytes=0,maxStatements=0,totalStatements=0,returnedRows=0,estimatedReads=0,writes=0,steps=0;
+  let fullEdgeReads=0,fullEdgeBytes=0,indexedEdgeReads=0,indexedEdgeBytes=0,requests=0,sourceBytes=0,maxStatements=0,maxStatementPhase='unknown',totalStatements=0,returnedRows=0,estimatedReads=0,writes=0,steps=0;
+  const maxStatementsByPhase:Record<string,number>={};
   const originalPrepare=db.prepare.bind(db);
   db.prepare=(query:string)=>{
     const statement=originalPrepare(query),all=statement.all.bind(statement);
@@ -26,9 +27,16 @@ for (const count of [0,399,1000,5000,10000,20000]) {
   db.resetBudget();const started=await beginAreaTaskPreparation(requestDatabase(db,queryBudget),'campaign_n','area_n');
   if(started.outcome!=='run')throw new Error('audit_start_failed');
   let result:any;const start=performance.now(),cpu=process.cpuUsage();let heap=getHeapStatistics().used_heap_size;
-  do {db.resetBudget();result=await runAreaTaskPreparation(requestDatabase(db,queryBudget),started.run,{fetchImpl});const report=db.report();maxStatements=Math.max(maxStatements,report.statements);totalStatements+=report.statements;returnedRows+=report.returnedRows;estimatedReads+=report.estimatedRowsRead;writes+=report.estimatedTotalRowsWritten;heap=Math.max(heap,getHeapStatistics().used_heap_size);steps++;}while(result.outcome==='pending'&&steps<300);
+  do {
+    const beforeJob=db.sqlite.prepare('SELECT phase FROM street_network_jobs').get() as {phase?:string}|undefined;
+    const phase=beforeJob?.phase??'start';
+    db.resetBudget();result=await runAreaTaskPreparation(requestDatabase(db,queryBudget),started.run,{fetchImpl});const report=db.report();
+    maxStatementsByPhase[phase]=Math.max(maxStatementsByPhase[phase]??0,report.statements);
+    if(report.statements>maxStatements){maxStatements=report.statements;maxStatementPhase=phase;}
+    totalStatements+=report.statements;returnedRows+=report.returnedRows;estimatedReads+=report.estimatedRowsRead;writes+=report.estimatedTotalRowsWritten;heap=Math.max(heap,getHeapStatistics().used_heap_size);steps++;
+  }while(result.outcome==='pending'&&steps<300);
   const used=process.cpuUsage(cpu),job=db.sqlite.prepare('SELECT phase,cursor,error_code,metrics_json FROM street_network_jobs').get() as any;
-  console.log(JSON.stringify({scenario:'scale',houses:count,tiles:tileCount,queryBudget,result,phase:job.phase,cursor:job.cursor,errorCode:job.error_code,steps,maxStatements,totalStatements,returnedRows,estimatedReads,writes,requests,sourceBytes,edgeReads:fullEdgeReads,edgeBytes:fullEdgeBytes,fullEdgeReads,fullEdgeBytes,indexedEdgeReads,indexedEdgeBytes,wallMs:Math.round(performance.now()-start),nodeCpuMs:(used.user+used.system)/1000,sampledProcessHeapBytes:heap,note:'SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; fullEdge* is complete staged edge payload, indexedEdge* is bounded label-bucket payload'}));db.sqlite.close();
+  console.log(JSON.stringify({scenario:'scale',houses:count,tiles:tileCount,queryBudget,result,phase:job.phase,cursor:job.cursor,errorCode:job.error_code,steps,maxStatements,maxStatementPhase,maxStatementsByPhase,totalStatements,returnedRows,estimatedReads,writes,requests,sourceBytes,edgeReads:fullEdgeReads,edgeBytes:fullEdgeBytes,fullEdgeReads,fullEdgeBytes,indexedEdgeReads,indexedEdgeBytes,wallMs:Math.round(performance.now()-start),nodeCpuMs:(used.user+used.system)/1000,sampledProcessHeapBytes:heap,note:'SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; fullEdge* is complete staged edge payload, indexedEdge* is bounded label-bucket payload'}));db.sqlite.close();
 }
 for(const shape of ['all-open','null-node','empty']){
   const db=new BudgetD1(true,true);seedNetwork(db);
