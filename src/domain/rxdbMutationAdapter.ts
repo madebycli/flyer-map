@@ -247,6 +247,11 @@ export function deriveMutationFromRxdbWrite(
       if (changedCount > 1) return { kind: "conflict", reason: "task_compound_change" };
       if (changedCount === 0) return { kind: "ack" };
       if (statusChanged) {
+        // completedAt is derived from the completion action, not an independent
+        // user-editable field. If another client already reached the same
+        // product status, keep that canonical timestamp and treat this retry as
+        // idempotent instead of manufacturing a same-status conflict/event.
+        if (currentTask.status === task.status) return { kind: "ack" };
         const state = threeWayFieldState(
           { status: currentTask.status, completedAt: currentTask.completedAt },
           { status: assumedTask.status, completedAt: assumedTask.completedAt },
@@ -275,6 +280,7 @@ export function deriveMutationFromRxdbWrite(
       if (changedCount > 1) return { kind: "conflict", reason: "house_compound_change" };
       if (changedCount === 0) return { kind: "ack" };
       if (statusChanged) {
+        if (currentTask.status === task.status) return { kind: "ack" };
         const state = threeWayFieldState(
           { status: currentTask.status, completedAt: currentTask.completedAt },
           { status: assumedTask.status, completedAt: assumedTask.completedAt },
