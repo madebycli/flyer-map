@@ -18,6 +18,10 @@ import {
   rewriteOrganizationManagedAccessResponse,
 } from "./organizationLegacyGuard.ts";
 import {
+  augmentOrganizationRememberResponse,
+  handleOrganizationRememberRoute,
+} from "./organizationRememberBridge.ts";
+import {
   handleOrganizationFieldGroupList,
   type OrganizationFieldGroupListEnv,
 } from "./organizationFieldGroupList.ts";
@@ -119,6 +123,8 @@ export default {
       }
       const rootRedirect = redirectBareRootToOrganizationLogin(request);
       if (rootRedirect) return harden(rootRedirect);
+      const rememberResponse = await handleOrganizationRememberRoute(request, env.DB);
+      if (rememberResponse) return harden(rememberResponse);
       const methodGuard = guardOrganizationApiMethod(request);
       if (methodGuard) return harden(methodGuard);
       const queryGuard = guardOrganizationSecurityQuery(request);
@@ -131,8 +137,11 @@ export default {
       if (bootstrapHashResponse) return harden(bootstrapHashResponse);
       const securityResponse = await handleOrganizationSecurityApi(request, env);
       if (securityResponse) return harden(securityResponse);
+      const organizationRequest = request.clone();
       const organizationResponse = await handleOrganizationApi(request, env);
-      if (organizationResponse) return harden(organizationResponse);
+      if (organizationResponse) {
+        return harden(await augmentOrganizationRememberResponse(organizationRequest, env.DB, organizationResponse));
+      }
       const roomListResponse = await handleOrganizationFieldGroupList(request, env);
       if (roomListResponse) return harden(roomListResponse);
       const teamCommentsResponse = await handleTeamCommentsSummary(request, env);
