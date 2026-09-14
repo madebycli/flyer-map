@@ -22,6 +22,10 @@ import {
   handleOrganizationRememberRoute,
 } from "./organizationRememberBridge.ts";
 import {
+  augmentCampaignAdminRememberResponse,
+  handleCampaignAdminRememberRoute,
+} from "./campaignAdminRememberBridge.ts";
+import {
   handleOrganizationFieldGroupList,
   type OrganizationFieldGroupListEnv,
 } from "./organizationFieldGroupList.ts";
@@ -125,6 +129,8 @@ export default {
       if (rootRedirect) return harden(rootRedirect);
       const rememberResponse = await handleOrganizationRememberRoute(request, env.DB);
       if (rememberResponse) return harden(rememberResponse);
+      const campaignAdminRememberResponse = await handleCampaignAdminRememberRoute(request, env.DB);
+      if (campaignAdminRememberResponse) return harden(campaignAdminRememberResponse);
       const methodGuard = guardOrganizationApiMethod(request);
       if (methodGuard) return harden(methodGuard);
       const queryGuard = guardOrganizationSecurityQuery(request);
@@ -146,9 +152,11 @@ export default {
       if (roomListResponse) return harden(roomListResponse);
       const teamCommentsResponse = await handleTeamCommentsSummary(request, env);
       if (teamCommentsResponse) return harden(teamCommentsResponse);
+      const campaignAdminRequest = request.clone();
       const baseResponse = await baseWorker.fetch(request, env, context);
-      const identityAwareResponse = await rewriteOrganizationManagedAccessResponse(request, env.DB, baseResponse);
-      return harden(failClosedOrganizationApiFallback(request, identityAwareResponse));
+      const rememberedBaseResponse = await augmentCampaignAdminRememberResponse(campaignAdminRequest, env.DB, baseResponse);
+      const identityAwareResponse = await rewriteOrganizationManagedAccessResponse(campaignAdminRequest, env.DB, rememberedBaseResponse);
+      return harden(failClosedOrganizationApiFallback(campaignAdminRequest, identityAwareResponse));
     } catch (error) {
       if (error instanceof OrganizationPasswordKdfUnavailableError) {
         return kdfUnavailableResponse(error, env.ORGANIZATION_KDF_DIAGNOSTICS === "1");
