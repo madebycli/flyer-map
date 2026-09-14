@@ -158,3 +158,43 @@ test("explicit refresh cannot complete before an already accepted local RxDB wri
     restoreWindow();
   }
 });
+
+test("automatic refresh delays only the collection with a pending local write", async () => {
+  const restoreWindow = installWindow();
+  const sync = new MissionRxdbSync({
+    campaignId: "campaign_collection_barrier",
+    storage: getRxStorageMemory(),
+    multiInstance: false,
+    onSnapshot: () => undefined,
+    onIssue: () => undefined,
+  });
+  const counts = new Map<RxdbCollectionName, number>();
+  const internal = sync as unknown as {
+    initialized: boolean;
+    pendingPushProofs: Map<string, number>;
+    replications: Map<RxdbCollectionName, { reSync(): void }>;
+  };
+
+  try {
+    internal.initialized = true;
+    for (const collectionName of collections) {
+      internal.replications.set(collectionName, {
+        reSync() { counts.set(collectionName, (counts.get(collectionName) ?? 0) + 1); },
+      });
+    }
+    internal.pendingPushProofs.set("teams:team_a", 1);
+
+    sync.refresh();
+    assert.equal(counts.get("teams") ?? 0, 0, "same-collection pull must wait behind its pending local push");
+    for (const collectionName of collections.filter((name) => name !== "teams")) {
+      assert.equal(counts.get(collectionName), 1, `${collectionName} must not be blocked by an unrelated Team write`);
+    }
+
+    internal.pendingPushProofs.delete("teams:team_a");
+    await waitFor(() => (counts.get("teams") ?? 0) === 1);
+    assert.equal(counts.get("teams"), 1, "queued Team refresh must run after its push proof clears");
+  } finally {
+    internal.initialized = false;
+    restoreWindow();
+  }
+});
