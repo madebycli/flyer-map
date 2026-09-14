@@ -59,30 +59,50 @@ function replicationDocument(document: RxdbDocument) {
   return { ...document, _deleted: document._deleted === true };
 }
 
-async function isAccessRequired(response: Response) {
-  if (response.status !== 401) return false;
+async function responseErrorCode(response: Response) {
   try {
     const body = await response.clone().json() as { error?: { code?: unknown } };
-    return body?.error?.code === "access_required";
+    return typeof body?.error?.code === "string" ? body.error.code : null;
+  } catch {
+    return null;
+  }
+}
+
+async function isAccessRequired(response: Response) {
+  return response.status === 401 && await responseErrorCode(response) === "access_required";
+}
+
+async function attemptRememberRefresh(fetchImpl: typeof fetch, path: string) {
+  try {
+    const response = await fetchImpl(path, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (response.ok) return true;
+    if (response.status === 409 && await responseErrorCode(response) === "remembered_device_rotated") {
+      await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 250));
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
 }
 
-function rememberedAdminFetch(campaignId: string, fetchImpl: typeof fetch): typeof fetch {
+export function rememberedSessionFetch(campaignId: string, fetchImpl: typeof fetch): typeof fetch {
   let refreshPromise: Promise<boolean> | null = null;
   const refresh = () => {
     if (refreshPromise) return refreshPromise;
-    const pending = fetchImpl(
-      `/api/campaigns/${encodeURIComponent(campaignId)}/admin-accounts/session/refresh`,
-      {
-        method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      },
-    ).then((response) => response.ok).catch(() => false).finally(() => {
+    const pending = (async () => {
+      if (await attemptRememberRefresh(fetchImpl, "/api/organization/session/refresh")) return true;
+      return attemptRememberRefresh(
+        fetchImpl,
+        `/api/campaigns/${encodeURIComponent(campaignId)}/admin-accounts/session/refresh`,
+      );
+    })().finally(() => {
       if (refreshPromise === pending) refreshPromise = null;
     });
     refreshPromise = pending;
@@ -125,7 +145,7 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
   constructor(input: MissionRxdbSyncInput) {
     const storage = input.storage ?? getRxStorageDexie();
     const rawFetch = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
-    const authenticatedFetch = rememberedAdminFetch(input.campaignId, rawFetch);
+    const authenticatedFetch = rememberedSessionFetch(input.campaignId, rawFetch);
     let instance: MissionRxdbSync | null = null;
     const userOnIssue = input.onIssue;
     super({
