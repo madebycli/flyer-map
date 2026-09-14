@@ -11,6 +11,14 @@ import { handleRxdbCheckpoint, handleRxdbPull, handleRxdbPush } from "../worker/
 import { MissionRxdbSync, TrailingPersistenceGate } from "../src/data/rxdbMissionSync.ts";
 import { getRxStorageMemory } from "rxdb/plugins/storage-memory";
 
+async function readSyncSource() {
+  const [coordinator, core] = await Promise.all([
+    readFile("src/data/rxdbMissionSync.ts", "utf8"),
+    readFile("src/data/rxdbMissionSyncCore.ts", "utf8"),
+  ]);
+  return coordinator + "\n" + core;
+}
+
 class Statement implements D1PreparedStatement {
   private values: unknown[] = [];
 
@@ -371,7 +379,6 @@ test("a retryable Team push does not block an independent Street pull", async ()
     await waitForCondition(async () => Boolean(await collections.campaigns.findOne(campaignId).exec()));
     await waitForCondition(async () => Boolean(await collections.teams.findOne("team_a").exec()));
 
-    // Client A reaches the real Worker push handler and gets a retryable 503.
     await sync.applyMutation({
       id: "mutation_rxdb_failed_team_push",
       campaignId,
@@ -382,8 +389,6 @@ test("a retryable Team push does not block an independent Street pull", async ()
     } as any);
     await waitForCondition(async () => failedTeamPushStatus === 503);
 
-    // Client B creates a Street on canonical D1 while A's Team write is still
-    // pending. A's independent Street replication must still pull it.
     const remoteStreet = await handleCampaignMutation(new Request("https://flyer.test/mutations", {
       method: "POST",
       body: JSON.stringify({
@@ -482,8 +487,6 @@ test("one Campaign safety checkpoint recovers a missed signal without duplicate 
     }), db, safetyCampaignId, safetyAdminAccess);
     assert.equal(remoteStreet.status, 200, await remoteStreet.text());
 
-    // Simulate a dropped WebSocket invalidation.  One high-water request is
-    // enough to decide whether all five collection replications must catch up.
     await sync.safetyResync();
     assert.equal(checkpointCalls, 1);
     await waitForCondition(async () => Boolean(await collections.streetTasks.findOne("task_missed_signal").exec()));
@@ -519,8 +522,6 @@ test("global Campaign revision stays monotonic while stale Street writes and con
   const firstBody = await teamNameWrite.json() as { conflicts: unknown[]; rejections: unknown[] };
   assert.deepEqual(firstBody.rejections, []);
 
-  // This client intentionally keeps the old global baseRevision (3).  The
-  // Worker re-reads current D1 state and still accepts an independent Street.
   const staleStreet = await handleCampaignMutation(new Request("https://flyer.test/mutations", {
     method: "POST",
     body: JSON.stringify({
@@ -541,8 +542,6 @@ test("global Campaign revision stays monotonic while stale Street writes and con
   }), db, campaignId, adminAccess);
   assert.equal(staleStreet.status, 200, await staleStreet.text());
 
-  // A second client also started from the original Team document.  Its color
-  // field is independent of the first client's name field and must merge.
   const teamColorWrite = await handleRxdbPush(db, campaignId, "teams", adminAccess, {
     rows: [{
       assumedMasterState: initialTeam,
@@ -563,7 +562,7 @@ test("global Campaign revision stays monotonic while stale Street writes and con
 
 test("Campaign and Team text/color bursts trail into one upstream window", async () => {
   const [sync, app, settings, store] = await Promise.all([
-    readFile("src/data/rxdbMissionSync.ts", "utf8"),
+    readSyncSource(),
     readFile("src/App.tsx", "utf8"),
     readFile("src/settings/SettingsSheet.tsx", "utf8"),
     readFile("src/data/campaignStore.ts", "utf8"),
