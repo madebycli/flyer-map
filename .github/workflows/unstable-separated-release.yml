@@ -23,6 +23,7 @@ jobs:
       BETA_DB_NAME: flyer-map-unstable-db
       UNSTABLE_ALIAS_WORKER: flyer-map-unstable
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
       BOOTSTRAP_SHA256: 2058707356b5b06c207d0e4a49148626058e6e2661af9dd4a4bb86c32d7930d9
     steps:
       - uses: actions/checkout@v4
@@ -65,6 +66,7 @@ jobs:
           fi
           [[ -n "$BETA_D1_ID" ]]
           [[ "$BETA_D1_ID" != "$PROD_D1_ID" ]]
+          [[ "$BETA_D1_ID" != "$RXDB_STAGING_D1_ID" ]]
           echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
 
       - name: Materialize isolated Unstable config
@@ -143,15 +145,20 @@ jobs:
           fi
           grep -q 'flyer-map-unstable-backend.cloudflare-eleven035.workers.dev' /tmp/unstable-backend.log
 
-      - name: Deploy public Unstable alias through service binding
+      - name: Deploy public Unstable alias to isolated backend
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/unstable-alias
           cat > /tmp/unstable-alias/index.mjs <<'EOF'
+          const upstreamHost='flyer-map-unstable-backend.cloudflare-eleven035.workers.dev';
           export default {
-            async fetch(request, env) {
-              const response=await env.UPSTREAM.fetch(request);
+            async fetch(request) {
+              const upstreamUrl=new URL(request.url);
+              upstreamUrl.protocol='https:';
+              upstreamUrl.hostname=upstreamHost;
+              const upstreamRequest=new Request(upstreamUrl,request);
+              const response=await fetch(upstreamRequest);
               const headers=new Headers(response.headers);
               headers.set('x-flyer-release-channel','unstable');
               return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
@@ -163,8 +170,7 @@ jobs:
             "name": "flyer-map-unstable",
             "main": "index.mjs",
             "compatibility_date": "2026-08-01",
-            "workers_dev": true,
-            "services": [{"binding":"UPSTREAM","service":"flyer-map-unstable-backend"}]
+            "workers_dev": true
           }
           EOF
           (cd /tmp/unstable-alias && npx --yes wrangler@4 deploy --config wrangler.jsonc) 2>&1 | tee /tmp/unstable-alias.log
