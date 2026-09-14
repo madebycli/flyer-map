@@ -20,12 +20,13 @@ export type AccessInfo = {
   role: AccessRole;
   teamId: string | null;
   groupId?: string | null;
+  membershipId?: string | null;
   label: string | null;
   collectorId?: string | null;
   collectionAccessId?: string | null;
 };
 
-export type AccessGrant = Omit<AccessInfo, "role" | "groupId"> & {
+export type AccessGrant = Omit<AccessInfo, "role" | "groupId" | "membershipId"> & {
   role: PersistentAccessRole;
   grantId: string;
   createdAt: string;
