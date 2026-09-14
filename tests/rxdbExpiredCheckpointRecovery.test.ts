@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getRxStorageMemory } from "rxdb/plugins/storage-memory";
+import type { CampaignSnapshot } from "../src/domain/campaign.ts";
 import { MissionRxdbSync, type RxdbSyncIssue } from "../src/data/rxdbMissionSync.ts";
 import type { RxdbCollectionName } from "../src/data/rxdbSyncProtocol.ts";
 
@@ -69,11 +70,8 @@ class RetentionServer {
     };
     const task = (id: string) => ({
       id, campaignId, areaId: "area_a", taskType: "street", label: id,
-      geometry: { type: "LineString", coordinates: [[8.61, 49.41], [8.62, 49.42]] },
-      source: null,
-      network: {},
-      areaPreparationGeneration: null,
-      status: "open", completedAt: null, createdAt: timestamp, updatedAt: timestamp,
+      geometry: { type: "LineString", coordinates: [[8.61, 49.41], [8.62, 49.42]] }, source: null, network: {},
+      areaPreparationGeneration: null, status: "open", completedAt: null, createdAt: timestamp, updatedAt: timestamp,
     });
     this.documents = {
       campaigns: [{ id: campaignId, campaignId, name: "Mission", status: "active", defaultMapView: null, createdAt: timestamp, updatedAt: timestamp }],
@@ -151,10 +149,6 @@ class RetentionServer {
   };
 }
 
-function internalCollections(sync: MissionRxdbSync) {
-  return (sync as unknown as { collections: Record<RxdbCollectionName, { findOne(id: string): { exec(): Promise<{ toJSON(): WireDocument } | null> } }> }).collections;
-}
-
 function statusMutation(campaignId: string) {
   return {
     id: "mutation_offline_keep",
@@ -177,13 +171,14 @@ test("expired checkpoint drains pending writes before a clean bootstrap and cann
   const campaignId = `campaign_retention_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
   const server = new RetentionServer(campaignId);
   const issues: RxdbSyncIssue[] = [];
+  let latestSnapshot: CampaignSnapshot | null = null;
 
   const makeSync = () => new MissionRxdbSync({
     campaignId,
     storage,
     multiInstance: false,
     fetchImpl: server.fetch,
-    onSnapshot: () => undefined,
+    onSnapshot: (snapshot) => { latestSnapshot = snapshot; },
     onIssue: (issue) => {
       issues.push(issue);
       if (issue.code === "rxdb_checkpoint_expired") server.pushOnline = true;
@@ -193,7 +188,7 @@ test("expired checkpoint drains pending writes before a clean bootstrap and cann
   let sync = makeSync();
   try {
     await sync.start();
-    await waitFor(async () => Boolean(await internalCollections(sync).streetTasks.findOne("task_deleted").exec()));
+    await waitFor(() => Boolean(latestSnapshot?.tasks.some((task) => task.id === "task_deleted")));
 
     server.pushOnline = false;
     await sync.applyMutation(statusMutation(campaignId));
@@ -201,13 +196,14 @@ test("expired checkpoint drains pending writes before a clean bootstrap and cann
     server.compactStreetFeed();
     await sync.destroy();
 
+    latestSnapshot = null;
     sync = makeSync();
     await sync.start();
 
     await waitFor(() => server.expiredResponses > 0);
     await waitFor(() => server.documents.streetTasks.some((document) => document.id === "task_keep" && document.status === "completed"));
-    await waitFor(async () => Boolean(await internalCollections(sync).streetTasks.findOne("task_new").exec()));
-    await waitFor(async () => !(await internalCollections(sync).streetTasks.findOne("task_deleted").exec()));
+    await waitFor(() => Boolean(latestSnapshot?.tasks.some((task) => task.id === "task_new")));
+    await waitFor(() => Boolean(latestSnapshot) && !latestSnapshot!.tasks.some((task) => task.id === "task_deleted"));
 
     assert.ok(issues.some((issue) => issue.code === "rxdb_checkpoint_expired"), "the runtime must observe the expired checkpoint");
     assert.equal(server.pushedIds.includes("task_deleted"), false, "the stale compacted task must never be pushed back to the server");
