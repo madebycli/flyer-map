@@ -6,6 +6,10 @@ Status: active
 
 Baseline: `unstable@35e9987efcf7a113a93df22b47f6f828cd0a4944`
 
+Aktueller Audit-Branch: `audit/sync-d1-streetengine-ultra-2026-09-14`
+
+Verifizierter Phase-A-Head: `d276ccdd6c2350997d3fdd377fb28824e56fd88d`
+
 Audit: `docs/status/SYNC_D1_STREETENGINE_ULTRA_AUDIT_2026-09-14.md`
 
 ## Ziel
@@ -20,9 +24,10 @@ Flyer Map soll mit mehreren gleichzeitig arbeitenden Geräten deterministisch ko
 - DO/WebSocket bleibt Hint/Invalidation, nicht SoT.
 - UI-Mutationen sind sofort lokal sichtbar.
 - Ein als lokal akzeptierter Write gilt erst als synchronisiert, wenn der Server ihn bestätigt oder einen expliziten Konflikt zurückgibt.
+- Eine kaputte Collection darf unabhängige Collections nicht blockieren.
 - Delete darf nicht resurrecten.
 - StreetEngine ist generation-basiertes Derived Data.
-- Auth muss Remember-Device unterstützen, ohne langlebige unrotierte Access-Cookies.
+- Auth soll Remember-Device unterstützen, ohne langlebige unrotierte Access-Cookies.
 - Free-Tier-Aussagen brauchen echte Cloudflare-Metriken; lokale SQLite-Schätzungen werden nicht als Billing verkauft.
 - Keine Production-Aktion, keine Production-D1-Migration, keine große Remote-Fixture.
 
@@ -30,27 +35,44 @@ Flyer Map soll mit mehreren gleichzeitig arbeitenden Geräten deterministisch ko
 
 ### Client Sync Coordinator
 
+Phase A ist implementiert und verifiziert:
+
 ```text
 UI local mutation
 -> RxDB write
--> assign local push-proof generation
+-> push proof collection:id
 -> optimistic UI remains visible
--> short coalescing window by mutation class
--> close round N (manual sync closes immediately)
--> flush persistence gates
--> freeze watermark N
--> await server ACK/conflict for proofs <= watermark N
--> read canonical server checkpoint
--> pull each collection to target
--> rebase/preserve round N+1 pending local intent
--> round N converged
+
+automatic refresh(collection set)
+-> flush relevant debounce gates
+-> safe collections reSync immediately
+-> blocked collection waits only for its own pending push proofs
+-> bounded release -> reSync that collection
+
+explicit refreshAndWait()
+-> flush all relevant gates
+-> wait all already accepted mission writes
+-> read canonical checkpoint
+-> pull to target
+-> converged
 ```
 
-Refresh sources (`manual`, `online`, `visibility`, WebSocket hint, safety) dürfen nicht direkt unkoordiniert `reSync()` starten. Sie senden einen Trigger an den Coordinator. Ein Hint kann zusammengefasst werden.
+Ein globaler automatischer Barrier wurde verworfen, weil ein retrybarer Team-Push sonst unabhängige Street-Pulls blockiert.
+
+Phase B kann bei Bedarf einen Proof-Generation-Watermark ergänzen:
+
+```text
+close round N
+-> freeze proof watermark N
+-> wait only proofs <= N
+-> canonical checkpoint
+-> pull/rebase
+-> new local writes belong to N+1
+```
 
 ### Konflikte
 
-- Status: servergeordnete fachliche Semantik, explizit diagnostizierbar.
+- Status: aktuelle servergeordnete Konfliktsemantik bleibt vorerst bestehen; Produktentscheidung zu sichtbarem Same-Status-Konflikt offen.
 - Label/Name/Farbe: property-level Three-Way Merge wie heute.
 - Geometry/Team-Zuordnung: optimistic concurrency, struktureller Konflikt.
 - Delete: serverseitige finale Gültigkeitsentscheidung, stale Updates abweisen.
@@ -84,48 +106,55 @@ Publish muss Area, Geometry-Fingerprint, Generation und Lease in demselben Guard
 
 ### Change Feed
 
-Langfristig:
+Zu prüfen und danach zu entscheiden:
 
 ```text
 heads + retention(min_seq/bootstrap_epoch) + ordered deltas
 ```
 
-Ein Client unter `min_seq` erhält `bootstrap_required`, statt einen nicht mehr bedienbaren alten Checkpoint still weiterzuverwenden.
+Wenn Retention eingeführt wird, darf ein Client unter dem Retention-Floor nicht still inkrementell weiterlaufen. Er braucht einen expliziten Full-Bootstrap-Vertrag.
 
 ## Dateistruktur
 
 | Bereich | Dateien |
 |---|---|
-| Coordinator/P0 | `src/data/rxdbMissionSync.ts`, `src/data/campaignStore.ts` |
+| Coordinator/P0 | `src/data/rxdbMissionSync.ts`, `src/data/rxdbMissionSyncCore.ts`, `src/data/campaignStore.ts` |
 | Sync-Protokoll | `src/data/rxdbSyncProtocol.ts`, `src/domain/rxdbMutationAdapter.ts` |
 | Worker Pull/Push | `worker/rxdbSync.ts`, `worker/rxdbChangeFeed.ts`, `worker/syncHeads.ts` |
 | Street Lifecycle | `worker/mutationHandler.ts`, `worker/mutationRepository.ts`, `worker/areaTaskPreparation.ts`, `worker/streetNetwork/runner.ts`, `worker/streetNetwork/chunkPersistence.ts` |
-| Auth | `worker/adminAuth.ts`, `worker/organizationAuth.ts`, neue additive Session-Family-Migration nur nach Tests |
+| Auth | `worker/adminAuth.ts`, `worker/organizationAuth.ts`; neue additive Session-Family-Migration nur nach Tests |
 | Progress | `worker/campaignSyncDurableObject.ts`, `worker/areaTaskPreparationApi.ts`, Client workspace/state |
-| Tests | `tests/rxdbRefreshOrdering.test.ts`, `tests/rxdbP0Semantics.test.ts`, neue Chaos-/Lifecycle-Tests |
+| Tests | `tests/rxdbRefreshOrdering.test.ts`, `tests/rxdbP0Semantics.test.ts`, `tests/rxdbSyncRuntime.test.ts`, neue Chaos-/Lifecycle-Tests |
 | D1 Budget | `tests/helpers/d1Budget.ts`, `scripts/street-d1-budget.ts`, Observability |
 | Docs | Audit, ADR-0032, dieser Plan, CURRENT/context-map nach verifiziertem Ergebnis |
 
 ## Umsetzungsschritte
 
-### Phase A: Ordering P0
+### Phase A: Ordering P0, erledigt und verifiziert
 
-1. historischen Ordering-Test gegen aktuellen Code portieren.
-2. Fehler reproduzieren.
-3. Push-Proof Watermark/Barrier in `MissionRxdbSync` implementieren.
-4. externe Refresh-Trigger über Coordinator vereinheitlichen.
-5. fokussierte Tests, Gesamttest, Typecheck, Build über CI.
+Ergebnis:
 
-Rollback: Commit(s) revertierbar, keine Migration.
+1. Historischen Ordering-Test portiert.
+2. Baseline-Fehler in CI `34865295021` reproduziert.
+3. Ersten globalen Barrier gebaut und durch bestehende Regression in CI `34866065831` verworfen.
+4. Collection-aware automatische Barrier implementiert.
+5. `refreshAndWait()` als explizite globale Konvergenzbarriere beibehalten.
+6. Bestehende Source-Contract-Tests auf Coordinator/Core-Split angepasst.
+7. CI `34867857864`: Tests, Typecheck, Dependency Audit und Production Build grün.
+8. Independent StreetEngine Audit `34867857844`: grün.
+
+Keine Migration, kein Deploy.
 
 ### Phase B: Multi-Client Semantics
 
-1. A/B/C Simulator mit Latenz/Reordering/Duplicate/Lost ACK.
-2. same-status Konflikt und different-field Merge testen.
-3. Konfliktzustand sichtbar/diagnostizierbar machen.
-4. per-Collection Health und bounded retry definieren.
+1. Direkten automatischen Same-Collection-Barrier-Test ergänzen, nicht nur `refreshAndWait()`.
+2. A/B/C Simulator mit Latenz, Reordering, Duplicate und Lost ACK erweitern.
+3. Same-status Konflikt und different-field Merge deterministisch prüfen.
+4. Browser-Restart mit pending writes und Actor-Wechsel prüfen.
+5. Nur bei echtem Bedarf Proof-Watermark/Rebase-Round ergänzen.
+6. Per-Collection Health und bounded retry definieren.
 
-Rollback: Client Coordinator hinter bestehender API, keine Datenmigration.
+Rollback: Coordinator-Fassade ist isoliert und ohne Schemaänderung revertierbar.
 
 ### Phase C: Delete/Resize/StreetEngine
 
@@ -137,21 +166,22 @@ Rollback: Client Coordinator hinter bestehender API, keine Datenmigration.
 
 Rollback: alte publizierte Generation bleibt bis erfolgreichem neuen Publish sichtbar; keine destruktive Migration.
 
-### Phase D: Feed und D1
+### Phase D: Feed und D1, als nächstes
 
-1. komplette Query-Inventur pro Route inklusive Auth/PRAGMA.
-2. `meta.rows_read`, `rows_written`, Query Count, CPU, Dauer strukturiert erfassen.
-3. lokale 400/1k/5k/10k/20k Modelle.
-4. kleine echte Staging-Messung nur nach expliziter Autorisierung.
-5. Retention/Bootstrap-Grenze implementieren, wenn nötig additive Migration.
+1. Repo-weit beweisen, ob Retention/GC bereits existiert.
+2. Feed-Schema, Heads, Pull High-Water und Bootstrap-Vertrag inventarisieren.
+3. Query-Inventur pro Route inklusive Auth/PRAGMA fortführen.
+4. lokale 400/1k/5k/10k/20k Modelle aus vorhandenen Harnesses nutzen.
+5. Retention/Bootstrap-Grenze nur mit Tests und additiver Migration implementieren.
+6. `meta.rows_read`, `rows_written`, Query Count, CPU und Dauer remote nur nach expliziter Staging-Autorisierung messen.
 
-Rollback: Feed-GC zunächst deaktiviert; Bootstrap bleibt möglich.
+Rollback: Feed-GC standardmäßig deaktiviert, bis Bootstrap und Delete-Resurrection nachgewiesen sind.
 
 ### Phase E: Auth
 
 1. Session-Family-Datenmodell + Tests.
 2. rotierendes Remember-Device Credential, Replay Detection, Revocation.
-3. Password Change/Disable/Logout all/MFA Tests.
+3. Password Change/Disable/Logout-all/MFA Tests.
 4. erst danach Migration und UI.
 
 Rollback: alte 12h Session bleibt kompatibel bis neue Device Session bestätigt ist.
@@ -161,22 +191,22 @@ Rollback: alte 12h Session bleibt kompatibel bis neue Device Session bestätigt 
 1. strukturierte Sync-Operation IDs und Diagnoseexport.
 2. Progress Hint über bestehendes DO.
 3. Reconnect bestätigt kanonischen D1-State.
-4. Polling-Frequenz senken, sobald Hint-Recovery nachgewiesen ist.
+4. Polling-Frequenz erst senken, wenn Hint-Recovery nachgewiesen ist.
 
 ## Testmatrix
 
 Pflicht:
 
-- push slow + manual refresh
+- push slow + manual refresh, Phase A grün
+- retryable Team push + independent Street pull, Phase A grün
 - push slow + WebSocket hint
 - push slow + online/visibility
-- old pull before push ACK
-- duplicate push / lost ACK
+- duplicate push / lost ACK, bestehende Abdeckung vorhanden
 - reordered pull responses
 - two-client same status
-- different-field edits
-- offline reconnect
-- lost WebSocket
+- different-field edits, bestehende Abdeckung vorhanden
+- offline reconnect, actor-isolierte Abdeckung vorhanden
+- lost WebSocket + safety recovery, bestehende Abdeckung vorhanden
 - browser restart with pending writes
 - Area delete + active generation + offline client
 - shrink/expand/reexpand
@@ -187,17 +217,18 @@ Pflicht:
 
 ## D1 Budget Gates
 
-- Free Tier hard limit: 50 D1 queries/Worker invocation.
-- vorhandene Full-Schema DO-Fixture: max. 48, deshalb zu wenig Reserve.
+- Kritische Invocations dürfen das Plattform-Query-Limit nicht ausreizen.
+- vorhandene Full-Schema-DO-Fixture lag lokal bei max. 48 Queries/Invocation und hat zu wenig Reserve.
 - Ziel für kritische Pfade: <=40, sofern ohne Korrektheitsverlust erreichbar.
-- Tagesbudget wird erst mit echten `meta.rows_read`/`rows_written` final klassifiziert.
+- Tagesbudget wird erst mit echten vollständigen Invocation-Metriken final klassifiziert.
+- `D1_FREE_TIER_FEASIBILITY = UNKNOWN`, solange Remote-Billing-Metadaten fehlen.
 
 ## Offene Fragen / UNKLAR:
 
-- Produktregel bei gleichzeitigem same-status Conflict: servergeordnetes LWW oder sichtbarer fachlicher Konflikt?
-- Wie lange müssen offline Clients garantiert ohne Full Bootstrap aufholen können?
+- Produktregel bei gleichzeitigem Same-Status-Konflikt: aktuelle Serverordnung oder sichtbarer fachlicher Konflikt?
+- Wie lange müssen Offline-Clients garantiert ohne Full Bootstrap aufholen können?
 - Retention-Fenster für Change Feed?
 - Soll Recreate einer gelöschten Entity-ID grundsätzlich verboten werden oder über Entity-Epoch erlaubt sein?
-- exakte Remember-Device Policy: Empfehlung 60 Tage idle / 90 Tage absolute Laufzeit, noch Produktentscheidung.
+- exakte Remember-Device Policy, noch Produktentscheidung.
 - exakte zulässige Progress-Latenz.
 - echte Cloudflare D1 Invocation-Metriken fehlen bis autorisierte Staging-Messung.
