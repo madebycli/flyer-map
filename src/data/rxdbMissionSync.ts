@@ -93,26 +93,42 @@ async function attemptRememberRefresh(fetchImpl: typeof fetch, path: string) {
 }
 
 export function rememberedSessionFetch(campaignId: string, fetchImpl: typeof fetch): typeof fetch {
-  let refreshPromise: Promise<boolean> | null = null;
-  const refresh = () => {
-    if (refreshPromise) return refreshPromise;
-    const pending = (async () => {
-      if (await attemptRememberRefresh(fetchImpl, "/api/organization/session/refresh")) return true;
-      return attemptRememberRefresh(
-        fetchImpl,
-        `/api/campaigns/${encodeURIComponent(campaignId)}/admin-accounts/session/refresh`,
-      );
-    })().finally(() => {
-      if (refreshPromise === pending) refreshPromise = null;
+  let organizationRefreshPromise: Promise<boolean> | null = null;
+  let campaignRefreshPromise: Promise<boolean> | null = null;
+
+  const refreshOrganization = () => {
+    if (organizationRefreshPromise) return organizationRefreshPromise;
+    const pending = attemptRememberRefresh(fetchImpl, "/api/organization/session/refresh").finally(() => {
+      if (organizationRefreshPromise === pending) organizationRefreshPromise = null;
     });
-    refreshPromise = pending;
+    organizationRefreshPromise = pending;
     return pending;
   };
+  const refreshCampaignAdmin = () => {
+    if (campaignRefreshPromise) return campaignRefreshPromise;
+    const pending = attemptRememberRefresh(
+      fetchImpl,
+      `/api/campaigns/${encodeURIComponent(campaignId)}/admin-accounts/session/refresh`,
+    ).finally(() => {
+      if (campaignRefreshPromise === pending) campaignRefreshPromise = null;
+    });
+    campaignRefreshPromise = pending;
+    return pending;
+  };
+
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const response = await fetchImpl(input, init);
+    let response = await fetchImpl(input, init);
     if (!(await isAccessRequired(response))) return response;
-    if (!(await refresh())) return response;
-    return fetchImpl(input, init);
+
+    if (await refreshOrganization()) {
+      response = await fetchImpl(input, init);
+      if (!(await isAccessRequired(response))) return response;
+    }
+
+    if (await refreshCampaignAdmin()) {
+      return fetchImpl(input, init);
+    }
+    return response;
   }) as typeof fetch;
 }
 
