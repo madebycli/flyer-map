@@ -11,6 +11,7 @@ import {
   getOrganizationMe,
   listOrganizationCampaigns,
   logoutOrganization,
+  skipOrganizationMfaEnrollment,
   updateOrganizationCampaignLifecycle,
   type OrganizationCampaignDto,
   type OrganizationMeDto,
@@ -104,7 +105,7 @@ function StartPage({ navigate }: { navigate: Navigate }) {
   const [password, setPassword] = useState("");
   const [passwordAgain, setPasswordAgain] = useState("");
   const [bootstrapSecret, setBootstrapSecret] = useState("");
-  const [enrollment, setEnrollment] = useState<null | { otpauthUri: string; recoveryCodes: string[] }>(null);
+  const [enrollment, setEnrollment] = useState<null | { otpauthUri: string; recoveryCodes: string[]; optionalMfaAllowed: boolean }>(null);
   const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +121,7 @@ function StartPage({ navigate }: { navigate: Navigate }) {
     setError(null);
     try {
       const result = await bootstrapOrganizationAccount({ organizationName, username, password, bootstrapSecret });
-      setEnrollment({ otpauthUri: result.otpauthUri, recoveryCodes: result.recoveryCodes });
+      setEnrollment({ otpauthUri: result.otpauthUri, recoveryCodes: result.recoveryCodes, optionalMfaAllowed: result.optionalMfaAllowed });
       setBootstrapSecret("");
       setPassword("");
       setPasswordAgain("");
@@ -171,6 +172,23 @@ function StartPage({ navigate }: { navigate: Navigate }) {
             {error ? <p className="org-error" role="alert">{error}</p> : null}
             <button className="org-primary" disabled={busy || totpCode.length !== 6}>MFA bestätigen & Admin öffnen</button>
           </form>
+          {enrollment.optionalMfaAllowed ? (
+            <button
+              className="org-link-button"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                void skipOrganizationMfaEnrollment()
+                  .then(() => navigate("/admin", true))
+                  .catch((cause: unknown) => setError(errorMessage(cause)))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              2FA vorerst überspringen
+            </button>
+          ) : null}
         </section>
       </PageFrame>
     );
@@ -216,9 +234,10 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
     setBusy(true);
     setError(null);
     try {
-      await beginOrganizationLogin(username, password);
+      const result = await beginOrganizationLogin(username, password);
       setPassword("");
-      setPhase("factor");
+      if (result.requiresFactor) setPhase("factor");
+      else navigate(next, true);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {

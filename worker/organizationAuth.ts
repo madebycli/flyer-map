@@ -62,6 +62,7 @@ type AccountCredentialRow = {
   id: string;
   username: string;
   disabled_at: string | null;
+  mfa_required: number;
   algorithm: string | null;
   iterations: number | null;
   salt: string | null;
@@ -568,6 +569,7 @@ export async function bootstrapOrganization(
 export async function beginOrganizationPasswordLogin(
   db: D1DatabaseLike,
   input: { username: unknown; password: unknown },
+  options: { allowOptionalMfa?: boolean } = {},
 ) {
   const username = normalizeOrganizationUsername(input.username);
   const password = typeof input.password === "string" ? input.password : "";
@@ -578,7 +580,7 @@ export async function beginOrganizationPasswordLogin(
   const row = username
     ? await db
         .prepare(
-          `SELECT a.id, a.username, a.disabled_at,
+          `SELECT a.id, a.username, a.disabled_at, a.mfa_required,
                   p.algorithm, p.iterations, p.salt, p.verifier
            FROM organization_accounts a
            LEFT JOIN organization_password_credentials p ON p.account_id = a.id
@@ -594,9 +596,19 @@ export async function beginOrganizationPasswordLogin(
     return { ok: false as const, code: "invalid_credentials" };
   }
   await clearLoginFailures(db, scope);
+  if (options.allowOptionalMfa && row!.mfa_required === 0) {
+    const session = await createAccountSession(db, row!.id, "mfa");
+    return {
+      ok: true as const,
+      requiresFactor: false as const,
+      account: { id: row!.id, username: row!.username },
+      session,
+    };
+  }
   const challenge = await createLoginChallenge(db, row!.id, "login");
   return {
     ok: true as const,
+    requiresFactor: true as const,
     challengeSecret: challenge.secret,
     challengeExpiresAt: challenge.expiresAt,
   };
@@ -660,9 +672,49 @@ export async function completeOrganizationTotpLogin(
          WHERE account_id = ? AND (last_counter IS NULL OR last_counter < ?)`,
       )
       .bind(now, verified.counter, now, row.account_id, verified.counter),
+    db
+      .prepare("UPDATE organization_accounts SET mfa_required = 1, updated_at = ? WHERE id = ?")
+      .bind(now, row.account_id),
+  ]);
+  if (
+    (result[0]?.meta?.changes ?? 0) !== 1 ||
+    (result[1]?.meta?.changes ?? 0) !== 1 ||
+    (result[2]?.meta?.changes ?? 0) !== 1
+  ) {
+    return { ok: false as const, code: "invalid_factor" };
+  }
+  const session = await createAccountSession(db, row.account_id, "mfa");
+  return {
+    ok: true as const,
+    account: { id: row.account_id, username: row.username },
+    session,
+  };
+}
+
+export async function skipOrganizationMfaEnrollment(
+  db: D1DatabaseLike,
+  input: { challengeSecret: string },
+) {
+  if (!input.challengeSecret || input.challengeSecret.length > 256) {
+    return { ok: false as const, code: "invalid_challenge" };
+  }
+  const row = await challengeBySecret(db, input.challengeSecret, false) as RecoveryChallengeRow | null;
+  if (!row || row.disabled_at || row.purpose !== "bootstrap") {
+    return { ok: false as const, code: "invalid_challenge" };
+  }
+  const now = new Date().toISOString();
+  const result = await db.batch([
+    db
+      .prepare(
+        "UPDATE organization_login_challenges SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?",
+      )
+      .bind(now, row.id, now),
+    db
+      .prepare("UPDATE organization_accounts SET mfa_required = 0, updated_at = ? WHERE id = ?")
+      .bind(now, row.account_id),
   ]);
   if ((result[0]?.meta?.changes ?? 0) !== 1 || (result[1]?.meta?.changes ?? 0) !== 1) {
-    return { ok: false as const, code: "invalid_factor" };
+    return { ok: false as const, code: "invalid_challenge" };
   }
   const session = await createAccountSession(db, row.account_id, "mfa");
   return {

@@ -16,6 +16,7 @@ import {
   requireOrganizationCapability,
   resolveOrganizationAccountSession,
   revokeOrganizationAccountSession,
+  skipOrganizationMfaEnrollment,
   type OrganizationCapability,
 } from "./organizationAuth.ts";
 
@@ -32,6 +33,7 @@ export type OrganizationApiEnv = {
   ORGANIZATION_BOOTSTRAP_SECRET?: string;
   ORGANIZATION_TOTP_KEY?: string;
   ORGANIZATION_LOGIN_LIMITER?: RateLimitBinding;
+  ORGANIZATION_OPTIONAL_MFA?: string;
 };
 
 const json = (data: unknown, init: ResponseInit = {}) =>
@@ -484,10 +486,14 @@ export async function handleOrganizationApi(request: Request, env: OrganizationA
         return errorResponse(429, "login_throttled", "Anmeldung ist vorübergehend nicht möglich.");
       }
     }
-    const result = await beginOrganizationPasswordLogin(db, {
-      username: parsed.value.username,
-      password: parsed.value.password,
-    });
+    const result = await beginOrganizationPasswordLogin(
+      db,
+      {
+        username: parsed.value.username,
+        password: parsed.value.password,
+      },
+      { allowOptionalMfa: env.ORGANIZATION_OPTIONAL_MFA === "1" },
+    );
     if (!result.ok) {
       return errorResponse(
         result.code === "throttled" ? 429 : 401,
@@ -495,8 +501,35 @@ export async function handleOrganizationApi(request: Request, env: OrganizationA
         "Benutzername oder Passwort ist ungültig.",
       );
     }
+    if (!result.requiresFactor) {
+      const response = json({
+        requiresFactor: false,
+        account: result.account,
+        assurance: result.session.assurance,
+      });
+      appendCookie(response, organizationAccountSessionCookie(result.session.secret));
+      return appendCookie(response, clearOrganizationLoginChallengeCookie());
+    }
     const response = json({ challengeExpiresAt: result.challengeExpiresAt, requiresFactor: true });
     return appendCookie(response, organizationLoginChallengeCookie(result.challengeSecret));
+  }
+
+  if (url.pathname === "/api/organization/bootstrap/skip-mfa" && request.method === "POST") {
+    if (env.ORGANIZATION_OPTIONAL_MFA !== "1") {
+      return errorResponse(404, "not_found", "Route wurde nicht gefunden.");
+    }
+    const challengeSecret = cookieValue(request, LOGIN_CHALLENGE_COOKIE) ?? "";
+    const result = await skipOrganizationMfaEnrollment(db, { challengeSecret });
+    if (!result.ok) {
+      return errorResponse(401, "invalid_challenge", "Setup-Sitzung ist ungültig oder abgelaufen.");
+    }
+    const response = json({
+      account: result.account,
+      assurance: result.session.assurance,
+      mfaRequired: false,
+    });
+    appendCookie(response, organizationAccountSessionCookie(result.session.secret));
+    return appendCookie(response, clearOrganizationLoginChallengeCookie());
   }
 
   if (url.pathname === "/api/organization/login/totp" && request.method === "POST") {

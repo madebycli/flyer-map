@@ -22,6 +22,7 @@ import {
   restartOrganizationTotpEnrollment,
   revokeOrganizationAccountSessionById,
   rotateOrganizationRecoveryCodes,
+  verifyOrganizationAccountPassword,
 } from "./organizationSecurity.ts";
 
 const MAX_BODY_BYTES = 96_000;
@@ -212,6 +213,66 @@ async function handlePublicRedeem(request: Request, env: OrganizationSecurityApi
   const response = json({ ok: true });
   response.headers.append("set-cookie", clearOrganizationAccountSessionCookie());
   return response;
+}
+
+async function handleMfaPreference(request: Request, env: OrganizationSecurityApiEnv) {
+  if (env.ORGANIZATION_OPTIONAL_MFA !== "1") {
+    return errorResponse(404, "not_found", "Route wurde nicht gefunden.");
+  }
+  const db = env.DB!;
+  const session = await resolveOrganizationAccountSession(db, request);
+  if (!session) return authError("authentication_required");
+  if (request.method === "GET") {
+    const row = await db
+      .prepare("SELECT mfa_required FROM organization_accounts WHERE id = ? LIMIT 1")
+      .bind(session.accountId)
+      .first<{ mfa_required: number }>();
+    return row
+      ? json({ optional: true, required: row.mfa_required !== 0 })
+      : errorResponse(404, "account_not_found", "Account wurde nicht gefunden.");
+  }
+  if (request.method !== "POST") {
+    return errorResponse(405, "method_not_allowed", "Security-Methode nicht erlaubt.");
+  }
+  const parsed = await readBody(request);
+  if (!parsed.ok) return parsed.response;
+  if (parsed.value.required !== false) {
+    return errorResponse(
+      409,
+      "mfa_enrollment_required",
+      "Zum Aktivieren von 2FA bitte TOTP neu einrichten und bestätigen.",
+    );
+  }
+  const organizationId = typeof parsed.value.organizationId === "string"
+    ? selector(parsed.value.organizationId)
+    : null;
+  if (!organizationId) {
+    return errorResponse(400, "invalid_organization", "Organization ist ungültig.");
+  }
+  const auth = await requireSelfMembership(request, db, organizationId);
+  if (!auth.ok) return auth.response;
+  if (!(await verifyOrganizationAccountPassword(db, session.accountId, parsed.value.currentPassword))) {
+    return errorResponse(401, "invalid_credentials", "Aktuelles Passwort ist ungültig.");
+  }
+  const now = new Date().toISOString();
+  const result = await db.batch([
+    db
+      .prepare("UPDATE organization_accounts SET mfa_required = 0, updated_at = ? WHERE id = ?")
+      .bind(now, session.accountId),
+  ]);
+  if ((result[0]?.meta?.changes ?? 0) !== 1) {
+    return errorResponse(404, "account_not_found", "Account wurde nicht gefunden.");
+  }
+  await audit(
+    db,
+    organizationId,
+    session.accountId,
+    "account.mfa_optional",
+    "account",
+    session.accountId,
+    { required: false },
+  );
+  return json({ optional: true, required: false });
 }
 
 async function handleSelfSecurity(request: Request, env: OrganizationSecurityApiEnv) {
@@ -585,6 +646,7 @@ export async function handleOrganizationSecurityApi(
   const publicRedeem =
     url.pathname === "/api/organization/invites/redeem" ||
     url.pathname === "/api/organization/password-reset/redeem";
+  const mfaPreference = url.pathname === "/api/organization/security/mfa";
   const selfSecurity =
     url.pathname === "/api/organization/security/password" ||
     url.pathname === "/api/organization/security/username" ||
@@ -592,12 +654,13 @@ export async function handleOrganizationSecurityApi(
     url.pathname === "/api/organization/security/totp/restart";
   const sessions = sessionRoute(url.pathname);
   const organizationRoute = organizationSecurityRoute(url.pathname);
-  if (!publicRedeem && !selfSecurity && !sessions && !organizationRoute) return null;
+  if (!publicRedeem && !mfaPreference && !selfSecurity && !sessions && !organizationRoute) return null;
   if (!sameOriginWrite(request)) return errorResponse(403, "origin_forbidden", "Organization-Schreibzugriffe benötigen denselben Origin.");
   if (!env.DB) return errorResponse(503, "d1_unavailable", "D1 ist nicht gebunden.");
   if (!(await hasSecuritySchema(env.DB))) {
     return errorResponse(503, "organization_security_schema_unavailable", "Organization-Security benötigt Migration 0019.");
   }
+  if (mfaPreference) return handleMfaPreference(request, env);
   if (publicRedeem) {
     if (request.method !== "POST") return errorResponse(405, "method_not_allowed", "Redeem-Methode nicht erlaubt.");
     return handlePublicRedeem(request, env);

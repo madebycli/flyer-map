@@ -132,7 +132,7 @@ async function credentialRow(db: D1DatabaseLike, accountId: string) {
     .first<CredentialRow>();
 }
 
-async function passwordMatchesAccount(db: D1DatabaseLike, accountId: string, password: unknown) {
+export async function verifyOrganizationAccountPassword(db: D1DatabaseLike, accountId: string, password: unknown) {
   const submitted = typeof password === "string" ? password : "";
   const row = await credentialRow(db, accountId);
   const salt = row?.salt ? base64UrlToBytes(row.salt) : null;
@@ -561,7 +561,7 @@ export async function changeOrganizationPassword(
   input: { organizationId: string; accountId: string; currentPassword: unknown; nextPassword: unknown },
 ) {
   if (!validOrganizationPassword(input.nextPassword)) return { ok: false as const, code: "invalid_password" };
-  if (!(await passwordMatchesAccount(db, input.accountId, input.currentPassword))) {
+  if (!(await verifyOrganizationAccountPassword(db, input.accountId, input.currentPassword))) {
     return { ok: false as const, code: "invalid_credentials" };
   }
   const password = await passwordRecord(input.nextPassword);
@@ -599,7 +599,7 @@ export async function changeOrganizationUsername(
 ) {
   const username = normalizeOrganizationUsername(input.username);
   if (!username) return { ok: false as const, code: "invalid_username" };
-  if (!(await passwordMatchesAccount(db, input.accountId, input.currentPassword))) {
+  if (!(await verifyOrganizationAccountPassword(db, input.accountId, input.currentPassword))) {
     return { ok: false as const, code: "invalid_credentials" };
   }
   const now = new Date().toISOString();
@@ -631,7 +631,7 @@ export async function rotateOrganizationRecoveryCodes(
   db: D1DatabaseLike,
   input: { organizationId: string; accountId: string; currentPassword: unknown },
 ) {
-  if (!(await passwordMatchesAccount(db, input.accountId, input.currentPassword))) {
+  if (!(await verifyOrganizationAccountPassword(db, input.accountId, input.currentPassword))) {
     return { ok: false as const, code: "invalid_credentials" };
   }
   const bundle = await recoveryBundle(input.accountId);
@@ -674,7 +674,7 @@ export async function restartOrganizationTotpEnrollment(
     totpKey: string;
   },
 ) {
-  if (!(await passwordMatchesAccount(db, input.accountId, input.currentPassword))) {
+  if (!(await verifyOrganizationAccountPassword(db, input.accountId, input.currentPassword))) {
     return { ok: false as const, code: "invalid_credentials" };
   }
   const enrollment = await enrollmentBundle(input.accountId, input.username, input.totpKey);

@@ -9,7 +9,9 @@ import {
   createOrganizationPasswordReset,
   createOrganizationRole,
   deleteOrganizationRole,
+  disableOrganizationMfa,
   getOrganizationMe,
+  getOrganizationMfaPreference,
   listOrganizationAudit,
   listOrganizationFeatures,
   listOrganizationInvites,
@@ -232,6 +234,7 @@ export function OrganizationSecurityCenter() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [totpEnrollment, setTotpEnrollment] = useState<{ otpauthUri: string; recoveryCodes: string[] } | null>(null);
   const [factorCode, setFactorCode] = useState("");
+  const [mfaRequired, setMfaRequired] = useState<boolean | null>(null);
 
   const membership = useMemo(() => me?.memberships.find((item) => item.organizationId === organizationId) ?? me?.memberships[0] ?? null, [me, organizationId]);
   const has = (capability: string) => Boolean(membership?.role === "organizer" || membership?.capabilities.includes(capability));
@@ -244,6 +247,7 @@ export function OrganizationSecurityCenter() {
     setError(null);
     const tasks: Promise<void>[] = [
       listOrganizationSessions().then((result) => setSessions(result.sessions)),
+      getOrganizationMfaPreference().then((result) => setMfaRequired(result.required)),
     ];
     if (has("account.manage")) tasks.push(listOrganizationMembers(nextOrganizationId).then((result) => setMembers(result.members)), listOrganizationInvites(nextOrganizationId).then((result) => setInvites(result.invites)));
     if (has("role.manage")) tasks.push(listOrganizationRoles(nextOrganizationId).then((result) => setRoles(result.roles)));
@@ -302,7 +306,8 @@ export function OrganizationSecurityCenter() {
 
         <section className="org-card org-card--wide">
           <h2>Eigener Account</h2>
-          <div className="org-detail-grid"><div><dt>Benutzername</dt><dd>{me.account.username}</dd></div><div><dt>Sitzung</dt><dd>MFA bestätigt</dd></div></div>
+          <div className="org-detail-grid"><div><dt>Benutzername</dt><dd>{me.account.username}</dd></div><div><dt>2FA</dt><dd>{mfaRequired === false ? "deaktiviert (Unstable)" : "aktiv"}</dd></div></div>
+          <MfaPreferenceCard organizationId={membership.organizationId} required={mfaRequired} onDisabled={() => setMfaRequired(false)} onEnableEnrollment={setTotpEnrollment} />
           <AccountForms organizationId={membership.organizationId} onRecoveryCodes={setRecoveryCodes} onTotp={setTotpEnrollment} />
           {totpEnrollment ? <TotpReenrollment enrollment={totpEnrollment} factorCode={factorCode} setFactorCode={setFactorCode} onDone={() => window.location.replace("/login")} /> : null}
         </section>
@@ -318,6 +323,62 @@ export function OrganizationSecurityCenter() {
         {has("audit.read") ? <AuditLog events={events} /> : null}
       </section>
     </main>
+  );
+}
+
+function MfaPreferenceCard({
+  organizationId,
+  required,
+  onDisabled,
+  onEnableEnrollment,
+}: {
+  organizationId: string;
+  required: boolean | null;
+  onDisabled: () => void;
+  onEnableEnrollment: (value: { otpauthUri: string; recoveryCodes: string[] }) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  if (required === null) return null;
+  const disable = async () => {
+    if (busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await disableOrganizationMfa(organizationId, password);
+      onDisabled();
+      setPassword("");
+      setMessage("2FA ist für diesen Unstable-Account deaktiviert.");
+    } catch (cause) {
+      setMessage(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const enable = async () => {
+    if (busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await restartOrganizationTotp(organizationId, password);
+      onEnableEnrollment({ otpauthUri: result.otpauthUri, recoveryCodes: result.recoveryCodes });
+      setPassword("");
+      setMessage("TOTP-Einrichtung gestartet. Nach Bestätigung ist 2FA wieder aktiv.");
+    } catch (cause) {
+      setMessage(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="org-form org-form--panel">
+      <h3>2FA in Unstable</h3>
+      <p>{required ? "2FA ist aktiv. Du kannst sie nur in Unstable für diesen Account deaktivieren." : "2FA ist deaktiviert. Login funktioniert nur mit Benutzername und Passwort."}</p>
+      <label>Aktuelles Passwort<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>
+      <button type="button" disabled={busy || !password} onClick={() => void (required ? disable() : enable())}>{required ? "2FA deaktivieren" : "2FA aktivieren"}</button>
+      {message ? <p className={message.includes("aktiv") || message.includes("deaktiviert") || message.includes("gestartet") ? "org-status" : "org-error"}>{message}</p> : null}
+    </section>
   );
 }
 

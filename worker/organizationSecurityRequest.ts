@@ -5,6 +5,7 @@ const SECURITY_QUERYLESS_PATHS = new Set([
   "/api/organization/security/username",
   "/api/organization/security/recovery-codes",
   "/api/organization/security/totp/restart",
+  "/api/organization/security/mfa",
 ]);
 
 export function guardOrganizationSecurityQuery(request: Request): Response | null {

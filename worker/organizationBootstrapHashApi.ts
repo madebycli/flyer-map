@@ -107,6 +107,7 @@ export async function handleOrganizationBootstrapHashApi(
     otpauthUri: result.otpauthUri,
     recoveryCodes: result.recoveryCodes,
     challengeExpiresAt: result.challengeExpiresAt,
+    optionalMfaAllowed: env.ORGANIZATION_OPTIONAL_MFA === "1",
   }, { status: 201 });
   response.headers.append("set-cookie", organizationLoginChallengeCookie(result.challengeSecret));
   return response;

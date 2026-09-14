@@ -121,11 +121,25 @@ export function bootstrapOrganizationAccount(input: {
     otpauthUri: string;
     recoveryCodes: string[];
     challengeExpiresAt: string;
+    optionalMfaAllowed: boolean;
   }>("/api/organization/bootstrap", { method: "POST", body: JSON.stringify(input) });
 }
 
+export function skipOrganizationMfaEnrollment() {
+  return requestJson<{
+    account: { id: string; username: string };
+    assurance: "mfa";
+    mfaRequired: false;
+  }>("/api/organization/bootstrap/skip-mfa", { method: "POST", body: "{}" });
+}
+
 export function beginOrganizationLogin(username: string, password: string) {
-  return requestJson<{ challengeExpiresAt: string; requiresFactor: true }>("/api/organization/login/password", {
+  return requestJson<{
+    challengeExpiresAt?: string;
+    requiresFactor: boolean;
+    account?: { id: string; username: string };
+    assurance?: "mfa";
+  }>("/api/organization/login/password", {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
@@ -322,4 +336,16 @@ export function updateOrganizationFeature(organizationId: string, key: string, e
     `/api/organizations/${encodeURIComponent(organizationId)}/features`,
     { method: "PUT", body: JSON.stringify({ key, enabled }) },
   );
+}
+
+
+export function getOrganizationMfaPreference() {
+  return requestJson<{ optional: true; required: boolean }>("/api/organization/security/mfa");
+}
+
+export function disableOrganizationMfa(organizationId: string, currentPassword: string) {
+  return requestJson<{ optional: true; required: false }>("/api/organization/security/mfa", {
+    method: "POST",
+    body: JSON.stringify({ organizationId, currentPassword, required: false }),
+  });
 }
