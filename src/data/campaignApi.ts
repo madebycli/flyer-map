@@ -93,16 +93,67 @@ async function parseError(response: Response) {
   );
 }
 
+function campaignIdForRememberRefresh(path: string) {
+  try {
+    const url = new URL(path, "https://flyer.local");
+    const direct = url.pathname.match(/^\/api\/campaigns\/([^/]+)\//u);
+    if (direct) {
+      const value = decodeURIComponent(direct[1]);
+      return CAMPAIGN_ID_PATTERN.test(value) ? value : null;
+    }
+    const query = url.searchParams.get("campaign");
+    return query && CAMPAIGN_ID_PATTERN.test(query) ? query : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshRememberedCampaignAdminSession(campaignId: string) {
+  try {
+    const response = await fetch(
+      `/api/campaigns/${encodeURIComponent(campaignId)}/admin-accounts/session/refresh`,
+      {
+        method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    );
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function apiFetch(path: string, init?: RequestInit) {
+  const send = () => fetch(path, {
+    cache: "no-store",
+    credentials: "same-origin",
+    ...init,
+  });
+
   let response: Response;
   try {
-    response = await fetch(path, {
-      cache: "no-store",
-      credentials: "same-origin",
-      ...init,
-    });
+    response = await send();
   } catch {
     throw new CampaignApiError(0, "network_error", "Server ist momentan nicht erreichbar.");
+  }
+
+  if (!response.ok && response.status === 401) {
+    const firstError = await parseError(response.clone());
+    const campaignId = campaignIdForRememberRefresh(path);
+    if (
+      firstError.code === "access_required" &&
+      campaignId &&
+      await refreshRememberedCampaignAdminSession(campaignId)
+    ) {
+      try {
+        response = await send();
+      } catch {
+        throw new CampaignApiError(0, "network_error", "Server ist momentan nicht erreichbar.");
+      }
+    }
   }
 
   if (!response.ok) throw await parseError(response);
@@ -165,7 +216,6 @@ export async function postCampaignMutation(
     alreadyApplied: boolean;
   };
 }
-
 
 export async function fetchCollectionSnapshot(campaignId: string) {
   const response = await apiFetch(
@@ -342,11 +392,16 @@ export async function createCampaignAdminPasswordResetInvite(campaignId: string,
   return (await response.json()) as { token: string; expiresAt: string; username: string };
 }
 
-export async function loginCampaignAdminAccount(campaignId: string, username: string, password: string) {
+export async function loginCampaignAdminAccount(
+  campaignId: string,
+  username: string,
+  password: string,
+  rememberDevice = false,
+) {
   const response = await apiFetch(`${campaignAdminAccountsPath(campaignId)}/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, rememberDevice }),
   });
   return ((await response.json()) as { access: AccessInfo }).access;
 }
@@ -377,7 +432,6 @@ export async function completeCampaignAdminPasswordReset(
   });
   return ((await response.json()) as { access: AccessInfo }).access;
 }
-
 
 export function collectionAccessTokenFromUrl() {
   if (typeof window === "undefined") return null;
