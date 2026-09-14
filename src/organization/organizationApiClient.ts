@@ -95,7 +95,9 @@ async function errorDetails(response: Response) {
   };
 }
 
-async function refreshRememberedOrganizationSession() {
+let organizationRefreshPromise: Promise<boolean> | null = null;
+
+async function performRememberedOrganizationRefresh() {
   try {
     const response = await fetch("/api/organization/session/refresh", {
       method: "POST",
@@ -103,10 +105,30 @@ async function refreshRememberedOrganizationSession() {
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    return response.ok;
+    if (response.ok) return true;
+    if (response.status === 409) {
+      const details = await errorDetails(response);
+      if (details.code === "remembered_device_rotated") {
+        // Another tab just rotated the shared cookie. Do not replay the stale
+        // token. Give that response a short window to install its new session
+        // cookie and retry only the original API request once.
+        await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 250));
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
   }
+}
+
+function refreshRememberedOrganizationSession() {
+  if (organizationRefreshPromise) return organizationRefreshPromise;
+  const pending = performRememberedOrganizationRefresh().finally(() => {
+    if (organizationRefreshPromise === pending) organizationRefreshPromise = null;
+  });
+  organizationRefreshPromise = pending;
+  return pending;
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
