@@ -191,17 +191,20 @@ async function retainedCheckpointFloor(
   campaignId: string,
   collectionName: RxdbCollectionName,
 ) {
-  const schema = await db.prepare("PRAGMA table_info(campaign_sync_retention)").all<{ name: string }>();
-  const columns = new Set(schema.results.map(column => column.name));
-  if (!columns.has("min_checkpoint_seq") || !columns.has("epoch")) return null;
-  const row = await db.prepare(
-    "SELECT min_checkpoint_seq, epoch FROM campaign_sync_retention WHERE campaign_id = ? AND collection_name = ?",
-  ).bind(campaignId, collectionName).first<RxdbRetentionFloor>();
-  if (!row) return null;
-  if (!Number.isSafeInteger(row.min_checkpoint_seq) || row.min_checkpoint_seq < 0 || !Number.isSafeInteger(row.epoch) || row.epoch < 1) {
-    throw new Error("rxdb_retention_state_invalid");
+  try {
+    const row = await db.prepare(
+      "SELECT min_checkpoint_seq, epoch FROM campaign_sync_retention WHERE campaign_id = ? AND collection_name = ?",
+    ).bind(campaignId, collectionName).first<RxdbRetentionFloor>();
+    if (!row) return null;
+    if (!Number.isSafeInteger(row.min_checkpoint_seq) || row.min_checkpoint_seq < 0 || !Number.isSafeInteger(row.epoch) || row.epoch < 1) {
+      throw new Error("rxdb_retention_state_invalid");
+    }
+    return { minCheckpointSeq: row.min_checkpoint_seq, epoch: row.epoch };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("no such table") || message.includes("campaign_sync_retention")) return null;
+    throw error;
   }
-  return { minCheckpointSeq: row.min_checkpoint_seq, epoch: row.epoch };
 }
 
 async function generationState(db:D1DatabaseLike,campaignId:string,access:AccessContext){
