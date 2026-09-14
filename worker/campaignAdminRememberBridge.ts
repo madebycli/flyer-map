@@ -62,6 +62,9 @@ export async function handleCampaignAdminRememberRoute(request: Request, db?: D1
 
   const refreshed = await refreshCampaignAdminRememberedDevice(db, request, campaignId);
   if (!refreshed.ok) {
+    if (refreshed.code === "rotated") {
+      return errorResponse(409, "remembered_device_rotated", "Dieses Gerät wurde gerade in einem anderen Tab erneuert.");
+    }
     const response = errorResponse(401, "remembered_device_invalid", "Das gemerkte Gerät ist abgelaufen oder wurde widerrufen.");
     response.headers.append("set-cookie", clearCampaignAdminRememberCookie());
     return response;
