@@ -1,72 +1,104 @@
 ---
 id: ADR-0032
-title: Central client sync coordinator with push-proof barriers
-status: proposed
+title: Central client sync coordinator with collection-aware push-proof barriers
+status: accepted
 date: 2026-09-14
 related: [ADR-0011, ADR-0024, ADR-0025, ADR-0029]
 ---
 
-# ADR-0032: Central client sync coordinator with push-proof barriers
+# ADR-0032: Central client sync coordinator with collection-aware push-proof barriers
 
 ## Context
 
-`MissionRxdbSync.refreshAndWait()` on `unstable@35e9987` reads a server checkpoint before proving that already accepted local RxDB writes have reached the canonical server. Manual refresh, online/visibility transitions and realtime/safety invalidation can therefore schedule pulls without one shared write barrier.
+`unstable@35e9987efcf7a113a93df22b47f6f828cd0a4944` could read a canonical checkpoint and start a pull before an already accepted local RxDB write had reached the server. The client already tracked `pendingPushProofs`, but `refresh()` and `refreshAndWait()` did not use those proofs as an ordering barrier.
 
-A historical branch fixed the symptom with both `campaignStore.serverWritePending` and `MissionRxdbSync.waitForPendingPushes()`. Reintroducing both creates two owners for the same sync state.
+The historical regression was restored as `tests/rxdbRefreshOrdering.test.ts`. CI run `34865295021` failed on the baseline-derived test commit with the assertion that refresh completed while a local write was still waiting for its push gate. The P0 is therefore reproduced, not inferred.
+
+A first implementation used one global pending-write barrier for every refresh. CI run `34866065831` rejected that design because a retryable `teams` push blocked an unrelated `streetTasks` pull. Global automatic barriers are therefore explicitly rejected.
 
 ## Decision
 
-`MissionRxdbSync` is the single owner of client sync ordering.
+`MissionRxdbSync` is the single owner of client sync ordering. `campaignStore` does not regain a second `serverWritePending` truth.
 
-1. Every local mutation that produces an RxDB push proof receives a monotonically increasing local proof generation.
-2. A hard sync barrier closes a watermark at the current proof generation.
-3. Debounced persistence gates are flushed.
-4. The barrier waits only for pending proofs at or below that watermark to reach ACK/conflict/rejection or a bounded timeout.
-5. Only after that barrier does it request the canonical server checkpoint.
-6. Pull then advances all relevant collection checkpoints to that target.
-7. Local edits created after the watermark belong to the next logical round and do not make the closed round unbounded.
+### Automatic and invalidation-driven refresh
 
-`campaignStore` must not maintain a second `serverWritePending` truth. UI state may display coordinator status, but ordering remains in `MissionRxdbSync`.
+`refresh(names)` is collection-aware:
 
-WebSocket messages remain contentless invalidation hints. Lost/duplicate/out-of-order hints do not affect correctness. Safety recovery is allowed, but it also routes through coordinator semantics.
+1. Flush only the persistence gates relevant to the requested collections.
+2. For each requested collection, inspect pending push proofs belonging to that collection.
+3. Collections without a pending same-collection write may re-sync immediately.
+4. A collection with a pending write is queued independently until its own push proof is resolved or the bounded barrier fails.
+5. A blocked `teams` collection must not prevent `streetTasks`, `areas`, `houseTasks` or `campaigns` from advancing when those collections are safe.
+6. Duplicate refresh triggers for the same blocked collection coalesce behind one barrier.
+
+WebSocket, online/visibility and safety paths may continue to call the public coordinator API. They do not call a second store-level ordering mechanism.
+
+### Explicit convergence refresh
+
+`refreshAndWait()` is deliberately stronger. It represents the user-visible statement that all already accepted local work has converged, so Phase A waits for pending writes in all five mission collections before reading the target checkpoint and delegating to the existing checkpoint convergence logic.
+
+This is intentionally not yet the final continuous-edit algorithm. A future Phase B may close a local proof-generation watermark so writes created after that watermark belong to the next round and cannot starve the closed round.
+
+### Core/facade split
+
+The existing RxDB replication mechanics remain in `rxdbMissionSyncCore.ts`. `rxdbMissionSync.ts` is the public coordinator facade. Source-contract tests read both files as one contract where they intentionally inspect implementation text.
 
 ## Conflict policy
 
-Existing property-level Three-Way detection in `rxdbMutationAdapter` remains the baseline. Structural changes and unresolved same-field conflicts return canonical master state plus diagnostic rejection/conflict information. CRDT is not introduced globally.
+Existing property-level Three-Way detection in `rxdbMutationAdapter` remains the baseline. Independent fields may rebase. Structural changes and unresolved same-field conflicts return canonical master state plus diagnostics. Stale updates against a deleted target remain `target_deleted` and do not recreate the entity.
 
-The exact product rule for concurrent status writes remains open: server-ordered status LWW versus explicit user-visible conflict. It must be decided and covered by tests before changing current behavior.
+No global CRDT is introduced.
+
+The exact product rule for simultaneous status writes remains open: keep the current server-ordered conflict behavior or expose a user-visible domain conflict. Any change requires a separate decision and regression tests.
+
+## Verification
+
+Phase A is verified on head `d276ccdd6c2350997d3fdd377fb28824e56fd88d`:
+
+- historical delayed-push refresh regression passes;
+- existing regression `a retryable Team push does not block an independent Street pull` passes;
+- full tests pass in CI run `34867857864`;
+- TypeScript typecheck passes in the same run;
+- dependency audit passes in the same run;
+- production build passes in the same run;
+- independent StreetEngine audit run `34867857844` passes.
+
+No deployment or D1 migration was performed.
 
 ## Consequences
 
-- a refresh cannot truthfully report convergence before pre-barrier local writes are server-resolved.
-- continuous edits after the barrier do not starve a manual sync round.
-- one coordinator owns manual/online/visibility/realtime/safety ordering.
-- no schema migration is required for the P0 barrier.
-- later per-collection health and round diagnostics can build on the same coordinator.
+- A same-collection invalidation pull cannot overtake an already accepted local write in that collection.
+- An unrelated broken collection no longer has to freeze the whole replica.
+- Explicit convergence is truthful with respect to already accepted local writes.
+- The P0 fix requires no schema migration.
+- Per-collection health and a future watermark/rebase round can build on the same coordinator boundary.
 
 ## Rejected alternatives
 
 ### Store-level `serverWritePending` as primary guard
 
-Rejected as the architecture owner. It duplicates RxDB replication state and is easy to bypass from WebSocket/safety paths.
+Rejected because it duplicates RxDB replication state and can be bypassed by realtime and safety paths.
 
-### Wait until `pendingPushProofs.size === 0`
+### One global barrier for every automatic refresh
 
-Rejected as the final model because new edits can arrive continuously and keep an already closed manual barrier open forever.
+Rejected by regression evidence. It makes an unhealthy collection block independent collections.
+
+### Wait forever for `pendingPushProofs.size === 0`
+
+Rejected as the final continuous-edit model. New edits can arrive continuously. Phase A uses bounded waits; Phase B should use a closed proof-generation watermark if starvation is observed or a stronger round contract is required.
 
 ### One-minute global upload batch
 
-Rejected. It increases collaboration latency and failure blast radius. Use short type-specific coalescing windows instead.
+Rejected because it increases collaboration latency and failure blast radius. Existing short type-specific coalescing windows remain preferable.
 
 ### Global CRDT
 
-Rejected. Flyer Map has mostly server-authoritative status, geometry and derived-data invariants. CRDT complexity is only justified for future fields that truly need commutative concurrent editing.
+Rejected. Flyer Map is primarily server-authoritative status, geometry and derived data. CRDT complexity is justified only for future fields that truly require commutative concurrent editing.
 
-## Verification gates
+## Remaining gates
 
-- regression: refresh while accepted local push is delayed.
-- refresh target includes the acknowledged local mutation.
-- new writes after barrier watermark do not block the prior barrier forever.
-- manual, online, visibility, WebSocket and safety triggers share coordinator semantics.
-- lost/duplicate hints still converge through checkpoint pull.
-- full CI, typecheck and build green before promotion.
+- explicit test for automatic same-collection refresh delayed by a pending local push;
+- multi-client same-status product decision and test;
+- browser restart plus pending-write recovery across actor scopes;
+- feed retention/bootstrap floor and delete-resurrection tests across compaction;
+- full Area resize/delete versus active StreetEngine generation chaos tests.
