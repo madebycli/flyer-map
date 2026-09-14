@@ -4,151 +4,179 @@ Stand: 2026-09-14
 
 Baseline: `unstable@35e9987efcf7a113a93df22b47f6f828cd0a4944`
 
-Historischer Vergleich: `fix/live-map-sync-organizer-2026-09-10`
+Audit-Branch: `audit/sync-d1-streetengine-ultra-2026-09-14`
 
-Status: **Phase 1 Audit. Keine Runtime-Änderung in diesem Commit.**
+Verifizierter Phase-A-Head: `d276ccdd6c2350997d3fdd377fb28824e56fd88d`
+
+Status: **Ordering-P0 Phase A implementiert und CI-verifiziert. Gesamtauftrag weiter offen. Keine Production-Aktion.**
 
 ## Beweisregeln
 
-- `PROVEN`: direkt aus aktuellem Source, vorhandenem Test oder exaktem historischen Diff nachgewiesen.
-- `LIKELY`: Source-Reihenfolge ist riskant, aber der konkrete Fehler ist auf aktuellem HEAD noch nicht durch einen ausgeführten Regressionstest bewiesen.
-- `HYPOTHESIS`: plausible Ursache, die noch gezielte Messung benötigt.
+- `PROVEN`: direkt aus aktuellem Source, vorhandenem Test oder ausgeführter CI nachgewiesen.
+- `LIKELY`: Source ist riskant, aber der konkrete Fehler noch nicht reproduziert.
+- `HYPOTHESIS`: plausible Ursache, die gezielte Messung benötigt.
 - `UNKNOWN`: Evidenz fehlt.
 
-Keine lokale Shell-Testausführung ist Teil dieses Checkpoints. Die aktuelle Ausführungsumgebung konnte das Repository nicht per `git clone` erreichen. Spätere Verifikation muss über GitHub Actions oder eine andere tatsächlich ausführbare Umgebung erfolgen.
+Lokales `git clone` war in der Ausführungsumgebung nicht verfügbar. Verifikation erfolgt deshalb über exakte GitHub-Commits und GitHub Actions. Kein lokaler Testlauf wird als Ersatz behauptet.
 
 ## 1. Executive Matrix
 
-| Bereich | aktueller Zustand | Root Cause | Risiko | Ziel | Änderung | Beweis |
-|---|---|---|---|---|---|---|
-| Refresh vor Push-ACK | `refreshAndWait()` fragt den Server-Checkpoint ab, bevor bestehende `pendingPushProofs` sicher bestätigt sind | historische Push-Barriere aus `14046b1` fehlt | lokaler Write kann von älterem Pull überholt werden | harte Barrier vor Ziel-Checkpoint | Regression zuerst, dann zentraler Barrier im Sync-Coordinator | `PROVEN` für Reihenfolge und fehlende Barriere; aktueller sichtbarer Rollback bis Testlauf `LIKELY` |
-| online/visibility refresh | `campaignStore` ruft `runtime.sync?.refresh()` direkt auf | alte `serverWritePending`/Write-Barrier aus `03d5a28` nicht mehr vorhanden | gleicher Race außerhalb manueller Syncs | alle externen Refresh-Trigger über Coordinator | keine zweite Wahrheit im Store, sondern Coordinator-API | `PROVEN` |
-| WebSocket/Safety resync | WebSocket `changed` und Safety-Pfad können Pull anstoßen; Safety liest zuerst Head | Hint-Pfad kennt Pending-Write-Grenze nicht | stale Pull/unnötige D1-Reads | Hint nur invalidiert; Coordinator entscheidet sichere Runde | Barrier/round-aware invalidation | `PROVEN` |
-| RxDB Konflikte | Server implementiert feldbezogene Three-Way-Prüfung; RxDB Default verwirft Fork bei ungelöstem Konflikt zugunsten Master | keine explizite Produktsemantik pro Feld im ADR | gleichzeitige Statusedits können still server-wins enden | explizite Konfliktmatrix | Status servergeordnet, unabhängige Felder mergebar, strukturelle Konflikte explizit | `PROVEN` für Code, Produktentscheidung offen |
-| Delete Resurrection | Adapter lehnt Update gegen serverseitig gelöschtes Dokument mit `target_deleted` ab; echte Create ohne assumed master bleibt erlaubt | Create und stale Update werden unterschieden | alte Offline-Updates dürfen Delete nicht rückgängig machen | Tombstone/Generation bis alle relevanten Clients sicher neu bootstrappen können | Tests für Offline-Delete, Restart, stale push, compaction | Schutz im Adapter `PROVEN`; Ende-zu-Ende mit Feed-Compaction `UNKNOWN` |
-| Area + StreetEngine | Base-Storage-Pfad erzeugt bei `area.create`/`area.update-geometry` eine neue Preparation-Generation und plant Runner, obwohl Legacy-Flag `AUTO_AREA_PREPARATION_ENABLED=false` bleibt | alter und neuer Lifecycle koexistieren | Dokumentation widerspricht Runtime; Resize-Races schwer nachvollziehbar | ein generation-basierter Lifecycle | Legacy-Flag/Docs bereinigen nach Regressionen | `PROVEN` |
-| stale StreetEngine publish | Publish-Claim prüft Area-Existenz, exakte Geometrie, Generation, Status und Lease in derselben D1-Batch-Guard | vorhandene Guard-Architektur | alte Generation könnte nur bei Guard-Lücke gewinnen | alter Job darf nie nach neuer Geometry/Delete publizieren | Chaos-/Race-Regressionen, Guard beibehalten | Source-Guard `PROVEN`, vollständiger Race-Test noch nötig |
-| Area delete | Base-Pfad löscht bounded Base/Overlay/Staging/Jobs/Preparation/canonical Task-Daten atomar mit Campaign-Write-Token | eigene kompakte Delete-Transaktion | Resurrection über alte Clients/Feed bleibt Restthema | Delete ist endgültige serverseitige Ordnungsentscheidung | stale-client Regression + Feed-Retention-Konzept | serverseitiges Cleanup `PROVEN`; vollständige Konvergenz `UNKNOWN` |
-| Change Feed | `campaign_sync_changes` enthält Payload/Tombstones; `campaign_sync_heads` reduziert Head-Leseweg | keine nachgewiesene Retention-/Compaction-Policy auf aktuellem Auditpfad | unbegrenztes Wachstum, Altclient-Catchup | bounded retention + Full-Bootstrap-Grenze | min retained seq / bootstrap epoch / GC | `LIKELY`, repo-weite aktuelle GC-Suche noch als Implementierungsgate |
-| D1 Budget | lokaler V6-Audit stark verbessert, aber echte Cloudflare `meta.rows_read/rows_written` für komplette Invocation fehlen | SQLite-Schätzung ist nicht Billing-Ground-Truth | falsche Free-Tier-Aussage | kleine isolierte Staging-Messung | erst nach expliziter Staging-Autorisierung | lokale Werte `PROVEN`, Livekosten `UNKNOWN` |
-| D1 Invocation Limit | vollständige DO-Fixture lag lokal bei max. 48 D1 Queries/Invocation | nur 2 Queries Reserve zum Free-Limit 50 | Auth/Schema/unerwartete Pfade können Limit reißen | Ziel <=40 auf kritischen Invocations | Query-Inventar + echte Meta | `PROVEN` für lokale Fixture, Remote `UNKNOWN` |
-| Admin Auth | Campaign-Admin Session 12h | fixer `ADMIN_SESSION_SECONDS` | tägliche Logins | kurze Access-Session + langlebiges rotierendes Device Credential | eigener Refresh-/Device-Session-Vertrag | `PROVEN` |
-| Organizer Auth | Organization Session 12h | fixer `SESSION_SECONDS` | tägliche Logins | wie oben, mit MFA-Assurance | Rotation/Revocation/Replay Detection | `PROVEN` |
-| normale Campaign Session | 30 Tage | eigener historischer Session-Vertrag | inkonsistente UX/Security-Semantik | vereinheitlichte Session-Familien | Migration ohne Token-Leak | `PROVEN` |
-| Progress | D1 enthält Phase/Cursor/Metriken; Public State berechnet Prozent | Anzeige hängt weiter an Endpoint/Poll/Invalidation | stale UX, unnötige D1-Polls | DO/WebSocket Progress-Hints + kanonische Reconcile-Abfrage | Hint ist nie SoT | Datenpfad teilweise `PROVEN`, UX-Abbruchstelle `UNKNOWN` |
+| Bereich | Zustand | Evidenz / Root Cause | Status |
+|---|---|---|---|
+| Refresh vor Push-ACK | Baseline konnte Checkpoint/Pull vor bereits akzeptiertem lokalen Push abschließen | historischer Regressionstest auf aktuellem Baseline-Code wiederhergestellt; CI `34865295021` rot mit `refresh must not report current while the local write is still waiting for its push gate` | **PROVEN P0, Phase A behoben** |
+| automatische Refreshes | globaler Barrier war zu grob und blockierte unabhängige Collections | CI `34866065831` scheiterte an `a retryable Team push does not block an independent Street pull` | **PROVEN Designfehler, verworfen** |
+| collection-aware Barrier | `refresh(names)` blockiert nur Collections mit eigenem pending push proof; sichere Collections re-syncen sofort | Head `d276ccdd...`, CI `34867857864` komplett grün | **PROVEN** |
+| explizite Konvergenz | `refreshAndWait()` wartet Phase A auf alle bereits akzeptierten Mission-Writes, dann liest es den Ziel-Checkpoint | historischer Ordering-Test + vollständige CI grün | **PROVEN** |
+| RxDB Konflikte | feldbezogene Three-Way-Prüfung, server-owned Struktur geschützt | `rxdbMutationAdapter` Tests für unabhängige Felder, same-field conflict, timestamp drift | **PROVEN** |
+| Delete Resurrection | Update gegen serverseitig gelöschtes Ziel wird `target_deleted`; echtes Create ohne assumed master bleibt getrennt | Adapter-Test vorhanden | **PROVEN auf Mutationsebene** |
+| Lost ACK | erneuter Push nach bereits committed Mutation erzeugt keinen zweiten Domain-Effekt/Feed-Eintrag | `rxdbP0Semantics` | **PROVEN** |
+| Actor Offline Isolation | Field Group A Offline-Intent bleibt actor-scoped und wird nicht von B hochgeladen | `rxdbP0Semantics` | **PROVEN** |
+| Multi-Tab Leader | ein Replication Leader; Handover dupliziert Write nicht | bestehender Test | **PROVEN** |
+| Area + StreetEngine | Base-Storage-Pfad erzeugt bei Area create/geometry update neue Preparation-Generation und plant Runner, obwohl Legacy-Flag `AUTO_AREA_PREPARATION_ENABLED=false` bleibt | aktueller Source | **PROVEN, Dokumentations-/Lifecycle-Schuld offen** |
+| stale StreetEngine publish | Publish guard prüft Area, exakte Geometry, Generation, Status und Lease | Persistence/ChunkPersistence Source | **PROVEN im Guard, E2E-Chaos offen** |
+| Area delete | Base-Pfad räumt Base/Overlay/Staging/Jobs/Preparation/Task-Daten atomar unter Campaign Write Token | Mutation Repository | **PROVEN serverseitig, Offline-End-to-End offen** |
+| Change Feed Retention | geordneter Feed und Heads vorhanden; Retention/GC noch nicht repo-weit final bewiesen | nächste Auditphase | **OPEN** |
+| D1 Query Reserve | vorhandene vollständige lokale DO-Fixture lag bei max. 48 Queries/Invocation | Budget-Harness | **PROVEN lokal, zu wenig Reserve** |
+| D1 Billing | echte vollständige Cloudflare `rows_read`/`rows_written` Invocation-Metadaten fehlen | keine autorisierte Remote-Messung | **UNKNOWN** |
+| Admin Auth | Campaign-Admin Session 12h | fixer Serververtrag | **PROVEN** |
+| Organizer Auth | Organization Session 12h | fixer Serververtrag | **PROVEN** |
+| normale Campaign Session | 30 Tage | separater Vertrag | **PROVEN** |
+| Remember Device | kein separat nachgewiesenes rotierendes Device-Credential | Auth-Audit | **OPEN** |
+| Progress | Phase/Cursor/Metriken existieren serverseitig; Realtime-/UI-Vertrag noch nicht vollständig bewiesen | Preparation Public State/Runner | **PARTIAL** |
 
-## 2. End-to-End-Sync-Karte
+## 2. Verifizierter Ordering-P0
+
+### Baseline
+
+Die Baseline besaß bereits:
+
+- lokale RxDB Writes;
+- `pendingPushProofs` pro `collection:id`;
+- `awaitDocumentPushed()`;
+- Push-Confirmation Timeout;
+- per-Collection Pull-Checkpoints.
+
+Der Fehler lag in der Orchestrierung: `refreshAndWait()` konnte zuerst den kanonischen Server-Checkpoint lesen und Pulls starten, bevor ein bereits akzeptierter lokaler Write bestätigt war.
+
+### Test-first-Beweis
+
+`tests/rxdbRefreshOrdering.test.ts` wurde aus der historischen Fix-Linie auf den aktuellen Audit-Stand zurückgebracht.
+
+Commit vor Runtime-Fix: `a87d7e567b622acbe87b162ba73cbab3830e506f`.
+
+CI run `34865295021`:
+
+- Checkout: grün
+- Install: grün
+- Test: **rot**
+- konkrete Assertion: `refresh must not report current while the local write is still waiting for its push gate`
+
+Damit ist die P0-Race reproduziert.
+
+### Verworfener globaler Fix
+
+Commit `63537c5760ab2ede6a1679d490e46c0b90ccd01a` setzte einen globalen Pending-Write-Barrier vor Refreshes.
+
+CI run `34866065831` blieb rot, weil ein retrybarer Team-Push einen unabhängigen Street-Pull blockierte. Das beweist, dass `pendingPushProofs.size === 0` als globale automatische Bedingung architektonisch falsch ist.
+
+### Akzeptierte Phase-A-Lösung
+
+Öffentliche Fassade `src/data/rxdbMissionSync.ts`, bestehender RxDB-Core in `src/data/rxdbMissionSyncCore.ts`.
+
+Automatische/invalidation-driven Refreshes sind collection-aware:
+
+```text
+refresh(requested collections)
+-> relevant debounce gates flush
+-> collection without pending local proof: reSync now
+-> collection with pending local proof: queue independently
+-> proof resolves or bounded error
+-> reSync only that collection
+```
+
+Explizites `refreshAndWait()` ist absichtlich stärker:
+
+```text
+flush all mission persistence gates
+-> wait all already accepted mission writes
+-> request canonical checkpoint
+-> pull to target
+-> report convergence
+```
+
+Ein Proof-Generation-Watermark für kontinuierliche neue Writes ist Phase B, nicht Teil des behaupteten Phase-A-Fixes.
+
+## 3. Phase-A-Verifikation
+
+Verifizierter Head: `d276ccdd6c2350997d3fdd377fb28824e56fd88d`.
+
+GitHub Actions:
+
+- CI `34867857864`: **SUCCESS**
+  - Tests grün
+  - Typecheck grün
+  - Dependency Audit grün
+  - Production Build grün
+- Independent StreetEngine Audit `34867857844`: **SUCCESS**
+
+Damit bestehen gleichzeitig:
+
+- delayed local push + explicit refresh ordering;
+- unabhängiger Street-Pull trotz retrybarem Team-Push;
+- Lost-ACK-Idempotenz;
+- actor-scoped Offline-Replay;
+- bestehende Konflikt- und Runtime-Suiten;
+- StreetEngine unabhängiger Scale-Audit.
+
+Kein Deploy, keine Remote-Migration, kein D1-Write außerhalb der Testharnesses.
+
+## 4. End-to-End-Sync-Karte
 
 ```text
 React/UI
   -> Domain Mutation
   -> CampaignStore
-  -> MissionRxdbSync.applyMutation()
+  -> MissionRxdbSync Coordinator
   -> RxDB/Dexie lokale Collection
   -> RxDB Replication Push Queue
   -> /api/campaigns/:id/rxdb/push/:collection
-  -> Worker Auth / resolveAccess
+  -> Worker Auth
   -> handleRxdbPush
-  -> deriveMutationFromRxdbWrite (Three-Way / assumed master)
+  -> deriveMutationFromRxdbWrite
   -> handleCampaignMutation
-  -> Validation + Authorization + Mutation Ledger
-  -> D1 guarded batch
+  -> validation + authorization + mutation ledger
+  -> guarded D1 batch
   -> campaign_sync_changes + campaign_sync_heads
-  -> DO WebSocket changed(seq) hint
+  -> DO/WebSocket changed hint
+  -> collection-aware coordinator refresh
   -> RxDB pull/checkpoint
-  -> lokale RxDB Replica
+  -> lokale Replica
   -> CampaignSnapshot Materialisierung
-  -> React
-  -> MapLibre / StreetEngine generation visibility
+  -> React / MapLibre / Generation Visibility
 ```
 
-### Übergangsverträge
+## 5. Konflikt- und Delete-Semantik
 
-| Übergang | SoT / Besitzer | Ordnung / Idempotenz | Retry / Fehler | D1-Kosten-/Race-Hinweis |
-|---|---|---|---|---|
-| UI -> RxDB | lokale RxDB Replica | lokale RxDB-Reihenfolge | sofort lokal sichtbar | keine D1-Kosten |
-| RxDB -> Push | RxDB Replication | assumedMasterState + newDocumentState | RxDB Retry | Pending Proof existiert clientseitig, aber Refresh-Barrier fehlt aktuell |
-| Push -> Domain Mutation | Worker/D1 | Mutation-ID; Server prüft aktuelle kanonische Felder | Konflikt liefert Master/Rejection | Snapshot/Schema/Auth Reads pro Push |
-| Mutation -> D1 | D1 | Campaign revision + write token + mutation ledger | idempotente Mutation-ID | Batch muss Query-Limit einhalten |
-| D1 -> Feed | D1 | monotone `seq` | atomar mit Domain-Write | Payload wird im Feed gespeichert |
-| Feed -> DO | D1 bleibt SoT | Hint darf duplicate/out-of-order sein | Verlust durch Safety Pull heilbar | DO soll keine kanonischen Dokumente halten |
-| Pull -> RxDB | D1/Feed | Checkpoint pro Collection | RxDB retry | alter Pull darf Pending Local Intent nicht sichtbar zurücksetzen |
-| RxDB -> React | lokale Replica | RxDB change stream | Collection-Fehler derzeit teilweise gemeinsam orchestriert | UI-Flackern ist P0-Symptom |
-| Area -> StreetEngine | D1 Area + gewünschte Generation | geometry fingerprint + generation + lease | Runner retry/alarm | derived data; stale publish muss Guard verlieren |
+Der aktuelle Adapter ist kein globales Document-LWW:
 
-## 3. P0: Refresh-Ordering
+- Campaign Name und Default Map View getrennt;
+- Team Name und Farbe unabhängig mergebar;
+- Area Name, Team und Geometry getrennt, Compound Structural Changes abgelehnt;
+- Street/House Status und Label getrennt;
+- Network, Road Position und Preparation Generation server-owned;
+- Update gegen gelöschtes Ziel wird `target_deleted`;
+- retry, dessen gewünschter Feldwert bereits kanonisch ist, kann als ACK enden.
 
-### Aktueller Code
+Offen bleibt eine Produktentscheidung für gleichzeitige echte Same-Status-Änderungen. Der Audit ändert diese Semantik nicht nebenbei.
 
-`MissionRxdbSync.refreshAndWait()` macht aktuell:
+## 6. StreetEngine als Derived Data
 
-1. `requestCheckpoint()`
-2. `refresh()` / `reSync()`
-3. wartet, bis alle Collection-Checkpoints das vorher gelesene Ziel erreichen.
-
-Die Methode wartet **nicht** zuerst auf bereits akzeptierte lokale `pendingPushProofs`.
-
-Der historische Commit `14046b10be88f8aef3a33f59ed1f7f6e3a42e5ce` hatte genau dafür `waitForPendingPushes()` eingeführt: Persistence Gates flushen, Push-Beweise abwarten, erst dann Server-Checkpoint bestimmen und pullen.
-
-Der historische Regressionstest aus `102516f8ac1a1e403cb7244d3746d0b3f4e21572` existiert auf dem aktuellen `unstable` nicht mehr.
-
-**Klassifikation:**
-
-- fehlende Barriere: `PROVEN`
-- Regressionstest verloren: `PROVEN`
-- aktueller sichtbarer Rollback bis zur erneuten Testausführung: `LIKELY`
-
-### Bessere Implementierungsform als blindes Cherry-Pick
-
-Nicht `campaignStore.serverWritePending` als zweite Sync-Wahrheit wieder einführen. Die Barriere gehört in `MissionRxdbSync` bzw. einen zentralen Sync-Coordinator.
-
-Eine manuelle Sync-Runde sollte einen **Watermark** erfassen:
-
-```text
-round N close
--> campaign/team debounce gates flush
--> merke höchste Push-Proof-Generation, die zu N gehört
--> warte nur auf Proofs <= Watermark
--> request canonical server checkpoint
--> pull bis Ziel erreicht
--> Round N = converged
--> neue lokale Edits gehören bereits Round N+1
-```
-
-Nur auf `pendingPushProofs.size === 0` zu warten wäre langfristig zu grob: bei kontinuierlichen neuen Edits könnte eine manuelle Barriere unnötig nie fertig werden.
-
-## 4. Konfliktsemantik
-
-Der aktuelle Adapter ist bereits besser als globales Document-LWW:
-
-- Campaign Name und Default Map View werden getrennt geprüft.
-- Team Name und Farbe können feldweise rebased werden.
-- Area Name, Team und Geometry werden als getrennte Felder geprüft, Compound Changes werden abgelehnt.
-- Street/House Status und Label werden getrennt geprüft.
-- strukturelle Server-owned Felder wie Network/Position/Preparation Generation dürfen der Client nicht überschreiben.
-- Update gegen gelöschtes Ziel wird als `target_deleted` abgelehnt.
-
-### Zielmatrix
-
-| Mutation | Semantik | Begründung |
-|---|---|---|
-| Street/House Status | servergeordnetes LWW pro Statusfeld **oder** expliziter Konflikt bei langer Offline-Divergenz; Produktentscheidung erforderlich | Status ist ein einzelner Benutzerintent, kein CRDT nötig |
-| Label/Name | property-level optimistic concurrency | unabhängige Felder dürfen parallel überleben |
-| Area Team | optimistic concurrency | fachliche Zuordnung, nicht blind überschreiben |
-| Area Geometry | `baseVersion`/expected generation, struktureller Konflikt | Derived Data hängt daran |
-| Delete | serverseitig finale Tombstone-/Generation-Entscheidung | keine Resurrection |
-| Kommentare/Text mit echter Co-Editing-Anforderung | erst dann CRDT/Yjs/Automerge prüfen | heutige Domain rechtfertigt globale CRDT-Komplexität nicht |
-
-RxDBs Default Conflict Handler nimmt bei ungelöstem Konflikt den Master und verwirft den Fork. Deshalb muss ein fachlich wichtiger Statuskonflikt diagnostizierbar sein und darf nicht wie erfolgreicher Sync aussehen.
-
-## 5. StreetEngine als Derived Data
-
-Der aktuelle Base-Storage-Pfad modelliert bereits wesentliche Teile einer Generation:
+Aktueller Base-Storage-Vertrag:
 
 ```text
 Area geometry + algorithm version
 -> geometry fingerprint
--> area_task_preparations.generation = pending
+-> area_task_preparations generation=pending
 -> street_network_jobs(generation, lease)
 -> bounded phases
 -> guarded publish
@@ -156,234 +184,115 @@ Area geometry + algorithm version
 -> generationState im RxDB Pull
 ```
 
-### Positive Invarianten im aktuellen Source
+Positive Invarianten:
 
-- Runner lädt genau den aktuellen Preparation-State und die kanonische Area.
-- Fingerprint-Mismatch markiert die Preparation stale/failed.
-- Publish-Claim prüft Area-Existenz, exakte Geometry, gewünschte Generation, Status und bei laufender Preparation die Lease.
-- Area Delete im Base-Pfad räumt Base, Overlay, Staging, Jobs, Preparation, House/Task-Daten und die Area unter demselben Campaign Write Token auf.
-- Benutzerarbeit an prepared Entities wird in Overlays erhalten.
+- Runner lädt aktuellen Preparation-State und kanonische Area.
+- Fingerprint-Mismatch wird stale/failed.
+- Publish-Claim validiert Area, Geometry, Generation, Status und Lease.
+- Base-Area Delete räumt server-owned Storage und canonical Kinder unter demselben Campaign Write Token.
+- bearbeitete prepared Entities können über Overlay erhalten bleiben.
 
-### Noch fehlende harte Lifecycle-Semantik
+Noch nicht bewiesen ist der vollständige E2E-Chaosfall `old generation running -> resize/delete -> delayed publish -> offline stale client`.
 
-Der gewünschte Zustand sollte explizit modelliert werden:
+Zielzustand bleibt:
 
 ```text
 desired -> building -> published -> obsolete -> deleted
 ```
 
-`generation` allein ist fast ausreichend, aber der Vertrag muss in ADR und Tests festhalten:
+## 7. Change Feed, nächste Auditphase
 
-1. Nur die aktuell gewünschte Generation darf publizieren.
-2. Delete invalidiert jede laufende Generation endgültig.
-3. Resize erzeugt eine neue gewünschte Generation.
-4. Eine alte Generation kann nach Resize/Delete keinen Write Token gewinnen.
-5. Ein Offline-Client kann eine gelöschte Area nicht durch ein Update wiederherstellen.
-6. Recreate derselben ID ist entweder verboten oder benötigt eine neue Entity-Epoch.
+Bekannt:
 
-Für sichere Resurrection-Verhinderung nach zukünftiger Feed-Compaction ist eine `entity_epoch`/Tombstone-Epoch robuster als unendlich lange Feed-Tombstones.
+- `campaign_sync_changes` speichert monotone `seq`, Collection, Document-ID, Scope und Payload/Tombstone.
+- `campaign_sync_heads` hält Collection-Heads.
+- Pull arbeitet mit Checkpoint und High Water.
+- Writer kann physische Änderungen kompakt gruppieren.
 
-## 6. Area Resize
+Jetzt repo-weit zu beweisen:
 
-### Shrink
+1. Gibt es irgendeinen Delete/GC/Retention-Pfad für `campaign_sync_changes`?
+2. Gibt es bereits einen Retention-Floor oder Bootstrap-Epoch?
+3. Kann ein alter Client erkennen, dass sein Checkpoint nicht mehr inkrementell bedienbar wäre?
+4. Welche Indizes und Queries skalieren mit Feed-Länge?
+5. Wie bleibt Delete-Resurrection ausgeschlossen, wenn alte Tombstones irgendwann entfernt werden?
 
-Vollständiges blindes Neu-Erzeugen und Löschen aller alten IDs ist nicht akzeptabel, weil Benutzerstatus/History verloren gehen könnten.
-
-Empfehlung:
-
-- neue Geometry -> neue Preparation Generation
-- neue Base generation-basiert berechnen
-- Stable IDs aus stabiler OSM-/Segment-Identität ableiten oder deterministisch reconciliieren
-- auto-generierte, nun außerhalb liegende **unbearbeitete** Entities aus sichtbarer Base entfernen
-- bearbeitete entfernte Entities als historisches/archiviertes Overlay erhalten, nicht still löschen
-- manuelle Streets/Houses getrennt behandeln
-- Publish atomar von alter auf neue sichtbare Generation umschalten
-
-### Expansion
-
-Standardempfehlung: vollständige neue Area vorbereiten und serverseitig gegen bestehende IDs/Overlays reconciliieren. Nur Geometry-Differenz zu rechnen ist billiger, aber OSM-Straßen/Relationen an der alten Grenze machen den Algorithmus wesentlich komplexer und fehleranfälliger. Erst bei gemessenem Kostenproblem sollte inkrementelle räumliche Differenz als Optimierung eingeführt werden.
-
-## 7. Change Feed
-
-Aktuell:
-
-- `campaign_sync_changes`: geordnete `seq`, Collection, document id, scope, JSON payload/tombstone.
-- `campaign_sync_heads`: per-Collection Head vermeidet `MAX(seq)` auf neuem Base-Schema.
-- Pull liest Delta zwischen Checkpoint und High Water.
-- kompakter Writer kann mehrere Documents in einer JSON-Payload bündeln.
-
-Offen:
-
-- sichere Retention/GC ist im bisher geprüften aktuellen Pfad nicht nachgewiesen.
-- ohne `min_retained_seq` kann ein sehr alter Client nicht erkennen, ob sein Checkpoint noch bedienbar ist.
-- Payload und Routing-Metadaten sind gekoppelt; für sehr große Feeds kann das unnötige Read-Bytes verursachen.
-
-Ziel:
-
-```text
-campaign_sync_heads
-campaign_sync_retention(min_seq, bootstrap_epoch)
-campaign_sync_changes(seq, routing metadata, optional compact payload)
-```
-
-Wenn `clientCheckpoint < min_seq`, gibt der Server explizit `bootstrap_required` zurück. Tombstones dürfen erst compaction-fähig werden, wenn Resurrection durch Entity-Epoch/Serverregeln ausgeschlossen bleibt.
+Keine Retention-Migration wird implementiert, bevor diese Fragen durch Source und Regressionen beantwortet sind.
 
 ## 8. D1 Budget
 
-### Offizielle Grenzen, geprüft am 2026-09-14
+Lokale Budgettests sind nützlich, aber keine Billing-Ground-Truth.
 
-Cloudflare dokumentiert für Workers Free/D1:
+Bekannter lokaler Risikopunkt:
 
-- 5.000.000 rows read pro Tag
-- 100.000 rows written pro Tag
-- 50 D1 Queries pro Worker Invocation
-- 500 MB maximale DB-Größe im Free-Tier
+- vollständige DO-Budgetfixture max. etwa 48 D1 Queries/Invocation;
+- Ziel mit sinnvoller Reserve: <=40, sofern ohne Korrektheitsverlust erreichbar.
 
-Seit 2026-09-01 werden die Free-Tier-Tageslimits für Rows Read/Written hart erzwungen. Bei Überschreitung schlagen Queries bis zum täglichen Reset fehl.
+Für eine endgültige Free-Tier-Aussage fehlen echte vollständige Invocation-Metadaten aus Cloudflare. Deshalb bleibt:
 
-Quellen:
+`D1_FREE_TIER_FEASIBILITY = UNKNOWN`
 
-- https://developers.cloudflare.com/d1/platform/pricing/
-- https://developers.cloudflare.com/d1/platform/limits/
-- https://developers.cloudflare.com/changelog/2026-09-01-d1-free-plan-limits/
-
-### Lokaler aktueller Street-Budget-Stand
-
-`docs/architecture/STREET_D1_BUDGET.md` zeigt nach dem Storage Pivot unter Full Schema u.a.:
-
-| Häuser | Preparation estimated reads | Preparation total write estimate | Status estimated reads | Delete estimated reads |
-|---:|---:|---:|---:|---:|
-| 400 | 198 | 139 | 123 | 132 |
-| 1.000 | 208 | 155 | 123 | 140 |
-| 5.000 | 300 | 316 | 123 | 160 |
-| 10.000 | 413 | 532 | 126 | 192 |
-
-Zusätzlich: vollständige DO-Budgetfixture max. **48 Queries/Invocation**.
-
-Diese Zahlen sind **keine Cloudflare-Billing-Messung**. Sie stammen aus dem lokalen SQLite/Budget-Adapter.
-
-### Vorläufige Kostenrechnung, nur Modell
-
-Bei 20 aktiven Clients und einem Safety-Checkpoint alle 120s entstehen 14.400 Checkpoint-Aufrufe/Tag, wenn alle 24h aktiv wären. Schon bei nur 100 echten `rows_read` pro kompletter authentifizierter Invocation wären das 1,44 Mio Reads/Tag allein für Safety. Bei 350 Rows wären es 5,04 Mio und damit bereits über Free.
-
-Das zeigt: Request-Frequenz ist genauso P0 wie SQL-Form. Ein WebSocket-Hint plus sehr seltene Safety-Recovery ist wirtschaftlich sinnvoller als häufiges Polling pro Client.
-
-### Free-Tier-Urteil
-
-`UNKNOWN` in Phase 1.
-
-Ein ehrliches `D1_FREE_TIER_FEASIBLE[_WITH_LIMITS]` oder `NOT_FEASIBLE` benötigt echte `meta.rows_read`/`meta.rows_written` für eine **komplette** authentifizierte Invocation. Der aktuelle Audit dokumentiert ausdrücklich, dass diese Remote-Metadaten noch fehlen. Ohne explizite Staging-Autorisierung wird keine Remote-D1-Messung ausgelöst.
+Remote-Staging-Messungen werden ohne explizite Autorisierung nicht gestartet.
 
 ## 9. Auth
 
-### Ist
+Istzustand:
 
-- normale Campaign Session: 30 Tage
-- Campaign Admin Account Session: 12 Stunden
-- Organization/Organizer Account Session: 12 Stunden
-- Cookies sind `HttpOnly`, `Secure`, `SameSite=Lax`; Organization nutzt `__Host-` Cookie.
-- Sessions sind serverseitig gehasht und Admin/Organization Sessions können widerrufen werden.
-- Organization unterstützt MFA/TOTP und Recovery Codes.
+- normale Campaign Session: 30 Tage;
+- Campaign Admin Account Session: 12 Stunden;
+- Organization/Organizer Account Session: 12 Stunden;
+- Cookies serverseitig abgesichert und Account-Sessions widerrufbar;
+- Organization unterstützt MFA/TOTP und Recovery Codes;
+- ein getrenntes rotierendes langlebiges Remember-Device-Credential ist bislang nicht nachgewiesen.
 
-### Ziel
-
-Kein 1-Jahr-Access-Cookie.
-
-Empfohlenes Modell:
+Zielrichtung für spätere getrennte Phase:
 
 ```text
-Access session: 8-12h
-Remember-device refresh family: z.B. 60 Tage idle, 90 Tage absolut
--> bei jeder Nutzung rotieren
--> nur Hash serverseitig speichern
--> alte Token-ID nach Rotation ungültig
--> Replay eines alten Tokens widerruft die ganze Device-Familie
--> Password reset/change, account disable, membership/grant revoke invalidieren Familien
--> Logout current / logout all devices
--> MFA assurance getrennt von Refresh-Lifetime
+short access session
++ hashed rotating device/refresh family
++ one-time rotation
++ replay detection
++ current-device revoke / logout-all
++ password/account/membership invalidation
++ MFA assurance independent from refresh lifetime
 ```
 
-Unsafe Requests bleiben same-origin und brauchen explizite CSRF-Bewertung. `SameSite=Lax` allein ist kein vollständiges CSRF-Design-Dokument.
+Keine Auth-Migration in Phase A.
 
 ## 10. Progress
 
-Serverseitig existieren bereits:
+Serverseitig existieren bereits Phase, Cursor, Tile-/Building-Zähler, Prozent und Quality/Failure Diagnostics. Die offene Frage liegt damit eher bei Hint/Polling/Reconnect/UI-Materialisierung als bei fehlenden Rohmetriken.
 
-- Phase
-- Cursor
-- total tiles
-- completed road/building tiles
-- processed/total buildings
-- Prozent
-- Quality/Failure Diagnostics
+Ziel bleibt: D1 kanonisch, DO/WebSocket nur best-effort Progress Hint, nach Verlust/Reconnect einmal kanonisch reconciliieren.
 
-`getAreaTaskPreparationPublicState()` liest Preparation + Street Job und berechnet Progress. Damit liegt das aktuelle Problem wahrscheinlich zwischen Endpoint-Frequenz, Invalidation und UI-Materialisierung, nicht in fehlenden Metriken.
+## 11. Priorität ab jetzt
 
-Ziel:
+### P0/P1 als nächstes
 
-- D1 bleibt kanonisch.
-- Runner emittiert best-effort kleine Progress-Hints über den bestehenden Campaign-DO/WebSocket.
-- Client nutzt Hints für UX, aber nach Reconnect/Hint-Verlust wird einmal kanonisch reconciled.
-- keine hochfrequenten D1-Polls pro Client nur für Prozentanzeige.
+1. Change-Feed Retention/Bootstrap-Grenze repo-weit beweisen.
+2. direkten automatischen Same-Collection-Barrier-Test ergänzen.
+3. Area Delete/Resize + active generation + stale client Chaos-Test.
+4. D1 Query-Inventur und Reserve verbessern, ohne Remote-Messung vor Autorisierung.
+5. danach Auth Remember-Device und Progress als getrennte Änderungen.
 
-**Klassifikation der konkreten UI-Abbruchstelle:** `UNKNOWN`, gezielter UI/Endpoint-Test folgt.
+### Offen / UNKNOWN
 
-## 11. Referenzarchitekturen
+- echte Cloudflare Billing-Metriken pro kompletter Invocation;
+- langfristiger Feed-Retention-Vertrag;
+- vollständiger Resurrection-Beweis nach zukünftiger Feed-Compaction;
+- Same-Status-Produktsemantik;
+- vollständige StreetEngine Resize/Delete-Chaosmatrix;
+- Remember-Device Policy und Migration;
+- konkrete UI-Ursache für veraltete Progress-Anzeige.
 
-| System | lokale Writes | Server-Reihenfolge | Konfliktstrategie | Change Feed | Realtime | Offline | Übertragbarkeit |
-|---|---|---|---|---|---|---|---|
-| RxDB | sofort lokale Replica | Backend-Checkpoint | assumed master + client conflict handler; Default nimmt Master | backend-definiert | pull stream / RESYNC | ja | direkte Basis; Default-Konfliktverhalten muss bewusst überschrieben/diagnostiziert werden |
-| Linear | lokale DB | ordered immutable sync-action IDs | serverautoritativ, Delta replay | Workspace sync-action log | ja | ja | sehr passend für monotone Campaign seq + Delta Sync; deren extreme Scale nicht kopieren |
-| Figma | lokale Property sofort | Server definiert Reihenfolge | property-level; unacked lokale Property schützt vor älterem eingehendem Wert | WAL/journal + seq/checkpoint | WebSocket | ja | Flacker-Schutz und serverseitige Ordnung direkt relevant; Grafik-CRDT-Komplexität nicht nötig |
-| Replicache | optimistic Mutations | Server führt Mutation IDs geordnet aus | Pull rewinds canonical state und replays pending mutations | cookie + patch + lastMutationID | contentless poke | ja | Sync-Rounds/Rebase-Modell sehr passend |
-| Firestore | lokaler Cache | Backend | LWW bei mehreren Änderungen am selben Dokument | intern | listener | ja | bewusst einfaches Gegenmodell; für strukturelle Area/Derived-Data-Konflikte zu grob |
-| CouchDB | lokale DB | `_changes` sequence | revision/conflicts | `_changes` | continuous feed | ja | Checkpoint/duplicate-idempotency nützlich; Datenmodell nicht 1:1 übernehmen |
-| ElectricSQL | lokale DB / Shapes | Server/Postgres Stream | systemabhängig | logical stream/shape | stream | ja | Partial Sync/Shapes als Denkmuster, aber keine Migration rechtfertigt neuen Stack |
-| CRDT/Yjs/Automerge | lokal first | keine zentrale Ordnung nötig | mathematisch mergebar | operation/state sync | typischerweise ja | ja | nur für echte kollaborative Text/Set-Probleme; für Status/Area unnötige Komplexität |
+## 12. Release-Status
 
-Quellen:
+`SYNC_ORDERING_PHASE_A = VERIFIED`
 
-- RxDB replication: https://rxdb.info/replication.html
-- Linear delta sync: https://linear.app/now/rebuilding-delta-sync-read-path
-- Figma multiplayer: https://www.figma.com/blog/how-figmas-multiplayer-technology-works/
-- Figma reliability/WAL: https://www.figma.com/blog/making-multiplayer-more-reliable/
-- Replicache: https://doc.replicache.dev/concepts/how-it-works
-- Firestore offline: https://firebase.google.com/docs/firestore/manage-data/enable-offline
-- CouchDB changes: https://docs.couchdb.org/en/stable/api/database/changes.html
+`STREET_ENGINE_LIVE_READY = FALSE`
 
-## 12. Priorität
+`D1_FREE_TIER_FEASIBILITY = UNKNOWN`
 
-### P0
+`RELEASE_READY = FALSE`
 
-1. Refresh/Push-Ordering Regression wiederherstellen und auf aktuellem HEAD ausführen.
-2. Zentralen Push-Proof Barrier einbauen, nicht Store-Doppelzustand.
-3. Two-/Three-Client same-entity und different-field Konflikte deterministisch testen.
-4. Delete + Offline Client + active StreetEngine + stale generation testen.
-5. Change-Feed Retention/Bootstrap-Grenze explizit definieren.
-6. vollständige D1 Invocation instrumentieren, Remote nur nach Staging-Autorisierung.
-
-### P1
-
-1. generation lifecycle für create/resize/delete dokumentieren und härten.
-2. Progress Hints über DO, D1 nur kanonische Reconcile-Abfrage.
-3. Admin/Organizer Remember-Device Refresh Families.
-4. per-Collection Sync Health statt ein globales unpräzises „Sync hängt“.
-
-### P2
-
-1. Feed GC/Compaction.
-2. strukturierte Sync-Diagnoseexporte.
-3. Query-Reserve von max. 48 Richtung <=40 senken.
-4. 20k lokale Chaos-/Performance-Matrix.
-
-## 13. Nächste Implementierungsreihenfolge
-
-1. Regression `refresh overtakes push` auf aktuellem Code wiederherstellen.
-2. Regression erwartungsgemäß rot bzw. reproduzierbar machen.
-3. `MissionRxdbSync` Barrier/Watermark implementieren.
-4. online/visibility/manual/WebSocket/Safety auf Coordinator-Semantik vereinheitlichen.
-5. Fokus-Suite und gesamte CI.
-6. danach Area Delete/Resize/Generation Chaos-Tests.
-7. erst anschließend Auth/Progress/Feed-Compaction in getrennten Commits.
-
-Keine Production-Aktion. Keine Remote-Migration. Keine große Staging-Fixture.
+Der Draft-PR bleibt unmerged, bis die für den Gesamtauftrag vorgesehenen Folgephasen ausreichend isoliert und verifiziert sind.
