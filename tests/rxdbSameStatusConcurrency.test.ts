@@ -142,7 +142,7 @@ const access: AccessContext = {
 
 function seedManualHouse(db: NetworkD1) {
   const house: HouseTask = {
-    id: 'house_manual_same',
+    id: 'task_house_manual_same',
     campaignId: 'campaign_n',
     areaId: 'area_n',
     taskType: 'house',
@@ -182,7 +182,7 @@ test('second same-completion RxDB push does not create another revision, event, 
   seedManualHouse(db);
   try {
     const initial = (await loadCampaignSnapshot(db, 'campaign_n'))!;
-    const staleHouse = initial.houseTasks!.find(house => house.id === 'house_manual_same')!;
+    const staleHouse = initial.houseTasks!.find(house => house.id === 'task_house_manual_same')!;
 
     const first = await handleRxdbPush(db, 'campaign_n', 'houseTasks', access, {
       rows: [{
