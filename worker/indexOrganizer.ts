@@ -52,12 +52,24 @@ type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & Organiz
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/u;
 
+type WorkerWebSocketResponse = Response & { webSocket?: unknown };
+type WorkerWebSocketResponseInit = ResponseInit & { webSocket: unknown };
+
 function harden(response: Response) {
   const headers = new Headers(response.headers);
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("cross-origin-opener-policy", "same-origin");
+  const webSocket = (response as WorkerWebSocketResponse).webSocket;
+  if (webSocket) {
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+      webSocket,
+    } as WorkerWebSocketResponseInit);
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
