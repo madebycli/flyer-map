@@ -82,6 +82,7 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
   private readonly recoveryStorage: any;
   private readonly recoveryDatabaseName: string;
   private readonly recoveryProgressKey: string;
+  private readonly recoveryReplicationPrefix: string;
   private recoveryPromise: Promise<void> | null = null;
 
   constructor(input: MissionRxdbSyncInput) {
@@ -109,6 +110,7 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
         : "campaign";
     this.recoveryDatabaseName = missionDatabaseName(input.campaignId, teamScopeId, actorScopeId);
     this.recoveryProgressKey = "verteil-flyer:rxdb-progress:v1:" + encodeURIComponent(input.campaignId) + ":" + encodeURIComponent(replicaScope);
+    this.recoveryReplicationPrefix = "mission-rxdb-sync-v1:" + input.campaignId + ":" + replicaScope + ":";
   }
 
   private internals() {
@@ -190,7 +192,7 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
     const collection = state.collections?.[collectionName];
     if (!collection) throw new RxdbSyncHttpError(0, "rxdb_collection_missing", "RxDB-Datenbereich ist für die Wiederherstellung nicht verfügbar.");
     return replicateRxCollection<RxdbDocument, { seq: number }>({
-      replicationIdentifier: "mission-rxdb-sync-v1:" + state.replicaScope + ":" + collectionName,
+      replicationIdentifier: this.recoveryReplicationPrefix + collectionName,
       collection,
       push: {
         batchSize: PUSH_BATCH_SIZE,
@@ -244,13 +246,13 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
     }
   }
 
-  private async recoverExpiredCheckpoint(collectionName: RxdbCollectionName) {
+  private async recoverExpiredCheckpoint(_collectionName: RxdbCollectionName) {
     const state = this.internals();
     if (!state.initialized || !state.collections) return;
     this.automaticRefreshQueued.clear();
     this.flushPersistenceGates(COLLECTION_NAMES);
 
-    const drains: Array<ReturnType<typeof replicateRxCollection<RxdbDocument, { seq: number }>>> = [];
+    const drains: any[] = [];
     let destroyed = false;
     try {
       await Promise.all([...state.replications.values()].map((replication) => replication.cancel()));
@@ -275,7 +277,6 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
     if (!state.initialized) {
       throw new RxdbSyncHttpError(0, "rxdb_rebootstrap_failed", "RxDB-Wiederherstellung wurde nicht vollständig neu gestartet.");
     }
-    state.onIssue({ kind: "network", collectionName, operation: "pull", code: "rxdb_rebootstrap_complete" });
   }
 
   private scheduleExpiredCheckpointRecovery(collectionName: RxdbCollectionName) {
