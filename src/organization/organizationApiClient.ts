@@ -85,8 +85,32 @@ export class OrganizationApiError extends Error {
   }
 }
 
+async function errorDetails(response: Response) {
+  const payload = await response.clone().json().catch(() => null) as unknown;
+  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : null;
+  const error = record?.error && typeof record.error === "object" ? record.error as Record<string, unknown> : null;
+  return {
+    code: typeof error?.code === "string" ? error.code : "request_failed",
+    message: typeof error?.message === "string" ? error.message : `Request fehlgeschlagen (${response.status}).`,
+  };
+}
+
+async function refreshRememberedOrganizationSession() {
+  try {
+    const response = await fetch("/api/organization/session/refresh", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const send = () => fetch(path, {
     ...init,
     credentials: "include",
     headers: {
@@ -94,6 +118,15 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
       ...init.headers,
     },
   });
+
+  let response = await send();
+  if (response.status === 401 && path !== "/api/organization/session/refresh") {
+    const firstError = await errorDetails(response);
+    if (firstError.code === "authentication_required" && await refreshRememberedOrganizationSession()) {
+      response = await send();
+    }
+  }
+
   const payload = await response.json().catch(() => null) as unknown;
   if (!response.ok) {
     const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : null;
@@ -133,7 +166,7 @@ export function skipOrganizationMfaEnrollment() {
   }>("/api/organization/bootstrap/skip-mfa", { method: "POST", body: "{}" });
 }
 
-export function beginOrganizationLogin(username: string, password: string) {
+export function beginOrganizationLogin(username: string, password: string, rememberDevice = false) {
   return requestJson<{
     challengeExpiresAt?: string;
     requiresFactor: boolean;
@@ -141,14 +174,14 @@ export function beginOrganizationLogin(username: string, password: string) {
     assurance?: "mfa";
   }>("/api/organization/login/password", {
     method: "POST",
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, rememberDevice }),
   });
 }
 
-export function completeOrganizationTotp(code: string) {
+export function completeOrganizationTotp(code: string, rememberDevice = false) {
   return requestJson<{ account: { id: string; username: string }; assurance: "mfa" }>("/api/organization/login/totp", {
     method: "POST",
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, rememberDevice }),
   });
 }
 
@@ -337,7 +370,6 @@ export function updateOrganizationFeature(organizationId: string, key: string, e
     { method: "PUT", body: JSON.stringify({ key, enabled }) },
   );
 }
-
 
 export function getOrganizationMfaPreference() {
   return requestJson<{ optional: true; required: boolean }>("/api/organization/security/mfa");
