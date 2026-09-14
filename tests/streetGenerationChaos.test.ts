@@ -114,9 +114,12 @@ test('Area resize supersedes an active generation, fences the old worker, and re
       schedule: async () => { schedules += 1; },
     });
     assert.equal(staleResize.status, 200);
-    const stalePayload = await staleResize.json() as { conflicts: Array<{ geometry: unknown }>; rejections: unknown[] };
+    const stalePayload = await staleResize.json() as {
+      conflicts: Array<{ geometry: unknown }>;
+      rejections: Array<{ documentId: string; code: string }>;
+    };
     assert.equal(stalePayload.conflicts.length, 1);
-    assert.deepEqual(stalePayload.rejections, []);
+    assert.deepEqual(stalePayload.rejections, [{ documentId: 'area_n', code: 'area_changed' }]);
     assert.deepEqual(stalePayload.conflicts[0].geometry, resizedGeometry());
     assert.equal((await getAreaTaskPreparationState(db, 'campaign_n', 'area_n'))?.generation, newGeneration);
     assert.equal(schedules, 1, 'conflicting stale resize must not schedule another generation');
