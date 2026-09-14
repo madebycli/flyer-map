@@ -39,7 +39,7 @@ function request(path: string, body: unknown, cookie?: string) {
   });
 }
 
-test("organization remembered device is issued after MFA login, rotates on refresh and rejects replay", async (t) => {
+test("organization remembered device is issued after MFA login, rotates on refresh and tolerates immediate cross-tab overlap", async (t) => {
   const db = new NetworkD1(true, true);
   t.after(() => db.sqlite.close());
   const now = "2026-09-14T18:00:00.000Z";
@@ -75,7 +75,7 @@ test("organization remembered device is issued after MFA login, rotates on refre
     1,
   );
 
-  const replay = await handleOrganizationRememberRoute(
+  const concurrentOldCookie = await handleOrganizationRememberRoute(
     request(
       "/api/organization/session/refresh",
       {},
@@ -83,10 +83,11 @@ test("organization remembered device is issued after MFA login, rotates on refre
     ),
     db,
   );
-  assert.ok(replay);
-  assert.equal(replay.status, 401);
+  assert.ok(concurrentOldCookie);
+  assert.equal(concurrentOldCookie.status, 409);
+  assert.equal(cookieHeader(concurrentOldCookie, "__Host-vf_organization_remember"), null, "benign overlap must not clear the replacement cookie");
 
-  const afterReplay = await handleOrganizationRememberRoute(
+  const replacementStillValid = await handleOrganizationRememberRoute(
     request(
       "/api/organization/session/refresh",
       {},
@@ -94,8 +95,43 @@ test("organization remembered device is issued after MFA login, rotates on refre
     ),
     db,
   );
-  assert.ok(afterReplay);
-  assert.equal(afterReplay.status, 401, "replay must revoke the rotated family too");
+  assert.ok(replacementStillValid);
+  assert.equal(replacementStillValid.status, 200);
+});
+
+test("organization optional-MFA password login can remember and later renew the short session", async (t) => {
+  const db = new NetworkD1(true, true);
+  t.after(() => db.sqlite.close());
+  const now = "2026-09-14T18:00:00.000Z";
+  db.sqlite.prepare(
+    `INSERT INTO organization_accounts
+      (id, username, username_normalized, disabled_at, created_at, updated_at, mfa_required)
+     VALUES ('org_account_optional', 'Optional', 'optional', NULL, ?, ?, 0)`,
+  ).run(now, now);
+
+  const loginResponse = await augmentOrganizationRememberResponse(
+    request("/api/organization/login/password", { username: "Optional", password: "secret", rememberDevice: true }),
+    db,
+    Response.json({ account: { id: "org_account_optional", username: "Optional" }, assurance: "mfa", requiresFactor: false }),
+  );
+  const rememberSecret = cookieHeader(loginResponse, "__Host-vf_organization_remember");
+  assert.ok(rememberSecret);
+  const stored = db.sqlite.prepare(
+    "SELECT assurance FROM auth_trusted_devices WHERE subject_kind='organization_account' AND subject_id='org_account_optional' AND revoked_at IS NULL",
+  ).get() as { assurance: string };
+  assert.equal(stored.assurance, "password");
+
+  const refreshed = await handleOrganizationRememberRoute(
+    request(
+      "/api/organization/session/refresh",
+      {},
+      `__Host-vf_organization_remember=${encodeURIComponent(rememberSecret!)}`,
+    ),
+    db,
+  );
+  assert.ok(refreshed);
+  assert.equal(refreshed.status, 200, "optional-MFA Unstable accounts must be able to renew a remembered short session");
+  assert.ok(cookieHeader(refreshed, "__Host-vf_organization_session"));
 });
 
 test("campaign admin remembered device rotates into a new short admin session and is campaign scoped", async (t) => {
