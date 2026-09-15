@@ -47,6 +47,7 @@ type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & Organiz
   ORGANIZATION_PASSWORD_KDF?: OrganizationPasswordKdfNamespace;
   ORGANIZATION_KDF_DIAGNOSTICS?: string;
   RUNTIME_ENVIRONMENT?: string;
+  SOURCE_COMMIT_SHA?: string;
   CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
 };
 
@@ -130,6 +131,7 @@ export default {
           ok: true,
           version: env.CF_VERSION_METADATA?.id ?? "development",
           environment: env.RUNTIME_ENVIRONMENT ?? "development",
+          sourceCommit: env.SOURCE_COMMIT_SHA ?? null,
           capabilities: {
             organizationAuth: true,
             organizationSecurity: true,
