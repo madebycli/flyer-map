@@ -18,7 +18,9 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      BETA_D1_ID: ac788637-4deb-4574-b5b6-8183770a1c01
+      BETA_DB_NAME: flyer-map-unstable-db
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,9 +44,12 @@ jobs:
             exit 1
           fi
           LIST_JSON="$(npx wrangler d1 list --json)"
-          BETA_DB_NAME="$(jq -r --arg id "$BETA_D1_ID" '[.[]|select(.uuid==$id)]|if length==1 then .[0].name else empty end' <<<"$LIST_JSON")"
-          [[ -n "$BETA_DB_NAME" ]] || { echo 'Exact Beta D1 missing or ambiguous.' >&2; exit 1; }
-          echo "BETA_DB_NAME=$BETA_DB_NAME" >> "$GITHUB_ENV"
+          BETA_D1_ID="$(jq -r --arg name "$BETA_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
+          [[ -n "$BETA_D1_ID" ]] || { echo 'Dedicated Unstable D1 missing or ambiguous.' >&2; exit 1; }
+          [[ "$BETA_D1_ID" != "$PROD_D1_ID" ]]
+          [[ "$BETA_D1_ID" != "$RXDB_STAGING_D1_ID" ]]
+          echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
+          echo "Resolved dedicated Unstable D1: ${BETA_DB_NAME} (${BETA_D1_ID})"
       - name: Capture real Cloudflare D1 query attribution
         shell: bash
         run: |
@@ -71,6 +76,7 @@ jobs:
           const out = {
             capturedAt: new Date().toISOString(),
             betaD1Id: process.env.BETA_D1_ID,
+            betaDbName: process.env.BETA_DB_NAME,
             sourceCommitSha: process.env.GITHUB_SHA,
             window: '1d',
             byRowsRead: sanitize(reads),
