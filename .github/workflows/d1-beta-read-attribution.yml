@@ -3,31 +3,40 @@ name: D1 Beta Read Attribution
 on:
   workflow_dispatch:
   push:
-    branches: [unstable]
+    branches: [beta]
     paths:
       - .github/workflows/d1-beta-read-attribution.yml
 
 permissions:
   contents: read
 
+concurrency:
+  group: d1-beta-read-attribution
+  cancel-in-progress: false
+
 jobs:
   attribute:
-    if: github.ref == 'refs/heads/unstable'
+    if: github.ref == 'refs/heads/beta'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      BETA_DB_NAME: flyer-map-unstable-db
+      BETA_DB_NAME: flyer-map-beta-db
+      BETA_URL: https://flyer-map-beta.cloudflare-eleven035.workers.dev
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+
       - name: Install pinned CLI
         run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Resolve exact Beta D1
         shell: bash
         run: |
@@ -36,58 +45,324 @@ jobs:
           ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
           [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
           if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
-            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+            ACCOUNT_ID="$CONFIGURED_CLOUDFLARE_ACCOUNT_ID"
           elif [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]; then
-            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+            ACCOUNT_ID="$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")"
           else
             echo 'Cloudflare account is ambiguous.' >&2
             exit 1
           fi
+          echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
+
           LIST_JSON="$(npx wrangler d1 list --json)"
           BETA_D1_ID="$(jq -r --arg name "$BETA_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
-          [[ -n "$BETA_D1_ID" ]] || { echo 'Dedicated Unstable D1 missing or ambiguous.' >&2; exit 1; }
+          [[ -n "$BETA_D1_ID" ]] || { echo 'Dedicated Beta D1 missing or ambiguous.' >&2; exit 1; }
           [[ "$BETA_D1_ID" != "$PROD_D1_ID" ]]
           [[ "$BETA_D1_ID" != "$RXDB_STAGING_D1_ID" ]]
           echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
-          echo "Resolved dedicated Unstable D1: ${BETA_DB_NAME} (${BETA_D1_ID})"
-      - name: Capture real Cloudflare D1 query attribution
+          echo "Resolved isolated Beta D1: ${BETA_DB_NAME} (${BETA_D1_ID})"
+
+      - name: Wait for the exact Beta commit to be live
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/d1-attribution
-          npx wrangler d1 insights "$BETA_DB_NAME" --time-period 1d --sort-type sum --sort-by reads --sort-direction DESC --limit 50 --json > /tmp/d1-attribution/by-reads.json
-          npx wrangler d1 insights "$BETA_DB_NAME" --time-period 1d --sort-type sum --sort-by count --sort-direction DESC --limit 50 --json > /tmp/d1-attribution/by-count.json
-          node <<'NODE'
-          const fs = require('fs');
-          const reads = JSON.parse(fs.readFileSync('/tmp/d1-attribution/by-reads.json','utf8'));
-          const count = JSON.parse(fs.readFileSync('/tmp/d1-attribution/by-count.json','utf8'));
-          const sanitize = rows => rows.map((row, index) => ({
-            rank: index + 1,
-            query: row.query,
-            avgRowsRead: row.avgRowsRead,
-            totalRowsRead: row.totalRowsRead,
-            avgRowsWritten: row.avgRowsWritten,
-            totalRowsWritten: row.totalRowsWritten,
-            avgDurationMs: row.avgDurationMs,
-            totalDurationMs: row.totalDurationMs,
-            numberOfTimesRun: row.numberOfTimesRun,
-            queryEfficiency: row.queryEfficiency,
-          }));
-          const out = {
-            capturedAt: new Date().toISOString(),
-            betaD1Id: process.env.BETA_D1_ID,
-            betaDbName: process.env.BETA_DB_NAME,
-            sourceCommitSha: process.env.GITHUB_SHA,
-            window: '1d',
-            byRowsRead: sanitize(reads),
-            byExecutionCount: sanitize(count),
+          for attempt in $(seq 1 90); do
+            RUNTIME="$(curl --silent --show-error --retry 2 --retry-all-errors "${BETA_URL}/api/runtime?d1-audit=${GITHUB_SHA}-${attempt}" || true)"
+            if jq -e --arg sha "$GITHUB_SHA" '.ok == true and .environment == "unstable" and .sourceCommit == $sha' <<<"$RUNTIME" >/dev/null 2>&1; then
+              echo "Exact Beta commit is live."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Expected Beta commit did not become live: ${GITHUB_SHA}" >&2
+          exit 1
+
+      - name: Materialize isolated one-shot StreetEngine audit Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .d1-audit /tmp/d1-attribution
+          AUDIT_WORKER_NAME="flyer-map-beta-d1-audit-${GITHUB_RUN_ID}"
+          AUDIT_PATH="$(node -e "console.log(require('node:crypto').randomBytes(24).toString('hex'))")"
+          CAMPAIGN_ID="campaign_d1_audit_${GITHUB_RUN_ID}"
+          TEAM_ID="team_d1_audit_${GITHUB_RUN_ID}"
+          AREA_ID="area_d1_audit_${GITHUB_RUN_ID}"
+          {
+            echo "AUDIT_WORKER_NAME=$AUDIT_WORKER_NAME"
+            echo "AUDIT_PATH=$AUDIT_PATH"
+            echo "AUDIT_CAMPAIGN_ID=$CAMPAIGN_ID"
+            echo "AUDIT_TEAM_ID=$TEAM_ID"
+            echo "AUDIT_AREA_ID=$AREA_ID"
+          } >> "$GITHUB_ENV"
+
+          cat > .d1-audit/index.ts <<'TS'
+          import { prepareAreaTasks } from '../worker/areaTaskPreparation.ts';
+
+          const AUDIT_PATH = '__AUDIT_PATH__';
+          const CAMPAIGN_ID = '__CAMPAIGN_ID__';
+          const TEAM_ID = '__TEAM_ID__';
+          const AREA_ID = '__AREA_ID__';
+          const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
+
+          type Metrics = {
+            queryCount: number;
+            batchCount: number;
+            returnedMetaRowsRead: number;
+            returnedMetaRowsWritten: number;
+            returnedMetaDurationMs: number;
+            queries: Record<string, number>;
           };
-          fs.writeFileSync('/tmp/d1-attribution/report.json', JSON.stringify(out, null, 2));
-          console.log(JSON.stringify(out, null, 2));
+
+          const numberMeta = (meta: any, snake: string, camel: string) => Number(meta?.[snake] ?? meta?.[camel] ?? 0) || 0;
+          const recordMeta = (metrics: Metrics, result: any) => {
+            const meta = result?.meta;
+            metrics.returnedMetaRowsRead += numberMeta(meta, 'rows_read', 'rowsRead');
+            metrics.returnedMetaRowsWritten += numberMeta(meta, 'rows_written', 'rowsWritten');
+            metrics.returnedMetaDurationMs += numberMeta(meta, 'duration', 'durationMs');
+          };
+          const recordQuery = (metrics: Metrics, query: string) => {
+            metrics.queryCount += 1;
+            const normalized = query.replace(/\s+/g, ' ').trim();
+            metrics.queries[normalized] = (metrics.queries[normalized] ?? 0) + 1;
+          };
+
+          class AuditStatement {
+            inner: any;
+            constructor(inner: any, readonly query: string, readonly metrics: Metrics) { this.inner = inner; }
+            bind(...values: unknown[]) { this.inner = this.inner.bind(...values); return this; }
+            async first<T>() { recordQuery(this.metrics, this.query); return this.inner.first<T>(); }
+            async all<T>() { recordQuery(this.metrics, this.query); const result = await this.inner.all<T>(); recordMeta(this.metrics, result); return result; }
+          }
+
+          class AuditDb {
+            constructor(readonly inner: any, readonly metrics: Metrics) {}
+            prepare(query: string) { return new AuditStatement(this.inner.prepare(query), query, this.metrics); }
+            async batch(statements: AuditStatement[]) {
+              this.metrics.batchCount += 1;
+              for (const statement of statements) recordQuery(this.metrics, statement.query);
+              const results = await this.inner.batch(statements.map((statement) => statement.inner));
+              for (const result of results) recordMeta(this.metrics, result);
+              return results;
+            }
+          }
+
+          const roads = [{
+            type: 'way', id: 1, tags: { highway: 'residential', name: 'Auditstraße' },
+            geometry: [{ lon: 13.001, lat: 51.005 }, { lon: 13.009, lat: 51.005 }],
+          }];
+          const buildings = [13.002, 13.004, 13.008].map((x, index) => ({
+            type: 'way', id: 100 + index,
+            tags: { building: 'house', 'addr:street': 'Auditstraße', 'addr:housenumber': String(index + 1) },
+            geometry: [
+              { lon: x, lat: 51.0051 }, { lon: x + 0.00003, lat: 51.0051 },
+              { lon: x + 0.00003, lat: 51.00513 }, { lon: x, lat: 51.0051 },
+            ],
+          }));
+          const osmFetch = async (_url: unknown, init?: RequestInit) => new Response(JSON.stringify({
+            osm3s: { timestamp_osm_base: '2026-09-15T00:00:00Z' },
+            elements: String(init?.body ?? '').includes('highway') ? roads : buildings,
+          }), { headers: { 'content-type': 'application/json' } });
+
+          export default {
+            async fetch(request: Request, env: { DB: any }) {
+              const url = new URL(request.url);
+              if (!url.pathname.startsWith(`/${AUDIT_PATH}/`)) return new Response('not found', { status: 404 });
+              const action = url.pathname.slice(AUDIT_PATH.length + 2);
+              const now = new Date().toISOString();
+              if (action === 'seed' && request.method === 'POST') {
+                const geometry = { type: 'Polygon', coordinates: [[[13,51],[13.01,51],[13.01,51.01],[13,51.01],[13,51]]] };
+                await env.DB.batch([
+                  env.DB.prepare("INSERT INTO campaigns(id,name,status,revision,write_token,created_at,updated_at) VALUES(?,?,'active',1,?,?,?)").bind(CAMPAIGN_ID, 'D1 Audit', 'audit', now, now),
+                  env.DB.prepare("INSERT INTO teams(id,campaign_id,name,color,created_at,updated_at) VALUES(?,?,?,?,?,?)").bind(TEAM_ID, CAMPAIGN_ID, 'Audit Team', '#2563eb', now, now),
+                  env.DB.prepare("INSERT INTO areas(id,campaign_id,team_id,name,geometry_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)").bind(AREA_ID, CAMPAIGN_ID, TEAM_ID, 'Audit Area', JSON.stringify(geometry), now, now),
+                ]);
+                return json({ ok: true, campaignId: CAMPAIGN_ID, areaId: AREA_ID });
+              }
+              if (action === 'run' && request.method === 'POST') {
+                const metrics: Metrics = { queryCount: 0, batchCount: 0, returnedMetaRowsRead: 0, returnedMetaRowsWritten: 0, returnedMetaDurationMs: 0, queries: {} };
+                const started = performance.now();
+                const result = await prepareAreaTasks(new AuditDb(env.DB, metrics) as any, CAMPAIGN_ID, AREA_ID, { fetchImpl: osmFetch as any });
+                return json({ ok: true, result, durationMs: performance.now() - started, metrics });
+              }
+              if (action === 'cleanup' && request.method === 'POST') {
+                try {
+                  await env.DB.prepare('DELETE FROM campaigns WHERE id = ?').bind(CAMPAIGN_ID).run();
+                  return json({ ok: true });
+                } catch (error) {
+                  return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+                }
+              }
+              return new Response('not found', { status: 404 });
+            },
+          };
+          TS
+          sed -i "s/__AUDIT_PATH__/${AUDIT_PATH}/g; s/__CAMPAIGN_ID__/${CAMPAIGN_ID}/g; s/__TEAM_ID__/${TEAM_ID}/g; s/__AREA_ID__/${AREA_ID}/g" .d1-audit/index.ts
+
+          cat > .d1-audit/wrangler.jsonc <<JSON
+          {
+            "name": "${AUDIT_WORKER_NAME}",
+            "main": "index.ts",
+            "compatibility_date": "2026-09-01",
+            "compatibility_flags": ["nodejs_compat"],
+            "workers_dev": true,
+            "d1_databases": [{
+              "binding": "DB",
+              "database_name": "${BETA_DB_NAME}",
+              "database_id": "${BETA_D1_ID}"
+            }]
+          }
+          JSON
+
+      - name: Deploy one-shot audit Worker and seed tiny fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config .d1-audit/wrangler.jsonc 2>&1 | tee /tmp/d1-attribution/audit-worker-deploy.log
+          AUDIT_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/d1-attribution/audit-worker-deploy.log | tail -n1)"
+          [[ -n "$AUDIT_URL" ]]
+          echo "AUDIT_URL=$AUDIT_URL" >> "$GITHUB_ENV"
+          curl --fail-with-body --silent --show-error --retry 8 --retry-all-errors -X POST "${AUDIT_URL}/${AUDIT_PATH}/seed" | tee /tmp/d1-attribution/seed.json
+          jq -e '.ok == true' /tmp/d1-attribution/seed.json >/dev/null
+          sleep 45
+
+      - name: Capture stabilized pre-workload D1 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          capture() {
+            local prefix="$1"
+            npx wrangler d1 insights "$BETA_DB_NAME" --time-period 1d --sort-type sum --sort-by reads --sort-direction DESC --limit 100 --json > "${prefix}-reads.json"
+            npx wrangler d1 insights "$BETA_DB_NAME" --time-period 1d --sort-type sum --sort-by count --sort-direction DESC --limit 100 --json > "${prefix}-count.json"
+          }
+          total_count() {
+            node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); console.log(rows.reduce((n,r)=>n+(Number(r.numberOfTimesRun)||0),0))" "$1"
+          }
+          capture /tmp/d1-attribution/baseline-a
+          STABLE=0
+          for attempt in $(seq 1 8); do
+            sleep 10
+            capture /tmp/d1-attribution/baseline-b
+            A="$(total_count /tmp/d1-attribution/baseline-a-count.json)"
+            B="$(total_count /tmp/d1-attribution/baseline-b-count.json)"
+            if [[ "$A" == "$B" ]]; then
+              STABLE=1
+              cp /tmp/d1-attribution/baseline-b-reads.json /tmp/d1-attribution/baseline-reads.json
+              cp /tmp/d1-attribution/baseline-b-count.json /tmp/d1-attribution/baseline-count.json
+              break
+            fi
+            cp /tmp/d1-attribution/baseline-b-reads.json /tmp/d1-attribution/baseline-a-reads.json
+            cp /tmp/d1-attribution/baseline-b-count.json /tmp/d1-attribution/baseline-a-count.json
+          done
+          [[ "$STABLE" == '1' ]] || { echo 'D1 Insights baseline did not stabilize.' >&2; exit 1; }
+
+      - name: Run exactly one real remote StreetEngine preparation
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error -X POST "${AUDIT_URL}/${AUDIT_PATH}/run" | tee /tmp/d1-attribution/workload.json
+          jq -e '.ok == true and .result.outcome == "ready" and .result.roadCount >= 1 and .result.houseCount >= 1 and .metrics.queryCount > 0' /tmp/d1-attribution/workload.json >/dev/null
+          echo "StreetEngine workload query count: $(jq -r '.metrics.queryCount' /tmp/d1-attribution/workload.json)"
+
+      - name: Wait for Cloudflare D1 Insights attribution and build exact delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="$(jq -r '.metrics.queryCount' /tmp/d1-attribution/workload.json)"
+          capture_after() {
+            npx wrangler d1 insights "$BETA_DB_NAME" --time-period 1d --sort-type sum --sort-by reads --sort-direction DESC --limit 100 --json > /tmp/d1-attribution/after-reads.json
+            npx wrangler d1 insights "$BETA_DB_NAME" --time-period 1d --sort-type sum --sort-by count --sort-direction DESC --limit 100 --json > /tmp/d1-attribution/after-count.json
+          }
+          delta_execs() {
+            node <<'NODE'
+          const fs=require('fs');
+          const load=(p)=>JSON.parse(fs.readFileSync(p,'utf8'));
+          const merge=(a,b)=>{const m=new Map(); for(const r of [...a,...b]){const q=r.query; const old=m.get(q); if(!old || Number(r.numberOfTimesRun||0)>Number(old.numberOfTimesRun||0))m.set(q,r);} return m;};
+          const base=merge(load('/tmp/d1-attribution/baseline-reads.json'),load('/tmp/d1-attribution/baseline-count.json'));
+          const after=merge(load('/tmp/d1-attribution/after-reads.json'),load('/tmp/d1-attribution/after-count.json'));
+          let n=0; for(const [q,r] of after)n+=Math.max(0,(Number(r.numberOfTimesRun)||0)-(Number(base.get(q)?.numberOfTimesRun)||0));
+          console.log(n);
           NODE
+          }
+          COMPLETE=0
+          for attempt in $(seq 1 36); do
+            sleep 10
+            capture_after
+            OBSERVED="$(delta_execs)"
+            echo "D1 Insights propagation: observed=${OBSERVED}, expected>=${EXPECTED}"
+            if [[ "$OBSERVED" -ge "$EXPECTED" ]]; then COMPLETE=1; break; fi
+          done
+          [[ "$COMPLETE" == '1' ]] || { echo 'D1 Insights did not expose the complete controlled workload in time.' >&2; exit 1; }
+
+          node <<'NODE'
+          const fs=require('fs');
+          const load=(p)=>JSON.parse(fs.readFileSync(p,'utf8'));
+          const merge=(a,b)=>{const m=new Map(); for(const r of [...a,...b]){const q=r.query; const old=m.get(q); if(!old || Number(r.numberOfTimesRun||0)>Number(old.numberOfTimesRun||0))m.set(q,r);} return m;};
+          const base=merge(load('/tmp/d1-attribution/baseline-reads.json'),load('/tmp/d1-attribution/baseline-count.json'));
+          const after=merge(load('/tmp/d1-attribution/after-reads.json'),load('/tmp/d1-attribution/after-count.json'));
+          const num=(v)=>Number(v)||0;
+          const rows=[];
+          for(const [query,current] of after){
+            const previous=base.get(query)||{};
+            const row={
+              query,
+              executions:Math.max(0,num(current.numberOfTimesRun)-num(previous.numberOfTimesRun)),
+              rowsRead:Math.max(0,num(current.totalRowsRead)-num(previous.totalRowsRead)),
+              rowsWritten:Math.max(0,num(current.totalRowsWritten)-num(previous.totalRowsWritten)),
+              durationMs:Math.max(0,num(current.totalDurationMs)-num(previous.totalDurationMs)),
+            };
+            if(row.executions||row.rowsRead||row.rowsWritten)rows.push(row);
+          }
+          rows.sort((a,b)=>b.rowsRead-a.rowsRead||b.executions-a.executions);
+          const workload=JSON.parse(fs.readFileSync('/tmp/d1-attribution/workload.json','utf8'));
+          const summary={
+            capturedAt:new Date().toISOString(),
+            sourceCommitSha:process.env.GITHUB_SHA,
+            betaDbName:process.env.BETA_DB_NAME,
+            betaD1Id:process.env.BETA_D1_ID,
+            workload:{roads:1,houses:3,result:workload.result,durationMs:workload.durationMs,queryCount:workload.metrics.queryCount,batchCount:workload.metrics.batchCount},
+            d1:{
+              rowsRead:rows.reduce((n,r)=>n+r.rowsRead,0),
+              rowsWritten:rows.reduce((n,r)=>n+r.rowsWritten,0),
+              queryExecutions:rows.reduce((n,r)=>n+r.executions,0),
+              durationMs:rows.reduce((n,r)=>n+r.durationMs,0),
+            },
+            topQueries:rows.slice(0,30),
+            returnedBatchMeta:{rowsRead:workload.metrics.returnedMetaRowsRead,rowsWritten:workload.metrics.returnedMetaRowsWritten,durationMs:workload.metrics.returnedMetaDurationMs},
+            attributionComplete:rows.reduce((n,r)=>n+r.executions,0)>=workload.metrics.queryCount,
+          };
+          fs.writeFileSync('/tmp/d1-attribution/report.json',JSON.stringify(summary,null,2)+'\n');
+          console.log(JSON.stringify(summary,null,2));
+          NODE
+          jq -e '.attributionComplete == true and .d1.rowsRead >= 0 and .d1.rowsWritten >= 0' /tmp/d1-attribution/report.json >/dev/null
+
+      - name: Cleanup audit fixture and one-shot Worker
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ -n "${AUDIT_URL:-}" && -n "${AUDIT_PATH:-}" ]]; then
+            curl --silent --show-error -X POST "${AUDIT_URL}/${AUDIT_PATH}/cleanup" > /tmp/d1-attribution/cleanup.json
+          fi
+          if [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${AUDIT_WORKER_NAME:-}" ]]; then
+            curl --silent --show-error -X DELETE "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${AUDIT_WORKER_NAME}" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' > /tmp/d1-attribution/delete-worker.json
+          fi
+          rm -rf .d1-audit
+          true
+
       - name: Upload sanitized attribution evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: d1-beta-read-attribution
-          path: /tmp/d1-attribution/report.json
+          path: |
+            /tmp/d1-attribution/report.json
+            /tmp/d1-attribution/workload.json
+            /tmp/d1-attribution/baseline-reads.json
+            /tmp/d1-attribution/baseline-count.json
+            /tmp/d1-attribution/after-reads.json
+            /tmp/d1-attribution/after-count.json
+            /tmp/d1-attribution/cleanup.json
+            /tmp/d1-attribution/delete-worker.json
           retention-days: 7
+          if-no-files-found: ignore
