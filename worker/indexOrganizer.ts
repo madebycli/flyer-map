@@ -18,6 +18,18 @@ import {
   rewriteOrganizationManagedAccessResponse,
 } from "./organizationLegacyGuard.ts";
 import {
+  augmentOrganizationRememberResponse,
+  handleOrganizationRememberRoute,
+} from "./organizationRememberBridge.ts";
+import {
+  augmentCampaignAdminRememberResponse,
+  handleCampaignAdminRememberRoute,
+} from "./campaignAdminRememberBridge.ts";
+import {
+  applyTrustedDeviceInvalidations,
+  captureTrustedDeviceInvalidations,
+} from "./trustedDeviceInvalidation.ts";
+import {
   handleOrganizationFieldGroupList,
   type OrganizationFieldGroupListEnv,
 } from "./organizationFieldGroupList.ts";
@@ -35,10 +47,14 @@ type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & Organiz
   ORGANIZATION_PASSWORD_KDF?: OrganizationPasswordKdfNamespace;
   ORGANIZATION_KDF_DIAGNOSTICS?: string;
   RUNTIME_ENVIRONMENT?: string;
+  SOURCE_COMMIT_SHA?: string;
   CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
 };
 
 const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/u;
+
+type WorkerWebSocketResponse = Response & { webSocket?: unknown };
+type WorkerWebSocketResponseInit = ResponseInit & { webSocket: unknown };
 
 function harden(response: Response) {
   const headers = new Headers(response.headers);
@@ -46,6 +62,15 @@ function harden(response: Response) {
   headers.set("x-frame-options", "DENY");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("cross-origin-opener-policy", "same-origin");
+  const webSocket = (response as WorkerWebSocketResponse).webSocket;
+  if (webSocket) {
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+      webSocket,
+    } as WorkerWebSocketResponseInit);
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -106,6 +131,7 @@ export default {
           ok: true,
           version: env.CF_VERSION_METADATA?.id ?? "development",
           environment: env.RUNTIME_ENVIRONMENT ?? "development",
+          sourceCommit: env.SOURCE_COMMIT_SHA ?? null,
           capabilities: {
             organizationAuth: true,
             organizationSecurity: true,
@@ -119,6 +145,10 @@ export default {
       }
       const rootRedirect = redirectBareRootToOrganizationLogin(request);
       if (rootRedirect) return harden(rootRedirect);
+      const rememberResponse = await handleOrganizationRememberRoute(request, env.DB);
+      if (rememberResponse) return harden(rememberResponse);
+      const campaignAdminRememberResponse = await handleCampaignAdminRememberRoute(request, env.DB);
+      if (campaignAdminRememberResponse) return harden(campaignAdminRememberResponse);
       const methodGuard = guardOrganizationApiMethod(request);
       if (methodGuard) return harden(methodGuard);
       const queryGuard = guardOrganizationSecurityQuery(request);
@@ -129,17 +159,28 @@ export default {
       if (legacyGuard) return harden(legacyGuard);
       const bootstrapHashResponse = await handleOrganizationBootstrapHashApi(request, env);
       if (bootstrapHashResponse) return harden(bootstrapHashResponse);
+
+      const invalidations = await captureTrustedDeviceInvalidations(request.clone(), env.DB);
       const securityResponse = await handleOrganizationSecurityApi(request, env);
-      if (securityResponse) return harden(securityResponse);
+      if (securityResponse) {
+        return harden(await applyTrustedDeviceInvalidations(env.DB, invalidations, securityResponse));
+      }
+      const organizationRequest = request.clone();
       const organizationResponse = await handleOrganizationApi(request, env);
-      if (organizationResponse) return harden(organizationResponse);
+      if (organizationResponse) {
+        const remembered = await augmentOrganizationRememberResponse(organizationRequest, env.DB, organizationResponse);
+        return harden(await applyTrustedDeviceInvalidations(env.DB, invalidations, remembered));
+      }
       const roomListResponse = await handleOrganizationFieldGroupList(request, env);
       if (roomListResponse) return harden(roomListResponse);
       const teamCommentsResponse = await handleTeamCommentsSummary(request, env);
       if (teamCommentsResponse) return harden(teamCommentsResponse);
+      const campaignAdminRequest = request.clone();
       const baseResponse = await baseWorker.fetch(request, env, context);
-      const identityAwareResponse = await rewriteOrganizationManagedAccessResponse(request, env.DB, baseResponse);
-      return harden(failClosedOrganizationApiFallback(request, identityAwareResponse));
+      const rememberedBaseResponse = await augmentCampaignAdminRememberResponse(campaignAdminRequest, env.DB, baseResponse);
+      const invalidatedBaseResponse = await applyTrustedDeviceInvalidations(env.DB, invalidations, rememberedBaseResponse);
+      const identityAwareResponse = await rewriteOrganizationManagedAccessResponse(campaignAdminRequest, env.DB, invalidatedBaseResponse);
+      return harden(failClosedOrganizationApiFallback(campaignAdminRequest, identityAwareResponse));
     } catch (error) {
       if (error instanceof OrganizationPasswordKdfUnavailableError) {
         return kdfUnavailableResponse(error, env.ORGANIZATION_KDF_DIAGNOSTICS === "1");

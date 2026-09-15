@@ -89,9 +89,11 @@ test("public Worker preserves root SPA assets while API requests never fall thro
   assert.equal(fetched.length, 1);
 });
 
-test("Main runtime contract exposes composed capabilities without binding or secret details", async () => {
+test("Main runtime contract exposes composed capabilities and exact source revision without binding or secret details", async () => {
+  const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
   const response = await publicWorker.fetch(new Request("https://one.flyer.test/api/runtime"), {
     RUNTIME_ENVIRONMENT: "main",
+    SOURCE_COMMIT_SHA: sourceCommit,
     CF_VERSION_METADATA: { id: "version-test" },
   } as never);
   assert.equal(response.status, 200);
@@ -99,6 +101,7 @@ test("Main runtime contract exposes composed capabilities without binding or sec
     ok: true,
     version: "version-test",
     environment: "main",
+    sourceCommit,
     capabilities: {
       organizationAuth: true,
       organizationSecurity: true,
@@ -111,6 +114,13 @@ test("Main runtime contract exposes composed capabilities without binding or sec
   });
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(response.headers.get("x-frame-options"), "DENY");
+
+  const development = await publicWorker.fetch(new Request("https://dev.flyer.test/api/runtime"), {
+    RUNTIME_ENVIRONMENT: "development",
+    CF_VERSION_METADATA: { id: "version-dev" },
+  } as never);
+  const developmentPayload = await development.json() as { sourceCommit: string | null };
+  assert.equal(developmentPayload.sourceCommit, null, "local/non-release runtimes must not invent a Git source revision");
 
   const head = await publicWorker.fetch(new Request("https://two.flyer.test/api/runtime", { method: "HEAD" }), {} as never);
   assert.equal(head.status, 405);

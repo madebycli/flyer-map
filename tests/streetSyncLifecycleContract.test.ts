@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+async function readSyncSource() {
+  const [coordinator, core] = await Promise.all([
+    readFile("src/data/rxdbMissionSync.ts", "utf8"),
+    readFile("src/data/rxdbMissionSyncCore.ts", "utf8"),
+  ]);
+  return coordinator + "\n" + core;
+}
+
 test("prepared Street realtime notification stays inside the Worker lifetime", async () => {
   const source = await readFile("worker/streetNetwork/preparation.ts", "utf8");
 
@@ -15,7 +23,7 @@ test("prepared Street realtime notification stays inside the Worker lifetime", a
 
 test("Street sync exposes payload-free client diagnostics for wakeup, pull, and manual refresh", async () => {
   const [syncSource, storeSource] = await Promise.all([
-    readFile("src/data/rxdbMissionSync.ts", "utf8"),
+    readSyncSource(),
     readFile("src/data/campaignStore.ts", "utf8"),
   ]);
 

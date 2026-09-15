@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "invariant": "A deploy source branch must equal its release channel source branch. Cross-channel deploys are forbidden.",
+  "stable": {
+    "sourceBranch": "main",
+    "runtimeEnvironment": "main",
+    "worker": "flyer-map",
+    "database": "flyer-map-db",
+    "url": "https://flyer-map.cloudflare-eleven035.workers.dev",
+    "applyD1MigrationsDuringDeploy": false
+  },
+  "unstable": {
+    "sourceBranch": "unstable",
+    "runtimeEnvironment": "unstable",
+    "backendWorker": "flyer-map-unstable-backend",
+    "aliasWorker": "flyer-map-unstable",
+    "database": "flyer-map-unstable-db",
+    "url": "https://flyer-map-unstable.cloudflare-eleven035.workers.dev",
+    "applyD1MigrationsDuringDeploy": true
+  },
+  "forbidden": [
+    "deploy main to the unstable channel",
+    "deploy unstable to the stable channel",
+    "deploy a feature/audit branch directly to either release channel",
+    "bind the unstable worker to the production D1 database",
+    "bind the stable worker to the unstable D1 database"
+  ]
+}

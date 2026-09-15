@@ -222,6 +222,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
   );
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(false);
   const [phase, setPhase] = useState<"password" | "factor" | "recovery-done">("password");
   const [factorMode, setFactorMode] = useState<"totp" | "recovery">("totp");
   const [factor, setFactor] = useState("");
@@ -234,7 +235,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await beginOrganizationLogin(username, password);
+      const result = await beginOrganizationLogin(username, password, rememberDevice);
       setPassword("");
       if (result.requiresFactor) setPhase("factor");
       else navigate(next, true);
@@ -252,7 +253,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
     setError(null);
     try {
       if (factorMode === "totp") {
-        await completeOrganizationTotp(factor);
+        await completeOrganizationTotp(factor, rememberDevice);
         navigate(next, true);
       } else {
         await completeOrganizationRecovery(factor);
@@ -287,6 +288,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
           <form className="org-form" onSubmit={(event) => void submitPassword(event)}>
             <label>Benutzername<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
             <label>Passwort<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>
+            <label><span><input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} /> Dieses Gerät merken</span><small>Die aktive Sitzung bleibt 12 Stunden kurzlebig. Dieses Gerät darf sie bis zu 60 Tage Inaktivität, maximal 90 Tage insgesamt, sicher erneuern.</small></label>
             {error ? <p className="org-error" role="alert">{error}</p> : null}
             <button className="org-primary" disabled={busy}>{busy ? "Prüfe …" : "Weiter"}</button>
           </form>
@@ -297,6 +299,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
               <button type="button" className={factorMode === "recovery" ? "is-active" : ""} onClick={() => { setFactorMode("recovery"); setFactor(""); }}>Recovery-Code</button>
             </div>
             <label>{factorMode === "totp" ? "6-stelliger Code" : "Recovery-Code"}<input value={factor} onChange={(event) => setFactor(event.target.value)} autoComplete={factorMode === "totp" ? "one-time-code" : "off"} inputMode={factorMode === "totp" ? "numeric" : "text"} required /></label>
+            {rememberDevice && factorMode === "totp" ? <p className="org-help">Nach erfolgreicher MFA wird nur dieses Gerät als vertrauenswürdig registriert. Der Remember-Token ist HttpOnly und wird bei jeder Erneuerung rotiert.</p> : null}
             {error ? <p className="org-error" role="alert">{error}</p> : null}
             <button className="org-primary" disabled={busy}>Anmelden</button>
             <button className="org-link-button" type="button" onClick={() => { setPhase("password"); setFactor(""); setError(null); }}>Zurück</button>

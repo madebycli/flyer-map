@@ -381,7 +381,7 @@ async function startRxdb(campaignId: string) {
   resetRxdbIssues();
   const fieldGroupAccess = runtime.access?.role === "field-group-member" ? runtime.access : null;
   const teamScopeId = fieldGroupAccess?.teamId ?? null;
-  const actorScopeId = fieldGroupAccess?.groupId ?? null;
+  const actorScopeId = fieldGroupAccess?.membershipId ?? null;
   if (fieldGroupAccess && (!teamScopeId || !actorScopeId || !FIELD_GROUP_ID_PATTERN.test(actorScopeId))) {
     throw new Error("field_group_actor_scope_required");
   }

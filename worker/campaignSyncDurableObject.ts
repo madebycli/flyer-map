@@ -58,7 +58,12 @@ export class CampaignSyncDurableObject {
         const message=JSON.stringify({type:'preparation',areaId:area.id,state:progress});
         for(const socket of state.getWebSockets()){
           const scope=socket.deserializeAttachment?.() as {teamId?:string;expiresAt?:number}|undefined;
-          if(!scope||!scope.expiresAt||scope.expiresAt<Date.now()||(scope.teamId!=='*'&&scope.teamId!==area.teamId))continue;
+          if(!scope||!scope.expiresAt)continue;
+          if(scope.expiresAt<Date.now()){
+            try{socket.close?.(4001,'scope_expired');}catch{/* Client will recover through canonical polling. */}
+            continue;
+          }
+          if(scope.teamId!=='*'&&scope.teamId!==area.teamId)continue;
           try{socket.send(message);}catch{/* Disconnected client catches up through scoped HTTP. */}
         }
       },
@@ -128,7 +133,7 @@ export class CampaignSyncDurableObject {
     }).WebSocketPair;
     if (!WebSocketPairConstructor) {
       // Node-based unit tests and local HTTP preview do not expose the
-      // Workers WebSocketPair.  Production Workers always do.
+      // Workers WebSocketPair. Production Workers always do.
       return json({ error: { code: "websocket_unavailable", message: "WebSocket-Realtime ist in dieser Laufzeit nicht verfügbar." } }, { status: 501 });
     }
     const pair = new WebSocketPairConstructor();
@@ -154,7 +159,7 @@ export class CampaignSyncDurableObject {
     }
   }
 
-  // Hibernation callbacks.  Clients never send domain writes through the DO.
+  // Hibernation callbacks. Clients never send domain writes through the DO.
   webSocketMessage(_socket: CampaignSyncWebSocket, _message: string | ArrayBuffer) {}
   webSocketClose(_socket: CampaignSyncWebSocket, _code: number, _reason: string, _wasClean: boolean) {}
   webSocketError(_socket: CampaignSyncWebSocket, _error: unknown) {}

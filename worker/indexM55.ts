@@ -154,6 +154,7 @@ export default {
             role: access.role,
             teamId: access.teamId,
             groupId: access.groupId ?? null,
+            membershipId: access.membershipId ?? null,
             label: access.label,
           },
         });

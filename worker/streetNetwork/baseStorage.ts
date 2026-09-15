@@ -94,8 +94,16 @@ export async function basePreparationStatements(db:D1DatabaseLike,before:Campaig
   }
   const hashes=new Set(existing.results.map(row=>row.content_hash));
   const guard='EXISTS(SELECT 1 FROM campaigns WHERE id=? AND write_token=?)';
-  const statements=boundedChunks(rows.filter(row=>!hashes.has(row.hash)),1_500_000).map(chunk=>db.prepare(`INSERT INTO street_base_chunks(campaign_id,area_id,content_hash,kind,bucket,payload_json)
-    SELECT ?,?,json_extract(value,'$.hash'),json_extract(value,'$.kind'),json_extract(value,'$.bucket'),json_extract(value,'$.payload') FROM json_each(?) WHERE ${guard}`).bind(campaignId,areaId,JSON.stringify(chunk),campaignId,token));
+  const chunks=boundedChunks(rows.filter(row=>!hashes.has(row.hash)),1_500_000);
+  const statements:D1PreparedStatement[]=[];
+  for(let index=0;index<chunks.length;index+=2){
+    const first=JSON.stringify(chunks[index]);
+    const second=JSON.stringify(chunks[index+1]??[]);
+    statements.push(db.prepare(`INSERT INTO street_base_chunks(campaign_id,area_id,content_hash,kind,bucket,payload_json)
+      SELECT ?,?,json_extract(value,'$.hash'),json_extract(value,'$.kind'),json_extract(value,'$.bucket'),json_extract(value,'$.payload')
+      FROM (SELECT value FROM json_each(?) UNION ALL SELECT value FROM json_each(?))
+      WHERE ${guard}`).bind(campaignId,areaId,first,second,campaignId,token));
+  }
   statements.push(db.prepare(`DELETE FROM street_base_chunks WHERE campaign_id=? AND area_id=? AND content_hash NOT IN(SELECT value FROM json_each(?)) AND ${guard}`).bind(campaignId,areaId,JSON.stringify(rows.map(row=>row.hash)),campaignId,token));
   statements.push(db.prepare(`INSERT INTO street_base_areas(campaign_id,area_id,generation) SELECT ?,?,? WHERE ${guard} ON CONFLICT(campaign_id,area_id) DO UPDATE SET generation=excluded.generation`).bind(campaignId,areaId,generation,campaignId,token));
   // Preserve manual references before legacy automatic Street rows are removed.

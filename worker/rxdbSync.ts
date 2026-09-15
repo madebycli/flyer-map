@@ -63,6 +63,7 @@ type TaskRow = {
   completed_at: string | null; created_at: string; updated_at: string;
 };
 type HouseRow = TaskRow & { parent_street_task_id: string | null };
+type RxdbRetentionFloor = { min_checkpoint_seq: number; epoch: number };
 
 function parseJson<T>(raw: string): T {
   return JSON.parse(raw) as T;
@@ -185,6 +186,27 @@ function batchSizeFrom(value: unknown) {
     : 100;
 }
 
+async function retainedCheckpointFloor(
+  db: D1DatabaseLike,
+  campaignId: string,
+  collectionName: RxdbCollectionName,
+) {
+  try {
+    const row = await db.prepare(
+      "SELECT min_checkpoint_seq, epoch FROM campaign_sync_retention WHERE campaign_id = ? AND collection_name = ?",
+    ).bind(campaignId, collectionName).first<RxdbRetentionFloor>();
+    if (!row) return null;
+    if (!Number.isSafeInteger(row.min_checkpoint_seq) || row.min_checkpoint_seq < 0 || !Number.isSafeInteger(row.epoch) || row.epoch < 1) {
+      throw new Error("rxdb_retention_state_invalid");
+    }
+    return { minCheckpointSeq: row.min_checkpoint_seq, epoch: row.epoch };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("no such table") || message.includes("campaign_sync_retention")) return null;
+    throw error;
+  }
+}
+
 async function generationState(db:D1DatabaseLike,campaignId:string,access:AccessContext){
   if(!await hasBaseStorage(db))return undefined;
   const team=fieldGroupScope(access);
@@ -248,6 +270,16 @@ export async function handleRxdbPull(
   const result = scopedToTeam
     ? await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, groupTeamId, batchSize).all<{ seq: number; document_json: string }>()
     : await statement.bind(campaignId, collectionName, checkpoint.seq, highWater, batchSize).all<{ seq: number; document_json: string }>();
+  const floor = await retainedCheckpointFloor(db, campaignId, collectionName);
+  if (floor && checkpoint.seq < floor.minCheckpointSeq) {
+    return json({
+      error: {
+        code: "rxdb_checkpoint_expired",
+        message: "Der lokale RxDB-Checkpoint ist älter als der aufbewahrte Change-Feed und muss neu aufgebaut werden.",
+      },
+      retention: floor,
+    }, { status: 409 });
+  }
   try {
     const expanded = result.results.flatMap((row) => {
       const raw=parseJson<unknown>(row.document_json);

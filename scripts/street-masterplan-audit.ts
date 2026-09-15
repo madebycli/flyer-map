@@ -4,13 +4,30 @@ import { seedNetwork, networkOsm } from '../tests/helpers/networkD1.ts';
 import { beginAreaTaskPreparation, runAreaTaskPreparation, prepareAreaTasks } from '../worker/areaTaskPreparation.ts';
 import { requestDatabase } from '../worker/requestDatabase.ts';
 
+function queryClass(sql:string) {
+  const flat=sql.replace(/\s+/g,' ').trim();
+  const pragma=/^PRAGMA table_info\(([^)]+)\)/i.exec(flat);if(pragma)return `pragma:${pragma[1]}`;
+  const insert=/^INSERT(?: OR \w+)? INTO ([A-Za-z_][\w]*)/i.exec(flat);if(insert)return `insert:${insert[1]}`;
+  const update=/^UPDATE ([A-Za-z_][\w]*)/i.exec(flat);if(update)return `update:${update[1]}`;
+  const del=/^DELETE FROM ([A-Za-z_][\w]*)/i.exec(flat);if(del)return `delete:${del[1]}`;
+  const from=/\bFROM ([A-Za-z_][\w]*)/i.exec(flat);if(from)return `select:${from[1]}`;
+  return flat.slice(0,80);
+}
+
 // Synthetic, offline audit only. Never uses a network provider or remote D1.
 for (const count of [0,399,1000,5000,10000,20000]) {
   const db=new BudgetD1(true,true);seedNetwork(db);
   const tileCount=count>10000?2:1;
   const queryBudget=50;
   if(tileCount===2)db.sqlite.prepare('UPDATE areas SET geometry_json=?').run(JSON.stringify({type:'Polygon',coordinates:[[[13,51],[13.02,51],[13.02,51.01],[13,51.01],[13,51]]]}));
-  let fullEdgeReads=0,fullEdgeBytes=0,indexedEdgeReads=0,indexedEdgeBytes=0,requests=0,sourceBytes=0,maxStatements=0,totalStatements=0,returnedRows=0,estimatedReads=0,writes=0,steps=0;
+  let fullEdgeReads=0,fullEdgeBytes=0,indexedEdgeReads=0,indexedEdgeBytes=0,requests=0,sourceBytes=0,maxStatements=0,maxStatementPhase='unknown',totalStatements=0,returnedRows=0,estimatedReads=0,writes=0,steps=0,activePhase='outside';
+  const maxStatementsByPhase:Record<string,number>={};
+  const queryClassesByPhase:Record<string,Record<string,number>>={};
+  const originalObserve=db.observe.bind(db);
+  db.observe=(query:string,values:unknown[])=>{
+    const phase=queryClassesByPhase[activePhase]??={};const key=queryClass(query);phase[key]=(phase[key]??0)+1;queryClassesByPhase[activePhase]=phase;
+    originalObserve(query,values);
+  };
   const originalPrepare=db.prepare.bind(db);
   db.prepare=(query:string)=>{
     const statement=originalPrepare(query),all=statement.all.bind(statement);
@@ -26,9 +43,17 @@ for (const count of [0,399,1000,5000,10000,20000]) {
   db.resetBudget();const started=await beginAreaTaskPreparation(requestDatabase(db,queryBudget),'campaign_n','area_n');
   if(started.outcome!=='run')throw new Error('audit_start_failed');
   let result:any;const start=performance.now(),cpu=process.cpuUsage();let heap=getHeapStatistics().used_heap_size;
-  do {db.resetBudget();result=await runAreaTaskPreparation(requestDatabase(db,queryBudget),started.run,{fetchImpl});const report=db.report();maxStatements=Math.max(maxStatements,report.statements);totalStatements+=report.statements;returnedRows+=report.returnedRows;estimatedReads+=report.estimatedRowsRead;writes+=report.estimatedTotalRowsWritten;heap=Math.max(heap,getHeapStatistics().used_heap_size);steps++;}while(result.outcome==='pending'&&steps<300);
+  do {
+    const beforeJob=db.sqlite.prepare('SELECT phase FROM street_network_jobs').get() as {phase?:string}|undefined;
+    const phase=beforeJob?.phase??'start';activePhase=phase;
+    db.resetBudget();result=await runAreaTaskPreparation(requestDatabase(db,queryBudget),started.run,{fetchImpl});const report=db.report();
+    maxStatementsByPhase[phase]=Math.max(maxStatementsByPhase[phase]??0,report.statements);
+    if(report.statements>maxStatements){maxStatements=report.statements;maxStatementPhase=phase;}
+    totalStatements+=report.statements;returnedRows+=report.returnedRows;estimatedReads+=report.estimatedRowsRead;writes+=report.estimatedTotalRowsWritten;heap=Math.max(heap,getHeapStatistics().used_heap_size);steps++;
+  }while(result.outcome==='pending'&&steps<300);
+  activePhase='outside';
   const used=process.cpuUsage(cpu),job=db.sqlite.prepare('SELECT phase,cursor,error_code,metrics_json FROM street_network_jobs').get() as any;
-  console.log(JSON.stringify({scenario:'scale',houses:count,tiles:tileCount,queryBudget,result,phase:job.phase,cursor:job.cursor,errorCode:job.error_code,steps,maxStatements,totalStatements,returnedRows,estimatedReads,writes,requests,sourceBytes,edgeReads:fullEdgeReads,edgeBytes:fullEdgeBytes,fullEdgeReads,fullEdgeBytes,indexedEdgeReads,indexedEdgeBytes,wallMs:Math.round(performance.now()-start),nodeCpuMs:(used.user+used.system)/1000,sampledProcessHeapBytes:heap,note:'SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; fullEdge* is complete staged edge payload, indexedEdge* is bounded label-bucket payload'}));db.sqlite.close();
+  console.log(JSON.stringify({scenario:'scale',houses:count,tiles:tileCount,queryBudget,result,phase:job.phase,cursor:job.cursor,errorCode:job.error_code,steps,maxStatements,maxStatementPhase,maxStatementsByPhase,...(count===20000?{maxPhaseQueryClasses:queryClassesByPhase[maxStatementPhase]}:{}),totalStatements,returnedRows,estimatedReads,writes,requests,sourceBytes,edgeReads:fullEdgeReads,edgeBytes:fullEdgeBytes,fullEdgeReads,fullEdgeBytes,indexedEdgeReads,indexedEdgeBytes,wallMs:Math.round(performance.now()-start),nodeCpuMs:(used.user+used.system)/1000,sampledProcessHeapBytes:heap,note:'SQLite estimates and process observations, excludes begin, not Worker CPU or Cloudflare billing; fullEdge* is complete staged edge payload, indexedEdge* is bounded label-bucket payload'}));db.sqlite.close();
 }
 for(const shape of ['all-open','null-node','empty']){
   const db=new BudgetD1(true,true);seedNetwork(db);

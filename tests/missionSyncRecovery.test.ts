@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+async function readSyncSource() {
+  const [coordinator, core] = await Promise.all([
+    readFile("src/data/rxdbMissionSync.ts", "utf8"),
+    readFile("src/data/rxdbMissionSyncCore.ts", "utf8"),
+  ]);
+  return coordinator + "\n" + core;
+}
+
 test("normal mission sync is RxDB-first and retains the M5 queue only for one-time import", async () => {
   const store = await readFile("src/data/campaignStore.ts", "utf8");
   assert.match(store, /MissionRxdbSync/u);
@@ -15,8 +23,9 @@ test("normal mission sync is RxDB-first and retains the M5 queue only for one-ti
 });
 
 test("replica snapshots and sync status distinguish local persistence from server acknowledgement", async () => {
-  const [store, sync] = await Promise.all([
+  const [store, sync, coordinator] = await Promise.all([
     readFile("src/data/campaignStore.ts", "utf8"),
+    readSyncSource(),
     readFile("src/data/rxdbMissionSync.ts", "utf8"),
   ]);
   assert.match(store, /function applyRxdbSnapshot/u);
@@ -33,15 +42,21 @@ test("replica snapshots and sync status distinguish local persistence from serve
   assert.match(sync, /rxdb_push_confirmation_timeout/u);
   assert.match(sync, /pushConfirmationTimeoutMs/u);
   assert.match(sync, /replication\.reSync\(\)/u);
-  assert.doesNotMatch(sync, /awaitInSync\(/u);
+  assert.doesNotMatch(coordinator, /override async refreshAndWait[\s\S]{0,2500}awaitInSync\(/u);
+  assert.match(coordinator, /recoverExpiredCheckpoint[\s\S]{0,2500}awaitInSync\(/u);
 });
 
-test("Field Group replicas are actor-scoped in addition to Team scope", async () => {
-  const [store, sync] = await Promise.all([
+test("Field Group replicas are membership-scoped in addition to Team scope", async () => {
+  const [store, sync, api, fieldGroupWorker] = await Promise.all([
     readFile("src/data/campaignStore.ts", "utf8"),
-    readFile("src/data/rxdbMissionSync.ts", "utf8"),
+    readSyncSource(),
+    readFile("src/data/campaignApi.ts", "utf8"),
+    readFile("worker/indexM55.ts", "utf8"),
   ]);
-  assert.match(store, /actorScopeId = fieldGroupAccess\?\.groupId/u);
+  assert.match(api, /membershipId\?: string \| null/u);
+  assert.match(fieldGroupWorker, /membershipId: access\.membershipId \?\? null/u);
+  assert.match(store, /actorScopeId = fieldGroupAccess\?\.membershipId/u);
+  assert.doesNotMatch(store, /actorScopeId = fieldGroupAccess\?\.groupId/u);
   assert.match(store, /field_group_actor_scope_required/u);
   assert.match(store, /if \(runtime\.sync\) await runtime\.sync\.destroy\(\)/u);
   assert.match(store, /collectionFallback: fieldGroupAccess \? undefined : runtime\.latestLocal\?\.collection/u);
