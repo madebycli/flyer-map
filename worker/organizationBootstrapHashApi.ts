@@ -8,7 +8,7 @@ import type { OrganizationApiEnv } from "./organizationApi.ts";
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
 const MAX_BODY_BYTES = 96_000;
-const BETA_BOOTSTRAP_SECRET_SHA256 = "dbbefc40c74001220ad2f4274b30d32fa3711fd05ef1eb75553073d4b5e0e325";
+const BETA_BOOTSTRAP_SECRET_SHA256 = "ddb570dea7f0ba8daf8c18c08d5a18dba36d05972f51f249b13cf9572fbab816";
 
 export type OrganizationBootstrapHashEnv = OrganizationApiEnv & {
   ORGANIZATION_BOOTSTRAP_SECRET_SHA256?: string;
@@ -24,7 +24,7 @@ function constantTimeTextEqual(left: string, right: string) {
   return difference === 0;
 }
 
-async function organizationBootstrapHashMatches(submitted: string, configuredSha256: string) {
+export async function organizationBootstrapHashMatches(submitted: string, configuredSha256: string) {
   if (!submitted || !SHA256_HEX.test(configuredSha256)) return false;
   const submittedHash = await hashSecret(submitted);
   return constantTimeTextEqual(submittedHash, configuredSha256);
