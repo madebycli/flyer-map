@@ -2,7 +2,19 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const workflowPath = new URL("../.github/workflows/unstable-separated-release.yml", import.meta.url);
+const workflowPath = new URL("../.github/workflows/release-channels.yml", import.meta.url);
+const runtimePath = new URL("../worker/indexOrganizer.ts", import.meta.url);
+
+test("release workflow hard-maps main to Stable and unstable to Unstable", async () => {
+  const source = await readFile(workflowPath, "utf8");
+  assert.match(source, /branches:\s*\n\s*- main\s*\n\s*- unstable/u);
+  assert.match(source, /stable:\s*\n\s*if: github\.ref == 'refs\/heads\/main'/u);
+  assert.match(source, /unstable:\s*\n\s*if: github\.ref == 'refs\/heads\/unstable'/u);
+  assert.match(source, /\[\[ "\$GITHUB_REF" == 'refs\/heads\/main' \]\]/u);
+  assert.match(source, /\[\[ "\$GITHUB_REF" == 'refs\/heads\/unstable' \]\]/u);
+  assert.match(source, /Deploy exact main to Stable without D1 migration/u);
+  assert.match(source, /Build and deploy exact unstable source to isolated backend/u);
+});
 
 test("unstable release remains isolated and verifies the new sync/auth migrations", async () => {
   const source = await readFile(workflowPath, "utf8");
@@ -22,4 +34,14 @@ test("unstable alias preserves Cloudflare websocket handshake objects", async ()
   assert.match(source, /webSocket:response\.webSocket/u);
   assert.match(source, /status:101/u);
   assert.match(source, /x-flyer-release-channel','unstable'/u);
+});
+
+test("release runtime and artifact expose exact source revision", async () => {
+  const workflow = await readFile(workflowPath, "utf8");
+  const runtime = await readFile(runtimePath, "utf8");
+  assert.match(workflow, /SOURCE_COMMIT_SHA:process\.env\.GITHUB_SHA/u);
+  assert.match(workflow, /release-channel-state\.json/u);
+  assert.match(workflow, /\.sourceCommit == \$sha/u);
+  assert.match(runtime, /SOURCE_COMMIT_SHA\?: string/u);
+  assert.match(runtime, /sourceCommit: env\.SOURCE_COMMIT_SHA \?\? null/u);
 });
