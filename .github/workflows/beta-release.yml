@@ -165,6 +165,22 @@ jobs:
         run: |
           set -euo pipefail
           echo "Testing $BETA_URL"
+          EXPECTED_SHA="$GITHUB_SHA"
+          RUNTIME=''
+          RUNTIME_READY=0
+          for attempt in $(seq 1 30); do
+            RUNTIME="$(curl --retry 3 --retry-delay 1 --retry-all-errors --silent --show-error "${BETA_URL}/api/runtime?smoke=${EXPECTED_SHA}-${attempt}" || true)"
+            if jq -e --arg sha "$EXPECTED_SHA" '.ok == true and .environment == "unstable" and .sourceCommit == $sha' <<<"$RUNTIME" >/dev/null 2>&1; then
+              RUNTIME_READY=1
+              echo "Expected Beta runtime reached on attempt ${attempt}."
+              break
+            fi
+            echo "Beta runtime not propagated yet (attempt ${attempt}/30): ${RUNTIME}"
+            sleep 2
+          done
+          echo "$RUNTIME" | jq .
+          [[ "$RUNTIME_READY" == '1' ]]
+
           ROOT="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -D /tmp/beta.headers -o /tmp/beta.html -w '%{http_code}' "$BETA_URL/")"
           LOGIN="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -o /tmp/beta-login.html -w '%{http_code}' "$BETA_URL/login")"
           START="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -o /tmp/beta-start.html -w '%{http_code}' "$BETA_URL/start")"
@@ -174,9 +190,6 @@ jobs:
           [[ "$LOGIN" -ge 200 && "$LOGIN" -lt 400 ]]
           [[ "$START" -ge 200 && "$START" -lt 400 ]]
           [[ "$ME" == '401' ]]
-          RUNTIME="$(curl --retry 8 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$BETA_URL/api/runtime")"
-          echo "$RUNTIME" | jq .
-          jq -e --arg sha "$GITHUB_SHA" '.ok == true and .environment == "unstable" and .sourceCommit == $sha' <<<"$RUNTIME" >/dev/null
           printf '%s\n' "$BETA_URL" > /tmp/beta-url.txt
 
       - uses: actions/upload-artifact@v4
