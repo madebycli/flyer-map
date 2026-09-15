@@ -4,6 +4,7 @@ import test from "node:test";
 
 const workflowPath = new URL("../.github/workflows/release-channels.yml", import.meta.url);
 const runtimePath = new URL("../worker/indexOrganizer.ts", import.meta.url);
+const contractPath = new URL("../.release-channels.json", import.meta.url);
 
 test("release workflow hard-maps main to Stable and unstable to Unstable", async () => {
   const source = await readFile(workflowPath, "utf8");
@@ -14,6 +15,25 @@ test("release workflow hard-maps main to Stable and unstable to Unstable", async
   assert.match(source, /\[\[ "\$GITHUB_REF" == 'refs\/heads\/unstable' \]\]/u);
   assert.match(source, /Deploy exact main to Stable without D1 migration/u);
   assert.match(source, /Build and deploy exact unstable source to isolated backend/u);
+});
+
+test("machine-readable release contract forbids cross-channel deployments", async () => {
+  const contract = JSON.parse(await readFile(contractPath, "utf8")) as {
+    stable: { sourceBranch: string; worker: string; database: string; applyD1MigrationsDuringDeploy: boolean };
+    unstable: { sourceBranch: string; backendWorker: string; aliasWorker: string; database: string; applyD1MigrationsDuringDeploy: boolean };
+    forbidden: string[];
+  };
+  assert.equal(contract.stable.sourceBranch, "main");
+  assert.equal(contract.unstable.sourceBranch, "unstable");
+  assert.equal(contract.stable.worker, "flyer-map");
+  assert.equal(contract.stable.database, "flyer-map-db");
+  assert.equal(contract.stable.applyD1MigrationsDuringDeploy, false);
+  assert.equal(contract.unstable.backendWorker, "flyer-map-unstable-backend");
+  assert.equal(contract.unstable.aliasWorker, "flyer-map-unstable");
+  assert.equal(contract.unstable.database, "flyer-map-unstable-db");
+  assert.equal(contract.unstable.applyD1MigrationsDuringDeploy, true);
+  assert.ok(contract.forbidden.some((entry) => entry.includes("main to the unstable")));
+  assert.ok(contract.forbidden.some((entry) => entry.includes("unstable to the stable")));
 });
 
 test("unstable release remains isolated and verifies the new sync/auth migrations", async () => {
