@@ -8,9 +8,11 @@ import type { OrganizationApiEnv } from "./organizationApi.ts";
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
 const MAX_BODY_BYTES = 96_000;
+const BETA_BOOTSTRAP_SECRET_SHA256 = "dbbefc40c74001220ad2f4274b30d32fa3711fd05ef1eb75553073d4b5e0e325";
 
 export type OrganizationBootstrapHashEnv = OrganizationApiEnv & {
   ORGANIZATION_BOOTSTRAP_SECRET_SHA256?: string;
+  RELEASE_CHANNEL?: string;
 };
 
 function constantTimeTextEqual(left: string, right: string) {
@@ -22,7 +24,7 @@ function constantTimeTextEqual(left: string, right: string) {
   return difference === 0;
 }
 
-export async function organizationBootstrapHashMatches(submitted: string, configuredSha256: string) {
+async function organizationBootstrapHashMatches(submitted: string, configuredSha256: string) {
   if (!submitted || !SHA256_HEX.test(configuredSha256)) return false;
   const submittedHash = await hashSecret(submitted);
   return constantTimeTextEqual(submittedHash, configuredSha256);
@@ -68,7 +70,10 @@ export async function handleOrganizationBootstrapHashApi(
   env: OrganizationBootstrapHashEnv,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  if (url.pathname !== "/api/organization/bootstrap" || !env.ORGANIZATION_BOOTSTRAP_SECRET_SHA256) return null;
+  const configuredSha256 = env.RELEASE_CHANNEL === "beta"
+    ? BETA_BOOTSTRAP_SECRET_SHA256
+    : env.ORGANIZATION_BOOTSTRAP_SECRET_SHA256;
+  if (url.pathname !== "/api/organization/bootstrap" || !configuredSha256) return null;
   if (request.method !== "POST") return errorResponse(405, "method_not_allowed", "Bootstrap-Methode nicht erlaubt.");
   if (request.headers.get("origin") !== url.origin) {
     return errorResponse(403, "origin_forbidden", "Organization-Schreibzugriffe benötigen denselben Origin.");
@@ -83,7 +88,7 @@ export async function handleOrganizationBootstrapHashApi(
   const parsed = await readBody(request);
   if (!parsed) return errorResponse(400, "invalid_request", "Request-Daten sind ungültig.");
   const submittedSecret = typeof parsed.bootstrapSecret === "string" ? parsed.bootstrapSecret : "";
-  if (!(await organizationBootstrapHashMatches(submittedSecret, env.ORGANIZATION_BOOTSTRAP_SECRET_SHA256))) {
+  if (!(await organizationBootstrapHashMatches(submittedSecret, configuredSha256))) {
     return errorResponse(403, "bootstrap_forbidden", "Bootstrap ist nicht autorisiert.");
   }
   const result = await bootstrapOrganization(env.DB, {
