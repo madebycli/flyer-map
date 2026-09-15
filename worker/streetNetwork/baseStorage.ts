@@ -6,6 +6,7 @@ export type PreparedEntity = DistributionTask | HouseTask;
 type Work = Pick<PreparedEntity,'label'|'status'|'completedAt'|'createdAt'|'updatedAt'> & {coverage?: NonNullable<DistributionTask['network']>['coverage']};
 type Overlay = Record<string,Work>;
 const encoder = new TextEncoder();
+const baseStorageBindings = new WeakSet<object>();
 export function boundedChunks<T>(rows: readonly T[], limit=220_000): T[][] {
   const chunks:T[][]=[];let chunk:T[]=[],bytes=2;
   for(const row of rows){
@@ -18,8 +19,11 @@ export function boundedChunks<T>(rows: readonly T[], limit=220_000): T[][] {
   return chunks;
 }
 export async function hasBaseStorage(db:D1DatabaseLike){
-  const row=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='street_base_chunks'").first<{name:string}>();
-  return row?.name==='street_base_chunks';
+  if(baseStorageBindings.has(db as object))return true;
+  const rows=await db.prepare('PRAGMA table_info(street_base_chunks)').all<{name:string}>();
+  const available=rows.results.some(row=>row.name==='payload_json');
+  if(available)baseStorageBindings.add(db as object);
+  return available;
 }
 // Stable partitions bound overlay writes without a secondary row/index per House.
 export function workBucket(id:string){let hash=2166136261;for(const char of id)hash=Math.imul(hash^char.charCodeAt(0),16777619);return (hash>>>0)%16;}
@@ -78,8 +82,6 @@ export async function basePreparationStatements(db:D1DatabaseLike,before:Campaig
   const partitions=new Map<string,PreparedEntity[]>();
   for(const entity of entities){
     const prior=old.get(entity.id);
-    // Generation is manifest-owned. Unchanged content does not get rewritten merely
-    // because a surrounding Area was expanded or shrunk.
     const base=oldBase.get(entity.id);
     const stable={...entity,label:base?.label??entity.label,status:'open' as const,completedAt:null,areaPreparationGeneration:null,updatedAt:base?.updatedAt??prior?.createdAt??entity.createdAt,...(entity.taskType==='street'&&entity.network?{network:{...entity.network,coverage:[]}}:{})};
     const partition=entity.taskType+':'+workBucket(entity.id);const rows=partitions.get(partition)??[];rows.push(stable);partitions.set(partition,rows);
@@ -106,15 +108,12 @@ export async function basePreparationStatements(db:D1DatabaseLike,before:Campaig
   }
   statements.push(db.prepare(`DELETE FROM street_base_chunks WHERE campaign_id=? AND area_id=? AND content_hash NOT IN(SELECT value FROM json_each(?)) AND ${guard}`).bind(campaignId,areaId,JSON.stringify(rows.map(row=>row.hash)),campaignId,token));
   statements.push(db.prepare(`INSERT INTO street_base_areas(campaign_id,area_id,generation) SELECT ?,?,? WHERE ${guard} ON CONFLICT(campaign_id,area_id) DO UPDATE SET generation=excluded.generation`).bind(campaignId,areaId,generation,campaignId,token));
-  // Preserve manual references before legacy automatic Street rows are removed.
   const legacyParents=new Set(before.tasks.filter(t=>t.areaId===areaId&&t.areaPreparationGeneration).map(t=>t.id));
   const manualLinks=(before.houseTasks??[]).filter(h=>h.areaId===areaId&&!h.areaPreparationGeneration&&h.parentStreetTaskId&&legacyParents.has(h.parentStreetTaskId));
   if(manualLinks.length)statements.push(db.prepare(`INSERT INTO street_manual_house_parents(campaign_id,house_id,area_id,parent_task_id)
     SELECT ?,json_extract(value,'$.id'),?,json_extract(value,'$.parentStreetTaskId') FROM json_each(?) WHERE ${guard}
     ON CONFLICT(campaign_id,house_id) DO UPDATE SET parent_task_id=excluded.parent_task_id`)
     .bind(campaignId,areaId,JSON.stringify(manualLinks),campaignId,token));
-  // An existing candidate may still have legacy prepared rows. Remove only those
-  // represented by the newly committed base, under the same revision guard.
   for(const table of ['house_tasks','tasks'])statements.push(db.prepare(`DELETE FROM ${table} WHERE campaign_id=? AND area_id=? AND area_preparation_generation IS NOT NULL AND ${guard}`).bind(campaignId,areaId,campaignId,token));
   return {statements,baseRows:rows.length};
 }
