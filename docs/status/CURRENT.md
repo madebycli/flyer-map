@@ -2,23 +2,17 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-13
+last_updated: 2026-09-16
 ---
 
 # Current Project State
 
-- Source: `madebycli/flyer-map`, `fix/street-engine-smart-marking`, Draft PR #92, open/unmerged; base `integration/main-street-runtime@f4facd6ef354c5ba6de861519b696bce6f46a209`.
-- Last verified runtime: `4c2d01e2a0a873c9c233e525e50f20148c648bda`. Exact CI [34761931839](https://github.com/madebycli/flyer-map/actions/runs/34761931839), job `103736181142`: Tests, Typecheck, Dependency audit and Production build success.
-- The quality fix rejects entirely corrupted Building tiles, classifies null nodes as data errors, persists safe source-attempt metadata and exposes bounded quality/failure details. Source cache version 2 avoids old silently reduced cached tiles. Existing ready generations are not automatically regenerated.
-- Local full suite: 893/894 pass; one sandbox Unix-socket EPERM in the two-tab leader-election test. Local TS7 cannot start because `/proc/self/exe` is unavailable; TS5.9.3 passes. Local Build passes; audit passes with the existing MapLibre GHSA-jrc7-96c5-q579 exception, not zero advisories.
-- MapLibre remains exactly 5.7.1 with unitbezier 0.0.1. Existing Area draw/edit compact HUD and same-button comments toggle retained; no renderer rewrite.
-- `AREA_DELETE_READ_PATH=VERIFIED_FIXED` locally through RxDB/DO regressions. `D1_STATUS=OPEN` only for directly affected repeated full edge-staging reads in the link phase. No new Delete rewrite or broad D1 project.
-- 0/399/1k/5k/10k synthetic source runs completed; 20k/two tiles fails at the current 10k target limit. This is a capacity blocker, not a passed 20k test.
-- Compute decision: server-first/server generation; operator compute remains conditional on measured CPU/memory benefit including validation/upload costs. [ADR-0031](../decisions/ADR-0031-street-engine-compute-placement.md).
-- Smart Marking: up to 32 visible waypoints, per-leg choices, Undo/Cancel, one atomic intent, stale-road state guard, exact partial coverage details and conflicting address-node rejection. [Plan036](../plans/active/036-smart-marking-waypoints.md); exact runtime CI green.
-- Active implementation plan: [035](../plans/active/035-street-engine-masterplan.md). P1 quality/diagnostics implemented. P2 pause/resume, P3 20k/graph reads, P4 integrity/real sync, P5 live acceptance remain open.
-- Master assigned further tests to an independent AI on 2026-09-13. [Independent audit prompt](../prompts/2026-09-13-independent-streetengine-audit.md); `INDEPENDENT_AUDIT=NOT_STARTED`. Existing CI is implementation evidence, not independent acceptance.
-- No new staging deployment, remote D1 read/write/migration, merge, Production change or secret change in this audit. Historical staging evidence is not evidence for this runtime.
-- `STREET_ENGINE_LIVE_READY=FALSE`, `D1_ATTRIBUTION_CONFIRMED=FALSE`, `MAP_RENDER_P0=OPEN`. The reported Buildings/cursor-0 live cause still needs its sanitized failed-job and deployed-SHA evidence.
-
-Detailed evidence: [audit](STREET_ENGINE_MASTERPLAN_AUDIT.md), [D1 gate](../verification/2026-09-12-street-engine-d1-gate.md), [handoff](STREET_ENGINE_MASTERPLAN_HANDOFF.md).
+- Active Street Engine V3 implementation branch: `feat/street-engine-v3-implementation-2026-09-16`, based exactly on `beta@5aa61866ec6e9a4dd8d369cf34348c13502d38e7`. `main`/Stable is untouched.
+- The V3 authority is the 2026-09-16 Free-Tier-First Greenfield brief. [ADR-0032](../decisions/ADR-0032-street-engine-v3-precompiled-source-packs.md) supersedes ADR-0031's V2 compute-default for V3.
+- V3 direction: precompiled immutable StreetEngine-ready Source-Packs, content-addressed source objects, thin area-specific runtime, Browser Worker as benchmarked normal-path candidate, bounded server verifier/fallback, R2/static for immutable geometry and D1 only for small relational/manifests/overlay state.
+- First implementation slice is in [Plan 037](../plans/active/037-street-engine-v3-source-packs.md): per-generation Free-Tier resource gate plus immutable Source-Pack manifest/selection core.
+- Implemented on the feature branch: `streetEngineV3Budget.ts`, `streetEngineV3SourcePack.ts` and focused tests. Source selection supports normal WGS84 coverage and small antimeridian-crossing Areas; source objects are addressed only by validated SHA-256, never by arbitrary client URLs.
+- Browser source preflight target is <=20 MiB and hard-blocks plans >40 MiB. D1 engineering target remains <=10k rows read/run, preferred <=5k; Worker/DO request targets <=100/run.
+- Mandatory benchmarks remain open: TypeScript vs Rust/WASM, binary shards vs FlatGeobuf, real Gebiet-3 transfer, current-iPad peak memory and reproducible cold <=60 s / <=20 MiB. No pass is claimed yet.
+- No V3 R2 binding, D1 migration, Beta deploy, remote D1 mutation, Stable deploy or secret change has been made by this slice.
+- Release invariant: implementation stays on a branch from `beta`; after branch CI/benchmarks are green, PR merges to `beta`, exact beta SHA is verified, and only the existing Beta release/link is used for runtime/device testing.
