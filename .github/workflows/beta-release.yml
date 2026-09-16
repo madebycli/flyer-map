@@ -120,6 +120,63 @@ jobs:
           [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
           npx wrangler d1 migrations apply "$BETA_DB_NAME" --remote --config wrangler.jsonc
 
+      - name: Repair and verify Beta StreetEngine schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
+          [[ "$BETA_D1_ID" != "$PROD_D1_ID" ]]
+          [[ "$BETA_D1_ID" != "$RXDB_STAGING_D1_ID" ]]
+
+          rows_json() {
+            node -e 'const fs=require("node:fs");const x=JSON.parse(fs.readFileSync(0,"utf8"));const rows=(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);process.stdout.write(JSON.stringify(rows));'
+          }
+
+          TASK_COLUMNS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(tasks);" | rows_json)"
+          HOUSE_COLUMNS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(house_tasks);" | rows_json)"
+
+          if ! jq -e 'any(.name == "area_preparation_generation")' <<<"$TASK_COLUMNS" >/dev/null; then
+            echo 'Repairing missing tasks.area_preparation_generation on isolated Beta D1.'
+            npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --command "ALTER TABLE tasks ADD COLUMN area_preparation_generation TEXT;"
+          fi
+          if ! jq -e 'any(.name == "area_preparation_generation")' <<<"$HOUSE_COLUMNS" >/dev/null; then
+            echo 'Repairing missing house_tasks.area_preparation_generation on isolated Beta D1.'
+            npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --command "ALTER TABLE house_tasks ADD COLUMN area_preparation_generation TEXT;"
+          fi
+
+          npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --file scripts/beta-streetengine-schema-repair.sql
+
+          npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('area_task_preparations','street_network_state','house_road_positions','street_network_jobs','street_network_staging','street_network_intents') ORDER BY name;" > /tmp/beta-streetengine-tables.json
+          npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(area_task_preparations);" > /tmp/beta-streetengine-preparation-columns.json
+          npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(tasks);" > /tmp/beta-streetengine-task-columns.json
+          npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(house_tasks);" > /tmp/beta-streetengine-house-columns.json
+          npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA foreign_key_check;" > /tmp/beta-streetengine-fk.json
+
+          node <<'NODE'
+          const fs=require('node:fs');
+          const rows=(path)=>{
+            const x=JSON.parse(fs.readFileSync(path,'utf8'));
+            return (Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);
+          };
+          const tables=new Set(rows('/tmp/beta-streetengine-tables.json').map(r=>r.name));
+          for(const name of ['area_task_preparations','street_network_state','house_road_positions','street_network_jobs','street_network_staging','street_network_intents']){
+            if(!tables.has(name)) throw new Error(`missing Beta StreetEngine table: ${name}`);
+          }
+          const prep=new Set(rows('/tmp/beta-streetengine-preparation-columns.json').map(r=>r.name));
+          for(const name of ['campaign_id','area_id','geometry_hash','generation','status','road_count','house_count','source_timestamp','started_at','ready_at','failed_at','last_error_code','updated_at']){
+            if(!prep.has(name)) throw new Error(`missing area_task_preparations column: ${name}`);
+          }
+          const tasks=new Set(rows('/tmp/beta-streetengine-task-columns.json').map(r=>r.name));
+          const houses=new Set(rows('/tmp/beta-streetengine-house-columns.json').map(r=>r.name));
+          if(!tasks.has('area_preparation_generation')) throw new Error('missing tasks.area_preparation_generation');
+          if(!houses.has('area_preparation_generation')) throw new Error('missing house_tasks.area_preparation_generation');
+          const fk=rows('/tmp/beta-streetengine-fk.json');
+          if(fk.length) throw new Error(`Beta D1 foreign key violations: ${JSON.stringify(fk)}`);
+          const summary={ok:true,tables:[...tables].sort(),taskGeneration:true,houseGeneration:true,foreignKeys:'clean'};
+          fs.writeFileSync('/tmp/beta-streetengine-schema-summary.json',JSON.stringify(summary,null,2)+'\n');
+          console.log(summary);
+          NODE
+
       - name: Prepare missing Beta secrets
         shell: bash
         run: |
@@ -200,5 +257,11 @@ jobs:
             /tmp/beta-url.txt
             /tmp/beta-deploy.log
             /tmp/beta.headers
+            /tmp/beta-streetengine-schema-summary.json
+            /tmp/beta-streetengine-tables.json
+            /tmp/beta-streetengine-preparation-columns.json
+            /tmp/beta-streetengine-task-columns.json
+            /tmp/beta-streetengine-house-columns.json
+            /tmp/beta-streetengine-fk.json
           retention-days: 30
           if-no-files-found: ignore
