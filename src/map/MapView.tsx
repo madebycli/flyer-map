@@ -1104,9 +1104,9 @@ function buildApplicationMapStyle(initialData?: InitialApplicationSourceData): S
         layout: { visibility: "none" },
         paint: {
           "circle-color": "#7c3aed",
-          "circle-radius": 8,
+          "circle-radius": 9,
           "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 3,
+          "circle-stroke-width": 3.5,
         },
       },
       {
@@ -2199,17 +2199,22 @@ export function MapView({
           return;
         }
         if (interaction.mode === "smart-street") {
-          // Reuse the already-rendered StreetEngine street layers as the precise
-          // pointer hit-test. Routing stays in RoadIndex, so we keep the large
-          // Smart candidate overlay empty without sacrificing tap precision.
+          // Preserve pointer intent: an exact rendered-line hit wins. Only when
+          // the pointer misses every visible line do we widen to a touch-friendly
+          // box. RoadIndex still performs the exact geometric snap and routing.
           const streetLayers = STREET_LAYER_IDS.filter((layerId) => map.getLayer(layerId));
+          const exactStreetFeatures = streetLayers.length > 0
+            ? map.queryRenderedFeatures(event.point, { layers: [...streetLayers] })
+            : [];
           const bbox: [[number, number], [number, number]] = [
             [event.point.x - 12, event.point.y - 12],
             [event.point.x + 12, event.point.y + 12],
           ];
-          const streetFeatures = streetLayers.length > 0
-            ? map.queryRenderedFeatures(bbox, { layers: [...streetLayers] })
-            : [];
+          const streetFeatures = exactStreetFeatures.length > 0
+            ? exactStreetFeatures
+            : streetLayers.length > 0
+              ? map.queryRenderedFeatures(bbox, { layers: [...streetLayers] })
+              : [];
           const sourceIds = [...new Set(
             streetFeatures
               .map((feature) => feature.properties?.taskId)

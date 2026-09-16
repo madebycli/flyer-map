@@ -50,6 +50,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   const optimistic=useMemo(()=>({...fullOptimistic,tasks:screening.tasks}),[fullOptimistic,screening.tasks]);
   const tasks=useMemo(()=>(selectionTasks??fullOptimistic.tasks).filter(task=>(!areaId||task.areaId===areaId)&&task.network&&permittedAreas.some(area=>area.id===task.areaId)),[selectionTasks,fullOptimistic.tasks,areaId,permittedIds]);
   const index=useMemo(()=>new RoadIndex(tasks),[tasks]);
+  const selectableTaskIds=useMemo(()=>new Set(screening.tasks.map(task=>task.id)),[screening.tasks]);
   useEffect(()=>{
     let stopped=false;
     const flush=async()=>{try{if(navigator.onLine)await flushNetworkIntents(scope,refresh);}catch{/* retry later */}if(!stopped)setPending(await queuedNetworkIntents(scope));};
@@ -80,7 +81,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     if(committing.current)return;
     if(points.length>=MAX_NETWORK_POINTS){setMessage(`Maximal ${MAX_NETWORK_POINTS} Punkte. Auswahl speichern oder rückgängig machen.`);return;}
     const rawCandidates=index.candidates(point,sourceIds.length?45:SMART_POINT_FALLBACK_RADIUS_METERS);
-    const candidates=smartPointCandidates(rawCandidates,sourceIds);
+    const candidates=smartPointCandidates(rawCandidates,sourceIds,selectableTaskIds);
     if(!candidates.length){setPendingPoint(null);setChoices([]);setMessage('Keine Straße gefunden. Punkt wurde zurückgesetzt.');return;}
     if(!points.length){accept(candidates[0]);return;}
     const from=points.at(-1)!;

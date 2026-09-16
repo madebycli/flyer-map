@@ -41,3 +41,20 @@ test('fallback snap is bounded instead of considering roads across a broad radiu
   ], []);
   assert.deepEqual(result.map((candidate) => candidate.task.id), ['near']);
 });
+
+
+test('rendered neighboring roads cannot steal a fine tap outside the half-meter tie window', () => {
+  const result = smartPointCandidates([
+    snap('tapped-side-street', 0.15),
+    snap('nearby-shorter-route', 0.66),
+  ], ['tapped-side-street', 'nearby-shorter-route']);
+  assert.deepEqual(result.map((candidate) => candidate.task.id), ['tapped-side-street']);
+});
+
+test('fallback cannot select a street hidden by the current screening mode', () => {
+  const result = smartPointCandidates([
+    snap('hidden', 0.1),
+    snap('visible', 0.2),
+  ], [], new Set(['visible']));
+  assert.deepEqual(result.map((candidate) => candidate.task.id), ['visible']);
+});
