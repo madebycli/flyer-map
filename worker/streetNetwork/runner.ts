@@ -45,10 +45,16 @@ export class PreparationRunner {
         await this.storage.put('preparationRunnerFailures',0);
         await this.storage.setAlarm(Date.now()+100);return;
       }
+      // Keep the durable pending row fresh while a long multi-step preparation is
+      // actively progressing. Real device traces showed updated_at otherwise
+      // staying at the original start time for minutes, which makes healthy jobs
+      // look stale to recovery logic and diagnostics.
+      const heartbeatNow=(this.options.now?.()??new Date()).toISOString();
+      await db.batch([db.prepare("UPDATE area_task_preparations SET updated_at=? WHERE campaign_id=? AND area_id=? AND generation=? AND status='pending'").bind(heartbeatNow,campaignId,area.id,state.generation)]);
       const job=await db.prepare('SELECT lease_until FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND generation=?').bind(campaignId,area.id,state.generation).first<{lease_until:string|null}>();
       const retryAt=job?.lease_until?Date.parse(job.lease_until):0;
       if(retryAt>Date.now()){await this.storage.put('preparationRunnerFailures',0);await this.storage.setAlarm(retryAt+50);return;}
-      await runAreaTaskPreparation(db,{campaignId,areaId:area.id,area,geometryHash:state.geometryHash,generation:state.generation,now:new Date().toISOString()},this.options);
+      await runAreaTaskPreparation(db,{campaignId,areaId:area.id,area,geometryHash:state.geometryHash,generation:state.generation,now:heartbeatNow},this.options);
     }
     await this.storage.put('preparationRunnerFailures',0);
     await this.storage.setAlarm(Date.now()+100);
