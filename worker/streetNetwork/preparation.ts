@@ -15,7 +15,7 @@ import { validateHousePolygonVertices } from '../../src/domain/geometry.ts';
 
 type Job = { generation:string;phase:string;cursor:number;lease:string|null;lease_until:string|null;attempts:number;metrics_json:string;geometry_json:string };
 type Building = { osmId:number;tags:Record<string,string>;geometry:PolygonGeometry };
-type Metrics = { cacheHits?:number; targetChunks?:{key:string;start:number;count:number}[]; addressMs?:number;normalizationMs?:number;parseMs?:number;tiles?:number;peakConcurrency?:number;tileTimings?:{kind:string;tile:number;bytes:number;elapsedMs:number;attempts:number}[]; quality?:PreparationQuality; lastSourceAttempts?:SourceAttempt[]; observedSourceBytes?:number; lastError?:{phase:string;cursor:number;code:string;attempt:number;sourceAttempts?:SourceAttempt[];quality?:PreparationQuality}; roads?:number;houses?:number;addressableBuildings?:number;buildings?:number; requests?:number;retries?:number;bytes?:number;fetchMs?:number;graphMs?:number;linkMs?:number;publishMs?:number;sourceTimestamp?:string;preferredOverpassUrl?:string };
+type Metrics = { cacheHits?:number; targetChunks?:{key:string;start:number;count:number}[]; activeMs?:number; addressMs?:number;normalizationMs?:number;parseMs?:number;tiles?:number;peakConcurrency?:number;tileTimings?:{kind:string;tile:number;bytes:number;elapsedMs:number;attempts:number}[]; quality?:PreparationQuality; lastSourceAttempts?:SourceAttempt[]; observedSourceBytes?:number; lastError?:{phase:string;cursor:number;code:string;attempt:number;sourceAttempts?:SourceAttempt[];quality?:PreparationQuality}; roads?:number;houses?:number;addressableBuildings?:number;buildings?:number; requests?:number;retries?:number;bytes?:number;fetchMs?:number;graphMs?:number;linkMs?:number;publishMs?:number;sourceTimestamp?:string;preferredOverpassUrl?:string };
 type AddressedBuilding = ReturnType<typeof addressBuildings>[number];
 type StagedTarget = { targetKey:string; target:AddressedBuilding };
 
@@ -218,6 +218,7 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
   if(claimed[0]?.meta?.changes!==1)return {outcome:'pending' as const};
   const job=await db.prepare('SELECT * FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?').bind(...scope,lease).first<Job>();
   if(!job)return {outcome:'pending' as const};
+  const stepStarted=performance.now();
   const metrics:Metrics=JSON.parse(job.metrics_json);
   const guard=`EXISTS(SELECT 1 FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?)`;
   const ownership=[...scope,lease];
@@ -395,10 +396,12 @@ export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPr
       metrics.publishMs=performance.now()-begin;phase='ready';
       try{await options.onCommitted?.(db);}catch{/* durable feed remains authoritative */}
     }
-    const checkpoint=await db.batch([db.prepare(`UPDATE street_network_jobs SET phase=?,cursor=?,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=? WHERE campaign_id=? AND area_id=? AND generation=? AND lease=? AND EXISTS(SELECT 1 FROM area_task_preparations WHERE campaign_id=? AND area_id=? AND generation=?)`).bind(phase,cursor,JSON.stringify(metrics),...ownership,...scope)]);
+    const persistedMetrics:Metrics={...metrics,activeMs:(metrics.activeMs??0)+performance.now()-stepStarted};
+    const checkpoint=await db.batch([db.prepare(`UPDATE street_network_jobs SET phase=?,cursor=?,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=? WHERE campaign_id=? AND area_id=? AND generation=? AND lease=? AND EXISTS(SELECT 1 FROM area_task_preparations WHERE campaign_id=? AND area_id=? AND generation=?)`).bind(phase,cursor,JSON.stringify(persistedMetrics),...ownership,...scope)]);
     if(checkpoint[0]?.meta?.changes===1)try{options.onProgress?.(run.area,{status:phase==='ready'?'ready':'pending',roadCount:metrics.roads??0,houseCount:metrics.houses??0,sourceTimestamp:metrics.sourceTimestamp??null,errorCode:null,updatedAt:now,...(metrics.quality?{quality:metrics.quality}:{}),progress:preparationProgress(phase,cursor,tiles.length,metrics,phase==='ready')});}catch{/* A socket failure cannot roll back durable progress. */}
     return phase==='ready'?{outcome:'ready' as const,roadCount:metrics.roads??0,houseCount:metrics.houses??0}:{outcome:'pending' as const};
   } catch(error) {
+    metrics.activeMs=(metrics.activeMs??0)+performance.now()-stepStarted;
     const code=error instanceof Error && /^[a-z][a-z0-9_]+$/.test(error.message)?error.message:'network_preparation_failure';
     const nextAttempts=job.attempts+1;
     metrics.lastError={phase,cursor,code,attempt:nextAttempts,...(error instanceof SourceFailure?{sourceAttempts:error.attempts,quality:error.quality?{...error.quality,samples:error.quality.samples.map(sample=>({...sample,tile:cursor}))}:undefined}:{})};
