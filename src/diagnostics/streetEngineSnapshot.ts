@@ -1,4 +1,3 @@
-const TOKEN_LIKE_PATTERN = /[A-Za-z0-9_-]{32,}/g;
 const SENSITIVE_KEY_PATTERN = /(authorization|cookie|password|secret|token)/iu;
 
 export type DiagnosticAreaSummary = {
@@ -135,7 +134,7 @@ export function readCampaignDiagnosticData(raw: string | null): CampaignDiagnost
 export function safeDiagnosticValue(value: unknown, depth = 0): unknown {
   if (depth > 5) return "[depth-limit]";
   if (value === null || typeof value === "boolean" || typeof value === "number") return value;
-  if (typeof value === "string") return value.replace(TOKEN_LIKE_PATTERN, "[redacted]").slice(0, 1_000);
+  if (typeof value === "string") return value.slice(0, 1_000);
   if (Array.isArray(value)) return value.slice(0, 30).map((item) => safeDiagnosticValue(item, depth + 1));
   if (!isRecord(value)) return String(value).slice(0, 200);
 
