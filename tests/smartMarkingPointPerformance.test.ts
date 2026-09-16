@@ -67,11 +67,13 @@ test('online shortcut commit does not wait for a slow remote network request',as
   set('window',{setInterval,clearInterval,setTimeout,clearTimeout,addEventListener:events.addEventListener.bind(events),removeEventListener:events.removeEventListener.bind(events)});
   set('navigator',navigatorValue);set('indexedDB',indexedDB);set('IS_REACT_ACT_ENVIRONMENT',true);
   let networkFetchStarted=false;
+  let resolveNetworkFetch:(response:Response)=>void=()=>{};
+  const networkFetch=new Promise<Response>(resolve=>{resolveNetworkFetch=resolve;});
   set('fetch',async(input:RequestInfo|URL)=>{
     const url=String(input);
     if(url.includes('/network')){
       networkFetchStarted=true;
-      return await new Promise<Response>(()=>{});
+      return await networkFetch;
     }
     return Response.json({status:'ready',updatedAt:'2026-09-16T00:00:00Z'});
   });
@@ -89,8 +91,12 @@ test('online shortcut commit does not wait for a slow remote network request',as
     new Promise<string>(resolve=>setTimeout(()=>resolve('timeout'),250)),
   ]);
   assert.equal(result,'committed','shortcut commit must finish after local persistence, not remote flush');
-  assert.equal(networkFetchStarted,true);
   assert.equal(workspace.active,true);
   assert.equal(workspace.panelState.saving,false);
   assert.equal(workspace.panelState.pointCount,0);
+
+  for(let i=0;i<20&&!networkFetchStarted;i++)await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(networkFetchStarted,true,'detached remote flush should still start after local commit returns');
+  resolveNetworkFetch(Response.json({ok:true}));
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});
 });
