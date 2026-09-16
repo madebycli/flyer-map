@@ -354,7 +354,7 @@ test('504 audit: stored tile survives terminal failure and manual restart resume
   if (started.outcome !== 'run') throw new Error('missing_initial_run');
   assert.equal((await runAreaTaskPreparation(db, started.run, options)).outcome, 'pending');
   let job = db.sqlite.prepare('SELECT phase,cursor,attempts FROM street_network_jobs').get() as { phase: string; cursor: number; attempts: number };
-  assert.deepEqual(job, { phase: 'roads', cursor: 1, attempts: 0 });
+  assert.deepEqual({ ...job }, { phase: 'roads', cursor: 1, attempts: 0 });
   const stagedAfterFirstTile = Number(db.sqlite.prepare("SELECT COUNT(*) n FROM street_network_staging WHERE kind='roads'").get()!.n);
   assert.ok(stagedAfterFirstTile > 0);
 
@@ -363,7 +363,7 @@ test('504 audit: stored tile survives terminal failure and manual restart resume
   const failed = await runAreaTaskPreparation(db, started.run, options);
   assert.equal(failed.outcome, 'failed');
   job = db.sqlite.prepare('SELECT phase,cursor,attempts FROM street_network_jobs').get() as { phase: string; cursor: number; attempts: number };
-  assert.deepEqual(job, { phase: 'roads', cursor: 1, attempts: 3 });
+  assert.deepEqual({ ...job }, { phase: 'roads', cursor: 1, attempts: 3 });
   assert.equal(Number(db.sqlite.prepare("SELECT COUNT(*) n FROM street_network_staging WHERE kind='roads'").get()!.n), stagedAfterFirstTile);
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM tasks').get()!.n, 0);
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM house_tasks').get()!.n, 0);
@@ -374,10 +374,10 @@ test('504 audit: stored tile survives terminal failure and manual restart resume
   if (restarted.outcome !== 'run') throw new Error('missing_restart_run');
   assert.equal(restarted.run.generation, started.run.generation);
   job = db.sqlite.prepare('SELECT phase,cursor,attempts FROM street_network_jobs').get() as { phase: string; cursor: number; attempts: number };
-  assert.deepEqual(job, { phase: 'roads', cursor: 1, attempts: 3 });
+  assert.deepEqual({ ...job }, { phase: 'roads', cursor: 1, attempts: 3 });
   assert.equal((await runAreaTaskPreparation(db, restarted.run, options)).outcome, 'pending');
   job = db.sqlite.prepare('SELECT phase,cursor,attempts FROM street_network_jobs').get() as { phase: string; cursor: number; attempts: number };
-  assert.deepEqual(job, { phase: 'graph', cursor: 0, attempts: 0 });
+  assert.deepEqual({ ...job }, { phase: 'graph', cursor: 0, attempts: 0 });
   const firstTileQuery = roadQueries[0];
   assert.equal(roadQueries.filter((query) => query === firstTileQuery).length, 1, 'cursor 0 must not be fetched again');
   assert.equal(new Set(roadQueries).size, 2, 'all failed/restarted requests target cursor 1');
@@ -404,7 +404,7 @@ test('retry audit: explicit non-transient HTTP 400 fails once instead of enterin
   assert.equal(result.outcome, 'failed');
   assert.equal(calls, 1);
   const job = db.sqlite.prepare('SELECT phase,cursor,attempts,error_code FROM street_network_jobs').get() as { phase: string; cursor: number; attempts: number; error_code: string };
-  assert.deepEqual(job, { phase: 'roads', cursor: 0, attempts: 1, error_code: 'overpass_http_400' });
+  assert.deepEqual({ ...job }, { phase: 'roads', cursor: 0, attempts: 1, error_code: 'overpass_http_400' });
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM tasks').get()!.n, 0);
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM house_tasks').get()!.n, 0);
   db.sqlite.close();
