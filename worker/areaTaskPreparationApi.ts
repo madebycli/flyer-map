@@ -80,7 +80,7 @@ export async function handleAreaTaskPreparationApi(
 ): Promise<Response> {
   db=requestDatabase(db);
   const diagnosticsRequested = new URL(request.url).searchParams.get('diag') === '1';
-  const withDiagnostics = async <T extends Record<string, unknown>>(state: T) => {
+  const withDiagnostics = async <T extends object>(state: T) => {
     if (!diagnosticsRequested) return state;
     const diagnostics = await getStreetEngineDiagnosticSnapshot(db, route.campaignId, route.areaId);
     return { ...state, diagnostics };
@@ -114,7 +114,9 @@ export async function handleAreaTaskPreparationApi(
     );
   }
   if (request.method === "GET") {
-    if(decision.state.status==='pending')await options?.schedule?.(route.campaignId);
+    // Diagnostic polling must remain observational. Normal status reads retain
+    // the recovery wake-up behavior, but ?diag=1 never schedules or mutates.
+    if(decision.state.status==='pending' && !diagnosticsRequested)await options?.schedule?.(route.campaignId);
     return json(await withDiagnostics(decision.state));
   }
   if (!canStartAreaPreparation(access, area)) {
