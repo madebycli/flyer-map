@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildCampaignAccessUrl,
   buildCampaignAdminPasswordResetUrl,
@@ -35,7 +35,6 @@ type Props = {
   onAppearanceChange: (preference: AppearancePreference) => void;
   onLanguageChange: (language: Language) => void;
   onRenameCampaign: (name: string) => void;
-  onNormalizeCampaignName: () => void;
   onCommitCampaignDraft: () => void;
   onSaveCurrentFocus: () => void;
   onJumpToFocus: () => void;
@@ -82,7 +81,6 @@ export function SettingsSheet({
   onAppearanceChange,
   onLanguageChange,
   onRenameCampaign,
-  onNormalizeCampaignName,
   onCommitCampaignDraft,
   onSaveCurrentFocus,
   onJumpToFocus,
@@ -116,6 +114,24 @@ export function SettingsSheet({
   const [accessBusy, setAccessBusy] = useState(false);
   const [accessError, setAccessError] = useState(false);
   const [adminAccountError, setAdminAccountError] = useState<string | null>(null);
+  const [campaignNameDraft, setCampaignNameDraft] = useState(campaign.name);
+  const lastCommittedCampaignName = useRef(campaign.name);
+
+  useEffect(() => {
+    setCampaignNameDraft(campaign.name);
+    lastCommittedCampaignName.current = campaign.name;
+  }, [campaign.name]);
+
+  const commitCampaignNameDraft = () => {
+    const normalizedName = campaignNameDraft.trim() || (language === "en" ? "New campaign" : "Neue Verteilaktion");
+    if (normalizedName !== campaignNameDraft) setCampaignNameDraft(normalizedName);
+    if (normalizedName === lastCommittedCampaignName.current) return;
+    lastCommittedCampaignName.current = normalizedName;
+    onRenameCampaign(normalizedName);
+    // The snapshot update is applied after this event. Flush on the next task
+    // so the just-created mutation is sent immediately, once per explicit commit.
+    window.setTimeout(onCommitCampaignDraft, 0);
+  };
 
   const activeGrants = useMemo(
     () => grants.filter((grant) => grant.revokedAt === null),
@@ -351,10 +367,14 @@ export function SettingsSheet({
               <label className="field-label">
                 <span>{t(language, "actionName")}</span>
                 <input
-                  value={campaign.name}
-                  onChange={(event) => onRenameCampaign(event.target.value)}
-                  onBlur={() => { onNormalizeCampaignName(); onCommitCampaignDraft(); }}
-                  onKeyDown={(event) => { if (event.key === "Enter") onCommitCampaignDraft(); }}
+                  value={campaignNameDraft}
+                  onChange={(event) => setCampaignNameDraft(event.target.value)}
+                  onBlur={commitCampaignNameDraft}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    commitCampaignNameDraft();
+                  }}
                   maxLength={80}
                 />
               </label>

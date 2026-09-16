@@ -129,6 +129,49 @@ function nextStreetName(tasks: DistributionTask[], areaId: string, language: Lan
   return `${t(language, "street")} ${count + 1}`;
 }
 
+function TeamNameInput({
+  name,
+  fallbackName,
+  ariaLabel,
+  onCommit,
+}: {
+  name: string;
+  fallbackName: string;
+  ariaLabel: string;
+  onCommit: (name: string) => void;
+}) {
+  const [draft, setDraft] = useState(name);
+  const lastCommittedName = useRef(name);
+
+  useEffect(() => {
+    setDraft(name);
+    lastCommittedName.current = name;
+  }, [name]);
+
+  const commit = () => {
+    const normalizedName = draft.trim() || fallbackName;
+    if (normalizedName !== draft) setDraft(normalizedName);
+    if (normalizedName === lastCommittedName.current) return;
+    lastCommittedName.current = normalizedName;
+    onCommit(normalizedName);
+  };
+
+  return (
+    <input
+      aria-label={ariaLabel}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        commit();
+      }}
+      maxLength={40}
+    />
+  );
+}
+
 function areaGeometryStatus(
   language: Language,
   count: number,
@@ -488,11 +531,6 @@ export default function App({
     }));
   };
 
-  const normalizeCampaignName = () => {
-    if (!isAdmin || snapshot.campaign.name.trim()) return;
-    renameCampaign(language === "en" ? "New campaign" : "Neue Verteilaktion");
-  };
-
   const createTeam = () => {
     if (!isAdmin) return;
     const color = nextAvailableTeamColor(snapshot.teams);
@@ -529,11 +567,6 @@ export default function App({
         team.id === teamId ? { ...team, ...patch, updatedAt: now } : team,
       ),
     }));
-  };
-
-  const normalizeTeamName = (team: Team) => {
-    if (team.name.trim()) return;
-    updateTeam(team.id, { name: t(language, "team") });
   };
 
   const deleteTeam = async (team: Team) => {
@@ -1684,7 +1717,6 @@ export default function App({
           onAppearanceChange={changeAppearance}
           onLanguageChange={setLanguage}
           onRenameCampaign={renameCampaign}
-          onNormalizeCampaignName={normalizeCampaignName}
           onCommitCampaignDraft={flushRxdbDrafts}
           onSaveCurrentFocus={saveCurrentFocus}
           onJumpToFocus={jumpToFocus}
@@ -1746,13 +1778,16 @@ export default function App({
                 <article className={"team-card " + (team.id === activeTeamId ? "is-active" : "")} key={team.id}>
                   <div className="team-card-header">
                     <span className="team-dot" style={{ backgroundColor: team.color }} aria-hidden="true" />
-                    <input
-                      aria-label={t(language, "teamName", { name: team.name || t(language, "team") })}
-                      value={team.name}
-                      onChange={(event) => updateTeam(team.id, { name: event.target.value })}
-                      onBlur={() => { normalizeTeamName(team); flushRxdbDrafts(); }}
-                      onKeyDown={(event) => { if (event.key === "Enter") flushRxdbDrafts(); }}
-                      maxLength={40}
+                    <TeamNameInput
+                      ariaLabel={t(language, "teamName", { name: team.name || t(language, "team") })}
+                      name={team.name}
+                      fallbackName={t(language, "team")}
+                      onCommit={(name) => {
+                        updateTeam(team.id, { name });
+                        // The snapshot update runs after this event. Flush only
+                        // the one mutation created by the explicit name commit.
+                        window.setTimeout(flushRxdbDrafts, 0);
+                      }}
                     />
                     <button className="small-action" type="button" onClick={() => setActiveTeamId(team.id)} aria-pressed={team.id === activeTeamId}>
                       {team.id === activeTeamId ? t(language, "active") : t(language, "choose")}
