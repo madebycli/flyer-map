@@ -14,13 +14,31 @@ type CopyEnvironment = {
   legacyCopy?: (value: string) => boolean;
 };
 
+type RuntimeNavigator = {
+  clipboard?: ClipboardWriter;
+};
+
+type RuntimeDocument = Document & {
+  execCommand?: (commandId: string, showUI?: boolean, value?: string) => boolean;
+};
+
+export function clipboardApiAvailable() {
+  if (typeof navigator === "undefined") return false;
+  return typeof (navigator as unknown as RuntimeNavigator).clipboard?.writeText === "function";
+}
+
+export function legacyCopyAvailable() {
+  if (typeof document === "undefined") return false;
+  return typeof (document as RuntimeDocument).execCommand === "function";
+}
+
 function browserClipboard(): ClipboardWriter | null {
-  if (typeof navigator === "undefined") return null;
-  return navigator.clipboard?.writeText ? navigator.clipboard : null;
+  if (!clipboardApiAvailable()) return null;
+  return (navigator as unknown as RuntimeNavigator).clipboard ?? null;
 }
 
 export function legacyCopyText(value: string) {
-  if (typeof document === "undefined" || !document.body || typeof document.execCommand !== "function") {
+  if (typeof document === "undefined" || !document.body || !legacyCopyAvailable()) {
     return false;
   }
 
@@ -45,7 +63,8 @@ export function legacyCopyText(value: string) {
 
   let copied = false;
   try {
-    copied = document.execCommand("copy");
+    const execCommand = (document as RuntimeDocument).execCommand;
+    copied = execCommand ? execCommand.call(document, "copy") : false;
   } catch {
     copied = false;
   } finally {
