@@ -9,6 +9,7 @@ import {
   type AreaPreparationExecutionContext,
   type AreaTaskPreparationOptions,
 } from "./areaTaskPreparation.ts";
+import { getStreetEngineDiagnosticSnapshot } from './streetNetwork/diagnostics.ts';
 import { parseCampaignId } from "./snapshotValidation.ts";
 
 type PreparationRoute = { campaignId: string; areaId: string };
@@ -78,6 +79,13 @@ export async function handleAreaTaskPreparationApi(
   options?: AreaTaskPreparationOptions,
 ): Promise<Response> {
   db=requestDatabase(db);
+  const diagnosticsRequested = new URL(request.url).searchParams.get('diag') === '1';
+  const withDiagnostics = async <T extends Record<string, unknown>>(state: T) => {
+    if (!diagnosticsRequested) return state;
+    const diagnostics = await getStreetEngineDiagnosticSnapshot(db, route.campaignId, route.areaId);
+    return { ...state, diagnostics };
+  };
+
   if (request.method !== "GET" && request.method !== "POST") {
     return error(405, "method_not_allowed", "Für die Area-Vorbereitung ist nur GET oder POST erlaubt.");
   }
@@ -107,17 +115,17 @@ export async function handleAreaTaskPreparationApi(
   }
   if (request.method === "GET") {
     if(decision.state.status==='pending')await options?.schedule?.(route.campaignId);
-    return json(decision.state);
+    return json(await withDiagnostics(decision.state));
   }
   if (!canStartAreaPreparation(access, area)) {
     return error(403, "forbidden", "Nur Admin oder der zuständige Team Editor darf vorbereiten.");
   }
   if (!decision.shouldStart && decision.state.status !== "pending") {
-    return json(decision.state, { status: decision.state.status === "ready" ? 200 : 202 });
+    return json(await withDiagnostics(decision.state), { status: decision.state.status === "ready" ? 200 : 202 });
   }
 
   const leased = await db.prepare('SELECT lease_until FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND lease IS NOT NULL AND lease_until>?').bind(route.campaignId,route.areaId,(options?.now?.()??new Date()).toISOString()).first();
-  if (leased) return json(decision.state,{status:202});
+  if (leased) return json(await withDiagnostics(decision.state),{status:202});
 
   const preparation = await beginAreaTaskPreparation(db, route.campaignId, route.areaId, options);
   if (preparation.outcome === "run") {
@@ -141,19 +149,19 @@ export async function handleAreaTaskPreparationApi(
   } else if (preparation.result.outcome !== "stale") {
     const current = await shouldStartAreaPreparation(db, route.campaignId, area);
     return json(
-      current.state,
+      await withDiagnostics(current.state),
       { status: current.state.status === "ready" ? 200 : 202 },
     );
   }
   return json(
-    {
+    await withDiagnostics({
       status: "pending",
       roadCount: 0,
       houseCount: 0,
       sourceTimestamp: null,
       errorCode: null,
       updatedAt: new Date().toISOString(),
-    },
+    }),
     { status: 202 },
   );
 }
