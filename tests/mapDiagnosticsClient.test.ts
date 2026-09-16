@@ -41,13 +41,18 @@ test('street engine diagnostics fail closed on invalid local snapshot data', () 
   assert.equal(readCampaignDiagnosticData('{broken').storageState, 'invalid');
 });
 
-test('diagnostic values redact token-like strings and sensitive keys', () => {
+test('diagnostic values preserve allowlisted ids while dropping sensitive keys', () => {
   const value = safeDiagnosticValue({
     status: 'pending',
     authorization: 'Bearer should-not-leak',
-    detail: 'abcdefghijklmnopqrstuvwxyz0123456789_SECRET',
+    sourceCommit: '1234567890abcdef1234567890abcdef12345678',
+    generation: 'e6aa0c16-b50a-4ad3-be3f-6edb6df601b1',
   });
-  assert.deepEqual(value, { status: 'pending', detail: '[redacted]' });
+  assert.deepEqual(value, {
+    status: 'pending',
+    sourceCommit: '1234567890abcdef1234567890abcdef12345678',
+    generation: 'e6aa0c16-b50a-4ad3-be3f-6edb6df601b1',
+  });
 });
 
 test('v3 client diagnostics request the existing read-only ?diag=1 preparation payload', async () => {
