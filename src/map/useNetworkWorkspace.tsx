@@ -121,7 +121,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       await queue({id:`network_${crypto.randomUUID()}`,areaId,generation:points[0].task.areaPreparationGeneration!,start:anchor(points[0]),end:anchor(points.at(-1)!),via:points.slice(1,-1).map(anchor),paths:legs.map(leg=>leg.routes[leg.selected!].ranges.map(range=>range.taskId)),selectedPath:activeRoute.ranges.map(range=>range.taskId),expectedState:await networkSelectionState(tasks,activeRoute.ranges),status});
     }catch{setMessage('Änderung konnte auf diesem Gerät nicht gespeichert werden. Bitte erneut versuchen.');return;}
     finally{committing.current=false;setSaving(false);}
-    setMarking(false);setAreaId(null);reset();
+    reset();
   };
   const whole=(task:DistributionTask)=>{
     if(committing.current)return;
