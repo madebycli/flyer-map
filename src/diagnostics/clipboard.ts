@@ -47,9 +47,12 @@ export function legacyCopyText(value: string) {
   textarea.setAttribute("readonly", "");
   textarea.setAttribute("aria-hidden", "true");
   textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
+  textarea.style.left = "0";
   textarea.style.top = "0";
-  textarea.style.opacity = "0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.fontSize = "16px";
+  textarea.style.opacity = "0.01";
   textarea.style.pointerEvents = "none";
 
   const previousActiveElement = document.activeElement instanceof HTMLElement
@@ -82,25 +85,25 @@ export async function copyTextToClipboard(
   value: string,
   environment: CopyEnvironment = {},
 ): Promise<ClipboardCopyResult> {
+  // iPadOS/Safari requires the copy operation to happen inside the transient
+  // click activation. Keep the synchronous selection path before any await.
+  const legacyCopy = environment.legacyCopy ?? legacyCopyText;
+  try {
+    if (legacyCopy(value)) return { ok: true, method: "exec-command" };
+  } catch {
+    // Continue with the Clipboard API while the same click activation is alive.
+  }
+
   const clipboard = Object.prototype.hasOwnProperty.call(environment, "clipboard")
     ? environment.clipboard ?? null
     : browserClipboard();
-
   if (clipboard) {
     try {
       await clipboard.writeText(value);
       return { ok: true, method: "clipboard-api" };
     } catch {
-      // iOS/Safari can reject Clipboard API writes despite a user gesture.
-      // Fall through to the synchronous selection-based path.
+      // The caller gets an explicit failure and exposes selectable text.
     }
-  }
-
-  const legacyCopy = environment.legacyCopy ?? legacyCopyText;
-  try {
-    if (legacyCopy(value)) return { ok: true, method: "exec-command" };
-  } catch {
-    // The caller gets an explicit failure and can expose selectable text.
   }
 
   return { ok: false, method: "failed" };

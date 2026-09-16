@@ -11,7 +11,7 @@ import { requestDatabase } from '../requestDatabase.ts';
 import { hasBaseStorage, restoreManualHouseParents } from './baseStorage.ts';
 import { cachedSourceTile } from './sourceCache.ts';
 import { jsonChunks, persistNetworkSnapshot } from './persistence.ts';
-import { validateHousePolygonVertices } from '../../src/domain/geometry.ts';
+import { normalizeHousePolygon } from './polygonRepair.ts';
 
 type Job = { generation:string;phase:string;cursor:number;lease:string|null;lease_until:string|null;attempts:number;metrics_json:string;geometry_json:string };
 type Building = { osmId:number;tags:Record<string,string>;geometry:PolygonGeometry };
@@ -38,10 +38,6 @@ function isTransientOverpassCode(code:string) {
   return code==='overpass_rate_limited'||code==='overpass_timeout'||code==='overpass_transport_error'||/^overpass_http_5\d\d$/.test(code);
 }
 function isDefaultProviderFailureCode(code:string) {
-  // A default provider can reject an otherwise valid request while the
-  // configured fallback still serves the same bounded query. Keep explicit
-  // upstream configuration strict, but fail over for the observed 400 from a
-  // default provider instead of terminally stopping at attempt 1.
   return isTransientOverpassCode(code)||code==='overpass_http_400'||code==='overpass_partial_failure'||code==='overpass_response_budget';
 }
 function normalizeOverpassError(error:unknown,timedOut:boolean) {
@@ -82,7 +78,6 @@ export function preparationTiles(area: Area): [number,number,number,number][] {
   const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
   if (maxX-minX>2 || maxY-minY>2 || Math.abs(minY)>85 || Math.abs(maxY)>85) throw new Error('query_planning_area_budget');
   const tiles:[number,number,number,number][]=[];
-  // A fixed geographic grid makes source tiles reusable after geometry edits.
   for(let iy=Math.floor(minY*100+1e-9);iy<Math.ceil(maxY*100-1e-9);iy++) for(let ix=Math.floor(minX*100+1e-9);ix<Math.ceil(maxX*100-1e-9);ix++) {
     const y=iy/100,x=ix/100,north=(iy+1)/100,east=(ix+1)/100;
     if(!polygonIntersects(area.geometry,{type:'Polygon',coordinates:[[[x,y],[east,y],[east,north],[x,north],[x,y]]]}))continue;
@@ -171,8 +166,9 @@ async function fetchTile(bbox:number[],kind:'roads'|'buildings',options:AreaTask
         if(kind==='roads')features.push({osmId:way.id,tags,geometry:JSON.parse(canonicalStreetFragmentGeometryJson({type:'LineString',coordinates}))});
         else {
           if(coordinates.length<4 || JSON.stringify(coordinates[0])!==JSON.stringify(coordinates.at(-1))){reject(way,'open_ring');continue;}
-          if(!validateHousePolygonVertices(coordinates.slice(0,-1)).valid){reject(way,'invalid_polygon');continue;}
-          features.push({osmId:way.id,tags,geometry:{type:'Polygon',coordinates:[coordinates]}});quality!.acceptedBuildings++;
+          const polygon=normalizeHousePolygon(coordinates);
+          if(!polygon){reject(way,'invalid_polygon');continue;}
+          features.push({osmId:way.id,tags,geometry:polygon});quality!.acceptedBuildings++;
         }
       }
       if(quality){
@@ -207,7 +203,6 @@ async function stagedBuckets<T>(db:D1DatabaseLike,run:AreaTaskPreparationRun,kin
   return rows.results.flatMap(row=>JSON.parse(row.payload_json) as T[]);
 }
 
-/** One request performs one bounded fetch, graph phase, house chunk or final transaction. */
 export async function runNetworkPreparationStep(db:D1DatabaseLike,run:AreaTaskPreparationRun,options:AreaTaskPreparationOptions={}) {
   db=requestDatabase(db);
   const {campaignId,areaId,generation}=run; const scope=[campaignId,areaId,generation];

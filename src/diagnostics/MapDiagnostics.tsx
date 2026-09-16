@@ -432,24 +432,28 @@ export function MapDiagnostics() {
     };
   };
 
-  const copyDiagnostics = async () => {
-    const diagnostics = await refreshServerDiagnostics();
-    const text = JSON.stringify(buildSnapshot(diagnostics), null, 2);
-    const result = await copyTextToClipboard(text);
-    setCopyMethod(result.method);
-    setCopyFailed(!result.ok);
-    if (result.ok) {
-      setManualCopyText("");
-      window.setTimeout(() => setCopyMethod(null), 2_500);
-      return;
-    }
-    setManualCopyText(text);
-    window.setTimeout(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>(".map-diagnostics-manual-copy");
-      textarea?.focus({ preventScroll: true });
-      textarea?.select();
-      textarea?.setSelectionRange(0, textarea.value.length);
-    }, 0);
+  const copyDiagnostics = () => {
+    // Never await network before initiating copy. iPadOS/Safari expires transient
+    // user activation when the click handler waits for a fetch.
+    const text = JSON.stringify(buildSnapshot(), null, 2);
+    const copyAttempt = copyTextToClipboard(text);
+    if (!serverDiagnosticsLoading) void refreshServerDiagnostics();
+    void copyAttempt.then((result) => {
+      setCopyMethod(result.method);
+      setCopyFailed(!result.ok);
+      if (result.ok) {
+        setManualCopyText("");
+        window.setTimeout(() => setCopyMethod(null), 2_500);
+        return;
+      }
+      setManualCopyText(text);
+      window.setTimeout(() => {
+        const textarea = document.querySelector<HTMLTextAreaElement>(".map-diagnostics-manual-copy");
+        textarea?.focus({ preventScroll: true });
+        textarea?.select();
+        textarea?.setSelectionRange(0, textarea.value.length);
+      }, 0);
+    });
   };
 
   const toggleExpanded = () => {
@@ -533,7 +537,7 @@ export function MapDiagnostics() {
             <button type="button" disabled={serverDiagnosticsLoading} onClick={() => void refreshServerDiagnostics()}>
               {serverDiagnosticsLoading ? "Street-Status lädt …" : "Street-Status aktualisieren"}
             </button>
-            <button type="button" disabled={serverDiagnosticsLoading} onClick={() => void copyDiagnostics()}>
+            <button type="button" onClick={copyDiagnostics}>
               {copyFailed ? "Kopieren fehlgeschlagen" : copyMethod ? "Kopiert ✓" : "Street-Logs kopieren"}
             </button>
           </div>
@@ -550,7 +554,7 @@ export function MapDiagnostics() {
             </>
           ) : null}
           <small>
-            DIAG lädt StreetEngine-Serverdaten nur beim Öffnen/Aktualisieren/Kopieren. Kein zusätzliches Status-Polling. Vor dem Kopieren die problematische Aktion ausführen.
+            DIAG lädt StreetEngine-Serverdaten beim Öffnen/Aktualisieren. Kopieren verwendet den zuletzt geladenen Stand sofort und wartet auf kein Netzwerk; danach wird der Serverstatus im Hintergrund aktualisiert.
           </small>
         </div>
       ) : null}

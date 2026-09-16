@@ -85,7 +85,7 @@ test('preparation rejects an entirely invalid Building tile without poisoning la
   const db=new NetworkD1(true);seedNetwork(db);
   const source=()=>new Response(JSON.stringify({osm3s:{timestamp_osm_base:'2026-09-07T00:00:00Z'},elements:[
     {type:'way',id:1,tags:{highway:'residential',name:'Straße'},geometry:[{lon:13.001,lat:51.005},{lon:13.009,lat:51.005}]},
-    {type:'way',id:999,tags:{building:'house','addr:street':'Straße','addr:housenumber':'9'},geometry:[{lon:13.002,lat:51.005},{lon:13.003,lat:51.006},{lon:13.002,lat:51.006},{lon:13.003,lat:51.005},{lon:13.002,lat:51.005}]},
+    {type:'way',id:999,tags:{building:'house','addr:street':'Straße','addr:housenumber':'9'},geometry:[{lon:13.002,lat:51.005},{lon:13.003,lat:51.005},{lon:13.004,lat:51.005},{lon:13.002,lat:51.005}]},
   ]}));
   assert.equal((await prepareAreaTasks(db,'campaign_n','area_n',{fetchImpl:async()=>source()})).outcome,'failed');
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM street_base_areas').get()!.n,0);
