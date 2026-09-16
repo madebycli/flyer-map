@@ -137,6 +137,7 @@ function safeMetrics(raw: string | null) {
     retries: finite(metrics.retries) ?? 0,
     bytes: finite(metrics.bytes) ?? 0,
     observedSourceBytes: finite(metrics.observedSourceBytes) ?? 0,
+    activeMs: finite(metrics.activeMs),
     fetchMs: finite(metrics.fetchMs) ?? 0,
     parseMs: finite(metrics.parseMs) ?? 0,
     normalizationMs: finite(metrics.normalizationMs) ?? 0,
@@ -197,6 +198,9 @@ export async function getStreetEngineDiagnosticSnapshot(
   const finished = parsedTime(row.ready_at ?? row.failed_at);
   const leaseUntil = parsedTime(row.lease_until);
   const updated = parsedTime(row.updated_at);
+  const metrics = safeMetrics(row.metrics_json);
+  const wallElapsedMs = started === null ? null : Math.max(0, (finished ?? now) - started);
+  const activeElapsedMs = metrics.activeMs;
   return {
     generation: row.generation,
     status: row.status,
@@ -209,10 +213,12 @@ export async function getStreetEngineDiagnosticSnapshot(
     startedAt: row.started_at,
     finishedAt: row.ready_at ?? row.failed_at,
     updatedAt: row.updated_at,
-    elapsedMs: started === null ? null : Math.max(0, (finished ?? now) - started),
+    elapsedMs: activeElapsedMs ?? wallElapsedMs,
+    activeElapsedMs,
+    wallElapsedMs,
     staleForMs: updated === null ? null : Math.max(0, now - updated),
     roadCount: row.road_count,
     houseCount: row.house_count,
-    metrics: safeMetrics(row.metrics_json),
+    metrics,
   };
 }
