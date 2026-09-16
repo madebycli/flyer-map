@@ -37,6 +37,7 @@ import {
   type Team,
 } from "./domain/campaign";
 import { darkenHexColor } from "./domain/color";
+import { nextNumberedName } from "./domain/areaNaming.ts";
 import {
   collectionAreaColor,
   collectionSnapshotOrEmpty,
@@ -121,7 +122,7 @@ function useOnlineStatus() {
 }
 
 function nextAreaName(areas: Area[], language: Language) {
-  return `${t(language, "area")} ${areas.length + 1}`;
+  return nextNumberedName(areas.map((area) => area.name), t(language, "area"));
 }
 
 function nextStreetName(tasks: DistributionTask[], areaId: string, language: Language) {
@@ -1157,15 +1158,15 @@ export default function App({
     });
     commitSnapshot((current) => ({
       ...current,
-      tasks: current.tasks.map((task) =>
-        task.id === selectedTask.id
+      tasks: current.tasks.map((currentTask) =>
+        currentTask.id === selectedTask.id
           ? {
-              ...task,
+              ...currentTask,
               status,
               completedAt: status === "completed" ? now : null,
               updatedAt: now,
             }
-          : task,
+          : currentTask,
       ),
     }));
   };
