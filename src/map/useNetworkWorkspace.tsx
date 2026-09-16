@@ -121,7 +121,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       await queue({id:`network_${crypto.randomUUID()}`,areaId,generation:points[0].task.areaPreparationGeneration!,start:anchor(points[0]),end:anchor(points.at(-1)!),via:points.slice(1,-1).map(anchor),paths:legs.map(leg=>leg.routes[leg.selected!].ranges.map(range=>range.taskId)),selectedPath:activeRoute.ranges.map(range=>range.taskId),expectedState:await networkSelectionState(tasks,activeRoute.ranges),status});
     }catch{setMessage('Änderung konnte auf diesem Gerät nicht gespeichert werden. Bitte erneut versuchen.');return;}
     finally{committing.current=false;setSaving(false);}
-    reset();
+    setAreaId(null);reset();
   };
   const whole=(task:DistributionTask)=>{
     if(committing.current)return;
@@ -226,5 +226,6 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     </div>;
   };
   const anchors=points.map(snap=>({sourceId:snap.task.id,snapped:snap.point,segmentIndex:0,segmentT:0,distanceMeters:snap.distance}));
-  return {optimistic,screeningMode,screening,open,available:permittedAreas.some(area=>fullOptimistic.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panelState,areaActions,whole,mapProps:{smartRoads:[],smartSelectedSourceIds:[],smartStartAnchor:anchors[0]??null,smartEndAnchor:anchors.length>1?anchors.at(-1)!:null,smartWaypointAnchors:anchors.slice(1,-1),smartPreviewGeometry:preview?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
+  const selectedSourceIds=[...new Set([...points.map(snap=>snap.task.id),...(preview?.ranges.map(range=>range.taskId)??[])])];
+  return {optimistic,screeningMode,screening,open,available:permittedAreas.some(area=>fullOptimistic.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panelState,areaActions,whole,mapProps:{smartRoads:[],smartSelectedSourceIds:selectedSourceIds,smartStartAnchor:anchors[0]??null,smartEndAnchor:anchors.length>1?anchors.at(-1)!:null,smartWaypointAnchors:anchors.slice(1,-1),smartPreviewGeometry:preview?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
 }
