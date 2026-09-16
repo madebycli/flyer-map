@@ -1,0 +1,193 @@
+.street-engine-diagnostics {
+  position: fixed;
+  z-index: 41;
+  top: calc(env(safe-area-inset-top) + 3.35rem);
+  left: 0.65rem;
+  display: grid;
+  justify-items: start;
+  gap: 0.4rem;
+  pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.street-engine-diagnostics-toggle,
+.street-engine-diagnostics-panel button,
+.street-engine-diagnostics-panel select {
+  pointer-events: auto;
+  border: 1px solid rgb(30 50 35 / 16%);
+  color: #25372b;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 0.18rem 0.7rem rgb(20 35 24 / 12%);
+  font: inherit;
+}
+
+.street-engine-diagnostics-toggle {
+  min-height: 2.15rem;
+  max-width: calc(100vw - 1.3rem);
+  padding: 0.45rem 0.62rem;
+  border-radius: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.street-engine-diagnostics-panel {
+  width: min(38rem, calc(100vw - 1.3rem));
+  max-height: min(76vh, 48rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  border: 1px solid rgb(30 50 35 / 12%);
+  border-radius: 0.85rem;
+  color: #2b3930;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 0.35rem 1.2rem rgb(20 35 24 / 15%);
+  pointer-events: auto;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.street-engine-diagnostics-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem 0.8rem;
+}
+
+.street-engine-diagnostics-heading strong {
+  font-size: 0.78rem;
+}
+
+.street-engine-diagnostics-panel label {
+  display: grid;
+  gap: 0.25rem;
+  font-weight: 700;
+}
+
+.street-engine-diagnostics-panel select {
+  width: 100%;
+  min-height: 2.15rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.55rem;
+  box-shadow: none;
+}
+
+.street-engine-diagnostics-grid {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(7rem, 1.2fr);
+  gap: 0.22rem 0.65rem;
+  align-items: baseline;
+}
+
+.street-engine-diagnostics-grid span {
+  color: #667169;
+}
+
+.street-engine-diagnostics-grid b {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.street-engine-diagnostics-panel details {
+  padding-top: 0.2rem;
+  border-top: 1px solid rgb(30 50 35 / 9%);
+}
+
+.street-engine-diagnostics-panel summary {
+  cursor: pointer;
+  margin-bottom: 0.35rem;
+  font-weight: 800;
+}
+
+.street-engine-diagnostics-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.street-engine-diagnostics-list > div {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.38rem 0.45rem;
+  border-radius: 0.45rem;
+  background: rgb(30 50 35 / 4%);
+  overflow-wrap: anywhere;
+}
+
+.street-engine-diagnostics-list > div span,
+.street-engine-diagnostics-list > div small {
+  color: #667169;
+}
+
+.street-engine-diagnostics-timeline {
+  max-height: 17rem;
+  overflow: auto;
+}
+
+.street-engine-diagnostics-error {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgb(145 55 45 / 22%);
+  border-radius: 0.55rem;
+  color: #812f28;
+  background: rgb(185 65 55 / 8%);
+  overflow-wrap: anywhere;
+}
+
+.street-engine-diagnostics-panel pre {
+  max-height: 11rem;
+  overflow: auto;
+  margin: 0.35rem 0 0;
+  padding: 0.45rem;
+  border-radius: 0.45rem;
+  background: rgb(30 50 35 / 5%);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
+.street-engine-diagnostics-panel > button {
+  min-height: 2.35rem;
+  border-radius: 0.65rem;
+  font-weight: 800;
+}
+
+.street-engine-diagnostics-panel > small {
+  color: #667169;
+  font-size: 0.62rem;
+}
+
+@media (max-width: 540px) {
+  .street-engine-diagnostics-panel {
+    max-height: 72vh;
+  }
+
+  .street-engine-diagnostics-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.08rem;
+  }
+
+  .street-engine-diagnostics-grid b {
+    margin-bottom: 0.2rem;
+    text-align: left;
+  }
+}
+
+:root[data-appearance="dark"] .street-engine-diagnostics-toggle,
+:root[data-appearance="dark"] .street-engine-diagnostics-panel,
+:root[data-appearance="dark"] .street-engine-diagnostics-panel button,
+:root[data-appearance="dark"] .street-engine-diagnostics-panel select {
+  color: #f1f3f1;
+  border-color: rgb(255 255 255 / 16%);
+  background: rgb(28 30 29 / 98%);
+}
+
+:root[data-appearance="dark"] .street-engine-diagnostics-grid span,
+:root[data-appearance="dark"] .street-engine-diagnostics-list > div span,
+:root[data-appearance="dark"] .street-engine-diagnostics-list > div small,
+:root[data-appearance="dark"] .street-engine-diagnostics-panel > small {
+  color: #aeb5b0;
+}
