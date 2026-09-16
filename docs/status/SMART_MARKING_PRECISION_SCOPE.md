@@ -1,0 +1,1 @@
+Scope is limited to Smart Marking tap precision and point rendering. No StreetEngine data generation changes, no screening/filter changes, no stable/main deployment, and no reintroduction of the removed duplicate Smart candidate-road overlay.

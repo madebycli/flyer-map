@@ -1,0 +1,1 @@
+Smart Marking precision branch `fix/smart-marking-precision-points-2026-09-16` is based on beta `5f0bb69a9330ff7c3f195151256c921d304daa67` and restores rendered-street hit testing without reintroducing the duplicate Smart road overlay. Purple/white visible vertices and spatial-first candidate narrowing are included. Awaiting PR CI and beta release before device verification.
