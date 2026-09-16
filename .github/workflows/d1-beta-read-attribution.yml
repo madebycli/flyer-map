@@ -318,3 +318,5 @@ jobs:
             /tmp/d1-attribution/delete-worker.json
           retention-days: 7
           if-no-files-found: ignore
+
+# Temporary controlled rerun marker; removed after the post-fix attribution evidence is captured.
