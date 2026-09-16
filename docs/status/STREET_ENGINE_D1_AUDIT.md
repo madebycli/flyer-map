@@ -178,3 +178,14 @@ Symbols: L = matching legacy task rows, B = base/overlay chunk rows, A = Areas, 
 - If the public error remains generic, obtain one job's `phase`, `cursor`, `attempts`, `error_code`, `lease_until`, and `metrics_json.lastError` using an explicitly selected, indexed campaign+Area lookup. No credentials or raw geometry needed. This audit did not run such a remote query.
 
 No Phase B workflow modification, staging deployment, production change or remote D1 operation has been performed. Phase A cannot honestly be marked complete until the real failure and consumption window are attributed. Smart Marking remains user-directed; preparation only creates/reconciles the base and preserves work state.
+
+
+## Authoritativer Beta-D1-Checkpoint, 2026-09-16
+
+- Aktueller kontrollierter Fix-Stand: `2ccd1cef0e91e50c5b13974acc1e08a8fa9d73c8`; Beta-Release [35060954547](https://github.com/madebycli/flyer-map/actions/runs/35060954547) PASS, D1-Attribution [35060954577](https://github.com/madebycli/flyer-map/actions/runs/35060954577) PASS.
+- Die isolierte Umgebung war `flyer-map-beta` / `flyer-map-beta-db`; weder Production-D1 noch Admin Staging wurden verwendet. Der temporäre Audit-Worker und die Fixture wurden nach Abschluss erfolgreich bereinigt.
+- Kontrollierte Fixture: 20 Straßen, 260 bewusst unadressierte Häuser, ein echter `prepareAreaTasks()`-Lauf. Ergebnis: `ready`, 20 Straßen, 260 Häuser, 48 Batches, 107 Worker-Queries, Worker-Dauer 5.025 s.
+- D1-Insights-Differenz: 189 Rows Read, 105 Rows Written, 128 erfasste Query-Ausführungen, 73.6178 ms D1-Dauer. Der Unterschied zwischen 107 Wrapper-Queries und 128 Insights-Ausführungen ist Messschicht-spezifisch und wird nicht gleichgesetzt.
+- Vor Fix: 1.638 Rows Read, 135 Rows Written, 107 Worker-Queries. Der `sqlite_master`-Probe allein verursachte 1.470 Rows Read. Nach Fix ist dieser konkrete `street_base_chunks`-`sqlite_master`-Fingerprint nicht mehr vorhanden. `PRAGMA table_info(street_base_chunks)` wurde viermal ausgeführt und meldete 0 Rows Read.
+- Größter verbleibender Read war der unadressierte `edges`-Staging-Fallback mit 63 von 189 Rows Read. Das ist materiell, aber kein allein klar dominanter Pfad gegenüber den beiden 42-Read-Staging-/Job-Schritten. Es wurde deshalb kein spekulativer Folgeumbau durchgeführt.
+- `D1_CONTROLLED_ATTRIBUTION = PASS`. Die historische Beobachtung von ungefähr 4,5 Millionen Rows Read bleibt ohne zeitfenster- und query-spezifische Billing-Evidenz `OPEN`; aus dieser Fixture wird kein Anteil dafür behauptet.

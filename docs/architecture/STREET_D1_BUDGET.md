@@ -140,3 +140,8 @@ Remaining gates: exact indexed read/CPU metadata, authenticated live failure and
 Overpass timing, empty-campaign browser timings, atomic cross-collection generation
 rendering, migration/manual-parent compatibility, stale generation races and old
 staging cleanup. No Production action or remote load test has run.
+
+
+## Verifizierter Remote-Checkpoint: Schema-Probe, 2026-09-16
+
+Der Beta-Nachtest auf derselben 20-Straßen-/260-unadressierte-Häuser-Fixture bestätigt die Budgetwirkung des Schema-Probe-Fix: 189 Rows Read und 105 Rows Written bei 107 Worker-Queries und 48 Batches, gegenüber 1.638 / 135 / 107 vor dem Fix. Die alte `sqlite_master`-Prüfung auf `street_base_chunks` fehlt vollständig; `PRAGMA table_info(street_base_chunks)` lief viermal mit 0 Rows Read. Der verbleibende unadressierte `edges`-Staging-Fallback hat 63 Rows Read und bleibt ein gemessener Beobachtungspunkt, aber kein ausreichend isolierter Folge-Hotspot für einen Umbau ohne weitere Cost/Write-Abwägung. Diese Werte sind kontrollierte Beta-D1-Attribution, nicht die Attribution des historischen 4,5m-Vorfalls.
