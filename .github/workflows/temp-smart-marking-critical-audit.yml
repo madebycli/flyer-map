@@ -1,0 +1,29 @@
+name: Temporary Smart Marking critical audit patch
+
+on:
+  push:
+    branches:
+      - fix/smart-marking-critical-audit-2026-09-16
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/smart-marking-critical-audit-2026-09-16
+          fetch-depth: 0
+      - name: Apply deterministic audit corrections
+        run: python scripts/apply-smart-marking-critical-audit-patch.py
+      - name: Commit audited Smart Marking corrections
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/domain/smartStreetPointSelection.ts src/map/useNetworkWorkspace.tsx src/map/MapView.tsx tests/smartStreetPointSelection.test.ts tests/smartStreetRuntime.test.ts docs/plans/active/041-smart-marking-precision-visible-vertices.md
+          git diff --cached --check
+          git commit -m "Tighten Smart Marking pointer precision after audit"
+          git push origin HEAD:fix/smart-marking-critical-audit-2026-09-16
