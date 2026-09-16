@@ -1103,15 +1103,7 @@ function buildApplicationMapStyle(initialData?: InitialApplicationSourceData): S
         source: SMART_POINT_SOURCE_ID,
         layout: { visibility: "none" },
         paint: {
-          "circle-color": [
-            "match",
-            ["get", "role"],
-            "start",
-            "#1f6b3a",
-            "end",
-            "#b42318",
-            "#2563eb",
-          ],
+          "circle-color": "#7c3aed",
           "circle-radius": 8,
           "circle-stroke-color": "#ffffff",
           "circle-stroke-width": 3,
@@ -1443,9 +1435,11 @@ function syncSmartStreetData(
     SMART_ROAD_SELECTED_LAYER_ID,
     SMART_PREVIEW_LAYER_ID,
     SMART_POINT_LAYER_ID,
-    SMART_POINT_LABEL_LAYER_ID,
   ]) {
     if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+  }
+  if (map.getLayer(SMART_POINT_LABEL_LAYER_ID)) {
+    map.setLayoutProperty(SMART_POINT_LABEL_LAYER_ID, "visibility", "none");
   }
 
   const region = map.getContainer().closest<HTMLElement>(".map-region");
@@ -2205,20 +2199,21 @@ export function MapView({
           return;
         }
         if (interaction.mode === "smart-street") {
-          const smartLayers = [SMART_ROAD_LAYER_ID, SMART_ROAD_SELECTED_LAYER_ID].filter(
-            (layerId) => map.getLayer(layerId),
-          );
+          // Reuse the already-rendered StreetEngine street layers as the precise
+          // pointer hit-test. Routing stays in RoadIndex, so we keep the large
+          // Smart candidate overlay empty without sacrificing tap precision.
+          const streetLayers = STREET_LAYER_IDS.filter((layerId) => map.getLayer(layerId));
           const bbox: [[number, number], [number, number]] = [
-            [event.point.x - 10, event.point.y - 10],
-            [event.point.x + 10, event.point.y + 10],
+            [event.point.x - 12, event.point.y - 12],
+            [event.point.x + 12, event.point.y + 12],
           ];
-          const smartFeatures = smartLayers.length > 0
-            ? map.queryRenderedFeatures(bbox, { layers: smartLayers })
+          const streetFeatures = streetLayers.length > 0
+            ? map.queryRenderedFeatures(bbox, { layers: [...streetLayers] })
             : [];
           const sourceIds = [...new Set(
-            smartFeatures
-              .map((feature) => feature.properties?.sourceId)
-              .filter((sourceId): sourceId is string => typeof sourceId === "string"),
+            streetFeatures
+              .map((feature) => feature.properties?.taskId)
+              .filter((taskId): taskId is string => typeof taskId === "string"),
           )];
           interaction.onSmartStreetPoint(lngLat, sourceIds);
           return;

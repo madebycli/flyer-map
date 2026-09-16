@@ -3,6 +3,7 @@ import { useEffect,useMemo,useRef,useState } from 'react';
 import type { AccessInfo, AreaPreparationPublicState } from '../data/campaignApi.ts';
 import type { Area,CampaignSnapshot,DistributionTask,LngLat,TaskStatus } from '../domain/campaign.ts';
 import { RoadIndex,networkRoutes,applyNetworkCoverage,type NetworkRoute,type RoadSnap } from '../domain/streetNetwork.ts';
+import { SMART_POINT_FALLBACK_RADIUS_METERS,smartPointCandidates } from '../domain/smartStreetPointSelection.ts';
 import { screenDistributionStreets,type StreetScreeningMode } from '../domain/streetScreening.ts';
 import { enqueueNetworkIntent,flushNetworkIntents,queuedNetworkIntents,discardNetworkIntent } from '../data/networkIntentQueue.ts';
 import { MAX_NETWORK_POINTS,joinNetworkRoutes,resolveNetworkIntent,networkSelectionState,type NetworkIntent } from '../domain/networkSelection.ts';
@@ -78,7 +79,8 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   const onPoint=(point:LngLat,sourceIds:string[])=>{
     if(committing.current)return;
     if(points.length>=MAX_NETWORK_POINTS){setMessage(`Maximal ${MAX_NETWORK_POINTS} Punkte. Auswahl speichern oder rückgängig machen.`);return;}
-    const candidates=index.candidates(point).filter(snap=>!sourceIds.length||sourceIds.includes(snap.task.id));
+    const rawCandidates=index.candidates(point,sourceIds.length?45:SMART_POINT_FALLBACK_RADIUS_METERS);
+    const candidates=smartPointCandidates(rawCandidates,sourceIds);
     if(!candidates.length){setPendingPoint(null);setChoices([]);setMessage('Keine Straße gefunden. Punkt wurde zurückgesetzt.');return;}
     if(!points.length){accept(candidates[0]);return;}
     const from=points.at(-1)!;
