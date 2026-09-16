@@ -8,7 +8,7 @@ import type { OrganizationApiEnv } from "./organizationApi.ts";
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
 const MAX_BODY_BYTES = 96_000;
-const BETA_BOOTSTRAP_SECRET_SHA256 = "ddb570dea7f0ba8daf8c18c08d5a18dba36d05972f51f249b13cf9572fbab816";
+const BETA_BOOTSTRAP_SECRET_SHA256 = "11a38f77777b1c9e84c64953a0e3aec14717dc0439d00a941b563e442072bdf5";
 
 export type OrganizationBootstrapHashEnv = OrganizationApiEnv & {
   ORGANIZATION_BOOTSTRAP_SECRET_SHA256?: string;
