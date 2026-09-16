@@ -45,12 +45,13 @@ test('real React Smart Mark hook chooses Area from A/B, previews and queues offl
   assert.ok(workspace.mapProps.smartPreviewGeometry);
   assert.ok(workspace.panelState);
   assert.equal(workspace.panelState.activeRoute !== null,true);
-  // Backtracking is intentional: a global A/B route must not erase these stops.
+  // Backtracking is intentional: mandatory waypoints must not be erased by a global route.
   for(const x of [13.003,13.007,13.004,13.008]){
     await act(async()=>workspace.mapProps.onSmartStreetPoint([x,51.005],[road.id]));
   }
   assert.equal(workspace.mapProps.smartWaypointAnchors.length,4);
   assert.equal(workspace.panelState.pointCount,6);
+  assert.equal(workspace.mapProps.smartSelectedSourceIds.includes(road.id),true);
   const sixPointLength=workspace.panelState.activeRoute.length;
   assert.ok(sixPointLength>road.network!.length*2);
   await act(async()=>workspace.panelState.onUndo());
@@ -68,14 +69,14 @@ test('real React Smart Mark hook chooses Area from A/B, previews and queues offl
   assert.equal(workspace.mapProps.smartStartAnchor.sourceId,second.id);
   await act(async()=>workspace.panelState.onReset());
   assert.equal(workspace.mapProps.smartStartAnchor,null);
-  // An unresolved street tap must remain visible and must not permit a commit.
+  // Overlapping candidates no longer block the distributor: pick deterministically and continue.
   snapshot.tasks.push({...second,id:'street_ambiguous'});
   snapshot={...snapshot,tasks:[...snapshot.tasks]};
   await act(async()=>renderer!.update(createElement(Harness)));
   await act(async()=>workspace.mapProps.onSmartStreetPoint(second.geometry.coordinates[0],[]));
   assert.ok(workspace.mapProps.smartStartAnchor);
-  assert.equal(workspace.panelState.choices.length,2);
-  assert.equal(workspace.panelState.activeRoute,null);
+  assert.equal(workspace.panelState.choices.length,0);
+  assert.equal(workspace.panelState.pointCount,1);
   await act(async()=>workspace.panelState.onUndo());
   assert.equal(workspace.mapProps.smartStartAnchor,null);
   await act(async()=>workspace.panelState.onClose());
@@ -112,7 +113,7 @@ test('real workspace preparation polling backs off transient failures and stops 
   await runNext();assert.equal(fetchCalls,6);assert.equal(callbacks.size,0);
 });
 
-test('ambiguous leg preserves points and prior route choice through extension and undo',async(t)=>{
+test('Smart Marking auto-selects the shortest route on an ambiguous loop',async(t)=>{
   const db=new NetworkD1();seedNetwork(db);const snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;
   snapshot.campaign.id='campaign_ring';snapshot.areas[0].geometry={type:'Polygon',coordinates:[[[13,51],[13.1,51],[13.1,51.1],[13,51.1],[13,51]]]};
   snapshot.tasks=await buildRoadNetwork({area:snapshot.areas[0].geometry,campaignId:'campaign_ring',areaId:'area_n',generation:'ring',timestamp:'2026-09-13T00:00:00Z',roads:[{osmId:5,tags:{highway:'residential',junction:'roundabout'},geometry:{type:'LineString',coordinates:[[13.02,51.02],[13.03,51.02],[13.03,51.03],[13.02,51.03],[13.02,51.02]]}}]});
@@ -127,17 +128,49 @@ test('ambiguous leg preserves points and prior route choice through extension an
   await act(async()=>workspace.open('area_n'));
   const index=new RoadIndex(snapshot.tasks);
   for(const point of [[13.025,51.02],[13.025,51.03]] as [number,number][]){const road=index.candidates(point)[0];await act(async()=>workspace.mapProps.onSmartStreetPoint(point,[road.task.id]));}
-  assert.equal(workspace.panelState.routes.length,2);assert.equal(workspace.panelState.activeRoute,null);
-  assert.ok(workspace.mapProps.smartStartAnchor);assert.ok(workspace.mapProps.smartEndAnchor);
-  await act(async()=>workspace.mapProps.onSmartStreetPoint([13.027,51.03],[]));
-  assert.equal(workspace.panelState.pointCount,2);
-  await act(async()=>workspace.panelState.onRouteSelect(1));
+  assert.equal(workspace.panelState.routes.length,1);assert.equal(workspace.panelState.selected,0);
+  assert.ok(workspace.panelState.activeRoute);assert.ok(workspace.mapProps.smartStartAnchor);assert.ok(workspace.mapProps.smartEndAnchor);
   const chosen=workspace.mapProps.smartPreviewGeometry;
-  await act(async()=>workspace.mapProps.onSmartStreetPoint([13.027,51.03],[index.candidates([13.027,51.03])[0].task.id]));
+  await act(async()=>workspace.mapProps.onSmartStreetPoint([13.027,51.03],[]));
   assert.equal(workspace.panelState.pointCount,3);assert.equal(workspace.mapProps.smartWaypointAnchors.length,1);
   assert.deepEqual(workspace.mapProps.smartPreviewGeometry.coordinates.slice(0,chosen.coordinates.length),chosen.coordinates);
   await act(async()=>workspace.panelState.onUndo());
-  assert.deepEqual(workspace.mapProps.smartPreviewGeometry,chosen);assert.equal(workspace.panelState.selected,1);
+  assert.deepEqual(workspace.mapProps.smartPreviewGeometry,chosen);assert.equal(workspace.panelState.selected,0);
+});
+
+test('Smart Marking accepts crossings and rolls an unreachable tap back automatically',async(t)=>{
+  const db=new NetworkD1();seedNetwork(db);const snapshot=(await loadCampaignSnapshot(db,'campaign_n'))!;
+  snapshot.campaign.id='campaign_crossing';snapshot.areas[0].geometry={type:'Polygon',coordinates:[[[13,51],[13.08,51],[13.08,51.08],[13,51.08],[13,51]]]};
+  snapshot.tasks=await buildRoadNetwork({area:snapshot.areas[0].geometry,campaignId:'campaign_crossing',areaId:'area_n',generation:'crossing',timestamp:'2026-09-16T00:00:00Z',roads:[
+    {osmId:11,tags:{highway:'residential',name:'Querstraße'},geometry:{type:'LineString',coordinates:[[13.01,51.02],[13.02,51.02],[13.03,51.02]]}},
+    {osmId:12,tags:{highway:'residential',name:'Längsstraße'},geometry:{type:'LineString',coordinates:[[13.02,51.01],[13.02,51.02],[13.02,51.03]]}},
+    {osmId:13,tags:{highway:'residential',name:'Inselstraße'},geometry:{type:'LineString',coordinates:[[13.06,51.06],[13.07,51.06]]}},
+  ]});
+  const useNetworkWorkspace=await loadWorkspaceHook(),events=new EventTarget(),originals=new Map<string,PropertyDescriptor|undefined>();
+  const set=(name:string,value:unknown)=>{originals.set(name,Object.getOwnPropertyDescriptor(globalThis,name));Object.defineProperty(globalThis,name,{value,configurable:true,writable:true});};
+  set('window',{setInterval,clearInterval,setTimeout,clearTimeout,addEventListener:events.addEventListener.bind(events),removeEventListener:events.removeEventListener.bind(events)});
+  set('navigator',{onLine:false});set('indexedDB',indexedDB);set('IS_REACT_ACT_ENVIRONMENT',true);
+  let renderer:ReactTestRenderer|undefined,workspace:any;
+  t.after(async()=>{if(renderer)await act(async()=>renderer!.unmount());for(const [key,value]of originals){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}db.sqlite.close();});
+  function Harness(){workspace=useNetworkWorkspace(snapshot,{role:'admin',teamId:null},async()=>{},()=>true);return null;}
+  await act(async()=>{renderer=create(createElement(Harness));});
+  await act(async()=>workspace.open('area_n'));
+  await act(async()=>workspace.mapProps.onSmartStreetPoint([13.015,51.02],[]));
+  await act(async()=>workspace.mapProps.onSmartStreetPoint([13.02,51.02],[]));
+  assert.equal(workspace.panelState.pointCount,2);
+  assert.ok(workspace.panelState.activeRoute);
+  assert.deepEqual(workspace.mapProps.smartEndAnchor.snapped,[13.02,51.02]);
+  await act(async()=>workspace.mapProps.onSmartStreetPoint([13.02,51.025],[]));
+  assert.equal(workspace.panelState.pointCount,3);
+  assert.equal(workspace.mapProps.smartWaypointAnchors.length,1);
+  assert.ok(workspace.mapProps.smartSelectedSourceIds.length>=2);
+  const previewBefore=workspace.mapProps.smartPreviewGeometry;
+  const countBefore=workspace.panelState.pointCount;
+  const island=new RoadIndex(snapshot.tasks).candidates([13.065,51.06])[0];
+  await act(async()=>workspace.mapProps.onSmartStreetPoint([13.065,51.06],[island.task.id]));
+  assert.equal(workspace.panelState.pointCount,countBefore);
+  assert.deepEqual(workspace.mapProps.smartPreviewGeometry,previewBefore);
+  assert.match(workspace.panelState.message,/Kein Weg gefunden.*zurückgesetzt/u);
 });
 
 test('workspace renders a Building quality failure and its bounded source details',async(t)=>{
