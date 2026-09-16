@@ -147,6 +147,7 @@ test("post-commit notifier targets one Campaign id and sends only the feed high-
       return {
         bind() { return this; },
         async first<T>() { return { seq: 77 } as T; },
+        async all<T>() { return { results: [] as T[] }; },
       };
     },
   };
