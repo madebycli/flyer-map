@@ -29,10 +29,14 @@
 }
 
 .map-diagnostics-panel {
-  width: min(20rem, calc(100vw - 1.3rem));
+  width: min(32rem, calc(100vw - 1.3rem));
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 4.3rem);
   display: grid;
   gap: 0.36rem;
   padding: 0.72rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid rgb(30 50 35 / 12%);
   border-radius: 0.85rem;
   color: #2b3930;
@@ -44,17 +48,45 @@
 }
 
 .map-diagnostics-panel strong {
+  margin-top: 0.22rem;
   font-size: 0.76rem;
 }
 
 .map-diagnostics-panel button {
   min-height: 2.3rem;
   margin-top: 0.2rem;
+  padding: 0.4rem 0.55rem;
   border-radius: 0.65rem;
   font-weight: 800;
+}
+
+.map-diagnostics-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.42rem;
 }
 
 .map-diagnostics-panel small {
   color: #667169;
   font-size: 0.62rem;
+}
+
+.map-diagnostics-manual-copy {
+  width: 100%;
+  min-height: 8rem;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid rgb(30 50 35 / 18%);
+  border-radius: 0.6rem;
+  padding: 0.55rem;
+  color: #1f2c23;
+  background: #fff;
+  font: inherit;
+  line-height: 1.35;
+}
+
+@media (max-width: 32rem) {
+  .map-diagnostics-actions {
+    grid-template-columns: 1fr;
+  }
 }
