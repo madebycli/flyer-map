@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { copyTextToClipboard, type ClipboardCopyMethod } from "./clipboard.ts";
+import {
+  clipboardApiAvailable,
+  copyTextToClipboard,
+  legacyCopyAvailable,
+  type ClipboardCopyMethod,
+} from "./clipboard.ts";
 import {
   readCampaignDiagnosticData,
   safeDiagnosticValue,
@@ -399,8 +404,8 @@ export function MapDiagnostics() {
           saveData: typeof connection?.saveData === "boolean" ? connection.saveData : null,
         },
         clipboard: {
-          apiAvailable: Boolean(navigator.clipboard?.writeText),
-          legacyCopyAvailable: typeof document.execCommand === "function",
+          apiAvailable: clipboardApiAvailable(),
+          legacyCopyAvailable: legacyCopyAvailable(),
           lastCopyMethod: copyMethod,
         },
       },
@@ -519,7 +524,7 @@ export function MapDiagnostics() {
             API-Requests beobachtet: {relevantResourceStats().apiRequests} · Preparation: {relevantResourceStats().preparationRequests} · Source-Pack: {relevantResourceStats().sourcePackRequestsObserved}
           </span>
           <span>
-            Clipboard API: {navigator.clipboard?.writeText ? "ja" : "nein"} · Fallback: {typeof document.execCommand === "function" ? "ja" : "nein"} · Secure Context: {window.isSecureContext ? "ja" : "nein"}
+            Clipboard API: {clipboardApiAvailable() ? "ja" : "nein"} · Fallback: {legacyCopyAvailable() ? "ja" : "nein"} · Secure Context: {window.isSecureContext ? "ja" : "nein"}
           </span>
           {renderer.rendererError ? <span>Renderer-Fehler: {renderer.rendererError}</span> : null}
           {renderer.missingApplicationLayers ? <span>Fehlende Layer: {renderer.missingApplicationLayers}</span> : null}
