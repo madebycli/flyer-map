@@ -23,6 +23,7 @@ jobs:
       CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       BETA_WORKER_NAME: flyer-map-beta
       BETA_DB_NAME: flyer-map-beta-db
+      BETA_STREET_ENGINE_V3_BUCKET: flyer-map-beta-street-engine-v3
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
       BOOTSTRAP_SHA256: 2058707356b5b06c207d0e4a49148626058e6e2661af9dd4a4bb86c32d7930d9
@@ -80,6 +81,17 @@ jobs:
           echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
           echo "Resolved isolated Beta D1: $BETA_DB_NAME ($BETA_D1_ID)"
 
+      - name: Ensure isolated Beta Street Engine V3 R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
+          if ! npx wrangler r2 bucket info "$BETA_STREET_ENGINE_V3_BUCKET" --json > /tmp/beta-streetengine-v3-r2.json 2>/tmp/beta-streetengine-v3-r2.err; then
+            npx wrangler r2 bucket create "$BETA_STREET_ENGINE_V3_BUCKET"
+            npx wrangler r2 bucket info "$BETA_STREET_ENGINE_V3_BUCKET" --json > /tmp/beta-streetengine-v3-r2.json
+          fi
+          node -e 'const fs=require("node:fs");const x=JSON.parse(fs.readFileSync("/tmp/beta-streetengine-v3-r2.json","utf8"));if(!x||x.name!==process.env.BETA_STREET_ENGINE_V3_BUCKET)throw new Error("beta_v3_r2_verification_failed");console.log(`Resolved isolated Beta V3 R2: ${x.name}`);'
+
       - name: Materialize isolated Beta config
         shell: bash
         run: |
@@ -94,6 +106,8 @@ jobs:
             RUNTIME_ENVIRONMENT:'unstable',
             SOURCE_COMMIT_SHA:process.env.GITHUB_SHA,
             RELEASE_CHANNEL:'beta',
+            STREET_ENGINE_VERSION:'v2',
+            STREET_ENGINE_V3_CHANNEL:'beta',
             ORGANIZATION_KDF_DIAGNOSTICS:'0',
             ORGANIZATION_OPTIONAL_MFA:'1',
             ORGANIZATION_BOOTSTRAP_SECRET_SHA256:process.env.BOOTSTRAP_SHA256,
@@ -103,6 +117,10 @@ jobs:
             database_name:process.env.BETA_DB_NAME,
             database_id:process.env.BETA_D1_ID,
             migrations_dir:'migrations',
+          }];
+          c.r2_buckets=[{
+            binding:'STREET_ENGINE_V3_SOURCE',
+            bucket_name:process.env.BETA_STREET_ENGINE_V3_BUCKET,
           }];
           c.ratelimits=[
             {name:'FIELD_GROUP_JOIN_ACTOR_LIMITER',namespace_id:'92015001',simple:{limit:30,period:60}},
@@ -263,5 +281,7 @@ jobs:
             /tmp/beta-streetengine-task-columns.json
             /tmp/beta-streetengine-house-columns.json
             /tmp/beta-streetengine-fk.json
+            /tmp/beta-streetengine-v3-r2.json
+            /tmp/beta-streetengine-v3-r2.err
           retention-days: 30
           if-no-files-found: ignore
