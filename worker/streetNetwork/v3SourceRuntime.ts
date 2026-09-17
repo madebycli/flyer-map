@@ -253,7 +253,8 @@ async function decodeStreetEngineV3Shard(bytes: Uint8Array, descriptor: StreetEn
   payload.addressNodes.forEach((node) => validateAddressNode(node, descriptor.bounds));
   if (payload.roads.length !== descriptor.counts.roads
     || payload.buildings.length !== descriptor.counts.buildings
-    || payload.addressNodes.length > descriptor.counts.addressableBuildings) {
+    || (descriptor.counts.addressNodes !== undefined
+      && payload.addressNodes.length !== descriptor.counts.addressNodes)) {
     throw new Error('street_engine_v3_shard_count_mismatch');
   }
   return { payload, decodedBytes: frame.byteLength };
