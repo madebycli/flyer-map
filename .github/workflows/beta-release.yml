@@ -17,12 +17,14 @@ jobs:
   beta:
     if: github.ref == 'refs/heads/beta'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       BETA_WORKER_NAME: flyer-map-beta
       BETA_DB_NAME: flyer-map-beta-db
+      BETA_STREET_ENGINE_V4_BUCKET: flyer-map-beta-street-engine-v4
+      V4_PBF_URL: https://download.geofabrik.de/europe/germany/nordrhein-westfalen-latest.osm.pbf
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
       BOOTSTRAP_SHA256: 2058707356b5b06c207d0e4a49148626058e6e2661af9dd4a4bb86c32d7930d9
@@ -80,7 +82,18 @@ jobs:
           echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
           echo "Resolved isolated Beta D1: $BETA_DB_NAME ($BETA_D1_ID)"
 
-      - name: Materialize isolated Beta config
+      - name: Ensure isolated Beta Street Engine V4 R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
+          if ! npx wrangler r2 bucket info "$BETA_STREET_ENGINE_V4_BUCKET" --json > /tmp/beta-streetengine-v4-r2.json 2>/tmp/beta-streetengine-v4-r2.err; then
+            npx wrangler r2 bucket create "$BETA_STREET_ENGINE_V4_BUCKET"
+            npx wrangler r2 bucket info "$BETA_STREET_ENGINE_V4_BUCKET" --json > /tmp/beta-streetengine-v4-r2.json
+          fi
+          node -e 'const fs=require("node:fs");const x=JSON.parse(fs.readFileSync("/tmp/beta-streetengine-v4-r2.json","utf8"));if(!x||x.name!==process.env.BETA_STREET_ENGINE_V4_BUCKET)throw new Error("beta_v4_r2_verification_failed");console.log(`Resolved isolated Beta V4 R2: ${x.name}`);'
+
+      - name: Materialize isolated Beta V4 config
         shell: bash
         run: |
           set -euo pipefail
@@ -94,15 +107,22 @@ jobs:
             RUNTIME_ENVIRONMENT:'unstable',
             SOURCE_COMMIT_SHA:process.env.GITHUB_SHA,
             RELEASE_CHANNEL:'beta',
+            STREET_ENGINE_VERSION:'v4',
+            STREET_ENGINE_V4_CHANNEL:'beta',
             ORGANIZATION_KDF_DIAGNOSTICS:'0',
             ORGANIZATION_OPTIONAL_MFA:'1',
             ORGANIZATION_BOOTSTRAP_SECRET_SHA256:process.env.BOOTSTRAP_SHA256,
           };
+          delete c.vars.OSM_OVERPASS_URL;
           c.d1_databases=[{
             binding:'DB',
             database_name:process.env.BETA_DB_NAME,
             database_id:process.env.BETA_D1_ID,
             migrations_dir:'migrations',
+          }];
+          c.r2_buckets=[{
+            binding:'STREET_ENGINE_V4_SOURCE',
+            bucket_name:process.env.BETA_STREET_ENGINE_V4_BUCKET,
           }];
           c.ratelimits=[
             {name:'FIELD_GROUP_JOIN_ACTOR_LIMITER',namespace_id:'92015001',simple:{limit:30,period:60}},
@@ -110,6 +130,7 @@ jobs:
             {name:'PICKUP_SEARCH_LIMITER',namespace_id:'92015003',simple:{limit:20,period:10}},
             {name:'ORGANIZATION_LOGIN_LIMITER',namespace_id:'92015004',simple:{limit:12,period:60}},
           ];
+          if(c.vars.STREET_ENGINE_VERSION!=='v4'||'OSM_OVERPASS_URL' in c.vars)throw new Error('beta_v4_runtime_config_invalid');
           fs.writeFileSync('wrangler.jsonc',JSON.stringify(c,null,2)+'\n');
           NODE
 
@@ -136,75 +157,109 @@ jobs:
           HOUSE_COLUMNS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(house_tasks);" | rows_json)"
 
           if ! jq -e 'any(.name == "area_preparation_generation")' <<<"$TASK_COLUMNS" >/dev/null; then
-            echo 'Repairing missing tasks.area_preparation_generation on isolated Beta D1.'
             npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --command "ALTER TABLE tasks ADD COLUMN area_preparation_generation TEXT;"
           fi
           if ! jq -e 'any(.name == "area_preparation_generation")' <<<"$HOUSE_COLUMNS" >/dev/null; then
-            echo 'Repairing missing house_tasks.area_preparation_generation on isolated Beta D1.'
             npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --command "ALTER TABLE house_tasks ADD COLUMN area_preparation_generation TEXT;"
           fi
-
           npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --file scripts/beta-streetengine-schema-repair.sql
-
           npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('area_task_preparations','street_network_state','house_road_positions','street_network_jobs','street_network_staging','street_network_intents') ORDER BY name;" > /tmp/beta-streetengine-tables.json
           npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(area_task_preparations);" > /tmp/beta-streetengine-preparation-columns.json
           npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(tasks);" > /tmp/beta-streetengine-task-columns.json
           npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info(house_tasks);" > /tmp/beta-streetengine-house-columns.json
           npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA foreign_key_check;" > /tmp/beta-streetengine-fk.json
-
           node <<'NODE'
           const fs=require('node:fs');
-          const rows=(path)=>{
-            const x=JSON.parse(fs.readFileSync(path,'utf8'));
-            return (Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);
-          };
+          const rows=(path)=>{const x=JSON.parse(fs.readFileSync(path,'utf8'));return(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);};
           const tables=new Set(rows('/tmp/beta-streetengine-tables.json').map(r=>r.name));
-          for(const name of ['area_task_preparations','street_network_state','house_road_positions','street_network_jobs','street_network_staging','street_network_intents']){
-            if(!tables.has(name)) throw new Error(`missing Beta StreetEngine table: ${name}`);
-          }
+          for(const name of ['area_task_preparations','street_network_state','house_road_positions','street_network_jobs','street_network_staging','street_network_intents'])if(!tables.has(name))throw new Error(`missing Beta StreetEngine table: ${name}`);
           const prep=new Set(rows('/tmp/beta-streetengine-preparation-columns.json').map(r=>r.name));
-          for(const name of ['campaign_id','area_id','geometry_hash','generation','status','road_count','house_count','source_timestamp','started_at','ready_at','failed_at','last_error_code','updated_at']){
-            if(!prep.has(name)) throw new Error(`missing area_task_preparations column: ${name}`);
-          }
-          const tasks=new Set(rows('/tmp/beta-streetengine-task-columns.json').map(r=>r.name));
-          const houses=new Set(rows('/tmp/beta-streetengine-house-columns.json').map(r=>r.name));
-          if(!tasks.has('area_preparation_generation')) throw new Error('missing tasks.area_preparation_generation');
-          if(!houses.has('area_preparation_generation')) throw new Error('missing house_tasks.area_preparation_generation');
-          const fk=rows('/tmp/beta-streetengine-fk.json');
-          if(fk.length) throw new Error(`Beta D1 foreign key violations: ${JSON.stringify(fk)}`);
-          const summary={ok:true,tables:[...tables].sort(),taskGeneration:true,houseGeneration:true,foreignKeys:'clean'};
-          fs.writeFileSync('/tmp/beta-streetengine-schema-summary.json',JSON.stringify(summary,null,2)+'\n');
-          console.log(summary);
+          for(const name of ['campaign_id','area_id','geometry_hash','generation','status','road_count','house_count','source_timestamp','started_at','ready_at','failed_at','last_error_code','updated_at'])if(!prep.has(name))throw new Error(`missing area_task_preparations column: ${name}`);
+          const tasks=new Set(rows('/tmp/beta-streetengine-task-columns.json').map(r=>r.name));const houses=new Set(rows('/tmp/beta-streetengine-house-columns.json').map(r=>r.name));
+          if(!tasks.has('area_preparation_generation'))throw new Error('missing tasks.area_preparation_generation');if(!houses.has('area_preparation_generation'))throw new Error('missing house_tasks.area_preparation_generation');
+          const fk=rows('/tmp/beta-streetengine-fk.json');if(fk.length)throw new Error(`Beta D1 foreign key violations: ${JSON.stringify(fk)}`);
+          fs.writeFileSync('/tmp/beta-streetengine-schema-summary.json',JSON.stringify({ok:true,tables:[...tables].sort(),taskGeneration:true,houseGeneration:true,foreignKeys:'clean'},null,2)+'\n');
           NODE
+
+      - name: Build and atomically publish Street Engine V4 source pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq osmium-tool
+
+          npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "SELECT id,name,geometry_json,updated_at,campaign_id FROM areas WHERE campaign_id=(SELECT campaign_id FROM areas ORDER BY updated_at DESC,id DESC LIMIT 1) ORDER BY updated_at,id;" > /tmp/v4-areas-wrangler.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/v4-areas-wrangler.json','utf8'));
+          const rows=(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);
+          if(!rows.length)throw new Error('street_engine_v4_no_beta_areas');
+          const points=[];
+          const collect=(value)=>{if(Array.isArray(value)&&value.length>=2&&typeof value[0]==='number'&&typeof value[1]==='number'){points.push([value[0],value[1]]);return;}if(Array.isArray(value))for(const item of value)collect(item);};
+          for(const row of rows){const geometry=JSON.parse(row.geometry_json);collect(geometry.coordinates);}
+          if(!points.length)throw new Error('street_engine_v4_beta_geometry_empty');
+          const margin=0.025;
+          const west=Math.max(-180,Math.min(...points.map(p=>p[0]))-margin),east=Math.min(180,Math.max(...points.map(p=>p[0]))+margin),south=Math.max(-85,Math.min(...points.map(p=>p[1]))-margin),north=Math.min(85,Math.max(...points.map(p=>p[1]))+margin);
+          const cellCount=Math.ceil((east-west)/0.01)*Math.ceil((north-south)/0.01);
+          if(cellCount>4096)throw new Error(`street_engine_v4_beta_coverage_too_large:${cellCount}`);
+          const bbox=[west,south,east,north].map(v=>v.toFixed(7)).join(',');
+          const areas=rows.map(r=>({id:r.id,name:r.name,updatedAt:r.updated_at}));
+          const meta={engineVersion:'v4',campaignId:rows[0].campaign_id,areaCount:rows.length,areas,areaIds:areas.map(r=>r.id),areaNames:areas.map(r=>r.name),bbox,cellCount,marginDegrees:margin};
+          fs.writeFileSync('/tmp/street-engine-v4-source-meta.json',JSON.stringify(meta,null,2)+'\n');
+          fs.appendFileSync(process.env.GITHUB_ENV,`V4_BBOX=${bbox}\nV4_CAMPAIGN_ID=${rows[0].campaign_id}\n`);
+          console.log(meta);
+          NODE
+
+          curl --fail-with-body --location --retry 4 --retry-delay 3 --retry-all-errors "$V4_PBF_URL" -o /tmp/nordrhein-westfalen.osm.pbf
+          SOURCE_TIMESTAMP="$(osmium fileinfo -g header.option.osmosis_replication_timestamp /tmp/nordrhein-westfalen.osm.pbf 2>/dev/null || true)"
+          if [[ -z "$SOURCE_TIMESTAMP" ]]; then SOURCE_TIMESTAMP="$(osmium fileinfo -g header.option.timestamp /tmp/nordrhein-westfalen.osm.pbf 2>/dev/null || true)"; fi
+          [[ "$SOURCE_TIMESTAMP" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]
+          osmium extract --strategy complete_ways --bbox "$V4_BBOX" /tmp/nordrhein-westfalen.osm.pbf -o /tmp/street-engine-v4.osm.pbf --overwrite
+          cat > /tmp/v4-export.json <<'JSON'
+          {
+            "attributes":{"type":true,"id":true},
+            "linear_tags":["highway"],
+            "area_tags":["building"],
+            "include_tags":["highway","building","addr:*"]
+          }
+          JSON
+          osmium export /tmp/street-engine-v4.osm.pbf -f geojsonseq -c /tmp/v4-export.json -o /tmp/street-engine-v4.geojsonseq --overwrite
+          node --experimental-transform-types scripts/build-street-engine-v4-pbf-pack.ts /tmp/street-engine-v4.geojsonseq "$V4_BBOX" "$SOURCE_TIMESTAMP" /tmp/street-engine-v4-pack beta geofabrik-nrw
+          jq -e '.engineVersion=="v4" and .algorithmVersion=="v4-pbf-builder-1" and .shardCount>0' /tmp/street-engine-v4-pack/summary.json >/dev/null
+
+          while IFS=$'\t' read -r key file; do
+            npx wrangler r2 object put "$BETA_STREET_ENGINE_V4_BUCKET/$key" --file "/tmp/street-engine-v4-pack/$file" --remote --config wrangler.jsonc >/dev/null
+          done < <(jq -r '.shards[]|[.key,.file]|@tsv' /tmp/street-engine-v4-pack/summary.json)
+          MANIFEST_KEY="$(jq -r '.manifestKey' /tmp/street-engine-v4-pack/summary.json)"
+          POINTER_KEY="$(jq -r '.pointerKey' /tmp/street-engine-v4-pack/summary.json)"
+          npx wrangler r2 object put "$BETA_STREET_ENGINE_V4_BUCKET/$MANIFEST_KEY" --file /tmp/street-engine-v4-pack/manifest.json --remote --config wrangler.jsonc >/dev/null
+          # Atomic cutover: channel pointer is always written last.
+          npx wrangler r2 object put "$BETA_STREET_ENGINE_V4_BUCKET/$POINTER_KEY" --file /tmp/street-engine-v4-pack/pointer.json --remote --config wrangler.jsonc >/dev/null
+          npx wrangler r2 object get "$BETA_STREET_ENGINE_V4_BUCKET/$MANIFEST_KEY" --file /tmp/v4-manifest-readback.json --remote --config wrangler.jsonc >/dev/null
+          npx wrangler r2 object get "$BETA_STREET_ENGINE_V4_BUCKET/$POINTER_KEY" --file /tmp/v4-pointer-readback.json --remote --config wrangler.jsonc >/dev/null
+          cmp /tmp/street-engine-v4-pack/manifest.json /tmp/v4-manifest-readback.json
+          cmp /tmp/street-engine-v4-pack/pointer.json /tmp/v4-pointer-readback.json
+          jq -e --arg hash "$(jq -r '.manifestHash' /tmp/street-engine-v4-pack/summary.json)" '.manifestHash==$hash' /tmp/v4-pointer-readback.json >/dev/null
+          rm -f /tmp/nordrhein-westfalen.osm.pbf /tmp/street-engine-v4.osm.pbf /tmp/street-engine-v4.geojsonseq
 
       - name: Prepare missing Beta secrets
         shell: bash
         run: |
           set -euo pipefail
           STATUS="$(curl --silent --show-error -o /tmp/beta-secret-list.json -w '%{http_code}' "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${BETA_WORKER_NAME}/secrets" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' || true)"
-          if [[ "$STATUS" != '200' ]] || ! jq -e '.success == true' /tmp/beta-secret-list.json >/dev/null 2>&1; then
-            printf '%s\n' '{"success":true,"result":[]}' > /tmp/beta-secret-list.json
-          fi
+          if [[ "$STATUS" != '200' ]] || ! jq -e '.success == true' /tmp/beta-secret-list.json >/dev/null 2>&1; then printf '%s\n' '{"success":true,"result":[]}' > /tmp/beta-secret-list.json; fi
           node <<'NODE'
-          const fs=require('node:fs');
-          const crypto=require('node:crypto');
-          const list=JSON.parse(fs.readFileSync('/tmp/beta-secret-list.json','utf8')).result || [];
-          const names=new Set(list.map(x=>x.name));
-          const missing={};
-          for (const name of ['ORGANIZATION_TOTP_KEY','FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY']) {
-            if (!names.has(name)) missing[name]=crypto.randomBytes(32).toString('base64url');
-          }
-          fs.writeFileSync('/tmp/beta-missing-secrets.json',JSON.stringify(missing));
-          fs.writeFileSync('/tmp/beta-secret-count.txt',String(Object.keys(missing).length));
-          console.log(`Missing Beta secrets prepared: ${Object.keys(missing).length}`);
+          const fs=require('node:fs'),crypto=require('node:crypto');const list=JSON.parse(fs.readFileSync('/tmp/beta-secret-list.json','utf8')).result||[];const names=new Set(list.map(x=>x.name));const missing={};for(const name of ['ORGANIZATION_TOTP_KEY','FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY'])if(!names.has(name))missing[name]=crypto.randomBytes(32).toString('base64url');fs.writeFileSync('/tmp/beta-missing-secrets.json',JSON.stringify(missing));fs.writeFileSync('/tmp/beta-secret-count.txt',String(Object.keys(missing).length));
           NODE
 
-      - name: Build and deploy exact Beta source directly
+      - name: Build and deploy exact Beta V4 source directly
         shell: bash
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          node -e 'const fs=require("node:fs");const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8"));if(c.vars?.STREET_ENGINE_VERSION!=="v4"||c.vars?.OSM_OVERPASS_URL!==undefined||!c.r2_buckets?.some(x=>x.binding==="STREET_ENGINE_V4_SOURCE"))throw new Error("beta_v4_deploy_invariant_failed")'
           rm -rf dist .wrangler
           npm run build
           if [[ "$(cat /tmp/beta-secret-count.txt)" -gt 0 ]]; then
@@ -217,37 +272,27 @@ jobs:
           echo "BETA_URL=$BETA_URL" >> "$GITHUB_ENV"
           echo "Beta URL: $BETA_URL"
 
-      - name: Smoke Beta
+      - name: Smoke Beta V4
         shell: bash
         run: |
           set -euo pipefail
           echo "Testing $BETA_URL"
-          EXPECTED_SHA="$GITHUB_SHA"
-          RUNTIME=''
-          RUNTIME_READY=0
+          EXPECTED_SHA="$GITHUB_SHA";RUNTIME='';RUNTIME_READY=0
           for attempt in $(seq 1 30); do
             RUNTIME="$(curl --retry 3 --retry-delay 1 --retry-all-errors --silent --show-error "${BETA_URL}/api/runtime?smoke=${EXPECTED_SHA}-${attempt}" || true)"
-            if jq -e --arg sha "$EXPECTED_SHA" '.ok == true and .environment == "unstable" and .sourceCommit == $sha' <<<"$RUNTIME" >/dev/null 2>&1; then
-              RUNTIME_READY=1
-              echo "Expected Beta runtime reached on attempt ${attempt}."
-              break
-            fi
-            echo "Beta runtime not propagated yet (attempt ${attempt}/30): ${RUNTIME}"
-            sleep 2
+            if jq -e --arg sha "$EXPECTED_SHA" '.ok==true and .environment=="unstable" and .sourceCommit==$sha and .releaseChannel=="beta" and .streetEngineVersion=="v4" and .streetEngineSourceChannel=="beta" and .capabilities.streetEngineV4==true' <<<"$RUNTIME" >/dev/null 2>&1; then RUNTIME_READY=1;echo "Expected Beta V4 runtime reached on attempt ${attempt}.";break;fi
+            echo "Beta V4 runtime not propagated yet (attempt ${attempt}/30): ${RUNTIME}";sleep 2
           done
           echo "$RUNTIME" | jq .
           [[ "$RUNTIME_READY" == '1' ]]
-
           ROOT="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -D /tmp/beta.headers -o /tmp/beta.html -w '%{http_code}' "$BETA_URL/")"
           LOGIN="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -o /tmp/beta-login.html -w '%{http_code}' "$BETA_URL/login")"
           START="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -o /tmp/beta-start.html -w '%{http_code}' "$BETA_URL/start")"
           ME="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -o /tmp/beta-me.json -w '%{http_code}' "$BETA_URL/api/organization/me")"
           echo "root=$ROOT login=$LOGIN start=$START me=$ME"
-          [[ "$ROOT" -ge 200 && "$ROOT" -lt 400 ]]
-          [[ "$LOGIN" -ge 200 && "$LOGIN" -lt 400 ]]
-          [[ "$START" -ge 200 && "$START" -lt 400 ]]
-          [[ "$ME" == '401' ]]
+          [[ "$ROOT" -ge 200 && "$ROOT" -lt 400 ]];[[ "$LOGIN" -ge 200 && "$LOGIN" -lt 400 ]];[[ "$START" -ge 200 && "$START" -lt 400 ]];[[ "$ME" == '401' ]]
           printf '%s\n' "$BETA_URL" > /tmp/beta-url.txt
+          printf '%s\n' "$RUNTIME" > /tmp/beta-v4-runtime.json
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -257,11 +302,17 @@ jobs:
             /tmp/beta-url.txt
             /tmp/beta-deploy.log
             /tmp/beta.headers
+            /tmp/beta-v4-runtime.json
             /tmp/beta-streetengine-schema-summary.json
             /tmp/beta-streetengine-tables.json
             /tmp/beta-streetengine-preparation-columns.json
             /tmp/beta-streetengine-task-columns.json
             /tmp/beta-streetengine-house-columns.json
             /tmp/beta-streetengine-fk.json
+            /tmp/beta-streetengine-v4-r2.json
+            /tmp/street-engine-v4-source-meta.json
+            /tmp/street-engine-v4-pack/summary.json
+            /tmp/street-engine-v4-pack/pointer.json
+            /tmp/street-engine-v4-pack/manifest.json
           retention-days: 30
           if-no-files-found: ignore
