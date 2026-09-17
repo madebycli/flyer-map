@@ -40,7 +40,7 @@ function harden(response: Response) {
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("cross-origin-opener-policy", "same-origin");
   const webSocket = (response as WorkerWebSocketResponse).webSocket;
-  if (webSocket) return new Response(null, { status: response.status, statusText: response.statusText, headers, webSocket } as WorkerWebSocketResponseInit);
+  if (webSocket) return new Response(null, { status: response.status, statusText: response.statusText, headers, webSocket, } as WorkerWebSocketResponseInit);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -65,15 +65,27 @@ export default {
       const url = new URL(request.url);
       if (url.pathname === "/api/runtime") {
         if (request.method !== "GET") return harden(new Response(request.method === "HEAD" ? null : JSON.stringify({ error: { code: "method_not_allowed", message: "Der Runtime-Vertrag verwendet GET." } }), { status: 405, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", allow: "GET" } }));
+        const streetEngineV4 = env.STREET_ENGINE_VERSION === "v4";
         return harden(Response.json({
           ok: true,
           version: env.CF_VERSION_METADATA?.id ?? "development",
           environment: env.RUNTIME_ENVIRONMENT ?? "development",
           sourceCommit: env.SOURCE_COMMIT_SHA ?? null,
-          releaseChannel: env.RELEASE_CHANNEL ?? null,
-          streetEngineVersion: env.STREET_ENGINE_VERSION ?? null,
-          streetEngineSourceChannel: env.STREET_ENGINE_V4_CHANNEL ?? null,
-          capabilities: { organizationAuth:true, organizationSecurity:true, campaignRuntime:true, rxdbSync:true, collection:true, fieldGroups:true, statistics:true, streetEngineV4:env.STREET_ENGINE_VERSION === "v4" },
+          ...(streetEngineV4 ? {
+            releaseChannel: env.RELEASE_CHANNEL ?? null,
+            streetEngineVersion: "v4",
+            streetEngineSourceChannel: env.STREET_ENGINE_V4_CHANNEL ?? null,
+          } : {}),
+          capabilities: {
+            organizationAuth:true,
+            organizationSecurity:true,
+            campaignRuntime:true,
+            rxdbSync:true,
+            collection:true,
+            fieldGroups:true,
+            statistics:true,
+            ...(streetEngineV4 ? { streetEngineV4:true } : {}),
+          },
         }, { headers: { "cache-control": "no-store" } }));
       }
       const rootRedirect = redirectBareRootToOrganizationLogin(request); if (rootRedirect) return harden(rootRedirect);
