@@ -169,9 +169,15 @@ function canonicalShardPayload(payload: StreetEngineV3ShardPayload) {
   }));
 }
 
-async function transformBytes(bytes: Uint8Array, stream: TransformStream<Uint8Array, Uint8Array>) {
+function ownedBytes(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy;
+}
+
+async function transformBytes(bytes: Uint8Array, stream: CompressionStream | DecompressionStream) {
   const writer = stream.writable.getWriter();
-  await writer.write(bytes);
+  await writer.write(ownedBytes(bytes));
   await writer.close();
   const reader = stream.readable.getReader();
   const chunks: Uint8Array[] = [];
@@ -193,7 +199,7 @@ async function transformBytes(bytes: Uint8Array, stream: TransformStream<Uint8Ar
 }
 
 export async function sha256Bytes(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const digest = await crypto.subtle.digest('SHA-256', ownedBytes(bytes));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
