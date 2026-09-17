@@ -18,6 +18,8 @@ export type StreetEngineV3FeatureCounts = {
   roads: number;
   buildings: number;
   addressableBuildings: number;
+  /** Optional for schema-v1 compatibility; new packs must publish the exact node count. */
+  addressNodes?: number;
   roadCandidates: number;
 };
 
@@ -73,6 +75,7 @@ function validCounts(counts: StreetEngineV3FeatureCounts) {
   return finiteInteger(counts.roads)
     && finiteInteger(counts.buildings)
     && finiteInteger(counts.addressableBuildings)
+    && (counts.addressNodes === undefined || finiteInteger(counts.addressNodes))
     && finiteInteger(counts.roadCandidates)
     && counts.addressableBuildings <= counts.buildings;
 }
