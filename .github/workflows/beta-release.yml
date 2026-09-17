@@ -204,7 +204,8 @@ jobs:
           const cellCount=Math.ceil((east-west)/0.01)*Math.ceil((north-south)/0.01);
           if(cellCount>4096)throw new Error(`street_engine_v4_beta_coverage_too_large:${cellCount}`);
           const bbox=[west,south,east,north].map(v=>v.toFixed(7)).join(',');
-          const meta={engineVersion:'v4',campaignId:rows[0].campaign_id,areaCount:rows.length,areaIds:rows.map(r=>r.id),bbox,cellCount,marginDegrees:margin};
+          const areas=rows.map(r=>({id:r.id,name:r.name,updatedAt:r.updated_at}));
+          const meta={engineVersion:'v4',campaignId:rows[0].campaign_id,areaCount:rows.length,areas,areaIds:areas.map(r=>r.id),areaNames:areas.map(r=>r.name),bbox,cellCount,marginDegrees:margin};
           fs.writeFileSync('/tmp/street-engine-v4-source-meta.json',JSON.stringify(meta,null,2)+'\n');
           fs.appendFileSync(process.env.GITHUB_ENV,`V4_BBOX=${bbox}\nV4_CAMPAIGN_ID=${rows[0].campaign_id}\n`);
           console.log(meta);
@@ -258,7 +259,7 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          node -e 'const c=require("./wrangler.jsonc");if(c.vars?.STREET_ENGINE_VERSION!=="v4"||c.vars?.OSM_OVERPASS_URL!==undefined||!c.r2_buckets?.some(x=>x.binding==="STREET_ENGINE_V4_SOURCE"))throw new Error("beta_v4_deploy_invariant_failed")'
+          node -e 'const fs=require("node:fs");const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8"));if(c.vars?.STREET_ENGINE_VERSION!=="v4"||c.vars?.OSM_OVERPASS_URL!==undefined||!c.r2_buckets?.some(x=>x.binding==="STREET_ENGINE_V4_SOURCE"))throw new Error("beta_v4_deploy_invariant_failed")'
           rm -rf dist .wrangler
           npm run build
           if [[ "$(cat /tmp/beta-secret-count.txt)" -gt 0 ]]; then
@@ -279,7 +280,7 @@ jobs:
           EXPECTED_SHA="$GITHUB_SHA";RUNTIME='';RUNTIME_READY=0
           for attempt in $(seq 1 30); do
             RUNTIME="$(curl --retry 3 --retry-delay 1 --retry-all-errors --silent --show-error "${BETA_URL}/api/runtime?smoke=${EXPECTED_SHA}-${attempt}" || true)"
-            if jq -e --arg sha "$EXPECTED_SHA" '.ok==true and .environment=="unstable" and .sourceCommit==$sha and .releaseChannel=="beta" and .streetEngineVersion=="v4" and .capabilities.streetEngineV4==true' <<<"$RUNTIME" >/dev/null 2>&1; then RUNTIME_READY=1;echo "Expected Beta V4 runtime reached on attempt ${attempt}.";break;fi
+            if jq -e --arg sha "$EXPECTED_SHA" '.ok==true and .environment=="unstable" and .sourceCommit==$sha and .releaseChannel=="beta" and .streetEngineVersion=="v4" and .streetEngineSourceChannel=="beta" and .capabilities.streetEngineV4==true' <<<"$RUNTIME" >/dev/null 2>&1; then RUNTIME_READY=1;echo "Expected Beta V4 runtime reached on attempt ${attempt}.";break;fi
             echo "Beta V4 runtime not propagated yet (attempt ${attempt}/30): ${RUNTIME}";sleep 2
           done
           echo "$RUNTIME" | jq .
