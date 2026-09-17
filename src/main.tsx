@@ -21,7 +21,7 @@ import "./ui-dark-mode.css";
 import "./ui-dark-mode-modules.css";
 
 const MapDiagnostics = lazy(() => import("./diagnostics/MapDiagnostics").then(module => ({ default: module.MapDiagnostics })));
-const StreetEngineDiagnostics = lazy(() => import("./diagnostics/StreetEngineDiagnostics").then(module => ({ default: module.StreetEngineDiagnostics })));
+const StreetEngineDiagnostics = lazy(() => import("./diagnostics/StreetEngineDiagnosticsV4").then(module => ({ default: module.StreetEngineDiagnosticsV4 })));
 const OrganizationAdminNavEnhancer = lazy(() => import("./organization/OrganizationAdminNavEnhancer").then(module => ({ default: module.OrganizationAdminNavEnhancer })));
 const OrganizationApp = lazy(() => import("./organization/OrganizationApp").then(module => ({ default: module.OrganizationApp })));
 const OrganizationInviteCenter = lazy(() => import("./organization/OrganizationInviteCenter").then(module => ({ default: module.OrganizationInviteCenter })));
