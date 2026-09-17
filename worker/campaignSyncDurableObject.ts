@@ -1,4 +1,5 @@
 import { PreparationRunner, type PreparationAlarmStorage } from './streetNetwork/runner.ts';
+import type { StreetEngineV3Bucket } from './streetNetwork/v3SourceRuntime.ts';
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import { syncHeads } from './syncHeads.ts';
 import { isRxdbCollectionName, type RxdbCollectionName } from '../src/data/rxdbSyncProtocol.ts';
@@ -30,6 +31,14 @@ export type CampaignSyncNamespace = {
   get(id: unknown): { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> };
 };
 
+type CampaignSyncEnv = {
+  DB?: D1DatabaseLike;
+  OSM_OVERPASS_URL?: string;
+  STREET_ENGINE_VERSION?: string;
+  STREET_ENGINE_V3_CHANNEL?: string;
+  STREET_ENGINE_V3_SOURCE?: StreetEngineV3Bucket;
+};
+
 const INTERNAL_HEADER = "x-campaign-sync-internal";
 const NO_STORE_HEADERS = { "cache-control": "no-store" };
 
@@ -50,10 +59,13 @@ export class CampaignSyncDurableObject {
   private runner: PreparationRunner | null;
   private db:D1DatabaseLike|undefined;
   constructor(private readonly state: CampaignSyncDurableObjectState, env: unknown) {
-    const bindings=env as {DB?:D1DatabaseLike;OSM_OVERPASS_URL?:string};
+    const bindings=env as CampaignSyncEnv;
     this.db=bindings?.DB;
     this.runner=state.storage && bindings?.DB ? new PreparationRunner(state.storage,bindings.DB,{
       upstreamUrl:bindings.OSM_OVERPASS_URL,
+      streetEngineVersion: bindings.STREET_ENGINE_VERSION === 'sourcepack-v3' ? 'sourcepack-v3' : 'v2',
+      streetEngineV3Bucket: bindings.STREET_ENGINE_V3_SOURCE,
+      streetEngineV3Channel: bindings.STREET_ENGINE_V3_CHANNEL ?? 'beta',
       onProgress:(area,progress)=>{
         const message=JSON.stringify({type:'preparation',areaId:area.id,state:progress});
         for(const socket of state.getWebSockets()){
