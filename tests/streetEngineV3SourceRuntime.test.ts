@@ -75,7 +75,7 @@ async function fixture() {
       bounds: payload.bounds,
       compressedBytes: encoded.bytes.byteLength,
       uncompressedBytes: encoded.uncompressedBytes,
-      counts: { roads: 1, buildings: 1, addressableBuildings: 1, roadCandidates: 1 },
+      counts: { roads: 1, buildings: 1, addressableBuildings: 1, addressNodes: 0, roadCandidates: 1 },
     }],
   };
   const manifestHash = await streetEngineV3SourceManifestHash(manifest);
@@ -96,6 +96,22 @@ test('V3 runtime reads only immutable source-pack objects and reports zero legac
   assert.equal(loaded.diagnostics.legacyOverpassRequests, 0);
   assert.equal(loaded.diagnostics.objectGets, 3);
   assert.equal(bucket.gets.some((key) => /overpass|https?:/i.test(key)), false);
+});
+
+test('V3 runtime rejects an address-node count mismatch independently from addressable buildings', async () => {
+  const { bucket, manifest, encoded } = await fixture();
+  const mismatched: StreetEngineV3SourceManifest = {
+    ...manifest,
+    shards: [{
+      ...manifest.shards[0],
+      counts: { ...manifest.shards[0].counts, addressNodes: 1 },
+    }],
+  };
+  const manifestHash = await streetEngineV3SourceManifestHash(mismatched);
+  bucket.set(streetEngineV3PointerKey('beta'), JSON.stringify({ schemaVersion: 1, channel: 'beta', manifestHash }));
+  bucket.set(streetEngineV3ManifestObjectKey(manifestHash), canonicalStreetEngineV3SourceManifestJson(mismatched));
+  bucket.set(streetEngineV3SourceObjectKey(encoded.id), encoded.bytes);
+  await assert.rejects(loadStreetEngineV3Source({ bucket, channel: 'beta', area }), /shard_count_mismatch/);
 });
 
 test('V3 runtime rejects corrupted shard bytes before decode or publish', async () => {
