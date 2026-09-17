@@ -1,6 +1,7 @@
 import { areaPreparationFingerprint, getAreaTaskPreparationState, runAreaTaskPreparation, type AreaTaskPreparationOptions } from '../areaTaskPreparation.ts';
 import { loadCanonicalArea, type D1DatabaseLike } from '../campaignRepository.ts';
 import { requestDatabase } from '../requestDatabase.ts';
+import { runStreetEngineV4Preparation, type StreetEngineV4PreparationOptions } from './v4Preparation.ts';
 
 export type PreparationAlarmStorage = {
   get<T>(key:string):Promise<T|undefined>;
@@ -10,9 +11,11 @@ export type PreparationAlarmStorage = {
   deleteAlarm():Promise<void>;
 };
 
+export type PreparationRunnerOptions = AreaTaskPreparationOptions & StreetEngineV4PreparationOptions;
+
 /** D1 is authoritative; durable storage holds only the campaign wake-up key. */
 export class PreparationRunner {
-  constructor(private storage:PreparationAlarmStorage, private db:D1DatabaseLike, private options:AreaTaskPreparationOptions={}) {}
+  constructor(private storage:PreparationAlarmStorage, private db:D1DatabaseLike, private options:PreparationRunnerOptions={}) {}
   async schedule(campaignId:string,restart=false) {
     const current=await this.storage.get<string>('preparationCampaign');
     if(current && current!==campaignId)throw new Error('preparation_scope_mismatch');
@@ -31,9 +34,8 @@ export class PreparationRunner {
       return;
     }
     await this.storage.put('preparationRunnerFailures',failures);
-    // Arm crash recovery before any fetch. A killed invocation leaves a durable wake-up.
+    // Arm crash recovery before any source-pack or legacy source work.
     await this.storage.setAlarm(Date.now()+65000);
-    // One bounded phase per invocation preserves the per-request D1 budget.
     {
       const pending=await db.prepare("SELECT area_id FROM area_task_preparations WHERE campaign_id=? AND status='pending' ORDER BY updated_at,area_id LIMIT 1").bind(campaignId).first<{area_id:string}>();
       if(!pending){await this.storage.put('preparationRunnerFailures',0);await this.storage.deleteAlarm();return;}
@@ -45,16 +47,14 @@ export class PreparationRunner {
         await this.storage.put('preparationRunnerFailures',0);
         await this.storage.setAlarm(Date.now()+100);return;
       }
-      // Keep the durable pending row fresh while a long multi-step preparation is
-      // actively progressing. Real device traces showed updated_at otherwise
-      // staying at the original start time for minutes, which makes healthy jobs
-      // look stale to recovery logic and diagnostics.
       const heartbeatNow=(this.options.now?.()??new Date()).toISOString();
       await db.batch([db.prepare("UPDATE area_task_preparations SET updated_at=? WHERE campaign_id=? AND area_id=? AND generation=? AND status='pending'").bind(heartbeatNow,campaignId,area.id,state.generation)]);
       const job=await db.prepare('SELECT lease_until FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND generation=?').bind(campaignId,area.id,state.generation).first<{lease_until:string|null}>();
       const retryAt=job?.lease_until?Date.parse(job.lease_until):0;
       if(retryAt>Date.now()){await this.storage.put('preparationRunnerFailures',0);await this.storage.setAlarm(retryAt+50);return;}
-      await runAreaTaskPreparation(db,{campaignId,areaId:area.id,area,geometryHash:state.geometryHash,generation:state.generation,now:heartbeatNow},this.options);
+      const run={campaignId,areaId:area.id,area,geometryHash:state.geometryHash,generation:state.generation,now:heartbeatNow};
+      if(this.options.streetEngineVersion==='v4')await runStreetEngineV4Preparation(db,run,this.options);
+      else await runAreaTaskPreparation(db,run,this.options);
     }
     await this.storage.put('preparationRunnerFailures',0);
     await this.storage.setAlarm(Date.now()+100);
