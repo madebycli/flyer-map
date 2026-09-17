@@ -1,4 +1,5 @@
 import { PreparationRunner, type PreparationAlarmStorage } from './streetNetwork/runner.ts';
+import type { StreetEngineV4Bucket } from './streetNetwork/v4Preparation.ts';
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import { syncHeads } from './syncHeads.ts';
 import { isRxdbCollectionName, type RxdbCollectionName } from '../src/data/rxdbSyncProtocol.ts';
@@ -30,6 +31,15 @@ export type CampaignSyncNamespace = {
   get(id: unknown): { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> };
 };
 
+type CampaignSyncEnv = {
+  DB?: D1DatabaseLike;
+  OSM_OVERPASS_URL?: string;
+  STREET_ENGINE_VERSION?: string;
+  STREET_ENGINE_V4_CHANNEL?: string;
+  STREET_ENGINE_V4_SOURCE?: StreetEngineV4Bucket;
+  RELEASE_CHANNEL?: string;
+};
+
 const INTERNAL_HEADER = "x-campaign-sync-internal";
 const NO_STORE_HEADERS = { "cache-control": "no-store" };
 
@@ -50,10 +60,23 @@ export class CampaignSyncDurableObject {
   private runner: PreparationRunner | null;
   private db:D1DatabaseLike|undefined;
   constructor(private readonly state: CampaignSyncDurableObjectState, env: unknown) {
-    const bindings=env as {DB?:D1DatabaseLike;OSM_OVERPASS_URL?:string};
+    const bindings=env as CampaignSyncEnv;
     this.db=bindings?.DB;
-    this.runner=state.storage && bindings?.DB ? new PreparationRunner(state.storage,bindings.DB,{
-      upstreamUrl:bindings.OSM_OVERPASS_URL,
+    const isV4 = bindings.STREET_ENGINE_VERSION === 'v4';
+    // Beta is fail-closed: a misconfigured Beta must never fall back to the legacy
+    // Overpass runner. Stable/main retain the existing legacy behavior until an
+    // explicit release migration is made there.
+    const betaV4Required = bindings.RELEASE_CHANNEL === 'beta';
+    const canRun = !betaV4Required || isV4;
+    this.runner=state.storage && bindings?.DB && canRun ? new PreparationRunner(state.storage,bindings.DB,{
+      ...(isV4 ? {
+        streetEngineVersion: 'v4' as const,
+        streetEngineV4Bucket: bindings.STREET_ENGINE_V4_SOURCE,
+        streetEngineV4Channel: bindings.STREET_ENGINE_V4_CHANNEL ?? 'beta',
+      } : {
+        streetEngineVersion: 'legacy' as const,
+        upstreamUrl: bindings.OSM_OVERPASS_URL,
+      }),
       onProgress:(area,progress)=>{
         const message=JSON.stringify({type:'preparation',areaId:area.id,state:progress});
         for(const socket of state.getWebSockets()){
@@ -99,7 +122,7 @@ export class CampaignSyncDurableObject {
       if(request.headers.get(INTERNAL_HEADER)!=='1')return json({error:{code:'forbidden'}},{status:403});
       const payload=await request.json() as {campaignId?:unknown;restart?:boolean};
       if(typeof payload.campaignId!=='string'||!/^[A-Za-z0-9._:-]{1,160}$/.test(payload.campaignId))return json({error:{code:'invalid_campaign'}},{status:400});
-      if(!this.runner)return json({error:{code:'preparation_runner_unavailable'}},{status:503});
+      if(!this.runner)return json({error:{code:'street_engine_v4_required'}},{status:503});
       await this.runner.schedule(payload.campaignId,payload.restart===true);
       return new Response(null,{status:204});
     }
@@ -132,8 +155,6 @@ export class CampaignSyncDurableObject {
       WebSocketPair?: new () => { 0: CampaignSyncWebSocket; 1: CampaignSyncWebSocket };
     }).WebSocketPair;
     if (!WebSocketPairConstructor) {
-      // Node-based unit tests and local HTTP preview do not expose the
-      // Workers WebSocketPair. Production Workers always do.
       return json({ error: { code: "websocket_unavailable", message: "WebSocket-Realtime ist in dieser Laufzeit nicht verfügbar." } }, { status: 501 });
     }
     const pair = new WebSocketPairConstructor();
@@ -145,27 +166,20 @@ export class CampaignSyncDurableObject {
     } as ResponseInit & { webSocket: CampaignSyncWebSocket });
   }
 
-  /** Broadcast a tiny checkpoint hint; the pull endpoint remains authoritative. */
   broadcastChanged(seq: number,collections?:Partial<Record<RxdbCollectionName,number>>) {
     if (!Number.isSafeInteger(seq) || seq < 0 || seq <= this.lastBroadcastSeq) return;
     this.lastBroadcastSeq = seq;
     const message = JSON.stringify({ type: "changed", seq,...(collections?{collections}:{}) });
     for (const socket of this.state.getWebSockets()) {
-      try {
-        socket.send(message);
-      } catch {
-        // Hibernating sockets can disappear between enumeration and send.
-      }
+      try { socket.send(message); } catch { /* Hibernating socket disappeared. */ }
     }
   }
 
-  // Hibernation callbacks. Clients never send domain writes through the DO.
   webSocketMessage(_socket: CampaignSyncWebSocket, _message: string | ArrayBuffer) {}
   webSocketClose(_socket: CampaignSyncWebSocket, _code: number, _reason: string, _wasClean: boolean) {}
   webSocketError(_socket: CampaignSyncWebSocket, _error: unknown) {}
 }
 
-/** Notify the one Campaign DO only after the D1/feed commit has succeeded. */
 export async function notifyCampaignSync(
   namespace: CampaignSyncNamespace | undefined,
   db: D1DatabaseLike,
@@ -178,10 +192,7 @@ export async function notifyCampaignSync(
   const id = namespace.idFromName(campaignId);
   await namespace.get(id).fetch("https://campaign-sync.internal/notify", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      [INTERNAL_HEADER]: "1",
-    },
+    headers: { "content-type": "application/json", [INTERNAL_HEADER]: "1" },
     body: JSON.stringify({ seq,collections:row.collections }),
   });
 }
