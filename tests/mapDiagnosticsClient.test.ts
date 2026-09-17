@@ -70,7 +70,7 @@ test('v3 client diagnostics request the existing read-only ?diag=1 preparation p
   });
 
   assert.equal(requests.length, 2);
-  assert.equal(requests[0].url, '/api/campaigns/campaign-1/areas/area-1/preparation?diag=1');
+  assert.equal(requests[0].url, '/api/campaigns/campaign-1/areas/area-2/preparation?diag=1');
   assert.equal(requests[0].init?.method, 'GET');
   assert.equal(requests[0].init?.cache, 'no-store');
   assert.equal(diagnostics[0].ok, true);
