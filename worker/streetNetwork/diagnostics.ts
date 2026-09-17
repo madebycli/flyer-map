@@ -35,6 +35,8 @@ type SafeSourceAttempt = {
   code: string | null;
 };
 
+const SHA256 = /^[0-9a-f]{64}$/;
+
 function finite(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -45,6 +47,19 @@ function integer(value: unknown) {
 
 function text(value: unknown) {
   return typeof value === 'string' ? value : null;
+}
+
+function hash(value: unknown) {
+  const candidate = text(value);
+  return candidate && SHA256.test(candidate) ? candidate : null;
+}
+
+function hashes(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 512).flatMap((entry) => {
+    const candidate = hash(entry);
+    return candidate ? [candidate] : [];
+  });
 }
 
 function safeSourceAttempt(value: unknown): SafeSourceAttempt | null {
@@ -130,14 +145,28 @@ function safeMetrics(raw: string | null) {
   const lastError = metrics.lastError && typeof metrics.lastError === 'object' && !Array.isArray(metrics.lastError)
     ? metrics.lastError as Record<string, unknown>
     : null;
+  const engineVersion = metrics.engineVersion === 'sourcepack-v3' ? 'sourcepack-v3' : 'v2';
   return {
+    engineVersion,
+    manifestHash: hash(metrics.manifestHash),
+    sourcePackVersion: text(metrics.sourcePackVersion),
+    algorithmVersion: text(metrics.algorithmVersion),
+    selectedShardIds: hashes(metrics.selectedShardIds),
+    shardCount: integer(metrics.shardCount) ?? 0,
+    objectGets: integer(metrics.objectGets) ?? 0,
+    compressedBytes: finite(metrics.compressedBytes) ?? 0,
+    decodedBytes: finite(metrics.decodedBytes) ?? 0,
+    legacyOverpassRequests: engineVersion === 'sourcepack-v3' ? integer(metrics.legacyOverpassRequests) ?? 0 : null,
+    resultHash: hash(metrics.resultHash),
     tiles: integer(metrics.tiles),
     cacheHits: finite(metrics.cacheHits) ?? 0,
+    cacheMisses: finite(metrics.cacheMisses) ?? 0,
     requests: finite(metrics.requests) ?? 0,
     retries: finite(metrics.retries) ?? 0,
     bytes: finite(metrics.bytes) ?? 0,
     observedSourceBytes: finite(metrics.observedSourceBytes) ?? 0,
     activeMs: finite(metrics.activeMs),
+    sourceMs: finite(metrics.sourceMs) ?? 0,
     fetchMs: finite(metrics.fetchMs) ?? 0,
     parseMs: finite(metrics.parseMs) ?? 0,
     normalizationMs: finite(metrics.normalizationMs) ?? 0,
@@ -204,6 +233,7 @@ export async function getStreetEngineDiagnosticSnapshot(
   return {
     generation: row.generation,
     status: row.status,
+    engineVersion: metrics.engineVersion,
     phase: row.phase ?? 'queued',
     cursor: row.cursor ?? 0,
     attempts: row.attempts ?? 0,
