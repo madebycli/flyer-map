@@ -1,0 +1,108 @@
+name: Beta V4 Area 7 Read-only Diagnostics
+
+on:
+  push:
+    branches:
+      - diag/beta-v4-area7-readonly-2026-09-18
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BETA_DB_NAME: flyer-map-beta-db
+      PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
+      RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
+      CAMPAIGN_ID: campaign_032feb82-7187-472c-b8d3-5d7e46f01eda
+      AREA_ID: area_6c0e1b59-be2e-4d7a-a6d5-67bb8ea968eb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install pinned CLI
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Resolve isolated Beta D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNTS_JSON="$(curl --fail-with-body --silent --show-error 'https://api.cloudflare.com/client/v4/accounts?per_page=50' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')"
+          [[ "$(jq -r '.success' <<<"$ACCOUNTS_JSON")" == 'true' ]]
+          if [[ -n "${CONFIGURED_CLOUDFLARE_ACCOUNT_ID:-}" ]] && jq -e --arg id "$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" '.result[]|select(.id==$id)' <<<"$ACCOUNTS_JSON" >/dev/null; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CONFIGURED_CLOUDFLARE_ACCOUNT_ID" >> "$GITHUB_ENV"
+          elif [[ "$(jq '.result|length' <<<"$ACCOUNTS_JSON")" == '1' ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$(jq -r '.result[0].id' <<<"$ACCOUNTS_JSON")" >> "$GITHUB_ENV"
+          else
+            echo 'Cloudflare account is ambiguous.' >&2
+            exit 1
+          fi
+          LIST_JSON="$(npx wrangler d1 list --json)"
+          BETA_D1_ID="$(jq -r --arg name "$BETA_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
+          [[ -n "$BETA_D1_ID" ]] || { echo 'Beta D1 missing or ambiguous.' >&2; exit 1; }
+          [[ "$BETA_D1_ID" != "$PROD_D1_ID" && "$BETA_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo 'Protected D1 collision.' >&2; exit 1; }
+          echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
+
+      - name: Capture sanitized Area 7 Street Engine state
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql_escape() { printf '%s' "$1" | sed "s/'/''/g"; }
+          CID="$(sql_escape "$CAMPAIGN_ID")"
+          AID="$(sql_escape "$AREA_ID")"
+
+          PREP="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT
+              p.status,p.generation,p.road_count,p.house_count,p.source_timestamp,
+              p.started_at,p.ready_at,p.failed_at,p.last_error_code,p.updated_at,
+              j.phase,j.cursor,j.attempts,j.error_code,j.lease_until,
+              json_extract(j.metrics_json,'$.engineVersion') AS engine_version,
+              json_extract(j.metrics_json,'$.manifestHash') AS manifest_hash,
+              json_extract(j.metrics_json,'$.sourcePackVersion') AS source_pack_version,
+              json_extract(j.metrics_json,'$.algorithmVersion') AS algorithm_version,
+              json_extract(j.metrics_json,'$.shardCount') AS shard_count,
+              json_extract(j.metrics_json,'$.objectGets') AS object_gets,
+              json_extract(j.metrics_json,'$.compressedBytes') AS compressed_bytes,
+              json_extract(j.metrics_json,'$.decodedBytes') AS decoded_bytes,
+              json_extract(j.metrics_json,'$.legacyOverpassRequests') AS legacy_overpass_requests,
+              json_extract(j.metrics_json,'$.roads') AS roads,
+              json_extract(j.metrics_json,'$.buildings') AS buildings,
+              json_extract(j.metrics_json,'$.addressableBuildings') AS addressable_buildings,
+              json_extract(j.metrics_json,'$.houses') AS houses,
+              json_extract(j.metrics_json,'$.sourceTimestamp') AS metric_source_timestamp,
+              json_extract(j.metrics_json,'$.sourceMs') AS source_ms,
+              json_extract(j.metrics_json,'$.graphMs') AS graph_ms,
+              json_extract(j.metrics_json,'$.addressMs') AS address_ms,
+              json_extract(j.metrics_json,'$.linkMs') AS link_ms,
+              json_extract(j.metrics_json,'$.publishMs') AS publish_ms,
+              json_extract(j.metrics_json,'$.resultHash') AS result_hash
+            FROM area_task_preparations p
+            LEFT JOIN street_network_jobs j
+              ON j.campaign_id=p.campaign_id AND j.area_id=p.area_id AND j.generation=p.generation
+            WHERE p.campaign_id='$CID' AND p.area_id='$AID';
+          ")"
+
+          COUNTS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT
+              (SELECT COUNT(*) FROM tasks WHERE campaign_id='$CID' AND area_id='$AID' AND area_preparation_generation IS NOT NULL) AS prepared_streets,
+              (SELECT COUNT(*) FROM house_tasks WHERE campaign_id='$CID' AND area_id='$AID' AND area_preparation_generation IS NOT NULL) AS prepared_houses,
+              (SELECT COUNT(*) FROM street_network_state s JOIN tasks t ON t.id=s.task_id WHERE t.campaign_id='$CID' AND t.area_id='$AID') AS network_rows,
+              (SELECT COUNT(*) FROM house_road_positions hp JOIN house_tasks h ON h.id=hp.house_id WHERE h.campaign_id='$CID' AND h.area_id='$AID') AS house_position_rows;
+          ")"
+
+          jq -n             --arg campaignId "$CAMPAIGN_ID"             --arg areaId "$AREA_ID"             --argjson preparation "$PREP"             --argjson canonicalCounts "$COUNTS"             '{campaignId:$campaignId,areaId:$areaId,preparation:$preparation,canonicalCounts:$canonicalCounts}'             > /tmp/beta-v4-area7-readonly.json
+          jq . /tmp/beta-v4-area7-readonly.json
+
+      - name: Upload sanitized read-only evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta-v4-area7-readonly
+          path: /tmp/beta-v4-area7-readonly.json
+          retention-days: 7
