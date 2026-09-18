@@ -9,6 +9,7 @@ import {
   type StreetEngineV3BuiltPbfPack,
   type StreetEngineV3PbfFeature,
 } from './v3PbfPackBuilder.ts';
+import type { StreetEngineV3ShardPayload } from './v3SourceRuntime.ts';
 
 export type StreetEngineV4PbfFeature = {
   type: 'Feature';
@@ -29,6 +30,86 @@ type PendingBuilding = {
 };
 
 const SUPPORTED_GEOMETRIES = new Set(['Point', 'LineString', 'Polygon', 'MultiPolygon']);
+
+const V4_SHARD_MAGIC = new TextEncoder().encode('FMSEV3\\0');
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, stableValue(nested)]));
+  }
+  return value;
+}
+
+function ownedBytes(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy;
+}
+
+async function readAllBytes(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const part = await reader.read();
+    if (part.done) break;
+    chunks.push(part.value);
+    size += part.value.byteLength;
+  }
+  const result = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
+/**
+ * The V3 codec writes the full input before reading compressed output. That can
+ * deadlock on release-sized V4 shards once CompressionStream applies
+ * backpressure. V4 drains the readable side concurrently with the write.
+ */
+async function compressStreetEngineV4Frame(bytes: Uint8Array) {
+  const stream = new CompressionStream('gzip');
+  const writer = stream.writable.getWriter();
+  const write = (async () => {
+    await writer.write(ownedBytes(bytes));
+    await writer.close();
+  })();
+  const read = readAllBytes(stream.readable);
+  const [, compressed] = await Promise.all([write, read]);
+  return compressed;
+}
+
+async function sha256Bytes(bytes: Uint8Array) {
+  const digest = await crypto.subtle.digest('SHA-256', ownedBytes(bytes));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export async function encodeStreetEngineV4Shard(payload: StreetEngineV3ShardPayload) {
+  const body = new TextEncoder().encode(JSON.stringify(stableValue({
+    schemaVersion: payload.schemaVersion,
+    bounds: payload.bounds,
+    roads: [...payload.roads].sort((left, right) => left.osmId - right.osmId),
+    buildings: [...payload.buildings].sort((left, right) => left.osmId - right.osmId),
+    addressNodes: [...payload.addressNodes].sort((left, right) => left.osmId - right.osmId),
+  })));
+  const frame = new Uint8Array(V4_SHARD_MAGIC.byteLength + 4 + body.byteLength);
+  frame.set(V4_SHARD_MAGIC, 0);
+  new DataView(frame.buffer).setUint32(V4_SHARD_MAGIC.byteLength, body.byteLength, true);
+  frame.set(body, V4_SHARD_MAGIC.byteLength + 4);
+  const compressed = await compressStreetEngineV4Frame(frame);
+  return {
+    bytes: compressed,
+    uncompressedBytes: frame.byteLength,
+    id: await sha256Bytes(compressed),
+  };
+}
+
 
 function isBuilding(properties: Record<string, unknown>) {
   return typeof properties.building === 'string' && properties.building.length > 0;
@@ -180,8 +261,9 @@ export async function buildStreetEngineV4PbfPack(input: {
   const built = await buildStreetEngineV3PbfPack({
     ...input,
     features: normalizeStreetEngineV4PbfFeatures(input.features),
+    encodeShard: encodeStreetEngineV4Shard,
   });
-  const manifest = { ...built.manifest, algorithmVersion: 'v4-pbf-builder-2' };
+  const manifest = { ...built.manifest, algorithmVersion: 'v4-pbf-builder-3' };
   const manifestJson = canonicalStreetEngineV3SourceManifestJson(manifest);
   const manifestHash = await streetEngineV3SourceManifestHash(manifest);
   return { ...built, manifest, manifestJson, manifestHash };
