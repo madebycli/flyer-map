@@ -33,7 +33,7 @@ function object(value: string | Uint8Array): StreetEngineV3Object {
   };
 }
 
-async function v4Bucket(): Promise<StreetEngineV3Bucket> {
+async function v4Bucket(extraFeatures: StreetEngineV4PbfFeature[] = []): Promise<StreetEngineV3Bucket> {
   const features: StreetEngineV4PbfFeature[] = [
     {
       type: 'Feature',
@@ -60,6 +60,7 @@ async function v4Bucket(): Promise<StreetEngineV3Bucket> {
         ]],
       },
     },
+    ...extraFeatures,
   ];
   const pack = await buildStreetEngineV4PbfPack({
     features,
@@ -201,6 +202,86 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
     failed_at: null,
   });
   assert.equal(preparation.ready_at, '2026-09-18T12:00:01.000Z');
+});
+
+
+test('V4 budgets apply to generated product entities instead of raw shard source counts', async (t) => {
+  const db = new NetworkD1();
+  t.after(() => db.sqlite.close());
+  seedNetwork(db);
+
+  const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n', {
+    randomUUID: () => 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    now: () => new Date('2026-09-18T13:00:00Z'),
+  });
+  assert.equal(begun.outcome, 'run');
+  if (begun.outcome !== 'run') return;
+
+  const rawOnlyFeatures: StreetEngineV4PbfFeature[] = [
+    {
+      type: 'Feature',
+      properties: { '@type': 'way', '@id': 11, highway: 'motorway', name: 'Nicht verteilbar' },
+      geometry: { type: 'LineString', coordinates: [[13.001, 51.006], [13.009, 51.006]] },
+    },
+    {
+      type: 'Feature',
+      properties: { '@type': 'way', '@id': 21, building: 'yes' },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [13.004, 51.0061],
+          [13.0042, 51.0061],
+          [13.0042, 51.0063],
+          [13.004, 51.0063],
+          [13.004, 51.0061],
+        ]],
+      },
+    },
+  ];
+
+  const result = await runStreetEngineV4Preparation(db, begun.run, {
+    streetEngineVersion: 'v4',
+    streetEngineV4Bucket: await v4Bucket(rawOnlyFeatures),
+    streetEngineV4Channel: 'beta',
+    maxRoadFragments: 1,
+    maxBuildings: 1,
+    now: () => new Date('2026-09-18T13:00:01Z'),
+  });
+
+  assert.equal(result.outcome, 'ready');
+  const job = db.sqlite.prepare('SELECT metrics_json FROM street_network_jobs').get() as { metrics_json: string };
+  const metrics = JSON.parse(job.metrics_json) as Record<string, unknown>;
+  assert.equal(metrics.sourceRoads, 2);
+  assert.equal(metrics.graphCandidateRoads, 1);
+  assert.equal(metrics.roads, 1);
+  assert.equal(metrics.sourceBuildings, 2);
+  assert.equal(metrics.addressableBuildings, 1);
+  assert.equal(metrics.houses, 1);
+});
+
+test('V4 still fails closed when generated road fragments exceed the product limit', async (t) => {
+  const db = new NetworkD1();
+  t.after(() => db.sqlite.close());
+  seedNetwork(db);
+
+  const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n', {
+    randomUUID: () => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    now: () => new Date('2026-09-18T13:10:00Z'),
+  });
+  assert.equal(begun.outcome, 'run');
+  if (begun.outcome !== 'run') return;
+
+  const result = await runStreetEngineV4Preparation(db, begun.run, {
+    streetEngineVersion: 'v4',
+    streetEngineV4Bucket: await v4Bucket(),
+    streetEngineV4Channel: 'beta',
+    maxRoadFragments: 0,
+    now: () => new Date('2026-09-18T13:10:01Z'),
+  });
+
+  assert.equal(result.outcome, 'failed');
+  const job = db.sqlite.prepare('SELECT error_code FROM street_network_jobs').get() as { error_code: string };
+  assert.equal(job.error_code, 'street_engine_v4_graph_build_budget');
 });
 
 test('V4 transient source retry preserves its current attempt budget instead of resetting it', async (t) => {
