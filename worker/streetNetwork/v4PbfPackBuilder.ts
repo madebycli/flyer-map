@@ -45,13 +45,20 @@ function sourceIdentity(properties: Record<string, unknown>) {
   return { sourceType, sourceId: sourceId as number };
 }
 
-function maxOriginalId(features: StreetEngineV4PbfFeature[]) {
-  let maximum = 0;
-  for (const feature of features) {
-    const value = feature.properties['@id'];
-    if (Number.isSafeInteger(value) && (value as number) > maximum) maximum = value as number;
+const SYNTHETIC_COMPONENT_STRIDE = 1024;
+const SYNTHETIC_WAY_BASE = 3_000_000_000_000_000;
+const SYNTHETIC_RELATION_BASE = 6_000_000_000_000_000;
+
+function syntheticBuildingId(sourceType: 'way' | 'relation', sourceId: number, component: number) {
+  if (!Number.isSafeInteger(component) || component < 0 || component >= SYNTHETIC_COMPONENT_STRIDE) {
+    throw new Error('street_engine_v4_pbf_component_budget');
   }
-  return maximum;
+  const base = sourceType === 'relation' ? SYNTHETIC_RELATION_BASE : SYNTHETIC_WAY_BASE;
+  const maximumSourceId = Math.floor((Number.MAX_SAFE_INTEGER - base - SYNTHETIC_COMPONENT_STRIDE) / SYNTHETIC_COMPONENT_STRIDE);
+  if (sourceId > maximumSourceId) throw new Error('street_engine_v4_pbf_synthetic_id_budget');
+  const id = base + sourceId * SYNTHETIC_COMPONENT_STRIDE + component;
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('street_engine_v4_pbf_synthetic_id_budget');
+  return id;
 }
 
 export function parseStreetEngineV4GeoJsonSeq(raw: string): StreetEngineV4PbfFeature[] {
@@ -139,24 +146,26 @@ export function normalizeStreetEngineV4PbfFeatures(
     || left.sourceId - right.sourceId
     || left.component - right.component);
 
-  let nextSyntheticId = maxOriginalId(features) + 1;
+  const usedIds = new Set(features.flatMap((feature) => {
+    const id = feature.properties['@id'];
+    return Number.isSafeInteger(id) && (id as number) > 0 ? [id as number] : [];
+  }));
   for (const building of pending) {
-    if (!Number.isSafeInteger(nextSyntheticId) || nextSyntheticId <= 0) {
-      throw new Error('street_engine_v4_pbf_synthetic_id_budget');
-    }
+    const syntheticId = syntheticBuildingId(building.sourceType, building.sourceId, building.component);
+    if (usedIds.has(syntheticId)) throw new Error('street_engine_v4_pbf_synthetic_id_collision');
+    usedIds.add(syntheticId);
     direct.push({
       type: 'Feature',
       properties: {
         ...building.properties,
         '@type': 'way',
-        '@id': nextSyntheticId,
+        '@id': syntheticId,
         'v4:source_type': building.sourceType,
         'v4:source_id': String(building.sourceId),
         'v4:source_component': String(building.component),
       },
       geometry: building.geometry,
     });
-    nextSyntheticId += 1;
   }
 
   return direct;
