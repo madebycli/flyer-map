@@ -1,11 +1,13 @@
 import type { PolygonGeometry } from './campaign.ts';
 import {
   planStreetEngineV3ShardTransfer,
+  STREET_ENGINE_V3_RUN_BUDGET,
   type StreetEngineV3TransferPlan,
 } from './streetEngineV3Budget.ts';
 
 export const STREET_ENGINE_V3_SOURCE_SCHEMA_VERSION = 1 as const;
 export const STREET_ENGINE_V3_BINARY_FORMAT = 'street-engine-v3-binary-shard-v1' as const;
+export const STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES = 64 * 1024 * 1024;
 
 export type StreetEngineV3Bounds = readonly [
   west: number,
@@ -126,7 +128,8 @@ export function validateStreetEngineV3SourceManifest(
       || !validBounds(shard.bounds)
       || !finiteInteger(shard.compressedBytes)
       || !finiteInteger(shard.uncompressedBytes)
-      || shard.compressedBytes > shard.uncompressedBytes
+      || shard.compressedBytes > STREET_ENGINE_V3_RUN_BUDGET.browserDownloadBytes.hard
+      || shard.uncompressedBytes > STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES
       || !validCounts(shard.counts)
       || ids.has(shard.id)) {
       throw new Error('street_engine_v3_source_invalid_shard');
