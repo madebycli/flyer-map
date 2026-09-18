@@ -1,5 +1,6 @@
 import { PreparationRunner, type PreparationAlarmStorage } from './streetNetwork/runner.ts';
 import type { StreetEngineV4Bucket } from './streetNetwork/v4Preparation.ts';
+import { createStreetEngineV4AssetBucket, type StreetEngineV4AssetFetcher } from './streetNetwork/v4AssetSource.ts';
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import { syncHeads } from './syncHeads.ts';
 import { isRxdbCollectionName, type RxdbCollectionName } from '../src/data/rxdbSyncProtocol.ts';
@@ -37,6 +38,7 @@ type CampaignSyncEnv = {
   STREET_ENGINE_VERSION?: string;
   STREET_ENGINE_V4_CHANNEL?: string;
   STREET_ENGINE_V4_SOURCE?: StreetEngineV4Bucket;
+  ASSETS?: StreetEngineV4AssetFetcher;
   RELEASE_CHANNEL?: string;
 };
 
@@ -68,10 +70,11 @@ export class CampaignSyncDurableObject {
     // explicit release migration is made there.
     const betaV4Required = bindings.RELEASE_CHANNEL === 'beta';
     const canRun = !betaV4Required || isV4;
+    const streetEngineV4Bucket = bindings.STREET_ENGINE_V4_SOURCE ?? createStreetEngineV4AssetBucket(bindings.ASSETS);
     this.runner=state.storage && bindings?.DB && canRun ? new PreparationRunner(state.storage,bindings.DB,{
       ...(isV4 ? {
         streetEngineVersion: 'v4' as const,
-        streetEngineV4Bucket: bindings.STREET_ENGINE_V4_SOURCE,
+        streetEngineV4Bucket,
         streetEngineV4Channel: bindings.STREET_ENGINE_V4_CHANNEL ?? 'beta',
       } : {
         streetEngineVersion: 'legacy' as const,

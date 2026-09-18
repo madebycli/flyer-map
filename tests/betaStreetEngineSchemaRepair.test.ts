@@ -7,13 +7,15 @@ const repairSql = readFileSync('scripts/beta-streetengine-schema-repair.sql', 'u
 
 test('Beta release repairs and verifies the StreetEngine schema before deploy', () => {
   const repairStep = workflow.indexOf('Repair and verify Beta StreetEngine schema');
-  const sourcePackStep = workflow.indexOf('Build and atomically publish Street Engine V4 source pack');
+  const sourcePackStep = workflow.indexOf('Build and stage Street Engine V4 source pack as Worker assets');
   const deployStep = workflow.indexOf('Build and deploy exact Beta V4 source directly');
   assert.ok(repairStep >= 0, 'missing Beta StreetEngine schema repair step');
-  assert.ok(sourcePackStep > repairStep, 'V4 source pack must publish after schema repair');
-  assert.ok(deployStep > sourcePackStep, 'schema repair and V4 source-pack publish must run before Beta deploy');
+  assert.ok(sourcePackStep > repairStep, 'V4 source pack must stage after schema repair');
+  assert.ok(deployStep > sourcePackStep, 'schema repair and V4 source-pack staging must run before Beta deploy');
   assert.match(workflow, /BETA_DB_NAME: flyer-map-beta-db/u);
-  assert.match(workflow, /BETA_STREET_ENGINE_V4_BUCKET: flyer-map-beta-street-engine-v4/u);
+  assert.match(workflow, /public\/__street-engine-v4/u);
+  assert.match(workflow, /dist\/client\/__street-engine-v4/u);
+  assert.doesNotMatch(workflow, /wrangler r2|BETA_STREET_ENGINE_V4_BUCKET|STREET_ENGINE_V4_SOURCE/u);
   assert.match(workflow, /STREET_ENGINE_VERSION:'v4'/u);
   assert.match(workflow, /delete c\.vars\.OSM_OVERPASS_URL/u);
   assert.match(workflow, /\[\[ "\$BETA_D1_ID" != "\$PROD_D1_ID" \]\]/u);
