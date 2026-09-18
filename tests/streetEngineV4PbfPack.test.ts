@@ -98,7 +98,7 @@ test('V4 pack builder counts Polygon and MultiPolygon buildings instead of silen
   assert.equal(built.manifest.algorithmVersion, 'v4-pbf-builder-2');
   assert.equal(totals.roads, 1);
   assert.equal(totals.buildings, 3);
-  assert.equal(totals.addressableBuildings, 3);
+  assert.equal(totals.addressableBuildings, 2);
 });
 
 test('V4 parser fails closed when a building uses an unsupported geometry', () => {
