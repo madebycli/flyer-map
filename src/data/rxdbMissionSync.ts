@@ -5,6 +5,7 @@ import type { DurableCampaignMutation } from "../domain/durableMutation.ts";
 import { GenerationVisibility } from "./generationVisibility.ts";
 import {
   withoutRxdbMetadata,
+  type RxdbAreaDocument,
   type RxdbCollectionName,
   type RxdbDocument,
   type RxdbPullResponse,
@@ -224,10 +225,23 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
     });
     const localDocuments = await collection.find({ selector: { campaignId: this.recoveryCampaignId } }).exec();
 
+    const normalizeArea = (document: RxdbAreaDocument) => ({
+      id: document.id,
+      campaignId: document.campaignId,
+      teamId: document.teamId,
+      name: document.name,
+      geometry: document.geometry,
+      createdAt: document.createdAt,
+      updatedAt: document.updatedAt,
+    });
     const normalize = (documents: RxdbDocument[]) =>
       documents
-        .filter((document) => document._deleted !== true)
-        .map((document) => withoutRxdbMetadata(document))
+        .filter((document): document is RxdbAreaDocument =>
+          document._deleted !== true &&
+          "teamId" in document &&
+          "geometry" in document,
+        )
+        .map(normalizeArea)
         .sort((left, right) => left.id.localeCompare(right.id));
 
     const local = normalize(localDocuments.map((document: any) => document.toJSON() as RxdbDocument));
