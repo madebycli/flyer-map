@@ -15,6 +15,8 @@ test('Beta release repairs and verifies the StreetEngine schema before deploy', 
   assert.match(workflow, /BETA_DB_NAME: flyer-map-beta-db/u);
   assert.match(workflow, /public\/__street-engine-v4/u);
   assert.match(workflow, /dist\/client\/__street-engine-v4/u);
+  assert.match(workflow, /V4_BBOX="\$\(jq -er '[^']*' \/tmp\/street-engine-v4-source-meta\.json\)"/u);
+  assert.match(workflow, /export V4_BBOX V4_CAMPAIGN_ID/u);
   assert.doesNotMatch(workflow, /wrangler r2|BETA_STREET_ENGINE_V4_BUCKET|STREET_ENGINE_V4_SOURCE/u);
   assert.match(workflow, /STREET_ENGINE_VERSION:'v4'/u);
   assert.match(workflow, /delete c\.vars\.OSM_OVERPASS_URL/u);
