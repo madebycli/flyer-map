@@ -47,6 +47,7 @@ type MissionRxdbSyncInternals = {
   canonicalRevision: number;
   generationVisibility: GenerationVisibility;
   onIssue: (issue: RxdbSyncIssue) => void;
+  onIssueResolved: (collectionName?: RxdbCollectionName) => void;
   request: <T>(operation: "pull" | "push", collectionName: RxdbCollectionName, body: unknown) => Promise<T>;
   createReplication: (collectionName: RxdbCollectionName) => CoreReplicationLike;
 };
@@ -487,7 +488,21 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
         "Lokale Änderungen konnten vor der Aktualisierung nicht rechtzeitig bestätigt werden.",
       );
     }
-    return await super.refreshAndWait(remaining);
+    const target = await super.refreshAndWait(remaining);
+    try {
+      if (!(await this.canonicalAreasMatchLocalReplica())) {
+        await this.repairCanonicalAreaMismatch();
+      }
+    } catch (error) {
+      this.internals().onIssue({
+        kind: "network",
+        collectionName: "areas",
+        operation: "pull",
+        code: error instanceof RxdbSyncHttpError ? error.code : "rxdb_canonical_rebootstrap_failed",
+      });
+      throw error;
+    }
+    return target;
   }
 
   override async applyMutation(mutation: DurableCampaignMutation) {
