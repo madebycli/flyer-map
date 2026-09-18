@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildStreetEngineV4PbfPack,
+  encodeStreetEngineV4Shard,
   normalizeStreetEngineV4PbfFeatures,
   parseStreetEngineV4GeoJsonSeq,
   type StreetEngineV4PbfFeature,
@@ -95,7 +96,7 @@ test('V4 pack builder counts Polygon and MultiPolygon buildings instead of silen
     addressableBuildings: counts.addressableBuildings + shard.counts.addressableBuildings,
   }), { roads: 0, buildings: 0, addressableBuildings: 0 });
 
-  assert.equal(built.manifest.algorithmVersion, 'v4-pbf-builder-2');
+  assert.equal(built.manifest.algorithmVersion, 'v4-pbf-builder-3');
   assert.equal(totals.roads, 1);
   assert.equal(totals.buildings, 3);
   assert.equal(totals.addressableBuildings, 2);
@@ -111,4 +112,43 @@ test('V4 parser fails closed when a building uses an unsupported geometry', () =
     () => parseStreetEngineV4GeoJsonSeq(raw),
     /street_engine_v4_pbf_building_geometry_unsupported/u,
   );
+});
+
+
+function deterministicNoise(seed: number, length: number) {
+  let state = seed >>> 0;
+  let value = '';
+  for (let index = 0; index < length; index += 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    value += (state % 36).toString(36);
+  }
+  return value;
+}
+
+test('V4 shard encoder drains CompressionStream while release-sized output applies backpressure', { timeout: 10_000 }, async () => {
+  const buildings = Array.from({ length: 1_500 }, (_, index) => {
+    const x = 7.0001 + (index % 50) * 0.0001;
+    const y = 50.7001 + (Math.floor(index / 50) % 50) * 0.0001;
+    return {
+      osmId: 10_000 + index,
+      tags: {
+        building: 'yes',
+        name: deterministicNoise(index + 1, 800),
+      },
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: polygon(x, y, x + 0.00005, y + 0.00005),
+      },
+    };
+  });
+  const encoded = await encodeStreetEngineV4Shard({
+    schemaVersion: 1,
+    bounds: [7.0, 50.7, 7.009, 50.709],
+    roads: [],
+    buildings,
+    addressNodes: [],
+  });
+  assert.ok(encoded.uncompressedBytes > 1_000_000);
+  assert.ok(encoded.bytes.byteLength > 0);
+  assert.match(encoded.id, /^[0-9a-f]{64}$/u);
 });
