@@ -126,12 +126,10 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
       failed_at: string | null;
       last_error_code: string | null;
     };
-  assert.deepEqual(restarted, {
-    status: 'pending',
-    started_at: '2026-09-18T12:00:00.000Z',
-    failed_at: null,
-    last_error_code: null,
-  });
+  assert.equal(restarted.status, 'pending');
+  assert.equal(restarted.started_at, '2026-09-18T12:00:00.000Z');
+  assert.equal(restarted.failed_at, null);
+  assert.equal(restarted.last_error_code, null);
 
   const result = await runStreetEngineV4Preparation(db, retry.run, {
     streetEngineVersion: 'v4',
