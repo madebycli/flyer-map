@@ -171,7 +171,7 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
   assert.equal(job.lease_until, null);
   assert.equal(metrics.engineVersion, 'v4');
   assert.equal(metrics.legacyOverpassRequests, 0);
-  assert.equal(metrics.algorithmVersion, 'v4-pbf-builder-3');
+  assert.equal(metrics.algorithmVersion, 'v4-pbf-builder-4');
   assert.match(String(metrics.manifestHash), /^[0-9a-f]{64}$/u);
   assert.equal(metrics.roads, 1);
   assert.equal(metrics.buildings, 1);
