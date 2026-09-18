@@ -195,6 +195,11 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV,`V4_BBOX=${bbox}\nV4_CAMPAIGN_ID=${rows[0].campaign_id}\n`);
           console.log(meta);
           NODE
+          # Values appended to GITHUB_ENV are only visible in later Actions steps.
+          # Rehydrate them for the remainder of this same source-pack step.
+          V4_BBOX="$(jq -er '.bbox | select(type=="string" and length>0)' /tmp/street-engine-v4-source-meta.json)"
+          V4_CAMPAIGN_ID="$(jq -er '.campaignId | select(type=="string" and length>0)' /tmp/street-engine-v4-source-meta.json)"
+          export V4_BBOX V4_CAMPAIGN_ID
 
           curl --fail-with-body --location --retry 4 --retry-delay 3 --retry-all-errors "$V4_PBF_URL" -o /tmp/nordrhein-westfalen.osm.pbf
           SOURCE_TIMESTAMP="$(osmium fileinfo -g header.option.osmosis_replication_timestamp /tmp/nordrhein-westfalen.osm.pbf 2>/dev/null || true)"
