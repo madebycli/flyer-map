@@ -89,6 +89,8 @@ async function resetV4RetryState(
     db.prepare(`UPDATE street_network_jobs
       SET phase='v4-source',cursor=0,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=?
       WHERE campaign_id=? AND area_id=? AND generation=?
+        AND phase<>'ready'
+        AND (lease_until IS NULL OR lease_until<=?)
         AND EXISTS(
           SELECT 1 FROM area_task_preparations
           WHERE campaign_id=? AND area_id=? AND generation=? AND status='pending'
@@ -98,6 +100,7 @@ async function resetV4RetryState(
         run.campaignId,
         run.areaId,
         run.generation,
+        now,
         run.campaignId,
         run.areaId,
         run.generation,
