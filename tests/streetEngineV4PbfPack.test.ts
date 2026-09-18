@@ -84,7 +84,7 @@ test('V4 pack builder counts Polygon and MultiPolygon buildings instead of silen
 
   const built = await buildStreetEngineV4PbfPack({
     features,
-    coverageBounds: [6.99, 50.69, 7.02, 50.72],
+    coverageBounds: [7.0, 50.7, 7.009, 50.709],
     sourceTimestamp: '2026-09-18T00:00:00Z',
     provider: 'fixture',
   });
