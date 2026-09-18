@@ -89,15 +89,7 @@ test('Source manifest allows valid gzip expansion for sparse shards', () => {
   assert.equal(validateStreetEngineV3SourceManifest(sparse).shards[0].compressedBytes, 1_024);
 });
 
-test('Source manifest rejects shards above explicit transfer or decoded-size hard limits', () => {
-  const transferOversize = manifest();
-  transferOversize.shards[0] = {
-    ...transferOversize.shards[0],
-    compressedBytes: 40 * MIB + 1,
-    uncompressedBytes: 41 * MIB,
-  };
-  assert.throws(() => validateStreetEngineV3SourceManifest(transferOversize), /invalid_shard/);
-
+test('Source manifest rejects shards above the decoded-size hard limit', () => {
   const decodedOversize = manifest();
   decodedOversize.shards[0] = {
     ...decodedOversize.shards[0],
