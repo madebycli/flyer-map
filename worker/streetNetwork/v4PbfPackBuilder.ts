@@ -31,7 +31,7 @@ type PendingBuilding = {
 
 const SUPPORTED_GEOMETRIES = new Set(['Point', 'LineString', 'Polygon', 'MultiPolygon']);
 
-const V4_SHARD_MAGIC = new TextEncoder().encode('FMSEV3\\0');
+const V4_SHARD_MAGIC = new Uint8Array([0x46, 0x4d, 0x53, 0x45, 0x56, 0x33, 0x00]);
 
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -263,7 +263,7 @@ export async function buildStreetEngineV4PbfPack(input: {
     features: normalizeStreetEngineV4PbfFeatures(input.features),
     encodeShard: encodeStreetEngineV4Shard,
   });
-  const manifest = { ...built.manifest, algorithmVersion: 'v4-pbf-builder-3' };
+  const manifest = { ...built.manifest, algorithmVersion: 'v4-pbf-builder-4' };
   const manifestJson = canonicalStreetEngineV3SourceManifestJson(manifest);
   const manifestHash = await streetEngineV3SourceManifestHash(manifest);
   return { ...built, manifest, manifestJson, manifestHash };
