@@ -112,6 +112,29 @@ jobs:
             WHERE campaign_id='$CID' AND id='$(sql_escape "$AREA8_ID")';
           ")"
 
+          AREA8_PREP="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT
+              p.status,p.generation,p.road_count,p.house_count,p.source_timestamp,
+              p.started_at,p.ready_at,p.failed_at,p.last_error_code,p.updated_at,
+              j.phase,j.cursor,j.attempts,j.error_code,j.lease_until,
+              json_extract(j.metrics_json,'$.engineVersion') AS engine_version,
+              json_extract(j.metrics_json,'$.manifestHash') AS manifest_hash,
+              json_extract(j.metrics_json,'$.sourcePackVersion') AS source_pack_version,
+              json_extract(j.metrics_json,'$.algorithmVersion') AS algorithm_version,
+              json_extract(j.metrics_json,'$.legacyOverpassRequests') AS legacy_overpass_requests,
+              json_extract(j.metrics_json,'$.resultHash') AS result_hash
+            FROM area_task_preparations p
+            LEFT JOIN street_network_jobs j
+              ON j.campaign_id=p.campaign_id AND j.area_id=p.area_id AND j.generation=p.generation
+            WHERE p.campaign_id='$CID' AND p.area_id='$(sql_escape "$AREA8_ID")';
+          ")"
+
+          AREA8_COUNTS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT
+              (SELECT COUNT(*) FROM tasks WHERE campaign_id='$CID' AND area_id='$(sql_escape "$AREA8_ID")') AS streets_total,
+              (SELECT COUNT(*) FROM house_tasks WHERE campaign_id='$CID' AND area_id='$(sql_escape "$AREA8_ID")') AS houses_total;
+          ")"
+
           SYNC_HEADS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
             SELECT collection_name,seq
             FROM campaign_sync_heads
@@ -146,9 +169,11 @@ jobs:
             --argjson previousPreparation "$PREVIOUS_PREP" \
             --argjson deviceCounts "$DEVICE_COUNTS" \
             --argjson area8Geometry "$AREA8_GEOMETRY" \
+            --argjson area8Preparation "$AREA8_PREP" \
+            --argjson area8Counts "$AREA8_COUNTS" \
             --argjson syncHeads "$SYNC_HEADS" \
             --argjson areaFeed "$AREA_FEED" \
-            '{campaignId:$campaignId,deviceAreaId:$deviceAreaId,previousAreaId:$previousAreaId,canonicalAreas:$canonicalAreas,devicePreparation:$devicePreparation,previousPreparation:$previousPreparation,deviceCounts:$deviceCounts,area8Geometry:$area8Geometry,syncHeads:$syncHeads,areaFeed:$areaFeed}' \
+            '{campaignId:$campaignId,deviceAreaId:$deviceAreaId,previousAreaId:$previousAreaId,canonicalAreas:$canonicalAreas,devicePreparation:$devicePreparation,previousPreparation:$previousPreparation,deviceCounts:$deviceCounts,area8Geometry:$area8Geometry,area8Preparation:$area8Preparation,area8Counts:$area8Counts,syncHeads:$syncHeads,areaFeed:$areaFeed}' \
             > /tmp/beta-v4-area7-readonly.json
           jq . /tmp/beta-v4-area7-readonly.json
 
