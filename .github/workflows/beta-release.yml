@@ -217,6 +217,12 @@ jobs:
           osmium export /tmp/street-engine-v4.osm.pbf -f geojsonseq -c /tmp/v4-export.json -o /tmp/street-engine-v4.geojsonseq --overwrite
           node --experimental-transform-types scripts/build-street-engine-v4-pbf-pack.ts /tmp/street-engine-v4.geojsonseq "$V4_BBOX" "$SOURCE_TIMESTAMP" /tmp/street-engine-v4-pack beta geofabrik-nrw
           jq -e '.engineVersion=="v4" and .algorithmVersion=="v4-pbf-builder-4" and .shardCount>0' /tmp/street-engine-v4-pack/summary.json >/dev/null
+          FIRST_V4_SHARD="$(jq -er '.shards[0].file' /tmp/street-engine-v4-pack/summary.json)"
+          gzip -t "/tmp/street-engine-v4-pack/$FIRST_V4_SHARD"
+          gzip -dc "/tmp/street-engine-v4-pack/$FIRST_V4_SHARD" > /tmp/street-engine-v4-first-shard.frame
+          V4_MAGIC_HEX="$(head -c 7 /tmp/street-engine-v4-first-shard.frame | od -An -tx1 | tr -d ' \n')"
+          [[ "$V4_MAGIC_HEX" == '464d5345563300' ]] || { echo "Invalid V4 shard magic: $V4_MAGIC_HEX" >&2; exit 1; }
+          rm -f /tmp/street-engine-v4-first-shard.frame
 
           ASSET_ROOT="public/__street-engine-v4"
           rm -rf "$ASSET_ROOT"
