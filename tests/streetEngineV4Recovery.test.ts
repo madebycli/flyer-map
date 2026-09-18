@@ -119,6 +119,19 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
   assert.equal(retry.outcome, 'run');
   if (retry.outcome !== 'run') return;
   assert.equal(retry.run.generation, first.run.generation);
+  const restarted = db.sqlite.prepare(`SELECT status,started_at,failed_at,last_error_code
+    FROM area_task_preparations WHERE campaign_id='campaign_n' AND area_id='area_n'`).get() as {
+      status: string;
+      started_at: string | null;
+      failed_at: string | null;
+      last_error_code: string | null;
+    };
+  assert.deepEqual(restarted, {
+    status: 'pending',
+    started_at: '2026-09-18T12:00:00.000Z',
+    failed_at: null,
+    last_error_code: null,
+  });
 
   const result = await runStreetEngineV4Preparation(db, retry.run, {
     streetEngineVersion: 'v4',
@@ -154,19 +167,29 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
   assert.equal(metrics.addressableBuildings, 1);
   assert.equal(metrics.houses, 1);
 
-  const preparation = db.sqlite.prepare(`SELECT status,road_count,house_count,last_error_code
+  const preparation = db.sqlite.prepare(`SELECT status,road_count,house_count,last_error_code,failed_at,ready_at
     FROM area_task_preparations WHERE campaign_id='campaign_n' AND area_id='area_n'`).get() as {
       status: string;
       road_count: number;
       house_count: number;
       last_error_code: string | null;
+      failed_at: string | null;
+      ready_at: string | null;
     };
-  assert.deepEqual(preparation, {
+  assert.deepEqual({
+    status: preparation.status,
+    road_count: preparation.road_count,
+    house_count: preparation.house_count,
+    last_error_code: preparation.last_error_code,
+    failed_at: preparation.failed_at,
+  }, {
     status: 'ready',
     road_count: 1,
     house_count: 1,
     last_error_code: null,
+    failed_at: null,
   });
+  assert.equal(preparation.ready_at, '2026-09-18T12:00:01.000Z');
 });
 
 test('V4 transient source retry preserves its current attempt budget instead of resetting it', async (t) => {
