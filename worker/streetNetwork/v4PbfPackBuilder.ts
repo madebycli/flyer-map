@@ -34,7 +34,7 @@ function isBuilding(properties: Record<string, unknown>) {
   return typeof properties.building === 'string' && properties.building.length > 0;
 }
 
-function sourceIdentity(properties: Record<string, unknown>) {
+function sourceIdentity(properties: Record<string, unknown>): { sourceType: 'way' | 'relation'; sourceId: number } {
   const sourceType = properties['@type'];
   const sourceId = properties['@id'];
   if ((sourceType !== 'way' && sourceType !== 'relation')
@@ -42,7 +42,7 @@ function sourceIdentity(properties: Record<string, unknown>) {
     || (sourceId as number) <= 0) {
     throw new Error('street_engine_v4_pbf_building_identity_invalid');
   }
-  return { sourceType, sourceId: sourceId as number };
+  return { sourceType: sourceType as 'way' | 'relation', sourceId: sourceId as number };
 }
 
 const SYNTHETIC_COMPONENT_STRIDE = 1024;
