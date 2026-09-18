@@ -510,7 +510,17 @@ export async function beginAreaTaskPreparation(
   }
   if ((current?.status === 'pending' || current?.status === 'failed') && current.geometryHash === geometryHash && await hasStreetNetworkSchema(db)) {
     if (!canReconcileWork&&await areaHasStartedAutomaticWork(db,campaignId,areaId)) return {outcome:'result',result:{outcome:'failed',code:'area_preparation_work_started'}};
-    await db.batch([db.prepare("UPDATE area_task_preparations SET status='pending',last_error_code=NULL WHERE campaign_id=? AND area_id=? AND generation=?").bind(campaignId,areaId,current.generation)]);
+    const restart = current.status === 'failed';
+    await db.batch([
+      restart
+        ? db.prepare(`UPDATE area_task_preparations
+            SET status='pending',road_count=0,house_count=0,source_timestamp=NULL,
+                started_at=?,ready_at=NULL,failed_at=NULL,last_error_code=NULL,updated_at=?
+            WHERE campaign_id=? AND area_id=? AND generation=?`)
+            .bind(now,now,campaignId,areaId,current.generation)
+        : db.prepare("UPDATE area_task_preparations SET status='pending',last_error_code=NULL WHERE campaign_id=? AND area_id=? AND generation=?")
+            .bind(campaignId,areaId,current.generation),
+    ]);
     return {outcome:'run',run:{campaignId,areaId,area,geometryHash,generation:current.generation,now}};
   }
   if (current && isFreshPending(current, geometryHash, nowDate)) {
