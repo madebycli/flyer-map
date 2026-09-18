@@ -7,6 +7,7 @@ import {
   withoutRxdbMetadata,
   type RxdbCollectionName,
   type RxdbDocument,
+  type RxdbPullResponse,
   type RxdbPushRow,
 } from "./rxdbSyncProtocol.ts";
 import {
@@ -20,11 +21,15 @@ export * from "./rxdbMissionSyncCore.ts";
 const BARRIER_POLL_INTERVAL_MS = 20;
 const AUTOMATIC_REFRESH_BARRIER_TIMEOUT_MS = 20_000;
 const REBOOTSTRAP_PUSH_TIMEOUT_MS = 20_000;
+const CANONICAL_AREA_PROBE_TIMEOUT_MS = 12_000;
 const PUSH_BATCH_SIZE = 20;
 const COLLECTION_NAMES = ["campaigns", "teams", "areas", "streetTasks", "houseTasks"] as const satisfies readonly RxdbCollectionName[];
 
 type PersistenceGateLike = { flush(): void };
-type CoreReplicationLike = { cancel(): Promise<unknown> };
+type CoreReplicationLike = {
+  cancel(): Promise<unknown>;
+  awaitInitialReplication?(): Promise<void>;
+};
 type MissionRxdbSyncInput = ConstructorParameters<typeof MissionRxdbSyncCore>[0];
 type MissionRxdbSyncInternals = {
   initialized: boolean;
@@ -156,7 +161,9 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
   private readonly recoveryDatabaseName: string;
   private readonly recoveryProgressKey: string;
   private readonly recoveryReplicationPrefix: string;
+  private readonly recoveryCampaignId: string;
   private recoveryPromise: Promise<void> | null = null;
+  private canonicalConsistencyChecked = false;
 
   constructor(input: MissionRxdbSyncInput) {
     const storage = input.storage ?? getRxStorageDexie();
@@ -184,6 +191,7 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
       : teamScopeId
         ? "team:" + teamScopeId
         : "campaign";
+    this.recoveryCampaignId = input.campaignId;
     this.recoveryDatabaseName = missionDatabaseName(input.campaignId, teamScopeId, actorScopeId);
     this.recoveryProgressKey = "verteil-flyer:rxdb-progress:v1:" + encodeURIComponent(input.campaignId) + ":" + encodeURIComponent(replicaScope);
     this.recoveryReplicationPrefix = "mission-rxdb-sync-v1:" + input.campaignId + ":" + replicaScope + ":";
@@ -191,6 +199,78 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
 
   private internals() {
     return this as unknown as MissionRxdbSyncInternals;
+  }
+
+
+  private async awaitAreaInitialReplication() {
+    const replication = this.internals().replications.get("areas");
+    if (!replication?.awaitInitialReplication) return;
+    await this.withTimeout(
+      replication.awaitInitialReplication(),
+      CANONICAL_AREA_PROBE_TIMEOUT_MS,
+      "rxdb_area_initial_replication_timeout",
+    );
+  }
+
+  private async canonicalAreasMatchLocalReplica() {
+    const state = this.internals();
+    const collection = state.collections?.areas;
+    if (!state.initialized || !collection) return true;
+
+    const canonical = await state.request<RxdbPullResponse>("pull", "areas", {
+      checkpoint: null,
+      batchSize: 100,
+    });
+    const localDocuments = await collection.find({ selector: { campaignId: this.recoveryCampaignId } }).exec();
+
+    const normalize = (documents: RxdbDocument[]) =>
+      documents
+        .filter((document) => document._deleted !== true)
+        .map((document) => withoutRxdbMetadata(document))
+        .sort((left, right) => left.id.localeCompare(right.id));
+
+    const local = normalize(localDocuments.map((document: any) => document.toJSON() as RxdbDocument));
+    const remote = normalize(canonical.documents);
+    return JSON.stringify(local) === JSON.stringify(remote);
+  }
+
+  private async repairCanonicalAreaMismatch() {
+    await this.recoverExpiredCheckpoint("areas");
+    await this.awaitAreaInitialReplication();
+    if (!(await this.canonicalAreasMatchLocalReplica())) {
+      throw new RxdbSyncHttpError(
+        0,
+        "rxdb_canonical_area_mismatch",
+        "Der lokale Gebietsstand konnte nicht auf den kanonischen Serverstand zurückgesetzt werden.",
+      );
+    }
+    this.internals().onIssueResolved("areas");
+  }
+
+  override async start() {
+    await super.start();
+    if (this.canonicalConsistencyChecked) return;
+    this.canonicalConsistencyChecked = true;
+
+    try {
+      await this.awaitAreaInitialReplication();
+      if (await this.canonicalAreasMatchLocalReplica()) return;
+    } catch {
+      // The regular replication error path already reports transient transport
+      // failures. A consistency probe may be retried by the next page start.
+      return;
+    }
+
+    try {
+      await this.repairCanonicalAreaMismatch();
+    } catch (error) {
+      this.internals().onIssue({
+        kind: "network",
+        collectionName: "areas",
+        operation: "pull",
+        code: error instanceof RxdbSyncHttpError ? error.code : "rxdb_canonical_rebootstrap_failed",
+      });
+    }
   }
 
   private flushPersistenceGates(names: readonly RxdbCollectionName[]) {
