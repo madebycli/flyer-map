@@ -263,7 +263,7 @@ export async function buildStreetEngineV4PbfPack(input: {
     features: normalizeStreetEngineV4PbfFeatures(input.features),
     encodeShard: encodeStreetEngineV4Shard,
   });
-  const manifest = { ...built.manifest, algorithmVersion: 'v4-pbf-builder-3' };
+  const manifest = { ...built.manifest, algorithmVersion: 'v4-pbf-builder-4' };
   const manifestJson = canonicalStreetEngineV3SourceManifestJson(manifest);
   const manifestHash = await streetEngineV3SourceManifestHash(manifest);
   return { ...built, manifest, manifestJson, manifestHash };
