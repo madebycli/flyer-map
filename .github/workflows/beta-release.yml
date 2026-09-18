@@ -23,7 +23,6 @@ jobs:
       CONFIGURED_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       BETA_WORKER_NAME: flyer-map-beta
       BETA_DB_NAME: flyer-map-beta-db
-      BETA_STREET_ENGINE_V4_BUCKET: flyer-map-beta-street-engine-v4
       V4_PBF_URL: https://download.geofabrik.de/europe/germany/nordrhein-westfalen-latest.osm.pbf
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
@@ -82,17 +81,6 @@ jobs:
           echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
           echo "Resolved isolated Beta D1: $BETA_DB_NAME ($BETA_D1_ID)"
 
-      - name: Ensure isolated Beta Street Engine V4 R2
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
-          if ! npx wrangler r2 bucket info "$BETA_STREET_ENGINE_V4_BUCKET" --json > /tmp/beta-streetengine-v4-r2.json 2>/tmp/beta-streetengine-v4-r2.err; then
-            npx wrangler r2 bucket create "$BETA_STREET_ENGINE_V4_BUCKET"
-            npx wrangler r2 bucket info "$BETA_STREET_ENGINE_V4_BUCKET" --json > /tmp/beta-streetengine-v4-r2.json
-          fi
-          node -e 'const fs=require("node:fs");const x=JSON.parse(fs.readFileSync("/tmp/beta-streetengine-v4-r2.json","utf8"));if(!x||x.name!==process.env.BETA_STREET_ENGINE_V4_BUCKET)throw new Error("beta_v4_r2_verification_failed");console.log(`Resolved isolated Beta V4 R2: ${x.name}`);'
-
       - name: Materialize isolated Beta V4 config
         shell: bash
         run: |
@@ -120,10 +108,7 @@ jobs:
             database_id:process.env.BETA_D1_ID,
             migrations_dir:'migrations',
           }];
-          c.r2_buckets=[{
-            binding:'STREET_ENGINE_V4_SOURCE',
-            bucket_name:process.env.BETA_STREET_ENGINE_V4_BUCKET,
-          }];
+          delete c.r2_buckets;
           c.ratelimits=[
             {name:'FIELD_GROUP_JOIN_ACTOR_LIMITER',namespace_id:'92015001',simple:{limit:30,period:60}},
             {name:'FIELD_GROUP_JOIN_CREDENTIAL_LIMITER',namespace_id:'92015002',simple:{limit:8,period:60}},
@@ -181,7 +166,7 @@ jobs:
           fs.writeFileSync('/tmp/beta-streetengine-schema-summary.json',JSON.stringify({ok:true,tables:[...tables].sort(),taskGeneration:true,houseGeneration:true,foreignKeys:'clean'},null,2)+'\n');
           NODE
 
-      - name: Build and atomically publish Street Engine V4 source pack
+      - name: Build and stage Street Engine V4 source pack as Worker assets
         shell: bash
         run: |
           set -euo pipefail
@@ -228,19 +213,28 @@ jobs:
           node --experimental-transform-types scripts/build-street-engine-v4-pbf-pack.ts /tmp/street-engine-v4.geojsonseq "$V4_BBOX" "$SOURCE_TIMESTAMP" /tmp/street-engine-v4-pack beta geofabrik-nrw
           jq -e '.engineVersion=="v4" and .algorithmVersion=="v4-pbf-builder-1" and .shardCount>0' /tmp/street-engine-v4-pack/summary.json >/dev/null
 
+          ASSET_ROOT="public/__street-engine-v4"
+          rm -rf "$ASSET_ROOT"
+          mkdir -p "$ASSET_ROOT"
           while IFS=$'\t' read -r key file; do
-            npx wrangler r2 object put "$BETA_STREET_ENGINE_V4_BUCKET/$key" --file "/tmp/street-engine-v4-pack/$file" --remote --config wrangler.jsonc >/dev/null
+            target="$ASSET_ROOT/$key"
+            mkdir -p "$(dirname "$target")"
+            cp "/tmp/street-engine-v4-pack/$file" "$target"
+            expected="$(basename "$file" .bin)"
+            actual="$(sha256sum "$target" | awk '{print $1}')"
+            [[ "$actual" == "$expected" ]]
           done < <(jq -r '.shards[]|[.key,.file]|@tsv' /tmp/street-engine-v4-pack/summary.json)
           MANIFEST_KEY="$(jq -r '.manifestKey' /tmp/street-engine-v4-pack/summary.json)"
           POINTER_KEY="$(jq -r '.pointerKey' /tmp/street-engine-v4-pack/summary.json)"
-          npx wrangler r2 object put "$BETA_STREET_ENGINE_V4_BUCKET/$MANIFEST_KEY" --file /tmp/street-engine-v4-pack/manifest.json --remote --config wrangler.jsonc >/dev/null
-          # Atomic cutover: channel pointer is always written last.
-          npx wrangler r2 object put "$BETA_STREET_ENGINE_V4_BUCKET/$POINTER_KEY" --file /tmp/street-engine-v4-pack/pointer.json --remote --config wrangler.jsonc >/dev/null
-          npx wrangler r2 object get "$BETA_STREET_ENGINE_V4_BUCKET/$MANIFEST_KEY" --file /tmp/v4-manifest-readback.json --remote --config wrangler.jsonc >/dev/null
-          npx wrangler r2 object get "$BETA_STREET_ENGINE_V4_BUCKET/$POINTER_KEY" --file /tmp/v4-pointer-readback.json --remote --config wrangler.jsonc >/dev/null
-          cmp /tmp/street-engine-v4-pack/manifest.json /tmp/v4-manifest-readback.json
-          cmp /tmp/street-engine-v4-pack/pointer.json /tmp/v4-pointer-readback.json
-          jq -e --arg hash "$(jq -r '.manifestHash' /tmp/street-engine-v4-pack/summary.json)" '.manifestHash==$hash' /tmp/v4-pointer-readback.json >/dev/null
+          mkdir -p "$(dirname "$ASSET_ROOT/$MANIFEST_KEY")" "$(dirname "$ASSET_ROOT/$POINTER_KEY")"
+          cp /tmp/street-engine-v4-pack/manifest.json "$ASSET_ROOT/$MANIFEST_KEY"
+          cp /tmp/street-engine-v4-pack/pointer.json "$ASSET_ROOT/$POINTER_KEY"
+          MANIFEST_HASH="$(jq -r '.manifestHash' /tmp/street-engine-v4-pack/summary.json)"
+          [[ "$(sha256sum "$ASSET_ROOT/$MANIFEST_KEY" | awk '{print $1}')" == "$MANIFEST_HASH" ]]
+          cmp /tmp/street-engine-v4-pack/manifest.json "$ASSET_ROOT/$MANIFEST_KEY"
+          cmp /tmp/street-engine-v4-pack/pointer.json "$ASSET_ROOT/$POINTER_KEY"
+          jq -e --arg hash "$MANIFEST_HASH" '.manifestHash==$hash' "$ASSET_ROOT/$POINTER_KEY" >/dev/null
+          jq -n --arg storage "worker-assets" --arg prefix "/__street-engine-v4" --arg manifestHash "$MANIFEST_HASH" --arg manifestKey "$MANIFEST_KEY" --arg pointerKey "$POINTER_KEY" '{storage:$storage,prefix:$prefix,manifestHash:$manifestHash,manifestKey:$manifestKey,pointerKey:$pointerKey}' > /tmp/beta-streetengine-v4-assets.json
           rm -f /tmp/nordrhein-westfalen.osm.pbf /tmp/street-engine-v4.osm.pbf /tmp/street-engine-v4.geojsonseq
 
       - name: Prepare missing Beta secrets
@@ -259,9 +253,15 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_REF" == 'refs/heads/beta' ]]
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          node -e 'const fs=require("node:fs");const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8"));if(c.vars?.STREET_ENGINE_VERSION!=="v4"||c.vars?.OSM_OVERPASS_URL!==undefined||!c.r2_buckets?.some(x=>x.binding==="STREET_ENGINE_V4_SOURCE"))throw new Error("beta_v4_deploy_invariant_failed")'
+          node -e 'const fs=require("node:fs");const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8"));if(c.vars?.STREET_ENGINE_VERSION!=="v4"||c.vars?.OSM_OVERPASS_URL!==undefined||(c.r2_buckets?.length??0)!==0)throw new Error("beta_v4_deploy_invariant_failed")'
           rm -rf dist .wrangler
           npm run build
+          ASSET_PREFIX="dist/client/__street-engine-v4"
+          MANIFEST_KEY="$(jq -r '.manifestKey' /tmp/street-engine-v4-pack/summary.json)"
+          POINTER_KEY="$(jq -r '.pointerKey' /tmp/street-engine-v4-pack/summary.json)"
+          test -f "$ASSET_PREFIX/$MANIFEST_KEY"
+          test -f "$ASSET_PREFIX/$POINTER_KEY"
+          while IFS=$'\t' read -r key _file; do test -f "$ASSET_PREFIX/$key"; done < <(jq -r '.shards[]|[.key,.file]|@tsv' /tmp/street-engine-v4-pack/summary.json)
           if [[ "$(cat /tmp/beta-secret-count.txt)" -gt 0 ]]; then
             npx wrangler deploy --config dist/flyer_map/wrangler.json --secrets-file /tmp/beta-missing-secrets.json 2>&1 | tee /tmp/beta-deploy.log
           else
@@ -309,7 +309,7 @@ jobs:
             /tmp/beta-streetengine-task-columns.json
             /tmp/beta-streetengine-house-columns.json
             /tmp/beta-streetengine-fk.json
-            /tmp/beta-streetengine-v4-r2.json
+            /tmp/beta-streetengine-v4-assets.json
             /tmp/street-engine-v4-source-meta.json
             /tmp/street-engine-v4-pack/summary.json
             /tmp/street-engine-v4-pack/pointer.json
