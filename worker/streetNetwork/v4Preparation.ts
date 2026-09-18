@@ -1,7 +1,7 @@
 import type { AreaTaskPreparationOptions, AreaTaskPreparationRun, PrepareAreaTasksResult } from '../areaTaskPreparation.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
 import { runStreetEngineV3Preparation } from './v3Preparation.ts';
-import type { StreetEngineV3Bucket } from './v3SourceRuntime.ts';
+import { resolveStreetEngineV3Manifest, type StreetEngineV3Bucket } from './v3SourceRuntime.ts';
 
 export type StreetEngineV4Bucket = StreetEngineV3Bucket;
 
@@ -18,6 +18,91 @@ function v4Code(value: unknown) {
 
 function v4Phase(value: unknown) {
   return value === 'v3-source' ? 'v4-source' : value;
+}
+
+type V4RetryJob = {
+  generation: string;
+  phase: string;
+  attempts: number;
+  error_code: string | null;
+  lease_until: string | null;
+  metrics_json: string;
+};
+
+function parsedMetrics(raw: string) {
+  try {
+    const value = JSON.parse(raw || '{}') as unknown;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A user retry keeps the same preparation generation. Old legacy failures and
+ * terminal V4 failures must not carry their exhausted attempt/error/lease state
+ * into the new V4 run. In-progress V4 transient retries keep their counters.
+ */
+async function resetV4RetryState(
+  db: D1DatabaseLike,
+  run: AreaTaskPreparationRun,
+  options: StreetEngineV4PreparationOptions,
+  now: string,
+) {
+  const row = await db.prepare(
+    'SELECT generation,phase,attempts,error_code,lease_until,metrics_json FROM street_network_jobs WHERE campaign_id=? AND area_id=?',
+  ).bind(run.campaignId, run.areaId).first<V4RetryJob>();
+  if (!row || row.generation !== run.generation) return;
+
+  const metrics = parsedMetrics(row.metrics_json);
+  const currentV4 = metrics.engineVersion === 'v4';
+  const terminalV4 = currentV4 && row.phase === 'failed';
+  const legacyOrUnversioned = !currentV4;
+  if (!terminalV4 && !legacyOrUnversioned) return;
+
+  const leaseUntil = row.lease_until ? Date.parse(row.lease_until) : 0;
+  if (Number.isFinite(leaseUntil) && leaseUntil > Date.parse(now)) return;
+
+  const baseline: Record<string, unknown> = {
+    engineVersion: 'v4',
+    legacyOverpassRequests: 0,
+  };
+  if (options.streetEngineV4Bucket) {
+    try {
+      const resolved = await resolveStreetEngineV3Manifest(
+        options.streetEngineV4Bucket,
+        options.streetEngineV4Channel ?? 'beta',
+      );
+      baseline.manifestHash = resolved.manifestHash;
+      baseline.sourcePackVersion = resolved.manifest.sourcePackVersion;
+      baseline.algorithmVersion = resolved.manifest.algorithmVersion.replace(/^v3-/u, 'v4-');
+      baseline.sourceTimestamp = resolved.manifest.source.timestamp;
+      baseline.objectGets = resolved.objectGets;
+    } catch {
+      // The delegated V4 source load records the precise fail-closed source error.
+    }
+  }
+
+  await db.batch([
+    db.prepare(`UPDATE street_network_jobs
+      SET phase='v4-source',cursor=0,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=?
+      WHERE campaign_id=? AND area_id=? AND generation=?
+        AND EXISTS(
+          SELECT 1 FROM area_task_preparations
+          WHERE campaign_id=? AND area_id=? AND generation=? AND status='pending'
+        )`)
+      .bind(
+        JSON.stringify(baseline),
+        run.campaignId,
+        run.areaId,
+        run.generation,
+        run.campaignId,
+        run.areaId,
+        run.generation,
+      ),
+  ]);
 }
 
 function normalizeMetrics(value: unknown) {
@@ -90,6 +175,8 @@ export async function runStreetEngineV4Preparation(
     await failMissingSource(db, run, now);
     return { outcome: 'failed', code: 'area_preparation_osm_failed' };
   }
+
+  await resetV4RetryState(db, run, options, now);
 
   const result = await runStreetEngineV3Preparation(db, run, {
     ...options,
