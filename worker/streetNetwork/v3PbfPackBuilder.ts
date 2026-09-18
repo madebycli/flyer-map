@@ -135,6 +135,8 @@ export async function buildStreetEngineV3PbfPack(input: {
   coverageBounds: StreetEngineV3Bounds;
   sourceTimestamp: string;
   provider?: string;
+  /** V4 may inject its own compatible shard encoder without changing V3 runtime behavior. */
+  encodeShard?: typeof encodeStreetEngineV3Shard;
 }): Promise<StreetEngineV3BuiltPbfPack> {
   const [west, south, east, north] = input.coverageBounds;
   if (![west, south, east, north].every(Number.isFinite) || west < -180 || east > 180 || south < -85 || north > 85 || west > east || south > north) {
@@ -198,7 +200,7 @@ export async function buildStreetEngineV3PbfPack(input: {
     group.buildings.sort((left, right) => left.osmId - right.osmId);
     group.addressNodes.sort((left, right) => left.osmId - right.osmId);
     const bounds = expandedBounds(group);
-    const encoded = await encodeStreetEngineV3Shard({
+    const encoded = await (input.encodeShard ?? encodeStreetEngineV3Shard)({
       schemaVersion: 1,
       bounds,
       roads: group.roads,
