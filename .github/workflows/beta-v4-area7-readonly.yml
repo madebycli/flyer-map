@@ -114,15 +114,20 @@ jobs:
 
           AREA_FEED="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
             SELECT
-              seq,document_id,operation,scope_team_id,changed_at,
-              json_extract(document_json,'$._deleted') AS document_deleted,
-              json_extract(document_json,'$.name') AS document_name,
-              json_extract(document_json,'$.updatedAt') AS document_updated_at
-            FROM campaign_sync_changes
-            WHERE campaign_id='$CID'
-              AND collection_name='areas'
-            ORDER BY seq DESC
-            LIMIT 50;
+              c.seq,
+              c.document_id AS chunk_document_id,
+              c.scope_team_id,
+              c.changed_at,
+              json_extract(d.value,'$.id') AS document_id,
+              json_extract(d.value,'$._deleted') AS document_deleted,
+              json_extract(d.value,'$.name') AS document_name,
+              json_extract(d.value,'$.updatedAt') AS document_updated_at
+            FROM campaign_sync_changes c
+            JOIN json_each(c.document_json,'$.documents') d
+            WHERE c.campaign_id='$CID'
+              AND c.collection_name='areas'
+            ORDER BY c.seq DESC
+            LIMIT 100;
           ")"
 
           jq -n \
