@@ -216,7 +216,7 @@ jobs:
           JSON
           osmium export /tmp/street-engine-v4.osm.pbf -f geojsonseq -c /tmp/v4-export.json -o /tmp/street-engine-v4.geojsonseq --overwrite
           node --experimental-transform-types scripts/build-street-engine-v4-pbf-pack.ts /tmp/street-engine-v4.geojsonseq "$V4_BBOX" "$SOURCE_TIMESTAMP" /tmp/street-engine-v4-pack beta geofabrik-nrw
-          jq -e '.engineVersion=="v4" and .algorithmVersion=="v4-pbf-builder-1" and .shardCount>0' /tmp/street-engine-v4-pack/summary.json >/dev/null
+          jq -e '.engineVersion=="v4" and .algorithmVersion=="v4-pbf-builder-2" and .shardCount>0' /tmp/street-engine-v4-pack/summary.json >/dev/null
 
           ASSET_ROOT="public/__street-engine-v4"
           rm -rf "$ASSET_ROOT"
