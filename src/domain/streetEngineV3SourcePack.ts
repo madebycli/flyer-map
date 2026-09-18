@@ -6,6 +6,7 @@ import {
 
 export const STREET_ENGINE_V3_SOURCE_SCHEMA_VERSION = 1 as const;
 export const STREET_ENGINE_V3_BINARY_FORMAT = 'street-engine-v3-binary-shard-v1' as const;
+export const STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES = 64 * 1024 * 1024;
 
 export type StreetEngineV3Bounds = readonly [
   west: number,
@@ -126,7 +127,7 @@ export function validateStreetEngineV3SourceManifest(
       || !validBounds(shard.bounds)
       || !finiteInteger(shard.compressedBytes)
       || !finiteInteger(shard.uncompressedBytes)
-      || shard.compressedBytes > shard.uncompressedBytes
+      || shard.uncompressedBytes > STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES
       || !validCounts(shard.counts)
       || ids.has(shard.id)) {
       throw new Error('street_engine_v3_source_invalid_shard');

@@ -4,6 +4,7 @@ import {
   selectStreetEngineV3SourceShards,
   streetEngineV3SourceManifestHash,
   streetEngineV3SourceObjectKey,
+  STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES,
   validateStreetEngineV3SourceManifest,
   type StreetEngineV3Bounds,
   type StreetEngineV3SourceManifest,
@@ -18,7 +19,6 @@ const SHARD_MAGIC = new TextEncoder().encode('FMSEV3\0');
 const SAFE_CHANNEL = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const MAX_MANIFEST_BYTES = 8 * 1024 * 1024;
-const MAX_DECODED_SHARD_BYTES = 64 * 1024 * 1024;
 
 export type StreetEngineV3SourcePointer = {
   schemaVersion: typeof POINTER_SCHEMA_VERSION;
@@ -187,7 +187,7 @@ async function transformBytes(bytes: Uint8Array, stream: CompressionStream | Dec
     if (part.done) break;
     chunks.push(part.value);
     size += part.value.byteLength;
-    if (size > MAX_DECODED_SHARD_BYTES) throw new Error('street_engine_v3_shard_decode_budget');
+    if (size > STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES) throw new Error('street_engine_v3_shard_decode_budget');
   }
   const result = new Uint8Array(size);
   let offset = 0;
@@ -334,7 +334,7 @@ export async function loadStreetEngineV3Source(input: {
     const bytes = new Uint8Array(await object.arrayBuffer());
     const decoded = await decodeStreetEngineV3Shard(bytes, shard);
     decodedBytes += decoded.decodedBytes;
-    if (decodedBytes > MAX_DECODED_SHARD_BYTES) throw new Error('street_engine_v3_shard_decode_budget');
+    if (decodedBytes > STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES) throw new Error('street_engine_v3_shard_decode_budget');
     mergeUnique(roads, decoded.payload.roads, 'street_engine_v3_road_conflict');
     mergeUnique(buildings, decoded.payload.buildings, 'street_engine_v3_building_conflict');
     mergeUnique(addressNodes, decoded.payload.addressNodes, 'street_engine_v3_address_conflict');

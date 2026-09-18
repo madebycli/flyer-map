@@ -114,9 +114,11 @@ test("startup canonical Area probe reboots a replica that retained a deleted Are
     await sync.start();
     const collections = (sync as unknown as { collections: Record<string, any> }).collections;
     await waitForCondition(async () => Boolean(await collections.areas.findOne(canonicalArea.id).exec()));
+    await waitForCondition(async () => snapshots.some(
+      (snapshot) => snapshot.areas.some((area) => area.id === canonicalArea.id),
+    ));
     assert.equal(await collections.areas.findOne(oldArea.id).exec(), null);
     assert.ok(areaBootstrapCalls >= 4, "initial bootstrap, mismatch probe, clean bootstrap and verification must all occur");
-    assert.ok(snapshots.some((snapshot) => snapshot.areas.some((area) => area.id === canonicalArea.id)));
     assert.ok(!issues.includes("rxdb_canonical_rebootstrap_failed"));
     assert.ok(!issues.includes("rxdb_canonical_area_mismatch"));
   } finally {
