@@ -5,6 +5,7 @@ import {
   selectStreetEngineV3SourceShards,
   streetEngineV3SourceManifestHash,
   streetEngineV3SourceObjectKey,
+  STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES,
   validateStreetEngineV3SourceManifest,
   type StreetEngineV3SourceManifest,
 } from '../src/domain/streetEngineV3SourcePack.ts';
@@ -74,6 +75,36 @@ test('Source manifest validates provenance, bounds, counts and immutable shard i
     counts: { ...invalidCounts.shards[0].counts, addressableBuildings: 501 },
   };
   assert.throws(() => validateStreetEngineV3SourceManifest(invalidCounts), /invalid_shard/);
+});
+
+
+
+test('Source manifest allows valid gzip expansion for sparse shards', () => {
+  const sparse = manifest();
+  sparse.shards[0] = {
+    ...sparse.shards[0],
+    compressedBytes: 1_024,
+    uncompressedBytes: 900,
+  };
+  assert.equal(validateStreetEngineV3SourceManifest(sparse).shards[0].compressedBytes, 1_024);
+});
+
+test('Source manifest rejects shards above explicit transfer or decoded-size hard limits', () => {
+  const transferOversize = manifest();
+  transferOversize.shards[0] = {
+    ...transferOversize.shards[0],
+    compressedBytes: 40 * MIB + 1,
+    uncompressedBytes: 41 * MIB,
+  };
+  assert.throws(() => validateStreetEngineV3SourceManifest(transferOversize), /invalid_shard/);
+
+  const decodedOversize = manifest();
+  decodedOversize.shards[0] = {
+    ...decodedOversize.shards[0],
+    compressedBytes: 10 * MIB,
+    uncompressedBytes: STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES + 1,
+  };
+  assert.throws(() => validateStreetEngineV3SourceManifest(decodedOversize), /invalid_shard/);
 });
 
 test('Canonical manifest and hash are independent from shard and coverage ordering', async () => {
