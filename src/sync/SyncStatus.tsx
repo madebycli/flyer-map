@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   flushRxdbDrafts,
   manualRefreshCampaign,
@@ -42,6 +42,19 @@ function stalledLabel(language: Language) {
   return language === "en" ? "Server confirmation timed out, tap to retry" : "Serverbestätigung dauert zu lange, zum Wiederholen tippen";
 }
 
+
+function syncIssueFingerprint(issue: SyncIssue) {
+  return JSON.stringify([
+    issue.kind,
+    issue.scope ?? null,
+    issue.affectedCollections ?? [],
+    issue.mutationType ?? null,
+    issue.operation ?? null,
+    issue.code ?? null,
+    issue.message,
+  ]);
+}
+
 export function SyncStatus() {
   const [language, setLanguage] = useState<Language>(detectLanguage);
   const [state, setState] = useState<MutationSyncState>("local-saved");
@@ -49,6 +62,8 @@ export function SyncStatus() {
   const [issue, setIssue] = useState<SyncIssue | null>(null);
   const [open, setOpen] = useState(false);
   const [stalled, setStalled] = useState(false);
+  const activeIssueFingerprint = useRef<string | null>(null);
+  const dismissedIssueFingerprint = useRef<string | null>(null);
 
   useEffect(
     () =>
@@ -56,9 +71,21 @@ export function SyncStatus() {
         if (update.syncState) setState(update.syncState);
         if (update.pendingCount !== undefined) setPendingCount(update.pendingCount);
         if ("syncIssue" in update) {
-          setIssue(update.syncIssue ?? null);
-          if (update.syncIssue) setOpen(true);
-          else setOpen(false);
+          const nextIssue = update.syncIssue ?? null;
+          setIssue(nextIssue);
+          if (!nextIssue) {
+            activeIssueFingerprint.current = null;
+            dismissedIssueFingerprint.current = null;
+            setOpen(false);
+          } else {
+            const fingerprint = syncIssueFingerprint(nextIssue);
+            const changed = fingerprint !== activeIssueFingerprint.current;
+            activeIssueFingerprint.current = fingerprint;
+            if (changed) {
+              dismissedIssueFingerprint.current = null;
+              setOpen(true);
+            }
+          }
         }
       }),
     [],
@@ -92,6 +119,21 @@ export function SyncStatus() {
     };
   }, [state]);
 
+
+  const dismissIssue = () => {
+    if (issue) dismissedIssueFingerprint.current = syncIssueFingerprint(issue);
+    setOpen(false);
+  };
+
+  const toggleIssue = () => {
+    if (!issue) return;
+    if (open) {
+      dismissIssue();
+      return;
+    }
+    setOpen(true);
+  };
+
   const visibleState: MutationSyncState = stalled && state === "waiting-server" ? "failed" : state;
   const label = stalled && state === "waiting-server" ? stalledLabel(language) : statusLabel(language, state, pendingCount);
   const serverConfirmed = state === "server-confirmed" && !issue;
@@ -120,7 +162,7 @@ export function SyncStatus() {
           className={`mutation-sync-status is-${visibleState}`}
           type="button"
           onClick={() => {
-            if (issue) setOpen((visible) => !visible);
+            if (issue) toggleIssue();
             else if (stalled) retryStalledSync();
           }}
           aria-expanded={issue ? open : undefined}
@@ -136,7 +178,7 @@ export function SyncStatus() {
           <strong>{issue.kind === "server-wins" ? "Online-Version übernommen" : "Synchronisierungsinfo"}</strong>
           <p>{issue.message}</p>
           {syncIssueAffectedLabel(issue) ? <small>{syncIssueAffectedLabel(issue)}</small> : null}
-          <button type="button" className="small-action" onClick={() => setOpen(false)}>Verstanden</button>
+          <button type="button" className="small-action" onClick={dismissIssue}>Verstanden</button>
         </section>
       ) : null}
     </div>

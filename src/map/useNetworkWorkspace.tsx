@@ -9,6 +9,20 @@ import { enqueueNetworkIntent,flushNetworkIntents,queuedNetworkIntents,discardNe
 import { MAX_NETWORK_POINTS,joinNetworkRoutes,resolveNetworkIntent,networkSelectionState,type NetworkIntent } from '../domain/networkSelection.ts';
 import { AREA_PREPARATION_POLL_INTERVAL_MS } from '../areaPreparation/preparationPolling.ts';
 
+
+async function preparationRequestError(response:Response) {
+  let code:string|null=null;
+  try {
+    const payload=await response.clone().json() as {error?:{code?:unknown}};
+    code=typeof payload?.error?.code==='string'?payload.error.code:null;
+  } catch {
+  }
+  if(response.status===404&&code==='area_not_found') {
+    return 'Dieses lokale Gebiet ist nicht mehr im gemeinsamen Serverstand. Die Synchronisierung wird aktualisiert.';
+  }
+  return `Vorbereitung derzeit nicht verfügbar (HTTP ${response.status}${code?`, ${code}`:''}).`;
+}
+
 const SCREENING_STORAGE_PREFIX='verteil-flyer:street-screening:';
 function readScreeningMode(campaignId:string):StreetScreeningMode {
   if(typeof window==='undefined')return 'classic';
@@ -178,7 +192,15 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
         if(stoppedAreas.has(area.id)||(known[area.id]&&known[area.id].status!=='pending')||(retryAt[area.id]??0)>Date.now())continue;
         try{
           const response=await fetch(preparationUrl(area.id),{credentials:'same-origin',signal:AbortSignal.timeout(10000)});
-          if(!response.ok){noteFailure(area.id,response.status);continue;}
+          if(!response.ok){
+            if(response.status===404){
+              const message=await preparationRequestError(response);
+              if(message.startsWith('Dieses lokale Gebiet')){
+                stoppedAreas.add(area.id);delete retryAt[area.id];setPreparationError(message);void refresh().catch(()=>undefined);continue;
+              }
+            }
+            noteFailure(area.id,response.status);continue;
+          }
           const state=await response.json() as AreaPreparationPublicState;
           if(stopped)return;
           acceptState(area.id,state);
@@ -198,7 +220,11 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     setPreparing(area.id);setPreparationError('');setMessage('');
     try{
       const response=await fetch(preparationUrl(area.id),{method:'POST',credentials:'same-origin',signal:AbortSignal.timeout(25000)});
-      if(!response.ok)throw new Error(`Vorbereitung derzeit nicht verfügbar (HTTP ${response.status}).`);
+      if(!response.ok){
+        const message=await preparationRequestError(response);
+        if(response.status===404){void refresh().catch(()=>undefined);}
+        throw new Error(message);
+      }
       const state=await response.json() as AreaPreparationPublicState;
       setStates(current=>({...current,[area.id]:state}));
       window.dispatchEvent(new CustomEvent('campaign-preparation',{detail:{campaignId:snapshot.campaign.id,areaId:area.id,state}}));
