@@ -47,7 +47,15 @@ test('V4 normalizer decomposes relation MultiPolygon buildings deterministically
   const normalized = normalizeStreetEngineV4PbfFeatures(features);
   const buildings = normalized.filter((feature) => feature.geometry.type === 'Polygon');
   assert.equal(buildings.length, 2);
-  assert.deepEqual(buildings.map((feature) => feature.properties['@id']), [101, 102]);
+  const ids = buildings.map((feature) => feature.properties['@id']) as number[];
+  assert.equal(ids.length, 2);
+  assert.equal(ids[1] - ids[0], 1);
+  assert.ok(ids[0] > 6_000_000_000_000_000);
+  const withUnrelatedHighId = normalizeStreetEngineV4PbfFeatures([
+    ...features,
+    { type: 'Feature', properties: { '@type': 'node', '@id': 999_999 }, geometry: { type: 'Point', coordinates: [7.1, 50.8] } },
+  ]).filter((feature) => feature.geometry.type === 'Polygon');
+  assert.deepEqual(withUnrelatedHighId.map((feature) => feature.properties['@id']), ids);
   assert.deepEqual(buildings.map((feature) => feature.properties['v4:source_type']), ['relation', 'relation']);
   assert.deepEqual(buildings.map((feature) => feature.properties['v4:source_id']), ['9', '9']);
 });
