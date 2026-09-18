@@ -21,6 +21,7 @@ jobs:
       CAMPAIGN_ID: campaign_032feb82-7187-472c-b8d3-5d7e46f01eda
       DEVICE_AREA_ID: area_d8c81ae7-2a1f-43d6-8a63-a302b5979390
       PREVIOUS_AREA_ID: area_6c0e1b59-be2e-4d7a-a6d5-67bb8ea968eb
+      AREA8_ID: area_9a911c26-2c44-4c1b-b07c-97075b6f33a5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -105,6 +106,12 @@ jobs:
               (SELECT COUNT(*) FROM house_tasks WHERE campaign_id='$CID' AND area_id='$DEVICE_AID' AND area_preparation_generation IS NOT NULL) AS prepared_houses;
           ")"
 
+          AREA8_GEOMETRY="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT id,name,geometry_json,created_at,updated_at
+            FROM areas
+            WHERE campaign_id='$CID' AND id='$(sql_escape "$AREA8_ID")';
+          ")"
+
           SYNC_HEADS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
             SELECT collection_name,seq
             FROM campaign_sync_heads
@@ -138,9 +145,10 @@ jobs:
             --argjson devicePreparation "$DEVICE_PREP" \
             --argjson previousPreparation "$PREVIOUS_PREP" \
             --argjson deviceCounts "$DEVICE_COUNTS" \
+            --argjson area8Geometry "$AREA8_GEOMETRY" \
             --argjson syncHeads "$SYNC_HEADS" \
             --argjson areaFeed "$AREA_FEED" \
-            '{campaignId:$campaignId,deviceAreaId:$deviceAreaId,previousAreaId:$previousAreaId,canonicalAreas:$canonicalAreas,devicePreparation:$devicePreparation,previousPreparation:$previousPreparation,deviceCounts:$deviceCounts,syncHeads:$syncHeads,areaFeed:$areaFeed}' \
+            '{campaignId:$campaignId,deviceAreaId:$deviceAreaId,previousAreaId:$previousAreaId,canonicalAreas:$canonicalAreas,devicePreparation:$devicePreparation,previousPreparation:$previousPreparation,deviceCounts:$deviceCounts,area8Geometry:$area8Geometry,syncHeads:$syncHeads,areaFeed:$areaFeed}' \
             > /tmp/beta-v4-area7-readonly.json
           jq . /tmp/beta-v4-area7-readonly.json
 
