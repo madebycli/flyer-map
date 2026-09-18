@@ -175,30 +175,17 @@ jobs:
           sudo apt-get install -y -qq osmium-tool
 
           npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "SELECT id,name,geometry_json,updated_at,campaign_id FROM areas WHERE campaign_id=(SELECT campaign_id FROM areas ORDER BY updated_at DESC,id DESC LIMIT 1) ORDER BY updated_at,id;" > /tmp/v4-areas-wrangler.json
-          node <<'NODE'
-          const fs=require('node:fs');
-          const x=JSON.parse(fs.readFileSync('/tmp/v4-areas-wrangler.json','utf8'));
-          const rows=(Array.isArray(x)?x:[x]).flatMap(v=>Array.isArray(v.results)?v.results:[]);
-          if(!rows.length)throw new Error('street_engine_v4_no_beta_areas');
-          const points=[];
-          const collect=(value)=>{if(Array.isArray(value)&&value.length>=2&&typeof value[0]==='number'&&typeof value[1]==='number'){points.push([value[0],value[1]]);return;}if(Array.isArray(value))for(const item of value)collect(item);};
-          for(const row of rows){const geometry=JSON.parse(row.geometry_json);collect(geometry.coordinates);}
-          if(!points.length)throw new Error('street_engine_v4_beta_geometry_empty');
-          const margin=0.025;
-          const west=Math.max(-180,Math.min(...points.map(p=>p[0]))-margin),east=Math.min(180,Math.max(...points.map(p=>p[0]))+margin),south=Math.max(-85,Math.min(...points.map(p=>p[1]))-margin),north=Math.min(85,Math.max(...points.map(p=>p[1]))+margin);
-          const cellCount=Math.ceil((east-west)/0.01)*Math.ceil((north-south)/0.01);
-          if(cellCount>4096)throw new Error(`street_engine_v4_beta_coverage_too_large:${cellCount}`);
-          const bbox=[west,south,east,north].map(v=>v.toFixed(7)).join(',');
-          const areas=rows.map(r=>({id:r.id,name:r.name,updatedAt:r.updated_at}));
-          const meta={engineVersion:'v4',campaignId:rows[0].campaign_id,areaCount:rows.length,areas,areaIds:areas.map(r=>r.id),areaNames:areas.map(r=>r.name),bbox,cellCount,marginDegrees:margin};
-          fs.writeFileSync('/tmp/street-engine-v4-source-meta.json',JSON.stringify(meta,null,2)+'\n');
-          fs.appendFileSync(process.env.GITHUB_ENV,`V4_BBOX=${bbox}\nV4_CAMPAIGN_ID=${rows[0].campaign_id}\n`);
-          console.log(meta);
-          NODE
-          # Values appended to GITHUB_ENV are only visible in later Actions steps.
-          # Rehydrate them for the remainder of this same source-pack step.
+          node --experimental-transform-types scripts/plan-street-engine-v4-coverage.ts /tmp/v4-areas-wrangler.json /tmp/street-engine-v4-source-meta.json
           V4_BBOX="$(jq -er '.bbox | select(type=="string" and length>0)' /tmp/street-engine-v4-source-meta.json)"
           V4_CAMPAIGN_ID="$(jq -er '.campaignId | select(type=="string" and length>0)' /tmp/street-engine-v4-source-meta.json)"
+          V4_COVERAGE_POLICY="$(jq -er '.coveragePolicy' /tmp/street-engine-v4-source-meta.json)"
+          V4_RESERVE_DEGREES="$(jq -er '.reserveDegrees' /tmp/street-engine-v4-source-meta.json)"
+          [[ "$V4_COVERAGE_POLICY" == 'grid-reserve-v1' ]]
+          awk -v reserve="$V4_RESERVE_DEGREES" 'BEGIN{exit !(reserve >= 0 && reserve <= 0.2)}'
+          {
+            echo "V4_BBOX=$V4_BBOX"
+            echo "V4_CAMPAIGN_ID=$V4_CAMPAIGN_ID"
+          } >> "$GITHUB_ENV"
           export V4_BBOX V4_CAMPAIGN_ID
 
           curl --fail-with-body --location --retry 4 --retry-delay 3 --retry-all-errors "$V4_PBF_URL" -o /tmp/nordrhein-westfalen.osm.pbf
