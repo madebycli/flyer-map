@@ -9,7 +9,8 @@ import {
 function fetcher(entries: Record<string, string | Uint8Array>): StreetEngineV4AssetFetcher {
   return {
     async fetch(input) {
-      const path = new URL(typeof input === 'string' ? input : input.toString()).pathname;
+      const rawUrl = input instanceof Request ? input.url : input instanceof URL ? input.toString() : String(input);
+      const path = new URL(rawUrl).pathname;
       const value = entries[path];
       if (value === undefined) return new Response('missing', { status: 404 });
       return new Response(value);
