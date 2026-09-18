@@ -137,7 +137,20 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
     streetEngineV4Channel: 'beta',
     now: () => new Date('2026-09-18T12:00:01Z'),
   });
-  assert.equal(result.outcome, 'ready');
+  const diagnosticJob = db.sqlite.prepare(`SELECT phase,attempts,error_code,metrics_json
+    FROM street_network_jobs WHERE campaign_id='campaign_n' AND area_id='area_n'`).get() as {
+      phase: string;
+      attempts: number;
+      error_code: string | null;
+      metrics_json: string;
+    };
+  assert.equal(result.outcome, 'ready', JSON.stringify({
+    result,
+    phase: diagnosticJob.phase,
+    attempts: diagnosticJob.attempts,
+    errorCode: diagnosticJob.error_code,
+    metrics: JSON.parse(diagnosticJob.metrics_json),
+  }));
 
   const job = db.sqlite.prepare(`SELECT phase,cursor,attempts,error_code,lease,lease_until,metrics_json
     FROM street_network_jobs WHERE campaign_id='campaign_n' AND area_id='area_n'`).get() as {
