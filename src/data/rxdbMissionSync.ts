@@ -250,7 +250,7 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
   }
 
   private async repairCanonicalAreaMismatch() {
-    await this.recoverExpiredCheckpoint("areas");
+    await this.beginRecovery("areas");
     await this.awaitAreaInitialReplication();
     if (!(await this.canonicalAreasMatchLocalReplica())) {
       throw new RxdbSyncHttpError(
@@ -450,23 +450,26 @@ export class MissionRxdbSync extends MissionRxdbSyncCore {
     }
   }
 
-  private scheduleExpiredCheckpointRecovery(collectionName: RxdbCollectionName) {
-    if (this.recoveryPromise) return;
-    const state = this.internals();
+  private beginRecovery(collectionName: RxdbCollectionName) {
+    if (this.recoveryPromise) return this.recoveryPromise;
     const recovery = this.recoverExpiredCheckpoint(collectionName);
     this.recoveryPromise = recovery;
-    void recovery
-      .catch((error: unknown) => {
-        state.onIssue({
-          kind: "network",
-          collectionName,
-          operation: "pull",
-          code: error instanceof RxdbSyncHttpError ? error.code : "rxdb_rebootstrap_failed",
-        });
-      })
-      .finally(() => {
-        if (this.recoveryPromise === recovery) this.recoveryPromise = null;
+    void recovery.finally(() => {
+      if (this.recoveryPromise === recovery) this.recoveryPromise = null;
+    }).catch(() => undefined);
+    return recovery;
+  }
+
+  private scheduleExpiredCheckpointRecovery(collectionName: RxdbCollectionName) {
+    const state = this.internals();
+    void this.beginRecovery(collectionName).catch((error: unknown) => {
+      state.onIssue({
+        kind: "network",
+        collectionName,
+        operation: "pull",
+        code: error instanceof RxdbSyncHttpError ? error.code : "rxdb_rebootstrap_failed",
       });
+    });
   }
 
   override refresh(names: readonly RxdbCollectionName[] = COLLECTION_NAMES) {
