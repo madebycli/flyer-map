@@ -96,7 +96,7 @@ test('V4 pack builder counts Polygon and MultiPolygon buildings instead of silen
     addressableBuildings: counts.addressableBuildings + shard.counts.addressableBuildings,
   }), { roads: 0, buildings: 0, addressableBuildings: 0 });
 
-  assert.equal(built.manifest.algorithmVersion, 'v4-pbf-builder-3');
+  assert.equal(built.manifest.algorithmVersion, 'v4-pbf-builder-4');
   assert.equal(totals.roads, 1);
   assert.equal(totals.buildings, 3);
   assert.equal(totals.addressableBuildings, 2);
