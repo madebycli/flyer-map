@@ -1,7 +1,6 @@
 import type { PolygonGeometry } from './campaign.ts';
 import {
   planStreetEngineV3ShardTransfer,
-  STREET_ENGINE_V3_RUN_BUDGET,
   type StreetEngineV3TransferPlan,
 } from './streetEngineV3Budget.ts';
 
@@ -128,7 +127,6 @@ export function validateStreetEngineV3SourceManifest(
       || !validBounds(shard.bounds)
       || !finiteInteger(shard.compressedBytes)
       || !finiteInteger(shard.uncompressedBytes)
-      || shard.compressedBytes > STREET_ENGINE_V3_RUN_BUDGET.browserDownloadBytes.hard
       || shard.uncompressedBytes > STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES
       || !validCounts(shard.counts)
       || ids.has(shard.id)) {
