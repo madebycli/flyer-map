@@ -201,6 +201,38 @@ export async function startAreaPreparation(campaignId: string, areaId: string) {
   return (await response.json()) as AreaPreparationPublicState;
 }
 
+
+export type CanonicalAreaSummary = {
+  id: string;
+  name: string;
+  updatedAt: string;
+};
+
+export async function fetchCanonicalAreas(campaignId: string) {
+  const response = await apiFetch(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/rxdb/pull/areas`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkpoint: null, batchSize: 100 }),
+    },
+  );
+  const payload = await response.json() as { documents?: unknown[] };
+  if (!Array.isArray(payload.documents)) {
+    throw new CampaignApiError(502, "invalid_area_bootstrap", "Der Server hat keine gültige Gebietsliste geliefert.");
+  }
+  return payload.documents.flatMap((value): CanonicalAreaSummary[] => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const area = value as Record<string, unknown>;
+    if (area._deleted === true || typeof area.id !== "string") return [];
+    return [{
+      id: area.id,
+      name: typeof area.name === "string" && area.name.trim() ? area.name.trim() : area.id,
+      updatedAt: typeof area.updatedAt === "string" ? area.updatedAt : "",
+    }];
+  }).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+}
+
 export async function fetchCampaignSnapshot(campaignId: string) {
   const response = await apiFetch(campaignPath(campaignId, "snapshot"));
   return normalizeAreaPreparationGenerations((await response.json()) as CampaignSnapshot);
