@@ -180,7 +180,16 @@ test('V4 transient source retry preserves its current attempt budget instead of 
   assert.equal(begun.outcome, 'run');
   if (begun.outcome !== 'run') return;
 
-  const missingBucket: StreetEngineV3Bucket = { get: async () => null };
+  const healthyBucket = await v4Bucket();
+  const pointerObject = await healthyBucket.get(streetEngineV3PointerKey('beta'));
+  assert.ok(pointerObject);
+  const pointer = JSON.parse(await pointerObject!.text()) as { manifestHash: string };
+  const transientBucket: StreetEngineV3Bucket = {
+    async get(key) {
+      if (key.endsWith('.bin')) throw new Error('street_engine_v3_source_unavailable');
+      return healthyBucket.get(key);
+    },
+  };
   db.sqlite.prepare(`INSERT INTO street_network_jobs(
     campaign_id,area_id,generation,geometry_json,phase,cursor,lease,lease_until,attempts,error_code,metrics_json
   ) VALUES(?,?,?,?, 'v4-source',0,NULL,NULL,1,'street_engine_v4_source_unavailable',?)`).run(
@@ -188,17 +197,26 @@ test('V4 transient source retry preserves its current attempt budget instead of 
     begun.run.areaId,
     begun.run.generation,
     JSON.stringify(begun.run.area.geometry),
-    JSON.stringify({ engineVersion: 'v4', legacyOverpassRequests: 0 }),
+    JSON.stringify({
+      engineVersion: 'v4',
+      legacyOverpassRequests: 0,
+      manifestHash: pointer.manifestHash,
+    }),
   );
 
   const result = await runStreetEngineV4Preparation(db, begun.run, {
     streetEngineVersion: 'v4',
-    streetEngineV4Bucket: missingBucket,
+    streetEngineV4Bucket: transientBucket,
     streetEngineV4Channel: 'beta',
     now: () => new Date('2026-09-18T12:00:01Z'),
   });
-  assert.equal(result.outcome, 'failed');
-  const job = db.sqlite.prepare('SELECT attempts,phase FROM street_network_jobs').get() as { attempts: number; phase: string };
-  assert.equal(job.attempts, 1);
-  assert.equal(job.phase, 'failed');
+  assert.equal(result.outcome, 'pending');
+  const job = db.sqlite.prepare('SELECT attempts,phase,metrics_json FROM street_network_jobs').get() as {
+    attempts: number;
+    phase: string;
+    metrics_json: string;
+  };
+  assert.equal(job.attempts, 2);
+  assert.equal(job.phase, 'v4-source');
+  assert.equal((JSON.parse(job.metrics_json) as { engineVersion: string }).engineVersion, 'v4');
 });
