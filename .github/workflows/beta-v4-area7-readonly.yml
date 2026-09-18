@@ -19,7 +19,8 @@ jobs:
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
       CAMPAIGN_ID: campaign_032feb82-7187-472c-b8d3-5d7e46f01eda
-      AREA_ID: area_6c0e1b59-be2e-4d7a-a6d5-67bb8ea968eb
+      DEVICE_AREA_ID: area_d8c81ae7-2a1f-43d6-8a63-a302b5979390
+      PREVIOUS_AREA_ID: area_6c0e1b59-be2e-4d7a-a6d5-67bb8ea968eb
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -50,15 +51,23 @@ jobs:
           [[ "$BETA_D1_ID" != "$PROD_D1_ID" && "$BETA_D1_ID" != "$RXDB_STAGING_D1_ID" ]] || { echo 'Protected D1 collision.' >&2; exit 1; }
           echo "BETA_D1_ID=$BETA_D1_ID" >> "$GITHUB_ENV"
 
-      - name: Capture sanitized Area 7 Street Engine state
+      - name: Capture sanitized canonical Area and sync state
         shell: bash
         run: |
           set -euo pipefail
           sql_escape() { printf '%s' "$1" | sed "s/'/''/g"; }
           CID="$(sql_escape "$CAMPAIGN_ID")"
-          AID="$(sql_escape "$AREA_ID")"
+          DEVICE_AID="$(sql_escape "$DEVICE_AREA_ID")"
+          PREVIOUS_AID="$(sql_escape "$PREVIOUS_AREA_ID")"
 
-          PREP="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+          AREAS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT id,name,team_id,created_at,updated_at
+            FROM areas
+            WHERE campaign_id='$CID'
+            ORDER BY updated_at DESC,id;
+          ")"
+
+          DEVICE_PREP="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
             SELECT
               p.status,p.generation,p.road_count,p.house_count,p.source_timestamp,
               p.started_at,p.ready_at,p.failed_at,p.last_error_code,p.updated_at,
@@ -67,37 +76,64 @@ jobs:
               json_extract(j.metrics_json,'$.manifestHash') AS manifest_hash,
               json_extract(j.metrics_json,'$.sourcePackVersion') AS source_pack_version,
               json_extract(j.metrics_json,'$.algorithmVersion') AS algorithm_version,
-              json_extract(j.metrics_json,'$.shardCount') AS shard_count,
-              json_extract(j.metrics_json,'$.objectGets') AS object_gets,
-              json_extract(j.metrics_json,'$.compressedBytes') AS compressed_bytes,
-              json_extract(j.metrics_json,'$.decodedBytes') AS decoded_bytes,
               json_extract(j.metrics_json,'$.legacyOverpassRequests') AS legacy_overpass_requests,
               json_extract(j.metrics_json,'$.roads') AS roads,
               json_extract(j.metrics_json,'$.buildings') AS buildings,
               json_extract(j.metrics_json,'$.addressableBuildings') AS addressable_buildings,
               json_extract(j.metrics_json,'$.houses') AS houses,
-              json_extract(j.metrics_json,'$.sourceTimestamp') AS metric_source_timestamp,
-              json_extract(j.metrics_json,'$.sourceMs') AS source_ms,
-              json_extract(j.metrics_json,'$.graphMs') AS graph_ms,
-              json_extract(j.metrics_json,'$.addressMs') AS address_ms,
-              json_extract(j.metrics_json,'$.linkMs') AS link_ms,
-              json_extract(j.metrics_json,'$.publishMs') AS publish_ms,
               json_extract(j.metrics_json,'$.resultHash') AS result_hash
             FROM area_task_preparations p
             LEFT JOIN street_network_jobs j
               ON j.campaign_id=p.campaign_id AND j.area_id=p.area_id AND j.generation=p.generation
-            WHERE p.campaign_id='$CID' AND p.area_id='$AID';
+            WHERE p.campaign_id='$CID' AND p.area_id='$DEVICE_AID';
           ")"
 
-          COUNTS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+          PREVIOUS_PREP="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT p.status,p.generation,p.road_count,p.house_count,p.updated_at,
+                   j.phase,j.cursor,j.attempts,j.error_code
+            FROM area_task_preparations p
+            LEFT JOIN street_network_jobs j
+              ON j.campaign_id=p.campaign_id AND j.area_id=p.area_id AND j.generation=p.generation
+            WHERE p.campaign_id='$CID' AND p.area_id='$PREVIOUS_AID';
+          ")"
+
+          DEVICE_COUNTS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
             SELECT
-              (SELECT COUNT(*) FROM tasks WHERE campaign_id='$CID' AND area_id='$AID' AND area_preparation_generation IS NOT NULL) AS prepared_streets,
-              (SELECT COUNT(*) FROM house_tasks WHERE campaign_id='$CID' AND area_id='$AID' AND area_preparation_generation IS NOT NULL) AS prepared_houses,
-              (SELECT COUNT(*) FROM street_network_state s JOIN tasks t ON t.id=s.task_id WHERE t.campaign_id='$CID' AND t.area_id='$AID') AS network_rows,
-              (SELECT COUNT(*) FROM house_road_positions hp JOIN house_tasks h ON h.id=hp.house_id WHERE h.campaign_id='$CID' AND h.area_id='$AID') AS house_position_rows;
+              (SELECT COUNT(*) FROM tasks WHERE campaign_id='$CID' AND area_id='$DEVICE_AID') AS streets_total,
+              (SELECT COUNT(*) FROM tasks WHERE campaign_id='$CID' AND area_id='$DEVICE_AID' AND area_preparation_generation IS NOT NULL) AS prepared_streets,
+              (SELECT COUNT(*) FROM house_tasks WHERE campaign_id='$CID' AND area_id='$DEVICE_AID') AS houses_total,
+              (SELECT COUNT(*) FROM house_tasks WHERE campaign_id='$CID' AND area_id='$DEVICE_AID' AND area_preparation_generation IS NOT NULL) AS prepared_houses;
           ")"
 
-          jq -n             --arg campaignId "$CAMPAIGN_ID"             --arg areaId "$AREA_ID"             --argjson preparation "$PREP"             --argjson canonicalCounts "$COUNTS"             '{campaignId:$campaignId,areaId:$areaId,preparation:$preparation,canonicalCounts:$canonicalCounts}'             > /tmp/beta-v4-area7-readonly.json
+          SYNC_HEADS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT collection_name,seq
+            FROM campaign_sync_heads
+            WHERE campaign_id='$CID'
+            ORDER BY collection_name;
+          ")"
+
+          AREA_FEED="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
+            SELECT seq,document_id,operation,scope_team_id,changed_at
+            FROM campaign_sync_changes
+            WHERE campaign_id='$CID'
+              AND collection_name='areas'
+              AND document_id IN ('$DEVICE_AID','$PREVIOUS_AID')
+            ORDER BY seq DESC
+            LIMIT 20;
+          ")"
+
+          jq -n \
+            --arg campaignId "$CAMPAIGN_ID" \
+            --arg deviceAreaId "$DEVICE_AREA_ID" \
+            --arg previousAreaId "$PREVIOUS_AREA_ID" \
+            --argjson canonicalAreas "$AREAS" \
+            --argjson devicePreparation "$DEVICE_PREP" \
+            --argjson previousPreparation "$PREVIOUS_PREP" \
+            --argjson deviceCounts "$DEVICE_COUNTS" \
+            --argjson syncHeads "$SYNC_HEADS" \
+            --argjson areaFeed "$AREA_FEED" \
+            '{campaignId:$campaignId,deviceAreaId:$deviceAreaId,previousAreaId:$previousAreaId,canonicalAreas:$canonicalAreas,devicePreparation:$devicePreparation,previousPreparation:$previousPreparation,deviceCounts:$deviceCounts,syncHeads:$syncHeads,areaFeed:$areaFeed}' \
+            > /tmp/beta-v4-area7-readonly.json
           jq . /tmp/beta-v4-area7-readonly.json
 
       - name: Upload sanitized read-only evidence
