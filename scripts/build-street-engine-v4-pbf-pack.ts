@@ -1,25 +1,14 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
-  canonicalStreetEngineV3SourceManifestJson,
-  streetEngineV3SourceManifestHash,
   streetEngineV3SourceObjectKey,
   type StreetEngineV3Bounds,
 } from '../src/domain/streetEngineV3SourcePack.ts';
-import { buildStreetEngineV3PbfPack, type StreetEngineV3PbfFeature } from '../worker/streetNetwork/v3PbfPackBuilder.ts';
+import {
+  buildStreetEngineV4PbfPack,
+  parseStreetEngineV4GeoJsonSeq,
+} from '../worker/streetNetwork/v4PbfPackBuilder.ts';
 import { streetEngineV3ManifestObjectKey, streetEngineV3PointerKey } from '../worker/streetNetwork/v3SourceRuntime.ts';
-
-function parseFeatures(raw:string):StreetEngineV3PbfFeature[]{
-  const features:StreetEngineV3PbfFeature[]=[];
-  for(const rawLine of raw.split(/\r?\n/u)){
-    const line=rawLine.replace(/^\u001e/u,'').trim();if(!line)continue;
-    let value:unknown;try{value=JSON.parse(line);}catch{throw new Error('street_engine_v4_pbf_geojsonseq_invalid');}
-    if(!value||typeof value!=='object'||(value as {type?:unknown}).type!=='Feature')throw new Error('street_engine_v4_pbf_geojsonseq_invalid');
-    const feature=value as StreetEngineV3PbfFeature;
-    if(feature.geometry?.type==='Point'||feature.geometry?.type==='LineString'||feature.geometry?.type==='Polygon')features.push(feature);
-  }
-  return features;
-}
 function parseBounds(value:string):StreetEngineV3Bounds{
   const parts=value.split(',').map(Number);if(parts.length!==4||parts.some((part)=>!Number.isFinite(part)))throw new Error('street_engine_v4_pbf_cli_bounds_invalid');
   return parts as unknown as StreetEngineV3Bounds;
@@ -31,10 +20,10 @@ if(!inputArg||!boundsArg||!timestampArg){
   process.exit(2);
 }
 const outputDir=resolve(outputArg);
-const built=await buildStreetEngineV3PbfPack({features:parseFeatures(await readFile(resolve(inputArg),'utf8')),coverageBounds:parseBounds(boundsArg),sourceTimestamp:timestampArg,provider:providerArg});
-const manifest={...built.manifest,algorithmVersion:'v4-pbf-builder-1'};
-const manifestJson=canonicalStreetEngineV3SourceManifestJson(manifest);
-const manifestHash=await streetEngineV3SourceManifestHash(manifest);
+const built=await buildStreetEngineV4PbfPack({features:parseStreetEngineV4GeoJsonSeq(await readFile(resolve(inputArg),'utf8')),coverageBounds:parseBounds(boundsArg),sourceTimestamp:timestampArg,provider:providerArg});
+const manifest=built.manifest;
+const manifestJson=built.manifestJson;
+const manifestHash=built.manifestHash;
 await rm(outputDir,{recursive:true,force:true});await mkdir(resolve(outputDir,'shards'),{recursive:true});
 for(const [id,bytes] of built.shardObjects)await writeFile(resolve(outputDir,'shards',`${id}.bin`),bytes);
 const pointer=JSON.stringify({schemaVersion:1,channel:channelArg,manifestHash});
