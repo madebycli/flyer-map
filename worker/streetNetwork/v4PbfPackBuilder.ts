@@ -142,38 +142,40 @@ function syntheticBuildingId(sourceType: 'way' | 'relation', sourceId: number, c
   return id;
 }
 
-export function parseStreetEngineV4GeoJsonSeq(raw: string): StreetEngineV4PbfFeature[] {
-  const features: StreetEngineV4PbfFeature[] = [];
-  for (const rawLine of raw.split(/\r?\n/u)) {
-    const line = rawLine.replace(/^\u001e/u, '').trim();
-    if (!line) continue;
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch {
-      throw new Error('street_engine_v4_pbf_geojsonseq_invalid');
-    }
-    if (!value || typeof value !== 'object' || (value as { type?: unknown }).type !== 'Feature') {
-      throw new Error('street_engine_v4_pbf_geojsonseq_invalid');
-    }
-    const feature = value as {
-      type: 'Feature';
-      properties?: unknown;
-      geometry?: { type?: unknown; coordinates?: unknown } | null;
-    };
-    const properties = feature.properties && typeof feature.properties === 'object' && !Array.isArray(feature.properties)
-      ? feature.properties as Record<string, unknown>
-      : {};
-    const geometryType = feature.geometry?.type;
-    if (typeof geometryType === 'string' && SUPPORTED_GEOMETRIES.has(geometryType)) {
-      features.push(value as StreetEngineV4PbfFeature);
-      continue;
-    }
-    if (isBuilding(properties)) {
-      throw new Error('street_engine_v4_pbf_building_geometry_unsupported');
-    }
+export function parseStreetEngineV4GeoJsonSeqRecord(rawLine: string): StreetEngineV4PbfFeature | null {
+  const line = rawLine.replace(/^\u001e/u, '').trim();
+  if (!line) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    throw new Error('street_engine_v4_pbf_geojsonseq_invalid');
   }
-  return features;
+  if (!value || typeof value !== 'object' || (value as { type?: unknown }).type !== 'Feature') {
+    throw new Error('street_engine_v4_pbf_geojsonseq_invalid');
+  }
+  const feature = value as {
+    type: 'Feature';
+    properties?: unknown;
+    geometry?: { type?: unknown; coordinates?: unknown } | null;
+  };
+  const properties = feature.properties && typeof feature.properties === 'object' && !Array.isArray(feature.properties)
+    ? feature.properties as Record<string, unknown>
+    : {};
+  const geometryType = feature.geometry?.type;
+  if (typeof geometryType === 'string' && SUPPORTED_GEOMETRIES.has(geometryType)) {
+    return value as StreetEngineV4PbfFeature;
+  }
+  if (isBuilding(properties)) {
+    throw new Error('street_engine_v4_pbf_building_geometry_unsupported');
+  }
+  return null;
+}
+
+export function parseStreetEngineV4GeoJsonSeq(raw: string): StreetEngineV4PbfFeature[] {
+  return raw.split(/\r?\n/u)
+    .map(parseStreetEngineV4GeoJsonSeqRecord)
+    .filter((feature): feature is StreetEngineV4PbfFeature => feature !== null);
 }
 
 /**
@@ -252,15 +254,63 @@ export function normalizeStreetEngineV4PbfFeatures(
   return direct;
 }
 
+export async function* normalizeStreetEngineV4PbfFeatureStream(
+  features: Iterable<StreetEngineV4PbfFeature> | AsyncIterable<StreetEngineV4PbfFeature>,
+): AsyncGenerator<StreetEngineV3PbfFeature> {
+  const syntheticIds = new Set<number>();
+  for await (const feature of features) {
+    const rawId = feature.properties['@id'];
+    if (Number.isSafeInteger(rawId) && (rawId as number) >= SYNTHETIC_WAY_BASE) {
+      throw new Error('street_engine_v4_pbf_synthetic_id_collision');
+    }
+
+    if (feature.geometry.type === 'Point' || feature.geometry.type === 'LineString') {
+      yield feature as StreetEngineV3PbfFeature;
+      continue;
+    }
+    if (!isBuilding(feature.properties)) continue;
+
+    const { sourceType, sourceId } = sourceIdentity(feature.properties);
+    if (feature.geometry.type === 'Polygon' && sourceType === 'way') {
+      yield feature as StreetEngineV3PbfFeature;
+      continue;
+    }
+
+    const polygons = feature.geometry.type === 'Polygon'
+      ? [feature.geometry.coordinates]
+      : feature.geometry.coordinates;
+    for (let component = 0; component < polygons.length; component += 1) {
+      const coordinates = polygons[component]!;
+      const syntheticId = syntheticBuildingId(sourceType, sourceId, component);
+      if (syntheticIds.has(syntheticId)) {
+        throw new Error('street_engine_v4_pbf_synthetic_id_collision');
+      }
+      syntheticIds.add(syntheticId);
+      yield {
+        type: 'Feature',
+        properties: {
+          ...feature.properties,
+          '@type': 'way',
+          '@id': syntheticId,
+          'v4:source_type': sourceType,
+          'v4:source_id': String(sourceId),
+          'v4:source_component': String(component),
+        },
+        geometry: { type: 'Polygon', coordinates },
+      };
+    }
+  }
+}
+
 export async function buildStreetEngineV4PbfPack(input: {
-  features: StreetEngineV4PbfFeature[];
+  features: Iterable<StreetEngineV4PbfFeature> | AsyncIterable<StreetEngineV4PbfFeature>;
   coverageBounds: StreetEngineV3Bounds;
   sourceTimestamp: string;
   provider?: string;
 }): Promise<StreetEngineV3BuiltPbfPack> {
   const built = await buildStreetEngineV3PbfPack({
     ...input,
-    features: normalizeStreetEngineV4PbfFeatures(input.features),
+    features: normalizeStreetEngineV4PbfFeatureStream(input.features),
     encodeShard: encodeStreetEngineV4Shard,
   });
   const manifest = { ...built.manifest, algorithmVersion: 'v4-pbf-builder-4' };

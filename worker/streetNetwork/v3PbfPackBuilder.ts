@@ -131,7 +131,7 @@ function mergeConsistent<T extends { osmId: number }>(target: Map<number, T>, va
 }
 
 export async function buildStreetEngineV3PbfPack(input: {
-  features: StreetEngineV3PbfFeature[];
+  features: Iterable<StreetEngineV3PbfFeature> | AsyncIterable<StreetEngineV3PbfFeature>;
   coverageBounds: StreetEngineV3Bounds;
   sourceTimestamp: string;
   provider?: string;
@@ -160,7 +160,7 @@ export async function buildStreetEngineV3PbfPack(input: {
   const roads = new Map<number, RoadInput>();
   const buildings = new Map<number, AddressBuilding>();
   const addressNodes = new Map<number, AddressNode>();
-  for (const feature of input.features) {
+  for await (const feature of input.features) {
     if (!feature || feature.type !== 'Feature' || !feature.properties || !feature.geometry) {
       throw new Error('street_engine_v3_pbf_feature_invalid');
     }

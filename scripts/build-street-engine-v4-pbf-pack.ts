@@ -1,14 +1,31 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import {
   streetEngineV3SourceObjectKey,
   type StreetEngineV3Bounds,
 } from '../src/domain/streetEngineV3SourcePack.ts';
 import {
   buildStreetEngineV4PbfPack,
-  parseStreetEngineV4GeoJsonSeq,
+  parseStreetEngineV4GeoJsonSeqRecord,
+  type StreetEngineV4PbfFeature,
 } from '../worker/streetNetwork/v4PbfPackBuilder.ts';
 import { streetEngineV3ManifestObjectKey, streetEngineV3PointerKey } from '../worker/streetNetwork/v3SourceRuntime.ts';
+async function* streamGeoJsonSeq(path: string): AsyncGenerator<StreetEngineV4PbfFeature> {
+  const input = createReadStream(path, { encoding: 'utf8' });
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const rawLine of lines) {
+      const feature = parseStreetEngineV4GeoJsonSeqRecord(rawLine);
+      if (feature) yield feature;
+    }
+  } finally {
+    lines.close();
+    input.destroy();
+  }
+}
+
 function parseBounds(value:string):StreetEngineV3Bounds{
   const parts=value.split(',').map(Number);if(parts.length!==4||parts.some((part)=>!Number.isFinite(part)))throw new Error('street_engine_v4_pbf_cli_bounds_invalid');
   return parts as unknown as StreetEngineV3Bounds;
@@ -20,7 +37,7 @@ if(!inputArg||!boundsArg||!timestampArg){
   process.exit(2);
 }
 const outputDir=resolve(outputArg);
-const built=await buildStreetEngineV4PbfPack({features:parseStreetEngineV4GeoJsonSeq(await readFile(resolve(inputArg),'utf8')),coverageBounds:parseBounds(boundsArg),sourceTimestamp:timestampArg,provider:providerArg});
+const built=await buildStreetEngineV4PbfPack({features:streamGeoJsonSeq(resolve(inputArg)),coverageBounds:parseBounds(boundsArg),sourceTimestamp:timestampArg,provider:providerArg});
 const manifest=built.manifest;
 const manifestJson=built.manifestJson;
 const manifestHash=built.manifestHash;
