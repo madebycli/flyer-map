@@ -177,25 +177,40 @@ function ownedBytes(bytes: Uint8Array) {
 
 async function transformBytes(bytes: Uint8Array, stream: CompressionStream | DecompressionStream) {
   const writer = stream.writable.getWriter();
-  await writer.write(ownedBytes(bytes));
-  await writer.close();
   const reader = stream.readable.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  while (true) {
-    const part = await reader.read();
-    if (part.done) break;
-    chunks.push(part.value);
-    size += part.value.byteLength;
-    if (size > STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES) throw new Error('street_engine_v3_shard_decode_budget');
+  const write = (async () => {
+    await writer.write(ownedBytes(bytes));
+    await writer.close();
+  })();
+  const read = (async () => {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      chunks.push(part.value);
+      size += part.value.byteLength;
+      if (size > STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES) {
+        throw new Error('street_engine_v3_shard_decode_budget');
+      }
+    }
+    const result = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return result;
+  })();
+
+  try {
+    const [, transformed] = await Promise.all([write, read]);
+    return transformed;
+  } catch (error) {
+    try { await writer.abort(error); } catch { /* stream already closed/errored */ }
+    try { await reader.cancel(error); } catch { /* stream already closed/errored */ }
+    throw error;
   }
-  const result = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return result;
 }
 
 export async function sha256Bytes(bytes: Uint8Array) {
