@@ -213,15 +213,16 @@ jobs:
           echo "area8 shardCount=$SHARD_COUNT compressedBytes=$COMPRESSED_BYTES decodedBytes=$DECODED_BYTES transferWithinBudget=$TRANSFER_WITHIN_BUDGET decodeWithinBudget=$DECODE_WITHIN_BUDGET"
 
           mkdir -p /tmp/v4-area8-assets
-          while IFS='|' read -r ID KEY EXPECTED_COMPRESSED EXPECTED_DECODED; do
+          while IFS='|' read -r ID EXPECTED_COMPRESSED EXPECTED_DECODED; do
             FILE="/tmp/v4-area8-assets/${ID}.bin"
+            KEY="source/v1/${ID:0:2}/${ID}.bin"
             curl --fail-with-body --silent --show-error "${ASSET_ROOT}/${KEY}" -o "$FILE"
             [[ "$(wc -c < "$FILE" | tr -d ' ')" == "$EXPECTED_COMPRESSED" ]]
             [[ "$(sha256sum "$FILE" | awk '{print $1}')" == "$ID" ]]
             gzip -t "$FILE"
             ACTUAL_DECODED="$(gzip -dc "$FILE" | wc -c | tr -d ' ')"
             [[ "$ACTUAL_DECODED" == "$EXPECTED_DECODED" ]]
-          done < <(jq -r '.[] | [.id,.key,(.compressedBytes|tostring),(.uncompressedBytes|tostring)] | join("|")' /tmp/v4-area8-selected-shards.json)
+          done < <(jq -r '.[] | [.id,(.compressedBytes|tostring),(.uncompressedBytes|tostring)] | join("|")' /tmp/v4-area8-selected-shards.json)
 
           jq -n \
             --arg manifestHash "$MANIFEST_HASH" \
