@@ -125,6 +125,14 @@ jobs:
               json_extract(j.metrics_json,'$.sourcePackVersion') AS source_pack_version,
               json_extract(j.metrics_json,'$.algorithmVersion') AS algorithm_version,
               json_extract(j.metrics_json,'$.legacyOverpassRequests') AS legacy_overpass_requests,
+              json_extract(j.metrics_json,'$.sourceRoads') AS source_roads,
+              json_extract(j.metrics_json,'$.graphCandidateRoads') AS graph_candidate_roads,
+              json_extract(j.metrics_json,'$.roads') AS roads,
+              json_extract(j.metrics_json,'$.sourceBuildings') AS source_buildings,
+              json_extract(j.metrics_json,'$.sourceAddressNodes') AS source_address_nodes,
+              json_extract(j.metrics_json,'$.addressableBuildings') AS addressable_buildings,
+              json_extract(j.metrics_json,'$.areaAddressableBuildings') AS area_addressable_buildings,
+              json_extract(j.metrics_json,'$.houses') AS houses,
               json_extract(j.metrics_json,'$.resultHash') AS result_hash,
               j.metrics_json AS full_metrics_json
             FROM area_task_preparations p
