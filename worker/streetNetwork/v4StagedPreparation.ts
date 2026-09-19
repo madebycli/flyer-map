@@ -69,6 +69,7 @@ type V4StagedMetrics = {
   publishMs?: number;
   resultHash?: string;
   baseChunkCount?: number;
+  baseHashes?: string[];
   feedChunkCount?: number;
   lastError?: { phase: string; cursor: number; code: string; attempt: number };
 };
@@ -324,11 +325,6 @@ async function oldGeneration(db: D1DatabaseLike, run: AreaTaskPreparationRun) {
   return row?.generation ?? null;
 }
 
-async function stagedBaseHash(db: D1DatabaseLike, run: AreaTaskPreparationRun) {
-  const rows = await staged<StagedBaseChunk>(db, run, 'v4-base-ready');
-  return sha256Hex(JSON.stringify(rows.map((row) => row.hash).sort()));
-}
-
 async function publishStaged(
   db: D1DatabaseLike,
   run: AreaTaskPreparationRun,
@@ -337,7 +333,7 @@ async function publishStaged(
   now: string,
 ) {
   const token = crypto.randomUUID();
-  metrics.resultHash ??= await stagedBaseHash(db, run);
+  metrics.resultHash ??= await sha256Hex(JSON.stringify([...(metrics.baseHashes ?? [])].sort()));
   const guard = 'EXISTS(SELECT 1 FROM campaigns WHERE id=? AND write_token=?)';
   const statements = [
     db.prepare(`UPDATE campaigns SET revision=revision+1,write_token=?,updated_at=?
@@ -392,10 +388,10 @@ async function publishStaged(
         run.campaignId, run.areaId, run.generation,
         run.campaignId, token,
       ),
-    db.prepare(`DELETE FROM tasks
+    db.prepare(`DELETE FROM house_tasks
       WHERE campaign_id=? AND area_id=? AND area_preparation_generation IS NOT NULL AND ${guard}`)
       .bind(run.campaignId, run.areaId, run.campaignId, token),
-    db.prepare(`DELETE FROM house_tasks
+    db.prepare(`DELETE FROM tasks
       WHERE campaign_id=? AND area_id=? AND area_preparation_generation IS NOT NULL AND ${guard}`)
       .bind(run.campaignId, run.areaId, run.campaignId, token),
     db.prepare(`UPDATE area_task_preparations SET
@@ -729,6 +725,7 @@ export async function runStreetEngineV4StagedPreparation(
       }
       await stageRows(db, run, lease, 'v4-base-ready', `${kind}:${bucketKey(bucket)}`, baseRows);
       metrics.baseChunkCount = (metrics.baseChunkCount ?? 0) + baseRows.length;
+      metrics.baseHashes = [...(metrics.baseHashes ?? []), ...baseRows.map((row) => row.hash)];
 
       const visibleNew = stable.map((entity) =>
         visibleWithOverlay(
@@ -757,7 +754,7 @@ export async function runStreetEngineV4StagedPreparation(
 
       cursor += 1;
       if (cursor >= 32) {
-        metrics.resultHash = await stagedBaseHash(db, run);
+        metrics.resultHash = await sha256Hex(JSON.stringify([...(metrics.baseHashes ?? [])].sort()));
         phase = 'v4-publish';
         cursor = 0;
       }
