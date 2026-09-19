@@ -24,11 +24,16 @@ test("MapLibre receives real candidate clicks and renders candidate, preview, an
   assert.match(map, /SMART_PREVIEW_SOURCE_ID = "vf-smart-street-preview"/u);
   assert.match(map, /SMART_POINT_SOURCE_ID = "vf-smart-street-points"/u);
   assert.match(map, /const streetLayers = STREET_LAYER_IDS\.filter/u);
+  assert.match(map, /map\.queryRenderedFeatures\(event\.point, \{ layers: \[\.\.\.streetLayers\] \}\)/u);
+  assert.match(map, /exactStreetFeatures\.length > 0/u);
   assert.match(map, /map\.queryRenderedFeatures\(bbox, \{ layers: \[\.\.\.streetLayers\] \}\)/u);
   assert.match(map, /feature\.properties\?\.taskId/u);
   assert.match(map, /interaction\.onSmartStreetPoint\(lngLat, sourceIds\)/u);
   assert.match(map, /"circle-color": "#7c3aed"/u);
+  assert.match(map, /"circle-radius": 9/u);
   assert.match(map, /"circle-stroke-color": "#ffffff"/u);
+  assert.match(map, /"circle-stroke-width": 3\.5/u);
+  assert.match(map, /streetDraftVertices[\s\S]*radius=\{9\}/u);
   assert.match(map, /SMART_POINT_LABEL_LAYER_ID, "visibility", "none"/u);
   assert.match(map, /roadSource\.setData\(smartRoadsToGeoJson/u);
   assert.match(map, /previewSource\.setData\(smartPreviewToGeoJson/u);
