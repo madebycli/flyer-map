@@ -55,7 +55,15 @@ export function clipNetworkLines(input: LinearInput, area: PolygonGeometry): Lin
 }
 
 /** OSM shared vertices encode actual junctions; an un-noded grade crossing is not a junction. */
-export async function buildRoadNetwork(input: { roads: RoadInput[]; area: PolygonGeometry; campaignId: string; areaId: string; generation: string; timestamp: string }): Promise<DistributionTask[]> {
+export async function buildRoadNetwork(input: {
+  roads: RoadInput[];
+  area: PolygonGeometry;
+  campaignId: string;
+  areaId: string;
+  generation: string;
+  timestamp: string;
+  maxTasks?: number;
+}): Promise<DistributionTask[]> {
   const fragments: { road: RoadInput; line: LineStringGeometry; level: string }[] = [];
   const seenWays = new Map<number, string>();
   for (const road of [...input.roads].sort((a, b) => a.osmId - b.osmId)) {
@@ -87,6 +95,7 @@ export async function buildRoadNetwork(input: { roads: RoadInput[]; area: Polygo
       if (total < 0.05) continue;
       const id = await stablePreparedStreetTaskId({ campaignId: input.campaignId, areaId: input.areaId, sourceOsmWayId: fragment.road.osmId, geometry });
       tasks.set(id, { id, campaignId: input.campaignId, areaId: input.areaId, taskType: 'street', label: fragment.road.tags.name ?? fragment.road.tags.ref ?? 'Straße', geometry, source: { dataset: 'OpenStreetMap', objectType: 'way', objectIds: [fragment.road.osmId] }, areaPreparationGeneration: input.generation, status: 'open', completedAt: null, createdAt: input.timestamp, updatedAt: input.timestamp, network: { fromNode: networkNodeKey(geometry.coordinates[0], fragment.level), toNode: networkNodeKey(geometry.coordinates.at(-1)!, fragment.level), length: total, coverage: [] } });
+      if (input.maxTasks !== undefined && tasks.size > input.maxTasks) throw new Error('graph_build_budget');
     }
   }
   return [...tasks.values()].sort((a, b) => a.id.localeCompare(b.id));
