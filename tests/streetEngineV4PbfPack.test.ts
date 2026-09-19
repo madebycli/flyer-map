@@ -7,6 +7,14 @@ import {
   parseStreetEngineV4GeoJsonSeq,
   type StreetEngineV4PbfFeature,
 } from '../worker/streetNetwork/v4PbfPackBuilder.ts';
+import {
+  loadStreetEngineV3Source,
+  streetEngineV3ManifestObjectKey,
+  streetEngineV3PointerKey,
+  type StreetEngineV3Bucket,
+  type StreetEngineV3Object,
+} from '../worker/streetNetwork/v3SourceRuntime.ts';
+import { streetEngineV3SourceObjectKey } from '../src/domain/streetEngineV3SourcePack.ts';
 
 const polygon = (west:number, south:number, east:number, north:number) => [[
   [west, south],
@@ -151,4 +159,77 @@ test('V4 shard encoder drains CompressionStream while release-sized output appli
   assert.ok(encoded.uncompressedBytes > 1_000_000);
   assert.ok(encoded.bytes.byteLength > 0);
   assert.match(encoded.id, /^[0-9a-f]{64}$/u);
+});
+
+
+function sourceObject(value: string | Uint8Array): StreetEngineV3Object {
+  const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+  return {
+    async arrayBuffer() {
+      const copy = new Uint8Array(bytes.byteLength);
+      copy.set(bytes);
+      return copy.buffer;
+    },
+    async text() {
+      return typeof value === 'string' ? value : new TextDecoder().decode(value);
+    },
+  };
+}
+
+test('V4 runtime drains large shard decompression while output applies backpressure', { timeout: 10_000 }, async () => {
+  const features: StreetEngineV4PbfFeature[] = Array.from({ length: 1_500 }, (_, index) => {
+    const x = 7.0001 + (index % 50) * 0.0001;
+    const y = 50.7001 + (Math.floor(index / 50) % 30) * 0.0001;
+    return {
+      type: 'Feature',
+      properties: {
+        '@type': 'way',
+        '@id': 50_000 + index,
+        building: 'yes',
+        name: deterministicNoise(index + 10_000, 800),
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: polygon(x, y, x + 0.00005, y + 0.00005),
+      },
+    };
+  });
+  const built = await buildStreetEngineV4PbfPack({
+    features,
+    coverageBounds: [7.0, 50.7, 7.009, 50.709],
+    sourceTimestamp: '2026-09-18T00:00:00Z',
+    provider: 'fixture',
+  });
+  assert.equal(built.shardObjects.size, 1);
+  const shard = built.manifest.shards[0]!;
+  assert.ok(shard.uncompressedBytes > 1_000_000);
+
+  const objects = new Map<string, StreetEngineV3Object>([
+    [streetEngineV3PointerKey('beta'), sourceObject(JSON.stringify({
+      schemaVersion: 1,
+      channel: 'beta',
+      manifestHash: built.manifestHash,
+    }))],
+    [streetEngineV3ManifestObjectKey(built.manifestHash), sourceObject(built.manifestJson)],
+  ]);
+  for (const [id, bytes] of built.shardObjects) {
+    objects.set(streetEngineV3SourceObjectKey(id), sourceObject(bytes));
+  }
+  const bucket: StreetEngineV3Bucket = {
+    async get(key) {
+      return objects.get(key) ?? null;
+    },
+  };
+
+  const loaded = await loadStreetEngineV3Source({
+    bucket,
+    channel: 'beta',
+    area: {
+      type: 'Polygon',
+      coordinates: [[[7.0, 50.7], [7.009, 50.7], [7.009, 50.709], [7.0, 50.709], [7.0, 50.7]]],
+    },
+  });
+  assert.equal(loaded.buildings.length, 1_500);
+  assert.equal(loaded.diagnostics.shardCount, 1);
+  assert.equal(loaded.diagnostics.decodedBytes, shard.uncompressedBytes);
 });
