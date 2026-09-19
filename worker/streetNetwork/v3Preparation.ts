@@ -43,7 +43,7 @@ type V3Metrics = {
   roads?: number;
   sourceBuildings?: number;
   sourceAddressNodes?: number;
-  areaBuildings?: number;
+  areaAddressableBuildings?: number;
   buildings?: number;
   addressableBuildings?: number;
   houses?: number;
@@ -255,15 +255,15 @@ export async function runStreetEngineV3Preparation(
     metrics.roads = roads.length;
 
     const addressStarted = performance.now();
-    const areaBuildings = source.buildings.filter((building) =>
+    const addressed = addressBuildings(source.buildings, source.addressNodes);
+    const areaAddressed = addressed.filter((building) =>
       polygonOwnsPoint(run.area.geometry, interiorPoint(building.geometry)),
     );
-    metrics.areaBuildings = areaBuildings.length;
-    const addressed = addressBuildings(areaBuildings, source.addressNodes);
     metrics.addressMs = performance.now() - addressStarted;
     metrics.buildings = source.buildings.length;
     metrics.addressableBuildings = addressed.length;
-    if (addressed.length > (options.maxBuildings ?? MAX_BUILDINGS)) throw new Error('street_engine_v3_house_budget');
+    metrics.areaAddressableBuildings = areaAddressed.length;
+    if (areaAddressed.length > (options.maxBuildings ?? MAX_BUILDINGS)) throw new Error('street_engine_v3_house_budget');
 
     const linkStarted = performance.now();
     const houses = await preparedHouses({
@@ -272,7 +272,7 @@ export async function runStreetEngineV3Preparation(
       generation: run.generation,
       timestamp: now,
       area: run.area,
-      buildings: addressed,
+      buildings: areaAddressed,
       roads,
     });
     metrics.linkMs = performance.now() - linkStarted;
