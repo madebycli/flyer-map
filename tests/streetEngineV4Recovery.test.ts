@@ -259,6 +259,61 @@ test('V4 budgets apply to generated product entities instead of raw shard source
   assert.equal(metrics.houses, 1);
 });
 
+
+test('V4 house budget ignores addressable shard buildings outside the Area', async (t) => {
+  const db = new NetworkD1();
+  t.after(() => db.sqlite.close());
+  seedNetwork(db);
+  db.sqlite.prepare("UPDATE areas SET geometry_json=? WHERE id='area_n'").run(JSON.stringify({
+    type: 'Polygon',
+    coordinates: [[[13, 51], [13.008, 51], [13.008, 51.008], [13, 51.008], [13, 51]]],
+  }));
+
+  const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n', {
+    randomUUID: () => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    now: () => new Date('2026-09-18T13:05:00Z'),
+  });
+  assert.equal(begun.outcome, 'run');
+  if (begun.outcome !== 'run') return;
+
+  const outsideAddressedBuilding: StreetEngineV4PbfFeature = {
+    type: 'Feature',
+    properties: {
+      '@type': 'way',
+      '@id': 22,
+      building: 'yes',
+      'addr:street': 'Außerhalb',
+      'addr:housenumber': '99',
+    },
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[
+        [13.009, 51.009],
+        [13.0092, 51.009],
+        [13.0092, 51.0092],
+        [13.009, 51.0092],
+        [13.009, 51.009],
+      ]],
+    },
+  };
+
+  const result = await runStreetEngineV4Preparation(db, begun.run, {
+    streetEngineVersion: 'v4',
+    streetEngineV4Bucket: await v4Bucket([outsideAddressedBuilding]),
+    streetEngineV4Channel: 'beta',
+    maxBuildings: 1,
+    now: () => new Date('2026-09-18T13:05:01Z'),
+  });
+
+  assert.equal(result.outcome, 'ready');
+  const job = db.sqlite.prepare('SELECT metrics_json FROM street_network_jobs').get() as { metrics_json: string };
+  const metrics = JSON.parse(job.metrics_json) as Record<string, unknown>;
+  assert.equal(metrics.sourceBuildings, 2);
+  assert.equal(metrics.areaBuildings, 1);
+  assert.equal(metrics.addressableBuildings, 1);
+  assert.equal(metrics.houses, 1);
+});
+
 test('V4 still fails closed when generated road fragments exceed the product limit', async (t) => {
   const db = new NetworkD1();
   t.after(() => db.sqlite.close());
