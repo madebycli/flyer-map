@@ -4,7 +4,7 @@ import { loadCampaignSnapshot, type D1DatabaseLike } from '../campaignRepository
 import { requestDatabase } from '../requestDatabase.ts';
 import { addressBuildings } from './addresses.ts';
 import { hasBaseStorage, restoreManualHouseParents } from './baseStorage.ts';
-import { associateHouses, buildRoadNetwork, interiorPoint, polygonOwnsPoint } from './geometry.ts';
+import { associateHouses, buildRoadNetwork, eligibleRoad, interiorPoint, polygonOwnsPoint } from './geometry.ts';
 import { persistNetworkSnapshot } from './persistence.ts';
 import { reconcileServerPreparedStreetTasks, sha256Hex } from './reconcile.ts';
 import {
@@ -38,7 +38,12 @@ type V3Metrics = {
   addressMs?: number;
   linkMs?: number;
   publishMs?: number;
+  sourceRoads?: number;
+  graphCandidateRoads?: number;
   roads?: number;
+  sourceBuildings?: number;
+  sourceAddressNodes?: number;
+  areaAddressableBuildings?: number;
   buildings?: number;
   addressableBuildings?: number;
   houses?: number;
@@ -63,6 +68,7 @@ export type StreetEngineV3PreparationOptions = AreaTaskPreparationOptions & {
 };
 
 function errorCode(error: unknown) {
+  if (error instanceof Error && error.message === 'graph_build_budget') return 'street_engine_v3_graph_build_budget';
   if (error instanceof Error && /^[a-z][a-z0-9_]+$/.test(error.message)) return error.message;
   return 'street_engine_v3_source_unavailable';
 }
@@ -225,27 +231,39 @@ export async function runStreetEngineV3Preparation(
     metrics.sourceMs = performance.now() - sourceStarted;
     Object.assign(metrics, source.diagnostics);
     metrics.objectGets = (metrics.objectGets ?? 0) + source.diagnostics.objectGets;
-    if (source.roads.length > (options.maxRoadFragments ?? MAX_ROADS)) throw new Error('street_engine_v3_graph_source_budget');
-    if (source.buildings.length > (options.maxBuildings ?? MAX_BUILDINGS)) throw new Error('street_engine_v3_building_budget');
+    metrics.sourceRoads = source.roads.length;
+    metrics.sourceBuildings = source.buildings.length;
+    metrics.sourceAddressNodes = source.addressNodes.length;
+
+    // Source-pack byte budgets protect runtime input size. Product entity
+    // limits belong to the generated graph/House outputs, not every raw OSM
+    // feature that happens to share an intersecting source shard.
+    const graphSourceRoads = source.roads.filter((road) => eligibleRoad(road.tags));
+    metrics.graphCandidateRoads = graphSourceRoads.length;
 
     const graphStarted = performance.now();
     const roads = await buildRoadNetwork({
-      roads: source.roads,
+      roads: graphSourceRoads,
       area: run.area.geometry,
       campaignId: run.campaignId,
       areaId: run.areaId,
       generation: run.generation,
       timestamp: now,
+      maxTasks: options.maxRoadFragments ?? MAX_ROADS,
     });
     metrics.graphMs = performance.now() - graphStarted;
     metrics.roads = roads.length;
 
     const addressStarted = performance.now();
     const addressed = addressBuildings(source.buildings, source.addressNodes);
+    const areaAddressed = addressed.filter((building) =>
+      polygonOwnsPoint(run.area.geometry, interiorPoint(building.geometry)),
+    );
     metrics.addressMs = performance.now() - addressStarted;
     metrics.buildings = source.buildings.length;
     metrics.addressableBuildings = addressed.length;
-    if (addressed.length > (options.maxBuildings ?? MAX_BUILDINGS)) throw new Error('street_engine_v3_house_budget');
+    metrics.areaAddressableBuildings = areaAddressed.length;
+    if (areaAddressed.length > (options.maxBuildings ?? MAX_BUILDINGS)) throw new Error('street_engine_v3_house_budget');
 
     const linkStarted = performance.now();
     const houses = await preparedHouses({
@@ -254,7 +272,7 @@ export async function runStreetEngineV3Preparation(
       generation: run.generation,
       timestamp: now,
       area: run.area,
-      buildings: addressed,
+      buildings: areaAddressed,
       roads,
     });
     metrics.linkMs = performance.now() - linkStarted;
