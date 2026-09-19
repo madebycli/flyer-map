@@ -309,8 +309,8 @@ test('V4 house budget ignores addressable shard buildings outside the Area', asy
   const job = db.sqlite.prepare('SELECT metrics_json FROM street_network_jobs').get() as { metrics_json: string };
   const metrics = JSON.parse(job.metrics_json) as Record<string, unknown>;
   assert.equal(metrics.sourceBuildings, 2);
-  assert.equal(metrics.areaBuildings, 1);
-  assert.equal(metrics.addressableBuildings, 1);
+  assert.equal(metrics.addressableBuildings, 2);
+  assert.equal(metrics.areaAddressableBuildings, 1);
   assert.equal(metrics.houses, 1);
 });
 
