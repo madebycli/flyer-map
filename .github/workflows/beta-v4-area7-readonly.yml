@@ -26,6 +26,9 @@ jobs:
       BETA_URL: https://flyer-map-beta.cloudflare-eleven035.workers.dev
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: beta
+          fetch-depth: 1
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -114,6 +117,9 @@ jobs:
             FROM areas
             WHERE campaign_id='$CID' AND id='$(sql_escape "$AREA8_ID")';
           ")"
+
+          jq -er '.[0].results[0].geometry_json | fromjson' <<<"$AREA8_GEOMETRY" > /tmp/v4-area8-geometry.json
+          jq -e '.type=="Polygon" and (.coordinates|length)>0' /tmp/v4-area8-geometry.json >/dev/null
 
           AREA8_PREP="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --json --command "
             SELECT
@@ -246,6 +252,139 @@ jobs:
             > /tmp/v4-area8-asset-verification.json
           cat /tmp/v4-area8-asset-verification.json
 
+
+      - name: Replay Gebiet 8 with current Beta V4 code
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .tmp-v4-area8-replay.ts <<'TS'
+          import { readFile } from 'node:fs/promises';
+          import { basename } from 'node:path';
+          import {
+            loadStreetEngineV3Source,
+            streetEngineV3ManifestObjectKey,
+            streetEngineV3PointerKey,
+            type StreetEngineV3Bucket,
+            type StreetEngineV3Object,
+          } from './worker/streetNetwork/v3SourceRuntime.ts';
+          import { streetEngineV3SourceObjectKey } from './src/domain/streetEngineV3SourcePack.ts';
+          import {
+            buildRoadNetwork,
+            eligibleRoad,
+            interiorPoint,
+            polygonOwnsPoint,
+          } from './worker/streetNetwork/geometry.ts';
+          import { addressBuildings } from './worker/streetNetwork/addresses.ts';
+          import type { PolygonGeometry } from './src/domain/campaign.ts';
+
+          const pointerRaw = await readFile('/tmp/v4-pointer-current.json', 'utf8');
+          const manifestRaw = await readFile('/tmp/v4-manifest-current.json', 'utf8');
+          const pointer = JSON.parse(pointerRaw) as { manifestHash: string };
+          const area = JSON.parse(await readFile('/tmp/v4-area8-geometry.json', 'utf8')) as PolygonGeometry;
+
+          const object = (value: string | Uint8Array): StreetEngineV3Object => ({
+            async arrayBuffer() {
+              const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+              const copy = new Uint8Array(bytes.byteLength);
+              copy.set(bytes);
+              return copy.buffer;
+            },
+            async text() {
+              return typeof value === 'string' ? value : new TextDecoder().decode(value);
+            },
+          });
+
+          const bucket: StreetEngineV3Bucket = {
+            async get(key) {
+              if (key === streetEngineV3PointerKey('beta')) return object(pointerRaw);
+              if (key === streetEngineV3ManifestObjectKey(pointer.manifestHash)) return object(manifestRaw);
+              const match = key.match(/^source\/v1\/[0-9a-f]{2}\/([0-9a-f]{64})\.bin$/u);
+              if (!match || key !== streetEngineV3SourceObjectKey(match[1])) return null;
+              try {
+                return object(new Uint8Array(await readFile('/tmp/v4-area8-assets/' + basename(match[1] + '.bin'))));
+              } catch {
+                return null;
+              }
+            },
+          };
+
+          const memory = () => {
+            const m = process.memoryUsage();
+            return { rss: m.rss, heapUsed: m.heapUsed, heapTotal: m.heapTotal, external: m.external };
+          };
+
+          const summary: Record<string, unknown> = {
+            areaId: process.env.AREA8_ID,
+            betaCommit: process.env.GITHUB_SHA,
+            memoryStart: memory(),
+          };
+
+          try {
+            const sourceStarted = performance.now();
+            const source = await loadStreetEngineV3Source({
+              bucket,
+              channel: 'beta',
+              area,
+            });
+            summary.sourceMs = Math.round(performance.now() - sourceStarted);
+            summary.manifestHash = source.manifestHash;
+            summary.sourcePackVersion = source.manifest.sourcePackVersion;
+            summary.shardCount = source.diagnostics.shardCount;
+            summary.compressedBytes = source.diagnostics.compressedBytes;
+            summary.decodedBytes = source.diagnostics.decodedBytes;
+            summary.sourceRoads = source.roads.length;
+            summary.sourceBuildings = source.buildings.length;
+            summary.sourceAddressNodes = source.addressNodes.length;
+            summary.memoryAfterSource = memory();
+
+            const graphCandidates = source.roads.filter((road) => eligibleRoad(road.tags));
+            summary.graphCandidateRoads = graphCandidates.length;
+            const graphStarted = performance.now();
+            try {
+              const roads = await buildRoadNetwork({
+                roads: graphCandidates,
+                area,
+                campaignId: 'diag_campaign',
+                areaId: String(process.env.AREA8_ID ?? 'area8'),
+                generation: 'diag',
+                timestamp: new Date(0).toISOString(),
+                maxTasks: 20_000,
+              });
+              summary.graphMs = Math.round(performance.now() - graphStarted);
+              summary.roads = roads.length;
+              summary.graphOutcome = 'ready';
+            } catch (error) {
+              summary.graphMs = Math.round(performance.now() - graphStarted);
+              summary.graphOutcome = 'failed';
+              summary.graphError = error instanceof Error ? error.message : String(error);
+            }
+            summary.memoryAfterGraph = memory();
+
+            const addressStarted = performance.now();
+            const addressed = addressBuildings(source.buildings, source.addressNodes);
+            const areaAddressed = addressed.filter((building) =>
+              polygonOwnsPoint(area, interiorPoint(building.geometry)),
+            );
+            summary.addressMs = Math.round(performance.now() - addressStarted);
+            summary.addressableBuildings = addressed.length;
+            summary.areaAddressableBuildings = areaAddressed.length;
+            summary.houseBudgetWithin20k = areaAddressed.length <= 20_000;
+            summary.memoryAfterAddress = memory();
+            summary.outcome = 'measured';
+          } catch (error) {
+            summary.outcome = 'failed';
+            summary.error = error instanceof Error ? error.message : String(error);
+            summary.memoryAtFailure = memory();
+          }
+
+          await import('node:fs/promises').then(({ writeFile }) =>
+            writeFile('/tmp/v4-area8-replay.json', JSON.stringify(summary, null, 2) + '\n', 'utf8'),
+          );
+          console.log(JSON.stringify(summary, null, 2));
+          TS
+          node --experimental-transform-types .tmp-v4-area8-replay.ts
+          rm -f .tmp-v4-area8-replay.ts
+
       - name: Upload sanitized read-only evidence
         uses: actions/upload-artifact@v4
         with:
@@ -253,4 +392,5 @@ jobs:
           path: |
             /tmp/beta-v4-area7-readonly.json
             /tmp/v4-area8-asset-verification.json
+            /tmp/v4-area8-replay.json
           retention-days: 7
