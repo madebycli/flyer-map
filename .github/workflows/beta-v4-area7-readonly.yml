@@ -82,7 +82,8 @@ jobs:
               json_extract(j.metrics_json,'$.buildings') AS buildings,
               json_extract(j.metrics_json,'$.addressableBuildings') AS addressable_buildings,
               json_extract(j.metrics_json,'$.houses') AS houses,
-              json_extract(j.metrics_json,'$.resultHash') AS result_hash
+              json_extract(j.metrics_json,'$.resultHash') AS result_hash,
+              j.metrics_json AS full_metrics_json
             FROM area_task_preparations p
             LEFT JOIN street_network_jobs j
               ON j.campaign_id=p.campaign_id AND j.area_id=p.area_id AND j.generation=p.generation
