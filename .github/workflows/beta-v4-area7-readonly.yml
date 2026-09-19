@@ -336,6 +336,12 @@ jobs:
             summary.sourceBuildings = source.buildings.length;
             summary.sourceAddressNodes = source.addressNodes.length;
             summary.memoryAfterSource = memory();
+            const { writeFile } = await import('node:fs/promises');
+            await Promise.all([
+              writeFile('/tmp/v4-area8-roads.json', JSON.stringify(source.roads)),
+              writeFile('/tmp/v4-area8-buildings.json', JSON.stringify(source.buildings)),
+              writeFile('/tmp/v4-area8-address-nodes.json', JSON.stringify(source.addressNodes)),
+            ]);
 
             const graphCandidates = source.roads.filter((road) => eligibleRoad(road.tags));
             summary.graphCandidateRoads = graphCandidates.length;
@@ -396,7 +402,73 @@ jobs:
           fi
           mv /tmp/v4-area8-replay-128.final.json /tmp/v4-area8-replay-128.json
           cat /tmp/v4-area8-replay-128.json
-          rm -f .tmp-v4-area8-replay.ts
+
+          cat > .tmp-v4-area8-graph-only.ts <<'TS'
+          import { readFile, writeFile } from 'node:fs/promises';
+          import { buildRoadNetwork, eligibleRoad } from './worker/streetNetwork/geometry.ts';
+          import type { PolygonGeometry } from './src/domain/campaign.ts';
+          import type { RoadInput } from './worker/streetNetwork/geometry.ts';
+          const memory=()=>{const m=process.memoryUsage();return {rss:m.rss,heapUsed:m.heapUsed,heapTotal:m.heapTotal,external:m.external};};
+          const summary:Record<string,unknown>={memoryStart:memory()};
+          try{
+            const area=JSON.parse(await readFile('/tmp/v4-area8-geometry.json','utf8')) as PolygonGeometry;
+            const roads=JSON.parse(await readFile('/tmp/v4-area8-roads.json','utf8')) as RoadInput[];
+            summary.rawRoads=roads.length;summary.memoryAfterParse=memory();
+            const candidates=roads.filter(road=>eligibleRoad(road.tags));
+            summary.candidates=candidates.length;
+            const tasks=await buildRoadNetwork({roads:candidates,area,campaignId:'diag_campaign',areaId:String(process.env.AREA8_ID??'area8'),generation:'diag',timestamp:new Date(0).toISOString(),maxTasks:100000});
+            summary.tasks=tasks.length;summary.memoryAfterGraph=memory();summary.outcome='ready';
+          }catch(error){summary.outcome='failed';summary.error=error instanceof Error?error.message:String(error);summary.memoryAtFailure=memory();}
+          await writeFile('/tmp/v4-area8-graph-only-128.json',JSON.stringify(summary,null,2)+'\n');
+          console.log(JSON.stringify(summary,null,2));
+          TS
+
+          set +e
+          node --max-old-space-size=128 --experimental-transform-types .tmp-v4-area8-graph-only.ts > /tmp/v4-area8-graph-only-128.log 2>&1
+          GRAPH_RC=$?
+          set -e
+          if [[ ! -f /tmp/v4-area8-graph-only-128.json ]]; then
+            jq -n --argjson exitCode "$GRAPH_RC" --arg logTail "$(tail -c 8000 /tmp/v4-area8-graph-only-128.log)" '{exitCode:$exitCode,heapLimitMiB:128,logTail:$logTail}' > /tmp/v4-area8-graph-only-128.json
+          else
+            jq --argjson exitCode "$GRAPH_RC" '. + {exitCode:$exitCode,heapLimitMiB:128}' /tmp/v4-area8-graph-only-128.json > /tmp/v4-area8-graph-only-128.final.json
+            mv /tmp/v4-area8-graph-only-128.final.json /tmp/v4-area8-graph-only-128.json
+          fi
+          cat /tmp/v4-area8-graph-only-128.json
+
+          cat > .tmp-v4-area8-address-only.ts <<'TS'
+          import { readFile, writeFile } from 'node:fs/promises';
+          import { addressBuildings } from './worker/streetNetwork/addresses.ts';
+          import { interiorPoint, polygonOwnsPoint } from './worker/streetNetwork/geometry.ts';
+          import type { PolygonGeometry } from './src/domain/campaign.ts';
+          import type { AddressBuilding, AddressNode } from './worker/streetNetwork/addresses.ts';
+          const memory=()=>{const m=process.memoryUsage();return {rss:m.rss,heapUsed:m.heapUsed,heapTotal:m.heapTotal,external:m.external};};
+          const summary:Record<string,unknown>={memoryStart:memory()};
+          try{
+            const area=JSON.parse(await readFile('/tmp/v4-area8-geometry.json','utf8')) as PolygonGeometry;
+            const buildings=JSON.parse(await readFile('/tmp/v4-area8-buildings.json','utf8')) as AddressBuilding[];
+            const nodes=JSON.parse(await readFile('/tmp/v4-area8-address-nodes.json','utf8')) as AddressNode[];
+            summary.buildings=buildings.length;summary.nodes=nodes.length;summary.memoryAfterParse=memory();
+            const addressed=addressBuildings(buildings,nodes);
+            summary.addressed=addressed.length;summary.memoryAfterAddress=memory();
+            const owned=addressed.filter(building=>polygonOwnsPoint(area,interiorPoint(building.geometry)));
+            summary.areaOwned=owned.length;summary.memoryAfterFilter=memory();summary.outcome='ready';
+          }catch(error){summary.outcome='failed';summary.error=error instanceof Error?error.message:String(error);summary.memoryAtFailure=memory();}
+          await writeFile('/tmp/v4-area8-address-only-128.json',JSON.stringify(summary,null,2)+'\n');
+          console.log(JSON.stringify(summary,null,2));
+          TS
+
+          set +e
+          node --max-old-space-size=128 --experimental-transform-types .tmp-v4-area8-address-only.ts > /tmp/v4-area8-address-only-128.log 2>&1
+          ADDRESS_RC=$?
+          set -e
+          if [[ ! -f /tmp/v4-area8-address-only-128.json ]]; then
+            jq -n --argjson exitCode "$ADDRESS_RC" --arg logTail "$(tail -c 8000 /tmp/v4-area8-address-only-128.log)" '{exitCode:$exitCode,heapLimitMiB:128,logTail:$logTail}' > /tmp/v4-area8-address-only-128.json
+          else
+            jq --argjson exitCode "$ADDRESS_RC" '. + {exitCode:$exitCode,heapLimitMiB:128}' /tmp/v4-area8-address-only-128.json > /tmp/v4-area8-address-only-128.final.json
+            mv /tmp/v4-area8-address-only-128.final.json /tmp/v4-area8-address-only-128.json
+          fi
+          cat /tmp/v4-area8-address-only-128.json
+          rm -f .tmp-v4-area8-replay.ts .tmp-v4-area8-graph-only.ts .tmp-v4-area8-address-only.ts
 
       - name: Upload sanitized read-only evidence
         uses: actions/upload-artifact@v4
@@ -407,4 +479,6 @@ jobs:
             /tmp/v4-area8-asset-verification.json
             /tmp/v4-area8-replay.json
             /tmp/v4-area8-replay-128.json
+            /tmp/v4-area8-graph-only-128.json
+            /tmp/v4-area8-address-only-128.json
           retention-days: 7
