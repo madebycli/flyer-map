@@ -238,7 +238,10 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     const screenedArea=screenDistributionStreets(roads,houses,screeningMode);
     const state=states[area.id];
     const running=state?.status==='pending';
-    const phaseLabel=({roads:'Straßen laden',graph:'Straßennetz aufbauen',buildings:'Gebäude laden',addresses:'Adressen prüfen',link:'Häuser zuordnen',publish:'Speichern',ready:'Bereit'} as Record<string,string>)[state?.progress?.phase??'']??'Vorbereitung';
+    const phaseLabel=({
+      roads:'Straßen laden',graph:'Straßennetz aufbauen',buildings:'Gebäude laden',addresses:'Adressen prüfen',link:'Häuser zuordnen',publish:'Speichern',ready:'Bereit',
+      'v4-plan':'Quelldaten planen','v4-source':'Quelldaten laden','v4-node-usage':'Kreuzungen prüfen','v4-graph':'Straßennetz aufbauen','v4-address':'Adressen prüfen','v4-link':'Häuser zuordnen','v4-base':'Daten vorbereiten','v4-publish':'Speichern',
+    } as Record<string,string>)[state?.progress?.phase??'']??'Vorbereitung';
     return <div className="area-actions-content">
       {(roads.some(task=>task.network)?canMark:editable)?<button className="button primary full-width" disabled={Boolean(preparing)||running} onClick={()=>roads.some(task=>task.network)?open(area.id):void prepare(area)}>{preparing===area.id||running?'Vorbereitung läuft …':roads.some(task=>task.network)?'Straßen bearbeiten':'Straßen und Häuser vorbereiten'}</button>:null}
       {roads.some(task=>task.network)?<div className="area-screening-beta" role="group" aria-label="Beta Straßen-Screening"><p><strong>Straßen-Screening · Beta</strong><br/>Nach der StreetEngine umschaltbar. Das erzeugte Netz bleibt unverändert.</p><div className="mode-actions"><button className={'button '+(screeningMode==='classic'?'primary':'secondary')} type="button" onClick={()=>changeScreening('classic')}>Filter V1 · Klassisch</button><button className={'button '+(screeningMode==='delivery-v2'?'primary':'secondary')} type="button" onClick={()=>changeScreening('delivery-v2')}>Screening V2 · Beta</button></div><small>{screeningMode==='delivery-v2'?`V2 zeigt ${screenedArea.tasks.length} von ${roads.length} Straßen. ${screenedArea.hiddenTaskIds.length} unbenannte Abschnitte ohne zugeordnete Häuser sind ausgeblendet.`:'V1 zeigt alle vorbereiteten Straßen.'}</small></div>:null}
