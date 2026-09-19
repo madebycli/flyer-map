@@ -181,11 +181,10 @@ export async function runStreetEngineV4Preparation(
 
   await resetV4RetryState(db, run, options, now);
 
-  const result = await runStreetEngineV3Preparation(db, run, {
+  const result = await runStreetEngineV4StagedPreparation(db, run, {
     ...options,
-    streetEngineVersion: 'sourcepack-v3',
-    streetEngineV3Bucket: options.streetEngineV4Bucket,
-    streetEngineV3Channel: options.streetEngineV4Channel ?? 'beta',
+    streetEngineV4Bucket: options.streetEngineV4Bucket,
+    streetEngineV4Channel: options.streetEngineV4Channel ?? 'beta',
   });
   await normalizeDurableV4State(db, run);
   return result;
