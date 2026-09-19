@@ -43,6 +43,7 @@ type V3Metrics = {
   roads?: number;
   sourceBuildings?: number;
   sourceAddressNodes?: number;
+  areaBuildings?: number;
   buildings?: number;
   addressableBuildings?: number;
   houses?: number;
@@ -254,7 +255,11 @@ export async function runStreetEngineV3Preparation(
     metrics.roads = roads.length;
 
     const addressStarted = performance.now();
-    const addressed = addressBuildings(source.buildings, source.addressNodes);
+    const areaBuildings = source.buildings.filter((building) =>
+      polygonOwnsPoint(run.area.geometry, interiorPoint(building.geometry)),
+    );
+    metrics.areaBuildings = areaBuildings.length;
+    const addressed = addressBuildings(areaBuildings, source.addressNodes);
     metrics.addressMs = performance.now() - addressStarted;
     metrics.buildings = source.buildings.length;
     metrics.addressableBuildings = addressed.length;
