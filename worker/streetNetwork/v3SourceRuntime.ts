@@ -234,7 +234,7 @@ export async function encodeStreetEngineV3Shard(payload: StreetEngineV3ShardPayl
   return { bytes: compressed, uncompressedBytes: frame.byteLength, id: await sha256Bytes(compressed) };
 }
 
-async function decodeStreetEngineV3Shard(bytes: Uint8Array, descriptor: StreetEngineV3SourceShard) {
+export async function decodeStreetEngineV3Shard(bytes: Uint8Array, descriptor: StreetEngineV3SourceShard) {
   if (bytes.byteLength !== descriptor.compressedBytes) throw new Error('street_engine_v3_shard_size_mismatch');
   if (await sha256Bytes(bytes) !== descriptor.id) throw new Error('street_engine_v3_shard_hash_mismatch');
   let frame: Uint8Array;
@@ -326,16 +326,43 @@ export async function resolveStreetEngineV3Manifest(
   return { manifestHash: pointer.manifestHash, manifest: await loadManifestByHash(bucket, pointer.manifestHash), objectGets: 2 };
 }
 
+
+export async function resolveStreetEngineV3SourceSelection(input: {
+  bucket: StreetEngineV3Bucket;
+  channel: string;
+  area: PolygonGeometry;
+  pinnedManifestHash?: string;
+}) {
+  const resolved = await resolveStreetEngineV3Manifest(input.bucket, input.channel, input.pinnedManifestHash);
+  const selection = await selectStreetEngineV3SourceShards(resolved.manifest, input.area);
+  if (selection.manifestHash !== resolved.manifestHash) throw new Error('street_engine_v3_manifest_hash_mismatch');
+  if (selection.transfer.status === 'blocked') throw new Error('street_engine_v3_source_transfer_budget');
+  return { ...resolved, selection };
+}
+
+export async function loadStreetEngineV3SourceShard(
+  bucket: StreetEngineV3Bucket,
+  shard: StreetEngineV3SourceShard,
+) {
+  const object = await bucket.get(streetEngineV3SourceObjectKey(shard.id));
+  if (!object) throw new Error('street_engine_v3_shard_missing');
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  const decoded = await decodeStreetEngineV3Shard(bytes, shard);
+  return {
+    ...decoded,
+    compressedBytes: bytes.byteLength,
+    objectGets: 1,
+  };
+}
+
 export async function loadStreetEngineV3Source(input: {
   bucket: StreetEngineV3Bucket;
   channel: string;
   area: PolygonGeometry;
   pinnedManifestHash?: string;
 }): Promise<StreetEngineV3LoadedSource> {
-  const resolved = await resolveStreetEngineV3Manifest(input.bucket, input.channel, input.pinnedManifestHash);
-  const selection = await selectStreetEngineV3SourceShards(resolved.manifest, input.area);
-  if (selection.manifestHash !== resolved.manifestHash) throw new Error('street_engine_v3_manifest_hash_mismatch');
-  if (selection.transfer.status === 'blocked') throw new Error('street_engine_v3_source_transfer_budget');
+  const resolved = await resolveStreetEngineV3SourceSelection(input);
+  const selection = resolved.selection;
 
   const roads = new Map<number, RoadInput>();
   const buildings = new Map<number, AddressBuilding>();
@@ -343,11 +370,8 @@ export async function loadStreetEngineV3Source(input: {
   let decodedBytes = 0;
   let objectGets = resolved.objectGets;
   for (const shard of selection.shards) {
-    const object = await input.bucket.get(streetEngineV3SourceObjectKey(shard.id));
-    objectGets += 1;
-    if (!object) throw new Error('street_engine_v3_shard_missing');
-    const bytes = new Uint8Array(await object.arrayBuffer());
-    const decoded = await decodeStreetEngineV3Shard(bytes, shard);
+    const decoded = await loadStreetEngineV3SourceShard(input.bucket, shard);
+    objectGets += decoded.objectGets;
     decodedBytes += decoded.decodedBytes;
     if (decodedBytes > STREET_ENGINE_V3_MAX_UNCOMPRESSED_SHARD_BYTES) throw new Error('street_engine_v3_shard_decode_budget');
     mergeUnique(roads, decoded.payload.roads, 'street_engine_v3_road_conflict');
