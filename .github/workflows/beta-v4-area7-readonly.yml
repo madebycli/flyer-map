@@ -378,11 +378,24 @@ jobs:
           }
 
           await import('node:fs/promises').then(({ writeFile }) =>
-            writeFile('/tmp/v4-area8-replay.json', JSON.stringify(summary, null, 2) + '\n', 'utf8'),
+            writeFile(process.env.REPLAY_OUTPUT ?? '/tmp/v4-area8-replay.json', JSON.stringify(summary, null, 2) + '\n', 'utf8'),
           );
           console.log(JSON.stringify(summary, null, 2));
           TS
-          node --experimental-transform-types .tmp-v4-area8-replay.ts
+          REPLAY_OUTPUT=/tmp/v4-area8-replay.json node --experimental-transform-types .tmp-v4-area8-replay.ts
+
+          set +e
+          REPLAY_OUTPUT=/tmp/v4-area8-replay-128.json node --max-old-space-size=128 --experimental-transform-types .tmp-v4-area8-replay.ts > /tmp/v4-area8-replay-128.log 2>&1
+          LIMITED_RC=$?
+          set -e
+          if [[ -f /tmp/v4-area8-replay-128.json ]]; then
+            jq --argjson exitCode "$LIMITED_RC" '. + {exitCode:$exitCode,heapLimitMiB:128}' /tmp/v4-area8-replay-128.json > /tmp/v4-area8-replay-128.final.json
+          else
+            TAIL="$(tail -c 8000 /tmp/v4-area8-replay-128.log)"
+            jq -n --argjson exitCode "$LIMITED_RC" --arg logTail "$TAIL" '{exitCode:$exitCode,heapLimitMiB:128,logTail:$logTail}' > /tmp/v4-area8-replay-128.final.json
+          fi
+          mv /tmp/v4-area8-replay-128.final.json /tmp/v4-area8-replay-128.json
+          cat /tmp/v4-area8-replay-128.json
           rm -f .tmp-v4-area8-replay.ts
 
       - name: Upload sanitized read-only evidence
@@ -393,4 +406,5 @@ jobs:
             /tmp/beta-v4-area7-readonly.json
             /tmp/v4-area8-asset-verification.json
             /tmp/v4-area8-replay.json
+            /tmp/v4-area8-replay-128.json
           retention-days: 7
