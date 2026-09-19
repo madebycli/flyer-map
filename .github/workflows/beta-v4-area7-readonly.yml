@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/beta-v4-decode-backpressure-2026-09-19
+          ref: fix/beta-v4-large-area-staged-2026-09-19
           fetch-depth: 1
       - uses: actions/setup-node@v4
         with:
