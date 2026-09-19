@@ -190,7 +190,9 @@ jobs:
           MANIFEST_HASH="$(jq -er '.manifestHash' /tmp/v4-pointer-current.json)"
           [[ "$MANIFEST_HASH" =~ ^[0-9a-f]{64}$ ]]
           curl --fail-with-body --silent --show-error "${ASSET_ROOT}/source/v1/manifests/${MANIFEST_HASH}.json" -o /tmp/v4-manifest-current.json
-          [[ "$(sha256sum /tmp/v4-manifest-current.json | awk '{print $1}')" == "$MANIFEST_HASH" ]]
+          ACTUAL_MANIFEST_HASH="$(sha256sum /tmp/v4-manifest-current.json | awk '{print $1}')"
+          echo "manifest expected=$MANIFEST_HASH actual=$ACTUAL_MANIFEST_HASH"
+          [[ "$ACTUAL_MANIFEST_HASH" == "$MANIFEST_HASH" ]]
 
           IFS=',' read -r WEST SOUTH EAST NORTH <<<"$AREA8_BBOX"
           jq --argjson west "$WEST" --argjson south "$SOUTH" --argjson east "$EAST" --argjson north "$NORTH" '
@@ -204,8 +206,11 @@ jobs:
           COMPRESSED_BYTES="$(jq '[.[].compressedBytes] | add // 0' /tmp/v4-area8-selected-shards.json)"
           DECODED_BYTES="$(jq '[.[].uncompressedBytes] | add // 0' /tmp/v4-area8-selected-shards.json)"
           [[ "$SHARD_COUNT" -gt 0 ]]
-          [[ "$COMPRESSED_BYTES" -le $((40 * 1024 * 1024)) ]]
-          [[ "$DECODED_BYTES" -le $((64 * 1024 * 1024)) ]]
+          TRANSFER_WITHIN_BUDGET=false
+          DECODE_WITHIN_BUDGET=false
+          [[ "$COMPRESSED_BYTES" -le $((40 * 1024 * 1024)) ]] && TRANSFER_WITHIN_BUDGET=true
+          [[ "$DECODED_BYTES" -le $((64 * 1024 * 1024)) ]] && DECODE_WITHIN_BUDGET=true
+          echo "area8 shardCount=$SHARD_COUNT compressedBytes=$COMPRESSED_BYTES decodedBytes=$DECODED_BYTES transferWithinBudget=$TRANSFER_WITHIN_BUDGET decodeWithinBudget=$DECODE_WITHIN_BUDGET"
 
           mkdir -p /tmp/v4-area8-assets
           while IFS='|' read -r ID KEY EXPECTED_COMPRESSED EXPECTED_DECODED; do
@@ -226,7 +231,9 @@ jobs:
             --argjson shardCount "$SHARD_COUNT" \
             --argjson compressedBytes "$COMPRESSED_BYTES" \
             --argjson decodedBytes "$DECODED_BYTES" \
-            '{manifestHash:$manifestHash,sourcePackVersion:$sourcePackVersion,algorithmVersion:$algorithmVersion,sourceTimestamp:$sourceTimestamp,shardCount:$shardCount,compressedBytes:$compressedBytes,decodedBytes:$decodedBytes,allSelectedAssetsVerified:true}' \
+            --arg transferWithinBudget "$TRANSFER_WITHIN_BUDGET" \
+            --arg decodeWithinBudget "$DECODE_WITHIN_BUDGET" \
+            '{manifestHash:$manifestHash,sourcePackVersion:$sourcePackVersion,algorithmVersion:$algorithmVersion,sourceTimestamp:$sourceTimestamp,shardCount:$shardCount,compressedBytes:$compressedBytes,decodedBytes:$decodedBytes,transferWithinBudget:($transferWithinBudget=="true"),decodeWithinBudget:($decodeWithinBudget=="true"),allSelectedAssetsVerified:true}' \
             > /tmp/v4-area8-asset-verification.json
           cat /tmp/v4-area8-asset-verification.json
 
