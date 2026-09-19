@@ -65,40 +65,49 @@ export async function buildRoadNetwork(input: {
   maxTasks?: number;
 }): Promise<DistributionTask[]> {
   const fragments: { road: RoadInput; line: LineStringGeometry; level: string }[] = [];
-  const seenWays = new Map<number, string>();
+  const seenWays = new Map<number, RoadInput>();
   for (const road of [...input.roads].sort((a, b) => a.osmId - b.osmId)) {
     if (!eligibleRoad(road.tags)) continue;
-    const source = JSON.stringify(road);
-    if (seenWays.has(road.osmId)) {
-      if (seenWays.get(road.osmId) !== source) throw new Error('road_dedupe_conflicting_source');
+    const prior = seenWays.get(road.osmId);
+    if (prior) {
+      if (JSON.stringify(prior) !== JSON.stringify(road)) throw new Error('road_dedupe_conflicting_source');
       continue;
     }
-    seenWays.set(road.osmId, source);
+    seenWays.set(road.osmId, road);
     for (const line of clipNetworkLines(road.geometry, input.area)) fragments.push({ road, line, level: road.tags.layer ?? '0' });
   }
-  const usage = new Map<string, Set<number>>();
+  // Only the number of distinct fragments touching a node is needed. A Set per
+  // node multiplies memory on dense Areas, so count each fragment once instead.
+  const usage = new Map<string, { lastFragment: number; count: number }>();
   fragments.forEach((fragment, index) => fragment.line.coordinates.forEach((point) => {
     const key = networkNodeKey(point, fragment.level);
-    if (!usage.has(key)) usage.set(key, new Set());
-    usage.get(key)!.add(index);
+    const prior = usage.get(key);
+    if (!prior) usage.set(key, { lastFragment: index, count: 1 });
+    else if (prior.lastFragment !== index) {
+      prior.lastFragment = index;
+      prior.count += 1;
+    }
   }));
-  const tasks = new Map<string, DistributionTask>();
+  const taskIds = new Set<string>();
+  const tasks: DistributionTask[] = [];
   for (const fragment of fragments) {
     let start = 0;
     const points = fragment.line.coordinates;
     const closed = networkNodeKey(points[0]) === networkNodeKey(points.at(-1)!);
     for (let i = 1; i < points.length; i++) {
-      if (i !== points.length - 1 && (usage.get(networkNodeKey(points[i], fragment.level))?.size ?? 0) < 2 && !(closed && i === Math.floor((points.length - 1) / 2))) continue;
+      if (i !== points.length - 1 && (usage.get(networkNodeKey(points[i], fragment.level))?.count ?? 0) < 2 && !(closed && i === Math.floor((points.length - 1) / 2))) continue;
       const geometry = JSON.parse(canonicalStreetFragmentGeometryJson({ type: 'LineString', coordinates: points.slice(start, i + 1) })) as LineStringGeometry;
       start = i;
       const total = roadLength(geometry);
       if (total < 0.05) continue;
       const id = await stablePreparedStreetTaskId({ campaignId: input.campaignId, areaId: input.areaId, sourceOsmWayId: fragment.road.osmId, geometry });
-      tasks.set(id, { id, campaignId: input.campaignId, areaId: input.areaId, taskType: 'street', label: fragment.road.tags.name ?? fragment.road.tags.ref ?? 'Straße', geometry, source: { dataset: 'OpenStreetMap', objectType: 'way', objectIds: [fragment.road.osmId] }, areaPreparationGeneration: input.generation, status: 'open', completedAt: null, createdAt: input.timestamp, updatedAt: input.timestamp, network: { fromNode: networkNodeKey(geometry.coordinates[0], fragment.level), toNode: networkNodeKey(geometry.coordinates.at(-1)!, fragment.level), length: total, coverage: [] } });
-      if (input.maxTasks !== undefined && tasks.size > input.maxTasks) throw new Error('graph_build_budget');
+      if (taskIds.has(id)) continue;
+      if (input.maxTasks !== undefined && taskIds.size >= input.maxTasks) throw new Error('graph_build_budget');
+      taskIds.add(id);
+      tasks.push({ id, campaignId: input.campaignId, areaId: input.areaId, taskType: 'street', label: fragment.road.tags.name ?? fragment.road.tags.ref ?? 'Straße', geometry, source: { dataset: 'OpenStreetMap', objectType: 'way', objectIds: [fragment.road.osmId] }, areaPreparationGeneration: input.generation, status: 'open', completedAt: null, createdAt: input.timestamp, updatedAt: input.timestamp, network: { fromNode: networkNodeKey(geometry.coordinates[0], fragment.level), toNode: networkNodeKey(geometry.coordinates.at(-1)!, fragment.level), length: total, coverage: [] } });
     }
   }
-  return [...tasks.values()].sort((a, b) => a.id.localeCompare(b.id));
+  return tasks.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function interiorPoint(polygon: PolygonGeometry): LngLat {
