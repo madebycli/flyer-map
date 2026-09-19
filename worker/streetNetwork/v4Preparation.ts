@@ -1,7 +1,7 @@
 import type { AreaTaskPreparationOptions, AreaTaskPreparationRun, PrepareAreaTasksResult } from '../areaTaskPreparation.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
-import { runStreetEngineV3Preparation } from './v3Preparation.ts';
-import { resolveStreetEngineV3Manifest, type StreetEngineV3Bucket } from './v3SourceRuntime.ts';
+import { runStreetEngineV4StagedPreparation } from './v4StagedPreparation.ts';
+import type { StreetEngineV3Bucket } from './v3SourceRuntime.ts';
 
 export type StreetEngineV4Bucket = StreetEngineV3Bucket;
 
@@ -67,27 +67,13 @@ async function resetV4RetryState(
 
   const baseline: Record<string, unknown> = {
     engineVersion: 'v4',
+    sourcePolicy: 'immutable-source-pack/no-live-overpass',
     legacyOverpassRequests: 0,
   };
-  if (options.streetEngineV4Bucket) {
-    try {
-      const resolved = await resolveStreetEngineV3Manifest(
-        options.streetEngineV4Bucket,
-        options.streetEngineV4Channel ?? 'beta',
-      );
-      baseline.manifestHash = resolved.manifestHash;
-      baseline.sourcePackVersion = resolved.manifest.sourcePackVersion;
-      baseline.algorithmVersion = resolved.manifest.algorithmVersion.replace(/^v3-/u, 'v4-');
-      baseline.sourceTimestamp = resolved.manifest.source.timestamp;
-      baseline.objectGets = resolved.objectGets;
-    } catch {
-      // The delegated V4 source load records the precise fail-closed source error.
-    }
-  }
 
   await db.batch([
     db.prepare(`UPDATE street_network_jobs
-      SET phase='v4-source',cursor=0,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=?
+      SET phase='v4-plan',cursor=0,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=?
       WHERE campaign_id=? AND area_id=? AND generation=?
         AND phase<>'ready'
         AND (lease_until IS NULL OR lease_until<=?)
@@ -105,6 +91,9 @@ async function resetV4RetryState(
         run.areaId,
         run.generation,
       ),
+    db.prepare(`DELETE FROM street_network_staging
+      WHERE campaign_id=? AND area_id=? AND generation=?`)
+      .bind(run.campaignId, run.areaId, run.generation),
   ]);
 }
 
