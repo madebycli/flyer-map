@@ -123,7 +123,8 @@ jobs:
               json_extract(j.metrics_json,'$.sourcePackVersion') AS source_pack_version,
               json_extract(j.metrics_json,'$.algorithmVersion') AS algorithm_version,
               json_extract(j.metrics_json,'$.legacyOverpassRequests') AS legacy_overpass_requests,
-              json_extract(j.metrics_json,'$.resultHash') AS result_hash
+              json_extract(j.metrics_json,'$.resultHash') AS result_hash,
+              j.metrics_json AS full_metrics_json
             FROM area_task_preparations p
             LEFT JOIN street_network_jobs j
               ON j.campaign_id=p.campaign_id AND j.area_id=p.area_id AND j.generation=p.generation
