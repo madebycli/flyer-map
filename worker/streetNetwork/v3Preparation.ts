@@ -67,6 +67,7 @@ export type StreetEngineV3PreparationOptions = AreaTaskPreparationOptions & {
 };
 
 function errorCode(error: unknown) {
+  if (error instanceof Error && error.message === 'graph_build_budget') return 'street_engine_v3_graph_build_budget';
   if (error instanceof Error && /^[a-z][a-z0-9_]+$/.test(error.message)) return error.message;
   return 'street_engine_v3_source_unavailable';
 }
@@ -247,10 +248,10 @@ export async function runStreetEngineV3Preparation(
       areaId: run.areaId,
       generation: run.generation,
       timestamp: now,
+      maxTasks: options.maxRoadFragments ?? MAX_ROADS,
     });
     metrics.graphMs = performance.now() - graphStarted;
     metrics.roads = roads.length;
-    if (roads.length > (options.maxRoadFragments ?? MAX_ROADS)) throw new Error('street_engine_v3_graph_build_budget');
 
     const addressStarted = performance.now();
     const addressed = addressBuildings(source.buildings, source.addressNodes);
