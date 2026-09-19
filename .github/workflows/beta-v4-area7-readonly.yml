@@ -348,7 +348,7 @@ jobs:
                 areaId: String(process.env.AREA8_ID ?? 'area8'),
                 generation: 'diag',
                 timestamp: new Date(0).toISOString(),
-                maxTasks: 20_000,
+                maxTasks: 100_000,
               });
               summary.graphMs = Math.round(performance.now() - graphStarted);
               summary.roads = roads.length;
