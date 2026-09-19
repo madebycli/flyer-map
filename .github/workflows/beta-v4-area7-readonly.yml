@@ -208,15 +208,7 @@ jobs:
           [[ "$DECODED_BYTES" -le $((64 * 1024 * 1024)) ]]
 
           mkdir -p /tmp/v4-area8-assets
-          while IFS=
-        uses: actions/upload-artifact@v4
-        with:
-          name: beta-v4-area7-readonly
-          path: |
-            /tmp/beta-v4-area7-readonly.json
-            /tmp/v4-area8-asset-verification.json
-          retention-days: 7
-\t' read -r ID KEY EXPECTED_COMPRESSED EXPECTED_DECODED; do
+          while IFS='|' read -r ID KEY EXPECTED_COMPRESSED EXPECTED_DECODED; do
             FILE="/tmp/v4-area8-assets/${ID}.bin"
             curl --fail-with-body --silent --show-error "${ASSET_ROOT}/${KEY}" -o "$FILE"
             [[ "$(wc -c < "$FILE" | tr -d ' ')" == "$EXPECTED_COMPRESSED" ]]
@@ -224,14 +216,25 @@ jobs:
             gzip -t "$FILE"
             ACTUAL_DECODED="$(gzip -dc "$FILE" | wc -c | tr -d ' ')"
             [[ "$ACTUAL_DECODED" == "$EXPECTED_DECODED" ]]
-          done < <(jq -r '.[] | [.id,.key,.compressedBytes,.uncompressedBytes] | @tsv' /tmp/v4-area8-selected-shards.json)
+          done < <(jq -r '.[] | [.id,.key,(.compressedBytes|tostring),(.uncompressedBytes|tostring)] | join("|")' /tmp/v4-area8-selected-shards.json)
 
-          jq -n             --arg manifestHash "$MANIFEST_HASH"             --arg sourcePackVersion "$(jq -r '.sourcePackVersion' /tmp/v4-manifest-current.json)"             --arg algorithmVersion "$(jq -r '.algorithmVersion' /tmp/v4-manifest-current.json)"             --arg sourceTimestamp "$(jq -r '.source.timestamp' /tmp/v4-manifest-current.json)"             --argjson shardCount "$SHARD_COUNT"             --argjson compressedBytes "$COMPRESSED_BYTES"             --argjson decodedBytes "$DECODED_BYTES"             '{manifestHash:$manifestHash,sourcePackVersion:$sourcePackVersion,algorithmVersion:$algorithmVersion,sourceTimestamp:$sourceTimestamp,shardCount:$shardCount,compressedBytes:$compressedBytes,decodedBytes:$decodedBytes,allSelectedAssetsVerified:true}'             > /tmp/v4-area8-asset-verification.json
+          jq -n \
+            --arg manifestHash "$MANIFEST_HASH" \
+            --arg sourcePackVersion "$(jq -r '.sourcePackVersion' /tmp/v4-manifest-current.json)" \
+            --arg algorithmVersion "$(jq -r '.algorithmVersion' /tmp/v4-manifest-current.json)" \
+            --arg sourceTimestamp "$(jq -r '.source.timestamp' /tmp/v4-manifest-current.json)" \
+            --argjson shardCount "$SHARD_COUNT" \
+            --argjson compressedBytes "$COMPRESSED_BYTES" \
+            --argjson decodedBytes "$DECODED_BYTES" \
+            '{manifestHash:$manifestHash,sourcePackVersion:$sourcePackVersion,algorithmVersion:$algorithmVersion,sourceTimestamp:$sourceTimestamp,shardCount:$shardCount,compressedBytes:$compressedBytes,decodedBytes:$decodedBytes,allSelectedAssetsVerified:true}' \
+            > /tmp/v4-area8-asset-verification.json
           cat /tmp/v4-area8-asset-verification.json
 
       - name: Upload sanitized read-only evidence
         uses: actions/upload-artifact@v4
         with:
           name: beta-v4-area7-readonly
-          path: /tmp/beta-v4-area7-readonly.json
+          path: |
+            /tmp/beta-v4-area7-readonly.json
+            /tmp/v4-area8-asset-verification.json
           retention-days: 7
