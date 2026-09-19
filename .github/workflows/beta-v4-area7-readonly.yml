@@ -22,6 +22,8 @@ jobs:
       DEVICE_AREA_ID: area_d8c81ae7-2a1f-43d6-8a63-a302b5979390
       PREVIOUS_AREA_ID: area_6c0e1b59-be2e-4d7a-a6d5-67bb8ea968eb
       AREA8_ID: area_9a911c26-2c44-4c1b-b07c-97075b6f33a5
+      AREA8_BBOX: 6.9076910,50.8962083,7.0216924,50.9805568
+      BETA_URL: https://flyer-map-beta.cloudflare-eleven035.workers.dev
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -178,6 +180,54 @@ jobs:
             '{campaignId:$campaignId,deviceAreaId:$deviceAreaId,previousAreaId:$previousAreaId,canonicalAreas:$canonicalAreas,devicePreparation:$devicePreparation,previousPreparation:$previousPreparation,deviceCounts:$deviceCounts,area8Geometry:$area8Geometry,area8Preparation:$area8Preparation,area8Counts:$area8Counts,syncHeads:$syncHeads,areaFeed:$areaFeed}' \
             > /tmp/beta-v4-area7-readonly.json
           jq . /tmp/beta-v4-area7-readonly.json
+
+      - name: Verify current Gebiet 8 immutable source assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET_ROOT="${BETA_URL}/__street-engine-v4"
+          curl --fail-with-body --silent --show-error "${ASSET_ROOT}/source/v1/channels/beta.json" -o /tmp/v4-pointer-current.json
+          MANIFEST_HASH="$(jq -er '.manifestHash' /tmp/v4-pointer-current.json)"
+          [[ "$MANIFEST_HASH" =~ ^[0-9a-f]{64}$ ]]
+          curl --fail-with-body --silent --show-error "${ASSET_ROOT}/source/v1/manifests/${MANIFEST_HASH}.json" -o /tmp/v4-manifest-current.json
+          [[ "$(sha256sum /tmp/v4-manifest-current.json | awk '{print $1}')" == "$MANIFEST_HASH" ]]
+
+          IFS=',' read -r WEST SOUTH EAST NORTH <<<"$AREA8_BBOX"
+          jq --argjson west "$WEST" --argjson south "$SOUTH" --argjson east "$EAST" --argjson north "$NORTH" '
+            [.shards[] | select(
+              .bounds[0] <= $east and .bounds[2] >= $west and
+              .bounds[1] <= $north and .bounds[3] >= $south
+            )]
+          ' /tmp/v4-manifest-current.json > /tmp/v4-area8-selected-shards.json
+
+          SHARD_COUNT="$(jq 'length' /tmp/v4-area8-selected-shards.json)"
+          COMPRESSED_BYTES="$(jq '[.[].compressedBytes] | add // 0' /tmp/v4-area8-selected-shards.json)"
+          DECODED_BYTES="$(jq '[.[].uncompressedBytes] | add // 0' /tmp/v4-area8-selected-shards.json)"
+          [[ "$SHARD_COUNT" -gt 0 ]]
+          [[ "$COMPRESSED_BYTES" -le $((40 * 1024 * 1024)) ]]
+          [[ "$DECODED_BYTES" -le $((64 * 1024 * 1024)) ]]
+
+          mkdir -p /tmp/v4-area8-assets
+          while IFS=
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta-v4-area7-readonly
+          path: |
+            /tmp/beta-v4-area7-readonly.json
+            /tmp/v4-area8-asset-verification.json
+          retention-days: 7
+\t' read -r ID KEY EXPECTED_COMPRESSED EXPECTED_DECODED; do
+            FILE="/tmp/v4-area8-assets/${ID}.bin"
+            curl --fail-with-body --silent --show-error "${ASSET_ROOT}/${KEY}" -o "$FILE"
+            [[ "$(wc -c < "$FILE" | tr -d ' ')" == "$EXPECTED_COMPRESSED" ]]
+            [[ "$(sha256sum "$FILE" | awk '{print $1}')" == "$ID" ]]
+            gzip -t "$FILE"
+            ACTUAL_DECODED="$(gzip -dc "$FILE" | wc -c | tr -d ' ')"
+            [[ "$ACTUAL_DECODED" == "$EXPECTED_DECODED" ]]
+          done < <(jq -r '.[] | [.id,.key,.compressedBytes,.uncompressedBytes] | @tsv' /tmp/v4-area8-selected-shards.json)
+
+          jq -n             --arg manifestHash "$MANIFEST_HASH"             --arg sourcePackVersion "$(jq -r '.sourcePackVersion' /tmp/v4-manifest-current.json)"             --arg algorithmVersion "$(jq -r '.algorithmVersion' /tmp/v4-manifest-current.json)"             --arg sourceTimestamp "$(jq -r '.source.timestamp' /tmp/v4-manifest-current.json)"             --argjson shardCount "$SHARD_COUNT"             --argjson compressedBytes "$COMPRESSED_BYTES"             --argjson decodedBytes "$DECODED_BYTES"             '{manifestHash:$manifestHash,sourcePackVersion:$sourcePackVersion,algorithmVersion:$algorithmVersion,sourceTimestamp:$sourceTimestamp,shardCount:$shardCount,compressedBytes:$compressedBytes,decodedBytes:$decodedBytes,allSelectedAssetsVerified:true}'             > /tmp/v4-area8-asset-verification.json
+          cat /tmp/v4-area8-asset-verification.json
 
       - name: Upload sanitized read-only evidence
         uses: actions/upload-artifact@v4
