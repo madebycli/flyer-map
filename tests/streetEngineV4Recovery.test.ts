@@ -19,6 +19,21 @@ import {
 } from '../worker/streetNetwork/v3SourceRuntime.ts';
 import { NetworkD1, seedNetwork } from './helpers/networkD1.ts';
 
+async function finishStagedPreparation(
+  db: NetworkD1,
+  run: Parameters<typeof runStreetEngineV4Preparation>[1],
+  options: Parameters<typeof runStreetEngineV4Preparation>[2],
+) {
+  for (let step = 0; step < 100; step++) {
+    const result = await runStreetEngineV4Preparation(db, run, options);
+    if (result.outcome !== 'pending') return result;
+    const preparation = db.sqlite.prepare(`SELECT status FROM area_task_preparations
+      WHERE campaign_id=? AND area_id=?`).get(run.campaignId, run.areaId) as { status: string };
+    assert.equal(preparation.status, 'pending', `step ${step} published before completion`);
+  }
+  assert.fail('V4 staged preparation did not terminate within 100 steps');
+}
+
 function object(value: string | Uint8Array): StreetEngineV3Object {
   const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
   return {
@@ -85,7 +100,7 @@ async function v4Bucket(extraFeatures: StreetEngineV4PbfFeature[] = []): Promise
 }
 
 test('V4 retry resets an old failed same-generation legacy job before using the current source pack', async (t) => {
-  const db = new NetworkD1();
+  const db = new NetworkD1(true);
   t.after(() => db.sqlite.close());
   seedNetwork(db);
 
@@ -132,7 +147,7 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
   assert.equal(restarted.failed_at, null);
   assert.equal(restarted.last_error_code, null);
 
-  const result = await runStreetEngineV4Preparation(db, retry.run, {
+  const result = await finishStagedPreparation(db, retry.run, {
     streetEngineVersion: 'v4',
     streetEngineV4Bucket: await v4Bucket(),
     streetEngineV4Channel: 'beta',
@@ -206,7 +221,7 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
 
 
 test('V4 budgets apply to generated product entities instead of raw shard source counts', async (t) => {
-  const db = new NetworkD1();
+  const db = new NetworkD1(true);
   t.after(() => db.sqlite.close());
   seedNetwork(db);
 
@@ -239,7 +254,7 @@ test('V4 budgets apply to generated product entities instead of raw shard source
     },
   ];
 
-  const result = await runStreetEngineV4Preparation(db, begun.run, {
+  const result = await finishStagedPreparation(db, begun.run, {
     streetEngineVersion: 'v4',
     streetEngineV4Bucket: await v4Bucket(rawOnlyFeatures),
     streetEngineV4Channel: 'beta',
@@ -261,7 +276,7 @@ test('V4 budgets apply to generated product entities instead of raw shard source
 
 
 test('V4 house budget ignores addressable shard buildings outside the Area', async (t) => {
-  const db = new NetworkD1();
+  const db = new NetworkD1(true);
   t.after(() => db.sqlite.close());
   seedNetwork(db);
   db.sqlite.prepare("UPDATE areas SET geometry_json=? WHERE id='area_n'").run(JSON.stringify({
@@ -297,7 +312,7 @@ test('V4 house budget ignores addressable shard buildings outside the Area', asy
     },
   };
 
-  const result = await runStreetEngineV4Preparation(db, begun.run, {
+  const result = await finishStagedPreparation(db, begun.run, {
     streetEngineVersion: 'v4',
     streetEngineV4Bucket: await v4Bucket([outsideAddressedBuilding]),
     streetEngineV4Channel: 'beta',
@@ -315,7 +330,7 @@ test('V4 house budget ignores addressable shard buildings outside the Area', asy
 });
 
 test('V4 still fails closed when generated road fragments exceed the product limit', async (t) => {
-  const db = new NetworkD1();
+  const db = new NetworkD1(true);
   t.after(() => db.sqlite.close());
   seedNetwork(db);
 
@@ -326,7 +341,7 @@ test('V4 still fails closed when generated road fragments exceed the product lim
   assert.equal(begun.outcome, 'run');
   if (begun.outcome !== 'run') return;
 
-  const result = await runStreetEngineV4Preparation(db, begun.run, {
+  const result = await finishStagedPreparation(db, begun.run, {
     streetEngineVersion: 'v4',
     streetEngineV4Bucket: await v4Bucket(),
     streetEngineV4Channel: 'beta',
@@ -340,7 +355,7 @@ test('V4 still fails closed when generated road fragments exceed the product lim
 });
 
 test('V4 transient source retry preserves its current attempt budget instead of resetting it', async (t) => {
-  const db = new NetworkD1();
+  const db = new NetworkD1(true);
   t.after(() => db.sqlite.close());
   seedNetwork(db);
   const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n', {
@@ -389,4 +404,35 @@ test('V4 transient source retry preserves its current attempt budget instead of 
   assert.equal(job.attempts, 2);
   assert.equal(job.phase, 'v4-source');
   assert.equal((JSON.parse(job.metrics_json) as { engineVersion: string }).engineVersion, 'v4');
+});
+
+test('V4 staged result and task timestamps are independent of alarm timing', async (t) => {
+  const source = await v4Bucket();
+  const results: { hash: string; payloads: string[]; taskTimestamp: string }[] = [];
+  for (const variableClock of [false, true]) {
+    const db = new NetworkD1(true);
+    t.after(() => db.sqlite.close());
+    seedNetwork(db);
+    const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n', {
+      randomUUID: () => '99999999-9999-4999-8999-999999999999',
+      now: () => new Date('2026-09-18T14:00:00Z'),
+    });
+    assert.equal(begun.outcome, 'run');
+    if (begun.outcome !== 'run') return;
+    let tick = 0;
+    const result = await finishStagedPreparation(db, begun.run, {
+      streetEngineVersion: 'v4',
+      streetEngineV4Bucket: source,
+      streetEngineV4Channel: 'beta',
+      now: () => new Date(Date.parse('2026-09-18T14:00:01Z') + (variableClock ? tick++ * 1_000 : 0)),
+    });
+    assert.equal(result.outcome, 'ready');
+    const row = db.sqlite.prepare('SELECT metrics_json FROM street_network_jobs').get() as { metrics_json: string };
+    const metrics = JSON.parse(row.metrics_json) as { resultHash: string; taskTimestamp: string };
+    const payloads = db.sqlite.prepare('SELECT payload_json FROM street_base_chunks ORDER BY content_hash')
+      .all().map((item) => item.payload_json as string);
+    results.push({ hash: metrics.resultHash, taskTimestamp: metrics.taskTimestamp, payloads });
+  }
+  assert.deepEqual(results[0], results[1]);
+  assert.equal(results[0].taskTimestamp, '2026-09-18T14:00:00.000Z');
 });

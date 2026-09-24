@@ -50,6 +50,12 @@ routing_rules:
   - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
+  - id: plan-v4-large-area-staged-preparation
+    path: docs/plans/active/042-v4-large-area-staged-preparation.md
+    type: plan
+    status: active
+    topics: [streets, houses, preparation, scaling, beta, v4]
+    load_when: [Street Engine V4 large-area continuation, Gebiet 8]
   - id: prompt-independent-streetengine-audit
     path: docs/prompts/2026-09-13-independent-streetengine-audit.md
     type: prompt
@@ -599,6 +605,8 @@ nodes:
     load_when: [generic fresh AI session]
 
 edges:
+  - { from: plan-v4-large-area-staged-preparation, to: plan-street-engine-masterplan, relation: continues }
+  - { from: plan-v4-large-area-staged-preparation, to: quality, relation: validated_by }
   - { from: prompt-independent-streetengine-audit, to: plan-smart-marking-waypoints, relation: verifies }
   - { from: prompt-independent-streetengine-audit, to: plan-street-engine-masterplan, relation: verifies }
   - { from: street-engine-masterplan-handoff, to: prompt-independent-streetengine-audit, relation: delegates_verification }

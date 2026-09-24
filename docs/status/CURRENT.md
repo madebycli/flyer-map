@@ -2,17 +2,16 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-16
+last_updated: 2026-09-24
 ---
 
 # Current Project State
 
-- Active Street Engine V3 implementation branch: `feat/street-engine-v3-implementation-2026-09-16`, based exactly on `beta@5aa61866ec6e9a4dd8d369cf34348c13502d38e7`. `main`/Stable is untouched.
-- The V3 authority is the 2026-09-16 Free-Tier-First Greenfield brief. [ADR-0032](../decisions/ADR-0032-street-engine-v3-precompiled-source-packs.md) supersedes ADR-0031's V2 compute-default for V3.
-- V3 direction: precompiled immutable StreetEngine-ready Source-Packs, content-addressed source objects, thin area-specific runtime, Browser Worker as benchmarked normal-path candidate, bounded server verifier/fallback, R2/static for immutable geometry and D1 only for small relational/manifests/overlay state.
-- First implementation slice is in [Plan 037](../plans/active/037-street-engine-v3-source-packs.md): per-generation Free-Tier resource gate plus immutable Source-Pack manifest/selection core.
-- Implemented on the feature branch: `streetEngineV3Budget.ts`, `streetEngineV3SourcePack.ts` and focused tests. Source selection supports normal WGS84 coverage and small antimeridian-crossing Areas; source objects are addressed only by validated SHA-256, never by arbitrary client URLs.
-- Browser source preflight target is <=20 MiB and hard-blocks plans >40 MiB. D1 engineering target remains <=10k rows read/run, preferred <=5k; Worker/DO request targets <=100/run.
-- Mandatory benchmarks remain open: TypeScript vs Rust/WASM, binary shards vs FlatGeobuf, real Gebiet-3 transfer, current-iPad peak memory and reproducible cold <=60 s / <=20 MiB. No pass is claimed yet.
-- No V3 R2 binding, D1 migration, Beta deploy, remote D1 mutation, Stable deploy or secret change has been made by this slice.
-- Release invariant: implementation stays on a branch from `beta`; after branch CI/benchmarks are green, PR merges to `beta`, exact beta SHA is verified, and only the existing Beta release/link is used for runtime/device testing.
+The authoritative cross-repository route is `.ai/CONTEXT.md` → `madebycli/master-context/projects/flyer-map/INDEX.md` → `handoffs/CURRENT.md`. The release-channel invariant there maps `beta` to the Beta Worker and Beta D1; `main` is Stable.
+
+- Live Beta remains `1937868f5e0ee7522134da1850262dacc97ce124` (Release #38), V4 only, with no legacy Overpass runtime fallback.
+- Gebiet 7 was accepted on Beta with 788 Streets and 1,737 Houses. Gebiet 8 remains **not ready**. A real-device run on 2026-09-24 loaded 130 shards and failed at `street_engine_v4_graph_build_budget`; a subsequent retry failed during source selection with the generic `street_engine_v4_source_unavailable`, two object gets and zero selected shards. The latter code does not establish that source assets are missing.
+- Draft PR #125 on `fix/beta-v4-staged-preparation-2026-09-19` stages V4 preparation across Durable Object alarms and D1 generation rows. It is not merged or released. Its original head `3506c51dc702dbb37124a8599de4351990228000` passed independent Scale Audit but failed five recovery tests. The local follow-up fixes these tests and pins generated task timestamps; final-head CI and a real-pack 128 MiB replay are still required.
+- `STREET_ENGINE_LIVE_READY=FALSE` until Gebiet 8 reaches `ready` on exact-commit Beta, Streets/Houses render, reload is stable, a second client converges and Gebiet 7 remains correct.
+
+Continue with [Plan 042](../plans/active/042-v4-large-area-staged-preparation.md). No Production/Main deploy, Production D1 mutation, secret rotation, V3/V2 runtime fallback or live Overpass fallback.

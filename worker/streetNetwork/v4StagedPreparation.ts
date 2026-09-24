@@ -48,6 +48,7 @@ type V4StagedMetrics = {
   sourcePackVersion?: string;
   algorithmVersion?: string;
   sourceTimestamp?: string;
+  taskTimestamp?: string;
   selectedShardIds?: string[];
   shardCount?: number;
   objectGets?: number;
@@ -57,9 +58,11 @@ type V4StagedMetrics = {
   graphCandidateRoads?: number;
   roads?: number;
   sourceBuildings?: number;
+  buildings?: number;
   sourceAddressNodes?: number;
   sourceAddressableBuildings?: number;
   addressableBuildings?: number;
+  areaAddressableBuildings?: number;
   houses?: number;
   activeMs?: number;
   sourceMs?: number;
@@ -109,7 +112,12 @@ function normalizeCode(value: string) {
 }
 
 function phaseErrorCode(phase: string, error: unknown) {
-  if (error instanceof Error && /^[a-z][a-z0-9_]+$/u.test(error.message)) return normalizeCode(error.message);
+  if (error instanceof Error && error.message === 'graph_build_budget') {
+    return 'street_engine_v4_graph_build_budget';
+  }
+  if (error instanceof Error && /^street_engine_v[34]_[a-z0-9_]+$/u.test(error.message)) {
+    return normalizeCode(error.message);
+  }
   if (phase === 'v4-plan' || phase === 'v4-source') return 'street_engine_v4_source_unavailable';
   if (phase.startsWith('v4-graph')) return 'street_engine_v4_graph_internal_failure';
   if (phase === 'v4-address') return 'street_engine_v4_address_internal_failure';
@@ -240,6 +248,14 @@ async function stageGroups(
 
 async function loadPlan(db: D1DatabaseLike, run: AreaTaskPreparationRun) {
   return staged<StreetEngineV3SourceShard>(db, run, 'v4-plan', 'selected:');
+}
+
+async function generationTimestamp(db: D1DatabaseLike, run: AreaTaskPreparationRun) {
+  const row = await db.prepare(`SELECT started_at FROM area_task_preparations
+    WHERE campaign_id=? AND area_id=? AND generation=? AND status='pending'`)
+    .bind(run.campaignId, run.areaId, run.generation).first<{ started_at: string | null }>();
+  if (!row) throw new Error('street_engine_v4_generation_stale');
+  return row.started_at ?? run.now;
 }
 
 async function loadAllAddressNodes(db: D1DatabaseLike, run: AreaTaskPreparationRun) {
@@ -491,6 +507,7 @@ export async function runStreetEngineV4StagedPreparation(
   try {
     if (phase === 'v4-plan') {
       const begin = performance.now();
+      metrics.taskTimestamp = await generationTimestamp(db, run);
       const resolved = await resolveStreetEngineV3SourceSelection({
         bucket: options.streetEngineV4Bucket,
         channel: options.streetEngineV4Channel ?? 'beta',
@@ -508,10 +525,12 @@ export async function runStreetEngineV4StagedPreparation(
       metrics.sourceRoads = 0;
       metrics.graphCandidateRoads = 0;
       metrics.sourceBuildings = 0;
+      metrics.buildings = 0;
       metrics.sourceAddressNodes = 0;
       metrics.roads = 0;
       metrics.sourceAddressableBuildings = 0;
       metrics.addressableBuildings = 0;
+      metrics.areaAddressableBuildings = 0;
       metrics.houses = 0;
       await stageRows(db, run, lease, 'v4-plan', 'selected', resolved.selection.shards);
       metrics.sourceMs = (metrics.sourceMs ?? 0) + performance.now() - begin;
@@ -519,7 +538,30 @@ export async function runStreetEngineV4StagedPreparation(
       cursor = 0;
     } else if (phase === 'v4-source') {
       const begin = performance.now();
-      const plan = await loadPlan(db, run);
+      let plan = await loadPlan(db, run);
+      // A retry may inherit a pre-staging V4 source job. Its selection was
+      // recorded in metrics, but no durable plan rows existed yet. Recreate
+      // the immutable selection without resetting the current attempt count.
+      if (!plan.length && cursor === 0) {
+        metrics.taskTimestamp ??= await generationTimestamp(db, run);
+        const resolved = await resolveStreetEngineV3SourceSelection({
+          bucket: options.streetEngineV4Bucket,
+          channel: options.streetEngineV4Channel ?? 'beta',
+          area: run.area.geometry,
+        });
+        if (metrics.manifestHash && metrics.manifestHash !== resolved.manifestHash) {
+          throw new Error('street_engine_v4_source_manifest_changed');
+        }
+        metrics.manifestHash = resolved.manifestHash;
+        metrics.sourcePackVersion = resolved.manifest.sourcePackVersion;
+        metrics.algorithmVersion = resolved.manifest.algorithmVersion.replace(/^v3-/u, 'v4-');
+        metrics.sourceTimestamp = resolved.manifest.source.timestamp;
+        metrics.selectedShardIds = resolved.selection.shards.map((shard) => shard.id);
+        metrics.shardCount = resolved.selection.shards.length;
+        metrics.objectGets = (metrics.objectGets ?? 0) + resolved.objectGets;
+        await stageRows(db, run, lease, 'v4-plan', 'selected', resolved.selection.shards);
+        plan = resolved.selection.shards;
+      }
       const shard = plan[cursor];
       if (!shard) throw new Error('street_engine_v4_source_plan_invalid');
       const decoded = await loadStreetEngineV3SourceShard(options.streetEngineV4Bucket, shard);
@@ -546,6 +588,7 @@ export async function runStreetEngineV4StagedPreparation(
       metrics.graphCandidateRoads = (metrics.graphCandidateRoads ?? 0)
         + decoded.payload.roads.filter((road) => eligibleRoad(road.tags)).length;
       metrics.sourceBuildings = (metrics.sourceBuildings ?? 0) + decoded.payload.buildings.length;
+      metrics.buildings = metrics.sourceBuildings;
       metrics.sourceAddressNodes = (metrics.sourceAddressNodes ?? 0) + decoded.payload.addressNodes.length;
       metrics.sourceMs = (metrics.sourceMs ?? 0) + performance.now() - begin;
 
@@ -585,7 +628,7 @@ export async function runStreetEngineV4StagedPreparation(
         campaignId: run.campaignId,
         areaId: run.areaId,
         generation: run.generation,
-        timestamp: now,
+        timestamp: metrics.taskTimestamp ??= await generationTimestamp(db, run),
         maxTasks: remaining,
       });
       const nextRoads = (metrics.roads ?? 0) + tasks.length;
@@ -625,11 +668,12 @@ export async function runStreetEngineV4StagedPreparation(
       const addressed = addressBuildings(buildings, nodes);
       const owned = addressed.filter((building) => polygonOwnsPoint(run.area.geometry, interiorPoint(building.geometry)));
       metrics.sourceAddressableBuildings = (metrics.sourceAddressableBuildings ?? 0) + addressed.length;
-      const nextAddressable = (metrics.addressableBuildings ?? 0) + owned.length;
+      metrics.addressableBuildings = metrics.sourceAddressableBuildings;
+      const nextAddressable = (metrics.areaAddressableBuildings ?? 0) + owned.length;
       if (nextAddressable > (options.maxBuildings ?? V4_DEFAULT_MAX_HOUSES)) {
         throw new Error('street_engine_v4_house_budget');
       }
-      metrics.addressableBuildings = nextAddressable;
+      metrics.areaAddressableBuildings = nextAddressable;
       await stageRows(db, run, lease, 'v4-targets', key(cursor), owned);
       metrics.addressMs = (metrics.addressMs ?? 0) + performance.now() - begin;
 
@@ -668,8 +712,8 @@ export async function runStreetEngineV4StagedPreparation(
           parentStreetTaskId: null,
           status: 'open',
           completedAt: null,
-          createdAt: now,
-          updatedAt: now,
+          createdAt: metrics.taskTimestamp ??= await generationTimestamp(db, run),
+          updatedAt: metrics.taskTimestamp,
         });
         if (building.tags['addr:street']) addresses.set(id, building.tags['addr:street']);
       }
@@ -774,7 +818,7 @@ export async function runStreetEngineV4StagedPreparation(
           errorCode: null,
           updatedAt: now,
           progress: preparationProgress('ready', 0, metrics.shardCount ?? 1, {
-            addressableBuildings: metrics.addressableBuildings,
+            addressableBuildings: metrics.areaAddressableBuildings,
           }, true),
         });
       } catch { /* best effort */ }
@@ -818,7 +862,7 @@ export async function runStreetEngineV4StagedPreparation(
             phase,
             cursor,
             metrics.shardCount ?? 1,
-            { addressableBuildings: metrics.addressableBuildings },
+            { addressableBuildings: metrics.areaAddressableBuildings },
             false,
           ),
         });

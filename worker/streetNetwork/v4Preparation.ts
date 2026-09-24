@@ -69,20 +69,24 @@ async function resetV4RetryState(
     engineVersion: 'v4',
     sourcePolicy: 'immutable-source-pack/no-live-overpass',
     legacyOverpassRequests: 0,
+    resetToken: crypto.randomUUID(),
   };
+  const baselineJson = JSON.stringify(baseline);
 
   await db.batch([
     db.prepare(`UPDATE street_network_jobs
       SET phase='v4-plan',cursor=0,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=?
       WHERE campaign_id=? AND area_id=? AND generation=?
         AND phase<>'ready'
+        AND (phase='failed' OR
+          CASE WHEN json_valid(metrics_json) THEN json_extract(metrics_json,'$.engineVersion') ELSE NULL END IS NOT 'v4')
         AND (lease_until IS NULL OR lease_until<=?)
         AND EXISTS(
           SELECT 1 FROM area_task_preparations
           WHERE campaign_id=? AND area_id=? AND generation=? AND status='pending'
         )`)
       .bind(
-        JSON.stringify(baseline),
+        baselineJson,
         run.campaignId,
         run.areaId,
         run.generation,
@@ -92,8 +96,11 @@ async function resetV4RetryState(
         run.generation,
       ),
     db.prepare(`DELETE FROM street_network_staging
-      WHERE campaign_id=? AND area_id=? AND generation=?`)
-      .bind(run.campaignId, run.areaId, run.generation),
+      WHERE campaign_id=? AND area_id=? AND generation=?
+        AND EXISTS(SELECT 1 FROM street_network_jobs
+          WHERE campaign_id=? AND area_id=? AND generation=? AND metrics_json=? AND lease IS NULL)`)
+      .bind(run.campaignId, run.areaId, run.generation,
+        run.campaignId, run.areaId, run.generation, baselineJson),
   ]);
 }
 
@@ -123,13 +130,17 @@ async function normalizeDurableV4State(db: D1DatabaseLike, run: AreaTaskPreparat
   if (!row) return;
   let parsed: unknown = {};
   try { parsed = JSON.parse(row.metrics_json || '{}'); } catch { parsed = {}; }
+  if (row.phase !== 'v3-source' && !row.error_code?.startsWith('street_engine_v3_')
+      && parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      && (parsed as Record<string, unknown>).engineVersion === 'v4') return;
   const phase = String(v4Phase(row.phase) ?? row.phase);
   const errorCode = v4Code(row.error_code) as string | null;
   await db.batch([
     db.prepare(`UPDATE street_network_jobs
       SET phase=?,error_code=?,metrics_json=?
-      WHERE campaign_id=? AND area_id=? AND generation=?`)
-      .bind(phase, errorCode, JSON.stringify(normalizeMetrics(parsed)), run.campaignId, run.areaId, run.generation),
+      WHERE campaign_id=? AND area_id=? AND generation=? AND phase=? AND metrics_json=? AND error_code IS ?`)
+      .bind(phase, errorCode, JSON.stringify(normalizeMetrics(parsed)),
+        run.campaignId, run.areaId, run.generation, row.phase, row.metrics_json, row.error_code),
   ]);
 }
 
