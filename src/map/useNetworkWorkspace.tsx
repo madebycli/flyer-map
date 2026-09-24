@@ -240,7 +240,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     const running=state?.status==='pending';
     const phaseLabel=({
       roads:'Straßen laden',graph:'Straßennetz aufbauen',buildings:'Gebäude laden',addresses:'Adressen prüfen',link:'Häuser zuordnen',publish:'Speichern',ready:'Bereit',
-      'v4-plan':'Quelldaten planen','v4-source':'Quelldaten laden','v4-node-usage':'Kreuzungen prüfen','v4-graph':'Straßennetz aufbauen','v4-address':'Adressen prüfen','v4-link':'Häuser zuordnen','v4-base':'Daten vorbereiten','v4-publish':'Speichern',
+      'v4-plan':'Quelldaten planen','v4-source':'Quelldaten laden','v4-node-usage':'Kreuzungen prüfen','v4-graph':'Straßennetz aufbauen','v4-address':'Adressen prüfen','v4-address-dedupe':'Adressen abgleichen','v4-address-final':'Adressen zuordnen','v4-link':'Häuser zuordnen','v4-base':'Daten vorbereiten','v4-publish':'Speichern',
     } as Record<string,string>)[state?.progress?.phase??'']??'Vorbereitung';
     return <div className="area-actions-content">
       {(roads.some(task=>task.network)?canMark:editable)?<button className="button primary full-width" disabled={Boolean(preparing)||running} onClick={()=>roads.some(task=>task.network)?open(area.id):void prepare(area)}>{preparing===area.id||running?'Vorbereitung läuft …':roads.some(task=>task.network)?'Straßen bearbeiten':'Straßen und Häuser vorbereiten'}</button>:null}

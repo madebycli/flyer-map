@@ -24,14 +24,14 @@ async function finishStagedPreparation(
   run: Parameters<typeof runStreetEngineV4Preparation>[1],
   options: Parameters<typeof runStreetEngineV4Preparation>[2],
 ) {
-  for (let step = 0; step < 100; step++) {
+  for (let step = 0; step < 180; step++) {
     const result = await runStreetEngineV4Preparation(db, run, options);
     if (result.outcome !== 'pending') return result;
     const preparation = db.sqlite.prepare(`SELECT status FROM area_task_preparations
       WHERE campaign_id=? AND area_id=?`).get(run.campaignId, run.areaId) as { status: string };
     assert.equal(preparation.status, 'pending', `step ${step} published before completion`);
   }
-  assert.fail('V4 staged preparation did not terminate within 100 steps');
+  assert.fail('V4 staged preparation did not terminate within 180 steps');
 }
 
 function object(value: string | Uint8Array): StreetEngineV3Object {
@@ -424,6 +424,7 @@ test('V4 staged result and task timestamps are independent of alarm timing', asy
       streetEngineVersion: 'v4',
       streetEngineV4Bucket: source,
       streetEngineV4Channel: 'beta',
+      v4LinkBuckets: variableClock ? 2 : 1,
       now: () => new Date(Date.parse('2026-09-18T14:00:01Z') + (variableClock ? tick++ * 1_000 : 0)),
     });
     assert.equal(result.outcome, 'ready');
@@ -435,4 +436,40 @@ test('V4 staged result and task timestamps are independent of alarm timing', asy
   }
   assert.deepEqual(results[0], results[1]);
   assert.equal(results[0].taskTimestamp, '2026-09-18T14:00:00.000Z');
+});
+
+test('V4 address keys are deduplicated across source shards before the House budget', async (t) => {
+  const db = new NetworkD1(true);
+  t.after(() => db.sqlite.close());
+  seedNetwork(db);
+  db.sqlite.prepare("UPDATE areas SET geometry_json=? WHERE id='area_n'").run(JSON.stringify({
+    type: 'Polygon', coordinates: [[[13, 51], [13.02, 51], [13.02, 51.01], [13, 51.01], [13, 51]]],
+  }));
+  const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n', {
+    randomUUID: () => '88888888-8888-4888-8888-888888888888',
+    now: () => new Date('2026-09-18T15:00:00Z'),
+  });
+  assert.equal(begun.outcome, 'run');
+  if (begun.outcome !== 'run') return;
+  const duplicate = {
+    type: 'Feature' as const,
+    properties: { '@type': 'way', '@id': 21, building: 'yes', 'addr:street': 'Straße', 'addr:housenumber': '7' },
+    geometry: { type: 'Polygon' as const, coordinates: [[
+      [13.011, 51.0051], [13.0112, 51.0051], [13.0112, 51.0053],
+      [13.011, 51.0053], [13.011, 51.0051],
+    ]] },
+  };
+  const result = await finishStagedPreparation(db, begun.run, {
+    streetEngineVersion: 'v4', streetEngineV4Bucket: await v4Bucket([duplicate]),
+    streetEngineV4Channel: 'beta', maxBuildings: 1,
+    now: () => new Date('2026-09-18T15:00:01Z'),
+  });
+  assert.equal(result.outcome, 'ready');
+  const row = db.sqlite.prepare('SELECT metrics_json FROM street_network_jobs').get() as { metrics_json: string };
+  const metrics = JSON.parse(row.metrics_json) as Record<string, unknown>;
+  assert.equal(metrics.shardCount, 2);
+  assert.equal(metrics.sourceBuildings, 2);
+  assert.equal(metrics.addressableBuildings, 1);
+  assert.equal(metrics.areaAddressableBuildings, 1);
+  assert.equal(metrics.houses, 1);
 });

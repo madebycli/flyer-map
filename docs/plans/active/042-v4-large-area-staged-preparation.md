@@ -21,7 +21,7 @@ Gebiet 8 auf Beta mit ungefähr 55.216 Streets und 46.661 Houses reproduzierbar 
 ## Umsetzungsschritte und Abnahme
 
 1. PR #125 gegen aktuelle Beta-Basis fertigstellen: alle fünf bisherigen CI-Fails als mehrstufige Lifecycle-Tests reparieren, transienten Source-Retry ohne verlorenes Attempt-Budget fortsetzen und Fehlercodes je Phase sicher normalisieren.
-2. Semantik mit Gebiet-7-Fixture und realen Source-Assets vergleichen. Gebiet 8 read-only mit 128 MiB Heap bis zum vollständigen staged Publish simulieren, inklusive Peak-Heap, D1-Batches, Result-Hash und Entity-Zahlen.
+2. Semantik mit Gebiet-7-Fixture und realen Source-Assets vergleichen. Ein read-only Replay der aktuellen 130 Beta-Shards mit rechteckiger Gebiet-8-BBox erreichte lokal `ready`: 62.179 Streets, 52.276 Houses, 64.650 source-addressable Buildings, 118,7 MiB V8-Heap-Peak, höchstens 12 Statements pro D1-Batch. Die BBox ist größer als das exakte Gebiet; dessen Polygon und die Cloudflare-Laufzeit bleiben reale Abnahme-Gates.
 3. Full CI, Typecheck, Dependency-Audit, Production Build und unabhängiges Scale Audit auf unverändertem finalen PR-Head verifizieren.
 4. PR nach grünen Gates mergen, ausschließlich Beta releasen, exakten Runtime-Commit prüfen. Authentifizierten Gebiet-8-Retry, Rendering, Reload, Android und zweiten Client real abnehmen; Gebiet 7 erneut prüfen.
 5. Kontext-Handoff, Status, Tests und Release-Evidenz aktuell halten. `STREET_ENGINE_LIVE_READY` erst nach allen Feldgates auf `TRUE` setzen.
@@ -29,6 +29,6 @@ Gebiet 8 auf Beta mit ungefähr 55.216 Streets und 46.661 Houses reproduzierbar 
 ## Risiken und offene Fragen
 
 - `UNKLAR:` Grund des neueren Source-Auswahlfehlers nach zwei Object-Gets. Der alte Catch verschleiert den konkreten Fehler. Neue V4-Diagnose auf Beta ist für die Feldursache nötig.
-- `UNKLAR:` 128-MiB-Real-Pack-Replay und tatsächliche Cloudflare-Isolate-/D1-Grenzen. Synthetische lokale Zahlen belegen keine Cloudflare-Eignung.
+- `UNKLAR:` tatsächliche Cloudflare-Isolate-/D1-Grenzen und reales Area-Polygon. Der 128-MiB-Real-Pack-Replay mit BBox ist lokal erfolgreich, aber der in-process SQLite-Test erreicht etwa 1,16 GiB RSS und bildet Cloudflare-D1 nicht ab.
 - Ein lokaler RxDB-Zweittab-Test benötigt Unix-Sockets und scheitert in der aktuellen Sandbox mit `EPERM`; CI muss ihn auf einem geeigneten Runner verifizieren.
 - Kein Production/Main-Eingriff und keine implizite Produktentscheidung über geänderte House-Qualität.

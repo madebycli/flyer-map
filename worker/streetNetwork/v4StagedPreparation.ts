@@ -25,6 +25,7 @@ import {
 } from './v3SourceRuntime.ts';
 
 const NODE_BUCKETS = 32;
+const LINK_BUCKETS = 2;
 const LINK_RADIUS_METERS = 110;
 const V4_DEFAULT_MAX_STREETS = 100_000;
 const V4_DEFAULT_MAX_HOUSES = 100_000;
@@ -63,6 +64,8 @@ type V4StagedMetrics = {
   sourceAddressableBuildings?: number;
   addressableBuildings?: number;
   areaAddressableBuildings?: number;
+  linkCells?: string[];
+  linkBucketCount?: number;
   houses?: number;
   activeMs?: number;
   sourceMs?: number;
@@ -78,6 +81,7 @@ type V4StagedMetrics = {
 };
 
 type BasePreparedEntity = DistributionTask | HouseTask;
+type AddressCandidate = { building: ReturnType<typeof addressBuildings>[number]; ordinal: number };
 type StagedBaseChunk = {
   hash: string;
   kind: 'street' | 'house';
@@ -120,7 +124,7 @@ function phaseErrorCode(phase: string, error: unknown) {
   }
   if (phase === 'v4-plan' || phase === 'v4-source') return 'street_engine_v4_source_unavailable';
   if (phase.startsWith('v4-graph')) return 'street_engine_v4_graph_internal_failure';
-  if (phase === 'v4-address') return 'street_engine_v4_address_internal_failure';
+  if (phase.startsWith('v4-address')) return 'street_engine_v4_address_internal_failure';
   if (phase === 'v4-link') return 'street_engine_v4_link_internal_failure';
   if (phase === 'v4-base' || phase === 'v4-publish') return 'street_engine_v4_publish_internal_failure';
   return 'street_engine_v4_internal_failure';
@@ -443,6 +447,7 @@ export async function runStreetEngineV4StagedPreparation(
   options: AreaTaskPreparationOptions & {
     streetEngineV4Bucket: StreetEngineV3Bucket;
     streetEngineV4Channel?: string;
+    v4LinkBuckets?: number;
   },
 ): Promise<PrepareAreaTasksResult> {
   db = requestDatabase(db);
@@ -531,7 +536,13 @@ export async function runStreetEngineV4StagedPreparation(
       metrics.sourceAddressableBuildings = 0;
       metrics.addressableBuildings = 0;
       metrics.areaAddressableBuildings = 0;
+      metrics.linkCells = [];
       metrics.houses = 0;
+      const linkBuckets = options.v4LinkBuckets ?? LINK_BUCKETS;
+      if (!Number.isSafeInteger(linkBuckets) || linkBuckets < 1 || linkBuckets > 8) {
+        throw new Error('street_engine_v4_link_bucket_invalid');
+      }
+      metrics.linkBucketCount = linkBuckets;
       await stageRows(db, run, lease, 'v4-plan', 'selected', resolved.selection.shards);
       metrics.sourceMs = (metrics.sourceMs ?? 0) + performance.now() - begin;
       phase = 'v4-source';
@@ -666,27 +677,99 @@ export async function runStreetEngineV4StagedPreparation(
       const buildings = await staged<AddressBuilding>(db, run, 'v4-buildings', `${key(cursor)}:`);
       const nodes = await loadAllAddressNodes(db, run);
       const addressed = addressBuildings(buildings, nodes);
-      const owned = addressed.filter((building) => polygonOwnsPoint(run.area.geometry, interiorPoint(building.geometry)));
-      metrics.sourceAddressableBuildings = (metrics.sourceAddressableBuildings ?? 0) + addressed.length;
-      metrics.addressableBuildings = metrics.sourceAddressableBuildings;
-      const nextAddressable = (metrics.areaAddressableBuildings ?? 0) + owned.length;
-      if (nextAddressable > (options.maxBuildings ?? V4_DEFAULT_MAX_HOUSES)) {
-        throw new Error('street_engine_v4_house_budget');
+      // addressBuildings deduplicates within one shard. Its global key winner
+      // must be chosen across all shards before we count or publish Houses.
+      const groups = new Map<string, unknown[]>();
+      const ordinals = new Map<number, number>();
+      for (const building of addressed) {
+        const ordinal = ordinals.get(building.osmId) ?? 0;
+        ordinals.set(building.osmId, ordinal + 1);
+        const addressKey = building.address.key ?? `building:${building.osmId}:${building.address.number}`;
+        const group = bucketKey(stableBucket(addressKey, NODE_BUCKETS));
+        const rows = groups.get(group) ?? [];
+        rows.push({ building, ordinal } satisfies AddressCandidate);
+        groups.set(group, rows);
       }
-      metrics.areaAddressableBuildings = nextAddressable;
-      await stageRows(db, run, lease, 'v4-targets', key(cursor), owned);
+      await stageGroups(db, run, lease, 'v4-address-keys', key(cursor), groups);
       metrics.addressMs = (metrics.addressMs ?? 0) + performance.now() - begin;
 
       cursor += 1;
       if (cursor >= plan.length) {
+        phase = 'v4-address-dedupe';
+        cursor = 0;
+      }
+    } else if (phase === 'v4-address-dedupe') {
+      const begin = performance.now();
+      const candidates = await staged<AddressCandidate>(db, run, 'v4-address-keys', `${bucketKey(cursor)}:`);
+      candidates.sort((left, right) => left.building.osmId - right.building.osmId
+        || left.ordinal - right.ordinal);
+      const seen = new Set<string>();
+      const groups = new Map<string, unknown[]>();
+      for (const candidate of candidates) {
+        const building = candidate.building;
+        const addressKey = building.address.key ?? `building:${building.osmId}:${building.address.number}`;
+        if (seen.has(addressKey)) continue;
+        seen.add(addressKey);
+        const group = bucketKey(stableBucket(String(building.osmId), NODE_BUCKETS));
+        const rows = groups.get(group) ?? [];
+        rows.push(candidate);
+        groups.set(group, rows);
+      }
+      await stageGroups(db, run, lease, 'v4-address-winners', bucketKey(cursor), groups);
+      metrics.addressMs = (metrics.addressMs ?? 0) + performance.now() - begin;
+      cursor += 1;
+      if (cursor >= NODE_BUCKETS) {
+        phase = 'v4-address-final';
+        cursor = 0;
+      }
+    } else if (phase === 'v4-address-final') {
+      const begin = performance.now();
+      const winners = await staged<AddressCandidate>(db, run, 'v4-address-winners', `${bucketKey(cursor)}:`);
+      winners.sort((left, right) => left.building.osmId - right.building.osmId
+        || left.ordinal - right.ordinal);
+      const emitted = new Set<number>();
+      const owned: ReturnType<typeof addressBuildings> = [];
+      for (const { building } of winners) {
+        const first = !emitted.has(building.osmId);
+        emitted.add(building.osmId);
+        const addressKey = building.address.key ?? `building:${building.osmId}:${building.address.number}`;
+        const resolved = { ...building, identityAddress: first ? null : addressKey };
+        if (polygonOwnsPoint(run.area.geometry, interiorPoint(resolved.geometry))) owned.push(resolved);
+      }
+      const sourceAddressed = (metrics.sourceAddressableBuildings ?? 0) + winners.length;
+      const areaAddressed = (metrics.areaAddressableBuildings ?? 0) + owned.length;
+      if (areaAddressed > (options.maxBuildings ?? V4_DEFAULT_MAX_HOUSES)) {
+        throw new Error('street_engine_v4_house_budget');
+      }
+      metrics.sourceAddressableBuildings = sourceAddressed;
+      metrics.addressableBuildings = sourceAddressed;
+      metrics.areaAddressableBuildings = areaAddressed;
+      const groups = new Map<string, unknown[]>();
+      for (const building of owned) {
+        const cell = spatialCell(interiorPoint(building.geometry));
+        const group = `${cell}:${bucketKey(stableBucket(String(building.osmId), metrics.linkBucketCount ?? LINK_BUCKETS))}`;
+        const rows = groups.get(group) ?? [];
+        rows.push(building);
+        groups.set(group, rows);
+      }
+      await stageGroups(db, run, lease, 'v4-targets', key(cursor), groups);
+      metrics.linkCells = [...new Set([...(metrics.linkCells ?? []), ...groups.keys()])].sort();
+      metrics.addressMs = (metrics.addressMs ?? 0) + performance.now() - begin;
+      cursor += 1;
+      if (cursor >= NODE_BUCKETS) {
         phase = 'v4-link';
         cursor = 0;
       }
     } else if (phase === 'v4-link') {
       const begin = performance.now();
-      const plan = await loadPlan(db, run);
+      const group = metrics.linkCells?.[cursor];
+      if (!group) {
+        phase = 'v4-base';
+        cursor = 0;
+      } else {
+      const cell = group.slice(0, group.lastIndexOf(':'));
       const targets = await staged<ReturnType<typeof addressBuildings>[number]>(
-        db, run, 'v4-targets', `${key(cursor)}:`,
+        db, run, 'v4-targets', `${group}:`,
       );
       const houses: HouseTask[] = [];
       const addresses = new Map<string, string>();
@@ -741,15 +824,17 @@ export async function runStreetEngineV4StagedPreparation(
       metrics.linkMs = (metrics.linkMs ?? 0) + performance.now() - begin;
 
       cursor += 1;
-      if (cursor >= plan.length) {
+      if (cursor >= (metrics.linkCells?.length ?? 0)) {
         phase = 'v4-base';
         cursor = 0;
+      }
       }
     } else if (phase === 'v4-base') {
       const kind: 'street' | 'house' = cursor < 16 ? 'street' : 'house';
       const bucket = cursor % 16;
       const stageKind = kind === 'street' ? 'v4-edge-work' : 'v4-house-work';
       const generated = await staged<BasePreparedEntity>(db, run, stageKind, `${bucketKey(bucket)}:`);
+      generated.sort((left, right) => left.id.localeCompare(right.id));
       const old = await oldBaseBucket(db, run, kind, bucket);
       const oldById = new Map(old.map((entity) => [entity.id, entity]));
       const newIds = new Set(generated.map((entity) => entity.id));
@@ -805,9 +890,21 @@ export async function runStreetEngineV4StagedPreparation(
     } else if (phase === 'v4-publish') {
       const begin = performance.now();
       metrics.activeMs = (metrics.activeMs ?? 0) + performance.now() - stepStarted;
-      metrics.publishMs = (metrics.publishMs ?? 0) + performance.now() - begin;
       const committed = await publishStaged(db, run, lease, metrics, now);
       if (!committed) throw new Error('street_engine_v4_publish_stale');
+      const publishElapsed = performance.now() - begin;
+      metrics.publishMs = (metrics.publishMs ?? 0) + publishElapsed;
+      metrics.activeMs += publishElapsed;
+      // The product commit is already atomic. Refresh diagnostic timing only;
+      // failure to record it cannot undo the published generation.
+      try {
+        await db.batch([
+          db.prepare(`UPDATE street_network_jobs SET metrics_json=?
+            WHERE campaign_id=? AND area_id=? AND generation=? AND phase='ready'
+              AND json_extract(metrics_json,'$.resultHash')=?`)
+            .bind(JSON.stringify(metrics), run.campaignId, run.areaId, run.generation, metrics.resultHash),
+        ]);
+      } catch { /* best effort diagnostic */ }
       try { await options.onCommitted?.(db); } catch { /* canonical feed is already durable */ }
       try {
         options.onProgress?.(run.area, {
@@ -819,6 +916,7 @@ export async function runStreetEngineV4StagedPreparation(
           updatedAt: now,
           progress: preparationProgress('ready', 0, metrics.shardCount ?? 1, {
             addressableBuildings: metrics.areaAddressableBuildings,
+            linkCellCount: metrics.linkCells?.length,
           }, true),
         });
       } catch { /* best effort */ }
@@ -862,7 +960,7 @@ export async function runStreetEngineV4StagedPreparation(
             phase,
             cursor,
             metrics.shardCount ?? 1,
-            { addressableBuildings: metrics.areaAddressableBuildings },
+            { addressableBuildings: metrics.areaAddressableBuildings, linkCellCount: metrics.linkCells?.length },
             false,
           ),
         });

@@ -9,6 +9,7 @@ export type StreetEngineV4PreparationOptions = AreaTaskPreparationOptions & {
   streetEngineVersion?: 'legacy' | 'v4';
   streetEngineV4Bucket?: StreetEngineV4Bucket;
   streetEngineV4Channel?: string;
+  v4LinkBuckets?: number;
 };
 
 function v4Code(value: unknown) {

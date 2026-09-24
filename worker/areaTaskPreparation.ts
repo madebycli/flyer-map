@@ -226,7 +226,7 @@ export function preparationProgress(
   phase:string,
   cursor:number,
   totalTiles:number,
-  metrics:{addressableBuildings?:number;shardCount?:number},
+  metrics:{addressableBuildings?:number;shardCount?:number;linkCellCount?:number},
   ready=false,
 ):AreaPreparationProgress{
   if(phase.startsWith('v4-')||phase==='ready'){
@@ -239,8 +239,10 @@ export function preparationProgress(
     else if(phase==='v4-source')percent=2+Math.floor(28*ratio(cursor,shards));
     else if(phase==='v4-node-usage')percent=30+Math.floor(5*ratio(cursor,32));
     else if(phase==='v4-graph')percent=35+Math.floor(30*ratio(cursor,shards));
-    else if(phase==='v4-address')percent=65+Math.floor(15*ratio(cursor,shards));
-    else if(phase==='v4-link')percent=80+Math.floor(10*ratio(cursor,shards));
+    else if(phase==='v4-address')percent=65+Math.floor(8*ratio(cursor,shards));
+    else if(phase==='v4-address-dedupe')percent=73+Math.floor(3*ratio(cursor,32));
+    else if(phase==='v4-address-final')percent=76+Math.floor(4*ratio(cursor,32));
+    else if(phase==='v4-link')percent=80+Math.floor(10*ratio(cursor,metrics.linkCellCount??shards));
     else if(phase==='v4-base')percent=90+Math.floor(8*ratio(cursor,32));
     else if(phase==='v4-publish')percent=99;
     const completedRoadTiles=phase==='v4-plan'||phase==='v4-source'
@@ -252,7 +254,7 @@ export function preparationProgress(
         ?Math.floor(totalTiles*ratio(cursor,shards))
         :totalTiles;
     const processedBuildings=phase==='v4-link'
-      ?Math.floor(totalBuildings*ratio(cursor,shards))
+      ?Math.floor(totalBuildings*ratio(cursor,metrics.linkCellCount??shards))
       :['v4-base','v4-publish','ready'].includes(phase)
         ?totalBuildings
         :0;
