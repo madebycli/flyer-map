@@ -6,6 +6,7 @@ import {
 import {
   beginAreaTaskPreparation,
 } from '../worker/areaTaskPreparation.ts';
+import { requestDatabase } from '../worker/requestDatabase.ts';
 import {
   buildStreetEngineV4PbfPack,
   type StreetEngineV4PbfFeature,
@@ -98,6 +99,36 @@ async function v4Bucket(extraFeatures: StreetEngineV4PbfFeature[] = []): Promise
     },
   };
 }
+
+test('V4 alarm completes a road-rich shard inside the 50-query D1 invocation budget', async (t) => {
+  const db = new NetworkD1(true);
+  t.after(() => db.sqlite.close());
+  seedNetwork(db);
+  const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n');
+  assert.equal(begun.outcome, 'run');
+  if (begun.outcome !== 'run') return;
+
+  const roads: StreetEngineV4PbfFeature[] = Array.from({ length: 200 }, (_, index) => {
+    const y = 51.001 + index * 0.00002;
+    return {
+      type: 'Feature',
+      properties: { '@type': 'way', '@id': 10_000 + index, highway: 'residential', name: `Straße ${index}` },
+      geometry: { type: 'LineString', coordinates: [[13.001, y], [13.009, y]] },
+    };
+  });
+  const bucket = await v4Bucket(roads);
+  let outcome: Awaited<ReturnType<typeof runStreetEngineV4Preparation>> = { outcome: 'pending' };
+  for (let alarm = 0; alarm < 400; alarm++) {
+    // Fresh wrapper per alarm mirrors PreparationRunner's Free D1 limit.
+    outcome = await runStreetEngineV4Preparation(requestDatabase(db, 50), begun.run, {
+      streetEngineVersion: 'v4', streetEngineV4Bucket: bucket, streetEngineV4Channel: 'beta',
+    });
+    if (outcome.outcome !== 'pending') break;
+  }
+  const job = db.sqlite.prepare('SELECT phase,error_code,attempts FROM street_network_jobs').get();
+  assert.equal(outcome.outcome, 'ready', JSON.stringify({ outcome, job }));
+  assert.equal((job as { attempts: number }).attempts, 0);
+});
 
 test('V4 retry resets an old failed same-generation legacy job before using the current source pack', async (t) => {
   const db = new NetworkD1(true);
