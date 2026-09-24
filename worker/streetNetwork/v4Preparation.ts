@@ -1,7 +1,7 @@
 import type { AreaTaskPreparationOptions, AreaTaskPreparationRun, PrepareAreaTasksResult } from '../areaTaskPreparation.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
-import { runStreetEngineV3Preparation } from './v3Preparation.ts';
-import { resolveStreetEngineV3Manifest, type StreetEngineV3Bucket } from './v3SourceRuntime.ts';
+import { runStreetEngineV4StagedPreparation } from './v4StagedPreparation.ts';
+import type { StreetEngineV3Bucket } from './v3SourceRuntime.ts';
 
 export type StreetEngineV4Bucket = StreetEngineV3Bucket;
 
@@ -9,6 +9,7 @@ export type StreetEngineV4PreparationOptions = AreaTaskPreparationOptions & {
   streetEngineVersion?: 'legacy' | 'v4';
   streetEngineV4Bucket?: StreetEngineV4Bucket;
   streetEngineV4Channel?: string;
+  v4LinkBuckets?: number;
 };
 
 function v4Code(value: unknown) {
@@ -67,36 +68,26 @@ async function resetV4RetryState(
 
   const baseline: Record<string, unknown> = {
     engineVersion: 'v4',
+    sourcePolicy: 'immutable-source-pack/no-live-overpass',
     legacyOverpassRequests: 0,
+    resetToken: crypto.randomUUID(),
   };
-  if (options.streetEngineV4Bucket) {
-    try {
-      const resolved = await resolveStreetEngineV3Manifest(
-        options.streetEngineV4Bucket,
-        options.streetEngineV4Channel ?? 'beta',
-      );
-      baseline.manifestHash = resolved.manifestHash;
-      baseline.sourcePackVersion = resolved.manifest.sourcePackVersion;
-      baseline.algorithmVersion = resolved.manifest.algorithmVersion.replace(/^v3-/u, 'v4-');
-      baseline.sourceTimestamp = resolved.manifest.source.timestamp;
-      baseline.objectGets = resolved.objectGets;
-    } catch {
-      // The delegated V4 source load records the precise fail-closed source error.
-    }
-  }
+  const baselineJson = JSON.stringify(baseline);
 
   await db.batch([
     db.prepare(`UPDATE street_network_jobs
-      SET phase='v4-source',cursor=0,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=?
+      SET phase='v4-plan',cursor=0,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=?
       WHERE campaign_id=? AND area_id=? AND generation=?
         AND phase<>'ready'
+        AND (phase='failed' OR
+          CASE WHEN json_valid(metrics_json) THEN json_extract(metrics_json,'$.engineVersion') ELSE NULL END IS NOT 'v4')
         AND (lease_until IS NULL OR lease_until<=?)
         AND EXISTS(
           SELECT 1 FROM area_task_preparations
           WHERE campaign_id=? AND area_id=? AND generation=? AND status='pending'
         )`)
       .bind(
-        JSON.stringify(baseline),
+        baselineJson,
         run.campaignId,
         run.areaId,
         run.generation,
@@ -105,6 +96,12 @@ async function resetV4RetryState(
         run.areaId,
         run.generation,
       ),
+    db.prepare(`DELETE FROM street_network_staging
+      WHERE campaign_id=? AND area_id=? AND generation=?
+        AND EXISTS(SELECT 1 FROM street_network_jobs
+          WHERE campaign_id=? AND area_id=? AND generation=? AND metrics_json=? AND lease IS NULL)`)
+      .bind(run.campaignId, run.areaId, run.generation,
+        run.campaignId, run.areaId, run.generation, baselineJson),
   ]);
 }
 
@@ -134,13 +131,17 @@ async function normalizeDurableV4State(db: D1DatabaseLike, run: AreaTaskPreparat
   if (!row) return;
   let parsed: unknown = {};
   try { parsed = JSON.parse(row.metrics_json || '{}'); } catch { parsed = {}; }
+  if (row.phase !== 'v3-source' && !row.error_code?.startsWith('street_engine_v3_')
+      && parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      && (parsed as Record<string, unknown>).engineVersion === 'v4') return;
   const phase = String(v4Phase(row.phase) ?? row.phase);
   const errorCode = v4Code(row.error_code) as string | null;
   await db.batch([
     db.prepare(`UPDATE street_network_jobs
       SET phase=?,error_code=?,metrics_json=?
-      WHERE campaign_id=? AND area_id=? AND generation=?`)
-      .bind(phase, errorCode, JSON.stringify(normalizeMetrics(parsed)), run.campaignId, run.areaId, run.generation),
+      WHERE campaign_id=? AND area_id=? AND generation=? AND phase=? AND metrics_json=? AND error_code IS ?`)
+      .bind(phase, errorCode, JSON.stringify(normalizeMetrics(parsed)),
+        run.campaignId, run.areaId, run.generation, row.phase, row.metrics_json, row.error_code),
   ]);
 }
 
@@ -181,11 +182,10 @@ export async function runStreetEngineV4Preparation(
 
   await resetV4RetryState(db, run, options, now);
 
-  const result = await runStreetEngineV3Preparation(db, run, {
+  const result = await runStreetEngineV4StagedPreparation(db, run, {
     ...options,
-    streetEngineVersion: 'sourcepack-v3',
-    streetEngineV3Bucket: options.streetEngineV4Bucket,
-    streetEngineV3Channel: options.streetEngineV4Channel ?? 'beta',
+    streetEngineV4Bucket: options.streetEngineV4Bucket,
+    streetEngineV4Channel: options.streetEngineV4Channel ?? 'beta',
   });
   await normalizeDurableV4State(db, run);
   return result;
