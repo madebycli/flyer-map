@@ -7,6 +7,7 @@ import {
   beginAreaTaskPreparation,
 } from '../worker/areaTaskPreparation.ts';
 import { requestDatabase } from '../worker/requestDatabase.ts';
+import { workBucket } from '../worker/streetNetwork/baseStorage.ts';
 import {
   buildStreetEngineV4PbfPack,
   type StreetEngineV4PbfFeature,
@@ -128,6 +129,58 @@ test('V4 alarm completes a road-rich shard inside the 50-query D1 invocation bud
   const job = db.sqlite.prepare('SELECT phase,error_code,attempts FROM street_network_jobs').get();
   assert.equal(outcome.outcome, 'ready', JSON.stringify({ outcome, job }));
   assert.equal((job as { attempts: number }).attempts, 0);
+});
+
+test('V4 base stages a Street whose geometry exceeds the former feed chunk limit', async (t) => {
+  const db = new NetworkD1(true);
+  t.after(() => db.sqlite.close());
+  seedNetwork(db);
+  const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n');
+  assert.equal(begun.outcome, 'run');
+  if (begun.outcome !== 'run') return;
+  const options = {
+    streetEngineVersion: 'v4' as const,
+    streetEngineV4Bucket: await v4Bucket(),
+    streetEngineV4Channel: 'beta',
+  };
+  let job: { phase: string; cursor: number } | undefined;
+  for (let step = 0; step < 150; step++) {
+    const result = await runStreetEngineV4Preparation(db, begun.run, options);
+    assert.equal(result.outcome, 'pending');
+    job = db.sqlite.prepare('SELECT phase,cursor FROM street_network_jobs').get() as typeof job;
+    if (job?.phase === 'v4-base') break;
+  }
+  assert.equal(job?.phase, 'v4-base');
+  assert.equal(job.cursor, 0);
+  const staged = db.sqlite.prepare("SELECT payload_json FROM street_network_staging WHERE kind='v4-edge-work' LIMIT 1").get() as { payload_json: string };
+  const original = (JSON.parse(staged.payload_json) as Record<string, unknown>[])[0];
+  assert.ok(original);
+  let id = 'long-street-0';
+  for (let suffix = 1; workBucket(id) !== 0; suffix++) id = `long-street-${suffix}`;
+  const longStreet = {
+    ...original,
+    id,
+    geometry: {
+      type: 'LineString',
+      coordinates: Array.from({ length: 5_000 }, (_, index) => [13 + index / 1_000_000, 51.005]),
+    },
+  };
+  const size = new TextEncoder().encode(JSON.stringify(longStreet)).length;
+  assert.ok(size > 75_000 && size < 220_000, `Street bytes: ${size}`);
+  db.sqlite.prepare(`INSERT INTO street_network_staging(
+    campaign_id,area_id,generation,kind,chunk_key,payload_json
+  ) VALUES(?,?,?,'v4-edge-work','00:large',?)`).run(
+    begun.run.campaignId, begun.run.areaId, begun.run.generation, JSON.stringify([longStreet]),
+  );
+  const result = await runStreetEngineV4Preparation(requestDatabase(db, 50), begun.run, options);
+  const after = db.sqlite.prepare('SELECT phase,cursor,error_code FROM street_network_jobs').get() as {
+    phase: string; cursor: number; error_code: string | null;
+  };
+  assert.equal(result.outcome, 'pending');
+  assert.equal(after.phase, 'v4-base');
+  assert.equal(after.cursor, 1);
+  assert.equal(after.error_code, null);
+  assert.ok(db.sqlite.prepare("SELECT 1 FROM street_network_staging WHERE kind='v4-feed' AND chunk_key LIKE 'street:00:%'").get());
 });
 
 test('V4 retry resets an old failed same-generation legacy job before using the current source pack', async (t) => {

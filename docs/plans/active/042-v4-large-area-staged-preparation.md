@@ -1,5 +1,9 @@
 # Plan 042: Street Engine V4 staged large-area preparation
 
+## Post-PR-#127-Retry-Befund 2026-09-25
+
+PR #127 wurde auf Beta veröffentlicht. Der echte Gebiet-8-Retry lud alle 130 Shards des aktuellen Packs und berechnete 55.270 Streets und 46.665 Houses. Der erste `v4-base`-Schritt endete mit dem generischen `street_engine_v4_publish_internal_failure`, ohne Veröffentlichung. Die konkrete Ausnahme ist bisher unbekannt. Die Feed-Paketierung erlaubt bisher nur 75 KB je Street, während die Basis 220 KB erlaubt; eine größere einzelne Geometrie kann daher erst beim Base-Schritt scheitern. Der Beta-Fix vereinheitlicht das Limit auf 220 KB, ergänzt einen Test mit >75 KB Street-Geometrie unter dem 50-Query-Alarm und speichert bei Fehlern den konkreten Base-Unterschritt und einen eigenen Row-Budget-Code. Der reale Lauf muss die Ursache beziehungsweise den Fix erst bestätigen.
+
 ## Post-Release-Befund 2026-09-24
 
 PR #125 ist auf Beta deployed. Der echte Gebiet-8-Lauf blieb bei `v4-source` Cursor 0 ohne Job-Fehlversuch und endete durch den Runner-Absturzschutz mit `area_preparation_runner_unavailable`. Ein lokaler Replay mit dem bisherigen echten 130-Shard-Pack und `requestDatabase(db,50)` reproduzierte den nicht persistierbaren `d1_invocation_budget_exceeded` im ersten Source-Schritt. Ursache sind einzelne DELETE-/INSERT-Statements für bis zu 32 Node-Gruppen innerhalb eines Alarms. Auch die spätere Graph-Phase las 32 Usage-Gruppen einzeln. Gruppenschreibungen werden nun als begrenzte `json_each`-Batches ausgeführt und Graph-Usage in Achtergruppen gelesen. Derselbe 50-Statement-Replay erreicht nach 762 Arbeitsschritten `ready` mit 62.179 Streets / 52.276 Houses. CI, neuer Beta-Release und echter Gebiet-8-Retry sind für diesen Fix offen.
