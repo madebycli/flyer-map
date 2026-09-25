@@ -12,6 +12,8 @@ const hash=(value:unknown)=>{const candidate=text(value);return candidate&&SHA25
 const hashes=(value:unknown)=>Array.isArray(value)?value.slice(0,512).flatMap((entry)=>{const candidate=hash(entry);return candidate?[candidate]:[]}):[];
 const v4Code=(value:unknown)=>typeof value==='string'?value.replace(/^street_engine_v3_/u,'street_engine_v4_'):value;
 const v4Phase=(value:unknown)=>value==='v3-source'?'v4-source':value;
+const baseSteps=new Set(['load-generated','load-existing','build-base','write-base','build-feed','write-feed']);
+const baseFailureClasses=new Set(['non-error','row-budget','d1-query-budget','size-limit','quota','timeout','d1-error','range-error','type-error','unknown']);
 
 function safeSourceAttempt(value:unknown):SafeSourceAttempt|null {
   if(!value||typeof value!=='object'||Array.isArray(value))return null;
@@ -41,7 +43,7 @@ function safeMetrics(raw:string|null){
     manifestHash:hash(metrics.manifestHash),sourcePackVersion:text(metrics.sourcePackVersion),algorithmVersion:algorithm,selectedShardIds:hashes(metrics.selectedShardIds),shardCount:integer(metrics.shardCount)??0,objectGets:integer(metrics.objectGets)??0,compressedBytes:finite(metrics.compressedBytes)??0,decodedBytes:finite(metrics.decodedBytes)??0,legacyOverpassRequests:engineVersion==='v4'?integer(metrics.legacyOverpassRequests)??0:null,resultHash:hash(metrics.resultHash),
     tiles:integer(metrics.tiles),cacheHits:finite(metrics.cacheHits)??0,cacheMisses:finite(metrics.cacheMisses)??0,requests:finite(metrics.requests)??0,retries:finite(metrics.retries)??0,bytes:finite(metrics.bytes)??0,observedSourceBytes:finite(metrics.observedSourceBytes)??0,
     activeMs:finite(metrics.activeMs),sourceMs:finite(metrics.sourceMs)??0,fetchMs:finite(metrics.fetchMs)??0,parseMs:finite(metrics.parseMs)??0,normalizationMs:finite(metrics.normalizationMs)??0,graphMs:finite(metrics.graphMs)??0,addressMs:finite(metrics.addressMs)??0,linkMs:finite(metrics.linkMs)??0,publishMs:finite(metrics.publishMs)??0,
-    roads:finite(metrics.roads)??0,buildings:finite(metrics.buildings)??0,addressableBuildings:finite(metrics.addressableBuildings)??0,houses:finite(metrics.houses)??0,sourceTimestamp:text(metrics.sourceTimestamp),tileTimings:safeTileTimings(metrics.tileTimings),lastSourceAttempts:engineVersion==='v4'?[]:safeAttempts(metrics.lastSourceAttempts),quality:safeQuality(metrics.quality),
+    roads:finite(metrics.roads)??0,buildings:finite(metrics.buildings)??0,addressableBuildings:finite(metrics.addressableBuildings)??0,houses:finite(metrics.houses)??0,sourceTimestamp:text(metrics.sourceTimestamp),baseStep:engineVersion==='v4'&&baseSteps.has(metrics.baseStep as string)?metrics.baseStep:null,baseFailureClass:engineVersion==='v4'&&baseFailureClasses.has(metrics.baseFailureClass as string)?metrics.baseFailureClass:null,tileTimings:safeTileTimings(metrics.tileTimings),lastSourceAttempts:engineVersion==='v4'?[]:safeAttempts(metrics.lastSourceAttempts),quality:safeQuality(metrics.quality),
     lastError:lastError?{phase:String(v4Phase(text(lastError.phase)??'unknown')),cursor:integer(lastError.cursor)??0,code:String(v4Code(text(lastError.code)??'unknown')),attempt:integer(lastError.attempt)??0,sourceAttempts:engineVersion==='v4'?[]:safeAttempts(lastError.sourceAttempts),quality:safeQuality(lastError.quality)}:null,
   };
 }
