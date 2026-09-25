@@ -162,6 +162,12 @@ function bucketKey(index: number) {
   return String(index).padStart(2, '0');
 }
 
+// Staging keys are ASCII. A bounded range uses their composite primary key;
+// SQLite's case-insensitive LIKE scans every row of the selected kind.
+function prefixEnd(prefix: string) {
+  return `${prefix}\uffff`;
+}
+
 function stableBucket(value: string, buckets: number) {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index++) {
@@ -203,8 +209,8 @@ async function staged<T>(
   const values: unknown[] = [run.campaignId, run.areaId, run.generation, kind];
   let sql = 'SELECT payload_json FROM street_network_staging WHERE campaign_id=? AND area_id=? AND generation=? AND kind=?';
   if (prefix !== undefined) {
-    sql += ' AND chunk_key LIKE ?';
-    values.push(`${prefix}%`);
+    sql += ' AND chunk_key>=? AND chunk_key<?';
+    values.push(prefix, prefixEnd(prefix));
   }
   sql += ' ORDER BY chunk_key';
   const rows = await db.prepare(sql).bind(...values).all<{ payload_json: string }>();
@@ -223,11 +229,11 @@ async function stageRows(
   const prefix = `${rowKey}:`;
   await db.batch([
     db.prepare(`DELETE FROM street_network_staging
-      WHERE campaign_id=? AND area_id=? AND generation=? AND kind=? AND chunk_key LIKE ?
+      WHERE campaign_id=? AND area_id=? AND generation=? AND kind=? AND chunk_key>=? AND chunk_key<?
         AND EXISTS(SELECT 1 FROM street_network_jobs
           WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?)`)
       .bind(
-        run.campaignId, run.areaId, run.generation, kind, `${prefix}%`,
+        run.campaignId, run.areaId, run.generation, kind, prefix, prefixEnd(prefix),
         run.campaignId, run.areaId, run.generation, lease,
       ),
   ]);
@@ -332,11 +338,14 @@ async function loadNodeUsage(
   // same 50-query invocation budget after the graph step already checkpointed.
   for (let start = 0; start < buckets.length; start += 8) {
     const part = buckets.slice(start, start + 8);
-    const conditions = part.map(() => 'chunk_key LIKE ?').join(' OR ');
+    const conditions = part.map(() => '(chunk_key>=? AND chunk_key<?)').join(' OR ');
     const rows = await db.prepare(`SELECT payload_json FROM street_network_staging
       WHERE campaign_id=? AND area_id=? AND generation=? AND kind='v4-node-usage'
         AND (${conditions}) ORDER BY chunk_key`)
-      .bind(run.campaignId, run.areaId, run.generation, ...part.map((bucket) => `${bucketKey(bucket)}:%`))
+      .bind(run.campaignId, run.areaId, run.generation, ...part.flatMap((bucket) => {
+        const prefix = `${bucketKey(bucket)}:`;
+        return [prefix, prefixEnd(prefix)];
+      }))
       .all<{ payload_json: string }>();
     for (const row of rows.results) {
       for (const [node, count] of JSON.parse(row.payload_json) as [string, number][]) {
@@ -1032,7 +1041,7 @@ export async function runStreetEngineV4StagedPreparation(
           progress: preparationProgress(
             phase,
             cursor,
-            metrics.shardCount ?? 1,
+            metrics.shardCount ?? 0,
             { addressableBuildings: metrics.areaAddressableBuildings, linkCellCount: metrics.linkCells?.length },
             false,
           ),

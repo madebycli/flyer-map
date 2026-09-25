@@ -1,5 +1,11 @@
 # Plan 042: Street Engine V4 staged large-area preparation
 
+## Tageslimit und Fortschrittsanzeige 2026-09-25
+
+Der Nutzer meldet das erreichte tägliche Cloudflare-D1-Free-Limit für gelesene und geschriebene Zeilen. Deshalb keine weiteren Beta-D1-Abfragen, keinen Live-Retry und keinen Merge, dessen Beta-Release automatische D1-Migrationen ausführt, bevor das Limit zurückgesetzt ist. Die auf PR #129 veröffentlichte Diagnose hat `baseStep` und `baseFailureClass` ergänzt; es fehlt noch ein neuer echter Fehler-Snapshot.
+
+HTTP-GET berechnete V4-`totalTiles` aus 102 Geometrie-Tiles, während WebSocket denselben Fortschritt mit 130 Quell-Shards meldete. Beide Wege verwenden jetzt die Shard-Zahl; in der Planungsphase ohne bekanntes Manifest erscheint noch keine erfundene Gesamtzahl. Ein erneut gestarteter äußerer Auftrag zeigt den alten fehlgeschlagenen V4-Job nicht mehr als aktuellen Fortschritt. Diagnostik- und Fallback-Polling laufen sequenziell und seltener, pausieren in versteckten Tabs; Präfixzugriffe auf Staging-Zeilen nutzen die bestehende Primärschlüssel-Reihenfolge. Das ist eine lokale Korrektur, keine bestätigte Beta-Veröffentlichung. Der echte D1-Verbrauch der gesamten Gebiet-8-Verarbeitung sowie der Base-Fehler bleiben offen.
+
 ## Post-PR-#128-Diagnose 2026-09-25
 
 Der Gerätelog von 11:28 UTC meldet auf dem exakten neuen Beta-Worker erneut `street_engine_v4_publish_internal_failure` bei `v4-base` Cursor 0. Der Log wurde 514 ms nach einem erneuten Start kopiert, sodass äußere Preparation `pending` und noch alter V4-Job `failed` zugleich zu sehen sind. Die 55.270 Streets und 46.665 Houses stammen aus dem unmittelbar vorher fehlgeschlagenen Lauf, nicht aus dem eben gestarteten Retry. Der konkrete Fehler ist unbekannt: der Worker schreibt `baseStep` beim Catch, aber `worker/streetNetwork/diagnostics.ts` entfernt es aus dem öffentlichen Snapshot. Der nächste Beta-Fix gibt nur bekannte Base-Schritte und eine klassifizierte Fehlerart frei und testet den Diagnosevertrag. Das 220-KB-Feed-Limit hat den Fehler offenbar nicht behoben; einen anderen Ursachenfix darf der Log nicht vortäuschen.

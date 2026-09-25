@@ -63,7 +63,7 @@ function timerQueue() {
   };
 }
 
-test("missing preparation starts once, polls every two seconds, and refreshes once on ready", async () => {
+test("missing preparation starts once, polls every five seconds, and refreshes once on ready", async () => {
   const timers = timerQueue();
   const fetched: AreaPreparationPublicState[] = [
     { ...pending, status: "missing" },
