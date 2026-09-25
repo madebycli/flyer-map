@@ -248,7 +248,11 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       {state?.progress && running?<div className="area-preparation-progress" role="status">
         <div className="area-preparation-progress-header"><strong>{state.progress.percent} %</strong><span>{phaseLabel}</span></div>
         <progress max={100} value={state.progress.percent} aria-label="Vorbereitung" />
-        <p>Straßen-Tiles {state.progress.completedRoadTiles}/{state.progress.totalTiles} · Gebäude-Tiles {state.progress.completedBuildingTiles}/{state.progress.totalTiles} · {state.progress.processedBuildings}/{state.progress.totalBuildings} Gebäude · {state.houseCount} Häuser</p>
+        <p>{state.progress.phase.startsWith('v4-')
+          ? state.progress.totalTiles>0
+            ? `Straßen-Shards ${state.progress.completedRoadTiles}/${state.progress.totalTiles} · Gebäude-Shards ${state.progress.completedBuildingTiles}/${state.progress.totalTiles}`
+            : 'Quell-Shards werden ermittelt'
+          : `Straßen-Tiles ${state.progress.completedRoadTiles}/${state.progress.totalTiles} · Gebäude-Tiles ${state.progress.completedBuildingTiles}/${state.progress.totalTiles}`} · {state.progress.processedBuildings}/{state.progress.totalBuildings} Gebäude · {state.houseCount} Häuser</p>
       </div>:null}
       {state?.status==='failed'?<div role="alert"><p>{preparationFailureMessage(state.failure?.code??state.errorCode??undefined)}</p>{state.failure?<details><summary>Fehlerdetails</summary><p>{phaseLabel} · Cursor {state.failure.cursor} · Versuch {state.failure.attempt} · {state.failure.code}</p></details>:null}</div>:null}
       {state?.quality?.rejectedBuildings?<div role="status"><p>{state.quality.rejectedBuildings} von {state.quality.receivedBuildings} Gebäudeobjekten konnten nicht verwendet werden. Die Hausliste kann dadurch unvollständig sein.</p><details><summary>Betroffene Quelldaten (maximal 10)</summary><ul>{state.quality.samples.map((sample,index)=><li key={index}>OSM {sample.osmId??'unbekannt'} · Tile {sample.tile} · {sample.reason}</li>)}</ul></details></div>:null}

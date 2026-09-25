@@ -108,8 +108,8 @@ test('real workspace preparation polling backs off transient failures and stops 
   t.after(async()=>{Date.now=originalDateNow;if(renderer)await act(async()=>renderer!.unmount());for(const [key,descriptor]of originals){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}});
   function Harness(){useNetworkWorkspace(snapshot,{campaignId:'campaign_poll',role:'admin',teamId:null,label:null},async()=>{},()=>true);return null;}
   await act(async()=>{renderer=create(createElement(Harness));});await act(async()=>{await Promise.resolve();await Promise.resolve();});
-  assert.equal(fetchCalls,1);assert.deepEqual(delays,[2_000]);
-  for(const expected of [4_000,8_000,16_000,30_000]){await runNext();assert.equal(delays.at(-1),expected);}
+  assert.equal(fetchCalls,1);assert.deepEqual(delays,[5_000]);
+  for(const expected of [10_000,20_000,30_000,30_000]){await runNext();assert.equal(delays.at(-1),expected);}
   await runNext();assert.equal(fetchCalls,6);assert.equal(callbacks.size,0);
 });
 

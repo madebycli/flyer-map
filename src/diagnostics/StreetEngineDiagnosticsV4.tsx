@@ -25,9 +25,65 @@ export function StreetEngineDiagnosticsV4(){
   const enabled=useMemo(diagnosticsEnabled,[]);const campaignId=useMemo(()=>campaignIdFromUrl(),[]);
   const [expanded,setExpanded]=useState(false);const [copied,setCopied]=useState(false);const [areas,setAreas]=useState<AreaOption[]>(()=>enabled?localAreas():[]);const [areaSource,setAreaSource]=useState<"server"|"local">("local");const [selectedAreaId,setSelectedAreaId]=useState(()=>enabled?localAreas()[0]?.id??"":"");const [payload,setPayload]=useState<PreparationPayload|null>(null);const [runtime,setRuntime]=useState<RuntimeInfo|null>(null);const [error,setError]=useState<string|null>(null);const [canonicalAreaError,setCanonicalAreaError]=useState<string|null>(null);const [pollMs,setPollMs]=useState(0);const [observations,setObservations]=useState<Observation[]>([]);const lastSignature=useRef("");
 
-  useEffect(()=>{if(!enabled||!campaignId)return;let cancelled=false;const refresh=async()=>{try{const next=await fetchCanonicalAreas(campaignId);if(cancelled)return;setAreas(next);setAreaSource("server");setCanonicalAreaError(null);setSelectedAreaId((current)=>current&&next.some((area)=>area.id===current)?current:next[0]?.id??"");}catch(cause){if(cancelled)return;const next=localAreas();setAreas(next);setAreaSource("local");setPayload(null);setObservations([]);lastSignature.current="";setCanonicalAreaError(cause instanceof CampaignApiError?`${cause.code} (HTTP ${cause.status})`:cause instanceof Error?cause.message:"canonical_area_lookup_failed");setSelectedAreaId((current)=>current&&next.some((area)=>area.id===current)?current:next[0]?.id??"");}};void refresh();const interval=window.setInterval(()=>void refresh(),4000);return()=>{cancelled=true;window.clearInterval(interval);};},[enabled,campaignId]);
+  useEffect(()=>{
+    if(!enabled||!campaignId)return;
+    let cancelled=false,loading=false,timer:number|undefined;
+    const refresh=async()=>{
+      if(cancelled||loading||document.visibilityState==="hidden")return;
+      loading=true;
+      try{
+        const next=await fetchCanonicalAreas(campaignId);
+        if(cancelled)return;
+        setAreas(next);setAreaSource("server");setCanonicalAreaError(null);
+        setSelectedAreaId((current)=>current&&next.some((area)=>area.id===current)?current:next[0]?.id??"");
+      }catch(cause){
+        if(cancelled)return;
+        const next=localAreas();setAreas(next);setAreaSource("local");setPayload(null);
+        setObservations([]);lastSignature.current="";
+        setCanonicalAreaError(cause instanceof CampaignApiError?`${cause.code} (HTTP ${cause.status})`:cause instanceof Error?cause.message:"canonical_area_lookup_failed");
+        setSelectedAreaId((current)=>current&&next.some((area)=>area.id===current)?current:next[0]?.id??"");
+      }finally{
+        loading=false;
+        if(!cancelled)timer=window.setTimeout(()=>void refresh(),30_000);
+      }
+    };
+    const resume=()=>{if(document.visibilityState!=="visible"||loading)return;if(timer!==undefined)window.clearTimeout(timer);timer=undefined;void refresh();};
+    document.addEventListener("visibilitychange",resume);
+    void refresh();
+    return()=>{cancelled=true;if(timer!==undefined)window.clearTimeout(timer);document.removeEventListener("visibilitychange",resume);};
+  },[enabled,campaignId]);
   useEffect(()=>{if(!enabled)return;let cancelled=false;const load=async()=>{try{const response=await fetch(`/api/runtime?diag=${Date.now()}`,{cache:"no-store",credentials:"same-origin"});if(response.ok&&!cancelled)setRuntime(await response.json() as RuntimeInfo);}catch{/* preparation diagnostics remain useful */}};void load();return()=>{cancelled=true;};},[enabled]);
-  useEffect(()=>{if(!enabled||!campaignId||!selectedAreaId||areaSource!=="server")return;let cancelled=false;const poll=async()=>{const started=performance.now();try{const response=await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/areas/${encodeURIComponent(selectedAreaId)}/preparation?diag=1&t=${Date.now()}`,{cache:"no-store",credentials:"same-origin"});if(!response.ok)throw new Error(`HTTP ${response.status}`);const next=await response.json() as PreparationPayload;if(cancelled)return;const elapsed=performance.now()-started;setPollMs(elapsed);setPayload(next);setError(null);const diag=next.diagnostics;const observation:Observation={at:new Date().toISOString(),status:next.status,phase:diag?.phase??next.progress?.phase??"–",cursor:diag?.cursor??0,attempts:diag?.attempts??0,errorCode:diag?.errorCode??next.errorCode,pollMs:elapsed,elapsedMs:diag?.elapsedMs??null};const signature=JSON.stringify([observation.status,observation.phase,observation.cursor,observation.attempts,observation.errorCode,diag?.generation]);if(signature!==lastSignature.current){lastSignature.current=signature;setObservations((current)=>[observation,...current].slice(0,100));}}catch(cause){if(!cancelled)setError(cause instanceof Error?cause.message:"diagnostic_request_failed");}};void poll();const interval=window.setInterval(()=>void poll(),1000);return()=>{cancelled=true;window.clearInterval(interval);};},[enabled,campaignId,selectedAreaId,areaSource]);
+  useEffect(()=>{
+    if(!enabled||!campaignId||!selectedAreaId||areaSource!=="server")return;
+    let cancelled=false,reading=false,timer:number|undefined;
+    const poll=async()=>{
+      if(cancelled||reading||document.visibilityState==="hidden")return;
+      reading=true;
+      const started=performance.now();
+      let delay=30_000;
+      try{
+        const response=await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/areas/${encodeURIComponent(selectedAreaId)}/preparation?diag=1&t=${Date.now()}`,{cache:"no-store",credentials:"same-origin"});
+        if(!response.ok)throw new Error(`HTTP ${response.status}`);
+        const next=await response.json() as PreparationPayload;
+        if(cancelled)return;
+        delay=next.status==="pending"?5_000:30_000;
+        const elapsed=performance.now()-started;setPollMs(elapsed);setPayload(next);setError(null);
+        const diag=next.diagnostics;
+        const observation:Observation={at:new Date().toISOString(),status:next.status,phase:diag?.phase??next.progress?.phase??"–",cursor:diag?.cursor??0,attempts:diag?.attempts??0,errorCode:diag?.errorCode??next.errorCode,pollMs:elapsed,elapsedMs:diag?.elapsedMs??null};
+        const signature=JSON.stringify([observation.status,observation.phase,observation.cursor,observation.attempts,observation.errorCode,diag?.generation]);
+        if(signature!==lastSignature.current){lastSignature.current=signature;setObservations((current)=>[observation,...current].slice(0,100));}
+      }catch(cause){
+        if(!cancelled)setError(cause instanceof Error?cause.message:"diagnostic_request_failed");
+      }finally{
+        reading=false;
+        if(!cancelled)timer=window.setTimeout(()=>void poll(),delay);
+      }
+    };
+    const resume=()=>{if(document.visibilityState!=="visible"||reading)return;if(timer!==undefined)window.clearTimeout(timer);timer=undefined;void poll();};
+    document.addEventListener("visibilitychange",resume);
+    void poll();
+    return()=>{cancelled=true;if(timer!==undefined)window.clearTimeout(timer);document.removeEventListener("visibilitychange",resume);};
+  },[enabled,campaignId,selectedAreaId,areaSource]);
 
   if(!enabled)return null;const selected=areas.find((area)=>area.id===selectedAreaId);const diag=payload?.diagnostics??null;const metrics=diag?.metrics??{};const isV4=(diag?.engineVersion??metrics.engineVersion)==="v4";const overpassViolation=isV4&&(metrics.legacyOverpassRequests??0)!==0;const runtimeViolation=runtime!==null&&(runtime.streetEngineVersion!=="v4"||runtime.releaseChannel!=="beta");const headline=diag?`${diag.status} · ${formatDuration(diag.elapsedMs)}`:payload?.status??"warte";
   const copy=async()=>{const report={schema:"street-engine-diag-v4",at:new Date().toISOString(),page:window.location.href,campaignId,areaSource,canonicalAreaError,areas,selectedArea:selected??null,runtime,payload,observations};const text=JSON.stringify(report,null,2);try{await navigator.clipboard.writeText(text);setCopied(true);window.setTimeout(()=>setCopied(false),1500);}catch{window.prompt("V4 Diagnose kopieren",text);}};

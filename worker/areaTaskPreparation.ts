@@ -215,8 +215,15 @@ async function withProgress(db:D1DatabaseLike,state:AreaPreparationState|null):P
   if(!state || !await hasStreetNetworkSchema(db))return result;
   const job=await db.prepare('SELECT phase,cursor,error_code,attempts,geometry_json,metrics_json FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND generation=?').bind(state.campaignId,state.areaId,state.generation).first<{phase:string;cursor:number;error_code:string|null;attempts:number;geometry_json:string;metrics_json:string}>();
   if(!job)return result;
-  const totalTiles=preparationTiles({geometry:JSON.parse(job.geometry_json)} as Area).length;
+  // A user retry can reopen the outer preparation before its old failed V4
+  // job is reset. Do not show that prior attempt as current progress.
+  if(state.status==='pending'&&job.phase==='failed')return result;
   const metrics=JSON.parse(job.metrics_json);
+  // WebSocket checkpoints use source shards. The GET path must report the
+  // same denominator; geometry tiles describe a different, legacy unit.
+  const totalTiles=metrics.engineVersion==='v4'
+    ? Number.isSafeInteger(metrics.shardCount)&&metrics.shardCount>0?metrics.shardCount:0
+    : preparationTiles({geometry:JSON.parse(job.geometry_json)} as Area).length;
   const quality=state.status==='failed'&&metrics.lastError?.quality?metrics.lastError.quality:metrics.quality;
   const failure=state.status==='failed'&&job.error_code?{phase:job.phase,cursor:job.cursor,code:job.error_code,attempt:job.attempts}:undefined;
   return {...result,...(quality?{quality}:{}),...(failure?{failure}:{}),roadCount:state.status==='ready'?state.roadCount:metrics.roads??0,houseCount:state.status==='ready'?state.houseCount:metrics.houses??0,progress:preparationProgress(job.phase,job.cursor,totalTiles,metrics,state.status==='ready')};
