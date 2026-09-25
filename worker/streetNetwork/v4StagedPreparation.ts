@@ -245,8 +245,42 @@ async function stageGroups(
   owner: string,
   groups: Map<string, unknown[]>,
 ) {
-  for (const [group, rows] of [...groups.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-    await stageRows(db, run, lease, kind, `${group}:${owner}`, rows);
+  // A source shard can populate every node bucket. One DELETE per bucket plus
+  // one INSERT per bucket exceeds the Free D1 50-query alarm limit before the
+  // first shard can checkpoint, leaving the runner to exhaust crash recovery.
+  // Clear this owner's prior partial work once, then write deterministic keys.
+  await db.batch([
+    db.prepare(`DELETE FROM street_network_staging
+      WHERE campaign_id=? AND area_id=? AND generation=? AND kind=?
+        AND chunk_key LIKE ?
+        AND EXISTS(SELECT 1 FROM street_network_jobs
+          WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?)`)
+      .bind(
+        run.campaignId, run.areaId, run.generation, kind, `%:${owner}:%`,
+        run.campaignId, run.areaId, run.generation, lease,
+      ),
+  ]);
+  const chunks = [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .flatMap(([group, rows]) => jsonChunks(rows).map((chunk, index) =>
+      ({ chunk_key: `${group}:${owner}:${String(index).padStart(6, '0')}`, payload: JSON.stringify(chunk) }),
+    ));
+  // json_each expands many small buckets in one bounded D1 statement. A
+  // payload remains below the 2-MB D1 string limit even after JSON escaping.
+  for (const part of jsonChunks(chunks, 900_000)) {
+    await db.batch([
+      db.prepare(`INSERT INTO street_network_staging(campaign_id,area_id,generation,kind,chunk_key,payload_json)
+        SELECT ?,?,?,?,json_extract(value,'$.chunk_key'),json_extract(value,'$.payload')
+        FROM json_each(?)
+        WHERE EXISTS(SELECT 1 FROM street_network_jobs
+          WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?)
+        ON CONFLICT(campaign_id,area_id,generation,kind,chunk_key)
+        DO UPDATE SET payload_json=excluded.payload_json`)
+        .bind(
+          run.campaignId, run.areaId, run.generation, kind, JSON.stringify(part),
+          run.campaignId, run.areaId, run.generation, lease,
+        ),
+    ]);
   }
 }
 
@@ -274,9 +308,22 @@ async function loadNodeUsage(
   const wanted = new Set(fragments.flatMap(roadFragmentNodeKeys));
   const buckets = [...new Set([...wanted].map((node) => stableBucket(node, NODE_BUCKETS)))];
   const usage = new Map<string, number>();
-  for (const bucket of buckets) {
-    const rows = await staged<[string, number]>(db, run, 'v4-node-usage', `${bucketKey(bucket)}:`);
-    for (const [node, count] of rows) if (wanted.has(node)) usage.set(node, count);
+  // Read a few buckets per D1 query. A road shard can touch all 32 buckets;
+  // one query per bucket plus staging and runner bookkeeping can exceed the
+  // same 50-query invocation budget after the graph step already checkpointed.
+  for (let start = 0; start < buckets.length; start += 8) {
+    const part = buckets.slice(start, start + 8);
+    const conditions = part.map(() => 'chunk_key LIKE ?').join(' OR ');
+    const rows = await db.prepare(`SELECT payload_json FROM street_network_staging
+      WHERE campaign_id=? AND area_id=? AND generation=? AND kind='v4-node-usage'
+        AND (${conditions}) ORDER BY chunk_key`)
+      .bind(run.campaignId, run.areaId, run.generation, ...part.map((bucket) => `${bucketKey(bucket)}:%`))
+      .all<{ payload_json: string }>();
+    for (const row of rows.results) {
+      for (const [node, count] of JSON.parse(row.payload_json) as [string, number][]) {
+        if (wanted.has(node)) usage.set(node, count);
+      }
+    }
   }
   return usage;
 }
