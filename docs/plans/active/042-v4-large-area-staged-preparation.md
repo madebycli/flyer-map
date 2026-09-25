@@ -4,6 +4,10 @@
 
 PR #125 ist auf Beta deployed. Der echte Gebiet-8-Lauf blieb bei `v4-source` Cursor 0 ohne Job-Fehlversuch und endete durch den Runner-Absturzschutz mit `area_preparation_runner_unavailable`. Ein lokaler Replay mit dem bisherigen echten 130-Shard-Pack und `requestDatabase(db,50)` reproduzierte den nicht persistierbaren `d1_invocation_budget_exceeded` im ersten Source-Schritt. Ursache sind einzelne DELETE-/INSERT-Statements für bis zu 32 Node-Gruppen innerhalb eines Alarms. Auch die spätere Graph-Phase las 32 Usage-Gruppen einzeln. Gruppenschreibungen werden nun als begrenzte `json_each`-Batches ausgeführt und Graph-Usage in Achtergruppen gelesen. Derselbe 50-Statement-Replay erreicht nach 762 Arbeitsschritten `ready` mit 62.179 Streets / 52.276 Houses. CI, neuer Beta-Release und echter Gebiet-8-Retry sind für diesen Fix offen.
 
+## Post-PR-#126-Retry-Befund 2026-09-25
+
+PR #126 ist erfolgreich auf Beta deployed. Der neue echte Lauf schaffte die Source-Cursor 0 bis 7, endete dort aber mit `street_engine_v4_shard_size_mismatch`. Seine Staging-Plan-Metrik zeigte noch auf das vorherige Manifest `11bed2…`; der aktuelle Beta-Pointer ist `3f3e63…`. Ein Runner-Crash hatte nur die äußere Preparation auf `failed` gesetzt, während das V4-Job-Phase `v4-source` blieb. `beginAreaTaskPreparation` eröffnete dieselbe Generation neu, doch `resetV4RetryState` setzte bisher nur terminale V4- oder Legacy-Jobs zurück. Ein neuer `started_at` muss auch für einen mittleren V4-Job alle alten Source-/Staging-Zeilen verwerfen, unter Lease-/Generation-/Timestamp-Schutz. Ein laufender transienter Retry mit unverändertem Startzeitpunkt darf seine Attempt-Zahl behalten.
+
 ## Ziel
 
 Gebiet 8 auf Beta mit ungefähr 55.216 Streets und 46.661 Houses reproduzierbar auf `ready` bringen, ohne einen V3/V2- oder Live-Overpass-Fallback.

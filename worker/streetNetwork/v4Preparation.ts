@@ -28,6 +28,7 @@ type V4RetryJob = {
   error_code: string | null;
   lease_until: string | null;
   metrics_json: string;
+  preparation_started_at: string | null;
 };
 
 function parsedMetrics(raw: string) {
@@ -44,7 +45,9 @@ function parsedMetrics(raw: string) {
 /**
  * A user retry keeps the same preparation generation. Old legacy failures and
  * terminal V4 failures must not carry their exhausted attempt/error/lease state
- * into the new V4 run. In-progress V4 transient retries keep their counters.
+ * into the new V4 run. The runner can also fail the preparation while leaving
+ * the V4 job mid-phase; a new started_at then invalidates its pinned source
+ * manifest and partial staging. In-progress transient retries keep their state.
  */
 async function resetV4RetryState(
   db: D1DatabaseLike,
@@ -52,16 +55,23 @@ async function resetV4RetryState(
   options: StreetEngineV4PreparationOptions,
   now: string,
 ) {
-  const row = await db.prepare(
-    'SELECT generation,phase,attempts,error_code,lease_until,metrics_json FROM street_network_jobs WHERE campaign_id=? AND area_id=?',
-  ).bind(run.campaignId, run.areaId).first<V4RetryJob>();
+  const row = await db.prepare(`SELECT j.generation,j.phase,j.attempts,j.error_code,j.lease_until,
+      j.metrics_json,p.started_at AS preparation_started_at
+    FROM street_network_jobs j JOIN area_task_preparations p
+      ON p.campaign_id=j.campaign_id AND p.area_id=j.area_id AND p.generation=j.generation
+    WHERE j.campaign_id=? AND j.area_id=?`)
+    .bind(run.campaignId, run.areaId).first<V4RetryJob>();
   if (!row || row.generation !== run.generation) return;
 
   const metrics = parsedMetrics(row.metrics_json);
   const currentV4 = metrics.engineVersion === 'v4';
   const terminalV4 = currentV4 && row.phase === 'failed';
   const legacyOrUnversioned = !currentV4;
-  if (!terminalV4 && !legacyOrUnversioned) return;
+  const restartedV4 = currentV4
+    && typeof metrics.taskTimestamp === 'string'
+    && typeof row.preparation_started_at === 'string'
+    && metrics.taskTimestamp !== row.preparation_started_at;
+  if (!terminalV4 && !legacyOrUnversioned && !restartedV4) return;
 
   const leaseUntil = row.lease_until ? Date.parse(row.lease_until) : 0;
   if (Number.isFinite(leaseUntil) && leaseUntil > Date.parse(now)) return;
@@ -78,23 +88,25 @@ async function resetV4RetryState(
     db.prepare(`UPDATE street_network_jobs
       SET phase='v4-plan',cursor=0,lease=NULL,lease_until=NULL,attempts=0,error_code=NULL,metrics_json=?
       WHERE campaign_id=? AND area_id=? AND generation=?
-        AND phase<>'ready'
-        AND (phase='failed' OR
-          CASE WHEN json_valid(metrics_json) THEN json_extract(metrics_json,'$.engineVersion') ELSE NULL END IS NOT 'v4')
+        AND phase=? AND phase<>'ready' AND metrics_json=?
         AND (lease_until IS NULL OR lease_until<=?)
         AND EXISTS(
           SELECT 1 FROM area_task_preparations
           WHERE campaign_id=? AND area_id=? AND generation=? AND status='pending'
+            AND started_at IS ?
         )`)
       .bind(
         baselineJson,
         run.campaignId,
         run.areaId,
         run.generation,
+        row.phase,
+        row.metrics_json,
         now,
         run.campaignId,
         run.areaId,
         run.generation,
+        row.preparation_started_at,
       ),
     db.prepare(`DELETE FROM street_network_staging
       WHERE campaign_id=? AND area_id=? AND generation=?

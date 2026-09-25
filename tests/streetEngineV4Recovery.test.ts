@@ -250,6 +250,67 @@ test('V4 retry resets an old failed same-generation legacy job before using the 
   assert.equal(preparation.ready_at, '2026-09-18T12:00:01.000Z');
 });
 
+test('V4 retry after runner failure drops the old pinned manifest and partial shard rows', async (t) => {
+  const db = new NetworkD1(true);
+  t.after(() => db.sqlite.close());
+  seedNetwork(db);
+  const first = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n', {
+    now: () => new Date('2026-09-24T11:33:13Z'),
+  });
+  assert.equal(first.outcome, 'run');
+  if (first.outcome !== 'run') return;
+  const firstBucket = await v4Bucket();
+  const options = { streetEngineVersion: 'v4' as const, streetEngineV4Channel: 'beta', streetEngineV4Bucket: firstBucket };
+  await runStreetEngineV4Preparation(db, first.run, options); // plan
+  await runStreetEngineV4Preparation(db, first.run, options); // source shard
+  const oldJob = db.sqlite.prepare('SELECT phase,cursor,metrics_json FROM street_network_jobs').get() as {
+    phase: string; cursor: number; metrics_json: string;
+  };
+  assert.equal(oldJob.phase, 'v4-node-usage');
+  assert.ok(db.sqlite.prepare("SELECT 1 FROM street_network_staging WHERE kind='v4-fragments'").get());
+
+  // The runner's crash guard fails the preparation without changing the V4
+  // job's mid-phase state, as observed on Beta after the first release.
+  db.sqlite.prepare(`UPDATE area_task_preparations SET status='failed',
+    last_error_code='area_preparation_runner_unavailable',failed_at=?,updated_at=?`).run(
+    '2026-09-24T11:39:44Z', '2026-09-24T11:39:44Z',
+  );
+  const retry = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n', {
+    now: () => new Date('2026-09-25T08:10:56Z'),
+  });
+  assert.equal(retry.outcome, 'run');
+  if (retry.outcome !== 'run') return;
+  assert.equal(retry.run.generation, first.run.generation);
+
+  const newerBucket = await v4Bucket([{
+    type: 'Feature',
+    properties: { '@type': 'way', '@id': 11, highway: 'residential', name: 'Neue Straße' },
+    geometry: { type: 'LineString', coordinates: [[13.002, 51.006], [13.008, 51.006]] },
+  }]);
+  const newerPointer = await newerBucket.get(streetEngineV3PointerKey('beta'));
+  assert.ok(newerPointer);
+  const newHash = (JSON.parse(await newerPointer!.text()) as { manifestHash: string }).manifestHash;
+  assert.notEqual(newHash, (JSON.parse(oldJob.metrics_json) as { manifestHash: string }).manifestHash);
+
+  const step = await runStreetEngineV4Preparation(db, retry.run, {
+    ...options, streetEngineV4Bucket: newerBucket,
+  });
+  assert.equal(step.outcome, 'pending');
+  const job = db.sqlite.prepare('SELECT phase,cursor,attempts,metrics_json FROM street_network_jobs').get() as {
+    phase: string; cursor: number; attempts: number; metrics_json: string;
+  };
+  assert.equal(job.phase, 'v4-source');
+  assert.equal(job.cursor, 0);
+  assert.equal(job.attempts, 0);
+  assert.equal((JSON.parse(job.metrics_json) as { manifestHash: string }).manifestHash, newHash);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM street_network_staging WHERE kind='v4-fragments'").get()!.count, 0);
+
+  const finished = await finishStagedPreparation(db, retry.run, {
+    ...options, streetEngineV4Bucket: newerBucket,
+  });
+  assert.equal(finished.outcome, 'ready');
+});
+
 
 test('V4 budgets apply to generated product entities instead of raw shard source counts', async (t) => {
   const db = new NetworkD1(true);
@@ -417,6 +478,7 @@ test('V4 transient source retry preserves its current attempt budget instead of 
       engineVersion: 'v4',
       legacyOverpassRequests: 0,
       manifestHash: pointer.manifestHash,
+      taskTimestamp: '2026-09-18T12:00:00.000Z',
     }),
   );
 
