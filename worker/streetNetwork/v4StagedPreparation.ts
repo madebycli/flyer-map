@@ -78,6 +78,7 @@ type V4StagedMetrics = {
   baseHashes?: string[];
   feedChunkCount?: number;
   baseStep?: string;
+  baseFailureClass?: string;
   lastError?: { phase: string; cursor: number; code: string; attempt: number };
 };
 
@@ -132,6 +133,20 @@ function phaseErrorCode(phase: string, error: unknown) {
   if (phase === 'v4-link') return 'street_engine_v4_link_internal_failure';
   if (phase === 'v4-base' || phase === 'v4-publish') return 'street_engine_v4_publish_internal_failure';
   return 'street_engine_v4_internal_failure';
+}
+
+function baseFailureClass(error: unknown) {
+  if (!(error instanceof Error)) return 'non-error';
+  const message = error.message.toLowerCase();
+  if (message === 'network_row_budget_exceeded') return 'row-budget';
+  if (message === 'd1_invocation_budget_exceeded') return 'd1-query-budget';
+  if (/too (?:big|large)|maximum (?:string|blob|row|size)|string or blob too big/u.test(message)) return 'size-limit';
+  if (/quota|rate limit|too many queries|daily (?:row )?(?:read|write) limit/u.test(message)) return 'quota';
+  if (/timeout|timed out/u.test(message)) return 'timeout';
+  if (/d1_error|d1_exec_error|sqlite_/u.test(message)) return 'd1-error';
+  if (error instanceof RangeError) return 'range-error';
+  if (error instanceof TypeError) return 'type-error';
+  return 'unknown';
 }
 
 function retryable(phase: string, code: string) {
@@ -1027,6 +1042,7 @@ export async function runStreetEngineV4StagedPreparation(
     return { outcome: 'pending' };
   } catch (error) {
     metrics.activeMs = (metrics.activeMs ?? 0) + performance.now() - stepStarted;
+    if (phase === 'v4-base') metrics.baseFailureClass = baseFailureClass(error);
     const code = phaseErrorCode(phase, error);
     const attempts = job.attempts + 1;
     metrics.lastError = { phase, cursor, code, attempt: attempts };

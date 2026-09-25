@@ -8,6 +8,7 @@ import {
 } from '../worker/areaTaskPreparation.ts';
 import { requestDatabase } from '../worker/requestDatabase.ts';
 import { workBucket } from '../worker/streetNetwork/baseStorage.ts';
+import { getStreetEngineDiagnosticSnapshot } from '../worker/streetNetwork/diagnostics.ts';
 import {
   buildStreetEngineV4PbfPack,
   type StreetEngineV4PbfFeature,
@@ -181,6 +182,29 @@ test('V4 base stages a Street whose geometry exceeds the former feed chunk limit
   assert.equal(after.cursor, 1);
   assert.equal(after.error_code, null);
   assert.ok(db.sqlite.prepare("SELECT 1 FROM street_network_staging WHERE kind='v4-feed' AND chunk_key LIKE 'street:00:%'").get());
+
+  let oversizedId = 'oversized-street-0';
+  for (let suffix = 1; workBucket(oversizedId) !== 1; suffix++) oversizedId = `oversized-street-${suffix}`;
+  const oversizedStreet = {
+    ...longStreet,
+    id: oversizedId,
+    geometry: {
+      type: 'LineString',
+      coordinates: Array.from({ length: 15_000 }, (_, index) => [13 + index / 1_000_000, 51.005]),
+    },
+  };
+  assert.ok(new TextEncoder().encode(JSON.stringify(oversizedStreet)).length > 220_000);
+  db.sqlite.prepare(`INSERT INTO street_network_staging(
+    campaign_id,area_id,generation,kind,chunk_key,payload_json
+  ) VALUES(?,?,?,'v4-edge-work','01:large',?)`).run(
+    begun.run.campaignId, begun.run.areaId, begun.run.generation, JSON.stringify([oversizedStreet]),
+  );
+  const rejected = await runStreetEngineV4Preparation(requestDatabase(db, 50), begun.run, options);
+  assert.equal(rejected.outcome, 'failed');
+  const diagnostic = await getStreetEngineDiagnosticSnapshot(db, begun.run.campaignId, begun.run.areaId);
+  assert.equal(diagnostic?.errorCode, 'street_engine_v4_row_budget_exceeded');
+  assert.equal(diagnostic?.metrics.baseStep, 'build-base');
+  assert.equal(diagnostic?.metrics.baseFailureClass, 'row-budget');
 });
 
 test('V4 retry resets an old failed same-generation legacy job before using the current source pack', async (t) => {

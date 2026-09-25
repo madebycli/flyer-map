@@ -1,5 +1,9 @@
 # Plan 042: Street Engine V4 staged large-area preparation
 
+## Post-PR-#128-Diagnose 2026-09-25
+
+Der Gerätelog von 11:28 UTC meldet auf dem exakten neuen Beta-Worker erneut `street_engine_v4_publish_internal_failure` bei `v4-base` Cursor 0. Der Log wurde 514 ms nach einem erneuten Start kopiert, sodass äußere Preparation `pending` und noch alter V4-Job `failed` zugleich zu sehen sind. Die 55.270 Streets und 46.665 Houses stammen aus dem unmittelbar vorher fehlgeschlagenen Lauf, nicht aus dem eben gestarteten Retry. Der konkrete Fehler ist unbekannt: der Worker schreibt `baseStep` beim Catch, aber `worker/streetNetwork/diagnostics.ts` entfernt es aus dem öffentlichen Snapshot. Der nächste Beta-Fix gibt nur bekannte Base-Schritte und eine klassifizierte Fehlerart frei und testet den Diagnosevertrag. Das 220-KB-Feed-Limit hat den Fehler offenbar nicht behoben; einen anderen Ursachenfix darf der Log nicht vortäuschen.
+
 ## Post-PR-#127-Retry-Befund 2026-09-25
 
 PR #127 wurde auf Beta veröffentlicht. Der echte Gebiet-8-Retry lud alle 130 Shards des aktuellen Packs und berechnete 55.270 Streets und 46.665 Houses. Der erste `v4-base`-Schritt endete mit dem generischen `street_engine_v4_publish_internal_failure`, ohne Veröffentlichung. Die konkrete Ausnahme ist bisher unbekannt. Die Feed-Paketierung erlaubt bisher nur 75 KB je Street, während die Basis 220 KB erlaubt; eine größere einzelne Geometrie kann daher erst beim Base-Schritt scheitern. Der Beta-Fix vereinheitlicht das Limit auf 220 KB, ergänzt einen Test mit >75 KB Street-Geometrie unter dem 50-Query-Alarm und speichert bei Fehlern den konkreten Base-Unterschritt und einen eigenen Row-Budget-Code. Der reale Lauf muss die Ursache beziehungsweise den Fix erst bestätigen.
