@@ -2,12 +2,14 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 ---
 
 # Current Project State
 
 The authoritative cross-repository route is `.ai/CONTEXT.md` → `madebycli/master-context/projects/flyer-map/INDEX.md` → `handoffs/CURRENT.md`. The release-channel invariant there maps `beta` to the Beta Worker and Beta D1; `main` is Stable.
+
+- PR #127 is on Beta as commit `0266375b254834a354a525260266fbb62c6fe250`. The 2026-09-25 real Gebiet-8 retry selected the current 130-shard pack, loaded all shards, and calculated 55,270 Streets and 46,665 Houses. After ~944 seconds active work, it failed at the first `v4-base` bucket with the generic `street_engine_v4_publish_internal_failure`; no generation was published. The precise exception is unknown. The next Beta-only slice raises the feed's 75 KB per-entity limit to the 220 KB base limit, verifies a Street above 75 KB under a 50-query alarm, and records the base substep plus a specific row-budget code on failure. Device retry remains required; `STREET_ENGINE_LIVE_READY=FALSE`.
 
 - Post-PR-#126 real Gebiet-8 retry on Worker `6b6b46df-6088-4418-a455-9c59b6a86f79` passed the former D1 alarm-budget blocker and completed seven source shards, then failed `street_engine_v4_shard_size_mismatch` at source cursor 7. The job was still pinned to manifest `11bed2b5655e8626bc0670aca38cb6e896b0fab89c4da5adf1dd494cf951b22b` from the prior release, while the current Beta pointer is `3f3e63c2398a77293bc8e07c971cf036c592997e7dbf7c98e29f3aea89f3d1f8`. Its preparation had previously been failed by the runner crash guard while the V4 job remained mid-phase. The same-generation user retry reopened `area_task_preparations` but the V4 reset covered only terminal V4 jobs or legacy jobs, retaining the old staged shard plan.
 - The active Beta-only fix detects a new preparation `started_at` relative to V4 `taskTimestamp`, resets the stale mid-phase job and staged rows with a lease-/generation-/timestamp-guarded transaction, and selects the current pack on the next plan step. A regression reproduces the runner-failed mid-phase job and verifies a changed manifest and clean staging on retry. `STREET_ENGINE_LIVE_READY=FALSE` pending full CI, release and a fresh real field run.

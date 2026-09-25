@@ -77,6 +77,7 @@ type V4StagedMetrics = {
   baseChunkCount?: number;
   baseHashes?: string[];
   feedChunkCount?: number;
+  baseStep?: string;
   lastError?: { phase: string; cursor: number; code: string; attempt: number };
 };
 
@@ -116,6 +117,9 @@ function normalizeCode(value: string) {
 }
 
 function phaseErrorCode(phase: string, error: unknown) {
+  if (error instanceof Error && error.message === 'network_row_budget_exceeded') {
+    return 'street_engine_v4_row_budget_exceeded';
+  }
   if (error instanceof Error && error.message === 'graph_build_budget') {
     return 'street_engine_v4_graph_build_budget';
   }
@@ -880,14 +884,17 @@ export async function runStreetEngineV4StagedPreparation(
       const kind: 'street' | 'house' = cursor < 16 ? 'street' : 'house';
       const bucket = cursor % 16;
       const stageKind = kind === 'street' ? 'v4-edge-work' : 'v4-house-work';
+      metrics.baseStep = 'load-generated';
       const generated = await staged<BasePreparedEntity>(db, run, stageKind, `${bucketKey(bucket)}:`);
       generated.sort((left, right) => left.id.localeCompare(right.id));
+      metrics.baseStep = 'load-existing';
       const old = await oldBaseBucket(db, run, kind, bucket);
       const oldById = new Map(old.map((entity) => [entity.id, entity]));
       const newIds = new Set(generated.map((entity) => entity.id));
       const overlay = await overlayBucket(db, run, bucket);
       const previousGeneration = await oldGeneration(db, run);
 
+      metrics.baseStep = 'build-base';
       const stable = generated.map((entity) => stableBaseEntity(entity, oldById.get(entity.id)));
       const baseRows: StagedBaseChunk[] = [];
       for (const part of boundedChunks(stable)) {
@@ -899,6 +906,7 @@ export async function runStreetEngineV4StagedPreparation(
           payload,
         });
       }
+      metrics.baseStep = 'write-base';
       await stageRows(db, run, lease, 'v4-base-ready', `${kind}:${bucketKey(bucket)}`, baseRows);
       metrics.baseChunkCount = (metrics.baseChunkCount ?? 0) + baseRows.length;
       metrics.baseHashes = [...(metrics.baseHashes ?? []), ...baseRows.map((row) => row.hash)];
@@ -919,14 +927,17 @@ export async function runStreetEngineV4StagedPreparation(
           _deleted: true,
         }));
       const documents = [...visibleNew, ...deleted];
-      const feedRows: StagedFeedChunk[] = boundedChunks(documents, 75_000).map((part) => ({
+      metrics.baseStep = 'build-feed';
+      const feedRows: StagedFeedChunk[] = boundedChunks(documents, 220_000).map((part) => ({
         collection: kind === 'street' ? 'streetTasks' : 'houseTasks',
         scope: run.area.teamId ?? null,
         id: part[0]?.id ?? `${kind}:${bucket}`,
         payload: JSON.stringify({ documents: part }),
       }));
+      metrics.baseStep = 'write-feed';
       await stageRows(db, run, lease, 'v4-feed', `${kind}:${bucketKey(bucket)}`, feedRows);
       metrics.feedChunkCount = (metrics.feedChunkCount ?? 0) + feedRows.length;
+      delete metrics.baseStep;
 
       cursor += 1;
       if (cursor >= 32) {
