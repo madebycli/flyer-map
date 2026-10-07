@@ -26,6 +26,11 @@ test('real React Smart Mark hook chooses Area from A/B, previews and queues offl
   const road=snapshot.tasks[0];
   snapshot.areas.push({...snapshot.areas[0],id:'area_second'});
   snapshot.tasks.push({...road,id:'street_second',areaId:'area_second',geometry:{type:'LineString',coordinates:road.geometry.coordinates.map(([x,y])=>[x,y+0.02])}});
+  let geometryReads=0;
+  for(const task of snapshot.tasks){
+    const geometry=task.geometry;
+    Object.defineProperty(task,'geometry',{enumerable:true,get(){geometryReads++;return geometry;}});
+  }
   const useNetworkWorkspace=await loadWorkspaceHook();
   const originals=new Map<string,PropertyDescriptor|undefined>();
   const set=(name:string,value:unknown)=>{originals.set(name,Object.getOwnPropertyDescriptor(globalThis,name));Object.defineProperty(globalThis,name,{value,configurable:true,writable:true});};
@@ -37,7 +42,10 @@ test('real React Smart Mark hook chooses Area from A/B, previews and queues offl
   t.after(async()=>{if(renderer)await act(async()=>renderer!.unmount());for(const [key,descriptor]of originals){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}db.sqlite.close();});
   function Harness(){workspace=useNetworkWorkspace(snapshot,{role:'admin',teamId:null},async()=>{},()=>true);return null;}
   await act(async()=>{renderer=create(createElement(Harness));});
+  assert.equal(workspace.available,true);
+  assert.equal(geometryReads,0,'browse startup must not build the Smart Marking segment index');
   await act(async()=>workspace.open(null));
+  assert.ok(geometryReads>0,'opening marking must build the actual snapping index');
   assert.equal(workspace.active,true);
   await act(async()=>workspace.mapProps.onSmartStreetPoint(road.geometry.coordinates[0],[road.id]));
   assert.equal(workspace.mapProps.smartStartAnchor.sourceId,road.id);
@@ -108,8 +116,8 @@ test('real workspace preparation polling backs off transient failures and stops 
   t.after(async()=>{Date.now=originalDateNow;if(renderer)await act(async()=>renderer!.unmount());for(const [key,descriptor]of originals){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}});
   function Harness(){useNetworkWorkspace(snapshot,{campaignId:'campaign_poll',role:'admin',teamId:null,label:null},async()=>{},()=>true);return null;}
   await act(async()=>{renderer=create(createElement(Harness));});await act(async()=>{await Promise.resolve();await Promise.resolve();});
-  assert.equal(fetchCalls,1);assert.deepEqual(delays,[2_000]);
-  for(const expected of [4_000,8_000,16_000,30_000]){await runNext();assert.equal(delays.at(-1),expected);}
+  assert.equal(fetchCalls,1);assert.deepEqual(delays,[5_000]);
+  for(const expected of [10_000,20_000,30_000,30_000]){await runNext();assert.equal(delays.at(-1),expected);}
   await runNext();assert.equal(fetchCalls,6);assert.equal(callbacks.size,0);
 });
 

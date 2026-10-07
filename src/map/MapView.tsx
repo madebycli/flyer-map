@@ -1,3 +1,4 @@
+import { updateRendererFeatureDiagnostics } from "./rendererFeatureDiagnostics.ts";
 import { roadSlice } from '../domain/streetNetwork.ts';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
@@ -1566,62 +1567,12 @@ function updateRendererDiagnostics(map: Map) {
     region.dataset.missingApplicationSources = missingSources.join(",");
     region.dataset.missingApplicationLayers = missingLayers.join(",");
     region.dataset.mapRendererError = "";
-    const sourceAreas = map.getSource(AREA_SOURCE_ID)
-      ? map.querySourceFeatures(AREA_SOURCE_ID).filter(
-          (feature) => typeof feature.properties?.areaId === "string",
-        )
-      : [];
-    const sourceStreets = map.getSource(STREET_SOURCE_ID)
-      ? map.querySourceFeatures(STREET_SOURCE_ID).filter(
-          (feature) => typeof feature.properties?.taskId === "string",
-        )
-      : [];
-    const renderedAreas = map.getLayer(AREA_FILL_LAYER_ID)
-      ? map.queryRenderedFeatures(undefined, { layers: [AREA_FILL_LAYER_ID] })
-      : [];
-    const streetLayers = STREET_LAYER_IDS.filter((layerId) => map.getLayer(layerId));
-    const renderedStreets =
-      streetLayers.length > 0
-        ? map.queryRenderedFeatures(undefined, { layers: [...streetLayers] })
-        : [];
-    const sourceHouses = map.getSource(HOUSE_SOURCE_ID)
-      ? map.querySourceFeatures(HOUSE_SOURCE_ID).filter(
-          (feature) => typeof feature.properties?.houseTaskId === "string",
-        )
-      : [];
-    const renderedHouses = map.getLayer(HOUSE_FILL_LAYER_ID)
-      ? map.queryRenderedFeatures(undefined, { layers: [HOUSE_FILL_LAYER_ID] })
-      : [];
-    const sourcePickups = map.getSource(COLLECTION_PICKUP_SOURCE_ID)
-      ? map.querySourceFeatures(COLLECTION_PICKUP_SOURCE_ID).filter(
-          (feature) => typeof feature.properties?.pickupId === "string",
-        )
-      : [];
-    const renderedPickups = map.getLayer(COLLECTION_PICKUP_MARKER_LAYER_ID)
-      ? map.queryRenderedFeatures(undefined, { layers: [COLLECTION_PICKUP_MARKER_LAYER_ID] })
-      : [];
-    region.dataset.sourceAreas = String(new Set(sourceAreas.map((feature) => feature.properties?.areaId)).size);
-    region.dataset.sourceStreets = String(
-      new Set(sourceStreets.map((feature) => feature.properties?.taskId)).size,
-    );
-    region.dataset.renderedAreas = String(
-      new Set(renderedAreas.map((feature) => feature.properties?.areaId)).size,
-    );
-    region.dataset.renderedStreets = String(
-      new Set(renderedStreets.map((feature) => feature.properties?.taskId)).size,
-    );
-    region.dataset.sourceHouses = String(
-      new Set(sourceHouses.map((feature) => feature.properties?.houseTaskId)).size,
-    );
-    region.dataset.renderedHouses = String(
-      new Set(renderedHouses.map((feature) => feature.properties?.houseTaskId)).size,
-    );
-    region.dataset.sourceCollectionPickups = String(
-      new Set(sourcePickups.map((feature) => feature.properties?.pickupId)).size,
-    );
-    region.dataset.renderedCollectionPickups = String(
-      new Set(renderedPickups.map((feature) => feature.properties?.pickupId)).size,
-    );
+    updateRendererFeatureDiagnostics(map, region.dataset, [
+      { source: AREA_SOURCE_ID, layers: [AREA_FILL_LAYER_ID], idProperty: "areaId", sourceCount: "sourceAreas", renderedCount: "renderedAreas" },
+      { source: STREET_SOURCE_ID, layers: STREET_LAYER_IDS, idProperty: "taskId", sourceCount: "sourceStreets", renderedCount: "renderedStreets" },
+      { source: HOUSE_SOURCE_ID, layers: [HOUSE_FILL_LAYER_ID], idProperty: "houseTaskId", sourceCount: "sourceHouses", renderedCount: "renderedHouses" },
+      { source: COLLECTION_PICKUP_SOURCE_ID, layers: [COLLECTION_PICKUP_MARKER_LAYER_ID], idProperty: "pickupId", sourceCount: "sourceCollectionPickups", renderedCount: "renderedCollectionPickups" },
+    ], new URLSearchParams(window.location.search).get("diag") === "1");
   } catch (cause) {
     region.dataset.mapRendererError = cause instanceof Error ? cause.message : String(cause);
     console.warn("Map renderer diagnostics failed", cause);
