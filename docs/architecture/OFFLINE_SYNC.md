@@ -248,3 +248,15 @@ M6 persistence does not change ADR-0010:
 - normal browse has no application loop projecting all saved geometry.
 
 See ADR-0011 for mutation/idempotency behavior, ADR-0013 for Smart Street/House identity/source geometry and ADR-0022 for the final no-legacy-snapshot-write boundary.
+
+## Beta audit candidate, 2026-10-07
+
+House-status change-feed parent detection indexes the previous Street snapshot
+in one pass instead of nested `find()` calls. It preserves output order, team
+scope and automatic parent effects. The RxDB deadline wrapper respects a
+Request's AbortSignal unless an explicit init signal overrides it. Preparation
+HTTP and WebSocket progress share the same V4 projection: immutable source
+Shards, Area houses and link cells. Diagnostics poll serially, stop while hidden
+and reject results from cancelled effects. No checkpoint/schema or domain
+mutation contract changed. Cold bootstrap still returns the whole collection;
+paged bootstrap needs a generation/checkpoint protocol decision before changes.
