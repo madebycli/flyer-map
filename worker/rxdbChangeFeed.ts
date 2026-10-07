@@ -178,17 +178,22 @@ export function rxdbChangeFeedEntriesForMutation(
     case "house.delete":
       add("houseTasks", mutation.payload.taskId);
       break;
-    case "house.set-status":
+    case "house.set-status": {
       add("houseTasks", mutation.payload.taskId);
       // Completing the last House can atomically complete its parent Street.
       // Include that server-side automation effect in the same feed batch.
+      const previousTasks = new Map<string, CampaignSnapshot["tasks"][number]>();
+      for (const task of before.tasks) {
+        if (!previousTasks.has(task.id)) previousTasks.set(task.id, task);
+      }
       for (const task of after.tasks) {
-        const previous = before.tasks.find((candidate) => candidate.id === task.id);
+        const previous = previousTasks.get(task.id);
         if (previous && (previous.status !== task.status || previous.completedAt !== task.completedAt || previous.updatedAt !== task.updatedAt)) {
           add("streetTasks", task.id);
         }
       }
       break;
+    }
     case "house.create-batch":
       for (const house of mutation.payload.houses) add("houseTasks", house.taskId);
       break;
