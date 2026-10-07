@@ -145,3 +145,20 @@ staging cleanup. No Production action or remote load test has run.
 ## Verifizierter Remote-Checkpoint: Schema-Probe, 2026-09-16
 
 Der Beta-Nachtest auf derselben 20-Straßen-/260-unadressierte-Häuser-Fixture bestätigt die Budgetwirkung des Schema-Probe-Fix: 189 Rows Read und 105 Rows Written bei 107 Worker-Queries und 48 Batches, gegenüber 1.638 / 135 / 107 vor dem Fix. Die alte `sqlite_master`-Prüfung auf `street_base_chunks` fehlt vollständig; `PRAGMA table_info(street_base_chunks)` lief viermal mit 0 Rows Read. Der verbleibende unadressierte `edges`-Staging-Fallback hat 63 Rows Read und bleibt ein gemessener Beobachtungspunkt, aber kein ausreichend isolierter Folge-Hotspot für einen Umbau ohne weitere Cost/Write-Abwägung. Diese Werte sind kontrollierte Beta-D1-Attribution, nicht die Attribution des historischen 4,5m-Vorfalls.
+
+## V4 Beta audit candidate, 2026-10-07
+
+Prefix reads/deletes use primary-key ranges. Node usage uses up to eight disjoint
+UNION ALL seeks per request, 40 bindings, instead of a kind-wide LIKE/OR scan.
+`stageRows` expands bounded JSON envelopes with `json_each` rather than spending
+one statement per chunk. Stored payload/chunk IDs, lease guards and resume
+semantics remain. The actual alarm runner, not only the inner preparation, must
+fit 50 queries. A synthetic 20-road/20k-house local runner failed before this
+batch fix and reaches ready after it, max 41 statements including bookkeeping.
+This does not identify the historical Gebiet-8 cloud failure. Billing counters
+and larger heterogeneous source-shard workloads remain acceptance gates.
+
+Candidate logical-write model: 1k houses 4,186 writes including estimated index
+writes; 20k houses 6,795. SQLite TEMP triggers count table changes exactly;
+index/read totals are estimates, not D1 billing. Packing makes linear
+extrapolation from house count invalid. See audit raw evidence and cost model.

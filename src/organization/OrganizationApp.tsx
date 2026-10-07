@@ -288,7 +288,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
           <form className="org-form" onSubmit={(event) => void submitPassword(event)}>
             <label>Benutzername<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
             <label>Passwort<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>
-            <label><span><input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} /> Dieses Gerät merken</span><small>Die aktive Sitzung bleibt 12 Stunden kurzlebig. Dieses Gerät darf sie bis zu 60 Tage Inaktivität, maximal 90 Tage insgesamt, sicher erneuern.</small></label>
+            <label className="org-remember-control"><span><input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} /> Dieses Gerät merken</span><small>Die aktive Sitzung bleibt 12 Stunden kurzlebig. Dieses Gerät darf sie bis zu 60 Tage Inaktivität, maximal 90 Tage insgesamt, sicher erneuern.</small></label>
             {error ? <p className="org-error" role="alert">{error}</p> : null}
             <button className="org-primary" disabled={busy}>{busy ? "Prüfe …" : "Weiter"}</button>
           </form>

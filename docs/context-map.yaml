@@ -1,7 +1,7 @@
-version: 28
-last_updated: 2026-09-13
+version: 29
+last_updated: 2026-10-07
 
-current_pr92_state:
+historical_pr92_state:
   repository: madebycli/flyer-map
   branch: fix/street-engine-smart-marking
   pull_request: { number: 92, state: open, draft: true, merged: false, base: integration/main-street-runtime }
@@ -50,6 +50,18 @@ routing_rules:
   - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
 
 nodes:
+  - id: beta-system-audit
+    path: docs/verification/2026-10-07-beta-system-audit.md
+    type: verification
+    status: current
+    topics: [beta, audit, v4, map, sync, security, d1, costs]
+    load_when: [Current Beta system audit, performance fixes, audit field gates]
+  - id: plan-beta-system-audit
+    path: docs/plans/completed/043-beta-system-audit.md
+    type: plan
+    status: completed
+    topics: [beta, audit, map, v4, sync, security]
+    load_when: [Beta system audit implementation history]
   - id: plan-v4-large-area-staged-preparation
     path: docs/plans/active/042-v4-large-area-staged-preparation.md
     type: plan
@@ -605,6 +617,12 @@ nodes:
     load_when: [generic fresh AI session]
 
 edges:
+  - { from: beta-system-audit, to: plan-beta-system-audit, relation: verifies }
+  - { from: beta-system-audit, to: plan-v4-large-area-staged-preparation, relation: constrains }
+  - { from: beta-system-audit, to: map, relation: investigates }
+  - { from: beta-system-audit, to: offline-sync, relation: investigates }
+  - { from: beta-system-audit, to: security, relation: investigates }
+  - { from: beta-system-audit, to: quality, relation: validated_by }
   - { from: plan-v4-large-area-staged-preparation, to: plan-street-engine-masterplan, relation: continues }
   - { from: plan-v4-large-area-staged-preparation, to: quality, relation: validated_by }
   - { from: prompt-independent-streetengine-audit, to: plan-smart-marking-waypoints, relation: verifies }

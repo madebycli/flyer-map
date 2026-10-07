@@ -36,7 +36,7 @@ import {
   type TaskStatus,
   type Team,
 } from "./domain/campaign";
-import { darkenHexColor } from "./domain/color";
+import { colorAreaEntities, createAreaRenderIndex } from "./map/renderModel.ts";
 import { nextNumberedName } from "./domain/areaNaming.ts";
 import {
   collectionAreaColor,
@@ -384,9 +384,12 @@ export default function App({
   const canChangeSelectedTaskStatus = canChangeTaskStatusInArea(selectedTaskArea);
   const canChangeSelectedHouseTaskStatus = canChangeTaskStatusInArea(selectedHouseTaskArea);
   const selectedTaskIsAutoPrepared = Boolean(selectedTask?.areaPreparationGeneration);
+  const areaRenderIndex = useMemo(
+    () => createAreaRenderIndex(snapshot.areas, snapshot.teams),
+    [snapshot.areas, snapshot.teams],
+  );
   const platformStreets = useMemo(() => snapshot.tasks.map((task) => {
-    const area = snapshot.areas.find((candidate) => candidate.id === task.areaId);
-    const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
+    const { area, team } = areaRenderIndex.get(task.areaId) ?? {};
     return {
       id: task.id,
       label: task.label,
@@ -396,7 +399,7 @@ export default function App({
       teamName: team?.name ?? "Team",
       status: task.status,
     };
-  }).filter((street) => Boolean(street.teamId)), [snapshot.areas, snapshot.tasks, snapshot.teams]);
+  }).filter((street) => Boolean(street.teamId)), [snapshot.tasks, areaRenderIndex]);
   const platformSyncState = !online
     ? "offline" as const
     : refreshState === "loading"
@@ -456,37 +459,19 @@ export default function App({
     () =>
       snapshot.areas.map((area) => ({
         ...area,
-        color: snapshot.teams.find((team) => team.id === area.teamId)?.color ?? "#64748b",
+        color: areaRenderIndex.get(area.id)?.palette.color ?? "#64748b",
       })),
-    [snapshot.areas, snapshot.teams],
+    [snapshot.areas, areaRenderIndex],
   );
 
   const renderedTasks = useMemo(
-    () =>
-      networkWorkspace.optimistic.tasks.map((task) => {
-        const area = snapshot.areas.find((candidate) => candidate.id === task.areaId);
-        const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
-        return {
-          ...task,
-          color: team?.color ?? "#64748b",
-          completedColor: darkenHexColor(team?.color ?? "#64748b", 0.25),
-        };
-      }),
-    [networkWorkspace.optimistic.tasks, snapshot.areas, snapshot.teams],
+    () => colorAreaEntities(networkWorkspace.optimistic.tasks, areaRenderIndex),
+    [networkWorkspace.optimistic.tasks, areaRenderIndex],
   );
 
   const renderedHouses = useMemo(
-    () =>
-      (networkWorkspace.optimistic.houseTasks ?? []).map((house) => {
-        const area = snapshot.areas.find((candidate) => candidate.id === house.areaId);
-        const team = area ? snapshot.teams.find((candidate) => candidate.id === area.teamId) : null;
-        return {
-          ...house,
-          color: team?.color ?? "#64748b",
-          completedColor: darkenHexColor(team?.color ?? "#64748b", 0.25),
-        };
-      }),
-    [networkWorkspace.optimistic.houseTasks, snapshot.areas, snapshot.teams],
+    () => colorAreaEntities(networkWorkspace.optimistic.houseTasks ?? [], areaRenderIndex),
+    [networkWorkspace.optimistic.houseTasks, areaRenderIndex],
   );
 
   const drawValidation = useMemo(

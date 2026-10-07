@@ -20,6 +20,25 @@ function snapshot(): CampaignSnapshot {
   };
 }
 
+test('House status compares dense Street snapshots with linear ID reads and preserves feed order', () => {
+  const before = snapshot();
+  let reads = 0;
+  before.tasks = Array.from({ length: 1_000 }, (_, i) => ({
+    ...before.tasks[0], get id() { reads++; return `task_${i}`; },
+  }));
+  const after = { ...before, tasks: before.tasks.map(task => ({ ...task })) };
+  after.tasks[999] = { ...after.tasks[999], status: 'completed', completedAt: stamp };
+  reads = 0;
+  const entries = rxdbChangeFeedEntriesForMutation(before, after, {
+    id: 'dense-house-update', campaignId: before.campaign.id, baseRevision: 1,
+    createdAt: stamp, type: 'house.set-status',
+    payload: { taskId: 'absent-house', status: 'completed', completedAt: stamp, expectedUpdatedAt: stamp },
+  });
+  assert.deepEqual(entries.map(entry => entry.document.id), ['task_999']);
+  assert.equal(entries[0].scopeTeamId, 'team_a');
+  assert.ok(reads <= 10 * before.tasks.length, `quadratic comparison: ${reads} ID reads`);
+});
+
 test("a Street status produces one scoped incremental upsert", () => {
   const before = snapshot();
   const after: CampaignSnapshot = {

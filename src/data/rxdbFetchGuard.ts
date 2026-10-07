@@ -17,9 +17,12 @@ export async function fetchWithRxdbDeadline(
   if (!url.includes("/rxdb/")) return fetchImpl(input, init);
 
   const controller = new AbortController();
-  const upstreamSignal = init?.signal;
-  const relayAbort = () => controller.abort();
-  if (upstreamSignal?.aborted) controller.abort();
+  // An explicit init.signal (including null) overrides a Request's signal.
+  const upstreamSignal = init?.signal !== undefined
+    ? init.signal
+    : typeof Request !== "undefined" && input instanceof Request ? input.signal : undefined;
+  const relayAbort = () => controller.abort(upstreamSignal?.reason);
+  if (upstreamSignal?.aborted) relayAbort();
   else upstreamSignal?.addEventListener("abort", relayAbort, { once: true });
 
   const timer = globalThis.setTimeout(() => controller.abort(), Math.max(1, timeoutMs));

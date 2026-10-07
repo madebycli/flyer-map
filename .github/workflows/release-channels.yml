@@ -258,9 +258,7 @@ jobs:
         run: |
           set -euo pipefail
           STATUS="$(curl --silent --show-error -o /tmp/unstable-secret-list.json -w '%{http_code}' "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${BETA_BACKEND_WORKER}/secrets" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' || true)"
-          if [[ "$STATUS" != '200' ]] || ! jq -e '.success == true' /tmp/unstable-secret-list.json >/dev/null 2>&1; then
-            printf '%s\n' '{"success":true,"result":[]}' > /tmp/unstable-secret-list.json
-          fi
+          node scripts/validate-secret-inventory.mjs "$STATUS" /tmp/unstable-secret-list.json
           node <<'NODE'
           const fs=require('node:fs');
           const crypto=require('node:crypto');

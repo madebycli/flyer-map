@@ -44,6 +44,9 @@ body:has(.org-page), body:has(.org-admin-page) {
   width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; min-height: 46px; padding: 10px 12px; border: 1px solid #bec7c0; border-radius: 10px;
   background: #fff; color: var(--org-text); font: inherit; outline: none;
 }
+/* Keep the Remember control separate from full-width text input sizing. */
+.org-form .org-remember-control > span { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.org-form .org-remember-control input[type="checkbox"] { width: 20px; height: 20px; min-height: 20px; flex: 0 0 20px; margin: 0; padding: 0; accent-color: var(--org-accent); }
 .org-form input:focus, .org-form select:focus, .org-select-label select:focus { border-color: var(--org-accent); box-shadow: 0 0 0 3px rgba(29,95,71,.12); }
 .org-primary, .org-secondary, .org-back, .org-link-button, .org-admin-topbar button, .org-admin-topbar a {
   font: inherit; cursor: pointer;

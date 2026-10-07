@@ -50,6 +50,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   useEffect(()=>{setAreaId(null);setMarking(false);setPending([]);setPreparing(null);setPreparationError('');setStates({});setScreeningMode(readScreeningMode(snapshot.campaign.id));reset();},[scope]);
   const permittedAreas=snapshot.areas.filter(canMark);
   const permittedIds=permittedAreas.map(area=>area.id+':'+area.updatedAt).sort().join('|');
+  const permittedAreaIds=useMemo(()=>new Set(permittedAreas.map(area=>area.id)),[permittedIds]);
   const fullOptimistic=useMemo(()=>{
     let result=snapshot;
     for(const item of pending){
@@ -62,8 +63,12 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   },[snapshot,pending]);
   const screening=useMemo(()=>screenDistributionStreets(fullOptimistic.tasks,fullOptimistic.houseTasks??[],screeningMode),[fullOptimistic.tasks,fullOptimistic.houseTasks,screeningMode]);
   const optimistic=useMemo(()=>({...fullOptimistic,tasks:screening.tasks}),[fullOptimistic,screening.tasks]);
-  const tasks=useMemo(()=>(selectionTasks??fullOptimistic.tasks).filter(task=>(!areaId||task.areaId===areaId)&&task.network&&permittedAreas.some(area=>area.id===task.areaId)),[selectionTasks,fullOptimistic.tasks,areaId,permittedIds]);
-  const index=useMemo(()=>new RoadIndex(tasks),[tasks]);
+  const tasks=useMemo(()=>marking
+    ?(selectionTasks??fullOptimistic.tasks).filter(task=>(!areaId||task.areaId===areaId)&&task.network&&permittedAreaIds.has(task.areaId))
+    :[],[marking,selectionTasks,fullOptimistic.tasks,areaId,permittedAreaIds]);
+  // Browse/refresh has no snap queries. Defer segment lengths and the RBush
+  // until marking opens, and release it when marking closes.
+  const index=useMemo(()=>marking?new RoadIndex(tasks):null,[marking,tasks]);
   useEffect(()=>{
     let stopped=false;
     const flush=async()=>{try{if(navigator.onLine)await flushNetworkIntents(scope,refresh);}catch{/* retry later */}if(!stopped)setPending(await queuedNetworkIntents(scope));};
@@ -91,7 +96,7 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
     }catch{setMessage('Kein sicherer Weg gefunden. Punkt wurde zurückgesetzt.');}
   };
   const onPoint=(point:LngLat,sourceIds:string[])=>{
-    if(committing.current)return;
+    if(committing.current||!index)return;
     if(points.length>=MAX_NETWORK_POINTS){setMessage(`Maximal ${MAX_NETWORK_POINTS} Punkte. Auswahl speichern oder rückgängig machen.`);return;}
     const rawCandidates=index.candidates(point,sourceIds.length?45:SMART_POINT_FALLBACK_RADIUS_METERS);
     const candidates=smartPointCandidates(rawCandidates,sourceIds);
@@ -248,7 +253,11 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
       {state?.progress && running?<div className="area-preparation-progress" role="status">
         <div className="area-preparation-progress-header"><strong>{state.progress.percent} %</strong><span>{phaseLabel}</span></div>
         <progress max={100} value={state.progress.percent} aria-label="Vorbereitung" />
-        <p>Straßen-Tiles {state.progress.completedRoadTiles}/{state.progress.totalTiles} · Gebäude-Tiles {state.progress.completedBuildingTiles}/{state.progress.totalTiles} · {state.progress.processedBuildings}/{state.progress.totalBuildings} Gebäude · {state.houseCount} Häuser</p>
+        <p>{state.progress.phase.startsWith('v4-')
+          ? state.progress.totalTiles>0
+            ? `Straßen-Shards ${state.progress.completedRoadTiles}/${state.progress.totalTiles} · Gebäude-Shards ${state.progress.completedBuildingTiles}/${state.progress.totalTiles}`
+            : 'Quell-Shards werden ermittelt'
+          : `Straßen-Tiles ${state.progress.completedRoadTiles}/${state.progress.totalTiles} · Gebäude-Tiles ${state.progress.completedBuildingTiles}/${state.progress.totalTiles}`} · {state.progress.processedBuildings}/{state.progress.totalBuildings} Gebäude · {state.houseCount} Häuser</p>
       </div>:null}
       {state?.status==='failed'?<div role="alert"><p>{preparationFailureMessage(state.failure?.code??state.errorCode??undefined)}</p>{state.failure?<details><summary>Fehlerdetails</summary><p>{phaseLabel} · Cursor {state.failure.cursor} · Versuch {state.failure.attempt} · {state.failure.code}</p></details>:null}</div>:null}
       {state?.quality?.rejectedBuildings?<div role="status"><p>{state.quality.rejectedBuildings} von {state.quality.receivedBuildings} Gebäudeobjekten konnten nicht verwendet werden. Die Hausliste kann dadurch unvollständig sein.</p><details><summary>Betroffene Quelldaten (maximal 10)</summary><ul>{state.quality.samples.map((sample,index)=><li key={index}>OSM {sample.osmId??'unbekannt'} · Tile {sample.tile} · {sample.reason}</li>)}</ul></details></div>:null}
@@ -258,5 +267,5 @@ export function useNetworkWorkspace(snapshot:CampaignSnapshot,access:AccessInfo|
   };
   const anchors=points.map(snap=>({sourceId:snap.task.id,snapped:snap.point,segmentIndex:0,segmentT:0,distanceMeters:snap.distance}));
   const selectedSourceIds=[...new Set([...points.map(snap=>snap.task.id),...(preview?.ranges.map(range=>range.taskId)??[])])];
-  return {optimistic,screeningMode,screening,open,available:permittedAreas.some(area=>fullOptimistic.tasks.some(task=>task.areaId===area.id&&task.network)),active:marking,panelState,areaActions,whole,mapProps:{smartRoads:[],smartSelectedSourceIds:selectedSourceIds,smartStartAnchor:anchors[0]??null,smartEndAnchor:anchors.length>1?anchors.at(-1)!:null,smartWaypointAnchors:anchors.slice(1,-1),smartPreviewGeometry:preview?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
+  return {optimistic,screeningMode,screening,open,available:fullOptimistic.tasks.some(task=>task.network&&permittedAreaIds.has(task.areaId)),active:marking,panelState,areaActions,whole,mapProps:{smartRoads:[],smartSelectedSourceIds:selectedSourceIds,smartStartAnchor:anchors[0]??null,smartEndAnchor:anchors.length>1?anchors.at(-1)!:null,smartWaypointAnchors:anchors.slice(1,-1),smartPreviewGeometry:preview?.geometry??null,smartStreetColor:'#7c3aed',onSmartStreetPoint:onPoint}};
 }

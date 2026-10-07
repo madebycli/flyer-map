@@ -3,7 +3,9 @@ import {
   type AreaPreparationPublicState,
 } from "../data/campaignApi.ts";
 
-export const AREA_PREPARATION_POLL_INTERVAL_MS = 2_000;
+// WebSocket events update the UI immediately; this is a fallback and must not
+// burn the Free D1 row budget for every open Area Sheet.
+export const AREA_PREPARATION_POLL_INTERVAL_MS = 5_000;
 export const AREA_PREPARATION_NOT_YET_PERSISTED_RETRY_LIMIT = 5;
 
 export type AreaPreparationClient = {

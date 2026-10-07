@@ -240,7 +240,7 @@ jobs:
         run: |
           set -euo pipefail
           STATUS="$(curl --silent --show-error -o /tmp/beta-secret-list.json -w '%{http_code}' "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${BETA_WORKER_NAME}/secrets" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' || true)"
-          if [[ "$STATUS" != '200' ]] || ! jq -e '.success == true' /tmp/beta-secret-list.json >/dev/null 2>&1; then printf '%s\n' '{"success":true,"result":[]}' > /tmp/beta-secret-list.json; fi
+          node scripts/validate-secret-inventory.mjs "$STATUS" /tmp/beta-secret-list.json
           node <<'NODE'
           const fs=require('node:fs'),crypto=require('node:crypto');const list=JSON.parse(fs.readFileSync('/tmp/beta-secret-list.json','utf8')).result||[];const names=new Set(list.map(x=>x.name));const missing={};for(const name of ['ORGANIZATION_TOTP_KEY','FIELD_GROUP_CREDENTIAL_ENCRYPTION_KEY'])if(!names.has(name))missing[name]=crypto.randomBytes(32).toString('base64url');fs.writeFileSync('/tmp/beta-missing-secrets.json',JSON.stringify(missing));fs.writeFileSync('/tmp/beta-secret-count.txt',String(Object.keys(missing).length));
           NODE

@@ -226,3 +226,13 @@ Prepared 3 km offline packages must be measured with dense representative urban 
 ## Persistence independence
 
 The map consumes the current in-memory Campaign state regardless of whether it came from local cache or Worker/D1. Rendering does not directly depend on network availability.
+
+## Beta audit candidate, 2026-10-07
+
+The candidate builds an Area/Team palette index once for Street/House render
+models, preserving geometry identity and first-match lookup semantics. Smart
+Marking's RoadIndex exists only while marking is active; browse does not build
+its segment/RBush index. Renderer feature enumeration is restricted to `diag=1`;
+cheap source/layer readiness remains available. Persistent source/layer ownership
+and full `setData()` contracts remain. These reduce proven CPU work but do not
+establish device FPS or reload acceptance. See the current audit verification.

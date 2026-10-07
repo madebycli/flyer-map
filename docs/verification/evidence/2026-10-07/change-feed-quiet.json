@@ -1,0 +1,53 @@
+{
+  "at": "2026-10-07T08:31:14.900Z",
+  "baseline": "603775645a07c1587df6b3cae21e35836a6de81c",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "AMD EPYC 9V74 80-Core Processor"
+  },
+  "method": "full feed function, synthetic unchanged Street snapshot plus one automated parent delta; empty House/Area collections isolate comparison; 1 warmup, 3 alternating samples; no D1/HTTP/cloud billing claim",
+  "results": [
+    {
+      "streets": 1000,
+      "equivalent": true,
+      "baseline": {
+        "medianMs": 7.7038330000000315,
+        "rawMs": [
+          7.164176999999995,
+          7.7038330000000315,
+          7.733508000000029
+        ]
+      },
+      "candidate": {
+        "medianMs": 0.9153850000000148,
+        "rawMs": [
+          0.9153850000000148,
+          0.9973390000000109,
+          0.8628860000000032
+        ]
+      }
+    },
+    {
+      "streets": 10000,
+      "equivalent": true,
+      "baseline": {
+        "medianMs": 341.86938199999986,
+        "rawMs": [
+          343.69360099999994,
+          323.873834,
+          341.86938199999986
+        ]
+      },
+      "candidate": {
+        "medianMs": 4.071439000000282,
+        "rawMs": [
+          9.99820499999987,
+          2.727426000000378,
+          4.071439000000282
+        ]
+      }
+    }
+  ]
+}

@@ -21,6 +21,7 @@ import {
   type StreetEngineV3Object,
 } from '../worker/streetNetwork/v3SourceRuntime.ts';
 import { NetworkD1, seedNetwork } from './helpers/networkD1.ts';
+import { PreparationRunner } from '../worker/streetNetwork/runner.ts';
 
 async function finishStagedPreparation(
   db: NetworkD1,
@@ -50,6 +51,39 @@ function object(value: string | Uint8Array): StreetEngineV3Object {
     },
   };
 }
+
+test('20k House V4 preparation includes runner bookkeeping inside every 50-query alarm', async (t) => {
+  const db = new NetworkD1(true);
+  t.after(() => db.sqlite.close());
+  seedNetwork(db);
+  const begun = await beginAreaTaskPreparation(db, 'campaign_n', 'area_n');
+  if (begun.outcome !== 'run') assert.fail('missing run');
+  const houses: StreetEngineV4PbfFeature[] = Array.from({ length: 20_000 }, (_, i) => {
+    const x = 13.00018 + (i % 20) * 0.00049, y = 51.00015 + Math.floor(i / 20) * 0.000009;
+    return { type: 'Feature', properties: { '@type': 'way', '@id': 1_000 + i, building: 'yes', 'addr:street': `Road ${i % 20}`, 'addr:housenumber': String(Math.floor(i / 20) + 1) },
+      geometry: { type: 'Polygon', coordinates: [[[x, y], [x + 0.00002, y], [x + 0.00002, y + 0.000005], [x, y + 0.000005], [x, y]]] } };
+  });
+  const roads: StreetEngineV4PbfFeature[] = Array.from({ length: 20 }, (_, road) => {
+    const x = 13.00015 + road * 0.00049;
+    return { type: 'Feature', properties: { '@type': 'way', '@id': 100 + road, highway: 'residential', name: `Road ${road}` },
+      geometry: { type: 'LineString', coordinates: [[x, 51.0001], [x, 51.0099]] } };
+  });
+  const storage = { values: new Map<string, unknown>(), at: null as number | null,
+    async get<T>(key: string) { return this.values.get(key) as T | undefined; },
+    async put(key: string, value: unknown) { this.values.set(key, value); },
+    async getAlarm() { return this.at; }, async setAlarm(at: number) { this.at = at; }, async deleteAlarm() { this.at = null; } };
+  const runner = new PreparationRunner(storage, db, { streetEngineVersion: 'v4', streetEngineV4Bucket: await v4Bucket([...roads, ...houses]), streetEngineV4Channel: 'beta' });
+  await runner.schedule('campaign_n');
+  let state;
+  for (let alarm = 0; alarm < 400; alarm++) {
+    await runner.alarm();
+    state = db.sqlite.prepare('SELECT status,house_count FROM area_task_preparations').get();
+    if (state?.status !== 'pending') break;
+  }
+  assert.equal(state?.status, 'ready');
+  assert.equal(state?.house_count, 20_001);
+  assert.equal((db.sqlite.prepare('SELECT attempts FROM street_network_jobs').get() as { attempts: number }).attempts, 0);
+});
 
 async function v4Bucket(extraFeatures: StreetEngineV4PbfFeature[] = []): Promise<StreetEngineV3Bucket> {
   const features: StreetEngineV4PbfFeature[] = [
@@ -119,6 +153,12 @@ test('V4 alarm completes a road-rich shard inside the 50-query D1 invocation bud
     };
   });
   const bucket = await v4Bucket(roads);
+  const nodeReads: string[] = [];
+  const prepare = db.prepare.bind(db);
+  db.prepare = (query: string) => {
+    if (query.includes("kind='v4-node-usage'") && query.startsWith('SELECT')) nodeReads.push(query);
+    return prepare(query);
+  };
   let outcome: Awaited<ReturnType<typeof runStreetEngineV4Preparation>> = { outcome: 'pending' };
   for (let alarm = 0; alarm < 400; alarm++) {
     // Fresh wrapper per alarm mirrors PreparationRunner's Free D1 limit.
@@ -130,6 +170,16 @@ test('V4 alarm completes a road-rich shard inside the 50-query D1 invocation bud
   const job = db.sqlite.prepare('SELECT phase,error_code,attempts FROM street_network_jobs').get();
   assert.equal(outcome.outcome, 'ready', JSON.stringify({ outcome, job }));
   assert.equal((job as { attempts: number }).attempts, 0);
+  assert.ok(nodeReads.length > 0, 'the fixture must traverse the actual graph Node-Usage read');
+  for (const query of nodeReads) {
+    const values = Array.from({ length: (query.match(/\?/g) ?? []).length }, () => 'fixture');
+    const plan = db.sqlite.prepare('EXPLAIN QUERY PLAN ' + query).all(...values) as { detail: string }[];
+    const reads = plan.filter(({ detail }) => detail.includes('SEARCH street_network_staging'));
+    assert.ok(reads.length > 0);
+    assert.ok(reads.every(({ detail }) => detail.includes('chunk_key>') && detail.includes('chunk_key<')),
+      JSON.stringify(plan));
+    assert.ok(values.length <= 100, 'D1 binding limit');
+  }
 });
 
 test('V4 base stages a Street whose geometry exceeds the former feed chunk limit', async (t) => {

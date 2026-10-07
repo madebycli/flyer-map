@@ -2,10 +2,18 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-09-25
+last_updated: 2026-10-07
 ---
 
 # Current Project State
+
+- 2026-10-07 read-only runtime verification: Beta branch and deployed source are
+  `603775645a07c1587df6b3cae21e35836a6de81c`, V4, source channel Beta.
+  Audit fixes are an isolated candidate, not deployed. See
+  [current audit evidence and acceptance gates](../verification/2026-10-07-beta-system-audit.md)
+  and [completed Plan 043](../plans/completed/043-beta-system-audit.md).
+  PR #130 remains an unchanged open Draft candidate. Current D1 usage and new
+  exact Gebiet-8 terminal evidence were unavailable; live readiness remains false.
 
 The authoritative cross-repository route is `.ai/CONTEXT.md` → `madebycli/master-context/projects/flyer-map/INDEX.md` → `handoffs/CURRENT.md`. The release-channel invariant there maps `beta` to the Beta Worker and Beta D1; `main` is Stable.
 

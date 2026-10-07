@@ -1,7 +1,7 @@
 import type { DistributionTask, HouseTask, LngLat } from '../../src/domain/campaign.ts';
 import type { StreetEngineV3SourceShard } from '../../src/domain/streetEngineV3SourcePack.ts';
 import type { AreaTaskPreparationOptions, AreaTaskPreparationRun, PrepareAreaTasksResult } from '../areaTaskPreparation.ts';
-import { preparationProgress } from '../areaTaskPreparation.ts';
+import { v4PreparationProgress } from '../areaTaskPreparation.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
 import { requestDatabase } from '../requestDatabase.ts';
 import { addressBuildings, type AddressBuilding, type AddressNode } from './addresses.ts';
@@ -162,6 +162,12 @@ function bucketKey(index: number) {
   return String(index).padStart(2, '0');
 }
 
+// Staging keys are ASCII. A bounded range uses their composite primary key;
+// SQLite's case-insensitive LIKE scans every row of the selected kind.
+function prefixEnd(prefix: string) {
+  return `${prefix}\uffff`;
+}
+
 function stableBucket(value: string, buckets: number) {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index++) {
@@ -203,8 +209,8 @@ async function staged<T>(
   const values: unknown[] = [run.campaignId, run.areaId, run.generation, kind];
   let sql = 'SELECT payload_json FROM street_network_staging WHERE campaign_id=? AND area_id=? AND generation=? AND kind=?';
   if (prefix !== undefined) {
-    sql += ' AND chunk_key LIKE ?';
-    values.push(`${prefix}%`);
+    sql += ' AND chunk_key>=? AND chunk_key<?';
+    values.push(prefix, prefixEnd(prefix));
   }
   sql += ' ORDER BY chunk_key';
   const rows = await db.prepare(sql).bind(...values).all<{ payload_json: string }>();
@@ -219,22 +225,26 @@ async function stageRows(
   rowKey: string,
   rows: readonly unknown[],
 ) {
-  const chunks = jsonChunks(rows);
   const prefix = `${rowKey}:`;
   await db.batch([
     db.prepare(`DELETE FROM street_network_staging
-      WHERE campaign_id=? AND area_id=? AND generation=? AND kind=? AND chunk_key LIKE ?
+      WHERE campaign_id=? AND area_id=? AND generation=? AND kind=? AND chunk_key>=? AND chunk_key<?
         AND EXISTS(SELECT 1 FROM street_network_jobs
           WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?)`)
       .bind(
-        run.campaignId, run.areaId, run.generation, kind, `${prefix}%`,
+        run.campaignId, run.areaId, run.generation, kind, prefix, prefixEnd(prefix),
         run.campaignId, run.areaId, run.generation, lease,
       ),
   ]);
-  for (let start = 0; start < chunks.length; start += 30) {
-    const statements = chunks.slice(start, start + 30).map((chunk, offset) =>
+  // A Base bucket can contain dozens of feed/base chunks. One INSERT per
+  // chunk exhausts the alarm's 50 queries after runner bookkeeping. Expand
+  // deterministic rows with json_each, preserving payloads and lease guards.
+  // Bound the escaped envelope as well as each original chunk.
+  const flush = async (part: {chunk_key:string;payload:string}[]) => {
+    await db.batch([
       db.prepare(`INSERT INTO street_network_staging(campaign_id,area_id,generation,kind,chunk_key,payload_json)
-        SELECT ?,?,?,?,?,?
+        SELECT ?,?,?,?,json_extract(value,'$.chunk_key'),json_extract(value,'$.payload')
+        FROM json_each(?)
         WHERE EXISTS(SELECT 1 FROM street_network_jobs
           WHERE campaign_id=? AND area_id=? AND generation=? AND lease=?)
         ON CONFLICT(campaign_id,area_id,generation,kind,chunk_key)
@@ -244,16 +254,25 @@ async function stageRows(
           run.areaId,
           run.generation,
           kind,
-          `${prefix}${String(start + offset).padStart(6, '0')}`,
-          JSON.stringify(chunk),
+          JSON.stringify(part),
           run.campaignId,
           run.areaId,
           run.generation,
           lease,
         ),
-    );
-    if (statements.length) await db.batch(statements);
+    ]);
+  };
+  // Serialize one bounded envelope at a time, not a second copy of the entire
+  // bucket. Include escaping and UTF-8 bytes in the parameter size limit.
+  let part: {chunk_key:string;payload:string}[] = [], bytes = 2;
+  for (const [index, chunk] of jsonChunks(rows).entries()) {
+    const row = { chunk_key: `${prefix}${String(index).padStart(6, '0')}`, payload: JSON.stringify(chunk) };
+    const size = new TextEncoder().encode(JSON.stringify(row)).length + 1;
+    if (size + 2 > 900_000) throw new Error('network_row_budget_exceeded');
+    if (bytes + size > 900_000) { await flush(part); part = []; bytes = 2; }
+    part.push(row); bytes += size;
   }
+  if (part.length) await flush(part);
 }
 
 async function stageGroups(
@@ -332,11 +351,16 @@ async function loadNodeUsage(
   // same 50-query invocation budget after the graph step already checkpointed.
   for (let start = 0; start < buckets.length; start += 8) {
     const part = buckets.slice(start, start + 8);
-    const conditions = part.map(() => 'chunk_key LIKE ?').join(' OR ');
-    const rows = await db.prepare(`SELECT payload_json FROM street_network_staging
+    // OR ranges still scan every key of the selected kind in SQLite. Each
+    // UNION arm must seek its own prefix while keeping one D1 query per part.
+    const queries = part.map(() => `SELECT chunk_key,payload_json FROM street_network_staging
       WHERE campaign_id=? AND area_id=? AND generation=? AND kind='v4-node-usage'
-        AND (${conditions}) ORDER BY chunk_key`)
-      .bind(run.campaignId, run.areaId, run.generation, ...part.map((bucket) => `${bucketKey(bucket)}:%`))
+        AND chunk_key>=? AND chunk_key<?`);
+    const rows = await db.prepare(`${queries.join(' UNION ALL ')} ORDER BY chunk_key`)
+      .bind(...part.flatMap((bucket) => {
+        const prefix = `${bucketKey(bucket)}:`;
+        return [run.campaignId, run.areaId, run.generation, prefix, prefixEnd(prefix)];
+      }))
       .all<{ payload_json: string }>();
     for (const row of rows.results) {
       for (const [node, count] of JSON.parse(row.payload_json) as [string, number][]) {
@@ -987,10 +1011,7 @@ export async function runStreetEngineV4StagedPreparation(
           sourceTimestamp: metrics.sourceTimestamp ?? null,
           errorCode: null,
           updatedAt: now,
-          progress: preparationProgress('ready', 0, metrics.shardCount ?? 1, {
-            addressableBuildings: metrics.areaAddressableBuildings,
-            linkCellCount: metrics.linkCells?.length,
-          }, true),
+          progress: v4PreparationProgress('ready', 0, metrics, true),
         });
       } catch { /* best effort */ }
       return {
@@ -1029,13 +1050,7 @@ export async function runStreetEngineV4StagedPreparation(
           sourceTimestamp: metrics.sourceTimestamp ?? null,
           errorCode: null,
           updatedAt: now,
-          progress: preparationProgress(
-            phase,
-            cursor,
-            metrics.shardCount ?? 1,
-            { addressableBuildings: metrics.areaAddressableBuildings, linkCellCount: metrics.linkCells?.length },
-            false,
-          ),
+          progress: v4PreparationProgress(phase, cursor, metrics),
         });
       } catch { /* best effort */ }
     }
