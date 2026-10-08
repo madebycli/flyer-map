@@ -4,11 +4,10 @@ import { ENGINE_VERSION, encodePack, overpassQuery, packFromOverpass, paddedBbox
 import type { AccessContext } from '../access.ts';
 import { resolveAccess } from '../access.ts';
 import { loadCanonicalArea, type D1DatabaseLike } from '../campaignRepository.ts';
+import { canSeeArea, fail, ID, isScoped, json, writesAllowed } from './shared.ts';
+import { pullNotes, pushNotes } from './notes.ts';
 import { parseCampaignId } from '../snapshotValidation.ts';
 
-const json = (data: unknown, init: ResponseInit = {}) =>
-  Response.json(data, { ...init, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...init.headers } });
-const fail = (status: number, code: string, message: string) => json({ error: { code, message } }, { status });
 
 export type V5Options = {
   fetchImpl?: typeof fetch;
@@ -26,26 +25,23 @@ const MAX_AREA_SQ_KM = 25;
 const PACK_REBUILD_COOLDOWN_MS = 60_000;
 const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 const KEY = /^[sh]:[A-Za-z0-9#:._-]{1,80}$/u;
-const ID = /^[A-Za-z0-9._:-]{1,160}$/u;
 
 type Route =
-  | { kind: 'state' | 'ops' | 'meta'; campaignId: string }
+  | { kind: 'state' | 'ops' | 'meta' | 'notes'; campaignId: string }
   | { kind: 'pack'; campaignId: string; areaId: string };
 
 export function v5Route(pathname: string): Route | null {
-  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|areas\/([^/]+)\/pack)$/u.exec(pathname);
+  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|areas\/([^/]+)\/pack)$/u.exec(pathname);
   if (!m) return null;
   try {
     const campaignId = parseCampaignId(decodeURIComponent(m[1]));
     if (!campaignId) return null;
-    if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta') return { kind: m[2], campaignId };
+    if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta' || m[2] === 'notes') return { kind: m[2], campaignId };
     const areaId = decodeURIComponent(m[3]);
     return ID.test(areaId) ? { kind: 'pack', campaignId, areaId } : null;
   } catch { return null; }
 }
 
-const writesAllowed = (a: AccessContext) => a.role === 'admin' || a.role === 'team-editor' || a.role === 'field-group-member';
-const isScoped = (a: AccessContext) => a.role === 'team-editor' || a.role === 'field-group-member';
 
 function sameOrigin(request: Request) {
   const origin = request.headers.get('origin');
@@ -62,16 +58,11 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
   if (route.kind === 'meta' && request.method === 'GET') return meta(db, access, route.campaignId);
   if (route.kind === 'state' && request.method === 'GET') return pullState(db, access, route.campaignId, url, options);
   if (route.kind === 'ops' && request.method === 'POST') return pushOps(db, access, route.campaignId, request, options);
+  if (route.kind === 'notes' && request.method === 'GET') return pullNotes(db, access, route.campaignId, url, options);
+  if (route.kind === 'notes' && request.method === 'POST') return pushNotes(db, access, route.campaignId, request, options);
   if (route.kind === 'pack' && request.method === 'GET') return getPack(db, access, route.campaignId, route.areaId, request);
   if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options);
   return fail(405, 'method_not_allowed', 'Methode nicht erlaubt.');
-}
-
-async function canSeeArea(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string) {
-  const area = await loadCanonicalArea(db, campaignId, areaId);
-  if (!area) return null;
-  if (!isScoped(access)) return area;
-  return access.teamId === area.teamId ? area : null;
 }
 
 /** Everything the field client needs to boot, in one small request: role, team colours, Areas and pack versions. */

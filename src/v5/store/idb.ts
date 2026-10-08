@@ -1,3 +1,4 @@
+import type { NotePersisted, NotePersistence } from '../notes/types.ts';
 import type { Persisted, Persistence } from './types.ts';
 
 /** Single-record IndexedDB persistence; every failure degrades to "no persistence". */
@@ -41,5 +42,45 @@ export class IndexedDbPersistence implements Persistence {
         tx.onerror = tx.onabort = () => { db.close(); resolve(); };
       });
     } catch { /* storage unavailable (private mode): run memory-only */ }
+  }
+}
+
+/** Notes live in the same database (record `notes`), so one origin-local store per Aktion holds everything offline. */
+export class IndexedDbNotePersistence implements NotePersistence {
+  constructor(private readonly name: string) {}
+
+  private open(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(`vf-v5-${this.name}`, 1);
+      request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains('state')) request.result.createObjectStore('state'); };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async load(): Promise<NotePersisted | null> {
+    try {
+      const db = await this.open();
+      const value = await new Promise<unknown>((resolve) => {
+        const request = db.transaction('state').objectStore('state').get('notes');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(undefined);
+      });
+      db.close();
+      const saved = value as NotePersisted | undefined;
+      return saved && saved.version === 1 ? saved : null;
+    } catch { return null; }
+  }
+
+  async save(data: NotePersisted): Promise<void> {
+    try {
+      const db = await this.open();
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction('state', 'readwrite');
+        tx.objectStore('state').put(data, 'notes');
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = tx.onabort = () => { db.close(); resolve(); };
+      });
+    } catch { /* memory-only */ }
   }
 }

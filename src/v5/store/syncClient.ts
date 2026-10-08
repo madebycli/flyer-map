@@ -1,6 +1,13 @@
 import type { FieldStore } from './store.ts';
 import type { Op } from './types.ts';
 
+/** Anything else that rides the same loop (notes): one round of push + pull, plus a way to be woken by local edits. */
+export interface SyncExtra {
+  syncOnce(): Promise<void>;
+  subscribe(listener: () => void): () => void;
+  pendingCount(): number;
+}
+
 export interface SyncTransport {
   pull(since: number): Promise<{ ops: Op[]; cursor: number; serverNow?: number }>;
   /** `rejected` edits are permanently refused and get rolled back locally. */
@@ -19,7 +26,7 @@ export class SyncClient {
   private kickTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
-  private unsubscribe: () => void;
+  private unsubscribers: (() => void)[];
   state: 'idle' | 'syncing' | 'offline' = 'idle';
 
   constructor(
@@ -27,8 +34,9 @@ export class SyncClient {
     private readonly transport: SyncTransport,
     private readonly batchSize = 200,
     private readonly onState: (state: SyncClient['state'], pending: number) => void = () => {},
+    private readonly extras: SyncExtra[] = [],
   ) {
-    this.unsubscribe = store.subscribe(() => this.kick());
+    this.unsubscribers = [store.subscribe(() => this.kick()), ...extras.map((extra) => extra.subscribe(() => this.kick()))];
   }
 
   kick(): void {
@@ -58,6 +66,7 @@ export class SyncClient {
           this.store.receive(ops, cursor);
           if (!ops.length || cursor <= 0) break;
         }
+        for (const extra of this.extras) await extra.syncOnce();
         this.failures = 0;
         this.set('idle');
       } while (this.again);
@@ -74,10 +83,10 @@ export class SyncClient {
     }
   }
 
-  private set(state: SyncClient['state']) { if (!this.disposed) { this.state = state; this.onState(state, this.store.pendingOps().length); } }
+  private set(state: SyncClient['state']) { if (!this.disposed) { this.state = state; this.onState(state, this.store.pendingOps().length + this.extras.reduce((n, extra) => n + extra.pendingCount(), 0)); } }
   dispose() {
     this.disposed = true;
-    this.unsubscribe();
+    for (const off of this.unsubscribers) off();
     if (this.kickTimer) clearTimeout(this.kickTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.kickTimer = this.retryTimer = null;

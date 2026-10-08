@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { mergeNetworks, type Network } from '../engine/index.ts';
 import { FieldStore } from '../store/store.ts';
-import { IndexedDbPersistence } from '../store/idb.ts';
+import { IndexedDbNotePersistence, IndexedDbPersistence } from '../store/idb.ts';
+import { NoteStore } from '../notes/store.ts';
+import { NoteSync } from '../notes/sync.ts';
 import { Progress, type ProgressSnapshot } from '../store/progress.ts';
 import { SyncClient } from '../store/syncClient.ts';
-import { V5ApiError, buildPack, fetchMeta, fetchPack, httpTransport, type Meta } from './api.ts';
+import { V5ApiError, buildPack, fetchMeta, fetchPack, httpNoteTransport, httpTransport, type Meta } from './api.ts';
 import { derive, type WorkerResponse } from './network.worker.ts';
 
 export type Phase =
@@ -19,6 +21,7 @@ export type CampaignState = {
   network: Network | null;
   areaOf: Map<string, string>;
   store: FieldStore | null;
+  notes: NoteStore | null;
   progress: ProgressSnapshot | null;
   sync: { state: 'idle' | 'syncing' | 'offline'; pending: number };
   /** Areas that are shown without data yet (some other Areas already work). */
@@ -57,6 +60,7 @@ export function useCampaign(campaignId: string): CampaignState {
   const [network, setNetwork] = useState<Network | null>(null);
   const [areaOf, setAreaOf] = useState<Map<string, string>>(new Map());
   const [store, setStore] = useState<FieldStore | null>(null);
+  const [notes, setNotes] = useState<NoteStore | null>(null);
   const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
   const [sync, setSync] = useState<CampaignState['sync']>({ state: 'idle', pending: 0 });
   const [missingAreas, setMissingAreas] = useState<Meta['areas']>([]);
@@ -70,6 +74,8 @@ export function useCampaign(campaignId: string): CampaignState {
     let progressTracker: Progress | null = null;
     let hydrated = false;
     const fieldStore = new FieldStore(actorId(), new IndexedDbPersistence(campaignId));
+    const noteStore = new NoteStore(actorId(), new IndexedDbNotePersistence(campaignId), () => Date.now());
+    let notesHydrated = false;
 
     const boot = async () => {
       try {
@@ -96,7 +102,7 @@ export function useCampaign(campaignId: string): CampaignState {
         }
         const merged = mergeNetworks(parts);
         fieldStore.setAreaResolver((key) => merged.areaOf.get(key));
-        if (!hydrated) { await fieldStore.hydrate(); hydrated = true; }
+        if (!hydrated) { await Promise.all([fieldStore.hydrate(), noteStore.hydrate()]); hydrated = true; notesHydrated = true; }
         if (cancelled) return; // a boot cancelled while hydrating must not create clients nobody disposes
         // Only prune when every Area was derived; a missing pack must never cost queued edits.
         if (!missing.length) fieldStore.reconcilePending((key) => merged.areaOf.has(key));
@@ -104,9 +110,9 @@ export function useCampaign(campaignId: string): CampaignState {
         progressTracker = new Progress(merged.network, fieldStore);
         progressTracker.onChange(setProgress);
         setProgress(progressTracker.snapshot());
-        setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore);
+        setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore); setNotes(noteStore);
         client?.dispose();
-        client = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending) => setSync({ state, pending }));
+        client = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending) => setSync({ state, pending }), [new NoteSync(noteStore, httpNoteTransport(campaignId))]);
         // Show the screen once the first pull settled (or after 4 s on a slow link), so a fresh device does not
         // flash 0 % before the shared progress arrives.
         if (parts.length) setPhase({ kind: 'loading', label: 'Fortschritt wird geladen …' });
@@ -121,9 +127,9 @@ export function useCampaign(campaignId: string): CampaignState {
     reload.current = boot;
     void boot();
     const online = () => void client?.run();
-    const hidden = () => { if (document.visibilityState === 'hidden') void fieldStore.persistNow(); };
+    const hidden = () => { if (document.visibilityState === 'hidden') flush(); };
     const visible = () => { if (document.visibilityState === 'visible') void client?.run(); };
-    const flush = () => void fieldStore.persistNow();
+    const flush = () => { void fieldStore.persistNow(); void noteStore.persistNow(); };
     window.addEventListener('online', online);
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', hidden);
@@ -134,12 +140,13 @@ export function useCampaign(campaignId: string): CampaignState {
       window.removeEventListener('online', online); window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', hidden); document.removeEventListener('visibilitychange', visible);
       window.clearInterval(poll);
+      if (notesHydrated) void noteStore.persistNow();
       void fieldStore.persistNow(); // a no-op unless this store finished hydrating
     };
   }, [campaignId]);
 
   return {
-    phase, meta, network, areaOf, store, progress, sync, missingAreas,
+    phase, meta, network, areaOf, store, notes, progress, sync, missingAreas,
     reload: () => reload.current(),
     async buildMissing() {
       const areas = missingRef.current;

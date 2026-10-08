@@ -8,6 +8,7 @@ import { fetchLegacySnapshot } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { buildIndex } from './mark.ts';
 import { MarkBar, meters, useMarking } from './marking.tsx';
+import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, notePosition, segmentNoteKey, useNotesVersion } from './notes.tsx';
 import { useCampaign } from './useCampaign.ts';
 import { Icon, Loader, WavyProgress, type IconName } from './ui.tsx';
 
@@ -52,7 +53,7 @@ const FIT_PADDING = { top: 120, bottom: 170, left: 28, right: 28 };
 
 export function App({ campaignId }: { campaignId: string }) {
   const campaign = useCampaign(campaignId);
-  const { phase, meta, network, store } = campaign;
+  const { phase, meta, network, store, notes } = campaign;
   const mapHost = useRef<HTMLDivElement>(null);
   const fieldMap = useRef<FieldMap | null>(null);
   const [tool, setTool] = useState<Tool>('inspect');
@@ -65,6 +66,7 @@ export function App({ campaignId }: { campaignId: string }) {
   const [menu, setMenu] = useState(false);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [showConflicts, setShowConflicts] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   useEffect(() => { if (!store) return; setConflicts([...store.pendingConflicts]); return store.subscribeConflicts(setConflicts); }, [store]);
   useEffect(() => { if (!conflicts.length) setShowConflicts(false); }, [conflicts.length]);
@@ -89,11 +91,16 @@ export function App({ campaignId }: { campaignId: string }) {
     if (tool === 'mark') { marking.onMapHit(hit); return; }
     if (!index) return;
     if (!hit) { setSelection(null); fieldMap.current?.select(null); return; }
-    if (hit.kind === 'house') {
-      const house = index.houses.get(hit.id);
+    if (hit.kind === 'note') { openNoteTarget(hit.id); return; }
+    selectEntity(hit.kind, hit.id);
+  };
+  const selectEntity = (kind: 'house' | 'segment', id: string) => {
+    if (!index) return;
+    if (kind === 'house') {
+      const house = index.houses.get(id);
       if (house) { setSelection({ kind: 'house', house }); fieldMap.current?.select(houseKey(house.id)); }
     } else {
-      const segment = index.segments.get(hit.id);
+      const segment = index.segments.get(id);
       if (segment) {
         const chunks = index.chunksByGroup.get(segment.group) ?? [segment];
         setSelection({ kind: 'segment', segment, chunks, houses: chunks.flatMap((c) => index.housesBySegment.get(c.id) ?? []) });
@@ -101,12 +108,23 @@ export function App({ campaignId }: { campaignId: string }) {
       }
     }
   };
+  /** Jump to the place a note belongs to and open it (marker tap or overview row). */
+  const openNoteTarget = (key: string) => {
+    if (!index || !meta) return;
+    const at = notePosition(key, index, meta.areas);
+    setMenu(false); setNotesOpen(false); setShowConflicts(false);
+    if (key.startsWith('a:')) { setSelection(null); fieldMap.current?.select(null); setTool('areas'); areaTool.setSelectedId(key.slice(2)); }
+    else { areaTool.setSelectedId(null); setTool('inspect'); selectEntity(key.startsWith('h:') ? 'house' : 'segment', key.slice(2)); }
+    if (at) fieldMap.current?.focus(at);
+  };
+  const toolRef = useRef<Tool>('inspect');
+  toolRef.current = tool;
   const segmentsOnlyRef = useRef(false);
   segmentsOnlyRef.current = tool === 'mark' && marking.mode === 'route';
 
   useEffect(() => {
     if (!mapHost.current || fieldMap.current) return;
-    fieldMap.current = new FieldMap({ container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), segmentsOnly: () => segmentsOnlyRef.current });
+    fieldMap.current = new FieldMap({ container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), segmentsOnly: () => segmentsOnlyRef.current, noteHits: () => toolRef.current === 'inspect' });
     return () => { fieldMap.current?.destroy(); fieldMap.current = null; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -115,6 +133,12 @@ export function App({ campaignId }: { campaignId: string }) {
     const map = fieldMap.current;
     void map.loadNetwork(network).then(() => { map.bind(store); map.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); });
   }, [network, store]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
+
+  const notesVersion = useNotesVersion(notes);
+  useEffect(() => {
+    if (!notes || !index || !meta) return;
+    fieldMap.current?.setNotes(noteFeatures(notes.all(), index, meta.areas));
+  }, [notes, index, meta, notesVersion]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -148,9 +172,10 @@ export function App({ campaignId }: { campaignId: string }) {
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
   const editing = !!areaTool.edit;
-  const ui = !ready ? 'none' : editing || tool === 'mark' ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu || showConflicts ? 'sheet' : 'dock';
+  const ui = !ready ? 'none' : editing || tool === 'mark' ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu || showConflicts || notesOpen ? 'sheet' : 'dock';
   const canEditAny = !!meta && (meta.role === 'admin' || meta.role === 'team-editor');
 
+  const selectionArea = !selection ? '' : campaign.areaOf.get(selection.kind === 'house' ? houseKey(selection.house.id) : segmentKey(selection.segment.id)) ?? '';
   const selectedArea = meta?.areas.find((a) => a.id === areaTool.selectedId) ?? null;
   const areaStats = useMemo(() => {
     if (!selectedArea || !network || !store) return null;
@@ -237,9 +262,16 @@ export function App({ campaignId }: { campaignId: string }) {
             <button className="v5-row-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'} />{theme === 'dark' ? 'Helles Design' : 'Dunkles Design'}</button>
             <button className="v5-row-btn" onClick={() => setHand(hand === 'right' ? 'left' : 'right')}><Icon name="hand" />{hand === 'right' ? 'Bedienung links' : 'Bedienung rechts'}</button>
             {importOffer && <button className="v5-row-btn" disabled={importState === 'busy'} onClick={() => void importLegacy()} aria-label="Fortschritt aus der bisherigen Version übernehmen"><Icon name={importState === 'busy' ? 'sync' : 'download'} />Fortschritt aus der alten Version übernehmen</button>}
+            <button className="v5-row-btn" onClick={() => { setMenu(false); setNotesOpen(true); }}><Icon name="message" />Notizen{notes && notes.all().length > 0 && <b className="v5-row-count">{notes.all().length}</b>}</button>
             <a className="v5-row-btn" href={`/?campaign=${encodeURIComponent(campaignId)}`}><Icon name="mapPin" />Alte Ansicht</a>
             {meta?.role === 'admin' && <a className="v5-row-btn" href="/login"><Icon name="shield" />Verwaltung</a>}
           </div>
+        </SheetFrame>
+      )}
+
+      {notesOpen && ready && (
+        <SheetFrame icon="message" title="Notizen" onClose={() => setNotesOpen(false)}>
+          <NotesOverview store={notes} index={index} areas={meta?.areas ?? []} onOpen={openNoteTarget} />
         </SheetFrame>
       )}
 
@@ -250,6 +282,7 @@ export function App({ campaignId }: { campaignId: string }) {
             <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo([[Math.min(...selectedArea.geometry.coordinates[0].map((p) => p[0])), Math.min(...selectedArea.geometry.coordinates[0].map((p) => p[1]))], [Math.max(...selectedArea.geometry.coordinates[0].map((p) => p[0])), Math.max(...selectedArea.geometry.coordinates[0].map((p) => p[1]))]], FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
             {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
           </div>
+          <NotesPane store={notes} target={areaNoteKey(selectedArea.id)} area={selectedArea.id} canWrite={canWrite && (meta?.role === 'admin' || meta?.teamId === selectedArea.teamId)} onUndo={(label, revert) => setUndo({ label, revert })} />
         </SheetFrame>
       )}
 
@@ -271,6 +304,9 @@ export function App({ campaignId }: { campaignId: string }) {
                   </button>
                 )}
               </>}
+          <NotesPane store={notes} canWrite={canWrite && selectionArea !== ''} onUndo={(label, revert) => setUndo({ label, revert })}
+            target={selection.kind === 'house' ? houseNoteKey(selection.house.id) : segmentNoteKey(selection.segment.group)}
+            area={selectionArea} />
         </SheetFrame>
       )}
     </div>

@@ -8,6 +8,7 @@ export const SEGMENT_SOURCE = 'v5-segments';
 export const HOUSE_SOURCE = 'v5-houses';
 export const AREA_SOURCE = 'v5-areas';
 export const DRAW_SOURCE = 'v5-draw';
+export const NOTE_SOURCE = 'v5-notes';
 
 export type Theme = 'dark' | 'light';
 
@@ -34,7 +35,7 @@ const statusMatch = (theme: Theme): ExpressionSpecification => {
   return ['match', ['coalesce', ['feature-state', 'status'], 'open'], 'completed', c.completed, 'later', c.later, 'not-deliverable', c['not-deliverable'], c.open];
 };
 
-export type Hit = { kind: 'segment' | 'house'; id: string };
+export type Hit = { kind: 'segment' | 'house' | 'note'; id: string };
 export type Pt = { x: number; y: number };
 /** A pointer gesture owned by the active tool. `down` decides whether the tool takes it (map pan is suspended then). */
 export type Gesture = {
@@ -54,6 +55,8 @@ export type FieldMapOptions = {
   onHit?: (hit: Hit | null, point: Pt) => void;
   /** Route marking only cares about street segments; houses must not swallow those taps. */
   segmentsOnly?: () => boolean;
+  /** Note markers take taps only while this returns true (inspect tool); otherwise they must not swallow marking taps. */
+  noteHits?: () => boolean;
 };
 
 export function networkToGeoJson(network: Network): { segments: FeatureCollection; houses: FeatureCollection } {
@@ -123,6 +126,10 @@ export class FieldMap {
     });
     this.map.on('click', (event) => {
       if (this.swallowClick) { this.swallowClick = false; return; }
+      if (options.noteHits?.() && this.map.getLayer('v5-notes-dot')) {
+        const pin = this.map.queryRenderedFeatures([[event.point.x - 16, event.point.y - 16], [event.point.x + 16, event.point.y + 16]], { layers: ['v5-notes-dot'] })[0];
+        if (pin) return options.onHit?.({ kind: 'note', id: String(pin.properties?.key) }, event.point);
+      }
       // A house is hit only when the tap lies inside it; streets get a forgiving 12 px halo.
       if (!options.segmentsOnly?.()) {
         const houses = this.map.queryRenderedFeatures(event.point, { layers: ['v5-houses-fill'] });
@@ -147,6 +154,7 @@ export class FieldMap {
     if (this.network) this.pushNetwork(this.network);
     this.pushAreas();
     this.pushDraw();
+    this.pushNotes();
     if (this.store) void this.applyChunked([...this.store.entries()].map(([key, entry]) => [key, entry.status] as [EntityKey, Status]));
     this.previewed = new Set(); // feature-state died with the old sources
     this.selected = [];
@@ -223,6 +231,20 @@ export class FieldMap {
       id: 'v5-draw-vertex', type: 'circle', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'vertex'],
       paint: { 'circle-radius': ['case', ['==', ['get', 'selected'], 1], 13, 10], 'circle-color': ['case', ['==', ['get', 'selected'], 1], '#ffd24a', '#ffffff'], 'circle-stroke-color': ['coalesce', ['get', 'color'], '#7aa8ff'], 'circle-stroke-width': 3 },
     });
+    // Note markers: a coloured pin per annotated street/house/Area, on top of everything but the tool overlay.
+    map.addSource(NOTE_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'v5-notes-halo', type: 'circle', source: NOTE_SOURCE,
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 6, 16, 13], 'circle-color': theme === 'dark' ? '#0e1513' : '#ffffff', 'circle-opacity': 0.92 },
+    }, 'v5-draw-fill');
+    map.addLayer({
+      id: 'v5-notes-dot', type: 'circle', source: NOTE_SOURCE,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 4, 16, 9.5],
+        'circle-color': ['coalesce', ['get', 'color'], '#b0bec5'],
+        'circle-stroke-width': ['case', ['>', ['get', 'count'], 1], 3, 0], 'circle-stroke-color': theme === 'dark' ? '#0e1513' : '#ffffff',
+      },
+    }, 'v5-draw-fill');
     // House numbers need a glyph endpoint; a style without one (tests, offline stub) simply has no labels.
     if (map.getStyle().glyphs) map.addLayer({
       id: 'v5-houses-number', type: 'symbol', source: HOUSE_SOURCE, minzoom: 17.5,
@@ -316,6 +338,10 @@ export class FieldMap {
       features: this.areas.map((a): Feature => ({ type: 'Feature', id: a.id, properties: { id: a.id, name: a.name, color: a.color, active: a.id === this.activeArea ? 1 : 0 }, geometry: { type: 'Polygon', coordinates: [a.ring] } })),
     });
   }
+  setNotes(features: FeatureCollection) { this.noteFeatures = features; this.pushNotes(); }
+  private noteFeatures: FeatureCollection = { type: 'FeatureCollection', features: [] };
+  private pushNotes() { (this.map.getSource(NOTE_SOURCE) as GeoJSONSource | undefined)?.setData(this.noteFeatures); }
+
   setDraw(collection: FeatureCollection) { this.draw = collection; this.pushDraw(); }
   private pushDraw() { (this.map.getSource(DRAW_SOURCE) as GeoJSONSource | undefined)?.setData(this.draw); }
 
@@ -393,6 +419,9 @@ export class FieldMap {
     el.addEventListener('pointerup', finish);
     el.addEventListener('pointercancel', (event) => { this.pointers.delete(event.pointerId); this.cancelGesture(); });
   }
+
+  /** Centre on a place, zooming in far enough to act on it. */
+  focus(at: LngLat, zoom = 17.2) { this.map.easeTo({ center: at, zoom: Math.max(this.map.getZoom(), zoom), duration: 450, padding: { top: 90, bottom: 280, left: 0, right: 0 } }); }
 
   fitTo(bounds: [[number, number], [number, number]], padding: number | { top: number; bottom: number; left: number; right: number } = 40) {
     this.map.fitBounds(bounds, { padding, duration: 0, maxZoom: 17.2 });

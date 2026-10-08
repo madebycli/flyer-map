@@ -222,3 +222,28 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-root[data-hand="left"] .v5-conflict { left: auto; right: 0.7rem; }
 .v5-conflict-row { display: flex; align-items: center; gap: 0.6rem; min-height: 3.4rem; padding: 0 0.5rem 0 1rem; border-radius: 1.2rem; background: var(--surface-3); }
 .v5-conflict-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+
+/* ── notes: flag toggles, list, composer ─────────────────────── */
+.v5-notes { display: grid; gap: 0.6rem; margin-top: 0.2rem; }
+.v5-flags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.v5-flag {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem; min-width: 3rem; height: 3rem; padding: 0 0.7rem; border: 1.5px solid transparent; border-radius: 1.1rem;
+  background: var(--surface-3); color: var(--c); cursor: pointer; flex: 1 1 3rem; max-width: 4.6rem;
+  transition: border-radius 360ms var(--spring), background 160ms, transform 160ms var(--spring);
+}
+.v5-flag b { font-size: 0.85rem; font-weight: 800; color: var(--on); font-variant-numeric: tabular-nums; }
+.v5-flag.on { background: color-mix(in srgb, var(--c) 26%, var(--surface-3)); border-color: var(--c); border-radius: 1.5rem; }
+.v5-flag:active { transform: scale(0.92); }
+.v5-note-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.v5-note { display: flex; align-items: center; gap: 0.7rem; width: 100%; min-height: 3.2rem; padding: 0.3rem 0.4rem 0.3rem 0.7rem; border: 0; border-radius: 1.1rem; background: var(--surface-3); color: var(--on); text-align: left; font: inherit; }
+.v5-note-open { cursor: pointer; padding-right: 0.9rem; transition: border-radius 300ms var(--spring), transform 160ms var(--spring); }
+.v5-note-open:active { transform: scale(0.98); border-radius: 1.5rem; }
+.v5-note-ico { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: 0.8rem; background: color-mix(in srgb, var(--c) 24%, transparent); color: var(--c); flex: none; }
+.v5-note-body { flex: 1; min-width: 0; display: grid; }
+.v5-note-body span { overflow-wrap: anywhere; font-weight: 650; }
+.v5-note-body small { color: var(--on-var); font-weight: 600; }
+.v5-note-form { display: flex; gap: 0.4rem; align-items: center; }
+.v5-note-form input { flex: 1; min-width: 0; height: 3rem; padding: 0 1rem; border: 1.5px solid var(--outline-var); border-radius: 1.1rem; background: var(--surface-1); color: var(--on); font: 600 16px var(--font); outline: none; transition: border-color 160ms, border-radius 300ms var(--spring); }
+.v5-note-form input:focus { border-color: var(--primary); border-radius: 1.5rem; }
+.v5-note-form .v5-icon-btn:disabled { opacity: 0.4; }
+.v5-row-count { margin-left: auto; padding: 0.1rem 0.6rem; border-radius: 1rem; background: var(--primary-container); color: var(--on-primary-container); font-variant-numeric: tabular-nums; }

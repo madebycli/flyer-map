@@ -1,5 +1,7 @@
 import type { SyncTransport } from '../store/syncClient.ts';
 import type { Op } from '../store/types.ts';
+import type { NoteTransport } from '../notes/sync.ts';
+import type { Note } from '../notes/types.ts';
 
 export type Meta = {
   campaign: { id: string; name: string };
@@ -54,6 +56,27 @@ export function httpTransport(campaignId: string): SyncTransport {
       })).json() as { accepted: string[]; rejected: { id: string }[] };
       // Permanently rejected edits are rolled back locally by the sync client; they must not retry forever.
       return { accepted: result.accepted, rejected: result.rejected.map((r) => r.id), cursor: 0 };
+    },
+  };
+}
+
+export function httpNoteTransport(campaignId: string): NoteTransport {
+  return {
+    async pull(since) {
+      const page = await (await call(`${base(campaignId)}/notes?since=${since}&limit=500`)).json() as { notes: Note[]; cursor: number; more: boolean; serverNow?: number };
+      return page;
+    },
+    async push(notes) {
+      try {
+        return await (await call(`${base(campaignId)}/notes`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ notes: notes.map(({ id, key, area, flag, text, rev, deleted }) => ({ id, key, area, flag, text, rev, deleted })) }),
+        })).json() as { accepted: string[]; rejected: { id: string; reason: string }[] };
+      } catch (error) {
+        // A role that may not write at all would otherwise retry forever; treat it as a permanent refusal of this batch.
+        if (error instanceof V5ApiError && error.status === 403) return { accepted: [], rejected: notes.map((n) => ({ id: n.id, reason: error.code })) };
+        throw error;
+      }
     },
   };
 }
