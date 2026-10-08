@@ -112,3 +112,15 @@ test("unknown anchors are rejected", () => {
 test("multi-segment selection label reports exact section count instead of grouping by road name", () => {
   assert.equal(smartRoadSelectionLabel(chain, ["way/1", "way/2", "way/3"]), "3 Straßenabschnitte");
 });
+
+test('a side street joining at an interior vertex is connected', () => {
+  const road = (sourceId: string, coordinates: [number, number][]) => ({
+    sourceId, osmId: 1, name: sourceId, ref: null, highway: 'residential',
+    geometry: { type: 'LineString' as const, coordinates },
+  });
+  const roads = [
+    road('through', [[13.0, 51.0], [13.001, 51.0], [13.002, 51.0]]),
+    road('side', [[13.001, 51.0], [13.001, 51.001]]),
+  ];
+  assert.deepEqual(selectSmartRoadRange(roads, 'through', 'side'), { state: 'selected', sourceIds: ['through', 'side'] });
+});

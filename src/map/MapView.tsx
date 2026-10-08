@@ -1,5 +1,6 @@
 import { roadSlice } from '../domain/streetNetwork.ts';
 import { useEffect, useMemo, useRef, useState } from "react";
+import { syncIncrementalGeoJson } from "./incrementalGeoJson.ts";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
 import type {
   ExpressionSpecification,
@@ -1393,19 +1394,37 @@ function syncCollectionPickupSelection(
   if (region) region.dataset.collectionSelectedPickup = selectedPickupId ?? "";
 }
 
+// Per-entity change keys: only entities whose key changed are re-serialised and
+// sent to the MapLibre worker, so one status edit no longer rebuilds every
+// saved Area, Street slice and House.
+const areaRenderVersion = (area: RenderArea) =>
+  `${area.updatedAt}|${area.name}|${area.color}|${area.teamId}|${area.geometry.coordinates[0]?.length ?? 0}`;
+const taskRenderVersion = (task: RenderTask) =>
+  `${task.updatedAt}|${task.status}|${task.label}|${task.color}|${task.completedColor}|${task.geometry.coordinates.length}|${
+    task.network ? JSON.stringify(task.network.coverage) : ""
+  }`;
+const houseRenderVersion = (house: RenderHouse) =>
+  `${house.updatedAt}|${house.status}|${house.label}|${house.color}|${house.completedColor}|${house.parentStreetTaskId ?? ""}`;
+
 function syncAreaData(map: Map, areas: RenderArea[]) {
   const areaSource = map.getSource(AREA_SOURCE_ID) as GeoJSONSource | undefined;
-  if (areaSource) areaSource.setData(areasToGeoJson(areas));
+  if (areaSource) {
+    syncIncrementalGeoJson(areaSource, areas, areaRenderVersion, areasToGeoJson);
+  }
 }
 
 function syncStreetData(map: Map, tasks: RenderTask[]) {
   const streetSource = map.getSource(STREET_SOURCE_ID) as GeoJSONSource | undefined;
-  if (streetSource) streetSource.setData(streetsToGeoJson(tasks));
+  if (streetSource) {
+    syncIncrementalGeoJson(streetSource, tasks, taskRenderVersion, streetsToGeoJson);
+  }
 }
 
 function syncHouseData(map: Map, houses: RenderHouse[]) {
   const houseSource = map.getSource(HOUSE_SOURCE_ID) as GeoJSONSource | undefined;
-  if (houseSource) houseSource.setData(housesToGeoJson(houses));
+  if (houseSource) {
+    syncIncrementalGeoJson(houseSource, houses, houseRenderVersion, housesToGeoJson);
+  }
 }
 
 function syncSmartStreetData(

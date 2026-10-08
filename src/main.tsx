@@ -19,6 +19,7 @@ import "./diagnostics/map-diagnostics.css";
 import "./map-context-ui.css";
 import "./ui-dark-mode.css";
 import "./ui-dark-mode-modules.css";
+import "./vela-controls.css";
 
 const MapDiagnostics = lazy(() => import("./diagnostics/MapDiagnostics").then(module => ({ default: module.MapDiagnostics })));
 const StreetEngineDiagnostics = lazy(() => import("./diagnostics/StreetEngineDiagnosticsV4").then(module => ({ default: module.StreetEngineDiagnosticsV4 })));

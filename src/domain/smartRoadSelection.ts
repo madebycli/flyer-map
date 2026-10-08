@@ -20,39 +20,28 @@ function coordinateKey([lng, lat]: Coordinate) {
   return `${lng.toFixed(7)},${lat.toFixed(7)}`;
 }
 
-function endpointKeys(candidate: SmartRoadCandidate) {
-  const coordinates = candidate.geometry.coordinates;
-  if (coordinates.length === 0) return new Set<string>();
-  return new Set([
-    coordinateKey(coordinates[0]),
-    coordinateKey(coordinates[coordinates.length - 1]),
-  ]);
-}
-
-function candidatesTouch(a: SmartRoadCandidate, b: SmartRoadCandidate) {
-  const aEndpoints = endpointKeys(a);
-  const bEndpoints = endpointKeys(b);
-  for (const endpoint of aEndpoints) {
-    if (bEndpoints.has(endpoint)) return true;
-  }
-  return false;
-}
-
+/**
+ * Two OSM ways are connected when they share any vertex, not only an endpoint:
+ * a side street frequently joins a through way at an interior node. Indexing by
+ * vertex also keeps this linear in the number of coordinates instead of O(n²).
+ */
 function adjacencyFor(roads: SmartRoadCandidate[]) {
-  const adjacency = new Map<string, string[]>();
-  for (const road of roads) adjacency.set(road.sourceId, []);
-
-  for (let index = 0; index < roads.length; index += 1) {
-    for (let otherIndex = index + 1; otherIndex < roads.length; otherIndex += 1) {
-      const first = roads[index];
-      const second = roads[otherIndex];
-      if (!candidatesTouch(first, second)) continue;
-      adjacency.get(first.sourceId)?.push(second.sourceId);
-      adjacency.get(second.sourceId)?.push(first.sourceId);
+  const adjacency = new Map<string, Set<string>>();
+  const idsByVertex = new Map<string, string[]>();
+  for (const road of roads) {
+    adjacency.set(road.sourceId, new Set());
+    for (const coordinate of new Set(road.geometry.coordinates.map(coordinateKey))) {
+      const ids = idsByVertex.get(coordinate);
+      if (ids) ids.push(road.sourceId);
+      else idsByVertex.set(coordinate, [road.sourceId]);
     }
   }
-
-  return adjacency;
+  for (const ids of idsByVertex.values()) {
+    for (const first of ids) {
+      for (const second of ids) if (first !== second) adjacency.get(first)?.add(second);
+    }
+  }
+  return new Map([...adjacency].map(([id, neighbors]) => [id, [...neighbors]]));
 }
 
 /**

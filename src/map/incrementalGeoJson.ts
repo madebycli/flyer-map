@@ -5,7 +5,16 @@ type Source={setData(data:FeatureCollection):unknown;updateData(diff:GeoJSONSour
 type Cached={version:string;features:Feature[]};
 const sources=new WeakMap<Source,Map<string,Cached>>();
 /** Keep geometry in MapLibre's worker. A status edit sends changed properties only. */
-export function syncIncrementalGeoJson<T extends {id:string}>(source:Source,entities:readonly T[],version:(entity:T)=>string,render:(entities:T[])=>FeatureCollection){
+export function syncIncrementalGeoJson<T extends {id:string}>(source:Source,entities:readonly T[],version:(entity:T)=>string,render:(entities:T[])=>FeatureCollection):void{
+  try{applyIncrementalGeoJson(source,entities,version,render);}
+  catch(cause){
+    // A rejected diff must never leave the map stale: forget the cache and send the complete FeatureCollection.
+    console.warn('Incremental GeoJSON update failed; replaying complete data',cause);
+    sources.delete(source);
+    applyIncrementalGeoJson(source,entities,version,render);
+  }
+}
+function applyIncrementalGeoJson<T extends {id:string}>(source:Source,entities:readonly T[],version:(entity:T)=>string,render:(entities:T[])=>FeatureCollection){
   const previous=sources.get(source);
   const next=new Map<string,Cached>();
   const diff:GeoJSONSourceDiff={add:[],remove:[],update:[]};

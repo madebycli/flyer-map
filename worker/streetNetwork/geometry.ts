@@ -4,6 +4,7 @@ import OverlayOp from 'jsts/org/locationtech/jts/operation/overlay/OverlayOp.js'
 import IsValidOp from 'jsts/org/locationtech/jts/operation/valid/IsValidOp.js';
 import InteriorPointArea from 'jsts/org/locationtech/jts/algorithm/InteriorPointArea.js';
 import type { DistributionTask, HouseTask, LineStringGeometry, LngLat, PolygonGeometry } from '../../src/domain/campaign.ts';
+import { isDeliveryRelevantRoad } from '../../src/domain/roadRelevance.ts';
 import { RoadIndex, networkNodeKey, roadLength } from '../../src/domain/streetNetwork.ts';
 import { stablePreparedStreetTaskId, canonicalStreetFragmentGeometryJson } from '../streetNetwork/reconcile.ts';
 
@@ -19,7 +20,7 @@ const reader = new GeoJSONReader();
 const writer = new GeoJSONWriter();
 const allowedRoads = new Set(['residential', 'living_street', 'service', 'unclassified', 'tertiary', 'tertiary_link', 'secondary', 'secondary_link', 'primary', 'primary_link', 'pedestrian', 'footway', 'path', 'steps']);
 export function eligibleRoad(tags: Record<string, string>) {
-  return allowedRoads.has(tags.highway) && !['no', 'private'].includes(tags.foot ?? tags.access ?? '') && !['driveway', 'parking_aisle'].includes(tags.service ?? '');
+  return allowedRoads.has(tags.highway) && !['no', 'private'].includes(tags.foot ?? tags.access ?? '') && isDeliveryRelevantRoad(tags);
 }
 function lines(input: LinearInput): LineStringGeometry[] {
   if (input.type === 'GeometryCollection') return input.geometries.flatMap(lines);

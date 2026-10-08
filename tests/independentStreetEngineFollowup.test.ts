@@ -78,9 +78,9 @@ test('renderer baseline stays on MapLibre 5.7.1 and keeps the known working visi
   assert.match(map, /const applicationStyle = buildApplicationMapStyle\(initialData\)/u);
   assert.match(map, /map\.addSource\(sourceId, source as SourceSpecification\)/u);
   assert.match(map, /const basemapLabelInsertionLayerId = \[\.\.\.map\.getStyle\(\)\.layers\]\.reverse\(\)\.find/u);
-  assert.match(map, /areaSource\.setData\(areasToGeoJson\(areas\)\)/u);
-  assert.match(map, /streetSource\.setData\(streetsToGeoJson\(tasks\)\)/u);
-  assert.match(map, /houseSource\.setData\(housesToGeoJson\(houses\)\)/u);
+  assert.match(map, /syncIncrementalGeoJson\(areaSource, areas, areaRenderVersion, areasToGeoJson\)/u);
+  assert.match(map, /syncIncrementalGeoJson\(streetSource, tasks, taskRenderVersion, streetsToGeoJson\)/u);
+  assert.match(map, /syncIncrementalGeoJson\(houseSource, houses, houseRenderVersion, housesToGeoJson\)/u);
 });
 
 test('offline intent FIFO survives wall-clock rollback across IndexedDB reopen cycles', async (t) => {

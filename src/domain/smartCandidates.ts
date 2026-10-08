@@ -4,6 +4,7 @@ import type {
   OfflineMapPackage,
   OfflineMapRoadFeature,
 } from "./offlineMap.ts";
+import { isDeliveryRelevantRoad } from "./roadRelevance.ts";
 import {
   buildingCandidatesForArea,
   roadCandidatesForArea,
@@ -68,7 +69,9 @@ export function toSmartBuildingCandidate(
 }
 
 export function smartCandidatesForArea(area: Area, pkg: OfflineMapPackage) {
-  const roads = roadCandidatesForArea(area, pkg).map(toSmartRoadCandidate);
+  const roads = roadCandidatesForArea(area, pkg)
+    .filter((feature) => isDeliveryRelevantRoad(feature.properties.tags))
+    .map(toSmartRoadCandidate);
   const buildings = buildingCandidatesForArea(area, pkg).map(toSmartBuildingCandidate);
   const summary: SmartCandidateSummary = {
     roadCount: roads.length,

@@ -38,6 +38,7 @@ const TAG_ALLOWLIST = new Set([
   "lanes",
   "lit",
   "sidewalk",
+  "footway",
 ]);
 
 export type FetchLike = typeof fetch;
