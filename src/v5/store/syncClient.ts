@@ -2,7 +2,7 @@ import type { FieldStore } from './store.ts';
 import type { Op } from './types.ts';
 
 export interface SyncTransport {
-  pull(since: number): Promise<{ ops: Op[]; cursor: number }>;
+  pull(since: number): Promise<{ ops: Op[]; cursor: number; serverNow?: number }>;
   /** `rejected` edits are permanently refused and get rolled back locally. */
   push(ops: Op[]): Promise<{ accepted: string[]; rejected?: string[]; cursor: number }>;
 }
@@ -53,7 +53,8 @@ export class SyncClient {
           if (!result.accepted.length && !result.rejected?.length) break;
         }
         for (;;) {
-          const { ops, cursor } = await this.transport.pull(this.store.lastCursor);
+          const { ops, cursor, serverNow } = await this.transport.pull(this.store.lastCursor);
+          if (serverNow !== undefined) this.store.syncClock(serverNow);
           this.store.receive(ops, cursor);
           if (!ops.length || cursor <= 0) break;
         }

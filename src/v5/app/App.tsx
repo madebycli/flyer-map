@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { importLegacyProgress, type House, type LegacySnapshot, type Network, type Segment } from '../engine/index.ts';
 import { FieldMap, statusColors, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
-import type { FieldStore } from '../store/store.ts';
+import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
 import { fetchLegacySnapshot } from './api.ts';
@@ -52,6 +52,11 @@ export function App({ campaignId }: { campaignId: string }) {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [hand, setHand] = useState<'left' | 'right'>(readHand);
   const [menu, setMenu] = useState(false);
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [showConflicts, setShowConflicts] = useState(false);
+
+  useEffect(() => { if (!store) return; setConflicts([...store.pendingConflicts]); return store.subscribeConflicts(setConflicts); }, [store]);
+  useEffect(() => { if (!conflicts.length) setShowConflicts(false); }, [conflicts.length]);
 
   const index = useMemo(() => (network ? buildIndex(network) : null), [network]);
   const canWrite = !!meta?.canWrite;
@@ -128,7 +133,7 @@ export function App({ campaignId }: { campaignId: string }) {
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
   const editing = !!areaTool.edit;
-  const ui = !ready ? 'none' : editing || tool === 'mark' ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu ? 'sheet' : 'dock';
+  const ui = !ready ? 'none' : editing || tool === 'mark' ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu || showConflicts ? 'sheet' : 'dock';
   const canEditAny = !!meta && (meta.role === 'admin' || meta.role === 'team-editor');
 
   const selectedArea = meta?.areas.find((a) => a.id === areaTool.selectedId) ?? null;
@@ -148,6 +153,11 @@ export function App({ campaignId }: { campaignId: string }) {
           <Icon name="warning" size={20} /><span>{campaign.missingAreas.map((a) => a.name).join(', ')}</span>
           {meta?.canBuildPack && <button className="v5-icon-btn tonal" onClick={() => void campaign.buildMissing()} aria-label="Kartendaten laden" title="Kartendaten laden"><Icon name="download" /></button>}
         </div>
+      )}
+      {ready && conflicts.length > 0 && !showConflicts && (
+        <button className="v5-conflict" onClick={() => { closeSelection(); setMenu(false); setShowConflicts(true); }} aria-label={`${conflicts.length} Änderungen wurden von anderen überschrieben`} title="Von anderen überschrieben">
+          <Icon name="warning" size={18} />{conflicts.length}
+        </button>
       )}
       {notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{notice}</span><button className="v5-icon-btn" onClick={() => setNotice(null)} aria-label="OK"><Icon name="close" size={20} /></button></div>}
       {undo && !notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{undo.label}</span><button className="v5-icon-btn tonal" onClick={() => { undo.revert(); setUndo(null); }} aria-label="Rückgängig" title="Rückgängig"><Icon name="undo" /></button></div>}
@@ -173,6 +183,30 @@ export function App({ campaignId }: { campaignId: string }) {
       )}
 
       {tool === 'mark' && ready && <MarkBar marking={marking} theme={theme} onClose={() => enter('inspect')} />}
+
+      {showConflicts && ready && (
+        <SheetFrame icon="warning" title="Überschrieben" onClose={() => setShowConflicts(false)}
+          meta={<span>{conflicts.length}</span>}>
+          <div className="v5-list">
+            {conflicts.slice(0, 30).map((c) => {
+              const isHouse = c.key.startsWith('h:');
+              const id = c.key.slice(2);
+              const house = isHouse ? index?.houses.get(id) : undefined, segment = !isHouse ? index?.segments.get(id) : undefined;
+              const title = house ? `${house.street ?? ''} ${house.number ?? ''}`.trim() || 'Haus' : segment?.name ?? 'Straße';
+              return (
+                <div key={c.key} className="v5-conflict-row">
+                  <Icon name={isHouse ? 'house' : 'road'} size={22} />
+                  <span className="v5-conflict-title">{title}</span>
+                  <Icon name={STATUS_ICON[c.mine]} size={22} /><Icon name="undo" size={14} /><Icon name={STATUS_ICON[c.theirs]} size={22} />
+                  <button className="v5-icon-btn tonal" aria-label="Meine Version wiederherstellen" title="Meine Version wiederherstellen"
+                    onClick={() => { store?.set(c.key, c.mine); store?.dismissConflicts([c.key]); }}><Icon name="check" size={20} /></button>
+                </div>
+              );
+            })}
+            <button className="v5-row-btn" onClick={() => { store?.dismissConflicts(); setShowConflicts(false); }}><Icon name="close" />Alle so lassen</button>
+          </div>
+        </SheetFrame>
+      )}
 
       {tool === 'areas' && ready && meta && !editing && !selectedArea && (
         <nav className="v5-dock v5-dock-areas" aria-label="Gebiete">

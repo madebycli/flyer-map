@@ -41,8 +41,8 @@ export async function buildPack(campaignId: string, areaId: string): Promise<voi
 export function httpTransport(campaignId: string): SyncTransport {
   return {
     async pull(since) {
-      const page = await (await call(`${base(campaignId)}/state?since=${since}&limit=1000`)).json() as { ops: Op[]; cursor: number };
-      return { ops: page.ops, cursor: page.cursor };
+      const page = await (await call(`${base(campaignId)}/state?since=${since}&limit=1000`)).json() as { ops: Op[]; cursor: number; serverNow?: number };
+      return { ops: page.ops, cursor: page.cursor, serverNow: page.serverNow };
     },
     async push(ops) {
       // Edits without a known Area cannot be authorised yet; they stay in the outbox.

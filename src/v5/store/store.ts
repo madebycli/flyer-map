@@ -2,6 +2,8 @@ import { type ClockState, encodeClock, receive, tick } from './hlc.ts';
 import type { EntityKey, Op, OverlayEntry, Persisted, Persistence, Status } from './types.ts';
 
 export type Changes = ReadonlyMap<EntityKey, Status>;
+/** Someone else's newer edit replaced one of ours: the screen changed under the user's hands, so it must be told. */
+export type Conflict = { key: EntityKey; mine: Status; theirs: Status; by: string; at: string };
 type Listener = (changes: Changes) => void;
 
 /**
@@ -16,6 +18,11 @@ export class FieldStore {
   private clock: ClockState;
   private cursor = 0;
   private listeners = new Set<Listener>();
+  private conflictListeners = new Set<(conflicts: Conflict[]) => void>();
+  /** Keys whose current winner is our own edit (op id + status), to recognise being overwritten. */
+  private mine = new Map<EntityKey, { id: string; status: Status }>();
+  private conflicts: Conflict[] = [];
+  private clockOffset = 0;
   private keyListeners = new Map<EntityKey, Set<() => void>>();
   /** Status each touched key had at the last flush, so no-op round trips emit nothing. */
   private baseline = new Map<EntityKey, Status>();
@@ -24,13 +31,17 @@ export class FieldStore {
   private areaOf: ((key: EntityKey) => string | undefined) | null = null;
   /** Saving before the persisted state was loaded would overwrite the offline outbox with an empty one. */
   private mayPersist: boolean;
+  private readonly nowFn: () => number;
+  /** The device clock corrected by the server's: a phone that is an hour off must not lose every edit race. */
+  private now = () => this.nowFn() + this.clockOffset;
 
   constructor(
     readonly actor: string,
     private readonly persistence: Persistence | null = null,
-    private readonly now: () => number = Date.now,
+    nowFn: () => number = Date.now,
     private readonly saveDelayMs = 400,
   ) {
+    this.nowFn = nowFn;
     this.clock = { wall: 0, counter: 0, node: actor };
     this.mayPersist = persistence === null;
   }
@@ -68,6 +79,7 @@ export class FieldStore {
       const op: Op = { id: encodeClock(this.clock), key, status, by: this.actor, ...(area ? { area } : {}) };
       this.applyEntry(key, { status, at: op.id, by: op.by });
       this.pending.set(op.id, op);
+      this.mine.set(key, { id: op.id, status });
       ops.push(op);
     }
     this.flush();
@@ -80,9 +92,19 @@ export class FieldStore {
   receive(ops: Op[], cursor?: number): void {
     for (const op of ops) {
       this.clock = receive(this.clock, op.id, this.now());
+      const mine = this.mine.get(op.key);
+      if (mine) {
+        if (mine.id === op.id) this.pending.delete(op.id); // our own edit echoed back
+        else if (op.id > mine.id) {
+          // a newer edit by someone else replaces ours: keep it visible unless both ended up with the same status
+          this.mine.delete(op.key);
+          if (op.status !== mine.status) this.conflicts.push({ key: op.key, mine: mine.status, theirs: op.status, by: op.by, at: op.id });
+        }
+      }
       this.applyEntry(op.key, { status: op.status, at: op.id, by: op.by });
       this.pending.delete(op.id);
     }
+    if (this.conflicts.length) this.emitConflicts();
     if (cursor !== undefined && cursor > this.cursor) this.cursor = cursor;
     this.flush();
     this.scheduleSave();
@@ -97,6 +119,7 @@ export class FieldStore {
       const op = this.pending.get(id);
       if (!op) continue;
       this.pending.delete(id);
+      if (this.mine.get(op.key)?.id === id) this.mine.delete(op.key);
       const entry = this.overlay.get(op.key);
       if (entry?.at !== id) continue; // a newer local edit supersedes it and is judged on its own
       if (!this.baseline.has(op.key)) this.baseline.set(op.key, entry.status);
@@ -127,6 +150,20 @@ export class FieldStore {
     if (dropped) this.scheduleSave();
     return dropped;
   }
+
+  /** Server time seen on a pull; keeps new edits ordered correctly even when this device's clock is off. */
+  syncClock(serverNow: number): void {
+    const offset = serverNow - this.nowFn();
+    if (Number.isFinite(offset)) this.clockOffset = offset;
+  }
+
+  get pendingConflicts(): readonly Conflict[] { return this.conflicts; }
+  subscribeConflicts(listener: (conflicts: Conflict[]) => void): () => void { this.conflictListeners.add(listener); return () => { this.conflictListeners.delete(listener); }; }
+  dismissConflicts(keys?: EntityKey[]): void {
+    this.conflicts = keys ? this.conflicts.filter((c) => !keys.includes(c.key)) : [];
+    this.emitConflicts();
+  }
+  private emitConflicts() { for (const l of this.conflictListeners) l([...this.conflicts]); }
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);

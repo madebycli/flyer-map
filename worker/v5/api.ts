@@ -60,7 +60,7 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
   if (!access) return fail(401, 'unauthorized', 'Kein Zugriff auf diese Aktion.');
   if (request.method !== 'GET' && request.method !== 'HEAD' && !sameOrigin(request)) return fail(403, 'cross_origin', 'Anfrage von fremdem Ursprung.');
   if (route.kind === 'meta' && request.method === 'GET') return meta(db, access, route.campaignId);
-  if (route.kind === 'state' && request.method === 'GET') return pullState(db, access, route.campaignId, url);
+  if (route.kind === 'state' && request.method === 'GET') return pullState(db, access, route.campaignId, url, options);
   if (route.kind === 'ops' && request.method === 'POST') return pushOps(db, access, route.campaignId, request, options);
   if (route.kind === 'pack' && request.method === 'GET') return getPack(db, access, route.campaignId, route.areaId, request);
   if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options);
@@ -98,7 +98,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
   });
 }
 
-async function pullState(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL): Promise<Response> {
+async function pullState(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL, options: V5Options): Promise<Response> {
   const since = Math.max(0, Math.trunc(Number(url.searchParams.get('since') ?? '0')) || 0);
   const limit = Math.min(1000, Math.max(1, Math.trunc(Number(url.searchParams.get('limit') ?? '1000')) || 1000));
   const scoped = isScoped(access);
@@ -112,6 +112,7 @@ async function pullState(db: D1DatabaseLike, access: AccessContext, campaignId: 
     ops: page.map((row) => ({ id: row.op_id, key: row.key, status: row.status, by: row.actor, area: row.area_id })),
     cursor: page.length ? page[page.length - 1].seq : since,
     more: rows.length > limit,
+    serverNow: (options.now ?? Date.now)(),
   });
 }
 

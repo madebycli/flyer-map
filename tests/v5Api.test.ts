@@ -255,3 +255,28 @@ test('concurrent pack builds: exactly one reaches the upstream, failures are thr
   assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_o/pack`, undefined, { fetchImpl: failing })).status, 502);
   assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_o/pack`, undefined, { fetchImpl: failing })).status, 429, 'a failed attempt still counts');
 });
+
+test('fuzz against the real handler and SQL: overlapping batches, duplicates and reordering always leave the highest op id per key', async () => {
+  for (let seed = 1; seed <= 12; seed++) {
+    let s = seed;
+    const rand = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 2 ** 32; };
+    const { db, call } = await setup();
+    const keys = Array.from({ length: 10 }, (_, i) => `h:f${i}`);
+    const all: { id: string; key: string; status: string }[] = [];
+    for (let i = 0; i < 90; i++) all.push({ id: stamp(NOW - 100_000 + Math.floor(rand() * 90_000), Math.floor(rand() * 5), `n${Math.floor(rand() * 4)}`), key: keys[Math.floor(rand() * keys.length)], status: ['completed', 'later', 'not-deliverable', 'open'][Math.floor(rand() * 4)] });
+    const batches: typeof all[] = [];
+    for (let i = 0; i < 40; i++) batches.push(Array.from({ length: 1 + Math.floor(rand() * 8) }, () => all[Math.floor(rand() * all.length)]));
+    // every op is sent at least once; the order is shuffled and many are duplicated
+    batches.push(all);
+    for (let i = batches.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [batches[i], batches[j]] = [batches[j], batches[i]]; }
+    await Promise.all(batches.map((batch) => call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, { ops: batch.map((o) => ({ ...o, area: 'area_n' })) })));
+    for (const key of keys) {
+      const best = all.filter((o) => o.key === key).sort((a, b) => (a.id < b.id ? 1 : -1))[0];
+      const row = db.sqlite.prepare('SELECT op_id, status FROM v5_state WHERE key=?').get(key) as { op_id: string; status: string } | undefined;
+      assert.equal(row?.op_id, best?.id, `seed ${seed}: ${key}`);
+      if (best) assert.equal(row?.status, best.status);
+    }
+    const seqs = (db.sqlite.prepare('SELECT seq FROM v5_state').all() as { seq: number }[]).map((r) => r.seq);
+    assert.equal(new Set(seqs).size, seqs.length, `seed ${seed}: sequence numbers are unique`);
+  }
+});
