@@ -71,7 +71,8 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 - Notes: seven quick flags (toggle) or text, or both; one marker per annotated place; overview from "Mehr";
   viewers read, writers write, scoped roles only in their team's Areas.
 - Warm start: derived network per Area cached in IndexedDB by pack version, Area `updatedAt` and engine version;
-  `window.__v5Boot` shows `meta / packs / derive / ready` milliseconds.
+  `window.__v5Boot` shows `meta / packs / derive / ready` milliseconds. Measured with 39 k houses in headless Chromium
+  (software WebGL): cold boot 3.1 s (derive 2.7 s) → warm boot 0.8 s (cache read 0.33 s, derive 0).
 
 ## Not verified / not done
 

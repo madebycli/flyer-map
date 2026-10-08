@@ -23,7 +23,7 @@ last_updated: 2026-10-08
    that v5 does not have).
 3. **Warm start cache.** The derived network per Area is kept in IndexedDB keyed by
    `(pack version, Area `updatedAt`, engine version)`. A cache hit skips pack download and derivation; any change in
-   those three invalidates it. Boot timings are exposed on `window.__v5Boot` (and logged with `?debug`).
+   those three invalidates it. Measured at 39 k houses: cold 3.1 s → warm 0.8 s to ready. Boot timings are exposed on `window.__v5Boot` (and logged with `?debug`).
 4. **The engine stays TypeScript; no Rust/WASM port now.** Reasons, all measured or structural:
    - Derivation of 51 k houses takes ≈ 0.54 s in V8 (docs/v5/README.md) and already runs off the main thread in a
      Web Worker; the cache removes it from every warm start. It is not the bottleneck.
