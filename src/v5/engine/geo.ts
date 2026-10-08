@@ -74,3 +74,26 @@ export function pointInRing(p: LngLat, ring: LngLat[]): boolean {
 }
 
 export const coordKey = (p: LngLat) => `${p[0].toFixed(7)},${p[1].toFixed(7)}`;
+
+/** Cut a polyline into `parts` pieces of equal length (metres, local frame); pieces share their end vertices. */
+export function splitEqual(frame: Frame, coords: LngLat[], parts: number): LngLat[][] {
+  if (parts <= 1 || coords.length < 2) return [coords];
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + Math.hypot(frame.x(coords[i][0]) - frame.x(coords[i - 1][0]), frame.y(coords[i][1]) - frame.y(coords[i - 1][1])));
+  const total = cum[cum.length - 1];
+  const at = (d: number): LngLat => {
+    let i = 1;
+    while (i < cum.length - 1 && cum[i] < d) i++;
+    const span = cum[i] - cum[i - 1], t = span === 0 ? 0 : (d - cum[i - 1]) / span;
+    return [coords[i - 1][0] + (coords[i][0] - coords[i - 1][0]) * t, coords[i - 1][1] + (coords[i][1] - coords[i - 1][1]) * t];
+  };
+  const out: LngLat[][] = [];
+  for (let k = 0; k < parts; k++) {
+    const from = (total * k) / parts, to = (total * (k + 1)) / parts;
+    const piece: LngLat[] = [k === 0 ? coords[0] : at(from)];
+    for (let i = 1; i < coords.length - 1; i++) if (cum[i] > from + 1e-9 && cum[i] < to - 1e-9) piece.push(coords[i]);
+    piece.push(k === parts - 1 ? coords[coords.length - 1] : at(to));
+    out.push(piece);
+  }
+  return out;
+}

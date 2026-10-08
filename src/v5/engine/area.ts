@@ -10,12 +10,10 @@ export function restrictToArea(network: Network, ring: LngLat[]): Network {
   const houses = network.houses.filter((h) => pointInRing(h.center, ring));
   const counts = new Map<string, number>();
   for (const h of houses) if (h.parent) counts.set(h.parent, (counts.get(h.parent) ?? 0) + 1);
-  const segments = network.segments
-    .filter((s) => counts.has(s.id) || s.coords.some((p) => pointInRing(p, ring)) || crossesRing(s.coords, ring))
-    .map((s) => {
-      const houseCount = counts.get(s.id) ?? 0;
-      return { ...s, houseCount, visible: s.cls === 'street' || houseCount > 0 };
-    });
+  const kept = network.segments.filter((s) => counts.has(s.id) || s.coords.some((p) => pointInRing(p, ring)) || crossesRing(s.coords, ring));
+  const groupHouses = new Map<string, number>();
+  for (const s of kept) groupHouses.set(s.group, (groupHouses.get(s.group) ?? 0) + (counts.get(s.id) ?? 0));
+  const segments = kept.map((s) => ({ ...s, houseCount: counts.get(s.id) ?? 0, visible: s.cls === 'street' || (groupHouses.get(s.group) ?? 0) > 0 }));
   return {
     segments, houses,
     diagnostics: { ...network.diagnostics, segments: segments.length, visibleSegments: segments.filter((s) => s.visible).length, housesOut: houses.length },

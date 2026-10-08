@@ -6,6 +6,8 @@ export type Index = {
   segments: Map<string, Segment>;
   houses: Map<string, House>;
   housesBySegment: Map<string, House[]>;
+  /** Chunks of every junction-to-junction segment, in order. */
+  chunksByGroup: Map<string, Segment[]>;
 };
 
 export function buildIndex(network: Network): Index {
@@ -15,7 +17,23 @@ export function buildIndex(network: Network): Index {
     const list = housesBySegment.get(house.parent);
     if (list) list.push(house); else housesBySegment.set(house.parent, [house]);
   }
-  return { segments: new Map(network.segments.map((s) => [s.id, s])), houses: new Map(network.houses.map((h) => [h.id, h])), housesBySegment };
+  const chunksByGroup = new Map<string, Segment[]>();
+  for (const segment of network.segments) {
+    const list = chunksByGroup.get(segment.group);
+    if (list) list.push(segment); else chunksByGroup.set(segment.group, [segment]);
+  }
+  for (const list of chunksByGroup.values()) list.sort((a, b) => a.chunk - b.chunk);
+  return { segments: new Map(network.segments.map((s) => [s.id, s])), houses: new Map(network.houses.map((h) => [h.id, h])), housesBySegment, chunksByGroup };
+}
+
+/** Everything of a street piece in one go: all chunks of the tapped junction segment (and optionally their houses). */
+export function keysForGroups(index: Index, segmentIds: Iterable<string>, withHouses: boolean): EntityKey[] {
+  const ids = new Set<string>();
+  for (const id of segmentIds) {
+    const segment = index.segments.get(id);
+    for (const chunk of segment ? index.chunksByGroup.get(segment.group) ?? [segment] : []) ids.add(chunk.id);
+  }
+  return keysForSegments(index, ids, withHouses);
 }
 
 /** One street segment, optionally with all houses that belong to it. */

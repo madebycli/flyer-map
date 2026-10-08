@@ -18,8 +18,19 @@ const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme'
 const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf-v5-hand') === 'left' ? 'left' : 'right'; } catch { return 'right'; } };
 
 type Tool = 'inspect' | 'mark' | 'areas';
-type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; houses: House[] };
+type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
+
+/** One street piece = several chunks: a single status when they agree, null when they differ ("mixed"). */
+function useGroupStatus(store: FieldStore | null, keys: EntityKey[]): Status | null {
+  const joined = keys.join('|');
+  const snapshot = useSyncExternalStore(
+    useCallback((listener) => { const offs = store ? keys.map((k) => store.subscribeKey(k, listener)) : []; return () => offs.forEach((off) => off()); }, [store, joined]), // eslint-disable-line react-hooks/exhaustive-deps
+    () => (store ? keys.map((k) => store.statusOf(k)).join(',') : ''),
+  );
+  const all = snapshot.split(',').filter(Boolean) as Status[];
+  return all.length && all.every((s) => s === all[0]) ? all[0] : null;
+}
 
 function useStatus(store: FieldStore | null, key: EntityKey | null): Status {
   return useSyncExternalStore(
@@ -83,7 +94,11 @@ export function App({ campaignId }: { campaignId: string }) {
       if (house) { setSelection({ kind: 'house', house }); fieldMap.current?.select(houseKey(house.id)); }
     } else {
       const segment = index.segments.get(hit.id);
-      if (segment) { setSelection({ kind: 'segment', segment, houses: index.housesBySegment.get(segment.id) ?? [] }); fieldMap.current?.select(segmentKey(segment.id)); }
+      if (segment) {
+        const chunks = index.chunksByGroup.get(segment.group) ?? [segment];
+        setSelection({ kind: 'segment', segment, chunks, houses: chunks.flatMap((c) => index.housesBySegment.get(c.id) ?? []) });
+        fieldMap.current?.select(chunks.map((c) => segmentKey(c.id)));
+      }
     }
   };
   const segmentsOnlyRef = useRef(false);
@@ -243,15 +258,15 @@ export function App({ campaignId }: { campaignId: string }) {
           icon={selection.kind === 'house' ? 'house' : 'road'}
           title={selection.kind === 'house' ? `${selection.house.street ?? ''} ${selection.house.number ?? ''}`.trim() || 'Haus' : selection.segment.name ?? 'Straße'}
           onClose={closeSelection}
-          meta={selection.kind === 'segment' ? <><span><Icon name="ruler" size={16} />{meters(selection.segment.length)}</span><span><Icon name="house" size={16} />{selection.houses.length}</span></>
+          meta={selection.kind === 'segment' ? <><span><Icon name="ruler" size={16} />{meters(selection.chunks.reduce((sum, c) => sum + c.length, 0))}</span><span><Icon name="house" size={16} />{selection.houses.length}</span></>
             : selection.house.parent === null ? <span><Icon name="warning" size={16} />Keiner Straße zugeordnet</span> : undefined}>
           {selection.kind === 'house'
             ? <Detail theme={theme} store={store} keyOf={houseKey(selection.house.id)} canWrite={canWrite} onPick={(s) => apply([houseKey(selection.house.id)], s, `Haus ${selection.house.number ?? ''}`)} />
             : <>
-                <Detail theme={theme} store={store} keyOf={segmentKey(selection.segment.id)} canWrite={canWrite} onPick={(s) => apply([segmentKey(selection.segment.id)], s, selection.segment.name ?? 'Abschnitt')} />
+                <GroupDetail theme={theme} store={store} keys={selection.chunks.map((c) => segmentKey(c.id))} canWrite={canWrite} onPick={(s) => apply(selection.chunks.map((c) => segmentKey(c.id)), s, selection.segment.name ?? 'Abschnitt')} />
                 {canWrite && selection.houses.length > 0 && (
                   <button className="v5-wide" aria-label={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`} title={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`}
-                    onClick={() => apply([segmentKey(selection.segment.id), ...selection.houses.map((h) => houseKey(h.id))], 'completed', `${selection.segment.name ?? 'Abschnitt'} + ${selection.houses.length}`)}>
+                    onClick={() => apply([...selection.chunks.map((c) => segmentKey(c.id)), ...selection.houses.map((h) => houseKey(h.id))], 'completed', `${selection.segment.name ?? 'Abschnitt'} + ${selection.houses.length}`)}>
                     <Icon name="road" size={22} /><Icon name="house" size={22} /><Icon name="check" size={22} /><b>{selection.houses.length}</b>
                   </button>
                 )}
@@ -289,6 +304,13 @@ function SheetFrame({ icon, title, meta, onClose, children }: { icon: IconName; 
       {children}
     </section>
   );
+}
+
+function GroupDetail({ store, keys, canWrite, onPick, theme }: { store: FieldStore | null; keys: EntityKey[]; canWrite: boolean; onPick: (s: Status) => void; theme: Theme }) {
+  const status = useGroupStatus(store, keys);
+  return canWrite
+    ? <StatusGroup current={status ?? undefined} onPick={onPick} theme={theme} />
+    : <p className="v5-readonly"><Icon name={status ? STATUS_ICON[status] : 'open'} size={22} />{status ? LABELS[status] : 'Gemischt'}</p>;
 }
 
 function Detail({ store, keyOf, canWrite, onPick, theme }: { store: FieldStore | null; keyOf: EntityKey; canWrite: boolean; onPick: (s: Status) => void; theme: Theme }) {

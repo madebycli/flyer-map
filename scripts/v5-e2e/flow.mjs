@@ -54,10 +54,10 @@ if (process.env.V5_DEBUG) console.log('DEBUG pill:', JSON.stringify(await page.l
 await jump(page, 200, 0, 15.8);
 await page.getByRole('button', { name: 'Markieren' }).click();
 await page.getByRole('button', { name: 'Strecke', exact: true }).click();
-await clickAt(page, 50, 0); await clickAt(page, 350, 0);
+await clickAt(page, 25, 0); await clickAt(page, 375, 0);
 await page.waitForTimeout(900);
 const meta = await page.locator('.v5-markinfo').innerText();
-check('route sheet reports 5 segments and 400 m', /5/.test(meta) && /400 m/.test(meta), meta.replace(/\n/g, ' '));
+check('route sheet reports 8 chunks and 400 m', /8/.test(meta) && /400 m/.test(meta), meta.replace(/\n/g, ' '));
 await page.screenshot({ path: `${shots}/f2-route.png` });
 const beforeRoute = await done(page);
 await page.getByRole('button', { name: 'Strecke markieren' }).click();

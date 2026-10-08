@@ -77,7 +77,7 @@ export function networkToGeoJson(network: Network): { segments: FeatureCollectio
 export class FieldMap {
   readonly map: MlMap;
   private theme: Theme;
-  private selected: EntityKey | null = null;
+  private selected: EntityKey[] = [];
   private network: Network | null = null;
   private store: FieldStore | null = null;
   private unbind: (() => void) | null = null;
@@ -149,7 +149,7 @@ export class FieldMap {
     this.pushDraw();
     if (this.store) void this.applyChunked([...this.store.entries()].map(([key, entry]) => [key, entry.status] as [EntityKey, Status]));
     this.previewed = new Set(); // feature-state died with the old sources
-    this.selected = null;
+    this.selected = [];
     this.resolveReady();
   }
 
@@ -253,7 +253,7 @@ export class FieldMap {
     this.pushNetwork(network);
     this.map.removeFeatureState({ source: SEGMENT_SOURCE });
     this.map.removeFeatureState({ source: HOUSE_SOURCE });
-    this.selected = null;
+    this.selected = [];
   }
 
   /** Mirror the store into feature-state: initial restore, then only the changed keys. */
@@ -279,14 +279,14 @@ export class FieldMap {
     }
   }
 
-  select(key: EntityKey | null) {
+  select(keys: EntityKey | EntityKey[] | null) {
     const set = (k: EntityKey, selected: boolean) => {
       const source = k.startsWith('h:') ? HOUSE_SOURCE : SEGMENT_SOURCE;
       if (this.map.getSource(source)) this.map.setFeatureState({ source, id: k }, { selected });
     };
-    if (this.selected) set(this.selected, false);
-    this.selected = key;
-    if (key) set(key, true);
+    for (const k of this.selected) set(k, false);
+    this.selected = keys === null ? [] : Array.isArray(keys) ? keys : [keys];
+    for (const k of this.selected) set(k, true);
   }
 
   /** Highlight what a tool is about to change (route, paint trail, lasso) without touching status. */

@@ -11,7 +11,12 @@ export type RoadClass = 'street' | 'access' | 'connector' | 'excluded';
 export type RoadVerdict = { cls: RoadClass; reason: string };
 
 export type Segment = {
+  /** Stable id of this piece. A junction-to-junction segment longer than CHUNK_METERS is cut into chunks `<group>~<k>`. */
   id: string;
+  /** The junction-to-junction segment this chunk belongs to (equals `id` when it was not cut). */
+  group: string;
+  chunk: number;
+  chunks: number;
   wayId: number;
   name: string | null;
   ref: string | null;

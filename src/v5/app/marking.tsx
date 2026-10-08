@@ -3,7 +3,7 @@ import type { Feature } from 'geojson';
 import { routeSegments, buildGraph, type Network } from '../engine/index.ts';
 import { statusColors, type FieldMap, type Pt, type Theme } from '../map/fieldMap.ts';
 import { segmentKey, type EntityKey, type Status } from '../store/types.ts';
-import { keysForSegments, keysForTouched, lassoSelect, type Index } from './mark.ts';
+import { keysForGroups, keysForSegments, keysForTouched, lassoSelect, type Index } from './mark.ts';
 import { Icon, type IconName } from './ui.tsx';
 
 export type MarkMode = 'tap' | 'paint' | 'lasso' | 'route';
@@ -115,7 +115,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
     const { index, brush: b, withHouses: wh, apply } = latest.current;
     if (!index || !hit) return true;
     if (mode === 'tap') {
-      const keys = hit.kind === 'house' ? [`h:${hit.id}`] : keysForSegments(index, [hit.id], wh);
+      const keys = hit.kind === 'house' ? [`h:${hit.id}`] : keysForGroups(index, [hit.id], wh);
       if (keys.length) apply(keys, b, keys.length === 1 ? '1' : String(keys.length));
       return true;
     }

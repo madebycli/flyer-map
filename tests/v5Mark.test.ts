@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveNetwork } from '../src/v5/engine/index.ts';
 import { syntheticCity } from '../src/v5/engine/synthetic.ts';
-import { buildIndex, keysForSegments, keysForTouched, lassoSelect } from '../src/v5/app/mark.ts';
+import { buildIndex, keysForGroups, keysForSegments, keysForTouched, lassoSelect } from '../src/v5/app/mark.ts';
 
 const network = deriveNetwork(syntheticCity(4, 3).raw);
 const index = buildIndex(network);
@@ -39,4 +39,16 @@ test('lasso selects houses by centre and streets by middle, nothing else', () =>
   assert.ok(picked.houses.length > 0 && picked.houses.length < network.houses.length / 6);
   assert.ok(picked.segments.every((id) => index.segments.get(id)!.visible));
   assert.deepEqual(lassoSelect(network, [M(0, 0), M(1, 1)]), { houses: [], segments: [] }, 'fewer than three points select nothing');
+});
+
+test('a street tap covers every chunk of the junction segment and all their houses, other streets stay untouched', () => {
+  const chunk = network.segments.find((s) => s.visible && s.chunks > 1)!;
+  const group = network.segments.filter((s) => s.group === chunk.group);
+  const keys = keysForGroups(index, [chunk.id], true);
+  for (const part of group) assert.ok(keys.includes(`s:${part.id}`), `chunk ${part.id} is marked`);
+  const houseKeys = group.flatMap((part) => (index.housesBySegment.get(part.id) ?? []).map((h) => `h:${h.id}`));
+  for (const k of houseKeys) assert.ok(keys.includes(k));
+  assert.equal(keys.length, group.length + houseKeys.length, 'nothing beyond the group and its houses');
+  assert.deepEqual(keysForGroups(index, ['nope'], true), []);
+  assert.deepEqual(keysForGroups(index, [chunk.id, group.at(-1)!.id], false).sort(), keysForGroups(index, [chunk.id], false).sort(), 'duplicates collapse');
 });

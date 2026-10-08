@@ -150,3 +150,56 @@ test('legacy progress carries over by OSM id and by position along the old stree
   const lng0 = through.coords[0][0], cos = Math.cos((51 * Math.PI) / 180);
   for (const s of marked) assert.ok((s.coords[0][0] - lng0) * cos * 111320 < 150, 'only the covered stretch is carried over');
 });
+
+import { CHUNK_METERS } from '../src/v5/engine/index.ts';
+
+test('chunks: long segments are cut into equal pieces ≤ CHUNK_METERS with stable ids and chained nodes', () => {
+  const net = deriveNetwork(syntheticCity(4, 4).raw);
+  const cut = net.segments.filter((s) => s.chunks > 1);
+  assert.ok(cut.length > 0, 'the synthetic blocks are longer than one chunk');
+  const ids = new Set<string>();
+  for (const s of net.segments) {
+    assert.ok(s.length <= CHUNK_METERS + 0.01, `${s.id} is ${s.length} m`);
+    assert.ok(!ids.has(s.id), 'ids are unique');
+    ids.add(s.id);
+    assert.ok(s.chunk >= 0 && s.chunk < s.chunks);
+    if (s.chunks === 1) assert.equal(s.id, s.group);
+    else assert.equal(s.id, `${s.group}~${s.chunk}`);
+  }
+  const byGroup = new Map<string, typeof net.segments>();
+  for (const s of net.segments) byGroup.set(s.group, [...(byGroup.get(s.group) ?? []), s]);
+  for (const parts of byGroup.values()) {
+    parts.sort((a, b) => a.chunk - b.chunk);
+    assert.equal(parts.length, parts[0].chunks, 'every chunk of a group exists');
+    for (let i = 1; i < parts.length; i++) {
+      assert.equal(parts[i - 1].to, parts[i].from, 'chunks form a chain');
+      assert.deepEqual(parts[i - 1].coords.at(-1), parts[i].coords[0], 'chunks touch geometrically');
+    }
+    assert.ok(parts.every((p) => p.visible === parts[0].visible), 'visibility is decided per group');
+  }
+});
+
+test('chunks: ids do not change when unrelated data is added elsewhere', () => {
+  const small = deriveNetwork(syntheticCity(3, 3).raw);
+  const big = deriveNetwork(syntheticCity(3, 3).raw);
+  assert.deepEqual(small.segments.map((s) => s.id), big.segments.map((s) => s.id));
+});
+
+test('chunks: a route across a chunked street selects the chain and measures real length', () => {
+  const net = deriveNetwork(syntheticCity(3, 3).raw);
+  const group = [...new Set(net.segments.filter((s) => s.chunks >= 2 && s.visible).map((s) => s.group))][0];
+  const parts = net.segments.filter((s) => s.group === group).sort((a, b) => a.chunk - b.chunk);
+  const route = routeSegments(net, [parts[0].id, parts.at(-1)!.id]);
+  assert.equal(route.state, 'selected');
+  if (route.state === 'selected') {
+    for (const p of parts) assert.ok(route.segmentIds.includes(p.id), `${p.id} is on the route`);
+  }
+});
+
+test('chunks: houses attach to the chunk beside them and every chunk of a service road shows up once one has houses', () => {
+  const net = deriveNetwork(syntheticCity(3, 3).raw);
+  const bySeg = new Map(net.segments.map((s) => [s.id, s]));
+  for (const h of net.houses) if (h.parent) assert.ok(bySeg.has(h.parent));
+  const withHouses = new Set(net.segments.filter((s) => s.houseCount > 0).map((s) => s.group));
+  for (const s of net.segments) if (withHouses.has(s.group)) assert.equal(s.visible, true);
+});

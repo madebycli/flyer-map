@@ -1,9 +1,12 @@
 import RBush from 'rbush';
 import { classifyBuilding, classifyRoad } from './classify.ts';
-import { Frame, coordKey, frameFor, pointInRing, polylineLength, projectToPolyline, ringCentroid } from './geo.ts';
+import { Frame, coordKey, frameFor, pointInRing, polylineLength, projectToPolyline, ringCentroid, splitEqual } from './geo.ts';
 import type { House, LngLat, Network, NetworkDiagnostics, RawOsm, RawWay, Segment } from './types.ts';
 
-export const ENGINE_VERSION = 'v5.0';
+export const ENGINE_VERSION = 'v5.1';
+
+/** Streets are marked in pieces of at most this length (chunks): the unit of precise painting and partial routes. */
+export const CHUNK_METERS = 60;
 
 /** Max metres from a house centroid to the street it is assigned to. */
 const MAX_PARENT_DISTANCE = 45;
@@ -75,11 +78,15 @@ export function deriveNetwork(raw: RawOsm): Network {
         let id = `s${startKey}`;
         if (usedIds.has(id)) id = `${id}#${start}`;
         usedIds.add(id);
-        segments.push({
-          id, wayId: way.id, name: way.tags.name?.trim() || null, ref: way.tags.ref?.trim() || null,
-          highway: way.tags.highway, cls: verdict.cls as Segment['cls'], coords, length,
-          from: vertexKey(way, start), to: vertexKey(way, i), houseCount: 0, visible: false,
-        });
+        const parts = Math.max(1, Math.ceil(length / CHUNK_METERS));
+        const pieces = splitEqual(frame, coords, parts);
+        const fromKey = vertexKey(way, start), toKey = vertexKey(way, i);
+        pieces.forEach((piece, k) => segments.push({
+          id: parts === 1 ? id : `${id}~${k}`, group: id, chunk: k, chunks: parts,
+          wayId: way.id, name: way.tags.name?.trim() || null, ref: way.tags.ref?.trim() || null,
+          highway: way.tags.highway, cls: verdict.cls as Segment['cls'], coords: piece, length: length / parts,
+          from: k === 0 ? fromKey : `${id}@${k}`, to: k === parts - 1 ? toKey : `${id}@${k + 1}`, houseCount: 0, visible: false,
+        }));
       }
       start = i;
     }
@@ -158,8 +165,11 @@ export function deriveNetwork(raw: RawOsm): Network {
     if (!house.parent) { diagnostics.orphanHouses++; continue; }
     bySegment.get(house.parent)!.houseCount++;
   }
+  // Visibility is decided per junction segment: a service road that serves houses shows up with all its chunks.
+  const groupHouses = new Map<string, number>();
+  for (const segment of segments) groupHouses.set(segment.group, (groupHouses.get(segment.group) ?? 0) + segment.houseCount);
   for (const segment of segments) {
-    segment.visible = segment.cls === 'street' || segment.houseCount > 0;
+    segment.visible = segment.cls === 'street' || (groupHouses.get(segment.group) ?? 0) > 0;
     if (segment.visible) {
       diagnostics.visibleSegments++;
       if (segment.cls !== 'street') diagnostics.promotedByHouses++;
