@@ -512,6 +512,15 @@ export class MissionRxdbSync {
     }, 0);
   }
 
+  /** RxDB documents are immutable per revision, so the validated plain copy is cached per instance. */
+  private readonly plainDocuments = new WeakMap<object, unknown>();
+  private plainDocument<N extends RxdbCollectionName>(collectionName: N, document: any) {
+    if (this.plainDocuments.has(document)) return this.plainDocuments.get(document) as RxdbDocumentForCollection<N> | null;
+    const value = narrowRxdbDocument(collectionName, document.toJSON()) as RxdbDocumentForCollection<N> | null;
+    this.plainDocuments.set(document, value);
+    return value;
+  }
+
   private async materialize() {
     if (!this.collections) return;
     // The live queries already provide consistent collection results. Reuse them
@@ -521,13 +530,13 @@ export class MissionRxdbSync {
     const visibleTeams = this.teamScopeId ? teams.filter((document) => narrowRxdbDocument("teams", document)?.id === this.teamScopeId) : teams;
     const visibleAreas = areas.filter(document=>!this.deletedAreaHints.has(document.id) && (!this.teamScopeId || narrowRxdbDocument("areas",document)?.teamId===this.teamScopeId));
     const visibleAreaIds = new Set(visibleAreas.map((document) => document.id));
-    const visibleStreetTasks = streetTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("streetTasks", document)?.areaId ?? ""));
-    const visibleHouseTasks = houseTasks.filter((document) => visibleAreaIds.has(narrowRxdbDocument("houseTasks", document)?.areaId ?? ""));
-    const campaign = campaigns[0] ? narrowRxdbDocument("campaigns", campaigns[0].toJSON()) : null;
-    const teamDocuments = visibleTeams.flatMap((document) => { const value = narrowRxdbDocument("teams", document.toJSON()); return value ? [value] : []; });
-    const areaDocuments = visibleAreas.flatMap((document) => { const value = narrowRxdbDocument("areas", document.toJSON()); return value ? [value] : []; });
-    const streetTaskDocuments = visibleStreetTasks.flatMap((document) => { const value = narrowRxdbDocument("streetTasks", document.toJSON()); return value ? [value] : []; });
-    const houseTaskDocuments = visibleHouseTasks.flatMap((document) => { const value = narrowRxdbDocument("houseTasks", document.toJSON()); return value ? [value] : []; });
+    const visibleStreetTasks = streetTasks.filter((document) => visibleAreaIds.has(this.plainDocument("streetTasks", document)?.areaId ?? ""));
+    const visibleHouseTasks = houseTasks.filter((document) => visibleAreaIds.has(this.plainDocument("houseTasks", document)?.areaId ?? ""));
+    const campaign = campaigns[0] ? this.plainDocument("campaigns", campaigns[0]) : null;
+    const teamDocuments = visibleTeams.flatMap((document) => { const value = this.plainDocument("teams", document); return value ? [value] : []; });
+    const areaDocuments = visibleAreas.flatMap((document) => { const value = this.plainDocument("areas", document); return value ? [value] : []; });
+    const streetTaskDocuments = visibleStreetTasks.flatMap((document) => { const value = this.plainDocument("streetTasks", document); return value ? [value] : []; });
+    const houseTaskDocuments = visibleHouseTasks.flatMap((document) => { const value = this.plainDocument("houseTasks", document); return value ? [value] : []; });
     const snapshot = materializeCampaignSnapshot({
       revision: this.canonicalRevision,
       campaign,

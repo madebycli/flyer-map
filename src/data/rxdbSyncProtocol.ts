@@ -270,6 +270,9 @@ export function toDeletedRxdbDocument(document: RxdbDocument): RxdbDocument {
   return { ...document, _deleted: true };
 }
 
+// Unchanged documents keep their object identity across snapshots, so a sync
+// event that touches one House does not hand every consumer 20k fresh objects.
+const metadataFreeCache = new WeakMap<object, RxdbDocument>();
 /** Removes transport metadata before comparing domain content or sending HTTP. */
 export function withoutRxdbMetadata(document: RxdbCampaignDocument): RxdbCampaignDocument;
 export function withoutRxdbMetadata(document: RxdbTeamDocument): RxdbTeamDocument;
@@ -279,8 +282,12 @@ export function withoutRxdbMetadata(document: RxdbHouseTaskDocument): RxdbHouseT
 export function withoutRxdbMetadata<N extends RxdbCollectionName>(document: RxdbDocumentForCollection<N>): RxdbDocumentForCollection<N>;
 export function withoutRxdbMetadata(document: RxdbDocument): RxdbDocument;
 export function withoutRxdbMetadata(document: RxdbDocument): RxdbDocument {
+  const cached = metadataFreeCache.get(document);
+  if (cached) return cached;
   const { _deleted, _rev: _rev, _meta: _meta, _attachments: _attachments, ...plain } = document;
-  return _deleted ? { ...plain, _deleted: true } : plain;
+  const result = _deleted ? { ...plain, _deleted: true } : plain;
+  metadataFreeCache.set(document, result as RxdbDocument);
+  return result as RxdbDocument;
 }
 
 /** Canonical timestamps are server generated, so retry equivalence excludes them. */
