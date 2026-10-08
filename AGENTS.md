@@ -88,7 +88,7 @@ Maps:
 Important renderer rule:
 - normal browse pan/zoom/rotate must not project or repaint every saved Area/Street in React/SVG/Canvas;
 - persistent saved geometry moves in the map renderer with the basemap;
-- actual domain changes may update GeoJSON sources with `setData()`.
+- actual domain changes update the saved Area/Street/House GeoJSON sources incrementally (`syncIncrementalGeoJson`: per-entity content versions, `updateData()` diffs) and replay complete `setData()` on first load, page resume, style reinstall or a rejected diff.
 
 See `docs/architecture/MAP.md` and ADR-0010.
 

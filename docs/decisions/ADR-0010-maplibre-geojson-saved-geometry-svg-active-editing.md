@@ -49,7 +49,7 @@ On map initialization:
 2. seed those application sources with the latest Campaign data available when the Map instance is constructed;
 3. keep refs to the newest Areas/Streets/selection while MapLibre is still loading;
 4. on the MapLibre `load` event, synchronize the newest referenced Campaign data through `setData()` and the selected-Street filter so changes that arrived during startup cannot be lost;
-5. on later domain changes, call `setData()` on the existing sources and update only the relevant fixed filters.
+5. on later domain changes, update the existing sources incrementally (amended by ADR-0033: `updateData()` diffs from content versions, with a complete `setData()` replay on resume/style reinstall/rejected diff) and update only the relevant fixed filters.
 
 Do not use `styledata -> setData()` feedback loops. Do not recreate application sources/layers for normal Campaign changes.
 
@@ -80,7 +80,7 @@ Editing continues to use the established SVG edit-handle hit test because only a
 
 During ordinary browse pan/zoom/rotate, Verteil-Flyer performs no per-feature saved-geometry projection and no React reconciliation for Areas/Streets. Rendering is performed in the same MapLibre/WebGL pipeline that moves the basemap.
 
-Domain updates still require GeoJSON serialization and `setData()`, but those occur on explicit data/sync changes rather than every camera frame.
+Domain updates still require GeoJSON serialization of the *changed* entities (originally a complete `setData()`, see ADR-0033), but those occur on explicit data/sync changes rather than every camera frame.
 
 ## Reference and licensing
 

@@ -1,5 +1,5 @@
 version: 28
-last_updated: 2026-09-13
+last_updated: 2026-10-08
 
 current_pr92_state:
   repository: madebycli/flyer-map
@@ -512,6 +512,20 @@ nodes:
     status: active
     topics: [organization, organizer, admin, identity, permissions, capabilities, campaigns, security, staging]
     load_when: [Organizer Admin Platform, Plan 030, Organization account work, admin campaign console]
+
+  - id: plan-044-beta-overhaul-2026-10
+    path: docs/plans/active/044-beta-overhaul-2026-10.md
+    type: plan
+    status: active
+    topics: [map-performance, incremental-geojson, smart-marking, road-relevance, rxdb-snapshot, vela-controls]
+    load_when: [incremental GeoJSON sync, updateData, Smart Marking connectivity, road relevance filter, Vela controls]
+
+  - id: adr-0033-field-core-first-principles-rebuild
+    path: docs/decisions/ADR-0033-field-core-first-principles-rebuild.md
+    type: decision
+    status: proposed
+    topics: [performance, measurements, map-update-strategies, snapshot-materialisation]
+    load_when: [map update benchmark, why incremental GeoJSON, snapshot materialisation cost]
 
   - id: prompt-continue-rxdb-sync-latest
     path: docs/prompts/CONTINUE_RXDB_SYNC_LATEST.md

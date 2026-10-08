@@ -97,7 +97,7 @@ Interaction overlays stay above Bright labels:
 - Smart Street/House candidates and selections;
 - Smart preview, points and point labels.
 
-Actual Campaign data changes update the existing `GeoJSONSource` data with `setData()`.
+Actual Campaign data changes update the existing `GeoJSONSource` incrementally through `syncIncrementalGeoJson` (`src/map/incrementalGeoJson.ts`): per-entity content versions decide what changed and only those features are sent with `updateData()`. A complete `setData()` is replayed on the first load, after a page resume or style reinstall (the cache is forgotten first, because the worker may have lost its state) and whenever a diff is rejected. Measured: `setData` cost grows linearly with the dataset (≈25 ms at 20 k Houses), `updateData` stays flat (ADR-0033).
 
 Do not use `styledata -> setData()` feedback loops.
 

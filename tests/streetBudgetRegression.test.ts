@@ -7,7 +7,7 @@ import { beginAreaTaskPreparation } from '../worker/areaTaskPreparation.ts';
 import { PreparationRunner, type PreparationAlarmStorage } from '../worker/streetNetwork/runner.ts';
 import { loadCampaignSnapshot } from '../worker/campaignRepository.ts';
 import { CampaignSyncDurableObject } from '../worker/campaignSyncDurableObject.ts';
-import { syncIncrementalGeoJson } from '../src/map/incrementalGeoJson.ts';
+import { forgetIncrementalGeoJson, syncIncrementalGeoJson } from '../src/map/incrementalGeoJson.ts';
 import { housesToGeoJson, type RenderHouse } from '../src/map/houseRenderer.ts';
 
 class AlarmStorage implements PreparationAlarmStorage{
@@ -105,4 +105,17 @@ test('10k MapLibre Houses: one status change transfers properties, clearing uses
   assert.equal(diffs[0].update[0].newGeometry,undefined);assert.ok(JSON.stringify(diffs[0]).length<200);
   syncIncrementalGeoJson(source,updated,version,housesToGeoJson);assert.equal(diffs.length,1);
   syncIncrementalGeoJson(source,[],version,housesToGeoJson);assert.deepEqual(diffs[1],{removeAll:true});
+});
+
+test('forgetting a source makes the next sync replay complete data', () => {
+  const houses: RenderHouse[] = Array.from({ length: 3 }, (_, i) => ({ id: `house_${i}`, campaignId: 'c', areaId: 'a', taskType: 'house', label: String(i), geometry: { type: 'Polygon', coordinates: [[[13, 51], [13.001, 51], [13.001, 51.001], [13, 51]]] }, status: 'open', completedAt: null, parentStreetTaskId: null, createdAt: '2026-09-09', updatedAt: '2026-09-09', color: '#111', completedColor: '#222' }));
+  const full: unknown[] = [], diffs: unknown[] = [];
+  const source = { setData: (value: unknown) => full.push(value), updateData: (value: unknown) => diffs.push(value) };
+  const version = (house: RenderHouse) => house.updatedAt + house.status;
+  syncIncrementalGeoJson(source, houses, version, housesToGeoJson);
+  syncIncrementalGeoJson(source, houses, version, housesToGeoJson);
+  assert.equal(full.length, 1, 'unchanged data sends nothing');
+  forgetIncrementalGeoJson(source);
+  syncIncrementalGeoJson(source, houses, version, housesToGeoJson);
+  assert.equal(full.length, 2, 'after forget the complete collection is sent again');
 });

@@ -68,15 +68,11 @@ html[data-appearance="dark"] {
   background-size: 1.65rem 1.65rem;
 }
 
-html[data-appearance="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+html[data-appearance="dark"] .maplibregl-ctrl-group button:not(.maplibregl-ctrl-geolocate-active):not(.maplibregl-ctrl-geolocate-active-error) .maplibregl-ctrl-icon {
   filter: invert(1) brightness(0.92);
 }
 
-/* Active location follow gets the teal accent like Vela's "my location" state. */
-.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon,
-.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-active-error .maplibregl-ctrl-icon {
-  filter: none;
-}
+/* The geolocate active/error icons keep MapLibre's own blue/red colouring in both appearances (see the :not() in the dark rule). */
 
 @media (hover: none) {
   .maplibregl-ctrl-group button:hover {

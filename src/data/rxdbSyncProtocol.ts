@@ -270,9 +270,6 @@ export function toDeletedRxdbDocument(document: RxdbDocument): RxdbDocument {
   return { ...document, _deleted: true };
 }
 
-// Unchanged documents keep their object identity across snapshots, so a sync
-// event that touches one House does not hand every consumer 20k fresh objects.
-const metadataFreeCache = new WeakMap<object, RxdbDocument>();
 /** Removes transport metadata before comparing domain content or sending HTTP. */
 export function withoutRxdbMetadata(document: RxdbCampaignDocument): RxdbCampaignDocument;
 export function withoutRxdbMetadata(document: RxdbTeamDocument): RxdbTeamDocument;
@@ -282,13 +279,21 @@ export function withoutRxdbMetadata(document: RxdbHouseTaskDocument): RxdbHouseT
 export function withoutRxdbMetadata<N extends RxdbCollectionName>(document: RxdbDocumentForCollection<N>): RxdbDocumentForCollection<N>;
 export function withoutRxdbMetadata(document: RxdbDocument): RxdbDocument;
 export function withoutRxdbMetadata(document: RxdbDocument): RxdbDocument {
-  const cached = metadataFreeCache.get(document);
-  if (cached) return cached;
   const { _deleted, _rev: _rev, _meta: _meta, _attachments: _attachments, ...plain } = document;
-  const result = _deleted ? { ...plain, _deleted: true } : plain;
-  metadataFreeCache.set(document, result as RxdbDocument);
-  return result as RxdbDocument;
+  return _deleted ? { ...plain, _deleted: true } : plain;
 }
+
+// Snapshot-only identity cache. The exported function above stays a pure copy (wire paths may mutate their
+// inputs); only materialisation shares results, and only because its inputs are the validated plain copies that
+// the sync core caches per immutable RxDB document revision.
+const snapshotDocuments = new WeakMap<object, RxdbDocument>();
+const snapshotDocument = ((document: RxdbDocument): RxdbDocument => {
+  const cached = snapshotDocuments.get(document);
+  if (cached) return cached;
+  const result = withoutRxdbMetadata(document);
+  snapshotDocuments.set(document, result);
+  return result;
+}) as typeof withoutRxdbMetadata;
 
 /** Canonical timestamps are server generated, so retry equivalence excludes them. */
 export function sameRxdbBusinessDocument(left: RxdbDocument, right: RxdbDocument) {
@@ -320,10 +325,10 @@ export function materializeCampaignSnapshot(input: {
     schemaVersion: 3,
     revision: input.revision,
     campaign: domainCampaign,
-    teams: sortByCreated(input.teams).map((document) => withoutRxdbMetadata(document)),
-    areas: sortByCreated(input.areas).map((document) => withoutRxdbMetadata(document)),
-    tasks: sortByCreated(input.streetTasks).map((document) => withoutRxdbMetadata(document)),
-    houseTasks: sortByCreated(input.houseTasks).map((document) => withoutRxdbMetadata(document)),
+    teams: sortByCreated(input.teams).map((document) => snapshotDocument(document)),
+    areas: sortByCreated(input.areas).map((document) => snapshotDocument(document)),
+    tasks: sortByCreated(input.streetTasks).map((document) => snapshotDocument(document)),
+    houseTasks: sortByCreated(input.houseTasks).map((document) => snapshotDocument(document)),
     ...(input.collection ? { collection: input.collection } : {}),
   };
 }

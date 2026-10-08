@@ -512,7 +512,11 @@ export class MissionRxdbSync {
     }, 0);
   }
 
-  /** RxDB documents are immutable per revision, so the validated plain copy is cached per instance. */
+  /**
+   * RxDB documents are immutable per revision (a changed document is a new instance; verified in
+   * tests/rxdbDocumentImmutability.test.ts), so the validated plain copy is cached per instance.
+   * The cached object is shared between snapshots and must be treated as read-only.
+   */
   private readonly plainDocuments = new WeakMap<object, unknown>();
   private plainDocument<N extends RxdbCollectionName>(collectionName: N, document: any) {
     if (this.plainDocuments.has(document)) return this.plainDocuments.get(document) as RxdbDocumentForCollection<N> | null;
@@ -527,8 +531,8 @@ export class MissionRxdbSync {
     // instead of executing all five queries again after every collection event.
     if (COLLECTION_NAMES.some(name => !this.collectionDocuments.has(name))) return;
     const [campaigns, teams, areas, streetTasks, houseTasks] = COLLECTION_NAMES.map(name => this.collectionDocuments.get(name)!);
-    const visibleTeams = this.teamScopeId ? teams.filter((document) => narrowRxdbDocument("teams", document)?.id === this.teamScopeId) : teams;
-    const visibleAreas = areas.filter(document=>!this.deletedAreaHints.has(document.id) && (!this.teamScopeId || narrowRxdbDocument("areas",document)?.teamId===this.teamScopeId));
+    const visibleTeams = this.teamScopeId ? teams.filter((document) => this.plainDocument("teams", document)?.id === this.teamScopeId) : teams;
+    const visibleAreas = areas.filter(document=>!this.deletedAreaHints.has(document.id) && (!this.teamScopeId || this.plainDocument("areas",document)?.teamId===this.teamScopeId));
     const visibleAreaIds = new Set(visibleAreas.map((document) => document.id));
     const visibleStreetTasks = streetTasks.filter((document) => visibleAreaIds.has(this.plainDocument("streetTasks", document)?.areaId ?? ""));
     const visibleHouseTasks = houseTasks.filter((document) => visibleAreaIds.has(this.plainDocument("houseTasks", document)?.areaId ?? ""));

@@ -1,4 +1,5 @@
-export const OFFLINE_MAP_SCHEMA_VERSION = 1 as const;
+// 2: packages carry the `footway` tag, needed to hide sidewalks/crossings; older cached packages are refetched.
+export const OFFLINE_MAP_SCHEMA_VERSION = 2 as const;
 export const OFFLINE_MAP_RADIUS_METERS = 3_000;
 export type OfflineMapDataKind = "all" | "roads" | "buildings";
 

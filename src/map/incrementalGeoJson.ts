@@ -4,6 +4,11 @@ import type { GeoJSONSourceDiff } from 'maplibre-gl';
 type Source={setData(data:FeatureCollection):unknown;updateData(diff:GeoJSONSourceDiff):unknown};
 type Cached={version:string;features:Feature[]};
 const sources=new WeakMap<Source,Map<string,Cached>>();
+/**
+ * Drop what we believe the source contains, so the next sync replays the complete FeatureCollection.
+ * Needed whenever the source may have lost its state (page resume, style reinstall).
+ */
+export function forgetIncrementalGeoJson(source:Source):void{sources.delete(source);}
 /** Keep geometry in MapLibre's worker. A status edit sends changed properties only. */
 export function syncIncrementalGeoJson<T extends {id:string}>(source:Source,entities:readonly T[],version:(entity:T)=>string,render:(entities:T[])=>FeatureCollection):void{
   try{applyIncrementalGeoJson(source,entities,version,render);}

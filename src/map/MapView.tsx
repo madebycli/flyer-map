@@ -1,6 +1,6 @@
 import { roadSlice } from '../domain/streetNetwork.ts';
 import { useEffect, useMemo, useRef, useState } from "react";
-import { syncIncrementalGeoJson } from "./incrementalGeoJson.ts";
+import { forgetIncrementalGeoJson, syncIncrementalGeoJson } from "./incrementalGeoJson.ts";
 import { GeolocateControl, Map, NavigationControl } from "maplibre-gl";
 import type {
   ExpressionSpecification,
@@ -1394,17 +1394,36 @@ function syncCollectionPickupSelection(
   if (region) region.dataset.collectionSelectedPickup = selectedPickupId ?? "";
 }
 
-// Per-entity change keys: only entities whose key changed are re-serialised and
-// sent to the MapLibre worker, so one status edit no longer rebuilds every
-// saved Area, Street slice and House.
+// Per-entity change keys: only entities whose key changed are re-serialised and sent to the MapLibre worker,
+// so one status edit no longer rebuilds every saved Area, Street slice and House. Keys are derived from the
+// rendered content (including a geometry checksum), never from timestamps alone: a regenerated geometry with
+// an unchanged id/updatedAt must still reach the map.
+const geometryKeys = new WeakMap<object, string>();
+function geometryKey(geometry: { coordinates: unknown }): string {
+  const cached = geometryKeys.get(geometry);
+  if (cached) return cached;
+  let hash = 2166136261, count = 0;
+  const visit = (value: unknown) => {
+    if (typeof value === "number") {
+      hash = Math.imul(hash ^ Math.round(value * 1e7), 16777619) >>> 0;
+      count++;
+    } else if (Array.isArray(value)) for (const item of value) visit(item);
+  };
+  visit(geometry.coordinates);
+  const key = `${count}:${hash.toString(36)}`;
+  geometryKeys.set(geometry, key);
+  return key;
+}
+const coverageKey = (coverage: readonly { from: number; to: number; status: string }[]) =>
+  coverage.map((range) => `${range.from}-${range.to}${range.status[0]}`).join(",");
 const areaRenderVersion = (area: RenderArea) =>
-  `${area.updatedAt}|${area.name}|${area.color}|${area.teamId}|${area.geometry.coordinates[0]?.length ?? 0}`;
+  `${area.updatedAt}|${area.name}|${area.color}|${area.teamId}|${geometryKey(area.geometry)}`;
 const taskRenderVersion = (task: RenderTask) =>
-  `${task.updatedAt}|${task.status}|${task.label}|${task.color}|${task.completedColor}|${task.geometry.coordinates.length}|${
-    task.network ? JSON.stringify(task.network.coverage) : ""
+  `${task.updatedAt}|${task.areaId}|${task.status}|${task.label}|${task.color}|${task.completedColor}|${geometryKey(task.geometry)}|${
+    task.network ? coverageKey(task.network.coverage) : ""
   }`;
 const houseRenderVersion = (house: RenderHouse) =>
-  `${house.updatedAt}|${house.status}|${house.label}|${house.color}|${house.completedColor}|${house.parentStreetTaskId ?? ""}`;
+  `${house.updatedAt}|${house.areaId}|${house.status}|${house.label}|${house.color}|${house.completedColor}|${house.parentStreetTaskId ?? ""}|${geometryKey(house.geometry)}`;
 
 function syncAreaData(map: Map, areas: RenderArea[]) {
   const areaSource = map.getSource(AREA_SOURCE_ID) as GeoJSONSource | undefined;
@@ -2059,6 +2078,12 @@ export function MapView({
           // GeoJSON source has not yet crossed its first style recalculation.
           // Seed new core sources with their real FeatureCollections instead;
           // only existing sources use the normal incremental setData() path.
+          // Existing sources may have lost their worker state (page resume): replay complete data, not a diff
+          // against a cache that still believes the old content is there.
+          for (const sourceId of [AREA_SOURCE_ID, STREET_SOURCE_ID, HOUSE_SOURCE_ID]) {
+            const existing = map.getSource(sourceId) as GeoJSONSource | undefined;
+            if (existing) forgetIncrementalGeoJson(existing);
+          }
           if (!seeded.areas) syncAreaData(map, current.areas);
           if (!seeded.streets) syncStreetData(map, current.tasks);
           if (!seeded.houses) syncHouseData(map, current.houses);

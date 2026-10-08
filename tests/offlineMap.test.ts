@@ -119,7 +119,7 @@ test("explicit null map-data kind is not treated as an omitted default", async (
   assert.equal(body.error.code, "invalid_kind");
 });
 
-test("partial map-data packages keep the common v1 schema with the other collection empty", async () => {
+test("partial map-data packages keep the common current schema with the other collection empty", async () => {
   const response = await handleOfflineMapPackage(
     request({ center: { lat: 51.05, lng: 13.74 }, radiusMeters: 3_000, kind: "roads" }),
     {
@@ -149,7 +149,7 @@ test("partial map-data packages keep the common v1 schema with the other collect
     },
   );
   const pkg = await response.json() as { schemaVersion: number; roads: { features: unknown[] }; buildings: { features: unknown[] } };
-  assert.equal(pkg.schemaVersion, 1);
+  assert.equal(pkg.schemaVersion, 2);
   assert.equal(pkg.roads.features.length, 1);
   assert.equal(pkg.buildings.features.length, 0);
 });
@@ -200,7 +200,7 @@ test("Overpass ways normalize into a versioned package with whitelisted inert ta
   assert.equal(isOfflineMapPackage(pkg), true);
   if (!isOfflineMapPackage(pkg)) throw new Error("package validation failed");
 
-  assert.equal(pkg.schemaVersion, 1);
+  assert.equal(pkg.schemaVersion, 2);
   assert.equal(pkg.attribution, "© OpenStreetMap contributors");
   assert.equal(pkg.roads.features.length, 1);
   assert.equal(pkg.buildings.features.length, 1);

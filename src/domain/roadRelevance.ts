@@ -25,7 +25,8 @@ const COMPANION_FOOTWAYS = new Set(['sidewalk', 'crossing', 'traffic_island', 'l
 export function isDeliveryRelevantRoad(tags: Tags): boolean {
   const highway = tags.highway;
   if (!highway || NON_DELIVERY_HIGHWAYS.has(highway)) return false;
-  if (RESTRICTED_ACCESS.has(tags.access ?? '') || RESTRICTED_ACCESS.has(tags.foot ?? '')) return false;
+  // `foot` is the more specific tag and overrides a generic `access` (access=private + foot=yes stays walkable).
+  if (RESTRICTED_ACCESS.has(tags.foot ?? tags.access ?? '')) return false;
   if (tags.service === 'driveway' || tags.service === 'parking_aisle') return false;
   if (highway === 'footway' && COMPANION_FOOTWAYS.has(tags.footway ?? '')) return false;
   if (PATH_LIKE.has(highway) && UNPAVED_SURFACES.has(tags.surface ?? '')) return false;

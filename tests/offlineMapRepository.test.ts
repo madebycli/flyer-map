@@ -13,7 +13,7 @@ import type { OfflineMapPackage } from "../src/domain/offlineMap.ts";
 function packageFixture(options?: { fetchedAt?: string; roadId?: number }): OfflineMapPackage {
   const roadId = options?.roadId ?? 123;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceDataset: "OpenStreetMap",
     sourceLicense: "ODbL-1.0",
     sourceUrl: "https://www.openstreetmap.org/copyright",

@@ -23,3 +23,10 @@ test('ordinary streets and unnamed service accesses stay deliverable', () => {
   assert.equal(isDeliveryRelevantRoad({ highway: 'service', surface: 'gravel' }), true);
   assert.equal(isDeliveryRelevantRoad({ highway: 'service', service: 'parking_aisle' }), false);
 });
+
+test('foot overrides a generic access restriction, like the previous eligibility rule', () => {
+  assert.equal(isDeliveryRelevantRoad({ highway: 'service', access: 'private', foot: 'yes' }), true);
+  assert.equal(isDeliveryRelevantRoad({ highway: 'residential', access: 'no', foot: 'yes' }), true);
+  assert.equal(isDeliveryRelevantRoad({ highway: 'residential', access: 'yes', foot: 'no' }), false);
+  assert.equal(isDeliveryRelevantRoad({ highway: 'path', access: 'forestry' }), false);
+});

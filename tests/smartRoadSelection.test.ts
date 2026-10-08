@@ -124,3 +124,16 @@ test('a side street joining at an interior vertex is connected', () => {
   ];
   assert.deepEqual(selectSmartRoadRange(roads, 'through', 'side'), { state: 'selected', sourceIds: ['through', 'side'] });
 });
+
+test('two side streets on one long way select the side streets and that way (documented behaviour)', () => {
+  const road = (sourceId: string, coordinates: [number, number][]) => ({
+    sourceId, osmId: 1, name: sourceId, ref: null, highway: 'residential',
+    geometry: { type: 'LineString' as const, coordinates },
+  });
+  const roads = [
+    road('T', [[13.0, 51.0], [13.001, 51.0], [13.002, 51.0], [13.003, 51.0]]),
+    road('S1', [[13.001, 51.0], [13.001, 51.001]]),
+    road('S2', [[13.002, 51.0], [13.002, 51.001]]),
+  ];
+  assert.deepEqual(selectSmartRoadRange(roads, 'S1', 'S2'), { state: 'selected', sourceIds: ['S1', 'T', 'S2'] });
+});

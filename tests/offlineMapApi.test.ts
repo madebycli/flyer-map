@@ -9,7 +9,7 @@ import type { OfflineMapPackage } from "../src/domain/offlineMap.ts";
 
 function packageFixture(): OfflineMapPackage {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceDataset: "OpenStreetMap",
     sourceLicense: "ODbL-1.0",
     sourceUrl: "https://www.openstreetmap.org/copyright",
@@ -57,7 +57,7 @@ test("offline map client sends campaign route, center, fixed radius and all kind
       lat: 51.05,
       lng: 13.74,
     });
-    assert.equal(pkg.schemaVersion, 1);
+    assert.equal(pkg.schemaVersion, 2);
     assert.equal(pkg.radiusMeters, 3_000);
   });
 });
@@ -88,7 +88,7 @@ test("ephemeral and Settings map-data requests share the same non-persisting cli
 
 test("offline map client rejects structurally invalid success payloads", async () => {
   await withFetch(
-    async () => Response.json({ schemaVersion: 1, radiusMeters: 3_000 }),
+    async () => Response.json({ schemaVersion: 2, radiusMeters: 3_000 }),
     async () => {
       await assert.rejects(
         () =>

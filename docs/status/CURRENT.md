@@ -9,6 +9,8 @@ last_updated: 2026-09-25
 
 The authoritative cross-repository route is `.ai/CONTEXT.md` → `madebycli/master-context/projects/flyer-map/INDEX.md` → `handoffs/CURRENT.md`. The release-channel invariant there maps `beta` to the Beta Worker and Beta D1; `main` is Stable.
 
+- 2026-10-08: branch `claude/beta-overhaul-2026-10-08` (from Beta, not deployed) adds a client-side road-relevance filter for Smart Marking, vertex-based Smart road connectivity, incremental GeoJSON map sync and Vela-style map controls; see [Plan 044](../plans/active/044-beta-overhaul-2026-10.md). Server street preparation is intentionally unchanged.
+
 - The 2026-09-25 11:28 UTC Gebiet-8 diagnosis identifies exact PR-#128 Beta Worker `e1f2fb85-a9a0-4b10-a1e4-3d3de43534b2`, the same 55,270 Streets / 46,665 Houses, and another generic failure at `v4-base` cursor 0. It was copied 514 ms after a same-generation retry began: outer preparation `pending` at 11:28:26 while the V4 job still showed the previous failed phase. The reason `baseStep` was absent is proven: `diagnostics.ts` omitted it from its public allowlist even though the job stored it on failure. The Beta-only diagnostic fix allowlists bounded `baseStep` and `baseFailureClass`; a regression verifies both through the public snapshot. The specific D1 exception and the outcome of the newly begun retry remain unknown. `STREET_ENGINE_LIVE_READY=FALSE`.
 
 - PR #128 is on Beta as commit `c20a6ce748ef73efbfd31fbaf554801a48043b9a`. The earlier real Gebiet-8 retry loaded the 130-shard pack and calculated 55,270 Streets / 46,665 Houses before failing at the first Base bucket. PR #128 aligned the feed and base row limits to 220 KB, but the fresh device run still failed at that bucket. No generation has been published.

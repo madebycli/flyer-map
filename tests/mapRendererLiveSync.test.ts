@@ -48,3 +48,8 @@ test("mobile resume remeasures the map and rehydrates GeoJSON workers", () => {
   assert.match(source, /map\.resize\(\)/);
   assert.match(source, /installCurrentStyle\(\);\s*map\.triggerRepaint\(\);/);
 });
+
+test("resuming the page replays complete GeoJSON instead of diffing against a stale cache", () => {
+  assert.match(source, /forgetIncrementalGeoJson\(existing\)/);
+  assert.match(source, /for \(const sourceId of \[AREA_SOURCE_ID, STREET_SOURCE_ID, HOUSE_SOURCE_ID\]\)/);
+});
