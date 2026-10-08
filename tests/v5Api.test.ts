@@ -280,3 +280,16 @@ test('fuzz against the real handler and SQL: overlapping batches, duplicates and
     assert.equal(new Set(seqs).size, seqs.length, `seed ${seed}: sequence numbers are unique`);
   }
 });
+
+import { deriveNetwork } from '../src/v5/engine/index.ts';
+import { syntheticCity } from '../src/v5/engine/synthetic.ts';
+
+test('every key the engine can produce (chunks, nodes, houses, address nodes) is accepted by the server', async () => {
+  const { call } = await setup();
+  const net = deriveNetwork(syntheticCity(4, 3).raw);
+  assert.ok(net.segments.some((s) => s.id.includes('~')), 'the fixture has chunk ids');
+  const keys = [...net.segments.map((s) => `s:${s.id}`), ...net.houses.map((h) => `h:${h.id}`)].slice(0, 150);
+  const res = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, { ops: keys.map((key, i) => ({ id: stamp(NOW - 5000, i), key, status: 'completed', area: 'area_n' })) })).json() as { accepted: string[]; rejected: { reason: string }[] };
+  assert.deepEqual(res.rejected, []);
+  assert.equal(res.accepted.length, keys.length);
+});

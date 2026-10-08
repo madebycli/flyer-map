@@ -2,10 +2,10 @@ import { decodeClock } from '../../src/v5/store/hlc.ts';
 import { NOTE_KEY, NOTE_TEXT_MAX, cleanText, isFlag } from '../../src/v5/notes/types.ts';
 import type { AccessContext } from '../access.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
-import { ID, canWriteArea, fail, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
+import { ID, canWriteArea, fail, isScoped, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 
 const MAX_NOTES_PER_PUSH = 50;
-const MAX_BODY_BYTES = 64_000;
+const MAX_BODY_BYTES = 256_000; // 50 notes × 500 chars, worst case fully JSON-escaped
 const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 
 type Options = { now?: () => number };
@@ -60,6 +60,21 @@ export async function pushNotes(db: D1DatabaseLike, access: AccessContext, campa
     accepted.push(id);
     const prior = latest.get(id);
     if (!prior || prior.rev < (n.rev as string)) latest.set(id, { id, key: n.key, area: n.area, flag: (n.flag as string | null | undefined) ?? null, text: clean, rev: n.rev as string, deleted });
+  }
+  if (latest.size && isScoped(access)) {
+    // Like status ops: a scoped writer cannot hang notes on a street or house another Area already owns.
+    for (const [id, note] of [...latest]) {
+      if (note.key.startsWith('a:')) continue;
+      const base = note.key; // s:<group> covers its chunks s:<group>~k
+      const owner = await db.prepare(
+        `SELECT area_id FROM v5_state WHERE campaign_id = ? AND (key = ? OR (key >= ? AND key < ?)) LIMIT 1`,
+      ).bind(campaignId, base, `${base}~`, `${base}~\uffff`).first<{ area_id: string }>();
+      if (owner && owner.area_id !== note.area) {
+        latest.delete(id);
+        accepted.splice(accepted.indexOf(id), 1);
+        rejected.push({ id, reason: 'key_owned_elsewhere' });
+      }
+    }
   }
   if (latest.size) {
     // A note never moves: its key and Area are fixed at creation, so a scoped writer cannot pull a foreign note into their Area.

@@ -61,9 +61,31 @@ await A.page.mouse.click(pin[0], pin[1]);
 check('tapping the marker opens its notes', await until(async () => (await A.page.locator('.v5-note').count()) === 3, 4000));
 await A.page.getByRole('button', { name: 'Schließen' }).click();
 
+// A note on a (chunked) street: draft text must not leak to the next place, and the marker must open the street.
+await A.jump(180, 0, 17.4);
+await A.click(180, 0);
+await A.page.waitForSelector('.v5-sheet');
+await A.page.getByLabel('Notiz', { exact: true }).fill('Entwurf bleibt hier');
+// move the house into the part of the screen that the open sheet does not cover
+await A.page.evaluate(async (c) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom: 18.1, padding: { bottom: 520 } }); await new Promise((r) => m.once('idle', r)); await new Promise((r) => setTimeout(r, 250)); }, M(116, 13));
+await A.click(116, 13);
+await A.page.waitForTimeout(500);
+check('an unsent draft does not carry over to another place', (await A.page.locator('.v5-note-form input').inputValue()) === '');
+await A.jump(180, 0, 17.4);
+await A.click(180, 0);
+await A.page.waitForSelector('.v5-sheet');
+await A.page.getByRole('button', { name: 'Briefkasten voll', exact: true }).click();
+await A.page.getByRole('button', { name: 'Schließen' }).click();
+await A.page.waitForTimeout(300);
+await A.page.evaluate(async () => { const m = window.__v5Map; const f = m.getSource('v5-notes')._data.features.find((x) => x.properties.key.startsWith('s:')); m.jumpTo({ center: f.geometry.coordinates, zoom: 17.4 }); await new Promise((r) => m.once('idle', r)); await new Promise((r) => setTimeout(r, 250)); });
+const pin2 = await A.page.evaluate(() => { const m = window.__v5Map; const f = m.getSource('v5-notes')._data.features.find((x) => x.properties.key.startsWith('s:')); const p = m.project(f.geometry.coordinates); return [p.x, p.y]; });
+await A.page.mouse.click(pin2[0], pin2[1]);
+check('tapping a street note marker opens that street with its note', await until(async () => (await A.page.locator('.v5-note').count()) === 1, 4000));
+await A.page.getByRole('button', { name: 'Schließen' }).click();
+
 // Second person sees them; delete is an edit that propagates.
 const B = await person('editor');
-check('another person receives the marker', await until(async () => (await B.markers()) === 1));
+check('another person receives the markers', await until(async () => (await B.markers()) === 2));
 B.gate.blocked = true;
 await B.jump(136, 13, 18.1); await B.click(136, 13);
 await B.page.waitForSelector('.v5-sheet');
@@ -73,12 +95,12 @@ B.gate.blocked = false;
 await B.page.evaluate(() => window.dispatchEvent(new Event('online')));
 check('after reconnect it reaches the server', await until(async () => (await A.serverNotes()).some((n) => n.flag === 'danger')));
 await A.page.evaluate(() => window.dispatchEvent(new Event('online')));
-check('and the first person’s map shows the second marker', await until(async () => (await A.markers()) === 2));
+check('and the first person’s map shows the new marker', await until(async () => (await A.markers()) === 3));
 
 // Overview from the menu.
 await A.page.getByRole('button', { name: 'Mehr' }).click();
 await A.page.getByRole('button', { name: /^Notizen/ }).click();
-check('the overview lists all notes', await until(async () => (await A.page.locator('.v5-note-open').count()) === 4, 4000));
+check('the overview lists all notes', await until(async () => (await A.page.locator('.v5-note-open').count()) === 5, 4000));
 await A.page.getByRole('button', { name: 'Gefahr (1)' }).click();
 check('the filter narrows the list', (await A.page.locator('.v5-note-open').count()) === 1);
 await A.page.screenshot({ path: `${process.env.SHOTS_DIR ?? '.'}/f5-notes-overview.png` });
@@ -90,12 +112,12 @@ await A.page.getByRole('button', { name: 'Notiz löschen' }).first().click();
 check('deleting offers undo', (await A.page.getByRole('button', { name: 'Rückgängig' }).count()) === 1);
 await A.page.getByRole('button', { name: 'Rückgängig' }).click();
 check('undo brings the note back', (await A.page.locator('.v5-note').count()) === 1);
-check('and the restore reaches the server', await until(async () => (await A.serverNotes()).filter((n) => !n.deleted).length === 4));
+check('and the restore reaches the server', await until(async () => (await A.serverNotes()).filter((n) => !n.deleted).length === 5));
 await A.ctx.close(); await B.ctx.close();
 
 // Viewer: sees notes, cannot write.
 const V = await person('viewer');
-check('a viewer sees the markers', await until(async () => (await V.markers()) === 2));
+check('a viewer sees the markers', await until(async () => (await V.markers()) === 3));
 await V.jump(116, 13, 18.1); await V.click(116, 13);
 await V.page.waitForSelector('.v5-sheet');
 check('but gets no flags and no text field', (await V.page.locator('.v5-flag').count()) === 0 && (await V.page.locator('.v5-note-form').count()) === 0 && (await V.page.locator('.v5-note').count()) === 3);

@@ -100,7 +100,8 @@ export function App({ campaignId }: { campaignId: string }) {
       const house = index.houses.get(id);
       if (house) { setSelection({ kind: 'house', house }); fieldMap.current?.select(houseKey(house.id)); }
     } else {
-      const segment = index.segments.get(id);
+      // Notes on a street piece are keyed by its junction segment (group), taps by chunk: accept both.
+      const segment = index.segments.get(id) ?? index.chunksByGroup.get(id)?.[0];
       if (segment) {
         const chunks = index.chunksByGroup.get(segment.group) ?? [segment];
         setSelection({ kind: 'segment', segment, chunks, houses: chunks.flatMap((c) => index.housesBySegment.get(c.id) ?? []) });
@@ -282,7 +283,7 @@ export function App({ campaignId }: { campaignId: string }) {
             <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo([[Math.min(...selectedArea.geometry.coordinates[0].map((p) => p[0])), Math.min(...selectedArea.geometry.coordinates[0].map((p) => p[1]))], [Math.max(...selectedArea.geometry.coordinates[0].map((p) => p[0])), Math.max(...selectedArea.geometry.coordinates[0].map((p) => p[1]))]], FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
             {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
           </div>
-          <NotesPane store={notes} target={areaNoteKey(selectedArea.id)} area={selectedArea.id} canWrite={canWrite && (meta?.role === 'admin' || meta?.teamId === selectedArea.teamId)} onUndo={(label, revert) => setUndo({ label, revert })} />
+          <NotesPane key={areaNoteKey(selectedArea.id)} store={notes} target={areaNoteKey(selectedArea.id)} area={selectedArea.id} canWrite={canWrite && (meta?.role === 'admin' || meta?.teamId === selectedArea.teamId)} onUndo={(label, revert) => setUndo({ label, revert })} />
         </SheetFrame>
       )}
 
@@ -304,7 +305,7 @@ export function App({ campaignId }: { campaignId: string }) {
                   </button>
                 )}
               </>}
-          <NotesPane store={notes} canWrite={canWrite && selectionArea !== ''} onUndo={(label, revert) => setUndo({ label, revert })}
+          <NotesPane key={selection.kind === 'house' ? houseNoteKey(selection.house.id) : segmentNoteKey(selection.segment.group)} store={notes} canWrite={canWrite && selectionArea !== ''} onUndo={(label, revert) => setUndo({ label, revert })}
             target={selection.kind === 'house' ? houseNoteKey(selection.house.id) : segmentNoteKey(selection.segment.group)}
             area={selectionArea} />
         </SheetFrame>

@@ -23,6 +23,8 @@ export class SyncClient {
   private running = false;
   private again = false;
   private failures = 0;
+  private extraFailed = false;
+  private extraFailures = 0;
   private kickTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
@@ -66,7 +68,16 @@ export class SyncClient {
           this.store.receive(ops, cursor);
           if (!ops.length || cursor <= 0) break;
         }
-        for (const extra of this.extras) await extra.syncOnce();
+        // Notes ride the same loop but must not make the status sync look offline (or the reverse): isolate and retry.
+        for (const extra of this.extras) {
+          try { await extra.syncOnce(); } catch { this.extraFailed = true; }
+        }
+        if (this.extraFailed) {
+          this.extraFailed = false;
+          this.extraFailures++;
+          if (this.retryTimer) clearTimeout(this.retryTimer);
+          this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.run(); }, Math.min(60_000, 1000 * 2 ** this.extraFailures));
+        } else this.extraFailures = 0;
         this.failures = 0;
         this.set('idle');
       } while (this.again);

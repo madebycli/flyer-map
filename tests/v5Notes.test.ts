@@ -117,3 +117,19 @@ test('area notes use the a:<area> key and sequence numbers never repeat under in
   }
   assert.equal(seen.size, 12, 'paging reaches every note exactly once');
 });
+
+test('a scoped editor cannot hang notes on a street or house that another Area already owns', async () => {
+  const { call } = await setup();
+  await call('other', 'POST', `/api/v5/campaigns/${campaign}/ops`, { ops: [{ id: stamp(NOW - 9000), key: 'h:theirs', status: 'completed', area: 'area_o' }, { id: stamp(NOW - 8999), key: 's:g1~2', status: 'completed', area: 'area_o' }] });
+  const res = await (await push(call, 'editor', note(stamp(NOW - 5000), 'h:theirs'), note(stamp(NOW - 4999), 's:g1'), note(stamp(NOW - 4998), 'h:mine'))).json() as { accepted: string[]; rejected: { reason: string }[] };
+  assert.deepEqual(res.rejected.map((r) => r.reason), ['key_owned_elsewhere', 'key_owned_elsewhere'], 'a group key is covered by its chunks');
+  assert.equal(res.accepted.length, 1);
+  assert.equal((await push(call, 'admin', note(stamp(NOW - 4000), 'h:theirs', { area: 'area_o' }))).status, 200, 'admins are not bound');
+});
+
+test('a full batch of maximum-length, quote-heavy notes still fits the request limit', async () => {
+  const { call } = await setup();
+  const heavy = '"\\\n'.repeat(125);
+  const res = await push(call, 'admin', ...Array.from({ length: 50 }, (_, i) => note(stamp(NOW - 9000, i), 'h:a', { text: heavy })));
+  assert.equal(res.status, 200);
+});

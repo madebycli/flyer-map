@@ -34,9 +34,10 @@ test('synthetic city: tricky ways are handled and every house finds its street',
   const cut = waysOf(city.special.cutThroughPath);
   assert.equal(cut.length, 1);
   assert.equal(cut[0].visible, false, 'house-less path stays a hidden connector');
-  const back = waysOf(city.special.backLotService)[0];
+  const backParts = waysOf(city.special.backLotService);
+  const back = backParts[0];
   assert.equal(back.cls, 'access');
-  assert.equal(back.houseCount, 3);
+  assert.equal(backParts.reduce((sum, p) => sum + p.houseCount, 0), 3);
   assert.equal(back.visible, true, 'service road with houses is promoted');
   assert.equal(net.houses.length, city.housesExpected, 'garage dropped, bakery dwelling kept');
   assert.equal(net.diagnostics.orphanHouses, 0);
@@ -179,10 +180,18 @@ test('chunks: long segments are cut into equal pieces ≤ CHUNK_METERS with stab
   }
 });
 
-test('chunks: ids do not change when unrelated data is added elsewhere', () => {
-  const small = deriveNetwork(syntheticCity(3, 3).raw);
-  const big = deriveNetwork(syntheticCity(3, 3).raw);
-  assert.deepEqual(small.segments.map((s) => s.id), big.segments.map((s) => s.id));
+test('chunks: ids do not change when unrelated data is added elsewhere (other extent, other latitude scale)', () => {
+  const raw = syntheticCity(3, 3).raw;
+  const alone = deriveNetwork(raw);
+  const far = { ...raw, ways: [...raw.ways, { id: 999_001, tags: { highway: 'residential', name: 'Fernweg' }, coords: [[raw.ways[0].coords[0][0], raw.ways[0].coords[0][1] + 0.05], [raw.ways[0].coords[0][0] + 0.001, raw.ways[0].coords[0][1] + 0.05]] as [number, number][] }] };
+  const withFar = deriveNetwork(far);
+  const ids = (n: typeof alone) => n.segments.filter((s) => s.wayId !== 999_001).map((s) => s.id).sort();
+  assert.deepEqual(ids(withFar), ids(alone));
+  // a street whose length sits right at a chunk boundary keeps its chunk count whatever the pack extent is
+  const edge = (lat: number): typeof raw => ({ ways: [{ id: 1, tags: { highway: 'residential' }, coords: [[13, lat], [13 + 120.01 / (111_320 * Math.cos((lat * Math.PI) / 180)), lat]] }], buildings: [], addresses: [] });
+  const solo = deriveNetwork(edge(51)).segments.map((s) => s.id);
+  const stretched = deriveNetwork({ ...edge(51), ways: [...edge(51).ways, { id: 2, tags: { highway: 'residential' }, coords: [[13, 53], [13.001, 53]] }] }).segments.filter((s) => s.wayId === 1).map((s) => s.id);
+  assert.deepEqual(stretched, solo);
 });
 
 test('chunks: a route across a chunked street selects the chain and measures real length', () => {

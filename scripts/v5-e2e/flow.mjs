@@ -63,6 +63,8 @@ const beforeRoute = await done(page);
 await page.getByRole('button', { name: 'Strecke markieren' }).click();
 await page.waitForTimeout(1500);
 check('route marking completes the houses along the street', (await done(page)) - beforeRoute >= 10, `+${(await done(page)) - beforeRoute}`);
+const chunkKeys = () => page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.filter((o) => o.key.startsWith('s:') && o.key.includes('~') && o.status === 'completed').length);
+check('chunk keys (s:…~k) are stored by the server, not refused', await until(async () => (await chunkKeys()) >= 6), String(await chunkKeys()));
 await ctx.close();
 
 // Theme switch keeps (or restores) our layers, geometry and status on the new basemap.

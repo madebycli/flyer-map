@@ -72,14 +72,17 @@ export function deriveNetwork(raw: RawOsm): Network {
       const last = i === way.coords.length - 1;
       if (!last && (visits.get(vertexKey(way, i)) ?? 0) < 2) continue;
       const coords = way.coords.slice(start, i + 1);
-      const length = polylineLength(frame, coords);
+      // Measured in a frame of the segment's own: chunk counts (hence ids) must not depend on what else is in the pack.
+      const local = frameFor(coords);
+      const length = polylineLength(local, coords);
       if (length >= 0.5) {
         const startKey = way.nodes?.[start] !== undefined ? `${way.id}:${way.nodes[start]}` : `${way.id}#${start}`;
         let id = `s${startKey}`;
         if (usedIds.has(id)) id = `${id}#${start}`;
         usedIds.add(id);
-        const parts = Math.max(1, Math.ceil(length / CHUNK_METERS));
-        const pieces = splitEqual(frame, coords, parts);
+        // 2 % slack: a street a hair over a multiple of 60 m must not flip to one more chunk because of rounding.
+        const parts = Math.max(1, Math.ceil(length / CHUNK_METERS - 0.02));
+        const pieces = splitEqual(local, coords, parts);
         const fromKey = vertexKey(way, start), toKey = vertexKey(way, i);
         pieces.forEach((piece, k) => segments.push({
           id: parts === 1 ? id : `${id}~${k}`, group: id, chunk: k, chunks: parts,

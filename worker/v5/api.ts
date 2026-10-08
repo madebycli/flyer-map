@@ -25,7 +25,7 @@ const PACK_CHUNK_BYTES = 512 * 1024;
 const MAX_AREA_SQ_KM = 25;
 const PACK_REBUILD_COOLDOWN_MS = 60_000;
 const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
-const KEY = /^[sh]:[A-Za-z0-9#:._-]{1,80}$/u;
+const KEY = /^[sh]:[A-Za-z0-9#:._~@-]{1,80}$/u;
 
 type Route =
   | { kind: 'state' | 'ops' | 'meta' | 'notes'; campaignId: string }
