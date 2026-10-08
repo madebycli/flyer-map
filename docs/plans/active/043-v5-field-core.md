@@ -26,8 +26,9 @@ Streets/Houses are derived deterministically from a per-Area raw OSM pack on the
 - [x] Tools: stamp/paint/lasso/route marking with a brush status, undo, Area corner editor (drag, insert, delete, create), street chunks ≤ 60 m
 - [x] Sync hardening: conflicts shown and restorable, server-time clock correction, adversarial two-writer tests, seeded fuzz
 - [x] Field notes (flags + text, markers, overview) — ADR-0034; warm-start network cache
-- [x] Engine stays TypeScript (measured, ADR-0034); revisit criteria written down
-- [ ] Abholaktion, Rooms (Übernehmen/Teilnehmen), temporary identities, admin/login in v5 — see [Plan 045](045-v5-pickup-rooms-admin.md)
+- [x] Rust/WASM engine + vector tiles, TypeScript kept as reference and fallback — [Plan 046](046-v5-rust-tiles.md), ADR-0034
+- [x] Abholaktion field surface (Gebietsliste, Übernehmen/Teilnehmen, Room, Sonder-Marker) — [Plan 045](045-v5-pickup-rooms-admin.md) A+B
+- [ ] Plan 045 C: temporary identities, location-derived Area preselection, street-aligned placement of new Areas, admin entry
 - [ ] Real Overpass pack for a real Area (Gebiet 4 and Gebiet 8) and comparison of v5 vs V4 street/house counts
 - [ ] Real-device acceptance per ADR-0030 (iPad + Android) incl. offline edit → reconnect convergence
 - [ ] Apply migration 0026 on Beta D1; deploy the branch to Beta only after the two items above

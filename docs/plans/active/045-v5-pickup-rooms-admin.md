@@ -1,6 +1,6 @@
 # Plan 045 — v5: Abholaktion, Rooms, identities, admin surface
 
-Status: Phase A done, Phase B mostly done (Sonder-Marker, Phase C open) on `claude/v5-field-core`
+Status: Phase A and B done (incl. Sonder-Marker), Phase C partly (street-aligned placement done) on `claude/v5-field-core`
 Date: 2026-10-08
 Reference (target behaviour, used as a reference not as a spec): `master-context/projects/flyer-map/plans/ABHOLMODUS_ZIELPLAN_2026-09-13.md`
 Depends on: [Plan 043](043-v5-field-core.md), [ADR-0034](../../decisions/ADR-0034-v5-notes-chunks-and-engine-language.md)
@@ -50,7 +50,7 @@ derived network meets them.
 ### C — identity and admin
 - [ ] Temporary identity for link users (neutral label, per device) shown in notes, rooms and activity
 - [ ] Location-derived preselection of the editable Area when starting to draw/edit (nearest Area under the user's position)
-- [ ] Street-aligned manual placement of Sonder-Marker (snap to the nearest derived street/house)
+- [x] Street-aligned placement of Sonder-Marker (engine snaps to the nearest house ≤ 30 m, else street ≤ 22 m, and takes its address)
 - [ ] Admin/login: keep legacy `/login` and organisation admin; v5 gets a role-aware entry (admin sees "Verwaltung", collectors never see admin links), no duplicate auth stack
 
 ## Acceptance
