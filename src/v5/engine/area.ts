@@ -1,0 +1,35 @@
+import { pointInRing } from './geo.ts';
+import type { LngLat, Network } from './types.ts';
+
+/**
+ * Keep what belongs to an Area polygon: houses whose centre lies inside, and street
+ * segments that touch it (a vertex inside, or serving a kept house). Visibility and
+ * house counts are recomputed, so a connector only appears for houses inside the Area.
+ */
+export function restrictToArea(network: Network, ring: LngLat[]): Network {
+  const houses = network.houses.filter((h) => pointInRing(h.center, ring));
+  const counts = new Map<string, number>();
+  for (const h of houses) if (h.parent) counts.set(h.parent, (counts.get(h.parent) ?? 0) + 1);
+  const segments = network.segments
+    .filter((s) => counts.has(s.id) || s.coords.some((p) => pointInRing(p, ring)) || crossesRing(s.coords, ring))
+    .map((s) => {
+      const houseCount = counts.get(s.id) ?? 0;
+      return { ...s, houseCount, visible: s.cls === 'street' || houseCount > 0 };
+    });
+  return {
+    segments, houses,
+    diagnostics: { ...network.diagnostics, segments: segments.length, visibleSegments: segments.filter((s) => s.visible).length, housesOut: houses.length },
+  };
+}
+
+function crossesRing(line: LngLat[], ring: LngLat[]): boolean {
+  for (let i = 1; i < line.length; i++) {
+    for (let j = 1; j < ring.length; j++) if (intersects(line[i - 1], line[i], ring[j - 1], ring[j])) return true;
+  }
+  return false;
+}
+
+function intersects(a: LngLat, b: LngLat, c: LngLat, d: LngLat): boolean {
+  const o = (p: LngLat, q: LngLat, r: LngLat) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+}

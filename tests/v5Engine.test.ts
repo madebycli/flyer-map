@@ -81,3 +81,44 @@ test('address nodes attach to buildings and standalone ones become point houses'
   const net = deriveNetwork(raw);
   assert.ok(net.houses.some((h) => h.source === 'address-node' && h.number === '42'));
 });
+
+import { decodePack, encodePack, packFromOverpass, paddedBbox, overpassQuery, restrictToArea } from '../src/v5/engine/index.ts';
+
+test('overpass normalisation keeps node ids, counts bad elements and never throws on them', () => {
+  const { raw, stats } = packFromOverpass({ elements: [
+    { type: 'way', id: 1, nodes: [10, 11], geometry: [{ lat: 51, lon: 13 }, { lat: 51.001, lon: 13 }], tags: { highway: 'residential', name: 'A' } },
+    { type: 'way', id: 2, nodes: [1, 2, 3, 4], geometry: [{ lat: 51, lon: 13 }, { lat: 51, lon: 13.0001 }, { lat: 51.0001, lon: 13.0001 }, { lat: 51, lon: 13 }], tags: { building: 'house' } },
+    { type: 'way', id: 3, geometry: [{ lat: 51, lon: 13 }, { lat: 51.001, lon: 13 }, { lat: 51.002, lon: 13 }], tags: { building: 'house' } },
+    { type: 'way', id: 4, geometry: [{ lat: 999, lon: 13 }, { lat: 51, lon: 13 }], tags: { highway: 'residential' } },
+    { type: 'node', id: 5, lat: 51.0000, lon: 13.0000, tags: { 'addr:housenumber': '5' } },
+    { type: 'node', id: 6, lat: 51.0, lon: 13.0, tags: {} },
+    { type: 'relation', id: 7 },
+  ] });
+  assert.equal(raw.ways.length, 1);
+  assert.deepEqual(raw.ways[0].nodes, [10, 11]);
+  assert.equal(raw.buildings.length, 1);
+  assert.equal(raw.addresses.length, 1);
+  assert.deepEqual(stats.dropped, { building_ring_open: 1, way_bad_geometry: 1 });
+  assert.throws(() => packFromOverpass({}), /overpass_response_invalid/);
+  assert.match(overpassQuery(paddedBbox([[13, 51], [13.01, 51.01], [13, 51.01], [13, 51]])), /out geom qt;$/);
+});
+
+test('pack codec round-trips and rejects garbage', async () => {
+  const raw = syntheticCity(2, 2).raw;
+  const bytes = await encodePack(raw);
+  assert.ok(bytes.length < JSON.stringify(raw).length / 3, 'gzip shrinks the pack');
+  assert.deepEqual(await decodePack(bytes), raw);
+  await assert.rejects(decodePack(await encodePack({ ways: 1 } as never)), /pack_invalid/);
+});
+
+test('restricting to an area keeps its houses and recomputes visibility', () => {
+  const city = syntheticCity(4, 3);
+  const full = deriveNetwork(city.raw);
+  // Ring around the first block only.
+  const cos = Math.cos((51 * Math.PI) / 180);
+  const ring: [number, number][] = [[13 - 5 / (cos * 111320), 51 - 5 / 110574], [13 + 105 / (cos * 111320), 51 - 5 / 110574], [13 + 105 / (cos * 111320), 51 + 105 / 110574], [13 - 5 / (cos * 111320), 51 + 105 / 110574], [13 - 5 / (cos * 111320), 51 - 5 / 110574]];
+  const part = restrictToArea(full, ring);
+  assert.ok(part.houses.length > 0 && part.houses.length < full.houses.length / 4);
+  assert.ok(part.houses.every((h) => h.parent === null || part.segments.some((s) => s.id === h.parent)), 'parents of kept houses are kept');
+  assert.ok(part.segments.length < full.segments.length);
+});

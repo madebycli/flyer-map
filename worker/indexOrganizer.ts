@@ -13,6 +13,7 @@ import { applyTrustedDeviceInvalidations, captureTrustedDeviceInvalidations } fr
 import { handleOrganizationFieldGroupList, type OrganizationFieldGroupListEnv } from "./organizationFieldGroupList.ts";
 import { handleTeamCommentsSummary, type TeamCommentsSummaryEnv } from "./teamCommentsSummary.ts";
 import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
+import { handleV5Api } from "./v5/api.ts";
 
 export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
 export { OrganizationPasswordKdfDurableObject } from "./organizationPasswordKdfDurableObject.ts";
@@ -88,6 +89,7 @@ export default {
           },
         }, { headers: { "cache-control": "no-store" } }));
       }
+      const v5Response = env.DB ? await handleV5Api(request, env.DB) : null; if (v5Response) return harden(v5Response);
       const rootRedirect = redirectBareRootToOrganizationLogin(request); if (rootRedirect) return harden(rootRedirect);
       const rememberResponse = await handleOrganizationRememberRoute(request, env.DB); if (rememberResponse) return harden(rememberResponse);
       const campaignAdminRememberResponse = await handleCampaignAdminRememberRoute(request, env.DB); if (campaignAdminRememberResponse) return harden(campaignAdminRememberResponse);

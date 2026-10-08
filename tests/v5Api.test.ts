@@ -1,0 +1,160 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { NetworkD1, seedNetwork } from './helpers/networkD1.ts';
+import { createAccessGrant, createSessionForGrant, resolveAccess, sessionCookie, type PersistentAccessRole } from '../worker/access.ts';
+import { handleV5Api } from '../worker/v5/api.ts';
+import { decodePack } from '../src/v5/engine/index.ts';
+import { encodeClock } from '../src/v5/store/hlc.ts';
+
+const campaign = 'campaign_n';
+const stamp = (wall: number, counter = 0, node = 'n') => encodeClock({ wall, counter, node });
+const NOW = 1_800_000_000_000;
+
+async function setup() {
+  const db = new NetworkD1(false, true);
+  seedNetwork(db);
+  const t = '2026-09-07T00:00:00.000Z';
+  db.sqlite.prepare("INSERT INTO teams(id,campaign_id,name,color,created_at,updated_at) VALUES('team_o',?,'Other','#ef4444',?,?)").run(campaign, t, t);
+  db.sqlite.prepare("INSERT INTO areas(id,campaign_id,team_id,name,geometry_json,created_at,updated_at) VALUES('area_o',?,'team_o','Other',?,?,?)")
+    .run(campaign, JSON.stringify({ type: 'Polygon', coordinates: [[[13.02, 51], [13.03, 51], [13.03, 51.01], [13.02, 51.01], [13.02, 51]]] }), t, t);
+  const cookies: Record<string, string> = {};
+  for (const [name, role, teamId] of [['admin', 'admin', null], ['viewer', 'viewer', null], ['editor', 'team-editor', 'team_n'], ['other', 'team-editor', 'team_o']] as [string, PersistentAccessRole, string | null][]) {
+    const { grant } = await createAccessGrant(db, { campaignId: campaign, role, teamId, label: name });
+    const ctx = (await resolveAccessForGrant(db, grant.grantId))!;
+    const session = await createSessionForGrant(db, ctx);
+    cookies[name] = `${sessionCookie(session.sessionSecret).split(';')[0]}`;
+  }
+  const call = async (who: string | null, method: string, path: string, body?: unknown, opts = {}) => {
+    const request = new Request(`https://example.test${path}`, {
+      method, headers: { ...(who ? { cookie: cookies[who] } : {}), ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined,
+    });
+    return (await handleV5Api(request, db, { now: () => NOW, ...opts }))!;
+  };
+  return { db, call };
+}
+
+async function resolveAccessForGrant(db: NetworkD1, grantId: string) {
+  const row = db.sqlite.prepare('SELECT id, campaign_id, role, team_id, label FROM campaign_access_grants WHERE id=?').get(grantId) as { id: string; campaign_id: string; role: PersistentAccessRole; team_id: string | null; label: string | null };
+  return { grantId: row.id, campaignId: row.campaign_id, role: row.role, teamId: row.team_id, label: row.label };
+}
+
+const ops = (...items: [string, string, string, string?][]) => ({ ops: items.map(([id, key, status, area]) => ({ id, key, status, area: area ?? 'area_n' })) });
+
+test('unauthenticated requests are rejected, unknown v5 routes 404, others pass through', async () => {
+  const { call } = await setup();
+  assert.equal((await call(null, 'GET', `/api/v5/campaigns/${campaign}/state`)).status, 401);
+  assert.equal((await call('admin', 'GET', '/api/v5/nonsense')).status, 404);
+  const outside = await handleV5Api(new Request('https://example.test/api/campaigns'), new NetworkD1());
+  assert.equal(outside, null);
+});
+
+test('ops are stored last-writer-wins, idempotent, and pulled incrementally', async () => {
+  const { call } = await setup();
+  const first = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 5000), 'h:a', 'completed'], [stamp(NOW - 4000), 'h:b', 'later'], [stamp(NOW - 3000), 's:x#1', 'completed']));
+  const body1 = await first.json() as { accepted: string[]; rejected: unknown[]; cursor: number };
+  assert.equal(body1.accepted.length, 3);
+  assert.deepEqual(body1.rejected, []);
+  const pull1 = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { ops: { key: string; status: string; by: string }[]; cursor: number; more: boolean };
+  assert.deepEqual(pull1.ops.map((o) => [o.key, o.status]).sort(), [['h:a', 'completed'], ['h:b', 'later'], ['s:x#1', 'completed']]);
+  assert.equal(pull1.ops[0].by, 'admin');
+  assert.equal(pull1.more, false);
+  // An older write loses; the same write again changes nothing; a newer write wins and re-appears after the cursor.
+  await call('editor', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 9000), 'h:a', 'later']));
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 5000), 'h:a', 'completed']));
+  const quiet = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/state?since=${pull1.cursor}`)).json() as { ops: unknown[] };
+  assert.equal(quiet.ops.length, 0, 'losing and duplicate writes produce no new state');
+  await call('editor', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 100), 'h:a', 'not-deliverable']));
+  const later = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/state?since=${pull1.cursor}`)).json() as { ops: { key: string; status: string; by: string }[] };
+  assert.deepEqual(later.ops.map((o) => [o.key, o.status, o.by]), [['h:a', 'not-deliverable', 'editor']]);
+});
+
+test('invalid operations are rejected individually without blocking valid ones', async () => {
+  const { call } = await setup();
+  const response = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, {
+    ops: [
+      { id: stamp(NOW - 10), key: 'h:ok', status: 'completed', area: 'area_n' },
+      { id: 'garbage', key: 'h:x', status: 'completed', area: 'area_n' },
+      { id: stamp(NOW - 9), key: 'x:bad key', status: 'completed', area: 'area_n' },
+      { id: stamp(NOW - 8), key: 'h:y', status: 'finished', area: 'area_n' },
+      { id: stamp(NOW + 5 * 24 * 3600 * 1000), key: 'h:z', status: 'completed', area: 'area_n' },
+      { id: stamp(NOW - 7), key: 'h:w', status: 'completed', area: 'missing_area' },
+    ],
+  });
+  const body = await response.json() as { accepted: string[]; rejected: { reason: string }[] };
+  assert.equal(body.accepted.length, 1);
+  assert.deepEqual(body.rejected.map((r) => r.reason), ['bad_id', 'bad_key', 'bad_status', 'clock_future', 'area_forbidden']);
+  assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, { ops: [] })).status, 400);
+});
+
+test('roles: viewers cannot write; teams are confined to their own areas', async () => {
+  const { call } = await setup();
+  const write = (who: string, area: string, wall: number) => call(who, 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(wall), `h:${who}${area}`, 'completed', area]));
+  assert.equal((await write('viewer', 'area_n', NOW - 50)).status, 403);
+  assert.equal(((await (await write('editor', 'area_n', NOW - 49)).json()) as { accepted: string[] }).accepted.length, 1);
+  const foreign = await (await write('editor', 'area_o', NOW - 48)).json() as { accepted: string[]; rejected: { reason: string }[] };
+  assert.deepEqual([foreign.accepted.length, foreign.rejected[0].reason], [0, 'area_forbidden']);
+  await write('other', 'area_o', NOW - 47);
+  const seen = await (await call('editor', 'GET', `/api/v5/campaigns/${campaign}/state`)).json() as { ops: { key: string }[] };
+  assert.deepEqual(seen.ops.map((o) => o.key), ['h:editorarea_n'], 'editor never sees the other team’s state');
+  const admin = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/state`)).json() as { ops: unknown[] };
+  assert.equal(admin.ops.length, 2);
+});
+
+test('pull paginates with a stable cursor', async () => {
+  const { call } = await setup();
+  const items: [string, string, string][] = Array.from({ length: 30 }, (_, i) => [stamp(NOW - 1000 + i), `h:k${i}`, 'completed']);
+  for (let i = 0; i < items.length; i += 10) await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops(...items.slice(i, i + 10)));
+  let cursor = 0, total = 0, pages = 0;
+  for (;;) {
+    const page = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/state?since=${cursor}&limit=7`)).json() as { ops: unknown[]; cursor: number; more: boolean };
+    total += page.ops.length; cursor = page.cursor; pages++;
+    if (!page.more) break;
+  }
+  assert.deepEqual([total, pages], [30, 5]);
+});
+
+const overpassOk = () => new Response(JSON.stringify({ elements: [
+  { type: 'way', id: 1, nodes: [1, 2], geometry: [{ lat: 51.005, lon: 13.001 }, { lat: 51.005, lon: 13.009 }], tags: { highway: 'residential', name: 'Teststraße' } },
+  { type: 'way', id: 2, nodes: [3, 4, 5, 3], geometry: [{ lat: 51.0051, lon: 13.002 }, { lat: 51.0051, lon: 13.00203 }, { lat: 51.00513, lon: 13.00203 }, { lat: 51.0051, lon: 13.002 }], tags: { building: 'house', 'addr:housenumber': '1', 'addr:street': 'Teststraße' } },
+] }));
+
+test('pack build stores a compressed raw pack that clients can read back, with team scoping', async () => {
+  const { call } = await setup();
+  let requested = '';
+  const fetchImpl = (async (_url: string, init?: RequestInit) => { requested = String(init?.body); return overpassOk(); }) as unknown as typeof fetch;
+  assert.equal((await call('viewer', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).status, 403);
+  assert.equal((await call('other', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).status, 403);
+  const built = await call('editor', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl });
+  assert.equal(built.status, 200);
+  assert.match(decodeURIComponent(requested), /out geom qt;/);
+  const info = await built.json() as { version: number; stats: { ways: number; buildings: number } };
+  assert.deepEqual([info.version, info.stats.ways, info.stats.buildings], [1, 1, 1]);
+  const rebuilt = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).json() as { version: number };
+  assert.equal(rebuilt.version, 2);
+  const got = await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/areas/area_n/pack`);
+  assert.equal(got.headers.get('x-pack-version'), '2');
+  const raw = await decodePack(new Uint8Array(await got.arrayBuffer()));
+  assert.equal(raw.ways[0].tags.name, 'Teststraße');
+  assert.equal((await call('other', 'GET', `/api/v5/campaigns/${campaign}/areas/area_n/pack`)).status, 404);
+  assert.equal((await call('admin', 'GET', `/api/v5/campaigns/${campaign}/areas/area_o/pack`)).status, 404, 'no pack built yet');
+});
+
+test('pack build fails closed: upstream errors, invalid bodies, empty results', async () => {
+  const { call } = await setup();
+  const post = (fetchImpl: typeof fetch) => call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl });
+  assert.equal((await post((async () => new Response('busy', { status: 429 })) as unknown as typeof fetch)).status, 502);
+  assert.equal((await post((async () => { throw new Error('net'); }) as unknown as typeof fetch)).status, 502);
+  assert.equal((await post((async () => new Response('<html>')) as unknown as typeof fetch)).status, 502);
+  assert.equal((await post((async () => new Response(JSON.stringify({ elements: [] }))) as unknown as typeof fetch)).status, 422);
+  assert.equal((await call('admin', 'GET', `/api/v5/campaigns/${campaign}/areas/area_n/pack`)).status, 404, 'failed builds leave no pack behind');
+});
+
+test('oversized areas are refused before any upstream request', async () => {
+  const { db, call } = await setup();
+  db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=?').run(JSON.stringify({ type: 'Polygon', coordinates: [[[13, 51], [13.5, 51], [13.5, 51.5], [13, 51.5], [13, 51]]] }), 'area_n');
+  let called = false;
+  const fetchImpl = (async () => { called = true; return overpassOk(); }) as unknown as typeof fetch;
+  const response = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl });
+  assert.equal(response.status, 422);
+  assert.equal(called, false);
+});
