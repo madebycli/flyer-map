@@ -10,6 +10,7 @@ const LABELS: Record<Status, string> = { open: 'Offen', completed: 'Erledigt', l
 const ORDER: Status[] = ['completed', 'later', 'not-deliverable', 'open'];
 const meters = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`);
 const percent = (ratio: number) => `${Math.round(ratio * 100)} %`;
+const NO_SEGMENTS: string[] = [];
 
 type Selection =
   | { kind: 'house'; house: House }
@@ -48,7 +49,7 @@ export function App({ campaignId }: { campaignId: string }) {
   }, [network]);
 
   const route = useMemo(() => (index && anchors.length >= 1 ? routeSegments(network as Network, anchors, index.graph) : null), [index, network, anchors]);
-  const routeSegmentIds = route?.state === 'selected' ? route.segmentIds : [];
+  const routeSegmentIds = route?.state === 'selected' ? route.segmentIds : NO_SEGMENTS;
 
   // The map is created once; geometry and status arrive through loadNetwork / bind.
   useEffect(() => {

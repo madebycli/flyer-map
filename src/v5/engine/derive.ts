@@ -90,8 +90,9 @@ export function deriveNetwork(raw: RawOsm): Network {
   const tree = new RBush<IndexedSegment>(9);
   const indexed: IndexedSegment[] = segments.map((segment) => {
     const xy = segment.coords.map((p) => frame.toXY(p));
-    const xs = xy.map((p) => p[0]), ys = xy.map((p) => p[1]);
-    return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys), segment, xy, norm: normalizeName(segment.name) };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x, y] of xy) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    return { minX, minY, maxX, maxY, segment, xy, norm: normalizeName(segment.name) };
   });
   tree.load(indexed);
 
@@ -130,9 +131,16 @@ export function deriveNetwork(raw: RawOsm): Network {
     }, frame, tree));
   }
   // Address nodes that belong to no building become small point-houses (rural farms, mapped-by-node).
+  const buildingTree = new RBush<{ minX: number; minY: number; maxX: number; maxY: number; ring: LngLat[] }>(9);
+  buildingTree.load(raw.buildings.map((b) => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x, y] of b.ring) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    return { minX, minY, maxX, maxY, ring: b.ring };
+  }));
   for (const entry of nodeEntries) {
     if (entry.used || !entry.node.tags['addr:housenumber']) continue;
-    const inside = raw.buildings.some((b) => pointInRing(entry.node.point, b.ring));
+    const [nx, ny] = entry.node.point;
+    const inside = buildingTree.search({ minX: nx, minY: ny, maxX: nx, maxY: ny }).some((b) => pointInRing(entry.node.point, b.ring));
     if (inside) continue;
     const [px, py] = entry.node.point;
     const d = 0.00003;

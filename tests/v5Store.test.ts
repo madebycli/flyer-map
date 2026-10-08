@@ -52,6 +52,7 @@ test('listeners receive only changed keys, coalesced; no-op round trips are sile
 test('outbox: pending ops survive restart and leave on acknowledge', async () => {
   const disk = new MemoryPersistence();
   const s = new FieldStore('x', disk, () => 1000, 1);
+  await s.hydrate();
   const ops = s.set(['s:a', 's:b'], 'completed');
   assert.equal(s.pendingOps().length, 2);
   await s.persistNow();
@@ -136,4 +137,28 @@ test('two clients converge through the server; offline edits are delivered later
   assert.equal(a.pendingOps().length, 0);
   for (const s of [a, b]) { assert.equal(s.statusOf('h:1'), 'completed'); assert.equal(s.statusOf('s:9'), 'later'); }
   ca.dispose(); cb.dispose();
+});
+
+
+test('a store that was never hydrated cannot overwrite the saved outbox', async () => {
+  const disk = new MemoryPersistence();
+  const first = new FieldStore('x', disk, () => 1000, 1);
+  await first.hydrate();
+  first.set('h:1', 'completed');
+  await first.persistNow();
+  const early = new FieldStore('x', disk, () => 1000, 1); // e.g. a React StrictMode double mount
+  await early.persistNow();
+  const restarted = new FieldStore('x', disk, () => 1000, 1);
+  await restarted.hydrate();
+  assert.equal(restarted.pendingOps().length, 1);
+  assert.equal(restarted.statusOf('h:1'), 'completed');
+});
+
+test('reconcilePending stamps missing areas and drops edits for vanished entities', async () => {
+  const s = new FieldStore('x', null, () => 1000);
+  s.set(['h:keep', 'h:gone'], 'completed');
+  s.setAreaResolver((key) => (key === 'h:keep' ? 'area_1' : undefined));
+  const dropped = s.reconcilePending((key) => key === 'h:keep');
+  assert.equal(dropped, 1);
+  assert.deepEqual(s.pendingOps().map((o) => [o.key, o.area]), [['h:keep', 'area_1']]);
 });

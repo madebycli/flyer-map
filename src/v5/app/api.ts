@@ -51,9 +51,9 @@ export function httpTransport(campaignId: string): SyncTransport {
       const result = await (await call(`${base(campaignId)}/ops`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ops: sendable.map(({ id, key, status, area }) => ({ id, key, status, area })) }),
-      })).json() as { accepted: string[]; rejected: { id: string }[]; cursor: number };
+      })).json() as { accepted: string[]; rejected: { id: string }[] };
       // Permanently rejected edits (forbidden area, bad clock) must leave the outbox or they would retry forever.
-      return { accepted: [...result.accepted, ...result.rejected.map((r) => r.id)], cursor: result.cursor };
+      return { accepted: [...result.accepted, ...result.rejected.map((r) => r.id)], cursor: 0 };
     },
   };
 }

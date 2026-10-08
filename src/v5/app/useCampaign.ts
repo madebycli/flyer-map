@@ -86,6 +86,8 @@ export function useCampaign(campaignId: string): CampaignState {
         const merged = mergeNetworks(parts);
         fieldStore.setAreaResolver((key) => merged.areaOf.get(key));
         await fieldStore.hydrate();
+        // Only prune when every Area was derived; a missing pack must never cost queued edits.
+        if (!missing.length) fieldStore.reconcilePending((key) => merged.areaOf.has(key));
         progressTracker?.dispose();
         progressTracker = new Progress(merged.network, fieldStore);
         progressTracker.onChange(setProgress);

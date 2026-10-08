@@ -89,7 +89,10 @@ export function routeSegments(network: Network | Graph, anchors: string[], graph
     if (!leg) return { state: 'disconnected' };
     for (const id of leg.ids) if (merged[merged.length - 1] !== id) merged.push(id);
     // Probe: ban each interior segment in turn; a different route within 12% means ambiguity.
-    for (const banned of leg.ids.slice(1, -1).slice(0, 60)) {
+    const interior = leg.ids.slice(1, -1);
+    const step = Math.max(1, Math.ceil(interior.length / 12)); // at most ~12 probes, spread along the route
+    for (let k = 0; k < interior.length; k += step) {
+      const banned = interior[k];
       const alt = shortest(graph, anchors[i], anchors[i + 1], new Set([banned]));
       if (alt && alt.length <= leg.length * 1.12) { ambiguous = true; break; }
     }

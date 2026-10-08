@@ -129,7 +129,8 @@ test('pack build stores a compressed raw pack that clients can read back, with t
   assert.match(decodeURIComponent(requested), /out geom qt;/);
   const info = await built.json() as { version: number; stats: { ways: number; buildings: number } };
   assert.deepEqual([info.version, info.stats.ways, info.stats.buildings], [1, 1, 1]);
-  const rebuilt = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).json() as { version: number };
+  assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).status, 429, 'rebuild cooldown');
+  const rebuilt = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl, now: () => NOW + 120_000 })).json() as { version: number };
   assert.equal(rebuilt.version, 2);
   const got = await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/areas/area_n/pack`);
   assert.equal(got.headers.get('x-pack-version'), '2');
@@ -172,4 +173,15 @@ test('meta gives role, scoped areas and pack versions in one request', async () 
   await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl: (async () => overpassOk()) as unknown as typeof fetch });
   const after = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { areas: { id: string; packVersion: number | null }[] };
   assert.equal(after.areas.find((a) => a.id === 'area_n')!.packVersion, 1);
+});
+
+test('sequence numbers are strictly increasing and unique across interleaved batches', async () => {
+  const { db, call } = await setup();
+  await Promise.all(Array.from({ length: 6 }, (_, w) => call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`,
+    ops(...Array.from({ length: 25 }, (_, i): [string, string, string] => [stamp(NOW - 50_000 + w * 1000 + i), `h:w${w}k${i}`, 'completed'])))));
+  const rows = db.sqlite.prepare('SELECT seq FROM v5_state ORDER BY seq').all() as { seq: number }[];
+  assert.equal(rows.length, 150);
+  assert.equal(new Set(rows.map((r) => r.seq)).size, 150, 'no duplicate sequence numbers');
+  const counter = db.sqlite.prepare('SELECT seq FROM v5_counters').get() as { seq: number };
+  assert.equal(rows[rows.length - 1].seq, counter.seq, 'the counter ends exactly at the highest assigned number');
 });

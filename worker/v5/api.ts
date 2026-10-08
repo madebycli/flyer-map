@@ -18,9 +18,10 @@ export type V5Options = {
 };
 
 const MAX_OPS = 200;
-const ROWS_PER_STATEMENT = 12; // 8 bound parameters per row; D1 allows 100 per statement.
+const ROWS_PER_STATEMENT = 10; // 9 bound parameters per row; D1 allows 100 per statement.
 const PACK_CHUNK_BYTES = 512 * 1024;
 const MAX_AREA_SQ_KM = 25;
+const PACK_REBUILD_COOLDOWN_MS = 60_000;
 const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 const KEY = /^[sh]:[A-Za-z0-9#:._-]{1,80}$/u;
 const ID = /^[A-Za-z0-9._:-]{1,160}$/u;
@@ -136,29 +137,30 @@ async function pushOps(db: D1DatabaseLike, access: AccessContext, campaignId: st
     const prior = latest.get(op.key);
     if (!prior || prior.id < id) latest.set(op.key, { id, key: op.key, status: op.status, area: op.area });
   }
-  let cursor = 0;
   if (latest.size) {
-    await db.prepare('INSERT OR IGNORE INTO v5_counters (campaign_id, seq) VALUES (?, 0)').bind(campaignId).all();
-    const reserved = await db.prepare('UPDATE v5_counters SET seq = seq + ? WHERE campaign_id = ? RETURNING seq').bind(latest.size, campaignId).first<{ seq: number }>();
-    if (!reserved) return fail(500, 'counter_missing', 'Zähler fehlt.');
-    cursor = reserved.seq;
-    let seq = reserved.seq - latest.size;
+    // Sequence numbers are allocated inside the same atomic batch as the upserts. Reserving them in a
+    // separate request step would let a slower writer commit lower numbers after a faster one, and a
+    // client whose cursor already passed them would never see those rows.
     const rows = [...latest.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
     const actor = (access.label ?? access.grantId).slice(0, 80);
-    const statements = [];
+    const statements = [
+      db.prepare('INSERT OR IGNORE INTO v5_counters (campaign_id, seq) VALUES (?, 0)').bind(campaignId),
+      db.prepare('UPDATE v5_counters SET seq = seq + ? WHERE campaign_id = ?').bind(rows.length, campaignId),
+    ];
     for (let i = 0; i < rows.length; i += ROWS_PER_STATEMENT) {
       const chunk = rows.slice(i, i + ROWS_PER_STATEMENT);
       const values: unknown[] = [];
-      for (const row of chunk) values.push(campaignId, row.key, row.id, row.status, row.area, actor, access.grantId, ++seq);
+      chunk.forEach((row, j) => values.push(campaignId, row.key, row.id, row.status, row.area, actor, access.grantId, campaignId, rows.length - (i + j + 1)));
       statements.push(db.prepare(
-        `INSERT INTO v5_state (campaign_id, key, op_id, status, area_id, actor, grant_id, seq) VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?)').join(',')}
+        `INSERT INTO v5_state (campaign_id, key, op_id, status, area_id, actor, grant_id, seq)
+         VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,(SELECT seq FROM v5_counters WHERE campaign_id = ?) - ?)').join(',')}
          ON CONFLICT(campaign_id, key) DO UPDATE SET op_id = excluded.op_id, status = excluded.status, area_id = excluded.area_id,
            actor = excluded.actor, grant_id = excluded.grant_id, seq = excluded.seq WHERE excluded.op_id > v5_state.op_id`,
       ).bind(...values));
     }
     await db.batch(statements);
   }
-  return json({ accepted, rejected, cursor });
+  return json({ accepted, rejected });
 }
 
 async function getPack(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string): Promise<Response> {
@@ -182,11 +184,14 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
   const bbox = paddedBbox(ring);
   const km2 = ((bbox[2] - bbox[0]) * 110.574) * ((bbox[3] - bbox[1]) * 111.32 * Math.cos((((bbox[0] + bbox[2]) / 2) * Math.PI) / 180));
   if (km2 > MAX_AREA_SQ_KM) return fail(422, 'area_too_large', `Gebiet zu groß (${km2.toFixed(1)} km², max. ${MAX_AREA_SQ_KM}).`);
+  // One Overpass request per Area per minute: a double tap or a script must not hammer the shared upstream.
+  const last = await db.prepare('SELECT built_at FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<{ built_at: string }>();
+  if (last && (options.now ?? Date.now)() - Date.parse(last.built_at) < PACK_REBUILD_COOLDOWN_MS) return fail(429, 'pack_recent', 'Das Kartenpaket wurde gerade erst erzeugt. Bitte eine Minute warten.');
   const doFetch = options.fetchImpl ?? fetch;
   let response: Response;
   try {
     response = await doFetch(options.overpassUrl ?? 'https://overpass-api.de/api/interpreter', {
-      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: `data=${encodeURIComponent(overpassQuery(bbox))}`,
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'verteil-flyer-v5/1 (flyer distribution field tool)' }, body: `data=${encodeURIComponent(overpassQuery(bbox))}`,
     });
   } catch { return fail(502, 'overpass_unreachable', 'Kartendatenquelle nicht erreichbar.'); }
   if (!response.ok) return fail(502, 'overpass_error', `Kartendatenquelle antwortete mit ${response.status}.`);

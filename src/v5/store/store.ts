@@ -22,6 +22,8 @@ export class FieldStore {
   private flushScheduled = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private areaOf: ((key: EntityKey) => string | undefined) | null = null;
+  /** Saving before the persisted state was loaded would overwrite the offline outbox with an empty one. */
+  private mayPersist: boolean;
 
   constructor(
     readonly actor: string,
@@ -30,10 +32,12 @@ export class FieldStore {
     private readonly saveDelayMs = 400,
   ) {
     this.clock = { wall: 0, counter: 0, node: actor };
+    this.mayPersist = persistence === null;
   }
 
   async hydrate(): Promise<void> {
     const saved = await this.persistence?.load();
+    this.mayPersist = true;
     if (!saved || saved.version !== 1) return;
     this.clock = { ...saved.clock, node: this.actor };
     this.cursor = saved.cursor;
@@ -86,6 +90,20 @@ export class FieldStore {
     this.scheduleSave();
   }
 
+  /**
+   * After the derived network is known: stamp queued edits with their Area and drop edits whose
+   * entity no longer exists (e.g. an Area was removed), which could otherwise never be sent.
+   */
+  reconcilePending(isKnownKey: (key: EntityKey) => boolean): number {
+    let dropped = 0;
+    for (const [id, op] of this.pending) {
+      if (!isKnownKey(op.key)) { this.pending.delete(id); dropped++; continue; }
+      if (!op.area) { const area = this.areaOf?.(op.key); if (area) this.pending.set(id, { ...op, area }); }
+    }
+    if (dropped) this.scheduleSave();
+    return dropped;
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
@@ -130,7 +148,7 @@ export class FieldStore {
   }
 
   async persistNow(): Promise<void> {
-    if (!this.persistence) return;
+    if (!this.persistence || !this.mayPersist) return;
     const data: Persisted = {
       version: 1, clock: this.clock, cursor: this.cursor,
       overlay: [...this.overlay.entries()], pending: this.pendingOps(),
