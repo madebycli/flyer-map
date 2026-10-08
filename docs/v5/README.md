@@ -41,11 +41,14 @@ Streets and houses are a pure function of OSM data. v5 therefore stores **no tas
 
 ## Verified
 
-`npm test` (1056 tests incl. engine, store, API, legacy import), `npm run typecheck`, `npm run build`, and the
-browser flow in `scripts/v5-e2e` (needs Playwright + Chromium): pack build → derive → mark house → undo →
-server sync → fresh client sees state → route marking (5 segments, 16 houses) → viewer is read-only.
-Measured in headless Chromium with software WebGL: 12.8 k houses, painting 5 000 statuses ≈ 21 ms, one change ≈ 1 ms;
-engine derives 51 k houses in ≈ 0.54 s on a fast CPU.
+- `npm test` (1068 tests incl. engine, store, API incl. attack/race cases, legacy import), `npm run typecheck`, `npm run build`.
+- An independent code review (`/code-review`, high) found 10 issues; all fixed (see git log "address independent review findings").
+- Browser flows in `scripts/v5-e2e` (real Worker handlers on in-memory D1; Playwright + Chromium):
+  `flow.mjs` – pack build → derive → mark → undo → sync → fresh client → route marking → read-only viewer;
+  `flow2.mjs` – legacy-progress import, offline outbox (API blocked: edit persisted to IndexedDB at once, delivered
+  after reconnect), team editor sees only its Area. All checks pass at 1.2 k and at 39 k houses
+  (`CITY_BLOCKS=70`): first boot incl. pack build + derive 5.0 s, later boots 1.9 s in headless Chromium with software WebGL.
+- Measured: 12.8 k houses, painting 5 000 statuses ≈ 21 ms, one change ≈ 1 ms; engine derives 51 k houses in ≈ 0.54 s.
 
 ## Not verified / not done
 
@@ -54,4 +57,6 @@ engine derives 51 k houses in ≈ 0.54 s on a fast CPU.
 - Area drawing, comments, activity, statistics, collection/pickup and admin screens still live in the legacy app;
   v5 reads the same Areas and access grants.
 - No deploy, no remote migration (`0026` is additive and untested against a real D1).
+- Reloading the page without network does not work (no service worker by ADR-0006); only a page that is already open keeps working offline.
+- Key ownership is bound to the first Area that writes a key; the server cannot yet verify that a key geometrically lies inside the claimed Area (it would need the derived key set per Area).
 - Pack rebuilds change derived ids only where OSM changed; statuses of vanished ids stay in D1 but are not shown.

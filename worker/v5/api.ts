@@ -15,6 +15,8 @@ export type V5Options = {
   overpassUrl?: string;
   now?: () => number;
   maxPackBytes?: number;
+  /** Upper bound for one Area's padded bounding box (default 25 km²). */
+  maxAreaSqKm?: number;
 };
 
 const MAX_OPS = 200;
@@ -224,7 +226,8 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
   const ring = area.geometry.coordinates[0];
   const bbox = paddedBbox(ring);
   const km2 = ((bbox[2] - bbox[0]) * 110.574) * ((bbox[3] - bbox[1]) * 111.32 * Math.cos((((bbox[0] + bbox[2]) / 2) * Math.PI) / 180));
-  if (km2 > MAX_AREA_SQ_KM) return fail(422, 'area_too_large', `Gebiet zu groß (${km2.toFixed(1)} km², max. ${MAX_AREA_SQ_KM}).`);
+  const maxKm2 = options.maxAreaSqKm ?? MAX_AREA_SQ_KM;
+  if (km2 > maxKm2) return fail(422, 'area_too_large', `Gebiet zu groß (${km2.toFixed(1)} km², max. ${maxKm2}).`);
   // One upstream attempt per Area per minute, claimed atomically *before* the request, so double taps,
   // concurrent callers and failed attempts cannot hammer the shared Overpass service.
   const nowMs = (options.now ?? Date.now)();
