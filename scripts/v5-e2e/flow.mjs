@@ -52,14 +52,15 @@ await ctx.close();
 const fresh = await done(page);
 if (process.env.V5_DEBUG) console.log('DEBUG pill:', JSON.stringify(await page.locator('.v5-pill').innerText()), 'server rows:', await page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.map((o) => o.key + '=' + o.status).join(','))); check('a fresh client (empty IndexedDB) sees the server state', fresh === start + 1, `fresh=${fresh} start=${start}`);
 await jump(page, 200, 0, 15.8);
-await page.getByRole('button', { name: 'Strecke markieren' }).click();
+await page.getByRole('button', { name: 'Markieren' }).click();
+await page.getByRole('button', { name: 'Strecke', exact: true }).click();
 await clickAt(page, 50, 0); await clickAt(page, 350, 0);
 await page.waitForTimeout(900);
-const meta = await page.locator('.v5-sheet .v5-meta').innerText();
+const meta = await page.locator('.v5-markinfo').innerText();
 check('route sheet reports 5 segments and 400 m', /5/.test(meta) && /400 m/.test(meta), meta.replace(/\n/g, ' '));
 await page.screenshot({ path: `${shots}/f2-route.png` });
 const beforeRoute = await done(page);
-await page.locator('.v5-sheet').getByRole('button', { name: 'Erledigt' }).click();
+await page.getByRole('button', { name: 'Strecke markieren' }).click();
 await page.waitForTimeout(1500);
 check('route marking completes the houses along the street', (await done(page)) - beforeRoute >= 10, `+${(await done(page)) - beforeRoute}`);
 await ctx.close();
@@ -76,7 +77,7 @@ check('and back to dark', await page.evaluate(() => document.documentElement.dat
 await ctx.close();
 
 ({ ctx, page } = await open('viewer'));
-check('viewer is read-only: no route tool, a banner instead', (await page.getByRole('button', { name: 'Strecke markieren' }).count()) === 0 && (await page.locator('.v5-banner').count()) === 1);
+check('viewer is read-only: no mark tool, a banner instead', (await page.getByRole('button', { name: 'Markieren' }).count()) === 0 && (await page.locator('.v5-banner').count()) === 1);
 await jump(page, 116, 13, 18.1); await clickAt(page, 116, 13); await page.waitForSelector('.v5-sheet');
 check('viewer sees the status but no buttons', (await page.locator('.v5-status').count()) === 0);
 await ctx.close();

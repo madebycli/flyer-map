@@ -80,10 +80,10 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
   if (!campaign) return fail(404, 'not_found', 'Aktion nicht gefunden.');
   const scoped = isScoped(access);
   const areas = (await db.prepare(
-    `SELECT a.id, a.name, a.team_id, a.geometry_json, p.version AS pack_version, p.geometry_hash AS pack_hash FROM areas a
+    `SELECT a.id, a.name, a.team_id, a.geometry_json, a.updated_at, p.version AS pack_version, p.geometry_hash AS pack_hash FROM areas a
      LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
      WHERE a.campaign_id = ?${scoped ? ' AND a.team_id = ?' : ''} ORDER BY a.created_at, a.id`,
-  ).bind(...(scoped ? [campaignId, access.teamId] : [campaignId])).all<{ id: string; name: string; team_id: string; geometry_json: string; pack_version: number | null; pack_hash: string | null }>()).results;
+  ).bind(...(scoped ? [campaignId, access.teamId] : [campaignId])).all<{ id: string; name: string; team_id: string; geometry_json: string; updated_at: string; pack_version: number | null; pack_hash: string | null }>()).results;
   const teams = (await db.prepare('SELECT id, name, color FROM teams WHERE campaign_id = ? ORDER BY name, id').bind(campaignId).all<{ id: string; name: string; color: string }>()).results;
   return json({
     campaign, role: access.role, teamId: access.teamId, canWrite: writesAllowed(access),
@@ -93,7 +93,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
       const geometry = JSON.parse(a.geometry_json);
       // A pack built for a different polygon is stale: report it as missing so the client offers a rebuild.
       const stale = a.pack_version !== null && a.pack_hash !== (await geometryHash(geometry));
-      return { id: a.id, name: a.name, teamId: a.team_id, geometry, packVersion: stale ? null : a.pack_version, packStale: stale };
+      return { id: a.id, name: a.name, teamId: a.team_id, geometry, updatedAt: a.updated_at, packVersion: stale ? null : a.pack_version, packStale: stale };
     })),
   });
 }

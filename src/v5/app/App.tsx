@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { buildGraph, importLegacyProgress, routeSegments, type House, type LegacySnapshot, type Network, type Segment } from '../engine/index.ts';
-import { FieldMap, statusColors, type Hit, type Theme } from '../map/fieldMap.ts';
+import { importLegacyProgress, type House, type LegacySnapshot, type Network, type Segment } from '../engine/index.ts';
+import { FieldMap, statusColors, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import type { FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
+import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
 import { fetchLegacySnapshot } from './api.ts';
+import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
+import { buildIndex } from './mark.ts';
+import { MarkBar, meters, useMarking } from './marking.tsx';
 import { useCampaign } from './useCampaign.ts';
 import { Icon, Loader, WavyProgress, type IconName } from './ui.tsx';
 
@@ -11,13 +15,10 @@ const LABELS: Record<Status, string> = { open: 'Offen', completed: 'Erledigt', l
 const ORDER: Status[] = ['completed', 'later', 'not-deliverable', 'open'];
 const STATUS_ICON: Record<Status, IconName> = { completed: 'check', later: 'later', 'not-deliverable': 'blocked', open: 'open' };
 const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
-const meters = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`);
-const NO_SEGMENTS: string[] = [];
+const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf-v5-hand') === 'left' ? 'left' : 'right'; } catch { return 'right'; } };
 
-type Selection =
-  | { kind: 'house'; house: House }
-  | { kind: 'segment'; segment: Segment; houses: House[] };
-
+type Tool = 'inspect' | 'mark' | 'areas';
+type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
 function useStatus(store: FieldStore | null, key: EntityKey | null): Status {
@@ -27,82 +28,51 @@ function useStatus(store: FieldStore | null, key: EntityKey | null): Status {
   );
 }
 
+/** Bounds of what can be worked on (houses and visible streets); Area polygons only when nothing was derived. */
+function workBounds(network: Network, areas: { geometry: { coordinates: [number, number][][] } }[]): [[number, number], [number, number]] {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  const add = (lng: number, lat: number) => { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < s) s = lat; if (lat > n) n = lat; };
+  for (const house of network.houses) add(house.center[0], house.center[1]);
+  for (const segment of network.segments) if (segment.visible) add(segment.coords[0][0], segment.coords[0][1]);
+  if (!Number.isFinite(w)) for (const area of areas) for (const [lng, lat] of area.geometry.coordinates[0]) add(lng, lat);
+  return [[w, s], [e, n]];
+}
+const FIT_PADDING = { top: 120, bottom: 170, left: 28, right: 28 };
+
 export function App({ campaignId }: { campaignId: string }) {
   const campaign = useCampaign(campaignId);
   const { phase, meta, network, store } = campaign;
   const mapHost = useRef<HTMLDivElement>(null);
   const fieldMap = useRef<FieldMap | null>(null);
+  const [tool, setTool] = useState<Tool>('inspect');
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [routeMode, setRouteMode] = useState(false);
-  const [anchors, setAnchors] = useState<string[]>([]);
-  const [withHouses, setWithHouses] = useState(true);
   const [undo, setUndo] = useState<Undo | null>(null);
-  const [importState, setImportState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [notice, setNotice] = useState<string | null>(null);
+  const [importState, setImportState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [theme, setTheme] = useState<Theme>(readTheme);
+  const [hand, setHand] = useState<'left' | 'right'>(readHand);
+  const [menu, setMenu] = useState(false);
 
-  const index = useMemo(() => {
-    if (!network) return null;
-    const housesBySegment = new Map<string, House[]>();
-    for (const house of network.houses) if (house.parent) { const list = housesBySegment.get(house.parent); if (list) list.push(house); else housesBySegment.set(house.parent, [house]); }
-    return {
-      housesBySegment, graph: buildGraph(network),
-      segments: new Map(network.segments.map((s) => [s.id, s])), houses: new Map(network.houses.map((h) => [h.id, h])),
-    };
-  }, [network]);
-
-  const route = useMemo(() => (index && anchors.length >= 1 ? routeSegments(network as Network, anchors, index.graph) : null), [index, network, anchors]);
-  const routeSegmentIds = route?.state === 'selected' ? route.segmentIds : NO_SEGMENTS;
-
-  // The map is created once; geometry and status arrive through loadNetwork / bind.
-  useEffect(() => {
-    if (!mapHost.current || fieldMap.current) return;
-    fieldMap.current = new FieldMap({
-      container: mapHost.current,
-      theme,
-      onHit: (hit) => hitRef.current(hit),
-      segmentsOnly: () => routeModeRef.current,
-    });
-    return () => { fieldMap.current?.destroy(); fieldMap.current = null; };
-  }, []);
-
-  useEffect(() => {
-    if (!network || !store || !fieldMap.current) return;
-    const map = fieldMap.current;
-    void map.loadNetwork(network).then(() => {
-      map.bind(store);
-      map.fitTo(workBounds(network, meta?.areas ?? []), { top: 120, bottom: 150, left: 28, right: 28 });
-    });
-  }, [network, store]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    fieldMap.current?.setTheme(theme);
-    try { localStorage.setItem('vf-v5-theme', theme); } catch { /* private mode */ }
-  }, [theme]);
-
-  useEffect(() => { fieldMap.current?.setPreview(routeMode ? routeSegmentIds.map(segmentKey) : []); }, [routeMode, routeSegmentIds]);
+  const index = useMemo(() => (network ? buildIndex(network) : null), [network]);
+  const canWrite = !!meta?.canWrite;
 
   const apply = useCallback((keys: EntityKey[], status: Status, label: string) => {
-    if (!store || !meta?.canWrite || !keys.length) return;
+    if (!store || !canWrite || !keys.length) return;
     const before = keys.map((key) => [key, store.statusOf(key)] as const);
     store.set(keys, status);
-    setUndo({
-      label: `${label} → ${LABELS[status]}`,
-      revert: () => { for (const [key, previous] of before) store.set(key, previous); },
-    });
-  }, [store, meta]);
+    setUndo({ label: `${label} → ${LABELS[status]}`, revert: () => { for (const [key, previous] of before) store.set(key, previous); } });
+  }, [store, canWrite]);
 
-  const routeModeRef = useRef(false);
-  routeModeRef.current = routeMode;
-  const hitRef = useRef<(hit: Hit | null) => void>(() => {});
-  hitRef.current = (hit) => {
+  const marking = useMarking({ fieldMap, network, index, apply }, tool === 'mark');
+  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload }, tool === 'areas');
+
+  // One click router: whichever tool is active decides what a tap on the map means.
+  const hitRef = useRef<(hit: Hit | null, point: Pt) => void>(() => {});
+  hitRef.current = (hit, point) => {
+    if (tool === 'areas') { areaTool.onMapTap(point); return; }
+    if (tool === 'mark') { marking.onMapHit(hit); return; }
     if (!index) return;
     if (!hit) { setSelection(null); fieldMap.current?.select(null); return; }
-    if (routeMode) {
-      if (hit.kind === 'segment') setAnchors((current) => [...current, hit.id]);
-      return;
-    }
     if (hit.kind === 'house') {
       const house = index.houses.get(hit.id);
       if (house) { setSelection({ kind: 'house', house }); fieldMap.current?.select(houseKey(house.id)); }
@@ -111,8 +81,34 @@ export function App({ campaignId }: { campaignId: string }) {
       if (segment) { setSelection({ kind: 'segment', segment, houses: index.housesBySegment.get(segment.id) ?? [] }); fieldMap.current?.select(segmentKey(segment.id)); }
     }
   };
+  const segmentsOnlyRef = useRef(false);
+  segmentsOnlyRef.current = tool === 'mark' && marking.mode === 'route';
 
-  useEffect(() => { if (!undo) return; const t = window.setTimeout(() => setUndo(null), 8000); return () => window.clearTimeout(t); }, [undo]);
+  useEffect(() => {
+    if (!mapHost.current || fieldMap.current) return;
+    fieldMap.current = new FieldMap({ container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), segmentsOnly: () => segmentsOnlyRef.current });
+    return () => { fieldMap.current?.destroy(); fieldMap.current = null; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!network || !store || !fieldMap.current) return;
+    const map = fieldMap.current;
+    void map.loadNetwork(network).then(() => { map.bind(store); map.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); });
+  }, [network, store]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    fieldMap.current?.setTheme(theme);
+    try { localStorage.setItem('vf-v5-theme', theme); } catch { /* private mode */ }
+  }, [theme]);
+  useEffect(() => { try { localStorage.setItem('vf-v5-hand', hand); } catch { /* private mode */ } }, [hand]);
+
+  useEffect(() => { if (!undo) return; const t = window.setTimeout(() => setUndo(null), 7000); return () => window.clearTimeout(t); }, [undo]);
+  useEffect(() => { if (!notice) return; const t = window.setTimeout(() => setNotice(null), 9000); return () => window.clearTimeout(t); }, [notice]);
+
+  const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); };
+  const enter = (next: Tool) => { closeSelection(); setMenu(false); areaTool.setSelectedId(null); setTool(next); };
+  const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); };
 
   const importLegacy = async () => {
     if (!store || !network) return;
@@ -125,40 +121,37 @@ export function App({ campaignId }: { campaignId: string }) {
       }
       const { housesMatched, housesUnmatched, streetRangesMatched, streetRangesUnmatched } = result.stats;
       setNotice(`${housesMatched} Häuser und ${streetRangesMatched} Straßenabschnitte übernommen${housesUnmatched + streetRangesUnmatched ? `, ${housesUnmatched + streetRangesUnmatched} nicht zuordenbar` : ''}.`);
-      setImportState('done');
+      setImportState('done'); setMenu(false);
     } catch { setNotice('Der bisherige Fortschritt konnte nicht geladen werden.'); setImportState('idle'); }
   };
-  useEffect(() => { if (!notice) return; const t = window.setTimeout(() => setNotice(null), 9000); return () => window.clearTimeout(t); }, [notice]);
 
-  const leaveRouteMode = () => { setRouteMode(false); setAnchors([]); };
-  const routeKeys = useMemo(() => {
-    if (!index || !routeSegmentIds.length) return [] as EntityKey[];
-    const visible = routeSegmentIds.filter((id) => index.segments.get(id)?.visible);
-    const keys = visible.map(segmentKey);
-    if (withHouses) for (const id of visible) for (const house of index.housesBySegment.get(id) ?? []) keys.push(houseKey(house.id));
-    return keys;
-  }, [index, routeSegmentIds, withHouses]);
-  const routeLength = route?.state === 'selected' ? route.length : 0;
-
-  const canWrite = !!meta?.canWrite;
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
-  const sheetOpen = routeMode || !!selection;
-  const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), { top: 120, bottom: 150, left: 28, right: 28 }); };
-  const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); };
+  const ready = phase.kind === 'ready';
+  const editing = !!areaTool.edit;
+  const ui = !ready ? 'none' : editing || tool === 'mark' ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu ? 'sheet' : 'dock';
+  const canEditAny = !!meta && (meta.role === 'admin' || meta.role === 'team-editor');
+
+  const selectedArea = meta?.areas.find((a) => a.id === areaTool.selectedId) ?? null;
+  const areaStats = useMemo(() => {
+    if (!selectedArea || !network || !store) return null;
+    let total = 0, done = 0;
+    for (const house of network.houses) if (campaign.areaOf.get(`h:${house.id}`) === selectedArea.id) { total++; if (store.statusOf(`h:${house.id}`) === 'completed') done++; }
+    return { total, done, size: areaSquareMeters(fromRing(selectedArea.geometry.coordinates[0])) };
+  }, [selectedArea, network, store, campaign.areaOf, campaign.progress]);
 
   return (
-    <div className="v5-root">
+    <div className="v5-root" data-ui={ui} data-hand={hand}>
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
-      {phase.kind === 'ready' && <Hud name={meta?.campaign.name ?? ''} campaign={campaign} />}
-      {phase.kind === 'ready' && meta && !meta.canWrite && <div className="v5-banner" role="status"><Icon name="eye" size={20} />Nur ansehen</div>}
-      {phase.kind === 'ready' && campaign.missingAreas.length > 0 && (
+      {ready && <Hud name={meta?.campaign.name ?? ''} campaign={campaign} />}
+      {ready && meta && !meta.canWrite && <div className="v5-banner" role="status"><Icon name="eye" size={20} />Nur ansehen</div>}
+      {ready && campaign.missingAreas.length > 0 && (
         <div className="v5-banner v5-missing" role="status">
           <Icon name="warning" size={20} /><span>{campaign.missingAreas.map((a) => a.name).join(', ')}</span>
           {meta?.canBuildPack && <button className="v5-icon-btn tonal" onClick={() => void campaign.buildMissing()} aria-label="Kartendaten laden" title="Kartendaten laden"><Icon name="download" /></button>}
         </div>
       )}
       {notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{notice}</span><button className="v5-icon-btn" onClick={() => setNotice(null)} aria-label="OK"><Icon name="close" size={20} /></button></div>}
-      {undo && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{undo.label}</span><button className="v5-icon-btn tonal" onClick={() => { undo.revert(); setUndo(null); }} aria-label="Rückgängig" title="Rückgängig"><Icon name="undo" /></button></div>}
+      {undo && !notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{undo.label}</span><button className="v5-icon-btn tonal" onClick={() => { undo.revert(); setUndo(null); }} aria-label="Rückgängig" title="Rückgängig"><Icon name="undo" /></button></div>}
 
       {phase.kind === 'loading' && <Overlay><Loader /><p>{phase.label}</p></Overlay>}
       {phase.kind === 'error' && <Overlay><span className="v5-badge big"><Icon name="warning" size={34} /></span><h2>Das hat nicht geklappt</h2><p>{phase.status === 401 ? 'Kein Zugriff auf diese Aktion. Öffne den Einladungslink erneut.' : phase.message}</p><button className="v5-btn" onClick={() => location.reload()}><Icon name="sync" size={20} />Neu laden</button></Overlay>}
@@ -171,46 +164,48 @@ export function App({ campaignId }: { campaignId: string }) {
         </Overlay>
       )}
 
-      {phase.kind === 'ready' && !sheetOpen && (
+      {ui === 'dock' && (
         <nav className="v5-dock" aria-label="Werkzeuge">
           <button className="v5-tool" onClick={fitAll} aria-label="Alles zeigen" title="Alles zeigen"><Icon name="fit" /></button>
-          {canWrite && (
-            <button className="v5-tool primary" aria-pressed={false} aria-label="Strecke markieren" title="Strecke markieren"
-              onClick={() => { closeSelection(); setRouteMode(true); }}><Icon name="route" size={28} /></button>
-          )}
-          <button className="v5-tool" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Helles Design' : 'Dunkles Design'} title={theme === 'dark' ? 'Helles Design' : 'Dunkles Design'}>
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-          </button>
-          {importOffer && (
-            <button className="v5-tool" disabled={importState === 'busy'} onClick={() => void importLegacy()} aria-label="Fortschritt aus der bisherigen Version übernehmen" title="Fortschritt aus der bisherigen Version übernehmen">
-              <Icon name={importState === 'busy' ? 'sync' : 'download'} />
-            </button>
-          )}
+          {canWrite && <button className="v5-tool primary" onClick={() => enter('mark')} aria-label="Markieren" title="Markieren"><Icon name="brush" size={28} /></button>}
+          <button className="v5-tool" onClick={() => enter('areas')} aria-label="Gebiete" title="Gebiete"><Icon name="polygon" /></button>
+          <button className="v5-tool" onClick={() => setMenu(true)} aria-label="Mehr" title="Mehr"><Icon name="more" /></button>
         </nav>
       )}
 
-      {routeMode && (
-        <SheetFrame icon="route" title="Strecke markieren" onClose={leaveRouteMode}
-          meta={route?.state === 'selected' && anchors.length >= 2 ? <><span><Icon name="road" size={16} />{routeSegmentIds.length}</span><span><Icon name="ruler" size={16} />{meters(routeLength)}</span></> : undefined}>
-          {anchors.length < 2 && <p className="v5-hint"><Icon name="mapPin" size={20} />{anchors.length === 0 ? 'Start antippen' : 'Ende antippen – weitere Tipps setzen Zwischenpunkte'}</p>}
-          {route?.state === 'disconnected' && <p className="v5-warn"><Icon name="warning" size={20} />Nicht verbunden</p>}
-          {route?.state === 'selected' && anchors.length >= 2 && (
-            <>
-              {route.ambiguous && <p className="v5-warn"><Icon name="warning" size={20} />Mehrere ähnlich kurze Wege – Zwischenpunkt antippen</p>}
-              <div className="v5-row">
-                <button className={`v5-chip-toggle${withHouses ? ' on' : ''}`} aria-pressed={withHouses} onClick={() => setWithHouses(!withHouses)} aria-label="Häuser an der Strecke mitmarkieren" title="Häuser an der Strecke mitmarkieren">
-                  <Icon name="house" size={22} />{withHouses && <Icon name="check" size={16} />}
-                </button>
-                <button className="v5-icon-btn tonal" onClick={() => setAnchors((a) => a.slice(0, -1))} aria-label="Letzten Punkt entfernen" title="Letzten Punkt entfernen"><Icon name="undo" /></button>
-              </div>
-              <StatusGroup theme={theme} onPick={(status) => { apply(routeKeys, status, `${routeSegmentIds.length} Abschnitte`); leaveRouteMode(); }} />
-            </>
-          )}
-          {anchors.length === 1 && <div className="v5-row"><button className="v5-icon-btn tonal" onClick={() => setAnchors([])} aria-label="Zurücksetzen" title="Zurücksetzen"><Icon name="undo" /></button></div>}
+      {tool === 'mark' && ready && <MarkBar marking={marking} theme={theme} onClose={() => enter('inspect')} />}
+
+      {tool === 'areas' && ready && meta && !editing && !selectedArea && (
+        <nav className="v5-dock v5-dock-areas" aria-label="Gebiete">
+          <button className="v5-tool" onClick={() => enter('inspect')} aria-label="Fertig" title="Fertig"><Icon name="close" /></button>
+          {canEditAny && <button className="v5-tool primary" onClick={areaTool.startNew} aria-label="Neues Gebiet" title="Neues Gebiet"><Icon name="plus" size={28} /></button>}
+        </nav>
+      )}
+      {editing && meta && <AreaEditBar tool={areaTool} meta={meta} />}
+
+      {ui === 'sheet' && menu && (
+        <SheetFrame icon="more" title="Mehr" onClose={() => setMenu(false)}>
+          <div className="v5-list">
+            <button className="v5-row-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'} />{theme === 'dark' ? 'Helles Design' : 'Dunkles Design'}</button>
+            <button className="v5-row-btn" onClick={() => setHand(hand === 'right' ? 'left' : 'right')}><Icon name="hand" />{hand === 'right' ? 'Bedienung links' : 'Bedienung rechts'}</button>
+            {importOffer && <button className="v5-row-btn" disabled={importState === 'busy'} onClick={() => void importLegacy()} aria-label="Fortschritt aus der bisherigen Version übernehmen"><Icon name={importState === 'busy' ? 'sync' : 'download'} />Fortschritt aus der alten Version übernehmen</button>}
+            <a className="v5-row-btn" href={`/?campaign=${encodeURIComponent(campaignId)}`}><Icon name="mapPin" />Alte Ansicht</a>
+            {meta?.role === 'admin' && <a className="v5-row-btn" href="/login"><Icon name="shield" />Verwaltung</a>}
+          </div>
         </SheetFrame>
       )}
 
-      {!routeMode && selection && (
+      {tool === 'areas' && !editing && selectedArea && (
+        <SheetFrame icon="polygon" title={selectedArea.name} onClose={() => areaTool.setSelectedId(null)}
+          meta={<><span><Icon name="ruler" size={16} />{areaStats ? sizeLabel(areaStats.size) : ''}</span><span><Icon name="house" size={16} />{areaStats ? `${areaStats.done.toLocaleString('de')} / ${areaStats.total.toLocaleString('de')}` : ''}</span></>}>
+          <div className="v5-row">
+            <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo([[Math.min(...selectedArea.geometry.coordinates[0].map((p) => p[0])), Math.min(...selectedArea.geometry.coordinates[0].map((p) => p[1]))], [Math.max(...selectedArea.geometry.coordinates[0].map((p) => p[0])), Math.max(...selectedArea.geometry.coordinates[0].map((p) => p[1]))]], FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
+            {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
+          </div>
+        </SheetFrame>
+      )}
+
+      {tool === 'inspect' && selection && (
         <SheetFrame
           icon={selection.kind === 'house' ? 'house' : 'road'}
           title={selection.kind === 'house' ? `${selection.house.street ?? ''} ${selection.house.number ?? ''}`.trim() || 'Haus' : selection.segment.name ?? 'Straße'}
@@ -232,16 +227,6 @@ export function App({ campaignId }: { campaignId: string }) {
       )}
     </div>
   );
-}
-
-/** Bounds of what can be worked on (houses and visible streets); Area polygons only when nothing was derived. */
-function workBounds(network: Network, areas: { geometry: { coordinates: [number, number][][] } }[]): [[number, number], [number, number]] {
-  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
-  const add = (lng: number, lat: number) => { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < s) s = lat; if (lat > n) n = lat; };
-  for (const house of network.houses) add(house.center[0], house.center[1]);
-  for (const segment of network.segments) if (segment.visible) add(segment.coords[0][0], segment.coords[0][1]);
-  if (!Number.isFinite(w)) for (const area of areas) for (const [lng, lat] of area.geometry.coordinates[0]) add(lng, lat);
-  return [[w, s], [e, n]];
 }
 
 function StatusGroup({ current, onPick, theme }: { current?: Status; onPick: (status: Status) => void; theme: Theme }) {

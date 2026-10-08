@@ -165,6 +165,7 @@ test('meta gives role, scoped areas and pack versions in one request', async () 
   const { call } = await setup();
   const admin = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { areas: { id: string; packVersion: number | null }[]; teams: unknown[]; canWrite: boolean; canBuildPack: boolean };
   assert.deepEqual(admin.areas.map((a) => a.id).sort(), ['area_n', 'area_o']);
+  assert.ok(admin.areas.every((a) => typeof (a as { updatedAt?: string }).updatedAt === 'string' && (a as { updatedAt: string }).updatedAt.length > 0), 'areas carry updatedAt for optimistic edits');
   assert.equal(admin.teams.length, 2);
   const viewer = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { canWrite: boolean; canBuildPack: boolean };
   assert.deepEqual([viewer.canWrite, viewer.canBuildPack], [false, false]);

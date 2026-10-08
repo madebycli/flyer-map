@@ -8,7 +8,7 @@ export type Meta = {
   canWrite: boolean;
   canBuildPack: boolean;
   teams: { id: string; name: string; color: string }[];
-  areas: { id: string; name: string; teamId: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; packVersion: number | null }[];
+  areas: { id: string; name: string; teamId: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; updatedAt: string; packVersion: number | null; packStale?: boolean }[];
 };
 
 export class V5ApiError extends Error {
@@ -62,3 +62,27 @@ export function httpTransport(campaignId: string): SyncTransport {
 export async function fetchLegacySnapshot(campaignId: string): Promise<unknown> {
   return (await call(`/api/campaigns/${encodeURIComponent(campaignId)}/snapshot`)).json();
 }
+
+type Polygon = { type: 'Polygon'; coordinates: [number, number][][] };
+
+/** Area edits go through the existing, validated, authorised mutation endpoint, so legacy clients stay consistent. */
+async function postAreaMutation(campaignId: string, type: 'area.update-geometry' | 'area.create', payload: Record<string, unknown>): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    const { revision } = await (await call(`/api/campaigns/${encodeURIComponent(campaignId)}/version`)).json() as { revision: number };
+    const mutation = { id: `mutation_${crypto.randomUUID()}`, campaignId, type, payload, baseRevision: revision, createdAt: new Date().toISOString() };
+    try {
+      await call(`/api/campaigns/${encodeURIComponent(campaignId)}/mutations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mutation, fieldGroupId: null }) });
+      return;
+    } catch (error) {
+      // Somebody else saved in the meantime: the revision moved, our own entity check (expectedUpdatedAt) still decides.
+      if (error instanceof V5ApiError && error.status === 409 && /revision/i.test(error.code) && attempt < 2) continue;
+      throw error;
+    }
+  }
+}
+
+export const saveAreaGeometry = (campaignId: string, area: { id: string; updatedAt: string }, geometry: Polygon) =>
+  postAreaMutation(campaignId, 'area.update-geometry', { areaId: area.id, geometry, expectedUpdatedAt: area.updatedAt });
+
+export const createArea = (campaignId: string, area: { id: string; teamId: string; name: string; geometry: Polygon }) =>
+  postAreaMutation(campaignId, 'area.create', { areaId: area.id, teamId: area.teamId, name: area.name, geometry: area.geometry });

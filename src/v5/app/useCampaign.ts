@@ -24,6 +24,8 @@ export type CampaignState = {
   /** Areas that are shown without data yet (some other Areas already work). */
   missingAreas: Meta['areas'];
   buildMissing(): Promise<void>;
+  /** Re-fetch Areas, packs and status (after an Area was created or reshaped). */
+  reload(): Promise<void>;
 };
 
 function deriveInWorker(areaId: string, pack: Uint8Array, ring: [number, number][]): Promise<Network> {
@@ -138,6 +140,7 @@ export function useCampaign(campaignId: string): CampaignState {
 
   return {
     phase, meta, network, areaOf, store, progress, sync, missingAreas,
+    reload: () => reload.current(),
     async buildMissing() {
       const areas = missingRef.current;
       if (!areas.length || !canBuildRef.current) return;

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { NetworkD1, seedNetwork } from '../../tests/helpers/networkD1.ts';
 import { createAccessGrant, createSessionForGrant, sessionCookie } from '../../worker/access.ts';
 import { handleV5Api } from '../../worker/v5/api.ts';
+import baseWorker from '../../worker/index.ts';
 import { syntheticCity } from '../../src/v5/engine/synthetic.ts';
 
 const BLOCKS = Number(process.env.CITY_BLOCKS ?? 12);
@@ -57,8 +58,10 @@ http.createServer(async (req, res) => {
     const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer);
     const request = new Request(url, { method: req.method, headers: req.headers as Record<string, string>, body: ['GET', 'HEAD'].includes(req.method!) ? undefined : Buffer.concat(chunks) });
     const response = await handleV5Api(request, db, { fetchImpl, maxAreaSqKm: 200, now: () => (pace.clock += 70_000) }); // each call counts as 70 s later, so build cooldowns never block the scripted flow
-    if (!response) { res.writeHead(404); res.end(); return; }
-    res.writeHead(response.status, Object.fromEntries(response.headers)); res.end(Buffer.from(await response.arrayBuffer())); return;
+    // Everything that is not /api/v5 (area mutations, access info, version) runs through the real legacy Worker.
+    const final = response ?? await baseWorker.fetch(new Request(url, { method: req.method, headers: req.headers as Record<string, string>, body: ['GET', 'HEAD'].includes(req.method!) ? undefined : Buffer.concat(chunks) }), { DB: db } as never);
+    if (!final) { res.writeHead(404); res.end(); return; }
+    res.writeHead(final.status, Object.fromEntries(final.headers)); res.end(Buffer.from(await final.arrayBuffer())); return;
   }
   let file = path.join(dist, url.pathname === '/v5' ? '/v5.html' : url.pathname);
   try { const body = fs.readFileSync(file); res.writeHead(200, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream' }); res.end(body); }

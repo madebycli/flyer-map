@@ -1,6 +1,13 @@
 /* MapLibre control chrome in the v5 look: tonal rounded groups, dark first. Presentation only. */
-.maplibregl-ctrl-top-right { top: calc(env(safe-area-inset-top) + 0.7rem); right: 0.7rem; display: flex; flex-direction: column; align-items: flex-end; gap: 0.6rem; }
-.maplibregl-ctrl-top-right .maplibregl-ctrl { margin: 0; float: none; }
+/* Thumb zone: zoom and locate sit at the bottom edge (above the active tool bar), not at the far top corner. */
+.maplibregl-ctrl-bottom-right { right: 0.7rem; bottom: calc(env(safe-area-inset-bottom) + var(--ctl-bottom, 6.6rem)); display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 0.6rem; transition: bottom 360ms var(--spring); }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl { margin: 0; float: none; }
+.v5-root[data-hand="left"] .maplibregl-ctrl-bottom-right { right: auto; left: 0.7rem; align-items: flex-start; }
+.v5-root[data-ui="dock"] { --ctl-bottom: 6.6rem; }
+.v5-root[data-ui="bar"] { --ctl-bottom: 12.8rem; }
+.v5-root[data-ui="sheet"] .maplibregl-ctrl-bottom-right, .v5-root[data-ui="none"] .maplibregl-ctrl-bottom-right { opacity: 0; pointer-events: none; }
+.maplibregl-ctrl-bottom-left { display: none; }
+.maplibregl-ctrl-attrib { margin-right: 0 !important; }
 .maplibregl-ctrl-group { overflow: hidden; border: 0; border-radius: 1.8rem; background: color-mix(in srgb, var(--surface-3) 90%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: var(--shadow); }
 .maplibregl-ctrl-group button { width: 3.3rem; height: 3.3rem; background-color: transparent; transition: background-color 120ms; }
 .maplibregl-ctrl-group button + button { border-top: 1px solid var(--outline-var); }
