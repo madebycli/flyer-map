@@ -7,7 +7,7 @@ import { NetworkD1, seedNetwork } from '../../tests/helpers/networkD1.ts';
 import { createAccessGrant, createSessionForGrant, sessionCookie } from '../../worker/access.ts';
 import { collectionSessionCookie, createCollectionAccessLink, redeemCollectionAccess } from '../../worker/collectionAccess.ts';
 import { handleV5Api } from '../../worker/v5/api.ts';
-import baseWorker from '../../worker/index.ts';
+import baseWorker from '../../worker/indexFc52.ts'; // base Worker + the pickup (Sonder-Marker) layer, as in production
 import { syntheticCity } from '../../src/v5/engine/synthetic.ts';
 
 const BLOCKS = Number(process.env.CITY_BLOCKS ?? 12);
@@ -51,6 +51,8 @@ for (const [name, grant] of [['admin', admin.grant], ['viewer', viewer.grant], [
   }
   for (const name of ['alice', 'bob']) {
     const redeemed = (await redeemCollectionAccess(db, 'campaign_n', link.token))!;
+    // alice may place and edit Sonder-Marker, bob only sees them
+    if (name === 'alice') db.sqlite.prepare('UPDATE collection_collectors SET can_create_pickups=1, can_edit_pickups=1 WHERE id=?').run(redeemed.access.collectorId);
     cookies[name] = collectionSessionCookie(redeemed.sessionSecret).split(';')[0].split('=').slice(1).join('=');
   }
 }

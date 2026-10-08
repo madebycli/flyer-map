@@ -9,7 +9,7 @@ last_updated: 2026-10-08
 
 ## Decisions
 
-1. **Street chunks (engine `v5.1`).** A junction-to-junction segment longer than 60 m is cut into equal pieces
+1. **Street chunks (engine `v5.1`; `v5.2` fixes building centroids that drifted by metres — ids unchanged, caches rebuild).** A junction-to-junction segment longer than 60 m is cut into equal pieces
    `<segment>~<k>` (`CHUNK_METERS`). Tap marks the whole junction segment; painting and routes work per chunk, so a
    long street can be half done and a route can end mid-street. Ids stay deterministic; visibility is decided per
    junction segment (a service road with houses shows all its chunks). Cost: more features (≈ ×1.3 on the

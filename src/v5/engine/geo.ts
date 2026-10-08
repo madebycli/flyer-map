@@ -50,10 +50,13 @@ export function projectToPolyline(line: [number, number][], p: [number, number])
 }
 
 export function ringCentroid(ring: LngLat[]): LngLat {
-  // Area-weighted centroid; falls back to the vertex mean for degenerate rings.
+  // Area-weighted centroid, computed relative to the first vertex: with absolute degrees (13.0, 51.0) the cross products of a
+  // building-sized ring cancel catastrophically and the centre ends up metres away from the building. Falls back to the
+  // vertex mean for degenerate rings.
+  const [ox, oy] = ring[0];
   let a = 0, cx = 0, cy = 0;
   for (let i = 0; i < ring.length - 1; i++) {
-    const [x0, y0] = ring[i], [x1, y1] = ring[i + 1];
+    const x0 = ring[i][0] - ox, y0 = ring[i][1] - oy, x1 = ring[i + 1][0] - ox, y1 = ring[i + 1][1] - oy;
     const f = x0 * y1 - x1 * y0;
     a += f; cx += (x0 + x1) * f; cy += (y0 + y1) * f;
   }
@@ -61,7 +64,7 @@ export function ringCentroid(ring: LngLat[]): LngLat {
     const n = Math.max(1, ring.length - 1);
     return [ring.slice(0, n).reduce((s, p) => s + p[0], 0) / n, ring.slice(0, n).reduce((s, p) => s + p[1], 0) / n];
   }
-  return [cx / (3 * a), cy / (3 * a)];
+  return [ox + cx / (3 * a), oy + cy / (3 * a)];
 }
 
 export function pointInRing(p: LngLat, ring: LngLat[]): boolean {

@@ -113,7 +113,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
   const onMapHit = useCallback((hit: Hit | null): boolean => {
     if (!active) return false;
     const { index, brush: b, withHouses: wh, apply } = latest.current;
-    if (!index || !hit || hit.kind === 'note') return true;
+    if (!index || !hit || (hit.kind !== 'house' && hit.kind !== 'segment')) return true;
     if (mode === 'tap') {
       const keys = hit.kind === 'house' ? [`h:${hit.id}`] : keysForGroups(index, [hit.id], wh);
       if (keys.length) apply(keys, b, keys.length === 1 ? '1' : String(keys.length));

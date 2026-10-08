@@ -12,6 +12,7 @@ export type Meta = {
   collectorId: string | null;
   collectorLabel: string | null;
   mainAreaId: string | null;
+  pickupRights: { view: boolean; create: boolean; edit: boolean };
   runs: CollectionRunInfo[];
   role: 'admin' | 'team-editor' | 'viewer' | 'field-group-member' | 'collection-collector';
   teamId: string | null;

@@ -8,6 +8,9 @@ import { buildPack, fetchLegacySnapshot } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { buildIndex } from './mark.ts';
 import { MarkBar, meters, useMarking } from './marking.tsx';
+import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
+import { createPickup, setPickupStatus, snapToNetwork, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
+import { actionErrorText } from './collection.ts';
 import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, notePosition, segmentNoteKey, useNotesVersion } from './notes.tsx';
 import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaViews, type AreaStats } from './collection.tsx';
 import { areaPercent, collectionActions } from './collection.ts';
@@ -21,7 +24,7 @@ const STATUS_ICON: Record<Status, IconName> = { completed: 'check', later: 'late
 const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
 const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf-v5-hand') === 'left' ? 'left' : 'right'; } catch { return 'right'; } };
 
-type Tool = 'inspect' | 'mark' | 'areas';
+type Tool = 'inspect' | 'mark' | 'areas' | 'pickup';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -90,6 +93,12 @@ export function App({ campaignId }: { campaignId: string }) {
     if (area && !area.packVersion) { await buildPack(campaignId, areaId); void campaign.reload(); }
   }), [runner, actions, meta, campaignId, campaign]);
   const [listOpen, setListOpen] = useState(false);
+  const [pickupId, setPickupId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<PickupDraft | null>(null);
+  const [pickupBusy, setPickupBusy] = useState(false);
+  const [pickupError, setPickupError] = useState<string | null>(null);
+  const pickupInFlight = useRef(false);
+  const rights = meta?.pickupRights ?? { view: false, create: false, edit: false };
   const [collectionAreaId, setCollectionAreaId] = useState<string | null>(null);
   const writableAreas = useMemo(() => new Set((meta?.areas ?? []).filter((a) => a.writable).map((a) => a.id)), [meta]);
   const mayMark = canWrite && writableAreas.size > 0;
@@ -111,6 +120,28 @@ export function App({ campaignId }: { campaignId: string }) {
     return map;
   }, [network, store, campaign.areaOf, campaign.progress, isCollection]);
 
+  const selectedPickup = campaign.pickups.find((p) => p.id === pickupId) ?? null;
+  const guardPickup = async (action: () => Promise<void>) => {
+    if (pickupInFlight.current) return;
+    pickupInFlight.current = true; setPickupBusy(true); setPickupError(null);
+    try { await action(); await campaign.refreshMeta(); }
+    catch (e) { setPickupError(actionErrorText(e)); }
+    finally { pickupInFlight.current = false; setPickupBusy(false); }
+  };
+  const savePickup = () => guardPickup(async () => {
+    const valid = draft ? validateDraft(draft) : null;
+    if (!draft || !valid?.ok) return;
+    await createPickup(campaignId, { ...valid.value, position: draft.position, areaId: draft.areaId });
+    setDraft(null); setNotice('Sonder-Marker gespeichert.');
+  });
+  const changePickupStatus = (pickup: Pickup, status: PickupStatus) => guardPickup(() => setPickupStatus(campaignId, pickup, status));
+  useEffect(() => {
+    const fm = fieldMap.current;
+    if (tool !== 'pickup' || !fm) return;
+    fm.setDraw({ type: 'FeatureCollection', features: draft ? [{ type: 'Feature', properties: { kind: 'vertex', selected: 1 }, geometry: { type: 'Point', coordinates: draft.position } }] : [] });
+    return () => { fm.setDraw({ type: 'FeatureCollection', features: [] }); };
+  }, [tool, draft?.position[0], draft?.position[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const apply = useCallback((requested: EntityKey[], status: Status, label: string) => {
     if (!store || !canWrite || !requested.length) return;
     // The server decides who may write where; mirroring it here keeps a tap on someone else's Area from becoming a phantom edit.
@@ -128,6 +159,14 @@ export function App({ campaignId }: { campaignId: string }) {
   const hitRef = useRef<(hit: Hit | null, point: Pt) => void>(() => {});
   hitRef.current = (hit, point) => {
     if (tool === 'areas') { areaTool.onMapTap(point); return; }
+    if (tool === 'pickup') {
+      const at = fieldMap.current?.lngLatAt(point);
+      if (!at || !index || !meta) return;
+      const snap = snapToNetwork(index, at, meta.areas);
+      setPickupError(null);
+      setDraft((current) => ({ title: current?.title ?? '', description: current?.description ?? '', address: snap.address ?? current?.address ?? '', position: snap.position, areaId: snap.areaId, snappedTo: snap.snappedTo }));
+      return;
+    }
     if (tool === 'mark') { marking.onMapHit(hit); return; }
     if (!index) return;
     if (!hit) {
@@ -137,6 +176,7 @@ export function App({ campaignId }: { campaignId: string }) {
       return;
     }
     if (hit.kind === 'note') { openNoteTarget(hit.id); return; }
+    if (hit.kind === 'pickup') { closeSelection(); setMenu(false); setListOpen(false); setPickupError(null); setPickupId(hit.id); const p = campaign.pickups.find((x) => x.id === hit.id); if (p) fieldMap.current?.focus(p.position); return; }
     selectEntity(hit.kind, hit.id);
   };
   const selectEntity = (kind: 'house' | 'segment', id: string) => {
@@ -180,6 +220,7 @@ export function App({ campaignId }: { campaignId: string }) {
     void map.loadNetwork(network).then(() => { map.bind(store); map.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); });
   }, [network, store]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
 
+  useEffect(() => { fieldMap.current?.setPickups(pickupFeatures(campaign.pickups)); }, [campaign.pickups]);
   const notesVersion = useNotesVersion(notes);
   useEffect(() => {
     if (!notes || !index || !meta) return;
@@ -196,7 +237,7 @@ export function App({ campaignId }: { campaignId: string }) {
   useEffect(() => { if (!undo) return; const t = window.setTimeout(() => setUndo(null), 7000); return () => window.clearTimeout(t); }, [undo]);
   useEffect(() => { if (!notice) return; const t = window.setTimeout(() => setNotice(null), 9000); return () => window.clearTimeout(t); }, [notice]);
 
-  const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); setCollectionAreaId(null); };
+  const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); setCollectionAreaId(null); setPickupId(null); };
   const enter = (next: Tool) => { closeSelection(); setMenu(false); areaTool.setSelectedId(null); setTool(next); };
   const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); };
 
@@ -218,7 +259,7 @@ export function App({ campaignId }: { campaignId: string }) {
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
   const editing = !!areaTool.edit;
-  const ui = !ready ? 'none' : editing || tool === 'mark' ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu || showConflicts || notesOpen || listOpen || !!collectionAreaId ? 'sheet' : 'dock';
+  const ui = !ready ? 'none' : editing || tool === 'mark' || (tool === 'pickup' && !draft) ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu || showConflicts || notesOpen || listOpen || !!collectionAreaId || !!pickupId || !!draft ? 'sheet' : 'dock';
   const canEditAny = !!meta && (meta.role === 'admin' || meta.role === 'team-editor');
 
   const selectionArea = !selection ? '' : campaign.areaOf.get(selection.kind === 'house' ? houseKey(selection.house.id) : segmentKey(selection.segment.id)) ?? '';
@@ -263,6 +304,7 @@ export function App({ campaignId }: { campaignId: string }) {
         <nav className="v5-dock" aria-label="Werkzeuge">
           <button className="v5-tool" onClick={fitAll} aria-label="Alles zeigen" title="Alles zeigen"><Icon name="fit" /></button>
           {mayMark && <button className="v5-tool primary" onClick={() => enter('mark')} aria-label="Markieren" title="Markieren"><Icon name="brush" size={28} /></button>}
+          {isCollection && rights.create && <button className="v5-tool" onClick={() => enter('pickup')} aria-label="Sonder-Marker setzen" title="Sonder-Marker setzen"><Icon name="flag" /></button>}
           {isCollection
             ? <button className="v5-tool" onClick={() => { closeSelection(); setListOpen(true); }} aria-label="Gebiete" title="Gebiete"><Icon name="polygon" /></button>
             : <button className="v5-tool" onClick={() => enter('areas')} aria-label="Gebiete" title="Gebiete"><Icon name="polygon" /></button>}
@@ -317,6 +359,23 @@ export function App({ campaignId }: { campaignId: string }) {
         </SheetFrame>
       )}
 
+      {tool === 'pickup' && ready && !draft && (
+        <nav className="v5-dock v5-dock-areas" aria-label="Sonder-Marker setzen">
+          <button className="v5-tool" onClick={() => enter('inspect')} aria-label="Fertig" title="Fertig"><Icon name="close" /></button>
+          <span className="v5-hintchip"><Icon name="mapPin" size={20} />Karte antippen</span>
+        </nav>
+      )}
+      {tool === 'pickup' && ready && draft && (
+        <SheetFrame icon="mapPin" title="Sonder-Marker" onClose={() => { setDraft(null); setPickupError(null); }}>
+          <PickupForm draft={draft} busy={pickupBusy} error={pickupError} onChange={setDraft} onSave={() => void savePickup()} />
+        </SheetFrame>
+      )}
+      {selectedPickup && ready && tool === 'inspect' && (
+        <SheetFrame icon="mapPin" title={selectedPickup.title} onClose={() => { setPickupId(null); setPickupError(null); }}
+          meta={<span>{PICKUP_LABEL[selectedPickup.status]}</span>}>
+          <PickupBody pickup={selectedPickup} canEdit={rights.edit} busy={pickupBusy} error={pickupError} onStatus={(status) => void changePickupStatus(selectedPickup, status)} />
+        </SheetFrame>
+      )}
       {isCollection && listOpen && ready && meta && (
         <SheetFrame icon="polygon" title="Gebiete" onClose={() => setListOpen(false)}
           meta={<span><Icon name="users" size={16} />{[...views.values()].filter((v) => v.phase === 'working').length}</span>}>

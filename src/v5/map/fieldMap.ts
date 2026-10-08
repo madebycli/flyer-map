@@ -9,6 +9,7 @@ export const HOUSE_SOURCE = 'v5-houses';
 export const AREA_SOURCE = 'v5-areas';
 export const DRAW_SOURCE = 'v5-draw';
 export const NOTE_SOURCE = 'v5-notes';
+export const PICKUP_SOURCE = 'v5-pickups';
 
 export type Theme = 'dark' | 'light';
 
@@ -35,7 +36,7 @@ const statusMatch = (theme: Theme): ExpressionSpecification => {
   return ['match', ['coalesce', ['feature-state', 'status'], 'open'], 'completed', c.completed, 'later', c.later, 'not-deliverable', c['not-deliverable'], c.open];
 };
 
-export type Hit = { kind: 'segment' | 'house' | 'note'; id: string };
+export type Hit = { kind: 'segment' | 'house' | 'note' | 'pickup'; id: string };
 export type Pt = { x: number; y: number };
 /** A pointer gesture owned by the active tool. `down` decides whether the tool takes it (map pan is suspended then). */
 export type Gesture = {
@@ -126,6 +127,10 @@ export class FieldMap {
     });
     this.map.on('click', (event) => {
       if (this.swallowClick) { this.swallowClick = false; return; }
+      if (options.noteHits?.() && this.map.getLayer('v5-pickups-pin')) {
+        const pin = this.map.queryRenderedFeatures([[event.point.x - 18, event.point.y - 18], [event.point.x + 18, event.point.y + 18]], { layers: ['v5-pickups-pin'] })[0];
+        if (pin) return options.onHit?.({ kind: 'pickup', id: String(pin.properties?.id) }, event.point);
+      }
       if (options.noteHits?.() && this.map.getLayer('v5-notes-dot')) {
         const pin = this.map.queryRenderedFeatures([[event.point.x - 16, event.point.y - 16], [event.point.x + 16, event.point.y + 16]], { layers: ['v5-notes-dot'] })[0];
         if (pin) return options.onHit?.({ kind: 'note', id: String(pin.properties?.key) }, event.point);
@@ -155,6 +160,7 @@ export class FieldMap {
     this.pushAreas();
     this.pushDraw();
     this.pushNotes();
+    this.pushPickups();
     if (this.store) void this.applyChunked([...this.store.entries()].map(([key, entry]) => [key, entry.status] as [EntityKey, Status]));
     this.previewed = new Set(); // feature-state died with the old sources
     this.selected = [];
@@ -245,6 +251,29 @@ export class FieldMap {
         'circle-stroke-width': ['case', ['>', ['get', 'count'], 1], 3, 0], 'circle-stroke-color': theme === 'dark' ? '#0e1513' : '#ffffff',
       },
     }, 'v5-draw-fill');
+    // Sonder-Marker (pickup tasks): a diamond, so they never read as a house, a street or a note.
+    if (!map.hasImage('v5-pin') && typeof document !== 'undefined') {
+      const size = 64, canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const g = canvas.getContext('2d');
+      if (g) {
+        g.fillStyle = '#fff'; g.beginPath(); g.moveTo(size / 2, 4); g.lineTo(size - 6, size / 2); g.lineTo(size / 2, size - 4); g.lineTo(6, size / 2); g.closePath(); g.fill();
+        map.addImage('v5-pin', g.getImageData(0, 0, size, size), { sdf: true });
+      }
+    }
+    map.addSource(PICKUP_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    if (map.hasImage('v5-pin')) {
+      map.addLayer({
+        id: 'v5-pickups-halo', type: 'symbol', source: PICKUP_SOURCE,
+        layout: { 'icon-image': 'v5-pin', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.42, 16, 0.78] },
+        paint: { 'icon-color': theme === 'dark' ? '#0e1513' : '#ffffff' },
+      }, 'v5-draw-fill');
+      map.addLayer({
+        id: 'v5-pickups-pin', type: 'symbol', source: PICKUP_SOURCE,
+        layout: { 'icon-image': 'v5-pin', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.3, 16, 0.58] },
+        paint: { 'icon-color': ['coalesce', ['get', 'color'], '#c77dff'] },
+      }, 'v5-draw-fill');
+    }
     // House numbers need a glyph endpoint; a style without one (tests, offline stub) simply has no labels.
     if (map.getStyle().glyphs) map.addLayer({
       id: 'v5-houses-number', type: 'symbol', source: HOUSE_SOURCE, minzoom: 17.5,
@@ -342,6 +371,10 @@ export class FieldMap {
   private noteFeatures: FeatureCollection = { type: 'FeatureCollection', features: [] };
   private pushNotes() { (this.map.getSource(NOTE_SOURCE) as GeoJSONSource | undefined)?.setData(this.noteFeatures); }
 
+  setPickups(features: FeatureCollection) { this.pickupFeatures = features; this.pushPickups(); }
+  private pickupFeatures: FeatureCollection = { type: 'FeatureCollection', features: [] };
+  private pushPickups() { (this.map.getSource(PICKUP_SOURCE) as GeoJSONSource | undefined)?.setData(this.pickupFeatures); }
+
   setDraw(collection: FeatureCollection) { this.draw = collection; this.pushDraw(); }
   private pushDraw() { (this.map.getSource(DRAW_SOURCE) as GeoJSONSource | undefined)?.setData(this.draw); }
 
@@ -419,6 +452,8 @@ export class FieldMap {
     el.addEventListener('pointerup', finish);
     el.addEventListener('pointercancel', (event) => { this.pointers.delete(event.pointerId); this.cancelGesture(); });
   }
+
+  lngLatAt(point: Pt): LngLat { const l = this.map.unproject([point.x, point.y]); return [l.lng, l.lat]; }
 
   /** Centre on a place, zooming in far enough to act on it. */
   focus(at: LngLat, zoom = 17.2) { this.map.easeTo({ center: at, zoom: Math.max(this.map.getZoom(), zoom), duration: 450, padding: { top: 90, bottom: 280, left: 0, right: 0 } }); }

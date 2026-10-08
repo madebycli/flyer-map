@@ -212,3 +212,19 @@ test('chunks: houses attach to the chunk beside them and every chunk of a servic
   const withHouses = new Set(net.segments.filter((s) => s.houseCount > 0).map((s) => s.group));
   for (const s of net.segments) if (withHouses.has(s.group)) assert.equal(s.visible, true);
 });
+
+import { ringCentroid } from '../src/v5/engine/geo.ts';
+
+test('building centroids are exact at real-world coordinates (no cancellation far from the origin)', () => {
+  for (const [lng, lat] of [[13.0, 51.0], [8.6821, 50.1109], [-122.4194, 37.7749], [151.2093, -33.8688]]) {
+    const w = 12 / 70_053, h = 10 / 110_574;
+    const ring: [number, number][] = [[lng, lat], [lng + w, lat], [lng + w, lat + h], [lng, lat + h], [lng, lat]];
+    const [cx, cy] = ringCentroid(ring);
+    assert.ok(Math.abs(cx - (lng + w / 2)) < 1e-12 && Math.abs(cy - (lat + h / 2)) < 1e-12, `${lng},${lat}: off by ${Math.abs(cx - lng - w / 2) * 70_053} m`);
+  }
+  // the derived house centre lies inside its own footprint
+  const net = deriveNetwork(syntheticCity(3, 3).raw);
+  const inside = net.houses.filter((h) => h.source === 'building' && pointInRingExported(h.center, h.ring)).length;
+  assert.equal(inside, net.houses.filter((h) => h.source === 'building').length);
+});
+import { pointInRing as pointInRingExported } from '../src/v5/engine/geo.ts';

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { mergeNetworks, type Network } from '../engine/index.ts';
 import { FieldStore } from '../store/store.ts';
 import { IndexedDbNotePersistence, IndexedDbPersistence } from '../store/idb.ts';
@@ -8,6 +8,7 @@ import { NoteSync } from '../notes/sync.ts';
 import { Progress, type ProgressSnapshot } from '../store/progress.ts';
 import { SyncClient } from '../store/syncClient.ts';
 import { V5ApiError, buildPack, fetchMeta, fetchPack, httpNoteTransport, httpTransport, type Meta } from './api.ts';
+import { fetchPickups, type Pickup } from './pickups.ts';
 import { derive, type WorkerResponse } from './network.worker.ts';
 
 export type Phase =
@@ -23,6 +24,7 @@ export type CampaignState = {
   areaOf: Map<string, string>;
   store: FieldStore | null;
   notes: NoteStore | null;
+  pickups: Pickup[];
   progress: ProgressSnapshot | null;
   sync: { state: 'idle' | 'syncing' | 'offline'; pending: number };
   /** Areas that are shown without data yet (some other Areas already work). */
@@ -64,6 +66,8 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const [areaOf, setAreaOf] = useState<Map<string, string>>(new Map());
   const [store, setStore] = useState<FieldStore | null>(null);
   const [notes, setNotes] = useState<NoteStore | null>(null);
+  const [pickups, setPickups] = useState<Pickup[]>([]);
+  const loadPickups = useCallback(async (m: Meta) => { setPickups(m.kind === 'collection' && m.pickupRights.view ? await fetchPickups(campaignId) : []); }, [campaignId]);
   const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
   const [sync, setSync] = useState<CampaignState['sync']>({ state: 'idle', pending: 0 });
   const [missingAreas, setMissingAreas] = useState<Meta['areas']>([]);
@@ -89,6 +93,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         const loaded = await fetchMeta(campaignId, kind);
         if (cancelled) return;
         setMeta(loaded); metaKindRef.current = loaded.kind;
+        void loadPickups(loaded);
         canBuildRef.current = loaded.canBuildPack;
         // Per Area: the cached derived network when pack, polygon and engine are unchanged; otherwise download (all in
         // parallel — the slow part on mobile data) and derive one after another.
@@ -155,7 +160,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', hidden);
     document.addEventListener('visibilitychange', visible);
-    const poll = window.setInterval(() => { void client?.run(); if (kind === 'collection' || metaKindRef.current === 'collection') void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) setMeta(m); }, () => {}); }, 15_000);
+    const poll = window.setInterval(() => { void client?.run(); if (kind === 'collection' || metaKindRef.current === 'collection') void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) { setMeta(m); void loadPickups(m); } }, () => {}); }, 15_000);
     return () => {
       cancelled = true; client?.dispose(); progressTracker?.dispose();
       window.removeEventListener('online', online); window.removeEventListener('pagehide', flush);
@@ -167,9 +172,9 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   }, [campaignId, kind]);
 
   return {
-    phase, meta, network, areaOf, store, notes, progress, sync, missingAreas,
+    phase, meta, network, areaOf, store, notes, pickups, progress, sync, missingAreas,
     reload: () => reload.current(),
-    async refreshMeta() { setMeta(await fetchMeta(campaignId, kind)); },
+    async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
     async buildMissing() {
       if (!canBuildRef.current) return;
       setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });

@@ -3,7 +3,7 @@ import { classifyBuilding, classifyRoad } from './classify.ts';
 import { Frame, coordKey, frameFor, pointInRing, polylineLength, projectToPolyline, ringCentroid, splitEqual } from './geo.ts';
 import type { House, LngLat, Network, NetworkDiagnostics, RawOsm, RawWay, Segment } from './types.ts';
 
-export const ENGINE_VERSION = 'v5.1';
+export const ENGINE_VERSION = 'v5.2';
 
 /** Streets are marked in pieces of at most this length (chunks): the unit of precise painting and partial routes. */
 export const CHUNK_METERS = 60;

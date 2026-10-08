@@ -4,6 +4,7 @@ import { ENGINE_VERSION, encodePack, overpassQuery, packFromOverpass, paddedBbox
 import type { AccessContext } from '../access.ts';
 import { resolveAccess } from '../access.ts';
 import { resolveCollectionAccess } from '../collectionAccess.ts';
+import { loadPickupCapabilities } from '../pickupCapabilities.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
 import { canReadArea, canWriteArea, fail, ID, isScoped, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 import { pullNotes, pushNotes } from './notes.ts';
@@ -114,11 +115,24 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     } catch { runs = []; }
   }
   return json({
-    campaign, kind, role: access.role, teamId: access.teamId, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainAreaId: kind === 'collection' ? await mainAreaId(db, campaignId) : null, canWrite: writesAllowed(access),
+    campaign, kind, role: access.role, teamId: access.teamId, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainAreaId: kind === 'collection' ? await mainAreaId(db, campaignId) : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: scoped ? teams.filter((t) => t.id === access.teamId) : teams,
     areas,
   });
+}
+
+/** What this caller may do with Sonder-Marker (pickup tasks); the legacy capability model decides, v5 only mirrors it. */
+async function pickupRights(db: D1DatabaseLike, access: AccessContext, campaignId: string): Promise<{ view: boolean; create: boolean; edit: boolean }> {
+  if (access.role === 'admin') return { view: true, create: true, edit: true };
+  if (access.role === 'viewer') return { view: true, create: false, edit: false };
+  if (access.role === 'collection-collector' && access.collectorId) {
+    try {
+      const c = await loadPickupCapabilities(db, campaignId, access.collectorId);
+      return { view: c?.canViewPickups === true, create: c?.canCreatePickups === true, edit: c?.canEditPickups === true };
+    } catch { return { view: false, create: false, edit: false }; }
+  }
+  return { view: false, create: false, edit: false };
 }
 
 async function mainAreaId(db: D1DatabaseLike, campaignId: string): Promise<string | null> {
