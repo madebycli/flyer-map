@@ -10,3 +10,5 @@ dist/
 *.log
 coverage/
 dist-v5-harness
+scripts/v5-e2e/cookies.json
+scripts/v5-e2e/*.png

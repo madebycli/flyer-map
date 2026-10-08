@@ -33,3 +33,27 @@ function intersects(a: LngLat, b: LngLat, c: LngLat, d: LngLat): boolean {
   const o = (p: LngLat, q: LngLat, r: LngLat) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
   return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
 }
+
+/**
+ * Combine per-Area networks. Overlapping Areas share OSM ids, so a house or segment
+ * seen twice keeps one entry (first Area wins) and therefore one status.
+ */
+export function mergeNetworks(parts: { areaId: string; network: Network }[]): { network: Network; areaOf: Map<string, string> } {
+  const segments = new Map<string, Network['segments'][number]>();
+  const houses = new Map<string, Network['houses'][number]>();
+  const areaOf = new Map<string, string>();
+  for (const { areaId, network } of parts) {
+    for (const s of network.segments) if (!segments.has(s.id)) { segments.set(s.id, s); areaOf.set(`s:${s.id}`, areaId); }
+    for (const h of network.houses) if (!houses.has(h.id)) { houses.set(h.id, h); areaOf.set(`h:${h.id}`, areaId); }
+  }
+  const first = parts[0]?.network.diagnostics;
+  const list = [...segments.values()];
+  return {
+    network: {
+      segments: list, houses: [...houses.values()],
+      diagnostics: { ...(first ?? { engineVersion: '', waysIn: 0, waysExcluded: {}, promotedByHouses: 0, hiddenConnectors: 0, buildingsIn: 0, buildingsSkipped: {}, orphanHouses: 0, segments: 0, visibleSegments: 0, housesOut: 0 }),
+        segments: list.length, visibleSegments: list.filter((s) => s.visible).length, housesOut: houses.size },
+    },
+    areaOf,
+  };
+}

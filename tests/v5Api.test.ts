@@ -158,3 +158,18 @@ test('oversized areas are refused before any upstream request', async () => {
   assert.equal(response.status, 422);
   assert.equal(called, false);
 });
+
+test('meta gives role, scoped areas and pack versions in one request', async () => {
+  const { call } = await setup();
+  const admin = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { areas: { id: string; packVersion: number | null }[]; teams: unknown[]; canWrite: boolean; canBuildPack: boolean };
+  assert.deepEqual(admin.areas.map((a) => a.id).sort(), ['area_n', 'area_o']);
+  assert.equal(admin.teams.length, 2);
+  const viewer = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { canWrite: boolean; canBuildPack: boolean };
+  assert.deepEqual([viewer.canWrite, viewer.canBuildPack], [false, false]);
+  const editor = await (await call('editor', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { areas: { id: string }[]; teams: unknown[]; canWrite: boolean };
+  assert.deepEqual(editor.areas.map((a) => a.id), ['area_n']);
+  assert.equal(editor.teams.length, 1);
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl: (async () => overpassOk()) as unknown as typeof fetch });
+  const after = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { areas: { id: string; packVersion: number | null }[] };
+  assert.equal(after.areas.find((a) => a.id === 'area_n')!.packVersion, 1);
+});

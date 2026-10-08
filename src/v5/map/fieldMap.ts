@@ -25,6 +25,8 @@ export type FieldMapOptions = {
   center?: [number, number];
   zoom?: number;
   onHit?: (hit: Hit | null) => void;
+  /** Route marking only cares about street segments; houses must not swallow those taps. */
+  segmentsOnly?: () => boolean;
 };
 
 const BLANK_STYLE: StyleSpecification = { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#f1f3f4' } }] };
@@ -59,13 +61,26 @@ export class FieldMap {
       zoom: options.zoom ?? 15, attributionControl: { compact: true }, fadeDuration: 0, pitchWithRotate: false,
       maxPitch: 0, dragRotate: true,
     });
+    // Test/diagnostic handle, only with ?debug in the URL.
+    if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as { __v5Map?: MlMap }).__v5Map = this.map;
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), 'top-right');
     this.map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right');
     this.ready = new Promise((resolve) => this.map.once('load', () => { this.installLayers(); resolve(); }));
+    // Field work must survive a basemap outage: if the style itself cannot be fetched, fall back to a plain background.
+    let styleFallback = false;
+    this.map.on('error', (event) => {
+      const failedUrl = (event as { error?: { url?: string } }).error?.url;
+      if (styleFallback || this.map.isStyleLoaded() || !failedUrl || typeof options.style !== 'string' || failedUrl !== options.style) return;
+      styleFallback = true;
+      this.map.setStyle(BLANK_STYLE);
+    });
     this.map.on('click', (event) => {
-      const box: [[number, number], [number, number]] = [[event.point.x - 10, event.point.y - 10], [event.point.x + 10, event.point.y + 10]];
-      const houses = this.map.queryRenderedFeatures(box, { layers: ['v5-houses-fill'] });
-      if (houses.length) return options.onHit?.({ kind: 'house', id: String(houses[0].id).slice(2) });
+      // A house is hit only when the tap lies inside it; streets get a forgiving 12 px halo.
+      if (!options.segmentsOnly?.()) {
+        const houses = this.map.queryRenderedFeatures(event.point, { layers: ['v5-houses-fill'] });
+        if (houses.length) return options.onHit?.({ kind: 'house', id: String(houses[0].id).slice(2) });
+      }
+      const box: [[number, number], [number, number]] = [[event.point.x - 12, event.point.y - 12], [event.point.x + 12, event.point.y + 12]];
       const segments = this.map.queryRenderedFeatures(box, { layers: ['v5-segments-line'] });
       options.onHit?.(segments.length ? { kind: 'segment', id: String(segments[0].id).slice(2) } : null);
     });
@@ -88,6 +103,14 @@ export class FieldMap {
       id: 'v5-segments-casing', type: 'line', source: SEGMENT_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': '#ffffff', 'line-opacity': 0.9, 'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 12, 2.5, 16, 8, 20, 22] },
+    });
+    map.addLayer({
+      id: 'v5-segments-preview', type: 'line', source: SEGMENT_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#1a73e8', 'line-opacity': ['case', ['boolean', ['feature-state', 'preview'], false], 0.85, 0],
+        'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 12, 7, 16, 17, 20, 40], 'line-blur': 1,
+      },
     });
     map.addLayer({
       id: 'v5-segments-line', type: 'line', source: SEGMENT_SOURCE,
@@ -145,7 +168,16 @@ export class FieldMap {
     if (key) set(key, true);
   }
 
+  private previewed = new Set<EntityKey>();
   /** Highlight a candidate route (smart marking preview) without touching status. */
+  setPreview(keys: EntityKey[]) {
+    const next = new Set(keys);
+    for (const key of this.previewed) if (!next.has(key)) this.map.setFeatureState({ source: SEGMENT_SOURCE, id: key }, { preview: false });
+    for (const key of next) if (!this.previewed.has(key)) this.map.setFeatureState({ source: SEGMENT_SOURCE, id: key }, { preview: true });
+    this.previewed = next;
+  }
+
+  fitTo(bounds: [[number, number], [number, number]], padding = 40) { this.map.fitBounds(bounds, { padding, duration: 0, maxZoom: 18 }); }
   get paintedCount() { return this.applied; }
   destroy() { this.unbind?.(); this.map.remove(); }
 }

@@ -3,5 +3,5 @@ export { ENGINE_VERSION, deriveNetwork } from './derive.ts';
 export { classifyBuilding, classifyRoad } from './classify.ts';
 export { buildGraph, routeSegments } from './route.ts';
 export { overpassQuery, packFromOverpass, paddedBbox, type Bbox, type PackStats } from './overpass.ts';
-export { restrictToArea } from './area.ts';
+export { mergeNetworks, restrictToArea } from './area.ts';
 export { encodePack, decodePack } from './pack.ts';

@@ -21,6 +21,7 @@ export class FieldStore {
   private baseline = new Map<EntityKey, Status>();
   private flushScheduled = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private areaOf: ((key: EntityKey) => string | undefined) | null = null;
 
   constructor(
     readonly actor: string,
@@ -41,6 +42,9 @@ export class FieldStore {
     this.flush();
   }
 
+  /** Stamps outgoing edits with their Area (needed for server-side team scoping). */
+  setAreaResolver(resolver: (key: EntityKey) => string | undefined) { this.areaOf = resolver; }
+
   statusOf(key: EntityKey): Status { return this.overlay.get(key)?.status ?? 'open'; }
   get size() { return this.overlay.size; }
   get lastCursor() { return this.cursor; }
@@ -53,7 +57,8 @@ export class FieldStore {
     for (const key of Array.isArray(keys) ? keys : [keys]) {
       if (this.statusOf(key) === status && this.overlay.has(key)) continue;
       this.clock = tick(this.clock, this.now());
-      const op: Op = { id: encodeClock(this.clock), key, status, by: this.actor };
+      const area = this.areaOf?.(key);
+      const op: Op = { id: encodeClock(this.clock), key, status, by: this.actor, ...(area ? { area } : {}) };
       this.applyEntry(key, { status, at: op.id, by: op.by });
       this.pending.set(op.id, op);
       ops.push(op);

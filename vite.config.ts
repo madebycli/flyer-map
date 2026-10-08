@@ -12,4 +12,8 @@ export default defineConfig({
   build: {
     sourcemap: true,
   },
+  environments: {
+    // v5 field core ships as a second page next to the existing app (served at /v5).
+    client: { build: { rollupOptions: { input: { main: "index.html", v5: "v5.html" } } } },
+  },
 });

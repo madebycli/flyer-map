@@ -1,0 +1,82 @@
+/* v5 field shell, Vela-style: floating white surfaces, teal accent, large touch targets. */
+:root {
+  --v5-bg: #f8f9fa; --v5-surface: #ffffff; --v5-text: #202124; --v5-muted: #5f6368;
+  --v5-line: rgb(60 64 67 / 16%); --v5-teal: #14857a; --v5-teal-dark: #0b5d55; --v5-teal-tint: #b6e7df;
+  --v5-warn: #b06000; --v5-shadow: 0 1px 3px rgb(60 64 67 / 30%), 0 6px 18px rgb(60 64 67 / 18%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-appearance="light"]) {
+    --v5-bg: #131314; --v5-surface: #282a2c; --v5-text: #e8eaed; --v5-muted: #bdc1c6;
+    --v5-line: rgb(255 255 255 / 16%); --v5-teal: #4fb3a6; --v5-teal-dark: #b6e7df; --v5-teal-tint: #1f4a44;
+    --v5-warn: #fdd663; --v5-shadow: 0 1px 3px rgb(0 0 0 / 60%), 0 6px 18px rgb(0 0 0 / 40%);
+  }
+}
+html, body, #root { margin: 0; height: 100%; background: var(--v5-bg); color: var(--v5-text); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.v5-root { position: fixed; inset: 0; overflow: hidden; }
+.v5-map { position: absolute; inset: 0; }
+
+.v5-pill {
+  position: absolute; z-index: 5; top: calc(env(safe-area-inset-top) + 0.75rem); left: 0.75rem; right: 4.5rem; max-width: 26rem;
+  display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.7rem; align-items: center; padding: 0.55rem 1rem 0.65rem;
+  background: var(--v5-surface); border-radius: 1.5rem; box-shadow: var(--v5-shadow);
+}
+.v5-pill-text { display: flex; flex-direction: column; min-width: 0; }
+.v5-pill-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v5-pill-text small { color: var(--v5-muted); }
+.v5-bar { grid-column: 1 / -1; height: 0.3rem; border-radius: 0.2rem; background: var(--v5-line); overflow: hidden; }
+.v5-bar i { display: block; height: 100%; background: var(--v5-teal); transition: width 300ms ease; }
+.v5-dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--v5-teal); }
+.v5-dot.busy { background: #f2a600; animation: v5-pulse 1.2s ease-in-out infinite; }
+.v5-dot.offline { background: #d93025; }
+@keyframes v5-pulse { 50% { opacity: 0.35; } }
+
+.v5-banner { position: absolute; z-index: 4; top: calc(env(safe-area-inset-top) + 5rem); left: 0.75rem; right: 4.5rem; padding: 0.5rem 1rem; border-radius: 1rem; background: var(--v5-surface); box-shadow: var(--v5-shadow); font-size: 0.875rem; color: var(--v5-muted); }
+
+.v5-fab {
+  position: absolute; z-index: 5; right: 0.9rem; bottom: calc(env(safe-area-inset-bottom) + 1.25rem); min-height: 3.5rem; padding: 0 1.4rem;
+  border: 0; border-radius: 1.75rem; background: var(--v5-teal); color: #fff; font: 600 1rem system-ui; box-shadow: var(--v5-shadow); cursor: pointer;
+}
+.v5-fab.active { background: var(--v5-surface); color: var(--v5-text); outline: 2px solid var(--v5-teal); }
+.v5-fab:active { transform: scale(0.97); }
+
+.v5-sheet {
+  position: absolute; z-index: 6; left: 0; right: 0; bottom: 0; max-height: 62vh; overflow: auto; padding: 0.4rem 1.1rem calc(env(safe-area-inset-bottom) + 1.1rem);
+  background: var(--v5-surface); border-radius: 1.5rem 1.5rem 0 0; box-shadow: 0 -2px 18px rgb(0 0 0 / 22%);
+}
+@media (min-width: 700px) { .v5-sheet { left: 0.9rem; right: auto; bottom: 0.9rem; width: 24rem; border-radius: 1.5rem; } }
+.v5-handle { width: 2.4rem; height: 0.3rem; margin: 0.2rem auto 0.4rem; border-radius: 0.2rem; background: var(--v5-line); }
+.v5-sheet header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.v5-sheet h2 { margin: 0.2rem 0; font-size: 1.2rem; }
+.v5-close { width: 2.6rem; height: 2.6rem; border: 0; border-radius: 50%; background: transparent; color: var(--v5-muted); font-size: 1.6rem; cursor: pointer; }
+.v5-muted { color: var(--v5-muted); margin: 0.2rem 0 0.7rem; }
+.v5-warn { color: var(--v5-warn); margin: 0.4rem 0; }
+.v5-chip { display: inline-block; width: 0.85rem; height: 0.85rem; margin-right: 0.5rem; border-radius: 50%; vertical-align: -0.1rem; }
+.v5-check { display: flex; align-items: center; gap: 0.6rem; margin: 0.6rem 0; min-height: 2.75rem; }
+.v5-check input { width: 1.3rem; height: 1.3rem; accent-color: var(--v5-teal); }
+
+.v5-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin: 0.4rem 0 0.7rem; }
+.v5-status {
+  min-height: 3.5rem; padding: 0 0.8rem; border: 1px solid var(--v5-line); border-radius: 1rem; background: var(--v5-bg); color: var(--v5-text);
+  font: 600 0.95rem system-ui; display: flex; align-items: center; cursor: pointer; text-align: left;
+}
+.v5-status.on { border-color: var(--v5-teal); background: var(--v5-teal-tint); }
+.v5-status:active { transform: scale(0.98); }
+.v5-btn { min-height: 3rem; padding: 0 1.2rem; border: 1px solid var(--v5-line); border-radius: 1.5rem; background: var(--v5-surface); color: var(--v5-text); font: 600 0.95rem system-ui; cursor: pointer; }
+.v5-btn.wide { width: 100%; }
+.v5-btn.primary { background: var(--v5-teal); border-color: transparent; color: #fff; }
+
+.v5-toast {
+  position: absolute; z-index: 8; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 5.3rem); width: max-content; max-width: calc(100% - 1.5rem);
+  display: flex; align-items: center; gap: 0.8rem; padding: 0.4rem 0.5rem 0.4rem 1.1rem; border-radius: 1.5rem; background: #303134; color: #fff; box-shadow: var(--v5-shadow);
+}
+.v5-toast button { min-height: 2.6rem; padding: 0 1rem; border: 0; border-radius: 1.3rem; background: transparent; color: #8ee0d3; font: 700 0.95rem system-ui; cursor: pointer; }
+
+.v5-overlay { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 1.2rem; background: rgb(0 0 0 / 28%); }
+.v5-card { max-width: 24rem; padding: 1.6rem; border-radius: 1.5rem; background: var(--v5-surface); box-shadow: var(--v5-shadow); text-align: center; }
+.v5-card h2 { margin-top: 0; }
+.v5-spinner { width: 2.4rem; height: 2.4rem; margin: 0 auto 1rem; border: 0.28rem solid var(--v5-teal-tint); border-top-color: var(--v5-teal); border-radius: 50%; animation: v5-spin 0.9s linear infinite; }
+@keyframes v5-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .v5-spinner, .v5-dot.busy { animation: none; } .v5-bar i { transition: none; } }
+
+/* Keep MapLibre controls clear of the pill. */
+.v5-root .maplibregl-ctrl-top-right { top: calc(env(safe-area-inset-top) + 0.75rem); }

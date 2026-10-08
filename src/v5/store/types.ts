@@ -10,6 +10,8 @@ export type Op = {
   key: EntityKey;
   status: Status;
   by: string;
+  /** Area the edit was made in; the server enforces team scope with it. */
+  area?: string;
 };
 
 export type OverlayEntry = { status: Status; at: string; by: string };

@@ -26,16 +26,16 @@ const KEY = /^[sh]:[A-Za-z0-9#:._-]{1,80}$/u;
 const ID = /^[A-Za-z0-9._:-]{1,160}$/u;
 
 type Route =
-  | { kind: 'state' | 'ops'; campaignId: string }
+  | { kind: 'state' | 'ops' | 'meta'; campaignId: string }
   | { kind: 'pack'; campaignId: string; areaId: string };
 
 export function v5Route(pathname: string): Route | null {
-  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|areas\/([^/]+)\/pack)$/u.exec(pathname);
+  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|areas\/([^/]+)\/pack)$/u.exec(pathname);
   if (!m) return null;
   try {
     const campaignId = parseCampaignId(decodeURIComponent(m[1]));
     if (!campaignId) return null;
-    if (m[2] === 'state' || m[2] === 'ops') return { kind: m[2], campaignId };
+    if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta') return { kind: m[2], campaignId };
     const areaId = decodeURIComponent(m[3]);
     return ID.test(areaId) ? { kind: 'pack', campaignId, areaId } : null;
   } catch { return null; }
@@ -56,6 +56,7 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
   const access = await resolveAccess(db, request, route.campaignId);
   if (!access) return fail(401, 'unauthorized', 'Kein Zugriff auf diese Aktion.');
   if (request.method !== 'GET' && request.method !== 'HEAD' && !sameOrigin(request)) return fail(403, 'cross_origin', 'Anfrage von fremdem Ursprung.');
+  if (route.kind === 'meta' && request.method === 'GET') return meta(db, access, route.campaignId);
   if (route.kind === 'state' && request.method === 'GET') return pullState(db, access, route.campaignId, url);
   if (route.kind === 'ops' && request.method === 'POST') return pushOps(db, access, route.campaignId, request, options);
   if (route.kind === 'pack' && request.method === 'GET') return getPack(db, access, route.campaignId, route.areaId);
@@ -68,6 +69,25 @@ async function canSeeArea(db: D1DatabaseLike, access: AccessContext, campaignId:
   if (!area) return null;
   if (!isScoped(access)) return area;
   return access.teamId === area.teamId ? area : null;
+}
+
+/** Everything the field client needs to boot, in one small request: role, team colours, Areas and pack versions. */
+async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: string): Promise<Response> {
+  const campaign = await db.prepare('SELECT id, name FROM campaigns WHERE id = ?').bind(campaignId).first<{ id: string; name: string }>();
+  if (!campaign) return fail(404, 'not_found', 'Aktion nicht gefunden.');
+  const scoped = isScoped(access);
+  const areas = (await db.prepare(
+    `SELECT a.id, a.name, a.team_id, a.geometry_json, p.version AS pack_version FROM areas a
+     LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
+     WHERE a.campaign_id = ?${scoped ? ' AND a.team_id = ?' : ''} ORDER BY a.created_at, a.id`,
+  ).bind(...(scoped ? [campaignId, access.teamId] : [campaignId])).all<{ id: string; name: string; team_id: string; geometry_json: string; pack_version: number | null }>()).results;
+  const teams = (await db.prepare('SELECT id, name, color FROM teams WHERE campaign_id = ? ORDER BY name, id').bind(campaignId).all<{ id: string; name: string; color: string }>()).results;
+  return json({
+    campaign, role: access.role, teamId: access.teamId, canWrite: writesAllowed(access),
+    canBuildPack: access.role === 'admin' || access.role === 'team-editor',
+    teams: scoped ? teams.filter((t) => t.id === access.teamId) : teams,
+    areas: areas.map((a) => ({ id: a.id, name: a.name, teamId: a.team_id, geometry: JSON.parse(a.geometry_json), packVersion: a.pack_version })),
+  });
 }
 
 async function pullState(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL): Promise<Response> {
