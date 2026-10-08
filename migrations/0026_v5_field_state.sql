@@ -32,8 +32,8 @@ CREATE TABLE v5_pack_meta (
   built_at TEXT NOT NULL,
   -- Hash of the Area polygon the pack was built for; a changed polygon makes the pack stale.
   geometry_hash TEXT NOT NULL DEFAULT '',
-  PRIMARY KEY (campaign_id, area_id),
-  FOREIGN KEY (area_id, campaign_id) REFERENCES areas(id, campaign_id) ON DELETE CASCADE
+  PRIMARY KEY (campaign_id, area_id)
+  -- No foreign key on area_id: an Area is either a distribution `areas` row or a `collection_areas` row; the Worker checks which.
 );
 
 CREATE TABLE v5_packs (
@@ -42,8 +42,7 @@ CREATE TABLE v5_packs (
   version INTEGER NOT NULL,
   chunk INTEGER NOT NULL,
   bytes BLOB NOT NULL,
-  PRIMARY KEY (campaign_id, area_id, version, chunk),
-  FOREIGN KEY (area_id, campaign_id) REFERENCES areas(id, campaign_id) ON DELETE CASCADE
+  PRIMARY KEY (campaign_id, area_id, version, chunk)
 );
 
 -- Claim row for pack builds: acquired atomically before the upstream request, so concurrent or repeated

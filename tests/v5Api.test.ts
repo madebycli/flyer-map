@@ -123,7 +123,7 @@ test('pack build stores a compressed raw pack that clients can read back, with t
   let requested = '';
   const fetchImpl = (async (_url: string, init?: RequestInit) => { requested = String(init?.body); return overpassOk(); }) as unknown as typeof fetch;
   assert.equal((await call('viewer', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).status, 403);
-  assert.equal((await call('other', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).status, 403);
+  assert.equal((await call('other', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).status, 404); // an area of another team does not even reveal that it exists
   const built = await call('editor', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl });
   assert.equal(built.status, 200);
   assert.match(decodeURIComponent(requested), /out geom qt;/);

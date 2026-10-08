@@ -2,7 +2,7 @@ import { decodeClock } from '../../src/v5/store/hlc.ts';
 import { NOTE_KEY, NOTE_TEXT_MAX, cleanText, isFlag } from '../../src/v5/notes/types.ts';
 import type { AccessContext } from '../access.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
-import { ID, canSeeArea, fail, isScoped, json, writesAllowed } from './shared.ts';
+import { ID, canWriteArea, fail, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 
 const MAX_NOTES_PER_PUSH = 50;
 const MAX_BODY_BYTES = 64_000;
@@ -14,12 +14,9 @@ type Row = { id: string; key: string; area_id: string; flag: string | null; body
 export async function pullNotes(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL, options: Options): Promise<Response> {
   const since = Math.max(0, Math.trunc(Number(url.searchParams.get('since') ?? '0')) || 0);
   const limit = Math.min(500, Math.max(1, Math.trunc(Number(url.searchParams.get('limit') ?? '500')) || 500));
-  const scoped = isScoped(access);
-  const rows = (await db.prepare(
-    `SELECT id, key, area_id, flag, body, rev, deleted, actor, seq FROM v5_notes WHERE campaign_id = ? AND seq > ?${
-      scoped ? ' AND area_id IN (SELECT id FROM areas WHERE campaign_id = ? AND team_id = ?)' : ''
-    } ORDER BY seq ASC LIMIT ?`,
-  ).bind(...(scoped ? [campaignId, since, campaignId, access.teamId, limit + 1] : [campaignId, since, limit + 1])).all<Row>()).results;
+  const scope = readableAreasClause(access, campaignId);
+  const rows = (await db.prepare(`SELECT id, key, area_id, flag, body, rev, deleted, actor, seq FROM v5_notes WHERE campaign_id = ? AND seq > ?${scope.sql} ORDER BY seq ASC LIMIT ?`)
+    .bind(campaignId, since, ...scope.params, limit + 1).all<Row>()).results;
   const page = rows.slice(0, limit);
   return json({
     notes: page.map((r) => ({ id: r.id, key: r.key, area: r.area_id, flag: r.flag, text: r.body, rev: r.rev, deleted: r.deleted === 1, by: r.actor })),
@@ -58,7 +55,7 @@ export async function pushNotes(db: D1DatabaseLike, access: AccessContext, campa
     const clean = cleanText(typeof n.text === 'string' ? n.text : '');
     const deleted = n.deleted === true;
     if (!deleted && !n.flag && clean === '') { reject('empty'); continue; }
-    if (!areaOk.has(n.area)) areaOk.set(n.area, (await canSeeArea(db, access, campaignId, n.area)) !== null);
+    if (!areaOk.has(n.area)) { const area = await resolveArea(db, campaignId, n.area); areaOk.set(n.area, !!area && (await canWriteArea(db, access, campaignId, area))); }
     if (!areaOk.get(n.area)) { reject('area_forbidden'); continue; }
     accepted.push(id);
     const prior = latest.get(id);

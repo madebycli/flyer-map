@@ -3,8 +3,9 @@ import { isStatus } from '../../src/v5/store/types.ts';
 import { ENGINE_VERSION, encodePack, overpassQuery, packFromOverpass, paddedBbox } from '../../src/v5/engine/index.ts';
 import type { AccessContext } from '../access.ts';
 import { resolveAccess } from '../access.ts';
-import { loadCanonicalArea, type D1DatabaseLike } from '../campaignRepository.ts';
-import { canSeeArea, fail, ID, isScoped, json, writesAllowed } from './shared.ts';
+import { resolveCollectionAccess } from '../collectionAccess.ts';
+import type { D1DatabaseLike } from '../campaignRepository.ts';
+import { canReadArea, canWriteArea, fail, ID, isScoped, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 import { pullNotes, pushNotes } from './notes.ts';
 import { parseCampaignId } from '../snapshotValidation.ts';
 
@@ -52,10 +53,10 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
   const url = new URL(request.url);
   const route = v5Route(url.pathname);
   if (!route) return url.pathname.startsWith('/api/v5/') ? fail(404, 'not_found', 'Unbekannte v5-Route.') : null;
-  const access = await resolveAccess(db, request, route.campaignId);
+  const access = (await resolveAccess(db, request, route.campaignId)) ?? (await resolveCollectionAccess(db, request, route.campaignId));
   if (!access) return fail(401, 'unauthorized', 'Kein Zugriff auf diese Aktion.');
   if (request.method !== 'GET' && request.method !== 'HEAD' && !sameOrigin(request)) return fail(403, 'cross_origin', 'Anfrage von fremdem Ursprung.');
-  if (route.kind === 'meta' && request.method === 'GET') return meta(db, access, route.campaignId);
+  if (route.kind === 'meta' && request.method === 'GET') return meta(db, access, route.campaignId, url);
   if (route.kind === 'state' && request.method === 'GET') return pullState(db, access, route.campaignId, url, options);
   if (route.kind === 'ops' && request.method === 'POST') return pushOps(db, access, route.campaignId, request, options);
   if (route.kind === 'notes' && request.method === 'GET') return pullNotes(db, access, route.campaignId, url, options);
@@ -66,38 +67,57 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
 }
 
 /** Everything the field client needs to boot, in one small request: role, team colours, Areas and pack versions. */
-async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: string): Promise<Response> {
+async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL): Promise<Response> {
   const campaign = await db.prepare('SELECT id, name FROM campaigns WHERE id = ?').bind(campaignId).first<{ id: string; name: string }>();
   if (!campaign) return fail(404, 'not_found', 'Aktion nicht gefunden.');
+  // A collector only ever sees the collection side; admins and viewers choose with ?kind=collection.
+  const kind: 'distribution' | 'collection' = access.role === 'collection-collector' || (url.searchParams.get('kind') === 'collection' && (access.role === 'admin' || access.role === 'viewer')) ? 'collection' : 'distribution';
+  type Row = { id: string; name: string; team_id: string; geometry_json: string; updated_at: string; pack_version: number | null; pack_hash: string | null; status?: string; run_id?: string | null; claimed_by_label?: string | null };
+  let rows: Row[];
+  if (kind === 'collection') {
+    try {
+      rows = (await db.prepare(
+        `SELECT a.id, a.name, '' AS team_id, a.geometry_json, a.updated_at, a.status, a.run_id, a.claimed_by_label, p.version AS pack_version, p.geometry_hash AS pack_hash FROM collection_areas a
+         LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
+         WHERE a.campaign_id = ?${access.role === 'admin' ? '' : " AND a.status <> 'archived'"} ORDER BY a.created_at, a.id`,
+      ).bind(campaignId).all<Row>()).results;
+    } catch { rows = []; }
+  } else {
+    const scoped = isScoped(access);
+    rows = (await db.prepare(
+      `SELECT a.id, a.name, a.team_id, a.geometry_json, a.updated_at, p.version AS pack_version, p.geometry_hash AS pack_hash FROM areas a
+       LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
+       WHERE a.campaign_id = ?${scoped ? ' AND a.team_id = ?' : ''} ORDER BY a.created_at, a.id`,
+    ).bind(...(scoped ? [campaignId, access.teamId] : [campaignId])).all<Row>()).results;
+  }
   const scoped = isScoped(access);
-  const areas = (await db.prepare(
-    `SELECT a.id, a.name, a.team_id, a.geometry_json, a.updated_at, p.version AS pack_version, p.geometry_hash AS pack_hash FROM areas a
-     LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
-     WHERE a.campaign_id = ?${scoped ? ' AND a.team_id = ?' : ''} ORDER BY a.created_at, a.id`,
-  ).bind(...(scoped ? [campaignId, access.teamId] : [campaignId])).all<{ id: string; name: string; team_id: string; geometry_json: string; updated_at: string; pack_version: number | null; pack_hash: string | null }>()).results;
-  const teams = (await db.prepare('SELECT id, name, color FROM teams WHERE campaign_id = ? ORDER BY name, id').bind(campaignId).all<{ id: string; name: string; color: string }>()).results;
+  const teams = kind === 'collection' ? [] : (await db.prepare('SELECT id, name, color FROM teams WHERE campaign_id = ? ORDER BY name, id').bind(campaignId).all<{ id: string; name: string; color: string }>()).results;
+  const areas = await Promise.all(rows.map(async (a) => {
+    const geometry = JSON.parse(a.geometry_json);
+    // A pack built for a different polygon is stale: report it as missing so the client offers a rebuild.
+    const stale = a.pack_version !== null && a.pack_hash !== (await geometryHash(geometry));
+    const ref = await resolveArea(db, campaignId, a.id);
+    return {
+      id: a.id, name: a.name, teamId: a.team_id, geometry, updatedAt: a.updated_at, packVersion: stale ? null : a.pack_version, packStale: stale,
+      /** Server-evaluated: may this caller write status/notes in this Area right now? The UI only mirrors it. */
+      writable: ref ? await canWriteArea(db, access, campaignId, ref) : false,
+      ...(kind === 'collection' ? { collection: { status: a.status ?? 'open', runId: a.run_id ?? null, claimedBy: a.claimed_by_label ?? null } } : {}),
+    };
+  }));
   return json({
-    campaign, role: access.role, teamId: access.teamId, canWrite: writesAllowed(access),
-    canBuildPack: access.role === 'admin' || access.role === 'team-editor',
+    campaign, kind, role: access.role, teamId: access.teamId, collectorId: access.collectorId ?? null, canWrite: writesAllowed(access),
+    canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: scoped ? teams.filter((t) => t.id === access.teamId) : teams,
-    areas: await Promise.all(areas.map(async (a) => {
-      const geometry = JSON.parse(a.geometry_json);
-      // A pack built for a different polygon is stale: report it as missing so the client offers a rebuild.
-      const stale = a.pack_version !== null && a.pack_hash !== (await geometryHash(geometry));
-      return { id: a.id, name: a.name, teamId: a.team_id, geometry, updatedAt: a.updated_at, packVersion: stale ? null : a.pack_version, packStale: stale };
-    })),
+    areas,
   });
 }
 
 async function pullState(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL, options: V5Options): Promise<Response> {
   const since = Math.max(0, Math.trunc(Number(url.searchParams.get('since') ?? '0')) || 0);
   const limit = Math.min(1000, Math.max(1, Math.trunc(Number(url.searchParams.get('limit') ?? '1000')) || 1000));
-  const scoped = isScoped(access);
-  const sql = `SELECT key, op_id, status, area_id, actor, seq FROM v5_state WHERE campaign_id = ? AND seq > ?${
-    scoped ? ' AND area_id IN (SELECT id FROM areas WHERE campaign_id = ? AND team_id = ?)' : ''
-  } ORDER BY seq ASC LIMIT ?`;
-  const params = scoped ? [campaignId, since, campaignId, access.teamId, limit + 1] : [campaignId, since, limit + 1];
-  const rows = (await db.prepare(sql).bind(...params).all<{ key: string; op_id: string; status: string; area_id: string; actor: string; seq: number }>()).results;
+  const scope = readableAreasClause(access, campaignId);
+  const rows = (await db.prepare(`SELECT key, op_id, status, area_id, actor, seq FROM v5_state WHERE campaign_id = ? AND seq > ?${scope.sql} ORDER BY seq ASC LIMIT ?`)
+    .bind(campaignId, since, ...scope.params, limit + 1).all<{ key: string; op_id: string; status: string; area_id: string; actor: string; seq: number }>()).results;
   const page = rows.slice(0, limit);
   return json({
     ops: page.map((row) => ({ id: row.op_id, key: row.key, status: row.status, by: row.actor, area: row.area_id })),
@@ -130,7 +150,7 @@ async function pushOps(db: D1DatabaseLike, access: AccessContext, campaignId: st
     if (typeof op.key !== 'string' || !KEY.test(op.key)) { reject('bad_key'); continue; }
     if (!isStatus(op.status)) { reject('bad_status'); continue; }
     if (typeof op.area !== 'string' || !ID.test(op.area)) { reject('bad_area'); continue; }
-    if (!areaOk.has(op.area)) areaOk.set(op.area, (await canSeeArea(db, access, campaignId, op.area)) !== null);
+    if (!areaOk.has(op.area)) { const area = await resolveArea(db, campaignId, op.area); areaOk.set(op.area, !!area && (await canWriteArea(db, access, campaignId, area))); }
     if (!areaOk.get(op.area)) { reject('area_forbidden'); continue; }
     accepted.push(id);
     const prior = latest.get(op.key);
@@ -189,7 +209,8 @@ async function geometryHash(geometry: unknown): Promise<string> {
 }
 
 async function getPack(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, request: Request): Promise<Response> {
-  if (!(await canSeeArea(db, access, campaignId, areaId))) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
+  const visible = await resolveArea(db, campaignId, areaId);
+  if (!visible || !canReadArea(access, visible)) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
   type PackMeta = { version: number; chunks: number; total_bytes: number; engine: string };
   const readMeta = () => db.prepare('SELECT version, chunks, total_bytes, engine FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<PackMeta>();
   let meta = await readMeta();
@@ -212,9 +233,11 @@ async function getPack(db: D1DatabaseLike, access: AccessContext, campaignId: st
 }
 
 async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, options: V5Options): Promise<Response> {
-  const area = await loadCanonicalArea(db, campaignId, areaId);
-  if (!area) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
-  if (!(access.role === 'admin' || (access.role === 'team-editor' && access.teamId === area.teamId))) return fail(403, 'forbidden', 'Nur Admins oder das Team dürfen das Paket erzeugen.');
+  const area = await resolveArea(db, campaignId, areaId);
+  if (!area || !canReadArea(access, area)) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
+  // Building a pack is a write-class action (it costs an upstream request): admins, the owning team's editor, or a collector who holds the Area.
+  const mayBuild = access.role === 'admin' || ((access.role === 'team-editor' || access.role === 'collection-collector') && (await canWriteArea(db, access, campaignId, area)));
+  if (!mayBuild) return fail(403, 'forbidden', 'Nur Admins oder die zuständige Gruppe dürfen das Paket erzeugen.');
   const ring = area.geometry.coordinates[0];
   const bbox = paddedBbox(ring);
   const km2 = ((bbox[2] - bbox[0]) * 110.574) * ((bbox[3] - bbox[1]) * 111.32 * Math.cos((((bbox[0] + bbox[2]) / 2) * Math.PI) / 180));

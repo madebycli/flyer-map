@@ -27,7 +27,7 @@ export async function setup() {
     });
     return (await handleV5Api(request, db, { now: () => NOW, ...opts }))!;
   };
-  return { db, call };
+  return { db, call, cookies };
 }
 
 async function resolveAccessForGrant(db: NetworkD1, grantId: string) {
