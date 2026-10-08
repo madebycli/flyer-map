@@ -21,10 +21,11 @@ Streets and houses are a pure function of OSM data. v5 therefore stores **no tas
 
 - `src/v5/engine` – whitelist road classification, junction noding, house→street assignment, routing,
   Overpass normalisation, area restriction, legacy-progress import, synthetic test city.
+- `src/v5/notes` – field notes: flags + text per street/house/Area, own LWW store and sync round (rides the status `SyncClient`).
 - `src/v5/store` – HLC, `FieldStore` (changed-keys listeners, outbox), `SyncClient`, `Progress`, IndexedDB persistence.
 - `src/v5/map` – `FieldMap` (MapLibre 5.7.1, feature-state painting, route preview, basemap-outage fallback).
 - `src/v5/app` – React shell (`App.tsx`), derivation worker, API client, Vela-style CSS.
-- `worker/v5/api.ts` + `migrations/0026_v5_field_state.sql` – meta, state, ops, pack endpoints.
+- `worker/v5/api.ts` + `migrations/0026_v5_field_state.sql` – meta, state, ops, pack endpoints; `worker/v5/notes.ts` + `0027_v5_notes.sql` – notes endpoints.
 - `scripts/v5-e2e` – fixture server (real handlers, in-memory D1) and Playwright flow.
 
 ## Design
@@ -50,7 +51,7 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 
 ## Verified
 
-- `npm test` (1068 tests incl. engine, store, API incl. attack/race cases, legacy import), `npm run typecheck`, `npm run build`.
+- `npm test` (1108 tests incl. engine incl. chunks, store, notes, cache, API incl. attack/race cases, legacy import), `npm run typecheck`, `npm run build`.
 - An independent code review (`/code-review`, high) found 10 issues; all fixed (see git log "address independent review findings").
 - Browser flows in `scripts/v5-e2e` (real Worker handlers on in-memory D1; Playwright + Chromium):
   `flow.mjs` – pack build → derive → mark → undo → sync → fresh client → route marking → read-only viewer;
@@ -59,13 +60,26 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
   (`CITY_BLOCKS=70`): first boot incl. pack build + derive 5.0 s, later boots 1.9 s in headless Chromium with software WebGL.
 - Measured: 12.8 k houses, painting 5 000 statuses ≈ 21 ms, one change ≈ 1 ms; engine derives 51 k houses in ≈ 0.54 s.
 
+- Flows 3–6 (`flow3` tools + Area editor, `flow4` two writers overwrite one street → both told, nothing reset, `flow5`
+  notes between two people incl. offline and a read-only viewer, `flow6` warm start without any pack request).
+  `node scripts/v5-e2e/run-all.mjs` runs all six against fresh fixture servers.
+
+## Tools, notes, cache (see ADR-0034)
+
+- Street pieces are ≤ 60 m chunks. Tap = whole junction segment, paint/route = chunks. Marking modes: tap, paint,
+  lasso, route; a brush status applies to everything until changed; undo for the last gesture.
+- Notes: seven quick flags (toggle) or text, or both; one marker per annotated place; overview from "Mehr";
+  viewers read, writers write, scoped roles only in their team's Areas.
+- Warm start: derived network per Area cached in IndexedDB by pack version, Area `updatedAt` and engine version;
+  `window.__v5Boot` shows `meta / packs / derive / ready` milliseconds.
+
 ## Not verified / not done
 
 - Real phones (ADR-0030) and the live OpenFreeMap basemap (sandbox has no egress): only a blank-style fallback was exercised.
 - Real Overpass data: the pack builder is tested with a stub and a synthetic city, not a real city extract.
-- Area drawing, comments, activity, statistics, collection/pickup and admin screens still live in the legacy app;
-  v5 reads the same Areas and access grants.
-- No deploy, no remote migration (`0026` is additive and untested against a real D1).
+- Activity, statistics, collection/pickup (Plan 045) and admin screens still live in the legacy app;
+  v5 reads the same Areas and access grants. Area drawing/editing and notes are in v5.
+- No deploy, no remote migration (`0026` and `0027` are additive and untested against a real D1).
 - Reloading the page without network does not work (no service worker by ADR-0006); only a page that is already open keeps working offline.
 - Key ownership is bound to the first Area that writes a key; the server cannot yet verify that a key geometrically lies inside the claimed Area (it would need the derived key set per Area).
 - Pack rebuilds change derived ids only where OSM changed; statuses of vanished ids stay in D1 but are not shown.

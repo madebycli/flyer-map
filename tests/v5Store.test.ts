@@ -225,3 +225,30 @@ test('a disposed sync client stops: no retries, no state callbacks', async () =>
   assert.equal(calls, 1, 'no retry was scheduled after dispose');
   assert.equal(states, before, 'no state callback after dispose');
 });
+
+import { MemoryNetworkStorage, NetworkCache } from '../src/v5/store/networkCache.ts';
+import { ENGINE_VERSION } from '../src/v5/engine/index.ts';
+
+test('network cache: hits only for the exact pack, polygon and engine it was built from', async () => {
+  const storage = new MemoryNetworkStorage();
+  const cache = new NetworkCache('c1', storage);
+  const network = deriveNetwork(syntheticCity(2, 2).raw);
+  const area = { id: 'a1', packVersion: 3, updatedAt: '2026-10-01T00:00:00Z' };
+  const key = NetworkCache.keyFor(area)!;
+  assert.equal(await cache.load(key), null, 'empty at first');
+  await cache.store(key, network);
+  assert.deepEqual((await cache.load(key))!.houses.length, network.houses.length);
+  assert.equal(await cache.load({ ...key, packVersion: 4 }), null, 'a rebuilt pack invalidates');
+  assert.equal(await cache.load({ ...key, updatedAt: '2026-10-02T00:00:00Z' }), null, 'a reshaped Area invalidates');
+  assert.equal(await cache.load({ ...key, engine: 'older' }), null, 'a new engine version invalidates');
+  assert.equal(key.engine, ENGINE_VERSION);
+  assert.equal(NetworkCache.keyFor({ ...area, packVersion: null }), null, 'no pack, no key');
+  await new NetworkCache('c2', storage).store(key, network);
+  await cache.forget('a1');
+  assert.equal(await cache.load(key), null, 'forgotten');
+  assert.ok(await new NetworkCache('c2', storage).load(key), 'other campaigns keep theirs');
+  const broken = new NetworkCache('c1', { get: async () => { throw new Error('quota'); }, put: async () => { throw new Error('quota'); }, delete: async () => { throw new Error('x'); } });
+  assert.equal(await broken.load(key), null);
+  await broken.store(key, network);
+  await broken.forget('a1');
+});

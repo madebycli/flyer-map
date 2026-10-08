@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { mergeNetworks, type Network } from '../engine/index.ts';
 import { FieldStore } from '../store/store.ts';
 import { IndexedDbNotePersistence, IndexedDbPersistence } from '../store/idb.ts';
+import { IndexedDbNetworkStorage, NetworkCache } from '../store/networkCache.ts';
 import { NoteStore } from '../notes/store.ts';
 import { NoteSync } from '../notes/sync.ts';
 import { Progress, type ProgressSnapshot } from '../store/progress.ts';
@@ -76,30 +77,43 @@ export function useCampaign(campaignId: string): CampaignState {
     const fieldStore = new FieldStore(actorId(), new IndexedDbPersistence(campaignId));
     const noteStore = new NoteStore(actorId(), new IndexedDbNotePersistence(campaignId), () => Date.now());
     let notesHydrated = false;
+    const cache = new NetworkCache(campaignId, typeof indexedDB === 'undefined' ? null : new IndexedDbNetworkStorage());
 
     const boot = async () => {
+      const t0 = performance.now();
       try {
         setPhase({ kind: 'loading', label: 'Aktion wird geladen …' });
         const loaded = await fetchMeta(campaignId);
         if (cancelled) return;
         setMeta(loaded);
         canBuildRef.current = loaded.canBuildPack;
-        // Download packs in parallel (the slow part on mobile data); derive them one after another.
+        // Per Area: the cached derived network when pack, polygon and engine are unchanged; otherwise download (all in
+        // parallel — the slow part on mobile data) and derive one after another.
         setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
-        const packs = await Promise.all(loaded.areas.map(async (area) => ({
-          areaId: area.id, ring: area.geometry.coordinates[0], pack: area.packVersion ? await fetchPack(campaignId, area.id) : null,
-        })));
+        const timing: Record<string, number> = { meta: Math.round(performance.now() - t0) };
+        const resolved = await Promise.all(loaded.areas.map(async (area) => {
+          const key = NetworkCache.keyFor(area);
+          const cached = key ? await cache.load(key) : null;
+          if (cached) return { areaId: area.id, ring: area.geometry.coordinates[0], pack: null as Uint8Array | null, cached, key };
+          return { areaId: area.id, ring: area.geometry.coordinates[0], pack: area.packVersion ? await fetchPack(campaignId, area.id) : null, cached: null as Network | null, key };
+        }));
         if (cancelled) return;
-        const missing = loaded.areas.filter((a) => !packs.find((p) => p.areaId === a.id)?.pack);
+        timing.packs = Math.round(performance.now() - t0) - timing.meta;
+        timing.cacheHits = resolved.filter((r) => r.cached).length;
+        const missing = loaded.areas.filter((a) => { const r = resolved.find((p) => p.areaId === a.id); return !r?.pack && !r?.cached; });
         missingRef.current = missing;
         setMissingAreas(missing);
         const parts: { areaId: string; network: Network }[] = [];
-        for (const item of packs) {
+        for (const item of resolved) {
+          if (item.cached) { parts.push({ areaId: item.areaId, network: item.cached }); continue; }
           if (!item.pack) continue;
           setPhase({ kind: 'loading', label: 'Straßen und Häuser werden berechnet …' });
-          parts.push({ areaId: item.areaId, network: await deriveInWorker(item.areaId, item.pack, item.ring) });
+          const network = await deriveInWorker(item.areaId, item.pack, item.ring);
+          parts.push({ areaId: item.areaId, network });
+          if (item.key) void cache.store(item.key, network);
           if (cancelled) return;
         }
+        timing.derive = Math.round(performance.now() - t0) - timing.meta - timing.packs;
         const merged = mergeNetworks(parts);
         fieldStore.setAreaResolver((key) => merged.areaOf.get(key));
         if (!hydrated) { await Promise.all([fieldStore.hydrate(), noteStore.hydrate()]); hydrated = true; notesHydrated = true; }
@@ -118,6 +132,9 @@ export function useCampaign(campaignId: string): CampaignState {
         if (parts.length) setPhase({ kind: 'loading', label: 'Fortschritt wird geladen …' });
         await Promise.race([client.run(), new Promise((resolve) => setTimeout(resolve, 4000))]);
         if (cancelled) return;
+        timing.ready = Math.round(performance.now() - t0);
+        (window as unknown as { __v5Boot?: Record<string, number> }).__v5Boot = timing;
+        if (location.search.includes('debug')) console.info('[v5 boot ms]', JSON.stringify(timing));
         // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
         setPhase(parts.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
       } catch (error) {

@@ -23,10 +23,15 @@ Streets/Houses are derived deterministically from a per-Area raw OSM pack on the
 - [x] Map: geometry once, `setFeatureState` painting; `/v5` shell with route marking, undo, legacy import
 - [x] Review pass: independent code review findings fixed (seq race, key ownership, stale packs, outbox safety)
 - [x] Dark-first Material 3 Expressive UI with icon-led controls, theme switch with dark/light basemap and layer self-heal
+- [x] Tools: stamp/paint/lasso/route marking with a brush status, undo, Area corner editor (drag, insert, delete, create), street chunks ≤ 60 m
+- [x] Sync hardening: conflicts shown and restorable, server-time clock correction, adversarial two-writer tests, seeded fuzz
+- [x] Field notes (flags + text, markers, overview) — ADR-0034; warm-start network cache
+- [x] Engine stays TypeScript (measured, ADR-0034); revisit criteria written down
+- [ ] Abholaktion, Rooms (Übernehmen/Teilnehmen), temporary identities, admin/login in v5 — see [Plan 045](045-v5-pickup-rooms-admin.md)
 - [ ] Real Overpass pack for a real Area (Gebiet 4 and Gebiet 8) and comparison of v5 vs V4 street/house counts
 - [ ] Real-device acceptance per ADR-0030 (iPad + Android) incl. offline edit → reconnect convergence
 - [ ] Apply migration 0026 on Beta D1; deploy the branch to Beta only after the two items above
-- [ ] Decide what to do with Area drawing, comments, statistics, collection/pickup (still legacy-only)
+- [ ] Statistics and activity views (legacy-only)
 
 ## Gates
 

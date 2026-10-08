@@ -527,6 +527,20 @@ nodes:
     topics: [v5, street-engine, performance, measurements, architecture]
     load_when: [why v5, map update benchmarks, snapshot materialisation cost, road whitelist]
 
+  - id: plan-045-v5-pickup-rooms-admin
+    path: docs/plans/active/045-v5-pickup-rooms-admin.md
+    type: plan
+    status: planned
+    topics: [v5, collection, pickup, abholaktion, rooms, claims, collector-access, identities, admin]
+    load_when: [Abholaktion in v5, Übernehmen Teilnehmen, rooms, collector link, Sonder-Marker, v5 admin surface]
+
+  - id: adr-0034-v5-notes-chunks-and-engine-language
+    path: docs/decisions/ADR-0034-v5-notes-chunks-and-engine-language.md
+    type: decision
+    status: accepted
+    topics: [v5, notes, comments, street-chunks, cache, rust, engine-language]
+    load_when: [v5 notes, street chunks, warm start cache, why not Rust, migration-0027]
+
   - id: doc-v5-overview
     path: docs/v5/README.md
     type: architecture
