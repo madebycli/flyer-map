@@ -19,7 +19,7 @@ const open = async (who) => {
   await page.waitForTimeout(1200);
   return { ctx, page };
 };
-const done = async (page) => { const m = /([\d.]+) \/ ([\d.]+)/.exec(await page.locator('.v5-pill').innerText()); return m ? Number(m[1].replace(/\./g, '')) : -1; };
+const done = async (page) => Number(await page.locator('.v5-pill').getAttribute('data-done'));
 const jump = (page, x, y, zoom) => page.evaluate(async ([c, z]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom: z }); await new Promise((r) => m.once('idle', r)); }, [M(x, y), zoom]);
 const clickAt = async (page, x, y) => { const p = await page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(x, y)); await page.mouse.click(p[0], p[1]); };
 
@@ -67,6 +67,7 @@ await ctx.close();
 
 // Theme switch keeps (or restores) our layers, geometry and status on the new basemap.
 ({ ctx, page } = await open('admin'));
+await page.getByRole('button', { name: 'Mehr' }).click();
 await page.getByRole('button', { name: 'Helles Design' }).click();
 await page.waitForTimeout(3000);
 const themed = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, line: !!window.__v5Map.getLayer('v5-segments-line'), houses: window.__v5Map.getSource('v5-houses') ? 1 : 0 }));
@@ -77,7 +78,7 @@ check('and back to dark', await page.evaluate(() => document.documentElement.dat
 await ctx.close();
 
 ({ ctx, page } = await open('viewer'));
-check('viewer is read-only: no mark tool, a banner instead', (await page.getByRole('button', { name: 'Markieren' }).count()) === 0 && (await page.locator('.v5-banner').count()) === 1);
+check('viewer is read-only: no mark tool, an eye marker instead', (await page.getByRole('button', { name: 'Markieren' }).count()) === 0 && (await page.locator('.v5-viewonly').count()) === 1);
 await jump(page, 116, 13, 18.1); await clickAt(page, 116, 13); await page.waitForSelector('.v5-sheet');
 check('viewer sees the status but no buttons', (await page.locator('.v5-status').count()) === 0);
 await ctx.close();

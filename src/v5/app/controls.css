@@ -21,3 +21,8 @@
 .maplibregl-ctrl-attrib a { color: var(--on-var) !important; }
 .maplibregl-ctrl-attrib-button { filter: none; }
 :root:not([data-theme="light"]) .maplibregl-ctrl-attrib-button { filter: invert(1); }
+
+/* Touch devices zoom by pinch / double tap: no +/- buttons there. The compass only appears while the map is rotated. */
+@media (pointer: coarse) { .maplibregl-ctrl-zoom-in, .maplibregl-ctrl-zoom-out { display: none; } }
+.v5-map:not([data-rotated]) .maplibregl-ctrl-compass { display: none; }
+.v5-map:not([data-rotated]) .maplibregl-ctrl-group:has(.maplibregl-ctrl-compass:only-child) { display: none; }

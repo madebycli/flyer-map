@@ -24,7 +24,7 @@ const open = async (who, { buildIfNeeded = false } = {}) => {
   await page.waitForTimeout(1200);
   return { ctx, page, bootMs };
 };
-const pill = async (page) => (await page.locator('.v5-pill').innerText()).replace(/\n/g, ' | ');
+const pill = async (page) => `${await page.locator('.v5-pill').getAttribute('data-done')} / ${await page.locator('.v5-pill').getAttribute('data-total')}`;
 const jump = (page, x, y, zoom) => page.evaluate(async ([c, z]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom: z }); await new Promise((r) => m.once('idle', r)); }, [M(x, y), zoom]);
 const clickAt = async (page, x, y) => { const p = await page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(x, y)); await page.mouse.click(p[0], p[1]); };
 const serverState = async (page) => page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops);
@@ -32,6 +32,7 @@ const serverState = async (page) => page.evaluate(async () => (await (await fetc
 // 1. Admin boots (building the pack the first time) and imports the legacy progress.
 let { ctx, page, bootMs } = await open('admin', { buildIfNeeded: true });
 console.log(`boot incl. pack build + derive: ${bootMs} ms, ${await pill(page)}`);
+await page.getByRole('button', { name: 'Mehr' }).click();
 const importButton = page.getByRole('button', { name: /Fortschritt aus der bisherigen Version/ });
 check('import offer is visible for an admin with an empty overlay', await importButton.isVisible());
 await importButton.click();

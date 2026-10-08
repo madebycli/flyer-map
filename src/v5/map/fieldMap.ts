@@ -110,6 +110,7 @@ export class FieldMap {
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), 'bottom-right');
     this.map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'bottom-right');
     this.map.on('style.load', () => this.install());
+    this.map.on('rotate', () => { const rotated = Math.abs(this.map.getBearing()) > 0.5; if (rotated) options.container.dataset.rotated = '1'; else delete options.container.dataset.rotated; });
     // Self-heal: a style swap that was superseded or fell back can finish without a usable `style.load`; whenever the
     // map is idle on a loaded style that lacks our sources, install them again.
     this.map.on('idle', () => { if (this.map.isStyleLoaded() && !this.map.getSource(SEGMENT_SOURCE)) this.install(); });

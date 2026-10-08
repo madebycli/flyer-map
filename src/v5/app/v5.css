@@ -31,21 +31,22 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .v5-map { position: absolute; inset: 0; }
 .v5-icon { flex: none; display: block; }
 
-/* ── HUD capsule ─────────────────────────────────────────────── */
+/* ── HUD capsule (quiet by default) ──────────────────────────── */
 .v5-pill {
-  position: absolute; z-index: 5; top: calc(env(safe-area-inset-top) + 0.7rem); left: 0.7rem; width: min(21rem, calc(100% - 5.6rem));
-  display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 1.1rem 0.5rem 0.5rem;
+  position: absolute; z-index: 5; top: calc(env(safe-area-inset-top) + 0.7rem); left: 0.7rem; display: grid; gap: 0.1rem;
   background: color-mix(in srgb, var(--surface-2) 86%, transparent); backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  border-radius: 2rem; box-shadow: var(--shadow);
+  border-radius: 1.6rem; box-shadow: var(--shadow); max-width: min(17rem, calc(100% - 1.4rem)); transition: border-radius 360ms var(--spring);
 }
-.v5-dot { display: grid; place-items: center; width: 2.9rem; height: 2.9rem; border-radius: 1.1rem; background: var(--primary-container); color: var(--on-primary-container); transition: border-radius 400ms var(--spring), background 200ms; }
+.v5-pill-main { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.9rem 0.3rem 0.3rem; border: 0; background: transparent; cursor: pointer; border-radius: inherit; }
+.v5-pill-detail { display: grid; gap: 0.35rem; padding: 0.1rem 1rem 0.8rem; animation: v5-pop-center 360ms var(--spring); }
+.v5-pill-detail small { color: var(--on-var); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v5-viewonly { color: var(--on-var); }
+.v5-dot { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 0.95rem; background: var(--primary-container); color: var(--on-primary-container); transition: border-radius 400ms var(--spring), background 200ms; }
 .v5-dot.busy { background: var(--tertiary-container); color: var(--on-tertiary-container); border-radius: 50%; }
 .v5-dot.busy .v5-icon { animation: v5-spin 1.1s linear infinite; }
 .v5-dot.offline { background: var(--error-container); color: var(--error); border-radius: 50%; }
-.v5-hud-main { flex: 1; min-width: 0; display: grid; gap: 0.2rem; }
-.v5-hud-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
-.v5-percent { font-size: 1.95rem; line-height: 1; font-weight: 800; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
-.v5-percent small { margin-left: 0.1rem; font-size: 0.95rem; font-weight: 700; color: var(--on-var); letter-spacing: 0; }
+.v5-percent { font-size: 1.35rem; line-height: 1; font-weight: 800; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+.v5-percent small { margin-left: 0.1rem; font-size: 0.8rem; font-weight: 700; color: var(--on-var); letter-spacing: 0; }
 .v5-count { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.82rem; font-weight: 600; color: var(--on-var); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* wavy linear progress */
@@ -209,3 +210,9 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 @media (min-width: 700px) {
   .v5-markbar { left: 50%; right: auto; width: 30rem; transform: translateX(-50%); animation-name: v5-rise-center; margin: 0; }
 }
+
+/* ── app feel: the UI never zooms, scrolls or selects; only the map gestures do ── */
+html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.v5-root { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.v5-root input { -webkit-user-select: text; user-select: text; font-size: 16px; /* 16 px keeps iOS from zooming into focused fields */ }
+.v5-root .v5-map { touch-action: none; }

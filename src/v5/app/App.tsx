@@ -142,8 +142,7 @@ export function App({ campaignId }: { campaignId: string }) {
   return (
     <div className="v5-root" data-ui={ui} data-hand={hand}>
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
-      {ready && <Hud name={meta?.campaign.name ?? ''} campaign={campaign} />}
-      {ready && meta && !meta.canWrite && <div className="v5-banner" role="status"><Icon name="eye" size={20} />Nur ansehen</div>}
+      {ready && <Hud name={meta?.campaign.name ?? ''} campaign={campaign} canWrite={canWrite} />}
       {ready && campaign.missingAreas.length > 0 && (
         <div className="v5-banner v5-missing" role="status">
           <Icon name="warning" size={20} /><span>{campaign.missingAreas.map((a) => a.name).join(', ')}</span>
@@ -265,21 +264,32 @@ function Detail({ store, keyOf, canWrite, onPick, theme }: { store: FieldStore |
     : <p className="v5-readonly"><Icon name={STATUS_ICON[status]} size={22} />{LABELS[status]}</p>;
 }
 
-function Hud({ name, campaign }: { name: string; campaign: ReturnType<typeof useCampaign> }) {
+/**
+ * Quiet by default: one small capsule (sync state + percentage). Tapping it unfolds the details for a few seconds.
+ * Nothing animates here unless something needs attention.
+ */
+function Hud({ name, campaign, canWrite }: { name: string; campaign: ReturnType<typeof useCampaign>; canWrite: boolean }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => { if (!open) return; const t = window.setTimeout(() => setOpen(false), 5000); return () => window.clearTimeout(t); }, [open]);
   const p = campaign.progress;
   const dot = campaign.sync.state === 'offline' ? 'offline' : campaign.sync.pending > 0 || campaign.sync.state === 'syncing' ? 'busy' : 'ok';
   const title = dot === 'ok' ? 'Alles gespeichert' : dot === 'busy' ? `${campaign.sync.pending} Änderungen werden gesendet` : `Offline – ${campaign.sync.pending} Änderungen warten`;
   const done = p?.houses.completed ?? 0, total = p ? p.totalHouses - p.houses['not-deliverable'] : 0;
+  const percent = Math.round((p?.houseRatio ?? 0) * 100);
   return (
-    <div className="v5-pill" role="status" title={name} aria-label={`${name}: ${Math.round((p?.houseRatio ?? 0) * 100)} Prozent`}>
-      <span className={`v5-dot ${dot}`} title={title} aria-label={title}><Icon name={dot === 'ok' ? 'cloudOk' : dot === 'offline' ? 'cloudOff' : 'sync'} size={22} /></span>
-      <div className="v5-hud-main">
-        <div className="v5-hud-row">
-          <strong className="v5-percent">{Math.round((p?.houseRatio ?? 0) * 100)}<small>%</small></strong>
+    <div className={`v5-pill${open ? ' open' : ''}`} role="status" aria-label={`${name}: ${percent} Prozent`} data-done={done} data-total={total}>
+      <button className="v5-pill-main" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Fortschritt">
+        <span className={`v5-dot ${dot}`} title={title} aria-label={title}><Icon name={dot === 'ok' ? 'cloudOk' : dot === 'offline' ? 'cloudOff' : 'sync'} size={20} /></span>
+        <strong className="v5-percent">{percent}<small>%</small></strong>
+        {!canWrite && <Icon name="eye" size={18} className="v5-viewonly" />}
+      </button>
+      {open && (
+        <div className="v5-pill-detail">
           <span className="v5-count"><Icon name="house" size={15} />{done.toLocaleString('de')} / {total.toLocaleString('de')}</span>
+          <WavyProgress value={p?.houseRatio ?? 0} label="Fortschritt" />
+          <small>{name}</small>
         </div>
-        <WavyProgress value={p?.houseRatio ?? 0} label="Fortschritt" />
-      </div>
+      )}
     </div>
   );
 }

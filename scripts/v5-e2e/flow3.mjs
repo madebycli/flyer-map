@@ -18,7 +18,7 @@ const boot = async () => {
   await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
   await page.waitForTimeout(1200);
 };
-const done = async () => { const m = /([\d.]+) \/ ([\d.]+)/.exec(await page.locator('.v5-pill').innerText()); return m ? Number(m[1].replace(/\./g, '')) : -1; };
+const done = async () => Number(await page.locator('.v5-pill').getAttribute('data-done'));
 const jump = (x, y, zoom) => page.evaluate(async ([c, z]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom: z }); await new Promise((r) => m.once('idle', r)); }, [M(x, y), zoom]);
 const scr = (x, y) => page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(x, y));
 const clickAt = async (x, y) => { const [sx, sy] = await scr(x, y); await page.mouse.click(sx, sy); };
