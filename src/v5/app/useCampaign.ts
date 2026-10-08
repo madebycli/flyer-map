@@ -105,7 +105,11 @@ export function useCampaign(campaignId: string): CampaignState {
         setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore);
         client?.dispose();
         client = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending) => setSync({ state, pending }));
-        void client.run();
+        // Show the screen once the first pull settled (or after 4 s on a slow link), so a fresh device does not
+        // flash 0 % before the shared progress arrives.
+        if (parts.length) setPhase({ kind: 'loading', label: 'Fortschritt wird geladen …' });
+        await Promise.race([client.run(), new Promise((resolve) => setTimeout(resolve, 4000))]);
+        if (cancelled) return;
         // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
         setPhase(parts.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
       } catch (error) {

@@ -1,93 +1,16 @@
-/* Floating map controls in the Vela / Google-Maps style.
-   Presentation only: restyles the MapLibre control chrome (zoom +/-, compass,
-   locate) as separate round, high-contrast 48 px touch targets with a teal
-   accent. It does not touch the map canvas, sources or layers. */
-:root {
-  --vela-teal: #14857a;
-  --vela-teal-dark: #0b5d55;
-  --vela-teal-tint: #b6e7df;
-  --vela-surface: #ffffff;
-  --vela-icon: #3c4043;
-  --vela-shadow: 0 1px 3px rgb(60 64 67 / 30%), 0 4px 10px rgb(60 64 67 / 15%);
-}
-
-@media (prefers-color-scheme: dark) {
-:root:not([data-appearance="light"]) {
-  --vela-surface: #282a2c;
-  --vela-icon: #e8eaed;
-  --vela-shadow: 0 1px 3px rgb(0 0 0 / 55%), 0 4px 12px rgb(0 0 0 / 35%);
-}
-}
-
-.maplibregl-ctrl-top-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.6rem;
-  right: 0.65rem;
-}
-
-.maplibregl-ctrl-top-right .maplibregl-ctrl {
-  margin: 0;
-  float: none;
-}
-
-.maplibregl-ctrl-group {
-  overflow: hidden;
-  border: 0;
-  border-radius: 1.5rem;
-  background: var(--vela-surface);
-  box-shadow: var(--vela-shadow);
-}
-
-.maplibregl-ctrl-group button {
-  width: 3rem;
-  height: 3rem;
-  background-color: transparent;
-  transition: background-color 120ms ease;
-}
-
-.maplibregl-ctrl-group button + button {
-  border-top: 1px solid rgb(128 134 139 / 28%);
-}
-
-.maplibregl-ctrl-group button:hover,
-.maplibregl-ctrl-group button:focus-visible {
-  background-color: rgb(20 133 122 / 12%);
-}
-
-.maplibregl-ctrl-group button:active {
-  background-color: var(--vela-teal-tint);
-}
-
-.maplibregl-ctrl-group button:focus-visible {
-  outline: 2px solid var(--vela-teal);
-  outline-offset: -3px;
-}
-
-/* Plus / minus use the bundled icons; recolour them for both appearances. */
-.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
-  background-size: 1.65rem 1.65rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-appearance="light"]) .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1) brightness(0.92); }
-}
-
-/* Active location follow gets the teal accent like Vela's "my location" state. */
-.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon,
-.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-active-error .maplibregl-ctrl-icon {
-  filter: none;
-}
-
-@media (hover: none) {
-  .maplibregl-ctrl-group button:hover {
-    background-color: transparent;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .maplibregl-ctrl-group button {
-    transition: none;
-  }
-}
+/* MapLibre control chrome in the v5 look: tonal rounded groups, dark first. Presentation only. */
+.maplibregl-ctrl-top-right { top: calc(env(safe-area-inset-top) + 0.7rem); right: 0.7rem; display: flex; flex-direction: column; align-items: flex-end; gap: 0.6rem; }
+.maplibregl-ctrl-top-right .maplibregl-ctrl { margin: 0; float: none; }
+.maplibregl-ctrl-group { overflow: hidden; border: 0; border-radius: 1.8rem; background: color-mix(in srgb, var(--surface-3) 90%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: var(--shadow); }
+.maplibregl-ctrl-group button { width: 3.3rem; height: 3.3rem; background-color: transparent; transition: background-color 120ms; }
+.maplibregl-ctrl-group button + button { border-top: 1px solid var(--outline-var); }
+.maplibregl-ctrl-group button:hover, .maplibregl-ctrl-group button:focus-visible { background-color: var(--surface-4); }
+.maplibregl-ctrl-group button:active { background-color: var(--primary-container); }
+.maplibregl-ctrl-group button:focus-visible { outline: 2px solid var(--primary); outline-offset: -3px; }
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon { background-size: 1.6rem 1.6rem; }
+/* The bundled icons are dark glyphs: invert them on the dark theme; the geolocate active/error icons keep their own colours. */
+:root:not([data-theme="light"]) .maplibregl-ctrl-group button:not(.maplibregl-ctrl-geolocate-active):not(.maplibregl-ctrl-geolocate-active-error) .maplibregl-ctrl-icon { filter: invert(1) brightness(0.95); }
+.maplibregl-ctrl-attrib { background: color-mix(in srgb, var(--surface-1) 75%, transparent) !important; color: var(--on-var) !important; border-radius: 1rem 0 0 0; }
+.maplibregl-ctrl-attrib a { color: var(--on-var) !important; }
+.maplibregl-ctrl-attrib-button { filter: none; }
+:root:not([data-theme="light"]) .maplibregl-ctrl-attrib-button { filter: invert(1); }

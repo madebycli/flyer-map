@@ -1,7 +1,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { deriveNetwork } from '../engine/derive.ts';
 import { syntheticCity } from '../engine/synthetic.ts';
-import { FieldMap } from '../map/fieldMap.ts';
+import { FieldMap, blankStyle } from '../map/fieldMap.ts';
 import { FieldStore } from '../store/store.ts';
 import type { Network } from '../engine/types.ts';
 
@@ -18,7 +18,7 @@ window.harness = {
     const store = new FieldStore('harness');
     const hits: unknown[] = [];
     const fieldMap = new FieldMap({
-      container: document.getElementById('map')!, zoom: 16.8,
+      container: document.getElementById('map')!, zoom: 16.8, styles: { dark: blankStyle('dark') },
       center: [13.0 + (blocks * 50) / 70_000, 51.0 + (blocks * 50) / 110_574], onHit: (h) => hits.push(h),
     });
     (window as unknown as { fm: FieldMap }).fm = fieldMap;

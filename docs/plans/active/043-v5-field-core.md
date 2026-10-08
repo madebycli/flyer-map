@@ -22,6 +22,7 @@ Streets/Houses are derived deterministically from a per-Area raw OSM pack on the
 - [x] Worker: `/api/v5` meta/state/ops/pack, migration 0026 (additive, unapplied), team scoping incl. key ownership
 - [x] Map: geometry once, `setFeatureState` painting; `/v5` shell with route marking, undo, legacy import
 - [x] Review pass: independent code review findings fixed (seq race, key ownership, stale packs, outbox safety)
+- [x] Dark-first Material 3 Expressive UI with icon-led controls, theme switch with dark/light basemap and layer self-heal
 - [ ] Real Overpass pack for a real Area (Gebiet 4 and Gebiet 8) and comparison of v5 vs V4 street/house counts
 - [ ] Real-device acceptance per ADR-0030 (iPad + Android) incl. offline edit → reconnect convergence
 - [ ] Apply migration 0026 on Beta D1; deploy the branch to Beta only after the two items above

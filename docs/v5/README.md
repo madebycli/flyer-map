@@ -27,6 +27,15 @@ Streets and houses are a pure function of OSM data. v5 therefore stores **no tas
 - `worker/v5/api.ts` + `migrations/0026_v5_field_state.sql` – meta, state, ops, pack endpoints.
 - `scripts/v5-e2e` – fixture server (real handlers, in-memory D1) and Playwright flow.
 
+## Design
+
+Dark first (the default, independent of the OS setting; light is one tap away and remembered). Material 3 Expressive
+ideas, built with plain CSS and an own inline icon set (no webfont, no icon font, no network): tonal surfaces,
+squircle shapes that morph on press, a wavy progress indicator, a morphing-shape loader, a floating icon toolbar,
+and a status group of four icon buttons where the selected one grows and shows its label. Zoomed out, houses are
+status-coloured dots so a whole city reads as progress; houses appear as shapes from zoom 15.2.
+Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
+
 ## Behaviour decisions
 
 - Roads: **whitelist**. `residential`, `living_street`, `unclassified`, `tertiary…primary`, `pedestrian` are streets;

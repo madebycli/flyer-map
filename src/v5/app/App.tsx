@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { buildGraph, importLegacyProgress, routeSegments, type House, type LegacySnapshot, type Network, type Segment } from '../engine/index.ts';
-import { FieldMap, STATUS_COLORS, type Hit } from '../map/fieldMap.ts';
+import { FieldMap, statusColors, type Hit, type Theme } from '../map/fieldMap.ts';
 import type { FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { fetchLegacySnapshot } from './api.ts';
 import { useCampaign } from './useCampaign.ts';
+import { Icon, Loader, WavyProgress, type IconName } from './ui.tsx';
 
 const LABELS: Record<Status, string> = { open: 'Offen', completed: 'Erledigt', later: 'Später', 'not-deliverable': 'Nicht zustellbar' };
 const ORDER: Status[] = ['completed', 'later', 'not-deliverable', 'open'];
+const STATUS_ICON: Record<Status, IconName> = { completed: 'check', later: 'later', 'not-deliverable': 'blocked', open: 'open' };
+const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
 const meters = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`);
-const percent = (ratio: number) => `${Math.round(ratio * 100)} %`;
 const NO_SEGMENTS: string[] = [];
 
 type Selection =
@@ -37,6 +39,7 @@ export function App({ campaignId }: { campaignId: string }) {
   const [undo, setUndo] = useState<Undo | null>(null);
   const [importState, setImportState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [notice, setNotice] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>(readTheme);
 
   const index = useMemo(() => {
     if (!network) return null;
@@ -56,7 +59,7 @@ export function App({ campaignId }: { campaignId: string }) {
     if (!mapHost.current || fieldMap.current) return;
     fieldMap.current = new FieldMap({
       container: mapHost.current,
-      style: 'https://tiles.openfreemap.org/styles/bright',
+      theme,
       onHit: (hit) => hitRef.current(hit),
       segmentsOnly: () => routeModeRef.current,
     });
@@ -68,12 +71,15 @@ export function App({ campaignId }: { campaignId: string }) {
     const map = fieldMap.current;
     void map.loadNetwork(network).then(() => {
       map.bind(store);
-      // Fit to the Area polygons (always present, even without houses); loops, never argument spreads.
-      let w = Infinity, south = Infinity, e = -Infinity, n = -Infinity;
-      for (const area of meta?.areas ?? []) for (const [lng, lat] of area.geometry.coordinates[0]) { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < south) south = lat; if (lat > n) n = lat; }
-      if (Number.isFinite(w)) map.fitTo([[w, south], [e, n]]);
+      map.fitTo(workBounds(network, meta?.areas ?? []), { top: 120, bottom: 150, left: 28, right: 28 });
     });
   }, [network, store]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    fieldMap.current?.setTheme(theme);
+    try { localStorage.setItem('vf-v5-theme', theme); } catch { /* private mode */ }
+  }, [theme]);
 
   useEffect(() => { fieldMap.current?.setPreview(routeMode ? routeSegmentIds.map(segmentKey) : []); }, [routeMode, routeSegmentIds]);
 
@@ -134,118 +140,162 @@ export function App({ campaignId }: { campaignId: string }) {
   }, [index, routeSegmentIds, withHouses]);
   const routeLength = route?.state === 'selected' ? route.length : 0;
 
+  const canWrite = !!meta?.canWrite;
+  const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
+  const sheetOpen = routeMode || !!selection;
+  const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), { top: 120, bottom: 150, left: 28, right: 28 }); };
+  const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); };
+
   return (
     <div className="v5-root">
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
-      {phase.kind === 'ready' && <TopPill name={meta?.campaign.name ?? ''} campaign={campaign} />}
-      {phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && store && store.size === 0 && (
-        <button className="v5-import" disabled={importState === 'busy'} onClick={() => void importLegacy()}>
-          {importState === 'busy' ? 'Wird übernommen …' : 'Fortschritt aus der bisherigen Version übernehmen'}
-        </button>
-      )}
-      {notice && <div className="v5-toast" role="status"><span>{notice}</span><button onClick={() => setNotice(null)}>OK</button></div>}
+      {phase.kind === 'ready' && <Hud name={meta?.campaign.name ?? ''} campaign={campaign} />}
+      {phase.kind === 'ready' && meta && !meta.canWrite && <div className="v5-banner" role="status"><Icon name="eye" size={20} />Nur ansehen</div>}
       {phase.kind === 'ready' && campaign.missingAreas.length > 0 && (
         <div className="v5-banner v5-missing" role="status">
-          <span>Ohne Kartendaten: {campaign.missingAreas.map((a) => a.name).join(', ')}</span>
-          {meta?.canBuildPack && <button className="v5-btn" onClick={() => void campaign.buildMissing()}>Laden</button>}
+          <Icon name="warning" size={20} /><span>{campaign.missingAreas.map((a) => a.name).join(', ')}</span>
+          {meta?.canBuildPack && <button className="v5-icon-btn tonal" onClick={() => void campaign.buildMissing()} aria-label="Kartendaten laden" title="Kartendaten laden"><Icon name="download" /></button>}
         </div>
       )}
-      {phase.kind === 'ready' && meta && !meta.canWrite && <div className="v5-banner">Nur ansehen – mit dieser Rolle kannst du nichts markieren.</div>}
-      {phase.kind === 'loading' && <Overlay><div className="v5-spinner" aria-hidden /><p>{phase.label}</p></Overlay>}
-      {phase.kind === 'error' && <Overlay><h2>Das hat nicht geklappt</h2><p>{phase.status === 401 ? 'Du hast keinen Zugriff auf diese Aktion. Öffne den Einladungslink erneut.' : phase.message}</p><button className="v5-btn" onClick={() => location.reload()}>Neu laden</button></Overlay>}
+      {notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{notice}</span><button className="v5-icon-btn" onClick={() => setNotice(null)} aria-label="OK"><Icon name="close" size={20} /></button></div>}
+      {undo && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{undo.label}</span><button className="v5-icon-btn tonal" onClick={() => { undo.revert(); setUndo(null); }} aria-label="Rückgängig" title="Rückgängig"><Icon name="undo" /></button></div>}
+
+      {phase.kind === 'loading' && <Overlay><Loader /><p>{phase.label}</p></Overlay>}
+      {phase.kind === 'error' && <Overlay><span className="v5-badge big"><Icon name="warning" size={34} /></span><h2>Das hat nicht geklappt</h2><p>{phase.status === 401 ? 'Kein Zugriff auf diese Aktion. Öffne den Einladungslink erneut.' : phase.message}</p><button className="v5-btn" onClick={() => location.reload()}><Icon name="sync" size={20} />Neu laden</button></Overlay>}
       {phase.kind === 'needs-pack' && (
         <Overlay>
+          <span className="v5-badge big"><Icon name="mapPin" size={34} /></span>
           <h2>Kartendaten fehlen</h2>
-          <p>{phase.areas.map((a) => a.name).join(', ')} {phase.areas.length === 1 ? 'hat' : 'haben'} noch keine Straßen- und Häuserdaten.</p>
-          {phase.canBuild ? <button className="v5-btn primary" onClick={() => void campaign.buildMissing()}>Kartendaten laden</button> : <p className="v5-muted">Bitte eine Admin-Person, sie zu laden.</p>}
+          <p>{phase.areas.map((a) => a.name).join(', ')}</p>
+          {phase.canBuild ? <button className="v5-btn primary" onClick={() => void campaign.buildMissing()}><Icon name="download" size={20} />Kartendaten laden</button> : <p className="v5-muted">Eine Admin-Person muss sie laden.</p>}
         </Overlay>
       )}
-      {phase.kind === 'ready' && meta?.canWrite && (
-        <button className={`v5-fab${routeMode ? ' active' : ''}`} aria-pressed={routeMode} onClick={() => (routeMode ? leaveRouteMode() : (setSelection(null), fieldMap.current?.select(null), setRouteMode(true)))}>
-          {routeMode ? 'Abbrechen' : 'Strecke markieren'}
-        </button>
+
+      {phase.kind === 'ready' && !sheetOpen && (
+        <nav className="v5-dock" aria-label="Werkzeuge">
+          <button className="v5-tool" onClick={fitAll} aria-label="Alles zeigen" title="Alles zeigen"><Icon name="fit" /></button>
+          {canWrite && (
+            <button className="v5-tool primary" aria-pressed={false} aria-label="Strecke markieren" title="Strecke markieren"
+              onClick={() => { closeSelection(); setRouteMode(true); }}><Icon name="route" size={28} /></button>
+          )}
+          <button className="v5-tool" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Helles Design' : 'Dunkles Design'} title={theme === 'dark' ? 'Helles Design' : 'Dunkles Design'}>
+            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+          </button>
+          {importOffer && (
+            <button className="v5-tool" disabled={importState === 'busy'} onClick={() => void importLegacy()} aria-label="Fortschritt aus der bisherigen Version übernehmen" title="Fortschritt aus der bisherigen Version übernehmen">
+              <Icon name={importState === 'busy' ? 'sync' : 'download'} />
+            </button>
+          )}
+        </nav>
       )}
+
       {routeMode && (
-        <Sheet title="Strecke markieren" onClose={leaveRouteMode}>
-          {anchors.length < 2 && <p className="v5-muted">{anchors.length === 0 ? 'Tippe auf den ersten Straßenabschnitt.' : 'Tippe auf den letzten Abschnitt. Weitere Tipps legen Zwischenpunkte fest.'}</p>}
-          {route?.state === 'disconnected' && <p className="v5-warn">Diese Abschnitte sind nicht verbunden.</p>}
+        <SheetFrame icon="route" title="Strecke markieren" onClose={leaveRouteMode}
+          meta={route?.state === 'selected' && anchors.length >= 2 ? <><span><Icon name="road" size={16} />{routeSegmentIds.length}</span><span><Icon name="ruler" size={16} />{meters(routeLength)}</span></> : undefined}>
+          {anchors.length < 2 && <p className="v5-hint"><Icon name="mapPin" size={20} />{anchors.length === 0 ? 'Start antippen' : 'Ende antippen – weitere Tipps setzen Zwischenpunkte'}</p>}
+          {route?.state === 'disconnected' && <p className="v5-warn"><Icon name="warning" size={20} />Nicht verbunden</p>}
           {route?.state === 'selected' && anchors.length >= 2 && (
             <>
-              <p><strong>{routeSegmentIds.length}</strong> Abschnitte · {meters(routeLength)}</p>
-              {route.ambiguous && <p className="v5-warn">Es gibt mehrere ähnlich kurze Wege. Tippe einen Zwischenpunkt, um deinen Weg festzulegen.</p>}
-              <label className="v5-check"><input type="checkbox" checked={withHouses} onChange={(e) => setWithHouses(e.target.checked)} /> Häuser an der Strecke mitmarkieren</label>
-              <StatusGrid onPick={(status) => { apply(routeKeys, status, `${routeSegmentIds.length} Abschnitte`); leaveRouteMode(); }} />
+              {route.ambiguous && <p className="v5-warn"><Icon name="warning" size={20} />Mehrere ähnlich kurze Wege – Zwischenpunkt antippen</p>}
+              <div className="v5-row">
+                <button className={`v5-chip-toggle${withHouses ? ' on' : ''}`} aria-pressed={withHouses} onClick={() => setWithHouses(!withHouses)} aria-label="Häuser an der Strecke mitmarkieren" title="Häuser an der Strecke mitmarkieren">
+                  <Icon name="house" size={22} />{withHouses && <Icon name="check" size={16} />}
+                </button>
+                <button className="v5-icon-btn tonal" onClick={() => setAnchors((a) => a.slice(0, -1))} aria-label="Letzten Punkt entfernen" title="Letzten Punkt entfernen"><Icon name="undo" /></button>
+              </div>
+              <StatusGroup theme={theme} onPick={(status) => { apply(routeKeys, status, `${routeSegmentIds.length} Abschnitte`); leaveRouteMode(); }} />
             </>
           )}
-          {anchors.length > 0 && <button className="v5-btn" onClick={() => setAnchors((a) => a.slice(0, -1))}>Letzten Punkt entfernen</button>}
-        </Sheet>
+          {anchors.length === 1 && <div className="v5-row"><button className="v5-icon-btn tonal" onClick={() => setAnchors([])} aria-label="Zurücksetzen" title="Zurücksetzen"><Icon name="undo" /></button></div>}
+        </SheetFrame>
       )}
+
       {!routeMode && selection && (
-        <Sheet title={selection.kind === 'house' ? `${selection.house.street ?? 'Haus'} ${selection.house.number ?? ''}`.trim() : selection.segment.name ?? 'Straße'} onClose={() => { setSelection(null); fieldMap.current?.select(null); }}>
+        <SheetFrame
+          icon={selection.kind === 'house' ? 'house' : 'road'}
+          title={selection.kind === 'house' ? `${selection.house.street ?? ''} ${selection.house.number ?? ''}`.trim() || 'Haus' : selection.segment.name ?? 'Straße'}
+          onClose={closeSelection}
+          meta={selection.kind === 'segment' ? <><span><Icon name="ruler" size={16} />{meters(selection.segment.length)}</span><span><Icon name="house" size={16} />{selection.houses.length}</span></>
+            : selection.house.parent === null ? <span><Icon name="warning" size={16} />Keiner Straße zugeordnet</span> : undefined}>
           {selection.kind === 'house'
-            ? <Detail store={store} keyOf={houseKey(selection.house.id)} canWrite={!!meta?.canWrite} onPick={(s) => apply([houseKey(selection.house.id)], s, `Haus ${selection.house.number ?? ''}`)}
-                note={selection.house.parent === null ? 'Keiner Straße zugeordnet' : selection.house.evidence === 'residential-type' ? 'Ohne Hausnummer' : undefined} />
+            ? <Detail theme={theme} store={store} keyOf={houseKey(selection.house.id)} canWrite={canWrite} onPick={(s) => apply([houseKey(selection.house.id)], s, `Haus ${selection.house.number ?? ''}`)} />
             : <>
-                <Detail store={store} keyOf={segmentKey(selection.segment.id)} canWrite={!!meta?.canWrite} onPick={(s) => apply([segmentKey(selection.segment.id)], s, selection.segment.name ?? 'Abschnitt')}
-                  note={`${meters(selection.segment.length)} · ${selection.houses.length} Häuser`} />
-                {meta?.canWrite && selection.houses.length > 0 && (
-                  <button className="v5-btn wide" onClick={() => apply([segmentKey(selection.segment.id), ...selection.houses.map((h) => houseKey(h.id))], 'completed', `${selection.segment.name ?? 'Abschnitt'} mit ${selection.houses.length} Häusern`)}>
-                    Abschnitt und alle {selection.houses.length} Häuser erledigt
+                <Detail theme={theme} store={store} keyOf={segmentKey(selection.segment.id)} canWrite={canWrite} onPick={(s) => apply([segmentKey(selection.segment.id)], s, selection.segment.name ?? 'Abschnitt')} />
+                {canWrite && selection.houses.length > 0 && (
+                  <button className="v5-wide" aria-label={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`} title={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`}
+                    onClick={() => apply([segmentKey(selection.segment.id), ...selection.houses.map((h) => houseKey(h.id))], 'completed', `${selection.segment.name ?? 'Abschnitt'} + ${selection.houses.length}`)}>
+                    <Icon name="road" size={22} /><Icon name="house" size={22} /><Icon name="check" size={22} /><b>{selection.houses.length}</b>
                   </button>
                 )}
               </>}
-        </Sheet>
+        </SheetFrame>
       )}
-      {undo && <div className="v5-toast" role="status"><span>{undo.label}</span><button onClick={() => { undo.revert(); setUndo(null); }}>Rückgängig</button></div>}
     </div>
   );
 }
 
-function TopPill({ name, campaign }: { name: string; campaign: ReturnType<typeof useCampaign> }) {
-  const p = campaign.progress;
-  const dot = campaign.sync.state === 'offline' ? 'offline' : campaign.sync.pending > 0 || campaign.sync.state === 'syncing' ? 'busy' : 'ok';
-  const title = dot === 'ok' ? 'Alles gespeichert' : dot === 'busy' ? `${campaign.sync.pending} Änderungen werden gesendet` : `Offline – ${campaign.sync.pending} Änderungen warten`;
-  return (
-    <div className="v5-pill" role="status">
-      <span className={`v5-dot ${dot}`} title={title} aria-label={title} />
-      <div className="v5-pill-text">
-        <strong>{name}</strong>
-        {p && <small>{p.houses.completed.toLocaleString('de')} / {(p.totalHouses - p.houses['not-deliverable']).toLocaleString('de')} Häuser · {percent(p.houseRatio)}</small>}
-      </div>
-      {p && <div className="v5-bar" aria-hidden><i style={{ width: percent(p.houseRatio) }} /></div>}
-    </div>
-  );
+/** Bounds of what can be worked on (houses and visible streets); Area polygons only when nothing was derived. */
+function workBounds(network: Network, areas: { geometry: { coordinates: [number, number][][] } }[]): [[number, number], [number, number]] {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  const add = (lng: number, lat: number) => { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < s) s = lat; if (lat > n) n = lat; };
+  for (const house of network.houses) add(house.center[0], house.center[1]);
+  for (const segment of network.segments) if (segment.visible) add(segment.coords[0][0], segment.coords[0][1]);
+  if (!Number.isFinite(w)) for (const area of areas) for (const [lng, lat] of area.geometry.coordinates[0]) add(lng, lat);
+  return [[w, s], [e, n]];
 }
 
-function Detail({ store, keyOf, canWrite, onPick, note }: { store: FieldStore | null; keyOf: EntityKey; canWrite: boolean; onPick: (s: Status) => void; note?: string }) {
-  const status = useStatus(store, keyOf);
+function StatusGroup({ current, onPick, theme }: { current?: Status; onPick: (status: Status) => void; theme: Theme }) {
+  const colors = statusColors(theme);
   return (
-    <>
-      <p className="v5-muted"><span className="v5-chip" style={{ background: STATUS_COLORS[status] }} />{LABELS[status]}{note ? ` · ${note}` : ''}</p>
-      {canWrite && <StatusGrid current={status} onPick={onPick} />}
-    </>
-  );
-}
-
-function StatusGrid({ current, onPick }: { current?: Status; onPick: (s: Status) => void }) {
-  return (
-    <div className="v5-grid">
+    <div className="v5-seg" role="group" aria-label="Status">
       {ORDER.map((status) => (
-        <button key={status} className={`v5-status${current === status ? ' on' : ''}`} onClick={() => onPick(status)} aria-pressed={current === status}>
-          <span className="v5-chip" style={{ background: STATUS_COLORS[status] }} />{LABELS[status]}
+        <button key={status} className={`v5-status v5-seg-btn${current === status ? ' on' : ''}`} style={{ '--c': colors[status] } as React.CSSProperties}
+          onClick={() => onPick(status)} aria-pressed={current === status} aria-label={LABELS[status]} title={LABELS[status]}>
+          <Icon name={STATUS_ICON[status]} size={26} />
+          <span>{LABELS[status]}</span>
         </button>
       ))}
     </div>
   );
 }
 
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function SheetFrame({ icon, title, meta, onClose, children }: { icon: IconName; title: string; meta?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
   return (
     <section className="v5-sheet" aria-label={title}>
       <div className="v5-handle" aria-hidden />
-      <header><h2>{title}</h2><button className="v5-close" onClick={onClose} aria-label="Schließen">×</button></header>
+      <header>
+        <span className="v5-badge"><Icon name={icon} size={26} /></span>
+        <div className="v5-head-text"><h2>{title}</h2>{meta && <div className="v5-meta">{meta}</div>}</div>
+        <button className="v5-icon-btn" onClick={onClose} aria-label="Schließen" title="Schließen"><Icon name="close" /></button>
+      </header>
       {children}
     </section>
+  );
+}
+
+function Detail({ store, keyOf, canWrite, onPick, theme }: { store: FieldStore | null; keyOf: EntityKey; canWrite: boolean; onPick: (s: Status) => void; theme: Theme }) {
+  const status = useStatus(store, keyOf);
+  return canWrite
+    ? <StatusGroup current={status} onPick={onPick} theme={theme} />
+    : <p className="v5-readonly"><Icon name={STATUS_ICON[status]} size={22} />{LABELS[status]}</p>;
+}
+
+function Hud({ name, campaign }: { name: string; campaign: ReturnType<typeof useCampaign> }) {
+  const p = campaign.progress;
+  const dot = campaign.sync.state === 'offline' ? 'offline' : campaign.sync.pending > 0 || campaign.sync.state === 'syncing' ? 'busy' : 'ok';
+  const title = dot === 'ok' ? 'Alles gespeichert' : dot === 'busy' ? `${campaign.sync.pending} Änderungen werden gesendet` : `Offline – ${campaign.sync.pending} Änderungen warten`;
+  const done = p?.houses.completed ?? 0, total = p ? p.totalHouses - p.houses['not-deliverable'] : 0;
+  return (
+    <div className="v5-pill" role="status" title={name} aria-label={`${name}: ${Math.round((p?.houseRatio ?? 0) * 100)} Prozent`}>
+      <span className={`v5-dot ${dot}`} title={title} aria-label={title}><Icon name={dot === 'ok' ? 'cloudOk' : dot === 'offline' ? 'cloudOff' : 'sync'} size={22} /></span>
+      <div className="v5-hud-main">
+        <div className="v5-hud-row">
+          <strong className="v5-percent">{Math.round((p?.houseRatio ?? 0) * 100)}<small>%</small></strong>
+          <span className="v5-count"><Icon name="house" size={15} />{done.toLocaleString('de')} / {total.toLocaleString('de')}</span>
+        </div>
+        <WavyProgress value={p?.houseRatio ?? 0} label="Fortschritt" />
+      </div>
+    </div>
   );
 }
 

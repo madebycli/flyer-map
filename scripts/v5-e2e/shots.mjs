@@ -1,0 +1,54 @@
+// Visual acceptance shots (phone viewport, 2x) in dark and light with realistic progress. Run: node --experimental-transform-types shots.mjs
+const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
+import fs from 'node:fs';
+import { encodeClock } from '../../src/v5/store/hlc.ts';
+const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
+const out = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
+const M = (x, y) => [13 + x / 70053, 51 + y / 110574];
+const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
+const ctx = await b.newContext({ viewport: { width: 430, height: 932 }, deviceScaleFactor: 2 });
+await ctx.addCookies([{ name: 'vf_session', value: cookies.admin, url: 'http://localhost:8140' }]);
+const page = await ctx.newPage();
+page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
+await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug');
+await page.getByText('Kartendaten fehlen').waitFor({ timeout: 8000 }).then(() => page.getByRole('button', { name: 'Kartendaten laden' }).click(), () => {});
+await page.waitForSelector('.v5-pill', { timeout: 120000 });
+await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
+// Seed realistic progress through the real API: the first block rows done, a few later / not deliverable.
+const now = Date.now();
+const ops = [];
+const add = (from, to, status) => { for (let id = from; id < to; id++) ops.push({ id: encodeClock({ wall: now - 100000 + ops.length, counter: 0, node: 'seed' }), key: `h:h${id}`, status, area: 'area_n' }); };
+add(5000000, 5000420, 'completed'); add(5000420, 5000445, 'later'); add(5000445, 5000452, 'not-deliverable');
+for (let i = 0; i < ops.length; i += 100) {
+  const r = await page.evaluate(async (chunk) => (await fetch('/api/v5/campaigns/campaign_n/ops', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ops: chunk }) })).status, ops.slice(i, i + 100));
+  if (r !== 200) console.log('seed failed', r);
+}
+await page.reload();
+await page.waitForSelector('.v5-pill');
+await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
+await page.waitForTimeout(2500);
+const shot = (name) => page.screenshot({ path: `${out}/${name}.png` });
+const jump = (x, y, z) => page.evaluate(async ([c, zoom]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom }); await new Promise((r) => m.once('idle', r)); }, [M(x, y), z]);
+const clickAt = async (x, y) => { const p = await page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(x, y)); await page.mouse.click(p[0], p[1]); };
+await shot('s1-overview-dark');
+await jump(150, 150, 16.4);
+await page.waitForTimeout(500);
+await shot('s2-street-level-dark');
+await jump(76, 87, 18.1);
+await clickAt(76, 87);
+await page.waitForSelector('.v5-sheet');
+await page.waitForTimeout(700);
+await shot('s3-house-sheet-dark');
+await page.getByRole('button', { name: 'Schließen' }).click();
+await page.getByRole('button', { name: 'Strecke markieren' }).click();
+await jump(200, 0, 15.8);
+await clickAt(50, 0); await clickAt(350, 0);
+await page.waitForTimeout(900);
+await shot('s4-route-dark');
+await page.getByRole('button', { name: 'Schließen' }).click();
+await page.getByRole('button', { name: 'Helles Design' }).click();
+await page.waitForTimeout(1500);
+await jump(150, 150, 16.4);
+await page.waitForTimeout(800);
+await shot('s5-street-level-light');
+await b.close();
