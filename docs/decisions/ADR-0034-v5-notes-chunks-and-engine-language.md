@@ -24,17 +24,22 @@ last_updated: 2026-10-08
 3. **Warm start cache.** The derived network per Area is kept in IndexedDB keyed by
    `(pack version, Area `updatedAt`, engine version)`. A cache hit skips pack download and derivation; any change in
    those three invalidates it. Measured at 39 k houses: cold 3.1 s → warm 0.8 s to ready. Boot timings are exposed on `window.__v5Boot` (and logged with `?debug`).
-4. **The engine stays TypeScript; no Rust/WASM port now.** Reasons, all measured or structural:
-   - Derivation of 51 k houses takes ≈ 0.54 s in V8 (docs/v5/README.md) and already runs off the main thread in a
-     Web Worker; the cache removes it from every warm start. It is not the bottleneck.
-   - Map updates are flat per change (`setFeatureState`, ADR-0033); the remaining render cost is MapLibre's own
-     worker/GPU work, which a Rust engine would not change.
-   - A second implementation must reproduce every id bit-for-bit (stable keys are the sync contract) and would
-     double the surface of the adversarial test suite. The same TypeScript module currently runs on the device,
-     in the Worker (pack building) and in the Node tests, which is a correctness feature.
-   - **Revisit when** a real mid-range Android measures derivation of the largest Area (Gebiet 8, ~47 k houses) above
-     ≈ 2 s, or the Worker cannot build a pack inside its CPU limit. Then port `derive`/`route` first, keep ids
-     byte-identical, and gate with a differential test against the TypeScript reference over seeded cities.
+4. **Rust/WASM engine (decided by the product owner, 2026-10-08; supersedes the earlier "stay TypeScript" call).**
+   The measurements that made TypeScript look sufficient are still true, so the port is judged on what it buys:
+   - `engine-rs` (no wasm-bindgen, C ABI) ports `deriveNetwork` + `restrictToArea` line by line. The TypeScript engine stays
+     as the reference and as the fallback when WebAssembly is unavailable; both must agree **exactly** (ids, parents,
+     counts, every coordinate) on the synthetic cities and on 120 seeded random cities (all latitudes, unicode names, odd
+     tags, address nodes straddling the snap radius); only `length`/`measure` (hypot/cos in different libms) are compared
+     with 1e-9 tolerance. Four deliberate mutations of Rust constants were each caught.
+   - Found by the differential test and fixed in **both** engines: parent choice between geometrically identical chunks
+     depended on ulp noise (now: scores within 1 nm are ties, smaller id wins); output coordinates are rounded to OSM's
+     1e-7° grid so both engines emit identical bytes.
+   - Measured honestly (Node, 39 k houses, same bytes in, `Network` out): Rust compute is ≈ 4× faster than V8 natively, but in
+     WebAssembly plus the 22 MB JSON hand-over (`TextDecoder` + `JSON.parse`) the end-to-end gain is **≈ 0–20 %**. The hand-over,
+     not the algorithm, is the cost. Therefore the next step is not more compute in Rust but **not handing the geometry over
+     at all**: Rust keeps the network and serves MapLibre vector tiles through a custom protocol (see Plan 046).
+   - The committed `engine.wasm` is built by `scripts/build-wasm.sh`; a test fails when the Rust sources and the artifact's
+     recorded digest drift apart. A future CSP needs `wasm-unsafe-eval`.
 
 ## Consequences
 

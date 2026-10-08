@@ -1,0 +1,22 @@
+[package]
+name = "verteil-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Verteil-Flyer v5 street/house engine (derive + restrictToArea), compiled to WebAssembly; byte-compatible with src/v5/engine in TypeScript."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+rustc-hash = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

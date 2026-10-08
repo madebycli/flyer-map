@@ -59,7 +59,7 @@ for (const [name, grant] of [['admin', admin.grant], ['viewer', viewer.grant], [
 fs.writeFileSync(new URL('./cookies.json', import.meta.url).pathname, JSON.stringify(cookies));
 
 const dist = new URL('../../dist/client', import.meta.url).pathname;
-const types: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml' };
+const types: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml', '.wasm': 'application/wasm' };
 http.createServer(async (req, res) => {
   const url = new URL(req.url!, 'http://localhost:8140');
   if (url.pathname === '/api/campaigns/campaign_n/snapshot') {

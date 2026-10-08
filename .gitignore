@@ -12,3 +12,4 @@ coverage/
 dist-v5-harness
 scripts/v5-e2e/cookies.json
 scripts/v5-e2e/*.png
+/f5-*.png

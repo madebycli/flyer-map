@@ -14,6 +14,7 @@ const MAX_NAMED_PARENT_DISTANCE = 80;
 const CLASS_PENALTY = { street: 0, access: 8, connector: 25 } as const;
 /** An address node counts for a building when it lies inside it or within this many metres of the centroid. */
 const ADDRESS_NODE_SNAP = 8;
+const SCORE_EPS = 1e-9;
 
 const normalizeName = (name: string | null | undefined) =>
   (name ?? '').normalize('NFKC').toLocaleLowerCase('de').replace(/straße/g, 'str').replace(/strasse/g, 'str')
@@ -180,7 +181,16 @@ export function deriveNetwork(raw: RawOsm): Network {
   }
   diagnostics.housesOut = houses.length;
   houses.sort((a, b) => a.id.localeCompare(b.id));
-  return { segments, houses, diagnostics };
+  return roundNetwork({ segments, houses, diagnostics });
+}
+
+/** OSM stores 1e-7° (≈1 cm); derived points are rounded to the same grid (smaller payloads, identical in both engines). */
+const r7 = (v: number) => Math.floor(v * 1e7 + 0.5) / 1e7;
+const rp = (p: LngLat): LngLat => [r7(p[0]), r7(p[1])];
+function roundNetwork(network: Network): Network {
+  for (const s of network.segments) s.coords = s.coords.map(rp);
+  network.houses = network.houses.map((h) => ({ ...h, ring: h.ring.map(rp), center: rp(h.center) }));
+  return network;
 }
 
 function assignParent(house: House, frame: Frame, tree: RBush<IndexedSegment>): House {
@@ -195,7 +205,8 @@ function assignParent(house: House, frame: Frame, tree: RBush<IndexedSegment>): 
     if (projection.distance > limit) continue;
     // A name match outweighs a nearer wrong street; class penalty keeps paths from stealing houses.
     const score = projection.distance + CLASS_PENALTY[entry.segment.cls] - (named ? 30 : 0);
-    if (!best || score < best.score || (score === best.score && entry.segment.id < best.segment.id)) {
+    // Scores closer than a nanometre are ties (ulp noise between engines/platforms must not pick the parent): smaller id wins.
+    if (!best || score < best.score - SCORE_EPS || (Math.abs(score - best.score) <= SCORE_EPS && entry.segment.id < best.segment.id)) {
       best = { score, segment: entry.segment, measure: projection.measure };
     }
   }

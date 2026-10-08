@@ -36,13 +36,13 @@ export type CampaignState = {
   refreshMeta(): Promise<void>;
 };
 
-function deriveInWorker(areaId: string, pack: Uint8Array, ring: [number, number][]): Promise<Network> {
+function deriveInWorker(areaId: string, pack: Uint8Array, ring: [number, number][]): Promise<{ network: Network; engine: 'wasm' | 'ts'; ms: number; detail?: Record<string, number> }> {
   if (typeof Worker === 'undefined') return derive({ areaId, pack, ring });
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./network.worker.ts', import.meta.url), { type: 'module' });
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       worker.terminate();
-      if ('error' in event.data) reject(new Error(event.data.error)); else resolve(event.data.network);
+      if ('error' in event.data) reject(new Error(event.data.error)); else resolve(event.data);
     };
     worker.onerror = () => { worker.terminate(); derive({ areaId, pack, ring }).then(resolve, reject); };
     worker.postMessage({ areaId, pack, ring });
@@ -116,7 +116,10 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
           if (item.cached) { parts.push({ areaId: item.areaId, network: item.cached }); continue; }
           if (!item.pack) continue;
           setPhase({ kind: 'loading', label: 'Straßen und Häuser werden berechnet …' });
-          const network = await deriveInWorker(item.areaId, item.pack, item.ring);
+          const { network, engine, ms, detail } = await deriveInWorker(item.areaId, item.pack, item.ring);
+          if (detail) for (const [k, v] of Object.entries(detail)) timing[`w_${k}`] = (timing[`w_${k}`] ?? 0) + v;
+          timing[engine === 'wasm' ? 'wasmAreas' : 'tsAreas'] = (timing[engine === 'wasm' ? 'wasmAreas' : 'tsAreas'] ?? 0) + 1;
+          timing.engineMs = (timing.engineMs ?? 0) + ms;
           parts.push({ areaId: item.areaId, network });
           if (item.key) void cache.store(item.key, network);
           if (cancelled) return;

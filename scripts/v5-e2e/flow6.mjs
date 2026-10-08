@@ -21,6 +21,7 @@ async function open() {
   return { page, requests, boot, houses };
 }
 const first = await open();
+check('cold start derives with the Rust/WASM engine', (first.boot.wasmAreas ?? 0) >= 1 && !(first.boot.tsAreas > 0), JSON.stringify(first.boot));
 check('cold start downloads the pack', first.requests.some((u) => /\/pack(\?|$)/.test(u)) && first.boot.cacheHits === 0, JSON.stringify(first.boot));
 await first.page.waitForTimeout(1500); // the cache write is fire-and-forget
 await first.page.close();

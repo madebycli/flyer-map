@@ -4,5 +4,6 @@ export { classifyBuilding, classifyRoad } from './classify.ts';
 export { buildGraph, routeSegments } from './route.ts';
 export { overpassQuery, packFromOverpass, paddedBbox, type Bbox, type PackStats } from './overpass.ts';
 export { mergeNetworks, restrictToArea } from './area.ts';
-export { encodePack, decodePack } from './pack.ts';
+export { encodePack, decodePack, gunzip } from './pack.ts';
+export { WasmEngine } from './wasm.ts';
 export { importLegacyProgress, type LegacyImport, type LegacySnapshot } from './legacy.ts';

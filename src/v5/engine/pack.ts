@@ -6,6 +6,12 @@ export async function encodePack(raw: RawOsm): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+/** The pack as plain JSON bytes, without parsing: the Rust engine reads them directly. */
+export async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
 export async function decodePack(bytes: Uint8Array): Promise<RawOsm> {
   const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'));
   const value = JSON.parse(await new Response(stream).text()) as RawOsm;
