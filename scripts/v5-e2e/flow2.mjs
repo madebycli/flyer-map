@@ -16,10 +16,10 @@ const open = async (who, { buildIfNeeded = false } = {}) => {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
   const t = Date.now();
-  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug');
+  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug' + (process.env.V5_QUERY ?? ''));
   if (buildIfNeeded) await page.getByText('Kartendaten fehlen').waitFor({ timeout: 8000 }).then(() => page.getByRole('button', { name: 'Kartendaten laden' }).click(), () => {});
   await page.waitForSelector('.v5-pill', { timeout: 240000 });
-  await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__v5Map && (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')), null, { timeout: 60000 });
   const bootMs = Date.now() - t;
   await page.waitForTimeout(1200);
   return { ctx, page, bootMs };

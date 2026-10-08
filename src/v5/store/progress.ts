@@ -1,4 +1,4 @@
-import type { Network } from '../engine/types.ts';
+import type { FieldNetwork as Network } from '../engine/types.ts';
 import type { FieldStore } from './store.ts';
 import { type Status, STATUSES } from './types.ts';
 

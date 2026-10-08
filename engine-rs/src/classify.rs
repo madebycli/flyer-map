@@ -1,5 +1,5 @@
 //! Whitelist classification, identical to `src/v5/engine/classify.ts`.
-use crate::model::{RoadClass, Tags};
+use crate::model::{Evidence, RoadClass, Tags};
 
 const STREETS: &[&str] = &[
     "residential", "living_street", "unclassified", "tertiary", "tertiary_link", "secondary", "secondary_link", "primary",
@@ -63,7 +63,7 @@ const AMBIGUOUS_OUTBUILDING: &[&str] = &["barn", "cabin", "hut", "service", "all
 const RESIDENTIAL: &[&str] = &["house", "residential", "detached", "semidetached_house", "terrace", "apartments", "dormitory", "bungalow", "farm", "houseboat", "static_caravan"];
 
 pub enum BuildingVerdict {
-    Keep(&'static str),
+    Keep(Evidence),
     Drop(String),
 }
 
@@ -74,10 +74,10 @@ pub fn classify_building(tags: &Tags, has_address: bool) -> BuildingVerdict {
         return BuildingVerdict::Drop(format!("non_dwelling_{kind}"));
     }
     if has_address {
-        return BuildingVerdict::Keep("address");
+        return BuildingVerdict::Keep(Evidence::Address);
     }
     if RESIDENTIAL.contains(&kind) {
-        return BuildingVerdict::Keep("residential-type");
+        return BuildingVerdict::Keep(Evidence::ResidentialType);
     }
     BuildingVerdict::Drop(if AMBIGUOUS_OUTBUILDING.contains(&kind) { format!("outbuilding_{kind}") } else { "no_address_no_residential_type".into() })
 }

@@ -1,5 +1,5 @@
 import { frameFor, projectToPolyline } from './geo.ts';
-import type { LngLat, Network } from './types.ts';
+import type { FieldNetwork, LngLat } from './types.ts';
 
 type LegacyStatus = 'open' | 'completed' | 'later' | 'not-deliverable';
 /** The parts of the pre-v5 snapshot the import needs (structural, so no dependency on legacy modules). */
@@ -27,7 +27,7 @@ const SNAP_METERS = 4;
  * street progress matches by OSM way id plus position along the legacy fragment, because
  * v5 segments are split at junctions while legacy tasks were clipped fragments.
  */
-export function importLegacyProgress(network: Network, legacy: LegacySnapshot): LegacyImport {
+export function importLegacyProgress(network: FieldNetwork, legacy: LegacySnapshot): LegacyImport {
   const result: LegacyImport = { houses: new Map(), segments: new Map(), stats: { housesMatched: 0, housesUnmatched: 0, streetRangesMatched: 0, streetRangesUnmatched: 0 } };
   const houseIds = new Set(network.houses.map((h) => h.id));
   for (const task of legacy.houseTasks ?? []) {
@@ -37,9 +37,9 @@ export function importLegacyProgress(network: Network, legacy: LegacySnapshot): 
     if (id && houseIds.has(id)) { result.houses.set(`h:${id}`, task.status); result.stats.housesMatched++; } else result.stats.housesUnmatched++;
   }
 
-  const byWay = new Map<number, Network['segments']>();
+  const byWay = new Map<number, FieldNetwork['segments']>();
   for (const segment of network.segments) { const list = byWay.get(segment.wayId); if (list) list.push(segment); else byWay.set(segment.wayId, [segment]); }
-  const frame = frameFor(network.segments.flatMap((s) => s.coords.slice(0, 1)));
+  const frame = frameFor(network.segments.map((s) => s.start));
   for (const task of legacy.tasks ?? []) {
     const wayId = task.source?.objectIds?.[0];
     const segments = wayId === undefined ? undefined : byWay.get(wayId);
@@ -51,8 +51,8 @@ export function importLegacyProgress(network: Network, legacy: LegacySnapshot): 
       if (!segments) { result.stats.streetRangesUnmatched++; continue; }
       let hit = 0;
       for (const segment of segments) {
-        // Midpoint by length is more robust than a vertex for long straight segments.
-        const projection = projectToPolyline(line, frame.toXY(midpointByLength(segment.coords) ?? segment.coords[0]));
+        // The midpoint by length is more robust than a vertex for long straight segments.
+        const projection = projectToPolyline(line, frame.toXY(segment.mid));
         if (projection.distance > SNAP_METERS) continue;
         if (projection.measure < range.from - 1 || projection.measure > Math.min(range.to, length ?? Infinity) + 1) continue;
         result.segments.set(`s:${segment.id}`, range.status);
@@ -62,20 +62,4 @@ export function importLegacyProgress(network: Network, legacy: LegacySnapshot): 
     }
   }
   return result;
-}
-
-function midpointByLength(coords: LngLat[]): LngLat | null {
-  if (coords.length < 2) return null;
-  const lengths: number[] = [];
-  let total = 0;
-  for (let i = 1; i < coords.length; i++) { const d = Math.hypot(coords[i][0] - coords[i - 1][0], coords[i][1] - coords[i - 1][1]); lengths.push(d); total += d; }
-  let rest = total / 2;
-  for (let i = 0; i < lengths.length; i++) {
-    if (rest <= lengths[i] || i === lengths.length - 1) {
-      const t = lengths[i] === 0 ? 0 : rest / lengths[i];
-      return [coords[i][0] + (coords[i + 1][0] - coords[i][0]) * t, coords[i][1] + (coords[i + 1][1] - coords[i][1]) * t];
-    }
-    rest -= lengths[i];
-  }
-  return null;
 }

@@ -4,6 +4,7 @@ import { syntheticCity } from '../engine/synthetic.ts';
 import { FieldMap, blankStyle } from '../map/fieldMap.ts';
 import { FieldStore } from '../store/store.ts';
 import type { Network } from '../engine/types.ts';
+import { networksToGeoJson } from '../engine/geojson.ts';
 
 declare global { interface Window { harness: unknown } }
 
@@ -23,7 +24,7 @@ window.harness = {
     });
     (window as unknown as { fm: FieldMap }).fm = fieldMap;
     t = performance.now();
-    await fieldMap.loadNetwork(network);
+    await fieldMap.loadMapData({ kind: 'geojson', ...networksToGeoJson([network]) }, async () => new ArrayBuffer(0));
     fieldMap.bind(store);
     await new Promise<void>((r) => fieldMap.map.once('idle', () => r()));
     const loadMs = performance.now() - t;

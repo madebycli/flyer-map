@@ -1,0 +1,166 @@
+//! The engine session: keeps the geometry of every loaded Area (merged "first Area wins", like `mergeNetworks`),
+//! cuts vector tiles from it and answers geometry queries, so JavaScript never has to hold coordinates.
+use crate::grid::Grid;
+use crate::model::*;
+use crate::mvt::{encode_tile, GeomType, Layer};
+use crate::tile::{clip_line, clip_ring, mercator, to_tile, BUFFER, EXTENT};
+use rustc_hash::FxHashSet;
+
+pub const MIN_TILE_ZOOM: u32 = 11;
+/// Dots (one per house) are drawn up to this zoom, house outlines from `OUTLINE_FROM` on.
+pub const CENTERS_UP_TO: u32 = 15;
+pub const OUTLINES_FROM: u32 = 15;
+const CELL: f64 = 1.0 / 65536.0;
+
+struct Seg { key: String, line: Vec<[f64; 2]>, lnglat: Vec<LngLat>, name: Option<String> }
+struct Hou { key: String, num: String, ring: Vec<[f64; 2]>, center: [f64; 2], center_ll: LngLat, street: Option<String>, number: Option<String> }
+
+pub struct Session {
+    segs: Vec<Seg>,
+    houses: Vec<Hou>,
+    seen_seg: FxHashSet<String>,
+    seen_house: FxHashSet<String>,
+    seg_grid: Grid,
+    house_grid: Grid,
+}
+
+fn bbox(pts: &[[f64; 2]]) -> [f64; 4] {
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for p in pts {
+        x0 = x0.min(p[0]); x1 = x1.max(p[0]); y0 = y0.min(p[1]); y1 = y1.max(p[1]);
+    }
+    [x0, y0, x1, y1]
+}
+
+/// Same rule as `midpointByLength` in legacy.ts (degrees, not metres — it only has to be stable and central).
+pub fn midpoint_by_length(coords: &[LngLat]) -> Option<LngLat> {
+    if coords.len() < 2 { return None; }
+    let mut lengths = Vec::with_capacity(coords.len() - 1);
+    let mut total = 0.0;
+    for i in 1..coords.len() {
+        let d = (coords[i][0] - coords[i - 1][0]).hypot(coords[i][1] - coords[i - 1][1]);
+        lengths.push(d);
+        total += d;
+    }
+    let mut rest = total / 2.0;
+    for i in 0..lengths.len() {
+        if rest <= lengths[i] || i == lengths.len() - 1 {
+            let t = if lengths[i] == 0.0 { 0.0 } else { rest / lengths[i] };
+            return Some([coords[i][0] + (coords[i + 1][0] - coords[i][0]) * t, coords[i][1] + (coords[i + 1][1] - coords[i][1]) * t]);
+        }
+        rest -= lengths[i];
+    }
+    None
+}
+
+fn r7(v: f64) -> f64 { (v * 1e7 + 0.5).floor() / 1e7 }
+
+pub fn slim(network: &Network) -> SlimNetwork {
+    let segments = network.segments.iter().map(|s| {
+        let m = midpoint_by_length(&s.coords).unwrap_or(s.coords[0]);
+        SlimSegment {
+            id: s.id.clone(), group: s.group.clone(), chunk: s.chunk, chunks: s.chunks, way_id: s.way_id, name: s.name.clone(), reference: s.reference.clone(),
+            highway: s.highway.clone(), cls: s.cls, length: s.length, from: s.from.clone(), to: s.to.clone(), house_count: s.house_count, visible: s.visible,
+            mid: [r7(m[0]), r7(m[1])], start: s.coords[0],
+        }
+    }).collect();
+    let houses = network.houses.iter().map(|h| SlimHouse {
+        id: h.id.clone(), osm_id: h.osm_id, source: h.source, number: h.number.clone(), street: h.street.clone(), center: h.center, parent: h.parent.clone(), measure: h.measure, evidence: h.evidence,
+    }).collect();
+    SlimNetwork { segments, houses, diagnostics: network.diagnostics.clone() }
+}
+
+impl Session {
+    pub fn new() -> Self {
+        Session { segs: vec![], houses: vec![], seen_seg: FxHashSet::default(), seen_house: FxHashSet::default(), seg_grid: Grid::new(CELL), house_grid: Grid::new(CELL) }
+    }
+
+    /// Merge one Area's network: only ids not seen before are drawn (first Area wins), hidden segments are never drawn.
+    pub fn add(&mut self, network: &Network) {
+        for s in &network.segments {
+            if !self.seen_seg.insert(s.id.clone()) || !s.visible { continue; }
+            let line: Vec<[f64; 2]> = s.coords.iter().map(|p| mercator(*p)).collect();
+            self.seg_grid.insert(bbox(&line));
+            self.segs.push(Seg { key: format!("s:{}", s.id), line, lnglat: s.coords.clone(), name: s.name.clone() });
+        }
+        for h in &network.houses {
+            if !self.seen_house.insert(h.id.clone()) { continue; }
+            let ring: Vec<[f64; 2]> = h.ring.iter().map(|p| mercator(*p)).collect();
+            self.house_grid.insert(bbox(&ring));
+            self.houses.push(Hou { key: format!("h:{}", h.id), num: h.number.clone().unwrap_or_default(), center: mercator(h.center), ring, center_ll: h.center, street: h.street.clone(), number: h.number.clone() });
+        }
+    }
+
+
+    /// MVT bytes for tile z/x/y; empty when there is nothing to draw (or the zoom is below the first level).
+    pub fn tile(&mut self, z: u32, x: u32, y: u32) -> Vec<u8> {
+        if z < MIN_TILE_ZOOM || z > 22 { return Vec::new(); }
+        let n = (1u64 << z) as f64;
+        let pad = (BUFFER / EXTENT) / n;
+        let q = [x as f64 / n - pad, y as f64 / n - pad, (x + 1) as f64 / n + pad, (y + 1) as f64 / n + pad];
+        let mut ids: Vec<u32> = Vec::new();
+        let mut segments = Layer::new("segments");
+        self.seg_grid.search(q, &mut ids);
+        ids.sort_unstable();
+        for &i in &ids {
+            let s = &self.segs[i as usize];
+            let pts: Vec<[f64; 2]> = s.line.iter().map(|p| to_tile(*p, z, x, y)).collect();
+            let parts = clip_line(&pts);
+            if !parts.is_empty() { segments.add(GeomType::Line, &[("key", &s.key)], &parts); }
+        }
+        let mut houses = Layer::new("houses");
+        let mut centers = Layer::new("centers");
+        self.house_grid.search(q, &mut ids);
+        ids.sort_unstable();
+        for &i in &ids {
+            let h = &self.houses[i as usize];
+            if z >= OUTLINES_FROM {
+                let ring: Vec<[f64; 2]> = h.ring.iter().map(|p| to_tile(*p, z, x, y)).collect();
+                if let Some(r) = clip_ring(&ring) { houses.add(GeomType::Polygon, &[("key", &h.key), ("num", &h.num)], &[r]); }
+            }
+            if z <= CENTERS_UP_TO {
+                let c = to_tile(h.center, z, x, y);
+                if c[0] >= -BUFFER && c[0] <= EXTENT + BUFFER && c[1] >= -BUFFER && c[1] <= EXTENT + BUFFER {
+                    centers.add(GeomType::Point, &[("key", &h.key)], &[vec![[c[0].round() as i32, c[1].round() as i32]]]);
+                }
+            }
+        }
+        encode_tile(&[segments, houses, centers])
+    }
+
+    /// The nearest house within `house_reach` metres, else the nearest street within `street_reach` (position, name).
+    /// Returns (position, address, kind) with kind 0 = nothing, 1 = house, 2 = street.
+    pub fn snap(&self, at: LngLat, house_reach: f64, street_reach: f64) -> (LngLat, Option<String>, u8) {
+        let kx = 111_320.0 * (at[1] * std::f64::consts::PI / 180.0).cos();
+        let m_lat = 110_574.0;
+        let d2 = |p: LngLat| ((p[0] - at[0]) * kx).powi(2) + ((p[1] - at[1]) * m_lat).powi(2);
+        let mut best_house: Option<(f64, usize)> = None;
+        for (i, h) in self.houses.iter().enumerate() {
+            if ((h.center_ll[0] - at[0]) * kx).abs() > house_reach || ((h.center_ll[1] - at[1]) * m_lat).abs() > house_reach { continue; }
+            let d = d2(h.center_ll);
+            if d <= house_reach * house_reach && best_house.map_or(true, |(bd, _)| d < bd) { best_house = Some((d, i)); }
+        }
+        if let Some((_, i)) = best_house {
+            let h = &self.houses[i];
+            let label: Vec<&str> = [h.street.as_deref(), h.number.as_deref()].into_iter().flatten().filter(|s| !s.is_empty()).collect();
+            return (h.center_ll, if label.is_empty() { None } else { Some(label.join(" ")) }, 1);
+        }
+        let mut best: Option<(f64, LngLat, Option<String>)> = None;
+        for s in &self.segs {
+            for w in s.lnglat.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                let (ax, ay, bx, by) = ((a[0] - at[0]) * kx, (a[1] - at[1]) * m_lat, (b[0] - at[0]) * kx, (b[1] - at[1]) * m_lat);
+                let (dx, dy) = (bx - ax, by - ay);
+                let len2 = dx * dx + dy * dy;
+                let t = if len2 == 0.0 { 0.0 } else { (-(ax * dx + ay * dy) / len2).clamp(0.0, 1.0) };
+                let (px, py) = (ax + t * dx, ay + t * dy);
+                let d = px * px + py * py;
+                if d <= street_reach * street_reach && best.as_ref().map_or(true, |(bd, _, _)| d < *bd) {
+                    best = Some((d, [at[0] + px / kx, at[1] + py / m_lat], s.name.clone()));
+                }
+            }
+        }
+        match best { Some((_, p, name)) => (p, name, 2), None => (at, None, 0) }
+    }
+
+}

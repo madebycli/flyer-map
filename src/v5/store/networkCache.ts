@@ -1,8 +1,9 @@
-import { ENGINE_VERSION, type Network } from '../engine/index.ts';
+import { ENGINE_VERSION } from '../engine/index.ts';
 
 /** What a derived network was built from. Any change in these makes the cached copy unusable. */
 export type NetworkKey = { areaId: string; packVersion: number; updatedAt: string; engine: string };
-type Entry = { key: NetworkKey; network: Network };
+/** The engine's own binary snapshot of an Area (geometry included): one ArrayBuffer, no object graph to clone. */
+type Entry = { key: NetworkKey; blob: Uint8Array };
 
 export interface NetworkStorage {
   get(id: string): Promise<Entry | undefined>;
@@ -13,7 +14,7 @@ export interface NetworkStorage {
 export const sameKey = (a: NetworkKey, b: NetworkKey) => a.areaId === b.areaId && a.packVersion === b.packVersion && a.updatedAt === b.updatedAt && a.engine === b.engine;
 
 /**
- * Derived network per Area, kept on the device. Re-opening an Aktion then skips the pack download and the derivation
+ * Derived Area snapshots kept on the device. Re-opening an Aktion then skips the pack download and the derivation
  * — the two slowest steps of a cold start — and only pays for Areas whose pack, polygon or engine version changed.
  */
 export class NetworkCache {
@@ -25,15 +26,15 @@ export class NetworkCache {
     return area.packVersion === null ? null : { areaId: area.id, packVersion: area.packVersion, updatedAt: area.updatedAt, engine: ENGINE_VERSION };
   }
 
-  async load(key: NetworkKey): Promise<Network | null> {
+  async load(key: NetworkKey): Promise<Uint8Array | null> {
     try {
       const entry = await this.storage?.get(this.id(key.areaId));
-      return entry && sameKey(entry.key, key) ? entry.network : null;
+      return entry && sameKey(entry.key, key) ? entry.blob : null;
     } catch { return null; }
   }
 
-  async store(key: NetworkKey, network: Network): Promise<void> {
-    try { await this.storage?.put(this.id(key.areaId), { key, network }); } catch { /* quota or private mode: just no cache */ }
+  async store(key: NetworkKey, blob: Uint8Array): Promise<void> {
+    try { await this.storage?.put(this.id(key.areaId), { key, blob }); } catch { /* quota or private mode: just no cache */ }
   }
 
   async forget(areaId: string): Promise<void> {

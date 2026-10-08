@@ -1,5 +1,5 @@
 import { pointInRing } from './geo.ts';
-import type { LngLat, Network } from './types.ts';
+import type { LngLat, Network, NetworkDiagnostics } from './types.ts';
 
 /**
  * Keep what belongs to an Area polygon: houses whose centre lies inside, and street
@@ -36,9 +36,11 @@ function intersects(a: LngLat, b: LngLat, c: LngLat, d: LngLat): boolean {
  * Combine per-Area networks. Overlapping Areas share OSM ids, so a house or segment
  * seen twice keeps one entry (first Area wins) and therefore one status.
  */
-export function mergeNetworks(parts: { areaId: string; network: Network }[]): { network: Network; areaOf: Map<string, string> } {
-  const segments = new Map<string, Network['segments'][number]>();
-  const houses = new Map<string, Network['houses'][number]>();
+export function mergeNetworks<S extends { id: string; visible: boolean }, H extends { id: string }>(
+  parts: { areaId: string; network: { segments: S[]; houses: H[]; diagnostics: NetworkDiagnostics } }[],
+): { network: { segments: S[]; houses: H[]; diagnostics: NetworkDiagnostics }; areaOf: Map<string, string> } {
+  const segments = new Map<string, S>();
+  const houses = new Map<string, H>();
   const areaOf = new Map<string, string>();
   for (const { areaId, network } of parts) {
     for (const s of network.segments) if (!segments.has(s.id)) { segments.set(s.id, s); areaOf.set(`s:${s.id}`, areaId); }

@@ -12,10 +12,10 @@ await ctx.addCookies([{ name: 'vf_session', value: cookies.admin, url: 'http://l
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
 const boot = async () => {
-  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug');
+  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug' + (process.env.V5_QUERY ?? ''));
   await page.getByText('Kartendaten fehlen').waitFor({ timeout: 5000 }).then(() => page.getByRole('button', { name: 'Kartendaten laden' }).click(), () => {});
   await page.waitForSelector('.v5-pill', { timeout: 120000 });
-  await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__v5Map && (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')), null, { timeout: 60000 });
   await page.waitForTimeout(1200);
 };
 const done = async () => Number(await page.locator('.v5-pill').getAttribute('data-done'));

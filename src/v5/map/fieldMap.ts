@@ -1,11 +1,14 @@
-import maplibregl, { type ExpressionSpecification, type GeoJSONSource, type Map as MlMap, type StyleSpecification } from 'maplibre-gl';
+import maplibregl, { type ExpressionSpecification, type GeoJSONSource, type Map as MlMap, type StyleSpecification, type VectorTileSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection } from 'geojson';
-import type { LngLat, Network } from '../engine/types.ts';
+import type { MapData } from '../engine/host.ts';
+import type { LngLat } from '../engine/types.ts';
 import type { FieldStore } from '../store/store.ts';
 import type { EntityKey, Status } from '../store/types.ts';
 
 export const SEGMENT_SOURCE = 'v5-segments';
 export const HOUSE_SOURCE = 'v5-houses';
+export const CENTER_SOURCE = 'v5-centers';
+export const TILE_SOURCE = 'v5-tiles';
 export const AREA_SOURCE = 'v5-areas';
 export const DRAW_SOURCE = 'v5-draw';
 export const NOTE_SOURCE = 'v5-notes';
@@ -60,16 +63,23 @@ export type FieldMapOptions = {
   noteHits?: () => boolean;
 };
 
-export function networkToGeoJson(network: Network): { segments: FeatureCollection; houses: FeatureCollection } {
-  const segments: Feature[] = [];
-  for (const s of network.segments) {
-    if (!s.visible) continue;
-    segments.push({ type: 'Feature', id: s.id, properties: { key: `s:${s.id}`, name: s.name ?? '', cls: s.cls }, geometry: { type: 'LineString', coordinates: s.coords } });
-  }
-  const houses: Feature[] = network.houses.map((h) => ({
-    type: 'Feature', id: h.id, properties: { key: `h:${h.id}`, num: h.number ?? '' }, geometry: { type: 'Polygon', coordinates: [h.ring] },
-  }));
-  return { segments: { type: 'FeatureCollection', features: segments }, houses: { type: 'FeatureCollection', features: houses } };
+export type TileFn = (z: number, x: number, y: number) => Promise<ArrayBuffer>;
+type DataMode = 'tiles' | 'geojson';
+type Layer = 'segments' | 'houses' | 'centers';
+
+/** Tiles come from the engine (Rust) through one global protocol; each map instance owns a token. */
+const providers = new Map<string, TileFn>();
+let protocolRegistered = false;
+let tokens = 0;
+function ensureTileProtocol() {
+  if (protocolRegistered) return;
+  protocolRegistered = true;
+  maplibregl.addProtocol('v5t', async (params) => {
+    const m = /^v5t:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
+    const provider = m ? providers.get(m[1]) : undefined;
+    if (!m || !provider) return { data: new ArrayBuffer(0) };
+    return { data: await provider(Number(m[2]), Number(m[3]), Number(m[4])) };
+  });
 }
 
 /**
@@ -82,7 +92,10 @@ export class FieldMap {
   readonly map: MlMap;
   private theme: Theme;
   private selected: EntityKey[] = [];
-  private network: Network | null = null;
+  private mode: DataMode = 'tiles';
+  private geo: MapData | null = null;
+  private readonly token = `m${++tokens}`;
+  private tileVersion = 0;
   private store: FieldStore | null = null;
   private unbind: (() => void) | null = null;
   private previewed = new Set<EntityKey>();
@@ -117,7 +130,7 @@ export class FieldMap {
     this.map.on('rotate', () => { const rotated = Math.abs(this.map.getBearing()) > 0.5; if (rotated) options.container.dataset.rotated = '1'; else delete options.container.dataset.rotated; });
     // Self-heal: a style swap that was superseded or fell back can finish without a usable `style.load`; whenever the
     // map is idle on a loaded style that lacks our sources, install them again.
-    this.map.on('idle', () => { if (this.map.isStyleLoaded() && !this.map.getSource(SEGMENT_SOURCE)) this.install(); });
+    this.map.on('idle', () => { if (this.map.isStyleLoaded() && !this.map.getSource(this.firstSource())) this.install(); });
     // Field work must survive a basemap outage: if the style itself cannot be fetched, fall back to a plain background.
     this.map.on('error', (event) => {
       const failedUrl = (event as { error?: { url?: string } }).error?.url;
@@ -154,9 +167,9 @@ export class FieldMap {
   /** Runs after every style load (first load and theme switches): layers, then geometry, then status. */
   private install() {
     const map = this.map;
-    if (map.getSource(SEGMENT_SOURCE)) return;
+    if (map.getSource(this.firstSource())) return;
     this.installLayers();
-    if (this.network) this.pushNetwork(this.network);
+    this.pushData();
     this.pushAreas();
     this.pushDraw();
     this.pushNotes();
@@ -169,8 +182,16 @@ export class FieldMap {
 
   private installLayers() {
     const map = this.map, theme = this.theme;
-    map.addSource(SEGMENT_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, promoteId: 'key', tolerance: 0.2 });
-    map.addSource(HOUSE_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, promoteId: 'key', tolerance: 0.1 });
+    ensureTileProtocol();
+    const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
+    if (this.mode === 'tiles') {
+      map.addSource(TILE_SOURCE, { type: 'vector', tiles: [this.tileUrl()], minzoom: 11, maxzoom: 17, promoteId: { segments: 'key', houses: 'key', centers: 'key' } });
+    } else {
+      map.addSource(SEGMENT_SOURCE, { type: 'geojson', data: empty, promoteId: 'key', tolerance: 0.2 });
+      map.addSource(HOUSE_SOURCE, { type: 'geojson', data: empty, promoteId: 'key', tolerance: 0.1 });
+      map.addSource(CENTER_SOURCE, { type: 'geojson', data: empty, promoteId: 'key' });
+    }
+    const src = (layer: Layer): { source: string; 'source-layer'?: string } => this.mode === 'tiles' ? { source: TILE_SOURCE, 'source-layer': layer } : { source: layer === 'segments' ? SEGMENT_SOURCE : layer === 'houses' ? HOUSE_SOURCE : CENTER_SOURCE };
     const selectedOn: ExpressionSpecification = ['boolean', ['feature-state', 'selected'], false];
     map.addSource(AREA_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addSource(DRAW_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -181,22 +202,22 @@ export class FieldMap {
     });
     // Zoomed out, houses become status-coloured dots: the whole city reads as progress, not as a block of lines.
     map.addLayer({
-      id: 'v5-houses-dots', type: 'circle', source: HOUSE_SOURCE, minzoom: 11.5, maxzoom: 15.2,
+      id: 'v5-houses-dots', type: 'circle', ...src('centers'), minzoom: 11.5, maxzoom: 15.2,
       paint: {
         'circle-color': statusMatch(theme), 'circle-opacity': 0.92, 'circle-stroke-width': 0,
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 11.5, 0.7, 14, 1.6, 15.2, 3.2],
       },
     });
     map.addLayer({
-      id: 'v5-houses-fill', type: 'fill', source: HOUSE_SOURCE, minzoom: 15.2,
+      id: 'v5-houses-fill', type: 'fill', ...src('houses'), minzoom: 15.2,
       paint: { 'fill-color': statusMatch(theme), 'fill-opacity': ['case', selectedOn, 1, 0.88] },
     });
     map.addLayer({
-      id: 'v5-houses-outline', type: 'line', source: HOUSE_SOURCE, minzoom: 16.5,
+      id: 'v5-houses-outline', type: 'line', ...src('houses'), minzoom: 16.5,
       paint: { 'line-color': ['case', selectedOn, SELECTED_OUTLINE[theme], OUTLINE[theme]], 'line-width': ['case', selectedOn, 2.5, 0.6] },
     });
     map.addLayer({
-      id: 'v5-segments-casing', type: 'line', source: SEGMENT_SOURCE, minzoom: 13.5,
+      id: 'v5-segments-casing', type: 'line', ...src('segments'), minzoom: 13.5,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': CASING[theme],
@@ -204,7 +225,7 @@ export class FieldMap {
       },
     });
     map.addLayer({
-      id: 'v5-segments-preview', type: 'line', source: SEGMENT_SOURCE,
+      id: 'v5-segments-preview', type: 'line', ...src('segments'),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': '#7aa8ff', 'line-opacity': ['case', ['boolean', ['feature-state', 'preview'], false], 0.9, 0],
@@ -213,7 +234,7 @@ export class FieldMap {
     });
     // Thin and translucent when zoomed far out, so a whole city reads as texture, not as one solid block.
     map.addLayer({
-      id: 'v5-segments-line', type: 'line', source: SEGMENT_SOURCE,
+      id: 'v5-segments-line', type: 'line', ...src('segments'),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': statusMatch(theme),
@@ -223,7 +244,7 @@ export class FieldMap {
       },
     });
     map.addLayer({
-      id: 'v5-houses-preview', type: 'line', source: HOUSE_SOURCE, minzoom: 15.2,
+      id: 'v5-houses-preview', type: 'line', ...src('houses'), minzoom: 15.2,
       paint: { 'line-color': '#7aa8ff', 'line-width': 3, 'line-opacity': ['case', ['boolean', ['feature-state', 'preview'], false], 1, 0] },
     });
     // Tool overlay: lasso, area edit polygon, vertex and midpoint handles (always on top).
@@ -276,16 +297,22 @@ export class FieldMap {
     }
     // House numbers need a glyph endpoint; a style without one (tests, offline stub) simply has no labels.
     if (map.getStyle().glyphs) map.addLayer({
-      id: 'v5-houses-number', type: 'symbol', source: HOUSE_SOURCE, minzoom: 17.5,
+      id: 'v5-houses-number', type: 'symbol', ...src('houses'), minzoom: 17.5,
       layout: { 'text-field': ['get', 'num'], 'text-size': 11, 'text-allow-overlap': false, 'text-font': ['Noto Sans Regular'] },
       paint: { 'text-color': theme === 'dark' ? '#0b0f0e' : '#202124', 'text-halo-color': theme === 'dark' ? 'rgba(255,255,255,0.85)' : '#ffffff', 'text-halo-width': 1.2 },
     });
   }
 
-  private pushNetwork(network: Network) {
-    const data = networkToGeoJson(network);
-    (this.map.getSource(SEGMENT_SOURCE) as GeoJSONSource).setData(data.segments);
-    (this.map.getSource(HOUSE_SOURCE) as GeoJSONSource).setData(data.houses);
+  private firstSource() { return this.mode === 'tiles' ? TILE_SOURCE : SEGMENT_SOURCE; }
+  private tileUrl() { return `v5t://${this.token}/{z}/{x}/{y}?v=${this.tileVersion}`; }
+
+  /** After (re)install: hand the geometry to the sources of the current mode. */
+  private pushData() {
+    if (this.mode === 'tiles') return; // the tile source already points at this map's provider
+    if (this.geo?.kind !== 'geojson') return;
+    (this.map.getSource(SEGMENT_SOURCE) as GeoJSONSource | undefined)?.setData(this.geo.segments);
+    (this.map.getSource(HOUSE_SOURCE) as GeoJSONSource | undefined)?.setData(this.geo.houses);
+    (this.map.getSource(CENTER_SOURCE) as GeoJSONSource | undefined)?.setData(this.geo.centers);
   }
 
   /** Swap the basemap; our layers, geometry and statuses are re-installed on `style.load`. */
@@ -297,14 +324,44 @@ export class FieldMap {
     this.map.setStyle(this.expectedStyle);
   }
 
-  /** Replace geometry (rare: a new area pack). Status is re-applied from the store afterwards. */
-  async loadNetwork(network: Network): Promise<void> {
+  /**
+   * Replace geometry (rare: a new Area). Rust engine → vector tiles pulled through `tile`; TypeScript fallback → GeoJSON.
+   * Status is re-applied from the store afterwards.
+   */
+  async loadMapData(data: MapData, tile: TileFn): Promise<void> {
     await this.ready;
-    this.network = network;
-    this.pushNetwork(network);
-    this.map.removeFeatureState({ source: SEGMENT_SOURCE });
-    this.map.removeFeatureState({ source: HOUSE_SOURCE });
+    providers.set(this.token, tile);
+    this.geo = data;
+    const mode: DataMode = data.kind === 'tiles' ? 'tiles' : 'geojson';
+    if (mode !== this.mode) {
+      this.mode = mode;
+      this.removeDataLayers();
+      this.installLayers();
+      this.pushData();
+    } else if (mode === 'tiles') {
+      // New tile URL = the source drops its cached tiles and asks the engine again.
+      this.tileVersion++;
+      (this.map.getSource(TILE_SOURCE) as VectorTileSource | undefined)?.setTiles([this.tileUrl()]);
+    } else this.pushData();
+    for (const source of [TILE_SOURCE, SEGMENT_SOURCE, HOUSE_SOURCE, CENTER_SOURCE]) if (this.map.getSource(source)) this.map.removeFeatureState({ source });
     this.selected = [];
+  }
+
+  /** Every layer and source of ours (data, notes, pickups, tools): used when the data mode switches. */
+  private removeDataLayers() {
+    const style = this.map.getStyle();
+    for (const layer of style.layers ?? []) if (layer.id.startsWith('v5-')) this.map.removeLayer(layer.id);
+    for (const id of Object.keys(style.sources ?? {})) if (id.startsWith('v5-')) this.map.removeSource(id);
+  }
+
+  /** Feature-state targets of a key: houses are painted on the outlines and on the dots, streets on the line. */
+  private targets(key: EntityKey): { source: string; sourceLayer?: string }[] {
+    if (this.mode === 'tiles') return key.startsWith('h:') ? [{ source: TILE_SOURCE, sourceLayer: 'houses' }, { source: TILE_SOURCE, sourceLayer: 'centers' }] : [{ source: TILE_SOURCE, sourceLayer: 'segments' }];
+    return key.startsWith('h:') ? [{ source: HOUSE_SOURCE }, { source: CENTER_SOURCE }] : [{ source: SEGMENT_SOURCE }];
+  }
+
+  private setState(key: EntityKey, state: Record<string, unknown>) {
+    for (const t of this.targets(key)) if (this.map.getSource(t.source)) this.map.setFeatureState({ ...t, id: key }, state);
   }
 
   /** Mirror the store into feature-state: initial restore, then only the changed keys. */
@@ -316,9 +373,7 @@ export class FieldMap {
   }
 
   private paint(key: EntityKey, status: Status) {
-    const source = key.startsWith('h:') ? HOUSE_SOURCE : SEGMENT_SOURCE;
-    if (!this.map.getSource(source)) return;
-    this.map.setFeatureState({ source, id: key }, { status });
+    this.setState(key, { status });
     this.applied++;
   }
 
@@ -331,10 +386,7 @@ export class FieldMap {
   }
 
   select(keys: EntityKey | EntityKey[] | null) {
-    const set = (k: EntityKey, selected: boolean) => {
-      const source = k.startsWith('h:') ? HOUSE_SOURCE : SEGMENT_SOURCE;
-      if (this.map.getSource(source)) this.map.setFeatureState({ source, id: k }, { selected });
-    };
+    const set = (k: EntityKey, selected: boolean) => this.setState(k, { selected });
     for (const k of this.selected) set(k, false);
     this.selected = keys === null ? [] : Array.isArray(keys) ? keys : [keys];
     for (const k of this.selected) set(k, true);
@@ -343,10 +395,7 @@ export class FieldMap {
   /** Highlight what a tool is about to change (route, paint trail, lasso) without touching status. */
   setPreview(keys: Iterable<EntityKey>) {
     const next = new Set(keys);
-    const apply = (key: EntityKey, preview: boolean) => {
-      const source = key.startsWith('h:') ? HOUSE_SOURCE : SEGMENT_SOURCE;
-      if (this.map.getSource(source)) this.map.setFeatureState({ source, id: key }, { preview });
-    };
+    const apply = (key: EntityKey, preview: boolean) => this.setState(key, { preview });
     for (const key of this.previewed) if (!next.has(key)) apply(key, false);
     for (const key of next) if (!this.previewed.has(key)) apply(key, true);
     this.previewed = next;

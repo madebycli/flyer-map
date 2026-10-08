@@ -1,6 +1,5 @@
 import type { LngLat } from '../engine/types.ts';
 import { pointInRing } from '../engine/geo.ts';
-import type { Index } from './mark.ts';
 import type { Meta } from './api.ts';
 import { postMutation } from './api.ts';
 
@@ -19,45 +18,16 @@ const ID = /^collection_pickup_[A-Za-z0-9._:-]+$/u;
 export const newPickupId = () => `collection_pickup_${crypto.randomUUID()}`;
 export const isPickupId = (id: string) => ID.test(id);
 
-const M_LAT = 110_574;
-const mLng = (lat: number) => 111_320 * Math.cos((lat * Math.PI) / 180);
-
 export type Snap = { position: LngLat; address: string | null; snappedTo: 'house' | 'street' | null; areaId: string | null };
 
 /**
- * A Sonder-Marker belongs on the real thing, not next to it: snap to the nearest house within `houseReach` metres,
- * else onto the nearest visible street within `streetReach`; the address is taken from what it snapped to.
+ * A Sonder-Marker belongs on the real thing, not next to it. The engine (which holds the geometry) snaps the tap to the
+ * nearest house within 30 m, else onto the nearest street within 22 m; the Area is the one containing the snapped point.
  */
-export function snapToNetwork(index: Index, at: LngLat, areas: Pick<Meta['areas'][number], 'id' | 'geometry'>[], houseReach = 30, streetReach = 22): Snap {
-  const kx = mLng(at[1]);
-  const d2 = (p: LngLat) => ((p[0] - at[0]) * kx) ** 2 + ((p[1] - at[1]) * M_LAT) ** 2;
-  let house: { d: number; h: { center: LngLat; street: string | null; number: string | null } } | null = null;
-  for (const h of index.houses.values()) {
-    if (Math.abs(h.center[0] - at[0]) * kx > houseReach || Math.abs(h.center[1] - at[1]) * M_LAT > houseReach) continue;
-    const d = d2(h.center);
-    if (d <= houseReach ** 2 && (!house || d < house.d)) house = { d, h };
-  }
-  let result: Omit<Snap, 'areaId'>;
-  if (house) {
-    const label = [house.h.street, house.h.number].filter(Boolean).join(' ');
-    result = { position: house.h.center, address: label || null, snappedTo: 'house' };
-  } else {
-    let best: { d: number; p: LngLat; name: string | null } | null = null;
-    for (const s of index.segments.values()) {
-      if (!s.visible) continue;
-      for (let i = 0; i + 1 < s.coords.length; i++) {
-        const a = s.coords[i], b = s.coords[i + 1];
-        const ax = (a[0] - at[0]) * kx, ay = (a[1] - at[1]) * M_LAT, bx = (b[0] - at[0]) * kx, by = (b[1] - at[1]) * M_LAT;
-        const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
-        const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2));
-        const px = ax + t * dx, py = ay + t * dy, d = px * px + py * py;
-        if (d <= streetReach ** 2 && (!best || d < best.d)) best = { d, p: [at[0] + px / kx, at[1] + py / M_LAT], name: s.name };
-      }
-    }
-    result = best ? { position: best.p, address: best.name, snappedTo: 'street' } : { position: at, address: null, snappedTo: null };
-  }
-  const area = areas.find((a) => pointInRing(result.position, a.geometry.coordinates[0] as LngLat[]));
-  return { ...result, areaId: area?.id ?? null };
+export async function snapPoint(engine: { snap(at: LngLat): Promise<{ position: LngLat; address: string | null; kind: 0 | 1 | 2 }> }, at: LngLat, areas: Pick<Meta['areas'][number], 'id' | 'geometry'>[]): Promise<Snap> {
+  const r = await engine.snap(at);
+  const area = areas.find((a) => pointInRing(r.position, a.geometry.coordinates[0] as LngLat[]));
+  return { position: r.position, address: r.address, snappedTo: r.kind === 1 ? 'house' : r.kind === 2 ? 'street' : null, areaId: area?.id ?? null };
 }
 
 /** Only these fields reach the server, with the length rules the server enforces (title ≤ 160, address ≤ 320). */

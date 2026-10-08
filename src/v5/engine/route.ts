@@ -1,4 +1,4 @@
-import type { Network, Segment } from './types.ts';
+import type { FieldNetwork as Network, FieldSegment as Segment } from './types.ts';
 
 export type RouteResult =
   | { state: 'selected'; segmentIds: string[]; length: number; ambiguous: boolean }

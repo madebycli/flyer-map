@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { importLegacyProgress, type House, type LegacySnapshot, type Network, type Segment } from '../engine/index.ts';
+import { importLegacyProgress, type FieldHouse as House, type FieldNetwork as Network, type FieldSegment as Segment, type LegacySnapshot } from '../engine/index.ts';
 import { FieldMap, statusColors, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
@@ -9,7 +9,7 @@ import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { buildIndex } from './mark.ts';
 import { MarkBar, meters, useMarking } from './marking.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
-import { createPickup, setPickupStatus, snapToNetwork, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
+import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
 import { actionErrorText } from './collection.ts';
 import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, notePosition, segmentNoteKey, useNotesVersion } from './notes.tsx';
 import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaViews, type AreaStats } from './collection.tsx';
@@ -51,7 +51,7 @@ function workBounds(network: Network, areas: { geometry: { coordinates: [number,
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
   const add = (lng: number, lat: number) => { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < s) s = lat; if (lat > n) n = lat; };
   for (const house of network.houses) add(house.center[0], house.center[1]);
-  for (const segment of network.segments) if (segment.visible) add(segment.coords[0][0], segment.coords[0][1]);
+  for (const segment of network.segments) if (segment.visible) add(segment.start[0], segment.start[1]);
   if (!Number.isFinite(w)) for (const area of areas) for (const [lng, lat] of area.geometry.coordinates[0]) add(lng, lat);
   return [[w, s], [e, n]];
 }
@@ -161,10 +161,11 @@ export function App({ campaignId }: { campaignId: string }) {
     if (tool === 'areas') { areaTool.onMapTap(point); return; }
     if (tool === 'pickup') {
       const at = fieldMap.current?.lngLatAt(point);
-      if (!at || !index || !meta) return;
-      const snap = snapToNetwork(index, at, meta.areas);
-      setPickupError(null);
-      setDraft((current) => ({ title: current?.title ?? '', description: current?.description ?? '', address: snap.address ?? current?.address ?? '', position: snap.position, areaId: snap.areaId, snappedTo: snap.snappedTo }));
+      if (!at || !campaign.engine || !meta) return;
+      void snapPoint(campaign.engine, at, meta.areas).then((snap) => {
+        setPickupError(null);
+        setDraft((current) => ({ title: current?.title ?? '', description: current?.description ?? '', address: snap.address ?? current?.address ?? '', position: snap.position, areaId: snap.areaId, snappedTo: snap.snappedTo }));
+      }).catch(() => setPickupError('Position konnte nicht bestimmt werden.'));
       return;
     }
     if (tool === 'mark') { marking.onMapHit(hit); return; }
@@ -215,10 +216,11 @@ export function App({ campaignId }: { campaignId: string }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!network || !store || !fieldMap.current) return;
+    const { network, store, engine, mapData } = campaign;
+    if (!network || !store || !engine || !mapData || !fieldMap.current) return;
     const map = fieldMap.current;
-    void map.loadNetwork(network).then(() => { map.bind(store); map.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); });
-  }, [network, store]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
+    void map.loadMapData(mapData, (z, x, y) => engine.tile(z, x, y)).then(() => { map.bind(store); map.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); });
+  }, [network, store, campaign.mapData]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
 
   useEffect(() => { fieldMap.current?.setPickups(pickupFeatures(campaign.pickups)); }, [campaign.pickups]);
   const notesVersion = useNotesVersion(notes);

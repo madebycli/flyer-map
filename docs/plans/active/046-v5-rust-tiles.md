@@ -1,6 +1,6 @@
 # Plan 046 — v5: geometry stays in Rust, the map reads vector tiles
 
-Status: IN PROGRESS on `claude/v5-field-core` (R1 done)
+Status: R1–R5 done on `claude/v5-field-core`; follow-ups listed at the end
 Reference: [ADR-0034](../../decisions/ADR-0034-v5-notes-chunks-and-engine-language.md) item 4, measurements there.
 
 ## Why
@@ -12,12 +12,31 @@ asks for tiles, the app keeps only slim logic data.
 ## Phases
 
 - [x] R1 — `engine-rs`: derive + restrictToArea, exact differential tests, worker integration with TypeScript fallback
-- [ ] R2 — tile cutter in Rust (MVT: `segments` lines, `houses` polygons, `centers` points), session holding all Areas, serialisable index
-- [ ] R3 — slim `Network` (no coordinates; per segment a midpoint, per house its centre) and the few geometry consumers (snap, legacy import) as Rust queries
-- [ ] R4 — MapLibre custom protocol + vector sources with `promoteId`, feature-state painting unchanged; GeoJSON path kept as fallback
-- [ ] R5 — warm start from one binary blob (index) instead of structured-cloned objects; benchmarks in the browser
+- [x] R2 — tile cutter in Rust (MVT: `segments` lines, `houses` polygons, `centers` points), session holding all Areas (first Area wins), bincode snapshot per Area
+- [x] R3 — `FieldNetwork` (no coordinates; per segment `mid`/`start`, per house `center`); snapping is an engine query (Rust, TypeScript twin, differentially tested)
+- [x] R4 — MapLibre custom protocol `v5t://`, vector source with `promoteId`, feature-state per source-layer; GeoJSON path kept as the fallback (`?engine=ts` forces it; all browser flows pass in both modes)
+- [x] R5 — warm start loads one binary snapshot per Area into the engine; boot timings in `window.__v5Boot`
 
 ## Acceptance
 
 Every browser flow passes on both paths; tiles are byte-stable for the same network; the first screen needs no main-thread
 parse of geometry; warm start reads one ArrayBuffer.
+
+## Measured (headless Chromium, software WebGL, 39 k houses in two Areas, same machine, 2026-10-08)
+
+| | TypeScript + GeoJSON | Rust + vector tiles |
+|---|---|---|
+| cold start: ready (derive done, first screen data) | 2.4 s | 1.2 s |
+| …then until the map has loaded its data | +2.0 s (GeoJSON indexing) | +0.003 s (tiles on demand) |
+| warm start: ready | no cache | 0.9 s |
+| JS heap after load | 147 MB | 57–69 MB |
+| one z16 tile | – | a few ms |
+
+Honest limits: the Rust derive itself is ≈ 4× faster than V8 natively but only ≈ 1.5–2× inside WebAssembly here; the win is
+mostly *not moving geometry through JavaScript*. Numbers from a fast desktop CPU with software GL: real phones are the open gate.
+
+## Follow-ups
+
+- Route graph (`buildGraph`/Dijkstra) is still TypeScript on the main thread; move it next to the geometry.
+- Tile-side simplification at low zoom (one dot per house is cheap, long streets at z11 are not yet generalised).
+- Server-side use of the same crate (pack validation) would need the Worker's wasm import; not needed yet.

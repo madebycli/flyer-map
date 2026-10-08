@@ -218,7 +218,7 @@ pub fn derive_network(raw: &RawOsm) -> Network {
             }
         };
         let house = House {
-            id: format!("h{}", building.id), osm_id: building.id, source: "building", number, street, ring: building.ring.clone(), center,
+            id: format!("h{}", building.id), osm_id: building.id, source: Source::Building, number, street, ring: building.ring.clone(), center,
             parent: None, measure: None, evidence,
         };
         houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch));
@@ -253,11 +253,11 @@ pub fn derive_network(raw: &RawOsm) -> Network {
         }
         let d = 0.00003;
         let house = House {
-            id: format!("a{}", node.id), osm_id: node.id, source: "address-node",
+            id: format!("a{}", node.id), osm_id: node.id, source: Source::AddressNode,
             number: Some(js_trim(&node.tags["addr:housenumber"]).to_string()),
             street: trimmed(&node.tags, "addr:street"),
             ring: vec![[nx - d, ny - d], [nx + d, ny - d], [nx + d, ny + d], [nx - d, ny + d], [nx - d, ny - d]],
-            center: node.point, parent: None, measure: None, evidence: "address-node",
+            center: node.point, parent: None, measure: None, evidence: Evidence::AddressNode,
         };
         houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch));
     }

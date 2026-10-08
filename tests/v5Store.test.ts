@@ -91,13 +91,13 @@ test('20k-key bulk edit is a single batch', async () => {
 
 import { Progress } from '../src/v5/store/progress.ts';
 import { SyncClient, type SyncTransport } from '../src/v5/store/syncClient.ts';
-import { deriveNetwork } from '../src/v5/engine/index.ts';
+import { deriveNetwork, slimNetwork } from '../src/v5/engine/index.ts';
 import { syntheticCity } from '../src/v5/engine/synthetic.ts';
 
 test('progress counters follow store changes incrementally', async () => {
   const net = deriveNetwork(syntheticCity(2, 2).raw);
   const s = new FieldStore('x', null, () => 1000);
-  const p = new Progress(net, s);
+  const p = new Progress(slimNetwork(net), s);
   const total = net.houses.length;
   assert.equal(p.snapshot().houses.open, total);
   s.set([`h:${net.houses[0].id}`, `h:${net.houses[1].id}`], 'completed');

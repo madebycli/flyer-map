@@ -15,10 +15,11 @@ Streets and houses are a pure function of OSM data. v5 therefore stores **no tas
 | Ids | `s<way>:<startNode>` for segments, `h<buildingWay>` / `a<node>` for houses (stable across clients) |
 | User state | status overlay `key → status`, last-writer-wins by hybrid logical clock |
 | Sync | `GET /api/v5/campaigns/:id/state?since=` and `POST …/ops` (idempotent, team-scoped) |
-| Rendering | geometry loaded once; status via `setFeatureState` (no re-tiling) |
+| Rendering | the engine (Rust, in a Worker) serves MapLibre vector tiles (`v5t://`); status via `setFeatureState` on the tile features |
 
 ## Layout
 
+- `engine-rs` – the engine in Rust (C ABI WASM): derive, restrictToArea, vector-tile cutter, snapping, Area snapshots. `src/v5/engine/wasm/engine.wasm` is the committed build (`scripts/build-wasm.sh`; a test checks the source digest). The TypeScript engine below is the reference and the fallback.
 - `src/v5/engine` – whitelist road classification, junction noding, house→street assignment, routing,
   Overpass normalisation, area restriction, legacy-progress import, synthetic test city.
 - `src/v5/notes` – field notes: flags + text per street/house/Area, own LWW store and sync round (rides the status `SyncClient`).

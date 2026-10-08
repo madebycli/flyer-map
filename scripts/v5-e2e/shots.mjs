@@ -13,7 +13,7 @@ page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
 await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug');
 await page.getByText('Kartendaten fehlen').waitFor({ timeout: 8000 }).then(() => page.getByRole('button', { name: 'Kartendaten laden' }).click(), () => {});
 await page.waitForSelector('.v5-pill', { timeout: 120000 });
-await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
+await page.waitForFunction(() => window.__v5Map && (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')), null, { timeout: 60000 });
 // Seed realistic progress through the real API: the first block rows done, a few later / not deliverable.
 const now = Date.now();
 const ops = [];
@@ -25,7 +25,7 @@ for (let i = 0; i < ops.length; i += 100) {
 }
 await page.reload();
 await page.waitForSelector('.v5-pill');
-await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
+await page.waitForFunction(() => window.__v5Map && (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')), null, { timeout: 60000 });
 await page.waitForTimeout(2500);
 const shot = (name) => page.screenshot({ path: `${out}/${name}.png` });
 const jump = (x, y, z) => page.evaluate(async ([c, zoom]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom }); await new Promise((r) => m.once('idle', r)); }, [M(x, y), z]);

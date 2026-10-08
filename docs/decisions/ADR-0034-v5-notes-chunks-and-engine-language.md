@@ -37,7 +37,8 @@ last_updated: 2026-10-08
    - Measured honestly (Node, 39 k houses, same bytes in, `Network` out): Rust compute is ≈ 4× faster than V8 natively, but in
      WebAssembly plus the 22 MB JSON hand-over (`TextDecoder` + `JSON.parse`) the end-to-end gain is **≈ 0–20 %**. The hand-over,
      not the algorithm, is the cost. Therefore the next step is not more compute in Rust but **not handing the geometry over
-     at all**: Rust keeps the network and serves MapLibre vector tiles through a custom protocol (see Plan 046).
+     at all**: Rust keeps the network and serves MapLibre vector tiles through a custom protocol (Plan 046, done). In the
+     browser that is cold 2.4 s → 1.2 s, +2.0 s of GeoJSON indexing → none, heap 147 MB → ~60 MB at 39 k houses.
    - The committed `engine.wasm` is built by `scripts/build-wasm.sh`; a test fails when the Rust sources and the artifact's
      recorded digest drift apart. A future CSP needs `wasm-unsafe-eval`.
 

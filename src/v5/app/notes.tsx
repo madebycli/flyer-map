@@ -37,8 +37,7 @@ export function notePosition(key: NoteKey, index: Index, areas: Meta['areas']): 
   if (key.startsWith('s:')) {
     const chunks = index.chunksByGroup.get(id) ?? (index.segments.get(id) ? [index.segments.get(id)!] : null);
     if (!chunks?.length) return null;
-    const mid = chunks[Math.floor((chunks.length - 1) / 2)];
-    return mid.coords[Math.floor((mid.coords.length - 1) / 2)];
+    return chunks[Math.floor((chunks.length - 1) / 2)].mid;
   }
   const area = areas.find((a) => a.id === id);
   if (!area) return null;

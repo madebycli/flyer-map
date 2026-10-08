@@ -39,7 +39,7 @@ pub struct RawOsm {
     pub addresses: Vec<RawAddressNode>,
 }
 
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum RoadClass {
     Street,
@@ -47,7 +47,7 @@ pub enum RoadClass {
     Connector,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Segment {
     pub id: String,
@@ -68,22 +68,40 @@ pub struct Segment {
     pub visible: bool,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Source {
+    #[serde(rename = "building")]
+    Building,
+    #[serde(rename = "address-node")]
+    AddressNode,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Evidence {
+    #[serde(rename = "address")]
+    Address,
+    #[serde(rename = "residential-type")]
+    ResidentialType,
+    #[serde(rename = "address-node")]
+    AddressNode,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct House {
     pub id: String,
     pub osm_id: i64,
-    pub source: &'static str,
+    pub source: Source,
     pub number: Option<String>,
     pub street: Option<String>,
     pub ring: Vec<LngLat>,
     pub center: LngLat,
     pub parent: Option<String>,
     pub measure: Option<f64>,
-    pub evidence: &'static str,
+    pub evidence: Evidence,
 }
 
-#[derive(Serialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostics {
     pub engine_version: String,
@@ -99,9 +117,53 @@ pub struct Diagnostics {
     pub orphan_houses: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Network {
     pub segments: Vec<Segment>,
     pub houses: Vec<House>,
+    pub diagnostics: Diagnostics,
+}
+
+/// What the app keeps on the main thread: everything except coordinates (those stay in Rust / in tiles).
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SlimSegment {
+    pub id: String,
+    pub group: String,
+    pub chunk: u32,
+    pub chunks: u32,
+    pub way_id: i64,
+    pub name: Option<String>,
+    #[serde(rename = "ref")]
+    pub reference: Option<String>,
+    pub highway: String,
+    pub cls: RoadClass,
+    pub length: f64,
+    pub from: String,
+    pub to: String,
+    pub house_count: u32,
+    pub visible: bool,
+    pub mid: LngLat,
+    pub start: LngLat,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SlimHouse {
+    pub id: String,
+    pub osm_id: i64,
+    pub source: Source,
+    pub number: Option<String>,
+    pub street: Option<String>,
+    pub center: LngLat,
+    pub parent: Option<String>,
+    pub measure: Option<f64>,
+    pub evidence: Evidence,
+}
+
+#[derive(Serialize)]
+pub struct SlimNetwork {
+    pub segments: Vec<SlimSegment>,
+    pub houses: Vec<SlimHouse>,
     pub diagnostics: Diagnostics,
 }

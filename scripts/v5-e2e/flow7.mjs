@@ -15,9 +15,9 @@ async function helper(who) {
   await ctx.addCookies([{ name: 'vf_collection_session', value: cookies[who], url: 'http://localhost:8140' }]);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log('PAGEERROR', who, e.message));
-  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug');
+  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug' + (process.env.V5_QUERY ?? ''));
   await page.waitForSelector('.v5-pill', { timeout: 120000 });
-  await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__v5Map && (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')), null, { timeout: 60000 });
   await page.waitForTimeout(800);
   const jump = (x, y, z) => page.evaluate(async ([c, zoom]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom, padding: { top: 0, bottom: 0, left: 0, right: 0 } }); await new Promise((r) => m.once('idle', r)); await new Promise((r) => setTimeout(r, 250)); }, [M(x, y), z]);
   const click = async (x, y) => { const p = await page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(x, y)); await page.mouse.click(p[0], p[1]); };

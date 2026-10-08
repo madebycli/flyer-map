@@ -1,4 +1,4 @@
-import type { LngLat, Network } from './types.ts';
+import type { FieldNetwork, LngLat, Network } from './types.ts';
 
 type Exports = {
   memory: WebAssembly.Memory;
@@ -9,6 +9,12 @@ type Exports = {
   result_len(): number;
   engine_version_ptr(): number;
   engine_version_len(): number;
+  session_reset(): void;
+  session_add_area(rawPtr: number, rawLen: number, ringPtr: number, ringLen: number): number;
+  session_export_last(): number;
+  session_add_blob(ptr: number, len: number): number;
+  session_tile(z: number, x: number, y: number): number;
+  session_snap(lng: number, lat: number, houseReach: number, streetReach: number): number;
 };
 
 /**
@@ -65,5 +71,68 @@ export class WasmEngine {
       this.x.dealloc(rawPtr, rawJson.byteLength);
       if (ringPtr) this.x.dealloc(ringPtr, ringBytes.byteLength);
     }
+  }
+
+  // ── session: the engine keeps the geometry; the app gets coordinate-free data and tiles ──
+
+  private result(): Uint8Array {
+    return new Uint8Array(this.x.memory.buffer, this.x.result_ptr(), this.x.result_len());
+  }
+
+  private json<T>(n: number): T {
+    const text = new TextDecoder().decode(this.result());
+    if (n === 0) throw new Error(`wasm_engine: ${(JSON.parse(text) as { error: string }).error}`);
+    return JSON.parse(text) as T;
+  }
+
+  private withBytes<T>(bytes: Uint8Array, fn: (ptr: number) => T): T {
+    const ptr = this.put(bytes);
+    try { return fn(ptr); } finally { this.x.dealloc(ptr, bytes.byteLength); }
+  }
+
+  resetSession(): void { this.x.session_reset(); }
+
+  /** Derive one Area from the decompressed pack JSON, keep its geometry in the session, return the coordinate-free network. */
+  addArea(rawJson: Uint8Array, ring: LngLat[]): FieldNetwork {
+    const ringBytes = new TextEncoder().encode(JSON.stringify(ring));
+    return this.withBytes(rawJson, (rawPtr) => this.withBytes(ringBytes, (ringPtr) => {
+      const t0 = performance.now();
+      const n = this.x.session_add_area(rawPtr, rawJson.byteLength, ringPtr, ringBytes.byteLength);
+      const t1 = performance.now();
+      const network = this.json<FieldNetwork>(n);
+      this.lastTiming = { wasm: Math.round(t1 - t0), decode: 0, parse: Math.round(performance.now() - t1), bytes: n };
+      return network;
+    }));
+  }
+
+  /** The last added Area as one binary blob for the device cache (geometry included). */
+  exportLastArea(): Uint8Array {
+    const n = this.x.session_export_last();
+    if (n === 0) this.json(0);
+    return this.result().slice();
+  }
+
+  /** Re-load a cached Area blob; same effect as `addArea` without pack download or derivation. */
+  addBlob(blob: Uint8Array): FieldNetwork {
+    return this.withBytes(blob, (ptr) => {
+      const t0 = performance.now();
+      const n = this.x.session_add_blob(ptr, blob.byteLength);
+      const t1 = performance.now();
+      const network = this.json<FieldNetwork>(n);
+      this.lastTiming = { wasm: Math.round(t1 - t0), decode: 0, parse: Math.round(performance.now() - t1), bytes: n };
+      return network;
+    });
+  }
+
+  /** MVT bytes of tile z/x/y (empty when there is nothing to draw). */
+  tile(z: number, x: number, y: number): Uint8Array {
+    this.x.session_tile(z, x, y);
+    return this.result().slice();
+  }
+
+  /** Nearest house (within `houseReach` m) or street (within `streetReach` m) to a point. */
+  snap(lng: number, lat: number, houseReach = 30, streetReach = 22): { position: LngLat; address: string | null; kind: 0 | 1 | 2 } {
+    const n = this.x.session_snap(lng, lat, houseReach, streetReach);
+    return this.json(n);
   }
 }

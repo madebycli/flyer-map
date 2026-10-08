@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { mergeNetworks, type Network } from '../engine/index.ts';
+import { mergeNetworks, type FieldNetwork as Network } from '../engine/index.ts';
+import type { MapData } from '../engine/host.ts';
 import { FieldStore } from '../store/store.ts';
 import { IndexedDbNotePersistence, IndexedDbPersistence } from '../store/idb.ts';
 import { IndexedDbNetworkStorage, NetworkCache } from '../store/networkCache.ts';
@@ -9,7 +10,7 @@ import { Progress, type ProgressSnapshot } from '../store/progress.ts';
 import { SyncClient } from '../store/syncClient.ts';
 import { V5ApiError, buildPack, fetchMeta, fetchPack, httpNoteTransport, httpTransport, type Meta } from './api.ts';
 import { fetchPickups, type Pickup } from './pickups.ts';
-import { derive, type WorkerResponse } from './network.worker.ts';
+import { EngineClient } from './engineClient.ts';
 
 export type Phase =
   | { kind: 'loading'; label: string }
@@ -21,6 +22,9 @@ export type CampaignState = {
   phase: Phase;
   meta: Meta | null;
   network: Network | null;
+  /** The engine holding the geometry (tiles, snapping) and what the map should load from it. */
+  engine: EngineClient | null;
+  mapData: MapData | null;
   areaOf: Map<string, string>;
   store: FieldStore | null;
   notes: NoteStore | null;
@@ -36,19 +40,6 @@ export type CampaignState = {
   refreshMeta(): Promise<void>;
 };
 
-function deriveInWorker(areaId: string, pack: Uint8Array, ring: [number, number][]): Promise<{ network: Network; engine: 'wasm' | 'ts'; ms: number; detail?: Record<string, number> }> {
-  if (typeof Worker === 'undefined') return derive({ areaId, pack, ring });
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./network.worker.ts', import.meta.url), { type: 'module' });
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-      worker.terminate();
-      if ('error' in event.data) reject(new Error(event.data.error)); else resolve(event.data);
-    };
-    worker.onerror = () => { worker.terminate(); derive({ areaId, pack, ring }).then(resolve, reject); };
-    worker.postMessage({ areaId, pack, ring });
-  });
-}
-
 function actorId(): string {
   try {
     const existing = localStorage.getItem('vf-v5-actor');
@@ -63,6 +54,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const [phase, setPhase] = useState<Phase>({ kind: 'loading', label: 'Aktion wird geladen …' });
   const [meta, setMeta] = useState<Meta | null>(null);
   const [network, setNetwork] = useState<Network | null>(null);
+  const [engineState, setEngineState] = useState<{ client: EngineClient; mapData: MapData } | null>(null);
   const [areaOf, setAreaOf] = useState<Map<string, string>>(new Map());
   const [store, setStore] = useState<FieldStore | null>(null);
   const [notes, setNotes] = useState<NoteStore | null>(null);
@@ -81,6 +73,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     let client: SyncClient | null = null;
     let progressTracker: Progress | null = null;
     let hydrated = false;
+    let engine: EngineClient | null = null;
     const fieldStore = new FieldStore(actorId(), new IndexedDbPersistence(campaignId));
     const noteStore = new NoteStore(actorId(), new IndexedDbNotePersistence(campaignId), () => Date.now());
     let notesHydrated = false;
@@ -90,40 +83,53 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
       const t0 = performance.now();
       try {
         setPhase({ kind: 'loading', label: 'Aktion wird geladen …' });
+        // The engine (worker + wasm instantiation) starts while the Aktion's meta data is still on its way.
+        engine?.dispose();
+        const enginePromise = EngineClient.create({ forceTs: new URLSearchParams(location.search).get('engine') === 'ts' });
+        enginePromise.catch(() => {});
         const loaded = await fetchMeta(campaignId, kind);
         if (cancelled) return;
         setMeta(loaded); metaKindRef.current = loaded.kind;
         void loadPickups(loaded);
         canBuildRef.current = loaded.canBuildPack;
-        // Per Area: the cached derived network when pack, polygon and engine are unchanged; otherwise download (all in
-        // parallel — the slow part on mobile data) and derive one after another.
+        // The engine (Rust/WASM in a Worker, TypeScript fallback) keeps every Area's geometry; the app only gets coordinate-free data.
+        engine = await enginePromise;
+        if (cancelled) { engine.dispose(); return; }
+        const useBlobs = engine.kind === 'wasm';
+        // Per Area: the cached snapshot when pack, polygon and engine are unchanged; otherwise download (all in parallel —
+        // the slow part on mobile data) and derive one after another.
         setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
-        const timing: Record<string, number> = { meta: Math.round(performance.now() - t0) };
+        const timing: Record<string, number> = { meta: Math.round(performance.now() - t0), wasm: useBlobs ? 1 : 0 };
         const resolved = await Promise.all(loaded.areas.map(async (area) => {
           const key = NetworkCache.keyFor(area);
-          const cached = key ? await cache.load(key) : null;
-          if (cached) return { areaId: area.id, ring: area.geometry.coordinates[0], pack: null as Uint8Array | null, cached, key };
-          return { areaId: area.id, ring: area.geometry.coordinates[0], pack: area.packVersion ? await fetchPack(campaignId, area.id) : null, cached: null as Network | null, key };
+          const blob = key && useBlobs ? await cache.load(key) : null;
+          return { areaId: area.id, packVersion: area.packVersion, ring: area.geometry.coordinates[0] as [number, number][], blob, key, pack: !blob && area.packVersion ? await fetchPack(campaignId, area.id) : null };
         }));
         if (cancelled) return;
         timing.packs = Math.round(performance.now() - t0) - timing.meta;
-        timing.cacheHits = resolved.filter((r) => r.cached).length;
-        const missing = loaded.areas.filter((a) => { const r = resolved.find((p) => p.areaId === a.id); return !r?.pack && !r?.cached; });
-        missingRef.current = missing;
-        setMissingAreas(missing);
+        timing.cacheHits = resolved.filter((r) => r.blob).length;
+        await engine.reset();
         const parts: { areaId: string; network: Network }[] = [];
+        const missing: Meta['areas'] = [];
         for (const item of resolved) {
-          if (item.cached) { parts.push({ areaId: item.areaId, network: item.cached }); continue; }
-          if (!item.pack) continue;
-          setPhase({ kind: 'loading', label: 'Straßen und Häuser werden berechnet …' });
-          const { network, engine, ms, detail } = await deriveInWorker(item.areaId, item.pack, item.ring);
-          if (detail) for (const [k, v] of Object.entries(detail)) timing[`w_${k}`] = (timing[`w_${k}`] ?? 0) + v;
-          timing[engine === 'wasm' ? 'wasmAreas' : 'tsAreas'] = (timing[engine === 'wasm' ? 'wasmAreas' : 'tsAreas'] ?? 0) + 1;
-          timing.engineMs = (timing.engineMs ?? 0) + ms;
-          parts.push({ areaId: item.areaId, network });
-          if (item.key) void cache.store(item.key, network);
+          let result: Awaited<ReturnType<EngineClient['area']>> | null = null;
+          if (item.blob) {
+            try { result = await engine.area({ areaId: item.areaId, ring: item.ring, blob: item.blob }); }
+            catch { void cache.forget(item.areaId); item.pack = await fetchPack(campaignId, item.areaId); timing.cacheHits--; }
+          }
+          if (!result) {
+            if (!item.pack) { missing.push(loaded.areas.find((a) => a.id === item.areaId)!); continue; }
+            setPhase({ kind: 'loading', label: 'Straßen und Häuser werden berechnet …' });
+            result = await engine.area({ areaId: item.areaId, ring: item.ring, pack: item.pack, wantBlob: useBlobs });
+            if (item.key && result.blob) void cache.store(item.key, result.blob);
+          }
+          if (result.detail) for (const [k, v] of Object.entries(result.detail)) timing[`w_${k}`] = (timing[`w_${k}`] ?? 0) + v;
+          timing.engineMs = (timing.engineMs ?? 0) + result.ms;
+          parts.push({ areaId: item.areaId, network: result.network });
           if (cancelled) return;
         }
+        missingRef.current = missing;
+        setMissingAreas(missing);
         timing.derive = Math.round(performance.now() - t0) - timing.meta - timing.packs;
         const merged = mergeNetworks(parts);
         fieldStore.setAreaResolver((key) => merged.areaOf.get(key));
@@ -135,6 +141,8 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         progressTracker = new Progress(merged.network, fieldStore);
         progressTracker.onChange(setProgress);
         setProgress(progressTracker.snapshot());
+        const mapData = await engine.mapData();
+        setEngineState({ client: engine, mapData });
         setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore); setNotes(noteStore);
         client?.dispose();
         client = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending) => setSync({ state, pending }), [new NoteSync(noteStore, httpNoteTransport(campaignId))]);
@@ -165,7 +173,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     document.addEventListener('visibilitychange', visible);
     const poll = window.setInterval(() => { void client?.run(); if (kind === 'collection' || metaKindRef.current === 'collection') void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) { setMeta(m); void loadPickups(m); } }, () => {}); }, 15_000);
     return () => {
-      cancelled = true; client?.dispose(); progressTracker?.dispose();
+      cancelled = true; client?.dispose(); progressTracker?.dispose(); engine?.dispose();
       window.removeEventListener('online', online); window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', hidden); document.removeEventListener('visibilitychange', visible);
       window.clearInterval(poll);
@@ -175,7 +183,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   }, [campaignId, kind]);
 
   return {
-    phase, meta, network, areaOf, store, notes, pickups, progress, sync, missingAreas,
+    phase, meta, network, engine: engineState?.client ?? null, mapData: engineState?.mapData ?? null, areaOf, store, notes, pickups, progress, sync, missingAreas,
     reload: () => reload.current(),
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
     async buildMissing() {

@@ -7,3 +7,5 @@ export { mergeNetworks, restrictToArea } from './area.ts';
 export { encodePack, decodePack, gunzip } from './pack.ts';
 export { WasmEngine } from './wasm.ts';
 export { importLegacyProgress, type LegacyImport, type LegacySnapshot } from './legacy.ts';
+export { slimNetwork, midpointByLength } from './slim.ts';
+export { snapToNetworks, type SnapResult } from './snap.ts';

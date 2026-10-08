@@ -1,5 +1,5 @@
 import { pointInRing } from '../engine/geo.ts';
-import type { House, LngLat, Network, Segment } from '../engine/types.ts';
+import type { FieldHouse as House, FieldNetwork as Network, FieldSegment as Segment, LngLat } from '../engine/types.ts';
 import { houseKey, segmentKey, type EntityKey } from '../store/types.ts';
 
 export type Index = {
@@ -55,7 +55,7 @@ export function keysForTouched(index: Index, touched: { houses: Iterable<string>
   return [...keys];
 }
 
-const middle = (s: Segment): LngLat => s.coords[Math.floor((s.coords.length - 1) / 2)];
+const middle = (s: Segment): LngLat => s.mid;
 
 /** Lasso: houses whose centre lies inside the shape, and visible street segments whose middle does. Purely geometric. */
 export function lassoSelect(network: Network, ring: LngLat[]): { houses: string[]; segments: string[] } {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature } from 'geojson';
-import { routeSegments, buildGraph, type Network } from '../engine/index.ts';
+import { routeSegments, buildGraph, type FieldNetwork as Network } from '../engine/index.ts';
 import { statusColors, type FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import { segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { keysForGroups, keysForSegments, keysForTouched, lassoSelect, type Index } from './mark.ts';

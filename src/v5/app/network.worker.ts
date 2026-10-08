@@ -1,33 +1,44 @@
-import { decodePack, deriveNetwork, gunzip, restrictToArea, WasmEngine, type Network } from '../engine/index.ts';
+import { EngineHost, type AreaRequest, type AreaResult, type EngineKind, type MapData } from '../engine/host.ts';
+import type { LngLat } from '../engine/types.ts';
 
-export type WorkerRequest = { areaId: string; pack: Uint8Array; ring: [number, number][] };
-export type WorkerResponse = { areaId: string; network: Network; engine: 'wasm' | 'ts'; ms: number; detail?: Record<string, number> } | { areaId: string; error: string };
+export type EngineRequest =
+  | { id: number; op: 'init'; forceTs: boolean }
+  | { id: number; op: 'reset' }
+  | ({ id: number; op: 'area' } & AreaRequest)
+  | { id: number; op: 'mapData' }
+  | { id: number; op: 'tile'; z: number; x: number; y: number }
+  | { id: number; op: 'snap'; at: LngLat };
+export type EngineReply = { id: number; error?: string; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']> };
 
-let wasm: Promise<WasmEngine | null> | null = null;
-/** The Rust engine, loaded once per worker; null when WebAssembly or the module is unavailable (the TypeScript engine then does the work). */
-function wasmEngine(): Promise<WasmEngine | null> {
-  return (wasm ??= (typeof WebAssembly === 'undefined' ? Promise.resolve(null) : WasmEngine.load(fetch(new URL('../engine/wasm/engine.wasm', import.meta.url))).catch(() => null)));
-}
+const wasmUrl = () => fetch(new URL('../engine/wasm/engine.wasm', import.meta.url));
 
-/** Derivation is CPU work: keep it off the UI thread. Rust/WASM first, the TypeScript reference as the fallback. */
-export async function derive(request: WorkerRequest): Promise<{ network: Network; engine: 'wasm' | 'ts'; ms: number; detail?: Record<string, number> }> {
-  const t0 = performance.now();
-  const engine = await wasmEngine();
-  if (engine) {
-    try {
-      const raw = await gunzip(request.pack);
-      const tUnzip = Math.round(performance.now() - t0);
-      const network = engine.deriveArea(raw, request.ring);
-      return { network, engine: 'wasm', ms: Math.round(performance.now() - t0), detail: { gunzip: tUnzip, ...engine.lastTiming } };
-    } catch { /* fall through to the reference engine */ }
+/** One request → one reply; shared by the Worker and the in-thread fallback. */
+export async function handle(host: EngineHost, req: EngineRequest): Promise<{ reply: EngineReply; transfer: Transferable[] }> {
+  try {
+    switch (req.op) {
+      case 'init': return { reply: { id: req.id, kind: await host.init(req.forceTs ? null : wasmUrl) }, transfer: [] };
+      case 'reset': host.reset(); return { reply: { id: req.id }, transfer: [] };
+      case 'area': {
+        const area = await host.area(req);
+        return { reply: { id: req.id, area }, transfer: area.blob ? [area.blob.buffer] : [] };
+      }
+      case 'mapData': return { reply: { id: req.id, mapData: host.mapData() }, transfer: [] };
+      case 'tile': {
+        const bytes = host.tile(req.z, req.x, req.y);
+        const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        return { reply: { id: req.id, tile: buffer }, transfer: [buffer] };
+      }
+      case 'snap': return { reply: { id: req.id, snap: host.snap(req.at) }, transfer: [] };
+    }
+  } catch (error) {
+    return { reply: { id: req.id, error: error instanceof Error ? error.message : 'engine_failed' }, transfer: [] };
   }
-  const network = restrictToArea(deriveNetwork(await decodePack(request.pack)), request.ring);
-  return { network, engine: 'ts', ms: Math.round(performance.now() - t0) };
 }
 
 if (typeof self !== 'undefined' && 'postMessage' in self && typeof (self as { document?: unknown }).document === 'undefined') {
-  self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-    try { (self as unknown as Worker).postMessage({ areaId: event.data.areaId, ...(await derive(event.data)) } satisfies WorkerResponse); }
-    catch (error) { (self as unknown as Worker).postMessage({ areaId: event.data.areaId, error: error instanceof Error ? error.message : 'derive_failed' } satisfies WorkerResponse); }
+  const host = new EngineHost();
+  self.onmessage = async (event: MessageEvent<EngineRequest>) => {
+    const { reply, transfer } = await handle(host, event.data);
+    (self as unknown as Worker).postMessage(reply, transfer);
   };
 }

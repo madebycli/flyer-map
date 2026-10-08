@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveNetwork } from '../src/v5/engine/index.ts';
+import { deriveNetwork, slimNetwork } from '../src/v5/engine/index.ts';
 import { syntheticCity } from '../src/v5/engine/synthetic.ts';
 import { buildIndex, keysForGroups, keysForSegments, keysForTouched, lassoSelect } from '../src/v5/app/mark.ts';
 
-const network = deriveNetwork(syntheticCity(4, 3).raw);
+const network = slimNetwork(deriveNetwork(syntheticCity(4, 3).raw));
 const index = buildIndex(network);
 const M = (x: number, y: number): [number, number] => [13 + x / 70053, 51 + y / 110574];
 

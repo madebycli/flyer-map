@@ -15,10 +15,10 @@ async function person(who) {
   page.on('pageerror', (e) => console.log('PAGEERROR', who, e.message));
   const gate = { blocked: false };
   await page.route('**/api/**', (route) => (gate.blocked ? route.abort() : route.continue()));
-  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug');
+  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug' + (process.env.V5_QUERY ?? ''));
   await page.getByText('Kartendaten fehlen').waitFor({ timeout: 4000 }).then(() => page.getByRole('button', { name: 'Kartendaten laden' }).click(), () => {});
   await page.waitForSelector('.v5-pill', { timeout: 120000 });
-  await page.waitForFunction(() => window.__v5Map && window.__v5Map.getSource('v5-houses'), null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__v5Map && (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')), null, { timeout: 60000 });
   await page.waitForTimeout(1000);
   const jump = (x, y, z) => page.evaluate(async ([c, zoom]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom }); await new Promise((r) => m.once('idle', r)); }, [M(x, y), z]);
   const click = async (x, y) => { const p = await page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(x, y)); await page.mouse.click(p[0], p[1]); };

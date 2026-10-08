@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGraph, classifyBuilding, classifyRoad, deriveNetwork, routeSegments } from '../src/v5/engine/index.ts';
 import { syntheticCity } from '../src/v5/engine/synthetic.ts';
+import { slimNetwork } from '../src/v5/engine/slim.ts';
 
 test('whitelist: only known delivery roads pass, unknown highways are excluded', () => {
   assert.equal(classifyRoad({ highway: 'residential' }).cls, 'street');
@@ -143,7 +144,7 @@ test('legacy progress carries over by OSM id and by position along the old stree
       { status: 'not-deliverable' as const, source: { objectType: 'way', objectIds: [424242] }, geometry: { type: 'LineString' as const, coordinates: through.coords } },
     ],
   };
-  const out = importLegacyProgress(net, legacy);
+  const out = importLegacyProgress(slimNetwork(net), legacy);
   assert.deepEqual([...out.houses].sort(), [['h:h5000000', 'completed'], ['h:h5000001', 'later']]);
   assert.deepEqual(out.stats, { housesMatched: 2, housesUnmatched: 1, streetRangesMatched: 1, streetRangesUnmatched: 1 });
   const marked = net.segments.filter((s) => out.segments.has(`s:${s.id}`));

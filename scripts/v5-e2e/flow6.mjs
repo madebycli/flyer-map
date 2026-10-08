@@ -21,7 +21,7 @@ async function open() {
   return { page, requests, boot, houses };
 }
 const first = await open();
-check('cold start derives with the Rust/WASM engine', (first.boot.wasmAreas ?? 0) >= 1 && !(first.boot.tsAreas > 0), JSON.stringify(first.boot));
+check('cold start derives with the Rust/WASM engine', first.boot.wasm === 1 && first.boot.w_wasm >= 0 && first.boot.w_gunzip >= 0, JSON.stringify(first.boot));
 check('cold start downloads the pack', first.requests.some((u) => /\/pack(\?|$)/.test(u)) && first.boot.cacheHits === 0, JSON.stringify(first.boot));
 await first.page.waitForTimeout(1500); // the cache write is fire-and-forget
 await first.page.close();
@@ -29,7 +29,7 @@ const second = await open();
 check('warm start uses the cached network for every Area', second.boot.cacheHits >= 1, JSON.stringify(second.boot));
 check('and downloads no pack at all', !second.requests.some((u) => /\/pack(\?|$)/.test(u)));
 check('same houses as before', second.houses === first.houses && second.houses > 0, `${second.houses}`);
-check('and spends no time deriving', second.boot.derive <= 5, `derive ${first.boot.derive} ms → ${second.boot.derive} ms (ready ${first.boot.ready} → ${second.boot.ready} ms; tiny fixture, timings are noise)`);
+check('and derives nothing (the engine only loads the cached snapshot)', second.boot.w_gunzip === undefined && second.boot.w_wasm === undefined, `derive phase ${first.boot.derive} ms → ${second.boot.derive} ms (ready ${first.boot.ready} → ${second.boot.ready} ms)`);
 await b.close();
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

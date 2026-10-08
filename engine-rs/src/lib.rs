@@ -10,13 +10,37 @@ mod derive;
 mod geo;
 mod grid;
 pub mod model;
+mod mvt;
+mod session;
+mod tile;
 
-use model::{LngLat, RawOsm};
+use model::{LngLat, Network, RawOsm};
+use session::Session;
 use std::sync::Mutex;
 
 pub use derive::{CHUNK_METERS, ENGINE_VERSION};
 
 static RESULT: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+static LAST_AREA: Mutex<Option<Network>> = Mutex::new(None);
+
+fn with_session<T>(f: impl FnOnce(&mut Session) -> T) -> T {
+    let mut guard = SESSION.lock().unwrap();
+    f(guard.get_or_insert_with(Session::new))
+}
+
+fn fail(message: &str) -> usize {
+    store(format!("{{\"error\":{}}}", serde_json::to_string(message).unwrap_or_else(|_| "\"error\"".into())).into_bytes());
+    0
+}
+
+fn merge_and_slim(network: Network) -> usize {
+    with_session(|s| s.add(&network));
+    match serde_json::to_vec(&session::slim(&network)) {
+        Ok(bytes) => { *LAST_AREA.lock().unwrap() = Some(network); store(bytes) }
+        Err(e) => fail(&format!("serialize_failed: {e}")),
+    }
+}
 
 /// Phases exposed separately (benchmarks): parse, derive.
 pub fn parse_raw(raw: &[u8]) -> Result<RawOsm, String> {
@@ -91,4 +115,58 @@ pub extern "C" fn engine_version_len() -> usize {
 #[no_mangle]
 pub extern "C" fn engine_version_ptr() -> *const u8 {
     ENGINE_VERSION.as_ptr()
+}
+
+/// New, empty session (drops every Area).
+#[no_mangle]
+pub extern "C" fn session_reset() {
+    *SESSION.lock().unwrap() = Some(Session::new());
+    *LAST_AREA.lock().unwrap() = None;
+}
+
+/// Derive one Area from raw OSM JSON, merge it into the session and return its slim network JSON (0 = failure).
+///
+/// # Safety
+/// Pointers/lengths come from `alloc` buffers written by the host.
+#[no_mangle]
+pub unsafe extern "C" fn session_add_area(raw_ptr: *const u8, raw_len: usize, ring_ptr: *const u8, ring_len: usize) -> usize {
+    let raw = match serde_json::from_slice::<RawOsm>(std::slice::from_raw_parts(raw_ptr, raw_len)) { Ok(r) => r, Err(e) => return fail(&format!("pack_invalid: {e}")) };
+    let mut network = derive::derive_network(&raw);
+    let ring: Vec<LngLat> = match serde_json::from_slice(std::slice::from_raw_parts(ring_ptr, ring_len)) { Ok(r) => r, Err(e) => return fail(&format!("ring_invalid: {e}")) };
+    network = area::restrict_to_area(network, &ring);
+    merge_and_slim(network)
+}
+
+/// The full network of the Area added last, as a binary blob for the device cache (0 = nothing to export).
+#[no_mangle]
+pub extern "C" fn session_export_last() -> usize {
+    match LAST_AREA.lock().unwrap().as_ref().map(bincode::serialize) {
+        Some(Ok(bytes)) => store(bytes),
+        _ => fail("nothing_to_export"),
+    }
+}
+
+/// Load a cached Area blob (from `session_export_last`) into the session; returns its slim network JSON (0 = failure).
+///
+/// # Safety
+/// Pointer/length come from an `alloc` buffer written by the host.
+#[no_mangle]
+pub unsafe extern "C" fn session_add_blob(ptr: *const u8, len: usize) -> usize {
+    match bincode::deserialize::<Network>(std::slice::from_raw_parts(ptr, len)) {
+        Ok(network) => merge_and_slim(network),
+        Err(e) => fail(&format!("blob_invalid: {e}")),
+    }
+}
+
+/// MVT bytes of tile z/x/y from everything in the session (length 0 = empty tile).
+#[no_mangle]
+pub extern "C" fn session_tile(z: u32, x: u32, y: u32) -> usize {
+    store(with_session(|s| s.tile(z, x, y)))
+}
+
+/// Snap a point to the nearest house / street: JSON `{"position":[lng,lat],"address":string|null,"kind":0|1|2}`.
+#[no_mangle]
+pub extern "C" fn session_snap(lng: f64, lat: f64, house_reach: f64, street_reach: f64) -> usize {
+    let (position, address, kind) = with_session(|s| s.snap([lng, lat], house_reach, street_reach));
+    store(serde_json::to_vec(&serde_json::json!({ "position": position, "address": address, "kind": kind })).unwrap_or_default())
 }

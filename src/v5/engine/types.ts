@@ -65,3 +65,11 @@ export type Network = {
   houses: House[];
   diagnostics: NetworkDiagnostics;
 };
+
+/**
+ * What the app holds: the network without coordinates. Geometry stays in the engine (Rust session) and reaches the map as
+ * vector tiles; the few places that need a position use `mid`/`start`/`center` or ask the engine.
+ */
+export type FieldSegment = Omit<Segment, 'coords'> & { mid: LngLat; start: LngLat };
+export type FieldHouse = Omit<House, 'ring'>;
+export type FieldNetwork = { segments: FieldSegment[]; houses: FieldHouse[]; diagnostics: NetworkDiagnostics };
