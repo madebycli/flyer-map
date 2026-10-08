@@ -24,9 +24,13 @@ export type Persisted = {
   cursor: number;
 };
 
+/**
+ * `scope: 'outbox'` writes only the small, critical part (clock, cursor, queued edits) and is called on every local
+ * edit; `'all'` also writes the potentially large overlay and is debounced.
+ */
 export interface Persistence {
   load(): Promise<Persisted | null>;
-  save(data: Persisted): Promise<void>;
+  save(data: Persisted, scope: 'all' | 'outbox'): Promise<void>;
 }
 
 export const isStatus = (value: unknown): value is Status => typeof value === 'string' && (STATUSES as readonly string[]).includes(value);

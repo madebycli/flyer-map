@@ -21,6 +21,8 @@ export type CampaignState = {
   store: FieldStore | null;
   progress: ProgressSnapshot | null;
   sync: { state: 'idle' | 'syncing' | 'offline'; pending: number };
+  /** Areas that are shown without data yet (some other Areas already work). */
+  missingAreas: Meta['areas'];
   buildMissing(): Promise<void>;
 };
 
@@ -55,12 +57,16 @@ export function useCampaign(campaignId: string): CampaignState {
   const [store, setStore] = useState<FieldStore | null>(null);
   const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
   const [sync, setSync] = useState<CampaignState['sync']>({ state: 'idle', pending: 0 });
+  const [missingAreas, setMissingAreas] = useState<Meta['areas']>([]);
   const reload = useRef<() => Promise<void>>(async () => {});
+  const missingRef = useRef<Meta['areas']>([]);
+  const canBuildRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     let client: SyncClient | null = null;
     let progressTracker: Progress | null = null;
+    let hydrated = false;
     const fieldStore = new FieldStore(actorId(), new IndexedDbPersistence(campaignId));
 
     const boot = async () => {
@@ -69,23 +75,27 @@ export function useCampaign(campaignId: string): CampaignState {
         const loaded = await fetchMeta(campaignId);
         if (cancelled) return;
         setMeta(loaded);
-        const packs: { areaId: string; ring: [number, number][]; pack: Uint8Array | null }[] = [];
-        for (const area of loaded.areas) {
-          setPhase({ kind: 'loading', label: `Kartendaten: ${area.name}` });
-          packs.push({ areaId: area.id, ring: area.geometry.coordinates[0], pack: area.packVersion ? await fetchPack(campaignId, area.id) : null });
-        }
+        canBuildRef.current = loaded.canBuildPack;
+        // Download packs in parallel (the slow part on mobile data); derive them one after another.
+        setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
+        const packs = await Promise.all(loaded.areas.map(async (area) => ({
+          areaId: area.id, ring: area.geometry.coordinates[0], pack: area.packVersion ? await fetchPack(campaignId, area.id) : null,
+        })));
+        if (cancelled) return;
         const missing = loaded.areas.filter((a) => !packs.find((p) => p.areaId === a.id)?.pack);
-        if (missing.length) { if (!cancelled) setPhase({ kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack }); }
+        missingRef.current = missing;
+        setMissingAreas(missing);
         const parts: { areaId: string; network: Network }[] = [];
         for (const item of packs) {
           if (!item.pack) continue;
-          setPhase((current) => (current.kind === 'needs-pack' ? current : { kind: 'loading', label: 'Straßen und Häuser werden berechnet …' }));
+          setPhase({ kind: 'loading', label: 'Straßen und Häuser werden berechnet …' });
           parts.push({ areaId: item.areaId, network: await deriveInWorker(item.areaId, item.pack, item.ring) });
+          if (cancelled) return;
         }
-        if (cancelled) return;
         const merged = mergeNetworks(parts);
         fieldStore.setAreaResolver((key) => merged.areaOf.get(key));
-        await fieldStore.hydrate();
+        if (!hydrated) { await fieldStore.hydrate(); hydrated = true; }
+        if (cancelled) return; // a boot cancelled while hydrating must not create clients nobody disposes
         // Only prune when every Area was derived; a missing pack must never cost queued edits.
         if (!missing.length) fieldStore.reconcilePending((key) => merged.areaOf.has(key));
         progressTracker?.dispose();
@@ -96,8 +106,8 @@ export function useCampaign(campaignId: string): CampaignState {
         client?.dispose();
         client = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending) => setSync({ state, pending }));
         void client.run();
-        if (!missing.length) setPhase({ kind: 'ready' });
-        else if (parts.length) setPhase({ kind: 'ready' });
+        // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
+        setPhase(parts.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
       } catch (error) {
         if (!cancelled) setPhase({ kind: 'error', message: error instanceof Error ? error.message : 'Unbekannter Fehler', status: error instanceof V5ApiError ? error.status : undefined });
       }
@@ -105,23 +115,30 @@ export function useCampaign(campaignId: string): CampaignState {
     reload.current = boot;
     void boot();
     const online = () => void client?.run();
+    const hidden = () => { if (document.visibilityState === 'hidden') void fieldStore.persistNow(); };
     const visible = () => { if (document.visibilityState === 'visible') void client?.run(); };
+    const flush = () => void fieldStore.persistNow();
     window.addEventListener('online', online);
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', hidden);
     document.addEventListener('visibilitychange', visible);
     const poll = window.setInterval(() => void client?.run(), 15_000);
     return () => {
       cancelled = true; client?.dispose(); progressTracker?.dispose();
-      window.removeEventListener('online', online); document.removeEventListener('visibilitychange', visible); window.clearInterval(poll);
-      void fieldStore.persistNow();
+      window.removeEventListener('online', online); window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', hidden); document.removeEventListener('visibilitychange', visible);
+      window.clearInterval(poll);
+      void fieldStore.persistNow(); // a no-op unless this store finished hydrating
     };
   }, [campaignId]);
 
   return {
-    phase, meta, network, areaOf, store, progress, sync,
+    phase, meta, network, areaOf, store, progress, sync, missingAreas,
     async buildMissing() {
-      if (phase.kind !== 'needs-pack') return;
+      const areas = missingRef.current;
+      if (!areas.length || !canBuildRef.current) return;
       setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
-      try { for (const area of phase.areas) await buildPack(campaignId, area.id); await reload.current(); }
+      try { for (const area of areas) await buildPack(campaignId, area.id); await reload.current(); }
       catch (error) { setPhase({ kind: 'error', message: error instanceof Error ? error.message : 'Kartendaten konnten nicht geladen werden', status: error instanceof V5ApiError ? error.status : undefined }); }
     },
   };

@@ -86,3 +86,6 @@ html, body, #root { margin: 0; height: 100%; background: var(--v5-bg); color: va
   border: 1px solid var(--v5-line); border-radius: 1.4rem; background: var(--v5-surface); color: var(--v5-teal-dark); font: 600 0.875rem system-ui; box-shadow: var(--v5-shadow); cursor: pointer; text-align: left;
 }
 .v5-import:disabled { opacity: 0.6; }
+
+.v5-missing { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; top: calc(env(safe-area-inset-top) + 8.2rem); }
+.v5-missing .v5-btn { min-height: 2.4rem; }

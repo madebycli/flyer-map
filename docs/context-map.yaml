@@ -1,5 +1,5 @@
 version: 28
-last_updated: 2026-09-13
+last_updated: 2026-10-08
 
 current_pr92_state:
   repository: madebycli/flyer-map
@@ -512,6 +512,27 @@ nodes:
     status: active
     topics: [organization, organizer, admin, identity, permissions, capabilities, campaigns, security, staging]
     load_when: [Organizer Admin Platform, Plan 030, Organization account work, admin campaign console]
+
+  - id: plan-043-v5-field-core
+    path: docs/plans/active/043-v5-field-core.md
+    type: plan
+    status: active
+    topics: [v5, street-engine, derived-network, status-overlay, hlc, feature-state, map-performance, sync, migration-0026]
+    load_when: [v5 field core, derive not materialise, /v5 page, status overlay sync, replacing V4 preparation, Gebiet 8 scale]
+
+  - id: adr-0033-field-core-first-principles-rebuild
+    path: docs/decisions/ADR-0033-field-core-first-principles-rebuild.md
+    type: decision
+    status: accepted
+    topics: [v5, street-engine, performance, measurements, architecture]
+    load_when: [why v5, map update benchmarks, snapshot materialisation cost, road whitelist]
+
+  - id: doc-v5-overview
+    path: docs/v5/README.md
+    type: architecture
+    status: current
+    topics: [v5, engine, store, worker-api, e2e]
+    load_when: [v5 layout, v5 endpoints, v5 e2e script, v5 verified and unverified]
 
   - id: prompt-continue-rxdb-sync-latest
     path: docs/prompts/CONTINUE_RXDB_SYNC_LATEST.md

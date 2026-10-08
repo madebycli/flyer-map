@@ -142,7 +142,8 @@ test('pack build stores a compressed raw pack that clients can read back, with t
 
 test('pack build fails closed: upstream errors, invalid bodies, empty results', async () => {
   const { call } = await setup();
-  const post = (fetchImpl: typeof fetch) => call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl });
+  let clock = NOW;
+  const post = (fetchImpl: typeof fetch) => call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl, now: () => (clock += 120_000) });
   assert.equal((await post((async () => new Response('busy', { status: 429 })) as unknown as typeof fetch)).status, 502);
   assert.equal((await post((async () => { throw new Error('net'); }) as unknown as typeof fetch)).status, 502);
   assert.equal((await post((async () => new Response('<html>')) as unknown as typeof fetch)).status, 502);
@@ -184,4 +185,72 @@ test('sequence numbers are strictly increasing and unique across interleaved bat
   assert.equal(new Set(rows.map((r) => r.seq)).size, 150, 'no duplicate sequence numbers');
   const counter = db.sqlite.prepare('SELECT seq FROM v5_counters').get() as { seq: number };
   assert.equal(rows[rows.length - 1].seq, counter.seq, 'the counter ends exactly at the highest assigned number');
+});
+
+
+test('a scoped editor cannot overwrite another team\u2019s progress by claiming their own area', async () => {
+  const { db, call } = await setup();
+  const url = `/api/v5/campaigns/${campaign}/ops`;
+  await call('other', 'POST', url, ops([stamp(NOW - 5000), 'h:h777', 'completed', 'area_o']));
+  const attack = await (await call('editor', 'POST', url, ops([stamp(NOW - 100), 'h:h777', 'not-deliverable', 'area_n'], [stamp(NOW - 99), 'h:h778', 'completed', 'area_n']))).json() as { accepted: string[]; rejected: { reason: string }[] };
+  assert.deepEqual(attack.rejected.map((r) => r.reason), ['key_owned_elsewhere']);
+  assert.equal(attack.accepted.length, 1, 'new keys in the editor\u2019s own area still work');
+  const row = db.sqlite.prepare("SELECT status, area_id FROM v5_state WHERE key='h:h777'").get() as { status: string; area_id: string };
+  assert.deepEqual([row.status, row.area_id], ['completed', 'area_o']);
+  // The same team keeps editing its own keys; an admin may correct anything.
+  await call('other', 'POST', url, ops([stamp(NOW - 50), 'h:h777', 'later', 'area_o']));
+  assert.equal((db.sqlite.prepare("SELECT status FROM v5_state WHERE key='h:h777'").get() as { status: string }).status, 'later');
+  await call('admin', 'POST', url, ops([stamp(NOW - 10), 'h:h777', 'open', 'area_n']));
+  assert.equal((db.sqlite.prepare("SELECT status FROM v5_state WHERE key='h:h777'").get() as { status: string }).status, 'open');
+});
+
+test('the SQL guard also protects against a race that slips past the ownership pre-check', async () => {
+  const { db, call } = await setup();
+  await call('other', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 5000), 'h:h900', 'completed', 'area_o']));
+  // Simulate the check-then-write race: the pre-check sees no owner, the row appears before the batch runs.
+  const original = db.prepare.bind(db);
+  let injected = false;
+  (db as unknown as { prepare: typeof db.prepare }).prepare = (query: string) => {
+    if (!injected && query.startsWith('SELECT key, area_id FROM v5_state')) {
+      injected = true;
+      const statement = original(query);
+      return { bind: (...values: unknown[]) => { statement.bind(...values); return { bind: () => statement, first: async () => null, all: async () => ({ results: [] }) } as never; }, first: statement.first.bind(statement), all: statement.all.bind(statement) } as never;
+    }
+    return original(query);
+  };
+  await call('editor', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 100), 'h:h900', 'not-deliverable', 'area_n']));
+  assert.equal((db.sqlite.prepare("SELECT status FROM v5_state WHERE key='h:h900'").get() as { status: string }).status, 'completed');
+});
+
+test('a pack built for an old polygon is reported missing; unchanged packs revalidate with 304', async () => {
+  const { db, call } = await setup();
+  const fetchImpl = (async () => overpassOk()) as unknown as typeof fetch;
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl });
+  const first = await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/areas/area_n/pack`);
+  assert.equal(first.status, 200);
+  const etag = first.headers.get('etag')!;
+  const revalidated = await handleV5Api(new Request(`https://example.test/api/v5/campaigns/${campaign}/areas/area_n/pack`, { headers: { 'if-none-match': etag, cookie: (await cookieFor(db)) } }), db);
+  assert.equal(revalidated!.status, 304);
+  db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=?').run(JSON.stringify({ type: 'Polygon', coordinates: [[[13, 51], [13.02, 51], [13.02, 51.01], [13, 51.01], [13, 51]]] }), 'area_n');
+  const meta = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { areas: { id: string; packVersion: number | null; packStale: boolean }[] };
+  const area = meta.areas.find((a) => a.id === 'area_n')!;
+  assert.deepEqual([area.packVersion, area.packStale], [null, true]);
+});
+
+async function cookieFor(db: NetworkD1) {
+  const { grant } = await createAccessGrant(db, { campaignId: campaign, role: 'viewer', teamId: null, label: 'v2' });
+  const session = await createSessionForGrant(db, (await resolveAccessForGrant(db, grant.grantId))!);
+  return sessionCookie(session.sessionSecret).split(';')[0];
+}
+
+test('concurrent pack builds: exactly one reaches the upstream, failures are throttled too', async () => {
+  const { call } = await setup();
+  let upstream = 0;
+  const fetchImpl = (async () => { upstream++; await new Promise((r) => setTimeout(r, 10)); return overpassOk(); }) as unknown as typeof fetch;
+  const results = await Promise.all([1, 2, 3].map(() => call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 429, 429]);
+  assert.equal(upstream, 1);
+  const failing = (async () => new Response('busy', { status: 429 })) as unknown as typeof fetch;
+  assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_o/pack`, undefined, { fetchImpl: failing })).status, 502);
+  assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_o/pack`, undefined, { fetchImpl: failing })).status, 429, 'a failed attempt still counts');
 });

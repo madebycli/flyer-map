@@ -42,7 +42,10 @@ export class FieldStore {
     this.clock = { ...saved.clock, node: this.actor };
     this.cursor = saved.cursor;
     for (const [key, entry] of saved.overlay) this.applyEntry(key, entry);
-    for (const op of saved.pending) this.pending.set(op.id, op);
+    for (const op of saved.pending) {
+      this.pending.set(op.id, op);
+      this.applyEntry(op.key, { status: op.status, at: op.id, by: op.by }); // edits survive even if the overlay record is older
+    }
     this.flush();
   }
 
@@ -68,6 +71,7 @@ export class FieldStore {
       ops.push(op);
     }
     this.flush();
+    if (ops.length) this.persistOutbox();
     this.scheduleSave();
     return ops;
   }
@@ -84,9 +88,29 @@ export class FieldStore {
     this.scheduleSave();
   }
 
+  /**
+   * The server refused these edits for good (forbidden area, foreign key, impossible clock). Undo their local
+   * effect so the screen shows what the server actually has, instead of a status nobody else will ever see.
+   */
+  rollback(ids: string[]): void {
+    for (const id of ids) {
+      const op = this.pending.get(id);
+      if (!op) continue;
+      this.pending.delete(id);
+      const entry = this.overlay.get(op.key);
+      if (entry?.at !== id) continue; // a newer local edit supersedes it and is judged on its own
+      if (!this.baseline.has(op.key)) this.baseline.set(op.key, entry.status);
+      this.overlay.delete(op.key);
+    }
+    this.flush();
+    this.persistOutbox();
+    this.scheduleSave();
+  }
+
   /** Server confirmed these operations; they leave the outbox. */
   acknowledge(ids: string[]): void {
     for (const id of ids) this.pending.delete(id);
+    this.persistOutbox();
     this.scheduleSave();
   }
 
@@ -147,18 +171,33 @@ export class FieldStore {
     this.saveTimer = setTimeout(() => { this.saveTimer = null; void this.persistNow(); }, this.saveDelayMs);
   }
 
+  private chain: Promise<void> = Promise.resolve();
+  private snapshot(withOverlay: boolean): Persisted {
+    return { version: 1, clock: { ...this.clock }, cursor: this.cursor, overlay: withOverlay ? [...this.overlay.entries()] : [], pending: this.pendingOps() };
+  }
+
+  /** Queued edits are written right away (cheap, serialised): they are what an app kill must not lose. */
+  persistOutbox(): Promise<void> {
+    if (!this.persistence || !this.mayPersist) return this.chain;
+    const data = this.snapshot(false);
+    return (this.chain = this.chain.then(() => this.persistence!.save(data, 'outbox')).catch(() => {}));
+  }
+
   async persistNow(): Promise<void> {
     if (!this.persistence || !this.mayPersist) return;
-    const data: Persisted = {
-      version: 1, clock: this.clock, cursor: this.cursor,
-      overlay: [...this.overlay.entries()], pending: this.pendingOps(),
-    };
-    await this.persistence.save(data);
+    const data = this.snapshot(true);
+    await (this.chain = this.chain.then(() => this.persistence!.save(data, 'all')).catch(() => {}));
   }
 }
 
 export class MemoryPersistence implements Persistence {
   data: Persisted | null = null;
+  saves: ('all' | 'outbox')[] = [];
   async load() { return this.data ? structuredClone(this.data) : null; }
-  async save(data: Persisted) { this.data = structuredClone(data); }
+  async save(data: Persisted, scope: 'all' | 'outbox') {
+    this.saves.push(scope);
+    const copy = structuredClone(data);
+    // Mirror the split storage: an outbox-only save keeps the previously saved overlay.
+    this.data = scope === 'all' || !this.data ? copy : { ...copy, overlay: this.data.overlay };
+  }
 }

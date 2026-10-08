@@ -16,20 +16,27 @@ export class IndexedDbPersistence implements Persistence {
   async load(): Promise<Persisted | null> {
     try {
       const db = await this.open();
-      return await new Promise((resolve) => {
-        const request = db.transaction('state').objectStore('state').get('main');
-        request.onsuccess = () => { db.close(); resolve((request.result as Persisted | undefined) ?? null); };
-        request.onerror = () => { db.close(); resolve(null); };
+      const read = (key: string) => new Promise<unknown>((resolve) => {
+        const request = db.transaction('state').objectStore('state').get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(undefined);
       });
+      const [overlay, outbox] = await Promise.all([read('overlay'), read('outbox')]);
+      db.close();
+      const box = outbox as Omit<Persisted, 'overlay'> | undefined;
+      if (!box || box.version !== 1) return null;
+      return { ...box, overlay: (overlay as Persisted['overlay'] | undefined) ?? [] };
     } catch { return null; }
   }
 
-  async save(data: Persisted): Promise<void> {
+  async save(data: Persisted, scope: 'all' | 'outbox'): Promise<void> {
     try {
       const db = await this.open();
       await new Promise<void>((resolve) => {
         const tx = db.transaction('state', 'readwrite');
-        tx.objectStore('state').put(data, 'main');
+        const { overlay, ...outbox } = data;
+        tx.objectStore('state').put(outbox, 'outbox');
+        if (scope === 'all') tx.objectStore('state').put(overlay, 'overlay');
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = tx.onabort = () => { db.close(); resolve(); };
       });

@@ -68,10 +68,12 @@ export function App({ campaignId }: { campaignId: string }) {
     const map = fieldMap.current;
     void map.loadNetwork(network).then(() => {
       map.bind(store);
-      const lngs = network.houses.map((h) => h.center[0]), lats = network.houses.map((h) => h.center[1]);
-      if (lngs.length) map.fitTo([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]]);
+      // Fit to the Area polygons (always present, even without houses); loops, never argument spreads.
+      let w = Infinity, south = Infinity, e = -Infinity, n = -Infinity;
+      for (const area of meta?.areas ?? []) for (const [lng, lat] of area.geometry.coordinates[0]) { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < south) south = lat; if (lat > n) n = lat; }
+      if (Number.isFinite(w)) map.fitTo([[w, south], [e, n]]);
     });
-  }, [network, store]);
+  }, [network, store]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
 
   useEffect(() => { fieldMap.current?.setPreview(routeMode ? routeSegmentIds.map(segmentKey) : []); }, [routeMode, routeSegmentIds]);
 
@@ -142,6 +144,12 @@ export function App({ campaignId }: { campaignId: string }) {
         </button>
       )}
       {notice && <div className="v5-toast" role="status"><span>{notice}</span><button onClick={() => setNotice(null)}>OK</button></div>}
+      {phase.kind === 'ready' && campaign.missingAreas.length > 0 && (
+        <div className="v5-banner v5-missing" role="status">
+          <span>Ohne Kartendaten: {campaign.missingAreas.map((a) => a.name).join(', ')}</span>
+          {meta?.canBuildPack && <button className="v5-btn" onClick={() => void campaign.buildMissing()}>Laden</button>}
+        </div>
+      )}
       {phase.kind === 'ready' && meta && !meta.canWrite && <div className="v5-banner">Nur ansehen – mit dieser Rolle kannst du nichts markieren.</div>}
       {phase.kind === 'loading' && <Overlay><div className="v5-spinner" aria-hidden /><p>{phase.label}</p></Overlay>}
       {phase.kind === 'error' && <Overlay><h2>Das hat nicht geklappt</h2><p>{phase.status === 401 ? 'Du hast keinen Zugriff auf diese Aktion. Öffne den Einladungslink erneut.' : phase.message}</p><button className="v5-btn" onClick={() => location.reload()}>Neu laden</button></Overlay>}

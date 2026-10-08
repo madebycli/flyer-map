@@ -3,7 +3,8 @@ import type { Op } from './types.ts';
 
 export interface SyncTransport {
   pull(since: number): Promise<{ ops: Op[]; cursor: number }>;
-  push(ops: Op[]): Promise<{ accepted: string[]; cursor: number }>;
+  /** `rejected` edits are permanently refused and get rolled back locally. */
+  push(ops: Op[]): Promise<{ accepted: string[]; rejected?: string[]; cursor: number }>;
 }
 
 /**
@@ -15,7 +16,9 @@ export class SyncClient {
   private running = false;
   private again = false;
   private failures = 0;
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private kickTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
   private unsubscribe: () => void;
   state: 'idle' | 'syncing' | 'offline' = 'idle';
 
@@ -29,11 +32,12 @@ export class SyncClient {
   }
 
   kick(): void {
-    if (this.timer) return;
-    this.timer = setTimeout(() => { this.timer = null; void this.run(); }, 50);
+    if (this.kickTimer || this.disposed) return;
+    this.kickTimer = setTimeout(() => { this.kickTimer = null; void this.run(); }, 50);
   }
 
   async run(): Promise<void> {
+    if (this.disposed) return;
     if (this.running) { this.again = true; return; }
     this.running = true;
     try {
@@ -45,7 +49,8 @@ export class SyncClient {
           const result = await this.transport.push(batch);
           // The push cursor must not advance the pull cursor: it would skip other clients' ops.
           this.store.acknowledge(result.accepted);
-          if (!result.accepted.length) break;
+          if (result.rejected?.length) this.store.rollback(result.rejected);
+          if (!result.accepted.length && !result.rejected?.length) break;
         }
         for (;;) {
           const { ops, cursor } = await this.transport.pull(this.store.lastCursor);
@@ -56,15 +61,24 @@ export class SyncClient {
         this.set('idle');
       } while (this.again);
     } catch {
-      this.failures++;
-      this.set('offline');
-      // Exponential backoff, capped; pending ops stay safely in the persisted outbox.
-      this.timer = setTimeout(() => { this.timer = null; void this.run(); }, Math.min(30_000, 500 * 2 ** this.failures));
+      if (!this.disposed) {
+        this.failures++;
+        this.set('offline');
+        // Exponential backoff, capped; pending ops stay safely in the persisted outbox.
+        if (this.retryTimer) clearTimeout(this.retryTimer);
+        this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.run(); }, Math.min(30_000, 500 * 2 ** this.failures));
+      }
     } finally {
       this.running = false;
     }
   }
 
-  private set(state: SyncClient['state']) { this.state = state; this.onState(state, this.store.pendingOps().length); }
-  dispose() { this.unsubscribe(); if (this.timer) clearTimeout(this.timer); }
+  private set(state: SyncClient['state']) { if (!this.disposed) { this.state = state; this.onState(state, this.store.pendingOps().length); } }
+  dispose() {
+    this.disposed = true;
+    this.unsubscribe();
+    if (this.kickTimer) clearTimeout(this.kickTimer);
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.kickTimer = this.retryTimer = null;
+  }
 }

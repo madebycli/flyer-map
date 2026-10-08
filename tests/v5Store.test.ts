@@ -162,3 +162,66 @@ test('reconcilePending stamps missing areas and drops edits for vanished entitie
   assert.equal(dropped, 1);
   assert.deepEqual(s.pendingOps().map((o) => [o.key, o.area]), [['h:keep', 'area_1']]);
 });
+
+test('refused edits are rolled back locally and never retried', async () => {
+  const server = new FakeServer();
+  const store = new FieldStore('a', null, () => 1000);
+  const transport: SyncTransport = {
+    pull: async () => ({ ops: [], cursor: 0 }),
+    push: async (ops) => ({ accepted: [], rejected: ops.map((o) => o.id), cursor: 0 }),
+  };
+  const client = new SyncClient(store, transport);
+  const changes: string[] = [];
+  store.subscribe((c) => { for (const [k, s] of c) changes.push(`${k}=${s}`); });
+  store.set('h:foreign', 'completed');
+  await tickMicro();
+  await client.run();
+  await tickMicro();
+  assert.equal(store.statusOf('h:foreign'), 'open', 'the screen no longer shows a status the server refused');
+  assert.equal(store.pendingOps().length, 0);
+  assert.deepEqual(changes, ['h:foreign=completed', 'h:foreign=open']);
+  void server;
+  client.dispose();
+});
+
+test('a newer local edit survives the rollback of an older refused one', async () => {
+  const store = new FieldStore('a', null, () => 1000);
+  const [first] = store.set('h:1', 'completed');
+  store.set('h:1', 'later');
+  store.rollback([first.id]);
+  assert.equal(store.statusOf('h:1'), 'later');
+});
+
+test('local edits hit the persisted outbox immediately, before any debounce', async () => {
+  const disk = new MemoryPersistence();
+  const store = new FieldStore('a', disk, () => 1000, 60_000); // debounce far in the future
+  await store.hydrate();
+  store.set('h:7', 'completed');
+  await store.persistOutbox();
+  assert.ok(disk.saves.includes('outbox'));
+  const revived = new FieldStore('a', disk, () => 1000, 60_000);
+  await revived.hydrate();
+  assert.equal(revived.pendingOps().length, 1);
+  assert.equal(revived.statusOf('h:7'), 'completed', 'pending edits are re-applied even though no overlay was saved');
+});
+
+test('a disposed sync client stops: no retries, no state callbacks', async () => {
+  const store = new FieldStore('a', null, () => 1000);
+  let calls = 0, states = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const transport: SyncTransport = {
+    pull: async () => { calls++; await gate; throw new Error('offline'); },
+    push: async () => ({ accepted: [], cursor: 0 }),
+  };
+  const client = new SyncClient(store, transport, 100, () => states++);
+  const running = client.run();
+  await tickMicro();
+  const before = states;
+  client.dispose();
+  release();
+  await running;
+  await new Promise((r) => setTimeout(r, 700));
+  assert.equal(calls, 1, 'no retry was scheduled after dispose');
+  assert.equal(states, before, 'no state callback after dispose');
+});

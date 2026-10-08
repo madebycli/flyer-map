@@ -30,6 +30,8 @@ CREATE TABLE v5_pack_meta (
   engine TEXT NOT NULL,
   stats_json TEXT NOT NULL,
   built_at TEXT NOT NULL,
+  -- Hash of the Area polygon the pack was built for; a changed polygon makes the pack stale.
+  geometry_hash TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (campaign_id, area_id),
   FOREIGN KEY (area_id, campaign_id) REFERENCES areas(id, campaign_id) ON DELETE CASCADE
 );
@@ -42,4 +44,13 @@ CREATE TABLE v5_packs (
   bytes BLOB NOT NULL,
   PRIMARY KEY (campaign_id, area_id, version, chunk),
   FOREIGN KEY (area_id, campaign_id) REFERENCES areas(id, campaign_id) ON DELETE CASCADE
+);
+
+-- Claim row for pack builds: acquired atomically before the upstream request, so concurrent or repeated
+-- builds (including failed ones) cannot hammer Overpass.
+CREATE TABLE v5_pack_attempts (
+  campaign_id TEXT NOT NULL,
+  area_id TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (campaign_id, area_id)
 );
