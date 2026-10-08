@@ -155,7 +155,10 @@ export function collectionMutationStatements(
       return [db.prepare(
         `INSERT INTO collection_run_members
             (id, run_id, campaign_id, collector_id, label, joined_at, left_at)
-          SELECT ?, ?, ?, ?, ?, ?, NULL WHERE @@GUARD@@`.replace("@@GUARD@@", guard),
+          SELECT ?, ?, ?, ?, ?, ?, NULL WHERE @@GUARD@@
+          ON CONFLICT(run_id, collector_id) DO UPDATE SET
+            left_at = NULL, joined_at = excluded.joined_at, label = excluded.label
+            WHERE collection_run_members.left_at IS NOT NULL`.replace("@@GUARD@@", guard),
       ).bind(
         mutation.payload.memberId, mutation.payload.runId, mutation.campaignId,
         mutation.payload.collectorId, mutation.payload.label, mutation.createdAt,

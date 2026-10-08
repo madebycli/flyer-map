@@ -3,14 +3,22 @@ import type { Op } from '../store/types.ts';
 import type { NoteTransport } from '../notes/sync.ts';
 import type { Note } from '../notes/types.ts';
 
+export type CollectionAreaInfo = { status: 'open' | 'claimed' | 'in-progress' | 'completed' | 'archived'; runId: string | null; claimedBy: string | null; claimedById: string | null };
+export type CollectionRunInfo = { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] };
+
 export type Meta = {
   campaign: { id: string; name: string };
+  kind: 'distribution' | 'collection';
+  collectorId: string | null;
+  collectorLabel: string | null;
+  mainAreaId: string | null;
+  runs: CollectionRunInfo[];
   role: 'admin' | 'team-editor' | 'viewer' | 'field-group-member' | 'collection-collector';
   teamId: string | null;
   canWrite: boolean;
   canBuildPack: boolean;
   teams: { id: string; name: string; color: string }[];
-  areas: { id: string; name: string; teamId: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; updatedAt: string; packVersion: number | null; packStale?: boolean }[];
+  areas: { id: string; name: string; teamId: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; updatedAt: string; packVersion: number | null; packStale?: boolean; writable: boolean; collection?: CollectionAreaInfo }[];
 };
 
 export class V5ApiError extends Error {
@@ -27,8 +35,8 @@ async function call(path: string, init?: RequestInit): Promise<Response> {
 
 const base = (campaignId: string) => `/api/v5/campaigns/${encodeURIComponent(campaignId)}`;
 
-export async function fetchMeta(campaignId: string): Promise<Meta> {
-  return (await call(`${base(campaignId)}/meta`)).json() as Promise<Meta>;
+export async function fetchMeta(campaignId: string, kind?: 'collection'): Promise<Meta> {
+  return (await call(`${base(campaignId)}/meta${kind ? `?kind=${kind}` : ''}`)).json() as Promise<Meta>;
 }
 
 export async function fetchPack(campaignId: string, areaId: string): Promise<Uint8Array | null> {
@@ -88,21 +96,31 @@ export async function fetchLegacySnapshot(campaignId: string): Promise<unknown> 
 
 type Polygon = { type: 'Polygon'; coordinates: [number, number][][] };
 
-/** Area edits go through the existing, validated, authorised mutation endpoint, so legacy clients stay consistent. */
-async function postAreaMutation(campaignId: string, type: 'area.update-geometry' | 'area.create', payload: Record<string, unknown>): Promise<void> {
+/**
+ * Mutations go through the existing, validated, authorised legacy endpoint, so legacy clients stay consistent.
+ * `id` makes a user action idempotent: a double tap or a retry after a lost response sends the same mutation id.
+ */
+export async function postMutation(campaignId: string, type: string, payload: Record<string, unknown>, options: { id?: string; revisionFrom?: 'version' | 'collection' } = {}): Promise<void> {
+  const id = options.id ?? `mutation_${crypto.randomUUID()}`;
   for (let attempt = 0; ; attempt++) {
-    const { revision } = await (await call(`/api/campaigns/${encodeURIComponent(campaignId)}/version`)).json() as { revision: number };
-    const mutation = { id: `mutation_${crypto.randomUUID()}`, campaignId, type, payload, baseRevision: revision, createdAt: new Date().toISOString() };
+    // Collectors may not read /version; the collection snapshot carries the same revision for everyone who may mutate collection data.
+    const revisionUrl = options.revisionFrom === 'collection' ? `/api/campaigns/${encodeURIComponent(campaignId)}/collection/snapshot` : `/api/campaigns/${encodeURIComponent(campaignId)}/version`;
+    const { revision } = await (await call(revisionUrl)).json() as { revision: number };
+    const mutation = { id, campaignId, type, payload, baseRevision: revision, createdAt: new Date().toISOString() };
     try {
       await call(`/api/campaigns/${encodeURIComponent(campaignId)}/mutations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mutation, fieldGroupId: null }) });
       return;
     } catch (error) {
-      // Somebody else saved in the meantime: the revision moved, our own entity check (expectedUpdatedAt) still decides.
+      // Our own earlier attempt was applied but its response got lost: the id is ours alone, so the action is done.
+      if (error instanceof V5ApiError && error.code === 'mutation_id_reused') return;
+      // Somebody else saved in the meantime: the revision moved, our own entity checks still decide.
       if (error instanceof V5ApiError && error.status === 409 && /revision/i.test(error.code) && attempt < 2) continue;
       throw error;
     }
   }
 }
+
+const postAreaMutation = (campaignId: string, type: 'area.update-geometry' | 'area.create', payload: Record<string, unknown>) => postMutation(campaignId, type, payload);
 
 export const saveAreaGeometry = (campaignId: string, area: { id: string; updatedAt: string }, geometry: Polygon) =>
   postAreaMutation(campaignId, 'area.update-geometry', { areaId: area.id, geometry, expectedUpdatedAt: area.updatedAt });

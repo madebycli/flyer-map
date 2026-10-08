@@ -42,6 +42,9 @@ test('meta: a collector sees the collection side only, with a server-evaluated "
   assert.deepEqual(meta.areas.map((x) => [x.id, x.writable]).sort(), [['c_alice', true], ['c_bob', false], ['c_open', false]], 'archived is hidden, only the own claimed Area is writable');
   assert.equal(meta.areas.find((x) => x.id === 'c_bob')!.collection.claimedBy, 'Nutzer 2');
   assert.deepEqual(meta.teams, [], 'no distribution teams leak');
+  const m2 = meta as unknown as { collectorId: string; collectorLabel: string; mainAreaId: string; runs: { id: string; members: { label: string }[] }[] };
+  assert.ok(m2.collectorId.startsWith('collector_') && m2.collectorLabel === 'Nutzer 1' && m2.mainAreaId === 'main');
+  assert.deepEqual(m2.runs.map((r) => [r.id, r.members.map((m) => m.label)]), [['runA', ['Nutzer 1']], ['runB', ['Nutzer 2']]], 'active Runs with their current members');
   const admin = await (await call('admin', 'GET', `${base}/meta?kind=collection`)).json() as { areas: { id: string; writable: boolean }[] };
   assert.equal(admin.areas.length, 4, 'admin also sees the archived Area');
   assert.ok(admin.areas.filter((x) => x.id !== 'c_old').every((x) => x.writable));

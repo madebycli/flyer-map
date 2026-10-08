@@ -72,12 +72,12 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
   if (!campaign) return fail(404, 'not_found', 'Aktion nicht gefunden.');
   // A collector only ever sees the collection side; admins and viewers choose with ?kind=collection.
   const kind: 'distribution' | 'collection' = access.role === 'collection-collector' || (url.searchParams.get('kind') === 'collection' && (access.role === 'admin' || access.role === 'viewer')) ? 'collection' : 'distribution';
-  type Row = { id: string; name: string; team_id: string; geometry_json: string; updated_at: string; pack_version: number | null; pack_hash: string | null; status?: string; run_id?: string | null; claimed_by_label?: string | null };
+  type Row = { id: string; name: string; team_id: string; geometry_json: string; updated_at: string; pack_version: number | null; pack_hash: string | null; status?: string; run_id?: string | null; claimed_by_label?: string | null; claimed_by_collector_id?: string | null };
   let rows: Row[];
   if (kind === 'collection') {
     try {
       rows = (await db.prepare(
-        `SELECT a.id, a.name, '' AS team_id, a.geometry_json, a.updated_at, a.status, a.run_id, a.claimed_by_label, p.version AS pack_version, p.geometry_hash AS pack_hash FROM collection_areas a
+        `SELECT a.id, a.name, '' AS team_id, a.geometry_json, a.updated_at, a.status, a.run_id, a.claimed_by_label, a.claimed_by_collector_id, p.version AS pack_version, p.geometry_hash AS pack_hash FROM collection_areas a
          LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
          WHERE a.campaign_id = ?${access.role === 'admin' ? '' : " AND a.status <> 'archived'"} ORDER BY a.created_at, a.id`,
       ).bind(campaignId).all<Row>()).results;
@@ -101,15 +101,28 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
       id: a.id, name: a.name, teamId: a.team_id, geometry, updatedAt: a.updated_at, packVersion: stale ? null : a.pack_version, packStale: stale,
       /** Server-evaluated: may this caller write status/notes in this Area right now? The UI only mirrors it. */
       writable: ref ? await canWriteArea(db, access, campaignId, ref) : false,
-      ...(kind === 'collection' ? { collection: { status: a.status ?? 'open', runId: a.run_id ?? null, claimedBy: a.claimed_by_label ?? null } } : {}),
+      ...(kind === 'collection' ? { collection: { status: a.status ?? 'open', runId: a.run_id ?? null, claimedBy: a.claimed_by_label ?? null, claimedById: a.claimed_by_collector_id ?? null } } : {}),
     };
   }));
+  // The Räume (active Runs with their current members) the Gebietsliste needs: who works where, and who may be joined.
+  let runs: { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] }[] = [];
+  if (kind === 'collection') {
+    try {
+      const active = (await db.prepare("SELECT id, main_area_id FROM collection_runs WHERE campaign_id = ? AND status = 'active' ORDER BY started_at, id").bind(campaignId).all<{ id: string; main_area_id: string }>()).results;
+      const members = (await db.prepare("SELECT run_id, collector_id, label FROM collection_run_members WHERE campaign_id = ? AND left_at IS NULL ORDER BY joined_at, id").bind(campaignId).all<{ run_id: string; collector_id: string; label: string }>()).results;
+      runs = active.map((r) => ({ id: r.id, mainAreaId: r.main_area_id, members: members.filter((m) => m.run_id === r.id).map((m) => ({ collectorId: m.collector_id, label: m.label })) }));
+    } catch { runs = []; }
+  }
   return json({
-    campaign, kind, role: access.role, teamId: access.teamId, collectorId: access.collectorId ?? null, canWrite: writesAllowed(access),
+    campaign, kind, role: access.role, teamId: access.teamId, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainAreaId: kind === 'collection' ? await mainAreaId(db, campaignId) : null, canWrite: writesAllowed(access),
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: scoped ? teams.filter((t) => t.id === access.teamId) : teams,
     areas,
   });
+}
+
+async function mainAreaId(db: D1DatabaseLike, campaignId: string): Promise<string | null> {
+  try { return (await db.prepare('SELECT id FROM collection_main_areas WHERE campaign_id = ?').bind(campaignId).first<{ id: string }>())?.id ?? null; } catch { return null; }
 }
 
 async function pullState(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL, options: V5Options): Promise<Response> {

@@ -298,3 +298,29 @@ test("production Collection flow uses the real MapLibre surface and has no previ
   assert.match(mapSource, /vf-collection-areas/);
   assert.match(mapSource, /queryRenderedFeatures/);
 });
+
+test("A collector who left a Run can join it again; an active member cannot join twice", () => {
+  const initial = snapshot();
+  const started = applyCampaignMutation(initial, mutation(initial, {
+    type: "collection.run.start",
+    payload: { runId: "collection_run_rejoin", memberId: "collection_member_a", mainAreaId: "collection_main_fixture", collectorId: "collector_one", label: "Nutzer 1" },
+  }, "mutation_rejoin_start"));
+  const joined = applyCampaignMutation(started, mutation(started, {
+    type: "collection.run.join",
+    payload: { runId: "collection_run_rejoin", memberId: "collection_member_b", collectorId: "collector_two", label: "Nutzer 2" },
+  }, "mutation_rejoin_join"));
+  assert.throws(() => applyCampaignMutation(joined, mutation(joined, {
+    type: "collection.run.join",
+    payload: { runId: "collection_run_rejoin", memberId: "collection_member_b2", collectorId: "collector_two", label: "Nutzer 2" },
+  }, "mutation_rejoin_twice")), /collection_run_member_exists/);
+  const left = applyCampaignMutation(joined, mutation(joined, {
+    type: "collection.run.leave", payload: { runId: "collection_run_rejoin", collectorId: "collector_two" },
+  }, "mutation_rejoin_leave"));
+  const back = applyCampaignMutation(left, mutation(left, {
+    type: "collection.run.join",
+    payload: { runId: "collection_run_rejoin", memberId: "collection_member_b3", collectorId: "collector_two", label: "Nutzer 2" },
+  }, "mutation_rejoin_back"));
+  const members = back.collection!.runs.find((run) => run.id === "collection_run_rejoin")!.members;
+  assert.equal(members.length, 2, "no duplicate member row");
+  assert.equal(members.find((m) => m.collectorId === "collector_two")!.leftAt, null);
+});

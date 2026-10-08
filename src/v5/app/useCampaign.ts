@@ -30,6 +30,8 @@ export type CampaignState = {
   buildMissing(): Promise<void>;
   /** Re-fetch Areas, packs and status (after an Area was created or reshaped). */
   reload(): Promise<void>;
+  /** Light refresh of roles, claims and Rooms only (no map rebuild, no loading screen). */
+  refreshMeta(): Promise<void>;
 };
 
 function deriveInWorker(areaId: string, pack: Uint8Array, ring: [number, number][]): Promise<Network> {
@@ -55,7 +57,7 @@ function actorId(): string {
   } catch { return `d${Math.random().toString(36).slice(2, 8)}`; }
 }
 
-export function useCampaign(campaignId: string): CampaignState {
+export function useCampaign(campaignId: string, kind?: 'collection'): CampaignState {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading', label: 'Aktion wird geladen …' });
   const [meta, setMeta] = useState<Meta | null>(null);
   const [network, setNetwork] = useState<Network | null>(null);
@@ -67,6 +69,7 @@ export function useCampaign(campaignId: string): CampaignState {
   const [missingAreas, setMissingAreas] = useState<Meta['areas']>([]);
   const reload = useRef<() => Promise<void>>(async () => {});
   const missingRef = useRef<Meta['areas']>([]);
+  const metaKindRef = useRef<Meta['kind']>('distribution');
   const canBuildRef = useRef(false);
 
   useEffect(() => {
@@ -83,9 +86,9 @@ export function useCampaign(campaignId: string): CampaignState {
       const t0 = performance.now();
       try {
         setPhase({ kind: 'loading', label: 'Aktion wird geladen …' });
-        const loaded = await fetchMeta(campaignId);
+        const loaded = await fetchMeta(campaignId, kind);
         if (cancelled) return;
-        setMeta(loaded);
+        setMeta(loaded); metaKindRef.current = loaded.kind;
         canBuildRef.current = loaded.canBuildPack;
         // Per Area: the cached derived network when pack, polygon and engine are unchanged; otherwise download (all in
         // parallel — the slow part on mobile data) and derive one after another.
@@ -136,7 +139,8 @@ export function useCampaign(campaignId: string): CampaignState {
         (window as unknown as { __v5Boot?: Record<string, number> }).__v5Boot = timing;
         if (location.search.includes('debug')) console.info('[v5 boot ms]', JSON.stringify(timing));
         // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
-        setPhase(parts.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
+        // A collection Aktion is useful without any map data yet: helpers see the Areas and take one first; its pack is built on taking it.
+        setPhase(parts.length || loaded.kind === 'collection' ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
       } catch (error) {
         if (!cancelled) setPhase({ kind: 'error', message: error instanceof Error ? error.message : 'Unbekannter Fehler', status: error instanceof V5ApiError ? error.status : undefined });
       }
@@ -151,7 +155,7 @@ export function useCampaign(campaignId: string): CampaignState {
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', hidden);
     document.addEventListener('visibilitychange', visible);
-    const poll = window.setInterval(() => void client?.run(), 15_000);
+    const poll = window.setInterval(() => { void client?.run(); if (kind === 'collection' || metaKindRef.current === 'collection') void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) setMeta(m); }, () => {}); }, 15_000);
     return () => {
       cancelled = true; client?.dispose(); progressTracker?.dispose();
       window.removeEventListener('online', online); window.removeEventListener('pagehide', flush);
@@ -160,17 +164,24 @@ export function useCampaign(campaignId: string): CampaignState {
       if (notesHydrated) void noteStore.persistNow();
       void fieldStore.persistNow(); // a no-op unless this store finished hydrating
     };
-  }, [campaignId]);
+  }, [campaignId, kind]);
 
   return {
     phase, meta, network, areaOf, store, notes, progress, sync, missingAreas,
     reload: () => reload.current(),
+    async refreshMeta() { setMeta(await fetchMeta(campaignId, kind)); },
     async buildMissing() {
-      const areas = missingRef.current;
-      if (!areas.length || !canBuildRef.current) return;
+      if (!canBuildRef.current) return;
       setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
-      try { for (const area of areas) await buildPack(campaignId, area.id); await reload.current(); }
-      catch (error) { setPhase({ kind: 'error', message: error instanceof Error ? error.message : 'Kartendaten konnten nicht geladen werden', status: error instanceof V5ApiError ? error.status : undefined }); }
+      try {
+        // Only Areas this caller may build right now (a collector: the ones their Room holds), judged on fresh server state.
+        const fresh = await fetchMeta(campaignId, kind);
+        const wanted = new Set(missingRef.current.map((a) => a.id));
+        const buildable = fresh.areas.filter((a) => wanted.has(a.id) && (a.writable || fresh.role === 'admin'));
+        if (!buildable.length) { await reload.current(); return; }
+        for (const area of buildable) await buildPack(campaignId, area.id);
+        await reload.current();
+      } catch (error) { setPhase({ kind: 'error', message: error instanceof Error ? error.message : 'Kartendaten konnten nicht geladen werden', status: error instanceof V5ApiError ? error.status : undefined }); }
     },
   };
 }

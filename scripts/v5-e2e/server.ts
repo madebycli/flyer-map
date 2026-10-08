@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { NetworkD1, seedNetwork } from '../../tests/helpers/networkD1.ts';
 import { createAccessGrant, createSessionForGrant, sessionCookie } from '../../worker/access.ts';
+import { collectionSessionCookie, createCollectionAccessLink, redeemCollectionAccess } from '../../worker/collectionAccess.ts';
 import { handleV5Api } from '../../worker/v5/api.ts';
 import baseWorker from '../../worker/index.ts';
 import { syntheticCity } from '../../src/v5/engine/synthetic.ts';
@@ -38,6 +39,20 @@ const editor = await createAccessGrant(db, { campaignId: 'campaign_n', role: 'te
 for (const [name, grant] of [['admin', admin.grant], ['viewer', viewer.grant], ['editor', editor.grant]] as const) {
   const session = await createSessionForGrant(db, { ...grant, groupId: null, membershipId: null });
   cookies[name] = sessionCookie(session.sessionSecret).split(';')[0].split('=').slice(1).join('=');
+}
+// Collection side (Abholaktion): a Sammelgebiet split into a west and an east Area, and two helpers who came in through the Abhol-Link.
+{
+  const link = await createCollectionAccessLink(db, 'campaign_n');
+  const geo = (x0: number, x1: number) => JSON.stringify({ type: 'Polygon', coordinates: [[[x0, -400], [x1, -400], [x1, BLOCKS * 100 + 100], [x0, BLOCKS * 100 + 100], [x0, -400]].map(([x, y]) => [13 + x / M_LNG, 51 + y / M_LAT])] });
+  const mid = Math.round((BLOCKS * 100) / 2);
+  db.sqlite.prepare("INSERT INTO collection_main_areas(id,campaign_id,name,geometry_json,created_at,updated_at) VALUES('main','campaign_n','Sammelgebiet',?,?,?)").run(geo(-300, BLOCKS * 100 + 100), t0, t0);
+  for (const [id, name, x0, x1] of [['c_west', 'West', -300, mid], ['c_east', 'Ost', mid, BLOCKS * 100 + 100]] as const) {
+    db.sqlite.prepare("INSERT INTO collection_areas(id,campaign_id,main_area_id,name,geometry_json,color,status,run_id,claimed_by_collector_id,claimed_by_label,completed_at,created_at,updated_at) VALUES(?,'campaign_n','main',?,?,'#2563eb','open',NULL,NULL,NULL,NULL,?,?)").run(id, name, geo(x0, x1), t0, t0);
+  }
+  for (const name of ['alice', 'bob']) {
+    const redeemed = (await redeemCollectionAccess(db, 'campaign_n', link.token))!;
+    cookies[name] = collectionSessionCookie(redeemed.sessionSecret).split(';')[0].split('=').slice(1).join('=');
+  }
 }
 fs.writeFileSync(new URL('./cookies.json', import.meta.url).pathname, JSON.stringify(cookies));
 

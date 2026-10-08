@@ -24,6 +24,8 @@ export type AreaContext = {
   meta: Meta | null;
   network: Network | null;
   reload(): Promise<void>;
+  /** Outline colour override (collection Areas are coloured by what is happening in them, not by team). */
+  colorFor?: (area: Meta['areas'][number]) => string | undefined;
 };
 
 export const sizeLabel = (m2: number) => (m2 >= 1e6 ? `${(m2 / 1e6).toFixed(2).replace('.', ',')} km²` : `${Math.round(m2 / 100) / 100} ha`.replace('.', ','));
@@ -44,7 +46,7 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
 
   const shapes: AreaShape[] = useMemo(() => (meta?.areas ?? [])
     .filter((a) => a.id !== edit?.id)
-    .map((a) => ({ id: a.id, name: a.name, color: colorOf(meta!, a.teamId), ring: a.geometry.coordinates[0] as LngLat[] })), [meta, edit?.id]);
+    .map((a) => ({ id: a.id, name: a.name, color: ctx.colorFor?.(a) ?? colorOf(meta!, a.teamId), ring: a.geometry.coordinates[0] as LngLat[] })), [meta, edit?.id, ctx.colorFor]);
   useEffect(() => { fieldMap.current?.setAreas(shapes, active ? selectedId : null); }, [shapes, selectedId, active, fieldMap]);
 
   // overlay for the polygon being edited

@@ -4,15 +4,18 @@ import { FieldMap, statusColors, type Hit, type Pt, type Theme } from '../map/fi
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
-import { fetchLegacySnapshot } from './api.ts';
+import { buildPack, fetchLegacySnapshot } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { buildIndex } from './mark.ts';
 import { MarkBar, meters, useMarking } from './marking.tsx';
 import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, notePosition, segmentNoteKey, useNotesVersion } from './notes.tsx';
+import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaViews, type AreaStats } from './collection.tsx';
+import { areaPercent, collectionActions } from './collection.ts';
 import { useCampaign } from './useCampaign.ts';
 import { Icon, Loader, WavyProgress, type IconName } from './ui.tsx';
 
-const LABELS: Record<Status, string> = { open: 'Offen', completed: 'Erledigt', later: 'Später', 'not-deliverable': 'Nicht zustellbar' };
+const LABELS_DISTRIBUTION: Record<Status, string> = { open: 'Offen', completed: 'Erledigt', later: 'Später', 'not-deliverable': 'Nicht zustellbar' };
+const LABELS_COLLECTION: Record<Status, string> = { open: 'Offen', completed: 'Abgeholt', later: 'Später', 'not-deliverable': 'Nicht verfügbar' };
 const ORDER: Status[] = ['completed', 'later', 'not-deliverable', 'open'];
 const STATUS_ICON: Record<Status, IconName> = { completed: 'check', later: 'later', 'not-deliverable': 'blocked', open: 'open' };
 const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
@@ -52,8 +55,10 @@ function workBounds(network: Network, areas: { geometry: { coordinates: [number,
 const FIT_PADDING = { top: 120, bottom: 170, left: 28, right: 28 };
 
 export function App({ campaignId }: { campaignId: string }) {
-  const campaign = useCampaign(campaignId);
+  const campaign = useCampaign(campaignId, new URLSearchParams(location.search).get('kind') === 'collection' ? 'collection' : undefined);
   const { phase, meta, network, store, notes } = campaign;
+  const isCollection = meta?.kind === 'collection';
+  const LABELS = isCollection ? LABELS_COLLECTION : LABELS_DISTRIBUTION;
   const mapHost = useRef<HTMLDivElement>(null);
   const fieldMap = useRef<FieldMap | null>(null);
   const [tool, setTool] = useState<Tool>('inspect');
@@ -74,15 +79,50 @@ export function App({ campaignId }: { campaignId: string }) {
   const index = useMemo(() => (network ? buildIndex(network) : null), [network]);
   const canWrite = !!meta?.canWrite;
 
-  const apply = useCallback((keys: EntityKey[], status: Status, label: string) => {
-    if (!store || !canWrite || !keys.length) return;
+  const me = useMemo(() => (meta?.collectorId ? { collectorId: meta.collectorId, label: meta.collectorLabel ?? 'Helfer' } : null), [meta?.collectorId, meta?.collectorLabel]);
+  const views = useAreaViews(meta, me);
+  const runner = useActionRunner(campaign.refreshMeta);
+  const actions = useMemo(() => (meta && isCollection ? collectionActions(campaignId, meta) : null), [meta, campaignId, isCollection]);
+  /** Übernehmen, and if the Area has no map data yet, fetch it right away so the helper can start. */
+  const claimArea = useCallback((areaId: string) => runner.run(async () => {
+    await actions!.claim(areaId);
+    const area = meta?.areas.find((a) => a.id === areaId);
+    if (area && !area.packVersion) { await buildPack(campaignId, areaId); void campaign.reload(); }
+  }), [runner, actions, meta, campaignId, campaign]);
+  const [listOpen, setListOpen] = useState(false);
+  const [collectionAreaId, setCollectionAreaId] = useState<string | null>(null);
+  const writableAreas = useMemo(() => new Set((meta?.areas ?? []).filter((a) => a.writable).map((a) => a.id)), [meta]);
+  const mayMark = canWrite && writableAreas.size > 0;
+  // Only Areas this person can actually fetch data for: a helper is not nagged about Areas that belong to someone else's Room.
+  const buildableMissing = useMemo(() => campaign.missingAreas.filter((a) => meta?.role === 'admin' || writableAreas.has(a.id)), [campaign.missingAreas, meta?.role, writableAreas]);
+  const colorFor = useCallback((area: { id: string }) => (isCollection && views.get(area.id) ? phaseColor(views.get(area.id)!) : undefined), [isCollection, views]);
+  const areaStatsMap = useMemo(() => {
+    const map = new Map<string, AreaStats>();
+    if (!network || !store || !isCollection) return map;
+    for (const house of network.houses) {
+      const id = campaign.areaOf.get(`h:${house.id}`);
+      if (!id) continue;
+      const status = store.statusOf(`h:${house.id}`);
+      if (status === 'not-deliverable') continue;
+      const entry = map.get(id) ?? { done: 0, total: 0 };
+      entry.total++; if (status === 'completed') entry.done++;
+      map.set(id, entry);
+    }
+    return map;
+  }, [network, store, campaign.areaOf, campaign.progress, isCollection]);
+
+  const apply = useCallback((requested: EntityKey[], status: Status, label: string) => {
+    if (!store || !canWrite || !requested.length) return;
+    // The server decides who may write where; mirroring it here keeps a tap on someone else's Area from becoming a phantom edit.
+    const keys = requested.filter((key) => { const area = campaign.areaOf.get(key); return !!area && writableAreas.has(area); });
+    if (!keys.length) { setNotice(isCollection ? 'Erst das Gebiet übernehmen.' : 'Hier darfst du nichts ändern.'); return; }
     const before = keys.map((key) => [key, store.statusOf(key)] as const);
     store.set(keys, status);
     setUndo({ label: `${label} → ${LABELS[status]}`, revert: () => { for (const [key, previous] of before) store.set(key, previous); } });
-  }, [store, canWrite]);
+  }, [store, canWrite, campaign.areaOf, writableAreas, isCollection]); // eslint-disable-line react-hooks/exhaustive-deps -- LABELS follows isCollection
 
   const marking = useMarking({ fieldMap, network, index, apply }, tool === 'mark');
-  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload }, tool === 'areas');
+  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined }, tool === 'areas');
 
   // One click router: whichever tool is active decides what a tap on the map means.
   const hitRef = useRef<(hit: Hit | null, point: Pt) => void>(() => {});
@@ -90,7 +130,12 @@ export function App({ campaignId }: { campaignId: string }) {
     if (tool === 'areas') { areaTool.onMapTap(point); return; }
     if (tool === 'mark') { marking.onMapHit(hit); return; }
     if (!index) return;
-    if (!hit) { setSelection(null); fieldMap.current?.select(null); return; }
+    if (!hit) {
+      setSelection(null); fieldMap.current?.select(null);
+      const areaId = isCollection ? fieldMap.current?.hitArea(point) : null;
+      if (areaId) { setMenu(false); setListOpen(false); setCollectionAreaId(areaId); }
+      return;
+    }
     if (hit.kind === 'note') { openNoteTarget(hit.id); return; }
     selectEntity(hit.kind, hit.id);
   };
@@ -151,7 +196,7 @@ export function App({ campaignId }: { campaignId: string }) {
   useEffect(() => { if (!undo) return; const t = window.setTimeout(() => setUndo(null), 7000); return () => window.clearTimeout(t); }, [undo]);
   useEffect(() => { if (!notice) return; const t = window.setTimeout(() => setNotice(null), 9000); return () => window.clearTimeout(t); }, [notice]);
 
-  const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); };
+  const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); setCollectionAreaId(null); };
   const enter = (next: Tool) => { closeSelection(); setMenu(false); areaTool.setSelectedId(null); setTool(next); };
   const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); };
 
@@ -173,7 +218,7 @@ export function App({ campaignId }: { campaignId: string }) {
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
   const editing = !!areaTool.edit;
-  const ui = !ready ? 'none' : editing || tool === 'mark' ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu || showConflicts || notesOpen ? 'sheet' : 'dock';
+  const ui = !ready ? 'none' : editing || tool === 'mark' ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu || showConflicts || notesOpen || listOpen || !!collectionAreaId ? 'sheet' : 'dock';
   const canEditAny = !!meta && (meta.role === 'admin' || meta.role === 'team-editor');
 
   const selectionArea = !selection ? '' : campaign.areaOf.get(selection.kind === 'house' ? houseKey(selection.house.id) : segmentKey(selection.segment.id)) ?? '';
@@ -189,9 +234,9 @@ export function App({ campaignId }: { campaignId: string }) {
     <div className="v5-root" data-ui={ui} data-hand={hand}>
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
       {ready && <Hud name={meta?.campaign.name ?? ''} campaign={campaign} canWrite={canWrite} />}
-      {ready && campaign.missingAreas.length > 0 && (
+      {ready && buildableMissing.length > 0 && (
         <div className="v5-banner v5-missing" role="status">
-          <Icon name="warning" size={20} /><span>{campaign.missingAreas.map((a) => a.name).join(', ')}</span>
+          <Icon name="warning" size={20} /><span>{buildableMissing.map((a) => a.name).join(', ')}</span>
           {meta?.canBuildPack && <button className="v5-icon-btn tonal" onClick={() => void campaign.buildMissing()} aria-label="Kartendaten laden" title="Kartendaten laden"><Icon name="download" /></button>}
         </div>
       )}
@@ -217,8 +262,10 @@ export function App({ campaignId }: { campaignId: string }) {
       {ui === 'dock' && (
         <nav className="v5-dock" aria-label="Werkzeuge">
           <button className="v5-tool" onClick={fitAll} aria-label="Alles zeigen" title="Alles zeigen"><Icon name="fit" /></button>
-          {canWrite && <button className="v5-tool primary" onClick={() => enter('mark')} aria-label="Markieren" title="Markieren"><Icon name="brush" size={28} /></button>}
-          <button className="v5-tool" onClick={() => enter('areas')} aria-label="Gebiete" title="Gebiete"><Icon name="polygon" /></button>
+          {mayMark && <button className="v5-tool primary" onClick={() => enter('mark')} aria-label="Markieren" title="Markieren"><Icon name="brush" size={28} /></button>}
+          {isCollection
+            ? <button className="v5-tool" onClick={() => { closeSelection(); setListOpen(true); }} aria-label="Gebiete" title="Gebiete"><Icon name="polygon" /></button>
+            : <button className="v5-tool" onClick={() => enter('areas')} aria-label="Gebiete" title="Gebiete"><Icon name="polygon" /></button>}
           <button className="v5-tool" onClick={() => setMenu(true)} aria-label="Mehr" title="Mehr"><Icon name="more" /></button>
         </nav>
       )}
@@ -270,6 +317,36 @@ export function App({ campaignId }: { campaignId: string }) {
         </SheetFrame>
       )}
 
+      {isCollection && listOpen && ready && meta && (
+        <SheetFrame icon="polygon" title="Gebiete" onClose={() => setListOpen(false)}
+          meta={<span><Icon name="users" size={16} />{[...views.values()].filter((v) => v.phase === 'working').length}</span>}>
+          <AreaList areas={meta.areas} views={views} stats={areaStatsMap} canAct={!!me} busy={runner.busy}
+            onOpen={(id) => { setListOpen(false); setCollectionAreaId(id); }}
+            onClaim={(id) => void claimArea(id)} onJoin={(runId) => void runner.run(() => actions!.join(runId))} />
+          {runner.error && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{runner.error}</p>}
+        </SheetFrame>
+      )}
+
+      {isCollection && collectionAreaId && ready && meta && (() => {
+        const area = meta.areas.find((a) => a.id === collectionAreaId);
+        const view = area ? views.get(area.id) : undefined;
+        if (!area || !view) return null;
+        const stat = areaStatsMap.get(area.id);
+        const percent = stat ? areaPercent(stat.done, stat.total, view.phase) : null;
+        return (
+          <SheetFrame icon="polygon" title={area.name} onClose={() => { setCollectionAreaId(null); runner.clear(); }}
+            meta={<><span>{view.phase === 'open' ? 'Offen' : view.phase === 'working' ? 'Wird bearbeitet' : 'Erledigt'}</span>{percent !== null && <span><Icon name="house" size={16} />{percent} %</span>}</>}>
+            <RoomStrip members={view.members} me={me} />
+            <AreaActions view={view} busy={runner.busy} error={runner.error} canAct={!!me}
+              onFit={() => fieldMap.current?.fitTo([[Math.min(...area.geometry.coordinates[0].map((p) => p[0])), Math.min(...area.geometry.coordinates[0].map((p) => p[1]))], [Math.max(...area.geometry.coordinates[0].map((p) => p[0])), Math.max(...area.geometry.coordinates[0].map((p) => p[1]))]], FIT_PADDING)}
+              onClaim={() => void claimArea(area.id)} onJoin={() => void runner.run(() => actions!.join(view.runId!))}
+              onLeave={() => void runner.run(() => actions!.leave(view.runId!))} onRelease={() => void runner.run(() => actions!.release(view.runId!, area.id))}
+              onComplete={() => void runner.run(() => actions!.complete(view.runId!, area.id))} />
+            <NotesPane key={areaNoteKey(area.id)} store={notes} target={areaNoteKey(area.id)} area={area.id} canWrite={area.writable} onUndo={(label, revert) => setUndo({ label, revert })} />
+          </SheetFrame>
+        );
+      })()}
+
       {notesOpen && ready && (
         <SheetFrame icon="message" title="Notizen" onClose={() => setNotesOpen(false)}>
           <NotesOverview store={notes} index={index} areas={meta?.areas ?? []} onOpen={openNoteTarget} />
@@ -295,9 +372,9 @@ export function App({ campaignId }: { campaignId: string }) {
           meta={selection.kind === 'segment' ? <><span><Icon name="ruler" size={16} />{meters(selection.chunks.reduce((sum, c) => sum + c.length, 0))}</span><span><Icon name="house" size={16} />{selection.houses.length}</span></>
             : selection.house.parent === null ? <span><Icon name="warning" size={16} />Keiner Straße zugeordnet</span> : undefined}>
           {selection.kind === 'house'
-            ? <Detail theme={theme} store={store} keyOf={houseKey(selection.house.id)} canWrite={canWrite} onPick={(s) => apply([houseKey(selection.house.id)], s, `Haus ${selection.house.number ?? ''}`)} />
+            ? <Detail labels={LABELS} theme={theme} store={store} keyOf={houseKey(selection.house.id)} canWrite={canWrite} onPick={(s) => apply([houseKey(selection.house.id)], s, `Haus ${selection.house.number ?? ''}`)} />
             : <>
-                <GroupDetail theme={theme} store={store} keys={selection.chunks.map((c) => segmentKey(c.id))} canWrite={canWrite} onPick={(s) => apply(selection.chunks.map((c) => segmentKey(c.id)), s, selection.segment.name ?? 'Abschnitt')} />
+                <GroupDetail labels={LABELS} theme={theme} store={store} keys={selection.chunks.map((c) => segmentKey(c.id))} canWrite={canWrite} onPick={(s) => apply(selection.chunks.map((c) => segmentKey(c.id)), s, selection.segment.name ?? 'Abschnitt')} />
                 {canWrite && selection.houses.length > 0 && (
                   <button className="v5-wide" aria-label={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`} title={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`}
                     onClick={() => apply([...selection.chunks.map((c) => segmentKey(c.id)), ...selection.houses.map((h) => houseKey(h.id))], 'completed', `${selection.segment.name ?? 'Abschnitt'} + ${selection.houses.length}`)}>
@@ -305,7 +382,7 @@ export function App({ campaignId }: { campaignId: string }) {
                   </button>
                 )}
               </>}
-          <NotesPane key={selection.kind === 'house' ? houseNoteKey(selection.house.id) : segmentNoteKey(selection.segment.group)} store={notes} canWrite={canWrite && selectionArea !== ''} onUndo={(label, revert) => setUndo({ label, revert })}
+          <NotesPane key={selection.kind === 'house' ? houseNoteKey(selection.house.id) : segmentNoteKey(selection.segment.group)} store={notes} canWrite={canWrite && writableAreas.has(selectionArea)} onUndo={(label, revert) => setUndo({ label, revert })}
             target={selection.kind === 'house' ? houseNoteKey(selection.house.id) : segmentNoteKey(selection.segment.group)}
             area={selectionArea} />
         </SheetFrame>
@@ -314,15 +391,15 @@ export function App({ campaignId }: { campaignId: string }) {
   );
 }
 
-function StatusGroup({ current, onPick, theme }: { current?: Status; onPick: (status: Status) => void; theme: Theme }) {
+function StatusGroup({ current, onPick, theme, labels }: { current?: Status; onPick: (status: Status) => void; theme: Theme; labels: Record<Status, string> }) {
   const colors = statusColors(theme);
   return (
     <div className="v5-seg" role="group" aria-label="Status">
       {ORDER.map((status) => (
         <button key={status} className={`v5-status v5-seg-btn${current === status ? ' on' : ''}`} style={{ '--c': colors[status] } as React.CSSProperties}
-          onClick={() => onPick(status)} aria-pressed={current === status} aria-label={LABELS[status]} title={LABELS[status]}>
+          onClick={() => onPick(status)} aria-pressed={current === status} aria-label={labels[status]} title={labels[status]}>
           <Icon name={STATUS_ICON[status]} size={26} />
-          <span>{LABELS[status]}</span>
+          <span>{labels[status]}</span>
         </button>
       ))}
     </div>
@@ -343,18 +420,18 @@ function SheetFrame({ icon, title, meta, onClose, children }: { icon: IconName; 
   );
 }
 
-function GroupDetail({ store, keys, canWrite, onPick, theme }: { store: FieldStore | null; keys: EntityKey[]; canWrite: boolean; onPick: (s: Status) => void; theme: Theme }) {
+function GroupDetail({ store, keys, canWrite, onPick, theme, labels }: { store: FieldStore | null; keys: EntityKey[]; canWrite: boolean; onPick: (s: Status) => void; theme: Theme; labels: Record<Status, string> }) {
   const status = useGroupStatus(store, keys);
   return canWrite
-    ? <StatusGroup current={status ?? undefined} onPick={onPick} theme={theme} />
-    : <p className="v5-readonly"><Icon name={status ? STATUS_ICON[status] : 'open'} size={22} />{status ? LABELS[status] : 'Gemischt'}</p>;
+    ? <StatusGroup current={status ?? undefined} onPick={onPick} theme={theme} labels={labels} />
+    : <p className="v5-readonly"><Icon name={status ? STATUS_ICON[status] : 'open'} size={22} />{status ? labels[status] : 'Gemischt'}</p>;
 }
 
-function Detail({ store, keyOf, canWrite, onPick, theme }: { store: FieldStore | null; keyOf: EntityKey; canWrite: boolean; onPick: (s: Status) => void; theme: Theme }) {
+function Detail({ store, keyOf, canWrite, onPick, theme, labels }: { store: FieldStore | null; keyOf: EntityKey; canWrite: boolean; onPick: (s: Status) => void; theme: Theme; labels: Record<Status, string> }) {
   const status = useStatus(store, keyOf);
   return canWrite
-    ? <StatusGroup current={status} onPick={onPick} theme={theme} />
-    : <p className="v5-readonly"><Icon name={STATUS_ICON[status]} size={22} />{LABELS[status]}</p>;
+    ? <StatusGroup current={status} onPick={onPick} theme={theme} labels={labels} />
+    : <p className="v5-readonly"><Icon name={STATUS_ICON[status]} size={22} />{labels[status]}</p>;
 }
 
 /**

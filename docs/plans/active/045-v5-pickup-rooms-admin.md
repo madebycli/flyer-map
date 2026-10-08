@@ -1,6 +1,6 @@
 # Plan 045 — v5: Abholaktion, Rooms, identities, admin surface
 
-Status: PLANNED (design below; Phase A/B in progress on `claude/v5-field-core`)
+Status: Phase A done, Phase B mostly done (Sonder-Marker, Phase C open) on `claude/v5-field-core`
 Date: 2026-10-08
 Reference (target behaviour, used as a reference not as a spec): `master-context/projects/flyer-map/plans/ABHOLMODUS_ZIELPLAN_2026-09-13.md`
 Depends on: [Plan 043](043-v5-field-core.md), [ADR-0034](../../decisions/ADR-0034-v5-notes-chunks-and-engine-language.md)
@@ -36,16 +36,16 @@ derived network meets them.
 ## Phases
 
 ### A — server (tests first)
-- [ ] `kind` in meta; `collection_areas` as work areas; `canSeeArea` per kind
-- [ ] Collector access in `/api/v5/*`, writes limited to claimed areas, per-area scoping for pulls
-- [ ] Attack tests: collector vs distribution areas, released area stops accepting writes, revoked link, expired session
+- [x] `kind` in meta; `collection_areas` as work areas; one Area resolver for both kinds (`worker/v5/shared.ts`)
+- [x] Collector access in `/api/v5/*`, writes limited to Areas of the helper's own active Run, per-area scoping for pulls and notes
+- [x] Attack tests (`tests/v5Collection.test.ts`): foreign/unclaimed/archived/completed Areas, release/leave/close/revoke, key theft, packs, notes
 
 ### B — field UI (reusing the v5 shell)
-- [ ] Gebietsliste sheet (name, offen / wird bearbeitet / erledigt, % progress, claimed-by, Teilnehmen possible); finished areas greyed out and not claimable; tap an Area on the map opens the same detail
-- [ ] Übernehmen → creates the Run; Teilnehmen → joins it; Verlassen / Freigeben / Abbrechen as explicit actions; double tap/reload/offline never creates a second Run (idempotent request ids)
-- [ ] Room strip: active members and the shared progress (one number everywhere: list, detail, map, room)
+- [x] Gebietsliste sheet (name, offen / wird bearbeitet / erledigt, % progress, claimed-by, Teilnehmen possible); finished areas greyed out and not claimable; tap an Area on the map opens the same detail
+- [x] Übernehmen → creates the Run; Teilnehmen → joins it; Verlassen / Freigeben / Abbrechen as explicit actions; double tap/reload/offline never creates a second Run (idempotent request ids)
+- [x] Room strip: active members and the shared progress (one number everywhere: list, detail, map, room)
 - [ ] Sonder-Marker: `collection_pickups` as pins on the map and in the Area detail, never counted as street progress
-- [ ] Abholen labels for the same four statuses (offen · abgeholt · später · nicht verfügbar)
+- [x] Abholen labels for the same four statuses (offen · abgeholt · später · nicht verfügbar)
 
 ### C — identity and admin
 - [ ] Temporary identity for link users (neutral label, per device) shown in notes, rooms and activity
@@ -63,3 +63,10 @@ derived network meets them.
 ## Gates
 
 Same as Plan 043: no deploy, no remote migration, `STREET_ENGINE_LIVE_READY=FALSE`.
+
+## Notes on the implementation
+
+- The UI never invents a rule: every Area carries a server-evaluated `writable`, the list is derived from `meta.runs`/`collection` only, and a failed action explains itself in plain words.
+- Actions are the existing legacy mutations (`collection.run.start/claim-areas/start-area/join/leave/release-area/complete-area`); one user action = one mutation id, a lost response is recognised (`mutation_id_reused` = already applied).
+- Legacy gap fixed: a helper who left a Room can now join it again (domain + repository), otherwise "Verlassen" locked people out for good.
+- Browser flow `scripts/v5-e2e/flow7.mjs`: two helpers through the Abhol-Link, one Room, marking only inside the held Area, rejoin, finish greys the Area out.

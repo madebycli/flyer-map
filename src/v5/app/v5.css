@@ -247,3 +247,22 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-note-form input:focus { border-color: var(--primary); border-radius: 1.5rem; }
 .v5-note-form .v5-icon-btn:disabled { opacity: 0.4; }
 .v5-row-count { margin-left: auto; padding: 0.1rem 0.6rem; border-radius: 1rem; background: var(--primary-container); color: var(--on-primary-container); font-variant-numeric: tabular-nums; }
+
+/* ── collection: Gebietsliste, Raum ──────────────────────────── */
+.v5-arealist { max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.v5-arearow { display: flex; align-items: center; gap: 0.35rem; border-radius: 1.2rem; background: var(--surface-3); padding-right: 0.4rem; transition: opacity 200ms; }
+.v5-arearow.done { opacity: 0.5; }
+.v5-arearow-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.7rem; min-height: 3.6rem; padding: 0.3rem 0.4rem 0.3rem 0.5rem; border: 0; background: transparent; color: var(--on); text-align: left; cursor: pointer; border-radius: 1.2rem; }
+.v5-arearow-badge { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 0.9rem; flex: none; background: var(--surface-4); color: var(--on-var); }
+.v5-arearow.working .v5-arearow-badge { background: var(--tertiary-container); color: var(--on-tertiary-container); border-radius: 50%; }
+.v5-arearow.done .v5-arearow-badge { background: var(--primary-container); color: var(--on-primary-container); }
+.v5-arearow-text { flex: 1; min-width: 0; display: grid; }
+.v5-arearow-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v5-arearow-text small { color: var(--on-var); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v5-arearow-pct { font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+.v5-arearow-pct small { font-size: 0.75rem; color: var(--on-var); margin-left: 0.1rem; }
+.v5-actions { justify-content: flex-start; flex-wrap: wrap; }
+.v5-go:disabled, .v5-icon-btn:disabled { opacity: 0.45; }
+.v5-room { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.7rem; }
+.v5-member { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.7rem; border-radius: 1rem; background: var(--surface-3); color: var(--on-var); font-weight: 700; font-size: 0.9rem; }
+.v5-member.me { background: var(--primary-container); color: var(--on-primary-container); }

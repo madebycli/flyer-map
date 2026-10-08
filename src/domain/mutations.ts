@@ -862,14 +862,22 @@ export function applyCampaignMutation(
       const collection = collectionSnapshotOrEmpty(snapshot.collection);
       const run = collection.runs.find((candidate) => candidate.id === mutation.payload.runId);
       if (!run || run.status !== "active") conflict("collection_run_not_active");
-      if (run.members.some((member) => member.collectorId === mutation.payload.collectorId)) conflict("collection_run_member_exists");
+      if (run.members.some((member) => member.collectorId === mutation.payload.collectorId && member.leftAt === null)) conflict("collection_run_member_exists");
+      // Someone who left may come back (same member row, fresh join time): "Verlassen" must not lock a helper out of the Room for good.
+      const returning = run.members.some((member) => member.collectorId === mutation.payload.collectorId);
       next = {
         ...snapshot,
         collection: {
           ...collection,
           runs: collection.runs.map((candidate) =>
             candidate.id === run.id
-              ? { ...candidate, members: [...candidate.members, { id: mutation.payload.memberId, runId: run.id, collectorId: mutation.payload.collectorId, label: mutation.payload.label, joinedAt: mutation.createdAt, leftAt: null }], updatedAt: mutation.createdAt }
+              ? {
+                ...candidate,
+                members: returning
+                  ? candidate.members.map((member) => member.collectorId === mutation.payload.collectorId ? { ...member, label: mutation.payload.label, joinedAt: mutation.createdAt, leftAt: null } : member)
+                  : [...candidate.members, { id: mutation.payload.memberId, runId: run.id, collectorId: mutation.payload.collectorId, label: mutation.payload.label, joinedAt: mutation.createdAt, leftAt: null }],
+                updatedAt: mutation.createdAt,
+              }
               : candidate,
           ),
         },
