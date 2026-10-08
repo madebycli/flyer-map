@@ -80,3 +80,9 @@ html, body, #root { margin: 0; height: 100%; background: var(--v5-bg); color: va
 
 /* Keep MapLibre controls clear of the pill. */
 .v5-root .maplibregl-ctrl-top-right { top: calc(env(safe-area-inset-top) + 0.75rem); }
+
+.v5-import {
+  position: absolute; z-index: 4; left: 0.75rem; top: calc(env(safe-area-inset-top) + 5rem); max-width: calc(100% - 5rem); min-height: 2.75rem; padding: 0 1.1rem;
+  border: 1px solid var(--v5-line); border-radius: 1.4rem; background: var(--v5-surface); color: var(--v5-teal-dark); font: 600 0.875rem system-ui; box-shadow: var(--v5-shadow); cursor: pointer; text-align: left;
+}
+.v5-import:disabled { opacity: 0.6; }

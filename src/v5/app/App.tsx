@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { buildGraph, routeSegments, type House, type Network, type Segment } from '../engine/index.ts';
+import { buildGraph, importLegacyProgress, routeSegments, type House, type LegacySnapshot, type Network, type Segment } from '../engine/index.ts';
 import { FieldMap, STATUS_COLORS, type Hit } from '../map/fieldMap.ts';
 import type { FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
+import { fetchLegacySnapshot } from './api.ts';
 import { useCampaign } from './useCampaign.ts';
 
 const LABELS: Record<Status, string> = { open: 'Offen', completed: 'Erledigt', later: 'Später', 'not-deliverable': 'Nicht zustellbar' };
@@ -33,6 +34,8 @@ export function App({ campaignId }: { campaignId: string }) {
   const [anchors, setAnchors] = useState<string[]>([]);
   const [withHouses, setWithHouses] = useState(true);
   const [undo, setUndo] = useState<Undo | null>(null);
+  const [importState, setImportState] = useState<'idle' | 'busy' | 'done'>('idle');
+  const [notice, setNotice] = useState<string | null>(null);
 
   const index = useMemo(() => {
     if (!network) return null;
@@ -102,6 +105,22 @@ export function App({ campaignId }: { campaignId: string }) {
 
   useEffect(() => { if (!undo) return; const t = window.setTimeout(() => setUndo(null), 8000); return () => window.clearTimeout(t); }, [undo]);
 
+  const importLegacy = async () => {
+    if (!store || !network) return;
+    setImportState('busy');
+    try {
+      const result = importLegacyProgress(network, (await fetchLegacySnapshot(campaignId)) as LegacySnapshot);
+      for (const status of ['completed', 'later', 'not-deliverable'] as Status[]) {
+        const keys = [...result.houses, ...result.segments].filter(([, s]) => s === status).map(([key]) => key);
+        store.set(keys, status);
+      }
+      const { housesMatched, housesUnmatched, streetRangesMatched, streetRangesUnmatched } = result.stats;
+      setNotice(`${housesMatched} Häuser und ${streetRangesMatched} Straßenabschnitte übernommen${housesUnmatched + streetRangesUnmatched ? `, ${housesUnmatched + streetRangesUnmatched} nicht zuordenbar` : ''}.`);
+      setImportState('done');
+    } catch { setNotice('Der bisherige Fortschritt konnte nicht geladen werden.'); setImportState('idle'); }
+  };
+  useEffect(() => { if (!notice) return; const t = window.setTimeout(() => setNotice(null), 9000); return () => window.clearTimeout(t); }, [notice]);
+
   const leaveRouteMode = () => { setRouteMode(false); setAnchors([]); };
   const routeKeys = useMemo(() => {
     if (!index || !routeSegmentIds.length) return [] as EntityKey[];
@@ -116,6 +135,12 @@ export function App({ campaignId }: { campaignId: string }) {
     <div className="v5-root">
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
       {phase.kind === 'ready' && <TopPill name={meta?.campaign.name ?? ''} campaign={campaign} />}
+      {phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && store && store.size === 0 && (
+        <button className="v5-import" disabled={importState === 'busy'} onClick={() => void importLegacy()}>
+          {importState === 'busy' ? 'Wird übernommen …' : 'Fortschritt aus der bisherigen Version übernehmen'}
+        </button>
+      )}
+      {notice && <div className="v5-toast" role="status"><span>{notice}</span><button onClick={() => setNotice(null)}>OK</button></div>}
       {phase.kind === 'ready' && meta && !meta.canWrite && <div className="v5-banner">Nur ansehen – mit dieser Rolle kannst du nichts markieren.</div>}
       {phase.kind === 'loading' && <Overlay><div className="v5-spinner" aria-hidden /><p>{phase.label}</p></Overlay>}
       {phase.kind === 'error' && <Overlay><h2>Das hat nicht geklappt</h2><p>{phase.status === 401 ? 'Du hast keinen Zugriff auf diese Aktion. Öffne den Einladungslink erneut.' : phase.message}</p><button className="v5-btn" onClick={() => location.reload()}>Neu laden</button></Overlay>}

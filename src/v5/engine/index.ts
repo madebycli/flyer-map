@@ -5,3 +5,4 @@ export { buildGraph, routeSegments } from './route.ts';
 export { overpassQuery, packFromOverpass, paddedBbox, type Bbox, type PackStats } from './overpass.ts';
 export { mergeNetworks, restrictToArea } from './area.ts';
 export { encodePack, decodePack } from './pack.ts';
+export { importLegacyProgress, type LegacyImport, type LegacySnapshot } from './legacy.ts';

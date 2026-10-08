@@ -122,3 +122,31 @@ test('restricting to an area keeps its houses and recomputes visibility', () => 
   assert.ok(part.houses.every((h) => h.parent === null || part.segments.some((s) => s.id === h.parent)), 'parents of kept houses are kept');
   assert.ok(part.segments.length < full.segments.length);
 });
+
+import { importLegacyProgress } from '../src/v5/engine/index.ts';
+
+test('legacy progress carries over by OSM id and by position along the old street fragment', () => {
+  const city = syntheticCity(4, 3);
+  const net = deriveNetwork(city.raw);
+  const through = city.raw.ways.find((w) => w.id === 1000)!;
+  const legacy = {
+    houseTasks: [
+      { status: 'completed' as const, source: { objectType: 'way', objectIds: [5_000_000] } },
+      { status: 'later' as const, source: { objectType: 'way', objectIds: [5_000_001] } },
+      { status: 'completed' as const, source: { objectType: 'way', objectIds: [999] } },
+      { status: 'open' as const, source: { objectType: 'way', objectIds: [5_000_002] } },
+    ],
+    tasks: [
+      { status: 'open' as const, source: { objectType: 'way', objectIds: [1000] }, geometry: { type: 'LineString' as const, coordinates: through.coords },
+        network: { length: 400, coverage: [{ from: 0, to: 150, status: 'completed' as const }] } },
+      { status: 'not-deliverable' as const, source: { objectType: 'way', objectIds: [424242] }, geometry: { type: 'LineString' as const, coordinates: through.coords } },
+    ],
+  };
+  const out = importLegacyProgress(net, legacy);
+  assert.deepEqual([...out.houses].sort(), [['h:h5000000', 'completed'], ['h:h5000001', 'later']]);
+  assert.deepEqual(out.stats, { housesMatched: 2, housesUnmatched: 1, streetRangesMatched: 1, streetRangesUnmatched: 1 });
+  const marked = net.segments.filter((s) => out.segments.has(`s:${s.id}`));
+  assert.ok(marked.length >= 2 && marked.every((s) => s.wayId === 1000));
+  const lng0 = through.coords[0][0], cos = Math.cos((51 * Math.PI) / 180);
+  for (const s of marked) assert.ok((s.coords[0][0] - lng0) * cos * 111320 < 150, 'only the covered stretch is carried over');
+});

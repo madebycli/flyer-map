@@ -57,3 +57,8 @@ export function httpTransport(campaignId: string): SyncTransport {
     },
   };
 }
+
+/** Pre-v5 snapshot, used only for the one-time progress carry-over. */
+export async function fetchLegacySnapshot(campaignId: string): Promise<unknown> {
+  return (await call(`/api/campaigns/${encodeURIComponent(campaignId)}/snapshot`)).json();
+}
