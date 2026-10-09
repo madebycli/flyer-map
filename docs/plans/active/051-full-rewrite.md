@@ -69,6 +69,8 @@ Net effect: ≈ 45 000 of 79 000 lines disappear at the end; ≈ 5 000 new lines
 
 ## Phase status
 
+- **Dual review, mobile clarity (B, 2026-10-09):** distinguish obsolete-progress clean-up from deleting a Gebiet with a visible caption; refresh the clean-up control after the last obsolete key is forgotten; label each helper-right switch using existing design-system components. Acceptance: real-handler browser checks, 390/430 px × dark/light × left/right screenshot matrix, no horizontal overflow, touch targets ≥44 px, and independent A review. This covers two affected sheets; the full-sheet audit, real devices and release gates remain open.
+
 - **Phase 1 (design system package)**: `src/ui` = `tokens.css`, `components.css`, `icons.tsx`, `progress.tsx`, `index.ts`; the v5 shell imports it, `v5.css` keeps only shell layout (203 lines, was 338). Typecheck, build, 1 178 unit tests and flows 3/9/10 green.
 - **Phase 2 (dormant features)**, slice 1 — *Statistik + Aktivität merged into "Team & Aktivität"* (`activity.ts`, `activitySheet.tsx`): who brought in how many houses today / 7 days / total and the latest changes,
   derived from the status overlay (every entry carries author and HLC wall time). No server change. Decision: this aggregation stays in TypeScript — the overlay lives in JS memory and the loop is one pass over a Map,

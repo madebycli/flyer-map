@@ -433,14 +433,17 @@ export function App({ campaignId }: { campaignId: string }) {
     () => (panel === 'overview' && network && store ? houseStats(network, (key) => store.statusOf(key), campaign.areaOf) : null),
     [panel, network, store, campaign.areaOf, campaign.progress],
   );
-  const orphanCount = useMemo(() => (tool === 'areas' && selectedArea && meta?.role === 'admin' ? campaign.orphans().length : 0), [tool, selectedArea, meta?.role, campaign.progress, campaign.network]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [cleanupRevision, setCleanupRevision] = useState(0);
+  const orphanCount = useMemo(() => (tool === 'areas' && selectedArea && meta?.role === 'admin' ? campaign.orphans().length : 0), [tool, selectedArea, meta?.role, campaign.progress, campaign.network, cleanupRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   const pruneSelected = () => {
     if (!selectedArea || !store) return;
     const keys = campaign.orphans();
     if (!keys.length || !window.confirm(`${keys.length} Markierungen entfernen, die nach der Änderung der Karte nirgends mehr liegen? Das gilt für alle Geräte und lässt sich nicht rückgängig machen.`)) return;
     void pruneArea(campaignId, selectedArea.id, keys, true).then((result) => {
       store.forget(result.keys);
-      setNotice(result.removed ? `${result.removed} veraltete Einträge entfernt.` : 'Keine veralteten Einträge in diesem Gebiet.');
+      // Forgetting obsolete keys does not change derived house progress, so refresh this count explicitly.
+      setCleanupRevision((revision) => revision + 1);
+      setNotice(result.removed === 1 ? '1 veralteter Eintrag entfernt.' : result.removed ? `${result.removed} veraltete Einträge entfernt.` : 'Keine veralteten Einträge in diesem Gebiet.');
     }).catch((e) => setNotice(actionErrorText(e)));
   };
 
@@ -669,8 +672,8 @@ export function App({ campaignId }: { campaignId: string }) {
           <div className="v5-row">
             <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo(ringBounds(selectedArea.geometry.coordinates[0]), FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
             {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
-            {orphanCount > 0 && <button className="v5-icon-btn tonal" onClick={pruneSelected} aria-label="Veraltete Einträge dieses Gebiets bereinigen" title="Veraltete Einträge bereinigen (Markierungen, die nach einer Änderung des Gebiets nirgends mehr liegen)"><Icon name="trash" /></button>}
           </div>
+          {orphanCount > 0 && <button className="v5-wide" onClick={pruneSelected} aria-label="Veraltete Einträge dieses Gebiets bereinigen" title="Markierungen entfernen, die nach einer Änderung des Gebiets nirgends mehr liegen"><Icon name="trash" size={20} />Veraltete Einträge bereinigen</button>}
           {meta?.role === 'admin' && (
             <>
               <AreaAdmin key={`${selectedArea.id}:${selectedArea.updatedAt}`} area={selectedArea} teams={meta.teams} busy={adminBusy}

@@ -51,7 +51,7 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 
 ## Verified
 
-- `npm test` (1108 tests incl. engine incl. chunks, store, notes, cache, API incl. attack/race cases, legacy import), `npm run typecheck`, `npm run build`.
+- B mobile-clarity branch (integration 5e352a2 plus reviewed A-5 62d3234): `npm test` 432/432, `npx tsc --noEmit -p .`, `npm run build`; affected flows 9/14/15. [Mobile evidence](screens/mobile-clarity-2026-10-09/README.md): two affected sheets × eight configurations, real handlers and 16 screenshots. A review pending. The older test counts and performance measurements below refer to their original runs, not a fresh complete run of this branch.
 - An independent code review (`/code-review`, high) found 10 issues; all fixed (see git log "address independent review findings").
 - Browser flows in `scripts/v5-e2e` (real Worker handlers on in-memory D1; Playwright + Chromium):
   `flow.mjs` – pack build → derive → mark → undo → sync → fresh client → route marking → read-only viewer;
@@ -80,6 +80,8 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 Übersicht (progress by houses, per Gebiet and Gruppe, sync state) · Team & Aktivität (who brought in how many houses, derived from the overlay) · Suche · Gebiete (draw/edit, rename, move to a Gruppe, delete) ·
 Gruppen (create/rename/recolour/delete, Aktion name) · Zugänge (links for a Gruppe, viewers and Abhol-Helfer with QR, withdraw, helper rights) · Notizen · Vorlage laden / Als Vorlage · Abholen: Einrichten (Sammelgebiet, Teilgebiete, free, archive) ·
 Sonder-Marker · Hell/Dunkel, Links-/Rechtshand, Karte an/aus. A link helper sees only what the server lets them do. Design system: `src/ui` (tokens, components, page kit), organiser pages: `src/organization`.
+
+On a selected Gebiet, **Veraltete Einträge bereinigen** clears obsolete progress while preserving the Gebiet and its current progress; **Gebiet löschen** removes the whole Gebiet and its associated data. Both ask for confirmation. After clearing the last obsolete entry, the clean-up control refreshes immediately. In Zugänge, each helper-right switch has a visible caption (Sehen, Anlegen, Bearbeiten, Zuweisen), an accessible name and a pressed state; policy is enforced on the server. The Zuweisen caption describes the existing permission, not a new assignment interface.
 
 ## Not verified / not done
 

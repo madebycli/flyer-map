@@ -108,9 +108,9 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
                   <span className="v5-conflict-title">{c.label}</span>
                   <button className="v5-icon-btn" onClick={() => void run(() => revokeCollector(campaignId, c.id))} disabled={busy} aria-label={`${c.label} entfernen`} title="Entfernen"><Icon name="trash" /></button>
                 </div>
-                <div className="v5-flags" role="group" aria-label={`Sonder-Marker-Rechte von ${c.label}`}>
+                <div className="v5-seg" role="group" aria-label={`Sonder-Marker-Rechte von ${c.label}`}>
                   {([['canViewPickups', 'eye', 'Sehen'], ['canCreatePickups', 'plus', 'Anlegen'], ['canEditPickups', 'pen', 'Bearbeiten'], ['canAssignPickups', 'users', 'Zuweisen']] as const).map(([key, icon, text]) => (
-                    <button key={key} className={`v5-flag${rights[key] ? ' on' : ''}`} style={{ '--c': 'var(--primary)' } as React.CSSProperties} disabled={busy} aria-pressed={rights[key]} aria-label={`${c.label}: ${text}`} title={text} onClick={() => toggle(key)}><Icon name={icon} size={22} /></button>
+                    <button key={key} className={`v5-seg-btn${rights[key] ? ' on' : ''}`} style={{ '--c': 'var(--primary)' } as React.CSSProperties} disabled={busy} aria-pressed={rights[key]} aria-label={`${c.label}: ${text}`} title={text} onClick={() => toggle(key)}><Icon name={icon} size={22} /><span>{text}</span></button>
                   ))}
                 </div>
               </div>
