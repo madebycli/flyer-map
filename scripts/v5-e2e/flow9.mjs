@@ -91,6 +91,13 @@ await page.reload();
 await page.waitForSelector('.v5-pill', { timeout: 120000 });
 await page.waitForFunction(() => window.__v5Map && window.__v5Map.getLayer('v5-segments-line'), null, { timeout: 60000 });
 await page.waitForTimeout(1500);
+// Team & Aktivität: derived from the overlay (author + clock of every entry), no extra request
+await menuTile(page, 'Team');
+await page.waitForSelector('.v5-sheet[aria-label="Team & Aktivität"]');
+const teamText = async () => (await page.locator('.v5-sheet').innerText()).replace(/\n/g, ' | ');
+check('team sheet lists a person with houses brought in today, and the latest change', await until(async () => { const t = await teamText(); return /wer hat wie viel/i.test(t) && /1 heute/.test(t) && /zuletzt/i.test(t); }), (await teamText()).slice(0, 300));
+await page.screenshot({ path: `${shots}/u5-team.png` });
+await page.getByRole('button', { name: 'Schließen' }).click();
 await menuTile(page, 'Gebiete');
 await page.evaluate(() => window.__v5Map.fitBounds([[12.9965, 50.9958], [13.0245, 51.0125]], { padding: 40, duration: 0 }));
 await page.waitForTimeout(1200);

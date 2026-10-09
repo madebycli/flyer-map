@@ -14,6 +14,7 @@ import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
 import { buildIndex } from './mark.ts';
 import { meters, useMarking } from './marking.tsx';
+import { ActivitySheet } from './activitySheet.tsx';
 import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } from './panels.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
 import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
@@ -32,7 +33,7 @@ const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'home' | 'overview' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
+type Panel = 'home' | 'overview' | 'activity' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -238,6 +239,12 @@ export function App({ campaignId }: { campaignId: string }) {
     else { areaTool.setSelectedId(null); setTool('inspect'); selectEntity(key.startsWith('h:') ? 'house' : 'segment', key.slice(2)); }
     if (at) fieldMap.current?.focus(at);
   };
+  /** A human name for a status key: the address of a house or the name of a street piece. */
+  const keyLabel = (key: string): string => {
+    if (!index) return key;
+    if (key.startsWith('h:')) { const h = index.houses.get(key.slice(2)); return h ? [h.street, h.number].filter(Boolean).join(' ') || 'Haus' : 'Haus'; }
+    const s = index.segments.get(key.slice(2)); return s?.name ?? s?.ref ?? 'Straße';
+  };
   const openSearchResult = (entry: SearchHit) => {
     if (!index) return;
     setPanel(null); setFab('idle'); setTool('inspect'); areaTool.setSelectedId(null);
@@ -441,6 +448,7 @@ export function App({ campaignId }: { campaignId: string }) {
       { id: 'm-coll', icon: 'paw', label: 'Abholen', on: isCollection, href: isCollection ? undefined : modeHref(true), onClick: () => setPanel(null), wide: true } satisfies AppTile,
     ] : []),
     { id: 'overview', icon: 'chart', label: 'Übersicht', onClick: () => openPanel('overview') },
+    { id: 'activity', icon: 'users', label: 'Team', onClick: () => openPanel('activity') },
     { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
     { id: 'areas', icon: 'polygon', label: 'Gebiete', onClick: () => (isCollection ? openPanel('areas') : enter('areas')) },
     ...(canEditAny && !isCollection ? [{ id: 'template', icon: 'upload', label: 'Vorlage laden', onClick: pickTemplate } satisfies AppTile] : []),
@@ -544,6 +552,9 @@ export function App({ campaignId }: { campaignId: string }) {
 
       {ready && panel === 'home' && <HomeSheet tiles={tiles} identity={identity} onClose={() => setPanel(null)} />}
       {ready && panel === 'template' && templateDraft && <TemplateSheet template={templateDraft.template} plan={templateDraft.plan} progress={templateProgress} onApply={() => void applyTemplate()} onClose={() => { if (!templateProgress) { setPanel(null); setTemplateDraft(null); } }} />}
+      {ready && panel === 'activity' && store && (
+        <ActivitySheet kind={kind} theme={theme} store={store} version={campaign.progress} myLabel={meta?.me?.label ?? meta?.collectorLabel ?? 'Du'} labelOf={keyLabel} onPick={openNoteTarget} onClose={() => setPanel(null)} />
+      )}
       {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
         <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflicts.length}

@@ -71,7 +71,11 @@ Net effect: ≈ 45 000 of 79 000 lines disappear at the end; ≈ 5 000 new lines
 ## Phase status
 
 - **Phase 1 (design system package)**: `src/ui` = `tokens.css`, `components.css`, `icons.tsx`, `progress.tsx`, `index.ts`; the v5 shell imports it, `v5.css` keeps only shell layout (203 lines, was 338). Typecheck, build, 1 178 unit tests and flows 3/9/10 green.
-- Phases 2–5: not started.
+- **Phase 2 (dormant features)**, slice 1 — *Statistik + Aktivität merged into "Team & Aktivität"* (`activity.ts`, `activitySheet.tsx`): who brought in how many houses today / 7 days / total and the latest changes,
+  derived from the status overlay (every entry carries author and HLC wall time). No server change. Decision: this aggregation stays in TypeScript — the overlay lives in JS memory and the loop is one pass over a Map,
+  so a Rust port would only add marshalling (the plan's "stats in Rust" is dropped for this part; geometry stays in Rust). Tests `v5Activity` + flow 9.
+  Open in phase 2: Einsätze, Automationen, Team-Center/Gruppen (need Worker contracts), Organizer/Admin UI.
+- Phases 3–5: not started.
 
 ## Not decided here
 
