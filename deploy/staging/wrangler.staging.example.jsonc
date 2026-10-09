@@ -1,8 +1,9 @@
-// STAGING-VORLAGE. Nicht mit `wrangler deploy` ohne Anpassung verwenden.
+// STAGING-KONFIGURATION (D1 und Rate-Limits gesetzt; siehe Kommentar unten). Deploy NUR so:
+//   npx wrangler deploy -c deploy/staging/wrangler.staging.example.jsonc
+// Nie ohne "-c" deployen: wrangler.jsonc gehört zur Produktion.
 // Grund: wrangler.jsonc hat den Worker-Namen "flyer-map" (= Produktion). Ein Deploy aus dem Repo
 // würde den Produktions-Worker überschreiben. Diese Datei nutzt einen eigenen Namen und eigene Bindings.
-// Vor dem Gebrauch: alle "FILL_ME" ersetzen; neue Ressourcen (D1, Durable Objects, Rate-Limits) anlegen,
-// NICHT die Produktions-IDs aus wrangler.jsonc übernehmen.
+// D1 = flyer-map-staging-db (Staging). Rate-Limit-Namespaces 9271400x sind eigene Staging-IDs, nicht die der Produktion.
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "flyer-map-staging",
@@ -15,7 +16,7 @@
     "run_worker_first": ["/api/*", "/"]
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "flyer-map-staging-db", "database_id": "FILL_ME_STAGING_D1_ID" }
+    { "binding": "DB", "database_name": "flyer-map-staging-db", "database_id": "bcec3432-18ec-42a2-970a-64d52c8263d5" }
   ],
   "durable_objects": {
     "bindings": [
@@ -26,6 +27,12 @@
   "migrations": [
     { "tag": "v1-campaign-sync", "new_sqlite_classes": ["CampaignSyncDurableObject"] },
     { "tag": "v2-organization-password-kdf", "new_sqlite_classes": ["OrganizationPasswordKdfDurableObject"] }
+  ],
+  "ratelimits": [
+    { "name": "FIELD_GROUP_JOIN_ACTOR_LIMITER", "namespace_id": "92714001", "simple": { "limit": 30, "period": 60 } },
+    { "name": "FIELD_GROUP_JOIN_CREDENTIAL_LIMITER", "namespace_id": "92714002", "simple": { "limit": 8, "period": 60 } },
+    { "name": "PICKUP_SEARCH_LIMITER", "namespace_id": "92714003", "simple": { "limit": 20, "period": 10 } },
+    { "name": "ORGANIZATION_LOGIN_LIMITER", "namespace_id": "92714004", "simple": { "limit": 12, "period": 60 } }
   ],
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
