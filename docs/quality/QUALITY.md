@@ -69,9 +69,9 @@ Measure:
 
 ## Map runtime upgrades
 
-MapLibre is currently pinned to 5.7.1 after 6.4.1 caused a real-browser saved-GeoJSON regression.
+MapLibre is pinned to 6.13.0 (ADR-0037). 6.4.1 once caused a real-browser saved-GeoJSON regression in the retired GeoJSON map; real-device acceptance of the v5 vector-tile map is still open.
 
-A map-runtime upgrade must pass a dedicated browser test with real saved Area + Street data and cannot rely only on compilation/unit tests.
+A map-runtime upgrade must pass the browser flows (`node scripts/v5-e2e/run-all.mjs`) and a real-device check of tiles, hit testing, selection and camera; it cannot rely only on compilation/unit tests.
 
 ## Application performance principles
 

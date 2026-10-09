@@ -1,3 +1,4 @@
+import '../../mapRuntime.ts';
 import * as maplibregl from 'maplibre-gl';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, RequestParameters, StyleSpecification, VectorTileSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection } from 'geojson';

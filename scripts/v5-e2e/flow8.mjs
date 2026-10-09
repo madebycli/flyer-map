@@ -22,7 +22,7 @@ async function helper(who) {
   await page.waitForTimeout(800);
   const jump = (x, y, z) => page.evaluate(async ([c, zoom]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom, padding: { top: 0, bottom: 0, left: 0, right: 0 } }); await new Promise((r) => m.once('idle', r)); await new Promise((r) => setTimeout(r, 250)); }, [M(x, y), z]);
   const click = async (x, y) => { const p = await page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(x, y)); await page.mouse.click(p[0], p[1]); };
-  const pins = () => page.evaluate(() => window.__v5Map.getSource('v5-pickups')._data?.features?.length ?? 0);
+  const pins = () => page.evaluate(async () => (await window.__v5Map.getSource('v5-pickups').getData())?.features?.length ?? 0);
   return { ctx, page, jump, click, pins };
 }
 
@@ -50,7 +50,7 @@ const progressBefore = await A.page.locator('.v5-pill').getAttribute('data-done'
 
 // Tap the pin, set its status.
 await A.page.getByRole('button', { name: 'Fertig' }).click();
-const pin = await A.page.evaluate(() => { const f = window.__v5Map.getSource('v5-pickups')._data.features[0]; const p = window.__v5Map.project(f.geometry.coordinates); return [p.x, p.y]; });
+const pin = await A.page.evaluate(async () => { const f = (await window.__v5Map.getSource('v5-pickups').getData()).features[0]; const p = window.__v5Map.project(f.geometry.coordinates); return [p.x, p.y]; });
 await A.page.mouse.click(pin[0], pin[1]);
 await A.page.waitForSelector('.v5-sheet');
 check('tapping the pin opens it with title and address', /Kleidersack/.test(await A.page.locator('.v5-sheet').innerText()) && /Klingel defekt/.test(await A.page.locator('.v5-sheet').innerText()));
@@ -65,7 +65,7 @@ check('the other helper sees the pin', await until(async () => (await B.pins()) 
 await openMenu(B.page);
 check('and has no tool to place new ones', (await B.page.getByRole('button', { name: 'Sonder-Marker', exact: true }).count()) === 0);
 await B.page.getByRole('button', { name: 'Schließen' }).click();
-const pinB = await B.page.evaluate(() => { const f = window.__v5Map.getSource('v5-pickups')._data.features[0]; window.__v5Map.jumpTo({ center: f.geometry.coordinates, zoom: 18 }); return f.geometry.coordinates; });
+const pinB = await B.page.evaluate(async () => { const f = (await window.__v5Map.getSource('v5-pickups').getData()).features[0]; window.__v5Map.jumpTo({ center: f.geometry.coordinates, zoom: 18 }); return f.geometry.coordinates; });
 await B.page.waitForTimeout(800);
 const pb = await B.page.evaluate((c) => { const p = window.__v5Map.project(c); return [p.x, p.y]; }, pinB);
 await B.page.mouse.click(pb[0], pb[1]);

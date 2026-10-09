@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import "../mapRuntime.ts";
 import * as maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
