@@ -206,7 +206,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     phase, meta, network, engine: engineState?.client ?? null, mapData: engineState?.mapData ?? null, areaOf, store, notes, pickups, progress, sync, missingAreas,
     reload: () => reload.current(),
     syncNow: () => { void syncRef.current?.run(); },
-    orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].map(([key]) => key).filter((key) => !live.areaOf.has(key)) : []; },
+    orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
     async buildMissing() {
       if (!canBuildRef.current) return;

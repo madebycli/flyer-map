@@ -2,7 +2,7 @@ import { decodeClock } from '../../src/v5/store/hlc.ts';
 import { NOTE_KEY, NOTE_TEXT_MAX, cleanText, isFlag } from '../../src/v5/notes/types.ts';
 import type { AccessContext } from '../access.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
-import { ID, canWriteArea, fail, isScoped, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
+import { ID, canWriteArea, fail, isRecord, isScoped, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 
 const MAX_NOTES_PER_PUSH = 50;
 const MAX_BODY_BYTES = 256_000; // 50 notes × 500 chars, worst case fully JSON-escaped
@@ -35,6 +35,7 @@ export async function pushNotes(db: D1DatabaseLike, access: AccessContext, campa
   if (text.length > MAX_BODY_BYTES) return fail(413, 'too_large', 'Zu viele Notizen auf einmal.');
   let body: { notes?: Incoming[] };
   try { body = JSON.parse(text); } catch { return fail(400, 'invalid_json', 'Ungültiges JSON.'); }
+  if (!isRecord(body)) return fail(400, 'invalid_json', 'JSON-Objekt erwartet.');
   if (!Array.isArray(body.notes) || body.notes.length === 0 || body.notes.length > MAX_NOTES_PER_PUSH) return fail(400, 'invalid_notes', `1 bis ${MAX_NOTES_PER_PUSH} Notizen erwartet.`);
 
   const now = (options.now ?? Date.now)();
@@ -42,6 +43,7 @@ export async function pushNotes(db: D1DatabaseLike, access: AccessContext, campa
   const accepted: string[] = [], rejected: { id: string; reason: string }[] = [];
   const latest = new Map<string, { id: string; key: string; area: string; flag: string | null; text: string; rev: string; deleted: boolean }>();
   for (const n of body.notes) {
+    if (!isRecord(n)) { rejected.push({ id: '', reason: 'bad_id' }); continue; }
     const id = typeof n.id === 'string' ? n.id : '';
     const reject = (reason: string) => rejected.push({ id, reason });
     const created = decodeClock(id), edited = typeof n.rev === 'string' ? decodeClock(n.rev) : null;

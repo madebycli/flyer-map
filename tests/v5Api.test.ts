@@ -30,7 +30,8 @@ async function setup() {
     });
     return (await handleV5Api(request, db, { now: () => NOW, ...opts }))!;
   };
-  return { db, call };
+  const raw = async (who: string, path: string, text: string) => (await handleV5Api(new Request(`https://example.test${path}`, { method: 'POST', headers: { cookie: cookies[who], 'content-type': 'application/json' }, body: text }), db, { now: () => NOW }))!;
+  return { db, call, raw };
 }
 
 async function resolveAccessForGrant(db: NetworkD1, grantId: string) {
@@ -309,8 +310,8 @@ test('prune removes only the listed keys of that area, and only for admins', asy
   assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/nope/prune`, { keys: ['h:a'] })).status, 404);
   const done = await (await call('admin', 'POST', path, { keys: ['h:a', 'h:c', 'h:zzz'] })).json() as { removed: number };
   assert.equal(done.removed, 1, 'h:c belongs to another area and h:zzz does not exist: only h:a goes');
-  const rest = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { ops: { key: string }[] };
-  assert.deepEqual(rest.ops.map((o) => o.key).sort(), ['h:b', 'h:c']);
+  const rest = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { ops: { key: string; status: string }[] };
+  assert.deepEqual(rest.ops.map((o) => [o.key, o.status]).sort(), [['h:a', 'open'], ['h:b', 'later'], ['h:c', 'completed']], 'the cleared key travels on as an open tombstone');
 });
 
 test('meta serves the deployment basemap; the client carries none', async () => {
@@ -338,8 +339,8 @@ test('forgetting a deleted Gebiet removes its progress, notes and map data, and 
   db.sqlite.prepare('DELETE FROM areas WHERE id = ?').run('area_n');
   const done = await (await call('admin', 'POST', path('area_n'))).json() as { removed: number };
   assert.equal(done.removed, 1);
-  const rest = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { ops: { key: string }[] };
-  assert.deepEqual(rest.ops.map((o) => o.key), ['h:c'], 'other Gebiete are untouched');
+  const rest = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { ops: { key: string; status: string }[] };
+  assert.deepEqual(rest.ops.map((o) => [o.key, o.status]).sort(), [['h:a', 'open'], ['h:c', 'completed']], 'the forgotten Gebiet travels on as a tombstone, other Gebiete are untouched');
 });
 
 test('the basemap is also served without a campaign (admin pages), read-only', async () => {
@@ -377,4 +378,78 @@ test('a partial Overpass answer (remark: timed out) is refused instead of stored
   assert.equal(((await refused.json()) as { error: { code: string } }).error.code, 'overpass_incomplete');
   const meta = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { areas: { id: string; packVersion: number | null }[] };
   assert.equal(meta.areas.find((a) => a.id === 'area_n')!.packVersion, null, 'no pack was stored');
+});
+
+test('a clean-up reaches a device that already pulled the status (tombstone, not a vanished row)', async () => {
+  const { call } = await setup();
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 5000), 'h:a', 'completed'], [stamp(NOW - 4000), 'h:b', 'later']));
+  const first = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { cursor: number };
+  const pruned = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/prune`, { keys: ['h:a'] })).json() as { removed: number; keys: string[] };
+  assert.deepEqual([pruned.removed, pruned.keys], [1, ['h:a']]);
+  const next = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/state?since=${first.cursor}`)).json() as { ops: { id: string; key: string; status: string }[] };
+  assert.deepEqual(next.ops.map((o) => [o.key, o.status]), [['h:a', 'open']], 'the incremental pull delivers the clear');
+  assert.ok(next.ops[0].id > stamp(NOW - 5000), 'the tombstone outranks the status it clears');
+  // a second clean-up of the same key finds nothing left to clear, and an edit made afterwards wins over the tombstone
+  const again = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/prune`, { keys: ['h:a'] })).json() as { removed: number };
+  assert.equal(again.removed, 0);
+  const redo = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW + 1000), 'h:a', 'completed']))).json() as { accepted: string[] };
+  assert.equal(redo.accepted.length, 1);
+  const last = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/state?since=${first.cursor}`)).json() as { ops: { key: string; status: string }[] };
+  assert.equal(last.ops.find((o) => o.key === 'h:a')?.status, 'completed');
+});
+
+test('a clean-up keeps an edit that arrived after the keys were looked up, and never reuses a sequence number', async () => {
+  const { call, db } = await setup();
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops(...Array.from({ length: 12 }, (_, i): [string, string, string] => [stamp(NOW - 9000, i), `h:k${i}`, 'completed'])));
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/prune`, { keys: Array.from({ length: 12 }, (_, i) => `h:k${i}`) });
+  const seqs = (db.sqlite.prepare('SELECT seq FROM v5_state ORDER BY seq').all() as { seq: number }[]).map((r) => r.seq);
+  assert.equal(new Set(seqs).size, seqs.length, 'every row has its own sequence number, so no pull page can skip one');
+  const counter = (db.sqlite.prepare('SELECT seq FROM v5_counters').get() as { seq: number }).seq;
+  assert.equal(Math.max(...seqs), counter);
+});
+
+test('forgetting a Gebiet clears its notes for other devices as well', async () => {
+  const { call, db } = await setup();
+  const note = { id: stamp(NOW - 5000), key: 'a:area_n', area: 'area_n', flag: 'dog', text: 'Vorsicht', rev: stamp(NOW - 5000) };
+  assert.equal(((await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/notes`, { notes: [note] })).json()) as { accepted: string[] }).accepted.length, 1);
+  const first = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/notes?since=0`)).json() as { cursor: number };
+  db.sqlite.prepare('DELETE FROM areas WHERE id = ?').run('area_n');
+  const done = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/forget`)).json() as { notes: number };
+  assert.equal(done.notes, 1);
+  const next = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/notes?since=${first.cursor}`)).json() as { notes: { id: string; deleted: boolean; text: string; flag: string | null; rev: string }[] };
+  assert.equal(next.notes.length, 1);
+  assert.deepEqual([next.notes[0].deleted, next.notes[0].text, next.notes[0].flag], [true, '', null]);
+  assert.ok(next.notes[0].rev > note.rev);
+});
+
+test('forget cannot wipe a Gebiet that is re-created between the check and the writes', async () => {
+  const { call, db } = await setup();
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 5000), 'h:a', 'completed']));
+  const t = '2026-09-07T00:00:00.000Z';
+  const row = db.sqlite.prepare('SELECT * FROM areas WHERE id = ?').get('area_n') as Record<string, string>;
+  db.sqlite.prepare('DELETE FROM areas WHERE id = ?').run('area_n');
+  const original = db.batch.bind(db);
+  // the Gebiet comes back right before the batch runs
+  db.batch = (async (statements: Parameters<typeof original>[0]) => {
+    db.sqlite.prepare('INSERT INTO areas(id,campaign_id,team_id,name,geometry_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(row.id, row.campaign_id, row.team_id, row.name, row.geometry_json, t, t);
+    return original(statements);
+  }) as typeof db.batch;
+  const result = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/forget`);
+  assert.equal(result.status, 200);
+  const state = (db.sqlite.prepare('SELECT key, status FROM v5_state').all() as { key: string; status: string }[]).map((r) => ({ key: r.key, status: r.status }));
+  assert.deepEqual(state, [{ key: 'h:a', status: 'completed' }], 'the live Gebiet keeps its progress');
+});
+
+test('JSON null and non-object elements are refused or skipped with a 4xx, not a crash', async () => {
+  const { raw } = await setup();
+  const base = `/api/v5/campaigns/${campaign}`;
+  for (const [path, text] of [[`${base}/ops`, 'null'], [`${base}/notes`, 'null'], [`${base}/areas/area_n/prune`, 'null'], [`${base}/ops`, '"text"'], [`${base}/ops`, '[1]']] as [string, string][]) {
+    assert.equal((await raw('admin', path, text)).status, 400, `${path} ${text}`);
+  }
+  for (const [path, key] of [[`${base}/ops`, 'ops'], [`${base}/notes`, 'notes']] as const) {
+    const res = await raw('admin', path, JSON.stringify({ [key]: [null] }));
+    assert.equal(res.status, 200, `${key}: [null]`);
+    const out = await res.json() as { accepted: string[]; rejected: { reason: string }[] };
+    assert.deepEqual([out.accepted, out.rejected.length], [[], 1], 'the element is rejected on its own; the others in the request are still judged');
+  }
 });

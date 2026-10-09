@@ -5,6 +5,8 @@ export const json = (data: unknown, init: ResponseInit = {}) =>
   Response.json(data, { ...init, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...init.headers } });
 export const fail = (status: number, code: string, message: string) => json({ error: { code, message } }, { status });
 
+export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
 export const ID = /^[A-Za-z0-9._:-]{1,160}$/u;
 
 /** Roles that may write something at all; which Areas they may write in is decided per Area (`canWriteArea`). */
