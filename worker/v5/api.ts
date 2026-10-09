@@ -35,17 +35,17 @@ const KEY = /^[sh]:[A-Za-z0-9#:._~@-]{1,80}$/u;
 
 type Route =
   | { kind: 'state' | 'ops' | 'meta' | 'notes'; campaignId: string }
-  | { kind: 'pack' | 'prune'; campaignId: string; areaId: string };
+  | { kind: 'pack' | 'prune' | 'forget'; campaignId: string; areaId: string };
 
 export function v5Route(pathname: string): Route | null {
-  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|areas\/([^/]+)\/(?:pack|prune))$/u.exec(pathname);
+  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|areas\/([^/]+)\/(?:pack|prune|forget))$/u.exec(pathname);
   if (!m) return null;
   try {
     const campaignId = parseCampaignId(decodeURIComponent(m[1]));
     if (!campaignId) return null;
     if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta' || m[2] === 'notes') return { kind: m[2], campaignId };
     const areaId = decodeURIComponent(m[3]);
-    return ID.test(areaId) ? { kind: m[2].endsWith('/prune') ? 'prune' : 'pack', campaignId, areaId } : null;
+    return ID.test(areaId) ? { kind: m[2].endsWith('/prune') ? 'prune' : m[2].endsWith('/forget') ? 'forget' : 'pack', campaignId, areaId } : null;
   } catch { return null; }
 }
 
@@ -92,6 +92,24 @@ async function pruneState(db: D1DatabaseLike, access: AccessContext, campaignId:
   return json({ removed, keys: found });
 }
 
+/**
+ * After a Gebiet was deleted: everything v5 kept for it goes too (progress, notes, map data). Admin only, and only once the Gebiet
+ * is really gone, so this can never be used to wipe a live Gebiet. The reply counts what was removed.
+ */
+async function forgetArea(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string): Promise<Response> {
+  if (access.role !== 'admin') return fail(403, 'forbidden', 'Nur Admins dürfen ein Gebiet endgültig entfernen.');
+  if (await resolveArea(db, campaignId, areaId)) return fail(409, 'area_still_exists', 'Das Gebiet existiert noch. Erst löschen, dann aufräumen.');
+  const delState = db.prepare('DELETE FROM v5_state WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId);
+  const results = await db.batch([
+    delState,
+    db.prepare('DELETE FROM v5_notes WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
+    db.prepare('DELETE FROM v5_packs WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
+    db.prepare('DELETE FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
+    db.prepare('DELETE FROM v5_pack_attempts WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
+  ]);
+  return json({ removed: results[0]?.meta?.changes ?? 0, notes: results[1]?.meta?.changes ?? 0 });
+}
+
 export async function handleV5Api(request: Request, db: D1DatabaseLike, options: V5Options = {}): Promise<Response | null> {
   const url = new URL(request.url);
   // The deployment's basemap, without a campaign: the admin pages place the map focus with it. Style URLs reach every field client anyway, so they must not carry secrets.
@@ -109,6 +127,7 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
   if (route.kind === 'pack' && request.method === 'GET') return getPack(db, access, route.campaignId, route.areaId, request);
   if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options);
   if (route.kind === 'prune' && request.method === 'POST') return pruneState(db, access, route.campaignId, route.areaId, request);
+  if (route.kind === 'forget' && request.method === 'POST') return forgetArea(db, access, route.campaignId, route.areaId);
   return fail(405, 'method_not_allowed', 'Methode nicht erlaubt.');
 }
 

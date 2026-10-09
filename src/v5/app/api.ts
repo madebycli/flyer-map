@@ -148,6 +148,14 @@ export const setAreaTeam = (campaignId: string, area: { id: string; updatedAt: s
 export const renameCampaign = (campaignId: string, expectedName: string, name: string) =>
   postMutation(campaignId, 'campaign.rename', { name, expectedName });
 
+export const deleteArea = (campaignId: string, area: { id: string; updatedAt: string }) =>
+  postMutation(campaignId, 'area.delete', { areaId: area.id, expectedUpdatedAt: area.updatedAt });
+
+/** After the Gebiet is gone: the server drops what v5 kept for it (progress, notes, map data). */
+export async function forgetArea(campaignId: string, areaId: string): Promise<{ removed: number }> {
+  return (await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/forget`, { method: 'POST' })).json() as Promise<{ removed: number }>;
+}
+
 export const createArea = (campaignId: string, area: { id: string; teamId: string; name: string; geometry: Polygon }) =>
   postAreaMutation(campaignId, 'area.create', { areaId: area.id, teamId: area.teamId, name: area.name, geometry: area.geometry });
 

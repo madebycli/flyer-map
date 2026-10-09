@@ -8,7 +8,7 @@ import { areaAt } from '../areas/nearest.ts';
 import { makeTemplate, parseTemplate, planTemplate, serializeTemplate, templateFileName, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import { downloadText } from './download.ts';
 import { applyTemplatePlan, type ApplyProgress } from './templateApply.ts';
-import { buildPack, createTeam, deleteTeam, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
+import { buildPack, createTeam, deleteArea, deleteTeam, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
@@ -665,7 +665,17 @@ export function App({ campaignId }: { campaignId: string }) {
             <>
               <AreaAdmin key={`${selectedArea.id}:${selectedArea.updatedAt}`} area={selectedArea} teams={meta.teams} busy={adminBusy}
                 onRename={(name) => void runAdmin(() => renameArea(campaignId, areaOfId(selectedArea.id) ?? selectedArea, name))}
-                onSetTeam={(teamId) => void runAdmin(() => setAreaTeam(campaignId, areaOfId(selectedArea.id) ?? selectedArea, teamId), 'Gebiet verschoben.')} />
+                onSetTeam={(teamId) => void runAdmin(() => setAreaTeam(campaignId, areaOfId(selectedArea.id) ?? selectedArea, teamId), 'Gebiet verschoben.')}
+                onDelete={() => {
+                  if (!window.confirm(`Gebiet „${selectedArea.name}“ endgültig löschen? Fortschritt, Notizen und Kartendaten dieses Gebiets werden für alle Geräte entfernt. Das lässt sich nicht rückgängig machen.`)) return;
+                  const keys = [...campaign.areaOf].filter(([, area]) => area === selectedArea.id).map(([key]) => key);
+                  void runAdmin(async () => {
+                    await deleteArea(campaignId, areaOfId(selectedArea.id) ?? selectedArea);
+                    await forgetArea(campaignId, selectedArea.id);
+                    store?.forget(keys);
+                    areaTool.setSelectedId(null);
+                  }, 'Gebiet gelöscht.');
+                }} />
               {adminError && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{adminError}</p>}
             </>
           )}
