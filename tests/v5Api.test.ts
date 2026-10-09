@@ -323,6 +323,25 @@ test('meta serves the deployment basemap; the client carries none', async () => 
   assert.deepEqual(lightOnly.basemap, { dark: null, light: 'https://tiles.example/light' }, 'a theme without a style stays plain, it does not borrow the other one');
 });
 
+test('forgetting a deleted Gebiet removes its progress, notes and map data, and refuses a Gebiet that still exists', async () => {
+  const { call, db } = await setup();
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, { ops: [
+    { id: stamp(NOW - 5000), key: 'h:a', status: 'completed', area: 'area_n' },
+    { id: stamp(NOW - 4000), key: 'h:c', status: 'completed', area: 'area_o' },
+  ] });
+  const path = (area: string) => `/api/v5/campaigns/${campaign}/areas/${area}/forget`;
+  assert.equal((await call('admin', 'POST', path('area_n'))).status, 409, 'a live Gebiet cannot be wiped through this route');
+  assert.equal((await call('editor', 'POST', path('area_gone'))).status, 403);
+  assert.equal((await call('viewer', 'POST', path('area_gone'))).status, 403);
+  assert.equal((await call('anon', 'POST', path('area_gone'))).status, 401);
+  // the Gebiet row disappears, as the mutation would do
+  db.sqlite.prepare('DELETE FROM areas WHERE id = ?').run('area_n');
+  const done = await (await call('admin', 'POST', path('area_n'))).json() as { removed: number };
+  assert.equal(done.removed, 1);
+  const rest = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { ops: { key: string }[] };
+  assert.deepEqual(rest.ops.map((o) => o.key), ['h:c'], 'other Gebiete are untouched');
+});
+
 test('the basemap is also served without a campaign (admin pages), read-only', async () => {
   const { call } = await setup();
   const none = await call('anon', 'GET', '/api/v5/basemap');

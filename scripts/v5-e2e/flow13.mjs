@@ -67,6 +67,12 @@ await page.getByRole('group', { name: 'Gruppe des Gebiets' }).getByRole('button'
 check('moving a Gebiet to another Gruppe is saved', await until(async () => (await meta()).areas.find((a) => a.id === 'area_n')?.teamId === 'team_o'));
 await page.screenshot({ path: `${shots}/g2-area.png` });
 
+// Delete the Gebiet: asks first, removes it and what v5 kept for it
+await page.evaluate(async () => { await fetch('/api/v5/campaigns/campaign_n/ops', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ops: [{ id: `${(Date.now() - 1000).toString(36).padStart(11, '0')}-0000-seed`, key: 'h:gone-1', status: 'completed', area: 'area_n' }] }) }); });
+page.once('dialog', (d) => { check('deleting a Gebiet asks first and says what goes with it', /Fortschritt, Notizen/.test(d.message())); void d.accept(); });
+await page.getByRole('button', { name: 'Gebiet löschen' }).click();
+check('the Gebiet is gone on the server', await until(async () => !(await meta()).areas.some((a) => a.id === 'area_n')));
+check('and so is the progress that belonged to it', await until(async () => await page.evaluate(async () => !(await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.some((o) => o.area === 'area_n'))));
 await b.close();
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

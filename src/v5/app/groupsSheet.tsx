@@ -73,7 +73,7 @@ export function GroupsSheet({ meta, busy, error, onRenameCampaign, onCreate, onU
 }
 
 /** Admin, on a selected Gebiet: its name and which Gruppe it belongs to (the map colours it accordingly). */
-export function AreaAdmin({ area, teams, busy, onRename, onSetTeam }: { area: Meta['areas'][number]; teams: Meta['teams']; busy: boolean; onRename(name: string): void; onSetTeam(teamId: string): void }) {
+export function AreaAdmin({ area, teams, busy, onRename, onSetTeam, onDelete }: { area: Meta['areas'][number]; teams: Meta['teams']; busy: boolean; onRename(name: string): void; onSetTeam(teamId: string): void; onDelete(): void }) {
   const [name, setName] = useState(area.name);
   const commit = () => { const next = name.trim(); if (next && next !== area.name) onRename(next); else setName(area.name); };
   return (
@@ -84,6 +84,7 @@ export function AreaAdmin({ area, teams, busy, onRename, onSetTeam }: { area: Me
           {teams.map((t) => <button key={t.id} className={`v5-team${t.id === area.teamId ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} disabled={busy} aria-pressed={t.id === area.teamId} aria-label={`Zu Gruppe ${t.name}`} title={t.name} onClick={() => { if (t.id !== area.teamId) onSetTeam(t.id); }} />)}
         </div>
       )}
+      <button className="v5-btn" style={{ marginTop: 0 }} disabled={busy} onClick={onDelete}><Icon name="trash" size={20} />Gebiet löschen</button>
     </div>
   );
 }

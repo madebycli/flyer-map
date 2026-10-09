@@ -98,6 +98,7 @@ Einsätze, Automationen and the Team-Center are **not** rebuilt; they are delete
 | Streets (list, manual street) | search + derived streets | list replaced by search; manual street for roads missing in OSM: not rebuilt (decision 5) |
 | Einstellungen: appearance, hand | Menü: Hell/Dunkel, Links-/Rechtshand | done |
 | Einstellungen: access links (Gruppe/Ansehen/Admin), Abhol-Links, helpers | Menü → Zugänge | done (Admin links are replaced by Organizer accounts) |
+| Gebiet löschen | on a selected Gebiet (admin): deletes it and everything v5 kept for it | done (flow 13, `POST …/areas/:id/forget`) |
 | Einstellungen: Gruppen rename/recolour, Gebiet → Gruppe, Aktion rename | Menü → Gruppen (create, rename, recolour, delete when empty, Aktion rename); on a selected Gebiet: rename and move to another Gruppe | done (flow 13) |
 | Einstellungen: language (en) | German only | dropped (decision 5) |
 | Team (hub, active team) | Gruppe is implied by the link; admins see all Gruppen | done |
