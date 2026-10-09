@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const componentPath = "src/platform/FunnyFocusVideo.tsx";
-const mainPath = "src/main.tsx";
+const mainPath = "src/legacyMain.tsx";
 
 test("funny focus video stays local and alternates the two requested clips", async () => {
   const source = await readFile(componentPath, "utf8");

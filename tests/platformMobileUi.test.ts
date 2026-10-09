@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("organizer navigation and lifecycle controls stay usable on mobile", async () => {
-  const css = await readFile("src/organization/organization-admin.css", "utf8");
-  assert.match(css, /\.org-admin-topbar nav\s*\{[\s\S]*?flex-wrap: nowrap[\s\S]*?overflow-x: auto/u);
-  assert.match(css, /@media \(max-width: 760px\)[\s\S]*?\.org-admin-topbar nav button[\s\S]*?min-height: 44px/u);
-  assert.match(css, /@media \(max-width: 760px\)[\s\S]*?\.org-lifecycle-actions\s*\{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/u);
-  assert.match(css, /\.org-lifecycle-actions button[\s\S]*?min-height: 48px/u);
+test("organizer navigation scrolls instead of wrapping and keeps tap targets large on mobile", async () => {
+  const css = await readFile("src/ui/kit.css", "utf8");
+  assert.match(css, /\.ui-bar nav\s*\{[^}]*overflow-x: auto/u);
+  assert.match(css, /@media \(min-width: 760px\)[^\n]*\.ui-bar \{ flex-wrap: nowrap; \}/u);
+  assert.match(css, /\.ui-bar nav a, \.ui-bar nav button\s*\{[^}]*min-height: 2\.5rem/u);
+  assert.match(css, /\.ui-seg button\s*\{[^}]*min-height: 2\.4rem/u);
+  assert.match(css, /\.ui-main\s*\{[^}]*padding: 1\.6rem max\(1rem, env\(safe-area-inset-left\)\)/u);
 });
 
 test("launcher opens expanded while the focused team summary stays compact", async () => {

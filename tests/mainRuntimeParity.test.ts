@@ -85,7 +85,7 @@ test("Main deployment serves Organizer login UI and recognizes auth routes inste
   assert.equal(config.assets.not_found_handling,'single-page-application');
   assert.deepEqual(config.assets.run_worker_first,['/api/*','/']);
   assert.equal(isOrganizationAdminPath("/login"),true);
-  assert.match(entry,/isOrganizationAdminPath\(window\.location\.pathname\)/u);
+  assert.match(entry,/isOrganizationAdminPath\(pathname\)/u);
   const me=await mainWorker.fetch(request("https://one.flyer.test","/api/organization/me"),env(db));
   assert.equal(me.status,401);assert.equal(((await me.json()) as {error:{code:string}}).error.code,"authentication_required");
   const head=await mainWorker.fetch(request("https://one.flyer.test","/api/organization/me",undefined,{method:"HEAD"}),env(db));

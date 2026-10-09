@@ -74,7 +74,13 @@ Net effect: ≈ 45 000 of 79 000 lines disappear at the end; ≈ 5 000 new lines
 - **Phase 2 (dormant features)**, slice 1 — *Statistik + Aktivität merged into "Team & Aktivität"* (`activity.ts`, `activitySheet.tsx`): who brought in how many houses today / 7 days / total and the latest changes,
   derived from the status overlay (every entry carries author and HLC wall time). No server change. Decision: this aggregation stays in TypeScript — the overlay lives in JS memory and the loop is one pass over a Map,
   so a Rust port would only add marshalling (the plan's "stats in Rust" is dropped for this part; geometry stays in Rust). Tests `v5Activity` + flow 9.
-  Open in phase 2: Einsätze, Automationen, Team-Center/Gruppen (need Worker contracts), Organizer/Admin UI.
+- **Phase 2, slice 2 — Organizer UI** (sign-in with second factor, Aktionen, new Aktion, security centre, invitations, invite/reset pages) rebuilt on the page kit `src/ui/kit.*`:
+  logic unchanged, markup new. `src/main.tsx` is now a router with two chunks (`organization/main.tsx` with the design system only, `legacyMain.tsx` with the old map and its CSS), so the
+  organiser pages no longer load any map CSS. Merged duplicates: the invitation form lived twice (Security Center and Invite Center) — now only on `/admin/invites`; the nav-injection hack
+  (`OrganizationAdminNavEnhancer`) is gone because one `AdminBar` serves every page. The focus picker no longer hard-codes the OSM tile server: it uses the deployment basemap via the new
+  public `GET /api/v5/basemap` (same URLs every field client already receives) and falls back to a plain background. 470 lines of org CSS deleted. Tests: `organizationAdminUi` rewritten
+  as behaviour assertions, `v5Api` (basemap endpoint), flow 11 (browser, API mocked at the network edge).
+  Open in phase 2: Einsätze, Automationen, Team-Center/Gruppen (need Worker contracts), admin panels still inside the legacy map app (`src/admin`).
 - Phases 3–5: not started.
 
 ## Not decided here

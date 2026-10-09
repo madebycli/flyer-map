@@ -1,103 +1,21 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AdminMapPicker } from "./AdminMapPicker.tsx";
 import {
-  OrganizationApiError,
   beginOrganizationLogin,
   bootstrapOrganizationAccount,
   completeOrganizationRecovery,
   completeOrganizationTotp,
   createOrganizationCampaign,
-  getOrganizationMe,
   listOrganizationCampaigns,
-  logoutOrganization,
   skipOrganizationMfaEnrollment,
   updateOrganizationCampaignLifecycle,
   type OrganizationCampaignDto,
-  type OrganizationMeDto,
 } from "./organizationApiClient.ts";
-import {
-  campaignIdFromOrganizationPath,
-  preserveDiagnosticFlag,
-  safeOrganizationNext,
-} from "./organizationRoutes.ts";
-import "./organization-admin.css";
+import { campaignIdFromOrganizationPath, preserveDiagnosticFlag, safeOrganizationNext } from "./organizationRoutes.ts";
+import { AdminBar, OrganizationLine, PageLoading, TotpEnrollment, errorMessage, formatDate, useOrganizationMe, type Navigate } from "./shared.tsx";
+import { Button, Card, CenterPage, Chip, Facts, Field, Group, Heading, LinkButton, Notice, Page, Radio, Segmented, Select, TextInput } from "../ui/index.ts";
 
-type Navigate = (path: string, replace?: boolean) => void;
-
-type AsyncState<T> = {
-  loading: boolean;
-  value: T | null;
-  error: string | null;
-};
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Unbekannter Fehler.";
-}
-
-function useOrganizationMe(navigate: Navigate): AsyncState<OrganizationMeDto> {
-  const [state, setState] = useState<AsyncState<OrganizationMeDto>>({ loading: true, value: null, error: null });
-  useEffect(() => {
-    let active = true;
-    getOrganizationMe()
-      .then((value) => {
-        if (active) setState({ loading: false, value, error: null });
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        if (error instanceof OrganizationApiError && error.status === 401) {
-          const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
-          navigate(`/login?next=${next}`, true);
-          return;
-        }
-        setState({ loading: false, value: null, error: errorMessage(error) });
-      });
-    return () => {
-      active = false;
-    };
-  }, [navigate]);
-  return state;
-}
-
-function PageFrame({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
-  return (
-    <main className={compact ? "org-page org-page--compact" : "org-page"}>
-      <header className="org-public-header">
-        <a className="org-brand" href="/login">Flyer Map</a>
-        <span>Organizer Admin</span>
-      </header>
-      {children}
-    </main>
-  );
-}
-
-function AdminTopbar({ me, navigate }: { me: OrganizationMeDto; navigate: Navigate }) {
-  const [busy, setBusy] = useState(false);
-  const canCreateCampaign = me.memberships.some((membership) => membership.role === "organizer");
-  const logout = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await logoutOrganization();
-    } finally {
-      navigate("/login", true);
-    }
-  };
-  return (
-    <header className="org-admin-topbar">
-      <button className="org-brand org-brand--button" type="button" onClick={() => navigate("/admin")}>Flyer Map</button>
-      <nav aria-label="Organizer Navigation">
-        <button type="button" onClick={() => navigate("/admin")}>Aktionen</button>
-        {canCreateCampaign ? <button type="button" onClick={() => navigate("/new")}>Neue Aktion</button> : null}
-        <a href="/admin/security">Sicherheit</a>
-      </nav>
-      <div className="org-account-chip">
-        <span>{me.account.username}</span>
-        <button type="button" disabled={busy} onClick={() => void logout()}>Abmelden</button>
-      </div>
-    </header>
-  );
-}
+const Problem = ({ children }: { children: string | null }) => <CenterPage><Notice tone="error">{children ?? "Sitzung konnte nicht geladen werden."}</Notice></CenterPage>;
 
 function StartPage({ navigate }: { navigate: Navigate }) {
   const [organizationName, setOrganizationName] = useState("");
@@ -106,17 +24,13 @@ function StartPage({ navigate }: { navigate: Navigate }) {
   const [passwordAgain, setPasswordAgain] = useState("");
   const [bootstrapSecret, setBootstrapSecret] = useState("");
   const [enrollment, setEnrollment] = useState<null | { otpauthUri: string; recoveryCodes: string[]; optionalMfaAllowed: boolean }>(null);
-  const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submitSetup = async (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;
-    if (password !== passwordAgain) {
-      setError("Die Passwörter stimmen nicht überein.");
-      return;
-    }
+    if (password !== passwordAgain) { setError("Die Passwörter stimmen nicht überein."); return; }
     setBusy(true);
     setError(null);
     try {
@@ -132,94 +46,55 @@ function StartPage({ navigate }: { navigate: Navigate }) {
     }
   };
 
-  const finishSetup = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await completeOrganizationTotp(totpCode);
-      navigate("/admin", true);
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (enrollment) {
     return (
-      <PageFrame compact>
-        <section className="org-card org-enrollment-card">
-          <span className="org-eyebrow">Schritt 2 von 2</span>
-          <h1>MFA absichern</h1>
-          <p>Scanne den QR-Code mit deiner Authenticator-App. Sichere anschließend die Recovery-Codes offline.</p>
-          <div className="org-qr"><QRCodeSVG value={enrollment.otpauthUri} size={196} level="M" /></div>
-          <details>
-            <summary>Setup-Schlüssel manuell anzeigen</summary>
-            <code className="org-break-code">{enrollment.otpauthUri}</code>
-          </details>
-          <div className="org-recovery-box">
-            <div>
-              <strong>Recovery-Codes</strong>
-              <small>Jeder Code funktioniert nur einmal.</small>
-            </div>
-            <pre>{enrollment.recoveryCodes.join("\n")}</pre>
-            <button type="button" onClick={() => void navigator.clipboard.writeText(enrollment.recoveryCodes.join("\n"))}>Codes kopieren</button>
-          </div>
-          <form className="org-form" onSubmit={(event) => void finishSetup(event)}>
-            <label>6-stelliger Code<input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value)} required /></label>
-            {error ? <p className="org-error" role="alert">{error}</p> : null}
-            <button className="org-primary" disabled={busy || totpCode.length !== 6}>MFA bestätigen & Admin öffnen</button>
-          </form>
-          {enrollment.optionalMfaAllowed ? (
-            <button
-              className="org-link-button"
-              type="button"
-              disabled={busy}
+      <CenterPage>
+        <TotpEnrollment
+          enrollment={enrollment}
+          title="MFA absichern"
+          intro="Scanne den QR-Code mit deiner Authenticator-App. Sichere anschließend die Recovery-Codes offline."
+          confirmLabel="MFA bestätigen & Admin öffnen"
+          onConfirmed={() => navigate("/admin", true)}
+          extra={enrollment.optionalMfaAllowed ? (
+            <Button
+              tone="quiet"
+              busy={busy}
               onClick={() => {
                 setBusy(true);
                 setError(null);
-                void skipOrganizationMfaEnrollment()
-                  .then(() => navigate("/admin", true))
-                  .catch((cause: unknown) => setError(errorMessage(cause)))
-                  .finally(() => setBusy(false));
+                void skipOrganizationMfaEnrollment().then(() => navigate("/admin", true)).catch((cause: unknown) => setError(errorMessage(cause))).finally(() => setBusy(false));
               }}
             >
               2FA vorerst überspringen
-            </button>
+            </Button>
           ) : null}
-        </section>
-      </PageFrame>
+        />
+        {error ? <Notice tone="error">{error}</Notice> : null}
+      </CenterPage>
     );
   }
 
   return (
-    <PageFrame compact>
-      <section className="org-card">
-        <span className="org-eyebrow">Ersteinrichtung</span>
-        <h1>Organization & ersten Organizer anlegen</h1>
+    <CenterPage>
+      <Card eyebrow="Ersteinrichtung" title="Organization & ersten Organizer anlegen" icon="shield">
         <p>Dieser Vorgang ist global nur einmal möglich und benötigt den separaten Setup-Schlüssel der isolierten Umgebung.</p>
-        <form className="org-form" onSubmit={(event) => void submitSetup(event)}>
-          <label>Organization<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} minLength={2} maxLength={120} autoComplete="organization" required /></label>
-          <label>Benutzername<input value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={40} autoComplete="username" required /></label>
-          <label>Passwort<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} maxLength={256} autoComplete="new-password" required /></label>
-          <label>Passwort wiederholen<input type="password" value={passwordAgain} onChange={(event) => setPasswordAgain(event.target.value)} minLength={12} maxLength={256} autoComplete="new-password" required /></label>
-          <label>Setup-Schlüssel<input type="password" value={bootstrapSecret} onChange={(event) => setBootstrapSecret(event.target.value)} autoComplete="off" required /></label>
-          {error ? <p className="org-error" role="alert">{error}</p> : null}
-          <button className="org-primary" disabled={busy}>{busy ? "Wird angelegt …" : "Organization sicher anlegen"}</button>
+        <form className="ui-form" onSubmit={(event) => void submitSetup(event)}>
+          <Field label="Organization"><TextInput value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} minLength={2} maxLength={120} autoComplete="organization" required /></Field>
+          <Field label="Benutzername"><TextInput value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={40} autoComplete="username" required /></Field>
+          <Field label="Passwort"><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} maxLength={256} autoComplete="new-password" required /></Field>
+          <Field label="Passwort wiederholen"><TextInput type="password" value={passwordAgain} onChange={(event) => setPasswordAgain(event.target.value)} minLength={12} maxLength={256} autoComplete="new-password" required /></Field>
+          <Field label="Setup-Schlüssel"><TextInput type="password" value={bootstrapSecret} onChange={(event) => setBootstrapSecret(event.target.value)} autoComplete="off" required /></Field>
+          {error ? <Notice tone="error">{error}</Notice> : null}
+          <Button tone="primary" busy={busy}>{busy ? "Wird angelegt …" : "Organization sicher anlegen"}</Button>
         </form>
-        <p className="org-secondary-copy">Bereits eingerichtet? <button type="button" className="org-link-button" onClick={() => navigate("/login")}>Zum Login</button></p>
-      </section>
-    </PageFrame>
+        <p>Bereits eingerichtet? <Button tone="quiet" onClick={() => navigate("/login")}>Zum Login</Button></p>
+      </Card>
+    </CenterPage>
   );
 }
 
 function LoginPage({ navigate }: { navigate: Navigate }) {
-  const next = preserveDiagnosticFlag(
-    safeOrganizationNext(new URLSearchParams(window.location.search).get("next")),
-    window.location.search,
-  );
+  const next = preserveDiagnosticFlag(safeOrganizationNext(new URLSearchParams(window.location.search).get("next")), window.location.search);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rememberDevice, setRememberDevice] = useState(false);
@@ -268,50 +143,53 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
 
   if (phase === "recovery-done") {
     return (
-      <PageFrame compact>
-        <section className="org-card">
-          <span className="org-eyebrow">Recovery bestätigt</span>
-          <h1>Sicherheitsfaktor erneuern</h1>
+      <CenterPage>
+        <Card eyebrow="Recovery bestätigt" title="Sicherheitsfaktor erneuern" icon="shield">
           <p>Die Recovery-Sitzung ist absichtlich eingeschränkt. Privilegierte Organizer-Aktionen bleiben gesperrt, bis TOTP neu eingerichtet wurde.</p>
-          <button className="org-primary" type="button" onClick={() => navigate(preserveDiagnosticFlag("/admin", window.location.search))}>Sitzungsstatus öffnen</button>
-        </section>
-      </PageFrame>
+          <Button tone="primary" onClick={() => navigate(preserveDiagnosticFlag("/admin", window.location.search))}>Sitzungsstatus öffnen</Button>
+        </Card>
+      </CenterPage>
     );
   }
 
   return (
-    <PageFrame compact>
-      <section className="org-card">
-        <span className="org-eyebrow">Organizer Login</span>
-        <h1>{phase === "password" ? "Sicher anmelden" : "Zweiten Faktor bestätigen"}</h1>
+    <CenterPage>
+      <Card eyebrow="Organizer Login" title={phase === "password" ? "Sicher anmelden" : "Zweiten Faktor bestätigen"} icon="lock">
         {phase === "password" ? (
-          <form className="org-form" onSubmit={(event) => void submitPassword(event)}>
-            <label>Benutzername<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
-            <label>Passwort<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>
-            <label><span><input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} /> Dieses Gerät merken</span><small>Die aktive Sitzung bleibt 12 Stunden kurzlebig. Dieses Gerät darf sie bis zu 60 Tage Inaktivität, maximal 90 Tage insgesamt, sicher erneuern.</small></label>
-            {error ? <p className="org-error" role="alert">{error}</p> : null}
-            <button className="org-primary" disabled={busy}>{busy ? "Prüfe …" : "Weiter"}</button>
+          <form className="ui-form" onSubmit={(event) => void submitPassword(event)}>
+            <Field label="Benutzername"><TextInput value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></Field>
+            <Field label="Passwort"><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></Field>
+            <label className="ui-check">
+              <input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />
+              <span>Dieses Gerät merken<small>Die aktive Sitzung bleibt 12 Stunden kurzlebig. Dieses Gerät darf sie bis zu 60 Tage Inaktivität, maximal 90 Tage insgesamt, sicher erneuern.</small></span>
+            </label>
+            {error ? <Notice tone="error">{error}</Notice> : null}
+            <Button tone="primary" busy={busy}>{busy ? "Prüfe …" : "Weiter"}</Button>
           </form>
         ) : (
-          <form className="org-form" onSubmit={(event) => void submitFactor(event)}>
-            <div className="org-segmented" role="group" aria-label="MFA-Methode">
-              <button type="button" className={factorMode === "totp" ? "is-active" : ""} onClick={() => { setFactorMode("totp"); setFactor(""); }}>Authenticator</button>
-              <button type="button" className={factorMode === "recovery" ? "is-active" : ""} onClick={() => { setFactorMode("recovery"); setFactor(""); }}>Recovery-Code</button>
-            </div>
-            <label>{factorMode === "totp" ? "6-stelliger Code" : "Recovery-Code"}<input value={factor} onChange={(event) => setFactor(event.target.value)} autoComplete={factorMode === "totp" ? "one-time-code" : "off"} inputMode={factorMode === "totp" ? "numeric" : "text"} required /></label>
-            {rememberDevice && factorMode === "totp" ? <p className="org-help">Nach erfolgreicher MFA wird nur dieses Gerät als vertrauenswürdig registriert. Der Remember-Token ist HttpOnly und wird bei jeder Erneuerung rotiert.</p> : null}
-            {error ? <p className="org-error" role="alert">{error}</p> : null}
-            <button className="org-primary" disabled={busy}>Anmelden</button>
-            <button className="org-link-button" type="button" onClick={() => { setPhase("password"); setFactor(""); setError(null); }}>Zurück</button>
+          <form className="ui-form" onSubmit={(event) => void submitFactor(event)}>
+            <Segmented
+              label="MFA-Methode"
+              value={factorMode}
+              options={[{ value: "totp", label: "Authenticator" }, { value: "recovery", label: "Recovery-Code" }]}
+              onChange={(mode) => { setFactorMode(mode); setFactor(""); }}
+            />
+            <Field label={factorMode === "totp" ? "6-stelliger Code" : "Recovery-Code"}>
+              <TextInput value={factor} onChange={(event) => setFactor(event.target.value)} autoComplete={factorMode === "totp" ? "one-time-code" : "off"} inputMode={factorMode === "totp" ? "numeric" : "text"} required />
+            </Field>
+            {rememberDevice && factorMode === "totp" ? <p>Nach erfolgreicher MFA wird nur dieses Gerät als vertrauenswürdig registriert. Der Remember-Token ist HttpOnly und wird bei jeder Erneuerung rotiert.</p> : null}
+            {error ? <Notice tone="error">{error}</Notice> : null}
+            <Button tone="primary" busy={busy}>Anmelden</Button>
+            <Button tone="quiet" onClick={() => { setPhase("password"); setFactor(""); setError(null); }}>Zurück</Button>
           </form>
         )}
-      </section>
-    </PageFrame>
+      </Card>
+    </CenterPage>
   );
 }
 
 function DashboardPage({ navigate }: { navigate: Navigate }) {
-  const meState = useOrganizationMe(navigate);
+  const meState = useOrganizationMe("/admin", (path) => navigate(path, true));
   const [organizationId, setOrganizationId] = useState("");
   const [campaigns, setCampaigns] = useState<OrganizationCampaignDto[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
@@ -329,58 +207,50 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
     setLoadingCampaigns(true);
     setCampaignError(null);
     listOrganizationCampaigns(organizationId)
-      .then((result) => {
-        if (active) setCampaigns(result.campaigns);
-      })
-      .catch((error: unknown) => {
-        if (active) setCampaignError(errorMessage(error));
-      })
-      .finally(() => {
-        if (active) setLoadingCampaigns(false);
-      });
-    return () => {
-      active = false;
-    };
+      .then((result) => { if (active) setCampaigns(result.campaigns); })
+      .catch((error: unknown) => { if (active) setCampaignError(errorMessage(error)); })
+      .finally(() => { if (active) setLoadingCampaigns(false); });
+    return () => { active = false; };
   }, [organizationId, meState.value?.assurance]);
 
-  if (meState.loading) return <PageFrame><section className="org-status">Admin wird geladen …</section></PageFrame>;
-  if (!meState.value) return <PageFrame><section className="org-status org-error">{meState.error ?? "Sitzung konnte nicht geladen werden."}</section></PageFrame>;
+  if (meState.loading) return <Page><PageLoading>Admin wird geladen …</PageLoading></Page>;
+  if (!meState.value) return <Problem>{meState.error}</Problem>;
   const me = meState.value;
   const membership = me.memberships.find((item) => item.organizationId === organizationId) ?? me.memberships[0] ?? null;
   const canCreateCampaign = Boolean(me.assurance === "mfa" && membership?.role === "organizer");
+  const newPath = `/new${organizationId ? `?organization=${encodeURIComponent(organizationId)}` : ""}`;
 
   return (
-    <main className="org-admin-page">
-      <AdminTopbar me={me} navigate={navigate} />
-      <section className="org-admin-content">
-        <div className="org-heading-row">
-          <div><span className="org-eyebrow">Organization</span><h1>Aktionen</h1></div>
-          {membership?.role === "organizer" ? <button className="org-primary" type="button" disabled={!canCreateCampaign} onClick={() => navigate(`/new${organizationId ? `?organization=${encodeURIComponent(organizationId)}` : ""}`)}>+ Neue Aktion</button> : null}
-        </div>
-        {me.memberships.length > 1 ? (
-          <label className="org-select-label">Organization<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{me.memberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</select></label>
-        ) : membership ? <p className="org-organization-name">{membership.organizationName} · {membership.role === "organizer" ? "Organizer" : "Admin"}</p> : null}
-        {me.assurance === "recovery" ? <div className="org-warning"><strong>Recovery-Sitzung</strong><p>Privilegierte Aktionen sind serverseitig gesperrt, bis MFA wieder vollständig hergestellt ist.</p></div> : null}
-        {me.memberships.length === 0 ? <div className="org-empty"><h2>Keine Organization-Zuordnung</h2><p>Dieser Account besitzt aktuell keine aktive Mitgliedschaft.</p></div> : null}
-        {campaignError ? <p className="org-error" role="alert">{campaignError}</p> : null}
-        {loadingCampaigns ? <p className="org-status">Aktionen werden geladen …</p> : null}
-        {!loadingCampaigns && !campaignError && me.assurance === "mfa" && campaigns.length === 0 && organizationId ? <div className="org-empty"><h2>Noch keine Aktion</h2><p>{membership?.role === "organizer" ? "Erstelle die erste serverseitig persistierte Aktion für diese Organization." : "Für diese Organization ist noch keine für deinen Admin sichtbare Aktion vorhanden."}</p>{membership?.role === "organizer" ? <button className="org-primary" type="button" onClick={() => navigate(`/new?organization=${encodeURIComponent(organizationId)}`)}>Erste Aktion erstellen</button> : null}</div> : null}
-        <div className="org-campaign-grid">
-          {campaigns.map((campaign) => (
-            <button className="org-campaign-card" type="button" key={campaign.id} onClick={() => navigate(preserveDiagnosticFlag(`/admin/campaign/${encodeURIComponent(campaign.id)}`, window.location.search))}>
-              <div><span className={`org-lifecycle org-lifecycle--${campaign.lifecycle}`}>{campaign.lifecycle}</span><h2>{campaign.name}</h2></div>
-              <dl><div><dt>Kartenfokus</dt><dd>{campaign.map ? `${campaign.map.lat.toFixed(3)}, ${campaign.map.lng.toFixed(3)} · z${campaign.map.zoom.toFixed(1)}` : "Nicht gesetzt"}</dd></div><div><dt>Aktualisiert</dt><dd>{new Date(campaign.updatedAt).toLocaleString("de-DE")}</dd></div></dl>
-              <span>Öffnen →</span>
-            </button>
-          ))}
-        </div>
-      </section>
-    </main>
+    <Page bar={<AdminBar me={me} current="campaigns" navigate={navigate} />}>
+      <Heading eyebrow="Organization" title="Aktionen">
+        {membership?.role === "organizer" ? <Button tone="primary" icon="plus" disabled={!canCreateCampaign} onClick={() => navigate(newPath)}>Neue Aktion</Button> : null}
+      </Heading>
+      <OrganizationLine me={me} organizationId={organizationId} onChange={setOrganizationId} />
+      {me.assurance === "recovery" ? <Notice tone="warn">Recovery-Sitzung: Privilegierte Aktionen sind serverseitig gesperrt, bis MFA wieder vollständig hergestellt ist.</Notice> : null}
+      {me.memberships.length === 0 ? <Card title="Keine Organization-Zuordnung" icon="info"><p>Dieser Account besitzt aktuell keine aktive Mitgliedschaft.</p></Card> : null}
+      {campaignError ? <Notice tone="error">{campaignError}</Notice> : null}
+      {loadingCampaigns ? <PageLoading>Aktionen werden geladen …</PageLoading> : null}
+      {!loadingCampaigns && !campaignError && me.assurance === "mfa" && campaigns.length === 0 && organizationId ? (
+        <Card title="Noch keine Aktion" icon="mailbox">
+          <p>{membership?.role === "organizer" ? "Erstelle die erste Aktion für diese Organization." : "Für diese Organization ist noch keine für deinen Admin sichtbare Aktion vorhanden."}</p>
+          {membership?.role === "organizer" ? <Button tone="primary" icon="plus" onClick={() => navigate(`/new?organization=${encodeURIComponent(organizationId)}`)}>Erste Aktion erstellen</Button> : null}
+        </Card>
+      ) : null}
+      <div className="ui-grid">
+        {campaigns.map((campaign) => (
+          <button className="ui-campaign" type="button" key={campaign.id} onClick={() => navigate(preserveDiagnosticFlag(`/admin/campaign/${encodeURIComponent(campaign.id)}`, window.location.search))}>
+            <div><Chip tone={campaign.lifecycle}>{campaign.lifecycle}</Chip><h2>{campaign.name}</h2></div>
+            <small>Aktualisiert {formatDate(campaign.updatedAt)}</small>
+            <span className="go">Öffnen →</span>
+          </button>
+        ))}
+      </div>
+    </Page>
   );
 }
 
 function NewCampaignPage({ navigate }: { navigate: Navigate }) {
-  const meState = useOrganizationMe(navigate);
+  const meState = useOrganizationMe("/new", (path) => navigate(path, true));
   const requestedOrganization = new URLSearchParams(window.location.search).get("organization") ?? "";
   const [organizationId, setOrganizationId] = useState(requestedOrganization);
   const [name, setName] = useState("");
@@ -416,45 +286,51 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
     }
   };
 
-  if (meState.loading) return <PageFrame><section className="org-status">Admin wird geladen …</section></PageFrame>;
-  if (!meState.value) return <PageFrame><section className="org-status org-error">{meState.error}</section></PageFrame>;
+  if (meState.loading) return <Page><PageLoading>Admin wird geladen …</PageLoading></Page>;
+  if (!meState.value) return <Problem>{meState.error}</Problem>;
   const me = meState.value;
   const organizerMemberships = me.memberships.filter((item) => item.role === "organizer");
+  const bar = <AdminBar me={me} current="new" navigate={navigate} />;
 
   if (organizerMemberships.length === 0) {
     return (
-      <main className="org-admin-page">
-        <AdminTopbar me={me} navigate={navigate} />
-        <section className="org-admin-content org-admin-content--narrow">
-          <button className="org-back" type="button" onClick={() => navigate("/admin")}>← Aktionen</button>
-          <section className="org-card org-card--wide"><h1>Nur für Organizer</h1><p>Neue Campaigns können ausschließlich von einem Organizer mit vollständig bestätigter MFA-Sitzung angelegt werden.</p></section>
-        </section>
-      </main>
+      <Page bar={bar} narrow>
+        <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
+        <Card title="Nur für Organizer" icon="lock"><p>Neue Campaigns können ausschließlich von einem Organizer mit vollständig bestätigter MFA-Sitzung angelegt werden.</p></Card>
+      </Page>
     );
   }
 
   return (
-    <main className="org-admin-page">
-      <AdminTopbar me={me} navigate={navigate} />
-      <section className="org-admin-content org-admin-content--narrow">
-        <button className="org-back" type="button" onClick={() => navigate("/admin")}>← Aktionen</button>
-        <div><span className="org-eyebrow">Neue Aktion</span><h1>Aktion erstellen</h1><p>Name, Organization, Startstatus und Kartenfokus werden serverseitig gespeichert.</p></div>
-        <form className="org-form org-form--panel" onSubmit={(event) => void submit(event)}>
-          <label>Organization<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} required>{organizerMemberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</select></label>
-          <label>Name der Aktion<input value={name} minLength={2} maxLength={160} onChange={(event) => setName(event.target.value)} placeholder="z. B. Frühjahr 2027" required /></label>
-          <fieldset className="org-radio"><legend>Startstatus</legend><label><input type="radio" checked={lifecycle === "draft"} onChange={() => setLifecycle("draft")} /> Entwurf</label><label><input type="radio" checked={lifecycle === "active"} onChange={() => setLifecycle("active")} /> Aktiv</label></fieldset>
-          <div><strong>Kartenfokus</strong><p className="org-help">Verschiebe die Karte an den Arbeitsbereich. Die Mitte und Zoomstufe werden mit der Aktion gespeichert.</p><AdminMapPicker value={map} onChange={setMap} /></div>
-          {!canCreate ? <p className="org-error">Für neue Campaigns ist eine Organizer-Rolle mit vollständig bestätigter MFA-Sitzung erforderlich.</p> : null}
-          {error ? <p className="org-error" role="alert">{error}</p> : null}
-          <button className="org-primary" disabled={!canCreate || busy}>{busy ? "Aktion wird erstellt …" : "Aktion erstellen"}</button>
+    <Page bar={bar} narrow>
+      <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
+      <Heading eyebrow="Neue Aktion" title="Aktion erstellen" />
+      <p className="ui-muted">Name, Organization, Startstatus und Kartenfokus werden serverseitig gespeichert.</p>
+      <Card>
+        <form className="ui-form" onSubmit={(event) => void submit(event)}>
+          <Field label="Organization"><Select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} required>{organizerMemberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</Select></Field>
+          <Field label="Name der Aktion"><TextInput value={name} minLength={2} maxLength={160} onChange={(event) => setName(event.target.value)} placeholder="z. B. Frühjahr 2027" required /></Field>
+          <Group legend="Startstatus">
+            <Radio name="lifecycle" label="Entwurf" checked={lifecycle === "draft"} onChange={() => setLifecycle("draft")} />
+            <Radio name="lifecycle" label="Aktiv" checked={lifecycle === "active"} onChange={() => setLifecycle("active")} />
+          </Group>
+          <div className="ui-form">
+            <strong>Kartenfokus</strong>
+            <AdminMapPicker value={map} onChange={setMap} />
+          </div>
+          {!canCreate ? <Notice tone="error">Für neue Campaigns ist eine Organizer-Rolle mit vollständig bestätigter MFA-Sitzung erforderlich.</Notice> : null}
+          {error ? <Notice tone="error">{error}</Notice> : null}
+          <Button tone="primary" busy={busy} disabled={!canCreate}>{busy ? "Aktion wird erstellt …" : "Aktion erstellen"}</Button>
         </form>
-      </section>
-    </main>
+      </Card>
+    </Page>
   );
 }
 
+const LIFECYCLES = ["draft", "active", "completed", "archived"] as const;
+
 function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId: string }) {
-  const meState = useOrganizationMe(navigate);
+  const meState = useOrganizationMe(`/admin/campaign/${encodeURIComponent(campaignId)}`, (path) => navigate(path, true));
   const [campaign, setCampaign] = useState<OrganizationCampaignDto | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -473,26 +349,17 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
           const result = await listOrganizationCampaigns(membership.organizationId);
           const found = result.campaigns.find((item) => item.id === campaignId);
           if (found) {
-            if (active) {
-              setCampaign(found);
-              setOrganizationId(membership.organizationId);
-              setLoading(false);
-            }
+            if (active) { setCampaign(found); setOrganizationId(membership.organizationId); setLoading(false); }
             return;
           }
         } catch {
           // A membership without campaign.manage is intentionally skipped.
         }
       }
-      if (active) {
-        setError("Aktion wurde in keiner für diesen Account sichtbaren Organization gefunden.");
-        setLoading(false);
-      }
+      if (active) { setError("Aktion wurde in keiner für diesen Account sichtbaren Organization gefunden."); setLoading(false); }
     };
     void findCampaign();
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [campaignId, meState.value]);
 
   const setLifecycle = async (next: OrganizationCampaignDto["lifecycle"]) => {
@@ -509,29 +376,34 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
     }
   };
 
-  if (meState.loading || loading) return <PageFrame><section className="org-status">Aktion wird geladen …</section></PageFrame>;
-  if (!meState.value) return <PageFrame><section className="org-status org-error">{meState.error}</section></PageFrame>;
+  if (meState.loading || loading) return <Page><PageLoading>Aktion wird geladen …</PageLoading></Page>;
+  if (!meState.value) return <Problem>{meState.error}</Problem>;
   const me = meState.value;
 
   return (
-    <main className="org-admin-page">
-      <AdminTopbar me={me} navigate={navigate} />
-      <section className="org-admin-content org-admin-content--narrow">
-        <button className="org-back" type="button" onClick={() => navigate("/admin")}>← Aktionen</button>
-        {error ? <p className="org-error" role="alert">{error}</p> : null}
-        {campaign ? (
-          <>
-            <div className="org-heading-row"><div><span className={`org-lifecycle org-lifecycle--${campaign.lifecycle}`}>{campaign.lifecycle}</span><h1>{campaign.name}</h1></div><a className="org-secondary" href={preserveDiagnosticFlag(`/?campaign=${encodeURIComponent(campaign.id)}`, window.location.search)}>Feldkarte öffnen</a></div>
-            <section className="org-card org-card--wide">
-              <h2>Lebenszyklus</h2>
-              <div className="org-lifecycle-actions">{(["draft", "active", "completed", "archived"] as const).map((value) => <button type="button" key={value} disabled={busy || campaign.lifecycle === value} className={campaign.lifecycle === value ? "is-current" : ""} onClick={() => void setLifecycle(value)}>{value}</button>)}</div>
-            </section>
-            <section className="org-card org-card--wide"><h2>Kartenfokus</h2>{campaign.map ? <dl className="org-detail-grid"><div><dt>Breitengrad</dt><dd>{campaign.map.lat.toFixed(6)}</dd></div><div><dt>Längengrad</dt><dd>{campaign.map.lng.toFixed(6)}</dd></div><div><dt>Zoom</dt><dd>{campaign.map.zoom.toFixed(2)}</dd></div><div><dt>Ausrichtung</dt><dd>{campaign.map.bearing.toFixed(1)}°</dd></div></dl> : <p>Nicht gesetzt.</p>}</section>
-            <section className="org-card org-card--wide"><h2>Persistenz</h2><p>Campaign-ID <code>{campaign.id}</code></p><p>Diese Aktion ist der Organization serverseitig zugeordnet und bleibt nach Abmelden, Cookie-Löschung und erneutem Login erhalten.</p></section>
-          </>
-        ) : null}
-      </section>
-    </main>
+    <Page bar={<AdminBar me={me} current="campaigns" navigate={navigate} />} narrow>
+      <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {campaign ? (
+        <>
+          <Heading eyebrow={campaign.lifecycle} title={campaign.name}>
+            <LinkButton tone="primary" icon="mapPin" href={`/v5?campaign=${encodeURIComponent(campaign.id)}`}>Feldkarte öffnen</LinkButton>
+          </Heading>
+          <Card title="Lebenszyklus" icon="flag">
+            <Segmented label="Lebenszyklus" value={campaign.lifecycle} options={LIFECYCLES.map((value) => ({ value, label: value }))} onChange={(value) => { if (!busy && value !== campaign.lifecycle) void setLifecycle(value); }} />
+          </Card>
+          <Card title="Kartenfokus" icon="mapPin">
+            {campaign.map
+              ? <Facts items={[["Breitengrad", campaign.map.lat.toFixed(6)], ["Längengrad", campaign.map.lng.toFixed(6)], ["Zoom", campaign.map.zoom.toFixed(2)], ["Ausrichtung", `${campaign.map.bearing.toFixed(1)}°`]]} />
+              : <p>Nicht gesetzt.</p>}
+          </Card>
+          <Card title="Persistenz" icon="cloudOk">
+            <p>Campaign-ID <code>{campaign.id}</code></p>
+            <p>Diese Aktion ist der Organization serverseitig zugeordnet und bleibt nach Abmelden, Cookie-Löschung und erneutem Login erhalten.</p>
+          </Card>
+        </>
+      ) : null}
+    </Page>
   );
 }
 
@@ -554,5 +426,6 @@ export function OrganizationApp() {
   if (pathname === "/new") return <NewCampaignPage navigate={navigate} />;
   if (pathname === "/admin") return <DashboardPage navigate={navigate} />;
   if (campaignId) return <CampaignPage navigate={navigate} campaignId={campaignId} />;
-  return <PageFrame compact><section className="org-card"><h1>Admin-Seite nicht gefunden</h1><button className="org-primary" type="button" onClick={() => navigate("/admin", true)}>Zum Admin</button></section></PageFrame>;
+  return <CenterPage><Card title="Admin-Seite nicht gefunden" icon="info"><Button tone="primary" onClick={() => navigate("/admin", true)}>Zum Admin</Button></Card></CenterPage>;
 }
+

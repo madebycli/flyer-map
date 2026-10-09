@@ -2,46 +2,55 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const appSource = readFileSync(new URL("../src/organization/OrganizationApp.tsx", import.meta.url), "utf8");
-const securitySource = readFileSync(new URL("../src/organization/OrganizationSecurityCenter.tsx", import.meta.url), "utf8");
-const adminCss = readFileSync(new URL("../src/organization/organization-admin.css", import.meta.url), "utf8");
-const securityCss = readFileSync(new URL("../src/organization/organization-security.css", import.meta.url), "utf8");
-const mainSource = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
+const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const appSource = read("src/organization/OrganizationApp.tsx");
+const securitySource = read("src/organization/OrganizationSecurityCenter.tsx");
+const inviteSource = read("src/organization/OrganizationInviteCenter.tsx");
+const sharedSource = read("src/organization/shared.tsx");
+const pickerSource = read("src/organization/AdminMapPicker.tsx");
+const kitCss = read("src/ui/kit.css");
+const orgMain = read("src/organization/main.tsx");
+const mainSource = read("src/main.tsx");
+const legacySource = read("src/legacyMain.tsx");
 
-test("organizer admin exposes the security center in primary navigation", () => {
-  assert.match(appSource, /<a href="\/admin\/security">Sicherheit<\/a>/u);
+test("one admin navigation exposes campaigns, invitations and the security center on every page", () => {
+  assert.match(sharedSource, /label: "Einladungen"[\s\S]*?href: "\/admin\/invites"/u);
+  assert.match(sharedSource, /label: "Sicherheit"[\s\S]*?href: "\/admin\/security"/u);
+  for (const source of [appSource, securitySource, inviteSource]) assert.match(source, /<AdminBar /u);
 });
 
-test("organizer pages override the map shell scroll lock", () => {
-  assert.match(
-    adminCss,
-    /body:has\(\.org-page\), body:has\(\.org-admin-page\)[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/u,
-  );
+test("organizer pages scroll like documents and never load the map shell CSS", () => {
+  assert.match(kitCss, /html:has\(\.ui-page\), body:has\(\.ui-page\)\s*\{[^}]*overflow: auto/u);
+  assert.doesNotMatch(orgMain, /styles\.css|street-mode\.css|m4\.css|ui-dark-mode/u);
+  assert.match(orgMain, /import "\.\.\/ui\/ui\.css"/u);
 });
 
-test("security forms can shrink and wrap instead of overflowing horizontally", () => {
-  assert.match(adminCss, /\.org-form--panel \{[^}]*max-width: 100%;[^}]*min-width: 0;/u);
-  assert.match(adminCss, /\.org-form input, \.org-form select, \.org-select-label select \{[^}]*max-width: 100%;[^}]*min-width: 0;/u);
-  assert.match(adminCss, /\.org-radio \{[^}]*max-width: 100%;[^}]*min-width: 0;[^}]*flex-wrap: wrap;/u);
-  assert.match(adminCss, /\.org-campaign-grid > \* \{ min-width: 0; \}/u);
+test("forms and grids can shrink instead of overflowing horizontally", () => {
+  assert.match(kitCss, /\.ui-input\s*\{[^}]*width: 100%;[^}]*min-width: 0;/u);
+  assert.match(kitCss, /\.ui-card\s*\{[^}]*min-width: 0;/u);
+  assert.match(kitCss, /\.ui-grid > \* \{ min-width: 0; \}/u);
+  assert.match(kitCss, /\.ui-form\s*\{[^}]*min-width: 0;/u);
 });
 
-test("one-time invite links stay attached to their row and open in a themed dialog", () => {
-  assert.match(securitySource, /targetId: result\.invite\.id/u);
-  assert.match(securitySource, />Link anzeigen<\/button>/u);
-  assert.match(securitySource, /<OneTimeLinkDialog value=\{oneTimeLink\}/u);
-  assert.doesNotMatch(securitySource, /\{generatedLink \? <section className="org-warning"/u);
-  assert.match(securityCss, /\.org-link-dialog-backdrop/u);
-  assert.match(securityCss, /\.org-security-action--danger/u);
+test("one-time links open in a themed dialog and invitations live on one page", () => {
+  assert.match(inviteSource, /<OneTimeLinkDialog title=\{dialog\.title\} link=\{dialog\.link\}/u);
+  assert.match(inviteSource, />Link anzeigen<\/Button>/u);
+  assert.match(sharedSource, /role="dialog"|<Dialog /u);
+  assert.match(kitCss, /\.ui-scrim/u);
+  assert.match(kitCss, /\.ui-btn\.danger/u);
+  assert.doesNotMatch(securitySource, /createOrganizationInvite/u, "the security center no longer duplicates the invitation form");
+  assert.match(securitySource, /href="\/admin\/invites"/u);
+});
+
+test("secrets travel in the URL fragment and are removed from the address bar once read", () => {
+  assert.match(inviteSource, /url\.hash = new URLSearchParams\(\{ token: secret \}\)/u);
+  assert.match(sharedSource, /window\.history\.replaceState\(null, "", `\$\{window\.location\.pathname\}\$\{window\.location\.search\}`\)/u);
 });
 
 test("campaign.create is not delegable in the Security Center because new Campaigns are Organizer-only", () => {
-  const capabilityBlock = securitySource.slice(
-    securitySource.indexOf("const CAPABILITIES"),
-    securitySource.indexOf("] as const;", securitySource.indexOf("const CAPABILITIES")),
-  );
-  assert.doesNotMatch(capabilityBlock, /campaign\.create/u);
-  assert.match(securitySource, /membership\.role === "organizer"/u);
+  const block = securitySource.slice(securitySource.indexOf("const CAPABILITIES"), securitySource.indexOf("] as const;", securitySource.indexOf("const CAPABILITIES")));
+  assert.doesNotMatch(block, /campaign\.create/u);
+  assert.match(securitySource, /membership\?\.role === "organizer"/u);
 });
 
 test("Admin UI reserves new Campaign creation for Organizer memberships", () => {
@@ -51,8 +60,18 @@ test("Admin UI reserves new Campaign creation for Organizer memberships", () => 
   assert.doesNotMatch(appSource, /membership\?\.capabilities\.includes\("campaign\.create"\)/u);
 });
 
+test("the focus picker uses the deployment's basemap, never a hard-coded tile server", () => {
+  assert.match(pickerSource, /fetch\("\/api\/v5\/basemap"/u);
+  assert.doesNotMatch(pickerSource, /openstreetmap\.org|tile\.openstreetmap/u);
+});
+
 test("bare field root redirects to central login instead of mounting or creating a Campaign", () => {
-  assert.match(mainSource, /else if \(!campaignIdFromUrl\(\)\) \{/u);
-  assert.match(mainSource, /window\.location\.replace\(preserveDiagnosticFlag\("\/login", window\.location\.search\)\)/u);
-  assert.match(appSource, /href=\{preserveDiagnosticFlag\(`\/\?campaign=\$\{encodeURIComponent\(campaign\.id\)\}`, window\.location\.search\)\}>Feldkarte öffnen/u);
+  assert.match(legacySource, /else if \(!campaignIdFromUrl\(\)\) \{/u);
+  assert.match(legacySource, /window\.location\.replace\(preserveDiagnosticFlag\("\/login", window\.location\.search\)\)/u);
+  assert.match(appSource, /Feldkarte öffnen/u);
+});
+
+test("the entry splits organiser pages from the legacy map into separate chunks", () => {
+  assert.match(mainSource, /import\("\.\/organization\/main\.tsx"\)/u);
+  assert.match(mainSource, /import\("\.\/legacyMain\.tsx"\)/u);
 });

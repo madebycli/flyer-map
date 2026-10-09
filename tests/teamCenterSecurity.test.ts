@@ -75,10 +75,12 @@ test("new-device onboarding happens after successful QR redemption", async () =>
 });
 
 test("admin invite center is a first-class route", async () => {
-  const main = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
-  assert.match(main, /window\.location\.pathname === "\/admin\/invites"/u);
-  assert.match(main, /OrganizationInviteCenter/u);
-  assert.match(main, /AccessLinkOnboardingGate/u);
+  const entry = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
+  const organization = await readFile(new URL("../src/organization/main.tsx", import.meta.url), "utf8");
+  const legacy = await readFile(new URL("../src/legacyMain.tsx", import.meta.url), "utf8");
+  assert.match(entry, /"\/admin\/invites"/u);
+  assert.match(organization, /"\/admin\/invites":[\s\S]*?<InviteCenter \/>/u);
+  assert.match(legacy, /AccessLinkOnboardingGate/u);
 });
 
 

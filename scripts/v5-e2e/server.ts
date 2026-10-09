@@ -82,5 +82,9 @@ http.createServer(async (req, res) => {
   }
   let file = path.join(dist, url.pathname === '/v5' ? '/v5.html' : url.pathname);
   try { const body = fs.readFileSync(file); res.writeHead(200, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream' }); res.end(body); }
-  catch { res.writeHead(404); res.end(); }
+  catch {
+    // Like the Worker's assets (single-page-application): a path without a file extension is an app route served by index.html.
+    if (!path.extname(url.pathname)) { res.writeHead(200, { 'content-type': 'text/html' }); res.end(fs.readFileSync(path.join(dist, 'index.html'))); return; }
+    res.writeHead(404); res.end();
+  }
 }).listen(8140, () => console.log('READY'));

@@ -323,6 +323,16 @@ test('meta serves the deployment basemap; the client carries none', async () => 
   assert.deepEqual(lightOnly.basemap, { dark: null, light: 'https://tiles.example/light' }, 'a theme without a style stays plain, it does not borrow the other one');
 });
 
+test('the basemap is also served without a campaign (admin pages), read-only', async () => {
+  const { call } = await setup();
+  const none = await call('anon', 'GET', '/api/v5/basemap');
+  assert.equal(none.status, 200, 'no session needed: the same URLs reach every field client');
+  assert.deepEqual(await none.json(), { basemap: null });
+  const set = await (await call('anon', 'GET', '/api/v5/basemap', undefined, { basemap: { dark: 'https://tiles.example/dark' } })).json() as { basemap: unknown };
+  assert.deepEqual(set.basemap, { dark: 'https://tiles.example/dark', light: null });
+  assert.equal((await call('anon', 'POST', '/api/v5/basemap', {})).status, 404, 'nothing can be written through it');
+});
+
 test('a clean-up that would wipe most of an Area needs a confirmation, and the reply names the rows that really went', async () => {
   const { call } = await setup();
   const ops = Array.from({ length: 30 }, (_, i) => ({ id: stamp(NOW - 5000 + i), key: `h:bulk${i}`, status: 'completed', area: 'area_n' }));

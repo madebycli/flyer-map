@@ -94,6 +94,8 @@ async function pruneState(db: D1DatabaseLike, access: AccessContext, campaignId:
 
 export async function handleV5Api(request: Request, db: D1DatabaseLike, options: V5Options = {}): Promise<Response | null> {
   const url = new URL(request.url);
+  // The deployment's basemap, without a campaign: the admin pages place the map focus with it. Style URLs reach every field client anyway, so they must not carry secrets.
+  if (url.pathname === '/api/v5/basemap' && (request.method === 'GET' || request.method === 'HEAD')) return basemapResponse(options);
   const route = v5Route(url.pathname);
   if (!route) return url.pathname.startsWith('/api/v5/') ? fail(404, 'not_found', 'Unbekannte v5-Route.') : null;
   const access = (await resolveAccess(db, request, route.campaignId)) ?? (await resolveCollectionAccess(db, request, route.campaignId));
@@ -108,6 +110,11 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
   if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options);
   if (route.kind === 'prune' && request.method === 'POST') return pruneState(db, access, route.campaignId, route.areaId, request);
   return fail(405, 'method_not_allowed', 'Methode nicht erlaubt.');
+}
+
+function basemapResponse(options: V5Options): Response {
+  const basemap = options.basemap?.dark || options.basemap?.light ? { dark: options.basemap.dark ?? null, light: options.basemap.light ?? null } : null;
+  return Response.json({ basemap }, { headers: { 'cache-control': 'public, max-age=300' } });
 }
 
 /** Everything the field client needs to boot, in one small request: role, team colours, Areas and pack versions. */

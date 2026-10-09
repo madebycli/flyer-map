@@ -4,7 +4,7 @@ import test from "node:test";
 
 const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../src/map-context-ui.css", import.meta.url), "utf8");
-const main = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
+const main = readFileSync(new URL("../src/legacyMain.tsx", import.meta.url), "utf8");
 const collection = readFileSync(new URL("../src/collection/CollectionAdminPanel.tsx", import.meta.url), "utf8");
 
 test("map-critical field surfaces never blur the map", () => {

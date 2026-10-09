@@ -13,7 +13,7 @@ const shell = readFileSync(new URL("../src/platform/PlatformShell.tsx", import.m
 const settingsSheet = readFileSync(new URL("../src/settings/SettingsSheet.tsx", import.meta.url), "utf8");
 const syncStatus = readFileSync(new URL("../src/sync/SyncStatus.tsx", import.meta.url), "utf8");
 const syncCss = readFileSync(new URL("../src/m5.css", import.meta.url), "utf8");
-const mainSource = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
+const mainSource = readFileSync(new URL("../src/legacyMain.tsx", import.meta.url), "utf8");
 
  test("short Team surfaces start compact instead of reserving an empty expanded sheet", () => {
   assert.match(teamHub, /initialSnap="compact"/u);

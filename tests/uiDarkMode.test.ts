@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const mainSource = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
+const mainSource = readFileSync(new URL("../src/legacyMain.tsx", import.meta.url), "utf8");
 const shellSource = readFileSync(new URL("../src/platform/PlatformShell.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const settingsSource = readFileSync(new URL("../src/settings/SettingsSheet.tsx", import.meta.url), "utf8");
@@ -11,7 +11,7 @@ const moduleThemeSource = readFileSync(new URL("../src/ui-dark-mode-modules.css"
 
 test("UI appearance initializes before the app renders", () => {
   assert.match(mainSource, /import \{ initializeAppearance \} from "\.\/settings\/appearance\.ts";/);
-  assert.match(mainSource, /installRxdbFetchGuard\(\);\s*initializeAppearance\(\);/);
+  assert.match(mainSource, /installRxdbFetchGuard\(\);\s*initializeAppearance\(\);/, "appearance is set up before the first render");
   assert.match(mainSource, /import "\.\/ui-dark-mode\.css";/);
 });
 

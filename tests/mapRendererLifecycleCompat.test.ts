@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const mapView = readFileSync(new URL("../src/map/MapView.tsx", import.meta.url), "utf8");
-const main = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
+const main = readFileSync(new URL("../src/legacyMain.tsx", import.meta.url), "utf8");
 
 test("new application GeoJSON sources are seeded with current core data", () => {
   assert.match(mapView, /buildApplicationMapStyle\(initialData\?: InitialApplicationSourceData\)/u);
