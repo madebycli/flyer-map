@@ -24,7 +24,7 @@ const boot = async () => {
   await page.waitForFunction(() => window.__v5Map && window.__v5Map.getLayer('v5-segments-line'), null, { timeout: 60000 });
   await page.waitForTimeout(800);
 };
-const serverKeys = () => page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.map((o) => o.key));
+const serverKeys = () => page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.filter((o) => o.status !== 'open').map((o) => o.key));
 const rect = (x0, x1) => [[x0, -400], [x1, -400], [x1, 1300], [x0, 1300], [x0, -400]].map(([x, y]) => M(x, y));
 
 await boot();
