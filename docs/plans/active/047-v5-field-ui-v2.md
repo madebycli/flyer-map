@@ -1,6 +1,6 @@
 # Plan 047 — v5 field UI v2: calm, square, one big button
 
-Status: UI v2 implemented on `claude/v5-field-core`; template mode designed below, not built
+Status: UI v2 and template mode implemented on `claude/v5-field-core-clean`
 Reference: product feedback of 2026-10-08, [Plan 043](043-v5-field-core.md), [Plan 045](045-v5-pickup-rooms-admin.md), [Plan 046](046-v5-rust-tiles.md)
 
 ## Principles
@@ -58,12 +58,19 @@ house); the layers filter on it, the key builders (`mark.ts`) skip such streets 
 The poll idles while the page is hidden and never stacks meta requests; the soak flow (`soak.mjs`) covers reload, lock/unlock and
 many-Area map moves with context loss. Locate keeps no watcher. Provider and tile caches are released in `FieldMap.destroy`.
 
-## Template mode (designed, not built)
+## Template mode (built)
 
-Goal: create an Area template once, download it, reuse it for the next campaign. A template is `{name, polygon, rules}`; applying it
-runs the derivation script (the Rust engine) over the polygon and then **removes what is now outside** (prune endpoint above) —
-because derivation is deterministic and status is keyed by derived ids, re-applying a template to a changed polygon needs no migration.
-Open questions: template storage (new table vs. file export), whether rules include street filters ("Nur Straßen mit Häusern").
+An Area template is a small JSON file `{format, version, name, ring, rules}` (`areas/template.ts`; no progress, no street data). The engine
+derives streets and houses again from the outline, so a template needs no migration.
+
+- **Save:** Area sheet → "Als Vorlage speichern" (download, safe file name).
+- **Load:** Menü → "Vorlage laden" (new Area) or Area sheet → "Vorlage auf dieses Gebiet anwenden" (replaces the outline). The file is
+  untrusted input: size, shape, coordinate range and polygon validity are checked and the result is rebuilt field by field. The outline
+  goes into the normal Area editor and is saved with ✓ (same validation, team choice, pack build); the rule "Nur Straßen mit Häusern" is applied.
+- **Re-derive and remove what is now outside:** after a saved reshaping the app reloads, the Rust engine derives the new network, and for
+  admins the progress rows of that Area that no longer exist are pruned on the server automatically (`POST …/prune`, notice with the count).
+  Team editors reshape without the bulk delete; the Area sheet offers the clean-up to an admin later.
+- Browser flow `flow10` covers export, refusal of foreign files, reshaping with automatic clean-up (west half stays, east half goes) and a new Area from a template.
 
 ## Not possible from this environment
 

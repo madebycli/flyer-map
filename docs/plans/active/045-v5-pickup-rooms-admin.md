@@ -1,6 +1,6 @@
 # Plan 045 — v5: Abholaktion, Rooms, identities, admin surface
 
-Status: Phase A and B done (incl. Sonder-Marker), Phase C partly (street-aligned placement done) on `claude/v5-field-core`
+Status: Phases A, B and C done on `claude/v5-field-core-clean`
 Date: 2026-10-08
 Reference (target behaviour, used as a reference not as a spec): `master-context/projects/flyer-map/plans/ABHOLMODUS_ZIELPLAN_2026-09-13.md`
 Depends on: [Plan 043](043-v5-field-core.md), [ADR-0034](../../decisions/ADR-0034-v5-notes-chunks-and-engine-language.md)
@@ -44,14 +44,14 @@ derived network meets them.
 - [x] Gebietsliste sheet (name, offen / wird bearbeitet / erledigt, % progress, claimed-by, Teilnehmen possible); finished areas greyed out and not claimable; tap an Area on the map opens the same detail
 - [x] Übernehmen → creates the Run; Teilnehmen → joins it; Verlassen / Freigeben / Abbrechen as explicit actions; double tap/reload/offline never creates a second Run (idempotent request ids)
 - [x] Room strip: active members and the shared progress (one number everywhere: list, detail, map, room)
-- [ ] Sonder-Marker: `collection_pickups` as pins on the map and in the Area detail, never counted as street progress
+- [x] Sonder-Marker: `collection_pickups` as pins on the map and in the Area detail, never counted as street progress
 - [x] Abholen labels for the same four statuses (offen · abgeholt · später · nicht verfügbar)
 
 ### C — identity and admin
-- [ ] Temporary identity for link users (neutral label, per device) shown in notes, rooms and activity
-- [ ] Location-derived preselection of the editable Area when starting to draw/edit (nearest Area under the user's position)
+- [x] Temporary identity for link users (neutral label from the server, e.g. "Nutzer 2"; `meta.me.label`) shown in the Menü, rooms and notes
+- [x] Location-derived preselection of the editable Area when starting to draw/edit (`areas/nearest.ts`: containing Area, else nearest within 1.5 km; only when the position permission is already granted — never a surprise prompt)
 - [x] Street-aligned placement of Sonder-Marker (engine snaps to the nearest house ≤ 30 m, else street ≤ 22 m, and takes its address)
-- [ ] Admin/login: keep legacy `/login` and organisation admin; v5 gets a role-aware entry (admin sees "Verwaltung", collectors never see admin links), no duplicate auth stack
+- [x] Admin/login: keep legacy `/login` and organisation admin; v5 has a role-aware Menü (admin sees "Verwaltung", link helpers see no admin, legacy or mode-switch entries; `flow7`/`flow10` check it), no duplicate auth stack
 
 ## Acceptance
 

@@ -37,6 +37,6 @@ mostly *not moving geometry through JavaScript*. Numbers from a fast desktop CPU
 
 ## Follow-ups
 
-- Route graph (`buildGraph`/Dijkstra) is still TypeScript on the main thread; move it next to the geometry.
+- ~~Route graph still TypeScript on the main thread~~ done: the session keeps the street graph (every piece, hidden connectors included, first Area wins) and answers `route(anchors)` in Rust inside the Worker; the TypeScript `routeSegments` stays as the reference and fallback (`tests/v5Route.test.ts`: 600 random routes over five random cities compare exactly — ids, length, ambiguity, disconnected; both break ties by network order).
 - Tile-side simplification at low zoom (one dot per house is cheap, long streets at z11 are not yet generalised).
 - Server-side use of the same crate (pack validation) would need the Worker's wasm import; not needed yet.
