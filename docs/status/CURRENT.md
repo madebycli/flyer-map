@@ -9,12 +9,12 @@ last_updated: 2026-10-09
 
 The authoritative cross-repository route is `.ai/CONTEXT.md` → `madebycli/master-context/projects/flyer-map/INDEX.md` → `handoffs/CURRENT.md`.
 
-**What exists (branch `claude/rewrite-phase5-delete-legacy`, not merged, not deployed):** one field map, `/v5`, written from scratch ([Plan 051](../plans/active/051-full-rewrite.md), [ADR-0036](../decisions/ADR-0036-legacy-map-retired.md)).
+**What exists (branch `claude/rewrite-phase5-delete-legacy`, not merged into `main`/`beta`, not deployed; two AI sessions work on it, every change is counter-read before it enters, see `madebycli/master-context` `projects/flyer-map/handoffs/dual/BOARD.md`):** one field map, `/v5`, written from scratch ([Plan 051](../plans/active/051-full-rewrite.md), [ADR-0036](../decisions/ADR-0036-legacy-map-retired.md)).
 Streets and houses are derived on the device by a Rust/WASM engine from one OSM pack per Gebiet; only a status overlay and notes are stored and synced. One design system (`src/ui`) serves the field map and the organiser pages
 (sign-in with second factor, Aktionen, Sicherheit, Einladungen). The old map, RxDB sync, V3/V4 street engine, Rooms, comments, statistics and automations are deleted; the Worker keeps identity, access links, the collection
 backend (Abholen incl. admin setup), the lean mutation path and `worker/v5`. Source: 79 k → 23 k lines.
 
-**Verified (sandbox only):** 1 200 unit tests, 15 browser flows against the real Worker handlers on in-memory D1 (`scripts/v5-e2e`, `node scripts/v5-e2e/run-all.mjs`; also in TypeScript-fallback mode), typecheck, build.
+**Verified (sandbox only):** 425 unit tests (integration branch at `5e352a2`, counted with `npm test`), 15 browser flows against the real Worker handlers on in-memory D1 (`scripts/v5-e2e`, `node scripts/v5-e2e/run-all.mjs`; also in TypeScript-fallback mode), typecheck, build.
 **Not verified:** real phones, real Overpass data, a real D1, the live basemap, the organiser pages against the real API (flow 11 mocks it at the network edge).
 
 **Open before go-live (owner):**

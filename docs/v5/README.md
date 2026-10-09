@@ -51,7 +51,7 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 
 ## Verified
 
-- `npm test` (1108 tests incl. engine incl. chunks, store, notes, cache, API incl. attack/race cases, legacy import), `npm run typecheck`, `npm run build`.
+- `npm test` (425 tests on the integration branch, incl. engine incl. chunks, store, notes, cache, API incl. attack/race cases, legacy import), `npm run typecheck`, `npm run build`.
 - An independent code review (`/code-review`, high) found 10 issues; all fixed (see git log "address independent review findings").
 - Browser flows in `scripts/v5-e2e` (real Worker handlers on in-memory D1; Playwright + Chromium):
   `flow.mjs` – pack build → derive → mark → undo → sync → fresh client → route marking → read-only viewer;
