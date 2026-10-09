@@ -131,3 +131,14 @@ test('notes follow the same rule: collectors write notes only in their Area and 
   const seen = ((await (await call('bob', 'GET', `${base}/notes?since=0`)).json()) as { notes: { id: string }[] }).notes.map((n) => n.id);
   assert.deepEqual(seen, [mine], 'bob reads alice’s note in a collection Area, not the distribution note');
 });
+
+test('collectors can neither clean up nor forget a Gebiet, not even their own', async () => {
+  const { call } = await fixture();
+  await call('admin', 'POST', `${base}/ops`, op(stamp(NOW - 900), 'h:keep', 'completed', 'c_alice'));
+  for (const who of ['alice', 'bob']) {
+    assert.equal((await call(who, 'POST', `${base}/areas/c_alice/prune`, { keys: ['h:keep'] })).status, 403, `${who} prune`);
+    assert.equal((await call(who, 'POST', `${base}/areas/c_gone/forget`)).status, 403, `${who} forget`);
+  }
+  const rows = ((await (await call('admin', 'GET', `${base}/state?since=0`)).json()) as { ops: { key: string; status: string }[] }).ops;
+  assert.deepEqual(rows.map((r) => [r.key, r.status]), [['h:keep', 'completed']], 'nothing was cleared');
+});

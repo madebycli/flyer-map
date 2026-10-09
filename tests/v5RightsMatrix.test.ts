@@ -5,6 +5,7 @@ import { setup, campaign, NOW, stamp } from './helpers/v5Setup.ts';
 // Role × route × Gebiet, judged against the policy (not against whatever the handlers happen to return):
 //   anon: nothing. viewer: read everything, write nothing. admin: everything.
 //   team-editor: read and write only the Areas of the own team; no bulk delete, no clean-up.
+//   Abhol-Helfer (collection-collector) are covered in v5Collection.test.ts, which needs the Run/Area fixture.
 const base = `/api/v5/campaigns/${campaign}`;
 type Who = 'viewer' | 'admin' | 'editor' | 'other';
 const WHO: Who[] = ['viewer', 'admin', 'editor', 'other'];
