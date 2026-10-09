@@ -30,7 +30,7 @@ export class V5ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
 }
 
-async function call(path: string, init?: RequestInit): Promise<Response> {
+export async function call(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, { credentials: 'same-origin', ...init });
   if (response.ok) return response;
   let code = 'http_' + response.status, message = `Serverfehler ${response.status}`;

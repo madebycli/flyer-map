@@ -81,7 +81,36 @@ Net effect: ≈ 45 000 of 79 000 lines disappear at the end; ≈ 5 000 new lines
   public `GET /api/v5/basemap` (same URLs every field client already receives) and falls back to a plain background. 470 lines of org CSS deleted. Tests: `organizationAdminUi` rewritten
   as behaviour assertions, `v5Api` (basemap endpoint), flow 11 (browser, API mocked at the network edge).
   Open in phase 2: Einsätze, Automationen, Team-Center/Gruppen (need Worker contracts), admin panels still inside the legacy map app (`src/admin`).
-- Phases 3–5: not started.
+- **Phase 2, slice 3 — links and access** (`link.ts`, `accessApi.ts`, `accessSheet.tsx`): the field map redeems `#access=` and `#collection=` links itself (token → session cookie → removed from the
+  address bar; revoked/made-up → "Link ungültig", server trouble → "Keine Verbindung", the link stays valid), the old map address `/?campaign=…` now opens `/v5` with the same token
+  (`?legacy=1` keeps the old app reachable until it is deleted), and admins create/revoke Gruppen-, Ansehen- and Abhol-Links with QR code in the menu tile "Zugänge". Tests `v5Link`, flow 12.
+
+## Parity audit (what a person can do in the old map vs. now)
+
+The old launcher offers exactly: **Team, Rooms, Fortschritt, Kommentare, Streets, Gebiet, Einstellungen** (`buildPlatformLauncherItems`). Everything else in `src` that is not reachable from there was dead
+(Plan 031 "implemented but not promoted": Activity, Automationen, Einsatz-Verlauf, Team-Center). **Correction to the decision above:** rebuilding unreachable features is new product work, not parity, so
+Einsätze, Automationen and the Team-Center are **not** rebuilt; they are deleted in phase 5 with their tests unless the product owner asks for one of them.
+
+| Old launcher entry | Now in the field map | Decision |
+|---|---|---|
+| Fortschritt | Übersicht (houses, per Gebiet, per Gruppe) + Team & Aktivität | done |
+| Kommentare | Notizen (flags + text per street, house, Gebiet) | done, replaces comments |
+| Gebiet (draw/edit) | Gebiete tool, polygon editor, Aktions-Vorlage | done |
+| Streets (list, manual street) | search + derived streets | list replaced by search; **manual street for roads missing in OSM: open** |
+| Einstellungen: appearance, hand | Menü: Hell/Dunkel, Links-/Rechtshand | done |
+| Einstellungen: access links (Gruppe/Ansehen/Admin), Abhol-Links, helpers | Menü → Zugänge | done (Admin links are replaced by Organizer accounts) |
+| Einstellungen: Gruppen rename/recolour, Gebiet → Gruppe, Aktion rename | creation only (new Gebiet picks/creates a Gruppe) | **open: "Gruppen" sheet** |
+| Einstellungen: language (en) | German only | **open: decide whether English is still wanted** |
+| Team (hub, active team) | Gruppe is implied by the link; admins see all Gruppen | done |
+| Rooms (live groups with join code/QR, leave, members) | none (collection has its own Raum) | **open: decide — large subsystem, used?** |
+| Offline map area, street edit after mission, smart house/street tasks | warm cache + derived network | replaced |
+
+## Order from here
+1. "Gruppen" sheet (rename/recolour, move Gebiet to another Gruppe, rename Aktion) — closes the last settings gap.
+2. Decide Rooms / English / manual street with the product owner (they change what is built).
+3. Phase 3 checklist for staging: redirect of the old address (done), service worker/offline unchanged, soak at 39 k houses, real-device pass.
+4. Phase 4 (Worker in Rust) only after the `workers-rs` probe is accepted.
+- Phases 4–5: not started.
 
 ## Not decided here
 

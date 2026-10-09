@@ -14,6 +14,7 @@ import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
 import { buildIndex } from './mark.ts';
 import { meters, useMarking } from './marking.tsx';
+import { AccessSheet } from './accessSheet.tsx';
 import { ActivitySheet } from './activitySheet.tsx';
 import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } from './panels.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
@@ -33,7 +34,7 @@ const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'home' | 'overview' | 'activity' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
+type Panel = 'home' | 'overview' | 'activity' | 'access' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -449,6 +450,7 @@ export function App({ campaignId }: { campaignId: string }) {
     ] : []),
     { id: 'overview', icon: 'chart', label: 'Übersicht', onClick: () => openPanel('overview') },
     { id: 'activity', icon: 'users', label: 'Team', onClick: () => openPanel('activity') },
+    ...(meta?.role === 'admin' ? [{ id: 'access', icon: 'lock', label: 'Zugänge', onClick: () => openPanel('access') } satisfies AppTile] : []),
     { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
     { id: 'areas', icon: 'polygon', label: 'Gebiete', onClick: () => (isCollection ? openPanel('areas') : enter('areas')) },
     ...(canEditAny && !isCollection ? [{ id: 'template', icon: 'upload', label: 'Vorlage laden', onClick: pickTemplate } satisfies AppTile] : []),
@@ -461,7 +463,7 @@ export function App({ campaignId }: { campaignId: string }) {
     { id: 'base', icon: 'layers', label: baseOn ? 'Karte aus' : 'Karte an', on: !baseOn, onClick: () => setBaseOn(!baseOn) },
     ...(importOffer ? [{ id: 'import', icon: importState === 'busy' ? 'sync' : 'download', label: 'Alt-Import', onClick: () => void importLegacy() } satisfies AppTile] : []),
     // admin and legacy entries are role-aware: a link helper never sees them
-    ...(meta?.role !== 'collection-collector' ? [{ id: 'legacy', icon: 'mapPin', label: 'Alte Ansicht', href: `/?campaign=${encodeURIComponent(campaignId)}` } satisfies AppTile] : []),
+    ...(meta?.role !== 'collection-collector' ? [{ id: 'legacy', icon: 'mapPin', label: 'Alte Ansicht', href: `/?campaign=${encodeURIComponent(campaignId)}&legacy=1` } satisfies AppTile] : []),
     ...(meta?.role === 'admin' ? [{ id: 'admin', icon: 'shield', label: 'Verwaltung', href: '/login' } satisfies AppTile] : []),
   ];
 
@@ -555,6 +557,7 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && panel === 'activity' && store && (
         <ActivitySheet kind={kind} theme={theme} store={store} version={campaign.progress} myLabel={meta?.me?.label ?? meta?.collectorLabel ?? 'Du'} labelOf={keyLabel} onPick={openNoteTarget} onClose={() => setPanel(null)} />
       )}
+      {ready && panel === 'access' && meta?.role === 'admin' && <AccessSheet campaignId={campaignId} teams={meta.teams} onClose={() => setPanel(null)} />}
       {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
         <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflicts.length}

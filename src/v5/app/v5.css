@@ -201,3 +201,4 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-member, .v5-row-count, .v5-app em, .v5-dotc { border-radius: 0.6rem; }
 .v5-sheet { border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .v5-syncbox > span { display: flex; align-items: center; gap: 0.5rem; }
+.v5-qr { display: grid; place-items: center; justify-self: center; padding: 0.7rem; border-radius: var(--r); background: #fff; }
