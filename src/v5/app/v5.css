@@ -63,6 +63,8 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 
 /* ── HUD capsule (quiet by default) ──────────────────────────── */
 .v5-pill { position: absolute; z-index: 5; top: calc(env(safe-area-inset-top) + 0.7rem); left: 0.7rem; display: flex; align-items: center; height: var(--ctl); background: var(--glass); border-radius: var(--r); box-shadow: var(--shadow); }
+.v5-pill { border: 0; padding: 0 0.85rem 0 0.25rem; gap: 0.55rem; color: var(--on); font: inherit; cursor: pointer; }
+.v5-pill:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .v5-pill-main { display: flex; align-items: center; gap: 0.55rem; height: 100%; padding: 0 0.85rem 0 0.25rem; border: 0; background: transparent; cursor: pointer; border-radius: inherit; }
 .v5-viewonly { color: var(--on-var); }
 .v5-dot { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 0.75rem; background: var(--primary-container); color: var(--on-primary-container); transition: background var(--t); }
@@ -113,7 +115,8 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-root[data-ui="sheet"] .v5-ctl, .v5-root[data-ui="none"] .v5-ctl { opacity: 0; pointer-events: none; transform: translateY(0.6rem); }
 .v5-zoom { display: flex; flex-direction: column; border-radius: var(--r); background: var(--glass); box-shadow: var(--shadow); }
 .v5-zoom .v5-sq { box-shadow: none; background: transparent; }
-.v5-zoom .v5-sq + .v5-sq { border-top: 1px solid var(--outline-var); }
+.v5-zoom .v5-sq:first-child { border-radius: var(--r) var(--r) 0 0; }
+.v5-zoom .v5-sq + .v5-sq { border-top: 1px solid var(--outline-var); border-radius: 0 0 var(--r) var(--r); }
 .maplibregl-ctrl-top-left, .maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right { display: none; }
 /* attribution (licence-required) stays, quiet and small, bottom centre so it never sits under the controls */
 .maplibregl-ctrl-bottom-left { left: 50%; bottom: 0; transform: translateX(-50%); }
@@ -332,3 +335,4 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 /* rounded everywhere, never a sharp corner: one more safety net for small chips and inputs */
 .v5-member, .v5-row-count, .v5-app em, .v5-dotc { border-radius: 0.6rem; }
 .v5-sheet { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.v5-syncbox > span { display: flex; align-items: center; gap: 0.5rem; }
