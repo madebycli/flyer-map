@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature } from 'geojson';
-import type { FieldNetwork as Network, RouteResult } from '../engine/index.ts';
+import type { RouteResult } from '../engine/index.ts';
 import type { FieldMap, Hit, Pt } from '../map/fieldMap.ts';
 import { segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import type { EngineClient } from './engineClient.ts';
-import { keysForGroups, keysForSegments, keysForTouched, lassoSelect, type Index } from './mark.ts';
+import { keysForGroups, keysForSegments, keysForTouched, type Index } from './mark.ts';
 import type { IconName } from './ui.tsx';
 
 export type MarkMode = 'tap' | 'paint' | 'lasso' | 'route';
@@ -21,8 +21,7 @@ const load = (): Saved => { try { return { ...DEFAULTS, ...JSON.parse(localStora
 
 export type MarkContext = {
   fieldMap: React.MutableRefObject<FieldMap | null>;
-  network: Network | null;
-  /** The engine answers route questions (Rust); null while it is not ready. */
+  /** The engine answers route, lasso and search questions (Rust); null while it is not ready. */
   engine: EngineClient | null;
   index: Index | null;
   apply(keys: EntityKey[], status: Status, label: string): void;
@@ -102,13 +101,15 @@ export function useMarking(ctx: MarkContext, active: boolean) {
         down: (p) => { points = [p]; return true; },
         move: (p) => { const l = points[points.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) >= 4) { points.push(p); drawn(false); } },
         up: (_p, _l, moved) => {
-          const { network, index, brush: b, housesOnly: ho, apply } = now();
+          const { engine, brush: b, housesOnly: ho, apply } = now();
           const ring = points.map((p) => fm.unproject(p));
           points = []; fm.setDraw({ type: 'FeatureCollection', features: [] });
-          if (!moved || !network || ring.length < 3) return;
-          const picked = lassoSelect(network, [...ring, ring[0]], ho ? index?.groupHouses : undefined);
-          const keys: EntityKey[] = [...picked.houses.map((id) => `h:${id}`), ...picked.segments.map(segmentKey)];
-          if (keys.length) apply(keys, b, String(keys.length));
+          if (!moved || !engine || ring.length < 3) return;
+          // the engine (Rust) knows where every house and street piece lies; the answer arrives a moment later
+          void engine.lasso([...ring, ring[0]], ho).then((picked) => {
+            const keys: EntityKey[] = [...picked.houses.map((id) => `h:${id}`), ...picked.segments.map(segmentKey)];
+            if (keys.length) apply(keys, b, String(keys.length));
+          }, () => { /* engine gone (view closed) */ });
         },
         cancel: () => { points = []; fm.setDraw({ type: 'FeatureCollection', features: [] }); },
       });

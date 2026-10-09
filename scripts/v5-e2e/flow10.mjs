@@ -1,4 +1,4 @@
-// Templates, automatic clean-up after reshaping, identity, location preselection and role-aware menu entries.
+// Aktions-Vorlage (whole map incl. Gruppen), preview and plan, automatic clean-up after reshaping, identity, location preselection, role-aware menu.
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
 import { encodeClock } from '../../src/v5/store/hlc.ts';
@@ -48,40 +48,49 @@ await page.getByRole('button', { name: 'Schließen' }).click();
 await menuTile(page, 'Gebiete');
 check('entering Gebiete preselects the Area the person stands in', await until(async () => (await page.locator('.v5-sheet h2').count()) === 1 && /Area/.test(await page.locator('.v5-sheet h2').innerText()), 8000), await page.locator('.v5-sheet h2').allInnerTexts().then((t) => t.join('|')).catch(() => ''));
 
-// export
-const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Als Vorlage speichern' }).click()]);
-const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
-check('the template is a small file with outline, name and rules, named safely', exported.format === 'verteil-flyer-area-template' && exported.ring.length === 5 && /\.vorlage\.json$/.test(download.suggestedFilename()) && Object.keys(exported).sort().join() === 'format,name,ring,rules,version', download.suggestedFilename());
+await page.getByRole('button', { name: 'Schließen' }).click();
+await page.getByRole('button', { name: 'Fertig' }).click();
 
-// a garbage file is refused in plain words
-let [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Vorlage auf dieses Gebiet anwenden' }).click()]);
+// export: the whole Aktion — every Gebiet and Gruppe — as one file
+const [download] = await Promise.all([page.waitForEvent('download'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Als Vorlage', exact: true }).click(); })()]);
+const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+check('the Aktions-Vorlage holds all Gebiete and all Gruppen, rules, and nothing else', exported.format === 'verteil-flyer-action-template' && exported.areas.length === 2 && exported.teams.length === 2 && Object.keys(exported).sort().join() === 'areas,format,name,rules,teams,version' && /\.aktion\.json$/.test(download.suggestedFilename()), `${download.suggestedFilename()} areas=${exported.areas?.length} teams=${exported.teams?.length}`);
+check('each Gebiet names its Gruppe', exported.areas.every((a) => exported.teams.some((t) => t.name === a.team)));
+const unchangedArea = exported.areas.find((a) => a.name === 'Fremdes Gebiet');
+
+// a foreign file is refused in plain words
+let [chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Vorlage laden', exact: true }).click(); })()]);
 await chooser.setFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"nope":1}') });
 check('a foreign file is refused with a reason', await until(async () => /keine Vorlage/.test(await page.locator('.v5-toast').innerText().catch(() => '')), 5000));
 
-// apply a smaller outline to the existing Area: editor opens, ✓ saves, the engine re-derives, what is outside is removed
-const small = makeTemplate('West', rect(-300, 650), { housesOnly: false });
-[chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Vorlage auf dieses Gebiet anwenden' }).click()]);
-await chooser.setFiles({ name: 'west.vorlage.json', mimeType: 'application/json', buffer: Buffer.from(serializeTemplate(small)) });
-await page.waitForSelector('.v5-markbar');
-check('the template outline is in the editor, to be confirmed', /4\/50/.test(await page.locator('.v5-counter').first().innerText()) && /Vorlage geladen/.test(await page.locator('.v5-toast').innerText().catch(() => '')));
-await page.getByRole('button', { name: 'Gebiet speichern' }).click();
-await page.waitForFunction(() => !document.querySelector('.v5-markbar'), null, { timeout: 60000 });
-check('after saving, progress outside the new outline is removed automatically and reported', await until(async () => /Markierungen außerhalb des neuen Umrisses entfernt/.test(await page.locator('.v5-toast').innerText().catch(() => '')), 30000));
+// load a template: smaller outline for "Area", unchanged "Fremdes Gebiet", plus a new Gebiet in a new Gruppe
+const template = makeTemplate('Frühjahr', [{ name: 'Team', color: '#2563eb' }, { name: 'Andere', color: '#ef4444' }, { name: 'Neues Team', color: '#15803d' }], [
+  { name: 'Area', team: 'Team', ring: rect(-300, 650) },
+  { name: 'Fremdes Gebiet', team: 'Andere', ring: unchangedArea.ring },
+  { name: 'Ost-Vorlage', team: 'Neues Team', ring: rect(1400, 1500) },
+], { housesOnly: true });
+[chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Vorlage laden', exact: true }).click(); })()]);
+await chooser.setFiles({ name: 'fruehjahr.aktion.json', mimeType: 'application/json', buffer: Buffer.from(serializeTemplate(template)) });
+await page.waitForSelector('.v5-sheet h2:has-text("Aktions-Vorlage")');
+const planText = await page.locator('.v5-sheet').innerText();
+check('the plan shows what would change before anything happens', /1 neue Gruppen/.test(planText) && /1 neue Gebiete/.test(planText) && /1 Gebiete mit neuem Umriss/.test(planText) && /1 unverändert/.test(planText) && /nichts gelöscht|Es wird nichts gelöscht/.test(planText), planText.replace(/\n/g, ' | ').slice(0, 300));
+check('the template outlines are previewed on the map', await page.evaluate(() => window.__v5Map.getSource('v5-draw')._data.features.length === 3));
+const beforeTeams = await page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/meta')).json()).teams.length);
+check('nothing was created yet', beforeTeams === 2);
+await page.screenshot({ path: `${process.env.SHOTS_DIR ?? '.'}/u5-template.png` });
+await page.getByRole('button', { name: 'Anwenden' }).click();
+check('applying reports what happened, incl. the automatic clean-up outside the new outline', await until(async () => /Vorlage angewendet: 1 Gruppen, 1 neue Gebiete, 1 angepasst, 5 Markierungen außerhalb entfernt/.test(await page.locator('.v5-toast').innerText().catch(() => '')), 90000), await page.locator('.v5-toast').innerText().catch(() => ''));
+const after = await page.evaluate(async () => { const m = await (await fetch('/api/v5/campaigns/campaign_n/meta')).json(); return { teams: m.teams.map((t) => [t.name, t.color]), areas: m.areas.map((a) => [a.name, a.teamId]) , teamId: Object.fromEntries(m.teams.map((t) => [t.name, t.id])) }; });
+check('the new Gruppe exists with its colour', after.teams.some(([n, c]) => n === 'Neues Team' && c === '#15803d'));
+check('the new Gebiet belongs to the new Gruppe, the other Gebiete kept their Gruppe', after.areas.some(([n, t]) => n === 'Ost-Vorlage' && t === after.teamId['Neues Team']) && after.areas.some(([n, t]) => n === 'Area' && t === after.teamId['Team']) && after.areas.length === 3);
 const keys = await serverKeys();
 check('only the east half was removed on the server', west.every((h) => keys.includes(h.key)) && east.every((h) => !keys.includes(h.key)), `${keys.length} rows left`);
-
-// a new Area from a template
-const east2 = makeTemplate('Ost-Vorlage', rect(700, 1300), { housesOnly: true });
-await page.getByRole('button', { name: 'Schließen' }).click().catch(() => {});
-[chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Vorlage laden', exact: true }).click(); })()]);
-await chooser.setFiles({ name: 'ost.vorlage.json', mimeType: 'application/json', buffer: Buffer.from(serializeTemplate(east2)) });
-await page.waitForSelector('.v5-markbar');
-check('a new Area starts from the template name', (await page.getByLabel('Name des Gebiets').inputValue()) === 'Ost-Vorlage');
-await page.getByRole('button', { name: 'Gebiet speichern' }).click();
-await page.waitForFunction(() => !document.querySelector('.v5-markbar'), null, { timeout: 60000 });
-check('and exists on the server afterwards', await until(async () => (await page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/meta')).json()).areas.map((a) => a.name))).includes('Ost-Vorlage')));
 check('the template rule "Nur Straßen mit Häusern" was applied to the map', await page.evaluate(() => !!window.__v5Map.getFilter('v5-segments-line')));
-await page.screenshot({ path: `${process.env.SHOTS_DIR ?? '.'}/u5-template.png` });
+// loading the same file again plans nothing: the application is idempotent
+[chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Vorlage laden', exact: true }).click(); })()]);
+await chooser.setFiles({ name: 'fruehjahr.aktion.json', mimeType: 'application/json', buffer: Buffer.from(serializeTemplate(template)) });
+await page.waitForSelector('.v5-sheet h2:has-text("Aktions-Vorlage")');
+check('loading it again has nothing left to do', /Nichts zu tun/.test(await page.locator('.v5-sheet').innerText()) && (await page.getByRole('button', { name: 'Anwenden' }).count()) === 0);
 await b.close();
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

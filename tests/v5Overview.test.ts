@@ -43,7 +43,7 @@ test('folding ignores case, umlauts and Straße spellings', () => {
 });
 
 test('search finds streets and house numbers, prefix and streets first', () => {
-  const entries = buildSearchIndex(index);
+  const entries = buildSearchIndex(network);
   assert.ok(entries.some((e) => e.kind === 'street'));
   const house = network.houses.find((h) => h.street && h.number)!;
   const hit = searchEntries(entries, `${house.street} ${house.number}`);
@@ -56,5 +56,5 @@ test('search finds streets and house numbers, prefix and streets first', () => {
 });
 
 test('the street entry points at a real segment', () => {
-  for (const e of buildSearchIndex(index).filter((x) => x.kind === 'street')) assert.ok(index.segments.has(e.id));
+  for (const e of buildSearchIndex(network).filter((x) => x.kind === 'street')) assert.ok(index.segments.has(e.id));
 });

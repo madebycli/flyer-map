@@ -3,7 +3,6 @@ import type { Feature } from 'geojson';
 import type { FieldNetwork as Network, LngLat } from '../engine/types.ts';
 import type { AreaShape, FieldMap } from '../map/fieldMap.ts';
 import { areaSquareMeters, fromRing, insertVertex, midpoints, moveVertex, MAX_VERTICES, removeVertex, seedSquare, toPolygon, toRing, validate, type Vertices } from '../areas/polygon.ts';
-import type { AreaTemplate } from '../areas/template.ts';
 import { buildPack, createArea, saveAreaGeometry, type Meta } from './api.ts';
 import { Icon } from './ui.tsx';
 
@@ -115,22 +114,6 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
     setEdit({ id: null, vertices: seedSquare([c.lng, c.lat], 120), selected: null, history: [], teamId, name: `Gebiet ${(meta.areas.length + 1)}`, saving: false, error: null });
   };
 
-  /** A template's outline goes into the editor (new Area, or replacing the outline of `targetId`): checked and confirmed with ✓ like any edit. */
-  const loadTemplate = (template: AreaTemplate, targetId: string | null) => {
-    const fm = fieldMap.current;
-    if (!fm || !meta) return false;
-    const target = targetId ? meta.areas.find((a) => a.id === targetId) : null;
-    if (targetId && (!target || !canEdit(target.teamId))) return false;
-    const teamId = target?.teamId ?? (meta.role === 'team-editor' && meta.teamId ? meta.teamId : meta.teams[0]?.id);
-    if (!teamId) return false;
-    const vertices = fromRing(template.ring);
-    setSelectedId(targetId);
-    setEdit({ id: targetId, vertices, selected: null, history: target ? [fromRing(target.geometry.coordinates[0] as LngLat[])] : [], teamId, name: target?.name ?? template.name, saving: false, error: null });
-    const lngs = vertices.map((v) => v[0]), lats = vertices.map((v) => v[1]);
-    fm.fitTo([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], 80);
-    return true;
-  };
-
   const cancelEdit = () => setEdit(null);
   const undo = () => setEdit((c) => (c && c.history.length ? { ...c, vertices: c.history[c.history.length - 1], history: c.history.slice(0, -1), selected: null, error: null } : c));
   const deleteSelected = () => setEdit((c) => {
@@ -169,7 +152,7 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
     return true;
   }, [active, fieldMap]);
 
-  return { selectedId, setSelectedId, edit, canEdit, startEdit, startNew, loadTemplate, cancelEdit, undo, deleteSelected, setName, setTeam, save, validity, onMapTap };
+  return { selectedId, setSelectedId, edit, canEdit, startEdit, startNew, cancelEdit, undo, deleteSelected, setName, setTeam, save, validity, onMapTap };
 }
 
 export type AreaTool = ReturnType<typeof useAreaTool>;

@@ -1,4 +1,5 @@
 import type { RouteResult } from './route.ts';
+import type { SearchHit } from './search.ts';
 import type { FieldNetwork, LngLat, Network } from './types.ts';
 
 type Exports = {
@@ -17,6 +18,8 @@ type Exports = {
   session_tile(z: number, x: number, y: number): number;
   session_snap(lng: number, lat: number, houseReach: number, streetReach: number): number;
   session_route(ptr: number, len: number): number;
+  session_lasso(ptr: number, len: number, housesOnly: number): number;
+  session_search(ptr: number, len: number, limit: number): number;
 };
 
 /**
@@ -145,5 +148,17 @@ export class WasmEngine {
   route(anchors: string[]): RouteResult {
     const bytes = new TextEncoder().encode(JSON.stringify(anchors));
     return this.withBytes(bytes, (ptr) => this.json<RouteResult>(this.x.session_route(ptr, bytes.byteLength)));
+  }
+
+  /** Houses (centre) and visible street pieces (middle) inside the shape; `housesOnly` skips streets without a house. */
+  lasso(ring: LngLat[], housesOnly: boolean): { houses: string[]; segments: string[] } {
+    const bytes = new TextEncoder().encode(JSON.stringify(ring));
+    return this.withBytes(bytes, (ptr) => this.json(this.x.session_lasso(ptr, bytes.byteLength, housesOnly ? 1 : 0)));
+  }
+
+  /** Street and address search over everything the session holds. */
+  search(query: string, limit = 30): SearchHit[] {
+    const bytes = new TextEncoder().encode(query);
+    return this.withBytes(bytes, (ptr) => this.json(this.x.session_search(ptr, bytes.byteLength, limit)));
   }
 }

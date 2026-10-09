@@ -5,15 +5,16 @@ import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
 import { areaAt } from '../areas/nearest.ts';
-import { makeTemplate, parseTemplate, serializeTemplate, templateFileName } from '../areas/template.ts';
+import { makeTemplate, parseTemplate, planTemplate, serializeTemplate, templateFileName, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import { downloadText } from './download.ts';
+import { applyTemplatePlan, type ApplyProgress } from './templateApply.ts';
 import { buildPack, fetchLegacySnapshot, pruneArea } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
 import { buildIndex } from './mark.ts';
 import { meters, useMarking } from './marking.tsx';
-import { HomeSheet, OverviewSheet, SearchSheet, type AppTile } from './panels.tsx';
+import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } from './panels.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
 import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
 import { actionErrorText } from './collection.ts';
@@ -22,7 +23,7 @@ import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaV
 import { areaPercent, collectionActions } from './collection.ts';
 import { SheetFrame, StatusGroup } from './sheet.tsx';
 import { houseStats } from './stats.ts';
-import type { SearchEntry } from './search.ts';
+import type { SearchHit } from './search.ts';
 import { useCampaign } from './useCampaign.ts';
 import { Icon, Loader } from './ui.tsx';
 
@@ -31,7 +32,7 @@ const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'home' | 'overview' | 'search' | 'notes' | 'conflicts' | 'areas';
+type Panel = 'home' | 'overview' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -167,7 +168,7 @@ export function App({ campaignId }: { campaignId: string }) {
     setUndo({ label: `${label} → ${LABELS[status]}`, revert: () => { for (const [key, previous] of before) store.set(key, previous); } });
   }, [store, canWrite, campaign.areaOf, writableAreas, isCollection]); // eslint-disable-line react-hooks/exhaustive-deps -- LABELS follows isCollection
 
-  const marking = useMarking({ fieldMap, network, engine: campaign.engine, index, apply }, fab !== 'idle');
+  const marking = useMarking({ fieldMap, engine: campaign.engine, index, apply }, fab !== 'idle');
   /** After an outline was changed and the map re-derived: what the old outline held and the new one does not is removed, for everyone. */
   const afterAreaSaved = async (areaId: string, wasEdit: boolean) => {
     if (!wasEdit || meta?.role !== 'admin' || !store) return;
@@ -228,7 +229,7 @@ export function App({ campaignId }: { campaignId: string }) {
     else { areaTool.setSelectedId(null); setTool('inspect'); selectEntity(key.startsWith('h:') ? 'house' : 'segment', key.slice(2)); }
     if (at) fieldMap.current?.focus(at);
   };
-  const openSearchResult = (entry: SearchEntry) => {
+  const openSearchResult = (entry: SearchHit) => {
     if (!index) return;
     setPanel(null); setFab('idle'); setTool('inspect'); areaTool.setSelectedId(null);
     const at = entry.kind === 'house' ? index.houses.get(entry.id)?.center : index.segments.get(entry.id)?.mid;
@@ -299,23 +300,56 @@ export function App({ campaignId }: { campaignId: string }) {
     const id = areaAt(meta.areas.map((a) => ({ id: a.id, ring: a.geometry.coordinates[0] as [number, number][] })), at);
     if (id && !areaTool.edit) { areaTool.setSelectedId((current) => current ?? id); const area = meta.areas.find((a) => a.id === id); if (area) fieldMap.current?.fitTo(ringBounds(area.geometry.coordinates[0]), FIT_PADDING); }
   };
-  // Templates: a small JSON file with an outline and the marking rules; it goes into the Area editor and is saved with ✓.
+  // Aktions-Vorlage: the whole map (all Gebiete, their Gruppen, the marking rules) as one file. Loading shows what would change first.
   const templateInput = useRef<HTMLInputElement>(null);
-  const templateTarget = useRef<string | null>(null);
-  const pickTemplate = (targetAreaId: string | null) => { templateTarget.current = targetAreaId; setPanel(null); templateInput.current?.click(); };
+  const [templateDraft, setTemplateDraft] = useState<{ template: ActionTemplate; plan: TemplatePlan } | null>(null);
+  const [templateProgress, setTemplateProgress] = useState<ApplyProgress | null>(null);
+  const pickTemplate = () => { setPanel(null); templateInput.current?.click(); };
   const onTemplateFile = async (file: File | undefined) => {
-    if (!file) return;
+    if (!file || !meta) return;
     const result = parseTemplate(await file.text());
     if (!result.ok) { setNotice(result.reason); return; }
-    const target = templateTarget.current;
-    closeSelection(); setPanel(null); setFab('idle'); setTool('areas');
-    if (areaTool.loadTemplate(result.template, target)) { marking.setHousesOnly(result.template.rules.housesOnly); setNotice('Vorlage geladen. Umriss prüfen und mit dem Haken speichern.'); }
-    else setNotice('Hier darfst du keine Gebiete anlegen oder ändern.');
+    const plan = planTemplate(result.template, { teams: meta.teams, areas: meta.areas.map((a) => ({ id: a.id, name: a.name, teamId: a.teamId, ring: a.geometry.coordinates[0] })) }, { role: meta.role === 'admin' ? 'admin' : 'team-editor', teamId: meta.teamId });
+    setTemplateDraft({ template: result.template, plan });
+    closeSelection(); setFab('idle'); setTool('inspect'); setPanel('template');
   };
-  const saveTemplate = (area: { name: string; geometry: { coordinates: [number, number][][] } }) => {
-    downloadText(templateFileName(area.name), serializeTemplate(makeTemplate(area.name, area.geometry.coordinates[0], { housesOnly: marking.housesOnly })));
-    setNotice('Vorlage gespeichert.');
+  const applyTemplate = async () => {
+    if (!templateDraft || !meta || templateProgress) return;
+    const { template, plan } = templateDraft;
+    setTemplateProgress({ done: 0, total: plan.createTeams.length + plan.createAreas.length + plan.reshapeAreas.length, label: '' });
+    const result = await applyTemplatePlan(campaignId, plan, meta, setTemplateProgress);
+    await campaign.reload();
+    // The engine derived the changed outlines again: what the old outlines held and the new ones do not is removed (admin only).
+    let pruned = 0;
+    if (meta.role === 'admin' && result.reshapedIds.length && store) {
+      const keys = campaign.orphans();
+      if (keys.length) { for (const id of result.reshapedIds) pruned += await pruneArea(campaignId, id, keys).catch(() => 0); store.forget(keys); }
+    }
+    marking.setHousesOnly(template.rules.housesOnly);
+    setTemplateProgress(null);
+    const parts = [result.teamsCreated && `${result.teamsCreated} Gruppen`, result.areasCreated && `${result.areasCreated} neue Gebiete`, result.areasReshaped && `${result.areasReshaped} angepasst`, pruned && `${pruned} Markierungen außerhalb entfernt`].filter(Boolean);
+    // The sheet always closes: a second "Anwenden" on the old plan could create things twice. Loading the file again plans from what exists now.
+    setNotice(result.errors.length ? `Vorlage teilweise angewendet (${parts.join(', ') || 'nichts'}). ${result.errors.length} Schritte fehlgeschlagen, z. B. ${result.errors[0]}. Datei erneut laden, um den Rest nachzuholen.` : parts.length ? `Vorlage angewendet: ${parts.join(', ')}.` : 'Vorlage angewendet.');
+    setTemplateDraft(null); setPanel(null);
   };
+  const exportTemplate = () => {
+    if (!meta || !meta.areas.length) { setNotice('Es gibt noch keine Gebiete für eine Vorlage.'); return; }
+    const unique = (names: string[]) => { const seen = new Map<string, number>(); return names.map((name) => { const key = name.trim().toLowerCase(); const n = (seen.get(key) ?? 0) + 1; seen.set(key, n); return n === 1 ? name : `${name} (${n})`; }); };
+    const teamNames = unique(meta.teams.map((t) => t.name)), areaNames = unique(meta.areas.map((a) => a.name));
+    const teams = meta.teams.map((t, i) => ({ name: teamNames[i], color: t.color }));
+    const areas = meta.areas.map((a, i) => ({ name: areaNames[i], team: teamNames[Math.max(0, meta.teams.findIndex((t) => t.id === a.teamId))] ?? teamNames[0], ring: a.geometry.coordinates[0] as [number, number][] }));
+    downloadText(templateFileName(meta.campaign.name), serializeTemplate(makeTemplate(meta.campaign.name, teams, areas, { housesOnly: marking.housesOnly })));
+    setPanel(null); setNotice('Aktions-Vorlage gespeichert.');
+  };
+  // The template's outlines are shown on the map while its sheet is open ("nur zur Info"), in the colours of its Gruppen.
+  useEffect(() => {
+    const fm = fieldMap.current;
+    if (!fm || panel !== 'template' || !templateDraft) return;
+    const colors = new Map(templateDraft.template.teams.map((t) => [t.name, t.color]));
+    fm.setDraw({ type: 'FeatureCollection', features: templateDraft.template.areas.map((a) => ({ type: 'Feature', properties: { kind: 'line', color: colors.get(a.team) ?? '#8fb8ff' }, geometry: { type: 'LineString', coordinates: a.ring } })) });
+    fm.fitTo(ringBounds(templateDraft.template.areas.flatMap((a) => a.ring)), FIT_PADDING);
+    return () => { fm.setDraw({ type: 'FeatureCollection', features: [] }); };
+  }, [panel, templateDraft]);
   const openPanel = (next: Panel) => { closeSelection(); setFab('idle'); setPanel(next); };
   const startMarking = () => { closeSelection(); setPanel(null); setTool('inspect'); setFab('panel'); };
   const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); };
@@ -392,7 +426,8 @@ export function App({ campaignId }: { campaignId: string }) {
     { id: 'overview', icon: 'chart', label: 'Übersicht', onClick: () => openPanel('overview') },
     { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
     { id: 'areas', icon: 'polygon', label: 'Gebiete', onClick: () => (isCollection ? openPanel('areas') : enter('areas')) },
-    ...(canEditAny && !isCollection ? [{ id: 'template', icon: 'upload', label: 'Vorlage laden', onClick: () => pickTemplate(null) } satisfies AppTile] : []),
+    ...(canEditAny && !isCollection ? [{ id: 'template', icon: 'upload', label: 'Vorlage laden', onClick: pickTemplate } satisfies AppTile] : []),
+    ...(meta?.role === 'admin' && !isCollection ? [{ id: 'template-save', icon: 'download', label: 'Als Vorlage', onClick: exportTemplate } satisfies AppTile] : []),
     { id: 'notes', icon: 'message', label: 'Notizen', badge: notes?.all().length || undefined, onClick: () => openPanel('notes') },
     ...(isCollection && rights.create ? [{ id: 'pickup', icon: 'flag', label: 'Sonder-Marker', onClick: () => enter('pickup') } satisfies AppTile] : []),
     { id: 'fit', icon: 'fit', label: 'Alles zeigen', onClick: () => { setPanel(null); fitAll(); } },
@@ -491,7 +526,8 @@ export function App({ campaignId }: { campaignId: string }) {
       )}
 
       {ready && panel === 'home' && <HomeSheet tiles={tiles} identity={identity} onClose={() => setPanel(null)} />}
-      {ready && panel === 'search' && <SearchSheet index={index} onPick={openSearchResult} onClose={() => setPanel(null)} />}
+      {ready && panel === 'template' && templateDraft && <TemplateSheet template={templateDraft.template} plan={templateDraft.plan} progress={templateProgress} onApply={() => void applyTemplate()} onClose={() => { if (!templateProgress) { setPanel(null); setTemplateDraft(null); } }} />}
+      {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
         <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflicts.length}
           engine={campaign.engine?.kind === 'wasm' ? 'Rust (WebAssembly)' : 'TypeScript (Ersatz)'} onFitArea={fitArea} onSyncNow={campaign.syncNow} onConflicts={() => openPanel('conflicts')} onClose={() => setPanel(null)} />
@@ -571,8 +607,6 @@ export function App({ campaignId }: { campaignId: string }) {
           <div className="v5-row">
             <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo(ringBounds(selectedArea.geometry.coordinates[0]), FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
             {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
-            <button className="v5-icon-btn tonal" onClick={() => saveTemplate(selectedArea)} aria-label="Als Vorlage speichern" title="Als Vorlage speichern (Datei)"><Icon name="download" /></button>
-            {areaTool.canEdit(selectedArea.teamId) && <button className="v5-icon-btn tonal" onClick={() => pickTemplate(selectedArea.id)} aria-label="Vorlage auf dieses Gebiet anwenden" title="Vorlage anwenden (ersetzt den Umriss)"><Icon name="upload" /></button>}
             {orphanCount > 0 && <button className="v5-icon-btn tonal" onClick={pruneSelected} aria-label="Veraltete Einträge dieses Gebiets bereinigen" title="Veraltete Einträge bereinigen (Markierungen, die nach einer Änderung des Gebiets nirgends mehr liegen)"><Icon name="trash" /></button>}
           </div>
           <NotesPane key={areaNoteKey(selectedArea.id)} store={notes} target={areaNoteKey(selectedArea.id)} area={selectedArea.id} canWrite={canWrite && (meta?.role === 'admin' || meta?.teamId === selectedArea.teamId)} onUndo={(label, revert) => setUndo({ label, revert })} />

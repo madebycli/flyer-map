@@ -3,6 +3,7 @@
 use crate::grid::Grid;
 use crate::model::*;
 use crate::mvt::{encode_tile, GeomType, Layer};
+use crate::query::{self, Entry, Lasso};
 use crate::tile::{clip_line, clip_ring, mercator, to_tile, BUFFER, EXTENT};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::Ordering;
@@ -21,6 +22,8 @@ struct Seg {
     name: Option<String>,
     /// The junction-to-junction street this piece belongs to has at least one house ("Nur Straßen mit Häusern").
     with_houses: bool,
+    /// Middle of the piece by length, rounded like the slim network (what a lasso tests).
+    mid: LngLat,
 }
 struct Hou { key: String, num: String, ring: Vec<[f64; 2]>, center: [f64; 2], center_ll: LngLat, street: Option<String>, number: Option<String> }
 
@@ -33,6 +36,12 @@ struct RouteGraph {
     to: Vec<u32>,
     length: Vec<f64>,
     visible: Vec<bool>,
+    name: Vec<Option<String>>,
+    group: Vec<u32>,
+    house_count: Vec<u32>,
+    /// houses along each junction-to-junction street (sum over its pieces), by group index
+    group_houses: Vec<u32>,
+    groups: FxHashMap<String, u32>,
     /// segment indices touching each node, in insertion order (the same order the TypeScript reference iterates)
     at: Vec<Vec<u32>>,
     nodes: FxHashMap<String, u32>,
@@ -56,6 +65,11 @@ impl RouteGraph {
         self.to.push(to);
         self.length.push(s.length);
         self.visible.push(s.visible);
+        let group = match self.groups.get(&s.group) { Some(&g) => g, None => { let g = self.group_houses.len() as u32; self.groups.insert(s.group.clone(), g); self.group_houses.push(0); g } };
+        self.group_houses[group as usize] += s.house_count;
+        self.name.push(s.name.clone());
+        self.group.push(group);
+        self.house_count.push(s.house_count);
         self.at[from as usize].push(i);
         self.at[to as usize].push(i);
     }
@@ -130,6 +144,8 @@ impl RouteGraph {
 
 pub struct Session {
     graph: RouteGraph,
+    /// Built on the first search after Areas changed.
+    search_entries: Option<Vec<Entry>>,
     segs: Vec<Seg>,
     houses: Vec<Hou>,
     seen_seg: FxHashSet<String>,
@@ -186,11 +202,12 @@ pub fn slim(network: &Network) -> SlimNetwork {
 
 impl Session {
     pub fn new() -> Self {
-        Session { graph: RouteGraph::default(), segs: vec![], houses: vec![], seen_seg: FxHashSet::default(), seen_house: FxHashSet::default(), seg_grid: Grid::new(CELL), house_grid: Grid::new(CELL) }
+        Session { graph: RouteGraph::default(), search_entries: None, segs: vec![], houses: vec![], seen_seg: FxHashSet::default(), seen_house: FxHashSet::default(), seg_grid: Grid::new(CELL), house_grid: Grid::new(CELL) }
     }
 
     /// Merge one Area's network: only ids not seen before are drawn (first Area wins), hidden segments are never drawn.
     pub fn add(&mut self, network: &Network) {
+        self.search_entries = None;
         let mut group_houses: rustc_hash::FxHashMap<&str, u32> = rustc_hash::FxHashMap::default();
         for s in &network.segments { *group_houses.entry(s.group.as_str()).or_insert(0) += s.house_count; }
         for s in &network.segments { self.graph.add(s); }
@@ -198,7 +215,8 @@ impl Session {
             if !self.seen_seg.insert(s.id.clone()) || !s.visible { continue; }
             let line: Vec<[f64; 2]> = s.coords.iter().map(|p| mercator(*p)).collect();
             self.seg_grid.insert(bbox(&line));
-            self.segs.push(Seg { key: format!("s:{}", s.id), line, lnglat: s.coords.clone(), name: s.name.clone(), with_houses: group_houses.get(s.group.as_str()).copied().unwrap_or(0) > 0 });
+            let mid = midpoint_by_length(&s.coords).map(|m| [r7(m[0]), r7(m[1])]).unwrap_or(s.coords[0]);
+            self.segs.push(Seg { key: format!("s:{}", s.id), line, lnglat: s.coords.clone(), name: s.name.clone(), mid, with_houses: group_houses.get(s.group.as_str()).copied().unwrap_or(0) > 0 });
         }
         for h in &network.houses {
             if !self.seen_house.insert(h.id.clone()) { continue; }
@@ -243,6 +261,53 @@ impl Session {
             }
         }
         encode_tile(&[segments, houses, centers])
+    }
+
+    /// Houses whose centre and visible street pieces whose middle lie inside the shape (ids); `houses_only` skips streets without a house.
+    pub fn lasso(&self, ring: &[LngLat], houses_only: bool) -> (Vec<String>, Vec<String>) {
+        let Some(shape) = Lasso::new(ring) else { return (Vec::new(), Vec::new()) };
+        let houses = self.houses.iter().filter(|h| shape.contains(h.center_ll)).map(|h| h.key[2..].to_string()).collect();
+        let segments = self.segs.iter().filter(|s| (!houses_only || s.with_houses) && shape.contains(s.mid)).map(|s| s.key[2..].to_string()).collect();
+        (houses, segments)
+    }
+
+    fn build_search(&self) -> Vec<Entry> {
+        let g = &self.graph;
+        // one entry per street name: the junction-to-junction street with the most houses (earliest on a tie) is where it points
+        struct Street { id: u32, houses: u32, total: u32, seen: FxHashSet<u32> }
+        let mut order: Vec<&str> = Vec::new();
+        let mut streets: FxHashMap<&str, Street> = FxHashMap::default();
+        for i in 0..g.ids.len() {
+            if !g.visible[i] { continue; }
+            let Some(name) = g.name[i].as_deref() else { continue };
+            if name.is_empty() { continue; }
+            let group = g.group[i];
+            let houses = g.group_houses[group as usize];
+            let street = streets.entry(name).or_insert_with(|| { order.push(name); Street { id: i as u32, houses: 0, total: 0, seen: FxHashSet::default() } });
+            if street.seen.insert(group) {
+                street.total += houses;
+                if street.seen.len() == 1 || houses > street.houses { street.houses = houses; street.id = i as u32; }
+            }
+        }
+        let mut entries = Vec::with_capacity(order.len() + self.houses.len());
+        for name in order {
+            let street = &streets[name];
+            entries.push(Entry { street: true, id: g.ids[street.id as usize].clone(), label: name.to_string(), detail: format!("{} Häuser", street.total), norm: query::fold(name) });
+        }
+        for h in &self.houses {
+            let (Some(street), Some(number)) = (h.street.as_deref(), h.number.as_deref()) else { continue };
+            if street.is_empty() || number.is_empty() { continue; }
+            let label = format!("{street} {number}");
+            entries.push(Entry { street: false, id: h.key[2..].to_string(), norm: query::fold(&label), label, detail: "Haus".to_string() });
+        }
+        entries
+    }
+
+    /// Street and address search: `(kind, id, label, detail)` of the best matches.
+    pub fn search(&mut self, text: &str, limit: usize) -> Vec<(bool, String, String, String)> {
+        if self.search_entries.is_none() { self.search_entries = Some(self.build_search()); }
+        let entries = self.search_entries.as_ref().unwrap();
+        query::search(entries, text, limit).into_iter().map(|i| { let e = &entries[i]; (e.street, e.id.clone(), e.label.clone(), e.detail.clone()) }).collect()
     }
 
     /// Route between street pieces (ids), through every anchor in order.

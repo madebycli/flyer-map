@@ -1,5 +1,4 @@
-import { pointInRing } from '../engine/geo.ts';
-import type { FieldHouse as House, FieldNetwork as Network, FieldSegment as Segment, LngLat } from '../engine/types.ts';
+import type { FieldHouse as House, FieldNetwork as Network, FieldSegment as Segment } from '../engine/types.ts';
 import { houseKey, segmentKey, type EntityKey } from '../store/types.ts';
 
 export type Index = {
@@ -11,6 +10,8 @@ export type Index = {
   /** Houses along each junction-to-junction street: "Nur Straßen mit Häusern" skips the ones with none. */
   groupHouses: Map<string, number>;
 };
+
+export { lassoSelect } from '../engine/lasso.ts';
 
 export function buildIndex(network: Network): Index {
   const housesBySegment = new Map<string, House[]>();
@@ -57,18 +58,4 @@ export function keysForTouched(index: Index, touched: { houses: Iterable<string>
   const keys = new Set<EntityKey>(keysForSegments(index, touched.segments, withHouses, housesOnly));
   for (const id of touched.houses) if (index.houses.has(id)) keys.add(houseKey(id));
   return [...keys];
-}
-
-const middle = (s: Segment): LngLat => s.mid;
-
-/** Lasso: houses whose centre lies inside the shape, and visible street segments whose middle does. Purely geometric. */
-export function lassoSelect(network: Network, ring: LngLat[], housesOnly?: ReadonlyMap<string, number>): { houses: string[]; segments: string[] } {
-  if (ring.length < 3) return { houses: [], segments: [] };
-  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
-  for (const [lng, lat] of ring) { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < s) s = lat; if (lat > n) n = lat; }
-  const inside = (p: LngLat) => p[0] >= w && p[0] <= e && p[1] >= s && p[1] <= n && pointInRing(p, ring);
-  return {
-    houses: network.houses.filter((h) => inside(h.center)).map((h) => h.id),
-    segments: network.segments.filter((seg) => seg.visible && (!housesOnly || (housesOnly.get(seg.group) ?? 0) > 0) && inside(middle(seg))).map((seg) => seg.id),
-  };
 }

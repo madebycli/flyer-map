@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusColors, type Theme } from '../map/fieldMap.ts';
 import type { Meta } from './api.ts';
 import { HINTS, LABELS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
-import { buildSearchIndex, searchEntries, type SearchEntry } from './search.ts';
-import type { Index } from './mark.ts';
+import type { SearchHit } from './search.ts';
+import type { EngineClient } from './engineClient.ts';
 import { ago, emptyTally, percentOf, tallyTotal, type HouseStats, type Tally } from './stats.ts';
 import { SheetFrame } from './sheet.tsx';
+import { planIsEmpty, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
+import type { ApplyProgress } from './templateApply.ts';
 import { Icon, WavyProgress, type IconName } from './ui.tsx';
 
 export type AppTile = { id: string; icon: IconName; label: string; on?: boolean; badge?: number; href?: string; onClick?: () => void; wide?: boolean };
@@ -120,13 +122,18 @@ export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflict
   );
 }
 
-/** Street and house-number search; picking a result flies there and opens it. */
-export function SearchSheet({ index, onPick, onClose }: { index: Index | null; onPick: (entry: SearchEntry) => void; onClose: () => void }) {
+/** Street and house-number search, answered by the engine (Rust); picking a result flies there and opens it. */
+export function SearchSheet({ engine, onPick, onClose }: { engine: EngineClient | null; onPick: (entry: SearchHit) => void; onClose: () => void }) {
   const [query, setQuery] = useState('');
-  const entries = useMemo(() => (index ? buildSearchIndex(index) : []), [index]);
-  const results = useMemo(() => searchEntries(entries, query), [entries, query]);
+  const [results, setResults] = useState<SearchHit[]>([]);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, []);
+  useEffect(() => {
+    if (!engine || !query.trim()) { setResults([]); return; }
+    let stale = false;
+    const timer = window.setTimeout(() => { engine.search(query).then((hits) => { if (!stale) setResults(hits); }, () => { if (!stale) setResults([]); }); }, 50);
+    return () => { stale = true; window.clearTimeout(timer); };
+  }, [engine, query]);
   return (
     <SheetFrame icon="search" title="Suche" onClose={onClose}>
       <div className="v5-row"><input ref={input} className="v5-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Straße oder Adresse" aria-label="Straße oder Adresse suchen" inputMode="search" autoComplete="off" /></div>
@@ -138,6 +145,37 @@ export function SearchSheet({ index, onPick, onClose }: { index: Index | null; o
         ))}
         {query.trim() && !results.length && <p className="v5-hint"><Icon name="info" size={20} />Nichts gefunden.</p>}
       </div>
+    </SheetFrame>
+  );
+}
+
+const names = (list: string[], max = 8) => (list.length > max ? `${list.slice(0, max).join(', ')} und ${list.length - max} weitere` : list.join(', '));
+
+/** What loading an Aktions-Vorlage would do, before anything happens: new Gruppen and Gebiete, changed outlines, what stays. */
+export function TemplateSheet({ template, plan, progress, onApply, onClose }: { template: ActionTemplate; plan: TemplatePlan; progress: ApplyProgress | null; onApply: () => void; onClose: () => void }) {
+  const rows: { icon: IconName; title: string; text: string }[] = [
+    plan.createTeams.length ? { icon: 'users', title: `${plan.createTeams.length} neue Gruppen`, text: names(plan.createTeams.map((t) => t.name)) } : null,
+    plan.createAreas.length ? { icon: 'plus', title: `${plan.createAreas.length} neue Gebiete`, text: names(plan.createAreas.map((a) => a.name)) } : null,
+    plan.reshapeAreas.length ? { icon: 'pen', title: `${plan.reshapeAreas.length} Gebiete mit neuem Umriss`, text: `${names(plan.reshapeAreas.map((a) => a.name))} – Markierungen außerhalb des neuen Umrisses werden entfernt` } : null,
+    plan.unchanged.length ? { icon: 'check', title: `${plan.unchanged.length} unverändert`, text: names(plan.unchanged) } : null,
+    plan.keep.length ? { icon: 'info', title: `${plan.keep.length} nicht in der Vorlage`, text: `${names(plan.keep)} – bleiben, wie sie sind` } : null,
+    plan.skipped.length ? { icon: 'warning', title: `${plan.skipped.length} übersprungen`, text: plan.skipped.map((s) => `${s.name} (${s.reason})`).join(', ') } : null,
+  ].filter((r): r is { icon: IconName; title: string; text: string } => r !== null);
+  const empty = planIsEmpty(plan);
+  return (
+    <SheetFrame icon="upload" title="Aktions-Vorlage" onClose={onClose} meta={<span><Icon name="polygon" size={16} />{template.name} · {template.areas.length} Gebiete · {template.teams.length} Gruppen</span>}>
+      <p className="v5-hint"><Icon name="info" size={20} />Die Umrisse sind auf der Karte zu sehen. Es wird nichts gelöscht und keine Person und kein Fortschritt aus der Vorlage übernommen.</p>
+      <div className="v5-legend">
+        {rows.map((r) => (
+          <div key={r.title} className="v5-legend-row" style={{ '--c': 'var(--primary)' } as React.CSSProperties}>
+            <span className="v5-swatch"><Icon name={r.icon} size={20} /></span>
+            <div><b>{r.title}</b><small>{r.text}</small></div>
+          </div>
+        ))}
+      </div>
+      {empty && <p className="v5-hint"><Icon name="check" size={20} />Nichts zu tun: Die Aktion entspricht schon der Vorlage.</p>}
+      {progress && <div className="v5-syncbox" role="status"><span><Icon name="sync" size={18} />{progress.done} / {progress.total}</span><small>{progress.label}</small><div className="v5-bar" style={{ '--p': progress.total ? progress.done / progress.total : 0 } as React.CSSProperties}><i /></div></div>}
+      {!empty && <div className="v5-row" style={{ marginTop: '0.6rem' }}><button className="v5-btn primary" style={{ marginTop: 0 }} onClick={onApply} disabled={!!progress}><Icon name="check" size={20} />Anwenden</button></div>}
     </SheetFrame>
   );
 }

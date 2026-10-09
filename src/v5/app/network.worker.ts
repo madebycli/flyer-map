@@ -9,8 +9,10 @@ export type EngineRequest =
   | { id: number; op: 'mapData' }
   | { id: number; op: 'tile'; z: number; x: number; y: number }
   | { id: number; op: 'snap'; at: LngLat }
-  | { id: number; op: 'route'; anchors: string[] };
-export type EngineReply = { id: number; error?: string; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']>; route?: ReturnType<EngineHost['route']>; stats?: ReturnType<EngineHost['stats']> };
+  | { id: number; op: 'route'; anchors: string[] }
+  | { id: number; op: 'lasso'; ring: LngLat[]; housesOnly: boolean }
+  | { id: number; op: 'search'; query: string; limit?: number };
+export type EngineReply = { id: number; error?: string; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']>; route?: ReturnType<EngineHost['route']>; lasso?: ReturnType<EngineHost['lasso']>; search?: ReturnType<EngineHost['search']>; stats?: ReturnType<EngineHost['stats']> };
 
 const wasmUrl = () => fetch(new URL('../engine/wasm/engine.wasm', import.meta.url));
 
@@ -31,6 +33,8 @@ export async function handle(host: EngineHost, req: EngineRequest): Promise<{ re
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
         return { reply: { id: req.id, tile: buffer }, transfer: [buffer] };
       }
+      case 'lasso': return { reply: { id: req.id, lasso: host.lasso(req.ring, req.housesOnly) }, transfer: [] };
+      case 'search': return { reply: { id: req.id, search: host.search(req.query, req.limit) }, transfer: [] };
       case 'route': return { reply: { id: req.id, route: host.route(req.anchors) }, transfer: [] };
       case 'snap': return { reply: { id: req.id, snap: host.snap(req.at) }, transfer: [] };
     }

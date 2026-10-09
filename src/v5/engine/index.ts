@@ -9,3 +9,4 @@ export { WasmEngine } from './wasm.ts';
 export { importLegacyProgress, type LegacyImport, type LegacySnapshot } from './legacy.ts';
 export { slimNetwork, midpointByLength } from './slim.ts';
 export { snapToNetworks, type SnapResult } from './snap.ts';
+export { buildSearchIndex, searchEntries, fold, type SearchEntry, type SearchHit } from './search.ts';

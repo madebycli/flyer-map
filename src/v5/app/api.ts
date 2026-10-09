@@ -130,6 +130,9 @@ const postAreaMutation = (campaignId: string, type: 'area.update-geometry' | 'ar
 export const saveAreaGeometry = (campaignId: string, area: { id: string; updatedAt: string }, geometry: Polygon) =>
   postAreaMutation(campaignId, 'area.update-geometry', { areaId: area.id, geometry, expectedUpdatedAt: area.updatedAt });
 
+export const createTeam = (campaignId: string, team: { id: string; name: string; color: string }) =>
+  postMutation(campaignId, 'team.create', { teamId: team.id, name: team.name, color: team.color });
+
 export const createArea = (campaignId: string, area: { id: string; teamId: string; name: string; geometry: Polygon }) =>
   postAreaMutation(campaignId, 'area.create', { areaId: area.id, teamId: area.teamId, name: area.name, geometry: area.geometry });
 

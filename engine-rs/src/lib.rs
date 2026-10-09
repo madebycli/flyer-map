@@ -11,6 +11,7 @@ mod geo;
 mod grid;
 pub mod model;
 mod mvt;
+mod query;
 mod session;
 mod tile;
 
@@ -186,5 +187,28 @@ pub unsafe extern "C" fn session_route(ptr: *const u8, len: usize) -> usize {
         session::RouteOut::Selected { ids, length, ambiguous } => serde_json::json!({ "state": "selected", "segmentIds": ids, "length": length, "ambiguous": ambiguous }),
         session::RouteOut::Disconnected => serde_json::json!({ "state": "disconnected" }),
     };
+    store(serde_json::to_vec(&json).unwrap_or_default())
+}
+
+/// Houses and visible street pieces inside a lasso: input JSON `[[lng,lat],…]`; output `{"houses":[ids],"segments":[ids]}`.
+///
+/// # Safety
+/// Pointer/length come from an `alloc` buffer written by the host.
+#[no_mangle]
+pub unsafe extern "C" fn session_lasso(ptr: *const u8, len: usize, houses_only: u32) -> usize {
+    let ring: Vec<LngLat> = match serde_json::from_slice(std::slice::from_raw_parts(ptr, len)) { Ok(r) => r, Err(e) => return fail(&format!("ring_invalid: {e}")) };
+    let (houses, segments) = with_session(|s| s.lasso(&ring, houses_only != 0));
+    store(serde_json::to_vec(&serde_json::json!({ "houses": houses, "segments": segments })).unwrap_or_default())
+}
+
+/// Street/address search over everything in the session: JSON array of `{kind:"street"|"house",id,label,detail}`.
+///
+/// # Safety
+/// Pointer/length come from an `alloc` buffer holding the UTF-8 query.
+#[no_mangle]
+pub unsafe extern "C" fn session_search(ptr: *const u8, len: usize, limit: usize) -> usize {
+    let text = String::from_utf8_lossy(std::slice::from_raw_parts(ptr, len)).into_owned();
+    let found = with_session(|s| s.search(&text, limit));
+    let json: Vec<serde_json::Value> = found.into_iter().map(|(street, id, label, detail)| serde_json::json!({ "kind": if street { "street" } else { "house" }, "id": id, "label": label, "detail": detail })).collect();
     store(serde_json::to_vec(&json).unwrap_or_default())
 }

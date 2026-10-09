@@ -6,6 +6,8 @@ import { slimNetwork } from './slim.ts';
 import { snapToNetworks, type SnapResult } from './snap.ts';
 import { buildGraph, routeSegments, type RouteResult } from './route.ts';
 import { mergeNetworks } from './area.ts';
+import { buildSearchIndex, searchEntries, type SearchEntry, type SearchHit } from './search.ts';
+import { lassoSelect } from './lasso.ts';
 import type { FieldNetwork, LngLat, Network } from './types.ts';
 import { WasmEngine } from './wasm.ts';
 
@@ -23,10 +25,12 @@ export class EngineHost {
   private wasm: WasmEngine | null = null;
   private fulls: Network[] = [];
   private tsGraph: ReturnType<typeof buildGraph> | null = null;
+  private tsMerged: FieldNetwork | null = null;
+  private tsSearch: SearchEntry[] | null = null;
 
   /** `loadWasm` returns the module bytes/response; omitted (or failing) means the TypeScript engine. */
   async init(loadWasm: (() => Parameters<typeof WasmEngine.load>[0]) | null): Promise<EngineKind> {
-    this.wasm = null; this.fulls = []; this.tsGraph = null; this.kind = 'ts';
+    this.wasm = null; this.fulls = []; this.tsGraph = null; this.tsMerged = null; this.tsSearch = null; this.kind = 'ts';
     if (loadWasm && typeof WebAssembly !== 'undefined') {
       try { this.wasm = await WasmEngine.load(loadWasm()); this.wasm.resetSession(); this.kind = 'wasm'; } catch { this.wasm = null; }
     }
@@ -35,7 +39,7 @@ export class EngineHost {
 
   stats(): { kind: EngineKind; wasmBytes: number; fulls: number } { return { kind: this.kind, wasmBytes: this.wasm?.memoryBytes() ?? 0, fulls: this.fulls.length }; }
 
-  reset(): void { this.fulls = []; this.tsGraph = null; this.wasm?.resetSession(); }
+  reset(): void { this.fulls = []; this.tsGraph = null; this.tsMerged = null; this.tsSearch = null; this.wasm?.resetSession(); }
 
   async area(req: AreaRequest): Promise<AreaResult> {
     const t0 = performance.now();
@@ -56,7 +60,7 @@ export class EngineHost {
     if (!req.pack) throw new Error('blob_needs_wasm');
     const full = restrictToArea(deriveNetwork(await decodePack(req.pack)), req.ring);
     this.fulls.push(full);
-    this.tsGraph = null;
+    this.tsGraph = null; this.tsMerged = null; this.tsSearch = null;
     return { network: slimNetwork(full), ms: Math.round(performance.now() - t0) };
   }
 
@@ -67,8 +71,22 @@ export class EngineHost {
   /** Route through street pieces: Rust when loaded, otherwise the TypeScript reference over the merged slim network. */
   route(anchors: string[]): RouteResult {
     if (this.wasm) return this.wasm.route(anchors);
-    this.tsGraph ??= buildGraph(mergeNetworks(this.fulls.map((full) => ({ areaId: '', network: slimNetwork(full) }))).network);
+    this.tsGraph ??= buildGraph(this.merged());
     return routeSegments(this.tsGraph, anchors);
+  }
+
+  /** The merged coordinate-free network of the fallback engine (first Area wins), built on first use. */
+  private merged(): FieldNetwork { return (this.tsMerged ??= mergeNetworks(this.fulls.map((full) => ({ areaId: '', network: slimNetwork(full) }))).network); }
+
+  /** Houses and street pieces inside a lasso (Rust, or the TypeScript reference). */
+  lasso(ring: LngLat[], housesOnly: boolean): { houses: string[]; segments: string[] } {
+    return this.wasm ? this.wasm.lasso(ring, housesOnly) : lassoSelect(this.merged(), ring, housesOnly);
+  }
+
+  /** Street and address search (Rust, or the TypeScript reference). */
+  search(query: string, limit = 30): SearchHit[] {
+    if (this.wasm) return this.wasm.search(query, limit);
+    return searchEntries((this.tsSearch ??= buildSearchIndex(this.merged())), query, limit);
   }
 
   snap(at: LngLat, houseReach = 30, streetReach = 22): SnapResult {

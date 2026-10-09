@@ -56,6 +56,8 @@ export class EngineClient {
   async mapData(): Promise<MapData> { return (await this.call({ op: 'mapData' })).mapData!; }
   async tile(z: number, x: number, y: number): Promise<ArrayBuffer> { return (await this.call({ op: 'tile', z, x, y })).tile!; }
   async stats() { return (await this.call({ op: 'stats' })).stats!; }
+  async lasso(ring: LngLat[], housesOnly: boolean) { return (await this.call({ op: 'lasso', ring, housesOnly })).lasso!; }
+  async search(query: string, limit = 30) { return (await this.call({ op: 'search', query, limit })).search!; }
   async route(anchors: string[]) { return (await this.call({ op: 'route', anchors })).route!; }
   async snap(at: LngLat) { return (await this.call({ op: 'snap', at })).snap!; }
 
