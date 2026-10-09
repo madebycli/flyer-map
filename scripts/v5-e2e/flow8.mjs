@@ -39,7 +39,7 @@ await A.page.getByRole('button', { name: 'Sonder-Marker', exact: true }).click()
 await A.jump(116, 13, 18.1);
 await A.click(119, 16); // a few metres beside the house
 await A.page.waitForSelector('.v5-form');
-check('the marker snapped to the house and took its address', (await A.page.getByLabel('Adresse').inputValue()).length > 0 && /Am Haus/.test(await A.page.locator('.v5-form .v5-hint').innerText()), await A.page.getByLabel('Adresse').inputValue());
+check('the marker snapped to the house and took its address', (await A.page.getByLabel('Adresse', { exact: true }).inputValue()).length > 0 && /Am Haus/.test(await A.page.locator('.v5-form .v5-hint').innerText()), await A.page.getByLabel('Adresse', { exact: true }).inputValue());
 check('saving needs a title', await A.page.getByRole('button', { name: 'Sonder-Marker speichern' }).isDisabled());
 await A.page.getByLabel('Titel').fill('Kleidersack Hintertür');
 await A.page.getByLabel('Hinweis').fill('Klingel defekt');
