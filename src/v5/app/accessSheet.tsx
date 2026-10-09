@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Meta } from './api.ts';
-import { createCollectionLink, createGrant, listCollectors, listGrants, revokeCollector, revokeGrant, type Collector, type Grant, type GrantRole } from './accessApi.ts';
+import { createCollectionLink, createGrant, listCollectors, listGrants, revokeCollector, revokeGrant, setPickupRights, type Collector, type Grant, type GrantRole, type PickupRights } from './accessApi.ts';
 import { SheetFrame } from './sheet.tsx';
 import { Icon } from '../../ui/index.ts';
 
@@ -99,12 +99,23 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
       </div>
       {collectors.length > 0 && (
         <div className="v5-list">
-          {collectors.map((c) => (
-            <div key={c.id} className="v5-conflict-row">
-              <span className="v5-conflict-title">{c.label}</span>
-              <button className="v5-icon-btn" onClick={() => void run(() => revokeCollector(campaignId, c.id))} disabled={busy} aria-label={`${c.label} entfernen`} title="Entfernen"><Icon name="trash" /></button>
-            </div>
-          ))}
+          {collectors.map((c) => {
+            const rights = c.collectionCapabilities ?? { canViewPickups: true, canCreatePickups: false, canEditPickups: false, canAssignPickups: false };
+            const toggle = (key: keyof PickupRights) => void run(() => setPickupRights(campaignId, c.id, { ...rights, [key]: !rights[key] }));
+            return (
+              <div key={c.id} className="v5-grouprow">
+                <div className="v5-conflict-row">
+                  <span className="v5-conflict-title">{c.label}</span>
+                  <button className="v5-icon-btn" onClick={() => void run(() => revokeCollector(campaignId, c.id))} disabled={busy} aria-label={`${c.label} entfernen`} title="Entfernen"><Icon name="trash" /></button>
+                </div>
+                <div className="v5-flags" role="group" aria-label={`Sonder-Marker-Rechte von ${c.label}`}>
+                  {([['canViewPickups', 'eye', 'Sehen'], ['canCreatePickups', 'plus', 'Anlegen'], ['canEditPickups', 'pen', 'Bearbeiten'], ['canAssignPickups', 'users', 'Zuweisen']] as const).map(([key, icon, text]) => (
+                    <button key={key} className={`v5-flag${rights[key] ? ' on' : ''}`} style={{ '--c': 'var(--primary)' } as React.CSSProperties} disabled={busy} aria-pressed={rights[key]} aria-label={`${c.label}: ${text}`} title={text} onClick={() => toggle(key)}><Icon name={icon} size={22} /></button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </SheetFrame>

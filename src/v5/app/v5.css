@@ -205,3 +205,10 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-grouprow { display: grid; gap: 0.5rem; }
 .v5-grouprow .v5-team { flex: none; }
 .v5-sheet > .v5-input { width: 100%; flex: none; }
+/* the edit bar never grows past the screen: long rows wrap (name above, colours below) instead of pushing the buttons out */
+.v5-markbar { min-width: 0; box-sizing: border-box; }
+.v5-markbar > * { min-width: 0; }
+.v5-barrow { flex-wrap: wrap; }
+.v5-barrow > .v5-input { flex: 1 1 10rem; }
+.v5-barrow .v5-teams { flex-wrap: wrap; }
+.v5-barrow .v5-team { width: 2.2rem; height: 2.2rem; }

@@ -4,7 +4,8 @@ import { linkFor } from './link.ts';
 /** Who may open the field map with a link: a Gruppe (edit its own Gebiete) or a viewer (read only). Admins are people with an account, not links. */
 export type GrantRole = 'team-editor' | 'viewer';
 export type Grant = { grantId: string; role: 'admin' | GrantRole; teamId: string | null; label: string | null; createdAt: string; revokedAt: string | null };
-export type Collector = { id: string; label: string; createdAt: string; revokedAt: string | null };
+export type PickupRights = { canViewPickups: boolean; canCreatePickups: boolean; canEditPickups: boolean; canAssignPickups: boolean };
+export type Collector = { id: string; label: string; createdAt: string; revokedAt: string | null; collectionCapabilities?: PickupRights };
 
 const campaign = (id: string) => `/api/campaigns/${encodeURIComponent(id)}`;
 const json = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -34,4 +35,9 @@ export async function listCollectors(campaignId: string): Promise<Collector[]> {
 
 export async function revokeCollector(campaignId: string, collectorId: string): Promise<void> {
   await call(`${campaign(campaignId)}/collection/collectors/${encodeURIComponent(collectorId)}`, { method: 'DELETE' });
+}
+
+/** What one helper's device may do with Sonder-Marker. The server stores it per device; the helper's own map follows on its next load. */
+export async function setPickupRights(campaignId: string, collectorId: string, rights: PickupRights): Promise<void> {
+  await call(`${campaign(campaignId)}/collection/collectors/${encodeURIComponent(collectorId)}/pickup-capabilities`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(rights) });
 }

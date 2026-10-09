@@ -103,6 +103,8 @@ Einsätze, Automationen and the Team-Center are **not** rebuilt; they are delete
 | Einstellungen: language (en) | German only | dropped (decision 5) |
 | Team (hub, active team) | Gruppe is implied by the link; admins see all Gruppen | done |
 | Rooms (live groups with join code/QR, leave, members) | none (collection has its own Raum) | not rebuilt (decision 5) |
+| Abholen einrichten: Sammelgebiet + Teilgebiete zeichnen/bearbeiten/archivieren, Admin-Freigabe, Helfer-Rechte je Gerät (old `CollectionAdminPanel`) | Menü → Einrichten (Abhol-Ansicht), Zugänge → Geräte | done (flow 14; found and fixed a server bug: `collection.area.update` bound no colour, so the update matched no row — regression test `collectionMutationBinds`) |
+| Sonder-Marker zuweisen (an Raum/Helfer) | right can be granted, no assignment UI | **open** (small) |
 | Offline map area, street edit after mission, smart house/street tasks | warm cache + derived network | replaced |
 
 ## Order from here

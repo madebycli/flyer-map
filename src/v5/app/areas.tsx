@@ -3,10 +3,17 @@ import type { Feature } from 'geojson';
 import type { FieldNetwork as Network, LngLat } from '../engine/types.ts';
 import type { AreaShape, FieldMap } from '../map/fieldMap.ts';
 import { areaSquareMeters, fromRing, insertVertex, midpoints, moveVertex, MAX_VERTICES, removeVertex, seedSquare, toPolygon, toRing, validate, type Vertices } from '../areas/polygon.ts';
-import { buildPack, createArea, saveAreaGeometry, type Meta } from './api.ts';
+import { buildPack, createArea, createCollectionArea, createMainArea, saveAreaGeometry, updateCollectionArea, updateMainArea, type Meta } from './api.ts';
 import { Icon } from '../../ui/index.ts';
 
+/** The Sammelgebiet is drawn like an Area; its outline carries this id on the map. */
+export const MAIN_ID = '__main__';
+
 export type AreaEdit = {
+  /** What is being drawn: a distribution Gebiet, the Sammelgebiet of an Abholaktion, or one of its Teilgebiete. */
+  kind: 'team' | 'main' | 'collection';
+  /** Outline colour of a Teilgebiet (Abholaktion); distribution Gebiete take their Gruppe's colour. */
+  color: string;
   /** null = a new Area that does not exist on the server yet */
   id: string | null;
   vertices: Vertices;
@@ -28,8 +35,11 @@ export type AreaContext = {
   colorFor?: (area: Meta['areas'][number]) => string | undefined;
   /** Runs after a save and the reload that followed it (the app prunes what the new outline left outside). */
   onSaved?: (areaId: string, wasEdit: boolean) => Promise<void> | void;
+  /** Drawing a Sammelgebiet/Teilgebiet ended (saved or cancelled): the app returns to the Einrichten sheet. */
+  onCollectionDone?: () => void;
 };
 
+export const COLLECTION_COLORS = ['#2563eb', '#e5736b', '#e0a83a', '#8b7be8', '#38b8a6'];
 export const sizeLabel = (m2: number) => (m2 >= 1e6 ? `${(m2 / 1e6).toFixed(2).replace('.', ',')} km²` : `${Math.round(m2 / 100) / 100} ha`.replace('.', ','));
 const colorOf = (meta: Meta, teamId: string) => meta.teams.find((t) => t.id === teamId)?.color ?? '#7aa8ff';
 
@@ -46,9 +56,12 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
 
   const canEdit = useCallback((teamId: string) => !!meta && (meta.role === 'admin' || (meta.role === 'team-editor' && meta.teamId === teamId)), [meta]);
 
-  const shapes: AreaShape[] = useMemo(() => (meta?.areas ?? [])
-    .filter((a) => a.id !== edit?.id)
-    .map((a) => ({ id: a.id, name: a.name, color: ctx.colorFor?.(a) ?? colorOf(meta!, a.teamId), ring: a.geometry.coordinates[0] as LngLat[] })), [meta, edit?.id, ctx.colorFor]);
+  const shapes: AreaShape[] = useMemo(() => [
+    ...(meta?.mainArea && edit?.kind !== 'main' ? [{ id: MAIN_ID, name: meta.mainArea.name, color: '#8a97a6', ring: meta.mainArea.geometry.coordinates[0] as LngLat[] }] : []),
+    ...(meta?.areas ?? [])
+      .filter((a) => a.id !== edit?.id)
+      .map((a) => ({ id: a.id, name: a.name, color: ctx.colorFor?.(a) ?? a.collection?.color ?? colorOf(meta!, a.teamId), ring: a.geometry.coordinates[0] as LngLat[] })),
+  ], [meta, edit?.id, edit?.kind, ctx.colorFor]);
   useEffect(() => { fieldMap.current?.setAreas(shapes, active ? selectedId : null); }, [shapes, selectedId, active, fieldMap]);
 
   // overlay for the polygon being edited
@@ -56,7 +69,7 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
     const fm = fieldMap.current;
     if (!fm) return;
     if (!edit || !meta) { fm.setDraw({ type: 'FeatureCollection', features: [] }); return; }
-    const color = colorOf(meta, edit.teamId);
+    const color = edit.kind === 'team' ? colorOf(meta, edit.teamId) : edit.kind === 'main' ? '#8a97a6' : edit.color;
     const ring = toRing(edit.vertices);
     const features: Feature[] = [];
     if (edit.vertices.length >= 3) features.push({ type: 'Feature', properties: { kind: 'fill', color }, geometry: { type: 'Polygon', coordinates: [ring] } });
@@ -98,23 +111,39 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
   }, [active, edit?.id, !!edit, fieldMap, setEdit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startEdit = (areaId: string) => {
+    if (areaId === MAIN_ID) {
+      const main = meta?.mainArea;
+      if (!main || meta?.role !== 'admin') return;
+      setSelectedId(null);
+      setEdit({ kind: 'main', color: '#8a97a6', id: main.id, vertices: fromRing(main.geometry.coordinates[0] as LngLat[]), selected: null, history: [], teamId: '', name: main.name, saving: false, error: null });
+      return;
+    }
     const area = meta?.areas.find((a) => a.id === areaId);
     if (!area || !canEdit(area.teamId)) return;
     setSelectedId(areaId);
-    setEdit({ id: areaId, vertices: fromRing(area.geometry.coordinates[0] as LngLat[]), selected: null, history: [], teamId: area.teamId, name: area.name, saving: false, error: null });
+    setEdit({ kind: meta?.kind === 'collection' ? 'collection' : 'team', color: area.collection?.color ?? '#2563eb', id: areaId, vertices: fromRing(area.geometry.coordinates[0] as LngLat[]), selected: null, history: [], teamId: area.teamId, name: area.name, saving: false, error: null });
   };
 
   const startNew = () => {
     const fm = fieldMap.current;
     if (!fm || !meta) return;
-    const teamId = meta.role === 'team-editor' && meta.teamId ? meta.teamId : meta.teams[0]?.id;
-    if (!teamId) return;
     const c = fm.map.getCenter();
     setSelectedId(null);
-    setEdit({ id: null, vertices: seedSquare([c.lng, c.lat], 120), selected: null, history: [], teamId, name: `Gebiet ${(meta.areas.length + 1)}`, saving: false, error: null });
+    if (meta.kind === 'collection') {
+      if (meta.role !== 'admin') return;
+      // The first outline is the Sammelgebiet (a generous square around the map centre); every further one is a Teilgebiet.
+      const main = !meta.mainArea;
+      const bounds = fm.map.getBounds();
+      const half = Math.max(120, Math.min(1500, Math.abs(bounds.getEast() - bounds.getWest()) * 111_320 * Math.cos((c.lat * Math.PI) / 180) * 0.3));
+      setEdit({ kind: main ? 'main' : 'collection', color: ['#2563eb', '#e5736b', '#e0a83a', '#8b7be8', '#38b8a6'][meta.areas.length % 5], id: null, vertices: seedSquare([c.lng, c.lat], main ? half : Math.max(100, half / 3)), selected: null, history: [], teamId: '', name: main ? 'Sammelgebiet' : `Teilgebiet ${meta.areas.length + 1}`, saving: false, error: null });
+      return;
+    }
+    const teamId = meta.role === 'team-editor' && meta.teamId ? meta.teamId : meta.teams[0]?.id;
+    if (!teamId) return;
+    setEdit({ kind: 'team', color: '#2563eb', id: null, vertices: seedSquare([c.lng, c.lat], 120), selected: null, history: [], teamId, name: `Gebiet ${(meta.areas.length + 1)}`, saving: false, error: null });
   };
 
-  const cancelEdit = () => setEdit(null);
+  const cancelEdit = () => { const kind = editRef.current?.kind; setEdit(null); if (kind && kind !== 'team') ctx.onCollectionDone?.(); };
   const undo = () => setEdit((c) => (c && c.history.length ? { ...c, vertices: c.history[c.history.length - 1], history: c.history.slice(0, -1), selected: null, error: null } : c));
   const deleteSelected = () => setEdit((c) => {
     if (!c || c.selected === null) return c;
@@ -123,6 +152,7 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
   });
   const setName = (name: string) => setEdit((c) => (c ? { ...c, name: name.slice(0, 80) } : c));
   const setTeam = (teamId: string) => setEdit((c) => (c ? { ...c, teamId } : c));
+  const setColor = (color: string) => setEdit((c) => (c ? { ...c, color } : c));
 
   const validity = edit ? validate(edit.vertices) : null;
   const save = async () => {
@@ -134,12 +164,20 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
     try {
       const geometry = toPolygon(current.vertices);
       let id = current.id;
-      if (id) await saveAreaGeometry(ctx.campaignId, { id, updatedAt: meta.areas.find((a) => a.id === id)!.updatedAt }, geometry);
-      else { id = `area_${crypto.randomUUID()}`; await createArea(ctx.campaignId, { id, teamId: current.teamId, name: current.name.trim() || 'Gebiet', geometry }); }
+      const name = current.name.trim() || (current.kind === 'main' ? 'Sammelgebiet' : 'Gebiet');
+      if (current.kind === 'main') {
+        if (id) await updateMainArea(ctx.campaignId, { id, updatedAt: meta.mainArea!.updatedAt }, name, geometry);
+        else { id = `collection_main_${crypto.randomUUID()}`; await createMainArea(ctx.campaignId, { id, name, geometry }); }
+      } else if (current.kind === 'collection') {
+        if (id) await updateCollectionArea(ctx.campaignId, { id, updatedAt: meta.areas.find((a) => a.id === id)!.updatedAt }, name, geometry, current.color);
+        else { id = `collection_area_${crypto.randomUUID()}`; await createCollectionArea(ctx.campaignId, { id, mainAreaId: meta.mainArea!.id, name, geometry, color: current.color }); }
+      } else if (id) await saveAreaGeometry(ctx.campaignId, { id, updatedAt: meta.areas.find((a) => a.id === id)!.updatedAt }, geometry);
+      else { id = `area_${crypto.randomUUID()}`; await createArea(ctx.campaignId, { id, teamId: current.teamId, name, geometry }); }
       // the data pack covers the old outline: fetch fresh map data for the new one (a cooldown refusal just leaves it for the "Laden" chip)
-      if (meta.canBuildPack) { try { await buildPack(ctx.campaignId, id); } catch { /* offered again after reload */ } }
-      setEdit(null); setSelectedId(id);
+      if (meta.canBuildPack && current.kind !== 'main') { try { await buildPack(ctx.campaignId, id); } catch { /* offered again after reload */ } }
+      setEdit(null); setSelectedId(current.kind === 'team' ? id : null);
       await ctx.reload();
+      if (current.kind !== 'team') { ctx.onCollectionDone?.(); return; }
       try { await ctx.onSaved?.(id, !!current.id); } catch { /* the clean-up is offered again from the Area sheet */ }
     } catch (error) {
       setEdit({ ...current, saving: false, error: error instanceof Error ? error.message : 'Speichern fehlgeschlagen' });
@@ -152,7 +190,7 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
     return true;
   }, [active, fieldMap]);
 
-  return { selectedId, setSelectedId, edit, canEdit, startEdit, startNew, cancelEdit, undo, deleteSelected, setName, setTeam, save, validity, onMapTap };
+  return { selectedId, setSelectedId, edit, canEdit, startEdit, startNew, cancelEdit, undo, deleteSelected, setName, setTeam, setColor, save, validity, onMapTap };
 }
 
 export type AreaTool = ReturnType<typeof useAreaTool>;
@@ -160,15 +198,20 @@ export type AreaTool = ReturnType<typeof useAreaTool>;
 export function AreaEditBar({ tool, meta }: { tool: AreaTool; meta: Meta }) {
   const edit = tool.edit!;
   const valid = tool.validity?.valid ?? false;
-  const choosesTeam = edit.id === null && meta.role === 'admin' && meta.teams.length > 1;
+  const choosesTeam = edit.kind === 'team' && edit.id === null && meta.role === 'admin' && meta.teams.length > 1;
   return (
     <section className="v5-markbar" aria-label="Gebiet bearbeiten">
       {(edit.error || (!valid && tool.validity && !tool.validity.valid)) && (
         <div className="v5-markinfo"><span className="warn"><Icon name="warning" size={18} />{edit.error ?? (tool.validity && !tool.validity.valid ? tool.validity.reason : '')}</span></div>
       )}
-      {edit.id === null && (
+      {(edit.id === null || edit.kind !== 'team') && (
         <div className="v5-barrow">
-          <input className="v5-input" value={edit.name} onChange={(e) => tool.setName(e.target.value)} aria-label="Name des Gebiets" placeholder="Name" maxLength={80} />
+          <input className="v5-input" value={edit.name} onChange={(e) => tool.setName(e.target.value)} aria-label={edit.kind === 'main' ? 'Name des Sammelgebiets' : 'Name des Gebiets'} placeholder="Name" maxLength={80} />
+          {edit.kind === 'collection' && (
+            <div className="v5-teams" role="group" aria-label="Farbe">
+              {COLLECTION_COLORS.map((c) => <button key={c} className={`v5-team${edit.color === c ? ' on' : ''}`} style={{ '--c': c } as React.CSSProperties} aria-pressed={edit.color === c} aria-label={c} onClick={() => tool.setColor(c)} />)}
+            </div>
+          )}
           {choosesTeam && (
             <div className="v5-teams" role="group" aria-label="Team">
               {meta.teams.map((t) => <button key={t.id} className={`v5-team${edit.teamId === t.id ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} aria-pressed={edit.teamId === t.id} aria-label={t.name} title={t.name} onClick={() => tool.setTeam(t.id)} />)}
