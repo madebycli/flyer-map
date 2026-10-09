@@ -14,7 +14,7 @@ Streets and houses are derived on the device by a Rust/WASM engine from one OSM 
 (sign-in with second factor, Aktionen, Sicherheit, Einladungen). The old map, RxDB sync, V3/V4 street engine, Rooms, comments, statistics and automations are deleted; the Worker keeps identity, access links, the collection
 backend (Abholen incl. admin setup), the lean mutation path and `worker/v5`. Source: 79 k → 23 k lines.
 
-**Verified (sandbox only):** 425 unit tests (integration branch at `5e352a2`, counted with `npm test`), 15 browser flows against the real Worker handlers on in-memory D1 (`scripts/v5-e2e`, `node scripts/v5-e2e/run-all.mjs`; also in TypeScript-fallback mode), typecheck, build.
+**Verified (sandbox only):** 446 unit tests (counted with `npm test` on the integration branch after the A-5/rights-matrix merges; re-count after every merge), 15 browser flows against the real Worker handlers on in-memory D1 (`scripts/v5-e2e`, `node scripts/v5-e2e/run-all.mjs`; also in TypeScript-fallback mode), typecheck, build.
 **Not verified:** real phones, real Overpass data, a real D1, the live basemap, the organiser pages against the real API (flow 11 mocks it at the network edge).
 
 **Open before go-live (owner):**
