@@ -16,7 +16,7 @@
     "run_worker_first": ["/api/*", "/"]
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "flyer-map-staging-db", "database_id": "bcec3432-18ec-42a2-970a-64d52c8263d5" }
+    { "binding": "DB", "database_name": "flyer-map-staging-db", "database_id": "bcec3432-18ec-42a2-970a-64d52c8263d5", "migrations_dir": "../../migrations" }
   ],
   "durable_objects": {
     "bindings": [
