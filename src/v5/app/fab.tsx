@@ -3,7 +3,7 @@ import { statusColors, type Theme } from '../map/fieldMap.ts';
 import type { Status } from '../store/types.ts';
 import { HINTS, LABELS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
 import { MODES, meters, type Marking } from './marking.tsx';
-import { Icon } from './ui.tsx';
+import { Icon } from '../../ui/index.ts';
 
 /** idle: just the button. panel: counter / undo / discard / confirm. status: pick what the route becomes. options: modes, brush, filters. */
 export type FabPhase = 'idle' | 'panel' | 'status' | 'options';

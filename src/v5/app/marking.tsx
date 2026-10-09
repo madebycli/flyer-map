@@ -5,7 +5,7 @@ import type { FieldMap, Hit, Pt } from '../map/fieldMap.ts';
 import { segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import type { EngineClient } from './engineClient.ts';
 import { keysForGroups, keysForSegments, keysForTouched, type Index } from './mark.ts';
-import type { IconName } from './ui.tsx';
+import type { IconName } from '../../ui/index.ts';
 
 export type MarkMode = 'tap' | 'paint' | 'lasso' | 'route';
 /** Route first: "Strecke" is what almost every shift is made of, so it is what a plain tap on the marking button starts. */

@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { Feature, FeatureCollection } from 'geojson';
 import { PICKUP_COLOR, PICKUP_LABEL, PICKUP_STATUSES, validateDraft, type Pickup, type PickupStatus } from './pickups.ts';
-import { Icon, type IconName } from './ui.tsx';
+import { Icon, type IconName } from '../../ui/index.ts';
 
 const ICON: Record<PickupStatus, IconName> = { open: 'open', collected: 'check', 'needs-follow-up': 'repeat', unavailable: 'blocked' };
 

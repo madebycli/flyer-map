@@ -5,7 +5,7 @@ import { FLAGS, FLAG_LABEL, NOTE_TEXT_MAX, type Flag, type Note, type NoteKey } 
 import type { NoteStore } from '../notes/store.ts';
 import type { Meta } from './api.ts';
 import type { Index } from './mark.ts';
-import { Icon, type IconName } from './ui.tsx';
+import { Icon, type IconName } from '../../ui/index.ts';
 
 export const FLAG_ICON: Record<Flag, IconName> = { dog: 'paw', locked: 'lock', nope: 'noAds', full: 'mailbox', again: 'repeat', danger: 'warning', info: 'info' };
 /** Same hue on dark and light basemaps; danger/locked read as "stop", the rest as information. */

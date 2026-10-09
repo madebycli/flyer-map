@@ -1,7 +1,7 @@
 import { statusColors, type Theme } from '../map/fieldMap.ts';
 import type { Status } from '../store/types.ts';
 import { HINTS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
-import { Icon, type IconName } from './ui.tsx';
+import { Icon, type IconName } from '../../ui/index.ts';
 
 /** The bottom sheet every detail view uses: handle, badge, title, optional meta line, close. */
 export function SheetFrame({ icon, title, meta, onClose, children }: { icon: IconName; title: string; meta?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {

@@ -1,0 +1,39 @@
+/* v5 field shell — dark first, Material 3 Expressive ideas kept calm: tonal surfaces, one control size, short transitions.
+   Rules of this file:
+   - icon controls are SQUARES (width = height = --ctl) with one radius; long controls are horizontal pills of the same height;
+   - no backdrop blur and no animation on layout-heavy things: it has to run on old phones;
+   - colour only carries meaning (status, one accent); everything else is neutral and quiet.
+   No webfont: the system sans keeps it fast and offline-safe. */
+:root {
+  color-scheme: dark;
+  --ctl: 3rem; --ctl-lg: 4rem; --r: 1.1rem; --r-lg: 1.75rem; --gap: 0.5rem;
+  --surface: #0f1514; --surface-1: #151c1b; --surface-2: #1a2322; --surface-3: #232d2b; --surface-4: #2d3836;
+  --glass: rgb(26 35 34 / 94%);
+  --on: #e3eae8; --on-var: #a9b6b2; --outline: #6c7a76; --outline-var: #2e3836;
+  --primary: #66cfb3; --on-primary: #00382c; --primary-container: #1d4a40; --on-primary-container: #a2efd9;
+  --tertiary: #e2bb7a; --tertiary-container: #4a3716; --on-tertiary-container: #f7dfb8;
+  --error: #f2b8b5; --error-container: #53201d;
+  --inverse: #dfe7e3; --on-inverse: #161d1b;
+  --shadow: 0 1px 3px rgb(0 0 0 / 40%), 0 6px 18px rgb(0 0 0 / 32%);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --t: 200ms;
+  --font: "Google Sans Flex", "Google Sans", "Segoe UI Variable", system-ui, -apple-system, Roboto, sans-serif;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --surface: #f5faf8; --surface-1: #edf3f1; --surface-2: #e7eeeb; --surface-3: #dee7e4; --surface-4: #d4dedb;
+  --glass: rgb(237 243 241 / 95%);
+  --on: #161d1b; --on-var: #3f4946; --outline: #6f7975; --outline-var: #c3cdc9;
+  --primary: #1b7a64; --on-primary: #ffffff; --primary-container: #b3ebd9; --on-primary-container: #00201a;
+  --tertiary: #8a5f10; --tertiary-container: #f7e3bc; --on-tertiary-container: #2b1a00;
+  --error: #ba1a1a; --error-container: #ffdad6;
+  --inverse: #2b3230; --on-inverse: #eaf2ee;
+  --shadow: 0 1px 3px rgb(30 50 45 / 26%), 0 6px 18px rgb(30 50 45 / 16%);
+}
+
+html, body, #root { margin: 0; height: 100%; background: var(--surface); color: var(--on); font: 500 16px/1.35 var(--font); -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; touch-action: manipulation; }
+.v5-root, .v5-root *, .v5-root *::before, .v5-root *::after { box-sizing: border-box; }
+.v5-root { position: fixed; inset: 0; overflow: hidden; }
+.v5-map { position: absolute; inset: 0; }
+.v5-icon { flex: none; display: block; }

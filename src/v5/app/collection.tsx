@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { Meta } from './api.ts';
 import { actionErrorText, areaPercent, areaView, type AreaView, type Me } from './collection.ts';
-import { Icon, type IconName } from './ui.tsx';
+import { Icon, type IconName } from '../../ui/index.ts';
 
 type Area = Meta['areas'][number];
 export type AreaStats = { done: number; total: number };

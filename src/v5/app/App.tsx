@@ -25,7 +25,7 @@ import { SheetFrame, StatusGroup } from './sheet.tsx';
 import { houseStats } from './stats.ts';
 import type { SearchHit } from './search.ts';
 import { useCampaign } from './useCampaign.ts';
-import { Icon, Loader } from './ui.tsx';
+import { Icon, Loader } from '../../ui/index.ts';
 
 const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
 const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf-v5-hand') === 'left' ? 'left' : 'right'; } catch { return 'right'; } };

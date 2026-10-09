@@ -4,7 +4,7 @@ import type { FieldNetwork as Network, LngLat } from '../engine/types.ts';
 import type { AreaShape, FieldMap } from '../map/fieldMap.ts';
 import { areaSquareMeters, fromRing, insertVertex, midpoints, moveVertex, MAX_VERTICES, removeVertex, seedSquare, toPolygon, toRing, validate, type Vertices } from '../areas/polygon.ts';
 import { buildPack, createArea, saveAreaGeometry, type Meta } from './api.ts';
-import { Icon } from './ui.tsx';
+import { Icon } from '../../ui/index.ts';
 
 export type AreaEdit = {
   /** null = a new Area that does not exist on the server yet */

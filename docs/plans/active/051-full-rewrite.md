@@ -38,12 +38,40 @@ v3/v4 street-engine remnants. "Unreachable" is therefore a list of *dormant prod
 | 4 | **Worker**: v5 handlers (pack, state, notes, prune, meta) to Rust (`workers-rs`), same endpoints and tests; then mutations/sync; **auth last** (KDF, TOTP, trusted devices need their own security review) | ≈ 27 000 lines | yes | high |
 | 5 | **Delete the legacy app**, its CSS (12 k lines) and the tests that only described it | − 45 000 lines | — | after go-live |
 
-## Decisions needed (they change what is built)
+## Decisions (2026-10-09, taken by the technical owner on the user's instruction "Überdenke alle Funktionen … full rewrite")
 
-1. **The dormant features** (Activity, Automationen, Einsätze, Statistik, Team-Center, Smart House/Street): rebuild them in the new design (phase 2), or delete them
-   for good? Deleting needs the Plan 031 tests removed on purpose.
-2. **The Worker in Rust**: adopt `workers-rs` and a build step in the deploy (phase 4)? This changes the deployment pipeline and the Durable Object classes.
-3. **Go-live of `/v5` for the legacy map app** (phase 3): when, and which Aktionen first?
+1. **Dormant features are rebuilt, not deleted** — in the v5 shell and the shared design system, one at a time, each behind its existing Worker contract.
+2. **Worker to Rust via `workers-rs`**, as a strangler: a Rust entry Worker answers the v5 routes natively and forwards everything else through a service binding to the
+   current TypeScript Worker; auth moves last, after its own security review. Not started until a feasibility probe (build, D1, Durable Object, HTTP-level test harness) is accepted.
+3. **One switch**: all work lands on one long-lived branch in always-green stages; `/v5` replaces the legacy map app only on an explicit go after staging.
+
+## Function inventory — keep / rebuild / move to Rust / drop
+
+| Function (today) | Where | Decision | Why |
+|---|---|---|---|
+| Karte, Status setzen, Smart Marking, Lasso, Routing, Suche | `src/v5`, `engine-rs` | **keep** (done, Rust) | already the new core |
+| Notizen, Gebiete zeichnen, Aktions-Vorlage, Abholmodus, Raum | `src/v5` | **keep** | done in the shell |
+| Fortschritt / Statistik (Team, Gebiet, Zeitraum) | `StatisticsHub`, `worker/statistics.ts` | **rebuild** in shell; aggregation **Rust** | pure function of the status overlay; no D1 rows needed |
+| Aktivität (wer hat was wann) | `ActivityHub`, `worker/activity.ts`, `domainEventHistory` | **rebuild**; reads ops log of v5 | v5 ops already carry author + HLC |
+| Einsatz-Verlauf / Field Sessions | `FieldSessions*`, `worker/fieldSession*` | **rebuild** (one list + one detail sheet) | merge History/Draft/Note/Tasks into one concept: "Einsatz" |
+| Kommentare | `CommentsHub/Panel/ContextPanel` | **drop as separate feature, merged into Notizen** | v5 notes already do flags + text per place; comments were the same idea |
+| Automationen | `AutomationHub`, `worker/automation*` | **rebuild small**: rules list + toggle; runtime stays TS until Worker phase | low use, keep contract |
+| Team-Center / Teams, Gruppen, Mitglieder, Beitritt, Credential-Recovery | `src/team`, `worker/fieldGroup*` | **rebuild** (Team sheet in shell) | needed for Aktionen; recovery flow security-reviewed |
+| Räume (Rooms) | `RoomsHub` | **drop** — replaced by v5 Raum (Abholmodus) | duplicate |
+| Smart House / Smart Street tasks, v3/v4 street engine | `src/domain/*street*`, `worker/streetNetwork` (4 336 lines) | **drop after cut-over** | v5 derives instead of materialising; D1 task tables stay readable for the import tool only |
+| Legacy-Karte `App.tsx` / `MapView.tsx` / Collection view / Offline map | `src` | **replace** by `/v5` (+ offline = warm cache) | phase 3 |
+| Organizer / Admin: Aktionen anlegen, löschen, vergleichen, Analytics-Export, Einladungen, öffentliche Links, Sicherheit (MFA, trusted devices) | `src/admin`, `src/organization`, `worker/organization*` | **rebuild UI** in shell (Admin area of `/v5`); **auth stays TS until last** | security review before porting KDF/TOTP |
+| Workbench previews, Funny-Focus-Video, M6/M5 previews | `src/workbench`, `src/platform/FunnyFocusVideo` | **drop** | demo/preview surfaces, not product |
+| Diagnostics, Support, Live | `src/diagnostics`, `src/support`, `src/live` | **keep as one "Hilfe & Status" sheet** | merge three into one |
+| RxDB sync, change feed, sync heads, mutation pipeline | `worker/rxdb*`, `mutation*`, `syncHeads`, `campaignSyncDurableObject` | **keep until cut-over**, then **drop** | v5 has own LWW sync (`/api/v5/.../ops`) |
+| CSS: 12 k lines in 65 files | `src/*.css` | **drop with their screens** | replaced by `src/ui` tokens + components |
+
+Net effect: ≈ 45 000 of 79 000 lines disappear at the end; ≈ 5 000 new lines (UI) and the Rust Worker core replace them.
+
+## Phase status
+
+- **Phase 1 (design system package)**: `src/ui` = `tokens.css`, `components.css`, `icons.tsx`, `progress.tsx`, `index.ts`; the v5 shell imports it, `v5.css` keeps only shell layout (203 lines, was 338). Typecheck, build, 1 178 unit tests and flows 3/9/10 green.
+- Phases 2–5: not started.
 
 ## Not decided here
 

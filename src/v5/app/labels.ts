@@ -1,5 +1,5 @@
 import type { Status } from '../store/types.ts';
-import type { IconName } from './ui.tsx';
+import type { IconName } from '../../ui/index.ts';
 
 export type Kind = 'distribution' | 'collection';
 

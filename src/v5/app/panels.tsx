@@ -8,7 +8,7 @@ import { ago, emptyTally, percentOf, tallyTotal, type HouseStats, type Tally } f
 import { SheetFrame } from './sheet.tsx';
 import { planIsEmpty, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import type { ApplyProgress } from './templateApply.ts';
-import { Icon, WavyProgress, type IconName } from './ui.tsx';
+import { Icon, WavyProgress, type IconName } from '../../ui/index.ts';
 
 export type AppTile = { id: string; icon: IconName; label: string; on?: boolean; badge?: number; href?: string; onClick?: () => void; wide?: boolean };
 
