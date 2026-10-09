@@ -341,6 +341,12 @@ nodes:
     status: accepted
     topics: []
     load_when: [task touches this area]
+  - id: operations-staging-v5-readiness
+    path: docs/operations/STAGING_V5_READINESS.md
+    type: operations
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
   - id: operations-production
     path: docs/operations/PRODUCTION.md
     type: operations
