@@ -77,7 +77,8 @@ check('marking caption explains the first step', /Startpunkt/.test(await page.lo
 await page.locator('.v5-fab .v5-tile').first().click();
 await page.getByRole('button', { name: 'Nur Straßen mit Häusern' }).click();
 await page.getByRole('button', { name: 'Weiter markieren' }).click();
-const hidden = await page.evaluate(async () => { const m = window.__v5Map; await new Promise((r) => m.once('idle', r)); return m.queryRenderedFeatures({ layers: ['v5-segments-line'] }).filter((f) => f.properties.h === '0').length; });
+await page.waitForTimeout(1200);
+const hidden = await page.evaluate(async () => { const m = window.__v5Map; return m.queryRenderedFeatures({ layers: ['v5-segments-line'] }).filter((f) => f.properties.h === '0').length; });
 check('streets without houses disappear from the map while the filter is on', hidden === 0, `h=0 rendered: ${hidden}`);
 await page.screenshot({ path: `${shots}/u4-marking.png` });
 await page.getByRole('button', { name: 'Markieren beenden' }).click();

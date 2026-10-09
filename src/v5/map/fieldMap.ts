@@ -372,6 +372,18 @@ export class FieldMap {
     });
   }
 
+  /**
+   * A position without asking: only when the browser already holds the permission (never a surprise prompt), a recent fix is fine,
+   * and the map does not move. Null when unknown. Used to preselect the Area a person is standing in.
+   */
+  async quietFix(): Promise<LngLat | null> {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.geolocation || !navigator.permissions) return null;
+      if ((await navigator.permissions.query({ name: 'geolocation' as PermissionName })).state !== 'granted') return null;
+    } catch { return null; }
+    return new Promise((resolve) => navigator.geolocation.getCurrentPosition((p) => resolve([p.coords.longitude, p.coords.latitude]), () => resolve(null), { enableHighAccuracy: false, timeout: 6000, maximumAge: 120_000 }));
+  }
+
   zoomBy(delta: number) { this.map.zoomTo(this.map.getZoom() + delta, { duration: 180 }); }
   resetNorth() { this.map.resetNorth({ duration: 250 }); }
 

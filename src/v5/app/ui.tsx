@@ -51,6 +51,7 @@ const PATHS = {
   chart: <path d="M5 20V11M12 20V5M19 20v-6" />,
   layers: <path d="M12 4l8.500 4.500L12 13 3.500 8.500zM3.500 12.500L12 17l8.500-4.500M3.500 16L12 20.500 20.500 16" />,
   swap: <path d="M7 4L3.500 7.500 7 11M3.500 7.500H20M17 13l3.500 3.500L17 20M20.500 16.500H4" />,
+  upload: <path d="M12 15V4M7.500 8L12 3.500 16.500 8M5 19.500h14" />,
   mapPin: <><path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 0 0-13 0c0 5.4 6.5 11 6.5 11z" /><circle cx="12" cy="10" r="2.3" /></>,
 } satisfies Record<string, ReactNode>;
 

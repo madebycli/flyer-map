@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature } from 'geojson';
-import { routeSegments, buildGraph, type FieldNetwork as Network } from '../engine/index.ts';
+import type { FieldNetwork as Network, RouteResult } from '../engine/index.ts';
 import type { FieldMap, Hit, Pt } from '../map/fieldMap.ts';
 import { segmentKey, type EntityKey, type Status } from '../store/types.ts';
+import type { EngineClient } from './engineClient.ts';
 import { keysForGroups, keysForSegments, keysForTouched, lassoSelect, type Index } from './mark.ts';
 import type { IconName } from './ui.tsx';
 
@@ -21,6 +22,8 @@ const load = (): Saved => { try { return { ...DEFAULTS, ...JSON.parse(localStora
 export type MarkContext = {
   fieldMap: React.MutableRefObject<FieldMap | null>;
   network: Network | null;
+  /** The engine answers route questions (Rust); null while it is not ready. */
+  engine: EngineClient | null;
   index: Index | null;
   apply(keys: EntityKey[], status: Status, label: string): void;
 };
@@ -37,8 +40,15 @@ export function useMarking(ctx: MarkContext, active: boolean) {
   const latest = useRef({ ...ctx, brush, withHouses, housesOnly });
   latest.current = { ...ctx, brush, withHouses, housesOnly };
 
-  const graph = useMemo(() => (ctx.network ? buildGraph(ctx.network) : null), [ctx.network]);
-  const route = useMemo(() => (graph && ctx.network && anchors.length >= 1 ? routeSegments(ctx.network, anchors, graph) : null), [graph, ctx.network, anchors]);
+  // The route is computed by the engine (Rust, in the Worker); an answer for outdated anchors is dropped.
+  const [route, setRoute] = useState<RouteResult | null>(null);
+  const { engine } = ctx;
+  useEffect(() => {
+    if (!active || mode !== 'route' || !engine || anchors.length < 1) { setRoute(null); return; }
+    let stale = false;
+    engine.route(anchors).then((result) => { if (!stale) setRoute(result); }, () => { if (!stale) setRoute(null); });
+    return () => { stale = true; };
+  }, [active, mode, engine, anchors]);
   const routeIds = route?.state === 'selected' ? route.segmentIds : [];
   const routeKeys = useMemo(() => (ctx.index && routeIds.length ? keysForSegments(ctx.index, routeIds, withHouses, housesOnly) : []), [ctx.index, routeIds, withHouses, housesOnly]);
   const routeHouses = useMemo(() => routeKeys.reduce((n, key) => n + (key.startsWith('h:') ? 1 : 0), 0), [routeKeys]);

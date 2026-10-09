@@ -4,30 +4,36 @@ export type RouteResult =
   | { state: 'selected'; segmentIds: string[]; length: number; ambiguous: boolean }
   | { state: 'disconnected' };
 
-type Graph = { byId: Map<string, Segment>; at: Map<string, string[]> };
+/** `order` is the position of a segment in the network: the deterministic tie-break between equally long routes (the Rust engine uses the same). */
+type Graph = { byId: Map<string, Segment>; at: Map<string, string[]>; order: Map<string, number> };
 
 export function buildGraph(network: Network): Graph {
   const byId = new Map<string, Segment>();
   const at = new Map<string, string[]>();
+  const order = new Map<string, number>();
   for (const segment of network.segments) {
     byId.set(segment.id, segment);
+    order.set(segment.id, order.size);
     for (const key of [segment.from, segment.to]) {
       const list = at.get(key);
       if (list) list.push(segment.id); else at.set(key, [segment.id]);
     }
   }
-  return { byId, at };
+  return { byId, at, order };
 }
 
-/** Binary min-heap keyed by cost. */
+type Item = { cost: number; id: string; order: number };
+const before = (a: Item, b: Item) => a.cost < b.cost || (a.cost === b.cost && a.order < b.order);
+
+/** Binary min-heap keyed by (cost, order): equal costs pop in network order, so the result never depends on heap internals. */
 class Heap {
-  private items: { cost: number; id: string }[] = [];
+  private items: Item[] = [];
   get size() { return this.items.length; }
-  push(cost: number, id: string) {
-    const items = this.items; items.push({ cost, id });
+  push(cost: number, id: string, order: number) {
+    const items = this.items; items.push({ cost, id, order });
     for (let i = items.length - 1; i > 0;) {
       const parent = (i - 1) >> 1;
-      if (items[parent].cost <= items[i].cost) break;
+      if (!before(items[i], items[parent])) break;
       [items[parent], items[i]] = [items[i], items[parent]]; i = parent;
     }
   }
@@ -37,8 +43,8 @@ class Heap {
       items[0] = last;
       for (let i = 0; ;) {
         let m = i; const l = 2 * i + 1, r = l + 1;
-        if (l < items.length && items[l].cost < items[m].cost) m = l;
-        if (r < items.length && items[r].cost < items[m].cost) m = r;
+        if (l < items.length && before(items[l], items[m])) m = l;
+        if (r < items.length && before(items[r], items[m])) m = r;
         if (m === i) break;
         [items[m], items[i]] = [items[i], items[m]]; i = m;
       }
@@ -52,7 +58,7 @@ function shortest(graph: Graph, from: string, to: string, banned: ReadonlySet<st
   const dist = new Map<string, number>([[from, 0]]);
   const prev = new Map<string, string>();
   const heap = new Heap();
-  heap.push(0, from);
+  heap.push(0, from, graph.order.get(from)!);
   while (heap.size) {
     const { cost, id } = heap.pop();
     if (cost > (dist.get(id) ?? Infinity)) continue;
@@ -64,7 +70,7 @@ function shortest(graph: Graph, from: string, to: string, banned: ReadonlySet<st
         const target = graph.byId.get(next)!;
         // Entering a hidden connector costs extra so routes follow real streets when possible.
         const next_cost = cost + target.length * (target.visible ? 1 : 1.6);
-        if (next_cost < (dist.get(next) ?? Infinity)) { dist.set(next, next_cost); prev.set(next, id); heap.push(next_cost, next); }
+        if (next_cost < (dist.get(next) ?? Infinity)) { dist.set(next, next_cost); prev.set(next, id); heap.push(next_cost, next, graph.order.get(next)!); }
       }
     }
   }

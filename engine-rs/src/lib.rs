@@ -172,3 +172,19 @@ pub extern "C" fn session_snap(lng: f64, lat: f64, house_reach: f64, street_reac
     let (position, address, kind) = with_session(|s| s.snap([lng, lat], house_reach, street_reach));
     store(serde_json::to_vec(&serde_json::json!({ "position": position, "address": address, "kind": kind })).unwrap_or_default())
 }
+
+/// Route through street pieces: input is a JSON array of segment ids; output JSON
+/// `{"state":"selected","segmentIds":[…],"length":m,"ambiguous":bool}` or `{"state":"disconnected"}`.
+///
+/// # Safety
+/// Pointer/length come from an `alloc` buffer written by the host.
+#[no_mangle]
+pub unsafe extern "C" fn session_route(ptr: *const u8, len: usize) -> usize {
+    let anchors: Vec<String> = match serde_json::from_slice(std::slice::from_raw_parts(ptr, len)) { Ok(a) => a, Err(e) => return fail(&format!("anchors_invalid: {e}")) };
+    let out = with_session(|s| s.route(&anchors));
+    let json = match out {
+        session::RouteOut::Selected { ids, length, ambiguous } => serde_json::json!({ "state": "selected", "segmentIds": ids, "length": length, "ambiguous": ambiguous }),
+        session::RouteOut::Disconnected => serde_json::json!({ "state": "disconnected" }),
+    };
+    store(serde_json::to_vec(&json).unwrap_or_default())
+}

@@ -8,8 +8,9 @@ export type EngineRequest =
   | ({ id: number; op: 'area' } & AreaRequest)
   | { id: number; op: 'mapData' }
   | { id: number; op: 'tile'; z: number; x: number; y: number }
-  | { id: number; op: 'snap'; at: LngLat };
-export type EngineReply = { id: number; error?: string; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']>; stats?: ReturnType<EngineHost['stats']> };
+  | { id: number; op: 'snap'; at: LngLat }
+  | { id: number; op: 'route'; anchors: string[] };
+export type EngineReply = { id: number; error?: string; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']>; route?: ReturnType<EngineHost['route']>; stats?: ReturnType<EngineHost['stats']> };
 
 const wasmUrl = () => fetch(new URL('../engine/wasm/engine.wasm', import.meta.url));
 
@@ -30,6 +31,7 @@ export async function handle(host: EngineHost, req: EngineRequest): Promise<{ re
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
         return { reply: { id: req.id, tile: buffer }, transfer: [buffer] };
       }
+      case 'route': return { reply: { id: req.id, route: host.route(req.anchors) }, transfer: [] };
       case 'snap': return { reply: { id: req.id, snap: host.snap(req.at) }, transfer: [] };
     }
   } catch (error) {

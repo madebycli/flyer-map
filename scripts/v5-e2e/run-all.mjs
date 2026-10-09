@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 
 const dir = new URL('.', import.meta.url).pathname;
-const flows = process.argv.slice(2).length ? process.argv.slice(2) : ['flow2', 'flow', 'flow3', 'flow4', 'flow5', 'flow6', 'flow7', 'flow8', 'flow9', 'soak'];
+const flows = process.argv.slice(2).length ? process.argv.slice(2) : ['flow2', 'flow', 'flow3', 'flow4', 'flow5', 'flow6', 'flow7', 'flow8', 'flow9', 'flow10', 'soak'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failed = 0;
 

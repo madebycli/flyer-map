@@ -4,6 +4,9 @@ import { FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
+import { areaAt } from '../areas/nearest.ts';
+import { makeTemplate, parseTemplate, serializeTemplate, templateFileName } from '../areas/template.ts';
+import { downloadText } from './download.ts';
 import { buildPack, fetchLegacySnapshot, pruneArea } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
@@ -164,8 +167,17 @@ export function App({ campaignId }: { campaignId: string }) {
     setUndo({ label: `${label} → ${LABELS[status]}`, revert: () => { for (const [key, previous] of before) store.set(key, previous); } });
   }, [store, canWrite, campaign.areaOf, writableAreas, isCollection]); // eslint-disable-line react-hooks/exhaustive-deps -- LABELS follows isCollection
 
-  const marking = useMarking({ fieldMap, network, index, apply }, fab !== 'idle');
-  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined }, tool === 'areas');
+  const marking = useMarking({ fieldMap, network, engine: campaign.engine, index, apply }, fab !== 'idle');
+  /** After an outline was changed and the map re-derived: what the old outline held and the new one does not is removed, for everyone. */
+  const afterAreaSaved = async (areaId: string, wasEdit: boolean) => {
+    if (!wasEdit || meta?.role !== 'admin' || !store) return;
+    const keys = campaign.orphans();
+    if (!keys.length) return;
+    const removed = await pruneArea(campaignId, areaId, keys);
+    store.forget(keys);
+    if (removed) setNotice(`${removed} Markierungen außerhalb des neuen Umrisses entfernt.`);
+  };
+  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined, onSaved: afterAreaSaved }, tool === 'areas');
 
   // One click router: whichever tool is active decides what a tap on the map means.
   const hitRef = useRef<(hit: Hit | null, point: Pt) => void>(() => {});
@@ -276,7 +288,34 @@ export function App({ campaignId }: { campaignId: string }) {
   useEffect(() => { if (!notice) return; const t = window.setTimeout(() => setNotice(null), 9000); return () => window.clearTimeout(t); }, [notice]);
 
   const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); setCollectionAreaId(null); setPickupId(null); };
-  const enter = (next: Tool) => { closeSelection(); setPanel(null); setFab('idle'); areaTool.setSelectedId(null); setTool(next); };
+  const enter = (next: Tool) => {
+    closeSelection(); setPanel(null); setFab('idle'); areaTool.setSelectedId(null); setTool(next);
+    if (next === 'areas') void preselectByLocation();
+  };
+  /** Drawing or editing starts at the Area the person is standing in (only when the position is already allowed, never a prompt). */
+  const preselectByLocation = async () => {
+    const at = await fieldMap.current?.quietFix();
+    if (!at || !meta || toolRef.current !== 'areas') return;
+    const id = areaAt(meta.areas.map((a) => ({ id: a.id, ring: a.geometry.coordinates[0] as [number, number][] })), at);
+    if (id && !areaTool.edit) { areaTool.setSelectedId((current) => current ?? id); const area = meta.areas.find((a) => a.id === id); if (area) fieldMap.current?.fitTo(ringBounds(area.geometry.coordinates[0]), FIT_PADDING); }
+  };
+  // Templates: a small JSON file with an outline and the marking rules; it goes into the Area editor and is saved with ✓.
+  const templateInput = useRef<HTMLInputElement>(null);
+  const templateTarget = useRef<string | null>(null);
+  const pickTemplate = (targetAreaId: string | null) => { templateTarget.current = targetAreaId; setPanel(null); templateInput.current?.click(); };
+  const onTemplateFile = async (file: File | undefined) => {
+    if (!file) return;
+    const result = parseTemplate(await file.text());
+    if (!result.ok) { setNotice(result.reason); return; }
+    const target = templateTarget.current;
+    closeSelection(); setPanel(null); setFab('idle'); setTool('areas');
+    if (areaTool.loadTemplate(result.template, target)) { marking.setHousesOnly(result.template.rules.housesOnly); setNotice('Vorlage geladen. Umriss prüfen und mit dem Haken speichern.'); }
+    else setNotice('Hier darfst du keine Gebiete anlegen oder ändern.');
+  };
+  const saveTemplate = (area: { name: string; geometry: { coordinates: [number, number][][] } }) => {
+    downloadText(templateFileName(area.name), serializeTemplate(makeTemplate(area.name, area.geometry.coordinates[0], { housesOnly: marking.housesOnly })));
+    setNotice('Vorlage gespeichert.');
+  };
   const openPanel = (next: Panel) => { closeSelection(); setFab('idle'); setPanel(next); };
   const startMarking = () => { closeSelection(); setPanel(null); setTool('inspect'); setFab('panel'); };
   const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); };
@@ -353,6 +392,7 @@ export function App({ campaignId }: { campaignId: string }) {
     { id: 'overview', icon: 'chart', label: 'Übersicht', onClick: () => openPanel('overview') },
     { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
     { id: 'areas', icon: 'polygon', label: 'Gebiete', onClick: () => (isCollection ? openPanel('areas') : enter('areas')) },
+    ...(canEditAny && !isCollection ? [{ id: 'template', icon: 'upload', label: 'Vorlage laden', onClick: () => pickTemplate(null) } satisfies AppTile] : []),
     { id: 'notes', icon: 'message', label: 'Notizen', badge: notes?.all().length || undefined, onClick: () => openPanel('notes') },
     ...(isCollection && rights.create ? [{ id: 'pickup', icon: 'flag', label: 'Sonder-Marker', onClick: () => enter('pickup') } satisfies AppTile] : []),
     { id: 'fit', icon: 'fit', label: 'Alles zeigen', onClick: () => { setPanel(null); fitAll(); } },
@@ -360,10 +400,13 @@ export function App({ campaignId }: { campaignId: string }) {
     { id: 'hand', icon: 'hand', label: hand === 'right' ? 'Linkshand' : 'Rechtshand', onClick: () => setHand(hand === 'right' ? 'left' : 'right') },
     { id: 'base', icon: 'layers', label: baseOn ? 'Karte aus' : 'Karte an', on: !baseOn, onClick: () => setBaseOn(!baseOn) },
     ...(importOffer ? [{ id: 'import', icon: importState === 'busy' ? 'sync' : 'download', label: 'Alt-Import', onClick: () => void importLegacy() } satisfies AppTile] : []),
-    { id: 'legacy', icon: 'mapPin', label: 'Alte Ansicht', href: `/?campaign=${encodeURIComponent(campaignId)}` },
+    // admin and legacy entries are role-aware: a link helper never sees them
+    ...(meta?.role !== 'collection-collector' ? [{ id: 'legacy', icon: 'mapPin', label: 'Alte Ansicht', href: `/?campaign=${encodeURIComponent(campaignId)}` } satisfies AppTile] : []),
     ...(meta?.role === 'admin' ? [{ id: 'admin', icon: 'shield', label: 'Verwaltung', href: '/login' } satisfies AppTile] : []),
   ];
 
+  const ROLE_NAME: Record<string, string> = { admin: 'Admin', 'team-editor': 'Gruppe (bearbeiten)', viewer: 'Ansehen', 'field-group-member': 'Gruppe', 'collection-collector': 'Helfer' };
+  const identity = meta ? [meta.me?.label ?? meta.collectorLabel, ROLE_NAME[meta.role] ?? meta.role].filter(Boolean).join(' · ') : undefined;
   const p = campaign.progress;
   const dot = campaign.sync.state === 'offline' ? 'offline' : campaign.sync.pending > 0 || campaign.sync.state === 'syncing' ? 'busy' : 'ok';
   const syncTitle = dot === 'ok' ? 'Alles gespeichert' : dot === 'busy' ? `${campaign.sync.pending} Änderungen werden gesendet` : `Offline – ${campaign.sync.pending} Änderungen warten`;
@@ -373,6 +416,7 @@ export function App({ campaignId }: { campaignId: string }) {
   return (
     <div className="v5-root" data-ui={ui} data-hand={hand} data-fab={fab}>
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
+      <input ref={templateInput} type="file" accept=".json,application/json" hidden aria-label="Vorlagen-Datei wählen" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void onTemplateFile(file); }} />
       {ready && (
         <button className="v5-pill" onClick={() => openPanel('overview')} role="status" aria-label={`${meta?.campaign.name ?? ''}: ${percent} Prozent – Übersicht öffnen`} data-done={doneHouses} data-total={totalHouses} title={syncTitle}>
           <span className={`v5-dot ${dot}`} aria-label={syncTitle}><Icon name={dot === 'ok' ? 'cloudOk' : dot === 'offline' ? 'cloudOff' : 'sync'} size={20} /></span>
@@ -446,7 +490,7 @@ export function App({ campaignId }: { campaignId: string }) {
         </div>
       )}
 
-      {ready && panel === 'home' && <HomeSheet tiles={tiles} onClose={() => setPanel(null)} />}
+      {ready && panel === 'home' && <HomeSheet tiles={tiles} identity={identity} onClose={() => setPanel(null)} />}
       {ready && panel === 'search' && <SearchSheet index={index} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
         <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflicts.length}
@@ -527,6 +571,8 @@ export function App({ campaignId }: { campaignId: string }) {
           <div className="v5-row">
             <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo(ringBounds(selectedArea.geometry.coordinates[0]), FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
             {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
+            <button className="v5-icon-btn tonal" onClick={() => saveTemplate(selectedArea)} aria-label="Als Vorlage speichern" title="Als Vorlage speichern (Datei)"><Icon name="download" /></button>
+            {areaTool.canEdit(selectedArea.teamId) && <button className="v5-icon-btn tonal" onClick={() => pickTemplate(selectedArea.id)} aria-label="Vorlage auf dieses Gebiet anwenden" title="Vorlage anwenden (ersetzt den Umriss)"><Icon name="upload" /></button>}
             {orphanCount > 0 && <button className="v5-icon-btn tonal" onClick={pruneSelected} aria-label="Veraltete Einträge dieses Gebiets bereinigen" title="Veraltete Einträge bereinigen (Markierungen, die nach einer Änderung des Gebiets nirgends mehr liegen)"><Icon name="trash" /></button>}
           </div>
           <NotesPane key={areaNoteKey(selectedArea.id)} store={notes} target={areaNoteKey(selectedArea.id)} area={selectedArea.id} canWrite={canWrite && (meta?.role === 'admin' || meta?.teamId === selectedArea.teamId)} onUndo={(label, revert) => setUndo({ label, revert })} />

@@ -69,6 +69,8 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const [missingAreas, setMissingAreas] = useState<Meta['areas']>([]);
   const reload = useRef<() => Promise<void>>(async () => {});
   const syncRef = useRef<SyncClient | null>(null);
+  /** What `orphans()` judges by: always the newest derivation, also right after `reload()` and before React re-rendered. */
+  const liveRef = useRef<{ store: FieldStore; areaOf: Map<string, string>; missing: number } | null>(null);
   const missingRef = useRef<Meta['areas']>([]);
   const metaKindRef = useRef<Meta['kind']>('distribution');
   const canBuildRef = useRef(false);
@@ -135,6 +137,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         }
         missingRef.current = missing;
         setMissingAreas(missing);
+        liveRef.current = null; // set again below, once the new derivation is in place
         timing.derive = Math.round(performance.now() - t0) - timing.meta - timing.packs;
         const merged = mergeNetworks(parts);
         fieldStore.setAreaResolver((key) => merged.areaOf.get(key));
@@ -148,6 +151,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         setProgress(progressTracker.snapshot());
         const mapData = await engine.mapData();
         setEngineState({ client: engine, mapData });
+        liveRef.current = { store: fieldStore, areaOf: merged.areaOf, missing: missing.length };
         setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore); setNotes(noteStore);
         client?.dispose();
         client = syncRef.current = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending, info) => setSync({ state, pending, ...info }), [new NoteSync(noteStore, httpNoteTransport(campaignId))]);
@@ -199,7 +203,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     phase, meta, network, engine: engineState?.client ?? null, mapData: engineState?.mapData ?? null, areaOf, store, notes, pickups, progress, sync, missingAreas,
     reload: () => reload.current(),
     syncNow: () => { void syncRef.current?.run(); },
-    orphans: () => (store && network && !missingAreas.length ? [...store.entries()].map(([key]) => key).filter((key) => !areaOf.has(key)) : []),
+    orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].map(([key]) => key).filter((key) => !live.areaOf.has(key)) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
     async buildMissing() {
       if (!canBuildRef.current) return;

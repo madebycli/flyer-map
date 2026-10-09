@@ -1,3 +1,4 @@
+import type { RouteResult } from './route.ts';
 import type { FieldNetwork, LngLat, Network } from './types.ts';
 
 type Exports = {
@@ -15,6 +16,7 @@ type Exports = {
   session_add_blob(ptr: number, len: number): number;
   session_tile(z: number, x: number, y: number): number;
   session_snap(lng: number, lat: number, houseReach: number, streetReach: number): number;
+  session_route(ptr: number, len: number): number;
 };
 
 /**
@@ -137,5 +139,11 @@ export class WasmEngine {
   snap(lng: number, lat: number, houseReach = 30, streetReach = 22): { position: LngLat; address: string | null; kind: 0 | 1 | 2 } {
     const n = this.x.session_snap(lng, lat, houseReach, streetReach);
     return this.json(n);
+  }
+
+  /** Shortest route through street pieces (segment ids) in order; same answer as `routeSegments`, computed in Rust. */
+  route(anchors: string[]): RouteResult {
+    const bytes = new TextEncoder().encode(JSON.stringify(anchors));
+    return this.withBytes(bytes, (ptr) => this.json<RouteResult>(this.x.session_route(ptr, bytes.byteLength)));
   }
 }

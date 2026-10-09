@@ -11,9 +11,9 @@ import { Icon, WavyProgress, type IconName } from './ui.tsx';
 export type AppTile = { id: string; icon: IconName; label: string; on?: boolean; badge?: number; href?: string; onClick?: () => void; wide?: boolean };
 
 /** The Home menu: an app-icon grid of squares. Rare things live here so the map stays free for the one thing that is done all day. */
-export function HomeSheet({ tiles, onClose }: { tiles: AppTile[]; onClose: () => void }) {
+export function HomeSheet({ tiles, identity, onClose }: { tiles: AppTile[]; identity?: string; onClose: () => void }) {
   return (
-    <SheetFrame icon="grid" title="Menü" onClose={onClose}>
+    <SheetFrame icon="grid" title="Menü" onClose={onClose} meta={identity ? <span><Icon name="users" size={16} />{identity}</span> : undefined}>
       <div className="v5-home">
         {tiles.map((t) => {
           const body = <><Icon name={t.icon} size={t.wide ? 26 : 28} /><span>{t.label}</span>{t.badge ? <em>{t.badge}</em> : null}</>;

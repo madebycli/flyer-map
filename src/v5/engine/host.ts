@@ -4,6 +4,8 @@ import { networksToGeoJson, type MapGeoJson } from './geojson.ts';
 import { decodePack, gunzip } from './pack.ts';
 import { slimNetwork } from './slim.ts';
 import { snapToNetworks, type SnapResult } from './snap.ts';
+import { buildGraph, routeSegments, type RouteResult } from './route.ts';
+import { mergeNetworks } from './area.ts';
 import type { FieldNetwork, LngLat, Network } from './types.ts';
 import { WasmEngine } from './wasm.ts';
 
@@ -20,10 +22,11 @@ export class EngineHost {
   kind: EngineKind = 'ts';
   private wasm: WasmEngine | null = null;
   private fulls: Network[] = [];
+  private tsGraph: ReturnType<typeof buildGraph> | null = null;
 
   /** `loadWasm` returns the module bytes/response; omitted (or failing) means the TypeScript engine. */
   async init(loadWasm: (() => Parameters<typeof WasmEngine.load>[0]) | null): Promise<EngineKind> {
-    this.wasm = null; this.fulls = []; this.kind = 'ts';
+    this.wasm = null; this.fulls = []; this.tsGraph = null; this.kind = 'ts';
     if (loadWasm && typeof WebAssembly !== 'undefined') {
       try { this.wasm = await WasmEngine.load(loadWasm()); this.wasm.resetSession(); this.kind = 'wasm'; } catch { this.wasm = null; }
     }
@@ -32,7 +35,7 @@ export class EngineHost {
 
   stats(): { kind: EngineKind; wasmBytes: number; fulls: number } { return { kind: this.kind, wasmBytes: this.wasm?.memoryBytes() ?? 0, fulls: this.fulls.length }; }
 
-  reset(): void { this.fulls = []; this.wasm?.resetSession(); }
+  reset(): void { this.fulls = []; this.tsGraph = null; this.wasm?.resetSession(); }
 
   async area(req: AreaRequest): Promise<AreaResult> {
     const t0 = performance.now();
@@ -53,12 +56,20 @@ export class EngineHost {
     if (!req.pack) throw new Error('blob_needs_wasm');
     const full = restrictToArea(deriveNetwork(await decodePack(req.pack)), req.ring);
     this.fulls.push(full);
+    this.tsGraph = null;
     return { network: slimNetwork(full), ms: Math.round(performance.now() - t0) };
   }
 
   mapData(): MapData { return this.wasm ? { kind: 'tiles' } : { kind: 'geojson', ...networksToGeoJson(this.fulls) }; }
 
   tile(z: number, x: number, y: number): Uint8Array { return this.wasm ? this.wasm.tile(z, x, y) : new Uint8Array(0); }
+
+  /** Route through street pieces: Rust when loaded, otherwise the TypeScript reference over the merged slim network. */
+  route(anchors: string[]): RouteResult {
+    if (this.wasm) return this.wasm.route(anchors);
+    this.tsGraph ??= buildGraph(mergeNetworks(this.fulls.map((full) => ({ areaId: '', network: slimNetwork(full) }))).network);
+    return routeSegments(this.tsGraph, anchors);
+  }
 
   snap(at: LngLat, houseReach = 30, streetReach = 22): SnapResult {
     return this.wasm ? this.wasm.snap(at[0], at[1], houseReach, streetReach) : snapToNetworks(this.fulls, at, houseReach, streetReach);

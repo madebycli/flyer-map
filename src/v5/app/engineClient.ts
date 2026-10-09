@@ -56,6 +56,7 @@ export class EngineClient {
   async mapData(): Promise<MapData> { return (await this.call({ op: 'mapData' })).mapData!; }
   async tile(z: number, x: number, y: number): Promise<ArrayBuffer> { return (await this.call({ op: 'tile', z, x, y })).tile!; }
   async stats() { return (await this.call({ op: 'stats' })).stats!; }
+  async route(anchors: string[]) { return (await this.call({ op: 'route', anchors })).route!; }
   async snap(at: LngLat) { return (await this.call({ op: 'snap', at })).snap!; }
 
   dispose() {

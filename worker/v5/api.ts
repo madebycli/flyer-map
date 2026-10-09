@@ -144,7 +144,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     } catch { runs = []; }
   }
   return json({
-    campaign, kind, role: access.role, teamId: access.teamId, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainAreaId: kind === 'collection' ? await mainAreaId(db, campaignId) : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
+    campaign, kind, role: access.role, teamId: access.teamId, me: { label: access.label ?? null }, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainAreaId: kind === 'collection' ? await mainAreaId(db, campaignId) : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: scoped ? teams.filter((t) => t.id === access.teamId) : teams,
     areas,
