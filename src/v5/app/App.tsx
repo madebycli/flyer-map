@@ -8,13 +8,14 @@ import { areaAt } from '../areas/nearest.ts';
 import { makeTemplate, parseTemplate, planTemplate, serializeTemplate, templateFileName, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import { downloadText } from './download.ts';
 import { applyTemplatePlan, type ApplyProgress } from './templateApply.ts';
-import { buildPack, fetchLegacySnapshot, pruneArea, PruneConfirmRequired } from './api.ts';
+import { buildPack, createTeam, deleteTeam, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
 import { buildIndex } from './mark.ts';
 import { meters, useMarking } from './marking.tsx';
 import { AccessSheet } from './accessSheet.tsx';
+import { AreaAdmin, GroupsSheet } from './groupsSheet.tsx';
 import { ActivitySheet } from './activitySheet.tsx';
 import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } from './panels.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
@@ -34,7 +35,7 @@ const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'home' | 'overview' | 'activity' | 'access' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
+type Panel = 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -442,6 +443,19 @@ export function App({ campaignId }: { campaignId: string }) {
     }).catch((e) => setNotice(actionErrorText(e)));
   };
 
+  // Gruppen and Gebiet admin: every change is one validated mutation (stale = someone else changed it first), then the new truth is loaded.
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const runAdmin = async (task: () => Promise<void>, done?: string) => {
+    if (adminBusy) return;
+    setAdminBusy(true); setAdminError(null);
+    try { await task(); await campaign.reload(); if (done) setNotice(done); }
+    catch (e) { setAdminError(actionErrorText(e)); try { await campaign.reload(); } catch { /* the error text stays */ } }
+    finally { setAdminBusy(false); }
+  };
+  const teamOf = (id: string) => meta?.teams.find((t) => t.id === id);
+  const areaOfId = (id: string) => meta?.areas.find((a) => a.id === id);
+
   const modeHref = (collection: boolean) => { const u = new URL(location.href); u.searchParams.delete('kind'); if (collection) u.searchParams.set('kind', 'collection'); return `${u.pathname}${u.search}`; };
   const tiles: AppTile[] = [
     ...(meta?.role === 'admin' ? [
@@ -450,6 +464,7 @@ export function App({ campaignId }: { campaignId: string }) {
     ] : []),
     { id: 'overview', icon: 'chart', label: 'Übersicht', onClick: () => openPanel('overview') },
     { id: 'activity', icon: 'users', label: 'Team', onClick: () => openPanel('activity') },
+    ...(meta?.role === 'admin' && !isCollection ? [{ id: 'groups', icon: 'flag', label: 'Gruppen', onClick: () => { setAdminError(null); openPanel('groups'); } } satisfies AppTile] : []),
     ...(meta?.role === 'admin' ? [{ id: 'access', icon: 'lock', label: 'Zugänge', onClick: () => openPanel('access') } satisfies AppTile] : []),
     { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
     { id: 'areas', icon: 'polygon', label: 'Gebiete', onClick: () => (isCollection ? openPanel('areas') : enter('areas')) },
@@ -557,6 +572,13 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && panel === 'activity' && store && (
         <ActivitySheet kind={kind} theme={theme} store={store} version={campaign.progress} myLabel={meta?.me?.label ?? meta?.collectorLabel ?? 'Du'} labelOf={keyLabel} onPick={openNoteTarget} onClose={() => setPanel(null)} />
       )}
+      {ready && panel === 'groups' && meta?.role === 'admin' && (
+        <GroupsSheet meta={meta} busy={adminBusy} error={adminError} onClose={() => setPanel(null)}
+          onRenameCampaign={(name) => void runAdmin(() => renameCampaign(campaignId, meta.campaign.name, name), 'Aktion umbenannt.')}
+          onCreate={(name, color) => void runAdmin(() => createTeam(campaignId, { id: `team_${crypto.randomUUID()}`, name, color }), 'Gruppe angelegt.')}
+          onUpdate={(teamId, patch) => { const t = teamOf(teamId); if (t) void runAdmin(() => updateTeam(campaignId, t, patch)); }}
+          onDelete={(teamId) => { const t = teamOf(teamId); if (t && window.confirm(`Gruppe „${t.name}“ löschen? Ihre Zugangslinks bleiben bestehen, bis du sie widerrufst.`)) void runAdmin(() => deleteTeam(campaignId, t), 'Gruppe gelöscht.'); }} />
+      )}
       {ready && panel === 'access' && meta?.role === 'admin' && <AccessSheet campaignId={campaignId} teams={meta.teams} onClose={() => setPanel(null)} />}
       {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
@@ -640,6 +662,14 @@ export function App({ campaignId }: { campaignId: string }) {
             {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
             {orphanCount > 0 && <button className="v5-icon-btn tonal" onClick={pruneSelected} aria-label="Veraltete Einträge dieses Gebiets bereinigen" title="Veraltete Einträge bereinigen (Markierungen, die nach einer Änderung des Gebiets nirgends mehr liegen)"><Icon name="trash" /></button>}
           </div>
+          {meta?.role === 'admin' && (
+            <>
+              <AreaAdmin key={`${selectedArea.id}:${selectedArea.updatedAt}`} area={selectedArea} teams={meta.teams} busy={adminBusy}
+                onRename={(name) => void runAdmin(() => renameArea(campaignId, areaOfId(selectedArea.id) ?? selectedArea, name))}
+                onSetTeam={(teamId) => void runAdmin(() => setAreaTeam(campaignId, areaOfId(selectedArea.id) ?? selectedArea, teamId), 'Gebiet verschoben.')} />
+              {adminError && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{adminError}</p>}
+            </>
+          )}
           <NotesPane key={areaNoteKey(selectedArea.id)} store={notes} target={areaNoteKey(selectedArea.id)} area={selectedArea.id} canWrite={canWrite && (meta?.role === 'admin' || meta?.teamId === selectedArea.teamId)} onUndo={(label, revert) => setUndo({ label, revert })} />
         </SheetFrame>
       )}

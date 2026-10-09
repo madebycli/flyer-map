@@ -20,7 +20,7 @@ export type Meta = {
   teamId: string | null;
   canWrite: boolean;
   canBuildPack: boolean;
-  teams: { id: string; name: string; color: string }[];
+  teams: { id: string; name: string; color: string; updatedAt: string }[];
   /** Basemap styles chosen by the deployment (null = plain background); the client carries no third-party map URL. */
   basemap: { dark: string | null; light: string | null } | null;
   areas: { id: string; name: string; teamId: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; updatedAt: string; packVersion: number | null; packStale?: boolean; writable: boolean; collection?: CollectionAreaInfo }[];
@@ -132,6 +132,21 @@ export const saveAreaGeometry = (campaignId: string, area: { id: string; updated
 
 export const createTeam = (campaignId: string, team: { id: string; name: string; color: string }) =>
   postMutation(campaignId, 'team.create', { teamId: team.id, name: team.name, color: team.color });
+
+export const updateTeam = (campaignId: string, team: { id: string; updatedAt: string }, patch: { name?: string; color?: string }) =>
+  postMutation(campaignId, 'team.update', { teamId: team.id, expectedUpdatedAt: team.updatedAt, ...patch });
+
+export const deleteTeam = (campaignId: string, team: { id: string; updatedAt: string }) =>
+  postMutation(campaignId, 'team.delete', { teamId: team.id, expectedUpdatedAt: team.updatedAt });
+
+export const renameArea = (campaignId: string, area: { id: string; updatedAt: string }, name: string) =>
+  postMutation(campaignId, 'area.rename', { areaId: area.id, name, expectedUpdatedAt: area.updatedAt });
+
+export const setAreaTeam = (campaignId: string, area: { id: string; updatedAt: string }, teamId: string) =>
+  postMutation(campaignId, 'area.set-team', { areaId: area.id, teamId, expectedUpdatedAt: area.updatedAt });
+
+export const renameCampaign = (campaignId: string, expectedName: string, name: string) =>
+  postMutation(campaignId, 'campaign.rename', { name, expectedName });
 
 export const createArea = (campaignId: string, area: { id: string; teamId: string; name: string; geometry: Polygon }) =>
   postAreaMutation(campaignId, 'area.create', { areaId: area.id, teamId: area.teamId, name: area.name, geometry: area.geometry });

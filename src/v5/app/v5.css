@@ -202,3 +202,6 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-sheet { border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .v5-syncbox > span { display: flex; align-items: center; gap: 0.5rem; }
 .v5-qr { display: grid; place-items: center; justify-self: center; padding: 0.7rem; border-radius: var(--r); background: #fff; }
+.v5-grouprow { display: grid; gap: 0.5rem; }
+.v5-grouprow .v5-team { flex: none; }
+.v5-sheet > .v5-input { width: 100%; flex: none; }

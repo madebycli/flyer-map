@@ -142,7 +142,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     ).bind(...(scoped ? [campaignId, access.teamId] : [campaignId])).all<Row>()).results;
   }
   const scoped = isScoped(access);
-  const teams = kind === 'collection' ? [] : (await db.prepare('SELECT id, name, color FROM teams WHERE campaign_id = ? ORDER BY name, id').bind(campaignId).all<{ id: string; name: string; color: string }>()).results;
+  const teams = kind === 'collection' ? [] : (await db.prepare('SELECT id, name, color, updated_at FROM teams WHERE campaign_id = ? ORDER BY name, id').bind(campaignId).all<{ id: string; name: string; color: string; updated_at: string }>()).results;
   const areas = await Promise.all(rows.map(async (a) => {
     const geometry = JSON.parse(a.geometry_json);
     // A pack built for a different polygon is stale: report it as missing so the client offers a rebuild.
@@ -167,7 +167,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
   return json({
     campaign, kind, role: access.role, teamId: access.teamId, me: { label: access.label ?? null }, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainAreaId: kind === 'collection' ? await mainAreaId(db, campaignId) : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
-    teams: scoped ? teams.filter((t) => t.id === access.teamId) : teams,
+    teams: (scoped ? teams.filter((t) => t.id === access.teamId) : teams).map((t) => ({ id: t.id, name: t.name, color: t.color, updatedAt: t.updated_at })),
     areas,
     basemap: options.basemap?.dark || options.basemap?.light ? { dark: options.basemap.dark ?? null, light: options.basemap.light ?? null } : null,
   });

@@ -99,14 +99,14 @@ Einsätze, Automationen and the Team-Center are **not** rebuilt; they are delete
 | Streets (list, manual street) | search + derived streets | list replaced by search; **manual street for roads missing in OSM: open** |
 | Einstellungen: appearance, hand | Menü: Hell/Dunkel, Links-/Rechtshand | done |
 | Einstellungen: access links (Gruppe/Ansehen/Admin), Abhol-Links, helpers | Menü → Zugänge | done (Admin links are replaced by Organizer accounts) |
-| Einstellungen: Gruppen rename/recolour, Gebiet → Gruppe, Aktion rename | creation only (new Gebiet picks/creates a Gruppe) | **open: "Gruppen" sheet** |
+| Einstellungen: Gruppen rename/recolour, Gebiet → Gruppe, Aktion rename | Menü → Gruppen (create, rename, recolour, delete when empty, Aktion rename); on a selected Gebiet: rename and move to another Gruppe | done (flow 13) |
 | Einstellungen: language (en) | German only | **open: decide whether English is still wanted** |
 | Team (hub, active team) | Gruppe is implied by the link; admins see all Gruppen | done |
 | Rooms (live groups with join code/QR, leave, members) | none (collection has its own Raum) | **open: decide — large subsystem, used?** |
 | Offline map area, street edit after mission, smart house/street tasks | warm cache + derived network | replaced |
 
 ## Order from here
-1. "Gruppen" sheet (rename/recolour, move Gebiet to another Gruppe, rename Aktion) — closes the last settings gap.
+1. ~~"Gruppen" sheet~~ done.
 2. Decide Rooms / English / manual street with the product owner (they change what is built).
 3. Phase 3 checklist for staging: redirect of the old address (done), service worker/offline unchanged, soak at 39 k houses, real-device pass.
 4. Phase 4 (Worker in Rust) only after the `workers-rs` probe is accepted.
