@@ -13,7 +13,7 @@ for (const flow of flows) {
   const server = spawn('node', ['--experimental-transform-types', `${dir}server.ts`], { cwd: dir, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => server.stdout.on('data', (chunk) => String(chunk).includes('READY') && resolve()));
   await sleep(300);
-  const code = await new Promise((resolve) => spawn('node', [`${dir}${flow}.mjs`], { stdio: 'inherit', env: process.env }).on('exit', resolve));
+  const code = await new Promise((resolve) => spawn('node', ['--experimental-transform-types', `${dir}${flow}.mjs`], { stdio: 'inherit', env: process.env }).on('exit', resolve));
   server.kill();
   console.log(`== ${flow}: ${code === 0 ? 'ok' : 'FAILED'}\n`);
   if (code !== 0) failed++;
