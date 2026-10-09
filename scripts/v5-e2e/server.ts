@@ -37,7 +37,7 @@ const viewer = await createAccessGrant(db, { campaignId: 'campaign_n', role: 'vi
 const cookies: Record<string, string> = {};
 const editor = await createAccessGrant(db, { campaignId: 'campaign_n', role: 'team-editor', teamId: 'team_n', label: 'editor' });
 for (const [name, grant] of [['admin', admin.grant], ['viewer', viewer.grant], ['editor', editor.grant]] as const) {
-  const session = await createSessionForGrant(db, { ...grant, groupId: null, membershipId: null });
+  const session = await createSessionForGrant(db, { ...grant });
   cookies[name] = sessionCookie(session.sessionSecret).split(';')[0].split('=').slice(1).join('=');
 }
 // Collection side (Abholaktion): a Sammelgebiet split into a west and an east Area, and two helpers who came in through the Abhol-Link.
