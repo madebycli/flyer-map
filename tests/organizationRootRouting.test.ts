@@ -106,10 +106,8 @@ test("Main runtime contract exposes composed capabilities and exact source revis
       organizationAuth: true,
       organizationSecurity: true,
       campaignRuntime: true,
-      rxdbSync: true,
       collection: true,
-      fieldGroups: true,
-      statistics: true,
+      fieldMapV5: true,
     },
   });
   assert.equal(response.headers.get("cache-control"), "no-store");

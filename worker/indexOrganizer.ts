@@ -10,9 +10,6 @@ import { guardOrganizationManagedLegacyAdminRequest, rewriteOrganizationManagedA
 import { augmentOrganizationRememberResponse, handleOrganizationRememberRoute } from "./organizationRememberBridge.ts";
 import { augmentCampaignAdminRememberResponse, handleCampaignAdminRememberRoute } from "./campaignAdminRememberBridge.ts";
 import { applyTrustedDeviceInvalidations, captureTrustedDeviceInvalidations } from "./trustedDeviceInvalidation.ts";
-import { handleOrganizationFieldGroupList, type OrganizationFieldGroupListEnv } from "./organizationFieldGroupList.ts";
-import { handleTeamCommentsSummary, type TeamCommentsSummaryEnv } from "./teamCommentsSummary.ts";
-import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 import { handleV5Api } from "./v5/api.ts";
 import { v5OptionsFromEnv } from "./v5/config.ts";
 
@@ -20,7 +17,7 @@ export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
 export { OrganizationPasswordKdfDurableObject } from "./organizationPasswordKdfDurableObject.ts";
 
 type BaseEnv = Parameters<typeof baseWorker.fetch>[1];
-type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & OrganizationFieldGroupListEnv & TeamCommentsSummaryEnv & {
+type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & {
   ORGANIZATION_PASSWORD_KDF?: OrganizationPasswordKdfNamespace;
   ORGANIZATION_KDF_DIAGNOSTICS?: string;
   RUNTIME_ENVIRONMENT?: string;
@@ -61,32 +58,23 @@ function kdfUnavailableResponse(error: OrganizationPasswordKdfUnavailableError, 
 }
 
 export default {
-  async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     configureOrganizationPasswordKdfRuntime(env.ORGANIZATION_PASSWORD_KDF);
     try {
       const url = new URL(request.url);
       if (url.pathname === "/api/runtime") {
         if (request.method !== "GET") return harden(new Response(request.method === "HEAD" ? null : JSON.stringify({ error: { code: "method_not_allowed", message: "Der Runtime-Vertrag verwendet GET." } }), { status: 405, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", allow: "GET" } }));
-        const streetEngineV4 = env.STREET_ENGINE_VERSION === "v4";
         return harden(Response.json({
           ok: true,
           version: env.CF_VERSION_METADATA?.id ?? "development",
           environment: env.RUNTIME_ENVIRONMENT ?? "development",
           sourceCommit: env.SOURCE_COMMIT_SHA ?? null,
-          ...(streetEngineV4 ? {
-            releaseChannel: env.RELEASE_CHANNEL ?? null,
-            streetEngineVersion: "v4",
-            streetEngineSourceChannel: env.STREET_ENGINE_V4_CHANNEL ?? null,
-          } : {}),
           capabilities: {
             organizationAuth:true,
             organizationSecurity:true,
             campaignRuntime:true,
-            rxdbSync:true,
             collection:true,
-            fieldGroups:true,
-            statistics:true,
-            ...(streetEngineV4 ? { streetEngineV4:true } : {}),
+            fieldMapV5:true,
           },
         }, { headers: { "cache-control": "no-store" } }));
       }
@@ -103,10 +91,8 @@ export default {
       const securityResponse = await handleOrganizationSecurityApi(request, env); if (securityResponse) return harden(await applyTrustedDeviceInvalidations(env.DB, invalidations, securityResponse));
       const organizationRequest = request.clone();
       const organizationResponse = await handleOrganizationApi(request, env); if (organizationResponse) return harden(await applyTrustedDeviceInvalidations(env.DB, invalidations, await augmentOrganizationRememberResponse(organizationRequest, env.DB, organizationResponse)));
-      const roomListResponse = await handleOrganizationFieldGroupList(request, env); if (roomListResponse) return harden(roomListResponse);
-      const teamCommentsResponse = await handleTeamCommentsSummary(request, env); if (teamCommentsResponse) return harden(teamCommentsResponse);
       const campaignAdminRequest = request.clone();
-      const baseResponse = await baseWorker.fetch(request, env, context);
+      const baseResponse = await baseWorker.fetch(request, env);
       const rememberedBaseResponse = await augmentCampaignAdminRememberResponse(campaignAdminRequest, env.DB, baseResponse);
       const invalidatedBaseResponse = await applyTrustedDeviceInvalidations(env.DB, invalidations, rememberedBaseResponse);
       return harden(failClosedOrganizationApiFallback(campaignAdminRequest, await rewriteOrganizationManagedAccessResponse(campaignAdminRequest, env.DB, invalidatedBaseResponse)));

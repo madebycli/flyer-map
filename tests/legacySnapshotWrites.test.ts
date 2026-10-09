@@ -32,7 +32,6 @@ test("synchronization source contains no legacy Snapshot PUT path", async () => 
   const paths = [
     "worker/campaignRepository.ts",
     "worker/index.ts",
-    "worker/indexM55.ts",
   ];
   const source = (
     await Promise.all(paths.map(async (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8")))

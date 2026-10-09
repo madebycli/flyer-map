@@ -166,10 +166,10 @@ test("a changed mutation target produces a visible conflict instead of last-writ
   const mutation: CampaignMutation = {
     id: "mutation_task-rename",
     campaignId: "campaign_mutation-test",
-    type: "task.rename",
+    type: "area.rename",
     payload: {
-      taskId: "task_a",
-      label: "Neuer Name",
+      areaId: "area_a",
+      name: "Neuer Name",
       expectedUpdatedAt: createdAt,
     },
     baseRevision: 4,
@@ -177,16 +177,16 @@ test("a changed mutation target produces a visible conflict instead of last-writ
   };
   const currentServer = snapshot();
   currentServer.revision = 5;
-  currentServer.tasks[0] = {
-    ...currentServer.tasks[0],
-    label: "Anderes Gerät",
+  currentServer.areas[0] = {
+    ...currentServer.areas[0],
+    name: "Anderes Gerät",
     updatedAt: "2026-08-24T09:05:30.000Z",
   };
 
   assert.throws(
     () => applyCampaignMutation(currentServer, mutation),
     (error) =>
-      error instanceof CampaignMutationConflictError && error.reason === "task_changed",
+      error instanceof CampaignMutationConflictError && error.reason === "area_changed",
   );
 });
 
@@ -195,11 +195,10 @@ test("viewer mutation candidate remains read-only under M4 authorization", () =>
   const mutation: CampaignMutation = {
     id: "mutation_viewer",
     campaignId: current.campaign.id,
-    type: "task.set-status",
+    type: "area.rename",
     payload: {
-      taskId: "task_a",
-      status: "completed",
-      completedAt: "2026-08-24T09:07:00.000Z",
+      areaId: "area_a",
+      name: "Viewer wollte umbenennen",
       expectedUpdatedAt: createdAt,
     },
     baseRevision: current.revision,
@@ -235,27 +234,6 @@ test("team editor cannot mutate an area owned by another team", () => {
   });
 });
 
-test("manual Street creation is rejected when any segment leaves its selected Area", () => {
-  const current = snapshot();
-  const mutation: CampaignMutation = {
-    id: "mutation_street-outside",
-    campaignId: current.campaign.id,
-    type: "task.create",
-    payload: {
-      taskId: "task_outside",
-      areaId: "area_a",
-      label: "Außerhalb",
-      geometry: { type: "LineString", coordinates: [[8.601, 49.401], [8.63, 49.43]] },
-    },
-    baseRevision: current.revision,
-    createdAt: "2026-08-24T09:09:00.000Z",
-  };
-  assert.throws(
-    () => applyCampaignMutation(current, mutation),
-    (error) => error instanceof CampaignMutationConflictError && error.reason === "street_outside_area",
-  );
-});
-
 test("worker rejects unknown mutation types before persistence", () => {
   const current = snapshot();
   const result = validateCampaignMutation(
@@ -271,4 +249,18 @@ test("worker rejects unknown mutation types before persistence", () => {
   );
 
   assert.equal(result.valid, false);
+});
+
+test("task and house mutations of the old map are retired and rejected before persistence", () => {
+  const current = snapshot();
+  for (const [type, payload] of [
+    ["task.create", { taskId: "task_x", areaId: "area_a", label: "x", geometry: { type: "LineString", coordinates: [[8.6, 49.4], [8.61, 49.41]] } }],
+    ["task.set-status", { taskId: "task_a", status: "completed", completedAt: createdAt, expectedUpdatedAt: createdAt }],
+    ["house.create", { taskId: "task_h", areaId: "area_a", label: "h", geometry: { type: "Polygon", coordinates: [[[8, 49], [8.1, 49], [8, 49]]] }, parentStreetTaskId: null }],
+    ["house.set-status", { taskId: "task_h", status: "completed", completedAt: createdAt, expectedUpdatedAt: createdAt }],
+    ["campaign.set-default-map-view", { defaultMapView: null, expectedDefaultMapView: null }],
+  ] as const) {
+    const result = validateCampaignMutation({ id: "mutation_retired", campaignId: current.campaign.id, type, payload, baseRevision: current.revision, createdAt }, current.campaign.id);
+    assert.equal(result.valid, false, type);
+  }
 });

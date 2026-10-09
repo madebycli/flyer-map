@@ -1,4 +1,4 @@
-import baseWorker from "./indexM55.ts";
+import baseWorker from "./index.ts";
 import { resolvePersistentAccess } from "./access.ts";
 import type { D1DatabaseLike } from "./campaignRepository.ts";
 import { resolveCollectionAccess } from "./collectionAccess.ts";
@@ -17,11 +17,6 @@ import {
   pickupSearchCampaignRoute,
   type PickupSearchEnv,
 } from "./pickupSearch.ts";
-import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
-
-// Wrangler's Durable Object migration resolves the class from the module
-// entrypoint, while the base Worker keeps the HTTP/auth implementation.
-export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
 
 type AssetBinding = {
   fetch(request: Request): Promise<Response>;
@@ -144,7 +139,7 @@ export async function augmentPickupSnapshotResponse(
 }
 
 export default {
-  async fetch(request: Request, env: Env, context?: AreaPreparationExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     if (shouldServeRootAsset(request) && env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
@@ -180,7 +175,7 @@ export default {
     const searchResponse = await handlePickupSearch(request, env);
     if (searchResponse) return searchResponse;
 
-    let response = await baseWorker.fetch(request, env, context);
+    let response = await baseWorker.fetch(request, env);
     if (!env.DB) return response;
     response = await augmentPickupCapabilitiesResponse(request, response, env.DB);
     if (request.method !== "GET") return response;

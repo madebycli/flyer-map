@@ -1,22 +1,12 @@
-import type { CampaignMutation } from "../src/domain/mutations.ts";
-import { hasBaseStorage, overlayStatements, type PreparedEntity } from './streetNetwork/baseStorage.ts';
+import type { CampaignMutation, CollectionMutation } from "../src/domain/mutations.ts";
 import {
   getCampaignRevision,
-  hasHouseTasksTable,
   hasCollectionSchema,
-  hasAreaTaskPreparationSchema,
-  hasTaskSourceProvenanceColumn,
   type D1DatabaseLike,
   type D1PreparedStatement,
 } from "./campaignRepository.ts";
-import type { MutationDomainEvent } from "./mutationEvents.ts";
 import { fingerprintCampaignMutation } from "./mutationFingerprint.ts";
-import type { AutomationExecution } from "./automationRuntime.ts";
 import { collectionMutationStatements } from "./collectionMutationRepository.ts";
-import {
-  rxdbChangeFeedStatements,
-  type RxdbChangeFeedEntry,
-} from "./rxdbChangeFeed.ts";
 
 export type AppliedMutation = {
   mutationType: CampaignMutation["type"];
@@ -133,10 +123,8 @@ function guardExistsSql() {
 
 function mutationStatement(
   db: D1DatabaseLike,
-  mutation: CampaignMutation,
+  mutation: Exclude<CampaignMutation, CollectionMutation>,
   writeToken: string,
-  hasTaskSource: boolean,
-  hasPreparation: boolean,
 ): D1PreparedStatement {
   const guard = guardExistsSql();
 
@@ -145,23 +133,6 @@ function mutationStatement(
       return db
         .prepare("UPDATE campaigns SET name = ? WHERE id = ? AND write_token = ?")
         .bind(mutation.payload.name, mutation.campaignId, writeToken);
-    case "campaign.set-default-map-view": {
-      const view = mutation.payload.defaultMapView;
-      return db
-        .prepare(
-          `UPDATE campaigns SET
-             map_center_lng = ?, map_center_lat = ?, map_zoom = ?, map_bearing = ?
-           WHERE id = ? AND write_token = ?`,
-        )
-        .bind(
-          view?.center[0] ?? null,
-          view?.center[1] ?? null,
-          view?.zoom ?? null,
-          view?.bearing ?? null,
-          mutation.campaignId,
-          writeToken,
-        );
-    }
     case "team.create":
       return db
         .prepare(
@@ -273,538 +244,39 @@ function mutationStatement(
           mutation.campaignId,
           writeToken,
         );
-    case "task.create":
-      return hasTaskSource && hasPreparation
-        ? db
-            .prepare(
-              `INSERT INTO tasks (
-                 id, campaign_id, area_id, task_type, label, geometry_json, source_json,
-                 area_preparation_generation, status, completed_at, created_at, updated_at
-               ) SELECT ?, ?, ?, 'street', ?, ?, ?, NULL, 'open', NULL, ?, ? WHERE ${guard}`,
-            )
-            .bind(
-              mutation.payload.taskId,
-              mutation.campaignId,
-              mutation.payload.areaId,
-              mutation.payload.label,
-              JSON.stringify(mutation.payload.geometry),
-              mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
-              mutation.createdAt,
-              mutation.createdAt,
-              mutation.campaignId,
-              writeToken,
-            )
-        : hasTaskSource
-        ? db
-            .prepare(
-              `INSERT INTO tasks (
-                 id, campaign_id, area_id, task_type, label, geometry_json, source_json,
-                 status, completed_at, created_at, updated_at
-               ) SELECT ?, ?, ?, 'street', ?, ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
-            )
-            .bind(
-              mutation.payload.taskId,
-              mutation.campaignId,
-              mutation.payload.areaId,
-              mutation.payload.label,
-              JSON.stringify(mutation.payload.geometry),
-              mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
-              mutation.createdAt,
-              mutation.createdAt,
-              mutation.campaignId,
-              writeToken,
-            )
-        : db
-            .prepare(
-              `INSERT INTO tasks (
-                 id, campaign_id, area_id, task_type, label, geometry_json,
-                 status, completed_at, created_at, updated_at
-               ) SELECT ?, ?, ?, 'street', ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
-            )
-            .bind(
-              mutation.payload.taskId,
-              mutation.campaignId,
-              mutation.payload.areaId,
-              mutation.payload.label,
-              JSON.stringify(mutation.payload.geometry),
-              mutation.createdAt,
-              mutation.createdAt,
-              mutation.campaignId,
-              writeToken,
-            );
-    case "task.rename":
-      return db
-        .prepare(
-          `UPDATE tasks SET label = ?, updated_at = ?
-           WHERE id = ? AND campaign_id = ? AND ${guard}`,
-        )
-        .bind(
-          mutation.payload.label,
-          mutation.createdAt,
-          mutation.payload.taskId,
-          mutation.campaignId,
-          mutation.campaignId,
-          writeToken,
-        );
-    case "task.set-status":
-      return db
-        .prepare(
-          `UPDATE tasks SET status = ?, completed_at = ?, updated_at = ?
-           WHERE id = ? AND campaign_id = ? AND ${guard}`,
-        )
-        .bind(
-          mutation.payload.status,
-          mutation.payload.completedAt,
-          mutation.createdAt,
-          mutation.payload.taskId,
-          mutation.campaignId,
-          mutation.campaignId,
-          writeToken,
-        );
-    case "task.delete":
-      return hasPreparation
-        ? db
-            .prepare(`DELETE FROM tasks WHERE id = ? AND campaign_id = ? AND area_preparation_generation IS NULL AND ${guard}`)
-            .bind(
-              mutation.payload.taskId,
-              mutation.campaignId,
-              mutation.campaignId,
-              writeToken,
-            )
-        : db
-            .prepare(`DELETE FROM tasks WHERE id = ? AND campaign_id = ? AND ${guard}`)
-            .bind(
-              mutation.payload.taskId,
-              mutation.campaignId,
-              mutation.campaignId,
-              writeToken,
-            );
-    case "house.create":
-      return hasPreparation
-        ? db
-            .prepare(
-              `INSERT INTO house_tasks (
-                 id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
-                 area_preparation_generation, status, completed_at, created_at, updated_at
-               ) SELECT ?, ?, ?, ?, ?, ?, ?, NULL, 'open', NULL, ?, ? WHERE ${guard}`,
-            )
-            .bind(
-              mutation.payload.taskId,
-              mutation.campaignId,
-              mutation.payload.areaId,
-              mutation.payload.parentStreetTaskId,
-              mutation.payload.label,
-              JSON.stringify(mutation.payload.geometry),
-              mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
-              mutation.createdAt,
-              mutation.createdAt,
-              mutation.campaignId,
-              writeToken,
-            )
-        : db
-        .prepare(
-          `INSERT INTO house_tasks (
-             id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
-             status, completed_at, created_at, updated_at
-           ) SELECT ?, ?, ?, ?, ?, ?, ?, 'open', NULL, ?, ? WHERE ${guard}`,
-        )
-        .bind(
-          mutation.payload.taskId,
-          mutation.campaignId,
-          mutation.payload.areaId,
-          mutation.payload.parentStreetTaskId,
-          mutation.payload.label,
-          JSON.stringify(mutation.payload.geometry),
-          mutation.payload.source ? JSON.stringify(mutation.payload.source) : null,
-          mutation.createdAt,
-          mutation.createdAt,
-          mutation.campaignId,
-          writeToken,
-        );
-    case "house.create-batch":
-      return hasPreparation
-        ? db
-            .prepare(
-              `INSERT INTO house_tasks (
-                 id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
-                 area_preparation_generation, status, completed_at, created_at, updated_at
-               )
-               SELECT
-                 json_extract(value, '$.taskId'), ?, json_extract(value, '$.areaId'),
-                 json_extract(value, '$.parentStreetTaskId'), json_extract(value, '$.label'),
-                 json_extract(value, '$.geometry'),
-                 CASE WHEN json_type(value, '$.source') IS NULL THEN NULL ELSE json_extract(value, '$.source') END,
-                 NULL, 'open', NULL, ?, ?
-               FROM json_each(?) WHERE ${guard}`,
-            )
-            .bind(
-              mutation.campaignId,
-              mutation.createdAt,
-              mutation.createdAt,
-              JSON.stringify(mutation.payload.houses),
-              mutation.campaignId,
-              writeToken,
-            )
-        : db
-        .prepare(
-          `INSERT INTO house_tasks (
-             id, campaign_id, area_id, parent_street_task_id, label, geometry_json, source_json,
-             status, completed_at, created_at, updated_at
-           )
-           SELECT
-             json_extract(value, '$.taskId'),
-             ?,
-             json_extract(value, '$.areaId'),
-             json_extract(value, '$.parentStreetTaskId'),
-             json_extract(value, '$.label'),
-             json_extract(value, '$.geometry'),
-             CASE
-               WHEN json_type(value, '$.source') IS NULL THEN NULL
-               ELSE json_extract(value, '$.source')
-             END,
-             'open', NULL, ?, ?
-           FROM json_each(?)
-           WHERE ${guard}`,
-        )
-        .bind(
-          mutation.campaignId,
-          mutation.createdAt,
-          mutation.createdAt,
-          JSON.stringify(mutation.payload.houses),
-          mutation.campaignId,
-          writeToken,
-        );
-    case "house.rename":
-      return db
-        .prepare(
-          `UPDATE house_tasks SET label = ?, updated_at = ?
-           WHERE id = ? AND campaign_id = ? AND ${guard}`,
-        )
-        .bind(
-          mutation.payload.label,
-          mutation.createdAt,
-          mutation.payload.taskId,
-          mutation.campaignId,
-          mutation.campaignId,
-          writeToken,
-        );
-    case "house.set-status":
-      return db
-        .prepare(
-          `UPDATE house_tasks SET status = ?, completed_at = ?, updated_at = ?
-           WHERE id = ? AND campaign_id = ? AND ${guard}`,
-        )
-        .bind(
-          mutation.payload.status,
-          mutation.payload.completedAt,
-          mutation.createdAt,
-          mutation.payload.taskId,
-          mutation.campaignId,
-          mutation.campaignId,
-          writeToken,
-        );
-    case "house.delete":
-      return hasPreparation
-        ? db
-            .prepare(`DELETE FROM house_tasks WHERE id = ? AND campaign_id = ? AND area_preparation_generation IS NULL AND ${guard}`)
-            .bind(
-              mutation.payload.taskId,
-              mutation.campaignId,
-              mutation.campaignId,
-              writeToken,
-            )
-        : db
-            .prepare(`DELETE FROM house_tasks WHERE id = ? AND campaign_id = ? AND ${guard}`)
-            .bind(
-              mutation.payload.taskId,
-              mutation.campaignId,
-              mutation.campaignId,
-              writeToken,
-            );
     default:
-      throw new Error("collection_mutation_statement_not_supported_here");
+      throw new Error("unsupported_mutation_type");
   }
 }
 
-function domainEventStatement(
-  db: D1DatabaseLike,
-  mutation: CampaignMutation,
-  writeToken: string,
-  event: MutationDomainEvent,
-): D1PreparedStatement {
-  const payloadJson = JSON.stringify({
-    previousStatus: event.previousStatus,
-    newStatus: event.newStatus,
-  });
-  const eventId = "domain_event_mutation_" + mutation.id;
-  const dedupeKey = "campaign-mutation:" + mutation.id + ":task-status";
-
-  return db
-    .prepare(
-      `INSERT OR IGNORE INTO domain_events (
-         id, campaign_id, team_id, field_session_id, entity_type, entity_id,
-         event_type, occurred_at, actor_kind, actor_ref, payload_version,
-         payload_json, dedupe_key, created_at
-       )
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?
-       WHERE ${guardExistsSql()}`,
-    )
-    .bind(
-      eventId,
-      mutation.campaignId,
-      event.teamId,
-      event.fieldSessionId,
-      event.entityType,
-      event.entityId,
-      event.eventType,
-      event.occurredAt,
-      event.actorKind,
-      event.actorRef,
-      payloadJson,
-      dedupeKey,
-      new Date().toISOString(),
-      mutation.campaignId,
-      writeToken,
-    );
-}
-
-const AUTOMATION_COMPLETION_PREDICATE = `
-    EXISTS (
-      SELECT 1
-      FROM automation_rules ar
-      WHERE ar.campaign_id = parent_task.campaign_id
-        AND ar.rule_type = ?
-        AND ar.enabled = 1
-    )
-    AND EXISTS (
-      SELECT 1
-      FROM house_tasks trigger_house
-      WHERE trigger_house.id = ?
-        AND trigger_house.campaign_id = parent_task.campaign_id
-        AND trigger_house.parent_street_task_id = parent_task.id
-        AND trigger_house.area_id = parent_task.area_id
-        AND trigger_house.status = 'completed'
-        AND trigger_house.updated_at = ?
-    )
-    AND EXISTS (
-      SELECT 1
-      FROM house_tasks child_house
-      WHERE child_house.campaign_id = parent_task.campaign_id
-        AND child_house.parent_street_task_id = parent_task.id
-        AND child_house.area_id = parent_task.area_id
-    )
-    AND NOT EXISTS (
-      SELECT 1
-      FROM house_tasks incomplete_house
-      WHERE incomplete_house.campaign_id = parent_task.campaign_id
-        AND incomplete_house.parent_street_task_id = parent_task.id
-        AND incomplete_house.area_id = parent_task.area_id
-        AND incomplete_house.status <> 'completed'
-    )`;
-
-function automationParentStatement(
-  db: D1DatabaseLike,
-  mutation: CampaignMutation,
-  writeToken: string,
-  execution: AutomationExecution,
-) {
-  return db
-    .prepare(
-      `UPDATE tasks AS parent_task
-       SET status = 'completed', completed_at = ?, updated_at = ?
-       WHERE parent_task.id = ?
-         AND parent_task.campaign_id = ?
-         AND parent_task.status = 'open'
-         AND ` +
-        AUTOMATION_COMPLETION_PREDICATE +
-        `
-         AND ${guardExistsSql()}`,
-    )
-    .bind(
-      mutation.createdAt,
-      mutation.createdAt,
-      execution.parentStreetTaskId,
-      mutation.campaignId,
-      execution.ruleType,
-      execution.triggerHouseTaskId,
-      mutation.createdAt,
-      mutation.campaignId,
-      writeToken,
-    );
-}
-
-function automationParentEventStatement(
-  db: D1DatabaseLike,
-  mutation: CampaignMutation,
-  writeToken: string,
-  execution: AutomationExecution,
-) {
-  const eventId = "domain_event_automation_task_" + mutation.id;
-  const dedupeKey = "campaign-mutation:" + mutation.id + ":automation-parent-task-status";
-  const payloadJson = JSON.stringify({ previousStatus: "open", newStatus: "completed" });
-  return db
-    .prepare(
-      `INSERT OR IGNORE INTO domain_events (
-         id, campaign_id, team_id, field_session_id, entity_type, entity_id,
-         event_type, occurred_at, actor_kind, actor_ref, payload_version,
-         payload_json, dedupe_key, created_at
-       )
-       SELECT ?, ?, ?, ?, 'street-task', ?, 'task.status.changed', ?,
-              'system', NULL, 1, ?, ?, ?
-       WHERE EXISTS (
-         SELECT 1
-         FROM tasks AS parent_task
-         WHERE parent_task.id = ?
-           AND parent_task.campaign_id = ?
-           AND parent_task.status = 'completed'
-           AND parent_task.completed_at = ?
-           AND parent_task.updated_at = ?
-           AND ` +
-        AUTOMATION_COMPLETION_PREDICATE +
-        `
-           AND ${guardExistsSql()}
-       )`,
-    )
-    .bind(
-      eventId,
-      mutation.campaignId,
-      execution.parentTeamId,
-      execution.fieldSessionId,
-      execution.parentStreetTaskId,
-      mutation.createdAt,
-      payloadJson,
-      dedupeKey,
-      new Date().toISOString(),
-      execution.parentStreetTaskId,
-      mutation.campaignId,
-      mutation.createdAt,
-      mutation.createdAt,
-      execution.ruleType,
-      execution.triggerHouseTaskId,
-      mutation.createdAt,
-      mutation.campaignId,
-      writeToken,
-    );
-}
-
-function automationExecutedEventStatement(
-  db: D1DatabaseLike,
-  mutation: CampaignMutation,
-  writeToken: string,
-  execution: AutomationExecution,
-) {
-  const eventId = "domain_event_automation_executed_" + mutation.id;
-  const dedupeKey = "campaign-mutation:" + mutation.id + ":automation-executed";
-  const payloadJson = JSON.stringify({
-    ruleType: execution.ruleType,
-    effectType: execution.effectType,
-    triggerEntityId: execution.triggerHouseTaskId,
-  });
-  return db
-    .prepare(
-      `INSERT OR IGNORE INTO domain_events (
-         id, campaign_id, team_id, field_session_id, entity_type, entity_id,
-         event_type, occurred_at, actor_kind, actor_ref, payload_version,
-         payload_json, dedupe_key, created_at
-       )
-       SELECT ?, ?, ?, ?, 'street-task', ?, 'automation.executed', ?,
-              'system', NULL, 1, ?, ?, ?
-       WHERE EXISTS (
-         SELECT 1
-         FROM tasks AS parent_task
-         WHERE parent_task.id = ?
-           AND parent_task.campaign_id = ?
-           AND parent_task.status = 'completed'
-           AND parent_task.completed_at = ?
-           AND parent_task.updated_at = ?
-           AND ` +
-        AUTOMATION_COMPLETION_PREDICATE +
-        `
-           AND ${guardExistsSql()}
-       )`,
-    )
-    .bind(
-      eventId,
-      mutation.campaignId,
-      execution.parentTeamId,
-      execution.fieldSessionId,
-      execution.parentStreetTaskId,
-      mutation.createdAt,
-      payloadJson,
-      dedupeKey,
-      new Date().toISOString(),
-      execution.parentStreetTaskId,
-      mutation.campaignId,
-      mutation.createdAt,
-      mutation.createdAt,
-      execution.ruleType,
-      execution.triggerHouseTaskId,
-      mutation.createdAt,
-      mutation.campaignId,
-      writeToken,
-    );
-}
-
+/**
+ * One guarded D1 batch: claim the next campaign revision, apply the change, write the ledger entry. The write token ties the three
+ * together, so a concurrent writer makes the claim miss and nothing else lands.
+ */
 export async function persistCampaignMutation(
   db: D1DatabaseLike,
   mutation: CampaignMutation,
   fromRevision: number,
   fingerprintOverride?: string,
-  domainEvent: MutationDomainEvent | null = null,
-  automationExecution: AutomationExecution | null = null,
-  syncChanges: readonly RxdbChangeFeedEntry[] = [],
-  preparedChange?: PreparedEntity,
-  preparation?: {areaId:string;geometryHash:string;generation:string},
 ): Promise<MutationPersistenceResult> {
   const fingerprint = fingerprintOverride ?? (await fingerprintCampaignMutation(mutation));
   const existing = await getAppliedMutation(db, mutation.campaignId, mutation.id);
   if (existing) {
     if (existing.mutationFingerprint !== fingerprint) {
-      return {
-        ok: false,
-        currentRevision: existing.appliedRevision,
-        reason: "mutation_id_reused",
-      };
+      return { ok: false, currentRevision: existing.appliedRevision, reason: "mutation_id_reused" };
     }
     return { ok: true, revision: existing.appliedRevision, alreadyApplied: true };
   }
 
   const collectionMutation = mutation.type.startsWith("collection.");
   if (collectionMutation && !(await hasCollectionSchema(db))) {
-    return {
-      ok: false,
-      currentRevision: fromRevision,
-      reason: "schema_migration_required",
-    };
-  }
-
-  const houseMutation = mutation.type.startsWith("house.");
-  if (houseMutation && !(await hasHouseTasksTable(db))) {
-    return {
-      ok: false,
-      currentRevision: fromRevision,
-      reason: "schema_migration_required",
-    };
-  }
-
-  const hasTaskSource =
-    mutation.type === "task.create" ? await hasTaskSourceProvenanceColumn(db) : true;
-  const hasPreparation = await hasAreaTaskPreparationSchema(db);
-  if (mutation.type === "task.create" && mutation.payload.source && !hasTaskSource) {
-    return {
-      ok: false,
-      currentRevision: fromRevision,
-      reason: "schema_migration_required",
-    };
+    return { ok: false, currentRevision: fromRevision, reason: "schema_migration_required" };
   }
 
   const writeToken = crypto.randomUUID();
   const nextRevision = fromRevision + 1;
   const claim = db
-    .prepare(
-      `UPDATE campaigns SET revision = ?, write_token = ?, updated_at = ?
-       WHERE id = ? AND revision = ?`,
-    )
+    .prepare(`UPDATE campaigns SET revision = ?, write_token = ?, updated_at = ? WHERE id = ? AND revision = ?`)
     .bind(nextRevision, writeToken, mutation.createdAt, mutation.campaignId, fromRevision);
 
   const ledger = db
@@ -815,93 +287,13 @@ export async function persistCampaignMutation(
        )
        SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guardExistsSql()}`,
     )
-    .bind(
-      mutation.campaignId,
-      mutation.id,
-      mutation.type,
-      fingerprint,
-      mutation.baseRevision,
-      fromRevision,
-      nextRevision,
-      mutation.createdAt,
-      mutation.campaignId,
-      writeToken,
-    );
+    .bind(mutation.campaignId, mutation.id, mutation.type, fingerprint, mutation.baseRevision, fromRevision, nextRevision, mutation.createdAt, mutation.campaignId, writeToken);
 
-  const compact=await hasBaseStorage(db);
-  const createdHouses=mutation.type==='house.create'?[mutation.payload]:mutation.type==='house.create-batch'?mutation.payload.houses:[];
-  const parentIds=[...new Set(createdHouses.flatMap(h=>h.parentStreetTaskId?[h.parentStreetTaskId]:[]))];
-  const legacyParents=compact&&parentIds.length?await db.prepare('SELECT id FROM tasks WHERE campaign_id=? AND id IN(SELECT value FROM json_each(?))').bind(mutation.campaignId,JSON.stringify(parentIds)).all<{id:string}>():null;
-  const legacyIds=new Set(legacyParents?.results.map(row=>row.id));
-  const chunkParents=legacyParents?createdHouses.filter(h=>h.parentStreetTaskId&&!legacyIds.has(h.parentStreetTaskId)):[];
-  const mappedIds=new Set(chunkParents.map(h=>h.taskId));
-  const storedMutation:CampaignMutation=mutation.type==='house.create'&&mappedIds.has(mutation.payload.taskId)?{...mutation,payload:{...mutation.payload,parentStreetTaskId:null}}
-    :mutation.type==='house.create-batch'&&mappedIds.size?{...mutation,payload:{...mutation.payload,houses:mutation.payload.houses.map(h=>mappedIds.has(h.taskId)?{...h,parentStreetTaskId:null}:h)}}:mutation;
-  const useOverlay=compact&&preparedChange&&await db.prepare('SELECT generation FROM street_base_areas WHERE campaign_id=? AND area_id=?').bind(mutation.campaignId,preparedChange.areaId).first();
-  // Prepared Areas can own thousands of generated entities. Remove their bounded
-  // server-owned storage explicitly before deleting the Area so D1 does not have
-  // to discover a deep cascade in one opaque foreign-key step. Every statement
-  // remains guarded by the same campaign write token and therefore stays atomic
-  // with the revision claim, ledger entry and RxDB tombstone publication.
-  const preparedAreaDeleteStatements = compact && mutation.type === "area.delete"
-    ? [
-        db.prepare(`DELETE FROM street_manual_house_parents WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM house_road_positions WHERE house_id IN (SELECT id FROM house_tasks WHERE campaign_id=? AND area_id=?) AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM street_network_state WHERE task_id IN (SELECT id FROM tasks WHERE campaign_id=? AND area_id=?) AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM street_work_overlays WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM street_base_chunks WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM street_base_areas WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM street_network_staging WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM street_network_jobs WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM area_task_preparations WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM house_tasks WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        db.prepare(`DELETE FROM tasks WHERE campaign_id=? AND area_id=? AND ${guardExistsSql()}`).bind(mutation.campaignId,mutation.payload.areaId,mutation.campaignId,writeToken),
-        mutationStatement(db, storedMutation, writeToken, hasTaskSource, hasPreparation),
-      ]
-    : null;
-  const domainStatements = useOverlay
-    ? await overlayStatements(db,mutation.campaignId,preparedChange!.areaId,[preparedChange!],writeToken)
-    : preparedAreaDeleteStatements
-      ? preparedAreaDeleteStatements
-      : collectionMutation
-        ? collectionMutationStatements(db, mutation as import("../src/domain/mutations.ts").CollectionMutation, writeToken)
-        : [mutationStatement(db, storedMutation, writeToken, hasTaskSource, hasPreparation)];
-  const statements = [
-    claim,
-    ...domainStatements,
-    ledger,
-  ];
-  if(chunkParents.length)statements.push(db.prepare(`INSERT INTO street_manual_house_parents(campaign_id,house_id,area_id,parent_task_id)
-    SELECT ?,json_extract(value,'$.taskId'),json_extract(value,'$.areaId'),json_extract(value,'$.parentStreetTaskId') FROM json_each(?) WHERE EXISTS(SELECT 1 FROM campaigns WHERE id=? AND write_token=?)`)
-    .bind(mutation.campaignId,JSON.stringify(chunkParents),mutation.campaignId,writeToken));
-  if(preparation)statements.push(db.prepare(`INSERT INTO area_task_preparations(campaign_id,area_id,geometry_hash,generation,status,road_count,house_count,started_at,updated_at)
-    SELECT ?,?,?,?,'pending',0,0,?,? WHERE EXISTS(SELECT 1 FROM campaigns WHERE id=? AND write_token=?)
-    ON CONFLICT(campaign_id,area_id) DO UPDATE SET geometry_hash=excluded.geometry_hash,generation=excluded.generation,status='pending',started_at=excluded.started_at,updated_at=excluded.updated_at,ready_at=NULL,failed_at=NULL,last_error_code=NULL`)
-    .bind(mutation.campaignId,preparation.areaId,preparation.geometryHash,preparation.generation,mutation.createdAt,mutation.createdAt,mutation.campaignId,writeToken));
-  if (domainEvent) {
-    statements.push(domainEventStatement(db, mutation, writeToken, domainEvent));
-  }
-  if (automationExecution) {
-    statements.push(
-      automationParentStatement(db, mutation, writeToken, automationExecution),
-      automationParentEventStatement(db, mutation, writeToken, automationExecution),
-      automationExecutedEventStatement(db, mutation, writeToken, automationExecution),
-    );
-  }
-  if (syncChanges.length > 0) {
-    statements.push(
-      ...rxdbChangeFeedStatements(
-        db,
-        mutation.campaignId,
-        writeToken,
-        mutation.createdAt,
-        syncChanges,
-        compact,
-      ),
-    );
-  }
+  const domainStatements = collectionMutation
+    ? collectionMutationStatements(db, mutation as CollectionMutation, writeToken)
+    : [mutationStatement(db, mutation as Exclude<CampaignMutation, CollectionMutation>, writeToken)];
 
-  const results = await db.batch(statements);
+  const results = await db.batch([claim, ...domainStatements, ledger]);
 
   if ((results[0]?.meta?.changes ?? 0) === 1) {
     return { ok: true, revision: nextRevision, alreadyApplied: false };
@@ -910,18 +302,10 @@ export async function persistCampaignMutation(
   const appliedAfterRace = await getAppliedMutation(db, mutation.campaignId, mutation.id);
   if (appliedAfterRace) {
     if (appliedAfterRace.mutationFingerprint !== fingerprint) {
-      return {
-        ok: false,
-        currentRevision: appliedAfterRace.appliedRevision,
-        reason: "mutation_id_reused",
-      };
+      return { ok: false, currentRevision: appliedAfterRace.appliedRevision, reason: "mutation_id_reused" };
     }
     return { ok: true, revision: appliedAfterRace.appliedRevision, alreadyApplied: true };
   }
 
-  return {
-    ok: false,
-    currentRevision: await getCampaignRevision(db, mutation.campaignId),
-    reason: "revision_conflict",
-  };
+  return { ok: false, currentRevision: await getCampaignRevision(db, mutation.campaignId), reason: "revision_conflict" };
 }

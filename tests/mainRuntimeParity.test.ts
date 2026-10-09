@@ -96,31 +96,25 @@ test("Main deployment serves Organizer login UI and recognizes auth routes inste
   assert.equal(unknown.status,404);assert.equal(((await unknown.json()) as {error:{code:string}}).error.code,"not_found");assert.match(unknown.headers.get("content-type")??"",/application\/json/u);
 });
 
-test("two origins with distinct sessions mutate one host-independent Campaign and Change Feed",async()=>{
+test("two origins with distinct sessions mutate one host-independent Campaign",async()=>{
   const {db,sessions,time}=await fixture();
   const one="https://one.flyer.test",two="https://two.flyer.test";
   const initialOne=await snapshot(db,one,sessions.one),initialTwo=await snapshot(db,two,sessions.two);
   assert.equal(initialOne.campaign.id,"campaign_shared");assert.deepEqual(initialTwo,initialOne);
 
-  const mutate=async(origin:string,secret:string,id:string,status:"completed"|"later",baseRevision:number,expectedUpdatedAt:string,createdAt:string)=>mainWorker.fetch(request(origin,"/api/campaigns/campaign_shared/mutations",secret,{method:"POST",headers:{origin,"content-type":"application/json"},body:JSON.stringify({mutation:{id,campaignId:"campaign_shared",baseRevision,createdAt,type:"task.set-status",payload:{taskId:"task_shared",status,completedAt:status==="completed"?createdAt:null,expectedUpdatedAt}}})}),env(db));
-  const fromOne=await mutate(one,sessions.one,"mutation_one","completed",1,time,"2026-09-08T00:01:00.000Z");
+  const rename=async(origin:string,secret:string,id:string,name:string,baseRevision:number,expectedUpdatedAt:string,createdAt:string)=>mainWorker.fetch(request(origin,"/api/campaigns/campaign_shared/mutations",secret,{method:"POST",headers:{origin,"content-type":"application/json"},body:JSON.stringify({mutation:{id,campaignId:"campaign_shared",baseRevision,createdAt,type:"area.rename",payload:{areaId:"area_shared",name,expectedUpdatedAt}}})}),env(db));
+  const fromOne=await rename(one,sessions.one,"mutation_one","Von Origin eins",1,time,"2026-09-08T00:01:00.000Z");
   assert.equal(fromOne.status,200,await fromOne.clone().text());
-  const seenOnTwo=await snapshot(db,two,sessions.two);assert.equal(seenOnTwo.tasks[0].status,"completed");
+  const seenOnTwo=await snapshot(db,two,sessions.two);assert.equal(seenOnTwo.areas[0].name,"Von Origin eins");
 
-  const foreignOrigin=await mutate(two,sessions.two,"mutation_foreign","later",seenOnTwo.revision,seenOnTwo.tasks[0].updatedAt,"2026-09-08T00:02:00.000Z");
+  const foreignOrigin=await rename(two,sessions.two,"mutation_foreign","Von Origin zwei",seenOnTwo.revision,seenOnTwo.areas[0].updatedAt,"2026-09-08T00:02:00.000Z");
   // A cookie for Origin B cannot authorize a write claiming Origin A.
   const forgedRequest=request(two,"/api/campaigns/campaign_shared/mutations",sessions.two,{method:"POST",headers:{origin:one,"content-type":"application/json"},body:"{}"});
   const forged=await mainWorker.fetch(forgedRequest,env(db));assert.equal(forged.status,403);
   assert.equal(foreignOrigin.status,200,await foreignOrigin.clone().text());
-  const seenOnOne=await snapshot(db,one,sessions.one);assert.equal(seenOnOne.tasks[0].status,"later");
+  const seenOnOne=await snapshot(db,one,sessions.one);assert.equal(seenOnOne.areas[0].name,"Von Origin zwei");
   assert.equal(seenOnOne.campaign.id,"campaign_shared");
 
-  const checkpoints=await Promise.all([[one,sessions.one],[two,sessions.two]].map(async([origin,secret])=>{
-    const response=await mainWorker.fetch(request(origin,"/api/campaigns/campaign_shared/rxdb/checkpoint",secret),env(db));
-    assert.equal(response.status,200);return response.json();
-  }));
-  assert.deepEqual(checkpoints[0],checkpoints[1]);
-  assert.equal(db.sqlite.prepare("SELECT count(DISTINCT campaign_id) n FROM campaign_sync_changes").get()!.n,1);
   assert.equal(db.sqlite.prepare("SELECT count(*) n FROM campaigns WHERE id='campaign_shared'").get()!.n,1);
   assert.equal(db.sqlite.prepare("SELECT count(*) n FROM organization_account_sessions WHERE account_id='account_shared'").get()!.n,2);
 });

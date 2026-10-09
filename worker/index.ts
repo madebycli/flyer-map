@@ -1,21 +1,16 @@
-import { handleNetworkIntent } from './streetNetwork/api.ts';
 import { requestDatabase } from './requestDatabase.ts';
-import { executeInCampaign } from './campaignExecution.ts';
 import {
   campaignExists,
   getCampaignRevision,
   loadCampaignSnapshot,
-  createInitialCampaignState,
   hasCollectionSchema,
   StoredSnapshotError,
   type D1DatabaseLike,
 } from "./campaignRepository.ts";
 import { parseCampaignId, validateCampaignSnapshot } from "./snapshotValidation.ts";
 import {
-  campaignHasAccessGrants,
   clearSessionCookie,
   createAccessGrant,
-  createSessionForGrant,
   listAccessGrants,
   redeemAccessToken,
   resolveAccess,
@@ -41,15 +36,6 @@ import {
 import { collectionSnapshotOrEmpty } from "../src/domain/collection.ts";
 import { createRecoveredAdminAccess, operatorSecretMatches } from "./operatorRecovery.ts";
 import { handleCampaignMutation } from "./mutationHandler.ts";
-import { handleActivityApi } from "./activity.ts";
-import { handleCommentsApi } from "./comments.ts";
-import { handleAutomationsApi } from "./automationConfig.ts";
-import { handleStatisticsApi } from "./statistics.ts";
-import {
-  areaTaskPreparationRoute,
-  handleAreaTaskPreparationApi,
-} from "./areaTaskPreparationApi.ts";
-import type { AreaPreparationExecutionContext } from "./areaTaskPreparation.ts";
 import {
   adminAccountSessionCookie,
   clearAdminAccountSessionCookie,
@@ -65,13 +51,6 @@ import {
   renameCampaignAdminAccount,
   revokeCurrentCampaignAdminAccountSession,
 } from "./adminAuth.ts";
-import { isRxdbCollectionName } from "../src/data/rxdbSyncProtocol.ts";
-import { handleRxdbCheckpoint, handleRxdbPull, handleRxdbPush } from "./rxdbSync.ts";
-import {
-  notifyCampaignSync,
-  schedulePreparation,
-  type CampaignSyncNamespace,
-} from "./campaignSyncDurableObject.ts";
 
 const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -79,7 +58,6 @@ type Env = {
   DB?: D1DatabaseLike;
   M4_BOOTSTRAP_SECRET?: string;
   OSM_OVERPASS_URL?: string;
-  CAMPAIGN_SYNC?: CampaignSyncNamespace;
 };
 
 type ErrorBody = {
@@ -168,51 +146,6 @@ function mutationRoute(pathname: string) {
   } catch {
     return null;
   }
-}
-
-function rxdbRoute(pathname: string) {
-  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/rxdb\/(pull|push)\/([^/]+)$/);
-  if (!match) return null;
-  try {
-    const campaignId = parseCampaignId(decodeURIComponent(match[1]));
-    const collectionName = decodeURIComponent(match[3]);
-    if (!campaignId || !isRxdbCollectionName(collectionName)) return null;
-    return { campaignId, operation: match[2] as "pull" | "push", collectionName };
-  } catch {
-    return null;
-  }
-}
-
-function rxdbCheckpointRoute(pathname: string) {
-  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/rxdb\/checkpoint$/u);
-  if (!match) return null;
-  try {
-    return parseCampaignId(decodeURIComponent(match[1]));
-  } catch {
-    return null;
-  }
-}
-
-function rxdbSocketRoute(pathname: string) {
-  const match = pathname.match(/^\/api\/campaigns\/([^/]+)\/rxdb\/ws$/u);
-  if (!match) return null;
-  try {
-    return parseCampaignId(decodeURIComponent(match[1]));
-  } catch {
-    return null;
-  }
-}
-
-function scheduleCampaignSyncNotification(
-  namespace: CampaignSyncNamespace | undefined,
-  db: D1DatabaseLike,
-  campaignId: string,
-  response: Response,
-  context: AreaPreparationExecutionContext | undefined,
-) {
-  if (!namespace || !response.ok) return;
-  const notification = notifyCampaignSync(namespace, db, campaignId).catch(() => undefined);
-  if (context) context.waitUntil(notification);
 }
 
 function accessRoute(pathname: string) {
@@ -433,90 +366,6 @@ export function legacySnapshotWriteResponse() {
     410,
     "legacy_snapshot_write_retired",
     "Campaign-Änderungen müssen über den Mutationspfad gespeichert werden.",
-  );
-}
-
-async function createCampaign(request: Request, db: D1DatabaseLike) {
-  const parsedBody = await readJsonBody(request);
-  if (!parsedBody.ok) return parsedBody.response;
-  const value =
-    typeof parsedBody.value === "object" &&
-    parsedBody.value !== null &&
-    !Array.isArray(parsedBody.value)
-      ? (parsedBody.value as Record<string, unknown>).snapshot
-      : null;
-  const campaignId =
-    value && typeof value === "object" && !Array.isArray(value)
-      ? parseCampaignId(
-          String(
-            (value as Record<string, unknown>).campaign &&
-              typeof (value as Record<string, unknown>).campaign === "object"
-              ? ((value as Record<string, unknown>).campaign as Record<string, unknown>).id ?? ""
-              : "",
-          ),
-        )
-      : null;
-  if (!campaignId) return errorResponse(400, "invalid_campaign", "Campaign-ID ist ungültig.");
-
-  const validation = validateCampaignSnapshot(value, campaignId);
-  if (!validation.valid) return errorResponse(422, "snapshot_invalid", validation.message);
-  if (validation.snapshot.revision !== 0) {
-    return errorResponse(
-      422,
-      "initial_revision_invalid",
-      "Neue Campaigns müssen mit Revision 0 beginnen.",
-    );
-  }
-
-  const result = await createInitialCampaignState(db, validation.snapshot);
-  if (!result.ok) {
-    if (result.reason === "campaign_exists") {
-      return errorResponse(409, "campaign_exists", "Campaign existiert bereits.");
-    }
-    if (result.reason === "schema_migration_required") {
-      return errorResponse(
-        503,
-        "schema_migration_required",
-        "Die initiale Campaign benötigt eine vorbereitete D1-Migration.",
-      );
-    }
-    return errorResponse(
-      422,
-      "initial_revision_invalid",
-      "Neue Campaigns müssen mit Revision 0 beginnen.",
-    );
-  }
-
-  const created = await createAccessGrant(db, {
-    campaignId,
-    role: "admin",
-    teamId: null,
-    label: "Initial admin",
-  });
-  const access: AccessContext = {
-    grantId: created.grant.grantId,
-    campaignId,
-    role: "admin",
-    teamId: null,
-    label: created.grant.label,
-  };
-  const session = await createSessionForGrant(db, access);
-  const stored = await loadCampaignSnapshot(db, campaignId);
-  if (!stored) {
-    return errorResponse(
-      500,
-      "write_verification_failed",
-      "Gespeicherter Campaign-Stand konnte nicht erneut geladen werden.",
-    );
-  }
-
-  return json(
-    {
-      snapshot: stored,
-      access: publicAccess(access),
-      initialAccessToken: created.token,
-    },
-    { status: 201, headers: { "set-cookie": sessionCookie(session.sessionSecret) } },
   );
 }
 
@@ -748,55 +597,6 @@ async function completeCampaignAdminAccountPasswordReset(
   );
 }
 
-async function bootstrapCampaign(request: Request, env: Env, db: D1DatabaseLike) {
-  if (!env.M4_BOOTSTRAP_SECRET) {
-    return errorResponse(
-      503,
-      "bootstrap_unconfigured",
-      "M4 Bootstrap ist serverseitig nicht konfiguriert.",
-    );
-  }
-  const parsed = await readJsonBody(request);
-  if (!parsed.ok) return parsed.response;
-  if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
-    return errorResponse(400, "invalid_request", "Bootstrap-Daten sind ungültig.");
-  }
-  const body = parsed.value as Record<string, unknown>;
-  const campaignId =
-    typeof body.campaignId === "string" ? parseCampaignId(body.campaignId) : null;
-  const secret = typeof body.secret === "string" ? body.secret : "";
-  if (!campaignId || !secret) {
-    return errorResponse(
-      400,
-      "invalid_request",
-      "Campaign und Bootstrap-Secret sind erforderlich.",
-    );
-  }
-
-  if (!(await operatorSecretMatches(secret, env.M4_BOOTSTRAP_SECRET))) {
-    return errorResponse(403, "bootstrap_forbidden", "Bootstrap-Secret ist ungültig.");
-  }
-  if (!(await campaignExists(db, campaignId))) {
-    return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
-  }
-  if (await campaignHasAccessGrants(db, campaignId)) {
-    return errorResponse(
-      409,
-      "already_bootstrapped",
-      "Campaign besitzt bereits Access Grants.",
-    );
-  }
-
-  const recovered = await createRecoveredAdminAccess(db, campaignId, "M4 bootstrap admin");
-  return json(
-    {
-      access: publicAccess(recovered.access),
-      initialAccessToken: recovered.token,
-    },
-    { headers: { "set-cookie": sessionCookie(recovered.sessionSecret) } },
-  );
-}
-
 async function recoverCampaignAdmin(request: Request, env: Env, db: D1DatabaseLike) {
   if (!env.M4_BOOTSTRAP_SECRET) {
     return errorResponse(
@@ -845,7 +645,6 @@ export default {
   async fetch(
     request: Request,
     env: Env,
-    context?: AreaPreparationExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
 
@@ -924,28 +723,6 @@ export default {
       if (collectionAccess === "logout" && request.method === "POST") {
         await revokeCollectionSession(db, request);
         return json({ ok: true }, { headers: { "set-cookie": clearCollectionSessionCookie() } });
-      }
-    }
-
-    if (db) {
-      const commentsResponse = await handleCommentsApi(request, db);
-      if (commentsResponse) return commentsResponse;
-
-      const activityResponse = await handleActivityApi(request, db);
-      if (activityResponse) return activityResponse;
-
-      const statisticsResponse = await handleStatisticsApi(request, db);
-      if (statisticsResponse) return statisticsResponse;
-
-      const automationsResponse = await handleAutomationsApi(request, db);
-      if (automationsResponse) return automationsResponse;
-    }
-
-    if (db && url.pathname === "/api/campaigns" && request.method === "POST") {
-      try {
-        return await createCampaign(request, db);
-      } catch {
-        return errorResponse(500, "internal_error", "Campaign konnte nicht erstellt werden.");
       }
     }
 
@@ -1036,18 +813,6 @@ export default {
       return response;
     }
 
-    if (db && url.pathname === "/api/admin/bootstrap" && request.method === "POST") {
-      try {
-        return await bootstrapCampaign(request, env, db);
-      } catch {
-        return errorResponse(
-          500,
-          "internal_error",
-          "Campaign-Bootstrap ist fehlgeschlagen.",
-        );
-      }
-    }
-
     if (db && url.pathname === "/api/admin/recover" && request.method === "POST") {
       try {
         return await recoverCampaignAdmin(request, env, db);
@@ -1111,145 +876,12 @@ export default {
       }
     }
 
-    const networkRoute = url.pathname.match(/^\/api\/campaigns\/([A-Za-z0-9._:-]+)\/network$/);
-    if (networkRoute && db) {
-      const auth = await requireAccess(db, request, networkRoute[1]);
-      if (!auth.ok) return auth.response;
-      if(env.CAMPAIGN_SYNC&&request.method==='POST'){
-        const parsed=await readJsonBody(request);if(!parsed.ok)return parsed.response;
-        return executeInCampaign(env.CAMPAIGN_SYNC,{campaignId:networkRoute[1],access:auth.access,operation:'network',input:parsed.value});
-      }
-      return handleNetworkIntent(request, db, networkRoute[1], auth.access, () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, networkRoute[1]));
-    }
-
-    const preparationRoute = areaTaskPreparationRoute(url.pathname);
-    if (preparationRoute && db) {
-      try {
-        const auth = await requireAccess(db, request, preparationRoute.campaignId);
-        if (!auth.ok) return auth.response;
-        const response = await handleAreaTaskPreparationApi(
-          request,
-          db,
-          preparationRoute,
-          auth.access,
-          context,
-          {
-            schedule: (campaignId, restart) => schedulePreparation(env.CAMPAIGN_SYNC, campaignId, restart),
-            upstreamUrl: env.OSM_OVERPASS_URL,
-            onCommitted: () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, preparationRoute.campaignId),
-          },
-        );
-        return response;
-      } catch (error) {
-        if (error instanceof StoredSnapshotError) {
-          return errorResponse(500, "stored_snapshot_invalid", error.message);
-        }
-        return errorResponse(500, "internal_error", "Area-Vorbereitung konnte nicht verarbeitet werden.");
-      }
-    }
-
-    const rxdbSocketCampaignId = rxdbSocketRoute(url.pathname);
-    if (rxdbSocketCampaignId && db) {
-      if (request.method !== "GET") {
-        return errorResponse(405, "method_not_allowed", "Campaign-Realtime verwendet GET mit WebSocket-Upgrade.");
-      }
-      if (!env.CAMPAIGN_SYNC) {
-        return errorResponse(503, "realtime_unavailable", "Campaign-Realtime ist in diesem Worker noch nicht gebunden.");
-      }
-      try {
-        const auth = await requireAccess(db, request, rxdbSocketCampaignId);
-        if (!auth.ok) return auth.response;
-        const id = env.CAMPAIGN_SYNC.idFromName(rxdbSocketCampaignId);
-        const socketRequest = new Request("https://campaign-sync.internal/ws", {
-          method: "GET",
-          headers: {
-            Upgrade: "websocket",
-            "x-campaign-sync-internal": "1",
-            "x-campaign-sync-team": auth.access.role==='admin'||auth.access.role==='viewer'?'*':auth.access.teamId??'',
-          },
-        });
-        return await env.CAMPAIGN_SYNC.get(id).fetch(socketRequest);
-      } catch {
-        return errorResponse(503, "realtime_unavailable", "Campaign-Realtime konnte nicht aufgebaut werden.");
-      }
-    }
-
-    const rxdbCheckpointCampaignId = rxdbCheckpointRoute(url.pathname);
-    if (rxdbCheckpointCampaignId && db) {
-      if (request.method !== "GET") {
-        return errorResponse(405, "method_not_allowed", "Der RxDB-Checkpoint verwendet GET.");
-      }
-      try {
-        const auth = await requireAccess(db, request, rxdbCheckpointCampaignId);
-        if (!auth.ok) return auth.response;
-        return await handleRxdbCheckpoint(db, rxdbCheckpointCampaignId, auth.access);
-      } catch {
-        return errorResponse(500, "internal_error", "RxDB-Checkpoint konnte nicht gelesen werden.");
-      }
-    }
-
-    const rxdbSyncRoute = rxdbRoute(url.pathname);
-    if (rxdbSyncRoute && db) {
-      if (request.method !== "POST") {
-        return errorResponse(405, "method_not_allowed", "RxDB Pull und Push verwenden POST.");
-      }
-      const parsed = await readJsonBody(request);
-      if (!parsed.ok) return parsed.response;
-      try {
-        const auth = await requireAccess(db, request, rxdbSyncRoute.campaignId);
-        if (!auth.ok) return auth.response;
-        if(env.CAMPAIGN_SYNC)return executeInCampaign(env.CAMPAIGN_SYNC,{campaignId:rxdbSyncRoute.campaignId,access:auth.access,operation:rxdbSyncRoute.operation,collectionName:rxdbSyncRoute.collectionName,input:parsed.value});
-        const response = rxdbSyncRoute.operation === "pull"
-          ? await handleRxdbPull(
-              db,
-              rxdbSyncRoute.campaignId,
-              rxdbSyncRoute.collectionName,
-              auth.access,
-              parsed.value,
-            )
-          : await handleRxdbPush(
-              db,
-              rxdbSyncRoute.campaignId,
-              rxdbSyncRoute.collectionName,
-              auth.access,
-              parsed.value,
-              {schedule:(campaignId,restart)=>schedulePreparation(env.CAMPAIGN_SYNC,campaignId,restart)},
-            );
-        if (rxdbSyncRoute.operation === "push") {
-          scheduleCampaignSyncNotification(
-            env.CAMPAIGN_SYNC,
-            db,
-            rxdbSyncRoute.campaignId,
-            response,
-            context,
-          );
-        }
-        return response;
-      } catch (error) {
-        if (error instanceof StoredSnapshotError) {
-          return errorResponse(500, "stored_snapshot_invalid", error.message);
-        }
-        return errorResponse(500, "internal_error", "RxDB-Synchronisation konnte nicht verarbeitet werden.");
-      }
-    }
-
     const mutationCampaignId = mutationRoute(url.pathname);
     if (mutationCampaignId && db) {
       try {
         const auth = await requireMutationAccess(db, request, mutationCampaignId);
         if (!auth.ok) return auth.response;
-        const response = await handleCampaignMutation(request, db, mutationCampaignId, auth.access, context, {
-          schedule:(campaignId,restart)=>schedulePreparation(env.CAMPAIGN_SYNC,campaignId,restart),
-          upstreamUrl: env.OSM_OVERPASS_URL,
-          onCommitted: () => notifyCampaignSync(env.CAMPAIGN_SYNC, db, mutationCampaignId),
-        });
-        scheduleCampaignSyncNotification(
-          env.CAMPAIGN_SYNC,
-          db,
-          mutationCampaignId,
-          response,
-          context,
-        );
+        const response = await handleCampaignMutation(request, db, mutationCampaignId, auth.access);
         return response;
       } catch (error) {
         if (error instanceof StoredSnapshotError) {
