@@ -485,7 +485,7 @@ export function App({ campaignId }: { campaignId: string }) {
     ...(meta?.role === 'admin' ? [{ id: 'admin', icon: 'shield', label: 'Verwaltung', href: '/login' } satisfies AppTile] : []),
   ];
 
-  const ROLE_NAME: Record<string, string> = { admin: 'Admin', 'team-editor': 'Gruppe (bearbeiten)', viewer: 'Ansehen', 'field-group-member': 'Gruppe', 'collection-collector': 'Helfer' };
+  const ROLE_NAME: Record<string, string> = { admin: 'Admin', 'team-editor': 'Gruppe (bearbeiten)', viewer: 'Ansehen', 'collection-collector': 'Helfer' };
   const identity = meta ? [meta.me?.label ?? meta.collectorLabel, ROLE_NAME[meta.role] ?? meta.role].filter(Boolean).join(' · ') : undefined;
   const p = campaign.progress;
   const dot = campaign.sync.state === 'offline' ? 'offline' : campaign.sync.pending > 0 || campaign.sync.state === 'syncing' ? 'busy' : 'ok';

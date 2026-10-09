@@ -65,7 +65,7 @@ export async function resolveCollectionAccess(
     return {
       grantId: "collection:" + row.collector_id, campaignId: row.campaign_id,
       role: "collection-collector" as AccessRole, teamId: null, label: row.label,
-      groupId: null, membershipId: null, collectorId: row.collector_id,
+      collectorId: row.collector_id,
       collectionAccessId: row.access_link_id,
     };
   } catch (error) {
@@ -127,7 +127,7 @@ export async function redeemCollectionAccess(db: D1DatabaseLike, campaignId: str
   return {
     access: {
       grantId: "collection:" + collectorId, campaignId, role: "collection-collector" as const,
-      teamId: null, label, groupId: null, membershipId: null,
+      teamId: null, label,
       collectorId, collectionAccessId: link.id,
     },
     sessionSecret,

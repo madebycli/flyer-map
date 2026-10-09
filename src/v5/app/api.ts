@@ -18,7 +18,7 @@ export type Meta = {
   runs: CollectionRunInfo[];
   /** The device's temporary identity as the server knows it (a neutral label such as "Nutzer 2"; null when the link carries none). */
   me: { label: string | null };
-  role: 'admin' | 'team-editor' | 'viewer' | 'field-group-member' | 'collection-collector';
+  role: 'admin' | 'team-editor' | 'viewer' | 'collection-collector';
   teamId: string | null;
   canWrite: boolean;
   canBuildPack: boolean;

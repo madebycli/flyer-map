@@ -45,7 +45,7 @@ test("validates the typed expectedUpdatedAt Team delete payload", () => {
 });
 
 test("mutation endpoint denies Team Editor, Viewer and Field Group Member before persistence", async () => {
-  const forbiddenRoles: AccessContext["role"][] = ["team-editor", "viewer", "field-group-member"];
+  const forbiddenRoles: AccessContext["role"][] = ["team-editor", "viewer"];
   const unusedDb: D1DatabaseLike = {
     prepare: () => { throw new Error("must_not_persist"); },
     async batch() { throw new Error("must_not_persist"); },

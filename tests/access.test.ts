@@ -244,3 +244,12 @@ test("operator recovery can mint a fresh admin grant and session after grants al
     "admin",
   );
 });
+
+test("the retired field-group (Rooms) cookie grants no access, and not even a lookup", async () => {
+  const { NetworkD1, seedNetwork } = await import("./helpers/networkD1.ts");
+  const db = new NetworkD1(false, true);
+  seedNetwork(db);
+  const request = new Request("https://example.test/api/x", { headers: { cookie: "vf_field_group_session=" + "a".repeat(43) } });
+  assert.equal(await resolveAccess(db, request, "campaign_n"), null);
+  assert.equal(await resolveAccess(db, request), null);
+});
