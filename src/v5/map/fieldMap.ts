@@ -1,4 +1,5 @@
-import maplibregl, { type ExpressionSpecification, type GeoJSONSource, type Map as MlMap, type StyleSpecification, type VectorTileSource } from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, RequestParameters, StyleSpecification, VectorTileSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { MapData } from '../engine/host.ts';
 import type { LngLat } from '../engine/types.ts';
@@ -85,7 +86,7 @@ let tokens = 0;
 function ensureTileProtocol() {
   if (protocolRegistered) return;
   protocolRegistered = true;
-  maplibregl.addProtocol('v5t', async (params) => {
+  maplibregl.addProtocol('v5t', async (params: RequestParameters) => {
     const m = /^v5t:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
     const provider = m ? providers.get(m[1]) : undefined;
     if (!m || !provider) return { data: new ArrayBuffer(0) };
