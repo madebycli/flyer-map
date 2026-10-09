@@ -6,8 +6,9 @@ import { resolveAccess } from '../access.ts';
 import { resolveCollectionAccess } from '../collectionAccess.ts';
 import { loadPickupCapabilities } from '../pickupCapabilities.ts';
 import type { D1DatabaseLike } from '../campaignRepository.ts';
-import { canReadArea, canWriteArea, fail, ID, isScoped, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
+import { canReadArea, canWriteArea, fail, ID, isScoped, isRecord, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 import { pullNotes, pushNotes } from './notes.ts';
+import { forgetArea, pruneState } from './cleanup.ts';
 import { parseCampaignId } from '../snapshotValidation.ts';
 
 
@@ -23,9 +24,6 @@ export type V5Options = {
 };
 
 const MAX_OPS = 200;
-const MAX_PRUNE = 5000;
-const PRUNE_CONFIRM_MIN = 20;
-const PRUNE_CONFIRM_SHARE = 0.6;
 const ROWS_PER_STATEMENT = 10; // 9 bound parameters per row; D1 allows 100 per statement.
 const PACK_CHUNK_BYTES = 512 * 1024;
 const MAX_AREA_SQ_KM = 25;
@@ -55,61 +53,6 @@ function sameOrigin(request: Request) {
   return !origin || origin === new URL(request.url).origin;
 }
 
-/**
- * "Gebiet bereinigen": after an Area was reshaped the engine derives a different set of keys. The client lists the keys of
- * that Area that no longer exist in what it derived; the server removes exactly those rows (and only rows of this Area).
- * Admin only: it is a bulk delete of shared progress.
- */
-async function pruneState(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, request: Request): Promise<Response> {
-  if (access.role !== 'admin') return fail(403, 'forbidden', 'Nur Admins dürfen ein Gebiet bereinigen.');
-  const area = await resolveArea(db, campaignId, areaId);
-  if (!area) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
-  if (!(request.headers.get('content-type') ?? '').includes('application/json')) return fail(415, 'unsupported_media_type', 'JSON erwartet.');
-  const text = await request.text();
-  if (text.length > 200_000) return fail(413, 'too_large', 'Zu viele Einträge auf einmal.');
-  let body: { keys?: unknown; confirm?: unknown };
-  try { body = JSON.parse(text); } catch { return fail(400, 'invalid_json', 'Ungültiges JSON.'); }
-  if (!Array.isArray(body.keys) || body.keys.length === 0 || body.keys.length > MAX_PRUNE || !body.keys.every((k) => typeof k === 'string' && KEY.test(k))) return fail(400, 'invalid_keys', `1 bis ${MAX_PRUNE} gültige Schlüssel erwartet.`);
-  const keys = [...new Set(body.keys as string[])];
-  // Only rows that really belong to this Area are candidates: the reply names them, so the client forgets exactly those.
-  const found: string[] = [];
-  for (let i = 0; i < keys.length; i += 90) {
-    const chunk = keys.slice(i, i + 90);
-    const rows = (await db.prepare(`SELECT key FROM v5_state WHERE campaign_id = ? AND area_id = ? AND key IN (${chunk.map(() => '?').join(',')})`).bind(campaignId, areaId, ...chunk).all<{ key: string }>()).results;
-    for (const row of rows) found.push(row.key);
-  }
-  // A clean-up that would wipe most of an Area is almost never intended (a partial map download, a wrong outline): it needs an explicit confirmation.
-  const total = (await db.prepare('SELECT COUNT(*) AS n FROM v5_state WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<{ n: number }>())?.n ?? 0;
-  if (body.confirm !== true && found.length > PRUNE_CONFIRM_MIN && found.length > total * PRUNE_CONFIRM_SHARE) {
-    return json({ error: { code: 'prune_confirm_required', message: `Das würde ${found.length} von ${total} Markierungen dieses Gebiets entfernen. Bitte bestätigen.` }, matched: found.length, total }, { status: 409 });
-  }
-  let removed = 0;
-  for (let i = 0; i < found.length; i += 90) {
-    const chunk = found.slice(i, i + 90);
-    const [result] = await db.batch([db.prepare(`DELETE FROM v5_state WHERE campaign_id = ? AND area_id = ? AND key IN (${chunk.map(() => '?').join(',')})`).bind(campaignId, areaId, ...chunk)]);
-    removed += result?.meta?.changes ?? 0;
-  }
-  return json({ removed, keys: found });
-}
-
-/**
- * After a Gebiet was deleted: everything v5 kept for it goes too (progress, notes, map data). Admin only, and only once the Gebiet
- * is really gone, so this can never be used to wipe a live Gebiet. The reply counts what was removed.
- */
-async function forgetArea(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string): Promise<Response> {
-  if (access.role !== 'admin') return fail(403, 'forbidden', 'Nur Admins dürfen ein Gebiet endgültig entfernen.');
-  if (await resolveArea(db, campaignId, areaId)) return fail(409, 'area_still_exists', 'Das Gebiet existiert noch. Erst löschen, dann aufräumen.');
-  const delState = db.prepare('DELETE FROM v5_state WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId);
-  const results = await db.batch([
-    delState,
-    db.prepare('DELETE FROM v5_notes WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
-    db.prepare('DELETE FROM v5_packs WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
-    db.prepare('DELETE FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
-    db.prepare('DELETE FROM v5_pack_attempts WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
-  ]);
-  return json({ removed: results[0]?.meta?.changes ?? 0, notes: results[1]?.meta?.changes ?? 0 });
-}
-
 export async function handleV5Api(request: Request, db: D1DatabaseLike, options: V5Options = {}): Promise<Response | null> {
   const url = new URL(request.url);
   // The deployment's basemap, without a campaign: the admin pages place the map focus with it. Style URLs reach every field client anyway, so they must not carry secrets.
@@ -126,8 +69,8 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
   if (route.kind === 'notes' && request.method === 'POST') return pushNotes(db, access, route.campaignId, request, options);
   if (route.kind === 'pack' && request.method === 'GET') return getPack(db, access, route.campaignId, route.areaId, request);
   if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options);
-  if (route.kind === 'prune' && request.method === 'POST') return pruneState(db, access, route.campaignId, route.areaId, request);
-  if (route.kind === 'forget' && request.method === 'POST') return forgetArea(db, access, route.campaignId, route.areaId);
+  if (route.kind === 'prune' && request.method === 'POST') return pruneState(db, access, route.campaignId, route.areaId, request, (options.now ?? Date.now)());
+  if (route.kind === 'forget' && request.method === 'POST') return forgetArea(db, access, route.campaignId, route.areaId, (options.now ?? Date.now)());
   return fail(405, 'method_not_allowed', 'Methode nicht erlaubt.');
 }
 
@@ -237,6 +180,7 @@ async function pushOps(db: D1DatabaseLike, access: AccessContext, campaignId: st
   if (text.length > 100_000) return fail(413, 'too_large', 'Zu viele Änderungen auf einmal.');
   let body: { ops?: IncomingOp[] };
   try { body = JSON.parse(text); } catch { return fail(400, 'invalid_json', 'Ungültiges JSON.'); }
+  if (!isRecord(body)) return fail(400, 'invalid_json', 'JSON-Objekt erwartet.');
   if (!Array.isArray(body.ops) || body.ops.length === 0 || body.ops.length > MAX_OPS) return fail(400, 'invalid_ops', `1 bis ${MAX_OPS} Änderungen erwartet.`);
 
   const now = (options.now ?? Date.now)();
@@ -244,6 +188,7 @@ async function pushOps(db: D1DatabaseLike, access: AccessContext, campaignId: st
   const accepted: string[] = [], rejected: { id: string; reason: string }[] = [];
   const latest = new Map<string, { id: string; key: string; status: string; area: string }>();
   for (const op of body.ops) {
+    if (!isRecord(op)) { rejected.push({ id: '', reason: 'bad_id' }); continue; }
     const id = typeof op.id === 'string' ? op.id : '';
     const reject = (reason: string) => rejected.push({ id, reason });
     if (!decodeClock(id)) { reject('bad_id'); continue; }
