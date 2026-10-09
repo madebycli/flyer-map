@@ -41,8 +41,7 @@ v3/v4 street-engine remnants. "Unreachable" is therefore a list of *dormant prod
 ## Decisions (2026-10-09, taken by the technical owner on the user's instruction "Überdenke alle Funktionen … full rewrite")
 
 1. **Dormant features are rebuilt, not deleted** — in the v5 shell and the shared design system, one at a time, each behind its existing Worker contract.
-2. **Worker to Rust via `workers-rs`**, as a strangler: a Rust entry Worker answers the v5 routes natively and forwards everything else through a service binding to the
-   current TypeScript Worker; auth moves last, after its own security review. Not started until a feasibility probe (build, D1, Durable Object, HTTP-level test harness) is accepted.
+2. **Worker stays TypeScript** — superseded the earlier `workers-rs` idea after measuring ([ADR-0035](../../decisions/ADR-0035-worker-stays-typescript.md)): the heaviest Worker task (pack build, 39 k houses) is 0.5 s CPU, dominated by native `JSON.parse` and gzip.
 3. **One switch**: all work lands on one long-lived branch in always-green stages; `/v5` replaces the legacy map app only on an explicit go after staging.
 
 ## Function inventory — keep / rebuild / move to Rust / drop
@@ -96,21 +95,23 @@ Einsätze, Automationen and the Team-Center are **not** rebuilt; they are delete
 | Fortschritt | Übersicht (houses, per Gebiet, per Gruppe) + Team & Aktivität | done |
 | Kommentare | Notizen (flags + text per street, house, Gebiet) | done, replaces comments |
 | Gebiet (draw/edit) | Gebiete tool, polygon editor, Aktions-Vorlage | done |
-| Streets (list, manual street) | search + derived streets | list replaced by search; **manual street for roads missing in OSM: open** |
+| Streets (list, manual street) | search + derived streets | list replaced by search; manual street for roads missing in OSM: not rebuilt (decision 5) |
 | Einstellungen: appearance, hand | Menü: Hell/Dunkel, Links-/Rechtshand | done |
 | Einstellungen: access links (Gruppe/Ansehen/Admin), Abhol-Links, helpers | Menü → Zugänge | done (Admin links are replaced by Organizer accounts) |
 | Einstellungen: Gruppen rename/recolour, Gebiet → Gruppe, Aktion rename | Menü → Gruppen (create, rename, recolour, delete when empty, Aktion rename); on a selected Gebiet: rename and move to another Gruppe | done (flow 13) |
-| Einstellungen: language (en) | German only | **open: decide whether English is still wanted** |
+| Einstellungen: language (en) | German only | dropped (decision 5) |
 | Team (hub, active team) | Gruppe is implied by the link; admins see all Gruppen | done |
-| Rooms (live groups with join code/QR, leave, members) | none (collection has its own Raum) | **open: decide — large subsystem, used?** |
+| Rooms (live groups with join code/QR, leave, members) | none (collection has its own Raum) | not rebuilt (decision 5) |
 | Offline map area, street edit after mission, smart house/street tasks | warm cache + derived network | replaced |
 
 ## Order from here
 1. ~~"Gruppen" sheet~~ done.
 2. Decide Rooms / English / manual street with the product owner (they change what is built).
 3. Phase 3 checklist for staging: redirect of the old address (done), service worker/offline unchanged, soak at 39 k houses, real-device pass.
-4. Phase 4 (Worker in Rust) only after the `workers-rs` probe is accepted.
-- Phases 4–5: not started.
+4. ~~Phase 4 (Worker in Rust)~~ dropped by ADR-0035. Phase 4 is now: delete what the Worker no longer needs.
+5. Product decisions taken by the technical owner (the owner may reverse any of them): **Rooms** (live groups with codes) are not rebuilt — Gruppen links plus Team & Aktivität cover the use, collection keeps its own Raum;
+   **English** is dropped (German only); the **manual street** is not rebuilt (a road missing in OSM is fixed in OSM and the Gebiet's data reloaded).
+- Phase 5 (delete the legacy app) is prepared on its own branch so that it can be dropped without touching the rest.
 
 ## Not decided here
 
