@@ -142,12 +142,12 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
   if (!campaign) return fail(404, 'not_found', 'Aktion nicht gefunden.');
   // A collector only ever sees the collection side; admins and viewers choose with ?kind=collection.
   const kind: 'distribution' | 'collection' = access.role === 'collection-collector' || (url.searchParams.get('kind') === 'collection' && (access.role === 'admin' || access.role === 'viewer')) ? 'collection' : 'distribution';
-  type Row = { id: string; name: string; team_id: string; geometry_json: string; updated_at: string; pack_version: number | null; pack_hash: string | null; status?: string; run_id?: string | null; claimed_by_label?: string | null; claimed_by_collector_id?: string | null };
+  type Row = { id: string; name: string; team_id: string; geometry_json: string; updated_at: string; pack_version: number | null; pack_hash: string | null; status?: string; run_id?: string | null; claimed_by_label?: string | null; claimed_by_collector_id?: string | null; color?: string };
   let rows: Row[];
   if (kind === 'collection') {
     try {
       rows = (await db.prepare(
-        `SELECT a.id, a.name, '' AS team_id, a.geometry_json, a.updated_at, a.status, a.run_id, a.claimed_by_label, a.claimed_by_collector_id, p.version AS pack_version, p.geometry_hash AS pack_hash FROM collection_areas a
+        `SELECT a.id, a.name, '' AS team_id, a.geometry_json, a.updated_at, a.status, a.color, a.run_id, a.claimed_by_label, a.claimed_by_collector_id, p.version AS pack_version, p.geometry_hash AS pack_hash FROM collection_areas a
          LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
          WHERE a.campaign_id = ?${access.role === 'admin' ? '' : " AND a.status <> 'archived'"} ORDER BY a.created_at, a.id`,
       ).bind(campaignId).all<Row>()).results;
@@ -171,7 +171,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
       id: a.id, name: a.name, teamId: a.team_id, geometry, updatedAt: a.updated_at, packVersion: stale ? null : a.pack_version, packStale: stale,
       /** Server-evaluated: may this caller write status/notes in this Area right now? The UI only mirrors it. */
       writable: ref ? await canWriteArea(db, access, campaignId, ref) : false,
-      ...(kind === 'collection' ? { collection: { status: a.status ?? 'open', runId: a.run_id ?? null, claimedBy: a.claimed_by_label ?? null, claimedById: a.claimed_by_collector_id ?? null } } : {}),
+      ...(kind === 'collection' ? { collection: { status: a.status ?? 'open', color: a.color ?? '#2563eb', runId: a.run_id ?? null, claimedBy: a.claimed_by_label ?? null, claimedById: a.claimed_by_collector_id ?? null } } : {}),
     };
   }));
   // The Räume (active Runs with their current members) the Gebietsliste needs: who works where, and who may be joined.
@@ -184,7 +184,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     } catch { runs = []; }
   }
   return json({
-    campaign, kind, role: access.role, teamId: access.teamId, me: { label: access.label ?? null }, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainAreaId: kind === 'collection' ? await mainAreaId(db, campaignId) : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
+    campaign, kind, role: access.role, teamId: access.teamId, me: { label: access.label ?? null }, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainArea: kind === 'collection' ? await mainArea(db, campaignId) : null, mainAreaId: kind === 'collection' ? (await mainArea(db, campaignId))?.id ?? null : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: (scoped ? teams.filter((t) => t.id === access.teamId) : teams).map((t) => ({ id: t.id, name: t.name, color: t.color, updatedAt: t.updated_at })),
     areas,
@@ -205,8 +205,12 @@ async function pickupRights(db: D1DatabaseLike, access: AccessContext, campaignI
   return { view: false, create: false, edit: false };
 }
 
-async function mainAreaId(db: D1DatabaseLike, campaignId: string): Promise<string | null> {
-  try { return (await db.prepare('SELECT id FROM collection_main_areas WHERE campaign_id = ?').bind(campaignId).first<{ id: string }>())?.id ?? null; } catch { return null; }
+/** The Sammelgebiet: the outline all Teilgebiete of an Abholaktion lie in. */
+async function mainArea(db: D1DatabaseLike, campaignId: string): Promise<{ id: string; name: string; geometry: unknown; updatedAt: string } | null> {
+  try {
+    const row = await db.prepare('SELECT id, name, geometry_json, updated_at FROM collection_main_areas WHERE campaign_id = ?').bind(campaignId).first<{ id: string; name: string; geometry_json: string; updated_at: string }>();
+    return row ? { id: row.id, name: row.name, geometry: JSON.parse(row.geometry_json), updatedAt: row.updated_at } : null;
+  } catch { return null; }
 }
 
 async function pullState(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL, options: V5Options): Promise<Response> {

@@ -8,14 +8,15 @@ import { areaAt } from '../areas/nearest.ts';
 import { makeTemplate, parseTemplate, planTemplate, serializeTemplate, templateFileName, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import { downloadText } from './download.ts';
 import { applyTemplatePlan, type ApplyProgress } from './templateApply.ts';
-import { buildPack, createTeam, deleteArea, deleteTeam, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
-import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
+import { buildPack, createTeam, archiveCollectionArea, deleteArea, deleteTeam, forceReleaseArea, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
+import { AreaEditBar, MAIN_ID, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
 import { buildIndex } from './mark.ts';
 import { meters, useMarking } from './marking.tsx';
 import { AccessSheet } from './accessSheet.tsx';
 import { AreaAdmin, GroupsSheet } from './groupsSheet.tsx';
+import { CollectionSetupSheet } from './collectionSetup.tsx';
 import { ActivitySheet } from './activitySheet.tsx';
 import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } from './panels.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
@@ -35,7 +36,7 @@ const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
+type Panel = 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -190,7 +191,7 @@ export function App({ campaignId }: { campaignId: string }) {
       else throw error;
     }
   };
-  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined, onSaved: afterAreaSaved }, tool === 'areas');
+  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined, onSaved: afterAreaSaved, onCollectionDone: () => { setTool('inspect'); setPanel('setup'); } }, tool === 'areas');
 
   // One click router: whichever tool is active decides what a tap on the map means.
   const hitRef = useRef<(hit: Hit | null, point: Pt) => void>(() => {});
@@ -453,6 +454,8 @@ export function App({ campaignId }: { campaignId: string }) {
     catch (e) { setAdminError(actionErrorText(e)); try { await campaign.reload(); } catch { /* the error text stays */ } }
     finally { setAdminBusy(false); }
   };
+  const drawCollection = () => { closeSelection(); setPanel(null); setFab('idle'); setTool('areas'); areaTool.startNew(); };
+  const editCollection = (id: string) => { closeSelection(); setPanel(null); setFab('idle'); setTool('areas'); areaTool.startEdit(id); };
   const teamOf = (id: string) => meta?.teams.find((t) => t.id === id);
   const areaOfId = (id: string) => meta?.areas.find((a) => a.id === id);
 
@@ -464,6 +467,7 @@ export function App({ campaignId }: { campaignId: string }) {
     ] : []),
     { id: 'overview', icon: 'chart', label: 'Übersicht', onClick: () => openPanel('overview') },
     { id: 'activity', icon: 'users', label: 'Team', onClick: () => openPanel('activity') },
+    ...(meta?.role === 'admin' && isCollection ? [{ id: 'setup', icon: 'ruler', label: 'Einrichten', onClick: () => { setAdminError(null); openPanel('setup'); } } satisfies AppTile] : []),
     ...(meta?.role === 'admin' && !isCollection ? [{ id: 'groups', icon: 'flag', label: 'Gruppen', onClick: () => { setAdminError(null); openPanel('groups'); } } satisfies AppTile] : []),
     ...(meta?.role === 'admin' ? [{ id: 'access', icon: 'lock', label: 'Zugänge', onClick: () => openPanel('access') } satisfies AppTile] : []),
     { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
@@ -571,6 +575,12 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && panel === 'template' && templateDraft && <TemplateSheet template={templateDraft.template} plan={templateDraft.plan} progress={templateProgress} onApply={() => void applyTemplate()} onClose={() => { if (!templateProgress) { setPanel(null); setTemplateDraft(null); } }} />}
       {ready && panel === 'activity' && store && (
         <ActivitySheet kind={kind} theme={theme} store={store} version={campaign.progress} myLabel={meta?.me?.label ?? meta?.collectorLabel ?? 'Du'} labelOf={keyLabel} onPick={openNoteTarget} onClose={() => setPanel(null)} />
+      )}
+      {ready && panel === 'setup' && isCollection && meta?.role === 'admin' && (
+        <CollectionSetupSheet meta={meta} views={views} busy={adminBusy} error={adminError} onClose={() => setPanel(null)}
+          onDraw={drawCollection} onEditMain={() => editCollection(MAIN_ID)} onEdit={editCollection}
+          onArchive={(id) => { const a = areaOfId(id); if (a && window.confirm(`Teilgebiet „${a.name}“ archivieren? Helfer sehen es dann nicht mehr; Fortschritt und Sonder-Marker bleiben erhalten.`)) void runAdmin(() => archiveCollectionArea(campaignId, a), 'Teilgebiet archiviert.'); }}
+          onFree={(id, runId) => { const a = areaOfId(id); if (a && window.confirm(`„${a.name}“ freigeben? Der Raum wird geschlossen und das Teilgebiet ist wieder offen.`)) void runAdmin(() => forceReleaseArea(campaignId, runId, id), 'Teilgebiet freigegeben.'); }} />
       )}
       {ready && panel === 'groups' && meta?.role === 'admin' && (
         <GroupsSheet meta={meta} busy={adminBusy} error={adminError} onClose={() => setPanel(null)}

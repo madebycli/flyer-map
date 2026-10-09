@@ -3,7 +3,7 @@ import type { Op } from '../store/types.ts';
 import type { NoteTransport } from '../notes/sync.ts';
 import type { Note } from '../notes/types.ts';
 
-export type CollectionAreaInfo = { status: 'open' | 'claimed' | 'in-progress' | 'completed' | 'archived'; runId: string | null; claimedBy: string | null; claimedById: string | null };
+export type CollectionAreaInfo = { status: 'open' | 'claimed' | 'in-progress' | 'completed' | 'archived'; color: string; runId: string | null; claimedBy: string | null; claimedById: string | null };
 export type CollectionRunInfo = { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] };
 
 export type Meta = {
@@ -12,6 +12,8 @@ export type Meta = {
   collectorId: string | null;
   collectorLabel: string | null;
   mainAreaId: string | null;
+  /** The Sammelgebiet of an Abholaktion (collection side only). */
+  mainArea: { id: string; name: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; updatedAt: string } | null;
   pickupRights: { view: boolean; create: boolean; edit: boolean };
   runs: CollectionRunInfo[];
   /** The device's temporary identity as the server knows it (a neutral label such as "Nutzer 2"; null when the link carries none). */
@@ -155,6 +157,22 @@ export const deleteArea = (campaignId: string, area: { id: string; updatedAt: st
 export async function forgetArea(campaignId: string, areaId: string): Promise<{ removed: number }> {
   return (await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/forget`, { method: 'POST' })).json() as Promise<{ removed: number }>;
 }
+
+const collectionMutation = (campaignId: string, type: string, payload: Record<string, unknown>) => postMutation(campaignId, type, payload, { revisionFrom: 'collection' });
+
+export const createMainArea = (campaignId: string, main: { id: string; name: string; geometry: Polygon }) =>
+  collectionMutation(campaignId, 'collection.main-area.create', { mainAreaId: main.id, name: main.name, geometry: main.geometry });
+export const updateMainArea = (campaignId: string, main: { id: string; updatedAt: string }, name: string, geometry: Polygon) =>
+  collectionMutation(campaignId, 'collection.main-area.update', { mainAreaId: main.id, name, geometry, expectedUpdatedAt: main.updatedAt });
+export const createCollectionArea = (campaignId: string, area: { id: string; mainAreaId: string; name: string; geometry: Polygon; color: string }) =>
+  collectionMutation(campaignId, 'collection.area.create', { areaId: area.id, mainAreaId: area.mainAreaId, name: area.name, geometry: area.geometry, color: area.color });
+export const updateCollectionArea = (campaignId: string, area: { id: string; updatedAt: string }, name: string, geometry: Polygon, color: string) =>
+  collectionMutation(campaignId, 'collection.area.update', { areaId: area.id, name, geometry, color, expectedUpdatedAt: area.updatedAt });
+export const archiveCollectionArea = (campaignId: string, area: { id: string; updatedAt: string }) =>
+  collectionMutation(campaignId, 'collection.area.archive', { areaId: area.id, expectedUpdatedAt: area.updatedAt });
+/** An admin frees an Area a helper holds (a lost phone, someone who left): the Raum is closed, the Gebiet is open again. */
+export const forceReleaseArea = (campaignId: string, runId: string, areaId: string) =>
+  collectionMutation(campaignId, 'collection.admin.force-release-area', { runId, areaId, adminId: `admin_${crypto.randomUUID()}` });
 
 export const createArea = (campaignId: string, area: { id: string; teamId: string; name: string; geometry: Polygon }) =>
   postAreaMutation(campaignId, 'area.create', { areaId: area.id, teamId: area.teamId, name: area.name, geometry: area.geometry });

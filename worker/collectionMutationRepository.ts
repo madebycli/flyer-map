@@ -93,7 +93,7 @@ export function collectionMutationStatements(
         `UPDATE collection_areas SET name = ?, geometry_json = ?, color = ?, updated_at = ?
           WHERE id = ? AND campaign_id = ? AND updated_at = ? AND status <> 'archived' AND @@GUARD@@`.replace("@@GUARD@@", guard),
       ).bind(
-        mutation.payload.name, JSON.stringify(mutation.payload.geometry), mutation.createdAt,
+        mutation.payload.name, JSON.stringify(mutation.payload.geometry), mutation.payload.color, mutation.createdAt,
         mutation.payload.areaId, mutation.campaignId,
         mutation.payload.expectedUpdatedAt, mutation.campaignId, writeToken,
       )];
