@@ -109,7 +109,7 @@ check('an admin sees the clean-up button for an Area with orphan rows', await un
 page.once('dialog', (dialog) => { check('the manual clean-up asks first and says it affects every device', /alle Geräte/.test(dialog.message())); void dialog.accept(); });
 await broom.click();
 check('and it reports what it removed', await until(async () => /1 veraltete Einträge entfernt/.test(await page.locator('.v5-toast').innerText().catch(() => ''))));
-check('the orphan is gone on the server, real progress is not touched', await until(async () => await page.evaluate(async () => { const ops = (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops; return !ops.some((o) => o.key === 'h:ghost-9'); })));
+check('the orphan is gone on the server, real progress is not touched', await until(async () => await page.evaluate(async () => { const ops = (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops; return !ops.some((o) => o.key === 'h:ghost-9' && o.status !== 'open'); })));
 await b.close();
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

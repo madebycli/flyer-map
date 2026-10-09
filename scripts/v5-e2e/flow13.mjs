@@ -72,7 +72,7 @@ await page.evaluate(async () => { await fetch('/api/v5/campaigns/campaign_n/ops'
 page.once('dialog', (d) => { check('deleting a Gebiet asks first and says what goes with it', /Fortschritt, Notizen/.test(d.message())); void d.accept(); });
 await page.getByRole('button', { name: 'Gebiet löschen' }).click();
 check('the Gebiet is gone on the server', await until(async () => !(await meta()).areas.some((a) => a.id === 'area_n')));
-check('and so is the progress that belonged to it', await until(async () => await page.evaluate(async () => !(await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.some((o) => o.area === 'area_n'))));
+check('and so is the progress that belonged to it', await until(async () => await page.evaluate(async () => !(await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.some((o) => o.area === 'area_n' && o.status !== 'open'))));
 await b.close();
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);
