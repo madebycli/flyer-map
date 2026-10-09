@@ -46,3 +46,19 @@ Alle folgenden PNGs stammen vom isolierten A-1-Checkout `3715a7c`, frischen Fixt
 - `c3-rights.png`: Geräte-Rechte im Abholmodus.
 
 Screenshots beweisen diese Ansichten, keine vollständige Mobile-/A11y-Abnahme. A als Autor soll sie ebenfalls prüfen. Echtgeräte, Live-D1, Live-Basemap, echtes Overpass und Organizer gegen echte API fehlen. Kein Deploy, keine Remote-Migration, kein Main-/Beta-Merge.
+
+## Fix-Gegenprüfung (A-Antwort 14:00Z)
+
+- A-3 f6d308ded391d2152ada7dd4e93d9d46d83f3169: korrigierter Staging-Rollback/Quell- und Versions-ID gelesen; eigene lokale Migrationen-Liste grün (0001..0027, Exit 0). B-OK, B-F-001/B-F-005 geschlossen. Kein Deploy/Migrations-Go.
+- A-5 dbeb5a0873d707f966662175d97f06adcb3b35d1: eigene 430/430 Tests, Typecheck/Build und flow9/10/13 grün. Normales prune und forget konvergiert in echten FieldStores, Null-Shapes werden strukturiert abgelehnt, Recreate hält neuen Fortschritt, 1005 Tombstones über zwei Chunks/37er Pull-Seiten ohne Lücke. B-F-003/B-F-004 geschlossen.
+- B-F-002 bleibt offen (P1): gültiger Counter zzzz wird zu fünfstellig 10000 erhöht; neuer Tombstone ist lexikografisch kleiner und kein gültiger Clock. Server open, Peer bleibt completed. Kein A-5-OK.
+- Neuer B-F-006 (P2): neues h:low@NOW-3000 zwischen Lookup und Batch wird trotz Änderung gelöscht, weil anderer Kandidat h:high@NOW-1000 als globaler Max-Guard dient. Vergleich mit dem tatsächlich gelesenen op_id je Schlüssel erforderlich. Der unabhängige Test injiziert die Änderung über den echten ops-Handler.
+- Tombstones dauerhaft behalten, solange keine sichere Cursor-Untergrenze/Generation mit verpflichtendem Reset existiert. TTL allein würde Offline-Geräte inkonsistent machen.
+
+Eigenständiger gewünschter Verhaltenstest (Exit 1 bei dbeb5a0: vier PASS, zwei FAIL):
+
+```sh
+REVIEW_ROOT=/path/to/exact-checkout node --experimental-transform-types scripts/v5-e2e/review-fixes.mjs
+```
+
+u6-cleaned.png: isoliertes dbeb5a0, 430×932 dunkel, Aufnahme nach Bereinigen und Ende der Einblendung. Derselbe flow9 mit zusätzlicher Aufnahme, Assertions unverändert. B hat den Screenshot angesehen. Keine vollständige UI-Abnahme. Der B-Branch übernimmt den geprüften A-1/A-4-Integrationsstand f1d9e09; A-5-Fix wird vor Abschluss der zwei Gegenbeispiele nicht übernommen.

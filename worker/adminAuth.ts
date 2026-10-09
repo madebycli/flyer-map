@@ -228,8 +228,6 @@ export async function resolveCampaignAdminAccountAccess(
       role: "admin",
       teamId: null,
       label: row.username,
-      groupId: null,
-      membershipId: null,
     };
   } catch {
     return null;
@@ -492,8 +490,6 @@ export async function completeCampaignAdminSetup(
       role: "admin" as const,
       teamId: null,
       label: username.display,
-      groupId: null,
-      membershipId: null,
     },
     session,
   };
@@ -561,8 +557,6 @@ export async function loginCampaignAdminAccount(
       role: "admin" as const,
       teamId: null,
       label: account.username,
-      groupId: null,
-      membershipId: null,
     },
     session,
   };
@@ -646,8 +640,6 @@ export async function completeCampaignAdminPasswordReset(
       role: "admin" as const,
       teamId: null,
       label: account.username,
-      groupId: null,
-      membershipId: null,
     },
     session,
   };

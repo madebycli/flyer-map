@@ -258,12 +258,6 @@ async function requireCollectionReadAccess(
 ) {
   const normal = await resolveAccess(db, request, campaignId);
   if (normal) {
-    if (normal.role === "field-group-member") {
-      return {
-        ok: false as const,
-        response: errorResponse(403, "collection_scope_forbidden", "Dieser Zugriff ist nicht für Collection freigeschaltet."),
-      };
-    }
     return { ok: true as const, access: normal };
   }
   const collector = await resolveCollectionAccess(db, request, campaignId);

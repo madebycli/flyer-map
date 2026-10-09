@@ -8,9 +8,9 @@ export const fail = (status: number, code: string, message: string) => json({ er
 export const ID = /^[A-Za-z0-9._:-]{1,160}$/u;
 
 /** Roles that may write something at all; which Areas they may write in is decided per Area (`canWriteArea`). */
-export const writesAllowed = (a: AccessContext) => a.role === 'admin' || a.role === 'team-editor' || a.role === 'field-group-member' || a.role === 'collection-collector';
+export const writesAllowed = (a: AccessContext) => a.role === 'admin' || a.role === 'team-editor' || a.role === 'collection-collector';
 /** Roles whose reads and writes are bound to Areas they are entitled to (admins and viewers see everything). */
-export const isScoped = (a: AccessContext) => a.role === 'team-editor' || a.role === 'field-group-member' || a.role === 'collection-collector';
+export const isScoped = (a: AccessContext) => a.role === 'team-editor' || a.role === 'collection-collector';
 
 type Polygon = { type: 'Polygon'; coordinates: [number, number][][] };
 /** An Area of either kind: distribution Areas belong to a team, collection Areas are claimed by a Run. */
