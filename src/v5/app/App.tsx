@@ -477,8 +477,7 @@ export function App({ campaignId }: { campaignId: string }) {
     { id: 'hand', icon: 'hand', label: hand === 'right' ? 'Linkshand' : 'Rechtshand', onClick: () => setHand(hand === 'right' ? 'left' : 'right') },
     { id: 'base', icon: 'layers', label: baseOn ? 'Karte aus' : 'Karte an', on: !baseOn, onClick: () => setBaseOn(!baseOn) },
     ...(importOffer ? [{ id: 'import', icon: importState === 'busy' ? 'sync' : 'download', label: 'Alt-Import', onClick: () => void importLegacy() } satisfies AppTile] : []),
-    // admin and legacy entries are role-aware: a link helper never sees them
-    ...(meta?.role !== 'collection-collector' ? [{ id: 'legacy', icon: 'mapPin', label: 'Alte Ansicht', href: `/?campaign=${encodeURIComponent(campaignId)}&legacy=1` } satisfies AppTile] : []),
+    // the admin entry is role-aware: a link helper never sees it
     ...(meta?.role === 'admin' ? [{ id: 'admin', icon: 'shield', label: 'Verwaltung', href: '/login' } satisfies AppTile] : []),
   ];
 

@@ -28,10 +28,8 @@ test("the retired Snapshot PUT route does not require access or D1", async () =>
   assert.match(await response.text(), /legacy_snapshot_write_retired/u);
 });
 
-test("campaign client and synchronization source contain no legacy Snapshot PUT path", async () => {
+test("synchronization source contains no legacy Snapshot PUT path", async () => {
   const paths = [
-    "src/data/campaignApi.ts",
-    "src/data/campaignStore.ts",
     "worker/campaignRepository.ts",
     "worker/index.ts",
     "worker/indexM55.ts",

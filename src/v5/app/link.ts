@@ -30,9 +30,9 @@ export async function redeemLink(campaignId: string, intent: LinkIntent, fetchIm
   return response.status >= 500 || response.status === 429 ? 'offline' : 'invalid';
 }
 
-/** Where a link to the old map address goes now: `/?campaign=X[&collection=1]#…` → `/v5?campaign=X[&kind=collection]#…`. `legacy=1` keeps the old app reachable meanwhile. */
+/** Where a link to the old map address goes: `/?campaign=X[&collection=1]#…` → `/v5?campaign=X[&kind=collection]#…`. */
 export function toFieldMap(url: URL): string | null {
-  if (url.pathname !== '/' || url.searchParams.get('legacy') === '1') return null;
+  if (url.pathname !== '/') return null;
   const campaign = url.searchParams.get('campaign');
   if (!campaign || !/^[A-Za-z0-9._:-]{1,160}$/.test(campaign)) return null;
   const next = new URLSearchParams({ campaign });

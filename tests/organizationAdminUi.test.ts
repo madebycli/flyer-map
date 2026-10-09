@@ -11,7 +11,6 @@ const pickerSource = read("src/organization/AdminMapPicker.tsx");
 const kitCss = read("src/ui/kit.css");
 const orgMain = read("src/organization/main.tsx");
 const mainSource = read("src/main.tsx");
-const legacySource = read("src/legacyMain.tsx");
 
 test("one admin navigation exposes campaigns, invitations and the security center on every page", () => {
   assert.match(sharedSource, /label: "Einladungen"[\s\S]*?href: "\/admin\/invites"/u);
@@ -65,13 +64,13 @@ test("the focus picker uses the deployment's basemap, never a hard-coded tile se
   assert.doesNotMatch(pickerSource, /openstreetmap\.org|tile\.openstreetmap/u);
 });
 
-test("bare field root redirects to central login instead of mounting or creating a Campaign", () => {
-  assert.match(legacySource, /else if \(!campaignIdFromUrl\(\)\) \{/u);
-  assert.match(legacySource, /window\.location\.replace\(preserveDiagnosticFlag\("\/login", window\.location\.search\)\)/u);
+test("the bare root goes to the sign-in page, a campaign address goes to the field map", () => {
+  assert.match(mainSource, /toFieldMap\(new URL\(window\.location\.href\)\)/u);
+  assert.match(mainSource, /window\.location\.replace\(`\/login\$\{diagnostic\}`\)/u);
   assert.match(appSource, /Feldkarte öffnen/u);
 });
 
-test("the entry splits organiser pages from the legacy map into separate chunks", () => {
+test("the entry loads the organiser pages as their own chunk", () => {
   assert.match(mainSource, /import\("\.\/organization\/main\.tsx"\)/u);
-  assert.match(mainSource, /import\("\.\/legacyMain\.tsx"\)/u);
+  assert.doesNotMatch(mainSource, /legacyMain|PlatformShell|MapView/u);
 });

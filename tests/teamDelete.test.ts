@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CampaignSnapshot } from "../src/domain/campaign.ts";
-import { deriveCampaignMutation, MutationDerivationError } from "../src/domain/mutationDiff.ts";
 import { applyCampaignMutation, CampaignMutationConflictError, type CampaignMutation } from "../src/domain/mutations.ts";
 import { validateCampaignMutation } from "../worker/mutationValidation.ts";
 import { teamDeleteBlocker } from "../worker/mutationRepository.ts";
@@ -25,20 +24,6 @@ function snapshot(withArea = false): CampaignSnapshot {
 function mutation(expectedUpdatedAt = stamp): CampaignMutation {
   return { id: "mutation_team_delete", campaignId, type: "team.delete", payload: { teamId: "team_empty", expectedUpdatedAt }, baseRevision: 4, createdAt: "2026-09-02T10:01:00.000Z" };
 }
-
-test("derives team.delete only for one otherwise isolated Team removal", () => {
-  const previous = snapshot();
-  const next = { ...previous, revision: 5, campaign: { ...previous.campaign, updatedAt: "2026-09-02T10:01:00.000Z" }, teams: [] };
-  const derived = deriveCampaignMutation(previous, next);
-  assert.equal(derived?.type, "team.delete");
-  assert.deepEqual(derived && "payload" in derived ? derived.payload : null, { teamId: "team_empty", expectedUpdatedAt: stamp });
-});
-
-test("does not derive a pseudo-cascade when a Team and its Area disappear together", () => {
-  const previous = snapshot(true);
-  const next = { ...previous, revision: 5, campaign: { ...previous.campaign, updatedAt: "2026-09-02T10:01:00.000Z" }, teams: [], areas: [] };
-  assert.throws(() => deriveCampaignMutation(previous, next), MutationDerivationError);
-});
 
 test("applies an empty Team delete without cascading unrelated entities", () => {
   const current = snapshot();

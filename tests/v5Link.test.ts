@@ -28,11 +28,10 @@ test('redeeming posts the token to the right endpoint and tells apart refused, u
   assert.equal(await redeemLink('c1', { kind: 'access', token: T32 }, (async () => { throw new TypeError('network'); }) as unknown as typeof fetch), 'offline');
 });
 
-test('old map links open the field map and keep their token; the legacy escape hatch stays', () => {
+test('old map links open the field map and keep their token', () => {
   assert.equal(toFieldMap(new URL(`https://x.test/?campaign=c1#access=${T32}`)), `/v5?campaign=c1#access=${T32}`);
   assert.equal(toFieldMap(new URL(`https://x.test/?campaign=c1&collection=1#collection=${T64}`)), `/v5?campaign=c1&kind=collection#collection=${T64}`);
   assert.equal(toFieldMap(new URL(`https://x.test/?campaign=c1#collection=${T64}`)), `/v5?campaign=c1&kind=collection#collection=${T64}`, 'the token alone marks a helper link');
-  assert.equal(toFieldMap(new URL('https://x.test/?campaign=c1&legacy=1')), null);
   assert.equal(toFieldMap(new URL('https://x.test/?workbench=ui')), null, 'no campaign, nothing to open');
   assert.equal(toFieldMap(new URL('https://x.test/admin?campaign=c1')), null, 'only the map address is redirected');
   assert.equal(toFieldMap(new URL('https://x.test/?campaign=c1&evil=https://bad.test')), '/v5?campaign=c1', 'nothing but the campaign survives');
