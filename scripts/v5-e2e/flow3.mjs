@@ -107,6 +107,7 @@ const vertexScreen = async (i) => page.evaluate((index) => { const f = window.__
 const midScreen = async (edge) => page.evaluate((e) => { const f = window.__v5Map.querySourceFeatures('v5-draw').filter((x) => x.properties.kind === 'mid' && Number(x.properties.edge) === e)[0]; const c = window.__v5Map.project(f.geometry.coordinates); return [c.x, c.y]; }, edge);
 const dragScreen = async (from, to) => { await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(...to, { steps: 12 }); await page.mouse.up(); };
 
+await page.waitForFunction(() => window.__v5Map.querySourceFeatures('v5-draw').some((x) => x.properties.kind === 'vertex'), null, { timeout: 10000 });
 const v0 = await vertexScreen(0);
 await dragScreen(v0, [v0[0] - 30, v0[1] - 20]);
 await page.waitForTimeout(400);
@@ -123,7 +124,7 @@ await page.waitForTimeout(500);
 const saveBtn = page.getByRole('button', { name: 'Gebiet speichern' });
 const blocked = await saveBtn.isDisabled();
 check('a self-crossing outline cannot be saved and says why', blocked && /kreuzen|Fläche/.test(await page.locator('.v5-markinfo').innerText()), blocked ? '' : 'save was enabled');
-await page.getByRole('button', { name: 'Rückgängig' }).click();
+await page.locator('.v5-markbar').getByRole('button', { name: 'Rückgängig' }).click();
 await page.waitForTimeout(400);
 check('undo restores a valid outline', await saveBtn.isEnabled());
 

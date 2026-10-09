@@ -53,7 +53,7 @@ await page.getByRole('button', { name: 'Schließen' }).click();
 
 // Suche
 await page.getByRole('button', { name: 'Straße oder Adresse suchen' }).first().click();
-await page.getByLabel('Straße oder Adresse suchen').fill('querstr 1');
+await page.locator('.v5-sheet').getByLabel('Straße oder Adresse suchen').fill('querstr 1');
 await page.waitForSelector('.v5-result');
 check('search finds streets and addresses ("Str." spelling)', (await page.locator('.v5-result').count()) >= 2 && /Querstraße 1/.test(await page.locator('.v5-result').first().innerText()));
 await page.locator('.v5-result').first().click();
