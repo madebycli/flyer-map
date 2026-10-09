@@ -9,6 +9,7 @@ const PRUNE_CONFIRM_SHARE = 0.6;
 const KEYS_PER_STATEMENT = 1000; // one JSON parameter per statement, ~30 bytes per key
 const KEY = /^[sh]:[A-Za-z0-9#:._~@-]{1,80}$/u;
 const ACTOR = 'Aufräumen';
+const MAX_COUNTER = 36 ** 4 - 1;
 
 /**
  * Clean-up never deletes a synced row: the other devices already hold its status and cursor, so a vanished row would stay on them
@@ -17,9 +18,12 @@ const ACTOR = 'Aufräumen';
  * it removes and lets any edit made afterwards win over it.
  */
 function tombstoneId(now: number, newest: string | null): string {
+  const node = `srv${crypto.randomUUID().slice(0, 6)}`;
   const prior = newest ? decodeClock(newest) : null;
-  if (!prior || prior.wall < now) return encodeClock({ wall: now, counter: 0, node: `srv${crypto.randomUUID().slice(0, 6)}` });
-  return encodeClock({ wall: prior.wall, counter: prior.counter + 1, node: `srv${crypto.randomUUID().slice(0, 6)}` });
+  if (!prior || prior.wall < now) return encodeClock({ wall: now, counter: 0, node });
+  // the counter is four base-36 digits: at its maximum the next id carries over into the wall time, so it stays valid and larger
+  if (prior.counter >= MAX_COUNTER) return encodeClock({ wall: prior.wall + 1, counter: 0, node });
+  return encodeClock({ wall: prior.wall, counter: prior.counter + 1, node });
 }
 
 /** True while no Gebiet with this id exists, in the same statement that writes. A check made before the batch could be overtaken by a re-created Gebiet. */
@@ -69,11 +73,11 @@ export async function pruneState(db: D1DatabaseLike, access: AccessContext, camp
   if (!isRecord(body)) return fail(400, 'invalid_json', 'JSON-Objekt erwartet.');
   if (!Array.isArray(body.keys) || body.keys.length === 0 || body.keys.length > MAX_PRUNE || !body.keys.every((k) => typeof k === 'string' && KEY.test(k))) return fail(400, 'invalid_keys', `1 bis ${MAX_PRUNE} gültige Schlüssel erwartet.`);
   const keys = [...new Set(body.keys as string[])];
-  const chunks: string[][] = [];
-  for (let i = 0; i < keys.length; i += KEYS_PER_STATEMENT) chunks.push(keys.slice(i, i + KEYS_PER_STATEMENT));
+  const requested: string[][] = [];
+  for (let i = 0; i < keys.length; i += KEYS_PER_STATEMENT) requested.push(keys.slice(i, i + KEYS_PER_STATEMENT));
   // Only rows that really belong to this Area, and still carry a status, are candidates; the reply names the ones really cleared.
   const found: { key: string; op_id: string }[] = [];
-  for (const chunk of chunks) {
+  for (const chunk of requested) {
     found.push(...(await db.prepare("SELECT key, op_id FROM v5_state WHERE campaign_id = ? AND area_id = ? AND status <> 'open' AND key IN (SELECT value FROM json_each(?))").bind(campaignId, areaId, JSON.stringify(chunk)).all<{ key: string; op_id: string }>()).results);
   }
   // A clean-up that would wipe most of an Area is almost never intended (a partial map download, a wrong outline): it needs an explicit confirmation.
@@ -85,18 +89,21 @@ export async function pruneState(db: D1DatabaseLike, access: AccessContext, camp
   const newest = found.reduce((max, row) => (row.op_id > max ? row.op_id : max), '');
   const id = tombstoneId(now, newest);
   const statements: D1PreparedStatement[] = [];
-  for (const chunk of chunks) {
-    // `op_id <= newest` keeps an edit that arrived after the lookup above: it is newer than the tombstone would be.
+  const pairChunks: { k: string; o: string }[][] = [];
+  for (let i = 0; i < found.length; i += KEYS_PER_STATEMENT) pairChunks.push(found.slice(i, i + KEYS_PER_STATEMENT).map((row) => ({ k: row.key, o: row.op_id })));
+  for (const pairs of pairChunks) {
+    // Each row is cleared only while it still carries the exact op_id that was looked up: an edit that arrived since (even one that
+    // sorts below the newest id of the whole list) is a newer truth and stays.
     statements.push(...tombstoneStatements(db, 'v5_state', campaignId, {
-      where: "campaign_id = ? AND area_id = ? AND status <> 'open' AND op_id <= ? AND key IN (SELECT value FROM json_each(?))",
-      params: [campaignId, areaId, newest, JSON.stringify(chunk)],
+      where: "campaign_id = ? AND area_id = ? AND status <> 'open' AND (key, op_id) IN (SELECT json_extract(value, '$.k'), json_extract(value, '$.o') FROM json_each(?))",
+      params: [campaignId, areaId, JSON.stringify(pairs)],
     }, id, access.grantId));
   }
-  // the first INSERT OR IGNORE per chunk is idempotent; one batch keeps allocation and update atomic
+  // one batch keeps sequence allocation and update atomic
   await db.batch(statements);
   const cleared: string[] = [];
-  for (const chunk of chunks) {
-    cleared.push(...(await db.prepare('SELECT key FROM v5_state WHERE campaign_id = ? AND area_id = ? AND op_id = ? AND key IN (SELECT value FROM json_each(?))').bind(campaignId, areaId, id, JSON.stringify(chunk)).all<{ key: string }>()).results.map((r) => r.key));
+  for (const pairs of pairChunks) {
+    cleared.push(...(await db.prepare('SELECT key FROM v5_state WHERE campaign_id = ? AND area_id = ? AND op_id = ? AND key IN (SELECT json_extract(value, \'$.k\') FROM json_each(?))').bind(campaignId, areaId, id, JSON.stringify(pairs)).all<{ key: string }>()).results.map((r) => r.key));
   }
   return json({ removed: cleared.length, keys: cleared });
 }

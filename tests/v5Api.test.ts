@@ -398,7 +398,22 @@ test('a clean-up reaches a device that already pulled the status (tombstone, not
   assert.equal(last.ops.find((o) => o.key === 'h:a')?.status, 'completed');
 });
 
-test('a clean-up keeps an edit that arrived after the keys were looked up, and never reuses a sequence number', async () => {
+test('a clean-up keeps an edit that arrived after the keys were looked up, even one older than another key of the list', async () => {
+  const { call, db } = await setup();
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([stamp(NOW - 5000), 'h:low', 'completed'], [stamp(NOW - 1000), 'h:high', 'completed']));
+  const original = db.batch.bind(db);
+  // between the lookup and the batch a newer edit of h:low arrives; its id still sorts below h:high
+  db.batch = (async (statements: Parameters<typeof original>[0]) => {
+    db.sqlite.prepare("UPDATE v5_state SET op_id = ?, status = 'later' WHERE key = 'h:low'").run(stamp(NOW - 3000));
+    return original(statements);
+  }) as typeof db.batch;
+  const done = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/prune`, { keys: ['h:low', 'h:high'] })).json() as { removed: number; keys: string[] };
+  assert.deepEqual(done.keys, ['h:high'], 'only the row that was still as looked up is cleared');
+  const rows = db.sqlite.prepare('SELECT key, status FROM v5_state ORDER BY key').all() as { key: string; status: string }[];
+  assert.deepEqual(rows.map((r) => [r.key, r.status]), [['h:high', 'open'], ['h:low', 'later']]);
+});
+
+test('a clean-up never reuses a sequence number', async () => {
   const { call, db } = await setup();
   await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops(...Array.from({ length: 12 }, (_, i): [string, string, string] => [stamp(NOW - 9000, i), `h:k${i}`, 'completed'])));
   await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/prune`, { keys: Array.from({ length: 12 }, (_, i) => `h:k${i}`) });
@@ -406,6 +421,18 @@ test('a clean-up keeps an edit that arrived after the keys were looked up, and n
   assert.equal(new Set(seqs).size, seqs.length, 'every row has its own sequence number, so no pull page can skip one');
   const counter = (db.sqlite.prepare('SELECT seq FROM v5_counters').get() as { seq: number }).seq;
   assert.equal(Math.max(...seqs), counter);
+});
+
+test('a tombstone stays valid and larger when the clock counter of the cleared edit is at its maximum', async () => {
+  const { call } = await setup();
+  const maxed = stamp(NOW - 100, 36 ** 4 - 1);
+  assert.equal(((await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, ops([maxed, 'h:max', 'completed']))).json()) as { accepted: string[] }).accepted.length, 1);
+  const pruned = await (await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/prune`, { keys: ['h:max'] }, { now: () => NOW - 100 })).json() as { removed: number };
+  assert.equal(pruned.removed, 1);
+  const pull = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { ops: { id: string; status: string }[] };
+  assert.equal(pull.ops[0].status, 'open');
+  assert.ok(/^[0-9a-z]{11}-[0-9a-z]{4}-.+$/.test(pull.ops[0].id), 'a well-formed clock id');
+  assert.ok(pull.ops[0].id > maxed, 'sorts after the cleared edit');
 });
 
 test('forgetting a Gebiet clears its notes for other devices as well', async () => {
