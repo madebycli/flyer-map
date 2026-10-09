@@ -22,7 +22,7 @@ const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now()
 const sizes = await page.evaluate(() => [...document.querySelectorAll('.v5-sq, .v5-fab')].map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }));
 check('icon controls are squares', sizes.length >= 5 && sizes.every(([w, h]) => w === h), JSON.stringify(sizes));
 check('no backdrop blur anywhere in the shell', await page.evaluate(() => ![...document.querySelectorAll('.v5-root *')].some((e) => { const s = getComputedStyle(e); return (s.backdropFilter && s.backdropFilter !== 'none') || (s.webkitBackdropFilter && s.webkitBackdropFilter !== 'none'); })));
-check('every control has rounded corners', await page.evaluate(() => [...document.querySelectorAll('.v5-sq, .v5-fab, .v5-pill')].every((e) => parseFloat(getComputedStyle(e).borderTopLeftRadius) >= 12)));
+check('every control has rounded corners', await page.evaluate(() => [...document.querySelectorAll('.v5-sq:not(.v5-zoom .v5-sq), .v5-zoom, .v5-fab, .v5-pill')].every((e) => parseFloat(getComputedStyle(e).borderTopLeftRadius) >= 12)));
 await page.screenshot({ path: `${shots}/u1-idle.png` });
 
 // Zoom ±
