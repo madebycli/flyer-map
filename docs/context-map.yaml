@@ -1,20 +1,5 @@
-version: 28
-last_updated: 2026-10-08
-
-current_pr92_state:
-  repository: madebycli/flyer-map
-  branch: fix/street-engine-smart-marking
-  pull_request: { number: 92, state: open, draft: true, merged: false, base: integration/main-street-runtime }
-  verified_runtime_head: 4c2d01e2a0a873c9c233e525e50f20148c648bda
-  dependencies: { maplibre_gl: 5.7.1, unitbezier: 0.0.1 }
-  normal_ci: { run: 34761931839, job: 103736181142, conclusion: success }
-  deployment: no deployment of current quality or Smart Marking fixes
-  test_summary: exact-head Test, Typecheck, Dependency audit with existing MapLibre exception, Production build success
-  current_plan: docs/plans/active/035-street-engine-masterplan.md
-  current_handoff: docs/status/STREET_ENGINE_MASTERPLAN_HANDOFF.md
-  device_gate: MAP_RENDER_P0=OPEN; STREET_ENGINE_LIVE_READY=FALSE
-  d1_gate: prepared Area-delete read path locally verified fixed; D1_STATUS=OPEN only for link edge rereads; billing attribution false
-  safety: no merge, Production deploy/change, remote-D1 operations or secret rotation
+version: 29
+last_updated: 2026-10-09
 
 entrypoints:
   always:
@@ -23,850 +8,408 @@ entrypoints:
     - docs/context-map.yaml
 
 routing_rules:
-  - load entrypoints first
-  - select nodes whose topics/load_when match the task
-  - follow depends_on/constrained_by/implements/governed_by edges as needed
-  - prefer accepted/current/active nodes over proposed or historical nodes
-  - load proposed architecture only for the corresponding future capability
-  - inspect accepted ADRs before changing an architectural or security boundary
-  - inspect current open PRs, exact heads and CI before starting or replacing a slice
-  - treat prepared D1 migrations as unapplied until deployment/status docs explicitly record remote application
-  - for Organizer/Admin Platform, Organization accounts, MFA, invites, role templates, campaign tenancy or Admin staging, load context-organizer-admin, plan-030-organizer-admin-platform, adr-organization-admin-identity and prompt-organizer-admin-latest after the entrypoints
-  - for a fresh Plan-017 planner chat, load prompt-latest-feature-complete after the entrypoints, then follow its graph edges
-  - for completed House polygon renderer history or its open device gates, load prompt-house-polygon-renderer and plan-house-polygon-renderer, then follow Map, Smart Task identity, Collaboration and Quality edges
-  - for Smart Street runtime planning or continuation, load plan-smart-street-runtime, then follow Offline Map, Map, UX, Offline Sync, Smart Task identity and Quality edges
-  - for Smart House runtime or preview schema-gate hardening, load plan-smart-house-runtime, then follow Smart Street runtime, House persistence, House renderer, Offline Map, Map, UX, Data, Offline Sync, Security, Smart Task identity and Quality edges
-  - for OpenFreeMap basemap, standard house numbers, Smart Map online-first or related Area-Sheet hardening, load plan-openfreemap-smartdata-ui-hardening, then follow Map, Offline Map, Smart Street runtime, Smart House runtime, UX, Collaboration and Quality edges
-  - for automatic server-side Area preparation, recovery status/retry, generated Street/House Tasks or migration 0014, load plan-auto-area-task-preparation, then follow Data, Offline Sync, Map, Security, Quality, Offline Map, Smart Task identity and ADR-0021 edges
-  - for the normal automatic Area Sheet, Preparation polling/retry, completed task color or removal of browser Smart/offline-download UI, load plan-auto-area-ui-server-preparation after plan-auto-area-task-preparation, then follow UX, Map, Offline Sync, Quality and ADR-0021 edges
-  - for the 2026-09-02 mission branch, manual Street creation, dormant automatic preparation, campaign-local Admin passwords, password reset or migrations 0015/0016, load ADR-0023 before proposed Organization identity documents
-  - for post-mission automatic Street editing, load plan-smart-street-edit-after-mission and ADR-0023, then follow Smart Street runtime, automatic Area preparation, Map, Offline Sync, Security and Quality edges
-  - for mission day-one sync recovery, Tour QR startup, Viewer team scope or terminal M5 queue records, load plan-mission-day-one-fixpack and follow Offline Sync, Security, Live Teams, UX and Quality edges
-  - for the RxDB-first mission sync, migration 0017, checkpoint feed, Durable-Object invalidation or M5-to-RxDB recovery import, load ADR-0024, ADR-0025 and plan-028, then follow Data, Offline Sync, Security, Stack and Quality edges
-  - for FC5 Collection/Pickup runtime, load plan-collection-pickup-persistence, then follow Roadmap, UX, Data, Offline Sync, Map, Security, Collaboration, Live Teams, Access/Session, Smart Task identity, Offline Map, Field Session Events and Quality edges
-  - FC5 uses the Master-selected First-Class Collection/Pickup direction; do not route implementation back to Collection-state-on-Distribution unless Plan 021 is explicitly superseded
-  - for FC5.1 prioritize Collection-only QR access, Main/Child Areas, Collection Runs, claims/join/leave/release and existing temporary-credential patterns before Pickup search or Road-Stats follow-up slices
-  - FC5.2 Pickup runtime is complete through visibility, search/composer, MapLibre rendering, comments, assignment, edit, soft archive, archive review and normal Admin/Collector product flows; route new runtime work to FC5.3 Road Sections, separated statistics, actor highlight/attribution and compensating revert while keeping real-device acceptance separate
-  - for the final M5 write contract, load plan-m5-remove-legacy-snapshot-writes and ADR-0022, then follow Data, Offline Sync, Security and Quality; Snapshot PUT is retired and Campaign POST is create-only
+  - load entrypoints first, then only nodes whose topics or load_when match the task
+  - the field map is v5 (src/v5, worker/v5, engine-rs); the legacy map is archived in docs/archive/legacy-map and is history, never a requirement
+  - for what was kept, rebuilt or dropped and why, load plan-051-full-rewrite and adr-0036-legacy-map-retired
+  - for organiser sign-in, admin, MFA, invites and campaign tenancy load context-organizer-admin and plan-030-organizer-admin-platform
+  - inspect accepted ADRs before changing an architectural or security boundary; superseded ones are marked in adr-0036
+  - treat prepared D1 migrations as unapplied until a deployment/status document records remote application
+  - production is never changed without explicit authorisation and a backup; branch previews share the production D1 (see docs/operations)
 
 nodes:
-  - id: plan-v4-large-area-staged-preparation
-    path: docs/plans/active/042-v4-large-area-staged-preparation.md
+  - id: plan-051-full-rewrite
+    path: docs/plans/active/051-full-rewrite.md
     type: plan
     status: active
-    topics: [streets, houses, preparation, scaling, beta, v4]
-    load_when: [Street Engine V4 large-area continuation, Gebiet 8]
-  - id: prompt-independent-streetengine-audit
-    path: docs/prompts/2026-09-13-independent-streetengine-audit.md
-    type: prompt
-    status: active
-    topics: [streets, independent-audit, testing, evidence]
-    load_when: [Independent StreetEngine testing]
-  - id: plan-smart-marking-waypoints
-    path: docs/plans/active/036-smart-marking-waypoints.md
-    type: plan
-    status: active
-    topics: [streets, waypoints, coverage, offline, conflicts, houses]
-    load_when: [Smart Marking continuation]
-  - id: street-engine-masterplan-handoff
-    path: docs/status/STREET_ENGINE_MASTERPLAN_HANDOFF.md
-    type: status
-    status: active
-    topics: [streets, preparation, quality, evidence]
-    load_when: [StreetEngine continuation]
-  - id: street-engine-masterplan-audit
-    path: docs/status/STREET_ENGINE_MASTERPLAN_AUDIT.md
-    type: status
-    status: active
-    topics: [streets, houses, preparation, quality, d1, scaling]
-    load_when: [StreetEngine masterplan, Buildings cursor zero]
-  - id: plan-street-engine-masterplan
-    path: docs/plans/active/035-street-engine-masterplan.md
-    type: plan
-    status: active
-    topics: [streets, houses, preparation, scaling, compute]
-    load_when: [StreetEngine continuation, 20000 Houses]
-  - id: adr-street-engine-compute
-    path: docs/decisions/ADR-0031-street-engine-compute-placement.md
-    type: decision
-    status: accepted
-    topics: [streets, compute, operator, server, architecture]
-    load_when: [StreetEngine compute placement]
-  - id: street-engine-d1-read-audit
-    path: docs/status/STREET_ENGINE_D1_AUDIT.md
-    type: status
-    status: active
-    topics: [streets, preparation, d1, reads, sync]
-    load_when: [StreetEngine failure, systemwide D1 read audit]
-  - id: plan-street-engine-d1-read-audit
-    path: docs/plans/active/034-street-engine-d1-read-audit.md
-    type: plan
-    status: active
-    topics: [streets, preparation, d1, reads, sync]
-    load_when: [StreetEngine failure, systemwide D1 read audit]
-  - id: adr-renderer-security-candidate
-    path: docs/decisions/ADR-0030-maplibre-security-candidate.md
-    topics: [map, security, dependencies]
-    type: decision
-    status: candidate
-    load_when: [MapLibre upgrade, security audit, renderer release acceptance]
-
-  - id: adr-street-base-budget
-    path: docs/decisions/ADR-0029-street-base-chunks-and-budget.md
-    type: decision
-    status: accepted
-    topics: [streets, houses, d1, budget, chunks]
-    load_when: [Street D1 budget, prepared base storage]
-  - id: street-d1-budget
-    path: docs/architecture/STREET_D1_BUDGET.md
-    type: architecture
-    status: active
-    topics: [d1, budget, performance]
-    load_when: [D1 usage, Street budget regression]
-  - id: street-house-network-recovery
-    path: docs/plans/active/032-street-house-network-recovery.md
-    type: plan
-    status: active
-    topics: [streets, houses, coverage, graph, preparation, rxdb]
-    load_when: [Street House Network Recovery, Smart A/B, House propagation]
-  - id: adr-street-house-network
-    path: docs/decisions/ADR-0027-street-house-network.md
-    type: decision
-    status: accepted
-    topics: [streets, houses, coverage, graph, preparation]
-    load_when: [canonical street network, preparation job, network mutation]
-  - id: product
-    path: docs/product/PRODUCT.md
-    type: product
-    status: accepted
-    topics: [product, requirements, users, concepts]
-    load_when: [product behavior, domain vocabulary, user goals]
-
-  - id: roadmap
-    path: docs/product/ROADMAP.md
-    type: product
-    status: accepted
-    topics: [roadmap, feature-complete, offline-map, streets, houses, automatic-area-preparation, pickup, collection, collection-areas, collection-runs, collector-access, field-sessions, live-teams, statistics, organizations, admin, permissions, accounts, support, comments, automations]
-    load_when: [new feature planning, milestone planning, long-term scope, collection, collection access, collection areas, collection runs, live teams, statistics, admin accounts]
-
-  - id: mvp
-    path: docs/product/MVP.md
-    type: product
-    status: accepted
-    topics: [mvp, release, field-readiness]
-    load_when: [release scope, MVP acceptance, field testing]
-
-  - id: ux
-    path: docs/product/UX.md
-    type: product
-    status: accepted
-    topics: [ui, ux, mobile, desktop, accessibility, launcher, bottom-bar, progress, team-colors, admin, support, comments, activity, statistics, field-sessions, houses]
-    load_when: [UI change, map interaction, mobile behavior, desktop admin UX, launcher, progress UI, House interaction, Collection sheets, address search]
-
-  - id: architecture
-    path: ARCHITECTURE.md
-    type: architecture
-    status: current
-    topics: [architecture, system, backend, frontend, boundaries]
-    load_when: [cross-cutting architecture, system overview]
-
-  - id: stack
-    path: docs/architecture/STACK.md
+    topics: [rewrite, design-system, parity, legacy-removal]
+    load_when: [any structural change, what exists, what was dropped, what is open]
+  - id: v5-readme
+    path: docs/v5/README.md
     type: architecture
     status: accepted
-    topics: [dependencies, cloudflare, react, vite, maplibre]
-    load_when: [dependency change, runtime version, build tooling]
-
-  - id: map
-    path: docs/architecture/MAP.md
-    type: architecture
-    status: accepted
-    topics: [map, maplibre, openfreemap, bright, liberty, housenumber, geojson, renderer, osm, offline-map, streets, houses, automatic-area-preparation, gps-follow]
-    load_when: [map rendering, geometry interaction, performance, road/building data, automatic Area tasks, session map highlighting, House polygon renderer, Collection areas, Collection roads, Pickup markers]
-
-  - id: data
-    path: docs/architecture/DATA.md
-    type: architecture
-    status: accepted
-    topics: [database, d1, schema, campaigns, teams, areas, tasks, automatic-area-preparation, preparation-generation, comments, domain-events, activity, automations, statistics, revisions, migrations]
-    load_when: [domain model, D1 migration, persistence, automatic Area preparation, preparation state, field sessions, comments, accounts, team lifecycle, Collection persistence]
-
-  - id: offline-sync
-    path: docs/architecture/OFFLINE_SYNC.md
-    type: architecture
-    status: accepted
-    topics: [offline, synchronization, indexeddb, mutations, idempotency, conflicts, automatic-area-preparation]
-    load_when: [M5, sync, retries, conflicts, offline behavior, automatic Area preparation, live collaboration conflicts, Collection mutation retry]
-
-  - id: security
-    path: docs/architecture/SECURITY.md
-    type: architecture
-    status: accepted
-    topics: [auth, authorization, privacy, tokens, sessions, roles, gps, injection, live-join, automatic-area-preparation]
-    load_when: [access, protected API, automatic Area preparation, preparation recovery, privacy, QR codes, live teams, credentials, Collection QR access, geocoder proxy]
-
-  - id: live-teams
-    path: docs/architecture/LIVE_TEAMS.md
-    type: architecture
-    status: accepted
-    topics: [live-teams, field-groups, room-code, qr, temporary-membership, discoverability, multi-device, rate-limit]
-    load_when: [Field Groups, Team Hub, Room Code, QR join, member roster, temporary group access, discoverability, temporary Collector credential reuse]
-
-  - id: collaboration
-    path: docs/architecture/COLLABORATION.md
-    type: architecture
-    status: active
-    topics: [field-sessions, domain-events, comments, activity, automations, statistics, reporting, retention, session-map-highlight]
-    load_when: [Field Session, event persistence, comments, activity feed, automations, statistics, session history, House session highlight, Collection actor attribution, Pickup comments]
-
-  - id: organizations
-    path: docs/architecture/ORGANIZATIONS.md
-    type: architecture
-    status: proposed
-    topics: [organizations, multi-tenant, admins, admin-panel, membership, team-archive, team-delete]
-    load_when: [organization model, admin panel, multiple administrators, tenant security, Team archive/delete]
-
-  - id: identity-permissions
-    path: docs/architecture/IDENTITY_PERMISSIONS.md
-    type: architecture
-    status: proposed
-    topics: [identity, accounts, username, password, totp, permissions, capabilities, roles, admin-transfer]
-    load_when: [admin login, accounts, TOTP, permission settings, capability model, admin transfer]
-
-  - id: identity-threat-model
-    path: docs/architecture/IDENTITY_THREAT_MODEL.md
-    type: architecture
-    status: proposed
-    topics: [threat-model, password, totp, sessions, csrf, xss, tenant-isolation, recovery]
-    load_when: [account threat model, admin login security, TOTP security, tenant isolation]
-
-  - id: context-organizer-admin
-    path: docs/context-organizer-admin.yaml
-    type: context-graph
-    status: current
-    topics: [organization, organizer, admin, identity, permissions, staging, handoff]
-    load_when: [Organizer Admin Platform, Organization account work, Admin staging, fresh Plan 030 session]
-
-  - id: quality
-    path: docs/quality/QUALITY.md
-    type: quality
-    status: accepted
-    topics: [tests, performance, accessibility, browsers, security-testing, dense-data]
-    load_when: [testing, performance acceptance, browser support, release gate, dense data, House renderer performance, Collection dense-mobile]
-
-  - id: deployment
-    path: docs/operations/DEPLOYMENT.md
-    type: operations
-    status: accepted
-    topics: [deploy, cloudflare, github, d1, migrations]
-    load_when: [deployment, migration, Worker config, Cloudflare]
-
-  - id: production
-    path: docs/operations/PRODUCTION.md
-    type: operations
-    status: current
-    topics: [production, health, deployment, field-test]
-    load_when: [production verification, live URL, smoke test]
-
-  - id: organizer-admin-staging
-    path: docs/operations/ORGANIZER_ADMIN_STAGING.md
-    type: operations
-    status: active
-    topics: [organizer, admin, staging, cloudflare, d1, durable-object, rate-limit, e2e]
-    load_when: [Admin staging, Organizer test link, isolated D1, browser E2E]
-
-  - id: decisions
-    path: docs/decisions/README.md
-    type: decisions
-    status: index
-    topics: [adr, architecture-decisions]
-    load_when: [architecture change, security decision, superseding a boundary]
-
-  - id: adr-offline-map-data
-    path: docs/decisions/ADR-0012-prepared-offline-map-data.md
-    type: decision
-    status: accepted
-    topics: [offline-map, osm, overpass, indexeddb]
-    load_when: [prepared offline map, OSM package, Smart Street source]
-
-  - id: adr-smart-task-identity
-    path: docs/decisions/ADR-0013-smart-street-house-identity.md
-    type: decision
-    status: accepted
-    topics: [smart-streets, houses, osm-identity, task-identity, provenance]
-    load_when: [Smart Street persistence, House persistence, OSM task identity, M6 schema, House renderer identity]
-
-  - id: adr-live-field-group-credentials
-    path: docs/decisions/ADR-0014-live-field-group-credentials.md
-    type: decision
-    status: accepted
-    topics: [field-groups, qr, room-code, temporary-credentials, discoverability, rate-limit]
-    load_when: [Field Group credential runtime, QR join, Room Code, temporary group access, member removal, Collection temporary access reuse]
-
-  - id: adr-admin-identity
-    path: docs/decisions/ADR-0015-organization-admin-identity-totp-sessions.md
-    type: decision
-    status: proposed
-    topics: [accounts, username, password, totp, recovery, sessions]
-    load_when: [Organization Admin accounts, password hashing, TOTP, account recovery]
-
-  - id: adr-organization-admin-identity
-    path: docs/decisions/ADR-0026-organization-admin-identity-and-authorization.md
-    type: decision
-    status: accepted
-    topics: [organization, account, membership, organizer, admin, password, totp, recovery, sessions, authorization, tenant-isolation]
-    load_when: [Organizer Admin identity, Organization authorization, MFA, recovery, sessions, tenant boundary, Plan 030]
-
-  - id: adr-mission-manual-distribution-admin-accounts
-    path: docs/decisions/ADR-0023-mission-manual-distribution-and-campaign-admin-accounts.md
-    type: decision
-    status: accepted
-    topics: [mission-release, manual-streets, area-validation, campaign-admin, username, password, password-reset, sessions, migration-0015, migration-0016]
-    load_when: [mission branch, manual Street, automatic preparation disabled, Campaign Admin password, setup link, password reset, login, migration 0015, migration 0016]
-
-  - id: adr-rxdb-local-first-mission-sync
-    path: docs/decisions/ADR-0024-rxdb-local-first-mission-sync.md
-    type: decision
-    status: accepted
-    topics: [mission-release, rxdb, indexeddb, dexie, sync, checkpoint, change-feed, migration-0017, oss]
-    load_when: [RxDB, local-first sync, change feed, migration 0017, multi-device sync, M5 legacy import]
-
-  - id: adr-rxdb-campaign-invalidation
-    path: docs/decisions/ADR-0025-rxdb-campaign-invalidation.md
-    type: decision
-    status: accepted
-    topics: [mission-release, rxdb, websocket, durable-object, hibernation, invalidation, checkpoint, safety-resync]
-    load_when: [RxDB realtime, Campaign WebSocket, Durable Object invalidation, missed signal, safety resync]
-
-  - id: adr-capability-roles
-    path: docs/decisions/ADR-0016-capability-role-templates.md
-    type: decision
-    status: proposed
-    topics: [permissions, capabilities, role-templates, delegation, tenant-isolation]
-    load_when: [permission implementation, role templates, capability checks, Admin delegation]
-
-  - id: adr-field-session-events
-    path: docs/decisions/ADR-0017-field-session-events-retention.md
-    type: decision
-    status: accepted
-    topics: [field-sessions, domain-events, retention, statistics, comments, activity, history]
-    load_when: [durable Field Sessions, event persistence, session map highlighting, retention, Collection event attribution]
-
-  - id: adr-action-templates-analytics
-    path: docs/decisions/ADR-0018-action-templates-cycles-analytics-export.md
-    type: decision
-    status: proposed
-    topics: [actions, templates, action-cycles, analytics, export]
-    load_when: [Action Template persistence, repeated Action comparison, Admin analytics export]
-
-  - id: adr-deterministic-automations
-    path: docs/decisions/ADR-0019-deterministic-automation-runtime.md
-    type: decision
-    status: accepted
-    topics: [automations, deterministic-effects, idempotency, domain-events, authorization]
-    load_when: [deterministic automation, automation runtime, automation configuration, automatic task effect]
-
-  - id: adr-collection-access-areas-runs
-    path: docs/decisions/ADR-0020-collection-access-areas-runs.md
-    type: decision
-    status: accepted
-    topics: [collection, collection-access, collection-areas, collection-runs, qr, security, m5, maplibre]
-    load_when: [Collection Access, Collection Areas, Collection Runs, Collection QR, FC5.1 runtime]
-
-  - id: adr-server-prepared-automatic-area-work
-    path: docs/decisions/ADR-0021-server-prepared-automatic-area-work.md
-    type: decision
-    status: accepted
-    topics: [automatic-area-preparation, generated-tasks, osm, preparation-generation, recovery, migration-0014]
-    load_when: [server Area preparation, automatic Street Tasks, automatic House Tasks, preparation recovery, migration 0014]
-
-  - id: adr-m5-no-legacy-snapshot-writes
-    path: docs/decisions/ADR-0022-no-legacy-snapshot-writes.md
-    type: decision
-    status: accepted
-    topics: [M5, snapshot, legacy-write, mutations, create-only, conflicts, queue, security]
-    load_when: [final M5 write contract, retired Snapshot PUT, create-only Campaign bootstrap, Snapshot conflict recovery]
-
-  - id: plan-m5-sync
-    path: docs/plans/completed/010-m5-resilient-mutation-sync.md
-    type: plan
-    status: completed
-    topics: [M5, mutation-queue, indexeddb, idempotency, conflicts]
-    load_when: [M5 history, durable mutation queue architecture]
-
-  - id: plan-m5-remove-legacy-snapshot-writes
-    path: docs/plans/completed/025-m5-remove-legacy-snapshot-writes.md
-    type: plan
-    status: completed
-    topics: [M5, snapshot, legacy-write, mutations, create-only, conflicts, queue]
-    load_when: [final M5 write contract, retired Snapshot PUT, create-only Campaign bootstrap, Snapshot conflict recovery]
-
-  - id: plan-offline-map
-    path: docs/plans/active/011-offline-map-area.md
-    type: plan
-    status: active
-    topics: [offline-map, indexeddb, osm, field-connectivity]
-    load_when: [prepared offline map, offline map storage]
-
-  - id: plan-platform-expansion
-    path: docs/plans/active/012-platform-app-expansion.md
-    type: plan
-    status: active
-    topics: [platform-expansion, statistics, field-sessions, live-teams, collection, admin, organizations, permissions]
-    load_when: [full platform scope, product expansion history]
-
-  - id: plan-action-templates-analytics
-    path: docs/plans/active/013-action-templates-admin-analytics.md
-    type: plan
-    status: active
-    topics: [actions, templates, repeated-rounds, analytics, export]
-    load_when: [Action Templates, repeated rounds, analytics export]
-
-  - id: plan-m6-house-persistence
-    path: docs/plans/completed/015-m6-house-persistence.md
-    type: plan
-    status: completed
-    topics: [houses, house-tasks, persistence, migration-0005]
-    load_when: [House persistence, house_tasks, parent Street]
-
-  - id: plan-app-launcher-sheet
-    path: docs/plans/completed/016-app-launcher-sheet.md
-    type: plan
-    status: completed
-    topics: [app-launcher, menu, team-context, field-chrome]
-    load_when: [launcher, bottom bar, Team dropdown removal]
-
-  - id: plan-feature-complete-platform
-    path: docs/plans/active/017-feature-complete-platform.md
-    type: plan
-    status: active
-    topics: [feature-complete, team-hub, live-groups, field-sessions, comments, activity, automations, statistics, smart-streets, houses, house-polygon, collection, admin, permissions, actions, support, hardening]
-    load_when: [next feature implementation, Team Hub, Live Field Groups, FC2, FC4, FC5, platform completion]
-
-  - id: plan-house-polygon-renderer
-    path: docs/plans/completed/018-house-polygon-renderer.md
-    type: plan
-    status: completed
-    topics: [houses, house-polygon, maplibre, geojson, renderer, selection, session-highlight, performance]
-    load_when: [House polygon renderer history, normal House rendering, House map selection, House session highlight, open House device gates]
-
-  - id: plan-smart-street-runtime
-    path: docs/plans/completed/019-smart-street-runtime.md
-    type: plan
-    status: completed
-    topics: [feature-complete, FC4, smart-streets, streets, offline-map, osm, maplibre, selection, persistence, retry, permissions]
-    load_when: [Smart Street runtime, normal Area street selection, FC4 continuation, prepared OSM candidates, Smart Street persistence]
-
-  - id: plan-smart-house-runtime
-    path: docs/plans/completed/020-smart-house-runtime.md
-    type: plan
-    status: completed
-    topics: [feature-complete, FC4, smart-houses, houses, offline-map, osm, maplibre, selection, house-batch, task-persistence, schema-gates, preview-hardening]
-    load_when: [Smart House runtime, normal House candidate selection, FC4 continuation, prepared OSM buildings, House batch persistence, preview schema gates]
-
-  - id: plan-openfreemap-smartdata-ui-hardening
-    path: docs/plans/completed/022-openfreemap-smartdata-ui-hardening.md
-    type: plan
-    status: completed
-    topics: [openfreemap, bright, liberty, basemap, housenumber, style-load, smart-map, online-first, offline-optional, roads, buildings, gps-follow, comments, retry, mobile-area-sheet]
-    load_when: [OpenFreeMap basemap, house number labels, Smart Street online data, Smart House online data, optional offline map, Comment retry UI, mobile Area sheet]
-
-  - id: plan-auto-area-task-preparation
-    path: docs/plans/completed/023-auto-area-task-preparation.md
-    type: plan
-    status: completed
-    topics: [automatic-area-preparation, generated-tasks, areas, streets, houses, osm, clipping, preparation-generation, recovery, migration-0014, m5]
-    load_when: [automatic Area preparation, generated Street Tasks, generated House Tasks, preparation status, recovery retry, migration 0014]
-
-  - id: plan-auto-area-ui-server-preparation
-    path: docs/plans/completed/024-auto-area-ui-server-preparation.md
-    type: plan
-    status: completed
-    topics: [automatic-area-preparation, area-sheet, preparation-status, polling, retry, completed-color, offline-map, smart-ui-removal, m5]
-    load_when: [normal automatic Area Sheet, preparation polling, preparation retry, completed task color, browser Smart UI removal, offline download UI removal]
-
-  - id: plan-smart-street-edit-after-mission
-    path: docs/plans/active/026-smart-street-edit-after-mission.md
-    type: plan
-    status: proposed
-    topics: [mission-release, post-mission, automatic-area-preparation, smart-streets, street-edit, two-point-selection, maplibre, m5, override]
-    load_when: [post-mission automatic Street edit, Smart Street edit button, highlighted route between two points, automatic Street correction]
-
-  - id: plan-mission-day-one-fixpack
-    path: docs/plans/active/027-mission-day-one-fixpack.md
-    type: plan
-    status: active
-    topics: [mission-release, m5, sync, conflict-recovery, field-groups, viewer, team-colors]
-    load_when: [mission Day-One fixpack, Street refresh, stale IndexedDB queue, Tour QR, Viewer Team leak]
-
-  - id: plan-028-rxdb-local-first-mission-sync
-    path: docs/plans/active/028-rxdb-local-first-mission-sync.md
-    type: plan
-    status: active
-    topics: [mission-release, rxdb, dexie, indexeddb, sync, checkpoint, change-feed, migration-0017, multi-device]
-    load_when: [RxDB mission sync, offline replication, checkpoint pull, entity conflict, 50 devices]
-
-  - id: plan-030-organizer-admin-platform
-    path: docs/plans/active/030-organizer-admin-platform.md
-    type: plan
-    status: active
-    topics: [organization, organizer, admin, identity, permissions, capabilities, campaigns, security, staging]
-    load_when: [Organizer Admin Platform, Plan 030, Organization account work, admin campaign console]
-
+    topics: [v5, engine, tiles, sync, notes, tools]
+    load_when: [field map behaviour or data model]
   - id: plan-043-v5-field-core
     path: docs/plans/active/043-v5-field-core.md
     type: plan
     status: active
-    topics: [v5, street-engine, derived-network, status-overlay, hlc, feature-state, map-performance, sync, migration-0026]
-    load_when: [v5 field core, derive not materialise, /v5 page, status overlay sync, replacing V4 preparation, Gebiet 8 scale]
-
-  - id: adr-0033-field-core-first-principles-rebuild
-    path: docs/decisions/ADR-0033-field-core-first-principles-rebuild.md
-    type: decision
-    status: accepted
-    topics: [v5, street-engine, performance, measurements, architecture]
-    load_when: [why v5, map update benchmarks, snapshot materialisation cost, road whitelist]
-
+    topics: [v5, sync, overlay]
+    load_when: [continuing 043-v5-field-core]
   - id: plan-045-v5-pickup-rooms-admin
     path: docs/plans/active/045-v5-pickup-rooms-admin.md
     type: plan
-    status: planned
-    topics: [v5, collection, pickup, abholaktion, rooms, claims, collector-access, identities, admin]
-    load_when: [Abholaktion in v5, Übernehmen Teilnehmen, rooms, collector link, Sonder-Marker, v5 admin surface]
-
+    status: active
+    topics: [collection, pickups, admin]
+    load_when: [continuing 045-v5-pickup-rooms-admin]
   - id: plan-046-v5-rust-tiles
     path: docs/plans/active/046-v5-rust-tiles.md
     type: plan
     status: active
-    topics: [v5, rust, wasm, vector-tiles, mvt, engine-rs, maplibre-protocol]
-    load_when: [Rust engine, WASM, vector tiles, v5t protocol, engine-rs build]
-
+    topics: [rust, wasm, tiles]
+    load_when: [continuing 046-v5-rust-tiles]
   - id: plan-047-v5-field-ui-v2
     path: docs/plans/active/047-v5-field-ui-v2.md
     type: plan
     status: active
-    topics: [v5, ui, design-system, marking-button, home-menu, overview, search, basemap-config, prune, template-mode]
-    load_when: [v5 UI, marking button, Nur Straßen mit Häusern, Home menu, Übersicht, Suche, basemap configuration, Gebiet bereinigen, template mode]
-
+    topics: [ui, design, fab, menu]
+    load_when: [continuing 047-v5-field-ui-v2]
+  - id: plan-030-organizer-admin-platform
+    path: docs/plans/active/030-organizer-admin-platform.md
+    type: plan
+    status: active
+    topics: [organization, auth, mfa, invites]
+    load_when: [continuing 030-organizer-admin-platform]
+  - id: adr-0001-pwa
+    path: docs/decisions/ADR-0001-pwa.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0002-cloudflare
+    path: docs/decisions/ADR-0002-cloudflare.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0003-map-stack
+    path: docs/decisions/ADR-0003-map-stack.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0004-osm-raster-basemap-fallback
+    path: docs/decisions/ADR-0004-osm-raster-basemap-fallback.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0005-versatiles-vector-basemap
+    path: docs/decisions/ADR-0005-versatiles-vector-basemap.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0006-website-only
+    path: docs/decisions/ADR-0006-website-only.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0007-carto-vector-basemap-with-fallback
+    path: docs/decisions/ADR-0007-carto-vector-basemap-with-fallback.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0008-carto-retina-raster-performance
+    path: docs/decisions/ADR-0008-carto-retina-raster-performance.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0009-access-links-and-revocable-sessions
+    path: docs/decisions/ADR-0009-access-links-and-revocable-sessions.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0010-maplibre-geojson-saved-geometry-svg-active-editing
+    path: docs/decisions/ADR-0010-maplibre-geojson-saved-geometry-svg-active-editing.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0011-durable-mutation-queue-and-idempotency
+    path: docs/decisions/ADR-0011-durable-mutation-queue-and-idempotency.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0012-prepared-offline-map-data
+    path: docs/decisions/ADR-0012-prepared-offline-map-data.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0013-smart-street-house-identity
+    path: docs/decisions/ADR-0013-smart-street-house-identity.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0014-live-field-group-credentials
+    path: docs/decisions/ADR-0014-live-field-group-credentials.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0015-organization-admin-identity-totp-sessions
+    path: docs/decisions/ADR-0015-organization-admin-identity-totp-sessions.md
+    type: decision
+    status: proposed
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0016-capability-role-templates
+    path: docs/decisions/ADR-0016-capability-role-templates.md
+    type: decision
+    status: proposed
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0017-field-session-events-retention
+    path: docs/decisions/ADR-0017-field-session-events-retention.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0018-action-templates-cycles-analytics-export
+    path: docs/decisions/ADR-0018-action-templates-cycles-analytics-export.md
+    type: decision
+    status: proposed
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0019-deterministic-automation-runtime
+    path: docs/decisions/ADR-0019-deterministic-automation-runtime.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0020-collection-access-areas-runs
+    path: docs/decisions/ADR-0020-collection-access-areas-runs.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0021-server-prepared-automatic-area-work
+    path: docs/decisions/ADR-0021-server-prepared-automatic-area-work.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0022-no-legacy-snapshot-writes
+    path: docs/decisions/ADR-0022-no-legacy-snapshot-writes.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0023-mission-manual-distribution-and-campaign-admin-accounts
+    path: docs/decisions/ADR-0023-mission-manual-distribution-and-campaign-admin-accounts.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0024-rxdb-local-first-mission-sync
+    path: docs/decisions/ADR-0024-rxdb-local-first-mission-sync.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0025-rxdb-campaign-invalidation
+    path: docs/decisions/ADR-0025-rxdb-campaign-invalidation.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0026-organization-admin-identity-and-authorization
+    path: docs/decisions/ADR-0026-organization-admin-identity-and-authorization.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0027-street-house-network
+    path: docs/decisions/ADR-0027-street-house-network.md
+    type: decision
+    status: accepted for implementation by the explicit recovery task
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0028-main-runtime-and-domain-aliases
+    path: docs/decisions/ADR-0028-main-runtime-and-domain-aliases.md
+    type: decision
+    status: accepted-for-main-candidate
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0029-street-base-chunks-and-budget
+    path: docs/decisions/ADR-0029-street-base-chunks-and-budget.md
+    type: decision
+    status: accepted design for the recovery candidate, implementation in progress
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0030-maplibre-security-candidate
+    path: docs/decisions/ADR-0030-maplibre-security-candidate.md
+    type: decision
+    status: accepted for the PR #92 WIP candidate, browser release acceptance open
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0031-street-engine-compute-placement
+    path: docs/decisions/ADR-0031-street-engine-compute-placement.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0032-street-engine-v3-precompiled-source-packs
+    path: docs/decisions/ADR-0032-street-engine-v3-precompiled-source-packs.md
+    type: decision
+    status: ACCEPTED
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0032-sync-coordinator-write-barrier
+    path: docs/decisions/ADR-0032-sync-coordinator-write-barrier.md
+    type: decision
+    status: accepted
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0033-field-core-first-principles-rebuild
+    path: docs/decisions/ADR-0033-field-core-first-principles-rebuild.md
+    type: decision
+    status: accepted-for-v5-branch
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
   - id: adr-0034-v5-notes-chunks-and-engine-language
     path: docs/decisions/ADR-0034-v5-notes-chunks-and-engine-language.md
     type: decision
-    status: accepted
-    topics: [v5, notes, comments, street-chunks, cache, rust, engine-language]
-    load_when: [v5 notes, street chunks, warm start cache, why not Rust, migration-0027]
-
-  - id: doc-v5-overview
-    path: docs/v5/README.md
-    type: architecture
-    status: current
-    topics: [v5, engine, store, worker-api, e2e]
-    load_when: [v5 layout, v5 endpoints, v5 e2e script, v5 verified and unverified]
-
-  - id: prompt-continue-rxdb-sync-latest
-    path: docs/prompts/CONTINUE_RXDB_SYNC_LATEST.md
-    type: handoff
-    status: current
-    topics: [rxdb, mission-release, handoff, ci, migration-0017]
-    load_when: [continue RxDB sync, latest RxDB handoff, exact feature head]
-
-  - id: prompt-organizer-admin-latest
-    path: docs/prompts/CONTINUE_ORGANIZER_ADMIN_LATEST.md
-    type: handoff
-    status: current
-    topics: [organization, organizer, admin, handoff, github, ci, staging, acceptance]
-    load_when: [fresh Organizer Admin chat, continue Plan 030, latest Organizer handoff]
-
-  - id: plan-collection-pickup-persistence
-    path: docs/plans/active/021-collection-pickup-persistence.md
-    type: plan
-    status: active
-    topics: [feature-complete, FC5, collection, pickup, persistence, collection-main-area, collection-areas, collection-runs, collector-access, qr, road-sections, osm-address-search, special-address, pickup-edit, pickup-archive, pickup-assignment, comments, actor-attribution, revert, m5, field-sessions, maplibre, statistics, security]
-    load_when: [Collection/Pickup planning, Pickup persistence, FC5, collection mode, pickup tasks, Collection QR, Collection Areas, Collection Runs, Collection Road Sections, special-address search, Pickup lifecycle, actor revert]
-
-  - id: house-renderer-runtime
-    path: src/map/houseRenderer.ts
-    type: code
-    status: current
-    topics: [houses, house-polygon, maplibre, geojson, renderer, selection, session-highlight]
-    load_when: [House renderer implementation, House GeoJSON contract, House renderer regression, House map selection]
-
-  - id: prompt-latest-feature-complete
-    path: docs/prompts/CONTINUE_FEATURE_COMPLETE_PLATFORM_LATEST.md
-    type: onboarding
-    status: current
-    topics: [handoff, planner, current-branch, current-pr, ci, migration-status, next-step, graph-context, house-renderer, smart-street-runtime, smart-house-runtime, automatic-area-preparation, collection, FC5, FC5.2-complete, FC5.3, collection-access, collection-runs, m5-final-write-contract, legacy-snapshot-write-retired]
-    load_when: [fresh AI session, planner chat, verify current Plan 017 state, continue current Plan 017 development, continue FC5]
-
-  - id: prompt-house-polygon-renderer
-    path: docs/prompts/CODEX_PLAN_HOUSE_POLYGON_RENDERER.md
-    type: onboarding
-    status: historical
-    topics: [codex, planner, house-polygon, renderer, maplibre, current-pr, working-tree]
-    load_when: [historical House renderer planning, verify completed Plan 018, open House device gates]
-
-  - id: smart-street-runtime
-    path: src/App.tsx
-    type: code
-    status: current
-    topics: [smart-streets, prepared-osm, maplibre, candidate-selection, route-ambiguity, task-persistence, m5-sync]
-    load_when: [Smart Street normal product flow, candidate map interaction, Street Task creation from OSM candidates]
-
-  - id: smart-house-runtime
-    path: src/App.tsx
-    type: code
-    status: current
-    topics: [smart-houses, prepared-osm, maplibre, candidate-selection, house-batch, task-persistence, m5-sync]
-    load_when: [Smart House normal product flow, building candidate map interaction, House Task creation from OSM candidates]
-
-  - id: smart-house-candidate-data
-    path: src/map/smartHouseCandidateData.ts
-    type: code
-    status: current
-    topics: [smart-houses, maplibre, geojson, dense-data, selection]
-    load_when: [Smart House candidate source, fixed candidate layers, House candidate performance]
-
-  - id: pickup-foundation
-    path: src/domain/pickup.ts
-    type: code
-    status: current
-    topics: [collection, pickup, status, address, edit, archive, assignment, comments, statistics]
-    load_when: [Pickup domain/runtime, Pickup status, Pickup lifecycle, Collection persistence planning, FC5.2 history, FC5.3]
-
-  - id: plan-main-runtime-parity
-    path: docs/plans/completed/033-main-runtime-parity-and-domain-aliases.md
-    type: plan
-    status: completed
-    topics: [main-runtime, organization, domain-aliases, shared-data, deployment]
-    load_when: [Main UI API parity, Organizer login on Main, multiple domains same Campaign]
-
-  - id: adr-main-runtime-domain-aliases
-    path: docs/decisions/ADR-0028-main-runtime-and-domain-aliases.md
+    status: accepted-for-v5-branch
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0035-worker-stays-typescript
+    path: docs/decisions/ADR-0035-worker-stays-typescript.md
     type: decision
+    status: accepted-for-v5-branch
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0036-legacy-map-retired
+    path: docs/decisions/ADR-0036-legacy-map-retired.md
+    type: decision
+    status: accepted-for-v5-branch
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
+  - id: architecture-data
+    path: docs/architecture/DATA.md
+    type: architecture
     status: accepted
-    topics: [worker-composition, same-origin, domain-aliases, shared-d1]
-    load_when: [Main Worker entry point, custom domains, domain identity, shared data plane]
-
-  - id: prompts
-    path: docs/prompts/NEW_AGENT.md
-    type: onboarding
-    status: current
-    topics: [agent, context, onboarding]
-    load_when: [generic fresh AI session]
-
-edges:
-  - { from: plan-v4-large-area-staged-preparation, to: plan-street-engine-masterplan, relation: continues }
-  - { from: plan-v4-large-area-staged-preparation, to: quality, relation: validated_by }
-  - { from: prompt-independent-streetengine-audit, to: plan-smart-marking-waypoints, relation: verifies }
-  - { from: prompt-independent-streetengine-audit, to: plan-street-engine-masterplan, relation: verifies }
-  - { from: street-engine-masterplan-handoff, to: prompt-independent-streetengine-audit, relation: delegates_verification }
-  - { from: plan-smart-marking-waypoints, to: plan-street-engine-masterplan, relation: extends }
-  - { from: street-engine-masterplan-handoff, to: plan-smart-marking-waypoints, relation: continues }
-  - { from: street-engine-masterplan-handoff, to: plan-street-engine-masterplan, relation: continues }
-  - { from: plan-street-engine-masterplan, to: street-engine-masterplan-audit, relation: grounded_by }
-  - { from: plan-street-engine-masterplan, to: adr-street-engine-compute, relation: governed_by }
-  - { from: adr-street-engine-compute, to: adr-street-base-budget, relation: preserves }
-  - { from: street-engine-masterplan-audit, to: street-engine-d1-read-audit, relation: narrows }
-  - { from: plan-street-engine-d1-read-audit, to: street-engine-d1-read-audit, relation: records_evidence }
-  - { from: plan-street-engine-d1-read-audit, to: adr-street-base-budget, relation: constrained_by }
-  - { from: plan-street-engine-d1-read-audit, to: adr-street-house-network, relation: constrained_by }
-  - { from: plan-street-engine-d1-read-audit, to: offline-sync, relation: investigates }
-  - { from: plan-street-engine-d1-read-audit, to: quality, relation: validated_by }
-  - { from: adr-renderer-security-candidate, to: map, relation: governs }
-  - { from: adr-renderer-security-candidate, to: security, relation: constrained_by }
-  - { from: adr-street-base-budget, to: adr-street-house-network, relation: supersedes_storage }
-  - { from: adr-street-base-budget, to: street-d1-budget, relation: supported_by }
-  - { from: street-house-network-recovery, to: adr-street-base-budget, relation: governed_by }
-  - { from: plan-main-runtime-parity, to: adr-main-runtime-domain-aliases, relation: governed_by }
-  - { from: plan-main-runtime-parity, to: security, relation: constrained_by }
-  - { from: plan-main-runtime-parity, to: deployment, relation: activates_through }
-  - { from: adr-main-runtime-domain-aliases, to: organizations, relation: composes_runtime }
-  - { from: adr-main-runtime-domain-aliases, to: data, relation: preserves_shared_identity }
-  - from: street-house-network-recovery
-    to: adr-street-house-network
-    relation: governed_by
-  - from: street-house-network-recovery
-    to: offline-sync
-    relation: constrained_by
-  - from: street-house-network-recovery
-    to: map
-    relation: constrained_by
-  - { from: product, to: roadmap, relation: expands_into }
-  - { from: ux, to: product, relation: implements_experience }
-  - { from: architecture, to: product, relation: implements }
-  - { from: stack, to: architecture, relation: constrains }
-  - { from: map, to: architecture, relation: component_of }
-  - { from: data, to: architecture, relation: component_of }
-  - { from: offline-sync, to: data, relation: depends_on }
-  - { from: security, to: data, relation: constrains }
-  - { from: live-teams, to: security, relation: constrained_by }
-  - { from: live-teams, to: offline-sync, relation: reuses }
-  - { from: live-teams, to: collaboration, relation: creates_field_sessions }
-  - { from: collaboration, to: security, relation: constrained_by }
-  - { from: collaboration, to: data, relation: persists_in }
-  - { from: collaboration, to: offline-sync, relation: reuses_idempotency }
-  - { from: organizations, to: security, relation: constrained_by }
-  - { from: organizations, to: identity-permissions, relation: uses }
-  - { from: identity-permissions, to: identity-threat-model, relation: validated_by }
-  - { from: context-organizer-admin, to: plan-030-organizer-admin-platform, relation: routes_to }
-  - { from: context-organizer-admin, to: prompt-organizer-admin-latest, relation: routes_to }
-  - { from: context-organizer-admin, to: adr-organization-admin-identity, relation: routes_to }
-  - { from: context-organizer-admin, to: organizer-admin-staging, relation: routes_to }
-  - { from: adr-offline-map-data, to: map, relation: governs }
-  - { from: adr-smart-task-identity, to: data, relation: governs }
-  - { from: adr-live-field-group-credentials, to: live-teams, relation: governs }
-  - { from: adr-field-session-events, to: collaboration, relation: governs }
-  - { from: adr-admin-identity, to: identity-permissions, relation: precedes_runtime }
-  - { from: adr-organization-admin-identity, to: organizations, relation: governs }
-  - { from: adr-organization-admin-identity, to: identity-permissions, relation: governs_identity_boundary }
-  - { from: adr-organization-admin-identity, to: identity-threat-model, relation: resolves_security_boundary }
-  - { from: adr-organization-admin-identity, to: security, relation: constrained_by }
-  - { from: adr-capability-roles, to: identity-permissions, relation: governs }
-  - { from: adr-action-templates-analytics, to: plan-action-templates-analytics, relation: governs }
-  - { from: collaboration, to: adr-deterministic-automations, relation: governed_by }
-  - { from: plan-m5-sync, to: offline-sync, relation: implemented }
-  - { from: plan-m5-remove-legacy-snapshot-writes, to: adr-m5-no-legacy-snapshot-writes, relation: records_decision }
-  - { from: plan-m5-remove-legacy-snapshot-writes, to: data, relation: updates_write_contract }
-  - { from: plan-m5-remove-legacy-snapshot-writes, to: offline-sync, relation: updates_conflict_recovery }
-  - { from: plan-m5-remove-legacy-snapshot-writes, to: quality, relation: validated_by }
-  - { from: adr-rxdb-local-first-mission-sync, to: offline-sync, relation: governs }
-  - { from: adr-rxdb-local-first-mission-sync, to: security, relation: constrains }
-  - { from: adr-rxdb-local-first-mission-sync, to: stack, relation: selects_dependency }
-  - { from: adr-rxdb-campaign-invalidation, to: adr-rxdb-local-first-mission-sync, relation: extends }
-  - { from: adr-rxdb-campaign-invalidation, to: offline-sync, relation: governs_realtime }
-  - { from: adr-rxdb-campaign-invalidation, to: security, relation: constrains }
-  - { from: adr-rxdb-campaign-invalidation, to: stack, relation: selects_runtime }
-  - { from: plan-028-rxdb-local-first-mission-sync, to: adr-rxdb-local-first-mission-sync, relation: records_decision }
-  - { from: plan-028-rxdb-local-first-mission-sync, to: data, relation: implements_change_feed }
-  - { from: plan-028-rxdb-local-first-mission-sync, to: offline-sync, relation: implements }
-  - { from: plan-028-rxdb-local-first-mission-sync, to: security, relation: constrained_by }
-  - { from: plan-028-rxdb-local-first-mission-sync, to: quality, relation: validated_by }
-  - { from: prompt-continue-rxdb-sync-latest, to: plan-028-rxdb-local-first-mission-sync, relation: hands_off }
-  - { from: prompt-continue-rxdb-sync-latest, to: adr-rxdb-local-first-mission-sync, relation: references }
-  - { from: plan-030-organizer-admin-platform, to: adr-organization-admin-identity, relation: governed_by }
-  - { from: plan-030-organizer-admin-platform, to: adr-capability-roles, relation: requires_role_contract }
-  - { from: plan-030-organizer-admin-platform, to: organizations, relation: implements }
-  - { from: plan-030-organizer-admin-platform, to: identity-permissions, relation: implements }
-  - { from: plan-030-organizer-admin-platform, to: identity-threat-model, relation: validated_by }
-  - { from: plan-030-organizer-admin-platform, to: data, relation: extends_additively }
-  - { from: plan-030-organizer-admin-platform, to: security, relation: constrained_by }
-  - { from: plan-030-organizer-admin-platform, to: plan-028-rxdb-local-first-mission-sync, relation: must_not_regress }
-  - { from: plan-030-organizer-admin-platform, to: organizer-admin-staging, relation: validated_in }
-  - { from: prompt-organizer-admin-latest, to: plan-030-organizer-admin-platform, relation: continues }
-  - { from: prompt-organizer-admin-latest, to: context-organizer-admin, relation: expands_context }
-  - { from: prompt-organizer-admin-latest, to: organizer-admin-staging, relation: records_environment_state }
-  - { from: organizer-admin-staging, to: deployment, relation: follows }
-  - { from: organizer-admin-staging, to: plan-028-rxdb-local-first-mission-sync, relation: isolates_from_existing_staging }
-  - { from: plan-m6-house-persistence, to: data, relation: implemented_foundation }
-  - { from: plan-app-launcher-sheet, to: ux, relation: implemented }
-  - { from: plan-feature-complete-platform, to: live-teams, relation: implements_current_slice }
-  - { from: plan-feature-complete-platform, to: collaboration, relation: implements_next_slices }
-  - { from: plan-house-polygon-renderer, to: plan-feature-complete-platform, relation: refines_current_slice }
-  - { from: plan-house-polygon-renderer, to: map, relation: implements }
-  - { from: plan-house-polygon-renderer, to: adr-smart-task-identity, relation: constrained_by }
-  - { from: plan-house-polygon-renderer, to: collaboration, relation: completes_house_session_highlight }
-  - { from: plan-house-polygon-renderer, to: quality, relation: validated_by }
-  - { from: plan-house-polygon-renderer, to: house-renderer-runtime, relation: implements }
-  - { from: house-renderer-runtime, to: map, relation: implements }
-  - { from: house-renderer-runtime, to: adr-smart-task-identity, relation: constrained_by }
-  - { from: house-renderer-runtime, to: collaboration, relation: integrates }
-  - { from: prompt-latest-feature-complete, to: plan-feature-complete-platform, relation: continues }
-  - { from: prompt-latest-feature-complete, to: plan-smart-house-runtime, relation: records_completed_slice }
-  - { from: prompt-latest-feature-complete, to: plan-auto-area-ui-server-preparation, relation: records_completed_slice }
-  - { from: prompt-latest-feature-complete, to: plan-collection-pickup-persistence, relation: continues_fc5 }
-  - { from: prompt-latest-feature-complete, to: plan-m5-remove-legacy-snapshot-writes, relation: records_completed_slice }
-  - { from: prompt-house-polygon-renderer, to: plan-house-polygon-renderer, relation: plans }
-  - { from: plan-smart-street-runtime, to: plan-feature-complete-platform, relation: implements_fc4_slice }
-  - { from: plan-smart-street-runtime, to: plan-offline-map, relation: reuses_prepared_data }
-  - { from: plan-smart-street-runtime, to: map, relation: implements }
-  - { from: plan-smart-street-runtime, to: ux, relation: implements_mobile_flow }
-  - { from: plan-smart-street-runtime, to: offline-sync, relation: reuses }
-  - { from: plan-smart-street-runtime, to: adr-offline-map-data, relation: constrained_by }
-  - { from: plan-smart-street-runtime, to: adr-smart-task-identity, relation: constrained_by }
-  - { from: plan-smart-street-runtime, to: quality, relation: validated_by }
-  - { from: plan-smart-street-runtime, to: smart-street-runtime, relation: implements }
-  - { from: smart-street-runtime, to: map, relation: integrates }
-  - { from: smart-street-runtime, to: adr-smart-task-identity, relation: constrained_by }
-  - { from: smart-street-runtime, to: offline-sync, relation: reuses }
-  - { from: plan-smart-house-runtime, to: plan-feature-complete-platform, relation: implements_fc4_slice }
-  - { from: plan-smart-house-runtime, to: plan-smart-street-runtime, relation: builds_on }
-  - { from: plan-smart-house-runtime, to: plan-m6-house-persistence, relation: reuses }
-  - { from: plan-smart-house-runtime, to: plan-house-polygon-renderer, relation: feeds_renderer }
-  - { from: plan-smart-house-runtime, to: plan-offline-map, relation: reuses_prepared_data }
-  - { from: plan-smart-house-runtime, to: map, relation: implements }
-  - { from: plan-smart-house-runtime, to: ux, relation: implements_mobile_flow }
-  - { from: plan-smart-house-runtime, to: data, relation: extends_mutation_contract }
-  - { from: plan-smart-house-runtime, to: offline-sync, relation: reuses }
-  - { from: plan-smart-house-runtime, to: security, relation: constrained_by }
-  - { from: plan-smart-house-runtime, to: adr-offline-map-data, relation: constrained_by }
-  - { from: plan-smart-house-runtime, to: adr-smart-task-identity, relation: constrained_by }
-  - { from: plan-smart-house-runtime, to: quality, relation: validated_by }
-  - { from: plan-smart-house-runtime, to: smart-house-runtime, relation: implements }
-  - { from: smart-house-runtime, to: smart-house-candidate-data, relation: uses }
-  - { from: smart-house-candidate-data, to: map, relation: integrates }
-  - { from: plan-openfreemap-smartdata-ui-hardening, to: map, relation: updates_basemap_and_layer_order }
-  - { from: plan-openfreemap-smartdata-ui-hardening, to: plan-offline-map, relation: keeps_optional_storage_boundary }
-  - { from: plan-openfreemap-smartdata-ui-hardening, to: plan-smart-street-runtime, relation: makes_online_first }
-  - { from: plan-openfreemap-smartdata-ui-hardening, to: plan-smart-house-runtime, relation: makes_online_first }
-  - { from: plan-openfreemap-smartdata-ui-hardening, to: ux, relation: hardens_mobile_flow }
-  - { from: plan-openfreemap-smartdata-ui-hardening, to: collaboration, relation: hardens_comment_retry }
-  - { from: plan-openfreemap-smartdata-ui-hardening, to: quality, relation: validated_by }
-
-  - { from: adr-collection-access-areas-runs, to: plan-collection-pickup-persistence, relation: governs }
-  - { from: adr-collection-access-areas-runs, to: data, relation: constrains }
-  - { from: adr-collection-access-areas-runs, to: security, relation: constrains }
-  - { from: adr-collection-access-areas-runs, to: map, relation: constrains }
-  - { from: adr-server-prepared-automatic-area-work, to: data, relation: governs }
-  - { from: adr-mission-manual-distribution-admin-accounts, to: security, relation: governs }
-  - { from: adr-mission-manual-distribution-admin-accounts, to: data, relation: extends_additively }
-  - { from: adr-mission-manual-distribution-admin-accounts, to: adr-admin-identity, relation: mission_scoped_exception }
-  - { from: plan-smart-street-edit-after-mission, to: adr-mission-manual-distribution-admin-accounts, relation: waits_for_mission_gate }
-  - { from: plan-smart-street-edit-after-mission, to: plan-smart-street-runtime, relation: reuses_selection_runtime }
-  - { from: plan-smart-street-edit-after-mission, to: plan-auto-area-task-preparation, relation: requires_ready_areas }
-  - { from: plan-smart-street-edit-after-mission, to: map, relation: implements_highlight }
-  - { from: plan-smart-street-edit-after-mission, to: offline-sync, relation: reuses_m5 }
-  - { from: plan-smart-street-edit-after-mission, to: security, relation: constrained_by }
-  - { from: plan-smart-street-edit-after-mission, to: quality, relation: validated_by }
-  - { from: plan-mission-day-one-fixpack, to: offline-sync, relation: hardens }
-  - { from: plan-mission-day-one-fixpack, to: security, relation: constrained_by }
-  - { from: plan-mission-day-one-fixpack, to: live-teams, relation: preserves_credentials }
-  - { from: plan-mission-day-one-fixpack, to: ux, relation: hardens }
-  - { from: plan-mission-day-one-fixpack, to: quality, relation: validated_by }
-  - { from: adr-m5-no-legacy-snapshot-writes, to: data, relation: governs }
-  - { from: adr-m5-no-legacy-snapshot-writes, to: offline-sync, relation: governs }
-  - { from: adr-m5-no-legacy-snapshot-writes, to: security, relation: governs }
-  - { from: adr-server-prepared-automatic-area-work, to: security, relation: governs }
-  - { from: adr-server-prepared-automatic-area-work, to: map, relation: governs }
-  - { from: plan-auto-area-task-preparation, to: plan-feature-complete-platform, relation: implements_backend_slice }
-  - { from: plan-auto-area-task-preparation, to: data, relation: extends_persistence_contract }
-  - { from: plan-auto-area-task-preparation, to: offline-sync, relation: reuses_mutation_trigger }
-  - { from: plan-auto-area-task-preparation, to: map, relation: reuses_saved_renderer }
-  - { from: plan-auto-area-task-preparation, to: security, relation: constrained_by }
-  - { from: plan-auto-area-task-preparation, to: adr-offline-map-data, relation: reuses_bounded_osm }
-  - { from: plan-auto-area-task-preparation, to: adr-smart-task-identity, relation: preserves_identity }
-  - { from: plan-auto-area-task-preparation, to: adr-server-prepared-automatic-area-work, relation: governed_by }
-  - { from: plan-auto-area-task-preparation, to: quality, relation: validated_by }
-  - { from: plan-auto-area-ui-server-preparation, to: plan-auto-area-task-preparation, relation: integrates_backend_slice }
-  - { from: plan-auto-area-ui-server-preparation, to: ux, relation: implements_normal_area_sheet }
-  - { from: plan-auto-area-ui-server-preparation, to: map, relation: reuses_saved_renderer }
-  - { from: plan-auto-area-ui-server-preparation, to: offline-sync, relation: preserves_m5_boundary }
-  - { from: plan-auto-area-ui-server-preparation, to: adr-server-prepared-automatic-area-work, relation: governed_by }
-  - { from: plan-auto-area-ui-server-preparation, to: quality, relation: validated_by }
-  - { from: plan-collection-pickup-persistence, to: adr-collection-access-areas-runs, relation: governed_by }
-  - { from: plan-collection-pickup-persistence, to: plan-feature-complete-platform, relation: refines_next_milestone }
-  - { from: plan-collection-pickup-persistence, to: plan-smart-house-runtime, relation: builds_on }
-  - { from: plan-collection-pickup-persistence, to: plan-platform-expansion, relation: follows_direction }
-  - { from: plan-collection-pickup-persistence, to: roadmap, relation: implements_planned_capability }
-  - { from: plan-collection-pickup-persistence, to: ux, relation: implements_mobile_flow }
-  - { from: plan-collection-pickup-persistence, to: data, relation: extends_persistence_contract }
-  - { from: plan-collection-pickup-persistence, to: offline-sync, relation: reuses }
-  - { from: plan-collection-pickup-persistence, to: map, relation: reuses_renderer_boundary }
-  - { from: plan-collection-pickup-persistence, to: security, relation: constrained_by }
-  - { from: plan-collection-pickup-persistence, to: collaboration, relation: integrates_sessions_events_stats }
-  - { from: plan-collection-pickup-persistence, to: live-teams, relation: reuses_temporary_credential_patterns }
-  - { from: plan-collection-pickup-persistence, to: adr-live-field-group-credentials, relation: reuses_security_pattern }
-  - { from: plan-collection-pickup-persistence, to: adr-offline-map-data, relation: constrained_by }
-  - { from: plan-collection-pickup-persistence, to: adr-smart-task-identity, relation: constrained_by_identity_principles }
-  - { from: plan-collection-pickup-persistence, to: adr-field-session-events, relation: constrained_by }
-  - { from: plan-collection-pickup-persistence, to: quality, relation: validated_by }
-  - { from: plan-collection-pickup-persistence, to: pickup-foundation, relation: extends }
-  - { from: pickup-foundation, to: data, relation: informs_domain_contract }
+    topics: []
+    load_when: [changing the area it describes (older parts describe the retired map: check Plan 051 first)]
+  - id: architecture-identity-permissions
+    path: docs/architecture/IDENTITY_PERMISSIONS.md
+    type: architecture
+    status: accepted
+    topics: []
+    load_when: [changing the area it describes (older parts describe the retired map: check Plan 051 first)]
+  - id: architecture-identity-threat-model
+    path: docs/architecture/IDENTITY_THREAT_MODEL.md
+    type: architecture
+    status: accepted
+    topics: []
+    load_when: [changing the area it describes (older parts describe the retired map: check Plan 051 first)]
+  - id: architecture-map
+    path: docs/architecture/MAP.md
+    type: architecture
+    status: accepted
+    topics: []
+    load_when: [changing the area it describes (older parts describe the retired map: check Plan 051 first)]
+  - id: architecture-organizations
+    path: docs/architecture/ORGANIZATIONS.md
+    type: architecture
+    status: accepted
+    topics: []
+    load_when: [changing the area it describes (older parts describe the retired map: check Plan 051 first)]
+  - id: architecture-security
+    path: docs/architecture/SECURITY.md
+    type: architecture
+    status: accepted
+    topics: []
+    load_when: [changing the area it describes (older parts describe the retired map: check Plan 051 first)]
+  - id: architecture-stack
+    path: docs/architecture/STACK.md
+    type: architecture
+    status: accepted
+    topics: []
+    load_when: [changing the area it describes (older parts describe the retired map: check Plan 051 first)]
+  - id: operations-deployment
+    path: docs/operations/DEPLOYMENT.md
+    type: operations
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: operations-first-deploy
+    path: docs/operations/FIRST_DEPLOY.md
+    type: operations
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: operations-organizer-admin-staging
+    path: docs/operations/ORGANIZER_ADMIN_STAGING.md
+    type: operations
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: operations-production
+    path: docs/operations/PRODUCTION.md
+    type: operations
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: product-mvp
+    path: docs/product/MVP.md
+    type: product
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: product-product
+    path: docs/product/PRODUCT.md
+    type: product
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: product-roadmap
+    path: docs/product/ROADMAP.md
+    type: product
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: product-ux
+    path: docs/product/UX.md
+    type: product
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: quality-quality
+    path: docs/quality/QUALITY.md
+    type: quality
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: security-field-group-credential-recovery-threat-model
+    path: docs/security/FIELD_GROUP_CREDENTIAL_RECOVERY_THREAT_MODEL.md
+    type: security
+    status: accepted
+    topics: []
+    load_when: [task touches this area]
+  - id: status-current
+    path: docs/status/CURRENT.md
+    type: status
+    status: active
+    topics: []
+    load_when: [task touches this area]
+  - id: status-main-runtime-parity-handoff
+    path: docs/status/MAIN_RUNTIME_PARITY_HANDOFF.md
+    type: status
+    status: active
+    topics: []
+    load_when: [task touches this area]
+  - id: status-organizer-admin-live-handoff
+    path: docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md
+    type: status
+    status: active
+    topics: []
+    load_when: [task touches this area]
+  - id: status-release-channel-state
+    path: docs/status/RELEASE_CHANNEL_STATE.md
+    type: status
+    status: active
+    topics: []
+    load_when: [task touches this area]
+  - id: context-organizer-admin
+    path: docs/context-organizer-admin.yaml
+    type: context
+    status: active
+    topics: [organization, auth, mfa]
+    load_when: [organiser or admin work]

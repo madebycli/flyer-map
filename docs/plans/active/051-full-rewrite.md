@@ -114,7 +114,11 @@ Einsätze, Automationen and the Team-Center are **not** rebuilt; they are delete
 4. ~~Phase 4 (Worker in Rust)~~ dropped by ADR-0035. Phase 4 is now: delete what the Worker no longer needs.
 5. Product decisions taken by the technical owner (the owner may reverse any of them): **Rooms** (live groups with codes) are not rebuilt — Gruppen links plus Team & Aktivität cover the use, collection keeps its own Raum;
    **English** is dropped (German only); the **manual street** is not rebuilt (a road missing in OSM is fixed in OSM and the Gebiet's data reloaded).
-- Phase 5 (delete the legacy app) is prepared on its own branch so that it can be dropped without touching the rest.
+- **Phase 5 (delete the legacy app) is done on its own branch `claude/rewrite-phase5-delete-legacy`**, so that it can be dropped without touching the rest (the feature branch `claude/v5-field-core-clean` still carries the old map behind `?legacy=1`):
+  client (198 files, 39 k lines) and 100+ tests that only described it deleted; Worker reduced to identity, access, collection, pickups, `worker/v5` and a lean mutation path (`authorization.ts`, `mutationHandler.ts`, `mutationRepository.ts` rewritten;
+  task/house/default-view mutations are refused); rooms, comments, activity, statistics, automations, RxDB (sync, change feed, checkpoints), network intents, area preparation, street engine, offline map, field sessions removed;
+  `CampaignSyncDurableObject` is an empty stub; scripts, docs of the old map archived (`docs/archive/legacy-map`), `context-map.yaml` regenerated; dependencies `rxdb`, `rxjs`, `fake-indexeddb`, `react-test-renderer`, `@mapbox/unitbezier` removed.
+  Source 79 k → 23 k lines. Found on the way: map CSS depended on stylesheet order (`.v5-map` vs maplibre's `.maplibregl-map`), fixed; `collection.area.update` bound no colour, fixed.
 
 ## Not decided here
 

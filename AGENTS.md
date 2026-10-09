@@ -8,35 +8,14 @@ The map is the primary field workspace. Users need to see assigned areas, real d
 
 The application must remain lightweight, reliable, privacy-conscious and easy to operate outdoors.
 
-## Current field UI checkpoint
+## Current architecture
 
-On Draft PR #92, the Street detail sheet keeps the existing red Danger color and
-uses a compact trash icon with the same footprint as the comment action. The
-four Street status actions stay in the existing two-column grid, while the
-compact comment and trash actions are stacked vertically in the adjacent action
-column. The Street marking status controls use equal-width columns. The House
-detail sheet keeps its two-column status grid. This is a presentation-only
-layout rule, not a change to task semantics or persistence.
+The field map is **v5** (`/v5`): `src/v5` (shell, store, map), `engine-rs` (Rust/WASM engine), `worker/v5` (API), `src/ui` (design system, also used by the organiser pages in `src/organization`).
+Streets and houses are *derived* on the device from one OSM pack per Gebiet; only a status overlay (last-writer-wins by hybrid logical clock) and notes are stored and synced. The old map (materialised tasks, RxDB, V3/V4 street engine,
+Rooms, comments, statistics, automations) is retired: [ADR-0036](docs/decisions/ADR-0036-legacy-map-retired.md), history in `docs/archive/legacy-map/`. What was kept, rebuilt or dropped: [Plan 051](docs/plans/active/051-full-rewrite.md).
 
-## Product direction
-
-Current field model:
-- Campaign / Aktion;
-- Team;
-- Area;
-- distribution Task;
-- revocable Campaign access roles.
-
-Planned product expansion is documented in `docs/product/ROADMAP.md` and includes:
-- resilient mutation synchronization;
-- automatic road/task generation from map data and a House Mode;
-- comments, activity history and useful automations;
-- statistics/progress reporting;
-- multi-organization administration and organization-scoped Admin panels;
-- multiple authorized administrators rather than one implicit owner;
-- personal UI light/dark/system appearance while the basemap may remain unchanged.
-
-Do not implement these future concepts from memory. Read the roadmap and the relevant proposed architecture document first.
+Field model: Aktion (campaign) → Gruppen (teams) → Gebiete (areas) → derived streets/houses; access by revocable links (Gruppe, Ansehen, Abhol-Helfer) and organisation accounts; the Abholaktion has its own Sammelgebiet/Teilgebiete/Räume/Sonder-Marker.
+Planned product expansion is in `docs/product/ROADMAP.md`; do not implement future concepts from memory.
 
 ## Primary goals
 
@@ -64,33 +43,12 @@ See ADR-0006.
 
 ## Technology baseline
 
-Frontend:
-- TypeScript;
-- React;
-- Vite;
-- plain CSS;
-- MapLibre GL JS **5.7.1** and `@mapbox/unitbezier` **0.0.1** are pinned on Draft PR #92 for the controlled renderer isolation test; 6.9.0 remains a historical comparison/release line. Real-device browser acceptance is still required by ADR-0030.
+Frontend: TypeScript, React, Vite, plain CSS from the design system (`src/ui`: tokens, components, page kit), MapLibre GL JS (pinned in `package.json`), own inline icon set (no webfont).
+Engine: Rust compiled to WebAssembly (`engine-rs`, committed build in `src/v5/engine/wasm`, digest-checked, rebuild with `scripts/build-wasm.sh`); the TypeScript engine is the exact reference and the fallback.
+Platform: Cloudflare Workers (TypeScript, ADR-0035), Workers Static Assets, Cloudflare D1.
 
-Platform:
-- Cloudflare Workers;
-- Workers Static Assets;
-- Cloudflare D1 for shared persistence.
-
-Maps:
-- OpenFreeMap Bright vector basemap using OpenStreetMap-derived data, without an API key;
-- standard house numbers from the Bright `openmaptiles` / `housenumber` contract through one app-owned symbol layer;
-- MapLibre owns camera/navigation/geolocation and persistent saved application geometry;
-- saved Areas and saved Street Tasks are long-lived GeoJSON sources/layers in MapLibre;
-- active draw/edit geometry and edit handles use the small independent SVG overlay only while an interaction is active;
-- stored edit/corner points are hidden in browse mode;
-- the basemap/provider must remain replaceable.
-
-Important renderer rule:
-- normal browse pan/zoom/rotate must not project or repaint every saved Area/Street in React/SVG/Canvas;
-- persistent saved geometry moves in the map renderer with the basemap;
-- actual domain changes may update GeoJSON sources with `setData()`.
-
-See `docs/architecture/MAP.md` and ADR-0010.
+Maps: the basemap style comes from deployment configuration and is never hard-coded in the client; the map keeps working without it (plain background).
+Rendering rule: no per-frame work for dense geometry; status is painted with `setFeatureState` on vector-tile features, geometry is served as vector tiles by the engine.
 
 Source control:
 - GitHub.

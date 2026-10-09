@@ -4,7 +4,8 @@ Mobile-first Website zur koordinierten Verteilung von Flyern über eine gemeinsa
 
 ## Status
 
-Die Foundation ist produktiv deployed. M1 ergänzt die erste echte Produktfunktion: Verteilaktion, farbcodierte Teams sowie zeichn-, auswähl- und bearbeitbare Teamgebiete auf der Karte mit lokaler Reload-Persistenz.
+Die Feldkarte ist komplett neu gebaut (`/v5`, siehe `docs/plans/active/051-full-rewrite.md`): Straßen und Häuser werden auf dem Gerät aus OSM-Daten abgeleitet (Rust/WebAssembly),
+gespeichert und synchronisiert wird nur der Status. Ein Designsystem (`src/ui`) trägt Feldkarte und Organizer-Seiten. Aktueller Stand: `docs/status/CURRENT.md`.
 
 Die technische und produktseitige Source of Truth liegt im Repository unter `docs/`.
 
@@ -22,13 +23,10 @@ Die technische und produktseitige Source of Truth liegt im Repository unter `doc
 
 ## Stack
 
-- TypeScript
-- React + Vite
-- MapLibre GL JS
-- OpenFreeMap Bright Vektor-Basemap mit OpenStreetMap-abgeleiteten Kartendaten
-- Verteil-Flyer GeoJSON-Layer für Teamgebiete und spätere Aufgaben
-- Cloudflare Workers + Static Assets
-- Cloudflare D1 ab Shared-Persistence-Milestone
+- TypeScript, React, Vite
+- Rust/WebAssembly (`engine-rs`): Ableitung, Vektorkacheln, Routing, Lasso, Suche
+- MapLibre GL JS; die Basemap kommt aus der Deployment-Konfiguration (`V5_BASEMAP_DARK`/`V5_BASEMAP_LIGHT`), nichts ist im Client festverdrahtet
+- Cloudflare Workers + Static Assets, Cloudflare D1 (Worker bleibt TypeScript, siehe ADR-0035)
 
 ## Für Coding-Agents
 
@@ -52,7 +50,8 @@ npm run dev
 Qualitätscheck:
 
 ```bash
-npm run check
+npm run check          # Tests, Typecheck, Dependency-Audit, Build
+node scripts/v5-e2e/run-all.mjs   # Browser-Flows gegen die echten Worker-Handler (braucht Playwright + Chromium, siehe Skript)
 ```
 
 Deployment zu Cloudflare:

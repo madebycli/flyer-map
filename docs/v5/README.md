@@ -1,7 +1,6 @@
-# v5 field core (parallel to beta)
+# v5 field map
 
-Branch `claude/v5-field-core`, cut from `beta`. Ships as a second page at `/v5?campaign=<id>`
-next to the existing app; the legacy app, auth, organisations and admin are untouched.
+The only field map (`/v5?campaign=<id>`); the old map address forwards to it with its access token ([ADR-0036](../decisions/ADR-0036-legacy-map-retired.md)).
 Rationale and measurements: [ADR-0033](../decisions/ADR-0033-field-core-first-principles-rebuild.md).
 
 ## Idea: derive, don't materialise
@@ -76,13 +75,17 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
   `window.__v5Boot` shows `meta / packs / derive / ready` milliseconds. Measured with 39 k houses in headless Chromium
   (software WebGL): cold boot 3.1 s (derive 2.7 s) → warm boot 0.8 s (cache read 0.33 s, derive 0).
 
+## Surfaces in the menu (Menü)
+
+Übersicht (progress by houses, per Gebiet and Gruppe, sync state) · Team & Aktivität (who brought in how many houses, derived from the overlay) · Suche · Gebiete (draw/edit, rename, move to a Gruppe, delete) ·
+Gruppen (create/rename/recolour/delete, Aktion name) · Zugänge (links for a Gruppe, viewers and Abhol-Helfer with QR, withdraw, helper rights) · Notizen · Vorlage laden / Als Vorlage · Abholen: Einrichten (Sammelgebiet, Teilgebiete, free, archive) ·
+Sonder-Marker · Hell/Dunkel, Links-/Rechtshand, Karte an/aus. A link helper sees only what the server lets them do. Design system: `src/ui` (tokens, components, page kit), organiser pages: `src/organization`.
+
 ## Not verified / not done
 
-- Real phones (ADR-0030) and the live basemap (sandbox has no egress; style URLs come from `V5_BASEMAP_DARK`/`V5_BASEMAP_LIGHT`): only a blank-style fallback was exercised.
-- Real Overpass data: the pack builder is tested with a stub and a synthetic city, not a real city extract.
-- Activity, statistics, collection/pickup (Plan 045) and admin screens still live in the legacy app;
-  v5 reads the same Areas and access grants. Area drawing/editing and notes are in v5.
+- Real phones (ADR-0030), the live basemap (sandbox has no egress; style URLs come from `V5_BASEMAP_DARK`/`V5_BASEMAP_LIGHT`) and real Overpass data: only stubs and a synthetic city were exercised.
 - No deploy, no remote migration (`0026` and `0027` are additive and untested against a real D1).
 - Reloading the page without network does not work (no service worker by ADR-0006); only a page that is already open keeps working offline.
-- Key ownership is bound to the first Area that writes a key; the server cannot yet verify that a key geometrically lies inside the claimed Area (it would need the derived key set per Area).
-- Pack rebuilds change derived ids only where OSM changed; statuses of vanished ids stay in D1 but are not shown. An admin removes them per Area with "bereinigen" (`POST …/areas/:id/prune`).
+- Key ownership is bound to the first Area that writes a key; the server cannot yet verify that a key geometrically lies inside the claimed Area.
+- Pack rebuilds change derived ids only where OSM changed; statuses of vanished ids stay in D1 but are not shown. An admin removes them per Gebiet with "bereinigen" (`POST …/areas/:id/prune`); deleting a Gebiet removes everything of it (`…/forget`).
+- Dropped on purpose (Plan 051): Rooms, English UI, manual street creation, assigning Sonder-Marker.
