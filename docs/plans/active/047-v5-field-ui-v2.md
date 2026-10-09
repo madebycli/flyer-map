@@ -1,6 +1,6 @@
 # Plan 047 — v5 field UI v2: calm, square, one big button
 
-Status: UI v2 and template mode implemented on `claude/v5-field-core-clean`
+Status: UI v2 and Aktions-Vorlage implemented on `claude/v5-field-core-clean`
 Reference: product feedback of 2026-10-08, [Plan 043](043-v5-field-core.md), [Plan 045](045-v5-pickup-rooms-admin.md), [Plan 046](046-v5-rust-tiles.md)
 
 ## Principles
@@ -58,19 +58,26 @@ house); the layers filter on it, the key builders (`mark.ts`) skip such streets 
 The poll idles while the page is hidden and never stacks meta requests; the soak flow (`soak.mjs`) covers reload, lock/unlock and
 many-Area map moves with context loss. Locate keeps no watcher. Provider and tile caches are released in `FieldMap.destroy`.
 
-## Template mode (built)
+## Aktions-Vorlage (built)
 
-An Area template is a small JSON file `{format, version, name, ring, rules}` (`areas/template.ts`; no progress, no street data). The engine
-derives streets and houses again from the outline, so a template needs no migration.
+A template is the **whole map of an Aktion**, not one Gebiet: `{format: "verteil-flyer-action-template", version, name, teams[{name,color}], areas[{name,team,ring}], rules{housesOnly}}`
+(`areas/template.ts`). No progress, no street data, no people (no members, no links): the engine derives streets and houses again from the
+outlines, so a template needs no migration.
 
-- **Save:** Area sheet → "Als Vorlage speichern" (download, safe file name).
-- **Load:** Menü → "Vorlage laden" (new Area) or Area sheet → "Vorlage auf dieses Gebiet anwenden" (replaces the outline). The file is
-  untrusted input: size, shape, coordinate range and polygon validity are checked and the result is rebuilt field by field. The outline
-  goes into the normal Area editor and is saved with ✓ (same validation, team choice, pack build); the rule "Nur Straßen mit Häusern" is applied.
-- **Re-derive and remove what is now outside:** after a saved reshaping the app reloads, the Rust engine derives the new network, and for
-  admins the progress rows of that Area that no longer exist are pruned on the server automatically (`POST …/prune`, notice with the count).
-  Team editors reshape without the bulk delete; the Area sheet offers the clean-up to an admin later.
-- Browser flow `flow10` covers export, refusal of foreign files, reshaping with automatic clean-up (west half stays, east half goes) and a new Area from a template.
+- **Save:** Menü → "Als Vorlage" (admin): every Gebiet with its Gruppe, every Gruppe with its colour, the marking rule; duplicate names get a suffix.
+- **Load:** Menü → "Vorlage laden" (admin, Gruppen-Editor). The file is untrusted input: size, counts, names, colours, coordinate ranges and
+  polygon validity are checked, the result is rebuilt field by field. A **plan** (`planTemplate`, pure and tested) is shown before anything
+  happens, with the template's outlines previewed on the map: new Gruppen, new Gebiete, Gebiete with a new outline, unchanged, not in the
+  template (they stay), skipped (a Gruppen-Editor only touches their own Gruppe, only an admin creates Gruppen). Names decide what is "the same";
+  nothing is ever deleted or moved between Gruppen.
+- **Apply:** Gruppen first (`team.create`), then outlines (`area.update-geometry`, `area.create`), each its own validated mutation; a failed step
+  is reported and the rest continues; fresh map data is requested for every changed outline. Applying the same file again plans nothing.
+- **Re-derive and remove what is now outside:** the app reloads, the Rust engine derives the new network, and for admins the progress rows of
+  the reshaped Gebiete that no longer exist are pruned on the server — only rows of that Gebiet, the reply names them, and a clean-up that would
+  remove more than 60 % of a Gebiet needs an explicit confirmation (never done automatically). Progress inside a region that merely moved to
+  another Gebiet is kept.
+- Browser flow `flow10` covers export, refusal of foreign files, the plan, applying (new Gruppe with its colour, new Gebiet, reshaped Gebiet),
+  the automatic clean-up, and idempotence.
 
 ## Not possible from this environment
 

@@ -22,7 +22,7 @@ export type Meta = {
   canBuildPack: boolean;
   teams: { id: string; name: string; color: string }[];
   /** Basemap styles chosen by the deployment (null = plain background); the client carries no third-party map URL. */
-  basemap: { dark: string; light: string } | null;
+  basemap: { dark: string | null; light: string | null } | null;
   areas: { id: string; name: string; teamId: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; updatedAt: string; packVersion: number | null; packStale?: boolean; writable: boolean; collection?: CollectionAreaInfo }[];
 };
 
@@ -66,9 +66,9 @@ export function httpTransport(campaignId: string): SyncTransport {
       const result = await (await call(`${base(campaignId)}/ops`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ops: sendable.map(({ id, key, status, area }) => ({ id, key, status, area })) }),
-      })).json() as { accepted: string[]; rejected: { id: string }[] };
+      })).json() as { accepted: string[]; rejected: { id: string; reason?: string }[] };
       // Permanently rejected edits are rolled back locally by the sync client; they must not retry forever.
-      return { accepted: result.accepted, rejected: result.rejected.map((r) => r.id), cursor: 0 };
+      return { accepted: result.accepted, rejected: result.rejected.map((r) => r.id), refetch: result.rejected.some((r) => r.reason === 'key_owned_elsewhere'), cursor: 0 };
     },
   };
 }
@@ -136,12 +136,26 @@ export const createTeam = (campaignId: string, team: { id: string; name: string;
 export const createArea = (campaignId: string, area: { id: string; teamId: string; name: string; geometry: Polygon }) =>
   postAreaMutation(campaignId, 'area.create', { areaId: area.id, teamId: area.teamId, name: area.name, geometry: area.geometry });
 
-/** Admin only: remove progress rows of an Area for keys the derivation no longer produces. Returns how many rows went. */
-export async function pruneArea(campaignId: string, areaId: string, keys: string[]): Promise<number> {
-  let removed = 0;
-  for (let i = 0; i < keys.length; i += 4000) {
-    const response = await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/prune`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keys: keys.slice(i, i + 4000) }) });
-    removed += ((await response.json()) as { removed: number }).removed;
+/** Why a clean-up was held back: it would remove most of the Area's progress and needs an explicit yes. */
+export class PruneConfirmRequired extends Error {
+  constructor() { super('Sehr viele Markierungen dieses Gebiets würden entfernt.'); }
+}
+
+/**
+ * Admin only: remove progress rows of an Area for keys the derivation no longer produces. The server names the keys it really removed
+ * (only rows of that Area), so the caller forgets exactly those. Without `confirm`, a clean-up that would wipe most of the Area is refused.
+ */
+export async function pruneArea(campaignId: string, areaId: string, keys: string[], confirm = false): Promise<{ removed: number; keys: string[] }> {
+  const out = { removed: 0, keys: [] as string[] };
+  for (let i = 0; i < keys.length; i += 1500) {
+    try {
+      const response = await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/prune`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keys: keys.slice(i, i + 1500), ...(confirm ? { confirm: true } : {}) }) });
+      const body = (await response.json()) as { removed: number; keys: string[] };
+      out.removed += body.removed; out.keys.push(...body.keys);
+    } catch (error) {
+      if (error instanceof V5ApiError && error.code === 'prune_confirm_required') throw new PruneConfirmRequired();
+      throw error;
+    }
   }
-  return removed;
+  return out;
 }

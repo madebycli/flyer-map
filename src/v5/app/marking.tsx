@@ -24,7 +24,8 @@ export type MarkContext = {
   /** The engine answers route, lasso and search questions (Rust); null while it is not ready. */
   engine: EngineClient | null;
   index: Index | null;
-  apply(keys: EntityKey[], status: Status, label: string): void;
+  /** Applies what the person may change and returns how many keys that was (0 = nothing happened). */
+  apply(keys: EntityKey[], status: Status, label: string): number | void;
 };
 
 /**
@@ -132,7 +133,8 @@ export function useMarking(ctx: MarkContext, active: boolean) {
     return true;
   }, [active, mode]);
 
-  const applyRoute = (status: Status) => { if (routeKeys.length) { latest.current.apply(routeKeys, status, String(routeKeys.length)); setAnchors([]); } };
+  // the route is kept when nothing could be applied (e.g. it lies in somebody else's Area), so it can be corrected instead of redone
+  const applyRoute = (status: Status) => { if (routeKeys.length && latest.current.apply(routeKeys, status, String(routeKeys.length)) !== 0) setAnchors([]); };
   const routeReady = mode === 'route' && route?.state === 'selected' && anchors.length >= 2 && routeKeys.length > 0;
   return {
     mode, brush, withHouses, housesOnly,

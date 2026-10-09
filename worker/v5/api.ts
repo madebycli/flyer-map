@@ -24,6 +24,8 @@ export type V5Options = {
 
 const MAX_OPS = 200;
 const MAX_PRUNE = 5000;
+const PRUNE_CONFIRM_MIN = 20;
+const PRUNE_CONFIRM_SHARE = 0.6;
 const ROWS_PER_STATEMENT = 10; // 9 bound parameters per row; D1 allows 100 per statement.
 const PACK_CHUNK_BYTES = 512 * 1024;
 const MAX_AREA_SQ_KM = 25;
@@ -65,17 +67,29 @@ async function pruneState(db: D1DatabaseLike, access: AccessContext, campaignId:
   if (!(request.headers.get('content-type') ?? '').includes('application/json')) return fail(415, 'unsupported_media_type', 'JSON erwartet.');
   const text = await request.text();
   if (text.length > 200_000) return fail(413, 'too_large', 'Zu viele Einträge auf einmal.');
-  let body: { keys?: unknown };
+  let body: { keys?: unknown; confirm?: unknown };
   try { body = JSON.parse(text); } catch { return fail(400, 'invalid_json', 'Ungültiges JSON.'); }
   if (!Array.isArray(body.keys) || body.keys.length === 0 || body.keys.length > MAX_PRUNE || !body.keys.every((k) => typeof k === 'string' && KEY.test(k))) return fail(400, 'invalid_keys', `1 bis ${MAX_PRUNE} gültige Schlüssel erwartet.`);
   const keys = [...new Set(body.keys as string[])];
-  let removed = 0;
+  // Only rows that really belong to this Area are candidates: the reply names them, so the client forgets exactly those.
+  const found: string[] = [];
   for (let i = 0; i < keys.length; i += 90) {
     const chunk = keys.slice(i, i + 90);
+    const rows = (await db.prepare(`SELECT key FROM v5_state WHERE campaign_id = ? AND area_id = ? AND key IN (${chunk.map(() => '?').join(',')})`).bind(campaignId, areaId, ...chunk).all<{ key: string }>()).results;
+    for (const row of rows) found.push(row.key);
+  }
+  // A clean-up that would wipe most of an Area is almost never intended (a partial map download, a wrong outline): it needs an explicit confirmation.
+  const total = (await db.prepare('SELECT COUNT(*) AS n FROM v5_state WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<{ n: number }>())?.n ?? 0;
+  if (body.confirm !== true && found.length > PRUNE_CONFIRM_MIN && found.length > total * PRUNE_CONFIRM_SHARE) {
+    return json({ error: { code: 'prune_confirm_required', message: `Das würde ${found.length} von ${total} Markierungen dieses Gebiets entfernen. Bitte bestätigen.` }, matched: found.length, total }, { status: 409 });
+  }
+  let removed = 0;
+  for (let i = 0; i < found.length; i += 90) {
+    const chunk = found.slice(i, i + 90);
     const [result] = await db.batch([db.prepare(`DELETE FROM v5_state WHERE campaign_id = ? AND area_id = ? AND key IN (${chunk.map(() => '?').join(',')})`).bind(campaignId, areaId, ...chunk)]);
     removed += result?.meta?.changes ?? 0;
   }
-  return json({ removed });
+  return json({ removed, keys: found });
 }
 
 export async function handleV5Api(request: Request, db: D1DatabaseLike, options: V5Options = {}): Promise<Response | null> {
@@ -148,7 +162,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: scoped ? teams.filter((t) => t.id === access.teamId) : teams,
     areas,
-    basemap: options.basemap?.dark || options.basemap?.light ? { dark: options.basemap.dark ?? options.basemap.light, light: options.basemap.light ?? options.basemap.dark } : null,
+    basemap: options.basemap?.dark || options.basemap?.light ? { dark: options.basemap.dark ?? null, light: options.basemap.light ?? null } : null,
   });
 }
 
@@ -319,7 +333,13 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
   const textBody = await response.text();
   if (textBody.length > (options.maxPackBytes ?? 40_000_000)) return fail(502, 'overpass_too_large', 'Antwort der Kartendatenquelle zu groß.');
   let parsed: ReturnType<typeof packFromOverpass>;
-  try { parsed = packFromOverpass(JSON.parse(textBody)); } catch { return fail(502, 'overpass_invalid', 'Antwort der Kartendatenquelle ungültig.'); }
+  let upstream: unknown;
+  try { upstream = JSON.parse(textBody); } catch { return fail(502, 'overpass_invalid', 'Antwort der Kartendatenquelle ungültig.'); }
+  // Overpass answers 200 with a `remark` when a query ran out of time or memory and only part of the data came back: a partial pack
+  // would make streets and houses vanish from the map (and their progress look orphaned), so it is refused like a failure.
+  const remark = (upstream as { remark?: unknown } | null)?.remark;
+  if (typeof remark === 'string' && /runtime error|timed out|timeout|out of memory|too many/iu.test(remark)) return fail(502, 'overpass_incomplete', 'Die Kartendatenquelle war überlastet und lieferte nur einen Teil. Bitte später noch einmal versuchen.');
+  try { parsed = packFromOverpass(upstream as never); } catch { return fail(502, 'overpass_invalid', 'Antwort der Kartendatenquelle ungültig.'); }
   if (parsed.raw.ways.length === 0 && parsed.raw.buildings.length === 0) return fail(422, 'pack_empty', 'Im Gebiet wurden keine Straßen oder Gebäude gefunden.');
   const bytes = await encodePack(parsed.raw);
   const previous = await db.prepare('SELECT version FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<{ version: number }>();

@@ -261,3 +261,20 @@ test('forget drops overlay entries and queued edits of vanished keys, and nothin
   assert.equal(store.statusOf('h:keep'), 'completed');
   assert.deepEqual(store.pendingOps().map((op) => op.key), ['h:keep']);
 });
+
+test('after the server refuses an edit because the key belongs to another Area, the client pulls everything again and shows the server’s truth', async () => {
+  const store = new FieldStore('a', null);
+  const pulled: number[] = [];
+  const serverOp: Op = { id: encodeClock({ wall: 1000, counter: 0, node: 'srv' }), key: 'h:x', status: 'completed', by: 'other', area: 'area_old' };
+  let stage = 0;
+  const transport = {
+    async push(ops: Op[]) { stage++; return { accepted: [], rejected: ops.map((o) => o.id), refetch: true, cursor: 0 }; },
+    async pull(since: number) { pulled.push(since); return stage && since < 7 ? { ops: [serverOp], cursor: 7 } : { ops: [], cursor: since }; },
+  };
+  const client = new SyncClient(store, transport);
+  await client.run();
+  store.set('h:x', 'later'); // refused: rolled back locally
+  await client.run();
+  assert.equal(store.statusOf('h:x'), 'completed', 'the rolled-back house shows what the server holds, not "open"');
+  assert.ok(pulled.includes(0) && pulled.filter((c) => c === 0).length >= 2, `pulled from the start again: ${pulled.join(',')}`);
+});

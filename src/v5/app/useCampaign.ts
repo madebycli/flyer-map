@@ -91,11 +91,14 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
       try {
         setPhase({ kind: 'loading', label: 'Aktion wird geladen …' });
         // The engine (worker + wasm instantiation) starts while the Aktion's meta data is still on its way.
-        engine?.dispose();
+        engine?.dispose(); engine = null;
         const enginePromise = EngineClient.create({ forceTs: new URLSearchParams(location.search).get('engine') === 'ts' });
         enginePromise.catch(() => {});
-        const loaded = await fetchMeta(campaignId, kind);
-        if (cancelled) return;
+        // A Worker that was started but never adopted (the meta request failed, or the view was closed meanwhile) must not live on.
+        const discard = () => { void enginePromise.then((client) => client.dispose(), () => {}); };
+        let loaded: Awaited<ReturnType<typeof fetchMeta>>;
+        try { loaded = await fetchMeta(campaignId, kind); } catch (error) { discard(); throw error; }
+        if (cancelled) { discard(); return; }
         setMeta(loaded); metaKindRef.current = loaded.kind;
         void loadPickups(loaded);
         canBuildRef.current = loaded.canBuildPack;

@@ -11,7 +11,8 @@ export interface SyncExtra {
 export interface SyncTransport {
   pull(since: number): Promise<{ ops: Op[]; cursor: number; serverNow?: number }>;
   /** `rejected` edits are permanently refused and get rolled back locally. */
-  push(ops: Op[]): Promise<{ accepted: string[]; rejected?: string[]; cursor: number }>;
+  /** `refetch`: the refusal means the server holds another truth for some key (it belongs to another Area): pull everything again so the screen shows it. */
+  push(ops: Op[]): Promise<{ accepted: string[]; rejected?: string[]; refetch?: boolean; cursor: number }>;
 }
 
 /**
@@ -66,6 +67,7 @@ export class SyncClient {
           // The push cursor must not advance the pull cursor: it would skip other clients' ops.
           this.store.acknowledge(result.accepted);
           if (result.rejected?.length) this.store.rollback(result.rejected);
+          if (result.refetch) this.store.rewindCursor();
           if (!result.accepted.length && !result.rejected?.length) break;
         }
         for (;;) {

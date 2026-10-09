@@ -40,3 +40,10 @@ mostly *not moving geometry through JavaScript*. Numbers from a fast desktop CPU
 - ~~Route graph still TypeScript on the main thread~~ done: the session keeps the street graph (every piece, hidden connectors included, first Area wins) and answers `route(anchors)` in Rust inside the Worker; the TypeScript `routeSegments` stays as the reference and fallback (`tests/v5Route.test.ts`: 600 random routes over five random cities compare exactly — ids, length, ambiguity, disconnected; both break ties by network order).
 - Tile-side simplification at low zoom (one dot per house is cheap, long streets at z11 are not yet generalised).
 - Server-side use of the same crate (pack validation) would need the Worker's wasm import; not needed yet.
+
+## Later additions (all in Rust, each with an exact TypeScript reference)
+
+- **Routing** (`session_route`), see above.
+- **Lasso** (`session_lasso`): houses by centre, visible street pieces by middle, optional "nur Straßen mit Häusern"; the app no longer scans 50 k houses on the main thread. 480 random lassos over six random cities compare exactly with `engine/lasso.ts` (`tests/v5Query.test.ts`).
+- **Street and address search** (`session_search`, `query.rs`): the engine builds the index lazily from what it holds (names folded for case, umlauts, ß, "Str."/"Straße"; prefix and streets first; deterministic natural order). 500+ messy queries compare exactly with `engine/search.ts`, including the fold on awkward names.
+- Not moved, on purpose: template parsing/planning (it shares the polygon rules with the server and runs once per file), progress counters (O(changes) next to the store), key selection for a tap (a handful of ids).

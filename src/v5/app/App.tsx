@@ -8,7 +8,7 @@ import { areaAt } from '../areas/nearest.ts';
 import { makeTemplate, parseTemplate, planTemplate, serializeTemplate, templateFileName, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import { downloadText } from './download.ts';
 import { applyTemplatePlan, type ApplyProgress } from './templateApply.ts';
-import { buildPack, fetchLegacySnapshot, pruneArea } from './api.ts';
+import { buildPack, fetchLegacySnapshot, pruneArea, PruneConfirmRequired } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
@@ -159,13 +159,16 @@ export function App({ campaignId }: { campaignId: string }) {
   }, [tool, draft?.position[0], draft?.position[1]]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const apply = useCallback((requested: EntityKey[], status: Status, label: string) => {
-    if (!store || !canWrite || !requested.length) return;
+    if (!store || !canWrite || !requested.length) return 0;
     // The server decides who may write where; mirroring it here keeps a tap on someone else's Area from becoming a phantom edit.
     const keys = requested.filter((key) => { const area = campaign.areaOf.get(key); return !!area && writableAreas.has(area); });
-    if (!keys.length) { setNotice(isCollection ? 'Erst das Gebiet übernehmen.' : 'Hier darfst du nichts ändern.'); return; }
+    if (!keys.length) { setNotice(isCollection ? 'Erst das Gebiet übernehmen.' : 'Hier darfst du nichts ändern.'); return 0; }
+    // part of a route or lasso may reach into somebody else's Area: say so instead of silently marking less
+    if (keys.length < requested.length) setNotice(`${requested.length - keys.length} Einträge liegen in fremden Gebieten und wurden ausgelassen.`);
     const before = keys.map((key) => [key, store.statusOf(key)] as const);
     store.set(keys, status);
     setUndo({ label: `${label} → ${LABELS[status]}`, revert: () => { for (const [key, previous] of before) store.set(key, previous); } });
+    return keys.length;
   }, [store, canWrite, campaign.areaOf, writableAreas, isCollection]); // eslint-disable-line react-hooks/exhaustive-deps -- LABELS follows isCollection
 
   const marking = useMarking({ fieldMap, engine: campaign.engine, index, apply }, fab !== 'idle');
@@ -174,9 +177,15 @@ export function App({ campaignId }: { campaignId: string }) {
     if (!wasEdit || meta?.role !== 'admin' || !store) return;
     const keys = campaign.orphans();
     if (!keys.length) return;
-    const removed = await pruneArea(campaignId, areaId, keys);
-    store.forget(keys);
-    if (removed) setNotice(`${removed} Markierungen außerhalb des neuen Umrisses entfernt.`);
+    try {
+      const result = await pruneArea(campaignId, areaId, keys);
+      store.forget(result.keys);
+      if (result.removed) setNotice(`${result.removed} Markierungen außerhalb des neuen Umrisses entfernt.`);
+    } catch (error) {
+      // a clean-up that would wipe most of the Area is never done on its own: the Area sheet offers it with a confirmation
+      if (error instanceof PruneConfirmRequired) setNotice('Sehr viele Markierungen liegen außerhalb des neuen Umrisses. Sie wurden nicht entfernt; im Gebiet kann das Bereinigen bestätigt werden.');
+      else throw error;
+    }
   };
   const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined, onSaved: afterAreaSaved }, tool === 'areas');
 
@@ -294,11 +303,13 @@ export function App({ campaignId }: { campaignId: string }) {
     if (next === 'areas') void preselectByLocation();
   };
   /** Drawing or editing starts at the Area the person is standing in (only when the position is already allowed, never a prompt). */
+  const editingRef = useRef(false);
+  const selectedAreaRef = useRef<string | null>(null);
   const preselectByLocation = async () => {
     const at = await fieldMap.current?.quietFix();
     if (!at || !meta || toolRef.current !== 'areas') return;
     const id = areaAt(meta.areas.map((a) => ({ id: a.id, ring: a.geometry.coordinates[0] as [number, number][] })), at);
-    if (id && !areaTool.edit) { areaTool.setSelectedId((current) => current ?? id); const area = meta.areas.find((a) => a.id === id); if (area) fieldMap.current?.fitTo(ringBounds(area.geometry.coordinates[0]), FIT_PADDING); }
+    if (id && !editingRef.current && !selectedAreaRef.current) { areaTool.setSelectedId((current) => current ?? id); const area = meta.areas.find((a) => a.id === id); if (area) fieldMap.current?.fitTo(ringBounds(area.geometry.coordinates[0]), FIT_PADDING); }
   };
   // Aktions-Vorlage: the whole map (all Gebiete, their Gruppen, the marking rules) as one file. Loading shows what would change first.
   const templateInput = useRef<HTMLInputElement>(null);
@@ -320,14 +331,16 @@ export function App({ campaignId }: { campaignId: string }) {
     const result = await applyTemplatePlan(campaignId, plan, meta, setTemplateProgress);
     await campaign.reload();
     // The engine derived the changed outlines again: what the old outlines held and the new ones do not is removed (admin only).
-    let pruned = 0;
+    let pruned = 0, heldBack = false;
     if (meta.role === 'admin' && result.reshapedIds.length && store) {
       const keys = campaign.orphans();
-      if (keys.length) { for (const id of result.reshapedIds) pruned += await pruneArea(campaignId, id, keys).catch(() => 0); store.forget(keys); }
+      for (const id of keys.length ? result.reshapedIds : []) {
+        try { const r = await pruneArea(campaignId, id, keys); pruned += r.removed; store.forget(r.keys); } catch { heldBack = true; }
+      }
     }
     marking.setHousesOnly(template.rules.housesOnly);
     setTemplateProgress(null);
-    const parts = [result.teamsCreated && `${result.teamsCreated} Gruppen`, result.areasCreated && `${result.areasCreated} neue Gebiete`, result.areasReshaped && `${result.areasReshaped} angepasst`, pruned && `${pruned} Markierungen außerhalb entfernt`].filter(Boolean);
+    const parts = [result.teamsCreated && `${result.teamsCreated} Gruppen`, result.areasCreated && `${result.areasCreated} neue Gebiete`, result.areasReshaped && `${result.areasReshaped} angepasst`, pruned && `${pruned} Markierungen außerhalb entfernt`, heldBack && 'Bereinigen nicht automatisch (zu viele Markierungen betroffen)'].filter(Boolean);
     // The sheet always closes: a second "Anwenden" on the old plan could create things twice. Loading the file again plans from what exists now.
     setNotice(result.errors.length ? `Vorlage teilweise angewendet (${parts.join(', ') || 'nichts'}). ${result.errors.length} Schritte fehlgeschlagen, z. B. ${result.errors[0]}. Datei erneut laden, um den Rest nachzuholen.` : parts.length ? `Vorlage angewendet: ${parts.join(', ')}.` : 'Vorlage angewendet.');
     setTemplateDraft(null); setPanel(null);
@@ -388,9 +401,12 @@ export function App({ campaignId }: { campaignId: string }) {
     } catch { setNotice('Der bisherige Fortschritt konnte nicht geladen werden.'); setImportState('idle'); }
   };
 
+  // the marking button can only exist while marking is possible: a released Area or another tool must not leave it half open
+  useEffect(() => { if (fab !== 'idle' && (!mayMark || tool !== 'inspect' || phase.kind !== 'ready')) setFab('idle'); }, [fab, mayMark, tool, phase.kind]);
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
   const editing = !!areaTool.edit;
+  editingRef.current = editing; selectedAreaRef.current = areaTool.selectedId;
   const canEditAny = !!meta && (meta.role === 'admin' || meta.role === 'team-editor');
   const selectedArea = meta?.areas.find((a) => a.id === areaTool.selectedId) ?? null;
   const sheetOpen = !!panel || (tool === 'inspect' && fab === 'idle' && (!!selection || !!selectedPickup || (isCollection && !!collectionAreaId))) || (tool === 'areas' && !!selectedArea && !editing) || (tool === 'pickup' && !!draft);
@@ -411,9 +427,10 @@ export function App({ campaignId }: { campaignId: string }) {
   const pruneSelected = () => {
     if (!selectedArea || !store) return;
     const keys = campaign.orphans();
-    void pruneArea(campaignId, selectedArea.id, keys).then((removed) => {
-      store.forget(keys);
-      setNotice(removed ? `${removed} veraltete Einträge entfernt.` : 'Keine veralteten Einträge in diesem Gebiet.');
+    if (!keys.length || !window.confirm(`${keys.length} Markierungen entfernen, die nach der Änderung der Karte nirgends mehr liegen? Das gilt für alle Geräte und lässt sich nicht rückgängig machen.`)) return;
+    void pruneArea(campaignId, selectedArea.id, keys, true).then((result) => {
+      store.forget(result.keys);
+      setNotice(result.removed ? `${result.removed} veraltete Einträge entfernt.` : 'Keine veralteten Einträge in diesem Gebiet.');
     }).catch((e) => setNotice(actionErrorText(e)));
   };
 

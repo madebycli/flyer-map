@@ -319,4 +319,33 @@ test('meta serves the deployment basemap; the client carries none', async () => 
   assert.equal(none.basemap, null);
   const set = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/meta`, undefined, { basemap: { dark: 'https://tiles.example/dark', light: 'https://tiles.example/light' } })).json() as { basemap: { dark: string; light: string } };
   assert.deepEqual(set.basemap, { dark: 'https://tiles.example/dark', light: 'https://tiles.example/light' });
+  const lightOnly = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/meta`, undefined, { basemap: { light: 'https://tiles.example/light' } })).json() as { basemap: { dark: string | null; light: string | null } };
+  assert.deepEqual(lightOnly.basemap, { dark: null, light: 'https://tiles.example/light' }, 'a theme without a style stays plain, it does not borrow the other one');
+});
+
+test('a clean-up that would wipe most of an Area needs a confirmation, and the reply names the rows that really went', async () => {
+  const { call } = await setup();
+  const ops = Array.from({ length: 30 }, (_, i) => ({ id: stamp(NOW - 5000 + i), key: `h:bulk${i}`, status: 'completed', area: 'area_n' }));
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, { ops });
+  const path = `/api/v5/campaigns/${campaign}/areas/area_n/prune`;
+  const keys = ops.map((o) => o.key);
+  const held = await call('admin', 'POST', path, { keys });
+  assert.equal(held.status, 409);
+  assert.equal(((await held.json()) as { error: { code: string } }).error.code, 'prune_confirm_required');
+  assert.equal(((await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json()) as { ops: unknown[] }).ops.length, 30, 'nothing was removed');
+  const few = await (await call('admin', 'POST', path, { keys: keys.slice(0, 5) })).json() as { removed: number; keys: string[] };
+  assert.deepEqual([few.removed, few.keys.length], [5, 5], 'a small clean-up needs no confirmation');
+  const done = await (await call('admin', 'POST', path, { keys, confirm: true })).json() as { removed: number; keys: string[] };
+  assert.equal(done.removed, 25);
+  assert.deepEqual(done.keys.sort(), keys.slice(5).sort(), 'only the rows that still existed are reported');
+});
+
+test('a partial Overpass answer (remark: timed out) is refused instead of stored as a pack', async () => {
+  const { call } = await setup();
+  const partial = (async () => new Response(JSON.stringify({ remark: 'runtime error: Query timed out in "query" at line 3 after 25 seconds.', elements: [{ type: 'way', id: 1, tags: { highway: 'residential' }, nodes: [1, 2], geometry: [{ lat: 51, lon: 13 }, { lat: 51.001, lon: 13 }] }] }))) as unknown as typeof fetch;
+  const refused = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl: partial });
+  assert.equal(refused.status, 502);
+  assert.equal(((await refused.json()) as { error: { code: string } }).error.code, 'overpass_incomplete');
+  const meta = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { areas: { id: string; packVersion: number | null }[] };
+  assert.equal(meta.areas.find((a) => a.id === 'area_n')!.packVersion, null, 'no pack was stored');
 });

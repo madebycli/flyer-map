@@ -35,7 +35,7 @@ const byStatus = (open: number | ExpressionSpecification, done: number | Express
   ['match', ['coalesce', ['feature-state', 'status'], 'open'], 'open', open, done];
 
 /** Basemap styles are deployment configuration (served in the Aktion's meta), never a URL baked into the client. */
-export type Basemap = { dark: string; light: string } | null;
+export type Basemap = { dark: string | null; light: string | null } | null;
 const BLANK_BACKGROUND: Record<Theme, string> = { dark: '#0e1513', light: '#eef1ef' };
 export const blankStyle = (theme: Theme): StyleSpecification => ({ version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': BLANK_BACKGROUND[theme] } }] });
 const CASING: Record<Theme, string> = { dark: 'rgba(7,11,10,0.92)', light: 'rgba(255,255,255,0.92)' };
@@ -184,8 +184,11 @@ export class FieldMap {
 
   /** Use the deployment's basemap (null = plain background). Swapping re-installs our layers on `style.load`. */
   setBasemap(basemap: Basemap) {
-    const next = basemap ? { dark: basemap.dark, light: basemap.light } : {};
-    if (this.styles.dark === next.dark && this.styles.light === (next as Partial<Record<Theme, string>>).light) return;
+    // a theme without a style (the deployment turned it off) shows the plain background
+    const next: Partial<Record<Theme, string>> = {};
+    if (basemap?.dark) next.dark = basemap.dark;
+    if (basemap?.light) next.light = basemap.light;
+    if (this.styles.dark === next.dark && this.styles.light === next.light) return;
     this.styles = next;
     this.restyle();
   }

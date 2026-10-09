@@ -13,10 +13,15 @@ export function safeStyleUrl(value: string | undefined): string | undefined {
   try { return new URL(trimmed).protocol === 'https:' ? trimmed : undefined; } catch { return undefined; }
 }
 
+/** An absolute https URL (the Overpass endpoint is fetched by the Worker, so a relative path would only fail). */
+export function safeHttpsUrl(value: string | undefined): string | undefined {
+  try { return value && new URL(value.trim()).protocol === 'https:' ? value.trim() : undefined; } catch { return undefined; }
+}
+
 /** `V5_BASEMAP_DARK` / `V5_BASEMAP_LIGHT` set a style; the literal value `off` serves no basemap at all (plain background). */
 export function v5OptionsFromEnv(env: V5Env): V5Options {
   const pick = (value: string | undefined, fallback: string) => (value?.trim().toLowerCase() === 'off' ? undefined : safeStyleUrl(value) ?? fallback);
   const dark = pick(env.V5_BASEMAP_DARK, DEFAULT_BASEMAP.dark), light = pick(env.V5_BASEMAP_LIGHT, DEFAULT_BASEMAP.light);
-  const overpass = env.OSM_OVERPASS_URL && env.OSM_OVERPASS_URL !== 'default' ? safeStyleUrl(env.OSM_OVERPASS_URL) : undefined;
+  const overpass = env.OSM_OVERPASS_URL && env.OSM_OVERPASS_URL !== 'default' ? safeHttpsUrl(env.OSM_OVERPASS_URL) : undefined;
   return { basemap: { dark, light }, ...(overpass ? { overpassUrl: overpass } : {}) };
 }

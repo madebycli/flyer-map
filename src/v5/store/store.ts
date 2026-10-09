@@ -161,6 +161,9 @@ export class FieldStore {
     return removed;
   }
 
+  /** Pull everything again from the start (idempotent: only newer entries win). Used after the server refused an edit because it holds another truth. */
+  rewindCursor(): void { this.cursor = 0; this.persistOutbox(); }
+
   /** Server time seen on a pull; keeps new edits ordered correctly even when this device's clock is off. */
   syncClock(serverNow: number): void {
     const offset = serverNow - this.nowFn();
