@@ -1,0 +1,48 @@
+(node:13) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:25) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS  icon controls are squares  [[48,48],[48,48],[48,48],[48,48],[48,48],[48,48],[64,64]]
+PASS  no backdrop blur anywhere in the shell
+PASS  every control has rounded corners
+PASS  zoom in button zooms in
+PASS  zoom out button zooms out
+PASS  locate flies to the fix and shows the position dot
+PASS  no compass while north is up
+PASS  compass appears when rotated
+PASS  and resets north
+PASS  overview: percentage by houses, legend with explanations, honest sync box  Übersicht | 1.159 Häuser | 0 | % | 0 | Ausgeteilt | 0 | Später | 0 | Nicht möglich | 1.159 | Offen | FORTSCHRITT ZÄHLT HÄUSER, NICHT STRASSEN |  | „Nicht möglich“ zählt nicht gegen den Fortschritt. |  | GEBIETE | Area | 0 / 1.159 · 0 % | Fremdes Gebiet | – · 0 % | SYNCHRONISIERUNG | Alles gespeicher
+PASS  search finds streets and addresses ("Str." spelling)
+PASS  picking a result opens it on the map
+PASS  menu tiles: modes for the admin, overview, search, areas, notes  Austeilen|Abholen|Übersicht|Team|Gruppen|Zugänge|Suche|Gebiete|Vorlage laden|Als Vorlage|Notizen|Alles zeigen|Hell|Linkshand|Karte aus|Alt-Import|Verwaltung
+PASS  "Karte aus" is remembered per device
+PASS  marking caption explains the first step
+PASS  streets without houses disappear from the map while the filter is on  h=0 rendered: 0
+PASS  seeded an orphan progress row
+PASS  team sheet lists a person with houses brought in today, and the latest change  Team & Aktivität | 1 heute · 1 in 7 Tagen | WER HAT WIE VIEL | tester (du) | 1 ausgeteilt | 1 heute · 1 in 7 Tagen · zuletzt gerade eben | ZULETZT | Haus | Ausgeteilt · tester · gerade eben
+PASS  an admin sees the clean-up button for an Area with orphan rows
+PASS  the manual clean-up asks first and says it affects every device
+PASS  and it reports what it removed
+PASS  the clean-up button disappears after the last obsolete entry is cleared
+PASS  the orphan is gone on the server, real progress is not touched
+
+all checks passed
+== flow9: ok
+
+(node:109) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS  the sheet shows the Sammelgebiet and both Teilgebiete  Abholen einrichten | 2 Teilgebiete | SAMMELGEBIET | Sammelgebiet | Teilgebiet zeichnen | TEILGEBIETE | Ost · Offen | West · Offen
+PASS  the Teilgebiet is saved with its name and colour
+PASS  afterwards the Einrichten sheet is back
+PASS  renaming a Teilgebiet is saved
+PASS  the helper holds West
+PASS  the admin sees West as being worked on and can free it
+PASS  freeing asks first
+PASS  West is open again on the server
+PASS  archiving a held Teilgebiet is not offered, an open one is
+PASS  an archived Teilgebiet is marked archived
+PASS  and leaves the list
+PASS  switching a right on is stored for that device only
+
+all checks passed
+== flow14: ok

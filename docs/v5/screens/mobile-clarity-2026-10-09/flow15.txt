@@ -1,0 +1,151 @@
+(node:13) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:25) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS  390-dark-left: seed real and obsolete progress through handler
+PASS  390-dark-left: requested theme and hand applied
+PASS  390-dark-left: different actions have visible captions
+PASS  390-dark-left: area sheet has no horizontal overflow
+PASS  390-dark-left: both action targets are at least 44 px
+PASS  390-dark-left: area inputs have at least 16 px text
+PASS  390-dark-left: cleanup confirmation explains all devices
+PASS  390-dark-left: last obsolete entry clears and control disappears immediately
+PASS  390-dark-left: singular success message
+PASS  390-dark-left: cleanup preserves Gebiet and real progress
+PASS  390-dark-left: all four rights have visible text
+PASS  390-dark-left: all four right targets are at least 44 px
+PASS  390-dark-left: right captions are not clipped
+PASS  390-dark-left: rights sheet has no horizontal overflow
+PASS  390-dark-left: keyboard moves to next named right
+PASS  390-dark-left: keyboard toggle is saved only for chosen helper
+PASS  390-dark-left: pressed state matches saved right
+PASS  390-dark-left: tap switches right back off/on
+PASS  390-dark-right: seed real and obsolete progress through handler
+PASS  390-dark-right: requested theme and hand applied
+PASS  390-dark-right: different actions have visible captions
+PASS  390-dark-right: area sheet has no horizontal overflow
+PASS  390-dark-right: both action targets are at least 44 px
+PASS  390-dark-right: area inputs have at least 16 px text
+PASS  390-dark-right: cleanup confirmation explains all devices
+PASS  390-dark-right: last obsolete entry clears and control disappears immediately
+PASS  390-dark-right: singular success message
+PASS  390-dark-right: cleanup preserves Gebiet and real progress
+PASS  390-dark-right: all four rights have visible text
+PASS  390-dark-right: all four right targets are at least 44 px
+PASS  390-dark-right: right captions are not clipped
+PASS  390-dark-right: rights sheet has no horizontal overflow
+PASS  390-dark-right: keyboard moves to next named right
+PASS  390-dark-right: keyboard toggle is saved only for chosen helper
+PASS  390-dark-right: pressed state matches saved right
+PASS  390-dark-right: tap switches right back off/on
+PASS  390-light-left: seed real and obsolete progress through handler
+PASS  390-light-left: requested theme and hand applied
+PASS  390-light-left: different actions have visible captions
+PASS  390-light-left: area sheet has no horizontal overflow
+PASS  390-light-left: both action targets are at least 44 px
+PASS  390-light-left: area inputs have at least 16 px text
+PASS  390-light-left: cleanup confirmation explains all devices
+PASS  390-light-left: last obsolete entry clears and control disappears immediately
+PASS  390-light-left: singular success message
+PASS  390-light-left: cleanup preserves Gebiet and real progress
+PASS  390-light-left: all four rights have visible text
+PASS  390-light-left: all four right targets are at least 44 px
+PASS  390-light-left: right captions are not clipped
+PASS  390-light-left: rights sheet has no horizontal overflow
+PASS  390-light-left: keyboard moves to next named right
+PASS  390-light-left: keyboard toggle is saved only for chosen helper
+PASS  390-light-left: pressed state matches saved right
+PASS  390-light-left: tap switches right back off/on
+PASS  390-light-right: seed real and obsolete progress through handler
+PASS  390-light-right: requested theme and hand applied
+PASS  390-light-right: different actions have visible captions
+PASS  390-light-right: area sheet has no horizontal overflow
+PASS  390-light-right: both action targets are at least 44 px
+PASS  390-light-right: area inputs have at least 16 px text
+PASS  390-light-right: cleanup confirmation explains all devices
+PASS  390-light-right: last obsolete entry clears and control disappears immediately
+PASS  390-light-right: singular success message
+PASS  390-light-right: cleanup preserves Gebiet and real progress
+PASS  390-light-right: all four rights have visible text
+PASS  390-light-right: all four right targets are at least 44 px
+PASS  390-light-right: right captions are not clipped
+PASS  390-light-right: rights sheet has no horizontal overflow
+PASS  390-light-right: keyboard moves to next named right
+PASS  390-light-right: keyboard toggle is saved only for chosen helper
+PASS  390-light-right: pressed state matches saved right
+PASS  390-light-right: tap switches right back off/on
+PASS  430-dark-left: seed real and obsolete progress through handler
+PASS  430-dark-left: requested theme and hand applied
+PASS  430-dark-left: different actions have visible captions
+PASS  430-dark-left: area sheet has no horizontal overflow
+PASS  430-dark-left: both action targets are at least 44 px
+PASS  430-dark-left: area inputs have at least 16 px text
+PASS  430-dark-left: cleanup confirmation explains all devices
+PASS  430-dark-left: last obsolete entry clears and control disappears immediately
+PASS  430-dark-left: singular success message
+PASS  430-dark-left: cleanup preserves Gebiet and real progress
+PASS  430-dark-left: all four rights have visible text
+PASS  430-dark-left: all four right targets are at least 44 px
+PASS  430-dark-left: right captions are not clipped
+PASS  430-dark-left: rights sheet has no horizontal overflow
+PASS  430-dark-left: keyboard moves to next named right
+PASS  430-dark-left: keyboard toggle is saved only for chosen helper
+PASS  430-dark-left: pressed state matches saved right
+PASS  430-dark-left: tap switches right back off/on
+PASS  430-dark-right: seed real and obsolete progress through handler
+PASS  430-dark-right: requested theme and hand applied
+PASS  430-dark-right: different actions have visible captions
+PASS  430-dark-right: area sheet has no horizontal overflow
+PASS  430-dark-right: both action targets are at least 44 px
+PASS  430-dark-right: area inputs have at least 16 px text
+PASS  430-dark-right: cleanup confirmation explains all devices
+PASS  430-dark-right: last obsolete entry clears and control disappears immediately
+PASS  430-dark-right: singular success message
+PASS  430-dark-right: cleanup preserves Gebiet and real progress
+PASS  430-dark-right: all four rights have visible text
+PASS  430-dark-right: all four right targets are at least 44 px
+PASS  430-dark-right: right captions are not clipped
+PASS  430-dark-right: rights sheet has no horizontal overflow
+PASS  430-dark-right: keyboard moves to next named right
+PASS  430-dark-right: keyboard toggle is saved only for chosen helper
+PASS  430-dark-right: pressed state matches saved right
+PASS  430-dark-right: tap switches right back off/on
+PASS  430-light-left: seed real and obsolete progress through handler
+PASS  430-light-left: requested theme and hand applied
+PASS  430-light-left: different actions have visible captions
+PASS  430-light-left: area sheet has no horizontal overflow
+PASS  430-light-left: both action targets are at least 44 px
+PASS  430-light-left: area inputs have at least 16 px text
+PASS  430-light-left: cleanup confirmation explains all devices
+PASS  430-light-left: last obsolete entry clears and control disappears immediately
+PASS  430-light-left: singular success message
+PASS  430-light-left: cleanup preserves Gebiet and real progress
+PASS  430-light-left: all four rights have visible text
+PASS  430-light-left: all four right targets are at least 44 px
+PASS  430-light-left: right captions are not clipped
+PASS  430-light-left: rights sheet has no horizontal overflow
+PASS  430-light-left: keyboard moves to next named right
+PASS  430-light-left: keyboard toggle is saved only for chosen helper
+PASS  430-light-left: pressed state matches saved right
+PASS  430-light-left: tap switches right back off/on
+PASS  430-light-right: seed real and obsolete progress through handler
+PASS  430-light-right: requested theme and hand applied
+PASS  430-light-right: different actions have visible captions
+PASS  430-light-right: area sheet has no horizontal overflow
+PASS  430-light-right: both action targets are at least 44 px
+PASS  430-light-right: area inputs have at least 16 px text
+PASS  430-light-right: cleanup confirmation explains all devices
+PASS  430-light-right: last obsolete entry clears and control disappears immediately
+PASS  430-light-right: singular success message
+PASS  430-light-right: cleanup preserves Gebiet and real progress
+PASS  430-light-right: all four rights have visible text
+PASS  430-light-right: all four right targets are at least 44 px
+PASS  430-light-right: right captions are not clipped
+PASS  430-light-right: rights sheet has no horizontal overflow
+PASS  430-light-right: keyboard moves to next named right
+PASS  430-light-right: keyboard toggle is saved only for chosen helper
+PASS  430-light-right: pressed state matches saved right
+PASS  430-light-right: tap switches right back off/on
+
+all checks passed
+== flow15: ok
