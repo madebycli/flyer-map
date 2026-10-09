@@ -534,6 +534,20 @@ nodes:
     topics: [v5, collection, pickup, abholaktion, rooms, claims, collector-access, identities, admin]
     load_when: [Abholaktion in v5, Übernehmen Teilnehmen, rooms, collector link, Sonder-Marker, v5 admin surface]
 
+  - id: plan-046-v5-rust-tiles
+    path: docs/plans/active/046-v5-rust-tiles.md
+    type: plan
+    status: active
+    topics: [v5, rust, wasm, vector-tiles, mvt, engine-rs, maplibre-protocol]
+    load_when: [Rust engine, WASM, vector tiles, v5t protocol, engine-rs build]
+
+  - id: plan-047-v5-field-ui-v2
+    path: docs/plans/active/047-v5-field-ui-v2.md
+    type: plan
+    status: active
+    topics: [v5, ui, design-system, marking-button, home-menu, overview, search, basemap-config, prune, template-mode]
+    load_when: [v5 UI, marking button, Nur Straßen mit Häusern, Home menu, Übersicht, Suche, basemap configuration, Gebiet bereinigen, template mode]
+
   - id: adr-0034-v5-notes-chunks-and-engine-language
     path: docs/decisions/ADR-0034-v5-notes-chunks-and-engine-language.md
     type: decision

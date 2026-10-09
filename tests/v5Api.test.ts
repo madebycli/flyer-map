@@ -293,3 +293,30 @@ test('every key the engine can produce (chunks, nodes, houses, address nodes) is
   assert.deepEqual(res.rejected, []);
   assert.equal(res.accepted.length, keys.length);
 });
+
+test('prune removes only the listed keys of that area, and only for admins', async () => {
+  const { call } = await setup();
+  await call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`, { ops: [
+    { id: stamp(NOW - 5000), key: 'h:a', status: 'completed', area: 'area_n' },
+    { id: stamp(NOW - 4000), key: 'h:b', status: 'later', area: 'area_n' },
+    { id: stamp(NOW - 3000), key: 'h:c', status: 'completed', area: 'area_o' },
+  ] });
+  const path = `/api/v5/campaigns/${campaign}/areas/area_n/prune`;
+  assert.equal((await call('editor', 'POST', path, { keys: ['h:a'] })).status, 403, 'a team editor may not bulk-delete shared progress');
+  assert.equal((await call('viewer', 'POST', path, { keys: ['h:a'] })).status, 403);
+  assert.equal((await call('admin', 'POST', path, { keys: [] })).status, 400, 'empty list refused');
+  assert.equal((await call('admin', 'POST', path, { keys: ['not a key'] })).status, 400, 'malformed keys refused');
+  assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/nope/prune`, { keys: ['h:a'] })).status, 404);
+  const done = await (await call('admin', 'POST', path, { keys: ['h:a', 'h:c', 'h:zzz'] })).json() as { removed: number };
+  assert.equal(done.removed, 1, 'h:c belongs to another area and h:zzz does not exist: only h:a goes');
+  const rest = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/state?since=0`)).json() as { ops: { key: string }[] };
+  assert.deepEqual(rest.ops.map((o) => o.key).sort(), ['h:b', 'h:c']);
+});
+
+test('meta serves the deployment basemap; the client carries none', async () => {
+  const { call } = await setup();
+  const none = await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { basemap: unknown };
+  assert.equal(none.basemap, null);
+  const set = await (await call('viewer', 'GET', `/api/v5/campaigns/${campaign}/meta`, undefined, { basemap: { dark: 'https://tiles.example/dark', light: 'https://tiles.example/light' } })).json() as { basemap: { dark: string; light: string } };
+  assert.deepEqual(set.basemap, { dark: 'https://tiles.example/dark', light: 'https://tiles.example/light' });
+});

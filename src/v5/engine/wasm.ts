@@ -10,7 +10,7 @@ type Exports = {
   engine_version_ptr(): number;
   engine_version_len(): number;
   session_reset(): void;
-  session_add_area(rawPtr: number, rawLen: number, ringPtr: number, ringLen: number): number;
+  session_add_area(rawPtr: number, rawLen: number, ringPtr: number, ringLen: number, exportBlob: number): number;
   session_export_last(): number;
   session_add_blob(ptr: number, len: number): number;
   session_tile(z: number, x: number, y: number): number;
@@ -90,14 +90,17 @@ export class WasmEngine {
     try { return fn(ptr); } finally { this.x.dealloc(ptr, bytes.byteLength); }
   }
 
+  /** Linear memory in bytes (it only ever grows): a steadily rising value across identical actions would be a leak. */
+  memoryBytes(): number { return this.x.memory.buffer.byteLength; }
+
   resetSession(): void { this.x.session_reset(); }
 
   /** Derive one Area from the decompressed pack JSON, keep its geometry in the session, return the coordinate-free network. */
-  addArea(rawJson: Uint8Array, ring: LngLat[]): FieldNetwork {
+  addArea(rawJson: Uint8Array, ring: LngLat[], exportBlob = false): FieldNetwork {
     const ringBytes = new TextEncoder().encode(JSON.stringify(ring));
     return this.withBytes(rawJson, (rawPtr) => this.withBytes(ringBytes, (ringPtr) => {
       const t0 = performance.now();
-      const n = this.x.session_add_area(rawPtr, rawJson.byteLength, ringPtr, ringBytes.byteLength);
+      const n = this.x.session_add_area(rawPtr, rawJson.byteLength, ringPtr, ringBytes.byteLength, exportBlob ? 1 : 0);
       const t1 = performance.now();
       const network = this.json<FieldNetwork>(n);
       this.lastTiming = { wasm: Math.round(t1 - t0), decode: 0, parse: Math.round(performance.now() - t1), bytes: n };
@@ -105,7 +108,7 @@ export class WasmEngine {
     }));
   }
 
-  /** The last added Area as one binary blob for the device cache (geometry included). */
+  /** The last added Area as one binary blob for the device cache (geometry included); only after `addArea(…, true)`. */
   exportLastArea(): Uint8Array {
     const n = this.x.session_export_last();
     if (n === 0) this.json(0);

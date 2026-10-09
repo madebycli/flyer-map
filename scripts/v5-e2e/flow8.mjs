@@ -2,6 +2,7 @@
 // read-only for a helper without the capability; never part of the street progress.
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
+import { menuTile, openMenu } from './ui.mjs';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const shots = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
@@ -27,13 +28,14 @@ async function helper(who) {
 
 const A = await helper('alice');
 // Take the west Area first so there is map data to snap to.
-await A.page.getByRole('button', { name: 'Gebiete', exact: true }).click();
+await menuTile(A.page, 'Gebiete');
 await A.page.locator('.v5-arearow', { hasText: 'West' }).getByRole('button', { name: /übernehmen/ }).click();
 await until(async () => Number(await A.page.locator('.v5-pill').getAttribute('data-total')) > 0, 40000);
 await A.page.getByRole('button', { name: 'Schließen' }).click();
 
-check('a helper with the capability gets the Sonder-Marker tool', (await A.page.getByRole('button', { name: 'Sonder-Marker setzen' }).count()) === 1);
-await A.page.getByRole('button', { name: 'Sonder-Marker setzen' }).click();
+await openMenu(A.page);
+check('a helper with the capability gets the Sonder-Marker tool', (await A.page.getByRole('button', { name: 'Sonder-Marker', exact: true }).count()) === 1);
+await A.page.getByRole('button', { name: 'Sonder-Marker', exact: true }).click();
 await A.jump(116, 13, 18.1);
 await A.click(119, 16); // a few metres beside the house
 await A.page.waitForSelector('.v5-form');
@@ -60,7 +62,9 @@ await A.page.screenshot({ path: `${shots}/f8-pickup.png` });
 // A helper without the capability sees it but cannot change it.
 const B = await helper('bob');
 check('the other helper sees the pin', await until(async () => (await B.pins()) === 1));
-check('and has no tool to place new ones', (await B.page.getByRole('button', { name: 'Sonder-Marker setzen' }).count()) === 0);
+await openMenu(B.page);
+check('and has no tool to place new ones', (await B.page.getByRole('button', { name: 'Sonder-Marker', exact: true }).count()) === 0);
+await B.page.getByRole('button', { name: 'Schließen' }).click();
 const pinB = await B.page.evaluate(() => { const f = window.__v5Map.getSource('v5-pickups')._data.features[0]; window.__v5Map.jumpTo({ center: f.geometry.coordinates, zoom: 18 }); return f.geometry.coordinates; });
 await B.page.waitForTimeout(800);
 const pb = await B.page.evaluate((c) => { const p = window.__v5Map.project(c); return [p.x, p.y]; }, pinB);

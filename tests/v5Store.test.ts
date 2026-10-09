@@ -252,3 +252,12 @@ test('network cache: hits only for the exact pack, polygon and engine it was bui
   await broken.store(key, network);
   await broken.forget('a1');
 });
+
+test('forget drops overlay entries and queued edits of vanished keys, and nothing else', async () => {
+  const store = new FieldStore('a', null);
+  store.set(['h:keep', 'h:gone', 's:gone'], 'completed');
+  assert.equal(store.forget(['h:gone', 's:gone', 'h:never-existed']), 2);
+  assert.equal(store.statusOf('h:gone'), 'open');
+  assert.equal(store.statusOf('h:keep'), 'completed');
+  assert.deepEqual(store.pendingOps().map((op) => op.key), ['h:keep']);
+});

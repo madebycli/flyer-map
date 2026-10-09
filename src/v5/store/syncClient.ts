@@ -19,6 +19,9 @@ export interface SyncTransport {
  * bookkeeping to get wrong: failed pushes stay in the persisted outbox and are
  * simply sent again. Pulls are cursor based and may overlap harmlessly.
  */
+export type SyncInfo = { lastOkAt: number | null; lastError: string | null };
+const describe = (error: unknown) => (error instanceof Error ? error.message : 'Unbekannter Fehler').slice(0, 160);
+
 export class SyncClient {
   private running = false;
   private again = false;
@@ -30,12 +33,15 @@ export class SyncClient {
   private disposed = false;
   private unsubscribers: (() => void)[];
   state: 'idle' | 'syncing' | 'offline' = 'idle';
+  /** When the last full round trip succeeded, and why the last one failed (null while healthy): shown in the overview. */
+  lastOkAt: number | null = null;
+  lastError: string | null = null;
 
   constructor(
     private readonly store: FieldStore,
     private readonly transport: SyncTransport,
     private readonly batchSize = 200,
-    private readonly onState: (state: SyncClient['state'], pending: number) => void = () => {},
+    private readonly onState: (state: SyncClient['state'], pending: number, info: SyncInfo) => void = () => {},
     private readonly extras: SyncExtra[] = [],
   ) {
     this.unsubscribers = [store.subscribe(() => this.kick()), ...extras.map((extra) => extra.subscribe(() => this.kick()))];
@@ -70,20 +76,22 @@ export class SyncClient {
         }
         // Notes ride the same loop but must not make the status sync look offline (or the reverse): isolate and retry.
         for (const extra of this.extras) {
-          try { await extra.syncOnce(); } catch { this.extraFailed = true; }
+          try { await extra.syncOnce(); } catch (error) { this.extraFailed = true; this.lastError = `Notizen: ${describe(error)}`; }
         }
         if (this.extraFailed) {
           this.extraFailed = false;
           this.extraFailures++;
           if (this.retryTimer) clearTimeout(this.retryTimer);
           this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.run(); }, Math.min(60_000, 1000 * 2 ** this.extraFailures));
-        } else this.extraFailures = 0;
+        } else { this.extraFailures = 0; this.lastError = null; }
         this.failures = 0;
+        this.lastOkAt = Date.now();
         this.set('idle');
       } while (this.again);
-    } catch {
+    } catch (error) {
       if (!this.disposed) {
         this.failures++;
+        this.lastError = describe(error);
         this.set('offline');
         // Exponential backoff, capped; pending ops stay safely in the persisted outbox.
         if (this.retryTimer) clearTimeout(this.retryTimer);
@@ -94,7 +102,7 @@ export class SyncClient {
     }
   }
 
-  private set(state: SyncClient['state']) { if (!this.disposed) { this.state = state; this.onState(state, this.store.pendingOps().length + this.extras.reduce((n, extra) => n + extra.pendingCount(), 0)); } }
+  private set(state: SyncClient['state']) { if (!this.disposed) { this.state = state; this.onState(state, this.store.pendingOps().length + this.extras.reduce((n, extra) => n + extra.pendingCount(), 0), { lastOkAt: this.lastOkAt, lastError: this.lastError }); } }
   dispose() {
     this.disposed = true;
     for (const off of this.unsubscribers) off();

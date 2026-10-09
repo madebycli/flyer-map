@@ -7,7 +7,7 @@ type Area = Meta['areas'][number];
 export type AreaStats = { done: number; total: number };
 
 /** Outline colour of a collection Area: what is happening there, readable at a glance on the map. */
-export const phaseColor = (view: AreaView): string => (view.phase === 'done' ? '#3ee0b8' : view.phase === 'working' ? (view.inRoom ? '#7aa8ff' : '#ffd24a') : '#8da2b8');
+export const phaseColor = (view: AreaView): string => (view.phase === 'done' ? '#5fc79f' : view.phase === 'working' ? (view.inRoom ? '#8fb8ff' : '#d6b062') : '#8aa0b4');
 const PHASE_LABEL: Record<AreaView['phase'], string> = { open: 'Offen', working: 'Wird bearbeitet', done: 'Erledigt' };
 const PHASE_ICON: Record<AreaView['phase'], IconName> = { open: 'open', working: 'users', done: 'check' };
 

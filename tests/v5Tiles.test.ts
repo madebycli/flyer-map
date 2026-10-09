@@ -83,6 +83,14 @@ test('tiles: layers, feature keys and geometry match the network (z17, a block o
   const visibleHere = new Set(full.segments.filter((s) => s.visible).map((s) => `s:${s.id}`));
   assert.ok(sKeys.length > 0 && sKeys.every((k) => visibleHere.has(k)), 'only visible street pieces are in tiles');
   assert.ok(feats(segments).every((f) => f.type === 2));
+  // "Nur Straßen mit Häusern": h = 1 exactly when the junction-to-junction street has a house
+  const groupHouses = new Map<string, number>();
+  for (const s of full.segments) groupHouses.set(s.group, (groupHouses.get(s.group) ?? 0) + s.houseCount);
+  const segByKey = new Map(full.segments.map((s) => [`s:${s.id}`, s]));
+  for (const f of feats(segments)) {
+    const seg = segByKey.get(f.properties.key as string)!;
+    assert.equal(f.properties.h, (groupHouses.get(seg.group) ?? 0) > 0 ? '1' : '0', `${f.properties.key}: h`);
+  }
 });
 
 test('tiles: every house and every visible street piece appears in at least one tile of its zoom level (nothing lost at tile borders)', async () => {
@@ -131,7 +139,7 @@ test('a cached Area blob restores the same network and byte-identical tiles', as
   const raw = syntheticCity(4, 3).raw;
   const a = await WasmEngine.load(wasm);
   a.resetSession();
-  const slim = a.addArea(bytes(raw), bigRing(4, 3));
+  const slim = a.addArea(bytes(raw), bigRing(4, 3), true);
   const blob = a.exportLastArea();
   const b = await WasmEngine.load(wasm);
   b.resetSession();

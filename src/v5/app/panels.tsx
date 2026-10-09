@@ -1,0 +1,143 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { statusColors, type Theme } from '../map/fieldMap.ts';
+import type { Meta } from './api.ts';
+import { HINTS, LABELS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
+import { buildSearchIndex, searchEntries, type SearchEntry } from './search.ts';
+import type { Index } from './mark.ts';
+import { ago, emptyTally, percentOf, tallyTotal, type HouseStats, type Tally } from './stats.ts';
+import { SheetFrame } from './sheet.tsx';
+import { Icon, WavyProgress, type IconName } from './ui.tsx';
+
+export type AppTile = { id: string; icon: IconName; label: string; on?: boolean; badge?: number; href?: string; onClick?: () => void; wide?: boolean };
+
+/** The Home menu: an app-icon grid of squares. Rare things live here so the map stays free for the one thing that is done all day. */
+export function HomeSheet({ tiles, onClose }: { tiles: AppTile[]; onClose: () => void }) {
+  return (
+    <SheetFrame icon="grid" title="Menü" onClose={onClose}>
+      <div className="v5-home">
+        {tiles.map((t) => {
+          const body = <><Icon name={t.icon} size={t.wide ? 26 : 28} /><span>{t.label}</span>{t.badge ? <em>{t.badge}</em> : null}</>;
+          const cls = `v5-app${t.on ? ' on' : ''}${t.wide ? ' wide' : ''}`;
+          return t.href
+            ? <a key={t.id} className={cls} href={t.href} aria-label={t.label}>{body}</a>
+            : <button key={t.id} className={cls} onClick={t.onClick} aria-pressed={t.on} aria-label={t.label}>{body}</button>;
+        })}
+      </div>
+    </SheetFrame>
+  );
+}
+
+type OverviewProps = {
+  kind: Kind;
+  theme: Theme;
+  stats: HouseStats;
+  areas: Meta['areas'];
+  teams: Meta['teams'];
+  sync: { state: 'idle' | 'syncing' | 'offline'; pending: number; lastOkAt: number | null; lastError: string | null };
+  conflicts: number;
+  engine: string;
+  onFitArea(id: string): void;
+  onSyncNow(): void;
+  onConflicts(): void;
+  onClose(): void;
+};
+
+/** Progress by houses (overall, per Area, per Team), what the colours mean, and the honest state of the sync. */
+export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflicts, engine, onFitArea, onSyncNow, onConflicts, onClose }: OverviewProps) {
+  const labels = LABELS[kind], colors = statusColors(theme);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 10_000); return () => window.clearInterval(t); }, []);
+  const overall = stats.overall, total = tallyTotal(overall), percent = percentOf(overall);
+  const byTeam = useMemo(() => {
+    const map = new Map<string, { name: string; color: string; tally: Tally }>();
+    for (const area of areas) {
+      const t = stats.byArea.get(area.id);
+      if (!t) continue;
+      const team = teams.find((x) => x.id === area.teamId);
+      if (!team) continue;
+      const entry = map.get(team.id) ?? { name: team.name, color: team.color, tally: emptyTally() };
+      for (const s of ORDER) entry.tally[s] += t[s];
+      map.set(team.id, entry);
+    }
+    return [...map.values()];
+  }, [areas, teams, stats]);
+  const state = sync.state === 'offline' ? 'offline' : sync.pending > 0 || sync.state === 'syncing' ? 'busy' : 'ok';
+  const headline = state === 'ok' ? 'Alles gespeichert' : state === 'busy' ? `${sync.pending} Änderungen werden gesendet` : `Offline – ${sync.pending} Änderungen warten`;
+  return (
+    <SheetFrame icon="chart" title="Übersicht" onClose={onClose} meta={<span><Icon name="house" size={16} />{total.toLocaleString('de')} Häuser</span>}>
+      <div className="v5-bignum" aria-label={`${percent} Prozent der Häuser`}>{percent}<small>%</small></div>
+      <WavyProgress value={percent / 100} label="Fortschritt nach Häusern" />
+      <div className="v5-stats">
+        {ORDER.map((s) => (
+          <div key={s} className="v5-stat" style={{ '--c': colors[s] } as React.CSSProperties}><b>{overall[s].toLocaleString('de')}</b><small>{labels[s]}</small></div>
+        ))}
+      </div>
+      <h3>Fortschritt zählt Häuser, nicht Straßen</h3>
+      <p className="v5-hint">„Nicht möglich“ zählt nicht gegen den Fortschritt.</p>
+      {areas.length > 1 && (<>
+        <h3>Gebiete</h3>
+        <div className="v5-list">
+          {areas.map((a) => { const t = stats.byArea.get(a.id); const p = t ? percentOf(t) : 0; return (
+            <button key={a.id} className="v5-areabar" onClick={() => onFitArea(a.id)} aria-label={`${a.name}: ${p} Prozent, zeigen`}>
+              <div><b>{a.name}</b><span>{t ? `${t.completed.toLocaleString('de')} / ${(tallyTotal(t) - t['not-deliverable']).toLocaleString('de')}` : '–'} · {p} %</span></div>
+              <div className="v5-bar" style={{ '--p': p / 100 } as React.CSSProperties}><i /></div>
+            </button>
+          ); })}
+        </div>
+      </>)}
+      {byTeam.length > 1 && (<>
+        <h3>Gruppen</h3>
+        <div className="v5-list">
+          {byTeam.map((t) => (
+            <div key={t.name} className="v5-areabar" style={{ cursor: 'default' }}>
+              <div><b><span className="v5-dotc" style={{ background: t.color }} />{t.name}</b><span>{percentOf(t.tally)} %</span></div>
+              <div className="v5-bar" style={{ '--p': percentOf(t.tally) / 100 } as React.CSSProperties}><i /></div>
+            </div>
+          ))}
+        </div>
+      </>)}
+      <h3>Synchronisierung</h3>
+      <div className={`v5-syncbox${sync.lastError && state !== 'ok' ? ' bad' : ''}`} role="status">
+        <span><Icon name={state === 'ok' ? 'cloudOk' : state === 'offline' ? 'cloudOff' : 'sync'} size={18} /> {headline}</span>
+        <small>Zuletzt erfolgreich: {ago(sync.lastOkAt, now)}</small>
+        {sync.lastError && <small>Letzter Fehler: {sync.lastError}</small>}
+      </div>
+      <div className="v5-row" style={{ marginTop: '0.5rem' }}>
+        <button className="v5-btn" style={{ marginTop: 0 }} onClick={onSyncNow} disabled={sync.state === 'syncing'}><Icon name="sync" size={20} />Jetzt abgleichen</button>
+        {conflicts > 0 && <button className="v5-btn" style={{ marginTop: 0 }} onClick={onConflicts}><Icon name="warning" size={20} />{conflicts} überschrieben</button>}
+      </div>
+      <h3>Was bedeuten die Farben?</h3>
+      <div className="v5-legend">
+        {ORDER.map((s) => (
+          <div key={s} className="v5-legend-row" style={{ '--c': colors[s] } as React.CSSProperties}>
+            <span className="v5-swatch"><Icon name={STATUS_ICON[s]} size={20} /></span>
+            <div><b>{labels[s]}</b><small>{HINTS[kind][s]}</small></div>
+          </div>
+        ))}
+      </div>
+      <p className="v5-hint v5-foot">Kartenmotor: {engine}</p>
+    </SheetFrame>
+  );
+}
+
+/** Street and house-number search; picking a result flies there and opens it. */
+export function SearchSheet({ index, onPick, onClose }: { index: Index | null; onPick: (entry: SearchEntry) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const entries = useMemo(() => (index ? buildSearchIndex(index) : []), [index]);
+  const results = useMemo(() => searchEntries(entries, query), [entries, query]);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { input.current?.focus(); }, []);
+  return (
+    <SheetFrame icon="search" title="Suche" onClose={onClose}>
+      <div className="v5-row"><input ref={input} className="v5-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Straße oder Adresse" aria-label="Straße oder Adresse suchen" inputMode="search" autoComplete="off" /></div>
+      <div className="v5-results">
+        {results.map((r) => (
+          <button key={`${r.kind}${r.id}`} className="v5-result" onClick={() => onPick(r)}>
+            <Icon name={r.kind === 'street' ? 'road' : 'house'} size={22} /><b>{r.label}</b><small>{r.detail}</small>
+          </button>
+        ))}
+        {query.trim() && !results.length && <p className="v5-hint"><Icon name="info" size={20} />Nichts gefunden.</p>}
+      </div>
+    </SheetFrame>
+  );
+}

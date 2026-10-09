@@ -30,7 +30,7 @@ export type CampaignState = {
   notes: NoteStore | null;
   pickups: Pickup[];
   progress: ProgressSnapshot | null;
-  sync: { state: 'idle' | 'syncing' | 'offline'; pending: number };
+  sync: { state: 'idle' | 'syncing' | 'offline'; pending: number; lastOkAt: number | null; lastError: string | null };
   /** Areas that are shown without data yet (some other Areas already work). */
   missingAreas: Meta['areas'];
   buildMissing(): Promise<void>;
@@ -38,6 +38,10 @@ export type CampaignState = {
   reload(): Promise<void>;
   /** Light refresh of roles, claims and Rooms only (no map rebuild, no loading screen). */
   refreshMeta(): Promise<void>;
+  /** Keys in the local progress that the derived map no longer has (empty while an Area is missing, so nothing is judged by half the data). */
+  orphans(): string[];
+  /** Run a sync round right now (the overview's button); a no-op while one is running. */
+  syncNow(): void;
 };
 
 function actorId(): string {
@@ -61,9 +65,10 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const [pickups, setPickups] = useState<Pickup[]>([]);
   const loadPickups = useCallback(async (m: Meta) => { setPickups(m.kind === 'collection' && m.pickupRights.view ? await fetchPickups(campaignId) : []); }, [campaignId]);
   const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
-  const [sync, setSync] = useState<CampaignState['sync']>({ state: 'idle', pending: 0 });
+  const [sync, setSync] = useState<CampaignState['sync']>({ state: 'idle', pending: 0, lastOkAt: null, lastError: null });
   const [missingAreas, setMissingAreas] = useState<Meta['areas']>([]);
   const reload = useRef<() => Promise<void>>(async () => {});
+  const syncRef = useRef<SyncClient | null>(null);
   const missingRef = useRef<Meta['areas']>([]);
   const metaKindRef = useRef<Meta['kind']>('distribution');
   const canBuildRef = useRef(false);
@@ -145,7 +150,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         setEngineState({ client: engine, mapData });
         setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore); setNotes(noteStore);
         client?.dispose();
-        client = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending) => setSync({ state, pending }), [new NoteSync(noteStore, httpNoteTransport(campaignId))]);
+        client = syncRef.current = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending, info) => setSync({ state, pending, ...info }), [new NoteSync(noteStore, httpNoteTransport(campaignId))]);
         // Show the screen once the first pull settled (or after 4 s on a slow link), so a fresh device does not
         // flash 0 % before the shared progress arrives.
         if (parts.length) setPhase({ kind: 'loading', label: 'Fortschritt wird geladen …' });
@@ -171,9 +176,17 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', hidden);
     document.addEventListener('visibilitychange', visible);
-    const poll = window.setInterval(() => { void client?.run(); if (kind === 'collection' || metaKindRef.current === 'collection') void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) { setMeta(m); void loadPickups(m); } }, () => {}); }, 15_000);
+    // The poll idles while the page is hidden and never stacks requests on a slow link.
+    let metaBusy = false;
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      void client?.run();
+      if (metaBusy || !(kind === 'collection' || metaKindRef.current === 'collection')) return;
+      metaBusy = true;
+      void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) { setMeta(m); void loadPickups(m); } }, () => {}).finally(() => { metaBusy = false; });
+    }, 15_000);
     return () => {
-      cancelled = true; client?.dispose(); progressTracker?.dispose(); engine?.dispose();
+      cancelled = true; syncRef.current = null; client?.dispose(); progressTracker?.dispose(); engine?.dispose();
       window.removeEventListener('online', online); window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', hidden); document.removeEventListener('visibilitychange', visible);
       window.clearInterval(poll);
@@ -185,6 +198,8 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   return {
     phase, meta, network, engine: engineState?.client ?? null, mapData: engineState?.mapData ?? null, areaOf, store, notes, pickups, progress, sync, missingAreas,
     reload: () => reload.current(),
+    syncNow: () => { void syncRef.current?.run(); },
+    orphans: () => (store && network && !missingAreas.length ? [...store.entries()].map(([key]) => key).filter((key) => !areaOf.has(key)) : []),
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
     async buildMissing() {
       if (!canBuildRef.current) return;

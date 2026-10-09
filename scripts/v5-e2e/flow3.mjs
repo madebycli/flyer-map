@@ -1,6 +1,7 @@
 // Fast marking tools and the Area editor, against the real handlers (v5 API + legacy mutation endpoint).
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
+import { confirmRoute, menuTile, setBrush, setMode, startMarking } from './ui.mjs';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const shots = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
@@ -31,19 +32,20 @@ const start = await done();
 check('boots', start === 0, `done=${start}`);
 
 // ── tap mode: one tap = one house, brush chosen once ──────────────
-await page.getByRole('button', { name: 'Markieren' }).click();
+await startMarking(page);
+await setMode(page, 'Tippen');
 await jump(116, 13, 18.1);
 await clickAt(116, 13);
 await page.waitForTimeout(500);
-check('tap stamps a house with the default brush (completed) in a single tap', (await done()) === 1);
-await page.locator('.v5-seg.compact').getByRole('button', { name: 'Später' }).click();
+check('tap stamps a house with the default brush (Ausgeteilt) in a single tap', (await done()) === 1);
+await page.locator('.v5-fab').getByRole('button', { name: /^Pinsel: Ausgeteilt/ }).click(); // the panel's brush tile cycles to the next status
 await clickAt(136, 13);
 await page.waitForTimeout(400);
 check('switching the brush once changes what every following tap does', (await done()) === 1 && (await until(() => serverStatus('h:h5000098').then((s) => s === 'later'))));
 
 // ── paint mode: one drag over a row of houses ─────────────────────
-await page.locator('.v5-seg.compact').getByRole('button', { name: 'Erledigt' }).click();
-await page.getByRole('button', { name: 'Wischen' }).click();
+await setBrush(page, 'Ausgeteilt');
+await setMode(page, 'Wischen');
 await jump(246, 13, 18.1);
 const before = await done();
 await drag([[213, 13], [273, 13]]);
@@ -53,7 +55,7 @@ check('painting across four houses marks exactly those four', painted === 4, `+$
 await page.screenshot({ path: `${shots}/t1-paint.png` });
 
 // ── lasso: circle a whole block ───────────────────────────────────
-await page.getByRole('button', { name: 'Lasso' }).click();
+await setMode(page, 'Lasso');
 await jump(350, 50, 17.2);
 const lassoBefore = await done();
 await drag([[302, 2], [398, 2], [398, 98], [302, 98], [302, 2]]);
@@ -62,24 +64,34 @@ const lassoed = (await done()) - lassoBefore;
 check('lasso marks the houses of the circled block (8) and nothing outside', lassoed === 8, `+${lassoed}`);
 await page.screenshot({ path: `${shots}/t2-lasso.png` });
 
-// ── route with the brush: two taps and one confirm ─────────────────
-await page.getByRole('button', { name: 'Strecke', exact: true }).click();
+// ── route: tap points, confirm with the check, pick the status ─────
+await setMode(page, 'Strecke');
 await jump(200, 0, 15.8);
 await clickAt(50, 0); await clickAt(350, 0);
 await page.waitForTimeout(700);
+check('the counter tile counts the tapped points', (await page.locator('.v5-fab .v5-tile b').first().innerText()) === '2');
 const routeBefore = await done();
-await page.getByRole('button', { name: 'Strecke markieren' }).click();
+await confirmRoute(page);
 await page.waitForTimeout(900);
-check('a route is two taps and one confirm', (await done()) > routeBefore, `+${(await done()) - routeBefore}`);
+check('a route is two taps, a check and a status', (await done()) > routeBefore, `+${(await done()) - routeBefore}`);
+check('after a route the panel is ready for the next one (points reset)', (await page.locator('.v5-fab .v5-tile b').first().innerText()) === '0');
 
-await page.getByRole('button', { name: 'Fertig' }).click();
-check('closing the tool brings the dock back', await page.getByRole('button', { name: 'Gebiete' }).isVisible());
+// ── "Nur Straßen mit Häusern" is a switch in the options and filters the map layers ──
+await page.locator('.v5-fab .v5-tile').first().click();
+await page.getByRole('button', { name: 'Nur Straßen mit Häusern' }).click();
+check('the filter reaches the street layers', await page.evaluate(() => JSON.stringify(window.__v5Map.getFilter('v5-segments-line') ?? null).includes('"h"')));
+await page.getByRole('button', { name: 'Nur Straßen mit Häusern' }).click();
+check('and can be switched off again', await page.evaluate(() => !window.__v5Map.getFilter('v5-segments-line')));
+await page.getByRole('button', { name: 'Weiter markieren' }).click();
+
+await page.getByRole('button', { name: 'Markieren beenden' }).click();
+check('closing the tool brings the marking button back', await page.getByRole('button', { name: 'Markieren starten' }).isVisible());
 check('every gesture reached the server', await until(async () => (await serverStatus('h:h5000192')) === 'completed' && (await serverStatus('h:h5000290')) === 'completed'));
 
 // ── Area editor ───────────────────────────────────────────────────
 const areaRing = async () => page.evaluate(async () => { const m = await (await fetch('/api/v5/campaigns/campaign_n/meta')).json(); const a = m.areas.find((x) => x.id === 'area_n'); return { ring: a.geometry.coordinates[0], updatedAt: a.updatedAt, packVersion: a.packVersion, count: m.areas.length }; });
 const originalArea = await areaRing();
-await page.getByRole('button', { name: 'Gebiete' }).click();
+await menuTile(page, 'Gebiete');
 await page.evaluate(() => window.__v5Map.fitBounds([[12.9965, 50.9958], [13.0245, 51.0125]], { padding: 40, duration: 0 }));
 await page.waitForTimeout(1200);
 const [cx, cy] = await page.evaluate(() => { const m = window.__v5Map; const c = m.project([13.0075, 51.0045]); return [c.x, c.y]; });

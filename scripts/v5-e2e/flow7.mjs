@@ -2,6 +2,7 @@
 // marking works only inside the held Area, finishing greys the Area out; the legacy mutations run against the real Worker.
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
+import { menuTile } from './ui.mjs';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const shots = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
@@ -24,11 +25,11 @@ async function helper(who) {
   const serverStates = () => page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.map((o) => `${o.key}=${o.status}@${o.area}`));
   return { ctx, page, jump, click, serverStates };
 }
-const openList = async (p) => { if (await p.page.locator('.v5-sheet').count()) await p.page.getByRole('button', { name: 'Schließen' }).first().click(); await p.page.getByRole('button', { name: 'Gebiete', exact: true }).click(); await p.page.waitForSelector('.v5-arearow'); };
+const openList = async (p) => { if (await p.page.locator('.v5-sheet').count()) await p.page.getByRole('button', { name: 'Schließen' }).first().click(); await menuTile(p.page, 'Gebiete'); await p.page.waitForSelector('.v5-arearow'); };
 const row = (p, name) => p.page.locator('.v5-arearow', { hasText: name });
 
 const A = await helper('alice');
-check('a helper lands in the collection view with the Gebiete list, no distribution tools', (await A.page.getByRole('button', { name: 'Gebiete', exact: true }).count()) === 1 && (await A.page.getByRole('button', { name: 'Markieren' }).count()) === 0);
+check('a helper lands in the collection view with the Gebiete list, no distribution tools', (await A.page.getByRole('button', { name: 'Menü' }).count()) === 1 && (await A.page.getByRole('button', { name: 'Markieren starten' }).count()) === 0);
 await openList(A);
 check('both Areas are listed as open', (await A.page.locator('.v5-arearow[data-phase="open"]').count()) === 2);
 await A.page.screenshot({ path: `${shots}/f7-list-open.png` });

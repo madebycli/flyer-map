@@ -4,11 +4,12 @@ import type { LngLat } from '../engine/types.ts';
 export type EngineRequest =
   | { id: number; op: 'init'; forceTs: boolean }
   | { id: number; op: 'reset' }
+  | { id: number; op: 'stats' }
   | ({ id: number; op: 'area' } & AreaRequest)
   | { id: number; op: 'mapData' }
   | { id: number; op: 'tile'; z: number; x: number; y: number }
   | { id: number; op: 'snap'; at: LngLat };
-export type EngineReply = { id: number; error?: string; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']> };
+export type EngineReply = { id: number; error?: string; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']>; stats?: ReturnType<EngineHost['stats']> };
 
 const wasmUrl = () => fetch(new URL('../engine/wasm/engine.wasm', import.meta.url));
 
@@ -17,6 +18,7 @@ export async function handle(host: EngineHost, req: EngineRequest): Promise<{ re
   try {
     switch (req.op) {
       case 'init': return { reply: { id: req.id, kind: await host.init(req.forceTs ? null : wasmUrl) }, transfer: [] };
+      case 'stats': return { reply: { id: req.id, stats: host.stats() }, transfer: [] };
       case 'reset': host.reset(); return { reply: { id: req.id }, transfer: [] };
       case 'area': {
         const area = await host.area(req);

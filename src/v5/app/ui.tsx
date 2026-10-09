@@ -43,6 +43,14 @@ const PATHS = {
   send: <path d="M4 12L20 4l-4.500 16-3.500-6.500zM12 13.500L20 4" />,
   exit: <path d="M10 4.500H6.500A1.500 1.500 0 0 0 5 6v12a1.500 1.500 0 0 0 1.500 1.500H10M14 8.500l3.500 3.500-3.500 3.500M17.500 12H9.500" />,
   unlock: <><rect x="5.500" y="10.500" width="13" height="9.500" rx="2.500" /><path d="M8.500 10.500V8a3.500 3.500 0 0 1 6.600-1.600M12 14.500v2" /></>,
+  locate: <><circle cx="12" cy="12" r="3" /><circle cx="12" cy="12" r="7.5" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" /></>,
+  minus: <path d="M5 12h14" />,
+  compass: <><circle cx="12" cy="12" r="8.5" /><path d="M15.2 8.8l-1.6 4.8-4.8 1.6 1.6-4.8z" /></>,
+  grid: <><rect x="4.5" y="4.5" width="6" height="6" rx="1.6" /><rect x="13.5" y="4.5" width="6" height="6" rx="1.6" /><rect x="4.5" y="13.5" width="6" height="6" rx="1.6" /><rect x="13.5" y="13.5" width="6" height="6" rx="1.6" /></>,
+  search: <><circle cx="10.5" cy="10.5" r="6" /><path d="M15 15l5 5" /></>,
+  chart: <path d="M5 20V11M12 20V5M19 20v-6" />,
+  layers: <path d="M12 4l8.500 4.500L12 13 3.500 8.500zM3.500 12.500L12 17l8.500-4.500M3.500 16L12 20.500 20.500 16" />,
+  swap: <path d="M7 4L3.500 7.500 7 11M3.500 7.500H20M17 13l3.500 3.500L17 20M20.500 16.500H4" />,
   mapPin: <><path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 0 0-13 0c0 5.4 6.5 11 6.5 11z" /><circle cx="12" cy="10" r="2.3" /></>,
 } satisfies Record<string, ReactNode>;
 

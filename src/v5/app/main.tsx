@@ -1,7 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import './controls.css';
 import './v5.css';
 import { App } from './App.tsx';
 

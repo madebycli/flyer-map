@@ -67,9 +67,10 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 
 ## Tools, notes, cache (see ADR-0034)
 
-- Street pieces are ≤ 60 m chunks. Tap = whole junction segment, paint/route = chunks. Marking modes: tap, paint,
-  lasso, route; a brush status applies to everything until changed; undo for the last gesture.
-- Notes: seven quick flags (toggle) or text, or both; one marker per annotated place; overview from "Mehr";
+- Street pieces are ≤ 60 m chunks. Tap = whole junction segment, paint/route = chunks. Marking modes: route (default), tap,
+  paint, lasso. Route: tap points → ✓ → pick the status; the other modes apply the brush at once. "Nur Straßen mit Häusern"
+  skips and hides streets without a house. Undo for the last gesture. UI: [Plan 047](../plans/active/047-v5-field-ui-v2.md).
+- Notes: seven quick flags (toggle) or text, or both; one marker per annotated place; overview from the Menü;
   viewers read, writers write, scoped roles only in their team's Areas.
 - Warm start: derived network per Area cached in IndexedDB by pack version, Area `updatedAt` and engine version;
   `window.__v5Boot` shows `meta / packs / derive / ready` milliseconds. Measured with 39 k houses in headless Chromium
@@ -77,11 +78,11 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 
 ## Not verified / not done
 
-- Real phones (ADR-0030) and the live OpenFreeMap basemap (sandbox has no egress): only a blank-style fallback was exercised.
+- Real phones (ADR-0030) and the live basemap (sandbox has no egress; style URLs come from `V5_BASEMAP_DARK`/`V5_BASEMAP_LIGHT`): only a blank-style fallback was exercised.
 - Real Overpass data: the pack builder is tested with a stub and a synthetic city, not a real city extract.
 - Activity, statistics, collection/pickup (Plan 045) and admin screens still live in the legacy app;
   v5 reads the same Areas and access grants. Area drawing/editing and notes are in v5.
 - No deploy, no remote migration (`0026` and `0027` are additive and untested against a real D1).
 - Reloading the page without network does not work (no service worker by ADR-0006); only a page that is already open keeps working offline.
 - Key ownership is bound to the first Area that writes a key; the server cannot yet verify that a key geometrically lies inside the claimed Area (it would need the derived key set per Area).
-- Pack rebuilds change derived ids only where OSM changed; statuses of vanished ids stay in D1 but are not shown.
+- Pack rebuilds change derived ids only where OSM changed; statuses of vanished ids stay in D1 but are not shown. An admin removes them per Area with "bereinigen" (`POST …/areas/:id/prune`).

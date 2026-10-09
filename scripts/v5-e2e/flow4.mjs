@@ -33,7 +33,7 @@ for (const p of [A, B]) await p.jump(180, 0, 17.4);
 A.gate.blocked = true;
 await A.click(180, 0);
 await A.page.waitForSelector('.v5-sheet');
-await A.page.getByRole('button', { name: 'Erledigt' }).first().click();
+await A.page.getByRole('button', { name: 'Ausgeteilt' }).first().click();
 await A.page.waitForTimeout(400);
 await B.click(180, 0);
 await B.page.waitForSelector('.v5-sheet');

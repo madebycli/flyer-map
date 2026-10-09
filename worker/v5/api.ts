@@ -14,6 +14,8 @@ import { parseCampaignId } from '../snapshotValidation.ts';
 export type V5Options = {
   fetchImpl?: typeof fetch;
   overpassUrl?: string;
+  /** Basemap style URLs the client should use; the client itself hard-codes no third-party map. */
+  basemap?: { dark?: string; light?: string };
   now?: () => number;
   maxPackBytes?: number;
   /** Upper bound for one Area's padded bounding box (default 25 km²). */
@@ -21,6 +23,7 @@ export type V5Options = {
 };
 
 const MAX_OPS = 200;
+const MAX_PRUNE = 5000;
 const ROWS_PER_STATEMENT = 10; // 9 bound parameters per row; D1 allows 100 per statement.
 const PACK_CHUNK_BYTES = 512 * 1024;
 const MAX_AREA_SQ_KM = 25;
@@ -30,17 +33,17 @@ const KEY = /^[sh]:[A-Za-z0-9#:._~@-]{1,80}$/u;
 
 type Route =
   | { kind: 'state' | 'ops' | 'meta' | 'notes'; campaignId: string }
-  | { kind: 'pack'; campaignId: string; areaId: string };
+  | { kind: 'pack' | 'prune'; campaignId: string; areaId: string };
 
 export function v5Route(pathname: string): Route | null {
-  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|areas\/([^/]+)\/pack)$/u.exec(pathname);
+  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|areas\/([^/]+)\/(?:pack|prune))$/u.exec(pathname);
   if (!m) return null;
   try {
     const campaignId = parseCampaignId(decodeURIComponent(m[1]));
     if (!campaignId) return null;
     if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta' || m[2] === 'notes') return { kind: m[2], campaignId };
     const areaId = decodeURIComponent(m[3]);
-    return ID.test(areaId) ? { kind: 'pack', campaignId, areaId } : null;
+    return ID.test(areaId) ? { kind: m[2].endsWith('/prune') ? 'prune' : 'pack', campaignId, areaId } : null;
   } catch { return null; }
 }
 
@@ -50,6 +53,31 @@ function sameOrigin(request: Request) {
   return !origin || origin === new URL(request.url).origin;
 }
 
+/**
+ * "Gebiet bereinigen": after an Area was reshaped the engine derives a different set of keys. The client lists the keys of
+ * that Area that no longer exist in what it derived; the server removes exactly those rows (and only rows of this Area).
+ * Admin only: it is a bulk delete of shared progress.
+ */
+async function pruneState(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, request: Request): Promise<Response> {
+  if (access.role !== 'admin') return fail(403, 'forbidden', 'Nur Admins dürfen ein Gebiet bereinigen.');
+  const area = await resolveArea(db, campaignId, areaId);
+  if (!area) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
+  if (!(request.headers.get('content-type') ?? '').includes('application/json')) return fail(415, 'unsupported_media_type', 'JSON erwartet.');
+  const text = await request.text();
+  if (text.length > 200_000) return fail(413, 'too_large', 'Zu viele Einträge auf einmal.');
+  let body: { keys?: unknown };
+  try { body = JSON.parse(text); } catch { return fail(400, 'invalid_json', 'Ungültiges JSON.'); }
+  if (!Array.isArray(body.keys) || body.keys.length === 0 || body.keys.length > MAX_PRUNE || !body.keys.every((k) => typeof k === 'string' && KEY.test(k))) return fail(400, 'invalid_keys', `1 bis ${MAX_PRUNE} gültige Schlüssel erwartet.`);
+  const keys = [...new Set(body.keys as string[])];
+  let removed = 0;
+  for (let i = 0; i < keys.length; i += 90) {
+    const chunk = keys.slice(i, i + 90);
+    const [result] = await db.batch([db.prepare(`DELETE FROM v5_state WHERE campaign_id = ? AND area_id = ? AND key IN (${chunk.map(() => '?').join(',')})`).bind(campaignId, areaId, ...chunk)]);
+    removed += result?.meta?.changes ?? 0;
+  }
+  return json({ removed });
+}
+
 export async function handleV5Api(request: Request, db: D1DatabaseLike, options: V5Options = {}): Promise<Response | null> {
   const url = new URL(request.url);
   const route = v5Route(url.pathname);
@@ -57,18 +85,19 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
   const access = (await resolveAccess(db, request, route.campaignId)) ?? (await resolveCollectionAccess(db, request, route.campaignId));
   if (!access) return fail(401, 'unauthorized', 'Kein Zugriff auf diese Aktion.');
   if (request.method !== 'GET' && request.method !== 'HEAD' && !sameOrigin(request)) return fail(403, 'cross_origin', 'Anfrage von fremdem Ursprung.');
-  if (route.kind === 'meta' && request.method === 'GET') return meta(db, access, route.campaignId, url);
+  if (route.kind === 'meta' && request.method === 'GET') return meta(db, access, route.campaignId, url, options);
   if (route.kind === 'state' && request.method === 'GET') return pullState(db, access, route.campaignId, url, options);
   if (route.kind === 'ops' && request.method === 'POST') return pushOps(db, access, route.campaignId, request, options);
   if (route.kind === 'notes' && request.method === 'GET') return pullNotes(db, access, route.campaignId, url, options);
   if (route.kind === 'notes' && request.method === 'POST') return pushNotes(db, access, route.campaignId, request, options);
   if (route.kind === 'pack' && request.method === 'GET') return getPack(db, access, route.campaignId, route.areaId, request);
   if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options);
+  if (route.kind === 'prune' && request.method === 'POST') return pruneState(db, access, route.campaignId, route.areaId, request);
   return fail(405, 'method_not_allowed', 'Methode nicht erlaubt.');
 }
 
 /** Everything the field client needs to boot, in one small request: role, team colours, Areas and pack versions. */
-async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL): Promise<Response> {
+async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: string, url: URL, options: V5Options): Promise<Response> {
   const campaign = await db.prepare('SELECT id, name FROM campaigns WHERE id = ?').bind(campaignId).first<{ id: string; name: string }>();
   if (!campaign) return fail(404, 'not_found', 'Aktion nicht gefunden.');
   // A collector only ever sees the collection side; admins and viewers choose with ?kind=collection.
@@ -119,6 +148,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: scoped ? teams.filter((t) => t.id === access.teamId) : teams,
     areas,
+    basemap: options.basemap?.dark || options.basemap?.light ? { dark: options.basemap.dark ?? options.basemap.light, light: options.basemap.light ?? options.basemap.dark } : null,
   });
 }
 

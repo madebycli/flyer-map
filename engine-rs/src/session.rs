@@ -12,7 +12,14 @@ pub const CENTERS_UP_TO: u32 = 15;
 pub const OUTLINES_FROM: u32 = 15;
 const CELL: f64 = 1.0 / 65536.0;
 
-struct Seg { key: String, line: Vec<[f64; 2]>, lnglat: Vec<LngLat>, name: Option<String> }
+struct Seg {
+    key: String,
+    line: Vec<[f64; 2]>,
+    lnglat: Vec<LngLat>,
+    name: Option<String>,
+    /// The junction-to-junction street this piece belongs to has at least one house ("Nur Straßen mit Häusern").
+    with_houses: bool,
+}
 struct Hou { key: String, num: String, ring: Vec<[f64; 2]>, center: [f64; 2], center_ll: LngLat, street: Option<String>, number: Option<String> }
 
 pub struct Session {
@@ -77,11 +84,13 @@ impl Session {
 
     /// Merge one Area's network: only ids not seen before are drawn (first Area wins), hidden segments are never drawn.
     pub fn add(&mut self, network: &Network) {
+        let mut group_houses: rustc_hash::FxHashMap<&str, u32> = rustc_hash::FxHashMap::default();
+        for s in &network.segments { *group_houses.entry(s.group.as_str()).or_insert(0) += s.house_count; }
         for s in &network.segments {
             if !self.seen_seg.insert(s.id.clone()) || !s.visible { continue; }
             let line: Vec<[f64; 2]> = s.coords.iter().map(|p| mercator(*p)).collect();
             self.seg_grid.insert(bbox(&line));
-            self.segs.push(Seg { key: format!("s:{}", s.id), line, lnglat: s.coords.clone(), name: s.name.clone() });
+            self.segs.push(Seg { key: format!("s:{}", s.id), line, lnglat: s.coords.clone(), name: s.name.clone(), with_houses: group_houses.get(s.group.as_str()).copied().unwrap_or(0) > 0 });
         }
         for h in &network.houses {
             if !self.seen_house.insert(h.id.clone()) { continue; }
@@ -106,7 +115,7 @@ impl Session {
             let s = &self.segs[i as usize];
             let pts: Vec<[f64; 2]> = s.line.iter().map(|p| to_tile(*p, z, x, y)).collect();
             let parts = clip_line(&pts);
-            if !parts.is_empty() { segments.add(GeomType::Line, &[("key", &s.key)], &parts); }
+            if !parts.is_empty() { segments.add(GeomType::Line, &[("key", &s.key), ("h", if s.with_houses { "1" } else { "0" })], &parts); }
         }
         let mut houses = Layer::new("houses");
         let mut centers = Layer::new("centers");

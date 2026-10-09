@@ -22,7 +22,8 @@ pub use derive::{CHUNK_METERS, ENGINE_VERSION};
 
 static RESULT: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
-static LAST_AREA: Mutex<Option<Network>> = Mutex::new(None);
+/// Snapshot of the Area added last, built only when the host asked for it (the full network is never kept twice).
+static LAST_BLOB: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 fn with_session<T>(f: impl FnOnce(&mut Session) -> T) -> T {
     let mut guard = SESSION.lock().unwrap();
@@ -34,10 +35,11 @@ fn fail(message: &str) -> usize {
     0
 }
 
-fn merge_and_slim(network: Network) -> usize {
+fn merge_and_slim(network: Network, export: bool) -> usize {
     with_session(|s| s.add(&network));
+    *LAST_BLOB.lock().unwrap() = if export { bincode::serialize(&network).ok() } else { None };
     match serde_json::to_vec(&session::slim(&network)) {
-        Ok(bytes) => { *LAST_AREA.lock().unwrap() = Some(network); store(bytes) }
+        Ok(bytes) => store(bytes),
         Err(e) => fail(&format!("serialize_failed: {e}")),
     }
 }
@@ -121,7 +123,7 @@ pub extern "C" fn engine_version_ptr() -> *const u8 {
 #[no_mangle]
 pub extern "C" fn session_reset() {
     *SESSION.lock().unwrap() = Some(Session::new());
-    *LAST_AREA.lock().unwrap() = None;
+    *LAST_BLOB.lock().unwrap() = None;
 }
 
 /// Derive one Area from raw OSM JSON, merge it into the session and return its slim network JSON (0 = failure).
@@ -129,20 +131,20 @@ pub extern "C" fn session_reset() {
 /// # Safety
 /// Pointers/lengths come from `alloc` buffers written by the host.
 #[no_mangle]
-pub unsafe extern "C" fn session_add_area(raw_ptr: *const u8, raw_len: usize, ring_ptr: *const u8, ring_len: usize) -> usize {
+pub unsafe extern "C" fn session_add_area(raw_ptr: *const u8, raw_len: usize, ring_ptr: *const u8, ring_len: usize, export: u32) -> usize {
     let raw = match serde_json::from_slice::<RawOsm>(std::slice::from_raw_parts(raw_ptr, raw_len)) { Ok(r) => r, Err(e) => return fail(&format!("pack_invalid: {e}")) };
     let mut network = derive::derive_network(&raw);
     let ring: Vec<LngLat> = match serde_json::from_slice(std::slice::from_raw_parts(ring_ptr, ring_len)) { Ok(r) => r, Err(e) => return fail(&format!("ring_invalid: {e}")) };
     network = area::restrict_to_area(network, &ring);
-    merge_and_slim(network)
+    merge_and_slim(network, export != 0)
 }
 
 /// The full network of the Area added last, as a binary blob for the device cache (0 = nothing to export).
 #[no_mangle]
 pub extern "C" fn session_export_last() -> usize {
-    match LAST_AREA.lock().unwrap().as_ref().map(bincode::serialize) {
-        Some(Ok(bytes)) => store(bytes),
-        _ => fail("nothing_to_export"),
+    match LAST_BLOB.lock().unwrap().take() {
+        Some(bytes) => store(bytes),
+        None => fail("nothing_to_export"),
     }
 }
 
@@ -153,7 +155,7 @@ pub extern "C" fn session_export_last() -> usize {
 #[no_mangle]
 pub unsafe extern "C" fn session_add_blob(ptr: *const u8, len: usize) -> usize {
     match bincode::deserialize::<Network>(std::slice::from_raw_parts(ptr, len)) {
-        Ok(network) => merge_and_slim(network),
+        Ok(network) => merge_and_slim(network, false),
         Err(e) => fail(&format!("blob_invalid: {e}")),
     }
 }

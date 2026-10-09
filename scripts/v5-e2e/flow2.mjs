@@ -2,6 +2,7 @@
 // Needs the server from server.ts (CITY_BLOCKS=12 for the correctness checks, 70 for the scale check).
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
+import { openMenu } from './ui.mjs';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const shots = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
 const BLOCKS = Number(process.env.CITY_BLOCKS ?? 12);
@@ -32,8 +33,8 @@ const serverState = async (page) => page.evaluate(async () => (await (await fetc
 // 1. Admin boots (building the pack the first time) and imports the legacy progress.
 let { ctx, page, bootMs } = await open('admin', { buildIfNeeded: true });
 console.log(`boot incl. pack build + derive: ${bootMs} ms, ${await pill(page)}`);
-await page.getByRole('button', { name: 'Mehr' }).click();
-const importButton = page.getByRole('button', { name: /Fortschritt aus der bisherigen Version/ });
+await openMenu(page);
+const importButton = page.getByRole('button', { name: 'Alt-Import' });
 check('import offer is visible for an admin with an empty overlay', await importButton.isVisible());
 await importButton.click();
 await page.waitForSelector('.v5-toast');
@@ -54,7 +55,7 @@ blocked = true;
 await jump(page, 76, 87, 18.4);
 await clickAt(page, 76, 87);
 await page.waitForSelector('.v5-sheet');
-await page.getByRole('button', { name: 'Erledigt' }).first().click();
+await page.getByRole('button', { name: 'Ausgeteilt' }).first().click();
 await page.waitForTimeout(500);
 const before = (await serverState(page).catch(() => null));
 check('offline: the API is really unreachable', before === null);

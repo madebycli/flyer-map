@@ -30,6 +30,8 @@ export class EngineHost {
     return this.kind;
   }
 
+  stats(): { kind: EngineKind; wasmBytes: number; fulls: number } { return { kind: this.kind, wasmBytes: this.wasm?.memoryBytes() ?? 0, fulls: this.fulls.length }; }
+
   reset(): void { this.fulls = []; this.wasm?.resetSession(); }
 
   async area(req: AreaRequest): Promise<AreaResult> {
@@ -43,7 +45,7 @@ export class EngineHost {
       if (!req.pack) throw new Error('area_without_data');
       const raw = await gunzip(req.pack);
       const unzip = Math.round(performance.now() - t0);
-      const network = this.wasm.addArea(raw, req.ring);
+      const network = this.wasm.addArea(raw, req.ring, !!req.wantBlob);
       const wasmMs = this.wasm.lastTiming;
       const blob = req.wantBlob ? this.wasm.exportLastArea() : undefined;
       return { network, blob, ms: Math.round(performance.now() - t0), detail: { gunzip: unzip, wasm: wasmMs.wasm, parse: wasmMs.parse, bytes: wasmMs.bytes } };

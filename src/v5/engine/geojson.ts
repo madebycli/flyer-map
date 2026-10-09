@@ -11,11 +11,13 @@ export function networksToGeoJson(networks: Network[]): MapGeoJson {
   const segments: Feature[] = [], houses: Feature[] = [], centers: Feature[] = [];
   const seenS = new Set<string>(), seenH = new Set<string>();
   for (const network of networks) {
+    const groupHouses = new Map<string, number>();
+    for (const s of network.segments) groupHouses.set(s.group, (groupHouses.get(s.group) ?? 0) + s.houseCount);
     for (const s of network.segments) {
       if (seenS.has(s.id)) continue;
       seenS.add(s.id);
       if (!s.visible) continue;
-      segments.push({ type: 'Feature', id: s.id, properties: { key: `s:${s.id}`, cls: s.cls }, geometry: { type: 'LineString', coordinates: s.coords } });
+      segments.push({ type: 'Feature', id: s.id, properties: { key: `s:${s.id}`, h: (groupHouses.get(s.group) ?? 0) > 0 ? '1' : '0' }, geometry: { type: 'LineString', coordinates: s.coords } });
     }
     for (const h of network.houses) {
       if (seenH.has(h.id)) continue;

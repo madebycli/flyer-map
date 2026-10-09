@@ -151,6 +151,16 @@ export class FieldStore {
     return dropped;
   }
 
+  /** After a server-side "Gebiet bereinigen": drop overlay entries (and queued edits) of keys that no longer exist. Returns how many were removed. */
+  forget(keys: Iterable<EntityKey>): number {
+    let removed = 0;
+    const gone = new Set(keys);
+    for (const key of gone) if (this.overlay.delete(key)) { removed++; this.mine.delete(key); }
+    for (const [id, op] of this.pending) if (gone.has(op.key)) this.pending.delete(id);
+    if (removed) { this.persistOutbox(); this.scheduleSave(); }
+    return removed;
+  }
+
   /** Server time seen on a pull; keeps new edits ordered correctly even when this device's clock is off. */
   syncClock(serverNow: number): void {
     const offset = serverNow - this.nowFn();

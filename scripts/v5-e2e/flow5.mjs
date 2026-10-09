@@ -1,6 +1,7 @@
 // Field notes: quick flags + text on a house, map markers, sync to a second person, overview, read-only viewer.
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
+import { openMenu } from './ui.mjs';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
 let failures = 0;
@@ -98,7 +99,7 @@ await A.page.evaluate(() => window.dispatchEvent(new Event('online')));
 check('and the first person’s map shows the new marker', await until(async () => (await A.markers()) === 3));
 
 // Overview from the menu.
-await A.page.getByRole('button', { name: 'Mehr' }).click();
+await openMenu(A.page);
 await A.page.getByRole('button', { name: /^Notizen/ }).click();
 check('the overview lists all notes', await until(async () => (await A.page.locator('.v5-note-open').count()) === 5, 4000));
 await A.page.getByRole('button', { name: 'Gefahr (1)' }).click();

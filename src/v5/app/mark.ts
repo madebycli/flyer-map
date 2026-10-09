@@ -8,6 +8,8 @@ export type Index = {
   housesBySegment: Map<string, House[]>;
   /** Chunks of every junction-to-junction segment, in order. */
   chunksByGroup: Map<string, Segment[]>;
+  /** Houses along each junction-to-junction street: "Nur Straßen mit Häusern" skips the ones with none. */
+  groupHouses: Map<string, number>;
 };
 
 export function buildIndex(network: Network): Index {
@@ -23,25 +25,27 @@ export function buildIndex(network: Network): Index {
     if (list) list.push(segment); else chunksByGroup.set(segment.group, [segment]);
   }
   for (const list of chunksByGroup.values()) list.sort((a, b) => a.chunk - b.chunk);
-  return { segments: new Map(network.segments.map((s) => [s.id, s])), houses: new Map(network.houses.map((h) => [h.id, h])), housesBySegment, chunksByGroup };
+  const groupHouses = new Map<string, number>();
+  for (const segment of network.segments) groupHouses.set(segment.group, (groupHouses.get(segment.group) ?? 0) + segment.houseCount);
+  return { segments: new Map(network.segments.map((s) => [s.id, s])), houses: new Map(network.houses.map((h) => [h.id, h])), housesBySegment, chunksByGroup, groupHouses };
 }
 
 /** Everything of a street piece in one go: all chunks of the tapped junction segment (and optionally their houses). */
-export function keysForGroups(index: Index, segmentIds: Iterable<string>, withHouses: boolean): EntityKey[] {
+export function keysForGroups(index: Index, segmentIds: Iterable<string>, withHouses: boolean, housesOnly = false): EntityKey[] {
   const ids = new Set<string>();
   for (const id of segmentIds) {
     const segment = index.segments.get(id);
     for (const chunk of segment ? index.chunksByGroup.get(segment.group) ?? [segment] : []) ids.add(chunk.id);
   }
-  return keysForSegments(index, ids, withHouses);
+  return keysForSegments(index, ids, withHouses, housesOnly);
 }
 
 /** One street segment, optionally with all houses that belong to it. */
-export function keysForSegments(index: Index, segmentIds: Iterable<string>, withHouses: boolean): EntityKey[] {
+export function keysForSegments(index: Index, segmentIds: Iterable<string>, withHouses: boolean, housesOnly = false): EntityKey[] {
   const keys = new Set<EntityKey>();
   for (const id of segmentIds) {
     const segment = index.segments.get(id);
-    if (!segment?.visible) continue;
+    if (!segment?.visible || (housesOnly && !(index.groupHouses.get(segment.group) ?? 0))) continue;
     keys.add(segmentKey(id));
     if (withHouses) for (const house of index.housesBySegment.get(id) ?? []) keys.add(houseKey(house.id));
   }
@@ -49,8 +53,8 @@ export function keysForSegments(index: Index, segmentIds: Iterable<string>, with
 }
 
 /** What a finger passed over while painting: houses exactly, streets with their houses when asked. */
-export function keysForTouched(index: Index, touched: { houses: Iterable<string>; segments: Iterable<string> }, withHouses: boolean): EntityKey[] {
-  const keys = new Set<EntityKey>(keysForSegments(index, touched.segments, withHouses));
+export function keysForTouched(index: Index, touched: { houses: Iterable<string>; segments: Iterable<string> }, withHouses: boolean, housesOnly = false): EntityKey[] {
+  const keys = new Set<EntityKey>(keysForSegments(index, touched.segments, withHouses, housesOnly));
   for (const id of touched.houses) if (index.houses.has(id)) keys.add(houseKey(id));
   return [...keys];
 }
@@ -58,13 +62,13 @@ export function keysForTouched(index: Index, touched: { houses: Iterable<string>
 const middle = (s: Segment): LngLat => s.mid;
 
 /** Lasso: houses whose centre lies inside the shape, and visible street segments whose middle does. Purely geometric. */
-export function lassoSelect(network: Network, ring: LngLat[]): { houses: string[]; segments: string[] } {
+export function lassoSelect(network: Network, ring: LngLat[], housesOnly?: ReadonlyMap<string, number>): { houses: string[]; segments: string[] } {
   if (ring.length < 3) return { houses: [], segments: [] };
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
   for (const [lng, lat] of ring) { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < s) s = lat; if (lat > n) n = lat; }
   const inside = (p: LngLat) => p[0] >= w && p[0] <= e && p[1] >= s && p[1] <= n && pointInRing(p, ring);
   return {
     houses: network.houses.filter((h) => inside(h.center)).map((h) => h.id),
-    segments: network.segments.filter((seg) => seg.visible && inside(middle(seg))).map((seg) => seg.id),
+    segments: network.segments.filter((seg) => seg.visible && (!housesOnly || (housesOnly.get(seg.group) ?? 0) > 0) && inside(middle(seg))).map((seg) => seg.id),
   };
 }

@@ -19,6 +19,8 @@ export type Meta = {
   canWrite: boolean;
   canBuildPack: boolean;
   teams: { id: string; name: string; color: string }[];
+  /** Basemap styles chosen by the deployment (null = plain background); the client carries no third-party map URL. */
+  basemap: { dark: string; light: string } | null;
   areas: { id: string; name: string; teamId: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; updatedAt: string; packVersion: number | null; packStale?: boolean; writable: boolean; collection?: CollectionAreaInfo }[];
 };
 
@@ -128,3 +130,13 @@ export const saveAreaGeometry = (campaignId: string, area: { id: string; updated
 
 export const createArea = (campaignId: string, area: { id: string; teamId: string; name: string; geometry: Polygon }) =>
   postAreaMutation(campaignId, 'area.create', { areaId: area.id, teamId: area.teamId, name: area.name, geometry: area.geometry });
+
+/** Admin only: remove progress rows of an Area for keys the derivation no longer produces. Returns how many rows went. */
+export async function pruneArea(campaignId: string, areaId: string, keys: string[]): Promise<number> {
+  let removed = 0;
+  for (let i = 0; i < keys.length; i += 4000) {
+    const response = await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/prune`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keys: keys.slice(i, i + 4000) }) });
+    removed += ((await response.json()) as { removed: number }).removed;
+  }
+  return removed;
+}

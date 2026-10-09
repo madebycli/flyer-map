@@ -13,25 +13,34 @@ export const AREA_SOURCE = 'v5-areas';
 export const DRAW_SOURCE = 'v5-draw';
 export const NOTE_SOURCE = 'v5-notes';
 export const PICKUP_SOURCE = 'v5-pickups';
+export const ME_SOURCE = 'v5-me';
 
 export type Theme = 'dark' | 'light';
 
-/** Vivid on a dark basemap (the default); a deeper variant keeps the same contrast on the light basemap. */
+/**
+ * Calm, desaturated and still telling four states apart: "open" is a quiet slate (the work still to do should not shout),
+ * done is a soft green, later a muted amber, not-deliverable a dusty rose. The light theme uses deeper variants for contrast.
+ */
 const STATUS_PALETTE: Record<Theme, Record<Status, string>> = {
-  dark: { open: '#ff8a3d', completed: '#3ee0b8', later: '#ffd24a', 'not-deliverable': '#8d9bb0' },
-  light: { open: '#e8590c', completed: '#0b8f70', later: '#c98a00', 'not-deliverable': '#5f6f86' },
+  dark: { open: '#8aa0b4', completed: '#5fc79f', later: '#d6b062', 'not-deliverable': '#c9808c' },
+  light: { open: '#6c7f92', completed: '#2c9873', later: '#b4872b', 'not-deliverable': '#b05b6b' },
 };
 export const statusColors = (theme: Theme): Record<Status, string> => STATUS_PALETTE[theme];
 export const STATUS_COLORS = STATUS_PALETTE.dark;
 
-const BASEMAPS: Record<Theme, string> = {
-  dark: 'https://tiles.openfreemap.org/styles/dark',
-  light: 'https://tiles.openfreemap.org/styles/bright',
-};
+/** Status-dependent opacity: untouched streets and houses stay translucent, so the basemap shows through and progress stands out. */
+const OPEN_ALPHA = { line: 0.5, fill: 0.5, dot: 0.6 };
+const DONE_ALPHA = { line: 0.92, fill: 0.85, dot: 0.9 };
+const byStatus = (open: number | ExpressionSpecification, done: number | ExpressionSpecification): ExpressionSpecification =>
+  ['match', ['coalesce', ['feature-state', 'status'], 'open'], 'open', open, done];
+
+/** Basemap styles are deployment configuration (served in the Aktion's meta), never a URL baked into the client. */
+export type Basemap = { dark: string; light: string } | null;
 const BLANK_BACKGROUND: Record<Theme, string> = { dark: '#0e1513', light: '#eef1ef' };
 export const blankStyle = (theme: Theme): StyleSpecification => ({ version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': BLANK_BACKGROUND[theme] } }] });
 const CASING: Record<Theme, string> = { dark: 'rgba(7,11,10,0.92)', light: 'rgba(255,255,255,0.92)' };
 const OUTLINE: Record<Theme, string> = { dark: 'rgba(7,11,10,0.55)', light: 'rgba(32,33,36,0.45)' };
+const PREVIEW: Record<Theme, string> = { dark: '#8fb8ff', light: '#2a62c9' };
 const SELECTED_OUTLINE: Record<Theme, string> = { dark: '#ffffff', light: '#202124' };
 
 const statusMatch = (theme: Theme): ExpressionSpecification => {
@@ -51,8 +60,10 @@ export type Gesture = {
 export type AreaShape = { id: string; name: string; color: string; ring: LngLat[] };
 export type FieldMapOptions = {
   container: HTMLElement;
-  /** Override the basemaps (tests); by default OpenFreeMap dark/bright follow `theme`. */
+  /** Basemap styles per theme (tests, or the server's choice); without any, the plain background is used. */
   styles?: Partial<Record<Theme, string | StyleSpecification>>;
+  /** Called when the map is rotated away from north (and back), so the compass control can appear. */
+  onRotate?: (bearing: number) => void;
   theme?: Theme;
   center?: [number, number];
   zoom?: number;
@@ -115,19 +126,24 @@ export class FieldMap {
 
   constructor(private readonly options: FieldMapOptions) {
     this.theme = options.theme ?? 'dark';
+    this.styles = { ...options.styles };
     this.expectedStyle = this.styleFor(this.theme);
     this.ready = new Promise((resolve) => { this.resolveReady = resolve; });
     this.map = new maplibregl.Map({
       container: options.container, style: this.styleFor(this.theme), center: options.center ?? [13.0, 51.0],
-      zoom: options.zoom ?? 15, attributionControl: { compact: true }, fadeDuration: 0, pitchWithRotate: false,
+      zoom: options.zoom ?? 15, attributionControl: false, fadeDuration: 0, pitchWithRotate: false,
       maxPitch: 0, dragRotate: true,
     });
     // Test/diagnostic handle, only with ?debug in the URL.
     if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as { __v5Map?: MlMap }).__v5Map = this.map;
-    this.map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), 'bottom-right');
-    this.map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'bottom-right');
+    // Own controls live in the app shell; the map only keeps the (licence-required) attribution.
+    this.map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
     this.map.on('style.load', () => this.install());
-    this.map.on('rotate', () => { const rotated = Math.abs(this.map.getBearing()) > 0.5; if (rotated) options.container.dataset.rotated = '1'; else delete options.container.dataset.rotated; });
+    let rotated = false;
+    this.map.on('rotate', () => {
+      const now = Math.abs(this.map.getBearing()) > 0.5;
+      if (now !== rotated) { rotated = now; options.onRotate?.(this.map.getBearing()); }
+    });
     // Self-heal: a style swap that was superseded or fell back can finish without a usable `style.load`; whenever the
     // map is idle on a loaded style that lacks our sources, install them again.
     this.map.on('idle', () => { if (this.map.isStyleLoaded() && !this.map.getSource(this.firstSource())) this.install(); });
@@ -160,8 +176,31 @@ export class FieldMap {
     this.wireGestures();
   }
 
+  private styles: Partial<Record<Theme, string | StyleSpecification>>;
+  private baseVisible = true;
   private styleFor(theme: Theme): string | StyleSpecification {
-    return this.options.styles?.[theme] ?? BASEMAPS[theme];
+    return this.baseVisible ? this.styles[theme] ?? blankStyle(theme) : blankStyle(theme);
+  }
+
+  /** Use the deployment's basemap (null = plain background). Swapping re-installs our layers on `style.load`. */
+  setBasemap(basemap: Basemap) {
+    const next = basemap ? { dark: basemap.dark, light: basemap.light } : {};
+    if (this.styles.dark === next.dark && this.styles.light === (next as Partial<Record<Theme, string>>).light) return;
+    this.styles = next;
+    this.restyle();
+  }
+
+  /** "Karte aus": the plain background only, which also saves data and battery. */
+  setBasemapVisible(visible: boolean) {
+    if (visible === this.baseVisible) return;
+    this.baseVisible = visible;
+    this.restyle();
+  }
+
+  private restyle() {
+    this.styleFallback = false;
+    this.expectedStyle = this.styleFor(this.theme);
+    this.map.setStyle(this.expectedStyle);
   }
 
   /** Runs after every style load (first load and theme switches): layers, then geometry, then status. */
@@ -195,57 +234,57 @@ export class FieldMap {
     const selectedOn: ExpressionSpecification = ['boolean', ['feature-state', 'selected'], false];
     map.addSource(AREA_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addSource(DRAW_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({ id: 'v5-areas-fill', type: 'fill', source: AREA_SOURCE, paint: { 'fill-color': ['get', 'color'], 'fill-opacity': ['case', ['==', ['get', 'active'], 1], 0.16, 0.07] } });
+    map.addLayer({ id: 'v5-areas-fill', type: 'fill', source: AREA_SOURCE, paint: { 'fill-color': ['get', 'color'], 'fill-opacity': ['case', ['==', ['get', 'active'], 1], 0.12, 0.04] } });
     map.addLayer({
       id: 'v5-areas-line', type: 'line', source: AREA_SOURCE, layout: { 'line-join': 'round' },
-      paint: { 'line-color': ['get', 'color'], 'line-opacity': 0.95, 'line-width': ['case', ['==', ['get', 'active'], 1], 3.2, 2], 'line-dasharray': [2.2, 1.6] },
+      paint: { 'line-color': ['get', 'color'], 'line-opacity': 0.8, 'line-width': ['case', ['==', ['get', 'active'], 1], 2.6, 1.6], 'line-dasharray': [2.4, 1.8] },
     });
     // Zoomed out, houses become status-coloured dots: the whole city reads as progress, not as a block of lines.
     map.addLayer({
       id: 'v5-houses-dots', type: 'circle', ...src('centers'), minzoom: 11.5, maxzoom: 15.2,
       paint: {
-        'circle-color': statusMatch(theme), 'circle-opacity': 0.92, 'circle-stroke-width': 0,
+        'circle-color': statusMatch(theme), 'circle-opacity': byStatus(OPEN_ALPHA.dot, DONE_ALPHA.dot), 'circle-stroke-width': 0,
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 11.5, 0.7, 14, 1.6, 15.2, 3.2],
       },
     });
     map.addLayer({
       id: 'v5-houses-fill', type: 'fill', ...src('houses'), minzoom: 15.2,
-      paint: { 'fill-color': statusMatch(theme), 'fill-opacity': ['case', selectedOn, 1, 0.88] },
+      paint: { 'fill-color': statusMatch(theme), 'fill-opacity': ['case', selectedOn, 1, byStatus(OPEN_ALPHA.fill, DONE_ALPHA.fill)] },
     });
     map.addLayer({
-      id: 'v5-houses-outline', type: 'line', ...src('houses'), minzoom: 16.5,
-      paint: { 'line-color': ['case', selectedOn, SELECTED_OUTLINE[theme], OUTLINE[theme]], 'line-width': ['case', selectedOn, 2.5, 0.6] },
+      id: 'v5-houses-outline', type: 'line', ...src('houses'), minzoom: 16.5, layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': ['case', selectedOn, SELECTED_OUTLINE[theme], OUTLINE[theme]], 'line-width': ['case', selectedOn, 2.5, 0.5] },
     });
     map.addLayer({
-      id: 'v5-segments-casing', type: 'line', ...src('segments'), minzoom: 13.5,
+      id: 'v5-segments-casing', type: 'line', ...src('segments'), minzoom: 13.5, ...this.segmentFilterSpec(),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': CASING[theme],
-        'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 13.5, 2, 16, 8, 20, 22],
+        'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 13.5, 1.6, 16, 6.5, 20, 18],
       },
     });
     map.addLayer({
-      id: 'v5-segments-preview', type: 'line', ...src('segments'),
+      id: 'v5-segments-preview', type: 'line', ...src('segments'), ...this.segmentFilterSpec(),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': '#7aa8ff', 'line-opacity': ['case', ['boolean', ['feature-state', 'preview'], false], 0.9, 0],
-        'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 12, 6, 16, 17, 20, 40], 'line-blur': 1,
+        'line-color': PREVIEW[theme], 'line-opacity': ['case', ['boolean', ['feature-state', 'preview'], false], 0.7, 0],
+        'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 12, 5, 16, 13, 20, 32],
       },
     });
     // Thin and translucent when zoomed far out, so a whole city reads as texture, not as one solid block.
     map.addLayer({
-      id: 'v5-segments-line', type: 'line', ...src('segments'),
+      id: 'v5-segments-line', type: 'line', ...src('segments'), ...this.segmentFilterSpec(),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': statusMatch(theme),
-        'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.55, 14, 0.95],
+        'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, byStatus(0.3, 0.55), 14, byStatus(OPEN_ALPHA.line, DONE_ALPHA.line)],
         'line-width': ['interpolate', ['exponential', 1.5], ['zoom'],
-          10, ['case', selectedOn, 3, 0.5], 13, ['case', selectedOn, 4, 1.1], 16, ['case', selectedOn, 10, 5], 20, ['case', selectedOn, 26, 15]],
+          10, ['case', selectedOn, 3, 0.4], 13, ['case', selectedOn, 4, 0.9], 16, ['case', selectedOn, 9, 3.6], 20, ['case', selectedOn, 24, 11]],
       },
     });
     map.addLayer({
       id: 'v5-houses-preview', type: 'line', ...src('houses'), minzoom: 15.2,
-      paint: { 'line-color': '#7aa8ff', 'line-width': 3, 'line-opacity': ['case', ['boolean', ['feature-state', 'preview'], false], 1, 0] },
+      paint: { 'line-color': PREVIEW[theme], 'line-width': 2.5, 'line-opacity': ['case', ['boolean', ['feature-state', 'preview'], false], 1, 0] },
     });
     // Tool overlay: lasso, area edit polygon, vertex and midpoint handles (always on top).
     map.addLayer({ id: 'v5-draw-fill', type: 'fill', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'fill'], paint: { 'fill-color': ['coalesce', ['get', 'color'], '#7aa8ff'], 'fill-opacity': 0.18 } });
@@ -295,6 +334,10 @@ export class FieldMap {
         paint: { 'icon-color': ['coalesce', ['get', 'color'], '#c77dff'] },
       }, 'v5-draw-fill');
     }
+    // Own position: a soft halo and a dot, refreshed only when the person asks ("Standort aktualisieren").
+    map.addSource(ME_SOURCE, { type: 'geojson', data: this.meFeatures() });
+    map.addLayer({ id: 'v5-me-halo', type: 'circle', source: ME_SOURCE, paint: { 'circle-radius': 16, 'circle-color': PREVIEW[theme], 'circle-opacity': 0.22 } });
+    map.addLayer({ id: 'v5-me-dot', type: 'circle', source: ME_SOURCE, paint: { 'circle-radius': 6, 'circle-color': PREVIEW[theme], 'circle-stroke-width': 2.5, 'circle-stroke-color': theme === 'dark' ? '#0e1513' : '#ffffff' } });
     // House numbers need a glyph endpoint; a style without one (tests, offline stub) simply has no labels.
     if (map.getStyle().glyphs) map.addLayer({
       id: 'v5-houses-number', type: 'symbol', ...src('houses'), minzoom: 17.5,
@@ -302,6 +345,35 @@ export class FieldMap {
       paint: { 'text-color': theme === 'dark' ? '#0b0f0e' : '#202124', 'text-halo-color': theme === 'dark' ? 'rgba(255,255,255,0.85)' : '#ffffff', 'text-halo-width': 1.2 },
     });
   }
+
+  /** "Nur Straßen mit Häusern": the tile property `h` says whether the street piece has any house along it. */
+  private segmentFilter(): ExpressionSpecification | undefined { return this.housesOnly ? ['==', ['get', 'h'], '1'] : undefined; }
+  private segmentFilterSpec(): { filter?: ExpressionSpecification } { const filter = this.segmentFilter(); return filter ? { filter } : {}; }
+  private housesOnly = false;
+  setHousesOnly(on: boolean) {
+    if (on === this.housesOnly) return;
+    this.housesOnly = on;
+    for (const id of ['v5-segments-casing', 'v5-segments-preview', 'v5-segments-line']) if (this.map.getLayer(id)) this.map.setFilter(id, this.segmentFilter() ?? null);
+  }
+
+  private me: LngLat | null = null;
+  private meFeatures(): FeatureCollection { return { type: 'FeatureCollection', features: this.me ? [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: this.me } }] : [] }; }
+
+  /** One fresh position fix, then fly there. No watcher is left running (battery, privacy, nothing to leak). */
+  locate(): Promise<'ok' | 'denied' | 'unavailable'> {
+    return new Promise((resolve) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve('unavailable');
+      navigator.geolocation.getCurrentPosition((position) => {
+        this.me = [position.coords.longitude, position.coords.latitude];
+        (this.map.getSource(ME_SOURCE) as GeoJSONSource | undefined)?.setData(this.meFeatures());
+        this.map.easeTo({ center: this.me, zoom: Math.max(this.map.getZoom(), 17), duration: 450 });
+        resolve('ok');
+      }, (error) => resolve(error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable'), { enableHighAccuracy: true, timeout: 12_000, maximumAge: 0 });
+    });
+  }
+
+  zoomBy(delta: number) { this.map.zoomTo(this.map.getZoom() + delta, { duration: 180 }); }
+  resetNorth() { this.map.resetNorth({ duration: 250 }); }
 
   private firstSource() { return this.mode === 'tiles' ? TILE_SOURCE : SEGMENT_SOURCE; }
   private tileUrl() { return `v5t://${this.token}/{z}/{x}/{y}?v=${this.tileVersion}`; }
@@ -319,9 +391,7 @@ export class FieldMap {
   setTheme(theme: Theme) {
     if (theme === this.theme) return;
     this.theme = theme;
-    this.styleFallback = false;
-    this.expectedStyle = this.styleFor(theme);
-    this.map.setStyle(this.expectedStyle);
+    this.restyle();
   }
 
   /**
@@ -511,5 +581,11 @@ export class FieldMap {
     this.map.fitBounds(bounds, { padding, duration: 0, maxZoom: 17.2 });
   }
   get paintedCount() { return this.applied; }
-  destroy() { this.unbind?.(); this.map.remove(); }
+  /** Diagnostics for the soak test: what the map currently holds (a steady rise across identical actions is a leak). */
+  debugCounts() {
+    const style = this.map.style as unknown as { sourceCaches?: Record<string, { _tiles?: Record<string, unknown>; getIds?: () => string[] }> };
+    const tiles = Object.fromEntries(Object.entries(style.sourceCaches ?? {}).map(([id, cache]) => [id, Object.keys(cache._tiles ?? {}).length]));
+    return { tiles, layers: this.map.getStyle().layers?.length ?? 0, sources: Object.keys(this.map.getStyle().sources ?? {}).length, providers: providers.size };
+  }
+  destroy() { this.unbind?.(); providers.delete(this.token); this.map.remove(); }
 }

@@ -1,30 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { importLegacyProgress, type FieldHouse as House, type FieldNetwork as Network, type FieldSegment as Segment, type LegacySnapshot } from '../engine/index.ts';
-import { FieldMap, statusColors, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
+import { FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
-import { buildPack, fetchLegacySnapshot } from './api.ts';
+import { buildPack, fetchLegacySnapshot, pruneArea } from './api.ts';
 import { AreaEditBar, sizeLabel, useAreaTool } from './areas.tsx';
+import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
+import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
 import { buildIndex } from './mark.ts';
-import { MarkBar, meters, useMarking } from './marking.tsx';
+import { meters, useMarking } from './marking.tsx';
+import { HomeSheet, OverviewSheet, SearchSheet, type AppTile } from './panels.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
 import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
 import { actionErrorText } from './collection.ts';
 import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, notePosition, segmentNoteKey, useNotesVersion } from './notes.tsx';
 import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaViews, type AreaStats } from './collection.tsx';
 import { areaPercent, collectionActions } from './collection.ts';
+import { SheetFrame, StatusGroup } from './sheet.tsx';
+import { houseStats } from './stats.ts';
+import type { SearchEntry } from './search.ts';
 import { useCampaign } from './useCampaign.ts';
-import { Icon, Loader, WavyProgress, type IconName } from './ui.tsx';
+import { Icon, Loader } from './ui.tsx';
 
-const LABELS_DISTRIBUTION: Record<Status, string> = { open: 'Offen', completed: 'Erledigt', later: 'Später', 'not-deliverable': 'Nicht zustellbar' };
-const LABELS_COLLECTION: Record<Status, string> = { open: 'Offen', completed: 'Abgeholt', later: 'Später', 'not-deliverable': 'Nicht verfügbar' };
-const ORDER: Status[] = ['completed', 'later', 'not-deliverable', 'open'];
-const STATUS_ICON: Record<Status, IconName> = { completed: 'check', later: 'later', 'not-deliverable': 'blocked', open: 'open' };
 const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
 const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf-v5-hand') === 'left' ? 'left' : 'right'; } catch { return 'right'; } };
+const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
-type Tool = 'inspect' | 'mark' | 'areas' | 'pickup';
+type Tool = 'inspect' | 'areas' | 'pickup';
+type Panel = 'home' | 'overview' | 'search' | 'notes' | 'conflicts' | 'areas';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -55,29 +59,38 @@ function workBounds(network: Network, areas: { geometry: { coordinates: [number,
   if (!Number.isFinite(w)) for (const area of areas) for (const [lng, lat] of area.geometry.coordinates[0]) add(lng, lat);
   return [[w, s], [e, n]];
 }
+
 const FIT_PADDING = { top: 120, bottom: 170, left: 28, right: 28 };
+const ringBounds = (ring: [number, number][]): [[number, number], [number, number]] => {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const [lng, lat] of ring) { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < s) s = lat; if (lat > n) n = lat; }
+  return [[w, s], [e, n]];
+};
 
 export function App({ campaignId }: { campaignId: string }) {
   const campaign = useCampaign(campaignId, new URLSearchParams(location.search).get('kind') === 'collection' ? 'collection' : undefined);
   const { phase, meta, network, store, notes } = campaign;
   const isCollection = meta?.kind === 'collection';
-  const LABELS = isCollection ? LABELS_COLLECTION : LABELS_DISTRIBUTION;
+  const kind: Kind = isCollection ? 'collection' : 'distribution';
+  const LABELS = ALL_LABELS[kind];
   const mapHost = useRef<HTMLDivElement>(null);
   const fieldMap = useRef<FieldMap | null>(null);
   const [tool, setTool] = useState<Tool>('inspect');
+  const [fab, setFab] = useState<FabPhase>('idle');
+  const [panel, setPanel] = useState<Panel | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [importState, setImportState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [hand, setHand] = useState<'left' | 'right'>(readHand);
-  const [menu, setMenu] = useState(false);
+  const [baseOn, setBaseOn] = useState(readBase);
+  const [rotated, setRotated] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
-  const [showConflicts, setShowConflicts] = useState(false);
-  const [notesOpen, setNotesOpen] = useState(false);
 
   useEffect(() => { if (!store) return; setConflicts([...store.pendingConflicts]); return store.subscribeConflicts(setConflicts); }, [store]);
-  useEffect(() => { if (!conflicts.length) setShowConflicts(false); }, [conflicts.length]);
+  useEffect(() => { if (!conflicts.length && panel === 'conflicts') setPanel(null); }, [conflicts.length, panel]);
 
   const index = useMemo(() => (network ? buildIndex(network) : null), [network]);
   const canWrite = !!meta?.canWrite;
@@ -92,7 +105,6 @@ export function App({ campaignId }: { campaignId: string }) {
     const area = meta?.areas.find((a) => a.id === areaId);
     if (area && !area.packVersion) { await buildPack(campaignId, areaId); void campaign.reload(); }
   }), [runner, actions, meta, campaignId, campaign]);
-  const [listOpen, setListOpen] = useState(false);
   const [pickupId, setPickupId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PickupDraft | null>(null);
   const [pickupBusy, setPickupBusy] = useState(false);
@@ -152,7 +164,7 @@ export function App({ campaignId }: { campaignId: string }) {
     setUndo({ label: `${label} → ${LABELS[status]}`, revert: () => { for (const [key, previous] of before) store.set(key, previous); } });
   }, [store, canWrite, campaign.areaOf, writableAreas, isCollection]); // eslint-disable-line react-hooks/exhaustive-deps -- LABELS follows isCollection
 
-  const marking = useMarking({ fieldMap, network, index, apply }, tool === 'mark');
+  const marking = useMarking({ fieldMap, network, index, apply }, fab !== 'idle');
   const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined }, tool === 'areas');
 
   // One click router: whichever tool is active decides what a tap on the map means.
@@ -168,16 +180,16 @@ export function App({ campaignId }: { campaignId: string }) {
       }).catch(() => setPickupError('Position konnte nicht bestimmt werden.'));
       return;
     }
-    if (tool === 'mark') { marking.onMapHit(hit); return; }
+    if (fab !== 'idle') { marking.onMapHit(hit); return; }
     if (!index) return;
     if (!hit) {
       setSelection(null); fieldMap.current?.select(null);
       const areaId = isCollection ? fieldMap.current?.hitArea(point) : null;
-      if (areaId) { setMenu(false); setListOpen(false); setCollectionAreaId(areaId); }
+      if (areaId) { setPanel(null); setCollectionAreaId(areaId); }
       return;
     }
     if (hit.kind === 'note') { openNoteTarget(hit.id); return; }
-    if (hit.kind === 'pickup') { closeSelection(); setMenu(false); setListOpen(false); setPickupError(null); setPickupId(hit.id); const p = campaign.pickups.find((x) => x.id === hit.id); if (p) fieldMap.current?.focus(p.position); return; }
+    if (hit.kind === 'pickup') { closeSelection(); setPanel(null); setPickupError(null); setPickupId(hit.id); const p = campaign.pickups.find((x) => x.id === hit.id); if (p) fieldMap.current?.focus(p.position); return; }
     selectEntity(hit.kind, hit.id);
   };
   const selectEntity = (kind: 'house' | 'segment', id: string) => {
@@ -199,21 +211,40 @@ export function App({ campaignId }: { campaignId: string }) {
   const openNoteTarget = (key: string) => {
     if (!index || !meta) return;
     const at = notePosition(key, index, meta.areas);
-    setMenu(false); setNotesOpen(false); setShowConflicts(false);
+    setPanel(null); setFab('idle');
     if (key.startsWith('a:')) { setSelection(null); fieldMap.current?.select(null); setTool('areas'); areaTool.setSelectedId(key.slice(2)); }
     else { areaTool.setSelectedId(null); setTool('inspect'); selectEntity(key.startsWith('h:') ? 'house' : 'segment', key.slice(2)); }
     if (at) fieldMap.current?.focus(at);
   };
+  const openSearchResult = (entry: SearchEntry) => {
+    if (!index) return;
+    setPanel(null); setFab('idle'); setTool('inspect'); areaTool.setSelectedId(null);
+    const at = entry.kind === 'house' ? index.houses.get(entry.id)?.center : index.segments.get(entry.id)?.mid;
+    selectEntity(entry.kind === 'house' ? 'house' : 'segment', entry.id);
+    if (at) fieldMap.current?.focus(at);
+  };
+  const fabRef = useRef<FabPhase>('idle');
+  fabRef.current = fab;
   const toolRef = useRef<Tool>('inspect');
   toolRef.current = tool;
-  const segmentsOnlyRef = useRef(false);
-  segmentsOnlyRef.current = tool === 'mark' && marking.mode === 'route';
+  const routeModeRef = useRef(false);
+  routeModeRef.current = fab !== 'idle' && marking.mode === 'route';
 
   useEffect(() => {
     if (!mapHost.current || fieldMap.current) return;
-    fieldMap.current = new FieldMap({ container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), segmentsOnly: () => segmentsOnlyRef.current, noteHits: () => toolRef.current === 'inspect' });
+    fieldMap.current = new FieldMap({
+      container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), segmentsOnly: () => routeModeRef.current,
+      noteHits: () => toolRef.current === 'inspect' && fabRef.current === 'idle', onRotate: (bearing) => setRotated(Math.abs(bearing) > 0.5),
+    });
     return () => { fieldMap.current?.destroy(); fieldMap.current = null; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (meta) fieldMap.current?.setBasemap(meta.basemap ?? null); }, [meta?.basemap?.dark, meta?.basemap?.light, !!meta]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    fieldMap.current?.setBasemapVisible(baseOn);
+    try { localStorage.setItem('vf-v5-base', baseOn ? 'on' : 'off'); } catch { /* private mode */ }
+  }, [baseOn]);
+  useEffect(() => { fieldMap.current?.setHousesOnly(marking.housesOnly); }, [marking.housesOnly]);
 
   useEffect(() => {
     const { network, store, engine, mapData } = campaign;
@@ -223,6 +254,11 @@ export function App({ campaignId }: { campaignId: string }) {
   }, [network, store, campaign.mapData]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
 
   useEffect(() => { fieldMap.current?.setPickups(pickupFeatures(campaign.pickups)); }, [campaign.pickups]);
+  useEffect(() => {
+    if (!location.search.includes('debug') || !campaign.engine) return;
+    const engine = campaign.engine;
+    (window as unknown as { __v5Diag?: () => Promise<unknown> }).__v5Diag = async () => ({ engine: await engine.stats(), tiles: fieldMap.current?.debugCounts() ?? null });
+  }, [campaign.engine]);
   const notesVersion = useNotesVersion(notes);
   useEffect(() => {
     if (!notes || !index || !meta) return;
@@ -240,8 +276,29 @@ export function App({ campaignId }: { campaignId: string }) {
   useEffect(() => { if (!notice) return; const t = window.setTimeout(() => setNotice(null), 9000); return () => window.clearTimeout(t); }, [notice]);
 
   const closeSelection = () => { setSelection(null); fieldMap.current?.select(null); setCollectionAreaId(null); setPickupId(null); };
-  const enter = (next: Tool) => { closeSelection(); setMenu(false); areaTool.setSelectedId(null); setTool(next); };
+  const enter = (next: Tool) => { closeSelection(); setPanel(null); setFab('idle'); areaTool.setSelectedId(null); setTool(next); };
+  const openPanel = (next: Panel) => { closeSelection(); setFab('idle'); setPanel(next); };
+  const startMarking = () => { closeSelection(); setPanel(null); setTool('inspect'); setFab('panel'); };
   const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); };
+  const fitArea = (id: string) => { const area = meta?.areas.find((a) => a.id === id); if (area) { setPanel(null); fieldMap.current?.fitTo(ringBounds(area.geometry.coordinates[0]), FIT_PADDING); } };
+  const locate = async () => {
+    if (locating) return;
+    setLocating(true);
+    const result = await fieldMap.current?.locate();
+    setLocating(false);
+    if (result === 'denied') setNotice('Standort ist nicht freigegeben. Bitte in den Browser-Einstellungen erlauben.');
+    else if (result === 'unavailable') setNotice('Standort gerade nicht verfügbar.');
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (fab !== 'idle') setFab(fab === 'panel' ? 'idle' : 'panel');
+      else if (panel) setPanel(null);
+      else if (selection) closeSelection();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fab, panel, selection]);
 
   const importLegacy = async () => {
     if (!store || !network) return;
@@ -254,37 +311,89 @@ export function App({ campaignId }: { campaignId: string }) {
       }
       const { housesMatched, housesUnmatched, streetRangesMatched, streetRangesUnmatched } = result.stats;
       setNotice(`${housesMatched} Häuser und ${streetRangesMatched} Straßenabschnitte übernommen${housesUnmatched + streetRangesUnmatched ? `, ${housesUnmatched + streetRangesUnmatched} nicht zuordenbar` : ''}.`);
-      setImportState('done'); setMenu(false);
+      setImportState('done'); setPanel(null);
     } catch { setNotice('Der bisherige Fortschritt konnte nicht geladen werden.'); setImportState('idle'); }
   };
 
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
   const editing = !!areaTool.edit;
-  const ui = !ready ? 'none' : editing || tool === 'mark' || (tool === 'pickup' && !draft) ? 'bar' : selection || (tool === 'areas' && areaTool.selectedId) || menu || showConflicts || notesOpen || listOpen || !!collectionAreaId || !!pickupId || !!draft ? 'sheet' : 'dock';
   const canEditAny = !!meta && (meta.role === 'admin' || meta.role === 'team-editor');
+  const selectedArea = meta?.areas.find((a) => a.id === areaTool.selectedId) ?? null;
+  const sheetOpen = !!panel || (tool === 'inspect' && fab === 'idle' && (!!selection || !!selectedPickup || (isCollection && !!collectionAreaId))) || (tool === 'areas' && !!selectedArea && !editing) || (tool === 'pickup' && !!draft);
+  const ui = !ready ? 'none' : sheetOpen && !editing ? 'sheet' : 'idle';
 
   const selectionArea = !selection ? '' : campaign.areaOf.get(selection.kind === 'house' ? houseKey(selection.house.id) : segmentKey(selection.segment.id)) ?? '';
-  const selectedArea = meta?.areas.find((a) => a.id === areaTool.selectedId) ?? null;
   const areaStats = useMemo(() => {
     if (!selectedArea || !network || !store) return null;
     let total = 0, done = 0;
     for (const house of network.houses) if (campaign.areaOf.get(`h:${house.id}`) === selectedArea.id) { total++; if (store.statusOf(`h:${house.id}`) === 'completed') done++; }
     return { total, done, size: areaSquareMeters(fromRing(selectedArea.geometry.coordinates[0])) };
   }, [selectedArea, network, store, campaign.areaOf, campaign.progress]);
+  const stats = useMemo(
+    () => (panel === 'overview' && network && store ? houseStats(network, (key) => store.statusOf(key), campaign.areaOf) : null),
+    [panel, network, store, campaign.areaOf, campaign.progress],
+  );
+  const orphanCount = useMemo(() => (tool === 'areas' && selectedArea && meta?.role === 'admin' ? campaign.orphans().length : 0), [tool, selectedArea, meta?.role, campaign.progress, campaign.network]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pruneSelected = () => {
+    if (!selectedArea || !store) return;
+    const keys = campaign.orphans();
+    void pruneArea(campaignId, selectedArea.id, keys).then((removed) => {
+      store.forget(keys);
+      setNotice(removed ? `${removed} veraltete Einträge entfernt.` : 'Keine veralteten Einträge in diesem Gebiet.');
+    }).catch((e) => setNotice(actionErrorText(e)));
+  };
+
+  const modeHref = (collection: boolean) => { const u = new URL(location.href); u.searchParams.delete('kind'); if (collection) u.searchParams.set('kind', 'collection'); return `${u.pathname}${u.search}`; };
+  const tiles: AppTile[] = [
+    ...(meta?.role === 'admin' ? [
+      { id: 'm-dist', icon: 'mailbox', label: 'Austeilen', on: !isCollection, href: isCollection ? modeHref(false) : undefined, onClick: () => setPanel(null), wide: true } satisfies AppTile,
+      { id: 'm-coll', icon: 'paw', label: 'Abholen', on: isCollection, href: isCollection ? undefined : modeHref(true), onClick: () => setPanel(null), wide: true } satisfies AppTile,
+    ] : []),
+    { id: 'overview', icon: 'chart', label: 'Übersicht', onClick: () => openPanel('overview') },
+    { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
+    { id: 'areas', icon: 'polygon', label: 'Gebiete', onClick: () => (isCollection ? openPanel('areas') : enter('areas')) },
+    { id: 'notes', icon: 'message', label: 'Notizen', badge: notes?.all().length || undefined, onClick: () => openPanel('notes') },
+    ...(isCollection && rights.create ? [{ id: 'pickup', icon: 'flag', label: 'Sonder-Marker', onClick: () => enter('pickup') } satisfies AppTile] : []),
+    { id: 'fit', icon: 'fit', label: 'Alles zeigen', onClick: () => { setPanel(null); fitAll(); } },
+    { id: 'theme', icon: theme === 'dark' ? 'sun' : 'moon', label: theme === 'dark' ? 'Hell' : 'Dunkel', onClick: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
+    { id: 'hand', icon: 'hand', label: hand === 'right' ? 'Linkshand' : 'Rechtshand', onClick: () => setHand(hand === 'right' ? 'left' : 'right') },
+    { id: 'base', icon: 'layers', label: baseOn ? 'Karte aus' : 'Karte an', on: !baseOn, onClick: () => setBaseOn(!baseOn) },
+    ...(importOffer ? [{ id: 'import', icon: importState === 'busy' ? 'sync' : 'download', label: 'Alt-Import', onClick: () => void importLegacy() } satisfies AppTile] : []),
+    { id: 'legacy', icon: 'mapPin', label: 'Alte Ansicht', href: `/?campaign=${encodeURIComponent(campaignId)}` },
+    ...(meta?.role === 'admin' ? [{ id: 'admin', icon: 'shield', label: 'Verwaltung', href: '/login' } satisfies AppTile] : []),
+  ];
+
+  const p = campaign.progress;
+  const dot = campaign.sync.state === 'offline' ? 'offline' : campaign.sync.pending > 0 || campaign.sync.state === 'syncing' ? 'busy' : 'ok';
+  const syncTitle = dot === 'ok' ? 'Alles gespeichert' : dot === 'busy' ? `${campaign.sync.pending} Änderungen werden gesendet` : `Offline – ${campaign.sync.pending} Änderungen warten`;
+  const doneHouses = p?.houses.completed ?? 0, totalHouses = p ? p.totalHouses - p.houses['not-deliverable'] : 0;
+  const percent = Math.round((p?.houseRatio ?? 0) * 100);
 
   return (
-    <div className="v5-root" data-ui={ui} data-hand={hand}>
+    <div className="v5-root" data-ui={ui} data-hand={hand} data-fab={fab}>
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
-      {ready && <Hud name={meta?.campaign.name ?? ''} campaign={campaign} canWrite={canWrite} />}
+      {ready && (
+        <button className="v5-pill" onClick={() => openPanel('overview')} role="status" aria-label={`${meta?.campaign.name ?? ''}: ${percent} Prozent – Übersicht öffnen`} data-done={doneHouses} data-total={totalHouses} title={syncTitle}>
+          <span className={`v5-dot ${dot}`} aria-label={syncTitle}><Icon name={dot === 'ok' ? 'cloudOk' : dot === 'offline' ? 'cloudOff' : 'sync'} size={20} /></span>
+          <strong className="v5-percent">{percent}<small>%</small></strong>
+          {!canWrite && <Icon name="eye" size={18} className="v5-viewonly" />}
+        </button>
+      )}
+      {ready && (
+        <div className="v5-topright">
+          <button className="v5-sq" onClick={() => openPanel('search')} aria-label="Straße oder Adresse suchen" title="Suchen"><Icon name="search" size={24} /></button>
+          <button className="v5-sq" onClick={() => openPanel('home')} aria-label="Menü" title="Menü"><Icon name="grid" size={24} /></button>
+        </div>
+      )}
       {ready && buildableMissing.length > 0 && (
         <div className="v5-banner v5-missing" role="status">
           <Icon name="warning" size={20} /><span>{buildableMissing.map((a) => a.name).join(', ')}</span>
           {meta?.canBuildPack && <button className="v5-icon-btn tonal" onClick={() => void campaign.buildMissing()} aria-label="Kartendaten laden" title="Kartendaten laden"><Icon name="download" /></button>}
         </div>
       )}
-      {ready && conflicts.length > 0 && !showConflicts && (
-        <button className="v5-conflict" onClick={() => { closeSelection(); setMenu(false); setShowConflicts(true); }} aria-label={`${conflicts.length} Änderungen wurden von anderen überschrieben`} title="Von anderen überschrieben">
+      {ready && conflicts.length > 0 && panel !== 'conflicts' && (
+        <button className="v5-conflict" onClick={() => openPanel('conflicts')} aria-label={`${conflicts.length} Änderungen wurden von anderen überschrieben`} title="Von anderen überschrieben">
           <Icon name="warning" size={18} />{conflicts.length}
         </button>
       )}
@@ -302,23 +411,49 @@ export function App({ campaignId }: { campaignId: string }) {
         </Overlay>
       )}
 
-      {ui === 'dock' && (
-        <nav className="v5-dock" aria-label="Werkzeuge">
-          <button className="v5-tool" onClick={fitAll} aria-label="Alles zeigen" title="Alles zeigen"><Icon name="fit" /></button>
-          {mayMark && <button className="v5-tool primary" onClick={() => enter('mark')} aria-label="Markieren" title="Markieren"><Icon name="brush" size={28} /></button>}
-          {isCollection && rights.create && <button className="v5-tool" onClick={() => enter('pickup')} aria-label="Sonder-Marker setzen" title="Sonder-Marker setzen"><Icon name="flag" /></button>}
-          {isCollection
-            ? <button className="v5-tool" onClick={() => { closeSelection(); setListOpen(true); }} aria-label="Gebiete" title="Gebiete"><Icon name="polygon" /></button>
-            : <button className="v5-tool" onClick={() => enter('areas')} aria-label="Gebiete" title="Gebiete"><Icon name="polygon" /></button>}
-          <button className="v5-tool" onClick={() => setMenu(true)} aria-label="Mehr" title="Mehr"><Icon name="more" /></button>
-        </nav>
+      {ready && (fab === 'status' || fab === 'options') && <div className="v5-scrim" onClick={() => setFab('panel')} aria-hidden />}
+
+      {ready && tool === 'inspect' && !editing && (
+        <>
+          <div className="v5-ctl left">
+            <button className="v5-sq" onClick={fitAll} aria-label="Alles zeigen" title="Alles zeigen"><Icon name="fit" size={24} /></button>
+          </div>
+          <div className="v5-ctl right">
+            {fab !== 'idle' && fab !== 'options' && <FabCaption marking={marking} kind={kind} />}
+            {rotated && <button className="v5-sq" onClick={() => fieldMap.current?.resetNorth()} aria-label="Karte nach Norden ausrichten" title="Norden"><Icon name="compass" size={24} /></button>}
+            <div className="v5-zoom">
+              <button className="v5-sq" onClick={() => fieldMap.current?.zoomBy(1)} aria-label="Hineinzoomen" title="Hineinzoomen"><Icon name="plus" size={24} /></button>
+              <button className="v5-sq" onClick={() => fieldMap.current?.zoomBy(-1)} aria-label="Herauszoomen" title="Herauszoomen"><Icon name="minus" size={24} /></button>
+            </div>
+            <button className={`v5-sq${locating ? ' on' : ''}`} onClick={() => void locate()} aria-label="Standort aktualisieren" title="Standort aktualisieren"><Icon name={locating ? 'sync' : 'locate'} size={24} /></button>
+            {mayMark && <MarkFab phase={fab} setPhase={(next) => (next === 'panel' && fab === 'idle' ? startMarking() : setFab(next))} marking={marking} kind={kind} theme={theme} canUndoLast={!!undo} onUndoLast={() => { undo?.revert(); setUndo(null); }} />}
+          </div>
+        </>
       )}
 
-      {tool === 'mark' && ready && <MarkBar marking={marking} theme={theme} onClose={() => enter('inspect')} />}
+      {ready && tool === 'areas' && meta && !editing && !selectedArea && (
+        <div className="v5-ctl right row" aria-label="Gebiete">
+          <span className="v5-hintchip"><Icon name="polygon" size={20} />Gebiet antippen</span>
+          {canEditAny && <button className="v5-go" onClick={areaTool.startNew} aria-label="Neues Gebiet" title="Neues Gebiet"><Icon name="plus" size={26} /></button>}
+          <button className="v5-sq" onClick={() => enter('inspect')} aria-label="Fertig" title="Fertig"><Icon name="close" size={24} /></button>
+        </div>
+      )}
+      {editing && meta && <AreaEditBar tool={areaTool} meta={meta} />}
+      {ready && tool === 'pickup' && !draft && (
+        <div className="v5-ctl right row" aria-label="Sonder-Marker setzen">
+          <span className="v5-hintchip"><Icon name="mapPin" size={20} />Karte antippen</span>
+          <button className="v5-sq" onClick={() => enter('inspect')} aria-label="Fertig" title="Fertig"><Icon name="close" size={24} /></button>
+        </div>
+      )}
 
-      {showConflicts && ready && (
-        <SheetFrame icon="warning" title="Überschrieben" onClose={() => setShowConflicts(false)}
-          meta={<span>{conflicts.length}</span>}>
+      {ready && panel === 'home' && <HomeSheet tiles={tiles} onClose={() => setPanel(null)} />}
+      {ready && panel === 'search' && <SearchSheet index={index} onPick={openSearchResult} onClose={() => setPanel(null)} />}
+      {ready && panel === 'overview' && stats && meta && (
+        <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflicts.length}
+          engine={campaign.engine?.kind === 'wasm' ? 'Rust (WebAssembly)' : 'TypeScript (Ersatz)'} onFitArea={fitArea} onSyncNow={campaign.syncNow} onConflicts={() => openPanel('conflicts')} onClose={() => setPanel(null)} />
+      )}
+      {ready && panel === 'conflicts' && (
+        <SheetFrame icon="warning" title="Überschrieben" onClose={() => setPanel(null)} meta={<span>{conflicts.length}</span>}>
           <div className="v5-list">
             {conflicts.slice(0, 30).map((c) => {
               const isHouse = c.key.startsWith('h:');
@@ -335,60 +470,38 @@ export function App({ campaignId }: { campaignId: string }) {
                 </div>
               );
             })}
-            <button className="v5-row-btn" onClick={() => { store?.dismissConflicts(); setShowConflicts(false); }}><Icon name="close" />Alle so lassen</button>
+            <button className="v5-row-btn" onClick={() => { store?.dismissConflicts(); setPanel(null); }}><Icon name="close" />Alle so lassen</button>
           </div>
         </SheetFrame>
       )}
-
-      {tool === 'areas' && ready && meta && !editing && !selectedArea && (
-        <nav className="v5-dock v5-dock-areas" aria-label="Gebiete">
-          <button className="v5-tool" onClick={() => enter('inspect')} aria-label="Fertig" title="Fertig"><Icon name="close" /></button>
-          {canEditAny && <button className="v5-tool primary" onClick={areaTool.startNew} aria-label="Neues Gebiet" title="Neues Gebiet"><Icon name="plus" size={28} /></button>}
-        </nav>
-      )}
-      {editing && meta && <AreaEditBar tool={areaTool} meta={meta} />}
-
-      {ui === 'sheet' && menu && (
-        <SheetFrame icon="more" title="Mehr" onClose={() => setMenu(false)}>
-          <div className="v5-list">
-            <button className="v5-row-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'} />{theme === 'dark' ? 'Helles Design' : 'Dunkles Design'}</button>
-            <button className="v5-row-btn" onClick={() => setHand(hand === 'right' ? 'left' : 'right')}><Icon name="hand" />{hand === 'right' ? 'Bedienung links' : 'Bedienung rechts'}</button>
-            {importOffer && <button className="v5-row-btn" disabled={importState === 'busy'} onClick={() => void importLegacy()} aria-label="Fortschritt aus der bisherigen Version übernehmen"><Icon name={importState === 'busy' ? 'sync' : 'download'} />Fortschritt aus der alten Version übernehmen</button>}
-            <button className="v5-row-btn" onClick={() => { setMenu(false); setNotesOpen(true); }}><Icon name="message" />Notizen{notes && notes.all().length > 0 && <b className="v5-row-count">{notes.all().length}</b>}</button>
-            <a className="v5-row-btn" href={`/?campaign=${encodeURIComponent(campaignId)}`}><Icon name="mapPin" />Alte Ansicht</a>
-            {meta?.role === 'admin' && <a className="v5-row-btn" href="/login"><Icon name="shield" />Verwaltung</a>}
-          </div>
+      {ready && panel === 'notes' && (
+        <SheetFrame icon="message" title="Notizen" onClose={() => setPanel(null)}>
+          <NotesOverview store={notes} index={index} areas={meta?.areas ?? []} onOpen={openNoteTarget} />
         </SheetFrame>
       )}
 
-      {tool === 'pickup' && ready && !draft && (
-        <nav className="v5-dock v5-dock-areas" aria-label="Sonder-Marker setzen">
-          <button className="v5-tool" onClick={() => enter('inspect')} aria-label="Fertig" title="Fertig"><Icon name="close" /></button>
-          <span className="v5-hintchip"><Icon name="mapPin" size={20} />Karte antippen</span>
-        </nav>
-      )}
       {tool === 'pickup' && ready && draft && (
         <SheetFrame icon="mapPin" title="Sonder-Marker" onClose={() => { setDraft(null); setPickupError(null); }}>
           <PickupForm draft={draft} busy={pickupBusy} error={pickupError} onChange={setDraft} onSave={() => void savePickup()} />
         </SheetFrame>
       )}
-      {selectedPickup && ready && tool === 'inspect' && (
+      {selectedPickup && ready && tool === 'inspect' && fab === 'idle' && !panel && (
         <SheetFrame icon="mapPin" title={selectedPickup.title} onClose={() => { setPickupId(null); setPickupError(null); }}
           meta={<span>{PICKUP_LABEL[selectedPickup.status]}</span>}>
           <PickupBody pickup={selectedPickup} canEdit={rights.edit} busy={pickupBusy} error={pickupError} onStatus={(status) => void changePickupStatus(selectedPickup, status)} />
         </SheetFrame>
       )}
-      {isCollection && listOpen && ready && meta && (
-        <SheetFrame icon="polygon" title="Gebiete" onClose={() => setListOpen(false)}
+      {isCollection && panel === 'areas' && ready && meta && (
+        <SheetFrame icon="polygon" title="Gebiete" onClose={() => setPanel(null)}
           meta={<span><Icon name="users" size={16} />{[...views.values()].filter((v) => v.phase === 'working').length}</span>}>
           <AreaList areas={meta.areas} views={views} stats={areaStatsMap} canAct={!!me} busy={runner.busy}
-            onOpen={(id) => { setListOpen(false); setCollectionAreaId(id); }}
+            onOpen={(id) => { setPanel(null); setCollectionAreaId(id); }}
             onClaim={(id) => void claimArea(id)} onJoin={(runId) => void runner.run(() => actions!.join(runId))} />
           {runner.error && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{runner.error}</p>}
         </SheetFrame>
       )}
 
-      {isCollection && collectionAreaId && ready && meta && (() => {
+      {isCollection && collectionAreaId && ready && meta && tool === 'inspect' && fab === 'idle' && !panel && (() => {
         const area = meta.areas.find((a) => a.id === collectionAreaId);
         const view = area ? views.get(area.id) : undefined;
         if (!area || !view) return null;
@@ -399,7 +512,7 @@ export function App({ campaignId }: { campaignId: string }) {
             meta={<><span>{view.phase === 'open' ? 'Offen' : view.phase === 'working' ? 'Wird bearbeitet' : 'Erledigt'}</span>{percent !== null && <span><Icon name="house" size={16} />{percent} %</span>}</>}>
             <RoomStrip members={view.members} me={me} />
             <AreaActions view={view} busy={runner.busy} error={runner.error} canAct={!!me}
-              onFit={() => fieldMap.current?.fitTo([[Math.min(...area.geometry.coordinates[0].map((p) => p[0])), Math.min(...area.geometry.coordinates[0].map((p) => p[1]))], [Math.max(...area.geometry.coordinates[0].map((p) => p[0])), Math.max(...area.geometry.coordinates[0].map((p) => p[1]))]], FIT_PADDING)}
+              onFit={() => fieldMap.current?.fitTo(ringBounds(area.geometry.coordinates[0]), FIT_PADDING)}
               onClaim={() => void claimArea(area.id)} onJoin={() => void runner.run(() => actions!.join(view.runId!))}
               onLeave={() => void runner.run(() => actions!.leave(view.runId!))} onRelease={() => void runner.run(() => actions!.release(view.runId!, area.id))}
               onComplete={() => void runner.run(() => actions!.complete(view.runId!, area.id))} />
@@ -408,24 +521,19 @@ export function App({ campaignId }: { campaignId: string }) {
         );
       })()}
 
-      {notesOpen && ready && (
-        <SheetFrame icon="message" title="Notizen" onClose={() => setNotesOpen(false)}>
-          <NotesOverview store={notes} index={index} areas={meta?.areas ?? []} onOpen={openNoteTarget} />
-        </SheetFrame>
-      )}
-
-      {tool === 'areas' && !editing && selectedArea && (
+      {tool === 'areas' && ready && !editing && selectedArea && (
         <SheetFrame icon="polygon" title={selectedArea.name} onClose={() => areaTool.setSelectedId(null)}
           meta={<><span><Icon name="ruler" size={16} />{areaStats ? sizeLabel(areaStats.size) : ''}</span><span><Icon name="house" size={16} />{areaStats ? `${areaStats.done.toLocaleString('de')} / ${areaStats.total.toLocaleString('de')}` : ''}</span></>}>
           <div className="v5-row">
-            <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo([[Math.min(...selectedArea.geometry.coordinates[0].map((p) => p[0])), Math.min(...selectedArea.geometry.coordinates[0].map((p) => p[1]))], [Math.max(...selectedArea.geometry.coordinates[0].map((p) => p[0])), Math.max(...selectedArea.geometry.coordinates[0].map((p) => p[1]))]], FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
+            <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo(ringBounds(selectedArea.geometry.coordinates[0]), FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
             {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
+            {orphanCount > 0 && <button className="v5-icon-btn tonal" onClick={pruneSelected} aria-label="Veraltete Einträge dieses Gebiets bereinigen" title="Veraltete Einträge bereinigen (Markierungen, die nach einer Änderung des Gebiets nirgends mehr liegen)"><Icon name="trash" /></button>}
           </div>
           <NotesPane key={areaNoteKey(selectedArea.id)} store={notes} target={areaNoteKey(selectedArea.id)} area={selectedArea.id} canWrite={canWrite && (meta?.role === 'admin' || meta?.teamId === selectedArea.teamId)} onUndo={(label, revert) => setUndo({ label, revert })} />
         </SheetFrame>
       )}
 
-      {tool === 'inspect' && selection && (
+      {tool === 'inspect' && fab === 'idle' && !panel && selection && (
         <SheetFrame
           icon={selection.kind === 'house' ? 'house' : 'road'}
           title={selection.kind === 'house' ? `${selection.house.street ?? ''} ${selection.house.number ?? ''}`.trim() || 'Haus' : selection.segment.name ?? 'Straße'}
@@ -433,11 +541,11 @@ export function App({ campaignId }: { campaignId: string }) {
           meta={selection.kind === 'segment' ? <><span><Icon name="ruler" size={16} />{meters(selection.chunks.reduce((sum, c) => sum + c.length, 0))}</span><span><Icon name="house" size={16} />{selection.houses.length}</span></>
             : selection.house.parent === null ? <span><Icon name="warning" size={16} />Keiner Straße zugeordnet</span> : undefined}>
           {selection.kind === 'house'
-            ? <Detail labels={LABELS} theme={theme} store={store} keyOf={houseKey(selection.house.id)} canWrite={canWrite} onPick={(s) => apply([houseKey(selection.house.id)], s, `Haus ${selection.house.number ?? ''}`)} />
+            ? <Detail kind={kind} labels={LABELS} theme={theme} store={store} keyOf={houseKey(selection.house.id)} canWrite={canWrite} onPick={(s) => apply([houseKey(selection.house.id)], s, `Haus ${selection.house.number ?? ''}`)} />
             : <>
-                <GroupDetail labels={LABELS} theme={theme} store={store} keys={selection.chunks.map((c) => segmentKey(c.id))} canWrite={canWrite} onPick={(s) => apply(selection.chunks.map((c) => segmentKey(c.id)), s, selection.segment.name ?? 'Abschnitt')} />
+                <GroupDetail kind={kind} labels={LABELS} theme={theme} store={store} keys={selection.chunks.map((c) => segmentKey(c.id))} canWrite={canWrite} onPick={(s) => apply(selection.chunks.map((c) => segmentKey(c.id)), s, selection.segment.name ?? 'Abschnitt')} />
                 {canWrite && selection.houses.length > 0 && (
-                  <button className="v5-wide" aria-label={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`} title={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`}
+                  <button className="v5-wide" aria-label={`Abschnitt und alle ${selection.houses.length} Häuser erledigt`} title={`Abschnitt und alle ${selection.houses.length} Häuser: ${LABELS.completed}`}
                     onClick={() => apply([...selection.chunks.map((c) => segmentKey(c.id)), ...selection.houses.map((h) => houseKey(h.id))], 'completed', `${selection.segment.name ?? 'Abschnitt'} + ${selection.houses.length}`)}>
                     <Icon name="road" size={22} /><Icon name="house" size={22} /><Icon name="check" size={22} /><b>{selection.houses.length}</b>
                   </button>
@@ -452,77 +560,18 @@ export function App({ campaignId }: { campaignId: string }) {
   );
 }
 
-function StatusGroup({ current, onPick, theme, labels }: { current?: Status; onPick: (status: Status) => void; theme: Theme; labels: Record<Status, string> }) {
-  const colors = statusColors(theme);
-  return (
-    <div className="v5-seg" role="group" aria-label="Status">
-      {ORDER.map((status) => (
-        <button key={status} className={`v5-status v5-seg-btn${current === status ? ' on' : ''}`} style={{ '--c': colors[status] } as React.CSSProperties}
-          onClick={() => onPick(status)} aria-pressed={current === status} aria-label={labels[status]} title={labels[status]}>
-          <Icon name={STATUS_ICON[status]} size={26} />
-          <span>{labels[status]}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SheetFrame({ icon, title, meta, onClose, children }: { icon: IconName; title: string; meta?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <section className="v5-sheet" aria-label={title}>
-      <div className="v5-handle" aria-hidden />
-      <header>
-        <span className="v5-badge"><Icon name={icon} size={26} /></span>
-        <div className="v5-head-text"><h2>{title}</h2>{meta && <div className="v5-meta">{meta}</div>}</div>
-        <button className="v5-icon-btn" onClick={onClose} aria-label="Schließen" title="Schließen"><Icon name="close" /></button>
-      </header>
-      {children}
-    </section>
-  );
-}
-
-function GroupDetail({ store, keys, canWrite, onPick, theme, labels }: { store: FieldStore | null; keys: EntityKey[]; canWrite: boolean; onPick: (s: Status) => void; theme: Theme; labels: Record<Status, string> }) {
+function GroupDetail({ store, keys, canWrite, onPick, theme, labels, kind }: { store: FieldStore | null; keys: EntityKey[]; canWrite: boolean; onPick: (s: Status) => void; theme: Theme; labels: Record<Status, string>; kind: Kind }) {
   const status = useGroupStatus(store, keys);
   return canWrite
-    ? <StatusGroup current={status ?? undefined} onPick={onPick} theme={theme} labels={labels} />
+    ? <StatusGroup current={status ?? undefined} onPick={onPick} theme={theme} labels={labels} kind={kind} />
     : <p className="v5-readonly"><Icon name={status ? STATUS_ICON[status] : 'open'} size={22} />{status ? labels[status] : 'Gemischt'}</p>;
 }
 
-function Detail({ store, keyOf, canWrite, onPick, theme, labels }: { store: FieldStore | null; keyOf: EntityKey; canWrite: boolean; onPick: (s: Status) => void; theme: Theme; labels: Record<Status, string> }) {
+function Detail({ store, keyOf, canWrite, onPick, theme, labels, kind }: { store: FieldStore | null; keyOf: EntityKey; canWrite: boolean; onPick: (s: Status) => void; theme: Theme; labels: Record<Status, string>; kind: Kind }) {
   const status = useStatus(store, keyOf);
   return canWrite
-    ? <StatusGroup current={status} onPick={onPick} theme={theme} labels={labels} />
-    : <p className="v5-readonly"><Icon name={STATUS_ICON[status]} size={22} />{labels[status]}</p>;
-}
-
-/**
- * Quiet by default: one small capsule (sync state + percentage). Tapping it unfolds the details for a few seconds.
- * Nothing animates here unless something needs attention.
- */
-function Hud({ name, campaign, canWrite }: { name: string; campaign: ReturnType<typeof useCampaign>; canWrite: boolean }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => { if (!open) return; const t = window.setTimeout(() => setOpen(false), 5000); return () => window.clearTimeout(t); }, [open]);
-  const p = campaign.progress;
-  const dot = campaign.sync.state === 'offline' ? 'offline' : campaign.sync.pending > 0 || campaign.sync.state === 'syncing' ? 'busy' : 'ok';
-  const title = dot === 'ok' ? 'Alles gespeichert' : dot === 'busy' ? `${campaign.sync.pending} Änderungen werden gesendet` : `Offline – ${campaign.sync.pending} Änderungen warten`;
-  const done = p?.houses.completed ?? 0, total = p ? p.totalHouses - p.houses['not-deliverable'] : 0;
-  const percent = Math.round((p?.houseRatio ?? 0) * 100);
-  return (
-    <div className={`v5-pill${open ? ' open' : ''}`} role="status" aria-label={`${name}: ${percent} Prozent`} data-done={done} data-total={total}>
-      <button className="v5-pill-main" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Fortschritt">
-        <span className={`v5-dot ${dot}`} title={title} aria-label={title}><Icon name={dot === 'ok' ? 'cloudOk' : dot === 'offline' ? 'cloudOff' : 'sync'} size={20} /></span>
-        <strong className="v5-percent">{percent}<small>%</small></strong>
-        {!canWrite && <Icon name="eye" size={18} className="v5-viewonly" />}
-      </button>
-      {open && (
-        <div className="v5-pill-detail">
-          <span className="v5-count"><Icon name="house" size={15} />{done.toLocaleString('de')} / {total.toLocaleString('de')}</span>
-          <WavyProgress value={p?.houseRatio ?? 0} label="Fortschritt" />
-          <small>{name}</small>
-        </div>
-      )}
-    </div>
-  );
+    ? <StatusGroup current={status} onPick={onPick} theme={theme} labels={labels} kind={kind} />
+    : <p className="v5-readonly"><Icon name={STATUS_ICON[status]} size={22} />{labels[status]}<small className="v5-muted"> · {HINTS[kind][status]}</small></p>;
 }
 
 function Overlay({ children }: { children: React.ReactNode }) {
