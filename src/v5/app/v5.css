@@ -4,7 +4,7 @@
 html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .v5-root { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .v5-root input { -webkit-user-select: text; user-select: text; font-size: 16px; /* 16 px keeps iOS from zooming into focused fields */ }
-.v5-root .v5-map { touch-action: none; }
+.v5-root .v5-map { position: absolute; inset: 0; touch-action: none; } /* more specific than maplibre's own `.maplibregl-map { position: relative }`, so the order in which the stylesheets load never matters */
 
 /* ── HUD capsule (quiet by default) ──────────────────────────── */
 .v5-pill { position: absolute; z-index: 5; top: calc(env(safe-area-inset-top) + 0.7rem); left: 0.7rem; display: flex; align-items: center; height: var(--ctl); background: var(--glass); border-radius: var(--r); box-shadow: var(--shadow); }
