@@ -139,10 +139,16 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(300);
 const PRIVATE = /short-secret|51\.12345|13\.54321|70322|43422|Mustermann|Hund im Garten|tiles\.example\.test/;
-check('privacy: the log in the panel holds none of the foreign text', !PRIVATE.test(await sheet(page)));
+// Look at every line (warnings too) with its data open, not only the collapsed error lines.
+await page.getByRole('group', { name: 'Mindeststufe' }).getByRole('button', { name: 'Info', exact: true }).click();
+for (const button of await page.locator('.ui-logitem-btn:not([disabled])').all()) await button.click().catch(() => {});
+{ const t = await sheet(page); check('privacy: the log in the panel (all levels, every line opened) holds none of the foreign text', !PRIVATE.test(t) && /map error/.test(t) && /console\.warn/.test(t), (t.match(PRIVATE) ?? [])[0]); }
+// A thrown object (not an Error) is foreign as a whole.
+await page.evaluate(() => { setTimeout(() => { throw { user: 'Max Mustermann', pos: '51.12345,13.54321' }; }, 5); });
+await page.waitForTimeout(300);
 { const line = await page.locator('.ui-logitem-btn').first().boundingBox();
   await page.getByRole('button', { name: 'Schließen' }).click(); const hud = await page.locator('.v5-hud').boundingBox(); await page.locator('.v5-hud').click(); await tab(page, 'Log');
-  check('UI-Gate: the readout and the log lines are at least 44 px tall', (hud?.height ?? 99) >= 44 && (line?.height ?? 99) >= 44, `hud ${hud?.height} line ${line?.height}`); }
+  check('UI-Gate: the readout and the log lines are at least 44 px tall', (hud?.height ?? 0) >= 44 && (line?.height ?? 0) >= 44, `hud ${hud?.height} line ${line?.height}`); }
 await page.getByRole('group', { name: 'Mindeststufe' }).getByRole('button', { name: 'Info', exact: true }).click();
 await page.locator('.v5-sheet').getByLabel('Suche').fill('push');
 check('log: search narrows the entries', (await page.locator('.ui-logitem').count()) < 40);

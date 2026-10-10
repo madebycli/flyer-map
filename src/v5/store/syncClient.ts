@@ -26,6 +26,11 @@ export type SyncInfo = { lastOkAt: number | null; lastError: string | null };
 export type SyncRound = { at: number; ms: number; batches: number; sent: number; accepted: number; rejected: number; pages: number; pulled: number; result: 'ok' | 'notes-failed' | 'failed'; error?: string };
 const HISTORY = 30;
 const describe = (error: unknown) => (error instanceof Error ? error.message : 'Unbekannter Fehler').slice(0, 160);
+/** For the diagnostics: a server answer as `status code` (e.g. `403 cross_origin`), which survives redaction; anything else as its (redacted) message. The person sees `describe`. */
+const errorCode = (error: unknown) => {
+  const api = error as { status?: unknown; code?: unknown } | null;
+  return api && typeof api.status === 'number' && typeof api.code === 'string' && /^[a-z][a-z0-9_]{1,40}$/.test(api.code) ? `${api.status} ${api.code}` : describe(error);
+};
 
 export class SyncClient {
   private running = false;
@@ -44,6 +49,7 @@ export class SyncClient {
   /** When the last full round trip succeeded, and why the last one failed (null while healthy): shown in the overview. */
   lastOkAt: number | null = null;
   lastError: string | null = null;
+  private lastErrorCode: string | null = null;
 
   constructor(
     private readonly store: FieldStore,
@@ -54,7 +60,7 @@ export class SyncClient {
   ) {
     this.unsubscribers = [store.subscribe(() => this.kick()), ...extras.map((extra) => extra.subscribe(() => this.kick()))];
     this.stopProbe = diag.probe('sync', () => ({
-      state: this.state, running: this.running, lastOkAgoS: this.lastOkAt ? Math.round((Date.now() - this.lastOkAt) / 1000) : null, lastError: this.lastError, failures: this.failures, extraFailures: this.extraFailures,
+      state: this.state, running: this.running, lastOkAgoS: this.lastOkAt ? Math.round((Date.now() - this.lastOkAt) / 1000) : null, lastError: this.lastErrorCode, failures: this.failures, extraFailures: this.extraFailures,
       backoffMs: this.backoffMs, retryScheduled: !!this.retryTimer, pendingOps: this.store.pendingOps().length, pendingNotes: this.extras.reduce((n, extra) => n + extra.pendingCount(), 0),
       batchSize: this.batchSize, rounds: [...this.history],
     }));
@@ -108,7 +114,7 @@ export class SyncClient {
         }
         // Notes ride the same loop but must not make the status sync look offline (or the reverse): isolate and retry.
         for (const extra of this.extras) {
-          try { await extra.syncOnce(); } catch (error) { this.extraFailed = true; this.lastError = `Notizen: ${describe(error)}`; diag.warn('sync', 'notes sync failed', { error: describe(error) }); }
+          try { await extra.syncOnce(); } catch (error) { this.extraFailed = true; this.lastError = `Notizen: ${describe(error)}`; this.lastErrorCode = `Notizen: ${errorCode(error)}`; diag.warn('sync', 'notes sync failed', { error: errorCode(error) }); }
         }
         if (this.extraFailed) {
           this.extraFailed = false;
@@ -116,7 +122,7 @@ export class SyncClient {
           if (this.retryTimer) clearTimeout(this.retryTimer);
           this.backoffMs = Math.min(60_000, 1000 * 2 ** this.extraFailures);
           this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.run(); }, this.backoffMs);
-        } else { this.extraFailures = 0; this.lastError = null; this.backoffMs = 0; }
+        } else { this.extraFailures = 0; this.lastError = null; this.lastErrorCode = null; this.backoffMs = 0; }
         const recovered = this.failures > 0;
         this.failures = 0;
         this.lastOkAt = Date.now();
@@ -128,15 +134,15 @@ export class SyncClient {
     } catch (error) {
       if (!this.disposed) {
         this.failures++;
-        this.lastError = describe(error);
+        this.lastError = describe(error); this.lastErrorCode = errorCode(error);
         this.set('offline');
         // Exponential backoff, capped; pending ops stay safely in the persisted outbox.
         if (this.retryTimer) clearTimeout(this.retryTimer);
         this.backoffMs = Math.min(30_000, 500 * 2 ** this.failures);
         this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.run(); }, this.backoffMs);
         diag.inc('sync.failures');
-        diag.warn('sync', 'sync failed, retrying', { error: describe(error), failures: this.failures, retryInMs: this.backoffMs, pending: this.store.pendingOps().length });
-        finish('failed', describe(error));
+        diag.warn('sync', 'sync failed, retrying', { error: errorCode(error), failures: this.failures, retryInMs: this.backoffMs, pending: this.store.pendingOps().length });
+        finish('failed', errorCode(error));
       }
     } finally {
       this.running = false;

@@ -170,7 +170,9 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-member.me { background: var(--primary-container); color: var(--on-primary-container); }
 .v5-pickup-address { display: flex; align-items: center; gap: 0.5rem; margin: 0.1rem 0 0.5rem; font-weight: 700; color: var(--on); }
 .v5-pickup-desc { margin: 0 0 0.8rem; color: var(--on-var); font-weight: 600; overflow-wrap: anywhere; }
-.v5-form { display: grid; gap: 0.5rem; margin-bottom: 0.4rem; }
+.v5-form { display: grid; gap: var(--sp-2); margin-bottom: 0.4rem; }
+/* inside a form the same rhythm as in the sheet: the gap alone spaces the fields */
+.v5-form > * { margin-block: 0; }
 .v5-form .v5-go { justify-self: end; }
 .v5-hintchip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0 1rem; height: var(--ctl); border-radius: var(--r); background: var(--glass); box-shadow: var(--shadow); font-weight: 700; }
 
@@ -186,6 +188,8 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-counter { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0 0.5rem; font-size: 0.85rem; font-weight: 700; color: var(--on-var); font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (min-width: 700px) { .v5-markbar { left: 50%; right: auto; width: 30rem; transform: translateX(-50%); margin: 0; } }
 .v5-statushint { margin: -0.3rem 0 0.8rem; font-size: 0.86rem; }
+/* the hint explains the status buttons right above it: it sits at the tight distance, not the block distance */
+.v5-sheet > .v5-statushint { margin-top: calc(var(--sp-1) - var(--sp-2)) !important; }
 .v5-legend { display: grid; gap: 0.3rem; margin: 0.2rem 0 0.4rem; }
 .v5-legend-row { display: flex; align-items: center; gap: 0.7rem; min-height: var(--ctl); padding: 0 0.9rem 0 0.4rem; border-radius: var(--r); background: var(--surface-3); }
 .v5-legend-row .v5-swatch { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: 0.8rem; background: color-mix(in srgb, var(--c) 24%, transparent); color: var(--c); flex: none; }
@@ -214,6 +218,6 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-barrow .v5-team { width: 2.2rem; height: 2.2rem; }
 
 /* Die kleine Anzeige von ?diag=1 (Tabellen, Log und Befunde der Diagnose liegen als Bausteine in src/ui/kit.css) */
-.v5-hud { position: fixed; z-index: 30; top: calc(max(0.4rem, env(safe-area-inset-top)) + 3.7rem); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 1.5rem); min-height: var(--ctl); padding: 0 var(--gap) 0 calc(var(--gap) * 1.5); border: 0; border-radius: var(--r); background: var(--surface-1); color: var(--on); font: 700 0.74rem ui-monospace, monospace; box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v5-hud { position: fixed; z-index: 8; top: calc(max(0.4rem, env(safe-area-inset-top)) + 3.7rem); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 1.5rem); min-height: var(--ctl); padding: 0 var(--gap) 0 calc(var(--gap) * 1.5); border: 0; border-radius: var(--r); background: var(--surface-1); color: var(--on); font: 700 0.74rem ui-monospace, monospace; box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v5-hud.warn { background: var(--tertiary-container); color: var(--on-tertiary-container); }
 .v5-hud.bad { background: var(--error-container); color: var(--error); }

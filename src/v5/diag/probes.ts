@@ -1,4 +1,4 @@
-import { redactValue } from './redact.ts';
+import { foreignMessage, redactValue } from './redact.ts';
 import { log, metrics } from './state.ts';
 import { routeOf } from './net.ts';
 
@@ -12,7 +12,7 @@ export function registerProbe(name: string, fn: Probe): () => void {
 export function collectProbes(): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [name, fn] of probes) {
-    try { out[name] = redactValue(fn()); } catch (error) { out[name] = { error: error instanceof Error ? error.message : String(error) }; }
+    try { out[name] = redactValue(fn()); } catch (error) { out[name] = { error: foreignMessage(error) }; }
   }
   return out;
 }

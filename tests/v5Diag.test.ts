@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Logger } from '../src/v5/diag/log.ts';
 import { Histogram, Metrics } from '../src/v5/diag/metrics.ts';
-import { redactText, redactValue } from '../src/v5/diag/redact.ts';
+import { REPORT_LIMITS, redactText, redactValue } from '../src/v5/diag/redact.ts';
 import { routeOf, tracedFetch } from '../src/v5/diag/net.ts';
 import { buildReport, REPORT_SCHEMA } from '../src/v5/diag/report.ts';
 import { collectProbes, registerProbe } from '../src/v5/diag/probes.ts';
@@ -138,7 +138,7 @@ test('probes describe subsystems on demand and a failing probe never breaks the 
   registerProbe('bad', () => { throw new Error('probe broke'); });
   const out = collectProbes();
   assert.deepEqual(out.good, { n: 1, lat: '[removed]' });
-  assert.deepEqual(out.bad, { error: 'probe broke' });
+  assert.deepEqual(out.bad, { error: '[text removed, 11 chars]' });
   off();
   assert.equal(collectProbes().good, undefined);
 });
@@ -212,9 +212,22 @@ test('foreign text is recognised or dropped: the exact B-F-007 counterexamples l
   const full = JSON.stringify(buildReport({ id: 'test', startedAt: Date.now(), bootCount: 1, previous: null }, { logLimit: 50 }));
   assert.deepEqual(hasPrivate(full), [], 'the report');
   assert.ok(report.length > 0);
-  // 4. the saved tail and its read-back: an *old* tail written before this rule is cleaned when it is loaded
-  store.set('vf-v5-diag-tail', JSON.stringify({ session: 's', endedAt: 1, entries: [{ seq: 1, t: 1, at: 1, lvl: 'error', cat: 'error', msg: 'boom at https://tiles.example.test/17/70322/43422.png?key=short-secret', data: { message: 'Max Mustermann: Hund im Garten 51.12345', where: 'x' } }] }));
-  assert.deepEqual(hasPrivate(JSON.stringify(loadPrevious())), [], 'an old tail');
+  // 4. the saved tail and its read-back. A tail of the old format (written before the allowlist) is dropped and removed, not cleaned …
+  store.set('vf-v5-diag-tail', JSON.stringify({ session: 's', endedAt: 1, entries: [{ seq: 1, t: 1, at: 1, lvl: 'error', cat: 'error', msg: 'Max Mustermann: Hund im Garten, Position 51.12345,13.54321', data: { message: 'Hund im Garten' } }] }));
+  assert.equal(loadPrevious(), null, 'an old-format tail is not shown');
+  assert.equal(store.get('vf-v5-diag-tail'), undefined, 'and is removed from the device');
+  // … and a current-format tail is read through today's rules: in the error/console categories only our fixed messages survive, everything is re-redacted, the stored copy is replaced.
+  store.set('vf-v5-diag-tail', JSON.stringify({ v: 2, session: 's', endedAt: 1, entries: [
+    { seq: 1, t: 1, at: 1, lvl: 'error', cat: 'error', msg: 'Max Mustermann: Hund im Garten, Position 51.12345,13.54321', data: { message: 'Hund im Garten' } },
+    { seq: 2, t: 2, at: 2, lvl: 'warn', cat: 'console', msg: 'Hund im Garten' },
+    { seq: 3, t: 3, at: 3, lvl: 'error', cat: 'Mustermann', msg: 'boom at https://tiles.example.test/17/70322/43422.png?key=short-secret' },
+    { seq: 4, t: 4, at: 4, lvl: 'error', cat: 'error', msg: 'uncaught error', data: { where: 'index.js:1:2' } },
+  ] }));
+  const prev = loadPrevious()!;
+  assert.deepEqual(hasPrivate(JSON.stringify(prev)), [], 'a current-format tail with foreign text');
+  assert.deepEqual(prev.entries.map((e) => e.msg), ['error (text removed)', 'console (text removed)', 'error (text removed)', 'uncaught error']);
+  assert.equal(prev.entries[2].cat, 'error', 'an unknown category is not kept, and is treated as the strictest one');
+  assert.deepEqual(hasPrivate(store.get('vf-v5-diag-tail') ?? ''), [], 'the stored copy is replaced by the cleaned one');
   saveTail('s2', l.entries());
   await new Promise((r) => setTimeout(r, 900));
   assert.deepEqual(hasPrivate(store.get('vf-v5-diag-tail') ?? ''), [], 'the saved tail');
@@ -230,10 +243,51 @@ test('a free-text key keeps only recognised technical messages, and errors keep 
   assert.match(String(out.error), /^\[text removed, \d+ chars\]$/);
   assert.equal(out.message, 'The operation was aborted');
   assert.equal((out.reason as { message: string }).message, 'Failed to fetch');
-  assert.equal((out.reason as { name: string }).name, 'TypeError');
+  assert.equal((out.reason as { type: string }).type, 'TypeError');
   assert.equal(out.other, 'kept constant text');
   assert.ok(!JSON.stringify(out).includes('Mustermann'));
-  assert.equal((redactValue(Object.assign(new Error('x'), { name: 'Max Mustermann' })) as { name: string }).name, 'Error', 'a name that is not an error type is not kept');
-  const stacked = redactValue(Object.assign(new Error('x'), { stack: 'Error: x\n    at doThing (https://x.test/a/b/c.js?k=short-secret:10:20)\n    at https://x.test/d.js:1:2' })) as { stack: string };
-  assert.ok(stacked.stack.includes('c.js:10:20') && !stacked.stack.includes('short-secret') && !stacked.stack.includes('x.test'), stacked.stack);
+  assert.equal((redactValue(Object.assign(new Error('x'), { name: 'Max Mustermann' })) as { type: string }).type, 'Error', 'a name that is not an error type is not kept');
+  const stacked = redactValue(Object.assign(new Error('x'), { stack: 'Error: x\n    at doThing (https://x.test/a/b/c.js?k=short-secret:10:20)\n    at https://x.test/d.js:1:2' })) as { stack: string[] };
+  assert.deepEqual(stacked.stack, ['doThing c.js:10:20', 'd.js:1:2']);
+});
+
+// ---- independent review of the fixes: non-Error foreign values, engine start error, idempotence, cost, blocklist gaps ----
+test('a thrown object or array under a free-text key is never walked: neither its keys nor its strings survive', () => {
+  const out = JSON.stringify(redactValue({ message: { user: 'Max Mustermann', pos: '51.123,13.543', 'Max Mustermann 51.12345': 1 }, error: ['Max Mustermann'], reason: { info: 'Hund im Garten' }, initError: 'CompileError: Max Mustermann wohnt in tiles.example.test/17/70322/43422.png?key=s' }));
+  assert.deepEqual(hasPrivate(out), [], out);
+  assert.ok(out.includes('[object removed, 3 keys]') && out.includes('[array removed, 1 items]') && out.includes('"initError":"CompileError"'), out);
+});
+
+test('redaction is idempotent: a second pass (report, saved tail) keeps error type, frames and placeholders', () => {
+  const once = redactValue({ error: Object.assign(new TypeError('Max'), { stack: 'TypeError: Max\n    at run (https://x.test/assets/index-abc.js:12:13)\n    at go (https://x.test/assets/index-abc.js:1:2)' }), message: 'whatever Max said' });
+  const twice = redactValue(JSON.parse(JSON.stringify(once)), -20, REPORT_LIMITS);
+  assert.deepEqual(twice, once);
+  assert.deepEqual((once as { error: { stack: string[] } }).error.stack, ['run index-abc.js:12:13', 'go index-abc.js:1:2']);
+  assert.equal((once as { message: string }).message, '[text removed, 17 chars]');
+});
+
+test('Firefox/Safari stacks (no message line) keep their first frame; forged frames are dropped', () => {
+  const ff = redactValue(Object.assign(new Error('x'), { stack: 'run@https://x.test/assets/a.js:3:4\ngo@https://x.test/assets/a.js:5:6' })) as { stack: string[] };
+  assert.deepEqual(ff.stack, ['run a.js:3:4', 'go a.js:5:6']);
+  const forged = redactValue({ stack: ['Max Mustermann 51.12345:13:54321', 'ok.js:1:2'] }) as { stack: string[] };
+  assert.deepEqual(forged.stack, ['?', 'ok.js:1:2']);
+});
+
+test('textual redaction covers addresses without a scheme, query strings, comma decimals and coordinate pairs, in bounded time', () => {
+  for (const [input, leak] of [['see tiles.example.test/17/70322/43422.png?key=short-secret', 'example'], ['//host.test/17/1/2.png?key=x', 'host'], ['at 51,12345 13,54321', '12345'], ['pos 51.123, 13.543', '51.123'], ['?access=abc&key=short', 'short'], ['mail max@example.org now', 'max@']] as const) {
+    assert.ok(!redactText(input).includes(leak), `${input} → ${redactText(input)}`);
+  }
+  assert.equal(redactText('took 1.159 ms for 3 areas'), 'took 1.159 ms for 3 areas', 'ordinary numbers stay');
+  const t0 = performance.now();
+  redactText('x'.repeat(50000)); redactText('a@'.repeat(25000));
+  assert.ok(performance.now() - t0 < 100, `long input took ${performance.now() - t0} ms`);
+});
+
+test('our own messages around foreign text are recognised: status + code, the notes prefix, uncaught error types', async () => {
+  const { foreignMessage } = await import('../src/v5/diag/redact.ts');
+  assert.equal(foreignMessage('403 cross_origin'), '403 cross_origin');
+  assert.equal(foreignMessage('Serverfehler 502'), 'Serverfehler 502');
+  assert.equal(foreignMessage('Notizen: Failed to fetch'), 'Notizen: Failed to fetch');
+  assert.match(foreignMessage('Notizen: Max Mustermann'), /^Notizen: \[text removed/);
+  assert.equal(foreignMessage('Uncaught TypeError: Max Mustermann'), 'Uncaught TypeError');
 });
