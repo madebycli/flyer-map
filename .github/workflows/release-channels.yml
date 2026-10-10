@@ -297,14 +297,11 @@ jobs:
           [[ "$GITHUB_REF" == 'refs/heads/unstable' ]]
           mkdir -p /tmp/unstable-alias
           cat > /tmp/unstable-alias/index.mjs <<'EOF'
-          const upstreamHost='flyer-map-unstable-backend.cloudflare-eleven035.workers.dev';
+          // The public Unstable address. The backend is reached through a service binding: a Worker that fetches another
+          // Worker's workers.dev address in the same account is refused by Cloudflare (error 1042), which left this address dead.
           export default {
-            async fetch(request) {
-              const upstreamUrl=new URL(request.url);
-              upstreamUrl.protocol='https:';
-              upstreamUrl.hostname=upstreamHost;
-              const upstreamRequest=new Request(upstreamUrl,request);
-              const response=await fetch(upstreamRequest);
+            async fetch(request, env) {
+              const response=await env.UPSTREAM.fetch(request);
               const headers=new Headers(response.headers);
               headers.set('x-flyer-release-channel','unstable');
               if (response.webSocket) {
@@ -319,7 +316,8 @@ jobs:
             "name": "flyer-map-unstable",
             "main": "index.mjs",
             "compatibility_date": "2026-08-01",
-            "workers_dev": true
+            "workers_dev": true,
+            "services": [{ "binding": "UPSTREAM", "service": "flyer-map-unstable-backend" }]
           }
           EOF
           (cd /tmp/unstable-alias && npx --yes wrangler@4 deploy --config wrangler.jsonc) 2>&1 | tee /tmp/unstable-alias.log
