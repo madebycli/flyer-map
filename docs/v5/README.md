@@ -23,7 +23,7 @@ Streets and houses are a pure function of OSM data. v5 therefore stores **no tas
   Overpass normalisation, area restriction, legacy-progress import, synthetic test city.
 - `src/v5/notes` – field notes: flags + text per street/house/Area, own LWW store and sync round (rides the status `SyncClient`).
 - `src/v5/store` – HLC, `FieldStore` (changed-keys listeners, outbox), `SyncClient`, `Progress`, IndexedDB persistence.
-- `src/v5/map` – `FieldMap` (MapLibre 5.7.1, feature-state painting, route preview, basemap-outage fallback).
+- `src/v5/map` – `FieldMap` (MapLibre 6.13.0, feature-state painting, route preview, basemap-outage fallback).
 - `src/v5/app` – React shell (`App.tsx`), derivation worker, API client, Vela-style CSS.
 - `worker/v5/api.ts` + `migrations/0026_v5_field_state.sql` – meta, state, ops, pack endpoints; `worker/v5/notes.ts` + `0027_v5_notes.sql` – notes endpoints.
 - `scripts/v5-e2e` – fixture server (real handlers, in-memory D1) and Playwright flow.

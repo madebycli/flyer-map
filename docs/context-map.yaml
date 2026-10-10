@@ -281,6 +281,12 @@ nodes:
     status: accepted-for-v5-branch
     topics: []
     load_when: [before changing the architectural or security boundary it records]
+  - id: adr-0037-maplibre-6-13
+    path: docs/decisions/ADR-0037-maplibre-6-13.md
+    type: decision
+    status: accepted-for-v5-branch
+    topics: []
+    load_when: [before changing the architectural or security boundary it records]
   - id: architecture-data
     path: docs/architecture/DATA.md
     type: architecture

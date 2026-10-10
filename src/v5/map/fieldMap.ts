@@ -1,4 +1,6 @@
-import maplibregl, { type ExpressionSpecification, type GeoJSONSource, type Map as MlMap, type StyleSpecification, type VectorTileSource } from 'maplibre-gl';
+import '../../mapRuntime.ts';
+import * as maplibregl from 'maplibre-gl';
+import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, RequestParameters, StyleSpecification, VectorTileSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { MapData } from '../engine/host.ts';
 import type { LngLat } from '../engine/types.ts';
@@ -85,7 +87,7 @@ let tokens = 0;
 function ensureTileProtocol() {
   if (protocolRegistered) return;
   protocolRegistered = true;
-  maplibregl.addProtocol('v5t', async (params) => {
+  maplibregl.addProtocol('v5t', async (params: RequestParameters) => {
     const m = /^v5t:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
     const provider = m ? providers.get(m[1]) : undefined;
     if (!m || !provider) return { data: new ArrayBuffer(0) };
@@ -598,8 +600,11 @@ export class FieldMap {
   get paintedCount() { return this.applied; }
   /** Diagnostics for the soak test: what the map currently holds (a steady rise across identical actions is a leak). */
   debugCounts() {
-    const style = this.map.style as unknown as { sourceCaches?: Record<string, { _tiles?: Record<string, unknown>; getIds?: () => string[] }> };
-    const tiles = Object.fromEntries(Object.entries(style.sourceCaches ?? {}).map(([id, cache]) => [id, Object.keys(cache._tiles ?? {}).length]));
+    // MapLibre 5 calls them sourceCaches, 6 tileManagers; both list their tiles with getIds(). An unknown shape must read as "unknown", never as a quiet zero.
+    type TileCache = { getIds?: () => string[]; _tiles?: Record<string, unknown> };
+    const style = this.map.style as unknown as { tileManagers?: Record<string, TileCache>; sourceCaches?: Record<string, TileCache> };
+    const caches = style.tileManagers ?? style.sourceCaches;
+    const tiles = caches ? Object.fromEntries(Object.entries(caches).map(([id, cache]) => [id, cache.getIds ? cache.getIds().length : Object.keys(cache._tiles ?? {}).length])) : null;
     return { tiles, layers: this.map.getStyle().layers?.length ?? 0, sources: Object.keys(this.map.getStyle().sources ?? {}).length, providers: providers.size };
   }
   destroy() { this.unbind?.(); providers.delete(this.token); this.map.remove(); }

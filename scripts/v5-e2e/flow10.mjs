@@ -74,7 +74,7 @@ await chooser.setFiles({ name: 'fruehjahr.aktion.json', mimeType: 'application/j
 await page.waitForSelector('.v5-sheet h2:has-text("Aktions-Vorlage")');
 const planText = await page.locator('.v5-sheet').innerText();
 check('the plan shows what would change before anything happens', /1 neue Gruppen/.test(planText) && /1 neue Gebiete/.test(planText) && /1 Gebiete mit neuem Umriss/.test(planText) && /1 unverändert/.test(planText) && /nichts gelöscht|Es wird nichts gelöscht/.test(planText), planText.replace(/\n/g, ' | ').slice(0, 300));
-check('the template outlines are previewed on the map', await page.evaluate(() => window.__v5Map.getSource('v5-draw')._data.features.length === 3));
+check('the template outlines are previewed on the map', await page.evaluate(async () => (await window.__v5Map.getSource('v5-draw').getData()).features.length === 3));
 const beforeTeams = await page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/meta')).json()).teams.length);
 check('nothing was created yet', beforeTeams === 2);
 await page.screenshot({ path: `${process.env.SHOTS_DIR ?? '.'}/u5-template.png` });

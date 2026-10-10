@@ -7,7 +7,7 @@ Verteil-Flyer is a client-heavy mobile-first website backed by a small Cloudflar
 ```text
 Mobile/Desktop Browser
   ├─ React website shell
-  ├─ MapLibre GL JS 5.7.1
+  ├─ MapLibre GL JS 6.13.0
   │   ├─ OpenFreeMap Bright vector basemap
   │   ├─ camera / zoom / rotation / compass
   │   ├─ live/refining local geolocation and follow
@@ -92,7 +92,7 @@ MapLibre owns:
 
 The SVG overlay exists only while drawing/editing a small amount of active geometry. Stored edit points are not visible in browse mode.
 
-MapLibre is currently pinned to **5.7.1** because the tested 6.4.1 upgrade caused a real-browser GeoJSON rendering regression. Do not casually upgrade the map runtime without a browser acceptance test containing saved Area and Street GeoJSON.
+MapLibre is pinned to **6.13.0** (ADR-0037; 5.7.1 carried GHSA-jrc7-96c5-q579). The old 6.4.1 saved-GeoJSON regression concerned the retired GeoJSON map; the v5 field map paints vector tiles with feature-state. Do not casually change the map runtime: it needs the browser flows in `scripts/v5-e2e` and a real-device check (phones, tiles, hit testing, selection, camera) before a release.
 
 See `docs/architecture/MAP.md` and ADR-0010.
 

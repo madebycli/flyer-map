@@ -32,7 +32,7 @@ PR #21 (`renderer-access-recovery`) merged to `main` on 2026-08-25 as merge comm
 The merged baseline includes:
 - M4 Worker-enforced access/session authorization;
 - operator Admin recovery for existing Campaigns using server-only `M4_BOOTSTRAP_SECRET`;
-- MapLibre 5.7.1 with saved Areas/Streets in persistent GeoJSON sources/layers;
+- MapLibre 6.13.0 (field map v5: vector tiles with feature-state; see ADR-0037);
 - SVG only for active draw/edit input;
 - opt-in `?diag=1` renderer/performance diagnostics;
 - accepted mobile map/edit/toolbar behavior from Plan 008.

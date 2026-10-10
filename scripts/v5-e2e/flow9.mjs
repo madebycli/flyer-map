@@ -34,7 +34,7 @@ check('zoom out button zooms out', await until(async () => Math.abs((await page.
 
 // Standort aktualisieren: one fix, the map flies there, the dot is drawn
 await page.getByRole('button', { name: 'Standort aktualisieren' }).click();
-check('locate flies to the fix and shows the position dot', await until(async () => await page.evaluate(() => { const m = window.__v5Map; const c = m.getCenter(); const src = m.getSource('v5-me')?._data; return Math.abs(c.lng - 13.003) < 0.001 && src?.features?.length === 1; })));
+check('locate flies to the fix and shows the position dot', await until(async () => await page.evaluate(async () => { const m = window.__v5Map; const c = m.getCenter(); const src = await m.getSource('v5-me')?.getData(); return Math.abs(c.lng - 13.003) < 0.001 && src?.features?.length === 1; })));
 
 // Compass appears only while rotated
 check('no compass while north is up', (await page.getByRole('button', { name: /nach Norden/ }).count()) === 0);

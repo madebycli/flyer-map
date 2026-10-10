@@ -23,7 +23,7 @@ async function person(who) {
   await page.waitForTimeout(800);
   const jump = (x, y, z) => page.evaluate(async ([c, zoom]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom }); await new Promise((r) => m.once('idle', r)); }, [M(x, y), z]);
   const click = async (x, y) => { const p = await page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(x, y)); await page.mouse.click(p[0], p[1]); };
-  const markers = () => page.evaluate(() => window.__v5Map.getSource('v5-notes')._data?.features?.length ?? 0);
+  const markers = () => page.evaluate(async () => (await window.__v5Map.getSource('v5-notes').getData())?.features?.length ?? 0);
   const serverNotes = () => page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/notes?since=0')).json()).notes);
   return { ctx, page, gate, jump, click, markers, serverNotes };
 }
@@ -57,7 +57,7 @@ await A.page.getByRole('button', { name: 'Schließen' }).click();
 await A.page.waitForTimeout(300);
 await A.click(100, 40); // elsewhere: nothing selected
 await A.jump(116, 13, 18.1);
-const pin = await A.page.evaluate(() => { const f = window.__v5Map.getSource('v5-notes')._data.features[0]; const p = window.__v5Map.project(f.geometry.coordinates); return [p.x, p.y]; });
+const pin = await A.page.evaluate(async () => { const f = (await window.__v5Map.getSource('v5-notes').getData()).features[0]; const p = window.__v5Map.project(f.geometry.coordinates); return [p.x, p.y]; });
 await A.page.mouse.click(pin[0], pin[1]);
 check('tapping the marker opens its notes', await until(async () => (await A.page.locator('.v5-note').count()) === 3, 4000));
 await A.page.getByRole('button', { name: 'Schließen' }).click();
@@ -78,8 +78,8 @@ await A.page.waitForSelector('.v5-sheet');
 await A.page.getByRole('button', { name: 'Briefkasten voll', exact: true }).click();
 await A.page.getByRole('button', { name: 'Schließen' }).click();
 await A.page.waitForTimeout(300);
-await A.page.evaluate(async () => { const m = window.__v5Map; const f = m.getSource('v5-notes')._data.features.find((x) => x.properties.key.startsWith('s:')); m.jumpTo({ center: f.geometry.coordinates, zoom: 17.4 }); await new Promise((r) => m.once('idle', r)); await new Promise((r) => setTimeout(r, 250)); });
-const pin2 = await A.page.evaluate(() => { const m = window.__v5Map; const f = m.getSource('v5-notes')._data.features.find((x) => x.properties.key.startsWith('s:')); const p = m.project(f.geometry.coordinates); return [p.x, p.y]; });
+await A.page.evaluate(async () => { const m = window.__v5Map; const f = (await m.getSource('v5-notes').getData()).features.find((x) => x.properties.key.startsWith('s:')); m.jumpTo({ center: f.geometry.coordinates, zoom: 17.4 }); await new Promise((r) => m.once('idle', r)); await new Promise((r) => setTimeout(r, 250)); });
+const pin2 = await A.page.evaluate(async () => { const m = window.__v5Map; const f = (await m.getSource('v5-notes').getData()).features.find((x) => x.properties.key.startsWith('s:')); const p = m.project(f.geometry.coordinates); return [p.x, p.y]; });
 await A.page.mouse.click(pin2[0], pin2[1]);
 check('tapping a street note marker opens that street with its note', await until(async () => (await A.page.locator('.v5-note').count()) === 1, 4000));
 await A.page.getByRole('button', { name: 'Schließen' }).click();
