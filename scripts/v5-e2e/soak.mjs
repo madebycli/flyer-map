@@ -24,7 +24,7 @@ const sample = async () => {
   const { metrics } = await cdp.send('Performance.getMetrics');
   const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
   const diag = await page.evaluate(() => window.__v5Diag());
-  return { heapMB: m.JSHeapUsedSize / 1e6, nodes: m.Nodes, listeners: m.JSEventListeners, wasmMB: diag.engine.wasmBytes / 1e6, tiles: Object.values(diag.tiles?.tiles ?? {}).reduce((a, n) => a + n, 0), layers: diag.tiles?.layers, sources: diag.tiles?.sources, providers: diag.tiles?.providers };
+  return { heapMB: m.JSHeapUsedSize / 1e6, nodes: m.Nodes, listeners: m.JSEventListeners, wasmMB: diag.engine.wasmBytes / 1e6, tiles: Object.values(diag.tiles?.tiles ?? {}).reduce((a, n) => a + n, 0), vectorTiles: diag.tiles?.tiles?.['v5-tiles'] ?? 0, layers: diag.tiles?.layers, sources: diag.tiles?.sources, providers: diag.tiles?.providers };
 };
 const idle = () => page.evaluate(() => new Promise((r) => { const m = window.__v5Map; const t = setTimeout(r, 1500); m.once('idle', () => { clearTimeout(t); r(); }); }));
 const jump = (x, y, z) => page.evaluate(([c, zoom]) => window.__v5Map.jumpTo({ center: c, zoom, padding: { top: 0, bottom: 0, left: 0, right: 0 } }), [M(x, y), z]);
@@ -65,6 +65,8 @@ check('DOM nodes stay flat (±200)', Math.abs(last.nodes - base.nodes) < 200, `$
 check('event listeners stay flat (±40)', Math.abs(last.listeners - base.listeners) < 40, `${base.listeners} → ${last.listeners}`);
 check('engine (wasm) memory does not grow while only panning', last.wasmMB - base.wasmMB < 2, `${base.wasmMB.toFixed(1)} → ${last.wasmMB.toFixed(1)} MB`);
 check('layers/sources/providers never multiply', last.layers === base.layers && last.sources === base.sources && last.providers === base.providers, JSON.stringify([base.layers, base.sources, base.providers, '→', last.layers, last.sources, last.providers]));
+// A tile count that reads 0 because the adapter does not know this MapLibre version would turn the check below green without measuring anything.
+check('the tile count is really measured (the vector source holds tiles at every sample)', samples.every(([, s]) => s.tiles > 0 && s.vectorTiles > 0), JSON.stringify(samples.map(([i, s]) => [i, s.tiles, s.vectorTiles])));
 check('cached tiles stay bounded', last.tiles < Math.max(120, base.tiles * 2), `${base.tiles} → ${last.tiles}`);
 await b.close();
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');

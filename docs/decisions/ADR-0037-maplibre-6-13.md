@@ -5,7 +5,7 @@ Date: 2026-10-09. Supersedes the 5.7.1 pin and the 5.7.1 audit exception; contin
 
 ## Problem
 
-`maplibre-gl` 5.7.1 (a runtime dependency) carries [GHSA-jrc7-96c5-q579](https://github.com/advisories/GHSA-jrc7-96c5-q579) (critical, `DOM.sanitize()`; fixed from 6.4.1). `scripts/audit-dependencies.mjs` waived it for exactly 5.7.1. The pin existed because 6.4.1 once broke saved-GeoJSON rendering in the old map, which is deleted ([ADR-0036](ADR-0036-legacy-map-retired.md)). The v5 field map renders vector tiles (`v5t://`) with `setFeatureState`, plus a few small GeoJSON sources (Gebiet outlines, route preview).
+`maplibre-gl` 5.7.1 (a runtime dependency) carries [GHSA-jrc7-96c5-q579](https://github.com/advisories/GHSA-jrc7-96c5-q579) (critical, `DOM.sanitize()`; fixed from 6.4.1). `scripts/audit-dependencies.mjs` waived it for exactly 5.7.1. The pin existed because 6.4.1 once broke saved-GeoJSON rendering in the old map, which is deleted ([ADR-0036](ADR-0036-legacy-map-retired.md)). The v5 field map renders vector tiles (`v5t://`) with `setFeatureState`, plus a few small GeoJSON sources (Gebiet outlines, route preview). The code has no `Popup`/`setHTML`/`innerHTML`, but the advisory also names attribution text coming from an external style or source, and the field map uses `AttributionControl` with the configured basemap: this decision therefore does **not** rely on the flaw being unreachable; the upgrade is the fix.
 
 ## Decision
 
@@ -18,3 +18,7 @@ Typecheck, 446 unit tests, build, `npm run audit:dependencies` (zero vulnerabili
 ## Rollback
 
 Return to 5.7.1 only together with an explicit, dated audit exception; do not lower the audit threshold. A private fork is rejected (maintenance and security-patch burden). No deployment follows from this ADR.
+
+## Soak measurement (review B-F-010)
+
+MapLibre 6 renamed `style.sourceCaches` to `style.tileManagers`. The soak's tile count read the old name, found nothing and reported 0 at every sample, so "cached tiles stay bounded" was green without measuring. `FieldMap.debugCounts()` now reads either name through `getIds()` (an unknown shape reads as `null`, not as 0) and the soak fails if the vector source does not hold tiles at every sample.
