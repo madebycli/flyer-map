@@ -23,7 +23,7 @@ const CAPABILITIES = [
 ] as const;
 
 const CAPABILITY_LABELS: Record<string, string> = {
-  "organization.manage": "Organization verwalten",
+  "organization.manage": "Organisation verwalten",
   "account.manage": "Accounts & Einladungen verwalten",
   "role.manage": "Rollen verwalten",
   "campaign.manage": "Aktionen verwalten",
@@ -116,7 +116,7 @@ export function OrganizationInviteCenter() {
   });
 
   if (meState.loading) return <Page><PageLoading>Einladungen werden geladen …</PageLoading></Page>;
-  if (!me || !membership) return <Page narrow><Card title="Keine aktive Organization" icon="info"><Notice tone="error">{meState.error ?? error ?? "Keine aktive Mitgliedschaft gefunden."}</Notice></Card></Page>;
+  if (!me || !membership) return <Page narrow><Card title="Keine aktive Organisation" icon="info"><Notice tone="error">{meState.error ?? error ?? "Keine aktive Mitgliedschaft gefunden."}</Notice></Card></Page>;
 
   const mfa = me.assurance === "mfa";
   return (
@@ -150,7 +150,7 @@ export function OrganizationInviteCenter() {
                     onChange={(event) => setCapabilities(event.target.checked ? [...capabilities, capability] : capabilities.filter((item) => item !== capability))} />
                 ))}
               </Group>
-            ) : <Notice>Organizer besitzen die vollständige Organization-Verantwortung. Nur bestehende Organizer dürfen weitere Organizer einladen.</Notice>}
+            ) : <Notice>Organizer besitzen die vollständige Organisation-Verantwortung. Nur bestehende Organizer dürfen weitere Organizer einladen.</Notice>}
             <Button tone="primary" icon="send" busy={busy} disabled={!mfa} onClick={() => void createInvite()}>{busy ? "Wird erstellt …" : "Einladungslink erstellen"}</Button>
           </Card>
 

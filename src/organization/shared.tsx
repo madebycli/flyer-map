@@ -60,7 +60,7 @@ export function OrganizationLine({ me, organizationId, onChange }: { me: Organiz
   const membership = me.memberships.find((item) => item.organizationId === organizationId) ?? me.memberships[0];
   if (me.memberships.length > 1) {
     return (
-      <Field label="Organization">
+      <Field label="Organisation">
         <select className="ui-input" value={membership?.organizationId ?? ""} onChange={(event) => onChange(event.target.value)}>
           {me.memberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}
         </select>

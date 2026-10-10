@@ -99,11 +99,11 @@ function MfaPreferenceCard({ organizationId, required, onDisabled, onEnrollment 
     setMessage(null);
     try { setMessage({ tone: "ok", text: await task() }); } catch (cause) { setMessage({ tone: "error", text: errorMessage(cause) }); } finally { setBusy(false); }
   };
-  const disable = () => run(async () => { await disableOrganizationMfa(organizationId, password); onDisabled(); setPassword(""); return "2FA ist für diesen Unstable-Account deaktiviert."; });
+  const disable = () => run(async () => { await disableOrganizationMfa(organizationId, password); onDisabled(); setPassword(""); return "2FA ist für diesen Test-Account deaktiviert."; });
   const enable = () => run(async () => { const result = await restartOrganizationTotp(organizationId, password); onEnrollment({ otpauthUri: result.otpauthUri, recoveryCodes: result.recoveryCodes }); setPassword(""); return "TOTP-Einrichtung gestartet. Nach Bestätigung ist 2FA wieder aktiv."; });
   return (
-    <Card eyebrow="Zweiter Faktor" title="2FA in Unstable" icon="shield">
-      <p>{required ? "2FA ist aktiv. Du kannst sie nur in Unstable für diesen Account deaktivieren." : "2FA ist deaktiviert. Login funktioniert nur mit Benutzername und Passwort."}</p>
+    <Card eyebrow="Zweiter Faktor" title="Zweiter Faktor (Testumgebung)" icon="shield">
+      <p>{required ? "2FA ist aktiv. In der Testumgebung kannst du sie für diesen Account abschalten." : "2FA ist deaktiviert. Login funktioniert nur mit Benutzername und Passwort."}</p>
       <Field label="Aktuelles Passwort"><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></Field>
       <Button busy={busy} disabled={!password} onClick={() => void (required ? disable() : enable())}>{required ? "2FA deaktivieren" : "2FA aktivieren"}</Button>
       {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
@@ -267,14 +267,14 @@ export function OrganizationSecurityCenter() {
   useEffect(() => { if (me && organizationId) void refresh(organizationId); }, [me, organizationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (meState.loading) return <Page><PageLoading>Security Center wird geladen …</PageLoading></Page>;
-  if (!me || !membership) return <Page narrow><Card title="Keine aktive Organization" icon="info"><Notice tone="error">{meState.error ?? error ?? "Für diesen Account existiert keine aktive Mitgliedschaft."}</Notice><LinkButton href="/admin">Zurück</LinkButton></Card></Page>;
+  if (!me || !membership) return <Page narrow><Card title="Keine aktive Organisation" icon="info"><Notice tone="error">{meState.error ?? error ?? "Für diesen Account existiert keine aktive Mitgliedschaft."}</Notice><LinkButton href="/admin">Zurück</LinkButton></Card></Page>;
 
   const bar = <AdminBar me={me} current="security" />;
   if (me.assurance === "recovery") return <Page bar={bar} narrow><RecoveryMfaCard organizationId={membership.organizationId} /></Page>;
 
   return (
     <Page bar={bar}>
-      <Heading eyebrow="Organization Security" title="Sicherheit & Zugriffe"><LinkButton href="/admin">Zurück zu Aktionen</LinkButton></Heading>
+      <Heading eyebrow="Organisation" title="Sicherheit & Zugriffe"><LinkButton href="/admin">Zurück zu Aktionen</LinkButton></Heading>
       <OrganizationLine me={me} organizationId={membership.organizationId} onChange={setOrganizationId} />
       {membership.role === "admin" ? <Notice>Deine Ansicht ist auf die vom Organizer delegierten Berechtigungen begrenzt.</Notice> : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
@@ -286,7 +286,7 @@ export function OrganizationSecurityCenter() {
       ) : null}
 
       <Card title="Eigener Account" icon="users">
-        <Facts items={[["Benutzername", me.account.username], ["2FA", mfaRequired === false ? "deaktiviert (Unstable)" : "aktiv"]]} />
+        <Facts items={[["Benutzername", me.account.username], ["2FA", mfaRequired === false ? "deaktiviert (Testumgebung)" : "aktiv"]]} />
         <MfaPreferenceCard organizationId={membership.organizationId} required={mfaRequired} onDisabled={() => setMfaRequired(false)} onEnrollment={setTotpEnrollment} />
         <AccountForms organizationId={membership.organizationId} onRecoveryCodes={setRecoveryCodes} onTotp={setTotpEnrollment} />
         {totpEnrollment ? <TotpEnrollment enrollment={totpEnrollment} title="TOTP-Rotation abschließen" intro="Scanne den neuen QR-Code und bestätige mit einem Code." confirmLabel="Rotation bestätigen" onConfirmed={() => window.location.replace("/login")} /> : null}

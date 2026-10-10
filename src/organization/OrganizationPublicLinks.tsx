@@ -56,7 +56,7 @@ export function OrganizationInviteRedeemPage() {
 
   return (
     <CenterPage>
-      <Card eyebrow="Organization-Einladung" title="Admin-Account sicher einrichten" icon="users">
+      <Card eyebrow="Organisation-Einladung" title="Admin-Account sicher einrichten" icon="users">
         <p>Der Einladungs-Token wurde aus der Adresszeile entfernt und wird nur für diesen einmaligen Setup-Vorgang im Speicher gehalten.</p>
         <form className="ui-form" onSubmit={(event) => void redeem(event)}>
           <Field label="Benutzername"><TextInput value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={40} autoComplete="username" required /></Field>

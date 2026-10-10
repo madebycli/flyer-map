@@ -15,6 +15,8 @@ import { campaignIdFromOrganizationPath, preserveDiagnosticFlag, safeOrganizatio
 import { AdminBar, OrganizationLine, PageLoading, TotpEnrollment, errorMessage, formatDate, useOrganizationMe, type Navigate } from "./shared.tsx";
 import { Button, Card, CenterPage, Chip, Facts, Field, Group, Heading, LinkButton, Notice, Page, Radio, Segmented, Select, TextInput } from "../ui/index.ts";
 
+const LIFECYCLE_LABEL: Record<string, string> = { draft: "Entwurf", active: "Aktiv", completed: "Beendet", archived: "Archiviert" };
+
 const Problem = ({ children }: { children: string | null }) => <CenterPage><Notice tone="error">{children ?? "Sitzung konnte nicht geladen werden."}</Notice></CenterPage>;
 
 function StartPage({ navigate }: { navigate: Navigate }) {
@@ -76,16 +78,16 @@ function StartPage({ navigate }: { navigate: Navigate }) {
 
   return (
     <CenterPage>
-      <Card eyebrow="Ersteinrichtung" title="Organization & ersten Organizer anlegen" icon="shield">
+      <Card eyebrow="Ersteinrichtung" title="Organisation & ersten Organizer anlegen" icon="shield">
         <p>Dieser Vorgang ist global nur einmal möglich und benötigt den separaten Setup-Schlüssel der isolierten Umgebung.</p>
         <form className="ui-form" onSubmit={(event) => void submitSetup(event)}>
-          <Field label="Organization"><TextInput value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} minLength={2} maxLength={120} autoComplete="organization" required /></Field>
+          <Field label="Organisation"><TextInput value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} minLength={2} maxLength={120} autoComplete="organization" required /></Field>
           <Field label="Benutzername"><TextInput value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={40} autoComplete="username" required /></Field>
           <Field label="Passwort"><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} maxLength={256} autoComplete="new-password" required /></Field>
           <Field label="Passwort wiederholen"><TextInput type="password" value={passwordAgain} onChange={(event) => setPasswordAgain(event.target.value)} minLength={12} maxLength={256} autoComplete="new-password" required /></Field>
           <Field label="Setup-Schlüssel"><TextInput type="password" value={bootstrapSecret} onChange={(event) => setBootstrapSecret(event.target.value)} autoComplete="off" required /></Field>
           {error ? <Notice tone="error">{error}</Notice> : null}
-          <Button tone="primary" busy={busy}>{busy ? "Wird angelegt …" : "Organization sicher anlegen"}</Button>
+          <Button tone="primary" busy={busy}>{busy ? "Wird angelegt …" : "Organisation sicher anlegen"}</Button>
         </form>
         <p>Bereits eingerichtet? <Button tone="quiet" onClick={() => navigate("/login")}>Zum Login</Button></p>
       </Card>
@@ -222,24 +224,24 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
 
   return (
     <Page bar={<AdminBar me={me} current="campaigns" navigate={navigate} />}>
-      <Heading eyebrow="Organization" title="Aktionen">
+      <Heading eyebrow="Organisation" title="Aktionen">
         {membership?.role === "organizer" ? <Button tone="primary" icon="plus" disabled={!canCreateCampaign} onClick={() => navigate(newPath)}>Neue Aktion</Button> : null}
       </Heading>
       <OrganizationLine me={me} organizationId={organizationId} onChange={setOrganizationId} />
       {me.assurance === "recovery" ? <Notice tone="warn">Recovery-Sitzung: Privilegierte Aktionen sind serverseitig gesperrt, bis MFA wieder vollständig hergestellt ist.</Notice> : null}
-      {me.memberships.length === 0 ? <Card title="Keine Organization-Zuordnung" icon="info"><p>Dieser Account besitzt aktuell keine aktive Mitgliedschaft.</p></Card> : null}
+      {me.memberships.length === 0 ? <Card title="Keine Organisation-Zuordnung" icon="info"><p>Dieser Account besitzt aktuell keine aktive Mitgliedschaft.</p></Card> : null}
       {campaignError ? <Notice tone="error">{campaignError}</Notice> : null}
       {loadingCampaigns ? <PageLoading>Aktionen werden geladen …</PageLoading> : null}
       {!loadingCampaigns && !campaignError && me.assurance === "mfa" && campaigns.length === 0 && organizationId ? (
         <Card title="Noch keine Aktion" icon="mailbox">
-          <p>{membership?.role === "organizer" ? "Erstelle die erste Aktion für diese Organization." : "Für diese Organization ist noch keine für deinen Admin sichtbare Aktion vorhanden."}</p>
+          <p>{membership?.role === "organizer" ? "Erstelle die erste Aktion für diese Organisation." : "Für diese Organisation ist noch keine für deinen Admin sichtbare Aktion vorhanden."}</p>
           {membership?.role === "organizer" ? <Button tone="primary" icon="plus" onClick={() => navigate(`/new?organization=${encodeURIComponent(organizationId)}`)}>Erste Aktion erstellen</Button> : null}
         </Card>
       ) : null}
       <div className="ui-grid">
         {campaigns.map((campaign) => (
           <button className="ui-campaign" type="button" key={campaign.id} onClick={() => navigate(preserveDiagnosticFlag(`/admin/campaign/${encodeURIComponent(campaign.id)}`, window.location.search))}>
-            <div><Chip tone={campaign.lifecycle}>{campaign.lifecycle}</Chip><h2>{campaign.name}</h2></div>
+            <div><Chip tone={campaign.lifecycle}>{LIFECYCLE_LABEL[campaign.lifecycle] ?? campaign.lifecycle}</Chip><h2>{campaign.name}</h2></div>
             <small>Aktualisiert {formatDate(campaign.updatedAt)}</small>
             <span className="go">Öffnen →</span>
           </button>
@@ -305,10 +307,10 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
     <Page bar={bar} narrow>
       <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
       <Heading eyebrow="Neue Aktion" title="Aktion erstellen" />
-      <p className="ui-muted">Name, Organization, Startstatus und Kartenfokus werden serverseitig gespeichert.</p>
+      <p className="ui-muted">Name, Organisation, Startstatus und Kartenfokus werden serverseitig gespeichert.</p>
       <Card>
         <form className="ui-form" onSubmit={(event) => void submit(event)}>
-          <Field label="Organization"><Select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} required>{organizerMemberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</Select></Field>
+          <Field label="Organisation"><Select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} required>{organizerMemberships.map((item) => <option key={item.id} value={item.organizationId}>{item.organizationName}</option>)}</Select></Field>
           <Field label="Name der Aktion"><TextInput value={name} minLength={2} maxLength={160} onChange={(event) => setName(event.target.value)} placeholder="z. B. Frühjahr 2027" required /></Field>
           <Group legend="Startstatus">
             <Radio name="lifecycle" label="Entwurf" checked={lifecycle === "draft"} onChange={() => setLifecycle("draft")} />
@@ -356,7 +358,7 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
           // A membership without campaign.manage is intentionally skipped.
         }
       }
-      if (active) { setError("Aktion wurde in keiner für diesen Account sichtbaren Organization gefunden."); setLoading(false); }
+      if (active) { setError("Aktion wurde in keiner für diesen Account sichtbaren Organisation gefunden."); setLoading(false); }
     };
     void findCampaign();
     return () => { active = false; };
@@ -386,11 +388,11 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
       {error ? <Notice tone="error">{error}</Notice> : null}
       {campaign ? (
         <>
-          <Heading eyebrow={campaign.lifecycle} title={campaign.name}>
+          <Heading eyebrow={LIFECYCLE_LABEL[campaign.lifecycle] ?? campaign.lifecycle} title={campaign.name}>
             <LinkButton tone="primary" icon="mapPin" href={`/v5?campaign=${encodeURIComponent(campaign.id)}`}>Feldkarte öffnen</LinkButton>
           </Heading>
           <Card title="Lebenszyklus" icon="flag">
-            <Segmented label="Lebenszyklus" value={campaign.lifecycle} options={LIFECYCLES.map((value) => ({ value, label: value }))} onChange={(value) => { if (!busy && value !== campaign.lifecycle) void setLifecycle(value); }} />
+            <Segmented label="Lebenszyklus" value={campaign.lifecycle} options={LIFECYCLES.map((value) => ({ value, label: LIFECYCLE_LABEL[value] }))} onChange={(value) => { if (!busy && value !== campaign.lifecycle) void setLifecycle(value); }} />
           </Card>
           <Card title="Kartenfokus" icon="mapPin">
             {campaign.map
@@ -398,8 +400,8 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
               : <p>Nicht gesetzt.</p>}
           </Card>
           <Card title="Persistenz" icon="cloudOk">
-            <p>Campaign-ID <code>{campaign.id}</code></p>
-            <p>Diese Aktion ist der Organization serverseitig zugeordnet und bleibt nach Abmelden, Cookie-Löschung und erneutem Login erhalten.</p>
+            <p>Aktions-ID <code>{campaign.id}</code></p>
+            <p>Diese Aktion ist der Organisation serverseitig zugeordnet und bleibt nach Abmelden, Cookie-Löschung und erneutem Login erhalten.</p>
           </Card>
         </>
       ) : null}

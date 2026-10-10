@@ -11,17 +11,17 @@ html:has(.ui-page), body:has(.ui-page) { margin: 0; overflow: auto; height: auto
 .ui-page summary { cursor: pointer; font-weight: 700; padding: 0.3rem 0; }
 
 .ui-bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 1rem; min-height: 3.75rem; padding: 0.4rem max(1rem, env(safe-area-inset-left)); background: var(--surface-1); border-bottom: 1px solid var(--outline-var); }
-.ui-brand { display: inline-flex; align-items: center; gap: 0.55rem; border: 0; background: transparent; padding: 0; color: var(--on) !important; font: 800 1.1rem var(--font); letter-spacing: -0.02em; text-decoration: none; cursor: pointer; }
+.ui-brand { display: inline-flex; align-items: center; min-height: 2.75rem; gap: 0.55rem; border: 0; background: transparent; padding: 0; color: var(--on) !important; font: 800 1.1rem var(--font); letter-spacing: -0.02em; text-decoration: none; cursor: pointer; }
 .ui-brand .v5-icon { color: var(--primary); }
 .ui-bar nav { display: flex; flex: 1 1 auto; min-width: 0; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
 .ui-bar nav::-webkit-scrollbar { display: none; }
-.ui-bar nav a, .ui-bar nav button { display: inline-flex; align-items: center; min-height: 2.5rem; padding: 0 0.9rem; border: 0; border-radius: var(--r); background: transparent; color: var(--on-var) !important; font: 700 0.95rem var(--font); text-decoration: none; cursor: pointer; }
+.ui-bar nav a, .ui-bar nav button { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 0.9rem; border: 0; border-radius: var(--r); background: transparent; color: var(--on-var) !important; font: 700 0.95rem var(--font); text-decoration: none; cursor: pointer; }
 .ui-bar nav a:hover, .ui-bar nav button:hover { background: var(--surface-3); }
 .ui-bar nav [aria-current="page"] { background: var(--primary-container); color: var(--on-primary-container) !important; }
 .ui-brand { white-space: nowrap; }
-/* phone: brand and account on the first row, the navigation scrolls on its own row below */
+/* phone: brand and account on the first row, the navigation on its own rows below; every entry stays visible (it wraps, it never scrolls out of sight) */
 .ui-bar { flex-wrap: wrap; row-gap: 0; }
-.ui-bar nav { order: 3; flex: 1 1 100%; padding-bottom: 0.4rem; }
+.ui-bar nav { order: 3; flex: 1 1 100%; padding-bottom: 0.4rem; flex-wrap: wrap; overflow: visible; }
 .ui-account { margin-left: auto; }
 @media (min-width: 760px) { .ui-bar { flex-wrap: nowrap; } .ui-bar nav { order: 0; flex: 1 1 auto; padding-bottom: 0; } }
 .ui-account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; font-size: 0.88rem; font-weight: 700; color: var(--on-var); }
@@ -76,8 +76,9 @@ select.ui-input { appearance: none; padding-right: 2.4rem; background-image: url
 .ui-loading { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 3rem 1rem; color: var(--on-var); font-weight: 700; }
 .ui-loading .v5-loader { width: 2.2rem; height: 2.2rem; margin: 0; }
 
-.ui-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0.3rem; padding: 0.3rem; border-radius: var(--r); background: var(--surface-3); }
-.ui-seg button { min-height: 2.75rem; border: 0; border-radius: calc(var(--r) - 0.25rem); background: transparent; color: var(--on-var); font: 750 0.92rem var(--font); cursor: pointer; }
+/* equal segments in one row while they fit; a segment never breaks inside a word, the group wraps to a second row instead */
+.ui-seg { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.3rem; border-radius: var(--r); background: var(--surface-3); }
+.ui-seg button { flex: 1 1 0; min-width: max-content; min-height: 2.75rem; padding: 0 0.35rem; border: 0; border-radius: calc(var(--r) - 0.25rem); background: transparent; color: var(--on-var); font: 750 0.92rem var(--font); cursor: pointer; }
 .ui-seg button.on { background: var(--surface-1); color: var(--on); box-shadow: var(--shadow); }
 
 .ui-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; padding: 0.7rem 0.9rem; border-radius: var(--r); background: var(--surface-2); }
