@@ -238,7 +238,7 @@ async function requireAccess(
   if (!access) {
     return {
       ok: false as const,
-      response: errorResponse(401, "access_required", "Gültiger Campaign-Zugriff ist erforderlich."),
+      response: errorResponse(401, "access_required", "Gültiger Zugriff auf die Aktion ist erforderlich."),
     };
   }
   if (roles && !roles.includes(access.role)) {
@@ -264,7 +264,7 @@ async function requireCollectionReadAccess(
   if (!collector) {
     return {
       ok: false as const,
-      response: errorResponse(401, "access_required", "Gültiger Collection-Zugriff ist erforderlich."),
+      response: errorResponse(401, "access_required", "Gültiger Abhol-Zugriff ist erforderlich."),
     };
   }
   return { ok: true as const, access: collector };
@@ -281,7 +281,7 @@ async function requireMutationAccess(
   if (!collector) {
     return {
       ok: false as const,
-      response: errorResponse(401, "access_required", "Gültiger Campaign-Zugriff ist erforderlich."),
+      response: errorResponse(401, "access_required", "Gültiger Zugriff auf die Aktion ist erforderlich."),
     };
   }
   return { ok: true as const, access: collector };
@@ -292,9 +292,9 @@ async function getCollectionSnapshot(db: D1DatabaseLike, campaignId: string) {
     return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
   }
   const snapshot = await loadCampaignSnapshot(db, campaignId);
-  if (!snapshot) return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+  if (!snapshot) return errorResponse(404, "campaign_not_found", "Aktion wurde nicht gefunden.");
   const validation = validateCampaignSnapshot(snapshot, campaignId);
-  if (!validation.valid) return errorResponse(500, "stored_snapshot_invalid", "Der gespeicherte Collection-Stand ist ungültig.");
+  if (!validation.valid) return errorResponse(500, "stored_snapshot_invalid", "Der gespeicherte Abhol-Stand ist ungültig.");
   return json({
     ...validation.snapshot,
     teams: [],
@@ -326,17 +326,17 @@ async function manageCollection(
   }
   if (resource === "collectors" && request.method === "DELETE" && id) {
     if (!(await revokeCollectionCollector(db, campaignId, id))) {
-      return errorResponse(404, "collector_not_found", "Collection-Helfer wurde nicht gefunden.");
+      return errorResponse(404, "collector_not_found", "Abhol-Helfer wurde nicht gefunden.");
     }
     return json({ ok: true });
   }
-  return errorResponse(405, "method_not_allowed", "Collection-Management-Methode nicht erlaubt.");
+  return errorResponse(405, "method_not_allowed", "Abhol-Verwaltung-Methode nicht erlaubt.");
 }
 
 async function getSnapshot(db: D1DatabaseLike, campaignId: string) {
   const snapshot = await loadCampaignSnapshot(db, campaignId);
   if (!snapshot) {
-    return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+    return errorResponse(404, "campaign_not_found", "Aktion wurde nicht gefunden.");
   }
 
   const validation = validateCampaignSnapshot(snapshot, campaignId);
@@ -344,7 +344,7 @@ async function getSnapshot(db: D1DatabaseLike, campaignId: string) {
     return errorResponse(
       500,
       "stored_snapshot_invalid",
-      "Der gespeicherte Campaign-Stand ist ungültig.",
+      "Der gespeicherte Stand der Aktion ist ungültig.",
     );
   }
 
@@ -359,7 +359,7 @@ export function legacySnapshotWriteResponse() {
   return errorResponse(
     410,
     "legacy_snapshot_write_retired",
-    "Campaign-Änderungen müssen über den Mutationspfad gespeichert werden.",
+    "Aktions-Änderungen müssen über den Mutationspfad gespeichert werden.",
   );
 }
 
@@ -393,7 +393,7 @@ async function manageAccess(
         return errorResponse(
           400,
           "invalid_team_scope",
-          "Team Editor benötigt ein Team dieser Campaign.",
+          "Gruppen-Zugang benötigt eine Gruppe dieser Aktion.",
         );
       }
     } else if (teamId !== null) {
@@ -428,7 +428,7 @@ async function requireCampaignAdminAuthSchema(db: D1DatabaseLike) {
   return errorResponse(
     503,
     "admin_account_schema_unavailable",
-    "Campaign-Admin-Konten benötigen die vorbereitete Migration 0015.",
+    "Admin-Konten der Aktion benötigen die vorbereitete Migration 0015.",
   );
 }
 
@@ -437,7 +437,7 @@ async function requireCampaignAdminPasswordResetSchema(db: D1DatabaseLike) {
   return errorResponse(
     503,
     "admin_password_reset_schema_unavailable",
-    "Campaign-Admin-Passwort-Resets benötigen die vorbereitete Migration 0016.",
+    "Aktions-Admin-Passwort-Resets benötigen die vorbereitete Migration 0016.",
   );
 }
 
@@ -505,7 +505,7 @@ async function manageCampaignAdminAccounts(
     );
     if (!renamed.ok) {
       const message = renamed.code === "username_unavailable"
-        ? "Dieser Benutzername ist in dieser Campaign bereits vergeben."
+        ? "Dieser Benutzername ist in dieser Aktion bereits vergeben."
         : renamed.code === "account_not_found"
           ? "Admin-Konto wurde nicht gefunden."
           : "Der Benutzername muss 3 bis 40 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich oder Bindestrich enthalten.";
@@ -521,7 +521,7 @@ async function manageCampaignAdminAccounts(
     }
     return json({ ok: true });
   }
-  return errorResponse(405, "method_not_allowed", "Methode für Campaign-Admin-Konten nicht erlaubt.");
+  return errorResponse(405, "method_not_allowed", "Methode für Admin-Konten der Aktion nicht erlaubt.");
 }
 
 async function completeCampaignAdminAccountSetup(
@@ -538,7 +538,7 @@ async function completeCampaignAdminAccountSetup(
   const body = parsed.value as Record<string, unknown>;
   const campaignId = typeof body.campaignId === "string" ? parseCampaignId(body.campaignId) : null;
   const token = typeof body.token === "string" ? body.token : "";
-  if (!campaignId) return errorResponse(400, "invalid_campaign", "Campaign-ID ist ungültig.");
+  if (!campaignId) return errorResponse(400, "invalid_campaign", "Aktions-ID ist ungültig.");
   const completed = await completeCampaignAdminSetup(db, {
     campaignId,
     token,
@@ -547,7 +547,7 @@ async function completeCampaignAdminAccountSetup(
   });
   if (!completed.ok) {
     const message = completed.code === "username_unavailable"
-      ? "Dieser Benutzername ist in dieser Campaign bereits vergeben."
+      ? "Dieser Benutzername ist in dieser Aktion bereits vergeben."
       : completed.code === "setup_link_invalid"
         ? "Der Einrichtungslink ist ungültig, abgelaufen oder bereits verwendet."
         : "Benutzername, Passwort oder Einrichtungslink sind ungültig.";
@@ -573,7 +573,7 @@ async function completeCampaignAdminAccountPasswordReset(
   const body = parsed.value as Record<string, unknown>;
   const campaignId = typeof body.campaignId === "string" ? parseCampaignId(body.campaignId) : null;
   const token = typeof body.token === "string" ? body.token : "";
-  if (!campaignId) return errorResponse(400, "invalid_campaign", "Campaign-ID ist ungültig.");
+  if (!campaignId) return errorResponse(400, "invalid_campaign", "Aktions-ID ist ungültig.");
   const completed = await completeCampaignAdminPasswordReset(db, {
     campaignId,
     token,
@@ -614,7 +614,7 @@ async function recoverCampaignAdmin(request: Request, env: Env, db: D1DatabaseLi
     return errorResponse(
       400,
       "invalid_request",
-      "Campaign und Recovery-Secret sind erforderlich.",
+      "Aktion und Recovery-Secret sind erforderlich.",
     );
   }
 
@@ -622,7 +622,7 @@ async function recoverCampaignAdmin(request: Request, env: Env, db: D1DatabaseLi
     return errorResponse(403, "recovery_forbidden", "Recovery-Secret ist ungültig.");
   }
   if (!(await campaignExists(db, campaignId))) {
-    return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+    return errorResponse(404, "campaign_not_found", "Aktion wurde nicht gefunden.");
   }
 
   const recovered = await createRecoveredAdminAccess(db, campaignId);
@@ -682,17 +682,17 @@ export default {
         const parsed = await readJsonBody(request);
         if (!parsed.ok) return parsed.response;
         if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
-          return errorResponse(400, "invalid_request", "Collection Token ist ungültig.");
+          return errorResponse(400, "invalid_request", "Abhol-Token ist ungültig.");
         }
         const body = parsed.value as Record<string, unknown>;
         const campaignId = typeof body.campaignId === "string" ? parseCampaignId(body.campaignId) : null;
         const token = typeof body.token === "string" ? body.token : "";
         if (!campaignId || !token) {
-          return errorResponse(400, "invalid_request", "Campaign und Collection Token sind erforderlich.");
+          return errorResponse(400, "invalid_request", "Aktion und Abhol-Token sind erforderlich.");
         }
         try {
           const redeemed = await redeemCollectionAccess(db, campaignId, token);
-          if (!redeemed) return errorResponse(401, "invalid_collection_token", "Collection-QR ist ungültig oder widerrufen.");
+          if (!redeemed) return errorResponse(401, "invalid_collection_token", "Abhol-QR ist ungültig oder widerrufen.");
           return json(
             { access: publicAccess(redeemed.access) },
             { headers: { "set-cookie": collectionSessionCookie(redeemed.sessionSecret) } },
@@ -701,17 +701,17 @@ export default {
           if (isCollectionSchemaError(error)) {
             return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
           }
-          return errorResponse(500, "internal_error", "Collection-Zugang konnte nicht eingelöst werden.");
+          return errorResponse(500, "internal_error", "Abhol-Zugang konnte nicht eingelöst werden.");
         }
       }
       if (collectionAccess === "current" && request.method === "GET") {
         const campaignId = parseCampaignId(url.searchParams.get("campaign") ?? "");
-        if (!campaignId) return errorResponse(400, "invalid_campaign", "Campaign-ID ist ungültig.");
+        if (!campaignId) return errorResponse(400, "invalid_campaign", "Aktions-ID ist ungültig.");
         if (!(await hasCollectionSchema(db))) {
           return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
         }
         const access = await resolveCollectionAccess(db, request, campaignId);
-        if (!access) return errorResponse(401, "access_required", "Gültiger Collection-Zugriff ist erforderlich.");
+        if (!access) return errorResponse(401, "access_required", "Gültiger Abhol-Zugriff ist erforderlich.");
         return json({ access: publicAccess(access) });
       }
       if (collectionAccess === "logout" && request.method === "POST") {
@@ -724,7 +724,7 @@ export default {
       const parsed = await readJsonBody(request);
       if (!parsed.ok) return parsed.response;
       if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
-        return errorResponse(400, "invalid_request", "Access Token ist ungültig.");
+        return errorResponse(400, "invalid_request", "Zugangs-Token ist ungültig.");
       }
       const body = parsed.value as Record<string, unknown>;
       const campaignId =
@@ -734,7 +734,7 @@ export default {
         return errorResponse(
           400,
           "invalid_request",
-          "Campaign und Access Token sind erforderlich.",
+          "Aktion und Zugangs-Token sind erforderlich.",
         );
       }
       try {
@@ -743,7 +743,7 @@ export default {
           return errorResponse(
             401,
             "invalid_access_token",
-            "Access Token ist ungültig oder widerrufen.",
+            "Zugangs-Token ist ungültig oder widerrufen.",
           );
         }
         return json(
@@ -754,7 +754,7 @@ export default {
         return errorResponse(
           500,
           "internal_error",
-          "Access Token konnte nicht eingelöst werden.",
+          "Zugangs-Token konnte nicht eingelöst werden.",
         );
       }
     }
@@ -786,14 +786,14 @@ export default {
     if (db && url.pathname === "/api/access/current" && request.method === "GET") {
       const campaignId = parseCampaignId(url.searchParams.get("campaign") ?? "");
       if (!campaignId) {
-        return errorResponse(400, "invalid_campaign", "Campaign-ID ist ungültig.");
+        return errorResponse(400, "invalid_campaign", "Aktions-ID ist ungültig.");
       }
       const access = await resolveAccess(db, request, campaignId);
       if (!access) {
         return errorResponse(
           401,
           "access_required",
-          "Gültiger Campaign-Zugriff ist erforderlich.",
+          "Gültiger Zugriff auf die Aktion ist erforderlich.",
         );
       }
       return json({ access: publicAccess(access) });
@@ -834,7 +834,7 @@ export default {
           if (isCollectionSchemaError(error)) {
             return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
           }
-          return errorResponse(500, "internal_error", "Collection-Management ist fehlgeschlagen.");
+          return errorResponse(500, "internal_error", "Abhol-Verwaltung ist fehlgeschlagen.");
         }
       }
 
@@ -864,7 +864,7 @@ export default {
           return errorResponse(
             500,
             "internal_error",
-            "Campaign-Admin-Konten konnten nicht verarbeitet werden.",
+            "Admin-Konten der Aktion konnten nicht verarbeitet werden.",
           );
         }
       }
@@ -881,7 +881,7 @@ export default {
         if (error instanceof StoredSnapshotError) {
           return errorResponse(500, "stored_snapshot_invalid", error.message);
         }
-        return errorResponse(500, "internal_error", "Mutation konnte nicht verarbeitet werden.");
+        return errorResponse(500, "internal_error", "Änderung konnte nicht verarbeitet werden.");
       }
     }
 
@@ -889,7 +889,7 @@ export default {
     const collectionCampaignId = collectionSnapshotRoute(url.pathname);
     if (collectionCampaignId && db) {
       if (request.method !== "GET") {
-        return errorResponse(405, "method_not_allowed", "Für Collection-Snapshots ist nur GET erlaubt.");
+        return errorResponse(405, "method_not_allowed", "Für Abhol-Snapshots ist nur GET erlaubt.");
       }
       try {
         const auth = await requireCollectionReadAccess(db, request, collectionCampaignId);
@@ -902,7 +902,7 @@ export default {
         if (error instanceof StoredSnapshotError) {
           return errorResponse(500, "stored_snapshot_invalid", error.message);
         }
-        return errorResponse(500, "internal_error", "Collection-Daten konnten nicht geladen werden.");
+        return errorResponse(500, "internal_error", "Abhol-Daten konnten nicht geladen werden.");
       }
     }
 
@@ -935,7 +935,7 @@ export default {
             return errorResponse(
               404,
               "campaign_not_found",
-              "Campaign wurde nicht gefunden.",
+              "Aktion wurde nicht gefunden.",
             );
           }
           return json({ campaignId: route.campaignId, revision });
@@ -947,7 +947,7 @@ export default {
         return errorResponse(
           500,
           "internal_error",
-          "Campaign-Daten konnten nicht verarbeitet werden.",
+          "Daten der Aktion konnten nicht verarbeitet werden.",
         );
       }
     }

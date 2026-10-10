@@ -82,7 +82,7 @@ export async function loadPickupTasks(
       assignedCollectorIds = JSON.parse(row.assigned_collector_ids_json);
       source = row.source_json ? JSON.parse(row.source_json) : null;
     } catch {
-      throw new StoredPickupError("Gespeicherte Pickup-JSON-Daten sind ungültig.");
+      throw new StoredPickupError("Gespeicherte Sonder-Marker-JSON-Daten sind ungültig.");
     }
 
     const position: [number, number] = [row.longitude, row.latitude];

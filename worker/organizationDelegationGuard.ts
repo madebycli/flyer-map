@@ -82,7 +82,7 @@ export async function guardOrganizationDelegationRequest(
     if (!organizationId) return null;
     const actor = await actorMembership(db, request, organizationId);
     return actor && !canCreateOrganizationCampaign(actor.role)
-      ? jsonError("organizer_only", "Nur Organizer dürfen neue Campaigns anlegen.")
+      ? jsonError("organizer_only", "Nur Organizer dürfen neue Aktionen anlegen.")
       : null;
   }
 

@@ -393,7 +393,7 @@ export function validateCampaignSnapshot(
   campaignId: string,
 ): SnapshotValidationResult {
   if (!isId(campaignId)) {
-    return { valid: false, message: "Ungültige Campaign-ID." };
+    return { valid: false, message: "Ungültige Aktions-ID." };
   }
 
   if (!isRecord(value) || value.schemaVersion !== 3) {
@@ -412,7 +412,7 @@ export function validateCampaignSnapshot(
   if (!campaign) {
     return {
       valid: false,
-      message: "Campaign-Daten sind ungültig oder gehören zu einer anderen Campaign.",
+      message: "Daten der Aktion sind ungültig oder gehören zu einer anderen Aktion.",
     };
   }
 
@@ -423,7 +423,7 @@ export function validateCampaignSnapshot(
   const hasCollection = value.collection !== undefined;
   const collection = hasCollection ? parseCollectionSnapshot(value.collection, campaignId) : null;
   if (hasCollection && !collection) {
-    return { valid: false, message: "Collection Areas oder Runs sind ungültig." };
+    return { valid: false, message: "Abholgebiete oder Räume sind ungültig." };
   }
 
   if (hasHouseCollection && !Array.isArray(value.houseTasks)) {
@@ -490,7 +490,7 @@ export function validateCampaignSnapshot(
     if (teamColors.has(normalizedColor)) {
       return {
         valid: false,
-        message: "Teamfarben müssen innerhalb einer Campaign eindeutig sein.",
+        message: "Teamfarben müssen innerhalb einer Aktion eindeutig sein.",
       };
     }
     teamColors.add(normalizedColor);

@@ -43,7 +43,7 @@ export async function handlePickupMutationRequest(
         {
           error: {
             code: "pickup_capability_forbidden",
-            message: "Dieser Collection-Helfer darf keine Pickups sehen oder verändern.",
+            message: "Dieser Abhol-Helfer darf keine Sonder-Marker sehen oder verändern.",
           },
         },
         { status: 403 },
@@ -62,7 +62,7 @@ export async function handlePickupMutationRequest(
         {
           error: {
             code: "mutation_id_reused",
-            message: "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.",
+            message: "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.",
           },
           revision: existing.appliedRevision,
         },

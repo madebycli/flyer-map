@@ -21,12 +21,12 @@ function errorResponse(status: number, code: string, message: string, revision?:
 
 async function readMutationBody(request: Request) {
   const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_MUTATION_BYTES) return { ok: false as const, response: errorResponse(413, "payload_too_large", "Mutation ist zu groß.") };
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_MUTATION_BYTES) return { ok: false as const, response: errorResponse(413, "payload_too_large", "Änderung ist zu groß.") };
   const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > MAX_MUTATION_BYTES) return { ok: false as const, response: errorResponse(413, "payload_too_large", "Mutation ist zu groß.") };
+  if (new TextEncoder().encode(raw).byteLength > MAX_MUTATION_BYTES) return { ok: false as const, response: errorResponse(413, "payload_too_large", "Änderung ist zu groß.") };
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false as const, response: errorResponse(400, "invalid_request", "Mutation-Request ist ungültig.") };
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false as const, response: errorResponse(400, "invalid_request", "Änderung-Request ist ungültig.") };
     return { ok: true as const, value: parsed as Record<string, unknown> };
   } catch {
     return { ok: false as const, response: errorResponse(400, "invalid_json", "Request-Body ist kein gültiges JSON.") };
@@ -49,7 +49,7 @@ const TEAM_DELETE_MESSAGES: Record<string, string> = {
  */
 export async function handleCampaignMutation(request: Request, db: D1DatabaseLike, campaignId: string, access: AccessContext) {
   db = requestDatabase(db);
-  if (request.method !== "POST") return errorResponse(405, "method_not_allowed", "Für Mutationen ist nur POST erlaubt.");
+  if (request.method !== "POST") return errorResponse(405, "method_not_allowed", "Für Änderungen ist nur POST erlaubt.");
   if (access.role === "viewer") return errorResponse(403, "viewer_read_only", "Read-only Viewer dürfen nichts verändern.");
 
   const parsed = await readMutationBody(request);
@@ -64,28 +64,28 @@ export async function handleCampaignMutation(request: Request, db: D1DatabaseLik
   if (mutation.type === "team.delete" && access.role !== "admin") return errorResponse(403, "team_delete_forbidden", "Nur Admins dürfen Teams löschen.");
   const isCollectionMutation = mutation.type.startsWith("collection.");
   if (access.role === "collection-collector") {
-    if (!isCollectionMutation || !access.collectorId) return errorResponse(403, "collection_scope_forbidden", "Collection-Helfer dürfen nur Collection-Mutationen ausführen.");
+    if (!isCollectionMutation || !access.collectorId) return errorResponse(403, "collection_scope_forbidden", "Abhol-Helfer dürfen nur Abhol-Änderungen ausführen.");
     const actorId = typeof (mutation.payload as Record<string, unknown>).collectorId === "string" ? (mutation.payload as Record<string, unknown>).collectorId : null;
-    if (actorId !== access.collectorId) return errorResponse(403, "collection_actor_forbidden", "Die Mutation gehört nicht zu diesem Collection-Gerät.");
+    if (actorId !== access.collectorId) return errorResponse(403, "collection_actor_forbidden", "Die Änderung gehört nicht zu diesem Abhol-Gerät.");
   } else if (isCollectionMutation && access.role !== "admin") {
-    return errorResponse(403, "collection_scope_forbidden", "Nur Admins oder Collection-Helfer dürfen Collection ändern.");
+    return errorResponse(403, "collection_scope_forbidden", "Nur Admins oder Abhol-Helfer dürfen die Abholaktion ändern.");
   }
 
   const fingerprint = await fingerprintCampaignMutation(mutation);
   const existing = await getAppliedMutation(db, campaignId, mutation.id);
   if (existing) {
-    if (existing.mutationFingerprint !== fingerprint) return errorResponse(409, "mutation_id_reused", "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.", existing.appliedRevision);
+    if (existing.mutationFingerprint !== fingerprint) return errorResponse(409, "mutation_id_reused", "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.", existing.appliedRevision);
     return json({ mutationId: mutation.id, appliedRevision: existing.appliedRevision, alreadyApplied: true });
   }
 
   for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
     // Tasks and houses of the old map are not part of what these mutations change: leaving them out keeps every write small.
     const current = await loadCampaignSnapshot(db, campaignId, { includeCollection: isCollectionMutation, includeTasks: false, includeHouses: false });
-    if (!current) return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+    if (!current) return errorResponse(404, "campaign_not_found", "Aktion wurde nicht gefunden.");
 
     if (mutation.type === "collection.admin.force-release-area") {
       const area = current.collection?.areas.find((candidate) => candidate.id === mutation.payload.areaId);
-      if (!area || area.runId !== mutation.payload.runId) return errorResponse(409, "mutation_conflict", "Collection Area und Run passen nicht zum aktuellen Serverstand.", current.revision);
+      if (!area || area.runId !== mutation.payload.runId) return errorResponse(409, "mutation_conflict", "Abholgebiet und Raum passen nicht zum aktuellen Serverstand.", current.revision);
     }
 
     let candidate;
@@ -97,7 +97,7 @@ export async function handleCampaignMutation(request: Request, db: D1DatabaseLik
       if (error.reason === "team_missing" || error.reason === "team_changed") {
         return errorResponse(409, error.reason, error.reason === "team_missing" ? "Das Team wurde bereits gelöscht." : "Das Team wurde inzwischen geändert.", current.revision);
       }
-      return errorResponse(409, "mutation_conflict", `Mutation steht im Konflikt mit dem aktuellen Serverstand (${error.reason}).`, current.revision);
+      return errorResponse(409, "mutation_conflict", `Änderung steht im Konflikt mit dem aktuellen Serverstand (${error.reason}).`, current.revision);
     }
 
     const snapshotValidation = validateCampaignSnapshot(candidate, campaignId);
@@ -114,9 +114,9 @@ export async function handleCampaignMutation(request: Request, db: D1DatabaseLik
 
     const persisted = await persistCampaignMutation(db, mutation, current.revision, fingerprint);
     if (persisted.ok) return json({ mutationId: mutation.id, appliedRevision: persisted.revision, alreadyApplied: persisted.alreadyApplied });
-    if (persisted.reason === "mutation_id_reused") return errorResponse(409, "mutation_id_reused", "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.", persisted.currentRevision);
+    if (persisted.reason === "mutation_id_reused") return errorResponse(409, "mutation_id_reused", "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.", persisted.currentRevision);
     if (persisted.reason === "schema_migration_required") return errorResponse(503, "schema_migration_required", "Diese Änderung kann erst nach der vorbereiteten Datenbankmigration gespeichert werden.", persisted.currentRevision);
-    if (attempt === MAX_PERSIST_ATTEMPTS - 1) return errorResponse(409, "revision_conflict", "Der Campaign-Stand wurde gleichzeitig auf einem anderen Gerät geändert.", persisted.currentRevision);
+    if (attempt === MAX_PERSIST_ATTEMPTS - 1) return errorResponse(409, "revision_conflict", "Der Stand der Aktion wurde gleichzeitig auf einem anderen Gerät geändert.", persisted.currentRevision);
   }
-  return errorResponse(500, "internal_error", "Mutation konnte nicht verarbeitet werden.");
+  return errorResponse(500, "internal_error", "Änderung konnte nicht verarbeitet werden.");
 }

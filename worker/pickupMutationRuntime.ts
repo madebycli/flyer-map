@@ -122,7 +122,7 @@ export function validatePickupMutation(
   campaignId: string,
 ): { valid: true; mutation: PickupMutation } | { valid: false; message: string } {
   if (!isRecord(value) || !validCommonMutation(value, campaignId)) {
-    return { valid: false, message: "Pickup-Mutation ist ungültig." };
+    return { valid: false, message: "Sonder-Marker-Änderung ist ungültig." };
   }
   const payload = value.payload as Record<string, unknown>;
 
@@ -199,7 +199,7 @@ export function validatePickupMutation(
       return { valid: true, mutation: value as unknown as PickupMutation };
   }
 
-  return { valid: false, message: "Pickup-Mutation enthält ungültige oder zusätzliche Felder." };
+  return { valid: false, message: "Sonder-Marker-Änderung enthält ungültige oder zusätzliche Felder." };
 }
 
 export async function hasPickupSchema(db: D1DatabaseLike) {
@@ -449,13 +449,13 @@ async function currentTargetCheck(
 
   const pickup = await targetPickup(db, mutation.campaignId, mutation.payload.pickupId);
   if (!pickup) {
-    return { ok: false as const, status: 404, code: "pickup_not_found", message: "Pickup wurde nicht gefunden." };
+    return { ok: false as const, status: 404, code: "pickup_not_found", message: "Sonder-Marker wurde nicht gefunden." };
   }
   if (pickup.archived_at) {
-    return { ok: false as const, status: 409, code: "pickup_archived", message: "Archivierte Pickups können nicht verändert werden." };
+    return { ok: false as const, status: 409, code: "pickup_archived", message: "Archivierte Sonder-Marker können nicht verändert werden." };
   }
   if (pickup.updated_at !== mutation.payload.expectedUpdatedAt) {
-    return { ok: false as const, status: 409, code: "mutation_conflict", message: "Pickup wurde auf einem anderen Gerät geändert." };
+    return { ok: false as const, status: 409, code: "mutation_conflict", message: "Sonder-Marker wurde auf einem anderen Gerät geändert." };
   }
   return { ok: true as const };
 }
@@ -554,7 +554,7 @@ export async function handlePickupMutation(
     return errorResponse(
       403,
       "collection_scope_forbidden",
-      "Nur Admins oder Collection-Helfer dürfen Pickups ändern.",
+      "Nur Admins oder Abhol-Helfer dürfen Sonder-Marker ändern.",
     );
   }
 
@@ -562,21 +562,21 @@ export async function handlePickupMutation(
     return errorResponse(
       503,
       "pickup_schema_unavailable",
-      "Pickup-Persistenz benötigt die vorbereitete Migration 0011.",
+      "Sonder-Marker-Persistenz benötigt die vorbereitete Migration 0011.",
       await getCampaignRevision(db, campaignId),
     );
   }
 
   if (access.role === "collection-collector") {
     if (!access.collectorId) {
-      return errorResponse(403, "collection_actor_forbidden", "Collection-Gerät ist ungültig.");
+      return errorResponse(403, "collection_actor_forbidden", "Abhol-Gerät ist ungültig.");
     }
     const capabilities = await collectorCapabilities(db, campaignId, access.collectorId);
     if (!capabilities || capabilities[requiredCapability(mutation)] !== 1) {
       return errorResponse(
         403,
         "pickup_capability_forbidden",
-        "Dieses Collection-Gerät besitzt diese Pickup-Berechtigung nicht.",
+        "Dieses Abhol-Gerät besitzt diese Sonder-Marker-Berechtigung nicht.",
       );
     }
   }
@@ -586,7 +586,7 @@ export async function handlePickupMutation(
       ? mutation.payload.areaId
       : null;
   if (!(await validateArea(db, campaignId, areaId))) {
-    return errorResponse(422, "pickup_area_invalid", "Collection Area gehört nicht zu dieser Campaign oder ist archiviert.");
+    return errorResponse(422, "pickup_area_invalid", "Abholgebiet gehört nicht zu dieser Aktion oder ist archiviert.");
   }
 
   if (mutation.type === "collection.pickup.set-assignment") {
@@ -603,7 +603,7 @@ export async function handlePickupMutation(
       return errorResponse(
         422,
         "pickup_assignment_invalid",
-        "Run oder Collector gehört nicht zur Campaign oder ist nicht mehr aktiv.",
+        "Raum oder Helfer gehört nicht zur Aktion oder ist nicht mehr aktiv.",
       );
     }
   }
@@ -627,7 +627,7 @@ export async function handlePickupMutation(
       return errorResponse(
         409,
         "mutation_id_reused",
-        "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.",
+        "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.",
         existing.appliedRevision,
       );
     }
@@ -641,7 +641,7 @@ export async function handlePickupMutation(
   for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
     const fromRevision = await getCampaignRevision(db, campaignId);
     if (fromRevision === null) {
-      return errorResponse(404, "campaign_not_found", "Campaign wurde nicht gefunden.");
+      return errorResponse(404, "campaign_not_found", "Aktion wurde nicht gefunden.");
     }
 
     const retryTargetCheck = await currentTargetCheck(db, mutation);
@@ -676,7 +676,7 @@ export async function handlePickupMutation(
         return errorResponse(
           409,
           "mutation_id_reused",
-          "Diese Mutation-ID wurde bereits mit anderem Inhalt verwendet.",
+          "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.",
           appliedAfterRace.appliedRevision,
         );
       }
@@ -691,7 +691,7 @@ export async function handlePickupMutation(
   return errorResponse(
     409,
     "revision_conflict",
-    "Der Campaign-Stand wurde gleichzeitig auf einem anderen Gerät geändert.",
+    "Der Stand der Aktion wurde gleichzeitig auf einem anderen Gerät geändert.",
     await getCampaignRevision(db, campaignId),
   );
 }

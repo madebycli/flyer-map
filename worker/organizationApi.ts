@@ -130,10 +130,10 @@ function isOrganizationAuthorizationErrorCode(code: string): code is Organizatio
 
 function authError(code: string) {
   if (!isOrganizationAuthorizationErrorCode(code)) {
-    return errorResponse(500, "authorization_error", "Organization-Autorisierung ist fehlgeschlagen.");
+    return errorResponse(500, "authorization_error", "Organisations-Autorisierung ist fehlgeschlagen.");
   }
   if (code === "authentication_required") {
-    return errorResponse(401, code, "Organization-Anmeldung ist erforderlich.");
+    return errorResponse(401, code, "Organisations-Anmeldung ist erforderlich.");
   }
   if (code === "mfa_required") {
     return errorResponse(403, code, "Für diese Aktion ist eine vollständig bestätigte MFA-Sitzung erforderlich.");
@@ -172,11 +172,11 @@ async function audit(
 
 async function createOrganization(request: Request, db: D1DatabaseLike) {
   const session = await resolveOrganizationAccountSession(db, request);
-  if (!session) return errorResponse(401, "authentication_required", "Organization-Anmeldung ist erforderlich.");
+  if (!session) return errorResponse(401, "authentication_required", "Organisations-Anmeldung ist erforderlich.");
   if (session.assurance !== "mfa") return errorResponse(403, "mfa_required", "MFA ist erforderlich.");
   const memberships = await listOrganizationMemberships(db, session.accountId);
   if (!memberships.some((membership) => membership.role === "organizer")) {
-    return errorResponse(403, "forbidden", "Nur Organizer dürfen weitere Organizations anlegen.");
+    return errorResponse(403, "forbidden", "Nur Organizer dürfen weitere Organisationen anlegen.");
   }
   const parsed = await readBody(request);
   if (!parsed.ok) return parsed.response;
@@ -206,7 +206,7 @@ async function createOrganization(request: Request, db: D1DatabaseLike) {
       .bind(`org_audit_${crypto.randomUUID()}`, organizationId, session.accountId, organizationId, now),
   ]);
   if (result.some((item) => item.success === false)) {
-    return errorResponse(500, "organization_create_failed", "Organization konnte nicht angelegt werden.");
+    return errorResponse(500, "organization_create_failed", "Organisation konnte nicht angelegt werden.");
   }
   return json({ organization: { id: organizationId, name } }, { status: 201 });
 }
@@ -360,7 +360,7 @@ async function updateOrganizationCampaign(
       .bind(baseStatus, lifecycle, now, campaignId, organizationId),
   ]);
   if ((result[0]?.meta?.changes ?? 0) !== 1) {
-    return errorResponse(404, "campaign_not_found", "Aktion wurde in dieser Organization nicht gefunden.");
+    return errorResponse(404, "campaign_not_found", "Aktion wurde in dieser Organisation nicht gefunden.");
   }
   await audit(db, organizationId, auth.session.accountId, "campaign.lifecycle", "campaign", campaignId, { lifecycle });
   return json({ ok: true, lifecycle });
@@ -418,7 +418,7 @@ async function removeOrganizationMember(
     return errorResponse(409, "last_organizer", "Der letzte aktive Organizer kann nicht deaktiviert werden.");
   }
   if (result === "not_found") {
-    return errorResponse(404, "membership_not_found", "Organization-Mitglied wurde nicht gefunden.");
+    return errorResponse(404, "membership_not_found", "Organisations-Mitglied wurde nicht gefunden.");
   }
   await audit(db, organizationId, auth.session.accountId, "membership.disable", "membership", membershipId);
   return json({ ok: true });
@@ -432,17 +432,17 @@ export async function handleOrganizationApi(request: Request, env: OrganizationA
     url.pathname.startsWith("/api/organizations/");
   if (!isOrganizationPath) return null;
   if (!sameOriginWrite(request)) {
-    return errorResponse(403, "origin_forbidden", "Organization-Schreibzugriffe benötigen denselben Origin.");
+    return errorResponse(403, "origin_forbidden", "Organisations-Schreibzugriffe benötigen denselben Origin.");
   }
   if (!env.DB) return errorResponse(503, "d1_unavailable", "D1 ist nicht gebunden.");
   const db = env.DB;
   if (!(await hasOrganizationSchema(db))) {
-    return errorResponse(503, "organization_schema_unavailable", "Organization-Plattform benötigt Migration 0018.");
+    return errorResponse(503, "organization_schema_unavailable", "Organisations-Plattform benötigt Migration 0018.");
   }
 
   if (url.pathname === "/api/organization/bootstrap" && request.method === "POST") {
     if (!env.ORGANIZATION_BOOTSTRAP_SECRET || !env.ORGANIZATION_TOTP_KEY) {
-      return errorResponse(503, "organization_bootstrap_unconfigured", "Organization-Bootstrap ist nicht konfiguriert.");
+      return errorResponse(503, "organization_bootstrap_unconfigured", "Organisations-Bootstrap ist nicht konfiguriert.");
     }
     const parsed = await readBody(request);
     if (!parsed.ok) return parsed.response;
@@ -461,8 +461,8 @@ export async function handleOrganizationApi(request: Request, env: OrganizationA
         result.code === "bootstrap_unavailable" ? 409 : 400,
         result.code,
         result.code === "bootstrap_unavailable"
-          ? "Organization-Bootstrap wurde bereits beansprucht oder konnte nicht atomar abgeschlossen werden."
-          : "Organization-, Benutzer- oder Passwortdaten sind ungültig.",
+          ? "Organisations-Bootstrap wurde bereits beansprucht oder konnte nicht atomar abgeschlossen werden."
+          : "Organisations-, Benutzer- oder Passwortdaten sind ungültig.",
       );
     }
     const response = json({
@@ -581,7 +581,7 @@ export async function handleOrganizationApi(request: Request, env: OrganizationA
 
   if (url.pathname === "/api/organization/me" && request.method === "GET") {
     const session = await resolveOrganizationAccountSession(db, request);
-    if (!session) return errorResponse(401, "authentication_required", "Organization-Anmeldung ist erforderlich.");
+    if (!session) return errorResponse(401, "authentication_required", "Organisations-Anmeldung ist erforderlich.");
     return json({
       account: { id: session.accountId, username: session.username },
       assurance: session.assurance,
@@ -592,11 +592,11 @@ export async function handleOrganizationApi(request: Request, env: OrganizationA
   if (url.pathname === "/api/organizations") {
     if (request.method === "GET") {
       const session = await resolveOrganizationAccountSession(db, request);
-      if (!session) return errorResponse(401, "authentication_required", "Organization-Anmeldung ist erforderlich.");
+      if (!session) return errorResponse(401, "authentication_required", "Organisations-Anmeldung ist erforderlich.");
       return json({ organizations: await listOrganizationMemberships(db, session.accountId) });
     }
     if (request.method === "POST") return createOrganization(request, db);
-    return errorResponse(405, "method_not_allowed", "Organization-Methode nicht erlaubt.");
+    return errorResponse(405, "method_not_allowed", "Organisations-Methode nicht erlaubt.");
   }
 
   const campaignRoute = organizationCampaignRoute(url.pathname);
@@ -624,7 +624,7 @@ export async function handleOrganizationApi(request: Request, env: OrganizationA
     return errorResponse(405, "method_not_allowed", "Mitglieder-Methode nicht erlaubt.");
   }
 
-  return errorResponse(404, "not_found", "Organization-Route wurde nicht gefunden.");
+  return errorResponse(404, "not_found", "Organisations-Route wurde nicht gefunden.");
 }
 
 export const ORGANIZER_ADMIN_REQUIRED_CAPABILITIES: readonly OrganizationCapability[] = [

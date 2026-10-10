@@ -10,7 +10,7 @@ test("the retired Snapshot PUT contract is explicit and side-effect free", async
   assert.deepEqual(await response.json(), {
     error: {
       code: "legacy_snapshot_write_retired",
-      message: "Campaign-Änderungen müssen über den Mutationspfad gespeichert werden.",
+      message: "Aktions-Änderungen müssen über den Mutationspfad gespeichert werden.",
     },
   });
 });

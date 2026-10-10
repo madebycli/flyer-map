@@ -97,7 +97,7 @@ async function hasSecuritySchema(db: D1DatabaseLike) {
 }
 
 function authError(code: string) {
-  if (code === "authentication_required") return errorResponse(401, code, "Organization-Anmeldung ist erforderlich.");
+  if (code === "authentication_required") return errorResponse(401, code, "Organisations-Anmeldung ist erforderlich.");
   if (code === "mfa_required") return errorResponse(403, code, "Für diese Aktion ist MFA erforderlich.");
   return errorResponse(403, "forbidden", "Diese Organization-Berechtigung fehlt.");
 }
@@ -160,7 +160,7 @@ async function requireSelfMembership(request: Request, db: D1DatabaseLike, organ
 async function handlePublicRedeem(request: Request, env: OrganizationSecurityApiEnv) {
   if (!env.DB) return errorResponse(503, "d1_unavailable", "D1 ist nicht gebunden.");
   if (!(await hasSecuritySchema(env.DB))) {
-    return errorResponse(503, "organization_security_schema_unavailable", "Organization-Security benötigt Migration 0019.");
+    return errorResponse(503, "organization_security_schema_unavailable", "Organisations-Sicherheit benötigt Migration 0019.");
   }
   if (request.url.endsWith("/api/organization/invites/redeem")) {
     if (!env.ORGANIZATION_TOTP_KEY) {
@@ -247,7 +247,7 @@ async function handleMfaPreference(request: Request, env: OrganizationSecurityAp
     ? selector(parsed.value.organizationId)
     : null;
   if (!organizationId) {
-    return errorResponse(400, "invalid_organization", "Organization ist ungültig.");
+    return errorResponse(400, "invalid_organization", "Organisation ist ungültig.");
   }
   const auth = await requireSelfMembership(request, db, organizationId);
   if (!auth.ok) return auth.response;
@@ -281,7 +281,7 @@ async function handleSelfSecurity(request: Request, env: OrganizationSecurityApi
     const parsed = await readBody(request);
     if (!parsed.ok) return parsed.response;
     const organizationId = typeof parsed.value.organizationId === "string" ? selector(parsed.value.organizationId) : null;
-    if (!organizationId) return errorResponse(400, "invalid_organization", "Organization ist ungültig.");
+    if (!organizationId) return errorResponse(400, "invalid_organization", "Organisation ist ungültig.");
     const auth = await requireSelfMembership(request, db, organizationId);
     if (!auth.ok) return auth.response;
     if (auth.session.assurance !== "mfa") return authError("mfa_required");
@@ -307,7 +307,7 @@ async function handleSelfSecurity(request: Request, env: OrganizationSecurityApi
     const parsed = await readBody(request);
     if (!parsed.ok) return parsed.response;
     const organizationId = typeof parsed.value.organizationId === "string" ? selector(parsed.value.organizationId) : null;
-    if (!organizationId) return errorResponse(400, "invalid_organization", "Organization ist ungültig.");
+    if (!organizationId) return errorResponse(400, "invalid_organization", "Organisation ist ungültig.");
     const auth = await requireSelfMembership(request, db, organizationId);
     if (!auth.ok) return auth.response;
     if (auth.session.assurance !== "mfa") return authError("mfa_required");
@@ -335,7 +335,7 @@ async function handleSelfSecurity(request: Request, env: OrganizationSecurityApi
     const parsed = await readBody(request);
     if (!parsed.ok) return parsed.response;
     const organizationId = typeof parsed.value.organizationId === "string" ? selector(parsed.value.organizationId) : null;
-    if (!organizationId) return errorResponse(400, "invalid_organization", "Organization ist ungültig.");
+    if (!organizationId) return errorResponse(400, "invalid_organization", "Organisation ist ungültig.");
     const auth = await requireSelfMembership(request, db, organizationId);
     if (!auth.ok) return auth.response;
     if (auth.session.assurance !== "mfa") return authError("mfa_required");
@@ -354,7 +354,7 @@ async function handleSelfSecurity(request: Request, env: OrganizationSecurityApi
   const parsed = await readBody(request);
   if (!parsed.ok) return parsed.response;
   const organizationId = typeof parsed.value.organizationId === "string" ? selector(parsed.value.organizationId) : null;
-  if (!organizationId) return errorResponse(400, "invalid_organization", "Organization ist ungültig.");
+  if (!organizationId) return errorResponse(400, "invalid_organization", "Organisation ist ungültig.");
   const auth = await requireSelfMembership(request, db, organizationId);
   if (!auth.ok) return auth.response;
   const result = await restartOrganizationTotpEnrollment(db, {
@@ -625,7 +625,7 @@ async function createPasswordReset(request: Request, db: D1DatabaseLike, organiz
   const targetAccountId = typeof parsed.value.accountId === "string" ? selector(parsed.value.accountId) : null;
   if (!targetAccountId) return errorResponse(400, "invalid_account", "Account ist ungültig.");
   const targetMembership = await resolveOrganizationMembership(db, targetAccountId, organizationId);
-  if (!targetMembership) return errorResponse(404, "account_not_found", "Account wurde in dieser Organization nicht gefunden.");
+  if (!targetMembership) return errorResponse(404, "account_not_found", "Account wurde in dieser Organisation nicht gefunden.");
   if (targetMembership.role === "organizer" && auth.membership.role !== "organizer") return authError("forbidden");
   const reset = await createOrganizationPasswordReset(db, {
     organizationId,
@@ -655,10 +655,10 @@ export async function handleOrganizationSecurityApi(
   const sessions = sessionRoute(url.pathname);
   const organizationRoute = organizationSecurityRoute(url.pathname);
   if (!publicRedeem && !mfaPreference && !selfSecurity && !sessions && !organizationRoute) return null;
-  if (!sameOriginWrite(request)) return errorResponse(403, "origin_forbidden", "Organization-Schreibzugriffe benötigen denselben Origin.");
+  if (!sameOriginWrite(request)) return errorResponse(403, "origin_forbidden", "Organisations-Schreibzugriffe benötigen denselben Origin.");
   if (!env.DB) return errorResponse(503, "d1_unavailable", "D1 ist nicht gebunden.");
   if (!(await hasSecuritySchema(env.DB))) {
-    return errorResponse(503, "organization_security_schema_unavailable", "Organization-Security benötigt Migration 0019.");
+    return errorResponse(503, "organization_security_schema_unavailable", "Organisations-Sicherheit benötigt Migration 0019.");
   }
   if (mfaPreference) return handleMfaPreference(request, env);
   if (publicRedeem) {
@@ -704,5 +704,5 @@ export async function handleOrganizationSecurityApi(
   if (route.resource === "password-resets" && !route.resourceId && request.method === "POST") {
     return createPasswordReset(request, env.DB, route.organizationId);
   }
-  return errorResponse(405, "method_not_allowed", "Organization-Security-Methode nicht erlaubt.");
+  return errorResponse(405, "method_not_allowed", "Sicherheits-Methode nicht erlaubt.");
 }
