@@ -102,7 +102,7 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   check('the focus picker mounts a map canvas without any third-party request', await until(async () => (await page.locator('.ui-map canvas').count()) === 1) && seen.external.length === 0, seen.external.join(','));
   await page.getByLabel('Name der Aktion').fill('Neu');
   await page.getByRole('button', { name: 'Aktion erstellen' }).click();
-  check('creating leads to the Aktion page with the lifecycle control and the Feldkarte link', await until(async () => /\/admin\/campaign\/campaign_new/.test(page.url())) && await page.getByRole('link', { name: 'Feldkarte öffnen' }).count() === 1);
+  check('creating leads to the Aktion page with the lifecycle control and the Feldkarte link', await until(async () => /\/admin\/campaign\/campaign_new/.test(page.url()) && (await page.getByRole('link', { name: 'Feldkarte öffnen' }).count()) === 1));
   await pageAudit(page, 'o4-new');
   await page.screenshot({ path: `${shots}/o4-new.png` });
   await page.context().close();
