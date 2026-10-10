@@ -673,7 +673,7 @@ export function App({ campaignId }: { campaignId: string }) {
             <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo(ringBounds(selectedArea.geometry.coordinates[0]), FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
             {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
           </div>
-          {orphanCount > 0 && <button className="v5-wide" onClick={pruneSelected} aria-label="Veraltete Einträge dieses Gebiets bereinigen" title="Markierungen entfernen, die nach einer Änderung des Gebiets nirgends mehr liegen"><Icon name="trash" size={20} />Veraltete Einträge bereinigen</button>}
+          {orphanCount > 0 && <button className="v5-wide" onClick={pruneSelected} title="Markierungen entfernen, die nach einer Änderung des Gebiets nirgends mehr liegen"><Icon name="trash" size={20} />Veraltete Einträge bereinigen</button>}
           {meta?.role === 'admin' && (
             <>
               <AreaAdmin key={`${selectedArea.id}:${selectedArea.updatedAt}`} area={selectedArea} teams={meta.teams} busy={adminBusy}

@@ -132,9 +132,10 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 
 /* ── notes ───────────────────────────────────────────────────── */
 .v5-notes { display: grid; gap: 0.6rem; margin-top: 0.2rem; }
-.v5-flags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+/* seven flags fit one row at 390 px: equal columns, each at least 44 px, never wider than a square */
+.v5-flags { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.75rem, 1fr)); gap: var(--gap); }
 .v5-flag {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.2rem; width: var(--ctl); height: var(--ctl); padding: 0; border: 0; border-radius: var(--r);
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.2rem; width: 100%; max-width: var(--ctl); aspect-ratio: 1; min-height: 2.75rem; padding: 0; border: 0; border-radius: var(--r);
   background: var(--surface-3); color: var(--c); cursor: pointer; transition: background var(--t), transform 120ms var(--ease);
 }
 .v5-flag b { font-size: 0.8rem; font-weight: 800; color: var(--on); font-variant-numeric: tabular-nums; }

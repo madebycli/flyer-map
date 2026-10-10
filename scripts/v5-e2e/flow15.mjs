@@ -44,12 +44,13 @@ try {
     await page.waitForTimeout(1200);
     const point = await page.evaluate(() => { const point = window.__v5Map.project([13.0075, 51.0045]); return { x: point.x, y: point.y }; });
     await page.mouse.click(point.x, point.y);
-    const prune = page.getByRole('button', { name: 'Veraltete Einträge dieses Gebiets bereinigen', exact: true });
+    const prune = page.getByRole('button', { name: 'Veraltete Einträge bereinigen', exact: true });
     await prune.waitFor();
     const removeArea = page.getByRole('button', { name: 'Gebiet löschen', exact: true });
     check(`${tag}: different actions have visible captions`, (await prune.innerText()) === 'Veraltete Einträge bereinigen' && (await removeArea.innerText()) === 'Gebiet löschen');
     check(`${tag}: area sheet has no horizontal overflow`, await noOverflow(page));
     check(`${tag}: both action targets are at least 44 px`, await touchSize(prune) && await touchSize(removeArea));
+    check(`${tag}: the seven note flags stay in one row, each at least 44 px`, await page.getByRole('group', { name: 'Schnellnotiz' }).locator('button').evaluateAll((elements) => elements.length === 7 && new Set(elements.map((element) => Math.round(element.getBoundingClientRect().top))).size === 1 && elements.every((element) => element.getBoundingClientRect().width >= 44 && element.getBoundingClientRect().height >= 44)));
     check(`${tag}: area inputs have at least 16 px text`, await page.locator('.v5-sheet input').evaluateAll((elements) => elements.length > 0 && elements.every((element) => parseFloat(getComputedStyle(element).fontSize) >= 16)));
     await settledSheet(page);
     await page.screenshot({ path: `${shots}/area-${tag}.png` });
