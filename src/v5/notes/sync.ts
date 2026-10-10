@@ -20,7 +20,7 @@ export class NoteSync {
       const batch = sent.slice(0, this.batch);
       const result = await this.transport.push(batch);
       diag.inc('notes.push.batches'); diag.inc('notes.push.sent', batch.length); diag.inc('notes.push.accepted', result.accepted.length);
-      if (result.rejected?.length) { diag.inc('notes.push.rejected', result.rejected.length); diag.warn('notes', 'notes refused by the server', { count: result.rejected.length, reasons: [...new Set(result.rejected.map((r) => r.reason))] }); }
+      if (result.rejected?.length) { diag.inc('notes.push.rejected', result.rejected.length); diag.warn('notes', 'notes refused by the server', { count: result.rejected.length, reasons: [...new Set(result.rejected.map((r) => String(r.reason).replace(/[^a-z_-]/gi, '').slice(0, 40)))] }); }
       const accepted = new Set(result.accepted);
       const refused = new Set((result.rejected ?? []).map((r) => r.id));
       this.store.acknowledge(batch.filter((n) => accepted.has(n.id)));

@@ -19,7 +19,7 @@ test('redaction removes positions, credentials and token-like strings, and bound
   assert.equal((out.nested as Record<string, unknown>).geometry, '[removed]');
   assert.equal((out.nested as Record<string, unknown>).count, 2);
   assert.equal(out.ok, 'fine'); assert.equal(out.n, 3);
-  assert.ok(!String(out.url).includes(TOKEN) && String(out.url).includes('#access=[removed]'));
+  assert.equal(out.url, '[url]', 'a web address is never kept, with or without a credential in it');
   assert.ok(String(out.long).length <= 301);
   assert.equal((out.list as unknown[]).length, 21, '20 items and a marker for the rest');
   assert.equal(JSON.stringify(out).includes(TOKEN), false);
@@ -184,4 +184,56 @@ test('findings: a healthy device says so; every rule fires on its own condition 
   // offline with queued edits is not "stuck", it is expected
   const off = base(); off.metrics.gauges = { 'net.online': 0 }; off.subsystems = { sync: { failures: 0, pendingOps: 3, lastOkAgoS: 300 } };
   assert.ok(!findings(off).some((f) => /warten seit über 2 Minuten/.test(f.text)));
+});
+
+// ---- B-F-007: foreign text (exception messages, library lines, server text) must not reach the log, the report or the saved tail ----
+const PRIVATE = ['short-secret', '51.12345', '13.54321', '70322', '43422', 'Mustermann', 'Hund im Garten', 'tiles.example.test'];
+const hasPrivate = (text: string) => PRIVATE.filter((p) => text.includes(p));
+
+test('foreign text is recognised or dropped: the exact B-F-007 counterexamples leave nothing behind', async () => {
+  const { loadPrevious, saveTail } = await import('../src/v5/diag/persist.ts');
+  const { foreignMessage, urlKind, whereOf } = await import('../src/v5/diag/redact.ts');
+  const store = new Map<string, string>();
+  (globalThis as unknown as { localStorage: unknown }).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+  const l = new Logger();
+  // 1. what fieldMap's map.on('error') records
+  l.warn('map', 'map error', { source: 'v5-tiles', message: 'AJAXError: https://tiles.example.test/17/70322/43422.png?key=short-secret&lat=51.12345&lon=13.54321', stack: 'Error: x\n    at fetch (https://tiles.example.test/assets/a.js?key=short-secret:1:2)', kind: urlKind('https://tiles.example.test/17/70322/43422.png?key=short-secret') });
+  // 2. window.error / unhandled rejection / console.error shapes
+  l.error('error', 'uncaught error', { where: whereOf('https://x.test/assets/index.js?token=short-secret', 12, 3), message: new Error('Max Mustermann: Hund im Garten, Position 51.12345,13.54321') });
+  l.error('error', 'unhandled rejection', { reason: 'Max Mustermann: Hund im Garten' });
+  l.error('console', 'console.error', { message: foreignMessage('Max Mustermann: Hund im Garten, Position 51.12345,13.54321'), args: 2 });
+  // 3. an error object nested somewhere else, and a sync error line
+  l.warn('sync', 'sync failed, retrying', { error: 'Notizen: Mustermann hat 51.12345 geschrieben', lastError: 'Hund im Garten' });
+  const report = JSON.stringify(buildReport({ id: 'test', startedAt: Date.now(), bootCount: 1, previous: null }, { logLimit: 50 }));
+  const own = JSON.stringify(l.entries());
+  assert.deepEqual(hasPrivate(own), [], 'the log');
+  // the global log carries nothing from this test's own logger, so build the report from entries copied into it
+  for (const e of l.entries()) globalLog.log(e.lvl, e.cat, e.msg, e.data);
+  const full = JSON.stringify(buildReport({ id: 'test', startedAt: Date.now(), bootCount: 1, previous: null }, { logLimit: 50 }));
+  assert.deepEqual(hasPrivate(full), [], 'the report');
+  assert.ok(report.length > 0);
+  // 4. the saved tail and its read-back: an *old* tail written before this rule is cleaned when it is loaded
+  store.set('vf-v5-diag-tail', JSON.stringify({ session: 's', endedAt: 1, entries: [{ seq: 1, t: 1, at: 1, lvl: 'error', cat: 'error', msg: 'boom at https://tiles.example.test/17/70322/43422.png?key=short-secret', data: { message: 'Max Mustermann: Hund im Garten 51.12345', where: 'x' } }] }));
+  assert.deepEqual(hasPrivate(JSON.stringify(loadPrevious())), [], 'an old tail');
+  saveTail('s2', l.entries());
+  await new Promise((r) => setTimeout(r, 900));
+  assert.deepEqual(hasPrivate(store.get('vf-v5-diag-tail') ?? ''), [], 'the saved tail');
+  assert.equal(foreignMessage('Failed to fetch'), 'Failed to fetch');
+  assert.equal(foreignMessage('Failed to fetch https://tiles.example.test/x?key=short-secret'), 'Failed to fetch');
+  assert.match(foreignMessage('Max Mustermann'), /^\[text removed, 14 chars\]$/);
+  assert.equal(urlKind('https://tiles.example.test/17/70322/43422.png?key=short-secret'), 'tile');
+  assert.equal(whereOf('https://x.test/assets/index-abc.js?token=short-secret', 12, 3), 'index-abc.js:12:3');
+});
+
+test('a free-text key keeps only recognised technical messages, and errors keep a clean name, a recognised message and a reduced stack', () => {
+  const out = redactValue({ error: 'whatever the server said about Max', message: 'The operation was aborted. (details about Max)', reason: new TypeError('Failed to fetch'), other: 'kept constant text', cause: new Error('Mustermann') }) as Record<string, unknown>;
+  assert.match(String(out.error), /^\[text removed, \d+ chars\]$/);
+  assert.equal(out.message, 'The operation was aborted');
+  assert.equal((out.reason as { message: string }).message, 'Failed to fetch');
+  assert.equal((out.reason as { name: string }).name, 'TypeError');
+  assert.equal(out.other, 'kept constant text');
+  assert.ok(!JSON.stringify(out).includes('Mustermann'));
+  assert.equal((redactValue(Object.assign(new Error('x'), { name: 'Max Mustermann' })) as { name: string }).name, 'Error', 'a name that is not an error type is not kept');
+  const stacked = redactValue(Object.assign(new Error('x'), { stack: 'Error: x\n    at doThing (https://x.test/a/b/c.js?k=short-secret:10:20)\n    at https://x.test/d.js:1:2' })) as { stack: string };
+  assert.ok(stacked.stack.includes('c.js:10:20') && !stacked.stack.includes('short-secret') && !stacked.stack.includes('x.test'), stacked.stack);
 });

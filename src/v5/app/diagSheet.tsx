@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Check, Chip, Facts, Field, Notice, Segmented, Select, TextInput, Icon } from '../../ui/index.ts';
-import { CATEGORIES, LEVELS, collectProbes, copyText, diagFlag, downloadText, log, metrics, report, setVerbose, type Category, type Entry, type Level } from '../diag/index.ts';
+import { CATEGORIES, LEVELS, collectProbes, copyText, diagFlag, diagFromAddress, downloadText, log, metrics, report, setVerbose, type Category, type Entry, type Level } from '../diag/index.ts';
 import { findings } from '../diag/findings.ts';
 import { currentSession } from '../diag/index.ts';
 import type { EngineClient } from './engineClient.ts';
@@ -30,16 +30,16 @@ function Table({ title, rows, fmt = ms, label }: { title: string; rows: HistRow[
   const shown = rows.filter(([, h]) => h && h.n > 0);
   if (!shown.length) return null;
   return (
-    <div className="v5-d-table" role="table" aria-label={label}>
-      <div className="v5-d-row head" role="row"><span role="columnheader">{title}</span><span role="columnheader">Anz.</span><span role="columnheader">Median</span><span role="columnheader">95 %</span><span role="columnheader">Max</span></div>
+    <div className="ui-datatable" role="table" aria-label={label}>
+      <div className="ui-datarow head" role="row"><span role="columnheader">{title}</span><span role="columnheader">Anz.</span><span role="columnheader">Median</span><span role="columnheader">95 %</span><span role="columnheader">Max</span></div>
       {shown.map(([name, h]) => (
-        <div className="v5-d-row" role="row" key={name}><span role="cell" className="name">{name}</span><span role="cell">{num(h!.n)}</span><span role="cell">{fmt(h!.p50)}</span><span role="cell">{fmt(h!.p95)}</span><span role="cell">{fmt(h!.max)}</span></div>
+        <div className="ui-datarow" role="row" key={name}><span role="cell" className="name">{name}</span><span role="cell">{num(h!.n)}</span><span role="cell">{fmt(h!.p50)}</span><span role="cell">{fmt(h!.p95)}</span><span role="cell">{fmt(h!.max)}</span></div>
       ))}
     </div>
   );
 }
 
-const Block = ({ title, children }: { title: string; children: React.ReactNode }) => <><h3>{title}</h3>{children}</>;
+const Block = ({ title, children }: { title: string; children: React.ReactNode }) => <section className="ui-section"><h3>{title}</h3>{children}</section>;
 
 export function DiagSheet({ engine, onClose }: { engine: EngineClient | null; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('status');
@@ -61,10 +61,11 @@ export function DiagSheet({ engine, onClose }: { engine: EngineClient | null; on
 
   return (
     <SheetFrame icon="chart" title="Diagnose" onClose={onClose} meta={<span>Sitzung {currentSession().id.slice(-5)} · läuft seit {clock(performance.now())} min</span>}>
+      <div className="ui-stack">
       <Segmented<Tab> label="Bereich" value={tab} onChange={setTab} options={[{ value: 'status', label: 'Status' }, { value: 'engine', label: 'Engine' }, { value: 'sync', label: 'Sync' }, { value: 'net', label: 'Netz' }, { value: 'map', label: 'Karte' }, { value: 'log', label: 'Log' }]} />
 
       {tab === 'status' && (<>
-        <ul className="v5-d-list" aria-label="Befunde">{list.map((f, i) => <li key={i}><Notice tone={f.level === 'error' ? 'error' : f.level === 'warn' ? 'warn' : f.level === 'ok' ? 'ok' : 'info'}>{f.text}</Notice></li>)}</ul>
+        <ul className="ui-notices" aria-label="Befunde">{list.map((f, i) => <li key={i}><Notice tone={f.level === 'error' ? 'error' : f.level === 'warn' ? 'warn' : f.level === 'ok' ? 'ok' : 'info'}>{f.text}</Notice></li>)}</ul>
         <Facts items={[
           ['Engine', g['engine.wasm'] === 1 ? 'Rust / WASM' : g['engine.wasm'] === 0 ? 'TypeScript' : '–'],
           ['Netz', g['net.online'] === 0 ? 'offline' : 'online'],
@@ -84,15 +85,15 @@ export function DiagSheet({ engine, onClose }: { engine: EngineClient | null; on
         </Block>
         <Block title="Bericht">
           <p className="v5-hint">Der Bericht enthält Messwerte, Zähler und das Log dieser Sitzung – keine Positionen, Namen, Texte oder Zugangsdaten.</p>
-          <div className="v5-row v5-d-actions">
+          <div className="v5-row ui-actions">
             <Button tone="primary" icon="send" onClick={() => void copyReport()}>Bericht kopieren</Button>
             <Button icon="download" onClick={download}>Herunterladen</Button>
           </div>
           {copied && <p role="status" className="v5-hint"><Icon name="info" size={20} />{copied}</p>}
-          <div className="v5-row v5-d-actions">
+          <div className="v5-row ui-actions">
             <Button tone="quiet" icon="trash" onClick={() => { log.clear(); metrics.reset(); setCopied('Log und Zähler zurückgesetzt.'); }}>Zähler und Log zurücksetzen</Button>
           </div>
-          <Check label="Diagnose-Modus dauerhaft" hint="Ausführliches Log, Bildrate und kleine Anzeige oben. Gilt bis zum Ausschalten, auch nach dem Schließen." checked={diagFlag.read()} onChange={(e) => { setVerbose(e.target.checked); setCopied(e.target.checked ? 'Diagnose-Modus an (gilt ab dem nächsten Start vollständig).' : 'Diagnose-Modus aus.'); }} />
+          <Check label="Diagnose-Modus dauerhaft" hint="Ausführliches Log, Bildrate und kleine Anzeige oben. Gilt bis zum Ausschalten, auch nach dem Schließen." checked={diagFlag.read()} onChange={(e) => { setVerbose(e.target.checked); setCopied(e.target.checked ? 'Diagnose-Modus an (gilt ab dem nächsten Start vollständig).' : diagFromAddress() ? 'Gespeicherter Modus aus. Die Adresse enthält ?diag=1: die Anzeige bleibt, bis die Seite ohne diesen Zusatz geöffnet wird.' : 'Diagnose-Modus aus.'); }} />
         </Block>
       </>)}
 
@@ -116,7 +117,7 @@ export function DiagSheet({ engine, onClose }: { engine: EngineClient | null; on
         <Table label="Zeiten der Synchronisation" title="Zeit" rows={[['Runde', h['sync.round_ms'] ?? null], ['Senden', h['sync.push_ms'] ?? null], ['Abholen', h['sync.pull_ms'] ?? null], ['Speichern (alles)', h['idb.save.all_ms'] ?? null], ['Speichern (Warteschlange)', h['idb.save.outbox_ms'] ?? null], ['Laden beim Start', h['idb.load_ms'] ?? null], ['Hydrate', h['store.hydrate_ms'] ?? null]]} />
         <Block title="Letzte Runden">
           {arr(sync.rounds).length ? (
-            <ul className="v5-d-rounds" aria-label="Letzte Synchronisationsrunden">
+            <ul className="ui-rowlist" aria-label="Letzte Synchronisationsrunden">
               {[...arr(sync.rounds)].reverse().slice(0, 15).map((r, i) => (
                 <li key={i} className={String(r.result)}><span>{ago(n(r.at))}</span><span>{ms(n(r.ms))}</span><span>↑ {num(n(r.sent))} ↓ {num(n(r.pulled))}</span><span>{r.result === 'ok' ? 'ok' : r.result === 'failed' ? `Fehler${r.error ? `: ${String(r.error)}` : ''}` : 'Notizen fehlgeschlagen'}</span></li>
               ))}
@@ -150,6 +151,7 @@ export function DiagSheet({ engine, onClose }: { engine: EngineClient | null; on
       </>)}
 
       {tab === 'log' && <LogTab />}
+      </div>
     </SheetFrame>
   );
 }
@@ -196,7 +198,7 @@ function EngineTab({ engine, eng, campaign, s }: { engine: EngineClient | null; 
       {areas.length ? areas.map((a) => {
         const d = obj(a.diagnostics), detail = obj(a.detail);
         return (
-          <details key={String(a.n)} className="v5-d-area">
+          <details key={String(a.n)} className="ui-collapse">
             <summary><b>Gebiet {String(a.n)}</b><span>{a.source === 'cache' ? 'Cache' : a.source === 'server' ? 'Server' : 'ohne Daten'} · {num(n(a.houses))} Häuser · {num(n(a.segments))} Straßen · {ms(n(a.deriveMs))}</span></summary>
             <Facts items={[
               ['Paket geladen', `${kb(n(a.packBytes))} in ${ms(n(a.fetchMs))}`], ['Entpacken', ms(n(detail.gunzip))], ['Rust rechnet', ms(n(detail.wasm ?? detail.blobWasm))], ['Ergebnis lesen', ms(n(detail.parse ?? detail.blobParse))],
@@ -228,7 +230,7 @@ function NetTab({ s, P }: { s: ReturnType<typeof metrics.snapshot>; P: Record<st
     ]} />
     <Table label="Anfragen an den Server" title="Route" rows={rows} />
     {details.length > 0 && (
-      <ul className="v5-d-rounds" aria-label="Details der Anfragen">
+      <ul className="ui-rowlist" aria-label="Details der Anfragen">
         {details.map((d) => <li key={d.t}><span className="name">{d.t.replace('/api/v5/campaigns/:c', '…').replace('/api/campaigns/:c', '…')}</span><span>Antwort {ms(d.ttfb)}</span><span>{kb(d.bytes)}</span><span>Server {ms(d.server)}{d.serverDb != null ? ` (Datenbank ${ms(d.serverDb)})` : ''}</span><span>{errorsFor(d.t) ? `${errorsFor(d.t)} Fehler` : 'ohne Fehler'}</span></li>)}
       </ul>
     )}
@@ -237,7 +239,7 @@ function NetTab({ s, P }: { s: ReturnType<typeof metrics.snapshot>; P: Record<st
       <p className="v5-hint">Aus dem Browser-Cache: {c['res.cached'] ?? 0} Dateien.</p>
     </Block>
     <Block title="Letzte Netzwarnungen">
-      {warnings.length ? <ul className="v5-d-rounds" aria-label="Netzwarnungen">{warnings.map((e) => <li key={e.seq}><span>{clock(e.t)}</span><span className="name">{e.msg}</span></li>)}</ul> : <p className="v5-hint"><Icon name="info" size={20} />Keine.</p>}
+      {warnings.length ? <ul className="ui-rowlist" aria-label="Netzwarnungen">{warnings.map((e) => <li key={e.seq}><span>{clock(e.t)}</span><span className="name">{e.msg}</span></li>)}</ul> : <p className="v5-hint"><Icon name="info" size={20} />Keine.</p>}
     </Block>
   </>);
 }
@@ -253,16 +255,16 @@ function LogTab() {
   const [showPrev, setShowPrev] = useState(false);
   return (<>
     <Segmented<Level> label="Mindeststufe" value={min} onChange={setMin} options={[{ value: 'debug', label: 'Alles' }, { value: 'info', label: 'Info' }, { value: 'warn', label: 'Warnung' }, { value: 'error', label: 'Fehler' }]} />
-    <div className="v5-d-filter">
+    <div className="ui-filters">
       <Field label="Bereich"><Select value={cat} onChange={(e) => setCat(e.target.value as Category | 'all')}><option value="all">alle</option>{CATEGORIES.map((x) => <option key={x} value={x}>{x}</option>)}</Select></Field>
       <Field label="Suche"><TextInput value={text} onChange={(e) => setText(e.target.value)} placeholder="Text im Log" inputMode="search" /></Field>
     </div>
     {!log.verbose && min === 'debug' && <p className="v5-hint"><Icon name="info" size={20} />Detailzeilen werden nur im Diagnose-Modus aufgezeichnet.</p>}
     <p className="v5-hint" aria-live="polite">{entries.length} Einträge · gesamt {log.counts.info} Info, {log.counts.warn} Warnungen, {log.counts.error} Fehler</p>
-    <ul className="v5-d-log" aria-label="Log, neueste zuerst">{entries.map((e) => <LogLine key={e.seq} e={e} />)}</ul>
+    <ul className="ui-loglist" aria-label="Log, neueste zuerst">{entries.map((e) => <LogLine key={e.seq} e={e} />)}</ul>
     {previous.length > 0 && (<>
       <Button tone="quiet" icon="info" onClick={() => setShowPrev((v) => !v)}>{showPrev ? 'Vorherige Sitzung ausblenden' : `Vorherige Sitzung: ${previous.length} Warnungen/Fehler`}</Button>
-      {showPrev && <ul className="v5-d-log" aria-label="Log der vorherigen Sitzung">{[...previous].reverse().map((e) => <LogLine key={`p${e.seq}`} e={e} />)}</ul>}
+      {showPrev && <ul className="ui-loglist" aria-label="Log der vorherigen Sitzung">{[...previous].reverse().map((e) => <LogLine key={`p${e.seq}`} e={e} />)}</ul>}
     </>)}
   </>);
 }
@@ -271,11 +273,11 @@ function LogLine({ e }: { e: Entry }) {
   const [open, setOpen] = useState(false);
   const hasData = e.data !== undefined && e.data !== null;
   return (
-    <li className={`v5-d-line ${e.lvl}`}>
-      <button type="button" className="v5-d-linebtn" onClick={() => hasData && setOpen((v) => !v)} aria-expanded={hasData ? open : undefined} disabled={!hasData}>
+    <li className={`ui-logitem ${e.lvl}`}>
+      <button type="button" className="ui-logitem-btn" onClick={() => hasData && setOpen((v) => !v)} aria-expanded={hasData ? open : undefined} disabled={!hasData}>
         <span className="t">{e.prev ? new Date(e.at).toLocaleTimeString('de') : clock(e.t)}</span><Chip>{e.cat}</Chip><span className="msg">{e.msg}</span>{hasData && <span className="more" aria-hidden>{open ? '–' : '+'}</span>}
       </button>
-      {open && <pre className="v5-d-data">{JSON.stringify(e.data, null, 1)}</pre>}
+      {open && <pre className="ui-code">{JSON.stringify(e.data, null, 1)}</pre>}
     </li>
   );
 }

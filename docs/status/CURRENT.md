@@ -16,7 +16,7 @@ backend (Abholen incl. admin setup), the lean mutation path and `worker/v5`. Sou
 
 **Diagnostics:** `?diag=1` / menu → Diagnose (engine, sync, network, map, log, report, previous-session errors) plus server request ids, `Server-Timing` and `V5_LOG_LEVEL` request lines (default `warn`): [docs/v5/DIAGNOSTICS.md](../v5/DIAGNOSTICS.md). No telemetry leaves the device.
 
-**Verified (sandbox only):** 464 unit tests (counted with `npm test` on `ai-A/diagnostics`; re-count after every merge), 17 browser flows incl. the diagnostics flow 16 and the soak run against the real Worker handlers on in-memory D1 (`scripts/v5-e2e`, `node scripts/v5-e2e/run-all.mjs`; also in TypeScript-fallback mode), typecheck, build. Flow 15 (Gebiet and helper-rights sheets at 390/430 px × dark/light × left/right, mobile clarity) is added by B: [evidence](../v5/screens/mobile-clarity-2026-10-09/README.md).
+**Verified (sandbox only):** 467 unit tests (counted with `npm test` on `ai-A/diagnostics`; re-count after every merge), 17 browser flows incl. the diagnostics flow 16 and the soak run against the real Worker handlers on in-memory D1 (`scripts/v5-e2e`, `node scripts/v5-e2e/run-all.mjs`; also in TypeScript-fallback mode), typecheck, build. Flow 15 (Gebiet and helper-rights sheets at 390/430 px × dark/light × left/right, mobile clarity) is added by B: [evidence](../v5/screens/mobile-clarity-2026-10-09/README.md).
 **Not verified:** real phones, real Overpass data, a real D1, the live basemap, the organiser pages against the real API (flow 11 mocks it at the network edge).
 
 **Open before go-live (owner):**

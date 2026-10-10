@@ -45,21 +45,23 @@ Counter names are `<area>.<what>` (`sync.push.sent`, `engine.area.rtt_ms`, `net.
 
 ## Privacy (a binding rule, tested)
 
-Positions stay on the device (AGENTS.md). Redaction is structural and textual, applied when a line is recorded and again when a report is built (`src/v5/diag/redact.ts`):
+Positions stay on the device (AGENTS.md). Redaction is structural, textual and — for text from outside our own code — an **allowlist** (`src/v5/diag/redact.ts`), applied when a line is recorded, again when a report is built, and again when a saved tail is read back (so an older version's tail is never trusted):
 
 - keys that can carry personal or credential data are replaced by `[removed]` (`lat lng coordinates center position geometry ring bbox token secret password cookie authorization session hash access label name address title text body email note notes` …);
-- any 32+ character token-like string becomes `[token]`, `#access=` / `#collection=` fragments are cut;
+- **free text from outside** (exception messages, rejection reasons, a library's console line, a server's error text; keys `message error reason lastError cause detail description`) is never kept: only a message that starts like a known technical one (`Failed to fetch`, `The operation was aborted`, `QuotaExceededError`, `HTTP 503`, …) survives, as that start; anything else is recorded as `[text removed, N chars]`. Extend the list when a harmless message is missed in the field, never loosen it to "keep most text";
+- every string, wherever it appears: web addresses become `[url]`, coordinates and long digit runs `[num]`, e-mail addresses `[email]`, 32+ character token-like strings `[token]`, `#access=` / `#collection=` fragments are cut;
+- addresses of failed resources become a **kind** (`tile`, `style`, `glyphs`, `sprite`, `api`), never a path, tile number or query; error locations are `file.js:line:col` (file name only); stacks keep function names and those locations, four lines at most; an error's name is kept only if it is an `…Error`/`…Exception` type;
 - routes are logged as **templates** (ids replaced), query strings never;
 - the session id in the report is a random per-page id, not the cookie; campaign and area ids are not recorded.
 
-`tests/v5Diag.test.ts` and `scripts/v5-e2e/flow16.mjs` assert that a real report contains no campaign id, no session cookie, no token-like string and no coordinates.
+`tests/v5Diag.test.ts` and `scripts/v5-e2e/flow16.mjs` assert that a real report contains no campaign id, no session cookie, no token-like string and no coordinates, and that the review's counterexamples (a map error with an address and a key in it, an uncaught error, a console line and a rejection with a name, a note and a position) leave nothing in the panel, the copied report or the saved tail.
 
 ## Server side
 
 `worker/v5/observe.ts`, applied by `handleV5Api` to every `/api/v5/` request:
 
 - **`x-request-id`**: the client sends one (`c-xxxxxxxx`); the server echoes it if it is well-formed (`[A-Za-z0-9_-]{6,40}`), otherwise makes one (`s-…`). The same id is in the client's warning for a failed request and in the server's log line.
-- **`Server-Timing`**: `total;dur=…, db;dur=…;desc="N queries[, M batch]"`. Same-origin, so the browser exposes it without extra work; the Netz tab shows it per route. Database time is measured by a counting wrapper around the D1 binding (`instrumentDb`), D1 semantics unchanged.
+- **`Server-Timing`**: `total;dur=…, db;dur=…;desc="N queries[, M batch]"`. Same-origin, so the browser exposes it without extra work; the Netz tab shows it per route. Database time is measured by a counting wrapper around the D1 binding (`instrumentDb`): `bind`, `first` (with its column argument), `all`, `run`, `raw` and `batch` pass their arguments through unchanged; only counting and timing is added.
 - **One JSON line per request** at or above `V5_LOG_LEVEL` (`debug|info|warn|error`, default **`warn`**): healthy requests are silent; 4xx are `warn`; 5xx and thrown exceptions are `error` (the error *name* only); a request over 1.5 s or with over 0.8 s of database time is `warn`. Fields: `rid route method status ms db{queries,batches,ms,slowestMs} code`. No ids, no query string, no cookie, no body, no names, no error message text.
 
 Enabling it on a deployment is a configuration decision, not a code change: set the variable `V5_LOG_LEVEL=info` (staging) and, if lines should be kept beyond `wrangler tail`, turn on Workers Logs/observability for that Worker in the Cloudflare dashboard or its config. Neither is set in the repository's `wrangler.jsonc`, so production behaviour is unchanged by this feature.

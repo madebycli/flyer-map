@@ -42,7 +42,7 @@ check('?diag=1 opens the panel once the map is up', true);
 let text = await sheet(page);
 check('status: the Rust/WASM engine is reported', /Rust \/ WASM/.test(text), text.replace(/\n/g, ' | ').slice(0, 160));
 check('status: start timings are present (ready after …)', /Bereit nach/i.test(text) && /Kartenpakete/i.test(text));
-check('status: findings are in plain German and nothing is flagged as error on a healthy start', !(await page.locator('.v5-d-list .ui-notice.error').count()));
+check('status: findings are in plain German and nothing is flagged as error on a healthy start', !(await page.locator('.ui-notices .ui-notice.error').count()));
 check('status: the device block names the browser and the viewport', /Chrome|Chromium|Headless/.test(text) && /430×932/.test(text));
 check('no horizontal overflow in the sheet (status, 430 px)', (await overflowX(page)) <= 1, await overflowX(page));
 await page.screenshot({ path: `${shots}/d1-status.png` });
@@ -53,7 +53,7 @@ await page.waitForTimeout(600);
 text = await sheet(page);
 check('engine: per-call table with round trip and compute time', /area/.test(text) && /Rechenzeit/.test(text) && /tile/.test(text), text.replace(/\n/g, ' | ').slice(0, 200));
 check('engine: WASM memory is read from the worker', /WASM-Speicher\s*\n\s*[\d.,]+ (KB|MB)/i.test(text));
-await page.locator('.v5-d-area summary').first().click();
+await page.locator('.ui-collapse summary').first().click();
 text = await sheet(page);
 check('engine: the street-engine details of an Area (ways in, houses made, skipped buildings)', /Wege im Paket/i.test(text) && /Häuser erzeugt/i.test(text) && /Gebäude übersprungen/i.test(text));
 const waysIn = Number((text.match(/Wege im Paket\s*\n\s*([\d.]+)/i) ?? [])[1]?.replaceAll('.', ''));
@@ -122,16 +122,30 @@ await tab(page, 'Sync');
 check('back online: the queued edit is sent and the state recovers', await until(async () => /Offene Markierungen\s*\n\s*0/i.test(await sheet(page)), 40000), (await sheet(page)).replace(/\n/g, ' | ').slice(0, 200));
 
 // 5. Log: categories, search, details; an uncaught error is captured and survives the reload.
-await page.evaluate(() => { setTimeout(() => { throw new Error('diag-test-boom'); }, 10); });
+await page.evaluate(() => { setTimeout(() => { throw new Error('diag-test-boom Max Mustermann 51.12345,13.54321'); }, 10); });
 await page.waitForTimeout(400);
 await tab(page, 'Log');
 text = await sheet(page);
 check('log: boot and sync lines are there (info level)', /ready/.test(text) && /sync/.test(text), text.replace(/\n/g, ' | ').slice(0, 200));
 await page.getByRole('group', { name: 'Mindeststufe' }).getByRole('button', { name: 'Fehler', exact: true }).click();
-check('log: the uncaught error is captured with its message', /diag-test-boom/.test(await sheet(page)));
+{ const t = await sheet(page); check('log: the uncaught error is captured, its foreign text is not kept (only the length)', /uncaught error/i.test(t) && !/Mustermann|51\.12345|diag-test-boom/.test(t), t.replace(/\n/g, ' | ').slice(0, 200)); }
+// The five browser counterexamples of review B-F-007: map error, window error, console, copied report, saved tail.
+await page.evaluate(() => {
+  window.__v5Map.fire('error', { error: new Error('AJAXError: https://tiles.example.test/17/70322/43422.png?key=short-secret&lat=51.12345&lon=13.54321'), sourceId: 'v5-tiles' });
+  console.error('Max Mustermann: Hund im Garten, Position 51.12345,13.54321 key=short-secret');
+  console.warn(new Error('Max Mustermann: Hund im Garten'));
+  setTimeout(() => { throw new Error('Hund im Garten bei tiles.example.test 70322/43422'); }, 5);
+  Promise.reject(new Error('Max Mustermann'));
+});
+await page.waitForTimeout(300);
+const PRIVATE = /short-secret|51\.12345|13\.54321|70322|43422|Mustermann|Hund im Garten|tiles\.example\.test/;
+check('privacy: the log in the panel holds none of the foreign text', !PRIVATE.test(await sheet(page)));
+{ const line = await page.locator('.ui-logitem-btn').first().boundingBox();
+  await page.getByRole('button', { name: 'Schließen' }).click(); const hud = await page.locator('.v5-hud').boundingBox(); await page.locator('.v5-hud').click(); await tab(page, 'Log');
+  check('UI-Gate: the readout and the log lines are at least 44 px tall', (hud?.height ?? 99) >= 44 && (line?.height ?? 99) >= 44, `hud ${hud?.height} line ${line?.height}`); }
 await page.getByRole('group', { name: 'Mindeststufe' }).getByRole('button', { name: 'Info', exact: true }).click();
 await page.locator('.v5-sheet').getByLabel('Suche').fill('push');
-check('log: search narrows the entries', (await page.locator('.v5-d-line').count()) < 40);
+check('log: search narrows the entries', (await page.locator('.ui-logitem').count()) < 40);
 await page.locator('.v5-sheet').getByLabel('Suche').fill('');
 await page.screenshot({ path: `${shots}/d8-log.png` });
 await tab(page, 'Status');
@@ -148,7 +162,8 @@ check('report: valid JSON with the documented schema', rep?.schema === 'v5-diag-
 check('report: engine, sync, store and map are described by their own subsystems', !!rep?.subsystems?.engine && !!rep?.subsystems?.sync && !!rep?.subsystems?.campaign?.store && !!rep?.subsystems?.map);
 check('report: sync counters and engine timings are filled', rep?.metrics?.counters?.['sync.push.sent'] >= 1 && rep?.metrics?.histograms?.['engine.area.rtt_ms']?.n >= 1);
 check('report: no campaign id, no session cookie, no token-like string', !/campaign_n|area_n/.test(copied) && !copied.includes(cookies.admin) && !/[A-Za-z0-9_-]{32,}/.test(copied.replace(/"[^"]*\/api\/[^"]*"/g, '')), (copied.match(/[A-Za-z0-9_-]{32,}/) ?? [])[0]);
-check('report: a healthy run has no map error (the feature-state reset names its source layers)', !rep?.metrics?.counters?.['map.errors'], JSON.stringify(rep?.log?.entries?.filter((e) => e.cat === 'map' && e.lvl !== 'info' && e.lvl !== 'debug')));
+check('report: a healthy run has no map error besides the one injected above (the feature-state reset names its source layers)', (rep?.metrics?.counters?.['map.errors'] ?? 0) === 1, JSON.stringify(rep?.log?.entries?.filter((e) => e.cat === 'map' && e.lvl !== 'info' && e.lvl !== 'debug')));
+check('privacy: the copied report holds none of the foreign text (map error, window error, console, rejection)', !PRIVATE.test(copied), (copied.match(PRIVATE) ?? [])[0]);
 check('report: no coordinates', !/"(lat|lng|lon|coordinates|center|position)":\s*[\[\d-]/.test(copied));
 check('report: the previous-session slot exists', 'previousSession' in rep);
 await page.waitForTimeout(1200); // the warning/error tail is saved with a short delay
@@ -161,7 +176,8 @@ await tab(page, 'Log');
 const prevButton = page.getByRole('button', { name: /Vorherige Sitzung:/ });
 check('log: warnings and errors of the previous session are offered', await prevButton.isVisible().catch(() => false));
 await prevButton.click().catch(() => {});
-check('log: and show the error of the last session', /diag-test-boom/.test(await sheet(page)));
+check('log: and show the error of the last session (without its text)', /uncaught error/i.test(await sheet(page)) && !PRIVATE.test(await sheet(page)));
+check('privacy: the saved tail holds none of the foreign text', !PRIVATE.test(await page.evaluate(() => localStorage.getItem('vf-v5-diag-tail') ?? '')));
 await ctx.close();
 
 // 8. Narrow phone and light theme: no overflow, readable.
@@ -171,6 +187,20 @@ for (const name of ['Status', 'Engine', 'Sync', 'Netz', 'Karte', 'Log']) { await
 check('no horizontal overflow in any tab at 390 px', true);
 await narrow.page.screenshot({ path: `${shots}/d9-log-390.png` });
 await narrow.ctx.close();
+
+// 9. The saved mode switches the readout on and, when switched off in the panel, off again at once (without ?diag=1 in the address).
+{
+  const saved = await open('');
+  await saved.page.evaluate(() => localStorage.setItem('vf-v5-diag', '1'));
+  await saved.page.reload();
+  await saved.page.waitForSelector('.v5-hud', { timeout: 120000 });
+  check('a saved diagnostics mode shows the readout without ?diag=1', await saved.page.locator('.v5-hud').isVisible());
+  await saved.page.locator('.v5-hud').click();
+  await saved.page.getByRole('checkbox', { name: /Diagnose-Modus dauerhaft/ }).uncheck();
+  await saved.page.getByRole('button', { name: 'Schließen' }).click();
+  check('switching it off removes the readout right away', await until(async () => (await saved.page.locator('.v5-hud').count()) === 0, 4000), await saved.page.evaluate(() => localStorage.getItem('vf-v5-diag')));
+  await saved.ctx.close();
+}
 
 await b.close();
 console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');

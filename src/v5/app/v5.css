@@ -213,37 +213,7 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-barrow .v5-teams { flex-wrap: wrap; }
 .v5-barrow .v5-team { width: 2.2rem; height: 2.2rem; }
 
-/* Diagnose (Sheet, Tabellen, Log) und die kleine Anzeige von ?diag=1 */
-.v5-sheet [aria-label="Bereich"] + .ui-facts, .v5-sheet [aria-label="Bereich"] + .v5-d-table, .v5-sheet [aria-label="Bereich"] + h3 { margin-top: 0.8rem; }
-.v5-d-list { list-style: none; margin: 0.6rem 0 0.2rem; padding: 0; display: grid; gap: 0.4rem; }
-.v5-d-actions { gap: 0.5rem; flex-wrap: wrap; }
-.v5-d-table { display: grid; gap: 0.15rem; margin: 0.7rem 0; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
-.v5-d-row { display: grid; grid-template-columns: minmax(0, 1.7fr) repeat(4, minmax(2.4rem, 0.7fr)); gap: 0.4rem; align-items: baseline; padding: 0.3rem 0.5rem; border-radius: 0.6rem; background: var(--surface-2); }
-.v5-d-row.head { background: transparent; color: var(--on-var); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.68rem; }
-.v5-d-row .name { overflow-wrap: anywhere; font-weight: 700; }
-.v5-d-row span:not(.name) { text-align: right; white-space: nowrap; }
-.v5-d-rounds { list-style: none; margin: 0.4rem 0; padding: 0; display: grid; gap: 0.25rem; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
-.v5-d-rounds li { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; padding: 0.4rem 0.6rem; border-radius: 0.6rem; background: var(--surface-2); }
-.v5-d-rounds li.failed { background: var(--error-container); color: var(--error); }
-.v5-d-rounds li.notes-failed { background: var(--tertiary-container); color: var(--on-tertiary-container); }
-.v5-d-rounds .name { font-weight: 700; flex-basis: 100%; overflow-wrap: anywhere; }
-.v5-d-area { margin: 0.4rem 0; border-radius: var(--r); background: var(--surface-2); }
-.v5-d-area summary { display: grid; gap: 0.1rem; padding: 0.6rem 0.8rem; cursor: pointer; min-height: 2.75rem; }
-.v5-d-area summary span { color: var(--on-var); font-size: 0.8rem; }
-.v5-d-area .ui-facts { padding: 0 0.6rem 0.7rem; }
-.v5-d-filter { display: grid; grid-template-columns: 1fr 1.4fr; gap: 0.5rem; margin: 0.6rem 0 0.2rem; }
-.v5-d-log { list-style: none; margin: 0.4rem 0; padding: 0; display: grid; gap: 0.2rem; }
-.v5-d-line { border-radius: 0.6rem; background: var(--surface-2); border-left: 0.25rem solid var(--outline, transparent); }
-.v5-d-line.warn { border-left-color: var(--tertiary, #d9a441); }
-.v5-d-line.error { border-left-color: var(--error); }
-.v5-d-line.info { border-left-color: var(--primary); }
-.v5-d-linebtn { display: flex; align-items: baseline; gap: 0.5rem; width: 100%; min-height: 2.5rem; padding: 0.35rem 0.6rem; border: 0; background: transparent; color: var(--on); text-align: left; font: 500 0.8rem var(--font); cursor: pointer; }
-.v5-d-linebtn:disabled { cursor: default; }
-.v5-d-linebtn .t { font-variant-numeric: tabular-nums; color: var(--on-var); flex: none; }
-.v5-d-linebtn .msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.v5-d-linebtn .more { flex: none; color: var(--on-var); font-weight: 800; }
-.v5-d-linebtn .ui-chip { flex: none; height: 1.3rem; padding: 0 0.45rem; font-size: 0.64rem; }
-.v5-d-data { margin: 0; padding: 0.4rem 0.7rem 0.6rem; overflow-x: auto; font: 500 0.72rem/1.35 ui-monospace, monospace; color: var(--on-var); white-space: pre-wrap; overflow-wrap: anywhere; }
-.v5-hud { position: fixed; z-index: 30; top: calc(max(0.4rem, env(safe-area-inset-top)) + 3.7rem); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 1.5rem); min-height: 1.9rem; padding: 0.15rem 0.7rem; border: 0; border-radius: 0.7rem; background: var(--surface-1); color: var(--on); font: 700 0.7rem ui-monospace, monospace; box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Die kleine Anzeige von ?diag=1 (Tabellen, Log und Befunde der Diagnose liegen als Bausteine in src/ui/kit.css) */
+.v5-hud { position: fixed; z-index: 30; top: calc(max(0.4rem, env(safe-area-inset-top)) + 3.7rem); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 1.5rem); min-height: var(--ctl); padding: 0 var(--gap) 0 calc(var(--gap) * 1.5); border: 0; border-radius: var(--r); background: var(--surface-1); color: var(--on); font: 700 0.74rem ui-monospace, monospace; box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v5-hud.warn { background: var(--tertiary-container); color: var(--on-tertiary-container); }
 .v5-hud.bad { background: var(--error-container); color: var(--error); }

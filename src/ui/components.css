@@ -34,7 +34,14 @@
   position: absolute; z-index: 6; left: 0; right: 0; bottom: 0; max-height: 72vh; overflow: auto; padding: 0.35rem 1rem calc(env(safe-area-inset-bottom) + 1rem);
   background: var(--surface-1); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -4px 24px rgb(0 0 0 / 30%); animation: v5-sheet 260ms var(--ease);
   overscroll-behavior: contain;
+  /* One vertical rhythm: the sheet spaces its direct children by gap alone (see below), so no two screens space things differently. */
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--sp-2);
 }
+/* The old per-element margins (hints, rows, groups, headings, the header) are the reason gaps differed from screen to screen. Inside a sheet they no longer count;
+   `!important` is deliberate: these elements are also used outside sheets, where their margins stay. A heading sits closer to what it names than to the block before it. */
+.v5-sheet > * { margin-block: 0 !important; }
+.v5-sheet > h3 { margin-bottom: calc(var(--sp-1) - var(--sp-2)) !important; }
+.v5-sheet > .v5-handle { margin-bottom: calc(var(--sp-1) - var(--sp-2)) !important; }
 @keyframes v5-sheet { from { transform: translateY(30%); opacity: 0; } }
 @media (min-width: 700px) { .v5-sheet { left: 1rem; right: auto; bottom: 1rem; width: 26rem; border-radius: var(--r-lg); } }
 .v5-handle { width: 2.6rem; height: 0.28rem; margin: 0.25rem auto 0.7rem; border-radius: 1rem; background: var(--outline); opacity: 0.55; }

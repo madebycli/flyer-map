@@ -1,11 +1,12 @@
 import type { Entry } from './log.ts';
+import { redactText, redactValue } from './redact.ts';
 
 const TAIL_KEY = 'vf-v5-diag-tail';
 const BOOTS_KEY = 'vf-v5-diag-boots';
 const FLAG_KEY = 'vf-v5-diag';
 const KEEP = 80;
 
-/** What the previous page session ended with (warnings and errors only): the first thing to read after a crash or a forced reload. */
+/** What the previous page session ended with (warnings and errors only; read back through the current redaction, an older version's tail is never trusted): the first thing to read after a crash or a forced reload. */
 export type PreviousSession = { session: string; endedAt: number; entries: Entry[] };
 
 export function loadPrevious(): PreviousSession | null {
@@ -13,7 +14,7 @@ export function loadPrevious(): PreviousSession | null {
     const raw = localStorage.getItem(TAIL_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PreviousSession;
-    return parsed && Array.isArray(parsed.entries) ? { ...parsed, entries: parsed.entries.map((e) => ({ ...e, prev: true as const })) } : null;
+    return parsed && Array.isArray(parsed.entries) ? { ...parsed, entries: parsed.entries.map((e) => ({ ...e, msg: redactText(String(e.msg), 200), ...(e.data === undefined ? {} : { data: redactValue(e.data) }), prev: true as const })) } : null;
   } catch { return null; }
 }
 

@@ -5,7 +5,7 @@ import { diag } from '../diag/index.ts';
 /** An IndexedDB failure is the one that loses offline work: it is always logged, with the browser's error name (QuotaExceededError, …). */
 const failure = (what: string, error: unknown) => {
   const name = (error as { name?: string } | null)?.name ?? 'Error';
-  diag.error('store', `${what} failed`, { error: name, message: (error as { message?: string } | null)?.message });
+  diag.error('store', `${what} failed`, { kind: name, message: (error as { message?: string } | null)?.message });
   diag.inc(`idb.failed.${what}`);
 };
 

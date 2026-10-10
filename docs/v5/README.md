@@ -36,6 +36,7 @@ ideas, built with plain CSS and an own inline icon set (no webfont, no icon font
 squircle shapes that morph on press, a wavy progress indicator, a morphing-shape loader, a floating icon toolbar,
 and a status group of four icon buttons where the selected one grows and shows its label. Zoomed out, houses are
 status-coloured dots so a whole city reads as progress; houses appear as shapes from zoom 15.2.
+Spacing is one rhythm, not per-element margins: a sheet (`.v5-sheet`) spaces its direct children by `gap: var(--sp-2)` (1 rem) alone, a heading sits closer to its content (`--sp-1`), and `.ui-stack` / `.ui-section` do the same inside a screen. Do not add margins to children of a sheet.
 Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 
 ## Behaviour decisions

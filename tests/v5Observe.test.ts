@@ -94,3 +94,14 @@ test('the log level comes from V5_LOG_LEVEL, unknown values fall back to warn', 
   assert.equal(v5OptionsFromEnv({ V5_LOG_LEVEL: 'debug' }).logLevel, 'debug');
   assert.equal(v5OptionsFromEnv({}).logLevel, 'warn');
 });
+
+test('first(columnName) and run/raw receive their arguments through the wrapper', async () => {
+  const seen: unknown[][] = [];
+  const fake = { prepare: () => { const st: Record<string, unknown> = { bind: () => st, first: async (...a: unknown[]) => { seen.push(['first', ...a]); return a.length ? 3 : { count: 3 }; }, all: async () => ({ results: [] }), run: async () => ({ success: true }), raw: async (...a: unknown[]) => { seen.push(['raw', ...a]); return []; } }; return st; }, batch: async () => [] };
+  const { db } = instrumentDb(fake as never);
+  const st = db.prepare('x') as unknown as { first(c?: string): Promise<unknown>; raw(o: unknown): Promise<unknown> };
+  assert.equal(await st.first('count'), 3);
+  assert.deepEqual(await st.first(), { count: 3 });
+  await st.raw({ columnNames: true });
+  assert.deepEqual(seen, [['first', 'count'], ['first'], ['raw', { columnNames: true }]]);
+});

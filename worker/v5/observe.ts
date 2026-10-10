@@ -42,7 +42,7 @@ export function instrumentDb(db: D1DatabaseLike, clock: () => number = () => per
     const full = statement as D1PreparedStatement & { run?: () => Promise<unknown>; raw?: (...a: unknown[]) => Promise<unknown> };
     const out: Record<string, unknown> = {
       bind: (...values: unknown[]) => wrap(statement.bind(...values)),
-      first: <T,>() => timed(() => statement.first<T>(), 1),
+      first: <T,>(...column: [string?]) => timed(() => (column.length ? (statement as unknown as { first(c: string): Promise<T | null> }).first(column[0] as string) : statement.first<T>()), 1),
       all: <T,>() => timed(() => statement.all<T>(), 1),
     };
     if (full.run) out.run = () => timed(() => full.run!(), 1);

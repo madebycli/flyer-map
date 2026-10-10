@@ -3,7 +3,7 @@ import { bumpBootCount, diagFlag, loadPrevious, saveTail } from './persist.ts';
 import { startBrowserProbes, type BrowserProbes, registerProbe } from './probes.ts';
 import { buildReport, type Report, type Session } from './report.ts';
 import { log, metrics } from './state.ts';
-import { redactText } from './redact.ts';
+import { foreignMessage, whereOf } from './redact.ts';
 
 export { log, metrics } from './state.ts';
 export { registerProbe, collectProbes, deviceInfo } from './probes.ts';
@@ -33,11 +33,11 @@ export function initDiag(): Session {
   if (typeof window === 'undefined') return session;
 
   window.addEventListener('error', (event) => {
-    log.error('error', event.message || 'window error', { where: `${(event.filename ?? '').split('/').pop()}:${event.lineno}:${event.colno}`, error: event.error });
+    log.error('error', 'uncaught error', { where: whereOf(event.filename, event.lineno, event.colno), message: event.error ?? event.message });
     metrics.inc('errors.window');
   });
   window.addEventListener('unhandledrejection', (event) => {
-    log.error('error', 'unhandled rejection', { reason: event.reason });
+    log.error('error', 'unhandled rejection', { reason: event.reason instanceof Error ? event.reason : String(event.reason ?? '') });
     metrics.inc('errors.unhandledRejection');
   });
   // The libraries (MapLibre) report their trouble on the console: keep it in the log, and still print it.
@@ -45,7 +45,7 @@ export function initDiag(): Session {
     const original = console[level].bind(console);
     console[level] = (...args: unknown[]) => {
       original(...args);
-      try { log.log(level, 'console', args.map((a) => (typeof a === 'string' ? redactText(a, 160) : a instanceof Error ? a.message : '[object]')).join(' ').slice(0, 300)); } catch { /* never throw from the logger */ }
+      try { log.log(level, 'console', `console.${level}`, { message: foreignMessage(typeof args[0] === 'string' || args[0] instanceof Error ? args[0] : ''), args: args.length }); } catch { /* never throw from the logger */ }
     };
   }
   probes = startBrowserProbes();
@@ -58,7 +58,16 @@ export function initDiag(): Session {
 /** The panel (and the HUD) call this while visible: the frame sampler and the heap poll run only then. */
 export function setObserving(on: boolean) { probes?.setActive(on || diagRequested()); }
 
-export function setVerbose(on: boolean) { log.verbose = on; diagFlag.write(on); if (on) probes?.setActive(true); }
+const modeListeners = new Set<() => void>();
+/** For `useSyncExternalStore`: the readout appears and disappears the moment the switch changes, not at the next start. */
+export const subscribeDiagMode = (listener: () => void) => { modeListeners.add(listener); return () => { modeListeners.delete(listener); }; };
+/** True when the address itself asks for diagnostics (`?diag=1`): that one cannot be switched off from inside the page. */
+export const diagFromAddress = (): boolean => { try { return new URLSearchParams(location.search).get('diag') === '1'; } catch { return false; } };
+
+export function setVerbose(on: boolean) {
+  diagFlag.write(on); log.verbose = diagRequested(); if (on) probes?.setActive(true);
+  for (const listener of modeListeners) listener();
+}
 
 export function report(options?: { logLimit?: number }): Report { return buildReport(session ?? initDiag(), options); }
 export function currentSession(): Session { return session ?? initDiag(); }
@@ -78,3 +87,4 @@ export const diag = {
   probe: registerProbe,
 };
 export { webglInfo } from './probes.ts';
+export { whereOf, urlKind, foreignMessage } from './redact.ts';

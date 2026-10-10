@@ -3,7 +3,7 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { MapData } from '../engine/host.ts';
 import type { LngLat } from '../engine/types.ts';
 import type { FieldStore } from '../store/store.ts';
-import { diag, webglInfo } from '../diag/index.ts';
+import { diag, urlKind, webglInfo } from '../diag/index.ts';
 import type { EntityKey, Status } from '../store/types.ts';
 
 export const SEGMENT_SOURCE = 'v5-segments';
@@ -183,7 +183,8 @@ export class FieldMap {
     this.map.on('error', (event) => {
       const err = (event as { error?: { url?: string; status?: number; message?: string }; sourceId?: string });
       diag.inc('map.errors'); if (err.sourceId) diag.inc(`map.errors.${String(err.sourceId).replace(/[^a-z0-9_-]/gi, '').slice(0, 24)}`);
-      diag.warn('map', 'map error', { source: err.sourceId, status: err.error?.status, message: err.error?.message, stack: (err.error as { stack?: string } | undefined)?.stack?.split('\n').slice(1, 4).map((l) => l.trim().replace(/https?:\/\/[^/]+/, '').slice(0, 120)), url: err.error?.url ? new URL(err.error.url, 'http://local').pathname : undefined });
+      // The library's text and address are foreign: the message goes through the allowlist, the address becomes a kind (tile, style, glyphs …) without path or query.
+      diag.warn('map', 'map error', { source: err.sourceId, status: err.error?.status, message: err.error?.message, stack: (err.error as { stack?: string } | undefined)?.stack, kind: err.error?.url ? urlKind(err.error.url) : undefined });
       const failedUrl = (event as { error?: { url?: string } }).error?.url;
       if (this.styleFallback || !failedUrl || failedUrl !== this.expectedStyle) return;
       this.styleFallback = true;
@@ -643,8 +644,11 @@ export class FieldMap {
   get paintedCount() { return this.applied; }
   /** Diagnostics for the soak test: what the map currently holds (a steady rise across identical actions is a leak). */
   debugCounts() {
-    const style = this.map.style as unknown as { sourceCaches?: Record<string, { _tiles?: Record<string, unknown>; getIds?: () => string[] }> };
-    const tiles = Object.fromEntries(Object.entries(style.sourceCaches ?? {}).map(([id, cache]) => [id, Object.keys(cache._tiles ?? {}).length]));
+    // MapLibre 5 calls them sourceCaches, 6 tileManagers; both list their tiles with getIds(). An unknown shape must read as "unknown", never as a quiet zero.
+    type TileCache = { getIds?: () => string[]; _tiles?: Record<string, unknown> };
+    const style = this.map.style as unknown as { tileManagers?: Record<string, TileCache>; sourceCaches?: Record<string, TileCache> };
+    const caches = style.tileManagers ?? style.sourceCaches;
+    const tiles = caches ? Object.fromEntries(Object.entries(caches).map(([id, cache]) => [id, cache.getIds ? cache.getIds().length : Object.keys(cache._tiles ?? {}).length])) : null;
     return { tiles, layers: this.map.getStyle().layers?.length ?? 0, sources: Object.keys(this.map.getStyle().sources ?? {}).length, providers: providers.size };
   }
   destroy() { this.stopProbe?.(); this.unbind?.(); providers.delete(this.token); this.map.remove(); }

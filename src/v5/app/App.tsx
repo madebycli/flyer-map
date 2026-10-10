@@ -23,7 +23,7 @@ import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pick
 import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
 import { actionErrorText } from './collection.ts';
 import { DiagHud, DiagSheet } from './diagSheet.tsx';
-import { diagRequested, setObserving } from '../diag/index.ts';
+import { diagRequested, setObserving, subscribeDiagMode } from '../diag/index.ts';
 import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, notePosition, segmentNoteKey, useNotesVersion } from './notes.tsx';
 import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaViews, type AreaStats } from './collection.tsx';
 import { areaPercent, collectionActions } from './collection.ts';
@@ -418,7 +418,7 @@ export function App({ campaignId }: { campaignId: string }) {
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
   // ?diag=1 (or the switch left on in the panel): the readout stays on screen, and the panel opens once when the map is up.
-  const diagOn = useMemo(() => diagRequested(), []);
+  const diagOn = useSyncExternalStore(subscribeDiagMode, diagRequested, () => false);
   const diagAutoOpened = useRef(false);
   useEffect(() => { if (ready && diagOn && !diagAutoOpened.current && new URLSearchParams(location.search).get('diag') === '1') { diagAutoOpened.current = true; setPanel('diag'); } }, [ready, diagOn]);
   useEffect(() => { setObserving(panel === 'diag'); }, [panel]);

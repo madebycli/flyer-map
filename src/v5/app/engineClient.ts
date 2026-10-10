@@ -1,7 +1,7 @@
 import { EngineHost, type AreaRequest, type AreaResult, type EngineKind, type MapData } from '../engine/host.ts';
 import type { LngLat } from '../engine/types.ts';
 import type { EngineReply, EngineRequest } from './network.worker.ts';
-import { diag } from '../diag/index.ts';
+import { diag, whereOf } from '../diag/index.ts';
 
 type Pending = { resolve(reply: EngineReply): void; reject(error: Error): void };
 type Distribute<T> = T extends unknown ? Omit<T, 'id'> : never;
@@ -32,7 +32,7 @@ export class EngineClient {
         if (event.data.error) waiting.reject(new Error(event.data.error)); else waiting.resolve(event.data);
       };
       client.worker.onerror = (event) => {
-        diag.error('engine', 'the engine worker crashed', { message: event.message, where: `${(event.filename ?? '').split('/').pop()}:${event.lineno}` });
+        diag.error('engine', 'the engine worker crashed', { message: event.message, where: whereOf(event.filename, event.lineno, event.colno) });
         diag.inc('engine.worker.crashed');
         for (const p of client.pending.values()) p.reject(new Error('engine_worker_failed'));
         client.pending.clear();

@@ -7,6 +7,8 @@
 :root {
   color-scheme: dark;
   --ctl: 3rem; --ctl-lg: 4rem; --r: 1.1rem; --r-lg: 1.75rem; --gap: 0.5rem;
+  /* spacing scale for stacked content: tight (heading to its content), regular (between blocks) */
+  --sp-1: 0.5rem; --sp-2: 1rem;
   --surface: #0f1514; --surface-1: #151c1b; --surface-2: #1a2322; --surface-3: #232d2b; --surface-4: #2d3836;
   --glass: rgb(26 35 34 / 94%);
   --on: #e3eae8; --on-var: #a9b6b2; --outline: #6c7a76; --outline-var: #2e3836;
