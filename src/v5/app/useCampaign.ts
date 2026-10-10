@@ -71,7 +71,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
   const [sync, setSync] = useState<CampaignState['sync']>({ state: 'idle', pending: 0, lastOkAt: null, lastError: null });
   const [missingAreas, setMissingAreas] = useState<Meta['areas']>([]);
-  const reload = useRef<() => Promise<void>>(async () => {});
+  const reload = useRef<(options?: { quiet?: boolean }) => Promise<void>>(async () => {});
   const syncRef = useRef<SyncClient | null>(null);
   /** What `orphans()` judges by: always the newest derivation, also right after `reload()` and before React re-rendered. */
   const liveRef = useRef<{ store: FieldStore; areaOf: Map<string, string>; missing: number } | null>(null);
@@ -85,6 +85,8 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     let progressTracker: Progress | null = null;
     let hydrated = false;
     let engine: EngineClient | null = null;
+    /** The engine a quiet reload replaces; disposed once the new one serves the map, or adopted again if the reload fails. */
+    let retired: EngineClient | null = null;
     const fieldStore = new FieldStore(actorId(), new IndexedDbPersistence(campaignId));
     const noteStore = new NoteStore(actorId(), new IndexedDbNotePersistence(campaignId), () => Date.now());
     let notesHydrated = false;
@@ -93,14 +95,20 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     let bootSummary: { timing: Record<string, number>; areas: AreaBoot[]; role: string | null; kind: string | null; houses: number; segments: number; missing: number; at: number } | null = null;
     const stopProbe = diag.probe('campaign', () => ({ ...bootSummary, store: fieldStore.describe(), notesPending: noteStore.pendingNotes().length, orphans: liveRef.current ? [...liveRef.current.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !liveRef.current!.areaOf.has(key)).length : null }));
 
-    const boot = async () => {
+    /** `quiet`: an admin change re-reads the Aktion while the person keeps looking at it, so the open sheet and its scroll position stay; only the first start shows the loading steps. */
+    const boot = async ({ quiet = false }: { quiet?: boolean } = {}) => {
+      const loading = (label: string) => { if (!quiet) setPhase({ kind: 'loading', label }); };
       const t0 = performance.now();
       diag.info('boot', 'boot start', { collection: kind === 'collection' });
       diag.inc('boot.n');
       try {
-        setPhase({ kind: 'loading', label: 'Aktion wird geladen …' });
+        loading('Aktion wird geladen …');
         // The engine (worker + wasm instantiation) starts while the Aktion's meta data is still on its way.
-        engine?.dispose(); engine = null;
+        // A quiet reload keeps the running engine until the new one is in place: the map keeps asking it for tiles meanwhile.
+        const previous = engine;
+        if (!quiet) previous?.dispose();
+        engine = null;
+        retired = quiet ? previous : null;
         const enginePromise = EngineClient.create({ forceTs: new URLSearchParams(location.search).get('engine') === 'ts' });
         enginePromise.catch(() => {});
         // A Worker that was started but never adopted (the meta request failed, or the view was closed meanwhile) must not live on.
@@ -118,7 +126,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         const useBlobs = engine.kind === 'wasm';
         // Per Area: the cached snapshot when pack, polygon and engine are unchanged; otherwise download (all in parallel —
         // the slow part on mobile data) and derive one after another.
-        setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
+        loading('Kartendaten werden geladen …');
         const timing: Record<string, number> = { meta: Math.round(performance.now() - t0), wasm: useBlobs ? 1 : 0 };
         const areaBoots: AreaBoot[] = [];
         const resolved = await Promise.all(loaded.areas.map(async (area) => {
@@ -144,7 +152,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
           }
           if (!result) {
             if (!item.pack) { missing.push(loaded.areas.find((a) => a.id === item.areaId)!); diag.info('boot', 'an Area has no map data yet', { index: areaBoots.length + missing.length }); areaBoots.push({ n: areaBoots.length + 1, source: 'none', packBytes: null, fetchMs: item.fetchMs, deriveMs: null, detail: null, houses: 0, segments: 0, diagnostics: null }); continue; }
-            setPhase({ kind: 'loading', label: 'Straßen und Häuser werden berechnet …' });
+            loading('Straßen und Häuser werden berechnet …');
             result = await engine.area({ areaId: item.areaId, ring: item.ring, pack: item.pack, wantBlob: useBlobs });
             if (item.key && result.blob) void cache.store(item.key, result.blob);
           }
@@ -174,13 +182,14 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         setProgress(progressTracker.snapshot());
         const mapData = await engine.mapData();
         setEngineState({ client: engine, mapData });
+        if (retired && retired !== engine) { const old = retired; retired = null; setTimeout(() => old.dispose(), 2000); }
         liveRef.current = { store: fieldStore, areaOf: merged.areaOf, missing: missing.length };
         setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore); setNotes(noteStore);
         client?.dispose();
         client = syncRef.current = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending, info) => setSync({ state, pending, ...info }), [new NoteSync(noteStore, httpNoteTransport(campaignId))]);
         // Show the screen once the first pull settled (or after 4 s on a slow link), so a fresh device does not
         // flash 0 % before the shared progress arrives.
-        if (parts.length) setPhase({ kind: 'loading', label: 'Fortschritt wird geladen …' });
+        if (parts.length) loading('Fortschritt wird geladen …');
         await Promise.race([client.run(), new Promise((resolve) => setTimeout(resolve, 4000))]);
         if (cancelled) return;
         timing.ready = Math.round(performance.now() - t0);
@@ -195,6 +204,8 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         setPhase(parts.length || loaded.kind === 'collection' ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
       } catch (error) {
         if (!cancelled) diag.error('boot', 'start failed', { message: error instanceof Error ? error.message : String(error), status: error instanceof V5ApiError ? error.status : undefined, ms: Math.round(performance.now() - t0) });
+        if (retired && !engine) { engine = retired; retired = null; }
+        if (quiet && !cancelled && engine) { diag.warn('boot', 'quiet reload failed; the previous state stays', { error }); throw error; }
         if (!cancelled) setPhase({ kind: 'error', message: error instanceof Error ? error.message : 'Unbekannter Fehler', status: error instanceof V5ApiError ? error.status : undefined });
       }
     };
@@ -218,7 +229,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
       void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) { setMeta(m); void loadPickups(m); } }, () => {}).finally(() => { metaBusy = false; });
     }, 15_000);
     return () => {
-      cancelled = true; stopProbe(); syncRef.current = null; client?.dispose(); progressTracker?.dispose(); engine?.dispose();
+      cancelled = true; stopProbe(); syncRef.current = null; client?.dispose(); progressTracker?.dispose(); engine?.dispose(); retired?.dispose();
       window.removeEventListener('online', online); window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', hidden); document.removeEventListener('visibilitychange', visible);
       window.clearInterval(poll);
@@ -229,7 +240,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
 
   return {
     phase, meta, network, engine: engineState?.client ?? null, mapData: engineState?.mapData ?? null, areaOf, store, notes, pickups, progress, sync, missingAreas,
-    reload: () => reload.current(),
+    reload: () => reload.current({ quiet: true }),
     syncNow: () => { void syncRef.current?.run(); },
     orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },

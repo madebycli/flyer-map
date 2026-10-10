@@ -3,6 +3,7 @@ import type { Feature } from 'geojson';
 import type { FieldNetwork as Network, LngLat } from '../engine/types.ts';
 import type { AreaShape, FieldMap } from '../map/fieldMap.ts';
 import { areaSquareMeters, fromRing, insertVertex, midpoints, moveVertex, MAX_VERTICES, removeVertex, seedSquare, toPolygon, toRing, validate, type Vertices } from '../areas/polygon.ts';
+import { GroupPicker } from './groupsSheet.tsx';
 import { buildPack, createArea, createCollectionArea, createMainArea, saveAreaGeometry, updateCollectionArea, updateMainArea, type Meta } from './api.ts';
 import { Icon } from '../../ui/index.ts';
 
@@ -212,11 +213,7 @@ export function AreaEditBar({ tool, meta }: { tool: AreaTool; meta: Meta }) {
               {COLLECTION_COLORS.map((c) => <button key={c} className={`v5-team${edit.color === c ? ' on' : ''}`} style={{ '--c': c } as React.CSSProperties} aria-pressed={edit.color === c} aria-label={c} onClick={() => tool.setColor(c)} />)}
             </div>
           )}
-          {choosesTeam && (
-            <div className="v5-teams" role="group" aria-label="Team">
-              {meta.teams.map((t) => <button key={t.id} className={`v5-team${edit.teamId === t.id ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} aria-pressed={edit.teamId === t.id} aria-label={t.name} title={t.name} onClick={() => tool.setTeam(t.id)} />)}
-            </div>
-          )}
+          {choosesTeam && <GroupPicker teams={meta.teams} value={edit.teamId} label="Gruppe des neuen Gebiets" onPick={tool.setTeam} />}
         </div>
       )}
       <div className="v5-barrow">

@@ -68,9 +68,9 @@ try {
     const group = page.getByRole('group', { name: 'Sonder-Marker-Rechte von Nutzer 2', exact: true });
     await group.waitFor();
     await group.scrollIntoViewIfNeeded();
-    check(`${tag}: all four rights have visible text`, JSON.stringify(await group.getByRole('button').allInnerTexts()) === JSON.stringify(['Sehen', 'Anlegen', 'Bearbeiten', 'Zuweisen']));
-    check(`${tag}: all four right targets are at least 44 px`, await touchSize(group.getByRole('button')));
-    check(`${tag}: right captions are not clipped`, await group.locator('button span').evaluateAll((elements) => elements.length === 4 && elements.every((element) => element.scrollWidth <= element.clientWidth)));
+    check(`${tag}: the three rights have visible text (assigning Sonder-Marker has no function, so no switch)`, JSON.stringify(await group.getByRole('button').allInnerTexts()) === JSON.stringify(['Sehen', 'Anlegen', 'Bearbeiten']));
+    check(`${tag}: all right targets are at least 44 px`, await touchSize(group.getByRole('button')));
+    check(`${tag}: right captions are not clipped`, await group.locator('button span').evaluateAll((elements) => elements.length === 3 && elements.every((element) => element.scrollWidth <= element.clientWidth)));
     check(`${tag}: rights sheet has no horizontal overflow`, await noOverflow(page));
     const collectors = async () => (await (await context.request.get(`${BASE}/api/campaigns/campaign_n/collection/collectors`)).json()).collectors;
     const before = await collectors();
