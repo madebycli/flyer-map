@@ -27,12 +27,16 @@ export class EngineHost {
   private tsGraph: ReturnType<typeof buildGraph> | null = null;
   private tsMerged: FieldNetwork | null = null;
   private tsSearch: SearchEntry[] | null = null;
+  /** Why the Rust engine is not in use (null while it is, or when the TypeScript engine was asked for): shown in the diagnostics. */
+  initError: string | null = null;
 
   /** `loadWasm` returns the module bytes/response; omitted (or failing) means the TypeScript engine. */
   async init(loadWasm: (() => Parameters<typeof WasmEngine.load>[0]) | null): Promise<EngineKind> {
-    this.wasm = null; this.fulls = []; this.tsGraph = null; this.tsMerged = null; this.tsSearch = null; this.kind = 'ts';
-    if (loadWasm && typeof WebAssembly !== 'undefined') {
-      try { this.wasm = await WasmEngine.load(loadWasm()); this.wasm.resetSession(); this.kind = 'wasm'; } catch { this.wasm = null; }
+    this.wasm = null; this.fulls = []; this.tsGraph = null; this.tsMerged = null; this.tsSearch = null; this.kind = 'ts'; this.initError = null;
+    if (!loadWasm) this.initError = null;
+    else if (typeof WebAssembly === 'undefined') this.initError = 'WebAssembly is not available';
+    else {
+      try { this.wasm = await WasmEngine.load(loadWasm()); this.wasm.resetSession(); this.kind = 'wasm'; } catch (error) { this.wasm = null; this.initError = error instanceof Error ? error.message : String(error); }
     }
     return this.kind;
   }

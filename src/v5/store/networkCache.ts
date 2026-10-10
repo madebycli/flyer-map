@@ -1,4 +1,5 @@
 import { ENGINE_VERSION } from '../engine/index.ts';
+import { diag } from '../diag/index.ts';
 
 /** What a derived network was built from. Any change in these makes the cached copy unusable. */
 export type NetworkKey = { areaId: string; packVersion: number; updatedAt: string; engine: string };
@@ -27,18 +28,25 @@ export class NetworkCache {
   }
 
   async load(key: NetworkKey): Promise<Uint8Array | null> {
+    const done = diag.start('cache.load_ms');
     try {
       const entry = await this.storage?.get(this.id(key.areaId));
-      return entry && sameKey(entry.key, key) ? entry.blob : null;
-    } catch { return null; }
+      const hit = entry && sameKey(entry.key, key) ? entry.blob : null;
+      if (hit) { diag.inc('cache.hit'); diag.observe('cache.hit.bytes', hit.byteLength); }
+      else { diag.inc('cache.miss'); diag.debug('cache', entry ? 'cached network is stale (pack, polygon or engine changed)' : 'no cached network', { stale: !!entry }); }
+      return hit;
+    } catch (error) { diag.inc('cache.load.failed'); diag.warn('cache', 'reading the network cache failed', { error }); return null; } finally { done(); }
   }
 
   async store(key: NetworkKey, blob: Uint8Array): Promise<void> {
-    try { await this.storage?.put(this.id(key.areaId), { key, blob }); } catch { /* quota or private mode: just no cache */ }
+    const done = diag.start('cache.store_ms');
+    try { await this.storage?.put(this.id(key.areaId), { key, blob }); diag.inc('cache.stored'); diag.observe('cache.store.bytes', blob.byteLength); }
+    catch (error) { diag.inc('cache.store.failed'); diag.warn('cache', 'writing the network cache failed (quota or private mode): the next start derives again', { error, bytes: blob.byteLength }); /* quota or private mode: just no cache */ }
+    finally { done(); }
   }
 
   async forget(areaId: string): Promise<void> {
-    try { await this.storage?.delete(this.id(areaId)); } catch { /* ignore */ }
+    try { await this.storage?.delete(this.id(areaId)); diag.inc('cache.forgot'); } catch { /* ignore */ }
   }
 }
 

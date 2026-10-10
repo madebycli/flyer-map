@@ -2,6 +2,7 @@ import type { LngLat } from '../engine/types.ts';
 import { pointInRing } from '../engine/geo.ts';
 import type { Meta } from './api.ts';
 import { postMutation } from './api.ts';
+import { tracedFetch } from '../diag/index.ts';
 
 export type PickupStatus = 'open' | 'collected' | 'unavailable' | 'needs-follow-up';
 export const PICKUP_STATUSES: readonly PickupStatus[] = ['collected', 'needs-follow-up', 'unavailable', 'open'];
@@ -51,7 +52,7 @@ export const setPickupStatus = (campaignId: string, pickup: Pickup, status: Pick
 /** Pickups from the legacy collection snapshot (the same endpoint the old helper view reads). */
 export async function fetchPickups(campaignId: string): Promise<Pickup[]> {
   try {
-    const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/collection/snapshot`, { credentials: 'same-origin' });
+    const response = await tracedFetch(`/api/campaigns/${encodeURIComponent(campaignId)}/collection/snapshot`, { credentials: 'same-origin' });
     if (!response.ok) return [];
     const body = await response.json() as { collection?: { pickups?: { id: string; areaId: string | null; title: string; address: string; description: string; position: LngLat; status: PickupStatus; updatedAt: string; archivedAt: string | null }[] } };
     return (body.collection?.pickups ?? []).filter((p) => !p.archivedAt).map(({ id, areaId, title, address, description, position, status, updatedAt, archivedAt }) => ({ id, areaId, title, address, description, position, status, updatedAt, archivedAt }));

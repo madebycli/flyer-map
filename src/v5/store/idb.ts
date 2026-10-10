@@ -1,5 +1,13 @@
 import type { NotePersisted, NotePersistence } from '../notes/types.ts';
 import type { Persisted, Persistence } from './types.ts';
+import { diag } from '../diag/index.ts';
+
+/** An IndexedDB failure is the one that loses offline work: it is always logged, with the browser's error name (QuotaExceededError, …). */
+const failure = (what: string, error: unknown) => {
+  const name = (error as { name?: string } | null)?.name ?? 'Error';
+  diag.error('store', `${what} failed`, { error: name, message: (error as { message?: string } | null)?.message });
+  diag.inc(`idb.failed.${what}`);
+};
 
 /** Single-record IndexedDB persistence; every failure degrades to "no persistence". */
 export class IndexedDbPersistence implements Persistence {
@@ -15,6 +23,7 @@ export class IndexedDbPersistence implements Persistence {
   }
 
   async load(): Promise<Persisted | null> {
+    const done = diag.start('idb.load_ms');
     try {
       const db = await this.open();
       const read = (key: string) => new Promise<unknown>((resolve) => {
@@ -25,12 +34,14 @@ export class IndexedDbPersistence implements Persistence {
       const [overlay, outbox] = await Promise.all([read('overlay'), read('outbox')]);
       db.close();
       const box = outbox as Omit<Persisted, 'overlay'> | undefined;
+      done();
       if (!box || box.version !== 1) return null;
       return { ...box, overlay: (overlay as Persisted['overlay'] | undefined) ?? [] };
-    } catch { return null; }
+    } catch (error) { failure('idb load', error); return null; }
   }
 
   async save(data: Persisted, scope: 'all' | 'outbox'): Promise<void> {
+    const done = diag.start(`idb.save.${scope}_ms`);
     try {
       const db = await this.open();
       await new Promise<void>((resolve) => {
@@ -38,10 +49,10 @@ export class IndexedDbPersistence implements Persistence {
         const { overlay, ...outbox } = data;
         tx.objectStore('state').put(outbox, 'outbox');
         if (scope === 'all') tx.objectStore('state').put(overlay, 'overlay');
-        tx.oncomplete = () => { db.close(); resolve(); };
-        tx.onerror = tx.onabort = () => { db.close(); resolve(); };
+        tx.oncomplete = () => { db.close(); done(); diag.inc(`idb.saved.${scope}`); if (scope === 'all') diag.set('idb.overlayEntries', overlay.length); diag.set('idb.pending', outbox.pending.length); resolve(); };
+        tx.onerror = tx.onabort = () => { failure(`idb save ${scope}`, tx.error); db.close(); resolve(); };
       });
-    } catch { /* storage unavailable (private mode): run memory-only */ }
+    } catch (error) { failure(`idb save ${scope}`, error); /* storage unavailable (private mode): run memory-only */ }
   }
 }
 
@@ -69,7 +80,7 @@ export class IndexedDbNotePersistence implements NotePersistence {
       db.close();
       const saved = value as NotePersisted | undefined;
       return saved && saved.version === 1 ? saved : null;
-    } catch { return null; }
+    } catch (error) { failure('idb notes load', error); return null; }
   }
 
   async save(data: NotePersisted): Promise<void> {
@@ -78,9 +89,9 @@ export class IndexedDbNotePersistence implements NotePersistence {
       await new Promise<void>((resolve) => {
         const tx = db.transaction('state', 'readwrite');
         tx.objectStore('state').put(data, 'notes');
-        tx.oncomplete = () => { db.close(); resolve(); };
-        tx.onerror = tx.onabort = () => { db.close(); resolve(); };
+        tx.oncomplete = () => { db.close(); diag.inc('idb.saved.notes'); resolve(); };
+        tx.onerror = tx.onabort = () => { failure('idb notes save', tx.error); db.close(); resolve(); };
       });
-    } catch { /* memory-only */ }
+    } catch (error) { failure('idb notes save', error); /* memory-only */ }
   }
 }

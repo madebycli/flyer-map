@@ -26,6 +26,7 @@ Streets and houses are a pure function of OSM data. v5 therefore stores **no tas
 - `src/v5/map` – `FieldMap` (MapLibre 5.7.1, feature-state painting, route preview, basemap-outage fallback).
 - `src/v5/app` – React shell (`App.tsx`), derivation worker, API client, Vela-style CSS.
 - `worker/v5/api.ts` + `migrations/0026_v5_field_state.sql` – meta, state, ops, pack endpoints; `worker/v5/notes.ts` + `0027_v5_notes.sql` – notes endpoints.
+- `src/v5/diag` + `src/v5/app/diagSheet.tsx` + `worker/v5/observe.ts` – diagnostics and logs (`?diag=1`, menu → Diagnose, report, server request lines): [DIAGNOSTICS.md](DIAGNOSTICS.md).
 - `scripts/v5-e2e` – fixture server (real handlers, in-memory D1) and Playwright flow.
 
 ## Design

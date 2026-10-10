@@ -12,15 +12,22 @@ export type EngineRequest =
   | { id: number; op: 'route'; anchors: string[] }
   | { id: number; op: 'lasso'; ring: LngLat[]; housesOnly: boolean }
   | { id: number; op: 'search'; query: string; limit?: number };
-export type EngineReply = { id: number; error?: string; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']>; route?: ReturnType<EngineHost['route']>; lasso?: ReturnType<EngineHost['lasso']>; search?: ReturnType<EngineHost['search']>; stats?: ReturnType<EngineHost['stats']> };
+export type EngineReply = { id: number; error?: string; /** compute time inside the worker, ms */ ms?: number; initError?: string | null; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']>; route?: ReturnType<EngineHost['route']>; lasso?: ReturnType<EngineHost['lasso']>; search?: ReturnType<EngineHost['search']>; stats?: ReturnType<EngineHost['stats']> };
 
 const wasmUrl = () => fetch(new URL('../engine/wasm/engine.wasm', import.meta.url));
 
-/** One request → one reply; shared by the Worker and the in-thread fallback. */
+/** One request → one reply (with the time it took inside the engine); shared by the Worker and the in-thread fallback. */
 export async function handle(host: EngineHost, req: EngineRequest): Promise<{ reply: EngineReply; transfer: Transferable[] }> {
+  const t0 = performance.now();
+  const out = await run(host, req);
+  out.reply.ms = Math.round((performance.now() - t0) * 100) / 100;
+  return out;
+}
+
+async function run(host: EngineHost, req: EngineRequest): Promise<{ reply: EngineReply; transfer: Transferable[] }> {
   try {
     switch (req.op) {
-      case 'init': return { reply: { id: req.id, kind: await host.init(req.forceTs ? null : wasmUrl) }, transfer: [] };
+      case 'init': { const kind = await host.init(req.forceTs ? null : wasmUrl); return { reply: { id: req.id, kind, initError: host.initError }, transfer: [] }; }
       case 'stats': return { reply: { id: req.id, stats: host.stats() }, transfer: [] };
       case 'reset': host.reset(); return { reply: { id: req.id }, transfer: [] };
       case 'area': {

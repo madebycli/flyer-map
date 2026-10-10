@@ -22,6 +22,8 @@ import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } fr
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
 import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
 import { actionErrorText } from './collection.ts';
+import { DiagHud, DiagSheet } from './diagSheet.tsx';
+import { diagRequested, setObserving } from '../diag/index.ts';
 import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, notePosition, segmentNoteKey, useNotesVersion } from './notes.tsx';
 import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaViews, type AreaStats } from './collection.tsx';
 import { areaPercent, collectionActions } from './collection.ts';
@@ -36,7 +38,7 @@ const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
+type Panel = 'diag' | 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -415,6 +417,11 @@ export function App({ campaignId }: { campaignId: string }) {
   useEffect(() => { if (fab !== 'idle' && (!mayMark || tool !== 'inspect' || phase.kind !== 'ready')) setFab('idle'); }, [fab, mayMark, tool, phase.kind]);
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
+  // ?diag=1 (or the switch left on in the panel): the readout stays on screen, and the panel opens once when the map is up.
+  const diagOn = useMemo(() => diagRequested(), []);
+  const diagAutoOpened = useRef(false);
+  useEffect(() => { if (ready && diagOn && !diagAutoOpened.current && new URLSearchParams(location.search).get('diag') === '1') { diagAutoOpened.current = true; setPanel('diag'); } }, [ready, diagOn]);
+  useEffect(() => { setObserving(panel === 'diag'); }, [panel]);
   const editing = !!areaTool.edit;
   editingRef.current = editing; selectedAreaRef.current = areaTool.selectedId;
   const canEditAny = !!meta && (meta.role === 'admin' || meta.role === 'team-editor');
@@ -484,6 +491,7 @@ export function App({ campaignId }: { campaignId: string }) {
     { id: 'hand', icon: 'hand', label: hand === 'right' ? 'Linkshand' : 'Rechtshand', onClick: () => setHand(hand === 'right' ? 'left' : 'right') },
     { id: 'base', icon: 'layers', label: baseOn ? 'Karte aus' : 'Karte an', on: !baseOn, onClick: () => setBaseOn(!baseOn) },
     ...(importOffer ? [{ id: 'import', icon: importState === 'busy' ? 'sync' : 'download', label: 'Alt-Import', onClick: () => void importLegacy() } satisfies AppTile] : []),
+    { id: 'diag', icon: 'chart', label: 'Diagnose', onClick: () => openPanel('diag') },
     // the admin entry is role-aware: a link helper never sees it
     ...(meta?.role === 'admin' ? [{ id: 'admin', icon: 'shield', label: 'Verwaltung', href: '/login' } satisfies AppTile] : []),
   ];
@@ -528,7 +536,7 @@ export function App({ campaignId }: { campaignId: string }) {
       {undo && !notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{undo.label}</span><button className="v5-icon-btn tonal" onClick={() => { undo.revert(); setUndo(null); }} aria-label="Rückgängig" title="Rückgängig"><Icon name="undo" /></button></div>}
 
       {phase.kind === 'loading' && <Overlay><Loader /><p>{phase.label}</p></Overlay>}
-      {phase.kind === 'error' && <Overlay><span className="v5-badge big"><Icon name="warning" size={34} /></span><h2>Das hat nicht geklappt</h2><p>{phase.status === 401 ? 'Kein Zugriff auf diese Aktion. Öffne den Einladungslink erneut.' : phase.message}</p><button className="v5-btn" onClick={() => location.reload()}><Icon name="sync" size={20} />Neu laden</button></Overlay>}
+      {phase.kind === 'error' && <Overlay><span className="v5-badge big"><Icon name="warning" size={34} /></span><h2>Das hat nicht geklappt</h2><p>{phase.status === 401 ? 'Kein Zugriff auf diese Aktion. Öffne den Einladungslink erneut.' : phase.message}</p><button className="v5-btn" onClick={() => location.reload()}><Icon name="sync" size={20} />Neu laden</button><button className="v5-btn" onClick={() => { setPanel('diag'); }}><Icon name="chart" size={20} />Diagnose</button></Overlay>}
       {phase.kind === 'needs-pack' && (
         <Overlay>
           <span className="v5-badge big"><Icon name="mapPin" size={34} /></span>
@@ -573,6 +581,8 @@ export function App({ campaignId }: { campaignId: string }) {
         </div>
       )}
 
+      {diagOn && panel !== 'diag' && <DiagHud onOpen={() => setPanel('diag')} />}
+      {panel === 'diag' && <DiagSheet engine={campaign.engine} onClose={() => setPanel(null)} />}
       {ready && panel === 'home' && <HomeSheet tiles={tiles} identity={identity} onClose={() => setPanel(null)} />}
       {ready && panel === 'template' && templateDraft && <TemplateSheet template={templateDraft.template} plan={templateDraft.plan} progress={templateProgress} onApply={() => void applyTemplate()} onClose={() => { if (!templateProgress) { setPanel(null); setTemplateDraft(null); } }} />}
       {ready && panel === 'activity' && store && (

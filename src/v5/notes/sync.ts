@@ -1,5 +1,6 @@
 import type { NoteStore } from './store.ts';
 import type { Note } from './types.ts';
+import { diag } from '../diag/index.ts';
 
 export interface NoteTransport {
   pull(since: number): Promise<{ notes: Note[]; cursor: number; more?: boolean; serverNow?: number }>;
@@ -18,6 +19,8 @@ export class NoteSync {
     for (let sent = this.store.pendingNotes(); sent.length; sent = this.store.pendingNotes()) {
       const batch = sent.slice(0, this.batch);
       const result = await this.transport.push(batch);
+      diag.inc('notes.push.batches'); diag.inc('notes.push.sent', batch.length); diag.inc('notes.push.accepted', result.accepted.length);
+      if (result.rejected?.length) { diag.inc('notes.push.rejected', result.rejected.length); diag.warn('notes', 'notes refused by the server', { count: result.rejected.length, reasons: [...new Set(result.rejected.map((r) => r.reason))] }); }
       const accepted = new Set(result.accepted);
       const refused = new Set((result.rejected ?? []).map((r) => r.id));
       this.store.acknowledge(batch.filter((n) => accepted.has(n.id)));
@@ -26,6 +29,7 @@ export class NoteSync {
     }
     for (;;) {
       const page = await this.transport.pull(this.store.lastCursor);
+      diag.inc('notes.pull.pages'); diag.inc('notes.pull.notes', page.notes.length);
       if (page.serverNow !== undefined) this.store.syncClock(page.serverNow);
       this.store.receive(page.notes, page.cursor);
       if (!page.more || !page.notes.length) break;

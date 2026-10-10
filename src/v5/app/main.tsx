@@ -6,6 +6,7 @@ import './v5.css';
 import { App } from './App.tsx';
 import { linkIntent, redeemLink, type Redeemed } from './link.ts';
 import { applyTheme, Icon } from '../../ui/index.ts';
+import { initDiag } from '../diag/index.ts';
 
 // App feel: the page itself must never pinch-zoom or double-tap-zoom (iOS Safari ignores user-scalable=no); the map handles its own gestures.
 for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, (event) => event.preventDefault(), { passive: false });
@@ -32,6 +33,7 @@ async function boot(campaign: string | null): Promise<React.ReactNode> {
   return <App campaignId={campaign} />;
 }
 
+initDiag(); // the error nets and sensors must exist before anything else can fail
 applyTheme();
 const root = createRoot(document.getElementById('root')!);
 void boot(new URLSearchParams(location.search).get('campaign')).then((page) => root.render(<StrictMode>{page}</StrictMode>));
