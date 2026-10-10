@@ -26,6 +26,7 @@ Streets and houses are a pure function of OSM data. v5 therefore stores **no tas
 - `src/v5/map` – `FieldMap` (MapLibre 6.13.0, feature-state painting, route preview, basemap-outage fallback).
 - `src/v5/app` – React shell (`App.tsx`), derivation worker, API client, Vela-style CSS.
 - `worker/v5/api.ts` + `migrations/0026_v5_field_state.sql` – meta, state, ops, pack endpoints; `worker/v5/notes.ts` + `0027_v5_notes.sql` – notes endpoints.
+- `src/v5/diag` + `src/v5/app/diagSheet.tsx` + `worker/v5/observe.ts` – diagnostics and logs (`?diag=1`, menu → Diagnose, report, server request lines): [DIAGNOSTICS.md](DIAGNOSTICS.md).
 - `scripts/v5-e2e` – fixture server (real handlers, in-memory D1) and Playwright flow.
 
 ## Design
@@ -35,6 +36,7 @@ ideas, built with plain CSS and an own inline icon set (no webfont, no icon font
 squircle shapes that morph on press, a wavy progress indicator, a morphing-shape loader, a floating icon toolbar,
 and a status group of four icon buttons where the selected one grows and shows its label. Zoomed out, houses are
 status-coloured dots so a whole city reads as progress; houses appear as shapes from zoom 15.2.
+Spacing is one rhythm, not per-element margins: a sheet (`.v5-sheet`) spaces its direct children by `gap: var(--sp-2)` (1 rem) alone, a heading sits closer to its content (`--sp-1`), and `.ui-stack` / `.ui-section` do the same inside a screen. Do not add margins to children of a sheet.
 Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 
 ## Behaviour decisions

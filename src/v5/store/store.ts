@@ -1,5 +1,6 @@
 import { type ClockState, encodeClock, receive, tick } from './hlc.ts';
 import type { EntityKey, Op, OverlayEntry, Persisted, Persistence, Status } from './types.ts';
+import { diag } from '../diag/index.ts';
 
 export type Changes = ReadonlyMap<EntityKey, Status>;
 /** Someone else's newer edit replaced one of ours: the screen changed under the user's hands, so it must be told. */
@@ -47,9 +48,10 @@ export class FieldStore {
   }
 
   async hydrate(): Promise<void> {
+    const done = diag.start('store.hydrate_ms');
     const saved = await this.persistence?.load();
     this.mayPersist = true;
-    if (!saved || saved.version !== 1) return;
+    if (!saved || saved.version !== 1) { done(); diag.info('store', 'hydrate: nothing saved', { persistence: !!this.persistence }); return; }
     this.clock = { ...saved.clock, node: this.actor };
     this.cursor = saved.cursor;
     for (const [key, entry] of saved.overlay) this.applyEntry(key, entry);
@@ -58,6 +60,9 @@ export class FieldStore {
       this.applyEntry(op.key, { status: op.status, at: op.id, by: op.by }); // edits survive even if the overlay record is older
     }
     this.flush();
+    const ms = done();
+    diag.info('store', 'hydrated', { overlay: saved.overlay.length, pending: saved.pending.length, cursor: saved.cursor, ms: Math.round(ms) });
+    if (saved.pending.length) diag.warn('store', 'edits were waiting from the last session', { pending: saved.pending.length });
   }
 
   /** Stamps outgoing edits with their Area (needed for server-side team scoping). */
@@ -83,13 +88,14 @@ export class FieldStore {
       ops.push(op);
     }
     this.flush();
-    if (ops.length) this.persistOutbox();
+    if (ops.length) { this.persistOutbox(); diag.inc('store.set', ops.length); diag.observe('store.set.batch', ops.length); }
     this.scheduleSave();
     return ops;
   }
 
   /** Remote operations (and our own, echoed back). `cursor` advances the server position. */
   receive(ops: Op[], cursor?: number): void {
+    if (ops.length) { diag.inc('store.received', ops.length); diag.observe('store.receive.batch', ops.length); }
     for (const op of ops) {
       this.clock = receive(this.clock, op.id, this.now());
       const mine = this.mine.get(op.key);
@@ -98,7 +104,7 @@ export class FieldStore {
         else if (op.id > mine.id) {
           // a newer edit by someone else replaces ours: keep it visible unless both ended up with the same status
           this.mine.delete(op.key);
-          if (op.status !== mine.status) this.conflicts.push({ key: op.key, mine: mine.status, theirs: op.status, by: op.by, at: op.id });
+          if (op.status !== mine.status) { this.conflicts.push({ key: op.key, mine: mine.status, theirs: op.status, by: op.by, at: op.id }); diag.inc('store.conflicts'); diag.warn('store', 'an edit of mine was replaced by a newer one', { mine: mine.status, theirs: op.status }); }
         }
       }
       this.applyEntry(op.key, { status: op.status, at: op.id, by: op.by });
@@ -115,6 +121,7 @@ export class FieldStore {
    * effect so the screen shows what the server actually has, instead of a status nobody else will ever see.
    */
   rollback(ids: string[]): void {
+    if (ids.length) { diag.inc('store.rollback', ids.length); diag.warn('store', 'the server refused edits for good; they were undone here', { count: ids.length }); }
     for (const id of ids) {
       const op = this.pending.get(id);
       if (!op) continue;
@@ -147,7 +154,7 @@ export class FieldStore {
       if (!isKnownKey(op.key)) { this.pending.delete(id); dropped++; continue; }
       if (!op.area) { const area = this.areaOf?.(op.key); if (area) this.pending.set(id, { ...op, area }); }
     }
-    if (dropped) this.scheduleSave();
+    if (dropped) { this.scheduleSave(); diag.inc('store.reconcile.dropped', dropped); diag.warn('store', 'queued edits dropped: their houses no longer exist', { dropped }); }
     return dropped;
   }
 
@@ -162,12 +169,21 @@ export class FieldStore {
   }
 
   /** Pull everything again from the start (idempotent: only newer entries win). Used after the server refused an edit because it holds another truth. */
-  rewindCursor(): void { this.cursor = 0; this.persistOutbox(); }
+  rewindCursor(): void { this.cursor = 0; this.persistOutbox(); diag.inc('store.rewind'); diag.info('store', 'cursor rewound: full pull follows'); }
 
   /** Server time seen on a pull; keeps new edits ordered correctly even when this device's clock is off. */
   syncClock(serverNow: number): void {
     const offset = serverNow - this.nowFn();
-    if (Number.isFinite(offset)) this.clockOffset = offset;
+    if (Number.isFinite(offset)) {
+      if (Math.abs(offset - this.clockOffset) > 5000) diag.warn('store', 'device clock differs from the server', { offsetMs: Math.round(offset) });
+      this.clockOffset = offset;
+      diag.set('store.clockOffsetMs', Math.round(offset));
+    }
+  }
+
+  /** What the diagnostics panel shows about this store. */
+  describe() {
+    return { entries: this.overlay.size, pending: this.pending.size, cursor: this.cursor, clockOffsetMs: Math.round(this.clockOffset), conflicts: this.conflicts.length, listeners: this.listeners.size, keyListeners: this.keyListeners.size, persistence: !!this.persistence, mayPersist: this.mayPersist };
   }
 
   get pendingConflicts(): readonly Conflict[] { return this.conflicts; }
@@ -230,13 +246,13 @@ export class FieldStore {
   persistOutbox(): Promise<void> {
     if (!this.persistence || !this.mayPersist) return this.chain;
     const data = this.snapshot(false);
-    return (this.chain = this.chain.then(() => this.persistence!.save(data, 'outbox')).catch(() => {}));
+    return (this.chain = this.chain.then(() => this.persistence!.save(data, 'outbox')).catch((error) => { diag.error('store', 'saving the outbox failed', { error }); diag.inc('store.save.failed'); }));
   }
 
   async persistNow(): Promise<void> {
     if (!this.persistence || !this.mayPersist) return;
     const data = this.snapshot(true);
-    await (this.chain = this.chain.then(() => this.persistence!.save(data, 'all')).catch(() => {}));
+    await (this.chain = this.chain.then(() => this.persistence!.save(data, 'all')).catch((error) => { diag.error('store', 'saving the overlay failed', { error }); diag.inc('store.save.failed'); }));
   }
 }
 

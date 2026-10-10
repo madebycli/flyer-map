@@ -1,5 +1,6 @@
 import type { Meta } from './api.ts';
 import { postMutation } from './api.ts';
+import { diag } from '../diag/index.ts';
 
 type Area = Meta['areas'][number];
 export type Me = { collectorId: string; label: string } | null;
@@ -76,6 +77,7 @@ export function collectionActions(campaignId: string, meta: Meta) {
 /** Why an action failed, in words a helper understands (the server's conflict codes are not for people). */
 export function actionErrorText(error: unknown): string {
   const code = (error as { code?: string }).code ?? '';
+  diag.warn('ui', 'an action failed', { code, status: (error as { status?: number }).status });
   if (/area_unavailable|not_claimed|not_releasable|not_completable/.test(code)) return 'Das Gebiet wurde inzwischen von jemand anderem verändert.';
   if (/run_not_active/.test(code)) return 'Der Arbeitsraum ist nicht mehr aktiv.';
   if (/member/.test(code)) return 'Du bist nicht (mehr) im Arbeitsraum.';

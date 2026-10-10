@@ -5,6 +5,7 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { MapData } from '../engine/host.ts';
 import type { LngLat } from '../engine/types.ts';
 import type { FieldStore } from '../store/store.ts';
+import { diag, urlKind, webglInfo } from '../diag/index.ts';
 import type { EntityKey, Status } from '../store/types.ts';
 
 export const SEGMENT_SOURCE = 'v5-segments';
@@ -90,8 +91,18 @@ function ensureTileProtocol() {
   maplibregl.addProtocol('v5t', async (params: RequestParameters) => {
     const m = /^v5t:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
     const provider = m ? providers.get(m[1]) : undefined;
-    if (!m || !provider) return { data: new ArrayBuffer(0) };
-    return { data: await provider(Number(m[2]), Number(m[3]), Number(m[4])) };
+    if (!m || !provider) { diag.inc('map.tiles.noProvider'); return { data: new ArrayBuffer(0) }; }
+    const t0 = performance.now();
+    try {
+      const data = await provider(Number(m[2]), Number(m[3]), Number(m[4]));
+      diag.inc('map.tiles'); diag.inc(`map.tiles.z${Number(m[2])}`); diag.observe('map.tile_ms', performance.now() - t0);
+      if (!data.byteLength) diag.inc('map.tiles.empty');
+      return { data };
+    } catch (error) {
+      diag.inc('map.tiles.failed');
+      diag.error('map', 'a vector tile could not be made', { z: Number(m[2]), error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   });
 }
 
@@ -115,6 +126,10 @@ export class FieldMap {
   private areas: AreaShape[] = [];
   private draw: FeatureCollection = { type: 'FeatureCollection', features: [] };
   private gesture: Gesture | null = null;
+  private frames = 0;
+  private contextLosses = 0;
+  private styleStartedAt = 0;
+  private stopProbe: (() => void) | null = null;
   private gestureActive = false;
   /** The click that follows a gesture the active tool already handled must not be handled a second time. */
   private swallowClick = false;
@@ -140,7 +155,24 @@ export class FieldMap {
     if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as { __v5Map?: MlMap }).__v5Map = this.map;
     // Own controls live in the app shell; the map only keeps the (licence-required) attribution.
     this.map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
-    this.map.on('style.load', () => this.install());
+    this.styleStartedAt = performance.now();
+    this.map.on('style.load', () => {
+      if (this.styleStartedAt) { const ms = performance.now() - this.styleStartedAt; diag.observe('map.style_ms', ms); diag.info('map', 'style loaded', { ms: Math.round(ms), fallback: this.styleFallback, theme: this.theme }); this.styleStartedAt = 0; }
+      this.install();
+    });
+    this.map.on('render', () => { this.frames++; });
+    this.map.on('idle', () => { diag.inc('map.idle'); });
+    const canvas = this.map.getCanvas();
+    canvas.addEventListener('webglcontextlost', () => { this.contextLosses++; diag.inc('map.contextLost'); diag.error('map', 'the graphics context was lost (the browser took the GPU away); the map restores itself if the browser allows it'); });
+    canvas.addEventListener('webglcontextrestored', () => { diag.inc('map.contextRestored'); diag.warn('map', 'the graphics context was restored'); });
+    this.stopProbe = diag.probe('map', () => {
+      const size = this.map.getCanvas();
+      return {
+        library: `maplibre-gl ${maplibregl.getVersion?.() ?? '?'}`, gl: webglInfo(), theme: this.theme, mode: this.mode, zoom: Math.round(this.map.getZoom() * 100) / 100, bearing: Math.round(this.map.getBearing()),
+        canvas: `${size.width}x${size.height}`, framesRendered: this.frames, painted: this.applied, contextLosses: this.contextLosses, styleFallback: this.styleFallback, tileVersion: this.tileVersion,
+        baseVisible: this.baseVisible, selected: this.selected.length, previewed: this.previewed.size, areas: this.areas.length, ...this.debugCounts(),
+      };
+    });
     let rotated = false;
     this.map.on('rotate', () => {
       const now = Math.abs(this.map.getBearing()) > 0.5;
@@ -151,9 +183,16 @@ export class FieldMap {
     this.map.on('idle', () => { if (this.map.isStyleLoaded() && !this.map.getSource(this.firstSource())) this.install(); });
     // Field work must survive a basemap outage: if the style itself cannot be fetched, fall back to a plain background.
     this.map.on('error', (event) => {
+      const err = (event as { error?: { url?: string; status?: number; message?: string }; sourceId?: string });
+      diag.inc('map.errors'); if (err.sourceId) diag.inc(`map.errors.${String(err.sourceId).replace(/[^a-z0-9_-]/gi, '').slice(0, 24)}`);
+      // The library's text and address are foreign: the message goes through the allowlist, the address becomes a kind (tile, style, glyphs …) without path or query.
+      diag.warn('map', 'map error', { source: err.sourceId, status: err.error?.status, message: err.error?.message, stack: (err.error as { stack?: string } | undefined)?.stack, kind: err.error?.url ? urlKind(err.error.url) : undefined });
       const failedUrl = (event as { error?: { url?: string } }).error?.url;
       if (this.styleFallback || !failedUrl || failedUrl !== this.expectedStyle) return;
       this.styleFallback = true;
+      diag.warn('map', 'the basemap style could not be loaded: plain background is used (field work continues)');
+      diag.inc('map.styleFallback');
+      this.styleStartedAt = performance.now();
       this.map.setStyle(blankStyle(this.theme));
     });
     this.map.on('click', (event) => {
@@ -205,6 +244,8 @@ export class FieldMap {
   private restyle() {
     this.styleFallback = false;
     this.expectedStyle = this.styleFor(this.theme);
+    this.styleStartedAt = performance.now();
+    diag.info('map', 'style change', { theme: this.theme, basemap: this.baseVisible && !!this.styleFor(this.theme) });
     this.map.setStyle(this.expectedStyle);
   }
 
@@ -430,7 +471,9 @@ export class FieldMap {
       this.tileVersion++;
       (this.map.getSource(TILE_SOURCE) as VectorTileSource | undefined)?.setTiles([this.tileUrl()]);
     } else this.pushData();
-    for (const source of [TILE_SOURCE, SEGMENT_SOURCE, HOUSE_SOURCE, CENTER_SOURCE]) if (this.map.getSource(source)) this.map.removeFeatureState({ source });
+    // A vector source needs its source layers named; calling it with the source alone is an error and removes nothing.
+    if (this.map.getSource(TILE_SOURCE)) for (const sourceLayer of ['houses', 'centers', 'segments']) this.map.removeFeatureState({ source: TILE_SOURCE, sourceLayer });
+    for (const source of [SEGMENT_SOURCE, HOUSE_SOURCE, CENTER_SOURCE]) if (this.map.getSource(source)) this.map.removeFeatureState({ source });
     this.selected = [];
   }
 
@@ -456,7 +499,7 @@ export class FieldMap {
     this.unbind?.();
     this.store = store;
     void this.applyChunked([...store.entries()].map(([key, entry]) => [key, entry.status] as [EntityKey, Status]));
-    this.unbind = store.subscribe((changes) => { for (const [key, status] of changes) this.paint(key, status); });
+    this.unbind = store.subscribe((changes) => { const done = diag.start('map.paint_ms'); for (const [key, status] of changes) this.paint(key, status); diag.inc('map.painted', changes.size); diag.observe('map.paint.batch', changes.size); done(); });
   }
 
   private paint(key: EntityKey, status: Status) {
@@ -466,10 +509,13 @@ export class FieldMap {
 
   private async applyChunked(entries: [EntityKey, Status][]) {
     await this.ready;
+    const done = diag.start('map.restore_ms');
     for (let i = 0; i < entries.length; i += 4000) {
       for (const [key, status] of entries.slice(i, i + 4000)) this.paint(key, status);
       if (i + 4000 < entries.length) await new Promise((r) => requestAnimationFrame(() => r(null)));
     }
+    diag.inc('map.painted', entries.length);
+    diag.info('map', 'status painted from the store', { entries: entries.length, ms: Math.round(done()) });
   }
 
   select(keys: EntityKey | EntityKey[] | null) {
@@ -607,5 +653,5 @@ export class FieldMap {
     const tiles = caches ? Object.fromEntries(Object.entries(caches).map(([id, cache]) => [id, cache.getIds ? cache.getIds().length : Object.keys(cache._tiles ?? {}).length])) : null;
     return { tiles, layers: this.map.getStyle().layers?.length ?? 0, sources: Object.keys(this.map.getStyle().sources ?? {}).length, providers: providers.size };
   }
-  destroy() { this.unbind?.(); providers.delete(this.token); this.map.remove(); }
+  destroy() { this.stopProbe?.(); this.unbind?.(); providers.delete(this.token); this.map.remove(); }
 }

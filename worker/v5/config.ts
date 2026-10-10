@@ -1,7 +1,8 @@
 import type { V5Options } from './api.ts';
+import { logLevelFrom } from './observe.ts';
 
 /** Deployment settings of the field core. Everything third-party (basemap style, Overpass endpoint) is configurable here, never in the client. */
-export type V5Env = { OSM_OVERPASS_URL?: string; V5_BASEMAP_DARK?: string; V5_BASEMAP_LIGHT?: string };
+export type V5Env = { OSM_OVERPASS_URL?: string; V5_BASEMAP_DARK?: string; V5_BASEMAP_LIGHT?: string; V5_LOG_LEVEL?: string };
 
 const DEFAULT_BASEMAP = { dark: 'https://tiles.openfreemap.org/styles/dark', light: 'https://tiles.openfreemap.org/styles/bright' };
 
@@ -23,5 +24,5 @@ export function v5OptionsFromEnv(env: V5Env): V5Options {
   const pick = (value: string | undefined, fallback: string) => (value?.trim().toLowerCase() === 'off' ? undefined : safeStyleUrl(value) ?? fallback);
   const dark = pick(env.V5_BASEMAP_DARK, DEFAULT_BASEMAP.dark), light = pick(env.V5_BASEMAP_LIGHT, DEFAULT_BASEMAP.light);
   const overpass = env.OSM_OVERPASS_URL && env.OSM_OVERPASS_URL !== 'default' ? safeHttpsUrl(env.OSM_OVERPASS_URL) : undefined;
-  return { basemap: { dark, light }, ...(overpass ? { overpassUrl: overpass } : {}) };
+  return { basemap: { dark, light }, logLevel: logLevelFrom(env.V5_LOG_LEVEL), ...(overpass ? { overpassUrl: overpass } : {}) };
 }

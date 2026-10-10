@@ -10,6 +10,7 @@ import { canReadArea, canWriteArea, fail, ID, isScoped, isRecord, json, readable
 import { pullNotes, pushNotes } from './notes.ts';
 import { forgetArea, pruneState } from './cleanup.ts';
 import { parseCampaignId } from '../snapshotValidation.ts';
+import { emit, errorCodeOf, instrumentDb, requestIdOf, serverTiming, type LogLevel, type Sink } from './observe.ts';
 
 
 export type V5Options = {
@@ -21,6 +22,10 @@ export type V5Options = {
   maxPackBytes?: number;
   /** Upper bound for one Area's padded bounding box (default 25 km²). */
   maxAreaSqKm?: number;
+  /** Lowest level written to the log (default `warn`: problems and slow requests only). */
+  logLevel?: LogLevel;
+  /** Where log lines go (default: console). */
+  logSink?: Sink;
 };
 
 const MAX_OPS = 200;
@@ -53,7 +58,34 @@ function sameOrigin(request: Request) {
   return !origin || origin === new URL(request.url).origin;
 }
 
+/** The v5 API with its own observability: request id echoed, `Server-Timing` (total, database), and one log line per request at the configured level. */
 export async function handleV5Api(request: Request, db: D1DatabaseLike, options: V5Options = {}): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith('/api/v5/')) return null;
+  const t0 = performance.now();
+  const rid = requestIdOf(request);
+  const observed = instrumentDb(db);
+  let response: Response | null;
+  try { response = await routeV5(request, observed.db, options); } catch (error) {
+    emit({ rid, route: v5Template(url.pathname), method: request.method, status: 500, ms: performance.now() - t0, db: observed.stats, code: error instanceof Error ? error.name.slice(0, 40) : 'error' }, options.logLevel ?? 'warn', options.logSink);
+    throw error;
+  }
+  if (!response) return null;
+  const ms = performance.now() - t0;
+  emit({ rid, route: v5Template(url.pathname), method: request.method, status: response.status, ms, db: observed.stats, code: await errorCodeOf(response) }, options.logLevel ?? 'warn', options.logSink);
+  const out = new Response(response.body, response);
+  out.headers.set('x-request-id', rid);
+  out.headers.set('server-timing', serverTiming(ms, observed.stats));
+  return out;
+}
+
+/** The route as a template (ids replaced), the same shape the client uses, so both sides' numbers line up. */
+function v5Template(pathname: string): string {
+  const route = v5Route(pathname);
+  return route ? `/api/v5/campaigns/:c/${route.kind === 'pack' || route.kind === 'prune' || route.kind === 'forget' ? `areas/:a/${route.kind}` : route.kind}` : pathname === '/api/v5/basemap' ? pathname : '/api/v5/?';
+}
+
+async function routeV5(request: Request, db: D1DatabaseLike, options: V5Options): Promise<Response | null> {
   const url = new URL(request.url);
   // The deployment's basemap, without a campaign: the admin pages place the map focus with it. Style URLs reach every field client anyway, so they must not carry secrets.
   if (url.pathname === '/api/v5/basemap' && (request.method === 'GET' || request.method === 'HEAD')) return basemapResponse(options);

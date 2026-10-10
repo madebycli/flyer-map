@@ -61,13 +61,15 @@ v3/v4 street-engine remnants. "Unreachable" is therefore a list of *dormant prod
 | Legacy-Karte `App.tsx` / `MapView.tsx` / Collection view / Offline map | `src` | **replace** by `/v5` (+ offline = warm cache) | phase 3 |
 | Organizer / Admin: Aktionen anlegen, löschen, vergleichen, Analytics-Export, Einladungen, öffentliche Links, Sicherheit (MFA, trusted devices) | `src/admin`, `src/organization`, `worker/organization*` | **rebuild UI** in shell (Admin area of `/v5`); **auth stays TS until last** | security review before porting KDF/TOTP |
 | Workbench previews, Funny-Focus-Video, M6/M5 previews | `src/workbench`, `src/platform/FunnyFocusVideo` | **drop** | demo/preview surfaces, not product |
-| Diagnostics, Support, Live | `src/diagnostics`, `src/support`, `src/live` | **keep as one "Hilfe & Status" sheet** | merge three into one |
+| Diagnostics, Support, Live | `src/diagnostics`, `src/support`, `src/live` | **rebuilt as one "Diagnose" panel** (`?diag=1`, menu tile): engine, sync, network, map, log, report, plus server request lines — [docs/v5/DIAGNOSTICS.md](../../v5/DIAGNOSTICS.md) | more precise than the old `?diag=1`; no telemetry upload |
 | RxDB sync, change feed, sync heads, mutation pipeline | `worker/rxdb*`, `mutation*`, `syncHeads`, `campaignSyncDurableObject` | **keep until cut-over**, then **drop** | v5 has own LWW sync (`/api/v5/.../ops`) |
 | CSS: 12 k lines in 65 files | `src/*.css` | **drop with their screens** | replaced by `src/ui` tokens + components |
 
 Net effect: ≈ 45 000 of 79 000 lines disappear at the end; ≈ 5 000 new lines (UI) and the Rust Worker core replace them.
 
 ## Phase status
+
+- **Diagnostics and logs (A, 2026-10-10):** `src/v5/diag` (bounded log rings, counters/gauges/histograms, probes, redaction, report `v5-diag-1`, plain-German findings), `src/v5/app/diagSheet.tsx` (panel, readout), instrumentation of net, engine, boot, sync, store, notes, cache and map; Worker: request id, `Server-Timing` (total, database), JSON request lines at `V5_LOG_LEVEL` (default `warn`). Found and fixed on the way: the feature-state reset on the vector tile source named no source layer (MapLibre error, nothing removed). 464 tests, flow 16. Not verified: real devices, real server logs. See [DIAGNOSTICS.md](../../v5/DIAGNOSTICS.md).
 
 - **Dual review, mobile clarity (B, 2026-10-09):** distinguish obsolete-progress clean-up from deleting a Gebiet with a visible caption; refresh the clean-up control after the last obsolete key is forgotten; label each helper-right switch using existing design-system components. Acceptance: real-handler browser checks, 390/430 px × dark/light × left/right screenshot matrix, no horizontal overflow, touch targets ≥44 px, and independent A review. This covers two affected sheets; the full-sheet audit, real devices and release gates remain open.
 

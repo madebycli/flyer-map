@@ -53,7 +53,7 @@ html:has(.ui-page), body:has(.ui-page) { margin: 0; overflow: auto; height: auto
 .ui-input.area { height: auto; min-height: 6rem; padding: 0.75rem 1rem; resize: vertical; }
 .ui-input:focus { border-color: var(--primary); }
 select.ui-input { appearance: none; padding-right: 2.4rem; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.7rem center; }
-.ui-check { display: flex; align-items: flex-start; gap: 0.7rem; min-height: 2.5rem; padding: 0.4rem 0; font-weight: 650; color: var(--on); cursor: pointer; }
+.ui-check { display: flex; align-items: flex-start; gap: 0.7rem; min-height: 2.75rem; padding: 0.4rem 0; font-weight: 650; color: var(--on); cursor: pointer; }
 .ui-check input { flex: none; width: 1.3rem; height: 1.3rem; margin: 0.1rem 0 0; accent-color: var(--primary); }
 .ui-group { display: grid; gap: 0.2rem; min-width: 0; margin: 0; padding: 0; border: 0; }
 .ui-group legend { padding: 0; margin-bottom: 0.3rem; font-size: 0.86rem; font-weight: 700; color: var(--on-var); }
@@ -77,7 +77,7 @@ select.ui-input { appearance: none; padding-right: 2.4rem; background-image: url
 .ui-loading .v5-loader { width: 2.2rem; height: 2.2rem; margin: 0; }
 
 .ui-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0.3rem; padding: 0.3rem; border-radius: var(--r); background: var(--surface-3); }
-.ui-seg button { min-height: 2.4rem; border: 0; border-radius: calc(var(--r) - 0.25rem); background: transparent; color: var(--on-var); font: 750 0.92rem var(--font); cursor: pointer; }
+.ui-seg button { min-height: 2.75rem; border: 0; border-radius: calc(var(--r) - 0.25rem); background: transparent; color: var(--on-var); font: 750 0.92rem var(--font); cursor: pointer; }
 .ui-seg button.on { background: var(--surface-1); color: var(--on); box-shadow: var(--shadow); }
 
 .ui-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; padding: 0.7rem 0.9rem; border-radius: var(--r); background: var(--surface-2); }
@@ -121,3 +121,37 @@ select.ui-input { appearance: none; padding-right: 2.4rem; background-image: url
 @media (prefers-reduced-motion: reduce) { .ui-btn, .ui-campaign { transition: none; } }
 .ui-crosshair { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; color: var(--primary); }
 .ui-map .maplibregl-ctrl-attrib { font-size: 0.62rem; }
+
+/* Daten- und Log-Bausteine (Diagnose): Tabelle, Zeilenliste, aufklappbarer Block, Log mit 48-px-Zeilen, Code. Nur Systemtokens. */
+/* One vertical rhythm for stacked content: every block is separated by the same gap, no per-element margins. A section keeps its heading closer to its content. */
+.ui-stack { display: grid; gap: var(--sp-2); align-content: start; min-width: 0; }
+.ui-section { display: grid; gap: var(--sp-1); align-content: start; min-width: 0; }
+.v5-sheet .ui-stack > *, .v5-sheet .ui-section > * { margin: 0; }
+.ui-notices { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.ui-datatable { display: grid; gap: 0.15rem; margin: 0; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.ui-datarow { display: grid; grid-template-columns: minmax(0, 1.7fr) repeat(4, minmax(2.4rem, 0.7fr)); gap: 0.4rem; align-items: baseline; padding: 0.3rem 0.5rem; border-radius: calc(var(--r) / 2); background: var(--surface-2); }
+.ui-datarow.head { background: transparent; color: var(--on-var); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.68rem; }
+.ui-datarow .name { overflow-wrap: anywhere; font-weight: 700; }
+.ui-datarow span:not(.name) { text-align: right; white-space: nowrap; }
+.ui-rowlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.ui-rowlist li { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; padding: 0.4rem 0.6rem; border-radius: calc(var(--r) / 2); background: var(--surface-2); }
+.ui-rowlist li.failed { background: var(--error-container); color: var(--error); }
+.ui-rowlist li.notes-failed { background: var(--tertiary-container); color: var(--on-tertiary-container); }
+.ui-rowlist .name { font-weight: 700; flex-basis: 100%; overflow-wrap: anywhere; }
+.ui-collapse { margin: 0; border-radius: var(--r); background: var(--surface-2); }
+.ui-collapse summary { display: grid; gap: 0.1rem; padding: 0.6rem 0.8rem; cursor: pointer; min-height: var(--ctl); }
+.ui-collapse summary span { color: var(--on-var); font-size: 0.8rem; }
+.ui-collapse .ui-facts { padding: 0 0.6rem 0.7rem; }
+.ui-filters { display: grid; grid-template-columns: 1fr 1.4fr; gap: var(--gap); margin: 0; }
+.ui-loglist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.ui-logitem { border-radius: calc(var(--r) / 2); background: var(--surface-2); border-left: 0.25rem solid var(--outline); }
+.ui-logitem.warn { border-left-color: var(--tertiary); }
+.ui-logitem.error { border-left-color: var(--error); }
+.ui-logitem.info { border-left-color: var(--primary); }
+.ui-logitem-btn { display: flex; align-items: center; gap: 0.5rem; width: 100%; min-height: var(--ctl); padding: 0.35rem 0.7rem; border: 0; background: transparent; color: var(--on); text-align: left; font: 500 0.8rem var(--font); cursor: pointer; }
+.ui-logitem-btn:disabled { cursor: default; }
+.ui-logitem-btn .t { font-variant-numeric: tabular-nums; color: var(--on-var); flex: none; }
+.ui-logitem-btn .msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ui-logitem-btn .more { flex: none; color: var(--on-var); font-weight: 800; }
+.ui-logitem-btn .ui-chip { flex: none; height: 1.3rem; padding: 0 0.45rem; font-size: 0.64rem; }
+.ui-code { margin: 0; padding: 0.4rem 0.7rem 0.6rem; overflow-x: auto; font: 500 0.72rem/1.35 ui-monospace, monospace; color: var(--on-var); white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -11,6 +11,10 @@ import { SyncClient } from '../store/syncClient.ts';
 import { V5ApiError, buildPack, fetchMeta, fetchPack, httpNoteTransport, httpTransport, type Meta } from './api.ts';
 import { fetchPickups, type Pickup } from './pickups.ts';
 import { EngineClient } from './engineClient.ts';
+import { diag } from '../diag/index.ts';
+
+/** What one Area cost on this start and what the street engine made of it (shown per Area in the diagnostics). */
+type AreaBoot = { n: number; source: 'cache' | 'server' | 'none'; packBytes: number | null; fetchMs: number; deriveMs: number | null; detail: Record<string, number> | null; houses: number; segments: number; diagnostics: unknown };
 
 export type Phase =
   | { kind: 'loading'; label: string }
@@ -86,8 +90,13 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     let notesHydrated = false;
     const cache = new NetworkCache(campaignId, typeof indexedDB === 'undefined' ? null : new IndexedDbNetworkStorage());
 
+    let bootSummary: { timing: Record<string, number>; areas: AreaBoot[]; role: string | null; kind: string | null; houses: number; segments: number; missing: number; at: number } | null = null;
+    const stopProbe = diag.probe('campaign', () => ({ ...bootSummary, store: fieldStore.describe(), notesPending: noteStore.pendingNotes().length, orphans: liveRef.current ? [...liveRef.current.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !liveRef.current!.areaOf.has(key)).length : null }));
+
     const boot = async () => {
       const t0 = performance.now();
+      diag.info('boot', 'boot start', { collection: kind === 'collection' });
+      diag.inc('boot.n');
       try {
         setPhase({ kind: 'loading', label: 'Aktion wird geladen …' });
         // The engine (worker + wasm instantiation) starts while the Aktion's meta data is still on its way.
@@ -99,6 +108,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         let loaded: Awaited<ReturnType<typeof fetchMeta>>;
         try { loaded = await fetchMeta(campaignId, kind); } catch (error) { discard(); throw error; }
         if (cancelled) { discard(); return; }
+        diag.info('boot', 'meta loaded', { role: loaded.role, kind: loaded.kind, areas: loaded.areas.length, teams: loaded.teams.length, canBuild: loaded.canBuildPack, basemap: !!loaded.basemap, ms: Math.round(performance.now() - t0) });
         setMeta(loaded); metaKindRef.current = loaded.kind;
         void loadPickups(loaded);
         canBuildRef.current = loaded.canBuildPack;
@@ -110,31 +120,39 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         // the slow part on mobile data) and derive one after another.
         setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
         const timing: Record<string, number> = { meta: Math.round(performance.now() - t0), wasm: useBlobs ? 1 : 0 };
+        const areaBoots: AreaBoot[] = [];
         const resolved = await Promise.all(loaded.areas.map(async (area) => {
+          const tArea = performance.now();
           const key = NetworkCache.keyFor(area);
           const blob = key && useBlobs ? await cache.load(key) : null;
-          return { areaId: area.id, packVersion: area.packVersion, ring: area.geometry.coordinates[0] as [number, number][], blob, key, pack: !blob && area.packVersion ? await fetchPack(campaignId, area.id) : null };
+          const pack = !blob && area.packVersion ? await fetchPack(campaignId, area.id) : null;
+          return { areaId: area.id, packVersion: area.packVersion, ring: area.geometry.coordinates[0] as [number, number][], blob, key, pack, packBytes: blob?.byteLength ?? pack?.byteLength ?? null, fetchMs: Math.round(performance.now() - tArea) };
         }));
         if (cancelled) return;
         timing.packs = Math.round(performance.now() - t0) - timing.meta;
         timing.cacheHits = resolved.filter((r) => r.blob).length;
+        diag.info('boot', 'packs ready', { areas: resolved.length, cacheHits: timing.cacheHits, downloaded: resolved.filter((r) => r.pack).length, withoutPack: resolved.filter((r) => !r.blob && !r.pack).length, ms: timing.packs });
         await engine.reset();
         const parts: { areaId: string; network: Network }[] = [];
         const missing: Meta['areas'] = [];
         for (const item of resolved) {
           let result: Awaited<ReturnType<EngineClient['area']>> | null = null;
+          let source: AreaBoot['source'] = item.blob ? 'cache' : item.pack ? 'server' : 'none';
           if (item.blob) {
             try { result = await engine.area({ areaId: item.areaId, ring: item.ring, blob: item.blob }); }
-            catch { void cache.forget(item.areaId); item.pack = await fetchPack(campaignId, item.areaId); timing.cacheHits--; }
+            catch (error) { diag.warn('cache', 'a cached network could not be loaded: downloading the pack again', { error: error instanceof Error ? error.message : String(error) }); void cache.forget(item.areaId); item.pack = await fetchPack(campaignId, item.areaId); timing.cacheHits--; source = item.pack ? 'server' : 'none'; }
           }
           if (!result) {
-            if (!item.pack) { missing.push(loaded.areas.find((a) => a.id === item.areaId)!); continue; }
+            if (!item.pack) { missing.push(loaded.areas.find((a) => a.id === item.areaId)!); diag.info('boot', 'an Area has no map data yet', { index: areaBoots.length + missing.length }); areaBoots.push({ n: areaBoots.length + 1, source: 'none', packBytes: null, fetchMs: item.fetchMs, deriveMs: null, detail: null, houses: 0, segments: 0, diagnostics: null }); continue; }
             setPhase({ kind: 'loading', label: 'Straßen und Häuser werden berechnet …' });
             result = await engine.area({ areaId: item.areaId, ring: item.ring, pack: item.pack, wantBlob: useBlobs });
             if (item.key && result.blob) void cache.store(item.key, result.blob);
           }
           if (result.detail) for (const [k, v] of Object.entries(result.detail)) timing[`w_${k}`] = (timing[`w_${k}`] ?? 0) + v;
           timing.engineMs = (timing.engineMs ?? 0) + result.ms;
+          diag.observe(source === 'cache' ? 'derive.fromCache_ms' : 'derive.fromPack_ms', result.ms);
+          areaBoots.push({ n: areaBoots.length + 1, source, packBytes: item.packBytes, fetchMs: item.fetchMs, deriveMs: result.ms, detail: result.detail ?? null, houses: result.network.houses.length, segments: result.network.segments.length, diagnostics: result.network.diagnostics });
+          diag.info('boot', `area ${areaBoots.length} derived`, { source, ms: result.ms, houses: result.network.houses.length, segments: result.network.segments.length, waysIn: result.network.diagnostics.waysIn, buildingsIn: result.network.diagnostics.buildingsIn, orphanHouses: result.network.diagnostics.orphanHouses });
           parts.push({ areaId: item.areaId, network: result.network });
           if (cancelled) return;
         }
@@ -142,7 +160,9 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         setMissingAreas(missing);
         liveRef.current = null; // set again below, once the new derivation is in place
         timing.derive = Math.round(performance.now() - t0) - timing.meta - timing.packs;
+        const tMerge = performance.now();
         const merged = mergeNetworks(parts);
+        diag.observe('derive.merge_ms', performance.now() - tMerge);
         fieldStore.setAreaResolver((key) => merged.areaOf.get(key));
         if (!hydrated) { await Promise.all([fieldStore.hydrate(), noteStore.hydrate()]); hydrated = true; notesHydrated = true; }
         if (cancelled) return; // a boot cancelled while hydrating must not create clients nobody disposes
@@ -165,11 +185,16 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         if (cancelled) return;
         timing.ready = Math.round(performance.now() - t0);
         (window as unknown as { __v5Boot?: Record<string, number> }).__v5Boot = timing;
+        bootSummary = { timing, areas: areaBoots, role: loaded.role, kind: loaded.kind, houses: merged.network.houses.length, segments: merged.network.segments.length, missing: missing.length, at: Date.now() };
+        diag.observe('boot.ready_ms', timing.ready);
+        diag.info('boot', 'ready', { ...timing, houses: merged.network.houses.length, segments: merged.network.segments.length, missing: missing.length });
+        if (timing.ready > 8000) diag.warn('boot', 'start took long', { ms: timing.ready });
         if (location.search.includes('debug')) console.info('[v5 boot ms]', JSON.stringify(timing));
         // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
         // A collection Aktion is useful without any map data yet: helpers see the Areas and take one first; its pack is built on taking it.
         setPhase(parts.length || loaded.kind === 'collection' ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
       } catch (error) {
+        if (!cancelled) diag.error('boot', 'start failed', { message: error instanceof Error ? error.message : String(error), status: error instanceof V5ApiError ? error.status : undefined, ms: Math.round(performance.now() - t0) });
         if (!cancelled) setPhase({ kind: 'error', message: error instanceof Error ? error.message : 'Unbekannter Fehler', status: error instanceof V5ApiError ? error.status : undefined });
       }
     };
@@ -193,7 +218,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
       void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) { setMeta(m); void loadPickups(m); } }, () => {}).finally(() => { metaBusy = false; });
     }, 15_000);
     return () => {
-      cancelled = true; syncRef.current = null; client?.dispose(); progressTracker?.dispose(); engine?.dispose();
+      cancelled = true; stopProbe(); syncRef.current = null; client?.dispose(); progressTracker?.dispose(); engine?.dispose();
       window.removeEventListener('online', online); window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', hidden); document.removeEventListener('visibilitychange', visible);
       window.clearInterval(poll);

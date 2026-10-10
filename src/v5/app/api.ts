@@ -2,6 +2,7 @@ import type { SyncTransport } from '../store/syncClient.ts';
 import type { Op } from '../store/types.ts';
 import type { NoteTransport } from '../notes/sync.ts';
 import type { Note } from '../notes/types.ts';
+import { diag, tracedFetch } from '../diag/index.ts';
 
 export type CollectionAreaInfo = { status: 'open' | 'claimed' | 'in-progress' | 'completed' | 'archived'; color: string; runId: string | null; claimedBy: string | null; claimedById: string | null };
 export type CollectionRunInfo = { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] };
@@ -33,7 +34,7 @@ export class V5ApiError extends Error {
 }
 
 export async function call(path: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(path, { credentials: 'same-origin', ...init });
+  const response = await tracedFetch(path, { credentials: 'same-origin', ...init });
   if (response.ok) return response;
   let code = 'http_' + response.status, message = `Serverfehler ${response.status}`;
   try { const body = await response.clone().json() as { error?: { code?: string; message?: string } }; code = body.error?.code ?? code; message = body.error?.message ?? message; } catch { /* non-JSON error */ }
@@ -47,12 +48,19 @@ export async function fetchMeta(campaignId: string, kind?: 'collection'): Promis
 }
 
 export async function fetchPack(campaignId: string, areaId: string): Promise<Uint8Array | null> {
-  try { return new Uint8Array(await (await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack`)).arrayBuffer()); }
-  catch (error) { if (error instanceof V5ApiError && error.code === 'no_pack') return null; throw error; }
+  const done = diag.start('pack.fetch_ms');
+  try {
+    const bytes = new Uint8Array(await (await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack`)).arrayBuffer());
+    diag.observe('pack.fetch.bytes', bytes.byteLength);
+    diag.info('pack', 'pack downloaded', { bytes: bytes.byteLength, ms: Math.round(done()) });
+    return bytes;
+  } catch (error) { if (error instanceof V5ApiError && error.code === 'no_pack') { diag.info('pack', 'no pack built yet for an Area'); return null; } throw error; }
 }
 
 export async function buildPack(campaignId: string, areaId: string): Promise<void> {
-  await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack`, { method: 'POST' });
+  const done = diag.start('pack.build_ms');
+  try { await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack`, { method: 'POST' }); diag.info('pack', 'pack built on the server', { ms: Math.round(done()) }); }
+  catch (error) { diag.error('pack', 'building the pack failed', { error, ms: Math.round(done()) }); throw error; }
 }
 
 export function httpTransport(campaignId: string): SyncTransport {

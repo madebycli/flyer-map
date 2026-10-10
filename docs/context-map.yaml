@@ -1,5 +1,5 @@
-version: 29
-last_updated: 2026-10-09
+version: 30
+last_updated: 2026-10-10
 
 entrypoints:
   always:
@@ -29,6 +29,12 @@ nodes:
     status: accepted
     topics: [v5, engine, tiles, sync, notes, tools]
     load_when: [field map behaviour or data model]
+  - id: v5-diagnostics
+    path: docs/v5/DIAGNOSTICS.md
+    type: architecture
+    status: accepted
+    topics: [diagnostics, logging, performance, sync, privacy]
+    load_when: [debugging a field problem, adding a metric or log line, server request logging]
   - id: plan-043-v5-field-core
     path: docs/plans/active/043-v5-field-core.md
     type: plan
