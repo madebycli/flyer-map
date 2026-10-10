@@ -62,7 +62,7 @@ export async function handlePickupMutationRequest(
         {
           error: {
             code: "mutation_id_reused",
-            message: "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.",
+            message: "Diese Änderungs-ID wurde bereits mit anderem Inhalt verwendet.",
           },
           revision: existing.appliedRevision,
         },

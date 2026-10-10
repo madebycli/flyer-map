@@ -99,7 +99,7 @@ async function hasSecuritySchema(db: D1DatabaseLike) {
 function authError(code: string) {
   if (code === "authentication_required") return errorResponse(401, code, "Organisations-Anmeldung ist erforderlich.");
   if (code === "mfa_required") return errorResponse(403, code, "Für diese Aktion ist MFA erforderlich.");
-  return errorResponse(403, "forbidden", "Diese Organization-Berechtigung fehlt.");
+  return errorResponse(403, "forbidden", "Diese Berechtigung der Organisation fehlt.");
 }
 
 async function audit(
@@ -232,7 +232,7 @@ async function handleMfaPreference(request: Request, env: OrganizationSecurityAp
       : errorResponse(404, "account_not_found", "Account wurde nicht gefunden.");
   }
   if (request.method !== "POST") {
-    return errorResponse(405, "method_not_allowed", "Security-Methode nicht erlaubt.");
+    return errorResponse(405, "method_not_allowed", "Sicherheits-Methode nicht erlaubt.");
   }
   const parsed = await readBody(request);
   if (!parsed.ok) return parsed.response;
@@ -666,7 +666,7 @@ export async function handleOrganizationSecurityApi(
     return handlePublicRedeem(request, env);
   }
   if (selfSecurity) {
-    if (request.method !== "POST") return errorResponse(405, "method_not_allowed", "Security-Methode nicht erlaubt.");
+    if (request.method !== "POST") return errorResponse(405, "method_not_allowed", "Sicherheits-Methode nicht erlaubt.");
     return handleSelfSecurity(request, env);
   }
   if (sessions) {

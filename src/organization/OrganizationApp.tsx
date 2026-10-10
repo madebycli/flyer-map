@@ -298,7 +298,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
     return (
       <Page bar={bar} narrow>
         <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
-        <Card title="Nur für Organizer" icon="lock"><p>Neue Campaigns können ausschließlich von einem Organizer mit vollständig bestätigter MFA-Sitzung angelegt werden.</p></Card>
+        <Card title="Nur für Organizer" icon="lock"><p>Neue Aktionen können ausschließlich von einem Organizer mit vollständig bestätigter MFA-Sitzung angelegt werden.</p></Card>
       </Page>
     );
   }
@@ -320,7 +320,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
             <strong>Kartenfokus</strong>
             <AdminMapPicker value={map} onChange={setMap} />
           </div>
-          {!canCreate ? <Notice tone="error">Für neue Campaigns ist eine Organizer-Rolle mit vollständig bestätigter MFA-Sitzung erforderlich.</Notice> : null}
+          {!canCreate ? <Notice tone="error">Für neue Aktionen ist eine Organizer-Rolle mit vollständig bestätigter MFA-Sitzung erforderlich.</Notice> : null}
           {error ? <Notice tone="error">{error}</Notice> : null}
           <Button tone="primary" busy={busy} disabled={!canCreate}>{busy ? "Aktion wird erstellt …" : "Aktion erstellen"}</Button>
         </form>

@@ -347,7 +347,7 @@ export async function handlePickupSearch(
   const campaignId = pickupSearchCampaignRoute(url.pathname);
   if (!campaignId) return null;
   if (request.method !== "GET") {
-    return errorResponse(405, "method_not_allowed", "Für die Adresssuche für Sonder-Marker ist nur GET erlaubt.");
+    return errorResponse(405, "method_not_allowed", "Für die Adresssuche der Sonder-Marker ist nur GET erlaubt.");
   }
   if (!env.DB) {
     return errorResponse(503, "d1_unavailable", "D1 ist für die Adresssuche für Sonder-Marker nicht verfügbar.");
@@ -388,7 +388,7 @@ export async function handlePickupSearch(
     return errorResponse(
       409,
       "collection_main_area_required",
-      "Für die Adresssuche für Sonder-Marker muss zuerst ein gültiges Abhol-Hauptgebiet vorhanden sein.",
+      "Für die Adresssuche der Sonder-Marker muss zuerst ein gültiges Sammelgebiet vorhanden sein.",
     );
   }
   if (!env.GEOAPIFY_API_KEY) {

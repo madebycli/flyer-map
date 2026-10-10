@@ -12,6 +12,7 @@ fs.mkdirSync(shots, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
 let failures = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok || !detail ? '' : `  ${String(detail).slice(0, 400)}`}`); if (!ok) failures++; };
+const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn()) return true; await new Promise((r) => setTimeout(r, 150)); } return false; };
 const M = (x, y) => [13 + x / 70053, 51 + y / 110574];
 
 /** Everything this audit measures about the open sheet, in one pass inside the page. */
@@ -37,16 +38,23 @@ const measure = (page) => page.locator('.v5-sheet').evaluate((sheet) => {
   const rgb = (c) => { const m = c.match(/[\d.]+/g).map(Number); return c.startsWith('color(') ? m.slice(0, 3).map((v) => v * 255) : m.slice(0, 3); };
   const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
   const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
-  const faint = [...sheet.querySelectorAll('.v5-flag')].filter(visible).map((el) => { const s = getComputedStyle(el); return { el, r: ratio(rgb(s.color), rgb(s.backgroundColor)) }; })
+  const faint = [...sheet.querySelectorAll('.v5-flag, .v5-note-ico')].filter(visible).map((el) => { const s = getComputedStyle(el); return { el, r: ratio(rgb(s.color), rgb(s.backgroundColor)) }; })
     .filter(({ r }) => r < 3).map(({ el, r }) => `${el.getAttribute('aria-label')} ${r.toFixed(2)}:1`);
   // A control's caption that the browser cuts off (ellipsis or hidden overflow) is unreadable: "Nicht mögli…".
-  const clipped = controls.flatMap((el) => [el, ...el.querySelectorAll('*')]).filter((el) => visible(el) && el.childElementCount === 0 && el.textContent.trim() && el.scrollWidth > el.clientWidth && getComputedStyle(el).overflowX !== 'visible')
-    .map((el) => `「${el.textContent.trim().slice(0, 30)}」`);
+  const clipped = controls.flatMap((el) => {
+    const box = el.getBoundingClientRect();
+    const spills = [...el.querySelectorAll('*')].filter(visible).some((child) => { const r = child.getBoundingClientRect(); return r.left < box.left - 1 || r.right > box.right + 1; });
+    const cut = [el, ...el.querySelectorAll('*')].some((node) => node.textContent.trim() && node.scrollWidth > node.clientWidth && getComputedStyle(node).overflowX !== 'visible' && node.clientWidth > 0);
+    return spills || cut ? [`「${el.textContent.trim().slice(0, 30)}」`] : [];
+  });
   return { clipped, faint, overflow: Math.max(sheet.scrollWidth - sheet.clientWidth, document.documentElement.scrollWidth - innerWidth), small, unnamed, gaps };
 });
 
 const audit = async (page, tag, sheet) => {
   await page.locator('.v5-sheet').waitFor({ timeout: 10000 });
+  // Measure the sheet with its data, not its placeholder.
+  const loaded = await until(async () => !/Lade …|wird geladen|Lädt/.test(await page.locator('.v5-sheet').innerText().catch(() => 'Lade …')), 10000);
+  check(`${tag} ${sheet}: content loaded before measuring`, loaded);
   await page.locator('.v5-sheet').evaluate(async (el) => { await Promise.all(el.getAnimations().map((a) => a.finished)); });
   const m = await measure(page);
   check(`${tag} ${sheet}: no sideways scrolling`, m.overflow <= 1, m.overflow);
@@ -57,10 +65,13 @@ const audit = async (page, tag, sheet) => {
   check(`${tag} ${sheet}: note flag icons at least 3 : 1 against their background`, m.faint.length === 0, m.faint.join(' · '));
   await page.screenshot({ path: `${shots}/audit-${tag}-${sheet}.png` });
 };
-const close = (page) => page.locator('.v5-sheet').getByRole('button', { name: 'Schließen' }).first().click().catch(() => {});
+const close = async (page, what) => {
+  await page.locator('.v5-sheet').getByRole('button', { name: 'Schließen' }).first().click();
+  check(`${what}: the sheet closes`, await until(async () => (await page.locator('.v5-sheet').count()) === 0, 5000));
+};
 
 const open = async (width, theme, query = '') => {
-  const context = await browser.newContext({ viewport: { width, height: 932 } });
+  const context = await browser.newContext({ viewport: { width, height: width > 700 ? 900 : 932 } });
   await context.addCookies([{ name: 'vf_session', value: cookies.admin, url: BASE }]);
   await context.addInitScript((t) => { localStorage.setItem('vf-v5-theme', t); }, theme);
   const page = await context.newPage();
@@ -74,20 +85,20 @@ const open = async (width, theme, query = '') => {
 };
 
 try {
-  for (const width of [390, 430]) for (const theme of ['dark', 'light']) {
+  for (const [width, theme] of [[390, 'dark'], [390, 'light'], [430, 'dark'], [430, 'light'], [1280, 'dark']]) {
     const tag = `${width}-${theme}`;
     const { context, page } = await open(width, theme);
     for (const [tile, sheet] of [['Übersicht', 'overview'], ['Team', 'team'], ['Gruppen', 'groups'], ['Zugänge', 'access'], ['Suche', 'search'], ['Notizen', 'notes'], ['Diagnose', 'diag']]) {
       await menuTile(page, tile);
       await audit(page, tag, sheet);
-      await close(page);
+      await close(page, `${tag} ${sheet}`);
     }
     // A house and a street: tap them on the map.
     await page.evaluate(async ([c, z]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom: z }); await new Promise((r) => m.once('idle', r)); }, [M(76, 87), 18.4]);
     const house = await page.evaluate((c) => { const q = window.__v5Map.project(c); return [q.x, q.y]; }, M(76, 87));
     await page.mouse.click(house[0], house[1]);
     await audit(page, tag, 'house');
-    await close(page);
+    await close(page, `${tag} house`);
     // Gebiete: the area sheet of the first Area.
     await menuTile(page, 'Gebiete');
     await page.evaluate(() => window.__v5Map.fitBounds([[12.9965, 50.9958], [13.0245, 51.0125]], { padding: 40, duration: 0 }));
@@ -95,14 +106,14 @@ try {
     const area = await page.evaluate(() => { const p = window.__v5Map.project([13.0075, 51.0045]); return [p.x, p.y]; });
     await page.mouse.click(area[0], area[1]);
     await audit(page, tag, 'area');
-    await close(page);
+    await close(page, `${tag} area`);
     await context.close();
 
     // Abholen: the setup sheet and the collection Areas.
     const coll = await open(width, theme, '&kind=collection');
     await menuTile(coll.page, 'Einrichten');
     await audit(coll.page, tag, 'setup');
-    await close(coll.page);
+    await close(coll.page, `${tag} setup`);
     await menuTile(coll.page, 'Gebiete');
     await audit(coll.page, tag, 'collection-areas');
     await coll.context.close();

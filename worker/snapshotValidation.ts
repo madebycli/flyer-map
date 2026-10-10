@@ -417,23 +417,23 @@ export function validateCampaignSnapshot(
   }
 
   if (!Array.isArray(value.teams) || !Array.isArray(value.areas) || !Array.isArray(value.tasks)) {
-    return { valid: false, message: "Snapshot-Collections sind ungültig." };
+    return { valid: false, message: "Snapshot-Sammlungen sind ungültig." };
   }
   const hasHouseCollection = value.houseTasks !== undefined;
   const hasCollection = value.collection !== undefined;
   const collection = hasCollection ? parseCollectionSnapshot(value.collection, campaignId) : null;
   if (hasCollection && !collection) {
-    return { valid: false, message: "Abholgebiete oder Räume sind ungültig." };
+    return { valid: false, message: "Teilgebiete oder Räume sind ungültig." };
   }
 
   if (hasHouseCollection && !Array.isArray(value.houseTasks)) {
-    return { valid: false, message: "House-Task-Collection ist ungültig." };
+    return { valid: false, message: "Haus-Aufgaben-Sammlung ist ungültig." };
   }
 
   const teams: Team[] = [];
   for (const candidate of value.teams) {
     const team = parseTeam(candidate, campaignId);
-    if (!team) return { valid: false, message: "Mindestens ein Team ist ungültig." };
+    if (!team) return { valid: false, message: "Mindestens eine Gruppe ist ungültig." };
     teams.push(team);
   }
 

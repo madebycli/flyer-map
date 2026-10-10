@@ -38,7 +38,7 @@ export function validateCampaignMutation(
     return { valid: false, message: "Änderung ist kein gültiges Objekt." };
   }
   if (!isMutationId(value.id)) {
-    return { valid: false, message: "Änderung-ID ist ungültig." };
+    return { valid: false, message: "Änderungs-ID ist ungültig." };
   }
   if (value.campaignId !== campaignId) {
     return { valid: false, message: "Änderung gehört zu einer anderen Aktion." };
@@ -54,7 +54,7 @@ export function validateCampaignMutation(
     return { valid: false, message: "Änderung createdAt ist ungültig." };
   }
   if (typeof value.type !== "string" || !isRecord(value.payload)) {
-    return { valid: false, message: "Änderung-Typ oder Payload ist ungültig." };
+    return { valid: false, message: "Änderungs-Typ oder Payload ist ungültig." };
   }
 
   const payload = value.payload;
@@ -224,8 +224,8 @@ export function validateCampaignMutation(
       }
       break;
     default:
-      return { valid: false, message: "Änderung-Typ wird nicht unterstützt." };
+      return { valid: false, message: "Änderungs-Typ wird nicht unterstützt." };
   }
 
-  return { valid: false, message: "Änderung-Payload ist ungültig." };
+  return { valid: false, message: "Änderungs-Payload ist ungültig." };
 }

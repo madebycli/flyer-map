@@ -289,7 +289,7 @@ async function requireMutationAccess(
 
 async function getCollectionSnapshot(db: D1DatabaseLike, campaignId: string) {
   if (!(await hasCollectionSchema(db))) {
-    return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+    return errorResponse(503, "schema_migration_required", "Die Abholaktion ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
   }
   const snapshot = await loadCampaignSnapshot(db, campaignId);
   if (!snapshot) return errorResponse(404, "campaign_not_found", "Aktion wurde nicht gefunden.");
@@ -330,7 +330,7 @@ async function manageCollection(
     }
     return json({ ok: true });
   }
-  return errorResponse(405, "method_not_allowed", "Abhol-Verwaltung-Methode nicht erlaubt.");
+  return errorResponse(405, "method_not_allowed", "Methode für die Abholverwaltung nicht erlaubt.");
 }
 
 async function getSnapshot(db: D1DatabaseLike, campaignId: string) {
@@ -699,7 +699,7 @@ export default {
           );
         } catch (error) {
           if (isCollectionSchemaError(error)) {
-            return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+            return errorResponse(503, "schema_migration_required", "Die Abholaktion ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
           }
           return errorResponse(500, "internal_error", "Abhol-Zugang konnte nicht eingelöst werden.");
         }
@@ -708,7 +708,7 @@ export default {
         const campaignId = parseCampaignId(url.searchParams.get("campaign") ?? "");
         if (!campaignId) return errorResponse(400, "invalid_campaign", "Aktions-ID ist ungültig.");
         if (!(await hasCollectionSchema(db))) {
-          return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+          return errorResponse(503, "schema_migration_required", "Die Abholaktion ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
         }
         const access = await resolveCollectionAccess(db, request, campaignId);
         if (!access) return errorResponse(401, "access_required", "Gültiger Abhol-Zugriff ist erforderlich.");
@@ -832,7 +832,7 @@ export default {
           );
         } catch (error) {
           if (isCollectionSchemaError(error)) {
-            return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+            return errorResponse(503, "schema_migration_required", "Die Abholaktion ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
           }
           return errorResponse(500, "internal_error", "Abhol-Verwaltung ist fehlgeschlagen.");
         }
@@ -897,7 +897,7 @@ export default {
         return await getCollectionSnapshot(db, collectionCampaignId);
       } catch (error) {
         if (isCollectionSchemaError(error)) {
-          return errorResponse(503, "schema_migration_required", "Collection ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
+          return errorResponse(503, "schema_migration_required", "Die Abholaktion ist vorbereitet, aber Migration 0010 ist noch nicht angewendet.");
         }
         if (error instanceof StoredSnapshotError) {
           return errorResponse(500, "stored_snapshot_invalid", error.message);

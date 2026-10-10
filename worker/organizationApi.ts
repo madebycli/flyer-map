@@ -138,7 +138,7 @@ function authError(code: string) {
   if (code === "mfa_required") {
     return errorResponse(403, code, "Für diese Aktion ist eine vollständig bestätigte MFA-Sitzung erforderlich.");
   }
-  return errorResponse(403, code, "Diese Organization-Berechtigung fehlt.");
+  return errorResponse(403, code, "Diese Berechtigung der Organisation fehlt.");
 }
 
 async function audit(
@@ -182,7 +182,7 @@ async function createOrganization(request: Request, db: D1DatabaseLike) {
   if (!parsed.ok) return parsed.response;
   const name = typeof parsed.value.name === "string" ? parsed.value.name.trim() : "";
   if (name.length < 2 || name.length > 120) {
-    return errorResponse(400, "invalid_organization_name", "Organization-Name muss 2 bis 120 Zeichen lang sein.");
+    return errorResponse(400, "invalid_organization_name", "Name der Organisation muss 2 bis 120 Zeichen lang sein.");
   }
   const organizationId = `org_${crypto.randomUUID()}`;
   const membershipId = `org_membership_${crypto.randomUUID()}`;

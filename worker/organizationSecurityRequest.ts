@@ -12,7 +12,7 @@ export function guardOrganizationSecurityQuery(request: Request): Response | nul
   const url = new URL(request.url);
   if (!url.search || !SECURITY_QUERYLESS_PATHS.has(url.pathname)) return null;
   return Response.json(
-    { error: { code: "query_not_allowed", message: "Organization-Security-Endpunkte akzeptieren keine Query-Parameter." } },
+    { error: { code: "query_not_allowed", message: "Sicherheits-Endpunkte der Organisation akzeptieren keine Query-Parameter." } },
     {
       status: 400,
       headers: {

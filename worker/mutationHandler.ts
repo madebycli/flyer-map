@@ -26,7 +26,7 @@ async function readMutationBody(request: Request) {
   if (new TextEncoder().encode(raw).byteLength > MAX_MUTATION_BYTES) return { ok: false as const, response: errorResponse(413, "payload_too_large", "Änderung ist zu groß.") };
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false as const, response: errorResponse(400, "invalid_request", "Änderung-Request ist ungültig.") };
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false as const, response: errorResponse(400, "invalid_request", "Änderungs-Request ist ungültig.") };
     return { ok: true as const, value: parsed as Record<string, unknown> };
   } catch {
     return { ok: false as const, response: errorResponse(400, "invalid_json", "Request-Body ist kein gültiges JSON.") };
@@ -34,11 +34,11 @@ async function readMutationBody(request: Request) {
 }
 
 const TEAM_DELETE_MESSAGES: Record<string, string> = {
-  team_delete_has_areas: "Team kann nicht gelöscht werden, solange Gebiete zugeordnet sind.",
-  team_delete_has_field_groups: "Team kann nicht gelöscht werden, weil Einsätze/Touren darauf verweisen.",
-  team_delete_has_sessions: "Team kann nicht gelöscht werden, weil Einsatzhistorie vorhanden ist.",
-  team_delete_has_history: "Team kann nicht gelöscht werden, weil Einsatzhistorie vorhanden ist.",
-  team_delete_has_access_grants: "Team kann nicht gelöscht werden, solange ein aktiver Team-Link existiert.",
+  team_delete_has_areas: "Gruppe kann nicht gelöscht werden, solange Gebiete zugeordnet sind.",
+  team_delete_has_field_groups: "Gruppe kann nicht gelöscht werden, weil Einsätze/Touren darauf verweisen.",
+  team_delete_has_sessions: "Gruppe kann nicht gelöscht werden, weil Einsatzhistorie vorhanden ist.",
+  team_delete_has_history: "Gruppe kann nicht gelöscht werden, weil Einsatzhistorie vorhanden ist.",
+  team_delete_has_access_grants: "Gruppe kann nicht gelöscht werden, solange ein aktiver Team-Link existiert.",
   team_delete_schema_unavailable: "Team kann nicht sicher gelöscht werden, weil die Serverdatenbank noch nicht vollständig geprüft werden kann.",
 };
 
@@ -61,7 +61,7 @@ export async function handleCampaignMutation(request: Request, db: D1DatabaseLik
   if (!validation.valid) return errorResponse(422, "mutation_invalid", validation.message);
   const mutation = validation.mutation;
 
-  if (mutation.type === "team.delete" && access.role !== "admin") return errorResponse(403, "team_delete_forbidden", "Nur Admins dürfen Teams löschen.");
+  if (mutation.type === "team.delete" && access.role !== "admin") return errorResponse(403, "team_delete_forbidden", "Nur Admins dürfen Gruppen löschen.");
   const isCollectionMutation = mutation.type.startsWith("collection.");
   if (access.role === "collection-collector") {
     if (!isCollectionMutation || !access.collectorId) return errorResponse(403, "collection_scope_forbidden", "Abhol-Helfer dürfen nur Abhol-Änderungen ausführen.");
@@ -74,7 +74,7 @@ export async function handleCampaignMutation(request: Request, db: D1DatabaseLik
   const fingerprint = await fingerprintCampaignMutation(mutation);
   const existing = await getAppliedMutation(db, campaignId, mutation.id);
   if (existing) {
-    if (existing.mutationFingerprint !== fingerprint) return errorResponse(409, "mutation_id_reused", "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.", existing.appliedRevision);
+    if (existing.mutationFingerprint !== fingerprint) return errorResponse(409, "mutation_id_reused", "Diese Änderungs-ID wurde bereits mit anderem Inhalt verwendet.", existing.appliedRevision);
     return json({ mutationId: mutation.id, appliedRevision: existing.appliedRevision, alreadyApplied: true });
   }
 
@@ -85,7 +85,7 @@ export async function handleCampaignMutation(request: Request, db: D1DatabaseLik
 
     if (mutation.type === "collection.admin.force-release-area") {
       const area = current.collection?.areas.find((candidate) => candidate.id === mutation.payload.areaId);
-      if (!area || area.runId !== mutation.payload.runId) return errorResponse(409, "mutation_conflict", "Abholgebiet und Raum passen nicht zum aktuellen Serverstand.", current.revision);
+      if (!area || area.runId !== mutation.payload.runId) return errorResponse(409, "mutation_conflict", "Teilgebiet und Raum passen nicht zum aktuellen Serverstand.", current.revision);
     }
 
     let candidate;
@@ -93,7 +93,7 @@ export async function handleCampaignMutation(request: Request, db: D1DatabaseLik
       candidate = applyCampaignMutation(current, mutation);
     } catch (error) {
       if (!(error instanceof CampaignMutationConflictError)) throw error;
-      if (error.reason === "team_has_areas") return errorResponse(409, "team_delete_has_areas", "Team kann nicht gelöscht werden, solange Gebiete zugeordnet sind.", current.revision);
+      if (error.reason === "team_has_areas") return errorResponse(409, "team_delete_has_areas", "Gruppe kann nicht gelöscht werden, solange Gebiete zugeordnet sind.", current.revision);
       if (error.reason === "team_missing" || error.reason === "team_changed") {
         return errorResponse(409, error.reason, error.reason === "team_missing" ? "Das Team wurde bereits gelöscht." : "Das Team wurde inzwischen geändert.", current.revision);
       }
@@ -114,7 +114,7 @@ export async function handleCampaignMutation(request: Request, db: D1DatabaseLik
 
     const persisted = await persistCampaignMutation(db, mutation, current.revision, fingerprint);
     if (persisted.ok) return json({ mutationId: mutation.id, appliedRevision: persisted.revision, alreadyApplied: persisted.alreadyApplied });
-    if (persisted.reason === "mutation_id_reused") return errorResponse(409, "mutation_id_reused", "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.", persisted.currentRevision);
+    if (persisted.reason === "mutation_id_reused") return errorResponse(409, "mutation_id_reused", "Diese Änderungs-ID wurde bereits mit anderem Inhalt verwendet.", persisted.currentRevision);
     if (persisted.reason === "schema_migration_required") return errorResponse(503, "schema_migration_required", "Diese Änderung kann erst nach der vorbereiteten Datenbankmigration gespeichert werden.", persisted.currentRevision);
     if (attempt === MAX_PERSIST_ATTEMPTS - 1) return errorResponse(409, "revision_conflict", "Der Stand der Aktion wurde gleichzeitig auf einem anderen Gerät geändert.", persisted.currentRevision);
   }

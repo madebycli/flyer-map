@@ -87,7 +87,7 @@ export async function guardOrganizationManagedLegacyAdminRequest(
     return errorResponse(
       409,
       "organization_identity_required",
-      "Diese Aktion verwendet zentrale Organisations-Konten. Kampagnenlokale Admin-Konten, Setup-Links und Recovery sind deaktiviert.",
+      "Diese Aktion verwendet zentrale Organisations-Konten. Aktionslokale Admin-Konten, Setup-Links und Recovery sind deaktiviert.",
     );
   }
 

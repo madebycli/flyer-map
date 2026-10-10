@@ -91,7 +91,7 @@ async function errorDetails(response: Response) {
   const error = record?.error && typeof record.error === "object" ? record.error as Record<string, unknown> : null;
   return {
     code: typeof error?.code === "string" ? error.code : "request_failed",
-    message: typeof error?.message === "string" ? error.message : `Request fehlgeschlagen (${response.status}).`,
+    message: typeof error?.message === "string" ? error.message : `Anfrage fehlgeschlagen (${response.status}).`,
   };
 }
 
@@ -154,7 +154,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
     const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : null;
     const error = record?.error && typeof record.error === "object" ? record.error as Record<string, unknown> : null;
     const code = typeof error?.code === "string" ? error.code : "request_failed";
-    const message = typeof error?.message === "string" ? error.message : `Request fehlgeschlagen (${response.status}).`;
+    const message = typeof error?.message === "string" ? error.message : `Anfrage fehlgeschlagen (${response.status}).`;
     throw new OrganizationApiError(response.status, code, message);
   }
   return payload as T;

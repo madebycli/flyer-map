@@ -443,7 +443,7 @@ async function currentTargetCheck(
   if (mutation.type === "collection.pickup.create") {
     const existing = await targetPickup(db, mutation.campaignId, mutation.payload.pickupId);
     return existing
-      ? { ok: false as const, status: 409, code: "pickup_already_exists", message: "Pickup existiert bereits." }
+      ? { ok: false as const, status: 409, code: "pickup_already_exists", message: "Dieser Sonder-Marker existiert bereits." }
       : { ok: true as const };
   }
 
@@ -586,7 +586,7 @@ export async function handlePickupMutation(
       ? mutation.payload.areaId
       : null;
   if (!(await validateArea(db, campaignId, areaId))) {
-    return errorResponse(422, "pickup_area_invalid", "Abholgebiet gehört nicht zu dieser Aktion oder ist archiviert.");
+    return errorResponse(422, "pickup_area_invalid", "Teilgebiet gehört nicht zu dieser Aktion oder ist archiviert.");
   }
 
   if (mutation.type === "collection.pickup.set-assignment") {
@@ -627,7 +627,7 @@ export async function handlePickupMutation(
       return errorResponse(
         409,
         "mutation_id_reused",
-        "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.",
+        "Diese Änderungs-ID wurde bereits mit anderem Inhalt verwendet.",
         existing.appliedRevision,
       );
     }
@@ -676,7 +676,7 @@ export async function handlePickupMutation(
         return errorResponse(
           409,
           "mutation_id_reused",
-          "Diese Änderung-ID wurde bereits mit anderem Inhalt verwendet.",
+          "Diese Änderungs-ID wurde bereits mit anderem Inhalt verwendet.",
           appliedAfterRace.appliedRevision,
         );
       }

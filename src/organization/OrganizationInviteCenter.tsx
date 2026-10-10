@@ -28,9 +28,9 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "role.manage": "Rollen verwalten",
   "campaign.manage": "Aktionen verwalten",
   "campaign.delete": "Aktionen löschen",
-  "team.cross_manage": "Teamübergreifend verwalten",
-  "audit.read": "Audit lesen",
-  "security.manage": "Security verwalten",
+  "team.cross_manage": "Gruppenübergreifend verwalten",
+  "audit.read": "Protokoll lesen",
+  "security.manage": "Sicherheit verwalten",
 };
 
 type LinkState = { kind: "invite" | "reset"; targetId: string; title: string; link: string };
@@ -150,7 +150,7 @@ export function OrganizationInviteCenter() {
                     onChange={(event) => setCapabilities(event.target.checked ? [...capabilities, capability] : capabilities.filter((item) => item !== capability))} />
                 ))}
               </Group>
-            ) : <Notice>Organizer besitzen die vollständige Organisation-Verantwortung. Nur bestehende Organizer dürfen weitere Organizer einladen.</Notice>}
+            ) : <Notice>Organizer besitzen die vollständige Organisations-Verantwortung. Nur bestehende Organizer dürfen weitere Organizer einladen.</Notice>}
             <Button tone="primary" icon="send" busy={busy} disabled={!mfa} onClick={() => void createInvite()}>{busy ? "Wird erstellt …" : "Einladungslink erstellen"}</Button>
           </Card>
 
