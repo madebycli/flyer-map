@@ -29,6 +29,12 @@ nodes:
     status: accepted
     topics: [v5, engine, tiles, sync, notes, tools]
     load_when: [field map behaviour or data model]
+  - id: operations-unstable-testing
+    path: docs/operations/UNSTABLE_TESTEN.md
+    type: operations
+    status: active
+    topics: [testing, unstable, deploy, bootstrap]
+    load_when: [testing on a real device, preparing a test round, resetting the test database]
   - id: v5-diagnostics
     path: docs/v5/DIAGNOSTICS.md
     type: architecture
