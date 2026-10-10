@@ -73,3 +73,19 @@ for (const who of WHO) {
     }
   });
 }
+
+test('reading a built pack: everybody sees what they may see, nobody learns that a foreign Area has one', async () => {
+  const { call } = await setup();
+  const overpass = (async () => new Response(JSON.stringify({ elements: [
+    { type: 'way', id: 1, nodes: [1, 2], geometry: [{ lat: 51.005, lon: 13.001 }, { lat: 51.005, lon: 13.009 }], tags: { highway: 'residential', name: 'Teststraße' } },
+  ] }))) as unknown as typeof fetch;
+  for (const area of ['area_n', 'area_o']) assert.equal((await call('admin', 'POST', `${base}/areas/${area}/pack`, undefined, { fetchImpl: overpass })).status, 200, `build ${area}`);
+  for (const who of WHO) {
+    for (const area of ['area_n', 'area_o']) {
+      const res = await call(who, 'GET', `${base}/areas/${area}/pack`);
+      if (own[who].includes(area)) { assert.equal(res.status, 200, `${who} reads ${area}`); assert.equal(res.headers.get('x-pack-version'), '1'); }
+      else assert.equal(res.status, 404, `${who} must not see that ${area} exists`);
+    }
+  }
+  assert.equal((await call('viewer', 'GET', `${base}/areas/area_nope/pack`)).status, 404, 'unknown Area looks the same as a foreign one');
+});
