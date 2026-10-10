@@ -6,6 +6,26 @@ const shots = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
 let failures = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  ' + detail : ''}`); if (!ok) failures++; };
+
+/** Same bar as the field sheets: every control at least 44 px, no English leftovers in what a person reads. */
+const pageAudit = async (page, name) => {
+  const r = await page.evaluate(() => {
+    const visible = (el) => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0 && getComputedStyle(el).visibility !== 'hidden'; };
+    const target = (el) => (el.matches('input[type=checkbox], input[type=radio]') ? el.closest('label') ?? el : el);
+    const small = [...document.querySelectorAll('button, a[href], input:not([type=hidden]), select, textarea')].filter(visible)
+      .filter((el) => { const b = target(el).getBoundingClientRect(); return b.width < 43.5 || b.height < 43.5; })
+      .filter((el) => !(el.tagName === 'A' && el.closest('p, li, small')))  // a link inside running text is part of the text
+      .map((el) => `${el.tagName.toLowerCase()}「${(el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 24)}」${Math.round(target(el).getBoundingClientRect().width)}×${Math.round(target(el).getBoundingClientRect().height)}`);
+    const english = (document.body.innerText.match(/\b(Organization|Unstable|Campaign|ACTIVE|DRAFT|ARCHIVED|active|draft|archived)\b/g) ?? []);
+    const where = [...document.body.innerText.matchAll(/.{0,40}\b(Organization|Unstable|Campaign|ACTIVE|DRAFT|ARCHIVED|active|draft|archived)\b.{0,20}/g)].map((m) => m[0]).slice(0, 4);
+    const clipped = [...document.querySelectorAll('button, a[href]')].filter(visible).flatMap((el) => [el, ...el.querySelectorAll('*')])
+      .filter((el) => el.childElementCount === 0 && el.textContent.trim() && el.scrollWidth > el.clientWidth && getComputedStyle(el).overflowX !== 'visible').map((el) => el.textContent.trim().slice(0, 24));
+    return { small, english, where, clipped };
+  });
+  check(`${name}: every control at least 44 px`, r.small.length === 0, r.small.join(' · '));
+  check(`${name}: no control caption is cut off`, r.clipped.length === 0, r.clipped.join(' · '));
+  check(`${name}: no English leftovers`, r.english.length === 0, [...new Set(r.english)].join(', ') + '  ' + JSON.stringify(r.where));
+};
 const until = async (predicate, ms = 15000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await predicate()) return true; await new Promise((r) => setTimeout(r, 200)); } return false; };
 const BASE = 'http://localhost:8140';
 
@@ -52,11 +72,13 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   await page.getByLabel('Benutzername').waitFor({ timeout: 60000 });
   check('sign-in page uses the design system (dark by default) and shows no legacy chrome', await page.evaluate(() => document.documentElement.dataset.theme === 'dark' && !!document.querySelector('.ui-page') && !document.querySelector('.org-page, .map-toolbar, .platform-shell')));
   check('the page scrolls like a document and fits a phone', await noHScroll(page));
+  await pageAudit(page, 'o1-login');
   await page.screenshot({ path: `${shots}/o1-login.png` });
   await page.getByLabel('Benutzername').fill('orga');
   await page.getByLabel('Passwort', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: 'Weiter' }).click();
   check('after the password the second factor is asked', await until(async () => (await page.getByRole('button', { name: 'Authenticator' }).count()) === 1));
+  await pageAudit(page, 'o2-factor');
   await page.screenshot({ path: `${shots}/o2-factor.png` });
   await page.getByLabel('6-stelliger Code').fill('123456');
   await page.getByRole('button', { name: 'Anmelden' }).click();
@@ -73,6 +95,7 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   const nav = await page.locator('.ui-bar nav a, .ui-bar nav button').allInnerTexts();
   check('one navigation: Aktionen, Neue Aktion, Einladungen, Sicherheit, Feldkarte', ['Aktionen', 'Neue Aktion', 'Einladungen', 'Sicherheit', 'Feldkarte'].every((t) => nav.includes(t)), nav.join('|'));
   check('dashboard fits the phone width', await noHScroll(page));
+  await pageAudit(page, 'o3-dashboard');
   await page.screenshot({ path: `${shots}/o3-dashboard.png` });
   await page.getByRole('button', { name: 'Neue Aktion' }).first().click();
   await page.getByLabel('Name der Aktion').waitFor();
@@ -80,6 +103,7 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   await page.getByLabel('Name der Aktion').fill('Neu');
   await page.getByRole('button', { name: 'Aktion erstellen' }).click();
   check('creating leads to the Aktion page with the lifecycle control and the Feldkarte link', await until(async () => /\/admin\/campaign\/campaign_new/.test(page.url())) && await page.getByRole('link', { name: 'Feldkarte öffnen' }).count() === 1);
+  await pageAudit(page, 'o4-new');
   await page.screenshot({ path: `${shots}/o4-new.png` });
   await page.context().close();
 }
@@ -91,6 +115,7 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   check('security centre shows the account, the sessions and the audit', await until(async () => { const t = await page.locator('.ui-main').innerText(); return /orga/.test(t) && /Aktive Sitzungen/.test(t) && /campaign\.created/.test(t); }));
   check('only the other session can be revoked', (await page.getByRole('button', { name: 'Widerrufen' }).count()) === 1);
   check('security fits the phone width', await noHScroll(page));
+  await pageAudit(page, 'o5-security');
   await page.screenshot({ path: `${shots}/o5-security.png` });
   await page.context().close();
 }
@@ -101,6 +126,7 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   await page.getByRole('dialog').waitFor();
   const link = await page.locator('.ui-dialog .ui-code').innerText();
   check('the one-time link carries the secret in the fragment, not in the query', /\/join#token=SECRET-TOKEN-123$/.test(link), link);
+  await pageAudit(page, 'o6-invite-dialog');
   await page.screenshot({ path: `${shots}/o6-invite-dialog.png` });
   await page.keyboard.press('Escape');
   check('Escape closes the dialog', await until(async () => (await page.getByRole('dialog').count()) === 0));
@@ -111,6 +137,7 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   const { page } = await open('/join#token=abc', { signedIn: false });
   await page.getByLabel('Benutzername').waitFor({ timeout: 60000 });
   check('the invitation token is removed from the address bar at once', !page.url().includes('token='), page.url());
+  await pageAudit(page, 'o7-join');
   await page.screenshot({ path: `${shots}/o7-join.png` });
   await page.context().close();
 }
