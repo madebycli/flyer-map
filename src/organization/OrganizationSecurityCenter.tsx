@@ -266,7 +266,7 @@ export function OrganizationSecurityCenter() {
 
   useEffect(() => { if (me && organizationId) void refresh(organizationId); }, [me, organizationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (meState.loading) return <Page><PageLoading>Security Center wird geladen …</PageLoading></Page>;
+  if (meState.loading) return <Page><PageLoading>Sicherheitsbereich wird geladen …</PageLoading></Page>;
   if (!me || !membership) return <Page narrow><Card title="Keine aktive Organisation" icon="info"><Notice tone="error">{meState.error ?? error ?? "Für diesen Account existiert keine aktive Mitgliedschaft."}</Notice><LinkButton href="/admin">Zurück</LinkButton></Card></Page>;
 
   const bar = <AdminBar me={me} current="security" />;

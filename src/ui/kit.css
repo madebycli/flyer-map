@@ -23,7 +23,7 @@ html:has(.ui-page), body:has(.ui-page) { margin: 0; overflow: auto; height: auto
 .ui-bar { flex-wrap: wrap; row-gap: 0; }
 .ui-bar nav { order: 3; flex: 1 1 100%; padding-bottom: 0.4rem; flex-wrap: wrap; overflow: visible; }
 .ui-account { margin-left: auto; }
-@media (min-width: 760px) { .ui-bar { flex-wrap: nowrap; } .ui-bar nav { order: 0; flex: 1 1 auto; padding-bottom: 0; } }
+@media (min-width: 760px) { .ui-bar { flex-wrap: nowrap; } .ui-bar nav { order: 0; flex: 1 1 auto; padding-bottom: 0; flex-wrap: nowrap; overflow-x: auto; } }
 .ui-account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; font-size: 0.88rem; font-weight: 700; color: var(--on-var); }
 
 .ui-main { display: grid; gap: 1rem; align-content: start; width: min(72rem, 100%); margin: 0 auto; padding: 1.6rem max(1rem, env(safe-area-inset-left)) 5rem; }

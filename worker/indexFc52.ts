@@ -92,7 +92,7 @@ export async function augmentPickupSnapshotResponse(
       {
         error: {
           code: "pickup_schema_unavailable",
-          message: "Pickup-Daten benötigen die vorbereitete Migration 0011.",
+          message: "Sonder-Marker-Daten benötigen die vorbereitete Migration 0011.",
         },
         ...(typeof payload.revision === "number" ? { revision: payload.revision } : {}),
       },
@@ -162,7 +162,7 @@ export default {
               {
                 error: {
                   code: "pickup_capability_forbidden",
-                  message: "Dieser Collection-Helfer darf keine Pickups sehen oder anlegen.",
+                  message: "Dieser Abhol-Helfer darf keine Sonder-Marker sehen oder anlegen.",
                 },
               },
               { status: 403 },

@@ -31,7 +31,7 @@ type CollectorRow = CapabilityRow & {
 
 export class PickupVisibilitySchemaUnavailableError extends Error {
   constructor() {
-    super("Pickup-Sichtbarkeit benötigt die vorbereitete Visibility-Migration.");
+    super("Sonder-Marker-Sichtbarkeit benötigt die vorbereitete Visibility-Migration.");
     this.name = "PickupVisibilitySchemaUnavailableError";
   }
 }
@@ -214,7 +214,7 @@ export async function handlePickupCapabilitiesApi(
   const route = capabilityRoute(new URL(request.url).pathname);
   if (!route) return null;
   if (request.method !== "PUT") {
-    return errorResponse(405, "method_not_allowed", "Pickup-Rechte werden mit PUT geändert.");
+    return errorResponse(405, "method_not_allowed", "Sonder-Marker-Rechte werden mit PUT geändert.");
   }
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) {
@@ -224,12 +224,12 @@ export async function handlePickupCapabilitiesApi(
     return errorResponse(
       503,
       "pickup_schema_unavailable",
-      "Pickup-Rechte benötigen die vorbereitete Migration 0011.",
+      "Sonder-Marker-Rechte benötigen die vorbereitete Migration 0011.",
     );
   }
   const access = await resolvePersistentAccess(db, request, route.campaignId);
   if (access?.role !== "admin") {
-    return errorResponse(403, "forbidden", "Nur Admins dürfen Pickup-Rechte ändern.");
+    return errorResponse(403, "forbidden", "Nur Admins dürfen Sonder-Marker-Rechte ändern.");
   }
 
   let value: unknown;
@@ -240,19 +240,19 @@ export async function handlePickupCapabilitiesApi(
   }
   const capabilities = parseCapabilities(value);
   if (!capabilities) {
-    return errorResponse(422, "capabilities_invalid", "Pickup-Rechte sind ungültig.");
+    return errorResponse(422, "capabilities_invalid", "Sonder-Marker-Rechte sind ungültig.");
   }
 
   try {
     if (!(await updatePickupCapabilities(db, route.campaignId, route.collectorId, capabilities))) {
-      return errorResponse(404, "collector_not_found", "Collection-Helfer wurde nicht gefunden.");
+      return errorResponse(404, "collector_not_found", "Abhol-Helfer wurde nicht gefunden.");
     }
   } catch (error) {
     if (error instanceof PickupVisibilitySchemaUnavailableError) {
       return errorResponse(
         503,
         "pickup_visibility_schema_unavailable",
-        "Pickup-Sichtbarkeit benötigt die vorbereitete Visibility-Migration.",
+        "Sonder-Marker-Sichtbarkeit benötigt die vorbereitete Visibility-Migration.",
       );
     }
     throw error;
@@ -260,7 +260,7 @@ export async function handlePickupCapabilitiesApi(
 
   const updated = await loadPickupCapabilities(db, route.campaignId, route.collectorId);
   if (!updated) {
-    return errorResponse(404, "collector_not_found", "Collection-Helfer wurde nicht gefunden.");
+    return errorResponse(404, "collector_not_found", "Abhol-Helfer wurde nicht gefunden.");
   }
   return json({ collectorId: route.collectorId, capabilities: updated });
 }

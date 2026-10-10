@@ -76,14 +76,14 @@ export async function handleOrganizationBootstrapHashApi(
   if (url.pathname !== "/api/organization/bootstrap" || !configuredSha256) return null;
   if (request.method !== "POST") return errorResponse(405, "method_not_allowed", "Bootstrap-Methode nicht erlaubt.");
   if (request.headers.get("origin") !== url.origin) {
-    return errorResponse(403, "origin_forbidden", "Organization-Schreibzugriffe benötigen denselben Origin.");
+    return errorResponse(403, "origin_forbidden", "Organisations-Schreibzugriffe benötigen denselben Origin.");
   }
   if (!env.DB) return errorResponse(503, "d1_unavailable", "D1 ist nicht gebunden.");
   if (!env.ORGANIZATION_TOTP_KEY) {
-    return errorResponse(503, "organization_bootstrap_unconfigured", "Organization-Bootstrap ist nicht vollständig konfiguriert.");
+    return errorResponse(503, "organization_bootstrap_unconfigured", "Organisations-Bootstrap ist nicht vollständig konfiguriert.");
   }
   if (!(await schemaAvailable(env.DB))) {
-    return errorResponse(503, "organization_schema_unavailable", "Organization-Plattform benötigt Migration 0018.");
+    return errorResponse(503, "organization_schema_unavailable", "Organisations-Plattform benötigt Migration 0018.");
   }
   const parsed = await readBody(request);
   if (!parsed) return errorResponse(400, "invalid_request", "Request-Daten sind ungültig.");
@@ -102,8 +102,8 @@ export async function handleOrganizationBootstrapHashApi(
       result.code === "bootstrap_unavailable" ? 409 : 400,
       result.code,
       result.code === "bootstrap_unavailable"
-        ? "Organization-Bootstrap wurde bereits beansprucht oder konnte nicht atomar abgeschlossen werden."
-        : "Organization-, Benutzer- oder Passwortdaten sind ungültig.",
+        ? "Organisations-Bootstrap wurde bereits beansprucht oder konnte nicht atomar abgeschlossen werden."
+        : "Organisations-, Benutzer- oder Passwortdaten sind ungültig.",
     );
   }
   const response = json({

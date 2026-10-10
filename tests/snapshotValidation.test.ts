@@ -143,6 +143,6 @@ test("rejects snapshots whose campaign does not match the route", () => {
   const result = validateCampaignSnapshot(validSnapshot(), "campaign_other-1");
   assert.deepEqual(result, {
     valid: false,
-    message: "Campaign-Daten sind ungültig oder gehören zu einer anderen Campaign.",
+    message: "Daten der Aktion sind ungültig oder gehören zu einer anderen Aktion.",
   });
 });

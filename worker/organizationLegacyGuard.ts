@@ -75,7 +75,7 @@ export async function guardOrganizationManagedLegacyAdminRequest(
     return errorResponse(
       409,
       "organization_campaign_create_required",
-      "Neue Campaigns werden ausschließlich von einem Organizer über die zentrale Organization-Verwaltung angelegt.",
+      "Neue Aktionen werden ausschließlich von einem Organizer über die zentrale Organisations-Verwaltung angelegt.",
     );
   }
 
@@ -87,7 +87,7 @@ export async function guardOrganizationManagedLegacyAdminRequest(
     return errorResponse(
       409,
       "organization_identity_required",
-      "Diese Campaign verwendet zentrale Organization-Konten. Kampagnenlokale Admin-Konten, Setup-Links und Recovery sind deaktiviert.",
+      "Diese Aktion verwendet zentrale Organisations-Konten. Aktionslokale Admin-Konten, Setup-Links und Recovery sind deaktiviert.",
     );
   }
 
@@ -104,7 +104,7 @@ export async function guardOrganizationManagedLegacyAdminRequest(
         return errorResponse(
           409,
           "organization_admin_invite_required",
-          "Admin-Zugriff für Organization-Campaigns wird ausschließlich über zentrale Organization-Einladungen vergeben.",
+          "Admin-Zugriff für Organisations-Aktionen wird ausschließlich über zentrale Organisations-Einladungen vergeben.",
         );
       }
     } catch {
@@ -130,7 +130,7 @@ export async function rewriteOrganizationManagedAccessResponse(
     return errorResponse(
       401,
       "organization_access_required",
-      "Für diese Campaign ist eine zentrale Organization-Anmeldung mit ausreichender Berechtigung erforderlich.",
+      "Für diese Aktion ist eine zentrale Organisations-Anmeldung mit ausreichender Berechtigung erforderlich.",
     );
   }
   if (!response.ok) return response;

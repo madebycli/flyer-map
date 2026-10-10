@@ -263,13 +263,13 @@ async function resolveSearchAccess(
       response: errorResponse(
         403,
         "pickup_search_forbidden",
-        "Nur Admins oder Collection-Helfer dürfen Pickup-Adressen suchen.",
+        "Nur Admins oder Abhol-Helfer dürfen Adressen für Sonder-Marker suchen.",
       ),
     };
   }
   return {
     ok: false,
-    response: errorResponse(401, "access_required", "Gültiger Collection-Zugriff ist erforderlich."),
+    response: errorResponse(401, "access_required", "Gültiger Abhol-Zugriff ist erforderlich."),
   };
 }
 
@@ -347,16 +347,16 @@ export async function handlePickupSearch(
   const campaignId = pickupSearchCampaignRoute(url.pathname);
   if (!campaignId) return null;
   if (request.method !== "GET") {
-    return errorResponse(405, "method_not_allowed", "Für die Pickup-Suche ist nur GET erlaubt.");
+    return errorResponse(405, "method_not_allowed", "Für die Adresssuche der Sonder-Marker ist nur GET erlaubt.");
   }
   if (!env.DB) {
-    return errorResponse(503, "d1_unavailable", "D1 ist für die Pickup-Suche nicht verfügbar.");
+    return errorResponse(503, "d1_unavailable", "D1 ist für die Adresssuche für Sonder-Marker nicht verfügbar.");
   }
   if (!(await hasPickupReadSchema(env.DB))) {
     return errorResponse(
       503,
       "pickup_schema_unavailable",
-      "Pickup-Suche benötigt die vorbereitete Migration 0011.",
+      "Adresssuche für Sonder-Marker benötigt die vorbereitete Migration 0011.",
     );
   }
 
@@ -370,7 +370,7 @@ export async function handlePickupSearch(
       return errorResponse(
         403,
         "pickup_capability_forbidden",
-        "Dieser Collection-Helfer darf keine Pickups sehen und anlegen.",
+        "Dieser Abhol-Helfer darf keine Sonder-Marker sehen und anlegen.",
       );
     }
   }
@@ -388,21 +388,21 @@ export async function handlePickupSearch(
     return errorResponse(
       409,
       "collection_main_area_required",
-      "Für die Pickup-Suche muss zuerst ein gültiges Collection-Hauptgebiet vorhanden sein.",
+      "Für die Adresssuche der Sonder-Marker muss zuerst ein gültiges Sammelgebiet vorhanden sein.",
     );
   }
   if (!env.GEOAPIFY_API_KEY) {
     return errorResponse(
       503,
       "pickup_search_unconfigured",
-      "Pickup-Adresssuche ist serverseitig noch nicht konfiguriert.",
+      "Sonder-Marker-Adresssuche ist serverseitig noch nicht konfiguriert.",
     );
   }
   if (!env.PICKUP_SEARCH_LIMITER) {
     return errorResponse(
       503,
       "pickup_search_unavailable",
-      "Pickup-Adresssuche ist ohne serverseitiges Rate Limit deaktiviert.",
+      "Sonder-Marker-Adresssuche ist ohne serverseitiges Rate Limit deaktiviert.",
     );
   }
   if (!(await allowSearchRequest(env.PICKUP_SEARCH_LIMITER, campaignId, access.access))) {

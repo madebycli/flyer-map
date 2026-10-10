@@ -16,10 +16,14 @@ const pageAudit = async (page, name) => {
       .filter((el) => { const b = target(el).getBoundingClientRect(); return b.width < 43.5 || b.height < 43.5; })
       .filter((el) => !(el.tagName === 'A' && el.closest('p, li, small')))  // a link inside running text is part of the text
       .map((el) => `${el.tagName.toLowerCase()}「${(el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 24)}」${Math.round(target(el).getBoundingClientRect().width)}×${Math.round(target(el).getBoundingClientRect().height)}`);
-    const english = (document.body.innerText.match(/\b(Organization|Unstable|Campaign|ACTIVE|DRAFT|ARCHIVED|active|draft|archived)\b/g) ?? []);
-    const where = [...document.body.innerText.matchAll(/.{0,40}\b(Organization|Unstable|Campaign|ACTIVE|DRAFT|ARCHIVED|active|draft|archived)\b.{0,20}/g)].map((m) => m[0]).slice(0, 4);
-    const clipped = [...document.querySelectorAll('button, a[href]')].filter(visible).flatMap((el) => [el, ...el.querySelectorAll('*')])
-      .filter((el) => el.childElementCount === 0 && el.textContent.trim() && el.scrollWidth > el.clientWidth && getComputedStyle(el).overflowX !== 'visible').map((el) => el.textContent.trim().slice(0, 24));
+    const english = (document.body.innerText.match(/\b(Organizations?|Unstable|Campaigns?|ACTIVE|DRAFT|ARCHIVED|COMPLETED|active|draft|archived|completed|Security|Request)\b/g) ?? []);
+    const where = [...document.body.innerText.matchAll(/.{0,40}\b(Organizations?|Unstable|Campaigns?|ACTIVE|DRAFT|ARCHIVED|COMPLETED|active|draft|archived|completed|Security|Request)\b.{0,20}/g)].map((m) => m[0]).slice(0, 4);
+    const clipped = [...document.querySelectorAll('button, a[href]')].filter(visible).filter((el) => {
+      const box = el.getBoundingClientRect();
+      const spills = [...el.querySelectorAll('*')].filter(visible).some((child) => { const r = child.getBoundingClientRect(); return r.left < box.left - 1 || r.right > box.right + 1; });
+      const cut = [el, ...el.querySelectorAll('*')].some((node) => node.textContent.trim() && node.clientWidth > 0 && node.scrollWidth > node.clientWidth && getComputedStyle(node).overflowX !== 'visible');
+      return spills || cut;
+    }).map((el) => el.textContent.trim().slice(0, 24));
     return { small, english, where, clipped };
   });
   check(`${name}: every control at least 44 px`, r.small.length === 0, r.small.join(' · '));
