@@ -151,7 +151,7 @@ jobs:
       UNSTABLE_ALIAS_WORKER: flyer-map-unstable
       PROD_D1_ID: 0113e775-1e43-4d96-8b97-51fdeec7355b
       RXDB_STAGING_D1_ID: bcec3432-18ec-42a2-970a-64d52c8263d5
-      BOOTSTRAP_SHA256: 2058707356b5b06c207d0e4a49148626058e6e2661af9dd4a4bb86c32d7930d9
+      BOOTSTRAP_SHA256: 8cb8fc4c717fc9588564f742f9bf1cb10354f38a60838309436623a1ca1e054f
       STABLE_URL: https://flyer-map.cloudflare-eleven035.workers.dev
       UNSTABLE_URL: https://flyer-map-unstable.cloudflare-eleven035.workers.dev
     steps:
