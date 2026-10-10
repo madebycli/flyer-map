@@ -46,6 +46,19 @@ page.once('dialog', (d) => { check('deleting asks first', /löschen/.test(d.mess
 await page.getByRole('button', { name: 'Gruppe Nordost löschen' }).click();
 check('an empty Gruppe can be deleted', await until(async () => !(await meta()).teams.some((t) => t.name === 'Nordost')));
 
+// Gebiete zuweisen: every Gebiet with its Gruppe, changeable in the Gruppen sheet
+const areaName = (await meta()).areas.find((a) => a.id === 'area_n').name;
+const other = (await meta()).teams.find((t) => t.id === 'team_o').name;
+const own = (await meta()).teams.find((t) => t.id === 'team_n').name;
+await page.evaluate(() => { document.querySelector('.v5-sheet').dataset.probe = 'kept'; document.querySelector('.v5-sheet').scrollTop = 40; });
+await page.getByLabel(`Gruppe von ${areaName}`).selectOption({ label: other });
+check('assigning a Gebiet to another Gruppe from the Gruppen sheet is saved', await until(async () => (await meta()).areas.find((a) => a.id === 'area_n')?.teamId === 'team_o'));
+check('the sheet stays open while the Aktion is re-read (no flash, scroll position kept)', await until(async () => /→/.test(await page.locator('.v5-toast').innerText().catch(() => ''))) && await page.evaluate(() => { const sheet = document.querySelector('.v5-sheet'); return sheet?.dataset.probe === 'kept' && sheet.scrollTop >= 30; }));
+check('the Gruppe that now has Gebiete can no longer be deleted, the emptied one can', await until(async () => (await page.getByRole('button', { name: `Gruppe ${other} löschen` }).isDisabled())));
+await page.getByLabel(`Gruppe von ${areaName}`).selectOption({ label: own });
+check('and back again', await until(async () => (await meta()).areas.find((a) => a.id === 'area_n')?.teamId === 'team_n'));
+await page.screenshot({ path: `${shots}/g1b-assign.png` });
+
 // Aktion rename
 await page.getByLabel('Name der Aktion').fill('Frühjahr 2027');
 await page.getByLabel('Name der Aktion').press('Enter');
@@ -63,7 +76,8 @@ await page.getByLabel('Name des Gebiets ändern').waitFor({ timeout: 10000 });
 await page.getByLabel('Name des Gebiets ändern').fill('Mitte');
 await page.getByLabel('Name des Gebiets ändern').press('Enter');
 check('renaming a Gebiet is saved', await until(async () => (await meta()).areas.find((a) => a.id === 'area_n')?.name === 'Mitte'));
-await page.getByRole('group', { name: 'Gruppe des Gebiets' }).getByRole('button', { name: /Zu Gruppe Andere/ }).click();
+check('on the Gebiet, each Gruppe is shown with its name, the current one pressed', await page.getByRole('group', { name: 'Gruppe des Gebiets' }).getByRole('button', { name: own, exact: true }).getAttribute('aria-pressed') === 'true');
+await page.getByRole('group', { name: 'Gruppe des Gebiets' }).getByRole('button', { name: other, exact: true }).click();
 check('moving a Gebiet to another Gruppe is saved', await until(async () => (await meta()).areas.find((a) => a.id === 'area_n')?.teamId === 'team_o'));
 await page.screenshot({ path: `${shots}/g2-area.png` });
 

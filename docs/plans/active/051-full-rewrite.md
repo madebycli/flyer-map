@@ -110,7 +110,8 @@ Einsätze, Automationen and the Team-Center are **not** rebuilt; they are delete
 | Team (hub, active team) | Gruppe is implied by the link; admins see all Gruppen | done |
 | Rooms (live groups with join code/QR, leave, members) | none (collection has its own Raum) | not rebuilt (decision 5) |
 | Abholen einrichten: Sammelgebiet + Teilgebiete zeichnen/bearbeiten/archivieren, Admin-Freigabe, Helfer-Rechte je Gerät (old `CollectionAdminPanel`) | Menü → Einrichten (Abhol-Ansicht), Zugänge → Geräte | done (flow 14; found and fixed a server bug: `collection.area.update` bound no colour, so the update matched no row — regression test `collectionMutationBinds`) |
-| Sonder-Marker zuweisen (an Raum/Helfer) | right can be granted, no assignment UI | **open** (small) |
+| Sonder-Marker zuweisen (an Raum/Helfer) | not built; the owner meant something else by „Zuweisen“ (Gebiete an Gruppen), so the switch without a function was removed from Zugänge; the server right stays | dropped |
+| Gebiete einer Gruppe zuweisen | Gruppen sheet → „Gebiete zuweisen“ (one list, every Gebiet with its Gruppe); on a Gebiet and when drawing: Gruppen by name and colour | done (flow 13) |
 | Offline map area, street edit after mission, smart house/street tasks | warm cache + derived network | replaced |
 
 ## Order from here

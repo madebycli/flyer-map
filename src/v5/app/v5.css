@@ -209,6 +209,14 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-sheet { border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .v5-syncbox > span { display: flex; align-items: center; gap: 0.5rem; }
 .v5-qr { display: grid; place-items: center; justify-self: center; padding: 0.7rem; border-radius: var(--r); background: #fff; }
+/* a Gruppe by colour and name: wraps, every chip a full target */
+.v5-groups { display: flex; flex-wrap: wrap; gap: var(--gap); }
+.v5-groupchip { display: inline-flex; align-items: center; gap: 0.55rem; min-height: 2.75rem; max-width: 100%; padding: 0.3rem 0.9rem; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font: 700 0.92rem var(--font); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.v5-groupchip .dot, .v5-assignrow .dot { width: 0.9rem; height: 0.9rem; flex: none; border-radius: 0.3rem; background: var(--c); }
+.v5-groupchip.on { background: color-mix(in srgb, var(--c) 22%, var(--surface-3)); box-shadow: inset 0 0 0 2px var(--c); }
+.v5-groupchip:disabled { opacity: 0.55; cursor: default; }
+.v5-assignrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, 46%); align-items: center; gap: var(--gap); }
+.v5-assignrow .name { display: inline-flex; align-items: center; gap: 0.55rem; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
 .v5-grouprow { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
 /* a row inside a grid cell may shrink below its content (the name field gives way, the count and the delete button stay on screen) */
 .v5-grouprow > .v5-row { min-width: 0; }

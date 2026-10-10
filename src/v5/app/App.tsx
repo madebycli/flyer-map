@@ -599,7 +599,8 @@ export function App({ campaignId }: { campaignId: string }) {
           onRenameCampaign={(name) => void runAdmin(() => renameCampaign(campaignId, meta.campaign.name, name), 'Aktion umbenannt.')}
           onCreate={(name, color) => void runAdmin(() => createTeam(campaignId, { id: `team_${crypto.randomUUID()}`, name, color }), 'Gruppe angelegt.')}
           onUpdate={(teamId, patch) => { const t = teamOf(teamId); if (t) void runAdmin(() => updateTeam(campaignId, t, patch)); }}
-          onDelete={(teamId) => { const t = teamOf(teamId); if (t && window.confirm(`Gruppe „${t.name}“ löschen? Ihre Zugangslinks bleiben bestehen, bis du sie widerrufst.`)) void runAdmin(() => deleteTeam(campaignId, t), 'Gruppe gelöscht.'); }} />
+          onDelete={(teamId) => { const t = teamOf(teamId); if (t && window.confirm(`Gruppe „${t.name}“ löschen? Ihre Zugangslinks bleiben bestehen, bis du sie widerrufst.`)) void runAdmin(() => deleteTeam(campaignId, t), 'Gruppe gelöscht.'); }}
+          onSetAreaTeam={(areaId, teamId) => { const a = areaOfId(areaId); if (a && a.teamId !== teamId) void runAdmin(() => setAreaTeam(campaignId, a, teamId), `${a.name} → ${teamOf(teamId)?.name ?? 'Gruppe'}`); }} />
       )}
       {ready && panel === 'access' && meta?.role === 'admin' && <AccessSheet campaignId={campaignId} teams={meta.teams} onClose={() => setPanel(null)} />}
       {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}

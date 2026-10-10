@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Meta } from './api.ts';
 import { SheetFrame } from './sheet.tsx';
-import { Icon } from '../../ui/index.ts';
+import { Icon, Select } from '../../ui/index.ts';
 
 /** Calm colours for Gruppen; the map draws a Gebiet in its Gruppe's colour, so they must stay apart from each other and from the status colours. */
 export const GROUP_COLORS = ['#4f8cff', '#e5736b', '#e0a83a', '#8b7be8', '#38b8a6', '#d46fb0', '#7dbb4a', '#8a97a6'];
@@ -14,6 +14,7 @@ type Props = {
   onCreate(name: string, color: string): void;
   onUpdate(teamId: string, patch: { name?: string; color?: string }): void;
   onDelete(teamId: string): void;
+  onSetAreaTeam(areaId: string, teamId: string): void;
   onClose(): void;
 };
 
@@ -23,6 +24,33 @@ export function Swatches({ value, onPick, label }: { value: string; onPick(color
     <div className="v5-teams" role="group" aria-label={label}>
       {GROUP_COLORS.map((c) => <button key={c} className={`v5-team${c.toLowerCase() === value.toLowerCase() ? ' on' : ''}`} style={{ '--c': c } as React.CSSProperties} onClick={() => onPick(c)} aria-pressed={c.toLowerCase() === value.toLowerCase()} aria-label={c} title={c} />)}
     </div>
+  );
+}
+
+/** Which Gruppe something belongs to: one chip per Gruppe with its colour and name (a colour alone says nothing to someone who did not pick it). */
+export function GroupPicker({ teams, value, label, disabled, onPick }: { teams: Meta['teams']; value: string; label: string; disabled?: boolean; onPick(teamId: string): void }) {
+  return (
+    <div className="v5-groups" role="group" aria-label={label}>
+      {teams.map((t) => (
+        <button key={t.id} type="button" className={`v5-groupchip${t.id === value ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} disabled={disabled}
+          aria-pressed={t.id === value} onClick={() => { if (t.id !== value) onPick(t.id); }}>
+          <span className="dot" aria-hidden />{t.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** One line per Gebiet: its name and the Gruppe it belongs to, changeable right there. */
+function AssignRow({ area, teams, busy, onSetAreaTeam }: { area: Meta['areas'][number]; teams: Meta['teams']; busy: boolean; onSetAreaTeam: Props['onSetAreaTeam'] }) {
+  const team = teams.find((t) => t.id === area.teamId);
+  return (
+    <label className="v5-assignrow">
+      <span className="name"><span className="dot" style={{ '--c': team?.color ?? 'var(--outline)' } as React.CSSProperties} aria-hidden />{area.name}</span>
+      <Select value={area.teamId} disabled={busy || teams.length < 2} aria-label={`Gruppe von ${area.name}`} onChange={(e) => onSetAreaTeam(area.id, e.target.value)}>
+        {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      </Select>
+    </label>
   );
 }
 
@@ -44,8 +72,8 @@ function GroupRow({ team, areas, busy, onUpdate, onDelete }: { team: Meta['teams
   );
 }
 
-/** Admin: the Aktion's name and its Gruppen. Gebiete are moved between Gruppen from the Gebiet itself. */
-export function GroupsSheet({ meta, busy, error, onRenameCampaign, onCreate, onUpdate, onDelete, onClose }: Props) {
+/** Admin: the Aktion's name, its Gruppen, and which Gebiet belongs to which Gruppe (also changeable on the Gebiet itself). */
+export function GroupsSheet({ meta, busy, error, onRenameCampaign, onCreate, onUpdate, onDelete, onSetAreaTeam, onClose }: Props) {
   const [campaignName, setCampaignName] = useState(meta.campaign.name);
   const [name, setName] = useState('');
   const [color, setColor] = useState(GROUP_COLORS[meta.teams.length % GROUP_COLORS.length]);
@@ -68,6 +96,10 @@ export function GroupsSheet({ meta, busy, error, onRenameCampaign, onCreate, onU
         <Swatches value={color} label="Farbe der neuen Gruppe" onPick={setColor} />
         <button className="v5-btn primary" style={{ marginTop: 0 }} disabled={busy || !name.trim()} onClick={() => { onCreate(name.trim(), color); setName(''); }}><Icon name="plus" size={20} />Gruppe anlegen</button>
       </div>
+      <h3>Gebiete zuweisen</h3>
+      {meta.areas.length === 0 ? <p className="v5-hint"><Icon name="info" size={20} />Noch keine Gebiete. Zeichne eines über Menü → Gebiete; es gehört dann zur gewählten Gruppe.</p>
+        : meta.teams.length < 2 ? <p className="v5-hint"><Icon name="info" size={20} />Lege eine zweite Gruppe an, dann kannst du die {meta.areas.length} Gebiete hier verteilen.</p>
+        : <div className="v5-list">{meta.areas.map((a) => <AssignRow key={`${a.id}:${a.updatedAt}`} area={a} teams={meta.teams} busy={busy} onSetAreaTeam={onSetAreaTeam} />)}</div>}
     </SheetFrame>
   );
 }
@@ -79,11 +111,7 @@ export function AreaAdmin({ area, teams, busy, onRename, onSetTeam, onDelete }: 
   return (
     <div className="v5-form">
       <input className="v5-input" value={name} onChange={(e) => setName(e.target.value.slice(0, 160))} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} aria-label="Name des Gebiets ändern" disabled={busy} maxLength={160} />
-      {teams.length > 1 && (
-        <div className="v5-teams" role="group" aria-label="Gruppe des Gebiets">
-          {teams.map((t) => <button key={t.id} className={`v5-team${t.id === area.teamId ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} disabled={busy} aria-pressed={t.id === area.teamId} aria-label={`Zu Gruppe ${t.name}`} title={t.name} onClick={() => { if (t.id !== area.teamId) onSetTeam(t.id); }} />)}
-        </div>
-      )}
+      <GroupPicker teams={teams} value={area.teamId} label="Gruppe des Gebiets" disabled={busy} onPick={onSetTeam} />
       <button className="v5-btn" style={{ marginTop: 0 }} disabled={busy} onClick={onDelete}><Icon name="trash" size={20} />Gebiet löschen</button>
     </div>
   );
