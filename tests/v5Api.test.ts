@@ -269,7 +269,12 @@ test('a down Overpass server (521) does not fail the build: the next mirror answ
   const failed = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_o/pack`, undefined, { fetchImpl: forbidden });
   assert.equal(failed.status, 502);
   assert.equal(refused.length, 1);
-  assert.match(((await failed.json()) as { error: { message: string } }).error.message, /400/);
+  assert.match(((await failed.json()) as { error: { message: string } }).error.message, /400.*\(overpass-api\.de 400\)/);
+  const allDown: string[] = [];
+  const down = (async (url: string) => { allDown.push(url); return new Response('', { status: allDown.length % 2 ? 500 : 521 }); }) as unknown as typeof fetch;
+  const listed = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_o/pack`, undefined, { fetchImpl: down, now: () => NOW + 500_000 });
+  assert.equal(listed.status, 502);
+  assert.match(((await listed.json()) as { error: { message: string } }).error.message, /overpass-api\.de 500 · .* 521/);
 });
 
 test('a failure after the data arrived is named and lifts the pause, so the next try is possible at once', async () => {

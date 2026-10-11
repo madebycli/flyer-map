@@ -310,7 +310,7 @@ async function getPack(db: D1DatabaseLike, access: AccessContext, campaignId: st
   return new Response(out, { headers: { 'content-type': 'application/gzip', 'cache-control': 'private, max-age=0, must-revalidate', etag: `"v5-${meta.version}"`, 'x-pack-version': String(meta.version), 'x-engine': meta.engine } });
 }
 
-const OVERPASS_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const OVERPASS_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://lz4.overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter'];
 
 async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, options: V5Options): Promise<Response> {
   const area = await resolveArea(db, campaignId, areaId);
@@ -336,18 +336,24 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
   // next mirror is tried, within this one attempt. A configured address (OSM_OVERPASS_URL) is the only one asked.
   const urls = options.overpassUrl ? [options.overpassUrl] : OVERPASS_MIRRORS;
   let response: Response | null = null;
-  let lastStatus = 0;
+  const tried: string[] = []; // what each server said, for the person who has to decide what to do ("overpass-api.de 521 · …")
   for (const url of urls) {
+    const host = new URL(url).hostname;
     try {
       const attempt = await doFetch(url, {
-        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'verteil-flyer-v5/1 (flyer distribution field tool)' }, body: `data=${encodeURIComponent(overpassQuery(bbox))}`, signal: AbortSignal.timeout(30_000),
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'verteil-flyer-v5/1 (flyer distribution field tool)' }, body: `data=${encodeURIComponent(overpassQuery(bbox))}`, signal: AbortSignal.timeout(20_000),
       });
       if (attempt.ok) { response = attempt; break; }
-      lastStatus = attempt.status;
+      tried.push(`${host} ${attempt.status}`);
       if (attempt.status !== 429 && attempt.status < 500) break; // another kind of refusal: a mirror will not change it
-    } catch { /* no answer: the next mirror */ }
+    } catch (error) { tried.push(`${host} ${error instanceof Error && error.name === 'TimeoutError' ? 'Zeitüberschreitung' : 'keine Antwort'}`); }
   }
-  if (!response) return lastStatus ? fail(502, 'overpass_error', `Kartendatenquelle antwortete mit ${lastStatus}. Bitte später erneut versuchen.`) : fail(502, 'overpass_unreachable', 'Kartendatenquelle nicht erreichbar. Bitte später erneut versuchen.');
+  if (!response) {
+    const status = Number(/ (\d{3})$/u.exec(tried[tried.length - 1] ?? '')?.[1] ?? 0);
+    return status
+      ? fail(502, 'overpass_error', `Kartendatenquelle antwortete mit ${status}. Bitte später erneut versuchen. (${tried.join(' · ')})`)
+      : fail(502, 'overpass_unreachable', `Kartendatenquelle nicht erreichbar. Bitte später erneut versuchen. (${tried.join(' · ')})`);
+  }
   const textBody = await response.text();
   if (textBody.length > (options.maxPackBytes ?? 40_000_000)) return fail(502, 'overpass_too_large', 'Antwort der Kartendatenquelle zu groß.');
   let parsed: ReturnType<typeof packFromOverpass>;
