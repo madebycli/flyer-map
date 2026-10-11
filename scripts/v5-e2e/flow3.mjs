@@ -74,7 +74,9 @@ const routeBefore = await done();
 await confirmRoute(page);
 await page.waitForTimeout(900);
 check('a route is two taps, a check and a status', (await done()) > routeBefore, `+${(await done()) - routeBefore}`);
-check('after a route the panel is ready for the next one (points reset)', (await page.locator('.v5-fab .v5-tile b').first().innerText()) === '0');
+check('choosing the status ends the marking mode', (await page.locator('.v5-fab').getAttribute('data-state')) === 'idle');
+await startMarking(page);
+check('a new start has the points reset', (await page.locator('.v5-fab .v5-tile b').first().innerText()) === '0');
 
 // ── "Nur Straßen mit Häusern" is a switch in the options and filters the map layers ──
 await page.locator('.v5-fab .v5-tile').first().click();

@@ -1,6 +1,6 @@
 import { decodeClock } from '../../src/v5/store/hlc.ts';
 import { isStatus } from '../../src/v5/store/types.ts';
-import { ENGINE_VERSION, encodePack, overpassQuery, packFromOverpass, paddedBbox } from '../../src/v5/engine/index.ts';
+import { ENGINE_VERSION, MAX_PACK_AREA_SQ_KM, encodePack, overpassQuery, packAreaSquareKm, packFromOverpass, paddedBbox } from '../../src/v5/engine/index.ts';
 import type { AccessContext } from '../access.ts';
 import { resolveAccess } from '../access.ts';
 import { resolveCollectionAccess } from '../collectionAccess.ts';
@@ -31,7 +31,6 @@ export type V5Options = {
 const MAX_OPS = 200;
 const ROWS_PER_STATEMENT = 10; // 9 bound parameters per row; D1 allows 100 per statement.
 const PACK_CHUNK_BYTES = 512 * 1024;
-const MAX_AREA_SQ_KM = 25;
 const PACK_REBUILD_COOLDOWN_MS = 60_000;
 const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 const KEY = /^[sh]:[A-Za-z0-9#:._~@-]{1,80}$/u;
@@ -320,8 +319,8 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
   if (!mayBuild) return fail(403, 'forbidden', 'Nur Admins oder die zuständige Gruppe dürfen das Paket erzeugen.');
   const ring = area.geometry.coordinates[0];
   const bbox = paddedBbox(ring);
-  const km2 = ((bbox[2] - bbox[0]) * 110.574) * ((bbox[3] - bbox[1]) * 111.32 * Math.cos((((bbox[0] + bbox[2]) / 2) * Math.PI) / 180));
-  const maxKm2 = options.maxAreaSqKm ?? MAX_AREA_SQ_KM;
+  const km2 = packAreaSquareKm(ring);
+  const maxKm2 = options.maxAreaSqKm ?? MAX_PACK_AREA_SQ_KM;
   if (km2 > maxKm2) return fail(422, 'area_too_large', `Gebiet zu groß (${km2.toFixed(1)} km², max. ${maxKm2}).`);
   // One upstream attempt per Area per minute, claimed atomically *before* the request, so double taps,
   // concurrent callers and failed attempts cannot hammer the shared Overpass service.

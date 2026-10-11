@@ -72,7 +72,8 @@ export type FieldMapOptions = {
   zoom?: number;
   onHit?: (hit: Hit | null, point: Pt) => void;
   /** Route marking only cares about street segments; houses must not swallow those taps. */
-  segmentsOnly?: () => boolean;
+  /** Route mode: a tap close to a street picks the street; one inside a house (away from the street) picks the house. */
+  streetsFirst?: () => boolean;
   /** Note markers take taps only while this returns true (inspect tool); otherwise they must not swallow marking taps. */
   noteHits?: () => boolean;
 };
@@ -153,11 +154,7 @@ export class FieldMap {
     });
     // Test/diagnostic handle, only with ?debug in the URL.
     if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as { __v5Map?: MlMap }).__v5Map = this.map;
-    // Own controls live in the app shell; the map only keeps the (licence-required) attribution.
-    this.map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
-    // The credit starts as the small (i) button; the full text opens only on tap (it is also in the menu).
-    const credit = options.container.querySelector('.maplibregl-ctrl-attrib');
-    credit?.removeAttribute('open'); credit?.classList.remove('maplibregl-compact-show');
+    // Own controls live in the app shell. The credit for the map data (OpenStreetMap, OpenMapTiles, OpenFreeMap) is in the menu, not on the map.
     this.styleStartedAt = performance.now();
     this.map.on('style.load', () => {
       if (this.styleStartedAt) { const ms = performance.now() - this.styleStartedAt; diag.observe('map.style_ms', ms); diag.info('map', 'style loaded', { ms: Math.round(ms), fallback: this.styleFallback, theme: this.theme }); this.styleStartedAt = 0; }
@@ -208,11 +205,15 @@ export class FieldMap {
         const pin = this.map.queryRenderedFeatures([[event.point.x - 16, event.point.y - 16], [event.point.x + 16, event.point.y + 16]], { layers: ['v5-notes-dot'] })[0];
         if (pin) return options.onHit?.({ kind: 'note', id: String(pin.properties?.key) }, event.point);
       }
-      // A house is hit only when the tap lies inside it; streets get a forgiving 12 px halo.
-      if (!options.segmentsOnly?.()) {
-        const houses = this.map.queryRenderedFeatures(event.point, { layers: ['v5-houses-fill'] });
-        if (houses.length) return options.onHit?.({ kind: 'house', id: String(houses[0].id).slice(2) }, event.point);
+      // A house is hit only when the tap lies inside it; streets get a forgiving 12 px halo. In route mode the street wins close to its line
+      // (8 px), so a tap beside the street still picks the street; a tap well inside a house picks the house.
+      if (options.streetsFirst?.()) {
+        const near: [[number, number], [number, number]] = [[event.point.x - 8, event.point.y - 8], [event.point.x + 8, event.point.y + 8]];
+        const close = this.map.queryRenderedFeatures(near, { layers: ['v5-segments-line'] });
+        if (close.length) return options.onHit?.({ kind: 'segment', id: String(close[0].id).slice(2) }, event.point);
       }
+      const houses = this.map.queryRenderedFeatures(event.point, { layers: ['v5-houses-fill'] });
+      if (houses.length) return options.onHit?.({ kind: 'house', id: String(houses[0].id).slice(2) }, event.point);
       const box: [[number, number], [number, number]] = [[event.point.x - 12, event.point.y - 12], [event.point.x + 12, event.point.y + 12]];
       const segments = this.map.queryRenderedFeatures(box, { layers: ['v5-segments-line'] });
       options.onHit?.(segments.length ? { kind: 'segment', id: String(segments[0].id).slice(2) } : null, event.point);

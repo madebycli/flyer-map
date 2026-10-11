@@ -47,7 +47,7 @@ check('and resets north', await until(async () => (await page.evaluate(() => Mat
 await page.locator('.v5-pill').click();
 await page.waitForSelector('.v5-sheet');
 const overview = await page.locator('.v5-sheet').innerText();
-check('overview: percentage by houses, legend with explanations, honest sync box', /Übersicht/.test(overview) && /Häuser/.test(overview) && /Nicht möglich/.test(overview) && /kein Zugang/.test(overview) && /Zuletzt erfolgreich/.test(overview), overview.replace(/\n/g, ' | ').slice(0, 300));
+check('overview: percentage by houses and counts; no colour legend, no engine line, no sync box while everything is saved', /Übersicht/.test(overview) && /Häuser/.test(overview) && /Nicht möglich/.test(overview) && !/Was bedeuten die Farben/.test(overview) && !/Kartenmotor/.test(overview) && !/Zuletzt erfolgreich/.test(overview), overview.replace(/\n/g, ' | ').slice(0, 300));
 await page.screenshot({ path: `${shots}/u2-overview.png` });
 await page.getByRole('button', { name: 'Schließen' }).click();
 
@@ -73,7 +73,7 @@ await page.getByRole('button', { name: 'Schließen' }).click();
 
 // Marking: caption, discard, "Nur Straßen mit Häusern"
 await startMarking(page);
-check('marking caption explains the first step', /Startpunkt/.test(await page.locator('.v5-caption').innerText()));
+check('marking caption explains the first step', /antippen/.test(await page.locator('.v5-caption').innerText()));
 await page.locator('.v5-fab .v5-tile').first().click();
 await page.getByRole('button', { name: 'Nur Straßen mit Häusern' }).click();
 await page.getByRole('button', { name: 'Weiter markieren' }).click();

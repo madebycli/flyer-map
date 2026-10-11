@@ -3,6 +3,7 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { FieldNetwork as Network, LngLat } from '../engine/types.ts';
 import type { AreaShape, FieldMap } from '../map/fieldMap.ts';
 import { areaSquareMeters, fromRing, insertVertex, midpoints, moveVertex, MAX_VERTICES, removeVertex, seedSquare, toPolygon, toRing, validate, type Vertices } from '../areas/polygon.ts';
+import { MAX_PACK_AREA_SQ_KM, packAreaSquareKm } from '../engine/index.ts';
 import { GroupPicker } from './groupsSheet.tsx';
 import { buildPack, createArea, createCollectionArea, createMainArea, saveAreaGeometry, updateCollectionArea, updateMainArea, type Meta } from './api.ts';
 import { Icon } from '../../ui/index.ts';
@@ -46,6 +47,14 @@ export const COLLECTION_COLORS = ['#2563eb', '#e5736b', '#e0a83a', '#8b7be8', '#
 export const sizeLabel = (m2: number) => (m2 >= 1e6 ? `${(m2 / 1e6).toFixed(2).replace('.', ',')} km²` : `${Math.round(m2 / 100) / 100} ha`.replace('.', ','));
 const colorOf = (meta: Meta, teamId: string) => meta.teams.find((t) => t.id === teamId)?.color ?? '#7aa8ff';
 const drawColor = (meta: Meta, edit: AreaEdit) => (edit.kind === 'team' ? colorOf(meta, edit.teamId) : edit.kind === 'main' ? '#8a97a6' : edit.color);
+
+/** The outline's own rules plus the one the data source sets: a Gebiet whose map data cannot be fetched (too large) is refused right here, not after saving. */
+function checked(vertices: Vertices, kind: AreaEdit['kind']) {
+  const own = validate(vertices);
+  if (!own.valid || kind === 'main') return own;
+  const km2 = packAreaSquareKm(toRing(vertices));
+  return km2 > MAX_PACK_AREA_SQ_KM ? { valid: false as const, reason: `Gebiet zu groß (${km2.toFixed(0)} km², höchstens ${MAX_PACK_AREA_SQ_KM})` } : own;
+}
 
 /** The map overlay of the polygon being edited: fill, outline, edge midpoints and corner handles. */
 function drawOf(vertices: Vertices, selected: number | null, color: string): FeatureCollection {
@@ -175,11 +184,11 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
   const setTeam = (teamId: string) => setEdit((c) => (c ? { ...c, teamId } : c));
   const setColor = (color: string) => setEdit((c) => (c ? { ...c, color } : c));
 
-  const validity = edit ? validate(edit.vertices) : null;
+  const validity = edit ? checked(edit.vertices, edit.kind) : null;
   const save = async () => {
     const current = editRef.current;
     if (!current || !meta || current.saving) return;
-    const check = validate(current.vertices);
+    const check = checked(current.vertices, current.kind);
     if (!check.valid) { setEdit({ ...current, error: check.reason }); return; }
     setEdit({ ...current, saving: true, error: null });
     try {

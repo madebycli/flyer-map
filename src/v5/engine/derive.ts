@@ -3,10 +3,10 @@ import { classifyBuilding, classifyRoad } from './classify.ts';
 import { Frame, coordKey, frameFor, pointInRing, polylineLength, projectToPolyline, ringCentroid, splitEqual } from './geo.ts';
 import type { House, LngLat, Network, NetworkDiagnostics, RawOsm, RawWay, Segment } from './types.ts';
 
-export const ENGINE_VERSION = 'v5.2';
+export const ENGINE_VERSION = 'v5.3';
 
 /** Streets are marked in pieces of at most this length (chunks): the unit of precise painting and partial routes. */
-export const CHUNK_METERS = 60;
+export const CHUNK_METERS = 20;
 
 /** Max metres from a house centroid to the street it is assigned to. */
 const MAX_PARENT_DISTANCE = 45;
@@ -14,7 +14,7 @@ const MAX_NAMED_PARENT_DISTANCE = 80;
 const CLASS_PENALTY = { street: 0, access: 8, connector: 25 } as const;
 /** An address node counts for a building when it lies inside it or within this many metres of the centroid. */
 const ADDRESS_NODE_SNAP = 8;
-const SCORE_EPS = 1e-9;
+const SCORE_EPS = 1e-6;
 
 const normalizeName = (name: string | null | undefined) =>
   (name ?? '').normalize('NFKC').toLocaleLowerCase('de').replace(/straße/g, 'str').replace(/strasse/g, 'str')
@@ -81,7 +81,7 @@ export function deriveNetwork(raw: RawOsm): Network {
         let id = `s${startKey}`;
         if (usedIds.has(id)) id = `${id}#${start}`;
         usedIds.add(id);
-        // 2 % slack: a street a hair over a multiple of 60 m must not flip to one more chunk because of rounding.
+        // 2 % slack: a street a hair over a multiple of the chunk length must not flip to one more chunk because of rounding.
         const parts = Math.max(1, Math.ceil(length / CHUNK_METERS - 0.02));
         const pieces = splitEqual(local, coords, parts);
         const fromKey = vertexKey(way, start), toKey = vertexKey(way, i);
@@ -205,7 +205,7 @@ function assignParent(house: House, frame: Frame, tree: RBush<IndexedSegment>): 
     if (projection.distance > limit) continue;
     // A name match outweighs a nearer wrong street; class penalty keeps paths from stealing houses.
     const score = projection.distance + CLASS_PENALTY[entry.segment.cls] - (named ? 30 : 0);
-    // Scores closer than a nanometre are ties (ulp noise between engines/platforms must not pick the parent): smaller id wins.
+    // Scores closer than a micrometre are ties (ulp noise between engines/platforms must not pick the parent): smaller id wins.
     if (!best || score < best.score - SCORE_EPS || (Math.abs(score - best.score) <= SCORE_EPS && entry.segment.id < best.segment.id)) {
       best = { score, segment: entry.segment, measure: projection.measure };
     }

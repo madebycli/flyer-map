@@ -99,26 +99,18 @@ export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflict
           ))}
         </div>
       </>)}
-      <h3>Synchronisierung</h3>
-      <div className={`v5-syncbox${sync.lastError && state !== 'ok' ? ' bad' : ''}`} role="status">
-        <span><Icon name={state === 'ok' ? 'cloudOk' : state === 'offline' ? 'cloudOff' : 'sync'} size={18} /> {headline}</span>
-        <small>Zuletzt erfolgreich: {ago(sync.lastOkAt, now)}</small>
-        {sync.lastError && <small>Letzter Fehler: {sync.lastError}</small>}
-      </div>
-      <div className="v5-row" style={{ marginTop: '0.5rem' }}>
-        <button className="v5-btn" style={{ marginTop: 0 }} onClick={onSyncNow} disabled={sync.state === 'syncing'}><Icon name="sync" size={20} />Jetzt abgleichen</button>
-        {conflicts > 0 && <button className="v5-btn" style={{ marginTop: 0 }} onClick={onConflicts}><Icon name="warning" size={20} />{conflicts} überschrieben</button>}
-      </div>
-      <h3>Was bedeuten die Farben?</h3>
-      <div className="v5-legend">
-        {ORDER.map((s) => (
-          <div key={s} className="v5-legend-row" style={{ '--c': colors[s] } as React.CSSProperties}>
-            <span className="v5-swatch"><Icon name={STATUS_ICON[s]} size={20} /></span>
-            <div><b>{labels[s]}</b><small>{HINTS[kind][s]}</small></div>
-          </div>
-        ))}
-      </div>
-      <p className="v5-hint v5-foot">Kartenmotor: {engine}</p>
+      {(state !== 'ok' || conflicts > 0) && (<>
+        <h3>Synchronisierung</h3>
+        <div className={`v5-syncbox${sync.lastError && state !== 'ok' ? ' bad' : ''}`} role="status">
+          <span><Icon name={state === 'offline' ? 'cloudOff' : 'sync'} size={18} /> {headline}</span>
+          <small>Zuletzt erfolgreich: {ago(sync.lastOkAt, now)}</small>
+          {sync.lastError && <small>Letzter Fehler: {sync.lastError}</small>}
+        </div>
+        <div className="v5-row">
+          {state !== 'ok' && <button className="v5-btn" onClick={onSyncNow} disabled={sync.state === 'syncing'}><Icon name="sync" size={20} />Jetzt abgleichen</button>}
+          {conflicts > 0 && <button className="v5-btn" onClick={onConflicts}><Icon name="warning" size={20} />{conflicts} überschrieben</button>}
+        </div>
+      </>)}
     </SheetFrame>
   );
 }

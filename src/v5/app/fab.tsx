@@ -46,9 +46,10 @@ export function MarkFab({ phase, setPhase, marking, kind, theme, canUndoLast, on
   const start = usePress(() => setPhase('panel'), () => setPhase('options'));
   const counter = usePress(() => setPhase('options'), () => setPhase('options'));
   const exit = () => { marking.clearAnchors(); setPhase('idle'); };
-  const discard = () => { if (marking.anchors.length) marking.clearAnchors(); else exit(); };
+  const discard = () => { if (marking.taps) marking.clearAnchors(); else exit(); };
   const cycleBrush = () => marking.setBrush(ORDER[(ORDER.indexOf(marking.brush) + 1) % ORDER.length]);
-  const choose = (status: Status) => { marking.applyRoute(status); setPhase('panel'); };
+  // Once the status is set the job is done: the marking mode ends and the button is back to a single square.
+  const choose = (status: Status) => setPhase(marking.applyRoute(status) ? 'idle' : 'panel');
 
   if (phase === 'idle') {
     return (
@@ -63,13 +64,13 @@ export function MarkFab({ phase, setPhase, marking, kind, theme, canUndoLast, on
       {phase === 'panel' && (
         <div className="v5-fab-grid">
           {route
-            ? <button className="v5-tile" {...counter} aria-label={`${marking.anchors.length} Punkte – Optionen`} title="Punkte – antippen für Optionen"><b>{marking.anchors.length}</b><small>Punkte</small></button>
+            ? <button className="v5-tile" {...counter} aria-label={`${marking.taps} Punkte – Optionen`} title="Punkte – antippen für Optionen"><b>{marking.taps}</b><small>Punkte</small></button>
             : <button className="v5-tile" {...counter} aria-label={`${modeMeta.label} – Optionen`} title="Optionen"><Icon name={modeMeta.icon} size={24} /><small>{modeMeta.label}</small></button>}
           {route
-            ? <button className="v5-tile" onClick={marking.undoAnchor} disabled={!marking.anchors.length} aria-label="Letzten Punkt entfernen" title="Letzten Punkt entfernen"><Icon name="undo" size={24} /><small>Zurück</small></button>
+            ? <button className="v5-tile" onClick={marking.undoAnchor} disabled={!marking.taps} aria-label="Letzten Punkt entfernen" title="Letzten Punkt entfernen"><Icon name="undo" size={24} /><small>Zurück</small></button>
             : <button className="v5-tile" onClick={onUndoLast} disabled={!canUndoLast} aria-label="Letzte Markierung rückgängig" title="Letzte Markierung rückgängig"><Icon name="undo" size={24} /><small>Zurück</small></button>}
-          <button className="v5-tile" onClick={discard} aria-label={route && marking.anchors.length ? 'Punkte verwerfen' : 'Markieren beenden'} title={route && marking.anchors.length ? 'Alle Punkte verwerfen' : 'Markieren beenden'}>
-            <Icon name={route && marking.anchors.length ? 'trash' : 'close'} size={24} /><small>{route && marking.anchors.length ? 'Leeren' : 'Fertig'}</small>
+          <button className="v5-tile" onClick={discard} aria-label={route && marking.taps ? 'Punkte verwerfen' : 'Markieren beenden'} title={route && marking.taps ? 'Alle Punkte verwerfen' : 'Markieren beenden'}>
+            <Icon name={route && marking.taps ? 'trash' : 'close'} size={24} /><small>{route && marking.taps ? 'Leeren' : 'Fertig'}</small>
           </button>
           {route
             ? <button className="v5-tile go" onClick={() => setPhase('status')} disabled={!marking.routeReady} aria-label="Strecke bestätigen" title="Strecke bestätigen"><Icon name="check" size={30} /></button>
@@ -111,9 +112,10 @@ export function FabCaption({ marking, kind }: { marking: Marking; kind: Kind }) 
   let text: string;
   let warn = false;
   if (marking.mode !== 'route') text = `${MODES.find((m) => m.mode === marking.mode)!.label} · ${LABELS[kind][marking.brush]}`;
-  else if (marking.anchors.length === 0) text = 'Startpunkt auf einer Straße antippen';
+  else if (marking.taps === 0) text = 'Straße oder Häuser antippen';
+  else if (marking.anchors.length === 0 || (marking.picked && marking.route?.state !== 'selected' && marking.route?.state !== 'disconnected')) text = `${marking.picked} ${marking.picked === 1 ? 'Haus' : 'Häuser'} · weitere antippen`;
   else if (marking.route?.state === 'disconnected') { text = 'Nicht verbunden – anderen Punkt wählen'; warn = true; }
-  else if (marking.anchors.length === 1) text = 'Endpunkt antippen';
+  else if (marking.anchors.length === 1 && !marking.picked) text = 'Endpunkt antippen';
   else if (marking.route?.state === 'selected') {
     text = `${marking.routeCount} Straßen · ${marking.routeHouses} Häuser · ${meters(marking.route.length)}`;
     if (marking.route.ambiguous) { text += ' · Zwischenpunkt?'; warn = true; }

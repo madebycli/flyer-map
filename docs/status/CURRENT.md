@@ -2,7 +2,7 @@
 id: status-current
 type: status
 status: active
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 ---
 
 # Current Project State
@@ -16,7 +16,7 @@ backend (Abholen incl. admin setup), the lean mutation path and `worker/v5`. Sou
 
 **Diagnostics:** `?diag=1` / menu → Diagnose (engine, sync, network, map, log, report, previous-session errors) plus server request ids, `Server-Timing` and `V5_LOG_LEVEL` request lines (default `warn`): [docs/v5/DIAGNOSTICS.md](../v5/DIAGNOSTICS.md). No telemetry leaves the device.
 
-**Verified (sandbox only):** 473 unit tests (counted with `npm test` on the integration branch after merging A-6, A-7 MapLibre 6.13, the mobile P3 and A-8 diagnostics; re-count after every merge), 18 browser runs incl. the diagnostics flow 16, the sheet audit flow 17 (11 sheets × 390/430 px × dark/light plus 1280 px desktop, measured after their data loaded: no sideways scrolling, every control ≥ 44 px and named, one spacing rhythm, no cut-off captions, note icons ≥ 3 : 1, sheets really close; 472 checks; flow 11 applies the same bar to every organiser page) and the soak run (tile count really measured since B-F-010; also with 39 207 houses: heap 37.5 → 41.9 MB, DOM/WASM flat) against the real Worker handlers on in-memory D1 (`scripts/v5-e2e`, `node scripts/v5-e2e/run-all.mjs`; also in TypeScript-fallback mode), typecheck, build. Flow 15 (Gebiet and helper-rights sheets at 390/430 px × dark/light × left/right, mobile clarity) is added by B: [evidence](../v5/screens/mobile-clarity-2026-10-09/README.md).
+**Verified (sandbox only):** 475 unit tests (`npm test`; re-count after every merge), 19 browser runs incl. the diagnostics flow 16, the layout/Strecke flow 18 (menu bottom-left, caption, house taps, mode ends after the status, shrinking sheet), the sheet audit flow 17 (11 sheets × 390/430 px × dark/light plus 1280 px desktop, measured after their data loaded: no sideways scrolling, every control ≥ 44 px and named, one spacing rhythm, no cut-off captions, note icons ≥ 3 : 1, sheets really close; 472 checks; flow 11 applies the same bar to every organiser page) and the soak run (tile count really measured since B-F-010; also with 39 207 houses: heap 37.5 → 41.9 MB, DOM/WASM flat) against the real Worker handlers on in-memory D1 (`scripts/v5-e2e`, `node scripts/v5-e2e/run-all.mjs`; also in TypeScript-fallback mode), typecheck, build. Flow 15 (Gebiet and helper-rights sheets at 390/430 px × dark/light × left/right, mobile clarity) is added by B: [evidence](../v5/screens/mobile-clarity-2026-10-09/README.md).
 **Not verified:** real phones, real Overpass data, a real D1, the live basemap, the organiser pages against the real API (flow 11 mocks it at the network edge).
 
 **Testing:** the integration branch is fast-forwarded to `unstable` → https://flyer-map-unstable.cloudflare-eleven035.workers.dev with its own, empty D1 (`flyer-map-unstable-db`); first start with the one-time setup key at `/start`: [docs/operations/UNSTABLE_TESTEN.md](../operations/UNSTABLE_TESTEN.md).

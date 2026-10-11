@@ -268,7 +268,7 @@ export function App({ campaignId }: { campaignId: string }) {
   useEffect(() => {
     if (!mapHost.current || fieldMap.current) return;
     fieldMap.current = new FieldMap({
-      container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), segmentsOnly: () => routeModeRef.current,
+      container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), streetsFirst: () => routeModeRef.current,
       noteHits: () => toolRef.current === 'inspect' && fabRef.current === 'idle', onRotate: (bearing) => setRotated(Math.abs(bearing) > 0.5),
     });
     return () => { fieldMap.current?.destroy(); fieldMap.current = null; };
@@ -378,7 +378,31 @@ export function App({ campaignId }: { campaignId: string }) {
   }, [panel, templateDraft]);
   const openPanel = (next: Panel) => { closeSelection(); setFab('idle'); setPanel(next); };
   const startMarking = () => { closeSelection(); setPanel(null); setTool('inspect'); setFab('panel'); };
-  const fitAll = () => { if (network && fieldMap.current) fieldMap.current.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); };
+  // "Alles zeigen": all Gebiete (the work area), or whatever the map derived when there are none; nothing to show is a no-op, not an error.
+  // Streets are cut into short pieces: pieces of one street that were overwritten the same way are one row, not a dozen.
+  const conflictRows = useMemo(() => {
+    const rows = new Map<string, { id: string; isHouse: boolean; title: string; items: typeof conflicts }>();
+    for (const c of conflicts) {
+      const isHouse = c.key.startsWith('h:');
+      const id = c.key.slice(2);
+      const segment = !isHouse ? index?.segments.get(id) : undefined;
+      const rowId = isHouse ? c.key : `s:${segment?.group ?? id}:${c.mine}:${c.theirs}`;
+      const house = isHouse ? index?.houses.get(id) : undefined;
+      const title = house ? `${house.street ?? ''} ${house.number ?? ''}`.trim() || 'Haus' : segment?.name ?? 'Straße';
+      const row = rows.get(rowId) ?? { id: rowId, isHouse, title, items: [] as typeof conflicts };
+      row.items.push(c);
+      rows.set(rowId, row);
+    }
+    return [...rows.values()];
+  }, [conflicts, index]);
+  const fitAll = () => {
+    const fm = fieldMap.current;
+    if (!fm) return;
+    const rings = (meta?.areas ?? []).map((a) => a.geometry.coordinates[0] as [number, number][]);
+    if (meta?.mainArea) rings.push(meta.mainArea.geometry.coordinates[0] as [number, number][]);
+    if (rings.length) { fm.fitTo(ringBounds(rings.flat()), FIT_PADDING); return; }
+    if (network && (network.houses.length || network.segments.length)) fm.fitTo(workBounds(network, []), FIT_PADDING);
+  };
   const fitArea = (id: string) => { const area = meta?.areas.find((a) => a.id === id); if (area) { setPanel(null); fieldMap.current?.fitTo(ringBounds(area.geometry.coordinates[0]), FIT_PADDING); } };
   const locate = async () => {
     if (locating) return;
@@ -519,7 +543,6 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && (
         <div className="v5-topright">
           <button className="v5-sq" onClick={() => openPanel('search')} aria-label="Straße oder Adresse suchen" title="Suchen"><Icon name="search" size={24} /></button>
-          <button className="v5-sq" onClick={() => openPanel('home')} aria-label="Menü" title="Menü"><Icon name="grid" size={24} /></button>
         </div>
       )}
       {ready && meta && meta.kind !== 'collection' && meta.areas.length === 0 && (
@@ -535,8 +558,8 @@ export function App({ campaignId }: { campaignId: string }) {
         </div>
       )}
       {ready && conflicts.length > 0 && panel !== 'conflicts' && (
-        <button className="v5-conflict" onClick={() => openPanel('conflicts')} aria-label={`${conflicts.length} Änderungen wurden von anderen überschrieben`} title="Von anderen überschrieben">
-          <Icon name="warning" size={18} />{conflicts.length}
+        <button className="v5-conflict" onClick={() => openPanel('conflicts')} aria-label={`${conflictRows.length} Änderungen wurden von anderen überschrieben`} title="Von anderen überschrieben">
+          <Icon name="warning" size={18} />{conflictRows.length}
         </button>
       )}
       {notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{notice}</span><button className="v5-icon-btn" onClick={() => setNotice(null)} aria-label="OK"><Icon name="close" size={20} /></button></div>}
@@ -557,12 +580,9 @@ export function App({ campaignId }: { campaignId: string }) {
 
       {ready && tool === 'inspect' && !editing && (
         <>
-          <div className="v5-ctl left">
-            <button className="v5-sq" onClick={fitAll} aria-label="Alles zeigen" title="Alles zeigen"><Icon name="fit" size={24} /></button>
-          </div>
           <div className="v5-ctl right">
-            {fab !== 'idle' && fab !== 'options' && <FabCaption marking={marking} kind={kind} />}
             {rotated && <button className="v5-sq" onClick={() => fieldMap.current?.resetNorth()} aria-label="Karte nach Norden ausrichten" title="Norden"><Icon name="compass" size={24} /></button>}
+            <button className="v5-sq" onClick={fitAll} aria-label="Alles zeigen" title="Alles zeigen"><Icon name="fit" size={24} /></button>
             <div className="v5-zoom">
               <button className="v5-sq" onClick={() => fieldMap.current?.zoomBy(1)} aria-label="Hineinzoomen" title="Hineinzoomen"><Icon name="plus" size={24} /></button>
               <button className="v5-sq" onClick={() => fieldMap.current?.zoomBy(-1)} aria-label="Herauszoomen" title="Herauszoomen"><Icon name="minus" size={24} /></button>
@@ -573,6 +593,12 @@ export function App({ campaignId }: { campaignId: string }) {
         </>
       )}
 
+      {ready && !editing && !(tool === 'pickup' && draft) && (
+        <div className="v5-ctl left">
+          {tool === 'inspect' && mayMark && fab !== 'idle' && fab !== 'options' && <FabCaption marking={marking} kind={kind} />}
+          <button className="v5-sq" onClick={() => openPanel('home')} aria-label="Menü" title="Menü"><Icon name="grid" size={24} /></button>
+        </div>
+      )}
       {ready && tool === 'areas' && meta && !editing && !selectedArea && (
         <div className="v5-ctl right row" aria-label="Gebiete">
           <span className="v5-hintchip"><Icon name="polygon" size={20} />Gebiet antippen</span>
@@ -612,27 +638,21 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && panel === 'access' && meta?.role === 'admin' && <AccessSheet campaignId={campaignId} teams={meta.teams} onClose={() => setPanel(null)} />}
       {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
-        <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflicts.length}
+        <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflictRows.length}
           engine={campaign.engine?.kind === 'wasm' ? 'Rust (WebAssembly)' : 'TypeScript (Ersatz)'} onFitArea={fitArea} onSyncNow={campaign.syncNow} onConflicts={() => openPanel('conflicts')} onClose={() => setPanel(null)} />
       )}
       {ready && panel === 'conflicts' && (
-        <SheetFrame icon="warning" title="Überschrieben" onClose={() => setPanel(null)} meta={<span>{conflicts.length}</span>}>
+        <SheetFrame icon="warning" title="Überschrieben" onClose={() => setPanel(null)} meta={<span>{conflictRows.length}</span>}>
           <div className="v5-list">
-            {conflicts.slice(0, 30).map((c) => {
-              const isHouse = c.key.startsWith('h:');
-              const id = c.key.slice(2);
-              const house = isHouse ? index?.houses.get(id) : undefined, segment = !isHouse ? index?.segments.get(id) : undefined;
-              const title = house ? `${house.street ?? ''} ${house.number ?? ''}`.trim() || 'Haus' : segment?.name ?? 'Straße';
-              return (
-                <div key={c.key} className="v5-conflict-row">
-                  <Icon name={isHouse ? 'house' : 'road'} size={22} />
-                  <span className="v5-conflict-title">{title}</span>
-                  <Icon name={STATUS_ICON[c.mine]} size={22} /><Icon name="undo" size={14} /><Icon name={STATUS_ICON[c.theirs]} size={22} />
-                  <button className="v5-icon-btn tonal" aria-label="Meine Version wiederherstellen" title="Meine Version wiederherstellen"
-                    onClick={() => { store?.set(c.key, c.mine); store?.dismissConflicts([c.key]); }}><Icon name="check" size={20} /></button>
-                </div>
-              );
-            })}
+            {conflictRows.slice(0, 30).map((row) => (
+              <div key={row.id} className="v5-conflict-row">
+                <Icon name={row.isHouse ? 'house' : 'road'} size={22} />
+                <span className="v5-conflict-title">{row.title}{row.items.length > 1 ? ` · ${row.items.length} Abschnitte` : ''}</span>
+                <Icon name={STATUS_ICON[row.items[0].mine]} size={22} /><Icon name="undo" size={14} /><Icon name={STATUS_ICON[row.items[0].theirs]} size={22} />
+                <button className="v5-icon-btn tonal" aria-label="Meine Version wiederherstellen" title="Meine Version wiederherstellen"
+                  onClick={() => { for (const c of row.items) store?.set(c.key, c.mine); store?.dismissConflicts(row.items.map((c) => c.key)); }}><Icon name="check" size={20} /></button>
+              </div>
+            ))}
             <button className="v5-row-btn" onClick={() => { store?.dismissConflicts(); setPanel(null); }}><Icon name="close" />Alle so lassen</button>
           </div>
         </SheetFrame>

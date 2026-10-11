@@ -57,7 +57,11 @@ await startMarking(page);
 await clickAt(page, 25, 0); await clickAt(page, 375, 0);
 await page.waitForTimeout(900);
 const meta = await page.locator('.v5-caption').innerText();
-check('route sheet reports 8 chunks and 400 m', /8/.test(meta) && /400 m/.test(meta), meta.replace(/\n/g, ' '));
+{
+  // 20 m pieces: a 400 m stretch is 20 of them (the first and last piece are the ones that were tapped, whole)
+  const pieces = Number(/(\d+) Straßen/.exec(meta)?.[1] ?? 0), length = Number(/(\d+) m/.exec(meta)?.[1] ?? 0);
+  check('route sheet reports about 20 pieces and about 400 m', pieces >= 18 && pieces <= 22 && length >= 360 && length <= 420, meta.replace(/\n/g, ' '));
+}
 await page.screenshot({ path: `${shots}/f2-route.png` });
 const beforeRoute = await done(page);
 await confirmRoute(page);

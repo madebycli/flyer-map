@@ -72,6 +72,8 @@ await A.page.evaluate(async (c) => { const m = window.__v5Map; m.jumpTo({ center
 await A.click(116, 13);
 await A.page.waitForTimeout(500);
 check('an unsent draft does not carry over to another place', (await A.page.locator('.v5-note-form input').inputValue()) === '');
+await A.page.getByRole('button', { name: 'Schließen' }).click(); // the house sheet must be gone before the next tap, or the tap lands on the sheet
+await A.page.locator('.v5-sheet').waitFor({ state: 'detached' });
 await A.jump(180, 0, 17.4);
 await A.click(180, 0);
 await A.page.waitForSelector('.v5-sheet');

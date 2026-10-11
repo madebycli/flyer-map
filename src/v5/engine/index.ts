@@ -2,7 +2,7 @@ export * from './types.ts';
 export { ENGINE_VERSION, CHUNK_METERS, deriveNetwork } from './derive.ts';
 export { classifyBuilding, classifyRoad } from './classify.ts';
 export { buildGraph, routeSegments, type RouteResult } from './route.ts';
-export { overpassQuery, packFromOverpass, paddedBbox, type Bbox, type PackStats } from './overpass.ts';
+export { MAX_PACK_AREA_SQ_KM, overpassQuery, packAreaSquareKm, packFromOverpass, paddedBbox, type Bbox, type PackStats } from './overpass.ts';
 export { mergeNetworks, restrictToArea } from './area.ts';
 export { encodePack, decodePack, gunzip } from './pack.ts';
 export { WasmEngine } from './wasm.ts';

@@ -16,6 +16,7 @@ export const MODES: { mode: MarkMode; icon: IconName; label: string }[] = [
 export const meters = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`);
 
 type Saved = { mode: MarkMode; brush: Status; withHouses: boolean; housesOnly: boolean };
+const HOUSE_TAP = 'house|';
 const DEFAULTS: Saved = { mode: 'route', brush: 'completed', withHouses: true, housesOnly: false };
 const load = (): Saved => { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('vf-v5-mark-2') ?? '{}') }; } catch { return DEFAULTS; } };
 
@@ -34,7 +35,10 @@ export type MarkContext = {
  */
 export function useMarking(ctx: MarkContext, active: boolean) {
   const [saved, setSaved] = useState<Saved>(load);
-  const [anchors, setAnchors] = useState<string[]>([]);
+  /** What was tapped, in order: street pieces (the route runs through them) and, as `house|<id>`, single houses added to the selection. */
+  const [taps, setTaps] = useState<string[]>([]);
+  const anchors = useMemo(() => taps.filter((t) => !t.startsWith(HOUSE_TAP)), [taps]);
+  const picked = useMemo(() => taps.filter((t) => t.startsWith(HOUSE_TAP)).map((t) => `h:${t.slice(HOUSE_TAP.length)}`), [taps]);
   const { mode, brush, withHouses, housesOnly } = saved;
   const update = (patch: Partial<Saved>) => setSaved((current) => { const next = { ...current, ...patch }; try { localStorage.setItem('vf-v5-mark-2', JSON.stringify(next)); } catch { /* private mode */ } return next; });
   const latest = useRef({ ...ctx, brush, withHouses, housesOnly });
@@ -50,11 +54,13 @@ export function useMarking(ctx: MarkContext, active: boolean) {
     return () => { stale = true; };
   }, [active, mode, engine, anchors]);
   const routeIds = route?.state === 'selected' ? route.segmentIds : [];
-  const routeKeys = useMemo(() => (ctx.index && routeIds.length ? keysForSegments(ctx.index, routeIds, withHouses, housesOnly) : []), [ctx.index, routeIds, withHouses, housesOnly]);
+  const streetKeys = useMemo(() => (ctx.index && routeIds.length ? keysForSegments(ctx.index, routeIds, withHouses, housesOnly) : []), [ctx.index, routeIds, withHouses, housesOnly]);
+  // Houses tapped one by one join the selection (a route is not needed for them): one confirm sets the status of everything.
+  const routeKeys = useMemo(() => (picked.length ? [...new Set([...streetKeys, ...picked])] : streetKeys), [streetKeys, picked]);
   const routeHouses = useMemo(() => routeKeys.reduce((n, key) => n + (key.startsWith('h:') ? 1 : 0), 0), [routeKeys]);
 
   // leaving a mode or the tool clears every transient overlay
-  useEffect(() => { if (!active || mode !== 'route') setAnchors([]); }, [active, mode]);
+  useEffect(() => { if (!active || mode !== 'route') setTaps([]); }, [active, mode]);
   useEffect(() => { ctx.fieldMap.current?.setPreview(active && mode === 'route' ? routeKeys : []); }, [active, mode, routeKeys, ctx.fieldMap]);
 
   // pointer tools: paint and lasso own the finger while active
@@ -129,19 +135,26 @@ export function useMarking(ctx: MarkContext, active: boolean) {
       if (keys.length) apply(keys, b, keys.length === 1 ? '1' : String(keys.length));
       return true;
     }
-    if (mode === 'route' && hit.kind === 'segment') setAnchors((a) => [...a, hit.id]);
+    if (mode === 'route') {
+      if (hit.kind === 'segment') setTaps((a) => [...a, hit.id]);
+      else setTaps((a) => (a.includes(`${HOUSE_TAP}${hit.id}`) ? a.filter((t) => t !== `${HOUSE_TAP}${hit.id}`) : [...a, `${HOUSE_TAP}${hit.id}`])); // a second tap takes the house out again
+    }
     return true;
   }, [active, mode]);
 
   // the route is kept when nothing could be applied (e.g. it lies in somebody else's Area), so it can be corrected instead of redone
-  const applyRoute = (status: Status) => { if (routeKeys.length && latest.current.apply(routeKeys, status, String(routeKeys.length)) !== 0) setAnchors([]); };
-  const routeReady = mode === 'route' && route?.state === 'selected' && anchors.length >= 2 && routeKeys.length > 0;
+  const applyRoute = (status: Status): boolean => {
+    if (!routeKeys.length || latest.current.apply(routeKeys, status, String(routeKeys.length)) === 0) return false;
+    setTaps([]);
+    return true;
+  };
+  const routeReady = mode === 'route' && routeKeys.length > 0 && (picked.length > 0 || (route?.state === 'selected' && anchors.length >= 2));
   return {
     mode, brush, withHouses, housesOnly,
     setMode: (m: MarkMode) => update({ mode: m }), setBrush: (b: Status) => update({ brush: b }),
     setWithHouses: (w: boolean) => update({ withHouses: w }), setHousesOnly: (h: boolean) => update({ housesOnly: h }),
-    anchors, route, routeKeys, routeCount: routeIds.length, routeHouses, routeReady,
-    undoAnchor: () => setAnchors((a) => a.slice(0, -1)), clearAnchors: () => setAnchors([]), applyRoute, onMapHit,
+    anchors, taps: taps.length, picked: picked.length, route, routeKeys, routeCount: routeIds.length, routeHouses, routeReady,
+    undoAnchor: () => setTaps((a) => a.slice(0, -1)), clearAnchors: () => setTaps([]), applyRoute, onMapHit,
   };
 }
 

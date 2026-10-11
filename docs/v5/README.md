@@ -69,8 +69,8 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
 
 ## Tools, notes, cache (see ADR-0034)
 
-- Street pieces are ≤ 60 m chunks. Tap = whole junction segment, paint/route = chunks. Marking modes: route (default), tap,
-  paint, lasso. Route: tap points → ✓ → pick the status; the other modes apply the brush at once. "Nur Straßen mit Häusern"
+- Street pieces are ≤ 20 m chunks (engine `v5.3`; was 60 m: a street could only be split every ~6 houses; ids of longer streets change, the derived-network cache rebuilds). Tap = whole junction segment, paint/route = chunks. Marking modes: route (default), tap,
+  paint, lasso. Route: tap street pieces (the route runs through them) and/or single houses (second tap removes one) → ✓ → pick the status; the mode ends then. The other modes apply the brush at once. "Nur Straßen mit Häusern"
   skips and hides streets without a house. Undo for the last gesture. UI: [Plan 047](../plans/active/047-v5-field-ui-v2.md).
 - Notes: seven quick flags (toggle) or text, or both; one marker per annotated place; overview from the Menü;
   viewers read, writers write, scoped roles only in their team's Areas.

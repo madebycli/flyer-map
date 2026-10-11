@@ -33,8 +33,8 @@ test('synthetic city: tricky ways are handled and every house finds its street',
   assert.equal(waysOf(city.special.sidewalk).length, 0, 'sidewalk excluded');
   assert.equal(waysOf(city.special.driveway).length, 0, 'driveway excluded');
   const cut = waysOf(city.special.cutThroughPath);
-  assert.equal(cut.length, 1);
-  assert.equal(cut[0].visible, false, 'house-less path stays a hidden connector');
+  assert.ok(cut.length >= 1);
+  assert.ok(cut.every((s) => !s.visible), 'house-less path stays a hidden connector (in every piece)');
   const backParts = waysOf(city.special.backLotService);
   const back = backParts[0];
   assert.equal(back.cls, 'access');

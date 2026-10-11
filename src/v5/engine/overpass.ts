@@ -9,6 +9,14 @@ export function overpassQuery(bbox: Bbox): string {
   return `[out:json][timeout:60];(way["highway"](${b});way["building"](${b});node["addr:housenumber"](${b}););out geom qt;`;
 }
 
+/** The largest outline whose map data is fetched in one go (the bounding box, in km²). */
+export const MAX_PACK_AREA_SQ_KM = 25;
+/** Size of the box the map data of a Gebiet is fetched for (outline plus its margin), in km². */
+export function packAreaSquareKm(ring: LngLat[]): number {
+  const bbox = paddedBbox(ring);
+  return ((bbox[2] - bbox[0]) * 110.574) * ((bbox[3] - bbox[1]) * 111.32 * Math.cos((((bbox[0] + bbox[2]) / 2) * Math.PI) / 180));
+}
+
 export function paddedBbox(ring: LngLat[], meters = 80): Bbox {
   let s = Infinity, w = Infinity, n = -Infinity, e = -Infinity;
   for (const [lng, lat] of ring) { s = Math.min(s, lat); n = Math.max(n, lat); w = Math.min(w, lng); e = Math.max(e, lng); }

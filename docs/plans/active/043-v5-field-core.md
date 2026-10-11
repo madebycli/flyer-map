@@ -23,7 +23,7 @@ Streets/Houses are derived deterministically from a per-Area raw OSM pack on the
 - [x] Map: geometry once, `setFeatureState` painting; `/v5` shell with route marking, undo, legacy import
 - [x] Review pass: independent code review findings fixed (seq race, key ownership, stale packs, outbox safety)
 - [x] Dark-first Material 3 Expressive UI with icon-led controls, theme switch with dark/light basemap and layer self-heal
-- [x] Tools: stamp/paint/lasso/route marking with a brush status, undo, Area corner editor (drag, insert, delete, create), street chunks ≤ 60 m
+- [x] Tools: stamp/paint/lasso/route marking with a brush status, undo, Area corner editor (drag, insert, delete, create), street chunks ≤ 20 m (was 60 m, see docs/v5/README.md)
 - [x] Sync hardening: conflicts shown and restorable, server-time clock correction, adversarial two-writer tests, seeded fuzz
 - [x] Field notes (flags + text, markers, overview) — ADR-0034; warm-start network cache
 - [x] Rust/WASM engine + vector tiles, TypeScript kept as reference and fallback — [Plan 046](046-v5-rust-tiles.md), ADR-0034
