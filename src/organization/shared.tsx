@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { AppBar, Button, Card, Dialog, Field, Loading, Notice, Secret, TextInput, type NavItem } from "../ui/index.ts";
+import { AppBar, Button, Card, Dialog, Field, Icon, Loading, Notice, Secret, TextInput, type NavItem } from "../ui/index.ts";
 import { OrganizationApiError, completeOrganizationTotp, getOrganizationMe, logoutOrganization, type OrganizationMeDto } from "./organizationApiClient.ts";
 
 export type Navigate = (path: string, replace?: boolean) => void;
@@ -33,11 +33,10 @@ export function AdminBar({ me, current, navigate }: { me: OrganizationMeDto; cur
   const canCreateCampaign = me.memberships.some((membership) => membership.role === "organizer");
   const go = (path: string) => (navigate ? { onClick: () => navigate(path) } : { href: path });
   const nav: NavItem[] = [
-    { label: "Aktionen", current: current === "campaigns", ...go("/admin") },
-    ...(canCreateCampaign ? [{ label: "Neue Aktion", current: current === "new", ...go("/new") }] : []),
-    { label: "Einladungen", current: current === "invites", href: "/admin/invites" },
-    { label: "Sicherheit", current: current === "security", href: "/admin/security" },
-    { label: "Feldkarte", href: "/" },
+    { label: "Aktionen", icon: "layers" as const, current: current === "campaigns", ...go("/admin") },
+    ...(canCreateCampaign ? [{ label: "Neue Aktion", icon: "plus" as const, current: current === "new", ...go("/new") }] : []),
+    { label: "Einladungen", icon: "send" as const, current: current === "invites", href: "/admin/invites" },
+    { label: "Sicherheit", icon: "shield" as const, current: current === "security", href: "/admin/security" },
   ];
   const logout = async () => {
     if (busy) return;
@@ -48,7 +47,7 @@ export function AdminBar({ me, current, navigate }: { me: OrganizationMeDto; cur
     <AppBar
       nav={nav}
       onBrand={navigate ? () => navigate("/admin") : undefined}
-      account={<><span>{me.account.username}</span><Button tone="quiet" disabled={busy} onClick={() => void logout()}>Abmelden</Button></>}
+      account={<><span className="ui-username">{me.account.username}</span><a className="ui-iconbtn" href="/" aria-label="Feldkarte" title="Feldkarte"><Icon name="mapPin" size={24} /></a><button className="ui-iconbtn" type="button" disabled={busy} onClick={() => void logout()} aria-label="Abmelden" title="Abmelden"><Icon name="exit" size={24} /></button></>}
     />
   );
 }

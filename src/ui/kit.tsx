@@ -26,7 +26,7 @@ export function CenterPage({ children }: { children: ReactNode }) {
   );
 }
 
-export type NavItem = { label: string; href?: string; onClick?: () => void; current?: boolean };
+export type NavItem = { label: string; icon?: IconName; href?: string; onClick?: () => void; current?: boolean };
 
 export function AppBar({ nav, account, onBrand }: { nav: NavItem[]; account?: ReactNode; onBrand?: () => void }) {
   return (
@@ -36,8 +36,8 @@ export function AppBar({ nav, account, onBrand }: { nav: NavItem[]; account?: Re
         : <a className="ui-brand" href="/admin"><Icon name="mailbox" size={24} />Flyer Map</a>}
       <nav aria-label="Organizer Navigation">
         {nav.map((item) => item.href
-          ? <a key={item.label} href={item.href} aria-current={item.current ? 'page' : undefined}>{item.label}</a>
-          : <button key={item.label} type="button" onClick={item.onClick} aria-current={item.current ? 'page' : undefined}>{item.label}</button>)}
+          ? <a key={item.label} href={item.href} aria-current={item.current ? 'page' : undefined}>{item.icon ? <Icon name={item.icon} size={22} /> : null}<span>{item.label}</span></a>
+          : <button key={item.label} type="button" onClick={item.onClick} aria-current={item.current ? 'page' : undefined}>{item.icon ? <Icon name={item.icon} size={22} /> : null}<span>{item.label}</span></button>)}
       </nav>
       {account ? <div className="ui-account">{account}</div> : null}
     </header>

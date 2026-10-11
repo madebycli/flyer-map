@@ -45,6 +45,7 @@ const PATHS = {
   unlock: <><rect x="5.500" y="10.500" width="13" height="9.500" rx="2.500" /><path d="M8.500 10.500V8a3.500 3.500 0 0 1 6.600-1.600M12 14.500v2" /></>,
   locate: <><circle cx="12" cy="12" r="3" /><circle cx="12" cy="12" r="7.5" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" /></>,
   minus: <path d="M5 12h14" />,
+  back: <path d="M19 12H5M11 6l-6 6 6 6" />,
   compass: <><circle cx="12" cy="12" r="8.5" /><path d="M15.2 8.8l-1.6 4.8-4.8 1.6 1.6-4.8z" /></>,
   grid: <><rect x="4.5" y="4.5" width="6" height="6" rx="1.6" /><rect x="13.5" y="4.5" width="6" height="6" rx="1.6" /><rect x="4.5" y="13.5" width="6" height="6" rx="1.6" /><rect x="13.5" y="13.5" width="6" height="6" rx="1.6" /></>,
   search: <><circle cx="10.5" cy="10.5" r="6" /><path d="M15 15l5 5" /></>,

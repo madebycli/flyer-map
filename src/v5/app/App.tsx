@@ -521,6 +521,12 @@ export function App({ campaignId }: { campaignId: string }) {
           <button className="v5-sq" onClick={() => openPanel('home')} aria-label="Menü" title="Menü"><Icon name="grid" size={24} /></button>
         </div>
       )}
+      {ready && meta && meta.kind !== 'collection' && meta.areas.length === 0 && (
+        <div className="v5-banner v5-missing" role="status">
+          <Icon name="info" size={20} /><span>Noch kein Gebiet.</span>
+          {meta.role === 'admin' && <button className="v5-icon-btn tonal" onClick={() => enter('areas')} aria-label="Gebiet anlegen" title="Gebiet anlegen"><Icon name="plus" /></button>}
+        </div>
+      )}
       {ready && buildableMissing.length > 0 && (
         <div className="v5-banner v5-missing" role="status">
           <Icon name="warning" size={20} /><span>{buildableMissing.map((a) => a.name).join(', ')}</span>

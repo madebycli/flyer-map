@@ -25,6 +25,7 @@ export function HomeSheet({ tiles, identity, onClose }: { tiles: AppTile[]; iden
             : <button key={t.id} className={cls} onClick={t.onClick} aria-pressed={t.on} aria-label={t.label}>{body}</button>;
         })}
       </div>
+      <p className="v5-hint">Kartendaten © OpenStreetMap-Mitwirkende · OpenMapTiles · OpenFreeMap</p>
     </SheetFrame>
   );
 }

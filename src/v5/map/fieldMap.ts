@@ -155,6 +155,9 @@ export class FieldMap {
     if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as { __v5Map?: MlMap }).__v5Map = this.map;
     // Own controls live in the app shell; the map only keeps the (licence-required) attribution.
     this.map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+    // The credit starts as the small (i) button; the full text opens only on tap (it is also in the menu).
+    const credit = options.container.querySelector('.maplibregl-ctrl-attrib');
+    credit?.removeAttribute('open'); credit?.classList.remove('maplibregl-compact-show');
     this.styleStartedAt = performance.now();
     this.map.on('style.load', () => {
       if (this.styleStartedAt) { const ms = performance.now() - this.styleStartedAt; diag.observe('map.style_ms', ms); diag.info('map', 'style loaded', { ms: Math.round(ms), fallback: this.styleFallback, theme: this.theme }); this.styleStartedAt = 0; }

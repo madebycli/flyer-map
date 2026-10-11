@@ -201,7 +201,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         if (location.search.includes('debug')) console.info('[v5 boot ms]', JSON.stringify(timing));
         // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
         // A collection Aktion is useful without any map data yet: helpers see the Areas and take one first; its pack is built on taking it.
-        setPhase(parts.length || loaded.kind === 'collection' ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
+        setPhase(parts.length || loaded.kind === 'collection' || !loaded.areas.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
       } catch (error) {
         if (!cancelled) diag.error('boot', 'start failed', { message: error instanceof Error ? error.message : String(error), status: error instanceof V5ApiError ? error.status : undefined, ms: Math.round(performance.now() - t0) });
         if (retired && !engine) { engine = retired; retired = null; }

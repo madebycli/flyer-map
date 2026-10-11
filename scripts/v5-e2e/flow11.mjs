@@ -97,7 +97,7 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   await page.getByRole('heading', { name: 'Aktionen' }).waitFor({ timeout: 60000 });
   check('dashboard lists the Aktion as a card', await until(async () => /Frühjahr 2027/.test(await page.locator('.ui-campaign').first().innerText().catch(() => ''))));
   const nav = await page.locator('.ui-bar nav a, .ui-bar nav button').allInnerTexts();
-  check('one navigation: Aktionen, Neue Aktion, Einladungen, Sicherheit, Feldkarte', ['Aktionen', 'Neue Aktion', 'Einladungen', 'Sicherheit', 'Feldkarte'].every((t) => nav.includes(t)), nav.join('|'));
+  check('one navigation: Aktionen, Neue Aktion, Einladungen, Sicherheit; Feldkarte and Abmelden as icons', ['Aktionen', 'Neue Aktion', 'Einladungen', 'Sicherheit'].every((t) => nav.includes(t)) && (await page.locator('.ui-account').getByRole('link', { name: 'Feldkarte' }).count()) === 1 && (await page.locator('.ui-account').getByRole('button', { name: 'Abmelden' }).count()) === 1, nav.join('|'));
   check('dashboard fits the phone width', await noHScroll(page));
   await pageAudit(page, 'o3-dashboard');
   await page.screenshot({ path: `${shots}/o3-dashboard.png` });

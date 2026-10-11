@@ -19,14 +19,30 @@ html:has(.ui-page), body:has(.ui-page) { margin: 0; overflow: auto; height: auto
 .ui-bar nav a:hover, .ui-bar nav button:hover { background: var(--surface-3); }
 .ui-bar nav [aria-current="page"] { background: var(--primary-container); color: var(--on-primary-container) !important; }
 .ui-brand { white-space: nowrap; }
-/* phone: brand and account on the first row, the navigation on its own rows below; every entry stays visible (it wraps, it never scrolls out of sight) */
-.ui-bar { flex-wrap: wrap; row-gap: 0; }
-.ui-bar nav { order: 3; flex: 1 1 100%; padding-bottom: 0.4rem; flex-wrap: wrap; overflow: visible; }
+/* phone: brand and account in one slim row on top, the navigation as a tab bar fixed at the bottom (thumb reach); from 760 px it sits in the top bar */
+.ui-bar { min-height: 3.5rem; }
+.ui-bar nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0; padding: 0.25rem max(0.25rem, env(safe-area-inset-left)) calc(0.25rem + env(safe-area-inset-bottom)); overflow: visible; background: var(--surface-2); border-top: 1px solid var(--outline-var); }
+.ui-bar nav a, .ui-bar nav button { flex-direction: column; justify-content: center; gap: 0.15rem; min-height: 3.5rem; padding: 0 0.15rem; font-size: 0.72rem; line-height: 1.15; text-align: center; white-space: normal; }
+.ui-bar nav a span, .ui-bar nav button span { display: block; max-width: 100%; overflow-wrap: anywhere; }
+.ui-bar nav [aria-current="page"] { background: transparent; color: var(--primary) !important; }
+.ui-bar nav [aria-current="page"] .v5-icon { background: var(--primary-container); color: var(--on-primary-container); border-radius: 999px; padding: 0.2rem 0.9rem; box-sizing: content-box; }
 .ui-account { margin-left: auto; }
-@media (min-width: 760px) { .ui-bar { flex-wrap: nowrap; } .ui-bar nav { order: 0; flex: 1 1 auto; padding-bottom: 0; flex-wrap: nowrap; overflow-x: auto; } }
+@media (min-width: 760px) {
+  .ui-bar nav { position: static; display: flex; flex: 1 1 auto; min-width: 0; gap: 0.25rem; padding: 0; background: transparent; border-top: 0; overflow-x: auto; }
+  .ui-bar nav a, .ui-bar nav button { flex-direction: row; min-height: 2.75rem; padding: 0 0.9rem; gap: 0.5rem; font-size: 0.95rem; white-space: nowrap; }
+  .ui-bar nav a .v5-icon, .ui-bar nav button .v5-icon { display: none; }
+  .ui-bar nav [aria-current="page"] { background: var(--primary-container); color: var(--on-primary-container) !important; }
+}
+.ui-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; border: 0; border-radius: var(--r); background: transparent; color: var(--primary) !important; cursor: pointer; }
+.ui-iconbtn:hover:not(:disabled) { background: var(--surface-3); }
+.ui-iconbtn:disabled { opacity: 0.45; }
+.ui-iconbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ui-username { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 9rem; }
 .ui-account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; font-size: 0.88rem; font-weight: 700; color: var(--on-var); }
 
 .ui-main { display: grid; gap: 1rem; align-content: start; width: min(72rem, 100%); margin: 0 auto; padding: 1.6rem max(1rem, env(safe-area-inset-left)) 5rem; }
+.ui-main { padding-bottom: 6.5rem; }
+@media (min-width: 760px) { .ui-main { padding-bottom: 5rem; } }
 .ui-main.narrow { width: min(40rem, 100%); }
 .ui-page.center .ui-main { align-content: center; padding-top: 1rem; }
 .ui-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }

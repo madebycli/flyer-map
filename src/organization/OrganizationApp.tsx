@@ -297,7 +297,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
   if (organizerMemberships.length === 0) {
     return (
       <Page bar={bar} narrow>
-        <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
+        <Button tone="quiet" className="ui-back" icon="back" onClick={() => navigate("/admin")}>Aktionen</Button>
         <Card title="Nur für Organizer" icon="lock"><p>Aktionen legen nur Organizer an.</p></Card>
       </Page>
     );
@@ -305,7 +305,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
 
   return (
     <Page bar={bar} narrow>
-      <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
+      <Button tone="quiet" className="ui-back" icon="back" onClick={() => navigate("/admin")}>Aktionen</Button>
       <Heading eyebrow="Neue Aktion" title="Aktion erstellen" />
       <p className="ui-muted">Name, Organisation, Startstatus und Kartenfokus werden serverseitig gespeichert.</p>
       <Card>
@@ -384,7 +384,7 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
 
   return (
     <Page bar={<AdminBar me={me} current="campaigns" navigate={navigate} />} narrow>
-      <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
+      <Button tone="quiet" className="ui-back" icon="back" onClick={() => navigate("/admin")}>Aktionen</Button>
       {error ? <Notice tone="error">{error}</Notice> : null}
       {campaign ? (
         <>
