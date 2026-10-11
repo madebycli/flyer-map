@@ -21,6 +21,7 @@ type Exports = {
   session_route(ptr: number, len: number): number;
   session_lasso(ptr: number, len: number, housesOnly: number): number;
   session_search(ptr: number, len: number, limit: number): number;
+  session_set_status(ptr: number, len: number): number;
 };
 
 /**
@@ -158,6 +159,12 @@ export class WasmEngine {
   lasso(ring: LngLat[], housesOnly: boolean): { houses: string[]; segments: string[] } {
     const bytes = new TextEncoder().encode(JSON.stringify(ring));
     return this.withBytes(bytes, (ptr) => this.json(this.x.session_lasso(ptr, bytes.byteLength, housesOnly ? 1 : 0)));
+  }
+
+  /** Status of entities (`h:…` / `s:…` → 1 completed, 2 later, 3 not-deliverable, 0 open) that the tiles cut from now on carry as `st`. */
+  setStatus(entries: [string, number][]): void {
+    const bytes = new TextEncoder().encode(JSON.stringify(entries));
+    this.withBytes(bytes, (ptr) => this.json(this.x.session_set_status(ptr, bytes.byteLength)));
   }
 
   /** Street and address search over everything the session holds. */

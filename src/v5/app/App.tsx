@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { importLegacyProgress, type FieldHouse as House, type FieldNetwork as Network, type FieldSegment as Segment, type LegacySnapshot } from '../engine/index.ts';
 import { FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
+import { bakeStatuses } from '../map/bake.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
@@ -309,14 +310,15 @@ export function App({ campaignId }: { campaignId: string }) {
     const { network, store, engine, mapData } = campaign;
     if (!network || !store || !engine || !mapData || !fieldMap.current) return;
     const map = fieldMap.current;
-    void map.loadMapData(mapData, (z, x, y) => engine.tile(z, x, y)).then(() => {
-      map.bind(store);
+    // The engine cuts the statuses into its tiles (tens of thousands of feature-states would be walked for every tile the map loads).
+    void (mapData.kind === 'tiles' ? bakeStatuses(store, engine) : Promise.resolve(null)).then((baked) => map.loadMapData(mapData, (z, x, y) => engine.tile(z, x, y)).then(() => {
+      map.bind(store, baked);
       // The view is fitted when the map first has something to show (the Gebiete, then once the streets and houses are there). Reloads after an
       // edit (a Gebiet changed or deleted, data fetched later) never move the camera again.
       const hasData = network.houses.length > 0 || network.segments.length > 0;
       const bounds = workBounds(network, meta?.areas ?? []);
       if (bounds && (fittedRef.current === 'none' || (fittedRef.current === 'areas' && hasData))) { fittedRef.current = hasData ? 'data' : 'areas'; map.fitTo(bounds, FIT_PADDING); }
-    });
+    }));
   }, [network, store, campaign.mapData]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
 
   useEffect(() => { fieldMap.current?.setPickups(pickupFeatures(campaign.pickups)); }, [campaign.pickups]);

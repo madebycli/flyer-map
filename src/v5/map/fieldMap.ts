@@ -7,6 +7,7 @@ import type { LngLat } from '../engine/types.ts';
 import type { FieldStore } from '../store/store.ts';
 import { diag, urlKind, webglInfo } from '../diag/index.ts';
 import type { EntityKey, Status } from '../store/types.ts';
+import type { BakedStatus } from './bake.ts';
 
 export const SEGMENT_SOURCE = 'v5-segments';
 export const HOUSE_SOURCE = 'v5-houses';
@@ -20,6 +21,9 @@ export const PICKUP_SOURCE = 'v5-pickups';
 export const ME_SOURCE = 'v5-me';
 
 export type Theme = 'dark' | 'light';
+
+/** Streets are drawn (and cut into the tiles) from this zoom on; below it the dots show the progress. Same number as `SEGMENTS_FROM` in engine-rs. */
+export const SEGMENTS_FROM = 14;
 
 /**
  * Calm, desaturated and still telling four states apart: "open" is a quiet slate (the work still to do should not shout),
@@ -35,8 +39,15 @@ export const STATUS_COLORS = STATUS_PALETTE.dark;
 /** Status-dependent opacity: untouched streets and houses stay translucent, so the basemap shows through and progress stands out. */
 const OPEN_ALPHA = { line: 0.5, fill: 0.5, dot: 0.6 };
 const DONE_ALPHA = { line: 0.92, fill: 0.85, dot: 0.9 };
+/**
+ * The status of a feature: what was set through feature-state since the tiles were cut, else what the engine cut into the tile (`st`, see
+ * `bakeStatuses`), else open. The bulk of the statuses comes with the tiles, so the feature-state list MapLibre walks for every tile it loads
+ * stays short.
+ */
+const BAKED_STATUS: ExpressionSpecification = ['match', ['to-string', ['get', 'st']], 'c', 'completed', 'l', 'later', 'n', 'not-deliverable', 'open'];
+const STATUS_NOW: ExpressionSpecification = ['coalesce', ['feature-state', 'status'], BAKED_STATUS];
 const byStatus = (open: number | ExpressionSpecification, done: number | ExpressionSpecification): ExpressionSpecification =>
-  ['match', ['coalesce', ['feature-state', 'status'], 'open'], 'open', open, done];
+  ['match', STATUS_NOW, 'open', open, done];
 
 /** Basemap styles are deployment configuration (served in the Aktion's meta), never a URL baked into the client. */
 export type Basemap = { dark: string | null; light: string | null } | null;
@@ -49,7 +60,7 @@ const SELECTED_OUTLINE: Record<Theme, string> = { dark: '#ffffff', light: '#2021
 
 const statusMatch = (theme: Theme): ExpressionSpecification => {
   const c = STATUS_PALETTE[theme];
-  return ['match', ['coalesce', ['feature-state', 'status'], 'open'], 'completed', c.completed, 'later', c.later, 'not-deliverable', c['not-deliverable'], c.open];
+  return ['match', STATUS_NOW, 'completed', c.completed, 'later', c.later, 'not-deliverable', c['not-deliverable'], c.open];
 };
 
 /** A finger that rests this long, within `HOLD_SLOP` px, starts a drawing tool (see `Gesture.hold`). The slop stays under the tap tolerance of the map. */
@@ -301,7 +312,8 @@ export class FieldMap {
     this.pushDraw();
     this.pushNotes();
     this.pushPickups();
-    if (this.store) void this.applyChunked([...this.store.entries()].map(([key, entry]) => [key, entry.status] as [EntityKey, Status]));
+    // Baked statuses come back with the new tiles (the engine is told every change); the GeoJSON fallback is painted again.
+    if (this.store && !this.baked) void this.applyChunked([...this.store.entries()].map(([key, entry]) => [key, entry.status] as [EntityKey, Status]));
     this.previewed = new Set(); // feature-state died with the old sources
     this.selected = [];
     this.resolveReady();
@@ -364,7 +376,7 @@ export class FieldMap {
     });
     // Thin and translucent when zoomed far out, so a whole city reads as texture, not as one solid block.
     map.addLayer({
-      id: 'v5-segments-line', type: 'line', ...src('segments'), ...this.segmentFilterSpec(),
+      id: 'v5-segments-line', type: 'line', ...src('segments'), minzoom: SEGMENTS_FROM, ...this.segmentFilterSpec(),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': statusMatch(theme),
@@ -540,12 +552,21 @@ export class FieldMap {
   }
 
   /** Mirror the store into feature-state: initial restore, then only the changed keys. */
-  bind(store: FieldStore): void {
+  bind(store: FieldStore, baked: BakedStatus | null = null): void {
     this.unbind?.();
     this.store = store;
-    void this.applyChunked([...store.entries()].map(([key, entry]) => [key, entry.status] as [EntityKey, Status]));
-    this.unbind = store.subscribe((changes) => { const done = diag.start('map.paint_ms'); for (const [key, status] of changes) this.paint(key, status); diag.inc('map.painted', changes.size); diag.observe('map.paint.batch', changes.size); done(); });
+    this.baked = baked;
+    // Baked: the tiles already carry the statuses of the baseline, so only what changed since needs feature-state.
+    const all = [...store.entries()].map(([key, entry]) => [key, entry.status] as [EntityKey, Status]);
+    void this.applyChunked(baked ? all.filter(([key, status]) => (baked.baseline.get(key) ?? 'open') !== status) : all);
+    this.unbind = store.subscribe((changes) => {
+      const done = diag.start('map.paint_ms');
+      for (const [key, status] of changes) this.paint(key, status);
+      baked?.send([...changes]);
+      diag.inc('map.painted', changes.size); diag.observe('map.paint.batch', changes.size); done();
+    });
   }
+  private baked: BakedStatus | null = null;
 
   private paint(key: EntityKey, status: Status) {
     this.setState(key, { status });

@@ -11,7 +11,8 @@ export type EngineRequest =
   | { id: number; op: 'snap'; at: LngLat }
   | { id: number; op: 'route'; anchors: string[] }
   | { id: number; op: 'lasso'; ring: LngLat[]; housesOnly: boolean }
-  | { id: number; op: 'search'; query: string; limit?: number };
+  | { id: number; op: 'search'; query: string; limit?: number }
+  | { id: number; op: 'status'; entries: [string, number][] };
 export type EngineReply = { id: number; error?: string; /** compute time inside the worker, ms */ ms?: number; initError?: string | null; kind?: EngineKind; area?: AreaResult; mapData?: MapData; tile?: ArrayBuffer; snap?: ReturnType<EngineHost['snap']>; route?: ReturnType<EngineHost['route']>; lasso?: ReturnType<EngineHost['lasso']>; search?: ReturnType<EngineHost['search']>; stats?: ReturnType<EngineHost['stats']> };
 
 const wasmUrl = () => fetch(new URL('../engine/wasm/engine.wasm', import.meta.url));
@@ -40,6 +41,7 @@ async function run(host: EngineHost, req: EngineRequest): Promise<{ reply: Engin
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
         return { reply: { id: req.id, tile: buffer }, transfer: [buffer] };
       }
+      case 'status': host.setStatus(req.entries); return { reply: { id: req.id }, transfer: [] };
       case 'lasso': return { reply: { id: req.id, lasso: host.lasso(req.ring, req.housesOnly) }, transfer: [] };
       case 'search': return { reply: { id: req.id, search: host.search(req.query, req.limit) }, transfer: [] };
       case 'route': return { reply: { id: req.id, route: host.route(req.anchors) }, transfer: [] };

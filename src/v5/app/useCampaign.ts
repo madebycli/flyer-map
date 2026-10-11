@@ -115,7 +115,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     const stopProbe = diag.probe('campaign', () => ({ ...bootSummary, store: fieldStore.describe(), notesPending: noteStore.pendingNotes().length, orphans: liveRef.current ? [...liveRef.current.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !liveRef.current!.areaOf.has(key)).length : null }));
 
     /** `quiet`: an admin change re-reads the Aktion while the person keeps looking at it, so the open sheet and its scroll position stay; only the first start shows the loading steps. */
-    // How many Gebiet parts a first start derives before the map is shown; the others follow behind the working map (see `rest`).
+    // How many new Gebiet parts a start derives before the map is shown (cached ones count half); the others follow behind the working map (see `rest`).
     const FIRST_UNITS = 3;
     let generation = 0;
     /** `rest`: the second step of a first start, which loads the parts the first step left out (quiet, like any reload). */
@@ -177,7 +177,9 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         });
         const staged = !quiet && !rest && units.length > FIRST_UNITS + 1;
         const deferred = new Set<number>();
-        if (staged) { let fresh = FIRST_UNITS; units.forEach((unit, index) => { if (!cachedBlobs[index].blob && unit.area.packVersion) { if (fresh > 0) fresh--; else deferred.add(index); } }); }
+        // A cached part costs a part of the budget (loading its blob takes a few hundred ms on a phone, 34 MB of blobs were 4 s), a new one two
+        // (download + derive): the budget is what the first step may spend, the rest follows behind the map.
+        if (staged) { let budget = FIRST_UNITS * 2; units.forEach((unit, index) => { if (!unit.area.packVersion) return; const cost = cachedBlobs[index].blob ? 1 : 2; if (budget >= cost) budget -= cost; else deferred.add(index); }); }
         timing.deferred = deferred.size;
         const resolved = await mapLimit(units, 6, async (unit, index) => {
           const { area } = unit;

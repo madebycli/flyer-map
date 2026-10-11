@@ -179,6 +179,18 @@ pub extern "C" fn session_tile(z: u32, x: u32, y: u32) -> usize {
     store(with_session(|s| s.tile(z, x, y)))
 }
 
+/// Status of entities for the tiles to come: JSON `[["h:…",1],["s:…",2],…]` with 1 completed, 2 later, 3 not-deliverable, 0 open (clears). Output `{"n":count}`.
+///
+/// # Safety
+/// Pointer/length come from an `alloc` buffer written by the host.
+#[no_mangle]
+pub unsafe extern "C" fn session_set_status(ptr: *const u8, len: usize) -> usize {
+    let entries: Vec<(String, u8)> = match serde_json::from_slice(std::slice::from_raw_parts(ptr, len)) { Ok(e) => e, Err(e) => return fail(&format!("status_invalid: {e}")) };
+    let n = entries.len();
+    with_session(|s| s.set_status(entries));
+    store(serde_json::to_vec(&serde_json::json!({ "n": n })).unwrap_or_default())
+}
+
 /// Snap a point to the nearest house / street: JSON `{"position":[lng,lat],"address":string|null,"kind":0|1|2}`.
 #[no_mangle]
 pub extern "C" fn session_snap(lng: f64, lat: f64, house_reach: f64, street_reach: f64) -> usize {

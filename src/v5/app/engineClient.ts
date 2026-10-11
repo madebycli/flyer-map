@@ -92,6 +92,8 @@ export class EngineClient {
     if (!tile.byteLength) diag.inc('engine.tile.empty');
     return tile;
   }
+  /** The statuses the tiles cut from now on carry (see `FieldMap.bind`); `[key, 0..3]`. */
+  async setStatus(entries: [string, number][]): Promise<void> { await this.call({ op: 'status', entries }); }
   async stats() { return (await this.call({ op: 'stats' })).stats!; }
   async lasso(ring: LngLat[], housesOnly: boolean) { return (await this.call({ op: 'lasso', ring, housesOnly })).lasso!; }
   async search(query: string, limit = 30) { return (await this.call({ op: 'search', query, limit })).search!; }

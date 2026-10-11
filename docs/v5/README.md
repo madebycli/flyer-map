@@ -14,7 +14,7 @@ Streets and houses are a pure function of OSM data. v5 therefore stores **no tas
 | Ids | `s<way>:<startNode>` for segments, `h<buildingWay>` / `a<node>` for houses (stable across clients) |
 | User state | status overlay `key → status`, last-writer-wins by hybrid logical clock |
 | Sync | `GET /api/v5/campaigns/:id/state?since=` and `POST …/ops` (idempotent, team-scoped) |
-| Rendering | the engine (Rust, in a Worker) serves MapLibre vector tiles (`v5t://`); status via `setFeatureState` on the tile features |
+| Rendering | the engine (Rust, in a Worker) serves MapLibre vector tiles (`v5t://`); status cut into the tiles by the engine (`st`, set with `setStatus`) and, for what changed since, `setFeatureState`; dots thinned below z14, streets from z14 |
 
 ## Layout
 

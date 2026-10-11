@@ -118,7 +118,8 @@ test('tiles: dots (centres) up to z15, outlines from z15, nothing below z11; emp
   const { engine } = await session(raw, bigRing(3, 3));
   const layers = (z: number) => { const { x, y } = tileOf(...M(150, 150), z); const b = engine.tile(z, x, y); return b.length ? Object.keys(decode(b).layers).sort() : []; };
   assert.deepEqual(layers(10), []);
-  assert.deepEqual(layers(12), ['centers', 'segments']);
+  assert.deepEqual(layers(13), ['centers'], 'no streets below z14');
+  assert.deepEqual(layers(14), ['centers', 'segments']);
   assert.deepEqual(layers(15), ['centers', 'houses', 'segments']);
   assert.deepEqual(layers(16), ['houses', 'segments']);
   assert.equal(engine.tile(17, 0, 0).length, 0, 'far away from the data');
@@ -193,4 +194,69 @@ test('tile cutting is fast: a z16 tile of a 39 k-house city in a few millisecond
   for (let i = 0; i < 20; i++) engine.tile(z, x, y);
   const ms = (performance.now() - t) / 20;
   assert.ok(ms < 50, `${ms.toFixed(1)} ms per tile`);
+});
+
+const tilesCovering = (z: number, w: number) => {
+  const from = tileOf(...M(-300, -400), z), to = tileOf(...M(w * 100 + 100, w * 100 + 100), z), out: [number, number][] = [];
+  for (let tx = from.x; tx <= to.x; tx++) for (let ty = to.y; ty <= from.y; ty++) out.push([tx, ty]);
+  return out;
+};
+
+test('tiles: the dots are thinned at low zoom (one per ~1.5 px), complete from z14; the streets start at z14', async () => {
+  const raw = syntheticCity(14, 14).raw;
+  const { engine, full } = await session(raw, bigRing(14, 14));
+  const dots = (z: number) => {
+    const keys = new Set<string>(); let bytes = 0;
+    for (const [tx, ty] of tilesCovering(z, 14)) {
+      const buf = engine.tile(z, tx, ty); bytes += buf.length;
+      const l = buf.length ? decode(buf).layers.centers : undefined;
+      for (let i = 0; l && i < l.length; i++) keys.add(l.feature(i).properties.key as string);
+    }
+    return { keys: keys.size, bytes };
+  };
+  const total = full.houses.length;
+  assert.ok(total > 300);
+  const z11 = dots(11), z12 = dots(12), z14 = dots(14);
+  assert.ok(z11.keys > 0 && z11.keys < total * 0.8, `z11 thinned (${z11.keys} of ${total})`);
+  assert.ok(z11.keys <= z12.keys && z12.keys < total, `z12 thinned (${z12.keys} of ${total})`);
+  assert.equal(z14.keys, total, 'z14: every house has its dot');
+  for (const z of [11, 12, 13]) for (const [tx, ty] of tilesCovering(z, 14)) { const b = engine.tile(z, tx, ty); if (b.length) assert.equal(decode(b).layers.segments, undefined, `z${z}: no streets`); }
+});
+
+test('tiles: the engine cuts the status of an entity into the tile (st), 0 takes it back; open entities carry nothing', async () => {
+  const raw = syntheticCity(4, 4).raw;
+  const { engine, full } = await session(raw, bigRing(4, 4));
+  const house = full.houses[0], street = full.segments.find((s) => s.visible)!;
+  const other = full.houses[1];
+  engine.setStatus([[`h:${house.id}`, 1], [`h:${other.id}`, 2], [`s:${street.id}`, 3]]);
+  const st = (z: number, layer: 'houses' | 'segments' | 'centers') => {
+    const out = new Map<string, string | undefined>();
+    for (const [tx, ty] of tilesCovering(z, 4)) {
+      const b = engine.tile(z, tx, ty); const l = b.length ? decode(b).layers[layer] : undefined;
+      for (let i = 0; l && i < l.length; i++) { const p = l.feature(i).properties; out.set(p.key as string, p.st as string | undefined); }
+    }
+    return out;
+  };
+  const houses = st(17, 'houses'), segments = st(17, 'segments'), dots = st(14, 'centers');
+  assert.equal(houses.get(`h:${house.id}`), 'c');
+  assert.equal(houses.get(`h:${other.id}`), 'l');
+  assert.equal(segments.get(`s:${street.id}`), 'n');
+  assert.equal(dots.get(`h:${house.id}`), 'c', 'the dots carry it too');
+  assert.ok([...houses].filter(([, v]) => v !== undefined).length === 2, 'only the two houses with a status');
+  engine.setStatus([[`h:${house.id}`, 0]]);
+  assert.equal(st(17, 'houses').get(`h:${house.id}`), undefined);
+  assert.equal(st(17, 'houses').get(`h:${other.id}`), 'l');
+  assert.throws(() => engine.setStatus('nope' as never), /./);
+});
+
+test('bakeStatuses: hands the engine every status that is not open and reports what it was given', async () => {
+  const { bakeStatuses } = await import('../src/v5/map/bake.ts');
+  const entries = new Map([['h:1', { status: 'completed' }], ['h:2', { status: 'open' }], ['s:3', { status: 'later' }], ['h:4', { status: 'not-deliverable' }]]);
+  const sent: [string, number][][] = [];
+  const baked = await bakeStatuses({ entries: () => entries.entries() } as never, { setStatus: async (e) => { sent.push(e); } });
+  assert.deepEqual(sent[0], [['h:1', 1], ['s:3', 2], ['h:4', 3]]);
+  assert.deepEqual([...baked!.baseline.keys()], ['h:1', 's:3', 'h:4']);
+  baked!.send([['h:1', 'open']]);
+  assert.deepEqual(sent[1], [['h:1', 0]]);
+  assert.equal(await bakeStatuses({ entries: () => entries.entries() } as never, { setStatus: async () => { throw new Error('x'); } }), null, 'an engine that cannot: the map paints everything itself');
 });

@@ -74,6 +74,9 @@ export class EngineHost {
 
   tile(z: number, x: number, y: number): Uint8Array { return this.wasm ? this.wasm.tile(z, x, y) : new Uint8Array(0); }
 
+  /** Status for the tiles to come (Rust tiles only; the GeoJSON fallback is painted through feature-state). */
+  setStatus(entries: [string, number][]): void { this.wasm?.setStatus(entries); }
+
   /** Route through street pieces: Rust when loaded, otherwise the TypeScript reference over the merged slim network. */
   route(anchors: string[]): RouteResult {
     if (this.wasm) return this.wasm.route(anchors);

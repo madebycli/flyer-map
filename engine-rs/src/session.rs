@@ -10,6 +10,12 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 pub const MIN_TILE_ZOOM: u32 = 11;
+/// Streets are cut into tiles from this zoom on: below it a 10 m piece is under one pixel, so a city tile would carry every piece of the
+/// city (2.7 MB at z11, 1 MB at z13) for a line nobody can tell from the basemap's. The dots show the progress there.
+pub const SEGMENTS_FROM: u32 = 14;
+/// Up to this zoom the dots are thinned: of the houses inside one `DOT_CELL` (tile units, ~1.5 px) only the first is cut into the tile.
+pub const THIN_DOTS_UP_TO: u32 = 13;
+const DOT_CELL: f64 = 12.0;
 /// Dots (one per house) are drawn up to this zoom, house outlines from `OUTLINE_FROM` on.
 pub const CENTERS_UP_TO: u32 = 15;
 pub const OUTLINES_FROM: u32 = 15;
@@ -152,6 +158,9 @@ pub struct Session {
     seen_house: FxHashSet<String>,
     seg_grid: Grid,
     house_grid: Grid,
+    /// Status of the entities that are not open (key → 1 completed, 2 later, 3 not-deliverable): cut into the tiles as `st`, so the map
+    /// does not have to be told about every one of them through feature-state (MapLibre walks that whole list for every tile it loads).
+    status: FxHashMap<String, u8>,
 }
 
 fn bbox(pts: &[[f64; 2]]) -> [f64; 4] {
@@ -202,7 +211,17 @@ pub fn slim(network: &Network) -> SlimNetwork {
 
 impl Session {
     pub fn new() -> Self {
-        Session { graph: RouteGraph::default(), search_entries: None, segs: vec![], houses: vec![], seen_seg: FxHashSet::default(), seen_house: FxHashSet::default(), seg_grid: Grid::new(CELL), house_grid: Grid::new(CELL) }
+        Session { graph: RouteGraph::default(), search_entries: None, segs: vec![], houses: vec![], seen_seg: FxHashSet::default(), seen_house: FxHashSet::default(), seg_grid: Grid::new(CELL), house_grid: Grid::new(CELL), status: FxHashMap::default() }
+    }
+
+    /// Set (or, with 0, clear) the status of entities; later tiles carry it.
+    pub fn set_status(&mut self, entries: Vec<(String, u8)>) {
+        for (key, code) in entries {
+            if code == 0 || code > 3 { self.status.remove(&key); } else { self.status.insert(key, code); }
+        }
+    }
+    fn st(&self, key: &str) -> Option<&'static str> {
+        match self.status.get(key) { Some(1) => Some("c"), Some(2) => Some("l"), Some(3) => Some("n"), _ => None }
     }
 
     /// Merge one Area's network: only ids not seen before are drawn (first Area wins), hidden segments are never drawn.
@@ -235,14 +254,21 @@ impl Session {
         let q = [x as f64 / n - pad, y as f64 / n - pad, (x + 1) as f64 / n + pad, (y + 1) as f64 / n + pad];
         let mut ids: Vec<u32> = Vec::new();
         let mut segments = Layer::new("segments");
-        self.seg_grid.search(q, &mut ids);
-        ids.sort_unstable();
-        for &i in &ids {
-            let s = &self.segs[i as usize];
-            let pts: Vec<[f64; 2]> = s.line.iter().map(|p| to_tile(*p, z, x, y)).collect();
-            let parts = clip_line(&pts);
-            if !parts.is_empty() { segments.add(GeomType::Line, &[("key", &s.key), ("h", if s.with_houses { "1" } else { "0" })], &parts); }
+        if z >= SEGMENTS_FROM {
+            self.seg_grid.search(q, &mut ids);
+            ids.sort_unstable();
+            for &i in &ids {
+                let s = &self.segs[i as usize];
+                let pts: Vec<[f64; 2]> = s.line.iter().map(|p| to_tile(*p, z, x, y)).collect();
+                let parts = clip_line(&pts);
+                if !parts.is_empty() {
+                    let mut props = vec![("key", s.key.as_str()), ("h", if s.with_houses { "1" } else { "0" })];
+                    if let Some(st) = self.st(&s.key) { props.push(("st", st)); }
+                    segments.add(GeomType::Line, &props, &parts);
+                }
+            }
         }
+        let mut taken: FxHashSet<(i32, i32)> = FxHashSet::default();
         let mut houses = Layer::new("houses");
         let mut centers = Layer::new("centers");
         self.house_grid.search(q, &mut ids);
@@ -251,12 +277,19 @@ impl Session {
             let h = &self.houses[i as usize];
             if z >= OUTLINES_FROM {
                 let ring: Vec<[f64; 2]> = h.ring.iter().map(|p| to_tile(*p, z, x, y)).collect();
-                if let Some(r) = clip_ring(&ring) { houses.add(GeomType::Polygon, &[("key", &h.key), ("num", &h.num)], &[r]); }
+                if let Some(r) = clip_ring(&ring) {
+                    let mut props = vec![("key", h.key.as_str()), ("num", h.num.as_str())];
+                    if let Some(st) = self.st(&h.key) { props.push(("st", st)); }
+                    houses.add(GeomType::Polygon, &props, &[r]);
+                }
             }
             if z <= CENTERS_UP_TO {
                 let c = to_tile(h.center, z, x, y);
                 if c[0] >= -BUFFER && c[0] <= EXTENT + BUFFER && c[1] >= -BUFFER && c[1] <= EXTENT + BUFFER {
-                    centers.add(GeomType::Point, &[("key", &h.key)], &[vec![[c[0].round() as i32, c[1].round() as i32]]]);
+                    if z <= THIN_DOTS_UP_TO && !taken.insert(((c[0] / DOT_CELL).floor() as i32, (c[1] / DOT_CELL).floor() as i32)) { continue; }
+                    let mut props = vec![("key", h.key.as_str())];
+                    if let Some(st) = self.st(&h.key) { props.push(("st", st)); }
+                    centers.add(GeomType::Point, &props, &[vec![[c[0].round() as i32, c[1].round() as i32]]]);
                 }
             }
         }
