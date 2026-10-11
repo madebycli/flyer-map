@@ -573,6 +573,13 @@ export function App({ campaignId }: { campaignId: string }) {
           {meta.role === 'admin' && <button className="v5-icon-btn tonal" onClick={() => enter('areas')} aria-label="Gebiet anlegen" title="Gebiet anlegen"><Icon name="plus" /></button>}
         </div>
       )}
+      {ready && campaign.completing && (
+        <div className="v5-banner v5-missing" role="status">
+          <Icon name={campaign.completing.failed ? 'warning' : 'sync'} size={20} />
+          <span>{campaign.completing.failed ? 'Nicht alle Kartendaten wurden geladen' : `Weitere Kartendaten werden geladen · ${campaign.completing.done}/${campaign.completing.total}`}</span>
+          {campaign.completing.failed && <button className="v5-icon-btn tonal" onClick={() => void campaign.reload()} aria-label="Erneut laden" title="Erneut laden"><Icon name="sync" /></button>}
+        </div>
+      )}
       {ready && buildableMissing.length > 0 && (
         <div className="v5-banner v5-missing" role="status">
           <Icon name="warning" size={20} /><span>{buildableMissing.map((a) => a.name).join(', ')}{campaign.buildProgress ? ` · ${campaign.buildProgress.done}/${campaign.buildProgress.total}` : ''}</span>

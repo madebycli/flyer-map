@@ -24,6 +24,10 @@ One request per Gebiet means one Overpass answer per Gebiet. At a few dozen km²
 - **Engine** (TypeScript reference and Rust, parity-tested): with a `cell`, a part keeps only the houses whose centre lies in the cell and the street pieces that start in it, so the parts partition the Gebiet and merge without double entries. Street piece ids come from OSM way and node ids, hence are the same in every part.
 - **Editor**: shows "Kartendaten in N Teilen"; only an outline of more than 600 parts is refused.
 
+## First start: show the first parts, load the rest behind the map
+
+Measured on a phone (Android, Chrome, 15 parts, 24 000 houses): packs 2.6 s, **deriving 14 parts 32 s** (the same code takes 1.6 s on an iPad), start 62 s. Deriving, not downloading, is the wait. A first start of a Gebiet with more than four parts therefore derives only the cached parts and the first three new ones (`FIRST_UNITS`), shows the map, and loads the others in a second, quiet pass (`boot({ quiet: true, rest: true })`, the same path as any reload; the first engine keeps serving tiles meanwhile). A notice "Weitere Kartendaten werden geladen · n/15" shows the progress; if the second pass fails the notice offers a reload. While parts are missing the queued edits are not pruned (`reconcilePending` waits for the complete network). `flow19` checks the two steps.
+
 ## Known limits (measured, not hidden)
 
 - Everything is loaded at once. Measured with the Rust engine: 44 000 houses and 117 000 street pieces (10 m pieces) in 12 parts: derive 4.9 s, JS heap 107 MB, WebAssembly memory 135 MB. A dense 600 km² can mean several hundred thousand houses and street pieces: fine on a desktop, **likely too much for a phone**. Next step if the field test shows it: load parts on demand by the visible map area (the session already adds Areas incrementally; the app state and the progress totals would have to follow).

@@ -47,6 +47,8 @@ export type CampaignState = {
   building: boolean;
   /** Parts of a big Gebiet fetched so far while `building` (null for a small Gebiet or when idle). */
   buildProgress: { done: number; total: number } | null;
+  /** The first start of a big Gebiet shows its first parts and loads the others behind the working map (`failed`: that did not work, a reload fetches all). */
+  completing: { done: number; total: number; failed?: boolean } | null;
   /** Re-fetch Areas, packs and status (after an Area was created or reshaped). */
   reload(): Promise<void>;
   /** Light refresh of roles, claims and Rooms only (no map rebuild, no loading screen). */
@@ -72,6 +74,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const phaseRef = useRef(phase); phaseRef.current = phase;
   const [building, setBuilding] = useState(false);
   const [buildProgress, setBuildProgress] = useState<{ done: number; total: number } | null>(null);
+  const [completing, setCompleting] = useState<{ done: number; total: number; failed?: boolean } | null>(null);
   const buildingRef = useRef(false);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [network, setNetwork] = useState<Network | null>(null);
@@ -84,7 +87,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
   const [sync, setSync] = useState<CampaignState['sync']>({ state: 'idle', pending: 0, lastOkAt: null, lastError: null });
   const [missingAreas, setMissingAreas] = useState<Meta['areas']>([]);
-  const reload = useRef<(options?: { quiet?: boolean }) => Promise<void>>(async () => {});
+  const reload = useRef<(options?: { quiet?: boolean; rest?: boolean }) => Promise<void>>(async () => {});
   const syncRef = useRef<SyncClient | null>(null);
   /** What `orphans()` judges by: always the newest derivation, also right after `reload()` and before React re-rendered. */
   const liveRef = useRef<{ store: FieldStore; areaOf: Map<string, string>; missing: number } | null>(null);
@@ -109,7 +112,12 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     const stopProbe = diag.probe('campaign', () => ({ ...bootSummary, store: fieldStore.describe(), notesPending: noteStore.pendingNotes().length, orphans: liveRef.current ? [...liveRef.current.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !liveRef.current!.areaOf.has(key)).length : null }));
 
     /** `quiet`: an admin change re-reads the Aktion while the person keeps looking at it, so the open sheet and its scroll position stay; only the first start shows the loading steps. */
-    const boot = async ({ quiet = false }: { quiet?: boolean } = {}) => {
+    // How many Gebiet parts a first start derives before the map is shown; the others follow behind the working map (see `rest`).
+    const FIRST_UNITS = 3;
+    let generation = 0;
+    /** `rest`: the second step of a first start, which loads the parts the first step left out (quiet, like any reload). */
+    const boot = async ({ quiet = false, rest = false }: { quiet?: boolean; rest?: boolean } = {}) => {
+      const myGeneration = ++generation;
       const loading = (label: string) => { if (!quiet) setPhase({ kind: 'loading', label }); };
       const t0 = performance.now();
       diag.info('boot', 'boot start', { collection: kind === 'collection' });
@@ -136,6 +144,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         // The engine (Rust/WASM in a Worker, TypeScript fallback) keeps every Area's geometry; the app only gets coordinate-free data.
         engine = await enginePromise;
         if (cancelled) { engine.dispose(); return; }
+        const mine = engine;
         const useBlobs = engine.kind === 'wasm';
         // Per Area: the cached snapshot when pack, polygon and engine are unchanged; otherwise download (all in parallel —
         // the slow part on mobile data) and derive one after another.
@@ -150,14 +159,24 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         });
         if (units.length > loaded.areas.length) diag.info('boot', 'big Gebiet: loaded in parts', { areas: loaded.areas.length, parts: units.length });
         let fetched = 0;
-        const resolved = await mapLimit(units, 6, async (unit) => {
+        // Which parts wait for the second step: with many parts a first start derives only the cached ones and the first few new ones,
+        // so the map is there after seconds and not after the whole Gebiet (the slow part on a weak phone is deriving).
+        const cachedBlobs = await mapLimit(units, 6, async (unit) => {
+          const key = NetworkCache.keyFor({ id: unit.id, packVersion: unit.area.packVersion, updatedAt: unit.area.updatedAt });
+          return { key, blob: key && useBlobs ? await cache.load(key) : null };
+        });
+        const staged = !quiet && !rest && units.length > FIRST_UNITS + 1;
+        const deferred = new Set<number>();
+        if (staged) { let fresh = FIRST_UNITS; units.forEach((unit, index) => { if (!cachedBlobs[index].blob && unit.area.packVersion) { if (fresh > 0) fresh--; else deferred.add(index); } }); }
+        timing.deferred = deferred.size;
+        const resolved = await mapLimit(units, 6, async (unit, index) => {
           const { area } = unit;
           const tArea = performance.now();
-          const key = NetworkCache.keyFor({ id: unit.id, packVersion: area.packVersion, updatedAt: area.updatedAt });
-          const blob = key && useBlobs ? await cache.load(key) : null;
-          const pack = !blob && area.packVersion ? await fetchPack(campaignId, area.id, unit.single ? null : unit.part.index) : null;
+          const { key, blob } = cachedBlobs[index];
+          const skip = deferred.has(index);
+          const pack = !blob && !skip && area.packVersion ? await fetchPack(campaignId, area.id, unit.single ? null : unit.part.index) : null;
           if (units.length > 8) { fetched++; loading(`Kartendaten werden geladen … ${fetched}/${units.length}`); }
-          return { areaId: area.id, unitId: unit.id, cell: unit.part.cell, packVersion: area.packVersion, ring: unit.ring, blob, key, pack, packBytes: blob?.byteLength ?? pack?.byteLength ?? null, fetchMs: Math.round(performance.now() - tArea) };
+          return { areaId: area.id, unitId: unit.id, cell: unit.part.cell, packVersion: area.packVersion, ring: unit.ring, blob, key, pack, deferred: skip, packBytes: blob?.byteLength ?? pack?.byteLength ?? null, fetchMs: Math.round(performance.now() - tArea) };
         });
         if (cancelled) return;
         timing.packs = Math.round(performance.now() - t0) - timing.meta;
@@ -167,7 +186,9 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         const parts: { areaId: string; network: Network }[] = [];
         const missing: Meta['areas'] = [];
         let derivedUnits = 0;
+        let partial = false;
         for (const item of resolved) {
+          if (item.deferred) { partial = true; continue; }
           let result: Awaited<ReturnType<EngineClient['area']>> | null = null;
           let source: AreaBoot['source'] = item.blob ? 'cache' : item.pack ? 'server' : 'none';
           if (item.blob) {
@@ -186,8 +207,11 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
           areaBoots.push({ n: areaBoots.length + 1, source, packBytes: item.packBytes, fetchMs: item.fetchMs, deriveMs: result.ms, detail: result.detail ?? null, houses: result.network.houses.length, segments: result.network.segments.length, diagnostics: result.network.diagnostics });
           diag.info('boot', `area ${areaBoots.length} derived`, { source, ms: result.ms, houses: result.network.houses.length, segments: result.network.segments.length, waysIn: result.network.diagnostics.waysIn, buildingsIn: result.network.diagnostics.buildingsIn, orphanHouses: result.network.diagnostics.orphanHouses });
           parts.push({ areaId: item.areaId, network: result.network });
+          if (rest) setCompleting({ done: parts.length, total: units.length });
           if (cancelled) return;
         }
+        // A newer start took over while this second step was deriving: its engine is the one that counts.
+        if (rest && myGeneration !== generation) { if (engine !== mine) mine.dispose(); return; }
         missingRef.current = missing;
         setMissingAreas(missing);
         liveRef.current = null; // set again below, once the new derivation is in place
@@ -199,7 +223,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         if (!hydrated) { await Promise.all([fieldStore.hydrate(), noteStore.hydrate()]); hydrated = true; notesHydrated = true; }
         if (cancelled) return; // a boot cancelled while hydrating must not create clients nobody disposes
         // Only prune when every Area was derived; a missing pack must never cost queued edits.
-        if (!missing.length) fieldStore.reconcilePending((key) => merged.areaOf.has(key));
+        if (!missing.length && !partial) fieldStore.reconcilePending((key) => merged.areaOf.has(key));
         progressTracker?.dispose();
         progressTracker = new Progress(merged.network, fieldStore);
         progressTracker.onChange(setProgress);
@@ -226,6 +250,12 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
         // A collection Aktion is useful without any map data yet: helpers see the Areas and take one first; its pack is built on taking it.
         setPhase(quiet || parts.length || loaded.kind === 'collection' || !loaded.areas.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
+        if (rest) setCompleting(null);
+        if (partial) {
+          diag.info('boot', 'the first parts are shown; the rest follows behind the map', { shown: parts.length, total: units.length });
+          setCompleting({ done: parts.length, total: units.length });
+          void boot({ quiet: true, rest: true }).catch(() => setCompleting({ done: parts.length, total: units.length, failed: true }));
+        }
       } catch (error) {
         if (!cancelled) diag.error('boot', 'start failed', { message: error instanceof Error ? error.message : String(error), status: error instanceof V5ApiError ? error.status : undefined, ms: Math.round(performance.now() - t0) });
         if (retired && !engine) { engine = retired; retired = null; }
@@ -268,7 +298,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     syncNow: () => { void syncRef.current?.run(); },
     orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
-    building, buildProgress,
+    building, buildProgress, completing,
     async buildMissing() {
       if (!canBuildRef.current || buildingRef.current) return null;
       buildingRef.current = true; setBuilding(true);
