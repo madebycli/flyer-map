@@ -31,7 +31,7 @@
 
 /* ── bottom sheet ────────────────────────────────────────────── */
 .v5-sheet {
-  position: absolute; z-index: 6; left: 0; right: 0; bottom: 0; max-height: 72vh; overflow: auto; padding: 0.35rem 1rem calc(env(safe-area-inset-bottom) + 1rem);
+  position: absolute; z-index: 11; left: 0; right: 0; bottom: 0; max-height: 72vh; overflow: auto; padding: 0.35rem 1rem calc(env(safe-area-inset-bottom) + 1rem);
   background: var(--surface-1); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -4px 24px rgb(0 0 0 / 30%); animation: v5-sheet 260ms var(--ease);
   overscroll-behavior: contain;
   /* One vertical rhythm: the sheet spaces its direct children by gap alone (see below), so no two screens space things differently. */

@@ -228,6 +228,10 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-barrow { flex-wrap: wrap; }
 .v5-barrow > .v5-input { flex: 1 1 10rem; }
 .v5-barrow .v5-teams { flex-wrap: wrap; }
+/* the buttons of the edit bar stay on one row on a phone: the counter gives way (shrinks), the buttons never wrap */
+.v5-barrow.tight { flex-wrap: nowrap; }
+.v5-barrow.tight .v5-modes { flex: 1 1 0; min-width: 0; gap: 0.35rem; }
+.v5-barrow.tight .v5-counter { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 0 0.2rem; }
 
 /* Die kleine Anzeige von ?diag=1 (Tabellen, Log und Befunde der Diagnose liegen als Bausteine in src/ui/kit.css) */
 .v5-hud { position: fixed; z-index: 8; top: calc(max(0.4rem, env(safe-area-inset-top)) + 3.7rem); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 1.5rem); min-height: var(--ctl); padding: 0 var(--gap) 0 calc(var(--gap) * 1.5); border: 0; border-radius: var(--r); background: var(--surface-1); color: var(--on); font: 700 0.74rem ui-monospace, monospace; box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

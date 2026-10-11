@@ -310,6 +310,8 @@ async function getPack(db: D1DatabaseLike, access: AccessContext, campaignId: st
   return new Response(out, { headers: { 'content-type': 'application/gzip', 'cache-control': 'private, max-age=0, must-revalidate', etag: `"v5-${meta.version}"`, 'x-pack-version': String(meta.version), 'x-engine': meta.engine } });
 }
 
+const OVERPASS_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+
 async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, options: V5Options): Promise<Response> {
   const area = await resolveArea(db, campaignId, areaId);
   if (!area || !canReadArea(access, area)) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
@@ -330,13 +332,22 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
   ).bind(campaignId, areaId, nowMs, nowMs - PACK_REBUILD_COOLDOWN_MS)]);
   if ((claim[0]?.meta?.changes ?? 0) !== 1) return fail(429, 'pack_recent', 'Für dieses Gebiet läuft gerade ein Abruf oder lief eben erst einer. Bitte eine Minute warten.');
   const doFetch = options.fetchImpl ?? fetch;
-  let response: Response;
-  try {
-    response = await doFetch(options.overpassUrl ?? 'https://overpass-api.de/api/interpreter', {
-      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'verteil-flyer-v5/1 (flyer distribution field tool)' }, body: `data=${encodeURIComponent(overpassQuery(bbox))}`,
-    });
-  } catch { return fail(502, 'overpass_unreachable', 'Kartendatenquelle nicht erreichbar.'); }
-  if (!response.ok) return fail(502, 'overpass_error', `Kartendatenquelle antwortete mit ${response.status}.`);
+  // The public Overpass service is shared and sometimes down (an error such as 521 or 504): on a refusal, a server error or no answer the
+  // next mirror is tried, within this one attempt. A configured address (OSM_OVERPASS_URL) is the only one asked.
+  const urls = options.overpassUrl ? [options.overpassUrl] : OVERPASS_MIRRORS;
+  let response: Response | null = null;
+  let lastStatus = 0;
+  for (const url of urls) {
+    try {
+      const attempt = await doFetch(url, {
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'verteil-flyer-v5/1 (flyer distribution field tool)' }, body: `data=${encodeURIComponent(overpassQuery(bbox))}`, signal: AbortSignal.timeout(30_000),
+      });
+      if (attempt.ok) { response = attempt; break; }
+      lastStatus = attempt.status;
+      if (attempt.status !== 429 && attempt.status < 500) break; // another kind of refusal: a mirror will not change it
+    } catch { /* no answer: the next mirror */ }
+  }
+  if (!response) return lastStatus ? fail(502, 'overpass_error', `Kartendatenquelle antwortete mit ${lastStatus}. Bitte später erneut versuchen.`) : fail(502, 'overpass_unreachable', 'Kartendatenquelle nicht erreichbar. Bitte später erneut versuchen.');
   const textBody = await response.text();
   if (textBody.length > (options.maxPackBytes ?? 40_000_000)) return fail(502, 'overpass_too_large', 'Antwort der Kartendatenquelle zu groß.');
   let parsed: ReturnType<typeof packFromOverpass>;

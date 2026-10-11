@@ -257,6 +257,21 @@ test('concurrent pack builds: exactly one reaches the upstream, failures are thr
   assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_o/pack`, undefined, { fetchImpl: failing })).status, 429, 'a failed attempt still counts');
 });
 
+test('a down Overpass server (521) does not fail the build: the next mirror answers; a refusal that a mirror cannot change stops at once', async () => {
+  const { call } = await setup();
+  const asked: string[] = [];
+  const firstDown = (async (url: string) => { asked.push(url); return asked.length === 1 ? new Response('', { status: 521 }) : overpassOk(); }) as unknown as typeof fetch;
+  assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl: firstDown })).status, 200);
+  assert.equal(asked.length, 2);
+  assert.notEqual(asked[0], asked[1]);
+  const refused: string[] = [];
+  const forbidden = (async (url: string) => { refused.push(url); return new Response('', { status: 400 }); }) as unknown as typeof fetch;
+  const failed = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_o/pack`, undefined, { fetchImpl: forbidden });
+  assert.equal(failed.status, 502);
+  assert.equal(refused.length, 1);
+  assert.match(((await failed.json()) as { error: { message: string } }).error.message, /400/);
+});
+
 test('fuzz against the real handler and SQL: overlapping batches, duplicates and reordering always leave the highest op id per key', async () => {
   for (let seed = 1; seed <= 12; seed++) {
     let s = seed;

@@ -102,6 +102,11 @@ await page.screenshot({ path: `${shots}/t3-area-sheet.png` });
 await page.getByRole('button', { name: 'Eckpunkte bearbeiten' }).click();
 await page.waitForSelector('.v5-markbar');
 check('edit mode shows the vertex counter', /4\/50/.test(await page.locator('.v5-counter').first().innerText()));
+{
+  // On a phone the buttons of the edit bar stay on one row (undo, delete, counter, cancel, save), all inside the screen.
+  const tops = await page.locator('.v5-barrow.tight').evaluate((row) => [...row.querySelectorAll('button')].map((b) => { const r = b.getBoundingClientRect(); return { top: Math.round(r.top), right: Math.round(r.right), h: Math.round(r.height) }; }));
+  check('the edit bar buttons share one row inside the screen', tops.length === 4 && tops.every((t) => Math.abs(t.top - tops[0].top) <= 2 && t.right <= 430 && t.h >= 44), JSON.stringify(tops));
+}
 
 const vertexScreen = async (i) => page.evaluate((index) => { const f = window.__v5Map.querySourceFeatures('v5-draw').filter((x) => x.properties.kind === 'vertex' && Number(x.properties.index) === index)[0]; const c = window.__v5Map.project(f.geometry.coordinates); return [c.x, c.y]; }, i);
 const midScreen = async (edge) => page.evaluate((e) => { const f = window.__v5Map.querySourceFeatures('v5-draw').filter((x) => x.properties.kind === 'mid' && Number(x.properties.edge) === e)[0]; const c = window.__v5Map.project(f.geometry.coordinates); return [c.x, c.y]; }, edge);

@@ -37,7 +37,10 @@ export type CampaignState = {
   sync: { state: 'idle' | 'syncing' | 'offline'; pending: number; lastOkAt: number | null; lastError: string | null };
   /** Areas that are shown without data yet (some other Areas already work). */
   missingAreas: Meta['areas'];
-  buildMissing(): Promise<void>;
+  /** Fetch the map data of the Areas that have none. Resolves with a message for the person when it did not work (nothing blocks the screen then). */
+  buildMissing(): Promise<string | null>;
+  /** A data fetch started by `buildMissing` is running. */
+  building: boolean;
   /** Re-fetch Areas, packs and status (after an Area was created or reshaped). */
   reload(): Promise<void>;
   /** Light refresh of roles, claims and Rooms only (no map rebuild, no loading screen). */
@@ -60,6 +63,9 @@ function actorId(): string {
 
 export function useCampaign(campaignId: string, kind?: 'collection'): CampaignState {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading', label: 'Aktion wird geladen …' });
+  const phaseRef = useRef(phase); phaseRef.current = phase;
+  const [building, setBuilding] = useState(false);
+  const buildingRef = useRef(false);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [network, setNetwork] = useState<Network | null>(null);
   const [engineState, setEngineState] = useState<{ client: EngineClient; mapData: MapData } | null>(null);
@@ -201,7 +207,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         if (location.search.includes('debug')) console.info('[v5 boot ms]', JSON.stringify(timing));
         // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
         // A collection Aktion is useful without any map data yet: helpers see the Areas and take one first; its pack is built on taking it.
-        setPhase(parts.length || loaded.kind === 'collection' || !loaded.areas.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
+        setPhase(quiet || parts.length || loaded.kind === 'collection' || !loaded.areas.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
       } catch (error) {
         if (!cancelled) diag.error('boot', 'start failed', { message: error instanceof Error ? error.message : String(error), status: error instanceof V5ApiError ? error.status : undefined, ms: Math.round(performance.now() - t0) });
         if (retired && !engine) { engine = retired; retired = null; }
@@ -244,18 +250,26 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     syncNow: () => { void syncRef.current?.run(); },
     orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
+    building,
     async buildMissing() {
-      if (!canBuildRef.current) return;
-      setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
+      if (!canBuildRef.current || buildingRef.current) return null;
+      buildingRef.current = true; setBuilding(true);
+      // On the first start (nothing derived yet) the loading screen carries the wait; otherwise the map stays usable.
+      const overlay = phaseRef.current.kind === 'needs-pack';
+      if (overlay) setPhase({ kind: 'loading', label: 'Kartendaten werden geladen …' });
       try {
         // Only Areas this caller may build right now (a collector: the ones their Room holds), judged on fresh server state.
         const fresh = await fetchMeta(campaignId, kind);
         const wanted = new Set(missingRef.current.map((a) => a.id));
         const buildable = fresh.areas.filter((a) => wanted.has(a.id) && (a.writable || fresh.role === 'admin'));
-        if (!buildable.length) { await reload.current(); return; }
         for (const area of buildable) await buildPack(campaignId, area.id);
-        await reload.current();
-      } catch (error) { setPhase({ kind: 'error', message: error instanceof Error ? error.message : 'Kartendaten konnten nicht geladen werden', status: error instanceof V5ApiError ? error.status : undefined }); }
+        await reload.current({ quiet: !overlay });
+        return null;
+      } catch (error) {
+        // A refusal (the one-minute pause, the data source down) is a message, not a dead end: the screen comes back as it was.
+        if (overlay) setPhase({ kind: 'needs-pack', areas: missingRef.current, canBuild: canBuildRef.current });
+        return error instanceof Error ? error.message : 'Kartendaten konnten nicht geladen werden';
+      } finally { buildingRef.current = false; setBuilding(false); }
     },
   };
 }

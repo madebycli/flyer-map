@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Feature } from 'geojson';
+import type { Feature, FeatureCollection } from 'geojson';
 import type { FieldNetwork as Network, LngLat } from '../engine/types.ts';
 import type { AreaShape, FieldMap } from '../map/fieldMap.ts';
 import { areaSquareMeters, fromRing, insertVertex, midpoints, moveVertex, MAX_VERTICES, removeVertex, seedSquare, toPolygon, toRing, validate, type Vertices } from '../areas/polygon.ts';
@@ -38,11 +38,25 @@ export type AreaContext = {
   onSaved?: (areaId: string, wasEdit: boolean) => Promise<void> | void;
   /** Drawing a Sammelgebiet/Teilgebiet ended (saved or cancelled): the app returns to the Einrichten sheet. */
   onCollectionDone?: () => void;
+  /** A short message for the person (the toast). */
+  notify?: (text: string) => void;
 };
 
 export const COLLECTION_COLORS = ['#2563eb', '#e5736b', '#e0a83a', '#8b7be8', '#38b8a6'];
 export const sizeLabel = (m2: number) => (m2 >= 1e6 ? `${(m2 / 1e6).toFixed(2).replace('.', ',')} km²` : `${Math.round(m2 / 100) / 100} ha`.replace('.', ','));
 const colorOf = (meta: Meta, teamId: string) => meta.teams.find((t) => t.id === teamId)?.color ?? '#7aa8ff';
+const drawColor = (meta: Meta, edit: AreaEdit) => (edit.kind === 'team' ? colorOf(meta, edit.teamId) : edit.kind === 'main' ? '#8a97a6' : edit.color);
+
+/** The map overlay of the polygon being edited: fill, outline, edge midpoints and corner handles. */
+function drawOf(vertices: Vertices, selected: number | null, color: string): FeatureCollection {
+  const ring = toRing(vertices);
+  const features: Feature[] = [];
+  if (vertices.length >= 3) features.push({ type: 'Feature', properties: { kind: 'fill', color }, geometry: { type: 'Polygon', coordinates: [ring] } });
+  if (vertices.length >= 2) features.push({ type: 'Feature', properties: { kind: 'line', color }, geometry: { type: 'LineString', coordinates: ring } });
+  for (const m of midpoints(vertices)) features.push({ type: 'Feature', properties: { kind: 'mid', edge: m.edge, color }, geometry: { type: 'Point', coordinates: m.point } });
+  vertices.forEach((v, index) => features.push({ type: 'Feature', properties: { kind: 'vertex', index, selected: selected === index ? 1 : 0, color }, geometry: { type: 'Point', coordinates: v } }));
+  return { type: 'FeatureCollection', features };
+}
 
 /** Area outlines, selection, and the vertex editor (drag, insert on edge midpoints, delete, undo, save). */
 export function useAreaTool(ctx: AreaContext, active: boolean) {
@@ -65,19 +79,14 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
   ], [meta, edit?.id, edit?.kind, ctx.colorFor]);
   useEffect(() => { fieldMap.current?.setAreas(shapes, active ? selectedId : null); }, [shapes, selectedId, active, fieldMap]);
 
+  const draggingRef = useRef(false);
   // overlay for the polygon being edited
   useEffect(() => {
     const fm = fieldMap.current;
     if (!fm) return;
     if (!edit || !meta) { fm.setDraw({ type: 'FeatureCollection', features: [] }); return; }
-    const color = edit.kind === 'team' ? colorOf(meta, edit.teamId) : edit.kind === 'main' ? '#8a97a6' : edit.color;
-    const ring = toRing(edit.vertices);
-    const features: Feature[] = [];
-    if (edit.vertices.length >= 3) features.push({ type: 'Feature', properties: { kind: 'fill', color }, geometry: { type: 'Polygon', coordinates: [ring] } });
-    if (edit.vertices.length >= 2) features.push({ type: 'Feature', properties: { kind: 'line', color }, geometry: { type: 'LineString', coordinates: ring } });
-    for (const m of midpoints(edit.vertices)) features.push({ type: 'Feature', properties: { kind: 'mid', edge: m.edge, color }, geometry: { type: 'Point', coordinates: m.point } });
-    edit.vertices.forEach((v, index) => features.push({ type: 'Feature', properties: { kind: 'vertex', index, selected: edit.selected === index ? 1 : 0, color }, geometry: { type: 'Point', coordinates: v } }));
-    fm.setDraw({ type: 'FeatureCollection', features });
+    if (draggingRef.current) return; // while a handle moves, the map is drawn straight from the gesture (below)
+    fm.setDraw(drawOf(edit.vertices, edit.selected, drawColor(meta, edit)));
   }, [edit, meta, fieldMap]);
 
   // dragging handles; anything that is not a handle stays a normal map pan
@@ -85,30 +94,41 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
     const fm = fieldMap.current;
     if (!fm || !active || !edit) return;
     let drag: number | null = null, snapshot: Vertices | null = null, changed = false;
+    // While a handle moves, the map is redrawn straight from the gesture and the app state follows at most every 100 ms
+    // (a state change re-renders the whole screen: once per finger move is what made drawing laggy on a phone).
+    let live: Vertices | null = null, timer: ReturnType<typeof setTimeout> | null = null;
+    const commit = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      const current = editRef.current;
+      if (current && live) setEdit({ ...current, vertices: live, error: null });
+    };
+    const finish = () => { commit(); drag = null; snapshot = null; live = null; draggingRef.current = false; };
     fm.setGesture({
       down: (p) => {
         const current = editRef.current;
         const handle = fm.hitHandle(p);
         if (!current || !handle) return false;
-        snapshot = current.vertices; changed = false;
-        if (handle.kind === 'vertex') { drag = handle.index; setEdit({ ...current, selected: handle.index }); return true; }
+        snapshot = current.vertices; changed = false; live = current.vertices;
+        if (handle.kind === 'vertex') { drag = handle.index; draggingRef.current = true; setEdit({ ...current, selected: handle.index }); return true; }
         const mid = midpoints(current.vertices).find((m) => m.edge === handle.index);
         const inserted = mid ? insertVertex(current.vertices, handle.index, mid.point) : null;
         if (!inserted) { setEdit({ ...current, error: `Höchstens ${MAX_VERTICES} Eckpunkte` }); return false; }
-        drag = inserted.index; changed = true;
+        drag = inserted.index; changed = true; live = inserted.vertices; draggingRef.current = true;
         setEdit({ ...current, vertices: inserted.vertices, selected: inserted.index, history: [...current.history, current.vertices].slice(-50), error: null });
         return true;
       },
       move: (_p, lngLat) => {
         const current = editRef.current;
-        if (drag === null || !current) return;
-        if (!changed && snapshot) { changed = true; setEdit({ ...current, history: [...current.history, snapshot].slice(-50), vertices: moveVertex(current.vertices, drag, lngLat), error: null }); return; }
-        setEdit({ ...current, vertices: moveVertex(current.vertices, drag, lngLat), error: null });
+        if (drag === null || !current || !live) return;
+        if (!changed && snapshot) { changed = true; setEdit({ ...current, history: [...current.history, snapshot].slice(-50) }); }
+        live = moveVertex(live, drag, lngLat);
+        fm.setDraw(drawOf(live, drag, drawColor(meta!, current)));
+        if (!timer) timer = setTimeout(commit, 100);
       },
-      up: () => { drag = null; snapshot = null; },
-      cancel: () => { drag = null; snapshot = null; },
+      up: finish,
+      cancel: finish,
     });
-    return () => fm.setGesture(null);
+    return () => { fm.setGesture(null); if (timer) clearTimeout(timer); draggingRef.current = false; };
   }, [active, edit?.id, !!edit, fieldMap, setEdit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startEdit = (areaId: string) => {
@@ -174,10 +194,18 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
         else { id = `collection_area_${crypto.randomUUID()}`; await createCollectionArea(ctx.campaignId, { id, mainAreaId: meta.mainArea!.id, name, geometry, color: current.color }); }
       } else if (id) await saveAreaGeometry(ctx.campaignId, { id, updatedAt: meta.areas.find((a) => a.id === id)!.updatedAt }, geometry);
       else { id = `area_${crypto.randomUUID()}`; await createArea(ctx.campaignId, { id, teamId: current.teamId, name, geometry }); }
-      // the data pack covers the old outline: fetch fresh map data for the new one (a cooldown refusal just leaves it for the "Laden" chip)
-      if (meta.canBuildPack && current.kind !== 'main') { try { await buildPack(ctx.campaignId, id); } catch { /* offered again after reload */ } }
       setEdit(null); setSelectedId(current.kind === 'team' ? id : null);
       await ctx.reload();
+      // The data pack covers the old outline: fetch fresh map data for the new one. This takes a while (the data comes from OpenStreetMap),
+      // so the map is free meanwhile; a refusal is said out loud and the "Kartendaten laden" chip offers it again.
+      if (meta.canBuildPack && current.kind !== 'main') {
+        const areaId = id;
+        void (async () => {
+          ctx.notify?.('Kartendaten werden geladen …');
+          try { await buildPack(ctx.campaignId, areaId); await ctx.reload(); ctx.notify?.('Kartendaten geladen'); }
+          catch (error) { ctx.notify?.(error instanceof Error ? error.message : 'Kartendaten konnten nicht geladen werden'); }
+        })();
+      }
       if (current.kind !== 'team') { ctx.onCollectionDone?.(); return; }
       try { await ctx.onSaved?.(id, !!current.id); } catch { /* the clean-up is offered again from the Area sheet */ }
     } catch (error) {
@@ -216,12 +244,11 @@ export function AreaEditBar({ tool, meta }: { tool: AreaTool; meta: Meta }) {
           {choosesTeam && <GroupPicker teams={meta.teams} value={edit.teamId} label="Gruppe des neuen Gebiets" onPick={tool.setTeam} />}
         </div>
       )}
-      <div className="v5-barrow">
+      <div className="v5-barrow tight">
         <div className="v5-modes" role="group" aria-label="Eckpunkte">
           <button className="v5-mode" onClick={tool.undo} disabled={!edit.history.length} aria-label="Rückgängig" title="Rückgängig"><Icon name="undo" size={24} /></button>
           <button className="v5-mode" onClick={tool.deleteSelected} disabled={edit.selected === null || edit.vertices.length <= 3} aria-label="Eckpunkt löschen" title="Eckpunkt löschen"><Icon name="trash" size={24} /></button>
-          <span className="v5-counter" title="Eckpunkte"><Icon name="polygon" size={18} />{edit.vertices.length}/{MAX_VERTICES}</span>
-          <span className="v5-counter" title="Fläche">{sizeLabel(areaSquareMeters(edit.vertices))}</span>
+          <span className="v5-counter" title="Eckpunkte und Fläche">{edit.vertices.length}/{MAX_VERTICES} · {sizeLabel(areaSquareMeters(edit.vertices))}</span>
         </div>
         <button className="v5-icon-btn tonal" onClick={tool.cancelEdit} aria-label="Abbrechen" title="Abbrechen"><Icon name="close" /></button>
         <button className="v5-go" onClick={() => void tool.save()} disabled={!valid || edit.saving} aria-label="Gebiet speichern" title="Gebiet speichern"><Icon name={edit.saving ? 'sync' : 'check'} size={26} /></button>

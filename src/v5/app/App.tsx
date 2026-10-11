@@ -91,6 +91,7 @@ export function App({ campaignId }: { campaignId: string }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const buildMissing = useCallback(async () => { const problem = await campaign.buildMissing(); if (problem) setNotice(problem); }, [campaign]);
   const [importState, setImportState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [hand, setHand] = useState<'left' | 'right'>(readHand);
@@ -193,7 +194,7 @@ export function App({ campaignId }: { campaignId: string }) {
       else throw error;
     }
   };
-  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined, onSaved: afterAreaSaved, onCollectionDone: () => { setTool('inspect'); setPanel('setup'); } }, tool === 'areas');
+  const areaTool = useAreaTool({ campaignId, fieldMap, meta, network, reload: campaign.reload, colorFor: isCollection ? colorFor : undefined, onSaved: afterAreaSaved, notify: setNotice, onCollectionDone: () => { setTool('inspect'); setPanel('setup'); } }, tool === 'areas');
 
   // One click router: whichever tool is active decides what a tap on the map means.
   const hitRef = useRef<(hit: Hit | null, point: Pt) => void>(() => {});
@@ -530,7 +531,7 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && buildableMissing.length > 0 && (
         <div className="v5-banner v5-missing" role="status">
           <Icon name="warning" size={20} /><span>{buildableMissing.map((a) => a.name).join(', ')}</span>
-          {meta?.canBuildPack && <button className="v5-icon-btn tonal" onClick={() => void campaign.buildMissing()} aria-label="Kartendaten laden" title="Kartendaten laden"><Icon name="download" /></button>}
+          {meta?.canBuildPack && <button className="v5-icon-btn tonal" disabled={campaign.building} onClick={() => void buildMissing()} aria-label="Kartendaten laden" title="Kartendaten laden"><Icon name={campaign.building ? 'sync' : 'download'} /></button>}
         </div>
       )}
       {ready && conflicts.length > 0 && panel !== 'conflicts' && (
@@ -548,7 +549,7 @@ export function App({ campaignId }: { campaignId: string }) {
           <span className="v5-badge big"><Icon name="mapPin" size={34} /></span>
           <h2>Kartendaten fehlen</h2>
           <p>{phase.areas.map((a) => a.name).join(', ')}</p>
-          {phase.canBuild ? <button className="v5-btn primary" onClick={() => void campaign.buildMissing()}><Icon name="download" size={20} />Kartendaten laden</button> : <p className="v5-muted">Eine Admin-Person muss sie laden.</p>}
+          {phase.canBuild ? <button className="v5-btn primary" onClick={() => void buildMissing()}><Icon name="download" size={20} />Kartendaten laden</button> : <p className="v5-muted">Eine Admin-Person muss sie laden.</p>}
         </Overlay>
       )}
 
