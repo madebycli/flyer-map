@@ -90,6 +90,18 @@ Sonder-Marker · Hell/Dunkel, Links-/Rechtshand, Karte an/aus. A link helper see
 
 On a selected Gebiet, **Veraltete Einträge bereinigen** clears obsolete progress while preserving the Gebiet and its current progress; **Gebiet löschen** removes the whole Gebiet and its associated data. Both ask for confirmation. After clearing the last obsolete entry, the clean-up control refreshes immediately. In Zugänge, each helper-right switch has a visible caption (Sehen, Anlegen, Bearbeiten, Zuweisen), an accessible name and a pressed state; policy is enforced on the server. The Zuweisen caption describes the existing permission, not a new assignment interface.
 
+## Touch handling while marking
+
+- **One finger pans, two zoom, a resting finger draws.** Wischen and Lasso (`Gesture.hold`) take a finger only after it has rested `HOLD_MS` (170 ms) within `HOLD_SLOP` (6 px); a ring and a short buzz mark the moment. A finger that moves first pans the map (its pan was never switched off); a second finger at any time hands everything back to the pinch. A tap before the hold is a one-point gesture (stamps what lies under the finger). Tippen and Strecke use plain taps and need no hold.
+- **Pointer bookkeeping is rebuilt at every primary pointer** (a lifted finger whose "up" never arrived used to count as a second finger and block the next gestures) and cleared on blur, hidden page and pointer cancel; pan is re-enabled whenever no gesture is active.
+- **The control containers let touches through** (`.v5-ctl`, `.v5-topright` are `pointer-events: none`, their children `auto`): beside the narrower zoom buttons the right column used to hold an invisible box as wide as the open marking panel, which swallowed touches meant for the map.
+- **A tap picks the nearest street** within 14 px (Strecke, before houses) or 16 px (otherwise), not the first one found.
+- Checked with real touch events by `scripts/v5-e2e/flow20.mjs` (CDP `Input.dispatchTouchEvent`); a real finger on a real phone is still the final test.
+
+## Team links and big Gebiete: data only where the person works
+
+A team link (`team-editor`) and a collector (`collection-collector`) load the streets and houses of the Gebiete they may write in; the server lists only the team's own Gebiete for a team link and sends the other teams' Gebiete as outlines (`contextAreas`: geometry only, no id, name or progress). Collectors see all collection Gebiete in the list; their map data is loaded for the ones they work in. Admins and readers load everything.
+
 ## Not verified / not done
 
 - Real phones (ADR-0030), the live basemap (sandbox has no egress; style URLs come from `V5_BASEMAP_DARK`/`V5_BASEMAP_LIGHT`) and real Overpass data: only stubs and a synthetic city were exercised.

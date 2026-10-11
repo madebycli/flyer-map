@@ -25,7 +25,7 @@ const scr = (x, y) => page.evaluate((c) => { const q = window.__v5Map.project(c)
 const clickAt = async (x, y) => { const [sx, sy] = await scr(x, y); await page.mouse.click(sx, sy); };
 const serverStatus = (key) => page.evaluate(async (k) => (await (await fetch('/api/v5/campaigns/campaign_n/state?since=0&limit=1000')).json()).ops.find((o) => o.key === k)?.status ?? 'open', key);
 const until = async (predicate, ms = 15000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await predicate()) return true; await new Promise((r) => setTimeout(r, 250)); } return false; };
-const drag = async (points) => { const first = await scr(...points[0]); await page.mouse.move(...first); await page.mouse.down(); for (const p of points.slice(1)) { const [sx, sy] = await scr(...p); await page.mouse.move(sx, sy, { steps: 14 }); } await page.mouse.up(); };
+const drag = async (points) => { const first = await scr(...points[0]); await page.mouse.move(...first); await page.mouse.down(); await page.waitForTimeout(260); /* Wischen / Lasso take a finger that rests a moment */ for (const p of points.slice(1)) { const [sx, sy] = await scr(...p); await page.mouse.move(sx, sy, { steps: 14 }); } await page.mouse.up(); };
 
 await boot();
 const start = await done();

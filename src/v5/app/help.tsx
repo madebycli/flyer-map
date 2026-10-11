@@ -16,6 +16,9 @@ const ENTRIES: Entry[] = [
   { q: 'Wie markiere ich viele auf einmal?', tags: 'wischen lasso tippen modus', roles: ['admin', 'team-editor'], a: [
     'Halte das grüne Quadrat gedrückt (oder tippe im Panel auf die Zahl). Dort wählst du „Wischen“ (mit dem Finger über Häuser und Straßen fahren), „Lasso“ (einen Bereich umkreisen) oder „Tippen“ (ein Tipp, ein Haus).',
     'Bei diesen drei Modi gilt sofort der Pinsel, den du dort eingestellt hast.' ] },
+  { q: 'Wie bewege ich die Karte bei „Wischen“ und „Lasso“?', tags: 'karte bewegen ziehen zoomen halten finger wischen lasso', roles: ['admin', 'team-editor'], a: [
+    'Mit einem Finger über die Karte ziehen bewegt sie, mit zwei Fingern zoomst du, wie sonst auch. Zum Markieren legst du den Finger kurz an (ein Ring zeigt, dass es losgeht) und ziehst dann.',
+    'Bei „Tippen“ und „Strecke“ gibt es nichts zu halten: Tippen markiert, Ziehen bewegt die Karte.' ] },
   { q: 'Was bedeuten die Farben?', tags: 'farben status ausgeteilt später nicht möglich offen', a: [
     'Grün: Ausgeteilt, die Flyer sind eingeworfen. Gelb: Später, wird noch einmal angegangen. Rot: Nicht möglich, zum Beispiel kein Zugang oder Briefkasten nicht erreichbar. Grau: Offen, noch nicht bearbeitet.',
     'Der Fortschritt in Prozent zählt Häuser, nicht Straßen. „Nicht möglich“ zählt nicht gegen den Fortschritt.' ] },

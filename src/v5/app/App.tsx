@@ -283,6 +283,7 @@ export function App({ campaignId }: { campaignId: string }) {
     try { localStorage.setItem('vf-v5-base', baseOn ? 'on' : 'off'); } catch { /* private mode */ }
   }, [baseOn]);
   useEffect(() => { fieldMap.current?.setHousesOnly(marking.housesOnly); }, [marking.housesOnly]);
+  useEffect(() => { fieldMap.current?.setContextAreas((meta?.contextAreas ?? []).map((c) => c.geometry.coordinates[0] as [number, number][])); }, [meta?.contextAreas, network]);
   useEffect(() => { fieldMap.current?.setDoubleTapZoom(fab === 'idle' && tool === 'inspect'); }, [fab, tool]);
 
   useEffect(() => {

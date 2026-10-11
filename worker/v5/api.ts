@@ -146,6 +146,11 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
       ...(kind === 'collection' ? { collection: { status: a.status ?? 'open', color: a.color ?? '#2563eb', runId: a.run_id ?? null, claimedBy: a.claimed_by_label ?? null, claimedById: a.claimed_by_collector_id ?? null } } : {}),
     };
   }));
+  // A team link works in its own Gebiete only; the other teams' Gebiete are shown on the map as outlines so the work can be placed. Geometry only: no id, name,
+  // team, pack or progress leaves the server for them.
+  const contextAreas = kind !== 'collection' && scoped
+    ? (await db.prepare('SELECT geometry_json FROM areas WHERE campaign_id = ? AND team_id <> ? ORDER BY created_at, id').bind(campaignId, access.teamId).all<{ geometry_json: string }>()).results.map((r) => ({ geometry: JSON.parse(r.geometry_json) }))
+    : [];
   // The Räume (active Runs with their current members) the Gebietsliste needs: who works where, and who may be joined.
   let runs: { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] }[] = [];
   if (kind === 'collection') {
@@ -159,7 +164,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     campaign, kind, role: access.role, teamId: access.teamId, me: { label: access.label ?? null }, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainArea: kind === 'collection' ? await mainArea(db, campaignId) : null, mainAreaId: kind === 'collection' ? (await mainArea(db, campaignId))?.id ?? null : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: (scoped ? teams.filter((t) => t.id === access.teamId) : teams).map((t) => ({ id: t.id, name: t.name, color: t.color, updatedAt: t.updated_at })),
-    areas,
+    areas, contextAreas,
     basemap: options.basemap?.dark || options.basemap?.light ? { dark: options.basemap.dark ?? null, light: options.basemap.light ?? null } : null,
   });
 }

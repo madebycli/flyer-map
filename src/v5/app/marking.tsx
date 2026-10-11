@@ -78,6 +78,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
         if (!frame) frame = requestAnimationFrame(refresh);
       };
       fm.setGesture({
+        hold: true,
         down: (p) => { houses.clear(); segments.clear(); last = p; touch(p); return true; },
         move: (p) => {
           // a fast finger skips pixels: sample the straight line between two events so thin streets are not missed
@@ -96,7 +97,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
       return () => { fm.setGesture(null); fm.setPreview([]); };
     }
     if (mode === 'lasso') {
-      let points: Pt[] = [];
+      let points: Pt[] = [], drawFrame = 0;
       const drawn = (closed: boolean) => {
         const coords = points.map((p) => fm.unproject(p));
         const features: Feature[] = [];
@@ -105,9 +106,12 @@ export function useMarking(ctx: MarkContext, active: boolean) {
         fm.setDraw({ type: 'FeatureCollection', features });
       };
       fm.setGesture({
+        hold: true,
         down: (p) => { points = [p]; return true; },
-        move: (p) => { const l = points[points.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) >= 4) { points.push(p); drawn(false); } },
+        // the outline is redrawn once per frame, not once per touch event (a finger sends several per frame)
+        move: (p) => { const l = points[points.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) >= 4) { points.push(p); if (!drawFrame) drawFrame = requestAnimationFrame(() => { drawFrame = 0; drawn(false); }); } },
         up: (_p, _l, moved) => {
+          if (drawFrame) { cancelAnimationFrame(drawFrame); drawFrame = 0; }
           const { engine, brush: b, housesOnly: ho, apply } = now();
           const ring = points.map((p) => fm.unproject(p));
           points = []; fm.setDraw({ type: 'FeatureCollection', features: [] });
@@ -118,7 +122,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
             if (keys.length) apply(keys, b, String(keys.length));
           }, () => { /* engine gone (view closed) */ });
         },
-        cancel: () => { points = []; fm.setDraw({ type: 'FeatureCollection', features: [] }); },
+        cancel: () => { if (drawFrame) { cancelAnimationFrame(drawFrame); drawFrame = 0; } points = []; fm.setDraw({ type: 'FeatureCollection', features: [] }); },
       });
       return () => { fm.setGesture(null); fm.setDraw({ type: 'FeatureCollection', features: [] }); };
     }

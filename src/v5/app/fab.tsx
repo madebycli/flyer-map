@@ -111,7 +111,8 @@ export function MarkFab({ phase, setPhase, marking, kind, theme, canUndoLast, on
 export function FabCaption({ marking, kind }: { marking: Marking; kind: Kind }) {
   let text: string;
   let warn = false;
-  if (marking.mode !== 'route') text = `${MODES.find((m) => m.mode === marking.mode)!.label} · ${LABELS[kind][marking.brush]}`;
+  if (marking.mode === 'paint' || marking.mode === 'lasso') text = `${MODES.find((m) => m.mode === marking.mode)!.label} · ${LABELS[kind][marking.brush]} · kurz halten, dann ziehen`;
+  else if (marking.mode !== 'route') text = `${MODES.find((m) => m.mode === marking.mode)!.label} · ${LABELS[kind][marking.brush]}`;
   else if (marking.taps === 0) text = 'Straße oder Häuser antippen';
   else if (marking.anchors.length === 0 || (marking.picked && marking.route?.state !== 'selected' && marking.route?.state !== 'disconnected')) text = `${marking.picked} ${marking.picked === 1 ? 'Haus' : 'Häuser'} · weitere antippen`;
   else if (marking.route?.state === 'disconnected') { text = 'Nicht verbunden – anderen Punkt wählen'; warn = true; }

@@ -28,6 +28,8 @@ export type Meta = {
   teams: { id: string; name: string; color: string; updatedAt: string }[];
   /** Basemap styles chosen by the deployment (null = plain background); the client carries no third-party map URL. */
   basemap: { dark: string | null; light: string | null } | null;
+  /** Outlines of Gebiete the person does not work in (a team link sees the other teams' ones): drawn on the map, no data behind them. */
+  contextAreas?: { geometry: { type: 'Polygon'; coordinates: [number, number][][] } }[];
   areas: { id: string; name: string; teamId: string; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; updatedAt: string; packVersion: number | null; packStale?: boolean; writable: boolean; collection?: CollectionAreaInfo }[];
 };
 

@@ -59,7 +59,7 @@ check('the admin sees West as being worked on and can free it', await until(asyn
 admin.once('dialog', (d) => { check('freeing asks first', /freigeben/.test(d.message())); void d.accept(); });
 await admin.getByRole('button', { name: 'West freigeben' }).click();
 check('West is open again on the server', await until(async () => (await meta()).areas.find((a) => a.name === 'West')?.collection.status === 'open'));
-check('archiving a held Teilgebiet is not offered, an open one is', (await admin.getByRole('button', { name: 'Zentrum archivieren' }).isEnabled()));
+check('archiving a held Teilgebiet is not offered, an open one is', await until(async () => admin.getByRole('button', { name: 'Zentrum archivieren' }).isEnabled())); // the sheet stays busy a moment after the server answered
 
 // Archive
 admin.once('dialog', (d) => { void d.accept(); });

@@ -222,6 +222,23 @@ test('meta gives role, scoped areas and pack versions in one request', async () 
   assert.equal(after.areas.find((a) => a.id === 'area_n')!.packVersion, 1);
 });
 
+test('a team link gets the other teams\u2019 Gebiete as outlines only (geometry, nothing else); admins and readers get none', async () => {
+  const { call } = await setup();
+  const raw = await (await call('editor', 'GET', `/api/v5/campaigns/${campaign}/meta`)).text();
+  const editor = JSON.parse(raw) as { areas: { id: string }[]; contextAreas: { geometry: { type: string; coordinates: unknown[] } }[] };
+  assert.deepEqual(editor.areas.map((a) => a.id), ['area_n'], 'data only for the own team');
+  assert.equal(editor.contextAreas.length, 1, 'the other team\u2019s Gebiet comes as an outline');
+  assert.deepEqual(Object.keys(editor.contextAreas[0]), ['geometry'], 'no id, name, team or pack with it');
+  assert.equal(editor.contextAreas[0].geometry.type, 'Polygon');
+  assert.ok(!raw.includes('area_o'), 'the other Gebiet\u2019s id never reaches the team link');
+  for (const who of ['admin', 'viewer']) {
+    const meta = await (await call(who, 'GET', `/api/v5/campaigns/${campaign}/meta`)).json() as { contextAreas: unknown[] };
+    assert.deepEqual(meta.contextAreas, [], `${who} sees all Gebiete as data already`);
+  }
+  // and still no data for them: the pack of the other team's Gebiet stays closed to the team link
+  assert.ok([403, 404].includes((await call('editor', 'GET', `/api/v5/campaigns/${campaign}/areas/area_o/pack`)).status));
+});
+
 test('sequence numbers are strictly increasing and unique across interleaved batches', async () => {
   const { db, call } = await setup();
   await Promise.all(Array.from({ length: 6 }, (_, w) => call('admin', 'POST', `/api/v5/campaigns/${campaign}/ops`,

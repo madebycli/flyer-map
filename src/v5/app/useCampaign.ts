@@ -74,6 +74,9 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const phaseRef = useRef(phase); phaseRef.current = phase;
   const [building, setBuilding] = useState(false);
   const [buildProgress, setBuildProgress] = useState<{ done: number; total: number } | null>(null);
+  /** The Gebiete (ids) the loaded map data is for, when the person gets data only for those they work in (null: everything is loaded). */
+  const loadedForRef = useRef<string | null>(null);
+  const worksInChangedRef = useRef<((m: Awaited<ReturnType<typeof fetchMeta>>) => void) | null>(null);
   const [completing, setCompleting] = useState<{ done: number; total: number; failed?: boolean } | null>(null);
   const buildingRef = useRef(false);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -152,7 +155,14 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         const timing: Record<string, number> = { meta: Math.round(performance.now() - t0), wasm: useBlobs ? 1 : 0 };
         const areaBoots: AreaBoot[] = [];
         // A big Gebiet is several units (its parts, see `packPlan`), each with its own pack and its own cached network; a small one is one unit.
-        const units = loaded.areas.flatMap((area) => {
+        // A person who works in some Gebiete only (a team link, a collector in a Run) gets the streets and houses of those; the other Gebiete are
+        // drawn as outlines. Admins and readers see everything.
+        const worksInSome = loaded.role === 'team-editor' || loaded.role === 'collection-collector';
+        const dataAreas = worksInSome ? loaded.areas.filter((a) => a.writable) : loaded.areas;
+        const outlineOnly = loaded.areas.length - dataAreas.length;
+        loadedForRef.current = worksInSome ? dataAreas.map((a) => a.id).sort().join(',') : null;
+        if (outlineOnly) diag.info('boot', 'Gebiete without data (the person works in the others only)', { outlines: outlineOnly, loaded: dataAreas.length });
+        const units = dataAreas.flatMap((area) => {
           const ring = area.geometry.coordinates[0] as [number, number][];
           const plan = packPlan(ring);
           return plan.parts.map((part) => ({ area, ring, part, single: plan.single, id: plan.single ? area.id : `${area.id}~${part.index}` }));
@@ -223,7 +233,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         if (!hydrated) { await Promise.all([fieldStore.hydrate(), noteStore.hydrate()]); hydrated = true; notesHydrated = true; }
         if (cancelled) return; // a boot cancelled while hydrating must not create clients nobody disposes
         // Only prune when every Area was derived; a missing pack must never cost queued edits.
-        if (!missing.length && !partial) fieldStore.reconcilePending((key) => merged.areaOf.has(key));
+        if (!missing.length && !partial && !outlineOnly) fieldStore.reconcilePending((key) => merged.areaOf.has(key));
         progressTracker?.dispose();
         progressTracker = new Progress(merged.network, fieldStore);
         progressTracker.onChange(setProgress);
@@ -231,7 +241,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         const mapData = await engine.mapData();
         setEngineState({ client: engine, mapData });
         if (retired && retired !== engine) { const old = retired; retired = null; setTimeout(() => old.dispose(), 2000); }
-        liveRef.current = { store: fieldStore, areaOf: merged.areaOf, missing: missing.length };
+        liveRef.current = { store: fieldStore, areaOf: merged.areaOf, missing: missing.length + outlineOnly };
         setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore); setNotes(noteStore);
         client?.dispose();
         client = syncRef.current = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending, info) => setSync({ state, pending, ...info }), [new NoteSync(noteStore, httpNoteTransport(campaignId))]);
@@ -264,6 +274,12 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
       }
     };
     reload.current = boot;
+    // Someone who loads only the Gebiete they work in (see `dataAreas`) gets the data of a Gebiet when they start working in it (taking it, joining its Room).
+    const worksInChanged = (m: Awaited<ReturnType<typeof fetchMeta>>) => {
+      if (loadedForRef.current === null || (m.role !== 'team-editor' && m.role !== 'collection-collector')) return;
+      if (m.areas.filter((a) => a.writable).map((a) => a.id).sort().join(',') !== loadedForRef.current) void boot({ quiet: true });
+    };
+    worksInChangedRef.current = worksInChanged;
     void boot();
     const online = () => void client?.run();
     const hidden = () => { if (document.visibilityState === 'hidden') flush(); };
@@ -280,7 +296,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
       void client?.run();
       if (metaBusy || !(kind === 'collection' || metaKindRef.current === 'collection')) return;
       metaBusy = true;
-      void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) { setMeta(m); void loadPickups(m); } }, () => {}).finally(() => { metaBusy = false; });
+      void fetchMeta(campaignId, kind).then((m) => { if (!cancelled) { setMeta(m); void loadPickups(m); worksInChanged(m); } }, () => {}).finally(() => { metaBusy = false; });
     }, 15_000);
     return () => {
       cancelled = true; stopProbe(); syncRef.current = null; client?.dispose(); progressTracker?.dispose(); engine?.dispose(); retired?.dispose();
@@ -297,7 +313,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     reload: () => reload.current({ quiet: true }),
     syncNow: () => { void syncRef.current?.run(); },
     orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
-    async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
+    async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); worksInChangedRef.current?.(m); },
     building, buildProgress, completing,
     async buildMissing() {
       if (!canBuildRef.current || buildingRef.current) return null;

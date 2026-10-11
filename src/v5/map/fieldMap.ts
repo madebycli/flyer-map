@@ -14,6 +14,7 @@ export const CENTER_SOURCE = 'v5-centers';
 export const TILE_SOURCE = 'v5-tiles';
 export const AREA_SOURCE = 'v5-areas';
 export const DRAW_SOURCE = 'v5-draw';
+export const CONTEXT_SOURCE = 'v5-context';
 export const NOTE_SOURCE = 'v5-notes';
 export const PICKUP_SOURCE = 'v5-pickups';
 export const ME_SOURCE = 'v5-me';
@@ -51,10 +52,29 @@ const statusMatch = (theme: Theme): ExpressionSpecification => {
   return ['match', ['coalesce', ['feature-state', 'status'], 'open'], 'completed', c.completed, 'later', c.later, 'not-deliverable', c['not-deliverable'], c.open];
 };
 
+/** A finger that rests this long, within `HOLD_SLOP` px, starts a drawing tool (see `Gesture.hold`). The slop stays under the tap tolerance of the map. */
+export const HOLD_MS = 170;
+export const HOLD_SLOP = 6;
+
+/** How far from a street line (px) a tap still counts for the street: in Strecke mode it beats a house, otherwise it is the fallback after houses. */
+const STREET_HALO_FIRST = 14;
+const STREET_HALO = 16;
+function distanceToSegment(p: Pt, a: Pt, b: Pt): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
 export type Hit = { kind: 'segment' | 'house' | 'note' | 'pickup'; id: string };
 export type Pt = { x: number; y: number };
 /** A pointer gesture owned by the active tool. `down` decides whether the tool takes it (map pan is suspended then). */
 export type Gesture = {
+  /**
+   * Tools that draw (Wischen, Lasso) take a finger only after it has rested a moment (`HOLD_MS`); a finger that moves first pans the map, two fingers
+   * zoom it. Without this the tool owned every one-finger drag and the map could not be moved with one hand. Taps are still handled (as `down` + `up`).
+   */
+  hold?: boolean;
   down(point: Pt, lngLat: LngLat): boolean;
   move?(point: Pt, lngLat: LngLat): void;
   up?(point: Pt, lngLat: LngLat, moved: boolean): void;
@@ -222,16 +242,15 @@ export class FieldMap {
       }
       // A house is hit only when the tap lies inside it; streets get a forgiving 12 px halo. In route mode the street wins close to its line
       // (8 px), so a tap beside the street still picks the street; a tap well inside a house picks the house.
+      // A fingertip lands a good way off the line it means: the nearest street within the halo wins, not the first one found.
       if (options.streetsFirst?.()) {
-        const near: [[number, number], [number, number]] = [[event.point.x - 8, event.point.y - 8], [event.point.x + 8, event.point.y + 8]];
-        const close = this.map.queryRenderedFeatures(near, { layers: ['v5-segments-line'] });
-        if (close.length) return options.onHit?.({ kind: 'segment', id: String(close[0].id).slice(2) }, event.point);
+        const close = this.nearestSegment(event.point, STREET_HALO_FIRST);
+        if (close) return options.onHit?.({ kind: 'segment', id: close }, event.point);
       }
       const houses = this.map.queryRenderedFeatures(event.point, { layers: ['v5-houses-fill'] });
       if (houses.length) return options.onHit?.({ kind: 'house', id: String(houses[0].id).slice(2) }, event.point);
-      const box: [[number, number], [number, number]] = [[event.point.x - 12, event.point.y - 12], [event.point.x + 12, event.point.y + 12]];
-      const segments = this.map.queryRenderedFeatures(box, { layers: ['v5-segments-line'] });
-      options.onHit?.(segments.length ? { kind: 'segment', id: String(segments[0].id).slice(2) } : null, event.point);
+      const segment = this.nearestSegment(event.point, STREET_HALO);
+      options.onHit?.(segment ? { kind: 'segment', id: segment } : null, event.point);
     });
     this.wireGestures();
   }
@@ -278,6 +297,7 @@ export class FieldMap {
     this.installLayers();
     this.pushData();
     this.pushAreas();
+    this.pushContext();
     this.pushDraw();
     this.pushNotes();
     this.pushPickups();
@@ -302,6 +322,9 @@ export class FieldMap {
     const selectedOn: ExpressionSpecification = ['boolean', ['feature-state', 'selected'], false];
     map.addSource(AREA_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addSource(DRAW_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addSource(CONTEXT_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    // Gebiete of other teams: a thin grey outline for orientation, nothing to tap
+    map.addLayer({ id: 'v5-context-line', type: 'line', source: CONTEXT_SOURCE, layout: { 'line-join': 'round' }, paint: { 'line-color': theme === 'dark' ? '#9aa5a0' : '#5d6762', 'line-opacity': 0.55, 'line-width': 1.2, 'line-dasharray': [1.6, 2.4] } });
     map.addLayer({ id: 'v5-areas-fill', type: 'fill', source: AREA_SOURCE, paint: { 'fill-color': ['get', 'color'], 'fill-opacity': ['case', ['==', ['get', 'active'], 1], 0.12, 0.04] } });
     map.addLayer({
       id: 'v5-areas-line', type: 'line', source: AREA_SOURCE, layout: { 'line-join': 'round' },
@@ -563,6 +586,12 @@ export class FieldMap {
     this.pushAreas();
   }
   private activeArea: string | null = null;
+  /** Outlines of Gebiete the person does not work in (see `Meta.contextAreas`). */
+  setContextAreas(rings: LngLat[][]) { this.context = rings; this.pushContext(); }
+  private context: LngLat[][] = [];
+  private pushContext() {
+    (this.map.getSource(CONTEXT_SOURCE) as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: this.context.map((ring): Feature => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } })) });
+  }
   private pushAreas() {
     const source = this.map.getSource(AREA_SOURCE) as GeoJSONSource | undefined;
     if (!source) return;
@@ -598,6 +627,28 @@ export class FieldMap {
     return mid ? { kind: 'mid', index: Number(mid.properties?.edge) } : null;
   }
 
+  /** The street piece (its group id) closest to a screen point within `halo` px, or null. */
+  private nearestSegment(point: Pt, halo: number): string | null {
+    if (!this.map.getLayer('v5-segments-line')) return null;
+    const found = this.map.queryRenderedFeatures([[point.x - halo, point.y - halo], [point.x + halo, point.y + halo]], { layers: ['v5-segments-line'] });
+    let best: string | null = null, bestDistance = Infinity;
+    for (const feature of found) {
+      const g = feature.geometry;
+      const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+      for (const line of lines) {
+        let previous: Pt | null = null;
+        for (const [lng, lat] of line) {
+          const q = this.map.project([lng, lat]);
+          const here = { x: q.x, y: q.y };
+          const d = distanceToSegment(point, previous ?? here, here);
+          if (d < bestDistance) { bestDistance = d; best = String(feature.id).slice(2); }
+          previous = here;
+        }
+      }
+    }
+    return bestDistance <= halo ? best : null;
+  }
+
   /** What is under the finger: a house exactly, a street within a forgiving halo. */
   hitTest(point: Pt, halo = 14): { house: string | null; segment: string | null } {
     const house = this.map.getLayer('v5-houses-fill') ? this.map.queryRenderedFeatures([point.x, point.y], { layers: ['v5-houses-fill'] })[0] : undefined;
@@ -627,35 +678,84 @@ export class FieldMap {
   private wireGestures() {
     const el = this.map.getCanvasContainer();
     const local = (event: PointerEvent): Pt => { const r = el.getBoundingClientRect(); return { x: event.clientX - r.left, y: event.clientY - r.top }; };
-    let start: Pt | null = null, moved = false;
-    el.addEventListener('pointerdown', (event) => {
-      this.swallowClick = false;
-      this.pointers.add(event.pointerId);
-      if (this.pointers.size > 1) { this.cancelGesture(); return; }
-      if (!this.gesture) return;
-      const point = local(event);
-      if (!this.gesture.down(point, this.unproject(point))) return;
-      this.gestureActive = true; this.swallowClick = true; start = point; moved = false;
+    // A ring that shows the moment a finger has been taken by the drawing tool (with a short buzz where the device has one).
+    const ring = document.createElement('div');
+    ring.className = 'v5-armring';
+    ring.setAttribute('aria-hidden', 'true');
+    el.appendChild(ring);
+    const arm = (p: Pt) => { ring.style.left = `${p.x}px`; ring.style.top = `${p.y}px`; ring.classList.remove('on'); void ring.offsetWidth; ring.classList.add('on'); try { navigator.vibrate?.(12); } catch { /* not allowed */ } };
+    // pending: a drawing tool waits to see what the finger does; active: the tool owns it; other: the map's own pan or pinch (or a lone extra finger).
+    let phase: 'idle' | 'pending' | 'active' | 'other' = 'idle';
+    let start: Pt | null = null, moved = false, timer = 0, current = -1;
+    const stopTimer = () => { if (timer) { window.clearTimeout(timer); timer = 0; } };
+    const claim = (point: Pt): boolean => {
+      if (!this.gesture || !this.gesture.down(point, this.unproject(point))) return false;
+      this.gestureActive = true; this.swallowClick = true; moved = false;
       this.map.dragPan.disable();
-      try { el.setPointerCapture(event.pointerId); } catch { /* synthetic pointers */ }
+      try { el.setPointerCapture(current); } catch { /* synthetic pointers */ }
+      return true;
+    };
+    const reset = () => { stopTimer(); this.pointers.clear(); this.cancelGesture(); this.map.dragPan.enable(); phase = 'idle'; start = null; };
+    el.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      this.swallowClick = false;
+      // A primary pointer begins a new touch sequence: ids left over from a finger whose "up" never arrived must not count as a second finger
+      // (that made the next taps and drags do nothing, and could leave panning switched off).
+      if (event.isPrimary) reset();
+      this.pointers.add(event.pointerId);
+      if (this.pointers.size > 1) { stopTimer(); this.cancelGesture(); phase = 'other'; return; }
+      if (!this.gesture) { phase = 'other'; return; }
+      const point = local(event);
+      start = point; current = event.pointerId;
+      if (!this.gesture.hold) { phase = claim(point) ? 'active' : 'other'; return; }
+      phase = 'pending';
+      timer = window.setTimeout(() => {
+        timer = 0;
+        if (phase !== 'pending' || this.pointers.size !== 1 || !start) return;
+        if (claim(start)) { phase = 'active'; arm(start); } else phase = 'other';
+      }, HOLD_MS);
     });
     el.addEventListener('pointermove', (event) => {
-      if (!this.gestureActive || !this.gesture || this.pointers.size > 1) return;
+      if (event.pointerId !== current) return;
       const point = local(event);
+      if (phase === 'pending') {
+        // moved before the hold ran out: the finger wants the map; its own pan was never switched off
+        if (start && Math.hypot(point.x - start.x, point.y - start.y) > HOLD_SLOP) { stopTimer(); phase = 'other'; }
+        return;
+      }
+      if (phase !== 'active' || !this.gesture || this.pointers.size > 1) return;
       if (start && Math.hypot(point.x - start.x, point.y - start.y) > 4) moved = true;
       this.gesture.move?.(point, this.unproject(point));
     });
     const finish = (event: PointerEvent) => {
       this.pointers.delete(event.pointerId);
-      if (!this.gestureActive) return;
-      this.gestureActive = false;
-      this.map.dragPan.enable();
-      const point = local(event);
-      this.gesture?.up?.(point, this.unproject(point), moved);
+      if (event.pointerId === current) {
+        const point = local(event);
+        if (phase === 'pending') {
+          // lifted before the hold ran out, without moving: a tap, which the tool handles like a one-point gesture
+          stopTimer();
+          if (this.gesture && claim(point)) { this.map.dragPan.enable(); this.gestureActive = false; this.gesture.up?.(point, this.unproject(point), false); }
+        } else if (phase === 'active' && this.gestureActive) {
+          this.gestureActive = false;
+          this.map.dragPan.enable();
+          this.gesture?.up?.(point, this.unproject(point), moved);
+        }
+      }
+      if (!this.pointers.size) { phase = 'idle'; start = null; }
     };
-    el.addEventListener('pointerup', finish);
-    el.addEventListener('pointercancel', (event) => { this.pointers.delete(event.pointerId); this.cancelGesture(); });
+    // on the window: a finger that lifts over a control or outside the page must still end the gesture
+    const cancelled = (event: PointerEvent) => { this.pointers.delete(event.pointerId); stopTimer(); this.cancelGesture(); if (!this.pointers.size) phase = 'idle'; };
+    const hidden = () => { if (document.visibilityState === 'hidden') reset(); };
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', cancelled);
+    window.addEventListener('blur', reset);
+    document.addEventListener('visibilitychange', hidden);
+    this.offGestures = () => {
+      stopTimer(); ring.remove();
+      window.removeEventListener('pointerup', finish); window.removeEventListener('pointercancel', cancelled); window.removeEventListener('blur', reset); document.removeEventListener('visibilitychange', hidden);
+    };
   }
+  private offGestures: (() => void) | null = null;
 
   lngLatAt(point: Pt): LngLat { const l = this.map.unproject([point.x, point.y]); return [l.lng, l.lat]; }
 
@@ -676,5 +776,5 @@ export class FieldMap {
     const tiles = caches ? Object.fromEntries(Object.entries(caches).map(([id, cache]) => [id, cache.getIds ? cache.getIds().length : Object.keys(cache._tiles ?? {}).length])) : null;
     return { tiles, layers: this.map.getStyle().layers?.length ?? 0, sources: Object.keys(this.map.getStyle().sources ?? {}).length, providers: providers.size };
   }
-  destroy() { this.stopProbe?.(); this.unbind?.(); providers.delete(this.token); this.map.remove(); }
+  destroy() { this.offGestures?.(); this.stopProbe?.(); this.unbind?.(); providers.delete(this.token); this.map.remove(); }
 }

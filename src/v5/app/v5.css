@@ -51,7 +51,12 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-ctl.right { right: 1.2rem; align-items: flex-end; }
 .v5-root[data-hand="left"] .v5-ctl.left { left: auto; right: 1.2rem; align-items: flex-end; }
 .v5-root[data-hand="left"] .v5-ctl.right { right: auto; left: 1.2rem; align-items: flex-start; }
-.v5-root[data-ui="sheet"] .v5-ctl, .v5-root[data-ui="none"] .v5-ctl { opacity: 0; pointer-events: none; transform: translateY(0.6rem); }
+/* The control containers only carry their buttons. A column is as wide as its widest child (the open marking panel), so beside the narrower zoom buttons it held
+   an invisible box that swallowed touches meant for the map: drags there did nothing, or the browser took them. Only the children take touches. */
+.v5-ctl, .v5-topright { pointer-events: none; }
+.v5-ctl > *, .v5-topright > * { pointer-events: auto; }
+.v5-root[data-ui="sheet"] .v5-ctl, .v5-root[data-ui="none"] .v5-ctl { opacity: 0; transform: translateY(0.6rem); }
+.v5-root[data-ui="sheet"] .v5-ctl > *, .v5-root[data-ui="none"] .v5-ctl > * { pointer-events: none; }
 .v5-zoom { display: flex; flex-direction: column; border-radius: var(--r); background: var(--glass); box-shadow: var(--shadow); }
 .v5-zoom .v5-sq { box-shadow: none; background: transparent; }
 .v5-zoom .v5-sq:first-child { border-radius: var(--r) var(--r) 0 0; }
@@ -249,3 +254,9 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-faqitem[open] { padding-bottom: 0.8rem; }
 .v5-faqitem[open] p { padding: 0 0.9rem; margin-top: 0.5rem; color: var(--on-var); font-size: 0.92rem; line-height: 1.45; }
 .v5-faqitem[open] p:first-of-type { margin-top: 0; }
+
+/* the ring that shows a finger was taken by Wischen / Lasso (after the short hold); the map itself pans with any finger that moves first */
+.v5-armring { position: absolute; z-index: 4; width: 4.4rem; height: 4.4rem; margin: -2.2rem 0 0 -2.2rem; border: 0.3rem solid var(--primary, #6fd6b4); border-radius: 50%; pointer-events: none; opacity: 0; }
+.v5-armring.on { animation: v5-arm 420ms ease-out; }
+@keyframes v5-arm { from { opacity: 0.95; scale: 0.45; } to { opacity: 0; scale: 1.2; } }
+@media (prefers-reduced-motion: reduce) { .v5-armring.on { animation: none; } }
