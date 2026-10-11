@@ -62,13 +62,13 @@ function useStatus(store: FieldStore | null, key: EntityKey | null): Status {
 }
 
 /** Bounds of what can be worked on (houses and visible streets); Area polygons only when nothing was derived. */
-function workBounds(network: Network, areas: { geometry: { coordinates: [number, number][][] } }[]): [[number, number], [number, number]] {
+function workBounds(network: Network, areas: { geometry: { coordinates: [number, number][][] } }[]): [[number, number], [number, number]] | null {
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
   const add = (lng: number, lat: number) => { if (lng < w) w = lng; if (lng > e) e = lng; if (lat < s) s = lat; if (lat > n) n = lat; };
   for (const house of network.houses) add(house.center[0], house.center[1]);
   for (const segment of network.segments) if (segment.visible) add(segment.start[0], segment.start[1]);
   if (!Number.isFinite(w)) for (const area of areas) for (const [lng, lat] of area.geometry.coordinates[0]) add(lng, lat);
-  return [[w, s], [e, n]];
+  return Number.isFinite(w) ? [[w, s], [e, n]] : null; // nothing to show yet (no Gebiet, no data): the camera stays where it is
 }
 
 const FIT_PADDING = { top: 120, bottom: 170, left: 28, right: 28 };
@@ -294,7 +294,8 @@ export function App({ campaignId }: { campaignId: string }) {
       // The view is fitted when the map first has something to show (the Gebiete, then once the streets and houses are there). Reloads after an
       // edit (a Gebiet changed or deleted, data fetched later) never move the camera again.
       const hasData = network.houses.length > 0 || network.segments.length > 0;
-      if (fittedRef.current === 'none' || (fittedRef.current === 'areas' && hasData)) { fittedRef.current = hasData ? 'data' : 'areas'; map.fitTo(workBounds(network, meta?.areas ?? []), FIT_PADDING); }
+      const bounds = workBounds(network, meta?.areas ?? []);
+      if (bounds && (fittedRef.current === 'none' || (fittedRef.current === 'areas' && hasData))) { fittedRef.current = hasData ? 'data' : 'areas'; map.fitTo(bounds, FIT_PADDING); }
     });
   }, [network, store, campaign.mapData]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
 
@@ -420,7 +421,8 @@ export function App({ campaignId }: { campaignId: string }) {
     const rings = (meta?.areas ?? []).map((a) => a.geometry.coordinates[0] as [number, number][]);
     if (meta?.mainArea) rings.push(meta.mainArea.geometry.coordinates[0] as [number, number][]);
     if (rings.length) { fm.fitTo(ringBounds(rings.flat()), FIT_PADDING); return; }
-    if (network && (network.houses.length || network.segments.length)) fm.fitTo(workBounds(network, []), FIT_PADDING);
+    const bounds = network && (network.houses.length || network.segments.length) ? workBounds(network, []) : null;
+    if (bounds) fm.fitTo(bounds, FIT_PADDING);
   };
   const fitArea = (id: string) => { const area = meta?.areas.find((a) => a.id === id); if (area) { setPanel(null); fieldMap.current?.fitTo(ringBounds(area.geometry.coordinates[0]), FIT_PADDING); } };
   const locate = async () => {
@@ -613,7 +615,7 @@ export function App({ campaignId }: { campaignId: string }) {
         </>
       )}
 
-      {ready && !editing && !(tool === 'pickup' && draft) && (
+      {ready && !editing && tool === 'inspect' && (
         <div className="v5-ctl left row">
           {tool === 'inspect' && mayMark && fab !== 'idle'
             // while marking, the caption takes the row of the menu button and the team badge
@@ -625,7 +627,7 @@ export function App({ campaignId }: { campaignId: string }) {
         </div>
       )}
       {ready && tool === 'areas' && meta && !editing && !selectedArea && (
-        <div className="v5-ctl right row raised" aria-label="Gebiete">
+        <div className="v5-ctl right row" aria-label="Gebiete">
           <span className="v5-hintchip"><Icon name="polygon" size={20} />Gebiet antippen</span>
           {canEditAny && <button className="v5-go" onClick={areaTool.startNew} aria-label="Neues Gebiet" title="Neues Gebiet"><Icon name="plus" size={26} /></button>}
           <button className="v5-sq" onClick={() => enter('inspect')} aria-label="Fertig" title="Fertig"><Icon name="close" size={24} /></button>
@@ -633,7 +635,7 @@ export function App({ campaignId }: { campaignId: string }) {
       )}
       {editing && meta && <AreaEditBar tool={areaTool} meta={meta} />}
       {ready && tool === 'pickup' && !draft && (
-        <div className="v5-ctl right row raised" aria-label="Sonder-Marker setzen">
+        <div className="v5-ctl right row" aria-label="Sonder-Marker setzen">
           <span className="v5-hintchip"><Icon name="mapPin" size={20} />Karte antippen</span>
           <button className="v5-sq" onClick={() => enter('inspect')} aria-label="Fertig" title="Fertig"><Icon name="close" size={24} /></button>
         </div>

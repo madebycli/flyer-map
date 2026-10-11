@@ -45,8 +45,6 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-ctl { position: absolute; z-index: 5; bottom: calc(env(safe-area-inset-bottom) + 1.5rem); display: flex; flex-direction: column; gap: var(--gap); transition: opacity var(--t), transform var(--t) var(--ease); }
 .v5-ctl.left { left: 1.2rem; align-items: flex-start; }
 .v5-ctl.row { flex-direction: row; align-items: center; }
-/* the hint row of the Gebiete / Sonder-Marker tools lies above the menu row instead of over it */
-.v5-ctl.raised { bottom: calc(env(safe-area-inset-bottom) + 5.2rem); }
 .v5-teamchip { display: inline-flex; align-items: center; gap: 0.5rem; max-width: calc(100vw - 2.4rem - var(--ctl) - 0.5rem - 10.4rem - 0.6rem); height: var(--ctl); padding: 0 1rem; border-radius: var(--r); background: var(--glass); box-shadow: var(--shadow); font-size: 0.88rem; font-weight: 700; color: var(--on); }
 .v5-teamchip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v5-teamchip .v5-dotc { flex: none; width: 0.7rem; height: 0.7rem; border-radius: 50%; }

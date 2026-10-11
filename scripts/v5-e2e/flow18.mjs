@@ -3,7 +3,7 @@
 // the sheet handle shrinks the sheet (and the map controls come back), no credit button on the map, no legend / engine line in the overview.
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
-import { openMenu, startMarking } from './ui.mjs';
+import { openMenu, menuTile, startMarking } from './ui.mjs';
 
 const BASE = 'http://localhost:8140';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
@@ -121,6 +121,19 @@ await page.locator('.v5-sheet').waitFor();
 const text = await page.locator('.v5-sheet').innerText();
 check('the overview has neither the colour legend nor the engine line', !/Was bedeuten die Farben/i.test(text) && !/Kartenmotor/i.test(text));
 await page.screenshot({ path: `${shots}/t18-overview.png` });
+await page.locator('.v5-sheet').getByRole('button', { name: 'Schließen' }).click();
+await page.locator('.v5-sheet').waitFor({ state: 'detached' });
+
+// ── Gebiete tool: the hint, the new-Gebiet button and the exit are one row at the bottom; the menu gives way to it ──
+await menuTile(page, 'Gebiete');
+await page.getByRole('button', { name: 'Neues Gebiet', exact: true }).waitFor();
+{
+  const [hint, add, exit] = await Promise.all([page.locator('.v5-hintchip').boundingBox(), box('Neues Gebiet'), box('Fertig')]);
+  check('the Gebiete tool is a single row (no second row above the menu), the menu button is gone', (await page.getByRole('button', { name: 'Menü', exact: true }).count()) === 0 && Math.abs(hint.y - add.y) < 4 && Math.abs(add.y - exit.y) < 4 && hint.y + hint.height > 844 * 0.88, JSON.stringify({ hint, add, exit }));
+  await page.screenshot({ path: `${shots}/t18-areas.png` });
+  await page.getByRole('button', { name: 'Fertig', exact: true }).click();
+  check('leaving it brings the menu back', await until(async () => (await page.getByRole('button', { name: 'Menü', exact: true }).count()) === 1));
+}
 
 await browser.close();
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');

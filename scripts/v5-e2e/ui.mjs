@@ -1,5 +1,10 @@
 // Shared UI gestures of the field shell: the Home menu and the marking button with its morphing panels.
-export const openMenu = (page) => page.getByRole('button', { name: 'Menü' }).click();
+export const openMenu = async (page) => {
+  // The Gebiete / Sonder-Marker tools replace the menu with their own bar; "Fertig" leaves the tool.
+  const menu = page.getByRole('button', { name: 'Menü', exact: true });
+  if (!(await menu.count()) && (await page.getByRole('button', { name: 'Fertig', exact: true }).count())) await page.getByRole('button', { name: 'Fertig', exact: true }).click();
+  await menu.click();
+};
 /** Open the Home menu and press one of its tiles. */
 export const menuTile = async (page, name) => { await openMenu(page); await page.getByRole('button', { name, exact: true }).click(); };
 /** A plain tap on the marking button starts marking in route mode. */

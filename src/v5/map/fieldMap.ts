@@ -663,6 +663,7 @@ export class FieldMap {
   focus(at: LngLat, zoom = 17.2) { this.map.easeTo({ center: at, zoom: Math.max(this.map.getZoom(), zoom), duration: 450, padding: { top: 90, bottom: 280, left: 0, right: 0 } }); }
 
   fitTo(bounds: [[number, number], [number, number]], padding: number | { top: number; bottom: number; left: number; right: number } = 40) {
+    if (!bounds.flat().every(Number.isFinite)) return;
     this.map.fitBounds(bounds, { padding, duration: 0, maxZoom: 17.2 });
   }
   get paintedCount() { return this.applied; }
