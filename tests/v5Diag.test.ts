@@ -305,3 +305,11 @@ test('a slow database is named as the server location, not as a fault of the dev
   assert.match(foreignMessage('Image "poi_tree_11" could not be loaded. Please make sure you have added the image before it is needed with map.addImage()'), /^Image "poi_tree_11" could not be loaded/);
   assert.match(foreignMessage('Mustermann: Image "x" could not be loaded for 51.12345'), /^\[text removed/);
 });
+
+test('findings: errors from scripts outside the app are named as such and are not an app fault', () => {
+  const ext = base();
+  ext.metrics.counters = { 'errors.external': 4 };
+  const list = findings(ext);
+  assert.ok(list.some((f) => f.level === 'info' && /4 Skriptfehler stammen nicht aus der App/.test(f.text)));
+  assert.ok(!list.some((f) => f.level === 'warn' || f.level === 'error'));
+});

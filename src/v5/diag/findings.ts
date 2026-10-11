@@ -56,6 +56,7 @@ export function findings({ metrics, subsystems }: FindingsInput): Finding[] {
 
   const dbMs = h['api./api/v5/campaigns/:c/state.server.db'] ?? h['api./api/v5/campaigns/:c/meta.server.db'];
   if (dbMs && dbMs.n >= 3 && dbMs.p50 > 250) out.push({ level: 'info', text: `Die Datenbank des Servers braucht ${Math.round(dbMs.p50)} ms pro Abfrage${h['sync.round_ms'] ? `, ein Abgleich dauert deshalb etwa ${sec(h['sync.round_ms'].p50)}` : ''}. Das liegt am Server-Standort, nicht an diesem Gerät.` });
+  if ((c['errors.external'] ?? 0) > 0) out.push({ level: 'info', text: `${c['errors.external']} Skriptfehler stammen nicht aus der App, sondern von einem Browser-Zusatz oder Inhaltsblocker (zum Beispiel Brave). Die App ist davon nicht betroffen.` });
   if (!out.length) out.push({ level: 'ok', text: 'Alles unauffällig.' });
   return out;
 }

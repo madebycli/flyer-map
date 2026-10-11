@@ -33,6 +33,15 @@ export function initDiag(): Session {
   if (typeof window === 'undefined') return session;
 
   window.addEventListener('error', (event) => {
+    // Scripts that are not ours also fail inside the page: a content blocker or a browser's own injected scripts (Brave on iPad reports four
+    // "Script error." and one TypeError at the page address on every start). They say nothing about the app, so they are counted apart.
+    const page = location.origin + location.pathname;
+    const outside = (event.message === 'Script error.' && !event.lineno) || (!!event.filename && event.filename.split(/[?#]/)[0] === page);
+    if (outside) {
+      log.warn('error', 'a script from outside the app failed (browser extension or content blocker)', { where: whereOf(event.filename, event.lineno, event.colno) });
+      metrics.inc('errors.external');
+      return;
+    }
     log.error('error', 'uncaught error', { where: whereOf(event.filename, event.lineno, event.colno), message: event.error ?? event.message });
     metrics.inc('errors.window');
   });
