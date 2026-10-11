@@ -2,7 +2,7 @@
 //!
 //! Protocol (all buffers live in the module's linear memory):
 //!   1. `alloc(len)` a buffer for the raw OSM JSON and one for the Area ring JSON (`[[lng,lat],…]`), write the bytes;
-//!   2. `derive_area(raw_ptr, raw_len, ring_ptr, ring_len)` → number of result bytes (0 = failure; the message is the result);
+//!   2. `derive_area(raw_ptr, raw_len, ring_ptr, ring_len, cell_ptr, cell_len)` → number of result bytes (0 = failure; the message is the result);
 //!   3. read `result_ptr()`/`result_len()` — UTF-8 JSON of `Network` (or `{"error":"…"}`), then `dealloc` every buffer.
 mod area;
 mod classify;
@@ -54,14 +54,24 @@ pub fn derive_parsed(raw: &RawOsm) -> model::Network {
 }
 
 /// Pure entry point (also used by the native tests): raw OSM JSON + optional ring JSON → Network JSON.
-pub fn derive_json(raw: &[u8], ring: Option<&[u8]>) -> Result<Vec<u8>, String> {
+pub fn derive_json(raw: &[u8], ring: Option<&[u8]>, cell: Option<&[u8]>) -> Result<Vec<u8>, String> {
     let raw: RawOsm = serde_json::from_slice(raw).map_err(|e| format!("pack_invalid: {e}"))?;
     let mut network = derive::derive_network(&raw);
     if let Some(ring) = ring {
         let ring: Vec<LngLat> = serde_json::from_slice(ring).map_err(|e| format!("ring_invalid: {e}"))?;
-        network = area::restrict_to_area(network, &ring);
+        let cell = parse_cell(cell)?;
+        network = area::restrict_to_area(network, &ring, cell);
     }
     serde_json::to_vec(&network).map_err(|e| format!("serialize_failed: {e}"))
+}
+
+/// The optional grid cell of a part (`[west, south, east, north]` as JSON); empty = the whole Area.
+fn parse_cell(cell: Option<&[u8]>) -> Result<Option<[f64; 4]>, String> {
+    match cell {
+        None => Ok(None),
+        Some(bytes) if bytes.is_empty() => Ok(None),
+        Some(bytes) => serde_json::from_slice::<[f64; 4]>(bytes).map(Some).map_err(|e| format!("cell_invalid: {e}")),
+    }
 }
 
 fn store(bytes: Vec<u8>) -> usize {
@@ -88,10 +98,11 @@ pub unsafe extern "C" fn dealloc(ptr: *mut u8, len: usize) {
 /// # Safety
 /// Both slices must be valid for their lengths (they were written by the host into buffers from `alloc`).
 #[no_mangle]
-pub unsafe extern "C" fn derive_area(raw_ptr: *const u8, raw_len: usize, ring_ptr: *const u8, ring_len: usize) -> usize {
+pub unsafe extern "C" fn derive_area(raw_ptr: *const u8, raw_len: usize, ring_ptr: *const u8, ring_len: usize, cell_ptr: *const u8, cell_len: usize) -> usize {
     let raw = std::slice::from_raw_parts(raw_ptr, raw_len);
     let ring = if ring_len == 0 { None } else { Some(std::slice::from_raw_parts(ring_ptr, ring_len)) };
-    match derive_json(raw, ring) {
+    let cell = if cell_len == 0 { None } else { Some(std::slice::from_raw_parts(cell_ptr, cell_len)) };
+    match derive_json(raw, ring, cell) {
         Ok(bytes) => store(bytes),
         Err(message) => {
             store(format!("{{\"error\":{}}}", serde_json::to_string(&message).unwrap_or_else(|_| "\"error\"".into())).into_bytes());
@@ -132,11 +143,12 @@ pub extern "C" fn session_reset() {
 /// # Safety
 /// Pointers/lengths come from `alloc` buffers written by the host.
 #[no_mangle]
-pub unsafe extern "C" fn session_add_area(raw_ptr: *const u8, raw_len: usize, ring_ptr: *const u8, ring_len: usize, export: u32) -> usize {
+pub unsafe extern "C" fn session_add_area(raw_ptr: *const u8, raw_len: usize, ring_ptr: *const u8, ring_len: usize, cell_ptr: *const u8, cell_len: usize, export: u32) -> usize {
     let raw = match serde_json::from_slice::<RawOsm>(std::slice::from_raw_parts(raw_ptr, raw_len)) { Ok(r) => r, Err(e) => return fail(&format!("pack_invalid: {e}")) };
     let mut network = derive::derive_network(&raw);
     let ring: Vec<LngLat> = match serde_json::from_slice(std::slice::from_raw_parts(ring_ptr, ring_len)) { Ok(r) => r, Err(e) => return fail(&format!("ring_invalid: {e}")) };
-    network = area::restrict_to_area(network, &ring);
+    let cell = match parse_cell(if cell_len == 0 { None } else { Some(std::slice::from_raw_parts(cell_ptr, cell_len)) }) { Ok(c) => c, Err(e) => return fail(&e) };
+    network = area::restrict_to_area(network, &ring, cell);
     merge_and_slim(network, export != 0)
 }
 

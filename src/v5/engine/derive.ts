@@ -3,10 +3,10 @@ import { classifyBuilding, classifyRoad } from './classify.ts';
 import { Frame, coordKey, frameFor, pointInRing, polylineLength, projectToPolyline, ringCentroid, splitEqual } from './geo.ts';
 import type { House, LngLat, Network, NetworkDiagnostics, RawOsm, RawWay, Segment } from './types.ts';
 
-export const ENGINE_VERSION = 'v5.3';
+export const ENGINE_VERSION = 'v5.4';
 
 /** Streets are marked in pieces of at most this length (chunks): the unit of precise painting and partial routes. */
-export const CHUNK_METERS = 20;
+export const CHUNK_METERS = 10;
 
 /** Max metres from a house centroid to the street it is assigned to. */
 const MAX_PARENT_DISTANCE = 45;

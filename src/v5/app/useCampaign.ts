@@ -8,9 +8,11 @@ import { NoteStore } from '../notes/store.ts';
 import { NoteSync } from '../notes/sync.ts';
 import { Progress, type ProgressSnapshot } from '../store/progress.ts';
 import { SyncClient } from '../store/syncClient.ts';
-import { V5ApiError, buildPack, fetchMeta, fetchPack, httpNoteTransport, httpTransport, type Meta } from './api.ts';
+import { V5ApiError, buildPackFor, fetchMeta, fetchPack, httpNoteTransport, httpTransport, type Meta } from './api.ts';
 import { fetchPickups, type Pickup } from './pickups.ts';
 import { EngineClient } from './engineClient.ts';
+import { packPlan } from '../engine/index.ts';
+import { mapLimit } from './pool.ts';
 import { diag } from '../diag/index.ts';
 
 /** What one Area cost on this start and what the street engine made of it (shown per Area in the diagnostics). */
@@ -21,6 +23,8 @@ export type Phase =
   | { kind: 'needs-pack'; areas: Meta['areas']; canBuild: boolean }
   | { kind: 'ready' }
   | { kind: 'error'; message: string; status?: number };
+
+const partIndexOf = (unitId: string) => Number(unitId.slice(unitId.lastIndexOf('~') + 1));
 
 export type CampaignState = {
   phase: Phase;
@@ -41,6 +45,8 @@ export type CampaignState = {
   buildMissing(): Promise<string | null>;
   /** A data fetch started by `buildMissing` is running. */
   building: boolean;
+  /** Parts of a big Gebiet fetched so far while `building` (null for a small Gebiet or when idle). */
+  buildProgress: { done: number; total: number } | null;
   /** Re-fetch Areas, packs and status (after an Area was created or reshaped). */
   reload(): Promise<void>;
   /** Light refresh of roles, claims and Rooms only (no map rebuild, no loading screen). */
@@ -65,6 +71,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const [phase, setPhase] = useState<Phase>({ kind: 'loading', label: 'Aktion wird geladen …' });
   const phaseRef = useRef(phase); phaseRef.current = phase;
   const [building, setBuilding] = useState(false);
+  const [buildProgress, setBuildProgress] = useState<{ done: number; total: number } | null>(null);
   const buildingRef = useRef(false);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [network, setNetwork] = useState<Network | null>(null);
@@ -135,13 +142,23 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         loading('Kartendaten werden geladen …');
         const timing: Record<string, number> = { meta: Math.round(performance.now() - t0), wasm: useBlobs ? 1 : 0 };
         const areaBoots: AreaBoot[] = [];
-        const resolved = await Promise.all(loaded.areas.map(async (area) => {
+        // A big Gebiet is several units (its parts, see `packPlan`), each with its own pack and its own cached network; a small one is one unit.
+        const units = loaded.areas.flatMap((area) => {
+          const ring = area.geometry.coordinates[0] as [number, number][];
+          const plan = packPlan(ring);
+          return plan.parts.map((part) => ({ area, ring, part, single: plan.single, id: plan.single ? area.id : `${area.id}~${part.index}` }));
+        });
+        if (units.length > loaded.areas.length) diag.info('boot', 'big Gebiet: loaded in parts', { areas: loaded.areas.length, parts: units.length });
+        let fetched = 0;
+        const resolved = await mapLimit(units, 6, async (unit) => {
+          const { area } = unit;
           const tArea = performance.now();
-          const key = NetworkCache.keyFor(area);
+          const key = NetworkCache.keyFor({ id: unit.id, packVersion: area.packVersion, updatedAt: area.updatedAt });
           const blob = key && useBlobs ? await cache.load(key) : null;
-          const pack = !blob && area.packVersion ? await fetchPack(campaignId, area.id) : null;
-          return { areaId: area.id, packVersion: area.packVersion, ring: area.geometry.coordinates[0] as [number, number][], blob, key, pack, packBytes: blob?.byteLength ?? pack?.byteLength ?? null, fetchMs: Math.round(performance.now() - tArea) };
-        }));
+          const pack = !blob && area.packVersion ? await fetchPack(campaignId, area.id, unit.single ? null : unit.part.index) : null;
+          if (units.length > 8) { fetched++; loading(`Kartendaten werden geladen … ${fetched}/${units.length}`); }
+          return { areaId: area.id, unitId: unit.id, cell: unit.part.cell, packVersion: area.packVersion, ring: unit.ring, blob, key, pack, packBytes: blob?.byteLength ?? pack?.byteLength ?? null, fetchMs: Math.round(performance.now() - tArea) };
+        });
         if (cancelled) return;
         timing.packs = Math.round(performance.now() - t0) - timing.meta;
         timing.cacheHits = resolved.filter((r) => r.blob).length;
@@ -149,17 +166,18 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         await engine.reset();
         const parts: { areaId: string; network: Network }[] = [];
         const missing: Meta['areas'] = [];
+        let derivedUnits = 0;
         for (const item of resolved) {
           let result: Awaited<ReturnType<EngineClient['area']>> | null = null;
           let source: AreaBoot['source'] = item.blob ? 'cache' : item.pack ? 'server' : 'none';
           if (item.blob) {
-            try { result = await engine.area({ areaId: item.areaId, ring: item.ring, blob: item.blob }); }
-            catch (error) { diag.warn('cache', 'a cached network could not be loaded: downloading the pack again', { error: error instanceof Error ? error.message : String(error) }); void cache.forget(item.areaId); item.pack = await fetchPack(campaignId, item.areaId); timing.cacheHits--; source = item.pack ? 'server' : 'none'; }
+            try { result = await engine.area({ areaId: item.unitId, ring: item.ring, cell: item.cell, blob: item.blob }); }
+            catch (error) { diag.warn('cache', 'a cached network could not be loaded: downloading the pack again', { error: error instanceof Error ? error.message : String(error) }); void cache.forget(item.unitId); item.pack = await fetchPack(campaignId, item.areaId, item.cell ? partIndexOf(item.unitId) : null); timing.cacheHits--; source = item.pack ? 'server' : 'none'; }
           }
           if (!result) {
-            if (!item.pack) { missing.push(loaded.areas.find((a) => a.id === item.areaId)!); diag.info('boot', 'an Area has no map data yet', { index: areaBoots.length + missing.length }); areaBoots.push({ n: areaBoots.length + 1, source: 'none', packBytes: null, fetchMs: item.fetchMs, deriveMs: null, detail: null, houses: 0, segments: 0, diagnostics: null }); continue; }
-            loading('Straßen und Häuser werden berechnet …');
-            result = await engine.area({ areaId: item.areaId, ring: item.ring, pack: item.pack, wantBlob: useBlobs });
+            if (!item.pack) { const gone = loaded.areas.find((a) => a.id === item.areaId)!; if (!missing.includes(gone)) missing.push(gone); diag.info('boot', 'an Area has no map data yet', { index: areaBoots.length + missing.length }); areaBoots.push({ n: areaBoots.length + 1, source: 'none', packBytes: null, fetchMs: item.fetchMs, deriveMs: null, detail: null, houses: 0, segments: 0, diagnostics: null }); continue; }
+            loading(resolved.length > 8 ? `Straßen und Häuser werden berechnet … ${++derivedUnits}/${resolved.length}` : 'Straßen und Häuser werden berechnet …');
+            result = await engine.area({ areaId: item.unitId, ring: item.ring, cell: item.cell, pack: item.pack, wantBlob: useBlobs });
             if (item.key && result.blob) void cache.store(item.key, result.blob);
           }
           if (result.detail) for (const [k, v] of Object.entries(result.detail)) timing[`w_${k}`] = (timing[`w_${k}`] ?? 0) + v;
@@ -250,7 +268,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     syncNow: () => { void syncRef.current?.run(); },
     orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); },
-    building,
+    building, buildProgress,
     async buildMissing() {
       if (!canBuildRef.current || buildingRef.current) return null;
       buildingRef.current = true; setBuilding(true);
@@ -262,14 +280,14 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         const fresh = await fetchMeta(campaignId, kind);
         const wanted = new Set(missingRef.current.map((a) => a.id));
         const buildable = fresh.areas.filter((a) => wanted.has(a.id) && (a.writable || fresh.role === 'admin'));
-        for (const area of buildable) await buildPack(campaignId, area.id);
+        for (const area of buildable) await buildPackFor(campaignId, area, (done, total) => { setBuildProgress({ done, total }); if (overlay) setPhase({ kind: 'loading', label: `Kartendaten werden geladen … ${done}/${total}` }); });
         await reload.current({ quiet: !overlay });
         return null;
       } catch (error) {
         // A refusal (the one-minute pause, the data source down) is a message, not a dead end: the screen comes back as it was.
         if (overlay) setPhase({ kind: 'needs-pack', areas: missingRef.current, canBuild: canBuildRef.current });
         return error instanceof Error ? error.message : 'Kartendaten konnten nicht geladen werden';
-      } finally { buildingRef.current = false; setBuilding(false); }
+      } finally { buildingRef.current = false; setBuilding(false); setBuildProgress(null); }
     },
   };
 }

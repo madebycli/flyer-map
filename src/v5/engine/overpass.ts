@@ -1,3 +1,4 @@
+import { pointInRing } from './geo.ts';
 import type { LngLat, RawAddressNode, RawBuilding, RawOsm, RawWay, Tags } from './types.ts';
 
 export type Bbox = [south: number, west: number, north: number, east: number];
@@ -9,13 +10,56 @@ export function overpassQuery(bbox: Bbox): string {
   return `[out:json][timeout:60];(way["highway"](${b});way["building"](${b});node["addr:housenumber"](${b}););out geom qt;`;
 }
 
-/** The largest outline whose map data is fetched in one go (the bounding box, in km²). */
-export const MAX_PACK_AREA_SQ_KM = 25;
 /** Size of the box the map data of a Gebiet is fetched for (outline plus its margin), in km². */
 export function packAreaSquareKm(ring: LngLat[]): number {
   const bbox = paddedBbox(ring);
   return ((bbox[2] - bbox[0]) * 110.574) * ((bbox[3] - bbox[1]) * 111.32 * Math.cos((((bbox[0] + bbox[2]) / 2) * Math.PI) / 180));
 }
+
+/**
+ * Big Gebiete are fetched, stored and derived in parts: a fixed grid over the map (the same for every Gebiet, so a part's contents never
+ * depend on the outline around it). A Gebiet up to `PACK_SINGLE_MAX_SQ_KM` is one part and works exactly as before.
+ */
+export const PACK_CELL_LNG = 0.03;
+export const PACK_CELL_LAT = 0.02;
+export const PACK_SINGLE_MAX_SQ_KM = 6;
+/** About 2 800 km² at 51° N: far more than any single Gebiet asks for; the limit only stops a runaway outline. */
+export const MAX_PACK_PARTS = 600;
+export type Cell = [west: number, south: number, east: number, north: number];
+export type PackPart = { index: number; /** null for a one-part Gebiet */ cell: Cell | null; /** what is asked from the data source: the cell plus a margin */ bbox: Bbox };
+export type PackPlan = { single: boolean; tooLarge: boolean; parts: PackPart[] };
+
+const orient = (p: LngLat, q: LngLat, r: LngLat) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+const crossing = (a: LngLat, b: LngLat, c: LngLat, d: LngLat) => orient(a, b, c) !== orient(a, b, d) && orient(c, d, a) !== orient(c, d, b);
+
+/** Does the polygon touch the cell (a corner or vertex inside, or an edge across)? */
+function touches(ring: LngLat[], [w, s, e, n]: Cell): boolean {
+  if (ring.some(([x, y]) => x >= w && x < e && y >= s && y < n)) return true;
+  const corners: LngLat[] = [[w, s], [e, s], [e, n], [w, n]];
+  if (corners.some((corner) => pointInRing(corner, ring))) return true;
+  for (let i = 1; i < ring.length; i++) for (let j = 0; j < 4; j++) if (crossing(ring[i - 1], ring[i], corners[j], corners[(j + 1) % 4])) return true;
+  return false;
+}
+
+export function packPlan(ring: LngLat[]): PackPlan {
+  if (packAreaSquareKm(ring) <= PACK_SINGLE_MAX_SQ_KM) return { single: true, tooLarge: false, parts: [{ index: 0, cell: null, bbox: paddedBbox(ring) }] };
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const [x, y] of ring) { if (x < w) w = x; if (x > e) e = x; if (y < s) s = y; if (y > n) n = y; }
+  const c0 = Math.floor(w / PACK_CELL_LNG), c1 = Math.floor(e / PACK_CELL_LNG), r0 = Math.floor(s / PACK_CELL_LAT), r1 = Math.floor(n / PACK_CELL_LAT);
+  if ((c1 - c0 + 1) * (r1 - r0 + 1) > MAX_PACK_PARTS * 20) return { single: false, tooLarge: true, parts: [] };
+  const parts: PackPart[] = [];
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const cell: Cell = [c * PACK_CELL_LNG, r * PACK_CELL_LAT, (c + 1) * PACK_CELL_LNG, (r + 1) * PACK_CELL_LAT];
+      if (!touches(ring, cell)) continue;
+      parts.push({ index: parts.length, cell, bbox: paddedBbox([[cell[0], cell[1]], [cell[2], cell[3]]]) });
+    }
+  }
+  return { single: false, tooLarge: parts.length > MAX_PACK_PARTS, parts: parts.length > MAX_PACK_PARTS ? [] : parts };
+}
+
+/** A point belongs to exactly one cell (west/south edges belong to it, east/north to the neighbour). */
+export const inCell = (p: LngLat, [w, s, e, n]: Cell) => p[0] >= w && p[0] < e && p[1] >= s && p[1] < n;
 
 export function paddedBbox(ring: LngLat[], meters = 80): Bbox {
   let s = Infinity, w = Infinity, n = -Infinity, e = -Infinity;

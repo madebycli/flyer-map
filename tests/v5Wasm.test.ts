@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
-import { deriveNetwork, restrictToArea, ENGINE_VERSION, type LngLat, type RawOsm } from '../src/v5/engine/index.ts';
+import { deriveNetwork, restrictToArea, ENGINE_VERSION, type Cell, type LngLat, type RawOsm } from '../src/v5/engine/index.ts';
 import { syntheticCity } from '../src/v5/engine/synthetic.ts';
 import { WasmEngine } from '../src/v5/engine/wasm.ts';
 import { randomCity, rng } from './helpers/randomCity.ts';
@@ -32,7 +32,7 @@ function same(a: unknown, b: unknown, path = '$'): void {
   assert.equal(a, b, path);
 }
 
-const reference = (raw: RawOsm, ring: LngLat[] | null) => JSON.parse(JSON.stringify(ring ? restrictToArea(deriveNetwork(raw), ring) : deriveNetwork(raw)));
+const reference = (raw: RawOsm, ring: LngLat[] | null, cell: Cell | null = null) => JSON.parse(JSON.stringify(ring ? restrictToArea(deriveNetwork(raw), ring, cell) : deriveNetwork(raw)));
 
 test('the committed wasm was built from the committed Rust sources (run scripts/build-wasm.sh after editing engine-rs)', () => {
   const root = new URL('../', import.meta.url);
@@ -85,4 +85,33 @@ test('garbage and truncated input fail with a message instead of crashing', () =
   assert.throws(() => engine.deriveArea(new TextEncoder().encode('{"ways":[1]}'), null), /pack_invalid/);
   const empty = engine.deriveArea(new TextEncoder().encode('{"ways":[],"buildings":[],"addresses":[]}'), null);
   assert.deepEqual([empty.segments.length, empty.houses.length], [0, 0]);
+});
+
+// ── parts of a big Gebiet (grid cells) ──
+const cityRing = (w: number, h: number): LngLat[] => { const M = (x: number, y: number): LngLat => [13 + x / 70053, 51 + y / 110574]; return [M(-400, -500), M(w * 100 + 200, -500), M(w * 100 + 200, h * 100 + 200), M(-400, h * 100 + 200), M(-400, -500)]; };
+const cellAt = (xa: number, xb: number, ya: number, yb: number): Cell => [13 + xa / 70053, 51 + ya / 110574, 13 + xb / 70053, 51 + yb / 110574];
+
+test('with a cell, Rust and TypeScript keep exactly the same houses and street pieces', () => {
+  const raw = syntheticCity(6, 6).raw;
+  const ring = cityRing(6, 6);
+  for (const cell of [cellAt(-400, 300, -500, 300), cellAt(300, 900, -500, 300), cellAt(-400, 300, 300, 900), cellAt(300, 900, 300, 900), cellAt(100, 250, 100, 250)]) {
+    same(engine.deriveArea(bytes(raw), ring, cell), reference(raw, ring, cell), `cell ${cell.join(',')}`);
+  }
+});
+
+test('the cells of a Gebiet partition it: every house and every street piece comes from exactly one part, with the parent it has in the whole', () => {
+  const raw = syntheticCity(6, 6).raw;
+  const ring = cityRing(6, 6);
+  const whole = engine.deriveArea(bytes(raw), ring, null);
+  const cells = [cellAt(-400, 300, -500, 300), cellAt(300, 900, -500, 300), cellAt(-400, 300, 300, 900), cellAt(300, 900, 300, 900)];
+  const parts = cells.map((cell) => engine.deriveArea(bytes(raw), ring, cell));
+  const houseIds = parts.flatMap((part) => part.houses.map((h) => h.id));
+  assert.equal(new Set(houseIds).size, houseIds.length, 'no house twice');
+  assert.deepEqual([...houseIds].sort(), whole.houses.map((h) => h.id).sort(), 'every house once');
+  const segmentIds = parts.flatMap((part) => part.segments.map((s) => s.id));
+  assert.equal(new Set(segmentIds).size, segmentIds.length, 'no street piece twice');
+  assert.deepEqual([...segmentIds].sort(), whole.segments.map((s) => s.id).sort(), 'every street piece once');
+  const parentOf = new Map(whole.houses.map((h) => [h.id, h.parent]));
+  for (const part of parts) for (const house of part.houses) assert.equal(house.parent, parentOf.get(house.id), `parent of ${house.id}`);
+  assert.ok(parts.filter((part) => part.houses.length > 0).length >= 3, 'the city really spreads over the cells');
 });

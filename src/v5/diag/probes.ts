@@ -112,8 +112,11 @@ export function startBrowserProbes(): BrowserProbes {
   let timer: ReturnType<typeof setInterval> | null = null;
   let last = 0, windowStart = 0, frames = 0;
   const recent: { t: number; dt: number }[] = [];
+  // A frame that spans a stretch with the page hidden is not slow rendering, it is the phone having paused the page: the sampler starts over when visibility changes.
+  add(document, 'visibilitychange', () => { last = 0; windowStart = 0; frames = 0; });
   const frame = (t: number) => {
     if (!active) return;
+    if (document.visibilityState === 'hidden') { raf = requestAnimationFrame(frame); return; }
     if (last) {
       const dt = t - last;
       frames++; recent.push({ t, dt });

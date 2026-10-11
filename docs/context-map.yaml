@@ -1,4 +1,4 @@
-version: 30
+version: 31
 last_updated: 2026-10-10
 
 entrypoints:
@@ -23,6 +23,12 @@ nodes:
     status: active
     topics: [rewrite, design-system, parity, legacy-removal]
     load_when: [any structural change, what exists, what was dropped, what is open]
+  - id: plan-052-big-areas
+    path: docs/plans/active/052-big-areas.md
+    type: plan
+    status: active
+    topics: [big-areas, pack-parts, grid, overpass, scale]
+    load_when: [Gebiet larger than a few km², pack building, memory on phones]
   - id: v5-readme
     path: docs/v5/README.md
     type: architecture

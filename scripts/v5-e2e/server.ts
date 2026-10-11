@@ -16,7 +16,9 @@ seedNetwork(db);
 // Area polygon covering the synthetic city (origin 13.0/51.0, 12x12 blocks of 100 m, plus the extras below/left of it).
 const M_LNG = 70_053, M_LAT = 110_574;
 const ring = [[-300 / M_LNG, -400 / M_LAT], [(BLOCKS * 100 + 100) / M_LNG, -400 / M_LAT], [(BLOCKS * 100 + 100) / M_LNG, (BLOCKS * 100 + 100) / M_LAT], [-300 / M_LNG, (BLOCKS * 100 + 100) / M_LAT], [-300 / M_LNG, -400 / M_LAT]].map(([x, y]) => [13 + x, 51 + y]);
-db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=?').run(JSON.stringify({ type: 'Polygon', coordinates: [ring] }), 'area_n');
+// BIG_AREA=1: the same city inside a Gebiet of about 45 km² (nine parts of the pack grid), to test fetching, storing and deriving in parts.
+const big: number[][] = [[12.985, 50.985], [13.075, 50.985], [13.075, 51.045], [12.985, 51.045], [12.985, 50.985]];
+db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=?').run(JSON.stringify({ type: 'Polygon', coordinates: [process.env.BIG_AREA ? big : ring] }), 'area_n');
 
 const city = syntheticCity(BLOCKS, BLOCKS);
 const overpass = {
@@ -74,7 +76,7 @@ http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/')) {
     const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer);
     const request = new Request(url, { method: req.method, headers: req.headers as Record<string, string>, body: ['GET', 'HEAD'].includes(req.method!) ? undefined : Buffer.concat(chunks) });
-    const response = await handleV5Api(request, db, { fetchImpl, maxAreaSqKm: 200, now: () => (pace.clock += 70_000) }); // each call counts as 70 s later, so build cooldowns never block the scripted flow
+    const response = await handleV5Api(request, db, { fetchImpl, now: () => (pace.clock += 70_000) }); // each call counts as 70 s later, so build cooldowns never block the scripted flow
     // Everything that is not /api/v5 (area mutations, access info, version) runs through the real legacy Worker.
     const final = response ?? await baseWorker.fetch(new Request(url, { method: req.method, headers: req.headers as Record<string, string>, body: ['GET', 'HEAD'].includes(req.method!) ? undefined : Buffer.concat(chunks) }), { DB: db } as never);
     if (!final) { res.writeHead(404); res.end(); return; }

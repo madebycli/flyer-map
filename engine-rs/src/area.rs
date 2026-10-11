@@ -23,8 +23,15 @@ fn crosses_ring(line: &[LngLat], ring: &[LngLat]) -> bool {
     false
 }
 
-pub fn restrict_to_area(network: Network, ring: &[LngLat]) -> Network {
-    let houses: Vec<House> = network.houses.into_iter().filter(|h| point_in_ring(h.center, ring)).collect();
+/// A point belongs to exactly one grid cell: the west and south edges are inside, the east and north edges are the neighbour's.
+fn in_cell(p: LngLat, c: &[f64; 4]) -> bool {
+    p[0] >= c[0] && p[0] < c[2] && p[1] >= c[1] && p[1] < c[3]
+}
+
+/// With a `cell` (one part of a big Gebiet) only what the cell owns is kept: houses whose centre lies in it and street pieces that start in it,
+/// so the parts of one Gebiet partition the data and merge without double entries.
+pub fn restrict_to_area(network: Network, ring: &[LngLat], cell: Option<[f64; 4]>) -> Network {
+    let houses: Vec<House> = network.houses.into_iter().filter(|h| point_in_ring(h.center, ring) && cell.as_ref().map_or(true, |c| in_cell(h.center, c))).collect();
     let mut counts: HashMap<&str, u32> = HashMap::default();
     for h in &houses {
         if let Some(p) = &h.parent {
@@ -32,7 +39,10 @@ pub fn restrict_to_area(network: Network, ring: &[LngLat]) -> Network {
         }
     }
     let kept: Vec<Segment> = network.segments.into_iter()
-        .filter(|s| counts.contains_key(s.id.as_str()) || s.coords.iter().any(|p| point_in_ring(*p, ring)) || crosses_ring(&s.coords, ring))
+        .filter(|s| match &cell {
+            Some(c) => in_cell(s.coords[0], c) && (counts.contains_key(s.id.as_str()) || s.coords.iter().any(|p| point_in_ring(*p, ring)) || crosses_ring(&s.coords, ring)),
+            None => counts.contains_key(s.id.as_str()) || s.coords.iter().any(|p| point_in_ring(*p, ring)) || crosses_ring(&s.coords, ring),
+        })
         .collect();
     let mut group_houses: HashMap<String, u32> = HashMap::default();
     for s in &kept {

@@ -44,6 +44,12 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 /* ── floating controls (thumb zone) ──────────────────────────── */
 .v5-ctl { position: absolute; z-index: 5; bottom: calc(env(safe-area-inset-bottom) + 1.5rem); display: flex; flex-direction: column; gap: var(--gap); transition: opacity var(--t), transform var(--t) var(--ease); }
 .v5-ctl.left { left: 1.2rem; align-items: flex-start; }
+.v5-ctl.row { flex-direction: row; align-items: center; }
+/* the hint row of the Gebiete / Sonder-Marker tools lies above the menu row instead of over it */
+.v5-ctl.raised { bottom: calc(env(safe-area-inset-bottom) + 5.2rem); }
+.v5-teamchip { display: inline-flex; align-items: center; gap: 0.5rem; max-width: calc(100vw - 2.4rem - var(--ctl) - 0.5rem - 10.4rem - 0.6rem); height: var(--ctl); padding: 0 1rem; border-radius: var(--r); background: var(--glass); box-shadow: var(--shadow); font-size: 0.88rem; font-weight: 700; color: var(--on); }
+.v5-teamchip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v5-teamchip .v5-dotc { flex: none; width: 0.7rem; height: 0.7rem; border-radius: 50%; }
 .v5-ctl.right { right: 1.2rem; align-items: flex-end; }
 .v5-root[data-hand="left"] .v5-ctl.left { left: auto; right: 1.2rem; align-items: flex-end; }
 .v5-root[data-hand="left"] .v5-ctl.right { right: auto; left: 1.2rem; align-items: flex-start; }
@@ -232,3 +238,16 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-hud { position: fixed; z-index: 8; top: calc(max(0.4rem, env(safe-area-inset-top)) + 3.7rem); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 1.5rem); min-height: var(--ctl); padding: 0 var(--gap) 0 calc(var(--gap) * 1.5); border: 0; border-radius: var(--r); background: var(--surface-1); color: var(--on); font: 700 0.74rem ui-monospace, monospace; box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v5-hud.warn { background: var(--tertiary-container); color: var(--on-tertiary-container); }
 .v5-hud.bad { background: var(--error-container); color: var(--error); }
+
+/* ── help: intro, search, questions that open on tap ──────────── */
+.v5-helpintro { display: grid; gap: 0.5rem; color: var(--on-var); font-size: 0.95rem; line-height: 1.4; }
+.v5-helpintro p, .v5-faqitem p { margin: 0; }
+.v5-faq { display: grid; gap: var(--sp-1); }
+.v5-faqitem { border-radius: var(--r); background: var(--surface-2); }
+.v5-faqitem summary { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: var(--ctl); padding: 0.55rem 0.9rem; font-weight: 700; cursor: pointer; list-style: none; }
+.v5-faqitem summary::-webkit-details-marker { display: none; }
+.v5-faqitem summary::after { content: '+'; flex: none; font-size: 1.3rem; line-height: 1; color: var(--primary); }
+.v5-faqitem[open] summary::after { content: '–'; }
+.v5-faqitem[open] { padding-bottom: 0.8rem; }
+.v5-faqitem[open] p { padding: 0 0.9rem; margin-top: 0.5rem; color: var(--on-var); font-size: 0.92rem; line-height: 1.45; }
+.v5-faqitem[open] p:first-of-type { margin-top: 0; }

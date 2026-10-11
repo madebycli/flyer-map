@@ -54,6 +54,8 @@ export function findings({ metrics, subsystems }: FindingsInput): Finding[] {
   if ((c['store.conflicts'] ?? 0) > 0) out.push({ level: 'info', text: `${c['store.conflicts']}× wurde eine eigene Markierung durch eine neuere einer anderen Person ersetzt.` });
   if ((c['longtask.n'] ?? 0) > 20 && (h['longtask.ms']?.sum ?? 0) > 2000) out.push({ level: 'info', text: `Die Seite war ${c['longtask.n']}× länger als 50 ms blockiert (zusammen ${sec(h['longtask.ms'].sum)}).` });
 
+  const dbMs = h['api./api/v5/campaigns/:c/state.server.db'] ?? h['api./api/v5/campaigns/:c/meta.server.db'];
+  if (dbMs && dbMs.n >= 3 && dbMs.p50 > 250) out.push({ level: 'info', text: `Die Datenbank des Servers braucht ${Math.round(dbMs.p50)} ms pro Abfrage${h['sync.round_ms'] ? `, ein Abgleich dauert deshalb etwa ${sec(h['sync.round_ms'].p50)}` : ''}. Das liegt am Server-Standort, nicht an diesem Gerät.` });
   if (!out.length) out.push({ level: 'ok', text: 'Alles unauffällig.' });
   return out;
 }

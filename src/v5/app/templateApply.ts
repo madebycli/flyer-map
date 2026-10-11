@@ -2,7 +2,7 @@ import type { TemplatePlan } from '../areas/template.ts';
 import type { LngLat } from '../engine/types.ts';
 import { fromRing, toPolygon } from '../areas/polygon.ts';
 import { fold } from './search.ts';
-import { buildPack, createArea, createTeam, saveAreaGeometry, type Meta } from './api.ts';
+import { buildPackFor, createArea, createTeam, saveAreaGeometry, type Meta } from './api.ts';
 
 export type ApplyResult = { teamsCreated: number; areasCreated: number; areasReshaped: number; reshapedIds: string[]; errors: string[] };
 export type ApplyProgress = { done: number; total: number; label: string };
@@ -35,14 +35,14 @@ export async function applyTemplatePlan(
     const id = `team_${crypto.randomUUID()}`;
     await attempt(`Gruppe ${team.name}`, async () => { await createTeam(campaignId, { id, name: team.name, color: team.color }); teamId.set(fold(team.name), id); result.teamsCreated++; });
   }
-  const refreshPack = async (areaId: string) => { if (meta.canBuildPack) { try { await buildPack(campaignId, areaId); } catch { /* cooldown or limit: offered again as "Kartendaten laden" */ } } };
+  const refreshPack = async (areaId: string, ring: [number, number][]) => { if (meta.canBuildPack) { try { await buildPackFor(campaignId, { id: areaId, geometry: polygon(ring) }); } catch { /* cooldown or limit: offered again as "Kartendaten laden" */ } } };
   for (const area of plan.reshapeAreas) {
     const current = meta.areas.find((a) => a.id === area.id);
     await attempt(`Gebiet ${area.name}`, async () => {
       if (!current) throw new Error('Gebiet nicht mehr vorhanden');
       await saveAreaGeometry(campaignId, { id: current.id, updatedAt: current.updatedAt }, polygon(area.ring));
       result.areasReshaped++; result.reshapedIds.push(area.id);
-      await refreshPack(area.id);
+      await refreshPack(area.id, area.ring);
     });
   }
   for (const area of plan.createAreas) {
@@ -52,7 +52,7 @@ export async function applyTemplatePlan(
       const id = `area_${crypto.randomUUID()}`;
       await createArea(campaignId, { id, teamId: team, name: area.name, geometry: polygon(area.ring) });
       result.areasCreated++;
-      await refreshPack(id);
+      await refreshPack(id, area.ring);
     });
   }
   onProgress({ done: total, total, label: '' });

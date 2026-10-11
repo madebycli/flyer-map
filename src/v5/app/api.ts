@@ -3,6 +3,8 @@ import type { Op } from '../store/types.ts';
 import type { NoteTransport } from '../notes/sync.ts';
 import type { Note } from '../notes/types.ts';
 import { diag, tracedFetch } from '../diag/index.ts';
+import { packPlan } from '../engine/index.ts';
+import { mapLimit } from './pool.ts';
 
 export type CollectionAreaInfo = { status: 'open' | 'claimed' | 'in-progress' | 'completed' | 'archived'; color: string; runId: string | null; claimedBy: string | null; claimedById: string | null };
 export type CollectionRunInfo = { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] };
@@ -47,20 +49,46 @@ export async function fetchMeta(campaignId: string, kind?: 'collection'): Promis
   return (await call(`${base(campaignId)}/meta${kind ? `?kind=${kind}` : ''}`)).json() as Promise<Meta>;
 }
 
-export async function fetchPack(campaignId: string, areaId: string): Promise<Uint8Array | null> {
+/** `part`: the number of the part of a big Gebiet (see `packPlan`); null for a Gebiet that is one pack. */
+export async function fetchPack(campaignId: string, areaId: string, part: number | null = null): Promise<Uint8Array | null> {
   const done = diag.start('pack.fetch_ms');
   try {
-    const bytes = new Uint8Array(await (await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack`)).arrayBuffer());
+    const bytes = new Uint8Array(await (await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack${part === null ? '' : `?part=${part}`}`)).arrayBuffer());
     diag.observe('pack.fetch.bytes', bytes.byteLength);
     diag.info('pack', 'pack downloaded', { bytes: bytes.byteLength, ms: Math.round(done()) });
     return bytes;
   } catch (error) { if (error instanceof V5ApiError && error.code === 'no_pack') { diag.info('pack', 'no pack built yet for an Area'); return null; } throw error; }
 }
 
-export async function buildPack(campaignId: string, areaId: string): Promise<void> {
+export async function buildPack(campaignId: string, areaId: string, part: number | null = null): Promise<void> {
   const done = diag.start('pack.build_ms');
-  try { await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack`, { method: 'POST' }); diag.info('pack', 'pack built on the server', { ms: Math.round(done()) }); }
+  try { await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack${part === null ? '' : `?part=${part}`}`, { method: 'POST' }); diag.info('pack', 'pack built on the server', { ms: Math.round(done()) }); }
   catch (error) { diag.error('pack', 'building the pack failed', { error, ms: Math.round(done()) }); throw error; }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Fetch the map data of a Gebiet on the server: one request for a small one, one request per part (two at a time, each retried a few times when the
+ * data source is busy) for a big one. Parts that are already there are skipped by the server, so a second call resumes where the first stopped.
+ */
+export async function buildPackFor(campaignId: string, area: { id: string; geometry: { coordinates: [number, number][][] } }, onProgress?: (done: number, total: number) => void): Promise<void> {
+  const plan = packPlan(area.geometry.coordinates[0]);
+  if (plan.tooLarge) throw new Error('Gebiet zu groß: bitte in mehrere Gebiete teilen.');
+  if (plan.single) { await buildPack(campaignId, area.id); return; }
+  let done = 0;
+  onProgress?.(0, plan.parts.length);
+  await mapLimit(plan.parts, 2, async (part) => {
+    for (let attempt = 1; ; attempt++) {
+      try { await buildPack(campaignId, area.id, part.index); break; }
+      catch (error) {
+        const busy = error instanceof V5ApiError && (error.status === 429 || error.status >= 500) && attempt < 4;
+        if (!busy) throw error instanceof Error ? new Error(`${error.message} (Teil ${part.index + 1} von ${plan.parts.length}, ${done} fertig; beim nächsten Versuch geht es dort weiter)`) : error;
+        await sleep(attempt * 4000);
+      }
+    }
+    onProgress?.(++done, plan.parts.length);
+  });
 }
 
 export function httpTransport(campaignId: string): SyncTransport {

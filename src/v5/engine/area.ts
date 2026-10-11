@@ -1,16 +1,20 @@
 import { pointInRing } from './geo.ts';
+import { inCell, type Cell } from './overpass.ts';
 import type { LngLat, Network, NetworkDiagnostics } from './types.ts';
 
 /**
  * Keep what belongs to an Area polygon: houses whose centre lies inside, and street
  * segments that touch it (a vertex inside, or serving a kept house). Visibility and
  * house counts are recomputed, so a connector only appears for houses inside the Area.
+ * With a `cell` (one part of a big Gebiet) only what the cell owns is kept: houses whose centre lies in it and street pieces that start in it,
+ * so the parts of one Gebiet partition the data and merge without double entries.
  */
-export function restrictToArea(network: Network, ring: LngLat[]): Network {
-  const houses = network.houses.filter((h) => pointInRing(h.center, ring));
+export function restrictToArea(network: Network, ring: LngLat[], cell?: Cell | null): Network {
+  const houses = network.houses.filter((h) => pointInRing(h.center, ring) && (!cell || inCell(h.center, cell)));
   const counts = new Map<string, number>();
   for (const h of houses) if (h.parent) counts.set(h.parent, (counts.get(h.parent) ?? 0) + 1);
-  const kept = network.segments.filter((s) => counts.has(s.id) || s.coords.some((p) => pointInRing(p, ring)) || crossesRing(s.coords, ring));
+  const touches = (s: Network['segments'][number]) => counts.has(s.id) || s.coords.some((p) => pointInRing(p, ring)) || crossesRing(s.coords, ring);
+  const kept = network.segments.filter((s) => (cell ? inCell(s.coords[0], cell) && touches(s) : touches(s)));
   const groupHouses = new Map<string, number>();
   for (const s of kept) groupHouses.set(s.group, (groupHouses.get(s.group) ?? 0) + (counts.get(s.id) ?? 0));
   const segments = kept.map((s) => ({ ...s, houseCount: counts.get(s.id) ?? 0, visible: s.cls === 'street' || (groupHouses.get(s.group) ?? 0) > 0 }));

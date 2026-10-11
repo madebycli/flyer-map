@@ -150,11 +150,26 @@ export class FieldMap {
     this.map = new maplibregl.Map({
       container: options.container, style: this.styleFor(this.theme), center: options.center ?? [13.0, 51.0],
       zoom: options.zoom ?? 15, attributionControl: false, fadeDuration: 0, pitchWithRotate: false,
+      // A fingertip moves a few pixels between touching and lifting. At MapLibre's default of 3 px such a tap counts as a tiny drag and its click is
+      // dropped ("press three times"); 8 px is about what the browsers themselves allow for a tap.
+      clickTolerance: 8,
       maxPitch: 0, dragRotate: true,
     });
     // Test/diagnostic handle, only with ?debug in the URL.
     if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as { __v5Map?: MlMap }).__v5Map = this.map;
+    // Tap, then drag with the same finger zooms in MapLibre. Marking is made of taps and drags, so one-handed panning right after a tap turned into
+    // zooming: that gesture is off (pinching and the two-finger rotate stay).
+    (this.map.touchZoomRotate as unknown as { _tapDragZoom?: { disable(): void } })._tapDragZoom?.disable();
     // Own controls live in the app shell. The credit for the map data (OpenStreetMap, OpenMapTiles, OpenFreeMap) is in the menu, not on the map.
+    // A basemap style may ask for icons its sprite does not have. Each ask would log a warning and be asked again: answer once with an empty image.
+    const missingImages = new Set<string>();
+    this.map.on('styleimagemissing', (event) => {
+      if (this.map.hasImage(event.id)) return;
+      this.map.addImage(event.id, { width: 1, height: 1, data: new Uint8Array(4) });
+      missingImages.add(event.id);
+      diag.inc('map.images.missing');
+      if (missingImages.size <= 3) diag.info('map', 'the basemap style asks for an icon its sprite does not have', { image: event.id, distinct: missingImages.size });
+    });
     this.styleStartedAt = performance.now();
     this.map.on('style.load', () => {
       if (this.styleStartedAt) { const ms = performance.now() - this.styleStartedAt; diag.observe('map.style_ms', ms); diag.info('map', 'style loaded', { ms: Math.round(ms), fallback: this.styleFallback, theme: this.theme }); this.styleStartedAt = 0; }
@@ -237,6 +252,9 @@ export class FieldMap {
     this.styles = next;
     this.restyle();
   }
+
+  /** Double tap / double click zoom is off while marking: two quick taps are two points, not a zoom. */
+  setDoubleTapZoom(on: boolean) { if (on) this.map.doubleClickZoom.enable(); else this.map.doubleClickZoom.disable(); }
 
   /** "Karte aus": the plain background only, which also saves data and battery. */
   setBasemapVisible(visible: boolean) {

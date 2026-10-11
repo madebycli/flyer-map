@@ -3,9 +3,9 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { FieldNetwork as Network, LngLat } from '../engine/types.ts';
 import type { AreaShape, FieldMap } from '../map/fieldMap.ts';
 import { areaSquareMeters, fromRing, insertVertex, midpoints, moveVertex, MAX_VERTICES, removeVertex, seedSquare, toPolygon, toRing, validate, type Vertices } from '../areas/polygon.ts';
-import { MAX_PACK_AREA_SQ_KM, packAreaSquareKm } from '../engine/index.ts';
+import { MAX_PACK_PARTS, packPlan } from '../engine/index.ts';
 import { GroupPicker } from './groupsSheet.tsx';
-import { buildPack, createArea, createCollectionArea, createMainArea, saveAreaGeometry, updateCollectionArea, updateMainArea, type Meta } from './api.ts';
+import { buildPackFor, createArea, createCollectionArea, createMainArea, saveAreaGeometry, updateCollectionArea, updateMainArea, type Meta } from './api.ts';
 import { Icon } from '../../ui/index.ts';
 
 /** The Sammelgebiet is drawn like an Area; its outline carries this id on the map. */
@@ -33,8 +33,12 @@ export type AreaContext = {
   meta: Meta | null;
   network: Network | null;
   reload(): Promise<void>;
+  /** Light refresh of the Gebiet list only (no map rebuild): the new outline is drawn at once, the rebuild follows. */
+  refreshMeta?(): Promise<void>;
   /** Outline colour override (collection Areas are coloured by what is happening in them, not by team). */
   colorFor?: (area: Meta['areas'][number]) => string | undefined;
+  /** Gebiete deleted a moment ago: not drawn any more although the reload that removes them is still running. */
+  hidden?: ReadonlySet<string>;
   /** Runs after a save and the reload that followed it (the app prunes what the new outline left outside). */
   onSaved?: (areaId: string, wasEdit: boolean) => Promise<void> | void;
   /** Drawing a Sammelgebiet/Teilgebiet ended (saved or cancelled): the app returns to the Einrichten sheet. */
@@ -48,12 +52,11 @@ export const sizeLabel = (m2: number) => (m2 >= 1e6 ? `${(m2 / 1e6).toFixed(2).r
 const colorOf = (meta: Meta, teamId: string) => meta.teams.find((t) => t.id === teamId)?.color ?? '#7aa8ff';
 const drawColor = (meta: Meta, edit: AreaEdit) => (edit.kind === 'team' ? colorOf(meta, edit.teamId) : edit.kind === 'main' ? '#8a97a6' : edit.color);
 
-/** The outline's own rules plus the one the data source sets: a Gebiet whose map data cannot be fetched (too large) is refused right here, not after saving. */
+/** The outline's own rules plus the one the map data sets: an outline that would need more than `MAX_PACK_PARTS` parts is refused right here. */
 function checked(vertices: Vertices, kind: AreaEdit['kind']) {
   const own = validate(vertices);
   if (!own.valid || kind === 'main') return own;
-  const km2 = packAreaSquareKm(toRing(vertices));
-  return km2 > MAX_PACK_AREA_SQ_KM ? { valid: false as const, reason: `Gebiet zu groß (${km2.toFixed(0)} km², höchstens ${MAX_PACK_AREA_SQ_KM})` } : own;
+  return packPlan(toRing(vertices)).tooLarge ? { valid: false as const, reason: 'Gebiet zu groß: bitte in mehrere Gebiete teilen' } : own;
 }
 
 /** The map overlay of the polygon being edited: fill, outline, edge midpoints and corner handles. */
@@ -83,9 +86,9 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
   const shapes: AreaShape[] = useMemo(() => [
     ...(meta?.mainArea && edit?.kind !== 'main' ? [{ id: MAIN_ID, name: meta.mainArea.name, color: '#8a97a6', ring: meta.mainArea.geometry.coordinates[0] as LngLat[] }] : []),
     ...(meta?.areas ?? [])
-      .filter((a) => a.id !== edit?.id)
+      .filter((a) => a.id !== edit?.id && !ctx.hidden?.has(a.id))
       .map((a) => ({ id: a.id, name: a.name, color: ctx.colorFor?.(a) ?? a.collection?.color ?? colorOf(meta!, a.teamId), ring: a.geometry.coordinates[0] as LngLat[] })),
-  ], [meta, edit?.id, edit?.kind, ctx.colorFor]);
+  ], [meta, edit?.id, edit?.kind, ctx.colorFor, ctx.hidden]);
   useEffect(() => { fieldMap.current?.setAreas(shapes, active ? selectedId : null); }, [shapes, selectedId, active, fieldMap]);
 
   const draggingRef = useRef(false);
@@ -204,6 +207,7 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
       } else if (id) await saveAreaGeometry(ctx.campaignId, { id, updatedAt: meta.areas.find((a) => a.id === id)!.updatedAt }, geometry);
       else { id = `area_${crypto.randomUUID()}`; await createArea(ctx.campaignId, { id, teamId: current.teamId, name, geometry }); }
       setEdit(null); setSelectedId(current.kind === 'team' ? id : null);
+      try { await ctx.refreshMeta?.(); } catch { /* the full reload below shows it anyway */ }
       await ctx.reload();
       // The data pack covers the old outline: fetch fresh map data for the new one. This takes a while (the data comes from OpenStreetMap),
       // so the map is free meanwhile; a refusal is said out loud and the "Kartendaten laden" chip offers it again.
@@ -211,7 +215,11 @@ export function useAreaTool(ctx: AreaContext, active: boolean) {
         const areaId = id;
         void (async () => {
           ctx.notify?.('Kartendaten werden geladen …');
-          try { await buildPack(ctx.campaignId, areaId); await ctx.reload(); ctx.notify?.('Kartendaten geladen'); }
+          try {
+            await buildPackFor(ctx.campaignId, { id: areaId, geometry: toPolygon(current.vertices) }, (done, total) => ctx.notify?.(`Kartendaten ${done}/${total} …`));
+            await ctx.reload();
+            ctx.notify?.('Kartendaten geladen');
+          }
           catch (error) { ctx.notify?.(error instanceof Error ? error.message : 'Kartendaten konnten nicht geladen werden'); }
         })();
       }
@@ -236,11 +244,15 @@ export type AreaTool = ReturnType<typeof useAreaTool>;
 export function AreaEditBar({ tool, meta }: { tool: AreaTool; meta: Meta }) {
   const edit = tool.edit!;
   const valid = tool.validity?.valid ?? false;
+  const big = useMemo(() => (edit.kind === 'main' ? null : packPlan(toRing(edit.vertices))), [edit.vertices, edit.kind]);
   const choosesTeam = edit.kind === 'team' && edit.id === null && meta.role === 'admin' && meta.teams.length > 1;
   return (
     <section className="v5-markbar" aria-label="Gebiet bearbeiten">
       {(edit.error || (!valid && tool.validity && !tool.validity.valid)) && (
         <div className="v5-markinfo"><span className="warn"><Icon name="warning" size={18} />{edit.error ?? (tool.validity && !tool.validity.valid ? tool.validity.reason : '')}</span></div>
+      )}
+      {big && big.parts.length > 1 && !big.tooLarge && (
+        <div className="v5-markinfo"><span><Icon name="info" size={18} />Großes Gebiet: Kartendaten in {big.parts.length} Teilen{big.parts.length > 30 ? ' (dauert einige Minuten)' : ''}</span></div>
       )}
       {(edit.id === null || edit.kind !== 'team') && (
         <div className="v5-barrow">

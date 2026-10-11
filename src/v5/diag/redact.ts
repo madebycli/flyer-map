@@ -49,6 +49,7 @@ const KNOWN_MESSAGES: RegExp[] = [
   /^(?:Could not create a WebGL context|Failed to initialize WebGL|WebGL context lost)\b/i, /^Script error\.?$/, /^ResizeObserver loop (?:limit exceeded|completed with undelivered notifications)\b/,
   /^Cannot read propert(?:y|ies) of (?:undefined|null)\b/, /^Worker failed to load\b/, /^HTTP \d{3}\b/, /^status \d{3}\b/, /^Unexpected end of (?:JSON )?input\b/i,
   /^(?:Der Server antwortet nicht|Keine Verbindung|offline)\b/, /^Serverfehler \d{3}\b/, /^\d{3} [a-z][a-z0-9_]{1,40}$/, /^Uncaught (?:[A-Z][A-Za-z]{1,30})?Error\b/,
+  /^Image "[A-Za-z0-9 _.:\/-]{1,60}" (?:could not be loaded|was not found)/, /^Unable to load glyph range\b/, /^Failed to load font\b/, /^Source layer "[A-Za-z0-9_.-]{1,40}" does not exist on source\b/, /^Unable to (?:perform|compute) style diff\b/,
   /^CompileError\b/, /^LinkError\b/, /^RuntimeError: (?:unreachable|memory access out of bounds|out of memory)\b/, /^WebAssembly\.\w+\(\)/,
 ];
 /** Our own placeholders: a second pass (the report, a saved tail read back) must leave them as they are. */

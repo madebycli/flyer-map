@@ -7,8 +7,8 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::collections::BTreeMap;
 use unicode_normalization::UnicodeNormalization;
 
-pub const ENGINE_VERSION: &str = "v5.3";
-pub const CHUNK_METERS: f64 = 20.0;
+pub const ENGINE_VERSION: &str = "v5.4";
+pub const CHUNK_METERS: f64 = 10.0;
 const MAX_PARENT_DISTANCE: f64 = 45.0;
 const MAX_NAMED_PARENT_DISTANCE: f64 = 80.0;
 const ADDRESS_NODE_SNAP: f64 = 8.0;

@@ -1,18 +1,19 @@
 import type { RouteResult } from './route.ts';
 import type { SearchHit } from './search.ts';
+import type { Cell } from './overpass.ts';
 import type { FieldNetwork, LngLat, Network } from './types.ts';
 
 type Exports = {
   memory: WebAssembly.Memory;
   alloc(len: number): number;
   dealloc(ptr: number, len: number): void;
-  derive_area(rawPtr: number, rawLen: number, ringPtr: number, ringLen: number): number;
+  derive_area(rawPtr: number, rawLen: number, ringPtr: number, ringLen: number, cellPtr: number, cellLen: number): number;
   result_ptr(): number;
   result_len(): number;
   engine_version_ptr(): number;
   engine_version_len(): number;
   session_reset(): void;
-  session_add_area(rawPtr: number, rawLen: number, ringPtr: number, ringLen: number, exportBlob: number): number;
+  session_add_area(rawPtr: number, rawLen: number, ringPtr: number, ringLen: number, cellPtr: number, cellLen: number, exportBlob: number): number;
   session_export_last(): number;
   session_add_blob(ptr: number, len: number): number;
   session_tile(z: number, x: number, y: number): number;
@@ -56,13 +57,15 @@ export class WasmEngine {
   /** Milliseconds of the last call: Rust (parse + derive + serialise), UTF-8 decode, JSON.parse of the result. */
   lastTiming = { wasm: 0, decode: 0, parse: 0, bytes: 0 };
 
-  deriveArea(rawJson: Uint8Array, ring: LngLat[] | null): Network {
+  deriveArea(rawJson: Uint8Array, ring: LngLat[] | null, cell: Cell | null = null): Network {
     const ringBytes = ring ? new TextEncoder().encode(JSON.stringify(ring)) : new Uint8Array(0);
+    const cellBytes = cell ? new TextEncoder().encode(JSON.stringify(cell)) : new Uint8Array(0);
     const rawPtr = this.put(rawJson);
     const ringPtr = ringBytes.byteLength ? this.put(ringBytes) : 0;
+    const cellPtr = cellBytes.byteLength ? this.put(cellBytes) : 0;
     try {
       const t0 = performance.now();
-      const ok = this.x.derive_area(rawPtr, rawJson.byteLength, ringPtr, ringBytes.byteLength);
+      const ok = this.x.derive_area(rawPtr, rawJson.byteLength, ringPtr, ringBytes.byteLength, cellPtr, cellBytes.byteLength);
       const t1 = performance.now();
       const out = new Uint8Array(this.x.memory.buffer, this.x.result_ptr(), this.x.result_len());
       const text = new TextDecoder().decode(out);
@@ -101,16 +104,17 @@ export class WasmEngine {
   resetSession(): void { this.x.session_reset(); }
 
   /** Derive one Area from the decompressed pack JSON, keep its geometry in the session, return the coordinate-free network. */
-  addArea(rawJson: Uint8Array, ring: LngLat[], exportBlob = false): FieldNetwork {
+  addArea(rawJson: Uint8Array, ring: LngLat[], exportBlob = false, cell: Cell | null = null): FieldNetwork {
     const ringBytes = new TextEncoder().encode(JSON.stringify(ring));
-    return this.withBytes(rawJson, (rawPtr) => this.withBytes(ringBytes, (ringPtr) => {
+    const cellBytes = cell ? new TextEncoder().encode(JSON.stringify(cell)) : new Uint8Array(0);
+    return this.withBytes(rawJson, (rawPtr) => this.withBytes(ringBytes, (ringPtr) => this.withBytes(cellBytes, (cellPtr) => {
       const t0 = performance.now();
-      const n = this.x.session_add_area(rawPtr, rawJson.byteLength, ringPtr, ringBytes.byteLength, exportBlob ? 1 : 0);
+      const n = this.x.session_add_area(rawPtr, rawJson.byteLength, ringPtr, ringBytes.byteLength, cellPtr, cellBytes.byteLength, exportBlob ? 1 : 0);
       const t1 = performance.now();
       const network = this.json<FieldNetwork>(n);
       this.lastTiming = { wasm: Math.round(t1 - t0), decode: 0, parse: Math.round(performance.now() - t1), bytes: n };
       return network;
-    }));
+    })));
   }
 
   /** The last added Area as one binary blob for the device cache (geometry included); only after `addArea(…, true)`. */

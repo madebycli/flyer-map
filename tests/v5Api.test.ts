@@ -154,12 +154,56 @@ test('pack build fails closed: upstream errors, invalid bodies, empty results', 
 
 test('oversized areas are refused before any upstream request', async () => {
   const { db, call } = await setup();
-  db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=?').run(JSON.stringify({ type: 'Polygon', coordinates: [[[13, 51], [13.5, 51], [13.5, 51.5], [13, 51.5], [13, 51]]] }), 'area_n');
+  db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=?').run(JSON.stringify({ type: 'Polygon', coordinates: [[[13, 51], [16, 51], [16, 54], [13, 54], [13, 51]]] }), 'area_n');
   let called = false;
   const fetchImpl = (async () => { called = true; return overpassOk(); }) as unknown as typeof fetch;
   const response = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl });
   assert.equal(response.status, 422);
   assert.equal(called, false);
+});
+
+test('a big Gebiet is built part by part: parts are resumable, the Gebiet is "ready" only when every part is there, and a new outline makes it stale', async () => {
+  const { db, call } = await setup();
+  const outline = (w: number) => JSON.stringify({ type: 'Polygon', coordinates: [[[13, 51], [13 + w, 51], [13 + w, 51.06], [13, 51.06], [13, 51]]] });
+  db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=?').run(outline(0.09), 'area_n');
+  let upstream = 0;
+  const fetchImpl = (async () => { upstream++; return overpassOk(); }) as unknown as typeof fetch;
+  const url = (suffix = '') => `/api/v5/campaigns/${campaign}/areas/area_n/pack${suffix}`;
+  const packVersion = async () => ((await (await call('admin', 'GET', `/api/v5/campaigns/${campaign}/meta`)).json()) as { areas: { id: string; packVersion: number | null }[] }).areas.find((a) => a.id === 'area_n')!.packVersion;
+  assert.equal((await call('admin', 'POST', url(), undefined, { fetchImpl })).status, 400, 'a big Gebiet needs a part number');
+  assert.equal((await call('admin', 'POST', url('?part=999'), undefined, { fetchImpl })).status, 400);
+  const emptyPart = (async () => new Response(JSON.stringify({ elements: [] }))) as unknown as typeof fetch;
+  assert.equal((await call('admin', 'POST', url('?part=8'), undefined, { fetchImpl: emptyPart })).status, 200, 'a part without streets or buildings (water, fields) is built too');
+  const first = await (await call('admin', 'POST', url('?part=0'), undefined, { fetchImpl })).json() as { parts: number; complete: boolean; built: number };
+  assert.ok(first.parts >= 6, `parts: ${first.parts}`);
+  assert.deepEqual([first.complete, first.built], [false, 2]);
+  assert.equal(await packVersion(), null, 'not ready with one part');
+  for (let i = 1; i < first.parts; i++) if (i !== 8) assert.equal((await call('admin', 'POST', url(`?part=${i}`), undefined, { fetchImpl })).status, 200, `part ${i}`);
+  const last = await (await call('admin', 'POST', url(`?part=${first.parts - 1}`), undefined, { fetchImpl })).json() as { complete: boolean; version: number };
+  assert.deepEqual([last.complete, last.version], [true, 1]);
+  assert.equal(await packVersion(), 1, 'ready with every part');
+  assert.equal(upstream, first.parts - 1, 'one upstream request per part');
+  const again = await (await call('admin', 'POST', url('?part=0'), undefined, { fetchImpl })).json() as { skipped?: boolean };
+  assert.equal(again.skipped, true);
+  assert.equal(upstream, first.parts - 1, 'a part that is there is not fetched again');
+  const part = await call('admin', 'GET', url('?part=2'));
+  assert.equal(part.status, 200);
+  assert.ok((await decodePack(new Uint8Array(await part.arrayBuffer()))).ways.length >= 1);
+  assert.equal((await call('admin', 'GET', url())).status, 404, 'the Gebiet itself has no chunks');
+  assert.equal((await call('viewer', 'POST', url('?part=0'), undefined, { fetchImpl })).status, 403);
+  // a new outline: every part is stale until rebuilt, and parts that no longer exist are removed
+  db.sqlite.prepare('UPDATE areas SET geometry_json=? WHERE id=?').run(outline(0.05), 'area_n');
+  assert.equal(await packVersion(), null, 'a new outline makes the pack stale');
+  const plan = await (await call('admin', 'POST', url('?part=0'), undefined, { fetchImpl, now: () => NOW + 300_000 })).json() as { parts: number };
+  for (let i = 1; i < plan.parts; i++) await call('admin', 'POST', url(`?part=${i}`), undefined, { fetchImpl, now: () => NOW + 300_000 });
+  assert.equal(await packVersion(), 2);
+  const leftover = (db.sqlite.prepare("SELECT COUNT(*) AS n FROM v5_pack_meta WHERE area_id LIKE 'area_n~%'").get() as { n: number }).n;
+  assert.equal(leftover, plan.parts, 'only the parts of the current outline remain');
+  // deleting the Gebiet's data removes the parts too
+  db.sqlite.prepare('DELETE FROM areas WHERE id=?').run('area_n');
+  assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/forget`, undefined, {})).status, 200);
+  assert.equal((db.sqlite.prepare("SELECT COUNT(*) AS n FROM v5_pack_meta WHERE area_id LIKE 'area_n%'").get() as { n: number }).n, 0);
+  assert.equal((db.sqlite.prepare("SELECT COUNT(*) AS n FROM v5_packs WHERE area_id LIKE 'area_n%'").get() as { n: number }).n, 0);
 });
 
 test('meta gives role, scoped areas and pack versions in one request', async () => {

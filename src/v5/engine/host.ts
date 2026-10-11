@@ -1,4 +1,5 @@
 import { restrictToArea } from './area.ts';
+import type { Cell } from './overpass.ts';
 import { deriveNetwork } from './derive.ts';
 import { networksToGeoJson, type MapGeoJson } from './geojson.ts';
 import { decodePack, gunzip } from './pack.ts';
@@ -12,7 +13,8 @@ import type { FieldNetwork, LngLat, Network } from './types.ts';
 import { WasmEngine } from './wasm.ts';
 
 export type EngineKind = 'wasm' | 'ts';
-export type AreaRequest = { areaId: string; ring: LngLat[]; pack?: Uint8Array; blob?: Uint8Array; wantBlob?: boolean };
+/** `cell`: one part of a big Gebiet (see `packPlan`); the engine keeps only what the cell owns. */
+export type AreaRequest = { areaId: string; ring: LngLat[]; cell?: Cell | null; pack?: Uint8Array; blob?: Uint8Array; wantBlob?: boolean };
 export type AreaResult = { network: FieldNetwork; blob?: Uint8Array; ms: number; detail?: Record<string, number> };
 export type MapData = { kind: 'tiles' } | ({ kind: 'geojson' } & MapGeoJson);
 
@@ -56,13 +58,13 @@ export class EngineHost {
       if (!req.pack) throw new Error('area_without_data');
       const raw = await gunzip(req.pack);
       const unzip = Math.round(performance.now() - t0);
-      const network = this.wasm.addArea(raw, req.ring, !!req.wantBlob);
+      const network = this.wasm.addArea(raw, req.ring, !!req.wantBlob, req.cell ?? null);
       const wasmMs = this.wasm.lastTiming;
       const blob = req.wantBlob ? this.wasm.exportLastArea() : undefined;
       return { network, blob, ms: Math.round(performance.now() - t0), detail: { gunzip: unzip, wasm: wasmMs.wasm, parse: wasmMs.parse, bytes: wasmMs.bytes } };
     }
     if (!req.pack) throw new Error('blob_needs_wasm');
-    const full = restrictToArea(deriveNetwork(await decodePack(req.pack)), req.ring);
+    const full = restrictToArea(deriveNetwork(await decodePack(req.pack)), req.ring, req.cell ?? null);
     this.fulls.push(full);
     this.tsGraph = null; this.tsMerged = null; this.tsSearch = null;
     return { network: slimNetwork(full), ms: Math.round(performance.now() - t0) };

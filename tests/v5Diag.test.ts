@@ -291,3 +291,17 @@ test('our own messages around foreign text are recognised: status + code, the no
   assert.match(foreignMessage('Notizen: Max Mustermann'), /^Notizen: \[text removed/);
   assert.equal(foreignMessage('Uncaught TypeError: Max Mustermann'), 'Uncaught TypeError');
 });
+
+// ---- from a real phone's report ----
+test('a slow database is named as the server location, not as a fault of the device; a MapLibre icon warning is kept, text next to it is not', async () => {
+  const slow = base();
+  const hist = (p50: number) => ({ n: 18, mean: p50, p50, p95: p50, p99: p50, min: p50, max: p50, last: p50, sum: p50 * 18, lastAt: 0 });
+  slow.metrics.histograms = { 'api./api/v5/campaigns/:c/state.server.db': hist(315), 'sync.round_ms': hist(900) } as never;
+  assert.ok(findings(slow).some((f) => /Datenbank des Servers braucht 315 ms/.test(f.text) && /Server-Standort/.test(f.text)));
+  const fast = base();
+  fast.metrics.histograms = { 'api./api/v5/campaigns/:c/state.server.db': hist(20) } as never;
+  assert.deepEqual(findings(fast).map((f) => f.level), ['ok']);
+  const { foreignMessage } = await import('../src/v5/diag/redact.ts');
+  assert.match(foreignMessage('Image "poi_tree_11" could not be loaded. Please make sure you have added the image before it is needed with map.addImage()'), /^Image "poi_tree_11" could not be loaded/);
+  assert.match(foreignMessage('Mustermann: Image "x" could not be loaded for 51.12345'), /^\[text removed/);
+});

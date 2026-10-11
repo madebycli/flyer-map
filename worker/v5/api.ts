@@ -1,6 +1,6 @@
 import { decodeClock } from '../../src/v5/store/hlc.ts';
 import { isStatus } from '../../src/v5/store/types.ts';
-import { ENGINE_VERSION, MAX_PACK_AREA_SQ_KM, encodePack, overpassQuery, packAreaSquareKm, packFromOverpass, paddedBbox } from '../../src/v5/engine/index.ts';
+import { ENGINE_VERSION, MAX_PACK_PARTS, encodePack, overpassQuery, packFromOverpass, packPlan } from '../../src/v5/engine/index.ts';
 import type { AccessContext } from '../access.ts';
 import { resolveAccess } from '../access.ts';
 import { resolveCollectionAccess } from '../collectionAccess.ts';
@@ -20,8 +20,6 @@ export type V5Options = {
   basemap?: { dark?: string; light?: string };
   now?: () => number;
   maxPackBytes?: number;
-  /** Upper bound for one Area's padded bounding box (default 25 km²). */
-  maxAreaSqKm?: number;
   /** Lowest level written to the log (default `warn`: problems and slow requests only). */
   logLevel?: LogLevel;
   /** Where log lines go (default: console). */
@@ -99,7 +97,7 @@ async function routeV5(request: Request, db: D1DatabaseLike, options: V5Options)
   if (route.kind === 'notes' && request.method === 'GET') return pullNotes(db, access, route.campaignId, url, options);
   if (route.kind === 'notes' && request.method === 'POST') return pushNotes(db, access, route.campaignId, request, options);
   if (route.kind === 'pack' && request.method === 'GET') return getPack(db, access, route.campaignId, route.areaId, request);
-  if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options);
+  if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options, request);
   if (route.kind === 'prune' && request.method === 'POST') return pruneState(db, access, route.campaignId, route.areaId, request, (options.now ?? Date.now)());
   if (route.kind === 'forget' && request.method === 'POST') return forgetArea(db, access, route.campaignId, route.areaId, (options.now ?? Date.now)());
   return fail(405, 'method_not_allowed', 'Methode nicht erlaubt.');
@@ -288,13 +286,18 @@ async function geometryHash(geometry: unknown): Promise<string> {
 async function getPack(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, request: Request): Promise<Response> {
   const visible = await resolveArea(db, campaignId, areaId);
   if (!visible || !canReadArea(access, visible)) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
+  // A big Gebiet is stored in parts (`?part=N`); a small one is one pack under its own id.
+  const part = partOf(request);
+  if (part === 'invalid') return fail(400, 'part_invalid', 'Teil ungültig.');
+  const key = part === null ? areaId : `${areaId}~${part}`;
   type PackMeta = { version: number; chunks: number; total_bytes: number; engine: string };
-  const readMeta = () => db.prepare('SELECT version, chunks, total_bytes, engine FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<PackMeta>();
+  const readMeta = () => db.prepare('SELECT version, chunks, total_bytes, engine FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, key).first<PackMeta>();
   let meta = await readMeta();
-  if (!meta) return fail(404, 'no_pack', 'Für dieses Gebiet wurde noch kein Kartenpaket erzeugt.');
+  // A big Gebiet's own row has no chunks (only its parts do): asking for it without `?part=` finds nothing.
+  if (!meta || meta.chunks === 0) return fail(404, 'no_pack', 'Für dieses Gebiet wurde noch kein Kartenpaket erzeugt.');
   // Revalidation is free: the version is the ETag, so an unchanged pack never touches the chunk rows.
   if (request.headers.get('if-none-match') === `"v5-${meta.version}"`) return new Response(null, { status: 304, headers: { etag: `"v5-${meta.version}"`, 'cache-control': 'private, max-age=0, must-revalidate' } });
-  const readChunks = (version: number) => db.prepare('SELECT chunk, bytes FROM v5_packs WHERE campaign_id = ? AND area_id = ? AND version = ? ORDER BY chunk ASC').bind(campaignId, areaId, version).all<{ chunk: number; bytes: ArrayBuffer | Uint8Array }>();
+  const readChunks = (version: number) => db.prepare('SELECT chunk, bytes FROM v5_packs WHERE campaign_id = ? AND area_id = ? AND version = ? ORDER BY chunk ASC').bind(campaignId, key, version).all<{ chunk: number; bytes: ArrayBuffer | Uint8Array }>();
   let rows = (await readChunks(meta.version)).results;
   if (rows.length !== meta.chunks) {
     // A rebuild may have swapped versions between the two reads: look once more before failing.
@@ -309,26 +312,73 @@ async function getPack(db: D1DatabaseLike, access: AccessContext, campaignId: st
   return new Response(out, { headers: { 'content-type': 'application/gzip', 'cache-control': 'private, max-age=0, must-revalidate', etag: `"v5-${meta.version}"`, 'x-pack-version': String(meta.version), 'x-engine': meta.engine } });
 }
 
+/** `?part=N` of a pack request: null when absent, the number, or 'invalid'. */
+function partOf(request: Request): number | null | 'invalid' {
+  const raw = new URL(request.url).searchParams.get('part');
+  if (raw === null) return null;
+  return /^\d{1,4}$/u.test(raw) ? Number(raw) : 'invalid';
+}
+
+/** Statements that remove every part row of an Area whose outline hash is not `keep` (all of them when `keep` is empty). */
+function partCleanup(db: D1DatabaseLike, campaignId: string, areaId: string, keep: string): ReturnType<D1DatabaseLike['prepare']>[] {
+  const prefix = `${areaId}~`;
+  return [
+    db.prepare('DELETE FROM v5_pack_meta WHERE campaign_id = ? AND substr(area_id, 1, ?) = ? AND geometry_hash <> ?').bind(campaignId, prefix.length, prefix, keep),
+    db.prepare('DELETE FROM v5_packs WHERE campaign_id = ? AND substr(area_id, 1, ?) = ? AND NOT EXISTS (SELECT 1 FROM v5_pack_meta m WHERE m.campaign_id = v5_packs.campaign_id AND m.area_id = v5_packs.area_id)').bind(campaignId, prefix.length, prefix),
+    db.prepare('DELETE FROM v5_pack_attempts WHERE campaign_id = ? AND substr(area_id, 1, ?) = ? AND NOT EXISTS (SELECT 1 FROM v5_pack_meta m WHERE m.campaign_id = v5_pack_attempts.campaign_id AND m.area_id = v5_pack_attempts.area_id)').bind(campaignId, prefix.length, prefix),
+  ];
+}
+
+/**
+ * After a part was stored: when every part of the current outline is there, the Area itself gets its (chunk-less) pack row. Its version is what
+ * `/meta` reports as `packVersion`, so the client sees a big Gebiet as "ready" exactly when all parts are, and as missing otherwise.
+ */
+async function completeParts(db: D1DatabaseLike, campaignId: string, areaId: string, parts: number, outline: string, builtAt: string): Promise<{ built: number; complete: boolean; version: number | null }> {
+  const prefix = `${areaId}~`;
+  const built = (await db.prepare('SELECT COUNT(*) AS n FROM v5_pack_meta WHERE campaign_id = ? AND substr(area_id, 1, ?) = ? AND geometry_hash = ?').bind(campaignId, prefix.length, prefix, outline).first<{ n: number }>())?.n ?? 0;
+  if (built < parts) return { built, complete: false, version: null };
+  const previous = await db.prepare('SELECT version, geometry_hash FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<{ version: number; geometry_hash: string }>();
+  if (previous && previous.geometry_hash === outline) return { built, complete: true, version: previous.version };
+  const version = (previous?.version ?? 0) + 1;
+  await db.batch([
+    db.prepare('DELETE FROM v5_packs WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId),
+    db.prepare(`INSERT INTO v5_pack_meta (campaign_id, area_id, version, chunks, total_bytes, engine, stats_json, built_at, geometry_hash) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)
+      ON CONFLICT(campaign_id, area_id) DO UPDATE SET version = excluded.version, chunks = 0, total_bytes = 0, engine = excluded.engine, stats_json = excluded.stats_json, built_at = excluded.built_at, geometry_hash = excluded.geometry_hash`)
+      .bind(campaignId, areaId, version, ENGINE_VERSION, JSON.stringify({ parts }), builtAt, outline),
+    ...partCleanup(db, campaignId, areaId, outline),
+  ]);
+  return { built, complete: true, version };
+}
+
 const OVERPASS_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://lz4.overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter'];
 
-async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, options: V5Options): Promise<Response> {
+async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: string, areaId: string, options: V5Options, request: Request): Promise<Response> {
   const area = await resolveArea(db, campaignId, areaId);
   if (!area || !canReadArea(access, area)) return fail(404, 'not_found', 'Gebiet nicht gefunden.');
   // Building a pack is a write-class action (it costs an upstream request): admins, the owning team's editor, or a collector who holds the Area.
   const mayBuild = access.role === 'admin' || ((access.role === 'team-editor' || access.role === 'collection-collector') && (await canWriteArea(db, access, campaignId, area)));
   if (!mayBuild) return fail(403, 'forbidden', 'Nur Admins oder die zuständige Gruppe dürfen das Paket erzeugen.');
   const ring = area.geometry.coordinates[0];
-  const bbox = paddedBbox(ring);
-  const km2 = packAreaSquareKm(ring);
-  const maxKm2 = options.maxAreaSqKm ?? MAX_PACK_AREA_SQ_KM;
-  if (km2 > maxKm2) return fail(422, 'area_too_large', `Gebiet zu groß (${km2.toFixed(1)} km², max. ${maxKm2}).`);
+  // Big Gebiete are built part by part (`?part=N`, one request each), small ones in one go. A part that is already there for this outline is not fetched again.
+  const plan = packPlan(ring);
+  if (plan.tooLarge) return fail(422, 'area_too_large', `Gebiet zu groß (mehr als ${MAX_PACK_PARTS} Kartenteile).`);
+  const requested = partOf(request);
+  if (requested === 'invalid' || (!plan.single && requested === null) || (requested !== null && requested >= plan.parts.length)) return fail(400, 'part_invalid', `Für dieses Gebiet gibt es ${plan.parts.length} Teile; Teil ungültig oder fehlt.`);
+  const part = plan.single ? plan.parts[0] : plan.parts[requested as number];
+  const key = plan.single ? areaId : `${areaId}~${part.index}`;
+  const bbox = part.bbox;
+  const outline = await geometryHash(area.geometry);
+  if (!plan.single) {
+    const have = await db.prepare('SELECT version, geometry_hash FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, key).first<{ version: number; geometry_hash: string }>();
+    if (have && have.geometry_hash === outline) return json({ part: part.index, parts: plan.parts.length, skipped: true, ...(await completeParts(db, campaignId, areaId, plan.parts.length, outline, new Date((options.now ?? Date.now)()).toISOString())) });
+  }
   // One upstream attempt per Area per minute, claimed atomically *before* the request, so double taps,
   // concurrent callers and failed attempts cannot hammer the shared Overpass service.
   const nowMs = (options.now ?? Date.now)();
   const claim = await db.batch([db.prepare(
     `INSERT INTO v5_pack_attempts (campaign_id, area_id, at) VALUES (?, ?, ?)
      ON CONFLICT(campaign_id, area_id) DO UPDATE SET at = excluded.at WHERE v5_pack_attempts.at <= ?`,
-  ).bind(campaignId, areaId, nowMs, nowMs - PACK_REBUILD_COOLDOWN_MS)]);
+  ).bind(campaignId, key, nowMs, nowMs - PACK_REBUILD_COOLDOWN_MS)]);
   if ((claim[0]?.meta?.changes ?? 0) !== 1) return fail(429, 'pack_recent', 'Für dieses Gebiet läuft gerade ein Abruf oder lief eben erst einer. Bitte eine Minute warten.');
   const doFetch = options.fetchImpl ?? fetch;
   // The public Overpass service is shared and sometimes down (an error such as 521 or 504): on a refusal, a server error or no answer the
@@ -363,29 +413,35 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
   const remark = (upstream as { remark?: unknown } | null)?.remark;
   if (typeof remark === 'string' && /runtime error|timed out|timeout|out of memory|too many/iu.test(remark)) return fail(502, 'overpass_incomplete', 'Die Kartendatenquelle war überlastet und lieferte nur einen Teil. Bitte später noch einmal versuchen.');
   try { parsed = packFromOverpass(upstream as never); } catch { return fail(502, 'overpass_invalid', 'Antwort der Kartendatenquelle ungültig.'); }
-  if (parsed.raw.ways.length === 0 && parsed.raw.buildings.length === 0) return fail(422, 'pack_empty', 'Im Gebiet wurden keine Straßen oder Gebäude gefunden.');
+  // A small Gebiet without any street or building is probably a mistake; a part of a big one (water, forest, fields) is simply empty and still counts as built.
+  if (plan.single && parsed.raw.ways.length === 0 && parsed.raw.buildings.length === 0) return fail(422, 'pack_empty', 'Im Gebiet wurden keine Straßen oder Gebäude gefunden.');
   // Everything from here is our own work on data that arrived: a failure is not the data source's fault, so it is named (error type and a short
   // text, for the admin who has to act on it), logged, and the one-minute pause is lifted so the next try is possible right away.
   try {
     const bytes = await encodePack(parsed.raw);
-    const previous = await db.prepare('SELECT version FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<{ version: number }>();
+    const previous = await db.prepare('SELECT version FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, key).first<{ version: number }>();
     const version = (previous?.version ?? 0) + 1;
     const chunks = Math.ceil(bytes.byteLength / PACK_CHUNK_BYTES);
     const statements = [];
     for (let i = 0; i < chunks; i++) {
       statements.push(db.prepare('INSERT INTO v5_packs (campaign_id, area_id, version, chunk, bytes) VALUES (?, ?, ?, ?, ?)')
-        .bind(campaignId, areaId, version, i, bytes.slice(i * PACK_CHUNK_BYTES, (i + 1) * PACK_CHUNK_BYTES).buffer as ArrayBuffer)); // D1 takes a blob as an ArrayBuffer
+        .bind(campaignId, key, version, i, bytes.slice(i * PACK_CHUNK_BYTES, (i + 1) * PACK_CHUNK_BYTES).buffer as ArrayBuffer)); // D1 takes a blob as an ArrayBuffer
     }
     statements.push(db.prepare(`INSERT INTO v5_pack_meta (campaign_id, area_id, version, chunks, total_bytes, engine, stats_json, built_at, geometry_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(campaign_id, area_id) DO UPDATE SET version = excluded.version, chunks = excluded.chunks, total_bytes = excluded.total_bytes, engine = excluded.engine, stats_json = excluded.stats_json, built_at = excluded.built_at, geometry_hash = excluded.geometry_hash`)
-      .bind(campaignId, areaId, version, chunks, bytes.byteLength, ENGINE_VERSION, JSON.stringify(parsed.stats), new Date(nowMs).toISOString(), await geometryHash(area.geometry)));
-    if (previous) statements.push(db.prepare('DELETE FROM v5_packs WHERE campaign_id = ? AND area_id = ? AND version < ?').bind(campaignId, areaId, version));
+      .bind(campaignId, key, version, chunks, bytes.byteLength, ENGINE_VERSION, JSON.stringify(parsed.stats), new Date(nowMs).toISOString(), outline));
+    if (previous) statements.push(db.prepare('DELETE FROM v5_packs WHERE campaign_id = ? AND area_id = ? AND version < ?').bind(campaignId, key, version));
     await db.batch(statements);
-    return json({ version, bytes: bytes.byteLength, chunks, stats: parsed.stats });
+    if (plan.single) {
+      // An outline that used to need parts (and is now small) leaves nothing behind.
+      await db.batch(partCleanup(db, campaignId, areaId, '').slice(0, 3));
+      return json({ version, bytes: bytes.byteLength, chunks, stats: parsed.stats });
+    }
+    return json({ part: part.index, parts: plan.parts.length, partVersion: version, bytes: bytes.byteLength, stats: parsed.stats, ...(await completeParts(db, campaignId, areaId, plan.parts.length, outline, new Date(nowMs).toISOString())) });
   } catch (error) {
     const what = error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 160) : 'unbekannt';
     consoleSink('error', JSON.stringify({ lvl: 'error', msg: 'v5 pack build failed after fetch', error: what }));
-    try { await db.batch([db.prepare('DELETE FROM v5_pack_attempts WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId)]); } catch { /* the pause stays */ }
+    try { await db.batch([db.prepare('DELETE FROM v5_pack_attempts WHERE campaign_id = ? AND area_id = ?').bind(campaignId, key)]); } catch { /* the pause stays */ }
     return fail(500, 'pack_failed', `Kartenpaket konnte nicht erzeugt oder gespeichert werden (${what}).`);
   }
 }

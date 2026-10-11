@@ -48,10 +48,10 @@
 .v5-handle { display: grid; place-items: start center; width: 100%; height: 2.75rem; padding-top: 0.7rem; box-sizing: border-box; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .v5-handle > i { display: block; width: 2.6rem; height: 0.28rem; border-radius: 1rem; background: var(--outline); opacity: 0.55; }
 .v5-handle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r); }
-/* shrunk to the header: the map is free, the controls move up above the sheet */
+/* shrunk to the header: the map is free; the controls keep their place and the sheet simply lies over the lower ones */
 .v5-sheet.small { max-height: none; overflow: hidden; }
 .v5-sheet.small > :not(.v5-handle):not(header) { display: none; }
-.v5-root:has(.v5-sheet.small) .v5-ctl { opacity: 1; pointer-events: auto; transform: none; bottom: calc(env(safe-area-inset-bottom) + 8.2rem); }
+.v5-root:has(.v5-sheet.small) .v5-ctl { opacity: 1; pointer-events: auto; transform: none; } /* they stay where they are: the sheet covers what lies behind it, nothing moves up or fades */
 .v5-sheet header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.9rem; }
 .v5-badge { display: grid; place-items: center; width: var(--ctl); height: var(--ctl); border-radius: var(--r); background: var(--primary-container); color: var(--on-primary-container); flex: none; }
 .v5-badge.big { width: 4.4rem; height: 4.4rem; border-radius: var(--r-lg); margin: 0 auto 0.9rem; }

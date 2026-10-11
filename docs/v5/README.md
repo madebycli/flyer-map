@@ -67,6 +67,10 @@ Screens: `docs/v5/screens/` (retake with `scripts/v5-e2e/shots.mjs`).
   notes between two people incl. offline and a read-only viewer, `flow6` warm start without any pack request).
   `node scripts/v5-e2e/run-all.mjs` runs all six against fresh fixture servers.
 
+## Big Gebiete
+
+A Gebiet over 6 km² is fetched, stored and derived in parts of a fixed grid: [Plan 052](../plans/active/052-big-areas.md).
+
 ## Tools, notes, cache (see ADR-0034)
 
 - Street pieces are ≤ 20 m chunks (engine `v5.3`; was 60 m: a street could only be split every ~6 houses; ids of longer streets change, the derived-network cache rebuilds). Tap = whole junction segment, paint/route = chunks. Marking modes: route (default), tap,

@@ -197,7 +197,7 @@ jobs:
           LIST_JSON="$(npx wrangler d1 list --json)"
           BETA_D1_ID="$(jq -r --arg name "$BETA_DB_NAME" '[.[]|select(.name==$name)]|if length==1 then .[0].uuid else empty end' <<<"$LIST_JSON")"
           if [[ -z "$BETA_D1_ID" ]]; then
-            CREATED="$(curl --fail-with-body --silent --show-error -X POST "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/d1/database" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "{\"name\":\"${BETA_DB_NAME}\"}")"
+            CREATED="$(curl --fail-with-body --silent --show-error -X POST "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/d1/database" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "{\"name\":\"${BETA_DB_NAME}\",\"primary_location_hint\":\"weur\"}")"
             jq -e '.success == true' <<<"$CREATED" >/dev/null
             BETA_D1_ID="$(jq -r '.result.uuid' <<<"$CREATED")"
           fi

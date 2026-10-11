@@ -130,7 +130,8 @@ export async function forgetArea(db: D1DatabaseLike, access: AccessContext, camp
     statements.push(...tombstoneStatements(db, 'v5_notes', campaignId, { where: `campaign_id = ? AND area_id = ? AND deleted = 0 AND rev <= ?${guard.sql}`, params: [campaignId, areaId, newestNote, ...guard.params] }, tombstoneId(now, newestNote), access.grantId));
   }
   for (const table of ['v5_packs', 'v5_pack_meta', 'v5_pack_attempts']) {
-    statements.push(db.prepare(`DELETE FROM ${table} WHERE campaign_id = ? AND area_id = ?${guard.sql}`).bind(campaignId, areaId, ...guard.params));
+    // the Area's own rows and, for a big Gebiet, its parts (`<id>~<n>`)
+    statements.push(db.prepare(`DELETE FROM ${table} WHERE campaign_id = ? AND (area_id = ? OR substr(area_id, 1, ?) = ?)${guard.sql}`).bind(campaignId, areaId, areaId.length + 1, `${areaId}~`, ...guard.params));
   }
   const results = await db.batch(statements);
   return json({ removed: stateAt >= 0 ? results[stateAt]?.meta?.changes ?? 0 : 0, notes: notesAt >= 0 ? results[notesAt]?.meta?.changes ?? 0 : 0 });
