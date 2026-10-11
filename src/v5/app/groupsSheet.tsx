@@ -2,9 +2,7 @@ import { useState } from 'react';
 import type { Meta } from './api.ts';
 import { SheetFrame } from './sheet.tsx';
 import { Icon, Select } from '../../ui/index.ts';
-
-/** Calm colours for Gruppen; the map draws a Gebiet in its Gruppe's colour, so they must stay apart from each other and from the status colours. */
-export const GROUP_COLORS = ['#4f8cff', '#e5736b', '#e0a83a', '#8b7be8', '#38b8a6', '#d46fb0', '#7dbb4a', '#8a97a6'];
+import { GROUP_COLORS, nextFreeColor } from './groupColors.ts';
 
 type Props = {
   meta: Meta;
@@ -22,7 +20,11 @@ type Props = {
 export function Swatches({ value, onPick, label }: { value: string; onPick(color: string): void; label: string }) {
   return (
     <div className="v5-teams" role="group" aria-label={label}>
-      {GROUP_COLORS.map((c) => <button key={c} className={`v5-team${c.toLowerCase() === value.toLowerCase() ? ' on' : ''}`} style={{ '--c': c } as React.CSSProperties} onClick={() => onPick(c)} aria-pressed={c.toLowerCase() === value.toLowerCase()} aria-label={c} title={c} />)}
+      {(GROUP_COLORS.some((c) => c.toLowerCase() === value.toLowerCase()) ? GROUP_COLORS : [value, ...GROUP_COLORS]).map((c) => <button key={c} className={`v5-team${c.toLowerCase() === value.toLowerCase() ? ' on' : ''}`} style={{ '--c': c } as React.CSSProperties} onClick={() => onPick(c)} aria-pressed={c.toLowerCase() === value.toLowerCase()} aria-label={c} title={c} />)}
+      <label className="v5-team custom" aria-label="Eigene Farbe wählen" title="Eigene Farbe">
+        <Icon name="palette" size={20} />
+        <input type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#4f8cff'} onChange={(event) => onPick(event.target.value)} aria-label={`${label}: eigene Farbe`} />
+      </label>
     </div>
   );
 }
@@ -76,7 +78,7 @@ function GroupRow({ team, areas, busy, onUpdate, onDelete }: { team: Meta['teams
 export function GroupsSheet({ meta, busy, error, onRenameCampaign, onCreate, onUpdate, onDelete, onSetAreaTeam, onClose }: Props) {
   const [campaignName, setCampaignName] = useState(meta.campaign.name);
   const [name, setName] = useState('');
-  const [color, setColor] = useState(GROUP_COLORS[meta.teams.length % GROUP_COLORS.length]);
+  const [color, setColor] = useState(() => nextFreeColor(meta.teams.map((t) => t.color)));
   const count = (teamId: string) => meta.areas.filter((a) => a.teamId === teamId).length;
   const commitCampaign = () => { const next = campaignName.trim(); if (next && next !== meta.campaign.name) onRenameCampaign(next); else setCampaignName(meta.campaign.name); };
   return (
