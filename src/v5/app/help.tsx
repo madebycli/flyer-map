@@ -43,7 +43,7 @@ const ENTRIES: Entry[] = [
   { q: 'Wo bin ich auf der Karte?', tags: 'standort gps position', a: [
     'Tippe rechts auf das Standort-Symbol. Dein Standort bleibt auf deinem Gerät und wird nicht gespeichert oder an andere gesendet.' ] },
   { q: 'Wie ändere ich Aussehen und Hand?', tags: 'hell dunkel linkshand theme', a: [
-    'Im Menü (unten links) findest du „Hell/Dunkel“ und „Linkshand“. Linkshand spiegelt die Knöpfe auf die andere Seite.' ] },
+    'Im Menü (unten links) findest du „Hell/Dunkel“, „Farbe“ und „Linkshand“. Mit „Farbe“ wählst du die Grundfarbe der App (Material You), nur für dieses Gerät. Linkshand spiegelt die Knöpfe auf die andere Seite.' ] },
   { q: 'Wie lade ich andere ein?', tags: 'einladen link zugang freunde', roles: ['team-editor', 'viewer'], a: [
     'Einladungslinks erstellt eine Admin-Person. Frag sie nach einem Link für deine Gruppe (zum Mitmarkieren) oder nur zum Ansehen.' ] },
 

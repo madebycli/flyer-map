@@ -3,3 +3,4 @@ export { Icon, type IconName } from './icons.tsx';
 export { WavyProgress, Loader } from './progress.tsx';
 export * from './kit.tsx';
 export { applyTheme, readTheme, type Theme } from './theme.ts';
+export { DEFAULT_SEED, SEEDS, applyPalette, readSeed, saveSeed, schemeFor, type Seed } from './palette.ts';

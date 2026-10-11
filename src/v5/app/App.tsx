@@ -19,6 +19,7 @@ import { AreaAdmin, GroupsSheet } from './groupsSheet.tsx';
 import { CollectionSetupSheet } from './collectionSetup.tsx';
 import { ActivitySheet } from './activitySheet.tsx';
 import { HelpSheet } from './help.tsx';
+import { PaletteSheet } from './paletteSheet.tsx';
 import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } from './panels.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
 import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
@@ -32,14 +33,14 @@ import { SheetFrame, StatusGroup } from './sheet.tsx';
 import { houseStats } from './stats.ts';
 import type { SearchHit } from './search.ts';
 import { useCampaign } from './useCampaign.ts';
-import { Icon, Loader } from '../../ui/index.ts';
+import { Icon, Loader, applyPalette, readSeed, saveSeed } from '../../ui/index.ts';
 
 const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
 const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf-v5-hand') === 'left' ? 'left' : 'right'; } catch { return 'right'; } };
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'help' | 'diag' | 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
+type Panel = 'palette' | 'help' | 'diag' | 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -96,6 +97,7 @@ export function App({ campaignId }: { campaignId: string }) {
   const buildMissing = useCallback(async () => { const problem = await campaign.buildMissing(); if (problem) setNotice(problem); }, [campaign]);
   const [importState, setImportState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [theme, setTheme] = useState<Theme>(readTheme);
+  const [seed, setSeed] = useState<string>(readSeed);
   const [hand, setHand] = useState<'left' | 'right'>(readHand);
   const [baseOn, setBaseOn] = useState(readBase);
   const [rotated, setRotated] = useState(false);
@@ -314,9 +316,11 @@ export function App({ campaignId }: { campaignId: string }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    applyPalette(seed, theme);
     fieldMap.current?.setTheme(theme);
     try { localStorage.setItem('vf-v5-theme', theme); } catch { /* private mode */ }
-  }, [theme]);
+  }, [theme, seed]);
+  useEffect(() => { saveSeed(seed); }, [seed]);
   useEffect(() => { try { localStorage.setItem('vf-v5-hand', hand); } catch { /* private mode */ } }, [hand]);
 
   useEffect(() => { if (!undo) return; const t = window.setTimeout(() => setUndo(null), 7000); return () => window.clearTimeout(t); }, [undo]);
@@ -534,6 +538,7 @@ export function App({ campaignId }: { campaignId: string }) {
     { id: 'notes', icon: 'message', label: 'Notizen', badge: notes?.all().length || undefined, onClick: () => openPanel('notes') },
     ...(isCollection && rights.create ? [{ id: 'pickup', icon: 'flag', label: 'Sonder-Marker', onClick: () => enter('pickup') } satisfies AppTile] : []),
     { id: 'fit', icon: 'fit', label: 'Alles zeigen', onClick: () => { setPanel(null); fitAll(); } },
+    { id: 'palette', icon: 'palette', label: 'Farbe', onClick: () => openPanel('palette') },
     { id: 'theme', icon: theme === 'dark' ? 'sun' : 'moon', label: theme === 'dark' ? 'Hell' : 'Dunkel', onClick: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
     { id: 'hand', icon: 'hand', label: hand === 'right' ? 'Linkshand' : 'Rechtshand', onClick: () => setHand(hand === 'right' ? 'left' : 'right') },
     { id: 'base', icon: 'layers', label: baseOn ? 'Karte aus' : 'Karte an', on: !baseOn, onClick: () => setBaseOn(!baseOn) },
@@ -651,6 +656,7 @@ export function App({ campaignId }: { campaignId: string }) {
 
       {diagOn && panel !== 'diag' && <DiagHud onOpen={() => setPanel('diag')} />}
       {panel === 'diag' && <DiagSheet engine={campaign.engine} onClose={() => setPanel(null)} />}
+      {panel === 'palette' && <PaletteSheet seed={seed} theme={theme} onPick={setSeed} onClose={() => setPanel(null)} />}
       {ready && panel === 'help' && meta && <HelpSheet role={meta.role} onClose={() => setPanel(null)} />}
       {ready && panel === 'home' && <HomeSheet tiles={tiles} identity={identity} onClose={() => setPanel(null)} />}
       {ready && panel === 'template' && templateDraft && <TemplateSheet template={templateDraft.template} plan={templateDraft.plan} progress={templateProgress} onApply={() => void applyTemplate()} onClose={() => { if (!templateProgress) { setPanel(null); setTemplateDraft(null); } }} />}

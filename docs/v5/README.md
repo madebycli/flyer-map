@@ -90,6 +90,10 @@ Sonder-Marker · Hell/Dunkel, Links-/Rechtshand, Karte an/aus. A link helper see
 
 On a selected Gebiet, **Veraltete Einträge bereinigen** clears obsolete progress while preserving the Gebiet and its current progress; **Gebiet löschen** removes the whole Gebiet and its associated data. Both ask for confirmation. After clearing the last obsolete entry, the clean-up control refreshes immediately. In Zugänge, each helper-right switch has a visible caption (Sehen, Anlegen, Bearbeiten, Zuweisen), an accessible name and a pressed state; policy is enforced on the server. The Zuweisen caption describes the existing permission, not a new assignment interface.
 
+## Colours (Material You)
+
+`src/ui/palette.ts` builds the colour roles of Material 3 from one seed colour (tonal palettes by CIE lightness found in OKLCH, no dependency): primary, secondary, tertiary, error, neutral surfaces in five tiers, outlines, inverse, light and dark. They are written to the CSS tokens of `tokens.css` on `<html>` (the static teal in the stylesheet is only the fallback before the script runs). Menu → **Farbe** offers eight seeds and a free colour; the choice lives on the device (`vf-v5-seed`) and applies to the field shell and the organiser pages alike. The web cannot read the wallpaper the way Android does. Status colours on the map (done, later, not possible, open) are meaning, not decoration, and stay fixed. `tests/uiPalette.test.ts` checks contrast (≥ 4.5 for text on containers and accents, ≥ 3 for accents on the surface) for every seed in both modes; `flow21` the menu, persistence and light/dark.
+
 ## Touch handling while marking
 
 - **One finger pans, two zoom, a resting finger draws.** Wischen and Lasso (`Gesture.hold`) take a finger only after it has rested `HOLD_MS` (170 ms) within `HOLD_SLOP` (6 px); a ring and a short buzz mark the moment. A finger that moves first pans the map (its pan was never switched off); a second finger at any time hands everything back to the pinch. A tap before the hold is a one-point gesture (stamps what lies under the finger). Tippen and Strecke use plain taps and need no hold.
