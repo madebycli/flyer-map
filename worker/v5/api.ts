@@ -10,7 +10,7 @@ import { canReadArea, canWriteArea, fail, ID, isScoped, isRecord, json, readable
 import { pullNotes, pushNotes } from './notes.ts';
 import { forgetArea, pruneState } from './cleanup.ts';
 import { parseCampaignId } from '../snapshotValidation.ts';
-import { emit, errorCodeOf, instrumentDb, requestIdOf, serverTiming, type LogLevel, type Sink } from './observe.ts';
+import { consoleSink, emit, errorCodeOf, instrumentDb, requestIdOf, serverTiming, type LogLevel, type Sink } from './observe.ts';
 
 
 export type V5Options = {
@@ -359,19 +359,28 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
   if (typeof remark === 'string' && /runtime error|timed out|timeout|out of memory|too many/iu.test(remark)) return fail(502, 'overpass_incomplete', 'Die Kartendatenquelle war überlastet und lieferte nur einen Teil. Bitte später noch einmal versuchen.');
   try { parsed = packFromOverpass(upstream as never); } catch { return fail(502, 'overpass_invalid', 'Antwort der Kartendatenquelle ungültig.'); }
   if (parsed.raw.ways.length === 0 && parsed.raw.buildings.length === 0) return fail(422, 'pack_empty', 'Im Gebiet wurden keine Straßen oder Gebäude gefunden.');
-  const bytes = await encodePack(parsed.raw);
-  const previous = await db.prepare('SELECT version FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<{ version: number }>();
-  const version = (previous?.version ?? 0) + 1;
-  const chunks = Math.ceil(bytes.byteLength / PACK_CHUNK_BYTES);
-  const statements = [];
-  for (let i = 0; i < chunks; i++) {
-    statements.push(db.prepare('INSERT INTO v5_packs (campaign_id, area_id, version, chunk, bytes) VALUES (?, ?, ?, ?, ?)')
-      .bind(campaignId, areaId, version, i, bytes.slice(i * PACK_CHUNK_BYTES, (i + 1) * PACK_CHUNK_BYTES)));
+  // Everything from here is our own work on data that arrived: a failure is not the data source's fault, so it is named (error type and a short
+  // text, for the admin who has to act on it), logged, and the one-minute pause is lifted so the next try is possible right away.
+  try {
+    const bytes = await encodePack(parsed.raw);
+    const previous = await db.prepare('SELECT version FROM v5_pack_meta WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId).first<{ version: number }>();
+    const version = (previous?.version ?? 0) + 1;
+    const chunks = Math.ceil(bytes.byteLength / PACK_CHUNK_BYTES);
+    const statements = [];
+    for (let i = 0; i < chunks; i++) {
+      statements.push(db.prepare('INSERT INTO v5_packs (campaign_id, area_id, version, chunk, bytes) VALUES (?, ?, ?, ?, ?)')
+        .bind(campaignId, areaId, version, i, bytes.slice(i * PACK_CHUNK_BYTES, (i + 1) * PACK_CHUNK_BYTES).buffer as ArrayBuffer)); // D1 takes a blob as an ArrayBuffer
+    }
+    statements.push(db.prepare(`INSERT INTO v5_pack_meta (campaign_id, area_id, version, chunks, total_bytes, engine, stats_json, built_at, geometry_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(campaign_id, area_id) DO UPDATE SET version = excluded.version, chunks = excluded.chunks, total_bytes = excluded.total_bytes, engine = excluded.engine, stats_json = excluded.stats_json, built_at = excluded.built_at, geometry_hash = excluded.geometry_hash`)
+      .bind(campaignId, areaId, version, chunks, bytes.byteLength, ENGINE_VERSION, JSON.stringify(parsed.stats), new Date(nowMs).toISOString(), await geometryHash(area.geometry)));
+    if (previous) statements.push(db.prepare('DELETE FROM v5_packs WHERE campaign_id = ? AND area_id = ? AND version < ?').bind(campaignId, areaId, version));
+    await db.batch(statements);
+    return json({ version, bytes: bytes.byteLength, chunks, stats: parsed.stats });
+  } catch (error) {
+    const what = error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 160) : 'unbekannt';
+    consoleSink('error', JSON.stringify({ lvl: 'error', msg: 'v5 pack build failed after fetch', error: what }));
+    try { await db.batch([db.prepare('DELETE FROM v5_pack_attempts WHERE campaign_id = ? AND area_id = ?').bind(campaignId, areaId)]); } catch { /* the pause stays */ }
+    return fail(500, 'pack_failed', `Kartenpaket konnte nicht erzeugt oder gespeichert werden (${what}).`);
   }
-  statements.push(db.prepare(`INSERT INTO v5_pack_meta (campaign_id, area_id, version, chunks, total_bytes, engine, stats_json, built_at, geometry_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(campaign_id, area_id) DO UPDATE SET version = excluded.version, chunks = excluded.chunks, total_bytes = excluded.total_bytes, engine = excluded.engine, stats_json = excluded.stats_json, built_at = excluded.built_at, geometry_hash = excluded.geometry_hash`)
-    .bind(campaignId, areaId, version, chunks, bytes.byteLength, ENGINE_VERSION, JSON.stringify(parsed.stats), new Date(nowMs).toISOString(), await geometryHash(area.geometry)));
-  if (previous) statements.push(db.prepare('DELETE FROM v5_packs WHERE campaign_id = ? AND area_id = ? AND version < ?').bind(campaignId, areaId, version));
-  try { await db.batch(statements); } catch { return fail(500, 'pack_write_failed', 'Kartenpaket konnte nicht gespeichert werden.'); }
-  return json({ version, bytes: bytes.byteLength, chunks, stats: parsed.stats });
 }

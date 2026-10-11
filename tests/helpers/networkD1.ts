@@ -4,7 +4,7 @@ import type { D1DatabaseLike, D1PreparedStatement } from '../../worker/campaignR
 class Statement implements D1PreparedStatement {
   values:unknown[]=[];
   constructor(readonly query:string,readonly db:DatabaseSync){}
-  bind(...values:unknown[]){this.values=values;return this;}
+  bind(...values:unknown[]){this.values=values.map(value=>value instanceof ArrayBuffer?new Uint8Array(value):value);return this;} // D1 takes a blob as an ArrayBuffer, node:sqlite as a typed array
   async first<T>(){return this.db.prepare(this.query).get(...this.values) as T??null;}
   async all<T>(){return {results:this.db.prepare(this.query).all(...this.values) as T[]};}
 }

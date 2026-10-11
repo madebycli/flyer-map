@@ -272,6 +272,21 @@ test('a down Overpass server (521) does not fail the build: the next mirror answ
   assert.match(((await failed.json()) as { error: { message: string } }).error.message, /400/);
 });
 
+test('a failure after the data arrived is named and lifts the pause, so the next try is possible at once', async () => {
+  const { db, call } = await setup();
+  const real = db.batch.bind(db);
+  let failWrite = true;
+  db.batch = (async (statements: Parameters<typeof real>[0]) => { if (failWrite && statements.length > 1) throw new Error('D1_TYPE_ERROR: boom'); return real(statements); }) as typeof db.batch;
+  const fetchImpl = (async () => overpassOk()) as unknown as typeof fetch;
+  const failed = await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl });
+  assert.equal(failed.status, 500);
+  const body = (await failed.json()) as { error: { code: string; message: string } };
+  assert.equal(body.error.code, 'pack_failed');
+  assert.match(body.error.message, /D1_TYPE_ERROR/);
+  failWrite = false;
+  assert.equal((await call('admin', 'POST', `/api/v5/campaigns/${campaign}/areas/area_n/pack`, undefined, { fetchImpl })).status, 200, 'no one-minute pause after our own failure');
+});
+
 test('fuzz against the real handler and SQL: overlapping batches, duplicates and reordering always leave the highest op id per key', async () => {
   for (let seed = 1; seed <= 12; seed++) {
     let s = seed;
