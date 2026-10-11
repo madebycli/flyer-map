@@ -46,7 +46,7 @@ export function OrganizationInviteRedeemPage() {
         <TotpEnrollment
           enrollment={enrollment}
           title="MFA jetzt einrichten"
-          intro="Der Einladungs-Token ist bereits verbraucht. Scanne den QR-Code und sichere die neuen Recovery-Codes offline."
+          intro="QR-Code mit der Authenticator-App scannen."
           confirmLabel="MFA bestätigen & Admin öffnen"
           onConfirmed={() => window.location.replace("/admin")}
         />
@@ -57,7 +57,6 @@ export function OrganizationInviteRedeemPage() {
   return (
     <CenterPage>
       <Card eyebrow="Organisation-Einladung" title="Admin-Account sicher einrichten" icon="users">
-        <p>Der Einladungs-Token wurde aus der Adresszeile entfernt und wird nur für diesen einmaligen Setup-Vorgang im Speicher gehalten.</p>
         <form className="ui-form" onSubmit={(event) => void redeem(event)}>
           <Field label="Benutzername"><TextInput value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={40} autoComplete="username" required /></Field>
           <PasswordPair password={password} again={passwordAgain} onPassword={setPassword} onAgain={setPasswordAgain} />
@@ -99,7 +98,7 @@ export function OrganizationPasswordResetPage() {
     return (
       <CenterPage>
         <Card eyebrow="Passwort geändert" title="Alle alten Sitzungen wurden widerrufen" icon="check">
-          <p>Der Reset-Link ist verbraucht. Melde dich mit dem neuen Passwort und deinem zweiten Faktor neu an.</p>
+          <p>Passwort geändert. Bitte neu anmelden.</p>
           <LinkButton tone="primary" href="/login">Zum Login</LinkButton>
         </Card>
       </CenterPage>
@@ -109,7 +108,6 @@ export function OrganizationPasswordResetPage() {
   return (
     <CenterPage>
       <Card eyebrow="Sicherer Passwort-Reset" title="Neues Passwort setzen" icon="lock">
-        <p>Der One-time-Token wurde sofort aus der URL entfernt. Nach erfolgreichem Reset werden alle bestehenden Organizer-Sitzungen serverseitig widerrufen.</p>
         <form className="ui-form" onSubmit={(event) => void submit(event)}>
           <PasswordPair label="Neues Passwort" password={password} again={passwordAgain} onPassword={setPassword} onAgain={setPasswordAgain} />
           {error ? <Notice tone="error">{error}</Notice> : null}

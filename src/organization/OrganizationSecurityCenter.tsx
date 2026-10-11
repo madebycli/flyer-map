@@ -77,7 +77,7 @@ function RecoveryMfaCard({ organizationId }: { organizationId: string }) {
   }
   return (
     <Card eyebrow="Recovery-Sitzung" title="Privilegierte Aktionen sind gesperrt" icon="lock">
-      <p>Bestätige dein aktuelles Passwort und richte TOTP neu ein. Die Recovery-Sitzung kann keine Admin-Änderungen ausführen.</p>
+      <p>Passwort bestätigen und Authenticator neu einrichten.</p>
       <form className="ui-form" onSubmit={(event) => void restart(event)}>
         <Field label="Aktuelles Passwort"><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></Field>
         {error ? <Notice tone="error">{error}</Notice> : null}
@@ -203,7 +203,6 @@ function FeatureSettings({ organizationId, features, onRefresh }: { organization
   };
   return (
     <Card title="Feature-Flags" icon="flag">
-      <p>Berechtigungen und Features bleiben getrennt. Ein Feature-Flag erteilt niemals automatisch Rechte.</p>
       <form className="ui-form" onSubmit={save}>
         <Field label="Feature-Key"><TextInput value={key} onChange={(event) => setKey(event.target.value)} pattern="[a-z0-9][a-z0-9._-]{0,79}" required /></Field>
         <Check label="aktiviert" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />

@@ -130,7 +130,7 @@ export function OrganizationInviteCenter() {
       {canManageAccounts ? (
         <>
           <Card eyebrow="Neuer Zugang" title="Person einladen" icon="send">
-            <p>Der Empfänger legt beim Einlösen selbst Benutzername, Passwort und MFA fest.</p>
+            <p>Der Empfänger wählt Benutzername und Passwort selbst.</p>
             <div className="ui-grid">
               <Field label="Rolle">
                 <Select value={role} onChange={(event) => { setRole(event.target.value as "organizer" | "admin"); setCapabilities([]); }}>
@@ -173,7 +173,7 @@ export function OrganizationInviteCenter() {
           </Card>
 
           <Card eyebrow="Accounts" title="Passwort-Reset" icon="unlock">
-            <p>Ein Reset-Link ist 30 Minuten gültig, einmalig und widerruft beim Einlösen die alten Sessions des Accounts.</p>
+            <p>Der Link gilt 30 Minuten und einmal.</p>
             <div className="ui-list">
               {members.map((member) => (
                 <Row key={member.id} title={member.username} text={`${member.role} · ${member.capabilities.join(" · ") || "keine Zusatzrechte"}`}>

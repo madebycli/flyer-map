@@ -208,10 +208,13 @@ jobs:
 
       - name: Materialize isolated Unstable config
         shell: bash
+        env:
+          # Optional: the owner's own setup key (repository secret). Only its SHA-256 reaches the Worker; without the secret the committed hash applies.
+          OWNER_SETUP_KEY: ${{ secrets.UNSTABLE_SETUP_KEY }}
         run: |
           set -euo pipefail
           node <<'NODE'
-          const fs=require('node:fs');
+          const fs=require('node:fs');const crypto=require('node:crypto');
           const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
           c.name=process.env.BETA_BACKEND_WORKER;
           c.workers_dev=true;
@@ -221,7 +224,7 @@ jobs:
             SOURCE_COMMIT_SHA:process.env.GITHUB_SHA,
             ORGANIZATION_KDF_DIAGNOSTICS:'0',
             ORGANIZATION_OPTIONAL_MFA:'1',
-            ORGANIZATION_BOOTSTRAP_SECRET_SHA256:process.env.BOOTSTRAP_SHA256,
+            ORGANIZATION_BOOTSTRAP_SECRET_SHA256:process.env.OWNER_SETUP_KEY?crypto.createHash('sha256').update(process.env.OWNER_SETUP_KEY).digest('hex'):process.env.BOOTSTRAP_SHA256,
           };
           c.d1_databases=[{
             binding:'DB',

@@ -95,7 +95,7 @@ export function TotpEnrollment({ enrollment, title, intro, confirmLabel, onConfi
       <div className="ui-qr"><QRCodeSVG value={enrollment.otpauthUri} size={196} level="M" /></div>
       <details><summary>Setup-Schlüssel manuell anzeigen</summary><code className="ui-code">{enrollment.otpauthUri}</code></details>
       <h3>Recovery-Codes</h3>
-      <p>Jeder Code funktioniert genau einmal. Sicher offline aufbewahren.</p>
+      <p>Jeder Code gilt einmal. Sicher aufbewahren.</p>
       <Secret value={enrollment.recoveryCodes.join("\n")} copyLabel="Codes kopieren" />
       <form className="ui-form" onSubmit={(event) => void confirm(event)}>
         <Field label="6-stelliger Code"><TextInput inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></Field>
@@ -113,7 +113,7 @@ export function OneTimeLinkDialog({ title, link, onClose }: { title: string; lin
   useEffect(() => setCopied(false), [link]);
   return (
     <Dialog title={title} eyebrow="One-time-Link" onClose={onClose}>
-      <p>Der Link wird aus Sicherheitsgründen nur in diesem Tab gehalten. Nach einem Neuladen kann der geheime Token nicht erneut aus der Datenbank gelesen werden.</p>
+      <p>Der Link wird nur einmal angezeigt. Jetzt kopieren.</p>
       <code className="ui-code">{link}</code>
       <div className="ui-actions">
         <Button tone="primary" icon="upload" onClick={() => void navigator.clipboard.writeText(link).then(() => setCopied(true))}>{copied ? "Kopiert ✓" : "Link kopieren"}</Button>

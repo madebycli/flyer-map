@@ -20,7 +20,8 @@ Stand 2026-10-10: `unstable` wurde auf den Integrationsstand des Rewrites vorges
 
 ## Erster Start (einmalig)
 
-1. **`/start`** öffnen → „Organisation & ersten Organizer anlegen“: Name der Organisation, Benutzername, Passwort und den **Setup-Schlüssel**. Der Schlüssel ist einmalig; im Repository steht nur sein SHA-256 (`BOOTSTRAP_SHA256` im Workflow). Nach der Einrichtung ist er wirkungslos (die Ersteinrichtung geht nur einmal).
+1. **`/start`** öffnen → „Organisation & ersten Organizer anlegen“: Name der Organisation, Benutzername, Passwort und den **Setup-Schlüssel**. Das geht nur einmal; danach ist die Seite wirkungslos. Weitere Organizer legt der erste über **Einladungen** an — einen Setup-Schlüssel braucht dafür niemand.
+   - **Eigener Schlüssel (empfohlen):** GitHub → Repository → Settings → Secrets and variables → Actions → *New repository secret* mit dem Namen `UNSTABLE_SETUP_KEY` und einem Wert, den nur du kennst (z. B. im Passwortmanager). Der nächste Push auf `unstable` übernimmt ihn; im Worker landet nur sein SHA-256. Ohne dieses Secret gilt der einmalige Start-Schlüssel, dessen SHA-256 als `BOOTSTRAP_SHA256` im Workflow steht.
 2. Zweiten Faktor (Authenticator-App) einrichten, falls die Seite danach fragt.
 3. **Neue Aktion** anlegen (Name, Kartenfokus) → **Feldkarte öffnen**.
 
@@ -39,4 +40,4 @@ Echte Handys (vor allem iOS Safari mit MapLibre 6), echte OpenStreetMap-Daten ü
 
 ## Zurücksetzen
 
-Die Unstable-Datenbank enthält nur Testdaten. Ein kompletter Neustart heißt: alle Tabellen der Unstable-D1 leeren (Migrationstabelle `d1_migrations` behalten) und einen neuen Setup-Schlüssel setzen (neuen SHA-256 in `BOOTSTRAP_SHA256`, Push auf `unstable`). D1 bietet außerdem eine Zeitreise-Wiederherstellung (Cloudflare-Dashboard → D1 → Time Travel).
+Die Unstable-Datenbank enthält nur Testdaten. Ein kompletter Neustart heißt: alle Tabellen der Unstable-D1 leeren (Migrationstabelle `d1_migrations` behalten) und den Setup-Schlüssel wieder verwenden (`UNSTABLE_SETUP_KEY`) — die Einrichtung ist nach dem Leeren wieder offen. D1 bietet außerdem eine Zeitreise-Wiederherstellung (Cloudflare-Dashboard → D1 → Time Travel).

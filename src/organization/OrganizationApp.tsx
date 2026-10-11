@@ -54,7 +54,7 @@ function StartPage({ navigate }: { navigate: Navigate }) {
         <TotpEnrollment
           enrollment={enrollment}
           title="MFA absichern"
-          intro="Scanne den QR-Code mit deiner Authenticator-App. Sichere anschließend die Recovery-Codes offline."
+          intro="QR-Code mit der Authenticator-App scannen."
           confirmLabel="MFA bestätigen & Admin öffnen"
           onConfirmed={() => navigate("/admin", true)}
           extra={enrollment.optionalMfaAllowed ? (
@@ -79,7 +79,7 @@ function StartPage({ navigate }: { navigate: Navigate }) {
   return (
     <CenterPage>
       <Card eyebrow="Ersteinrichtung" title="Organisation & ersten Organizer anlegen" icon="shield">
-        <p>Dieser Vorgang ist global nur einmal möglich und benötigt den separaten Setup-Schlüssel der isolierten Umgebung.</p>
+        <p>Nur einmal möglich. Den Setup-Schlüssel kennst nur du.</p>
         <form className="ui-form" onSubmit={(event) => void submitSetup(event)}>
           <Field label="Organisation"><TextInput value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} minLength={2} maxLength={120} autoComplete="organization" required /></Field>
           <Field label="Benutzername"><TextInput value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={40} autoComplete="username" required /></Field>
@@ -147,7 +147,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
     return (
       <CenterPage>
         <Card eyebrow="Recovery bestätigt" title="Sicherheitsfaktor erneuern" icon="shield">
-          <p>Die Recovery-Sitzung ist absichtlich eingeschränkt. Privilegierte Organizer-Aktionen bleiben gesperrt, bis TOTP neu eingerichtet wurde.</p>
+          <p>Eingeschränkte Sitzung. Richte den Authenticator neu ein, um alles freizuschalten.</p>
           <Button tone="primary" onClick={() => navigate(preserveDiagnosticFlag("/admin", window.location.search))}>Sitzungsstatus öffnen</Button>
         </Card>
       </CenterPage>
@@ -163,7 +163,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
             <Field label="Passwort"><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></Field>
             <label className="ui-check">
               <input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />
-              <span>Dieses Gerät merken<small>Die aktive Sitzung bleibt 12 Stunden kurzlebig. Dieses Gerät darf sie bis zu 60 Tage Inaktivität, maximal 90 Tage insgesamt, sicher erneuern.</small></span>
+              <span>Angemeldet bleiben</span>
             </label>
             {error ? <Notice tone="error">{error}</Notice> : null}
             <Button tone="primary" busy={busy}>{busy ? "Prüfe …" : "Weiter"}</Button>
@@ -179,7 +179,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
             <Field label={factorMode === "totp" ? "6-stelliger Code" : "Recovery-Code"}>
               <TextInput value={factor} onChange={(event) => setFactor(event.target.value)} autoComplete={factorMode === "totp" ? "one-time-code" : "off"} inputMode={factorMode === "totp" ? "numeric" : "text"} required />
             </Field>
-            {rememberDevice && factorMode === "totp" ? <p>Nach erfolgreicher MFA wird nur dieses Gerät als vertrauenswürdig registriert. Der Remember-Token ist HttpOnly und wird bei jeder Erneuerung rotiert.</p> : null}
+            {rememberDevice && factorMode === "totp" ? <p>Dieses Gerät bleibt angemeldet.</p> : null}
             {error ? <Notice tone="error">{error}</Notice> : null}
             <Button tone="primary" busy={busy}>Anmelden</Button>
             <Button tone="quiet" onClick={() => { setPhase("password"); setFactor(""); setError(null); }}>Zurück</Button>
@@ -228,7 +228,7 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
         {membership?.role === "organizer" ? <Button tone="primary" icon="plus" disabled={!canCreateCampaign} onClick={() => navigate(newPath)}>Neue Aktion</Button> : null}
       </Heading>
       <OrganizationLine me={me} organizationId={organizationId} onChange={setOrganizationId} />
-      {me.assurance === "recovery" ? <Notice tone="warn">Recovery-Sitzung: Privilegierte Aktionen sind serverseitig gesperrt, bis MFA wieder vollständig hergestellt ist.</Notice> : null}
+      {me.assurance === "recovery" ? <Notice tone="warn">Eingeschränkte Sitzung: Richte den Authenticator neu ein.</Notice> : null}
       {me.memberships.length === 0 ? <Card title="Keine Organisation-Zuordnung" icon="info"><p>Dieser Account besitzt aktuell keine aktive Mitgliedschaft.</p></Card> : null}
       {campaignError ? <Notice tone="error">{campaignError}</Notice> : null}
       {loadingCampaigns ? <PageLoading>Aktionen werden geladen …</PageLoading> : null}
@@ -298,7 +298,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
     return (
       <Page bar={bar} narrow>
         <Button tone="quiet" className="ui-back" onClick={() => navigate("/admin")}>← Aktionen</Button>
-        <Card title="Nur für Organizer" icon="lock"><p>Neue Aktionen können ausschließlich von einem Organizer mit vollständig bestätigter MFA-Sitzung angelegt werden.</p></Card>
+        <Card title="Nur für Organizer" icon="lock"><p>Aktionen legen nur Organizer an.</p></Card>
       </Page>
     );
   }
@@ -401,7 +401,7 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
           </Card>
           <Card title="Persistenz" icon="cloudOk">
             <p>Aktions-ID <code>{campaign.id}</code></p>
-            <p>Diese Aktion ist der Organisation serverseitig zugeordnet und bleibt nach Abmelden, Cookie-Löschung und erneutem Login erhalten.</p>
+            
           </Card>
         </>
       ) : null}

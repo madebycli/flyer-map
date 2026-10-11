@@ -55,7 +55,7 @@ test("campaign.create is not delegable in the Security Center because new Campai
 test("Admin UI reserves new Campaign creation for Organizer memberships", () => {
   assert.match(appSource, /const canCreateCampaign = Boolean\(me\.assurance === "mfa" && membership\?\.role === "organizer"\)/u);
   assert.match(appSource, /organizerMemberships = me\.memberships\.filter\(\(item\) => item\.role === "organizer"\)/u);
-  assert.match(appSource, /Neue Aktionen können ausschließlich von einem Organizer/u);
+  assert.match(appSource, /Aktionen legen nur Organizer an/u);
   assert.doesNotMatch(appSource, /membership\?\.capabilities\.includes\("campaign\.create"\)/u);
 });
 
