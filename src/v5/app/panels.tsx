@@ -5,6 +5,7 @@ import { HINTS, LABELS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
 import type { SearchHit } from './search.ts';
 import type { EngineClient } from './engineClient.ts';
 import { ago, emptyTally, percentOf, tallyTotal, type HouseStats, type Tally } from './stats.ts';
+import { CountdownCard } from './roomsUi.tsx';
 import { SheetFrame } from './sheet.tsx';
 import { planIsEmpty, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import type { ApplyProgress } from './templateApply.ts';
@@ -13,9 +14,9 @@ import { Icon, WavyProgress, type IconName } from '../../ui/index.ts';
 export type AppTile = { id: string; icon: IconName; label: string; on?: boolean; badge?: number; href?: string; onClick?: () => void; wide?: boolean };
 
 /** The Home menu: an app-icon grid of squares. Rare things live here so the map stays free for the one thing that is done all day. */
-export function HomeSheet({ tiles, identity, onClose }: { tiles: AppTile[]; identity?: string; onClose: () => void }) {
+export function HomeSheet({ tiles, identity, extra, onClose }: { tiles: AppTile[]; identity?: string; /** One more line under the name, for example the time left. */ extra?: React.ReactNode; onClose: () => void }) {
   return (
-    <SheetFrame icon="grid" title="Menü" onClose={onClose} meta={identity ? <span><Icon name="users" size={16} />{identity}</span> : undefined}>
+    <SheetFrame icon="grid" title="Menü" onClose={onClose} meta={identity || extra ? <><span>{identity && <Icon name="users" size={16} />}{identity}</span>{extra}</> : undefined}>
       <div className="v5-home">
         {tiles.map((t) => {
           const body = <><Icon name={t.icon} size={t.wide ? 26 : 28} /><span>{t.label}</span>{t.badge ? <em>{t.badge}</em> : null}</>;
@@ -39,6 +40,9 @@ type OverviewProps = {
   sync: { state: 'idle' | 'syncing' | 'offline'; pending: number; lastOkAt: number | null; lastError: string | null };
   conflicts: number;
   engine: string;
+  /** The Aktion's time window (distribution only) and the server clock the countdown follows. */
+  window?: { startsAt: string | null; endsAt: string | null } | null;
+  serverNow?: () => number;
   onFitArea(id: string): void;
   onSyncNow(): void;
   onConflicts(): void;
@@ -46,7 +50,7 @@ type OverviewProps = {
 };
 
 /** Progress by houses (overall, per Area, per Team), what the colours mean, and the honest state of the sync. */
-export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflicts, engine, onFitArea, onSyncNow, onConflicts, onClose }: OverviewProps) {
+export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflicts, engine, window: timeWindow, serverNow, onFitArea, onSyncNow, onConflicts, onClose }: OverviewProps) {
   const labels = LABELS[kind], colors = statusColors(theme);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 10_000); return () => window.clearInterval(t); }, []);
@@ -68,6 +72,7 @@ export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflict
   const headline = state === 'ok' ? 'Alles gespeichert' : state === 'busy' ? `${sync.pending} Änderungen werden gesendet` : `Offline – ${sync.pending} Änderungen warten`;
   return (
     <SheetFrame icon="chart" title="Übersicht" onClose={onClose} meta={<span><Icon name="house" size={16} />{total.toLocaleString('de')} Häuser</span>}>
+      {kind === 'distribution' && timeWindow && serverNow && <CountdownCard window={timeWindow} now={serverNow} progress={percent} />}
       <div className="v5-bignum" aria-label={`${percent} Prozent der Häuser`}>{percent}<small>%</small></div>
       <WavyProgress value={percent / 100} label="Fortschritt nach Häusern" />
       <div className="v5-stats">

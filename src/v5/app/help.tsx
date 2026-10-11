@@ -19,6 +19,13 @@ const ENTRIES: Entry[] = [
   { q: 'Wie bewege ich die Karte bei „Wischen“ und „Lasso“?', tags: 'karte bewegen ziehen zoomen halten finger wischen lasso', roles: ['admin', 'team-editor'], a: [
     'Mit einem Finger über die Karte ziehen bewegt sie, mit zwei Fingern zoomst du, wie sonst auch. Zum Markieren legst du den Finger kurz an (ein Ring zeigt, dass es losgeht) und ziehst dann.',
     'Bei „Tippen“ und „Strecke“ gibt es nichts zu halten: Tippen markiert, Ziehen bewegt die Karte.' ] },
+  { q: 'Was ist ein Raum und wie starte ich einen Run?', tags: 'raum run runs gruppe starten personen zeit', roles: ['admin', 'team-editor'], a: [
+    'Ein Raum ist eine Etappe in einem Gebiet: ihr trefft euch, einer öffnet den Raum, die anderen kommen dazu. Menü → „Runs“ → „Raum öffnen“. Dort stellst du ein, wie viele Personen dabei sind (Schieberegler oder Zahl). Das ist Pflicht und deine Angabe: Geräte werden nie mitgezählt.',
+    'Mit „Run beenden“ endet die Etappe. Zeit, Personen und geschaffte Häuser bleiben als Zahlen gespeichert, damit man das nächste Gebiet besser planen kann.' ] },
+  { q: 'Wie kommen andere in den Raum?', tags: 'raum beitreten qr link passwort offen gast', roles: ['admin', 'team-editor'], a: [
+    'Im Raum siehst du einen QR-Code und einen Link. Wer ihn öffnet, arbeitet bis zum Ende des Runs mit, aber nur in diesem Gebiet. Standard ist „Link / QR“. Du kannst auch „Nur Gruppe“, „Passwort“ oder „Offen“ wählen (offen: jede Person mit dem Link, auch aus anderen Gruppen).' ] },
+  { q: 'Wo sehe ich, wie viel Zeit noch bleibt?', tags: 'countdown zeitfenster ende frist zeit', roles: ['admin', 'team-editor', 'viewer'], a: [
+    'Oben im Menü und in der Übersicht steht, wie lange die Aktion noch läuft, und wie die Zeit zum Fortschritt passt. Admins legen Start und Ende unter Menü → „Runs“ → „Zeitfenster der Aktion“ fest.' ] },
   { q: 'Was bedeuten die Farben?', tags: 'farben status ausgeteilt später nicht möglich offen', a: [
     'Grün: Ausgeteilt, die Flyer sind eingeworfen. Gelb: Später, wird noch einmal angegangen. Rot: Nicht möglich, zum Beispiel kein Zugang oder Briefkasten nicht erreichbar. Grau: Offen, noch nicht bearbeitet.',
     'Der Fortschritt in Prozent zählt Häuser, nicht Straßen. „Nicht möglich“ zählt nicht gegen den Fortschritt.' ] },

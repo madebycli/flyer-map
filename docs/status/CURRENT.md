@@ -24,7 +24,7 @@ backend (Abholen incl. admin setup), the lean mutation path and `worker/v5`. Sou
 **Testing:** the integration branch is fast-forwarded to `unstable` → https://flyer-map-unstable.cloudflare-eleven035.workers.dev with its own, empty D1 (`flyer-map-unstable-db`); first start with the one-time setup key at `/start`: [docs/operations/UNSTABLE_TESTEN.md](../operations/UNSTABLE_TESTEN.md).
 
 **Open before go-live (owner):**
-- Apply `0026_v5_field_state.sql` and `0027_v5_notes.sql` (additive) on the target D1; on staging also the missing legacy migrations behind the login 500 (`0023`, `0024_*`, `0025`) — needs a go.
+- Apply `0026_v5_field_state.sql`, `0027_v5_notes.sql`, `0028_v5_window.sql` and `0029_v5_rooms.sql` (all additive; 0028/0029 before the code that uses them) on the target D1; on staging also the missing legacy migrations behind the login 500 (`0023`, `0024_*`, `0025`) — needs a go.
 - Deploy to **staging** first (`deploy/staging/wrangler.staging.example.jsonc`), test with real devices, then merge. Branch previews share the production D1; production is untouched.
 - Decide: Rooms, English UI, manual street, assigning Sonder-Marker (all dropped, see Plan 051 decision 5). Delete the old remote branch `claude/v5-field-core`.
 - `CampaignSyncDurableObject` stays as an empty stub until a `deleted_classes` migration is approved (it destroys the object's storage).

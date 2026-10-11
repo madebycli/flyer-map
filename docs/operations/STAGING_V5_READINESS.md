@@ -35,6 +35,7 @@ Reihenfolge, alle additiv; keine löscht Tabellen:
 4. `0025_trusted_devices.sql`
 5. `0026_v5_field_state.sql` (Statusschicht, Zähler, Gebiets-Packs)
 6. `0027_v5_notes.sql` (Notizen)
+7. `0028_v5_window.sql` (Zeitfenster) und `0029_v5_rooms.sql` (Räume, Gast-Zugänge)
 
 Das D1-Binding der Staging-Datei trägt `"migrations_dir": "../../migrations"`: Wrangler löst den Standardpfad relativ zur Konfigurationsdatei auf und fände unter `deploy/staging/` sonst keine Migrationen (lokal geprüft, B-F-005). Vorher prüfen, was angewendet ist: `npx wrangler d1 migrations list DB -c deploy/staging/wrangler.staging.example.jsonc --remote` (nur lesend; `--local` zeigt dieselbe Liste ohne Netz).
 

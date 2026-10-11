@@ -9,6 +9,7 @@ import type { D1DatabaseLike } from '../campaignRepository.ts';
 import { canReadArea, canWriteArea, fail, ID, isScoped, isRecord, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 import { pullNotes, pushNotes } from './notes.ts';
 import { forgetArea, pruneState } from './cleanup.ts';
+import { createRoom, deleteRoom, finishRoom, joinRoom, listRooms, putWindow, readWindow, roomInfo, updateRoom } from './rooms.ts';
 import { parseCampaignId } from '../snapshotValidation.ts';
 import { consoleSink, emit, errorCodeOf, instrumentDb, requestIdOf, serverTiming, type LogLevel, type Sink } from './observe.ts';
 
@@ -34,19 +35,31 @@ const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 const KEY = /^[sh]:[A-Za-z0-9#:._~@-]{1,80}$/u;
 
 type Route =
-  | { kind: 'state' | 'ops' | 'meta' | 'notes'; campaignId: string }
+  | { kind: 'state' | 'ops' | 'meta' | 'notes' | 'window' | 'rooms'; campaignId: string }
+  | { kind: 'room' | 'room-finish'; campaignId: string; roomId: string }
   | { kind: 'pack' | 'prune' | 'forget'; campaignId: string; areaId: string };
 
 export function v5Route(pathname: string): Route | null {
-  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|areas\/([^/]+)\/(?:pack|prune|forget))$/u.exec(pathname);
+  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|window|rooms|areas\/([^/]+)\/(?:pack|prune|forget)|rooms\/([^/]+)(?:\/finish)?)$/u.exec(pathname);
   if (!m) return null;
   try {
     const campaignId = parseCampaignId(decodeURIComponent(m[1]));
     if (!campaignId) return null;
-    if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta' || m[2] === 'notes') return { kind: m[2], campaignId };
+    if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta' || m[2] === 'notes' || m[2] === 'window' || m[2] === 'rooms') return { kind: m[2], campaignId };
+    if (m[4] !== undefined) {
+      const roomId = decodeURIComponent(m[4]);
+      return ID.test(roomId) ? { kind: m[2].endsWith('/finish') ? 'room-finish' : 'room', campaignId, roomId } : null;
+    }
     const areaId = decodeURIComponent(m[3]);
     return ID.test(areaId) ? { kind: m[2].endsWith('/prune') ? 'prune' : m[2].endsWith('/forget') ? 'forget' : 'pack', campaignId, areaId } : null;
   } catch { return null; }
+}
+
+/** The public room routes (the person may have no access yet): what a join page may ask, and joining itself. */
+function publicRoomRoute(pathname: string): { roomId: string; join: boolean } | null {
+  const m = /^\/api\/v5\/rooms\/([^/]+?)(\/join)?$/u.exec(pathname);
+  if (!m) return null;
+  try { const roomId = decodeURIComponent(m[1]); return ID.test(roomId) ? { roomId, join: !!m[2] } : null; } catch { return null; }
 }
 
 
@@ -79,16 +92,24 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
 /** The route as a template (ids replaced), the same shape the client uses, so both sides' numbers line up. */
 function v5Template(pathname: string): string {
   const route = v5Route(pathname);
-  return route ? `/api/v5/campaigns/:c/${route.kind === 'pack' || route.kind === 'prune' || route.kind === 'forget' ? `areas/:a/${route.kind}` : route.kind}` : pathname === '/api/v5/basemap' ? pathname : '/api/v5/?';
+  if (route) return `/api/v5/campaigns/:c/${route.kind === 'pack' || route.kind === 'prune' || route.kind === 'forget' ? `areas/:a/${route.kind}` : route.kind === 'room' ? 'rooms/:r' : route.kind === 'room-finish' ? 'rooms/:r/finish' : route.kind}`;
+  const room = publicRoomRoute(pathname);
+  return room ? `/api/v5/rooms/:r${room.join ? '/join' : ''}` : pathname === '/api/v5/basemap' ? pathname : '/api/v5/?';
 }
 
 async function routeV5(request: Request, db: D1DatabaseLike, options: V5Options): Promise<Response | null> {
   const url = new URL(request.url);
   // The deployment's basemap, without a campaign: the admin pages place the map focus with it. Style URLs reach every field client anyway, so they must not carry secrets.
   if (url.pathname === '/api/v5/basemap' && (request.method === 'GET' || request.method === 'HEAD')) return basemapResponse(options);
+  const publicRoom = publicRoomRoute(url.pathname);
+  if (publicRoom) {
+    if (publicRoom.join && request.method === 'POST') { if (!sameOrigin(request)) return fail(403, 'cross_origin', 'Anfrage von fremdem Ursprung.'); return joinRoom(db, publicRoom.roomId, request, options); }
+    if (!publicRoom.join && request.method === 'GET') return roomInfo(db, publicRoom.roomId, url);
+    return fail(405, 'method_not_allowed', 'Methode nicht erlaubt.');
+  }
   const route = v5Route(url.pathname);
   if (!route) return url.pathname.startsWith('/api/v5/') ? fail(404, 'not_found', 'Unbekannte v5-Route.') : null;
-  const access = (await resolveAccess(db, request, route.campaignId)) ?? (await resolveCollectionAccess(db, request, route.campaignId));
+  const access = (await resolveAccess(db, request, route.campaignId, { allowRoom: true })) ?? (await resolveCollectionAccess(db, request, route.campaignId));
   if (!access) return fail(401, 'unauthorized', 'Kein Zugriff auf diese Aktion.');
   if (request.method !== 'GET' && request.method !== 'HEAD' && !sameOrigin(request)) return fail(403, 'cross_origin', 'Anfrage von fremdem Ursprung.');
   if (route.kind === 'meta' && request.method === 'GET') return meta(db, access, route.campaignId, url, options);
@@ -96,6 +117,12 @@ async function routeV5(request: Request, db: D1DatabaseLike, options: V5Options)
   if (route.kind === 'ops' && request.method === 'POST') return pushOps(db, access, route.campaignId, request, options);
   if (route.kind === 'notes' && request.method === 'GET') return pullNotes(db, access, route.campaignId, url, options);
   if (route.kind === 'notes' && request.method === 'POST') return pushNotes(db, access, route.campaignId, request, options);
+  if (route.kind === 'window' && request.method === 'PUT') return putWindow(db, access, route.campaignId, request);
+  if (route.kind === 'rooms' && request.method === 'GET') return listRooms(db, access, route.campaignId, options);
+  if (route.kind === 'rooms' && request.method === 'POST') return createRoom(db, access, route.campaignId, request, options);
+  if (route.kind === 'room' && request.method === 'PATCH') return updateRoom(db, access, route.campaignId, route.roomId, request);
+  if (route.kind === 'room' && request.method === 'DELETE') return deleteRoom(db, access, route.campaignId, route.roomId, options);
+  if (route.kind === 'room-finish' && request.method === 'POST') return finishRoom(db, access, route.campaignId, route.roomId, request, options);
   if (route.kind === 'pack' && request.method === 'GET') return getPack(db, access, route.campaignId, route.areaId, request);
   if (route.kind === 'pack' && request.method === 'POST') return buildPack(db, access, route.campaignId, route.areaId, options, request);
   if (route.kind === 'prune' && request.method === 'POST') return pruneState(db, access, route.campaignId, route.areaId, request, (options.now ?? Date.now)());
@@ -126,11 +153,12 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     } catch { rows = []; }
   } else {
     const scoped = isScoped(access);
+    const guest = scoped && !!access.roomAreaId;
     rows = (await db.prepare(
       `SELECT a.id, a.name, a.team_id, a.geometry_json, a.updated_at, p.version AS pack_version, p.geometry_hash AS pack_hash FROM areas a
        LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
-       WHERE a.campaign_id = ?${scoped ? ' AND a.team_id = ?' : ''} ORDER BY a.created_at, a.id`,
-    ).bind(...(scoped ? [campaignId, access.teamId] : [campaignId])).all<Row>()).results;
+       WHERE a.campaign_id = ?${scoped ? ' AND a.team_id = ?' : ''}${guest ? ' AND a.id = ?' : ''} ORDER BY a.created_at, a.id`,
+    ).bind(...(scoped ? [campaignId, access.teamId] : [campaignId]), ...(guest ? [access.roomAreaId] : [])).all<Row>()).results;
   }
   const scoped = isScoped(access);
   const teams = kind === 'collection' ? [] : (await db.prepare('SELECT id, name, color, updated_at FROM teams WHERE campaign_id = ? ORDER BY name, id').bind(campaignId).all<{ id: string; name: string; color: string; updated_at: string }>()).results;
@@ -149,7 +177,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
   // A team link works in its own Gebiete only; the other teams' Gebiete are shown on the map as outlines so the work can be placed. Geometry only: no id, name,
   // team, pack or progress leaves the server for them.
   const contextAreas = kind !== 'collection' && scoped
-    ? (await db.prepare('SELECT geometry_json FROM areas WHERE campaign_id = ? AND team_id <> ? ORDER BY created_at, id').bind(campaignId, access.teamId).all<{ geometry_json: string }>()).results.map((r) => ({ geometry: JSON.parse(r.geometry_json) }))
+    ? (await db.prepare(`SELECT geometry_json FROM areas WHERE campaign_id = ? AND NOT (team_id = ?${access.roomAreaId ? ' AND id = ?' : ''}) ORDER BY created_at, id`).bind(campaignId, access.teamId, ...(access.roomAreaId ? [access.roomAreaId] : [])).all<{ geometry_json: string }>()).results.map((r) => ({ geometry: JSON.parse(r.geometry_json) }))
     : [];
   // The Räume (active Runs with their current members) the Gebietsliste needs: who works where, and who may be joined.
   let runs: { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] }[] = [];
@@ -161,7 +189,7 @@ async function meta(db: D1DatabaseLike, access: AccessContext, campaignId: strin
     } catch { runs = []; }
   }
   return json({
-    campaign, kind, role: access.role, teamId: access.teamId, me: { label: access.label ?? null }, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainArea: kind === 'collection' ? await mainArea(db, campaignId) : null, mainAreaId: kind === 'collection' ? (await mainArea(db, campaignId))?.id ?? null : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
+    campaign, kind, window: kind === 'distribution' ? await readWindow(db, campaignId) : null, guestRoom: access.roomId ?? null, role: access.role, teamId: access.teamId, me: { label: access.label ?? null }, collectorId: access.collectorId ?? null, collectorLabel: access.collectorId ? access.label ?? null : null, runs, mainArea: kind === 'collection' ? await mainArea(db, campaignId) : null, mainAreaId: kind === 'collection' ? (await mainArea(db, campaignId))?.id ?? null : null, pickupRights: kind === 'collection' ? await pickupRights(db, access, campaignId) : { view: false, create: false, edit: false }, canWrite: writesAllowed(access),
     canBuildPack: access.role === 'admin' || access.role === 'team-editor' || access.role === 'collection-collector',
     teams: (scoped ? teams.filter((t) => t.id === access.teamId) : teams).map((t) => ({ id: t.id, name: t.name, color: t.color, updatedAt: t.updated_at })),
     areas, contextAreas,

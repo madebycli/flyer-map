@@ -273,3 +273,54 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-preview .p { background: var(--primary); color: var(--on-primary); }
 .v5-preview .s { background: var(--secondary-container); color: var(--on-secondary-container); }
 .v5-preview .t { background: var(--tertiary-container); color: var(--on-tertiary-container); }
+
+/* ── Räume (runs): countdown, clock, headcount, rows of the record ── */
+.v5-field { display: grid; gap: 0.45rem; }
+.v5-field > span { font-size: 0.86rem; font-weight: 700; color: var(--on-var); }
+.v5-btn.danger { background: var(--error-container); color: var(--on-error-container); }
+.v5-headcount { display: grid; gap: 0.5rem; margin-bottom: 0.6rem; }
+.v5-headcount input[type="range"] { width: 100%; min-height: 3rem; margin: 0; accent-color: var(--primary); }
+.v5-headcount.untouched input[type="range"] { opacity: 0.55; }
+.v5-stepper { display: grid; grid-template-columns: var(--ctl) 1fr var(--ctl); gap: var(--gap); align-items: center; }
+.v5-stepper button { height: var(--ctl); border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font-size: 1.5rem; font-weight: 700; cursor: pointer; }
+.v5-stepper button:disabled { opacity: 0.4; }
+.v5-stepper input { height: var(--ctl); min-width: 0; border: 1.5px solid var(--outline-var); border-radius: var(--r); background: var(--surface-2); color: var(--on); text-align: center; font: 800 1.4rem/1 var(--font); font-variant-numeric: tabular-nums; }
+.v5-stepper input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.v5-countdown { display: grid; grid-template-columns: auto 1fr; gap: 0.9rem; align-items: start; margin: 0.4rem 0 1rem; padding: 1rem 1.2rem; border-radius: var(--r-lg); background: var(--primary-container); color: var(--on-primary-container); }
+.v5-countdown .v5-countdown-icon { display: grid; place-items: center; width: 2.8rem; height: 2.8rem; border-radius: 50%; background: color-mix(in srgb, var(--on-primary-container) 14%, transparent); }
+.v5-countdown b { display: block; font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; }
+.v5-countdown small { display: block; margin-top: 0.15rem; font-weight: 600; opacity: 0.85; }
+.v5-countdown .v5-bar { margin: 0.6rem 0 0.3rem; background: color-mix(in srgb, var(--on-primary-container) 18%, transparent); }
+.v5-countdown .v5-bar i { background: var(--on-primary-container); }
+.v5-countdown.urgent, .v5-countdown.over { background: var(--tertiary-container); color: var(--on-tertiary-container); }
+.v5-countdown.urgent .v5-countdown-icon, .v5-countdown.over .v5-countdown-icon { background: color-mix(in srgb, var(--on-tertiary-container) 14%, transparent); }
+.v5-countdown.urgent .v5-bar, .v5-countdown.over .v5-bar { background: color-mix(in srgb, var(--on-tertiary-container) 18%, transparent); }
+.v5-countdown.urgent .v5-bar i, .v5-countdown.over .v5-bar i { background: var(--on-tertiary-container); }
+.v5-countdown .behind { font-weight: 800; }
+.v5-roomcard { display: flex; align-items: center; gap: 0.9rem; width: 100%; min-height: 4.6rem; margin: 0 0 var(--gap); padding: 0.6rem 1.1rem; border: 0; border-radius: var(--r-lg); background: var(--surface-3); color: var(--on); text-align: left; cursor: pointer; }
+.v5-roomcard:active { transform: scale(0.98); }
+.v5-roomcard .dot { flex: none; width: 1rem; height: 1rem; border-radius: 50%; background: var(--c); }
+.v5-roomcard .body { display: grid; flex: 1; min-width: 0; }
+.v5-roomcard .body b, .v5-roomcard .body small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v5-roomcard .body small { color: var(--on-var); font-weight: 600; }
+.v5-roomcard .time { font: 800 1.15rem/1 var(--font); font-variant-numeric: tabular-nums; color: var(--primary); }
+.v5-runrow { display: grid; gap: 0.25rem; padding: 0.8rem 1rem; border-radius: var(--r); background: var(--surface-3); }
+.v5-runrow .head { display: flex; align-items: center; gap: 0.6rem; }
+.v5-runrow .head .dot { flex: none; width: 0.8rem; height: 0.8rem; border-radius: 50%; background: var(--c); }
+.v5-runrow .head .team { margin-left: auto; font-size: 0.8rem; font-weight: 700; color: var(--on-var); }
+.v5-runrow .head .team + .v5-icon-btn { margin-left: 0; }
+.v5-runrow small { color: var(--on-var); font-weight: 600; }
+.v5-runrow .figures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; margin-top: 0.3rem; }
+.v5-runrow .figures span { display: grid; font-size: 0.66rem; font-weight: 700; color: var(--on-var); }
+.v5-runrow .figures b { font-size: 1rem; font-variant-numeric: tabular-nums; color: var(--on); }
+.v5-roomclock { display: grid; justify-items: center; gap: 0.2rem; margin: 0.6rem 0 1rem; padding: 1.1rem; border-radius: var(--r-lg); background: var(--primary-container); color: var(--on-primary-container); }
+.v5-roomclock b { font: 800 2.6rem/1 var(--font); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.v5-roomclock small { font-weight: 600; opacity: 0.85; }
+.v5-roomchip { display: inline-flex; align-items: center; gap: 0.55rem; height: var(--ctl); padding: 0 1rem; border: 0; border-radius: var(--r); background: var(--primary-container); color: var(--on-primary-container); box-shadow: var(--shadow); font: 800 0.95rem/1 var(--font); font-variant-numeric: tabular-nums; cursor: pointer; }
+.v5-roomchip i { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--on-primary-container); animation: v5-pulse 1.8s ease-in-out infinite; }
+@keyframes v5-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .v5-roomchip i { animation: none; } }
+.v5-join { gap: 0.9rem; text-align: center; }
+.v5-join .v5-input { width: 100%; text-align: center; }
+.v5-summary .v5-stats { margin-top: 0.4rem; }
+.v5-late { color: var(--tertiary); }

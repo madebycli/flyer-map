@@ -30,9 +30,12 @@ export async function resolveArea(db: D1DatabaseLike, campaignId: string, areaId
   } catch { return null; /* collection tables not migrated: there are simply no collection Areas */ }
 }
 
+/** A guest of a room is bound to the room's Gebiet; everybody else is not bound to one. */
+export const inRoomArea = (access: AccessContext, areaId: string) => !access.roomId || access.roomAreaId === areaId;
+
 /** Reading: team members see their team's Areas, collectors the collection Areas (so they see who works where). */
 export function canReadArea(access: AccessContext, area: AreaRef): boolean {
-  if (area.source === 'distribution') return access.role !== 'collection-collector' && (!isScoped(access) || access.teamId === area.teamId);
+  if (area.source === 'distribution') return access.role !== 'collection-collector' && (!isScoped(access) || access.teamId === area.teamId) && inRoomArea(access, area.id);
   if (area.status === 'archived' && access.role !== 'admin') return false;
   return access.role === 'admin' || access.role === 'viewer' || access.role === 'collection-collector';
 }
@@ -50,7 +53,7 @@ async function collectorWorksIn(db: D1DatabaseLike, access: AccessContext, campa
 /** Writing: server-checked, never inferred from what the UI offers. */
 export async function canWriteArea(db: D1DatabaseLike, access: AccessContext, campaignId: string, area: AreaRef): Promise<boolean> {
   if (!writesAllowed(access)) return false;
-  if (area.source === 'distribution') return access.role !== 'collection-collector' && (!isScoped(access) || access.teamId === area.teamId);
+  if (area.source === 'distribution') return access.role !== 'collection-collector' && (!isScoped(access) || access.teamId === area.teamId) && inRoomArea(access, area.id);
   if (area.status === 'archived') return false;
   if (access.role === 'admin') return true;
   return access.role === 'collection-collector' && (await collectorWorksIn(db, access, campaignId, area));
@@ -59,6 +62,10 @@ export async function canWriteArea(db: D1DatabaseLike, access: AccessContext, ca
 /** SQL fragment restricting a table's `area_id` to what a caller may read; admins and viewers get no restriction. */
 export function readableAreasClause(access: AccessContext, campaignId: string): { sql: string; params: unknown[] } {
   if (access.role === 'collection-collector') return { sql: " AND area_id IN (SELECT id FROM collection_areas WHERE campaign_id = ? AND status <> 'archived')", params: [campaignId] };
-  if (isScoped(access)) return { sql: ' AND area_id IN (SELECT id FROM areas WHERE campaign_id = ? AND team_id = ?)', params: [campaignId, access.teamId] };
+  if (isScoped(access)) {
+    // a guest of a room sees and writes its one Gebiet and nothing else of the Gruppe
+    if (access.roomAreaId) return { sql: ' AND area_id IN (SELECT id FROM areas WHERE campaign_id = ? AND team_id = ? AND id = ?)', params: [campaignId, access.teamId, access.roomAreaId] };
+    return { sql: ' AND area_id IN (SELECT id FROM areas WHERE campaign_id = ? AND team_id = ?)', params: [campaignId, access.teamId] };
+  }
   return { sql: '', params: [] };
 }

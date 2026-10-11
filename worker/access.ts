@@ -13,6 +13,9 @@ export type AccessContext = {
   label: string | null;
   collectorId?: string | null;
   collectionAccessId?: string | null;
+  /** A guest who joined an open room: the access is bound to that room and to its Gebiet, and ends with the room. */
+  roomId?: string | null;
+  roomAreaId?: string | null;
 };
 
 export type AccessGrantSummary = Omit<AccessContext, "role"> & {
@@ -27,6 +30,9 @@ type AccessRow = {
   role: PersistentAccessRole;
   team_id: string | null;
   label: string | null;
+  room_id?: string | null;
+  room_area_id?: string | null;
+  room_status?: string | null;
 };
 
 type GrantRow = {
@@ -67,47 +73,68 @@ export function cookieValue(request: Request, name: string) {
   return null;
 }
 
-export function sessionCookie(secret: string) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(secret)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_SECONDS}`;
+export function sessionCookie(secret: string, maxAgeSeconds: number = SESSION_SECONDS) {
+  return `${SESSION_COOKIE}=${encodeURIComponent(secret)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
 }
 
 export function clearSessionCookie() {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
+export type ResolveOptions = {
+  /** A guest of a room is let in only where the room's rules are enforced (the v5 API); every other endpoint treats such a session as no session at all. */
+  allowRoom?: boolean;
+};
+
 export async function resolvePersistentAccess(
   db: D1DatabaseLike,
   request: Request,
   campaignId?: string,
+  options: ResolveOptions = {},
 ): Promise<AccessContext | null> {
   const sessionSecret = cookieValue(request, SESSION_COOKIE);
   if (!sessionSecret || sessionSecret.length > 256) return null;
   const sessionHash = await hashSecret(sessionSecret);
   const now = new Date().toISOString();
 
-  const row = await db
-    .prepare(
-      `SELECT
-         g.id AS grant_id, g.campaign_id, g.role, g.team_id, g.label
+  const withRoom = (extra: string) =>
+    `SELECT g.id AS grant_id, g.campaign_id, g.role, g.team_id, g.label${extra}
        FROM campaign_sessions s
        JOIN campaign_access_grants g
          ON g.id = s.grant_id AND g.campaign_id = s.campaign_id
+       ${extra ? "LEFT JOIN v5_rooms r ON r.id = g.room_id AND r.campaign_id = g.campaign_id" : ""}
        WHERE s.session_hash = ?
          AND s.expires_at > ?
          AND g.revoked_at IS NULL
          AND (? IS NULL OR g.campaign_id = ?)
-       LIMIT 1`,
-    )
-    .bind(sessionHash, now, campaignId ?? null, campaignId ?? null)
-    .first<AccessRow>();
+       LIMIT 1`;
+  let row: AccessRow | null;
+  try {
+    row = await db
+      .prepare(withRoom(", g.room_id AS room_id, r.area_id AS room_area_id, r.status AS room_status"))
+      .bind(sessionHash, now, campaignId ?? null, campaignId ?? null)
+      .first<AccessRow>();
+  } catch (error) {
+    // A database that does not have the rooms migration yet (0029) must not lock everybody out.
+    if (!/no such (table|column)/iu.test(error instanceof Error ? error.message : String(error))) throw error;
+    row = await db
+      .prepare(withRoom(""))
+      .bind(sessionHash, now, campaignId ?? null, campaignId ?? null)
+      .first<AccessRow>();
+  }
 
   if (!row) return null;
+  if (row.room_id) {
+    // A guest of a room: only for the API that enforces the room's rules, only while the room is open, and only for its Gebiet.
+    if (!options.allowRoom || row.room_status !== "active") return null;
+  }
   return {
     grantId: row.grant_id,
     campaignId: row.campaign_id,
     role: row.role,
     teamId: row.team_id,
     label: row.label,
+    ...(row.room_id ? { roomId: row.room_id, roomAreaId: row.room_area_id ?? null } : {}),
   };
 }
 
@@ -115,8 +142,9 @@ export async function resolveAccess(
   db: D1DatabaseLike,
   request: Request,
   campaignId?: string,
+  options: ResolveOptions = {},
 ): Promise<AccessContext | null> {
-  const persistent = await resolvePersistentAccess(db, request, campaignId);
+  const persistent = await resolvePersistentAccess(db, request, campaignId, options);
   if (persistent) return persistent;
   const account = await resolveCampaignAdminAccountAccess(db, request, campaignId);
   if (account) return account;
@@ -185,6 +213,7 @@ export async function createAccessGrant(
 export async function createSessionForGrant(
   db: D1DatabaseLike,
   grant: AccessContext,
+  options: { ttlSeconds?: number } = {},
 ) {
   if (grant.role === "collection-collector") {
     throw new Error("persistent_session_role_required");
@@ -193,7 +222,7 @@ export async function createSessionForGrant(
   const sessionHash = await hashSecret(sessionSecret);
   const sessionId = `session_${crypto.randomUUID()}`;
   const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + SESSION_SECONDS * 1000);
+  const expiresAt = new Date(createdAt.getTime() + (options.ttlSeconds ?? SESSION_SECONDS) * 1000);
 
   const result = await db.batch([
     db
@@ -256,7 +285,7 @@ export async function listAccessGrants(db: D1DatabaseLike, campaignId: string) {
     .prepare(
       `SELECT id, campaign_id, role, team_id, label, created_at, revoked_at
        FROM campaign_access_grants
-       WHERE campaign_id = ?
+       WHERE campaign_id = ? AND room_id IS NULL
        ORDER BY created_at DESC, id DESC`,
     )
     .bind(campaignId)

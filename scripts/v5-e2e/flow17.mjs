@@ -91,10 +91,31 @@ try {
     await page.getByRole('button', { name: 'Hilfe', exact: true }).click();
     await audit(page, tag, 'help');
     await close(page, `${tag} help`);
-    for (const [tile, sheet] of [['Übersicht', 'overview'], ['Team', 'team'], ['Gruppen', 'groups'], ['Zugänge', 'access'], ['Suche', 'search'], ['Notizen', 'notes'], ['Diagnose', 'diag']]) {
+    for (const [tile, sheet] of [['Übersicht', 'overview'], ['Team', 'team'], ['Gruppen', 'groups'], ['Zugänge', 'access'], ['Suche', 'search'], ['Notizen', 'notes'], ['Diagnose', 'diag'], ['Runs', 'runs'], ['Farbe', 'palette']]) {
       await menuTile(page, tile);
       await audit(page, tag, sheet);
       await close(page, `${tag} ${sheet}`);
+    }
+    if (tag === '390-dark') {
+      // Räume: the form to open one, the open room, and (the next rounds) the record with a finished run
+      await menuTile(page, 'Runs');
+      await page.getByRole('button', { name: 'Raum öffnen', exact: true }).click();
+      await page.getByRole('group', { name: 'Wer darf beitreten' }).waitFor();
+      await audit(page, tag, 'room-start');
+      await page.getByRole('textbox', { name: 'Personenzahl' }).fill('8');
+      await page.locator('.v5-sheet').getByRole('button', { name: 'Raum öffnen', exact: true }).click();
+      await page.getByRole('timer', { name: 'Laufzeit des Raums' }).waitFor();
+      await audit(page, tag, 'room');
+      await page.getByRole('button', { name: /Wer darf beitreten\? ändern/ }).click();
+      await audit(page, tag, 'room-mode');
+      page.once('dialog', (d) => void d.accept());
+      await page.getByRole('button', { name: 'Run beenden' }).click();
+      await page.getByText('Run beendet').waitFor();
+      await audit(page, tag, 'room-summary');
+      await page.getByRole('button', { name: 'Fertig' }).click(); // back to the list, which now holds the finished run
+      await page.locator('.v5-sheet').getByText('Alle Runs').waitFor();
+      await audit(page, tag, 'runs-record');
+      await close(page, `${tag} runs-record`);
     }
     // A house and a street: tap them on the map.
     await page.evaluate(async ([c, z]) => { const m = window.__v5Map; m.jumpTo({ center: c, zoom: z }); await new Promise((r) => m.once('idle', r)); }, [M(76, 87), 18.4]);

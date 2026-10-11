@@ -5,6 +5,7 @@ import type { Note } from '../notes/types.ts';
 import { diag, tracedFetch } from '../diag/index.ts';
 import { packPlan } from '../engine/index.ts';
 import { mapLimit } from './pool.ts';
+import type { RoomRecord } from './roomsLogic.ts';
 
 export type CollectionAreaInfo = { status: 'open' | 'claimed' | 'in-progress' | 'completed' | 'archived'; color: string; runId: string | null; claimedBy: string | null; claimedById: string | null };
 export type CollectionRunInfo = { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] };
@@ -23,6 +24,10 @@ export type Meta = {
   me: { label: string | null };
   role: 'admin' | 'team-editor' | 'viewer' | 'collection-collector';
   teamId: string | null;
+  /** The time window of the Aktion (distribution only): the countdown counts to its end. */
+  window: { startsAt: string | null; endsAt: string | null } | null;
+  /** Set for a guest who joined a room: the access is that room's and ends with it. */
+  guestRoom: string | null;
   canWrite: boolean;
   canBuildPack: boolean;
   teams: { id: string; name: string; color: string; updatedAt: string }[];
@@ -238,3 +243,21 @@ export async function pruneArea(campaignId: string, areaId: string, keys: string
   }
   return out;
 }
+
+// ── time window and rooms (distribution) ─────────────────────────
+export type RoomsReply = { rooms: RoomRecord[]; serverNow: number };
+export const fetchRooms = async (campaignId: string): Promise<RoomsReply> => (await call(`${base(campaignId)}/rooms`)).json() as Promise<RoomsReply>;
+const sendJson = (method: string, path: string, body?: unknown) => call(path, { method, headers: body === undefined ? undefined : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+export const setWindow = (campaignId: string, window: { startsAt: string | null; endsAt: string | null }) => sendJson('PUT', `${base(campaignId)}/window`, window);
+export type RoomStart = { areaId: string; headcount: number; joinMode: RoomRecord['joinMode']; password?: string; housesTotal?: number | null };
+export const startRoom = async (campaignId: string, input: RoomStart): Promise<RoomRecord> => ((await sendJson('POST', `${base(campaignId)}/rooms`, input)).json() as Promise<{ room: RoomRecord }>).then((r) => r.room);
+export const changeRoom = async (campaignId: string, roomId: string, patch: { headcount?: number; housesTotal?: number; joinMode?: RoomRecord['joinMode']; password?: string }): Promise<RoomRecord> =>
+  ((await sendJson('PATCH', `${base(campaignId)}/rooms/${encodeURIComponent(roomId)}`, patch)).json() as Promise<{ room: RoomRecord }>).then((r) => r.room);
+export const finishRoom = async (campaignId: string, roomId: string, housesTotal: number | null): Promise<RoomRecord> =>
+  ((await sendJson('POST', `${base(campaignId)}/rooms/${encodeURIComponent(roomId)}/finish`, housesTotal === null ? {} : { housesTotal })).json() as Promise<{ room: RoomRecord }>).then((r) => r.room);
+export const deleteRoom = (campaignId: string, roomId: string) => sendJson('DELETE', `${base(campaignId)}/rooms/${encodeURIComponent(roomId)}`);
+
+export type RoomInfo = { status: 'active' | 'finished'; areaName: string; campaignName: string; joinMode: RoomRecord['joinMode']; passwordRequired: boolean; canJoin: boolean; reason: string | null; campaignId: string | null };
+export const fetchRoomInfo = async (roomId: string, secret: string | null): Promise<RoomInfo> => (await call(`/api/v5/rooms/${encodeURIComponent(roomId)}${secret ? `?j=${encodeURIComponent(secret)}` : ''}`)).json() as Promise<RoomInfo>;
+export const joinRoomAsGuest = async (roomId: string, body: { label: string; j?: string | null; password?: string }): Promise<{ campaignId: string; areaId: string }> =>
+  (await sendJson('POST', `/api/v5/rooms/${encodeURIComponent(roomId)}/join`, body)).json() as Promise<{ campaignId: string; areaId: string }>;

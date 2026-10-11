@@ -8,7 +8,7 @@ import { areaAt } from '../areas/nearest.ts';
 import { makeTemplate, parseTemplate, planTemplate, serializeTemplate, templateFileName, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import { downloadText } from './download.ts';
 import { applyTemplatePlan, type ApplyProgress } from './templateApply.ts';
-import { buildPackFor, createTeam, archiveCollectionArea, deleteArea, deleteTeam, forceReleaseArea, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
+import { changeRoom, deleteRoom, finishRoom, setWindow, startRoom, buildPackFor, createTeam, archiveCollectionArea, deleteArea, deleteTeam, forceReleaseArea, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
 import { AreaEditBar, MAIN_ID, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
@@ -20,6 +20,9 @@ import { CollectionSetupSheet } from './collectionSetup.tsx';
 import { ActivitySheet } from './activitySheet.tsx';
 import { HelpSheet } from './help.tsx';
 import { PaletteSheet } from './paletteSheet.tsx';
+import { CountdownLine, RoomChip, RoomSheet, RoomStartSheet, RoomsSheet } from './roomsUi.tsx';
+import { useRooms } from './useRooms.ts';
+import { roomLinkFor, type RoomRecord } from './roomsLogic.ts';
 import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } from './panels.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
 import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
@@ -40,7 +43,7 @@ const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'palette' | 'help' | 'diag' | 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
+type Panel = 'rooms' | 'room' | 'roomstart' | 'palette' | 'help' | 'diag' | 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -103,12 +106,26 @@ export function App({ campaignId }: { campaignId: string }) {
   const [rotated, setRotated] = useState(false);
   const [locating, setLocating] = useState(false);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [roomBusy, setRoomBusy] = useState(false);
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomSummary, setRoomSummary] = useState(false);
 
   useEffect(() => { if (!store) return; setConflicts([...store.pendingConflicts]); return store.subscribeConflicts(setConflicts); }, [store]);
   useEffect(() => { if (!conflicts.length && panel === 'conflicts') setPanel(null); }, [conflicts.length, panel]);
 
   const index = useMemo(() => (network ? buildIndex(network) : null), [network]);
   const canWrite = !!meta?.canWrite;
+  // Räume exist for distribution Aktionen only (the Abhol side has its own Raum)
+  const roomsOn = !!meta && meta.kind === 'distribution' && meta.role !== 'collection-collector' && phase.kind === 'ready';
+  const rooms = useRooms(campaignId, roomsOn);
+  const room = rooms.rooms.find((r) => r.id === roomId) ?? null;
+  const houseCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!roomsOn || !network || !(panel === 'rooms' || panel === 'room' || panel === 'roomstart')) return counts;
+    for (const house of network.houses) { const id = campaign.areaOf.get(`h:${house.id}`); if (id) counts.set(id, (counts.get(id) ?? 0) + 1); }
+    return counts;
+  }, [roomsOn, network, panel, campaign.areaOf]);
 
   const me = useMemo(() => (meta?.collectorId ? { collectorId: meta.collectorId, label: meta.collectorLabel ?? 'Helfer' } : null), [meta?.collectorId, meta?.collectorLabel]);
   const views = useAreaViews(meta, me);
@@ -521,6 +538,19 @@ export function App({ campaignId }: { campaignId: string }) {
   const areaOfId = (id: string) => meta?.areas.find((a) => a.id === id);
 
   const modeHref = (collection: boolean) => { const u = new URL(location.href); u.searchParams.delete('kind'); if (collection) u.searchParams.set('kind', 'collection'); return `${u.pathname}${u.search}`; };
+  // ── Räume: who may open one, what the buttons do ──
+  const isStaff = meta?.role === 'admin' || (meta?.role === 'team-editor' && !meta.guestRoom);
+  const startableAreas = useMemo(() => (meta?.areas ?? []).filter((a) => a.writable && !rooms.active.some((r) => r.areaId === a.id))
+    .map((a) => { const team = meta?.teams.find((t) => t.id === a.teamId); return { id: a.id, name: a.name, teamName: team?.name ?? '', teamColor: team?.color ?? '#8a97a6' }; }), [meta, rooms.active]);
+  const canStartRoom = isStaff && startableAreas.length > 0;
+  const startHint = isStaff && startableAreas.length === 0 ? ((meta?.areas ?? []).some((a) => a.writable) ? 'In allen deinen Gebieten läuft schon ein Raum.' : 'Du hast kein Gebiet, in dem du einen Raum öffnen kannst.') : null;
+  const roomAction = async (task: () => Promise<void>) => {
+    setRoomBusy(true); setRoomError(null);
+    try { await task(); } catch (error) { setRoomError(error instanceof Error ? error.message : 'Das hat nicht geklappt.'); }
+    finally { setRoomBusy(false); }
+  };
+  const openRoom = (r: RoomRecord) => { setRoomId(r.id); setRoomSummary(false); setRoomError(null); setPanel('room'); };
+  const roomLink = room && room.status === 'active' && room.joinSecret && room.joinMode !== 'team' ? roomLinkFor(location.origin, campaignId, room.id, room.joinMode === 'link' ? room.joinSecret : null) : null;
   const tiles: AppTile[] = [
     ...(meta?.role === 'admin' ? [
       { id: 'm-dist', icon: 'mailbox', label: 'Austeilen', on: !isCollection, href: isCollection ? modeHref(false) : undefined, onClick: () => setPanel(null), wide: true } satisfies AppTile,
@@ -531,6 +561,7 @@ export function App({ campaignId }: { campaignId: string }) {
     ...(meta?.role === 'admin' && isCollection ? [{ id: 'setup', icon: 'ruler', label: 'Einrichten', onClick: () => { setAdminError(null); openPanel('setup'); } } satisfies AppTile] : []),
     ...(meta?.role === 'admin' && !isCollection ? [{ id: 'groups', icon: 'flag', label: 'Gruppen', onClick: () => { setAdminError(null); openPanel('groups'); } } satisfies AppTile] : []),
     ...(meta?.role === 'admin' ? [{ id: 'access', icon: 'lock', label: 'Zugänge', onClick: () => openPanel('access') } satisfies AppTile] : []),
+    ...(roomsOn ? [{ id: 'rooms', icon: 'later', label: 'Runs', badge: rooms.active.length || undefined, onClick: () => { setRoomError(null); openPanel('rooms'); } } satisfies AppTile] : []),
     { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
     { id: 'areas', icon: 'polygon', label: 'Gebiete', onClick: () => (isCollection ? openPanel('areas') : enter('areas')) },
     ...(canEditAny && !isCollection ? [{ id: 'template', icon: 'upload', label: 'Vorlage laden', onClick: pickTemplate } satisfies AppTile] : []),
@@ -635,6 +666,7 @@ export function App({ campaignId }: { campaignId: string }) {
             ? (fab !== 'options' && <FabCaption marking={marking} kind={kind} />)
             : (<>
               <button className="v5-sq" onClick={() => openPanel('home')} aria-label="Menü" title="Menü"><Icon name="grid" size={24} /></button>
+ {roomsOn && <RoomChip rooms={rooms.active} now={rooms.now} onClick={() => { if (rooms.active.length === 1) openRoom(rooms.active[0]); else { setRoomError(null); openPanel('rooms'); } }} />}
               {teamBadge && <span className="v5-teamchip" title={teamBadge.title}>{teamBadge.color && <i className="v5-dotc" style={{ background: teamBadge.color }} aria-hidden />}<span>{teamBadge.label}</span></span>}
             </>)}
         </div>
@@ -658,7 +690,24 @@ export function App({ campaignId }: { campaignId: string }) {
       {panel === 'diag' && <DiagSheet engine={campaign.engine} onClose={() => setPanel(null)} />}
       {panel === 'palette' && <PaletteSheet seed={seed} theme={theme} onPick={setSeed} onClose={() => setPanel(null)} />}
       {ready && panel === 'help' && meta && <HelpSheet role={meta.role} onClose={() => setPanel(null)} />}
-      {ready && panel === 'home' && <HomeSheet tiles={tiles} identity={identity} onClose={() => setPanel(null)} />}
+      {ready && panel === 'home' && <HomeSheet tiles={tiles} identity={identity} extra={roomsOn && meta?.window ? <CountdownLine window={meta.window} now={rooms.now} /> : undefined} onClose={() => setPanel(null)} />}
+      {ready && roomsOn && meta && panel === 'rooms' && (
+        <RoomsSheet role={meta.role} window={meta.window} rooms={rooms.rooms} now={rooms.now} progress={percent} staff={isStaff} canStart={canStartRoom} startHint={startHint} busy={roomBusy} error={roomError ?? rooms.error}
+          onStart={() => { setRoomError(null); setPanel('roomstart'); }} onOpen={openRoom}
+          onDelete={(r) => { if (window.confirm(`Run „${r.areaName}“ löschen? Die Zahlen sind danach weg.`)) void roomAction(async () => { await deleteRoom(campaignId, r.id); await rooms.refresh(); }); }}
+          onWindow={(next) => void roomAction(async () => { await setWindow(campaignId, next); await campaign.refreshMeta(); })} onClose={() => setPanel(null)} />
+      )}
+      {ready && roomsOn && panel === 'roomstart' && (
+        <RoomStartSheet areas={startableAreas} defaultAreaId={startableAreas[0]?.id ?? ''} busy={roomBusy} error={roomError}
+          onStart={(input) => void roomAction(async () => { const created = await startRoom(campaignId, { ...input, housesTotal: houseCounts.get(input.areaId) ?? null }); await rooms.refresh(); openRoom(created); })} onBack={() => setPanel('rooms')} />
+      )}
+      {ready && roomsOn && panel === 'room' && room && (
+        <RoomSheet room={room} now={rooms.now} link={roomLink} canManage={isStaff} busy={roomBusy} error={roomError} summary={roomSummary}
+          onHeadcount={(n) => void roomAction(async () => { await changeRoom(campaignId, room.id, { headcount: n }); await rooms.refresh(); })}
+          onMode={(mode, password) => void roomAction(async () => { await changeRoom(campaignId, room.id, { joinMode: mode, ...(password ? { password } : {}) }); await rooms.refresh(); })}
+          onFinish={() => { if (window.confirm('Run beenden? Danach endet der Zugang aller Gäste, die per Link dazugekommen sind.')) void roomAction(async () => { await finishRoom(campaignId, room.id, houseCounts.get(room.areaId) ?? null); await rooms.refresh(); setRoomSummary(true); }); }}
+          onClose={() => setPanel(roomSummary ? 'rooms' : null)} />
+      )}
       {ready && panel === 'template' && templateDraft && <TemplateSheet template={templateDraft.template} plan={templateDraft.plan} progress={templateProgress} onApply={() => void applyTemplate()} onClose={() => { if (!templateProgress) { setPanel(null); setTemplateDraft(null); } }} />}
       {ready && panel === 'activity' && store && (
         <ActivitySheet kind={kind} theme={theme} store={store} version={campaign.progress} myLabel={meta?.me?.label ?? meta?.collectorLabel ?? 'Du'} labelOf={keyLabel} onPick={openNoteTarget} onClose={() => setPanel(null)} />
@@ -681,7 +730,7 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
         <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflictRows.length}
-          engine={campaign.engine?.kind === 'wasm' ? 'Rust (WebAssembly)' : 'TypeScript (Ersatz)'} onFitArea={fitArea} onSyncNow={campaign.syncNow} onConflicts={() => openPanel('conflicts')} onClose={() => setPanel(null)} />
+          engine={campaign.engine?.kind === 'wasm' ? 'Rust (WebAssembly)' : 'TypeScript (Ersatz)'} window={roomsOn ? meta.window : null} serverNow={rooms.now} onFitArea={fitArea} onSyncNow={campaign.syncNow} onConflicts={() => openPanel('conflicts')} onClose={() => setPanel(null)} />
       )}
       {ready && panel === 'conflicts' && (
         <SheetFrame icon="warning" title="Überschrieben" onClose={() => setPanel(null)} meta={<span>{conflictRows.length}</span>}>

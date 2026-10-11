@@ -5,6 +5,8 @@ import '../../ui/ui.css';
 import './v5.css';
 import { App } from './App.tsx';
 import { linkIntent, redeemLink, type Redeemed } from './link.ts';
+import { JoinRoom } from './roomsUi.tsx';
+import { roomIntent } from './roomsLogic.ts';
 import { applyTheme, Icon } from '../../ui/index.ts';
 import { initDiag } from '../diag/index.ts';
 
@@ -20,6 +22,9 @@ const Card = ({ title, text, retry }: { title: string; text: string; retry?: boo
 /** An access link is exchanged for a session first; the token never stays in the address bar. */
 async function boot(campaign: string | null): Promise<React.ReactNode> {
   if (!campaign) return <Card title="Keine Aktion gewählt" text="Öffne den Link mit ?campaign=…" />;
+  // A room link: the room's page decides (join, or on to the map). The secret stays in the fragment, which no server ever sees.
+  const room = roomIntent(location.search, location.hash);
+  if (room) return <JoinRoom roomId={room.roomId} secret={room.secret} campaignId={room.campaignId} />;
   const intent = linkIntent(location.hash);
   if (!intent) return <App campaignId={campaign} />;
   const result: Redeemed = await redeemLink(campaign, intent);
