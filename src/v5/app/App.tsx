@@ -10,7 +10,7 @@ import { areaAt } from '../areas/nearest.ts';
 import { makeTemplate, parseTemplate, planTemplate, serializeTemplate, templateFileName, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import { downloadText } from './download.ts';
 import { applyTemplatePlan, type ApplyProgress } from './templateApply.ts';
-import { changeRoom, deleteRoom, finishRoom, setWindow, startRoom, buildPackFor, createTeam, archiveCollectionArea, deleteArea, deleteTeam, forceReleaseArea, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
+import { fetchProgress, type ServerProgress, changeRoom, deleteRoom, finishRoom, setWindow, startRoom, buildPackFor, createTeam, archiveCollectionArea, deleteArea, deleteTeam, forceReleaseArea, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
 import { AreaEditBar, MAIN_ID, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
@@ -35,7 +35,7 @@ import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, note
 import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaViews, type AreaStats } from './collection.tsx';
 import { areaPercent, collectionActions } from './collection.ts';
 import { SheetFrame, StatusGroup } from './sheet.tsx';
-import { houseStats } from './stats.ts';
+import { houseStats, withServerProgress } from './stats.ts';
 import type { SearchHit } from './search.ts';
 import { useCampaign } from './useCampaign.ts';
 import { Icon, Loader, applyPalette, readSeed, saveSeed } from '../../ui/index.ts';
@@ -507,9 +507,20 @@ export function App({ campaignId }: { campaignId: string }) {
     for (const house of network.houses) if (campaign.areaOf.get(`h:${house.id}`) === selectedArea.id) { total++; if (store.statusOf(`h:${house.id}`) === 'completed') done++; }
     return { total, done, size: areaSquareMeters(fromRing(selectedArea.geometry.coordinates[0])) };
   }, [selectedArea, network, store, campaign.areaOf, campaign.progress]);
+  // While parts of a Gebiet are still arriving, the overview takes that Gebiet's numbers from the server (see `withServerProgress`).
+  const [serverProgress, setServerProgress] = useState<ServerProgress | null>(null);
+  const partialCount = campaign.partialAreas.size;
+  useEffect(() => {
+    if (panel !== 'overview' || !partialCount) { setServerProgress(null); return; }
+    let live = true;
+    const load = () => { void fetchProgress(campaignId).then((p) => { if (live) setServerProgress(p); }, () => {}); };
+    load();
+    const timer = window.setInterval(load, 20_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [panel, partialCount, campaignId]);
   const stats = useMemo(
-    () => (panel === 'overview' && network && store ? houseStats(network, (key) => store.statusOf(key), campaign.areaOf) : null),
-    [panel, network, store, campaign.areaOf, campaign.progress],
+    () => (panel === 'overview' && network && store ? withServerProgress(houseStats(network, (key) => store.statusOf(key), campaign.areaOf), serverProgress, campaign.partialAreas, campaign.expectedUnits) : null),
+    [panel, network, store, campaign.areaOf, campaign.progress, serverProgress, campaign.partialAreas, campaign.expectedUnits],
   );
   const [cleanupRevision, setCleanupRevision] = useState(0);
   const orphanCount = useMemo(() => (tool === 'areas' && selectedArea && meta?.role === 'admin' ? campaign.orphans().length : 0), [tool, selectedArea, meta?.role, campaign.progress, campaign.network, cleanupRevision]); // eslint-disable-line react-hooks/exhaustive-deps

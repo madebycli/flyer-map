@@ -7,7 +7,7 @@ last_updated: 2026-10-12
 
 # Plan 054 — the same speed and data use for 10, 1 000 and 100 000 houses
 
-**Status: PLANNED / NOT IMPLEMENTED** (only the first measurements and the render fixes below are built). The owner's goal (2026-10-12): no difference in loading time or performance between 10, 1 000 and 100 000 houses and streets, and little data use, because many people use the site on mobile data.
+**Status: PARTLY BUILT.** Built: render fixes (`00ce2a0`, `2911b9b`), parts around the last view first (`b6eafe7`), step 2's server side (below). Not built: loading parts on demand, the levels of detail, the offline decision. The owner's goal (2026-10-12): no difference in loading time or performance between 10, 1 000 and 100 000 houses and streets, and little data use, because many people use the site on mobile data.
 
 ## What is measured, what is not
 
@@ -49,3 +49,10 @@ Must the map keep working offline in parts that were never opened? If **yes**: a
 - Synthetic cities of 10, 1 000 and 100 000 houses (`CITY_BLOCKS`, `perf.mjs`): bytes and time of a first start for the same Gebiet size or the same view stay within a stated factor; long tasks per pan do not grow with the city.
 - State pull for a team link transfers only that team's Gebiete (server test).
 - Overview numbers equal the per-house calculation (property test).
+
+## Built so far (2026-10-12)
+
+- **Start order** (`src/v5/app/lastView.ts`): the view is kept per Aktion on the device; a staged start derives the parts nearest to it first.
+- **Server aggregates** (`worker/v5/areaStats.ts`, migration `0030_v5_area_stats.sql`, additive, applied only to the dedicated Unstable D1 by the pipeline): `PUT /areas/stats` (admins; a device reports how many houses and street pieces each unit has, only when that changed since its last report because every report is a write) and `GET /progress` (per Gebiet the person may read: reported size while the pack version matches, plus done / later / not deliverable counted in the database). Tests: `tests/v5AreaStats.test.ts`.
+- **Overview** (`withServerProgress` in `src/v5/app/stats.ts`): while parts of a Gebiet are still arriving after a staged start, the overview takes that Gebiet's numbers from the server — only when the server knows all its units, else the local numbers stay. Refreshed every 20 s while the overview is open.
+- Not measured on a device. `/progress` reads the `v5_state` rows of the Aktion once per call (an aggregate over an index): the D1 read cost of an overview with many thousands of statuses is not measured yet.

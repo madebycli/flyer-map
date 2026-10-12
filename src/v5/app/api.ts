@@ -52,6 +52,17 @@ export async function call(path: string, init?: RequestInit): Promise<Response> 
 
 const base = (campaignId: string) => `/api/v5/campaigns/${encodeURIComponent(campaignId)}`;
 
+/** Sizes of derived units, reported by an admin's device (see `worker/v5/areaStats.ts`). */
+export type UnitSize = { unit: string; area: string; packVersion: number; houses: number; segments: number };
+export async function reportAreaStats(campaignId: string, units: UnitSize[]): Promise<void> {
+  await call(`${base(campaignId)}/areas/stats`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ units }) });
+}
+/** Per Gebiet: size reported by the devices and how many houses are done, from the server (the same cost whatever the size of the city is). */
+export type ServerProgress = Record<string, { houses: number; segments: number; units: number; completed: number; later: number; notDeliverable: number }>;
+export async function fetchProgress(campaignId: string): Promise<ServerProgress> {
+  return ((await (await call(`${base(campaignId)}/progress`)).json()) as { areas: ServerProgress }).areas;
+}
+
 export async function fetchMeta(campaignId: string, kind?: 'collection'): Promise<Meta> {
   return (await call(`${base(campaignId)}/meta${kind ? `?kind=${kind}` : ''}`)).json() as Promise<Meta>;
 }

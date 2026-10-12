@@ -9,6 +9,7 @@ import type { D1DatabaseLike } from '../campaignRepository.ts';
 import { canReadArea, canWriteArea, fail, ID, isScoped, isRecord, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 import { pullNotes, pushNotes } from './notes.ts';
 import { forgetArea, pruneState } from './cleanup.ts';
+import { getProgress, putAreaStats } from './areaStats.ts';
 import { createRoom, deleteRoom, finishRoom, joinRoom, listRooms, putWindow, readWindow, roomInfo, updateRoom } from './rooms.ts';
 import { parseCampaignId } from '../snapshotValidation.ts';
 import { consoleSink, emit, errorCodeOf, instrumentDb, requestIdOf, serverTiming, type LogLevel, type Sink } from './observe.ts';
@@ -35,17 +36,18 @@ const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 const KEY = /^[sh]:[A-Za-z0-9#:._~@-]{1,80}$/u;
 
 type Route =
-  | { kind: 'state' | 'ops' | 'meta' | 'notes' | 'window' | 'rooms'; campaignId: string }
+  | { kind: 'state' | 'ops' | 'meta' | 'notes' | 'window' | 'rooms' | 'progress' | 'stats'; campaignId: string }
   | { kind: 'room' | 'room-finish'; campaignId: string; roomId: string }
   | { kind: 'pack' | 'prune' | 'forget'; campaignId: string; areaId: string };
 
 export function v5Route(pathname: string): Route | null {
-  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|window|rooms|areas\/([^/]+)\/(?:pack|prune|forget)|rooms\/([^/]+)(?:\/finish)?)$/u.exec(pathname);
+  const m = /^\/api\/v5\/campaigns\/([^/]+)\/(state|ops|meta|notes|window|rooms|progress|areas\/stats|areas\/([^/]+)\/(?:pack|prune|forget)|rooms\/([^/]+)(?:\/finish)?)$/u.exec(pathname);
   if (!m) return null;
   try {
     const campaignId = parseCampaignId(decodeURIComponent(m[1]));
     if (!campaignId) return null;
-    if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta' || m[2] === 'notes' || m[2] === 'window' || m[2] === 'rooms') return { kind: m[2], campaignId };
+    if (m[2] === 'state' || m[2] === 'ops' || m[2] === 'meta' || m[2] === 'notes' || m[2] === 'window' || m[2] === 'rooms' || m[2] === 'progress') return { kind: m[2], campaignId };
+    if (m[2] === 'areas/stats') return { kind: 'stats', campaignId };
     if (m[4] !== undefined) {
       const roomId = decodeURIComponent(m[4]);
       return ID.test(roomId) ? { kind: m[2].endsWith('/finish') ? 'room-finish' : 'room', campaignId, roomId } : null;
@@ -92,7 +94,7 @@ export async function handleV5Api(request: Request, db: D1DatabaseLike, options:
 /** The route as a template (ids replaced), the same shape the client uses, so both sides' numbers line up. */
 function v5Template(pathname: string): string {
   const route = v5Route(pathname);
-  if (route) return `/api/v5/campaigns/:c/${route.kind === 'pack' || route.kind === 'prune' || route.kind === 'forget' ? `areas/:a/${route.kind}` : route.kind === 'room' ? 'rooms/:r' : route.kind === 'room-finish' ? 'rooms/:r/finish' : route.kind}`;
+  if (route) return `/api/v5/campaigns/:c/${route.kind === 'pack' || route.kind === 'prune' || route.kind === 'forget' ? `areas/:a/${route.kind}` : route.kind === 'stats' ? 'areas/stats' : route.kind === 'room' ? 'rooms/:r' : route.kind === 'room-finish' ? 'rooms/:r/finish' : route.kind}`;
   const room = publicRoomRoute(pathname);
   return room ? `/api/v5/rooms/:r${room.join ? '/join' : ''}` : pathname === '/api/v5/basemap' ? pathname : '/api/v5/?';
 }
@@ -117,6 +119,8 @@ async function routeV5(request: Request, db: D1DatabaseLike, options: V5Options)
   if (route.kind === 'ops' && request.method === 'POST') return pushOps(db, access, route.campaignId, request, options);
   if (route.kind === 'notes' && request.method === 'GET') return pullNotes(db, access, route.campaignId, url, options);
   if (route.kind === 'notes' && request.method === 'POST') return pushNotes(db, access, route.campaignId, request, options);
+  if (route.kind === 'progress' && request.method === 'GET') return getProgress(db, access, route.campaignId);
+  if (route.kind === 'stats' && request.method === 'PUT') return putAreaStats(db, access, route.campaignId, request, (options.now ?? Date.now)());
   if (route.kind === 'window' && request.method === 'PUT') return putWindow(db, access, route.campaignId, request);
   if (route.kind === 'rooms' && request.method === 'GET') return listRooms(db, access, route.campaignId, options);
   if (route.kind === 'rooms' && request.method === 'POST') return createRoom(db, access, route.campaignId, request, options);

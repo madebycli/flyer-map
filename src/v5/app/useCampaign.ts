@@ -9,7 +9,7 @@ import { NoteStore } from '../notes/store.ts';
 import { NoteSync } from '../notes/sync.ts';
 import { Progress, type ProgressSnapshot } from '../store/progress.ts';
 import { SyncClient } from '../store/syncClient.ts';
-import { V5ApiError, buildPackFor, fetchMeta, fetchPack, httpNoteTransport, httpTransport, type Meta } from './api.ts';
+import { V5ApiError, buildPackFor, fetchMeta, fetchPack, httpNoteTransport, httpTransport, reportAreaStats, type Meta, type UnitSize } from './api.ts';
 import { fetchPickups, type Pickup } from './pickups.ts';
 import { EngineClient } from './engineClient.ts';
 import { packPlan } from '../engine/index.ts';
@@ -50,6 +50,8 @@ export type CampaignState = {
   buildProgress: { done: number; total: number } | null;
   /** The first start of a big Gebiet shows its first parts and loads the others behind the working map (`failed`: that did not work, a reload fetches all). */
   completing: { done: number; total: number; failed?: boolean } | null;
+  partialAreas: ReadonlySet<string>;
+  expectedUnits: ReadonlyMap<string, number>;
   /** Re-fetch Areas, packs and status (after an Area was created or reshaped). */
   reload(): Promise<void>;
   /** Light refresh of roles, claims and Rooms only (no map rebuild, no loading screen). */
@@ -79,6 +81,9 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const loadedForRef = useRef<string | null>(null);
   const worksInChangedRef = useRef<((m: Awaited<ReturnType<typeof fetchMeta>>) => void) | null>(null);
   const [completing, setCompleting] = useState<{ done: number; total: number; failed?: boolean } | null>(null);
+  /** Gebiete of which parts are not on the device yet, and how many units each Gebiet has (see `withServerProgress`). */
+  const [partialAreas, setPartialAreas] = useState<ReadonlySet<string>>(new Set());
+  const [expectedUnits, setExpectedUnits] = useState<ReadonlyMap<string, number>>(new Map());
   const buildingRef = useRef(false);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [network, setNetwork] = useState<Network | null>(null);
@@ -187,6 +192,12 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
           for (const index of nearestFirst(centers, readLastView(campaignId))) { if (!units[index].area.packVersion) continue; const cost = cachedBlobs[index].blob ? 1 : 2; if (budget >= cost) budget -= cost; else deferred.add(index); }
         }
         timing.deferred = deferred.size;
+        if (!rest) {
+          setPartialAreas(new Set([...deferred].map((i) => units[i].area.id)));
+          const perArea = new Map<string, number>();
+          for (const unit of units) perArea.set(unit.area.id, (perArea.get(unit.area.id) ?? 0) + 1);
+          setExpectedUnits(perArea);
+        }
         const resolved = await mapLimit(units, 6, async (unit, index) => {
           const { area } = unit;
           const tArea = performance.now();
@@ -202,6 +213,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         diag.info('boot', 'packs ready', { areas: resolved.length, cacheHits: timing.cacheHits, downloaded: resolved.filter((r) => r.pack).length, withoutPack: resolved.filter((r) => !r.blob && !r.pack).length, ms: timing.packs });
         await engine.reset();
         const parts: { areaId: string; network: Network }[] = [];
+        const reports: UnitSize[] = [];
         const missing: Meta['areas'] = [];
         let derivedUnits = 0;
         let partial = false;
@@ -225,11 +237,19 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
           areaBoots.push({ n: areaBoots.length + 1, source, packBytes: item.packBytes, fetchMs: item.fetchMs, deriveMs: result.ms, detail: result.detail ?? null, houses: result.network.houses.length, segments: result.network.segments.length, diagnostics: result.network.diagnostics });
           diag.info('boot', `area ${areaBoots.length} derived`, { source, ms: result.ms, houses: result.network.houses.length, segments: result.network.segments.length, waysIn: result.network.diagnostics.waysIn, buildingsIn: result.network.diagnostics.buildingsIn, orphanHouses: result.network.diagnostics.orphanHouses });
           parts.push({ areaId: item.areaId, network: result.network });
+          if (item.packVersion) reports.push({ unit: item.unitId, area: item.areaId, packVersion: item.packVersion, houses: result.network.houses.length, segments: result.network.segments.length });
           if (rest) setCompleting({ done: parts.length, total: units.length });
           if (cancelled) return;
         }
         // A newer start took over while this second step was deriving: its engine is the one that counts.
         if (rest && myGeneration !== generation) { if (engine !== mine) mine.dispose(); return; }
+        // An admin's device tells the server how big the units it derived are (only when that changed since the last time: every report is a write).
+        if (loaded.role === 'admin' && reports.length) {
+          const stamp = JSON.stringify(reports.map((r) => [r.unit, r.packVersion, r.houses, r.segments]));
+          let last: string | null = null;
+          try { last = localStorage.getItem(`vf-v5-stats-${campaignId}`); } catch { /* private mode */ }
+          if (stamp !== last) void reportAreaStats(campaignId, reports).then(() => { try { localStorage.setItem(`vf-v5-stats-${campaignId}`, stamp); } catch { /* private mode */ } }, () => {});
+        }
         missingRef.current = missing;
         setMissingAreas(missing);
         liveRef.current = null; // set again below, once the new derivation is in place
@@ -268,7 +288,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         // Nothing derived at all: the blocking overlay. Some Areas derived: the map works, the rest is offered separately.
         // A collection Aktion is useful without any map data yet: helpers see the Areas and take one first; its pack is built on taking it.
         setPhase(quiet || parts.length || loaded.kind === 'collection' || !loaded.areas.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
-        if (rest) setCompleting(null);
+        if (rest) { setCompleting(null); setPartialAreas(new Set()); }
         if (partial) {
           diag.info('boot', 'the first parts are shown; the rest follows behind the map', { shown: parts.length, total: units.length });
           setCompleting({ done: parts.length, total: units.length });
@@ -322,7 +342,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     syncNow: () => { void syncRef.current?.run(); },
     orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); worksInChangedRef.current?.(m); },
-    building, buildProgress, completing,
+    building, buildProgress, completing, partialAreas, expectedUnits,
     async buildMissing() {
       if (!canBuildRef.current || buildingRef.current) return null;
       buildingRef.current = true; setBuilding(true);
