@@ -19,3 +19,20 @@ test('withServerProgress: a Gebiet with parts missing takes its numbers from the
   assert.equal(merged.overall.completed, 5 - 4 + 40);
   assert.equal(withServerProgress(local, server, new Set(), new Map()), local, 'nothing partial: untouched');
 });
+
+import { coveredByServer } from '../src/v5/app/stats.ts';
+import { grow, overlaps } from '../src/v5/app/lastView.ts';
+
+test('coveredByServer: only when every unit of every partial Gebiet is known', () => {
+  const server = { a: { houses: 5, units: 3, completed: 1, later: 0, notDeliverable: 0 }, b: { houses: 5, units: 1, completed: 1, later: 0, notDeliverable: 0 } };
+  assert.equal(coveredByServer(server, new Set(['a']), new Map([['a', 3]])), true);
+  assert.equal(coveredByServer(server, new Set(['a', 'b']), new Map([['a', 3], ['b', 2]])), false);
+  assert.equal(coveredByServer(null, new Set(['a']), new Map()), false);
+  assert.equal(coveredByServer(server, new Set(['c']), new Map([['c', 1]])), false);
+});
+
+test('view helpers: the view grows on every side and parts are found by overlap', () => {
+  assert.deepEqual(grow([0, 0, 4, 2], 0.25), [-1, -0.5, 5, 2.5]);
+  assert.equal(overlaps([0, 0, 1, 1], [1, 1, 2, 2]), true, 'touching counts');
+  assert.equal(overlaps([0, 0, 1, 1], [1.1, 0, 2, 1]), false);
+});

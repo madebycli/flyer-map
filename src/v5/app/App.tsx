@@ -35,7 +35,7 @@ import { NotesOverview, NotesPane, areaNoteKey, houseNoteKey, noteFeatures, note
 import { AreaActions, AreaList, RoomStrip, phaseColor, useActionRunner, useAreaViews, type AreaStats } from './collection.tsx';
 import { areaPercent, collectionActions } from './collection.ts';
 import { SheetFrame, StatusGroup } from './sheet.tsx';
-import { houseStats, withServerProgress } from './stats.ts';
+import { coveredByServer, houseStats, percentOf, tallyTotal, withServerProgress } from './stats.ts';
 import type { SearchHit } from './search.ts';
 import { useCampaign } from './useCampaign.ts';
 import { Icon, Loader, applyPalette, readSeed, saveSeed } from '../../ui/index.ts';
@@ -293,7 +293,7 @@ export function App({ campaignId }: { campaignId: string }) {
     if (!mapHost.current || fieldMap.current) return;
     fieldMap.current = new FieldMap({
       container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), streetsFirst: () => routeModeRef.current,
-      noteHits: () => toolRef.current === 'inspect' && fabRef.current === 'idle', onView: (center, zoom) => saveLastView(campaignId, { center, zoom }), onRotate: (bearing) => setRotated(Math.abs(bearing) > 0.5),
+      noteHits: () => toolRef.current === 'inspect' && fabRef.current === 'idle', onView: (center, zoom, bbox) => { saveLastView(campaignId, { center, zoom }); campaign.wantView({ bbox, zoom }); }, onRotate: (bearing) => setRotated(Math.abs(bearing) > 0.5),
     });
     return () => { fieldMap.current?.destroy(); fieldMap.current = null; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -510,18 +510,21 @@ export function App({ campaignId }: { campaignId: string }) {
   // While parts of a Gebiet are still arriving, the overview takes that Gebiet's numbers from the server (see `withServerProgress`).
   const [serverProgress, setServerProgress] = useState<ServerProgress | null>(null);
   const partialCount = campaign.partialAreas.size;
+  const lazyPartial = !!campaign.lazyInfo && partialCount > 0;
   useEffect(() => {
-    if (panel !== 'overview' || !partialCount) { setServerProgress(null); return; }
+    if ((panel !== 'overview' && !lazyPartial) || !partialCount) { setServerProgress(null); return; }
     let live = true;
     const load = () => { void fetchProgress(campaignId).then((p) => { if (live) setServerProgress(p); }, () => {}); };
     load();
-    const timer = window.setInterval(load, 20_000);
+    const timer = window.setInterval(load, panel === 'overview' ? 20_000 : 60_000);
     return () => { live = false; window.clearInterval(timer); };
-  }, [panel, partialCount, campaignId]);
+  }, [panel, partialCount, lazyPartial, campaignId]);
   const stats = useMemo(
-    () => (panel === 'overview' && network && store ? withServerProgress(houseStats(network, (key) => store.statusOf(key), campaign.areaOf), serverProgress, campaign.partialAreas, campaign.expectedUnits) : null),
-    [panel, network, store, campaign.areaOf, campaign.progress, serverProgress, campaign.partialAreas, campaign.expectedUnits],
+    () => ((panel === 'overview' || lazyPartial) && network && store ? withServerProgress(houseStats(network, (key) => store.statusOf(key), campaign.areaOf), serverProgress, campaign.partialAreas, campaign.expectedUnits) : null),
+    [panel, lazyPartial, network, store, campaign.areaOf, campaign.progress, serverProgress, campaign.partialAreas, campaign.expectedUnits],
   );
+  // The numbers of the whole Aktion, although only some parts are on the device: from the server, once it knows the size of every part.
+  const wholeFromServer = lazyPartial && !!stats && coveredByServer(serverProgress, campaign.partialAreas, campaign.expectedUnits);
   const [cleanupRevision, setCleanupRevision] = useState(0);
   const orphanCount = useMemo(() => (tool === 'areas' && selectedArea && meta?.role === 'admin' ? campaign.orphans().length : 0), [tool, selectedArea, meta?.role, campaign.progress, campaign.network, cleanupRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   const pruneSelected = () => {
@@ -598,8 +601,9 @@ export function App({ campaignId }: { campaignId: string }) {
   const p = campaign.progress;
   const dot = campaign.sync.state === 'offline' ? 'offline' : campaign.sync.pending > 0 || campaign.sync.state === 'syncing' ? 'busy' : 'ok';
   const syncTitle = dot === 'ok' ? 'Alles gespeichert' : dot === 'busy' ? `${campaign.sync.pending} Änderungen werden gesendet` : `Offline – ${campaign.sync.pending} Änderungen warten`;
-  const doneHouses = p?.houses.completed ?? 0, totalHouses = p ? p.totalHouses - p.houses['not-deliverable'] : 0;
-  const percent = Math.round((p?.houseRatio ?? 0) * 100);
+  const doneHouses = wholeFromServer ? stats!.overall.completed : p?.houses.completed ?? 0;
+  const totalHouses = wholeFromServer ? tallyTotal(stats!.overall) - stats!.overall['not-deliverable'] : p ? p.totalHouses - p.houses['not-deliverable'] : 0;
+  const percent = wholeFromServer ? percentOf(stats!.overall) : Math.round((p?.houseRatio ?? 0) * 100);
 
   return (
     <div className="v5-root" data-ui={ui} data-hand={hand} data-fab={fab}>
@@ -629,6 +633,11 @@ export function App({ campaignId }: { campaignId: string }) {
           <Icon name={campaign.completing.failed ? 'warning' : 'sync'} size={20} />
           <span>{campaign.completing.failed ? 'Nicht alle Kartendaten wurden geladen' : `Weitere Kartendaten werden geladen · ${campaign.completing.done}/${campaign.completing.total}`}</span>
           {campaign.completing.failed && <button className="v5-icon-btn tonal" onClick={() => void campaign.reload()} aria-label="Erneut laden" title="Erneut laden"><Icon name="sync" /></button>}
+        </div>
+      )}
+      {ready && !campaign.completing && campaign.lazyInfo && campaign.lazyInfo.loaded < campaign.lazyInfo.total && (
+        <div className="v5-banner v5-missing" role="status">
+          <Icon name="info" size={20} /><span>{`${campaign.lazyInfo.loaded} von ${campaign.lazyInfo.total} Kartenteilen geladen · weitere ab Zoom 14, wenn du hinschaust${wholeFromServer ? '' : ' · Zahlen nur für geladene Teile'}`}</span>
         </div>
       )}
       {ready && buildableMissing.length > 0 && (

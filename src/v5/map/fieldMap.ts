@@ -101,7 +101,7 @@ export type FieldMapOptions = {
   /** Called when the map is rotated away from north (and back), so the compass control can appear. */
   onRotate?: (bearing: number) => void;
   /** Called (at most about once a second) when the person has moved the view, with its centre and zoom. */
-  onView?: (center: LngLat, zoom: number) => void;
+  onView?: (center: LngLat, zoom: number, bounds: [number, number, number, number]) => void;
   theme?: Theme;
   center?: [number, number];
   zoom?: number;
@@ -229,7 +229,7 @@ export class FieldMap {
     let viewTimer: ReturnType<typeof setTimeout> | undefined;
     this.map.on('moveend', () => {
       if (!options.onView || viewTimer) return;
-      viewTimer = setTimeout(() => { viewTimer = undefined; const c = this.map.getCenter(); options.onView?.([c.lng, c.lat], this.map.getZoom()); }, 1000);
+      viewTimer = setTimeout(() => { viewTimer = undefined; const c = this.map.getCenter(), b = this.map.getBounds(); options.onView?.([c.lng, c.lat], this.map.getZoom(), [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]); }, 1000);
     });
     let rotated = false;
     this.map.on('rotate', () => {

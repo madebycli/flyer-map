@@ -1,4 +1,4 @@
-import { nearestFirst, readLastView } from './lastView.ts';
+import { LAZY_PART_CAP, grow, nearestFirst, overlaps, readLastView, readParts, saveParts, type Bbox } from './lastView.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mergeNetworks, type FieldNetwork as Network } from '../engine/index.ts';
 import type { MapData } from '../engine/host.ts';
@@ -51,6 +51,9 @@ export type CampaignState = {
   /** The first start of a big Gebiet shows its first parts and loads the others behind the working map (`failed`: that did not work, a reload fetches all). */
   completing: { done: number; total: number; failed?: boolean } | null;
   partialAreas: ReadonlySet<string>;
+  lazyInfo: { loaded: number; total: number } | null;
+  /** The map's view changed: parts of a lazily loaded Gebiet that come into it are loaded (zoomed in enough, see `LAZY_ZOOM`). */
+  wantView: (view: { bbox: Bbox; zoom: number }) => void;
   expectedUnits: ReadonlyMap<string, number>;
   /** Re-fetch Areas, packs and status (after an Area was created or reshaped). */
   reload(): Promise<void>;
@@ -81,6 +84,10 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const loadedForRef = useRef<string | null>(null);
   const worksInChangedRef = useRef<((m: Awaited<ReturnType<typeof fetchMeta>>) => void) | null>(null);
   const [completing, setCompleting] = useState<{ done: number; total: number; failed?: boolean } | null>(null);
+  /** A Gebiet of many parts is loaded part by part, as the person looks at it (see `lazy` in the boot): how many of the parts are on the device. */
+  const [lazyInfo, setLazyInfo] = useState<{ loaded: number; total: number } | null>(null);
+  const wantViewRef = useRef<(view: { bbox: Bbox; zoom: number }) => void>(() => {});
+  const wantView = useCallback((view: { bbox: Bbox; zoom: number }) => wantViewRef.current(view), []);
   /** Gebiete of which parts are not on the device yet, and how many units each Gebiet has (see `withServerProgress`). */
   const [partialAreas, setPartialAreas] = useState<ReadonlySet<string>>(new Set());
   const [expectedUnits, setExpectedUnits] = useState<ReadonlyMap<string, number>>(new Map());
@@ -123,6 +130,25 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     /** `quiet`: an admin change re-reads the Aktion while the person keeps looking at it, so the open sheet and its scroll position stay; only the first start shows the loading steps. */
     // How many new Gebiet parts a start derives before the map is shown (cached ones count half); the others follow behind the working map (see `rest`).
     const FIRST_UNITS = 3;
+    // Many parts (a big Gebiet, many Gebiete): the device loads only those around where the person looked and those they look at later, not all of them.
+    const LAZY_FROM = new URLSearchParams(location.search).get('parts') === 'all' ? Infinity : 8, LAZY_ZOOM = 14; // ?parts=all: everything at once (tests, comparisons)
+    const lazy = { on: false, ready: false, initialised: false, wanted: new Set<string>(), known: new Set<string>(), units: [] as { id: string; area: string; packed: boolean; bbox: Bbox }[] };
+    let lazyBusy = false, lazyAgain = false;
+    const lazyReload = async () => {
+      if (lazyBusy) { lazyAgain = true; return; }
+      lazyBusy = true;
+      try { do { lazyAgain = false; await boot({ quiet: true }); } while (lazyAgain && !cancelled); } catch { /* the previous state stays; the next view tries again */ } finally { lazyBusy = false; }
+    };
+    wantViewRef.current = ({ bbox, zoom }) => {
+      if (!lazy.on || !lazy.ready || zoom < LAZY_ZOOM) return;
+      const area = grow(bbox, 0.25);
+      let added = false;
+      for (const u of lazy.units) if (u.packed && !lazy.wanted.has(u.id) && overlaps(u.bbox, area)) { lazy.wanted.add(u.id); added = true; }
+      if (!added) return;
+      while (lazy.wanted.size > LAZY_PART_CAP) lazy.wanted.delete(lazy.wanted.values().next().value as string);
+      saveParts(campaignId, lazy.wanted);
+      void lazyReload();
+    };
     let generation = 0;
     /** `rest`: the second step of a first start, which loads the parts the first step left out (quiet, like any reload). */
     const boot = async ({ quiet = false, rest = false }: { quiet?: boolean; rest?: boolean } = {}) => {
@@ -181,16 +207,33 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
           const key = NetworkCache.keyFor({ id: unit.id, packVersion: unit.area.packVersion, updatedAt: unit.area.updatedAt });
           return { key, blob: key && useBlobs ? await cache.load(key) : null };
         });
-        const staged = !quiet && !rest && units.length > FIRST_UNITS + 1;
+        const lazyOn = !rest && units.length > LAZY_FROM;
+        const staged = !lazyOn && !quiet && !rest && units.length > FIRST_UNITS + 1;
         const deferred = new Set<number>();
         // A cached part costs a part of the budget (loading its blob takes a few hundred ms on a phone, 34 MB of blobs were 4 s), a new one two
         // (download + derive): the budget is what the first step may spend, the rest follows behind the map.
         // The parts around where the person looked last come first (the order of deriving stays the one of the Gebiete: "first Area wins").
-        if (staged) {
+        const centerOf = (unit: (typeof units)[number]): [number, number] | null => { const ring = unit.part.cell ? [[unit.part.cell[0], unit.part.cell[1]], [unit.part.cell[2], unit.part.cell[3]]] : unit.ring; if (!ring.length) return null; const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
+        const withinBudget = () => {
+          const inside = new Set<number>();
           let budget = FIRST_UNITS * 2;
-          const centers = units.map((unit): [number, number] | null => { const ring = unit.part.cell ? [[unit.part.cell[0], unit.part.cell[1]], [unit.part.cell[2], unit.part.cell[3]]] : unit.ring; if (!ring.length) return null; const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; });
-          for (const index of nearestFirst(centers, readLastView(campaignId))) { if (!units[index].area.packVersion) continue; const cost = cachedBlobs[index].blob ? 1 : 2; if (budget >= cost) budget -= cost; else deferred.add(index); }
+          for (const index of nearestFirst(units.map(centerOf), readLastView(campaignId))) { if (!units[index].area.packVersion) continue; const cost = cachedBlobs[index].blob ? 1 : 2; if (budget >= cost) { budget -= cost; inside.add(index); } }
+          return inside;
+        };
+        if (staged) { const inside = withinBudget(); units.forEach((unit, index) => { if (unit.area.packVersion && !inside.has(index)) deferred.add(index); }); }
+        if (lazyOn) {
+          lazy.units = units.map((unit) => { const ring = unit.part.cell ? [[unit.part.cell[0], unit.part.cell[1]], [unit.part.cell[2], unit.part.cell[3]]] : unit.ring; const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]); return { id: unit.id, area: unit.area.id, packed: !!unit.area.packVersion, bbox: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bbox }; });
+          if (!lazy.initialised) { // first time there is something to load: the parts of the last visits plus the ones around the last view
+            for (const id of readParts(campaignId)) lazy.wanted.add(id);
+            const inside = withinBudget();
+            units.forEach((unit, index) => { if (inside.has(index)) lazy.wanted.add(unit.id); });
+            lazy.initialised = units.some((unit) => !!unit.area.packVersion);
+          } else for (const unit of units) if (unit.area.packVersion && !lazy.known.has(unit.id)) lazy.wanted.add(unit.id); // a part that is new (a Gebiet just built) is wanted
+          for (const unit of units) if (unit.area.packVersion) lazy.known.add(unit.id);
+          units.forEach((unit, index) => { if (unit.area.packVersion && !lazy.wanted.has(unit.id)) deferred.add(index); });
+          saveParts(campaignId, lazy.wanted);
         }
+        lazy.on = lazyOn;
         timing.deferred = deferred.size;
         if (!rest) {
           setPartialAreas(new Set([...deferred].map((i) => units[i].area.id)));
@@ -269,7 +312,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         const mapData = await engine.mapData();
         setEngineState({ client: engine, mapData });
         if (retired && retired !== engine) { const old = retired; retired = null; setTimeout(() => old.dispose(), 2000); }
-        liveRef.current = { store: fieldStore, areaOf: merged.areaOf, missing: missing.length + outlineOnly };
+        liveRef.current = { store: fieldStore, areaOf: merged.areaOf, missing: missing.length + outlineOnly + (lazyOn && partial ? 1 : 0) };
         setNetwork(merged.network); setAreaOf(merged.areaOf); setStore(fieldStore); setNotes(noteStore);
         client?.dispose();
         client = syncRef.current = new SyncClient(fieldStore, httpTransport(campaignId), 100, (state, pending, info) => setSync({ state, pending, ...info }), [new NoteSync(noteStore, httpNoteTransport(campaignId))]);
@@ -289,7 +332,13 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         // A collection Aktion is useful without any map data yet: helpers see the Areas and take one first; its pack is built on taking it.
         setPhase(quiet || parts.length || loaded.kind === 'collection' || !loaded.areas.length ? { kind: 'ready' } : { kind: 'needs-pack', areas: missing, canBuild: loaded.canBuildPack });
         if (rest) { setCompleting(null); setPartialAreas(new Set()); }
-        if (partial) {
+        if (lazyOn) {
+          lazy.ready = true;
+          const packed = lazy.units.filter((u) => u.packed);
+          setLazyInfo({ loaded: packed.filter((u) => lazy.wanted.has(u.id)).length, total: packed.length });
+          if (partial) diag.info('boot', 'parts are loaded as they are looked at', { loaded: parts.length, total: units.length });
+        } else setLazyInfo(null);
+        if (partial && !lazyOn) {
           diag.info('boot', 'the first parts are shown; the rest follows behind the map', { shown: parts.length, total: units.length });
           setCompleting({ done: parts.length, total: units.length });
           void boot({ quiet: true, rest: true }).catch(() => setCompleting({ done: parts.length, total: units.length, failed: true }));
@@ -342,7 +391,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     syncNow: () => { void syncRef.current?.run(); },
     orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); worksInChangedRef.current?.(m); },
-    building, buildProgress, completing, partialAreas, expectedUnits,
+    building, buildProgress, completing, partialAreas, expectedUnits, lazyInfo, wantView,
     async buildMissing() {
       if (!canBuildRef.current || buildingRef.current) return null;
       buildingRef.current = true; setBuilding(true);

@@ -61,3 +61,10 @@ export function withServerProgress(local: HouseStats, server: Record<string, Ser
   }
   return { overall, byArea };
 }
+
+/** The server knows the size of every unit of every Gebiet that is not completely on the device: its numbers can stand for the whole. */
+export function coveredByServer(server: Record<string, ServerAreaProgress> | null, partial: ReadonlySet<string>, expectedUnits: ReadonlyMap<string, number>): boolean {
+  if (!server) return false;
+  for (const area of partial) { const s = server[area]; if (!s || s.units < (expectedUnits.get(area) ?? Infinity)) return false; }
+  return true;
+}

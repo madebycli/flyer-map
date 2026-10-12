@@ -16,7 +16,7 @@ async function open() {
   page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
   const boots = [];
   page.on('console', (m) => { const t = m.text(); if (t.startsWith('[v5 boot ms]')) boots.push(JSON.parse(t.slice(12))); });
-  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug');
+  await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug&parts=all');
   const needed = await page.getByText('Kartendaten fehlen').waitFor({ timeout: 5000 }).then(() => true, () => false);
   if (needed) await page.getByRole('button', { name: 'Kartendaten laden' }).click();
   await page.waitForSelector('.v5-pill', { timeout: 240000 });
