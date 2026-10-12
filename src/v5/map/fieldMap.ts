@@ -24,6 +24,8 @@ export type Theme = 'dark' | 'light';
 
 /** Streets are drawn (and cut into the tiles) from this zoom on; below it the dots show the progress. Same number as `SEGMENTS_FROM` in engine-rs. */
 export const SEGMENTS_FROM = 14;
+/** The map is drawn with at most this many device pixels per CSS pixel (see the Map options). */
+export const MAX_PIXEL_RATIO = 2;
 
 /**
  * Calm, desaturated and still telling four states apart: "open" is a quiet slate (the work still to do should not shout),
@@ -181,6 +183,9 @@ export class FieldMap {
     this.map = new maplibregl.Map({
       container: options.container, style: this.styleFor(this.theme), center: options.center ?? [13.0, 51.0],
       zoom: options.zoom ?? 15, attributionControl: false, fadeDuration: 0, pitchWithRotate: false,
+      // The graphics chip paints every pixel of every layer on every frame: a phone at 2.625 device pixels per CSS pixel draws 1079x2037 pixels,
+      // at 2 it draws 40 % fewer, which a fine dark map hardly shows but the frame rate does.
+      pixelRatio: Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, MAX_PIXEL_RATIO),
       // A fingertip moves a few pixels between touching and lifting. At MapLibre's default of 3 px such a tap counts as a tiny drag and its click is
       // dropped ("press three times"); 8 px is about what the browsers themselves allow for a tap.
       clickTolerance: 8,
