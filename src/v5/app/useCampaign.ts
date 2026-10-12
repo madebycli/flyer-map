@@ -1,3 +1,4 @@
+import { nearestFirst, readLastView } from './lastView.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mergeNetworks, type FieldNetwork as Network } from '../engine/index.ts';
 import type { MapData } from '../engine/host.ts';
@@ -179,7 +180,12 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         const deferred = new Set<number>();
         // A cached part costs a part of the budget (loading its blob takes a few hundred ms on a phone, 34 MB of blobs were 4 s), a new one two
         // (download + derive): the budget is what the first step may spend, the rest follows behind the map.
-        if (staged) { let budget = FIRST_UNITS * 2; units.forEach((unit, index) => { if (!unit.area.packVersion) return; const cost = cachedBlobs[index].blob ? 1 : 2; if (budget >= cost) budget -= cost; else deferred.add(index); }); }
+        // The parts around where the person looked last come first (the order of deriving stays the one of the Gebiete: "first Area wins").
+        if (staged) {
+          let budget = FIRST_UNITS * 2;
+          const centers = units.map((unit): [number, number] | null => { const ring = unit.part.cell ? [[unit.part.cell[0], unit.part.cell[1]], [unit.part.cell[2], unit.part.cell[3]]] : unit.ring; if (!ring.length) return null; const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; });
+          for (const index of nearestFirst(centers, readLastView(campaignId))) { if (!units[index].area.packVersion) continue; const cost = cachedBlobs[index].blob ? 1 : 2; if (budget >= cost) budget -= cost; else deferred.add(index); }
+        }
         timing.deferred = deferred.size;
         const resolved = await mapLimit(units, 6, async (unit, index) => {
           const { area } = unit;

@@ -100,6 +100,8 @@ export type FieldMapOptions = {
   styles?: Partial<Record<Theme, string | StyleSpecification>>;
   /** Called when the map is rotated away from north (and back), so the compass control can appear. */
   onRotate?: (bearing: number) => void;
+  /** Called (at most about once a second) when the person has moved the view, with its centre and zoom. */
+  onView?: (center: LngLat, zoom: number) => void;
   theme?: Theme;
   center?: [number, number];
   zoom?: number;
@@ -223,6 +225,11 @@ export class FieldMap {
         canvas: `${size.width}x${size.height}`, framesRendered: this.frames, painted: this.applied, contextLosses: this.contextLosses, styleFallback: this.styleFallback, tileVersion: this.tileVersion,
         baseVisible: this.baseVisible, selected: this.selected.length, previewed: this.previewed.size, areas: this.areas.length, ...this.debugCounts(),
       };
+    });
+    let viewTimer: ReturnType<typeof setTimeout> | undefined;
+    this.map.on('moveend', () => {
+      if (!options.onView || viewTimer) return;
+      viewTimer = setTimeout(() => { viewTimer = undefined; const c = this.map.getCenter(); options.onView?.([c.lng, c.lat], this.map.getZoom()); }, 1000);
     });
     let rotated = false;
     this.map.on('rotate', () => {

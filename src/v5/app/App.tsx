@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { importLegacyProgress, type FieldHouse as House, type FieldNetwork as Network, type FieldSegment as Segment, type LegacySnapshot } from '../engine/index.ts';
 import { FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import { bakeStatuses } from '../map/bake.ts';
+import { saveLastView } from './lastView.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
@@ -292,7 +293,7 @@ export function App({ campaignId }: { campaignId: string }) {
     if (!mapHost.current || fieldMap.current) return;
     fieldMap.current = new FieldMap({
       container: mapHost.current, theme, onHit: (hit, point) => hitRef.current(hit, point), streetsFirst: () => routeModeRef.current,
-      noteHits: () => toolRef.current === 'inspect' && fabRef.current === 'idle', onRotate: (bearing) => setRotated(Math.abs(bearing) > 0.5),
+      noteHits: () => toolRef.current === 'inspect' && fabRef.current === 'idle', onView: (center, zoom) => saveLastView(campaignId, { center, zoom }), onRotate: (bearing) => setRotated(Math.abs(bearing) > 0.5),
     });
     return () => { fieldMap.current?.destroy(); fieldMap.current = null; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
