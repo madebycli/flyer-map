@@ -1,5 +1,5 @@
-version: 32
-last_updated: 2026-10-10
+version: 33
+last_updated: 2026-10-12
 
 entrypoints:
   always:
@@ -35,6 +35,12 @@ nodes:
     status: active
     topics: [rooms, runs, time-window, countdown, guests, team-colours]
     load_when: [rooms or runs, guest access by link or QR, the time window, run statistics]
+  - id: plan-054-scale-independent-loading
+    path: docs/plans/active/054-scale-independent-loading.md
+    type: plan
+    status: planned
+    topics: [scale, data-use, mobile-data, parts, levels-of-detail, performance]
+    load_when: [map speed or data use depending on the number of houses, loading only parts, progress numbers from the server, tile size]
   - id: v5-readme
     path: docs/v5/README.md
     type: architecture
