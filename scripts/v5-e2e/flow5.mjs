@@ -32,14 +32,14 @@ const A = await person('admin');
 await A.jump(116, 13, 18.1);
 await A.click(116, 13);
 await A.page.waitForSelector('.v5-sheet');
-check('the sheet offers seven quick flags and a text field', (await A.page.locator('.v5-flag').count()) === 7 && (await A.page.getByLabel('Notiz', { exact: true }).count()) >= 1);
+check('the sheet offers five quick flags (no dog, no danger) and a text field', (await A.page.locator('.v5-flag').count()) === 5 && (await A.page.getByLabel('Notiz', { exact: true }).count()) >= 1);
 
 // One tap on a flag is a note; tapping again takes it back.
-await A.page.getByRole('button', { name: 'Hund', exact: true }).click();
+await A.page.getByRole('button', { name: 'Kein Zutritt', exact: true }).click();
 check('a flag tap creates a note at once', (await A.page.locator('.v5-note').count()) === 1);
-await A.page.getByRole('button', { name: 'Hund', exact: true }).click();
+await A.page.getByRole('button', { name: 'Kein Zutritt', exact: true }).click();
 check('tapping the same flag again removes it', (await A.page.locator('.v5-note').count()) === 0);
-await A.page.getByRole('button', { name: 'Hund', exact: true }).click();
+await A.page.getByRole('button', { name: 'Kein Zutritt', exact: true }).click();
 
 // Text first, then a flag: both in one note.
 await A.page.getByLabel('Notiz', { exact: true }).fill('Klingel kaputt, bitte klopfen');
@@ -92,11 +92,11 @@ check('another person receives the markers', await until(async () => (await B.ma
 B.gate.blocked = true;
 await B.jump(136, 13, 18.1); await B.click(136, 13);
 await B.page.waitForSelector('.v5-sheet');
-await B.page.getByRole('button', { name: 'Gefahr', exact: true }).click();
+await B.page.getByRole('button', { name: 'Nochmal kommen', exact: true }).click();
 check('offline: the note exists locally and is queued', (await B.page.locator('.v5-note').count()) === 1 && (await B.serverNotes().catch(() => null)) === null);
 B.gate.blocked = false;
 await B.page.evaluate(() => window.dispatchEvent(new Event('online')));
-check('after reconnect it reaches the server', await until(async () => (await A.serverNotes()).some((n) => n.flag === 'danger')));
+check('after reconnect it reaches the server', await until(async () => (await A.serverNotes()).some((n) => n.flag === 'again')));
 await A.page.evaluate(() => window.dispatchEvent(new Event('online')));
 check('and the first person’s map shows the new marker', await until(async () => (await A.markers()) === 3));
 
@@ -104,11 +104,11 @@ check('and the first person’s map shows the new marker', await until(async () 
 await openMenu(A.page);
 await A.page.getByRole('button', { name: /^Notizen/ }).click();
 check('the overview lists all notes', await until(async () => (await A.page.locator('.v5-note-open').count()) === 5, 4000));
-await A.page.getByRole('button', { name: 'Gefahr (1)' }).click();
+await A.page.getByRole('button', { name: 'Nochmal kommen (1)' }).click();
 check('the filter narrows the list', (await A.page.locator('.v5-note-open').count()) === 1);
 await A.page.screenshot({ path: `${process.env.SHOTS_DIR ?? '.'}/f5-notes-overview.png` });
 await A.page.locator('.v5-note-open').first().click();
-check('tapping a row opens that place', await until(async () => /Gefahr/.test(await A.page.locator('.v5-sheet').innerText()) , 4000));
+check('tapping a row opens that place', await until(async () => /Nochmal kommen/.test(await A.page.locator('.v5-sheet').innerText()) , 4000));
 
 // Delete with undo.
 await A.page.getByRole('button', { name: 'Notiz löschen' }).first().click();

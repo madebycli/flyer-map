@@ -1,7 +1,8 @@
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { LngLat } from '../engine/types.ts';
-import { FLAGS, FLAG_LABEL, NOTE_TEXT_MAX, type Flag, type Note, type NoteKey } from '../notes/types.ts';
+import { ALL_FLAGS, FLAGS, FLAG_LABEL, NOTE_TEXT_MAX, type Flag, type Note, type NoteKey } from '../notes/types.ts';
+import { addTodo, isTodo, todoLines, todoProgress, toggleTodo } from '../notes/todo.ts';
 import type { NoteStore } from '../notes/store.ts';
 import type { Meta } from './api.ts';
 import type { Index } from './mark.ts';
@@ -12,6 +13,14 @@ export const FLAG_ICON: Record<Flag, IconName> = { dog: 'paw', locked: 'lock', n
 export const FLAG_COLOR: Record<Flag, string> = { dog: '#ffb74d', locked: '#ff6b5e', nope: '#c77dff', full: '#4dabf7', again: '#69db7c', danger: '#ff2d55', info: '#b0bec5' };
 /** When one place carries several flags, the most important one colours the marker. */
 const PRIORITY: Flag[] = ['danger', 'locked', 'dog', 'nope', 'again', 'full', 'info'];
+
+/** What a note shows as its one line (list rows, overview): a to-do list reads "Aufgaben 2/5" with its first open item. */
+export function noteSummary(note: Note): string {
+  const progress = todoProgress(note.text);
+  if (!progress) return note.text || (note.flag ? FLAG_LABEL[note.flag] : '');
+  const open = todoLines(note.text).find((l) => !l.done);
+  return `Aufgaben ${progress.done}/${progress.total}${open ? ` · ${open.text}` : ' · alles erledigt'}`;
+}
 
 /** Notes on a whole street piece are keyed by its junction segment, so chunks never split a remark. */
 export const segmentNoteKey = (group: string): NoteKey => `s:${group}`;
@@ -74,6 +83,27 @@ const ago = (rev: string): string => {
   return `${Math.round(minutes / 1440)} d`;
 };
 
+/** A to-do note: every `- [ ]` line is a box to tick (a tick is an edit of the note); other lines are plain text. */
+function TodoBody({ text, canWrite, onChange }: { text: string; canWrite: boolean; onChange: (text: string) => void }) {
+  const lines = text.split('\n');
+  const items = new Map(todoLines(text).map((l) => [l.index, l]));
+  const progress = todoProgress(text);
+  return (
+    <div className="v5-todo-list" role="group" aria-label={`Aufgaben, ${progress?.done ?? 0} von ${progress?.total ?? 0} erledigt`}>
+      {lines.map((line, index) => {
+        const item = items.get(index);
+        if (!item) return line.trim() ? <span key={index}>{line}</span> : null;
+        return (
+          <button key={index} type="button" role="checkbox" aria-checked={item.done} disabled={!canWrite} className={`v5-todo${item.done ? ' done' : ''}`} onClick={() => onChange(toggleTodo(text, index))}>
+            <span className="v5-todo-box" aria-hidden="true">{item.done && <Icon name="check" size={18} />}</span>
+            <span className="v5-todo-text">{item.text}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * Notes for one place. The flag row works as toggles (one tap = "Hund hier", tap again = gone); typing a text first
  * and then tapping a flag attaches both. Everything is local-first and synced like a status.
@@ -90,7 +120,16 @@ export function NotesPane({ store, target, area, canWrite, onUndo }: {
     store.add(target, area, flag, draft);
     setDraft('');
   };
-  const send = () => { if (store.add(target, area, null, draft)) setDraft(''); };
+  const [asTodo, setAsTodo] = useState(false);
+  const send = () => {
+    if (!asTodo) { if (store.add(target, area, null, draft)) setDraft(''); return; }
+    // A task joins the place's list (the newest note that is one) or starts a new list when there is none or it would grow too long.
+    const list = [...notes].reverse().find((n) => isTodo(n.text));
+    const joined = list ? addTodo(list.text, draft) : null;
+    if (list && joined !== null) { store.edit(list.id, { text: joined }); setDraft(''); return; }
+    const first = addTodo('', draft);
+    if (first !== null && store.add(target, area, null, first)) setDraft('');
+  };
   const active = new Set(notes.map((n) => n.flag).filter(Boolean));
   return (
     <div className="v5-notes">
@@ -108,9 +147,11 @@ export function NotesPane({ store, target, area, canWrite, onUndo }: {
         <ul className="v5-note-list">
           {notes.map((note) => (
             <li key={note.id} className="v5-note" style={{ '--c': FLAG_COLOR[note.flag ?? 'info'] } as React.CSSProperties}>
-              <span className="v5-note-ico"><Icon name={note.flag ? FLAG_ICON[note.flag] : 'message'} size={20} /></span>
+              <span className="v5-note-ico"><Icon name={isTodo(note.text) ? 'check' : note.flag ? FLAG_ICON[note.flag] : 'message'} size={20} /></span>
               <div className="v5-note-body">
-                <span>{note.text || (note.flag ? FLAG_LABEL[note.flag] : '')}</span>
+                {isTodo(note.text)
+                  ? <TodoBody text={note.text} canWrite={canWrite} onChange={(text) => { store.edit(note.id, { text }); }} />
+                  : <span>{note.text || (note.flag ? FLAG_LABEL[note.flag] : '')}</span>}
                 <small>{note.by === store.actor ? 'Ich' : note.by} · {ago(note.rev)}</small>
               </div>
               {canWrite && <button className="v5-icon-btn" aria-label="Notiz löschen" title="Notiz löschen" onClick={() => { store.remove(note.id); onUndo('Notiz gelöscht', () => { store.restore(note.id); }); }}><Icon name="trash" size={20} /></button>}
@@ -120,8 +161,9 @@ export function NotesPane({ store, target, area, canWrite, onUndo }: {
       )}
       {canWrite && (
         <form className="v5-note-form" onSubmit={(event) => { event.preventDefault(); send(); }}>
-          <input value={draft} onChange={(event) => setDraft(event.target.value.slice(0, NOTE_TEXT_MAX))} placeholder="Notiz" aria-label="Notiz" maxLength={NOTE_TEXT_MAX} enterKeyHint="send" autoComplete="off" />
-          <button type="submit" className="v5-icon-btn tonal" disabled={draft.trim() === ''} aria-label="Notiz speichern" title="Notiz speichern"><Icon name="send" size={22} /></button>
+          <button type="button" className={`v5-icon-btn${asTodo ? ' tonal' : ''}`} aria-pressed={asTodo} onClick={() => setAsTodo(!asTodo)} aria-label="Als Aufgabe zum Abhaken" title="Als Aufgabe zum Abhaken"><Icon name="check" size={22} /></button>
+          <input value={draft} onChange={(event) => setDraft(event.target.value.slice(0, NOTE_TEXT_MAX))} placeholder={asTodo ? 'Aufgabe' : 'Notiz'} aria-label={asTodo ? 'Aufgabe' : 'Notiz'} maxLength={NOTE_TEXT_MAX} enterKeyHint="send" autoComplete="off" />
+          <button type="submit" className="v5-icon-btn tonal" disabled={draft.trim() === ''} aria-label={asTodo ? 'Aufgabe speichern' : 'Notiz speichern'} title={asTodo ? 'Aufgabe speichern' : 'Notiz speichern'}><Icon name="send" size={22} /></button>
         </form>
       )}
     </div>
@@ -140,7 +182,7 @@ export function NotesOverview({ store, index, areas, onOpen }: { store: NoteStor
   return (
     <div className="v5-notes">
       <div className="v5-flags" role="group" aria-label="Filter">
-        {FLAGS.filter((f) => counts.has(f)).map((flag) => (
+        {ALL_FLAGS.filter((f) => counts.has(f)).map((flag) => (
           <button key={flag} className={`v5-flag${filter === flag ? ' on' : ''}`} style={{ '--c': FLAG_COLOR[flag] } as React.CSSProperties}
             onClick={() => setFilter(filter === flag ? null : flag)} aria-pressed={filter === flag} aria-label={`${FLAG_LABEL[flag]} (${counts.get(flag)})`} title={FLAG_LABEL[flag]}>
             <Icon name={FLAG_ICON[flag]} size={22} /><b>{counts.get(flag)}</b>
@@ -152,8 +194,8 @@ export function NotesOverview({ store, index, areas, onOpen }: { store: NoteStor
           {shown.map((note) => (
             <li key={note.id}>
               <button className="v5-note v5-note-open" style={{ '--c': FLAG_COLOR[note.flag ?? 'info'] } as React.CSSProperties} onClick={() => onOpen(note.key)}>
-                <span className="v5-note-ico"><Icon name={note.flag ? FLAG_ICON[note.flag] : 'message'} size={20} /></span>
-                <div className="v5-note-body"><span>{note.text || (note.flag ? FLAG_LABEL[note.flag] : '')}</span><small>{note.by === store.actor ? 'Ich' : note.by} · {ago(note.rev)}</small></div>
+                <span className="v5-note-ico"><Icon name={isTodo(note.text) ? 'check' : note.flag ? FLAG_ICON[note.flag] : 'message'} size={20} /></span>
+                <div className="v5-note-body"><span>{noteSummary(note)}</span><small>{note.by === store.actor ? 'Ich' : note.by} · {ago(note.rev)}</small></div>
                 <Icon name={note.key.startsWith('h:') ? 'house' : note.key.startsWith('s:') ? 'road' : 'polygon'} size={18} />
               </button>
             </li>

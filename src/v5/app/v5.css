@@ -324,3 +324,25 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-join .v5-input { width: 100%; text-align: center; }
 .v5-summary .v5-stats { margin-top: 0.4rem; }
 .v5-late { color: var(--tertiary); }
+
+/* To-do notes: boxes to tick, one per line (a tick is an edit of the note's text). */
+.v5-todo-list { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.v5-todo { display: flex; align-items: center; gap: 0.7rem; min-height: 44px; padding: 0 0.25rem; border: 0; border-radius: var(--r); background: none; color: var(--on); font: inherit; text-align: left; cursor: pointer; }
+.v5-todo:disabled { cursor: default; }
+.v5-todo-box { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--outline); border-radius: 7px; transition: background var(--t), border-color var(--t); }
+.v5-todo.done .v5-todo-box { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.v5-todo.done .v5-todo-text { color: var(--on-var); text-decoration: line-through; }
+.v5-todo-text { overflow-wrap: anywhere; }
+
+/* Brainrot mode: a muted video in a window that can be moved and scaled by finger, like a picture-in-picture on an iPad. */
+.v5-pip { position: fixed; z-index: 45; border-radius: var(--r); overflow: hidden; background: #000; box-shadow: 0 6px 24px rgb(0 0 0 / 45%); touch-action: none; transition: left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease; }
+.v5-pip.moving { transition: none; }
+.v5-pip-frame { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* larger than the window and centred, so the player's title and logo strips are cut off */
+.v5-pip-frame iframe { position: absolute; left: 50%; top: 50%; width: 118%; height: 118%; transform: translate(-50%, -50%); border: 0; }
+.v5-pip-touch { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+.v5-pip-close { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 44px; height: 44px; border: 0; background: none; color: #fff; filter: drop-shadow(0 0 3px rgb(0 0 0 / 80%)); cursor: pointer; }
+.v5-pip-handle { position: absolute; right: 0; bottom: 0; width: 44px; height: 44px; touch-action: none; cursor: nwse-resize; }
+.v5-pip-handle::after { content: ''; position: absolute; right: 8px; bottom: 8px; width: 14px; height: 14px; border-right: 3px solid #fff; border-bottom: 3px solid #fff; border-radius: 0 0 6px 0; filter: drop-shadow(0 0 3px rgb(0 0 0 / 80%)); }
+/* the note form has three controls now (task toggle, field, send): the field takes what is left and never pushes the row wider than the sheet */
+.v5-note-form input { flex: 1 1 0; width: 0; min-width: 0; }

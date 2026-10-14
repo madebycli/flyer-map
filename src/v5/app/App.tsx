@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { importLegacyProgress, type FieldHouse as House, type FieldNetwork as Network, type FieldSegment as Segment, type LegacySnapshot } from '../engine/index.ts';
 import { FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import { bakeStatuses } from '../map/bake.ts';
+import { FocusVideo } from './focusVideo.tsx';
 import { readLastView, saveLastView } from './lastView.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
@@ -612,6 +613,7 @@ export function App({ campaignId }: { campaignId: string }) {
   return (
     <div className="v5-root" data-ui={ui} data-hand={hand} data-fab={fab}>
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
+      <FocusVideo />
       <input ref={templateInput} type="file" accept=".json,application/json" hidden aria-label="Vorlagen-Datei wählen" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void onTemplateFile(file); }} />
       {ready && (
         <button className="v5-pill" onClick={() => openPanel('overview')} role="status" aria-label={`${meta?.campaign.name ?? ''}: ${percent} Prozent – Übersicht öffnen`} data-done={doneHouses} data-total={totalHouses} title={syncTitle}>

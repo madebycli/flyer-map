@@ -35,6 +35,11 @@ const ENTRIES: Entry[] = [
   { q: 'Wie schreibe ich eine Notiz?', tags: 'notiz notizen briefkasten flag', roles: ['admin', 'team-editor'], a: [
     'Tippe ein Haus oder eine Straße an (nicht im Markier-Modus). Im Fenster findest du schnelle Hinweise wie „Briefkasten voll“ zum Antippen und ein Textfeld.',
     'Wo eine Notiz liegt, erscheint ein kleiner Marker auf der Karte. Tippst du ihn an, siehst du alle Notizen dort.' ] },
+  { q: 'Wie lege ich Aufgaben zum Abhaken an?', tags: 'aufgabe aufgaben todo abhaken checkliste liste notiz', roles: ['admin', 'team-editor'], a: [
+    'Tippe im Notizfenster auf das Häkchen links neben dem Textfeld, schreibe die Aufgabe und sende sie. Weitere Aufgaben kommen in dieselbe Liste.',
+    'Ein Tipp auf das Kästchen hakt eine Aufgabe ab, ein zweiter nimmt es zurück. Alle in der Gruppe sehen den Stand nach dem Abgleich.' ] },
+  { q: 'Was ist der Fokus-Modus?', tags: 'brainrot video fokus fenster', roles: ['admin', 'team-editor', 'viewer', 'collection-collector'], a: [
+    'Halte die Menü-Taste fünf Sekunden gedrückt: ein stummes Video läuft in einem kleinen Fenster. Mit einem Finger verschiebst du es (es rastet in einer Ecke ein), mit zwei Fingern oder dem Griff unten rechts machst du es größer oder kleiner, mit dem Kreuz schließt du es.' ] },
   { q: 'Wie suche ich eine Straße oder Adresse?', tags: 'suche suchen lupe adresse', a: [
     'Tippe oben rechts auf die Lupe und gib einen Straßennamen oder eine Adresse ein, zum Beispiel „Hauptstr. 12“. Ein Treffer fliegt zur Stelle und öffnet sie.' ] },
   { q: 'Wo sehe ich meinen Fortschritt?', tags: 'fortschritt prozent übersicht', a: [
