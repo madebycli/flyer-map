@@ -54,6 +54,10 @@ export function findings({ metrics, subsystems }: FindingsInput): Finding[] {
   if ((c['store.conflicts'] ?? 0) > 0) out.push({ level: 'info', text: `${c['store.conflicts']}× wurde eine eigene Markierung durch eine neuere einer anderen Person ersetzt.` });
   if ((c['longtask.n'] ?? 0) > 20 && (h['longtask.ms']?.sum ?? 0) > 2000) out.push({ level: 'info', text: `Die Seite war ${c['longtask.n']}× länger als 50 ms blockiert (zusammen ${sec(h['longtask.ms'].sum)}).` });
 
+  // What this page cost in mobile data (own files and server data; the basemap comes from another host and is not measurable from here).
+  const transferred = ['js', 'css', 'wasm', 'image', 'font', 'api', 'other'].reduce((sum, k) => sum + (c[`res.${k}.bytes`] ?? 0), 0);
+  if (transferred > 20_000_000) out.push({ level: 'info', text: `Diese Sitzung hat ${Math.round(transferred / 100_000) / 10} MB geladen (Dateien und Serverdaten, ohne Hintergrundkarte). Das meiste sind Kartenpakete beim ersten Laden.` });
+
   const dbMs = h['api./api/v5/campaigns/:c/state.server.db'] ?? h['api./api/v5/campaigns/:c/meta.server.db'];
   if (dbMs && dbMs.n >= 3 && dbMs.p50 > 250) out.push({ level: 'info', text: `Die Datenbank des Servers braucht ${Math.round(dbMs.p50)} ms pro Abfrage${h['sync.round_ms'] ? `, ein Abgleich dauert deshalb etwa ${sec(h['sync.round_ms'].p50)}` : ''}. Das liegt am Server-Standort, nicht an diesem Gerät.` });
   if ((c['errors.external'] ?? 0) > 0) out.push({ level: 'info', text: `${c['errors.external']} Skriptfehler stammen nicht aus der App, sondern von einem Browser-Zusatz oder Inhaltsblocker (zum Beispiel Brave). Die App ist davon nicht betroffen.` });

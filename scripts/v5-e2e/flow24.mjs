@@ -1,0 +1,45 @@
+// An admin makes the numbers cover a whole big Aktion although only some parts are on the device: "Alle Teile einmal berechnen" derives the others once
+// (nothing kept) and reports their size; the pill then counts all houses. Run: BIG_AREA=1 node scripts/v5-e2e/run-all.mjs flow24
+const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
+import fs from 'node:fs';
+const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
+const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
+let failures = 0;
+const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  ' + detail : ''}`); if (!ok) failures++; };
+if (!process.env.BIG_AREA) { console.log('FAIL  this flow needs BIG_AREA=1'); process.exit(1); }
+const ctx = await b.newContext({ viewport: { width: 430, height: 932 } });
+await ctx.addCookies([{ name: 'vf_session', value: cookies.admin, url: 'http://localhost:8140' }]);
+const page = await ctx.newPage();
+page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
+await page.goto('http://localhost:8140/v5.html?campaign=campaign_n&debug');
+const needed = await page.getByText('Kartendaten fehlen').waitFor({ timeout: 5000 }).then(() => true, () => false);
+if (needed) await page.getByRole('button', { name: 'Kartendaten laden' }).click();
+await page.waitForSelector('.v5-pill', { timeout: 240000 });
+await page.waitForFunction(() => window.__v5Boot && window.__v5Map && window.__v5Map.getSource('v5-tiles'), null, { timeout: 120000 });
+await page.waitForTimeout(2500);
+const banner = page.locator('[role=status]', { hasText: 'Kartenteilen geladen' });
+const parts = async () => { const t = await banner.first().textContent({ timeout: 2000 }).catch(() => ''); const m = /(\d+) von (\d+) Kartenteilen/.exec(t ?? ''); return m ? [Number(m[1]), Number(m[2])] : null; };
+const hint = await page.evaluate(() => window.__v5Map.querySourceFeatures('v5-unloaded').length);
+check('parts that are not on the device are drawn as dashed squares', hint > 0, String(hint));
+const before = await parts();
+check('only some parts are on the device', !!before && before[0] < before[1], JSON.stringify(before));
+await page.locator('.v5-pill').click();
+const button = page.getByRole('button', { name: 'Alle Teile einmal berechnen' });
+await button.waitFor({ timeout: 10000 });
+check('the overview offers it, with a note that the numbers count the loaded parts', (await page.getByText('nur die geladenen Kartenteile').count()) > 0);
+await button.click();
+await page.waitForFunction(() => !document.body.textContent.includes('wird ermittelt') && !document.body.textContent.includes('Alle Teile einmal berechnen'), null, { timeout: 180000 });
+await page.keyboard.press('Escape').catch(() => {});
+const close = page.getByRole('button', { name: /schließen|Fertig/i }).first();
+if (await close.count()) await close.click().catch(() => {});
+await page.waitForTimeout(2000);
+const total = Number(await page.locator('.v5-pill').getAttribute('data-total'));
+const after = await parts();
+check('the numbers now cover the whole Aktion (all houses), with the parts still not all loaded', total === 1159 && !!after && after[0] < after[1], `${total} houses, ${JSON.stringify(after)}`);
+const prog = await page.evaluate(() => fetch('/api/v5/campaigns/campaign_n/progress').then((r) => r.json()));
+const sum = Object.values(prog.areas).reduce((t, x) => ({ units: t.units + x.units, houses: t.houses + x.houses }), { units: 0, houses: 0 });
+check('the server knows the size of every part of the Aktion', sum.units === before[1] && sum.houses >= 1159, `${JSON.stringify(sum)} of ${before[1]} parts`);
+check('the notice no longer says the numbers are partial', (await page.getByText('Zahlen nur für geladene Teile').count()) === 0);
+await b.close();
+console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
+process.exit(failures ? 1 : 0);

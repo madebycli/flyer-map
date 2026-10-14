@@ -43,6 +43,8 @@ type OverviewProps = {
   /** The Aktion's time window (distribution only) and the server clock the countdown follows. */
   window?: { startsAt: string | null; endsAt: string | null } | null;
   serverNow?: () => number;
+  /** An admin's way to make the numbers cover the whole Aktion although only some parts are on the device (see `completeSizes`). */
+  sizes?: { busy: { done: number; total: number; failed?: boolean } | null; onRun(): void };
   onFitArea(id: string): void;
   onSyncNow(): void;
   onConflicts(): void;
@@ -50,7 +52,7 @@ type OverviewProps = {
 };
 
 /** Progress by houses (overall, per Area, per Team), what the colours mean, and the honest state of the sync. */
-export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflicts, engine, window: timeWindow, serverNow, onFitArea, onSyncNow, onConflicts, onClose }: OverviewProps) {
+export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflicts, engine, window: timeWindow, serverNow, sizes, onFitArea, onSyncNow, onConflicts, onClose }: OverviewProps) {
   const labels = LABELS[kind], colors = statusColors(theme);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 10_000); return () => window.clearInterval(t); }, []);
@@ -73,6 +75,12 @@ export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflict
   return (
     <SheetFrame icon="chart" title="Übersicht" onClose={onClose} meta={<span><Icon name="house" size={16} />{total.toLocaleString('de')} Häuser</span>}>
       {kind === 'distribution' && timeWindow && serverNow && <CountdownCard window={timeWindow} now={serverNow} progress={percent} />}
+      {sizes && (
+        <div className="v5-row" role="status">
+          <p className="v5-hint"><Icon name="info" size={20} />{sizes.busy && !sizes.busy.failed ? `Größe der Kartenteile wird ermittelt · ${sizes.busy.done}/${sizes.busy.total}` : sizes.busy?.failed ? 'Das Ermitteln ist fehlgeschlagen.' : 'Die Zahlen zählen nur die geladenen Kartenteile.'}</p>
+          <button className="v5-btn" onClick={sizes.onRun} disabled={!!sizes.busy && !sizes.busy.failed}><Icon name="sync" size={20} />{sizes.busy?.failed ? 'Erneut versuchen' : 'Alle Teile einmal berechnen'}</button>
+        </div>
+      )}
       <div className="v5-bignum" aria-label={`${percent} Prozent der Häuser`}>{percent}<small>%</small></div>
       <WavyProgress value={percent / 100} label="Fortschritt nach Häusern" />
       <div className="v5-stats">

@@ -3,6 +3,8 @@ import type { D1DatabaseLike } from '../campaignRepository.ts';
 import { fail, ID, isRecord, json, readableAreasClause, resolveArea } from './shared.ts';
 
 const MAX_UNITS = 800;
+const PROGRESS_TTL_MS = 30_000;
+const PROGRESS_CACHE = new Map<string, { at: number; body: { areas: Record<string, AreaProgress> } }>();
 const MAX_COUNT = 10_000_000;
 const UNIT = /^[A-Za-z0-9._:-]{1,160}(~[0-9]{1,4})?$/u;
 
@@ -32,6 +34,7 @@ export async function putAreaStats(db: D1DatabaseLike, access: AccessContext, ca
     `INSERT INTO v5_area_stats (campaign_id, unit_id, area_id, pack_version, houses, segments, reported_at) VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(campaign_id, unit_id) DO UPDATE SET area_id = excluded.area_id, pack_version = excluded.pack_version, houses = excluded.houses, segments = excluded.segments, reported_at = excluded.reported_at`,
   ).bind(campaignId, r.unit, r.area, r.version, r.houses, r.segments, at)));
+  forgetProgress(campaignId);
   return json({ ok: true, units: rows.length });
 }
 
@@ -41,8 +44,12 @@ export type AreaProgress = { houses: number; segments: number; units: number; co
  * GET /progress — per Gebiet the person may read: reported size (only while the Gebiet's pack version is the one reported for; a big Gebiet's version is the one of its marker row, see `completeParts`) and how many houses are done / later / not deliverable.
  * One aggregate each, so the numbers cost the same whatever the size of the city is for the device.
  */
-export async function getProgress(db: D1DatabaseLike, access: AccessContext, campaignId: string): Promise<Response> {
+export async function getProgress(db: D1DatabaseLike, access: AccessContext, campaignId: string, now: number = Date.now()): Promise<Response> {
   const scope = readableAreasClause(access, campaignId);
+  // The count reads every done row of the Aktion: devices ask often, so the answer is kept for a short while (per Worker instance) instead of reading again.
+  const cacheKey = `${campaignId}|${scope.sql}|${scope.params.join(',')}`;
+  const hit = PROGRESS_CACHE.get(cacheKey);
+  if (hit && now - hit.at < PROGRESS_TTL_MS && now >= hit.at) return json(hit.body);
   const sizes = (await db.prepare(
     `SELECT s.area_id AS area_id, SUM(s.houses) AS houses, SUM(s.segments) AS segments, COUNT(*) AS units
        FROM v5_area_stats s JOIN v5_pack_meta m ON m.campaign_id = s.campaign_id AND m.area_id = s.area_id AND m.version = s.pack_version
@@ -55,5 +62,10 @@ export async function getProgress(db: D1DatabaseLike, access: AccessContext, cam
   const at = (id: string) => (areas[id] ??= { houses: 0, segments: 0, units: 0, completed: 0, later: 0, notDeliverable: 0 });
   for (const s of sizes) Object.assign(at(s.area_id), { houses: s.houses, segments: s.segments, units: s.units });
   for (const d of done) { const a = at(d.area_id); if (d.status === 'completed') a.completed = d.n; else if (d.status === 'later') a.later = d.n; else if (d.status === 'not-deliverable') a.notDeliverable = d.n; }
-  return json({ areas });
+  const body = { areas };
+  PROGRESS_CACHE.set(cacheKey, { at: now, body });
+  if (PROGRESS_CACHE.size > 200) PROGRESS_CACHE.delete(PROGRESS_CACHE.keys().next().value as string);
+  return json(body);
 }
+/** A report changes the sizes: the next read must see them. */
+export function forgetProgress(campaignId: string): void { for (const key of [...PROGRESS_CACHE.keys()]) if (key.startsWith(`${campaignId}|`)) PROGRESS_CACHE.delete(key); }

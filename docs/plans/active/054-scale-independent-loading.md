@@ -7,7 +7,7 @@ last_updated: 2026-10-12
 
 # Plan 054 — the same speed and data use for 10, 1 000 and 100 000 houses
 
-**Status: PARTLY BUILT.** Built: render fixes (`00ce2a0`, `2911b9b`), parts around the last view first (`b6eafe7`), step 2's server side (below). Loading parts on demand (step 1) is built too. Not built: the levels of detail (step 3), completing the sizes without visiting every part, the offline decision. The owner's goal (2026-10-12): no difference in loading time or performance between 10, 1 000 and 100 000 houses and streets, and little data use, because many people use the site on mobile data.
+**Status: PARTLY BUILT.** Built: render fixes (`00ce2a0`, `2911b9b`), parts around the last view first (`b6eafe7`), step 2's server side (below). Loading parts on demand (step 1) is built too. Not built: a progress grid for the levels of detail (step 3; per-part done counts do not exist on the server), the offline decision. The owner's goal (2026-10-12): no difference in loading time or performance between 10, 1 000 and 100 000 houses and streets, and little data use, because many people use the site on mobile data.
 
 ## What is measured, what is not
 
@@ -59,3 +59,20 @@ Must the map keep working offline in parts that were never opened? If **yes**: a
 - **Loading parts on demand** (`useCampaign.ts`, `lastView.ts`): a Gebiet or Aktion of more than 8 units (`LAZY_FROM`) is loaded part by part. A start derives the parts of the last visits (`vf-v5-parts-<campaign>`, at most 40) and the ones around the last view; when the view is at zoom 14 or closer, parts that come into it (grown by 25 %) are added and the map reloads quietly with the larger set (the engine is replaced, tiles refresh). Only wanted parts are downloaded or read from the device cache. New parts (a Gebiet just built) are wanted at once. A banner says "x von y Kartenteilen geladen". `?parts=all` loads everything (tests, comparisons). Orphan clean-up and pruning stay off while parts are missing. Flow: `scripts/v5-e2e/flow23.mjs` (needs `BIG_AREA=1`; start with 4 of 17 parts, 16 after looking around, none fetched twice, the next start brings them back).
 - **Whole-Aktion numbers** (pill and overview) come from the server once it knows the size of every unit (`coveredByServer`); until then they count the loaded parts and the banner says so. A device reports only the units it derived, so the sizes complete as parts are visited. **Open:** one admin action that derives and reports all units once ("Gebietsgrößen vollständig melden") so everybody gets the whole numbers at once.
 - **Not done:** the camera does not return to the last view at start (it fits the Gebiete); statuses are still pulled for the whole Aktion (a part filter on the state pull is the next saving); no levels of detail yet, so at zoom below 14 unloaded parts look empty.
+
+## Built on 2026-10-14
+
+- **The camera opens where the person looked last** when the Aktion is loaded part by part (those are the parts on the device); otherwise it fits all Gebiete as before.
+- **Parts that are not on the device** are drawn as quiet dashed squares below zoom 14, so an empty place is not read as "nothing here" (`v5-unloaded` layers).
+- **"Alle Teile einmal berechnen"** (overview, admins, only while the numbers count loaded parts only): derives every part that is not on the device once in a throw-away engine, keeps the blob in the device cache, reports the sizes; afterwards pill and overview count the whole Aktion although only some parts are loaded. Flow: `scripts/v5-e2e/flow24.mjs` (needs `BIG_AREA=1`).
+- **Data in the diagnostics:** the sheet shows the total transferred (own files and server data); a finding appears above 20 MB. The basemap is another host and not measurable from the page.
+- **Server cost of the aggregates:** `GET /progress` reads every done row of the Aktion, so the answer is kept 30 s per Worker instance (dropped by a report or a pack build) and the device asks every 30 s with the overview open, every 2 min otherwise.
+
+## D1 write budget (why a day can run dry)
+
+Measured by two failed deploys on 2026-10-11/12 (Cloudflare code 7500: free tier, daily row writes, reset at midnight UTC). A status write touches the table row, its primary-key index and two explicit indexes (≈ 3–4 row writes) plus the sequence counter per batch: about 25 000 marks fill a day of 100 000 row writes. Ideas, none built: `WITHOUT ROWID` for `v5_state` before any production apply (one B-tree less, ≈ −25 %; a rebuild of the Unstable table would cost more writes than the day allows), or the paid Workers plan. Note for tests with many marks: spread them over days or expect the pipeline's migration step to fail until midnight UTC.
+
+## Decided against, for now
+
+- **A part filter on the state pull:** needs a `part` on every state row, a backfill and a per-part cursor so that a part loaded later gets its older statuses; the saving is the one-time status download (≈ 5 MB uncompressed for 48 000 statuses, far less compressed) against a sync-protocol change. The pack download is the big item and is already on demand.
+- **Tinting Gebiete by progress at low zoom:** would reach into the Gebiet editor's map code for a nice-to-have; the overview already shows the percentages.

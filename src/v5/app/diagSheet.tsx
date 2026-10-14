@@ -236,6 +236,7 @@ function NetTab({ s, P }: { s: ReturnType<typeof metrics.snapshot>; P: Record<st
     )}
     <Block title="Geladene Dateien">
       <Facts items={(['js', 'css', 'wasm', 'image', 'font', 'api', 'other'] as const).filter((k) => c[`res.${k}.n`]).map((k): [string, React.ReactNode] => [k === 'api' ? 'Serverdaten' : k.toUpperCase(), `${c[`res.${k}.n`]} · ${kb(c[`res.${k}.bytes`] ?? 0)}`])} />
+      <Facts items={[['Übertragen insgesamt (ohne Hintergrundkarte)', kb((['js', 'css', 'wasm', 'image', 'font', 'api', 'other'] as const).reduce((sum, k) => sum + (c[`res.${k}.bytes`] ?? 0), 0))]]} />
       <p className="v5-hint">Aus dem Browser-Cache: {c['res.cached'] ?? 0} Dateien.</p>
     </Block>
     <Block title="Letzte Netzwarnungen">

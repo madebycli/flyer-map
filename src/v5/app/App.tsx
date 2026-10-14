@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { importLegacyProgress, type FieldHouse as House, type FieldNetwork as Network, type FieldSegment as Segment, type LegacySnapshot } from '../engine/index.ts';
 import { FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import { bakeStatuses } from '../map/bake.ts';
-import { saveLastView } from './lastView.ts';
+import { readLastView, saveLastView } from './lastView.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
 import { areaSquareMeters, fromRing } from '../areas/polygon.ts';
@@ -304,6 +304,7 @@ export function App({ campaignId }: { campaignId: string }) {
     try { localStorage.setItem('vf-v5-base', baseOn ? 'on' : 'off'); } catch { /* private mode */ }
   }, [baseOn]);
   useEffect(() => { fieldMap.current?.setHousesOnly(marking.housesOnly); }, [marking.housesOnly]);
+  useEffect(() => { fieldMap.current?.setUnloadedCells(campaign.unloadedCells); }, [campaign.unloadedCells]);
   useEffect(() => { fieldMap.current?.setContextAreas((meta?.contextAreas ?? []).map((c) => c.geometry.coordinates[0] as [number, number][])); }, [meta?.contextAreas, network]);
   useEffect(() => { fieldMap.current?.setDoubleTapZoom(fab === 'idle' && tool === 'inspect'); }, [fab, tool]);
 
@@ -318,7 +319,10 @@ export function App({ campaignId }: { campaignId: string }) {
       // edit (a Gebiet changed or deleted, data fetched later) never move the camera again.
       const hasData = network.houses.length > 0 || network.segments.length > 0;
       const bounds = workBounds(network, meta?.areas ?? []);
-      if (bounds && (fittedRef.current === 'none' || (fittedRef.current === 'areas' && hasData))) { fittedRef.current = hasData ? 'data' : 'areas'; map.fitTo(bounds, FIT_PADDING); }
+      // A big Aktion loaded part by part opens where the person looked last (those parts are the ones on the device); everything else shows all Gebiete.
+      const last = campaign.lazyActive() && hasData && fittedRef.current !== 'data' ? readLastView(campaignId) : null;
+      if (last && map.restoreView(last.center, last.zoom)) fittedRef.current = 'data';
+      else if (bounds && (fittedRef.current === 'none' || (fittedRef.current === 'areas' && hasData))) { fittedRef.current = hasData ? 'data' : 'areas'; map.fitTo(bounds, FIT_PADDING); }
     }));
   }, [network, store, campaign.mapData]); // eslint-disable-line react-hooks/exhaustive-deps -- fit only when the geometry changes
 
@@ -516,7 +520,7 @@ export function App({ campaignId }: { campaignId: string }) {
     let live = true;
     const load = () => { void fetchProgress(campaignId).then((p) => { if (live) setServerProgress(p); }, () => {}); };
     load();
-    const timer = window.setInterval(load, panel === 'overview' ? 20_000 : 60_000);
+    const timer = window.setInterval(load, panel === 'overview' ? 30_000 : 120_000); // each answer reads the done rows of the Aktion on the server: not more often than this
     return () => { live = false; window.clearInterval(timer); };
   }, [panel, partialCount, lazyPartial, campaignId]);
   const stats = useMemo(
@@ -752,7 +756,7 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && panel === 'access' && meta?.role === 'admin' && <AccessSheet campaignId={campaignId} teams={meta.teams} onClose={() => setPanel(null)} />}
       {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
-        <OverviewSheet kind={kind} theme={theme} stats={stats} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflictRows.length}
+        <OverviewSheet kind={kind} theme={theme} stats={stats} sizes={meta.role === 'admin' && lazyPartial && !wholeFromServer ? { busy: campaign.sizesProgress, onRun: () => void campaign.completeSizes().then(() => fetchProgress(campaignId)).then(setServerProgress, () => {}) } : undefined} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflictRows.length}
           engine={campaign.engine?.kind === 'wasm' ? 'Rust (WebAssembly)' : 'TypeScript (Ersatz)'} window={roomsOn ? meta.window : null} serverNow={rooms.now} onFitArea={fitArea} onSyncNow={campaign.syncNow} onConflicts={() => openPanel('conflicts')} onClose={() => setPanel(null)} />
       )}
       {ready && panel === 'conflicts' && (

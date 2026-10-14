@@ -51,7 +51,14 @@ export type CampaignState = {
   /** The first start of a big Gebiet shows its first parts and loads the others behind the working map (`failed`: that did not work, a reload fetches all). */
   completing: { done: number; total: number; failed?: boolean } | null;
   partialAreas: ReadonlySet<string>;
+  /** Squares of the parts that are not on the device (empty unless the Aktion is loaded part by part). */
+  unloadedCells: Bbox[];
+  /** True while the Aktion is loaded part by part (set before the map gets its data). */
+  lazyActive: () => boolean;
   lazyInfo: { loaded: number; total: number } | null;
+  sizesProgress: { done: number; total: number; failed?: boolean } | null;
+  /** Admin: derive and report the size of the parts that are not on the device, so everybody's numbers cover the whole Aktion. */
+  completeSizes: () => Promise<void>;
   /** The map's view changed: parts of a lazily loaded Gebiet that come into it are loaded (zoomed in enough, see `LAZY_ZOOM`). */
   wantView: (view: { bbox: Bbox; zoom: number }) => void;
   expectedUnits: ReadonlyMap<string, number>;
@@ -86,6 +93,12 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
   const [completing, setCompleting] = useState<{ done: number; total: number; failed?: boolean } | null>(null);
   /** A Gebiet of many parts is loaded part by part, as the person looks at it (see `lazy` in the boot): how many of the parts are on the device. */
   const [lazyInfo, setLazyInfo] = useState<{ loaded: number; total: number } | null>(null);
+  const lazyActiveRef = useRef(false);
+  /** One admin action: derive every part that is not on the device once, only to learn its size and report it (see `completeSizes`). */
+  const [sizesProgress, setSizesProgress] = useState<{ done: number; total: number; failed?: boolean } | null>(null);
+  const completeSizesRef = useRef<() => Promise<void>>(async () => {});
+  const completeSizes = useCallback(() => completeSizesRef.current(), []);
+  const [unloadedCells, setUnloadedCells] = useState<Bbox[]>([]);
   const wantViewRef = useRef<(view: { bbox: Bbox; zoom: number }) => void>(() => {});
   const wantView = useCallback((view: { bbox: Bbox; zoom: number }) => wantViewRef.current(view), []);
   /** Gebiete of which parts are not on the device yet, and how many units each Gebiet has (see `withServerProgress`). */
@@ -132,12 +145,43 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     const FIRST_UNITS = 3;
     // Many parts (a big Gebiet, many Gebiete): the device loads only those around where the person looked and those they look at later, not all of them.
     const LAZY_FROM = new URLSearchParams(location.search).get('parts') === 'all' ? Infinity : 8, LAZY_ZOOM = 14; // ?parts=all: everything at once (tests, comparisons)
-    const lazy = { on: false, ready: false, initialised: false, wanted: new Set<string>(), known: new Set<string>(), units: [] as { id: string; area: string; packed: boolean; bbox: Bbox }[] };
+    const lazy = { full: [] as { id: string; areaId: string; packVersion: number | null; updatedAt: string; ring: [number, number][]; cell: [number, number, number, number] | null; part: number; single: boolean }[], on: false, ready: false, initialised: false, wanted: new Set<string>(), known: new Set<string>(), units: [] as { id: string; area: string; packed: boolean; bbox: Bbox }[] };
     let lazyBusy = false, lazyAgain = false;
     const lazyReload = async () => {
       if (lazyBusy) { lazyAgain = true; return; }
       lazyBusy = true;
       try { do { lazyAgain = false; await boot({ quiet: true }); } while (lazyAgain && !cancelled); } catch { /* the previous state stays; the next view tries again */ } finally { lazyBusy = false; }
+    };
+    completeSizesRef.current = async () => {
+      if (!lazy.on || !lazy.ready) return;
+      const todo = lazy.full.filter((u) => u.packVersion && !lazy.wanted.has(u.id));
+      if (!todo.length) return;
+      let temp: EngineClient | null = null;
+      setSizesProgress({ done: 0, total: todo.length });
+      try {
+        temp = await EngineClient.create({ forceTs: false });
+        if (temp.kind !== 'wasm') throw new Error('Diese Funktion braucht die schnelle Karten-Engine.');
+        const reports: UnitSize[] = [];
+        for (const [i, u] of todo.entries()) {
+          if (cancelled) return;
+          const key = NetworkCache.keyFor({ id: u.id, packVersion: u.packVersion, updatedAt: u.updatedAt });
+          let blob = key ? await cache.load(key) : null;
+          let pack: Uint8Array | null = null;
+          if (!blob) pack = await fetchPack(campaignId, u.areaId, u.single ? null : u.part);
+          if (!blob && !pack) continue;
+          await temp.reset(); // one unit at a time: nothing is kept
+          const result = await temp.area({ areaId: u.id, ring: u.ring, cell: u.cell, ...(blob ? { blob } : { pack: pack ?? undefined, wantBlob: true }) });
+          if (key && result.blob && !blob) void cache.store(key, result.blob);
+          reports.push({ unit: u.id, area: u.areaId, packVersion: u.packVersion as number, houses: result.network.houses.length, segments: result.network.segments.length });
+          setSizesProgress({ done: i + 1, total: todo.length });
+          if (reports.length >= 20) await reportAreaStats(campaignId, reports.splice(0, reports.length));
+        }
+        if (reports.length) await reportAreaStats(campaignId, reports);
+        setSizesProgress(null);
+      } catch (error) {
+        diag.warn('boot', 'part sizes could not be completed', { error: error instanceof Error ? error.message : String(error) });
+        setSizesProgress((p) => ({ done: p?.done ?? 0, total: p?.total ?? todo.length, failed: true }));
+      } finally { temp?.dispose(); }
     };
     wantViewRef.current = ({ bbox, zoom }) => {
       if (!lazy.on || !lazy.ready || zoom < LAZY_ZOOM) return;
@@ -222,6 +266,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
         };
         if (staged) { const inside = withinBudget(); units.forEach((unit, index) => { if (unit.area.packVersion && !inside.has(index)) deferred.add(index); }); }
         if (lazyOn) {
+          lazy.full = units.map((unit) => ({ id: unit.id, areaId: unit.area.id, packVersion: unit.area.packVersion, updatedAt: unit.area.updatedAt, ring: unit.ring, cell: unit.part.cell, part: unit.part.index, single: unit.single }));
           lazy.units = units.map((unit) => { const ring = unit.part.cell ? [[unit.part.cell[0], unit.part.cell[1]], [unit.part.cell[2], unit.part.cell[3]]] : unit.ring; const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]); return { id: unit.id, area: unit.area.id, packed: !!unit.area.packVersion, bbox: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bbox }; });
           if (!lazy.initialised) { // first time there is something to load: the parts of the last visits plus the ones around the last view
             for (const id of readParts(campaignId)) lazy.wanted.add(id);
@@ -233,7 +278,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
           units.forEach((unit, index) => { if (unit.area.packVersion && !lazy.wanted.has(unit.id)) deferred.add(index); });
           saveParts(campaignId, lazy.wanted);
         }
-        lazy.on = lazyOn;
+        lazy.on = lazyOn; lazyActiveRef.current = lazyOn;
         timing.deferred = deferred.size;
         if (!rest) {
           setPartialAreas(new Set([...deferred].map((i) => units[i].area.id)));
@@ -336,8 +381,9 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
           lazy.ready = true;
           const packed = lazy.units.filter((u) => u.packed);
           setLazyInfo({ loaded: packed.filter((u) => lazy.wanted.has(u.id)).length, total: packed.length });
+          setUnloadedCells(packed.filter((u) => !lazy.wanted.has(u.id)).map((u) => u.bbox));
           if (partial) diag.info('boot', 'parts are loaded as they are looked at', { loaded: parts.length, total: units.length });
-        } else setLazyInfo(null);
+        } else { setLazyInfo(null); setUnloadedCells([]); }
         if (partial && !lazyOn) {
           diag.info('boot', 'the first parts are shown; the rest follows behind the map', { shown: parts.length, total: units.length });
           setCompleting({ done: parts.length, total: units.length });
@@ -391,7 +437,7 @@ export function useCampaign(campaignId: string, kind?: 'collection'): CampaignSt
     syncNow: () => { void syncRef.current?.run(); },
     orphans: () => { const live = liveRef.current; return live && !live.missing ? [...live.store.entries()].filter(([key, entry]) => entry.status !== 'open' && !live.areaOf.has(key)).map(([key]) => key) : []; },
     async refreshMeta() { const m = await fetchMeta(campaignId, kind); setMeta(m); await loadPickups(m); worksInChangedRef.current?.(m); },
-    building, buildProgress, completing, partialAreas, expectedUnits, lazyInfo, wantView,
+    building, buildProgress, completing, partialAreas, expectedUnits, lazyInfo, unloadedCells, sizesProgress, completeSizes, wantView, lazyActive: () => lazyActiveRef.current,
     async buildMissing() {
       if (!canBuildRef.current || buildingRef.current) return null;
       buildingRef.current = true; setBuilding(true);

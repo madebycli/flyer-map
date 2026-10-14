@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { campaign, setup, stamp } from './helpers/v5Setup.ts';
+import { forgetProgress } from '../worker/v5/areaStats.ts';
 
 const base = `/api/v5/campaigns/${campaign}`;
 type Progress = { areas: Record<string, { houses: number; segments: number; units: number; completed: number; later: number; notDeliverable: number }> };
@@ -38,6 +39,20 @@ test('area stats: only admins report; bad input and foreign units are refused; a
   }
   assert.equal((await call('admin', 'PUT', `${base}/areas/stats`, { units: [unit] })).status, 200);
   assert.equal(((await (await call('admin', 'GET', `${base}/progress`)).json()) as Progress).areas.area_n.houses, 10);
-  pack(db, 'area_n', 2); // rebuilt: the reported size belongs to version 1
+  pack(db, 'area_n', 2); // rebuilt (the build path drops the kept answer): the reported size belongs to version 1
+  forgetProgress(campaign);
   assert.equal(((await (await call('admin', 'GET', `${base}/progress`)).json()) as Progress).areas.area_n?.houses ?? 0, 0);
+});
+
+test('area stats: the progress answer is kept for 30 s (it reads every done row), and a report makes it fresh at once', async () => {
+  const { call, db } = await setup();
+  pack(db, 'area_n', 1);
+  const unit = { unit: 'area_n', area: 'area_n', packVersion: 1, houses: 10, segments: 20 };
+  assert.equal((await call('admin', 'PUT', `${base}/areas/stats`, { units: [unit] })).status, 200);
+  const read = async () => ((await (await call('admin', 'GET', `${base}/progress`)).json()) as Progress).areas.area_n;
+  assert.equal((await read()).completed, 0);
+  db.sqlite.prepare("INSERT INTO v5_state(campaign_id,key,op_id,status,area_id,actor,grant_id,seq) VALUES(?,?,?,?,?,?,?,?)").run(campaign, 'h:z1', stamp(1_800_000_000_000), 'completed', 'area_n', 'x', 'g', 1);
+  assert.equal((await read()).completed, 0, 'still the kept answer');
+  assert.equal((await call('admin', 'PUT', `${base}/areas/stats`, { units: [unit] })).status, 200);
+  assert.equal((await read()).completed, 1, 'a report drops it');
 });

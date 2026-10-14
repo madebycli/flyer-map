@@ -9,7 +9,7 @@ import type { D1DatabaseLike } from '../campaignRepository.ts';
 import { canReadArea, canWriteArea, fail, ID, isScoped, isRecord, json, readableAreasClause, resolveArea, writesAllowed } from './shared.ts';
 import { pullNotes, pushNotes } from './notes.ts';
 import { forgetArea, pruneState } from './cleanup.ts';
-import { getProgress, putAreaStats } from './areaStats.ts';
+import { forgetProgress, getProgress, putAreaStats } from './areaStats.ts';
 import { createRoom, deleteRoom, finishRoom, joinRoom, listRooms, putWindow, readWindow, roomInfo, updateRoom } from './rooms.ts';
 import { parseCampaignId } from '../snapshotValidation.ts';
 import { consoleSink, emit, errorCodeOf, instrumentDb, requestIdOf, serverTiming, type LogLevel, type Sink } from './observe.ts';
@@ -119,7 +119,7 @@ async function routeV5(request: Request, db: D1DatabaseLike, options: V5Options)
   if (route.kind === 'ops' && request.method === 'POST') return pushOps(db, access, route.campaignId, request, options);
   if (route.kind === 'notes' && request.method === 'GET') return pullNotes(db, access, route.campaignId, url, options);
   if (route.kind === 'notes' && request.method === 'POST') return pushNotes(db, access, route.campaignId, request, options);
-  if (route.kind === 'progress' && request.method === 'GET') return getProgress(db, access, route.campaignId);
+  if (route.kind === 'progress' && request.method === 'GET') return getProgress(db, access, route.campaignId, (options.now ?? Date.now)());
   if (route.kind === 'stats' && request.method === 'PUT') return putAreaStats(db, access, route.campaignId, request, (options.now ?? Date.now)());
   if (route.kind === 'window' && request.method === 'PUT') return putWindow(db, access, route.campaignId, request);
   if (route.kind === 'rooms' && request.method === 'GET') return listRooms(db, access, route.campaignId, options);
@@ -472,8 +472,10 @@ async function buildPack(db: D1DatabaseLike, access: AccessContext, campaignId: 
     if (plan.single) {
       // An outline that used to need parts (and is now small) leaves nothing behind.
       await db.batch(partCleanup(db, campaignId, areaId, '').slice(0, 3));
+      forgetProgress(campaignId); // the sizes belong to a pack version
       return json({ version, bytes: bytes.byteLength, chunks, stats: parsed.stats });
     }
+    forgetProgress(campaignId);
     return json({ part: part.index, parts: plan.parts.length, partVersion: version, bytes: bytes.byteLength, stats: parsed.stats, ...(await completeParts(db, campaignId, areaId, plan.parts.length, outline, new Date(nowMs).toISOString())) });
   } catch (error) {
     const what = error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 160) : 'unbekannt';

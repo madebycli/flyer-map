@@ -16,6 +16,7 @@ export const TILE_SOURCE = 'v5-tiles';
 export const AREA_SOURCE = 'v5-areas';
 export const DRAW_SOURCE = 'v5-draw';
 export const CONTEXT_SOURCE = 'v5-context';
+export const UNLOADED_SOURCE = 'v5-unloaded';
 export const NOTE_SOURCE = 'v5-notes';
 export const PICKUP_SOURCE = 'v5-pickups';
 export const ME_SOURCE = 'v5-me';
@@ -321,6 +322,7 @@ export class FieldMap {
     this.pushData();
     this.pushAreas();
     this.pushContext();
+    this.pushUnloaded();
     this.pushDraw();
     this.pushNotes();
     this.pushPickups();
@@ -347,6 +349,10 @@ export class FieldMap {
     map.addSource(AREA_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addSource(DRAW_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addSource(CONTEXT_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addSource(UNLOADED_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    // Parts of a big Aktion that are not on the device (yet): a quiet dashed square while zoomed out, so an empty place is not read as "nothing here".
+    map.addLayer({ id: 'v5-unloaded-fill', type: 'fill', source: UNLOADED_SOURCE, maxzoom: 14, paint: { 'fill-color': theme === 'dark' ? '#9aa5a0' : '#5d6762', 'fill-opacity': 0.07 } });
+    map.addLayer({ id: 'v5-unloaded-line', type: 'line', source: UNLOADED_SOURCE, maxzoom: 14, paint: { 'line-color': theme === 'dark' ? '#9aa5a0' : '#5d6762', 'line-opacity': 0.5, 'line-width': 1, 'line-dasharray': [2, 3] } });
     // Gebiete of other teams: a thin grey outline for orientation, nothing to tap
     map.addLayer({ id: 'v5-context-line', type: 'line', source: CONTEXT_SOURCE, layout: { 'line-join': 'round' }, paint: { 'line-color': theme === 'dark' ? '#9aa5a0' : '#5d6762', 'line-opacity': 0.55, 'line-width': 1.2, 'line-dasharray': [1.6, 2.4] } });
     map.addLayer({ id: 'v5-areas-fill', type: 'fill', source: AREA_SOURCE, paint: { 'fill-color': ['get', 'color'], 'fill-opacity': ['case', ['==', ['get', 'active'], 1], 0.12, 0.04] } });
@@ -622,6 +628,12 @@ export class FieldMap {
   /** Outlines of Gebiete the person does not work in (see `Meta.contextAreas`). */
   setContextAreas(rings: LngLat[][]) { this.context = rings; this.pushContext(); }
   private context: LngLat[][] = [];
+  /** Squares (west, south, east, north) of parts that are not on the device yet. */
+  setUnloadedCells(cells: [number, number, number, number][]) { this.unloaded = cells; this.pushUnloaded(); }
+  private unloaded: [number, number, number, number][] = [];
+  private pushUnloaded() {
+    (this.map.getSource(UNLOADED_SOURCE) as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: this.unloaded.map(([w, s, e, n]): Feature => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } })) });
+  }
   private pushContext() {
     (this.map.getSource(CONTEXT_SOURCE) as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: this.context.map((ring): Feature => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } })) });
   }
@@ -798,6 +810,12 @@ export class FieldMap {
   fitTo(bounds: [[number, number], [number, number]], padding: number | { top: number; bottom: number; left: number; right: number } = 40) {
     if (!bounds.flat().every(Number.isFinite)) return;
     this.map.fitBounds(bounds, { padding, duration: 0, maxZoom: 17.2 });
+  }
+  /** Put the camera where it was (no animation); false when the position is not usable. */
+  restoreView(center: LngLat, zoom: number): boolean {
+    if (![...center, zoom].every(Number.isFinite)) return false;
+    this.map.jumpTo({ center, zoom: Math.min(Math.max(zoom, 3), 20) });
+    return true;
   }
   get paintedCount() { return this.applied; }
   /** Diagnostics for the soak test: what the map currently holds (a steady rise across identical actions is a leak). */
