@@ -1,6 +1,6 @@
 import type { Meta } from './api.ts';
 import type { AreaView } from './collection.ts';
-import { SheetFrame } from './sheet.tsx';
+import { EmptyState, SheetFrame } from './sheet.tsx';
 import { Icon } from '../../ui/index.ts';
 
 type Props = {
@@ -27,7 +27,8 @@ export function CollectionSetupSheet({ meta, views, busy, error, onDraw, onEditM
   const areas = meta.areas.filter((a) => a.collection?.status !== 'archived');
   const archived = meta.areas.length - areas.length;
   return (
-    <SheetFrame icon="polygon" title="Abholen einrichten" onClose={onClose} meta={<span><Icon name="paw" size={16} />{areas.length} Teilgebiete</span>}>
+    <SheetFrame icon="polygon" title="Abholen einrichten" onClose={onClose} meta={<span><Icon name="paw" size={16} />{areas.length} Teilgebiete</span>}
+      actions={<button className="v5-icon-btn tonal" onClick={onDraw} disabled={busy} aria-label={main ? 'Teilgebiet zeichnen' : 'Sammelgebiet zeichnen'} title={main ? 'Teilgebiet zeichnen' : 'Sammelgebiet zeichnen'}><Icon name="plus" /></button>}>
       {error && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{error}</p>}
       <h3>Sammelgebiet</h3>
       {main ? (
@@ -35,10 +36,7 @@ export function CollectionSetupSheet({ meta, views, busy, error, onDraw, onEditM
           <span className="v5-conflict-title">{main.name}</span>
           <button className="v5-icon-btn" onClick={onEditMain} disabled={busy} aria-label="Sammelgebiet bearbeiten" title="Umriss bearbeiten"><Icon name="pen" /></button>
         </div>
-      ) : <p className="v5-hint"><Icon name="info" size={20} />Noch kein Sammelgebiet. Es umfasst alles, was abgeholt werden soll; die Teilgebiete liegen darin.</p>}
-      <div className="v5-row">
-        <button className="v5-btn primary" style={{ marginTop: 0 }} onClick={onDraw} disabled={busy}><Icon name="plus" size={20} />{main ? 'Teilgebiet zeichnen' : 'Sammelgebiet zeichnen'}</button>
-      </div>
+      ) : <EmptyState icon="polygon" title="Noch kein Sammelgebiet" text="Es umfasst alles, was abgeholt werden soll; die Teilgebiete liegen darin. Mit + zeichnest du es." />}
       {areas.length > 0 && (
         <>
           <h3>Teilgebiete</h3>
