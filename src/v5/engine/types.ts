@@ -53,6 +53,8 @@ export type NetworkDiagnostics = {
   segments: number;
   visibleSegments: number;
   promotedByHouses: number;
+  /** Houses that kept the street their address names although a footway or path lay nearer (engine v5.5). */
+  keptFromPaths: number;
   hiddenConnectors: number;
   buildingsIn: number;
   housesOut: number;

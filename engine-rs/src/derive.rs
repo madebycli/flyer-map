@@ -221,7 +221,7 @@ pub fn derive_network(raw: &RawOsm) -> Network {
             id: format!("h{}", building.id), osm_id: building.id, source: Source::Building, number, street, ring: building.ring.clone(), center,
             parent: None, measure: None, evidence,
         };
-        houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch));
+        houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch, &mut diag));
     }
 
     // address nodes that belong to no building become small point-houses
@@ -259,7 +259,7 @@ pub fn derive_network(raw: &RawOsm) -> Network {
             ring: vec![[nx - d, ny - d], [nx + d, ny - d], [nx + d, ny + d], [nx - d, ny + d], [nx - d, ny - d]],
             center: node.point, parent: None, measure: None, evidence: Evidence::AddressNode,
         };
-        houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch));
+        houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch, &mut diag));
     }
 
     // 6. visibility: streets always; access/connector only when real houses use them
@@ -315,7 +315,7 @@ fn round_network(network: &mut Network) {
     }
 }
 
-fn assign_parent(mut house: House, frame: &Frame, grid: &mut Grid, indexed: &[Indexed], segments: &[Segment], scratch: &mut Vec<u32>) -> House {
+fn assign_parent(mut house: House, frame: &Frame, grid: &mut Grid, indexed: &[Indexed], segments: &[Segment], scratch: &mut Vec<u32>, diag: &mut Diagnostics) -> House {
     let [cx, cy] = frame.to_xy(house.center);
     let reach = MAX_NAMED_PARENT_DISTANCE;
     let wanted = normalize_name(house.street.as_deref());
@@ -359,6 +359,7 @@ fn assign_parent(mut house: House, frame: &Frame, grid: &mut Grid, indexed: &[In
     if let (Some((_, bi, _, false)), Some(_)) = (best, best_named) {
         if segments[bi].cls == RoadClass::Connector {
             best = best_named;
+            diag.kept_from_paths += 1;
         }
     }
     if let Some((_, si, measure, _)) = best {

@@ -254,4 +254,5 @@ test('a garden path never takes a house away from the street its address names; 
   assert.equal(parentOf('h101').wayId, 1, 'the house whose address names Hauptstraße belongs to Hauptstraße, not to the path beside it');
   assert.equal(parentOf('h102').wayId, 2, 'a house with no street in its address keeps the nearest way, the path');
   assert.ok(net.segments.filter((s) => s.wayId === 2).every((s) => s.visible), 'the path stays visible because house 102 uses it');
+  assert.equal(net.diagnostics.keptFromPaths, 1, 'the diagnostics count the one house the rule kept on its street');
 });

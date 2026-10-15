@@ -110,6 +110,7 @@ pub struct Diagnostics {
     pub segments: usize,
     pub visible_segments: usize,
     pub promoted_by_houses: u32,
+    pub kept_from_paths: u32,
     pub hidden_connectors: u32,
     pub buildings_in: usize,
     pub houses_out: usize,

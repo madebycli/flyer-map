@@ -55,8 +55,8 @@ export function mergeNetworks<S extends { id: string; visible: boolean }, H exte
   return {
     network: {
       segments: list, houses: [...houses.values()],
-      diagnostics: { ...(first ?? { engineVersion: '', waysIn: 0, waysExcluded: {}, promotedByHouses: 0, hiddenConnectors: 0, buildingsIn: 0, buildingsSkipped: {}, orphanHouses: 0, segments: 0, visibleSegments: 0, housesOut: 0 }),
-        segments: list.length, visibleSegments: list.filter((s) => s.visible).length, housesOut: houses.size },
+      diagnostics: { ...(first ?? { engineVersion: '', waysIn: 0, waysExcluded: {}, promotedByHouses: 0, keptFromPaths: 0, hiddenConnectors: 0, buildingsIn: 0, buildingsSkipped: {}, orphanHouses: 0, segments: 0, visibleSegments: 0, housesOut: 0 }),
+        segments: list.length, visibleSegments: list.filter((s) => s.visible).length, housesOut: houses.size, keptFromPaths: parts.reduce((n, part) => n + (part.network.diagnostics.keptFromPaths ?? 0), 0) },
     },
     areaOf,
   };

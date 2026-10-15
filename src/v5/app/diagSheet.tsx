@@ -202,7 +202,7 @@ function EngineTab({ engine, eng, campaign, s }: { engine: EngineClient | null; 
             <summary><b>Gebiet {String(a.n)}</b><span>{a.source === 'cache' ? 'Cache' : a.source === 'server' ? 'Server' : 'ohne Daten'} · {num(n(a.houses))} Häuser · {num(n(a.segments))} Straßen · {ms(n(a.deriveMs))}</span></summary>
             <Facts items={[
               ['Paket geladen', `${kb(n(a.packBytes))} in ${ms(n(a.fetchMs))}`], ['Entpacken', ms(n(detail.gunzip))], ['Rust rechnet', ms(n(detail.wasm ?? detail.blobWasm))], ['Ergebnis lesen', ms(n(detail.parse ?? detail.blobParse))],
-              ['Wege im Paket', num(n(d.waysIn))], ['Straßenstücke', `${num(n(d.segments))} (sichtbar ${num(n(d.visibleSegments))})`], ['Durch Häuser aufgewertet', num(n(d.promotedByHouses))], ['Verdeckte Verbinder', num(n(d.hiddenConnectors))],
+              ['Wege im Paket', num(n(d.waysIn))], ['Straßenstücke', `${num(n(d.segments))} (sichtbar ${num(n(d.visibleSegments))})`], ['Durch Häuser aufgewertet', num(n(d.promotedByHouses))], ['Verdeckte Verbinder', num(n(d.hiddenConnectors))], ['Häuser bei ihrer Straße gehalten (statt Gartengang)', num(n(d.keptFromPaths))],
               ['Gebäude im Paket', num(n(d.buildingsIn))], ['Häuser erzeugt', num(n(d.housesOut))], ['Häuser ohne Straße', num(n(d.orphanHouses))],
               ['Wege ausgeschlossen', counts(obj(d.waysExcluded))], ['Gebäude übersprungen', counts(obj(d.buildingsSkipped))],
             ]} />
