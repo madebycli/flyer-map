@@ -380,29 +380,14 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-swatchstrip { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 2.75rem); grid-auto-columns: 2.75rem; gap: var(--gap); margin-inline: -1rem; padding: 0.15rem 1rem; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; }
 .v5-swatchstrip::-webkit-scrollbar { display: none; }
 
-/* Gruppen: rows that open a popup, and the popup itself (rises from the bottom edge, above a touch keyboard) */
+/* Gruppen: rows that open a page of their own */
 .v5-gdot { width: 1.1rem; height: 1.1rem; flex: none; border-radius: 0.35rem; background: var(--c); }
 .v5-row-btn .v5-row-name { display: grid; flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
 .v5-row-btn .v5-row-name small { color: var(--on-var); font-weight: 600; font-size: 0.85rem; }
 .v5-row-btn { min-height: var(--ctl); }
-.v5-popup-scrim { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; padding: 0 0 var(--kb, 0px); background: rgb(0 0 0 / 55%); animation: v5-fade var(--t) var(--ease); }
-.v5-popup { display: flex; flex-direction: column; width: min(30rem, 100%); max-height: calc(var(--vvh, 100vh) - 1rem); border-radius: var(--r-lg, 1.75rem) var(--r-lg, 1.75rem) 0 0; background: var(--surface-2); color: var(--on); box-shadow: 0 -8px 28px rgb(0 0 0 / 40%); }
-.v5-popup > header { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); padding: 1rem 1rem 0.4rem 1.3rem; }
-.v5-popup > header h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
-.v5-popup-body { display: grid; gap: var(--sp-3, 1rem); min-height: 0; padding: 0.6rem 1.3rem 1rem; overflow-y: auto; overscroll-behavior: contain; }
-.v5-popup-body > * { margin-block: 0; }
-.v5-popup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gap); padding: 0.7rem 1.3rem calc(env(safe-area-inset-bottom) + 1rem); border-top: 1px solid var(--outline-var); }
-:root[data-kb] .v5-popup-actions { padding-bottom: 1rem; }
-.v5-popup-actions .v5-btn { flex: 1 1 8rem; }
-@media (min-width: 700px) {
-  .v5-popup-scrim { align-items: center; padding-bottom: 0; }
-  .v5-popup { border-radius: var(--r-lg, 1.75rem); }
-}
 
 /* ── Material 3 Expressive, after the reference app: big soft shapes, pill buttons and chips, section titles with an accent bar, tonal count pills ── */
-.v5-sheet-body h3, .v5-popup-body h3 { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.1rem; font-size: 1.02rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--on); }
-.v5-sheet-body h3::before, .v5-popup-body h3::before { content: ''; flex: none; width: 0.28rem; height: 1.1rem; border-radius: 0.2rem; background: var(--primary); }
-:is(.v5-results, .v5-arealist, .v5-list) > :first-child { border-top-left-radius: var(--r-lg); border-top-right-radius: var(--r-lg); }
+.v5-sheet-body h3, .v5-sheet-body h3::before, :is(.v5-results, .v5-arealist, .v5-list) > :first-child { border-top-left-radius: var(--r-lg); border-top-right-radius: var(--r-lg); }
 :is(.v5-results, .v5-arealist, .v5-list) > :last-child { border-bottom-left-radius: var(--r-lg); border-bottom-right-radius: var(--r-lg); }
 :is(.v5-results, .v5-arealist, .v5-list) > :only-child { border-radius: var(--r-lg); }
 .v5-row-btn { min-height: 3.5rem; padding: 0 1.2rem; }
@@ -412,8 +397,9 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 .v5-groupchip { padding: 0.3rem 1.1rem 0.3rem 0.9rem; }
 .v5-groupchip .dot { width: 1rem; height: 1rem; border-radius: 50%; }
 .v5-groupchip.on { background: color-mix(in srgb, var(--c) 26%, var(--surface-2)); }
-.v5-popup { border-radius: 1.75rem 1.75rem 0 0; background: var(--surface-1); }
-.v5-popup > header h2 { font-size: 1.35rem; }
-.v5-popup .v5-input, .v5-popup-body input.v5-input { height: 3.5rem; border-radius: 1.75rem; padding: 0 1.3rem; }
-.v5-popup-body .v5-field > span { padding-left: 0.4rem; }
 .v5-empty-ico { width: 4.6rem; height: 4.6rem; border-radius: 1.6rem; }
+
+/* a page one level down: back arrow in the header, the one action pinned at the foot */
+.v5-footer-actions { display: flex; flex-wrap: wrap; gap: var(--gap); }
+.v5-footer-actions .v5-btn { flex: 1 1 8rem; }
+.v5-sheet-body .v5-field { display: grid; gap: 0.45rem; }

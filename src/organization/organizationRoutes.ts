@@ -8,6 +8,7 @@ export function isOrganizationAdminPath(pathname: string) {
     pathname === "/new" ||
     pathname === "/admin" ||
     pathname === "/admin/security" ||
+    pathname === "/admin/invites" ||
     pathname.startsWith("/admin/campaign/");
 }
 
@@ -15,6 +16,7 @@ function isAuthenticatedOrganizationDestination(pathname: string) {
   return pathname === "/new" ||
     pathname === "/admin" ||
     pathname === "/admin/security" ||
+    pathname === "/admin/invites" ||
     pathname.startsWith("/admin/campaign/");
 }
 

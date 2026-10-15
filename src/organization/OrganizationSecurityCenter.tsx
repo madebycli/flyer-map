@@ -19,7 +19,7 @@ import {
   type OrganizationRoleDto,
   type OrganizationSessionDto,
 } from "./organizationApiClient.ts";
-import { AdminBar, OrganizationLine, PageLoading, TotpEnrollment, errorMessage, formatDate, useOrganizationMe } from "./shared.tsx";
+import { OrganizationLine, PageLoading, TotpEnrollment, errorMessage, formatDate, useOrganizationMe } from "./shared.tsx";
 import { Button, Card, Check, Facts, Field, Group, Heading, LinkButton, Notice, Page, Row, Secret, TextInput } from "../ui/index.ts";
 
 /** Rights an Organizer may hand out. `campaign.create` is deliberately absent: new Campaigns are Organizer-only. */
@@ -268,11 +268,10 @@ export function OrganizationSecurityCenter() {
   if (meState.loading) return <Page><PageLoading>Sicherheitsbereich wird geladen …</PageLoading></Page>;
   if (!me || !membership) return <Page narrow><Card title="Keine aktive Organisation" icon="info"><Notice tone="error">{meState.error ?? error ?? "Für diesen Account existiert keine aktive Mitgliedschaft."}</Notice><LinkButton href="/admin">Zurück</LinkButton></Card></Page>;
 
-  const bar = <AdminBar me={me} current="security" />;
-  if (me.assurance === "recovery") return <Page bar={bar} narrow><RecoveryMfaCard organizationId={membership.organizationId} /></Page>;
+  if (me.assurance === "recovery") return <Page narrow><RecoveryMfaCard organizationId={membership.organizationId} /></Page>;
 
   return (
-    <Page bar={bar}>
+    <Page>
       <Heading eyebrow="Organisation" title="Sicherheit & Zugriffe"><LinkButton href="/admin">Zurück zu Aktionen</LinkButton></Heading>
       <OrganizationLine me={me} organizationId={membership.organizationId} onChange={setOrganizationId} />
       {membership.role === "admin" ? <Notice>Deine Ansicht ist auf die vom Organizer delegierten Berechtigungen begrenzt.</Notice> : null}

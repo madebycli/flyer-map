@@ -13,9 +13,12 @@ const orgMain = read("src/organization/main.tsx");
 const mainSource = read("src/main.tsx");
 
 test("one admin navigation exposes campaigns, invitations and the security center on every page", () => {
-  assert.match(sharedSource, /label: "Einladungen"[\s\S]*?href: "\/admin\/invites"/u);
-  assert.match(sharedSource, /label: "Sicherheit"[\s\S]*?href: "\/admin\/security"/u);
-  for (const source of [appSource, securitySource, inviteSource]) assert.match(source, /<AdminBar /u);
+  assert.match(sharedSource, /label: "Einladungen"[\s\S]*?go\("\/admin\/invites"\)/u);
+  assert.match(sharedSource, /label: "Sicherheit"[\s\S]*?go\("\/admin\/security"\)/u);
+  // one shell owns the bar; the tabs are pages inside it, so switching never rebuilds the bar or asks for the account again
+  assert.match(appSource, /<AdminBar [^>]*navigate=\{navigate\}/u);
+  assert.match(appSource, /<MeContext\.Provider/u);
+  for (const source of [securitySource, inviteSource]) assert.doesNotMatch(source, /<AdminBar /u);
 });
 
 test("organizer pages scroll like documents and never load the map shell CSS", () => {

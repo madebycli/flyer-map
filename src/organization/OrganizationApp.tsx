@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState, type FormEvent } from "react";
 import { AdminMapPicker } from "./AdminMapPicker.tsx";
 import {
   beginOrganizationLogin,
@@ -12,8 +12,11 @@ import {
   type OrganizationCampaignDto,
 } from "./organizationApiClient.ts";
 import { campaignIdFromOrganizationPath, preserveDiagnosticFlag, safeOrganizationNext } from "./organizationRoutes.ts";
-import { AdminBar, OrganizationLine, PageLoading, TotpEnrollment, errorMessage, formatDate, useOrganizationMe, type Navigate } from "./shared.tsx";
-import { Button, Card, CenterPage, Chip, Facts, Field, Group, Heading, LinkButton, Notice, Page, Radio, Segmented, Select, TextInput } from "../ui/index.ts";
+import { AdminBar, MeContext, OrganizationLine, PageLoading, TotpEnrollment, errorMessage, formatDate, useOrganizationMe, type AdminPage, type Navigate } from "./shared.tsx";
+import { Button, Card, CenterPage, Chip, Facts, Field, Group, Heading, LinkButton, Notice, Page, Radio, Segmented, Select, ShellContext, TextInput } from "../ui/index.ts";
+
+const InviteCenter = lazy(() => import("./OrganizationInviteCenter.tsx").then((m) => ({ default: m.OrganizationInviteCenter })));
+const SecurityCenter = lazy(() => import("./OrganizationSecurityCenter.tsx").then((m) => ({ default: m.OrganizationSecurityCenter })));
 
 const LIFECYCLE_LABEL: Record<string, string> = { draft: "Entwurf", active: "Aktiv", completed: "Beendet", archived: "Archiviert" };
 
@@ -190,7 +193,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
   );
 }
 
-function DashboardPage({ navigate }: { navigate: Navigate }) {
+function DashboardPage({ navigate, reload = 0 }: { navigate: Navigate; reload?: number }) {
   const meState = useOrganizationMe("/admin", (path) => navigate(path, true));
   const [organizationId, setOrganizationId] = useState("");
   const [campaigns, setCampaigns] = useState<OrganizationCampaignDto[]>([]);
@@ -206,14 +209,14 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
   useEffect(() => {
     if (!organizationId || meState.value?.assurance !== "mfa") return;
     let active = true;
-    setLoadingCampaigns(true);
+    if (reload === 0) setLoadingCampaigns(true); // coming back to the tab refreshes quietly, the list stays on screen
     setCampaignError(null);
     listOrganizationCampaigns(organizationId)
       .then((result) => { if (active) setCampaigns(result.campaigns); })
       .catch((error: unknown) => { if (active) setCampaignError(errorMessage(error)); })
       .finally(() => { if (active) setLoadingCampaigns(false); });
     return () => { active = false; };
-  }, [organizationId, meState.value?.assurance]);
+  }, [organizationId, meState.value?.assurance, reload]);
 
   if (meState.loading) return <Page><PageLoading>Admin wird geladen …</PageLoading></Page>;
   if (!meState.value) return <Problem>{meState.error}</Problem>;
@@ -223,7 +226,7 @@ function DashboardPage({ navigate }: { navigate: Navigate }) {
   const newPath = `/new${organizationId ? `?organization=${encodeURIComponent(organizationId)}` : ""}`;
 
   return (
-    <Page bar={<AdminBar me={me} current="campaigns" navigate={navigate} />}>
+    <Page>
       <Heading eyebrow="Organisation" title="Aktionen">
         {membership?.role === "organizer" ? <Button tone="primary" icon="plus" disabled={!canCreateCampaign} onClick={() => navigate(newPath)}>Neue Aktion</Button> : null}
       </Heading>
@@ -292,11 +295,10 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
   if (!meState.value) return <Problem>{meState.error}</Problem>;
   const me = meState.value;
   const organizerMemberships = me.memberships.filter((item) => item.role === "organizer");
-  const bar = <AdminBar me={me} current="new" navigate={navigate} />;
 
   if (organizerMemberships.length === 0) {
     return (
-      <Page bar={bar} narrow>
+      <Page narrow>
         <Button tone="quiet" className="ui-back" icon="back" onClick={() => navigate("/admin")}>Aktionen</Button>
         <Card title="Nur für Organizer" icon="lock"><p>Aktionen legen nur Organizer an.</p></Card>
       </Page>
@@ -304,7 +306,7 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
   }
 
   return (
-    <Page bar={bar} narrow>
+    <Page narrow>
       <Button tone="quiet" className="ui-back" icon="back" onClick={() => navigate("/admin")}>Aktionen</Button>
       <Heading eyebrow="Neue Aktion" title="Aktion erstellen" />
       <p className="ui-muted">Name, Organisation, Startstatus und Kartenfokus werden serverseitig gespeichert.</p>
@@ -383,7 +385,7 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
   const me = meState.value;
 
   return (
-    <Page bar={<AdminBar me={me} current="campaigns" navigate={navigate} />} narrow>
+    <Page narrow>
       <Button tone="quiet" className="ui-back" icon="back" onClick={() => navigate("/admin")}>Aktionen</Button>
       {error ? <Notice tone="error">{error}</Notice> : null}
       {campaign ? (
@@ -409,6 +411,44 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
   );
 }
 
+type Tab = "campaigns" | "new" | "invites" | "security";
+const TITLES: Record<Tab, string> = { campaigns: "Aktionen", new: "Neue Aktion", invites: "Einladungen", security: "Sicherheit" };
+
+/**
+ * The signed-in part: one frame with the bar (a tab bar at the bottom of a phone) that stays where it is. The account is loaded once; a tab that has been
+ * opened stays mounted (hidden), so switching back is instant and nothing is fetched again.
+ */
+function AdminShell({ navigate, pathname }: { navigate: Navigate; pathname: string }) {
+  const meState = useOrganizationMe(pathname, (path) => navigate(path, true));
+  const campaignId = campaignIdFromOrganizationPath(pathname);
+  const tab: Tab = pathname === "/new" ? "new" : pathname === "/admin/invites" ? "invites" : pathname === "/admin/security" ? "security" : "campaigns";
+  const [opened, setOpened] = useState<Set<Tab>>(() => new Set([tab]));
+  useEffect(() => { setOpened((current) => (current.has(tab) ? current : new Set(current).add(tab))); document.title = `${TITLES[tab]} | Flyer Map`; }, [tab]);
+  const [dashboardReload, setDashboardReload] = useState(0);
+  const [lastTab, setLastTab] = useState<Tab>(tab);
+  if (tab !== lastTab) { setLastTab(tab); if (tab === "campaigns" && lastTab !== "campaigns") setDashboardReload((n) => n + 1); }
+  if (meState.loading) return <Page><PageLoading>Wird geladen …</PageLoading></Page>;
+  if (!meState.value) return <Problem>{meState.error}</Problem>;
+  const me = meState.value;
+  const show = (name: Tab) => opened.has(name) || name === tab;
+  return (
+    <div className="ui-page">
+      <AdminBar me={me} current={tab as AdminPage} navigate={navigate} />
+      <ShellContext.Provider value>
+        <MeContext.Provider value={meState}>
+          <Suspense fallback={<PageLoading>Wird geladen …</PageLoading>}>
+            <div hidden={tab !== "campaigns" || Boolean(campaignId)}>{show("campaigns") ? <DashboardPage navigate={navigate} reload={dashboardReload} /> : null}</div>
+            {campaignId ? <CampaignPage navigate={navigate} campaignId={campaignId} /> : null}
+            {tab === "new" ? <NewCampaignPage navigate={navigate} /> : null}
+            <div hidden={tab !== "invites"}>{show("invites") ? <InviteCenter /> : null}</div>
+            <div hidden={tab !== "security"}>{show("security") ? <SecurityCenter /> : null}</div>
+          </Suspense>
+        </MeContext.Provider>
+      </ShellContext.Provider>
+    </div>
+  );
+}
+
 export function OrganizationApp() {
   const [path, setPath] = useState(() => `${window.location.pathname}${window.location.search}`);
   useEffect(() => {
@@ -425,9 +465,7 @@ export function OrganizationApp() {
   const campaignId = campaignIdFromOrganizationPath(pathname);
   if (pathname === "/start") return <StartPage navigate={navigate} />;
   if (pathname === "/login") return <LoginPage navigate={navigate} />;
-  if (pathname === "/new") return <NewCampaignPage navigate={navigate} />;
-  if (pathname === "/admin") return <DashboardPage navigate={navigate} />;
-  if (campaignId) return <CampaignPage navigate={navigate} campaignId={campaignId} />;
+  if (pathname === "/new" || pathname === "/admin" || pathname === "/admin/invites" || pathname === "/admin/security" || campaignId) return <AdminShell navigate={navigate} pathname={pathname} />;
   return <CenterPage><Card title="Admin-Seite nicht gefunden" icon="info"><Button tone="primary" onClick={() => navigate("/admin", true)}>Zum Admin</Button></Card></CenterPage>;
 }
 

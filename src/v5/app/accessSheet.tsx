@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Meta } from './api.ts';
 import { createCollectionLink, createGrant, listCollectors, listGrants, revokeCollector, revokeGrant, setPickupRights, type Collector, type Grant, type GrantRole, type PickupRights } from './accessApi.ts';
-import { EmptyState, Popup, SheetFrame } from './sheet.tsx';
+import { EmptyState, SheetFrame } from './sheet.tsx';
 import { Icon } from '../../ui/index.ts';
 
 type LinkKind = GrantRole | 'collector';
@@ -67,8 +67,30 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
   });
   const teamName = (id: string | null) => teams.find((t) => t.id === id)?.name ?? '–';
 
+  if (creating) {
+    return (
+      <SheetFrame icon="users" title="Neuer Link" onBack={() => setCreating(false)} backLabel="Zurück zu den Zugängen" onClose={onClose}
+        footer={<button className="v5-btn primary" style={{ marginTop: 0, width: '100%' }} disabled={busy || (role === 'team-editor' && !teamId)} onClick={() => void create()}><Icon name="send" size={20} />Link erstellen</button>}>
+        <div className="v5-seg three" role="group" aria-label="Wer bekommt den Link">
+          {([['team-editor', 'users', 'Gruppe'], ['viewer', 'eye', 'Ansehen'], ['collector', 'paw', 'Abholen']] as const).map(([value, icon, text]) => (
+            <button key={value} className={`v5-seg-btn${role === value ? ' on' : ''}`} style={{ '--c': 'var(--primary)' } as React.CSSProperties}
+              onClick={() => setRole(value)} aria-pressed={role === value} disabled={value === 'team-editor' && !teams.length}><Icon name={icon} size={22} /><span>{text}</span></button>
+          ))}
+        </div>
+        {role === 'team-editor' && (
+          <div className="v5-field"><span>Gruppe</span>
+            <div className="v5-chips" role="group" aria-label="Gruppe">
+              {teams.map((t) => <button key={t.id} type="button" className={`v5-groupchip${t.id === teamId ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} aria-pressed={t.id === teamId} onClick={() => setTeamId(t.id)}><span className="dot" aria-hidden />{t.name}</button>)}
+            </div>
+          </div>
+        )}
+        {role === 'collector'
+          ? <p className="v5-hint"><Icon name="info" size={20} />Abhol-Helfer öffnen den Link auf dem Handy, übernehmen Teilgebiete und legen Sonder-Marker an.</p>
+          : <label className="v5-field"><span>Name (nur für dich)</span><input className="v5-input" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); }} placeholder="z. B. Gruppe Nord" aria-label="Name des Links" maxLength={80} /></label>}
+      </SheetFrame>
+    );
+  }
   return (
-    <>
     <SheetFrame icon="users" title="Zugänge" onClose={onClose} meta={<span><Icon name="lock" size={16} />{(grants?.length ?? 0) + collectors.length} aktiv</span>}
       actions={<button className="v5-icon-btn tonal" onClick={() => setCreating(true)} aria-label="Neuer Link" title="Neuer Link"><Icon name="plus" /></button>}>
       {created && <LinkBox title={created.title} link={created.link} onDone={() => setCreated(null)} />}
@@ -108,27 +130,5 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
         </div>
       )}
     </SheetFrame>
-    {creating && (
-      <Popup title="Neuer Link" onClose={() => setCreating(false)}
-        actions={<button className="v5-btn primary" style={{ marginTop: 0 }} disabled={busy || (role === 'team-editor' && !teamId)} onClick={() => void create()}><Icon name="send" size={20} />Link erstellen</button>}>
-        <div className="v5-seg three" role="group" aria-label="Wer bekommt den Link">
-          {([['team-editor', 'users', 'Gruppe'], ['viewer', 'eye', 'Ansehen'], ['collector', 'paw', 'Abholen']] as const).map(([value, icon, text]) => (
-            <button key={value} className={`v5-seg-btn${role === value ? ' on' : ''}`} style={{ '--c': 'var(--primary)' } as React.CSSProperties}
-              onClick={() => setRole(value)} aria-pressed={role === value} disabled={value === 'team-editor' && !teams.length}><Icon name={icon} size={22} /><span>{text}</span></button>
-          ))}
-        </div>
-        {role === 'team-editor' && (
-          <div className="v5-field"><span>Gruppe</span>
-            <div className="v5-chips" role="group" aria-label="Gruppe">
-              {teams.map((t) => <button key={t.id} type="button" className={`v5-groupchip${t.id === teamId ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} aria-pressed={t.id === teamId} onClick={() => setTeamId(t.id)}><span className="dot" aria-hidden />{t.name}</button>)}
-            </div>
-          </div>
-        )}
-        {role === 'collector'
-          ? <p className="v5-hint"><Icon name="info" size={20} />Abhol-Helfer öffnen den Link auf dem Handy, übernehmen Teilgebiete und legen Sonder-Marker an.</p>
-          : <label className="v5-field"><span>Name (nur für dich)</span><input className="v5-input" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); }} placeholder="z. B. Gruppe Nord" aria-label="Name des Links" maxLength={80} /></label>}
-      </Popup>
-    )}
-    </>
   );
 }

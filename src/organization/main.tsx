@@ -4,8 +4,6 @@ import { Loading, applyTheme } from "../ui/index.ts";
 import "../ui/ui.css";
 
 const OrganizationApp = lazy(() => import("./OrganizationApp.tsx").then((m) => ({ default: m.OrganizationApp })));
-const InviteCenter = lazy(() => import("./OrganizationInviteCenter.tsx").then((m) => ({ default: m.OrganizationInviteCenter })));
-const SecurityCenter = lazy(() => import("./OrganizationSecurityCenter.tsx").then((m) => ({ default: m.OrganizationSecurityCenter })));
 const InviteRedeem = lazy(() => import("./OrganizationPublicLinks.tsx").then((m) => ({ default: m.OrganizationInviteRedeemPage })));
 const PasswordReset = lazy(() => import("./OrganizationPublicLinks.tsx").then((m) => ({ default: m.OrganizationPasswordResetPage })));
 
@@ -13,8 +11,6 @@ const PasswordReset = lazy(() => import("./OrganizationPublicLinks.tsx").then((m
 const PAGES: Record<string, { title: string; page: ReactElement }> = {
   "/join": { title: "Einladung | Flyer Map", page: <InviteRedeem /> },
   "/reset": { title: "Passwort-Reset | Flyer Map", page: <PasswordReset /> },
-  "/admin/invites": { title: "Einladungen | Flyer Map", page: <InviteCenter /> },
-  "/admin/security": { title: "Sicherheit | Flyer Map", page: <SecurityCenter /> },
 };
 
 export function mountOrganization(root: HTMLElement) {

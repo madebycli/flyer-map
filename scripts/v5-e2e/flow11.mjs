@@ -41,13 +41,15 @@ const json = (route, body, status = 200) => route.fulfill({ status, contentType:
 async function open(path, { signedIn = true, viewport = { width: 390, height: 844 } } = {}) {
   const ctx = await b.newContext({ viewport });
   const page = await ctx.newPage();
-  const seen = { posts: [], external: [] };
+  const seen = { posts: [], external: [], me: 0, lists: 0 };
   let signed = signedIn;
   page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
   page.on('request', (r) => { const u = new URL(r.url()); if (u.hostname !== 'localhost' && u.protocol.startsWith('http')) seen.external.push(r.url()); });
   await page.route(/\/api\/organizations?\//, async (route) => {
     const url = new URL(route.request().url()), p = url.pathname, m = route.request().method();
     if (m === 'POST') seen.posts.push(p);
+    if (p === '/api/organization/me') seen.me++;
+    if (p.endsWith('/campaigns') && m === 'GET') seen.lists++;
     if (p === '/api/organization/me') return signed ? json(route, me) : json(route, { error: { code: 'authentication_required', message: 'Bitte anmelden.' } }, 401);
     if (p === '/api/organization/login/password') return json(route, { requiresFactor: true });
     if (p === '/api/organization/login/totp') { signed = true; return json(route, { account: me.account, assurance: 'mfa' }); }
@@ -109,6 +111,33 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   check('creating leads to the Aktion page with the lifecycle control and the Feldkarte link', await until(async () => /\/admin\/campaign\/campaign_new/.test(page.url()) && (await page.getByRole('link', { name: 'Feldkarte öffnen' }).count()) === 1));
   await pageAudit(page, 'o4-new');
   await page.screenshot({ path: `${shots}/o4-new.png` });
+  await page.context().close();
+}
+
+// 2b. Tabs: the bar is one frame; switching tabs rebuilds neither the bar nor asks for the account again
+{
+  const { page, seen } = await open('/admin');
+  await page.getByRole('heading', { name: 'Aktionen' }).first().waitFor({ timeout: 60000 });
+  await page.evaluate(() => { window.__tabProbe = 'same document'; document.querySelector('.ui-bar').dataset.probe = 'same bar'; });
+  const nav = page.getByRole('navigation', { name: 'Organizer Navigation' });
+  await nav.getByRole('button', { name: 'Sicherheit' }).click();
+  await page.getByRole('heading', { name: 'Sicherheit & Zugriffe' }).waitFor({ timeout: 60000 });
+  await nav.getByRole('button', { name: 'Einladungen' }).click();
+  await page.getByRole('heading', { name: 'Einladungen' }).first().waitFor({ timeout: 60000 });
+  await nav.getByRole('button', { name: 'Aktionen' }).click();
+  await page.getByRole('heading', { name: 'Aktionen' }).first().waitFor();
+  check('switching tabs stays in the same document and keeps the same bar', await page.evaluate(() => window.__tabProbe === 'same document' && document.querySelector('.ui-bar')?.dataset.probe === 'same bar'));
+  check('the account is asked for once for all tabs', seen.me === 1, `requests ${seen.me}`);
+  check('the URL follows the tab', /\/admin$/.test(page.url()));
+  const before = seen.lists;
+  await nav.getByRole('button', { name: 'Sicherheit' }).click();
+  const t0 = Date.now();
+  await page.getByRole('heading', { name: 'Sicherheit & Zugriffe' }).waitFor({ state: 'visible' });
+  check('a tab opened before is shown at once, from memory', Date.now() - t0 < 600 && (await page.getByText('Wird geladen').count()) === 0, `${Date.now() - t0} ms`);
+  check('only the visible tab is on screen', (await page.locator('.ui-main:visible').count()) === 1);
+  await page.goBack();
+  check('the back button returns to the previous tab', await until(async () => /\/admin$/.test(page.url())));
+  await page.screenshot({ path: `${shots}/o2b-tabs.png` });
   await page.context().close();
 }
 

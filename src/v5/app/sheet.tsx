@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { statusColors, type Theme } from '../map/fieldMap.ts';
 import type { Status } from '../store/types.ts';
 import { HINTS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
@@ -10,8 +10,10 @@ import { Icon, type IconName } from '../../ui/index.ts';
  * The handle is a real control: drag it down (or tap it) and the sheet shrinks to its header, so the map is free without losing the place;
  * drag it up (or tap again) and the sheet is back. Closing stays the job of the X.
  */
-export function SheetFrame({ icon, title, meta, onClose, actions, toolbar, footer, children }: {
+export function SheetFrame({ icon, title, meta, onClose, onBack, backLabel = 'Zurück', actions, toolbar, footer, children }: {
   icon: IconName; title: string; meta?: React.ReactNode; onClose: () => void;
+  /** A page one level down: the back arrow takes the place of the badge and returns to the page above. */
+  onBack?: () => void; backLabel?: string;
   /** Buttons between the title and the close cross (an overflow menu, a second action). */
   actions?: React.ReactNode;
   /** Pinned under the header while the body scrolls: a search field, filters. */
@@ -47,7 +49,9 @@ export function SheetFrame({ icon, title, meta, onClose, actions, toolbar, foote
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; reset(); }}
         onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSmall((value) => !value); } }}><i aria-hidden /></div>
       <header>
-        <span className="v5-badge"><Icon name={icon} size={26} /></span>
+        {onBack
+          ? <button className="v5-icon-btn tonal v5-back" onClick={onBack} aria-label={backLabel} title="Zurück"><Icon name="back" /></button>
+          : <span className="v5-badge"><Icon name={icon} size={26} /></span>}
         <div className="v5-head-text"><h2>{title}</h2>{meta && <div className="v5-meta">{meta}</div>}</div>
         {actions}
         <button className="v5-icon-btn tonal" onClick={onClose} aria-label="Schließen" title="Schließen"><Icon name="close" /></button>
@@ -89,27 +93,3 @@ export function EmptyState({ icon, title, text }: { icon: IconName; title: strin
   );
 }
 
-/**
- * A popup over the sheet for one small job (name a Gruppe, pick its colour): it rises from the bottom edge above a touch keyboard, the scrim and Escape
- * close it, and the actions sit in a pinned row at its foot. Nothing in it stays on the sheet behind.
- */
-export function Popup({ title, onClose, actions, children }: { title: string; onClose: () => void; actions?: React.ReactNode; children: React.ReactNode }) {
-  const id = useId();
-  const box = useRef<HTMLElement>(null);
-  useEffect(() => {
-    // captured first: Escape closes the popup only, not the sheet behind it
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } };
-    window.addEventListener('keydown', onKey, true);
-    box.current?.querySelector<HTMLElement>('input:not([type=color]), button')?.focus({ preventScroll: true });
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
-  return (
-    <div className="v5-popup-scrim" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section ref={box} className="v5-popup" role="dialog" aria-modal="true" aria-labelledby={id}>
-        <header><h2 id={id}>{title}</h2><button className="v5-icon-btn tonal" onClick={onClose} aria-label="Schließen" title="Schließen"><Icon name="close" /></button></header>
-        <div className="v5-popup-body">{children}</div>
-        {actions && <footer className="v5-popup-actions">{actions}</footer>}
-      </section>
-    </div>
-  );
-}

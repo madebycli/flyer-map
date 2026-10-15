@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { createContext, forwardRef, useContext, useEffect, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { Icon, type IconName } from './icons.tsx';
 import { Loader } from './progress.tsx';
 
@@ -7,7 +7,11 @@ import { Loader } from './progress.tsx';
  * Same tokens and shapes as the field shell (rounded, tonal, one control height), one scrollable column on a phone.
  */
 
+/** Set by a shell that owns the bar and the page frame (organiser admin): a Page inside it renders only its column, so switching tabs never rebuilds the bar. */
+export const ShellContext = createContext(false);
+
 export function Page({ bar, narrow = false, children }: { bar?: ReactNode; narrow?: boolean; children: ReactNode }) {
+  if (useContext(ShellContext)) return <main className={`ui-main${narrow ? ' narrow' : ''}`}>{children}</main>;
   return (
     <div className="ui-page">
       {bar}

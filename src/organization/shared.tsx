@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { AppBar, Button, Card, Dialog, Field, Icon, Loading, Notice, Secret, TextInput, type NavItem } from "../ui/index.ts";
 import { OrganizationApiError, completeOrganizationTotp, getOrganizationMe, logoutOrganization, type OrganizationMeDto } from "./organizationApiClient.ts";
@@ -8,10 +8,15 @@ export type Loaded<T> = { loading: boolean; value: T | null; error: string | nul
 
 export const errorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unbekannter Fehler.");
 
+/** The shell loads the account once and hands it to every tab, so a tab never asks again. */
+export const MeContext = createContext<Loaded<OrganizationMeDto> | null>(null);
+
 /** The signed-in account; a missing session sends the person to the sign-in page and back to where they were. */
 export function useOrganizationMe(next: string, onUnauthorized: (loginPath: string) => void): Loaded<OrganizationMeDto> {
+  const shared = useContext(MeContext);
   const [state, setState] = useState<Loaded<OrganizationMeDto>>({ loading: true, value: null, error: null });
   useEffect(() => {
+    if (shared) return;
     let active = true;
     getOrganizationMe()
       .then((value) => { if (active) setState({ loading: false, value, error: null }); })
@@ -22,7 +27,7 @@ export function useOrganizationMe(next: string, onUnauthorized: (loginPath: stri
       });
     return () => { active = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return state;
+  return shared ?? state;
 }
 
 export type AdminPage = "campaigns" | "new" | "invites" | "security";
@@ -35,8 +40,8 @@ export function AdminBar({ me, current, navigate }: { me: OrganizationMeDto; cur
   const nav: NavItem[] = [
     { label: "Aktionen", icon: "layers" as const, current: current === "campaigns", ...go("/admin") },
     ...(canCreateCampaign ? [{ label: "Neue Aktion", icon: "plus" as const, current: current === "new", ...go("/new") }] : []),
-    { label: "Einladungen", icon: "send" as const, current: current === "invites", href: "/admin/invites" },
-    { label: "Sicherheit", icon: "shield" as const, current: current === "security", href: "/admin/security" },
+    { label: "Einladungen", icon: "send" as const, current: current === "invites", ...go("/admin/invites") },
+    { label: "Sicherheit", icon: "shield" as const, current: current === "security", ...go("/admin/security") },
   ];
   const logout = async () => {
     if (busy) return;

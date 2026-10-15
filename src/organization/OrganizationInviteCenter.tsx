@@ -8,7 +8,7 @@ import {
   type OrganizationInviteDto,
   type OrganizationMemberDto,
 } from "./organizationApiClient.ts";
-import { AdminBar, OneTimeLinkDialog, OrganizationLine, PageLoading, errorMessage, formatDate, useOrganizationMe } from "./shared.tsx";
+import { OneTimeLinkDialog, OrganizationLine, PageLoading, errorMessage, formatDate, useOrganizationMe } from "./shared.tsx";
 import { Button, Card, Check, Field, Group, Heading, LinkButton, Notice, Page, Row, Select } from "../ui/index.ts";
 
 const CAPABILITIES = [
@@ -120,7 +120,7 @@ export function OrganizationInviteCenter() {
 
   const mfa = me.assurance === "mfa";
   return (
-    <Page bar={<AdminBar me={me} current="invites" />}>
+    <Page>
       <Heading eyebrow="Zugänge" title="Einladungen"><LinkButton href="/admin">Zurück zu Aktionen</LinkButton></Heading>
       <OrganizationLine me={me} organizationId={membership.organizationId} onChange={setOrganizationId} />
       {!mfa ? <Notice tone="warn">MFA erforderlich: Eine Recovery-Sitzung darf keine Einladungen oder Passwort-Resets erstellen. <a href="/admin/security">Sicherheit öffnen</a></Notice> : null}
