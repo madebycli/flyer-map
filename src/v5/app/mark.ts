@@ -5,6 +5,8 @@ export type Index = {
   segments: Map<string, Segment>;
   houses: Map<string, House>;
   housesBySegment: Map<string, House[]>;
+  /** Houses on a footway/path, by the street piece their address names (`streetParent`): marking that piece takes them along. */
+  housesByStreetParent: Map<string, House[]>;
   /** Chunks of every junction-to-junction segment, in order. */
   chunksByGroup: Map<string, Segment[]>;
   /** Houses along each junction-to-junction street: "Nur Straßen mit Häusern" skips the ones with none. */
@@ -15,7 +17,12 @@ export { lassoSelect } from '../engine/lasso.ts';
 
 export function buildIndex(network: Network): Index {
   const housesBySegment = new Map<string, House[]>();
+  const housesByStreetParent = new Map<string, House[]>();
   for (const house of network.houses) {
+    if (house.streetParent) {
+      const linked = housesByStreetParent.get(house.streetParent);
+      if (linked) linked.push(house); else housesByStreetParent.set(house.streetParent, [house]);
+    }
     if (!house.parent) continue;
     const list = housesBySegment.get(house.parent);
     if (list) list.push(house); else housesBySegment.set(house.parent, [house]);
@@ -28,7 +35,7 @@ export function buildIndex(network: Network): Index {
   for (const list of chunksByGroup.values()) list.sort((a, b) => a.chunk - b.chunk);
   const groupHouses = new Map<string, number>();
   for (const segment of network.segments) groupHouses.set(segment.group, (groupHouses.get(segment.group) ?? 0) + segment.houseCount);
-  return { segments: new Map(network.segments.map((s) => [s.id, s])), houses: new Map(network.houses.map((h) => [h.id, h])), housesBySegment, chunksByGroup, groupHouses };
+  return { segments: new Map(network.segments.map((s) => [s.id, s])), houses: new Map(network.houses.map((h) => [h.id, h])), housesBySegment, housesByStreetParent, chunksByGroup, groupHouses };
 }
 
 /** Everything of a street piece in one go: all chunks of the tapped junction segment (and optionally their houses). */
@@ -41,14 +48,30 @@ export function keysForGroups(index: Index, segmentIds: Iterable<string>, withHo
   return keysForSegments(index, ids, withHouses, housesOnly);
 }
 
-/** One street segment, optionally with all houses that belong to it. */
+/**
+ * One street segment, optionally with all houses that belong to it. Houses on a footway/path whose address names this street come along
+ * (`streetParent`), and so does such a path piece once every house on it has been taken: a path is never marked for its own sake, so paths
+ * without houses, or whose houses belong to another street, stay open.
+ */
 export function keysForSegments(index: Index, segmentIds: Iterable<string>, withHouses: boolean, housesOnly = false): EntityKey[] {
   const keys = new Set<EntityKey>();
+  const linked: House[] = [];
   for (const id of segmentIds) {
     const segment = index.segments.get(id);
     if (!segment?.visible || (housesOnly && !(index.groupHouses.get(segment.group) ?? 0))) continue;
     keys.add(segmentKey(id));
-    if (withHouses) for (const house of index.housesBySegment.get(id) ?? []) keys.add(houseKey(house.id));
+    if (withHouses) {
+      for (const house of index.housesBySegment.get(id) ?? []) keys.add(houseKey(house.id));
+      for (const house of index.housesByStreetParent.get(id) ?? []) { keys.add(houseKey(house.id)); linked.push(house); }
+    }
+  }
+  const seen = new Set<string>();
+  for (const house of linked) {
+    const path = house.parent;
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    const segment = index.segments.get(path);
+    if (segment?.visible && (index.housesBySegment.get(path) ?? []).every((h) => keys.has(houseKey(h.id)))) keys.add(segmentKey(path));
   }
   return [...keys];
 }

@@ -3,13 +3,16 @@ import { classifyBuilding, classifyRoad } from './classify.ts';
 import { Frame, coordKey, frameFor, pointInRing, polylineLength, projectToPolyline, ringCentroid, splitEqual } from './geo.ts';
 import type { House, LngLat, Network, NetworkDiagnostics, RawOsm, RawWay, Segment } from './types.ts';
 
-export const ENGINE_VERSION = 'v5.5';
+export const ENGINE_VERSION = 'v5.6';
 
 /** Streets are marked in pieces of at most this length (chunks): the unit of precise painting and partial routes. */
 export const CHUNK_METERS = 10;
 
 /** Max metres from a house centroid to the street it is assigned to. */
 const MAX_PARENT_DISTANCE = 45;
+
+/** How far a house on a path may be from the street its address names for that street to take it along when it is marked. */
+const MAX_STREET_LINK_DISTANCE = 200;
 const MAX_NAMED_PARENT_DISTANCE = 80;
 const CLASS_PENALTY = { street: 0, access: 8, connector: 25 } as const;
 /** An address node counts for a building when it lies inside it or within this many metres of the centroid. */
@@ -39,7 +42,7 @@ export function deriveNetwork(raw: RawOsm, options: { gardenPathRule?: boolean }
   const gardenPathRule = options.gardenPathRule ?? true;
   const diagnostics: NetworkDiagnostics = {
     engineVersion: ENGINE_VERSION, waysIn: raw.ways.length, waysExcluded: {}, segments: 0, visibleSegments: 0,
-    promotedByHouses: 0, keptFromPaths: 0, hiddenConnectors: 0, buildingsIn: raw.buildings.length, housesOut: 0, buildingsSkipped: {}, orphanHouses: 0,
+    promotedByHouses: 0, keptFromPaths: 0, linkedFromPaths: 0, hiddenConnectors: 0, buildingsIn: raw.buildings.length, housesOut: 0, buildingsSkipped: {}, orphanHouses: 0,
   };
   const frame = frameFor([
     ...raw.ways.flatMap((way) => way.coords),
@@ -140,7 +143,7 @@ export function deriveNetwork(raw: RawOsm, options: { gardenPathRule?: boolean }
     if (!verdict.keep) { bump(diagnostics.buildingsSkipped, verdict.reason); continue; }
     houses.push(assignParent({
       id: `h${building.id}`, osmId: building.id, source: 'building', number, street, ring: building.ring, center,
-      parent: null, measure: null, evidence: verdict.evidence ?? 'address',
+      parent: null, measure: null, streetParent: null, evidence: verdict.evidence ?? 'address',
     }, frame, tree, diagnostics, gardenPathRule));
   }
   // Address nodes that belong to no building become small point-houses (rural farms, mapped-by-node).
@@ -161,8 +164,28 @@ export function deriveNetwork(raw: RawOsm, options: { gardenPathRule?: boolean }
       id: `a${entry.node.id}`, osmId: entry.node.id, source: 'address-node', number: entry.node.tags['addr:housenumber'].trim(),
       street: entry.node.tags['addr:street']?.trim() ?? null,
       ring: [[px - d, py - d], [px + d, py - d], [px + d, py + d], [px - d, py + d], [px - d, py - d]],
-      center: entry.node.point, parent: null, measure: null, evidence: 'address-node',
+      center: entry.node.point, parent: null, measure: null, streetParent: null, evidence: 'address-node',
     }, frame, tree, diagnostics, gardenPathRule));
+  }
+
+  // 5b. Houses on a footway/path whose address names a street nearby: that street takes them along when it is marked.
+  {
+    const segById = new Map(segments.map((segment) => [segment.id, segment]));
+    for (const house of houses) {
+      if (!house.parent || segById.get(house.parent)!.cls !== 'connector') continue;
+      const wanted = normalizeName(house.street);
+      if (wanted === '') continue;
+      const [cx, cy] = frame.toXY(house.center);
+      const reach = MAX_STREET_LINK_DISTANCE;
+      let best: { d: number; segment: Segment } | null = null;
+      for (const entry of tree.search({ minX: cx - reach, minY: cy - reach, maxX: cx + reach, maxY: cy + reach })) {
+        if (entry.norm !== wanted || entry.segment.cls === 'connector') continue;
+        const d = projectToPolyline(entry.xy, [cx, cy]).distance;
+        if (d > reach) continue;
+        if (!best || d < best.d - SCORE_EPS || (Math.abs(d - best.d) <= SCORE_EPS && entry.segment.id < best.segment.id)) best = { d, segment: entry.segment };
+      }
+      if (best) { house.streetParent = best.segment.id; diagnostics.linkedFromPaths++; }
+    }
   }
 
   // 6. Visibility: streets always; access/connector only when real houses use them.

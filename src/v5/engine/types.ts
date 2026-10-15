@@ -43,6 +43,8 @@ export type House = {
   parent: string | null;
   /** Metres along the parent segment. */
   measure: number | null;
+  /** A house on a footway/path whose address names a street nearby: that street's nearest piece. Marking the street takes the house along; the path itself stays a path. */
+  streetParent: string | null;
   evidence: 'address' | 'residential-type' | 'address-node';
 };
 
@@ -55,6 +57,8 @@ export type NetworkDiagnostics = {
   promotedByHouses: number;
   /** Houses that kept the street their address names although a footway or path lay nearer (engine v5.5). */
   keptFromPaths: number;
+  /** Houses on a path that are linked to the street their address names (engine v5.6). */
+  linkedFromPaths: number;
   hiddenConnectors: number;
   buildingsIn: number;
   housesOut: number;

@@ -98,6 +98,8 @@ pub struct House {
     pub center: LngLat,
     pub parent: Option<String>,
     pub measure: Option<f64>,
+    /// A house on a footway/path whose address names a street nearby: that street's nearest piece. Marking the street takes the house along; the path itself stays a path.
+    pub street_parent: Option<String>,
     pub evidence: Evidence,
 }
 
@@ -111,6 +113,7 @@ pub struct Diagnostics {
     pub visible_segments: usize,
     pub promoted_by_houses: u32,
     pub kept_from_paths: u32,
+    pub linked_from_paths: u32,
     pub hidden_connectors: u32,
     pub buildings_in: usize,
     pub houses_out: usize,
@@ -159,6 +162,7 @@ pub struct SlimHouse {
     pub center: LngLat,
     pub parent: Option<String>,
     pub measure: Option<f64>,
+    pub street_parent: Option<String>,
     pub evidence: Evidence,
 }
 

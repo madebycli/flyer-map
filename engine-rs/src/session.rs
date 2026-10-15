@@ -204,7 +204,7 @@ pub fn slim(network: &Network) -> SlimNetwork {
         }
     }).collect();
     let houses = network.houses.iter().map(|h| SlimHouse {
-        id: h.id.clone(), osm_id: h.osm_id, source: h.source, number: h.number.clone(), street: h.street.clone(), center: h.center, parent: h.parent.clone(), measure: h.measure, evidence: h.evidence,
+        id: h.id.clone(), osm_id: h.osm_id, source: h.source, number: h.number.clone(), street: h.street.clone(), center: h.center, parent: h.parent.clone(), measure: h.measure, street_parent: h.street_parent.clone(), evidence: h.evidence,
     }).collect();
     SlimNetwork { segments, houses, diagnostics: network.diagnostics.clone() }
 }

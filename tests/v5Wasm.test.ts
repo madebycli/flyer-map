@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { deriveNetwork, restrictToArea, ENGINE_VERSION, type Cell, type LngLat, type RawOsm } from '../src/v5/engine/index.ts';
+import { pathLinkRaw } from './helpers/pathLinkCity.ts';
 import { syntheticCity } from '../src/v5/engine/synthetic.ts';
 import { WasmEngine } from '../src/v5/engine/wasm.ts';
 import { randomCity, rng } from './helpers/randomCity.ts';
@@ -55,6 +56,10 @@ for (const [w, h] of [[2, 2], [4, 3], [6, 6]] as const) {
     same(engine.deriveArea(bytes(raw), ring), reference(raw, ring));
   });
 }
+
+test('garden paths linked to the street their address names: identical network in Rust and TypeScript', () => {
+  same(engine.deriveArea(bytes(pathLinkRaw), null), reference(pathLinkRaw, null));
+});
 
 // ── seeded fuzz (generator in tests/helpers/randomCity.ts) ──
 let fuzzTotals = { segments: 0, houses: 0, parented: 0, promoted: 0 };

@@ -7,12 +7,14 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::collections::BTreeMap;
 use unicode_normalization::UnicodeNormalization;
 
-pub const ENGINE_VERSION: &str = "v5.5";
+pub const ENGINE_VERSION: &str = "v5.6";
 pub const CHUNK_METERS: f64 = 10.0;
 const MAX_PARENT_DISTANCE: f64 = 45.0;
 const MAX_NAMED_PARENT_DISTANCE: f64 = 80.0;
 const ADDRESS_NODE_SNAP: f64 = 8.0;
 const SCORE_EPS: f64 = 1e-6;
+/// How far a house on a path may be from the street its address names for that street to take it along when it is marked.
+const MAX_STREET_LINK_DISTANCE: f64 = 200.0;
 
 fn class_penalty(cls: RoadClass) -> f64 {
     match cls {
@@ -219,7 +221,7 @@ pub fn derive_network(raw: &RawOsm) -> Network {
         };
         let house = House {
             id: format!("h{}", building.id), osm_id: building.id, source: Source::Building, number, street, ring: building.ring.clone(), center,
-            parent: None, measure: None, evidence,
+            parent: None, measure: None, street_parent: None, evidence,
         };
         houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch, &mut diag));
     }
@@ -257,9 +259,40 @@ pub fn derive_network(raw: &RawOsm) -> Network {
             number: Some(js_trim(&node.tags["addr:housenumber"]).to_string()),
             street: trimmed(&node.tags, "addr:street"),
             ring: vec![[nx - d, ny - d], [nx + d, ny - d], [nx + d, ny + d], [nx - d, ny + d], [nx - d, ny - d]],
-            center: node.point, parent: None, measure: None, evidence: Evidence::AddressNode,
+            center: node.point, parent: None, measure: None, street_parent: None, evidence: Evidence::AddressNode,
         };
         houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch, &mut diag));
+    }
+
+    // 5b. houses on a footway/path whose address names a street nearby: that street takes them along when it is marked
+    {
+        let by_id: HashMap<&str, usize> = segments.iter().enumerate().map(|(i, s)| (s.id.as_str(), i)).collect();
+        for house in houses.iter_mut() {
+            let Some(p) = &house.parent else { continue };
+            if segments[by_id[p.as_str()]].cls != RoadClass::Connector { continue; }
+            let wanted = normalize_name(house.street.as_deref());
+            if wanted.is_empty() { continue; }
+            let [cx, cy] = frame.to_xy(house.center);
+            let reach = MAX_STREET_LINK_DISTANCE;
+            seg_grid.search([cx - reach, cy - reach, cx + reach, cy + reach], &mut scratch);
+            let mut best: Option<(f64, usize)> = None;
+            for &gid in scratch.iter() {
+                let entry = &indexed[gid as usize];
+                let seg = &segments[entry.seg];
+                if entry.norm != wanted || seg.cls == RoadClass::Connector { continue; }
+                let d = project_to_polyline(&entry.xy, [cx, cy]).distance;
+                if d > reach { continue; }
+                let better = match best {
+                    None => true,
+                    Some((bd, bi)) => d < bd - SCORE_EPS || ((d - bd).abs() <= SCORE_EPS && seg.id < segments[bi].id),
+                };
+                if better { best = Some((d, entry.seg)); }
+            }
+            if let Some((_, si)) = best {
+                house.street_parent = Some(segments[si].id.clone());
+                diag.linked_from_paths += 1;
+            }
+        }
     }
 
     // 6. visibility: streets always; access/connector only when real houses use them
