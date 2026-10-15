@@ -95,7 +95,19 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * Fetch the map data of a Gebiet on the server: one request for a small one, one request per part (two at a time, each retried a few times when the
  * data source is busy) for a big one. Parts that are already there are skipped by the server, so a second call resumes where the first stopped.
  */
-export async function buildPackFor(campaignId: string, area: { id: string; geometry: { coordinates: [number, number][][] } }, onProgress?: (done: number, total: number) => void): Promise<void> {
+/** Builds running right now, by Gebiet: a second caller (the editor's background build and the "Kartendaten laden" chip) joins the first instead of asking the server again. */
+const buildsInFlight = new Map<string, Promise<void>>();
+
+export function buildPackFor(campaignId: string, area: { id: string; geometry: { coordinates: [number, number][][] } }, onProgress?: (done: number, total: number) => void): Promise<void> {
+  const key = `${campaignId}|${area.id}`;
+  const running = buildsInFlight.get(key);
+  if (running) { diag.info('pack', 'a build for this Gebiet is already running; joining it'); return running; }
+  const started = buildPackForUnguarded(campaignId, area, onProgress).finally(() => { buildsInFlight.delete(key); });
+  buildsInFlight.set(key, started);
+  return started;
+}
+
+async function buildPackForUnguarded(campaignId: string, area: { id: string; geometry: { coordinates: [number, number][][] } }, onProgress?: (done: number, total: number) => void): Promise<void> {
   const plan = packPlan(area.geometry.coordinates[0]);
   if (plan.tooLarge) throw new Error('Gebiet zu groß: bitte in mehrere Gebiete teilen.');
   if (plan.single) { await buildPack(campaignId, area.id); return; }

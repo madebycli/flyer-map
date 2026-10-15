@@ -330,17 +330,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$(curl -sS -D /tmp/unstable.headers -o /tmp/unstable.html -w '%{http_code}' "$UNSTABLE_URL/")"
-          LOGIN="$(curl -sS -o /tmp/unstable-login.html -w '%{http_code}' "$UNSTABLE_URL/login")"
-          START="$(curl -sS -o /tmp/unstable-start.html -w '%{http_code}' "$UNSTABLE_URL/start")"
-          ME="$(curl -sS -o /tmp/unstable-me.json -w '%{http_code}' "$UNSTABLE_URL/api/organization/me")"
-          [[ "$ROOT" -ge 200 && "$ROOT" -lt 400 ]]
-          [[ "$LOGIN" -ge 200 && "$LOGIN" -lt 400 ]]
-          [[ "$START" -ge 200 && "$START" -lt 400 ]]
-          [[ "$ME" == '401' ]]
-          grep -qi '^x-flyer-release-channel: unstable' /tmp/unstable.headers
-          UNSTABLE_RUNTIME="$(curl --fail --silent --show-error "$UNSTABLE_URL/api/runtime")"
-          jq -e --arg sha "$GITHUB_SHA" '.ok == true and .environment == "unstable" and .sourceCommit == $sha' <<<"$UNSTABLE_RUNTIME" >/dev/null
+          # A fresh deploy takes a moment to reach every edge: the checks are repeated for up to a minute before the step fails.
+          smoke() {
+            ROOT="$(curl -sS -D /tmp/unstable.headers -o /tmp/unstable.html -w '%{http_code}' "$UNSTABLE_URL/")" || return 1
+            LOGIN="$(curl -sS -o /tmp/unstable-login.html -w '%{http_code}' "$UNSTABLE_URL/login")" || return 1
+            START="$(curl -sS -o /tmp/unstable-start.html -w '%{http_code}' "$UNSTABLE_URL/start")" || return 1
+            ME="$(curl -sS -o /tmp/unstable-me.json -w '%{http_code}' "$UNSTABLE_URL/api/organization/me")" || return 1
+            [[ "$ROOT" -ge 200 && "$ROOT" -lt 400 ]] || return 1
+            [[ "$LOGIN" -ge 200 && "$LOGIN" -lt 400 ]] || return 1
+            [[ "$START" -ge 200 && "$START" -lt 400 ]] || return 1
+            [[ "$ME" == '401' ]] || return 1
+            grep -qi '^x-flyer-release-channel: unstable' /tmp/unstable.headers || return 1
+            UNSTABLE_RUNTIME="$(curl --fail --silent --show-error "$UNSTABLE_URL/api/runtime")" || return 1
+            jq -e --arg sha "$GITHUB_SHA" '.ok == true and .environment == "unstable" and .sourceCommit == $sha' <<<"$UNSTABLE_RUNTIME" >/dev/null || return 1
+          }
+          for attempt in 1 2 3 4 5 6; do
+            if smoke; then break; fi
+            if [[ "$attempt" == 6 ]]; then echo "smoke failed after $attempt attempts (root=${ROOT:-?} login=${LOGIN:-?} start=${START:-?} me=${ME:-?})"; exit 1; fi
+            echo "smoke attempt $attempt not ready yet (root=${ROOT:-?} login=${LOGIN:-?} start=${START:-?} me=${ME:-?}); waiting"
+            sleep 10
+          done
           STABLE_RUNTIME="$(curl --fail --silent --show-error "$STABLE_URL/api/runtime" 2>/dev/null || printf '{}')"
           jq -n \
             --arg recordedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
