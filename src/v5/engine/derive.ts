@@ -3,7 +3,7 @@ import { classifyBuilding, classifyRoad } from './classify.ts';
 import { Frame, coordKey, frameFor, pointInRing, polylineLength, projectToPolyline, ringCentroid, splitEqual } from './geo.ts';
 import type { House, LngLat, Network, NetworkDiagnostics, RawOsm, RawWay, Segment } from './types.ts';
 
-export const ENGINE_VERSION = 'v5.4';
+export const ENGINE_VERSION = 'v5.5';
 
 /** Streets are marked in pieces of at most this length (chunks): the unit of precise painting and partial routes. */
 export const CHUNK_METERS = 10;
@@ -197,7 +197,10 @@ function assignParent(house: House, frame: Frame, tree: RBush<IndexedSegment>): 
   const [cx, cy] = frame.toXY(house.center);
   const reach = MAX_NAMED_PARENT_DISTANCE;
   const wanted = normalizeName(house.street);
-  let best: { score: number; segment: Segment; measure: number } | null = null;
+  let best: { score: number; segment: Segment; measure: number; named: boolean } | null = null;
+  // Special rule for garden paths: the best segment that carries the house's own street name. A path (footway, path, steps) that merely lies nearer
+  // never takes the house away from it; the dashed paths between gardens and the woodland tracks are only where somebody walks, not the street the house is on.
+  let bestNamed: { score: number; segment: Segment; measure: number; named: boolean } | null = null;
   for (const entry of tree.search({ minX: cx - reach, minY: cy - reach, maxX: cx + reach, maxY: cy + reach })) {
     const projection = projectToPolyline(entry.xy, [cx, cy]);
     const named = wanted !== '' && entry.norm === wanted;
@@ -207,8 +210,12 @@ function assignParent(house: House, frame: Frame, tree: RBush<IndexedSegment>): 
     const score = projection.distance + CLASS_PENALTY[entry.segment.cls] - (named ? 30 : 0);
     // Scores closer than a micrometre are ties (ulp noise between engines/platforms must not pick the parent): smaller id wins.
     if (!best || score < best.score - SCORE_EPS || (Math.abs(score - best.score) <= SCORE_EPS && entry.segment.id < best.segment.id)) {
-      best = { score, segment: entry.segment, measure: projection.measure };
+      best = { score, segment: entry.segment, measure: projection.measure, named };
+    }
+    if (named && (!bestNamed || score < bestNamed.score - SCORE_EPS || (Math.abs(score - bestNamed.score) <= SCORE_EPS && entry.segment.id < bestNamed.segment.id))) {
+      bestNamed = { score, segment: entry.segment, measure: projection.measure, named };
     }
   }
+  if (best && bestNamed && best.segment.cls === 'connector' && !best.named) best = bestNamed;
   return best ? { ...house, parent: best.segment.id, measure: Math.round(best.measure * 10) / 10 } : house;
 }

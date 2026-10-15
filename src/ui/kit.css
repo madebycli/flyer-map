@@ -16,7 +16,8 @@ html:has(.ui-page), body:has(.ui-page) { margin: 0; overflow: auto; height: auto
 .ui-bar nav { display: flex; flex: 1 1 auto; min-width: 0; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
 .ui-bar nav::-webkit-scrollbar { display: none; }
 .ui-bar nav a, .ui-bar nav button { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 0.9rem; border: 0; border-radius: var(--r); background: transparent; color: var(--on-var) !important; font: 700 0.95rem var(--font); text-decoration: none; cursor: pointer; }
-.ui-bar nav a:hover, .ui-bar nav button:hover { background: var(--surface-3); }
+.ui-bar nav { -webkit-tap-highlight-color: transparent; }
+@media (hover: hover) and (min-width: 760px) { .ui-bar nav a:hover, .ui-bar nav button:hover { background: var(--surface-3); } }
 .ui-bar nav [aria-current="page"] { background: var(--primary-container); color: var(--on-primary-container) !important; }
 .ui-brand { white-space: nowrap; }
 /* phone: brand and account in one slim row on top, the navigation as a tab bar fixed at the bottom (thumb reach); from 760 px it sits in the top bar */
@@ -25,13 +26,15 @@ html:has(.ui-page), body:has(.ui-page) { margin: 0; overflow: auto; height: auto
 .ui-bar nav a, .ui-bar nav button { flex-direction: column; justify-content: center; gap: 0.15rem; min-height: 3.5rem; padding: 0 0.15rem; font-size: 0.72rem; line-height: 1.15; text-align: center; white-space: normal; }
 .ui-bar nav a span, .ui-bar nav button span { display: block; max-width: 100%; overflow-wrap: anywhere; }
 .ui-bar nav [aria-current="page"] { background: transparent; color: var(--primary) !important; }
-.ui-bar nav [aria-current="page"] .v5-icon { background: var(--primary-container); color: var(--on-primary-container); border-radius: 999px; padding: 0.2rem 0.9rem; box-sizing: content-box; }
+.ui-bar nav a, .ui-bar nav button { background: transparent !important; }
+.ui-bar nav [aria-current="page"] { font-weight: 800; } /* the current tab differs by colour only: no pill, no grey field, no outline */
 .ui-account { margin-left: auto; }
 @media (min-width: 760px) {
   .ui-bar nav { position: static; display: flex; flex: 1 1 auto; min-width: 0; gap: 0.25rem; padding: 0; background: transparent; border-top: 0; overflow-x: auto; }
   .ui-bar nav a, .ui-bar nav button { flex-direction: row; min-height: 2.75rem; padding: 0 0.9rem; gap: 0.5rem; font-size: 0.95rem; white-space: nowrap; }
   .ui-bar nav a .v5-icon, .ui-bar nav button .v5-icon { display: none; }
-  .ui-bar nav [aria-current="page"] { background: var(--primary-container); color: var(--on-primary-container) !important; }
+  .ui-bar nav a, .ui-bar nav button { background: transparent; }
+  .ui-bar nav [aria-current="page"] { background: var(--primary-container) !important; color: var(--on-primary-container) !important; }
 }
 .ui-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; border: 0; border-radius: var(--r); background: transparent; color: var(--primary) !important; cursor: pointer; }
 .ui-iconbtn:hover:not(:disabled) { background: var(--surface-3); }

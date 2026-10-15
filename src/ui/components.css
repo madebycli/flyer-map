@@ -37,7 +37,9 @@
   background: var(--surface-1); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -4px 24px rgb(0 0 0 / 30%); animation: v5-sheet 260ms var(--ease);
   overscroll-behavior: contain;
 }
-:root[data-kb] .v5-sheet { max-height: calc(var(--vvh) - 0.8rem - env(safe-area-inset-top)); border-radius: var(--r-lg); }
+/* With a keyboard up the sheet is not a window floating above the keys: it stays flush with the bottom edge (the keys cover its lower part), grows up to
+   just under the top of the visible area, and keeps `--kb` of padding below its content so the list ends above the keys. The header and the search field stay put. */
+:root[data-kb] .v5-sheet { bottom: 0; padding-bottom: var(--kb); max-height: calc(var(--vvh) + var(--kb) - 0.8rem - env(safe-area-inset-top)); border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .v5-sheet-body {
   flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0 1rem calc(env(safe-area-inset-bottom) + 1rem);
   /* One vertical rhythm: the body spaces its direct children by gap alone (see below), so no two screens space things differently. */
@@ -53,7 +55,7 @@
 :root[data-kb] .v5-sheet-footer { padding-bottom: 0.8rem; }
 @keyframes v5-sheet { from { transform: translateY(30%); opacity: 0; } }
 @media (min-width: 700px) { .v5-sheet { left: 1rem; right: auto; bottom: calc(1rem + var(--kb, 0px)); width: 28rem; border-radius: var(--r-lg); } }
-@media (min-width: 700px) { :root[data-kb] .v5-sheet { max-height: calc(var(--vvh) - 2rem - env(safe-area-inset-top)); } }
+@media (min-width: 700px) { :root[data-kb] .v5-sheet { bottom: 0; max-height: calc(var(--vvh) + var(--kb) - 1rem - env(safe-area-inset-top)); border-radius: var(--r-lg) var(--r-lg) 0 0; } }
 .v5-handle { flex: none; display: grid; place-items: start center; width: 100%; height: 2.75rem; padding-top: 0.7rem; box-sizing: border-box; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .v5-handle > i { display: block; width: 2.6rem; height: 0.28rem; border-radius: 1rem; background: var(--outline); opacity: 0.55; }
 .v5-handle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r); }

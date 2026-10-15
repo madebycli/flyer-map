@@ -9,6 +9,7 @@ const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, arg
 let failures = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok || !detail ? '' : `  ${String(detail).slice(0, 300)}`}`); if (!ok) failures++; };
 
+const innerHeightOf = (r) => r.innerHeight;
 for (const [tag, width, height, keyboard] of [['phone', 390, 844, 330], ['ipad', 820, 1180, 380]]) {
   const ctx = await b.newContext({ viewport: { width, height }, hasTouch: true });
   await ctx.addCookies([{ name: 'vf_session', value: cookies.admin, url: 'http://localhost:8140' }]);
@@ -36,13 +37,15 @@ for (const [tag, width, height, keyboard] of [['phone', 390, 844, 330], ['ipad',
   await page.evaluate(([kb]) => { const r = document.documentElement; r.style.setProperty('--kb', `${kb}px`); r.style.setProperty('--vvh', `${innerHeight - kb}px`); r.setAttribute('data-kb', ''); }, [keyboard]);
   await page.waitForTimeout(300);
   const up = await room();
-  check(`${tag}: with a keyboard the sheet ends above the keys`, up.bottom <= up.innerHeight - keyboard + 1, JSON.stringify(up));
-  check(`${tag}: and does not grow past the visible area`, up.top >= 0 && up.height <= up.innerHeight - keyboard, JSON.stringify(up));
+  check(`${tag}: with a keyboard the sheet is no floating window: it stays flush with the bottom edge`, Math.abs(up.bottom - up.innerHeight) < 1, JSON.stringify(up));
+  check(`${tag}: and its top stays inside the visible area`, up.top >= 0 && up.top < up.innerHeight - keyboard, JSON.stringify(up));
   check(`${tag}: the search field is on screen, above the keys`, up.barTop >= 0 && up.barBottom <= up.innerHeight - keyboard, JSON.stringify(up));
   check(`${tag}: the long list scrolls inside the sheet`, up.scrolls);
   await page.locator('.v5-sheet-body').evaluate((el) => { el.scrollTop = el.scrollHeight; });
   const scrolled = await room();
   check(`${tag}: after scrolling the list to its end the search field has not moved`, Math.abs(scrolled.barTop - up.barTop) < 1 && Math.abs(scrolled.top - up.top) < 1, `${up.barTop} → ${scrolled.barTop}`);
+  const lastRow = await page.evaluate(() => { const rows = document.querySelectorAll('.v5-result'); return rows[rows.length - 1].getBoundingClientRect().bottom; });
+  check(`${tag}: the last result can be scrolled above the keys`, lastRow <= innerHeightOf(up) - keyboard + 1, `${lastRow}`);
   await page.screenshot({ path: `${shots}/kb-${tag}.png` });
   await page.evaluate(() => { const r = document.documentElement; r.style.removeProperty('--kb'); r.style.removeProperty('--vvh'); r.removeAttribute('data-kb'); });
   await page.getByRole('button', { name: 'Schließen' }).click();

@@ -33,6 +33,7 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
   const [collectors, setCollectors] = useState<Collector[]>([]);
   const [role, setRole] = useState<LinkKind>(teams.length ? 'team-editor' : 'viewer');
   const [creating, setCreating] = useState(false);
+  const [detail, setDetail] = useState<Grant | null>(null);
   const [teamId, setTeamId] = useState(teams[0]?.id ?? '');
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
@@ -67,6 +68,34 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
   });
   const teamName = (id: string | null) => teams.find((t) => t.id === id)?.name ?? '–';
 
+  if (detail) {
+    const g = detail;
+    const what = g.label || ROLE[g.role];
+    // The server keeps only a fingerprint of a link, never the link itself, so an old link cannot be shown again: a new one takes its place and the old one stops working.
+    const renew = () => {
+      if (!window.confirm(`Neuen Link für „${what}“ erzeugen? Der bisherige Link funktioniert danach nicht mehr.`)) return;
+      void run(async () => {
+        const result = await createGrant(campaignId, { role: g.role === 'team-editor' ? 'team-editor' : 'viewer', teamId: g.teamId, label: g.label ?? '' });
+        await revokeGrant(campaignId, g.grantId);
+        setCreated({ title: g.role === 'team-editor' ? 'Neuer Link für die Gruppe' : 'Neuer Link zum Ansehen', link: result.link });
+        setDetail(null);
+      });
+    };
+    return (
+      <SheetFrame icon="lock" title={what} meta={<span>{g.role === 'team-editor' ? teamName(g.teamId) : ROLE[g.role]}</span>} onBack={() => setDetail(null)} backLabel="Zurück zu den Zugängen" onClose={onClose}
+        footer={<div className="v5-footer-actions">
+          <button className="v5-btn danger" style={{ marginTop: 0 }} disabled={busy} onClick={() => void run(async () => { await revokeGrant(campaignId, g.grantId); setDetail(null); })} aria-label={`Link ${what} widerrufen`}><Icon name="trash" size={20} />Widerrufen</button>
+          <button className="v5-btn primary" style={{ marginTop: 0 }} disabled={busy} onClick={renew}><Icon name="repeat" size={20} />Neuen Link erzeugen</button>
+        </div>}>
+        {error && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{error}</p>}
+        <p className="v5-hint"><Icon name="info" size={20} />Dieser Link ist aktiv. Aus Sicherheitsgründen speichert der Server den Link selbst nicht, deshalb lässt er sich nicht erneut anzeigen. Mit „Neuen Link erzeugen“ bekommst du einen frischen QR-Code und Link; der bisherige wird ungültig.</p>
+        <div className="v5-list">
+          <div className="v5-row-btn" role="group" aria-label="Eigenschaften"><span className="v5-row-name">Für<small>{g.role === 'team-editor' ? `Gruppe ${teamName(g.teamId)} (bearbeiten)` : 'Ansehen (nur lesen)'}</small></span></div>
+          <div className="v5-row-btn" role="group" aria-label="Erstellt"><span className="v5-row-name">Erstellt<small>{new Date(g.createdAt).toLocaleString('de-DE')}</small></span></div>
+        </div>
+      </SheetFrame>
+    );
+  }
   if (creating) {
     return (
       <SheetFrame icon="users" title="Neuer Link" onBack={() => setCreating(false)} backLabel="Zurück zu den Zugängen" onClose={onClose}
@@ -99,10 +128,11 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
       {grants === null ? <p className="v5-hint">Lade …</p> : grants.length === 0 ? <EmptyState icon="send" title="Noch kein Link" text="Mit + erstellst du einen Link für eine Gruppe, zum Ansehen oder für Abhol-Helfer." /> : (
         <div className="v5-list">
           {grants.map((g) => (
-            <div key={g.grantId} className="v5-conflict-row">
-              <span className="v5-conflict-title">{g.label || ROLE[g.role]} <small className="v5-muted">· {g.role === 'team-editor' ? teamName(g.teamId) : ROLE[g.role]}</small></span>
-              <button className="v5-icon-btn" onClick={() => void run(() => revokeGrant(campaignId, g.grantId))} disabled={busy} aria-label={`Link ${g.label || ROLE[g.role]} widerrufen`} title="Widerrufen"><Icon name="trash" /></button>
-            </div>
+            <button key={g.grantId} className="v5-row-btn" onClick={() => setDetail(g)} aria-label={`Link ${g.label || ROLE[g.role]} öffnen`}>
+              <Icon name={g.role === 'team-editor' ? 'users' : 'eye'} size={22} />
+              <span className="v5-row-name">{g.label || ROLE[g.role]}<small>{g.role === 'team-editor' ? teamName(g.teamId) : ROLE[g.role]}</small></span>
+              <Icon name="more" size={20} />
+            </button>
           ))}
         </div>
       )}

@@ -81,7 +81,12 @@ export async function fetchPack(campaignId: string, areaId: string, part: number
 export async function buildPack(campaignId: string, areaId: string, part: number | null = null): Promise<void> {
   const done = diag.start('pack.build_ms');
   try { await call(`${base(campaignId)}/areas/${encodeURIComponent(areaId)}/pack${part === null ? '' : `?part=${part}`}`, { method: 'POST' }); diag.info('pack', 'pack built on the server', { ms: Math.round(done()) }); }
-  catch (error) { diag.error('pack', 'building the pack failed', { error, ms: Math.round(done()) }); throw error; }
+  catch (error) {
+    // 429: another request is already building this Gebiet (or did a minute ago); the server refuses a second one on purpose. Nothing is broken, so it is no error.
+    if (error instanceof V5ApiError && error.status === 429) diag.warn('pack', 'a build for this Gebiet is already running', { ms: Math.round(done()) });
+    else diag.error('pack', 'building the pack failed', { error, ms: Math.round(done()) });
+    throw error;
+  }
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

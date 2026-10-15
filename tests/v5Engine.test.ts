@@ -229,3 +229,29 @@ test('building centroids are exact at real-world coordinates (no cancellation fa
   assert.equal(inside, net.houses.filter((h) => h.source === 'building').length);
 });
 import { pointInRing as pointInRingExported } from '../src/v5/engine/geo.ts';
+
+test('a garden path never takes a house away from the street its address names; without that address the path stays its parent', () => {
+  const origin: [number, number] = [13.0, 51.0];
+  const cos = Math.cos((origin[1] * Math.PI) / 180);
+  const pt = (x: number, y: number): [number, number] => [origin[0] + x / (cos * 111_320), origin[1] + y / 110_574];
+  const house = (id: number, x: number, y: number, tags: Record<string, string>) => ({
+    id, tags: { building: 'house', ...tags }, ring: [pt(x, y), pt(x + 12, y), pt(x + 12, y + 10), pt(x, y + 10), pt(x, y)],
+  });
+  const raw = {
+    ways: [
+      { id: 1, tags: { highway: 'residential', name: 'Hauptstraße' }, coords: [pt(0, 0), pt(200, 0)], nodes: [11, 12] },
+      { id: 2, tags: { highway: 'footway', surface: 'asphalt' }, coords: [pt(60, 20), pt(60, 120)], nodes: [21, 22] },
+    ],
+    // 67 m from the street (inside the 80 m reach of a named match), 6 m from the path: before v5.5 the path's 25 m penalty lost against the 30 m name bonus only up to ~55 m
+    buildings: [
+      house(101, 66, 67, { 'addr:housenumber': '1', 'addr:street': 'Hauptstraße' }),
+      house(102, 66, 90, { 'addr:housenumber': '2' }),
+    ],
+    addresses: [],
+  };
+  const net = deriveNetwork(raw);
+  const parentOf = (id: string) => net.segments.find((s) => s.id === net.houses.find((h) => h.id === id)!.parent)!;
+  assert.equal(parentOf('h101').wayId, 1, 'the house whose address names Hauptstraße belongs to Hauptstraße, not to the path beside it');
+  assert.equal(parentOf('h102').wayId, 2, 'a house with no street in its address keeps the nearest way, the path');
+  assert.ok(net.segments.filter((s) => s.wayId === 2).every((s) => s.visible), 'the path stays visible because house 102 uses it');
+});

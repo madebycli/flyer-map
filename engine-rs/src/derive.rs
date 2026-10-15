@@ -7,7 +7,7 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::collections::BTreeMap;
 use unicode_normalization::UnicodeNormalization;
 
-pub const ENGINE_VERSION: &str = "v5.4";
+pub const ENGINE_VERSION: &str = "v5.5";
 pub const CHUNK_METERS: f64 = 10.0;
 const MAX_PARENT_DISTANCE: f64 = 45.0;
 const MAX_NAMED_PARENT_DISTANCE: f64 = 80.0;
@@ -320,7 +320,10 @@ fn assign_parent(mut house: House, frame: &Frame, grid: &mut Grid, indexed: &[In
     let reach = MAX_NAMED_PARENT_DISTANCE;
     let wanted = normalize_name(house.street.as_deref());
     grid.search([cx - reach, cy - reach, cx + reach, cy + reach], scratch);
-    let mut best: Option<(f64, usize, f64)> = None; // score, segment index, measure
+    let mut best: Option<(f64, usize, f64, bool)> = None; // score, segment index, measure, name matches
+    // Special rule for garden paths: the best segment that carries the house's own street name. A path (footway, path, steps) that merely lies nearer
+    // never takes the house away from it; the dashed paths between gardens and the woodland tracks are only where somebody walks, not the street the house is on.
+    let mut best_named: Option<(f64, usize, f64, bool)> = None;
     for &gid in scratch.iter() {
         let entry = &indexed[gid as usize];
         let seg = &segments[entry.seg];
@@ -338,13 +341,27 @@ fn assign_parent(mut house: House, frame: &Frame, grid: &mut Grid, indexed: &[In
         let score = projection.distance + class_penalty(seg.cls) - if named { 30.0 } else { 0.0 };
         let better = match best {
             None => true,
-            Some((bs, bi, _)) => score < bs - SCORE_EPS || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id),
+            Some((bs, bi, _, _)) => score < bs - SCORE_EPS || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id),
         };
         if better {
-            best = Some((score, entry.seg, projection.measure));
+            best = Some((score, entry.seg, projection.measure, named));
+        }
+        if named {
+            let better_named = match best_named {
+                None => true,
+                Some((bs, bi, _, _)) => score < bs - SCORE_EPS || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id),
+            };
+            if better_named {
+                best_named = Some((score, entry.seg, projection.measure, true));
+            }
         }
     }
-    if let Some((_, si, measure)) = best {
+    if let (Some((_, bi, _, false)), Some(_)) = (best, best_named) {
+        if segments[bi].cls == RoadClass::Connector {
+            best = best_named;
+        }
+    }
+    if let Some((_, si, measure, _)) = best {
         house.parent = Some(segments[si].id.clone());
         house.measure = Some((measure * 10.0 + 0.5).floor() / 10.0);
     }

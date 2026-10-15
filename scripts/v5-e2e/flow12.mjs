@@ -73,6 +73,21 @@ check('the Abhol-Link opens the collection side', /kind=collection#collection=/.
 }
 // 5. Revoke, then the link is refused with a clear message
 await admin.getByRole('button', { name: 'Fertig' }).click();
+await admin.getByRole('button', { name: 'Link Nachbarn öffnen' }).click();
+check('a link has a page of its own that says it cannot be shown again and offers a new one', /nicht erneut anzeigen/.test(await admin.locator('.v5-sheet').innerText()) && await admin.getByRole('button', { name: 'Neuen Link erzeugen' }).count() === 1);
+admin.once('dialog', (d) => { check('renewing asks first and says the old link stops working', /funktioniert danach nicht mehr/.test(d.message())); void d.accept(); });
+await admin.getByRole('button', { name: 'Neuen Link erzeugen' }).click();
+await admin.getByLabel('Zugangslink').waitFor();
+const renewedLink = await admin.getByLabel('Zugangslink').inputValue();
+check('renewing gives a different link', renewedLink !== viewerLink && /#access=/.test(renewedLink));
+{
+  const { ctx, page } = await visit(renewedLink, 'renewed');
+  check('the new link opens the map', await until(async () => (await page.locator('.v5-pill').count()) === 1, 60000));
+  await ctx.close();
+}
+await admin.getByRole('button', { name: 'Fertig' }).click();
+check('the list shows the renewed link under the same name', await until(async () => (await admin.getByRole('button', { name: 'Link Nachbarn öffnen' }).count()) === 1));
+await admin.getByRole('button', { name: 'Link Nachbarn öffnen' }).click();
 await admin.getByRole('button', { name: 'Link Nachbarn widerrufen' }).click();
 check('a revoked link disappears from the list', await until(async () => !/Nachbarn/.test(await admin.locator('.v5-sheet').innerText())));
 {
