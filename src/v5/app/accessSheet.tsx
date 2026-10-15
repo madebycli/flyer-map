@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Meta } from './api.ts';
 import { createCollectionLink, createGrant, listCollectors, listGrants, revokeCollector, revokeGrant, setPickupRights, type Collector, type Grant, type GrantRole, type PickupRights } from './accessApi.ts';
-import { SheetFrame } from './sheet.tsx';
+import { EmptyState, Popup, SheetFrame } from './sheet.tsx';
 import { Icon } from '../../ui/index.ts';
 
+type LinkKind = GrantRole | 'collector';
 type Props = { campaignId: string; teams: Meta['teams']; onClose: () => void };
 
 const ROLE: Record<string, string> = { 'team-editor': 'Gruppe bearbeitet', viewer: 'Ansehen', admin: 'Admin' };
@@ -30,7 +31,8 @@ function LinkBox({ title, link, onDone }: { title: string; link: string; onDone:
 export function AccessSheet({ campaignId, teams, onClose }: Props) {
   const [grants, setGrants] = useState<Grant[] | null>(null);
   const [collectors, setCollectors] = useState<Collector[]>([]);
-  const [role, setRole] = useState<GrantRole>(teams.length ? 'team-editor' : 'viewer');
+  const [role, setRole] = useState<LinkKind>(teams.length ? 'team-editor' : 'viewer');
+  const [creating, setCreating] = useState(false);
   const [teamId, setTeamId] = useState(teams[0]?.id ?? '');
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
@@ -53,36 +55,26 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
     try { await task(); await load(); } catch (e) { setError(e instanceof Error ? e.message : 'Das hat nicht geklappt.'); } finally { setBusy(false); }
   };
   const create = () => run(async () => {
-    const result = await createGrant(campaignId, { role, teamId: role === 'team-editor' ? teamId : null, label: label.trim() });
+    if (role === 'collector') {
+      const r = await createCollectionLink(campaignId);
+      setCreated({ title: 'Link für Abhol-Helfer', link: r.link });
+    } else {
+      const result = await createGrant(campaignId, { role, teamId: role === 'team-editor' ? teamId : null, label: label.trim() });
+      setCreated({ title: role === 'team-editor' ? 'Link für die Gruppe' : 'Link zum Ansehen', link: result.link });
+    }
     setLabel('');
-    setCreated({ title: role === 'team-editor' ? 'Link für die Gruppe' : 'Link zum Ansehen', link: result.link });
+    setCreating(false);
   });
   const teamName = (id: string | null) => teams.find((t) => t.id === id)?.name ?? '–';
 
   return (
-    <SheetFrame icon="users" title="Zugänge" onClose={onClose} meta={<span><Icon name="lock" size={16} />{(grants?.length ?? 0) + collectors.length} aktiv</span>}>
+    <>
+    <SheetFrame icon="users" title="Zugänge" onClose={onClose} meta={<span><Icon name="lock" size={16} />{(grants?.length ?? 0) + collectors.length} aktiv</span>}
+      actions={<button className="v5-icon-btn tonal" onClick={() => setCreating(true)} aria-label="Neuer Link" title="Neuer Link"><Icon name="plus" /></button>}>
       {created && <LinkBox title={created.title} link={created.link} onDone={() => setCreated(null)} />}
       {error && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{error}</p>}
-      <h3>Neuer Link</h3>
-      <div className="v5-form">
-        <div className="v5-seg" role="group" aria-label="Wer bekommt den Link" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-          {([['team-editor', 'users', 'Gruppe'], ['viewer', 'eye', 'Ansehen']] as const).map(([value, icon, text]) => (
-            <button key={value} className={`v5-seg-btn${role === value ? ' on' : ''}`} style={{ '--c': 'var(--primary)', aspectRatio: 'auto', minHeight: 'var(--ctl)' } as React.CSSProperties}
-              onClick={() => setRole(value)} aria-pressed={role === value} disabled={value === 'team-editor' && !teams.length}><Icon name={icon} size={22} /><span>{text}</span></button>
-          ))}
-        </div>
-        {role === 'team-editor' && (
-          <div className="v5-teams" role="group" aria-label="Gruppe">
-            {teams.map((t) => <button key={t.id} className={`v5-team${t.id === teamId ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} onClick={() => setTeamId(t.id)} aria-label={t.name} aria-pressed={t.id === teamId} title={t.name} />)}
-            <span className="v5-muted" style={{ alignSelf: 'center', marginLeft: '0.4rem' }}>{teamName(teamId)}</span>
-          </div>
-        )}
-        <input className="v5-input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Name für dich (z. B. Gruppe Nord)" aria-label="Name des Links" maxLength={80} />
-        <button className="v5-btn primary" style={{ marginTop: 0 }} disabled={busy || (role === 'team-editor' && !teamId)} onClick={() => void create()}><Icon name="send" size={20} />Link erstellen</button>
-      </div>
-
       <h3>Aktive Links</h3>
-      {grants === null ? <p className="v5-hint">Lade …</p> : grants.length === 0 ? <p className="v5-hint"><Icon name="info" size={20} />Noch kein Link erstellt.</p> : (
+      {grants === null ? <p className="v5-hint">Lade …</p> : grants.length === 0 ? <EmptyState icon="send" title="Noch kein Link" text="Mit + erstellst du einen Link für eine Gruppe, zum Ansehen oder für Abhol-Helfer." /> : (
         <div className="v5-list">
           {grants.map((g) => (
             <div key={g.grantId} className="v5-conflict-row">
@@ -93,10 +85,7 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
         </div>
       )}
 
-      <h3>Abholen</h3>
-      <div className="v5-row">
-        <button className="v5-btn" style={{ marginTop: 0 }} disabled={busy} onClick={() => void run(async () => { const r = await createCollectionLink(campaignId); setCreated({ title: 'Link für Abhol-Helfer', link: r.link }); })}><Icon name="paw" size={20} />Abhol-Link erstellen</button>
-      </div>
+      {collectors.length > 0 && <h3>Abhol-Helfer</h3>}
       {collectors.length > 0 && (
         <div className="v5-list">
           {collectors.map((c) => {
@@ -119,5 +108,27 @@ export function AccessSheet({ campaignId, teams, onClose }: Props) {
         </div>
       )}
     </SheetFrame>
+    {creating && (
+      <Popup title="Neuer Link" onClose={() => setCreating(false)}
+        actions={<button className="v5-btn primary" style={{ marginTop: 0 }} disabled={busy || (role === 'team-editor' && !teamId)} onClick={() => void create()}><Icon name="send" size={20} />Link erstellen</button>}>
+        <div className="v5-seg three" role="group" aria-label="Wer bekommt den Link">
+          {([['team-editor', 'users', 'Gruppe'], ['viewer', 'eye', 'Ansehen'], ['collector', 'paw', 'Abholen']] as const).map(([value, icon, text]) => (
+            <button key={value} className={`v5-seg-btn${role === value ? ' on' : ''}`} style={{ '--c': 'var(--primary)' } as React.CSSProperties}
+              onClick={() => setRole(value)} aria-pressed={role === value} disabled={value === 'team-editor' && !teams.length}><Icon name={icon} size={22} /><span>{text}</span></button>
+          ))}
+        </div>
+        {role === 'team-editor' && (
+          <div className="v5-field"><span>Gruppe</span>
+            <div className="v5-chips" role="group" aria-label="Gruppe">
+              {teams.map((t) => <button key={t.id} type="button" className={`v5-groupchip${t.id === teamId ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} aria-pressed={t.id === teamId} onClick={() => setTeamId(t.id)}><span className="dot" aria-hidden />{t.name}</button>)}
+            </div>
+          </div>
+        )}
+        {role === 'collector'
+          ? <p className="v5-hint"><Icon name="info" size={20} />Abhol-Helfer öffnen den Link auf dem Handy, übernehmen Teilgebiete und legen Sonder-Marker an.</p>
+          : <label className="v5-field"><span>Name (nur für dich)</span><input className="v5-input" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); }} placeholder="z. B. Gruppe Nord" aria-label="Name des Links" maxLength={80} /></label>}
+      </Popup>
+    )}
+    </>
   );
 }

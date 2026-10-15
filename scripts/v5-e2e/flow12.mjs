@@ -29,6 +29,7 @@ async function visit(url, label) {
 
 // 1. Create a viewer link
 await menuTile(admin, 'Zugänge');
+await admin.getByRole('button', { name: 'Neuer Link' }).click();
 await admin.getByRole('button', { name: 'Ansehen' }).click();
 await admin.getByLabel('Name des Links').fill('Nachbarn');
 await admin.getByRole('button', { name: 'Link erstellen', exact: true }).click();
@@ -57,7 +58,9 @@ check('the new link is listed under the active links', await until(async () => /
   await ctx.close();
 }
 // 4. Abhol-Link
-await admin.getByRole('button', { name: 'Abhol-Link erstellen' }).click();
+await admin.getByRole('button', { name: 'Neuer Link' }).click();
+await admin.getByRole('button', { name: 'Abholen', exact: true }).click();
+await admin.getByRole('button', { name: 'Link erstellen', exact: true }).click();
 await admin.locator('.v5-syncbox[aria-label="Link für Abhol-Helfer"]').waitFor();
 const helperLink = await admin.getByLabel('Zugangslink').inputValue();
 check('the Abhol-Link opens the collection side', /kind=collection#collection=/.test(helperLink), helperLink.replace(/collection=[A-Za-z0-9_-]{20,}$/, 'collection=…'));
