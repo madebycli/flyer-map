@@ -15,9 +15,15 @@ export const MODES: { mode: MarkMode; icon: IconName; label: string }[] = [
 ];
 export const meters = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`);
 
-type Saved = { mode: MarkMode; brush: Status; withHouses: boolean; housesOnly: boolean };
+export type BrushSize = 'fine' | 'medium' | 'wide';
+/** Diameter of the highlighter stroke in screen px: the same on every zoom level, so what is under it is what is marked. */
+export const BRUSH_PX: Record<BrushSize, number> = { fine: 26, medium: 44, wide: 72 };
+export const BRUSH_SIZES: BrushSize[] = ['fine', 'medium', 'wide'];
+export const BRUSH_LABEL: Record<BrushSize, string> = { fine: 'Fein', medium: 'Mittel', wide: 'Breit' };
+
+type Saved = { mode: MarkMode; brush: Status; withHouses: boolean; housesOnly: boolean; size: BrushSize };
 const HOUSE_TAP = 'house|';
-const DEFAULTS: Saved = { mode: 'route', brush: 'completed', withHouses: true, housesOnly: false };
+const DEFAULTS: Saved = { mode: 'route', brush: 'completed', withHouses: true, housesOnly: false, size: 'medium' };
 const load = (): Saved => { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('vf-v5-mark-2') ?? '{}') }; } catch { return DEFAULTS; } };
 
 export type MarkContext = {
@@ -39,10 +45,10 @@ export function useMarking(ctx: MarkContext, active: boolean) {
   const [taps, setTaps] = useState<string[]>([]);
   const anchors = useMemo(() => taps.filter((t) => !t.startsWith(HOUSE_TAP)), [taps]);
   const picked = useMemo(() => taps.filter((t) => t.startsWith(HOUSE_TAP)).map((t) => `h:${t.slice(HOUSE_TAP.length)}`), [taps]);
-  const { mode, brush, withHouses, housesOnly } = saved;
+  const { mode, brush, withHouses, housesOnly, size } = saved;
   const update = (patch: Partial<Saved>) => setSaved((current) => { const next = { ...current, ...patch }; try { localStorage.setItem('vf-v5-mark-2', JSON.stringify(next)); } catch { /* private mode */ } return next; });
-  const latest = useRef({ ...ctx, brush, withHouses, housesOnly });
-  latest.current = { ...ctx, brush, withHouses, housesOnly };
+  const latest = useRef({ ...ctx, brush, withHouses, housesOnly, size });
+  latest.current = { ...ctx, brush, withHouses, housesOnly, size };
 
   // The route is computed by the engine (Rust, in the Worker); an answer for outdated anchors is dropped.
   const [route, setRoute] = useState<RouteResult | null>(null);
@@ -69,32 +75,45 @@ export function useMarking(ctx: MarkContext, active: boolean) {
     if (!fm || !active) return;
     const now = () => latest.current;
     if (mode === 'paint') {
+      // Highlighter: a thick see-through stroke follows the finger; everything it touches on the screen is previewed and, on lifting, marked.
       const houses = new Set<string>(), segments = new Set<string>();
-      let last: Pt | null = null, frame = 0;
-      const refresh = () => { frame = 0; const { index, withHouses: wh, housesOnly: ho } = now(); if (index) fm.setPreview(keysForTouched(index, { houses, segments }, wh, ho)); };
-      const touch = (p: Pt) => {
-        const hit = fm.hitTest(p);
-        if (hit.house) houses.add(hit.house); else if (hit.segment) segments.add(hit.segment);
-        if (!frame) frame = requestAnimationFrame(refresh);
+      let points: Pt[] = [], last: Pt | null = null, frame = 0, fade = 0;
+      const clearStroke = () => { if (fade) { window.clearTimeout(fade); fade = 0; } fm.setDraw({ type: 'FeatureCollection', features: [] }); };
+      const draw = () => {
+        frame = 0;
+        const { brush: b, size: sz, index, withHouses: wh, housesOnly: ho } = now();
+        const coords = points.map((p, i) => fm.unproject(points.length === 1 ? { x: p.x + i * 0.5, y: p.y } : p));
+        if (points.length === 1) coords.push(fm.unproject({ x: points[0].x + 0.5, y: points[0].y }));
+        fm.setDraw({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { kind: 'stroke', color: fm.statusColor(b), width: BRUSH_PX[sz] }, geometry: { type: 'LineString', coordinates: coords } }] });
+        if (index) fm.setPreview(keysForTouched(index, { houses, segments }, wh, ho));
+      };
+      const touch = (a: Pt, b: Pt) => {
+        const hit = fm.brushTouch(a, b, BRUSH_PX[now().size] / 2);
+        for (const id of hit.houses) houses.add(id);
+        for (const id of hit.segments) segments.add(id);
+        if (!frame) frame = requestAnimationFrame(draw);
       };
       fm.setGesture({
         hold: true,
-        down: (p) => { houses.clear(); segments.clear(); last = p; touch(p); return true; },
+        down: (p) => { clearStroke(); houses.clear(); segments.clear(); points = [p]; last = p; touch(p, p); return true; },
         move: (p) => {
-          // a fast finger skips pixels: sample the straight line between two events so thin streets are not missed
-          if (last) { const steps = Math.ceil(Math.hypot(p.x - last.x, p.y - last.y) / 8); for (let i = 1; i < steps; i++) touch({ x: last.x + ((p.x - last.x) * i) / steps, y: last.y + ((p.y - last.y) * i) / steps }); }
-          touch(p); last = p;
+          const from = last ?? p;
+          // a fast finger skips pixels: the whole line from the last point is tested, not just the new one
+          touch(from, p);
+          if (Math.hypot(p.x - from.x, p.y - from.y) >= 3) { points.push(p); last = p; }
         },
         up: () => {
-          const { index, brush: b, withHouses: wh, housesOnly: ho, apply } = now();
+          const { index, brush: b, housesOnly: ho, withHouses: wh, apply } = now();
           const keys = index ? keysForTouched(index, { houses, segments }, wh, ho) : [];
-          if (frame) cancelAnimationFrame(frame);
+          if (frame) { cancelAnimationFrame(frame); frame = 0; }
           fm.setPreview([]);
           if (keys.length) apply(keys, b, keys.length === 1 ? '1' : String(keys.length));
+          // the stroke stays a moment, then fades away: the marked colours take over
+          fade = window.setTimeout(() => { fade = 0; fm.setDraw({ type: 'FeatureCollection', features: [] }); }, 450);
         },
-        cancel: () => { if (frame) cancelAnimationFrame(frame); fm.setPreview([]); },
+        cancel: () => { if (frame) cancelAnimationFrame(frame); frame = 0; fm.setPreview([]); clearStroke(); },
       });
-      return () => { fm.setGesture(null); fm.setPreview([]); };
+      return () => { if (frame) cancelAnimationFrame(frame); fm.setGesture(null); fm.setPreview([]); clearStroke(); };
     }
     if (mode === 'lasso') {
       let points: Pt[] = [], drawFrame = 0;
@@ -157,6 +176,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
     mode, brush, withHouses, housesOnly,
     setMode: (m: MarkMode) => update({ mode: m }), setBrush: (b: Status) => update({ brush: b }),
     setWithHouses: (w: boolean) => update({ withHouses: w }), setHousesOnly: (h: boolean) => update({ housesOnly: h }),
+    size, setSize: (z: BrushSize) => update({ size: z }),
     anchors, taps: taps.length, picked: picked.length, route, routeKeys, routeCount: routeIds.length, routeHouses, routeReady,
     undoAnchor: () => setTaps((a) => a.slice(0, -1)), clearAnchors: () => setTaps([]), applyRoute, onMapHit,
   };

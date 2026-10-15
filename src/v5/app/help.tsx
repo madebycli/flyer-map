@@ -14,7 +14,7 @@ const ENTRIES: Entry[] = [
     'Im Markier-Modus tippst du die Häuser einfach an, jedes Haus kommt dazu. Ein zweiter Tipp nimmt es wieder heraus. Mit dem Haken bestätigst du und wählst den Status.',
     'Straße und Häuser lassen sich mischen: erst die Strecke, dann noch ein paar Häuser dazu.' ] },
   { q: 'Wie markiere ich viele auf einmal?', tags: 'wischen lasso tippen modus', roles: ['admin', 'team-editor'], a: [
-    'Halte das grüne Quadrat gedrückt (oder tippe im Panel auf die Zahl). Dort wählst du „Wischen“ (mit dem Finger über Häuser und Straßen fahren), „Lasso“ (einen Bereich umkreisen) oder „Tippen“ (ein Tipp, ein Haus).',
+    'Halte das grüne Quadrat gedrückt (oder tippe im Panel auf die Zahl). Dort wählst du „Wischen“ (wie ein Textmarker: du malst einen durchscheinenden Strich, alles darunter wird markiert; die Breite stellst du dort um), „Lasso“ (einen Bereich umkreisen) oder „Tippen“ (ein Tipp, ein Haus).',
     'Bei diesen drei Modi gilt sofort der Pinsel, den du dort eingestellt hast.' ] },
   { q: 'Wie bewege ich die Karte bei „Wischen“ und „Lasso“?', tags: 'karte bewegen ziehen zoomen halten finger wischen lasso', roles: ['admin', 'team-editor'], a: [
     'Mit einem Finger über die Karte ziehen bewegt sie, mit zwei Fingern zoomst du, wie sonst auch. Zum Markieren legst du den Finger kurz an (ein Ring zeigt, dass es losgeht) und ziehst dann.',

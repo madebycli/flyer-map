@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { statusColors, type Theme } from '../map/fieldMap.ts';
 import type { Status } from '../store/types.ts';
 import { HINTS, LABELS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
-import { MODES, meters, type Marking } from './marking.tsx';
+import { BRUSH_LABEL, BRUSH_SIZES, MODES, meters, type Marking } from './marking.tsx';
 import { Icon } from '../../ui/index.ts';
 
 /** idle: just the button. panel: counter / undo / discard / confirm. status: pick what the route becomes. options: modes, brush, filters. */
@@ -97,6 +97,7 @@ export function MarkFab({ phase, setPhase, marking, kind, theme, canUndoLast, on
               <Icon name={STATUS_ICON[status]} size={24} /><small>{labels[status]}</small>
             </button>
           ))}
+          {marking.mode === 'paint' && <button className="v5-tile" onClick={() => marking.setSize(BRUSH_SIZES[(BRUSH_SIZES.indexOf(marking.size) + 1) % BRUSH_SIZES.length])} aria-label={`Strichbreite: ${BRUSH_LABEL[marking.size]}`} title="Strichbreite ändern"><Icon name="brush" size={24} /><small>{BRUSH_LABEL[marking.size]}</small></button>}
           <button className={`v5-tile${marking.withHouses ? ' on' : ''}`} onClick={() => marking.setWithHouses(!marking.withHouses)} aria-pressed={marking.withHouses} aria-label="Häuser mitmarkieren" title="Häuser an der Straße mitmarkieren"><Icon name="house" size={24} /><small>+ Häuser</small></button>
           <button className={`v5-tile${marking.housesOnly ? ' on' : ''}`} onClick={() => marking.setHousesOnly(!marking.housesOnly)} aria-pressed={marking.housesOnly} aria-label="Nur Straßen mit Häusern" title="Straßen ohne Häuser auslassen und ausblenden"><Icon name="road" size={24} /><small>Nur mit Haus</small></button>
           <button className="v5-tile" onClick={exit} aria-label="Markieren beenden" title="Markieren beenden"><Icon name="close" size={24} /><small>Beenden</small></button>

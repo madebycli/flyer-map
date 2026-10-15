@@ -37,6 +37,39 @@ const STATUS_PALETTE: Record<Theme, Record<Status, string>> = {
   light: { open: '#6c7f92', completed: '#2c9873', later: '#b4872b', 'not-deliverable': '#b05b6b' },
 };
 export const statusColors = (theme: Theme): Record<Status, string> => STATUS_PALETTE[theme];
+
+type P2 = [number, number];
+/** Distance from point `p` to the segment `a`–`b` (screen px). */
+function distPointSeg(p: P2, a: P2, b: P2): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1], len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+const cross = (o: P2, a: P2, b: P2) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+/** Distance between the segments `a`–`b` and `c`–`d`: 0 when they cross. */
+function distSegSeg(a: P2, b: P2, c: P2, d: P2): number {
+  if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) return 0;
+  return Math.min(distPointSeg(a, c, d), distPointSeg(b, c, d), distPointSeg(c, a, b), distPointSeg(d, a, b));
+}
+function lineHit(line: P2[], a: P2, b: P2, r: number): boolean {
+  if (line.length === 1) return distPointSeg(line[0], a, b) <= r;
+  for (let i = 1; i < line.length; i++) if (distSegSeg(a, b, line[i - 1], line[i]) <= r) return true;
+  return false;
+}
+function inRing(p: P2, ring: P2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+/** The stroke touches a house when it crosses or comes within `r` of its outline, or lies inside it. */
+function polygonHit(rings: P2[][], a: P2, b: P2, r: number): boolean {
+  const outer = rings[0];
+  if (!outer?.length) return false;
+  return inRing(a, outer) || inRing(b, outer) || lineHit(outer, a, b, r);
+}
 export const STATUS_COLORS = STATUS_PALETTE.dark;
 
 /** Status-dependent opacity: untouched streets and houses stay translucent, so the basemap shows through and progress stands out. */
@@ -409,6 +442,8 @@ export class FieldMap {
     });
     // Tool overlay: lasso, area edit polygon, vertex and midpoint handles (always on top).
     map.addLayer({ id: 'v5-draw-fill', type: 'fill', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'fill'], paint: { 'fill-color': ['coalesce', ['get', 'color'], '#7aa8ff'], 'fill-opacity': 0.18 } });
+    // Wischen: the highlighter stroke, as wide as the brush and see-through, in the colour of the status it will set
+    map.addLayer({ id: 'v5-draw-stroke', type: 'line', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'stroke'], layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': ['coalesce', ['get', 'color'], '#7aa8ff'], 'line-width': ['coalesce', ['get', 'width'], 40], 'line-opacity': 0.4 } });
     map.addLayer({ id: 'v5-draw-line', type: 'line', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'line'], layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': ['coalesce', ['get', 'color'], '#7aa8ff'], 'line-width': 3 } });
     map.addLayer({
       id: 'v5-draw-mid', type: 'circle', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'mid'],
@@ -700,6 +735,36 @@ export class FieldMap {
     const box: [[number, number], [number, number]] = [[point.x - halo, point.y - halo], [point.x + halo, point.y + halo]];
     const segment = this.map.getLayer('v5-segments-line') ? this.map.queryRenderedFeatures(box, { layers: ['v5-segments-line'] })[0] : undefined;
     return { house: house ? String(house.id).slice(2) : null, segment: segment ? String(segment.id).slice(2) : null };
+  }
+
+  /** The colour a status has on this map (the highlighter stroke is drawn in it). */
+  statusColor(status: Status): string { return statusColors(this.theme)[status]; }
+
+  /**
+   * Everything the thick line from `a` to `b` (radius `r` px) touches on the screen: houses by their drawn outline (a dot when zoomed far out),
+   * street pieces by their drawn line. It is the geometry the person sees under the highlighter, so what is painted is what is marked.
+   */
+  brushTouch(a: Pt, b: Pt, r: number): { houses: string[]; segments: string[] } {
+    const layers = ['v5-houses-fill', 'v5-houses-dots', 'v5-segments-line'].filter((id) => this.map.getLayer(id));
+    const out = { houses: new Set<string>(), segments: new Set<string>() };
+    if (!layers.length) return { houses: [], segments: [] };
+    const box: [[number, number], [number, number]] = [[Math.min(a.x, b.x) - r, Math.min(a.y, b.y) - r], [Math.max(a.x, b.x) + r, Math.max(a.y, b.y) + r]];
+    const px = (c: number[]): [number, number] => { const q = this.map.project([c[0], c[1]]); return [q.x, q.y]; };
+    const A: [number, number] = [a.x, a.y], B: [number, number] = [b.x, b.y];
+    for (const f of this.map.queryRenderedFeatures(box, { layers })) {
+      const id = String(f.id ?? '');
+      const g = f.geometry;
+      let hit = false;
+      if (g.type === 'Point') hit = distPointSeg(px(g.coordinates), A, B) <= r;
+      else if (g.type === 'MultiPoint') hit = g.coordinates.some((c) => distPointSeg(px(c), A, B) <= r);
+      else if (g.type === 'LineString') hit = lineHit(g.coordinates.map(px), A, B, r);
+      else if (g.type === 'MultiLineString') hit = g.coordinates.some((l) => lineHit(l.map(px), A, B, r));
+      else if (g.type === 'Polygon') hit = polygonHit(g.coordinates.map((ring) => ring.map(px)), A, B, r);
+      else if (g.type === 'MultiPolygon') hit = g.coordinates.some((poly) => polygonHit(poly.map((ring) => ring.map(px)), A, B, r));
+      if (!hit) continue;
+      if (id.startsWith('h:')) out.houses.add(id.slice(2)); else if (id.startsWith('s:')) out.segments.add(id.slice(2));
+    }
+    return { houses: [...out.houses], segments: [...out.segments] };
   }
 
   unproject(point: Pt): LngLat { const l = this.map.unproject([point.x, point.y]); return [l.lng, l.lat]; }
