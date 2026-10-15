@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { statusColors, type Theme } from '../map/fieldMap.ts';
 import type { Status } from '../store/types.ts';
 import { HINTS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
@@ -85,6 +85,31 @@ export function EmptyState({ icon, title, text }: { icon: IconName; title: strin
       <span className="v5-empty-ico"><Icon name={icon} size={30} /></span>
       <b>{title}</b>
       {text && <p>{text}</p>}
+    </div>
+  );
+}
+
+/**
+ * A popup over the sheet for one small job (name a Gruppe, pick its colour): it rises from the bottom edge above a touch keyboard, the scrim and Escape
+ * close it, and the actions sit in a pinned row at its foot. Nothing in it stays on the sheet behind.
+ */
+export function Popup({ title, onClose, actions, children }: { title: string; onClose: () => void; actions?: React.ReactNode; children: React.ReactNode }) {
+  const id = useId();
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => {
+    // captured first: Escape closes the popup only, not the sheet behind it
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    box.current?.querySelector<HTMLElement>('input:not([type=color]), button')?.focus({ preventScroll: true });
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  return (
+    <div className="v5-popup-scrim" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section ref={box} className="v5-popup" role="dialog" aria-modal="true" aria-labelledby={id}>
+        <header><h2 id={id}>{title}</h2><button className="v5-icon-btn tonal" onClick={onClose} aria-label="Schließen" title="Schließen"><Icon name="close" /></button></header>
+        <div className="v5-popup-body">{children}</div>
+        {actions && <footer className="v5-popup-actions">{actions}</footer>}
+      </section>
     </div>
   );
 }

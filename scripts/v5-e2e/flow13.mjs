@@ -19,47 +19,62 @@ await page.getByText('Kartendaten fehlen').waitFor({ timeout: 5000 }).then(() =>
 await page.waitForSelector('.v5-pill', { timeout: 120000 });
 const meta = () => page.evaluate(async () => (await (await fetch('/api/v5/campaigns/campaign_n/meta')).json()));
 
-// Create a Gruppe
+// The sheet is a plain list: no form lives in it, "+" opens the popup for a new Gruppe
 await menuTile(page, 'Gruppen');
+check('the Gruppen sheet shows no input field of its own', await page.locator('.v5-sheet-body input').count() === 0);
+await page.getByRole('button', { name: 'Neue Gruppe' }).click();
+await page.getByRole('dialog', { name: 'Neue Gruppe' }).waitFor();
+check('the popup asks for a name and a colour', await page.getByLabel('Name der neuen Gruppe').count() === 1 && await page.getByRole('group', { name: 'Farbe der neuen Gruppe' }).count() === 1);
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${shots}/g0-popup-new.png` });
+await page.keyboard.press('Escape');
+check('Escape closes the popup without creating anything', await page.getByRole('dialog').count() === 0 && !(await meta()).teams.some((t) => t.name === 'Nord'));
+await page.getByRole('button', { name: 'Neue Gruppe' }).click();
 await page.getByLabel('Name der neuen Gruppe').fill('Nord');
 await page.getByRole('button', { name: '#e5736b' }).click();
 await page.getByRole('button', { name: 'Gruppe anlegen' }).click();
 check('a new Gruppe exists on the server with the chosen colour', await until(async () => (await meta()).teams.some((t) => t.name === 'Nord' && t.color === '#e5736b')));
-check('the sheet lists it', await until(async () => (await page.getByLabel('Name der Gruppe Nord').count()) === 1));
+check('the popup is closed and the sheet lists it', await until(async () => (await page.getByRole('button', { name: 'Gruppe Nord bearbeiten' }).count()) === 1) && await page.getByRole('dialog').count() === 0);
 await page.screenshot({ path: `${shots}/g1-groups.png` });
 
-// Rename and recolour
+// Rename and recolour in the change popup
 const nord = async () => (await meta()).teams.find((t) => t.name === 'Nord' || t.name === 'Nordost');
+await page.getByRole('button', { name: 'Gruppe Nord bearbeiten' }).click();
 await page.getByLabel('Name der Gruppe Nord').fill('Nordost');
-await page.getByLabel('Name der Gruppe Nord').press('Enter');
-check('renaming a Gruppe is saved', await until(async () => (await nord())?.name === 'Nordost'));
-await page.getByRole('button', { name: 'Farbe von Nordost ändern' }).click();
-await page.getByRole('group', { name: 'Farbe von Nordost' }).getByRole('button', { name: '#38b8a6' }).click();
-check('recolouring a Gruppe is saved', await until(async () => (await nord())?.color === '#38b8a6'));
+await page.getByRole('group', { name: 'Farbe von Nord' }).getByRole('button', { name: '#38b8a6' }).click();
+await page.getByRole('button', { name: 'Speichern' }).click();
+check('renaming and recolouring a Gruppe is saved', await until(async () => (await nord())?.name === 'Nordost' && (await nord())?.color === '#38b8a6'));
 
 // A Gruppe with Gebieten cannot be deleted
 const withAreas = (await meta()).teams.find((t) => (t.id === 'team_n'));
-check('a Gruppe with Gebieten cannot be deleted from the sheet', await page.getByRole('button', { name: new RegExp(`Gruppe ${withAreas.name} löschen`) }).isDisabled());
+await page.getByRole('button', { name: `Gruppe ${withAreas.name} bearbeiten` }).click();
+check('a Gruppe with Gebieten cannot be deleted from its popup', await page.getByRole('button', { name: new RegExp(`Gruppe ${withAreas.name} löschen`) }).isDisabled());
+await page.keyboard.press('Escape');
 
 // Delete the empty one (confirmation first)
+await page.getByRole('button', { name: 'Gruppe Nordost bearbeiten' }).click();
 page.once('dialog', (d) => { check('deleting asks first', /löschen/.test(d.message())); void d.accept(); });
 await page.getByRole('button', { name: 'Gruppe Nordost löschen' }).click();
 check('an empty Gruppe can be deleted', await until(async () => !(await meta()).teams.some((t) => t.name === 'Nordost')));
 
-// Gebiete zuweisen: every Gebiet with its Gruppe, changeable in the Gruppen sheet
+// Gebiete zuweisen: a level below, every Gebiet with its Gruppe
 const areaName = (await meta()).areas.find((a) => a.id === 'area_n').name;
 const other = (await meta()).teams.find((t) => t.id === 'team_o').name;
 const own = (await meta()).teams.find((t) => t.id === 'team_n').name;
-await page.evaluate(() => { document.querySelector('.v5-sheet').dataset.probe = 'kept'; document.querySelector('.v5-sheet').scrollTop = 40; });
+await page.getByRole('button', { name: /Gebiete zuweisen/ }).click();
+check('the assignment is its own view with a way back', await page.getByRole('button', { name: 'Zurück zu den Gruppen' }).count() === 1);
+await page.evaluate(() => { document.querySelector('.v5-sheet').dataset.probe = 'kept'; });
 await page.getByLabel(`Gruppe von ${areaName}`).selectOption({ label: other });
 check('assigning a Gebiet to another Gruppe from the Gruppen sheet is saved', await until(async () => (await meta()).areas.find((a) => a.id === 'area_n')?.teamId === 'team_o'));
-check('the sheet stays open while the Aktion is re-read (no flash, scroll position kept)', await until(async () => /→/.test(await page.locator('.v5-toast').innerText().catch(() => ''))) && await page.evaluate(() => { const sheet = document.querySelector('.v5-sheet'); return sheet?.dataset.probe === 'kept' && sheet.scrollTop >= 30; }));
-check('the Gruppe that now has Gebiete can no longer be deleted, the emptied one can', await until(async () => (await page.getByRole('button', { name: `Gruppe ${other} löschen` }).isDisabled())));
+check('the sheet stays open while the Aktion is re-read (no flash)', await until(async () => /→/.test(await page.locator('.v5-toast').innerText().catch(() => ''))) && await page.evaluate(() => document.querySelector('.v5-sheet')?.dataset.probe === 'kept'));
 await page.getByLabel(`Gruppe von ${areaName}`).selectOption({ label: own });
 check('and back again', await until(async () => (await meta()).areas.find((a) => a.id === 'area_n')?.teamId === 'team_n'));
 await page.screenshot({ path: `${shots}/g1b-assign.png` });
+await page.getByRole('button', { name: 'Zurück zu den Gruppen' }).click();
+check('the Gruppe that now has Gebiete cannot be deleted', (await page.getByRole('button', { name: `Gruppe ${own} bearbeiten` }).count()) === 1);
 
-// Aktion rename
+// Aktion rename (popup)
+await page.getByRole('button', { name: 'Aktion umbenennen' }).click();
 await page.getByLabel('Name der Aktion').fill('Frühjahr 2027');
 await page.getByLabel('Name der Aktion').press('Enter');
 check('the Aktion can be renamed', await until(async () => (await meta()).campaign.name === 'Frühjahr 2027'));

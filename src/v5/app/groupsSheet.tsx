@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Meta } from './api.ts';
-import { SheetFrame } from './sheet.tsx';
+import { EmptyState, Popup as PopupFrame, SheetFrame } from './sheet.tsx';
 import { Icon, Select } from '../../ui/index.ts';
 import { GROUP_COLORS, nextFreeColor } from './groupColors.ts';
 
@@ -62,53 +62,95 @@ function AssignRow({ area, teams, busy, onSetAreaTeam }: { area: Meta['areas'][n
   );
 }
 
-/** One row per Gruppe: name, colour, how many Gebiete. A Gruppe with Gebieten cannot be deleted (move or delete the Gebiete first). */
-function GroupRow({ team, areas, busy, onUpdate, onDelete }: { team: Meta['teams'][number]; areas: number; busy: boolean; onUpdate: Props['onUpdate']; onDelete: Props['onDelete'] }) {
-  const [name, setName] = useState(team.name);
-  const [open, setOpen] = useState(false);
-  const commit = () => { const next = name.trim(); if (next && next !== team.name) onUpdate(team.id, { name: next }); else setName(team.name); };
+type Popup = null | { kind: 'new' } | { kind: 'campaign' } | { kind: 'edit'; teamId: string };
+
+/** Name and colour of a Gruppe: the same two fields to create one and to change one; deleting sits at the foot of the change popup. */
+function GroupPopup({ team, areas, busy, color: startColor, onSave, onDelete, onClose }: {
+  team?: Meta['teams'][number]; areas: number; busy: boolean; color: string;
+  onSave(name: string, color: string): void; onDelete?(): void; onClose(): void;
+}) {
+  const [name, setName] = useState(team?.name ?? '');
+  const [color, setColor] = useState(startColor);
+  const ready = !!name.trim() && !busy;
+  const save = () => { if (ready) onSave(name.trim(), color); };
   return (
-    <div className="v5-grouprow">
-      <div className="v5-row" style={{ margin: 0 }}>
-        <button className="v5-team on" style={{ '--c': team.color, borderColor: 'transparent' } as React.CSSProperties} onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Farbe von ${team.name} ändern`} title="Farbe ändern" />
-        <input className="v5-input" value={name} onChange={(e) => setName(e.target.value.slice(0, 120))} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} aria-label={`Name der Gruppe ${team.name}`} disabled={busy} maxLength={120} />
-        <span className="v5-counter" title="Gebiete"><Icon name="polygon" size={18} />{areas}</span>
-        <button className="v5-icon-btn" onClick={() => onDelete(team.id)} disabled={busy || areas > 0} aria-label={`Gruppe ${team.name} löschen`} title={areas > 0 ? 'Erst die Gebiete verschieben oder löschen' : 'Gruppe löschen'}><Icon name="trash" /></button>
-      </div>
-      {open && <Swatches value={team.color} label={`Farbe von ${team.name}`} onPick={(color) => { setOpen(false); onUpdate(team.id, { color }); }} />}
-    </div>
+    <PopupFrame title={team ? 'Gruppe ändern' : 'Neue Gruppe'} onClose={onClose}
+      actions={<>
+        {team && onDelete && <button className="v5-btn danger" style={{ marginTop: 0 }} disabled={busy || areas > 0} onClick={onDelete} aria-label={`Gruppe ${team.name} löschen`} title={areas > 0 ? 'Erst die Gebiete verschieben oder löschen' : 'Gruppe löschen'}><Icon name="trash" size={20} />Löschen</button>}
+        <button className="v5-btn primary" style={{ marginTop: 0 }} disabled={!ready} onClick={save}><Icon name={team ? 'check' : 'plus'} size={20} />{team ? 'Speichern' : 'Gruppe anlegen'}</button>
+      </>}>
+      <label className="v5-field"><span>Name</span>
+        <input className="v5-input" value={name} onChange={(e) => setName(e.target.value.slice(0, 120))} onKeyDown={(e) => { if (e.key === 'Enter') save(); }} placeholder="z. B. Nord" aria-label={team ? `Name der Gruppe ${team.name}` : 'Name der neuen Gruppe'} maxLength={120} />
+      </label>
+      <div className="v5-field"><span>Farbe</span><Swatches value={color} label={team ? `Farbe von ${team.name}` : 'Farbe der neuen Gruppe'} onPick={setColor} /></div>
+      {team && areas > 0 && <p className="v5-hint"><Icon name="info" size={20} />{areas} {areas === 1 ? 'Gebiet gehört' : 'Gebiete gehören'} dazu; zum Löschen erst verschieben.</p>}
+    </PopupFrame>
   );
 }
 
-/** Admin: the Aktion's name, its Gruppen, and which Gebiet belongs to which Gruppe (also changeable on the Gebiet itself). */
-export function GroupsSheet({ meta, busy, error, onRenameCampaign, onCreate, onUpdate, onDelete, onSetAreaTeam, onClose }: Props) {
-  const [campaignName, setCampaignName] = useState(meta.campaign.name);
-  const [name, setName] = useState('');
-  const [color, setColor] = useState(() => nextFreeColor(meta.teams.map((t) => t.color)));
-  const count = (teamId: string) => meta.areas.filter((a) => a.teamId === teamId).length;
-  const commitCampaign = () => { const next = campaignName.trim(); if (next && next !== meta.campaign.name) onRenameCampaign(next); else setCampaignName(meta.campaign.name); };
+/** Rename the Aktion. */
+function CampaignPopup({ name: current, busy, onSave, onClose }: { name: string; busy: boolean; onSave(name: string): void; onClose(): void }) {
+  const [name, setName] = useState(current);
+  const ready = !!name.trim() && !busy;
   return (
-    <SheetFrame icon="users" title="Gruppen" onClose={onClose} meta={<span><Icon name="polygon" size={16} />{meta.areas.length} Gebiete</span>}>
-      {error && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{error}</p>}
-      <h3>Aktion</h3>
-      <input className="v5-input" value={campaignName} onChange={(e) => setCampaignName(e.target.value.slice(0, 160))} onBlur={commitCampaign} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} aria-label="Name der Aktion" disabled={busy} maxLength={160} />
-      <h3>Gruppen</h3>
-      {meta.teams.length === 0 ? <p className="v5-hint"><Icon name="info" size={20} />Noch keine Gruppe. Ein Gebiet gehört immer zu einer Gruppe.</p> : (
-        <div className="v5-list">
-          {meta.teams.map((t) => <GroupRow key={`${t.id}:${t.updatedAt}`} team={t} areas={count(t.id)} busy={busy} onUpdate={onUpdate} onDelete={onDelete} />)}
-        </div>
+    <PopupFrame title="Aktion umbenennen" onClose={onClose}
+      actions={<button className="v5-btn primary" style={{ marginTop: 0 }} disabled={!ready} onClick={() => onSave(name.trim())}><Icon name="check" size={20} />Speichern</button>}>
+      <label className="v5-field"><span>Name der Aktion</span>
+        <input className="v5-input" value={name} onChange={(e) => setName(e.target.value.slice(0, 160))} onKeyDown={(e) => { if (e.key === 'Enter' && ready) onSave(name.trim()); }} aria-label="Name der Aktion" maxLength={160} />
+      </label>
+    </PopupFrame>
+  );
+}
+
+/** Admin: the Aktion's Gruppen as a list (a tap changes one, + adds one) and, one level down, which Gebiet belongs to which Gruppe. */
+export function GroupsSheet({ meta, busy, error, onRenameCampaign, onCreate, onUpdate, onDelete, onSetAreaTeam, onClose }: Props) {
+  const [view, setView] = useState<'main' | 'assign'>('main');
+  const [popup, setPopup] = useState<Popup>(null);
+  const count = (teamId: string) => meta.areas.filter((a) => a.teamId === teamId).length;
+  const editing = popup?.kind === 'edit' ? meta.teams.find((t) => t.id === popup.teamId) : undefined;
+  const assign = view === 'assign';
+  return (
+    <>
+      <SheetFrame icon="users" title={assign ? 'Gebiete zuweisen' : 'Gruppen'} onClose={onClose}
+        meta={<span><Icon name="polygon" size={16} />{meta.areas.length} Gebiete</span>}
+        actions={assign
+          ? <button className="v5-icon-btn tonal" onClick={() => setView('main')} aria-label="Zurück zu den Gruppen" title="Zurück"><Icon name="back" /></button>
+          : <button className="v5-icon-btn tonal" onClick={() => setPopup({ kind: 'new' })} aria-label="Neue Gruppe" title="Neue Gruppe"><Icon name="plus" /></button>}>
+        {error && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{error}</p>}
+        {assign ? (
+          meta.areas.length === 0 ? <EmptyState icon="polygon" title="Noch keine Gebiete" text="Zeichne eines über Menü → Gebiete; es gehört dann zur gewählten Gruppe." />
+            : meta.teams.length < 2 ? <EmptyState icon="users" title="Nur eine Gruppe" text={`Lege eine zweite Gruppe an, dann kannst du die ${meta.areas.length} Gebiete verteilen.`} />
+            : <div className="v5-list">{meta.areas.map((a) => <AssignRow key={`${a.id}:${a.updatedAt}`} area={a} teams={meta.teams} busy={busy} onSetAreaTeam={onSetAreaTeam} />)}</div>
+        ) : (
+          <>
+            <h3>Gruppen</h3>
+            {meta.teams.length === 0 ? <EmptyState icon="users" title="Noch keine Gruppe" text="Ein Gebiet gehört immer zu einer Gruppe. Mit + legst du die erste an." />
+              : <div className="v5-list">
+                {meta.teams.map((t) => (
+                  <button key={t.id} className="v5-row-btn" onClick={() => setPopup({ kind: 'edit', teamId: t.id })} aria-label={`Gruppe ${t.name} bearbeiten`}>
+                    <span className="v5-gdot" style={{ '--c': t.color } as React.CSSProperties} aria-hidden />
+                    <span className="v5-row-name">{t.name}</span>
+                    <span className="v5-row-count" title="Gebiete">{count(t.id)} {count(t.id) === 1 ? 'Gebiet' : 'Gebiete'}</span>
+                    <Icon name="pen" size={20} />
+                  </button>
+                ))}
+              </div>}
+            <h3>Weiteres</h3>
+            <div className="v5-list">
+              <button className="v5-row-btn" onClick={() => setView('assign')} disabled={meta.areas.length === 0}><Icon name="polygon" size={22} /><span className="v5-row-name">Gebiete zuweisen</span><span className="v5-row-count">{meta.areas.length}</span></button>
+              <button className="v5-row-btn" onClick={() => setPopup({ kind: 'campaign' })} aria-label="Aktion umbenennen"><Icon name="pen" size={22} /><span className="v5-row-name">Aktion umbenennen<small>{meta.campaign.name}</small></span></button>
+            </div>
+          </>
+        )}
+      </SheetFrame>
+      {popup?.kind === 'new' && <GroupPopup areas={0} busy={busy} color={nextFreeColor(meta.teams.map((t) => t.color))} onClose={() => setPopup(null)} onSave={(name, color) => { onCreate(name, color); setPopup(null); }} />}
+      {popup?.kind === 'edit' && editing && (
+        <GroupPopup key={editing.id} team={editing} areas={count(editing.id)} busy={busy} color={editing.color} onClose={() => setPopup(null)}
+          onSave={(name, color) => { const patch: { name?: string; color?: string } = {}; if (name !== editing.name) patch.name = name; if (color.toLowerCase() !== editing.color.toLowerCase()) patch.color = color; if (patch.name || patch.color) onUpdate(editing.id, patch); setPopup(null); }}
+          onDelete={() => { setPopup(null); onDelete(editing.id); }} />
       )}
-      <h3>Neue Gruppe</h3>
-      <div className="v5-form">
-        <input className="v5-input" value={name} onChange={(e) => setName(e.target.value.slice(0, 120))} placeholder="Name (z. B. Nord)" aria-label="Name der neuen Gruppe" maxLength={120} />
-        <Swatches value={color} label="Farbe der neuen Gruppe" onPick={setColor} />
-        <button className="v5-btn primary" style={{ marginTop: 0 }} disabled={busy || !name.trim()} onClick={() => { onCreate(name.trim(), color); setName(''); }}><Icon name="plus" size={20} />Gruppe anlegen</button>
-      </div>
-      <h3>Gebiete zuweisen</h3>
-      {meta.areas.length === 0 ? <p className="v5-hint"><Icon name="info" size={20} />Noch keine Gebiete. Zeichne eines über Menü → Gebiete; es gehört dann zur gewählten Gruppe.</p>
-        : meta.teams.length < 2 ? <p className="v5-hint"><Icon name="info" size={20} />Lege eine zweite Gruppe an, dann kannst du die {meta.areas.length} Gebiete hier verteilen.</p>
-        : <div className="v5-list">{meta.areas.map((a) => <AssignRow key={`${a.id}:${a.updatedAt}`} area={a} teams={meta.teams} busy={busy} onSetAreaTeam={onSetAreaTeam} />)}</div>}
-    </SheetFrame>
+      {popup?.kind === 'campaign' && <CampaignPopup name={meta.campaign.name} busy={busy} onClose={() => setPopup(null)} onSave={(name) => { if (name !== meta.campaign.name) onRenameCampaign(name); setPopup(null); }} />}
+    </>
   );
 }
 
