@@ -1,0 +1,32 @@
+name: Real OSM data check (garden-path rule)
+
+# Runs the StreetEngine on real, public OpenStreetMap data and lists what the garden-path rule changes. Contains no user data.
+on:
+  push:
+    branches:
+      - unstable
+    paths:
+      - .github/workflows/real-osm-check.yml
+      - scripts/real-osm-check.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Derive real areas with and without the rule
+        run: node --experimental-transform-types scripts/real-osm-check.mjs | tee /tmp/real-osm.txt
+      - name: Summary
+        if: always()
+        run: |
+          { echo '```'; cat /tmp/real-osm.txt 2>/dev/null || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

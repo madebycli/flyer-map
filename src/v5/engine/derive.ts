@@ -34,7 +34,9 @@ function bump(counter: Record<string, number>, key: string) { counter[key] = (co
  * input and ENGINE_VERSION always yield the same ids, so clients never need to sync
  * the derived entities, only the status overlay keyed by those ids.
  */
-export function deriveNetwork(raw: RawOsm): Network {
+/** `gardenPathRule: false` reproduces the nearest-way assignment of engines before v5.5 (only the real-data comparison script turns it off). */
+export function deriveNetwork(raw: RawOsm, options: { gardenPathRule?: boolean } = {}): Network {
+  const gardenPathRule = options.gardenPathRule ?? true;
   const diagnostics: NetworkDiagnostics = {
     engineVersion: ENGINE_VERSION, waysIn: raw.ways.length, waysExcluded: {}, segments: 0, visibleSegments: 0,
     promotedByHouses: 0, keptFromPaths: 0, hiddenConnectors: 0, buildingsIn: raw.buildings.length, housesOut: 0, buildingsSkipped: {}, orphanHouses: 0,
@@ -139,7 +141,7 @@ export function deriveNetwork(raw: RawOsm): Network {
     houses.push(assignParent({
       id: `h${building.id}`, osmId: building.id, source: 'building', number, street, ring: building.ring, center,
       parent: null, measure: null, evidence: verdict.evidence ?? 'address',
-    }, frame, tree, diagnostics));
+    }, frame, tree, diagnostics, gardenPathRule));
   }
   // Address nodes that belong to no building become small point-houses (rural farms, mapped-by-node).
   const buildingTree = new RBush<{ minX: number; minY: number; maxX: number; maxY: number; ring: LngLat[] }>(9);
@@ -160,7 +162,7 @@ export function deriveNetwork(raw: RawOsm): Network {
       street: entry.node.tags['addr:street']?.trim() ?? null,
       ring: [[px - d, py - d], [px + d, py - d], [px + d, py + d], [px - d, py + d], [px - d, py - d]],
       center: entry.node.point, parent: null, measure: null, evidence: 'address-node',
-    }, frame, tree, diagnostics));
+    }, frame, tree, diagnostics, gardenPathRule));
   }
 
   // 6. Visibility: streets always; access/connector only when real houses use them.
@@ -193,7 +195,7 @@ function roundNetwork(network: Network): Network {
   return network;
 }
 
-function assignParent(house: House, frame: Frame, tree: RBush<IndexedSegment>, diagnostics: NetworkDiagnostics): House {
+function assignParent(house: House, frame: Frame, tree: RBush<IndexedSegment>, diagnostics: NetworkDiagnostics, gardenPathRule: boolean): House {
   const [cx, cy] = frame.toXY(house.center);
   const reach = MAX_NAMED_PARENT_DISTANCE;
   const wanted = normalizeName(house.street);
@@ -216,6 +218,6 @@ function assignParent(house: House, frame: Frame, tree: RBush<IndexedSegment>, d
       bestNamed = { score, segment: entry.segment, measure: projection.measure, named };
     }
   }
-  if (best && bestNamed && best.segment.cls === 'connector' && !best.named) { best = bestNamed; diagnostics.keptFromPaths++; }
+  if (gardenPathRule && best && bestNamed && best.segment.cls === 'connector' && !best.named) { best = bestNamed; diagnostics.keptFromPaths++; }
   return best ? { ...house, parent: best.segment.id, measure: Math.round(best.measure * 10) / 10 } : house;
 }

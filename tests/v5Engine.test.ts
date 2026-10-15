@@ -255,4 +255,8 @@ test('a garden path never takes a house away from the street its address names; 
   assert.equal(parentOf('h102').wayId, 2, 'a house with no street in its address keeps the nearest way, the path');
   assert.ok(net.segments.filter((s) => s.wayId === 2).every((s) => s.visible), 'the path stays visible because house 102 uses it');
   assert.equal(net.diagnostics.keptFromPaths, 1, 'the diagnostics count the one house the rule kept on its street');
+  // without the rule (the comparison switch of scripts/real-osm-check.mjs) the nearer path wins, as in engines before v5.5
+  const before = deriveNetwork(raw, { gardenPathRule: false });
+  assert.equal(before.segments.find((s) => s.id === before.houses.find((h) => h.id === 'h101')!.parent)!.wayId, 2);
+  assert.equal(before.diagnostics.keptFromPaths, 0);
 });
