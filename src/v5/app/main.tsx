@@ -9,6 +9,7 @@ import { JoinRoom } from './roomsUi.tsx';
 import { roomIntent } from './roomsLogic.ts';
 import { applyTheme, Icon } from '../../ui/index.ts';
 import { initDiag } from '../diag/index.ts';
+import { watchViewport } from './viewport.ts';
 
 // App feel: the page itself must never pinch-zoom or double-tap-zoom (iOS Safari ignores user-scalable=no); the map handles its own gestures.
 for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, (event) => event.preventDefault(), { passive: false });
@@ -38,6 +39,7 @@ async function boot(campaign: string | null): Promise<React.ReactNode> {
   return <App campaignId={campaign} />;
 }
 
+watchViewport();
 initDiag(); // the error nets and sensors must exist before anything else can fail
 applyTheme();
 const root = createRoot(document.getElementById('root')!);

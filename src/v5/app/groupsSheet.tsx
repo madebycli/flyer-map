@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Meta } from './api.ts';
 import { SheetFrame } from './sheet.tsx';
 import { Icon, Select } from '../../ui/index.ts';
@@ -18,8 +18,14 @@ type Props = {
 
 /** Swatches the size of a control; the selected one carries a ring. */
 export function Swatches({ value, onPick, label }: { value: string; onPick(color: string): void; label: string }) {
+  // the strip scrolls sideways: the chosen colour is brought into view when it opens
+  const strip = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = strip.current, on = el?.querySelector<HTMLElement>('.v5-team.on');
+    if (el && on) el.scrollLeft = Math.max(0, on.offsetLeft - el.clientWidth / 2 + on.offsetWidth / 2);
+  }, []);
   return (
-    <div className="v5-teams" role="group" aria-label={label}>
+    <div className="v5-teams v5-swatchstrip" role="group" aria-label={label} ref={strip}>
       {(GROUP_COLORS.some((c) => c.toLowerCase() === value.toLowerCase()) ? GROUP_COLORS : [value, ...GROUP_COLORS]).map((c) => <button key={c} className={`v5-team${c.toLowerCase() === value.toLowerCase() ? ' on' : ''}`} style={{ '--c': c } as React.CSSProperties} onClick={() => onPick(c)} aria-pressed={c.toLowerCase() === value.toLowerCase()} aria-label={c} title={c} />)}
       <label className="v5-team custom" aria-label="Eigene Farbe wählen" title="Eigene Farbe">
         <Icon name="palette" size={20} />
@@ -32,7 +38,7 @@ export function Swatches({ value, onPick, label }: { value: string; onPick(color
 /** Which Gruppe something belongs to: one chip per Gruppe with its colour and name (a colour alone says nothing to someone who did not pick it). */
 export function GroupPicker({ teams, value, label, disabled, onPick }: { teams: Meta['teams']; value: string; label: string; disabled?: boolean; onPick(teamId: string): void }) {
   return (
-    <div className="v5-groups" role="group" aria-label={label}>
+    <div className="v5-chips" role="group" aria-label={label}>
       {teams.map((t) => (
         <button key={t.id} type="button" className={`v5-groupchip${t.id === value ? ' on' : ''}`} style={{ '--c': t.color } as React.CSSProperties} disabled={disabled}
           aria-pressed={t.id === value} onClick={() => { if (t.id !== value) onPick(t.id); }}>
@@ -107,14 +113,13 @@ export function GroupsSheet({ meta, busy, error, onRenameCampaign, onCreate, onU
 }
 
 /** Admin, on a selected Gebiet: its name and which Gruppe it belongs to (the map colours it accordingly). */
-export function AreaAdmin({ area, teams, busy, onRename, onSetTeam, onDelete }: { area: Meta['areas'][number]; teams: Meta['teams']; busy: boolean; onRename(name: string): void; onSetTeam(teamId: string): void; onDelete(): void }) {
+export function AreaAdmin({ area, teams, busy, onRename, onSetTeam }: { area: Meta['areas'][number]; teams: Meta['teams']; busy: boolean; onRename(name: string): void; onSetTeam(teamId: string): void }) {
   const [name, setName] = useState(area.name);
   const commit = () => { const next = name.trim(); if (next && next !== area.name) onRename(next); else setName(area.name); };
   return (
     <div className="v5-form">
       <input className="v5-input" value={name} onChange={(e) => setName(e.target.value.slice(0, 160))} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} aria-label="Name des Gebiets ändern" disabled={busy} maxLength={160} />
       <GroupPicker teams={teams} value={area.teamId} label="Gruppe des Gebiets" disabled={busy} onPick={onSetTeam} />
-      <button className="v5-btn" style={{ marginTop: 0 }} disabled={busy} onClick={onDelete}><Icon name="trash" size={20} />Gebiet löschen</button>
     </div>
   );
 }

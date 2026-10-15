@@ -7,6 +7,7 @@ import type { NoteStore } from '../notes/store.ts';
 import type { Meta } from './api.ts';
 import type { Index } from './mark.ts';
 import { Icon, type IconName } from '../../ui/index.ts';
+import { EmptyState } from './sheet.tsx';
 
 export const FLAG_ICON: Record<Flag, IconName> = { dog: 'paw', locked: 'lock', nope: 'noAds', full: 'mailbox', again: 'repeat', danger: 'warning', info: 'info' };
 /** Same hue on dark and light basemaps; danger/locked read as "stop", the rest as information. */
@@ -189,7 +190,7 @@ export function NotesOverview({ store, index, areas, onOpen }: { store: NoteStor
           </button>
         ))}
       </div>
-      {shown.length === 0 ? <p className="v5-hint"><Icon name="message" size={22} /></p> : (
+      {shown.length === 0 ? <EmptyState icon="message" title={filter ? 'Keine Notizen mit diesem Filter' : 'Noch keine Notizen'} text={filter ? undefined : 'Tippe ein Haus, eine Straße oder ein Gebiet an und schreibe etwas dazu. Alle Notizen der Aktion erscheinen hier.'} /> : (
         <ul className="v5-note-list">
           {shown.map((note) => (
             <li key={note.id}>

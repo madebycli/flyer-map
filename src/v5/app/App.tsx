@@ -3,6 +3,7 @@ import { importLegacyProgress, type FieldHouse as House, type FieldNetwork as Ne
 import { FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import { bakeStatuses } from '../map/bake.ts';
 import { FocusVideo } from './focusVideo.tsx';
+import { OverflowMenu } from './overflowMenu.tsx';
 import { readLastView, saveLastView } from './lastView.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
@@ -532,6 +533,19 @@ export function App({ campaignId }: { campaignId: string }) {
   const wholeFromServer = lazyPartial && !!stats && coveredByServer(serverProgress, campaign.partialAreas, campaign.expectedUnits);
   const [cleanupRevision, setCleanupRevision] = useState(0);
   const orphanCount = useMemo(() => (tool === 'areas' && selectedArea && meta?.role === 'admin' ? campaign.orphans().length : 0), [tool, selectedArea, meta?.role, campaign.progress, campaign.network, cleanupRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const deleteSelectedArea = () => {
+    if (!selectedArea) return;
+    if (!window.confirm(`Gebiet „${selectedArea.name}“ endgültig löschen? Fortschritt, Notizen und Kartendaten dieses Gebiets werden für alle Geräte entfernt. Das lässt sich nicht rückgängig machen.`)) return;
+    const keys = [...campaign.areaOf].filter(([, area]) => area === selectedArea.id).map(([key]) => key);
+    void runAdmin(async () => {
+      await deleteArea(campaignId, areaOfId(selectedArea.id) ?? selectedArea);
+      // Gone at once: the outline and the sheet disappear now, the reload that follows only tidies up behind it.
+      setGoneAreas((current) => new Set([...current, selectedArea.id]));
+      areaTool.setSelectedId(null);
+      await forgetArea(campaignId, selectedArea.id);
+      store?.forget(keys);
+    }, 'Gebiet gelöscht.');
+  };
   const pruneSelected = () => {
     if (!selectedArea || !store) return;
     const keys = campaign.orphans();
@@ -826,32 +840,27 @@ export function App({ campaignId }: { campaignId: string }) {
 
       {tool === 'areas' && ready && !editing && selectedArea && (
         <SheetFrame icon="polygon" title={selectedArea.name} onClose={() => areaTool.setSelectedId(null)}
-          meta={<><span><Icon name="ruler" size={16} />{areaStats ? sizeLabel(areaStats.size) : ''}</span><span><Icon name="house" size={16} />{areaStats ? `${areaStats.done.toLocaleString('de')} / ${areaStats.total.toLocaleString('de')}` : ''}</span></>}>
-          <div className="v5-row">
-            <button className="v5-icon-btn tonal" onClick={() => fieldMap.current?.fitTo(ringBounds(selectedArea.geometry.coordinates[0]), FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" /></button>
-            {areaTool.canEdit(selectedArea.teamId) && <button className="v5-go" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={26} /></button>}
+          meta={<><span><Icon name="ruler" size={16} />{areaStats ? sizeLabel(areaStats.size) : ''}</span><span><Icon name="house" size={16} />{areaStats ? `${areaStats.done.toLocaleString('de')} / ${areaStats.total.toLocaleString('de')}` : ''}</span></>}
+          actions={meta?.role === 'admin' ? (
+            <OverflowMenu items={[
+              ...(orphanCount > 0 ? [{ label: 'Veraltete Einträge bereinigen', icon: 'trash' as const, note: 'Markierungen, die nirgends mehr liegen', onSelect: pruneSelected }] : []),
+              { label: 'Gebiet löschen', icon: 'trash' as const, danger: true, disabled: adminBusy, onSelect: deleteSelectedArea },
+            ]} />
+          ) : undefined}>
+          <div className="v5-actionrow">
+            <button className="v5-action" onClick={() => fieldMap.current?.fitTo(ringBounds(selectedArea.geometry.coordinates[0]), FIT_PADDING)} aria-label="Gebiet zeigen" title="Gebiet zeigen"><Icon name="fit" size={22} />Zeigen</button>
+            {areaTool.canEdit(selectedArea.teamId) && <button className="v5-action primary" onClick={() => areaTool.startEdit(selectedArea.id)} aria-label="Eckpunkte bearbeiten" title="Eckpunkte bearbeiten"><Icon name="pen" size={22} />Umriss</button>}
           </div>
-          {orphanCount > 0 && <button className="v5-wide" onClick={pruneSelected} title="Markierungen entfernen, die nach einer Änderung des Gebiets nirgends mehr liegen"><Icon name="trash" size={20} />Veraltete Einträge bereinigen</button>}
           {meta?.role === 'admin' && (
             <>
+              <h3>Name und Gruppe</h3>
               <AreaAdmin key={`${selectedArea.id}:${selectedArea.updatedAt}`} area={selectedArea} teams={meta.teams} busy={adminBusy}
                 onRename={(name) => void runAdmin(() => renameArea(campaignId, areaOfId(selectedArea.id) ?? selectedArea, name))}
-                onSetTeam={(teamId) => void runAdmin(() => setAreaTeam(campaignId, areaOfId(selectedArea.id) ?? selectedArea, teamId), 'Gebiet verschoben.')}
-                onDelete={() => {
-                  if (!window.confirm(`Gebiet „${selectedArea.name}“ endgültig löschen? Fortschritt, Notizen und Kartendaten dieses Gebiets werden für alle Geräte entfernt. Das lässt sich nicht rückgängig machen.`)) return;
-                  const keys = [...campaign.areaOf].filter(([, area]) => area === selectedArea.id).map(([key]) => key);
-                  void runAdmin(async () => {
-                    await deleteArea(campaignId, areaOfId(selectedArea.id) ?? selectedArea);
-                    // Gone at once: the outline and the sheet disappear now, the reload that follows only tidies up behind it.
-                    setGoneAreas((current) => new Set([...current, selectedArea.id]));
-                    areaTool.setSelectedId(null);
-                    await forgetArea(campaignId, selectedArea.id);
-                    store?.forget(keys);
-                  }, 'Gebiet gelöscht.');
-                }} />
+                onSetTeam={(teamId) => void runAdmin(() => setAreaTeam(campaignId, areaOfId(selectedArea.id) ?? selectedArea, teamId), 'Gebiet verschoben.')} />
               {adminError && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />{adminError}</p>}
             </>
           )}
+          <h3>Notizen</h3>
           <NotesPane key={areaNoteKey(selectedArea.id)} store={notes} target={areaNoteKey(selectedArea.id)} area={selectedArea.id} canWrite={canWrite && (meta?.role === 'admin' || meta?.teamId === selectedArea.teamId)} onUndo={(label, revert) => setUndo({ label, revert })} />
         </SheetFrame>
       )}

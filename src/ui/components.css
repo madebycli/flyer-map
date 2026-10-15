@@ -30,22 +30,31 @@
 
 
 /* ── bottom sheet ────────────────────────────────────────────── */
+/* A column: handle, header, optional toolbar, the body (the only part that scrolls) and an optional footer. It sits above a touch keyboard and never grows
+   past the visible area (`--kb` and `--vvh` come from viewport.ts), so the field somebody types into stays on screen. */
 .v5-sheet {
-  position: absolute; z-index: 11; left: 0; right: 0; bottom: 0; max-height: 72vh; overflow: auto; padding: 0 1rem calc(env(safe-area-inset-bottom) + 1rem);
+  position: absolute; z-index: 11; left: 0; right: 0; bottom: var(--kb, 0px); display: flex; flex-direction: column; max-height: calc(var(--vvh, 100vh) * 0.78); padding: 0;
   background: var(--surface-1); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -4px 24px rgb(0 0 0 / 30%); animation: v5-sheet 260ms var(--ease);
   overscroll-behavior: contain;
-  /* One vertical rhythm: the sheet spaces its direct children by gap alone (see below), so no two screens space things differently. */
+}
+:root[data-kb] .v5-sheet { max-height: calc(var(--vvh) - 0.8rem - env(safe-area-inset-top)); border-radius: var(--r-lg); }
+.v5-sheet-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0 1rem calc(env(safe-area-inset-bottom) + 1rem);
+  /* One vertical rhythm: the body spaces its direct children by gap alone (see below), so no two screens space things differently. */
   display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--sp-2);
 }
-/* The old per-element margins (hints, rows, groups, headings, the header) are the reason gaps differed from screen to screen. Inside a sheet they no longer count;
+:root[data-kb] .v5-sheet-body { padding-bottom: 1rem; }
+/* The old per-element margins (hints, rows, groups, headings) are the reason gaps differed from screen to screen. Inside a sheet they no longer count;
    `!important` is deliberate: these elements are also used outside sheets, where their margins stay. A heading sits closer to what it names than to the block before it. */
-.v5-sheet > * { margin-block: 0 !important; }
-.v5-sheet > h3 { margin-bottom: calc(var(--sp-1) - var(--sp-2)) !important; }
-/* A grid track never gets shorter than zero, so the thin handle cannot pull the header up with a negative margin of its own: the header moves up instead. */
-.v5-sheet > .v5-handle + * { margin-top: calc(var(--sp-1) - var(--sp-2)) !important; }
+.v5-sheet-body > * { margin-block: 0 !important; min-width: 0; }
+.v5-sheet-body > h3 { margin-bottom: calc(var(--sp-1) - var(--sp-2)) !important; }
+.v5-sheet-toolbar { flex: none; padding: 0 1rem var(--sp-2); }
+.v5-sheet-footer { flex: none; padding: var(--sp-2) 1rem calc(env(safe-area-inset-bottom) + 0.8rem); border-top: 1px solid var(--outline-var); background: var(--surface-1); }
+:root[data-kb] .v5-sheet-footer { padding-bottom: 0.8rem; }
 @keyframes v5-sheet { from { transform: translateY(30%); opacity: 0; } }
-@media (min-width: 700px) { .v5-sheet { left: 1rem; right: auto; bottom: 1rem; width: 26rem; border-radius: var(--r-lg); } }
-.v5-handle { display: grid; place-items: start center; width: 100%; height: 2.75rem; padding-top: 0.7rem; box-sizing: border-box; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+@media (min-width: 700px) { .v5-sheet { left: 1rem; right: auto; bottom: calc(1rem + var(--kb, 0px)); width: 28rem; border-radius: var(--r-lg); } }
+@media (min-width: 700px) { :root[data-kb] .v5-sheet { max-height: calc(var(--vvh) - 2rem - env(safe-area-inset-top)); } }
+.v5-handle { flex: none; display: grid; place-items: start center; width: 100%; height: 2.75rem; padding-top: 0.7rem; box-sizing: border-box; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .v5-handle > i { display: block; width: 2.6rem; height: 0.28rem; border-radius: 1rem; background: var(--outline); opacity: 0.55; }
 .v5-handle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r); }
 /* shrunk to the header: the map is free; the controls keep their place and the sheet simply lies over the lower ones */
@@ -53,12 +62,13 @@
 .v5-sheet.small > :not(.v5-handle):not(header) { display: none; }
 .v5-root:has(.v5-sheet.small) .v5-ctl { opacity: 1; transform: none; }
 .v5-root:has(.v5-sheet.small) .v5-ctl > * { pointer-events: auto; } /* they stay where they are: the sheet covers what lies behind it, nothing moves up or fades */
-.v5-sheet header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.9rem; }
+.v5-sheet header { flex: none; display: flex; align-items: center; gap: 0.8rem; padding: 0 1rem; margin-bottom: var(--sp-2); }
+.v5-sheet.small header { margin-bottom: 1rem; }
 .v5-badge { display: grid; place-items: center; width: var(--ctl); height: var(--ctl); border-radius: var(--r); background: var(--primary-container); color: var(--on-primary-container); flex: none; }
 .v5-badge.big { width: 4.4rem; height: 4.4rem; border-radius: var(--r-lg); margin: 0 auto 0.9rem; }
 .v5-head-text { flex: 1; min-width: 0; }
-.v5-sheet h2 { margin: 0; font-size: 1.3rem; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.v5-sheet h3 { margin: 1rem 0 0.4rem; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--on-var); }
+.v5-sheet h2 { margin: 0; font-size: 1.35rem; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v5-sheet h3 { margin: 1rem 0 0.4rem; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--on-var); }
 .v5-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin-top: 0.15rem; color: var(--on-var); font-size: 0.86rem; font-weight: 600; }
 .v5-meta span { display: inline-flex; align-items: center; gap: 0.3rem; }
 .v5-hint, .v5-warn, .v5-readonly { display: flex; align-items: center; gap: 0.6rem; margin: 0.3rem 0 0.9rem; font-weight: 600; color: var(--on-var); }
@@ -66,6 +76,22 @@
 .v5-readonly { color: var(--on); font-size: 1.05rem; }
 .v5-row { display: flex; align-items: center; gap: var(--gap); margin: 0.2rem 0 0.8rem; }
 .v5-muted { color: var(--on-var); }
+
+/* the "more" button of a header and its menu */
+.v5-menuwrap { position: relative; flex: none; }
+.v5-menu { position: absolute; z-index: 30; top: calc(100% + 0.3rem); right: 0; display: grid; gap: 2px; min-width: 16rem; max-width: calc(100vw - 2rem); padding: 0.4rem; border-radius: var(--r); background: var(--surface-4); box-shadow: 0 8px 28px rgb(0 0 0 / 45%); animation: v5-fade var(--t) var(--ease); }
+.v5-menuitem { display: flex; align-items: center; gap: 0.85rem; min-height: var(--ctl); padding: 0.3rem 0.9rem; border: 0; border-radius: 0.8rem; background: transparent; color: var(--on); font: 700 0.95rem var(--font); text-align: left; cursor: pointer; }
+.v5-menuitem:hover, .v5-menuitem:focus-visible { background: var(--surface-3); outline: none; }
+.v5-menuitem span { display: grid; min-width: 0; }
+.v5-menuitem small { color: var(--on-var); font-weight: 600; font-size: 0.78rem; }
+.v5-menuitem.danger { color: var(--error); }
+.v5-menuitem:disabled { opacity: 0.4; cursor: default; }
+
+/* a row of choices (groups, filters) is ONE line that scrolls sideways: it never wraps into a second and third row */
+.v5-chips { display: flex; flex-wrap: nowrap; gap: var(--gap); margin-inline: -1rem; padding: 0.15rem 1rem; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; touch-action: pan-x; }
+.v5-chips::-webkit-scrollbar { display: none; }
+.v5-chips > * { flex: none; scroll-snap-align: start; }
+.v5-sheet-toolbar .v5-chips { margin-inline: -1rem; }
 
 /* status group: four equal squares, icon over a short label */
 .v5-seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); margin: 0.1rem 0 0.8rem; }

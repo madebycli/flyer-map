@@ -25,12 +25,13 @@ const measure = (page) => page.locator('.v5-sheet').evaluate((sheet) => {
   const small = controls.map((el) => { const r = target(el).getBoundingClientRect(); return { el, w: r.width, h: r.height }; }).filter(({ w, h }) => w < 43.5 || h < 43.5)
     .map(({ el, w, h }) => `${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ')[0] : ''}「${name(el).slice(0, 24)}」${Math.round(w)}×${Math.round(h)}`);
   const unnamed = controls.filter((el) => !name(el)).map((el) => `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`);
-  const kids = [...sheet.children].filter(visible);
+  const body = sheet.querySelector('.v5-sheet-body') ?? sheet;
+  const kids = [...body.children].filter(visible);
   const gaps = [];
   for (let i = 1; i < kids.length; i++) {
     const a = kids[i - 1], b = kids[i];
     const gap = Math.round(b.getBoundingClientRect().top - a.getBoundingClientRect().bottom);
-    const tight = a.tagName === 'H3' || a.classList.contains('v5-handle') || b.classList.contains('v5-statushint');
+    const tight = a.tagName === 'H3' || b.classList.contains('v5-statushint');
     const want = tight ? 8 : 16;
     if (Math.abs(gap - want) > 1) gaps.push(`${a.tagName.toLowerCase()}.${String(a.className).split(' ')[0]} → ${b.tagName.toLowerCase()}.${String(b.className).split(' ')[0]}: ${gap}px (soll ${want})`);
   }
@@ -47,7 +48,7 @@ const measure = (page) => page.locator('.v5-sheet').evaluate((sheet) => {
     const cut = [el, ...el.querySelectorAll('*')].some((node) => node.textContent.trim() && node.scrollWidth > node.clientWidth && getComputedStyle(node).overflowX !== 'visible' && node.clientWidth > 0);
     return spills || cut ? [`「${el.textContent.trim().slice(0, 30)}」`] : [];
   });
-  return { clipped, faint, overflow: Math.max(sheet.scrollWidth - sheet.clientWidth, document.documentElement.scrollWidth - innerWidth), small, unnamed, gaps };
+  return { clipped, faint, overflow: Math.max(sheet.scrollWidth - sheet.clientWidth, body.scrollWidth - body.clientWidth, document.documentElement.scrollWidth - innerWidth), small, unnamed, gaps };
 });
 
 const audit = async (page, tag, sheet) => {

@@ -6,7 +6,7 @@ import type { SearchHit } from './search.ts';
 import type { EngineClient } from './engineClient.ts';
 import { ago, emptyTally, percentOf, tallyTotal, type HouseStats, type Tally } from './stats.ts';
 import { CountdownCard } from './roomsUi.tsx';
-import { SheetFrame } from './sheet.tsx';
+import { EmptyState, SheetFrame } from './sheet.tsx';
 import { planIsEmpty, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import type { ApplyProgress } from './templateApply.ts';
 import { Icon, WavyProgress, type IconName } from '../../ui/index.ts';
@@ -140,17 +140,28 @@ export function SearchSheet({ engine, onPick, onClose }: { engine: EngineClient 
     const timer = window.setTimeout(() => { engine.search(query).then((hits) => { if (!stale) setResults(hits); }, () => { if (!stale) setResults([]); }); }, 50);
     return () => { stale = true; window.clearTimeout(timer); };
   }, [engine, query]);
+  const bar = (
+    <label className="v5-searchbar">
+      <Icon name="search" size={22} />
+      <input ref={input} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Straße oder Adresse" aria-label="Straße oder Adresse suchen" inputMode="search" enterKeyHint="search" autoComplete="off" autoCorrect="off" spellCheck={false} />
+      {query && <button type="button" className="v5-icon-btn" onClick={() => { setQuery(''); input.current?.focus(); }} aria-label="Suche leeren" title="Suche leeren"><Icon name="close" size={22} /></button>}
+    </label>
+  );
   return (
-    <SheetFrame icon="search" title="Suche" onClose={onClose}>
-      <div className="v5-row"><input ref={input} className="v5-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Straße oder Adresse" aria-label="Straße oder Adresse suchen" inputMode="search" autoComplete="off" /></div>
-      <div className="v5-results">
-        {results.map((r) => (
-          <button key={`${r.kind}${r.id}`} className="v5-result" onClick={() => onPick(r)}>
-            <Icon name={r.kind === 'street' ? 'road' : 'house'} size={22} /><b>{r.label}</b><small>{r.detail}</small>
-          </button>
-        ))}
-        {query.trim() && !results.length && <p className="v5-hint"><Icon name="info" size={20} />Nichts gefunden.</p>}
-      </div>
+    <SheetFrame icon="search" title="Suche" onClose={onClose} toolbar={bar} meta={results.length ? <span>{results.length} Treffer</span> : undefined}>
+      {results.length > 0 && (
+        <div className="v5-results">
+          {results.map((r) => (
+            <button key={`${r.kind}${r.id}`} className="v5-result" onClick={() => onPick(r)}>
+              <span className="v5-result-ico"><Icon name={r.kind === 'street' ? 'road' : 'house'} size={22} /></span>
+              <span className="v5-result-text"><b>{r.label}</b><small>{r.kind === 'street' ? 'Straße' : 'Haus'}</small></span>
+              <small className="v5-result-detail">{r.detail}</small>
+            </button>
+          ))}
+        </div>
+      )}
+      {query.trim() && !results.length && <EmptyState icon="search" title="Nichts gefunden" text="Prüfe die Schreibweise oder suche nur nach dem Straßennamen." />}
+      {!query.trim() && <EmptyState icon="search" title="Straße oder Adresse" text="Die Suche läuft über alle Straßen und Häuser der geladenen Kartenteile." />}
     </SheetFrame>
   );
 }
