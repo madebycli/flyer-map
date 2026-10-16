@@ -1,7 +1,7 @@
 import type { RoadSnap } from './streetNetwork.ts';
 
 export const SMART_POINT_FALLBACK_RADIUS_METERS = 20;
-export const SMART_POINT_AMBIGUITY_METERS = 3;
+export const SMART_POINT_AMBIGUITY_METERS = 0.5;
 
 /**
  * Preserve pointer intent before route optimization.
@@ -16,10 +16,14 @@ export const SMART_POINT_AMBIGUITY_METERS = 3;
 export function smartPointCandidates(
   candidates: readonly RoadSnap[],
   sourceIds: readonly string[],
+  selectableTaskIds: ReadonlySet<string> | null = null,
 ): RoadSnap[] {
   const sourceSet = sourceIds.length > 0 ? new Set(sourceIds) : null;
   const eligible = candidates
-    .filter((candidate) => sourceSet ? sourceSet.has(candidate.task.id) : candidate.distance <= SMART_POINT_FALLBACK_RADIUS_METERS)
+    .filter((candidate) => {
+      if (selectableTaskIds && !selectableTaskIds.has(candidate.task.id)) return false;
+      return sourceSet ? sourceSet.has(candidate.task.id) : candidate.distance <= SMART_POINT_FALLBACK_RADIUS_METERS;
+    })
     .sort((left, right) => left.distance - right.distance || left.task.id.localeCompare(right.task.id));
 
   if (eligible.length === 0) return [];
