@@ -6,6 +6,7 @@ import { diag, tracedFetch } from '../diag/index.ts';
 import { packPlan } from '../engine/index.ts';
 import { mapLimit } from './pool.ts';
 import type { RoomRecord } from './roomsLogic.ts';
+import { campaignOfPath, renewAdminSession } from './session.ts';
 
 export type CollectionAreaInfo = { status: 'open' | 'claimed' | 'in-progress' | 'completed' | 'archived'; color: string; runId: string | null; claimedBy: string | null; claimedById: string | null };
 export type CollectionRunInfo = { id: string; mainAreaId: string; members: { collectorId: string; label: string }[] };
@@ -43,7 +44,10 @@ export class V5ApiError extends Error {
 }
 
 export async function call(path: string, init?: RequestInit): Promise<Response> {
-  const response = await tracedFetch(path, { credentials: 'same-origin', ...init });
+  let response = await tracedFetch(path, { credentials: 'same-origin', ...init });
+  // An expired Organisator session (12 h) is renewed from the remembered device, then the request goes again once: it was refused before anything happened.
+  const campaignId = response.status === 401 ? campaignOfPath(path) : null;
+  if (campaignId && await renewAdminSession(campaignId)) response = await tracedFetch(path, { credentials: 'same-origin', ...init });
   if (response.ok) return response;
   let code = 'http_' + response.status, message = `Serverfehler ${response.status}`;
   try { const body = await response.clone().json() as { error?: { code?: string; message?: string } }; code = body.error?.code ?? code; message = body.error?.message ?? message; } catch { /* non-JSON error */ }

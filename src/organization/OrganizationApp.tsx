@@ -128,7 +128,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
   const next = preserveDiagnosticFlag(safeOrganizationNext(new URLSearchParams(window.location.search).get("next")), window.location.search);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberDevice, setRememberDevice] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [phase, setPhase] = useState<"password" | "factor" | "recovery-done">("password");
   const [factorMode, setFactorMode] = useState<"totp" | "recovery">("totp");
   const [factor, setFactor] = useState("");
@@ -192,7 +192,7 @@ function LoginPage({ navigate }: { navigate: Navigate }) {
             <Field label="Passwort"><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></Field>
             <label className="ui-check">
               <input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />
-              <span>Angemeldet bleiben</span>
+              <span>Angemeldet bleiben (nur auf eigenen Geräten)</span>
             </label>
             {error ? <Notice tone="error">{error}</Notice> : null}
             <Button tone="primary" busy={busy}>{busy ? "Prüfe …" : "Weiter"}</Button>
