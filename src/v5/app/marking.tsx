@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Feature } from 'geojson';
 import type { RouteResult } from '../engine/index.ts';
 import type { FieldMap, Hit, Pt } from '../map/fieldMap.ts';
 import { segmentKey, type EntityKey, type Status } from '../store/types.ts';
@@ -77,14 +76,12 @@ export function useMarking(ctx: MarkContext, active: boolean) {
     if (mode === 'paint') {
       // Highlighter: a thick see-through stroke follows the finger; everything it touches on the screen is previewed and, on lifting, marked.
       const houses = new Set<string>(), segments = new Set<string>();
-      let points: Pt[] = [], last: Pt | null = null, frame = 0, fade = 0;
-      const clearStroke = () => { if (fade) { window.clearTimeout(fade); fade = 0; } fm.setDraw({ type: 'FeatureCollection', features: [] }); };
+      let points: Pt[] = [], last: Pt | null = null, frame = 0;
+      const clearStroke = () => fm.setInk(null);
       const draw = () => {
         frame = 0;
         const { brush: b, size: sz, index, withHouses: wh, housesOnly: ho } = now();
-        const coords = points.map((p, i) => fm.unproject(points.length === 1 ? { x: p.x + i * 0.5, y: p.y } : p));
-        if (points.length === 1) coords.push(fm.unproject({ x: points[0].x + 0.5, y: points[0].y }));
-        fm.setDraw({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { kind: 'stroke', color: fm.statusColor(b), width: BRUSH_PX[sz] }, geometry: { type: 'LineString', coordinates: coords } }] });
+        fm.setInk({ kind: 'stroke', points, color: fm.statusColor(b), width: BRUSH_PX[sz] });
         if (index) fm.setPreview(keysForTouched(index, { houses, segments }, wh, ho));
       };
       const touch = (a: Pt, b: Pt) => {
@@ -109,7 +106,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
           fm.setPreview([]);
           if (keys.length) apply(keys, b, keys.length === 1 ? '1' : String(keys.length));
           // the stroke stays a moment, then fades away: the marked colours take over
-          fade = window.setTimeout(() => { fade = 0; fm.setDraw({ type: 'FeatureCollection', features: [] }); }, 450);
+          fm.fadeInk();
         },
         cancel: () => { if (frame) cancelAnimationFrame(frame); frame = 0; fm.setPreview([]); clearStroke(); },
       });
@@ -117,13 +114,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
     }
     if (mode === 'lasso') {
       let points: Pt[] = [], drawFrame = 0;
-      const drawn = (closed: boolean) => {
-        const coords = points.map((p) => fm.unproject(p));
-        const features: Feature[] = [];
-        if (coords.length >= 2) features.push({ type: 'Feature', properties: { kind: 'line' }, geometry: { type: 'LineString', coordinates: closed ? [...coords, coords[0]] : coords } });
-        if (coords.length >= 3) features.push({ type: 'Feature', properties: { kind: 'fill' }, geometry: { type: 'Polygon', coordinates: [[...coords, coords[0]]] } });
-        fm.setDraw({ type: 'FeatureCollection', features });
-      };
+      const drawn = (closed: boolean) => fm.setInk({ kind: 'lasso', points, closed });
       fm.setGesture({
         hold: true,
         down: (p) => { points = [p]; return true; },
@@ -133,7 +124,7 @@ export function useMarking(ctx: MarkContext, active: boolean) {
           if (drawFrame) { cancelAnimationFrame(drawFrame); drawFrame = 0; }
           const { engine, brush: b, housesOnly: ho, apply } = now();
           const ring = points.map((p) => fm.unproject(p));
-          points = []; fm.setDraw({ type: 'FeatureCollection', features: [] });
+          points = []; fm.setInk(null);
           if (!moved || !engine || ring.length < 3) return;
           // the engine (Rust) knows where every house and street piece lies; the answer arrives a moment later
           void engine.lasso([...ring, ring[0]], ho).then((picked) => {
@@ -141,9 +132,9 @@ export function useMarking(ctx: MarkContext, active: boolean) {
             if (keys.length) apply(keys, b, String(keys.length));
           }, () => { /* engine gone (view closed) */ });
         },
-        cancel: () => { if (drawFrame) { cancelAnimationFrame(drawFrame); drawFrame = 0; } points = []; fm.setDraw({ type: 'FeatureCollection', features: [] }); },
+        cancel: () => { if (drawFrame) { cancelAnimationFrame(drawFrame); drawFrame = 0; } points = []; fm.setInk(null); },
       });
-      return () => { fm.setGesture(null); fm.setDraw({ type: 'FeatureCollection', features: [] }); };
+      return () => { fm.setGesture(null); fm.setInk(null); };
     }
     fm.setGesture(null);
   }, [active, mode, ctx.fieldMap]);

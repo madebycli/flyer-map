@@ -71,7 +71,7 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
   transition: width var(--t) var(--ease), height var(--t) var(--ease), background var(--t);
 }
 .v5-fab[data-state="panel"], .v5-fab[data-state="status"] { width: 10.4rem; height: 10.4rem; background: var(--glass); color: var(--on); }
-.v5-fab[data-state="options"] { width: 19.2rem; height: 14.4rem; background: var(--glass); color: var(--on); }
+.v5-fab[data-state="options"] { width: min(21.6rem, calc(100vw - 2.4rem)); height: 15.6rem; background: var(--glass); color: var(--on); }
 .v5-fab-main { position: absolute; inset: 0; display: grid; place-items: center; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .v5-fab-grid { position: absolute; inset: 0; display: grid; gap: 0.5rem; padding: 0.6rem; animation: v5-fade var(--t) var(--ease); }
 .v5-fab[data-state="panel"] .v5-fab-grid, .v5-fab[data-state="status"] .v5-fab-grid { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
@@ -85,7 +85,7 @@ html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-siz
 }
 .v5-tile:active:not(:disabled) { transform: scale(0.93); }
 .v5-tile:disabled { opacity: 0.4; cursor: default; }
-.v5-tile small { max-width: 100%; padding: 0 0.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; font-weight: 700; line-height: 1; color: var(--on-var); }
+.v5-tile small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-width: 100%; padding: 0 0.2rem; overflow: hidden; overflow-wrap: anywhere; text-align: center; font-size: 0.72rem; font-weight: 700; line-height: 1.1; color: var(--on-var); }
 .v5-tile b { font-size: 1.4rem; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; }
 .v5-tile.on { background: var(--primary-container); color: var(--on-primary-container); }
 .v5-tile.on small { color: inherit; }

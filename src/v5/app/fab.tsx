@@ -97,10 +97,9 @@ export function MarkFab({ phase, setPhase, marking, kind, theme, canUndoLast, on
               <Icon name={STATUS_ICON[status]} size={24} /><small>{labels[status]}</small>
             </button>
           ))}
-          {marking.mode === 'paint' && <button className="v5-tile" onClick={() => marking.setSize(BRUSH_SIZES[(BRUSH_SIZES.indexOf(marking.size) + 1) % BRUSH_SIZES.length])} aria-label={`Strichbreite: ${BRUSH_LABEL[marking.size]}`} title="Strichbreite ändern"><Icon name="brush" size={24} /><small>{BRUSH_LABEL[marking.size]}</small></button>}
+          <button className="v5-tile" onClick={() => marking.setSize(BRUSH_SIZES[(BRUSH_SIZES.indexOf(marking.size) + 1) % BRUSH_SIZES.length])} disabled={marking.mode !== 'paint'} aria-label={`Strichbreite: ${BRUSH_LABEL[marking.size]}`} title={marking.mode === 'paint' ? 'Strichbreite ändern (antippen)' : 'Die Strichbreite gilt nur bei „Wischen“'}><Icon name="brush" size={24} /><small>{`Strich ${BRUSH_LABEL[marking.size]}`}</small></button>
           <button className={`v5-tile${marking.withHouses ? ' on' : ''}`} onClick={() => marking.setWithHouses(!marking.withHouses)} aria-pressed={marking.withHouses} aria-label="Häuser mitmarkieren" title="Häuser an der Straße mitmarkieren"><Icon name="house" size={24} /><small>+ Häuser</small></button>
-          <button className={`v5-tile${marking.housesOnly ? ' on' : ''}`} onClick={() => marking.setHousesOnly(!marking.housesOnly)} aria-pressed={marking.housesOnly} aria-label="Nur Straßen mit Häusern" title="Straßen ohne Häuser auslassen und ausblenden"><Icon name="road" size={24} /><small>Nur mit Haus</small></button>
-          <button className="v5-tile" onClick={exit} aria-label="Markieren beenden" title="Markieren beenden"><Icon name="close" size={24} /><small>Beenden</small></button>
+          <button className={`v5-tile${marking.housesOnly ? ' on' : ''}`} onClick={() => marking.setHousesOnly(!marking.housesOnly)} aria-pressed={marking.housesOnly} aria-label="Nur Straßen mit Häusern" title="Straßen ohne Häuser auslassen und ausblenden"><Icon name="road" size={24} /><small>Nur mit Häusern</small></button>
           <button className="v5-tile go" onClick={() => setPhase('panel')} aria-label="Weiter markieren" title="Weiter markieren"><Icon name="check" size={30} /></button>
         </div>
       )}

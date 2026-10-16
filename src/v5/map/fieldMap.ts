@@ -115,6 +115,8 @@ function distanceToSegment(p: Pt, a: Pt, b: Pt): number {
 
 export type Hit = { kind: 'segment' | 'house' | 'note' | 'pickup'; id: string };
 export type Pt = { x: number; y: number };
+/** What a finger tool draws while it works: the highlighter stroke (a thick line of `width` px) or the lasso outline. */
+export type Ink = { kind: 'stroke'; points: Pt[]; color: string; width: number } | { kind: 'lasso'; points: Pt[]; closed: boolean };
 /** A pointer gesture owned by the active tool. `down` decides whether the tool takes it (map pan is suspended then). */
 export type Gesture = {
   /**
@@ -442,8 +444,6 @@ export class FieldMap {
     });
     // Tool overlay: lasso, area edit polygon, vertex and midpoint handles (always on top).
     map.addLayer({ id: 'v5-draw-fill', type: 'fill', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'fill'], paint: { 'fill-color': ['coalesce', ['get', 'color'], '#7aa8ff'], 'fill-opacity': 0.18 } });
-    // Wischen: the highlighter stroke, as wide as the brush and see-through, in the colour of the status it will set
-    map.addLayer({ id: 'v5-draw-stroke', type: 'line', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'stroke'], layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': ['coalesce', ['get', 'color'], '#7aa8ff'], 'line-width': ['coalesce', ['get', 'width'], 40], 'line-opacity': 0.4 } });
     map.addLayer({ id: 'v5-draw-line', type: 'line', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'line'], layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': ['coalesce', ['get', 'color'], '#7aa8ff'], 'line-width': 3 } });
     map.addLayer({
       id: 'v5-draw-mid', type: 'circle', source: DRAW_SOURCE, filter: ['==', ['get', 'kind'], 'mid'],
@@ -690,6 +690,67 @@ export class FieldMap {
 
   setDraw(collection: FeatureCollection) { this.draw = collection; this.pushDraw(); }
   private pushDraw() { (this.map.getSource(DRAW_SOURCE) as GeoJSONSource | undefined)?.setData(this.draw); }
+
+  /**
+   * The ink of the finger tools (highlighter stroke, lasso) lives on a canvas of its own in screen pixels, not in a map layer:
+   * a map line layer draws every segment and round join as separate triangles, so a wide see-through stroke showed fans, spikes and
+   * dark overlaps. One canvas path is one shape; the see-through look comes from the opacity of the whole canvas.
+   */
+  setInk(shape: Ink | null) {
+    if (this.inkTimer) { window.clearTimeout(this.inkTimer); this.inkTimer = 0; }
+    const canvas = this.inkCanvas;
+    if (!shape && !canvas) return;
+    const el = this.inkElement();
+    const base = this.map.getCanvas();
+    const w = base.clientWidth, h = base.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 3);
+    if (el.width !== Math.round(w * dpr) || el.height !== Math.round(h * dpr)) { el.width = Math.round(w * dpr); el.height = Math.round(h * dpr); el.style.width = `${w}px`; el.style.height = `${h}px`; }
+    const g = el.getContext('2d');
+    if (!g) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    el.style.transition = 'none';
+    if (!shape || !shape.points.length) { el.style.opacity = '0'; return; }
+    const path = () => { g.beginPath(); shape.points.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); };
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    if (shape.kind === 'stroke') {
+      el.style.opacity = '0.42';
+      g.strokeStyle = shape.color; g.lineWidth = shape.width;
+      path();
+      if (shape.points.length === 1) g.lineTo(shape.points[0].x + 0.01, shape.points[0].y);
+      g.stroke();
+    } else {
+      el.style.opacity = '1';
+      const color = '#7aa8ff';
+      if (shape.points.length >= 3) { path(); g.closePath(); g.globalAlpha = 0.2; g.fillStyle = color; g.fill('evenodd'); g.globalAlpha = 1; } // even-odd: the rule the engine selects by
+      g.strokeStyle = color; g.lineWidth = 3;
+      path(); if (shape.closed) g.closePath();
+      g.stroke();
+    }
+  }
+
+  /** Lets the ink fade away (the marked colours take over), then clears it. */
+  fadeInk(ms = 420) {
+    const el = this.inkCanvas;
+    if (!el) return;
+    if (this.inkTimer) window.clearTimeout(this.inkTimer);
+    el.style.transition = `opacity ${ms}ms ease-out`;
+    el.style.opacity = '0';
+    this.inkTimer = window.setTimeout(() => { this.inkTimer = 0; this.setInk(null); }, ms + 30);
+  }
+
+  private inkCanvas: HTMLCanvasElement | null = null;
+  private inkTimer = 0;
+  private inkElement(): HTMLCanvasElement {
+    if (this.inkCanvas) return this.inkCanvas;
+    const el = document.createElement('canvas');
+    el.className = 'v5-ink';
+    el.setAttribute('aria-hidden', 'true');
+    el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;opacity:0';
+    this.map.getCanvasContainer().appendChild(el);
+    // the ink is in screen pixels: when the map moves under it, it is gone
+    this.map.on('movestart', () => { if (this.inkCanvas && this.inkCanvas.style.opacity !== '0') this.setInk(null); });
+    return (this.inkCanvas = el);
+  }
 
   /** Area under a screen point (areas are drawn below houses, so this is only asked by area tools). */
   hitArea(point: Pt): string | null {
