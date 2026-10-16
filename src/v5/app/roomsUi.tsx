@@ -75,26 +75,6 @@ export function CountdownCard({ window, now, progress }: { window: Window | null
   );
 }
 
-const toLocalInput = (iso: string | null) => { if (!iso) return ''; const d = new Date(iso); const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
-
-/** Admin: when the Aktion starts and when everything has to be done. Both optional. */
-function WindowEditor({ window, busy, onSave }: { window: Window | null; busy: boolean; onSave(next: Window): void }) {
-  const [start, setStart] = useState(toLocalInput(window?.startsAt ?? null)), [end, setEnd] = useState(toLocalInput(window?.endsAt ?? null));
-  useEffect(() => { setStart(toLocalInput(window?.startsAt ?? null)); setEnd(toLocalInput(window?.endsAt ?? null)); }, [window?.startsAt, window?.endsAt]);
-  const iso = (v: string) => (v ? new Date(v).toISOString() : null);
-  const bad = !!start && !!end && new Date(end) <= new Date(start);
-  return (
-    <div className="v5-form">
-      <label className="v5-field"><span>Start</span><input className="v5-input" type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} aria-label="Start des Zeitfensters" disabled={busy} /></label>
-      <label className="v5-field"><span>Ende</span><input className="v5-input" type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Ende des Zeitfensters" disabled={busy} /></label>
-      {bad && <p className="v5-warn" role="alert"><Icon name="warning" size={20} />Das Ende muss nach dem Start liegen.</p>}
-      <div className="v5-row">
-        <button className="v5-btn primary" style={{ marginTop: 0 }} disabled={busy || bad || (!start && !end && !window)} onClick={() => onSave({ startsAt: iso(start), endsAt: iso(end) })}><Icon name="check" size={20} />Speichern</button>
-        {window && <button className="v5-btn" style={{ marginTop: 0 }} disabled={busy} onClick={() => { setStart(''); setEnd(''); onSave({ startsAt: null, endsAt: null }); }}><Icon name="close" size={20} />Entfernen</button>}
-      </div>
-    </div>
-  );
-}
 
 const dayText = (iso: string) => new Date(iso).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -113,12 +93,11 @@ type RoomsProps = {
   onStart(): void;
   onOpen(room: RoomRecord): void;
   onDelete(room: RoomRecord): void;
-  onWindow(next: Window): void;
   onClose(): void;
 };
 
 /** Runs: the time left, the rooms that are open, a way to open one, and the record of the finished ones (the numbers for the feedback round and for planning). */
-export function RoomsSheet({ role, window, rooms, now, progress, staff, canStart, startHint, busy, error, onStart, onOpen, onDelete, onWindow, onClose }: RoomsProps) {
+export function RoomsSheet({ role, window, rooms, now, progress, staff, canStart, startHint, busy, error, onStart, onOpen, onDelete, onClose }: RoomsProps) {
   useTick(true, 1000);
   const t = now();
   const active = rooms.filter((r) => r.status === 'active');
@@ -175,13 +154,6 @@ export function RoomsSheet({ role, window, rooms, now, progress, staff, canStart
               );
             })}
           </div>
-        </>
-      )}
-      {role === 'admin' && (
-        <>
-          <h3>Zeitfenster der Aktion</h3>
-          <p className="v5-hint" style={{ marginTop: 0 }}><Icon name="info" size={20} />Start und Ende der Aktion. Alle sehen den Countdown, auch im Menü.</p>
-          <WindowEditor window={window} busy={busy} onSave={onWindow} />
         </>
       )}
     </SheetFrame>

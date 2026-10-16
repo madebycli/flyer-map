@@ -107,10 +107,12 @@ await admin.screenshot({ path: `${shots}/t22-runs.png` });
 
 // ── the time window ────────────────────────────────────────────
 const inTwoWeeks = new Date(Date.now() + 14 * 86_400_000 + 3 * 3_600_000), weekAgo = new Date(Date.now() - 7 * 86_400_000);
-const local = (d) => { const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
-await admin.getByLabel('Start des Zeitfensters').fill(local(weekAgo));
-await admin.getByLabel('Ende des Zeitfensters').fill(local(inTwoWeeks));
-await admin.getByRole('button', { name: 'Speichern' }).click();
+// the window is set when the Aktion is created (organiser pages, flow 11), not in the Runs sheet: here it is set through the API and read back
+check('the Runs sheet has no time-window form', (await admin.getByLabel('Start des Zeitfensters').count()) === 0);
+await admin.evaluate(async ([s, e]) => { await fetch('/api/v5/campaigns/campaign_n/window', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ startsAt: s, endsAt: e }) }); }, [weekAgo.toISOString(), inTwoWeeks.toISOString()]);
+await admin.reload();
+await admin.waitForSelector('.v5-pill', { timeout: 120000 });
+await menuTile(admin, 'Runs');
 check('the countdown appears with days and hours', await until(async () => /Noch 14 Tage/.test(await admin.locator('.v5-countdown').innerText().catch(() => '')), 10000), await admin.locator('.v5-countdown').innerText().catch(() => ''));
 await settle(admin);
 await admin.screenshot({ path: `${shots}/t22-window.png` });

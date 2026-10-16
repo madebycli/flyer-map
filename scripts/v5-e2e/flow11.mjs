@@ -41,10 +41,16 @@ const json = (route, body, status = 200) => route.fulfill({ status, contentType:
 async function open(path, { signedIn = true, viewport = { width: 390, height: 844 } } = {}) {
   const ctx = await b.newContext({ viewport });
   const page = await ctx.newPage();
-  const seen = { posts: [], external: [], me: 0, lists: 0 };
+  const seen = { posts: [], external: [], me: 0, lists: 0, windowPuts: [] };
+  let storedWindow = null;
   let signed = signedIn;
   page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
   page.on('request', (r) => { const u = new URL(r.url()); if (u.hostname !== 'localhost' && u.protocol.startsWith('http')) seen.external.push(r.url()); });
+  await page.route(/\/api\/v5\/campaigns\/[^/]+\/(window|meta)$/, async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'PUT') { storedWindow = JSON.parse(route.request().postData() ?? '{}'); seen.windowPuts.push(storedWindow); return json(route, { ok: true }); }
+    return json(route, { window: storedWindow });
+  });
   await page.route(/\/api\/organizations?\//, async (route) => {
     const url = new URL(route.request().url()), p = url.pathname, m = route.request().method();
     if (m === 'POST') seen.posts.push(p);
@@ -107,8 +113,13 @@ const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollW
   await page.getByLabel('Name der Aktion').waitFor();
   check('the focus picker mounts a map canvas without any third-party request', await until(async () => (await page.locator('.ui-map canvas').count()) === 1) && seen.external.length === 0, seen.external.join(','));
   await page.getByLabel('Name der Aktion').fill('Neu');
+  check('the new-Aktion form asks for the time window (optional start and end)', (await page.getByLabel('Start (optional)').count()) === 1 && (await page.getByLabel('Ende (optional)').count()) === 1);
+  await page.getByLabel('Start (optional)').fill('2027-03-01T09:00');
+  await page.getByLabel('Ende (optional)').fill('2027-03-14T18:00');
   await page.getByRole('button', { name: 'Aktion erstellen' }).click();
   check('creating leads to the Aktion page with the lifecycle control and the Feldkarte link', await until(async () => /\/admin\/campaign\/campaign_new/.test(page.url()) && (await page.getByRole('link', { name: 'Feldkarte öffnen' }).count()) === 1));
+  check('the window chosen when creating was saved for the new Aktion', await until(async () => seen.windowPuts.length === 1 && /2027-03-01/.test(seen.windowPuts[0].startsAt ?? '') && /2027-03-14/.test(seen.windowPuts[0].endsAt ?? '')), JSON.stringify(seen.windowPuts));
+  check('the Aktion page shows the window and can change it', await until(async () => (await page.getByLabel('Start (optional)').inputValue().catch(() => '')) .startsWith('2027-03-01')) && (await page.getByRole('button', { name: 'Speichern' }).count()) === 1);
   await pageAudit(page, 'o4-new');
   await page.screenshot({ path: `${shots}/o4-new.png` });
   await page.context().close();

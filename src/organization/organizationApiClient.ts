@@ -403,3 +403,19 @@ export function disableOrganizationMfa(organizationId: string, currentPassword: 
     body: JSON.stringify({ organizationId, currentPassword, required: false }),
   });
 }
+
+/** The Aktion's time window (start and end, both optional; ISO strings). It lives with the field data, so it is read and written through the field API. */
+export type CampaignWindow = { startsAt: string | null; endsAt: string | null };
+
+export async function getCampaignWindow(campaignId: string): Promise<CampaignWindow | null> {
+  const response = await fetch(`/api/v5/campaigns/${encodeURIComponent(campaignId)}/meta`, { credentials: "same-origin" });
+  if (!response.ok) throw new Error(`Zeitfenster konnte nicht gelesen werden (${response.status}).`);
+  return ((await response.json()) as { window?: CampaignWindow | null }).window ?? null;
+}
+
+export async function setCampaignWindow(campaignId: string, window: CampaignWindow): Promise<void> {
+  const response = await fetch(`/api/v5/campaigns/${encodeURIComponent(campaignId)}/window`, {
+    method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(window),
+  });
+  if (!response.ok) throw new Error(`Zeitfenster konnte nicht gespeichert werden (${response.status}).`);
+}

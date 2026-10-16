@@ -12,7 +12,7 @@ import { areaAt } from '../areas/nearest.ts';
 import { makeTemplate, parseTemplate, planTemplate, serializeTemplate, templateFileName, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import { downloadText } from './download.ts';
 import { applyTemplatePlan, type ApplyProgress } from './templateApply.ts';
-import { fetchProgress, type ServerProgress, changeRoom, deleteRoom, finishRoom, setWindow, startRoom, buildPackFor, createTeam, archiveCollectionArea, deleteArea, deleteTeam, forceReleaseArea, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
+import { fetchProgress, type ServerProgress, changeRoom, deleteRoom, finishRoom, startRoom, buildPackFor, createTeam, archiveCollectionArea, deleteArea, deleteTeam, forceReleaseArea, forgetArea, fetchLegacySnapshot, pruneArea, PruneConfirmRequired, renameArea, renameCampaign, setAreaTeam, updateTeam } from './api.ts';
 import { AreaEditBar, MAIN_ID, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
@@ -737,8 +737,7 @@ export function App({ campaignId }: { campaignId: string }) {
       {ready && roomsOn && meta && panel === 'rooms' && (
         <RoomsSheet role={meta.role} window={meta.window} rooms={rooms.rooms} now={rooms.now} progress={percent} staff={isStaff} canStart={canStartRoom} startHint={startHint} busy={roomBusy} error={roomError ?? rooms.error}
           onStart={() => { setRoomError(null); setPanel('roomstart'); }} onOpen={openRoom}
-          onDelete={(r) => { if (window.confirm(`Run „${r.areaName}“ löschen? Die Zahlen sind danach weg.`)) void roomAction(async () => { await deleteRoom(campaignId, r.id); await rooms.refresh(); }); }}
-          onWindow={(next) => void roomAction(async () => { await setWindow(campaignId, next); await campaign.refreshMeta(); })} onClose={() => setPanel(null)} />
+          onDelete={(r) => { if (window.confirm(`Run „${r.areaName}“ löschen? Die Zahlen sind danach weg.`)) void roomAction(async () => { await deleteRoom(campaignId, r.id); await rooms.refresh(); }); }} onClose={() => setPanel(null)} />
       )}
       {ready && roomsOn && panel === 'roomstart' && (
         <RoomStartSheet areas={startableAreas} defaultAreaId={startableAreas[0]?.id ?? ''} busy={roomBusy} error={roomError}

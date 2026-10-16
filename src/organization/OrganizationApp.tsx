@@ -6,6 +6,9 @@ import {
   completeOrganizationRecovery,
   completeOrganizationTotp,
   createOrganizationCampaign,
+  getCampaignWindow,
+  setCampaignWindow,
+  type CampaignWindow,
   listOrganizationCampaigns,
   skipOrganizationMfaEnrollment,
   updateOrganizationCampaignLifecycle,
@@ -19,6 +22,29 @@ const InviteCenter = lazy(() => import("./OrganizationInviteCenter.tsx").then((m
 const SecurityCenter = lazy(() => import("./OrganizationSecurityCenter.tsx").then((m) => ({ default: m.OrganizationSecurityCenter })));
 
 const LIFECYCLE_LABEL: Record<string, string> = { draft: "Entwurf", active: "Aktiv", completed: "Beendet", archived: "Archiviert" };
+
+const toLocalInput = (iso: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso), p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const toIso = (local: string) => (local ? new Date(local).toISOString() : null);
+const windowProblem = (start: string, end: string) => (start && end && new Date(end) <= new Date(start) ? "Das Ende muss nach dem Start liegen." : null);
+
+/** Start and end of the Aktion, both optional: everybody sees the countdown. */
+function WindowFields({ start, end, onStart, onEnd, disabled }: { start: string; end: string; onStart: (value: string) => void; onEnd: (value: string) => void; disabled?: boolean }) {
+  const problem = windowProblem(start, end);
+  return (
+    <div className="ui-form">
+      <Field label="Start (optional)"><TextInput type="datetime-local" value={start} onChange={(event) => onStart(event.target.value)} disabled={disabled} /></Field>
+      <Field label="Ende (optional)"><TextInput type="datetime-local" value={end} onChange={(event) => onEnd(event.target.value)} disabled={disabled} /></Field>
+      {problem ? <Notice tone="error">{problem}</Notice> : null}
+    </div>
+  );
+}
+
+/** Said once on the Aktion page after creating, when the time window could not be saved together with it. */
+let pendingNotice: string | null = null;
 
 const Problem = ({ children }: { children: string | null }) => <CenterPage><Notice tone="error">{children ?? "Sitzung konnte nicht geladen werden."}</Notice></CenterPage>;
 
@@ -261,6 +287,8 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
   const [name, setName] = useState("");
   const [lifecycle, setLifecycle] = useState<"draft" | "active">("draft");
   const [map, setMap] = useState({ lng: 13.405, lat: 52.52, zoom: 11, bearing: 0 });
+  const [windowStart, setWindowStart] = useState("");
+  const [windowEnd, setWindowEnd] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -279,10 +307,16 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!canCreate || busy) return;
+    const problem = windowProblem(windowStart, windowEnd);
+    if (problem) { setError(problem); return; }
     setBusy(true);
     setError(null);
     try {
       const result = await createOrganizationCampaign(organizationId, { name, lifecycle, map });
+      if (windowStart || windowEnd) {
+        try { await setCampaignWindow(result.campaign.id, { startsAt: toIso(windowStart), endsAt: toIso(windowEnd) }); }
+        catch { pendingNotice = "Die Aktion ist angelegt, das Zeitfenster konnte nicht gespeichert werden. Du kannst es hier nachtragen."; }
+      }
       navigate(`/admin/campaign/${encodeURIComponent(result.campaign.id)}`, true);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -318,6 +352,9 @@ function NewCampaignPage({ navigate }: { navigate: Navigate }) {
             <Radio name="lifecycle" label="Entwurf" checked={lifecycle === "draft"} onChange={() => setLifecycle("draft")} />
             <Radio name="lifecycle" label="Aktiv" checked={lifecycle === "active"} onChange={() => setLifecycle("active")} />
           </Group>
+          <Group legend="Zeitfenster">
+            <WindowFields start={windowStart} end={windowEnd} onStart={setWindowStart} onEnd={setWindowEnd} disabled={busy} />
+          </Group>
           <div className="ui-form">
             <strong>Kartenfokus</strong>
             <AdminMapPicker value={map} onChange={setMap} />
@@ -340,6 +377,27 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [windowLoaded, setWindowLoaded] = useState<CampaignWindow | null | undefined>(undefined);
+  const [windowStart, setWindowStart] = useState("");
+  const [windowEnd, setWindowEnd] = useState("");
+  const [windowNote, setWindowNote] = useState<string | null>(() => { const note = pendingNotice; pendingNotice = null; return note; });
+
+  useEffect(() => {
+    let active = true;
+    getCampaignWindow(campaignId)
+      .then((value) => { if (active) { setWindowLoaded(value); setWindowStart(toLocalInput(value?.startsAt ?? null)); setWindowEnd(toLocalInput(value?.endsAt ?? null)); } })
+      .catch(() => { if (active) setWindowLoaded(null); });
+    return () => { active = false; };
+  }, [campaignId]);
+
+  const saveWindow = async (next: CampaignWindow) => {
+    if (busy) return;
+    setBusy(true);
+    setWindowNote(null);
+    try { await setCampaignWindow(campaignId, next); setWindowLoaded(next); setWindowStart(toLocalInput(next.startsAt)); setWindowEnd(toLocalInput(next.endsAt)); setWindowNote("Zeitfenster gespeichert."); }
+    catch (cause) { setWindowNote(errorMessage(cause)); }
+    finally { setBusy(false); }
+  };
 
   useEffect(() => {
     const me = meState.value;
@@ -395,6 +453,15 @@ function CampaignPage({ navigate, campaignId }: { navigate: Navigate; campaignId
           </Heading>
           <Card title="Lebenszyklus" icon="flag">
             <Segmented label="Lebenszyklus" value={campaign.lifecycle} options={LIFECYCLES.map((value) => ({ value, label: LIFECYCLE_LABEL[value] }))} onChange={(value) => { if (!busy && value !== campaign.lifecycle) void setLifecycle(value); }} />
+          </Card>
+          <Card title="Zeitfenster" icon="later">
+            <p className="ui-muted">Start und Ende der Aktion. Alle sehen den Countdown in der Feldkarte.</p>
+            <WindowFields start={windowStart} end={windowEnd} onStart={setWindowStart} onEnd={setWindowEnd} disabled={busy || windowLoaded === undefined} />
+            {windowNote ? <Notice tone={windowNote.startsWith("Zeitfenster gespeichert") ? "ok" : "error"}>{windowNote}</Notice> : null}
+            <div className="ui-actions">
+              <Button tone="primary" busy={busy} disabled={busy || Boolean(windowProblem(windowStart, windowEnd))} onClick={() => void saveWindow({ startsAt: toIso(windowStart), endsAt: toIso(windowEnd) })}>Speichern</Button>
+              {windowLoaded && (windowLoaded.startsAt || windowLoaded.endsAt) ? <Button disabled={busy} onClick={() => void saveWindow({ startsAt: null, endsAt: null })}>Entfernen</Button> : null}
+            </div>
           </Card>
           <Card title="Kartenfokus" icon="mapPin">
             {campaign.map
