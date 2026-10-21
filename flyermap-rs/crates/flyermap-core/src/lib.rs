@@ -4,6 +4,7 @@
 //! Layout: `status`, `key`, `clock`, `op` are the vocabulary; `overlay`, `outbox`, `conflict`, `changes` are the parts of the store;
 //! `store` composes them and `persisted` is what survives a restart; `progress` counts houses and metres.
 pub mod changes;
+pub mod check;
 pub mod clock;
 pub mod conflict;
 pub mod key;

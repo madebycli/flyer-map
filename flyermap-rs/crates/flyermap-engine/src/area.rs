@@ -41,7 +41,7 @@ pub fn restrict_to_area(network: Network, ring: &[LngLat], cell: Option<[f64; 4]
         .houses
         .into_iter()
         .filter(|h| {
-            point_in_ring(h.center, ring) && cell.as_ref().map_or(true, |c| in_cell(h.center, c))
+            point_in_ring(h.center, ring) && cell.as_ref().is_none_or(|c| in_cell(h.center, c))
         })
         .collect();
     let mut counts: HashMap<&str, u32> = HashMap::default();

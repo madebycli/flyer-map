@@ -38,7 +38,7 @@ const reference = (raw: RawOsm, ring: LngLat[] | null, cell: Cell | null = null)
 test('the committed wasm was built from the committed Rust sources (run scripts/build-wasm.sh after editing the engine crate)', () => {
   const root = new URL('../', import.meta.url);
   const dir = 'flyermap-rs/crates/flyermap-engine';
-  const files = [...readdirSync(new URL(`${dir}/src/`, root)).map((f) => `${dir}/src/${f}`), `${dir}/Cargo.toml`].sort();
+  const files = [...(readdirSync(new URL(`${dir}/src/`, root), { recursive: true }) as string[]).filter((f) => f.endsWith('.rs')).map((f) => `${dir}/src/${f}`), `${dir}/Cargo.toml`].sort();
   const lines = files.map((f) => `${createHash('sha256').update(readFileSync(new URL(f, root))).digest('hex')}  ${f}\n`).join('');
   const digest = createHash('sha256').update(lines).digest('hex');
   assert.equal(digest, readFileSync(new URL('src/v5/engine/wasm/engine.source.sha256', root), 'utf8').trim());

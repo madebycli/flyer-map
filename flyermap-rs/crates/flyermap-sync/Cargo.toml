@@ -1,0 +1,18 @@
+[package]
+name = "flyermap-sync"
+version.workspace = true
+edition.workspace = true
+description = "The push/pull loop of Verteil-Flyer as a sans-I/O state machine: events in, actions out. The host does the HTTP, the timers and the saving."
+publish.workspace = true
+
+[dependencies]
+flyermap-core = { path = "../flyermap-core" }
+flyermap-diag = { path = "../flyermap-diag" }
+flyermap-wire = { path = "../flyermap-wire" }
+serde_json.workspace = true
+
+[dev-dependencies]
+flyermap-rights = { path = "../flyermap-rights" }
+
+[lints]
+workspace = true

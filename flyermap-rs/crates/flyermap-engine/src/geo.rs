@@ -28,6 +28,7 @@ impl Frame {
         (lat - self.lat0) * M_PER_DEG_LAT
     }
     #[inline]
+    #[allow(clippy::wrong_self_convention)] // the name matches the TypeScript reference (`toXY`)
     pub fn to_xy(&self, p: LngLat) -> [f64; 2] {
         [self.x(p[0]), self.y(p[1])]
     }

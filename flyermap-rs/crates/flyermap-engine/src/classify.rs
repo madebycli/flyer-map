@@ -70,12 +70,11 @@ pub fn classify_road(tags: &Tags) -> Result<RoadClass, String> {
     if tag(tags, "area") == "yes" {
         return Err("area".into());
     }
-    if RESTRICTED_ACCESS.contains(&tag(tags, "access"))
-        || RESTRICTED_ACCESS.contains(&tag(tags, "foot"))
+    if (RESTRICTED_ACCESS.contains(&tag(tags, "access"))
+        || RESTRICTED_ACCESS.contains(&tag(tags, "foot")))
+        && !["yes", "designated", "permissive"].contains(&tag(tags, "foot"))
     {
-        if !["yes", "designated", "permissive"].contains(&tag(tags, "foot")) {
-            return Err("restricted_access".into());
-        }
+        return Err("restricted_access".into());
     }
     if STREETS.contains(&highway) {
         return Ok(RoadClass::Street);

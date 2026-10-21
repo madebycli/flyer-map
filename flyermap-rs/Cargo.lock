@@ -49,6 +49,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyermap-sync"
+version = "0.1.0"
+dependencies = [
+ "flyermap-core",
+ "flyermap-diag",
+ "flyermap-rights",
+ "flyermap-wire",
+ "serde_json",
+]
+
+[[package]]
 name = "flyermap-wire"
 version = "0.1.0"
 dependencies = [

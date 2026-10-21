@@ -84,7 +84,7 @@ pub fn derive_json(
 fn parse_cell(cell: Option<&[u8]>) -> Result<Option<[f64; 4]>, String> {
     match cell {
         None => Ok(None),
-        Some(bytes) if bytes.is_empty() => Ok(None),
+        Some([]) => Ok(None),
         Some(bytes) => serde_json::from_slice::<[f64; 4]>(bytes)
             .map(Some)
             .map_err(|e| format!("cell_invalid: {e}")),

@@ -10,10 +10,11 @@ use crate::{
     op::Op,
     outbox::Outbox,
     overlay::{Entry, Overlay},
-    persisted::{Persisted, PERSISTED_VERSION},
     status::Status,
 };
 use std::collections::HashSet;
+
+pub use crate::check::Finding;
 
 /// What changed that is worth saving: queued edits at once (an app kill must not lose them), the overlay later and in bulk.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -22,24 +23,17 @@ pub struct Dirty {
     pub overlay: bool,
 }
 
-/// A finding of [`Store::check`]: something that should never be true, with a stable code.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Finding {
-    pub code: &'static str,
-    pub detail: String,
-}
-
 pub struct Store {
-    actor: String,
-    clock: ClockState,
+    pub(crate) actor: String,
+    pub(crate) clock: ClockState,
     /// Server time minus device time: a phone that is an hour off must not lose every edit race.
-    clock_offset_ms: i64,
-    cursor: u64,
-    overlay: Overlay,
-    outbox: Outbox,
-    conflicts: Conflicts,
-    tracker: ChangeTracker,
-    dirty: Dirty,
+    pub(crate) clock_offset_ms: i64,
+    pub(crate) cursor: u64,
+    pub(crate) overlay: Overlay,
+    pub(crate) outbox: Outbox,
+    pub(crate) conflicts: Conflicts,
+    pub(crate) tracker: ChangeTracker,
+    pub(crate) dirty: Dirty,
 }
 
 impl Store {
@@ -60,31 +54,6 @@ impl Store {
             tracker: ChangeTracker::default(),
             dirty: Dirty::default(),
         }
-    }
-
-    /// Start from what was saved. Queued edits are applied on top of the saved overlay: they survive even when the overlay record is older.
-    pub fn restore(actor: impl Into<String>, saved: &Persisted) -> Store {
-        let mut store = Store::new(actor);
-        store.clock = ClockState {
-            node: store.actor.clone(),
-            ..saved.clock.clone()
-        };
-        store.cursor = saved.cursor;
-        for (key, entry) in &saved.overlay {
-            store.apply_entry(key, entry.clone());
-        }
-        for op in &saved.pending {
-            store.outbox.insert(op.clone());
-            store.apply_entry(
-                &op.key,
-                Entry {
-                    status: op.status,
-                    at: op.id.clone(),
-                    by: op.by.clone(),
-                },
-            );
-        }
-        store
     }
 
     pub fn actor(&self) -> &str {
@@ -125,7 +94,7 @@ impl Store {
         device_now.saturating_add_signed(self.clock_offset_ms)
     }
 
-    fn apply_entry(&mut self, key: &Key, entry: Entry) {
+    pub(crate) fn apply_entry(&mut self, key: &Key, entry: Entry) {
         if let Some(before) = self.overlay.apply(key, entry) {
             self.tracker.touch(key, before);
         }
@@ -310,63 +279,5 @@ impl Store {
     /// What the host should save now (and forget that it asked).
     pub fn take_dirty(&mut self) -> Dirty {
         std::mem::take(&mut self.dirty)
-    }
-
-    /// The state to save. An outbox-only snapshot (`with_overlay == false`) keeps the potentially large overlay out.
-    pub fn snapshot(&self, with_overlay: bool) -> Persisted {
-        let mut overlay: Vec<(Key, Entry)> = if with_overlay {
-            self.overlay
-                .iter()
-                .map(|(k, e)| (k.clone(), e.clone()))
-                .collect()
-        } else {
-            Vec::new()
-        };
-        overlay.sort_by(|a, b| a.0.cmp(&b.0));
-        Persisted {
-            version: PERSISTED_VERSION,
-            clock: self.clock.clone(),
-            overlay,
-            pending: self.outbox.ops(),
-            cursor: self.cursor,
-        }
-    }
-
-    /// Invariants that must always hold. An empty answer means the store is consistent; tests call this after every step and the diagnostics report it.
-    pub fn check(&self) -> Vec<Finding> {
-        let mut findings = Vec::new();
-        for op in self.outbox.ops() {
-            if op.id.decode().is_none() {
-                findings.push(Finding {
-                    code: "outbox.bad_id",
-                    detail: format!("queued edit {} has no valid timestamp", op.id),
-                });
-            }
-            match self.overlay.get(&op.key) {
-                Some(entry) if entry.at >= op.id => {}
-                _ => findings.push(Finding {
-                    code: "outbox.not_in_overlay",
-                    detail: format!("queued edit {} is not reflected in the overlay", op.id),
-                }),
-            }
-        }
-        let behind = |at: &OpId| {
-            at.decode()
-                .is_some_and(|c| (c.wall, c.counter) > (self.clock.wall, self.clock.counter))
-        };
-        for (key, entry) in self.overlay.iter() {
-            if entry.at.decode().is_none() {
-                findings.push(Finding {
-                    code: "overlay.bad_id",
-                    detail: format!("{key} has no valid timestamp"),
-                });
-            } else if behind(&entry.at) {
-                findings.push(Finding {
-                    code: "clock.behind_overlay",
-                    detail: format!("the clock is older than the edit on {key}"),
-                });
-            }
-        }
-        findings
     }
 }
