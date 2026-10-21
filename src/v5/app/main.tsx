@@ -59,8 +59,7 @@ async function start() {
     const platform = detectPlatform(navigator.userAgent, navigator.maxTouchPoints);
     await new Promise<void>((resolve) => { const close = showOver((done) => <InstallGuide platform={platform === 'ios' ? 'ios' : 'android'} onContinue={() => { done(); resolve(); }} />); void close; });
   }
-  splash.text('Version wird geprüft …');
-  if (await coldStartUpdate()) { splash.text('Neue Version wird geladen …'); return; }
+  void coldStartUpdate(4000, undefined, () => splash.active()).then((reloading) => { if (reloading) splash.text('Neue Version wird geladen …'); });
   mountPwaChrome();
   splash.text('Aktion wird geöffnet …');
   const campaign = new URLSearchParams(location.search).get('campaign');

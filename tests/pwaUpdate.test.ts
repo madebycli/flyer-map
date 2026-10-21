@@ -41,14 +41,12 @@ test('cold start: a newer build reloads once, then never again for that build in
   assert.equal(await coldStartUpdate(200, newer), true, 'a still newer build gets its own try');
 });
 
-test('cold start: same build, offline or slow server just starts the app', async () => {
+test('cold start: same build or offline just starts the app; an app already on screen is not reloaded', async () => {
   assert.equal(await coldStartUpdate(100, deps({ latest: at(501) })), false);
   assert.equal(await coldStartUpdate(100, deps({ latest: null })), false);
-  const slow = deps({ fetchLatest: () => new Promise(() => {}) });
-  const t = Date.now();
-  assert.equal(await coldStartUpdate(80, slow), false);
-  assert.ok(Date.now() - t < 500, 'the start waits only a moment');
-  assert.equal(slow.reloads, 0);
+  const shown = deps({});
+  assert.equal(await coldStartUpdate(100, shown, () => false), false, 'the answer came after the map was shown: the banner will tell');
+  assert.equal(shown.reloads, 0);
 });
 
 test('reloadOnce does not reload without storage (a loop could not be stopped)', () => {

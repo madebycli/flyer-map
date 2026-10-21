@@ -39,8 +39,7 @@ async function start() {
     await new Promise<void>((resolve) => { showOver((done) => <InstallGuide platform={platform === "ios" ? "ios" : "android"} onContinue={() => { done(); resolve(); }} />); });
     splash.watch();
   }
-  splash.text("Version wird geprüft …");
-  if (await coldStartUpdate()) { splash.text("Neue Version wird geladen …"); return; }
+  void coldStartUpdate(4000, undefined, () => splash.active()).then((reloading) => { if (reloading) splash.text("Neue Version wird geladen …"); });
   mountPwaChrome();
   if (home) {
     showOver(() => <StartPage />);

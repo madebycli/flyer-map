@@ -34,10 +34,13 @@ export function reloadOnce(latest: Latest, deps: UpdateDeps = realDeps()): boole
   return true;
 }
 
-/** At a start: true when the page is reloading, so the caller must not boot the app. Waits at most `waitMs` for the answer. */
-export async function coldStartUpdate(waitMs = 1500, deps: UpdateDeps = realDeps()): Promise<boolean> {
-  const latest = await Promise.race([deps.fetchLatest(waitMs), new Promise<null>((resolve) => setTimeout(() => resolve(null), waitMs + 50))]);
-  return !!latest && isNewer(latest, deps.current) && reloadOnce(latest, deps);
+/**
+ * At a start: asks what is online, in parallel with the start (the app never waits for it). Reloads once if a newer build is online
+ * and the start screen is still up (`stillStarting`); a person who is already looking at the map gets the banner instead. True when it reloads.
+ */
+export async function coldStartUpdate(waitMs = 4000, deps: UpdateDeps = realDeps(), stillStarting: () => boolean = () => true): Promise<boolean> {
+  const latest = await deps.fetchLatest(waitMs);
+  return !!latest && isNewer(latest, deps.current) && stillStarting() && reloadOnce(latest, deps);
 }
 
 // ── the running app ─────────────────────────────────────────────
