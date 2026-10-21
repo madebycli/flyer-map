@@ -14,6 +14,7 @@ const UNPAVED = new Set([
   'unpaved', 'ground', 'dirt', 'earth', 'grass', 'gravel', 'fine_gravel', 'sand', 'mud',
   'compacted', 'woodchips', 'pebblestone', 'grass_paver', 'clay', 'soil', 'rock',
 ]);
+const PAVED = new Set(['asphalt', 'paved', 'concrete', 'concrete:plates', 'concrete:lanes', 'paving_stones', 'sett', 'cobblestone', 'unhewn_cobblestone', 'bricks']);
 const SERVICE_EXCLUDED = new Set(['driveway', 'parking_aisle', 'drive-through', 'emergency_access', 'siding', 'yard', 'spur']);
 
 export function classifyRoad(tags: Tags): RoadVerdict {
@@ -29,6 +30,10 @@ export function classifyRoad(tags: Tags): RoadVerdict {
     const service = tags.service ?? '';
     if (SERVICE_EXCLUDED.has(service)) return { cls: 'excluded', reason: `service_${service}` };
     return { cls: 'access', reason: service ? `service_${service}` : 'service' };
+  }
+  if (highway === 'track') {
+    // A lane to a few houses is often mapped as a track. Only a paved one (explicit surface or grade1) can be one; it stays hidden unless houses sit on it.
+    return PAVED.has(tags.surface ?? '') || tags.tracktype === 'grade1' ? { cls: 'connector', reason: 'track_paved' } : { cls: 'excluded', reason: 'highway_track' };
   }
   if (PATH_LIKE.has(highway)) {
     if (highway === 'footway' && ['sidewalk', 'crossing', 'traffic_island', 'link'].includes(tags.footway ?? '')) {

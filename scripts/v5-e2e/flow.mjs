@@ -77,7 +77,7 @@ await setAppearance(page, 'Hell');
 await page.waitForTimeout(3000);
 const themed = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, line: !!window.__v5Map.getLayer('v5-segments-line'), houses: (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')) ? 1 : 0 }));
 check('switching to the light theme re-installs the map layers', themed.theme === 'light' && themed.line && themed.houses === 1, JSON.stringify(themed));
-await page.getByRole('radio', { name: 'Dunkel', exact: true }).click();
+await page.getByRole('button', { name: 'Dunkel', exact: true }).click();
 await page.waitForTimeout(2500);
 check('and back to dark', await page.evaluate(() => document.documentElement.dataset.theme === 'dark' && !!window.__v5Map.getLayer('v5-segments-line')));
 await ctx.close();

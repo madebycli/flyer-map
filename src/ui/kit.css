@@ -96,9 +96,9 @@ select.ui-input { appearance: none; padding-right: 2.4rem; background-image: url
 .ui-loading .v5-loader { width: 2.2rem; height: 2.2rem; margin: 0; }
 
 /* equal segments in one row while they fit; a segment never breaks inside a word, the group wraps to a second row instead */
-.ui-seg { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.3rem; border-radius: var(--r); background: var(--surface-3); }
-.ui-seg button { flex: 1 1 0; min-width: max-content; min-height: 2.75rem; padding: 0 0.35rem; border: 0; border-radius: calc(var(--r) - 0.25rem); background: transparent; color: var(--on-var); font: 750 0.92rem var(--font); cursor: pointer; }
-.ui-seg button.on { background: var(--surface-1); color: var(--on); box-shadow: var(--shadow); }
+.ui-seg { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.3rem; border-radius: calc(var(--r) + 0.3rem); background: var(--surface-3); }
+.ui-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; flex: 1 1 0; min-width: max-content; min-height: 2.75rem; padding: 0 0.6rem; border: 0; border-radius: var(--r); background: transparent; color: var(--on-var); font: 750 0.92rem var(--font); cursor: pointer; }
+.ui-seg button.on { background: var(--primary-container); color: var(--on-primary-container); }
 
 .ui-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; padding: 0.7rem 0.9rem; border-radius: var(--r); background: var(--surface-2); }
 .ui-row-text { display: grid; min-width: 0; flex: 1 1 12rem; }

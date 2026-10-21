@@ -9,6 +9,9 @@ test('whitelist: only known delivery roads pass, unknown highways are excluded',
   assert.equal(classifyRoad({ highway: 'service' }).cls, 'access');
   assert.equal(classifyRoad({ highway: 'service', service: 'driveway' }).cls, 'excluded');
   assert.equal(classifyRoad({ highway: 'track', name: 'Waldweg' }).cls, 'excluded');
+  assert.equal(classifyRoad({ highway: 'track', surface: 'gravel' }).cls, 'excluded', 'an unpaved track is never a task');
+  assert.equal(classifyRoad({ highway: 'track', surface: 'asphalt' }).cls, 'connector', 'a paved lane to houses can become one once houses sit on it');
+  assert.equal(classifyRoad({ highway: 'track', tracktype: 'grade1' }).cls, 'connector');
   assert.equal(classifyRoad({ highway: 'footway', footway: 'sidewalk' }).cls, 'excluded');
   assert.equal(classifyRoad({ highway: 'path', surface: 'ground' }).cls, 'excluded');
   assert.equal(classifyRoad({ highway: 'footway', surface: 'asphalt' }).cls, 'connector');

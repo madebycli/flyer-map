@@ -123,10 +123,10 @@ export function LinkButton({ tone = 'tonal', icon, href, children }: { tone?: Bu
   return <a className={`ui-btn ${tone}`} href={href}>{icon ? <Icon name={icon} size={20} /> : null}{children}</a>;
 }
 
-export function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (value: T) => void }) {
+export function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string; icon?: IconName }[]; onChange: (value: T) => void }) {
   return (
     <div className="ui-seg" role="group" aria-label={label}>
-      {options.map((o) => <button key={o.value} type="button" className={o.value === value ? 'on' : ''} aria-pressed={o.value === value} onClick={() => onChange(o.value)}>{o.label}</button>)}
+      {options.map((o) => <button key={o.value} type="button" className={o.value === value ? 'on' : ''} aria-pressed={o.value === value} onClick={() => onChange(o.value)}>{o.icon ? <Icon name={o.icon} size={20} /> : null}{o.label}</button>)}
     </div>
   );
 }

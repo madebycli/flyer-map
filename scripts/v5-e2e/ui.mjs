@@ -15,8 +15,8 @@ export const menuTile = async (page, name) => {
 };
 /** The settings page: appearance, hand, basemap. */
 export const openSettings = async (page) => { await openMenu(page); await page.getByRole('button', { name: 'Einstellungen', exact: true }).click(); };
-/** Appearance in the settings: 'Hell' or 'Dunkel' (a segmented choice, so a radio). */
-export const setAppearance = async (page, name) => { await openSettings(page); await page.getByRole('radio', { name, exact: true }).click(); };
+/** Appearance in the settings: 'Hell' or 'Dunkel' (a segmented choice). */
+export const setAppearance = async (page, name) => { await openSettings(page); await page.getByRole('button', { name, exact: true }).click(); };
 /** Type into the search bar at the top of the map. */
 export const searchFor = async (page, text) => { const input = page.getByRole('textbox', { name: 'Straße oder Adresse suchen' }); await input.click(); await input.fill(text); };
 /** A plain tap on the marking button starts marking in route mode. */

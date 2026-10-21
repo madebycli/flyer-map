@@ -175,10 +175,6 @@
 .v5-grow.primary .v5-row-text small { color: inherit; opacity: 0.85; }
 .v5-row-badge { flex: none; min-width: 1.6rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font-size: 0.8rem; font-style: normal; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
 .v5-row-chev { flex: none; color: var(--on-var); }
-.v5-segmented { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-3); }
-.v5-segmented button { display: flex; align-items: center; justify-content: center; gap: 0.4rem; min-width: 0; height: calc(var(--ctl) - 6px); padding: 0 0.6rem; border: 0; border-radius: 999px; background: transparent; color: var(--on-var); font: 700 0.92rem var(--font); white-space: nowrap; cursor: pointer; transition: background var(--t), color var(--t); }
-.v5-segmented button.on { background: var(--primary-container); color: var(--on-primary-container); }
-.v5-segmented button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .v5-switch { flex: none; position: relative; width: 3.1rem; height: 1.85rem; border-radius: 999px; background: var(--surface-4); box-shadow: inset 0 0 0 2px var(--outline); transition: background var(--t), box-shadow var(--t); }
 .v5-switch i { position: absolute; top: 50%; left: 0.45rem; width: 0.9rem; height: 0.9rem; margin-top: -0.45rem; border-radius: 50%; background: var(--outline); transition: transform var(--t) var(--ease), width var(--t) var(--ease), height var(--t) var(--ease), background var(--t), margin var(--t) var(--ease); }
 .v5-switch.on { background: var(--primary); box-shadow: none; }

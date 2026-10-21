@@ -4,4 +4,4 @@ export { Progress, Loader } from './progress.tsx';
 export * from './kit.tsx';
 export { applyTheme, readTheme, type Theme } from './theme.ts';
 export { DEFAULT_SEED, SEEDS, applyPalette, readSeed, saveSeed, schemeFor, type Seed } from './palette.ts';
-export { ListGroup, ListRow, Segmented, SwitchRow } from './controls.tsx';
+export { ListGroup, ListRow, SwitchRow } from './controls.tsx';

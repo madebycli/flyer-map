@@ -3,7 +3,7 @@ import { Icon, type IconName } from './icons.tsx';
 
 /**
  * The building blocks of lists and settings, so every page looks and behaves the same way:
- * `ListGroup` (a titled block of rows), `ListRow` (one line: icon, text, badge, chevron), `Segmented` (2 to 4 choices, equal width) and `SwitchRow` (an on/off setting).
+ * `ListGroup` (a titled block of rows), `ListRow` (one line: icon, text, badge, chevron) and `SwitchRow` (an on/off setting). Choices use `Segmented` from the kit.
  * Every control is one height (`--ctl`) and one radius (`--r`); nothing here moves when a state changes.
  */
 export function ListGroup({ title, children }: { title?: string; children: ReactNode }) {
@@ -30,18 +30,6 @@ export function ListRow({ icon, label, hint, badge, chevron = true, tone = 'defa
   return href
     ? <a className={cls} href={href} aria-label={label}>{body}</a>
     : <button className={cls} onClick={onClick} disabled={disabled} aria-label={label}>{body}</button>;
-}
-
-export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; icon?: IconName }[]; onChange: (value: T) => void; label: string }) {
-  return (
-    <div className="v5-segmented" role="radiogroup" aria-label={label} style={{ '--n': options.length } as React.CSSProperties}>
-      {options.map((option) => (
-        <button key={option.value} role="radio" aria-checked={value === option.value} className={value === option.value ? 'on' : ''} onClick={() => onChange(option.value)}>
-          {option.icon && <Icon name={option.icon} size={20} />}{option.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 export function SwitchRow({ icon, label, hint, checked, onChange }: { icon: IconName; label: string; hint?: string; checked: boolean; onChange: (checked: boolean) => void }) {

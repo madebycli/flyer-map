@@ -28,6 +28,8 @@ struct Seg {
     name: Option<String>,
     /// The junction-to-junction street this piece belongs to has at least one house ("Nur Straßen mit Häusern").
     with_houses: bool,
+    /// A path or lane (not a road): drawn dashed so that it reads differently from a street.
+    path: bool,
     /// Middle of the piece by length, rounded like the slim network (what a lasso tests).
     mid: LngLat,
 }
@@ -235,7 +237,7 @@ impl Session {
             let line: Vec<[f64; 2]> = s.coords.iter().map(|p| mercator(*p)).collect();
             self.seg_grid.insert(bbox(&line));
             let mid = midpoint_by_length(&s.coords).map(|m| [r7(m[0]), r7(m[1])]).unwrap_or(s.coords[0]);
-            self.segs.push(Seg { key: format!("s:{}", s.id), line, lnglat: s.coords.clone(), name: s.name.clone(), mid, with_houses: group_houses.get(s.group.as_str()).copied().unwrap_or(0) > 0 });
+            self.segs.push(Seg { key: format!("s:{}", s.id), line, lnglat: s.coords.clone(), name: s.name.clone(), mid, with_houses: group_houses.get(s.group.as_str()).copied().unwrap_or(0) > 0, path: matches!(s.cls, RoadClass::Connector) });
         }
         for h in &network.houses {
             if !self.seen_house.insert(h.id.clone()) { continue; }
@@ -262,7 +264,7 @@ impl Session {
                 let pts: Vec<[f64; 2]> = s.line.iter().map(|p| to_tile(*p, z, x, y)).collect();
                 let parts = clip_line(&pts);
                 if !parts.is_empty() {
-                    let mut props = vec![("key", s.key.as_str()), ("h", if s.with_houses { "1" } else { "0" })];
+                    let mut props = vec![("key", s.key.as_str()), ("h", if s.with_houses { "1" } else { "0" }), ("p", if s.path { "1" } else { "0" })];
                     if let Some(st) = self.st(&s.key) { props.push(("st", st)); }
                     segments.add(GeomType::Line, &props, &parts);
                 }

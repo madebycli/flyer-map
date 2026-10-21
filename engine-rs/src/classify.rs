@@ -11,6 +11,7 @@ const UNPAVED: &[&str] = &[
     "unpaved", "ground", "dirt", "earth", "grass", "gravel", "fine_gravel", "sand", "mud", "compacted", "woodchips", "pebblestone",
     "grass_paver", "clay", "soil", "rock",
 ];
+const PAVED: &[&str] = &["asphalt", "paved", "concrete", "concrete:plates", "concrete:lanes", "paving_stones", "sett", "cobblestone", "unhewn_cobblestone", "bricks"];
 const SERVICE_EXCLUDED: &[&str] = &["driveway", "parking_aisle", "drive-through", "emergency_access", "siding", "yard", "spur"];
 
 fn tag<'a>(tags: &'a Tags, key: &str) -> &'a str {
@@ -41,6 +42,13 @@ pub fn classify_road(tags: &Tags) -> Result<RoadClass, String> {
             return Err(format!("service_{service}"));
         }
         return Ok(RoadClass::Access);
+    }
+    if highway == "track" {
+        // A lane to a few houses is often mapped as a track. Only a paved one (explicit surface or grade1) can be one; it stays hidden unless houses sit on it.
+        if PAVED.contains(&tag(tags, "surface")) || tag(tags, "tracktype") == "grade1" {
+            return Ok(RoadClass::Connector);
+        }
+        return Err("highway_track".into());
     }
     if PATH_LIKE.contains(&highway) {
         let footway = tag(tags, "footway");
