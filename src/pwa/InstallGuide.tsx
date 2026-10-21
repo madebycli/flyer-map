@@ -47,7 +47,7 @@ export function InstallGuide({ platform, onContinue }: { platform: Exclude<Platf
         <header className="pwa-head">
           <img src="/logo.svg" alt="" width="88" height="88" />
           <h1 id="pwa-guide-title">Als App installieren</h1>
-          <p>Ohne Browserleiste, schneller und immer aktuell.</p>
+          <p>Schneller, ohne Browserleiste, immer aktuell.</p>
         </header>
         <ol className="pwa-steps">
           {(ios ? IOS : ANDROID).map((step) => (

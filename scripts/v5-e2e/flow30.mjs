@@ -28,7 +28,7 @@ const phone = async (userAgent, { standalone = false } = {}) => {
 {
   const response = await fetch(`${BASE}/manifest.webmanifest`);
   const manifest = await response.json();
-  check('the manifest makes a standalone app with a start URL inside its scope', manifest.display === 'standalone' && manifest.start_url.startsWith('/') && manifest.scope === '/' && manifest.background_color === '#0f1514', JSON.stringify(manifest).slice(0, 200));
+  check('the manifest makes a standalone app with a start URL inside its scope', manifest.display === 'standalone' && manifest.start_url.startsWith('/') && manifest.scope === '/' && manifest.background_color === '#0a0f0e', JSON.stringify(manifest).slice(0, 200));
   const sizes = new Set(manifest.icons.map((i) => i.sizes));
   check('with 192, 512 and a maskable icon', sizes.has('192x192') && sizes.has('512x512') && manifest.icons.some((i) => i.purpose === 'maskable'));
   let allOk = true;
