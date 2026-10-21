@@ -89,10 +89,10 @@ try {
   for (const [width, theme] of [[390, 'dark'], [390, 'light'], [430, 'dark'], [430, 'light'], [1280, 'dark']]) {
     const tag = `${width}-${theme}`;
     const { context, page } = await open(width, theme);
-    await page.getByRole('button', { name: 'Hilfe', exact: true }).click();
+    await menuTile(page, 'Hilfe');
     await audit(page, tag, 'help');
     await close(page, `${tag} help`);
-    for (const [tile, sheet] of [['Übersicht', 'overview'], ['Team', 'team'], ['Gruppen', 'groups'], ['Zugänge', 'access'], ['Suche', 'search'], ['Notizen', 'notes'], ['Diagnose', 'diag'], ['Runs', 'runs'], ['Farbe', 'palette']]) {
+    for (const [tile, sheet] of [['Übersicht', 'overview'], ['Team', 'team'], ['Gruppen', 'groups'], ['Zugänge', 'access'], ['Vorlagen', 'templates'], ['Notizen', 'notes'], ['Einstellungen', 'settings'], ['Diagnose', 'diag'], ['Runs', 'runs'], ['Farbe', 'palette']]) {
       await menuTile(page, tile);
       await audit(page, tag, sheet);
       await close(page, `${tag} ${sheet}`);

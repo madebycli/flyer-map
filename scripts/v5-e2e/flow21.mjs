@@ -2,7 +2,7 @@
 // reload, and every swatch is a real target.
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
-import { menuTile } from './ui.mjs';
+import { menuTile, setAppearance } from './ui.mjs';
 
 const BASE = 'http://localhost:8140';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
@@ -40,11 +40,11 @@ const blue = { primary: await token('--primary'), container: await token('--prim
 
 // light mode recomputes the roles for the same seed
 await page.getByRole('button', { name: 'Schließen' }).click();
-await menuTile(page, 'Hell');
+await setAppearance(page, 'Hell');
 await until(async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === 'light');
 const light = { primary: await token('--primary'), surface: await token('--surface') };
 check('light mode has its own tones of the same blue (darker accent, light surface)', light.primary !== blue.primary && light.surface !== before.surface, JSON.stringify(light));
-await page.getByRole('button', { name: 'Farbe', exact: true }).click(); // the menu stays open after the theme tile
+await page.getByRole('button', { name: 'Farbe', exact: true }).click(); // the settings page stays open after the choice
 await page.getByRole('group', { name: 'Grundfarbe' }).waitFor();
 await settle();
 await page.screenshot({ path: `${shots}/t21-palette-light.png` });

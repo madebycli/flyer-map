@@ -20,35 +20,36 @@ for (const [tag, width, height, keyboard] of [['phone', 390, 844, 330], ['ipad',
   await page.waitForSelector('.v5-pill', { timeout: 120000 });
   await page.waitForFunction(() => window.__v5Boot && window.__v5Map && (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')), null, { timeout: 60000 });
   await page.waitForTimeout(1000);
-  await menuTile(page, 'Suche');
-  const input = page.locator('.v5-searchbar input');
-  await input.waitFor();
+  const input = page.getByRole('textbox', { name: 'Straße oder Adresse suchen' });
+  await input.click();
   await input.fill('a');
   await page.waitForFunction(() => document.querySelectorAll('.v5-result').length > 6, null, { timeout: 15000 }).catch(() => {});
   const results = await page.locator('.v5-result').count();
   check(`${tag}: the search finds enough to fill a screen`, results > 6, String(results));
   const room = () => page.evaluate(() => {
-    const sheet = document.querySelector('.v5-sheet').getBoundingClientRect(), bar = document.querySelector('.v5-searchbar').getBoundingClientRect(), body = document.querySelector('.v5-sheet-body');
-    return { top: sheet.top, bottom: sheet.bottom, height: sheet.height, barTop: bar.top, barBottom: bar.bottom, scrolls: body.scrollHeight > body.clientHeight + 1, innerHeight };
+    const bar = document.querySelector('.v5-cmd').getBoundingClientRect(), card = document.querySelector('.v5-spot');
+    const c = card.getBoundingClientRect();
+    return { barTop: bar.top, barBottom: bar.bottom, barHeight: bar.height, top: c.top, bottom: c.bottom, scrolls: card.scrollHeight > card.clientHeight + 1, innerHeight };
   });
   const free = await room();
-  check(`${tag}: without a keyboard the sheet leaves the map visible`, free.height <= free.innerHeight * 0.8 + 1, JSON.stringify(free));
+  check(`${tag}: the results float under the bar, which keeps its place and size`, free.top >= free.barBottom && free.barTop < 40 && Math.abs(free.barHeight - 56) < 1, JSON.stringify(free));
+  await page.screenshot({ path: `${shots}/spot-free-${tag}.png` });
   // the keyboard goes up
   await page.evaluate(([kb]) => { const r = document.documentElement; r.style.setProperty('--kb', `${kb}px`); r.style.setProperty('--vvh', `${innerHeight - kb}px`); r.setAttribute('data-kb', ''); }, [keyboard]);
   await page.waitForTimeout(300);
   const up = await room();
-  check(`${tag}: with a keyboard the sheet is no floating window: it stays flush with the bottom edge`, Math.abs(up.bottom - up.innerHeight) < 1, JSON.stringify(up));
-  check(`${tag}: and its top stays inside the visible area`, up.top >= 0 && up.top < up.innerHeight - keyboard, JSON.stringify(up));
-  check(`${tag}: the search field is on screen, above the keys`, up.barTop >= 0 && up.barBottom <= up.innerHeight - keyboard, JSON.stringify(up));
-  check(`${tag}: the long list scrolls inside the sheet`, up.scrolls);
-  await page.locator('.v5-sheet-body').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  check(`${tag}: with a keyboard the bar has not moved`, Math.abs(up.barTop - free.barTop) < 1, `${free.barTop} → ${up.barTop}`);
+  check(`${tag}: the result card ends above the keys`, up.bottom <= up.innerHeight - keyboard + 1, JSON.stringify(up));
+  check(`${tag}: the long list scrolls inside the card`, up.scrolls);
+  await page.locator('.v5-spot').evaluate((el) => { el.scrollTop = el.scrollHeight; });
   const scrolled = await room();
-  check(`${tag}: after scrolling the list to its end the search field has not moved`, Math.abs(scrolled.barTop - up.barTop) < 1 && Math.abs(scrolled.top - up.top) < 1, `${up.barTop} → ${scrolled.barTop}`);
+  check(`${tag}: after scrolling the list to its end the bar and the card have not moved`, Math.abs(scrolled.barTop - up.barTop) < 1 && Math.abs(scrolled.top - up.top) < 1, `${up.top} → ${scrolled.top}`);
   const lastRow = await page.evaluate(() => { const rows = document.querySelectorAll('.v5-result'); return rows[rows.length - 1].getBoundingClientRect().bottom; });
-  check(`${tag}: the last result can be scrolled above the keys`, lastRow <= innerHeightOf(up) - keyboard + 1, `${lastRow}`);
+  check(`${tag}: the last result can be scrolled above the keys`, lastRow <= up.innerHeight - keyboard + 1, `${lastRow}`);
   await page.screenshot({ path: `${shots}/kb-${tag}.png` });
   await page.evaluate(() => { const r = document.documentElement; r.style.removeProperty('--kb'); r.style.removeProperty('--vvh'); r.removeAttribute('data-kb'); });
-  await page.getByRole('button', { name: 'Schließen' }).click();
+  await page.keyboard.press('Escape');
+  check(`${tag}: Escape closes the card and empties the field`, (await page.locator('.v5-spot').count()) === 0 && (await input.inputValue()) === '');
 
   // a row of choices is one line: the groups of a Gebiet
   await menuTile(page, 'Gebiete');

@@ -6,7 +6,7 @@
    No webfont: the system sans keeps it fast and offline-safe. */
 :root {
   color-scheme: dark;
-  --ctl: 3rem; --ctl-lg: 4rem; --r: 1.1rem; --r-lg: 1.75rem; --gap: 0.5rem;
+  --ctl: 3rem; --ctl-lg: 4rem; --bar: 3.5rem; --r: 1.1rem; --r-lg: 1.75rem; --gap: 0.5rem;
   /* spacing scale for stacked content: tight (heading to its content), regular (between blocks) */
   --sp-1: 0.5rem; --sp-2: 1rem;
   --surface: #0f1514; --surface-1: #151c1b; --surface-2: #1a2322; --surface-3: #232d2b; --surface-4: #2d3836;

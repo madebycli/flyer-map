@@ -2,7 +2,7 @@
 // Needs the server from server.ts (CITY_BLOCKS=12 for the correctness checks, 70 for the scale check).
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
-import { openMenu } from './ui.mjs';
+import { openSettings } from './ui.mjs';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const shots = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
 const BLOCKS = Number(process.env.CITY_BLOCKS ?? 12);
@@ -33,7 +33,7 @@ const serverState = async (page) => page.evaluate(async () => (await (await fetc
 // 1. Admin boots (building the pack the first time) and imports the legacy progress.
 let { ctx, page, bootMs } = await open('admin', { buildIfNeeded: true });
 console.log(`boot incl. pack build + derive: ${bootMs} ms, ${await pill(page)}`);
-await openMenu(page);
+await openSettings(page);
 const importButton = page.getByRole('button', { name: 'Alt-Import' });
 check('import offer is visible for an admin with an empty overlay', await importButton.isVisible());
 await importButton.click();

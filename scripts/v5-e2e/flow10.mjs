@@ -41,7 +41,7 @@ await boot();
 // identity and role-aware menu
 await openMenu(page);
 check('the menu shows who this device is', /Admin/.test(await page.locator('.v5-sheet .v5-meta').innerText()));
-check('an admin sees Verwaltung and the template entry', (await page.getByRole('button', { name: 'Verwaltung' }).count() + await page.getByRole('link', { name: 'Verwaltung' }).count()) === 1 && (await page.getByRole('button', { name: 'Vorlage laden' }).count()) === 1);
+check('an admin sees Verwaltung and the template entry', (await page.getByRole('button', { name: 'Verwaltung' }).count() + await page.getByRole('link', { name: 'Verwaltung' }).count()) === 1 && (await page.getByRole('button', { name: 'Vorlagen', exact: true }).count()) === 1);
 await page.getByRole('button', { name: 'Schließen' }).click();
 
 // location preselection: the position is inside the Area, so tapping "Gebiete" selects it without a tap on the map
@@ -52,14 +52,14 @@ await page.getByRole('button', { name: 'Schließen' }).click();
 await page.getByRole('button', { name: 'Fertig' }).click();
 
 // export: the whole Aktion — every Gebiet and Gruppe — as one file
-const [download] = await Promise.all([page.waitForEvent('download'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Als Vorlage', exact: true }).click(); })()]);
+const [download] = await Promise.all([page.waitForEvent('download'), (async () => { await menuTile(page, 'Als Vorlage speichern'); })()]);
 const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
 check('the Aktions-Vorlage holds all Gebiete and all Gruppen, rules, and nothing else', exported.format === 'verteil-flyer-action-template' && exported.areas.length === 2 && exported.teams.length === 2 && Object.keys(exported).sort().join() === 'areas,format,name,rules,teams,version' && /\.aktion\.json$/.test(download.suggestedFilename()), `${download.suggestedFilename()} areas=${exported.areas?.length} teams=${exported.teams?.length}`);
 check('each Gebiet names its Gruppe', exported.areas.every((a) => exported.teams.some((t) => t.name === a.team)));
 const unchangedArea = exported.areas.find((a) => a.name === 'Fremdes Gebiet');
 
 // a foreign file is refused in plain words
-let [chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Vorlage laden', exact: true }).click(); })()]);
+let [chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await menuTile(page, 'Vorlage laden'); })()]);
 await chooser.setFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"nope":1}') });
 check('a foreign file is refused with a reason', await until(async () => /keine Vorlage/.test(await page.locator('.v5-toast').innerText().catch(() => '')), 5000));
 
@@ -69,7 +69,7 @@ const template = makeTemplate('Frühjahr', [{ name: 'Team', color: '#2563eb' }, 
   { name: 'Fremdes Gebiet', team: 'Andere', ring: unchangedArea.ring },
   { name: 'Ost-Vorlage', team: 'Neues Team', ring: rect(1400, 1500) },
 ], { housesOnly: true });
-[chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Vorlage laden', exact: true }).click(); })()]);
+[chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await menuTile(page, 'Vorlage laden'); })()]);
 await chooser.setFiles({ name: 'fruehjahr.aktion.json', mimeType: 'application/json', buffer: Buffer.from(serializeTemplate(template)) });
 await page.waitForSelector('.v5-sheet h2:has-text("Aktions-Vorlage")');
 const planText = await page.locator('.v5-sheet').innerText();
@@ -87,7 +87,7 @@ const keys = await serverKeys();
 check('only the east half was removed on the server', west.every((h) => keys.includes(h.key)) && east.every((h) => !keys.includes(h.key)), `${keys.length} rows left`);
 check('the template rule "Nur Straßen mit Häusern" was applied to the map', await page.evaluate(() => !!window.__v5Map.getFilter('v5-segments-line')));
 // loading the same file again plans nothing: the application is idempotent
-[chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await openMenu(page); await page.getByRole('button', { name: 'Vorlage laden', exact: true }).click(); })()]);
+[chooser] = await Promise.all([page.waitForEvent('filechooser'), (async () => { await menuTile(page, 'Vorlage laden'); })()]);
 await chooser.setFiles({ name: 'fruehjahr.aktion.json', mimeType: 'application/json', buffer: Buffer.from(serializeTemplate(template)) });
 await page.waitForSelector('.v5-sheet h2:has-text("Aktions-Vorlage")');
 check('loading it again has nothing left to do', /Nichts zu tun/.test(await page.locator('.v5-sheet').innerText()) && (await page.getByRole('button', { name: 'Anwenden' }).count()) === 0);

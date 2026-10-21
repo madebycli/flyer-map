@@ -1,7 +1,7 @@
 // Core flow with assertions: mark → undo → sync → fresh client → route marking → read-only viewer.
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
-import { openMenu, startMarking, confirmRoute } from './ui.mjs';
+import { openMenu, setAppearance, startMarking, confirmRoute } from './ui.mjs';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const shots = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
@@ -73,12 +73,11 @@ await ctx.close();
 
 // Theme switch keeps (or restores) our layers, geometry and status on the new basemap.
 ({ ctx, page } = await open('admin'));
-await openMenu(page);
-await page.getByRole('button', { name: 'Hell', exact: true }).click();
+await setAppearance(page, 'Hell');
 await page.waitForTimeout(3000);
 const themed = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, line: !!window.__v5Map.getLayer('v5-segments-line'), houses: (window.__v5Map.getSource('v5-tiles') || window.__v5Map.getSource('v5-houses')) ? 1 : 0 }));
 check('switching to the light theme re-installs the map layers', themed.theme === 'light' && themed.line && themed.houses === 1, JSON.stringify(themed));
-await page.getByRole('button', { name: 'Dunkel', exact: true }).click();
+await page.getByRole('radio', { name: 'Dunkel', exact: true }).click();
 await page.waitForTimeout(2500);
 check('and back to dark', await page.evaluate(() => document.documentElement.dataset.theme === 'dark' && !!window.__v5Map.getLayer('v5-segments-line')));
 await ctx.close();

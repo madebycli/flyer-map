@@ -1,7 +1,7 @@
 // Visual acceptance shots (phone viewport, 2x) in dark and light with realistic progress. Run: node --experimental-transform-types shots.mjs
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
-import { openMenu, startMarking } from './ui.mjs';
+import { openMenu, setAppearance, startMarking } from './ui.mjs';
 import { encodeClock } from '../../src/v5/store/hlc.ts';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const out = process.env.SHOTS_DIR ?? new URL('.', import.meta.url).pathname;
@@ -61,8 +61,7 @@ await page.getByRole('button', { name: 'Übersicht', exact: true }).click();
 await page.waitForTimeout(600);
 await shot('s7-overview-dark');
 await page.getByRole('button', { name: 'Schließen' }).click();
-await openMenu(page);
-await page.getByRole('button', { name: 'Hell', exact: true }).click();
+await setAppearance(page, 'Hell');
 await page.getByRole('button', { name: 'Schließen' }).click();
 await page.waitForTimeout(1500);
 await jump(150, 150, 16.4);

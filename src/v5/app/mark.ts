@@ -38,6 +38,67 @@ export function buildIndex(network: Network): Index {
   return { segments: new Map(network.segments.map((s) => [s.id, s])), houses: new Map(network.houses.map((h) => [h.id, h])), housesBySegment, housesByStreetParent, chunksByGroup, groupHouses };
 }
 
+/**
+ * The whole street a search result stands for: every junction-to-junction piece with the same name that is connected to the found one (shared junction,
+ * or a gap of at most `joinMeters`, such as a crossing or a roundabout). Two villages with a "Hauptstraße" stay two streets.
+ * Returns the chunks of all those pieces in order of discovery.
+ */
+export function wholeStreet(index: Index, start: Segment, joinMeters = 60): Segment[] {
+  if (!start.name) return index.chunksByGroup.get(start.group) ?? [start];
+  const name = start.name;
+  const groups = new Map<string, { chunks: Segment[]; ends: [number, number][]; nodes: Set<string> }>();
+  // the field network keeps no full geometry: the start and the middle of every chunk are enough to see a crossing or a roundabout in between
+  for (const [group, chunks] of index.chunksByGroup) {
+    const first = chunks[0];
+    if (first.name !== name || !first.visible) continue;
+    const nodes = new Set<string>();
+    for (const c of chunks) { nodes.add(c.from); nodes.add(c.to); }
+    groups.set(group, { chunks, ends: chunks.flatMap((c) => [c.start, c.mid] as [number, number][]), nodes });
+  }
+  if (!groups.has(start.group)) return index.chunksByGroup.get(start.group) ?? [start];
+  const near = (p: [number, number], q: [number, number]) => {
+    const k = Math.cos((p[1] * Math.PI) / 180) * 111_320;
+    return Math.hypot((p[0] - q[0]) * k, (p[1] - q[1]) * 110_540) <= joinMeters;
+  };
+  const taken = new Set<string>([start.group]);
+  const queue = [start.group];
+  while (queue.length) {
+    const here = groups.get(queue.pop()!)!;
+    for (const [group, other] of groups) {
+      if (taken.has(group)) continue;
+      let joined = false;
+      for (const node of other.nodes) if (here.nodes.has(node)) { joined = true; break; }
+      if (!joined) joined = here.ends.some((p) => other.ends.some((q) => near(p, q)));
+      if (joined) { taken.add(group); queue.push(group); }
+    }
+  }
+  return [...taken].flatMap((group) => groups.get(group)!.chunks);
+}
+
+/**
+ * The nearest street piece that still has work: visible, with houses along it, and neither the street nor all of its houses done. `mine` limits it to
+ * places the person may mark. Used by "Nächste offene Straße": after finishing a street, the next one is one tap away.
+ */
+export function nearestOpen(index: Index, from: [number, number], statusOf: (key: EntityKey) => string, mine: (segment: Segment) => boolean): Segment | null {
+  const k = Math.cos((from[1] * Math.PI) / 180) * 111_320;
+  let best: Segment | null = null, bestD = Infinity;
+  const openGroups = new Map<string, boolean>();
+  for (const [group, chunks] of index.chunksByGroup) {
+    const first = chunks[0];
+    if (!first.visible || !first.name || (index.groupHouses.get(group) ?? 0) === 0 || !mine(first)) { openGroups.set(group, false); continue; }
+    const open = chunks.some((c) => statusOf(segmentKey(c.id)) === 'open') || chunks.some((c) => (index.housesBySegment.get(c.id) ?? []).some((h) => statusOf(houseKey(h.id)) === 'open'));
+    openGroups.set(group, open);
+  }
+  for (const [group, chunks] of index.chunksByGroup) {
+    if (!openGroups.get(group)) continue;
+    for (const c of chunks) {
+      const d = Math.hypot((c.mid[0] - from[0]) * k, (c.mid[1] - from[1]) * 110_540);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+  }
+  return best;
+}
+
 /** Everything of a street piece in one go: all chunks of the tapped junction segment (and optionally their houses). */
 export function keysForGroups(index: Index, segmentIds: Iterable<string>, withHouses: boolean, housesOnly = false): EntityKey[] {
   const ids = new Set<string>();

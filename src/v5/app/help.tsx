@@ -41,21 +41,21 @@ const ENTRIES: Entry[] = [
   { q: 'Was ist der Fokus-Modus?', tags: 'brainrot video fokus fenster', roles: ['admin', 'team-editor', 'viewer', 'collection-collector'], a: [
     'Halte die Menü-Taste fünf Sekunden gedrückt: ein stummes Video läuft in einem kleinen Fenster. Mit einem Finger verschiebst du es (es rastet in einer Ecke ein), mit zwei Fingern oder dem Griff unten rechts machst du es größer oder kleiner, mit dem Kreuz schließt du es.' ] },
   { q: 'Wie suche ich eine Straße oder Adresse?', tags: 'suche suchen lupe adresse', a: [
-    'Tippe oben rechts auf die Lupe und gib einen Straßennamen oder eine Adresse ein, zum Beispiel „Hauptstr. 12“. Ein Treffer fliegt zur Stelle und öffnet sie.' ] },
+    'Tippe oben auf das Suchfeld und gib einen Straßennamen oder eine Adresse ein, zum Beispiel „Hauptstr. 12“. Die Treffer erscheinen direkt darunter. Ein Treffer fliegt zur Stelle und öffnet sie; bei einer Straße wird die ganze Straße ausgewählt.' ] },
   { q: 'Wo sehe ich meinen Fortschritt?', tags: 'fortschritt prozent übersicht', a: [
-    'Oben links zeigt die Kapsel den Fortschritt in Prozent. Tippst du darauf, öffnet sich die Übersicht mit den Zahlen je Status und je Gebiet.' ] },
+    'Oben rechts in der Leiste zeigt die Kapsel den Fortschritt in Prozent. Tippst du darauf, öffnet sich die Übersicht mit den Zahlen je Status und je Gebiet.' ] },
   { q: 'Was heißt „überschrieben“?', tags: 'überschrieben konflikt warnung', roles: ['admin', 'team-editor'], a: [
     'Wenn zwei Personen dieselbe Straße oder dasselbe Haus zur gleichen Zeit unterschiedlich markieren, gilt die neuere Markierung. Du siehst oben ein Warnsymbol mit einer Zahl.',
     'Tippe darauf: dort stehen die betroffenen Stellen. Mit dem Haken stellst du deine Version wieder her, mit „Alle so lassen“ akzeptierst du die neuen.' ] },
   { q: 'Was passiert ohne Internet?', tags: 'offline internet empfang synchronisieren', a: [
-    'Die App arbeitet weiter, du kannst markieren und Notizen schreiben. Die Wolke oben links zeigt, ob alles gespeichert ist. Sobald du wieder Empfang hast, gleicht sich alles von selbst ab.',
+    'Die App arbeitet weiter, du kannst markieren und Notizen schreiben. Die Wolke oben rechts in der Leiste zeigt, ob alles gespeichert ist. Sobald du wieder Empfang hast, gleicht sich alles von selbst ab.',
     'Lade die Seite nicht neu, solange Änderungen noch warten: sie sind auf deinem Gerät gespeichert, aber noch nicht bei den anderen.' ] },
   { q: 'Warum kann ich nichts markieren?', tags: 'nicht markieren ansehen gebiet fremd rechte', a: [
-    'Entweder hast du nur einen Ansichts-Zugang (das Augen-Symbol oben links), oder das Gebiet gehört zu einer anderen Gruppe. Ein Admin kann dir einen passenden Link geben.' ] },
+    'Entweder hast du nur einen Ansichts-Zugang (das Augen-Symbol in der Leiste oben), oder das Gebiet gehört zu einer anderen Gruppe. Ein Admin kann dir einen passenden Link geben.' ] },
   { q: 'Wo bin ich auf der Karte?', tags: 'standort gps position', a: [
     'Tippe rechts auf das Standort-Symbol. Dein Standort bleibt auf deinem Gerät und wird nicht gespeichert oder an andere gesendet.' ] },
   { q: 'Wie ändere ich Aussehen und Hand?', tags: 'hell dunkel linkshand theme', a: [
-    'Im Menü (unten links) findest du „Hell/Dunkel“, „Farbe“ und „Linkshand“. Mit „Farbe“ wählst du die Grundfarbe der App (Material You), nur für dieses Gerät. Linkshand spiegelt die Knöpfe auf die andere Seite.' ] },
+    'Menü → „Einstellungen“: Dort wählst du Hell oder Dunkel, die Farbe der App (Material You), Rechts- oder Linkshand und ob die Straßenkarte darunter zu sehen ist. Alles gilt nur für dieses Gerät. Linkshand spiegelt die Knöpfe auf die andere Seite.' ] },
   { q: 'Wie lade ich andere ein?', tags: 'einladen link zugang freunde', roles: ['team-editor', 'viewer'], a: [
     'Einladungslinks erstellt eine Admin-Person. Frag sie nach einem Link für deine Gruppe (zum Mitmarkieren) oder nur zum Ansehen.' ] },
 
@@ -73,10 +73,10 @@ const ENTRIES: Entry[] = [
   { q: 'Wo sehe ich, wer was gemacht hat?', tags: 'team aktivität wer', roles: ['admin'], a: [
     'Menü → Team zeigt für jede Person, wie viele Häuser sie heute und in den letzten Tagen ausgeteilt hat und wann zuletzt etwas kam.' ] },
   { q: 'Was heißt „Kartendaten laden“?', tags: 'kartendaten laden openstreetmap pack', roles: ['admin'], a: [
-    'Straßen und Häuser kommen aus OpenStreetMap und werden einmal je Gebiet geholt. Das Symbol mit dem Pfeil oben links erscheint, wenn für ein Gebiet noch Daten fehlen.',
+    'Straßen und Häuser kommen aus OpenStreetMap und werden einmal je Gebiet geholt. Das Symbol mit dem Pfeil unter der Leiste erscheint, wenn für ein Gebiet noch Daten fehlen.',
     'Wenn die Quelle gerade überlastet ist, steht ein Hinweis da. Dann einfach etwas später nochmal tippen.' ] },
   { q: 'Wie speichere und lade ich eine Vorlage?', tags: 'vorlage template aktion kopieren', roles: ['admin'], a: [
-    'Menü → „Als Vorlage“ speichert Gruppen und Gebiete ohne Fortschritt als Datei. Mit „Vorlage laden“ legst du daraus in einer anderen Aktion alles neu an.' ] },
+    'Menü → „Vorlagen“: „Als Vorlage speichern“ hält Gruppen und Gebiete ohne Fortschritt als Datei fest. Mit „Vorlage laden“ legst du daraus in einer anderen Aktion alles neu an.' ] },
   { q: 'Wie entferne ich veraltete Markierungen?', tags: 'bereinigen veraltet orphan', roles: ['admin'], a: [
     'Wenn du ein Gebiet kleiner machst, bleiben Markierungen außerhalb zunächst bestehen. Tippe das Gebiet an und wähle „Veraltete Einträge bereinigen“.' ] },
 
@@ -88,10 +88,10 @@ const ENTRIES: Entry[] = [
 
 const TOPIC: Record<HelpRole, { title: string; intro: string[] }> = {
   admin: { title: 'Hilfe für Admins', intro: [
-    'Du richtest die Aktion ein: Gebiete zeichnen, Gruppen anlegen, Gebiete zuweisen und Links verteilen. Alles Wichtige steht im Menü unten links.',
-    'Markieren geht über das grüne Quadrat unten rechts, der Fortschritt steht oben links.' ] },
+    'Du richtest die Aktion ein: Gebiete zeichnen, Gruppen anlegen, Gebiete zuweisen und Links verteilen. Alles Wichtige steht im Menü (links oben in der Leiste).',
+    'Markieren geht über das grüne Quadrat unten rechts, der Fortschritt steht oben in der Leiste.' ] },
   'team-editor': { title: 'Hilfe', intro: [
-    'Du markierst in den Gebieten deiner Gruppe, welche Häuser und Straßen schon verteilt sind. Das grüne Quadrat unten rechts startet das Markieren, oben links siehst du den Fortschritt.',
+    'Du markierst in den Gebieten deiner Gruppe, welche Häuser und Straßen schon verteilt sind. Das grüne Quadrat unten rechts startet das Markieren, oben in der Leiste siehst du den Fortschritt.',
     'Alles wird laufend gespeichert und mit den anderen abgeglichen, auch wenn du zwischendurch keinen Empfang hast.' ] },
   viewer: { title: 'Hilfe', intro: [
     'Du siehst den aktuellen Stand der Aktion: welche Straßen und Häuser schon verteilt sind. Zum Markieren brauchst du einen Link für eine Gruppe.',

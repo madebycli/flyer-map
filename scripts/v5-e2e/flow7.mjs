@@ -31,7 +31,7 @@ const row = (p, name) => p.page.locator('.v5-arearow', { hasText: name });
 const A = await helper('alice');
 check('a helper lands in the collection view with the Gebiete list, no distribution tools', (await A.page.getByRole('button', { name: 'Menü' }).count()) === 1 && (await A.page.getByRole('button', { name: 'Markieren starten' }).count()) === 0);
 await A.page.getByRole('button', { name: 'Menü' }).click();
-const collectorTiles = await A.page.locator('.v5-home .v5-app').allInnerTexts();
+const collectorTiles = await A.page.locator('.v5-sheet .v5-grow, .v5-sheet .v5-segmented button').allInnerTexts();
 check('a link helper sees no admin or legacy entries and no mode switch', !collectorTiles.some((t) => /Verwaltung|Alte Ansicht|Austeilen|Abholen|Vorlage|Alt-Import/.test(t)) && /Nutzer \d/.test(await A.page.locator('.v5-sheet .v5-meta').innerText()), collectorTiles.join('|'));
 await A.page.getByRole('button', { name: 'Schließen' }).click();
 await openList(A);

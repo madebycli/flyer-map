@@ -54,8 +54,8 @@
 .v5-sheet-footer { flex: none; padding: var(--sp-2) 1rem calc(env(safe-area-inset-bottom) + 0.8rem); border-top: 1px solid var(--outline-var); background: var(--surface-1); }
 :root[data-kb] .v5-sheet-footer { padding-bottom: 0.8rem; }
 @keyframes v5-sheet { from { transform: translateY(30%); opacity: 0; } }
-@media (min-width: 700px) { .v5-sheet { left: 1rem; right: auto; bottom: calc(1rem + var(--kb, 0px)); width: 28rem; border-radius: var(--r-lg); } }
-@media (min-width: 700px) { :root[data-kb] .v5-sheet { bottom: 0; max-height: calc(var(--vvh) + var(--kb) - 1rem - env(safe-area-inset-top)); border-radius: var(--r-lg) var(--r-lg) 0 0; } }
+@media (min-width: 600px) { .v5-sheet { left: 1rem; right: auto; bottom: calc(1rem + var(--kb, 0px)); width: 28rem; border-radius: var(--r-lg); } }
+@media (min-width: 600px) { :root[data-kb] .v5-sheet { bottom: 0; max-height: calc(var(--vvh) + var(--kb) - 1rem - env(safe-area-inset-top)); border-radius: var(--r-lg) var(--r-lg) 0 0; } }
 .v5-handle { flex: none; display: grid; place-items: start center; width: 100%; height: 2.75rem; padding-top: 0.7rem; box-sizing: border-box; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .v5-handle > i { display: block; width: 2.6rem; height: 0.28rem; border-radius: 1rem; background: var(--outline); opacity: 0.55; }
 .v5-handle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r); }
@@ -155,3 +155,43 @@
 .v5-input { flex: 1; min-width: 0; height: var(--ctl); padding: 0 1rem; border: 1.5px solid var(--outline-var); border-radius: var(--r); background: var(--surface-1); color: var(--on); font: 700 1rem var(--font); }
 .v5-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
 
+
+/* ── lists and settings: one row height, one radius, nothing moves when a state changes ─────────────── */
+.v5-group { display: grid; gap: 0.4rem; margin: 0 0 1.1rem; }
+.v5-group-title { margin: 0.2rem 0.3rem 0; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--on-var); }
+.v5-group-rows { display: grid; gap: 2px; border-radius: var(--r); overflow: hidden; }
+.v5-grow { display: flex; align-items: center; gap: 0.9rem; width: 100%; min-height: 3.5rem; padding: 0.35rem 1rem 0.35rem 0.8rem; border: 0; border-radius: 0.35rem; background: var(--surface-3); color: var(--on); font: inherit; text-align: left; text-decoration: none; cursor: pointer; transition: background var(--t), transform 120ms var(--ease); }
+.v5-group-rows > :first-child { border-top-left-radius: var(--r); border-top-right-radius: var(--r); }
+.v5-group-rows > :last-child { border-bottom-left-radius: var(--r); border-bottom-right-radius: var(--r); }
+.v5-grow:active:not(:disabled) { background: var(--surface-4); }
+.v5-grow:disabled { opacity: 0.45; cursor: default; }
+.v5-grow:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.v5-grow.primary { background: var(--primary-container); color: var(--on-primary-container); }
+.v5-row-ico { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; background: var(--surface-4); color: var(--on); }
+.v5-grow.primary .v5-row-ico { background: color-mix(in srgb, var(--on-primary-container) 14%, transparent); color: inherit; }
+.v5-row-text { display: grid; flex: 1; min-width: 0; gap: 0.1rem; }
+.v5-row-text b { font-size: 1rem; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.v5-row-text small { font-size: 0.82rem; font-weight: 600; line-height: 1.25; color: var(--on-var); overflow-wrap: anywhere; }
+.v5-grow.primary .v5-row-text small { color: inherit; opacity: 0.85; }
+.v5-row-badge { flex: none; min-width: 1.6rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font-size: 0.8rem; font-style: normal; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
+.v5-row-chev { flex: none; color: var(--on-var); }
+.v5-segmented { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-3); }
+.v5-segmented button { display: flex; align-items: center; justify-content: center; gap: 0.4rem; min-width: 0; height: calc(var(--ctl) - 6px); padding: 0 0.6rem; border: 0; border-radius: 999px; background: transparent; color: var(--on-var); font: 700 0.92rem var(--font); white-space: nowrap; cursor: pointer; transition: background var(--t), color var(--t); }
+.v5-segmented button.on { background: var(--primary-container); color: var(--on-primary-container); }
+.v5-segmented button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.v5-switch { flex: none; position: relative; width: 3.1rem; height: 1.85rem; border-radius: 999px; background: var(--surface-4); box-shadow: inset 0 0 0 2px var(--outline); transition: background var(--t), box-shadow var(--t); }
+.v5-switch i { position: absolute; top: 50%; left: 0.45rem; width: 0.9rem; height: 0.9rem; margin-top: -0.45rem; border-radius: 50%; background: var(--outline); transition: transform var(--t) var(--ease), width var(--t) var(--ease), height var(--t) var(--ease), background var(--t), margin var(--t) var(--ease); }
+.v5-switch.on { background: var(--primary); box-shadow: none; }
+.v5-switch.on i { width: 1.4rem; height: 1.4rem; margin-top: -0.7rem; background: var(--on-primary); transform: translateX(1.15rem); }
+@media (prefers-reduced-motion: reduce) { .v5-switch i, .v5-switch { transition: none; } }
+
+/* ── progress: a calm Material 3 bar; a small gap and a dot mark the end of the track, nothing waves or stacks ── */
+.v5-progress { --h: 0.6rem; display: flex; align-items: center; gap: 0.25rem; height: var(--h); contain: layout paint; }
+.v5-progress > i { display: block; height: var(--h); border-radius: 999px; }
+.v5-progress > i:first-child { flex: 0 0 max(var(--h), calc(var(--p) * (100% - 0.25rem))); background: var(--primary); transition: flex-basis 400ms var(--ease); }
+.v5-progress > i:last-child { position: relative; flex: 1 1 0; min-width: 0; background: var(--surface-4); }
+.v5-progress > i:last-child::after { content: ""; position: absolute; right: 0.15rem; top: 50%; width: 0.25rem; height: 0.25rem; margin-top: -0.125rem; border-radius: 50%; background: var(--primary); }
+.v5-progress[data-full="true"] { gap: 0; }
+.v5-progress[data-full="true"] > i:first-child { flex-basis: 100%; }
+.v5-progress[data-full="true"] > i:last-child { display: none; }
+@media (prefers-reduced-motion: reduce) { .v5-progress > i:first-child { transition: none; } }

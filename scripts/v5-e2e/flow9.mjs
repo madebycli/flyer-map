@@ -2,7 +2,7 @@
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 import fs from 'node:fs';
 import { encodeClock } from '../../src/v5/store/hlc.ts';
-import { menuTile, openMenu, startMarking } from './ui.mjs';
+import { menuTile, openMenu, searchFor, startMarking } from './ui.mjs';
 const cookies = JSON.parse(fs.readFileSync(new URL('./cookies.json', import.meta.url), 'utf8'));
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox', '--no-proxy-server'] });
 let failures = 0;
@@ -52,23 +52,24 @@ await page.screenshot({ path: `${shots}/u2-overview.png` });
 await page.getByRole('button', { name: 'Schließen' }).click();
 
 // Suche
-await page.getByRole('button', { name: 'Straße oder Adresse suchen' }).first().click();
-await page.locator('.v5-sheet').getByLabel('Straße oder Adresse suchen').fill('querstr 1');
+await searchFor(page, 'querstr 1');
 await page.waitForSelector('.v5-result');
 check('search finds streets and addresses ("Str." spelling)', (await page.locator('.v5-result').count()) >= 2 && /Querstraße 1/.test(await page.locator('.v5-result').first().innerText()));
 await page.locator('.v5-result').first().click();
 await page.waitForSelector('.v5-sheet');
+check('picking a result closes the card and empties the field', (await page.locator('.v5-spot').count()) === 0 && (await page.getByRole('textbox', { name: 'Straße oder Adresse suchen' }).inputValue()) === '');
 check('picking a result opens it on the map', /Querstraße 1/.test(await page.locator('.v5-sheet h2').innerText()));
 await page.getByRole('button', { name: 'Schließen' }).click();
 
 // Menü: tiles, Karte aus, no leftover old controls
 await openMenu(page);
-const tiles = await page.locator('.v5-home .v5-app').allInnerTexts();
-check('menu tiles: modes for the admin, overview, search, areas, notes', ['Austeilen', 'Abholen', 'Übersicht', 'Suche', 'Gebiete', 'Notizen'].every((t) => tiles.some((x) => x.includes(t))), tiles.join('|'));
+const tiles = await page.locator('.v5-sheet .v5-grow, .v5-sheet .v5-segmented button').allInnerTexts();
+check('menu: modes for the admin, overview, areas, notes, settings, help', ['Austeilen', 'Abholen', 'Übersicht', 'Gebiete', 'Notizen', 'Einstellungen', 'Hilfe'].every((t) => tiles.some((x) => x.includes(t))), tiles.join('|'));
 await page.screenshot({ path: `${shots}/u3-menu.png` });
-await page.getByRole('button', { name: 'Karte aus', exact: true }).click();
-check('"Karte aus" is remembered per device', await page.evaluate(() => localStorage.getItem('vf-v5-base') === 'off'));
-await page.getByRole('button', { name: 'Karte an', exact: true }).click();
+await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+await page.getByRole('switch', { name: 'Straßenkarte darunter' }).click();
+check('the basemap switch is remembered per device', await page.evaluate(() => localStorage.getItem('vf-v5-base') === 'off'));
+await page.getByRole('switch', { name: 'Straßenkarte darunter' }).click();
 await page.getByRole('button', { name: 'Schließen' }).click();
 
 // Marking: caption, discard, "Nur Straßen mit Häusern"

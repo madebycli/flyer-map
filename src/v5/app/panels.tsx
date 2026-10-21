@@ -1,34 +1,78 @@
 import { versionLabel } from '../../pwa/version.ts';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { statusColors, type Theme } from '../map/fieldMap.ts';
 import type { Meta } from './api.ts';
 import { HINTS, LABELS, ORDER, STATUS_ICON, type Kind } from './labels.ts';
-import type { SearchHit } from './search.ts';
-import type { EngineClient } from './engineClient.ts';
 import { ago, emptyTally, percentOf, tallyTotal, type HouseStats, type Tally } from './stats.ts';
 import { CountdownCard } from './roomsUi.tsx';
-import { EmptyState, SheetFrame } from './sheet.tsx';
+import { SheetFrame } from './sheet.tsx';
 import { planIsEmpty, type ActionTemplate, type TemplatePlan } from '../areas/template.ts';
 import type { ApplyProgress } from './templateApply.ts';
-import { Icon, WavyProgress, type IconName } from '../../ui/index.ts';
+import { Icon, ListGroup, ListRow, Progress, Segmented, SwitchRow, type IconName } from '../../ui/index.ts';
 
-export type AppTile = { id: string; icon: IconName; label: string; on?: boolean; badge?: number; href?: string; onClick?: () => void; wide?: boolean };
+export type MenuRow = { id: string; icon: IconName; label: string; hint?: string; badge?: number; href?: string; onClick?: () => void };
+export type MenuGroup = { id: string; title?: string; rows: MenuRow[] };
 
-/** The Home menu: an app-icon grid of squares. Rare things live here so the map stays free for the one thing that is done all day. */
-export function HomeSheet({ tiles, identity, extra, onClose }: { tiles: AppTile[]; identity?: string; /** One more line under the name, for example the time left. */ extra?: React.ReactNode; onClose: () => void }) {
+/** The menu: a few titled groups of rows, ordered by how often they are needed. Rare things (look, hand, diagnosis) live one level down in the settings. */
+export function HomeSheet({ groups, mode, identity, extra, onClose }: {
+  groups: MenuGroup[];
+  /** Admins switch between handing out and collecting here. */
+  mode?: { value: 'distribution' | 'collection'; onChange: (value: 'distribution' | 'collection') => void };
+  identity?: string; /** One more line under the name, for example the time left. */ extra?: React.ReactNode; onClose: () => void;
+}) {
   return (
-    <SheetFrame icon="grid" title="Menü" onClose={onClose} meta={identity || extra ? <><span>{identity && <Icon name="users" size={16} />}{identity}</span>{extra}</> : undefined}>
-      <div className="v5-home">
-        {tiles.map((t) => {
-          const body = <><Icon name={t.icon} size={t.wide ? 26 : 28} /><span>{t.label}</span>{t.badge ? <em>{t.badge}</em> : null}</>;
-          const cls = `v5-app${t.on ? ' on' : ''}${t.wide ? ' wide' : ''}`;
-          return t.href
-            ? <a key={t.id} className={cls} href={t.href} aria-label={t.label}>{body}</a>
-            : <button key={t.id} className={cls} onClick={t.onClick} aria-pressed={t.on} aria-label={t.label}>{body}</button>;
-        })}
-      </div>
+    <SheetFrame icon="menu" title="Menü" onClose={onClose} meta={identity || extra ? <><span>{identity && <Icon name="users" size={16} />}{identity}</span>{extra}</> : undefined}>
+      {mode && <Segmented label="Modus" value={mode.value} onChange={mode.onChange} options={[{ value: 'distribution', label: 'Austeilen', icon: 'mailbox' }, { value: 'collection', label: 'Abholen', icon: 'paw' }]} />}
+      {groups.map((g) => (
+        <ListGroup key={g.id} title={g.title}>
+          {g.rows.map((r) => <ListRow key={r.id} icon={r.icon} label={r.label} hint={r.hint} badge={r.badge} href={r.href} onClick={r.onClick} />)}
+        </ListGroup>
+      ))}
       <p className="v5-hint">Kartendaten © OpenStreetMap-Mitwirkende · OpenMapTiles · OpenFreeMap</p>
       <p className="v5-hint v5-version" aria-label={`App-Version ${versionLabel()}`}>{versionLabel()}</p>
+    </SheetFrame>
+  );
+}
+
+/** Look and feel on one page: appearance, accent colour, handedness, basemap. Nothing here changes the data. */
+export function SettingsSheet({ theme, onTheme, hand, onHand, baseOn, onBase, awake, onAwake, haptics, onHaptics, onPalette, extraRows, onBack, onClose }: {
+  theme: Theme; onTheme(theme: Theme): void; hand: 'right' | 'left'; onHand(hand: 'right' | 'left'): void; baseOn: boolean; onBase(on: boolean): void; awake: boolean; onAwake(on: boolean): void; haptics: boolean; onHaptics(on: boolean): void;
+  onPalette(): void; extraRows: MenuRow[]; onBack(): void; onClose(): void;
+}) {
+  return (
+    <SheetFrame icon="settings" title="Einstellungen" onBack={onBack} onClose={onClose}>
+      <ListGroup title="Darstellung">
+        <Segmented label="Hell oder dunkel" value={theme} onChange={onTheme} options={[{ value: 'dark', label: 'Dunkel', icon: 'moon' }, { value: 'light', label: 'Hell', icon: 'sun' }]} />
+        <ListRow icon="palette" label="Farbe" hint="Akzentfarbe der App" onClick={onPalette} />
+      </ListGroup>
+      <ListGroup title="Bedienung">
+        <Segmented label="Bedienhand" value={hand} onChange={onHand} options={[{ value: 'right', label: 'Rechtshand', icon: 'hand' }, { value: 'left', label: 'Linkshand', icon: 'hand' }]} />
+      </ListGroup>
+      <ListGroup title="Unterwegs">
+        <SwitchRow icon="sun" label="Bildschirm anlassen" hint="Das Display dimmt nicht, solange die App offen ist" checked={awake} onChange={onAwake} />
+        <SwitchRow icon="check" label="Kurz vibrieren beim Markieren" hint="Nur auf Geräten, die das können (nicht iPhone)" checked={haptics} onChange={onHaptics} />
+      </ListGroup>
+      <ListGroup title="Karte">
+        <SwitchRow icon="layers" label="Straßenkarte darunter" hint="Aus: nur Straßen, Häuser und Gebiete" checked={baseOn} onChange={onBase} />
+      </ListGroup>
+      {extraRows.length > 0 && (
+        <ListGroup title="Mehr">
+          {extraRows.map((r) => <ListRow key={r.id} icon={r.icon} label={r.label} hint={r.hint} onClick={r.onClick} />)}
+        </ListGroup>
+      )}
+    </SheetFrame>
+  );
+}
+
+/** Aktions-Vorlagen: load one from a file, or keep the current Gebiete and Gruppen as a file. */
+export function TemplatesSheet({ canLoad, canSave, onLoad, onSave, onBack, onClose }: { canLoad: boolean; canSave: boolean; onLoad(): void; onSave(): void; onBack(): void; onClose(): void }) {
+  return (
+    <SheetFrame icon="upload" title="Vorlagen" onBack={onBack} onClose={onClose}>
+      <p className="v5-hint"><Icon name="info" size={20} />Eine Vorlage hält Gebiete und Gruppen einer Aktion fest, ohne Personen und ohne Fortschritt. Damit lässt sich eine Aktion schnell wieder aufsetzen.</p>
+      <ListGroup>
+        {canLoad && <ListRow icon="upload" label="Vorlage laden" hint="Datei wählen, vorher wird gezeigt, was sich ändert" onClick={onLoad} />}
+        {canSave && <ListRow icon="download" label="Als Vorlage speichern" hint="Gebiete und Gruppen dieser Aktion als Datei" onClick={onSave} />}
+      </ListGroup>
     </SheetFrame>
   );
 }
@@ -84,14 +128,13 @@ export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflict
         </div>
       )}
       <div className="v5-bignum" aria-label={`${percent} Prozent der Häuser`}>{percent}<small>%</small></div>
-      <WavyProgress value={percent / 100} label="Fortschritt nach Häusern" />
+      <Progress value={percent / 100} label="Fortschritt nach Häusern" />
       <div className="v5-stats">
         {ORDER.map((s) => (
           <div key={s} className="v5-stat" style={{ '--c': colors[s] } as React.CSSProperties}><b>{overall[s].toLocaleString('de')}</b><small>{labels[s]}</small></div>
         ))}
       </div>
-      <h3>Fortschritt zählt Häuser, nicht Straßen</h3>
-      <p className="v5-hint">„Nicht möglich“ zählt nicht gegen den Fortschritt.</p>
+      <p className="v5-hint"><Icon name="info" size={20} />{`Der Fortschritt zählt Häuser. „${labels['not-deliverable']}“ wird von der Gesamtzahl abgezogen.`}</p>
       {areas.length > 1 && (<>
         <h3>Gebiete</h3>
         <div className="v5-list">
@@ -126,44 +169,6 @@ export function OverviewSheet({ kind, theme, stats, areas, teams, sync, conflict
           {conflicts > 0 && <button className="v5-btn" onClick={onConflicts}><Icon name="warning" size={20} />{conflicts} überschrieben</button>}
         </div>
       </>)}
-    </SheetFrame>
-  );
-}
-
-/** Street and house-number search, answered by the engine (Rust); picking a result flies there and opens it. */
-export function SearchSheet({ engine, onPick, onClose }: { engine: EngineClient | null; onPick: (entry: SearchHit) => void; onClose: () => void }) {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchHit[]>([]);
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { input.current?.focus(); }, []);
-  useEffect(() => {
-    if (!engine || !query.trim()) { setResults([]); return; }
-    let stale = false;
-    const timer = window.setTimeout(() => { engine.search(query).then((hits) => { if (!stale) setResults(hits); }, () => { if (!stale) setResults([]); }); }, 50);
-    return () => { stale = true; window.clearTimeout(timer); };
-  }, [engine, query]);
-  const bar = (
-    <label className="v5-searchbar">
-      <Icon name="search" size={22} />
-      <input ref={input} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Straße oder Adresse" aria-label="Straße oder Adresse suchen" inputMode="search" enterKeyHint="search" autoComplete="off" autoCorrect="off" spellCheck={false} />
-      {query && <button type="button" className="v5-icon-btn" onClick={() => { setQuery(''); input.current?.focus(); }} aria-label="Suche leeren" title="Suche leeren"><Icon name="close" size={22} /></button>}
-    </label>
-  );
-  return (
-    <SheetFrame icon="search" title="Suche" onClose={onClose} toolbar={bar} meta={results.length ? <span>{results.length} Treffer</span> : undefined}>
-      {results.length > 0 && (
-        <div className="v5-results">
-          {results.map((r) => (
-            <button key={`${r.kind}${r.id}`} className="v5-result" onClick={() => onPick(r)}>
-              <span className="v5-result-ico"><Icon name={r.kind === 'street' ? 'road' : 'house'} size={22} /></span>
-              <span className="v5-result-text"><b>{r.label}</b><small>{r.kind === 'street' ? 'Straße' : 'Haus'}</small></span>
-              <small className="v5-result-detail">{r.detail}</small>
-            </button>
-          ))}
-        </div>
-      )}
-      {query.trim() && !results.length && <EmptyState icon="search" title="Nichts gefunden" text="Prüfe die Schreibweise oder suche nur nach dem Straßennamen." />}
-      {!query.trim() && <EmptyState icon="search" title="Straße oder Adresse" text="Die Suche läuft über alle Straßen und Häuser der geladenen Kartenteile." />}
     </SheetFrame>
   );
 }

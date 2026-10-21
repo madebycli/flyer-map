@@ -5,8 +5,20 @@ export const openMenu = async (page) => {
   if (!(await menu.count()) && (await page.getByRole('button', { name: 'Fertig', exact: true }).count())) await page.getByRole('button', { name: 'Fertig', exact: true }).click();
   await menu.click();
 };
-/** Open the Home menu and press one of its tiles. */
-export const menuTile = async (page, name) => { await openMenu(page); await page.getByRole('button', { name, exact: true }).click(); };
+/** Things that live one level below the menu: the settings page and the templates page. */
+const BELOW = { Farbe: 'Einstellungen', Diagnose: 'Einstellungen', 'Alt-Import': 'Einstellungen', 'Vorlage laden': 'Vorlagen', 'Als Vorlage speichern': 'Vorlagen' };
+/** Open the menu and press one of its rows (going through the page it lives on, if it is below the menu). */
+export const menuTile = async (page, name) => {
+  await openMenu(page);
+  if (BELOW[name]) await page.getByRole('button', { name: BELOW[name], exact: true }).click();
+  await page.getByRole('button', { name, exact: true }).click();
+};
+/** The settings page: appearance, hand, basemap. */
+export const openSettings = async (page) => { await openMenu(page); await page.getByRole('button', { name: 'Einstellungen', exact: true }).click(); };
+/** Appearance in the settings: 'Hell' or 'Dunkel' (a segmented choice, so a radio). */
+export const setAppearance = async (page, name) => { await openSettings(page); await page.getByRole('radio', { name, exact: true }).click(); };
+/** Type into the search bar at the top of the map. */
+export const searchFor = async (page, text) => { const input = page.getByRole('textbox', { name: 'Straße oder Adresse suchen' }); await input.click(); await input.fill(text); };
 /** A plain tap on the marking button starts marking in route mode. */
 export const startMarking = (page) => page.getByRole('button', { name: 'Markieren starten' }).click();
 /** Long press (the way to the options panel without the counter tile). */

@@ -28,8 +28,9 @@ const box = (name, role = 'button') => page.getByRole(role, { name, exact: true 
 
 // ── layout ─────────────────────────────────────────────────────────
 const menu = await box('Menü');
-check('the menu button sits bottom-left, with the role badge next to it', menu && menu.x < 60 && menu.y > 844 * 0.75 && /Admin/.test(await page.locator('.v5-teamchip').innerText()), JSON.stringify(menu));
-check('the top right has help and search, no menu', (await page.locator('.v5-topright button').count()) === 2 && (await page.getByRole('button', { name: 'Hilfe', exact: true }).count()) === 1);
+check('the menu button is the left end of the bar at the top, the role badge sits bottom-left', menu && menu.x < 24 && menu.y < 60 && /Admin/.test(await page.locator('.v5-teamchip').innerText()), JSON.stringify(menu));
+{ const bar = await page.locator('.v5-cmd').boundingBox(), pill = await page.locator('.v5-pill').boundingBox(), field = await page.getByRole('textbox', { name: 'Straße oder Adresse suchen' }).boundingBox();
+  check('the top bar is one line: menu, search field, status; help lives in the menu', bar && pill && field && Math.abs(bar.height - 56) < 1 && field.x > menu.x + menu.width - 2 && pill.x > field.x + field.width - 2 && (await page.getByRole('button', { name: 'Hilfe', exact: true }).count()) === 0, JSON.stringify({ bar, pill, field })); }
 const [fit, plus, locate, fab] = await Promise.all([box('Alles zeigen'), box('Hineinzoomen'), box('Standort aktualisieren'), box('Markieren starten')]);
 check('right column from the top: Alles zeigen, zoom, Standort, Markieren', fit && plus && locate && fab && fit.y < plus.y && plus.y < locate.y && locate.y < fab.y, JSON.stringify({ fit, plus, locate, fab }));
 check('Alles zeigen is on the right (not left)', fit && fit.x > 390 / 2);
@@ -38,7 +39,7 @@ await page.getByRole('button', { name: 'Alles zeigen', exact: true }).click(); /
 await page.screenshot({ path: `${shots}/t18-layout.png` });
 
 // ── help: role text, questions open on tap, search narrows them ────
-await page.getByRole('button', { name: 'Hilfe', exact: true }).click();
+await menuTile(page, 'Hilfe');
 await page.locator('.v5-sheet').waitFor();
 const helpText = await page.locator('.v5-sheet').innerText();
 check('the admin help is for admins (areas, groups), without helper-only chapters', /Hilfe für Admins/.test(helpText) && /Wie lege ich ein Gebiet an/.test(helpText) && !/Wie übernehme ich ein Teilgebiet/.test(helpText));
@@ -60,7 +61,7 @@ await caption.waitFor();
 await page.locator('.v5-fab').evaluate(async (el) => { await Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)); }); // the panel grows with a transition
 const capBox = await caption.boundingBox();
 const panelBox = await page.locator('.v5-fab').boundingBox();
-check('while marking the menu button and the role badge give way to the caption, which sits in their row', (await page.getByRole('button', { name: 'Menü', exact: true }).count()) === 0 && (await page.locator('.v5-teamchip').count()) === 0 && capBox.x < 40 && capBox.y + capBox.height > 844 * 0.88 && capBox.x + capBox.width <= panelBox.x + 1, JSON.stringify({ capBox, panelBox }));
+check('while marking the role badge gives way to the caption, which sits in their row', (await page.locator('.v5-teamchip').count()) === 0 && capBox.x < 40 && capBox.y + capBox.height > 844 * 0.88 && capBox.x + capBox.width <= panelBox.x + 1, JSON.stringify({ capBox, panelBox }));
 check('the panel keeps a margin to the screen edge', panelBox.x + panelBox.width <= 390 - 12 && panelBox.y + panelBox.height <= 844 - 12, JSON.stringify(panelBox));
 check('the panel is bigger than before', panelBox.width >= 150, String(panelBox.width));
 const done = async () => Number(await page.locator('.v5-pill').getAttribute('data-done'));
@@ -107,7 +108,7 @@ check('the shrunk sheet is much lower than the full one and still there', small.
 await page.waitForTimeout(500); // the controls fade/slide with a transition
 const zoomAfter = await box('Hineinzoomen');
 const zoomBefore = { y: fit.y + fit.height + 8 }; // measured before, with no sheet open
-check('the controls stay where they were while the sheet is shrunk (nothing moved up)', Math.abs(zoomAfter.y - plus.y) <= 1 && (await box('Menü')).y > small.y - 1, JSON.stringify({ before: plus, after: zoomAfter, small, zoomBefore }));
+check('the controls stay where they were while the sheet is shrunk (nothing moved up)', Math.abs(zoomAfter.y - plus.y) <= 1 && (await box('Menü')).y < 60, JSON.stringify({ before: plus, after: zoomAfter, small, zoomBefore }));
 await page.screenshot({ path: `${shots}/t18-small.png` });
 await page.locator('.v5-handle').click();
 check('tapping the handle brings the sheet back', await until(async () => !(await sheet.getAttribute('class')).includes('small')));

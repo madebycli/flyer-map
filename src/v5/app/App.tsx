@@ -17,7 +17,8 @@ import { fetchProgress, type ServerProgress, changeRoom, deleteRoom, finishRoom,
 import { AreaEditBar, MAIN_ID, sizeLabel, useAreaTool } from './areas.tsx';
 import { FabCaption, MarkFab, type FabPhase } from './fab.tsx';
 import { HINTS, LABELS as ALL_LABELS, STATUS_ICON, type Kind } from './labels.ts';
-import { buildIndex } from './mark.ts';
+import { buildIndex, nearestOpen, wholeStreet } from './mark.ts';
+import { keepAwake, readAwake, readHaptics, saveAwake, saveHaptics, tick } from '../../pwa/device.ts';
 import { meters, useMarking } from './marking.tsx';
 import { AccessSheet } from './accessSheet.tsx';
 import { AreaAdmin, GroupsSheet } from './groupsSheet.tsx';
@@ -28,7 +29,8 @@ import { PaletteSheet } from './paletteSheet.tsx';
 import { CountdownLine, RoomChip, RoomSheet, RoomStartSheet, RoomsSheet } from './roomsUi.tsx';
 import { useRooms } from './useRooms.ts';
 import { roomLinkFor, type RoomRecord } from './roomsLogic.ts';
-import { HomeSheet, OverviewSheet, SearchSheet, TemplateSheet, type AppTile } from './panels.tsx';
+import { HomeSheet, OverviewSheet, SettingsSheet, TemplateSheet, TemplatesSheet, type MenuGroup, type MenuRow } from './panels.tsx';
+import { CommandBar } from './commandBar.tsx';
 import { PickupBody, PickupForm, pickupFeatures, type PickupDraft } from './pickups.tsx';
 import { createPickup, setPickupStatus, snapPoint, validateDraft, PICKUP_LABEL, type Pickup, type PickupStatus } from './pickups.ts';
 import { actionErrorText } from './collection.ts';
@@ -48,7 +50,7 @@ const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf
 const readBase = (): boolean => { try { return localStorage.getItem('vf-v5-base') !== 'off'; } catch { return true; } };
 
 type Tool = 'inspect' | 'areas' | 'pickup';
-type Panel = 'rooms' | 'room' | 'roomstart' | 'palette' | 'help' | 'diag' | 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'search' | 'notes' | 'conflicts' | 'areas' | 'template';
+type Panel = 'rooms' | 'room' | 'roomstart' | 'palette' | 'help' | 'diag' | 'home' | 'overview' | 'activity' | 'access' | 'groups' | 'setup' | 'settings' | 'templates' | 'notes' | 'conflicts' | 'areas' | 'template';
 type Selection = { kind: 'house'; house: House } | { kind: 'segment'; segment: Segment; chunks: Segment[]; houses: House[] };
 type Undo = { label: string; revert: () => void };
 
@@ -107,6 +109,10 @@ export function App({ campaignId }: { campaignId: string }) {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [seed, setSeed] = useState<string>(readSeed);
   const [hand, setHand] = useState<'left' | 'right'>(readHand);
+  const [awake, setAwake] = useState(readAwake);
+  const [haptics, setHaptics] = useState(readHaptics);
+  useEffect(() => { saveAwake(awake); return awake ? keepAwake() : undefined; }, [awake]);
+  useEffect(() => { saveHaptics(haptics); }, [haptics]);
   const [baseOn, setBaseOn] = useState(readBase);
   const [rotated, setRotated] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -200,6 +206,7 @@ export function App({ campaignId }: { campaignId: string }) {
     if (keys.length < requested.length) setNotice(`${requested.length - keys.length} Einträge liegen in fremden Gebieten und wurden ausgelassen.`);
     const before = keys.map((key) => [key, store.statusOf(key)] as const);
     store.set(keys, status);
+    tick();
     setUndo({ label: `${label} → ${LABELS[status]}`, revert: () => { for (const [key, previous] of before) store.set(key, previous); } });
     return keys.length;
   }, [store, canWrite, campaign.areaOf, writableAreas, isCollection]); // eslint-disable-line react-hooks/exhaustive-deps -- LABELS follows isCollection
@@ -277,12 +284,31 @@ export function App({ campaignId }: { campaignId: string }) {
     if (key.startsWith('h:')) { const h = index.houses.get(key.slice(2)); return h ? [h.street, h.number].filter(Boolean).join(' ') || 'Haus' : 'Haus'; }
     const s = index.segments.get(key.slice(2)); return s?.name ?? s?.ref ?? 'Straße';
   };
+  /** A search result flies there and selects it; a street is selected as a whole (every connected piece of that name), not only the piece the index points at. */
   const openSearchResult = (entry: SearchHit) => {
     if (!index) return;
     setPanel(null); setFab('idle'); setTool('inspect'); areaTool.setSelectedId(null);
-    const at = entry.kind === 'house' ? index.houses.get(entry.id)?.center : index.segments.get(entry.id)?.mid;
-    selectEntity(entry.kind === 'house' ? 'house' : 'segment', entry.id);
-    if (at) fieldMap.current?.focus(at);
+    if (entry.kind === 'house') {
+      const at = index.houses.get(entry.id)?.center;
+      selectEntity('house', entry.id);
+      if (at) fieldMap.current?.focus(at);
+      return;
+    }
+    const found = index.segments.get(entry.id);
+    if (!found) return;
+    const chunks = wholeStreet(index, found);
+    setSelection({ kind: 'segment', segment: found, chunks, houses: chunks.flatMap((c) => index.housesBySegment.get(c.id) ?? []) });
+    fieldMap.current?.select(chunks.map((c) => segmentKey(c.id)));
+    const points = chunks.flatMap((c) => [c.start, c.mid]);
+    if (points.length > 2) fieldMap.current?.fitTo(ringBounds(points), FIT_PADDING); else fieldMap.current?.focus(found.mid);
+  };
+  /** After a street is done: the nearest one that still has work, in places this person may mark. */
+  const goNextOpen = () => {
+    if (!index || !store || !fieldMap.current) return;
+    setPanel(null);
+    const next = nearestOpen(index, fieldMap.current.center(), (key) => store.statusOf(key), (segment) => { const area = campaign.areaOf.get(segmentKey(segment.id)); return !!area && writableAreas.has(area); });
+    if (!next) { setNotice('In deinen Gebieten ist alles erledigt.'); return; }
+    openSearchResult({ kind: 'street', id: next.id, label: next.name ?? '', detail: '' });
   };
   const fabRef = useRef<FabPhase>('idle');
   fabRef.current = fab;
@@ -595,32 +621,37 @@ export function App({ campaignId }: { campaignId: string }) {
   };
   const openRoom = (r: RoomRecord) => { setRoomId(r.id); setRoomSummary(false); setRoomError(null); setPanel('room'); };
   const roomLink = room && room.status === 'active' && room.joinSecret && room.joinMode !== 'team' ? roomLinkFor(location.origin, campaignId, room.id, room.joinMode === 'link' ? room.joinSecret : null) : null;
-  const tiles: AppTile[] = [
-    ...(meta?.role === 'admin' ? [
-      { id: 'm-dist', icon: 'mailbox', label: 'Austeilen', on: !isCollection, href: isCollection ? modeHref(false) : undefined, onClick: () => setPanel(null), wide: true } satisfies AppTile,
-      { id: 'm-coll', icon: 'paw', label: 'Abholen', on: isCollection, href: isCollection ? undefined : modeHref(true), onClick: () => setPanel(null), wide: true } satisfies AppTile,
-    ] : []),
-    { id: 'overview', icon: 'chart', label: 'Übersicht', onClick: () => openPanel('overview') },
-    { id: 'activity', icon: 'users', label: 'Team', onClick: () => openPanel('activity') },
-    ...(meta?.role === 'admin' && isCollection ? [{ id: 'setup', icon: 'ruler', label: 'Einrichten', onClick: () => { setAdminError(null); openPanel('setup'); } } satisfies AppTile] : []),
-    ...(meta?.role === 'admin' && !isCollection ? [{ id: 'groups', icon: 'flag', label: 'Gruppen', onClick: () => { setAdminError(null); openPanel('groups'); } } satisfies AppTile] : []),
-    ...(meta?.role === 'admin' ? [{ id: 'access', icon: 'lock', label: 'Zugänge', onClick: () => openPanel('access') } satisfies AppTile] : []),
-    ...(roomsOn ? [{ id: 'rooms', icon: 'later', label: 'Runs', badge: rooms.active.length || undefined, onClick: () => { setRoomError(null); openPanel('rooms'); } } satisfies AppTile] : []),
-    { id: 'search', icon: 'search', label: 'Suche', onClick: () => openPanel('search') },
-    { id: 'areas', icon: 'polygon', label: 'Gebiete', onClick: () => (isCollection ? openPanel('areas') : enter('areas')) },
-    ...(canEditAny && !isCollection ? [{ id: 'template', icon: 'upload', label: 'Vorlage laden', onClick: pickTemplate } satisfies AppTile] : []),
-    ...(meta?.role === 'admin' && !isCollection ? [{ id: 'template-save', icon: 'download', label: 'Als Vorlage', onClick: exportTemplate } satisfies AppTile] : []),
-    { id: 'notes', icon: 'message', label: 'Notizen', badge: notes?.all().length || undefined, onClick: () => openPanel('notes') },
-    ...(isCollection && rights.create ? [{ id: 'pickup', icon: 'flag', label: 'Sonder-Marker', onClick: () => enter('pickup') } satisfies AppTile] : []),
-    { id: 'fit', icon: 'fit', label: 'Alles zeigen', onClick: () => { setPanel(null); fitAll(); } },
-    { id: 'palette', icon: 'palette', label: 'Farbe', onClick: () => openPanel('palette') },
-    { id: 'theme', icon: theme === 'dark' ? 'sun' : 'moon', label: theme === 'dark' ? 'Hell' : 'Dunkel', onClick: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
-    { id: 'hand', icon: 'hand', label: hand === 'right' ? 'Linkshand' : 'Rechtshand', onClick: () => setHand(hand === 'right' ? 'left' : 'right') },
-    { id: 'base', icon: 'layers', label: baseOn ? 'Karte aus' : 'Karte an', on: !baseOn, onClick: () => setBaseOn(!baseOn) },
-    ...(importOffer ? [{ id: 'import', icon: importState === 'busy' ? 'sync' : 'download', label: 'Alt-Import', onClick: () => void importLegacy() } satisfies AppTile] : []),
-    { id: 'diag', icon: 'chart', label: 'Diagnose', onClick: () => openPanel('diag') },
-    // the admin entry is role-aware: a link helper never sees it
-    ...(meta?.role === 'admin' ? [{ id: 'admin', icon: 'shield', label: 'Verwaltung', href: '/login' } satisfies AppTile] : []),
+  const admin = meta?.role === 'admin';
+  const row = (id: string, icon: MenuRow['icon'], label: string, onClick: () => void, extra: Partial<MenuRow> = {}): MenuRow => ({ id, icon, label, onClick, ...extra });
+  // Ordered by use: what the day is about first, setting things up second, the app itself last. Look, hand, diagnosis and the like are in the settings.
+  const menuGroups: MenuGroup[] = [
+    { id: 'now', rows: [
+      row('overview', 'chart', 'Übersicht', () => openPanel('overview'), { hint: 'Fortschritt, Gebiete, Synchronisierung' }),
+      row('activity', 'users', 'Team', () => openPanel('activity'), { hint: 'Wer ist unterwegs, letzte Änderungen' }),
+      ...(roomsOn ? [row('rooms', 'later', 'Runs', () => { setRoomError(null); openPanel('rooms'); }, { badge: rooms.active.length || undefined, hint: 'Gemeinsam losgehen' })] : []),
+      row('notes', 'message', 'Notizen', () => openPanel('notes'), { badge: notes?.all().length || undefined }),
+    ] },
+    { id: 'map', title: 'Karte', rows: [
+      row('areas', 'polygon', 'Gebiete', () => (isCollection ? openPanel('areas') : enter('areas')), { hint: isCollection ? 'Teilgebiete übernehmen' : 'Ansehen und bearbeiten' }),
+      ...(isCollection && rights.create ? [row('pickup', 'flag', 'Sonder-Marker', () => enter('pickup'))] : []),
+      ...(mayMark ? [row('next', 'route', 'Nächste offene Straße', goNextOpen, { hint: 'Springt zur nächsten Straße mit Arbeit' })] : []),
+      row('fit', 'fit', 'Alles zeigen', () => { setPanel(null); fitAll(); }),
+    ] },
+    ...(admin || canEditAny ? [{ id: 'admin', title: 'Verwalten', rows: [
+      ...(admin && isCollection ? [row('setup', 'ruler', 'Einrichten', () => { setAdminError(null); openPanel('setup'); }, { hint: 'Sammelgebiet und Teilgebiete' })] : []),
+      ...(admin && !isCollection ? [row('groups', 'flag', 'Gruppen', () => { setAdminError(null); openPanel('groups'); }, { hint: 'Gruppen und ihre Gebiete' })] : []),
+      ...(admin ? [row('access', 'lock', 'Zugänge', () => openPanel('access'), { hint: 'Links und Codes zum Mitmachen' })] : []),
+      ...(canEditAny && !isCollection ? [row('templates', 'upload', 'Vorlagen', () => openPanel('templates'), { hint: 'Aktion laden oder speichern' })] : []),
+      ...(admin ? [{ id: 'verwaltung', icon: 'shield' as const, label: 'Verwaltung', href: '/login', hint: 'Alle Aktionen, Konten, Einstellungen der Organisation' }] : []),
+    ] }] : []),
+    { id: 'app', title: 'App', rows: [
+      row('settings', 'settings', 'Einstellungen', () => openPanel('settings'), { hint: 'Darstellung, Hand, Karte' }),
+      row('help', 'help', 'Hilfe', () => openPanel('help')),
+    ] },
+  ];
+  const settingsExtra: MenuRow[] = [
+    ...(importOffer ? [row('import', importState === 'busy' ? 'sync' : 'download', 'Alt-Import', () => void importLegacy(), { hint: 'Markierungen der alten App übernehmen' })] : []),
+    row('diag', 'chart', 'Diagnose', () => openPanel('diag'), { hint: 'Messwerte und Bericht für den Support' }),
   ];
 
   const ROLE_NAME: Record<string, string> = { admin: 'Admin', 'team-editor': 'Gruppe (bearbeiten)', viewer: 'Ansehen', 'collection-collector': 'Helfer' };
@@ -637,18 +668,15 @@ export function App({ campaignId }: { campaignId: string }) {
       <div ref={mapHost} className="v5-map" aria-label="Karte" />
       <FocusVideo />
       <input ref={templateInput} type="file" accept=".json,application/json" hidden aria-label="Vorlagen-Datei wählen" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void onTemplateFile(file); }} />
-      {ready && (
-        <button className="v5-pill" onClick={() => openPanel('overview')} role="status" aria-label={`${meta?.campaign.name ?? ''}: ${percent} Prozent – Übersicht öffnen`} data-done={doneHouses} data-total={totalHouses} title={syncTitle}>
-          <span className={`v5-dot ${dot}`} aria-label={syncTitle}><Icon name={dot === 'ok' ? 'cloudOk' : dot === 'offline' ? 'cloudOff' : 'sync'} size={20} /></span>
-          <strong className="v5-percent">{percent}<small>%</small></strong>
-          {!canWrite && <Icon name="eye" size={18} className="v5-viewonly" />}
-        </button>
-      )}
-      {ready && (
-        <div className="v5-topright">
-          <button className="v5-sq" onClick={() => openPanel('help')} aria-label="Hilfe" title="Hilfe"><Icon name="help" size={24} /></button>
-          <button className="v5-sq" onClick={() => openPanel('search')} aria-label="Straße oder Adresse suchen" title="Suchen"><Icon name="search" size={24} /></button>
-        </div>
+      {ready && tool === 'inspect' && !editing && (
+        <CommandBar engine={campaign.engine} onMenu={() => openPanel('home')} onFocusSearch={() => { if (panel || selection) { closeSelection(); setPanel(null); } }} onPick={openSearchResult}
+          status={
+            <button className="v5-pill" onClick={() => openPanel('overview')} role="status" aria-label={`${meta?.campaign.name ?? ''}: ${percent} Prozent – Übersicht öffnen`} data-done={doneHouses} data-total={totalHouses} title={syncTitle}>
+              <span className={`v5-dot ${dot}`} aria-label={syncTitle}><Icon name={dot === 'ok' ? 'cloudOk' : dot === 'offline' ? 'cloudOff' : 'sync'} size={20} /></span>
+              <strong className="v5-percent">{percent}<small>%</small></strong>
+              {!canWrite && <Icon name="eye" size={18} className="v5-viewonly" />}
+            </button>
+          } />
       )}
       {ready && meta && meta.kind !== 'collection' && meta.areas.length === 0 && (
         <div className="v5-banner v5-missing" role="status">
@@ -716,7 +744,6 @@ export function App({ campaignId }: { campaignId: string }) {
             // while marking, the caption takes the row of the menu button and the team badge
             ? (fab !== 'options' && <FabCaption marking={marking} kind={kind} />)
             : (<>
-              <button className="v5-sq" onClick={() => openPanel('home')} aria-label="Menü" title="Menü"><Icon name="grid" size={24} /></button>
  {roomsOn && <RoomChip rooms={rooms.active} now={rooms.now} onClick={() => { if (rooms.active.length === 1) openRoom(rooms.active[0]); else { setRoomError(null); openPanel('rooms'); } }} />}
               {teamBadge && <span className="v5-teamchip" title={teamBadge.title}>{teamBadge.color && <i className="v5-dotc" style={{ background: teamBadge.color }} aria-hidden />}<span>{teamBadge.label}</span></span>}
             </>)}
@@ -739,9 +766,11 @@ export function App({ campaignId }: { campaignId: string }) {
 
       {diagOn && panel !== 'diag' && <DiagHud onOpen={() => setPanel('diag')} />}
       {panel === 'diag' && <DiagSheet engine={campaign.engine} onClose={() => setPanel(null)} />}
-      {panel === 'palette' && <PaletteSheet seed={seed} theme={theme} onPick={setSeed} onClose={() => setPanel(null)} />}
+      {panel === 'palette' && <PaletteSheet seed={seed} theme={theme} onPick={setSeed} onBack={() => setPanel('settings')} onClose={() => setPanel(null)} />}
+      {ready && panel === 'settings' && <SettingsSheet theme={theme} onTheme={setTheme} hand={hand} onHand={setHand} baseOn={baseOn} onBase={setBaseOn} awake={awake} onAwake={setAwake} haptics={haptics} onHaptics={setHaptics} onPalette={() => setPanel('palette')} extraRows={settingsExtra} onBack={() => setPanel('home')} onClose={() => setPanel(null)} />}
+      {ready && panel === 'templates' && <TemplatesSheet canLoad={canEditAny} canSave={admin} onLoad={pickTemplate} onSave={exportTemplate} onBack={() => setPanel('home')} onClose={() => setPanel(null)} />}
       {ready && panel === 'help' && meta && <HelpSheet role={meta.role} onClose={() => setPanel(null)} />}
-      {ready && panel === 'home' && <HomeSheet tiles={tiles} identity={identity} extra={roomsOn && meta?.window ? <CountdownLine window={meta.window} now={rooms.now} /> : undefined} onClose={() => setPanel(null)} />}
+      {ready && panel === 'home' && <HomeSheet groups={menuGroups} mode={admin ? { value: isCollection ? 'collection' : 'distribution', onChange: (value) => { if ((value === 'collection') !== isCollection) location.assign(modeHref(value === 'collection')); } } : undefined} identity={identity} extra={roomsOn && meta?.window ? <CountdownLine window={meta.window} now={rooms.now} /> : undefined} onClose={() => setPanel(null)} />}
       {ready && roomsOn && meta && panel === 'rooms' && (
         <RoomsSheet role={meta.role} window={meta.window} rooms={rooms.rooms} now={rooms.now} progress={percent} staff={isStaff} canStart={canStartRoom} startHint={startHint} busy={roomBusy} error={roomError ?? rooms.error}
           onStart={() => { setRoomError(null); setPanel('roomstart'); }} onOpen={openRoom}
@@ -777,7 +806,6 @@ export function App({ campaignId }: { campaignId: string }) {
           onSetAreaTeam={(areaId, teamId) => { const a = areaOfId(areaId); if (a && a.teamId !== teamId) void runAdmin(() => setAreaTeam(campaignId, a, teamId), `${a.name} → ${teamOf(teamId)?.name ?? 'Gruppe'}`); }} />
       )}
       {ready && panel === 'access' && meta?.role === 'admin' && <AccessSheet campaignId={campaignId} teams={meta.teams} onClose={() => setPanel(null)} />}
-      {ready && panel === 'search' && <SearchSheet engine={campaign.engine} onPick={openSearchResult} onClose={() => setPanel(null)} />}
       {ready && panel === 'overview' && stats && meta && (
         <OverviewSheet kind={kind} theme={theme} stats={stats} sizes={meta.role === 'admin' && lazyPartial && !wholeFromServer ? { busy: campaign.sizesProgress, onRun: () => void campaign.completeSizes().then(() => fetchProgress(campaignId)).then(setServerProgress, () => {}) } : undefined} areas={meta.areas} teams={meta.teams} sync={campaign.sync} conflicts={conflictRows.length}
           engine={campaign.engine?.kind === 'wasm' ? 'Rust (WebAssembly)' : 'TypeScript (Ersatz)'} window={roomsOn ? meta.window : null} serverNow={rooms.now} onFitArea={fitArea} onSyncNow={campaign.syncNow} onConflicts={() => openPanel('conflicts')} onClose={() => setPanel(null)} />

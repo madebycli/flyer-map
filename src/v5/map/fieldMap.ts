@@ -353,6 +353,7 @@ export class FieldMap {
   private install() {
     const map = this.map;
     if (map.getSource(this.firstSource())) return;
+    this.hideOneWayArrows();
     this.installLayers();
     this.pushData();
     this.pushAreas();
@@ -366,6 +367,17 @@ export class FieldMap {
     this.previewed = new Set(); // feature-state died with the old sources
     this.selected = [];
     this.resolveReady();
+  }
+
+  /** The basemap's one-way arrows are noise on a walking map and sit on top of our street lines: off. */
+  private hideOneWayArrows() {
+    try {
+      for (const layer of this.map.getStyle().layers ?? []) {
+        if (layer.id.startsWith('v5-') || layer.type !== 'symbol') continue;
+        const sourceLayer = (layer as { 'source-layer'?: string })['source-layer'] ?? '';
+        if (/oneway|one-way|arrow/i.test(`${layer.id} ${sourceLayer}`)) this.map.setLayoutProperty(layer.id, 'visibility', 'none');
+      }
+    } catch (error) { diag.warn('map', 'one-way arrows could not be hidden', { error: String(error) }); }
   }
 
   private installLayers() {
@@ -947,6 +959,8 @@ export class FieldMap {
   /** Centre on a place, zooming in far enough to act on it. */
   focus(at: LngLat, zoom = 17.2) { this.map.easeTo({ center: at, zoom: Math.max(this.map.getZoom(), zoom), duration: 450, padding: { top: 90, bottom: 280, left: 0, right: 0 } }); }
 
+  /** Where the map looks right now. */
+  center(): [number, number] { const c = this.map.getCenter(); return [c.lng, c.lat]; }
   fitTo(bounds: [[number, number], [number, number]], padding: number | { top: number; bottom: number; left: number; right: number } = 40) {
     if (!bounds.flat().every(Number.isFinite)) return;
     this.map.fitBounds(bounds, { padding, duration: 0, maxZoom: 17.2 });

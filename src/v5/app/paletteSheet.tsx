@@ -3,11 +3,11 @@ import type { Theme } from '../map/fieldMap.ts';
 import { SheetFrame } from './sheet.tsx';
 
 /** Pick the colour of the app (Material You from a seed colour): eight colours or any colour; kept on this device, applied to every page. */
-export function PaletteSheet({ seed, theme, onPick, onClose }: { seed: string; theme: Theme; onPick(hex: string): void; onClose(): void }) {
+export function PaletteSheet({ seed, theme, onPick, onBack, onClose }: { seed: string; theme: Theme; onPick(hex: string): void; onBack?(): void; onClose(): void }) {
   const custom = !SEEDS.some((s) => s.hex.toLowerCase() === seed.toLowerCase());
   const swatch = (hex: string) => { const scheme = schemeFor(hex, theme); return { background: scheme['primary-container'], color: scheme['on-primary-container'], ['--dot' as string]: scheme.primary }; };
   return (
-    <SheetFrame icon="palette" title="Farbe" onClose={onClose}>
+    <SheetFrame icon="palette" title="Farbe" onBack={onBack} onClose={onClose}>
       <p className="v5-hint"><Icon name="info" size={20} />Alle Farben der App werden aus einer Grundfarbe gebildet, hell und dunkel. Das gilt nur für dieses Gerät.</p>
       <div className="v5-swatches" role="group" aria-label="Grundfarbe">
         {SEEDS.map((s) => {
