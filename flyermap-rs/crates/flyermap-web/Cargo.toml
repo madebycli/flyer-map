@@ -1,0 +1,32 @@
+[package]
+name = "flyermap-web"
+version.workspace = true
+edition.workspace = true
+description = "Verteil-Flyer web app (Leptos, CSR, WebAssembly): platform layer, design system, screens. Runs in the browser; the pure parts are tested natively."
+publish.workspace = true
+
+[lib]
+name = "flyermap_web"
+
+[[bin]]
+name = "flyermap-web"
+path = "src/main.rs"
+
+[dependencies]
+flyermap-core = { path = "../flyermap-core" }
+leptos = { version = "0.8", features = ["csr"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+thiserror.workspace = true
+web-sys = { version = "0.3", features = [
+  "console", "Window", "Document", "Element", "HtmlElement", "Node", "Storage", "Navigator", "VisualViewport", "CssStyleDeclaration",
+  "Event", "EventTarget", "PointerEvent", "KeyboardEvent", "HtmlInputElement", "DomRect", "DomTokenList", "VisibilityState",
+] }
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
