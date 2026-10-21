@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import '../ui/ui.css';
 import './pwa.css';
 import { canPromptInstall, onInstallPromptChange, promptInstall, saveSkip, type Platform } from './install.ts';
 
@@ -42,7 +43,7 @@ function IosAdd() {
 function IosConfirm() {
   return (
     <Shot label="Oben rechts die Schaltfläche Hinzufügen ist markiert">
-      <text x="160" y="40" fill="var(--on)" fontSize="15" fontWeight="800" textAnchor="middle" fontFamily="system-ui, sans-serif">Zum Home-Bildschirm</text>
+      <text x="28" y="43" fill="var(--on)" fontSize="13" fontWeight="800" fontFamily="system-ui, sans-serif">Zum Home-Bildschirm</text>
       <rect x="236" y="22" width="68" height="30" rx="15" fill="var(--primary)" />
       <text x="270" y="43" fill="var(--on-primary)" fontSize="14" fontWeight="800" textAnchor="middle" fontFamily="system-ui, sans-serif">Hinzufügen</text>
       <rect x="230" y="17" width="80" height="40" rx="20" fill="none" stroke={RING} strokeWidth="3" />

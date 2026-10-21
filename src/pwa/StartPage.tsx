@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import '../ui/ui.css';
 import './pwa.css';
 import { lastCampaign, pastedLinkTarget } from './link.ts';
 

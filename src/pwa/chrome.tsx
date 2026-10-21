@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import '../ui/ui.css';
 import './pwa.css';
 import { applyUpdate, onUpdate, updateAvailable, watchUpdates } from './update.ts';
 import { versionLabel } from './version.ts';

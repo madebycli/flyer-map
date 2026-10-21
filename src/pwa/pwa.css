@@ -24,11 +24,11 @@
 .pwa-shot { display: block; width: 100%; height: auto; border-radius: 1rem; background: var(--surface-3); }
 .pwa-note { margin: 0; color: var(--on-var); font-size: 0.85rem; text-align: center; }
 .pwa-actions { display: grid; gap: 0.6rem; }
-.pwa-btn { display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 3.25rem; padding: 0 1.4rem; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--on); font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
+.pwa-btn { box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 3.25rem; padding: 0 1.4rem; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--on); font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
 .pwa-btn.primary { background: var(--primary); color: var(--on-primary); }
 .pwa-btn:disabled { opacity: 0.5; }
 .pwa-btn:focus-visible, .pwa-banner button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.pwa-input { width: 100%; min-height: 3.25rem; padding: 0 1rem; border: 1.5px solid var(--outline-var); border-radius: var(--r); background: var(--surface-1); color: var(--on); font: inherit; font-size: 16px; }
+.pwa-input { box-sizing: border-box; width: 100%; min-height: 3.25rem; padding: 0 1rem; border: 1.5px solid var(--outline-var); border-radius: var(--r); background: var(--surface-1); color: var(--on); font: inherit; font-size: 16px; }
 .pwa-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
 .pwa-error { margin: 0; color: var(--error); font-size: 0.9rem; font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .pwa-banner { animation: none; } }

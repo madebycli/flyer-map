@@ -8,6 +8,7 @@ import { registerServiceWorker } from "./pwa/register.ts";
 import { splash } from "./pwa/splash.ts";
 import { StartPage } from "./pwa/StartPage.tsx";
 import { coldStartUpdate } from "./pwa/update.ts";
+import { applyTheme } from "./ui/index.ts";
 
 /**
  * Entry of the single-page routes. Organiser pages (sign-in, admin, security, invitations) are mounted from here;
@@ -24,6 +25,7 @@ captureInstallPrompt();
 registerServiceWorker();
 
 async function start() {
+  applyTheme(); // the guide and the start page come before any page of the app, and follow the chosen theme
   if (fieldMap) { window.location.replace(fieldMap); return; }
   const organiser = isOrganizationAdminPath(pathname) || pathname === "/join" || pathname === "/reset" || pathname === "/admin/invites";
   const home = pathname === "/" && (new URLSearchParams(search).get("source") === "pwa" || isStandalone());
