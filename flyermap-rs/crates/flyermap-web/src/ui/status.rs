@@ -13,7 +13,12 @@ pub enum Kind {
 }
 
 /// The order of buttons and counters on screen (done first, open last).
-pub const ORDER: [Status; 4] = [Status::Completed, Status::Later, Status::NotDeliverable, Status::Open];
+pub const ORDER: [Status; 4] = [
+    Status::Completed,
+    Status::Later,
+    Status::NotDeliverable,
+    Status::Open,
+];
 
 pub fn label(kind: Kind, status: Status) -> &'static str {
     match (status, kind) {
@@ -58,6 +63,9 @@ mod tests {
             assert_eq!(ORDER.iter().filter(|o| **o == s).count(), 1);
         }
         assert_eq!(label(Kind::Collection, Status::Completed), "Abgeholt");
-        assert_eq!(label(Kind::Distribution, Status::NotDeliverable), "Nicht möglich");
+        assert_eq!(
+            label(Kind::Distribution, Status::NotDeliverable),
+            "Nicht möglich"
+        );
     }
 }

@@ -11,7 +11,9 @@ use leptos::prelude::*;
 pub fn apply_look(prefs: &Prefs) {
     let theme = prefs.theme.get_untracked();
     theme::apply(theme);
-    prefs.seed.with_untracked(|seed| palette::apply(seed, theme));
+    prefs
+        .seed
+        .with_untracked(|seed| palette::apply(seed, theme));
 }
 
 pub fn install(prefs: Prefs) {

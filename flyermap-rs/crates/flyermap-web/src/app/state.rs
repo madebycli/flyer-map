@@ -15,7 +15,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(prefs: Prefs, world: World) -> AppState {
-        AppState { shell: RwSignal::new(Shell::default()), prefs, world: StoredValue::new(world) }
+        AppState {
+            shell: RwSignal::new(Shell::default()),
+            prefs,
+            world: StoredValue::new(world),
+        }
     }
 
     pub fn dispatch(&self, action: Action) {

@@ -6,8 +6,7 @@ use leptos::prelude::*;
 #[component]
 pub fn ListGroup(
     // `optional_no_strip` + `into`: callers pass a text or an `Option` they already have
-    #[prop(optional_no_strip, into)]
-    title: Option<&'static str>,
+    #[prop(optional_no_strip, into)] title: Option<&'static str>,
     children: Children,
 ) -> impl IntoView {
     view! {

@@ -2,7 +2,8 @@
 # Builds the Rust web app (flyermap-rs/crates/flyermap-web) into dist-rs/ without a Node bundler:
 #   cargo (wasm32) -> wasm-bindgen --target web -> index.html, one app.css (the @imports of assets/css/app.css inlined), icons and logo.
 #   scripts/rs-web-build.sh            debug build (fast, large)
-#   scripts/rs-web-build.sh --release  release build (workspace release profile: opt-level 3, LTO, one codegen unit, abort on panic)
+#   scripts/rs-web-build.sh --release  release build (workspace profile `web`: the release profile with opt-level "z"; LTO, one codegen unit,
+#                                      abort on panic). RS_WEB_PROFILE=release uses the plain release profile (opt-level 3) instead.
 # Then: node scripts/rs-web-serve.mjs  (http://localhost:8150)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,7 +11,7 @@ WS="$ROOT/flyermap-rs"
 CRATE="$WS/crates/flyermap-web"
 OUT="$ROOT/dist-rs"
 PROFILE=debug; FLAG=()
-[ "${1:-}" = "--release" ] && { PROFILE=release; FLAG=(--release); }
+[ "${1:-}" = "--release" ] && { PROFILE=${RS_WEB_PROFILE:-web}; FLAG=(--profile "$PROFILE"); }
 
 # The wasm-bindgen CLI must be the version of the crate in Cargo.lock (scripts/rs-setup.sh installs it).
 WANT=$(grep -A1 'name = "wasm-bindgen"$' "$WS/Cargo.lock" | sed -n 's/version = "\(.*\)"/\1/p' | head -1)

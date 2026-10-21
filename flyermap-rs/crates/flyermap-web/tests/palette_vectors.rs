@@ -40,7 +40,13 @@ fn every_scheme_matches_the_typescript_palette() {
         let ours = scheme_for(&case.seed, theme);
         assert_eq!(ours.len(), case.scheme.len(), "{} {}", case.seed, case.mode);
         for (role, hex) in &case.scheme {
-            assert_eq!(ours.get(role), Some(hex.as_str()), "{} {} {role}", case.seed, case.mode);
+            assert_eq!(
+                ours.get(role),
+                Some(hex.as_str()),
+                "{} {} {role}",
+                case.seed,
+                case.mode
+            );
         }
     }
 }
@@ -48,6 +54,13 @@ fn every_scheme_matches_the_typescript_palette() {
 #[test]
 fn every_tone_matches_the_typescript_palette() {
     for case in vectors().tones {
-        assert_eq!(tone_color(case.hue, case.chroma, case.tone), case.hex, "hue {} chroma {} tone {}", case.hue, case.chroma, case.tone);
+        assert_eq!(
+            tone_color(case.hue, case.chroma, case.tone),
+            case.hex,
+            "hue {} chroma {} tone {}",
+            case.hue,
+            case.chroma,
+            case.tone
+        );
     }
 }

@@ -1,6 +1,8 @@
 //! Menü (port of `HomeSheet` in `src/v5/app/panels.tsx`): a few titled groups of rows; admins switch between handing out and collecting here.
 use super::rows::{MenuGroup, MenuTarget};
-use crate::ui::{status::Kind, Icon, IconName, ListGroup, ListRow, SegOption, Segmented, Sheet, SheetMeta};
+use crate::ui::{
+    status::Kind, Icon, IconName, ListGroup, ListRow, SegOption, Segmented, Sheet, SheetMeta,
+};
 use leptos::prelude::*;
 
 #[component]
@@ -19,7 +21,10 @@ pub fn MenuSheet(
     version: &'static str,
 ) -> impl IntoView {
     let mode = kind.map(|value| {
-        let options = vec![SegOption::new(Kind::Distribution, "Austeilen", IconName::Mailbox), SegOption::new(Kind::Collection, "Abholen", IconName::Paw)];
+        let options = vec![
+            SegOption::new(Kind::Distribution, "Austeilen", IconName::Mailbox),
+            SegOption::new(Kind::Collection, "Abholen", IconName::Paw),
+        ];
         view! { <Segmented label="Modus" value=value options=options on_change=on_kind /> }
     });
     let groups = move || {

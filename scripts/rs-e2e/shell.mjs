@@ -39,7 +39,7 @@ async function run({ width, height, theme }) {
   await page.goto(BASE);
   await page.waitForSelector('.v5-pill', { timeout: 20000 });
   check(`${tag}: the shell starts`, true, `${Date.now() - t0} ms to the pill`);
-  await page.waitForFunction(() => document.getElementById('splash')?.classList.contains('done'));
+  check(`${tag}: the start screen fades and leaves the document`, await page.waitForFunction(() => !document.getElementById('splash'), null, { timeout: 3000 }).then(() => true, () => false));
   check(`${tag}: the theme is ${theme}`, (await page.evaluate(() => document.documentElement.dataset.theme)) === theme);
 
   const pill = page.locator('button.v5-pill');
@@ -58,6 +58,7 @@ async function run({ width, height, theme }) {
   const barAfter = await rect('.v5-cmd'), card = await rect('.v5-spot');
   check(`${tag}: the results card appears under the bar`, card.y >= barAfter.y + barAfter.height && (await page.locator('.v5-result').count()) > 1, JSON.stringify(card));
   check(`${tag}: the bar keeps its place and size while the card is open`, JSON.stringify(barBefore) === JSON.stringify(barAfter), `${JSON.stringify(barBefore)} -> ${JSON.stringify(barAfter)}`);
+  await page.locator('.v5-spot').evaluate(async (el) => { await Promise.all(el.getAnimations().map((a) => a.finished)); });
   await page.screenshot({ path: `${shots}/${tag}-search.png` });
   await field.fill('xyzzy');
   check(`${tag}: nothing found says so`, await page.locator('.v5-spot-empty').isVisible());
@@ -87,6 +88,26 @@ async function run({ width, height, theme }) {
   check(`${tag}: tapping the handle shrinks the sheet`, (await sheet.getAttribute('class')).includes('small') && (await rect('.v5-sheet')).height < full.height * 0.5);
   await page.locator('.v5-handle').click();
   check(`${tag}: tapping it again brings it back`, !(await sheet.getAttribute('class')).includes('small'));
+  const handle = await rect('.v5-handle');
+  check(`${tag}: the handle is a target of at least 44 px`, handle.height >= 44, JSON.stringify(handle));
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + 140, { steps: 8 });
+  await page.mouse.up();
+  check(`${tag}: dragging the handle down shrinks the sheet`, (await sheet.getAttribute('class')).includes('small'));
+  await page.mouse.move(handle.x + handle.width / 2, (await rect('.v5-handle')).y + 20);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, (await rect('.v5-handle')).y - 100, { steps: 8 });
+  await page.mouse.up();
+  check(`${tag}: dragging it up brings it back`, !(await sheet.getAttribute('class')).includes('small') && !(await sheet.getAttribute('style'))?.includes('translate'));
+
+  // keyboard-safe: the viewport variables are set, and with a keyboard up the sheet keeps its content above the keys
+  const vvh = await page.evaluate(() => document.documentElement.style.getPropertyValue('--vvh'));
+  check(`${tag}: --vvh is the visible height`, vvh === `${height}px`, vvh);
+  await page.evaluate(() => { const r = document.documentElement; r.style.setProperty('--kb', '300px'); r.style.setProperty('--vvh', `${innerHeight - 300}px`); r.setAttribute('data-kb', ''); });
+  const kb = await sheet.evaluate((el) => { const s = getComputedStyle(el); return { paddingBottom: s.paddingBottom, top: el.getBoundingClientRect().top }; });
+  check(`${tag}: with a keyboard the sheet pads its content above the keys and stays below the top`, kb.paddingBottom === '300px' && kb.top >= 0, JSON.stringify(kb));
+  await page.evaluate(() => { const r = document.documentElement; r.style.setProperty('--kb', '0px'); r.style.setProperty('--vvh', `${innerHeight}px`); r.removeAttribute('data-kb'); });
 
   // settings: appearance, switches
   await button('Einstellungen').click();

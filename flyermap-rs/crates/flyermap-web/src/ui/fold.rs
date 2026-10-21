@@ -24,7 +24,9 @@ pub fn fold(text: &str) -> String {
 /// Every word of the query (folded) occurs in the folded haystack. A blank query matches everything.
 pub fn matches_all_words(query: &str, haystack: &str) -> bool {
     let hay = fold(haystack);
-    fold(query).split_whitespace().all(|word| hay.contains(word))
+    fold(query)
+        .split_whitespace()
+        .all(|word| hay.contains(word))
 }
 
 #[cfg(test)]

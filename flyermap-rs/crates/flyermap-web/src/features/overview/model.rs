@@ -65,9 +65,17 @@ mod tests {
     #[test]
     fn not_possible_leaves_the_denominator() {
         let p = Progress::new(
-            [Key::house("1"), Key::house("2"), Key::house("3"), Key::house("4")],
+            [
+                Key::house("1"),
+                Key::house("2"),
+                Key::house("3"),
+                Key::house("4"),
+            ],
             [],
-            [(Key::house("1"), Status::Completed), (Key::house("2"), Status::NotDeliverable)],
+            [
+                (Key::house("1"), Status::Completed),
+                (Key::house("2"), Status::NotDeliverable),
+            ],
         );
         let s = p.snapshot();
         assert_eq!(deliverable(&s), 3);

@@ -23,17 +23,33 @@ pub fn measure(inner_height: f64, visual: Option<(f64, f64)>) -> Visible {
         None => (inner_height, inner_height),
     };
     let covered = (inner_height - bottom).round().max(0.0) as i64;
-    Visible { height: height.round() as i64, covered, keyboard: covered > KEYBOARD_MIN_PX }
+    Visible {
+        height: height.round() as i64,
+        covered,
+        keyboard: covered > KEYBOARD_MIN_PX,
+    }
 }
 
 fn apply() {
-    let Some(window) = web_sys::window() else { return };
-    let inner = window.inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let visual = window.visual_viewport().map(|vv| (vv.height(), vv.offset_top()));
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let inner = window
+        .inner_height()
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let visual = window
+        .visual_viewport()
+        .map(|vv| (vv.height(), vv.offset_top()));
     let v = measure(inner, visual);
     let _ = dom::set_root_var("--vvh", &format!("{}px", v.height));
     let _ = dom::set_root_var("--kb", &format!("{}px", v.covered));
-    let _ = if v.keyboard { dom::set_root_attr("data-kb", "") } else { dom::remove_root_attr("data-kb") };
+    let _ = if v.keyboard {
+        dom::set_root_attr("data-kb", "")
+    } else {
+        dom::remove_root_attr("data-kb")
+    };
 }
 
 /// Keeps the variables up to date until dropped.
@@ -43,7 +59,9 @@ pub struct ViewportWatch {
 
 impl Drop for ViewportWatch {
     fn drop(&mut self) {
-        let Some(window) = web_sys::window() else { return };
+        let Some(window) = web_sys::window() else {
+            return;
+        };
         let f = self.listener.as_ref().unchecked_ref();
         if let Some(vv) = window.visual_viewport() {
             let _ = vv.remove_event_listener_with_callback("resize", f);
@@ -72,7 +90,14 @@ mod tests {
 
     #[test]
     fn no_visual_viewport_means_nothing_covered() {
-        assert_eq!(measure(844.0, None), Visible { height: 844, covered: 0, keyboard: false });
+        assert_eq!(
+            measure(844.0, None),
+            Visible {
+                height: 844,
+                covered: 0,
+                keyboard: false
+            }
+        );
     }
 
     #[test]

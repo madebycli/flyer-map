@@ -4,7 +4,11 @@ use crate::platform::Theme;
 use leptos::prelude::*;
 
 #[component]
-pub fn MapStub(streets: Vec<StreetLine>, houses: Vec<HouseDot>, #[prop(into)] theme: Signal<Theme>) -> impl IntoView {
+pub fn MapStub(
+    streets: Vec<StreetLine>,
+    houses: Vec<HouseDot>,
+    #[prop(into)] theme: Signal<Theme>,
+) -> impl IntoView {
     let markup = Memo::new(move |_| svg_markup(&streets, &houses, theme.get()));
     view! {
         <div class="v5-map v5-map-stub" aria-label="Karte">

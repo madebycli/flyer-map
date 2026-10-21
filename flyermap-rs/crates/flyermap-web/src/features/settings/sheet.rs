@@ -16,8 +16,14 @@ pub fn SettingsSheet(
     #[prop(into)] on_back: Callback<()>,
     #[prop(into)] on_close: Callback<()>,
 ) -> impl IntoView {
-    let themes = vec![SegOption::new(Theme::Dark, "Dunkel", IconName::Moon), SegOption::new(Theme::Light, "Hell", IconName::Sun)];
-    let hands = vec![SegOption::new(Hand::Right, "Rechtshand", IconName::Hand), SegOption::new(Hand::Left, "Linkshand", IconName::Hand)];
+    let themes = vec![
+        SegOption::new(Theme::Dark, "Dunkel", IconName::Moon),
+        SegOption::new(Theme::Light, "Hell", IconName::Sun),
+    ];
+    let hands = vec![
+        SegOption::new(Hand::Right, "Rechtshand", IconName::Hand),
+        SegOption::new(Hand::Left, "Linkshand", IconName::Hand),
+    ];
     view! {
         <Sheet icon=IconName::Settings title="Einstellungen" on_back=on_back on_close=on_close>
             <ListGroup title="Darstellung">

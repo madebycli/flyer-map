@@ -11,11 +11,19 @@ pub struct SegOption<T> {
 
 impl<T> SegOption<T> {
     pub fn new(value: T, label: &'static str, icon: IconName) -> SegOption<T> {
-        SegOption { value, label, icon: Some(icon) }
+        SegOption {
+            value,
+            label,
+            icon: Some(icon),
+        }
     }
 
     pub fn text(value: T, label: &'static str) -> SegOption<T> {
-        SegOption { value, label, icon: None }
+        SegOption {
+            value,
+            label,
+            icon: None,
+        }
     }
 }
 
@@ -33,7 +41,11 @@ where
     let buttons = options
         .into_iter()
         .map(|option| {
-            let SegOption { value: own, label, icon } = option;
+            let SegOption {
+                value: own,
+                label,
+                icon,
+            } = option;
             let chosen = {
                 let own = own.clone();
                 Memo::new(move |_| value.with(|v| *v == own))

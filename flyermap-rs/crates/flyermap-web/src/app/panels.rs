@@ -35,7 +35,13 @@ fn menu(state: AppState) -> impl IntoView {
         })
     });
     let on_row = move |target| {
-        let label = groups.with_untracked(|gs| gs.iter().flat_map(|g| &g.rows).find(|r| r.target == target).map(|r| r.label).unwrap_or_default());
+        let label = groups.with_untracked(|gs| {
+            gs.iter()
+                .flat_map(|g| &g.rows)
+                .find(|r| r.target == target)
+                .map(|r| r.label)
+                .unwrap_or_default()
+        });
         state.dispatch(action_for(target, label));
     };
     view! {
@@ -56,7 +62,9 @@ fn overview(state: AppState) -> impl IntoView {
     let on_area = move |id: String| {
         state.dispatch(Action::Close);
         if let Some(name) = area_name(&id) {
-            state.dispatch(Action::Notify(format!("{name}: die Karte zeigt das Gebiet, sobald sie in der neuen Oberfläche ist.")));
+            state.dispatch(Action::Notify(format!(
+                "{name}: die Karte zeigt das Gebiet, sobald sie in der neuen Oberfläche ist."
+            )));
         }
     };
     view! { <OverviewSheet data=data theme=state.prefs.theme kind=state.kind() on_area=on_area on_close=state.on(Action::Close) /> }
@@ -65,7 +73,11 @@ fn overview(state: AppState) -> impl IntoView {
 pub fn panel_view(state: AppState, panel: Panel) -> AnyView {
     let close = state.on(Action::Close);
     let back = state.on(Action::Back);
-    let soon = move |text: &'static str| state.on(Action::Notify(format!("„{text}“ kommt in einem der nächsten Schritte in die neue Oberfläche.")));
+    let soon = move |text: &'static str| {
+        state.on(Action::Notify(format!(
+            "„{text}“ kommt in einem der nächsten Schritte in die neue Oberfläche."
+        )))
+    };
     match panel {
         Panel::Menu => menu(state).into_any(),
         Panel::Overview => overview(state).into_any(),

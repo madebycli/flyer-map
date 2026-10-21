@@ -12,7 +12,10 @@ pub struct Scheme(Vec<(&'static str, String)>);
 
 impl Scheme {
     pub fn get(&self, role: &str) -> Option<&str> {
-        self.0.iter().find(|(name, _)| *name == role).map(|(_, value)| value.as_str())
+        self.0
+            .iter()
+            .find(|(name, _)| *name == role)
+            .map(|(_, value)| value.as_str())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, &str)> {
@@ -30,7 +33,9 @@ impl Scheme {
 
 /// The roles for this seed (`#rrggbb`; anything else falls back to the default seed) in this theme.
 pub fn scheme_for(seed: &str, theme: Theme) -> Scheme {
-    let rgb = parse_hex(seed).or_else(|| parse_hex(DEFAULT_SEED)).unwrap_or([0.0; 3]);
+    let rgb = parse_hex(seed)
+        .or_else(|| parse_hex(DEFAULT_SEED))
+        .unwrap_or([0.0; 3]);
     let (h, c) = oklch(rgb);
     let primary = |t| tone_color(h, c.clamp(0.11, 0.2), t);
     let secondary = |t| tone_color(h, 0.04, t);
@@ -42,7 +47,13 @@ pub fn scheme_for(seed: &str, theme: Theme) -> Scheme {
     let glass = {
         let v = parse_hex(&neutral(if dark { 12.0 } else { 94.0 })).unwrap_or([0.0; 3]);
         let q = |x: f64| (from_linear(x) * 255.0).round() as i64;
-        format!("rgb({} {} {} / {}%)", q(v[0]), q(v[1]), q(v[2]), if dark { 94 } else { 95 })
+        format!(
+            "rgb({} {} {} / {}%)",
+            q(v[0]),
+            q(v[1]),
+            q(v[2]),
+            if dark { 94 } else { 95 }
+        )
     };
     let white = || "#ffffff".to_string();
     let roles: Vec<(&'static str, String)> = if dark {
@@ -122,23 +133,41 @@ mod tests {
             for theme in [Theme::Dark, Theme::Light] {
                 let s = scheme_for(seed.hex, theme);
                 assert_eq!(s.len(), 28);
-                let pair = |a: &str, b: &str| contrast(s.get(a).unwrap(), s.get(b).unwrap()).unwrap();
+                let pair =
+                    |a: &str, b: &str| contrast(s.get(a).unwrap(), s.get(b).unwrap()).unwrap();
                 assert!(pair("on", "surface") >= 7.0, "{} {theme:?}", seed.name);
-                assert!(pair("on-primary", "primary") >= 4.5, "{} {theme:?}", seed.name);
-                assert!(pair("on-primary-container", "primary-container") >= 4.5, "{} {theme:?}", seed.name);
+                assert!(
+                    pair("on-primary", "primary") >= 4.5,
+                    "{} {theme:?}",
+                    seed.name
+                );
+                assert!(
+                    pair("on-primary-container", "primary-container") >= 4.5,
+                    "{} {theme:?}",
+                    seed.name
+                );
             }
         }
     }
 
     #[test]
     fn a_bad_seed_is_the_default() {
-        assert_eq!(scheme_for("nonsense", Theme::Dark), scheme_for(DEFAULT_SEED, Theme::Dark));
+        assert_eq!(
+            scheme_for("nonsense", Theme::Dark),
+            scheme_for(DEFAULT_SEED, Theme::Dark)
+        );
     }
 
     #[test]
     fn light_and_dark_differ() {
-        let (d, l) = (scheme_for("#2f6bd8", Theme::Dark), scheme_for("#2f6bd8", Theme::Light));
+        let (d, l) = (
+            scheme_for("#2f6bd8", Theme::Dark),
+            scheme_for("#2f6bd8", Theme::Light),
+        );
         assert_ne!(d.get("primary"), l.get("primary"));
-        assert!(d.get("glass").unwrap().ends_with("/ 94%)") && l.get("glass").unwrap().ends_with("/ 95%)"));
+        assert!(
+            d.get("glass").unwrap().ends_with("/ 94%)")
+                && l.get("glass").unwrap().ends_with("/ 95%)")
+        );
     }
 }

@@ -29,8 +29,14 @@ mod tests {
 
     #[test]
     fn existing_sheets_open_and_missing_ones_say_so() {
-        assert_eq!(action_for(MenuTarget::Settings, "Einstellungen"), Action::Open(Panel::Settings));
-        assert_eq!(action_for(MenuTarget::Admin, "Verwaltung"), Action::ShowDialog(Dialog::Admin));
+        assert_eq!(
+            action_for(MenuTarget::Settings, "Einstellungen"),
+            Action::Open(Panel::Settings)
+        );
+        assert_eq!(
+            action_for(MenuTarget::Admin, "Verwaltung"),
+            Action::ShowDialog(Dialog::Admin)
+        );
         match action_for(MenuTarget::Notes, "Notizen") {
             Action::Notify(text) => assert!(text.contains("„Notizen“")),
             other => panic!("{other:?}"),

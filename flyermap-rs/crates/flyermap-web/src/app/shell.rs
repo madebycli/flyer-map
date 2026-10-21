@@ -80,7 +80,10 @@ impl Shell {
             Action::SetKind(kind) => self.kind = kind,
             Action::Notify(text) => {
                 self.next_notice += 1;
-                self.notice = Some(Notice { id: self.next_notice, text });
+                self.notice = Some(Notice {
+                    id: self.next_notice,
+                    text,
+                });
             }
             Action::Dismiss(id) => {
                 if self.notice.as_ref().is_some_and(|n| n.id == id) {
@@ -107,25 +110,44 @@ mod tests {
 
     #[test]
     fn menu_settings_palette_and_back_again() {
-        let s = run([Action::Open(Panel::Menu), Action::Open(Panel::Settings), Action::Open(Panel::Palette)]);
+        let s = run([
+            Action::Open(Panel::Menu),
+            Action::Open(Panel::Settings),
+            Action::Open(Panel::Palette),
+        ]);
         assert_eq!(s.panel, Some(Panel::Palette));
         let s = run([Action::Open(Panel::Palette), Action::Back]);
         assert_eq!(s.panel, Some(Panel::Settings));
         let s = run([Action::Open(Panel::Palette), Action::Back, Action::Back]);
         assert_eq!(s.panel, Some(Panel::Menu));
-        let s = run([Action::Open(Panel::Palette), Action::Back, Action::Back, Action::Back]);
+        let s = run([
+            Action::Open(Panel::Palette),
+            Action::Back,
+            Action::Back,
+            Action::Back,
+        ]);
         assert_eq!(s.panel, None, "back from the top closes");
     }
 
     #[test]
     fn closing_returns_to_the_map_from_any_depth() {
-        assert_eq!(run([Action::Open(Panel::Palette), Action::Close]).panel, None);
-        assert_eq!(run([Action::Open(Panel::Templates), Action::Back]).panel, Some(Panel::Menu));
+        assert_eq!(
+            run([Action::Open(Panel::Palette), Action::Close]).panel,
+            None
+        );
+        assert_eq!(
+            run([Action::Open(Panel::Templates), Action::Back]).panel,
+            Some(Panel::Menu)
+        );
     }
 
     #[test]
     fn an_old_timer_does_not_remove_a_newer_note() {
-        let s = run([Action::Notify("a".into()), Action::Notify("b".into()), Action::Dismiss(1)]);
+        let s = run([
+            Action::Notify("a".into()),
+            Action::Notify("b".into()),
+            Action::Dismiss(1),
+        ]);
         assert_eq!(s.notice.as_ref().map(|n| n.text.as_str()), Some("b"));
         let s = run([Action::Notify("a".into()), Action::Dismiss(1)]);
         assert_eq!(s.notice, None);
@@ -133,7 +155,11 @@ mod tests {
 
     #[test]
     fn opening_a_sheet_closes_the_dialog_and_the_mode_stays() {
-        let s = run([Action::SetKind(Kind::Collection), Action::ShowDialog(Dialog::Admin), Action::Open(Panel::Menu)]);
+        let s = run([
+            Action::SetKind(Kind::Collection),
+            Action::ShowDialog(Dialog::Admin),
+            Action::Open(Panel::Menu),
+        ]);
         assert_eq!((s.dialog, s.kind), (None, Kind::Collection));
     }
 

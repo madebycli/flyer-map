@@ -31,11 +31,17 @@ pub fn App(state: AppState) -> impl IntoView {
         }
     });
 
-    let (streets, houses) = state.world.with_value(|w| (w.streets.clone(), w.houses.clone()));
+    let (streets, houses) = state
+        .world
+        .with_value(|w| (w.streets.clone(), w.houses.clone()));
     let pill = Signal::derive(move || state.world.with_value(|w| w.pill.clone()));
-    let search = Callback::new(move |query: String| state.world.with_value(|w| find(&w.places, &query)));
+    let search =
+        Callback::new(move |query: String| state.world.with_value(|w| find(&w.places, &query)));
     let on_pick = move |hit: Hit| {
-        state.dispatch(Action::Notify(format!("{} ({}): die Karte fliegt dorthin, sobald sie in der neuen Oberfläche ist.", hit.label, hit.detail)));
+        state.dispatch(Action::Notify(format!(
+            "{} ({}): die Karte fliegt dorthin, sobald sie in der neuen Oberfläche ist.",
+            hit.label, hit.detail
+        )));
     };
     let on_focus = move |_| {
         if panel.get_untracked().is_some() {

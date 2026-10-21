@@ -34,7 +34,13 @@ pub fn CommandBar(
         }
     });
     let open = Memo::new(move |_| query.with(|q| card_open(focused.get(), q)));
-    let hits = Memo::new(move |_| if open.get() { search.run(query.get()) } else { Vec::new() });
+    let hits = Memo::new(move |_| {
+        if open.get() {
+            search.run(query.get())
+        } else {
+            Vec::new()
+        }
+    });
 
     let finish = move || {
         query.set(String::new());

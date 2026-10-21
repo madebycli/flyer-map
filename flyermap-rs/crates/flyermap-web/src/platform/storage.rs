@@ -48,18 +48,24 @@ impl LocalStore {
 
 impl KeyValue for LocalStore {
     fn read(&self, key: &str) -> Option<String> {
-        let stored = Self::area().ok().and_then(|area| area.get_item(key).ok().flatten());
+        let stored = Self::area()
+            .ok()
+            .and_then(|area| area.get_item(key).ok().flatten());
         stored.or_else(|| SESSION.with(|memory| memory.read(key)))
     }
 
     fn write(&self, key: &str, value: &str) -> Result<(), PlatformError> {
         SESSION.with(|memory| memory.write(key, value))?;
-        Self::area()?.set_item(key, value).map_err(|_| PlatformError::StorageWrite)
+        Self::area()?
+            .set_item(key, value)
+            .map_err(|_| PlatformError::StorageWrite)
     }
 
     fn remove(&self, key: &str) -> Result<(), PlatformError> {
         SESSION.with(|memory| memory.remove(key))?;
-        Self::area()?.remove_item(key).map_err(|_| PlatformError::StorageWrite)
+        Self::area()?
+            .remove_item(key)
+            .map_err(|_| PlatformError::StorageWrite)
     }
 }
 

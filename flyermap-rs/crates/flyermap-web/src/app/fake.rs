@@ -20,9 +20,21 @@ struct Area {
 
 const TEAMS: [(&str, &str); 2] = [("Gruppe Nord", "#4f8fdc"), ("Gruppe Süd", "#d9a53a")];
 const AREAS: [Area; 3] = [
-    Area { id: "nord", name: "Nordstadt", team: 0 },
-    Area { id: "alt", name: "Altstadt", team: 1 },
-    Area { id: "hafen", name: "Hafenviertel", team: 1 },
+    Area {
+        id: "nord",
+        name: "Nordstadt",
+        team: 0,
+    },
+    Area {
+        id: "alt",
+        name: "Altstadt",
+        team: 1,
+    },
+    Area {
+        id: "hafen",
+        name: "Hafenviertel",
+        team: 1,
+    },
 ];
 
 /// Name, Gebiet (index), from, to, number of houses.
@@ -60,30 +72,58 @@ pub struct World {
 type HouseRec = (Key, usize, Status);
 
 fn lay_out() -> (Vec<StreetLine>, Vec<HouseDot>, Vec<Place>, Vec<HouseRec>) {
-    let (mut streets, mut houses, mut places, mut records) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut streets, mut houses, mut places, mut records) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for (si, (name, area, from, to, count)) in STREETS.iter().enumerate() {
         let area_name = AREAS[*area].name;
         let mut done = 0;
-        places.push(Place { id: format!("s{si}"), kind: HitKind::Street, label: name.to_string(), area: area_name.into() });
+        places.push(Place {
+            id: format!("s{si}"),
+            kind: HitKind::Street,
+            label: name.to_string(),
+            area: area_name.into(),
+        });
         for n in 0..*count {
             let t = (n as f64 + 0.5) / *count as f64;
             let (dx, dy) = (to.0 - from.0, to.1 - from.1);
             let side = if n % 2 == 0 { 1.0 } else { -1.0 };
             // houses on both sides, 28 units off the middle of the street
-            let (nx, ny) = if dx.abs() > dy.abs() { (0.0, 28.0 * side) } else { (28.0 * side, 0.0) };
+            let (nx, ny) = if dx.abs() > dy.abs() {
+                (0.0, 28.0 * side)
+            } else {
+                (28.0 * side, 0.0)
+            };
             let status = status_of(*area, si, n);
             done += usize::from(status == Status::Completed);
-            houses.push(HouseDot { at: (from.0 + dx * t + nx, from.1 + dy * t + ny), status });
+            houses.push(HouseDot {
+                at: (from.0 + dx * t + nx, from.1 + dy * t + ny),
+                status,
+            });
             records.push((Key::house(&format!("{si}-{n}")), *area, status));
-            places.push(Place { id: format!("h{si}-{n}"), kind: HitKind::House, label: format!("{name} {}", n + 1), area: area_name.into() });
+            places.push(Place {
+                id: format!("h{si}-{n}"),
+                kind: HitKind::House,
+                label: format!("{name} {}", n + 1),
+                area: area_name.into(),
+            });
         }
-        let street_status = if done * 2 > *count { Status::Completed } else { Status::Open };
-        streets.push(StreetLine { from: *from, to: *to, status: street_status });
+        let street_status = if done * 2 > *count {
+            Status::Completed
+        } else {
+            Status::Open
+        };
+        streets.push(StreetLine {
+            from: *from,
+            to: *to,
+            status: street_status,
+        });
     }
     (streets, houses, places, records)
 }
 
-fn progress_of<'a>(records: impl Iterator<Item = &'a HouseRec> + Clone) -> flyermap_core::ProgressSnapshot {
+fn progress_of<'a>(
+    records: impl Iterator<Item = &'a HouseRec> + Clone,
+) -> flyermap_core::ProgressSnapshot {
     let keys = records.clone().map(|(k, _, _)| k.clone());
     let current = records.map(|(k, _, s)| (k.clone(), *s));
     Progress::new(keys, [], current).snapshot()
@@ -95,7 +135,11 @@ pub fn world() -> World {
     let areas = AREAS
         .iter()
         .enumerate()
-        .map(|(i, a)| AreaRow { id: a.id.into(), name: a.name.into(), snapshot: progress_of(records.iter().filter(move |r| r.1 == i)) })
+        .map(|(i, a)| AreaRow {
+            id: a.id.into(),
+            name: a.name.into(),
+            snapshot: progress_of(records.iter().filter(move |r| r.1 == i)),
+        })
         .collect();
     let teams = TEAMS
         .iter()
@@ -112,7 +156,17 @@ pub fn world() -> World {
         percent: (overall.house_ratio * 100.0).round() as i64,
         ..PillState::default()
     };
-    World { streets, houses, places, overview: OverviewData { overall, areas, teams }, pill }
+    World {
+        streets,
+        houses,
+        places,
+        overview: OverviewData {
+            overall,
+            areas,
+            teams,
+        },
+        pill,
+    }
 }
 
 /// The name of a Gebiet by id.
@@ -130,9 +184,25 @@ mod tests {
         let total: usize = STREETS.iter().map(|s| s.4).sum();
         assert_eq!(w.houses.len(), total);
         assert_eq!(w.overview.overall.total_houses as usize, total);
-        let by_area: i64 = w.overview.areas.iter().map(|a| a.snapshot.total_houses).sum();
+        let by_area: i64 = w
+            .overview
+            .areas
+            .iter()
+            .map(|a| a.snapshot.total_houses)
+            .sum();
         assert_eq!(by_area as usize, total);
-        assert!(w.pill.done > 0 && w.pill.done < w.pill.total && w.pill.percent > 0 && w.pill.percent < 100);
-        assert_eq!(w.places.iter().filter(|p| p.kind == HitKind::Street).count(), STREETS.len());
+        assert!(
+            w.pill.done > 0
+                && w.pill.done < w.pill.total
+                && w.pill.percent > 0
+                && w.pill.percent < 100
+        );
+        assert_eq!(
+            w.places
+                .iter()
+                .filter(|p| p.kind == HitKind::Street)
+                .count(),
+            STREETS.len()
+        );
     }
 }

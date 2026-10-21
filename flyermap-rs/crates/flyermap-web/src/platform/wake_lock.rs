@@ -21,8 +21,11 @@ pub struct KeepAwake {
 }
 
 fn wake_lock_api() -> Result<JsValue, PlatformError> {
-    let navigator = web_sys::window().ok_or(PlatformError::NoWindow)?.navigator();
-    let api = Reflect::get(&navigator, &"wakeLock".into()).map_err(|_| PlatformError::Unsupported("wake lock"))?;
+    let navigator = web_sys::window()
+        .ok_or(PlatformError::NoWindow)?
+        .navigator();
+    let api = Reflect::get(&navigator, &"wakeLock".into())
+        .map_err(|_| PlatformError::Unsupported("wake lock"))?;
     if api.is_undefined() || api.is_null() {
         return Err(PlatformError::Unsupported("wake lock"));
     }
@@ -30,14 +33,17 @@ fn wake_lock_api() -> Result<JsValue, PlatformError> {
 }
 
 fn release(sentinel: &JsValue) {
-    if let Ok(f) = Reflect::get(sentinel, &"release".into()).and_then(|f| f.dyn_into::<Function>()) {
+    if let Ok(f) = Reflect::get(sentinel, &"release".into()).and_then(|f| f.dyn_into::<Function>())
+    {
         // The promise it returns may reject when the lock is already gone; nothing to do about that.
         let _ = f.call0(sentinel);
     }
 }
 
 fn ask(state: &Rc<RefCell<State>>) {
-    let visible = dom::document().map(|d| d.visibility_state() == web_sys::VisibilityState::Visible).unwrap_or(false);
+    let visible = dom::document()
+        .map(|d| d.visibility_state() == web_sys::VisibilityState::Visible)
+        .unwrap_or(false);
     {
         let s = state.borrow();
         if s.stopped || s.asking || s.sentinel.is_some() || !visible {
@@ -45,8 +51,13 @@ fn ask(state: &Rc<RefCell<State>>) {
         }
     }
     let Ok(api) = wake_lock_api() else { return };
-    let request = Reflect::get(&api, &"request".into()).ok().and_then(|f| f.dyn_into::<Function>().ok());
-    let Some(promise) = request.and_then(|f| f.call1(&api, &"screen".into()).ok()).and_then(|p| p.dyn_into::<Promise>().ok()) else {
+    let request = Reflect::get(&api, &"request".into())
+        .ok()
+        .and_then(|f| f.dyn_into::<Function>().ok());
+    let Some(promise) = request
+        .and_then(|f| f.call1(&api, &"screen".into()).ok())
+        .and_then(|p| p.dyn_into::<Promise>().ok())
+    else {
         return;
     };
     state.borrow_mut().asking = true;
@@ -72,7 +83,9 @@ fn ask(state: &Rc<RefCell<State>>) {
                 }
             }
         });
-        if let Ok(add) = Reflect::get(&sentinel, &"addEventListener".into()).and_then(|f| f.dyn_into::<Function>()) {
+        if let Ok(add) = Reflect::get(&sentinel, &"addEventListener".into())
+            .and_then(|f| f.dyn_into::<Function>())
+        {
             let _ = add.call2(&sentinel, &"release".into(), &on_release);
         }
         state.borrow_mut().sentinel = Some(sentinel);
@@ -87,7 +100,10 @@ impl KeepAwake {
         let again = Rc::clone(&state);
         let on_visible = Closure::<dyn FnMut()>::new(move || ask(&again));
         dom::document()?
-            .add_event_listener_with_callback("visibilitychange", on_visible.as_ref().unchecked_ref())
+            .add_event_listener_with_callback(
+                "visibilitychange",
+                on_visible.as_ref().unchecked_ref(),
+            )
             .map_err(|_| PlatformError::Refused("addEventListener"))?;
         ask(&state);
         Ok(KeepAwake { state, on_visible })
@@ -107,7 +123,10 @@ impl Drop for KeepAwake {
             release(&sentinel);
         }
         if let Ok(document) = dom::document() {
-            let _ = document.remove_event_listener_with_callback("visibilitychange", self.on_visible.as_ref().unchecked_ref());
+            let _ = document.remove_event_listener_with_callback(
+                "visibilitychange",
+                self.on_visible.as_ref().unchecked_ref(),
+            );
         }
     }
 }

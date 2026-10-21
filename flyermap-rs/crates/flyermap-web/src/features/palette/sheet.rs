@@ -13,7 +13,11 @@ use leptos::prelude::*;
 pub fn swatch_colors(seed: &str, theme: Theme) -> (String, String, String) {
     let s = scheme_for(seed, theme);
     let role = |name: &str| s.get(name).unwrap_or_default().to_string();
-    (role("primary-container"), role("on-primary-container"), role("primary"))
+    (
+        role("primary-container"),
+        role("on-primary-container"),
+        role("primary"),
+    )
 }
 
 /// The value of the colour input: the seed if it is a colour, else the default.
@@ -110,6 +114,13 @@ mod tests {
     fn swatches_use_the_container_of_their_seed() {
         let (bg, fg, dot) = swatch_colors("#2f6bd8", Theme::Dark);
         let s = scheme_for("#2f6bd8", Theme::Dark);
-        assert_eq!((bg.as_str(), fg.as_str(), dot.as_str()), (s.get("primary-container").unwrap(), s.get("on-primary-container").unwrap(), s.get("primary").unwrap()));
+        assert_eq!(
+            (bg.as_str(), fg.as_str(), dot.as_str()),
+            (
+                s.get("primary-container").unwrap(),
+                s.get("on-primary-container").unwrap(),
+                s.get("primary").unwrap()
+            )
+        );
     }
 }

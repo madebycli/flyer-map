@@ -34,13 +34,20 @@ impl Entry {
     }
 
     pub fn matches(&self, query: &str) -> bool {
-        matches_all_words(query, &format!("{} {} {}", self.q, self.a.join(" "), self.tags))
+        matches_all_words(
+            query,
+            &format!("{} {} {}", self.q, self.a.join(" "), self.tags),
+        )
     }
 }
 
 /// The entries this role sees that contain every word of the query (all of them for a blank query), in their order.
 pub fn shown(role: HelpRole, query: &str) -> Vec<Entry> {
-    ENTRIES.iter().filter(|e| e.is_for(role) && e.matches(query)).copied().collect()
+    ENTRIES
+        .iter()
+        .filter(|e| e.is_for(role) && e.matches(query))
+        .copied()
+        .collect()
 }
 
 #[cfg(test)]
@@ -53,9 +60,19 @@ mod tests {
         let helper = shown(HelpRole::Collector, "");
         assert!(admin.iter().any(|e| e.q == "Wie lege ich ein Gebiet an?"));
         assert!(!helper.iter().any(|e| e.q == "Wie lege ich ein Gebiet an?"));
-        assert!(helper.iter().any(|e| e.q == "Wie übernehme ich ein Teilgebiet?"));
-        assert!(!admin.iter().any(|e| e.q == "Wie übernehme ich ein Teilgebiet?"));
-        assert!(admin.iter().chain(&helper).any(|e| e.q == "Was bedeuten die Farben?"), "an entry without roles is for everybody");
+        assert!(helper
+            .iter()
+            .any(|e| e.q == "Wie übernehme ich ein Teilgebiet?"));
+        assert!(!admin
+            .iter()
+            .any(|e| e.q == "Wie übernehme ich ein Teilgebiet?"));
+        assert!(
+            admin
+                .iter()
+                .chain(&helper)
+                .any(|e| e.q == "Was bedeuten die Farben?"),
+            "an entry without roles is for everybody"
+        );
     }
 
     #[test]
@@ -63,14 +80,23 @@ mod tests {
         let all = shown(HelpRole::Admin, "").len();
         let lasso = shown(HelpRole::Admin, "lasso");
         assert!(!lasso.is_empty() && lasso.len() < all);
-        assert!(shown(HelpRole::Admin, "LASSO finger").iter().all(|e| e.matches("lasso finger")));
-        assert_eq!(shown(HelpRole::Admin, "brainrot").len(), 1, "found by its tag");
+        assert!(shown(HelpRole::Admin, "LASSO finger")
+            .iter()
+            .all(|e| e.matches("lasso finger")));
+        assert_eq!(
+            shown(HelpRole::Admin, "brainrot").len(),
+            1,
+            "found by its tag"
+        );
         assert!(shown(HelpRole::Admin, "xyzzy").is_empty());
     }
 
     #[test]
     fn umlauts_need_not_be_typed() {
-        assert_eq!(shown(HelpRole::Admin, "ruckgangig").len(), shown(HelpRole::Admin, "rückgängig").len());
+        assert_eq!(
+            shown(HelpRole::Admin, "ruckgangig").len(),
+            shown(HelpRole::Admin, "rückgängig").len()
+        );
         assert!(!shown(HelpRole::Admin, "ruckgangig").is_empty());
     }
 }

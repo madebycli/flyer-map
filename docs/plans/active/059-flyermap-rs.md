@@ -77,6 +77,7 @@ Goal: when something is wrong on a phone or on the server, one report says what 
 - **M3** `sync`: the loop as a state machine with a fake transport; the same scenarios as `tests/v5Sync*.test.ts`.
 - **M4** `worker`: `ops`, `state`, `meta` in Rust behind the same HTTP contract, run under `wrangler dev`; the TypeScript contract tests are ported to Rust fixtures route by route, then notes, rooms, progress, packs, cleanup, collection, access links, organization and auth.
 - **M5** `web` shell: platform layer, design system, command bar, menu, settings, sheet; the field map with the engine and the store (read-only), then marking (stamp, brush, route, lasso).
+  First slice done: `flyermap-web` with fake data (platform, design system, Menü, Einstellungen, Farbe, Vorlagen, Übersicht, Hilfe), `scripts/rs-web-build.sh`, `scripts/rs-e2e/shell.mjs`; see the crate README for sizes and decisions.
 - **M6** `web` features: areas editor with connected drawing, notes, rooms, team, access, templates, help, diagnostics, install guide and start page.
 - **M7** organizer pages and auth in Rust.
 - **M8** switch the entry points, delete TypeScript.

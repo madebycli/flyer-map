@@ -8,14 +8,46 @@ pub struct Seed {
 }
 
 pub const SEEDS: [Seed; 8] = [
-    Seed { id: "smaragd", name: "Smaragd", hex: "#1f8a70" },
-    Seed { id: "blau", name: "Blau", hex: "#2f6bd8" },
-    Seed { id: "violett", name: "Violett", hex: "#7a4fd3" },
-    Seed { id: "rosa", name: "Rosa", hex: "#c8498a" },
-    Seed { id: "rot", name: "Rot", hex: "#d2453b" },
-    Seed { id: "orange", name: "Orange", hex: "#d9791f" },
-    Seed { id: "gold", name: "Gold", hex: "#a98a1f" },
-    Seed { id: "gruen", name: "Grün", hex: "#4a9a3a" },
+    Seed {
+        id: "smaragd",
+        name: "Smaragd",
+        hex: "#1f8a70",
+    },
+    Seed {
+        id: "blau",
+        name: "Blau",
+        hex: "#2f6bd8",
+    },
+    Seed {
+        id: "violett",
+        name: "Violett",
+        hex: "#7a4fd3",
+    },
+    Seed {
+        id: "rosa",
+        name: "Rosa",
+        hex: "#c8498a",
+    },
+    Seed {
+        id: "rot",
+        name: "Rot",
+        hex: "#d2453b",
+    },
+    Seed {
+        id: "orange",
+        name: "Orange",
+        hex: "#d9791f",
+    },
+    Seed {
+        id: "gold",
+        name: "Gold",
+        hex: "#a98a1f",
+    },
+    Seed {
+        id: "gruen",
+        name: "Grün",
+        hex: "#4a9a3a",
+    },
 ];
 
 pub const DEFAULT_SEED: &str = SEEDS[0].hex;

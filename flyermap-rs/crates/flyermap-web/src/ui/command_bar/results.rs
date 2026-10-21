@@ -4,9 +4,16 @@ use crate::ui::icon::{Icon, IconName};
 use leptos::{ev, prelude::*};
 
 #[component]
-pub fn Results(#[prop(into)] hits: Signal<Vec<Hit>>, #[prop(into)] on_pick: Callback<Hit>) -> impl IntoView {
+pub fn Results(
+    #[prop(into)] hits: Signal<Vec<Hit>>,
+    #[prop(into)] on_pick: Callback<Hit>,
+) -> impl IntoView {
     let row = move |hit: Hit| {
-        let icon = if hit.kind == HitKind::Street { IconName::Road } else { IconName::House };
+        let icon = if hit.kind == HitKind::Street {
+            IconName::Road
+        } else {
+            IconName::House
+        };
         let (label, kind, detail) = (hit.label.clone(), hit.kind.label(), hit.detail.clone());
         view! {
             <button

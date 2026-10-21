@@ -8,5 +8,7 @@ pub fn tick(haptics_on: bool) -> bool {
     if !haptics_on {
         return false;
     }
-    web_sys::window().map(|w| w.navigator().vibrate_with_duration(TICK_MS)).unwrap_or(false)
+    web_sys::window()
+        .map(|w| w.navigator().vibrate_with_duration(TICK_MS))
+        .unwrap_or(false)
 }

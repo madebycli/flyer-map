@@ -6,7 +6,11 @@ use super::{
 use leptos::prelude::*;
 
 #[component]
-pub fn Toast(#[prop(into)] text: String, #[prop(default = IconName::Check)] icon: IconName, #[prop(into)] on_dismiss: Callback<()>) -> impl IntoView {
+pub fn Toast(
+    #[prop(into)] text: String,
+    #[prop(default = IconName::Check)] icon: IconName,
+    #[prop(into)] on_dismiss: Callback<()>,
+) -> impl IntoView {
     view! {
         <div class="v5-toast" role="status">
             <Icon name=icon size=22 />

@@ -12,7 +12,11 @@ pub fn Icon(
     #[prop(optional)]
     class: &'static str,
 ) -> impl IntoView {
-    let class = if class.is_empty() { "v5-icon".to_string() } else { format!("v5-icon {class}") };
+    let class = if class.is_empty() {
+        "v5-icon".to_string()
+    } else {
+        format!("v5-icon {class}")
+    };
     view! {
         <svg
             class=class

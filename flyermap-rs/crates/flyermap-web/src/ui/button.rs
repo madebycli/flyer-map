@@ -81,7 +81,11 @@ pub fn IconButton(
     #[prop(default = 24)] size: u32,
     #[prop(into)] on_click: Callback<()>,
 ) -> impl IntoView {
-    let class = if class.is_empty() { variant.class().to_string() } else { format!("{} {class}", variant.class()) };
+    let class = if class.is_empty() {
+        variant.class().to_string()
+    } else {
+        format!("{} {class}", variant.class())
+    };
     view! {
         <button type="button" class=class aria-label=label title=label on:click=move |_| on_click.run(())>
             <Icon name=icon size=size />

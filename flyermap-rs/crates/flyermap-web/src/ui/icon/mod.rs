@@ -16,7 +16,9 @@ mod tests {
         assert_eq!(IconName::ALL.len(), 57);
         let names: HashSet<_> = IconName::ALL.iter().map(|i| i.as_str()).collect();
         assert_eq!(names.len(), 57);
-        for name in ["check", "cloudOk", "cloudOff", "mapPin", "menu", "chevron", "back", "palette", "help"] {
+        for name in [
+            "check", "cloudOk", "cloudOff", "mapPin", "menu", "chevron", "back", "palette", "help",
+        ] {
             assert!(names.contains(name), "{name}");
         }
     }
@@ -26,8 +28,15 @@ mod tests {
         for icon in IconName::ALL {
             let m = icon.markup();
             assert!(m.starts_with('<') && m.ends_with("/>"), "{icon:?}");
-            assert_eq!(m.matches('<').count(), m.matches("/>").count(), "{icon:?}: every shape closes itself");
-            assert!(!m.contains("strokeDasharray") && !m.contains('{'), "{icon:?}: no JSX left");
+            assert_eq!(
+                m.matches('<').count(),
+                m.matches("/>").count(),
+                "{icon:?}: every shape closes itself"
+            );
+            assert!(
+                !m.contains("strokeDasharray") && !m.contains('{'),
+                "{icon:?}: no JSX left"
+            );
         }
     }
 }

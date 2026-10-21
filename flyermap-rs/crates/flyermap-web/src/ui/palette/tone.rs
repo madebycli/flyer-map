@@ -63,7 +63,8 @@ mod tests {
     #[test]
     fn forty_tones_apart_is_readable_whatever_the_hue() {
         for hue in [0.0, 60.0, 120.0, 180.0, 240.0, 300.0] {
-            let ratio = contrast(&tone_color(hue, 0.15, 40.0), &tone_color(hue, 0.15, 90.0)).unwrap();
+            let ratio =
+                contrast(&tone_color(hue, 0.15, 40.0), &tone_color(hue, 0.15, 90.0)).unwrap();
             assert!(ratio >= 4.5, "hue {hue}: {ratio}");
         }
     }

@@ -53,7 +53,12 @@ pub fn tone_to_y(tone: f64) -> f64 {
 /// `#rrggbb` of a linear colour, clamped into sRGB.
 pub fn hex(rgb: Rgb) -> String {
     let byte = |c: f64| (from_linear(c.clamp(0.0, 1.0)).clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!("#{:02x}{:02x}{:02x}", byte(rgb[0]), byte(rgb[1]), byte(rgb[2]))
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        byte(rgb[0]),
+        byte(rgb[1]),
+        byte(rgb[2])
+    )
 }
 
 /// `#rrggbb` or `rrggbb` (any case, surrounding space allowed) as a linear colour.
@@ -76,7 +81,10 @@ pub fn oklch(rgb: Rgb) -> (f64, f64) {
     let s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b).cbrt();
     let a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
     let bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
-    ((bb.atan2(a) * 180.0 / std::f64::consts::PI + 360.0) % 360.0, a.hypot(bb))
+    (
+        (bb.atan2(a) * 180.0 / std::f64::consts::PI + 360.0) % 360.0,
+        a.hypot(bb),
+    )
 }
 
 /// WCAG contrast ratio of two `#rrggbb` colours; `None` when one of them is not a colour.

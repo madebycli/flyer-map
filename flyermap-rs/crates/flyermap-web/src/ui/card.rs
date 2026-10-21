@@ -32,6 +32,9 @@ pub fn Card(
 
 /// A sentence with an icon in front (`.v5-hint`).
 #[component]
-pub fn Hint(#[prop(default = IconName::Info)] icon: IconName, #[prop(into)] text: String) -> impl IntoView {
+pub fn Hint(
+    #[prop(default = IconName::Info)] icon: IconName,
+    #[prop(into)] text: String,
+) -> impl IntoView {
     view! { <p class="v5-hint"><Icon name=icon size=20 />{text}</p> }
 }

@@ -65,12 +65,17 @@ pub fn Sheet(
 
     let on_down = move |e: ev::PointerEvent| {
         drag.set_value(Some((f64::from(e.client_y()), 0.0)));
-        if let Some(target) = e.current_target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
+        if let Some(target) = e
+            .current_target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        {
             let _ = target.set_pointer_capture(e.pointer_id());
         }
     };
     let on_move = move |e: ev::PointerEvent| {
-        let Some((y, _)) = drag.get_value() else { return };
+        let Some((y, _)) = drag.get_value() else {
+            return;
+        };
         let dy = f64::from(e.client_y()) - y;
         drag.set_value(Some((y, dy)));
         if let Some(offset) = follow_offset(small.get_untracked(), dy) {

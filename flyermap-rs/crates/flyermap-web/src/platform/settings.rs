@@ -113,9 +113,16 @@ mod tests {
         assert_eq!(store.read("vf-v5-theme").as_deref(), Some("light"));
         assert_eq!(store.read("vf-v5-base").as_deref(), Some("off"));
         let s = Settings::load(&store);
-        assert_eq!((s.theme, s.hand, s.base_on, s.awake, s.haptics), (Theme::Light, Hand::Left, false, false, true));
+        assert_eq!(
+            (s.theme, s.hand, s.base_on, s.awake, s.haptics),
+            (Theme::Light, Hand::Left, false, false, true)
+        );
         assert_eq!(s.seed.as_deref(), Some("#2f6bd8"));
         save_seed(&store, "#1F8A70", "#1f8a70").unwrap();
-        assert_eq!(Settings::load(&store).seed, None, "the default seed is removed, not stored");
+        assert_eq!(
+            Settings::load(&store).seed,
+            None,
+            "the default seed is removed, not stored"
+        );
     }
 }
