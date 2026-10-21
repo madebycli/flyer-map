@@ -13,7 +13,7 @@ export function UpdateBanner() {
   if (!latest || later === latest.build) return null;
   return (
     <div className="pwa-banner" role="status">
-      <span>Neue Version {versionLabel(latest)} verfügbar<small>Jetzt aktualisieren, die Daten bleiben erhalten.</small></span>
+      <span>Neue Version {versionLabel(latest)} verfügbar<small>Deine Daten bleiben erhalten.</small></span>
       <button onClick={() => applyUpdate()}>Aktualisieren</button>
       <button className="plain" onClick={() => setLater(latest.build)} aria-label="Später erinnern">×</button>
     </div>

@@ -50,12 +50,23 @@ for (const [name, userAgent, steps, expect] of [['iPhone', IPHONE, 3, 'Teilen'],
   const guide = page.locator('.pwa-page');
   await guide.waitFor({ timeout: 10000 });
   check(`${name}: the guide comes before the app`, (await page.locator('.pwa-head h1').textContent()) === 'Als App installieren' && !(await page.locator('.v5-pill').count()));
-  check(`${name}: three steps, each with a picture, for this system`, (await page.locator('.pwa-step').count()) === steps && (await page.locator('.pwa-step svg').count()) === steps && (await guide.textContent()).includes(expect), (await guide.textContent()).slice(0, 200));
+  check(`${name}: three steps, each with a picture, for this system`, (await page.locator('.pwa-step').count()) === steps && (await page.locator('.pwa-step .pwa-glyph svg').count()) === steps && (await guide.textContent()).includes(expect), (await guide.textContent()).slice(0, 200));
   check(`${name}: targets are at least 44 px`, await page.locator('.pwa-btn').evaluateAll((els) => els.every((el) => el.getBoundingClientRect().height >= 44)));
-  const copy = page.getByRole('button', { name: 'Zugangslink kopieren' });
+  const geometry = await page.evaluate(() => {
+    const w = document.documentElement.clientWidth, h = document.documentElement.clientHeight;
+    const inside = [...document.querySelectorAll('.pwa-page *')].every((el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= -0.5 && r.right <= w + 0.5); });
+    const buttons = [...document.querySelectorAll('.pwa-btn')].map((b) => Math.round(b.getBoundingClientRect().height));
+    const pair = [...document.querySelectorAll('.pwa-pair .pwa-btn')].map((b) => Math.round(b.getBoundingClientRect().width));
+    const page = document.querySelector('.pwa-page');
+    return { inside, equalHeights: new Set(buttons).size === 1, pairEqual: pair.length < 2 || Math.abs(pair[0] - pair[1]) <= 1, noScroll: page.scrollHeight <= page.clientHeight + 1, buttons, pair, scroll: [page.scrollHeight, page.clientHeight] };
+  });
+  check(`${name}: nothing reaches past the screen edge`, geometry.inside);
+  check(`${name}: all buttons are the same height, the two in a row the same width`, geometry.equalHeights && geometry.pairEqual, JSON.stringify(geometry));
+  check(`${name}: the whole guide fits one phone screen without scrolling`, geometry.noScroll, JSON.stringify(geometry.scroll));
+  const copy = page.getByRole('button', { name: 'Link kopieren' });
   check(`${name}: with an access link in the address, the link can be copied`, (await copy.count()) === 1);
   await page.screenshot({ path: `${shots}/t30-guide-${name.toLowerCase()}.png`, fullPage: false });
-  await page.getByRole('button', { name: 'Trotzdem im Browser öffnen' }).click();
+  await page.getByRole('button', { name: 'Im Browser öffnen' }).click();
   await page.waitForSelector('.v5-pill, .v5-overlay', { timeout: 120000 }).catch(() => {});
   check(`${name}: "open in the browser anyway" goes on to the app`, (await page.locator('.pwa-page').count()) === 0);
   await page.reload();
@@ -88,6 +99,7 @@ for (const [name, userAgent, steps, expect] of [['iPhone', IPHONE, 3, 'Teilen'],
   await page.locator('.pwa-page').waitFor({ timeout: 10000 });
   check('the installed app opens a start page', (await page.locator('.pwa-head h1').textContent()) === 'Verteil-Flyer' && (await page.getByRole('link', { name: 'Als Organisator anmelden' }).count()) === 1);
   const input = page.getByRole('textbox', { name: 'Zugangslink einfügen' });
+  check('start page: nothing reaches past the screen edge', await page.evaluate(() => { const w = document.documentElement.clientWidth; return [...document.querySelectorAll('.pwa-page *')].every((el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= -0.5 && r.right <= w + 0.5); }); }));
   await input.fill('das ist kein link');
   await page.getByRole('button', { name: 'Öffnen', exact: true }).click();
   check('a text that is not a link is refused with a message', await page.getByRole('alert').isVisible());

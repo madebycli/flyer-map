@@ -11,24 +11,35 @@
 @keyframes pwa-drop { from { transform: translateY(-100%); } }
 
 .pwa-page { position: fixed; inset: 0; z-index: 1100; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); color: var(--on); }
-.pwa-wrap { display: grid; gap: 1.1rem; max-width: 30rem; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 2rem) 1.3rem calc(env(safe-area-inset-bottom) + 1.6rem); }
-.pwa-head { display: grid; justify-items: center; gap: 0.6rem; text-align: center; }
-.pwa-head img { width: 5rem; height: 5rem; border-radius: 1.4rem; }
-.pwa-head h1 { margin: 0; font-size: 1.55rem; font-weight: 800; letter-spacing: -0.02em; }
-.pwa-head p { margin: 0; color: var(--on-var); }
-.pwa-steps { display: grid; gap: 0.9rem; margin: 0; padding: 0; list-style: none; counter-reset: step; }
-.pwa-step { display: grid; gap: 0.6rem; padding: 1rem; border-radius: var(--r-lg); background: var(--surface-2); counter-increment: step; }
-.pwa-step > b { display: flex; align-items: center; gap: 0.6rem; font-size: 1rem; font-weight: 800; }
-.pwa-step > b::before { content: counter(step); flex: none; display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--primary); color: var(--on-primary); font-size: 0.9rem; }
-.pwa-step p { margin: 0; color: var(--on-var); font-size: 0.92rem; }
-.pwa-shot { display: block; width: 100%; height: auto; border-radius: 1rem; background: var(--surface-3); }
-.pwa-note { margin: 0; color: var(--on-var); font-size: 0.85rem; text-align: center; }
-.pwa-actions { display: grid; gap: 0.6rem; }
-.pwa-btn { box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 3.25rem; padding: 0 1.4rem; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--on); font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
+/* One column that never grows wider than the screen; head on top, content in the middle, the buttons at the foot (above the home bar). */
+.pwa-wrap {
+  box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto; gap: 1.2rem; min-height: 100%; max-width: 30rem; margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 1.6rem) max(1.2rem, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 1.2rem) max(1.2rem, env(safe-area-inset-left));
+}
+.pwa-head { display: grid; justify-items: center; gap: 0.35rem; text-align: center; }
+.pwa-head img { width: 4.5rem; height: 4.5rem; border-radius: 1.3rem; }
+.pwa-head h1 { margin: 0.3rem 0 0; font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; }
+.pwa-head p { margin: 0; color: var(--on-var); font-size: 0.95rem; }
+.pwa-body { display: grid; align-content: start; gap: 1rem; min-width: 0; }
+.pwa-foot { display: grid; gap: 0.6rem; min-width: 0; }
+.pwa-steps { display: grid; align-content: start; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+.pwa-step { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); align-items: center; gap: 0.9rem; padding: 0.7rem 0.9rem 0.7rem 0.7rem; border-radius: var(--r-lg); background: var(--surface-2); }
+.pwa-step b { display: block; font-size: 1rem; font-weight: 800; }
+.pwa-step p { margin: 0.1rem 0 0; color: var(--on-var); font-size: 0.88rem; line-height: 1.3; }
+.pwa-glyph { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 1.1rem; background: var(--surface-3); color: var(--on); }
+.pwa-glyph.hot { color: var(--primary); box-shadow: inset 0 0 0 2px var(--primary); }
+.pwa-note { margin: 0; color: var(--on-var); font-size: 0.85rem; line-height: 1.3; text-align: center; }
+.pwa-label { font-size: 0.86rem; font-weight: 700; color: var(--on-var); }
+.pwa-form { display: grid; gap: 0.6rem; min-width: 0; }
+.pwa-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+.pwa-pair.single { grid-template-columns: minmax(0, 1fr); }
+.pwa-btn { box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; min-width: 0; min-height: 3.25rem; padding: 0.4rem 1rem; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--on); font: inherit; font-size: 0.98rem; font-weight: 800; line-height: 1.15; text-align: center; text-decoration: none; cursor: pointer; transition: transform 120ms var(--ease), background var(--t); }
+.pwa-btn:active:not(:disabled) { transform: scale(0.97); }
 .pwa-btn.primary { background: var(--primary); color: var(--on-primary); }
-.pwa-btn:disabled { opacity: 0.5; }
+.pwa-btn:disabled { opacity: 0.45; cursor: default; }
 .pwa-btn:focus-visible, .pwa-banner button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.pwa-input { box-sizing: border-box; width: 100%; min-height: 3.25rem; padding: 0 1rem; border: 1.5px solid var(--outline-var); border-radius: var(--r); background: var(--surface-1); color: var(--on); font: inherit; font-size: 16px; }
-.pwa-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
-.pwa-error { margin: 0; color: var(--error); font-size: 0.9rem; font-weight: 700; }
+.pwa-input { box-sizing: border-box; display: block; width: 100%; min-width: 0; min-height: 3.25rem; padding: 0 1rem; border: 1.5px solid var(--outline-var); border-radius: var(--r); background: var(--surface-1); color: var(--on); font: inherit; font-size: 16px; text-overflow: ellipsis; }
+.pwa-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+.pwa-input[aria-invalid="true"] { border-color: var(--error); }
+.pwa-error { margin: 0; color: var(--error); font-size: 0.88rem; font-weight: 700; line-height: 1.3; }
 @media (prefers-reduced-motion: reduce) { .pwa-banner { animation: none; } }

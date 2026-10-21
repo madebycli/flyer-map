@@ -3,88 +3,33 @@ import '../ui/ui.css';
 import './pwa.css';
 import { canPromptInstall, onInstallPromptChange, promptInstall, saveSkip, type Platform } from './install.ts';
 
-/* The pictures are drawn here (no image files): a mock of the browser bar or sheet with the thing to tap ringed in the accent colour. */
-const RING = 'var(--primary)';
-function Shot({ children, label }: { children: React.ReactNode; label: string }) {
-  return <svg className="pwa-shot" viewBox="0 0 320 112" role="img" aria-label={label}>{children}</svg>;
-}
-const Share = ({ x, y }: { x: number; y: number }) => (
-  <g transform={`translate(${x} ${y})`} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M-9 -2v14a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V-2M0 -14v18M-6 -8l6-6 6 6" />
-  </g>
+/* The pictures are the real symbols the person has to find (drawn here, no image files), the one to tap ringed in the accent colour. */
+const Glyph = ({ hot, children, label }: { hot?: boolean; children: React.ReactNode; label: string }) => (
+  <span className={`pwa-glyph${hot ? ' hot' : ''}`} role="img" aria-label={label}>
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{children}</svg>
+  </span>
 );
-const Ring = ({ x, y, r = 24 }: { x: number; y: number; r?: number }) => <circle cx={x} cy={y} r={r} fill="none" stroke={RING} strokeWidth="3" />;
+/** iOS "Teilen": a box open at the top with an arrow leaving it. */
+const ShareGlyph = () => <><path d="M12 3v12" /><path d="m8 7 4-4 4 4" /><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1" /></>;
+/** iOS "Zum Home-Bildschirm": a rounded square with a plus. */
+const AddHomeGlyph = () => <><rect x="3.5" y="3.5" width="17" height="17" rx="4.5" /><path d="M12 8v8M8 12h8" /></>;
+/** Chrome's menu: three dots. */
+const DotsGlyph = () => <><circle cx="12" cy="5" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="19" r="1.2" fill="currentColor" /></>;
+/** "App installieren": a phone with an arrow going in. */
+const InstallGlyph = () => <><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" /><path d="M12 7.5v6" /><path d="m9.5 11.5 2.5 2.5 2.5-2.5" /></>;
+const CheckGlyph = () => <><circle cx="12" cy="12" r="9" /><path d="m8 12.5 2.6 2.6L16 9.5" /></>;
 
-function IosShare() {
-  return (
-    <Shot label="Untere Leiste von Safari, das Teilen-Symbol in der Mitte ist markiert">
-      <rect x="10" y="30" width="300" height="52" rx="26" fill="var(--surface-4)" />
-      <path d="M44 56l-8 0m0 0l6-6m-6 6l6 6" stroke="var(--on-var)" strokeWidth="2.4" strokeLinecap="round" fill="none" />
-      <path d="M92 50l8 6-8 6" stroke="var(--on-var)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" opacity="0.5" />
-      <g style={{ color: 'var(--on)' }}><Share x={160} y={58} /></g>
-      <Ring x={160} y={56} />
-      <rect x="226" y="46" width="22" height="20" rx="4" fill="none" stroke="var(--on-var)" strokeWidth="2.4" />
-      <circle cx="282" cy="56" r="2.6" fill="var(--on-var)" /><circle cx="272" cy="56" r="2.6" fill="var(--on-var)" /><circle cx="262" cy="56" r="2.6" fill="var(--on-var)" />
-    </Shot>
-  );
-}
-function IosAdd() {
-  return (
-    <Shot label="Liste im Teilen-Menü, Zum Home-Bildschirm ist markiert">
-      <rect x="24" y="12" width="272" height="30" rx="12" fill="var(--surface-4)" opacity="0.6" />
-      <rect x="24" y="52" width="272" height="48" rx="14" fill="var(--surface-4)" />
-      <rect x="40" y="64" width="24" height="24" rx="6" fill="none" stroke="var(--on)" strokeWidth="2.4" />
-      <path d="M52 70v12M46 76h12" stroke="var(--on)" strokeWidth="2.4" strokeLinecap="round" />
-      <text x="78" y="82" fill="var(--on)" fontSize="16" fontWeight="700" fontFamily="system-ui, sans-serif">Zum Home-Bildschirm</text>
-      <rect x="20" y="48" width="280" height="56" rx="16" fill="none" stroke={RING} strokeWidth="3" />
-    </Shot>
-  );
-}
-function IosConfirm() {
-  return (
-    <Shot label="Oben rechts die Schaltfläche Hinzufügen ist markiert">
-      <text x="28" y="43" fill="var(--on)" fontSize="13" fontWeight="800" fontFamily="system-ui, sans-serif">Zum Home-Bildschirm</text>
-      <rect x="236" y="22" width="68" height="30" rx="15" fill="var(--primary)" />
-      <text x="270" y="43" fill="var(--on-primary)" fontSize="14" fontWeight="800" textAnchor="middle" fontFamily="system-ui, sans-serif">Hinzufügen</text>
-      <rect x="230" y="17" width="80" height="40" rx="20" fill="none" stroke={RING} strokeWidth="3" />
-      <rect x="24" y="68" width="272" height="30" rx="10" fill="var(--surface-4)" />
-      <text x="40" y="88" fill="var(--on-var)" fontSize="14" fontFamily="system-ui, sans-serif">Flyer</text>
-    </Shot>
-  );
-}
-function AndroidMenu() {
-  return (
-    <Shot label="Browserleiste, das Menü mit drei Punkten oben rechts ist markiert">
-      <rect x="10" y="30" width="300" height="52" rx="26" fill="var(--surface-4)" />
-      <text x="40" y="62" fill="var(--on-var)" fontSize="15" fontFamily="system-ui, sans-serif">flyer-map…workers.dev</text>
-      <circle cx="274" cy="46" r="2.8" fill="var(--on)" /><circle cx="274" cy="56" r="2.8" fill="var(--on)" /><circle cx="274" cy="66" r="2.8" fill="var(--on)" />
-      <Ring x={274} y={56} />
-    </Shot>
-  );
-}
-function AndroidInstall() {
-  return (
-    <Shot label="Menüpunkt App installieren ist markiert">
-      <rect x="24" y="10" width="272" height="30" rx="10" fill="var(--surface-4)" opacity="0.6" />
-      <rect x="24" y="48" width="272" height="48" rx="14" fill="var(--surface-4)" />
-      <path d="M52 62v14m-7-7l7 7 7-7M44 82h16" stroke="var(--on)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <text x="76" y="78" fill="var(--on)" fontSize="16" fontWeight="700" fontFamily="system-ui, sans-serif">App installieren</text>
-      <rect x="20" y="44" width="280" height="56" rx="16" fill="none" stroke={RING} strokeWidth="3" />
-    </Shot>
-  );
-}
-function AndroidConfirm() {
-  return (
-    <Shot label="Die Schaltfläche Installieren im Fenster ist markiert">
-      <rect x="40" y="10" width="240" height="92" rx="20" fill="var(--surface-4)" />
-      <text x="62" y="40" fill="var(--on)" fontSize="15" fontWeight="800" fontFamily="system-ui, sans-serif">App installieren?</text>
-      <text x="62" y="60" fill="var(--on-var)" fontSize="13" fontFamily="system-ui, sans-serif">Verteil-Flyer</text>
-      <rect x="168" y="68" width="96" height="28" rx="14" fill="var(--primary)" />
-      <text x="216" y="87" fill="var(--on-primary)" fontSize="14" fontWeight="800" textAnchor="middle" fontFamily="system-ui, sans-serif">Installieren</text>
-      <rect x="162" y="63" width="108" height="38" rx="19" fill="none" stroke={RING} strokeWidth="3" />
-    </Shot>
-  );
-}
+type Step = { glyph: React.ReactNode; label: string; title: string; text: string; hot?: boolean };
+const IOS: Step[] = [
+  { glyph: <ShareGlyph />, label: 'Teilen-Symbol', title: 'Teilen öffnen', text: 'Tippe auf das Teilen-Symbol, unten oder im Menü ⋯ des Browsers.', hot: true },
+  { glyph: <AddHomeGlyph />, label: 'Zum Home-Bildschirm', title: 'Zum Home-Bildschirm', text: 'Wische in der Liste nach unten und tippe auf „Zum Home-Bildschirm“.' },
+  { glyph: <CheckGlyph />, label: 'Hinzufügen', title: 'Hinzufügen', text: 'Bestätige oben rechts. Danach startest du die App vom Home-Bildschirm.' },
+];
+const ANDROID: Step[] = [
+  { glyph: <DotsGlyph />, label: 'Menü mit drei Punkten', title: 'Menü öffnen', text: 'Tippe oben rechts auf die drei Punkte.', hot: true },
+  { glyph: <InstallGlyph />, label: 'App installieren', title: 'App installieren', text: 'Wähle „App installieren“ oder „Zum Startbildschirm hinzufügen“.' },
+  { glyph: <CheckGlyph />, label: 'Installieren', title: 'Bestätigen', text: 'Tippe auf „Installieren“. Die App liegt dann auf deinem Startbildschirm.' },
+];
 
 const hasAccessLink = () => /[?&]campaign=/.test(location.search) || location.hash.length > 1;
 
@@ -93,39 +38,33 @@ export function InstallGuide({ platform, onContinue }: { platform: Exclude<Platf
   const [canPrompt, setCanPrompt] = useState(canPromptInstall());
   const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
   useEffect(() => onInstallPromptChange(() => setCanPrompt(canPromptInstall())), []);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(location.href); setCopied('yes'); } catch { setCopied('failed'); }
-  };
+  const copy = async () => { try { await navigator.clipboard.writeText(location.href); setCopied('yes'); } catch { setCopied('failed'); } };
   const ios = platform === 'ios';
+  const link = hasAccessLink();
   return (
     <main className="pwa-page" aria-labelledby="pwa-guide-title">
       <div className="pwa-wrap">
         <header className="pwa-head">
-          <img src="/icon.svg" alt="" width="80" height="80" />
+          <img src="/icon.svg" alt="" width="72" height="72" />
           <h1 id="pwa-guide-title">Als App installieren</h1>
-          <p>Ohne Browserleiste, schneller gestartet und immer auf dem neuesten Stand.</p>
+          <p>Ohne Browserleiste, schneller und immer aktuell.</p>
         </header>
-        {!ios && canPrompt && <button className="pwa-btn primary" onClick={() => void promptInstall()}>App installieren</button>}
         <ol className="pwa-steps">
-          {ios ? (
-            <>
-              <li className="pwa-step"><b>Teilen öffnen</b><IosShare /><p>Tippe auf das Teilen-Symbol (Quadrat mit Pfeil nach oben). Es sitzt in der Leiste oder im Menü ⋯ des Browsers.</p></li>
-              <li className="pwa-step"><b>Zum Home-Bildschirm</b><IosAdd /><p>Wische in der Liste nach unten und tippe auf „Zum Home-Bildschirm“.</p></li>
-              <li className="pwa-step"><b>Hinzufügen</b><IosConfirm /><p>Bestätige oben rechts mit „Hinzufügen“. Danach startest du die App vom Home-Bildschirm.</p></li>
-            </>
-          ) : (
-            <>
-              <li className="pwa-step"><b>Menü öffnen</b><AndroidMenu /><p>Tippe oben rechts auf die drei Punkte.</p></li>
-              <li className="pwa-step"><b>App installieren</b><AndroidInstall /><p>Wähle „App installieren“ oder „Zum Startbildschirm hinzufügen“.</p></li>
-              <li className="pwa-step"><b>Bestätigen</b><AndroidConfirm /><p>Tippe auf „Installieren“. Die App erscheint auf deinem Startbildschirm.</p></li>
-            </>
-          )}
+          {(ios ? IOS : ANDROID).map((step) => (
+            <li key={step.title} className="pwa-step">
+              <Glyph hot={step.hot} label={step.label}>{step.glyph}</Glyph>
+              <div><b>{step.title}</b><p>{step.text}</p></div>
+            </li>
+          ))}
         </ol>
-        {ios && <p className="pwa-note">Auf iPhone und iPad hat die App einen eigenen Speicher. Dein Zugang gilt dort nicht automatisch: Öffne in der App „Link einfügen“.</p>}
-        <div className="pwa-actions">
-          {hasAccessLink() && <button className="pwa-btn" onClick={() => void copy()}>{copied === 'yes' ? 'Link kopiert' : copied === 'failed' ? 'Kopieren nicht möglich' : 'Zugangslink kopieren'}</button>}
-          <button className="pwa-btn" onClick={() => { saveSkip(); onContinue(); }}>Trotzdem im Browser öffnen</button>
-        </div>
+        <footer className="pwa-foot">
+          {ios && <p className="pwa-note">Auf iPhone und iPad hat die App einen eigenen Speicher: Öffne dort „Zugangslink einfügen“.</p>}
+          {!ios && canPrompt && <button className="pwa-btn primary" onClick={() => void promptInstall()}>App installieren</button>}
+          <div className={`pwa-pair${link ? '' : ' single'}`}>
+            {link && <button className="pwa-btn" onClick={() => void copy()}>{copied === 'yes' ? 'Link kopiert' : copied === 'failed' ? 'Nicht möglich' : 'Link kopieren'}</button>}
+            <button className="pwa-btn" onClick={() => { saveSkip(); onContinue(); }}>Im Browser öffnen</button>
+          </div>
+        </footer>
       </div>
     </main>
   );
