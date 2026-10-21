@@ -48,6 +48,7 @@ export function redirectBareRootToOrganizationLogin(request: Request): Response 
   const url = new URL(request.url);
   if (url.pathname !== "/") return null;
   if (url.searchParams.has("workbench")) return null;
+  if (url.searchParams.get("source") === "pwa") return null; // the installed app's start page (manifest start_url) is a page of its own, not the sign-in
   const campaignId = url.searchParams.get("campaign");
   if (campaignId && CAMPAIGN_ID_PATTERN.test(campaignId)) return null;
   return Response.redirect(new URL("/login", url).toString(), 302);

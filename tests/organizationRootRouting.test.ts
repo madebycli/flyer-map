@@ -27,6 +27,12 @@ test("explicit Campaign field links and workbench links are not redirected", () 
   );
 });
 
+test("the installed app's start URL is not sent to the sign-in (its start page decides), a plain root still is", () => {
+  assert.equal(redirectBareRootToOrganizationLogin(new Request("https://flyer.test/?source=pwa")), null);
+  assert.equal(redirectBareRootToOrganizationLogin(new Request("https://flyer.test/?source=other"))?.status, 302);
+  assert.equal(redirectBareRootToOrganizationLogin(new Request("https://flyer.test/"))?.status, 302);
+});
+
 test("invalid or missing Campaign selectors cannot enter the field runtime", () => {
   for (const url of [
     "https://flyer.test/",
