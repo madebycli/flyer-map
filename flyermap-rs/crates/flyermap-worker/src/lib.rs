@@ -11,6 +11,7 @@ pub mod db;
 mod entry;
 pub mod handlers;
 pub mod http;
+pub mod rand;
 pub mod repo;
 pub mod time;
 

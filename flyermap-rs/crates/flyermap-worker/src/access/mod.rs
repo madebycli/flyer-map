@@ -2,6 +2,7 @@
 //! organiser), then an Abhol-Helfer session. Organiser accounts and organisation members join when the organiser API moves (Plan 059 M7).
 pub mod collector;
 pub mod cookies;
+pub mod grants;
 pub mod hash;
 pub mod session;
 

@@ -21,11 +21,31 @@ pub struct Options {
     pub log: Box<dyn Fn(&str)>,
     /// Makes a request id when the client sent none.
     pub new_id: Box<dyn Fn() -> String>,
+    /// 32 fresh random bytes for secrets and ids.
+    pub random: Box<dyn Fn() -> [u8; 32]>,
+}
+
+impl Options {
+    /// A secret for a link or a session (43 characters, base64url).
+    pub fn secret(&self) -> String {
+        crate::rand::base64url(&(self.random)())
+    }
+    pub fn uuid(&self) -> String {
+        crate::rand::uuid_v4(&(self.random)())
+    }
 }
 
 impl Default for Options {
     fn default() -> Options {
-        Options { basemap: None, now: Box::new(|| 0), log: Box::new(|_| {}), new_id: Box::new(|| "s-0".into()) }
+        // A counter, not randomness: only for tests and tools. The Worker and every real host pass their CSPRNG.
+        let counter = std::cell::Cell::new(0u64);
+        let random = move || {
+            counter.set(counter.get() + 1);
+            let mut b = [0u8; 32];
+            b[..8].copy_from_slice(&counter.get().to_le_bytes());
+            b
+        };
+        Options { basemap: None, now: Box::new(|| 0), log: Box::new(|_| {}), new_id: Box::new(|| "s-0".into()), random: Box::new(random) }
     }
 }
 
@@ -41,16 +61,10 @@ fn same_origin(request: &Request) -> bool {
 /// Combinations the TypeScript Worker answers that are not here yet: they say so (501) instead of pretending (405).
 fn not_moved_yet(route: &Route, method: &str) -> bool {
     match route {
-        Route::Campaign { res, .. } => matches!(
-            (res, method),
-            (CampaignRes::Progress, "GET") | (CampaignRes::Stats, "PUT") | (CampaignRes::Window, "PUT") | (CampaignRes::Rooms, "GET" | "POST")
-        ),
-        Route::Room { finish: false, .. } => matches!(method, "PATCH" | "DELETE"),
-        Route::Room { finish: true, .. } => method == "POST",
+        Route::Campaign { res, .. } => matches!((res, method), (CampaignRes::Progress, "GET") | (CampaignRes::Stats, "PUT")),
         Route::Area { res: AreaRes::Pack, .. } => matches!(method, "GET" | "POST"),
         Route::Area { .. } => method == "POST",
-        Route::PublicRoom { join, .. } => (*join && method == "POST") || (!join && method == "GET"),
-        Route::Basemap => false,
+        Route::Room { .. } | Route::PublicRoom { .. } | Route::Basemap => false,
     }
 }
 
@@ -94,11 +108,12 @@ impl<D: Db> App<D> {
                     fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt.")
                 };
             }
-            Route::PublicRoom { .. } => {
-                return if not_moved_yet(&route, method) {
-                    fail(ErrorCode::NotImplemented, ErrorCode::NotImplemented.message())
-                } else {
-                    fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt.")
+            Route::PublicRoom { room_id, join } => {
+                return match (join, method) {
+                    (true, "POST") if !same_origin(request) => fail(ErrorCode::CrossOrigin, "Anfrage von fremdem Ursprung."),
+                    (true, "POST") => handlers::rooms::join(&self.db, room_id, request, &self.options).await,
+                    (false, "GET") => handlers::rooms::info(&self.db, room_id, request).await,
+                    _ => fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt."),
                 };
             }
             Route::Campaign { campaign_id, .. } | Route::Room { campaign_id, .. } | Route::Area { campaign_id, .. } => campaign_id.clone(),
@@ -109,17 +124,28 @@ impl<D: Db> App<D> {
         if !matches!(method, "GET" | "HEAD") && !same_origin(request) {
             return fail(ErrorCode::CrossOrigin, "Anfrage von fremdem Ursprung.");
         }
+        let (db, caller, id) = (&self.db, &caller, campaign_id.as_str());
+        if let Route::Room { room_id, finish, .. } = &route {
+            return match (finish, method) {
+                (false, "PATCH") => handlers::rooms::update(db, caller, id, room_id, request, &self.options).await,
+                (false, "DELETE") => handlers::rooms::delete(db, caller, id, room_id, now).await,
+                (true, "POST") => handlers::rooms::finish(db, caller, id, room_id, request, now).await,
+                _ => fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt."),
+            };
+        }
         let res = match &route {
             Route::Campaign { res, .. } => Some(*res),
             _ => None,
         };
-        let (db, caller, id) = (&self.db, &caller, campaign_id.as_str());
         match (res, method) {
             (Some(CampaignRes::Meta), "GET") => handlers::meta::meta(db, caller, id, request, &self.options).await,
             (Some(CampaignRes::State), "GET") => handlers::state::pull(db, caller, id, request, now).await,
             (Some(CampaignRes::Ops), "POST") => handlers::ops::push(db, caller, id, request, now).await,
             (Some(CampaignRes::Notes), "GET") => handlers::notes::pull(db, caller, id, request, now).await,
             (Some(CampaignRes::Notes), "POST") => handlers::notes::push(db, caller, id, request, now).await,
+            (Some(CampaignRes::Window), "PUT") => handlers::window::put(db, caller, id, request).await,
+            (Some(CampaignRes::Rooms), "GET") => handlers::rooms::list(db, caller, id, now).await,
+            (Some(CampaignRes::Rooms), "POST") => handlers::rooms::create(db, caller, id, request, &self.options).await,
             _ if not_moved_yet(&route, method) => fail(ErrorCode::NotImplemented, ErrorCode::NotImplemented.message()),
             _ => fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt."),
         }

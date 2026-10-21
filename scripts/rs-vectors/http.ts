@@ -32,7 +32,7 @@ function dump(): string {
 }
 const seedSql = dump();
 
-type Exchange = { who: string | null; method: string; path: string; headers: Record<string, string>; body: string | null; status: number; response: unknown; contentType: string | null; cacheControl: string | null };
+type Exchange = { who: string | null; method: string; path: string; headers: Record<string, string>; body: string | null; status: number; response: unknown; contentType: string | null; cacheControl: string | null; setCookie: string | null };
 const exchanges: Exchange[] = [];
 async function call(who: string | null, method: string, path: string, body?: unknown, extra: Record<string, string> = {}) {
   const text = body === undefined ? null : typeof body === 'string' ? body : JSON.stringify(body);
@@ -41,7 +41,8 @@ async function call(who: string | null, method: string, path: string, body?: unk
   const raw = await res.text();
   let response: unknown = raw;
   try { response = JSON.parse(raw); } catch { /* not JSON */ }
-  exchanges.push({ who, method, path, headers, body: text, status: res.status, response, contentType: res.headers.get('content-type'), cacheControl: res.headers.get('cache-control') });
+  exchanges.push({ who, method, path, headers, body: text, status: res.status, response, contentType: res.headers.get('content-type'), cacheControl: res.headers.get('cache-control'), setCookie: res.headers.get('set-cookie') });
+  return response as Record<string, any>;
 }
 const op = (id: string, key: string, status: string, area = 'area_n') => ({ id, key, status, area });
 
@@ -92,6 +93,74 @@ for (const who of ['viewer', 'editor', 'other']) await call(who, 'GET', `${base}
 await call('viewer', 'GET', `${base}/notes?since=1&limit=2`);
 await call('admin', 'GET', `/api/v5/campaigns/${encodeURIComponent('bad id!')}/state`);
 await call('admin', 'GET', `/api/v5/campaigns/campaign_missing/meta`);
+// the Aktion's time window
+const win = `${base}/window`;
+await call('viewer', 'PUT', win, { startsAt: '2030-01-01T10:00:00Z' });
+await call('admin', 'PUT', win, { startsAt: '2030-01-01T10:00:00Z', endsAt: '2030-01-01T09:00:00Z' });
+await call('admin', 'PUT', win, { startsAt: 'nope' });
+await call('admin', 'PUT', win, { startsAt: '1999-12-31T00:00:00Z' });
+await call('admin', 'PUT', win, { startsAt: '2030-01-01T08:00:00+02:00', endsAt: '2030-01-01T18:30:00Z' });
+await call('editor', 'GET', `${base}/meta`);
+await call('admin', 'PUT', win, { startsAt: null, endsAt: '' });
+// rooms: opening, every refusal, joining by link and by password, the lock, guests, finishing, deleting
+const rooms = `${base}/rooms`;
+await call('viewer', 'POST', rooms, { headcount: 3, areaId: 'area_n' });
+await call('editor', 'POST', rooms, { areaId: 'area_n' });
+await call('editor', 'POST', rooms, { headcount: 3, areaId: 'area_o' });
+await call('editor', 'POST', rooms, { headcount: 3, areaId: 'area_n', joinMode: 'bad' });
+await call('editor', 'POST', rooms, { headcount: 3, areaId: 'area_n', joinMode: 'password', password: 'ab' });
+await call('editor', 'POST', rooms, { headcount: 3, areaId: 'area_n', housesTotal: -1 });
+const linkRoom = (await call('editor', 'POST', rooms, { headcount: 3, areaId: 'area_n', housesTotal: 120 })).room;
+await call('editor', 'POST', rooms, { headcount: 2, areaId: 'area_n' });
+const passRoom = (await call('admin', 'POST', rooms, { headcount: 2, areaId: 'area_o', joinMode: 'password', password: 'geheim1' })).room;
+await call('editor', 'GET', rooms);
+await call('other', 'GET', rooms);
+const pub = (id: string) => `/api/v5/rooms/${id}`;
+await call(null, 'GET', pub(linkRoom.id));
+await call(null, 'GET', `${pub(linkRoom.id)}?j=wrong`);
+await call(null, 'GET', `${pub(linkRoom.id)}?j=${linkRoom.joinSecret}`);
+await call(null, 'GET', pub(passRoom.id));
+await call(null, 'GET', pub('room_nope'));
+await call(null, 'PUT', pub(linkRoom.id));
+await call(null, 'POST', `${pub(linkRoom.id)}/join`, { label: 'Anna' });
+await call(null, 'POST', `${pub(linkRoom.id)}/join`, { j: linkRoom.joinSecret }, { origin: 'https://evil.test' });
+await call('editor', 'POST', `${pub(linkRoom.id)}/join`, { j: linkRoom.joinSecret });
+await call('admin', 'POST', `${pub(linkRoom.id)}/join`, { j: linkRoom.joinSecret });
+const joined = async (who: string, roomId: string, body: Record<string, unknown>) => {
+  await call(null, 'POST', `${pub(roomId)}/join`, body);
+  cookies[who] = exchanges.at(-1)!.setCookie!.split(';')[0];
+};
+await joined('guestA', linkRoom.id, { j: linkRoom.joinSecret, label: '  <b>Anna</b>\u0007 ' });
+await call('guestA', 'POST', `${pub(linkRoom.id)}/join`, { j: linkRoom.joinSecret });
+for (let i = 0; i < 9; i++) await call(null, 'POST', `${pub(passRoom.id)}/join`, { password: `falsch${i}` });
+await call(null, 'POST', `${pub(passRoom.id)}/join`, { password: 'geheim1' });
+await call('admin', 'PATCH', `${rooms}/${passRoom.id}`, { password: 'neuespw1' });
+await joined('guestB', passRoom.id, { password: 'neuespw1' });
+await call('guestA', 'GET', rooms);
+await call('guestA', 'GET', `${base}/meta`);
+await call('guestA', 'POST', `${base}/ops`, { ops: [op(stamp(NOW - 300), 'h:g1', 'completed', 'area_n'), op(stamp(NOW - 299), 'h:g2', 'completed', 'area_o')] });
+await call('guestA', 'PATCH', `${rooms}/${linkRoom.id}`, { headcount: 5 });
+await call('guestA', 'PATCH', `${rooms}/${linkRoom.id}`, { joinMode: 'open' });
+await call('guestA', 'PATCH', `${rooms}/${passRoom.id}`, { headcount: 5 });
+await call('editor', 'PATCH', `${rooms}/${linkRoom.id}`, {});
+await call('editor', 'PATCH', `${rooms}/${linkRoom.id}`, { housesTotal: -1 });
+await call('editor', 'PATCH', `${rooms}/${linkRoom.id}`, { joinMode: 'password' });
+await call('editor', 'PATCH', `${rooms}/${linkRoom.id}`, { joinMode: 'team', headcount: 4, housesTotal: 0 });
+await call('editor', 'GET', rooms);
+await call('guestA', 'POST', `${rooms}/${linkRoom.id}/finish`);
+await call('editor', 'GET', `${rooms}/${linkRoom.id}/finish`);
+await call('editor', 'POST', `${rooms}/${linkRoom.id}/finish`, { housesTotal: 'viele' });
+await call('editor', 'POST', `${rooms}/${linkRoom.id}/finish`, { housesTotal: 130 });
+await call('editor', 'POST', `${rooms}/${linkRoom.id}/finish`);
+await call('guestA', 'GET', rooms);
+await call(null, 'GET', `${pub(linkRoom.id)}?j=${linkRoom.joinSecret}`);
+await call(null, 'POST', `${pub(linkRoom.id)}/join`, { j: linkRoom.joinSecret });
+await call('editor', 'PATCH', `${rooms}/${linkRoom.id}`, { headcount: 9 });
+await call('other', 'DELETE', `${rooms}/${passRoom.id}`);
+await call('admin', 'DELETE', `${rooms}/${passRoom.id}`);
+await call('admin', 'DELETE', `${rooms}/${passRoom.id}`);
+await call('guestB', 'GET', rooms);
+await call('admin', 'GET', rooms);
 
 const seedFile = new URL('v5.seed.sql', DIR);
 const text = `${JSON.stringify({ about: 'made by scripts/rs-vectors/http.ts from the TypeScript Worker; do not edit', now: NOW, cookies, exchanges }, null, 1)}\n`;

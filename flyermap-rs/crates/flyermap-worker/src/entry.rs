@@ -17,6 +17,13 @@ async fn fetch(mut req: worker::Request, env: Env, _ctx: Context) -> Result<CfRe
         now: Box::new(move || fixed.unwrap_or_else(|| Date::now().as_millis())),
         log: Box::new(|line| worker::console_log!("{line}")),
         new_id: Box::new(|| format!("s-{:x}", (js_sys::Math::random() * 1e12) as u64)),
+        random: Box::new(|| {
+            use wasm_bindgen::JsCast;
+            let mut bytes = [0u8; 32];
+            let scope: web_sys::WorkerGlobalScope = js_sys::global().unchecked_into();
+            scope.crypto().and_then(|c| c.get_random_values_with_u8_array(&mut bytes)).expect("crypto.getRandomValues");
+            bytes
+        }),
     };
     let app = App::new(D1Db(env.d1("DB")?), options);
     match app.handle(&request).await {
