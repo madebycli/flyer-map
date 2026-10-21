@@ -110,7 +110,7 @@ Do not add a fake `database_id` to `wrangler.jsonc`.
 
 ## After the first successful deploy
 
-Update `docs/status/CURRENT.md` with:
+Record in the context repository (`NOW.md`):
 
 - the real production URL
 - whether `/api/health` works

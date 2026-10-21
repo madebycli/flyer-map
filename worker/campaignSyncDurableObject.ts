@@ -1,7 +1,7 @@
 /**
  * Retired: the realtime/RxDB coordinator of the old map. The class stays exported only because the deployed Worker's Durable Object
  * migration history names it; taking the class away needs a `deleted_classes` migration, which destroys the object's stored data and
- * therefore waits for an explicit go (docs/status/CURRENT.md). It answers nothing.
+ * therefore waits for an explicit go (owner decision, see the context repository). It answers nothing.
  */
 export class CampaignSyncDurableObject {
   constructor(_state?: unknown, _env?: unknown) {}

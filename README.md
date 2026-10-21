@@ -5,7 +5,7 @@ Mobile-first Website zur koordinierten Verteilung von Flyern über eine gemeinsa
 ## Status
 
 Die Feldkarte ist komplett neu gebaut (`/v5`, siehe `docs/plans/active/051-full-rewrite.md`): Straßen und Häuser werden auf dem Gerät aus OSM-Daten abgeleitet (Rust/WebAssembly),
-gespeichert und synchronisiert wird nur der Status. Ein Designsystem (`src/ui`) trägt Feldkarte und Organizer-Seiten. Aktueller Stand: `docs/status/CURRENT.md`.
+gespeichert und synchronisiert wird nur der Status. Ein Designsystem (`src/ui`) trägt Feldkarte und Organizer-Seiten. Aktueller Stand: im privaten Kontext-Repo (`.ai/CONTEXT.md`).
 
 Die technische und produktseitige Source of Truth liegt im Repository unter `docs/`.
 
@@ -13,7 +13,7 @@ Die technische und produktseitige Source of Truth liegt im Repository unter `doc
 
 - mobile first
 - map first
-- Website only, keine native App und keine installierbare PWA
+- Web-App (PWA): installierbar, mit App-Gefühl, ohne App-Store (ADR-0038)
 - lightweight und datenarm
 - zuverlässig bei schwankender Mobilfunkverbindung
 - keine unnötige Standort- oder Bewegungsverfolgung
@@ -30,13 +30,7 @@ Die technische und produktseitige Source of Truth liegt im Repository unter `doc
 
 ## Für Coding-Agents
 
-Vor jeder Arbeit am Projekt zuerst lesen:
-
-1. `AGENTS.md`
-2. `docs/status/CURRENT.md`
-3. `docs/context-map.yaml`
-
-Danach nur den für die Aufgabe relevanten Kontext laden.
+Einstieg: `AGENTS.md` (kurz) und `.ai/CONTEXT.md` (Verweis auf den privaten Kontext). Code und Tests sind die Wahrheit; `docs/` enthält Entwicklerdoku, ADRs und offene Pläne.
 
 ## Entwicklung
 

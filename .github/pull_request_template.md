@@ -13,7 +13,7 @@
 - [ ] Relevante Tests ausgeführt/ergänzt
 - [ ] Mobile Auswirkungen geprüft
 - [ ] Relevante Dokumentation aktualisiert
-- [ ] `docs/status/CURRENT.md` aktualisiert
+- [ ] Kontext-Repo (`NOW.md`) angepasst, falls sich Regeln oder Stand ändern
 
 ## Risiken / Hinweise
 

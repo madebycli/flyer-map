@@ -177,4 +177,4 @@ Tests/Operations:
 
 ## Wiederaufnahme
 
-`AGENTS.md` -> `docs/status/CURRENT.md` -> `docs/context-map.yaml` -> `docs/context-organizer-admin.yaml` -> `docs/context-organizer-admin-live.yaml` -> dieser Plan -> ADR-0026 -> `docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md` -> `docs/operations/ORGANIZER_ADMIN_STAGING.md`. Danach GitHub Remote-Heads, PR #76, exact-head CI und aktuellen V9-Lauf neu verifizieren.
+`AGENTS.md` -> dieser Plan -> ADR-0026 -> `docs/status/ORGANIZER_ADMIN_LIVE_HANDOFF.md` -> `docs/operations/ORGANIZER_ADMIN_STAGING.md`. Danach GitHub Remote-Heads, PR #76, exact-head CI und aktuellen V9-Lauf neu verifizieren.
