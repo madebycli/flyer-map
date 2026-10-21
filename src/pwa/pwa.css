@@ -1,0 +1,34 @@
+/* Start screen extras, update banner, install guide, start page of the installed app. Uses the tokens of src/ui. */
+.pwa-banner {
+  position: fixed; z-index: 900; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 0.7rem;
+  padding: calc(env(safe-area-inset-top) + 0.6rem) 0.9rem 0.6rem 1rem; background: var(--primary-container); color: var(--on-primary-container); box-shadow: var(--shadow);
+  font-size: 0.92rem; font-weight: 700; animation: pwa-drop var(--t) var(--ease);
+}
+.pwa-banner > span { flex: 1; min-width: 0; line-height: 1.25; }
+.pwa-banner small { display: block; font-weight: 600; opacity: 0.85; }
+.pwa-banner button { flex: none; min-height: 2.75rem; padding: 0 1.1rem; border: 0; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-weight: 800; cursor: pointer; }
+.pwa-banner button.plain { min-width: 2.75rem; padding: 0; background: transparent; color: inherit; font-size: 1.2rem; }
+@keyframes pwa-drop { from { transform: translateY(-100%); } }
+
+.pwa-page { position: fixed; inset: 0; z-index: 1100; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); color: var(--on); }
+.pwa-wrap { display: grid; gap: 1.1rem; max-width: 30rem; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 2rem) 1.3rem calc(env(safe-area-inset-bottom) + 1.6rem); }
+.pwa-head { display: grid; justify-items: center; gap: 0.6rem; text-align: center; }
+.pwa-head img { width: 5rem; height: 5rem; border-radius: 1.4rem; }
+.pwa-head h1 { margin: 0; font-size: 1.55rem; font-weight: 800; letter-spacing: -0.02em; }
+.pwa-head p { margin: 0; color: var(--on-var); }
+.pwa-steps { display: grid; gap: 0.9rem; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.pwa-step { display: grid; gap: 0.6rem; padding: 1rem; border-radius: var(--r-lg); background: var(--surface-2); counter-increment: step; }
+.pwa-step > b { display: flex; align-items: center; gap: 0.6rem; font-size: 1rem; font-weight: 800; }
+.pwa-step > b::before { content: counter(step); flex: none; display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--primary); color: var(--on-primary); font-size: 0.9rem; }
+.pwa-step p { margin: 0; color: var(--on-var); font-size: 0.92rem; }
+.pwa-shot { display: block; width: 100%; height: auto; border-radius: 1rem; background: var(--surface-3); }
+.pwa-note { margin: 0; color: var(--on-var); font-size: 0.85rem; text-align: center; }
+.pwa-actions { display: grid; gap: 0.6rem; }
+.pwa-btn { display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 3.25rem; padding: 0 1.4rem; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--on); font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
+.pwa-btn.primary { background: var(--primary); color: var(--on-primary); }
+.pwa-btn:disabled { opacity: 0.5; }
+.pwa-btn:focus-visible, .pwa-banner button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.pwa-input { width: 100%; min-height: 3.25rem; padding: 0 1rem; border: 1.5px solid var(--outline-var); border-radius: var(--r); background: var(--surface-1); color: var(--on); font: inherit; font-size: 16px; }
+.pwa-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.pwa-error { margin: 0; color: var(--error); font-size: 0.9rem; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .pwa-banner { animation: none; } }

@@ -4,6 +4,7 @@ import { FieldMap, type Hit, type Pt, type Theme } from '../map/fieldMap.ts';
 import { bakeStatuses } from '../map/bake.ts';
 import { FocusVideo } from './focusVideo.tsx';
 import { OverflowMenu } from './overflowMenu.tsx';
+import { splash } from '../../pwa/splash.ts';
 import { readLastView, saveLastView } from './lastView.ts';
 import type { Conflict, FieldStore } from '../store/store.ts';
 import { houseKey, segmentKey, type EntityKey, type Status } from '../store/types.ts';
@@ -40,7 +41,7 @@ import { SheetFrame, StatusGroup } from './sheet.tsx';
 import { coveredByServer, houseStats, percentOf, tallyTotal, withServerProgress } from './stats.ts';
 import type { SearchHit } from './search.ts';
 import { useCampaign } from './useCampaign.ts';
-import { Icon, Loader, applyPalette, readSeed, saveSeed } from '../../ui/index.ts';
+import { Icon, applyPalette, readSeed, saveSeed } from '../../ui/index.ts';
 
 const readTheme = (): Theme => { try { return localStorage.getItem('vf-v5-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
 const readHand = (): 'left' | 'right' => { try { return localStorage.getItem('vf-v5-hand') === 'left' ? 'left' : 'right'; } catch { return 'right'; } };
@@ -494,6 +495,13 @@ export function App({ campaignId }: { campaignId: string }) {
   useEffect(() => { if (fab !== 'idle' && (!mayMark || tool !== 'inspect' || phase.kind !== 'ready')) setFab('idle'); }, [fab, mayMark, tool, phase.kind]);
   const importOffer = phase.kind === 'ready' && meta?.role === 'admin' && importState !== 'done' && !!store && store.size === 0;
   const ready = phase.kind === 'ready';
+  // The start screen (plain HTML in the page) says what is loading and goes away once the finished map is on screen; errors and missing data show as pages of their own.
+  const splashOn = splash.active();
+  useEffect(() => {
+    if (phase.kind === 'loading') splash.text(phase.label);
+    else if (phase.kind === 'ready') { splash.text('Karte wird gezeichnet …'); fieldMap.current ? fieldMap.current.whenSettled(() => splash.hide()) : splash.hide(); }
+    else splash.hide();
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
   // ?diag=1 (or the switch left on in the panel): the readout stays on screen, and the panel opens once when the map is up.
   const diagOn = useSyncExternalStore(subscribeDiagMode, diagRequested, () => false);
   const diagAutoOpened = useRef(false);
@@ -674,7 +682,7 @@ export function App({ campaignId }: { campaignId: string }) {
       {notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{notice}</span><button className="v5-icon-btn" onClick={() => setNotice(null)} aria-label="OK"><Icon name="close" size={20} /></button></div>}
       {undo && !notice && <div className="v5-toast" role="status"><Icon name="check" size={22} /><span>{undo.label}</span><button className="v5-icon-btn tonal" onClick={() => { undo.revert(); setUndo(null); }} aria-label="Rückgängig" title="Rückgängig"><Icon name="undo" /></button></div>}
 
-      {phase.kind === 'loading' && <Overlay><Loader /><p>{phase.label}</p></Overlay>}
+      {phase.kind === 'loading' && !splashOn && <LoadingPage label={phase.label} />}
       {phase.kind === 'error' && <Overlay><span className="v5-badge big"><Icon name="warning" size={34} /></span><h2>Das hat nicht geklappt</h2><p>{phase.status === 401 ? 'Dein Zugang zu dieser Aktion ist abgelaufen oder wurde widerrufen. Organisatoren melden sich neu an, Teams und Helfer öffnen ihren Einladungslink erneut.' : phase.message}</p>{phase.status === 401 && <a className="v5-btn primary" href={`/login?next=${encodeURIComponent(`/admin/campaign/${campaignId}`)}`}><Icon name="unlock" size={20} />Als Organisator anmelden</a>}<button className="v5-btn" onClick={() => location.reload()}><Icon name="sync" size={20} />Neu laden</button><button className="v5-btn" onClick={() => { setPanel('diag'); }}><Icon name="chart" size={20} />Diagnose</button></Overlay>}
       {phase.kind === 'needs-pack' && (
         <Overlay>
@@ -907,4 +915,15 @@ function Detail({ store, keyOf, canWrite, onPick, theme, labels, kind }: { store
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return <div className="v5-overlay"><div className="v5-card">{children}</div></div>;
+}
+
+/** Later loading phases (after the start screen is gone, e.g. building the map data) look like the start screen: a page, not a card over the half-built map. */
+function LoadingPage({ label }: { label: string }) {
+  return (
+    <div className="v5-overlay v5-loadingpage" role="status" aria-live="polite">
+      <img src="/icon.svg" alt="" width="96" height="96" />
+      <p>{label}</p>
+      <i className="v5-loadingbar" aria-hidden />
+    </div>
+  );
 }

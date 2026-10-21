@@ -1,3 +1,4 @@
+import { versionLabel } from '../../pwa/version.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusColors, type Theme } from '../map/fieldMap.ts';
 import type { Meta } from './api.ts';
@@ -27,6 +28,7 @@ export function HomeSheet({ tiles, identity, extra, onClose }: { tiles: AppTile[
         })}
       </div>
       <p className="v5-hint">Kartendaten © OpenStreetMap-Mitwirkende · OpenMapTiles · OpenFreeMap</p>
+      <p className="v5-hint v5-version" aria-label={`App-Version ${versionLabel()}`}>{versionLabel()}</p>
     </SheetFrame>
   );
 }

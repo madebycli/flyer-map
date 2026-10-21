@@ -828,6 +828,20 @@ export class FieldMap {
     return { houses: [...out.houses], segments: [...out.segments] };
   }
 
+  /**
+   * Calls `done` once the map has drawn what is on screen (style in, tiles in), at the latest after `maxMs`: the start screen waits for this,
+   * so the first thing the person sees is a finished map.
+   */
+  whenSettled(done: () => void, maxMs = 7000): void {
+    let fired = false;
+    const onIdle = () => { if (this.map.isStyleLoaded()) fire(); };
+    const fire = () => { if (fired) return; fired = true; clearTimeout(timer); this.map.off('idle', onIdle); done(); };
+    const timer = setTimeout(fire, maxMs);
+    this.map.on('idle', onIdle);
+    // already idle when asked: no further idle event would come
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (this.map.loaded() && !this.map.isMoving()) fire(); }));
+  }
+
   unproject(point: Pt): LngLat { const l = this.map.unproject([point.x, point.y]); return [l.lng, l.lat]; }
 
   /**

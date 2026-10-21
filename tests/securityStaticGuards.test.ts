@@ -78,10 +78,20 @@ test("security static guard: SQL template interpolation is limited to the audite
   }
 });
 
-test("security static guard: website-only build has no Service Worker or web manifest registration", async () => {
+test("security static guard: the service worker is registered in one place and only ever touches the app shell (ADR-0038)", async () => {
+  const files = await sourceFiles();
+  const registering: string[] = [];
+  for (const file of files) if (/serviceWorker\.register/u.test(await readFile(file, "utf8"))) registering.push(file.replaceAll("\\", "/"));
+  assert.deepEqual(registering, ["src/pwa/register.ts"]);
+
+  const worker = await readFile("public/sw.js", "utf8");
+  assert.match(worker, /startsWith\('\/api\/'\)/u, "API calls never go through the service worker");
+  assert.match(worker, /url\.origin !== self\.location\.origin\) return/u, "other origins (map tiles) are left alone");
+  assert.match(worker, /request\.method !== 'GET'\) return/u, "only GET is ever answered from a cache");
+  assert.doesNotMatch(worker, /showNotification|PushManager|\.sync\b|periodicSync/u, "no push or background sync");
+
   const source = await combinedSource();
-  assert.doesNotMatch(source, /serviceWorker\.register/u);
-  assert.doesNotMatch(source, /\.webmanifest\b/u);
+  assert.doesNotMatch(source, /PushManager|pushManager|periodicSync|SyncManager/u, "no push, no background sync");
 });
 
 test("security static guard: no continuous GPS watch is introduced", async () => {

@@ -1,3 +1,4 @@
+import { splash } from "../pwa/splash.ts";
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { AppBar, Button, Card, Dialog, Field, Icon, Loading, Notice, Secret, TextInput, type NavItem } from "../ui/index.ts";
@@ -19,11 +20,12 @@ export function useOrganizationMe(next: string, onUnauthorized: (loginPath: stri
     if (shared) return;
     let active = true;
     getOrganizationMe()
-      .then((value) => { if (active) setState({ loading: false, value, error: null }); })
+      .then((value) => { if (active) { setState({ loading: false, value, error: null }); splash.hide(); } })
       .catch((cause: unknown) => {
         if (!active) return;
         if (cause instanceof OrganizationApiError && cause.status === 401) { onUnauthorized(`/login?next=${encodeURIComponent(next)}`); return; }
         setState({ loading: false, value: null, error: errorMessage(cause) });
+        splash.hide();
       });
     return () => { active = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

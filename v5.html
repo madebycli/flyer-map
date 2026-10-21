@@ -6,10 +6,41 @@
     <meta name="theme-color" content="#0e1513" />
     <meta name="description" content="Verteil-Flyer v5 – schnelle Feldkarte." />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <title>Verteil-Flyer v5</title>
+    <title>Verteil-Flyer</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Flyer" />
+    <script>try{if(localStorage.getItem('vf-v5-theme')==='light'){document.documentElement.dataset.theme='light';document.querySelector('meta[name="theme-color"]').setAttribute('content','#f5faf8')}}catch(e){}</script>
+    <style>
+      /* First paint: dark (or the chosen light) at once, never a white flash; the start screen is plain HTML so it needs no script. */
+      html{background:#0f1514;color-scheme:dark}
+      html[data-theme=light]{background:#f5faf8;color-scheme:light}
+      body{margin:0}
+      #splash{position:fixed;inset:0;z-index:1000;display:grid;align-content:center;justify-items:center;gap:1.1rem;padding:1.5rem;background:#0f1514;color:#a9b6b2;font:600 0.95rem/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center;transition:opacity .26s ease-out}
+      html[data-theme=light] #splash{background:#f5faf8;color:#3f4946}
+      #splash.done{opacity:0;pointer-events:none}
+      #splash img{width:6rem;height:6rem;border-radius:1.6rem}
+      #splash p{margin:0;min-height:1.3em}
+      #splash .splash-bar{position:relative;display:block;width:7rem;height:3px;border-radius:2px;overflow:hidden;background:rgb(102 207 179 / 22%)}
+      #splash .splash-bar::after{content:"";position:absolute;inset:0;width:40%;border-radius:2px;background:#66cfb3;animation:splash-run 1.3s ease-in-out infinite}
+      html[data-theme=light] #splash .splash-bar{background:rgb(27 122 100 / 18%)}
+      html[data-theme=light] #splash .splash-bar::after{background:#1b7a64}
+      #splash .splash-retry{min-height:3rem;padding:0 1.4rem;border:0;border-radius:999px;background:#232d2b;color:#e3eae8;font:inherit;font-weight:800}
+      html[data-theme=light] #splash .splash-retry{background:#dee7e4;color:#161d1b}
+      @keyframes splash-run{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+      @media (prefers-reduced-motion:reduce){#splash{transition:none}#splash .splash-bar::after{animation:none;width:100%}}
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="splash" role="status" aria-live="polite">
+      <img src="/icon.svg" alt="" width="96" height="96" />
+      <p id="splash-text">Wird gestartet …</p>
+      <i class="splash-bar" aria-hidden="true"></i>
+    </div>
     <script type="module" src="/src/v5/app/main.tsx"></script>
   </body>
 </html>

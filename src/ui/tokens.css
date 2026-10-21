@@ -35,6 +35,12 @@
 
 html, body, #root { margin: 0; height: 100%; background: var(--surface); color: var(--on); font: 500 16px/1.35 var(--font); -webkit-tap-highlight-color: transparent; }
 button { font: inherit; color: inherit; touch-action: manipulation; }
+/* App feel on every page: no double-tap zoom, no pull-to-refresh bounce, no accidental text selection or callout menu; fields and codes stay selectable.
+   16 px in fields keeps iOS from zooming into a focused field. (Pinch zoom itself is stopped in src/pwa/appFeel.ts and by the viewport.) */
+html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; -webkit-touch-callout: none; }
+body { -webkit-user-select: none; user-select: none; }
+input, textarea, select, [contenteditable="true"], code, .ui-code, .ui-selectable { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+input, textarea, select { font-size: 16px; }
 .v5-root, .v5-root *, .v5-root *::before, .v5-root *::after { box-sizing: border-box; }
 .v5-root { position: fixed; inset: 0; overflow: hidden; }
 .v5-map { position: absolute; inset: 0; }

@@ -1,6 +1,8 @@
 import { StrictMode, Suspense, lazy, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
-import { Loading, applyTheme } from "../ui/index.ts";
+import { applyTheme } from "../ui/index.ts";
+import { useEffect } from "react";
+import { splash } from "../pwa/splash.ts";
 import "../ui/ui.css";
 
 const OrganizationApp = lazy(() => import("./OrganizationApp.tsx").then((m) => ({ default: m.OrganizationApp })));
@@ -13,9 +15,17 @@ const PAGES: Record<string, { title: string; page: ReactElement }> = {
   "/reset": { title: "Passwort-Reset | Flyer Map", page: <PasswordReset /> },
 };
 
+/** Pages that load nothing of their own (sign-in, invitations, reset) take the start screen away as soon as they stand. The admin pages do it when the account is loaded. */
+function SplashGate() {
+  useEffect(() => { requestAnimationFrame(() => splash.hide()); }, []);
+  return null;
+}
+
 export function mountOrganization(root: HTMLElement) {
   applyTheme();
-  const entry = PAGES[window.location.pathname] ?? { title: "Organizer Admin | Flyer Map", page: <OrganizationApp /> };
+  const { pathname } = window.location;
+  const entry = PAGES[pathname] ?? { title: "Organizer Admin | Flyer Map", page: <OrganizationApp /> };
+  const ownLoading = pathname.startsWith("/admin") || pathname === "/new";
   document.title = entry.title;
-  createRoot(root).render(<StrictMode><Suspense fallback={<Loading>Lade …</Loading>}>{entry.page}</Suspense></StrictMode>);
+  createRoot(root).render(<StrictMode><Suspense fallback={null}>{entry.page}{ownLoading ? null : <SplashGate />}</Suspense></StrictMode>);
 }
