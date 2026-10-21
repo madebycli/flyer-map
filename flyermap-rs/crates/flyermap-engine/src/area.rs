@@ -37,13 +37,8 @@ fn in_cell(p: LngLat, c: &[f64; 4]) -> bool {
 /// With a `cell` (one part of a big Gebiet) only what the cell owns is kept: houses whose centre lies in it and street pieces that start in it,
 /// so the parts of one Gebiet partition the data and merge without double entries.
 pub fn restrict_to_area(network: Network, ring: &[LngLat], cell: Option<[f64; 4]>) -> Network {
-    let houses: Vec<House> = network
-        .houses
-        .into_iter()
-        .filter(|h| {
-            point_in_ring(h.center, ring) && cell.as_ref().is_none_or(|c| in_cell(h.center, c))
-        })
-        .collect();
+    let houses: Vec<House> =
+        network.houses.into_iter().filter(|h| point_in_ring(h.center, ring) && cell.as_ref().is_none_or(|c| in_cell(h.center, c))).collect();
     let mut counts: HashMap<&str, u32> = HashMap::default();
     for h in &houses {
         if let Some(p) = &h.parent {
@@ -56,28 +51,20 @@ pub fn restrict_to_area(network: Network, ring: &[LngLat], cell: Option<[f64; 4]
         .filter(|s| match &cell {
             Some(c) => {
                 in_cell(s.coords[0], c)
-                    && (counts.contains_key(s.id.as_str())
-                        || s.coords.iter().any(|p| point_in_ring(*p, ring))
-                        || crosses_ring(&s.coords, ring))
+                    && (counts.contains_key(s.id.as_str()) || s.coords.iter().any(|p| point_in_ring(*p, ring)) || crosses_ring(&s.coords, ring))
             }
-            None => {
-                counts.contains_key(s.id.as_str())
-                    || s.coords.iter().any(|p| point_in_ring(*p, ring))
-                    || crosses_ring(&s.coords, ring)
-            }
+            None => counts.contains_key(s.id.as_str()) || s.coords.iter().any(|p| point_in_ring(*p, ring)) || crosses_ring(&s.coords, ring),
         })
         .collect();
     let mut group_houses: HashMap<String, u32> = HashMap::default();
     for s in &kept {
-        *group_houses.entry(s.group.clone()).or_insert(0) +=
-            counts.get(s.id.as_str()).copied().unwrap_or(0);
+        *group_houses.entry(s.group.clone()).or_insert(0) += counts.get(s.id.as_str()).copied().unwrap_or(0);
     }
     let segments: Vec<Segment> = kept
         .into_iter()
         .map(|mut s| {
             s.house_count = counts.get(s.id.as_str()).copied().unwrap_or(0);
-            s.visible =
-                s.cls == RoadClass::Street || group_houses.get(&s.group).copied().unwrap_or(0) > 0;
+            s.visible = s.cls == RoadClass::Street || group_houses.get(&s.group).copied().unwrap_or(0) > 0;
             s
         })
         .collect();
@@ -85,9 +72,5 @@ pub fn restrict_to_area(network: Network, ring: &[LngLat], cell: Option<[f64; 4]
     diagnostics.segments = segments.len();
     diagnostics.visible_segments = segments.iter().filter(|s| s.visible).count();
     diagnostics.houses_out = houses.len();
-    Network {
-        segments,
-        houses,
-        diagnostics,
-    }
+    Network { segments, houses, diagnostics }
 }

@@ -24,12 +24,6 @@ pub struct StatePage {
 
 impl StateOp {
     pub fn into_op(self) -> flyermap_core::Op {
-        flyermap_core::Op {
-            id: self.id,
-            key: self.key,
-            status: self.status,
-            by: self.by,
-            area: Some(self.area),
-        }
+        flyermap_core::Op { id: self.id, key: self.key, status: self.status, by: self.by, area: Some(self.area) }
     }
 }

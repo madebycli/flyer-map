@@ -11,12 +11,7 @@ impl Session {
         }
         let n = (1u64 << z) as f64;
         let pad = (BUFFER / EXTENT) / n;
-        let q = [
-            x as f64 / n - pad,
-            y as f64 / n - pad,
-            (x + 1) as f64 / n + pad,
-            (y + 1) as f64 / n + pad,
-        ];
+        let q = [x as f64 / n - pad, y as f64 / n - pad, (x + 1) as f64 / n + pad, (y + 1) as f64 / n + pad];
         let mut ids: Vec<u32> = Vec::new();
         let mut segments = Layer::new("segments");
         if z >= SEGMENTS_FROM {
@@ -27,11 +22,7 @@ impl Session {
                 let pts: Vec<[f64; 2]> = s.line.iter().map(|p| to_tile(*p, z, x, y)).collect();
                 let parts = clip_line(&pts);
                 if !parts.is_empty() {
-                    let mut props = vec![
-                        ("key", s.key.as_str()),
-                        ("h", if s.with_houses { "1" } else { "0" }),
-                        ("p", if s.path { "1" } else { "0" }),
-                    ];
+                    let mut props = vec![("key", s.key.as_str()), ("h", if s.with_houses { "1" } else { "0" }), ("p", if s.path { "1" } else { "0" })];
                     if let Some(st) = self.st(&s.key) {
                         props.push(("st", st));
                     }
@@ -58,28 +49,15 @@ impl Session {
             }
             if z <= CENTERS_UP_TO {
                 let c = to_tile(h.center, z, x, y);
-                if c[0] >= -BUFFER
-                    && c[0] <= EXTENT + BUFFER
-                    && c[1] >= -BUFFER
-                    && c[1] <= EXTENT + BUFFER
-                {
-                    if z <= THIN_DOTS_UP_TO
-                        && !taken.insert((
-                            (c[0] / DOT_CELL).floor() as i32,
-                            (c[1] / DOT_CELL).floor() as i32,
-                        ))
-                    {
+                if c[0] >= -BUFFER && c[0] <= EXTENT + BUFFER && c[1] >= -BUFFER && c[1] <= EXTENT + BUFFER {
+                    if z <= THIN_DOTS_UP_TO && !taken.insert(((c[0] / DOT_CELL).floor() as i32, (c[1] / DOT_CELL).floor() as i32)) {
                         continue;
                     }
                     let mut props = vec![("key", h.key.as_str())];
                     if let Some(st) = self.st(&h.key) {
                         props.push(("st", st));
                     }
-                    centers.add(
-                        GeomType::Point,
-                        &props,
-                        &[vec![[c[0].round() as i32, c[1].round() as i32]]],
-                    );
+                    centers.add(GeomType::Point, &props, &[vec![[c[0].round() as i32, c[1].round() as i32]]]);
                 }
             }
         }

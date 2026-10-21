@@ -82,19 +82,12 @@ impl PartialOrd for Item {
 impl Ord for Item {
     fn cmp(&self, o: &Self) -> Ordering {
         // BinaryHeap is a max-heap: reverse so the smallest (cost, order) pops first
-        o.cost
-            .partial_cmp(&self.cost)
-            .unwrap_or(Ordering::Equal)
-            .then(o.order.cmp(&self.order))
+        o.cost.partial_cmp(&self.cost).unwrap_or(Ordering::Equal).then(o.order.cmp(&self.order))
     }
 }
 
 pub enum RouteOut {
-    Selected {
-        ids: Vec<String>,
-        length: f64,
-        ambiguous: bool,
-    },
+    Selected { ids: Vec<String>, length: f64, ambiguous: bool },
     Disconnected,
 }
 
@@ -108,10 +101,7 @@ impl RouteGraph {
         let mut prev = vec![u32::MAX; n];
         let mut heap = BinaryHeap::new();
         dist[from as usize] = 0.0;
-        heap.push(Item {
-            cost: 0.0,
-            order: from,
-        });
+        heap.push(Item { cost: 0.0, order: from });
         while let Some(Item { cost, order: id }) = heap.pop() {
             if cost > dist[id as usize] {
                 continue;
@@ -124,20 +114,12 @@ impl RouteGraph {
                     if next == id || Some(next) == banned {
                         continue;
                     }
-                    let step = self.length[next as usize]
-                        * if self.visible[next as usize] {
-                            1.0
-                        } else {
-                            1.6
-                        };
+                    let step = self.length[next as usize] * if self.visible[next as usize] { 1.0 } else { 1.6 };
                     let cost_next = cost + step;
                     if cost_next < dist[next as usize] {
                         dist[next as usize] = cost_next;
                         prev[next as usize] = id;
-                        heap.push(Item {
-                            cost: cost_next,
-                            order: next,
-                        });
+                        heap.push(Item { cost: cost_next, order: next });
                     }
                 }
             }
@@ -150,9 +132,7 @@ impl RouteGraph {
             ids.push(prev[*ids.last().unwrap() as usize]);
         }
         ids.reverse();
-        let length = ids
-            .iter()
-            .fold(0.0, |sum, &i| sum + self.length[i as usize]);
+        let length = ids.iter().fold(0.0, |sum, &i| sum + self.length[i as usize]);
         Some((ids, length))
     }
 
@@ -179,11 +159,7 @@ impl RouteGraph {
                     merged.push(id);
                 }
             }
-            let interior = if ids.len() > 2 {
-                &ids[1..ids.len() - 1]
-            } else {
-                &ids[0..0]
-            };
+            let interior = if ids.len() > 2 { &ids[1..ids.len() - 1] } else { &ids[0..0] };
             let step = ((interior.len() as f64 / 12.0).ceil() as usize).max(1);
             let mut k = 0;
             while k < interior.len() {
@@ -199,17 +175,8 @@ impl RouteGraph {
         if idx.len() == 1 {
             merged.push(idx[0]);
         }
-        let length = merged
-            .iter()
-            .fold(0.0, |sum, &i| sum + self.length[i as usize]);
-        RouteOut::Selected {
-            ids: merged
-                .iter()
-                .map(|&i| self.ids[i as usize].clone())
-                .collect(),
-            length,
-            ambiguous,
-        }
+        let length = merged.iter().fold(0.0, |sum, &i| sum + self.length[i as usize]);
+        RouteOut::Selected { ids: merged.iter().map(|&i| self.ids[i as usize].clone()).collect(), length, ambiguous }
     }
 }
 

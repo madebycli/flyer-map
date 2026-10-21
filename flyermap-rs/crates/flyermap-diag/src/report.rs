@@ -47,30 +47,15 @@ pub struct Report {
 pub fn problems_of<'a>(events: impl Iterator<Item = &'a Event>) -> Vec<Problem> {
     let mut by: BTreeMap<String, Problem> = BTreeMap::new();
     for e in events.filter(|e| e.level >= Level::Warn) {
-        let code = e
-            .code
-            .clone()
-            .unwrap_or_else(|| format!("{}.{}", e.area, e.level.as_str()));
-        let p = by.entry(code.clone()).or_insert_with(|| Problem {
-            code,
-            level: e.level,
-            count: 0,
-            first_t: e.t,
-            last_t: e.t,
-            last_message: String::new(),
-        });
+        let code = e.code.clone().unwrap_or_else(|| format!("{}.{}", e.area, e.level.as_str()));
+        let p = by.entry(code.clone()).or_insert_with(|| Problem { code, level: e.level, count: 0, first_t: e.t, last_t: e.t, last_message: String::new() });
         p.count += 1;
         p.level = p.level.max(e.level);
         p.last_t = e.t;
         p.last_message = e.message.clone();
     }
     let mut list: Vec<Problem> = by.into_values().collect();
-    list.sort_by(|a, b| {
-        b.level
-            .cmp(&a.level)
-            .then(b.count.cmp(&a.count))
-            .then(a.code.cmp(&b.code))
-    });
+    list.sort_by(|a, b| b.level.cmp(&a.level).then(b.count.cmp(&a.count)).then(a.code.cmp(&b.code)));
     list
 }
 
@@ -92,18 +77,7 @@ mod tests {
             ev(5, Level::Warn, None, "e"),
         ];
         let p = problems_of(events.iter());
-        assert_eq!(
-            p.iter().map(|p| p.code.as_str()).collect::<Vec<_>>(),
-            ["map.style.failed", "sync.push.rejected", "sync.warn"]
-        );
-        assert_eq!(
-            (
-                p[1].count,
-                p[1].first_t,
-                p[1].last_t,
-                p[1].last_message.as_str()
-            ),
-            (2, 1, 2, "b")
-        );
+        assert_eq!(p.iter().map(|p| p.code.as_str()).collect::<Vec<_>>(), ["map.style.failed", "sync.push.rejected", "sync.warn"]);
+        assert_eq!((p[1].count, p[1].first_t, p[1].last_t, p[1].last_message.as_str()), (2, 1, 2, "b"));
     }
 }

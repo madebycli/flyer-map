@@ -23,16 +23,8 @@ struct Row {
 }
 
 fn query(with_room: bool) -> String {
-    let extra = if with_room {
-        ", g.room_id AS room_id, r.area_id AS room_area_id, r.status AS room_status"
-    } else {
-        ""
-    };
-    let join = if with_room {
-        "LEFT JOIN v5_rooms r ON r.id = g.room_id AND r.campaign_id = g.campaign_id"
-    } else {
-        ""
-    };
+    let extra = if with_room { ", g.room_id AS room_id, r.area_id AS room_area_id, r.status AS room_status" } else { "" };
+    let join = if with_room { "LEFT JOIN v5_rooms r ON r.id = g.room_id AND r.campaign_id = g.campaign_id" } else { "" };
     format!(
         "SELECT g.id AS grant_id, g.campaign_id, g.role, g.team_id, g.label{extra}
        FROM campaign_sessions s
@@ -55,20 +47,11 @@ pub async fn resolve_persistent<D: Db>(
     now_iso: &str,
     allow_room: bool,
 ) -> Result<Option<Caller>, DbError> {
-    let Some(secret) = cookies::cookie(request, cookies::SESSION_COOKIE)
-        .filter(|s| !s.is_empty() && s.encode_utf16().count() <= 256)
-    else {
+    let Some(secret) = cookies::cookie(request, cookies::SESSION_COOKIE).filter(|s| !s.is_empty() && s.encode_utf16().count() <= 256) else {
         return Ok(None);
     };
     let hash = hash_secret(&secret);
-    let params = || {
-        params![
-            hash.as_str(),
-            now_iso,
-            campaign_id.map(str::to_string),
-            campaign_id.map(str::to_string)
-        ]
-    };
+    let params = || params![hash.as_str(), now_iso, campaign_id.map(str::to_string), campaign_id.map(str::to_string)];
     let row = match db.first(&stmt(query(true), params())).await {
         Ok(row) => row,
         // A database without the rooms migration must not lock everybody out.

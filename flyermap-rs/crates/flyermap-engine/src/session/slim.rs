@@ -2,12 +2,7 @@
 use super::*;
 
 pub(super) fn bbox(pts: &[[f64; 2]]) -> [f64; 4] {
-    let (mut x0, mut y0, mut x1, mut y1) = (
-        f64::INFINITY,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::NEG_INFINITY,
-    );
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
     for p in pts {
         x0 = x0.min(p[0]);
         x1 = x1.max(p[0]);
@@ -32,15 +27,8 @@ pub fn midpoint_by_length(coords: &[LngLat]) -> Option<LngLat> {
     let mut rest = total / 2.0;
     for i in 0..lengths.len() {
         if rest <= lengths[i] || i == lengths.len() - 1 {
-            let t = if lengths[i] == 0.0 {
-                0.0
-            } else {
-                rest / lengths[i]
-            };
-            return Some([
-                coords[i][0] + (coords[i + 1][0] - coords[i][0]) * t,
-                coords[i][1] + (coords[i + 1][1] - coords[i][1]) * t,
-            ]);
+            let t = if lengths[i] == 0.0 { 0.0 } else { rest / lengths[i] };
+            return Some([coords[i][0] + (coords[i + 1][0] - coords[i][0]) * t, coords[i][1] + (coords[i + 1][1] - coords[i][1]) * t]);
         }
         rest -= lengths[i];
     }
@@ -93,9 +81,5 @@ pub fn slim(network: &Network) -> SlimNetwork {
             evidence: h.evidence,
         })
         .collect();
-    SlimNetwork {
-        segments,
-        houses,
-        diagnostics: network.diagnostics.clone(),
-    }
+    SlimNetwork { segments, houses, diagnostics: network.diagnostics.clone() }
 }

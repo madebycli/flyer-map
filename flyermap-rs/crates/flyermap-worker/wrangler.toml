@@ -1,0 +1,19 @@
+# Local and Unstable runs of the Rust Worker. Production stays on the TypeScript Worker until Plan 059 M8.
+name = "flyermap-rs-local"
+main = "build/index.js"
+compatibility_date = "2025-09-01"
+
+[build]
+# Symbols must stay in the module: wasm-bindgen needs them for its externref table.
+command = "CARGO_PROFILE_RELEASE_STRIP=false worker-build --release"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "flyermap-rs-local"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../../migrations"
+
+[assets]
+directory = "../../../dist/client"
+binding = "ASSETS"
+run_worker_first = ["/api/v5/*"]

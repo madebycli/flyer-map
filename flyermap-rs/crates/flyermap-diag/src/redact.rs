@@ -67,37 +67,15 @@ pub fn redact_text(text: &str, max: usize) -> String {
     // Cut first (with room for a whole address at the edge), so the cost never depends on what someone threw at us.
     let head: String = text.chars().take(max + 200).collect();
     let cut = head.chars().count() < text.chars().count();
-    let mut s = re(&FRAGMENT, r"#(access|collection)=\S+")
-        .replace_all(&head, "#$1=[removed]")
-        .into_owned();
-    s = re(&URL, r#"(?i)\b(?:https?|wss?|blob|data):[^\s"'<>)]*"#)
-        .replace_all(&s, "[url]")
-        .into_owned();
-    s = re(
-        &BARE_URL,
-        r#"(?i)(?://[^\s"'<>)]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+/[^\s"'<>)]*)"#,
-    )
-    .replace_all(&s, "[url]")
-    .into_owned();
-    s = re(&QUERY, r#"\?[^\s=&"'<>]{1,40}=[^\s"'<>]*"#)
-        .replace_all(&s, "[query]")
-        .into_owned();
-    s = re(
-        &EMAIL,
-        r"[^\s@]{1,64}@[^\s@.]{1,63}(?:\.[^\s@.]{1,63}){1,4}",
-    )
-    .replace_all(&s, "[email]")
-    .into_owned();
-    s = re(&PAIR, r"-?\d{1,3}[.,]\d{3,}\s*[,;/ ]\s*-?\d{1,3}[.,]\d{3,}")
-        .replace_all(&s, "[num]")
-        .into_owned();
-    s = re(&COORD, r"-?\d{1,3}[.,]\d{4,}")
-        .replace_all(&s, "[num]")
-        .into_owned();
+    let mut s = re(&FRAGMENT, r"#(access|collection)=\S+").replace_all(&head, "#$1=[removed]").into_owned();
+    s = re(&URL, r#"(?i)\b(?:https?|wss?|blob|data):[^\s"'<>)]*"#).replace_all(&s, "[url]").into_owned();
+    s = re(&BARE_URL, r#"(?i)(?://[^\s"'<>)]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+/[^\s"'<>)]*)"#).replace_all(&s, "[url]").into_owned();
+    s = re(&QUERY, r#"\?[^\s=&"'<>]{1,40}=[^\s"'<>]*"#).replace_all(&s, "[query]").into_owned();
+    s = re(&EMAIL, r"[^\s@]{1,64}@[^\s@.]{1,63}(?:\.[^\s@.]{1,63}){1,4}").replace_all(&s, "[email]").into_owned();
+    s = re(&PAIR, r"-?\d{1,3}[.,]\d{3,}\s*[,;/ ]\s*-?\d{1,3}[.,]\d{3,}").replace_all(&s, "[num]").into_owned();
+    s = re(&COORD, r"-?\d{1,3}[.,]\d{4,}").replace_all(&s, "[num]").into_owned();
     s = re(&DIGITS, r"\d{6,}").replace_all(&s, "[num]").into_owned();
-    s = re(&TOKEN, r"[A-Za-z0-9_-]{32,}")
-        .replace_all(&s, "[token]")
-        .into_owned();
+    s = re(&TOKEN, r"[A-Za-z0-9_-]{32,}").replace_all(&s, "[token]").into_owned();
     if s.chars().count() > max || cut {
         let kept: String = s.chars().take(max).collect();
         format!("{kept}…")
@@ -115,22 +93,35 @@ pub fn foreign_message(text: &str) -> String {
     if text.is_empty() {
         return String::new();
     }
-    if re(
-        &PLACEHOLDER,
-        r"^\[(?:text|object|array|value) removed(?:, \d+ (?:chars|keys|items))?\]$",
-    )
-    .is_match(text)
-    {
+    if re(&PLACEHOLDER, r"^\[(?:text|object|array|value) removed(?:, \d+ (?:chars|keys|items))?\]$").is_match(text) {
         return text.to_string();
     }
     let known = KNOWN.get_or_init(|| {
         [
-            r"^Failed to fetch\b", r"^Load failed\b", r"^NetworkError\b", r"^The operation (?:was aborted|timed out)\b", r"(?i)^signal is aborted\b",
-            r"(?i)^(?:Request )?timed out\b", r"^AbortError\b", r"(?i)^Out of memory\b", r"^QuotaExceededError\b", r"(?i)^The quota has been exceeded\b",
-            r"(?i)^(?:Could not create a WebGL context|Failed to initialize WebGL|WebGL context lost)\b", r"^Script error\.?$",
-            r"^ResizeObserver loop (?:limit exceeded|completed with undelivered notifications)\b", r"^Cannot read propert(?:y|ies) of (?:undefined|null)\b",
-            r"^HTTP \d{3}\b", r"^status \d{3}\b", r"(?i)^Unexpected end of (?:JSON )?input\b", r"^Serverfehler \d{3}\b", r"^\d{3} [a-z][a-z0-9_]{1,40}$",
-            r"^Uncaught (?:[A-Z][A-Za-z]{1,30})?Error\b", r"^Unable to load glyph range\b", r"^Failed to load font\b", r"^CompileError\b", r"^LinkError\b",
+            r"^Failed to fetch\b",
+            r"^Load failed\b",
+            r"^NetworkError\b",
+            r"^The operation (?:was aborted|timed out)\b",
+            r"(?i)^signal is aborted\b",
+            r"(?i)^(?:Request )?timed out\b",
+            r"^AbortError\b",
+            r"(?i)^Out of memory\b",
+            r"^QuotaExceededError\b",
+            r"(?i)^The quota has been exceeded\b",
+            r"(?i)^(?:Could not create a WebGL context|Failed to initialize WebGL|WebGL context lost)\b",
+            r"^Script error\.?$",
+            r"^ResizeObserver loop (?:limit exceeded|completed with undelivered notifications)\b",
+            r"^Cannot read propert(?:y|ies) of (?:undefined|null)\b",
+            r"^HTTP \d{3}\b",
+            r"^status \d{3}\b",
+            r"(?i)^Unexpected end of (?:JSON )?input\b",
+            r"^Serverfehler \d{3}\b",
+            r"^\d{3} [a-z][a-z0-9_]{1,40}$",
+            r"^Uncaught (?:[A-Z][A-Za-z]{1,30})?Error\b",
+            r"^Unable to load glyph range\b",
+            r"^Failed to load font\b",
+            r"^CompileError\b",
+            r"^LinkError\b",
             r"^RuntimeError: (?:unreachable|memory access out of bounds|out of memory)\b",
         ]
         .iter()
@@ -148,10 +139,7 @@ pub fn foreign_message(text: &str) -> String {
 /// An address reduced to what it is, not where it points: the kind of resource, never a path, tile number or query.
 pub fn url_kind(url: &str) -> &'static str {
     let path = url.split(['?', '#']).next().unwrap_or("");
-    let path = path
-        .strip_prefix("https://")
-        .or_else(|| path.strip_prefix("http://"))
-        .map_or(path, |rest| rest.find('/').map_or("", |i| &rest[i..]));
+    let path = path.strip_prefix("https://").or_else(|| path.strip_prefix("http://")).map_or(path, |rest| rest.find('/').map_or("", |i| &rest[i..]));
     if path.starts_with("/api/") {
         "api"
     } else if path.ends_with(".pbf") || path.ends_with(".mvt") {
@@ -166,11 +154,7 @@ pub fn url_kind(url: &str) -> &'static str {
         "script"
     } else if path.ends_with(".css") {
         "stylesheet"
-    } else if path.ends_with(".png")
-        || path.ends_with(".jpg")
-        || path.ends_with(".webp")
-        || path.ends_with(".svg")
-    {
+    } else if path.ends_with(".png") || path.ends_with(".jpg") || path.ends_with(".webp") || path.ends_with(".svg") {
         "image"
     } else {
         "other"
@@ -184,17 +168,11 @@ mod tests {
     #[test]
     fn what_identifies_a_place_or_a_session_does_not_survive() {
         let cases = [
-            (
-                "opened https://x.example/api/v5/campaigns/abc?token=secret now",
-                "opened [url] now",
-            ),
+            ("opened https://x.example/api/v5/campaigns/abc?token=secret now", "opened [url] now"),
             ("at 51.12345, 13.54321 and 51,12345", "at [num] and [num]"),
             ("mail me@example.org please", "mail [email] please"),
             ("id 123456789 ok", "id [num] ok"),
-            (
-                "key AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA end",
-                "key [token] end",
-            ),
+            ("key AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA end", "key [token] end"),
             ("link #access=abcdef rest", "link #access=[removed] rest"),
             ("host.tld/some/path here", "[url] here"),
         ];
@@ -212,19 +190,10 @@ mod tests {
 
     #[test]
     fn foreign_text_is_recognised_or_only_measured() {
-        assert_eq!(
-            foreign_message("Failed to fetch https://secret.example/x"),
-            "Failed to fetch"
-        );
+        assert_eq!(foreign_message("Failed to fetch https://secret.example/x"), "Failed to fetch");
         assert_eq!(foreign_message("403 cross_origin"), "403 cross_origin");
-        assert_eq!(
-            foreign_message("Max Mustermann wohnt in der Hauptstr. 5"),
-            "[text removed, 39 chars]"
-        );
-        assert_eq!(
-            foreign_message("[text removed, 5 chars]"),
-            "[text removed, 5 chars]"
-        );
+        assert_eq!(foreign_message("Max Mustermann wohnt in der Hauptstr. 5"), "[text removed, 39 chars]");
+        assert_eq!(foreign_message("[text removed, 5 chars]"), "[text removed, 5 chars]");
         assert_eq!(foreign_message("   "), "");
     }
 

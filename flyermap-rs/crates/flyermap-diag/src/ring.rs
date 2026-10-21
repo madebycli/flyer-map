@@ -10,11 +10,7 @@ pub struct Ring<T> {
 
 impl<T> Ring<T> {
     pub fn new(capacity: usize) -> Ring<T> {
-        Ring {
-            items: VecDeque::with_capacity(capacity.min(1024)),
-            capacity: capacity.max(1),
-            dropped: 0,
-        }
+        Ring { items: VecDeque::with_capacity(capacity.min(1024)), capacity: capacity.max(1), dropped: 0 }
     }
     pub fn push(&mut self, item: T) {
         if self.items.len() == self.capacity {

@@ -1,10 +1,7 @@
 //! Steps 1 to 3: keep the ways that can be streets, find the junctions, cut the ways at them and into chunks of about ten metres.
 use super::*;
 
-pub(super) fn candidate_ways<'a>(
-    raw: &'a RawOsm,
-    diag: &mut Diagnostics,
-) -> Vec<(&'a RawWay, RoadClass)> {
+pub(super) fn candidate_ways<'a>(raw: &'a RawOsm, diag: &mut Diagnostics) -> Vec<(&'a RawWay, RoadClass)> {
     let mut ways: Vec<(&RawWay, RoadClass)> = Vec::new();
     for way in &raw.ways {
         if way.coords.len() < 2 {
@@ -61,11 +58,7 @@ pub(super) fn split_ways(ways: &[(&RawWay, RoadClass)]) -> Vec<Segment> {
                 let highway = way.tags.get("highway").cloned().unwrap_or_default();
                 for (k, piece) in pieces.into_iter().enumerate() {
                     segments.push(Segment {
-                        id: if parts == 1 {
-                            id.clone()
-                        } else {
-                            format!("{id}~{k}")
-                        },
+                        id: if parts == 1 { id.clone() } else { format!("{id}~{k}") },
                         group: id.clone(),
                         chunk: k as u32,
                         chunks: parts as u32,
@@ -76,16 +69,8 @@ pub(super) fn split_ways(ways: &[(&RawWay, RoadClass)]) -> Vec<Segment> {
                         cls: *cls,
                         coords: piece,
                         length: length / parts as f64,
-                        from: if k == 0 {
-                            from_key.clone()
-                        } else {
-                            format!("{id}@{k}")
-                        },
-                        to: if k == parts - 1 {
-                            to_key.clone()
-                        } else {
-                            format!("{id}@{}", k + 1)
-                        },
+                        from: if k == 0 { from_key.clone() } else { format!("{id}@{k}") },
+                        to: if k == parts - 1 { to_key.clone() } else { format!("{id}@{}", k + 1) },
                         house_count: 0,
                         visible: false,
                     });

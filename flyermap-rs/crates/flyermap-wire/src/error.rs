@@ -22,6 +22,7 @@ macro_rules! codes {
 codes! {
     InvalidJson => ("invalid_json", 400, "Ungültiges JSON."),
     InvalidOps => ("invalid_ops", 400, "Ungültige Änderungen."),
+    InvalidNotes => ("invalid_notes", 400, "Ungültige Notizen."),
     Unauthorized => ("unauthorized", 401, "Kein Zugriff auf diese Aktion."),
     Forbidden => ("forbidden", 403, "Das darfst du nicht."),
     ReadOnly => ("read_only", 403, "Diese Rolle darf nichts markieren."),
@@ -66,27 +67,16 @@ pub struct ApiError {
 
 impl ApiError {
     pub fn new(code: ErrorCode) -> ApiError {
-        ApiError {
-            code,
-            message: code.message().to_string(),
-        }
+        ApiError { code, message: code.message().to_string() }
     }
     pub fn with(code: ErrorCode, message: &str) -> ApiError {
-        ApiError {
-            code,
-            message: message.to_string(),
-        }
+        ApiError { code, message: message.to_string() }
     }
     pub fn status(&self) -> u16 {
         self.code.status()
     }
     pub fn envelope(&self) -> ErrorEnvelope {
-        ErrorEnvelope {
-            error: ErrorBody {
-                code: self.code.as_str().to_string(),
-                message: self.message.clone(),
-            },
-        }
+        ErrorEnvelope { error: ErrorBody { code: self.code.as_str().to_string(), message: self.message.clone() } }
     }
 }
 
@@ -106,13 +96,8 @@ mod tests {
 
     #[test]
     fn the_body_has_the_shape_the_app_reads() {
-        let json =
-            serde_json::to_value(ApiError::with(ErrorCode::Forbidden, "Nur Admins.").envelope())
-                .unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({"error": {"code": "forbidden", "message": "Nur Admins."}})
-        );
+        let json = serde_json::to_value(ApiError::with(ErrorCode::Forbidden, "Nur Admins.").envelope()).unwrap();
+        assert_eq!(json, serde_json::json!({"error": {"code": "forbidden", "message": "Nur Admins."}}));
         assert_eq!(ApiError::new(ErrorCode::NotFound).status(), 404);
     }
 }

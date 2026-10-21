@@ -78,6 +78,18 @@ await call('admin', 'POST', `${base}/ops`, { ops: [7, op('junk', 'h:a', 'complet
 await call('admin', 'POST', `${base}/ops`, { ops: [op(stamp(NOW - 10), 'h:z', 'completed')] }, { origin: 'https://evil.test' });
 await call('admin', 'POST', `${base}/ops`, { ops: [op(stamp(NOW - 10), 'h:z', 'completed')] }, { origin: 'https://example.test' });
 await call('admin', 'GET', `${base}/state?since=0`);
+// notes: written, read back, refused for every reason
+const note = (id: string, key: string, area: string, extra: Record<string, unknown> = {}) => ({ id, rev: id, key, area, flag: null, text: 'Hinweis', ...extra });
+await call('admin', 'POST', `${base}/notes`, { notes: [note(stamp(NOW - 900), 'h:a', 'area_n'), note(stamp(NOW - 899), 'a:area_n', 'area_n', { flag: 'dog', text: '' }), note(stamp(NOW - 898), 's:x#1', 'area_n', { text: '  Tor zu \u0007 ' })] });
+await call('admin', 'POST', `${base}/notes`, { notes: [{ ...note(stamp(NOW - 900), 'h:a', 'area_n'), rev: stamp(NOW - 800), text: 'geändert' }, { ...note(stamp(NOW - 900), 'h:a', 'area_n'), rev: stamp(NOW - 850), text: 'älter' }] });
+await call('viewer', 'POST', `${base}/notes`, { notes: [note(stamp(NOW - 700), 'h:a', 'area_n')] });
+await call('other', 'POST', `${base}/notes`, { notes: [note(stamp(NOW - 690), 'h:a', 'area_o'), note(stamp(NOW - 689), 'h:new', 'area_o'), note(stamp(NOW - 688), 'h:new2', 'area_n')] });
+await call('admin', 'POST', `${base}/notes`, { notes: [{ ...note(stamp(NOW - 900), 'h:b', 'area_n'), rev: stamp(NOW - 600) }] });
+await call('admin', 'POST', `${base}/notes`, { notes: [5, { ...note(stamp(NOW - 500), 'h:a', 'area_n'), rev: stamp(NOW - 501) }, note(stamp(NOW + 2 * 86_400_000), 'h:a', 'area_n'), note(stamp(NOW - 499), 'x:a', 'area_n'), note(stamp(NOW - 498), 'h:a', 'bad area'), note(stamp(NOW - 497), 'a:area_o', 'area_n'), note(stamp(NOW - 496), 'h:a', 'area_n', { flag: 'cat' }), note(stamp(NOW - 495), 'h:a', 'area_n', { text: 5 }), note(stamp(NOW - 494), 'h:a', 'area_n', { text: ' ' }), note(stamp(NOW - 493), 'h:a', 'area_n', { text: '', deleted: true })] });
+await call('admin', 'POST', `${base}/notes`, { notes: [] });
+await call('admin', 'POST', `${base}/notes`, '{"notes":', {});
+for (const who of ['viewer', 'editor', 'other']) await call(who, 'GET', `${base}/notes?since=0`);
+await call('viewer', 'GET', `${base}/notes?since=1&limit=2`);
 await call('admin', 'GET', `/api/v5/campaigns/${encodeURIComponent('bad id!')}/state`);
 await call('admin', 'GET', `/api/v5/campaigns/campaign_missing/meta`);
 

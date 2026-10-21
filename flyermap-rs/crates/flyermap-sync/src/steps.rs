@@ -43,17 +43,10 @@ impl Machine {
 
     fn pull_from(&mut self, store: &Store) -> Vec<Action> {
         self.phase = Phase::Pulling;
-        vec![Action::Pull {
-            since: store.cursor(),
-        }]
+        vec![Action::Pull { since: store.cursor() }]
     }
 
-    pub(crate) fn on_push(
-        &mut self,
-        store: &mut Store,
-        now: u64,
-        result: Result<PushResponse, NetError>,
-    ) -> Vec<Action> {
+    pub(crate) fn on_push(&mut self, store: &mut Store, now: u64, result: Result<PushResponse, NetError>) -> Vec<Action> {
         if self.phase != Phase::Pushing {
             return Vec::new();
         }
@@ -62,11 +55,7 @@ impl Machine {
             Err(error) => return self.fail(store, now, error),
         };
         let accepted: Vec<OpId> = response.accepted.iter().map(OpId::new).collect();
-        let rejected: Vec<OpId> = response
-            .rejected
-            .iter()
-            .map(|r| OpId::new(r.id.as_str()))
-            .collect();
+        let rejected: Vec<OpId> = response.rejected.iter().map(|r| OpId::new(r.id.as_str())).collect();
         self.round.accepted += accepted.len();
         self.round.rejected += rejected.len();
         count("sync.push.accepted", accepted.len() as u64);
@@ -94,12 +83,7 @@ impl Machine {
         actions
     }
 
-    pub(crate) fn on_pull(
-        &mut self,
-        store: &mut Store,
-        now: u64,
-        result: Result<StatePage, NetError>,
-    ) -> Vec<Action> {
+    pub(crate) fn on_pull(&mut self, store: &mut Store, now: u64, result: Result<StatePage, NetError>) -> Vec<Action> {
         if self.phase != Phase::Pulling {
             return Vec::new();
         }
@@ -132,12 +116,7 @@ impl Machine {
         self.finish_ok(store, now)
     }
 
-    pub(crate) fn on_extras(
-        &mut self,
-        store: &mut Store,
-        now: u64,
-        result: Result<(), NetError>,
-    ) -> Vec<Action> {
+    pub(crate) fn on_extras(&mut self, store: &mut Store, now: u64, result: Result<(), NetError>) -> Vec<Action> {
         if self.phase != Phase::Extras {
             return Vec::new();
         }
@@ -170,15 +149,7 @@ impl Machine {
         self.failures = 0;
         self.last_ok_at = Some(now);
         flyermap_diag::gauge("sync.lastOkAt", now as f64);
-        self.finish_round(
-            now,
-            if self.extra_failures > 0 {
-                RoundResult::ExtrasFailed
-            } else {
-                RoundResult::Ok
-            },
-            None,
-        );
+        self.finish_round(now, if self.extra_failures > 0 { RoundResult::ExtrasFailed } else { RoundResult::Ok }, None);
         actions.extend(self.set_state(State::Idle, store));
         if self.again {
             actions.extend(self.start_cycle(store, now));
@@ -205,13 +176,7 @@ impl Machine {
 
     fn arm_retry(&mut self) -> Vec<Action> {
         self.retry_timer = true;
-        vec![
-            Action::CancelTimer(TimerKind::Retry),
-            Action::SetTimer {
-                kind: TimerKind::Retry,
-                after_ms: self.backoff_ms,
-            },
-        ]
+        vec![Action::CancelTimer(TimerKind::Retry), Action::SetTimer { kind: TimerKind::Retry, after_ms: self.backoff_ms }]
     }
 
     fn finish_round(&mut self, now: u64, result: RoundResult, error: Option<String>) {

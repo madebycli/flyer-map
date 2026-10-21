@@ -18,8 +18,7 @@ mod tests {
 
     #[test]
     fn finds_and_decodes() {
-        let r =
-            Request::new("GET", "https://h/").with_header("cookie", "a=1; vf_session=x%2Fy=z; b=2");
+        let r = Request::new("GET", "https://h/").with_header("cookie", "a=1; vf_session=x%2Fy=z; b=2");
         assert_eq!(cookie(&r, "vf_session").as_deref(), Some("x/y=z"));
         assert_eq!(cookie(&r, "none"), None);
     }

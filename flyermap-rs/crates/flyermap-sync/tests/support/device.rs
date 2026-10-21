@@ -28,10 +28,7 @@ impl Device {
         Device {
             name: name.into(),
             store: Store::new(name),
-            machine: Machine::new(Config {
-                batch_size: 3,
-                ..Config::default()
-            }),
+            machine: Machine::new(Config { batch_size: 3, ..Config::default() }),
             now,
             saves: vec![],
             timers: vec![],
@@ -53,9 +50,7 @@ impl Device {
         let mut guard = 0;
         while let Some(i) = self.timers.iter().position(|(k, _)| *k == TimerKind::Kick) {
             self.timers.remove(i);
-            let actions =
-                self.machine
-                    .handle(&mut self.store, self.now, Event::Timer(TimerKind::Kick));
+            let actions = self.machine.handle(&mut self.store, self.now, Event::Timer(TimerKind::Kick));
             self.run(actions, &mut Some(server));
             guard += 1;
             assert!(guard < 50, "the loop does not settle");
@@ -73,9 +68,7 @@ impl Device {
     pub fn retry(&mut self, server: &mut Server) {
         if let Some(i) = self.timers.iter().position(|(k, _)| *k == TimerKind::Retry) {
             self.timers.remove(i);
-            let actions =
-                self.machine
-                    .handle(&mut self.store, self.now, Event::Timer(TimerKind::Retry));
+            let actions = self.machine.handle(&mut self.store, self.now, Event::Timer(TimerKind::Retry));
             self.run(actions, &mut Some(server));
         }
         self.sync(server);
@@ -122,43 +115,25 @@ impl Device {
 
     fn do_push(&mut self, ops: Vec<WireOp>, server: &mut Option<&mut Server>) -> Option<Event> {
         let fate = self.next_fate();
-        let Some(server) = server
-            .as_deref_mut()
-            .filter(|_| !self.fail_all && fate != Fate::Lost)
-        else {
-            return Some(Event::PushDone(Err(NetError::new(
-                "Keine Verbindung",
-                "offline",
-            ))));
+        let Some(server) = server.as_deref_mut().filter(|_| !self.fail_all && fate != Fate::Lost) else {
+            return Some(Event::PushDone(Err(NetError::new("Keine Verbindung", "offline"))));
         };
         let response = server.push(&PushRequest { ops }, &self.name);
         if fate == Fate::LoseAnswer {
-            return Some(Event::PushDone(Err(NetError::new(
-                "Keine Verbindung",
-                "offline",
-            ))));
+            return Some(Event::PushDone(Err(NetError::new("Keine Verbindung", "offline"))));
         }
         Some(Event::PushDone(Ok(response)))
     }
 
     fn do_pull(&mut self, since: u64, server: &mut Option<&mut Server>) -> Option<Event> {
         let fate = self.next_fate();
-        let Some(server) = server
-            .as_deref_mut()
-            .filter(|_| !self.fail_all && fate != Fate::Lost)
-        else {
-            return Some(Event::PullDone(Err(NetError::new(
-                "Keine Verbindung",
-                "offline",
-            ))));
+        let Some(server) = server.as_deref_mut().filter(|_| !self.fail_all && fate != Fate::Lost) else {
+            return Some(Event::PullDone(Err(NetError::new("Keine Verbindung", "offline"))));
         };
         Some(Event::PullDone(Ok(server.pull(since))))
     }
 
     pub fn view(&self) -> BTreeMap<String, Status> {
-        self.store
-            .entries()
-            .map(|(k, e)| (k.to_string(), e.status))
-            .collect()
+        self.store.entries().map(|(k, e)| (k.to_string(), e.status)).collect()
     }
 }

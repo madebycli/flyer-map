@@ -12,22 +12,11 @@ pub struct Grid {
 
 impl Grid {
     pub fn new(cell: f64) -> Self {
-        Grid {
-            cell,
-            cells: HashMap::default(),
-            boxes: Vec::new(),
-            stamp: Vec::new(),
-            epoch: 0,
-        }
+        Grid { cell, cells: HashMap::default(), boxes: Vec::new(), stamp: Vec::new(), epoch: 0 }
     }
 
     fn range(&self, b: &[f64; 4]) -> (i64, i64, i64, i64) {
-        (
-            (b[0] / self.cell).floor() as i64,
-            (b[1] / self.cell).floor() as i64,
-            (b[2] / self.cell).floor() as i64,
-            (b[3] / self.cell).floor() as i64,
-        )
+        ((b[0] / self.cell).floor() as i64, (b[1] / self.cell).floor() as i64, (b[2] / self.cell).floor() as i64, (b[3] / self.cell).floor() as i64)
     }
 
     pub fn bbox(&self, id: u32) -> &[f64; 4] {

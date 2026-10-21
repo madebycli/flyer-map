@@ -13,16 +13,11 @@ pub struct Request {
 
 impl Request {
     pub fn new(method: &str, url: &str) -> Request {
-        Request {
-            method: method.to_string(),
-            url: url.to_string(),
-            ..Request::default()
-        }
+        Request { method: method.to_string(), url: url.to_string(), ..Request::default() }
     }
 
     pub fn with_header(mut self, name: &str, value: &str) -> Request {
-        self.headers
-            .push((name.to_ascii_lowercase(), value.to_string()));
+        self.headers.push((name.to_ascii_lowercase(), value.to_string()));
         self
     }
 
@@ -33,26 +28,17 @@ impl Request {
 
     pub fn header(&self, name: &str) -> Option<&str> {
         let name = name.to_ascii_lowercase();
-        self.headers
-            .iter()
-            .find(|(n, _)| *n == name)
-            .map(|(_, v)| v.as_str())
+        self.headers.iter().find(|(n, _)| *n == name).map(|(_, v)| v.as_str())
     }
 
     fn after_scheme(&self) -> &str {
-        self.url
-            .split_once("://")
-            .map_or(self.url.as_str(), |(_, rest)| rest)
+        self.url.split_once("://").map_or(self.url.as_str(), |(_, rest)| rest)
     }
 
     /// `scheme://host[:port]`
     pub fn origin(&self) -> String {
         let scheme = self.url.split_once("://").map_or("https", |(s, _)| s);
-        let host = self
-            .after_scheme()
-            .split(['/', '?', '#'])
-            .next()
-            .unwrap_or("");
+        let host = self.after_scheme().split(['/', '?', '#']).next().unwrap_or("");
         format!("{scheme}://{host}")
     }
 
@@ -85,17 +71,12 @@ impl Request {
 
 /// `decodeURIComponent` for query parts (with `+` meaning space, as in forms).
 pub fn decode_component(text: &str) -> String {
-    percent_decode_str(&text.replace('+', " "))
-        .decode_utf8_lossy()
-        .into_owned()
+    percent_decode_str(&text.replace('+', " ")).decode_utf8_lossy().into_owned()
 }
 
 /// `decodeURIComponent` for a path segment: `None` when the escape is broken (JavaScript throws there).
 pub fn decode_path_segment(text: &str) -> Option<String> {
-    percent_decode_str(text)
-        .decode_utf8()
-        .ok()
-        .map(|s| s.into_owned())
+    percent_decode_str(text).decode_utf8().ok().map(|s| s.into_owned())
 }
 
 #[cfg(test)]
@@ -104,10 +85,7 @@ mod tests {
 
     #[test]
     fn parts_of_a_url() {
-        let r = Request::new(
-            "GET",
-            "https://example.test/api/v5/x%20y?since=3&limit=a+b&since=9#frag",
-        );
+        let r = Request::new("GET", "https://example.test/api/v5/x%20y?since=3&limit=a+b&since=9#frag");
         assert_eq!(r.origin(), "https://example.test");
         assert_eq!(r.path(), "/api/v5/x%20y");
         assert_eq!(r.query("since").as_deref(), Some("3"));

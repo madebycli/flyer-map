@@ -32,23 +32,13 @@ fn with_session<T>(f: impl FnOnce(&mut Session) -> T) -> T {
 }
 
 fn fail(message: &str) -> usize {
-    store(
-        format!(
-            "{{\"error\":{}}}",
-            serde_json::to_string(message).unwrap_or_else(|_| "\"error\"".into())
-        )
-        .into_bytes(),
-    );
+    store(format!("{{\"error\":{}}}", serde_json::to_string(message).unwrap_or_else(|_| "\"error\"".into())).into_bytes());
     0
 }
 
 fn merge_and_slim(network: Network, export: bool) -> usize {
     with_session(|s| s.add(&network));
-    *LAST_BLOB.lock().unwrap() = if export {
-        bincode::serialize(&network).ok()
-    } else {
-        None
-    };
+    *LAST_BLOB.lock().unwrap() = if export { bincode::serialize(&network).ok() } else { None };
     match serde_json::to_vec(&session::slim(&network)) {
         Ok(bytes) => store(bytes),
         Err(e) => fail(&format!("serialize_failed: {e}")),
@@ -64,16 +54,11 @@ pub fn derive_parsed(raw: &RawOsm) -> model::Network {
 }
 
 /// Pure entry point (also used by the native tests): raw OSM JSON + optional ring JSON → Network JSON.
-pub fn derive_json(
-    raw: &[u8],
-    ring: Option<&[u8]>,
-    cell: Option<&[u8]>,
-) -> Result<Vec<u8>, String> {
+pub fn derive_json(raw: &[u8], ring: Option<&[u8]>, cell: Option<&[u8]>) -> Result<Vec<u8>, String> {
     let raw: RawOsm = serde_json::from_slice(raw).map_err(|e| format!("pack_invalid: {e}"))?;
     let mut network = derive::derive_network(&raw);
     if let Some(ring) = ring {
-        let ring: Vec<LngLat> =
-            serde_json::from_slice(ring).map_err(|e| format!("ring_invalid: {e}"))?;
+        let ring: Vec<LngLat> = serde_json::from_slice(ring).map_err(|e| format!("ring_invalid: {e}"))?;
         let cell = parse_cell(cell)?;
         network = area::restrict_to_area(network, &ring, cell);
     }
@@ -85,9 +70,7 @@ fn parse_cell(cell: Option<&[u8]>) -> Result<Option<[f64; 4]>, String> {
     match cell {
         None => Ok(None),
         Some([]) => Ok(None),
-        Some(bytes) => serde_json::from_slice::<[f64; 4]>(bytes)
-            .map(Some)
-            .map_err(|e| format!("cell_invalid: {e}")),
+        Some(bytes) => serde_json::from_slice::<[f64; 4]>(bytes).map(Some).map_err(|e| format!("cell_invalid: {e}")),
     }
 }
 
@@ -115,35 +98,14 @@ pub unsafe extern "C" fn dealloc(ptr: *mut u8, len: usize) {
 /// # Safety
 /// Both slices must be valid for their lengths (they were written by the host into buffers from `alloc`).
 #[no_mangle]
-pub unsafe extern "C" fn derive_area(
-    raw_ptr: *const u8,
-    raw_len: usize,
-    ring_ptr: *const u8,
-    ring_len: usize,
-    cell_ptr: *const u8,
-    cell_len: usize,
-) -> usize {
+pub unsafe extern "C" fn derive_area(raw_ptr: *const u8, raw_len: usize, ring_ptr: *const u8, ring_len: usize, cell_ptr: *const u8, cell_len: usize) -> usize {
     let raw = std::slice::from_raw_parts(raw_ptr, raw_len);
-    let ring = if ring_len == 0 {
-        None
-    } else {
-        Some(std::slice::from_raw_parts(ring_ptr, ring_len))
-    };
-    let cell = if cell_len == 0 {
-        None
-    } else {
-        Some(std::slice::from_raw_parts(cell_ptr, cell_len))
-    };
+    let ring = if ring_len == 0 { None } else { Some(std::slice::from_raw_parts(ring_ptr, ring_len)) };
+    let cell = if cell_len == 0 { None } else { Some(std::slice::from_raw_parts(cell_ptr, cell_len)) };
     match derive_json(raw, ring, cell) {
         Ok(bytes) => store(bytes),
         Err(message) => {
-            store(
-                format!(
-                    "{{\"error\":{}}}",
-                    serde_json::to_string(&message).unwrap_or_else(|_| "\"error\"".into())
-                )
-                .into_bytes(),
-            );
+            store(format!("{{\"error\":{}}}", serde_json::to_string(&message).unwrap_or_else(|_| "\"error\"".into())).into_bytes());
             0
         }
     }
@@ -195,16 +157,11 @@ pub unsafe extern "C" fn session_add_area(
         Err(e) => return fail(&format!("pack_invalid: {e}")),
     };
     let mut network = derive::derive_network(&raw);
-    let ring: Vec<LngLat> =
-        match serde_json::from_slice(std::slice::from_raw_parts(ring_ptr, ring_len)) {
-            Ok(r) => r,
-            Err(e) => return fail(&format!("ring_invalid: {e}")),
-        };
-    let cell = match parse_cell(if cell_len == 0 {
-        None
-    } else {
-        Some(std::slice::from_raw_parts(cell_ptr, cell_len))
-    }) {
+    let ring: Vec<LngLat> = match serde_json::from_slice(std::slice::from_raw_parts(ring_ptr, ring_len)) {
+        Ok(r) => r,
+        Err(e) => return fail(&format!("ring_invalid: {e}")),
+    };
+    let cell = match parse_cell(if cell_len == 0 { None } else { Some(std::slice::from_raw_parts(cell_ptr, cell_len)) }) {
         Ok(c) => c,
         Err(e) => return fail(&e),
     };
@@ -245,11 +202,10 @@ pub extern "C" fn session_tile(z: u32, x: u32, y: u32) -> usize {
 /// Pointer/length come from an `alloc` buffer written by the host.
 #[no_mangle]
 pub unsafe extern "C" fn session_set_status(ptr: *const u8, len: usize) -> usize {
-    let entries: Vec<(String, u8)> =
-        match serde_json::from_slice(std::slice::from_raw_parts(ptr, len)) {
-            Ok(e) => e,
-            Err(e) => return fail(&format!("status_invalid: {e}")),
-        };
+    let entries: Vec<(String, u8)> = match serde_json::from_slice(std::slice::from_raw_parts(ptr, len)) {
+        Ok(e) => e,
+        Err(e) => return fail(&format!("status_invalid: {e}")),
+    };
     let n = entries.len();
     with_session(|s| s.set_status(entries));
     store(serde_json::to_vec(&serde_json::json!({ "n": n })).unwrap_or_default())
@@ -259,12 +215,7 @@ pub unsafe extern "C" fn session_set_status(ptr: *const u8, len: usize) -> usize
 #[no_mangle]
 pub extern "C" fn session_snap(lng: f64, lat: f64, house_reach: f64, street_reach: f64) -> usize {
     let (position, address, kind) = with_session(|s| s.snap([lng, lat], house_reach, street_reach));
-    store(
-        serde_json::to_vec(
-            &serde_json::json!({ "position": position, "address": address, "kind": kind }),
-        )
-        .unwrap_or_default(),
-    )
+    store(serde_json::to_vec(&serde_json::json!({ "position": position, "address": address, "kind": kind })).unwrap_or_default())
 }
 
 /// Route through street pieces: input is a JSON array of segment ids; output JSON
@@ -280,11 +231,7 @@ pub unsafe extern "C" fn session_route(ptr: *const u8, len: usize) -> usize {
     };
     let out = with_session(|s| s.route(&anchors));
     let json = match out {
-        session::RouteOut::Selected {
-            ids,
-            length,
-            ambiguous,
-        } => {
+        session::RouteOut::Selected { ids, length, ambiguous } => {
             serde_json::json!({ "state": "selected", "segmentIds": ids, "length": length, "ambiguous": ambiguous })
         }
         session::RouteOut::Disconnected => serde_json::json!({ "state": "disconnected" }),
@@ -303,10 +250,7 @@ pub unsafe extern "C" fn session_lasso(ptr: *const u8, len: usize, houses_only: 
         Err(e) => return fail(&format!("ring_invalid: {e}")),
     };
     let (houses, segments) = with_session(|s| s.lasso(&ring, houses_only != 0));
-    store(
-        serde_json::to_vec(&serde_json::json!({ "houses": houses, "segments": segments }))
-            .unwrap_or_default(),
-    )
+    store(serde_json::to_vec(&serde_json::json!({ "houses": houses, "segments": segments })).unwrap_or_default())
 }
 
 /// Street/address search over everything in the session: JSON array of `{kind:"street"|"house",id,label,detail}`.
@@ -317,6 +261,9 @@ pub unsafe extern "C" fn session_lasso(ptr: *const u8, len: usize, houses_only: 
 pub unsafe extern "C" fn session_search(ptr: *const u8, len: usize, limit: usize) -> usize {
     let text = String::from_utf8_lossy(std::slice::from_raw_parts(ptr, len)).into_owned();
     let found = with_session(|s| s.search(&text, limit));
-    let json: Vec<serde_json::Value> = found.into_iter().map(|(street, id, label, detail)| serde_json::json!({ "kind": if street { "street" } else { "house" }, "id": id, "label": label, "detail": detail })).collect();
+    let json: Vec<serde_json::Value> = found
+        .into_iter()
+        .map(|(street, id, label, detail)| serde_json::json!({ "kind": if street { "street" } else { "house" }, "id": id, "label": label, "detail": detail }))
+        .collect();
     store(serde_json::to_vec(&json).unwrap_or_default())
 }

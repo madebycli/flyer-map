@@ -10,16 +10,12 @@ pub struct Response {
 
 impl Response {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
+        self.headers.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
     }
 
     pub fn set_header(&mut self, name: &str, value: &str) {
         self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
-        self.headers
-            .push((name.to_ascii_lowercase(), value.to_string()));
+        self.headers.push((name.to_ascii_lowercase(), value.to_string()));
     }
 
     /// A JSON answer that is never cached and never sniffed (every API answer except the public basemap).
@@ -32,10 +28,7 @@ impl Response {
     pub fn json_with<T: Serialize>(status: u16, body: &T, cache_control: &str) -> Response {
         Response {
             status,
-            headers: vec![
-                ("content-type".into(), "application/json".into()),
-                ("cache-control".into(), cache_control.into()),
-            ],
+            headers: vec![("content-type".into(), "application/json".into()), ("cache-control".into(), cache_control.into())],
             body: serde_json::to_vec(body).unwrap_or_else(|_| b"null".to_vec()),
         }
     }

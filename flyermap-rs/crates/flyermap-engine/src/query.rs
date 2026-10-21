@@ -31,12 +31,7 @@ impl<'a> Lasso<'a> {
         if ring.len() < 3 {
             return None;
         }
-        let (mut w, mut s, mut e, mut n) = (
-            f64::INFINITY,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            f64::NEG_INFINITY,
-        );
+        let (mut w, mut s, mut e, mut n) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
         for p in ring {
             w = w.min(p[0]);
             e = e.max(p[0]);
@@ -46,11 +41,7 @@ impl<'a> Lasso<'a> {
         Some(Lasso { ring, w, s, e, n })
     }
     pub fn contains(&self, p: LngLat) -> bool {
-        p[0] >= self.w
-            && p[0] <= self.e
-            && p[1] >= self.s
-            && p[1] <= self.n
-            && point_in_ring(p, self.ring)
+        p[0] >= self.w && p[0] <= self.e && p[1] >= self.s && p[1] <= self.n && point_in_ring(p, self.ring)
     }
 }
 
@@ -59,13 +50,7 @@ fn js_space(c: char) -> bool {
     matches!(
         c,
         '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200a}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202f}'
-                | '\u{205f}'
-                | '\u{3000}'
-                | '\u{feff}'
+            ..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
     )
 }
 /// JavaScript's ASCII `\w` (what `\b` means without the `i` flag).
@@ -114,13 +99,7 @@ pub fn fold(text: &str) -> String {
     let mut b: Vec<char> = Vec::with_capacity(a.len());
     let mut i = 0;
     while i < a.len() {
-        if i + 4 <= a.len()
-            && a[i] == 's'
-            && a[i + 1] == 't'
-            && a[i + 2] == 'r'
-            && a[i + 3] == '.'
-            && (i + 4 == a.len() || js_space(a[i + 4]))
-        {
+        if i + 4 <= a.len() && a[i] == 's' && a[i + 1] == 't' && a[i + 2] == 'r' && a[i + 3] == '.' && (i + 4 == a.len() || js_space(a[i + 4])) {
             b.extend("strasse".chars());
             i += 4;
         } else {
@@ -172,11 +151,7 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
                     }
                 }
                 let (tx, ty) = (dx.trim_start_matches('0'), dy.trim_start_matches('0'));
-                let o = tx
-                    .len()
-                    .cmp(&ty.len())
-                    .then_with(|| tx.cmp(ty))
-                    .then_with(|| dx.len().cmp(&dy.len()));
+                let o = tx.len().cmp(&ty.len()).then_with(|| tx.cmp(ty)).then_with(|| dx.len().cmp(&dy.len()));
                 if o != Ordering::Equal {
                     return o;
                 }
@@ -214,23 +189,14 @@ pub fn search(entries: &[Entry], query: &str, limit: usize) -> Vec<usize> {
             match entry.norm.find(word) {
                 None => continue 'entry,
                 Some(0) => {}
-                Some(at) => {
-                    score += if entry.norm[..at].ends_with(' ') {
-                        1
-                    } else {
-                        3
-                    }
-                }
+                Some(at) => score += if entry.norm[..at].ends_with(' ') { 1 } else { 3 },
             }
         }
         scored.push((score * 2 + if entry.street { 0 } else { 1 }, index));
     }
     scored.sort_by(|a, b| {
         let (x, y) = (&entries[a.1], &entries[b.1]);
-        a.0.cmp(&b.0)
-            .then_with(|| natural_cmp(&x.norm, &y.norm))
-            .then_with(|| natural_cmp(&x.label, &y.label))
-            .then_with(|| x.id.cmp(&y.id))
+        a.0.cmp(&b.0).then_with(|| natural_cmp(&x.norm, &y.norm)).then_with(|| natural_cmp(&x.label, &y.label)).then_with(|| x.id.cmp(&y.id))
     });
     scored.into_iter().take(limit).map(|(_, i)| i).collect()
 }

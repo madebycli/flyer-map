@@ -13,12 +13,7 @@ pub struct WireOp {
 impl WireOp {
     /// An edit without a known Gebiet cannot be authorised yet: it stays in the outbox.
     pub fn from_op(op: &Op) -> Option<WireOp> {
-        Some(WireOp {
-            id: op.id.clone(),
-            key: op.key.clone(),
-            status: op.status,
-            area: op.area.clone()?,
-        })
+        Some(WireOp { id: op.id.clone(), key: op.key.clone(), status: op.status, area: op.area.clone()? })
     }
 }
 
@@ -43,8 +38,6 @@ pub struct PushResponse {
 impl PushResponse {
     /// The server holds another truth for some key (it belongs to another Gebiet): the client pulls everything again.
     pub fn wants_refetch(&self) -> bool {
-        self.rejected
-            .iter()
-            .any(|r| r.reason == "key_owned_elsewhere")
+        self.rejected.iter().any(|r| r.reason == "key_owned_elsewhere")
     }
 }

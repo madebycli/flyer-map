@@ -37,13 +37,7 @@ impl Progress {
     ) -> Progress {
         let house_keys: HashSet<Key> = houses.into_iter().collect();
         let meter_of: HashMap<Key, f64> = segments.into_iter().collect();
-        let mut p = Progress {
-            houses: [0; 4],
-            meters: [0.0; 4],
-            last: HashMap::new(),
-            meter_of,
-            house_keys,
-        };
+        let mut p = Progress { houses: [0; 4], meters: [0.0; 4], last: HashMap::new(), meter_of, house_keys };
         p.houses[Status::Open.index()] = p.house_keys.len() as i64;
         p.meters[Status::Open.index()] = p.meter_of.values().sum();
         for (key, status) in current {
@@ -83,11 +77,7 @@ impl Progress {
             street_meters: self.meters,
             total_houses: total,
             total_street_meters: self.meters.iter().sum(),
-            house_ratio: if deliverable > 0 {
-                self.houses[Status::Completed.index()] as f64 / deliverable as f64
-            } else {
-                0.0
-            },
+            house_ratio: if deliverable > 0 { self.houses[Status::Completed.index()] as f64 / deliverable as f64 } else { 0.0 },
         }
     }
 }
@@ -125,19 +115,12 @@ mod tests {
         assert_eq!(s.houses, [1, 1, 0, 1]);
         assert_eq!(s.street_meters, [50.0, 100.0, 0.0, 0.0]);
         assert_eq!(s.total_houses, 3);
-        assert!(
-            (s.house_ratio - 0.5).abs() < 1e-9,
-            "not deliverable leaves the denominator"
-        );
+        assert!((s.house_ratio - 0.5).abs() < 1e-9, "not deliverable leaves the denominator");
     }
 
     #[test]
     fn nothing_deliverable_is_zero_percent() {
-        let p = Progress::new(
-            [Key::house("1")],
-            [],
-            [(Key::house("1"), Status::NotDeliverable)],
-        );
+        let p = Progress::new([Key::house("1")], [], [(Key::house("1"), Status::NotDeliverable)]);
         assert_eq!(p.snapshot().house_ratio, 0.0);
     }
 }

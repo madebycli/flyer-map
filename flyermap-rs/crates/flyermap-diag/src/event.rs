@@ -76,33 +76,15 @@ pub struct Event {
 
 impl Event {
     /// Builds an event. Message and text fields are redacted; fields under a secret-looking key (position, token, name, ...) never keep their value.
-    pub fn new(
-        t: u64,
-        level: Level,
-        area: &str,
-        code: Option<&str>,
-        message: &str,
-        fields: &[(&str, Value)],
-    ) -> Event {
+    pub fn new(t: u64, level: Level, area: &str, code: Option<&str>, message: &str, fields: &[(&str, Value)]) -> Event {
         let fields = fields
             .iter()
             .take(redact::MAX_KEYS)
             .map(|(key, value)| {
-                let value = if redact::is_secret_key(key) {
-                    Value::Text("[removed]".into())
-                } else {
-                    value.clone()
-                };
+                let value = if redact::is_secret_key(key) { Value::Text("[removed]".into()) } else { value.clone() };
                 ((*key).to_string(), value)
             })
             .collect();
-        Event {
-            t,
-            level,
-            area: area.to_string(),
-            code: code.map(str::to_string),
-            message: redact::redact_text(message, redact::MAX_TEXT),
-            fields,
-        }
+        Event { t, level, area: area.to_string(), code: code.map(str::to_string), message: redact::redact_text(message, redact::MAX_TEXT), fields }
     }
 }

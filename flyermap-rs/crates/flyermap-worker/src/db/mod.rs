@@ -1,5 +1,7 @@
 //! The database seam. Handlers only see [`Db`]: SQLite natively (tests, tools), D1 in the Worker. Rows come back as JSON objects (that is what D1
 //! gives) and are read into small typed structs where they are used.
+#[cfg(target_arch = "wasm32")]
+pub mod d1;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sqlite;
 
@@ -58,10 +60,7 @@ pub struct Stmt {
 }
 
 pub fn stmt(sql: impl Into<String>, params: Vec<Param>) -> Stmt {
-    Stmt {
-        sql: sql.into(),
-        params,
-    }
+    Stmt { sql: sql.into(), params }
 }
 
 /// `params![a, b, c]` turns each value into a [`Param`].
@@ -97,20 +96,9 @@ pub trait Db {
 
 /// Read rows into a struct.
 pub fn decode<T: DeserializeOwned>(rows: Vec<Row>) -> Result<Vec<T>, DbError> {
-    rows.into_iter()
-        .map(|row| {
-            serde_json::from_value(Value::Object(row)).map_err(|e| DbError {
-                message: format!("row shape: {e}"),
-            })
-        })
-        .collect()
+    rows.into_iter().map(|row| serde_json::from_value(Value::Object(row)).map_err(|e| DbError { message: format!("row shape: {e}") })).collect()
 }
 
 pub fn decode_one<T: DeserializeOwned>(row: Option<Row>) -> Result<Option<T>, DbError> {
-    row.map(|r| {
-        serde_json::from_value(Value::Object(r)).map_err(|e| DbError {
-            message: format!("row shape: {e}"),
-        })
-    })
-    .transpose()
+    row.map(|r| serde_json::from_value(Value::Object(r)).map_err(|e| DbError { message: format!("row shape: {e}") })).transpose()
 }

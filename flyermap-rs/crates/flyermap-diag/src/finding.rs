@@ -11,10 +11,6 @@ pub struct Finding {
 
 impl Finding {
     pub fn new(level: Level, code: &str, detail: &str) -> Finding {
-        Finding {
-            level,
-            code: code.to_string(),
-            detail: crate::redact::redact_text(detail, 200),
-        }
+        Finding { level, code: code.to_string(), detail: crate::redact::redact_text(detail, 200) }
     }
 }

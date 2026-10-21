@@ -1,17 +1,9 @@
 //! Step 6: which segments are shown (streets always; lanes and paths only when real houses use them), and rounding to the OSM grid.
 use super::*;
 
-pub(super) fn finish(
-    mut segments: Vec<Segment>,
-    mut houses: Vec<House>,
-    mut diag: Diagnostics,
-) -> Network {
+pub(super) fn finish(mut segments: Vec<Segment>, mut houses: Vec<House>, mut diag: Diagnostics) -> Network {
     // 6. visibility: streets always; access/connector only when real houses use them
-    let index_of: HashMap<&str, usize> = segments
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (s.id.as_str(), i))
-        .collect();
+    let index_of: HashMap<&str, usize> = segments.iter().enumerate().map(|(i, s)| (s.id.as_str(), i)).collect();
     let mut counts = vec![0u32; segments.len()];
     for h in &houses {
         match &h.parent {
@@ -27,8 +19,7 @@ pub(super) fn finish(
         *group_houses.entry(s.group.clone()).or_insert(0) += s.house_count;
     }
     for s in segments.iter_mut() {
-        s.visible =
-            s.cls == RoadClass::Street || group_houses.get(&s.group).copied().unwrap_or(0) > 0;
+        s.visible = s.cls == RoadClass::Street || group_houses.get(&s.group).copied().unwrap_or(0) > 0;
         if s.visible {
             diag.visible_segments += 1;
             if s.cls != RoadClass::Street {
@@ -40,11 +31,7 @@ pub(super) fn finish(
     }
     diag.houses_out = houses.len();
     houses.sort_by(|a, b| a.id.cmp(&b.id));
-    let mut network = Network {
-        segments,
-        houses,
-        diagnostics: diag,
-    };
+    let mut network = Network { segments, houses, diagnostics: diag };
     round_network(&mut network);
     network
 }

@@ -1,14 +1,7 @@
 //! Step 5: houses from buildings (with their address, or the address node inside or next to them) and from address nodes that belong to no building.
 use super::*;
 
-pub(super) fn derive_houses(
-    raw: &RawOsm,
-    frame: &Frame,
-    seg_grid: &mut Grid,
-    indexed: &[Indexed],
-    segments: &[Segment],
-    diag: &mut Diagnostics,
-) -> Vec<House> {
+pub(super) fn derive_houses(raw: &RawOsm, frame: &Frame, seg_grid: &mut Grid, indexed: &[Indexed], segments: &[Segment], diag: &mut Diagnostics) -> Vec<House> {
     // 5. houses
     let mut address_nodes: Vec<&RawAddressNode> = raw.addresses.iter().collect();
     address_nodes.sort_by_key(|a| a.id);
@@ -45,18 +38,8 @@ pub(super) fn derive_houses(
                     near.push((d, node.id, i));
                 }
             }
-            near.sort_by(|a, b| {
-                a.0.partial_cmp(&b.0)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then(a.1.cmp(&b.1))
-            });
-            let hit = near.iter().find(|(_, _, i)| {
-                address_nodes[*i]
-                    .tags
-                    .get("addr:housenumber")
-                    .map(|v| !v.is_empty())
-                    .unwrap_or(false)
-            });
+            near.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(&b.1)));
+            let hit = near.iter().find(|(_, _, i)| address_nodes[*i].tags.get("addr:housenumber").map(|v| !v.is_empty()).unwrap_or(false));
             if let Some(&(_, _, i)) = hit {
                 node_used[i] = true;
                 let node = address_nodes[i];
@@ -87,26 +70,13 @@ pub(super) fn derive_houses(
             street_parent: None,
             evidence,
         };
-        houses.push(assign_parent(
-            house,
-            frame,
-            seg_grid,
-            indexed,
-            segments,
-            &mut scratch,
-            diag,
-        ));
+        houses.push(assign_parent(house, frame, seg_grid, indexed, segments, &mut scratch, diag));
     }
 
     // address nodes that belong to no building become small point-houses
     let mut building_grid = Grid::new(0.001);
     for b in &raw.buildings {
-        let (mut min_x, mut min_y, mut max_x, mut max_y) = (
-            f64::INFINITY,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            f64::NEG_INFINITY,
-        );
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
         for p in &b.ring {
             if p[0] < min_x {
                 min_x = p[0];
@@ -129,20 +99,13 @@ pub(super) fn derive_houses(
         }
     }
     for (i, node) in address_nodes.iter().enumerate() {
-        let has_number = node
-            .tags
-            .get("addr:housenumber")
-            .map(|v| !v.is_empty())
-            .unwrap_or(false);
+        let has_number = node.tags.get("addr:housenumber").map(|v| !v.is_empty()).unwrap_or(false);
         if node_used[i] || !has_number {
             continue;
         }
         let [nx, ny] = node.point;
         building_grid.search([nx, ny, nx, ny], &mut scratch);
-        if scratch
-            .iter()
-            .any(|&b| point_in_ring(node.point, &raw.buildings[b as usize].ring))
-        {
+        if scratch.iter().any(|&b| point_in_ring(node.point, &raw.buildings[b as usize].ring)) {
             continue;
         }
         let d = 0.00003;
@@ -152,28 +115,14 @@ pub(super) fn derive_houses(
             source: Source::AddressNode,
             number: Some(js_trim(&node.tags["addr:housenumber"]).to_string()),
             street: trimmed(&node.tags, "addr:street"),
-            ring: vec![
-                [nx - d, ny - d],
-                [nx + d, ny - d],
-                [nx + d, ny + d],
-                [nx - d, ny + d],
-                [nx - d, ny - d],
-            ],
+            ring: vec![[nx - d, ny - d], [nx + d, ny - d], [nx + d, ny + d], [nx - d, ny + d], [nx - d, ny - d]],
             center: node.point,
             parent: None,
             measure: None,
             street_parent: None,
             evidence: Evidence::AddressNode,
         };
-        houses.push(assign_parent(
-            house,
-            frame,
-            seg_grid,
-            indexed,
-            segments,
-            &mut scratch,
-            diag,
-        ));
+        houses.push(assign_parent(house, frame, seg_grid, indexed, segments, &mut scratch, diag));
     }
     houses
 }

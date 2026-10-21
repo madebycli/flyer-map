@@ -35,18 +35,7 @@ pub struct SyncRound {
 
 impl SyncRound {
     pub fn fresh(at: u64) -> SyncRound {
-        SyncRound {
-            at,
-            ms: 0,
-            batches: 0,
-            sent: 0,
-            accepted: 0,
-            rejected: 0,
-            pages: 0,
-            pulled: 0,
-            result: RoundResult::Ok,
-            error: None,
-        }
+        SyncRound { at, ms: 0, batches: 0, sent: 0, accepted: 0, rejected: 0, pages: 0, pulled: 0, result: RoundResult::Ok, error: None }
     }
 
     /// For the diagnostics probe.

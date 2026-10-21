@@ -14,15 +14,8 @@ pub enum CollectionStatus {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "kebab-case")]
 pub enum AreaRef {
-    Distribution {
-        id: String,
-        team_id: String,
-    },
-    Collection {
-        id: String,
-        status: CollectionStatus,
-        run_id: Option<String>,
-    },
+    Distribution { id: String, team_id: String },
+    Collection { id: String, status: CollectionStatus, run_id: Option<String> },
 }
 
 impl AreaRef {

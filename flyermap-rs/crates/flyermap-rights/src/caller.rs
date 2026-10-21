@@ -16,15 +16,7 @@ pub struct Caller {
 
 impl Caller {
     pub fn new(grant_id: &str, role: Role) -> Caller {
-        Caller {
-            grant_id: grant_id.to_string(),
-            role,
-            team_id: None,
-            label: None,
-            collector_id: None,
-            room_id: None,
-            room_area_id: None,
-        }
+        Caller { grant_id: grant_id.to_string(), role, team_id: None, label: None, collector_id: None, room_id: None, room_area_id: None }
     }
     pub fn in_team(mut self, team_id: &str) -> Caller {
         self.team_id = Some(team_id.to_string());

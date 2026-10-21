@@ -37,12 +37,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Config {
-        Config {
-            batch_size: 200,
-            kick_delay_ms: 50,
-            has_extras: false,
-            history: 30,
-        }
+        Config { batch_size: 200, kick_delay_ms: 50, has_extras: false, history: 30 }
     }
 }
 
@@ -104,10 +99,7 @@ impl Machine {
         self.state
     }
     pub fn info(&self) -> SyncInfo {
-        SyncInfo {
-            last_ok_at: self.last_ok_at,
-            last_error: self.last_error.clone(),
-        }
+        SyncInfo { last_ok_at: self.last_ok_at, last_error: self.last_error.clone() }
     }
     pub fn history(&self) -> impl Iterator<Item = &SyncRound> {
         self.history.iter()
@@ -140,11 +132,7 @@ impl Machine {
     }
 
     pub(crate) fn notify(&self, store: &Store) -> Action {
-        Action::Notify {
-            state: self.state,
-            pending: store.pending_len() + self.extras_pending,
-            info: self.info(),
-        }
+        Action::Notify { state: self.state, pending: store.pending_len() + self.extras_pending, info: self.info() }
     }
 
     pub(crate) fn set_state(&mut self, state: State, store: &Store) -> Vec<Action> {
@@ -152,13 +140,7 @@ impl Machine {
             return Vec::new();
         }
         if state != self.state {
-            flyermap_diag::diag!(
-                flyermap_diag::Level::Debug,
-                "sync",
-                "state changed",
-                from = self.state.as_str(),
-                to = state.as_str()
-            );
+            flyermap_diag::diag!(flyermap_diag::Level::Debug, "sync", "state changed", from = self.state.as_str(), to = state.as_str());
         }
         self.state = state;
         flyermap_diag::gauge(
@@ -180,20 +162,14 @@ impl Machine {
         match event {
             Event::Dispose => {
                 self.disposed = true;
-                vec![
-                    Action::CancelTimer(TimerKind::Kick),
-                    Action::CancelTimer(TimerKind::Retry),
-                ]
+                vec![Action::CancelTimer(TimerKind::Kick), Action::CancelTimer(TimerKind::Retry)]
             }
             Event::Kick => {
                 if self.kick_timer {
                     return Vec::new();
                 }
                 self.kick_timer = true;
-                vec![Action::SetTimer {
-                    kind: TimerKind::Kick,
-                    after_ms: self.cfg.kick_delay_ms,
-                }]
+                vec![Action::SetTimer { kind: TimerKind::Kick, after_ms: self.cfg.kick_delay_ms }]
             }
             Event::Timer(TimerKind::Kick) => {
                 self.kick_timer = false;

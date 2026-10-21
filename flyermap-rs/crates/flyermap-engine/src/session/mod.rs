@@ -116,9 +116,7 @@ impl Session {
             }
             let line: Vec<[f64; 2]> = s.coords.iter().map(|p| mercator(*p)).collect();
             self.seg_grid.insert(bbox(&line));
-            let mid = midpoint_by_length(&s.coords)
-                .map(|m| [r7(m[0]), r7(m[1])])
-                .unwrap_or(s.coords[0]);
+            let mid = midpoint_by_length(&s.coords).map(|m| [r7(m[0]), r7(m[1])]).unwrap_or(s.coords[0]);
             self.segs.push(Seg {
                 key: format!("s:{}", s.id),
                 line,

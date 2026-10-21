@@ -8,10 +8,7 @@ use crate::{
 
 /// Roles that may write something at all; which Gebiete they may write in is decided per Gebiet ([`can_write_area`]).
 pub fn writes_allowed(caller: &Caller) -> bool {
-    matches!(
-        caller.role,
-        Role::Admin | Role::TeamEditor | Role::CollectionCollector
-    )
+    matches!(caller.role, Role::Admin | Role::TeamEditor | Role::CollectionCollector)
 }
 
 /// Roles whose reads and writes are bound to Gebiete they are entitled to (admins and viewers see everything).
@@ -28,18 +25,13 @@ pub fn in_room_area(caller: &Caller, area_id: &str) -> bool {
 pub fn can_read_area(caller: &Caller, area: &AreaRef) -> bool {
     match area {
         AreaRef::Distribution { id, team_id } => {
-            caller.role != Role::CollectionCollector
-                && (!is_scoped(caller) || caller.team_id.as_deref() == Some(team_id))
-                && in_room_area(caller, id)
+            caller.role != Role::CollectionCollector && (!is_scoped(caller) || caller.team_id.as_deref() == Some(team_id)) && in_room_area(caller, id)
         }
         AreaRef::Collection { status, .. } => {
             if *status == CollectionStatus::Archived && caller.role != Role::Admin {
                 return false;
             }
-            matches!(
-                caller.role,
-                Role::Admin | Role::Viewer | Role::CollectionCollector
-            )
+            matches!(caller.role, Role::Admin | Role::Viewer | Role::CollectionCollector)
         }
     }
 }
@@ -52,9 +44,7 @@ pub fn can_write_area(caller: &Caller, area: &AreaRef, collector_works_here: boo
     }
     match area {
         AreaRef::Distribution { id, team_id } => {
-            caller.role != Role::CollectionCollector
-                && (!is_scoped(caller) || caller.team_id.as_deref() == Some(team_id))
-                && in_room_area(caller, id)
+            caller.role != Role::CollectionCollector && (!is_scoped(caller) || caller.team_id.as_deref() == Some(team_id)) && in_room_area(caller, id)
         }
         AreaRef::Collection { status, run_id, .. } => {
             if *status == CollectionStatus::Archived {
@@ -63,15 +53,8 @@ pub fn can_write_area(caller: &Caller, area: &AreaRef, collector_works_here: boo
             if caller.role == Role::Admin {
                 return true;
             }
-            let held = run_id.is_some()
-                && matches!(
-                    status,
-                    CollectionStatus::Claimed | CollectionStatus::InProgress
-                );
-            caller.role == Role::CollectionCollector
-                && caller.collector_id.is_some()
-                && held
-                && collector_works_here
+            let held = run_id.is_some() && matches!(status, CollectionStatus::Claimed | CollectionStatus::InProgress);
+            caller.role == Role::CollectionCollector && caller.collector_id.is_some() && held && collector_works_here
         }
     }
 }
@@ -81,17 +64,10 @@ mod tests {
     use super::*;
 
     fn team_area(id: &str, team: &str) -> AreaRef {
-        AreaRef::Distribution {
-            id: id.into(),
-            team_id: team.into(),
-        }
+        AreaRef::Distribution { id: id.into(), team_id: team.into() }
     }
     fn coll(status: CollectionStatus, run: Option<&str>) -> AreaRef {
-        AreaRef::Collection {
-            id: "c1".into(),
-            status,
-            run_id: run.map(String::from),
-        }
+        AreaRef::Collection { id: "c1".into(), status, run_id: run.map(String::from) }
     }
     fn who(role: Role, team: Option<&str>) -> Caller {
         let c = Caller::new("g", role);
@@ -105,51 +81,21 @@ mod tests {
         let admin = who(Role::Admin, None);
         let viewer = who(Role::Viewer, None);
         let editor = who(Role::TeamEditor, Some("team_n"));
-        for (caller, read_n, read_o, write_n, write_o) in [
-            (&admin, true, true, true, true),
-            (&viewer, true, true, false, false),
-            (&editor, true, false, true, false),
-        ] {
-            assert_eq!(
-                can_read_area(caller, &n),
-                read_n,
-                "{:?} reads n",
-                caller.role
-            );
-            assert_eq!(
-                can_read_area(caller, &o),
-                read_o,
-                "{:?} reads o",
-                caller.role
-            );
-            assert_eq!(
-                can_write_area(caller, &n, false),
-                write_n,
-                "{:?} writes n",
-                caller.role
-            );
-            assert_eq!(
-                can_write_area(caller, &o, false),
-                write_o,
-                "{:?} writes o",
-                caller.role
-            );
+        for (caller, read_n, read_o, write_n, write_o) in
+            [(&admin, true, true, true, true), (&viewer, true, true, false, false), (&editor, true, false, true, false)]
+        {
+            assert_eq!(can_read_area(caller, &n), read_n, "{:?} reads n", caller.role);
+            assert_eq!(can_read_area(caller, &o), read_o, "{:?} reads o", caller.role);
+            assert_eq!(can_write_area(caller, &n, false), write_n, "{:?} writes n", caller.role);
+            assert_eq!(can_write_area(caller, &o, false), write_o, "{:?} writes o", caller.role);
         }
     }
 
     #[test]
     fn a_room_guest_is_bound_to_the_rooms_gebiet() {
         let guest = who(Role::TeamEditor, Some("team_n")).as_room_guest("r1", "area_n");
-        assert!(can_write_area(
-            &guest,
-            &team_area("area_n", "team_n"),
-            false
-        ));
-        assert!(!can_write_area(
-            &guest,
-            &team_area("area_n2", "team_n"),
-            false
-        ));
+        assert!(can_write_area(&guest, &team_area("area_n", "team_n"), false));
+        assert!(!can_write_area(&guest, &team_area("area_n2", "team_n"), false));
         assert!(!can_read_area(&guest, &team_area("area_n2", "team_n")));
     }
 
@@ -158,47 +104,21 @@ mod tests {
         let helper = Caller::new("g", Role::CollectionCollector).as_collector("col1");
         assert!(!can_read_area(&helper, &team_area("a", "t")));
         assert!(can_read_area(&helper, &coll(CollectionStatus::Open, None)));
-        assert!(!can_read_area(
-            &helper,
-            &coll(CollectionStatus::Archived, None)
-        ));
-        assert!(can_read_area(
-            &who(Role::Admin, None),
-            &coll(CollectionStatus::Archived, None)
-        ));
+        assert!(!can_read_area(&helper, &coll(CollectionStatus::Archived, None)));
+        assert!(can_read_area(&who(Role::Admin, None), &coll(CollectionStatus::Archived, None)));
         let held = coll(CollectionStatus::InProgress, Some("run1"));
         assert!(can_write_area(&helper, &held, true));
-        assert!(
-            !can_write_area(&helper, &held, false),
-            "not a member of the run"
-        );
-        assert!(
-            !can_write_area(&helper, &coll(CollectionStatus::Open, None), true),
-            "nobody holds it"
-        );
-        assert!(!can_write_area(
-            &helper,
-            &coll(CollectionStatus::Archived, Some("run1")),
-            true
-        ));
-        assert!(can_write_area(
-            &who(Role::Admin, None),
-            &coll(CollectionStatus::Open, None),
-            false
-        ));
-        assert!(!can_write_area(
-            &who(Role::Admin, None),
-            &coll(CollectionStatus::Archived, None),
-            false
-        ));
+        assert!(!can_write_area(&helper, &held, false), "not a member of the run");
+        assert!(!can_write_area(&helper, &coll(CollectionStatus::Open, None), true), "nobody holds it");
+        assert!(!can_write_area(&helper, &coll(CollectionStatus::Archived, Some("run1")), true));
+        assert!(can_write_area(&who(Role::Admin, None), &coll(CollectionStatus::Open, None), false));
+        assert!(!can_write_area(&who(Role::Admin, None), &coll(CollectionStatus::Archived, None), false));
         assert!(!can_write_area(&who(Role::Viewer, None), &held, true));
     }
 
     #[test]
     fn scope_and_write_permission_by_role() {
-        assert!(
-            writes_allowed(&who(Role::Admin, None)) && !writes_allowed(&who(Role::Viewer, None))
-        );
+        assert!(writes_allowed(&who(Role::Admin, None)) && !writes_allowed(&who(Role::Viewer, None)));
         assert!(is_scoped(&who(Role::TeamEditor, None)) && !is_scoped(&who(Role::Viewer, None)));
     }
 }

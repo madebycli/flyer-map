@@ -19,10 +19,7 @@ pub struct NetError {
 
 impl NetError {
     pub fn new(message: &str, code: &str) -> NetError {
-        NetError {
-            message: message.to_string(),
-            code: code.to_string(),
-        }
+        NetError { message: message.to_string(), code: code.to_string() }
     }
 }
 

@@ -46,13 +46,7 @@ impl Conflicts {
         if id > &mine.id {
             self.mine.remove(key);
             if status != mine.status {
-                self.list.push(Conflict {
-                    key: key.clone(),
-                    mine: mine.status,
-                    theirs: status,
-                    by: by.to_string(),
-                    at: id.clone(),
-                });
+                self.list.push(Conflict { key: key.clone(), mine: mine.status, theirs: status, by: by.to_string(), at: id.clone() });
             }
         }
         false

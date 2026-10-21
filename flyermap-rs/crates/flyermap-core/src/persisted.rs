@@ -18,45 +18,22 @@ impl Store {
     /// Start from what was saved. Queued edits are applied on top of the saved overlay: they survive even when the overlay record is older.
     pub fn restore(actor: impl Into<String>, saved: &Persisted) -> Store {
         let mut store = Store::new(actor);
-        store.clock = ClockState {
-            node: store.actor.clone(),
-            ..saved.clock.clone()
-        };
+        store.clock = ClockState { node: store.actor.clone(), ..saved.clock.clone() };
         store.cursor = saved.cursor;
         for (key, entry) in &saved.overlay {
             store.apply_entry(key, entry.clone());
         }
         for op in &saved.pending {
             store.outbox.insert(op.clone());
-            store.apply_entry(
-                &op.key,
-                Entry {
-                    status: op.status,
-                    at: op.id.clone(),
-                    by: op.by.clone(),
-                },
-            );
+            store.apply_entry(&op.key, Entry { status: op.status, at: op.id.clone(), by: op.by.clone() });
         }
         store
     }
 
     /// The state to save. An outbox-only snapshot (`with_overlay == false`) keeps the potentially large overlay out.
     pub fn snapshot(&self, with_overlay: bool) -> Persisted {
-        let mut overlay: Vec<(Key, Entry)> = if with_overlay {
-            self.overlay
-                .iter()
-                .map(|(k, e)| (k.clone(), e.clone()))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let mut overlay: Vec<(Key, Entry)> = if with_overlay { self.overlay.iter().map(|(k, e)| (k.clone(), e.clone())).collect() } else { Vec::new() };
         overlay.sort_by(|a, b| a.0.cmp(&b.0));
-        Persisted {
-            version: PERSISTED_VERSION,
-            clock: self.clock.clone(),
-            overlay,
-            pending: self.outbox.ops(),
-            cursor: self.cursor,
-        }
+        Persisted { version: PERSISTED_VERSION, clock: self.clock.clone(), overlay, pending: self.outbox.ops(), cursor: self.cursor }
     }
 }

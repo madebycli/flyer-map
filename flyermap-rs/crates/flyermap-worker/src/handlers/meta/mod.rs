@@ -31,9 +31,7 @@ struct AreaRow {
 }
 
 fn polygon(text: &str) -> Polygon {
-    serde_json::from_str(text).unwrap_or(Polygon {
-        coordinates: vec![],
-    })
+    serde_json::from_str(text).unwrap_or(Polygon { coordinates: vec![] })
 }
 
 /// The first 12 bytes of SHA-256 over the stored outline: a pack built for another outline is stale.
@@ -41,39 +39,25 @@ fn geometry_hash(geometry_json: &str) -> String {
     sha256_hex(geometry_json)[..24].to_string()
 }
 
-pub async fn meta<D: Db>(
-    db: &D,
-    caller: &Caller,
-    campaign_id: &str,
-    request: &Request,
-    options: &Options,
-) -> Outcome {
+pub async fn meta<D: Db>(db: &D, caller: &Caller, campaign_id: &str, request: &Request, options: &Options) -> Outcome {
     let Some(campaign) = repo::campaign::campaign(db, campaign_id).await? else {
         return fail(ErrorCode::NotFound, "Aktion nicht gefunden.");
     };
     // A helper only ever sees the collection side; admins and viewers choose with ?kind=collection.
-    let wants_collection = request.query("kind").as_deref() == Some("collection")
-        && matches!(caller.role, Role::Admin | Role::Viewer);
-    let kind = if caller.role == Role::CollectionCollector || wants_collection {
-        Kind::Collection
-    } else {
-        Kind::Distribution
-    };
+    let wants_collection = request.query("kind").as_deref() == Some("collection") && matches!(caller.role, Role::Admin | Role::Viewer);
+    let kind = if caller.role == Role::CollectionCollector || wants_collection { Kind::Collection } else { Kind::Distribution };
     let scoped = is_scoped(caller);
     let rows = area_rows(db, caller, campaign_id, kind).await?;
     let mut areas = Vec::with_capacity(rows.len());
     for a in rows {
-        let stale = a.pack_version.is_some()
-            && a.pack_hash.as_deref() != Some(geometry_hash(&a.geometry_json).as_str());
+        let stale = a.pack_version.is_some() && a.pack_hash.as_deref() != Some(geometry_hash(&a.geometry_json).as_str());
         let writable = match repo::areas::resolve_area(db, campaign_id, &a.id).await? {
             Some(area_ref) => repo::areas::can_write(db, caller, campaign_id, &area_ref).await?,
             None => false,
         };
         let collection = (kind == Kind::Collection).then(|| CollectionInfo {
-            status: serde_json::from_value(serde_json::Value::String(
-                a.status.clone().unwrap_or_else(|| "open".into()),
-            ))
-            .unwrap_or(flyermap_rights::CollectionStatus::Open),
+            status: serde_json::from_value(serde_json::Value::String(a.status.clone().unwrap_or_else(|| "open".into())))
+                .unwrap_or(flyermap_rights::CollectionStatus::Open),
             color: a.color.clone().unwrap_or_else(|| "#2563eb".into()),
             run_id: a.run_id.clone(),
             claimed_by: a.claimed_by_label.clone(),
@@ -91,83 +75,35 @@ pub async fn meta<D: Db>(
             collection,
         });
     }
-    let teams = if kind == Kind::Collection {
-        Vec::new()
-    } else {
-        teams(db, campaign_id).await?
-    };
-    let main = if kind == Kind::Collection {
-        main_area(db, campaign_id).await
-    } else {
-        None
-    };
+    let teams = if kind == Kind::Collection { Vec::new() } else { teams(db, campaign_id).await? };
+    let main = if kind == Kind::Collection { main_area(db, campaign_id).await } else { None };
     let meta = Meta {
-        window: if kind == Kind::Distribution {
-            repo::campaign::window(db, campaign_id).await?
-        } else {
-            None
-        },
+        window: if kind == Kind::Distribution { repo::campaign::window(db, campaign_id).await? } else { None },
         guest_room: caller.room_id.clone(),
         role: caller.role,
         team_id: caller.team_id.clone(),
-        me: Me {
-            label: caller.label.clone(),
-        },
+        me: Me { label: caller.label.clone() },
         collector_id: caller.collector_id.clone(),
         collector_label: caller.collector_id.as_ref().and(caller.label.clone()),
-        runs: if kind == Kind::Collection {
-            runs(db, campaign_id).await
-        } else {
-            Vec::new()
-        },
+        runs: if kind == Kind::Collection { runs(db, campaign_id).await } else { Vec::new() },
         main_area_id: main.as_ref().map(|m| m.id.clone()),
         main_area: main,
-        pickup_rights: if kind == Kind::Collection {
-            pickup_rights(db, caller, campaign_id).await
-        } else {
-            PickupRights::default()
-        },
+        pickup_rights: if kind == Kind::Collection { pickup_rights(db, caller, campaign_id).await } else { PickupRights::default() },
         can_write: writes_allowed(caller),
-        can_build_pack: matches!(
-            caller.role,
-            Role::Admin | Role::TeamEditor | Role::CollectionCollector
-        ),
-        teams: if scoped {
-            teams
-                .into_iter()
-                .filter(|t| Some(&t.id) == caller.team_id.as_ref())
-                .collect()
-        } else {
-            teams
-        },
+        can_build_pack: matches!(caller.role, Role::Admin | Role::TeamEditor | Role::CollectionCollector),
+        teams: if scoped { teams.into_iter().filter(|t| Some(&t.id) == caller.team_id.as_ref()).collect() } else { teams },
         areas,
-        context_areas: if kind == Kind::Distribution && scoped {
-            context_areas(db, caller, campaign_id).await?
-        } else {
-            Vec::new()
-        },
-        basemap: options
-            .basemap
-            .clone()
-            .filter(|b| b.dark.is_some() || b.light.is_some()),
+        context_areas: if kind == Kind::Distribution && scoped { context_areas(db, caller, campaign_id).await? } else { Vec::new() },
+        basemap: options.basemap.clone().filter(|b| b.dark.is_some() || b.light.is_some()),
         kind,
         campaign,
     };
     Ok(Response::json(200, &meta))
 }
 
-async fn area_rows<D: Db>(
-    db: &D,
-    caller: &Caller,
-    campaign_id: &str,
-    kind: Kind,
-) -> Result<Vec<AreaRow>, DbError> {
+async fn area_rows<D: Db>(db: &D, caller: &Caller, campaign_id: &str, kind: Kind) -> Result<Vec<AreaRow>, DbError> {
     if kind == Kind::Collection {
-        let archived = if caller.role == Role::Admin {
-            ""
-        } else {
-            " AND a.status <> 'archived'"
-        };
+        let archived = if caller.role == Role::Admin { "" } else { " AND a.status <> 'archived'" };
         let sql = format!(
             "SELECT a.id, a.name, '' AS team_id, a.geometry_json, a.updated_at, a.status, a.color, a.run_id, a.claimed_by_label, a.claimed_by_collector_id, p.version AS pack_version, p.geometry_hash AS pack_hash FROM collection_areas a
          LEFT JOIN v5_pack_meta p ON p.campaign_id = a.campaign_id AND p.area_id = a.id
@@ -205,43 +141,22 @@ async fn teams<D: Db>(db: &D, campaign_id: &str) -> Result<Vec<Team>, DbError> {
         color: String,
         updated_at: String,
     }
-    let rows: Vec<Row> = decode(
-        db.all(&stmt(
-            "SELECT id, name, color, updated_at FROM teams WHERE campaign_id = ? ORDER BY name, id",
-            params![campaign_id],
-        ))
-        .await?,
-    )?;
-    Ok(rows
-        .into_iter()
-        .map(|r| Team {
-            id: r.id,
-            name: r.name,
-            color: r.color,
-            updated_at: r.updated_at,
-        })
-        .collect())
+    let rows: Vec<Row> =
+        decode(db.all(&stmt("SELECT id, name, color, updated_at FROM teams WHERE campaign_id = ? ORDER BY name, id", params![campaign_id])).await?)?;
+    Ok(rows.into_iter().map(|r| Team { id: r.id, name: r.name, color: r.color, updated_at: r.updated_at }).collect())
 }
 
-async fn context_areas<D: Db>(
-    db: &D,
-    caller: &Caller,
-    campaign_id: &str,
-) -> Result<Vec<ContextArea>, DbError> {
+async fn context_areas<D: Db>(db: &D, caller: &Caller, campaign_id: &str) -> Result<Vec<ContextArea>, DbError> {
     #[derive(Deserialize)]
     struct Row {
         geometry_json: String,
     }
     let room = caller.room_area_id.is_some();
-    let sql = format!("SELECT geometry_json FROM areas WHERE campaign_id = ? AND NOT (team_id = ?{}) ORDER BY created_at, id", if room { " AND id = ?" } else { "" });
+    let sql =
+        format!("SELECT geometry_json FROM areas WHERE campaign_id = ? AND NOT (team_id = ?{}) ORDER BY created_at, id", if room { " AND id = ?" } else { "" });
     let mut p = params![campaign_id, caller.team_id.clone()];
     if room {
         p.push(caller.room_area_id.clone().into());
     }
-    Ok(decode::<Row>(db.all(&stmt(sql, p)).await?)?
-        .into_iter()
-        .map(|r| ContextArea {
-            geometry: polygon(&r.geometry_json),
-        })
-        .collect())
+    Ok(decode::<Row>(db.all(&stmt(sql, p)).await?)?.into_iter().map(|r| ContextArea { geometry: polygon(&r.geometry_json) }).collect())
 }

@@ -14,34 +14,19 @@ impl Store {
         let mut findings = Vec::new();
         for op in self.outbox.ops() {
             if op.id.decode().is_none() {
-                findings.push(Finding {
-                    code: "outbox.bad_id",
-                    detail: format!("queued edit {} has no valid timestamp", op.id),
-                });
+                findings.push(Finding { code: "outbox.bad_id", detail: format!("queued edit {} has no valid timestamp", op.id) });
             }
             match self.overlay.get(&op.key) {
                 Some(entry) if entry.at >= op.id => {}
-                _ => findings.push(Finding {
-                    code: "outbox.not_in_overlay",
-                    detail: format!("queued edit {} is not reflected in the overlay", op.id),
-                }),
+                _ => findings.push(Finding { code: "outbox.not_in_overlay", detail: format!("queued edit {} is not reflected in the overlay", op.id) }),
             }
         }
-        let behind = |at: &OpId| {
-            at.decode()
-                .is_some_and(|c| (c.wall, c.counter) > (self.clock.wall, self.clock.counter))
-        };
+        let behind = |at: &OpId| at.decode().is_some_and(|c| (c.wall, c.counter) > (self.clock.wall, self.clock.counter));
         for (key, entry) in self.overlay.iter() {
             if entry.at.decode().is_none() {
-                findings.push(Finding {
-                    code: "overlay.bad_id",
-                    detail: format!("{key} has no valid timestamp"),
-                });
+                findings.push(Finding { code: "overlay.bad_id", detail: format!("{key} has no valid timestamp") });
             } else if behind(&entry.at) {
-                findings.push(Finding {
-                    code: "clock.behind_overlay",
-                    detail: format!("the clock is older than the edit on {key}"),
-                });
+                findings.push(Finding { code: "clock.behind_overlay", detail: format!("the clock is older than the edit on {key}") });
             }
         }
         findings

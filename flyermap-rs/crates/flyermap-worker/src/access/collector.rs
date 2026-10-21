@@ -19,19 +19,11 @@ struct Row {
 
 fn is_collection_schema_error(e: &DbError) -> bool {
     let m = e.message.to_ascii_lowercase();
-    (m.contains("no such table") && m.contains("collection_"))
-        || (m.contains("collection_") && m.contains("does not exist"))
+    (m.contains("no such table") && m.contains("collection_")) || (m.contains("collection_") && m.contains("does not exist"))
 }
 
-pub async fn resolve<D: Db>(
-    db: &D,
-    request: &Request,
-    campaign_id: Option<&str>,
-    now_iso: &str,
-) -> Result<Option<Caller>, DbError> {
-    let Some(secret) = cookies::cookie(request, cookies::COLLECTION_COOKIE)
-        .filter(|s| !s.is_empty() && s.encode_utf16().count() <= 256)
-    else {
+pub async fn resolve<D: Db>(db: &D, request: &Request, campaign_id: Option<&str>, now_iso: &str) -> Result<Option<Caller>, DbError> {
+    let Some(secret) = cookies::cookie(request, cookies::COLLECTION_COOKIE).filter(|s| !s.is_empty() && s.encode_utf16().count() <= 256) else {
         return Ok(None);
     };
     let sql = "SELECT s.collector_id, s.campaign_id, c.access_link_id, c.label,
@@ -45,17 +37,7 @@ pub async fn resolve<D: Db>(
           WHERE s.session_hash = ?
             AND (? IS NULL OR s.campaign_id = ?)
           LIMIT 1";
-    let row = match db
-        .first(&stmt(
-            sql,
-            params![
-                hash_secret(&secret),
-                campaign_id.map(str::to_string),
-                campaign_id.map(str::to_string)
-            ],
-        ))
-        .await
-    {
+    let row = match db.first(&stmt(sql, params![hash_secret(&secret), campaign_id.map(str::to_string), campaign_id.map(str::to_string)])).await {
         Ok(row) => row,
         Err(e) if is_collection_schema_error(&e) => return Ok(None),
         Err(e) => return Err(e),
@@ -63,17 +45,10 @@ pub async fn resolve<D: Db>(
     let Some(row) = decode_one::<Row>(row)? else {
         return Ok(None);
     };
-    if row.expires_at.as_str() <= now_iso
-        || row.session_revoked_at.is_some()
-        || row.collector_revoked_at.is_some()
-    {
+    if row.expires_at.as_str() <= now_iso || row.session_revoked_at.is_some() || row.collector_revoked_at.is_some() {
         return Ok(None);
     }
-    let mut caller = Caller::new(
-        &format!("collection:{}", row.collector_id),
-        Role::CollectionCollector,
-    )
-    .as_collector(&row.collector_id);
+    let mut caller = Caller::new(&format!("collection:{}", row.collector_id), Role::CollectionCollector).as_collector(&row.collector_id);
     caller.label = row.label;
     Ok(Some(caller))
 }

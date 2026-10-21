@@ -11,11 +11,7 @@ use support::{
 const T0: u64 = 1_800_000_000_000;
 
 fn world() -> (Server, Device, Device) {
-    (
-        Server::new(T0),
-        Device::new("alice", T0),
-        Device::new("bob", T0),
-    )
+    (Server::new(T0), Device::new("alice", T0), Device::new("bob", T0))
 }
 
 #[test]
@@ -23,10 +19,7 @@ fn a_local_edit_waits_a_moment_then_goes_out_and_comes_back_as_the_servers_truth
     let (mut server, mut alice, mut bob) = world();
     alice.mark("h:1", Status::Completed);
     assert_eq!(alice.timers, [(TimerKind::Kick, 50)]);
-    assert!(
-        alice.saves.contains(&flyermap_sync::Save::Outbox),
-        "the queue is saved at once"
-    );
+    assert!(alice.saves.contains(&flyermap_sync::Save::Outbox), "the queue is saved at once");
     alice.sync(&mut server);
     assert_eq!(alice.store.pending_len(), 0);
     assert_eq!(alice.machine.state(), State::Idle);
@@ -51,11 +44,7 @@ fn two_devices_overwrite_the_same_house_at_once_one_winner_and_the_loser_is_told
     alice.sync(&mut server);
     assert_eq!(server.truth()["h:1"], Status::Later);
     assert_eq!(alice.view()["h:1"], Status::Later);
-    assert_eq!(
-        alice.store.conflicts().len(),
-        1,
-        "alice's edit was replaced by a different status"
-    );
+    assert_eq!(alice.store.conflicts().len(), 1, "alice's edit was replaced by a different status");
     assert!(bob.store.conflicts().is_empty());
 }
 
@@ -66,11 +55,7 @@ fn lost_answers_and_duplicate_deliveries_change_nothing() {
     alice.fates = vec![Fate::LoseAnswer];
     alice.sync(&mut server);
     assert_eq!(alice.machine.state(), State::Offline);
-    assert_eq!(
-        alice.store.pending_len(),
-        1,
-        "not confirmed, so still queued"
-    );
+    assert_eq!(alice.store.pending_len(), 1, "not confirmed, so still queued");
     assert_eq!(alice.timers, [(TimerKind::Retry, 1000)]);
     alice.retry(&mut server);
     assert_eq!(alice.store.pending_len(), 0);
@@ -102,8 +87,7 @@ fn backoff_doubles_while_the_network_is_down_and_resets_when_it_returns() {
 }
 
 #[test]
-fn a_device_whose_clock_is_an_hour_off_is_corrected_by_the_server_and_still_wins_when_it_edits_last(
-) {
+fn a_device_whose_clock_is_an_hour_off_is_corrected_by_the_server_and_still_wins_when_it_edits_last() {
     let (mut server, mut alice, mut bob) = world();
     bob.now = T0 - 3_600_000; // bob's phone runs an hour behind
     bob.mark("h:1", Status::Later);
@@ -116,11 +100,7 @@ fn a_device_whose_clock_is_an_hour_off_is_corrected_by_the_server_and_still_wins
     bob.mark("h:1", Status::NotDeliverable);
     bob.sync(&mut server);
     alice.sync(&mut server);
-    assert_eq!(
-        server.truth()["h:1"],
-        Status::NotDeliverable,
-        "the later edit wins although bob's own clock is behind"
-    );
+    assert_eq!(server.truth()["h:1"], Status::NotDeliverable, "the later edit wins although bob's own clock is behind");
 }
 
 #[test]
@@ -130,11 +110,7 @@ fn edits_the_server_refuses_are_rolled_back_and_never_retried() {
     alice.mark("h:1", Status::Completed);
     alice.sync(&mut server);
     assert_eq!(alice.store.pending_len(), 0);
-    assert_eq!(
-        alice.store.status_of(&flyermap_core::Key::new("h:1")),
-        Status::Open,
-        "the screen shows what the server has"
-    );
+    assert_eq!(alice.store.status_of(&flyermap_core::Key::new("h:1")), Status::Open, "the screen shows what the server has");
     assert!(alice.timers.is_empty(), "no retry for a refusal");
 }
 
@@ -157,25 +133,12 @@ fn paging_pulls_until_nothing_is_new() {
 fn a_kick_during_a_round_runs_one_more_round_and_dispose_stops_everything() {
     let (mut server, mut alice, _) = world();
     alice.mark("h:1", Status::Completed);
-    let actions = alice
-        .machine
-        .handle(&mut alice.store, alice.now, Event::Timer(TimerKind::Kick));
+    let actions = alice.machine.handle(&mut alice.store, alice.now, Event::Timer(TimerKind::Kick));
     assert!(alice.machine.is_running());
-    assert!(
-        alice
-            .machine
-            .handle(&mut alice.store, alice.now, Event::Timer(TimerKind::Kick))
-            .is_empty(),
-        "already running: remembered, not started twice"
-    );
+    assert!(alice.machine.handle(&mut alice.store, alice.now, Event::Timer(TimerKind::Kick)).is_empty(), "already running: remembered, not started twice");
     let _ = actions;
-    alice
-        .machine
-        .handle(&mut alice.store, alice.now, Event::Dispose);
-    assert!(alice
-        .machine
-        .handle(&mut alice.store, alice.now, Event::Kick)
-        .is_empty());
+    alice.machine.handle(&mut alice.store, alice.now, Event::Dispose);
+    assert!(alice.machine.handle(&mut alice.store, alice.now, Event::Kick).is_empty());
     alice.sync(&mut server);
 }
 

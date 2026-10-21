@@ -14,34 +14,16 @@ pub struct DbStats {
 /// The client's id when it is a plausible one, else `s-<random>` made by the host.
 pub fn request_id(incoming: Option<&str>, make: impl FnOnce() -> String) -> String {
     match incoming {
-        Some(id)
-            if (4..=64).contains(&id.len())
-                && id
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') =>
-        {
-            id.to_string()
-        }
+        Some(id) if (4..=64).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') => id.to_string(),
         _ => make(),
     }
 }
 
 pub fn server_timing(total_ms: f64, db: &DbStats) -> String {
-    format!(
-        "total;dur={total_ms:.1}, db;dur={:.1};desc=\"{} q, {} b\"",
-        db.ms, db.queries, db.batches
-    )
+    format!("total;dur={total_ms:.1}, db;dur={:.1};desc=\"{} q, {} b\"", db.ms, db.queries, db.batches)
 }
 
-pub fn log_line(
-    rid: &str,
-    route: &str,
-    method: &str,
-    status: u16,
-    ms: f64,
-    db: &DbStats,
-    code: Option<&str>,
-) -> String {
+pub fn log_line(rid: &str, route: &str, method: &str, status: u16, ms: f64, db: &DbStats, code: Option<&str>) -> String {
     let level = if status >= 500 {
         "error"
     } else if status >= 400 || ms > 1000.0 {
@@ -63,23 +45,9 @@ mod tests {
 
     #[test]
     fn ids_and_lines() {
-        assert_eq!(
-            request_id(Some("c-1234abcd"), || "s-new".into()),
-            "c-1234abcd"
-        );
+        assert_eq!(request_id(Some("c-1234abcd"), || "s-new".into()), "c-1234abcd");
         assert_eq!(request_id(Some("bad id"), || "s-new".into()), "s-new");
-        let line = log_line(
-            "r1",
-            "/api/v5/campaigns/:c/ops",
-            "POST",
-            403,
-            2.34,
-            &DbStats::default(),
-            Some("cross_origin"),
-        );
-        assert!(
-            line.contains("\"lvl\":\"warn\"") && line.contains("\"code\":\"cross_origin\""),
-            "{line}"
-        );
+        let line = log_line("r1", "/api/v5/campaigns/:c/ops", "POST", 403, 2.34, &DbStats::default(), Some("cross_origin"));
+        assert!(line.contains("\"lvl\":\"warn\"") && line.contains("\"code\":\"cross_origin\""), "{line}");
     }
 }

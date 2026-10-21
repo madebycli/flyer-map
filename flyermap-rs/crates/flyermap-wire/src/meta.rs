@@ -140,9 +140,6 @@ mod tests {
         assert_eq!(meta.role, Role::TeamEditor);
         assert_eq!(meta.areas[0].geometry.outer().len(), 4);
         let again: serde_json::Value = serde_json::to_value(&meta).unwrap();
-        assert_eq!(
-            again,
-            serde_json::from_str::<serde_json::Value>(text).unwrap()
-        );
+        assert_eq!(again, serde_json::from_str::<serde_json::Value>(text).unwrap());
     }
 }

@@ -30,19 +30,10 @@ pub(super) fn assign_parent(
         let entry = &indexed[gid as usize];
         let seg = &segments[entry.seg];
         let named = !wanted.is_empty() && entry.norm == wanted;
-        let limit = if named {
-            MAX_NAMED_PARENT_DISTANCE
-        } else {
-            MAX_PARENT_DISTANCE
-        };
+        let limit = if named { MAX_NAMED_PARENT_DISTANCE } else { MAX_PARENT_DISTANCE };
         // The box distance never exceeds the true distance, so skipping beyond `limit` changes no outcome, only the work.
         let b = grid.bbox(gid);
-        if (b[0] - cx)
-            .max(0.0)
-            .max(cx - b[2])
-            .hypot((b[1] - cy).max(0.0).max(cy - b[3]))
-            > limit
-        {
+        if (b[0] - cx).max(0.0).max(cx - b[2]).hypot((b[1] - cy).max(0.0).max(cy - b[3])) > limit {
             continue;
         }
         let projection = project_to_polyline(&entry.xy, [cx, cy]);
@@ -52,10 +43,7 @@ pub(super) fn assign_parent(
         let score = projection.distance + class_penalty(seg.cls) - if named { 30.0 } else { 0.0 };
         let better = match best {
             None => true,
-            Some((bs, bi, _, _)) => {
-                score < bs - SCORE_EPS
-                    || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id)
-            }
+            Some((bs, bi, _, _)) => score < bs - SCORE_EPS || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id),
         };
         if better {
             best = Some((score, entry.seg, projection.measure, named));
@@ -63,10 +51,7 @@ pub(super) fn assign_parent(
         if named {
             let better_named = match best_named {
                 None => true,
-                Some((bs, bi, _, _)) => {
-                    score < bs - SCORE_EPS
-                        || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id)
-                }
+                Some((bs, bi, _, _)) => score < bs - SCORE_EPS || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id),
             };
             if better_named {
                 best_named = Some((score, entry.seg, projection.measure, true));
@@ -87,21 +72,10 @@ pub(super) fn assign_parent(
 }
 
 /// Step 5b: houses on a footway/path whose address names a street nearby: that street takes them along when it is marked.
-pub(super) fn link_path_houses(
-    houses: &mut [House],
-    segments: &[Segment],
-    frame: &Frame,
-    seg_grid: &mut Grid,
-    indexed: &[Indexed],
-    diag: &mut Diagnostics,
-) {
+pub(super) fn link_path_houses(houses: &mut [House], segments: &[Segment], frame: &Frame, seg_grid: &mut Grid, indexed: &[Indexed], diag: &mut Diagnostics) {
     let mut scratch: Vec<u32> = Vec::new();
     {
-        let by_id: HashMap<&str, usize> = segments
-            .iter()
-            .enumerate()
-            .map(|(i, s)| (s.id.as_str(), i))
-            .collect();
+        let by_id: HashMap<&str, usize> = segments.iter().enumerate().map(|(i, s)| (s.id.as_str(), i)).collect();
         for house in houses.iter_mut() {
             let Some(p) = &house.parent else { continue };
             if segments[by_id[p.as_str()]].cls != RoadClass::Connector {
@@ -113,10 +87,7 @@ pub(super) fn link_path_houses(
             }
             let [cx, cy] = frame.to_xy(house.center);
             let reach = MAX_STREET_LINK_DISTANCE;
-            seg_grid.search(
-                [cx - reach, cy - reach, cx + reach, cy + reach],
-                &mut scratch,
-            );
+            seg_grid.search([cx - reach, cy - reach, cx + reach, cy + reach], &mut scratch);
             let mut best: Option<(f64, usize)> = None;
             for &gid in scratch.iter() {
                 let entry = &indexed[gid as usize];
@@ -130,10 +101,7 @@ pub(super) fn link_path_houses(
                 }
                 let better = match best {
                     None => true,
-                    Some((bd, bi)) => {
-                        d < bd - SCORE_EPS
-                            || ((d - bd).abs() <= SCORE_EPS && seg.id < segments[bi].id)
-                    }
+                    Some((bd, bi)) => d < bd - SCORE_EPS || ((d - bd).abs() <= SCORE_EPS && seg.id < segments[bi].id),
                 };
                 if better {
                     best = Some((d, entry.seg));

@@ -28,33 +28,16 @@ const SCORE_EPS: f64 = 1e-6;
 const MAX_STREET_LINK_DISTANCE: f64 = 200.0;
 
 pub fn derive_network(raw: &RawOsm) -> Network {
-    let mut diag = Diagnostics {
-        engine_version: ENGINE_VERSION.into(),
-        ways_in: raw.ways.len(),
-        buildings_in: raw.buildings.len(),
-        ..Default::default()
-    };
+    let mut diag = Diagnostics { engine_version: ENGINE_VERSION.into(), ways_in: raw.ways.len(), buildings_in: raw.buildings.len(), ..Default::default() };
     let frame = frame_for(
-        raw.ways
-            .iter()
-            .flat_map(|w| w.coords.iter())
-            .chain(raw.buildings.iter().flat_map(|b| b.ring.iter()))
-            .chain(raw.addresses.iter().map(|a| &a.point)),
+        raw.ways.iter().flat_map(|w| w.coords.iter()).chain(raw.buildings.iter().flat_map(|b| b.ring.iter())).chain(raw.addresses.iter().map(|a| &a.point)),
     );
 
     let ways = segments::candidate_ways(raw, &mut diag);
     let segments = segments::split_ways(&ways);
     diag.segments = segments.len();
     let (mut seg_grid, indexed) = index::index_segments(&segments, &frame);
-    let mut houses =
-        houses::derive_houses(raw, &frame, &mut seg_grid, &indexed, &segments, &mut diag);
-    parent::link_path_houses(
-        &mut houses,
-        &segments,
-        &frame,
-        &mut seg_grid,
-        &indexed,
-        &mut diag,
-    );
+    let mut houses = houses::derive_houses(raw, &frame, &mut seg_grid, &indexed, &segments, &mut diag);
+    parent::link_path_houses(&mut houses, &segments, &frame, &mut seg_grid, &indexed, &mut diag);
     visibility::finish(segments, houses, diag)
 }

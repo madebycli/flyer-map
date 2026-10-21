@@ -53,9 +53,7 @@ fn run(seed: u64) {
                 }
             }
             5..=7 => {
-                devices[d].fates = (0..rng.below(3))
-                    .map(|_| [Fate::Deliver, Fate::Lost, Fate::LoseAnswer][rng.below(3) as usize])
-                    .collect();
+                devices[d].fates = (0..rng.below(3)).map(|_| [Fate::Deliver, Fate::Lost, Fate::LoseAnswer][rng.below(3) as usize]).collect();
                 devices[d].kick(&mut server);
             }
             8 => devices[d].fail_all = !devices[d].fail_all,
@@ -63,19 +61,11 @@ fn run(seed: u64) {
         }
         for (i, dev) in devices.iter().enumerate() {
             let findings = dev.store.check();
-            assert!(
-                findings.is_empty(),
-                "seed {seed}: invariants broken on {}: {findings:?}",
-                dev.name
-            );
+            assert!(findings.is_empty(), "seed {seed}: invariants broken on {}: {findings:?}", dev.name);
             for (key, entry) in dev.store.entries() {
                 let at = entry.at.to_string();
                 let prior = seen_at[i].insert(key.to_string(), at.clone());
-                assert!(
-                    prior.is_none_or(|p| p <= at),
-                    "seed {seed}: {} went backwards on {key}",
-                    dev.name
-                );
+                assert!(prior.is_none_or(|p| p <= at), "seed {seed}: {} went backwards on {key}", dev.name);
             }
         }
     }
@@ -93,26 +83,12 @@ fn run(seed: u64) {
     }
     let truth = server.truth();
     for (key, (_, status)) in &made {
-        assert_eq!(
-            truth.get(key),
-            Some(status),
-            "seed {seed}: the server did not keep the last writer of {key}"
-        );
+        assert_eq!(truth.get(key), Some(status), "seed {seed}: the server did not keep the last writer of {key}");
     }
     for dev in &devices {
-        assert_eq!(
-            dev.store.pending_len(),
-            0,
-            "seed {seed}: {} still has queued edits",
-            dev.name
-        );
+        assert_eq!(dev.store.pending_len(), 0, "seed {seed}: {} still has queued edits", dev.name);
         for (key, status) in &truth {
-            assert_eq!(
-                dev.store.status_of(&Key::new(key.as_str())),
-                *status,
-                "seed {seed}: {} differs on {key}",
-                dev.name
-            );
+            assert_eq!(dev.store.status_of(&Key::new(key.as_str())), *status, "seed {seed}: {} differs on {key}", dev.name);
         }
     }
 }

@@ -8,18 +8,8 @@ impl Session {
         let Some(shape) = Lasso::new(ring) else {
             return (Vec::new(), Vec::new());
         };
-        let houses = self
-            .houses
-            .iter()
-            .filter(|h| shape.contains(h.center_ll))
-            .map(|h| h.key[2..].to_string())
-            .collect();
-        let segments = self
-            .segs
-            .iter()
-            .filter(|s| (!houses_only || s.with_houses) && shape.contains(s.mid))
-            .map(|s| s.key[2..].to_string())
-            .collect();
+        let houses = self.houses.iter().filter(|h| shape.contains(h.center_ll)).map(|h| h.key[2..].to_string()).collect();
+        let segments = self.segs.iter().filter(|s| (!houses_only || s.with_houses) && shape.contains(s.mid)).map(|s| s.key[2..].to_string()).collect();
         (houses, segments)
     }
 
@@ -48,12 +38,7 @@ impl Session {
             let houses = g.group_houses[group as usize];
             let street = streets.entry(name).or_insert_with(|| {
                 order.push(name);
-                Street {
-                    id: i as u32,
-                    houses: 0,
-                    total: 0,
-                    seen: FxHashSet::default(),
-                }
+                Street { id: i as u32, houses: 0, total: 0, seen: FxHashSet::default() }
             });
             if street.seen.insert(group) {
                 street.total += houses;
@@ -82,13 +67,7 @@ impl Session {
                 continue;
             }
             let label = format!("{street} {number}");
-            entries.push(Entry {
-                street: false,
-                id: h.key[2..].to_string(),
-                norm: query::fold(&label),
-                label,
-                detail: "Haus".to_string(),
-            });
+            entries.push(Entry { street: false, id: h.key[2..].to_string(), norm: query::fold(&label), label, detail: "Haus".to_string() });
         }
         entries
     }
@@ -110,20 +89,13 @@ impl Session {
 
     /// The nearest house within `house_reach` metres, else the nearest street within `street_reach` (position, name).
     /// Returns (position, address, kind) with kind 0 = nothing, 1 = house, 2 = street.
-    pub fn snap(
-        &self,
-        at: LngLat,
-        house_reach: f64,
-        street_reach: f64,
-    ) -> (LngLat, Option<String>, u8) {
+    pub fn snap(&self, at: LngLat, house_reach: f64, street_reach: f64) -> (LngLat, Option<String>, u8) {
         let kx = 111_320.0 * (at[1] * std::f64::consts::PI / 180.0).cos();
         let m_lat = 110_574.0;
         let d2 = |p: LngLat| ((p[0] - at[0]) * kx).powi(2) + ((p[1] - at[1]) * m_lat).powi(2);
         let mut best_house: Option<(f64, usize)> = None;
         for (i, h) in self.houses.iter().enumerate() {
-            if ((h.center_ll[0] - at[0]) * kx).abs() > house_reach
-                || ((h.center_ll[1] - at[1]) * m_lat).abs() > house_reach
-            {
+            if ((h.center_ll[0] - at[0]) * kx).abs() > house_reach || ((h.center_ll[1] - at[1]) * m_lat).abs() > house_reach {
                 continue;
             }
             let d = d2(h.center_ll);
@@ -133,43 +105,20 @@ impl Session {
         }
         if let Some((_, i)) = best_house {
             let h = &self.houses[i];
-            let label: Vec<&str> = [h.street.as_deref(), h.number.as_deref()]
-                .into_iter()
-                .flatten()
-                .filter(|s| !s.is_empty())
-                .collect();
-            return (
-                h.center_ll,
-                if label.is_empty() {
-                    None
-                } else {
-                    Some(label.join(" "))
-                },
-                1,
-            );
+            let label: Vec<&str> = [h.street.as_deref(), h.number.as_deref()].into_iter().flatten().filter(|s| !s.is_empty()).collect();
+            return (h.center_ll, if label.is_empty() { None } else { Some(label.join(" ")) }, 1);
         }
         let mut best: Option<(f64, LngLat, Option<String>)> = None;
         for s in &self.segs {
             for w in s.lnglat.windows(2) {
                 let (a, b) = (w[0], w[1]);
-                let (ax, ay, bx, by) = (
-                    (a[0] - at[0]) * kx,
-                    (a[1] - at[1]) * m_lat,
-                    (b[0] - at[0]) * kx,
-                    (b[1] - at[1]) * m_lat,
-                );
+                let (ax, ay, bx, by) = ((a[0] - at[0]) * kx, (a[1] - at[1]) * m_lat, (b[0] - at[0]) * kx, (b[1] - at[1]) * m_lat);
                 let (dx, dy) = (bx - ax, by - ay);
                 let len2 = dx * dx + dy * dy;
-                let t = if len2 == 0.0 {
-                    0.0
-                } else {
-                    (-(ax * dx + ay * dy) / len2).clamp(0.0, 1.0)
-                };
+                let t = if len2 == 0.0 { 0.0 } else { (-(ax * dx + ay * dy) / len2).clamp(0.0, 1.0) };
                 let (px, py) = (ax + t * dx, ay + t * dy);
                 let d = px * px + py * py;
-                if d <= street_reach * street_reach
-                    && best.as_ref().is_none_or(|(bd, _, _)| d < *bd)
-                {
+                if d <= street_reach * street_reach && best.as_ref().is_none_or(|(bd, _, _)| d < *bd) {
                     best = Some((d, [at[0] + px / kx, at[1] + py / m_lat], s.name.clone()));
                 }
             }

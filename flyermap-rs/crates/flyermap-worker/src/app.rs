@@ -25,12 +25,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Options {
-        Options {
-            basemap: None,
-            now: Box::new(|| 0),
-            log: Box::new(|_| {}),
-            new_id: Box::new(|| "s-0".into()),
-        }
+        Options { basemap: None, now: Box::new(|| 0), log: Box::new(|_| {}), new_id: Box::new(|| "s-0".into()) }
     }
 }
 
@@ -40,9 +35,7 @@ pub struct App<D: Db> {
 }
 
 fn same_origin(request: &Request) -> bool {
-    request
-        .header("origin")
-        .is_none_or(|o| o == request.origin())
+    request.header("origin").is_none_or(|o| o == request.origin())
 }
 
 /// Combinations the TypeScript Worker answers that are not here yet: they say so (501) instead of pretending (405).
@@ -50,17 +43,11 @@ fn not_moved_yet(route: &Route, method: &str) -> bool {
     match route {
         Route::Campaign { res, .. } => matches!(
             (res, method),
-            (CampaignRes::Notes, "GET" | "POST")
-                | (CampaignRes::Progress, "GET")
-                | (CampaignRes::Stats, "PUT")
-                | (CampaignRes::Window, "PUT")
-                | (CampaignRes::Rooms, "GET" | "POST")
+            (CampaignRes::Progress, "GET") | (CampaignRes::Stats, "PUT") | (CampaignRes::Window, "PUT") | (CampaignRes::Rooms, "GET" | "POST")
         ),
         Route::Room { finish: false, .. } => matches!(method, "PATCH" | "DELETE"),
         Route::Room { finish: true, .. } => method == "POST",
-        Route::Area {
-            res: AreaRes::Pack, ..
-        } => matches!(method, "GET" | "POST"),
+        Route::Area { res: AreaRes::Pack, .. } => matches!(method, "GET" | "POST"),
         Route::Area { .. } => method == "POST",
         Route::PublicRoom { join, .. } => (*join && method == "POST") || (!join && method == "GET"),
         Route::Basemap => false,
@@ -86,20 +73,8 @@ impl<D: Db> App<D> {
             Err(_) => Response::error(&ApiError::new(ErrorCode::Internal)),
         };
         let ms = (self.options.now)().saturating_sub(started) as f64;
-        let code = response
-            .body_json()
-            .pointer("/error/code")
-            .and_then(|c| c.as_str())
-            .map(str::to_string);
-        (self.options.log)(&log_line(
-            &rid,
-            &template,
-            &request.method,
-            response.status,
-            ms,
-            &DbStats::default(),
-            code.as_deref(),
-        ));
+        let code = response.body_json().pointer("/error/code").and_then(|c| c.as_str()).map(str::to_string);
+        (self.options.log)(&log_line(&rid, &template, &request.method, response.status, ms, &DbStats::default(), code.as_deref()));
         response.set_header("x-request-id", &rid);
         response.set_header("server-timing", &server_timing(ms, &DbStats::default()));
         Some(response)
@@ -121,53 +96,31 @@ impl<D: Db> App<D> {
             }
             Route::PublicRoom { .. } => {
                 return if not_moved_yet(&route, method) {
-                    fail(
-                        ErrorCode::NotImplemented,
-                        ErrorCode::NotImplemented.message(),
-                    )
+                    fail(ErrorCode::NotImplemented, ErrorCode::NotImplemented.message())
                 } else {
                     fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt.")
                 };
             }
-            Route::Campaign { campaign_id, .. }
-            | Route::Room { campaign_id, .. }
-            | Route::Area { campaign_id, .. } => campaign_id.clone(),
+            Route::Campaign { campaign_id, .. } | Route::Room { campaign_id, .. } | Route::Area { campaign_id, .. } => campaign_id.clone(),
         };
-        let Some(caller) = access::resolve(&self.db, request, &campaign_id, &iso(now)).await?
-        else {
+        let Some(caller) = access::resolve(&self.db, request, &campaign_id, &iso(now)).await? else {
             return fail(ErrorCode::Unauthorized, "Kein Zugriff auf diese Aktion.");
         };
         if !matches!(method, "GET" | "HEAD") && !same_origin(request) {
             return fail(ErrorCode::CrossOrigin, "Anfrage von fremdem Ursprung.");
         }
-        match (&route, method) {
-            (
-                Route::Campaign {
-                    res: CampaignRes::Meta,
-                    ..
-                },
-                "GET",
-            ) => {
-                handlers::meta::meta(&self.db, &caller, &campaign_id, request, &self.options).await
-            }
-            (
-                Route::Campaign {
-                    res: CampaignRes::State,
-                    ..
-                },
-                "GET",
-            ) => handlers::state::pull(&self.db, &caller, &campaign_id, request, now).await,
-            (
-                Route::Campaign {
-                    res: CampaignRes::Ops,
-                    ..
-                },
-                "POST",
-            ) => handlers::ops::push(&self.db, &caller, &campaign_id, request, now).await,
-            _ if not_moved_yet(&route, method) => fail(
-                ErrorCode::NotImplemented,
-                ErrorCode::NotImplemented.message(),
-            ),
+        let res = match &route {
+            Route::Campaign { res, .. } => Some(*res),
+            _ => None,
+        };
+        let (db, caller, id) = (&self.db, &caller, campaign_id.as_str());
+        match (res, method) {
+            (Some(CampaignRes::Meta), "GET") => handlers::meta::meta(db, caller, id, request, &self.options).await,
+            (Some(CampaignRes::State), "GET") => handlers::state::pull(db, caller, id, request, now).await,
+            (Some(CampaignRes::Ops), "POST") => handlers::ops::push(db, caller, id, request, now).await,
+            (Some(CampaignRes::Notes), "GET") => handlers::notes::pull(db, caller, id, request, now).await,
+            (Some(CampaignRes::Notes), "POST") => handlers::notes::push(db, caller, id, request, now).await,
+            _ if not_moved_yet(&route, method) => fail(ErrorCode::NotImplemented, ErrorCode::NotImplemented.message()),
             _ => fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt."),
         }
     }

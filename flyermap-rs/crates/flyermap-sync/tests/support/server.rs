@@ -34,13 +34,7 @@ pub enum Fate {
 
 impl Server {
     pub fn new(now: u64) -> Server {
-        Server {
-            rows: BTreeMap::new(),
-            seq: 0,
-            now,
-            page: 1000,
-            forbidden: Vec::new(),
-        }
+        Server { rows: BTreeMap::new(), seq: 0, now, page: 1000, forbidden: Vec::new() }
     }
 
     pub fn push(&mut self, request: &PushRequest, by: &str) -> PushResponse {
@@ -57,34 +51,16 @@ impl Server {
         let forbidden = self.forbidden.clone();
         let screened = screen_ops(&raw, self.now, |area| !forbidden.iter().any(|f| f == area));
         for write in screened.writes_in_order() {
-            let newer = self
-                .rows
-                .get(&write.key)
-                .is_none_or(|row| row.id < write.id);
+            let newer = self.rows.get(&write.key).is_none_or(|row| row.id < write.id);
             if newer {
                 self.seq += 1;
-                self.rows.insert(
-                    write.key.clone(),
-                    Row {
-                        id: write.id.clone(),
-                        status: write.status,
-                        area: write.area.clone(),
-                        by: by.to_string(),
-                        seq: self.seq,
-                    },
-                );
+                self.rows
+                    .insert(write.key.clone(), Row { id: write.id.clone(), status: write.status, area: write.area.clone(), by: by.to_string(), seq: self.seq });
             }
         }
         PushResponse {
             accepted: screened.accepted,
-            rejected: screened
-                .rejected
-                .iter()
-                .map(|r| PushRejected {
-                    id: r.id.clone(),
-                    reason: r.reason.as_str().into(),
-                })
-                .collect(),
+            rejected: screened.rejected.iter().map(|r| PushRejected { id: r.id.clone(), reason: r.reason.as_str().into() }).collect(),
         }
     }
 
@@ -113,9 +89,6 @@ impl Server {
 
     /// What the server believes: key to status.
     pub fn truth(&self) -> BTreeMap<String, Status> {
-        self.rows
-            .iter()
-            .map(|(k, r)| (k.to_string(), r.status))
-            .collect()
+        self.rows.iter().map(|(k, r)| (k.to_string(), r.status)).collect()
     }
 }

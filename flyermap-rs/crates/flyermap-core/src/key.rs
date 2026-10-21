@@ -42,11 +42,7 @@ impl Key {
     /// What the server accepts as a key: `s:` or `h:`, then 1 to 80 characters of `A-Za-z0-9#:._~@-`.
     pub fn is_wire_valid(&self) -> bool {
         let id = self.id();
-        self.kind().is_some()
-            && (1..=MAX_WIRE_ID).contains(&id.chars().count())
-            && id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "#:._~@-".contains(c))
+        self.kind().is_some() && (1..=MAX_WIRE_ID).contains(&id.chars().count()) && id.chars().all(|c| c.is_ascii_alphanumeric() || "#:._~@-".contains(c))
     }
 }
 

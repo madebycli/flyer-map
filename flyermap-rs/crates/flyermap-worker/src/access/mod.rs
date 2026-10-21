@@ -8,15 +8,8 @@ pub mod session;
 use crate::{db::Db, http::request::Request};
 use flyermap_rights::Caller;
 
-pub async fn resolve<D: Db>(
-    db: &D,
-    request: &Request,
-    campaign_id: &str,
-    now_iso: &str,
-) -> Result<Option<Caller>, crate::db::DbError> {
-    if let Some(caller) =
-        session::resolve_persistent(db, request, Some(campaign_id), now_iso, true).await?
-    {
+pub async fn resolve<D: Db>(db: &D, request: &Request, campaign_id: &str, now_iso: &str) -> Result<Option<Caller>, crate::db::DbError> {
+    if let Some(caller) = session::resolve_persistent(db, request, Some(campaign_id), now_iso, true).await? {
         return Ok(Some(caller));
     }
     collector::resolve(db, request, Some(campaign_id), now_iso).await

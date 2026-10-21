@@ -34,27 +34,9 @@ const UNPAVED: &[&str] = &[
     "soil",
     "rock",
 ];
-const PAVED: &[&str] = &[
-    "asphalt",
-    "paved",
-    "concrete",
-    "concrete:plates",
-    "concrete:lanes",
-    "paving_stones",
-    "sett",
-    "cobblestone",
-    "unhewn_cobblestone",
-    "bricks",
-];
-const SERVICE_EXCLUDED: &[&str] = &[
-    "driveway",
-    "parking_aisle",
-    "drive-through",
-    "emergency_access",
-    "siding",
-    "yard",
-    "spur",
-];
+const PAVED: &[&str] =
+    &["asphalt", "paved", "concrete", "concrete:plates", "concrete:lanes", "paving_stones", "sett", "cobblestone", "unhewn_cobblestone", "bricks"];
+const SERVICE_EXCLUDED: &[&str] = &["driveway", "parking_aisle", "drive-through", "emergency_access", "siding", "yard", "spur"];
 
 fn tag<'a>(tags: &'a Tags, key: &str) -> &'a str {
     tags.get(key).map(String::as_str).unwrap_or("")
@@ -70,8 +52,7 @@ pub fn classify_road(tags: &Tags) -> Result<RoadClass, String> {
     if tag(tags, "area") == "yes" {
         return Err("area".into());
     }
-    if (RESTRICTED_ACCESS.contains(&tag(tags, "access"))
-        || RESTRICTED_ACCESS.contains(&tag(tags, "foot")))
+    if (RESTRICTED_ACCESS.contains(&tag(tags, "access")) || RESTRICTED_ACCESS.contains(&tag(tags, "foot")))
         && !["yes", "designated", "permissive"].contains(&tag(tags, "foot"))
     {
         return Err("restricted_access".into());
@@ -95,9 +76,7 @@ pub fn classify_road(tags: &Tags) -> Result<RoadClass, String> {
     }
     if PATH_LIKE.contains(&highway) {
         let footway = tag(tags, "footway");
-        if highway == "footway"
-            && ["sidewalk", "crossing", "traffic_island", "link"].contains(&footway)
-        {
+        if highway == "footway" && ["sidewalk", "crossing", "traffic_island", "link"].contains(&footway) {
             return Err(format!("footway_{footway}"));
         }
         if UNPAVED.contains(&tag(tags, "surface")) {
@@ -132,19 +111,8 @@ const NON_DWELLING: &[&str] = &[
     "boathouse",
 ];
 const AMBIGUOUS_OUTBUILDING: &[&str] = &["barn", "cabin", "hut", "service", "allotment_house"];
-const RESIDENTIAL: &[&str] = &[
-    "house",
-    "residential",
-    "detached",
-    "semidetached_house",
-    "terrace",
-    "apartments",
-    "dormitory",
-    "bungalow",
-    "farm",
-    "houseboat",
-    "static_caravan",
-];
+const RESIDENTIAL: &[&str] =
+    &["house", "residential", "detached", "semidetached_house", "terrace", "apartments", "dormitory", "bungalow", "farm", "houseboat", "static_caravan"];
 
 pub enum BuildingVerdict {
     Keep(Evidence),
@@ -163,9 +131,5 @@ pub fn classify_building(tags: &Tags, has_address: bool) -> BuildingVerdict {
     if RESIDENTIAL.contains(&kind) {
         return BuildingVerdict::Keep(Evidence::ResidentialType);
     }
-    BuildingVerdict::Drop(if AMBIGUOUS_OUTBUILDING.contains(&kind) {
-        format!("outbuilding_{kind}")
-    } else {
-        "no_address_no_residential_type".into()
-    })
+    BuildingVerdict::Drop(if AMBIGUOUS_OUTBUILDING.contains(&kind) { format!("outbuilding_{kind}") } else { "no_address_no_residential_type".into() })
 }

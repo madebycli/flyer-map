@@ -56,11 +56,7 @@ impl Histogram {
         };
         HistogramSummary {
             count: self.count,
-            mean: if self.count > 0 {
-                self.sum / self.count as f64
-            } else {
-                0.0
-            },
+            mean: if self.count > 0 { self.sum / self.count as f64 } else { 0.0 },
             min: self.min,
             max: self.max,
             p50: at(0.5),
@@ -96,10 +92,7 @@ impl Metrics {
     }
     pub fn observe(&mut self, name: &str, value: f64) {
         if self.room(name) {
-            self.histograms
-                .entry(name.to_string())
-                .or_default()
-                .observe(value);
+            self.histograms.entry(name.to_string()).or_default().observe(value);
         }
     }
     pub fn counters(&self) -> &BTreeMap<String, u64> {
@@ -109,10 +102,7 @@ impl Metrics {
         &self.gauges
     }
     pub fn histograms(&self) -> BTreeMap<String, HistogramSummary> {
-        self.histograms
-            .iter()
-            .map(|(k, h)| (k.clone(), h.summary()))
-            .collect()
+        self.histograms.iter().map(|(k, h)| (k.clone(), h.summary())).collect()
     }
 }
 
@@ -129,10 +119,7 @@ mod tests {
         h.observe(f64::NAN);
         let s = h.summary();
         assert_eq!((s.count, s.min, s.max), (100, 1.0, 100.0));
-        assert!(
-            (s.p50 - 50.0).abs() <= 1.0 && (s.p95 - 95.0).abs() <= 1.0,
-            "{s:?}"
-        );
+        assert!((s.p50 - 50.0).abs() <= 1.0 && (s.p95 - 95.0).abs() <= 1.0, "{s:?}");
     }
 
     #[test]

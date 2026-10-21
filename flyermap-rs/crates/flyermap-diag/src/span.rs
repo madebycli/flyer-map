@@ -7,10 +7,7 @@ pub struct Span {
 }
 
 pub fn span(name: &str) -> Span {
-    Span {
-        name: format!("{name}_ms"),
-        start: recorder::now_ms(),
-    }
+    Span { name: format!("{name}_ms"), start: recorder::now_ms() }
 }
 
 impl Span {

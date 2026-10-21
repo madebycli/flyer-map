@@ -20,10 +20,7 @@ pub(super) fn non_empty(v: Option<String>) -> Option<String> {
 pub(super) fn normalize_name(name: Option<&str>) -> String {
     let lowered: String = name.unwrap_or("").nfkc().collect::<String>().to_lowercase();
     let replaced = lowered.replace("straße", "str").replace("strasse", "str");
-    let kept: String = replaced
-        .chars()
-        .filter(|c| !(c.is_whitespace() || *c == '\u{FEFF}' || *c == '.' || *c == '-'))
-        .collect();
+    let kept: String = replaced.chars().filter(|c| !(c.is_whitespace() || *c == '\u{FEFF}' || *c == '.' || *c == '-')).collect();
     js_trim(&kept).to_string()
 }
 

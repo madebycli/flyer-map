@@ -31,10 +31,7 @@ impl Serialize for JsNumber {
 fn js_rings<S: Serializer>(rings: &[Vec<[f64; 2]>], s: S) -> Result<S::Ok, S::Error> {
     let mut outer = s.serialize_seq(Some(rings.len()))?;
     for ring in rings {
-        let points: Vec<[JsNumber; 2]> = ring
-            .iter()
-            .map(|p| [JsNumber(p[0]), JsNumber(p[1])])
-            .collect();
+        let points: Vec<[JsNumber; 2]> = ring.iter().map(|p| [JsNumber(p[0]), JsNumber(p[1])]).collect();
         outer.serialize_element(&points)?;
     }
     outer.end()
@@ -46,12 +43,7 @@ mod tests {
 
     #[test]
     fn whole_numbers_are_written_like_javascript() {
-        let p = Polygon {
-            coordinates: vec![vec![[13.0, 51.0], [13.01, 51.5]]],
-        };
-        assert_eq!(
-            serde_json::to_string(&p).unwrap(),
-            r#"{"type":"Polygon","coordinates":[[[13,51],[13.01,51.5]]]}"#
-        );
+        let p = Polygon { coordinates: vec![vec![[13.0, 51.0], [13.01, 51.5]]] };
+        assert_eq!(serde_json::to_string(&p).unwrap(), r#"{"type":"Polygon","coordinates":[[[13,51],[13.01,51.5]]]}"#);
     }
 }

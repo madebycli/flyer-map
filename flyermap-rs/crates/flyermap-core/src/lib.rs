@@ -8,6 +8,7 @@ pub mod check;
 pub mod clock;
 pub mod conflict;
 pub mod key;
+pub mod note;
 pub mod op;
 pub mod outbox;
 pub mod overlay;

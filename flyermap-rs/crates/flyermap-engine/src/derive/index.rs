@@ -13,12 +13,7 @@ pub(super) fn index_segments(segments: &[Segment], frame: &Frame) -> (Grid, Vec<
     let mut indexed: Vec<Indexed> = Vec::with_capacity(segments.len());
     for (seg_i, s) in segments.iter().enumerate() {
         let xy: Vec<[f64; 2]> = s.coords.iter().map(|p| frame.to_xy(*p)).collect();
-        let (mut min_x, mut min_y, mut max_x, mut max_y) = (
-            f64::INFINITY,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            f64::NEG_INFINITY,
-        );
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
         for p in &xy {
             if p[0] < min_x {
                 min_x = p[0];
@@ -35,11 +30,7 @@ pub(super) fn index_segments(segments: &[Segment], frame: &Frame) -> (Grid, Vec<
         }
         let gid = seg_grid.insert([min_x, min_y, max_x, max_y]);
         debug_assert_eq!(gid as usize, indexed.len());
-        indexed.push(Indexed {
-            seg: seg_i,
-            xy,
-            norm: normalize_name(s.name.as_deref()),
-        });
+        indexed.push(Indexed { seg: seg_i, xy, norm: normalize_name(s.name.as_deref()) });
     }
     (seg_grid, indexed)
 }

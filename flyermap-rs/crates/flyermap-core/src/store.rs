@@ -40,11 +40,7 @@ impl Store {
     pub fn new(actor: impl Into<String>) -> Store {
         let actor = actor.into();
         Store {
-            clock: ClockState {
-                wall: 0,
-                counter: 0,
-                node: actor.clone(),
-            },
+            clock: ClockState { wall: 0, counter: 0, node: actor.clone() },
             actor,
             clock_offset_ms: 0,
             cursor: 0,
@@ -101,13 +97,7 @@ impl Store {
     }
 
     /// A local edit. Returns the operations (so a caller can undo them). Keys that already have this status are skipped.
-    pub fn set(
-        &mut self,
-        keys: &[Key],
-        status: Status,
-        device_now: u64,
-        area_of: &dyn Fn(&Key) -> Option<String>,
-    ) -> Vec<Op> {
+    pub fn set(&mut self, keys: &[Key], status: Status, device_now: u64, area_of: &dyn Fn(&Key) -> Option<String>) -> Vec<Op> {
         let mut ops = Vec::new();
         for key in keys {
             if self.overlay.status_of(key) == status && self.overlay.contains(key) {
@@ -115,30 +105,14 @@ impl Store {
             }
             self.clock = tick(&self.clock, self.now(device_now));
             let id = encode_clock(&self.clock);
-            let op = Op {
-                id: id.clone(),
-                key: key.clone(),
-                status,
-                by: self.actor.clone(),
-                area: area_of(key),
-            };
-            self.apply_entry(
-                key,
-                Entry {
-                    status,
-                    at: id.clone(),
-                    by: self.actor.clone(),
-                },
-            );
+            let op = Op { id: id.clone(), key: key.clone(), status, by: self.actor.clone(), area: area_of(key) };
+            self.apply_entry(key, Entry { status, at: id.clone(), by: self.actor.clone() });
             self.outbox.insert(op.clone());
             self.conflicts.set_mine(key.clone(), id, status);
             ops.push(op);
         }
         if !ops.is_empty() {
-            self.dirty = Dirty {
-                outbox: true,
-                overlay: true,
-            };
+            self.dirty = Dirty { outbox: true, overlay: true };
         }
         ops
     }
@@ -148,14 +122,7 @@ impl Store {
         for op in ops {
             self.clock = receive(&self.clock, op.id.as_str(), self.now(device_now));
             self.conflicts.on_remote(&op.key, &op.id, op.status, &op.by);
-            self.apply_entry(
-                &op.key,
-                Entry {
-                    status: op.status,
-                    at: op.id.clone(),
-                    by: op.by.clone(),
-                },
-            );
+            self.apply_entry(&op.key, Entry { status: op.status, at: op.id.clone(), by: op.by.clone() });
             self.outbox.remove(&op.id);
         }
         if let Some(cursor) = cursor {
@@ -184,22 +151,11 @@ impl Store {
             self.overlay.remove(&op.key);
             // An older edit of ours for the same key may still be queued: it is what this device shows (and will send) again.
             if let Some(older) = self.outbox.latest_for(&op.key).cloned() {
-                self.overlay.apply(
-                    &op.key,
-                    Entry {
-                        status: older.status,
-                        at: older.id.clone(),
-                        by: older.by.clone(),
-                    },
-                );
-                self.conflicts
-                    .set_mine(op.key.clone(), older.id, older.status);
+                self.overlay.apply(&op.key, Entry { status: older.status, at: older.id.clone(), by: older.by.clone() });
+                self.conflicts.set_mine(op.key.clone(), older.id, older.status);
             }
         }
-        self.dirty = Dirty {
-            outbox: true,
-            overlay: true,
-        };
+        self.dirty = Dirty { outbox: true, overlay: true };
     }
 
     /// The server confirmed these operations; they leave the outbox.
@@ -207,18 +163,11 @@ impl Store {
         for id in ids {
             self.outbox.remove(id);
         }
-        self.dirty = Dirty {
-            outbox: true,
-            overlay: true,
-        };
+        self.dirty = Dirty { outbox: true, overlay: true };
     }
 
     /// After the derived network is known: stamp queued edits with their Area and drop edits whose entity no longer exists. Returns how many were dropped.
-    pub fn reconcile_pending(
-        &mut self,
-        is_known: &dyn Fn(&Key) -> bool,
-        area_of: &dyn Fn(&Key) -> Option<String>,
-    ) -> usize {
+    pub fn reconcile_pending(&mut self, is_known: &dyn Fn(&Key) -> bool, area_of: &dyn Fn(&Key) -> Option<String>) -> usize {
         let dropped = self.outbox.retain_mut(|op| {
             if !is_known(&op.key) {
                 return false;
@@ -246,10 +195,7 @@ impl Store {
         }
         self.outbox.remove_keys(&gone);
         if removed > 0 {
-            self.dirty = Dirty {
-                outbox: true,
-                overlay: true,
-            };
+            self.dirty = Dirty { outbox: true, overlay: true };
         }
         removed
     }
@@ -262,9 +208,7 @@ impl Store {
 
     /// Server time seen on a pull; keeps new edits ordered correctly even when this device's clock is off.
     pub fn sync_clock(&mut self, server_now: u64, device_now: u64) {
-        self.clock_offset_ms = i64::try_from(server_now)
-            .unwrap_or(i64::MAX)
-            .saturating_sub(i64::try_from(device_now).unwrap_or(i64::MAX));
+        self.clock_offset_ms = i64::try_from(server_now).unwrap_or(i64::MAX).saturating_sub(i64::try_from(device_now).unwrap_or(i64::MAX));
     }
 
     pub fn dismiss_conflicts(&mut self, keys: Option<&[Key]>) {

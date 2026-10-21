@@ -9,9 +9,7 @@ pub struct SqliteDb {
 }
 
 fn err(e: rusqlite::Error) -> DbError {
-    DbError {
-        message: e.to_string(),
-    }
+    DbError { message: e.to_string() }
 }
 
 fn bind(params: &[Param]) -> Vec<rusqlite::types::Value> {
@@ -28,9 +26,7 @@ fn bind(params: &[Param]) -> Vec<rusqlite::types::Value> {
 
 impl SqliteDb {
     pub fn in_memory() -> Result<SqliteDb, DbError> {
-        Ok(SqliteDb {
-            conn: RefCell::new(Connection::open_in_memory().map_err(err)?),
-        })
+        Ok(SqliteDb { conn: RefCell::new(Connection::open_in_memory().map_err(err)?) })
     }
     /// Run a script (schema, seed rows).
     pub fn exec(&self, sql: &str) -> Result<(), DbError> {
@@ -42,14 +38,8 @@ impl Db for SqliteDb {
     async fn all(&self, stmt: &Stmt) -> Result<Vec<Row>, DbError> {
         let conn = self.conn.borrow();
         let mut prepared = conn.prepare(&stmt.sql).map_err(err)?;
-        let names: Vec<String> = prepared
-            .column_names()
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let mut rows = prepared
-            .query(rusqlite::params_from_iter(bind(&stmt.params)))
-            .map_err(err)?;
+        let names: Vec<String> = prepared.column_names().iter().map(|s| s.to_string()).collect();
+        let mut rows = prepared.query(rusqlite::params_from_iter(bind(&stmt.params))).map_err(err)?;
         let mut out = Vec::new();
         while let Some(row) = rows.next().map_err(err)? {
             let mut map = Row::new();
@@ -59,9 +49,7 @@ impl Db for SqliteDb {
                     ValueRef::Integer(v) => Value::Number(v.into()),
                     ValueRef::Real(v) => Number::from_f64(v).map_or(Value::Null, Value::Number),
                     ValueRef::Text(t) => Value::String(String::from_utf8_lossy(t).into_owned()),
-                    ValueRef::Blob(b) => {
-                        Value::Array(b.iter().map(|x| Value::Number((*x).into())).collect())
-                    }
+                    ValueRef::Blob(b) => Value::Array(b.iter().map(|x| Value::Number((*x).into())).collect()),
                 };
                 map.insert(name.clone(), value);
             }
@@ -75,9 +63,7 @@ impl Db for SqliteDb {
         let tx = conn.transaction().map_err(err)?;
         let mut changes = Vec::with_capacity(stmts.len());
         for stmt in stmts {
-            let n = tx
-                .execute(&stmt.sql, rusqlite::params_from_iter(bind(&stmt.params)))
-                .map_err(err)?;
+            let n = tx.execute(&stmt.sql, rusqlite::params_from_iter(bind(&stmt.params))).map_err(err)?;
             changes.push(n as u64);
         }
         tx.commit().map_err(err)?;

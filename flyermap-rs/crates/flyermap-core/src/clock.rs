@@ -57,12 +57,7 @@ fn padded(value: u64, width: usize) -> String {
 }
 
 pub fn encode_clock(clock: &ClockState) -> OpId {
-    OpId(format!(
-        "{}-{}-{}",
-        padded(clock.wall, WALL_DIGITS),
-        padded(u64::from(clock.counter), COUNTER_DIGITS),
-        clock.node
-    ))
+    OpId(format!("{}-{}-{}", padded(clock.wall, WALL_DIGITS), padded(u64::from(clock.counter), COUNTER_DIGITS), clock.node))
 }
 
 fn parse_base36(text: &str) -> Option<u64> {
@@ -85,25 +80,13 @@ pub fn decode_clock(text: &str) -> Option<ClockState> {
     if node.is_empty() {
         return None;
     }
-    Some(ClockState {
-        wall: parse_base36(wall)?,
-        counter: u32::try_from(parse_base36(counter)?).ok()?,
-        node: node.to_string(),
-    })
+    Some(ClockState { wall: parse_base36(wall)?, counter: u32::try_from(parse_base36(counter)?).ok()?, node: node.to_string() })
 }
 
 /// The next local timestamp: never earlier than the last one, counting up while the wall time stands still.
 pub fn tick(state: &ClockState, now: u64) -> ClockState {
     let wall = state.wall.max(now);
-    ClockState {
-        node: state.node.clone(),
-        wall,
-        counter: if wall == state.wall {
-            state.counter + 1
-        } else {
-            0
-        },
-    }
+    ClockState { node: state.node.clone(), wall, counter: if wall == state.wall { state.counter + 1 } else { 0 } }
 }
 
 /// Merge a remote timestamp so that every later local tick sorts after it. Text that is not a timestamp leaves the clock as it is.
@@ -121,11 +104,7 @@ pub fn receive(state: &ClockState, remote: &str, now: u64) -> ClockState {
     } else {
         0
     };
-    ClockState {
-        node: state.node.clone(),
-        wall,
-        counter,
-    }
+    ClockState { node: state.node.clone(), wall, counter }
 }
 
 #[cfg(test)]
@@ -133,11 +112,7 @@ mod tests {
     use super::*;
 
     fn clock(wall: u64, counter: u32) -> ClockState {
-        ClockState {
-            wall,
-            counter,
-            node: "n".into(),
-        }
+        ClockState { wall, counter, node: "n".into() }
     }
 
     #[test]
@@ -152,15 +127,7 @@ mod tests {
 
     #[test]
     fn decoding_refuses_what_is_not_a_timestamp() {
-        for text in [
-            "",
-            "x",
-            "0000000000-0000-n",
-            "00000000000-0000-",
-            "00000000000_0000-n",
-            "0000000000A-0000-n",
-            "00000000000-000g!-n",
-        ] {
+        for text in ["", "x", "0000000000-0000-n", "00000000000-0000-", "00000000000_0000-n", "0000000000A-0000-n", "00000000000-000g!-n"] {
             assert_eq!(decode_clock(text), None, "{text}");
         }
         assert!(decode_clock("00000000000-0000-node-with-dashes").is_some());

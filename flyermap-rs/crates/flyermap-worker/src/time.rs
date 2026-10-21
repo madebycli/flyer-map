@@ -5,13 +5,7 @@ pub fn iso(ms: u64) -> String {
     let secs = ms / 1000;
     let (days, rest) = (secs / 86_400, secs % 86_400);
     let (y, m, d) = civil_from_days(days as i64);
-    format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
-        rest / 3600,
-        rest % 3600 / 60,
-        rest % 60,
-        ms % 1000
-    )
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z", rest / 3600, rest % 3600 / 60, rest % 60, ms % 1000)
 }
 
 /// Days since 1970-01-01 to a calendar date (Howard Hinnant's algorithm).

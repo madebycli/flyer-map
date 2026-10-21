@@ -35,12 +35,7 @@ impl MemoryRecorder {
     pub fn new(clock: impl Fn() -> u64 + 'static) -> MemoryRecorder {
         MemoryRecorder {
             clock: Box::new(clock),
-            state: RefCell::new(State {
-                events: Ring::new(EVENTS),
-                crumbs: Ring::new(CRUMBS),
-                metrics: Metrics::default(),
-                min_level: Level::Info,
-            }),
+            state: RefCell::new(State { events: Ring::new(EVENTS), crumbs: Ring::new(CRUMBS), metrics: Metrics::default(), min_level: Level::Info }),
             probes: RefCell::new(BTreeMap::new()),
             sink: RefCell::new(None),
         }
@@ -58,9 +53,7 @@ impl MemoryRecorder {
 
     /// A named view into some part of the app (store, sync loop, map): called when a report is built.
     pub fn register_probe(&self, name: &str, probe: impl Fn() -> serde_json::Value + 'static) {
-        self.probes
-            .borrow_mut()
-            .insert(name.to_string(), Box::new(probe));
+        self.probes.borrow_mut().insert(name.to_string(), Box::new(probe));
     }
 
     pub fn events(&self) -> Vec<Event> {
@@ -68,13 +61,7 @@ impl MemoryRecorder {
     }
 
     pub fn counter(&self, name: &str) -> u64 {
-        self.state
-            .borrow()
-            .metrics
-            .counters()
-            .get(name)
-            .copied()
-            .unwrap_or(0)
+        self.state.borrow().metrics.counters().get(name).copied().unwrap_or(0)
     }
 
     pub fn clear(&self) {
@@ -84,18 +71,8 @@ impl MemoryRecorder {
     }
 
     /// Build the report now. `env` describes the device (browser, screen, storage); `findings` come from the checks of the parts (for example the store's).
-    pub fn report(
-        &self,
-        build: &str,
-        env: BTreeMap<String, Value>,
-        findings: Vec<Finding>,
-    ) -> Report {
-        let probes = self
-            .probes
-            .borrow()
-            .iter()
-            .map(|(name, probe)| (name.clone(), probe()))
-            .collect();
+    pub fn report(&self, build: &str, env: BTreeMap<String, Value>, findings: Vec<Finding>) -> Report {
+        let probes = self.probes.borrow().iter().map(|(name, probe)| (name.clone(), probe())).collect();
         let s = self.state.borrow();
         Report {
             schema: REPORT_SCHEMA,
@@ -129,8 +106,7 @@ impl Recorder for MemoryRecorder {
         }
         let mut s = self.state.borrow_mut();
         if event.level >= Level::Warn {
-            s.metrics
-                .count(&format!("events.{}", event.level.as_str()), 1);
+            s.metrics.count(&format!("events.{}", event.level.as_str()), 1);
         }
         s.events.push(event);
     }
@@ -145,10 +121,6 @@ impl Recorder for MemoryRecorder {
     }
     fn breadcrumb(&self, step: &str, n: Option<i64>) {
         let t = (self.clock)();
-        self.state.borrow_mut().crumbs.push(Breadcrumb {
-            t,
-            step: crate::redact::redact_text(step, 60),
-            n,
-        });
+        self.state.borrow_mut().crumbs.push(Breadcrumb { t, step: crate::redact::redact_text(step, 60), n });
     }
 }

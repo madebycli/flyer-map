@@ -23,13 +23,6 @@ impl Role {
         }
     }
     pub fn parse(text: &str) -> Option<Role> {
-        [
-            Role::Admin,
-            Role::TeamEditor,
-            Role::Viewer,
-            Role::CollectionCollector,
-        ]
-        .into_iter()
-        .find(|r| r.as_str() == text)
+        [Role::Admin, Role::TeamEditor, Role::Viewer, Role::CollectionCollector].into_iter().find(|r| r.as_str() == text)
     }
 }
