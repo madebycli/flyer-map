@@ -1,0 +1,37 @@
+# flyermap-rs: everything of our own, in Rust. Crates are small and layered; a crate only depends on the ones above it in this list.
+#
+#   flyermap-core     pure domain: clock, status, keys, operations, overlay (last writer wins), outbox, conflicts, progress   (no I/O)
+#   flyermap-rights   who may read and write where: roles, areas, operation rules                                           (depends on core)
+#   flyermap-wire     the HTTP contract of /api/v5 as typed requests and responses                                        (depends on core)
+#   flyermap-sync     the push/pull loop as a state machine behind traits (transport, storage, timer)                      (core, wire)
+#   flyermap-engine   streets and houses: derive, classify, tiles, route, lasso, search                                    (own, WebAssembly)
+#   flyermap-worker   the Cloudflare Worker: router, handlers, repositories                                                (core, rights, wire)
+#   flyermap-web      the app: design system, screens, map bridge                                                          (core, wire, sync, engine)
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "UNLICENSED"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

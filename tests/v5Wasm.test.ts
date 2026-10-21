@@ -35,9 +35,10 @@ function same(a: unknown, b: unknown, path = '$'): void {
 
 const reference = (raw: RawOsm, ring: LngLat[] | null, cell: Cell | null = null) => JSON.parse(JSON.stringify(ring ? restrictToArea(deriveNetwork(raw), ring, cell) : deriveNetwork(raw)));
 
-test('the committed wasm was built from the committed Rust sources (run scripts/build-wasm.sh after editing engine-rs)', () => {
+test('the committed wasm was built from the committed Rust sources (run scripts/build-wasm.sh after editing the engine crate)', () => {
   const root = new URL('../', import.meta.url);
-  const files = [...readdirSync(new URL('engine-rs/src/', root)).map((f) => `engine-rs/src/${f}`), 'engine-rs/Cargo.toml', 'engine-rs/Cargo.lock'].sort();
+  const dir = 'flyermap-rs/crates/flyermap-engine';
+  const files = [...readdirSync(new URL(`${dir}/src/`, root)).map((f) => `${dir}/src/${f}`), `${dir}/Cargo.toml`].sort();
   const lines = files.map((f) => `${createHash('sha256').update(readFileSync(new URL(f, root))).digest('hex')}  ${f}\n`).join('');
   const digest = createHash('sha256').update(lines).digest('hex');
   assert.equal(digest, readFileSync(new URL('src/v5/engine/wasm/engine.source.sha256', root), 'utf8').trim());

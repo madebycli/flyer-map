@@ -25,7 +25,7 @@ type Exports = {
 };
 
 /**
- * The Rust engine (engine-rs) behind the same contract as `deriveNetwork` + `restrictToArea`: raw OSM JSON bytes and an Area
+ * The Rust engine (flyermap-engine) behind the same contract as `deriveNetwork` + `restrictToArea`: raw OSM JSON bytes and an Area
  * ring in, `Network` out. The TypeScript engine stays the reference; tests compare both on seeded cities.
  */
 export class WasmEngine {

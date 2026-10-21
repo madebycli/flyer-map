@@ -1,9 +1,9 @@
 [package]
-name = "verteil-engine"
-version = "0.1.0"
-edition = "2021"
+name = "flyermap-engine"
+version.workspace = true
+edition.workspace = true
 description = "Verteil-Flyer v5 street/house engine (derive + restrictToArea), compiled to WebAssembly; byte-compatible with src/v5/engine in TypeScript."
-publish = false
+publish.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -15,9 +15,9 @@ unicode-normalization = "0.1"
 rustc-hash = "2"
 bincode = "1"
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
+# The only crate with `unsafe`: its C ABI towards the browser (alloc/dealloc and raw buffers). Every other crate forbids it.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

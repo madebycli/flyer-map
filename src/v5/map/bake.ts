@@ -1,7 +1,7 @@
 import type { FieldStore } from '../store/store.ts';
 import type { EntityKey, Status } from '../store/types.ts';
 
-/** The codes the engine knows (`Session::set_status` in engine-rs): 0 open, 1 completed, 2 later, 3 not-deliverable. */
+/** The codes the engine knows (`Session::set_status` in flyermap-engine): 0 open, 1 completed, 2 later, 3 not-deliverable. */
 export const STATUS_CODE: Record<Status, number> = { open: 0, completed: 1, later: 2, 'not-deliverable': 3 };
 
 /** What `bind` needs to know when the engine cut the statuses into its tiles: the statuses it was given, and where to send later changes. */

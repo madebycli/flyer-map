@@ -1,7 +1,7 @@
 import type { FieldNetwork } from './types.ts';
 
 /**
- * Street and address search, TypeScript reference of the Rust engine (`engine-rs/src/query.rs`): same folding, same ranking, same
+ * Street and address search, TypeScript reference of the Rust engine (`flyermap-rs/crates/flyermap-engine/src/query.rs`): same folding, same ranking, same
  * tie-breaks, compared differentially in the tests. The app asks the engine (Rust); this runs when WebAssembly is not available.
  */
 export type SearchEntry = {
