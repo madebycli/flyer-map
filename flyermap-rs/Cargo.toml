@@ -35,3 +35,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# The web app (scripts/rs-web-build.sh --release): the release profile tuned for size. The UI glue does no heavy work (the engine is its own
+# module with the release profile), and "z" halves the WebAssembly: 991 kB -> 499 kB raw, 204 kB -> 153 kB brotli (measured 2026-10-21).
+[profile.web]
+inherits = "release"
+opt-level = "z"

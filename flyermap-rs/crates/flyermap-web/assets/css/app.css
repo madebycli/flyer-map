@@ -1,0 +1,16 @@
+/* The stylesheet of flyermap-web: the files below in this order. `scripts/rs-web-build.sh` inlines them into one app.css for dist-rs;
+   a browser can also load this file as it is (each @import is one more request). */
+@import 'tokens.css';
+@import 'base.css';
+@import 'button.css';
+@import 'list.css';
+@import 'segmented.css';
+@import 'progress.css';
+@import 'sheet.css';
+@import 'card.css';
+@import 'command-bar.css';
+@import 'toast.css';
+@import 'map.css';
+@import 'overview.css';
+@import 'palette.css';
+@import 'help.css';

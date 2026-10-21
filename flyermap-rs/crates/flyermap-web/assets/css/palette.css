@@ -1,0 +1,13 @@
+/* Farbe: swatches and preview (src/v5/app/v5.css). */
+/* colour choice (Material You): swatches are tonal containers of their seed, the dot is its accent */
+.v5-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.4rem, 1fr)); gap: var(--gap); margin-top: var(--sp-2); }
+.v5-swatch { position: relative; display: flex; align-items: center; gap: 0.8rem; min-height: 4.8rem; padding: 0 1.2rem; border: 0.2rem solid transparent; border-radius: var(--r); font-weight: 700; cursor: pointer; text-align: left; }
+.v5-swatch > i { flex: none; display: grid; place-items: center; width: 2.8rem; height: 2.8rem; border-radius: 50%; background: var(--dot); color: var(--surface); }
+.v5-swatch.on { border-color: var(--on); }
+.v5-swatch input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.v5-preview { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap); margin-top: var(--sp-2); }
+.v5-preview b { width: 100%; font-size: 0.85rem; color: var(--on-var); }
+.v5-preview span { display: inline-flex; align-items: center; min-height: var(--ctl); padding: 0 1.2rem; border-radius: var(--r); font-weight: 700; }
+.v5-preview .p { background: var(--primary); color: var(--on-primary); }
+.v5-preview .s { background: var(--secondary-container); color: var(--on-secondary-container); }
+.v5-preview .t { background: var(--tertiary-container); color: var(--on-tertiary-container); }

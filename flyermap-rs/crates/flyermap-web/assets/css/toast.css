@@ -1,0 +1,10 @@
+/* The note under the bar (src/v5/app/v5.css). */
+.v5-toast {
+  position: absolute; z-index: 9; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 0.7rem + var(--bar) + 0.6rem); width: max-content; max-width: calc(100% - 1.4rem);
+  display: flex; align-items: center; gap: 0.7rem; min-height: var(--ctl); padding: 0 0.3rem 0 1rem; border-radius: var(--r); background: var(--surface-3); color: var(--on); border: 1px solid var(--outline-var); box-shadow: var(--shadow);
+  animation: v5-pop var(--t) var(--ease);
+}
+.v5-toast .v5-icon-btn { color: var(--on); }
+.v5-toast .v5-icon-btn.tonal { background: color-mix(in srgb, var(--on) 12%, transparent); }
+.v5-version { margin-bottom: 0.3rem; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+@keyframes v5-pop { from { transform: translateX(-50%) translateY(-0.5rem); opacity: 0; } }

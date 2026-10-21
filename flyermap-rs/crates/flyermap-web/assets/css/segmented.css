@@ -1,0 +1,4 @@
+/* Segmented choice (src/ui/kit.css). */
+.ui-seg { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.3rem; border-radius: calc(var(--r) + 0.3rem); background: var(--surface-3); }
+.ui-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; flex: 1 1 0; min-width: max-content; min-height: 2.75rem; padding: 0 0.6rem; border: 0; border-radius: var(--r); background: transparent; color: var(--on-var); font: 750 0.92rem var(--font); cursor: pointer; }
+.ui-seg button.on { background: var(--primary-container); color: var(--on-primary-container); }
