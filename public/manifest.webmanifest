@@ -9,7 +9,7 @@
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
-  "background_color": "#0f1514",
+  "background_color": "#0a0f0e",
   "theme_color": "#0f1514",
   "categories": ["productivity", "navigation"],
   "launch_handler": { "client_mode": ["navigate-existing", "auto"] },

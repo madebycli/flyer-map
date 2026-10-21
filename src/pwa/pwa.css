@@ -17,7 +17,7 @@
   padding: calc(env(safe-area-inset-top) + 1.6rem) max(1.2rem, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 1.2rem) max(1.2rem, env(safe-area-inset-left));
 }
 .pwa-head { display: grid; justify-items: center; gap: 0.35rem; text-align: center; }
-.pwa-head img { width: 4.5rem; height: 4.5rem; border-radius: 1.3rem; }
+.pwa-head img { width: 5.5rem; height: 5.5rem; }
 .pwa-head h1 { margin: 0.3rem 0 0; font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; }
 .pwa-head p { margin: 0; color: var(--on-var); font-size: 0.95rem; }
 .pwa-body { display: grid; align-content: start; gap: 1rem; min-width: 0; }

@@ -117,7 +117,7 @@
 .v5-overlay { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 1.2rem; background: var(--surface); }
 /* later loading phases look like the start screen: logo, one line, a thin moving bar */
 .v5-loadingpage { align-content: center; justify-items: center; gap: 1.1rem; color: var(--on-var); font-weight: 600; text-align: center; }
-.v5-loadingpage img { width: 6rem; height: 6rem; border-radius: 1.6rem; }
+.v5-loadingpage img { width: 7rem; height: 7rem; }
 .v5-loadingpage p { margin: 0; }
 .v5-loadingbar { position: relative; display: block; width: 7rem; height: 3px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--primary) 22%, transparent); }
 .v5-loadingbar::after { content: ""; position: absolute; inset: 0; width: 40%; border-radius: 2px; background: var(--primary); animation: v5-run 1.3s ease-in-out infinite; }

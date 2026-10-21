@@ -921,7 +921,7 @@ function Overlay({ children }: { children: React.ReactNode }) {
 function LoadingPage({ label }: { label: string }) {
   return (
     <div className="v5-overlay v5-loadingpage" role="status" aria-live="polite">
-      <img src="/icon.svg" alt="" width="96" height="96" />
+      <img src="/logo.svg" alt="" width="112" height="112" />
       <p>{label}</p>
       <i className="v5-loadingbar" aria-hidden />
     </div>

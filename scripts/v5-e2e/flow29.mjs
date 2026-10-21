@@ -46,7 +46,7 @@ const awaitReady = async (page) => {
   });
   const page = await open(context);
   await page.waitForSelector('#splash', { state: 'attached', timeout: 5000 });
-  const first = await page.evaluate(() => ({ bg: getComputedStyle(document.documentElement).backgroundColor, splash: !!document.getElementById('splash'), logo: !!document.querySelector('#splash img[src="/icon.svg"]'), text: document.getElementById('splash-text')?.textContent }));
+  const first = await page.evaluate(() => ({ bg: getComputedStyle(document.documentElement).backgroundColor, splash: !!document.getElementById('splash'), logo: !!document.querySelector('#splash img[src="/logo.svg"]'), text: document.getElementById('splash-text')?.textContent }));
   check('the first paint is dark (no white flash)', isDark(first.bg), first.bg);
   check('the start screen is in the page with the logo and a line of text', first.splash && first.logo && !!first.text, JSON.stringify(first));
   await awaitReady(page);

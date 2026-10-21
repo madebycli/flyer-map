@@ -20,7 +20,7 @@ export function StartPage() {
     <main className="pwa-page" aria-labelledby="pwa-start-title">
       <div className="pwa-wrap">
         <header className="pwa-head">
-          <img src="/icon.svg" alt="" width="72" height="72" />
+          <img src="/logo.svg" alt="" width="88" height="88" />
           <h1 id="pwa-start-title">Verteil-Flyer</h1>
           <p>Flyer verteilen mit einer gemeinsamen Karte.</p>
         </header>
