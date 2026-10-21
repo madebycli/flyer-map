@@ -1,0 +1,51 @@
+/* Lists, rows, groups, switch (src/ui/components.css, src/v5/app/v5.css). */
+/* ── lists, rows ─────────────────────────────────────────────── */
+.v5-list { display: grid; gap: 0.35rem; margin-bottom: 0.4rem; }
+.v5-row-btn { display: flex; align-items: center; gap: 0.9rem; min-height: var(--ctl); padding: 0 1rem; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font: 700 1rem var(--font); text-align: left; text-decoration: none; cursor: pointer; transition: transform 120ms var(--ease); }
+.v5-row-btn:active { transform: scale(0.98); }
+.v5-row-btn:disabled { opacity: 0.5; }
+.v5-row-count { margin-left: auto; padding: 0.1rem 0.6rem; border-radius: 0.6rem; background: var(--primary-container); color: var(--on-primary-container); font-variant-numeric: tabular-nums; }
+.v5-conflict-row { display: flex; align-items: center; gap: 0.6rem; min-height: var(--ctl); padding: 0 0.25rem 0 1rem; border-radius: var(--r); background: var(--surface-3); }
+.v5-conflict-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.v5-teams { display: flex; flex-wrap: wrap; gap: var(--gap); }
+.v5-team { width: 2.75rem; height: 2.75rem; flex: none; border: 2px solid transparent; border-radius: 0.7rem; background: var(--c); cursor: pointer; }
+.v5-team.on { border-color: var(--on); }
+.v5-team.custom { position: relative; border: 0; display: grid; place-items: center; background: var(--surface-3); color: var(--on-var); }
+.v5-team.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.v5-input { flex: 1; min-width: 0; height: var(--ctl); padding: 0 1rem; border: 1.5px solid var(--outline-var); border-radius: var(--r); background: var(--surface-1); color: var(--on); font: 700 1rem var(--font); }
+.v5-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+
+/* ── lists and settings: one row height, one radius, nothing moves when a state changes ─────────────── */
+.v5-group { display: grid; gap: 0.4rem; margin: 0 0 1.1rem; }
+.v5-group-title { margin: 0.2rem 0.3rem 0; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--on-var); }
+.v5-group-rows { display: grid; gap: 2px; border-radius: var(--r); overflow: hidden; }
+.v5-grow { display: flex; align-items: center; gap: 0.9rem; width: 100%; min-height: 3.5rem; padding: 0.35rem 1rem 0.35rem 0.8rem; border: 0; border-radius: 0.35rem; background: var(--surface-3); color: var(--on); font: inherit; text-align: left; text-decoration: none; cursor: pointer; transition: background var(--t), transform 120ms var(--ease); }
+.v5-group-rows > :first-child { border-top-left-radius: var(--r); border-top-right-radius: var(--r); }
+.v5-group-rows > :last-child { border-bottom-left-radius: var(--r); border-bottom-right-radius: var(--r); }
+.v5-grow:active:not(:disabled) { background: var(--surface-4); }
+.v5-grow:disabled { opacity: 0.45; cursor: default; }
+.v5-grow:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.v5-grow.primary { background: var(--primary-container); color: var(--on-primary-container); }
+.v5-row-ico { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; background: var(--surface-4); color: var(--on); }
+.v5-grow.primary .v5-row-ico { background: color-mix(in srgb, var(--on-primary-container) 14%, transparent); color: inherit; }
+.v5-row-text { display: grid; flex: 1; min-width: 0; gap: 0.1rem; }
+.v5-row-text b { font-size: 1rem; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.v5-row-text small { font-size: 0.82rem; font-weight: 600; line-height: 1.25; color: var(--on-var); overflow-wrap: anywhere; }
+.v5-grow.primary .v5-row-text small { color: inherit; opacity: 0.85; }
+.v5-row-badge { flex: none; min-width: 1.6rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font-size: 0.8rem; font-style: normal; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
+.v5-row-chev { flex: none; color: var(--on-var); }
+.v5-switch { flex: none; position: relative; width: 3.1rem; height: 1.85rem; border-radius: 999px; background: var(--surface-4); box-shadow: inset 0 0 0 2px var(--outline); transition: background var(--t), box-shadow var(--t); }
+.v5-switch i { position: absolute; top: 50%; left: 0.45rem; width: 0.9rem; height: 0.9rem; margin-top: -0.45rem; border-radius: 50%; background: var(--outline); transition: transform var(--t) var(--ease), width var(--t) var(--ease), height var(--t) var(--ease), background var(--t), margin var(--t) var(--ease); }
+.v5-switch.on { background: var(--primary); box-shadow: none; }
+.v5-switch.on i { width: 1.4rem; height: 1.4rem; margin-top: -0.7rem; background: var(--on-primary); transform: translateX(1.15rem); }
+@media (prefers-reduced-motion: reduce) { .v5-switch i, .v5-switch { transition: none; } }
+/* the rows of a list are one connected group: a small gap, the outer corners round, the inner ones tight (like one card cut into rows) */
+:is(.v5-results, .v5-arealist, .v5-list) > * { border-radius: 0.5rem; }
+:is(.v5-results, .v5-arealist, .v5-list) > :first-child { border-top-left-radius: var(--r); border-top-right-radius: var(--r); }
+:is(.v5-results, .v5-arealist, .v5-list) > :last-child { border-bottom-left-radius: var(--r); border-bottom-right-radius: var(--r); }
+:is(.v5-results, .v5-arealist, .v5-list) > :first-child { border-top-left-radius: var(--r-lg); border-top-right-radius: var(--r-lg); }
+:is(.v5-results, .v5-arealist, .v5-list) > :last-child { border-bottom-left-radius: var(--r-lg); border-bottom-right-radius: var(--r-lg); }
+:is(.v5-results, .v5-arealist, .v5-list) > :only-child { border-radius: var(--r-lg); }
+.v5-row-btn { min-height: 3.5rem; padding: 0 1.2rem; }
+.v5-row-count { padding: 0.25rem 0.8rem; border-radius: 999px; font-size: 0.88rem; font-weight: 800; }

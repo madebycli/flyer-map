@@ -1,0 +1,25 @@
+/* Buttons: icon squares, words on pills (src/ui/components.css, src/v5/app/v5.css). */
+/* ── controls: ONE size ──────────────────────────────────────── */
+.v5-icon-btn, .v5-go, .v5-sq {
+  display: grid; place-items: center; width: var(--ctl); height: var(--ctl); padding: 0; border: 0; border-radius: var(--r);
+  background: transparent; color: var(--on-var); cursor: pointer; flex: none; transition: background var(--t), transform 120ms var(--ease);
+}
+.v5-icon-btn:hover, .v5-sq:hover { background: var(--surface-3); }
+.v5-icon-btn:active, .v5-go:active:not(:disabled), .v5-sq:active { transform: scale(0.92); }
+.v5-icon-btn.tonal { background: var(--surface-3); color: var(--on); }
+.v5-sq { background: var(--glass); color: var(--on); box-shadow: var(--shadow); }
+.v5-sq.on { background: var(--primary-container); color: var(--on-primary-container); }
+.v5-go { background: var(--primary); color: var(--on-primary); }
+.v5-go:disabled, .v5-icon-btn:disabled, .v5-sq:disabled { opacity: 0.4; cursor: default; }
+.v5-icon-btn:focus-visible, .v5-go:focus-visible, .v5-sq:focus-visible, .v5-btn:focus-visible, .v5-row-btn:focus-visible, .v5-tile:focus-visible, .v5-app:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.v5-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; height: var(--ctl); margin-top: 0.7rem; padding: 0 1.3rem; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font-weight: 700; cursor: pointer; transition: transform 120ms var(--ease); }
+.v5-btn:active { transform: scale(0.96); }
+.v5-btn.primary { background: var(--primary); color: var(--on-primary); }
+
+.v5-btn.danger { background: var(--error-container); color: var(--on-error-container); }
+.v5-btn.quiet { background: transparent; color: var(--on-var); }
+.v5-btn, .v5-action, .v5-groupchip { border-radius: 999px; }
+.v5-btn, .v5-action { min-height: 3.25rem; }
+/* a page one level down: back arrow in the header, the one action pinned at the foot */
+.v5-footer-actions { display: flex; flex-wrap: wrap; gap: var(--gap); }
+.v5-footer-actions .v5-btn { flex: 1 1 8rem; }

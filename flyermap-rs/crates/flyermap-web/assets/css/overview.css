@@ -1,0 +1,18 @@
+/* Übersicht: big number, stats, bars per Gebiet (src/v5/app/v5.css). */
+/* stats */
+.v5-bignum { display: flex; align-items: baseline; gap: 0.3rem; font-size: 3rem; line-height: 1; font-weight: 800; letter-spacing: -0.05em; font-variant-numeric: tabular-nums; }
+.v5-bignum small { font-size: 1.1rem; color: var(--on-var); letter-spacing: 0; }
+.v5-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); margin: 0.8rem 0; }
+.v5-stat { display: grid; gap: 0.15rem; padding: 0.6rem 0.2rem; border-radius: var(--r); background: var(--surface-3); text-align: center; }
+.v5-stat b { font-size: 1.1rem; font-variant-numeric: tabular-nums; color: var(--c, var(--on)); }
+.v5-stat small { font-size: 0.64rem; font-weight: 700; color: var(--on-var); }
+.v5-bar { position: relative; height: 0.5rem; border-radius: 1rem; background: var(--surface-4); overflow: hidden; }
+.v5-bar i { position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 100%); background: var(--primary); border-radius: inherit; transition: width 300ms var(--ease); }
+.v5-areabar { display: grid; gap: 0.35rem; width: 100%; padding: 0.6rem 0.8rem; border-radius: var(--r); background: var(--surface-3); border: 0; color: var(--on); text-align: left; cursor: pointer; }
+.v5-areabar > div:first-child { display: flex; justify-content: space-between; gap: 0.5rem; font-weight: 700; }
+.v5-areabar span { font-variant-numeric: tabular-nums; color: var(--on-var); }
+.v5-syncbox { display: grid; gap: 0.2rem; padding: 0.7rem 0.9rem; border-radius: var(--r); background: var(--surface-3); font-weight: 600; }
+.v5-syncbox.bad { background: var(--error-container); color: var(--error); }
+.v5-syncbox small { color: var(--on-var); font-weight: 600; }
+.v5-syncbox.bad small { color: inherit; opacity: 0.85; }
+.v5-dotc { display: inline-block; width: 0.7rem; height: 0.7rem; margin-right: 0.45rem; border-radius: 0.25rem; vertical-align: baseline; }

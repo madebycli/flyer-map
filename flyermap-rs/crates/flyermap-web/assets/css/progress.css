@@ -1,0 +1,11 @@
+/* The calm progress bar (src/ui/components.css). */
+/* ── progress: a calm Material 3 bar; a small gap and a dot mark the end of the track, nothing waves or stacks ── */
+.v5-progress { --h: 0.6rem; display: flex; align-items: center; gap: 0.25rem; height: var(--h); contain: layout paint; }
+.v5-progress > i { display: block; height: var(--h); border-radius: 999px; }
+.v5-progress > i:first-child { flex: 0 0 max(var(--h), calc(var(--p) * (100% - 0.25rem))); background: var(--primary); transition: flex-basis 400ms var(--ease); }
+.v5-progress > i:last-child { position: relative; flex: 1 1 0; min-width: 0; background: var(--surface-4); }
+.v5-progress > i:last-child::after { content: ""; position: absolute; right: 0.15rem; top: 50%; width: 0.25rem; height: 0.25rem; margin-top: -0.125rem; border-radius: 50%; background: var(--primary); }
+.v5-progress[data-full="true"] { gap: 0; }
+.v5-progress[data-full="true"] > i:first-child { flex-basis: 100%; }
+.v5-progress[data-full="true"] > i:last-child { display: none; }
+@media (prefers-reduced-motion: reduce) { .v5-progress > i:first-child { transition: none; } }

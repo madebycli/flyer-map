@@ -46,7 +46,9 @@ pub fn finish_splash() {
     }
 }
 
-/// Milliseconds since the epoch (the browser's clock).
-pub fn now_ms() -> f64 {
-    js_sys::Date::now()
+/// Leave the app for another page of the site.
+pub fn navigate(url: &str) {
+    if let Some(window) = web_sys::window() {
+        let _ = window.location().assign(url);
+    }
 }

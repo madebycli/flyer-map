@@ -1,0 +1,8 @@
+/* The map stand-in until the MapLibre bridge exists: a calm surface with a faint grid, the drawing covering it. */
+.v5-map-stub {
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--outline-var) 1px, transparent 1px), linear-gradient(90deg, var(--outline-var) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: -1px -1px;
+}
+.v5-map-stub > svg { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.92; pointer-events: none; }

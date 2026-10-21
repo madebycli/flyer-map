@@ -30,7 +30,7 @@ fn wake_lock_api() -> Result<JsValue, PlatformError> {
 }
 
 fn release(sentinel: &JsValue) {
-    if let Ok(f) = Reflect::get(sentinel, &"release".into()).and_then(|f| f.dyn_into::<Function>().map_err(JsValue::from)) {
+    if let Ok(f) = Reflect::get(sentinel, &"release".into()).and_then(|f| f.dyn_into::<Function>()) {
         // The promise it returns may reject when the lock is already gone; nothing to do about that.
         let _ = f.call0(sentinel);
     }
@@ -53,24 +53,29 @@ fn ask(state: &Rc<RefCell<State>>) {
     let state = Rc::clone(state);
     spawn_local(async move {
         let result = JsFuture::from(promise).await;
-        let mut s = state.borrow_mut();
-        s.asking = false;
+        let stopped = {
+            let mut s = state.borrow_mut();
+            s.asking = false;
+            s.stopped
+        };
         // Refused (battery saver, no user gesture yet): the next `visibilitychange` asks again.
         let Ok(sentinel) = result else { return };
-        if s.stopped {
+        if stopped {
             release(&sentinel);
-        } else {
-            let weak = Rc::downgrade(&state);
-            let on_release = Closure::once_into_js(move || {
-                if let Some(state) = weak.upgrade() {
-                    state.borrow_mut().sentinel = None;
-                }
-            });
-            if let Ok(add) = Reflect::get(&sentinel, &"addEventListener".into()).and_then(|f| f.dyn_into::<Function>().map_err(JsValue::from)) {
-                let _ = add.call2(&sentinel, &"release".into(), &on_release);
-            }
-            s.sentinel = Some(sentinel);
+            return;
         }
+        let weak = Rc::downgrade(&state);
+        let on_release = Closure::once_into_js(move || {
+            if let Some(state) = weak.upgrade() {
+                if let Ok(mut s) = state.try_borrow_mut() {
+                    s.sentinel = None;
+                }
+            }
+        });
+        if let Ok(add) = Reflect::get(&sentinel, &"addEventListener".into()).and_then(|f| f.dyn_into::<Function>()) {
+            let _ = add.call2(&sentinel, &"release".into(), &on_release);
+        }
+        state.borrow_mut().sentinel = Some(sentinel);
     });
 }
 
@@ -91,9 +96,14 @@ impl KeepAwake {
 
 impl Drop for KeepAwake {
     fn drop(&mut self) {
-        let mut s = self.state.borrow_mut();
-        s.stopped = true;
-        if let Some(sentinel) = s.sentinel.take() {
+        let sentinel = {
+            let mut s = self.state.borrow_mut();
+            s.stopped = true;
+            s.sentinel.take()
+        };
+        // Released only after the borrow ends: the browser fires the sentinel's `release` event synchronously inside `release()`, and
+        // its listener writes to the same state (found by scripts/rs-e2e/shell.mjs: "RefCell already borrowed").
+        if let Some(sentinel) = sentinel {
             release(&sentinel);
         }
         if let Ok(document) = dom::document() {

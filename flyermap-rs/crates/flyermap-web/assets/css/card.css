@@ -1,0 +1,26 @@
+/* Overlay, card, loading page, loader (src/ui/components.css). */
+/* ── overlays ────────────────────────────────────────────────── */
+.v5-overlay { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 1.2rem; background: var(--surface); }
+/* later loading phases look like the start screen: logo, one line, a thin moving bar */
+.v5-loadingpage { align-content: center; justify-items: center; gap: 1.1rem; color: var(--on-var); font-weight: 600; text-align: center; }
+.v5-loadingpage img { width: 7rem; height: 7rem; }
+.v5-loadingpage p { margin: 0; }
+.v5-loadingbar { position: relative; display: block; width: 7rem; height: 3px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--primary) 22%, transparent); }
+.v5-loadingbar::after { content: ""; position: absolute; inset: 0; width: 40%; border-radius: 2px; background: var(--primary); animation: v5-run 1.3s ease-in-out infinite; }
+@keyframes v5-run { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+.v5-card { display: grid; justify-items: center; gap: 0.5rem; max-width: 22rem; padding: 1.8rem 1.6rem; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: var(--shadow); text-align: center; animation: v5-fade var(--t) var(--ease); }
+.v5-card h2 { margin: 0; font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; }
+.v5-card p { margin: 0; color: var(--on-var); }
+.v5-loader { display: block; width: 3.4rem; height: 3.4rem; margin-bottom: 0.7rem; background: var(--primary); animation: v5-morph 2.2s var(--ease) infinite; }
+@keyframes v5-morph {
+  0%   { border-radius: 50%; transform: rotate(0deg); background: var(--primary); }
+  50%  { border-radius: 22%; transform: rotate(180deg); background: var(--tertiary); }
+  100% { border-radius: 50%; transform: rotate(360deg); background: var(--primary); }
+}
+@keyframes v5-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .v5-loader, .v5-wave-fill, .v5-dot.busy .v5-icon { animation: none; }
+  .v5-loadingbar::after { animation: none; width: 100%; }
+  .v5-sheet, .v5-toast, .v5-card, .v5-fab-grid, .v5-markbar { animation: none; }
+  * { transition-duration: 0.01ms !important; }
+}
