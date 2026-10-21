@@ -6,7 +6,7 @@ pub enum CollectionStatus {
     Open,
     Claimed,
     InProgress,
-    Done,
+    Completed,
     Archived,
 }
 

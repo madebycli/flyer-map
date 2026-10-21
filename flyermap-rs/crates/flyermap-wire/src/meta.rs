@@ -134,7 +134,7 @@ mod tests {
         let text = r##"{"campaign":{"id":"campaign_n","name":"Test"},"kind":"distribution","window":null,"guestRoom":null,"role":"team-editor","teamId":"team_n","me":{"label":"Nutzer 2"},
           "collectorId":null,"collectorLabel":null,"runs":[],"mainArea":null,"mainAreaId":null,"pickupRights":{"view":false,"create":false,"edit":false},"canWrite":true,"canBuildPack":true,
           "teams":[{"id":"team_n","name":"Nord","color":"#2563eb","updatedAt":"2026-09-07T00:00:00.000Z"}],
-          "areas":[{"id":"area_n","name":"Area","teamId":"team_n","geometry":{"type":"Polygon","coordinates":[[[13.0,51.0],[13.1,51.0],[13.1,51.1],[13.0,51.0]]]},"updatedAt":"2026-09-07T00:00:00.000Z","packVersion":3,"packStale":false,"writable":true}],
+          "areas":[{"id":"area_n","name":"Area","teamId":"team_n","geometry":{"type":"Polygon","coordinates":[[[13,51],[13.1,51],[13.1,51.1],[13,51]]]},"updatedAt":"2026-09-07T00:00:00.000Z","packVersion":3,"packStale":false,"writable":true}],
           "contextAreas":[],"basemap":{"dark":"https://x/dark.json","light":null}}"##;
         let meta: Meta = serde_json::from_str(text).unwrap();
         assert_eq!(meta.role, Role::TeamEditor);

@@ -40,6 +40,8 @@ codes! {
     RoomLocked => ("room_locked", 429, "Zu viele Versuche. Bitte in ein paar Minuten noch einmal."),
     WriteFailed => ("write_failed", 500, "Änderungen konnten nicht gespeichert werden."),
     PackCorrupt => ("pack_corrupt", 500, "Kartenpaket beschädigt."),
+    Internal => ("internal", 500, "Interner Fehler. Bitte später noch einmal versuchen."),
+    NotImplemented => ("not_implemented", 501, "Diese Funktion ist im neuen Server noch nicht da."),
     OverpassIncomplete => ("overpass_incomplete", 502, "Die Kartendatenquelle war überlastet und lieferte nur einen Teil. Bitte später noch einmal versuchen."),
 }
 

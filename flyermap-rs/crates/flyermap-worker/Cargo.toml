@@ -1,0 +1,28 @@
+[package]
+name = "flyermap-worker"
+version.workspace = true
+edition.workspace = true
+description = "The Verteil-Flyer Worker in Rust: router, access, repositories and handlers behind the same HTTP contract as the TypeScript Worker."
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+flyermap-core = { path = "../flyermap-core" }
+flyermap-diag = { path = "../flyermap-diag" }
+flyermap-rights = { path = "../flyermap-rights" }
+flyermap-wire = { path = "../flyermap-wire" }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+percent-encoding = "2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[dev-dependencies]
+futures = { version = "0.3", default-features = false, features = ["executor"] }
+
+[lints]
+workspace = true
