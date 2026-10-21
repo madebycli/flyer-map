@@ -1,0 +1,14 @@
+[package]
+name = "flyermap-diag"
+version.workspace = true
+edition.workspace = true
+description = "Logs, metrics, breadcrumbs and the diagnostics report of Verteil-Flyer. The lowest crate: anything may log through it, the host installs the recorder."
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+regex-lite = "0.1"
+
+[lints]
+workspace = true
