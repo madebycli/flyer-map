@@ -1,0 +1,16 @@
+[package]
+name = "flyermap-rights"
+version.workspace = true
+edition.workspace = true
+description = "Who may read and write where in Verteil-Flyer: roles, callers, areas and the rules of operations. Pure functions; the Worker decides with them and the interface mirrors them."
+publish.workspace = true
+
+[dependencies]
+flyermap-core = { path = "../flyermap-core" }
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

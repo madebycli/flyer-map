@@ -1,0 +1,15 @@
+[package]
+name = "flyermap-wire"
+version.workspace = true
+edition.workspace = true
+description = "The HTTP contract of /api/v5 as typed requests and responses, shared by the client and the Worker so that a changed field cannot break one side silently."
+publish.workspace = true
+
+[dependencies]
+flyermap-core = { path = "../flyermap-core" }
+flyermap-rights = { path = "../flyermap-rights" }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

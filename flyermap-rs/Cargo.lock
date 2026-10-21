@@ -40,6 +40,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyermap-rights"
+version = "0.1.0"
+dependencies = [
+ "flyermap-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "flyermap-wire"
+version = "0.1.0"
+dependencies = [
+ "flyermap-core",
+ "flyermap-rights",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
