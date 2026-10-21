@@ -42,7 +42,15 @@ pub struct Layer {
 
 impl Layer {
     pub fn new(name: &str) -> Self {
-        Layer { name: name.into(), keys: vec![], key_index: FxHashMap::default(), values: vec![], value_index: FxHashMap::default(), features: vec![], cursor: [0, 0] }
+        Layer {
+            name: name.into(),
+            keys: vec![],
+            key_index: FxHashMap::default(),
+            values: vec![],
+            value_index: FxHashMap::default(),
+            features: vec![],
+            cursor: [0, 0],
+        }
     }
 
     pub fn is_empty(&self) -> bool {

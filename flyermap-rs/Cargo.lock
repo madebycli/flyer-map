@@ -12,6 +12,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyermap-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "flyermap-engine"
 version = "0.1.0"
 dependencies = [

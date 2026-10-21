@@ -1,6 +1,6 @@
 //! Wire types. Field names and shapes match `src/v5/engine/types.ts` exactly (camelCase JSON).
-use serde::{Deserialize, Serialize};
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub type LngLat = [f64; 2];

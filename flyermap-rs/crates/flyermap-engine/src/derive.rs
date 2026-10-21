@@ -40,7 +40,10 @@ fn non_empty(v: Option<String>) -> Option<String> {
 fn normalize_name(name: Option<&str>) -> String {
     let lowered: String = name.unwrap_or("").nfkc().collect::<String>().to_lowercase();
     let replaced = lowered.replace("straße", "str").replace("strasse", "str");
-    let kept: String = replaced.chars().filter(|c| !(c.is_whitespace() || *c == '\u{FEFF}' || *c == '.' || *c == '-')).collect();
+    let kept: String = replaced
+        .chars()
+        .filter(|c| !(c.is_whitespace() || *c == '\u{FEFF}' || *c == '.' || *c == '-'))
+        .collect();
     js_trim(&kept).to_string()
 }
 
@@ -68,7 +71,13 @@ pub fn derive_network(raw: &RawOsm) -> Network {
         buildings_in: raw.buildings.len(),
         ..Default::default()
     };
-    let frame = frame_for(raw.ways.iter().flat_map(|w| w.coords.iter()).chain(raw.buildings.iter().flat_map(|b| b.ring.iter())).chain(raw.addresses.iter().map(|a| &a.point)));
+    let frame = frame_for(
+        raw.ways
+            .iter()
+            .flat_map(|w| w.coords.iter())
+            .chain(raw.buildings.iter().flat_map(|b| b.ring.iter()))
+            .chain(raw.addresses.iter().map(|a| &a.point)),
+    );
 
     // 1. classify, keep candidates, stable order by way id
     let mut ways: Vec<(&RawWay, RoadClass)> = Vec::new();
@@ -124,7 +133,11 @@ pub fn derive_network(raw: &RawOsm) -> Network {
                 let highway = way.tags.get("highway").cloned().unwrap_or_default();
                 for (k, piece) in pieces.into_iter().enumerate() {
                     segments.push(Segment {
-                        id: if parts == 1 { id.clone() } else { format!("{id}~{k}") },
+                        id: if parts == 1 {
+                            id.clone()
+                        } else {
+                            format!("{id}~{k}")
+                        },
                         group: id.clone(),
                         chunk: k as u32,
                         chunks: parts as u32,
@@ -135,8 +148,16 @@ pub fn derive_network(raw: &RawOsm) -> Network {
                         cls: *cls,
                         coords: piece,
                         length: length / parts as f64,
-                        from: if k == 0 { from_key.clone() } else { format!("{id}@{k}") },
-                        to: if k == parts - 1 { to_key.clone() } else { format!("{id}@{}", k + 1) },
+                        from: if k == 0 {
+                            from_key.clone()
+                        } else {
+                            format!("{id}@{k}")
+                        },
+                        to: if k == parts - 1 {
+                            to_key.clone()
+                        } else {
+                            format!("{id}@{}", k + 1)
+                        },
                         house_count: 0,
                         visible: false,
                     });
@@ -152,16 +173,33 @@ pub fn derive_network(raw: &RawOsm) -> Network {
     let mut indexed: Vec<Indexed> = Vec::with_capacity(segments.len());
     for (seg_i, s) in segments.iter().enumerate() {
         let xy: Vec<[f64; 2]> = s.coords.iter().map(|p| frame.to_xy(*p)).collect();
-        let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
         for p in &xy {
-            if p[0] < min_x { min_x = p[0]; }
-            if p[0] > max_x { max_x = p[0]; }
-            if p[1] < min_y { min_y = p[1]; }
-            if p[1] > max_y { max_y = p[1]; }
+            if p[0] < min_x {
+                min_x = p[0];
+            }
+            if p[0] > max_x {
+                max_x = p[0];
+            }
+            if p[1] < min_y {
+                min_y = p[1];
+            }
+            if p[1] > max_y {
+                max_y = p[1];
+            }
         }
         let gid = seg_grid.insert([min_x, min_y, max_x, max_y]);
         debug_assert_eq!(gid as usize, indexed.len());
-        indexed.push(Indexed { seg: seg_i, xy, norm: normalize_name(s.name.as_deref()) });
+        indexed.push(Indexed {
+            seg: seg_i,
+            xy,
+            norm: normalize_name(s.name.as_deref()),
+        });
     }
 
     // 5. houses
@@ -200,8 +238,18 @@ pub fn derive_network(raw: &RawOsm) -> Network {
                     near.push((d, node.id, i));
                 }
             }
-            near.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(&b.1)));
-            let hit = near.iter().find(|(_, _, i)| address_nodes[*i].tags.get("addr:housenumber").map(|v| !v.is_empty()).unwrap_or(false));
+            near.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(a.1.cmp(&b.1))
+            });
+            let hit = near.iter().find(|(_, _, i)| {
+                address_nodes[*i]
+                    .tags
+                    .get("addr:housenumber")
+                    .map(|v| !v.is_empty())
+                    .unwrap_or(false)
+            });
             if let Some(&(_, _, i)) = hit {
                 node_used[i] = true;
                 let node = address_nodes[i];
@@ -220,21 +268,51 @@ pub fn derive_network(raw: &RawOsm) -> Network {
             }
         };
         let house = House {
-            id: format!("h{}", building.id), osm_id: building.id, source: Source::Building, number, street, ring: building.ring.clone(), center,
-            parent: None, measure: None, street_parent: None, evidence,
+            id: format!("h{}", building.id),
+            osm_id: building.id,
+            source: Source::Building,
+            number,
+            street,
+            ring: building.ring.clone(),
+            center,
+            parent: None,
+            measure: None,
+            street_parent: None,
+            evidence,
         };
-        houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch, &mut diag));
+        houses.push(assign_parent(
+            house,
+            &frame,
+            &mut seg_grid,
+            &indexed,
+            &segments,
+            &mut scratch,
+            &mut diag,
+        ));
     }
 
     // address nodes that belong to no building become small point-houses
     let mut building_grid = Grid::new(0.001);
     for b in &raw.buildings {
-        let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
         for p in &b.ring {
-            if p[0] < min_x { min_x = p[0]; }
-            if p[0] > max_x { max_x = p[0]; }
-            if p[1] < min_y { min_y = p[1]; }
-            if p[1] > max_y { max_y = p[1]; }
+            if p[0] < min_x {
+                min_x = p[0];
+            }
+            if p[0] > max_x {
+                max_x = p[0];
+            }
+            if p[1] < min_y {
+                min_y = p[1];
+            }
+            if p[1] > max_y {
+                max_y = p[1];
+            }
         }
         if !min_x.is_finite() {
             // an empty ring has an infinite box in JS too and never matches
@@ -244,49 +322,96 @@ pub fn derive_network(raw: &RawOsm) -> Network {
         }
     }
     for (i, node) in address_nodes.iter().enumerate() {
-        let has_number = node.tags.get("addr:housenumber").map(|v| !v.is_empty()).unwrap_or(false);
+        let has_number = node
+            .tags
+            .get("addr:housenumber")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
         if node_used[i] || !has_number {
             continue;
         }
         let [nx, ny] = node.point;
         building_grid.search([nx, ny, nx, ny], &mut scratch);
-        if scratch.iter().any(|&b| point_in_ring(node.point, &raw.buildings[b as usize].ring)) {
+        if scratch
+            .iter()
+            .any(|&b| point_in_ring(node.point, &raw.buildings[b as usize].ring))
+        {
             continue;
         }
         let d = 0.00003;
         let house = House {
-            id: format!("a{}", node.id), osm_id: node.id, source: Source::AddressNode,
+            id: format!("a{}", node.id),
+            osm_id: node.id,
+            source: Source::AddressNode,
             number: Some(js_trim(&node.tags["addr:housenumber"]).to_string()),
             street: trimmed(&node.tags, "addr:street"),
-            ring: vec![[nx - d, ny - d], [nx + d, ny - d], [nx + d, ny + d], [nx - d, ny + d], [nx - d, ny - d]],
-            center: node.point, parent: None, measure: None, street_parent: None, evidence: Evidence::AddressNode,
+            ring: vec![
+                [nx - d, ny - d],
+                [nx + d, ny - d],
+                [nx + d, ny + d],
+                [nx - d, ny + d],
+                [nx - d, ny - d],
+            ],
+            center: node.point,
+            parent: None,
+            measure: None,
+            street_parent: None,
+            evidence: Evidence::AddressNode,
         };
-        houses.push(assign_parent(house, &frame, &mut seg_grid, &indexed, &segments, &mut scratch, &mut diag));
+        houses.push(assign_parent(
+            house,
+            &frame,
+            &mut seg_grid,
+            &indexed,
+            &segments,
+            &mut scratch,
+            &mut diag,
+        ));
     }
 
     // 5b. houses on a footway/path whose address names a street nearby: that street takes them along when it is marked
     {
-        let by_id: HashMap<&str, usize> = segments.iter().enumerate().map(|(i, s)| (s.id.as_str(), i)).collect();
+        let by_id: HashMap<&str, usize> = segments
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.id.as_str(), i))
+            .collect();
         for house in houses.iter_mut() {
             let Some(p) = &house.parent else { continue };
-            if segments[by_id[p.as_str()]].cls != RoadClass::Connector { continue; }
+            if segments[by_id[p.as_str()]].cls != RoadClass::Connector {
+                continue;
+            }
             let wanted = normalize_name(house.street.as_deref());
-            if wanted.is_empty() { continue; }
+            if wanted.is_empty() {
+                continue;
+            }
             let [cx, cy] = frame.to_xy(house.center);
             let reach = MAX_STREET_LINK_DISTANCE;
-            seg_grid.search([cx - reach, cy - reach, cx + reach, cy + reach], &mut scratch);
+            seg_grid.search(
+                [cx - reach, cy - reach, cx + reach, cy + reach],
+                &mut scratch,
+            );
             let mut best: Option<(f64, usize)> = None;
             for &gid in scratch.iter() {
                 let entry = &indexed[gid as usize];
                 let seg = &segments[entry.seg];
-                if entry.norm != wanted || seg.cls == RoadClass::Connector { continue; }
+                if entry.norm != wanted || seg.cls == RoadClass::Connector {
+                    continue;
+                }
                 let d = project_to_polyline(&entry.xy, [cx, cy]).distance;
-                if d > reach { continue; }
+                if d > reach {
+                    continue;
+                }
                 let better = match best {
                     None => true,
-                    Some((bd, bi)) => d < bd - SCORE_EPS || ((d - bd).abs() <= SCORE_EPS && seg.id < segments[bi].id),
+                    Some((bd, bi)) => {
+                        d < bd - SCORE_EPS
+                            || ((d - bd).abs() <= SCORE_EPS && seg.id < segments[bi].id)
+                    }
                 };
-                if better { best = Some((d, entry.seg)); }
+                if better {
+                    best = Some((d, entry.seg));
+                }
             }
             if let Some((_, si)) = best {
                 house.street_parent = Some(segments[si].id.clone());
@@ -296,7 +421,11 @@ pub fn derive_network(raw: &RawOsm) -> Network {
     }
 
     // 6. visibility: streets always; access/connector only when real houses use them
-    let index_of: HashMap<&str, usize> = segments.iter().enumerate().map(|(i, s)| (s.id.as_str(), i)).collect();
+    let index_of: HashMap<&str, usize> = segments
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.id.as_str(), i))
+        .collect();
     let mut counts = vec![0u32; segments.len()];
     for h in &houses {
         match &h.parent {
@@ -312,7 +441,8 @@ pub fn derive_network(raw: &RawOsm) -> Network {
         *group_houses.entry(s.group.clone()).or_insert(0) += s.house_count;
     }
     for s in segments.iter_mut() {
-        s.visible = s.cls == RoadClass::Street || group_houses.get(&s.group).copied().unwrap_or(0) > 0;
+        s.visible =
+            s.cls == RoadClass::Street || group_houses.get(&s.group).copied().unwrap_or(0) > 0;
         if s.visible {
             diag.visible_segments += 1;
             if s.cls != RoadClass::Street {
@@ -324,7 +454,11 @@ pub fn derive_network(raw: &RawOsm) -> Network {
     }
     diag.houses_out = houses.len();
     houses.sort_by(|a, b| a.id.cmp(&b.id));
-    let mut network = Network { segments, houses, diagnostics: diag };
+    let mut network = Network {
+        segments,
+        houses,
+        diagnostics: diag,
+    };
     round_network(&mut network);
     network
 }
@@ -348,23 +482,40 @@ fn round_network(network: &mut Network) {
     }
 }
 
-fn assign_parent(mut house: House, frame: &Frame, grid: &mut Grid, indexed: &[Indexed], segments: &[Segment], scratch: &mut Vec<u32>, diag: &mut Diagnostics) -> House {
+fn assign_parent(
+    mut house: House,
+    frame: &Frame,
+    grid: &mut Grid,
+    indexed: &[Indexed],
+    segments: &[Segment],
+    scratch: &mut Vec<u32>,
+    diag: &mut Diagnostics,
+) -> House {
     let [cx, cy] = frame.to_xy(house.center);
     let reach = MAX_NAMED_PARENT_DISTANCE;
     let wanted = normalize_name(house.street.as_deref());
     grid.search([cx - reach, cy - reach, cx + reach, cy + reach], scratch);
     let mut best: Option<(f64, usize, f64, bool)> = None; // score, segment index, measure, name matches
-    // Special rule for garden paths: the best segment that carries the house's own street name. A path (footway, path, steps) that merely lies nearer
-    // never takes the house away from it; the dashed paths between gardens and the woodland tracks are only where somebody walks, not the street the house is on.
+                                                          // Special rule for garden paths: the best segment that carries the house's own street name. A path (footway, path, steps) that merely lies nearer
+                                                          // never takes the house away from it; the dashed paths between gardens and the woodland tracks are only where somebody walks, not the street the house is on.
     let mut best_named: Option<(f64, usize, f64, bool)> = None;
     for &gid in scratch.iter() {
         let entry = &indexed[gid as usize];
         let seg = &segments[entry.seg];
         let named = !wanted.is_empty() && entry.norm == wanted;
-        let limit = if named { MAX_NAMED_PARENT_DISTANCE } else { MAX_PARENT_DISTANCE };
+        let limit = if named {
+            MAX_NAMED_PARENT_DISTANCE
+        } else {
+            MAX_PARENT_DISTANCE
+        };
         // The box distance never exceeds the true distance, so skipping beyond `limit` changes no outcome, only the work.
         let b = grid.bbox(gid);
-        if (b[0] - cx).max(0.0).max(cx - b[2]).hypot((b[1] - cy).max(0.0).max(cy - b[3])) > limit {
+        if (b[0] - cx)
+            .max(0.0)
+            .max(cx - b[2])
+            .hypot((b[1] - cy).max(0.0).max(cy - b[3]))
+            > limit
+        {
             continue;
         }
         let projection = project_to_polyline(&entry.xy, [cx, cy]);
@@ -374,7 +525,10 @@ fn assign_parent(mut house: House, frame: &Frame, grid: &mut Grid, indexed: &[In
         let score = projection.distance + class_penalty(seg.cls) - if named { 30.0 } else { 0.0 };
         let better = match best {
             None => true,
-            Some((bs, bi, _, _)) => score < bs - SCORE_EPS || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id),
+            Some((bs, bi, _, _)) => {
+                score < bs - SCORE_EPS
+                    || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id)
+            }
         };
         if better {
             best = Some((score, entry.seg, projection.measure, named));
@@ -382,7 +536,10 @@ fn assign_parent(mut house: House, frame: &Frame, grid: &mut Grid, indexed: &[In
         if named {
             let better_named = match best_named {
                 None => true,
-                Some((bs, bi, _, _)) => score < bs - SCORE_EPS || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id),
+                Some((bs, bi, _, _)) => {
+                    score < bs - SCORE_EPS
+                        || ((score - bs).abs() <= SCORE_EPS && seg.id < segments[bi].id)
+                }
             };
             if better_named {
                 best_named = Some((score, entry.seg, projection.measure, true));

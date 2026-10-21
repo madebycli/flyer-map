@@ -1,0 +1,15 @@
+[package]
+name = "flyermap-core"
+version.workspace = true
+edition.workspace = true
+description = "Pure domain of Verteil-Flyer: clock, status, keys, operations, last-writer-wins overlay, outbox, conflicts, progress. No I/O, no time, no randomness."
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

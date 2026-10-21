@@ -131,6 +131,10 @@ export class FieldStore {
       if (entry?.at !== id) continue; // a newer local edit supersedes it and is judged on its own
       if (!this.baseline.has(op.key)) this.baseline.set(op.key, entry.status);
       this.overlay.delete(op.key);
+      // An older edit of ours for the same key may still be queued: it is what this device shows (and will send) again.
+      let older: Op | undefined;
+      for (const queued of this.pending.values()) if (queued.key === op.key && (!older || queued.id > older.id)) older = queued;
+      if (older) { this.overlay.set(op.key, { status: older.status, at: older.id, by: older.by }); this.mine.set(op.key, { id: older.id, status: older.status }); }
     }
     this.flush();
     this.persistOutbox();

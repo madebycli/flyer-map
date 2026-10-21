@@ -19,7 +19,7 @@ Version 5 still carried ideas of the first version: a home menu of icon tiles fo
 - **Honest numbers.** Progress counts houses; "Nicht möglich" is subtracted from the total. No decorative animation on numbers.
 - **A street is a street.** A search result selects the whole street (all connected pieces of that name), not one junction-to-junction piece.
 - **Practical before clever.** New features must save steps in the field: the next open street, screen stays on, a buzz on each mark. No feature without a field use.
-- **Stack.** Direction is Rust first for everything of our own: logic, sync, rules, Worker and, last, the UI (Plan 058); the owner's rule is that what comes from elsewhere (MapLibre, the Cloudflare runtime, the browser) is used, not rewritten. The step order and the two spikes that decide Worker and UI are in Plan 058. Until a step passes its gate, the web stack and the PWA (ADR-0038) stay.
+- **Stack.** Direction is Rust first for everything of our own: logic, sync, rules, Worker and, last, the UI (Plan 059); the owner's rule is that what comes from elsewhere (MapLibre, the Cloudflare runtime, the browser) is used, not rewritten. The step order and the two spikes that decide Worker and UI are in Plan 059. Until a step passes its gate, the web stack and the PWA (ADR-0038) stay.
 
 ## Consequences
 
