@@ -74,6 +74,35 @@ for (const [name, userAgent, steps, expect] of [['iPhone', IPHONE, 3, 'Teilen'],
   check(`${name}: and the guide stays away afterwards`, (await page.locator('.pwa-page').count()) === 0);
   await context.close();
 }
+// the guide fits the browser: Brave on the iPad has its own steps; with the system install button on Android there are no steps at all
+{
+  const BRAVE = 'Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1 Brave';
+  const context = await phone(BRAVE);
+  const page = await context.newPage();
+  await page.goto(V5);
+  await page.locator('.pwa-page').waitFor({ timeout: 10000 });
+  const titles = await page.locator('.pwa-step b').allTextContents();
+  check('Brave on iOS: Teilen, then Mehr, then Zum Home-Bildschirm', titles.join('|') === 'Teilen|Mehr|Zum Home-Bildschirm|Hinzufügen', titles.join('|'));
+  check('and no three dots in a column are mentioned there', !(await page.locator('.pwa-page').textContent()).includes('drei Punkte'));
+  await context.close();
+}
+{
+  const context = await phone(ANDROID);
+  const page = await context.newPage();
+  await page.goto(V5);
+  await page.locator('.pwa-page').waitFor({ timeout: 10000 });
+  const before = await page.locator('.pwa-step').count();
+  // the browser offers its install dialog: the guide turns into one button
+  await page.evaluate(() => { const event = new Event('beforeinstallprompt'); event.prompt = async () => { window.__prompted = true; }; event.userChoice = Promise.resolve({ outcome: 'dismissed' }); window.dispatchEvent(event); });
+  await page.waitForFunction(() => !document.querySelector('.pwa-step'), null, { timeout: 5000 });
+  const install = page.getByRole('button', { name: 'App installieren' });
+  check('Android with the install event: no steps, one big button', before === 3 && (await page.locator('.pwa-step').count()) === 0 && (await install.count()) === 1);
+  await page.screenshot({ path: `${shots}/t30-guide-direct.png` });
+  await install.click();
+  check('the button opens the system dialog', await until(() => page.evaluate(() => window.__prompted === true)));
+  await context.close();
+}
+
 {
   // the installed app and a desktop browser never see the guide
   const installed = await phone(IPHONE, { standalone: true });
