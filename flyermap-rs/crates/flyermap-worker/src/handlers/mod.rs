@@ -1,9 +1,11 @@
 //! One file per resource. A handler gets the database, the caller and the request and returns a response; errors it can name are `ApiError`s.
 pub mod basemap;
 pub mod body;
+pub mod cleanup;
 pub mod meta;
 pub mod notes;
 pub mod ops;
+pub mod progress;
 pub mod rooms;
 pub mod state;
 pub mod window;

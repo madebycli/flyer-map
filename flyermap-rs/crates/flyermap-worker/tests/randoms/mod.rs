@@ -7,10 +7,16 @@ pub struct Randoms {
     pairs: Vec<(String, String)>,
 }
 
-/// `room_…`, `grant_…`, `session_…` followed by a UUID, or anything under a key that carries a secret.
+/// `room_…`, `grant_…`, `session_…` followed by a UUID, a server tombstone id (`<clock>-srv` and six hex digits), or anything under a key that
+/// carries a secret.
 fn is_random(key: Option<&str>, value: &str) -> bool {
     if key == Some("joinSecret") {
         return true;
+    }
+    if let Some(node) = value.get(17..).and_then(|n| n.strip_prefix("srv")) {
+        if value.len() == 26 && node.bytes().all(|b| b.is_ascii_hexdigit()) && flyermap_core::clock::decode_clock(value).is_some() {
+            return true;
+        }
     }
     let Some((prefix, uuid)) = value.split_once('_') else { return false };
     matches!(prefix, "room" | "grant" | "session")
@@ -42,7 +48,8 @@ impl Randoms {
 
     fn walk(&mut self, key: Option<&str>, recorded: &Value, ours: &Value) -> bool {
         match (recorded, ours) {
-            (Value::String(r), Value::String(o)) if is_random(key, r) => self.pair(r, o),
+            // a tombstone id: the clock part is deterministic, only the node is random
+            (Value::String(r), Value::String(o)) if is_random(key, r) => (r.len() != 26 || r.get(..20) == o.get(..20)) && self.pair(r, o),
             (Value::Object(r), Value::Object(o)) => r.len() == o.len() && r.iter().all(|(k, rv)| o.get(k).is_some_and(|ov| self.walk(Some(k), rv, ov))),
             (Value::Array(r), Value::Array(o)) => r.len() == o.len() && r.iter().zip(o).all(|(rv, ov)| self.walk(key, rv, ov)),
             _ => recorded == ours,

@@ -14,6 +14,25 @@ const { db, cookies } = await setup();
 // Sessions are made with the real clock; the requests run at the fixed NOW. Far-future expiry keeps the pair valid whatever clock replays it.
 db.sqlite.exec("UPDATE campaign_sessions SET expires_at = '2099-01-01T00:00:00.000Z'");
 const base = `/api/v5/campaigns/${campaign}`;
+// Map data for the overview (pack versions the sizes must match) and the leftovers of a deleted Gebiet for "forget".
+const run = (sql: string, ...args: unknown[]) => db.sqlite.prepare(sql).run(...args);
+const T = '2026-09-07T00:00:00.000Z';
+for (const [area, version] of [['area_n', 3], ['area_o', 1], ['area_gone', 2], ['area_gone~1', 2], ['area_goner', 1]] as const) {
+  run('INSERT INTO v5_pack_meta (campaign_id, area_id, version, chunks, total_bytes, engine, stats_json, built_at) VALUES (?, ?, ?, 1, 4, ?, ?, ?)', campaign, area, version, 'e1', '{}', T);
+  run('INSERT INTO v5_packs (campaign_id, area_id, version, chunk, bytes) VALUES (?, ?, ?, 0, ?)', campaign, area, version, Buffer.from('pack'));
+}
+run('INSERT INTO v5_pack_attempts (campaign_id, area_id, at) VALUES (?, ?, 1)', campaign, 'area_gone');
+for (const [table, counters] of [['v5_state', 'v5_counters'], ['v5_notes', 'v5_note_counters']]) run(`INSERT OR IGNORE INTO ${counters} (campaign_id, seq) VALUES (?, 0)`, campaign);
+let seq = (db.sqlite.prepare('SELECT seq FROM v5_counters WHERE campaign_id = ?').get(campaign) as { seq: number }).seq;
+for (const [key, status, wall] of [['h:gone1', 'completed', 10_000], ['h:gone2', 'later', 9000], ['s:gone#1', 'completed', 8000], ['h:gone3', 'open', 7000]] as const) {
+  run('INSERT INTO v5_state (campaign_id, key, op_id, status, area_id, actor, grant_id, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', campaign, key, stamp(NOW - wall), status, 'area_gone', 'x', 'grant_x', ++seq);
+}
+run('UPDATE v5_counters SET seq = ? WHERE campaign_id = ?', seq, campaign);
+let noteSeq = (db.sqlite.prepare('SELECT seq FROM v5_note_counters WHERE campaign_id = ?').get(campaign) as { seq: number }).seq;
+for (const [id, deleted] of [['note_gone1', 0], ['note_gone2', 1]] as const) {
+  run('INSERT INTO v5_notes (campaign_id, id, key, area_id, flag, body, rev, deleted, actor, grant_id, seq) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)', campaign, id, 'h:gone1', 'area_gone', 'alt', stamp(NOW - 5000), deleted, 'x', 'grant_x', ++noteSeq);
+}
+run('UPDATE v5_note_counters SET seq = ? WHERE campaign_id = ?', noteSeq, campaign);
 
 // The database before the first request, as SQL text (schema in creation order, then the rows): small, readable, diffable.
 function dump(): string {
@@ -161,6 +180,51 @@ await call('admin', 'DELETE', `${rooms}/${passRoom.id}`);
 await call('admin', 'DELETE', `${rooms}/${passRoom.id}`);
 await call('guestB', 'GET', rooms);
 await call('admin', 'GET', rooms);
+// the overview: sizes reported by devices, done counts per readable Gebiet, the short cache
+const stats = `${base}/areas/stats`;
+const unit = (u: string, area: string, packVersion: number, houses: number, segments: number) => ({ unit: u, area, packVersion, houses, segments });
+await call('admin', 'GET', `${base}/progress`);
+await call('viewer', 'PUT', stats, { units: [unit('area_n', 'area_n', 3, 10, 5)] });
+await call('admin', 'PUT', stats, '{"units":[]}', { 'content-type': 'text/plain' });
+await call('admin', 'PUT', stats, '{"units":');
+await call('admin', 'PUT', stats, []);
+await call('admin', 'PUT', stats, { units: [] });
+await call('admin', 'PUT', stats, { units: [unit('area_o~1', 'area_n', 3, 1, 1)] });
+await call('admin', 'PUT', stats, { units: [unit('area_n~12345', 'area_n', 3, 1, 1)] });
+await call('admin', 'PUT', stats, { units: [unit('area_n', 'area_n', 3, -1, 1)] });
+await call('admin', 'PUT', stats, { units: [unit('area_n', 'area_n', 3.5, 1, 1)] });
+await call('admin', 'PUT', stats, { units: [unit('area_x', 'area_x', 1, 1, 1)] });
+await call('admin', 'PUT', stats, { units: [unit('area_n~1', 'area_n', 3, 120, 40), unit('area_n~2', 'area_n', 3, 80, 21), unit('area_o', 'area_o', 0, 50, 9)] });
+await call('admin', 'PUT', stats, { units: [unit('area_n~2', 'area_n', 3, 81, 22)] });
+for (const who of ['admin', 'viewer', 'editor', 'other']) await call(who, 'GET', `${base}/progress`);
+await call('admin', 'POST', `${base}/ops`, { ops: Array.from({ length: 30 }, (_, i) => op(stamp(NOW - 200 + i), `h:p${i}`, i % 3 ? 'completed' : 'later')) });
+await call('admin', 'GET', `${base}/progress`);
+await call('admin', 'PUT', stats, { units: [unit('area_o', 'area_o', 1, 50, 9)] });
+await call('admin', 'GET', `${base}/progress`);
+await call('admin', 'POST', `${base}/progress`);
+// clean-up: prune keys of a reshaped Gebiet, forget a deleted one; both leave tombstones
+const prune = `${base}/areas/area_n/prune`;
+const many = Array.from({ length: 25 }, (_, i) => `h:p${i}`);
+await call('viewer', 'POST', prune, { keys: ['h:a'] });
+await call('admin', 'POST', `${base}/areas/area_x/prune`, { keys: ['h:a'] });
+await call('admin', 'POST', prune, '{"keys":["h:a"]}', { 'content-type': 'text/plain' });
+await call('admin', 'POST', prune, '{"keys":');
+await call('admin', 'POST', prune, ['h:a']);
+await call('admin', 'POST', prune, { keys: [] });
+await call('admin', 'POST', prune, { keys: ['x:a'] });
+await call('admin', 'POST', prune, { keys: ['h:nothing', 'h:e1'] });
+await call('admin', 'POST', prune, { keys: many });
+await call('admin', 'POST', prune, { keys: [...many, 'h:p0'], confirm: true });
+await call('admin', 'POST', prune, { keys: ['h:a', 'h:b', 'h:a', 's:x#1', 'h:p29'] });
+await call('admin', 'GET', prune);
+await call('viewer', 'GET', `${base}/state?since=0`);
+await call('viewer', 'POST', `${base}/areas/area_gone/forget`);
+await call('admin', 'POST', `${base}/areas/area_n/forget`);
+await call('admin', 'POST', `${base}/areas/area_gone/forget`);
+await call('admin', 'POST', `${base}/areas/area_gone/forget`);
+await call('admin', 'GET', `${base}/state?since=0`);
+await call('admin', 'GET', `${base}/notes?since=0`);
+await call('admin', 'GET', `${base}/meta`);
 
 const seedFile = new URL('v5.seed.sql', DIR);
 const text = `${JSON.stringify({ about: 'made by scripts/rs-vectors/http.ts from the TypeScript Worker; do not edit', now: NOW, cookies, exchanges }, null, 1)}\n`;

@@ -61,10 +61,8 @@ fn same_origin(request: &Request) -> bool {
 /// Combinations the TypeScript Worker answers that are not here yet: they say so (501) instead of pretending (405).
 fn not_moved_yet(route: &Route, method: &str) -> bool {
     match route {
-        Route::Campaign { res, .. } => matches!((res, method), (CampaignRes::Progress, "GET") | (CampaignRes::Stats, "PUT")),
         Route::Area { res: AreaRes::Pack, .. } => matches!(method, "GET" | "POST"),
-        Route::Area { .. } => method == "POST",
-        Route::Room { .. } | Route::PublicRoom { .. } | Route::Basemap => false,
+        Route::Campaign { .. } | Route::Area { .. } | Route::Room { .. } | Route::PublicRoom { .. } | Route::Basemap => false,
     }
 }
 
@@ -133,6 +131,14 @@ impl<D: Db> App<D> {
                 _ => fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt."),
             };
         }
+        if let Route::Area { area_id, res, .. } = &route {
+            return match (res, method) {
+                (AreaRes::Prune, "POST") => handlers::cleanup::prune(db, caller, id, area_id, request, &self.options).await,
+                (AreaRes::Forget, "POST") => handlers::cleanup::forget(db, caller, id, area_id, &self.options).await,
+                _ if not_moved_yet(&route, method) => fail(ErrorCode::NotImplemented, ErrorCode::NotImplemented.message()),
+                _ => fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt."),
+            };
+        }
         let res = match &route {
             Route::Campaign { res, .. } => Some(*res),
             _ => None,
@@ -143,6 +149,8 @@ impl<D: Db> App<D> {
             (Some(CampaignRes::Ops), "POST") => handlers::ops::push(db, caller, id, request, now).await,
             (Some(CampaignRes::Notes), "GET") => handlers::notes::pull(db, caller, id, request, now).await,
             (Some(CampaignRes::Notes), "POST") => handlers::notes::push(db, caller, id, request, now).await,
+            (Some(CampaignRes::Progress), "GET") => handlers::progress::get(db, caller, id, now).await,
+            (Some(CampaignRes::Stats), "PUT") => handlers::progress::put_stats(db, caller, id, request, now).await,
             (Some(CampaignRes::Window), "PUT") => handlers::window::put(db, caller, id, request).await,
             (Some(CampaignRes::Rooms), "GET") => handlers::rooms::list(db, caller, id, now).await,
             (Some(CampaignRes::Rooms), "POST") => handlers::rooms::create(db, caller, id, request, &self.options).await,

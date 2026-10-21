@@ -9,9 +9,10 @@ const v = JSON.parse(readFileSync(new URL('../../flyermap-rs/crates/flyermap-wor
 const pairs = new Map(); // recorded → ours
 const rewrite = (text) => [...pairs].reduce((t, [recorded, ours]) => t.replaceAll(recorded, ours), text);
 const pair = (recorded, ours) => (pairs.has(recorded) ? pairs.get(recorded) === ours : [...pairs.values()].includes(ours) ? false : (pairs.set(recorded, ours), true));
-const isRandom = (key, value) => key === 'joinSecret' || /^(room|grant|session)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value);
+const isRandom = (key, value) => key === 'joinSecret' || /^(room|grant|session)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value) || /^[0-9a-z]{11}-[0-9a-z]{4}-srv[0-9a-f]{6}$/u.test(value);
 function same(recorded, ours, key = null) {
-  if (typeof recorded === 'string' && typeof ours === 'string' && isRandom(key, recorded)) return pair(recorded, ours);
+  // a tombstone id: the clock part is deterministic, only the node is random
+  if (typeof recorded === 'string' && typeof ours === 'string' && isRandom(key, recorded)) return (!/-srv/u.test(recorded) || recorded.slice(0, 20) === ours.slice(0, 20)) && pair(recorded, ours);
   if (Array.isArray(recorded)) return Array.isArray(ours) && recorded.length === ours.length && recorded.every((r, i) => same(r, ours[i], key));
   if (recorded && typeof recorded === 'object') {
     if (!ours || typeof ours !== 'object' || Array.isArray(ours)) return false;
