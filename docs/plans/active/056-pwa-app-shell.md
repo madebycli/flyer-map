@@ -17,6 +17,10 @@ Goal: the field tool feels like an app: one calm start screen, always the curren
 5. **Install.** Manifest, icons (192, 512, maskable, Apple touch icon), service worker as in the ADR. On a phone or tablet in a normal browser tab, before the app loads, a guide shows the installation for iOS (Share, Add to Home Screen) and Android (install button or menu) with pictures; "Open in the browser anyway" hides it for a week. Desktop and the installed app never see it.
 6. **Joining in the installed app.** The installed app opens a start page: continue the last Aktion, paste an invitation link, or sign in as organiser. Pasting a link redeems it exactly like opening it.
 
+## Stand 2026-10-21
+
+Built and checked in the sandbox (unit tests, flows 29 and 30, full regression run; not on real phones): points 1 to 6. The version is `MAJOR.MINOR.BUILD` from `package.json` and the commit count, published as `/version.json`; the check runs next to the start (it never delays it) and reloads only while the start screen is up. Still open: the join code, the QR behaviour on iOS, a check on real iPhones and Android phones (install, update, offline start, safe areas).
+
 ## Later (own steps, server work)
 
 - **Join code.** A short one-time code per access link, shown where links are shown (also as QR), entered on the start page. Needs a column for the code's hash on the grant table, rate limiting like the link redemption, and no way to show it again (same rule as links).
