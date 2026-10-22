@@ -5,6 +5,7 @@ mod support;
 use flyermap_aktion::{Caller, Dump, Handled, Limits};
 use flyermap_identity::{decide, Action, Resource};
 use flyermap_protocol::{Change, Command, CommandId, Verdict};
+use std::collections::BTreeMap;
 use support::{
     gen::{cast, command, pick_caller, seed_commands, Rng},
     mirror::{oracle, Mirror},
@@ -22,11 +23,9 @@ fn explains(change: &Change) -> &'static [Action] {
     match change {
         Change::MarkSet { .. } => &[Action::Mark, Action::DrawArea],
         Change::NoteSet { .. } => &[Action::Annotate, Action::DrawArea],
-        Change::MarksRemoved { .. }
-        | Change::NotesRemoved { .. }
-        | Change::HandedOver { .. }
-        | Change::GebietSet { .. }
-        | Change::GebietRemoved { .. } => &[Action::DrawArea],
+        Change::MarksRemoved { .. } | Change::NotesRemoved { .. } | Change::HandedOver { .. } | Change::GebietSet { .. } | Change::GebietRemoved { .. } => {
+            &[Action::DrawArea]
+        }
         Change::GruppeSet { .. } | Change::GruppeRemoved { .. } => &[Action::ManageGroup],
         Change::Collected { .. } => &[Action::Collect],
         Change::Released { .. } => &[Action::Collect, Action::ManageAktion],
@@ -65,16 +64,24 @@ struct Watcher {
     online: bool,
 }
 
-fn bring_up_to_date(w: &mut World, watcher: &mut Watcher) {
+/// What the histories did, to see that they did something: counts by what happened.
+type Tally = BTreeMap<String, u64>;
+
+fn bump(tally: &mut Tally, what: impl Into<String>) {
+    *tally.entry(what.into()).or_default() += 1;
+}
+
+fn bring_up_to_date(w: &mut World, watcher: &mut Watcher, tally: &mut Tally) {
     if !watcher.device.catch_up(&mut w.a, &watcher.caller, w.now, 9) {
+        bump(tally, "device rebuilt (behind the floor)");
         watcher.device = Mirror::from_scratch(&mut w.a, &watcher.caller, w.now, 9);
     }
     watcher.online = true;
 }
 
-fn run(seed: u64, compacting: bool) {
+fn run(seed: u64, compacting: bool, tally: &mut Tally) {
     let mut rng = Rng::new(seed * 2 + u64::from(compacting));
-    let limits = Limits { done_ttl_ms: 2 * 60 * 60 * 1000, log_keep: if compacting { 25 } else { u64::MAX / 4 }, ..Limits::default() };
+    let limits = Limits { done_ttl_ms: 2 * 60 * 60 * 1000, log_keep: if compacting { 10 } else { u64::MAX / 4 }, ..Limits::default() };
     let mut w = World::with(limits);
     for body in seed_commands() {
         w.ok(&who::admin(), body);
@@ -113,6 +120,16 @@ fn run(seed: u64, compacting: bool) {
             (_, Verdict::Accepted { .. }) => assert!(!handled.replayed),
             _ => {}
         }
+        match &handled.reply.verdict {
+            _ if handled.replayed => bump(tally, "retry answered from the kept answer"),
+            Verdict::Accepted { applied, refused, .. } => {
+                bump(tally, if *applied > 0 { format!("done: {}", command.body.kind()) } else { "accepted, nothing new".to_string() });
+                for item in refused {
+                    bump(tally, format!("item refused: {}", item.reason.code()));
+                }
+            }
+            Verdict::Rejected { reason } => bump(tally, format!("refused: {}", reason.code())),
+        }
         if earlier.is_none() {
             sent.push((caller.clone(), command, handled.reply.verdict.clone(), w.now));
         }
@@ -122,7 +139,7 @@ fn run(seed: u64, compacting: bool) {
         for watcher in &mut watchers {
             match (watcher.online, rng.chance(8)) {
                 (true, true) => watcher.online = false,
-                (false, true) => bring_up_to_date(&mut w, watcher),
+                (false, true) => bring_up_to_date(&mut w, watcher, tally),
                 _ => {}
             }
             if watcher.online {
@@ -130,7 +147,7 @@ fn run(seed: u64, compacting: bool) {
                 watcher.device.advance(handled.head);
             }
         }
-        if compacting && rng.chance(12) {
+        if compacting && rng.chance(25) {
             w.a.compact().unwrap();
             w.assert_sound();
         }
@@ -138,7 +155,7 @@ fn run(seed: u64, compacting: bool) {
 
     let dump = w.a.dump().unwrap();
     for watcher in &mut watchers {
-        bring_up_to_date(&mut w, watcher);
+        bring_up_to_date(&mut w, watcher, tally);
         assert_eq!(watcher.device.view(), oracle(&dump, &watcher.caller, w.now), "seed {seed}: {} after {STEPS} steps", watcher.caller.principal);
         let fresh = Mirror::from_scratch(&mut w.a, &watcher.caller, w.now, 1000);
         assert_eq!(fresh.view(), watcher.device.view(), "seed {seed}: {} from scratch", watcher.caller.principal);
@@ -150,16 +167,38 @@ fn run(seed: u64, compacting: bool) {
     assert!(w.a.head() >= 8, "seed {seed}: head {}", w.a.head());
 }
 
+fn histories(compacting: bool) -> Tally {
+    let mut tally = Tally::new();
+    for seed in 0..SEEDS {
+        run(seed, compacting, &mut tally);
+    }
+    eprintln!("{tally:#?}");
+    tally
+}
+
+/// Every kind of command went through and was done, and every kind of refusal that is about state came up: the histories are not all "forbidden".
+fn assert_the_histories_were_rich(tally: &Tally) {
+    let at_least = |what: &str, n: u64| assert!(tally.get(what).copied().unwrap_or(0) >= n, "{what}: {:?} < {n}", tally.get(what));
+    for kind in ["marks", "note", "gruppe", "gebiet", "gebiet-remove", "collect", "release", "run-start", "run-update", "run-end", "cleanup", "move"] {
+        at_least(&format!("done: {kind}"), 5);
+    }
+    for reason in ["forbidden", "not_found", "rev_mismatch", "overlaps", "confirm_mismatch", "run_active", "has_children", "not_collected", "cid_reused"] {
+        at_least(&format!("refused: {reason}"), 3);
+    }
+    for reason in ["clock_skew", "key_owned_elsewhere"] {
+        at_least(&format!("item refused: {reason}"), 3);
+    }
+    at_least("retry answered from the kept answer", 100);
+}
+
 #[test]
 fn random_histories_keep_every_promise() {
-    for seed in 0..SEEDS {
-        run(seed, false);
-    }
+    assert_the_histories_were_rich(&histories(false));
 }
 
 #[test]
 fn random_histories_with_the_log_compacted_keep_every_promise() {
-    for seed in 0..SEEDS {
-        run(seed, true);
-    }
+    let tally = histories(true);
+    assert_the_histories_were_rich(&tally);
+    assert!(tally.get("device rebuilt (behind the floor)").copied().unwrap_or(0) >= 5, "devices were sent for a snapshot: {tally:?}");
 }

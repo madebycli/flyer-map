@@ -18,7 +18,8 @@ fn busy() -> World {
 }
 
 fn commands() -> Vec<(&'static str, Body)> {
-    let batch: Vec<_> = (0..12).map(|i| mark(&format!("h:{i}"), Status::Later, op(T0 + 1000 + i, "a"))).chain([mark("s:9", Status::Completed, op(T0 + 5, "a"))]).collect();
+    let batch: Vec<_> =
+        (0..12).map(|i| mark(&format!("h:{i}"), Status::Later, op(T0 + 1000 + i, "a"))).chain([mark("s:9", Status::Completed, op(T0 + 5, "a"))]).collect();
     vec![
         ("marks", marks("n1", batch)),
         ("gruppe", support::gruppe_in("west", "West")),
@@ -88,7 +89,8 @@ fn an_aktion_that_is_opened_again_is_the_one_that_was_closed() {
     let admin = who::admin();
     w.ok(&admin, Body::GebietRemove { id: gid("n2"), base_rev: 1 });
     // two clean-ups at the same server time are stamped apart, also across a reopening
-    let clean = |keys: &[&str], n| Body::Cleanup { gebiet: gid("n1"), keys: Some(keys.iter().map(|k| key(k)).collect()), expect: Counts { marks: n, notes: 0 } };
+    let clean =
+        |keys: &[&str], n| Body::Cleanup { gebiet: gid("n1"), keys: Some(keys.iter().map(|k| key(k)).collect()), expect: Counts { marks: n, notes: 0 } };
     w.ok(&admin, clean(&["h:1"], 1));
     let dump = w.a.dump().unwrap();
     let (head, now) = (w.a.head(), w.now);

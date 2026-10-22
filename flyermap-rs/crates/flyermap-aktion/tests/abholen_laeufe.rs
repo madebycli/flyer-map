@@ -33,7 +33,15 @@ fn a_main_area_holds_sub_areas_inside_it_that_do_not_overlap() {
     assert_eq!(w.no(&admin, austeilen("verteil", None, square(13.1, 51.0, 0.001)).with_parent("main")), Reason::WrongArt);
     // the main area cannot shrink away from its parts, nor be deleted with parts in it
     let shrink = Body::Gebiet {
-        gebiet: flyermap_protocol::GebietIn { id: gid("main"), art: flyermap_protocol::Art::Abholen, gruppe: None, parent: None, name: "main".into(), ring: square(13.1, 51.0, 0.006), base_rev: 1 },
+        gebiet: flyermap_protocol::GebietIn {
+            id: gid("main"),
+            art: flyermap_protocol::Art::Abholen,
+            gruppe: None,
+            parent: None,
+            name: "main".into(),
+            ring: square(13.1, 51.0, 0.006),
+            base_rev: 1,
+        },
     };
     assert_eq!(w.no(&admin, shrink), Reason::OutsideParent);
     assert_eq!(w.no(&admin, Body::GebietRemove { id: gid("main"), base_rev: 1 }), Reason::HasChildren);
@@ -113,7 +121,10 @@ fn who_may_open_a_lauf_and_how_many_run_at_once() {
     assert_eq!(w.no(&who::viewer(), start("l0", "nord-1")), Reason::Forbidden { why: Why::MissingCapability });
     assert_eq!(w.no(&who::lead("sued"), start("l0", "nord-1")), Reason::Forbidden { why: Why::OutOfScope });
     assert_eq!(w.no(&admin, start("l0", "nowhere")), Reason::NotFound);
-    assert_eq!(w.no(&admin, Body::RunStart { run: LaufIn { id: LaufId::new("l0"), gebiet: gid("nord-1"), persons: 1000, join: Join::Closed } }), Reason::BadValue);
+    assert_eq!(
+        w.no(&admin, Body::RunStart { run: LaufIn { id: LaufId::new("l0"), gebiet: gid("nord-1"), persons: 1000, join: Join::Closed } }),
+        Reason::BadValue
+    );
     w.ok(&who::lead("nord"), start("l1", "nord-1"));
     assert_eq!(w.no(&admin, start("l2", "nord-1")), Reason::RunActive, "one at a time in a Gebiet");
     assert_eq!(w.no(&admin, start("l1", "sued-1")), Reason::Exists);

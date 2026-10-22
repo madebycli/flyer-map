@@ -1,11 +1,6 @@
 //! What the outline of a Gebiet must satisfy, judged by `flyermap-area`: a valid shape, not over another Gebiet of its world, and for a sub-area
 //! (Abholen) inside its main area and clear of its sisters. Only the neighbours whose bounding box meets the outline are loaded.
-use crate::{
-    fail::R,
-    queries::areas,
-    rights::Ctx,
-    sql::Sql,
-};
+use crate::{fail::R, queries::areas, rights::Ctx, sql::Sql};
 use flyermap_area::{check, within, DrawError};
 use flyermap_protocol::{Art, Gebiet, GebietId, Reason, Ring, RingFault};
 
@@ -27,10 +22,8 @@ pub(crate) fn judge<S: Sql>(sql: &mut S, cx: &Ctx, ring: &Ring, art: Art, parent
             return Err(Reason::OutsideParent.into());
         }
     }
-    let neighbours: Vec<Gebiet> = areas::near(sql, art, areas::bbox(ring))?
-        .into_iter()
-        .filter(|g| &g.id != this && g.parent.as_ref() == parent.map(|p| &p.id))
-        .collect();
+    let neighbours: Vec<Gebiet> =
+        areas::near(sql, art, areas::bbox(ring))?.into_iter().filter(|g| &g.id != this && g.parent.as_ref() == parent.map(|p| &p.id)).collect();
     let rings: Vec<Ring> = neighbours.iter().map(|g| g.ring.clone()).collect();
     match check(ring, &rings) {
         Ok(()) => Ok(()),

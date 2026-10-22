@@ -3,9 +3,9 @@ mod support;
 use flyermap_aktion::Caller;
 use flyermap_protocol::{limits::MAX_PAGE_ROWS, Body, Catchup, MarkCursor, NoteCursor, NoteId, NoteIn, Status};
 use support::{
-    abholen, austeilen, gid, gruppe_in, key, mark, marks, op,
+    abholen, austeilen, gid, gruppe_in, key, mark, marks,
     mirror::{oracle, Mirror},
-    square, who,
+    op, square, who,
     world::World,
     T0,
 };
@@ -25,10 +25,23 @@ fn town(marks_per_gebiet: u64) -> World {
         for chunk in batch.chunks(500) {
             w.ok(&admin, marks(gebiet, chunk.to_vec()));
         }
-        let note = NoteIn { id: NoteId::new(format!("note-{gebiet}")), key: key(&format!("a:{gebiet}")), gebiet: gid(gebiet), flag: None, text: gebiet.into(), rev: op(T0, "a"), deleted: false };
+        let note = NoteIn {
+            id: NoteId::new(format!("note-{gebiet}")),
+            key: key(&format!("a:{gebiet}")),
+            gebiet: gid(gebiet),
+            flag: None,
+            text: gebiet.into(),
+            rev: op(T0, "a"),
+            deleted: false,
+        };
         w.ok(&admin, Body::Note { note });
     }
-    w.ok(&admin, Body::RunStart { run: flyermap_protocol::LaufIn { id: flyermap_protocol::LaufId::new("l1"), gebiet: gid("s1"), persons: 1, join: flyermap_protocol::Join::Team } });
+    w.ok(
+        &admin,
+        Body::RunStart {
+            run: flyermap_protocol::LaufIn { id: flyermap_protocol::LaufId::new("l1"), gebiet: gid("s1"), persons: 1, join: flyermap_protocol::Join::Team },
+        },
+    );
     w
 }
 
@@ -169,11 +182,33 @@ fn a_device_built_from_snapshot_pages_and_log_sees_exactly_what_the_rights_allow
     let admin = who::admin();
     // the state moves while pages are being read: some marks change, a note is deleted, a Gebiet is removed
     w.ok(&admin, marks("n1", vec![mark("h:n1-0003", Status::Later, op(T0 + 9000, "b"))]));
-    w.ok(&admin, Body::Note { note: NoteIn { id: NoteId::new("note-s1"), key: key("a:s1"), gebiet: gid("s1"), flag: None, text: String::new(), rev: op(T0 + 9000, "b"), deleted: true } });
+    w.ok(
+        &admin,
+        Body::Note {
+            note: NoteIn {
+                id: NoteId::new("note-s1"),
+                key: key("a:s1"),
+                gebiet: gid("s1"),
+                flag: None,
+                text: String::new(),
+                rev: op(T0 + 9000, "b"),
+                deleted: true,
+            },
+        },
+    );
     w.ok(&admin, Body::RunEnd { id: flyermap_protocol::LaufId::new("l1") });
     w.ok(&admin, Body::GebietRemove { id: gid("w1"), base_rev: 1 });
     let dump = w.a.dump().unwrap();
-    let callers = [who::admin(), who::owner(), who::member("nord"), who::member("west"), who::lead("sued"), who::helper("h"), who::helper_at("h2", "part"), who::viewer()];
+    let callers = [
+        who::admin(),
+        who::owner(),
+        who::member("nord"),
+        who::member("west"),
+        who::lead("sued"),
+        who::helper("h"),
+        who::helper_at("h2", "part"),
+        who::viewer(),
+    ];
     for caller in &callers {
         for page in [3, 1000] {
             let device = Mirror::from_scratch(&mut w.a, caller, w.now, page);
@@ -214,12 +249,14 @@ fn a_device_that_listens_while_things_happen_ends_where_one_built_from_scratch_e
     let callers = [who::admin(), who::member("nord"), who::lead("sued"), who::helper("h"), who::viewer()];
     let mut devices: Vec<Mirror> = callers.iter().map(|c| Mirror::from_scratch(&mut w.a, c, w.now, 100)).collect();
     let admin = who::admin();
-    let mut sent = Vec::new();
-    sent.push(w.send(&admin, marks("n1", vec![mark("h:new", Status::Completed, op(T0 + 50, "b"))])));
-    sent.push(w.send(&admin, marks("part", vec![mark("h:new", Status::Completed, op(T0 + 50, "b"))])));
-    sent.push(w.send(&admin, Body::Cleanup { gebiet: gid("s1"), keys: Some(vec![key("h:s1-0001")]), expect: flyermap_protocol::Counts { marks: 1, notes: 0 } }));
-    sent.push(w.send(&admin, Body::RunEnd { id: flyermap_protocol::LaufId::new("l1") }));
-    sent.push(w.send(&admin, Body::GebietRemove { id: gid("part"), base_rev: 1 }));
+    let clean = Body::Cleanup { gebiet: gid("s1"), keys: Some(vec![key("h:s1-0001")]), expect: flyermap_protocol::Counts { marks: 1, notes: 0 } };
+    let sent = vec![
+        w.send(&admin, marks("n1", vec![mark("h:new", Status::Completed, op(T0 + 50, "b"))])),
+        w.send(&admin, marks("part", vec![mark("h:new", Status::Completed, op(T0 + 50, "b"))])),
+        w.send(&admin, clean),
+        w.send(&admin, Body::RunEnd { id: flyermap_protocol::LaufId::new("l1") }),
+        w.send(&admin, Body::GebietRemove { id: gid("part"), base_rev: 1 }),
+    ];
     for handled in &sent {
         for (caller, device) in callers.iter().zip(devices.iter_mut()) {
             device.apply_all(&handled.audience.filter(caller, w.now, &handled.broadcast));

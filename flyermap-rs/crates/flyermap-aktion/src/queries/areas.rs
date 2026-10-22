@@ -42,7 +42,8 @@ fn read(r: &Row) -> Result<AreaRow, SqlError> {
 
 /// `[min_lng, min_lat, max_lng, max_lat]`
 pub fn bbox(ring: &Ring) -> [f64; 4] {
-    ring.iter().fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, p| [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])])
+    ring.iter()
+        .fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, p| [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])])
 }
 
 pub fn get<S: Sql>(sql: &mut S, id: &GebietId) -> Result<Option<AreaRow>, SqlError> {

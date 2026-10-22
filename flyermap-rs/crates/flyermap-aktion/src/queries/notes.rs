@@ -52,7 +52,8 @@ pub fn on_keys<S: Sql>(sql: &mut S, gebiet: &GebietId, keys: &[Key]) -> Result<V
     for chunk in keys.chunks(IN_CHUNK) {
         let mut params = vec![Value::from(gebiet.as_str())];
         params.extend(chunk.iter().map(|k| Value::from(k.as_str())));
-        let rows = sql.query(&format!("SELECT {COLUMNS} FROM notes WHERE gebiet = ? AND deleted = 0 AND key IN ({}) ORDER BY id", placeholders(chunk.len())), &params)?;
+        let rows = sql
+            .query(&format!("SELECT {COLUMNS} FROM notes WHERE gebiet = ? AND deleted = 0 AND key IN ({}) ORDER BY id", placeholders(chunk.len())), &params)?;
         for r in &rows {
             out.push(read(r)?);
         }
@@ -86,7 +87,10 @@ pub fn tombstone<S: Sql>(sql: &mut S, gebiet: &GebietId, ids: &[NoteId], rev: &O
         let mut params = vec![Value::from(rev.as_str()), Value::from(who), Value::from(gebiet.as_str()), Value::from(rev.as_str())];
         params.extend(chunk.iter().map(|id| Value::from(id.as_str())));
         sql.execute(
-            &format!("UPDATE notes SET deleted = 1, flag = NULL, text = '', rev = ?, who = ? WHERE gebiet = ? AND rev < ? AND id IN ({})", placeholders(chunk.len())),
+            &format!(
+                "UPDATE notes SET deleted = 1, flag = NULL, text = '', rev = ?, who = ? WHERE gebiet = ? AND rev < ? AND id IN ({})",
+                placeholders(chunk.len())
+            ),
             &params,
         )?;
     }

@@ -92,14 +92,26 @@ fn a_change_needs_the_revision_it_was_made_on_and_the_world_never_changes() {
     assert_eq!(applied_and_stale(w.ok(&admin, edit("n1", Some("nord"), square(13.0, 51.0, 0.004), 2))), (0, 1));
     assert_eq!(w.a.head(), head);
     // another world, another parent
-    let as_abholen = Body::Gebiet { gebiet: GebietIn { id: gid("n1"), art: Art::Abholen, gruppe: None, parent: None, name: "n1".into(), ring: square(13.0, 51.0, 0.004), base_rev: 2 } };
+    let as_abholen = Body::Gebiet {
+        gebiet: GebietIn { id: gid("n1"), art: Art::Abholen, gruppe: None, parent: None, name: "n1".into(), ring: square(13.0, 51.0, 0.004), base_rev: 2 },
+    };
     assert_eq!(w.no(&admin, as_abholen), Reason::WrongArt);
     // a Gebiet that grows over its neighbour is refused; one that shrinks or moves is not
     assert_eq!(w.no(&admin, edit("n1", Some("nord"), square(13.0, 51.0, 0.012), 2)), Reason::Overlaps { with: Some(gid("s1")) });
     w.ok(&admin, edit("n1", Some("sued"), square(13.0, 51.0, 0.004), 2));
     assert_eq!(w.no(&admin, edit("n1", Some("gone"), square(13.0, 51.0, 0.004), 3)), Reason::BadParent);
     // a Gruppe belongs to the world of Austeilen only
-    let with_gruppe = Body::Gebiet { gebiet: GebietIn { id: gid("m"), art: Art::Abholen, gruppe: Some(gr("nord")), parent: None, name: "m".into(), ring: square(13.1, 51.0, 0.01), base_rev: 0 } };
+    let with_gruppe = Body::Gebiet {
+        gebiet: GebietIn {
+            id: gid("m"),
+            art: Art::Abholen,
+            gruppe: Some(gr("nord")),
+            parent: None,
+            name: "m".into(),
+            ring: square(13.1, 51.0, 0.01),
+            base_rev: 0,
+        },
+    };
     assert_eq!(w.no(&admin, with_gruppe), Reason::WrongArt);
     w.assert_replays();
 }
@@ -206,7 +218,12 @@ fn marks_and_notes_move_with_their_stamps_to_the_gebiet_that_took_the_piece() {
 fn a_gebiet_with_a_running_lauf_or_taker_is_not_deleted() {
     let mut w = World::standard();
     let admin = who::admin();
-    w.ok(&admin, Body::RunStart { run: flyermap_protocol::LaufIn { id: flyermap_protocol::LaufId::new("l1"), gebiet: gid("n1"), persons: 2, join: flyermap_protocol::Join::Team } });
+    w.ok(
+        &admin,
+        Body::RunStart {
+            run: flyermap_protocol::LaufIn { id: flyermap_protocol::LaufId::new("l1"), gebiet: gid("n1"), persons: 2, join: flyermap_protocol::Join::Team },
+        },
+    );
     assert_eq!(w.no(&admin, Body::GebietRemove { id: gid("n1"), base_rev: 1 }), Reason::InUse);
     w.ok(&admin, Body::RunEnd { id: flyermap_protocol::LaufId::new("l1") });
     w.ok(&admin, Body::GebietRemove { id: gid("n1"), base_rev: 1 });

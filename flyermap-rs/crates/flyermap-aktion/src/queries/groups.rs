@@ -28,7 +28,14 @@ pub fn all<S: Sql>(sql: &mut S) -> Result<Vec<GroupRow>, SqlError> {
 }
 
 pub fn live<S: Sql>(sql: &mut S) -> Result<Vec<Gruppe>, SqlError> {
-    Ok(sql.query(&format!("SELECT {COLUMNS} FROM groups WHERE deleted = 0 ORDER BY id"), &[])?.iter().map(read).collect::<Result<Vec<_>, _>>()?.into_iter().map(|r| r.gruppe).collect())
+    Ok(sql
+        .query(&format!("SELECT {COLUMNS} FROM groups WHERE deleted = 0 ORDER BY id"), &[])?
+        .iter()
+        .map(read)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|r| r.gruppe)
+        .collect())
 }
 
 pub fn count_live<S: Sql>(sql: &mut S) -> Result<u32, SqlError> {

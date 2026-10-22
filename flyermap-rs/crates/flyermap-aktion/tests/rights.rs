@@ -107,12 +107,28 @@ fn a_gebiet_cannot_be_taken_by_claiming_it() {
     let lead_nord = who::lead("nord");
     // s1 belongs to sued; the Lead of nord says it is nord's and redraws it
     let claim = Body::Gebiet {
-        gebiet: GebietIn { id: gid("s1"), art: Art::Austeilen, gruppe: Some(gr("nord")), parent: None, name: "mine".into(), ring: square(13.01, 51.0, 0.005), base_rev: 1 },
+        gebiet: GebietIn {
+            id: gid("s1"),
+            art: Art::Austeilen,
+            gruppe: Some(gr("nord")),
+            parent: None,
+            name: "mine".into(),
+            ring: square(13.01, 51.0, 0.005),
+            base_rev: 1,
+        },
     };
     assert_eq!(w.no(&lead_nord, claim), forbidden(Why::OutOfScope));
     // handing n1 to sued takes the right in both Gruppen, and the Lead has one
     let give = Body::Gebiet {
-        gebiet: GebietIn { id: gid("n1"), art: Art::Austeilen, gruppe: Some(gr("sued")), parent: None, name: "n1".into(), ring: square(13.0, 51.0, 0.005), base_rev: 1 },
+        gebiet: GebietIn {
+            id: gid("n1"),
+            art: Art::Austeilen,
+            gruppe: Some(gr("sued")),
+            parent: None,
+            name: "n1".into(),
+            ring: square(13.0, 51.0, 0.005),
+            base_rev: 1,
+        },
     };
     assert_eq!(w.no(&lead_nord, give.clone()), forbidden(Why::OutOfScope));
     w.ok(&who::admin(), give);

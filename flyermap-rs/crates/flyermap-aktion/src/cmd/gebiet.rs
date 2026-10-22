@@ -81,7 +81,15 @@ pub(super) fn upsert<S: Sql>(sql: &mut S, cx: &Ctx, out: &mut Out, input: &Gebie
     Ok(Done::applied(1))
 }
 
-fn create<S: Sql>(sql: &mut S, cx: &Ctx, out: &mut Out, input: &GebietIn, name: String, ring: flyermap_protocol::Ring, wanted: &flyermap_identity::Resource) -> R<Done> {
+fn create<S: Sql>(
+    sql: &mut S,
+    cx: &Ctx,
+    out: &mut Out,
+    input: &GebietIn,
+    name: String,
+    ring: flyermap_protocol::Ring,
+    wanted: &flyermap_identity::Resource,
+) -> R<Done> {
     cx.require(Action::DrawArea, wanted)?;
     let main = check_shape(sql, input.art, input.gruppe.as_ref(), input.parent.as_ref())?;
     if areas::get(sql, &input.id)?.is_some() {
@@ -91,7 +99,8 @@ fn create<S: Sql>(sql: &mut S, cx: &Ctx, out: &mut Out, input: &GebietIn, name: 
         return Err(Reason::LimitReached { limit: cx.limits.max_gebiete }.into());
     }
     geometry::judge(sql, cx, &ring, input.art, main.as_ref(), &input.id)?;
-    let gebiet = Gebiet { id: input.id.clone(), art: input.art, gruppe: input.gruppe.clone(), parent: input.parent.clone(), name, ring, rev: 1, collected: None };
+    let gebiet =
+        Gebiet { id: input.id.clone(), art: input.art, gruppe: input.gruppe.clone(), parent: input.parent.clone(), name, ring, rev: 1, collected: None };
     out.emit(sql, Change::GebietSet { gebiet })?;
     Ok(Done::applied(1))
 }

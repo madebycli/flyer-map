@@ -174,7 +174,13 @@ impl<S: Sql> Aktion<S> {
                     }
                 };
                 let audience = Audience::new(&self.org, &self.aktion, Vec::new());
-                Handled { reply: Answer { cid: cmd.cid.clone(), verdict: Verdict::rejected(reason) }, head: self.head, broadcast: Vec::new(), audience, replayed: false }
+                Handled {
+                    reply: Answer { cid: cmd.cid.clone(), verdict: Verdict::rejected(reason) },
+                    head: self.head,
+                    broadcast: Vec::new(),
+                    audience,
+                    replayed: false,
+                }
             }
         };
         record(kind, &handled);
@@ -198,7 +204,14 @@ impl<S: Sql> Aktion<S> {
                     return Err(Reason::CidReused.into());
                 }
                 let verdict: Verdict = queries::unjson(&prior.answer)?;
-                return Ok(Processed { verdict, entries: Vec::new(), audience: Audience::new(org, aktion, Vec::new()), head: *head, clock: None, replayed: true });
+                return Ok(Processed {
+                    verdict,
+                    entries: Vec::new(),
+                    audience: Audience::new(org, aktion, Vec::new()),
+                    head: *head,
+                    clock: None,
+                    replayed: true,
+                });
             }
             if sweep {
                 done::prune(sql, now.saturating_sub(limits.done_ttl_ms))?;

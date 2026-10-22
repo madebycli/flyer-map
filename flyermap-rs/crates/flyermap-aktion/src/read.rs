@@ -49,10 +49,7 @@ impl<S: Sql> Aktion<S> {
         ids.sort();
         ids.dedup();
         let facts: HashMap<GebietId, areas::Facts> = areas::facts(sql, &ids).map_err(storage)?.into_iter().map(|f| (f.id.clone(), f)).collect();
-        let laeufe = recent
-            .into_iter()
-            .filter(|l| facts.get(&l.gebiet).is_some_and(|f| cx.decide(Action::Read, &cx.facts_resource(f)).is_allowed()))
-            .collect();
+        let laeufe = recent.into_iter().filter(|l| facts.get(&l.gebiet).is_some_and(|f| cx.decide(Action::Read, &cx.facts_resource(f)).is_allowed())).collect();
         Ok(Snapshot { head: *head, floor: *floor, server_now: now, gruppen, gebiete, laeufe })
     }
 

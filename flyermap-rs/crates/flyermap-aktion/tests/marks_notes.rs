@@ -71,10 +71,7 @@ fn an_item_that_is_wrong_is_refused_alone_and_named_by_its_position() {
     let (applied, _, refused) = tally(&w.ok(&member, marks("n1", batch)));
     assert_eq!(applied, 2);
     let reasons: Vec<(u32, Reason)> = refused.into_iter().map(|r| (r.index, r.reason)).collect();
-    assert_eq!(
-        reasons,
-        vec![(1, Reason::BadKey), (2, Reason::BadClock), (3, Reason::ClockSkew), (4, Reason::ClockSkew), (6, Reason::BadKey)]
-    );
+    assert_eq!(reasons, vec![(1, Reason::BadKey), (2, Reason::BadClock), (3, Reason::ClockSkew), (4, Reason::ClockSkew), (6, Reason::BadKey)]);
 }
 
 #[test]

@@ -2,9 +2,7 @@
 //! seen. Written from the documentation of the protocol and not from the Akteur's tables, so that it is a second opinion on them.
 use flyermap_aktion::{Aktion, Caller, Dump, RusqliteSql};
 use flyermap_identity::{decide, Action, Resource};
-use flyermap_protocol::{
-    Catchup, Change, Entry, Gebiet, GebietId, Gruppe, GruppeId, Key, Lauf, LaufId, Mark, NoteId, Notiz,
-};
+use flyermap_protocol::{Catchup, Change, Entry, Gebiet, GebietId, Gruppe, GruppeId, Key, Lauf, LaufId, Mark, NoteId, Notiz};
 use std::collections::BTreeMap;
 
 use super::who;
@@ -227,7 +225,12 @@ pub fn oracle(dump: &Dump, caller: &Caller, now: u64) -> View {
     let mut view = View {
         gruppen: dump.gruppen.iter().filter(|(_, deleted)| !deleted).map(|(g, _)| g.clone()).collect(),
         gebiete: live.values().filter(|g| allowed(Action::Outline, g)).map(|g| (*g).clone()).collect(),
-        marks: dump.marks.iter().filter(|(m, removed)| !removed && live.get(&m.gebiet).is_some_and(|g| allowed(Action::Read, g))).map(|(m, _)| m.clone()).collect(),
+        marks: dump
+            .marks
+            .iter()
+            .filter(|(m, removed)| !removed && live.get(&m.gebiet).is_some_and(|g| allowed(Action::Read, g)))
+            .map(|(m, _)| m.clone())
+            .collect(),
         notes: dump.notes.iter().filter(|n| !n.deleted && live.get(&n.gebiet).is_some_and(|g| allowed(Action::Read, g))).cloned().collect(),
         laeufe: dump.laeufe.iter().filter(|l| any.get(&l.gebiet).is_some_and(|g| allowed(Action::Read, g))).cloned().collect(),
     };
