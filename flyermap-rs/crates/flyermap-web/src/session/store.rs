@@ -63,6 +63,7 @@ impl Session {
                 let list: Vec<(Key, Status)> = changes.iter().map(|(k, s)| (k.clone(), *s)).collect();
                 tracker.borrow_mut().apply(&changes);
                 me.progress.set(tracker.borrow().snapshots());
+                me.changed.update(|n| *n += 1);
                 if let Some(map) = me.map.get_untracked() {
                     map.paint(&list);
                 }

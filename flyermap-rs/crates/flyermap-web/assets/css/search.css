@@ -1,0 +1,15 @@
+/* The results of the bar: groups under their headings, the letters that matched in bold, the row the keyboard is on. On a phone the card sits above the keyboard
+   (the thumb reaches it there; the bar stays at the top where the eyes are), on a wider screen it hangs under the bar. */
+.fm-spot-group { display: grid; gap: 2px; }
+.fm-spot-h { margin: 0.5rem 0.9rem 0.2rem; font: 800 0.72rem var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-var); }
+.fm-spot-group:first-child .fm-spot-h { margin-top: 0.2rem; }
+.v5-result mark { background: transparent; color: var(--primary); font-weight: 800; }
+.v5-result[data-active="true"] { background: var(--primary-container); outline: 2px solid var(--primary); outline-offset: -2px; }
+.v5-result[data-active="true"] mark { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.v5-result:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.v5-spot-empty { min-height: 3.6rem; }
+
+@media (max-width: 599px) {
+  .v5-spot { position: fixed; top: auto; bottom: calc(var(--kb, 0px) + 0.7rem); max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - var(--bar) - 2.6rem); }
+}
+@media (prefers-reduced-motion: reduce) { .v5-spot { animation: none; } }

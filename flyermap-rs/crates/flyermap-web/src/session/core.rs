@@ -34,6 +34,8 @@ pub struct Session {
     pub rights: RwSignal<Rights>,
     /// Houses and metres per status, by Gebiet (what the overview and the pill show).
     pub progress: RwSignal<HashMap<String, ProgressSnapshot>>,
+    /// Counts every change of a status (from this device or from the server): a screen that shows a status reads it to know when to look again.
+    pub changed: RwSignal<u64>,
     pub sync: RwSignal<SyncView>,
     /// The loaded map data (engine, network, marking index) once there is some.
     pub loaded: RwSignal<Option<Rc<Loaded>>, LocalStorage>,
@@ -50,6 +52,7 @@ impl Session {
             world: RwSignal::new(World::empty()),
             rights: RwSignal::new(Rights::none()),
             progress: RwSignal::new(HashMap::new()),
+            changed: RwSignal::new(0),
             sync: RwSignal::new(SyncView::default()),
             loaded: RwSignal::new_local(None),
             field_state: RwSignal::new(FieldState::Idle),

@@ -42,6 +42,11 @@ impl Index {
         index
     }
 
+    /// Every chunk of the junction-to-junction piece that chunk `id` belongs to, in order (just `id` for a piece the index does not know).
+    pub fn chunks_of(&self, id: &str) -> Vec<String> {
+        self.segments.get(id).and_then(|s| self.chunks_by_group.get(&s.group)).cloned().unwrap_or_else(|| vec![id.to_string()])
+    }
+
     fn has_houses(&self, segment: &Segment) -> bool {
         self.group_houses.get(&segment.group).copied().unwrap_or(0) > 0
     }
@@ -137,7 +142,7 @@ mod tests {
         }
     }
     fn house(id: &str, parent: &str, street_parent: Option<&str>) -> House {
-        House { id: id.into(), center: [0.0, 0.0], parent: Some(parent.into()), street_parent: street_parent.map(str::to_string) }
+        House { id: id.into(), number: None, street: None, center: [0.0, 0.0], parent: Some(parent.into()), street_parent: street_parent.map(str::to_string) }
     }
     fn index() -> Index {
         Index::new(&Network {
@@ -154,6 +159,12 @@ mod tests {
         let keys = index().keys_for_groups(["1#1"], true, false);
         assert_eq!(names(&keys), ["s:1#0", "h:a", "s:1#1", "h:b"]);
         assert_eq!(names(&index().keys_for_groups(["1#1"], false, false)), ["s:1#0", "s:1#1"]);
+    }
+
+    #[test]
+    fn the_chunks_of_a_piece_are_listed_in_order() {
+        assert_eq!(index().chunks_of("1#1"), ["1#0", "1#1"]);
+        assert_eq!(index().chunks_of("nope"), ["nope"]);
     }
 
     #[test]

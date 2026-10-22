@@ -54,7 +54,7 @@ mod tests {
     }
 
     fn house(id: &str) -> House {
-        House { id: id.into(), center: [0.0, 0.0], parent: None, street_parent: None }
+        House { id: id.into(), number: None, street: None, center: [0.0, 0.0], parent: None, street_parent: None }
     }
 
     #[test]

@@ -2,10 +2,13 @@
 //! It owns no data. A tap on the map is handed to the app (what is under the finger depends on the tool in use).
 use super::{geojson, tiles};
 use crate::{
-    app::{acts::open_subject, state::AppState},
-    map::{bridge, FieldMap},
+    app::{
+        acts::{open_subject, position_of, REVEAL_AFTER},
+        state::AppState,
+    },
+    map::{bridge, query::Tapped, FieldMap},
     model::Subject,
-    shell::Tool,
+    shell::{Action, Tool},
 };
 use leptos::{html, prelude::*, task::spawn_local};
 use std::cell::Cell;
@@ -25,10 +28,26 @@ fn on_tap(state: AppState, map: &FieldMap, p: [f64; 2]) {
         Tool::Mark => return crate::app::marking::tap(state, map, p),
         Tool::Draw => return,
     }
-    let at = map.unproject(p);
-    let gebiet = state.session.world.with_untracked(|w| w.gebiet_at(at).map(|g| g.id.clone()));
-    if let Some(id) = gebiet {
-        open_subject(state, Subject::Gebiet(id));
+    let reveal_map = map.clone();
+    // what is under the finger opens its sheet: a house, a street piece, else the Gebiet; nothing: a sheet that is open goes away
+    let subject = match map.tapped(p, false) {
+        Some(Tapped::House(id)) => Some(Subject::Haus(id)),
+        Some(Tapped::Segment(id)) => Some(Subject::Strasse(id)),
+        None => {
+            let at = map.unproject(p);
+            state.session.world.with_untracked(|w| w.gebiet_at(at).map(|g| Subject::Gebiet(g.id.clone())))
+        }
+    };
+    match subject {
+        Some(subject) => {
+            let object = matches!(subject, Subject::Haus(_) | Subject::Strasse(_));
+            let at = object.then(|| position_of(state, &subject)).flatten();
+            open_subject(state, subject);
+            if let Some(at) = at {
+                set_timeout(move || reveal_map.reveal(at, None), REVEAL_AFTER);
+            }
+        }
+        None => state.dispatch(Action::Close),
     }
 }
 

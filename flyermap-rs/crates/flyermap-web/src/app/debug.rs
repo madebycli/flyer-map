@@ -64,6 +64,20 @@ pub fn install(session: Session) {
             JsValue::from_str(&format!(r#"{{"state":"{}","pending":{},"cursor":{},"queued":{}}}"#, view.state.as_str(), view.pending, cursor, pending))
         }),
     );
+    // address(n): the n-th house (by id) that has a street and a number, as JSON `{id, street, number}`; "" when there is none
+    set(
+        &api,
+        "address",
+        closure(move |a| {
+            let n = a[0].as_f64().unwrap_or(0.0) as usize;
+            let found = session.loaded.get_untracked().and_then(|l| {
+                let mut houses: Vec<_> = l.field.index.houses.values().filter(|h| h.street.is_some() && h.number.is_some()).collect();
+                houses.sort_by(|x, y| x.id.cmp(&y.id));
+                houses.get(n).map(|h| serde_json::json!({ "id": h.id, "street": h.street, "number": h.number }).to_string())
+            });
+            JsValue::from_str(&found.unwrap_or_default())
+        }),
+    );
     // status(key): what this device shows for a key
     set(
         &api,

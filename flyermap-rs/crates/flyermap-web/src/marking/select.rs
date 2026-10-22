@@ -71,7 +71,8 @@ mod tests {
     }
 
     fn index() -> Index {
-        let house = |id: &str, parent: &str| House { id: id.into(), center: [0.0, 0.0], parent: Some(parent.into()), street_parent: None };
+        let house =
+            |id: &str, parent: &str| House { id: id.into(), number: None, street: None, center: [0.0, 0.0], parent: Some(parent.into()), street_parent: None };
         Index::new(&Network { segments: vec![seg("1#0", 2), seg("2#0", 1)], houses: vec![house("a", "1#0"), house("b", "1#0"), house("c", "2#0")] })
     }
 

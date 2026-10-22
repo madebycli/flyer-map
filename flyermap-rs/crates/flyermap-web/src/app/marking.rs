@@ -173,7 +173,6 @@ pub fn install(state: AppState) {
         };
         driver.set_tool(chosen);
         if !active {
-            map.set_preview(&[]);
             // only when there is something to clear: writing what this effect reads would run it again and again
             if state.mark.with_untracked(|m| !m.taps.is_empty()) {
                 state.mark.update(|m| m.reduce(MarkAction::ClearTaps));
@@ -196,10 +195,18 @@ pub fn install(state: AppState) {
             }
         });
     });
-    // the preview: what the confirm would mark glows on the map
+    // the glow: what the confirm of Strecke would mark, or else the thing whose sheet is open
     Effect::new(move |_| {
         let Some(map) = s.map.get() else { return };
-        let keys = if tool.get() == Tool::Mark && state.mark.with(|m| m.mode == Mode::Route) { pending_keys_tracked(state) } else { Vec::new() };
+        let keys = if tool.get() == Tool::Mark {
+            if state.mark.with(|m| m.mode == Mode::Route) {
+                pending_keys_tracked(state)
+            } else {
+                Vec::new()
+            }
+        } else {
+            super::object::highlighted(state)
+        };
         map.set_preview(&keys);
     });
     // "only streets with houses" hides the others on the map

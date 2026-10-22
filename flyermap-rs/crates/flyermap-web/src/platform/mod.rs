@@ -8,6 +8,7 @@ pub mod gunzip;
 pub mod http;
 pub mod http_error;
 pub mod idb;
+pub mod keyboard;
 pub mod keys;
 pub mod panic;
 pub mod settings;

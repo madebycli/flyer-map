@@ -57,6 +57,7 @@ extern "C" {
     pub fn reset_north(map: &MlMap);
     #[wasm_bindgen(js_name = easeTo)]
     pub fn ease_to(map: &MlMap, lng: f64, lat: f64, zoom: f64);
+    pub fn reveal(map: &MlMap, lng: f64, lat: f64, zoom: f64);
     #[wasm_bindgen(js_name = fitBounds)]
     pub fn fit_bounds(map: &MlMap, west: f64, south: f64, east: f64, north: f64, padding: f64);
     #[wasm_bindgen(js_name = jumpTo)]

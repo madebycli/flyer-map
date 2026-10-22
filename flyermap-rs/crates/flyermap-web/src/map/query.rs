@@ -89,6 +89,12 @@ impl FieldMap {
         bridge::ease_to(&self.0.map, at[0], at[1], now.max(zoom));
     }
 
+    /// Bring `at` into the part of the stage no sheet covers. With `zoom` the camera goes there and at least that close; without, it only moves when `at` is
+    /// hidden or near an edge.
+    pub fn reveal(&self, at: LngLat, zoom: Option<f64>) {
+        bridge::reveal(&self.0.map, at[0], at[1], zoom.unwrap_or(f64::NAN));
+    }
+
     pub fn set_double_tap_zoom(&self, on: bool) {
         bridge::double_click_zoom(&self.0.map, on);
     }

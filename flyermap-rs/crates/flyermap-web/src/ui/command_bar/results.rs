@@ -29,7 +29,6 @@ fn scroll_to(index: usize) {
 pub fn Results(
     #[prop(into)] groups: Signal<Vec<ResultGroup>>,
     #[prop(into)] active: Signal<Option<usize>>,
-    #[prop(into)] busy: Signal<bool>,
     #[prop(into)] on_pick: Callback<Hit>,
 ) -> impl IntoView {
     Effect::new(move |_| {
@@ -69,17 +68,13 @@ pub fn Results(
             {move || {
                 let list = groups.get();
                 if list.iter().all(|g| g.hits.is_empty()) {
-                    return if busy.get() {
-                        view! { <p class="v5-spot-empty" role="status">"Suche läuft …"</p> }.into_any()
-                    } else {
-                        view! {
-                            <p class="v5-spot-empty" role="status">
-                                <Icon name=IconName::Search size=22 />
-                                "Nichts gefunden. Prüfe die Schreibweise oder suche nur nach dem Straßennamen."
-                            </p>
-                        }
-                        .into_any()
-                    };
+                    return view! {
+                        <p class="v5-spot-empty" role="status">
+                            <Icon name=IconName::Search size=22 />
+                            "Nichts gefunden. Prüfe die Schreibweise oder suche nur nach dem Straßennamen."
+                        </p>
+                    }
+                    .into_any();
                 }
                 let mut index = 0;
                 list.into_iter()

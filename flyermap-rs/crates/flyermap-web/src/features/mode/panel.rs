@@ -4,10 +4,7 @@
 use crate::{
     marking::{BrushSize, ConfirmKind, Context, Mode, PanelModel},
     platform::Theme,
-    ui::{
-        status::{self, Kind, ORDER},
-        Icon, IconName,
-    },
+    ui::{status::Kind, Icon, IconName, StatusTiles},
 };
 use flyermap_core::Status;
 use leptos::prelude::*;
@@ -57,26 +54,7 @@ pub fn MarkPanel(
             }
         })
         .collect_view();
-    let statuses = ORDER
-        .into_iter()
-        .map(|s| {
-            view! {
-                <button
-                    type="button"
-                    class="fm-tile status"
-                    data-status=s.as_str()
-                    style:--c=move || status::color(theme.get(), s)
-                    style:--ink=move || crate::ui::palette::color::ink_on(status::color(theme.get(), s))
-                    aria-label=move || status::label(kind.get(), s)
-                    aria-pressed=move || (model.with(|x| x.status) == s).to_string()
-                    on:click=move |_| on_status.run(s)
-                >
-                    <Icon name=status::icon(s) size=22 />
-                    <span>{move || status::label(kind.get(), s)}</span>
-                </button>
-            }
-        })
-        .collect_view();
+    let brush = Signal::derive(move || Some(model.with(|x| x.status)));
     let context = move || match model.with(|m| m.context.clone()) {
         Context::Line { text, warn } => view! {
             <p class="fm-ctx-line" class:warn=warn>
@@ -111,7 +89,7 @@ pub fn MarkPanel(
     view! {
         <section class="fm-panel fm-markpanel" aria-label="Markieren" data-panel-mode=move || model.with(|m| m.mode.key())>
             <div class="fm-slot" data-slot="mode" role="group" aria-label="Modus">{modes}</div>
-            <div class="fm-slot" data-slot="status" role="group" aria-label="Status">{statuses}</div>
+            <div class="fm-slot" data-slot="status"><StatusTiles selected=brush kind=kind theme=theme on_pick=on_status /></div>
             <div class="fm-slot" data-slot="context" role="status">{context}</div>
             <div class="fm-slot" data-slot="options" role="group" aria-label="Optionen">
                 <button

@@ -17,6 +17,9 @@ use flyermap_identity::Art;
 use leptos::prelude::*;
 
 fn subject_sheet(state: AppState, subject: Subject) -> AnyView {
+    if matches!(subject, Subject::Haus(_) | Subject::Strasse(_)) {
+        return super::object::sheet(state, subject);
+    }
     let close = state.on(Action::Close);
     let s = state.session;
     let view = s.world.with_untracked(|w| s.rights.with_untracked(|r| describe(&subject, w, r, None, now_ms())));

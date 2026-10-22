@@ -1,8 +1,9 @@
 //! The frame of the ready app: the map and the zones over it. This file only arranges; every anchor is a feature that gets its data from the state.
 use super::{
-    acts::open_subject,
+    acts::{locate, open_subject},
     marking,
     panels::panel_view,
+    search, shortcuts,
     state::AppState,
     zones::{Zone, ZoneId},
 };
@@ -13,29 +14,17 @@ use crate::{
         mode::{icon_of, MarkPanel, ModeButton},
         overview::build::pill,
         quick::QuickBar,
-        search::{command, find, CommandId},
     },
     marking::MarkAction,
     model::Subject,
-    platform::geo,
     shell::{nav::ui_state, Action, Layout, Panel, Tool},
-    ui::{status::Kind, CommandBar, Hit, HitKind, IconName, StatusPill, Toast},
+    ui::{status::Kind, CommandBar, IconName, StatusPill, Toast},
 };
 use leptos::prelude::*;
 use std::time::Duration;
 
 /// A note stays this long unless dismissed.
 const NOTICE_FOR: Duration = Duration::from_secs(9);
-
-fn subject_of(hit: &Hit) -> Option<Subject> {
-    match hit.kind {
-        HitKind::Gebiet => Some(Subject::Gebiet(hit.id.clone())),
-        HitKind::Gruppe => Some(Subject::Gruppe(hit.id.clone())),
-        HitKind::Lauf => Some(Subject::Lauf(hit.id.clone())),
-        HitKind::Person => Some(Subject::Person(hit.id.clone())),
-        HitKind::Street | HitKind::House | HitKind::Command => None,
-    }
-}
 
 #[component]
 pub fn Frame(state: AppState) -> impl IntoView {
@@ -51,40 +40,15 @@ pub fn Frame(state: AppState) -> impl IntoView {
     });
 
     let live = Memo::new(move |_| s.world.with(chips));
-    let on_locate = move |()| {
-        geo::locate(move |found| match found {
-            Ok(fix) => {
-                if let Some(map) = s.map.get_untracked() {
-                    map.set_position(Some(fix.at));
-                    map.focus(fix.at, 17.0);
-                }
-            }
-            Err(e) => state.notify(e.message()),
-        })
-    };
+    let on_locate = move |()| locate(state);
     let aktion_name = Signal::derive(move || s.world.with(|w| w.aktion.name.clone()));
     let pill_state = Signal::derive(move || {
         let view_only = s.world.with(|w| s.rights.with(|r| !r.may_mark_somewhere(&w.gebiete)));
         s.progress.with(|p| s.world.with(|w| pill(&crate::features::overview::build::build(w, p).overall, view_only)))
     });
     let may_mark = Signal::derive(move || s.world.with(|w| s.rights.with(|r| r.may_mark_somewhere(&w.gebiete))));
-    let search = Callback::new(move |query: String| {
-        let wide = state.layout.get_untracked() == Layout::Wide;
-        s.world.with(|w| find(w, &query, wide))
-    });
-    let on_pick = move |hit: Hit| {
-        if hit.kind == HitKind::Command {
-            match command(&hit.id).map(|c| c.id) {
-                Some(CommandId::Overview) => state.open(Panel::Overview),
-                Some(CommandId::Settings) => state.open(Panel::Settings),
-                Some(CommandId::Help) => state.open(Panel::Help),
-                Some(CommandId::Studio) => state.open(Panel::Studio),
-                None => {}
-            }
-        } else if let Some(subject) = subject_of(&hit) {
-            open_subject(state, subject);
-        }
-    };
+    let find = search::install(state);
+    shortcuts::install(state, find);
     let close_sheet_on_focus = move |()| {
         if panel.get_untracked().is_some() {
             state.dispatch(Action::Close);
@@ -124,7 +88,7 @@ pub fn Frame(state: AppState) -> impl IntoView {
             <div class="fm-stage">
                 <MapView state=state />
                 <Zone zone=ZoneId::Top>
-                    <CommandBar search=search on_pick=on_pick on_focus=close_sheet_on_focus>
+                    <CommandBar query=find.query groups=find.groups on_pick=find.on_pick on_focus=close_sheet_on_focus input=find.input>
                         <StatusPill campaign=aktion_name state=pill_state on_click=state.on(Action::Open(Panel::Overview)) />
                     </CommandBar>
                     <LiveStrip chips=live following=state.following on_pick=on_follow />

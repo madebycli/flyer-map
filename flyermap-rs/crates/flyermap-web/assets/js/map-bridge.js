@@ -114,6 +114,22 @@ export function doubleClickZoom(map, on) { if (on) map.doubleClickZoom.enable();
 export function zoomBy(map, delta) { map.zoomTo(map.getZoom() + delta, { duration: 180 }); }
 export function resetNorth(map) { map.resetNorth({ duration: 250 }); }
 export function easeTo(map, lng, lat, zoom) { map.easeTo({ center: [lng, lat], zoom, duration: 450 }); }
+// Bring a point into the part of the stage no sheet covers: a bottom sheet takes the lower part, a card at the left takes the left. NaN zoom: keep the zoom, and only
+// move when the point is not in the free part already.
+export function reveal(map, lng, lat, zoom) {
+  const el = map.getContainer();
+  const stage = el.closest(".fm-stage") || el.parentElement;
+  const W = el.clientWidth, H = el.clientHeight;
+  const sheet = stage.querySelector(".v5-sheet");
+  let x0 = 0, x1 = W, y0 = 110, y1 = H;
+  if (sheet) { if (sheet.offsetWidth > W * 0.8) y1 = H - sheet.offsetHeight - 12; else x0 = sheet.offsetLeft + sheet.offsetWidth + 12; }
+  const p = map.project([lng, lat]);
+  const m = 28;
+  const inside = p.x > x0 + m && p.x < x1 - m && p.y > y0 + m && p.y < y1 - m;
+  if (inside && Number.isNaN(zoom)) return;
+  const to = [(x0 + x1) / 2, (y0 + y1) / 2];
+  map.easeTo({ center: [lng, lat], zoom: Number.isNaN(zoom) ? map.getZoom() : Math.max(zoom, map.getZoom()), offset: [to[0] - W / 2, to[1] - H / 2], duration: 380 });
+}
 export function fitBounds(map, w, s, e, n, padding) { map.fitBounds([[w, s], [e, n]], { padding, duration: 0, maxZoom: 17.2 }); }
 export function jumpTo(map, lng, lat, zoom) { map.jumpTo({ center: [lng, lat], zoom }); }
 export function container(map) { return map.getCanvasContainer(); }

@@ -18,9 +18,6 @@ pub fn CommandBar(
     /// The typed text; the host watches it and answers with `groups`.
     query: RwSignal<String>,
     #[prop(into)] groups: Signal<Vec<ResultGroup>>,
-    /// The host is still looking (an answer may come).
-    #[prop(into)]
-    busy: Signal<bool>,
     #[prop(into)] on_pick: Callback<Hit>,
     /// Called when the field gets the focus (the app closes an open sheet then).
     #[prop(optional, into)]
@@ -132,7 +129,7 @@ pub fn CommandBar(
             {children()}
         </div>
         <Show when=move || open.get()>
-            <Results groups=groups active=active busy=busy on_pick=pick />
+            <Results groups=groups active=active on_pick=pick />
         </Show>
     }
 }

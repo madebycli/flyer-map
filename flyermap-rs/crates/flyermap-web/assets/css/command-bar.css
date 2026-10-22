@@ -2,7 +2,7 @@
 /* ── HUD capsule (quiet by default) ──────────────────────────── */
 .v5-cmd { position: relative; width: 100%; display: flex; align-items: center; gap: 0.2rem; height: var(--bar); padding: 0.25rem; border-radius: calc(var(--bar) / 2); background: var(--glass); box-shadow: var(--shadow); }
 .v5-cmd-btn, .v5-cmd-clear { flex: none; display: grid; place-items: center; width: var(--ctl); height: var(--ctl); padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--on); cursor: pointer; transition: background var(--t), transform 120ms var(--ease); }
-.v5-cmd-clear { width: 2.5rem; height: 2.5rem; color: var(--on-var); }
+.v5-cmd-clear { width: 2.75rem; height: 2.75rem; color: var(--on-var); }
 .v5-cmd-btn:active, .v5-cmd-clear:active { background: var(--surface-3); transform: scale(0.92); }
 .v5-cmd-btn:focus-visible, .v5-cmd-clear:focus-visible, .v5-pill:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .v5-cmd-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.5rem; height: var(--ctl); padding: 0 0.2rem 0 0.5rem; border-radius: calc(var(--ctl) / 2); color: var(--on-var); cursor: text; }

@@ -3,7 +3,8 @@
 .fm-markpanel { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-areas: "mode mode mode mode mode mode mode mode mode mode mode mode" "status status status status status status status status status status status status" "context context context context context context context context options options options options" "undo undo undo undo undo confirm confirm confirm confirm confirm confirm confirm"; gap: 0.45rem; }
 .fm-app[data-hand="left"] .fm-markpanel { grid-template-areas: "mode mode mode mode mode mode mode mode mode mode mode mode" "status status status status status status status status status status status status" "options options options options context context context context context context context context" "confirm confirm confirm confirm confirm confirm confirm undo undo undo undo undo"; }
 .fm-slot[data-slot="mode"] { grid-area: mode; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; }
-.fm-slot[data-slot="status"] { grid-area: status; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; }
+.fm-slot[data-slot="status"] { grid-area: status; }
+.fm-tiles4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; }
 .fm-slot[data-slot="context"] { grid-area: context; display: flex; align-items: center; min-width: 0; height: 3.25rem; padding: 0 0.3rem; color: var(--on); }
 .fm-slot[data-slot="options"] { grid-area: options; display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem; }
 .fm-app[data-hand="left"] .fm-slot[data-slot="options"] { justify-content: flex-start; }

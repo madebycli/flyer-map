@@ -25,6 +25,12 @@ pub struct Segment {
 #[serde(rename_all = "camelCase")]
 pub struct House {
     pub id: String,
+    /// The house number with its addition ("12a"), when the map data has one.
+    #[serde(default)]
+    pub number: Option<String>,
+    /// The street as written at the house.
+    #[serde(default)]
+    pub street: Option<String>,
     pub center: LngLat,
     /// The street piece the house is counted on.
     pub parent: Option<String>,

@@ -45,8 +45,11 @@
 .fm-act:last-child:nth-child(odd) { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0.9rem; min-height: 3.5rem; }
 .fm-subject-color { display: block; height: 0.3rem; border-radius: 1rem; }
 
-/* the map stand-in's Gebiete */
-.fm-stub-gebiet { fill: color-mix(in srgb, var(--c) 20%, transparent); stroke: var(--c); stroke-width: 3; vector-effect: non-scaling-stroke; stroke-linejoin: round; cursor: pointer; transition: fill var(--t); }
-.fm-stub-gebiet:hover { fill: color-mix(in srgb, var(--c) 32%, transparent); }
+/* the sheet of a house or a street piece: what its status is, the four statuses to choose from, the houses along */
+.fm-status-line { margin: 0; font: 700 1.05rem/1.3 var(--font); color: var(--on); }
+.fm-toggle { display: flex; align-items: center; gap: 0.7rem; width: 100%; min-height: 2.75rem; padding: 0 1rem; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font: 700 0.92rem var(--font); text-align: left; cursor: pointer; transition: background var(--t); }
+.fm-toggle[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); box-shadow: inset 0 0 0 2px var(--primary); }
+.fm-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.fm-toggle span { flex: 1; }
 
 @media (prefers-reduced-motion: reduce) { .fm-live-tag i, .fm-qbtn.sync.busy .v5-icon { animation: none; } }
