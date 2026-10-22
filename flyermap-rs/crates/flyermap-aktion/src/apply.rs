@@ -12,6 +12,8 @@ pub(crate) fn apply<S: Sql>(sql: &mut S, entry: &Entry) -> Result<(), SqlError> 
         Change::MarkSet { gebiet, key, status, op } => marks::upsert(sql, gebiet, key, *status, op, by),
         Change::MarksRemoved { gebiet, keys, rev } => marks::tombstone(sql, gebiet, keys, rev, by),
         Change::NoteSet { note } => notes::upsert(sql, note),
+        // the marks and notes were written, in the new Gebiet, by the entries that come with this one; this one is only for the readers of the old
+        Change::HandedOver { .. } => Ok(()),
         Change::NotesRemoved { gebiet, ids, rev } => notes::tombstone(sql, gebiet, ids, rev, by),
         Change::GruppeSet { gruppe } => groups::upsert(sql, gruppe),
         Change::GruppeRemoved { id, rev } => groups::tombstone(sql, id, *rev),

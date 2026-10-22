@@ -39,6 +39,11 @@ fn everything<S: Sql>(sql: &mut S, gebiet: &GebietId) -> R<(Vec<Key>, Vec<NoteId
     Ok((keys, ids))
 }
 
+/// The `part`-th run of at most `MAX_KEYS` of `all`.
+fn chunk<T: Clone>(all: &[T], part: usize) -> Vec<T> {
+    all.iter().skip(part * MAX_KEYS).take(MAX_KEYS).cloned().collect()
+}
+
 fn distinct(keys: &[Key], accepts: impl Fn(&Key) -> bool) -> R<Vec<Key>> {
     if keys.is_empty() {
         return Err(Reason::BadValue.into());
@@ -113,6 +118,12 @@ pub(super) fn hand_over<S: Sql>(sql: &mut S, cx: &Ctx, out: &mut Out, from: &Geb
     }
     for note in &written {
         out.emit(sql, Change::NoteSet { note: Notiz { gebiet: to.clone(), ..note.clone() } })?;
+    }
+    // those who read the old Gebiet and not the new one are told what left it
+    let moved_keys: Vec<Key> = owned.iter().map(|r| r.mark.key.clone()).collect();
+    let moved_notes: Vec<NoteId> = written.iter().map(|n| n.id.clone()).collect();
+    for part in 0..moved_keys.len().max(moved_notes.len()).div_ceil(MAX_KEYS) {
+        out.emit(sql, Change::HandedOver { from: from.clone(), to: to.clone(), keys: chunk(&moved_keys, part), notes: chunk(&moved_notes, part) })?;
     }
     stats::recount_all(sql, out, from)?;
     stats::recount_all(sql, out, to)?;

@@ -183,6 +183,32 @@ fn a_device_built_from_snapshot_pages_and_log_sees_exactly_what_the_rights_allow
 }
 
 #[test]
+fn marks_handed_to_a_gebiet_a_reader_cannot_read_leave_its_view() {
+    let mut w = town(6);
+    let admin = who::admin();
+    let (nord, sued) = (who::member("nord"), who::member("sued"));
+    let (mut nord_device, mut sued_device) = (Mirror::from_scratch(&mut w.a, &nord, w.now, 100), Mirror::from_scratch(&mut w.a, &sued, w.now, 100));
+    assert_eq!((nord_device.view().marks.len(), sued_device.view().marks.len()), (6, 6));
+    // two marks and the note on the whole Gebiet move from n1 (nord's) to s1 (sued's)
+    let keys = vec![key("h:n1-0001"), key("h:n1-0002")];
+    let handed = w.send(&admin, Body::Move { from: gid("n1"), to: gid("s1"), keys: keys.clone() });
+    assert!(handed.reply.verdict.is_accepted());
+    let kinds: Vec<_> = handed.broadcast.iter().map(|e| e.change.kind()).collect();
+    assert_eq!(kinds, ["mark-set", "mark-set", "handed-over", "lauf-set"], "the Lauf that runs in s1 counts again");
+    for (caller, device) in [(&nord, &mut nord_device), (&sued, &mut sued_device)] {
+        let shown = handed.audience.filter(caller, w.now, &handed.broadcast);
+        device.apply_all(&shown);
+        device.advance(handed.head);
+    }
+    // each is told what concerns it: nord that the marks left, sued that they came
+    assert_eq!((nord_device.view().marks.len(), sued_device.view().marks.len()), (4, 8));
+    let dump = w.a.dump().unwrap();
+    assert_eq!(nord_device.view(), oracle(&dump, &nord, w.now));
+    assert_eq!(sued_device.view(), oracle(&dump, &sued, w.now));
+    assert_eq!(Mirror::from_scratch(&mut w.a, &nord, w.now, 5).view(), nord_device.view());
+}
+
+#[test]
 fn a_device_that_listens_while_things_happen_ends_where_one_built_from_scratch_ends() {
     let mut w = town(5);
     let callers = [who::admin(), who::member("nord"), who::lead("sued"), who::helper("h"), who::viewer()];

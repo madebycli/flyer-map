@@ -1,6 +1,12 @@
-//! The log. Every change of the state of an Aktion is one numbered [`Entry`]; the state is a function of the entries alone (replay), and a device that
-//! applies the entries it is shown, in any order and any number of times, ends up with the same state as the server (last writer wins on marks and
-//! notes, the highest revision on the rest).
+//! The log. Every change of the state of an Aktion is one numbered [`Entry`]; the state is a function of the entries alone (replay). A device applies
+//! the entries it is shown in log order and skips those at or below the position it has reached; it ends up with the state the server shows to its caller.
+//! Marks and notes are last-writer-wins by stamp and the rest by revision, so applying the same entry twice, or an entry that is older than the state
+//! (a page of marks that is newer than the snapshot), changes nothing; what is not stamped (`Collected`, `Released`) needs the log order.
+//!
+//! Every entry is about one Gebiet (or a Gruppe), so that "who is told" is one question about one thing. A hand-over between two Gebiete is therefore
+//! two kinds of entry: the marks and notes arrive in the new Gebiet as `MarkSet` and `NoteSet`, and the old Gebiet is told what left it (`HandedOver`).
+//! One limit is the host's: when the rights of a caller change (a grant ends, a Gebiet is given to another Gruppe) the entries that took something from
+//! view are not shown to that caller; the host takes a new snapshot of it then (Plan 061 §3).
 use crate::{
     ids::NoteId,
     model::{Gebiet, Gruppe, Lauf, Notiz},
@@ -34,6 +40,15 @@ pub enum Change {
         gebiet: GebietId,
         ids: Vec<NoteId>,
         rev: OpId,
+    },
+    /// Marks on `keys` and notes `notes` left `from` for the Gebiet `to` (`Move`). They arrive in `to` as `MarkSet` and `NoteSet`, which only those who
+    /// read `to` are shown; this entry is for those who read `from`: they drop what is listed, if it is still `from`'s (a `MarkSet` for `to` may have
+    /// reached them before or after). The tables are not touched by it.
+    HandedOver {
+        from: GebietId,
+        to: GebietId,
+        keys: Vec<Key>,
+        notes: Vec<NoteId>,
     },
     GruppeSet {
         gruppe: Gruppe,
@@ -86,6 +101,7 @@ impl Change {
             Change::MarksRemoved { .. } => "marks-removed",
             Change::NoteSet { .. } => "note-set",
             Change::NotesRemoved { .. } => "notes-removed",
+            Change::HandedOver { .. } => "handed-over",
             Change::GruppeSet { .. } => "gruppe-set",
             Change::GruppeRemoved { .. } => "gruppe-removed",
             Change::GebietSet { .. } => "gebiet-set",
@@ -103,6 +119,7 @@ impl Change {
             Change::MarkSet { gebiet, .. }
             | Change::MarksRemoved { gebiet, .. }
             | Change::NotesRemoved { gebiet, .. }
+            | Change::HandedOver { from: gebiet, .. }
             | Change::Collected { gebiet, .. }
             | Change::Released { gebiet } => Some(gebiet),
             Change::NoteSet { note } => Some(&note.gebiet),

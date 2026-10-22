@@ -1,5 +1,6 @@
 //! Helpers shared by the test files: a world with an Akteur over in-memory SQLite, the callers of the cast, and small shapes.
 #![allow(dead_code)]
+pub mod gen;
 pub mod mirror;
 pub mod who;
 pub mod world;

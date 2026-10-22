@@ -95,6 +95,7 @@ fn every_change() -> Vec<Change> {
         Change::MarkSet { gebiet: gebiet_id("g1"), key: Key::house("a"), status: Status::Later, op: op(1) },
         Change::MarksRemoved { gebiet: gebiet_id("g1"), keys: vec![Key::house("a")], rev: op(2) },
         Change::NoteSet { note: notiz() },
+        Change::HandedOver { from: gebiet_id("g1"), to: gebiet_id("g2"), keys: vec![Key::house("a")], notes: vec![NoteId::new("n1")] },
         Change::NotesRemoved { gebiet: gebiet_id("g1"), ids: vec![NoteId::new("n1")], rev: op(3) },
         Change::GruppeSet { gruppe: Gruppe { id: GruppeId::new("nord"), name: "Nord".into(), color: 1, rev: 1 } },
         Change::GruppeRemoved { id: GruppeId::new("nord"), rev: 2 },
@@ -161,7 +162,7 @@ fn every_change_and_entry_round_trips_and_has_its_own_kind() {
         kinds.insert(change.kind());
         round(&Entry { seq: i as u64 + 1, at: 1_800_000_000_000, by: "p:1".into(), change });
     }
-    assert_eq!(kinds.len(), 12);
+    assert_eq!(kinds.len(), 13);
 }
 
 #[test]

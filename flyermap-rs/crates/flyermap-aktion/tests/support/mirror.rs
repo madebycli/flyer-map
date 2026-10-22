@@ -51,6 +51,11 @@ impl Mirror {
                 }
             }
             Change::NoteSet { note } => self.put_note(note.clone()),
+            Change::HandedOver { from, keys, notes, .. } => {
+                // what left `from` and is still held as `from`'s; a device that reads both Gebiete already has it as the new one's
+                self.marks.retain(|key, (mark, _)| mark.gebiet != *from || !keys.contains(key));
+                self.notes.retain(|id, note| note.gebiet != *from || !notes.contains(id));
+            }
             Change::NotesRemoved { gebiet, ids, rev } => {
                 for id in ids {
                     if let Some(note) = self.notes.get_mut(id) {
@@ -127,6 +132,11 @@ impl Mirror {
         if self.notes.get(&note.id).is_none_or(|old| old.rev <= note.rev) {
             self.notes.insert(note.id.clone(), note);
         }
+    }
+
+    /// The live feed says where the log stands: a device that has been shown everything it may see is there.
+    pub fn advance(&mut self, head: u64) {
+        self.applied = self.applied.max(head);
     }
 
     /// Entries shown to a device in one go.
