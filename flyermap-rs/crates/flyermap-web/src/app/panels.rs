@@ -35,7 +35,9 @@ fn overview(state: AppState) -> AnyView {
     let data = Signal::derive(move || s.world.with(|w| s.progress.with(|p| build(w, p))));
     let kind = Signal::derive(move || if s.world.with(|w| w.aktion.art == Art::Abholen) { Kind::Collection } else { Kind::Distribution });
     let on_area = move |id: String| acts::open_subject(state, Subject::Gebiet(id));
-    view! { <OverviewSheet data=data theme=state.prefs.theme kind=kind on_area=on_area on_close=state.on(Action::Close) /> }.into_any()
+    let on_sync = move |()| s.sync_now();
+    view! { <OverviewSheet data=data theme=state.prefs.theme kind=kind on_area=on_area sync=s.sync on_sync=on_sync on_close=state.on(Action::Close) /> }
+        .into_any()
 }
 
 pub fn panel_view(state: AppState, panel: Panel) -> AnyView {

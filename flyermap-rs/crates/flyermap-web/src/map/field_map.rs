@@ -2,7 +2,7 @@
 //! tile protocol, statuses are cut into the tiles by the engine and changed ones are painted through feature-state at once. Switching the
 //! theme or the basemap swaps the style and installs our layers again on `style.load`.
 use super::{bridge, style};
-use crate::platform::Theme;
+use crate::{model::Basemap, platform::Theme};
 use flyermap_core::{Key, Status};
 use serde_json::json;
 use std::{
@@ -12,12 +12,8 @@ use std::{
 };
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 
-/// The deployment's basemap styles; `None` for a theme means the plain background.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Basemap {
-    pub dark: Option<String>,
-    pub light: Option<String>,
-}
+/// A map click handler: screen x and y.
+type PointListener = Closure<dyn FnMut(f64, f64)>;
 
 pub struct Inner {
     pub map: bridge::MlMap,
@@ -30,14 +26,21 @@ pub struct Inner {
     tile_version: Cell<u32>,
     areas: RefCell<String>,
     context: RefCell<String>,
+    me: RefCell<String>,
+    draw: RefCell<String>,
     previewed: RefCell<HashSet<Key>>,
     ready: Cell<bool>,
     waiting: RefCell<Vec<Box<dyn FnOnce()>>>,
     keep: RefCell<Vec<Closure<dyn FnMut()>>>,
+    keep_pt: RefCell<Vec<PointListener>>,
 }
 
 #[derive(Clone)]
 pub struct FieldMap(pub Rc<Inner>);
+
+fn empty_collection() -> String {
+    json!({"type": "FeatureCollection", "features": []}).to_string()
+}
 
 static TOKENS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -58,10 +61,13 @@ impl FieldMap {
             tile_version: Cell::new(0),
             areas: RefCell::new(json!({"type": "FeatureCollection", "features": []}).to_string()),
             context: RefCell::new(json!({"type": "FeatureCollection", "features": []}).to_string()),
+            me: RefCell::new(empty_collection()),
+            draw: RefCell::new(empty_collection()),
             previewed: RefCell::default(),
             ready: Cell::new(false),
             waiting: RefCell::default(),
             keep: RefCell::default(),
+            keep_pt: RefCell::default(),
         });
         let me = FieldMap(inner);
         me.wire();
@@ -114,6 +120,8 @@ impl FieldMap {
         }
         bridge::set_data(map, style::AREAS, &self.0.areas.borrow());
         bridge::set_data(map, style::CONTEXT, &self.0.context.borrow());
+        bridge::set_data(map, style::ME, &self.0.me.borrow());
+        bridge::set_data(map, style::DRAW, &self.0.draw.borrow());
         self.0.previewed.borrow_mut().clear();
         self.0.ready.set(true);
         let waiting: Vec<_> = self.0.waiting.borrow_mut().drain(..).collect();
@@ -222,6 +230,32 @@ impl FieldMap {
         bridge::set_data(&self.0.map, style::CONTEXT, &context);
         *self.0.areas.borrow_mut() = areas;
         *self.0.context.borrow_mut() = context;
+    }
+
+    /// The device's position as a dot (`None` takes it away). It stays on the device.
+    pub fn set_position(&self, at: Option<[f64; 2]>) {
+        let features = at.map(|p| vec![json!({"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": p}})]).unwrap_or_default();
+        let data = json!({"type": "FeatureCollection", "features": features}).to_string();
+        bridge::set_data(&self.0.map, style::ME, &data);
+        *self.0.me.borrow_mut() = data;
+    }
+
+    /// The drawing of a Gebiet in progress: GeoJSON features with `kind` (`vertex`, `snap`) and `bad` (1: the drawing is not valid).
+    pub fn set_draw(&self, geojson: String) {
+        bridge::set_data(&self.0.map, style::DRAW, &geojson);
+        *self.0.draw.borrow_mut() = geojson;
+    }
+
+    /// A tap or click on the map, in screen pixels of the map.
+    pub fn on_click(&self, f: impl Fn([f64; 2]) + 'static) {
+        let closure = Closure::<dyn FnMut(f64, f64)>::new(move |x, y| f([x, y]));
+        bridge::on(&self.0.map, "click", closure.as_ref().unchecked_ref());
+        self.0.keep_pt.borrow_mut().push(closure);
+    }
+
+    /// The map came to rest (after a move or a zoom): the app can re-read what is on screen.
+    pub fn on_idle(&self, f: impl FnMut() + 'static) {
+        self.listen("idle", f);
     }
 
     pub fn token(&self) -> &str {

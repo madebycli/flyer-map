@@ -17,6 +17,7 @@ pub mod engine;
 pub mod features;
 pub mod field;
 pub mod map;
+pub mod marking;
 pub mod model;
 pub mod platform;
 pub mod session;

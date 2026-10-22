@@ -5,7 +5,7 @@
 pub mod help;
 pub mod join;
 pub mod live;
-pub mod map_stub;
+pub mod map;
 pub mod mode;
 pub mod overview;
 pub mod palette;

@@ -8,6 +8,9 @@ use serde_json::{json, Value};
 pub const TILES: &str = "v5-tiles";
 pub const AREAS: &str = "v5-areas";
 pub const CONTEXT: &str = "v5-context";
+/// The device's position (one point) and the Gebiet being drawn.
+pub const ME: &str = "v5-me";
+pub const DRAW: &str = "v5-draw";
 /// Streets are drawn (and cut into the tiles) from this zoom on; below it the dots show the progress (`SEGMENTS_FROM` of the engine).
 pub const SEGMENTS_FROM: f64 = 14.0;
 /// The layers a tap, a stroke or a brush can hit.
@@ -62,7 +65,28 @@ pub fn sources(tile_url: &str) -> Vec<(&'static str, Value)> {
             json!({"type": "vector", "tiles": [tile_url], "minzoom": 11, "maxzoom": 17, "promoteId": {"segments": "key", "houses": "key", "centers": "key"}}),
         ),
         (AREAS, empty.clone()),
-        (CONTEXT, empty),
+        (CONTEXT, empty.clone()),
+        (ME, empty.clone()),
+        (DRAW, empty),
+    ]
+}
+
+/// The drawing of a Gebiet and the device's position, on top of everything (see `areas::draw` for the properties of the features).
+fn overlay_layers(dark: bool) -> Vec<Value> {
+    let ink = if dark { "#8fb8ff" } else { "#2a62c9" };
+    let bad = if dark { "#f2b8b5" } else { "#ba1a1a" };
+    let ring = if dark { "#0e1513" } else { "#ffffff" };
+    let colour = json!(["case", ["==", ["get", "bad"], 1], bad, ink]);
+    vec![
+        json!({"id": "v5-draw-fill", "type": "fill", "source": DRAW, "filter": ["==", ["geometry-type"], "Polygon"],
+            "paint": {"fill-color": colour.clone(), "fill-opacity": 0.2}}),
+        json!({"id": "v5-draw-line", "type": "line", "source": DRAW, "filter": ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+            "layout": {"line-join": "round", "line-cap": "round"}, "paint": {"line-color": colour.clone(), "line-width": 3.5, "line-dasharray": [2, 1.4]}}),
+        json!({"id": "v5-draw-points", "type": "circle", "source": DRAW, "filter": ["==", ["geometry-type"], "Point"],
+            "paint": {"circle-color": colour, "circle-radius": ["case", ["==", ["get", "kind"], "snap"], 10, 5.5], "circle-stroke-width": 2.5, "circle-stroke-color": ring,
+                "circle-opacity": ["case", ["==", ["get", "kind"], "snap"], 0.55, 1]}}),
+        json!({"id": "v5-me-halo", "type": "circle", "source": ME, "paint": {"circle-color": "#3b82f6", "circle-opacity": 0.22, "circle-radius": 20}}),
+        json!({"id": "v5-me-dot", "type": "circle", "source": ME, "paint": {"circle-color": "#3b82f6", "circle-radius": 7, "circle-stroke-width": 3, "circle-stroke-color": "#ffffff"}}),
     ]
 }
 
@@ -90,7 +114,7 @@ pub fn layers(theme: Theme, houses_only: bool) -> Vec<Value> {
     let path_width = json!(["interpolate", ["exponential", 1.5], ["zoom"], 14, 1.2, 16, 2.4, 20, 7]);
     let line_opacity = json!(["interpolate", ["linear"], ["zoom"], 11, by_status(json!(0.3), json!(0.55)), 14, by_status(json!(open_line), json!(done_line))]);
     let filter = |id: &str| segment_filter(id, houses_only);
-    vec![
+    let mut all = vec![
         json!({"id": "v5-context-line", "type": "line", "source": CONTEXT, "layout": {"line-join": "round"},
             "paint": {"line-color": grey, "line-opacity": 0.55, "line-width": 1.2, "line-dasharray": [1.6, 2.4]}}),
         json!({"id": "v5-areas-fill", "type": "fill", "source": AREAS,
@@ -137,7 +161,9 @@ pub fn layers(theme: Theme, houses_only: bool) -> Vec<Value> {
             json!({"minzoom": 15.2, "paint": {"line-color": preview, "line-width": 2.5,
             "line-opacity": ["case", flag("preview"), 1, 0]}}),
         ),
-    ]
+    ];
+    all.extend(overlay_layers(dark));
+    all
 }
 
 #[cfg(test)]

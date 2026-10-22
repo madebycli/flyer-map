@@ -1,72 +1,75 @@
-//! What a start loads: the Gebiete with data for this person, each as one or more units (a big Gebiet is fetched and derived in parts, see
-//! `flyermap_pack::plan`). Same rules as the boot of `src/v5/app/useCampaign.ts`.
-use flyermap_rights::Role;
-use flyermap_wire::meta::{Area, Meta};
+//! What a start loads: the Gebiete with map data for this person, each as one or more units (a big Gebiet is fetched and derived in parts, see
+//! `flyermap_pack::plan`). The other Gebiete of the Aktion are outlines only. Same rule as the boot of the React app, asked of the rights mirror.
+use crate::{
+    backend::PackRef,
+    model::{Rights, World},
+};
+use flyermap_identity::Action;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Unit {
-    pub area: String,
-    /// `None` for a Gebiet that is one pack; the part number otherwise (`?part=`).
+    pub gebiet: String,
+    /// `None` for a Gebiet that is one pack; the part number otherwise.
     pub part: Option<usize>,
     pub ring: Vec<[f64; 2]>,
     pub cell: Option<[f64; 4]>,
-    pub has_pack: bool,
 }
 
-/// A team link or a collector gets the streets and houses of the Gebiete they work in; the other Gebiete are outlines. Admins and readers see everything.
-pub fn data_areas(meta: &Meta) -> Vec<&Area> {
-    let works_in_some = matches!(meta.role, Role::TeamEditor | Role::CollectionCollector);
-    meta.areas.iter().filter(|a| !works_in_some || a.writable).collect()
+impl Unit {
+    pub fn pack_ref(&self) -> PackRef {
+        PackRef { gebiet: self.gebiet.clone(), part: self.part }
+    }
 }
 
-pub fn units(meta: &Meta) -> Vec<Unit> {
-    let mut out = Vec::new();
-    for area in data_areas(meta) {
-        let ring: Vec<[f64; 2]> = area.geometry.outer().to_vec();
-        let plan = flyermap_pack::plan(&ring);
+/// The Gebiete too large to derive at all (an outline that is a runaway); they stay outlines.
+#[derive(Debug, Default, PartialEq)]
+pub struct Plan {
+    pub units: Vec<Unit>,
+    pub too_large: Vec<String>,
+}
+
+pub fn plan(world: &World, rights: &Rights) -> Plan {
+    let mut out = Plan::default();
+    for g in world.gebiete.iter().filter(|g| rights.can_gebiet(Action::Read, g)) {
+        let plan = flyermap_pack::plan(&g.ring);
+        if plan.too_large {
+            out.too_large.push(g.id.clone());
+            continue;
+        }
         for part in plan.parts {
-            out.push(Unit {
-                area: area.id.clone(),
-                part: (!plan.single).then_some(part.index),
-                ring: ring.clone(),
-                cell: part.cell,
-                has_pack: area.pack_version.is_some(),
-            });
+            out.units.push(Unit { gebiet: g.id.clone(), part: (!plan.single).then_some(part.index), ring: g.ring.clone(), cell: part.cell });
         }
     }
     out
 }
 
-/// The address of a unit's pack.
-pub fn pack_path(base: &str, unit: &Unit) -> String {
-    let area = String::from(js_sys::encode_uri_component(&unit.area));
-    match unit.part {
-        Some(part) => format!("{base}/areas/{area}/pack?part={part}"),
-        None => format!("{base}/areas/{area}/pack"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::mock::data::{grants, world, Persona, AKTION, ORG};
+    use flyermap_identity::{AktionId, OrgId};
 
-    fn meta(role: &str) -> Meta {
-        let text = format!(
-            r#"{{"campaign":{{"id":"c","name":"T"}},"kind":"distribution","window":null,"guestRoom":null,"role":"{role}","teamId":"t1","me":{{"label":null}},
-            "collectorId":null,"collectorLabel":null,"runs":[],"mainArea":null,"mainAreaId":null,"pickupRights":{{"view":false,"create":false,"edit":false}},
-            "canWrite":true,"canBuildPack":false,"teams":[],"contextAreas":[],"basemap":null,"areas":[
-            {{"id":"a","name":"A","teamId":"t1","geometry":{{"type":"Polygon","coordinates":[[[13,51],[13.01,51],[13.01,51.01],[13,51]]]}},"updatedAt":"x","packVersion":2,"packStale":false,"writable":true}},
-            {{"id":"b","name":"B","teamId":"t2","geometry":{{"type":"Polygon","coordinates":[[[13.0,51.4],[13.07,51.4],[13.07,51.45],[13.0,51.45],[13.0,51.4]]]}},"updatedAt":"x","packVersion":null,"packStale":false,"writable":false}}]}}"#
-        );
-        serde_json::from_str(&text).unwrap()
+    fn rights(p: Persona) -> Rights {
+        Rights::new(grants(p), OrgId::new(ORG), AktionId::new(AKTION), 1_800_000_000_000)
     }
 
     #[test]
-    fn a_team_link_loads_its_own_gebiete_and_a_reader_all() {
-        assert_eq!(units(&meta("team-editor")).len(), 1);
-        let all = units(&meta("viewer"));
-        assert!(all.len() > 2, "the big Gebiet comes in parts");
-        assert_eq!((all[0].part, all[0].has_pack), (None, true));
-        assert!(all[1..].iter().all(|u| u.area == "b" && u.part.is_some() && u.cell.is_some() && !u.has_pack));
+    fn an_admin_loads_everything_and_a_member_only_the_own_gruppe() {
+        let admin = plan(&world(Persona::Admin), &rights(Persona::Admin));
+        assert_eq!(admin.units.len(), 4);
+        assert!(admin.units.iter().all(|u| u.part.is_none() && u.cell.is_none()), "small Gebiete are one pack each");
+        let member = plan(&world(Persona::Member), &rights(Persona::Member));
+        assert_eq!(member.units.iter().map(|u| u.gebiet.as_str()).collect::<Vec<_>>(), ["nordstadt"]);
+        assert!(plan(&world(Persona::Viewer), &rights(Persona::Viewer)).units.len() == 4, "a viewer reads all");
+    }
+
+    #[test]
+    fn a_big_gebiet_comes_in_parts() {
+        let mut w = world(Persona::Admin);
+        w.gebiete.truncate(1);
+        w.gebiete[0].ring = vec![[13.0, 51.4], [13.07, 51.4], [13.07, 51.45], [13.0, 51.45], [13.0, 51.4]];
+        let p = plan(&w, &rights(Persona::Admin));
+        assert!(p.units.len() > 2 && p.units.iter().all(|u| u.part.is_some() && u.cell.is_some()));
+        assert_eq!(p.units[0].pack_ref().part, Some(0));
     }
 }

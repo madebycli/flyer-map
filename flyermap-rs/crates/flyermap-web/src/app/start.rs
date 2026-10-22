@@ -28,6 +28,7 @@ pub fn start() {
     std::mem::forget(viewport::watch());
     let session = Session::new(backend_for_address());
     let state = AppState::new(prefs, session);
+    super::debug::install(session);
     // `mount_to_body` keeps the app for the life of the page (it forgets its own handle).
     leptos::mount::mount_to_body(move || {
         effects::install(prefs);

@@ -1,6 +1,6 @@
 //! The frame of the ready app: the map and the zones over it. This file only arranges; every anchor is a feature that gets its data from the state.
 use super::{
-    acts::{self, open_subject},
+    acts::open_subject,
     panels::panel_view,
     state::AppState,
     zones::{Zone, ZoneId},
@@ -8,13 +8,14 @@ use super::{
 use crate::{
     features::{
         live::{chips, LiveStrip},
-        map_stub::MapStub,
+        map::{FieldStatus, MapView},
         mode::ModeButton,
         overview::build::pill,
         quick::QuickBar,
         search::{command, find, CommandId},
     },
     model::Subject,
+    platform::geo,
     shell::{nav::ui_state, Action, Layout, Panel, Tool},
     ui::{CommandBar, Hit, HitKind, IconName, StatusPill, Toast},
 };
@@ -48,7 +49,17 @@ pub fn Frame(state: AppState) -> impl IntoView {
     });
 
     let live = Memo::new(move |_| s.world.with(chips));
-    let gebiete = Signal::derive(move || s.world.with(|w| w.gebiete.clone()));
+    let on_locate = move |()| {
+        geo::locate(move |found| match found {
+            Ok(fix) => {
+                if let Some(map) = s.map.get_untracked() {
+                    map.set_position(Some(fix.at));
+                    map.focus(fix.at, 17.0);
+                }
+            }
+            Err(e) => state.notify(e.message()),
+        })
+    };
     let aktion_name = Signal::derive(move || s.world.with(|w| w.aktion.name.clone()));
     let pill_state = Signal::derive(move || {
         let view_only = s.world.with(|w| s.rights.with(|r| !r.may_mark_somewhere(&w.gebiete)));
@@ -105,12 +116,13 @@ pub fn Frame(state: AppState) -> impl IntoView {
                 </aside>
             </Show>
             <div class="fm-stage">
-                <MapStub gebiete=gebiete on_pick=move |id| acts::open_subject(state, Subject::Gebiet(id)) />
+                <MapView state=state />
                 <Zone zone=ZoneId::Top>
                     <CommandBar search=search on_pick=on_pick on_focus=close_sheet_on_focus>
                         <StatusPill campaign=aktion_name state=pill_state on_click=state.on(Action::Open(Panel::Overview)) />
                     </CommandBar>
                     <LiveStrip chips=live following=state.following on_pick=on_follow />
+                    <FieldStatus state=s.field_state on_retry=move |()| s.load_field() />
                 </Zone>
                 <Zone zone=ZoneId::Notice>
                     {move || notice.get().map(|n| view! { <Toast text=n.text on_dismiss=state.on(Action::Dismiss(n.id)) icon=IconName::Info /> })}
@@ -126,8 +138,11 @@ pub fn Frame(state: AppState) -> impl IntoView {
                     <QuickBar
                         prefs=state.prefs
                         sync=s.sync
-                        on_locate=move |()| state.notify("Der Standort kommt mit der Karte.")
-                        on_sync=move |()| state.notify(s.sync.with(|v| v.headline()))
+                        on_locate=on_locate
+                        on_sync=move |()| {
+                            s.sync_now();
+                            state.notify(s.sync.with(|v| v.headline()));
+                        }
                         on_note=move |text| state.notify(text)
                     />
                     <ModeButton icon=IconName::Route active=Signal::derive(move || tool.get() == Tool::Mark) label=mode_label available=may_mark on_click=on_mode />

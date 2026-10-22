@@ -161,12 +161,12 @@ pub fn overpass(bbox: [f64; 4], salt: &str) -> Value {
         }
     }
 
-    // one footway in the first full block, with three houses on it that belong to the street below
+    // one named asphalt footway in the first full block with three houses whose address is the footway itself: the engine shows such a path (dashed)
     if let (Some(&xa), Some(&ya)) = (xs.first(), ys.first()) {
         if xa + BLOCK < x1 && ya + BLOCK < y1 {
-            let (px, street) = (xa + BLOCK / 2.0, b.name(0).to_string());
+            let (px, street) = (xa + BLOCK / 2.0, "Parkpfad".to_string());
             let (n1, n2) = (b.end_node(), b.end_node());
-            b.way(300, json!({"highway": "footway", "surface": "asphalt"}), vec![n1, n2], vec![(px, ya + 28.0), (px, ya + BLOCK - 28.0)]);
+            b.way(300, json!({"highway": "footway", "surface": "asphalt", "name": "Parkpfad"}), vec![n1, n2], vec![(px, ya + 28.0), (px, ya + BLOCK - 28.0)]);
             for (n, dy) in [34.0, 46.0, 58.0].into_iter().enumerate() {
                 b.house(px + 8.0, ya + dy, &format!("{}a", n + 1), &street);
             }

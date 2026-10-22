@@ -7,4 +7,4 @@ pub mod ink;
 pub mod query;
 pub mod style;
 
-pub use field_map::{Basemap, FieldMap};
+pub use field_map::FieldMap;

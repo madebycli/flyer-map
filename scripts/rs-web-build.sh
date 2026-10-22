@@ -26,6 +26,16 @@ cp "$CRATE/assets/web/index.html" "$OUT/index.html"
 grep -o "@import '[^']*'" "$CRATE/assets/css/app.css" | sed "s/@import '\(.*\)'/\1/" | while read -r f; do cat "$CRATE/assets/css/$f"; echo; done > "$OUT/app.css"
 for f in logo.svg icon.svg icon-192.png icon-512.png apple-touch-icon.png; do cp "$ROOT/public/$f" "$OUT/$f"; done
 
+# The foreign parts, used as they are: MapLibre GL JS (its module, its shared chunk, its worker and its stylesheet, from node_modules after `npm ci`)
+# and the street engine (the committed WebAssembly build of flyermap-engine) with the small worker script that moves bytes to it.
+MAPLIBRE="$ROOT/node_modules/maplibre-gl/dist"
+[ -f "$MAPLIBRE/maplibre-gl.mjs" ] || { echo "MapLibre is missing: run npm ci"; exit 1; }
+mkdir -p "$OUT/vendor"
+for f in maplibre-gl.mjs maplibre-gl-shared.mjs maplibre-gl-worker.mjs; do cp "$MAPLIBRE/$f" "$OUT/vendor/$f"; done
+cat "$MAPLIBRE/maplibre-gl.css" >> "$OUT/app.css"
+cp "$ROOT/src/v5/engine/wasm/engine.wasm" "$OUT/engine.wasm"
+cp "$CRATE/assets/web/engine-worker.js" "$OUT/engine-worker.js"
+
 WASM="$OUT/flyermap-web_bg.wasm"
 RAW=$(wc -c < "$WASM"); GZ=$(gzip -9 -c "$WASM" | wc -c)
 BR=$(node -e "const z=require('zlib');process.stdout.write(String(z.brotliCompressSync(require('fs').readFileSync(process.argv[1]),{params:{[z.constants.BROTLI_PARAM_QUALITY]:11}}).length))" "$WASM")

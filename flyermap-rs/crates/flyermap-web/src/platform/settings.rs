@@ -39,6 +39,23 @@ pub fn toggle_str(on: bool) -> &'static str {
     }
 }
 
+/// The id of this device as the author of its edits: made once from `random` (values in 0..1) and kept in the store, so the same device is the same
+/// author after a restart, and a person who switches between the React app and this one stays one author.
+pub fn actor_id_with(store: &dyn KeyValue, random: &mut dyn FnMut() -> f64) -> String {
+    if let Some(existing) = store.read(keys::ACTOR).filter(|a| a.len() >= 4) {
+        return existing;
+    }
+    const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let id: String = std::iter::once('d').chain((0..6).map(|_| DIGITS[((random() * DIGITS.len() as f64) as usize).min(DIGITS.len() - 1)] as char)).collect();
+    // a store that refuses is no reason to stop: the id then lives for this session
+    let _ = store.write(keys::ACTOR, &id);
+    id
+}
+
+pub fn actor_id(store: &dyn KeyValue) -> String {
+    actor_id_with(store, &mut js_sys::Math::random)
+}
+
 /// How marking feels: a buzz, a tone, both or neither. The quick bar steps through the four with one button.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Feedback {
@@ -153,6 +170,21 @@ mod tests {
         assert!(s.base_on && s.awake && s.haptics);
         assert!(!s.sound, "a tone is a choice");
         assert_eq!(s.seed, None);
+    }
+
+    #[test]
+    fn the_device_is_one_author_for_good() {
+        let store = MemoryStore::default();
+        let mut n = 0.0;
+        let mut random = move || {
+            n += 0.17;
+            n % 1.0
+        };
+        let id = actor_id_with(&store, &mut random);
+        assert!(id.starts_with('d') && id.len() == 7 && id[1..].chars().all(|c| c.is_ascii_alphanumeric()), "{id}");
+        assert_eq!(actor_id_with(&store, &mut random), id, "the second ask reads what was kept");
+        store.write("vf-v5-actor", "dabc123").unwrap();
+        assert_eq!(actor_id_with(&store, &mut random), "dabc123", "the id of the React app is taken over");
     }
 
     #[test]

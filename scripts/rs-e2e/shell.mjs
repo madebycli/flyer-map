@@ -4,7 +4,10 @@
 // at 390x844 and 1280x800, dark and light, with a quiet console.
 import { fileURLToPath } from 'node:url';
 import { serve } from '../rs-web-serve.mjs';
-import { VIEWS, launch, noOverflow, openPage, rectOf, reporter, settle, shots } from './lib.mjs';
+import { VIEWS, launch, mapReady, noOverflow, openPage, rectOf, reporter, screenOf, settle, shots, withDebug } from './lib.mjs';
+
+// a tap on the Gebiet Nordstadt (its middle), as a finger would: through the map
+const tapNordstadt = async (page) => { const p = await screenOf(page, 13.0025, 51.20425); await page.mouse.click(p.x, p.y); };
 
 const PORT = 8151;
 const BASE = `http://127.0.0.1:${PORT}/`;
@@ -20,12 +23,13 @@ async function run(view) {
   const button = (name) => page.getByRole('button', { name, exact: true });
   const sheet = page.locator('.v5-sheet');
   const t0 = Date.now();
-  await page.goto(BASE);
+  await page.goto(withDebug(BASE));
   await page.waitForSelector('.fm-app', { timeout: 30000 });
   check(`${tag}: the app starts`, true, `${Date.now() - t0} ms`);
   check(`${tag}: the start screen leaves the document`, await page.waitForFunction(() => !document.getElementById('splash'), null, { timeout: 4000 }).then(() => true, () => false));
   check(`${tag}: the theme is ${theme}`, (await page.evaluate(() => document.documentElement.dataset.theme)) === theme);
   check(`${tag}: no horizontal overflow`, await noOverflow(page));
+  await mapReady(page);
 
   // zones: the stage holds the map and the six zones, nothing else floats
   const kids = await page.locator('.fm-stage > *').evaluateAll((els) => els.map((e) => e.dataset.zone ?? (e.classList.contains('v5-map') ? 'map' : `?${e.className}`)));
@@ -65,7 +69,7 @@ async function run(view) {
   check(`${tag}: buzz and tone go round through four states`, new Set(feelings).size === 4, feelings.join(' | '));
 
   // a tap on a Gebiet opens its sheet, with its actions
-  await page.locator('.fm-stub-gebiet[data-gebiet=nordstadt]').dispatchEvent('click');
+  await tapNordstadt(page);
   await sheet.waitFor();
   await settle(page, '.v5-sheet');
   check(`${tag}: a Gebiet opens a sheet with its name`, (await sheet.getAttribute('aria-label')) === 'Nordstadt');
@@ -105,10 +109,11 @@ async function run(view) {
 
   // a viewer may only look: no mode button, one action
   const viewer = await openPage(browser, view);
-  await viewer.page.goto(`${BASE}?mock=viewer`);
+  await viewer.page.goto(withDebug(BASE, 'mock=viewer'));
   await viewer.page.waitForSelector('.fm-app', { timeout: 30000 });
   check(`${tag}: a viewer has no mode button`, (await viewer.page.locator('.fm-mode').count()) === 0);
-  await viewer.page.locator('.fm-stub-gebiet[data-gebiet=nordstadt]').dispatchEvent('click');
+  await mapReady(viewer.page);
+  await tapNordstadt(viewer.page);
   await viewer.page.locator('.v5-sheet').waitFor();
   check(`${tag}: and one action on a Gebiet: look`, (await viewer.page.locator('.fm-act').allInnerTexts()).join() === 'Auf der Karte zeigen');
   check(`${tag}: the pill shows the eye of a viewer`, (await viewer.page.locator('.v5-pill .v5-viewonly').count()) === 1);

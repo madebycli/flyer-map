@@ -1,4 +1,6 @@
 //! The session: the backend, the answers of its boot, and the numbers the screens keep showing (progress, the state of the sync).
+use super::field::{FieldState, Loaded};
+use crate::map::FieldMap;
 use crate::{
     backend::{Backend, BackendError},
     model::{Rights, World},
@@ -33,6 +35,11 @@ pub struct Session {
     /// Houses and metres per status, by Gebiet (what the overview and the pill show).
     pub progress: RwSignal<HashMap<String, ProgressSnapshot>>,
     pub sync: RwSignal<SyncView>,
+    /// The loaded map data (engine, network, marking index) once there is some.
+    pub loaded: RwSignal<Option<Rc<Loaded>>, LocalStorage>,
+    pub field_state: RwSignal<FieldState>,
+    /// The map, once the map view has created it.
+    pub map: RwSignal<Option<FieldMap>, LocalStorage>,
 }
 
 impl Session {
@@ -44,6 +51,9 @@ impl Session {
             rights: RwSignal::new(Rights::none()),
             progress: RwSignal::new(HashMap::new()),
             sync: RwSignal::new(SyncView::default()),
+            loaded: RwSignal::new_local(None),
+            field_state: RwSignal::new(FieldState::Idle),
+            map: RwSignal::new_local(None),
         }
     }
 
@@ -62,6 +72,7 @@ impl Session {
                     me.rights.set(Rights::new(boot.grants, boot.org, aktion, now_ms()));
                     me.world.set(boot.world);
                     me.phase.set(Phase::Ready);
+                    me.load_field();
                 }
                 Err(BackendError::Unauthorized) => me.phase.set(Phase::NeedsJoin),
                 Err(e) => {

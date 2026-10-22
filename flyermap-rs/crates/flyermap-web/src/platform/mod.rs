@@ -3,6 +3,7 @@
 pub mod dom;
 pub mod error;
 pub mod events;
+pub mod geo;
 pub mod gunzip;
 pub mod http;
 pub mod http_error;

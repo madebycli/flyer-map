@@ -11,6 +11,8 @@ pub const BASE: &str = "vf-v5-base";
 pub const AWAKE: &str = "vf-awake";
 /// `"off"` or absent (on): a short buzz when marking.
 pub const HAPTICS: &str = "vf-haptics";
+/// The id of this device as the author of its edits (`d` and six letters or digits); made once and kept.
+pub const ACTOR: &str = "vf-v5-actor";
 /// `"on"` or absent (off): a short tone when marking. New in this app (a tone in the field is a choice).
 pub const SOUND: &str = "vf-sound";
 /// `#rrggbb` of the seed colour, absent for the default.

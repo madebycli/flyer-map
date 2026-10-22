@@ -5,16 +5,15 @@ use flyermap_sync::State;
 #[derive(Clone, Debug, PartialEq)]
 pub struct SyncView {
     pub state: State,
-    /// Queued edits (and notes) not on the server yet.
+    /// Queued edits not on the server yet.
     pub pending: usize,
     pub last_ok_at: Option<u64>,
     pub last_error: Option<String>,
-    pub notes: usize,
 }
 
 impl Default for SyncView {
     fn default() -> SyncView {
-        SyncView { state: State::Idle, pending: 0, last_ok_at: None, last_error: None, notes: 0 }
+        SyncView { state: State::Idle, pending: 0, last_ok_at: None, last_error: None }
     }
 }
 

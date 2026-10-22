@@ -28,9 +28,7 @@ pub fn grants(meta: &Meta) -> Vec<Grant> {
         LinkRole::Admin => vec![at_aktion(Role::Admin)],
         LinkRole::Viewer => vec![at_aktion(Role::Viewer)],
         LinkRole::TeamEditor => match &meta.team_id {
-            Some(team) => {
-                vec![Grant::new(Role::Member, Scope::Gruppe { org: org.clone(), aktion: aktion.clone(), gruppe: GruppeId::new(team) }), at_aktion(Role::Viewer)]
-            }
+            Some(team) => vec![Grant::new(Role::Member, Scope::Gruppe { org: org.clone(), aktion: aktion.clone(), gruppe: GruppeId::new(team) })],
             None => writable().map(|id| at_gebiet(Role::Member, id)).collect(),
         },
         LinkRole::CollectionCollector => std::iter::once(at_aktion(Role::Helper)).chain(writable().map(|id| at_gebiet(Role::Helper, id))).collect(),

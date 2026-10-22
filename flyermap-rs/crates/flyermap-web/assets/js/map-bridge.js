@@ -36,7 +36,8 @@ export function create(container, style, lng, lat, zoom, pixelRatio) {
   // a basemap may ask for icons its sprite lacks: answer once with an empty image instead of a warning per tile
   map.on('styleimagemissing', (event) => { if (!map.hasImage(event.id)) map.addImage(event.id, { width: 1, height: 1, data: new Uint8Array(4) }); });
   remember(map, style);
-  if (location.search.includes('debug')) window.__rsMap = map;
+  // for the browser flows and the diagnostics: the map itself and its counters, only when the address says `debug`
+  if (location.search.includes('debug')) { window.__rsMap = map; window.__rsDebug = () => JSON.parse(debugCounts(map)); }
   return map;
 }
 

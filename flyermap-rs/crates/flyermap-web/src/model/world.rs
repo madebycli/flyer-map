@@ -150,11 +150,30 @@ impl World {
         self.laeufe.iter().filter(move |l| l.gebiet == gebiet)
     }
 
+    /// The Gebiet a position lies in (the first, when two overlap).
+    pub fn gebiet_at(&self, p: LngLat) -> Option<&Gebiet> {
+        self.gebiete.iter().find(|g| in_ring(p, &g.ring))
+    }
+
     /// West, south, east, north of every Gebiet; `None` without Gebiete.
     pub fn bounds(&self) -> Option<[f64; 4]> {
         let all: Vec<LngLat> = self.gebiete.iter().flat_map(|g| g.ring.iter().copied()).collect();
         ring_bounds(&all)
     }
+}
+
+/// Is the point inside the ring (even-odd rule)? Longitude and latitude are treated as flat coordinates: fine for a ring the size of a town.
+pub fn in_ring(p: LngLat, ring: &[LngLat]) -> bool {
+    let mut inside = false;
+    let mut j = ring.len().wrapping_sub(1);
+    for i in 0..ring.len() {
+        let ([xi, yi], [xj, yj]) = (ring[i], ring[j]);
+        if (yi > p[1]) != (yj > p[1]) && p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 /// West, south, east, north of one ring.
@@ -174,6 +193,14 @@ pub fn ring_center(ring: &[LngLat]) -> Option<LngLat> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_position_is_in_the_gebiet_it_lies_in() {
+        let w = crate::backend::mock::data::world(crate::backend::mock::data::Persona::Admin);
+        assert_eq!(w.gebiet_at([13.002, 51.204]).map(|g| g.id.as_str()), Some("nordstadt"));
+        assert_eq!(w.gebiet_at([13.007, 51.201]).map(|g| g.id.as_str()), Some("hafen"));
+        assert!(w.gebiet_at([14.0, 52.0]).is_none());
+    }
 
     #[test]
     fn bounds_and_center_of_a_ring() {

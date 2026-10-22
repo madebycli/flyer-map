@@ -1,9 +1,10 @@
-//! The browser driver of `flyermap_sync::Machine`: it feeds the machine events (kicks, timers, answers) and carries out what comes back
-//! (requests, timers, saving, telling the interface). The decisions are all in the machine; this file only does the I/O.
-use super::{notes::Notes, persist, transport, view::SyncView};
-use crate::platform::time::now_ms;
+//! The browser driver of `flyermap_sync::Machine`: it feeds the machine events (kicks, timers, answers) and carries out what comes back (requests
+//! through the [`Backend`], timers, saving, telling the interface). The decisions are all in the machine; this file only does the I/O. It does not
+//! know which server stands behind the backend.
+use super::{persist, view::SyncView};
+use crate::{backend::Backend, platform::time::now_ms};
 use flyermap_core::{Changes, Store};
-use flyermap_sync::{Action, Config, Event, Machine, NetError, Save, TimerKind};
+use flyermap_sync::{Action, Config, Event, Machine, Save, TimerKind};
 use leptos::task::spawn_local;
 use std::{
     cell::{Cell, RefCell},
@@ -14,15 +15,14 @@ use wasm_bindgen::{closure::Closure, JsCast};
 
 /// The overlay (all statuses) is saved this long after the last change; queued edits are saved at once.
 const SAVE_ALL_AFTER_MS: i32 = 1500;
-/// Edits per push request (as the React app).
+/// Edits per push request.
 const BATCH: usize = 100;
 
 pub struct Shared {
     campaign: String,
-    base: String,
+    backend: Rc<dyn Backend>,
     pub store: Rc<RefCell<Store>>,
     machine: RefCell<Machine>,
-    notes: RefCell<Notes>,
     timers: RefCell<HashMap<TimerKind, i32>>,
     save_timer: Cell<Option<i32>>,
     disposed: Cell<bool>,
@@ -47,18 +47,17 @@ fn clear_timeout(id: i32) {
 impl SyncHost {
     pub fn new(
         campaign: &str,
-        base: &str,
+        backend: Rc<dyn Backend>,
         store: Rc<RefCell<Store>>,
         on_view: impl Fn(SyncView) + 'static,
         on_changes: impl Fn(Changes) + 'static,
     ) -> SyncHost {
-        let machine = Machine::new(Config { batch_size: BATCH, has_extras: true, ..Config::default() });
+        let machine = Machine::new(Config { batch_size: BATCH, ..Config::default() });
         SyncHost(Rc::new(Shared {
             campaign: campaign.to_string(),
-            base: base.to_string(),
+            backend,
             store,
             machine: RefCell::new(machine),
-            notes: RefCell::default(),
             timers: RefCell::default(),
             save_timer: Cell::new(None),
             disposed: Cell::new(false),
@@ -69,10 +68,6 @@ impl SyncHost {
 
     pub fn store(&self) -> Rc<RefCell<Store>> {
         Rc::clone(&self.0.store)
-    }
-
-    pub fn notes(&self) -> usize {
-        self.0.notes.borrow().len()
     }
 
     /// Ask for a round soon (a local edit, the window coming back, the person asking).
@@ -129,24 +124,19 @@ impl SyncHost {
                 Action::Push(ops) => {
                     let me = self.clone();
                     spawn_local(async move {
-                        let result = transport::push(&me.0.base, ops).await;
+                        let result = me.0.backend.push(ops).await;
                         me.feed(Event::PushDone(result));
                     });
                 }
                 Action::Pull { since } => {
                     let me = self.clone();
                     spawn_local(async move {
-                        let result = transport::pull(&me.0.base, since).await;
+                        let result = me.0.backend.pull(since).await;
                         me.feed(Event::PullDone(result));
                     });
                 }
-                Action::RunExtras => {
-                    let me = self.clone();
-                    spawn_local(async move {
-                        let result = me.pull_notes().await;
-                        me.feed(Event::ExtrasDone(result));
-                    });
-                }
+                // no side channel yet: the notes come with their own screens
+                Action::RunExtras => self.feed(Event::ExtrasDone(Ok(()))),
                 Action::SetTimer { kind, after_ms } => {
                     self.cancel(kind);
                     let me = self.clone();
@@ -165,7 +155,7 @@ impl SyncHost {
                 Action::Save(Save::All) => self.save_later(),
                 Action::Notify { state, pending, info } => {
                     flyermap_diag::breadcrumb(&format!("sync.{}", state.as_str()), Some(pending as i64));
-                    (self.0.on_view)(SyncView { state, pending, last_ok_at: info.last_ok_at, last_error: info.last_error, notes: self.notes() });
+                    (self.0.on_view)(SyncView { state, pending, last_ok_at: info.last_ok_at, last_error: info.last_error });
                 }
             }
         }
@@ -187,18 +177,6 @@ impl SyncHost {
             spawn_local(async move { me.save(true).await });
         });
         self.0.save_timer.set(id);
-    }
-
-    async fn pull_notes(&self) -> Result<(), NetError> {
-        loop {
-            let since = self.0.notes.borrow().cursor;
-            let page = transport::pull_notes(&self.0.base, since).await?;
-            let more = page.more && page.cursor > since;
-            self.0.notes.borrow_mut().receive(page.notes, page.cursor);
-            if !more {
-                return Ok(());
-            }
-        }
     }
 
     pub fn dispose(&self) {
