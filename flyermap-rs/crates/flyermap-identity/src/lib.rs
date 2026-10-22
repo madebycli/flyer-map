@@ -8,6 +8,7 @@
 //! Everything here is pure. Time comes in as milliseconds, randomness as bytes: the caller owns the clock and the entropy source.
 mod access;
 mod action;
+pub mod b64;
 mod grant;
 mod ids;
 pub mod invite;

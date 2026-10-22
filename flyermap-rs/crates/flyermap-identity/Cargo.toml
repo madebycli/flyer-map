@@ -10,11 +10,11 @@ serde.workspace = true
 sha2 = "0.10"
 hmac = "0.12"
 sha1 = "0.10"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 ciborium = "0.2"
+serde_json.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 rand_core = { version = "0.6", features = ["getrandom"] }
 p256 = { version = "0.13", features = ["ecdsa", "std"] }
 
