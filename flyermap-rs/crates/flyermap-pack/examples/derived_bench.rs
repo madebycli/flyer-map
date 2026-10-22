@@ -132,7 +132,7 @@ fn main() {
         let payload = pack.payload().expect("payload");
         println!("| gzip level | derived pack | compressing |");
         println!("|---|---|---|");
-        for level in [1, 6, COMPRESSION_LEVEL] {
+        for level in [1, 6, 9] {
             let (time, packed) = median(|| {
                 let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(level));
                 encoder.write_all(&payload).expect("memory");
