@@ -99,6 +99,12 @@ pub fn facts<S: Sql>(sql: &mut S, ids: &[GebietId]) -> Result<Vec<Facts>, SqlErr
     Ok(out)
 }
 
+/// The world and Gruppe of every Gebiet that is not deleted, by id.
+pub fn live_facts<S: Sql>(sql: &mut S) -> Result<Vec<Facts>, SqlError> {
+    let rows = sql.query("SELECT id, art, gruppe FROM areas WHERE deleted = 0 ORDER BY id", &[])?;
+    rows.iter().map(|r| Ok(Facts { id: GebietId::new(r.text(0)?), art: untag(r.text(1)?)?, gruppe: r.opt_text(2)?.map(GruppeId::new) })).collect()
+}
+
 /// Write the state of a Gebiet if its revision is not older than the stored one; a deleted row stays deleted.
 pub fn upsert<S: Sql>(sql: &mut S, g: &Gebiet) -> Result<(), SqlError> {
     let b = bbox(&g.ring);

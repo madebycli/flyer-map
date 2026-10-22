@@ -17,6 +17,8 @@ pub struct Limits {
     pub done_ttl_ms: u64,
     /// Läufe that ended within this time still appear in the snapshot.
     pub recent_runs_ms: u64,
+    /// Entries of the log that `compact` keeps.
+    pub log_keep: u64,
 }
 
 impl Default for Limits {
@@ -31,6 +33,7 @@ impl Default for Limits {
             past_skew_ms: PAST_SKEW_MS,
             done_ttl_ms: 14 * 24 * 60 * 60 * 1000,
             recent_runs_ms: 48 * 60 * 60 * 1000,
+            log_keep: 50_000,
         }
     }
 }

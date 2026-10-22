@@ -57,7 +57,7 @@ pub struct Aktion<S: Sql> {
     pub(crate) limits: Limits,
     pub(crate) head: u64,
     pub(crate) floor: u64,
-    clock: ClockState,
+    pub(crate) clock: ClockState,
     last_sweep: u64,
 }
 
@@ -125,6 +125,23 @@ impl<S: Sql> Aktion<S> {
         &self.aktion
     }
 
+    /// Forget the oldest entries of the log, keeping the newest `Limits::log_keep` (never fewer than one). A device behind the new floor takes a snapshot
+    /// instead of reading the log. The tables are not touched: they hold the state, the log only holds how it came to be. Returns the floor.
+    pub fn compact(&mut self) -> Result<u64, SqlError> {
+        let floor = self.head.saturating_sub(self.limits.log_keep.max(1));
+        if floor <= self.floor {
+            return Ok(self.floor);
+        }
+        self.sql.atomically::<_, SqlError>(|sql| {
+            log::delete_through(sql, floor)?;
+            meta::set(sql, meta::FLOOR, &floor.to_string())
+        })?;
+        self.floor = floor;
+        count("aktion.compacted", 1);
+        gauge("aktion.floor", floor as f64);
+        Ok(floor)
+    }
+
     /// Give the storage back (the host closes it, or measures it).
     pub fn into_sql(self) -> S {
         self.sql
@@ -135,8 +152,7 @@ impl<S: Sql> Aktion<S> {
     pub fn handle(&mut self, caller: &Caller, cmd: Command, now: u64) -> Handled {
         let kind = cmd.body.kind();
         let timer = span(&format!("aktion.cmd.{kind}"));
-        let result = self.process(caller, &cmd, now);
-        let handled = match result {
+        let handled = match self.process(caller, &cmd, now) {
             Ok(p) => Handled {
                 reply: Answer { cid: cmd.cid.clone(), verdict: p.verdict },
                 head: p.head,
@@ -144,10 +160,14 @@ impl<S: Sql> Aktion<S> {
                 audience: p.audience,
                 replayed: p.replayed,
             },
-            Err(reason) => {
-                if reason == Reason::Storage {
-                    diag!(Level::Error, "aktion", code "aktion.storage", "storage failed", kind = kind);
-                }
+            Err(fail) => {
+                let reason = match fail {
+                    Fail::Reason(reason) => reason,
+                    Fail::Sql(error) => {
+                        diag!(Level::Error, "aktion", code "aktion.storage", "storage failed", kind = kind, error = error.0);
+                        Reason::Storage
+                    }
+                };
                 let audience = Audience::new(&self.org, &self.aktion, Vec::new());
                 Handled { reply: Answer { cid: cmd.cid.clone(), verdict: Verdict::rejected(reason) }, head: self.head, broadcast: Vec::new(), audience, replayed: false }
             }
@@ -158,9 +178,9 @@ impl<S: Sql> Aktion<S> {
         handled
     }
 
-    fn process(&mut self, caller: &Caller, cmd: &Command, now: u64) -> Result<Processed, Reason> {
+    fn process(&mut self, caller: &Caller, cmd: &Command, now: u64) -> Result<Processed, Fail> {
         if !caller.is_valid() {
-            return Err(Reason::Forbidden { why: Why::NoGrant });
+            return Err(Reason::Forbidden { why: Why::NoGrant }.into());
         }
         validate::id(cmd.cid.as_str())?;
         let Aktion { sql, org, aktion, limits, head, clock, last_sweep, .. } = self;
@@ -191,20 +211,15 @@ impl<S: Sql> Aktion<S> {
             let audience = Audience::new(org, aktion, areas::facts(sql, &ids)?);
             Ok(Processed { verdict, head: out.head(), clock: out.clock_used.then(|| out.clock.clone()), entries: out.entries, audience, replayed: false })
         });
-        match outcome {
-            Ok(done) => {
-                *head = done.head;
-                if let Some(next) = &done.clock {
-                    *clock = next.clone();
-                }
-                if sweep {
-                    *last_sweep = now;
-                }
-                Ok(done)
-            }
-            Err(Fail::Reason(reason)) => Err(reason),
-            Err(Fail::Sql(_)) => Err(Reason::Storage),
+        let done = outcome?;
+        *head = done.head;
+        if let Some(next) = &done.clock {
+            *clock = next.clone();
         }
+        if sweep {
+            *last_sweep = now;
+        }
+        Ok(done)
     }
 }
 
