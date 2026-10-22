@@ -81,15 +81,15 @@ impl Role {
     /// Does the role make sense at this scope? (An Owner is for the Organisation, a Lead for a Gruppe, and so on.)
     pub fn fits(self, scope: &crate::Scope) -> bool {
         use crate::Scope::*;
-        match (self, scope) {
-            (Role::Owner, Organisation { .. }) => true,
-            (Role::Admin, Organisation { .. } | Aktion { .. }) => true,
-            (Role::Lead, Gruppe { .. }) => true,
-            (Role::Member, Gruppe { .. } | Gebiet { .. }) => true,
-            (Role::Helper, Aktion { .. } | Gebiet { .. }) => true,
-            (Role::Viewer, _) => true,
-            _ => false,
-        }
+        matches!(
+            (self, scope),
+            (Role::Owner, Organisation { .. })
+                | (Role::Admin, Organisation { .. } | Aktion { .. })
+                | (Role::Lead, Gruppe { .. })
+                | (Role::Member, Gruppe { .. } | Gebiet { .. })
+                | (Role::Helper, Aktion { .. } | Gebiet { .. })
+                | (Role::Viewer, _)
+        )
     }
 
     /// The roles this role may hand out (always at a scope it covers itself, see [`crate::may_grant`]). Nobody hands out more than they have.
