@@ -127,8 +127,8 @@ fn random_scope(r: &mut Lcg) -> Scope {
     match r.next() % 4 {
         0 => at_org(),
         1 => at_aktion(a),
-        2 => at_gruppe(a, &r.pick(&["g1", "g2", "g3"])),
-        _ => at_gebiet(a, &r.pick(&["x1", "x2", "x3"])),
+        2 => at_gruppe(a, r.pick(&["g1", "g2", "g3"])),
+        _ => at_gebiet(a, r.pick(&["x1", "x2", "x3"])),
     }
 }
 
@@ -136,7 +136,7 @@ fn random_grant(r: &mut Lcg) -> Grant {
     let scope = random_scope(r);
     let roles: Vec<Role> = Role::ALL.iter().copied().filter(|role| role.fits(&scope)).collect();
     let g = Grant::new(r.pick(&roles), scope);
-    if r.next() % 4 == 0 {
+    if r.next().is_multiple_of(4) {
         g.until(r.next() % 3_000)
     } else {
         g
@@ -144,12 +144,12 @@ fn random_grant(r: &mut Lcg) -> Grant {
 }
 
 fn random_resource(r: &mut Lcg) -> Resource {
-    let a = aktion(&r.pick(&["a1", "a2"]));
+    let a = aktion(r.pick(&["a1", "a2"]));
     match r.next() % 4 {
         0 => Resource::aktion(&org(), &a),
-        1 => Resource::gruppe(&org(), &a, &gruppe(&r.pick(&["g1", "g2", "g3"]))),
-        2 => Resource::gebiet(&org(), &a, &gebiet(&r.pick(&["x1", "x2", "x3"])), Art::Austeilen, Some(&gruppe(&r.pick(&["g1", "g2", "g3"])))),
-        _ => Resource::gebiet(&org(), &a, &gebiet(&r.pick(&["x1", "x2", "x3"])), Art::Abholen, None),
+        1 => Resource::gruppe(&org(), &a, &gruppe(r.pick(&["g1", "g2", "g3"]))),
+        2 => Resource::gebiet(&org(), &a, &gebiet(r.pick(&["x1", "x2", "x3"])), Art::Austeilen, Some(&gruppe(r.pick(&["g1", "g2", "g3"])))),
+        _ => Resource::gebiet(&org(), &a, &gebiet(r.pick(&["x1", "x2", "x3"])), Art::Abholen, None),
     }
 }
 
