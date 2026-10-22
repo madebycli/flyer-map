@@ -13,11 +13,13 @@ import { applyTrustedDeviceInvalidations, captureTrustedDeviceInvalidations } fr
 import { handleV5Api } from "./v5/api.ts";
 import { v5OptionsFromEnv } from "./v5/config.ts";
 
+import { forwardToRust, type RustEnv } from "./rustForward.ts";
+import { consoleSink } from "./v5/observe.ts";
 export { CampaignSyncDurableObject } from "./campaignSyncDurableObject.ts";
 export { OrganizationPasswordKdfDurableObject } from "./organizationPasswordKdfDurableObject.ts";
 
 type BaseEnv = Parameters<typeof baseWorker.fetch>[1];
-type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & {
+type Env = BaseEnv & OrganizationApiEnv & OrganizationBootstrapHashEnv & RustEnv & {
   ORGANIZATION_PASSWORD_KDF?: OrganizationPasswordKdfNamespace;
   ORGANIZATION_KDF_DIAGNOSTICS?: string;
   RUNTIME_ENVIRONMENT?: string;
@@ -79,6 +81,7 @@ export default {
           },
         }, { headers: { "cache-control": "no-store" } }));
       }
+      const rustResponse = await forwardToRust(request, env, (reason) => consoleSink('warn', JSON.stringify({ lvl: 'warn', msg: 'rust hand-over failed', reason }))); if (rustResponse) return harden(rustResponse);
       const v5Response = env.DB ? await handleV5Api(request, env.DB, v5OptionsFromEnv(env)) : null; if (v5Response) return harden(v5Response);
       const rootRedirect = redirectBareRootToOrganizationLogin(request); if (rootRedirect) return harden(rootRedirect);
       const rememberResponse = await handleOrganizationRememberRoute(request, env.DB); if (rememberResponse) return harden(rememberResponse);

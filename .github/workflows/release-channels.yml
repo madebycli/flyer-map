@@ -256,6 +256,43 @@ jobs:
           TRUSTED_COLS="$(npx wrangler d1 execute "$BETA_DB_NAME" --remote --config wrangler.jsonc --json --command "PRAGMA table_info('auth_trusted_devices');")"
           jq -e '.[0].results | map(.name) | contains(["subject_kind","subject_id","family_id","token_hash","idle_expires_at","absolute_expires_at","revoked_at","replaced_by_id"])' <<<"$TRUSTED_COLS" >/dev/null
 
+      - name: Build and deploy the Rust Worker behind the Unstable backend (opt-in)
+        # Plan 059: the TypeScript backend stays in front and hands the route groups in RUST_ROUTES to this Worker (service binding RUST_API).
+        # Off unless the repository variable RUST_API_ON_UNSTABLE is 1; the Rust Worker shares the dedicated Unstable D1 and has no public URL.
+        if: vars.RUST_API_ON_UNSTABLE == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/unstable' ]]
+          [[ -n "$BETA_D1_ID" ]]
+          bash scripts/rs-setup.sh
+          cd flyermap-rs/crates/flyermap-worker
+          node <<'NODE'
+          const fs=require('node:fs');
+          fs.writeFileSync('wrangler.unstable.toml',[
+            'name = "flyer-map-unstable-rs"','main = "build/index.js"','compatibility_date = "2025-09-01"','workers_dev = false','',
+            '[build]','command = "CARGO_PROFILE_RELEASE_STRIP=false worker-build --release"','',
+            '[vars]','RUNTIME_ENVIRONMENT = "unstable"',`SOURCE_COMMIT_SHA = "${process.env.GITHUB_SHA}"`,'',
+            '[[d1_databases]]','binding = "DB"',`database_name = "${process.env.BETA_DB_NAME}"`,`database_id = "${process.env.BETA_D1_ID}"`,'',
+          ].join('\n'));
+          NODE
+          "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" deploy --config wrangler.unstable.toml 2>&1 | tee /tmp/unstable-rs.log
+
+      - name: Hand route groups to the Rust Worker (opt-in)
+        if: vars.RUST_API_ON_UNSTABLE == '1'
+        shell: bash
+        env:
+          RUST_ROUTES: ${{ vars.RUST_ROUTES_UNSTABLE }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          c.services=[...(c.services||[]).filter(s=>s.binding!=='RUST_API'),{binding:'RUST_API',service:'flyer-map-unstable-rs'}];
+          c.vars={...(c.vars||{}),RUST_ROUTES:process.env.RUST_ROUTES||'v5'};
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(c,null,2)+'\n');
+          NODE
+
       - name: Prepare missing Unstable secrets
         shell: bash
         run: |

@@ -5,8 +5,13 @@
 use crate::{db::Db, http::request::Request, http::response::Response, App};
 
 pub async fn handle<D: Db>(app: &App<D>, request: &Request) -> Option<Response> {
-    if let Some(response) = app.handle_v5(request).await {
-        return Some(response);
+    let mut response = match app.handle_v5(request).await {
+        Some(response) => Some(response),
+        None => crate::base::handle(app, request).await,
+    };
+    // Which Worker answered, while both run side by side (diagnostics; the TypeScript Worker hands route groups over).
+    if let Some(r) = response.as_mut() {
+        r.set_header("x-served-by", "flyermap-rs");
     }
-    crate::base::handle(app, request).await
+    response
 }

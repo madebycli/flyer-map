@@ -73,6 +73,8 @@ for (const [n, e] of v.exchanges.entries()) {
   if (res.headers.get('cache-control') !== e.cacheControl) problems.push(`cache-control ${res.headers.get('cache-control')} instead of ${e.cacheControl}`);
   if (!sameCookie(e.setCookie ?? null, res.headers.get('set-cookie'))) problems.push(`set-cookie ${res.headers.get('set-cookie')} instead of ${e.setCookie}`);
   if (!res.headers.get('x-request-id')) problems.push('no x-request-id');
+  // behind the hand-over: the answer must come from the Worker named in SERVED_BY
+  if (process.env.SERVED_BY && res.headers.get('x-served-by') !== process.env.SERVED_BY) problems.push(`served by ${res.headers.get('x-served-by')}`);
   if (problems.length) { failed++; console.log(`FAIL #${n} ${e.who} ${e.method} ${e.path}\n  ${problems.join('\n  ')}`); }
 }
 if (overpass) stub.close();

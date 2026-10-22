@@ -44,7 +44,11 @@ async fn fetch(mut req: worker::Request, env: Env, _ctx: Context) -> Result<CfRe
             }
             Ok(CfResponse::from_bytes(response.body)?.with_status(response.status).with_headers(out))
         }
-        // Not ours: the static app and the routes that have not moved yet are served by the assets binding.
-        None => env.assets("ASSETS")?.fetch_request(req).await,
+        // Not ours: the static app is served by the assets binding. Behind the TypeScript Worker (a service binding, no assets) it is a 404.
+        None => match env.assets("ASSETS") {
+            Ok(assets) => assets.fetch_request(req).await,
+            Err(_) => Ok(CfResponse::from_json(&serde_json::json!({ "error": { "code": "not_found", "message": "API-Endpunkt wurde nicht gefunden." } }))?
+                .with_status(404)),
+        },
     }
 }
