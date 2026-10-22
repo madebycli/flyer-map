@@ -81,7 +81,7 @@ Begriffe bleiben, weil die Nutzer sie kennen: **Organisation**, **Aktion**, **Gr
 
 ## 8. Crates (Ziel)
 
-`core` (Domäne), `identity` (Rechte, Einladungen, TOTP, Passkeys, Tokens; rein), `aktion` (der Akteur: Zustandsautomat über Speicher-Trait), `wire` (Nachrichten v6), `sync` (Geräteseite), `pack` (Kartendaten), `engine` (Wasm), `area` (Zeichnen), `diag`, `server` (Edge-Worker + DO-Hüllen; dünn), `web` (App).
+`core` (Domäne), `identity` (Rechte, Einladungen, TOTP, Passkeys, Tokens; rein), `aktion` (der Akteur: Zustandsautomat über Speicher-Trait), `wire` (Nachrichten v6), `sync` (Geräteseite), `pack` (Kartendaten), `engine` (Wasm), `search` (Suche und Befehlsleiste aus §6, rein; gebaut: 54 Tests, 53k Einträge in 56 ms aufgebaut, rund 10 MB, schlechtester Tastendruck 0,5 ms), `area` (Zeichnen), `diag`, `server` (Edge-Worker + DO-Hüllen; dünn), `web` (App).
 Regeln wie Plan 059: Dateien ≤300 Zeilen (hart 500), `unsafe` verboten außer Engine, Diagnose von Anfang an.
 Das bestehende `flyermap-worker` (/api/v5) bleibt als Brücke, bis die Rust-App die TypeScript-App ersetzt; danach wird es gelöscht.
 

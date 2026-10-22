@@ -19,6 +19,7 @@ flyermap-diag = { path = "../flyermap-diag" }
 flyermap-identity = { path = "../flyermap-identity" }
 flyermap-pack = { path = "../flyermap-pack" }
 flyermap-rights = { path = "../flyermap-rights" }
+flyermap-search = { path = "../flyermap-search" }
 flyermap-sync = { path = "../flyermap-sync" }
 flyermap-wire = { path = "../flyermap-wire" }
 serde.workspace = true
@@ -37,7 +38,7 @@ web-sys = { version = "0.3", features = [
   "HtmlCanvasElement", "CanvasRenderingContext2d", "CanvasWindingRule", "DomStringList",
   "AudioContext", "AudioNode", "AudioDestinationNode", "AudioParam", "OscillatorNode", "OscillatorType", "GainNode",
   "Geolocation", "PositionOptions", "Position", "Coordinates", "PositionError",
-  "MediaQueryList", "Clipboard", "KeyboardEvent", "MouseEvent", "HtmlTextAreaElement", "HtmlButtonElement", "ScrollToOptions", "ScrollBehavior",
+  "MediaQueryList", "Clipboard", "KeyboardEvent", "MouseEvent", "HtmlTextAreaElement", "HtmlButtonElement", "ScrollToOptions", "ScrollBehavior", "ScrollIntoViewOptions", "ScrollLogicalPosition",
 ] }
 
 # flyermap-identity (the rights mirror) pulls in crates that ask for randomness; in the browser that is `crypto.getRandomValues`.

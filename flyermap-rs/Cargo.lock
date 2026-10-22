@@ -597,6 +597,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyermap-search"
+version = "0.1.0"
+dependencies = [
+ "rustc-hash",
+ "thiserror 2.0.21",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "flyermap-sync"
 version = "0.1.0"
 dependencies = [
@@ -617,6 +626,7 @@ dependencies = [
  "flyermap-identity",
  "flyermap-pack",
  "flyermap-rights",
+ "flyermap-search",
  "flyermap-sync",
  "flyermap-wire",
  "getrandom 0.2.17",
