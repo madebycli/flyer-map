@@ -71,11 +71,15 @@ Goal: when something is wrong on a phone or on the server, one report says what 
 ## Milestones (each one ships to Unstable and keeps the existing flows green where they apply)
 
 - **M0** workspace and engine moved (done).
-- **M1a** `diag`: events, recorder trait, ring buffer, redaction, metrics, report; native tests.
-- **M1** `core`: clock, overlay, outbox, conflicts, store, progress, with golden vectors from the TypeScript store.
-- **M2** `rights` and `wire`: rules and operation validation with vectors from `worker/v5`; wire types for ops, state, meta.
-- **M3** `sync`: the loop as a state machine with a fake transport; the same scenarios as `tests/v5Sync*.test.ts`.
+- **M1a** `diag`: events, recorder trait, ring buffer, redaction, metrics, report; native tests (done).
+- **M1** `core`: clock, overlay, outbox, conflicts, store, progress, with golden vectors from the TypeScript store (done: 30k fuzz steps identical).
+- **M2** `rights` and `wire`: rules and operation validation with vectors from `worker/v5`; wire types for ops, state, meta (done).
+- **M3** `sync`: the loop as a state machine with a fake transport; the same scenarios as `tests/v5Sync*.test.ts` (done: 300-seed convergence fuzz).
 - **M4** `worker`: `ops`, `state`, `meta` in Rust behind the same HTTP contract, run under `wrangler dev`; the TypeScript contract tests are ported to Rust fixtures route by route, then notes, rooms, progress, packs, cleanup, collection, access links, organization and auth.
+  The whole `/api/v5` is done (2026-10-22): every route, with `flyermap-pack` for the map data. Proof: `scripts/rs-vectors/http.ts` records 198
+  requests and 16 Overpass calls from the TypeScript Worker; `tests/contract_v5.rs` (SQLite) and `scripts/rs-e2e/worker-local.sh` (workerd, D1,
+  Overpass stub) replay them, 198/198. Random ids, secrets and tombstone nodes are paired; a pack is compared by its content (gzip bytes differ
+  by compressor). Not yet: collection, access links, organization and auth APIs (they are outside `/api/v5`), and the deployment switch.
 - **M5** `web` shell: platform layer, design system, command bar, menu, settings, sheet; the field map with the engine and the store (read-only), then marking (stamp, brush, route, lasso).
   First slice done: `flyermap-web` with fake data (platform, design system, Menü, Einstellungen, Farbe, Vorlagen, Übersicht, Hilfe), `scripts/rs-web-build.sh`, `scripts/rs-e2e/shell.mjs`; see the crate README for sizes and decisions.
 - **M6** `web` features: areas editor with connected drawing, notes, rooms, team, access, templates, help, diagnostics, install guide and start page.
