@@ -563,6 +563,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyermap-host"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "percent-encoding",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "worker",
+]
+
+[[package]]
 name = "flyermap-identity"
 version = "0.1.0"
 dependencies = [
@@ -638,6 +651,7 @@ version = "0.1.0"
 dependencies = [
  "flyermap-core",
  "flyermap-diag",
+ "flyermap-host",
  "flyermap-pack",
  "flyermap-rights",
  "flyermap-wire",

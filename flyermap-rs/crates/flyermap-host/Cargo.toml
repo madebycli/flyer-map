@@ -1,0 +1,22 @@
+[package]
+name = "flyermap-host"
+version.workspace = true
+edition.workspace = true
+description = "What a Worker needs from the platform, behind plain functions and traits: the database (SQLite natively, D1 in the Worker), HTTP request/response values, request log lines, time formats, secrets, outgoing requests, variables and rate limiters. No product logic."
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+percent-encoding = "2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = { version = "0.8", features = ["d1"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[lints]
+workspace = true

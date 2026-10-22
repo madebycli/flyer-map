@@ -101,7 +101,7 @@ impl<D: Db> App<D> {
         let template = route(path).map_or_else(|| "/api/v5/?".to_string(), |r| r.template());
         let mut response = match self.dispatch(request).await {
             Ok(response) => response,
-            Err(_) => Response::error(&ApiError::new(ErrorCode::Internal)),
+            Err(_) => crate::http::error_response(&ApiError::new(ErrorCode::Internal)),
         };
         let ms = (self.options.now)().saturating_sub(started) as f64;
         let code = response.body_json().pointer("/error/code").and_then(|c| c.as_str()).map(str::to_string);

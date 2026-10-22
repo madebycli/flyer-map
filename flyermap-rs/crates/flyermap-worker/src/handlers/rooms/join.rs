@@ -138,7 +138,7 @@ pub async fn join<D: Db>(db: &D, room_id: &str, request: &Request, options: &Opt
         Verdict::BadLink => return not_found(),
         Verdict::Finished => {
             // 403 here (the room list answers 409): the TypeScript Worker does the same.
-            let mut response = Response::error(&ApiError::new(ErrorCode::RoomFinished));
+            let mut response = crate::http::error_response(&ApiError::new(ErrorCode::RoomFinished));
             response.status = 403;
             return Ok(response);
         }

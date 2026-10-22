@@ -1,4 +1,3 @@
-use flyermap_wire::ApiError;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,8 +32,9 @@ impl Response {
         }
     }
 
-    pub fn error(error: &ApiError) -> Response {
-        Response::json(error.status(), &error.envelope())
+    /// The usual error answer: `{"error":{"code":…,"message":…}}`, never cached.
+    pub fn error(status: u16, code: &str, message: &str) -> Response {
+        Response::json(status, &serde_json::json!({ "error": { "code": code, "message": message } }))
     }
 
     pub fn body_json(&self) -> serde_json::Value {

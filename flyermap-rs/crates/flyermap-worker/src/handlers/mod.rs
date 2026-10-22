@@ -18,5 +18,5 @@ use flyermap_wire::{ApiError, ErrorCode};
 pub type Outcome = Result<Response, DbError>;
 
 pub fn fail(code: ErrorCode, message: &str) -> Outcome {
-    Ok(Response::error(&ApiError::with(code, message)))
+    Ok(crate::http::error_response(&ApiError::with(code, message)))
 }

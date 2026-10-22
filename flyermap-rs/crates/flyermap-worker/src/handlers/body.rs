@@ -5,7 +5,7 @@ use flyermap_wire::ErrorCode;
 use serde_json::{Map, Value};
 
 pub fn read_json(request: &Request, max_chars: usize) -> Result<Map<String, Value>, Response> {
-    let refuse = |code, message: &str| fail(code, message).unwrap_or_else(|_| Response::error(&flyermap_wire::ApiError::new(ErrorCode::Internal)));
+    let refuse = |code, message: &str| fail(code, message).unwrap_or_else(|_| crate::http::error_response(&flyermap_wire::ApiError::new(ErrorCode::Internal)));
     if !request.header("content-type").unwrap_or("").contains("application/json") {
         return Err(refuse(ErrorCode::UnsupportedMediaType, "JSON erwartet."));
     }
