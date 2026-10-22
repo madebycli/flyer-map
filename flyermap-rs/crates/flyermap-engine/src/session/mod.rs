@@ -66,6 +66,12 @@ pub struct Session {
     status: FxHashMap<String, u8>,
 }
 
+impl Default for Session {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Session {
     pub fn new() -> Self {
         Session {

@@ -1,5 +1,7 @@
 //! Map data of a Gebiet, from the plan to the stored bytes. Same results as `src/v5/engine/overpass.ts` and `pack.ts` (golden vectors in
-//! `tests/vectors/pack.json`). No I/O: the Worker asks Overpass and writes the database.
+//! `tests/vectors/pack.json`). No I/O: the Worker asks Overpass and writes the database. `derived` is the pack the engine's network makes once on the
+//! server (content-addressed, binary, with deltas), so a device loads the finished network instead of deriving it.
+pub mod derived;
 mod encode;
 mod js;
 mod normalize;
