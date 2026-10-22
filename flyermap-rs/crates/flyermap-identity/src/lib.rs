@@ -26,4 +26,4 @@ pub use grant::Grant;
 pub use ids::{AktionId, GebietId, GruppeId, OrgId};
 pub use resource::{Art, Resource};
 pub use role::{Capability, Role};
-pub use scope::Scope;
+pub use scope::{Scope, ScopeColumns};

@@ -34,3 +34,41 @@ impl Scope {
         }
     }
 }
+
+/// The columns a scope is stored in (the directory keeps one row shape for grants and invitations).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScopeColumns {
+    pub kind: &'static str,
+    pub org: String,
+    pub aktion: Option<String>,
+    pub gruppe: Option<String>,
+    pub gebiet: Option<String>,
+}
+
+impl Scope {
+    pub fn columns(&self) -> ScopeColumns {
+        let s = |x: &str| Some(x.to_string());
+        match self {
+            Scope::Organisation { org } => ScopeColumns { kind: "organisation", org: org.0.clone(), aktion: None, gruppe: None, gebiet: None },
+            Scope::Aktion { org, aktion } => ScopeColumns { kind: "aktion", org: org.0.clone(), aktion: s(&aktion.0), gruppe: None, gebiet: None },
+            Scope::Gruppe { org, aktion, gruppe } => {
+                ScopeColumns { kind: "gruppe", org: org.0.clone(), aktion: s(&aktion.0), gruppe: s(&gruppe.0), gebiet: None }
+            }
+            Scope::Gebiet { org, aktion, gebiet } => {
+                ScopeColumns { kind: "gebiet", org: org.0.clone(), aktion: s(&aktion.0), gruppe: None, gebiet: s(&gebiet.0) }
+            }
+        }
+    }
+
+    /// `None` when the columns do not make a scope (a row that was edited by hand).
+    pub fn from_columns(kind: &str, org: &str, aktion: Option<&str>, gruppe: Option<&str>, gebiet: Option<&str>) -> Option<Scope> {
+        let (org, aktion) = (OrgId::new(org), aktion.map(AktionId::new));
+        match kind {
+            "organisation" => Some(Scope::Organisation { org }),
+            "aktion" => Some(Scope::Aktion { org, aktion: aktion? }),
+            "gruppe" => Some(Scope::Gruppe { org, aktion: aktion?, gruppe: GruppeId::new(gruppe?) }),
+            "gebiet" => Some(Scope::Gebiet { org, aktion: aktion?, gebiet: GebietId::new(gebiet?) }),
+            _ => None,
+        }
+    }
+}

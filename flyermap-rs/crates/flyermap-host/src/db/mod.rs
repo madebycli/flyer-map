@@ -43,6 +43,16 @@ impl From<u64> for Param {
         Param::Int(i64::try_from(v).unwrap_or(i64::MAX))
     }
 }
+impl From<u32> for Param {
+    fn from(v: u32) -> Param {
+        Param::Int(i64::from(v))
+    }
+}
+impl From<bool> for Param {
+    fn from(v: bool) -> Param {
+        Param::Int(i64::from(v))
+    }
+}
 impl From<usize> for Param {
     fn from(v: usize) -> Param {
         Param::Int(i64::try_from(v).unwrap_or(i64::MAX))

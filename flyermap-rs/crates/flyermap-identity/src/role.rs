@@ -48,6 +48,21 @@ pub enum Role {
 impl Role {
     pub const ALL: [Role; 6] = [Role::Owner, Role::Admin, Role::Lead, Role::Member, Role::Helper, Role::Viewer];
 
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Owner => "owner",
+            Role::Admin => "admin",
+            Role::Lead => "lead",
+            Role::Member => "member",
+            Role::Helper => "helper",
+            Role::Viewer => "viewer",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Role> {
+        Role::ALL.into_iter().find(|r| r.as_str() == text)
+    }
+
     pub fn capabilities(self) -> &'static [Capability] {
         match self {
             Role::Owner => &[Read, Mark, Annotate, DrawArea, ManageGroup, StartRun, Collect, ManageAktion, ManagePeople, ManageSecurity],

@@ -1,4 +1,4 @@
-use crate::{AktionId, GebietId, GruppeId, OrgId};
+use crate::{AktionId, GebietId, GruppeId, OrgId, Scope};
 use serde::{Deserialize, Serialize};
 
 /// The two kinds of Gebiete. They are separate worlds (Plan 057).
@@ -22,6 +22,16 @@ pub struct Resource {
 }
 
 impl Resource {
+    /// The place a scope stands for (what managing people at that scope is asked about).
+    pub fn of_scope(scope: &Scope) -> Resource {
+        match scope {
+            Scope::Organisation { org } => Resource::organisation(org),
+            Scope::Aktion { org, aktion } => Resource::aktion(org, aktion),
+            Scope::Gruppe { org, aktion, gruppe } => Resource::gruppe(org, aktion, gruppe),
+            Scope::Gebiet { org, aktion, gebiet } => Resource { gebiet: Some(gebiet.clone()), ..Resource::aktion(org, aktion) },
+        }
+    }
+
     pub fn organisation(org: &OrgId) -> Resource {
         Resource { org: org.clone(), aktion: None, gruppe: None, gebiet: None, art: None }
     }

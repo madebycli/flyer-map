@@ -1,5 +1,8 @@
 # flyermap-rs: everything of our own, in Rust. Crates are small and layered; a crate only depends on the ones above it in this list.
 #
+#   flyermap-host     platform seams: database, HTTP values, secrets, time, outgoing requests, variables                  (no product logic)
+#   flyermap-identity who may do what and how people sign in: roles, scopes, one decision, invitations, TOTP, passkeys (pure)
+#   flyermap-server   the /v6 API: directory (people, sessions, grants, invitations, audit), sign-in flows                  (host, identity)
 #   flyermap-core     pure domain: clock, status, keys, operations, overlay (last writer wins), outbox, conflicts, progress   (no I/O)
 #   flyermap-rights   who may read and write where: roles, areas, operation rules                                           (depends on core)
 #   flyermap-wire     the HTTP contract of /api/v5 as typed requests and responses                                        (depends on core)
