@@ -15,7 +15,7 @@ pub mod toast;
 
 pub use button::{Button, ButtonVariant, IconButton, IconButtonVariant};
 pub use card::{Card, Hint, Overlay};
-pub use command_bar::{CommandBar, Hit, HitKind, PillState, StatusPill, SyncDot};
+pub use command_bar::{flat, CommandBar, Hit, HitKind, PillState, ResultGroup, StatusPill, SyncDot};
 pub use icon::{Icon, IconName};
 pub use list::{ListGroup, ListRow, RowTone, SwitchRow};
 pub use progress::Progress;
