@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { gunzipSync } from 'node:zlib';
 
 const base = process.env.BASE ?? 'http://localhost:8788';
-const v = JSON.parse(readFileSync(new URL('../../flyermap-rs/crates/flyermap-worker/tests/vectors/v5.json', import.meta.url), 'utf8'));
+const v = JSON.parse(readFileSync(new URL(`../../flyermap-rs/crates/flyermap-worker/tests/vectors/${process.env.VECTORS ?? 'v5'}.json`, import.meta.url), 'utf8'));
 
 const upstream = [...(v.upstream ?? [])];
 const upstreamProblems = [];
@@ -24,8 +24,8 @@ const stub = createServer((req, res) => {
     res.end(next.body);
   });
 });
-const overpass = new URL(v.overpass);
-await new Promise((ok) => stub.listen(Number(overpass.port), overpass.hostname, ok));
+const overpass = v.overpass ? new URL(v.overpass) : null;
+if (overpass) await new Promise((ok) => stub.listen(Number(overpass.port), overpass.hostname, ok));
 const unzipped = (bytes) => { try { return JSON.parse(gunzipSync(bytes).toString('utf8')); } catch { return undefined; } };
 
 const pairs = new Map(); // recorded → ours
@@ -75,7 +75,7 @@ for (const [n, e] of v.exchanges.entries()) {
   if (!res.headers.get('x-request-id')) problems.push('no x-request-id');
   if (problems.length) { failed++; console.log(`FAIL #${n} ${e.who} ${e.method} ${e.path}\n  ${problems.join('\n  ')}`); }
 }
-stub.close();
+if (overpass) stub.close();
 if (upstream.length) upstreamProblems.push(`${upstream.length} recorded requests were never sent`);
 for (const p of upstreamProblems) { failed++; console.log(`FAIL upstream: ${p}`); }
 console.log(failed ? `${failed} of ${v.exchanges.length} exchanges differ` : `all ${v.exchanges.length} exchanges answered like the TypeScript Worker`);
