@@ -7,8 +7,10 @@ use super::error::DerivedError;
 use flate2::{bufread::GzDecoder, write::DeflateEncoder, Compression, Crc};
 use std::io::{Read, Write};
 
-/// Level 9 costs the server time once per pack and every device a smaller download; measured in `examples/derived_bench.rs`.
-pub const LEVEL: u32 = 9;
+/// Level 6: on 51 000 houses level 9 is 0.05 % smaller (4059.5 kB against 4061.5 kB) and takes 1.9 s instead of 0.7 s to compress; level 1 is
+/// 18 % larger. Measured with `examples/derived_bench.rs` on the synthetic city. The name of a pack is the hash of the payload, so the level
+/// changes the stored bytes only, never the name.
+pub const LEVEL: u32 = 6;
 /// The most the inflater reserves up front; more is allocated as it grows.
 const RESERVE: u64 = 64 * 1024 * 1024;
 
