@@ -5,12 +5,15 @@
 //! `repo` (the queries), `handlers` (one file per resource), `app` (puts them together).
 pub mod access;
 pub mod app;
+pub mod base;
 pub mod config;
 pub mod db;
 #[cfg(target_arch = "wasm32")]
 mod entry;
 pub mod handlers;
 pub mod http;
+pub mod outer;
+pub mod platform;
 pub mod rand;
 pub mod repo;
 pub mod time;

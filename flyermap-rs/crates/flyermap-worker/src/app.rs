@@ -29,6 +29,10 @@ pub struct Options {
     pub overpass_url: Option<String>,
     /// The largest map data answer that is accepted (UTF-16 units, as the TypeScript Worker counts).
     pub max_pack_bytes: usize,
+    /// Deployment variables and secrets (`M4_BOOTSTRAP_SECRET`, `RUNTIME_ENVIRONMENT`, …).
+    pub vars: crate::platform::Vars,
+    /// The rate limiters by binding name (`ORGANIZATION_LOGIN_LIMITER`, …).
+    pub limit: crate::platform::Limiter,
 }
 
 impl Options {
@@ -60,6 +64,8 @@ impl Default for Options {
             fetch: crate::upstream::offline(),
             overpass_url: None,
             max_pack_bytes: 40_000_000,
+            vars: crate::platform::no_vars(),
+            limit: crate::platform::unlimited(),
         }
     }
 }
@@ -78,8 +84,14 @@ impl<D: Db> App<D> {
         App { db, options }
     }
 
-    /// `None` for anything outside `/api/v5/` (another part of the Worker answers it).
+    /// Every request: the layers in the order of the TypeScript Worker (`worker/indexOrganizer.ts` around `worker/indexFc52.ts` around
+    /// `worker/index.ts`). `None` when no layer answers (the static app is served instead).
     pub async fn handle(&self, request: &Request) -> Option<Response> {
+        crate::outer::handle(self, request).await
+    }
+
+    /// `/api/v5/` (the field API); `None` for anything else.
+    pub async fn handle_v5(&self, request: &Request) -> Option<Response> {
         let path = request.path();
         if !path.starts_with("/api/v5/") {
             return None;

@@ -32,6 +32,8 @@ async fn fetch(mut req: worker::Request, env: Env, _ctx: Context) -> Result<CfRe
         fetch: crate::upstream::platform(20_000),
         overpass_url: overpass_from_env(var, local_test),
         max_pack_bytes: 40_000_000,
+        vars: crate::platform::env_vars(env.clone()),
+        limit: crate::platform::env_limiter(env.clone()),
     };
     let app = App::new(D1Db(env.d1("DB")?), options);
     match app.handle(&request).await {
