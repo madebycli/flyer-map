@@ -2,7 +2,7 @@
 //! log can be compacted and replayed.
 mod support;
 use flyermap_aktion::{Aktion, Limits, OpenError, ReplayError, RusqliteSql, Sql};
-use flyermap_protocol::{Body, Catchup, Command, CommandId, Counts, Join, LaufId, LaufIn, Reason, Status, Verdict};
+use flyermap_protocol::{Body, Catchup, Command, CommandId, Counts, Join, LaufId, LaufIn, NoteId, NoteIn, Reason, Status, Verdict};
 use support::{abholen, austeilen, gid, key, mark, marks, op, square, who, world::World, T0};
 
 /// A world in which every kind of command has something to do.
@@ -17,26 +17,39 @@ fn busy() -> World {
     w
 }
 
-fn commands() -> Vec<(&'static str, Body)> {
+/// One command of every kind, with the setup it needs: (name, what the Admin does first, the command).
+fn commands() -> Vec<(&'static str, Vec<Body>, Body)> {
     let batch: Vec<_> =
         (0..12).map(|i| mark(&format!("h:{i}"), Status::Later, op(T0 + 1000 + i, "a"))).chain([mark("s:9", Status::Completed, op(T0 + 5, "a"))]).collect();
+    let note = NoteIn { id: NoteId::new("note"), key: key("h:1"), gebiet: gid("n1"), flag: None, text: "t".into(), rev: op(T0 + 10, "a"), deleted: false };
     vec![
-        ("marks", marks("n1", batch)),
-        ("gruppe", support::gruppe_in("west", "West")),
-        ("gebiet", austeilen("n3", Some("nord"), square(13.0, 51.02, 0.005))),
-        ("move", Body::Move { from: gid("n1"), to: gid("n2"), keys: vec![key("h:1"), key("h:2"), key("h:3")] }),
-        ("cleanup", Body::Cleanup { gebiet: gid("n1"), keys: Some(vec![key("h:1"), key("h:2")]), expect: Counts { marks: 2, notes: 0 } }),
-        ("run-end", Body::RunEnd { id: LaufId::new("l1") }),
-        ("collect", Body::Collect { gebiet: gid("main") }),
-        ("remove", Body::GebietRemove { id: gid("n2"), base_rev: 1 }),
+        ("marks", vec![], marks("n1", batch)),
+        ("note", vec![], Body::Note { note }),
+        ("gruppe", vec![], support::gruppe_in("west", "West")),
+        ("gruppe-remove", vec![support::gruppe_in("west", "West")], Body::GruppeRemove { id: support::gr("west"), base_rev: 1 }),
+        ("gebiet", vec![], austeilen("n3", Some("nord"), square(13.0, 51.02, 0.005))),
+        ("gebiet-remove", vec![], Body::GebietRemove { id: gid("n2"), base_rev: 1 }),
+        ("collect", vec![], Body::Collect { gebiet: gid("main") }),
+        ("release", vec![Body::Collect { gebiet: gid("main") }], Body::Release { gebiet: gid("main") }),
+        ("run-start", vec![], Body::RunStart { run: LaufIn { id: LaufId::new("l2"), gebiet: gid("s1"), persons: 1, join: Join::Link } }),
+        ("run-update", vec![], Body::RunUpdate { id: LaufId::new("l1"), persons: Some(7), join: None }),
+        ("run-end", vec![], Body::RunEnd { id: LaufId::new("l1") }),
+        ("cleanup", vec![], Body::Cleanup { gebiet: gid("n1"), keys: Some(vec![key("h:1"), key("h:2")]), expect: Counts { marks: 2, notes: 0 } }),
+        ("move", vec![], Body::Move { from: gid("n1"), to: gid("n2"), keys: vec![key("h:1"), key("h:2"), key("h:3")] }),
     ]
 }
 
 #[test]
 fn a_command_whose_storage_dies_halfway_changes_nothing_and_can_be_sent_again() {
     let admin = who::admin();
-    for (name, body) in commands() {
+    let all = commands();
+    let kinds: std::collections::BTreeSet<_> = all.iter().map(|(_, _, body)| body.kind()).collect();
+    assert_eq!(kinds.len(), 13, "one of every kind of command");
+    for (name, setup, body) in all {
         let mut w = busy();
+        for first in setup {
+            w.ok(&admin, first);
+        }
         let before = w.a.dump().unwrap();
         let head = w.a.head();
         let command = Command { cid: CommandId::new("the-one"), body };

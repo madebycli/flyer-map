@@ -144,7 +144,15 @@ fn gebiet_in(rng: &mut Rng, dump: &Dump, gebiet: &str) -> Body {
     let base_rev = if existing.is_none() && rng.chance(90) { 0 } else { rev_guess(rng, gebiet_rev(dump, gebiet)) };
     let ring = base_ring(gebiet, rng);
     Body::Gebiet {
-        gebiet: GebietIn { id: gid(gebiet), art, gruppe: gruppe.as_deref().map(gr), parent: parent_of(gebiet).map(gid), name: format!("Gebiet {gebiet}"), ring, base_rev },
+        gebiet: GebietIn {
+            id: gid(gebiet),
+            art,
+            gruppe: gruppe.as_deref().map(gr),
+            parent: parent_of(gebiet).map(gid),
+            name: format!("Gebiet {gebiet}"),
+            ring,
+            base_rev,
+        },
     }
 }
 

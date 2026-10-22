@@ -110,7 +110,7 @@ pub fn tombstone<S: Sql>(sql: &mut S, gebiet: &GebietId, keys: &[Key], rev: &OpI
 pub fn done_between<S: Sql>(sql: &mut S, gebiet: &GebietId, from: u64, to: Option<u64>) -> Result<u32, SqlError> {
     let rows = sql.query(
         "SELECT COUNT(*) FROM marks WHERE gebiet = ? AND status = 'completed' AND house = 1 AND removed = 0 AND wall >= ? AND wall <= ?",
-        &[Value::from(gebiet.as_str()), Value::from(from), Value::from(to.unwrap_or(i64::MAX as u64))],
+        &[Value::from(gebiet.as_str()), Value::from(from), Value::from(to.unwrap_or(crate::sql::MAX_SAFE_INT))],
     )?;
     Ok(scalar(&rows)?.max(0) as u32)
 }

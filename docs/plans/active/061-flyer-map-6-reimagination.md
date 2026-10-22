@@ -96,3 +96,27 @@ Das bestehende `flyermap-worker` (/api/v5) bleibt als Brücke, bis die Rust-App 
 ## 10. Beweise
 
 Eigenschaftstests (Rechte, Sync-Konvergenz, Ableitung wiederholbar), Szenario-Tests je Rolle, Messwerte auf der 51k-Häuser-Aktion, Browser-Abläufe (Headless-Chromium; echte Geräte erst nach Deployment auf Unstable).
+
+## 11. Stand: Schritt 2, der Akteur (Branch `rs-aktion`)
+
+**Fertig und geprüft:** `flyermap-protocol` (Protokoll v6 als reine Typen) und `flyermap-aktion` (der Akteur als Zustandsautomat über einen schmalen, synchronen SQL-Trait; keine Uhr, kein Zufall, kein I/O außer über den Trait).
+
+- **Befehle:** Markierungen (Register, neuester Stempel gewinnt), Notizen, Gruppen, Gebiete (Austeilen/Abholen, Haupt- und Teilgebiete, Überlappung und Lage geprüft mit `flyermap-area`), Abholen/Zurückgeben, Läufe (Treffer werden aus den Markierungen im Zeitfenster gezählt, nie aufaddiert), Aufräumen verwaister Markierungen (nur nach Bestätigung der Zahlen), Übergabe von Markierungen zwischen Gebieten. Jeder Befehl geschieht ganz oder gar nicht; derselbe Befehl (Aufrufer + Befehls-Id) zweimal geschieht einmal und bekommt dieselbe Antwort.
+- **Lesen:** Snapshot, Seiten für Markierungen und Notizen, Aufholen ab einer Nummer (`Resync`, wenn das Gerät hinter der verdichteten Stelle oder vor dem Kopf liegt). Alles wird je Aufrufer zugeschnitten, ausschließlich über `flyermap-identity::decide`; in keiner SQL-Klausel steht eine Rechteregel. `Audience` schneidet denselben Zuschnitt für den Live-Strom (Host: WebSocket).
+- **Beweise:** Szenario-Tests je Rolle und Angriff, Fehlerinjektion an jeder Stelle jedes Befehlstyps (nichts bleibt halb zurück, der Wiederholversuch gelingt), Wiedergabe des Protokolls ergibt dieselben Tabellen, Eigenschaftstests über 2 x 120 Zufallsverläufe zu je 120 Befehlen (Invarianten nach jedem Befehl, niemand verursacht Einträge ohne Recht, Wiederholung, Geräte aus Snapshot + Seiten + Aufholen bzw. Live-Strom enden bei dem, was die Rechte erlauben, mit und ohne Verdichtung). Bewusst eingesetzte Fehler (fehlende Rechteprüfung, fehlende Übergabe-Meldung) werden gefunden.
+- **Messung** (51 000 Häuser in 102 Stapeln, nativ, SQLite im Speicher): 18 µs je Haus, Stapel zu 500 im Median 8,7 ms (99 %: 16 ms); Snapshot 0,15 ms; alle Markierungen in Seiten zu 1000: 52 ms; 12 MB Speicher mit 50 000 Protokolleinträgen. Reproduzierbar mit `cargo run --release -p flyermap-aktion --example measure`.
+
+**Entscheidungen, die man kennen muss:**
+
+1. Jeder Eintrag betrifft genau ein Gebiet (oder eine Gruppe), damit "wer erfährt es" eine einzige Frage an eine einzige Sache ist. Eine Übergabe zwischen zwei Gebieten sind deshalb zwei Arten von Einträgen: `MarkSet`/`NoteSet` im neuen Gebiet und `HandedOver` im alten. Ohne Letzteres behielten die Leser des alten Gebiets die Markierungen für immer (vom Eigenschaftstest gefunden).
+2. Der SQL-Trait kennt kein `PRAGMA`, `BEGIN`, `SAVEPOINT`, höchstens 100 Parameter je Anweisung, Zahlen unter 2^53 und keine Zeilenzählung: so läuft dasselbe SQL im Durable Object. Der native Host (`RusqliteSql`, Feature `sqlite`) hat zusätzlich Fehlerinjektion für Tests.
+3. Wer wann was darf, ändert sich nur durch Grants, nicht durch den Akteur. Ändert sich das Recht eines Aufrufers (Grant endet, Gebiet wird einer anderen Gruppe gegeben), sieht er die Einträge nicht, die ihm etwas entziehen: der Host schickt ihm dann einen neuen Snapshot (siehe Kopf von `flyermap-protocol/src/change.rs`). Der Eigenschaftstest vermeidet solche Wechsel bewusst.
+4. `Collected` und `Released` tragen keine Revision; Geräte wenden Einträge deshalb in Reihenfolge der Nummer an und überspringen, was sie schon haben.
+
+**Offen (nächste Schritte):**
+
+- Durable-Object-Hülle: WebSocket (`Subscribe`, Anwesenheit, Ping), `Audience` je Verbindung, Alarm für `Aktion::compact`, Wiederaufnahme nach Neustart, `Sql` über `ctx.storage.sql`.
+- Edge-Worker: Zugriffsmenge einmal je Anfrage laden und dem Akteur übergeben; Verbindungen schließen bei Sperre/Widerruf (Entscheidung 3).
+- Der Host vergibt die Zugriffe, die der Akteur nur ankündigt: ein Grant am Gebiet bei `Collected` (endet bei `Released`), Gast-Zugang für einen Lauf mit `Join::Link` (endet bei `LaufEnded`).
+- Geräteseite: `flyermap-sync` auf Protokoll v6 (Snapshot, Seiten, Aufholen, Live) und `flyermap-wire`-Abbildung; die Testklasse `Mirror` in `crates/flyermap-aktion/tests/support/mirror.rs` ist eine Vorlage dafür.
+- Verzeichnis (D1) und Kartenableitung (Schritte 1 und 3) sind davon unberührt.

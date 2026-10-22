@@ -21,9 +21,12 @@ impl From<i64> for Value {
         Value::Int(v)
     }
 }
+/// The largest integer a JavaScript number holds exactly. "Without end" (an open window of a Lauf, the whole range of stamps) is bound as this.
+pub const MAX_SAFE_INT: u64 = (1 << 53) - 1;
+
 impl From<u64> for Value {
     fn from(v: u64) -> Value {
-        Value::Int(i64::try_from(v).unwrap_or(i64::MAX))
+        Value::Int(i64::try_from(v.min(MAX_SAFE_INT)).unwrap_or(i64::MAX))
     }
 }
 impl From<u32> for Value {
@@ -157,4 +160,20 @@ pub trait Sql {
 
     /// Run `f` so that all its statements happen or none: on `Err` everything it wrote is undone. A call inside `f` joins the outer transaction.
     fn atomically<T, E: From<SqlError>>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, E>) -> Result<T, E>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numbers_stay_where_a_javascript_number_is_exact() {
+        assert_eq!(Value::from(u64::MAX), Value::Int(MAX_SAFE_INT as i64));
+        assert_eq!(Value::from(1_800_000_000_000_u64), Value::Int(1_800_000_000_000));
+        assert_eq!(Row(vec![Value::Real(42.0)]).int(0), Ok(42), "a whole Real is an integer, as the Durable Object hands numbers over");
+        assert!(Row(vec![Value::Real(42.5)]).int(0).is_err());
+        assert!(Row(vec![Value::Int(-1)]).uint(0).is_err());
+        assert_eq!(Row(vec![Value::Null]).opt_text(0), Ok(None));
+        assert!(Row(vec![]).int(0).is_err(), "a missing column is an error, not a panic");
+    }
 }
