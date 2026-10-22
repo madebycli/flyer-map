@@ -142,6 +142,11 @@ impl<S: Sql> Aktion<S> {
         Ok(floor)
     }
 
+    /// The storage, for the host to measure or to break on purpose in a test. Writing to it by hand voids everything the Akteur promises.
+    pub fn storage_mut(&mut self) -> &mut S {
+        &mut self.sql
+    }
+
     /// Give the storage back (the host closes it, or measures it).
     pub fn into_sql(self) -> S {
         self.sql
