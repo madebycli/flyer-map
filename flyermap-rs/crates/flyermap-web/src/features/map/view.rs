@@ -16,8 +16,14 @@ const FIT_PADDING: f64 = 70.0;
 
 /// A tap with no tool in use: the Gebiet under the finger opens its sheet.
 fn on_tap(state: AppState, map: &FieldMap, p: [f64; 2]) {
-    if state.shell.with_untracked(|s| s.tool) != Tool::Idle {
+    // the click that follows a stroke a finger tool handled is not a tap
+    if state.driver.with_value(|d| d.as_ref().is_some_and(|d| d.swallows_click())) {
         return;
+    }
+    match state.shell.with_untracked(|s| s.tool) {
+        Tool::Idle => {}
+        Tool::Mark => return crate::app::marking::tap(state, map, p),
+        Tool::Draw => return,
     }
     let at = map.unproject(p);
     let gebiet = state.session.world.with_untracked(|w| w.gebiet_at(at).map(|g| g.id.clone()));

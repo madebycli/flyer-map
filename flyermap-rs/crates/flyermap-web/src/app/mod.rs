@@ -3,6 +3,7 @@ pub mod acts;
 pub mod debug;
 pub mod effects;
 pub mod frame;
+pub mod marking;
 pub mod panels;
 pub mod root;
 pub mod start;

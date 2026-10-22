@@ -57,7 +57,36 @@ export const counters = (page) => page.evaluate(() => window.__rsDebug());
 export const tilesDrawn = (page, n = 1) => page.waitForFunction((want) => { const p = window.__rsDebug?.().protocol; return p && p.tiles - p.empty >= want; }, n, { timeout: 30000 });
 /** A map point as page pixels (the map fills the stage, which starts at the stage's x). */
 export const screenOf = (page, lng, lat) => page.evaluate(([lo, la]) => { const p = window.__rsMap.project([lo, la]); const r = document.querySelector('[data-fm-map]').getBoundingClientRect(); return { x: r.x + p.x, y: r.y + p.y }; }, [lng, lat]);
-export const view = (page) => page.evaluate(() => { const m = window.__rsMap; const c = m.getCenter(); return { lng: c.lng, lat: c.lat, zoom: m.getZoom() }; });
+/** Features of a layer on the screen, as page pixels, inside a band the overlays leave free: `[{id, pts: [{x, y}, ...]}]` (a polygon's corners, a line's points). */
+export const screenFeatures = (page, layer, band) => page.evaluate(([layerId, b]) => {
+  const m = window.__rsMap;
+  const origin = document.querySelector('[data-fm-map]').getBoundingClientRect();
+  const seen = new Set();
+  const out = [];
+  for (const f of m.queryRenderedFeatures({ layers: [layerId] })) {
+    const id = String(f.id ?? f.properties?.key);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const ring = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.type === 'LineString' ? f.geometry.coordinates : null;
+    if (!ring) continue;
+    const pts = ring.map((c) => { const p = m.project(c); return { x: origin.x + p.x, y: origin.y + p.y }; });
+    if (pts.every((p) => p.x > b.x0 && p.x < b.x1 && p.y > b.y0 && p.y < b.y1)) out.push({ id, pts });
+  }
+  return out;
+}, [layer, band]);
+/** The middle of a feature's points. */
+export const middleOf = (f) => ({ x: f.pts.reduce((s, p) => s + p.x, 0) / f.pts.length, y: f.pts.reduce((s, p) => s + p.y, 0) / f.pts.length });
+/** A finger on a touch screen, through the browser's own input path (what the finger tools see): rest, then move along `points`, then lift. */
+export async function touchStroke(page, points, { holdMs = 260, stepMs = 16 } = {}) {
+  const client = await page.context().newCDPSession(page);
+  const touch = (type, p) => client.send('Input.dispatchTouchEvent', { type, touchPoints: p ? [{ x: p.x, y: p.y, id: 1 }] : [] });
+  await touch('touchStart', points[0]);
+  await new Promise((r) => setTimeout(r, holdMs));
+  for (const p of points.slice(1)) { await touch('touchMove', p); await new Promise((r) => setTimeout(r, stepMs)); }
+  await touch('touchEnd');
+  await client.detach();
+}
+export const view =(page) => page.evaluate(() => { const m = window.__rsMap; const c = m.getCenter(); return { lng: c.lng, lat: c.lat, zoom: m.getZoom() }; });
 
 export const rectOf =(page, selector) => page.locator(selector).first().evaluate((el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });
 export const noOverflow = (page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);

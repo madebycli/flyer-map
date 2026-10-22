@@ -1,6 +1,7 @@
 //! The frame of the ready app: the map and the zones over it. This file only arranges; every anchor is a feature that gets its data from the state.
 use super::{
     acts::open_subject,
+    marking,
     panels::panel_view,
     state::AppState,
     zones::{Zone, ZoneId},
@@ -9,15 +10,16 @@ use crate::{
     features::{
         live::{chips, LiveStrip},
         map::{FieldStatus, MapView},
-        mode::ModeButton,
+        mode::{icon_of, MarkPanel, ModeButton},
         overview::build::pill,
         quick::QuickBar,
         search::{command, find, CommandId},
     },
+    marking::MarkAction,
     model::Subject,
     platform::geo,
     shell::{nav::ui_state, Action, Layout, Panel, Tool},
-    ui::{CommandBar, Hit, HitKind, IconName, StatusPill, Toast},
+    ui::{status::Kind, CommandBar, Hit, HitKind, IconName, StatusPill, Toast},
 };
 use leptos::prelude::*;
 use std::time::Duration;
@@ -97,6 +99,10 @@ pub fn Frame(state: AppState) -> impl IntoView {
             open_subject(state, Subject::Lauf(id));
         }
     };
+    marking::install(state);
+    let mark_model = marking::panel_model(state);
+    let kind = Signal::derive(move || if s.world.with(|w| w.aktion.art == flyermap_identity::Art::Abholen) { Kind::Collection } else { Kind::Distribution });
+    let mode_icon = Signal::derive(move || icon_of(state.mark.with(|m| m.mode)));
     let mode_label = Signal::derive(move || if tool.get() == Tool::Mark { "Markieren beenden".to_string() } else { "Markieren".to_string() });
     let on_mode = move |()| {
         let next = if tool.get_untracked() == Tool::Mark { Tool::Idle } else { Tool::Mark };
@@ -129,9 +135,18 @@ pub fn Frame(state: AppState) -> impl IntoView {
                 </Zone>
                 <Zone zone=ZoneId::Panel>
                     <Show when=move || tool.get() == Tool::Mark>
-                        <section class="fm-panel" aria-label="Markieren">
-                            <p class="v5-hint">"Das Markier-Panel kommt im nächsten Schritt."</p>
-                        </section>
+                        <MarkPanel
+                            model=mark_model
+                            kind=kind
+                            theme=state.prefs.theme
+                            on_mode=move |m| state.mark.update(|x| x.reduce(MarkAction::SetMode(m)))
+                            on_status=move |st| state.mark.update(|x| x.reduce(MarkAction::SetStatus(st)))
+                            on_size=move |z| state.mark.update(|x| x.reduce(MarkAction::SetSize(z)))
+                            on_houses=move |()| state.mark.update(|x| x.reduce(MarkAction::ToggleHouses))
+                            on_houses_only=move |()| state.mark.update(|x| x.reduce(MarkAction::ToggleHousesOnly))
+                            on_undo=move |()| marking::undo(state)
+                            on_confirm=move |()| marking::confirm(state)
+                        />
                     </Show>
                 </Zone>
                 <Zone zone=ZoneId::Bottom>
@@ -145,7 +160,7 @@ pub fn Frame(state: AppState) -> impl IntoView {
                         }
                         on_note=move |text| state.notify(text)
                     />
-                    <ModeButton icon=IconName::Route active=Signal::derive(move || tool.get() == Tool::Mark) label=mode_label available=may_mark on_click=on_mode />
+                    <ModeButton icon=mode_icon active=Signal::derive(move || tool.get() == Tool::Mark) label=mode_label available=may_mark on_click=on_mode />
                 </Zone>
                 <Zone zone=ZoneId::Sheet>{move || panel.get().map(|p| panel_view(state, p))}</Zone>
                 <Zone zone=ZoneId::Overlay />

@@ -4,6 +4,7 @@ pub mod field_map;
 pub mod gesture;
 pub mod hit;
 pub mod ink;
+pub mod pointer;
 pub mod query;
 pub mod style;
 

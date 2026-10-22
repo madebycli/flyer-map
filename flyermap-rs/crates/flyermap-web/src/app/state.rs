@@ -1,12 +1,16 @@
 //! The app's reactive state, provided once as context: the shell (one signal around the pure [`Shell`]), the device settings, the session
 //! (backend and what it said) and the few values the zones share.
 use crate::{
+    engine::Route,
     features::settings::Prefs,
-    platform::events::on_window,
-    session::Session,
+    map::pointer::PointerDriver,
+    marking::{MarkState, SAVED_KEY},
+    platform::{events::on_window, storage::KeyValue, LocalStore},
+    session::{Applied, Session},
     shell::{layout_for, Action, Layout, Panel, Shell, Tool},
 };
 use leptos::prelude::*;
+use std::rc::Rc;
 
 #[derive(Clone, Copy)]
 pub struct AppState {
@@ -16,6 +20,14 @@ pub struct AppState {
     pub layout: RwSignal<Layout>,
     /// The Lauf the map follows (a tap on a person in the live strip).
     pub following: RwSignal<Option<String>>,
+    /// The marking tool: mode, brush, options, the points of a route.
+    pub mark: RwSignal<MarkState>,
+    /// The route the engine found for the points (`None`: none asked for yet).
+    pub route: RwSignal<Option<Route>>,
+    /// What the last markings replaced, newest last (the undo).
+    pub undo: RwSignal<Vec<Applied>>,
+    /// The finger driver of the map, once the map exists.
+    pub driver: StoredValue<Option<Rc<PointerDriver>>, LocalStorage>,
 }
 
 fn window_width() -> f64 {
@@ -29,7 +41,18 @@ impl AppState {
         if let Some(listener) = on_window("resize", move || layout.set(layout_for(window_width()))) {
             std::mem::forget(listener);
         }
-        AppState { shell: RwSignal::new(Shell::default()), prefs, session, layout, following: RwSignal::new(None) }
+        let mark = MarkState::load(LocalStore.read(SAVED_KEY).as_deref());
+        AppState {
+            shell: RwSignal::new(Shell::default()),
+            prefs,
+            session,
+            layout,
+            following: RwSignal::new(None),
+            mark: RwSignal::new(mark),
+            route: RwSignal::new(None),
+            undo: RwSignal::new(Vec::new()),
+            driver: StoredValue::new_local(None),
+        }
     }
 
     pub fn dispatch(&self, action: Action) {
