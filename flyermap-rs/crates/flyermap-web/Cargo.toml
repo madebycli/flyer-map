@@ -13,8 +13,10 @@ name = "flyermap-web"
 path = "src/main.rs"
 
 [dependencies]
+flyermap-area = { path = "../flyermap-area" }
 flyermap-core = { path = "../flyermap-core" }
 flyermap-diag = { path = "../flyermap-diag" }
+flyermap-identity = { path = "../flyermap-identity" }
 flyermap-pack = { path = "../flyermap-pack" }
 flyermap-rights = { path = "../flyermap-rights" }
 flyermap-sync = { path = "../flyermap-sync" }
@@ -33,6 +35,9 @@ web-sys = { version = "0.3", features = [
   "Worker", "WorkerOptions", "WorkerType", "MessageEvent", "Performance",
   "IdbFactory", "IdbDatabase", "IdbOpenDbRequest", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbVersionChangeEvent",
   "HtmlCanvasElement", "CanvasRenderingContext2d", "CanvasWindingRule", "DomStringList",
+  "AudioContext", "AudioNode", "AudioDestinationNode", "AudioParam", "OscillatorNode", "OscillatorType", "GainNode",
+  "Geolocation", "PositionOptions", "Position", "Coordinates", "PositionError",
+  "MediaQueryList", "Clipboard", "KeyboardEvent", "MouseEvent", "HtmlTextAreaElement", "HtmlButtonElement", "ScrollToOptions", "ScrollBehavior",
 ] }
 
 [lints]

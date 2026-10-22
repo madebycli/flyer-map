@@ -7,8 +7,12 @@
 //!
 //! The modules are public for the native tests in `tests/`; the browser entry is [`start`] (called by `main.rs` on wasm32).
 pub mod app;
+pub mod engine;
 pub mod features;
+pub mod field;
+pub mod map;
 pub mod platform;
+pub mod sync;
 pub mod ui;
 
 pub use app::start;

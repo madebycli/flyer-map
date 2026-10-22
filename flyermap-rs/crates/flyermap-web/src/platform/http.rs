@@ -37,6 +37,11 @@ pub async fn get_json<T: DeserializeOwned>(url: &str) -> Result<T, HttpError> {
     serde_json::from_str(&text).map_err(|_| HttpError::bad_answer())
 }
 
+/// The body of an answer as it is (the caller reads the parts it needs).
+pub async fn get_text(url: &str) -> Result<String, HttpError> {
+    text_of(send("GET", url, None).await?).await
+}
+
 pub async fn post_json<B: Serialize, T: DeserializeOwned>(url: &str, body: &B) -> Result<T, HttpError> {
     let body = serde_json::to_string(body).map_err(|_| HttpError::bad_answer())?;
     let text = text_of(send("POST", url, Some(&body)).await?).await?;

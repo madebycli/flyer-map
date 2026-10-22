@@ -61,7 +61,7 @@ fn dist(a: P2, b: P2) -> f64 {
 }
 
 impl Gestures {
-    fn claim(&mut self, tool: &mut dyn Tool, p: P2, out: &mut Vec<Effect>) -> bool {
+    fn claim<T: Tool + ?Sized>(&mut self, tool: &mut T, p: P2, out: &mut Vec<Effect>) -> bool {
         if !tool.down(p) {
             return false;
         }
@@ -72,7 +72,7 @@ impl Gestures {
         true
     }
 
-    fn cancel_gesture(&mut self, tool: Option<&mut dyn Tool>, out: &mut Vec<Effect>) {
+    fn cancel_gesture<T: Tool + ?Sized>(&mut self, tool: Option<&mut T>, out: &mut Vec<Effect>) {
         if !self.active {
             return;
         }
@@ -83,7 +83,7 @@ impl Gestures {
         out.push(Effect::PanOn);
     }
 
-    pub fn reset(&mut self, tool: Option<&mut dyn Tool>) -> Vec<Effect> {
+    pub fn reset<T: Tool + ?Sized>(&mut self, tool: Option<&mut T>) -> Vec<Effect> {
         let mut out = vec![Effect::StopHold];
         self.pointers.clear();
         self.cancel_gesture(tool, &mut out);
@@ -93,12 +93,12 @@ impl Gestures {
         out
     }
 
-    pub fn down(&mut self, mut tool: Option<&mut dyn Tool>, id: i32, primary: bool, p: P2) -> Vec<Effect> {
+    pub fn down<T: Tool + ?Sized>(&mut self, mut tool: Option<&mut T>, id: i32, primary: bool, p: P2) -> Vec<Effect> {
         let mut out = Vec::new();
         self.swallow_click = false;
         // a primary pointer begins a new touch sequence: ids of fingers whose "up" never arrived must not count as a second finger
         if primary {
-            out = self.reset(tool.as_deref_mut());
+            out = self.reset(tool.as_mut().map(|t| &mut **t));
         }
         if !self.pointers.contains(&id) {
             self.pointers.push(id);
@@ -124,7 +124,7 @@ impl Gestures {
         out
     }
 
-    pub fn hold_elapsed(&mut self, tool: Option<&mut dyn Tool>) -> Vec<Effect> {
+    pub fn hold_elapsed<T: Tool + ?Sized>(&mut self, tool: Option<&mut T>) -> Vec<Effect> {
         let mut out = Vec::new();
         let (Some(tool), Some(start)) = (tool, self.start) else { return out };
         if self.phase != Phase::Pending || self.pointers.len() != 1 {
@@ -139,7 +139,7 @@ impl Gestures {
         out
     }
 
-    pub fn moved(&mut self, tool: Option<&mut dyn Tool>, id: i32, p: P2) -> Vec<Effect> {
+    pub fn moved<T: Tool + ?Sized>(&mut self, tool: Option<&mut T>, id: i32, p: P2) -> Vec<Effect> {
         if id != self.current {
             return Vec::new();
         }
@@ -163,7 +163,7 @@ impl Gestures {
         Vec::new()
     }
 
-    pub fn up(&mut self, tool: Option<&mut dyn Tool>, id: i32, p: P2) -> Vec<Effect> {
+    pub fn up<T: Tool + ?Sized>(&mut self, tool: Option<&mut T>, id: i32, p: P2) -> Vec<Effect> {
         let mut out = Vec::new();
         self.pointers.retain(|x| *x != id);
         if id == self.current {
@@ -190,7 +190,7 @@ impl Gestures {
         out
     }
 
-    pub fn cancelled(&mut self, tool: Option<&mut dyn Tool>, id: i32) -> Vec<Effect> {
+    pub fn cancelled<T: Tool + ?Sized>(&mut self, tool: Option<&mut T>, id: i32) -> Vec<Effect> {
         let mut out = vec![Effect::StopHold];
         self.pointers.retain(|x| *x != id);
         self.cancel_gesture(tool, &mut out);
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn without_a_tool_the_map_keeps_the_finger() {
         let mut g = Gestures::default();
-        g.down(None, 1, true, [0.0, 0.0]);
+        g.down::<Pen>(None, 1, true, [0.0, 0.0]);
         assert_eq!(g.phase, Phase::Other);
     }
 }

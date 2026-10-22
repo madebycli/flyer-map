@@ -39,6 +39,55 @@ pub fn toggle_str(on: bool) -> &'static str {
     }
 }
 
+/// How marking feels: a buzz, a tone, both or neither. The quick bar steps through the four with one button.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Feedback {
+    #[default]
+    Off,
+    Haptic,
+    HapticSound,
+    Sound,
+}
+
+impl Feedback {
+    pub fn from_flags(haptic: bool, sound: bool) -> Feedback {
+        match (haptic, sound) {
+            (false, false) => Feedback::Off,
+            (true, false) => Feedback::Haptic,
+            (true, true) => Feedback::HapticSound,
+            (false, true) => Feedback::Sound,
+        }
+    }
+
+    /// `(haptic, sound)`.
+    pub fn flags(self) -> (bool, bool) {
+        match self {
+            Feedback::Off => (false, false),
+            Feedback::Haptic => (true, false),
+            Feedback::HapticSound => (true, true),
+            Feedback::Sound => (false, true),
+        }
+    }
+
+    pub fn next(self) -> Feedback {
+        match self {
+            Feedback::Off => Feedback::Haptic,
+            Feedback::Haptic => Feedback::HapticSound,
+            Feedback::HapticSound => Feedback::Sound,
+            Feedback::Sound => Feedback::Off,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Feedback::Off => "Aus",
+            Feedback::Haptic => "Vibration",
+            Feedback::HapticSound => "Vibration und Ton",
+            Feedback::Sound => "Ton",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub theme: Theme,
@@ -49,6 +98,8 @@ pub struct Settings {
     pub awake: bool,
     /// A short buzz when marking.
     pub haptics: bool,
+    /// A short tone when marking (off unless chosen).
+    pub sound: bool,
     /// The stored seed colour (`#rrggbb`), `None` for the default.
     pub seed: Option<String>,
 }
@@ -62,6 +113,7 @@ impl Settings {
             base_on: parse_toggle(read(keys::BASE).as_deref()),
             awake: parse_toggle(read(keys::AWAKE).as_deref()),
             haptics: parse_toggle(read(keys::HAPTICS).as_deref()),
+            sound: read(keys::SOUND).as_deref() == Some("on"),
             seed: read(keys::SEED),
         }
     }
@@ -99,7 +151,21 @@ mod tests {
         assert_eq!(s.theme, Theme::Dark);
         assert_eq!(s.hand, Hand::Right);
         assert!(s.base_on && s.awake && s.haptics);
+        assert!(!s.sound, "a tone is a choice");
         assert_eq!(s.seed, None);
+    }
+
+    #[test]
+    fn the_four_feelings_go_round() {
+        let mut f = Feedback::Off;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            f = f.next();
+            seen.push(f.flags());
+        }
+        assert_eq!(seen, [(true, false), (true, true), (false, true), (false, false)]);
+        assert_eq!(Feedback::from_flags(true, true).label(), "Vibration und Ton");
+        assert_eq!(Feedback::from_flags(false, false), Feedback::Off);
     }
 
     #[test]

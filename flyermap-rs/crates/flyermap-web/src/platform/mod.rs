@@ -10,6 +10,7 @@ pub mod idb;
 pub mod keys;
 pub mod panic;
 pub mod settings;
+pub mod sound;
 pub mod storage;
 pub mod theme;
 pub mod time;
@@ -19,6 +20,6 @@ pub mod wake_lock;
 
 pub use error::PlatformError;
 pub use http_error::HttpError;
-pub use settings::{Hand, Settings};
+pub use settings::{Feedback, Hand, Settings};
 pub use storage::{KeyValue, LocalStore};
 pub use theme::Theme;
