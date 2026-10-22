@@ -1,0 +1,22 @@
+[package]
+name = "flyermap-identity"
+version.workspace = true
+edition.workspace = true
+description = "Who may do what, and how people prove who they are: roles, scopes, grants, the one decision function, invite codes, session tokens, TOTP and passkeys. Pure: no database, no clock, no randomness of its own."
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+sha2 = "0.10"
+hmac = "0.12"
+sha1 = "0.10"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+ciborium = "0.2"
+
+[dev-dependencies]
+serde_json.workspace = true
+rand_core = { version = "0.6", features = ["getrandom"] }
+p256 = { version = "0.13", features = ["ecdsa", "std"] }
+
+[lints]
+workspace = true
