@@ -92,6 +92,8 @@ pub enum Reason {
     Exists,
     /// The thing is deleted.
     Deleted,
+    /// The thing is not deleted (a clean-up of every orphan is only for a deleted Gebiet).
+    NotDeleted,
     /// The edit was made on an older revision; `current` is the one to start from.
     RevMismatch {
         current: u64,
@@ -151,6 +153,7 @@ impl Reason {
             Reason::LimitReached { .. } => "limit_reached",
             Reason::Exists => "exists",
             Reason::Deleted => "deleted",
+            Reason::NotDeleted => "not_deleted",
             Reason::RevMismatch { .. } => "rev_mismatch",
             Reason::WrongArt => "wrong_art",
             Reason::BadParent => "bad_parent",

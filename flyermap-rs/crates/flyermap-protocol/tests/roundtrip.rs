@@ -123,6 +123,7 @@ fn every_reason() -> Vec<Reason> {
         Reason::LimitReached { limit: 9 },
         Reason::Exists,
         Reason::Deleted,
+        Reason::NotDeleted,
         Reason::RevMismatch { current: 7 },
         Reason::WrongArt,
         Reason::BadParent,
@@ -174,7 +175,7 @@ fn reasons_carry_a_stable_code_that_is_the_serialized_one() {
         round(&Verdict::rejected(reason.clone()));
         round(&Answer { cid: CommandId::new("c"), verdict: Verdict::Rejected { reason } });
     }
-    assert_eq!(codes.len(), 30, "the codes are all different");
+    assert_eq!(codes.len(), 31, "the codes are all different");
 }
 
 #[test]
