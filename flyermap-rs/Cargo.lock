@@ -674,12 +674,17 @@ dependencies = [
  "flyermap-identity",
  "futures",
  "hmac",
+ "js-sys",
  "p256",
  "pbkdf2",
  "rand_core",
  "serde",
  "serde_json",
  "sha2",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "worker",
 ]
 
 [[package]]

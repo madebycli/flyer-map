@@ -8,8 +8,12 @@ pub mod auth;
 pub mod config;
 pub mod directory;
 pub mod env;
+#[cfg(target_arch = "wasm32")]
+mod entry;
 pub mod error;
 pub mod kdf;
+#[cfg(target_arch = "wasm32")]
+mod kdf_web;
 pub mod seal;
 
 pub use app::App;

@@ -5,6 +5,9 @@ edition.workspace = true
 description = "The Flyer Map 6 server: the directory (people, sign-in, invitations, sessions, grants, audit) behind the /v6 API. Durable-Object hulls for the Aktionen come on top."
 publish.workspace = true
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 flyermap-host = { path = "../flyermap-host" }
 flyermap-identity = { path = "../flyermap-identity" }
@@ -15,6 +18,13 @@ sha2 = "0.10"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 hmac = "0.12"
 aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = { version = "0.8", features = ["d1"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["WorkerGlobalScope", "Crypto", "SubtleCrypto", "CryptoKey"] }
 
 [dev-dependencies]
 futures = { version = "0.3", default-features = false, features = ["executor"] }

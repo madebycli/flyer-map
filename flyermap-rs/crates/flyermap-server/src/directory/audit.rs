@@ -46,3 +46,9 @@ pub async fn list<D: Db>(db: &D, org_id: &str, before: Option<u64>, limit: u32) 
     let sql = "SELECT seq, at, actor, org_id, aktion_id, action, target, detail FROM audit WHERE org_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?";
     decode(db.all(&stmt(sql, params![org_id, before.unwrap_or(u64::MAX >> 1), limit.min(200)])).await?)
 }
+
+/// Newest first: what one person did with their own account (sign-ins, second factor, devices), for them alone.
+pub async fn list_by_actor<D: Db>(db: &D, actor: &str, before: Option<u64>, limit: u32) -> Result<Vec<Entry>, DbError> {
+    let sql = "SELECT seq, at, actor, org_id, aktion_id, action, target, detail FROM audit WHERE actor = ? AND seq < ? ORDER BY seq DESC LIMIT ?";
+    decode(db.all(&stmt(sql, params![actor, before.unwrap_or(u64::MAX >> 1), limit.min(200)])).await?)
+}

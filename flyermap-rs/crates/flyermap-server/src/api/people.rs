@@ -66,12 +66,16 @@ pub async fn revoke<D: Db>(c: &Ctx<'_, D>, id: &str) -> Done {
     Ok(Response::json(200, &json!({ "ok": true })))
 }
 
-/// `GET /v6/audit?org=<id>&before=<seq>`: the log of an Organisation, for owners.
+/// `GET /v6/audit?org=<id>&before=<seq>`: the log of an Organisation, for owners. `GET /v6/audit?mine=1`: what the caller did with their own account.
 pub async fn audit_log<D: Db>(c: &Ctx<'_, D>) -> Done {
-    c.me()?;
+    let me = c.me()?;
+    let before = c.request.query("before").and_then(|b| b.parse().ok());
+    if c.request.query("mine").is_some() {
+        let entries = audit::list_by_actor(c.db, &me.person.id, before, 100).await?;
+        return Ok(Response::json(200, &json!({ "entries": entries })));
+    }
     let org = c.request.query("org").ok_or_else(|| fail(Code::InvalidRequest, "org missing"))?;
     c.allow(Action::ManageSecurity, &Resource::organisation(&OrgId::new(&org)))?;
-    let before = c.request.query("before").and_then(|b| b.parse().ok());
     let entries = audit::list(c.db, &org, before, 100).await?;
     Ok(Response::json(200, &json!({ "entries": entries })))
 }
