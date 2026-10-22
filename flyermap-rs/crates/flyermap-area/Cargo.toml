@@ -1,0 +1,11 @@
+[package]
+name = "flyermap-area"
+version.workspace = true
+edition.workspace = true
+description = "Drawing Gebiete: snapping to borders, connected drawing (a new Gebiet takes the old border between its two ends), extending, splitting a main area into sub-areas, validity checks. Pure geometry."
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

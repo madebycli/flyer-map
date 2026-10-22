@@ -412,6 +412,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyermap-area"
+version = "0.1.0"
+
+[[package]]
 name = "flyermap-core"
 version = "0.1.0"
 dependencies = [

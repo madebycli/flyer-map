@@ -19,7 +19,7 @@ Decision: [ADR-0039](../../decisions/ADR-0039-flyer-map-6.md). Goal: a field app
 
 ### 6.1 Gebiete: separate for Austeilen and Abholen, better drawing
 - Austeilen and Abholen keep their own Gebiete (owner's decision). What changes is how a Gebiet is made.
-- **Connected drawing** (the Paper.io idea): start on the border of an existing Gebiet (or on one of its corner points), place points, end on the border again; the new Gebiet takes the old border between the two ends as part of its own. No more drawing a loose rectangle next to a Gebiet and fitting the lines by hand. Same for extending a Gebiet. Pure geometry in Rust (`flyer-core`), tested against hand-made cases.
+- **Connected drawing** (the Paper.io idea): start on the border of an existing Gebiet (or on one of its corner points), place points, end on the border again; the new Gebiet takes the old border between the two ends as part of its own. No more drawing a loose rectangle next to a Gebiet and fitting the lines by hand. Same for extending a Gebiet. Pure geometry in Rust, tested against hand-made cases: done in `flyermap-rs/crates/flyermap-area` (snap, connect as new or extension, split a main area, checks; 10 hand-made cases and a 3000-case random invariant test). The UI wiring comes with the Rust area editor (Plan 059 M6).
 - **Abholen**: a main area and sub-areas drawn inside it (or connected to each other); sub-areas must lie inside the main area, the rest of the main area is shown as what is left.
 - Side streets and paths: unnamed side streets with houses are marked like any other street; paved tracks that lead to houses count (done in the engine); paths are drawn dashed, roads solid.
 
