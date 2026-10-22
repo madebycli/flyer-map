@@ -22,6 +22,11 @@ for (const [area, version] of [['area_n', 3], ['area_o', 1], ['area_gone', 2], [
   run('INSERT INTO v5_packs (campaign_id, area_id, version, chunk, bytes) VALUES (?, ?, ?, 0, ?)', campaign, area, version, Buffer.from('pack'));
 }
 run('INSERT INTO v5_pack_attempts (campaign_id, area_id, at) VALUES (?, ?, 1)', campaign, 'area_gone');
+// Gebiete for map packs, one per answer of the stub data source below (told apart by latitude), and one big Gebiet built in parts.
+const square = (lng: number, lat: number, dLng: number, dLat: number) => ({ type: 'Polygon', coordinates: [[[lng, lat], [lng + dLng, lat], [lng + dLng, lat + dLat], [lng, lat + dLat], [lng, lat]]] });
+const SCENARIOS = ['ok', 'partial', 'empty', 'down', 'junk', 'refused', 'dead'] as const;
+SCENARIOS.forEach((name, i) => run('INSERT INTO areas (id, campaign_id, team_id, name, geometry_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)', `area_${name}`, campaign, 'team_n', name, JSON.stringify(square(13.01, 51.2 + i * 0.02, 0.01, 0.005)), T, T));
+run('INSERT INTO areas (id, campaign_id, team_id, name, geometry_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)', 'area_big', campaign, 'team_n', 'big', `{"type": "Polygon", "coordinates": [[[13.0, 51.4], [13.07, 51.4], [13.07, 51.45], [13.0, 51.45], [13.0, 51.4]]]}`, T, T);
 for (const [table, counters] of [['v5_state', 'v5_counters'], ['v5_notes', 'v5_note_counters']]) run(`INSERT OR IGNORE INTO ${counters} (campaign_id, seq) VALUES (?, 0)`, campaign);
 let seq = (db.sqlite.prepare('SELECT seq FROM v5_counters WHERE campaign_id = ?').get(campaign) as { seq: number }).seq;
 for (const [key, status, wall] of [['h:gone1', 'completed', 10_000], ['h:gone2', 'later', 9000], ['s:gone#1', 'completed', 8000], ['h:gone3', 'open', 7000]] as const) {
@@ -51,16 +56,54 @@ function dump(): string {
 }
 const seedSql = dump();
 
-type Exchange = { who: string | null; method: string; path: string; headers: Record<string, string>; body: string | null; status: number; response: unknown; contentType: string | null; cacheControl: string | null; setCookie: string | null };
+// The map data source, answered by a stub: which answer depends on where the asked box lies. Every request is recorded word for word, so
+// the Rust Worker must send the same query (the replays answer from this list and fail on any other query).
+const OVERPASS = 'http://127.0.0.1:8799/api/interpreter';
+type Upstream = { query: string; status: number; body: string };
+const upstream: Upstream[] = [];
+function stubAnswer(query: string): { status: number; body: string } {
+  const [s, w, n, e] = /\(([-\d.,]+)\);way\["building/u.exec(query)![1].split(',').map(Number);
+  const lat = (s + n) / 2, lng = (w + e) / 2;
+  const scenario = lat > 51.39 ? 'part' : SCENARIOS[Math.round((lat - 51.2025) / 0.02)];
+  const elements = [
+    { type: 'way', id: Math.round(lat * 1e4), tags: { highway: 'residential', name: `Weg ${lat.toFixed(3)}` }, nodes: [1, 2], geometry: [{ lat: lat - 0.001, lon: lng }, { lat: lat + 0.001, lon: lng }] },
+    { type: 'way', id: 7, tags: { building: 'yes' }, geometry: [{ lat, lon: lng + 0.0002 }, { lat, lon: lng + 0.0003 }, { lat: lat + 0.0001, lon: lng + 0.0003 }, { lat, lon: lng + 0.0002 }] },
+    { type: 'node', id: 9, lat, lon: lng + 0.00025, tags: { 'addr:housenumber': '3', 'addr:street': `Weg ${lat.toFixed(3)}` } },
+    { type: 'way', id: 8, tags: { building: 'yes' }, geometry: [{ lat, lon: lng }] },
+  ];
+  switch (scenario) {
+    case 'ok': return { status: 200, body: JSON.stringify({ version: 0.6, elements }) };
+    case 'part': return { status: 200, body: JSON.stringify({ elements: lng > 13.04 ? [] : elements }) };
+    case 'partial': return { status: 200, body: JSON.stringify({ remark: 'runtime error: Query timed out in "query" at line 1', elements }) };
+    case 'empty': return { status: 200, body: '{"elements":[]}' };
+    case 'down': return { status: 503, body: 'busy' };
+    case 'junk': return { status: 200, body: '<html>Wartung</html>' };
+    case 'refused': return { status: 400, body: 'bad query' };
+    default: return { status: 0, body: '' };
+  }
+}
+const fetchImpl = (async (url: string, init: { body: string }) => {
+  if (url !== OVERPASS) throw new Error('unexpected upstream');
+  const query = decodeURIComponent(String(init.body).replace(/^data=/u, ''));
+  const answer = stubAnswer(query);
+  upstream.push({ query, ...answer });
+  if (!answer.status) throw new TypeError('fetch failed');
+  return new Response(answer.body, { status: answer.status });
+}) as unknown as typeof fetch;
+
+type Exchange = { who: string | null; method: string; path: string; headers: Record<string, string>; body: string | null; status: number; response: unknown; contentType: string | null; cacheControl: string | null; setCookie: string | null; headersOut: Record<string, string> };
 const exchanges: Exchange[] = [];
 async function call(who: string | null, method: string, path: string, body?: unknown, extra: Record<string, string> = {}) {
   const text = body === undefined ? null : typeof body === 'string' ? body : JSON.stringify(body);
   const headers: Record<string, string> = { ...(who ? { cookie: cookies[who] } : {}), ...(text !== null ? { 'content-type': 'application/json' } : {}), ...extra };
-  const res = (await handleV5Api(new Request(`https://example.test${path}`, { method, headers, body: text ?? undefined }), db, { now: () => NOW }))!;
-  const raw = await res.text();
+  const res = (await handleV5Api(new Request(`https://example.test${path}`, { method, headers, body: text ?? undefined }), db, { now: () => NOW, fetchImpl, overpassUrl: OVERPASS }))!;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  const raw = bytes.toString('utf8');
   let response: unknown = raw;
-  try { response = JSON.parse(raw); } catch { /* not JSON */ }
-  exchanges.push({ who, method, path, headers, body: text, status: res.status, response, contentType: res.headers.get('content-type'), cacheControl: res.headers.get('cache-control'), setCookie: res.headers.get('set-cookie') });
+  if (res.headers.get('content-type') === 'application/gzip') response = { base64: bytes.toString('base64') };
+  else { try { response = JSON.parse(raw); } catch { /* not JSON */ } }
+  const headersOut = Object.fromEntries(['etag', 'x-pack-version', 'x-engine'].flatMap((h) => (res.headers.get(h) === null ? [] : [[h, res.headers.get(h)!]])));
+  exchanges.push({ who, method, path, headers, body: text, status: res.status, response, contentType: res.headers.get('content-type'), cacheControl: res.headers.get('cache-control'), setCookie: res.headers.get('set-cookie'), headersOut });
   return response as Record<string, any>;
 }
 const op = (id: string, key: string, status: string, area = 'area_n') => ({ id, key, status, area });
@@ -225,9 +268,37 @@ await call('admin', 'POST', `${base}/areas/area_gone/forget`);
 await call('admin', 'GET', `${base}/state?since=0`);
 await call('admin', 'GET', `${base}/notes?since=0`);
 await call('admin', 'GET', `${base}/meta`);
+// map packs: who may build, every answer of the data source, the one-minute pause, big Gebiete in parts, reading with ETags
+const pack = (area: string, query = '') => `${base}/areas/${area}/pack${query}`;
+await call('viewer', 'POST', pack('area_ok'));
+await call('other', 'POST', pack('area_ok'));
+await call('admin', 'POST', pack('area_missing'));
+await call('editor', 'POST', pack('area_ok', '?part=1'));
+await call('editor', 'POST', pack('area_ok', '?part=x'));
+await call('editor', 'POST', pack('area_ok'));
+await call('editor', 'POST', pack('area_ok'));
+for (const name of ['partial', 'empty', 'down', 'junk', 'refused', 'dead']) await call('editor', 'POST', pack(`area_${name}`));
+await call('admin', 'POST', pack('area_big'));
+await call('admin', 'POST', pack('area_big', '?part=99'));
+await call('admin', 'POST', pack('area_big', '?part=0'));
+await call('admin', 'POST', pack('area_big', '?part=0'));
+for (let part = 1; part < 16; part++) await call('admin', 'POST', pack('area_big', `?part=${part}`));
+await call('admin', 'POST', pack('area_big', '?part=15'));
+await call('viewer', 'GET', pack('area_ok'));
+await call('viewer', 'GET', pack('area_ok'), undefined, { 'if-none-match': '"v5-1"' });
+await call('viewer', 'GET', pack('area_ok'), undefined, { 'if-none-match': '"v5-9"' });
+await call('editor', 'GET', pack('area_n'));
+await call('other', 'GET', pack('area_ok'));
+await call('viewer', 'GET', pack('area_empty'));
+await call('viewer', 'GET', pack('area_big'));
+await call('viewer', 'GET', pack('area_big', '?part=3'));
+await call('viewer', 'GET', pack('area_big', '?part=abc'));
+await call('viewer', 'PUT', pack('area_ok'));
+await call('admin', 'GET', `${base}/meta`);
+await call('admin', 'GET', `${base}/progress`);
 
 const seedFile = new URL('v5.seed.sql', DIR);
-const text = `${JSON.stringify({ about: 'made by scripts/rs-vectors/http.ts from the TypeScript Worker; do not edit', now: NOW, cookies, exchanges }, null, 1)}\n`;
+const text = `${JSON.stringify({ about: 'made by scripts/rs-vectors/http.ts from the TypeScript Worker; do not edit', now: NOW, overpass: OVERPASS, cookies, exchanges, upstream }, null, 1)}\n`;
 const file = new URL('v5.json', DIR);
 writeFileSync(file, text);
 writeFileSync(seedFile, seedSql);

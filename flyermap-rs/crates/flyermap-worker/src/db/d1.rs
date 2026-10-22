@@ -21,6 +21,8 @@ fn values(params: &[Param]) -> Vec<JsValue> {
             Param::Int(v) => JsValue::from_f64(*v as f64),
             Param::Real(v) => JsValue::from_f64(*v),
             Param::Text(v) => JsValue::from_str(v),
+            // D1 takes a blob as an ArrayBuffer
+            Param::Blob(v) => worker::js_sys::Uint8Array::from(v.as_slice()).buffer().into(),
         })
         .collect()
 }

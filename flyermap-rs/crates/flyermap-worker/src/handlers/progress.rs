@@ -32,8 +32,8 @@ fn is_unit(text: &str) -> bool {
     is_id(head) && part.is_none_or(|p| (1..=4).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// A report changes the sizes: the next read must see them.
-fn forget(campaign_id: &str) {
+/// A report (or a new pack) changes the sizes: the next read must see them.
+pub(crate) fn forget(campaign_id: &str) {
     let prefix = format!("{campaign_id}|");
     CACHE.with(|c| c.borrow_mut().retain(|(key, _, _)| !key.starts_with(&prefix)));
 }
@@ -128,6 +128,7 @@ fn param_text(p: &Param) -> String {
         Param::Int(i) => i.to_string(),
         Param::Real(r) => r.to_string(),
         Param::Text(t) => t.clone(),
+        Param::Blob(b) => format!("{b:?}"),
     }
 }
 

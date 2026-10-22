@@ -20,6 +20,7 @@ fn bind(params: &[Param]) -> Vec<rusqlite::types::Value> {
             Param::Int(v) => rusqlite::types::Value::Integer(*v),
             Param::Real(v) => rusqlite::types::Value::Real(*v),
             Param::Text(v) => rusqlite::types::Value::Text(v.clone()),
+            Param::Blob(v) => rusqlite::types::Value::Blob(v.clone()),
         })
         .collect()
 }

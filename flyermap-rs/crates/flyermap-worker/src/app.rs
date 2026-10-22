@@ -23,6 +23,12 @@ pub struct Options {
     pub new_id: Box<dyn Fn() -> String>,
     /// 32 fresh random bytes for secrets and ids.
     pub random: Box<dyn Fn() -> [u8; 32]>,
+    /// Requests to other services (the map data source).
+    pub fetch: crate::upstream::Fetch,
+    /// A configured map data source (`OSM_OVERPASS_URL`): then it is the only one asked; otherwise the public mirrors in turn.
+    pub overpass_url: Option<String>,
+    /// The largest map data answer that is accepted (UTF-16 units, as the TypeScript Worker counts).
+    pub max_pack_bytes: usize,
 }
 
 impl Options {
@@ -45,7 +51,16 @@ impl Default for Options {
             b[..8].copy_from_slice(&counter.get().to_le_bytes());
             b
         };
-        Options { basemap: None, now: Box::new(|| 0), log: Box::new(|_| {}), new_id: Box::new(|| "s-0".into()), random: Box::new(random) }
+        Options {
+            basemap: None,
+            now: Box::new(|| 0),
+            log: Box::new(|_| {}),
+            new_id: Box::new(|| "s-0".into()),
+            random: Box::new(random),
+            fetch: crate::upstream::offline(),
+            overpass_url: None,
+            max_pack_bytes: 40_000_000,
+        }
     }
 }
 
@@ -56,14 +71,6 @@ pub struct App<D: Db> {
 
 fn same_origin(request: &Request) -> bool {
     request.header("origin").is_none_or(|o| o == request.origin())
-}
-
-/// Combinations the TypeScript Worker answers that are not here yet: they say so (501) instead of pretending (405).
-fn not_moved_yet(route: &Route, method: &str) -> bool {
-    match route {
-        Route::Area { res: AreaRes::Pack, .. } => matches!(method, "GET" | "POST"),
-        Route::Campaign { .. } | Route::Area { .. } | Route::Room { .. } | Route::PublicRoom { .. } | Route::Basemap => false,
-    }
 }
 
 impl<D: Db> App<D> {
@@ -135,7 +142,8 @@ impl<D: Db> App<D> {
             return match (res, method) {
                 (AreaRes::Prune, "POST") => handlers::cleanup::prune(db, caller, id, area_id, request, &self.options).await,
                 (AreaRes::Forget, "POST") => handlers::cleanup::forget(db, caller, id, area_id, &self.options).await,
-                _ if not_moved_yet(&route, method) => fail(ErrorCode::NotImplemented, ErrorCode::NotImplemented.message()),
+                (AreaRes::Pack, "GET") => handlers::packs::get(db, caller, id, area_id, request).await,
+                (AreaRes::Pack, "POST") => handlers::packs::build(db, caller, id, area_id, request, &self.options).await,
                 _ => fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt."),
             };
         }
@@ -154,7 +162,6 @@ impl<D: Db> App<D> {
             (Some(CampaignRes::Window), "PUT") => handlers::window::put(db, caller, id, request).await,
             (Some(CampaignRes::Rooms), "GET") => handlers::rooms::list(db, caller, id, now).await,
             (Some(CampaignRes::Rooms), "POST") => handlers::rooms::create(db, caller, id, request, &self.options).await,
-            _ if not_moved_yet(&route, method) => fail(ErrorCode::NotImplemented, ErrorCode::NotImplemented.message()),
             _ => fail(ErrorCode::MethodNotAllowed, "Methode nicht erlaubt."),
         }
     }

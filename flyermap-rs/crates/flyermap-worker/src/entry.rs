@@ -1,5 +1,9 @@
 //! The Cloudflare entry: turn the platform's request into ours, ask the app, turn the answer back. Nothing here decides anything.
-use crate::{config::basemap_from_env, db::d1::D1Db, App, Options, Request};
+use crate::{
+    config::{basemap_from_env, overpass_from_env},
+    db::d1::D1Db,
+    App, Options, Request,
+};
 use worker::{event, Context, Date, Env, Headers, Method, Response as CfResponse, Result};
 
 #[event(fetch)]
@@ -11,7 +15,8 @@ async fn fetch(mut req: worker::Request, env: Env, _ctx: Context) -> Result<CfRe
     let request = Request { method, url, headers, body };
     let var = |name: &str| env.var(name).ok().map(|v| v.to_string());
     // A fixed clock only for contract replays on a local machine (RUNTIME_ENVIRONMENT=local-test); every deployed environment uses the real one.
-    let fixed = (var("RUNTIME_ENVIRONMENT").as_deref() == Some("local-test")).then(|| var("TEST_FIXED_NOW_MS").and_then(|v| v.parse::<u64>().ok())).flatten();
+    let local_test = var("RUNTIME_ENVIRONMENT").as_deref() == Some("local-test");
+    let fixed = local_test.then(|| var("TEST_FIXED_NOW_MS").and_then(|v| v.parse::<u64>().ok())).flatten();
     let options = Options {
         basemap: Some(basemap_from_env(var)),
         now: Box::new(move || fixed.unwrap_or_else(|| Date::now().as_millis())),
@@ -24,6 +29,9 @@ async fn fetch(mut req: worker::Request, env: Env, _ctx: Context) -> Result<CfRe
             scope.crypto().and_then(|c| c.get_random_values_with_u8_array(&mut bytes)).expect("crypto.getRandomValues");
             bytes
         }),
+        fetch: crate::upstream::platform(20_000),
+        overpass_url: overpass_from_env(var, local_test),
+        max_pack_bytes: 40_000_000,
     };
     let app = App::new(D1Db(env.d1("DB")?), options);
     match app.handle(&request).await {

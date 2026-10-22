@@ -12,7 +12,8 @@ grep -v '^PRAGMA' "$CRATE/tests/vectors/v5.seed.sql" > "$WORK/seed.sql"
 cd "$CRATE"
 "$W" d1 execute DB -c wrangler.toml --local --persist-to "$WORK/d1" --file "$WORK/seed.sql" > "$WORK/seed.log" 2>&1
 setsid "$W" dev -c wrangler.toml --local --persist-to "$WORK/d1" --port "$PORT" --ip 127.0.0.1 \
-  --var RUNTIME_ENVIRONMENT:local-test --var TEST_FIXED_NOW_MS:1800000000000 --var V5_BASEMAP_DARK:off --var V5_BASEMAP_LIGHT:off > "$WORK/dev.log" 2>&1 &
+  --var RUNTIME_ENVIRONMENT:local-test --var TEST_FIXED_NOW_MS:1800000000000 --var V5_BASEMAP_DARK:off --var V5_BASEMAP_LIGHT:off \
+  --var OSM_OVERPASS_URL:http://127.0.0.1:8799/api/interpreter > "$WORK/dev.log" 2>&1 &
 DEV=$!
 # wrangler starts workerd as a child: stop the whole session, or the next run finds the port taken
 trap 'kill -- -$DEV 2>/dev/null || kill $DEV 2>/dev/null || true' EXIT

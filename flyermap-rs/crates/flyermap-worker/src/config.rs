@@ -30,9 +30,31 @@ pub fn basemap_from_env(get: impl Fn(&str) -> Option<String>) -> Basemap {
     Basemap { dark: pick("V5_BASEMAP_DARK", DEFAULT_DARK), light: pick("V5_BASEMAP_LIGHT", DEFAULT_LIGHT) }
 }
 
+/// `OSM_OVERPASS_URL`: an absolute https URL is the only map data source asked; unset or `default` means the public mirrors. Contract replays on
+/// a local machine (`local_test`) may point it at a plain-http stub.
+pub fn overpass_from_env(get: impl Fn(&str) -> Option<String>, local_test: bool) -> Option<String> {
+    let value = get("OSM_OVERPASS_URL")?;
+    let v = value.trim();
+    if v.is_empty() || value == "default" {
+        return None;
+    }
+    let rest = v.strip_prefix("https://").or_else(|| v.strip_prefix("http://").filter(|_| local_test))?;
+    (!rest.is_empty() && !rest.starts_with('/')).then(|| v.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overpass_from_the_environment() {
+        let one = |v: &'static str| move |k: &str| (k == "OSM_OVERPASS_URL").then(|| v.to_string());
+        assert_eq!(overpass_from_env(one("https://o.example/api/interpreter"), false).as_deref(), Some("https://o.example/api/interpreter"));
+        assert_eq!(overpass_from_env(one("default"), false), None);
+        assert_eq!(overpass_from_env(one("http://127.0.0.1:8799/api"), false), None);
+        assert_eq!(overpass_from_env(one("http://127.0.0.1:8799/api"), true).as_deref(), Some("http://127.0.0.1:8799/api"));
+        assert_eq!(overpass_from_env(|_| None, false), None);
+    }
 
     #[test]
     fn styles_from_the_environment() {

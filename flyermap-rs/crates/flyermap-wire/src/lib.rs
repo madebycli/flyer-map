@@ -4,6 +4,7 @@
 //! More resources (notes, rooms, progress, packs, access) join as the Worker learns them; each gets its own module.
 pub mod error;
 pub mod geometry;
+pub mod js_json;
 pub mod meta;
 pub mod ops;
 pub mod state;

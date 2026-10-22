@@ -5,6 +5,7 @@ pub mod cleanup;
 pub mod meta;
 pub mod notes;
 pub mod ops;
+pub mod packs;
 pub mod progress;
 pub mod rooms;
 pub mod state;

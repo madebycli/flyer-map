@@ -14,6 +14,8 @@ pub enum Param {
     Int(i64),
     Real(f64),
     Text(String),
+    /// Raw bytes (map packs); read back as an array of byte values.
+    Blob(Vec<u8>),
 }
 
 impl From<&str> for Param {

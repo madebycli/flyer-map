@@ -14,6 +14,7 @@ pub mod http;
 pub mod rand;
 pub mod repo;
 pub mod time;
+pub mod upstream;
 
 pub use app::{App, Options};
 pub use http::{request::Request, response::Response};

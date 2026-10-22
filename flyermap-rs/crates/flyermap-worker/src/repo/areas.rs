@@ -90,3 +90,23 @@ pub async fn owners<D: Db>(db: &D, campaign_id: &str, keys: &[String]) -> Result
     }
     Ok(out)
 }
+
+/// The stored outline of a Gebiet of either kind (`geometry_json` as written).
+pub async fn geometry_json<D: Db>(db: &D, campaign_id: &str, area: &AreaRef) -> Result<Option<String>, DbError> {
+    #[derive(Deserialize)]
+    struct G {
+        geometry_json: String,
+    }
+    let (sql, id) = match area {
+        AreaRef::Distribution { id, .. } => ("SELECT geometry_json FROM areas WHERE campaign_id = ? AND id = ?", id),
+        AreaRef::Collection { id, .. } => ("SELECT geometry_json FROM collection_areas WHERE campaign_id = ? AND id = ?", id),
+    };
+    Ok(decode_one::<G>(db.first(&stmt(sql, params![campaign_id, id.as_str()])).await?)?.map(|g| g.geometry_json))
+}
+
+/// The first 12 bytes of SHA-256 (hex) over the outline as JavaScript re-writes it (`JSON.stringify(JSON.parse(text))`): a pack built for
+/// another outline is stale.
+pub fn outline_hash(geometry_json: &str) -> String {
+    let canonical = flyermap_wire::js_json::restringify(geometry_json).unwrap_or_else(|| geometry_json.to_string());
+    crate::access::hash::sha256_hex(&canonical)[..24].to_string()
+}

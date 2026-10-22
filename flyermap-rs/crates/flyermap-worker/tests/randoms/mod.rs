@@ -48,6 +48,8 @@ impl Randoms {
 
     fn walk(&mut self, key: Option<&str>, recorded: &Value, ours: &Value) -> bool {
         match (recorded, ours) {
+            // the size of a gzip stream depends on the compressor, not on the content (the content is compared where the pack is read)
+            (Value::Number(_), Value::Number(_)) if key == Some("bytes") => true,
             // a tombstone id: the clock part is deterministic, only the node is random
             (Value::String(r), Value::String(o)) if is_random(key, r) => (r.len() != 26 || r.get(..20) == o.get(..20)) && self.pair(r, o),
             (Value::Object(r), Value::Object(o)) => r.len() == o.len() && r.iter().all(|(k, rv)| o.get(k).is_some_and(|ov| self.walk(Some(k), rv, ov))),

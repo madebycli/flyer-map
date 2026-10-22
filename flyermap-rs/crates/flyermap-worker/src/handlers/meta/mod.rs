@@ -3,7 +3,6 @@ mod collection;
 
 use super::{fail, Outcome};
 use crate::{
-    access::hash::sha256_hex,
     app::Options,
     db::{decode, stmt, Db, DbError},
     http::{request::Request, response::Response},
@@ -34,11 +33,6 @@ fn polygon(text: &str) -> Polygon {
     serde_json::from_str(text).unwrap_or(Polygon { coordinates: vec![] })
 }
 
-/// The first 12 bytes of SHA-256 over the stored outline: a pack built for another outline is stale.
-fn geometry_hash(geometry_json: &str) -> String {
-    sha256_hex(geometry_json)[..24].to_string()
-}
-
 pub async fn meta<D: Db>(db: &D, caller: &Caller, campaign_id: &str, request: &Request, options: &Options) -> Outcome {
     let Some(campaign) = repo::campaign::campaign(db, campaign_id).await? else {
         return fail(ErrorCode::NotFound, "Aktion nicht gefunden.");
@@ -50,7 +44,7 @@ pub async fn meta<D: Db>(db: &D, caller: &Caller, campaign_id: &str, request: &R
     let rows = area_rows(db, caller, campaign_id, kind).await?;
     let mut areas = Vec::with_capacity(rows.len());
     for a in rows {
-        let stale = a.pack_version.is_some() && a.pack_hash.as_deref() != Some(geometry_hash(&a.geometry_json).as_str());
+        let stale = a.pack_version.is_some() && a.pack_hash.as_deref() != Some(repo::areas::outline_hash(&a.geometry_json).as_str());
         let writable = match repo::areas::resolve_area(db, campaign_id, &a.id).await? {
             Some(area_ref) => repo::areas::can_write(db, caller, campaign_id, &area_ref).await?,
             None => false,

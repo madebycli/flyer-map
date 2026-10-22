@@ -13,6 +13,7 @@ flyermap-core = { path = "../flyermap-core" }
 flyermap-diag = { path = "../flyermap-diag" }
 flyermap-rights = { path = "../flyermap-rights" }
 flyermap-wire = { path = "../flyermap-wire" }
+flyermap-pack = { path = "../flyermap-pack" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"

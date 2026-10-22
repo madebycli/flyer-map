@@ -1,0 +1,18 @@
+[package]
+name = "flyermap-pack"
+version.workspace = true
+edition.workspace = true
+description = "Map data of a Gebiet: which parts to fetch, the Overpass query, the answer cleaned up and packed (JSON, gzip). Pure: the caller fetches and stores."
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+libm = "0.2"
+
+[dev-dependencies]
+flyermap-engine = { path = "../flyermap-engine" }
+
+[lints]
+workspace = true
