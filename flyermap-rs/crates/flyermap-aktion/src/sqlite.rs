@@ -7,6 +7,8 @@ use std::path::Path;
 pub struct RusqliteSql {
     conn: Connection,
     depth: u32,
+    /// Statements still allowed before every statement fails (fault injection for tests); `None`: no limit.
+    budget: Option<u64>,
 }
 
 fn failed(error: rusqlite::Error) -> SqlError {
@@ -24,11 +26,28 @@ fn cell(value: &Value) -> Cell {
 
 impl RusqliteSql {
     pub fn memory() -> Result<RusqliteSql, SqlError> {
-        Ok(RusqliteSql { conn: Connection::open_in_memory().map_err(failed)?, depth: 0 })
+        Ok(RusqliteSql { conn: Connection::open_in_memory().map_err(failed)?, depth: 0, budget: None })
     }
 
     pub fn file(path: &Path) -> Result<RusqliteSql, SqlError> {
-        Ok(RusqliteSql { conn: Connection::open(path).map_err(failed)?, depth: 0 })
+        Ok(RusqliteSql { conn: Connection::open(path).map_err(failed)?, depth: 0, budget: None })
+    }
+
+    /// Let only the next `statements` statements through; the one after fails, and so does every later one, until the limit is lifted with `None`. This is
+    /// how tests prove that a command that dies halfway leaves nothing behind.
+    pub fn fail_after(&mut self, statements: Option<u64>) {
+        self.budget = statements;
+    }
+
+    fn spend(&mut self) -> Result<(), SqlError> {
+        match &mut self.budget {
+            Some(0) => Err(SqlError::new("injected failure")),
+            Some(left) => {
+                *left -= 1;
+                Ok(())
+            }
+            None => Ok(()),
+        }
     }
 
     /// Bytes the database occupies (pages in use times page size): what a Durable Object would be charged for.
@@ -42,12 +61,14 @@ impl RusqliteSql {
 
 impl Sql for RusqliteSql {
     fn execute(&mut self, sql: &str, params: &[Value]) -> Result<(), SqlError> {
+        self.spend()?;
         let mut statement = self.conn.prepare_cached(sql).map_err(failed)?;
         statement.execute(params_from_iter(params.iter().map(cell))).map_err(failed)?;
         Ok(())
     }
 
     fn query(&mut self, sql: &str, params: &[Value]) -> Result<Vec<Row>, SqlError> {
+        self.spend()?;
         let mut statement = self.conn.prepare_cached(sql).map_err(failed)?;
         let columns = statement.column_count();
         let mut rows = statement.query(params_from_iter(params.iter().map(cell))).map_err(failed)?;
