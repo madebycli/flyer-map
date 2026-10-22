@@ -7,6 +7,7 @@
 #   flyermap-area     drawing Gebiete: snap, connected drawing, extend, split, checks                                       (own, pure geometry)
 #   flyermap-pack     map data of a Gebiet: parts, Overpass query, cleaned answer, gzip pack                               (own, no I/O)
 #   flyermap-engine   streets and houses: derive, classify, tiles, route, lasso, search                                    (own, WebAssembly)
+#   flyermap-search   search and command bar (Plan 061 §6): one in-memory index over everything, German-aware, typo tolerant  (own, pure, no dependency on the others)
 #   flyermap-worker   the Cloudflare Worker: router, handlers, repositories                                                (core, rights, wire, pack)
 #   flyermap-web      the app: design system, screens, map bridge                                                          (core, wire, sync, engine)
 [workspace]
