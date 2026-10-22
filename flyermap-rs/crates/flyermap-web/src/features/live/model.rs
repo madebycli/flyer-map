@@ -9,6 +9,8 @@ pub struct Chip {
     pub initials: String,
     /// The colour of the Gruppe.
     pub color: String,
+    /// The letters' colour on it.
+    pub ink: &'static str,
     /// Who: the names of the people, or the Gruppe.
     pub title: String,
     /// Where and how many: "Nordstadt · 3 Personen".
@@ -17,7 +19,7 @@ pub struct Chip {
 
 /// Up to two letters: the first of the first two words.
 pub fn initials(text: &str) -> String {
-    text.split_whitespace().filter_map(|w| w.chars().next()).take(2).flat_map(char::to_uppercase).collect()
+    text.split_whitespace().filter_map(|w| w.chars().next().filter(|c| c.is_alphabetic())).take(2).flat_map(char::to_uppercase).collect()
 }
 
 fn who(lauf: &Lauf, world: &World) -> String {
@@ -38,7 +40,14 @@ pub fn chip(lauf: &Lauf, world: &World) -> Chip {
     let place = world.gebiet(&lauf.gebiet).map_or("Gebiet", |g| g.name.as_str());
     let people = if lauf.headcount == 1 { "1 Person".to_string() } else { format!("{} Personen", lauf.headcount) };
     let color = lauf.gruppe.as_deref().and_then(|g| world.gruppe(g)).map_or_else(|| "#6c7f92".to_string(), |g| g.color.clone());
-    Chip { id: lauf.id.clone(), initials: initials(&title), color, detail: format!("{place} · {people}"), title }
+    Chip {
+        id: lauf.id.clone(),
+        initials: initials(&title),
+        ink: crate::ui::palette::color::ink_on(&color),
+        color,
+        detail: format!("{place} · {people}"),
+        title,
+    }
 }
 
 pub fn chips(world: &World) -> Vec<Chip> {

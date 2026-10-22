@@ -23,6 +23,7 @@ pub fn LiveStrip(
                                     type="button"
                                     class="fm-chip"
                                     style:--c=chip.color.clone()
+                                    style:--ink=chip.ink
                                     aria-label=label
                                     aria-pressed=move || (following.get().as_deref() == Some(pressed_id.as_str())).to_string()
                                     on:click=move |_| on_pick.run(id.clone())

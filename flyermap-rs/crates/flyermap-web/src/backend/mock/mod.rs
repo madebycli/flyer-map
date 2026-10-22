@@ -49,7 +49,11 @@ impl MockBackend {
     fn effective(&self) -> Persona {
         let s = self.state.borrow();
         if s.joined {
-            if s.persona == Persona::Stranger { Persona::Member } else { s.persona }
+            if s.persona == Persona::Stranger {
+                Persona::Member
+            } else {
+                s.persona
+            }
         } else {
             Persona::Stranger
         }
@@ -123,7 +127,8 @@ impl Backend for MockBackend {
                 format!("gebiet-{}", s.saved)
             });
             let version = s.world.gebiet(&id).and_then(|g| g.pack_version).map_or(1, |v| v + 1);
-            let gebiet = Gebiet { id: id.clone(), name: d.name, gruppe: d.gruppe, art: d.art, ring: d.ring, writable: true, pack_version: Some(version), color };
+            let gebiet =
+                Gebiet { id: id.clone(), name: d.name, gruppe: d.gruppe, art: d.art, ring: d.ring, writable: true, pack_version: Some(version), color };
             match s.world.gebiete.iter_mut().find(|g| g.id == id) {
                 Some(slot) => *slot = gebiet.clone(),
                 None => s.world.gebiete.push(gebiet.clone()),

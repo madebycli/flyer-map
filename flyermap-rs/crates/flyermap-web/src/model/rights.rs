@@ -1,7 +1,7 @@
 //! What the interface offers. The server decides every right; this is the same decision (`flyermap_identity::decide`) asked locally, so a button
 //! that would be refused is not shown, and the sentence "du darfst hier nur ansehen" is always true. Nothing here grants anything.
 use super::world::Gebiet;
-use flyermap_identity::{decide, AccessSet, Action, AktionId, GebietId, GruppeId, Grant, OrgId, Resource, Role};
+use flyermap_identity::{decide, AccessSet, Action, AktionId, GebietId, Grant, GruppeId, OrgId, Resource, Role};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rights {

@@ -57,7 +57,10 @@ pub fn blank_style(theme: Theme) -> String {
 pub fn sources(tile_url: &str) -> Vec<(&'static str, Value)> {
     let empty = json!({"type": "geojson", "data": {"type": "FeatureCollection", "features": []}});
     vec![
-        (TILES, json!({"type": "vector", "tiles": [tile_url], "minzoom": 11, "maxzoom": 17, "promoteId": {"segments": "key", "houses": "key", "centers": "key"}})),
+        (
+            TILES,
+            json!({"type": "vector", "tiles": [tile_url], "minzoom": 11, "maxzoom": 17, "promoteId": {"segments": "key", "houses": "key", "centers": "key"}}),
+        ),
         (AREAS, empty.clone()),
         (CONTEXT, empty),
     ]
@@ -94,22 +97,46 @@ pub fn layers(theme: Theme, houses_only: bool) -> Vec<Value> {
             "paint": {"fill-color": ["get", "color"], "fill-opacity": ["case", ["==", ["get", "active"], 1], 0.12, 0.04]}}),
         json!({"id": "v5-areas-line", "type": "line", "source": AREAS, "layout": {"line-join": "round"},
             "paint": {"line-color": ["get", "color"], "line-opacity": 0.8, "line-width": ["case", ["==", ["get", "active"], 1], 2.6, 1.6], "line-dasharray": [2.4, 1.8]}}),
-        with(tiles(HOUSES_DOTS, "centers", "circle"), json!({"minzoom": 11.5, "maxzoom": 15.2, "paint": {"circle-color": status_color(theme),
-            "circle-opacity": by_status(json!(0.6), json!(0.9)), "circle-stroke-width": 0, "circle-radius": ["interpolate", ["linear"], ["zoom"], 11.5, 0.7, 14, 1.6, 15.2, 3.2]}})),
-        with(tiles(HOUSES_FILL, "houses", "fill"), json!({"minzoom": 15.2, "paint": {"fill-color": status_color(theme),
-            "fill-opacity": ["case", flag("selected"), 1, by_status(json!(0.5), json!(0.85))]}})),
-        with(tiles("v5-houses-outline", "houses", "line"), json!({"minzoom": 16.5, "layout": round, "paint": {
-            "line-color": ["case", flag("selected"), selected_outline, outline], "line-width": ["case", flag("selected"), 2.5, 0.5]}})),
-        with(tiles("v5-segments-casing", "segments", "line"), json!({"minzoom": 13.5, "filter": filter("v5-segments-casing"), "layout": round,
-            "paint": {"line-color": casing, "line-width": ["interpolate", ["exponential", 1.5], ["zoom"], 13.5, 1.6, 16, 6.5, 20, 18]}})),
-        with(tiles("v5-segments-preview", "segments", "line"), json!({"filter": filter("v5-segments-preview"), "layout": round, "paint": {"line-color": preview,
-            "line-opacity": ["case", flag("preview"), 0.7, 0], "line-width": ["interpolate", ["exponential", 1.5], ["zoom"], 12, 5, 16, 13, 20, 32]}})),
-        with(tiles(STREETS, "segments", "line"), json!({"minzoom": SEGMENTS_FROM, "filter": filter(STREETS), "layout": round,
-            "paint": {"line-color": status_color(theme), "line-opacity": line_opacity.clone(), "line-width": street_width}})),
-        with(tiles(PATHS, "segments", "line"), json!({"minzoom": SEGMENTS_FROM, "filter": filter(PATHS), "layout": {"line-join": "round"},
-            "paint": {"line-color": status_color(theme), "line-opacity": line_opacity, "line-width": path_width, "line-dasharray": [1.4, 1.1]}})),
-        with(tiles("v5-houses-preview", "houses", "line"), json!({"minzoom": 15.2, "paint": {"line-color": preview, "line-width": 2.5,
-            "line-opacity": ["case", flag("preview"), 1, 0]}})),
+        with(
+            tiles(HOUSES_DOTS, "centers", "circle"),
+            json!({"minzoom": 11.5, "maxzoom": 15.2, "paint": {"circle-color": status_color(theme),
+            "circle-opacity": by_status(json!(0.6), json!(0.9)), "circle-stroke-width": 0, "circle-radius": ["interpolate", ["linear"], ["zoom"], 11.5, 0.7, 14, 1.6, 15.2, 3.2]}}),
+        ),
+        with(
+            tiles(HOUSES_FILL, "houses", "fill"),
+            json!({"minzoom": 15.2, "paint": {"fill-color": status_color(theme),
+            "fill-opacity": ["case", flag("selected"), 1, by_status(json!(0.5), json!(0.85))]}}),
+        ),
+        with(
+            tiles("v5-houses-outline", "houses", "line"),
+            json!({"minzoom": 16.5, "layout": round, "paint": {
+            "line-color": ["case", flag("selected"), selected_outline, outline], "line-width": ["case", flag("selected"), 2.5, 0.5]}}),
+        ),
+        with(
+            tiles("v5-segments-casing", "segments", "line"),
+            json!({"minzoom": 13.5, "filter": filter("v5-segments-casing"), "layout": round,
+            "paint": {"line-color": casing, "line-width": ["interpolate", ["exponential", 1.5], ["zoom"], 13.5, 1.6, 16, 6.5, 20, 18]}}),
+        ),
+        with(
+            tiles("v5-segments-preview", "segments", "line"),
+            json!({"filter": filter("v5-segments-preview"), "layout": round, "paint": {"line-color": preview,
+            "line-opacity": ["case", flag("preview"), 0.7, 0], "line-width": ["interpolate", ["exponential", 1.5], ["zoom"], 12, 5, 16, 13, 20, 32]}}),
+        ),
+        with(
+            tiles(STREETS, "segments", "line"),
+            json!({"minzoom": SEGMENTS_FROM, "filter": filter(STREETS), "layout": round,
+            "paint": {"line-color": status_color(theme), "line-opacity": line_opacity.clone(), "line-width": street_width}}),
+        ),
+        with(
+            tiles(PATHS, "segments", "line"),
+            json!({"minzoom": SEGMENTS_FROM, "filter": filter(PATHS), "layout": {"line-join": "round"},
+            "paint": {"line-color": status_color(theme), "line-opacity": line_opacity, "line-width": path_width, "line-dasharray": [1.4, 1.1]}}),
+        ),
+        with(
+            tiles("v5-houses-preview", "houses", "line"),
+            json!({"minzoom": 15.2, "paint": {"line-color": preview, "line-width": 2.5,
+            "line-opacity": ["case", flag("preview"), 1, 0]}}),
+        ),
     ]
 }
 

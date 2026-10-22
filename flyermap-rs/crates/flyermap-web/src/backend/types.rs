@@ -40,7 +40,12 @@ pub struct Joined {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SignIn {
     Passkey,
-    Password { name: String, password: String },
+    Password {
+        name: String,
+        password: String,
+    },
     /// The six digits of the second factor, after a password.
-    Totp { code: String },
+    Totp {
+        code: String,
+    },
 }

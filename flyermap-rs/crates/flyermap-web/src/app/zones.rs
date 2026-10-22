@@ -42,8 +42,8 @@ impl ZoneId {
 
 /// A positioned box that lets the map's gestures through everywhere except on what it holds.
 #[component]
-pub fn Zone(zone: ZoneId, children: Children) -> impl IntoView {
-    view! { <div class="fm-zone" data-zone=zone.name()>{children()}</div> }
+pub fn Zone(zone: ZoneId, #[prop(optional)] children: Option<Children>) -> impl IntoView {
+    view! { <div class="fm-zone" data-zone=zone.name()>{children.map(|c| c())}</div> }
 }
 
 #[cfg(test)]

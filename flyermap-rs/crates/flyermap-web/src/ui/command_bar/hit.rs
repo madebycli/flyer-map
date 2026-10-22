@@ -4,13 +4,36 @@
 pub enum HitKind {
     Street,
     House,
+    Gebiet,
+    Gruppe,
+    Lauf,
+    Person,
+    Command,
 }
 
 impl HitKind {
     pub fn label(self) -> &'static str {
         match self {
+            HitKind::Command => "Befehl",
             HitKind::Street => "Straße",
             HitKind::House => "Haus",
+            HitKind::Gebiet => "Gebiet",
+            HitKind::Gruppe => "Gruppe",
+            HitKind::Lauf => "Lauf",
+            HitKind::Person => "Person",
+        }
+    }
+
+    pub fn icon(self) -> crate::ui::icon::IconName {
+        use crate::ui::icon::IconName;
+        match self {
+            HitKind::Command => IconName::Chevron,
+            HitKind::Street => IconName::Road,
+            HitKind::House => IconName::House,
+            HitKind::Gebiet => IconName::Polygon,
+            HitKind::Gruppe => IconName::Users,
+            HitKind::Lauf => IconName::Flag,
+            HitKind::Person => IconName::Hand,
         }
     }
 }
@@ -22,11 +45,13 @@ pub struct Hit {
     pub label: String,
     /// The Gebiet or the house number range, right-aligned.
     pub detail: String,
+    /// Replaces the icon of the kind (commands carry their own).
+    pub icon: Option<crate::ui::icon::IconName>,
 }
 
-/// The card is open while the field has focus and something non-blank is typed.
-pub fn card_open(focused: bool, query: &str) -> bool {
-    focused && !query.trim().is_empty()
+/// The card is open while the field has focus: with nothing typed it offers suggestions, with text it shows what was found.
+pub fn card_open(focused: bool) -> bool {
+    focused
 }
 
 #[cfg(test)]
@@ -34,9 +59,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_card_needs_focus_and_text() {
-        assert!(card_open(true, "haupt"));
-        assert!(!card_open(true, "   "));
-        assert!(!card_open(false, "haupt"));
+    fn the_card_needs_focus_only() {
+        assert!(card_open(true));
+        assert!(!card_open(false));
     }
 }

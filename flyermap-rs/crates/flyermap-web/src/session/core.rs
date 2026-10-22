@@ -1,12 +1,14 @@
-//! The session: the backend and the answers of its boot.
+//! The session: the backend, the answers of its boot, and the numbers the screens keep showing (progress, the state of the sync).
 use crate::{
     backend::{Backend, BackendError},
     model::{Rights, World},
     platform::time::now_ms,
+    sync::SyncView,
 };
+use flyermap_core::ProgressSnapshot;
 use flyermap_identity::AktionId;
 use leptos::{prelude::*, task::spawn_local};
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
 /// Where the start is.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,7 +18,10 @@ pub enum Phase {
     NeedsJoin,
     Ready,
     /// The start failed for another reason: the sentence and the stable code.
-    Failed { message: String, code: String },
+    Failed {
+        message: String,
+        code: String,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -25,6 +30,9 @@ pub struct Session {
     pub phase: RwSignal<Phase>,
     pub world: RwSignal<World>,
     pub rights: RwSignal<Rights>,
+    /// Houses and metres per status, by Gebiet (what the overview and the pill show).
+    pub progress: RwSignal<HashMap<String, ProgressSnapshot>>,
+    pub sync: RwSignal<SyncView>,
 }
 
 impl Session {
@@ -34,6 +42,8 @@ impl Session {
             phase: RwSignal::new(Phase::Starting),
             world: RwSignal::new(World::empty()),
             rights: RwSignal::new(Rights::none()),
+            progress: RwSignal::new(HashMap::new()),
+            sync: RwSignal::new(SyncView::default()),
         }
     }
 

@@ -13,7 +13,6 @@ const BLUR_GRACE: Duration = Duration::from_millis(120);
 
 #[component]
 pub fn CommandBar(
-    #[prop(into)] on_menu: Callback<()>,
     /// The search: called with the typed text while the card is open.
     #[prop(into)]
     search: Callback<String, Vec<Hit>>,
@@ -33,7 +32,7 @@ pub fn CommandBar(
             let _ = el.set_attribute("autocorrect", "off");
         }
     });
-    let open = Memo::new(move |_| query.with(|q| card_open(focused.get(), q)));
+    let open = Memo::new(move |_| card_open(focused.get()));
     let hits = Memo::new(move |_| if open.get() { search.run(query.get()) } else { Vec::new() });
 
     let finish = move || {
@@ -64,26 +63,14 @@ pub fn CommandBar(
 
     view! {
         <div class="v5-cmd" data-open=move || open.get().to_string()>
-            <button
-                type="button"
-                class="v5-cmd-btn"
-                aria-label="Menü"
-                title="Menü"
-                on:click=move |_| {
-                    finish();
-                    on_menu.run(());
-                }
-            >
-                <Icon name=IconName::Menu size=24 />
-            </button>
             <label class="v5-cmd-search">
                 <Icon name=IconName::Search size=22 />
                 <input
                     node_ref=input
                     prop:value=move || query.get()
                     on:input=move |e| query.set(event_target_value(&e))
-                    placeholder="Straße oder Adresse"
-                    aria-label="Straße oder Adresse suchen"
+                    placeholder="Suchen oder Befehl …"
+                    aria-label="Suchen"
                     inputmode="search"
                     enterkeyhint="search"
                     autocomplete="off"

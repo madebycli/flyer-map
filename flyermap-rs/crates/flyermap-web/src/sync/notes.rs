@@ -39,7 +39,8 @@ mod tests {
     use super::*;
 
     fn note(id: &str, rev: &str, deleted: bool) -> Note {
-        serde_json::from_value(serde_json::json!({"id": id, "key": "h:1", "area": "a", "flag": null, "text": "", "rev": rev, "deleted": deleted, "by": "x"})).unwrap()
+        serde_json::from_value(serde_json::json!({"id": id, "key": "h:1", "area": "a", "flag": null, "text": "", "rev": rev, "deleted": deleted, "by": "x"}))
+            .unwrap()
     }
 
     #[test]

@@ -1,12 +1,12 @@
 //! The results card that floats under the bar (`.v5-spot`): neither the bar nor the map move when it opens.
-use super::hit::{Hit, HitKind};
+use super::hit::Hit;
 use crate::ui::icon::{Icon, IconName};
 use leptos::{ev, prelude::*};
 
 #[component]
 pub fn Results(#[prop(into)] hits: Signal<Vec<Hit>>, #[prop(into)] on_pick: Callback<Hit>) -> impl IntoView {
     let row = move |hit: Hit| {
-        let icon = if hit.kind == HitKind::Street { IconName::Road } else { IconName::House };
+        let icon = hit.icon.unwrap_or_else(|| hit.kind.icon());
         let (label, kind, detail) = (hit.label.clone(), hit.kind.label(), hit.detail.clone());
         view! {
             <button

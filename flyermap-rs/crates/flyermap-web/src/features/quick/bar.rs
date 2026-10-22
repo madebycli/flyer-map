@@ -25,6 +25,7 @@ fn QuickButton(
     /// The id the browser flows look the button up by.
     id: &'static str,
 ) -> impl IntoView {
+    let has_badge = move || badge.get() > 0;
     view! {
         <button
             type="button"
@@ -36,7 +37,7 @@ fn QuickButton(
             on:click=move |_| on_click.run(())
         >
             <Icon name=icon size=22 />
-            <Show when=move || badge.get() > 0>
+            <Show when=has_badge>
                 <em class="fm-qbadge" aria-hidden="true">{move || badge.get().min(99)}</em>
             </Show>
         </button>

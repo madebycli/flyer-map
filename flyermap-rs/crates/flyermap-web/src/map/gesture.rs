@@ -98,7 +98,7 @@ impl Gestures {
         self.swallow_click = false;
         // a primary pointer begins a new touch sequence: ids of fingers whose "up" never arrived must not count as a second finger
         if primary {
-            out = self.reset(tool.as_mut().map(|t| &mut **t));
+            out = self.reset(tool.as_deref_mut());
         }
         if !self.pointers.contains(&id) {
             self.pointers.push(id);

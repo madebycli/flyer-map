@@ -68,6 +68,16 @@ pub fn parse_hex(value: &str) -> Option<Rgb> {
     Some([channel(16), channel(8), channel(0)])
 }
 
+/// The text colour that reads on a given background colour (a Gruppe's colour): dark on light, white on dark.
+pub fn ink_on(background: &str) -> &'static str {
+    let luminance = parse_hex(background).map_or(0.0, |[r, g, b]| 0.2126 * r + 0.7152 * g + 0.0722 * b);
+    if luminance > 0.3 {
+        "#0f1514"
+    } else {
+        "#ffffff"
+    }
+}
+
 /// Hue (degrees, 0..360) and chroma of a colour in OKLCH.
 pub fn oklch(rgb: Rgb) -> (f64, f64) {
     let [r, g, b] = rgb;
@@ -83,6 +93,18 @@ pub fn oklch(rgb: Rgb) -> (f64, f64) {
 pub fn contrast(a: &str, b: &str) -> Option<f64> {
     let (ya, yb) = (luminance(parse_hex(a)?), luminance(parse_hex(b)?));
     Some((ya.max(yb) + 0.05) / (ya.min(yb) + 0.05))
+}
+
+#[cfg(test)]
+mod ink_tests {
+    use super::ink_on;
+
+    #[test]
+    fn letters_are_dark_on_yellow_and_white_on_blue() {
+        assert_eq!(ink_on("#d9a53a"), "#0f1514");
+        assert_eq!(ink_on("#4f8fdc"), "#ffffff");
+        assert_eq!(ink_on("not a colour"), "#ffffff");
+    }
 }
 
 #[cfg(test)]

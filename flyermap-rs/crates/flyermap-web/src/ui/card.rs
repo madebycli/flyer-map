@@ -18,14 +18,14 @@ pub fn Card(
     #[prop(optional)] icon: Option<IconName>,
     #[prop(into)] title: String,
     #[prop(optional, into)] text: Option<String>,
-    children: Children,
+    #[prop(optional)] children: Option<Children>,
 ) -> impl IntoView {
     view! {
         <section class="v5-card">
             {icon.map(|name| view! { <span class="v5-badge big"><Icon name=name size=32 /></span> })}
             <h2>{title}</h2>
             {text.map(|t| view! { <p>{t}</p> })}
-            {children()}
+            {children.map(|c| c())}
         </section>
     }
 }

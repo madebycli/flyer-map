@@ -43,34 +43,30 @@ pub struct PillState {
     pub done: i64,
     pub total: i64,
     pub percent: i64,
-    pub sync: SyncDot,
-    pub pending: u32,
     /// Only looking, no marking: an eye after the number.
     pub view_only: bool,
 }
 
+/// The progress at the right end of the bar. It opens the overview. (Whether everything is saved is the quick bar's business.)
 #[component]
 pub fn StatusPill(
     /// The name of the Aktion, read before the percentage.
-    campaign: &'static str,
+    #[prop(into)]
+    campaign: Signal<String>,
     #[prop(into)] state: Signal<PillState>,
     #[prop(into)] on_click: Callback<()>,
 ) -> impl IntoView {
-    let title = Memo::new(move |_| state.with(|s| s.sync.title(s.pending)));
     view! {
         <button
             type="button"
             class="v5-pill"
             role="status"
-            aria-label=move || format!("{campaign}: {} Prozent – Übersicht öffnen", state.with(|s| s.percent))
+            aria-label=move || format!("{}: {} Prozent – Übersicht öffnen", campaign.get(), state.with(|s| s.percent))
             data-done=move || state.with(|s| s.done)
             data-total=move || state.with(|s| s.total)
-            title=move || title.get()
+            title="Fortschritt"
             on:click=move |_| on_click.run(())
         >
-            <span class=move || state.with(|s| s.sync.class()) aria-label=move || title.get()>
-                <Icon name=Signal::derive(move || state.with(|s| s.sync.icon())) size=20 />
-            </span>
             <strong class="v5-percent">{move || state.with(|s| s.percent)}<small>"%"</small></strong>
             <Show when=move || state.with(|s| s.view_only)>
                 <Icon name=IconName::Eye size=18 class="v5-viewonly" />

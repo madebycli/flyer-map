@@ -1,6 +1,9 @@
 //! What a tap can mean and what may be done with it. There is no menu of everything: a Gebiet, a house, a street, a person, a Lauf opens a sheet
 //! with *its* actions, and [`actions_for`] says which ones, from the rights. The words and icons belong to the screens (`features::subject`).
-use super::{rights::Rights, world::{Gebiet, World}};
+use super::{
+    rights::Rights,
+    world::{Gebiet, World},
+};
 use flyermap_identity::{Action, Art};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -151,11 +154,13 @@ mod tests {
     fn a_member_sees_the_actions_of_the_own_group_only() {
         let w = world();
         let r = rights(Role::Member, Scope::Gruppe { org: OrgId::new("o"), aktion: AktionId::new("a"), gruppe: GruppeId::new("nord") });
-        let ctx = |g: Option<&Gebiet>| SubjectContext { world: &w, rights: &r, gebiet_of_key: g };
-        assert_eq!(actions_for(&Subject::Gebiet("g1".into()), &ctx(None)), [Act::Show]);
-        assert_eq!(actions_for(&Subject::Strasse("1#0".into()), &ctx(w.gebiet("g1"))), [Act::SetStatus, Act::WholeStreet, Act::Show]);
-        assert_eq!(actions_for(&Subject::Haus("h".into()), &ctx(w.gebiet("g2"))), [Act::Show], "a house in somebody else's Gebiet: look only");
-        assert!(actions_for(&Subject::Person("p".into()), &ctx(None)).is_empty());
+        fn ctx<'a>(world: &'a World, rights: &'a Rights, g: Option<&'a Gebiet>) -> SubjectContext<'a> {
+            SubjectContext { world, rights, gebiet_of_key: g }
+        }
+        assert_eq!(actions_for(&Subject::Gebiet("g1".into()), &ctx(&w, &r, None)), [Act::Show]);
+        assert_eq!(actions_for(&Subject::Strasse("1#0".into()), &ctx(&w, &r, w.gebiet("g1"))), [Act::SetStatus, Act::WholeStreet, Act::Show]);
+        assert_eq!(actions_for(&Subject::Haus("h".into()), &ctx(&w, &r, w.gebiet("g2"))), [Act::Show], "a house in somebody else's Gebiet: look only");
+        assert!(actions_for(&Subject::Person("p".into()), &ctx(&w, &r, None)).is_empty());
     }
 
     #[test]

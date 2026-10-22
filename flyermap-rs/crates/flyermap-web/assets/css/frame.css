@@ -1,0 +1,40 @@
+/* The frame: the stage with its zones, the Studio column from 900 px. Everything that floats over the map is in one zone (src/app/zones.rs). */
+.fm-app { display: grid; grid-template-columns: minmax(0, 1fr); }
+.fm-app[data-layout="wide"] { grid-template-columns: var(--studio-w, 25rem) minmax(0, 1fr); }
+.fm-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+/* A zone positions; the map's gestures pass through it everywhere except on what it holds. */
+.fm-zone { position: absolute; inset: 0; pointer-events: none; }
+.fm-zone > * { pointer-events: auto; }
+.fm-zone[data-zone="panel"] { z-index: 5; }
+.fm-zone[data-zone="bottom"] { z-index: 5; }
+.fm-zone[data-zone="top"] { z-index: 6; }
+.fm-zone[data-zone="notice"] { z-index: 9; }
+.fm-zone[data-zone="sheet"] { z-index: 11; }
+.fm-zone[data-zone="overlay"] { z-index: 20; }
+
+/* top: the command bar, then the live strip */
+.fm-zone[data-zone="top"] { inset: 0 0 auto 0; display: flex; flex-direction: column; align-items: center; gap: 0.45rem; padding: calc(env(safe-area-inset-top) + 0.7rem) 0.7rem 0; }
+.fm-zone[data-zone="top"] > .v5-cmd, .fm-zone[data-zone="top"] > .fm-live { max-width: 34rem; }
+.fm-zone[data-zone="top"] > .v5-spot { pointer-events: auto; }
+
+/* bottom: the quick bar on one side, the mode button on the thumb's side */
+.fm-zone[data-zone="bottom"] { inset: auto 0 0 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 0.5rem; padding: 0 0.7rem calc(env(safe-area-inset-bottom) + 0.8rem); }
+.fm-app[data-hand="left"] .fm-zone[data-zone="bottom"] { flex-direction: row-reverse; }
+.fm-zone[data-zone="bottom"] > .fm-mode:only-child { margin-left: auto; }
+.fm-app[data-hand="left"] .fm-zone[data-zone="bottom"] > .fm-mode:only-child { margin-left: 0; margin-right: auto; }
+
+/* panel: the tool's panel above the bottom row, on the thumb's side */
+.fm-zone[data-zone="panel"] { inset: auto 0 calc(env(safe-area-inset-bottom) + 0.8rem + 4rem + 0.6rem) 0; display: flex; justify-content: flex-end; padding: 0 0.7rem; }
+.fm-app[data-hand="left"] .fm-zone[data-zone="panel"] { justify-content: flex-start; }
+.fm-panel { width: 100%; max-width: 26rem; padding: 0.6rem; border-radius: var(--r-lg); background: var(--glass); box-shadow: var(--shadow); animation: fm-rise var(--t) var(--ease); }
+@keyframes fm-rise { from { transform: translateY(0.6rem); opacity: 0; } }
+
+/* the Studio column (wide) */
+.fm-studio { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--surface-1); border-right: 1px solid var(--outline-var); }
+.fm-studio > header { flex: none; display: flex; align-items: center; gap: 0.8rem; padding: calc(env(safe-area-inset-top) + 0.9rem) 1.1rem 0.6rem; }
+.fm-studio h2 { margin: 0; font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; }
+
+/* wide: sheets sit at the left of the stage, next to the Studio; the sheet zone itself does not catch the map's gestures */
+.fm-app[data-layout="wide"] .v5-sheet { left: 1rem; bottom: 1rem; width: 28rem; border-radius: var(--r-lg); }
+
+@media (prefers-reduced-motion: reduce) { .fm-panel { animation: none; } }

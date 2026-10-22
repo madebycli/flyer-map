@@ -72,9 +72,9 @@ mod tests {
 
     #[test]
     fn only_active_rooms_are_out_there() {
-        let json = r#"{"rooms":[
+        let json = r##"{"rooms":[
             {"id":"r1","areaId":"a1","areaName":"A","teamId":"t1","teamName":"N","teamColor":"#000","status":"active","headcount":3,"startedAt":"2027-01-15T08:00:00.000Z","housesDone":12},
-            {"id":"r2","areaId":"a2","areaName":"B","teamId":"t2","teamName":"S","teamColor":"#000","status":"finished","headcount":1,"startedAt":"2027-01-14T08:00:00.000Z","housesDone":null}],"serverNow":1}"#;
+            {"id":"r2","areaId":"a2","areaName":"B","teamId":"t2","teamName":"S","teamColor":"#000","status":"finished","headcount":1,"startedAt":"2027-01-14T08:00:00.000Z","housesDone":null}],"serverNow":1}"##;
         let l = active(json);
         assert_eq!(l.len(), 1);
         assert_eq!((l[0].id.as_str(), l[0].gebiet.as_str(), l[0].headcount, l[0].houses_done), ("r1", "a1", 3, Some(12)));

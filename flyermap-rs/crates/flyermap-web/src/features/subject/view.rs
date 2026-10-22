@@ -41,7 +41,13 @@ pub fn act_label(act: Act, art: Art) -> (&'static str, IconName) {
 
 fn minutes_since(then: Option<u64>, now: u64) -> Option<String> {
     let min = now.checked_sub(then?)? / 60_000;
-    Some(if min < 1 { "seit gerade eben".into() } else if min < 90 { format!("seit {min} min") } else { format!("seit {} h", min / 60) })
+    Some(if min < 1 {
+        "seit gerade eben".into()
+    } else if min < 90 {
+        format!("seit {min} min")
+    } else {
+        format!("seit {} h", min / 60)
+    })
 }
 
 fn expires_in(expires: Option<u64>, now: u64) -> String {
@@ -50,7 +56,11 @@ fn expires_in(expires: Option<u64>, now: u64) -> String {
         Some(t) if t <= now => "abgelaufen".into(),
         Some(t) => {
             let days = (t - now).div_ceil(86_400_000);
-            if days <= 1 { "läuft heute oder morgen ab".into() } else { format!("läuft in {days} Tagen ab") }
+            if days <= 1 {
+                "läuft heute oder morgen ab".into()
+            } else {
+                format!("läuft in {days} Tagen ab")
+            }
         }
     }
 }
@@ -134,7 +144,10 @@ mod tests {
     fn a_gebiet_says_its_gruppe_and_its_laeufe() {
         let (w, r) = (world(Persona::Admin), rights(Persona::Admin));
         let v = describe(&Subject::Gebiet("nordstadt".into()), &w, &r, None, NOW).unwrap();
-        assert_eq!((v.title.as_str(), v.facts.as_slice()), ("Nordstadt", ["Gruppe Nord".to_string(), "Austeilen".to_string(), "1 Lauf".to_string()].as_slice()));
+        assert_eq!(
+            (v.title.as_str(), v.facts.as_slice()),
+            ("Nordstadt", ["Gruppe Nord".to_string(), "Austeilen".to_string(), "1 Lauf".to_string()].as_slice())
+        );
         assert!(v.acts.contains(&Act::StartLauf) && v.acts.contains(&Act::DrawConnect));
         let viewer = describe(&Subject::Gebiet("nordstadt".into()), &w, &rights(Persona::Viewer), None, NOW).unwrap();
         assert_eq!(viewer.acts, [Act::Show], "a viewer may only look");

@@ -43,7 +43,11 @@ pub struct Network {
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum Route {
     #[serde(rename_all = "camelCase")]
-    Selected { segment_ids: Vec<String>, length: f64, ambiguous: bool },
+    Selected {
+        segment_ids: Vec<String>,
+        length: f64,
+        ambiguous: bool,
+    },
     Disconnected,
 }
 

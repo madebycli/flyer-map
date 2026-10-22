@@ -4,5 +4,5 @@ pub mod model;
 pub mod sheet;
 pub mod topics;
 
-pub use model::{shown, HelpRole};
+pub use model::{help_role, shown, HelpRole};
 pub use sheet::HelpSheet;

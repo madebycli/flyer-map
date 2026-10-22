@@ -145,7 +145,8 @@ mod tests {
     fn settings_palette_and_back_again() {
         let s = run([Action::Open(Panel::Settings), Action::Open(Panel::Palette)]);
         assert_eq!(s.panel, Some(Panel::Palette));
-        assert_eq!(run([Action::Open(Panel::Palette), Action::Back]).panel, None, "a page without a parent closes");
+        assert_eq!(run([Action::Open(Panel::Palette), Action::Back]).panel, Some(Panel::Settings));
+        assert_eq!(run([Action::Open(Panel::Palette), Action::Back, Action::Back]).panel, None, "back from a page without a parent closes");
         assert_eq!(run([Action::Open(Panel::Palette), Action::Close]).panel, None);
     }
 

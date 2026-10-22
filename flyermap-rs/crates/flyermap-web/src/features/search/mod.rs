@@ -1,4 +1,6 @@
-//! Suche: what the bar finds.
+//! Suche und Befehle: what the bar finds and what it can do.
+pub mod commands;
 pub mod find;
 
-pub use find::{find, Place};
+pub use commands::{command, CommandId, COMMANDS};
+pub use find::find;

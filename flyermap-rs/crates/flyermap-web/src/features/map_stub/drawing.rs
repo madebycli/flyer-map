@@ -1,64 +1,53 @@
-//! A stand-in for the map until the MapLibre bridge exists (M5): streets as lines and houses as small squares in their status colours, drawn
-//! once as one SVG string (no node per house in the reactive tree, like the real map's rule of constant layer counts).
-use crate::{platform::Theme, ui::status};
-use flyermap_core::Status;
-use std::fmt::Write;
+//! The stand-in for the map until the MapLibre bridge is wired (step 2): the Gebiete as outlines on a calm grid, so the zones have something
+//! to float over. Pure: rings in, SVG point lists out.
+use crate::model::{Gebiet, LngLat};
 
 /// The drawing's coordinate box (`viewBox`), scaled to cover the screen.
 pub const SIZE: f64 = 1000.0;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct StreetLine {
-    pub from: (f64, f64),
-    pub to: (f64, f64),
-    pub status: Status,
+pub struct Shape {
+    pub id: String,
+    pub color: String,
+    /// `x,y x,y …` in the box.
+    pub points: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct HouseDot {
-    pub at: (f64, f64),
-    pub status: Status,
-}
-
-/// The SVG of the drawing (without the outer `<svg>`), coloured for the theme.
-pub fn svg_markup(streets: &[StreetLine], houses: &[HouseDot], theme: Theme) -> String {
-    let mut out = String::with_capacity(64 * (streets.len() + houses.len()));
-    let casing = if theme == Theme::Dark { "#2a3432" } else { "#cfd9d5" };
-    for s in streets {
-        let _ = write!(
-            out,
-            r#"<line x1="{:.0}" y1="{:.0}" x2="{:.0}" y2="{:.0}" stroke="{casing}" stroke-width="22" stroke-linecap="round"/>"#,
-            s.from.0, s.from.1, s.to.0, s.to.1
-        );
-        let _ = write!(
-            out,
-            r#"<line x1="{:.0}" y1="{:.0}" x2="{:.0}" y2="{:.0}" stroke="{}" stroke-width="7" stroke-linecap="round"/>"#,
-            s.from.0,
-            s.from.1,
-            s.to.0,
-            s.to.1,
-            status::color(theme, s.status)
-        );
-    }
-    for h in houses {
-        let _ =
-            write!(out, r#"<rect x="{:.0}" y="{:.0}" width="20" height="16" rx="4" fill="{}"/>"#, h.at.0 - 10.0, h.at.1 - 8.0, status::color(theme, h.status));
-    }
-    out
+/// Fit all Gebiete into the box with a margin, north up, one scale for both axes (longitude is stretched by the latitude's cosine).
+pub fn shapes(gebiete: &[Gebiet]) -> Vec<Shape> {
+    let all: Vec<LngLat> = gebiete.iter().flat_map(|g| g.ring.iter().copied()).collect();
+    let Some(b) = crate::model::ring_bounds(&all) else { return Vec::new() };
+    let cos = ((b[1] + b[3]) / 2.0).to_radians().cos();
+    let (w, h) = ((b[2] - b[0]) * cos, b[3] - b[1]);
+    let scale = (SIZE * 0.7) / w.max(h).max(1e-9);
+    let (ox, oy) = ((SIZE - w * scale) / 2.0, (SIZE - h * scale) / 2.0);
+    gebiete
+        .iter()
+        .map(|g| Shape {
+            id: g.id.clone(),
+            color: g.color.clone(),
+            points: g.ring.iter().map(|p| format!("{:.1},{:.1}", ox + (p[0] - b[0]) * cos * scale, oy + (b[3] - p[1]) * scale)).collect::<Vec<_>>().join(" "),
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::mock::data::{world, Persona};
 
     #[test]
-    fn one_shape_per_house_and_two_per_street_in_the_status_colour() {
-        let streets = [StreetLine { from: (0.0, 0.0), to: (100.0, 0.0), status: Status::Completed }];
-        let houses = [HouseDot { at: (50.0, 20.0), status: Status::Later }, HouseDot { at: (70.0, 20.0), status: Status::Open }];
-        let svg = svg_markup(&streets, &houses, Theme::Dark);
-        assert_eq!(svg.matches("<line").count(), 2);
-        assert_eq!(svg.matches("<rect").count(), 2);
-        assert!(svg.contains(status::color(Theme::Dark, Status::Later)));
-        assert!(svg.contains(r#"x="40" y="12""#));
+    fn every_gebiet_is_one_shape_inside_the_box() {
+        let w = world(Persona::Admin);
+        let s = shapes(&w.gebiete);
+        assert_eq!(s.len(), 4);
+        for shape in &s {
+            for pair in shape.points.split(' ') {
+                let (x, y) = pair.split_once(',').unwrap();
+                let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+                assert!((0.0..=SIZE).contains(&x) && (0.0..=SIZE).contains(&y), "{pair}");
+            }
+        }
+        assert!(shapes(&[]).is_empty());
     }
 }

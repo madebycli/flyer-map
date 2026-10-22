@@ -10,8 +10,22 @@ const M_LNG: f64 = 111_320.0;
 /// Distance between two streets, in metres.
 pub const BLOCK: f64 = 90.0;
 const NAMES: [&str; 16] = [
-    "Lindenweg", "Hauptstraße", "Am Markt", "Kirchgasse", "Schulstraße", "Rosenweg", "Birkenallee", "Gartenstraße", "Mühlenweg", "Bergstraße", "Eichenweg",
-    "Wiesenpfad", "Tulpenstraße", "Uferweg", "Sonnenhang", "Akazienweg",
+    "Lindenweg",
+    "Hauptstraße",
+    "Am Markt",
+    "Kirchgasse",
+    "Schulstraße",
+    "Rosenweg",
+    "Birkenallee",
+    "Gartenstraße",
+    "Mühlenweg",
+    "Bergstraße",
+    "Eichenweg",
+    "Wiesenpfad",
+    "Tulpenstraße",
+    "Uferweg",
+    "Sonnenhang",
+    "Akazienweg",
 ];
 
 struct Frame {
@@ -64,7 +78,8 @@ impl Builder<'_> {
         self.houses += 1;
         let id = 500_000_000 + (self.salt % 900) * 10_000 + self.houses;
         let ring: Vec<Value> = [(x, y), (x + 12.0, y), (x + 12.0, y + 9.0), (x, y + 9.0), (x, y)].iter().map(|p| self.frame.at(p.0, p.1)).collect();
-        self.elements.push(json!({"type": "way", "id": id, "tags": {"building": "house", "addr:housenumber": number, "addr:street": street}, "geometry": ring}));
+        self.elements
+            .push(json!({"type": "way", "id": id, "tags": {"building": "house", "addr:housenumber": number, "addr:street": street}, "geometry": ring}));
     }
 }
 

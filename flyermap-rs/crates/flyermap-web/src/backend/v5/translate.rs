@@ -28,7 +28,9 @@ pub fn grants(meta: &Meta) -> Vec<Grant> {
         LinkRole::Admin => vec![at_aktion(Role::Admin)],
         LinkRole::Viewer => vec![at_aktion(Role::Viewer)],
         LinkRole::TeamEditor => match &meta.team_id {
-            Some(team) => vec![Grant::new(Role::Member, Scope::Gruppe { org: org.clone(), aktion: aktion.clone(), gruppe: GruppeId::new(team) }), at_aktion(Role::Viewer)],
+            Some(team) => {
+                vec![Grant::new(Role::Member, Scope::Gruppe { org: org.clone(), aktion: aktion.clone(), gruppe: GruppeId::new(team) }), at_aktion(Role::Viewer)]
+            }
             None => writable().map(|id| at_gebiet(Role::Member, id)).collect(),
         },
         LinkRole::CollectionCollector => std::iter::once(at_aktion(Role::Helper)).chain(writable().map(|id| at_gebiet(Role::Helper, id))).collect(),
@@ -111,7 +113,12 @@ mod tests {
             let b = boot(&meta(role, team));
             let r = rights(&b);
             for g in &b.world.gebiete {
-                let server_says = if role == "admin" { true } else { g.writable };
+                // the server flags what it lets this link write; a viewer link is never writable, whatever the flag of the area
+                let server_says = match role {
+                    "admin" => true,
+                    "viewer" => false,
+                    _ => g.writable,
+                };
                 assert_eq!(r.can_gebiet(Action::Mark, g), server_says, "{role} {team} in {}", g.id);
             }
         }

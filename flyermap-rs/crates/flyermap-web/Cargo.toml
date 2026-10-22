@@ -40,5 +40,9 @@ web-sys = { version = "0.3", features = [
   "MediaQueryList", "Clipboard", "KeyboardEvent", "MouseEvent", "HtmlTextAreaElement", "HtmlButtonElement", "ScrollToOptions", "ScrollBehavior",
 ] }
 
+# flyermap-identity (the rights mirror) pulls in crates that ask for randomness; in the browser that is `crypto.getRandomValues`.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
 [lints]
 workspace = true

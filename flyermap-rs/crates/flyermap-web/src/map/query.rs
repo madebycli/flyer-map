@@ -48,12 +48,13 @@ impl FieldMap {
 
     /// Everything the thick line a–b (radius r px) touches: houses by their drawn outline (a dot when zoomed out), street pieces by their line.
     pub fn brush_touch(&self, a: P2, b: P2, r: f64, into: &mut Touched) {
-        let drawn = self.drawn(a[0].min(b[0]) - r, a[1].min(b[1]) - r, a[0].max(b[0]) + r, a[1].max(b[1]) + r, &[
-            style::HOUSES_FILL,
-            style::HOUSES_DOTS,
-            style::STREETS,
-            style::PATHS,
-        ]);
+        let drawn = self.drawn(
+            a[0].min(b[0]) - r,
+            a[1].min(b[1]) - r,
+            a[0].max(b[0]) + r,
+            a[1].max(b[1]) + r,
+            &[style::HOUSES_FILL, style::HOUSES_DOTS, style::STREETS, style::PATHS],
+        );
         for f in drawn.iter().filter(|f| hit::touches(f, a, b, r)) {
             if let Some(id) = f.id.strip_prefix("h:") {
                 into.houses.insert(id.to_string());
@@ -108,5 +109,6 @@ impl FieldMap {
 
 /// West, south, east, north of a ring.
 pub fn bounds(ring: &[LngLat]) -> [f64; 4] {
-    ring.iter().fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, p| [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])])
+    ring.iter()
+        .fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, p| [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])])
 }
