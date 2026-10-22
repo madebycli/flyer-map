@@ -7,6 +7,7 @@ use crate::{
     query::Context,
 };
 use rustc_hash::FxHashMap;
+use std::collections::hash_map::Entry;
 
 pub(crate) struct Ctx {
     pub kinds: KindSet,
@@ -33,8 +34,8 @@ impl Ctx {
                 break;
             }
             if let Some(&slot) = index.by_id.get(&r.id) {
-                if !ranks.contains_key(&slot) {
-                    ranks.insert(slot, order.len());
+                if let Entry::Vacant(e) = ranks.entry(slot) {
+                    e.insert(order.len());
                     order.push(slot);
                 }
             }

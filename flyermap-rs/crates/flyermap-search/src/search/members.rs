@@ -1,6 +1,11 @@
 //! From a label that matched the words of the query to the entries under it: the street, the note, the command, and the houses whose
 //! number answers the number that was typed.
-use super::{assign::Assigned, context::Ctx, rank::*, Run};
+use super::{
+    assign::{text_score, Assigned},
+    context::Ctx,
+    rank::*,
+    Run,
+};
 use crate::{
     entry::Kind,
     index::{Data, Index, Label},
@@ -23,9 +28,11 @@ fn points(score: f32) -> u32 {
     score.round().max(0.0) as u32
 }
 
-/// `text` is the label's score for the words of the query; number tokens that matched no word of the label are the house number.
-pub(crate) fn expand(index: &Index, ctx: &Ctx, run: &Run, run_no: u8, label: &Label, a: &Assigned, text: u32, out: &mut Vec<Cand>) {
+/// The label's score for the words of the query becomes the base of every member's score; number tokens that matched no word of the label are
+/// the house number.
+pub(crate) fn expand(index: &Index, ctx: &Ctx, run: &Run, run_no: u8, label: &Label, a: &Assigned, out: &mut Vec<Cand>) {
     let tokens = &run.parse.tokens;
+    let text = text_score(label, &index.vocab, a, tokens.len());
     let unmatched: Vec<usize> = (0..tokens.len()).filter(|&t| tokens[t].number.is_some() && !a.has(t)).collect();
     for &s in &label.members {
         let slot = index.slot(s);

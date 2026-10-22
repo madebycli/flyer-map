@@ -16,7 +16,7 @@ mod tables;
 mod tokens;
 
 use crate::{hit::Results, index::Index, query::Query};
-use assign::{assign, text_score};
+use assign::assign;
 use context::Ctx;
 use members::Cand;
 use tables::{add_fuzzy, strict, tolerance, Table};
@@ -88,8 +88,7 @@ fn gather(index: &Index, ctx: &Ctx, run: &Run, run_no: u8, out: &mut Vec<Cand>) 
             };
             let a = assign(label, &run.tables, &run.order);
             if required.iter().all(|&t| a.has(t)) {
-                let text = text_score(label, &index.vocab, &a, tokens.len());
-                members::expand(index, ctx, run, run_no, label, &a, text, out);
+                members::expand(index, ctx, run, run_no, label, &a, out);
             }
         }
     }
