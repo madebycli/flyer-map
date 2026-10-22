@@ -10,7 +10,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# exact number parsing, as JSON.parse does (coordinates must not move by a bit between the TypeScript and the Rust path)
+serde_json = { version = "1", features = ["float_roundtrip"] }
 unicode-normalization = "0.1"
 rustc-hash = "2"
 bincode = "1"
