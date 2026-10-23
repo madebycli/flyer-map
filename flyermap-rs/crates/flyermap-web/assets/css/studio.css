@@ -1,0 +1,19 @@
+/* The Studio: tabs and the list of the chosen tab. The column (from 900 px) and the sheet on a phone use the same markup. */
+.fm-studio-body { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0.6rem; }
+.fm-tabs { flex: none; display: flex; gap: 0.35rem; padding: 0 1.1rem 0.1rem; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.v5-sheet-body > .fm-studio-body { margin: 0 -1rem; }
+.fm-tabs::-webkit-scrollbar { display: none; }
+.fm-tab { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2.75rem; padding: 0 1rem; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--on-var); font: 700 0.9rem var(--font); cursor: pointer; transition: background var(--t), color var(--t), transform 120ms var(--ease); }
+.fm-tab:active { transform: scale(0.96); }
+.fm-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.fm-tab[aria-selected="true"] { background: var(--primary-container); color: var(--on-primary-container); box-shadow: inset 0 0 0 2px var(--primary); }
+.fm-tab em { font-style: normal; font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums; opacity: 0.8; }
+
+.fm-slist { display: grid; align-content: start; gap: 0.3rem; flex: 1; min-height: 0; padding: 0.2rem 1.1rem calc(env(safe-area-inset-bottom) + 1rem); overflow-y: auto; overscroll-behavior: contain; }
+.fm-srow { display: flex; align-items: center; gap: 0.8rem; width: 100%; min-height: 3.5rem; padding: 0.35rem 0.9rem 0.35rem 0.7rem; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font: inherit; text-align: left; cursor: pointer; transition: background var(--t), transform 120ms var(--ease); }
+.fm-srow:active { background: var(--surface-4); transform: scale(0.99); }
+.fm-srow:focus-visible, .fm-snew:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.fm-srow-ico { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; background: color-mix(in srgb, var(--c, var(--outline)) 24%, var(--surface-4)); color: var(--on); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c, transparent) 60%, transparent); }
+.fm-snew { display: flex; align-items: center; gap: 0.8rem; width: 100%; min-height: 3.25rem; padding: 0 1rem; border: 0; border-radius: var(--r); background: var(--primary); color: var(--on-primary); font: 800 0.95rem var(--font); cursor: pointer; transition: transform 120ms var(--ease); }
+.fm-snew:active { transform: scale(0.98); }
+.fm-slist > .v5-hint { margin: 0.4rem 0; }

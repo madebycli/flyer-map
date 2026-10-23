@@ -36,7 +36,7 @@ pub enum Tool {
     Draw,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum StudioTab {
     #[default]
     Gebiete,

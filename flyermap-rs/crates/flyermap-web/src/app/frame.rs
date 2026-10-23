@@ -5,6 +5,7 @@ use super::{
     panels::panel_view,
     search, shortcuts,
     state::AppState,
+    studio,
     zones::{Zone, ZoneId},
 };
 use crate::{
@@ -49,6 +50,7 @@ pub fn Frame(state: AppState) -> impl IntoView {
     let may_mark = Signal::derive(move || s.world.with(|w| s.rights.with(|r| r.may_mark_somewhere(&w.gebiete))));
     let find = search::install(state);
     shortcuts::install(state, find);
+    studio::watch(state);
     let close_sheet_on_focus = move |()| {
         if panel.get_untracked().is_some() {
             state.dispatch(Action::Close);
@@ -83,6 +85,7 @@ pub fn Frame(state: AppState) -> impl IntoView {
             <Show when=move || state.layout.get() == Layout::Wide>
                 <aside class="fm-studio" aria-label="Studio">
                     <header><h2>"Studio"</h2></header>
+                    {studio::panel(state)}
                 </aside>
             </Show>
             <div class="fm-stage">

@@ -2,6 +2,7 @@
 //! index), the progress, the map and, as the steps follow, the store and the sync. The screens read signals from here and call methods on it;
 //! they never talk to a backend, an engine or the store directly.
 pub mod core;
+pub mod directory;
 pub mod field;
 pub mod progress;
 pub mod store;

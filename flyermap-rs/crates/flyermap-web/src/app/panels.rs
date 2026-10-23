@@ -11,7 +11,7 @@ use crate::{
     model::Subject,
     platform::time::now_ms,
     shell::{Action, Panel},
-    ui::status::Kind,
+    ui::{status::Kind, IconName, Sheet},
 };
 use flyermap_identity::Art;
 use leptos::prelude::*;
@@ -59,6 +59,6 @@ pub fn panel_view(state: AppState, panel: Panel) -> AnyView {
             let role = help_role(state.session.rights.with_untracked(|r| r.strongest()));
             view! { <HelpSheet role=role on_close=close /> }.into_any()
         }
-        Panel::Studio => view! { <p class="v5-hint">"Studio"</p> }.into_any(),
+        Panel::Studio => view! { <Sheet icon=IconName::Studio title="Studio" on_close=close>{super::studio::panel(state)}</Sheet> }.into_any(),
     }
 }

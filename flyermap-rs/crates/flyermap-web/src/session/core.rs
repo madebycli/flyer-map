@@ -36,6 +36,8 @@ pub struct Session {
     pub progress: RwSignal<HashMap<String, ProgressSnapshot>>,
     /// Counts every change of a status (from this device or from the server): a screen that shows a status reads it to know when to look again.
     pub changed: RwSignal<u64>,
+    /// Names of the lists the connection does not serve ("Personen", "Zugänge"): the Studio says so instead of showing them empty.
+    pub missing: RwSignal<Vec<String>>,
     pub sync: RwSignal<SyncView>,
     /// The loaded map data (engine, network, marking index) once there is some.
     pub loaded: RwSignal<Option<Rc<Loaded>>, LocalStorage>,
@@ -53,6 +55,7 @@ impl Session {
             rights: RwSignal::new(Rights::none()),
             progress: RwSignal::new(HashMap::new()),
             changed: RwSignal::new(0),
+            missing: RwSignal::new(Vec::new()),
             sync: RwSignal::new(SyncView::default()),
             loaded: RwSignal::new_local(None),
             field_state: RwSignal::new(FieldState::Idle),

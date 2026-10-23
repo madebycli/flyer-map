@@ -12,4 +12,5 @@ pub mod palette;
 pub mod quick;
 pub mod search;
 pub mod settings;
+pub mod studio;
 pub mod subject;

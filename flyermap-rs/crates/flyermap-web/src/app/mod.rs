@@ -11,6 +11,7 @@ pub mod search;
 pub mod shortcuts;
 pub mod start;
 pub mod state;
+pub mod studio;
 pub mod zones;
 
 pub use start::start;
