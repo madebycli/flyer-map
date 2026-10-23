@@ -1,8 +1,10 @@
-//! The bar at the top of the map (port of `src/v5/app/commandBar.tsx`), the one place for "where am I and where to": menu, search, status. It
-//! never changes size. Typing opens the results as a card that floats under it; a tap on a result picks it and closes the card.
+//! The bar at the top of the map, the one place for "where am I and where to": search and status. It never changes size. Typing opens the results as a
+//! card (under the bar; above the keyboard on a phone, where the thumb is); a tap or Enter on a result picks it and closes the card. The arrow keys walk the
+//! results, so a keyboard is as good as a finger. What is searched, and in which order, is the host's business: the bar gets the typed text out and the groups in.
 use super::{
-    hit::{card_open, Hit},
-    results::Results,
+    cursor::{self, step_for},
+    hit::{card_open, flat, Hit, ResultGroup},
+    results::{option_id, Results, LIST_ID},
 };
 use crate::ui::icon::{Icon, IconName};
 use leptos::{ev, html, prelude::*};
@@ -13,28 +15,34 @@ const BLUR_GRACE: Duration = Duration::from_millis(120);
 
 #[component]
 pub fn CommandBar(
-    #[prop(into)] on_menu: Callback<()>,
-    /// The search: called with the typed text while the card is open.
-    #[prop(into)]
-    search: Callback<String, Vec<Hit>>,
+    /// The typed text; the host watches it and answers with `groups`.
+    query: RwSignal<String>,
+    #[prop(into)] groups: Signal<Vec<ResultGroup>>,
     #[prop(into)] on_pick: Callback<Hit>,
     /// Called when the field gets the focus (the app closes an open sheet then).
     #[prop(optional, into)]
     on_focus: Option<Callback<()>>,
+    /// The field, for the shortcut that focuses it.
+    #[prop(optional)]
+    input: NodeRef<html::Input>,
     /// The status at the right end (the pill).
     children: Children,
 ) -> impl IntoView {
-    let query = RwSignal::new(String::new());
     let focused = RwSignal::new(false);
-    let input = NodeRef::<html::Input>::new();
+    let active = RwSignal::new(None::<usize>);
     // `autocorrect` (Safari) is not among the attributes `view!` knows, and a name without a dash cannot be written as a custom one.
     Effect::new(move |_| {
         if let Some(el) = input.get() {
             let _ = el.set_attribute("autocorrect", "off");
         }
     });
-    let open = Memo::new(move |_| query.with(|q| card_open(focused.get(), q)));
-    let hits = Memo::new(move |_| if open.get() { search.run(query.get()) } else { Vec::new() });
+    let open = Memo::new(move |_| card_open(focused.get()));
+    let hits = Memo::new(move |_| groups.with(|g| flat(g)));
+    // a new list starts at the top again
+    Effect::new(move |_| {
+        groups.track();
+        active.set(None);
+    });
 
     let finish = move || {
         query.set(String::new());
@@ -46,14 +54,28 @@ pub fn CommandBar(
         on_pick.run(hit);
         finish();
     };
-    let on_key = move |e: ev::KeyboardEvent| match e.key().as_str() {
-        "Enter" => {
-            if let Some(first) = hits.get_untracked().into_iter().next() {
-                pick(first);
+    let on_key = move |e: ev::KeyboardEvent| {
+        let key = e.key();
+        if let Some(step) = step_for(&key) {
+            // Home and End belong to the text while there is text to move in
+            if matches!(key.as_str(), "Home" | "End") && query.with_untracked(|q| !q.is_empty()) {
+                return;
             }
+            e.prevent_default();
+            active.update(|a| *a = cursor::step(*a, hits.with_untracked(Vec::len), step));
+            return;
         }
-        "Escape" => finish(),
-        _ => {}
+        match key.as_str() {
+            "Enter" => {
+                let chosen = hits.with_untracked(|h| cursor::enter(active.get_untracked(), h.len()).map(|i| h[i].clone()));
+                if let Some(hit) = chosen {
+                    e.prevent_default();
+                    pick(hit);
+                }
+            }
+            "Escape" => finish(),
+            _ => {}
+        }
     };
     let clear = move |_| {
         query.set(String::new());
@@ -64,26 +86,20 @@ pub fn CommandBar(
 
     view! {
         <div class="v5-cmd" data-open=move || open.get().to_string()>
-            <button
-                type="button"
-                class="v5-cmd-btn"
-                aria-label="Menü"
-                title="Menü"
-                on:click=move |_| {
-                    finish();
-                    on_menu.run(());
-                }
-            >
-                <Icon name=IconName::Menu size=24 />
-            </button>
             <label class="v5-cmd-search">
                 <Icon name=IconName::Search size=22 />
                 <input
                     node_ref=input
                     prop:value=move || query.get()
                     on:input=move |e| query.set(event_target_value(&e))
-                    placeholder="Straße oder Adresse"
-                    aria-label="Straße oder Adresse suchen"
+                    placeholder="Suchen oder Befehl …"
+                    aria-label="Suchen"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-haspopup="listbox"
+                    aria-controls=LIST_ID
+                    aria-expanded=move || open.get().to_string()
+                    aria-activedescendant=move || active.get().map(option_id)
                     inputmode="search"
                     enterkeyhint="search"
                     autocomplete="off"
@@ -113,7 +129,7 @@ pub fn CommandBar(
             {children()}
         </div>
         <Show when=move || open.get()>
-            <Results hits=hits on_pick=pick />
+            <Results groups=groups active=active on_pick=pick />
         </Show>
     }
 }

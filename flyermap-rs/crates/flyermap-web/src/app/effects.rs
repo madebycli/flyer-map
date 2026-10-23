@@ -39,6 +39,9 @@ pub fn install(prefs: Prefs) {
         // Dropping the old lock releases it; a browser without wake lock leaves `None`.
         lock.set_value(if on { KeepAwake::start().ok() } else { None });
     });
+    Effect::new(move |_| {
+        let _ = settings::save_toggle(&store, keys::SOUND, prefs.sound.get());
+    });
     Effect::new(move |before: Option<bool>| {
         let on = prefs.haptics.get();
         let _ = settings::save_toggle(&store, keys::HAPTICS, on);

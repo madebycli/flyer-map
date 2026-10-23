@@ -1,0 +1,43 @@
+/* The marking panel: one grid, six places, the same in every mode (src/features/mode/panel.rs). Undo at the bottom left and confirm at the bottom right for a
+   right-handed person; a left-handed person gets the mirror image, and the places are still the same in every mode. */
+.fm-markpanel { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-areas: "mode mode mode mode mode mode mode mode mode mode mode mode" "status status status status status status status status status status status status" "context context context context context context context context options options options options" "undo undo undo undo undo confirm confirm confirm confirm confirm confirm confirm"; gap: 0.45rem; }
+.fm-app[data-hand="left"] .fm-markpanel { grid-template-areas: "mode mode mode mode mode mode mode mode mode mode mode mode" "status status status status status status status status status status status status" "options options options options context context context context context context context context" "confirm confirm confirm confirm confirm confirm confirm undo undo undo undo undo"; }
+.fm-slot[data-slot="mode"] { grid-area: mode; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; }
+.fm-slot[data-slot="status"] { grid-area: status; }
+.fm-tiles4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; }
+.fm-slot[data-slot="context"] { grid-area: context; display: flex; align-items: center; min-width: 0; height: 3.25rem; padding: 0 0.3rem; color: var(--on); }
+.fm-slot[data-slot="options"] { grid-area: options; display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem; }
+.fm-app[data-hand="left"] .fm-slot[data-slot="options"] { justify-content: flex-start; }
+.fm-slot[data-slot="undo"] { grid-area: undo; }
+.fm-slot[data-slot="confirm"] { grid-area: confirm; }
+
+.fm-tile { display: grid; place-items: center; align-content: center; gap: 0.15rem; min-width: 0; min-height: 3.5rem; padding: 0.3rem 0.15rem; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font: 700 0.7rem/1.1 var(--font); text-align: center; cursor: pointer; transition: background var(--t), transform 120ms var(--ease), box-shadow var(--t); }
+.fm-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-tile:active { transform: scale(0.95); }
+.fm-tile:focus-visible, .fm-chipbtn:focus-visible, .fm-undo:focus-visible, .fm-confirm:focus-visible, .fm-ctx-size button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.fm-tile[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); box-shadow: inset 0 0 0 2px var(--primary); }
+.fm-tile.status { background: color-mix(in srgb, var(--c) 16%, var(--surface-3)); }
+.fm-tile.status .v5-icon { color: var(--c); }
+.fm-tile.status[aria-pressed="true"] { background: var(--c); color: var(--ink, #0f1514); box-shadow: 0 0 0 2px var(--on); }
+.fm-tile.status[aria-pressed="true"] .v5-icon { color: inherit; }
+
+.fm-ctx-line { display: flex; align-items: center; gap: 0.5rem; min-width: 0; margin: 0; font: 600 0.84rem/1.25 var(--font); }
+.fm-ctx-line > span { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.fm-ctx-line .v5-icon { flex: none; }
+.fm-ctx-line.warn { color: var(--tertiary); }
+.fm-ctx-count { flex: none; display: inline-grid; place-items: center; min-width: 1.7rem; height: 1.7rem; padding: 0 0.4rem; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font: 800 0.85rem var(--font); font-variant-numeric: tabular-nums; }
+.fm-ctx-size { display: flex; gap: 0.3rem; width: 100%; }
+.fm-ctx-size button { flex: 1; min-height: 2.75rem; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--on); font: 700 0.8rem var(--font); cursor: pointer; }
+.fm-ctx-size button[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); box-shadow: inset 0 0 0 2px var(--primary); }
+
+.fm-chipbtn { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on-var); cursor: pointer; transition: background var(--t), transform 120ms var(--ease); }
+.fm-chipbtn:active { transform: scale(0.92); }
+.fm-chipbtn[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); box-shadow: inset 0 0 0 2px var(--primary); }
+.fm-chipbtn:disabled { opacity: 0.4; cursor: default; }
+
+.fm-undo, .fm-confirm { display: flex; align-items: center; justify-content: center; gap: 0.4rem; min-height: 3.25rem; padding: 0 0.7rem; border: 0; border-radius: 999px; font: 800 0.88rem/1.1 var(--font); text-align: center; cursor: pointer; transition: transform 120ms var(--ease), background var(--t), opacity var(--t); }
+.fm-undo { background: var(--surface-3); color: var(--on); }
+.fm-confirm { background: var(--primary); color: var(--on-primary); }
+.fm-undo:active, .fm-confirm:active { transform: scale(0.96); }
+.fm-undo:disabled, .fm-confirm:disabled { opacity: 0.38; cursor: default; }
+.fm-markpanel .v5-icon { flex: none; }

@@ -1,0 +1,15 @@
+/* The line under the bar while the map data is prepared, and what went wrong. */
+.fm-fieldnote { display: flex; align-items: center; gap: 0.6rem; width: 100%; max-width: 34rem; min-height: 2.2rem; padding: 0.3rem 0.9rem; border-radius: 999px; background: var(--glass); box-shadow: var(--shadow); color: var(--on-var); font: 600 0.84rem var(--font); }
+.fm-fieldnote-bar { position: relative; flex: none; width: 2.4rem; height: 3px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--primary) 22%, transparent); }
+.fm-fieldnote-bar::after { content: ""; position: absolute; inset: 0; width: 40%; border-radius: 2px; background: var(--primary); animation: v5-run 1.3s ease-in-out infinite; }
+.fm-fieldnote.warn { color: var(--error); border-radius: var(--r); }
+.fm-fieldnote button { margin-left: auto; min-height: 2.75rem; padding: 0 0.8rem; border: 0; border-radius: 999px; background: transparent; color: var(--primary); font: 800 0.84rem var(--font); cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .fm-fieldnote-bar::after { animation: none; width: 100%; } }
+
+/* the sync box of the overview: is everything saved, and when */
+.fm-syncbox { display: flex; align-items: center; gap: 0.8rem; padding: 0.7rem 0.8rem 0.7rem 1rem; border-radius: var(--r); background: var(--surface-3); color: var(--on-primary-container); }
+.fm-syncbox[data-sync*="busy"] { color: var(--on-tertiary-container); }
+.fm-syncbox[data-sync*="offline"] { color: var(--error); }
+.fm-syncbox > div { flex: 1; min-width: 0; display: grid; gap: 0.1rem; color: var(--on); }
+.fm-syncbox small { color: var(--on-var); font-weight: 600; }
+.fm-syncbox .v5-btn { margin: 0; flex: none; }

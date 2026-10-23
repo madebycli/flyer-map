@@ -59,5 +59,11 @@ define_icons! {
     Chevron "chevron" => r#"<path d="M9.500 5.500l6.500 6.500-6.500 6.500"/>"#,
     Menu "menu" => r#"<path d="M4 7h16M4 12h16M4 17h16"/>"#,
     Settings "settings" => r#"<path d="M4 7h8.500M17.500 7H20M4 17h2.500M11.500 17H20"/><circle cx="15" cy="7" r="2.500"/><circle cx="9" cy="17" r="2.500"/>"#,
+    Speaker "speaker" => r#"<path d="M5 9.5h3l4.5-3.5v12L8 14.5H5z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>"#,
+    Vibrate "vibrate" => r#"<rect x="8" y="4" width="8" height="16" rx="2"/><path d="M4.5 8.5v7M19.5 8.5v7M2 10.5v3M22 10.5v3"/>"#,
+    Studio "studio" => r#"<rect x="3.5" y="4.5" width="7" height="15" rx="1.8"/><path d="M14 5h6.5M14 10h6.5M14 15h6.5M14 20h6.5"/>"#,
+    Link "link" => r#"<path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1"/>"#,
+    Clipboard "clipboard" => r#"<rect x="6" y="5" width="12" height="15" rx="2"/><path d="M9.500 5V4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1M9 11h6M9 15h4"/>"#,
+    Cut "cut" => r#"<circle cx="6" cy="7" r="2.500"/><circle cx="6" cy="17" r="2.500"/><path d="M8 8.500L20 18M8 15.500L20 6"/>"#,
     MapPin "mapPin" => r#"<path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 0 0-13 0c0 5.4 6.5 11 6.5 11z"/><circle cx="12" cy="10" r="2.3"/>"#,
 }

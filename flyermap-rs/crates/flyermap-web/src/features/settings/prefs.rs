@@ -12,6 +12,7 @@ pub struct Prefs {
     pub base_on: RwSignal<bool>,
     pub awake: RwSignal<bool>,
     pub haptics: RwSignal<bool>,
+    pub sound: RwSignal<bool>,
     /// `#rrggbb`.
     pub seed: RwSignal<String>,
 }
@@ -24,8 +25,27 @@ impl Prefs {
             base_on: RwSignal::new(s.base_on),
             awake: RwSignal::new(s.awake),
             haptics: RwSignal::new(s.haptics),
+            sound: RwSignal::new(s.sound),
             seed: RwSignal::new(seed_or_default(s.seed.as_deref())),
         }
+    }
+}
+
+impl Prefs {
+    /// How marking feels right now.
+    pub fn feedback(&self) -> crate::platform::Feedback {
+        crate::platform::Feedback::from_flags(self.haptics.get(), self.sound.get())
+    }
+
+    pub fn set_feedback(&self, feedback: crate::platform::Feedback) {
+        let (haptic, sound) = feedback.flags();
+        self.haptics.set(haptic);
+        self.sound.set(sound);
+    }
+
+    /// The confirmation of a mark, as chosen (buzz, tone, both or nothing).
+    pub fn confirm(&self) {
+        crate::platform::sound::confirm(self.haptics.get_untracked(), self.sound.get_untracked());
     }
 }
 

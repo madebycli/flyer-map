@@ -1,0 +1,55 @@
+/* The anchors of the map: quick bar, mode button, live strip; and the actions of a sheet at the thing. One control size (44 px and up). */
+:root { --q: 2.75rem; --fab: 4rem; }
+
+/* quick bar */
+.fm-quick { display: flex; align-items: center; gap: 2px; padding: 0.25rem; border-radius: 999px; background: var(--glass); box-shadow: var(--shadow); }
+.fm-qbtn { position: relative; flex: none; display: grid; place-items: center; width: var(--q); height: var(--q); padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--on-var); cursor: pointer; transition: background var(--t), transform 120ms var(--ease), color var(--t); }
+.fm-qbtn:active { transform: scale(0.9); }
+.fm-qbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.fm-qbtn[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); }
+.fm-qbtn.mirror .v5-icon { transform: scaleX(-1); }
+.fm-qbtn.sync[aria-pressed="false"] { color: var(--primary); }
+.fm-qbtn.sync.busy { color: var(--tertiary); }
+.fm-qbtn.sync.busy .v5-icon { animation: v5-spin 1.1s linear infinite; }
+.fm-qbtn.sync.offline { background: var(--error-container); color: var(--error); }
+.fm-qbadge { position: absolute; top: 0; right: 0; min-width: 1.15rem; height: 1.15rem; padding: 0 0.3rem; border-radius: 999px; background: var(--tertiary); color: var(--surface); font: 800 0.72rem/1.15rem var(--font); font-style: normal; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* mode button: the one big button, on the thumb's side, always at the same place */
+.fm-mode { flex: none; display: grid; place-items: center; width: var(--fab); height: var(--fab); padding: 0; border: 0; border-radius: 1.4rem; background: var(--primary); color: var(--on-primary); box-shadow: var(--shadow); cursor: pointer; transition: transform 120ms var(--ease), background var(--t), border-radius var(--t) var(--ease); }
+.fm-mode:active { transform: scale(0.93); }
+.fm-mode:focus-visible { outline: 3px solid var(--on); outline-offset: 2px; }
+.fm-mode[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); border-radius: 50%; box-shadow: 0 0 0 3px var(--primary), var(--shadow); }
+
+/* live strip */
+.fm-live { display: flex; align-items: center; gap: 0.45rem; width: 100%; }
+.fm-live-tag { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; height: 2rem; padding: 0 0.75rem; border-radius: 999px; background: var(--glass); box-shadow: var(--shadow); color: var(--on); font: 800 0.74rem var(--font); letter-spacing: 0.06em; text-transform: uppercase; }
+.fm-live-tag i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--primary); animation: fm-pulse 1.8s ease-in-out infinite; }
+@keyframes fm-pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
+.fm-live-chips { display: flex; gap: 0.4rem; min-width: 0; padding: 0.25rem 0.25rem 0.9rem; margin: -0.15rem -0.25rem -0.75rem; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
+.fm-live-chips::-webkit-scrollbar { display: none; }
+.fm-chip { flex: none; display: inline-flex; align-items: center; gap: 0.5rem; min-height: var(--q); padding: 0.15rem 0.9rem 0.15rem 0.2rem; border: 0; border-radius: 999px; background: var(--glass); box-shadow: 0 1px 5px rgb(0 0 0 / 24%); color: var(--on); text-align: left; cursor: pointer; scroll-snap-align: start; transition: transform 120ms var(--ease), background var(--t); }
+.fm-chip:active { transform: scale(0.96); }
+.fm-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.fm-chip[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); box-shadow: 0 0 0 2px var(--primary), var(--shadow); }
+.fm-chip-dot { display: grid; place-items: center; width: 2.3rem; height: 2.3rem; flex: none; border-radius: 50%; background: var(--c); color: var(--ink, #fff); font: 800 0.82rem var(--font); }
+.fm-chip-text { display: grid; line-height: 1.15; }
+.fm-chip-text b { font-size: 0.92rem; white-space: nowrap; }
+.fm-chip-text small { font-size: 0.74rem; font-weight: 600; color: var(--on-var); white-space: nowrap; }
+.fm-chip[aria-pressed="true"] small { color: inherit; opacity: 0.85; }
+
+/* the actions of a sheet at the thing */
+.fm-acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.fm-act { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 0.5rem; min-height: 4.5rem; padding: 0.8rem 1rem; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font: 700 0.95rem/1.2 var(--font); text-align: left; cursor: pointer; transition: transform 120ms var(--ease), background var(--t); }
+.fm-act:active { transform: scale(0.97); background: var(--surface-4); }
+.fm-act:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.fm-act:last-child:nth-child(odd) { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0.9rem; min-height: 3.5rem; }
+.fm-subject-color { display: block; height: 0.3rem; border-radius: 1rem; }
+
+/* the sheet of a house or a street piece: what its status is, the four statuses to choose from, the houses along */
+.fm-status-line { margin: 0; font: 700 1.05rem/1.3 var(--font); color: var(--on); }
+.fm-toggle { display: flex; align-items: center; gap: 0.7rem; width: 100%; min-height: 2.75rem; padding: 0 1rem; border: 0; border-radius: var(--r); background: var(--surface-3); color: var(--on); font: 700 0.92rem var(--font); text-align: left; cursor: pointer; transition: background var(--t); }
+.fm-toggle[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); box-shadow: inset 0 0 0 2px var(--primary); }
+.fm-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.fm-toggle span { flex: 1; }
+
+@media (prefers-reduced-motion: reduce) { .fm-live-tag i, .fm-qbtn.sync.busy .v5-icon { animation: none; } }

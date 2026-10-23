@@ -1,0 +1,14 @@
+/* The way in for a device without access: one column, centred, the main action in reach of the thumb. */
+.fm-join { display: grid; align-content: center; gap: 1.1rem; min-height: var(--vvh, 100dvh); max-width: 28rem; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 1.2rem) 1.25rem calc(env(safe-area-inset-bottom) + 1.4rem); box-sizing: border-box; }
+.fm-join header { display: grid; justify-items: center; gap: 0.5rem; text-align: center; }
+.fm-join h1 { margin: 0; font-size: 1.7rem; font-weight: 800; letter-spacing: -0.03em; }
+.fm-join header p { margin: 0; color: var(--on-var); font-weight: 600; line-height: 1.35; }
+.fm-joinform { display: grid; gap: 0.8rem; }
+.fm-joinform .v5-input { width: 100%; box-sizing: border-box; min-height: 3.25rem; font-size: 1rem; }
+.fm-code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 1.35rem !important; letter-spacing: 0.12em; text-transform: uppercase; text-align: center; }
+.fm-joinform .v5-btn { min-height: 3.25rem; justify-content: center; }
+.fm-send { min-height: 3.5rem !important; font-size: 1.05rem; }
+.fm-paste { justify-self: center; min-height: 2.75rem !important; }
+.fm-or { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.8rem; margin: 0.2rem 0; color: var(--on-var); font: 700 0.8rem var(--font); }
+.fm-or::before, .fm-or::after { content: ""; height: 1px; background: var(--outline-var); }
+.fm-send:disabled { opacity: 0.4; }

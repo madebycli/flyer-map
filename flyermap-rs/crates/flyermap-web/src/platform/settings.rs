@@ -39,6 +39,72 @@ pub fn toggle_str(on: bool) -> &'static str {
     }
 }
 
+/// The id of this device as the author of its edits: made once from `random` (values in 0..1) and kept in the store, so the same device is the same
+/// author after a restart, and a person who switches between the React app and this one stays one author.
+pub fn actor_id_with(store: &dyn KeyValue, random: &mut dyn FnMut() -> f64) -> String {
+    if let Some(existing) = store.read(keys::ACTOR).filter(|a| a.len() >= 4) {
+        return existing;
+    }
+    const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let id: String = std::iter::once('d').chain((0..6).map(|_| DIGITS[((random() * DIGITS.len() as f64) as usize).min(DIGITS.len() - 1)] as char)).collect();
+    // a store that refuses is no reason to stop: the id then lives for this session
+    let _ = store.write(keys::ACTOR, &id);
+    id
+}
+
+pub fn actor_id(store: &dyn KeyValue) -> String {
+    actor_id_with(store, &mut js_sys::Math::random)
+}
+
+/// How marking feels: a buzz, a tone, both or neither. The quick bar steps through the four with one button.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Feedback {
+    #[default]
+    Off,
+    Haptic,
+    HapticSound,
+    Sound,
+}
+
+impl Feedback {
+    pub fn from_flags(haptic: bool, sound: bool) -> Feedback {
+        match (haptic, sound) {
+            (false, false) => Feedback::Off,
+            (true, false) => Feedback::Haptic,
+            (true, true) => Feedback::HapticSound,
+            (false, true) => Feedback::Sound,
+        }
+    }
+
+    /// `(haptic, sound)`.
+    pub fn flags(self) -> (bool, bool) {
+        match self {
+            Feedback::Off => (false, false),
+            Feedback::Haptic => (true, false),
+            Feedback::HapticSound => (true, true),
+            Feedback::Sound => (false, true),
+        }
+    }
+
+    pub fn next(self) -> Feedback {
+        match self {
+            Feedback::Off => Feedback::Haptic,
+            Feedback::Haptic => Feedback::HapticSound,
+            Feedback::HapticSound => Feedback::Sound,
+            Feedback::Sound => Feedback::Off,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Feedback::Off => "Aus",
+            Feedback::Haptic => "Vibration",
+            Feedback::HapticSound => "Vibration und Ton",
+            Feedback::Sound => "Ton",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub theme: Theme,
@@ -49,6 +115,8 @@ pub struct Settings {
     pub awake: bool,
     /// A short buzz when marking.
     pub haptics: bool,
+    /// A short tone when marking (off unless chosen).
+    pub sound: bool,
     /// The stored seed colour (`#rrggbb`), `None` for the default.
     pub seed: Option<String>,
 }
@@ -62,6 +130,7 @@ impl Settings {
             base_on: parse_toggle(read(keys::BASE).as_deref()),
             awake: parse_toggle(read(keys::AWAKE).as_deref()),
             haptics: parse_toggle(read(keys::HAPTICS).as_deref()),
+            sound: read(keys::SOUND).as_deref() == Some("on"),
             seed: read(keys::SEED),
         }
     }
@@ -99,7 +168,36 @@ mod tests {
         assert_eq!(s.theme, Theme::Dark);
         assert_eq!(s.hand, Hand::Right);
         assert!(s.base_on && s.awake && s.haptics);
+        assert!(!s.sound, "a tone is a choice");
         assert_eq!(s.seed, None);
+    }
+
+    #[test]
+    fn the_device_is_one_author_for_good() {
+        let store = MemoryStore::default();
+        let mut n = 0.0;
+        let mut random = move || {
+            n += 0.17;
+            n % 1.0
+        };
+        let id = actor_id_with(&store, &mut random);
+        assert!(id.starts_with('d') && id.len() == 7 && id[1..].chars().all(|c| c.is_ascii_alphanumeric()), "{id}");
+        assert_eq!(actor_id_with(&store, &mut random), id, "the second ask reads what was kept");
+        store.write("vf-v5-actor", "dabc123").unwrap();
+        assert_eq!(actor_id_with(&store, &mut random), "dabc123", "the id of the React app is taken over");
+    }
+
+    #[test]
+    fn the_four_feelings_go_round() {
+        let mut f = Feedback::Off;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            f = f.next();
+            seen.push(f.flags());
+        }
+        assert_eq!(seen, [(true, false), (true, true), (false, true), (false, false)]);
+        assert_eq!(Feedback::from_flags(true, true).label(), "Vibration und Ton");
+        assert_eq!(Feedback::from_flags(false, false), Feedback::Off);
     }
 
     #[test]

@@ -42,6 +42,13 @@ pub fn SettingsSheet(
                     checked=prefs.haptics
                     on_change=move |on| prefs.haptics.set(on)
                 />
+                <SwitchRow
+                    icon=IconName::Speaker
+                    label="Kurzer Ton beim Markieren"
+                    hint="Ein leiser Klick, wenn eine Markierung gesetzt ist"
+                    checked=prefs.sound
+                    on_change=move |on| prefs.sound.set(on)
+                />
             </ListGroup>
             <ListGroup title="Karte">
                 <SwitchRow

@@ -12,6 +12,17 @@ pub enum HelpRole {
     Collector,
 }
 
+/// The help for the role the person holds here (the strongest of their grants).
+pub fn help_role(strongest: Option<flyermap_identity::Role>) -> HelpRole {
+    use flyermap_identity::Role;
+    match strongest {
+        Some(Role::Owner | Role::Admin) => HelpRole::Admin,
+        Some(Role::Lead | Role::Member) => HelpRole::TeamEditor,
+        Some(Role::Helper) => HelpRole::Collector,
+        Some(Role::Viewer) | None => HelpRole::Viewer,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub q: &'static str,

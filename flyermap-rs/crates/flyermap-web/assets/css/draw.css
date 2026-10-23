@@ -1,0 +1,15 @@
+/* Drawing a Gebiet: the panel has the places of the marking panel (kind tiles, one sentence, undo bottom left, confirm bottom right; mirrored for the left hand),
+   and the sheet that names the new Gebiet. */
+.fm-drawpanel { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-areas: "kind kind kind kind kind kind kind kind kind kind kind kind" "hint hint hint hint hint hint hint hint hint hint hint hint" "undo undo undo undo undo confirm confirm confirm confirm confirm confirm confirm"; gap: 0.45rem; }
+.fm-app[data-hand="left"] .fm-drawpanel { grid-template-areas: "kind kind kind kind kind kind kind kind kind kind kind kind" "hint hint hint hint hint hint hint hint hint hint hint hint" "confirm confirm confirm confirm confirm confirm confirm undo undo undo undo undo"; }
+.fm-slot[data-slot="kind"] { grid-area: kind; display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 0.35rem; }
+.fm-slot[data-slot="hint"] { grid-area: hint; display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; min-width: 0; height: 3.6rem; padding: 0 0.3rem; color: var(--on); }
+.fm-slot[data-slot="hint"] .fm-ctx-line > span { -webkit-line-clamp: 3; }
+.fm-draw-size { flex: none; padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font: 800 0.82rem var(--font); white-space: nowrap; }
+
+.fm-field { display: grid; gap: 0.35rem; margin: 0; }
+.fm-field > span { font: 800 0.74rem var(--font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--on-var); }
+.fm-choices { display: grid; gap: 0.35rem; }
+.fm-choice .fm-dot { flex: none; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--c, var(--outline)); box-shadow: 0 0 0 2px var(--surface-1); }
+.v5-hint.warn { color: var(--error); }
+.fm-drawpanel .fm-ctx-line.warn { color: var(--error); }

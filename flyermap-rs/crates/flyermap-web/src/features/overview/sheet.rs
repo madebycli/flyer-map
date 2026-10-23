@@ -2,10 +2,11 @@
 //! The sync box of the React sheet follows with the real sync (M5, store); the fake data is always saved.
 use super::model::{de_number, deliverable, percent_of, OverviewData};
 use crate::{
-    platform::Theme,
+    platform::{time::now_ms, Theme},
+    sync::{ago, SyncView},
     ui::{
         status::{self, Kind, ORDER},
-        Hint, Icon, IconName, Progress, Sheet, SheetMeta,
+        Button, ButtonVariant, Hint, Icon, IconName, Progress, Sheet, SheetMeta,
     },
 };
 use leptos::prelude::*;
@@ -18,8 +19,18 @@ pub fn OverviewSheet(
     /// A tap on a Gebiet shows it on the map.
     #[prop(into)]
     on_area: Callback<String>,
+    /// The sync of this device: saved, sending, offline, with the time of the last good round.
+    #[prop(into)]
+    sync: Signal<SyncView>,
+    #[prop(into)] on_sync: Callback<()>,
     #[prop(into)] on_close: Callback<()>,
 ) -> impl IntoView {
+    let sync_line = move || {
+        sync.with(|v| match &v.last_error {
+            Some(error) if v.state == flyermap_sync::State::Offline => format!("{} Zuletzt gespeichert: {}.", error, ago(v.last_ok_at, now_ms())),
+            _ => format!("Zuletzt gespeichert: {}.", ago(v.last_ok_at, now_ms())),
+        })
+    };
     let percent = Memo::new(move |_| data.with(|d| percent_of(&d.overall)));
     let total = move || data.with(|d| de_number(d.overall.total_houses));
     let stats = move || {
@@ -97,6 +108,15 @@ pub fn OverviewSheet(
                 <h3>"Gruppen"</h3>
                 <div class="v5-list">{teams}</div>
             </Show>
+            <h3>"Synchronisierung"</h3>
+            <div class="fm-syncbox" data-sync=move || sync.with(|v| v.dot().class()) role="status">
+                <Icon name=Signal::derive(move || sync.with(|v| v.dot().icon())) size=24 />
+                <div>
+                    <b>{move || sync.with(SyncView::headline)}</b>
+                    <small>{sync_line}</small>
+                </div>
+                <Button label="Jetzt senden" variant=ButtonVariant::Tonal on_click=on_sync />
+            </div>
         </Sheet>
     }
 }

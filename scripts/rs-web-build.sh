@@ -9,7 +9,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WS="$ROOT/flyermap-rs"
 CRATE="$WS/crates/flyermap-web"
-OUT="$ROOT/dist-rs"
+OUT="${RS_WEB_OUT:-$ROOT/dist-rs}"   # RS_WEB_OUT: another output directory (size experiments)
+# The wasm build has its own target directory (its flags differ from the native tests' and lints', so the two never rebuild each other).
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WS/target/web-wasm}"
+TARGET="$CARGO_TARGET_DIR"
+# `erase_components` (Leptos): views are built with erased types, which makes the WebAssembly about 8 % smaller after compression. It is set here, for this
+# build only: nothing else in the workspace uses Leptos. RS_WEB_ERASE=0 turns it off.
+[ "${RS_WEB_ERASE:-1}" = "1" ] && export RUSTFLAGS="--cfg erase_components ${RUSTFLAGS:-}"
 PROFILE=debug; FLAG=()
 [ "${1:-}" = "--release" ] && { PROFILE=${RS_WEB_PROFILE:-web}; FLAG=(--profile "$PROFILE"); }
 
@@ -20,11 +26,24 @@ HAVE=$(wasm-bindgen --version | awk '{print $2}')
 
 (cd "$WS" && cargo build -p flyermap-web --bin flyermap-web --target wasm32-unknown-unknown "${FLAG[@]}")
 rm -rf "$OUT"; mkdir -p "$OUT"
-wasm-bindgen --target web --no-typescript --out-dir "$OUT" "$WS/target/wasm32-unknown-unknown/$PROFILE/flyermap-web.wasm"
+wasm-bindgen --target web --no-typescript --out-dir "$OUT" "$TARGET/wasm32-unknown-unknown/$PROFILE/flyermap-web.wasm"
 
 cp "$CRATE/assets/web/index.html" "$OUT/index.html"
 grep -o "@import '[^']*'" "$CRATE/assets/css/app.css" | sed "s/@import '\(.*\)'/\1/" | while read -r f; do cat "$CRATE/assets/css/$f"; echo; done > "$OUT/app.css"
 for f in logo.svg icon.svg icon-192.png icon-512.png apple-touch-icon.png; do cp "$ROOT/public/$f" "$OUT/$f"; done
+
+# The foreign parts, used as they are: MapLibre GL JS (its module, its shared chunk, its worker and its stylesheet, from node_modules after `npm ci`)
+# and the street engine (the committed WebAssembly build of flyermap-engine) with the small worker script that moves bytes to it.
+MAPLIBRE="$ROOT/node_modules/maplibre-gl/dist"
+[ -f "$MAPLIBRE/maplibre-gl.mjs" ] || { echo "MapLibre is missing: run npm ci"; exit 1; }
+mkdir -p "$OUT/vendor"
+for f in maplibre-gl.mjs maplibre-gl-shared.mjs maplibre-gl-worker.mjs; do cp "$MAPLIBRE/$f" "$OUT/vendor/$f"; done
+cat "$MAPLIBRE/maplibre-gl.css" >> "$OUT/app.css"
+cp "$ROOT/src/v5/engine/wasm/engine.wasm" "$OUT/engine.wasm"
+cp "$CRATE/assets/web/engine-worker.js" "$OUT/engine-worker.js"
+cp "$CRATE/assets/web/manifest.webmanifest" "$OUT/manifest.webmanifest"
+# the service worker last: it lists every file of the build
+node "$ROOT/scripts/rs-web-sw.mjs" "$OUT" "$CRATE/assets/web/sw.js"
 
 WASM="$OUT/flyermap-web_bg.wasm"
 RAW=$(wc -c < "$WASM"); GZ=$(gzip -9 -c "$WASM" | wc -c)

@@ -13,7 +13,17 @@ name = "flyermap-web"
 path = "src/main.rs"
 
 [dependencies]
+flyermap-area = { path = "../flyermap-area" }
 flyermap-core = { path = "../flyermap-core" }
+flyermap-diag = { path = "../flyermap-diag" }
+flyermap-identity = { path = "../flyermap-identity" }
+flyermap-pack = { path = "../flyermap-pack" }
+flyermap-rights = { path = "../flyermap-rights" }
+flyermap-search = { path = "../flyermap-search" }
+flyermap-sync = { path = "../flyermap-sync" }
+flyermap-wire = { path = "../flyermap-wire" }
+serde.workspace = true
+serde_json.workspace = true
 leptos = { version = "0.8", features = ["csr"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -22,11 +32,18 @@ thiserror.workspace = true
 web-sys = { version = "0.3", features = [
   "console", "Window", "Document", "Element", "HtmlElement", "Node", "Storage", "Navigator", "VisualViewport", "CssStyleDeclaration",
   "Event", "EventTarget", "PointerEvent", "KeyboardEvent", "HtmlInputElement", "DomRect", "DomTokenList", "VisibilityState",
+  "Request", "RequestInit", "RequestCredentials", "Response", "Headers", "ReadableStream", "ReadableWritablePair", "Location", "Url", "UrlSearchParams",
+  "Worker", "WorkerOptions", "WorkerType", "MessageEvent", "Performance",
+  "IdbFactory", "IdbDatabase", "IdbOpenDbRequest", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbVersionChangeEvent",
+  "HtmlCanvasElement", "CanvasRenderingContext2d", "CanvasWindingRule", "DomStringList",
+  "AudioContext", "AudioNode", "AudioDestinationNode", "AudioParam", "OscillatorNode", "OscillatorType", "GainNode",
+  "Geolocation", "PositionOptions", "Position", "Coordinates", "PositionError",
+  "MediaQueryList", "Clipboard", "KeyboardEvent", "MouseEvent", "HtmlTextAreaElement", "HtmlButtonElement", "ScrollToOptions", "ScrollBehavior", "ScrollIntoViewOptions", "ScrollLogicalPosition",
 ] }
 
-[dev-dependencies]
-serde.workspace = true
-serde_json.workspace = true
+# flyermap-identity (the rights mirror) pulls in crates that ask for randomness; in the browser that is `crypto.getRandomValues`.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [lints]
 workspace = true

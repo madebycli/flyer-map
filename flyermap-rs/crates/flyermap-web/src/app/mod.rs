@@ -1,12 +1,20 @@
-//! The app: state, navigation, effects of the settings, the frame with its zones, and (for this slice) the made-up data.
-pub mod dialog;
+//! The app: the state, the frame with its zones, what a sheet's action does, the effects of the settings, the boot.
+pub mod acts;
+pub mod debug;
+pub mod draw;
+pub mod draw_views;
 pub mod effects;
-pub mod fake;
+pub mod frame;
+pub mod join;
+pub mod marking;
+pub mod object;
 pub mod panels;
 pub mod root;
-pub mod routes;
-pub mod shell;
+pub mod search;
+pub mod shortcuts;
 pub mod start;
 pub mod state;
+pub mod studio;
+pub mod zones;
 
 pub use start::start;
