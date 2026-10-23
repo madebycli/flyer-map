@@ -585,6 +585,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyermap-aktion"
+version = "0.1.0"
+dependencies = [
+ "flyermap-aktion",
+ "flyermap-area",
+ "flyermap-core",
+ "flyermap-diag",
+ "flyermap-identity",
+ "flyermap-protocol",
+ "flyermap-sync",
+ "flyermap-wire",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "flyermap-area"
 version = "0.1.0"
 
@@ -655,6 +674,16 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "flyermap-protocol"
+version = "0.1.0"
+dependencies = [
+ "flyermap-core",
+ "flyermap-identity",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

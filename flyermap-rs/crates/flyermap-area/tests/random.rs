@@ -1,5 +1,5 @@
 //! Random Gebiete and strokes (fixed seed): whatever is accepted keeps the invariants.
-use flyermap_area::{check, close, connect, open, split, BorderPoint, Mode, Ring};
+use flyermap_area::{check, close, connect, open, split, within, BorderPoint, Mode, Ring};
 
 /// Plane area in degrees² (one frame for every shape, so pieces add up exactly; `area_m2` centres its projection on each shape).
 fn area_m2(ring: &Ring) -> f64 {
@@ -62,6 +62,11 @@ fn accepted_drawings_keep_the_invariants() {
                 "split: {start:?} {end:?}\n old {old:?}\n small {small:?}\n large {large:?}"
             );
             assert_eq!(check(&small, std::slice::from_ref(&large)), Ok(()));
+            assert!(
+                within(&small, &old) && within(&large, &old),
+                "each piece of a split lies inside the whole\n old {old:?}\n small {small:?}\n large {large:?}"
+            );
+            assert!(!within(&old, &small), "the whole is not inside a piece");
         }
     }
     assert!(connected > 1000 && splits > 1000, "enough accepted cases to mean something: {connected} connected, {splits} splits");

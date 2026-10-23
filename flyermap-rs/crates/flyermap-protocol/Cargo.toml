@@ -1,0 +1,17 @@
+[package]
+name = "flyermap-protocol"
+version.workspace = true
+edition.workspace = true
+description = "Protocol v6 of Verteil-Flyer: everything that flows between the app and the Akteur of an Aktion (entities, commands, answers, log entries, snapshot, catch-up, live frames). Types only."
+publish.workspace = true
+
+[dependencies]
+flyermap-core = { path = "../flyermap-core" }
+flyermap-identity = { path = "../flyermap-identity" }
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

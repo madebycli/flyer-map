@@ -1,0 +1,34 @@
+[package]
+name = "flyermap-aktion"
+version.workspace = true
+edition.workspace = true
+description = "The Akteur of one Aktion: numbers, checks and applies every command, keeps the log, answers snapshot and catch-up. A pure state machine over a narrow synchronous SQL trait; the Durable Object and native tests are two hosts of it."
+publish.workspace = true
+
+[features]
+default = []
+# `RusqliteSql`: the native SQLite host (tests, measurements, tools). Never part of the wasm build.
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+flyermap-area = { path = "../flyermap-area" }
+flyermap-core = { path = "../flyermap-core" }
+flyermap-diag = { path = "../flyermap-diag" }
+flyermap-identity = { path = "../flyermap-identity" }
+flyermap-protocol = { path = "../flyermap-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+thiserror.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.37", features = ["bundled"], optional = true }
+
+[dev-dependencies]
+# the crate itself, with the native SQLite host, for the tests and the measurement
+flyermap-aktion = { path = ".", features = ["sqlite"] }
+flyermap-sync = { path = "../flyermap-sync" }
+flyermap-wire = { path = "../flyermap-wire" }
+
+[lints]
+workspace = true
