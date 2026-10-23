@@ -120,3 +120,25 @@ Eigenschaftstests (Rechte, Sync-Konvergenz, Ableitung wiederholbar), Szenario-Te
 - Der Host vergibt die Zugriffe, die der Akteur nur ankündigt: ein Grant am Gebiet bei `Collected` (endet bei `Released`), Gast-Zugang für einen Lauf mit `Join::Link` (endet bei `LaufEnded`).
 - Geräteseite: `flyermap-sync` auf Protokoll v6 (Snapshot, Seiten, Aufholen, Live) und `flyermap-wire`-Abbildung; die Testklasse `Mirror` in `crates/flyermap-aktion/tests/support/mirror.rs` ist eine Vorlage dafür.
 - Verzeichnis (D1) und Kartenableitung (Schritte 1 und 3) sind davon unberührt.
+
+## 12. Stand: Schritt 2, Zugang zum Akteur und Durable-Object-Hülle (Branch `claude/rewrite-phase5-delete-legacy`)
+
+**Gebaut:** der Weg vom Gerät zum Akteur durch den Rand (`flyermap-server`: `akteur`, `api/akteur.rs`, `akteur_host`).
+
+- **Rand:** `/v6/aktionen/:id/{push,snapshot,marks,notes,catchup,live}`. Der Rand kennt die Sitzung, prüft, dass die Aktion im Verzeichnis steht und die Person sie betreten darf (Fremde bekommen `not_found` und wecken kein Durable Object), baut den **Link** (Person, Sitzung und nur die Grants, die in dieser Aktion zählen) und leitet auf einer selbst gebauten Anfrage weiter. Nichts aus der Anfrage des Clients wird durchgereicht, auch kein `x-fm-link`.
+- **Akteur:** `serve` (die HTTP-Fläche des Akteurs), `live` + `channel` (der Live-Kanal als Zustandsmaschine ohne Sockets: Verbindungen, Abonnement, Verteilen je Gerät nach `Audience`, Anwesenheit, Rate), `conns` (Verbindungstabelle). Alles generisch über `Sql` und nativ getestet; das Durable Object führt nur `Out::{Send, Store, Close}` aus.
+- **Widerruf:** Endet ein Grant, wird ein Gerät abgemeldet, abgemeldet oder das Passwort geändert, sammelt der Handler einen `Kick`; die App sendet ihn nach dem Erfolg an die betroffenen Aktionen. Ein Kick, der nicht ankommt, macht die Änderung nicht rückgängig; der Alarm schließt Verbindungen ohne gültigen Zutritt innerhalb einer Minute. Ein Socket von einer fremden Seite (`Origin`) wird abgelehnt.
+- **Cloudflare:** `DoSql` (`ctx.storage.sql`, Transaktion über `transactionSync`, ein Fehler im Callback wirft und macht alles rückgängig; beim Aufwachen werden Verbindungszeilen ohne Socket verworfen), `AktionObject` (WebSocket-Hibernation, Alarm: Verbindungen prüfen, `compact`), `DoAkteure` (der Rand zum Objekt). Die JS-Schnittstelle wird direkt aufgerufen, weil `worker` seine SQL-Hülle nicht öffentlich macht.
+
+**Beweise:** 26 neue native Tests (Rolle × Angriff, Zuschnitt je Gerät, Cross-Origin, Rate, Kick, Ablauf, Verbindungstabelle); vier absichtlich eingebaute Fehler wurden je von einem Test gefunden. Dazu `scripts/rs-e2e/akteur-flow.mjs` in workerd mit echtem Durable Object: eine Probe (`--features probe`, nie Teil eines Deploys) prüft, dass `DoSql::atomically` alles oder nichts tut (Commit, Fehler nach Schreibzugriffen, verschachtelt, nach einem Rollback), dann echte WebSockets, Zuschnitt je Gerät, Aufwachen aus dem Schlaf und Schließen bei Widerruf.
+
+**Rechte, die sich ohne Widerruf ändern:** Wird ein Gebiet einer anderen Gruppe gegeben, verlieren Leser der alten Gruppe das Recht und bekommen den Eintrag nicht zu sehen, der es ihnen nimmt (er handelt von einem Gebiet, das sie nicht mehr sehen dürfen). Der Akteur meldet deshalb `Handled::rights_moved`, und der Live-Kanal schickt allen abonnierten Geräten ein `Resync`: sie nehmen einen neuen Snapshot, der ihren Rechten von jetzt entspricht (getestet, mit absichtlich entferntem Resync wird der Test rot).
+
+**Wie belastbar der Beweis in workerd ist:** Die Probe lief grün (7 Schritte, 34 Prüfungen im Akteur-Ablauf, danach die 39 des Verzeichnisses). Mit absichtlich abgeschaltetem Rollback in `DoSql` wurde sie rot (nach einem Fehler standen 3 statt 1 Zeile in der Tabelle): der Rollback im echten Durable Object hängt genau an der Exception aus dem Callback, und die Probe prüft das.
+
+**Bekannte Lücken (nicht gebaut):**
+
+1. **Anwesenheit ohne Lauf.** `Online::lauf` bleibt leer, bis der Akteur sagt, in welchem Lauf eine Person ist.
+2. **Der Host vergibt die angekündigten Zugriffe noch nicht:** Grant am Gebiet bei `Collected` und Gast-Zugang bei `Join::Link`. Auch das verschiebt Rechte ohne Widerruf und braucht dann denselben Resync.
+3. **Der Alarm** (Verbindungen prüfen, `compact`) ist nur durch seine Bestandteile getestet (`Channel::sweep`, `Aktion::compact`), nicht als Alarm in workerd.
+4. **Kein Lasttest** der Hülle (viele Verbindungen, große Pakete) und keine Messung der Latenz Gerät → Objekt → Gerät.

@@ -3,6 +3,8 @@
 //! `akteur` (edge → Akteur: link, HTTP surface, live channel), `directory` (queries on the D1 database, one file per table), `auth` (sign-in ceremonies and the caller of a request), `api` (the HTTP
 //! handlers), `app` (puts a request through: origin check, caller, route, log line).
 pub mod akteur;
+#[cfg(target_arch = "wasm32")]
+mod akteur_host;
 pub mod api;
 pub mod app;
 pub mod auth;

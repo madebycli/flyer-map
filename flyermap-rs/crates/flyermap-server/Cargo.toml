@@ -8,6 +8,11 @@ publish.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+# Lets the end-to-end test ask a real Durable Object whether its transactions are all-or-nothing. Never part of a deployed build.
+probe = []
+
 [dependencies]
 flyermap-host = { path = "../flyermap-host" }
 flyermap-identity = { path = "../flyermap-identity" }

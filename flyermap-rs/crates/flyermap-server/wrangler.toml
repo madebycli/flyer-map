@@ -5,7 +5,15 @@ compatibility_date = "2025-09-01"
 
 [build]
 # Symbols must stay in the module: wasm-bindgen needs them for its externref table.
-command = "CARGO_PROFILE_RELEASE_STRIP=false worker-build --release"
+command = "CARGO_PROFILE_RELEASE_STRIP=false worker-build --release ${FM_FEATURES:+--features $FM_FEATURES}"
+
+[[durable_objects.bindings]]
+name = "AKTION"
+class_name = "AktionObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AktionObject"]
 
 [[d1_databases]]
 binding = "DB"
