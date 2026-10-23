@@ -664,6 +664,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyermap-search"
+version = "0.1.0"
+dependencies = [
+ "rustc-hash",
+ "thiserror 2.0.21",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "flyermap-server"
 version = "0.1.0"
 dependencies = [
